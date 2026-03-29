@@ -1,38 +1,57 @@
 # Task Backlog
 
-## Phase 1: Ship v1 (this week)
+## Completed
 
-- [ ] Push to dwarvesf/dwarves-kit GitHub repo -- public, MIT license
-- [ ] Test install.sh on clean macOS (no ~/.claude/settings.json) -- verify settings.json created correctly
-- [ ] Test install.sh on existing config (with prior hooks) -- verify jq merge preserves existing hooks
-- [ ] Run /user:think on a real Dwarves project feature -- capture friction notes
-- [ ] Run /user:spec on the same feature -- does the spec format work for contractor handoff?
-- [ ] Verify safety-gate blocks rm -rf and push to main in a real session
-- [ ] Verify context-readiness outputs valid JSON on SessionStart
-- [ ] Verify anti-rationalization does not false-positive on legitimate "out of scope" statements
+### v1.0 (2026-03-29)
+- [x] Push to tieubao/dwarves-kit GitHub repo (public, MIT license)
+- [x] Test install.sh on clean macOS
+- [x] Test install.sh on existing config (jq merge preserves existing hooks)
+- [x] Add .gitignore and LICENSE
+- [x] Verify safety-gate, context-readiness, anti-rationalization in real session
 
-## Phase 2: Iterate (next 2 weeks)
+### v1.1 (2026-03-30)
+- [x] Add --uninstall flag to install.sh
+- [x] Fix permission-auto-approve pipe injection vulnerability
+- [x] Trim anti-rationalization to 5 unambiguous patterns
+- [x] Fix auto-format network downloads (npx --yes removal)
+- [x] Fix install.sh merge logic (preserve user hooks)
+- [x] Add statusline, slop-cleaner, hook logging, debug mode
+- [x] Add test suite (tests/test-hooks.sh)
+- [x] Add kit-health command, path-scoped rules templates
 
-- [ ] Add --uninstall flag to install.sh (remove symlinks, remove hooks from settings.json)
-- [ ] Monitor auto-format hook context noise -- if Claude gets too many "file changed" reminders, move to Stop hook
-- [ ] Tune anti-rationalization patterns based on real usage -- track false positives in a log
-- [ ] Add .gitignore to kit repo
-- [ ] Add LICENSE file (MIT)
-- [ ] Test with Go project (gofmt path in auto-format)
-- [ ] Test with Python project (ruff path in auto-format)
+### v1.2 (2026-03-30)
+- [x] Verification pipeline (task-verifier + fix-agent + retry loop)
+- [x] 8 custom agents (verifier, fix, reviewer, security-auditor, 4 researchers)
+- [x] /start entry point router
+- [x] /review-team parallel 3-lens review
+- [x] session-state-save Stop + SubagentStop hook
+- [x] Collaborative Design Protocol
+- [x] Enhanced /spec with 4 parallel research agents for brownfield
+- [x] Enhanced /ship with review gate, version bump, changelog
+- [x] context-readiness v2 with command suggestions
 
-## Phase 3: v2 (next month)
+## Next: Real-world validation
 
-- [ ] Upgrade anti-rationalization to prompt hook (Haiku evaluation, fewer false positives)
-- [ ] Add /qa command with headless browser testing (Playwright, adapted from gstack)
-- [ ] Add SessionEnd hook for automatic knowledge capture (trigger knowledge-capture skill)
-- [ ] Package as Claude Code plugin for marketplace distribution
-- [ ] Vietnamese README for Dwarves team adoption
-- [ ] Evaluate if spec-drift-guard needs smarter file-to-task matching (currently grep-based)
+- [ ] Install on one real Dwarves project and run full cycle (think > spec > execute > review > ship)
+- [ ] Monitor ~/.claude/dwarves-kit/logs/ for false positives (1 week)
+- [ ] Verify task-verifier catches intentional spec violations
+- [ ] Verify fix-agent retry cap works (max 2, then escalate)
+- [ ] Verify /start correctly detects all 8 project states
+- [ ] Test /review-team parallel dispatch (3 lenses run simultaneously)
+- [ ] Test /spec research agents on brownfield Go + TypeScript projects
+- [ ] Collect 30+ real verification transcripts for verifier prompt optimization
+
+## v2 (pending real usage data)
+
+- [ ] Prompt-type anti-rationalization (Haiku evaluation instead of grep)
+- [ ] /qa command with headless browser testing (Playwright)
+- [ ] Agent Teams parallel task dispatch in /execute
+- [ ] SessionEnd hook for automatic knowledge capture
+- [ ] AutoResearch optimization of task-verifier prompt (needs 30+ transcripts)
+- [ ] Plugin marketplace packaging
 
 ## Parking lot (revisit in 30+ days)
 
-- L5 orchestration support (Nimbalyst integration) -- not needed until 3+ concurrent Claude Code sessions
-- ClaudeKit paid features evaluation -- wait until v1 gaps are clear
-- AutoResearch loop for skill optimization -- manual iteration faster for now
-- Agent-type hooks for deep verification -- prompt hooks come first
+- L5 orchestration (Nimbalyst integration) -- not needed until 3+ concurrent sessions
+- AutoResearch loop for command prompt optimization -- manual iteration faster for now
+- Agent-type hooks for deep verification -- custom subagents handle this now

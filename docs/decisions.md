@@ -83,3 +83,72 @@ Two separate commands. /spec generates, /spec-validate attacks. User chooses whe
 - User might skip validation. That's fine for small features, risky for large ones.
 - /spec ends with a reminder to run /spec-validate.
 - The 4-reviewer pattern (security, failure, assumptions, scope) is thorough but takes time.
+
+---
+
+# ADR-005: Separate verifier subagent instead of worker self-verification
+
+## Status: accepted (v1.2)
+
+## Context
+After a worker subagent completes a task, the orchestrator needs to know if the work meets the spec. Two options: (A) have the worker self-verify, or (B) dispatch a separate read-only verifier.
+
+## Decision
+Separate task-verifier subagent with read-only access. It checks acceptance criteria, runs tests, and checks scope compliance. Returns PASS, FAIL:fixable, or FAIL:escalate.
+
+## Alternatives considered
+- Worker self-verification: cheaper (no extra subagent) but biased. The worker's context is saturated with its own implementation. It normalizes its own shortcuts.
+- Orchestrator inline verification: keeps it in the main session, but the orchestrator's context should stay lean for coordination, not deep code reading.
+
+## Consequences
+- Every task costs one extra subagent dispatch (task-verifier). Roughly 2x the token cost per task.
+- Verification is independent: the verifier has no knowledge of the worker's reasoning, only the spec and the code.
+- The verifier cannot modify code. If it finds issues, it reports them for the fix-agent.
+- Source: OMC's architect verification in the Ralph loop, adapted to Claude Code custom subagents.
+
+---
+
+# ADR-006: Custom subagents via .claude/agents/ directory
+
+## Status: accepted (v1.2)
+
+## Context
+v1.2 introduces 8 agent roles (task-verifier, fix-agent, reviewer, security-auditor, 4 researchers). These need prompt definitions that commands can reference.
+
+## Decision
+Agent definitions live in `.claude/agents/` as markdown files with YAML frontmatter (name, description, tools, model). install.sh copies them to `~/.claude/agents/`. Commands dispatch them via the Task tool.
+
+## Alternatives considered
+- Inline prompts in command files: works but duplicates content. Can't tune agent prompts independently.
+- MCP server agents: more powerful but requires a running server. Too heavy for this kit.
+- Skill files: skills are Claude-triggered, not command-triggered. Agents are dispatched by commands.
+
+## Consequences
+- Requires Claude Code v2.0.60+ (custom subagent support).
+- Agent prompts can be tuned independently from commands.
+- Model selection per agent: research-stack uses haiku (cheap), others use sonnet.
+- install.sh handles agent install/uninstall alongside commands and skills.
+
+---
+
+# ADR-007: Collaborative Design Protocol for agent decisions
+
+## Status: accepted (v1.2)
+
+## Context
+Worker subagents encounter design decisions during implementation (which library, which data model, which API pattern). Without structure, they either guess silently or block on every decision.
+
+## Decision
+Shared protocol (docs/COLLABORATIVE-DESIGN.md) with 5 steps: Question > Options > Recommendation > Decision > Record. Agents reference this protocol in their prompts. In autonomous mode (/execute), agents proceed with their recommendation and log it. The task-verifier catches misalignment after the fact.
+
+## Alternatives considered
+- Always block on decisions: too slow for autonomous /execute. Every non-trivial task has 2-3 decisions.
+- Never structure decisions: agents make silent choices that are hard to review.
+- Per-agent decision rules: inconsistent. A shared protocol means all agents speak the same decision language.
+
+## Consequences
+- Worker subagents can make decisions autonomously in /execute mode.
+- Decisions are logged in .planning/SPEC.md Decision Log for audit.
+- task-verifier checks whether decisions align with the spec.
+- In manual /next mode, agents pause for human approval on decisions.
+- Source: CCGS Collaborative Design Principle, adapted to fit the verification pipeline.
