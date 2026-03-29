@@ -79,6 +79,22 @@
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/slop-cleaner.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
+            "timeout": 5
           }
         ]
       }

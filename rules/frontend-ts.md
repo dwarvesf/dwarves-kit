@@ -1,5 +1,10 @@
 ---
-paths: ["**/src/**", "**/app/**", "**/components/**", "**/pages/**", "**/lib/**"]
+paths:
+  - "**/src/**"
+  - "**/app/**"
+  - "**/components/**"
+  - "**/pages/**"
+  - "**/lib/**"
 ---
 
 TypeScript frontend conventions for this project.

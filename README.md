@@ -1,6 +1,6 @@
 # dwarves-kit
 
-A minimal Claude Code workflow kit for spec-driven development. 11 hooks + 10 commands + 1 skill.
+A minimal Claude Code workflow kit for spec-driven development with verification. 12 hooks + 12 commands + 8 agents + 1 skill.
 
 Built for a solo technical lead handing off to contractors. Opinionated, lightweight, no enterprise theater.
 
@@ -11,9 +11,10 @@ Built for a solo technical lead handing off to contractors. Opinionated, lightwe
 | Hook | Event | What it does |
 |------|-------|-------------|
 | safety-gate | PreToolUse(Bash) | Blocks rm -rf, push to main, force push |
-| context-readiness | SessionStart | Checks project state, injects warnings only |
+| context-readiness | SessionStart | Detects project state, suggests next command |
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
+| session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
 | pre-compact-backup | PreCompact | Saves structured session snapshot before compaction |
@@ -26,16 +27,31 @@ Built for a solo technical lead handing off to contractors. Opinionated, lightwe
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
+| /user:start | Entry | Detect project state, suggest next command |
 | /user:think | Think | 6 forcing questions to stress-test an idea |
-| /user:spec | Spec | Generate .planning/SPEC.md from intent |
+| /user:spec | Spec | Generate .planning/SPEC.md with 4 parallel research agents |
 | /user:spec-validate | Spec | 4 adversarial reviewers attack the spec |
-| /user:execute | Build | Autonomous: spawns subagent per task, phase checkpoints |
+| /user:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /user:next | Build | Lightweight: picks next undone task, loads context, you drive |
-| /user:review | Review | Paranoid code review with severity scoring |
+| /user:review | Review | Paranoid single-pass code review |
+| /user:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage) |
 | /user:docs | Docs | Cross-reference diff against all doc files, fix drift |
-| /user:ship | Ship | Test, commit, update docs, open PR |
+| /user:ship | Ship | Review gate, version bump, changelog, commit, PR |
 | /user:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /user:kit-health | Meta | Self-assessment against kit philosophy |
+
+**Agents (subagents dispatched by commands):**
+
+| Agent | Dispatched by | What it does |
+|-------|--------------|-------------|
+| task-verifier | /execute | Read-only verification against spec + tests |
+| fix-agent | /execute | Targeted fixes on FAIL:fixable (max 2 retries) |
+| reviewer | /review-team | Focused review with configurable lens |
+| security-auditor | /review-team | Deep OWASP-style security audit |
+| research-stack | /spec | Maps technology stack (brownfield) |
+| research-features | /spec | Maps existing features in target area |
+| research-architecture | /spec | Maps architecture patterns and conventions |
+| research-pitfalls | /spec | Finds landmines before implementation |
 
 **Skills (autonomous, Claude-triggered):**
 
@@ -61,20 +77,22 @@ bash ~/.claude/dwarves-kit/install.sh --uninstall
 ## Workflow
 
 ```
+/user:start          Detect state, suggest next command (entry point)
 /user:think          Challenge the idea (5 min)
-/user:spec           Generate the spec (15-30 min)
+/user:spec           Generate the spec + 4 parallel researchers (15-30 min)
 /user:spec-validate  Stress-test the spec (10 min)
                      [hand off to contractor]
-/user:execute        Autonomous: subagent per task, phase checkpoints
+/user:execute        Autonomous: worker > verifier > fix-agent retry loop
   or
 /user:next           Manual: pick next task, load context, you drive
                      [hooks enforce during build]
                      [statusline shows context budget]
-                     [compaction backup + re-injection protect long sessions]
+                     [session-state-save persists progress on every stop]
                      [slop-cleaner flags bloat at stop points]
-/user:review         Review before merge (10 min)
+/user:review         Single-pass review (10 min)
+/user:review-team    Parallel 3-lens review (security + arch + tests)
 /user:docs           Update all docs to match code (5 min)
-/user:ship           Test, commit, PR (5 min)
+/user:ship           Review gate, version bump, changelog, commit, PR
 /user:retro          Retrospective (10 min, after shipping)
 ```
 
@@ -111,15 +129,19 @@ bash tests/test-hooks.sh
 
 Tests cover: safety-gate blocking, anti-rationalization patterns (including v1.1 false-positive fixes), permission-auto-approve pipe injection protection, and basic sanity checks for all hooks.
 
-## What the execution layer does NOT cover
+## Verification pipeline (/execute)
 
-The execution layer (/execute) dispatches tasks sequentially via the Task tool. It does not support parallel subagent dispatch, crash recovery, or multi-agent coordination. If you need:
+Every task goes through: worker > task-verifier > fix-agent (if needed).
 
-- Parallel execution: install GSD v2 (Pi SDK runtime) or OMC (Ultrapilot mode)
-- Crash-resilient autonomous loops: install Smart Ralph
-- Multi-agent coordination: install Nimbalyst or OMC Swarm
+```
+worker subagent completes task
+  -> task-verifier (read-only) checks acceptance criteria + tests
+     -> PASS: mark done, continue
+     -> FAIL:fixable: dispatch fix-agent (max 2 retries)
+     -> FAIL:escalate: stop, ask human
+```
 
-The kit's job is spec generation and lifecycle hooks, not competing with agent runtimes.
+Tasks execute sequentially within phases. Parallel dispatch is not yet supported. For parallel execution, use GSD v2 or OMC alongside the kit.
 
 ## External dependencies (install alongside, not included)
 
@@ -133,11 +155,21 @@ These tools complement the kit but are installed separately:
 
 ```
 dwarves-kit/
+  agents/
+    task-verifier.md            Read-only verification against spec + tests
+    fix-agent.md                Targeted fixes on FAIL:fixable verdicts
+    reviewer.md                 Focused review with configurable lens
+    security-auditor.md         Deep OWASP-style security audit
+    research-stack.md           Maps technology stack (brownfield)
+    research-features.md        Maps existing features in target area
+    research-architecture.md    Maps architecture patterns
+    research-pitfalls.md        Finds landmines before implementation
   hooks/
     safety-gate.sh              PreToolUse: rm-rf + push-to-main blocker
-    context-readiness.sh        SessionStart: project status (warnings only)
+    context-readiness.sh        SessionStart: state detection + command suggestion
     anti-rationalization.sh     Stop: catch incomplete work (5 patterns)
     slop-cleaner.sh             Stop: flag bloated code (nudge, not block)
+    session-state-save.sh       Stop + SubagentStop: persist session state
     auto-format.sh              PostToolUse: run formatter (no network downloads)
     spec-drift-guard.sh         PreToolUse: warn on unplanned files
     pre-compact-backup.sh       PreCompact: save session snapshot
@@ -146,14 +178,16 @@ dwarves-kit/
     permission-auto-approve.sh  PermissionRequest: auto-approve reads (pipe-safe)
     statusline.sh               StatusLine: model, branch, context %, cost
   commands/
+    start.md                    Entry: detect state, suggest next command
     think.md                    Phase 1: Challenge the idea
-    spec.md                     Phase 2a: Generate spec
+    spec.md                     Phase 2a: Generate spec + 4 research agents
     spec-validate.md            Phase 2b: Adversarial review
-    execute.md                  Phase 4: Autonomous subagent execution
+    execute.md                  Phase 4: Worker > verifier > fix-agent loop
     next.md                     Phase 4: Manual single-task picker
-    review.md                   Phase 5: Paranoid code review
+    review.md                   Phase 5: Single-pass code review
+    review-team.md              Phase 5: Parallel 3-lens review
     docs.md                     Phase 5.5: Update docs to match code
-    ship.md                     Phase 6: Test + commit + PR
+    ship.md                     Phase 6: Review gate + version + changelog + PR
     retro.md                    Phase 7: Retrospective + learning capture
     kit-health.md               Meta: Self-assessment against philosophy
   rules/
@@ -166,52 +200,50 @@ dwarves-kit/
   settings.json                 Hook + statusline registration
   CLAUDE.md                     Project template
   CHANGELOG.md                  Version history
-  VERSION                       Current version (1.1.0)
+  VERSION                       Current version
   install.sh                    Installer + uninstaller
   README.md                     This file
   docs/
     PHILOSOPHY.md               Design principles, target user, NO list
-    session_state.md             Code-handoff session state
-    tasks.md                     Phased backlog
-    decisions.md                 4 ADRs
-    dependencies.md              Required vs recommended tools
-    v1.1-handoff.md             Session handoff document
+    COLLABORATIVE-DESIGN.md     Decision protocol for agents
+    session_state.md            Code-handoff session state
+    tasks.md                    Phased backlog
+    decisions.md                4 ADRs
+    dependencies.md             Required vs recommended tools
+    v1.1-handoff.md             v1.1 session handoff
+    v1.2-handoff.md             v1.2 session handoff
 ```
 
-## v1.1 changelog
+## Changelog
 
-- **[SECURITY]** permission-auto-approve: reject commands with pipes, chains, subshells
-- **[FIX]** anti-rationalization: trimmed from 13 to 5 patterns (removed 8 false-positive-prone phrases)
-- **[FIX]** auto-format: no more `npx --yes` (no network downloads per edit)
-- **[FIX]** install.sh: proper array concat (doesn't overwrite user's existing hooks), backup before modify
-- **[FIX]** context-readiness: reduced context noise (warnings only, not full inventory)
-- **[NEW]** install.sh --uninstall: clean removal of hooks, commands, skills
-- **[NEW]** statusline: model, branch, context %, cost, thinking mode
-- **[NEW]** slop-cleaner: Stop hook that flags bloated code (nudge, not block)
-- **[NEW]** Hook logging: safety-gate, spec-drift-guard, slop-cleaner log decisions
-- **[NEW]** DWARVES_KIT_DEBUG=1: all hooks log to stderr in debug mode
-- **[NEW]** tests/test-hooks.sh: automated test suite for all hooks
+See [CHANGELOG.md](CHANGELOG.md) for full version history.
+
+**v1.2.0** - Verification pipeline, 8 agents, /start router, /review-team, session-state-save, Collaborative Design Protocol.
+
+**v1.1.0** - Security fixes, slop-cleaner, statusline, test suite, debug mode.
+
+**v1.0.0** - Initial release. 9 hooks + 9 commands + 1 skill.
 
 ## v2 roadmap (not yet built)
 
 - Prompt-type anti-rationalization hook (Haiku evaluation instead of grep patterns)
 - /qa command with headless browser testing (requires Playwright)
-- Spec-aware parallel task dispatch in /execute
-- Crash recovery for subagent failures (Smart Ralph pattern)
+- Agent Teams parallel task dispatch in /execute
 - SessionEnd hook for automatic knowledge capture
 - Plugin marketplace packaging
-- Vietnamese documentation for team adoption
 
 ## Credits
 
 Patterns extracted from:
-- [GSD](https://github.com/gsd-build/get-shit-done) - spec generation, .planning/ convention
+- [GSD](https://github.com/gsd-build/get-shit-done) - spec generation, .planning/ convention, 4 parallel researchers
 - [gstack](https://github.com/garrytan/gstack) - /office-hours, /review, /ship patterns
 - [Trail of Bits](https://github.com/trailofbits/claude-code-config) - hook implementations, code quality rules, statusline pattern
-- [ClaudeKit](https://github.com/mrgoonie/claudekit-skills) - validation gate, adversarial review
+- [ClaudeKit](https://github.com/mrgoonie/claudekit-skills) - validation gate, adversarial review, session-state pattern
 - [Context Hub](https://github.com/andrewyng/context-hub) - API docs skill
 - [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) - HUD/statusline, slop-cleaner pattern
-- [Claude-Code-Game-Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) - path-scoped rules concept (documented, not extracted)
+- [Claude-Code-Game-Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) - /start router, path-scoped rules, Collaborative Design Protocol
+- [OMC](https://github.com/OMC-tools) - task-verifier pattern (architect verification in Ralph loop)
+- [Smart Ralph](https://github.com/smart-ralph) - fix-agent retry pattern (fail-fix-re-verify loop)
 
 ## License
 

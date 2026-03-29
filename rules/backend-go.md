@@ -1,5 +1,9 @@
 ---
-paths: ["**/api/**", "**/pkg/**", "**/cmd/**", "**/internal/**"]
+paths:
+  - "**/api/**"
+  - "**/pkg/**"
+  - "**/cmd/**"
+  - "**/internal/**"
 ---
 
 Go backend conventions for this project.

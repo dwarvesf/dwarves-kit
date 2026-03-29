@@ -2,6 +2,29 @@
 
 All notable changes to dwarves-kit are documented here.
 
+## [1.2.0] - 2026-03-30
+
+### Added
+
+- **Verification pipeline**: /execute now runs worker > task-verifier > fix-agent retry loop (max 2) for every task. No task is accepted without verification.
+- **8 custom agents**: task-verifier (read-only verification), fix-agent (targeted fixes), reviewer (configurable lens), security-auditor (OWASP audit), research-stack, research-features, research-architecture, research-pitfalls (4 parallel brownfield researchers).
+- **/start command**: entry point router that detects project state and suggests next command. Source: CCGS /start.
+- **/review-team command**: parallel 3-lens review dispatching security + architecture + test-coverage reviewers simultaneously.
+- **session-state-save.sh** (Stop + SubagentStop): persists session state to `.claude/session-state/`, rotates last 10 archives. Fail-open.
+- **docs/COLLABORATIVE-DESIGN.md**: shared protocol for structured decision-making (Question > Options > Recommendation > Decision > Record).
+- **SubagentStop event** in settings.json for session-state-save.
+
+### Changed
+
+- **/execute**: complete rewrite with verification pipeline, Collaborative Design Protocol integration, codebase-memory-mcp awareness.
+- **/ship**: added review gate (checks REVIEW.md verdict), version bump detection, automatic changelog entry generation.
+- **/spec**: added 4 parallel research subagents for brownfield projects (Mode A: formal agents, Mode B: inline fallback).
+- **/spec-validate**: enhanced Scope Critic with aggressive atomicity check, dependency declaration checking, testability criteria.
+- **context-readiness.sh**: v2 upgrade. Reads spec status, counts completed tasks, suggests next command ("detect, don't dictate").
+- **install.sh**: added agents install/uninstall, path-scoped rules auto-copy to `.claude/rules/`.
+- **PHILOSOPHY.md**: added "Verify before proceeding" and "Verify, then trust" principles. Updated version strategy.
+- **rules/*.md**: YAML `paths` changed to multi-line list format.
+
 ## [1.1.0] - 2026-03-30
 
 ### Security

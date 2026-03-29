@@ -36,6 +36,15 @@ if [ "${1:-}" = "--uninstall" ]; then
     echo "[ok] Removed skill: get-api-docs"
   fi
 
+  # Remove agents
+  for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
+    AGENT_NAME=$(basename "$AGENT_FILE")
+    if [ -f "$CLAUDE_DIR/agents/$AGENT_NAME" ]; then
+      rm "$CLAUDE_DIR/agents/$AGENT_NAME"
+      echo "[ok] Removed agent: ${AGENT_NAME%.md}"
+    fi
+  done
+
   # Remove dwarves-kit hooks from settings.json
   if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
     # Backup first
@@ -154,15 +163,41 @@ if [ -d "$KIT_DIR/skills/get-api-docs" ]; then
   echo "[ok] Installed skill: get-api-docs"
 fi
 
+# 4b. Install subagent definitions
+if [ -d "$KIT_DIR/agents" ]; then
+  mkdir -p "$CLAUDE_DIR/agents"
+  for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
+    AGENT_NAME=$(basename "$AGENT_FILE")
+    cp "$AGENT_FILE" "$CLAUDE_DIR/agents/$AGENT_NAME"
+    echo "[ok] Installed agent: ${AGENT_NAME%.md}"
+  done
+fi
+
 # 5. Create log directory
 mkdir -p "$HOME/.claude/dwarves-kit/logs"
 echo "[ok] Log directory ready"
 
-# 6. Copy rules templates (user customizes these per project)
+# 6. Install path-scoped rules templates
 if [ -d "$KIT_DIR/rules" ]; then
-  echo "Rules templates available in: $KIT_DIR/rules/"
-  echo "  Copy to your project: cp -r $KIT_DIR/rules/ .claude/rules/"
-  echo "  Customize paths in YAML frontmatter per project."
+  mkdir -p ".claude/rules"
+  RULES_INSTALLED=0
+  for RULE_FILE in "$KIT_DIR/rules/"*.md; do
+    RULE_NAME=$(basename "$RULE_FILE")
+    # Only copy if the project doesn't already have this rule
+    if [ ! -f ".claude/rules/$RULE_NAME" ]; then
+      cp "$RULE_FILE" ".claude/rules/$RULE_NAME"
+      RULES_INSTALLED=$((RULES_INSTALLED + 1))
+      echo "[ok] Installed rule template: $RULE_NAME"
+    else
+      echo "[skip] Rule exists: .claude/rules/$RULE_NAME (not overwriting)"
+    fi
+  done
+  if [ "$RULES_INSTALLED" -eq 0 ]; then
+    echo "[ok] All rule templates already present in .claude/rules/"
+  fi
+  echo "  Customize paths in YAML frontmatter to match your project structure."
+  echo "  NOTE: path-scoped rules only activate when Claude READS matching files."
+  echo "  They must live in project .claude/rules/, not ~/.claude/rules/."
 fi
 
 # 7. Merge statusLine config
@@ -197,10 +232,16 @@ find "$CLAUDE_DIR/skills" -name "SKILL.md" 2>/dev/null | while read f; do
   echo "  $(basename "$DIR")"
 done
 
+echo "Agents:"
+ls -1 "$CLAUDE_DIR/agents/"*.md 2>/dev/null | while read f; do
+  NAME=$(basename "$f" .md)
+  echo "  $NAME"
+done
+
 echo ""
 echo "=== Done ==="
 echo "Start a new Claude Code session to activate hooks."
-echo "Run /user:think to challenge an idea, /user:spec to generate a spec."
+echo "Run /user:start to detect project state and get a suggestion."
 echo ""
 echo "Tip: Copy CLAUDE.md template to your project root:"
 echo "  cp $KIT_DIR/CLAUDE.md ./CLAUDE.md"

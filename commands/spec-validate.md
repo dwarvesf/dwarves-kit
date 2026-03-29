@@ -36,12 +36,13 @@ Look for:
 
 ### Reviewer 4: Scope Critic
 Look for:
-- Tasks that are too large (won't fit in 50% context window)
-- Tasks that bundle unrelated changes
-- Features disguised as requirements
-- Gold-plating (nice-to-have dressed up as must-have)
-- Missing tasks (gaps between spec and acceptance criteria)
-- Unclear acceptance criteria (not testable)
+- **Aggressive atomicity check (critical)**: Each task must fit in ~50% of a fresh context window (~100k tokens). Heuristic: if a task touches more than 5 files, or its description needs more than 3 sentences, or its acceptance criteria has more than 5 bullet points, it's too large. Flag it and suggest splitting. Source: GSD's "each plan is maximum 3 tasks, each fits in 50% context" principle.
+- Tasks that bundle unrelated changes (e.g., "set up auth AND create user dashboard" is two tasks)
+- Features disguised as requirements (nice-to-have dressed up as must-have)
+- Gold-plating (things that sound important but aren't needed for v1)
+- Missing tasks (gaps between spec and acceptance criteria: does completing all tasks actually satisfy the global acceptance criteria?)
+- Unclear acceptance criteria (not testable: "should be fast" is not testable, "response under 200ms at p95" is)
+- Missing dependency declarations (Task B clearly depends on Task A's output but doesn't say so)
 
 ## Output format
 

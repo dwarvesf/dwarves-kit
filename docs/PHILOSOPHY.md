@@ -30,6 +30,12 @@ We believe cherry-picking battle-tested patterns from mature tools is better tha
 - /kit-health: analogous to `npm audit`, `cargo clippy`, self-diagnostic commands in mature CLIs.
 - .planning/SPEC.md format: derived from architecture decision records (ADR), user story templates, and GSD's task breakdown convention. The format is a composition, not an invention.
 
+**v1.2 additions with direct lineage:**
+- task-verifier subagent: OMC's architect verification in the Ralph loop, adapted to a read-only Claude Code custom subagent. The verify-after-every-task pattern is the same; the mechanism changed from in-session check to isolated subagent.
+- fix-agent subagent: Smart Ralph's fail-fix-re-verify loop, adapted to a write-scoped subagent dispatched only on FAIL:fixable verdicts.
+- /start command: CCGS's /start router (detects project stage and routes to the right agent), adapted to read .planning/SPEC.md status field.
+- context-readiness v2 (command suggestions): same CCGS /start detection pattern, injected into SessionStart hook context instead of requiring a command invocation.
+
 **Decision this would reject:** "I have a new idea for a code review methodology nobody's tried." Test it as a standalone experiment first. If it works in production for 3+ months, then propose merging it into the kit with a source citation.
 
 ### "One kit, whole cycle"
@@ -48,6 +54,16 @@ We believe covering 7 lifecycle phases at 70% depth each is better than covering
 
 **Decision this would reject:** "Let's build a custom TypeScript runtime for task execution like GSD v2." That's building a product, not maintaining a kit. If execution depth becomes the bottleneck, adopt GSD v2 as the execution engine and integrate it, don't rebuild it.
 
+### "Verify before proceeding"
+
+We believe every task output should be verified by a dedicated agent before the orchestrator moves on. Self-reported "done" from a worker agent is not proof of completion. The verification pipeline (worker > verifier > fix-agent retry) catches issues at the cheapest point: right after the task, before downstream tasks build on top of a broken foundation.
+
+**Decision this already made:** /execute dispatches a read-only task-verifier subagent after each worker completes. The verifier checks acceptance criteria, runs tests, and checks scope compliance. On FAIL:fixable, a fix-agent applies targeted corrections (max 2 retries). On FAIL:escalate or after 2 failed retries, the human decides.
+
+**Source:** OMC's architect verification in Ralph loop (read-only verification after execution). Smart Ralph's fail-fix-re-verify loop (retry with feedback). Adapted: separate read-only verifier (cannot modify code) and write-scoped fix-agent (scoped to specific files). This separation prevents the verifier from "fixing" things by silently rewriting code.
+
+**Decision this would reject:** "Let the worker self-verify before reporting done." Self-verification is the fox guarding the henhouse. The worker's context is biased toward its own implementation. A fresh context window with only the spec and the diff catches things the worker's context normalized away.
+
 ### "Bash over binaries"
 
 We believe every hook should be a readable shell script, not a compiled binary or a Node.js project. A contractor should be able to open any .sh file, read it in 30 seconds, and understand what it does. When a hook misbehaves, `bash -x hooks/safety-gate.sh` is the entire debugging workflow.
@@ -60,11 +76,21 @@ We believe every hook should be a readable shell script, not a compiled binary o
 
 ### "Detect, don't dictate"
 
-We believe the kit should detect the user's current state and suggest the right action, not require them to memorize 9 commands. A full-time coder in flow state doesn't want to remember whether the next step is /review or /docs or /ship. The kit should surface what's relevant based on project state.
+We believe the kit should detect the user's current state and suggest the right action, not require them to memorize 11 commands. A full-time coder in flow state doesn't want to remember whether the next step is /review or /docs or /ship. The kit should surface what's relevant based on project state.
 
-**Decision this already made:** context-readiness hook detects whether CLAUDE.md exists, whether a spec is present, which git branch is active, and whether MCP servers are connected. It injects this as context so Claude knows the project state without being asked.
+**Decision this already made:** context-readiness hook (v1.2) reads .planning/SPEC.md status, counts completed tasks, checks for REVIEW.md, and injects a one-line "next:" suggestion into Claude's context at session start. The /start command provides the same detection as an explicit entry point. Both detect and suggest; neither blocks.
 
 **Decision this would reject:** "Add a phase-locking system that blocks /execute unless /spec-validate has been run." Rigid phase gates annoy experienced coders who know when to skip a step. Detect and suggest, never block workflow progression. The exception is safety hooks (rm-rf, push-to-main) which DO block because the cost of a mistake is irreversible.
+
+### "Verify, then trust"
+
+We believe every task output should be verified by a separate agent before being accepted. The worker who writes code is not the right judge of whether that code meets the spec. A dedicated verifier with read-only access and specific acceptance criteria catches issues that self-assessment misses. When verification fails on fixable issues, a scoped fix agent gets exactly one shot (max 2 retries total) before escalating to a human. We don't retry ambiguous failures because they indicate design problems, not code bugs.
+
+**Decision this already made:** /execute dispatches task-verifier (read-only subagent) after every worker completes. Verdicts are PASS, FAIL:fixable, or FAIL:escalate. fix-agent handles FAIL:fixable with a max 2 retry cap. FAIL:escalate always goes to the human.
+
+**Decision this would reject:** "Let the worker self-verify by running tests before reporting." Self-verification is necessary but not sufficient. The verifier checks spec compliance, scope drift, and quality issues that the worker has no incentive to flag about its own work.
+
+**Decision this would also reject:** "Remove the retry cap and let fix-agent keep trying." Unbounded retries burn tokens without progress when the issue is architectural. Two retries is the sweet spot: catches most import/assertion/off-by-one bugs, escalates everything else.
 
 ### "External tools are dependencies, not features"
 
@@ -118,9 +144,9 @@ End of day or end of sprint: /retro to capture learnings.
 - **Ops work**: Contractor payments, hiring pipeline, client comms. These use Notion + existing Dwarves skills, not the kit.
 - **IDE choice**: The kit works from the terminal. VS Code, Neovim, whatever.
 - **CI/CD**: The kit produces commits and PRs. GitHub Actions or whatever CI pipeline runs after that is a separate concern.
-- **Multi-agent coordination**: When 3+ contractors run Claude Code simultaneously, that's L5 orchestration (Nimbalyst/Intent territory). The kit is for one agent session at a time.
+- **Multi-agent coordination**: When 3+ contractors run Claude Code simultaneously, that's L5 orchestration (Nimbalyst/Intent territory). The kit is for one agent session at a time, with subagents dispatched within that session.
 - **Project management**: No sprint boards, no story points, no velocity tracking. Notion handles that.
-- **Parallel execution**: /execute dispatches tasks sequentially via the Task tool. It does not batch independent tasks for concurrent dispatch, auto-retry on crash, or coordinate multiple subagents on shared files. For parallel execution use GSD v2 (Pi SDK runtime) or OMC (Ultrapilot). For crash-resilient loops use Smart Ralph. The kit's thesis is lifecycle integration, not competing with agent runtimes.
+- **Parallel execution**: /execute dispatches tasks sequentially via the Task tool. Independent tasks in the same phase execute one at a time. For parallel execution use Agent Teams (experimental), GSD v2 (Pi SDK runtime), or OMC (Ultrapilot). The kit's thesis is lifecycle integration with verification, not competing with agent runtimes.
 
 ---
 
@@ -200,13 +226,15 @@ From the SDD handoff: the Karpathy loop can optimize kit components with a measu
 
 - **Command prompts**: The three-file contract (program.md = kit philosophy frozen, skill.md = command prompt modifiable, eval.py = LLM-as-judge scoring). Run 50 iterations overnight, keep the highest-scoring prompt variant. Applicable to /review, /spec-validate, /think.
 - **Hook patterns**: Anti-rationalization patterns can be optimized by running against a corpus of Claude outputs and measuring false positive / false negative rates.
+- **Verifier accuracy**: task-verifier's prompt can be optimized once a corpus of verified tasks exists. Score = % of real bugs caught (false negative rate) vs % of correct code wrongly flagged (false positive rate). Target: <5% false positive, <20% false negative. Requires 30+ real verified tasks to build the corpus.
 
-The bar for AutoResearch: only run it when manual iteration has plateaued AND you have 10+ real session transcripts to evaluate against. Before that, manual iteration is faster.
+The bar for AutoResearch: only run it when manual iteration has plateaued AND you have 10+ real session transcripts to evaluate against. Before that, manual iteration is faster. For the task-verifier specifically: collect 30+ real verification transcripts before attempting optimization.
 
 ### Version strategy
 
-- **v1.x**: Command hooks only. Manual iteration on prompts. Current state.
-- **v2.x**: Prompt-type hooks (anti-rationalization upgraded to Haiku evaluation). /qa command with browser testing. Plugin marketplace packaging.
+- **v1.0-v1.1**: Commands + hooks. Manual iteration on prompts. Sequential task dispatch.
+- **v1.2** (current): Verification pipeline (task-verifier + fix-agent + retry loop). Bootstrapping router (/start). Path-scoped rules. Context-readiness v2 with command suggestions.
+- **v2.x** (pending real usage data): Prompt-type hooks (anti-rationalization upgraded to Haiku evaluation). /qa command with browser testing. Agent Teams parallel execution. Plugin marketplace packaging.
 - **v3.x**: Agent-type hooks for deep verification. Multi-runtime support (Codex, Gemini). AutoResearch-optimized prompts.
 
 No timeline commitment. Version bumps happen when real usage exposes the limits of the current version, not on a calendar schedule.

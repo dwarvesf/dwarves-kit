@@ -1,0 +1,92 @@
+#!/bin/bash
+# session-state-save.sh — Stop hook (runs alongside anti-rationalization + slop-cleaner)
+# Persists session state to disk on every Stop and SubagentStop event.
+# Catches session crashes that PreCompact backup misses.
+# Source: ClaudeKit session-state.cjs pattern (adapted: bash, no Node.js)
+#
+# Writes to .claude/session-state/last-state.md
+# Rotates old states (keeps last 10).
+# Fail-open: errors are logged but never block the session.
+
+set -euo pipefail
+
+INPUT=$(cat)
+
+# Guard: prevent infinite Stop hook loop
+STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
+[ "$STOP_ACTIVE" = "true" ] && exit 0
+
+# Debug logging
+if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
+  echo "[dwarves-kit:session-state] saving state on Stop" >&2
+fi
+
+STATE_DIR=".claude/session-state"
+STATE_FILE="$STATE_DIR/last-state.md"
+ARCHIVE_DIR="$STATE_DIR/archive"
+
+# Fail-open: wrap everything in a trap
+trap 'exit 0' ERR
+
+mkdir -p "$STATE_DIR" "$ARCHIVE_DIR"
+
+# Rotate: archive current state before overwriting
+if [ -f "$STATE_FILE" ]; then
+  ARCHIVE_TS=$(date +"%Y%m%d-%H%M%S")
+  mv "$STATE_FILE" "$ARCHIVE_DIR/state-${ARCHIVE_TS}.md" 2>/dev/null || true
+
+  # Keep only last 10 archives
+  ARCHIVE_COUNT=$(find "$ARCHIVE_DIR" -name "state-*.md" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "$ARCHIVE_COUNT" -gt 10 ]; then
+    find "$ARCHIVE_DIR" -name "state-*.md" | sort | head -n $((ARCHIVE_COUNT - 10)) | xargs rm -f 2>/dev/null || true
+  fi
+fi
+
+# Gather state
+BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
+DIRTY=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+LAST_COMMITS=$(git log --oneline -5 2>/dev/null || echo "no commits")
+
+# Spec state
+SPEC_STATUS="none"
+TASK_PROGRESS=""
+if [ -d ".planning" ]; then
+  SPEC_FILE=$(find .planning -maxdepth 2 -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
+  if [ -n "$SPEC_FILE" ]; then
+    SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
+    TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+    DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+    TASK_PROGRESS="${DONE}/${TOTAL} tasks complete"
+  fi
+fi
+
+# Recently modified source files
+RECENT_FILES=$(find . \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.go" -o -name "*.py" -o -name "*.rs" \) \
+  -newer /tmp/.dwarves-kit-session-start 2>/dev/null \
+  | grep -v node_modules | grep -v vendor | grep -v dist \
+  | head -10 || echo "none")
+
+# Write state
+cat > "$STATE_FILE" << STATE
+# Session state
+Saved: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+Branch: ${BRANCH}
+Uncommitted: ${DIRTY} files
+Spec: ${SPEC_STATUS}
+Progress: ${TASK_PROGRESS:-no spec}
+
+## Last 5 commits
+${LAST_COMMITS}
+
+## Files modified this session
+${RECENT_FILES}
+
+## Resume instructions
+Read CLAUDE.md and .planning/SPEC.md for full context.
+Check git status for uncommitted work.
+Run /user:start to detect what to do next.
+STATE
+
+[ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:session-state] state saved to $STATE_FILE" >&2
+
+exit 0

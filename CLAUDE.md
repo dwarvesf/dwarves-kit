@@ -51,19 +51,31 @@ Adapted from Trail of Bits + Dwarves conventions:
 
 This project uses dwarves-kit. Available commands:
 
+- `/user:start` - Detect project state, suggest next command (entry point)
 - `/user:think` - Challenge an idea before writing spec
 - `/user:spec` - Generate development spec from intent
 - `/user:spec-validate` - Adversarial spec review (4 reviewers)
-- `/user:execute` - Autonomous execution (subagent per task, phase checkpoints)
+- `/user:execute` - Autonomous execution with verification pipeline (worker > verifier > fix-agent retry loop)
 - `/user:next` - Pick next task from spec, load context, manual execution
-- `/user:review` - Paranoid code review
+- `/user:review` - Paranoid code review (single-pass, all lenses)
+- `/user:review-team` - Parallel 3-lens review (security + architecture + test-coverage)
 - `/user:docs` - Update all docs to match current code
-- `/user:ship` - Test, commit, docs, PR
+- `/user:ship` - Review gate, test, version bump, changelog, commit, docs, PR
 - `/user:retro` - Retrospective: what worked, what hurt, action items
 - `/user:kit-health` - Self-assessment: checks kit against its own philosophy
 
+Subagents (dispatched automatically by commands):
+- `task-verifier` - Read-only verification of each task against spec acceptance criteria + tests
+- `fix-agent` - Targeted fixes when task-verifier returns FAIL:fixable (max 2 retries)
+- `security-auditor` - Deep security review, dispatched by /review-team
+- `reviewer` - Focused code reviewer with configurable lens (security/architecture/test-coverage)
+- `research-stack` - Maps technology stack for brownfield /spec
+- `research-features` - Maps existing features related to target area
+- `research-architecture` - Maps architecture patterns and conventions
+- `research-pitfalls` - Finds landmines before implementation begins
+
 Hooks run automatically:
-- SessionStart: context readiness check (warnings only)
+- SessionStart: context readiness check + command suggestion
 - PreToolUse(Bash): blocks rm-rf, push to main, force push
 - PreToolUse(Write): spec drift warning for unplanned files
 - PostToolUse(Write|Edit): auto-format (local formatters only, no network)
@@ -71,6 +83,8 @@ Hooks run automatically:
 - PreCompact: backup session state before compaction
 - Stop: anti-rationalization guard (5 unambiguous patterns)
 - Stop: slop-cleaner (flags bloated code, nudge only)
+- Stop: session-state-save (persists progress to .claude/session-state/)
+- SubagentStop: session-state-save (catches worker/verifier completion)
 - Notification: desktop alert when Claude needs input
 - PermissionRequest: auto-approve read-only operations (pipe-safe)
 - StatusLine: model, branch, context %, cost, thinking mode
