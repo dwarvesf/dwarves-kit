@@ -74,6 +74,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/anti-rationalization.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/slop-cleaner.sh",
+            "timeout": 10
           }
         ]
       }
@@ -101,5 +106,8 @@
         ]
       }
     ]
+  },
+  "statusLine": {
+    "command": "bash $HOME/.claude/dwarves-kit/hooks/statusline.sh"
   }
 }

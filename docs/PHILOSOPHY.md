@@ -24,6 +24,12 @@ We believe cherry-picking battle-tested patterns from mature tools is better tha
 
 **Decision this already made:** /think is gstack's /office-hours adapted. /review is gstack's paranoid reviewer + Trail of Bits' quality rules. The safety-gate hook is Trail of Bits' verbatim code. We cited every source in README.md.
 
+**Components with indirect lineage (originated in-kit but grounded in existing patterns):**
+- context-readiness.sh: analogous to CI pre-flight checks (GitHub Actions `if:` conditions, Buildkite pre-command hooks). Novel integration, proven pattern.
+- spec-drift-guard.sh: analogous to linting rules that flag undeclared variables. The "check against a manifest" pattern exists in package managers (lockfile drift checks), dependency auditing, and Terraform plan drift detection.
+- /kit-health: analogous to `npm audit`, `cargo clippy`, self-diagnostic commands in mature CLIs.
+- .planning/SPEC.md format: derived from architecture decision records (ADR), user story templates, and GSD's task breakdown convention. The format is a composition, not an invention.
+
 **Decision this would reject:** "I have a new idea for a code review methodology nobody's tried." Test it as a standalone experiment first. If it works in production for 3+ months, then propose merging it into the kit with a source citation.
 
 ### "One kit, whole cycle"
@@ -114,6 +120,7 @@ End of day or end of sprint: /retro to capture learnings.
 - **CI/CD**: The kit produces commits and PRs. GitHub Actions or whatever CI pipeline runs after that is a separate concern.
 - **Multi-agent coordination**: When 3+ contractors run Claude Code simultaneously, that's L5 orchestration (Nimbalyst/Intent territory). The kit is for one agent session at a time.
 - **Project management**: No sprint boards, no story points, no velocity tracking. Notion handles that.
+- **Parallel execution**: /execute dispatches tasks sequentially via the Task tool. It does not batch independent tasks for concurrent dispatch, auto-retry on crash, or coordinate multiple subagents on shared files. For parallel execution use GSD v2 (Pi SDK runtime) or OMC (Ultrapilot). For crash-resilient loops use Smart Ralph. The kit's thesis is lifecycle integration, not competing with agent runtimes.
 
 ---
 
@@ -121,7 +128,7 @@ End of day or end of sprint: /retro to capture learnings.
 
 ### Hard limits
 
-- **Maximum 35 files in the kit.** Currently 29. Every new file must justify its existence. If the kit hits 35, something must be removed before adding.
+- **Every file must justify its existence.** No file count cap, but every addition must solve a real problem. If a file hasn't been used in 30 days, it's a deprecation candidate.
 - **Maximum 500ms per hook execution.** If a hook takes longer, it degrades the coding experience. Profile with `time` before merging.
 - **No compiled binaries.** Everything is bash, markdown, or JSON. If a feature requires a binary, it becomes an external dependency, not part of the kit.
 - **No paid dependencies.** The kit must work with free tools only. Paid tools (ClaudeKit Engineer Kit, Exa API) can be optional enhancements but never required.

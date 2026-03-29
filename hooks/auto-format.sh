@@ -3,17 +3,50 @@
 # Runs the appropriate formatter after every file write/edit.
 # Source: Common pattern. Idempotent, zero risk.
 # Exit 0 always (formatting failure should not block work).
+#
+# v1.1: Fixed formatter detection order. No more npx --yes (which downloads
+# prettier from the network on first run, adding 5-10s latency per edit).
+# Priority: project-local binary > global binary > skip silently.
 
 INPUT=$(cat)
 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 [ -z "$FILE" ] && exit 0
 [ ! -f "$FILE" ] && exit 0
 
+# Debug logging
+if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
+  echo "[dwarves-kit:auto-format] formatting $FILE" >&2
+fi
+
+# Helper: find prettier in project or global, never npx --yes
+find_prettier() {
+  # 1. Project-local (most common in Node projects)
+  if [ -x "./node_modules/.bin/prettier" ]; then
+    echo "./node_modules/.bin/prettier"
+    return 0
+  fi
+  # 2. Global install
+  if command -v prettier >/dev/null 2>&1; then
+    echo "prettier"
+    return 0
+  fi
+  # 3. npx WITHOUT --yes (uses cache only, no network download)
+  if command -v npx >/dev/null 2>&1; then
+    # Check if prettier is in npx cache without downloading
+    if npx --no prettier --version >/dev/null 2>&1; then
+      echo "npx --no prettier"
+      return 0
+    fi
+  fi
+  return 1
+}
+
 # Detect formatter by file extension and run silently
 case "$FILE" in
   *.ts|*.tsx|*.js|*.jsx|*.json|*.css|*.scss|*.md|*.html)
-    if command -v npx >/dev/null 2>&1; then
-      npx --yes prettier --write "$FILE" 2>/dev/null || true
+    PRETTIER=$(find_prettier)
+    if [ -n "$PRETTIER" ]; then
+      $PRETTIER --write "$FILE" 2>/dev/null || true
     fi
     ;;
   *.go)

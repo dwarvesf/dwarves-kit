@@ -2,12 +2,75 @@
 # dwarves-kit installer
 # Merges hooks into ~/.claude/settings.json, symlinks commands and skills.
 # Idempotent: safe to re-run.
+#
+# v1.1: Fixed jq merge (concat arrays, don't deduplicate by matcher).
+# Added --uninstall flag. Backs up settings.json before modifying.
 
 set -euo pipefail
 
 KIT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
+SETTINGS_FILE="$CLAUDE_DIR/settings.json"
+BACKUP_DIR="$CLAUDE_DIR/backups"
+KIT_MARKER="dwarves-kit"
 
+# ============================================================
+# UNINSTALL
+# ============================================================
+if [ "${1:-}" = "--uninstall" ]; then
+  echo "=== dwarves-kit uninstaller ==="
+
+  # Remove command symlinks
+  for CMD_FILE in "$KIT_DIR/commands/"*.md; do
+    CMD_NAME=$(basename "$CMD_FILE")
+    LINK="$CLAUDE_DIR/commands/$CMD_NAME"
+    if [ -L "$LINK" ]; then
+      rm "$LINK"
+      echo "[ok] Removed command: /user:${CMD_NAME%.md}"
+    fi
+  done
+
+  # Remove skills
+  if [ -d "$CLAUDE_DIR/skills/get-api-docs" ]; then
+    rm -rf "$CLAUDE_DIR/skills/get-api-docs"
+    echo "[ok] Removed skill: get-api-docs"
+  fi
+
+  # Remove dwarves-kit hooks from settings.json
+  if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+    # Backup first
+    mkdir -p "$BACKUP_DIR"
+    cp "$SETTINGS_FILE" "$BACKUP_DIR/settings-pre-uninstall-$(date +%Y%m%d-%H%M%S).json"
+
+    # Remove any hook whose command path contains "dwarves-kit"
+    CLEANED=$(jq '
+      .hooks |= (
+        to_entries | map(
+          .value |= map(
+            .hooks |= map(select(.command | tostring | contains("dwarves-kit") | not))
+          ) | map(select(.hooks | length > 0))
+        ) | from_entries
+      )
+    ' "$SETTINGS_FILE" 2>/dev/null)
+
+    if [ -n "$CLEANED" ]; then
+      echo "$CLEANED" | jq '.' > "$SETTINGS_FILE"
+      echo "[ok] Removed dwarves-kit hooks from settings.json"
+    else
+      echo "[warn] Could not clean settings.json automatically. Remove dwarves-kit entries manually."
+    fi
+  fi
+
+  echo ""
+  echo "=== Uninstall complete ==="
+  echo "Kit directory ($KIT_DIR) was NOT removed. Delete it manually if desired:"
+  echo "  rm -rf $KIT_DIR"
+  exit 0
+fi
+
+# ============================================================
+# INSTALL
+# ============================================================
 echo "=== dwarves-kit installer ==="
 echo "Kit location: $KIT_DIR"
 echo ""
@@ -19,34 +82,49 @@ mkdir -p "$CLAUDE_DIR/commands" "$CLAUDE_DIR/skills"
 chmod +x "$KIT_DIR/hooks/"*.sh
 echo "[ok] Hook scripts are executable"
 
-# 2. Merge settings.json (key-level merge using jq)
-SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-
+# 2. Merge settings.json
 if [ ! -f "$SETTINGS_FILE" ]; then
   # No existing settings, just copy ours
   cp "$KIT_DIR/settings.json" "$SETTINGS_FILE"
   echo "[ok] Created $SETTINGS_FILE"
 else
-  # Merge: combine hook arrays, preserve everything else
   if command -v jq >/dev/null 2>&1; then
-    MERGED=$(jq -s '
-      .[0] as $existing |
-      .[1] as $kit |
-      $existing * {
-        hooks: (
-          ($existing.hooks // {}) as $eh |
-          ($kit.hooks // {}) as $kh |
-          ($eh | keys) + ($kh | keys) | unique | map(
-            . as $key |
-            { ($key): (($eh[$key] // []) + ($kh[$key] // []) | unique_by(.matcher // "default")) }
-          ) | add // {}
-        )
-      }
-    ' "$SETTINGS_FILE" "$KIT_DIR/settings.json" 2>/dev/null)
+    # Backup existing settings
+    mkdir -p "$BACKUP_DIR"
+    cp "$SETTINGS_FILE" "$BACKUP_DIR/settings-pre-install-$(date +%Y%m%d-%H%M%S).json"
+    echo "[ok] Backed up existing settings.json"
 
-    if [ -n "$MERGED" ]; then
-      echo "$MERGED" > "$SETTINGS_FILE"
-      echo "[ok] Merged hooks into $SETTINGS_FILE"
+    # First, remove any existing dwarves-kit hooks (idempotent reinstall)
+    EXISTING_CLEAN=$(jq '
+      .hooks |= (
+        to_entries | map(
+          .value |= map(
+            .hooks |= map(select(.command | tostring | contains("dwarves-kit") | not))
+          ) | map(select(.hooks | length > 0))
+        ) | from_entries
+      )
+    ' "$SETTINGS_FILE" 2>/dev/null || cat "$SETTINGS_FILE")
+
+    # Then merge: CONCAT arrays (don't deduplicate by matcher)
+    # This preserves the user's existing hooks alongside ours
+    MERGED=$(echo "$EXISTING_CLEAN" | jq --slurpfile kit "$KIT_DIR/settings.json" '
+      . as $existing |
+      $kit[0] as $new |
+      ($new.hooks // {}) as $kh |
+      .hooks = (
+        ((.hooks // {}) | to_entries) + ($kh | to_entries)
+        | group_by(.key)
+        | map({
+            key: .[0].key,
+            value: [.[][][]] | unique_by(.hooks[0].command // "")
+          })
+        | from_entries
+      )
+    ' 2>/dev/null)
+
+    if [ -n "$MERGED" ] && echo "$MERGED" | jq '.' >/dev/null 2>&1; then
+      echo "$MERGED" | jq '.' > "$SETTINGS_FILE"
+      echo "[ok] Merged hooks into $SETTINGS_FILE (existing hooks preserved)"
     else
       echo "[warn] jq merge failed. Manual merge needed."
       echo "       Copy hooks from $KIT_DIR/settings.json into $SETTINGS_FILE"
@@ -76,7 +154,32 @@ if [ -d "$KIT_DIR/skills/get-api-docs" ]; then
   echo "[ok] Installed skill: get-api-docs"
 fi
 
-# 5. Verify
+# 5. Create log directory
+mkdir -p "$HOME/.claude/dwarves-kit/logs"
+echo "[ok] Log directory ready"
+
+# 6. Copy rules templates (user customizes these per project)
+if [ -d "$KIT_DIR/rules" ]; then
+  echo "Rules templates available in: $KIT_DIR/rules/"
+  echo "  Copy to your project: cp -r $KIT_DIR/rules/ .claude/rules/"
+  echo "  Customize paths in YAML frontmatter per project."
+fi
+
+# 7. Merge statusLine config
+if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+  HAS_STATUSLINE=$(jq '.statusLine // null' "$SETTINGS_FILE" 2>/dev/null)
+  if [ "$HAS_STATUSLINE" = "null" ]; then
+    STATUSLINE_CMD=$(jq -r '.statusLine.command' "$KIT_DIR/settings.json" 2>/dev/null)
+    if [ -n "$STATUSLINE_CMD" ] && [ "$STATUSLINE_CMD" != "null" ]; then
+      jq --arg cmd "$STATUSLINE_CMD" '.statusLine = {"command": $cmd}' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+      echo "[ok] Registered statusLine"
+    fi
+  else
+    echo "[ok] statusLine already configured (not overwriting)"
+  fi
+fi
+
+# 6. Verify
 echo ""
 echo "=== Verification ==="
 echo "Hooks directory: $KIT_DIR/hooks/"
@@ -101,3 +204,5 @@ echo "Run /user:think to challenge an idea, /user:spec to generate a spec."
 echo ""
 echo "Tip: Copy CLAUDE.md template to your project root:"
 echo "  cp $KIT_DIR/CLAUDE.md ./CLAUDE.md"
+echo ""
+echo "To uninstall: bash $KIT_DIR/install.sh --uninstall"

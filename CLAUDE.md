@@ -60,17 +60,22 @@ This project uses dwarves-kit. Available commands:
 - `/user:docs` - Update all docs to match current code
 - `/user:ship` - Test, commit, docs, PR
 - `/user:retro` - Retrospective: what worked, what hurt, action items
+- `/user:kit-health` - Self-assessment: checks kit against its own philosophy
 
 Hooks run automatically:
-- SessionStart: context readiness check
+- SessionStart: context readiness check (warnings only)
 - PreToolUse(Bash): blocks rm-rf, push to main, force push
 - PreToolUse(Write): spec drift warning for unplanned files
-- PostToolUse(Write|Edit): auto-format
+- PostToolUse(Write|Edit): auto-format (local formatters only, no network)
 - PostToolUse(compact): re-inject critical rules after compaction
 - PreCompact: backup session state before compaction
-- Stop: anti-rationalization guard
+- Stop: anti-rationalization guard (5 unambiguous patterns)
+- Stop: slop-cleaner (flags bloated code, nudge only)
 - Notification: desktop alert when Claude needs input
-- PermissionRequest: auto-approve read-only operations
+- PermissionRequest: auto-approve read-only operations (pipe-safe)
+- StatusLine: model, branch, context %, cost, thinking mode
+
+Debug mode: set DWARVES_KIT_DEBUG=1 for verbose hook logging.
 
 ## Spec Location
 
