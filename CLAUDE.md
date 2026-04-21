@@ -69,6 +69,7 @@ Subagents (dispatched automatically by commands):
 - `fix-agent` - Targeted fixes when task-verifier returns FAIL:fixable (max 2 retries)
 - `security-auditor` - Deep security review, dispatched by /review-team
 - `reviewer` - Focused code reviewer with configurable lens (security/architecture/test-coverage)
+- `responding-to-review` - Responds to review findings with verify-before-implement, no performative agreement, YAGNI check
 - `research-stack` - Maps technology stack for brownfield /spec
 - `research-features` - Maps existing features related to target area
 - `research-architecture` - Maps architecture patterns and conventions
