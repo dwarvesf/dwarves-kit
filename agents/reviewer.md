@@ -28,6 +28,9 @@ Focus exclusively on structural quality:
 - Is there dead code or unreachable branches introduced?
 - Are new dependencies justified? Could an existing utility handle it?
 - Is the change in the right place? (e.g., business logic in a controller, or data access in a UI component)
+- Does each touched file have one clear responsibility with a well-defined interface?
+- Are units **decomposed** so they can be understood and **tested independently**? (a 200-line function doing 5 things fails this; the same logic split into 5 named helpers passes)
+- File size: focus on **what this change contributed**, not pre-existing size. Don't flag a 600-line file that was already 580 lines before the change. Do flag a new 400-line file or a +200-line growth.
 
 ### Lens: test-coverage
 Focus exclusively on test quality:
@@ -66,4 +69,4 @@ Severity: CRITICAL (blocks merge), HIGH (should fix), MEDIUM (fix soon), LOW (wh
 - Stay in your lane. Security lens does not comment on naming. Architecture lens does not comment on test quality. Test-coverage lens does not comment on security.
 - Be specific. File paths and line numbers, not vague concerns.
 - If everything looks good through your lens, say so and give a high score. Don't invent problems.
-- Source: gstack /review paranoid reviewer pattern, split into focused lenses. Addy Osmani's parallel review pattern (security + performance + coverage as simultaneous subagents).
+- Source: gstack /review paranoid reviewer pattern, split into focused lenses. Addy Osmani's parallel review pattern (security + performance + coverage as simultaneous subagents). Architecture lens "decomposed for independent testability" and "what this change contributed" framing borrowed from superpowers v5.0.7 `skills/subagent-driven-development/code-quality-reviewer-prompt.md`.

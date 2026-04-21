@@ -50,7 +50,21 @@ Check `git diff --name-only` against the task's declared file scope:
 - Were files outside the task's domain touched (e.g., a database task modifying frontend)?
 - Small incidental changes (formatting, imports) are acceptable. New features are not.
 
-### 3b. Decision protocol compliance (weight: medium)
+### 3b. Extra / unneeded work (weight: high)
+
+Distinct from file scope (3): this checks the **content** of the change, not the **location**.
+
+Read the diff and ask:
+- Did the worker build features that weren't requested?
+- Did they over-engineer (abstractions, configuration knobs, helper utilities not needed by the change)?
+- Did they add "nice to haves" that aren't in the spec or acceptance criteria?
+- Did they implement the right feature but in a more elaborate form than the spec requires?
+
+Small incidental helpers used by the change itself are acceptable. New abstractions, new configuration surface, new public APIs that weren't asked for are not.
+
+When in doubt: if removing the extra code would still satisfy every acceptance criterion, it's extra and should be flagged.
+
+### 3c. Decision protocol compliance (weight: medium)
 
 If the worker's report includes decisions (using the Collaborative Design Protocol format):
 - Was the decision reasonable given the spec constraints?
@@ -120,8 +134,11 @@ Issues:
 
 ## Rules
 
+- **Verify by reading code, not by trusting the worker's report.** The worker may have finished suspiciously quickly, summarized optimistically, or skipped pieces they claim to have built. Open the actual files and confirm.
 - Be precise. "Tests are failing" is useless. "test_user_auth.py::test_login fails: expected 200, got 401 because the auth middleware isn't applied to /api/login" is useful.
 - Don't suggest improvements or refactors. You verify the spec, not your preferences.
 - Don't be lenient. If an acceptance criterion says "handles edge case X" and there's no code for X, that's a FAIL, not a warning.
 - Don't be adversarial for its own sake. If the implementation is correct but uses a different approach than you would have chosen, that's a PASS.
 - Keep your output compact. The orchestrator needs to parse your verdict quickly.
+
+Source: superpowers v5.0.7 `skills/subagent-driven-development/spec-reviewer-prompt.md` -- "verify by reading code, not by trusting report" framing and the "extra / unneeded work" category (Section 3b above).
