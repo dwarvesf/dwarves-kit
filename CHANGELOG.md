@@ -2,6 +2,23 @@
 
 All notable changes to dwarves-kit are documented here.
 
+## [1.5.0] - 2026-04-21
+
+### Added
+
+- **GitHub Actions CI** (`.github/workflows/test.yml`): runs `bash tests/test-hooks.sh` on push to `master` and on every PR. Matrix: macOS + Ubuntu. Also validates all JSON files (`plugin.json`, `marketplace.json`, `hooks.json`, `settings.json`) parse cleanly.
+- **CI status badge in README** (top of file alongside version, license, Claude Code plugin badges).
+- **README hero section**: tagline, badge row, value prop, "Who this is for" / "Who this is NOT for" sections, prominent plugin install command. First-screen visible to anyone landing on the repo.
+- **Demo project at `examples/hello-spec/`**: small self-contained walkthrough showing real `CLAUDE.md`, `.planning/SPEC.md`, and a README that explains how the kit picks each file up. Demo subject: a Python CLI's `--version` flag.
+- **`CONTRIBUTING.md`** at repo root: rejection-first voice (adapted from superpowers v5.0.7 AGENTS.md, same source as v1.3 kit-health). Numbered MUST list before opening a PR. "What we will not accept" enumerates PHILOSOPHY.md's actual rejection criteria with cross-links.
+
+### Notes
+
+- All changes are additive. No breaking changes. No removals.
+- No new ADR: every change fits within existing principles. PHILOSOPHY.md unchanged.
+- README's component count line updated to "9 agents" (was "8") — tracks the `responding-to-review` agent added in v1.3.
+- CI is **descriptive**, not enforcing: PRs that fail CI are flagged but not auto-blocked. Enforcement still lives in the `safety-gate` hook locally.
+
 ## [1.4.0] - 2026-04-21
 
 ### Added

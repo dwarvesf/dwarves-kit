@@ -1,171 +1,128 @@
-# Spec: v1.4.0 Claude Code plugin packaging
+# Spec: v1.5.0 Polish (CI + README hero + demo + contributing)
 Generated: 2026-04-21
 Status: VALIDATED
-Source: Claude Code plugin docs (https://code.claude.com/docs/en/plugins.md, plugin-marketplaces.md, hooks.md)
-Note: Previous spec (v1.3 superpowers adoption) preserved in git history at commit 5315b0f.
+Note: Previous v1.4 spec preserved in git history at commit 711b8a9.
 
 ## Problem
 
-dwarves-kit currently installs via `git clone + bash install.sh`. This is two manual steps and requires a shell. Users discovering the kit on GitHub have no in-Claude-Code install path. Compare: superpowers ships via `/plugin install` and gets one-line install in any Claude Code session.
+After v1.4 plugin packaging shipped, 4 adoption-cost gaps remain from the audit (2026-04-21):
 
-The Claude Code plugin format (`.claude-plugin/plugin.json`) standardized in mid-2025 closes this gap. Adding plugin packaging to the kit is **additive**: no existing files removed, no breaking changes for current bash-install users.
+1. **No CI**: regressions in hooks or tests can ship undetected. No automated trust signal.
+2. **README opens with utility tables**: visitors who don't scroll see no value prop. First-screen conversion is poor.
+3. **No demo / examples**: new users can't see what a real `.planning/SPEC.md` or `CLAUDE.md` looks like in context. They have to install the kit and infer the format from `commands/spec.md`.
+4. **No CONTRIBUTING.md**: the kit has opinionated rejection criteria in PHILOSOPHY.md but no contributor-facing surface. AI-generated PRs (the rising threat for any popular AI-tooling repo) have no rejection wall.
 
 ## Solution
 
-Add 3 new files. Update 1 existing file (README). Bump version. No removals.
+Four additive changes. No breaking changes. No removals.
 
-| Action | File |
-|---|---|
-| Create | `.claude-plugin/plugin.json` |
-| Create | `hooks/hooks.json` (plugin-format hook registration using `${CLAUDE_PLUGIN_ROOT}`) |
-| Create | `.claude-plugin/marketplace.json` (self-hosted marketplace pointing at this repo) |
-| Modify | `README.md` (new "Install (plugin, recommended)" section + keep existing bash section as fallback) |
-| Bump | `VERSION` 1.3.0 → 1.4.0 (minor: additive feature, no breaking changes) |
+| Task | Files | Type |
+|---|---|---|
+| TASK-B1 | `.github/workflows/test.yml` (new) + `README.md` badge | New CI |
+| TASK-B2 | `README.md` (top section rewrite) | Modify |
+| TASK-B3 | `examples/hello-spec/` (new dir + 3 files) | New demo |
+| TASK-B4 | `CONTRIBUTING.md` (new at repo root) | New |
 
-Existing `install.sh` and root `settings.json` stay untouched. Both install paths work in v1.4.
-
-## Technical Design
-
-### File: `.claude-plugin/plugin.json`
-
-Required field: `name`. We add `version`, `description`, `author`, `homepage`, `repository`, `keywords` for marketplace discoverability and version pinning. Auto-discovery handles `skills/`, `commands/`, `agents/` directories.
-
-```json
-{
-  "name": "dwarves-kit",
-  "version": "1.4.0",
-  "description": "Spec-driven Claude Code workflow with verification pipeline. 12 hooks + 12 commands + 9 agents.",
-  "author": { "name": "Dwarves Foundation", "url": "https://dwarves.foundation" },
-  "homepage": "https://github.com/dwarvesf/dwarves-kit",
-  "repository": "https://github.com/dwarvesf/dwarves-kit",
-  "keywords": ["workflow", "spec-driven", "verification", "subagents", "hooks"]
-}
-```
-
-### File: `hooks/hooks.json`
-
-Same hook registrations as root `settings.json`, but commands use `${CLAUDE_PLUGIN_ROOT}/hooks/<script>.sh` (path-portable; resolves at install time). 12 hooks register across 8 events (SessionStart, PreToolUse with 2 matchers, PostToolUse with 2 matchers, PreCompact, Stop with 3 hooks, SubagentStop, Notification, PermissionRequest). Note: `statusLine` is not a hook in the plugin schema and stays in root `settings.json` only (the bash install path); the plugin install path inherits the user's existing statusLine config.
-
-### File: `.claude-plugin/marketplace.json`
-
-Lets the repo serve as its own marketplace. Users add it via `/plugin marketplace add dwarvesf/dwarves-kit`, then install via `/plugin install dwarves-kit@dwarves-marketplace`.
-
-```json
-{
-  "name": "dwarves-marketplace",
-  "owner": { "name": "Dwarves Foundation" },
-  "plugins": [
-    {
-      "name": "dwarves-kit",
-      "source": ".",
-      "description": "Spec-driven Claude Code workflow with verification pipeline."
-    }
-  ]
-}
-```
-
-### File: `README.md` Install section rewrite
-
-Two install sections. Plugin path is presented first (recommended). Bash path moved below as fallback for non-Claude-Code-plugin contexts (older installs, CI, project-template propagation). Add a one-line note pointing to Anthropic's official marketplace submission form for users who want broader discovery.
+All independent, no inter-dependencies.
 
 ## Task Breakdown
 
-### Phase 1: Plugin packaging (4 tasks, all independent)
-
-- [ ] **TASK-A1: Create `.claude-plugin/plugin.json`**
+- [ ] **TASK-B1: GitHub Actions test workflow + status badge**
+  - Files: `.github/workflows/test.yml` (new), `README.md` (badge URL)
+  - Workflow: runs `bash tests/test-hooks.sh` on `push` to `master` and on `pull_request`. Matrix: macos-latest + ubuntu-latest. Installs `jq` on Ubuntu (preinstalled on macOS runners).
   - Acceptance criteria:
-    - [ ] File exists at `.claude-plugin/plugin.json`
-    - [ ] `jq . .claude-plugin/plugin.json` exits 0 (valid JSON)
-    - [ ] `name` field equals `"dwarves-kit"`
-    - [ ] `version` field equals `"1.4.0"`
-    - [ ] `repository` field present and points to dwarvesf org
+    - [ ] `.github/workflows/test.yml` exists, valid YAML
+    - [ ] Triggers: `push` (master) + `pull_request` (any branch)
+    - [ ] Runs on both `macos-latest` and `ubuntu-latest`
+    - [ ] Step that installs jq on Ubuntu (`apt-get install jq` or similar)
+    - [ ] Step that runs `bash tests/test-hooks.sh` and asserts exit 0
+    - [ ] README has a CI status badge linking to the workflow
 
-- [ ] **TASK-A2: Create `hooks/hooks.json`**
+- [ ] **TASK-B2: README hero rewrite**
+  - Files: `README.md` (insert new top section above current "What it does")
+  - Changes: tagline, 2-3 sentence value prop, 4-6 badges, "who this is for" + "who this is NOT for", quick install pointer to the existing Install section.
   - Acceptance criteria:
-    - [ ] File exists at `hooks/hooks.json`
-    - [ ] `jq . hooks/hooks.json` exits 0 (valid JSON)
-    - [ ] Hook count: 12 hooks total registered (matching root settings.json)
-    - [ ] All hook commands use `${CLAUDE_PLUGIN_ROOT}/hooks/` prefix (greppable, no `$HOME/.claude/dwarves-kit` paths)
-    - [ ] Same 8 event types covered as root settings.json: SessionStart, PreToolUse, PostToolUse, PreCompact, Stop, SubagentStop, Notification, PermissionRequest
-    - [ ] `bash tests/test-hooks.sh` still passes 42/42 (no underlying script change)
+    - [ ] First 30 lines of README contain: a tagline, a value-prop paragraph, the badge row, and an install pointer
+    - [ ] Badges include: CI status, version, license, Claude Code compatibility (or shields.io variant)
+    - [ ] "Who this is for / not for" section present (mirrors PHILOSOPHY's target user discipline)
+    - [ ] Existing tables/sections retained below; no destructive rewrite
+    - [ ] No fabricated stats or claims (no "used by X teams", no "X% adoption" — we don't have that data)
 
-- [ ] **TASK-A3: Create `.claude-plugin/marketplace.json`**
+- [ ] **TASK-B3: Demo project at `examples/hello-spec/`**
+  - Files: `examples/hello-spec/README.md`, `examples/hello-spec/CLAUDE.md`, `examples/hello-spec/.planning/SPEC.md`
+  - Demo subject: a tiny CLI tool feature (chosen so the spec is small but non-trivial — e.g., "add a `--version` flag to a Python CLI"). Realistic enough to show the format, small enough to read in under 5 minutes.
+  - The walkthrough README explains: what each file is, what command would generate it (`/user:spec` produces the SPEC, etc.), and where the kit picks it up next (`/user:execute` reads it).
   - Acceptance criteria:
-    - [ ] File exists at `.claude-plugin/marketplace.json`
-    - [ ] `jq . .claude-plugin/marketplace.json` exits 0
-    - [ ] `name` field equals `"dwarves-marketplace"`
-    - [ ] `plugins[0].name` equals `"dwarves-kit"`
-    - [ ] `plugins[0].source` equals `"."` (self-reference; the marketplace lives in the same repo as the plugin)
+    - [ ] `examples/hello-spec/README.md` exists with a "what this shows" intro and a 3-section "the files" walkthrough
+    - [ ] `examples/hello-spec/CLAUDE.md` exists, follows the kit's CLAUDE.md template structure (Project, Tech Stack, Commands, Repository Structure, Code Quality Rules, Workflow, Spec Location)
+    - [ ] `examples/hello-spec/.planning/SPEC.md` exists with all the standard sections (Problem, Solution, Technical Design, Task Breakdown, Acceptance Criteria, Edge Cases, Out of Scope, Decision Log)
+    - [ ] All 3 files are <120 lines each (small enough to read; lean per PHILOSOPHY)
+    - [ ] No mock-up disclaimers like "this is just an example" inside the files themselves — they should look real (the meta-explanation lives in the README only)
 
-- [ ] **TASK-A4: README install section rewrite**
+- [ ] **TASK-B4: CONTRIBUTING.md in rejection-wall voice**
+  - Files: `CONTRIBUTING.md` (new at repo root)
+  - Adapts superpowers' AGENTS.md framing: direct address to AI agents, numbered MUST list before opening a PR, "what we will not accept" enumeration. Specifics come from PHILOSOPHY.md's actual rejection criteria, not lifted verbatim from superpowers.
   - Acceptance criteria:
-    - [ ] New "Install (Claude Code plugin, recommended)" section above the existing bash section
-    - [ ] Plugin install command literal in README: `/plugin marketplace add dwarvesf/dwarves-kit`
-    - [ ] Plugin install command literal in README: `/plugin install dwarves-kit@dwarves-marketplace`
-    - [ ] Bash install section retained, labeled as "alternative" or "legacy"
-    - [ ] One-line note about Anthropic official marketplace submission with URL https://claude.ai/settings/plugins/submit
-    - [ ] Repo URL `dwarvesf/dwarves-kit` (not the old `tieubao/dwarves-kit`) used everywhere in install commands
+    - [ ] `CONTRIBUTING.md` exists at repo root
+    - [ ] Has an "If You Are an AI Agent" section addressing AI-generated PRs directly
+    - [ ] Has a numbered "Before opening a PR you MUST" list (3-6 items)
+    - [ ] Has a "What we will not accept" section enumerating PHILOSOPHY's rejection criteria (compiled binaries, no source citation, single-purpose features, can't-be-explained-in-one-sentence, duplicate of external tool, etc.)
+    - [ ] References PHILOSOPHY.md as the source of truth (not a re-statement)
+    - [ ] Cites superpowers v5.0.7 AGENTS.md as the framing source
+    - [ ] Does NOT lift fabricated stats (no "94% rejection rate" — we don't have that data)
 
 ### Phase 2: Verify, docs, ship
 
 - [ ] All 4 task acceptance criteria met
-- [ ] `bash tests/test-hooks.sh` exit 0 (42/42)
-- [ ] `find . -name "*.json" -path "*/.claude-plugin/*" -o -path "*/hooks/*.json" | xargs -I {} jq . {} > /dev/null` exits 0
-- [ ] CHANGELOG entry under `[1.4.0]`
-- [ ] `docs/decisions.md` ADR-009 documenting the dual-ship deviation from PHILOSOPHY's "Replace, don't deprecate" with rationale + sunset trigger
-- [ ] `docs/dependencies.md` unchanged (no new deps)
-- [ ] `VERSION` → `1.4.0`
-- [ ] Atomic commits: 1 per TASK + 1 docs commit + 1 version bump = 6 commits total
-- [ ] `git tag -a v1.4.0 -m "..."`
+- [ ] `bash tests/test-hooks.sh` exit 0
+- [ ] CHANGELOG entry under `[1.5.0]`
+- [ ] No new ADR needed (no philosophy deviations; all changes additive within existing principles). If TASK-B3 reveals a missing principle (e.g., "examples must be real, not mocked"), add to PHILOSOPHY in a follow-up.
+- [ ] `VERSION` → `1.5.0`
+- [ ] Atomic commits: 1 per TASK + 1 docs + 1 version bump = 6 commits
+- [ ] Tag `v1.5.0`
 
 ## Acceptance Criteria (global)
 
-- [ ] All 4 task acceptance criteria met
-- [ ] All JSON files valid
-- [ ] No existing file deleted, no behavioral change to existing install path
-- [ ] tests pass 42/42
-- [ ] `install.sh` continues to work (unchanged)
-- [ ] Plugin format files are sufficient for `/plugin marketplace add` + `/plugin install` flow per Claude Code docs (cannot be tested locally without a fresh Claude Code session; verified by spec compliance with cited docs)
+- [ ] All 4 task ACs met
+- [ ] tests still 42/42
+- [ ] No existing file deleted; no breaking changes
+- [ ] CI workflow file is syntactically valid YAML (`yq eval . .github/workflows/test.yml > /dev/null` if yq available, else jq-on-the-yaml-parsed-via-helper or visual review)
 
 ## Edge Cases
 
-1. **Plugin install + bash install both run on same machine.** Hooks would register twice (once at the plugin location, once at $HOME/.claude/dwarves-kit). Mitigation: README warns users to pick one install path, not both. The kit's own `safety-gate` won't fire twice in practice (Claude Code dedupes by command string), but it's still a config smell.
-2. **`statusLine` not in plugin format.** Plugin schema has no statusLine equivalent in v1 of the plugin spec. Plugin-installed users keep whatever statusLine they had in their settings.json. Documented in README that the bash install also configures statusLine; plugin install does not.
-3. **Anthropic official marketplace submission.** Form-based, manual. Han submits via https://claude.ai/settings/plugins/submit when ready. Not blocking v1.4 ship; documented in README and ADR-009.
-4. **`source: "."` in marketplace.json.** This means "the plugin lives at the repo root". Per docs this is valid for single-plugin marketplaces. If Claude Code rejects the value, fallback: use `"./plugins/dwarves-kit"` and move plugin files into a subfolder. Defer the fix until first install failure surfaces.
+1. **CI fails on first push** because of platform-specific path issue (e.g., bash version differences between macOS and Ubuntu). Mitigation: matrix runs both; first failure tells us which to fix. Acceptance criterion is "workflow file exists and is syntactically valid", not "CI green on first run". The actual run happens on push.
+2. **README hero feels marketing-y** (overpromising). Mitigation: AC explicitly forbids fabricated stats. Tone matches kit voice (opinionated, factual, no theater).
+3. **Demo project SPEC.md inception** — the demo SPEC will be a different scale than the kit's own SPECs. Mitigation: demo subject deliberately scoped to 2-3 small tasks (single feature in a hypothetical Python CLI); the kit's own SPECs cover larger phases.
+4. **CONTRIBUTING accidentally re-states PHILOSOPHY**. Mitigation: AC "References PHILOSOPHY.md as source of truth (not re-statement)". Use one-line summaries that link to the section, don't copy.
 
 ## Out of Scope
 
-- Removing `install.sh` and root `settings.json` (user override: keep both for now; sunset trigger documented in ADR-009).
-- Multi-harness packaging (Codex/Cursor/Gemini/OpenCode). Defer per PHILOSOPHY: single Han audience.
-- Submitting to Anthropic's official marketplace (Han does manually via web form).
-- GitHub Actions CI workflow (separate v1.4 line item; can be a follow-up).
-- Migration script that auto-converts an existing bash install to a plugin install (low value: users uninstall + reinstall in 30 seconds).
-- Plugin update notifications (handled by Claude Code's plugin runtime, not us).
+- Animated GIF / asciinema in README (audit decided to skip — high recurring maintenance cost).
+- SECURITY.md (audit decided to skip — solo maintainer, pure cargo-cult signal).
+- Issue templates / PR template under `.github/` (deferred — would be a follow-up if we want; not core to v1.5).
+- QUICKSTART.md for contractors (deferred — different audience, larger doc, separate task).
+- GitHub Releases mirroring (cosmetic; tag annotations already have full notes).
+- Multi-harness packaging (still deferred per PHILOSOPHY).
+- Submitting to Anthropic's official marketplace (still manual step the maintainer does).
 
 ## Decision Log
 
-- **DEC-001 (override)**: Keep `install.sh` and root `settings.json` rather than replace per PHILOSOPHY's "Replace, don't deprecate".
-  - **Rationale**: User explicit instruction (2026-04-21). Avoids forcing existing contractors to re-install on v1.4 upgrade.
-  - **Sunset trigger**: Remove in v2.0 OR after 30 days of zero bash-install usage signal in `~/.claude/dwarves-kit/logs/install.log` (not yet instrumented; will require a tracker hook in a future task), whichever comes first.
-  - **Documented in**: ADR-009.
+- **DEC-001**: CI matrix is macOS + Ubuntu only, no Windows.
+  - **Rationale**: hooks are bash scripts; Windows would need WSL or git-bash. PHILOSOPHY's target user is on macOS; contractors are on macOS or Linux. Adding Windows is theater for a user we don't serve.
 
-- **DEC-002**: Self-hosted marketplace (single-plugin) at the kit repo, not a separate marketplace repo.
-  - **Rationale**: Single plugin, single repo. Splitting the marketplace into its own repo (like superpowers does with `obra/superpowers-marketplace`) only pays off when the marketplace hosts 2+ plugins. We have 1.
-  - **Rejected alternative**: Separate `dwarvesf/dwarves-marketplace` repo. Adds an empty repo for no current value.
+- **DEC-002**: Demo project subject is "Python CLI `--version` flag".
+  - **Rationale**: small (2-3 tasks), realistic (every CLI has a `--version`), language-neutral enough to be readable to a Go/TS engineer, doesn't require non-default deps.
+  - **Rejected alternative**: dogfooding the kit's own v1.4 spec as the example. Would be elegant but the spec is 200+ lines — too much to read in 5 minutes. Demo needs its own small subject.
 
-- **DEC-003**: Use `${CLAUDE_PLUGIN_ROOT}` (not `$HOME/.claude/dwarves-kit/`) in `hooks/hooks.json`.
-  - **Rationale**: Documented Claude Code plugin convention. Path-portable; resolves at install time. Citation: https://code.claude.com/docs/en/hooks.md.
+- **DEC-003**: CONTRIBUTING.md lives at repo root, not under `docs/` or `.github/`.
+  - **Rationale**: GitHub auto-discovers `CONTRIBUTING.md` at repo root and surfaces it on the PR new-issue flow. Putting it under `.github/CONTRIBUTING.md` also works but root is more visible to humans browsing the repo.
 
-- **DEC-004**: Bump to v1.4.0, not v2.0.0.
-  - **Rationale**: User explicit instruction. Additive change (no breaking removal). Conventional commits: `feat(plugin): ...` is minor, not major.
-
-- **DEC-005**: `statusLine` stays out of `hooks/hooks.json` (not a plugin schema field).
-  - **Rationale**: Per Claude Code plugin docs, hooks.json schema covers hook events only. statusLine config remains in root settings.json (bash install) and is not auto-applied by the plugin install. README documents this.
+- **DEC-004**: No new ADR for v1.5 (all changes additive within existing principles).
+  - **Rationale**: ADRs document non-obvious decisions and philosophy deviations. v1.5 has no deviations. Skipping the ceremony for ceremony's sake.
 
 ## Source citations
 
-- https://code.claude.com/docs/en/plugins.md
-- https://code.claude.com/docs/en/plugin-marketplaces.md
-- https://code.claude.com/docs/en/hooks.md (`${CLAUDE_PLUGIN_ROOT}` documented here)
-- Reference implementation: obra/superpowers v5.0.7 (single-plugin self-hosted marketplace pattern)
+- CI workflow pattern: standard GitHub Actions matrix testing (no novel approach).
+- README hero structure: standard OSS README pattern (badges + value prop + audience). No specific source needed.
+- Demo project pattern: standard "examples/" directory convention used by countless OSS projects.
+- CONTRIBUTING.md voice: obra/superpowers v5.0.7 `AGENTS.md` (already adopted in v1.3 for kit-health; same source, different application).
