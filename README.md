@@ -61,6 +61,23 @@ Built for a solo technical lead handing off to contractors. Opinionated, lightwe
 
 ## Install
 
+### Option 1: Claude Code plugin (recommended)
+
+In any Claude Code session:
+
+```
+/plugin marketplace add dwarvesf/dwarves-kit
+/plugin install dwarves-kit@dwarves-marketplace
+```
+
+That's it. Hooks, commands, agents, and the skill all install automatically. No bash, no `jq`, no symlinks. Updates via `/plugin update dwarves-kit`.
+
+To get the kit listed on Anthropic's official marketplace (`claude-plugins-official`), submit it via [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit). One-time manual step; not blocking the self-hosted install above.
+
+### Option 2: Bash installer (alternative)
+
+For environments without Claude Code's plugin system (CI, project templates, older Claude Code versions):
+
 ```bash
 git clone https://github.com/dwarvesf/dwarves-kit.git ~/.claude/dwarves-kit
 cd ~/.claude/dwarves-kit && bash install.sh
@@ -73,6 +90,10 @@ To uninstall:
 ```bash
 bash ~/.claude/dwarves-kit/install.sh --uninstall
 ```
+
+### Pick one
+
+Don't run both install paths on the same machine -- hooks would register twice. The plugin install does not configure `statusLine` (not in the v1 plugin schema); use the bash install if you want the statusline HUD. This split is documented in ADR-009.
 
 ## Workflow
 
