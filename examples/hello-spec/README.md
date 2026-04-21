@@ -52,3 +52,7 @@ PASS -> next task; FAIL:fixable -> fix-agent (max 2 retries); FAIL:escalate -> h
 1. Read `CLAUDE.md` first — it's the project anchor a contractor sees first.
 2. Then `.planning/SPEC.md` — the actual feature plan.
 3. Notice: no `--version` code yet. The spec is the input to `/user:execute`. The example stops at "spec ready to build", not "feature implemented", to keep the example readable.
+
+---
+
+*Synthetic demo. The `spm` package and the feature it describes are fabricated for documentation purposes — there is no real `pip install spm`. The shape of `CLAUDE.md` and `.planning/SPEC.md`, however, is exactly what the kit's `/user:spec` command produces.*

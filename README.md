@@ -202,74 +202,40 @@ These tools complement the kit but are installed separately:
 
 ```
 dwarves-kit/
-  agents/
-    task-verifier.md            Read-only verification against spec + tests
-    fix-agent.md                Targeted fixes on FAIL:fixable verdicts
-    reviewer.md                 Focused review with configurable lens
-    security-auditor.md         Deep OWASP-style security audit
-    research-stack.md           Maps technology stack (brownfield)
-    research-features.md        Maps existing features in target area
-    research-architecture.md    Maps architecture patterns
-    research-pitfalls.md        Finds landmines before implementation
-  hooks/
-    safety-gate.sh              PreToolUse: rm-rf + push-to-main blocker
-    context-readiness.sh        SessionStart: state detection + command suggestion
-    anti-rationalization.sh     Stop: catch incomplete work (5 patterns)
-    slop-cleaner.sh             Stop: flag bloated code (nudge, not block)
-    session-state-save.sh       Stop + SubagentStop: persist session state
-    auto-format.sh              PostToolUse: run formatter (no network downloads)
-    spec-drift-guard.sh         PreToolUse: warn on unplanned files
-    pre-compact-backup.sh       PreCompact: save session snapshot
-    post-compact-reinject.sh    PostToolUse(compact): re-inject rules
-    notification.sh             Notification: desktop alert
-    permission-auto-approve.sh  PermissionRequest: auto-approve reads (pipe-safe)
-    statusline.sh               StatusLine: model, branch, context %, cost
-  commands/
-    start.md                    Entry: detect state, suggest next command
-    think.md                    Phase 1: Challenge the idea
-    spec.md                     Phase 2a: Generate spec + 4 research agents
-    spec-validate.md            Phase 2b: Adversarial review
-    execute.md                  Phase 4: Worker > verifier > fix-agent loop
-    next.md                     Phase 4: Manual single-task picker
-    review.md                   Phase 5: Single-pass code review
-    review-team.md              Phase 5: Parallel 3-lens review
-    docs.md                     Phase 5.5: Update docs to match code
-    ship.md                     Phase 6: Review gate + version + changelog + PR
-    retro.md                    Phase 7: Retrospective + learning capture
-    kit-health.md               Meta: Self-assessment against philosophy
-  rules/
-    backend-go.md               Template: Go backend coding standards
-    frontend-ts.md              Template: TypeScript frontend standards
-  skills/
-    get-api-docs/SKILL.md       Context Hub integration
+  .claude-plugin/
+    plugin.json                 Plugin manifest (name, version, author, repo)
+    marketplace.json            Self-hosted single-plugin marketplace
+  .github/workflows/
+    test.yml                    CI: macOS + Ubuntu test matrix
+  agents/                       (9 files) Subagents dispatched by commands
+  hooks/                        (12 scripts + hooks.json plugin manifest)
+  commands/                     (12 markdown command prompts)
+  rules/                        Path-scoped coding-standard templates
+  skills/get-api-docs/          Context Hub integration
+  examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
   tests/
-    test-hooks.sh               Automated hook test suite
-  settings.json                 Hook + statusline registration
-  CLAUDE.md                     Project template
-  CHANGELOG.md                  Version history
-  VERSION                       Current version
-  install.sh                    Installer + uninstaller
-  README.md                     This file
+    test-hooks.sh               Hook behavior assertions
+    test-meta.sh                Structural integrity (manifests, frontmatter, cross-links)
   docs/
     PHILOSOPHY.md               Design principles, target user, NO list
     COLLABORATIVE-DESIGN.md     Decision protocol for agents
-    session_state.md            Code-handoff session state
-    tasks.md                    Phased backlog
-    decisions.md                4 ADRs
+    decisions.md                ADRs (1-9)
     dependencies.md             Required vs recommended tools
-    v1.1-handoff.md             v1.1 session handoff
-    v1.2-handoff.md             v1.2 session handoff
+    tasks.md                    Phased backlog
+    retro/                      Cycle retrospectives
+  settings.json                 Hook + statusline registration (bash install path)
+  install.sh                    Bash installer (alternative to plugin install)
+  CLAUDE.md                     Project template
+  CONTRIBUTING.md               Rejection-first contribution rules
+  CHANGELOG.md                  Version history (source of truth)
+  VERSION                       Current version
 ```
+
+For the full file listing including individual agent/hook/command names, run `git ls-files` or browse the repo on GitHub. The previous embedded tree was a drift surface that lost sync with reality across 5 releases.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for full version history.
-
-**v1.2.0** - Verification pipeline, 8 agents, /start router, /review-team, session-state-save, Collaborative Design Protocol.
-
-**v1.1.0** - Security fixes, slop-cleaner, statusline, test suite, debug mode.
-
-**v1.0.0** - Initial release. 9 hooks + 9 commands + 1 skill.
+See [CHANGELOG.md](CHANGELOG.md). It's the source of truth; the README does not duplicate it.
 
 ## v2 roadmap (not yet built)
 
@@ -277,7 +243,7 @@ See [CHANGELOG.md](CHANGELOG.md) for full version history.
 - /qa command with headless browser testing (requires Playwright)
 - Agent Teams parallel task dispatch in /execute
 - SessionEnd hook for automatic knowledge capture
-- Plugin marketplace packaging
+- Multi-harness packaging (Codex / Cursor / Gemini / OpenCode) -- defer until real demand
 
 ## Credits
 
