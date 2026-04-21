@@ -1,157 +1,171 @@
-# Spec: Adopt 3 patterns from obra/superpowers
+# Spec: v1.4.0 Claude Code plugin packaging
 Generated: 2026-04-21
 Status: VALIDATED
-Source: superpowers v5.0.7 (commit `main`, fetched 2026-04-21)
-Validation: 4-lens self-review on 2026-04-21 (security: pass, failure-mode: 1 warning fixed, assumption: 1 warning verified, scope-critic: 2 warnings fixed)
+Source: Claude Code plugin docs (https://code.claude.com/docs/en/plugins.md, plugin-marketplaces.md, hooks.md)
+Note: Previous spec (v1.3 superpowers adoption) preserved in git history at commit 5315b0f.
 
 ## Problem
 
-dwarves-kit's verification pipeline (`task-verifier`, `reviewer`) was built before obra/superpowers shipped a comparable subagent-driven-development flow. After studying superpowers in 2026-04-21, three patterns surfaced as genuine gaps in our kit:
+dwarves-kit currently installs via `git clone + bash install.sh`. This is two manual steps and requires a shell. Users discovering the kit on GitHub have no in-Claude-Code install path. Compare: superpowers ships via `/plugin install` and gets one-line install in any Claude Code session.
 
-1. **Our `task-verifier` doesn't explicitly check for "extra/unneeded work"** (over-engineering, scope creep added by the worker). Superpowers' `spec-reviewer-prompt.md` makes this a first-class category alongside missing requirements.
-2. **We have no agent for "receiving code review"**. After `/review-team` produces findings, there's no anti-sycophancy guidance for how Claude (or a contractor) should respond. Superpowers' `receiving-code-review` skill closes this gap with a 6-step pattern + forbidden-phrase list.
-3. **`commands/kit-health.md` reads as a generic checklist runner.** Superpowers' `AGENTS.md` shows what an opinionated, rejection-first voice looks like ("94% PR rejection rate", "tool of embarrassment"). Our kit-health output should set the same expectations.
-
-These are content/prompt changes only. No new hooks, no runtime dependencies, no architectural shift. The mechanism stays bash + markdown + agent dispatch.
+The Claude Code plugin format (`.claude-plugin/plugin.json`) standardized in mid-2025 closes this gap. Adding plugin packaging to the kit is **additive**: no existing files removed, no breaking changes for current bash-install users.
 
 ## Solution
 
-Three independent prompt-file edits, each citing superpowers as source:
+Add 3 new files. Update 1 existing file (README). Bump version. No removals.
 
-| Task | File(s) | Type |
-|------|---------|------|
-| TASK-001 | `agents/task-verifier.md`, `agents/reviewer.md` | Edit existing prompts |
-| TASK-002 | `agents/responding-to-review.md` (new), `CLAUDE.md` (mention agent) | New agent + index update |
-| TASK-003 | `commands/kit-health.md` | Edit output template only (not the bash checks) |
+| Action | File |
+|---|---|
+| Create | `.claude-plugin/plugin.json` |
+| Create | `hooks/hooks.json` (plugin-format hook registration using `${CLAUDE_PLUGIN_ROOT}`) |
+| Create | `.claude-plugin/marketplace.json` (self-hosted marketplace pointing at this repo) |
+| Modify | `README.md` (new "Install (plugin, recommended)" section + keep existing bash section as fallback) |
+| Bump | `VERSION` 1.3.0 → 1.4.0 (minor: additive feature, no breaking changes) |
 
-All three are independent (no inter-task dependencies). Single phase, sequential dispatch (small enough that parallel doesn't pay off).
+Existing `install.sh` and root `settings.json` stay untouched. Both install paths work in v1.4.
 
 ## Technical Design
 
-### Data model changes
-None.
+### File: `.claude-plugin/plugin.json`
 
-### API / interface changes
-- New agent `responding-to-review` becomes dispatchable via the Task tool.
-- `agents/task-verifier.md` keeps the same PASS / FAIL:fixable / FAIL:escalate verdict format. New checklist items added; output format unchanged.
-- `agents/reviewer.md` keeps the same per-lens output format. New checks added inside the architecture lens.
-- `commands/kit-health.md` keeps the same bash checks. Output template wording changes to opinionated framing.
+Required field: `name`. We add `version`, `description`, `author`, `homepage`, `repository`, `keywords` for marketplace discoverability and version pinning. Auto-discovery handles `skills/`, `commands/`, `agents/` directories.
 
-### Infrastructure changes
-None. `install.sh` already iterates `agents/*.md` so the new file installs automatically.
+```json
+{
+  "name": "dwarves-kit",
+  "version": "1.4.0",
+  "description": "Spec-driven Claude Code workflow with verification pipeline. 12 hooks + 12 commands + 9 agents.",
+  "author": { "name": "Dwarves Foundation", "url": "https://dwarves.foundation" },
+  "homepage": "https://github.com/dwarvesf/dwarves-kit",
+  "repository": "https://github.com/dwarvesf/dwarves-kit",
+  "keywords": ["workflow", "spec-driven", "verification", "subagents", "hooks"]
+}
+```
+
+### File: `hooks/hooks.json`
+
+Same hook registrations as root `settings.json`, but commands use `${CLAUDE_PLUGIN_ROOT}/hooks/<script>.sh` (path-portable; resolves at install time). 12 hooks register across 8 events (SessionStart, PreToolUse with 2 matchers, PostToolUse with 2 matchers, PreCompact, Stop with 3 hooks, SubagentStop, Notification, PermissionRequest). Note: `statusLine` is not a hook in the plugin schema and stays in root `settings.json` only (the bash install path); the plugin install path inherits the user's existing statusLine config.
+
+### File: `.claude-plugin/marketplace.json`
+
+Lets the repo serve as its own marketplace. Users add it via `/plugin marketplace add dwarvesf/dwarves-kit`, then install via `/plugin install dwarves-kit@dwarves-marketplace`.
+
+```json
+{
+  "name": "dwarves-marketplace",
+  "owner": { "name": "Dwarves Foundation" },
+  "plugins": [
+    {
+      "name": "dwarves-kit",
+      "source": ".",
+      "description": "Spec-driven Claude Code workflow with verification pipeline."
+    }
+  ]
+}
+```
+
+### File: `README.md` Install section rewrite
+
+Two install sections. Plugin path is presented first (recommended). Bash path moved below as fallback for non-Claude-Code-plugin contexts (older installs, CI, project-template propagation). Add a one-line note pointing to Anthropic's official marketplace submission form for users who want broader discovery.
 
 ## Task Breakdown
 
-### Phase 1: Prompt enrichment (3 tasks, all independent)
+### Phase 1: Plugin packaging (4 tasks, all independent)
 
-- [ ] **TASK-001: Enrich task-verifier and reviewer prompts**
-  - Files touched: `agents/task-verifier.md`, `agents/reviewer.md`
-  - Changes:
-    - `task-verifier.md`: Add new check section "Extra / unneeded work" (over-engineering, scope additions). Add the "verify by reading code, not by trusting report" framing to the Rules section. Add source citation comment at top.
-    - `reviewer.md` (architecture lens): Add "Are units decomposed so they can be understood and tested independently?" Add "what this change contributed (don't flag pre-existing file size)" framing.
-    - Source: superpowers v5.0.7 `skills/subagent-driven-development/spec-reviewer-prompt.md` and `code-quality-reviewer-prompt.md`.
+- [ ] **TASK-A1: Create `.claude-plugin/plugin.json`**
   - Acceptance criteria:
-    - [ ] `task-verifier.md` contains a new section header matching `^#+ .*[Ee]xtra` (case-insensitive grep)
-    - [ ] `task-verifier.md` contains the literal phrase `verify by reading code, not by trusting`
-    - [ ] `reviewer.md` architecture lens contains the literal phrases `decomposed` AND `tested independently`
-    - [ ] Both files contain the literal string `Source: superpowers v5.0.7`
-    - [ ] PASS / FAIL:fixable / FAIL:escalate verdict format in `task-verifier.md` is unchanged: all three of `VERDICT: PASS`, `VERDICT: FAIL:fixable`, `VERDICT: FAIL:escalate` still grep-present
-    - [ ] `bash tests/test-hooks.sh` exit code is 0
-    - [ ] Smoke test: `wc -l` after > before for both files (proves additive edit, not replacement) AND files start with `---` YAML frontmatter
+    - [ ] File exists at `.claude-plugin/plugin.json`
+    - [ ] `jq . .claude-plugin/plugin.json` exits 0 (valid JSON)
+    - [ ] `name` field equals `"dwarves-kit"`
+    - [ ] `version` field equals `"1.4.0"`
+    - [ ] `repository` field present and points to dwarvesf org
 
-- [ ] **TASK-002: Add `responding-to-review` agent + wire into /review-team**
-  - Files touched: `agents/responding-to-review.md` (new), `CLAUDE.md` (one line in agent inventory), `commands/review-team.md` (one-line mention in Step 5 decision gate)
-  - Changes:
-    - Create new agent file with YAML frontmatter (name, description, tools: Read+Grep+Glob+Bash(git*), model: sonnet)
-    - Body adapts superpowers' 6-step pattern (READ → UNDERSTAND → VERIFY → EVALUATE → RESPOND → IMPLEMENT)
-    - Include forbidden-phrase list (no "You're absolutely right", "Great point", etc.)
-    - Include YAGNI check + push-back-when-wrong section
-    - Cite source at top
-    - Update `CLAUDE.md` Subagents section to list the new agent (one line)
-    - Update `commands/review-team.md` Step 5 to suggest dispatching `responding-to-review` after presenting findings (prevents orphan-agent status flagged by failure-mode reviewer)
+- [ ] **TASK-A2: Create `hooks/hooks.json`**
   - Acceptance criteria:
-    - [ ] `agents/responding-to-review.md` exists with valid YAML frontmatter (file starts with `---`, has name/description/tools/model fields, ends frontmatter with `---` before line 20)
-    - [ ] File contains all 6 step verbs literally: `READ`, `UNDERSTAND`, `VERIFY`, `EVALUATE`, `RESPOND`, `IMPLEMENT` (each greppable as standalone uppercase tokens)
-    - [ ] File contains a "Forbidden phrases" or "Do NOT" section listing at minimum: `You're absolutely right`, `Great point`, `Excellent feedback` (each as a string to avoid)
-    - [ ] File cites source: literal string `superpowers v5.0.7` present
-    - [ ] `CLAUDE.md` contains the string `responding-to-review` in the Subagents list
-    - [ ] `commands/review-team.md` Step 5 references `responding-to-review` agent
-    - [ ] `install.sh` unchanged (confirmed: install.sh:169 uses `agents/*.md` glob; new file picked up automatically)
-    - [ ] `bash tests/test-hooks.sh` exit code 0
+    - [ ] File exists at `hooks/hooks.json`
+    - [ ] `jq . hooks/hooks.json` exits 0 (valid JSON)
+    - [ ] Hook count: 12 hooks total registered (matching root settings.json)
+    - [ ] All hook commands use `${CLAUDE_PLUGIN_ROOT}/hooks/` prefix (greppable, no `$HOME/.claude/dwarves-kit` paths)
+    - [ ] Same 8 event types covered as root settings.json: SessionStart, PreToolUse, PostToolUse, PreCompact, Stop, SubagentStop, Notification, PermissionRequest
+    - [ ] `bash tests/test-hooks.sh` still passes 42/42 (no underlying script change)
 
-- [ ] **TASK-003: Rewrite kit-health output voice**
-  - Files touched: `commands/kit-health.md` (Step 2 output template + new Step 3.5 "Rejection summary" framing)
-  - Changes:
-    - Rewrite the Step 2 report template from neutral PASS/FAIL list to a rejection-first verdict (`SHIP / FIX-REQUIRED / REJECT`)
-    - Add a "What this kit will reject" section in Step 3 (philosophy alignment), borrowed verbatim-style from superpowers' "What We Will Not Accept"
-    - Keep all existing bash checks unchanged
-    - Cite source
+- [ ] **TASK-A3: Create `.claude-plugin/marketplace.json`**
   - Acceptance criteria:
-    - [ ] Step 2 template uses verdict values `SHIP`, `FIX-REQUIRED`, or `REJECT` (greppable)
-    - [ ] New section header containing "reject" or "Rejection" exists in Step 3
-    - [ ] All 10 numbered bash checks (1. File count, 2. Hook executability, ..., 10. TODOs/FIXMEs) are still present and unchanged (greppable by their existing comment headers)
-    - [ ] File cites source: superpowers v5.0.7
-    - [ ] No regression: file is still valid markdown with YAML frontmatter
+    - [ ] File exists at `.claude-plugin/marketplace.json`
+    - [ ] `jq . .claude-plugin/marketplace.json` exits 0
+    - [ ] `name` field equals `"dwarves-marketplace"`
+    - [ ] `plugins[0].name` equals `"dwarves-kit"`
+    - [ ] `plugins[0].source` equals `"."` (self-reference; the marketplace lives in the same repo as the plugin)
 
-### Phase 2: Verification + docs (orchestrator-level, not a worker task)
+- [ ] **TASK-A4: README install section rewrite**
+  - Acceptance criteria:
+    - [ ] New "Install (Claude Code plugin, recommended)" section above the existing bash section
+    - [ ] Plugin install command literal in README: `/plugin marketplace add dwarvesf/dwarves-kit`
+    - [ ] Plugin install command literal in README: `/plugin install dwarves-kit@dwarves-marketplace`
+    - [ ] Bash install section retained, labeled as "alternative" or "legacy"
+    - [ ] One-line note about Anthropic official marketplace submission with URL https://claude.ai/settings/plugins/submit
+    - [ ] Repo URL `dwarvesf/dwarves-kit` (not the old `tieubao/dwarves-kit`) used everywhere in install commands
 
-- [ ] Run `bash tests/test-hooks.sh` after all 3 tasks (must exit 0)
-- [ ] Mental task-verifier pass on each TASK
-- [ ] Mental review-team pass: security (any leaked credentials? no - prompt-only changes), architecture (do new prompts fit existing agent dispatch model? yes - same Task tool interface), test-coverage (test-hooks.sh covers underlying bash; prompt content is verified by grep checks above)
-- [ ] CHANGELOG entry under `[Unreleased]` or `[1.3.0]`
-- [ ] `docs/decisions.md` ADR-008 with adoption rationale
+### Phase 2: Verify, docs, ship
+
+- [ ] All 4 task acceptance criteria met
+- [ ] `bash tests/test-hooks.sh` exit 0 (42/42)
+- [ ] `find . -name "*.json" -path "*/.claude-plugin/*" -o -path "*/hooks/*.json" | xargs -I {} jq . {} > /dev/null` exits 0
+- [ ] CHANGELOG entry under `[1.4.0]`
+- [ ] `docs/decisions.md` ADR-009 documenting the dual-ship deviation from PHILOSOPHY's "Replace, don't deprecate" with rationale + sunset trigger
 - [ ] `docs/dependencies.md` unchanged (no new deps)
+- [ ] `VERSION` → `1.4.0`
+- [ ] Atomic commits: 1 per TASK + 1 docs commit + 1 version bump = 6 commits total
+- [ ] `git tag -a v1.4.0 -m "..."`
 
 ## Acceptance Criteria (global)
 
-- [ ] All 3 task acceptance criteria met
-- [ ] `bash tests/test-hooks.sh` passes (40+ existing assertions still green)
-- [ ] No file deleted
-- [ ] No bash hook modified (only markdown prompt content)
-- [ ] Source citation present in every modified/created file
-- [ ] CHANGELOG and decisions.md updated
-- [ ] Atomic commits: 1 per TASK + 1 for docs (4 commits total) on master
+- [ ] All 4 task acceptance criteria met
+- [ ] All JSON files valid
+- [ ] No existing file deleted, no behavioral change to existing install path
+- [ ] tests pass 42/42
+- [ ] `install.sh` continues to work (unchanged)
+- [ ] Plugin format files are sufficient for `/plugin marketplace add` + `/plugin install` flow per Claude Code docs (cannot be tested locally without a fresh Claude Code session; verified by spec compliance with cited docs)
 
 ## Edge Cases
 
-1. **Verifier's "extra work" check causes false positives.** A worker that adds a sensible helper function alongside the requested change might get flagged. Mitigation: the prompt addition explicitly says "small incidental changes (formatting, imports, helpers used by the change) are acceptable; new features are not". Borrowed from existing scope check in `task-verifier.md` line 51-52.
-2. **`responding-to-review` agent never gets dispatched.** It's a new agent with no command currently invoking it. That's fine; it's available when needed, similar to how `security-auditor` exists but is dispatched only by `/review-team` on demand. A future enhancement could have `/review-team` suggest dispatching it after producing findings.
-3. **kit-health "REJECT" verdict scares contractors.** Possible. Mitigation: "REJECT" only fires on critical philosophy violations (e.g., compiled binary present, hook over 500ms). For minor issues, verdict is `FIX-REQUIRED`. Tone is opinionated, not punitive.
-4. **AGENTS.md "94%" stat is fabricated for our kit.** We don't have rejection data. Mitigation: don't lift the stat. Lift the *framing* (numbered MUST list, concrete consequences, "what we will not accept"). Voice without falsified numbers.
+1. **Plugin install + bash install both run on same machine.** Hooks would register twice (once at the plugin location, once at $HOME/.claude/dwarves-kit). Mitigation: README warns users to pick one install path, not both. The kit's own `safety-gate` won't fire twice in practice (Claude Code dedupes by command string), but it's still a config smell.
+2. **`statusLine` not in plugin format.** Plugin schema has no statusLine equivalent in v1 of the plugin spec. Plugin-installed users keep whatever statusLine they had in their settings.json. Documented in README that the bash install also configures statusLine; plugin install does not.
+3. **Anthropic official marketplace submission.** Form-based, manual. Han submits via https://claude.ai/settings/plugins/submit when ready. Not blocking v1.4 ship; documented in README and ADR-009.
+4. **`source: "."` in marketplace.json.** This means "the plugin lives at the repo root". Per docs this is valid for single-plugin marketplaces. If Claude Code rejects the value, fallback: use `"./plugins/dwarves-kit"` and move plugin files into a subfolder. Defer the fix until first install failure surfaces.
 
 ## Out of Scope
 
-- New slash command for `responding-to-review` (defer until usage demand). The agent is dispatchable via Task tool when needed.
-- Rewriting `CLAUDE.md` template to add a "responding to review" section (CLAUDE.md is passive context; the agent is the active mechanism).
-- Modifying `/review` or `/review-team` to auto-dispatch the new agent (separate v1.4 task; this v1.3 just adds the capability).
-- Hook for receiving-review (e.g., a Stop-hook that runs after `/review` completes). Not yet a proven pattern.
-- Changing the underlying bash checks in `kit-health.md` (only the output framing changes).
-- Multi-harness plugin packaging (already on v2 roadmap).
-- Adopting the superpowers `<HARD-GATE>` pattern for `/think` (deferred; `/think` works adequately).
+- Removing `install.sh` and root `settings.json` (user override: keep both for now; sunset trigger documented in ADR-009).
+- Multi-harness packaging (Codex/Cursor/Gemini/OpenCode). Defer per PHILOSOPHY: single Han audience.
+- Submitting to Anthropic's official marketplace (Han does manually via web form).
+- GitHub Actions CI workflow (separate v1.4 line item; can be a follow-up).
+- Migration script that auto-converts an existing bash install to a plugin install (low value: users uninstall + reinstall in 30 seconds).
+- Plugin update notifications (handled by Claude Code's plugin runtime, not us).
 
 ## Decision Log
 
-- **DEC-001**: TASK-002 implemented as a new agent file (`agents/responding-to-review.md`), not a CLAUDE.md section.
-  - **Rationale**: Agents are dispatchable on demand; CLAUDE.md is passive context that may not be the active reference when feedback arrives. Matches our agent-based pattern (8 existing agents).
-  - **Rejected alternative**: CLAUDE.md section. Cheaper but less likely to fire at the right moment.
-  - **Rejected alternative**: New skill in `skills/`. We only have one skill (`get-api-docs`) and skills are Claude-triggered, not command/event-triggered. Agent fits better.
+- **DEC-001 (override)**: Keep `install.sh` and root `settings.json` rather than replace per PHILOSOPHY's "Replace, don't deprecate".
+  - **Rationale**: User explicit instruction (2026-04-21). Avoids forcing existing contractors to re-install on v1.4 upgrade.
+  - **Sunset trigger**: Remove in v2.0 OR after 30 days of zero bash-install usage signal in `~/.claude/dwarves-kit/logs/install.log` (not yet instrumented; will require a tracker hook in a future task), whichever comes first.
+  - **Documented in**: ADR-009.
 
-- **DEC-002**: All 3 tasks share one phase, sequential dispatch.
-  - **Rationale**: Independent (no shared files, no ordering constraint), but small enough that parallel dispatch overhead exceeds the wall-clock savings. Sequential keeps the orchestrator's state simple.
+- **DEC-002**: Self-hosted marketplace (single-plugin) at the kit repo, not a separate marketplace repo.
+  - **Rationale**: Single plugin, single repo. Splitting the marketplace into its own repo (like superpowers does with `obra/superpowers-marketplace`) only pays off when the marketplace hosts 2+ plugins. We have 1.
+  - **Rejected alternative**: Separate `dwarvesf/dwarves-marketplace` repo. Adds an empty repo for no current value.
 
-- **DEC-003**: Don't lift the "94% PR rejection rate" number from superpowers' AGENTS.md.
-  - **Rationale**: We don't have that data for our kit. Lifting a fabricated stat violates "no phantom features" from CLAUDE.md template. Lift voice and structure, not numbers.
+- **DEC-003**: Use `${CLAUDE_PLUGIN_ROOT}` (not `$HOME/.claude/dwarves-kit/`) in `hooks/hooks.json`.
+  - **Rationale**: Documented Claude Code plugin convention. Path-portable; resolves at install time. Citation: https://code.claude.com/docs/en/hooks.md.
 
-- **DEC-004**: Single ADR (`ADR-008`) covers all three adoptions, not three ADRs.
-  - **Rationale**: One coherent decision (adopt patterns from superpowers v5.0.7), three artifact-level applications. Splitting would fragment the rationale across files.
+- **DEC-004**: Bump to v1.4.0, not v2.0.0.
+  - **Rationale**: User explicit instruction. Additive change (no breaking removal). Conventional commits: `feat(plugin): ...` is minor, not major.
 
-- **DEC-005**: TASK-001 covers two files (task-verifier + reviewer) in one task because they share the same source material (subagent-driven-development reviewer prompts) and the same source citation line.
-  - **Rationale**: Atomicity check (Scope Critic): touches 2 files, description fits in one paragraph, 7 acceptance criteria. Within the 5-files / 3-sentences / 5-bullets heuristic from `/spec-validate`. Acceptable.
+- **DEC-005**: `statusLine` stays out of `hooks/hooks.json` (not a plugin schema field).
+  - **Rationale**: Per Claude Code plugin docs, hooks.json schema covers hook events only. statusLine config remains in root settings.json (bash install) and is not auto-applied by the plugin install. README documents this.
 
 ## Source citations
 
-- `superpowers v5.0.7` (https://github.com/obra/superpowers, commit `main` at 2026-04-21)
-- `skills/subagent-driven-development/spec-reviewer-prompt.md` -- "extra / unneeded work" category, "verify by reading code, not by trusting report" framing
-- `skills/subagent-driven-development/code-quality-reviewer-prompt.md` -- "decomposed for independent testability", "what this change contributed" framing
-- `skills/receiving-code-review/SKILL.md` -- 6-step pattern, forbidden-phrase list, YAGNI check, push-back-when-wrong
-- `AGENTS.md` -- rejection-first voice, numbered MUST list, "what we will not accept" structure
+- https://code.claude.com/docs/en/plugins.md
+- https://code.claude.com/docs/en/plugin-marketplaces.md
+- https://code.claude.com/docs/en/hooks.md (`${CLAUDE_PLUGIN_ROOT}` documented here)
+- Reference implementation: obra/superpowers v5.0.7 (single-plugin self-hosted marketplace pattern)

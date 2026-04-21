@@ -2,6 +2,26 @@
 
 All notable changes to dwarves-kit are documented here.
 
+## [1.4.0] - 2026-04-21
+
+### Added
+
+- **Claude Code plugin packaging**: Kit now installs via `/plugin marketplace add dwarvesf/dwarves-kit` + `/plugin install dwarves-kit@dwarves-marketplace`. No `git clone`, no bash, no `jq` required. Updates via `/plugin update dwarves-kit`.
+- **`.claude-plugin/plugin.json`**: Plugin manifest with name, version, description, author, homepage, repository, keywords. Auto-discovers `agents/`, `commands/`, `skills/` directories.
+- **`.claude-plugin/marketplace.json`**: Self-hosted marketplace manifest. Single-plugin marketplace named `dwarves-marketplace` pointing at the repo root.
+- **`hooks/hooks.json`**: Plugin-format hook registration. Same 12 hooks across 8 event types as the bash install path. Uses `${CLAUDE_PLUGIN_ROOT}` for path-portable script references.
+- **README dual install section**: Plugin install presented first as recommended path. Bash install retained as alternative for CI / older Claude Code versions / non-plugin contexts. One-line note about Anthropic official marketplace submission via https://claude.ai/settings/plugins/submit.
+
+### Changed
+
+- **`docs/decisions.md`**: Added ADR-009 documenting the dual-ship deviation from PHILOSOPHY's "Replace, don't deprecate" with explicit rationale and sunset trigger.
+
+### Notes
+
+- This is an additive release. The bash installer (`install.sh`) and root `settings.json` are unchanged. Existing installs continue to work without action.
+- **Do not run both install paths on the same machine.** Hooks would register twice. Pick one.
+- Plugin install does not configure `statusLine` (not in v1 plugin schema). Use the bash install if you want the statusline HUD.
+
 ## [1.3.0] - 2026-04-21
 
 ### Added
