@@ -1,6 +1,6 @@
 {
   "name": "dwarves-kit",
-  "version": "1.4.0",
+  "version": "1.5.1",
   "description": "Spec-driven Claude Code workflow with verification pipeline. 12 hooks + 12 commands + 9 agents.",
   "author": {
     "name": "Dwarves Foundation",

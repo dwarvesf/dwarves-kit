@@ -2,6 +2,27 @@
 
 All notable changes to dwarves-kit are documented here.
 
+## [1.5.1] - 2026-04-21
+
+Audit-fix release. Same-day patch following a retroactive `/review-team` and `/retro` that surfaced gaps in the v1.4/v1.5 SDLC application.
+
+### Fixed
+
+- **`plugin.json` version drift**: `.claude-plugin/plugin.json` was still declaring `1.4.0` after VERSION bumped to `1.5.0`. Now bumped to `1.5.1` and asserted by `tests/test-meta.sh` (parity check between VERSION and plugin manifest). The bug shipped briefly in v1.5.0; v1.5.0 tag is preserved in history.
+
+### Added
+
+- **`tests/test-meta.sh`**: 62 new assertions covering structural integrity that grep-only checks miss. Validates: plugin manifest schema (including version-matches-VERSION parity), hooks.json/settings.json hook count parity, all hooks.json paths use `${CLAUDE_PLUGIN_ROOT}`, every agent/command markdown file has YAML frontmatter with required fields, CLAUDE.md Subagents list bidirectionally matches `agents/*.md`, demo project files have all required template sections, workflow has explicit permissions block, CONTRIBUTING.md cross-links resolve. Test suite total: 42 → 104.
+- **CI hardening**: workflow now runs `tests/test-meta.sh` alongside `tests/test-hooks.sh`. `actions/checkout` pinned to release SHA (supply-chain best practice). Explicit `permissions: contents: read` (least privilege).
+- **`docs/retro/v1.3-v1.5.md`**: cycle retrospective covering what worked, what hurt, action items. First retro since the kit started; addresses the action item to make `/retro` part of the release ritual.
+
+### Changed
+
+- **README "Project structure" section**: replaced the embedded file tree (drifted across 5 releases — last accurate at v1.0) with a concise top-level overview pointing at `git ls-files` for the canonical listing. Removes a recurring drift surface.
+- **README "Changelog" section**: removed the duplicated highlight bullets (last updated at v1.2.0). CHANGELOG.md is now sole source of truth for version history.
+- **README "v2 roadmap"**: removed "Plugin marketplace packaging" (shipped in v1.4); added "Multi-harness packaging" deferred line.
+- **`examples/hello-spec/README.md`**: added a one-line synthetic-demo disclaimer at the bottom (the `spm` package is fictional; the file shapes are real).
+
 ## [1.5.0] - 2026-04-21
 
 ### Added
