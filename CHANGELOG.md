@@ -2,6 +2,26 @@
 
 All notable changes to dwarves-kit are documented here.
 
+## [1.3.0] - 2026-04-21
+
+### Added
+
+- **`responding-to-review` agent**: New subagent that responds to code review findings with verify-before-implement, no performative agreement, YAGNI check, and push-back-when-wrong. Wired into `/review-team` Step 5 so the FIX-THEN-SHIP path can dispatch it. Source: superpowers v5.0.7 `skills/receiving-code-review/SKILL.md`, adapted from a Skill (auto-discovered) to a custom subagent (dispatched on demand).
+- **`task-verifier` "Extra / unneeded work" check (Section 3b)**: Verifier now explicitly checks whether the worker built features that weren't requested, over-engineered, or added nice-to-haves outside the spec. Distinct from the existing file-scope check. Source: superpowers v5.0.7 `skills/subagent-driven-development/spec-reviewer-prompt.md`.
+- **`reviewer` (architecture lens) decomposition + contribution checks**: New bullets for "decomposed for independent testability" and "what this change contributed (don't flag pre-existing file size)". Source: superpowers v5.0.7 `skills/subagent-driven-development/code-quality-reviewer-prompt.md`.
+- **`commands/kit-health` rejection-first verdict**: Output template now produces `SHIP / FIX-REQUIRED / REJECT` verdicts with explicit gate rules. New Step 4 "What this kit will reject" section enumerates 10 auto-REJECT conditions grounded in PHILOSOPHY.md. Source framing: superpowers v5.0.7 `AGENTS.md` "What We Will Not Accept".
+
+### Changed
+
+- **`task-verifier` Rules**: Added "Verify by reading code, not by trusting the worker's report" as the first rule. Source: superpowers v5.0.7 spec-reviewer-prompt.
+- **`commands/review-team` Step 5**: FIX-THEN-SHIP path now suggests dispatching `responding-to-review` to handle the findings without performative agreement.
+- **`CLAUDE.md`**: Added `responding-to-review` to the Subagents inventory.
+- **`docs/decisions.md`**: Added ADR-008 covering the superpowers v5.0.7 adoption.
+
+### Fixed
+
+- **`tests/test-hooks.sh`**: Stale assertion `expected 10 event hooks` updated to `12` to match actual settings.json count (drift since v1.2 added SubagentStop and StatusLine entries). Test suite now reports 42/42 instead of 41/42.
+
 ## [1.2.0] - 2026-03-30
 
 ### Added
