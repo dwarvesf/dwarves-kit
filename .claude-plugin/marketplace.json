@@ -1,0 +1,14 @@
+{
+  "name": "dwarves-marketplace",
+  "owner": {
+    "name": "Dwarves Foundation",
+    "url": "https://dwarves.foundation"
+  },
+  "plugins": [
+    {
+      "name": "dwarves-kit",
+      "source": ".",
+      "description": "Spec-driven Claude Code workflow with verification pipeline. 12 hooks + 12 commands + 9 agents."
+    }
+  ]
+}
