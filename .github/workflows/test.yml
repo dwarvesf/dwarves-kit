@@ -5,6 +5,11 @@ on:
     branches: [master]
   pull_request:
 
+# Least-privilege token: workflow only reads code and runs tests; no writes,
+# no PR comments, no release operations.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: test (${{ matrix.os }})
@@ -14,7 +19,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      # Pinned to release SHA to defend against tag-replay supply-chain attack.
+      # Update via Dependabot or manually when checkout cuts a new release.
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
 
       - name: Install jq (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -26,9 +33,5 @@ jobs:
       - name: Run hook test suite
         run: bash tests/test-hooks.sh
 
-      - name: Validate plugin JSON files
-        run: |
-          jq . .claude-plugin/plugin.json > /dev/null
-          jq . .claude-plugin/marketplace.json > /dev/null
-          jq . hooks/hooks.json > /dev/null
-          jq . settings.json > /dev/null
+      - name: Run meta integrity tests
+        run: bash tests/test-meta.sh
