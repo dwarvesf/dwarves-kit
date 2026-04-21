@@ -82,7 +82,13 @@ echo "TODOs/FIXMEs in hooks: $TODOS"
 
 ### Step 2: Present health report
 
-Format the results as a health report:
+Format the results as a verdict, not a checklist. The kit is opinionated; the report should be too. The verdict is one of three values, evaluated against the gate rules below:
+
+- **SHIP** -- all critical checks pass, no philosophy violations, no hook over 500ms, no compiled binaries.
+- **FIX-REQUIRED** -- one or more non-critical checks fail OR there are TODOs/FIXMEs in hooks. Kit still works, but the failures must be addressed before the next release.
+- **REJECT** -- one or more critical violations: a compiled binary present, a hook over 500ms, settings.json invalid, a registered hook missing, or any philosophy violation flagged in Step 3.
+
+Output:
 
 ```
 Kit Health Report (date)
@@ -99,7 +105,10 @@ Kit Health Report (date)
 [PASS/WARN] TODOs in hooks: N
 ================================
 Score: X/Y checks passed
+Verdict: SHIP / FIX-REQUIRED / REJECT
 ```
+
+If the verdict is REJECT, surface the specific violation and what would need to change to lift it. kit-health is a self-diagnostic command, not a safety hook -- it labels the state clearly and recommends, but does not block (per `Detect, don't dictate`). The user decides whether to act. Reserve actual blocking for the safety-gate hook.
 
 ### Step 3: Philosophy alignment check
 
@@ -114,10 +123,29 @@ Review against PHILOSOPHY.md principles:
 
 Flag any violations and suggest fixes.
 
-### Step 4: Suggest maintenance actions
+### Step 4: What this kit will reject
+
+Borrowed in spirit from superpowers' AGENTS.md "What We Will Not Accept". The kit-health command is the in-repo voice that catches violations before they ship. The following are auto-REJECT conditions. State them when reviewing PRs, contractor work, or your own additions to the kit:
+
+1. **Compiled binaries.** Bash is the carve-in, statusline.sh's optional `mjs` polyfill is the only carve-out (PHILOSOPHY.md `Bash over binaries`). Any new `.exe`, `.bin`, `.so`, `.dylib` in the kit directory is a REJECT, no exceptions.
+2. **Hooks over 500ms.** Profile with `time` before merging. A slow hook degrades every session. (PHILOSOPHY.md `Maximum 500ms per hook execution`)
+3. **No source citation.** Every component must trace to a proven implementation. Net-new patterns without lineage get rejected and routed to "test as a standalone experiment first" (PHILOSOPHY.md `Synthesize, don't originate`)
+4. **Single-purpose features serving fewer than 2 of the 9 workflow phases.** Belongs as a standalone script, not a kit feature. (PHILOSOPHY.md feature rejection criterion 2)
+5. **Duplicates an external tool.** If chub, GSD, gstack, Trail of Bits, or a Claude Code plugin already does it, depend on it. Do not rebuild. (PHILOSOPHY.md `External tools are dependencies, not features`)
+6. **Cannot be explained in one sentence.** If the README table can't fit it on one line, the component is too complex. (PHILOSOPHY.md feature rejection criterion 4)
+7. **Non-bash hooks** (except the documented statusline carve-out). Adds runtime dependencies, slows startup, makes debugging harder. Per PHILOSOPHY.md: if a second exception is proposed, the `Bash over binaries` principle should be revisited entirely, not bent again. A second non-bash hook triggers REJECT until the principle is formally re-evaluated.
+8. **Phantom features.** Documented but not implemented, or validated but not used. (CLAUDE.md template `No phantom features`)
+9. **Speculative configuration.** Flags, options, or knobs added "in case we need them later". Build it when there's a real consumer.
+10. **Bundled unrelated changes** in one PR. Split. One feature, one PR, one source citation.
+
+When kit-health detects any of these, the verdict is **REJECT**. Surface it to the user and recommend the fix path: either remove the violation or document an explicit carve-out in PHILOSOPHY.md with rationale. Do not paper over the finding silently.
+
+### Step 5: Suggest maintenance actions
 
 Based on the checks:
 - If hook logs show zero activity for 30+ days on any hook, suggest deprecation review
 - If file count is growing without justification, suggest a cleanup pass
 - If TODOs exist in hooks, list them with context
 - If performance is over 500ms on any hook, flag it for optimization
+
+Source: superpowers v5.0.7 `AGENTS.md` -- the rejection-first verdict structure (`SHIP / FIX-REQUIRED / REJECT`) and the "What We Will Not Accept" framing in Step 4 are adapted from superpowers' contributor doc voice ("PRs that show no evidence of human involvement will be closed", "Speculative or theoretical fixes" rejection). Numbered violations grounded in our own PHILOSOPHY.md, not lifted verbatim.
