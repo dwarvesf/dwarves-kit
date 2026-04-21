@@ -1,8 +1,34 @@
 # dwarves-kit
 
-A minimal Claude Code workflow kit for spec-driven development with verification. 12 hooks + 12 commands + 8 agents + 1 skill.
+> Spec-driven Claude Code workflow with a verification pipeline. Worker → verifier → fix-agent retry, by default.
 
-Built for a solo technical lead handing off to contractors. Opinionated, lightweight, no enterprise theater.
+[![CI](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml/badge.svg)](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml)
+[![Version](https://img.shields.io/github/v/tag/dwarvesf/dwarves-kit?label=version)](https://github.com/dwarvesf/dwarves-kit/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
+
+12 hooks + 12 commands + 9 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push blocked).
+
+Install in any Claude Code session:
+
+```
+/plugin marketplace add dwarvesf/dwarves-kit
+/plugin install dwarves-kit@dwarves-marketplace
+```
+
+## Who this is for
+
+A solo technical lead handing off implementation to contractors. The kit covers the full lifecycle (think → spec → execute → review → ship → retro) with one shared spec format. The contractor running `/user:execute` reads the same `.planning/SPEC.md` you wrote with `/user:spec`.
+
+Also for: a builder using Claude Code 6-8 hours/day who wants a context-budget HUD, automatic safety guards, session-state persistence across compaction, and slop detection at stop points.
+
+See `examples/hello-spec/` for a small, self-contained walkthrough of the artifacts the kit produces.
+
+## Who this is NOT for
+
+- Teams of 10+ with a dedicated DevOps pipeline. The kit is for one engineer (or one engineer + delegated contractors). Multi-agent orchestration across parallel sessions is L5 territory (Nimbalyst, Conductor) — install those alongside, not instead.
+- Anyone who wants a UI. The kit is bash hooks + markdown commands. Open any file in a text editor; it's all readable.
+- Projects already happily using GSD, gstack, or Trail of Bits' configs as standalone tools. The kit's value is integration; if format-translation overhead between standalone tools isn't actually hurting you, don't switch.
 
 ## What it does
 
