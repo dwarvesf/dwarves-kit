@@ -16,5 +16,5 @@ Adopted GSD's `.planning/` convention. Spec files live there. Hooks (context-rea
 ## Consequences
 - Compatible with GSD if user also installs GSD (both check .planning/).
 - context-readiness hook also checks for `.gsd/` as a fallback.
-- Contractors see specs in a predictable location across all Dwarves projects.
-- Historical archive of shipped specs lives in `docs/specs/SPEC-NNN-<slug>.md`. `.planning/` is for in-flight work; `docs/specs/` is for the record. Migration of a shipped spec is a manual step at release time.
+- Contractors see specs in a predictable location across all Dwarves projects that use the kit's tools.
+- **Convention split (added 2026-05-20)**: the kit's hooks/commands write to `.planning/SPEC.md` for the downstream-project case. For the kit ITSELF as a project, specs are drafted directly at `docs/specs/SPEC-NNN-<slug>.md` (matching ops-toolkit `tools/tide/` shape). The `.planning/` to `docs/specs/` migration step is retired for the kit's own work; the file's `Status:` header (DRAFT / VALIDATED / SHIPPED) tracks state in place. Downstream projects that use the kit continue to follow the `.planning/` convention until a future kit refactor unifies the two.
