@@ -1,9 +1,9 @@
 # docs/specs
 
-Historical record of shipped specs. One file per release that introduced a spec.
+Numbered specs for every cycle of work on the kit. Drafts and shipped specs both live here. The file's `Status:` header (DRAFT / VALIDATED / SHIPPED) tells you the state.
 
-In-flight work lives in `.planning/SPEC.md` (single working file the kit's hooks and commands reference). At release time, the maintainer moves the finalized SPEC here as `SPEC-NNN-<slug>.md` so the history survives the next cycle.
+Naming: `SPEC-NNN-<short-slug>.md`, zero-padded sequential, assigned when the file is created. Subsequent changes to a shipped feature get a new SPEC; do not edit a SHIPPED spec in place (use a new spec or an ADR).
 
-Numbering: zero-padded sequential, assigned at the moment of move. The file's content is the spec as it was at ship time, including the Decision Log. Subsequent fixes get their own SPEC; do not edit a shipped SPEC in place.
+Pattern source: ops-toolkit `tools/tide/docs/specs/`. dwarves-kit's prior convention (`.planning/SPEC.md` for working, migrate to `docs/specs/` at ship) was inherited from GSD and has been retired for the kit's own work; see ADR-0002.
 
-See ADR-0002 for why `.planning/` stays as the working dir.
+The kit's hooks and commands still reference `.planning/SPEC.md` for downstream projects that follow the GSD-style separation. That path remains the documented convention for kit USERS. For the kit ITSELF as a project, specs live here from day one.

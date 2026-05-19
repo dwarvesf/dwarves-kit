@@ -56,7 +56,7 @@ The kit is intentionally flat. Component dirs sit at the top of the repo, not ne
                  writes: docs/retro/v<version>.md
 ```
 
-After a release ships, the maintainer moves the finalized `.planning/SPEC.md` to `docs/specs/SPEC-NNN-<slug>.md` as the historical record. `.planning/` stays in-flight only.
+**Convention split (kit-on-kit vs downstream projects)**: the diagram above describes the downstream-project flow, where hooks/commands write to `.planning/SPEC.md`. For the KIT ITSELF as a project, specs are drafted directly at `docs/specs/SPEC-NNN-<slug>.md` and tracked in place via a `Status:` header (DRAFT / VALIDATED / SHIPPED). No migration step. See ADR-0002.
 
 ## Verification pipeline (the load-bearing piece)
 
