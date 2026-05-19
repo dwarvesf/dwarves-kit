@@ -63,7 +63,7 @@ Work through these categories systematically. For each, either report a finding 
 
 ## Decision protocol
 
-When you encounter code where the security implications depend on how it's used (e.g., a function that could be safe or unsafe depending on the caller), follow the Collaborative Design Protocol in docs/COLLABORATIVE-DESIGN.md. Present the risk, the conditions under which it's safe, and recommend whether to flag it.
+When you encounter code where the security implications depend on how it's used (e.g., a function that could be safe or unsafe depending on the caller), follow the Collaborative Design Protocol in docs/architecture.md. Present the risk, the conditions under which it's safe, and recommend whether to flag it.
 
 ## Output format
 

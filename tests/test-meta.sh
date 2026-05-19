@@ -105,28 +105,27 @@ for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
   assert_eq "agent $AGENT has description field" "1" "$HAS_DESC"
 done
 
-# CLAUDE.md Subagents list cross-refs match agents/ files
-SUBAGENT_NAMES=$(awk '/^Subagents/,/^Hooks/' "$KIT_DIR/CLAUDE.md" | grep '^- `' | sed 's/^- `\([^`]*\)`.*/\1/')
+# MANUAL.md agent table cross-refs match agents/ files.
+# Canonical agent inventory is in MANUAL.md "Agents" section (table rows).
+# CLAUDE.md no longer mirrors the inventory; see docs/architecture.md for component fit.
+SUBAGENT_NAMES=$(grep '^| `' "$KIT_DIR/MANUAL.md" | sed 's/^| `\([^`]*\)`.*/\1/' | sort -u)
 for NAME in $SUBAGENT_NAMES; do
-  TOTAL=$((TOTAL + 1))
   if [ -f "$KIT_DIR/agents/$NAME.md" ]; then
-    echo -e "  ${GREEN}PASS${NC} CLAUDE.md subagent '$NAME' has agents/$NAME.md"
+    TOTAL=$((TOTAL + 1))
+    echo -e "  ${GREEN}PASS${NC} MANUAL.md row '$NAME' has agents/$NAME.md"
     PASS=$((PASS + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} CLAUDE.md references agent '$NAME' but agents/$NAME.md missing"
-    FAIL=$((FAIL + 1))
   fi
 done
 
-# Reverse: every agent file mentioned in CLAUDE.md
+# Reverse: every agent file mentioned in MANUAL.md as a table row.
 for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
   AGENT=$(basename "$AGENT_FILE" .md)
   TOTAL=$((TOTAL + 1))
-  if grep -q "^- \`$AGENT\`" "$KIT_DIR/CLAUDE.md"; then
-    echo -e "  ${GREEN}PASS${NC} agent $AGENT listed in CLAUDE.md"
+  if grep -q "^| \`$AGENT\` " "$KIT_DIR/MANUAL.md"; then
+    echo -e "  ${GREEN}PASS${NC} agent $AGENT listed in MANUAL.md"
     PASS=$((PASS + 1))
   else
-    echo -e "  ${RED}FAIL${NC} agent $AGENT NOT listed in CLAUDE.md"
+    echo -e "  ${RED}FAIL${NC} agent $AGENT NOT listed in MANUAL.md"
     FAIL=$((FAIL + 1))
   fi
 done

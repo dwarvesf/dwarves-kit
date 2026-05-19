@@ -39,7 +39,7 @@ RULES (compaction may have dropped these):
 - Write tests alongside implementation.
 - No phantom features. No premature abstraction.
 - Finish what you started before declaring done.
-- If unsure about architecture, check docs/decisions.md.
+- If unsure about architecture, check docs/architecture.md and docs/decisions/.
 "
 
 # Output as additionalContext (injected into Claude's awareness)

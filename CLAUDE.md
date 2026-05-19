@@ -1,97 +1,77 @@
-# CLAUDE.md — dwarves-kit template
+# CLAUDE.md
 
-Copy this to your project root and fill in the [placeholders].
-
----
+Project instructions for working on **dwarves-kit itself** (the kit's own repo). If you are looking for the template to copy into a NEW project that consumes the kit, see `examples/hello-spec/CLAUDE.md`.
 
 ## Project
 
-[One paragraph: what it is, who it is for, what problem it solves.]
+dwarves-kit is a Claude Code workflow toolkit: 12 hooks + 12 commands + 9 agents + 1 skill. Spec-driven lifecycle (`/user:think` → `/user:spec` → `/user:execute` → `/user:review` → `/user:ship` → `/user:retro`) with a verification pipeline (worker → task-verifier → fix-agent retry, max 2). Distributed as a Claude Code plugin and as a bash installer. Maintainer: Han at Dwarves Foundation.
 
-## Tech Stack
+For component fit and data flow, read `docs/architecture.md`. For operator detail per command, read `MANUAL.md`. For hook misbehavior, read `RUNBOOK.md`. Design rejection rules live in `docs/PHILOSOPHY.md` and are load-bearing.
 
-| Layer | Choice | Version |
-|-------|--------|---------|
-| Runtime | [e.g. Node.js] | [e.g. 22 LTS] |
-| Framework | [e.g. Next.js] | [e.g. 15] |
-| Database | [e.g. PostgreSQL] | [e.g. 16] |
-| ORM | [e.g. Drizzle] | [e.g. latest] |
+## Tech stack
 
-## Commands
+| Layer | Choice |
+|---|---|
+| Hook runtime | bash + jq |
+| Distribution | Claude Code plugin (`.claude-plugin/`) + bash installer (`install.sh` + `settings.json`) |
+| Tests | bash (`tests/test-hooks.sh` for behavior, `tests/test-meta.sh` for structural integrity) |
+| CI | GitHub Actions, macOS + Ubuntu matrix |
+
+The kit deliberately uses no compiled binaries and no Node/Python in hooks (carve-out: statusline may use Node per PHILOSOPHY). Every script must be readable in 30 seconds.
+
+## Commands (for dev on the kit)
 
 ```bash
-[install command]    # install dependencies
-[dev command]        # start dev server
-[test command]       # run tests
-[lint command]       # run linter
-[build command]      # production build
+bash tests/test-hooks.sh      # 42 hook behavior tests
+bash tests/test-meta.sh       # 104 structural integrity tests
+bash install.sh               # install into ~/.claude/ (idempotent)
+bash install.sh --uninstall   # clean removal
+DWARVES_KIT_DEBUG=1 ...       # verbose hook logging on stderr
 ```
 
-## Repository Structure
+The kit ships its own slash commands (`/user:start` ... `/user:retro` ... `/user:kit-health`). Working on the kit means dogfooding: write a spec for your change, dispatch the verification pipeline, ship through `/user:ship`. The kit's commands are listed in `MANUAL.md`; do not duplicate the inventory here.
 
-```
-[fill after scaffolding]
-```
+## Repository structure
 
-## Code Quality Rules
+See README.md "Project structure" section (canonical) and `docs/architecture.md` (component fit). Do not maintain a third copy here.
 
-Adapted from Trail of Bits + Dwarves conventions:
+## Code quality rules
 
-- No speculative features. Don't add features, flags, or configuration unless actively needed.
-- No premature abstraction. Don't create utilities until you've written the same code three times.
-- Clarity over cleverness. Prefer explicit, readable code over dense one-liners.
-- Justify new dependencies. Each dependency is attack surface and maintenance burden.
+These are the kit's own dev rules. They apply to PRs into dwarves-kit. The same rules ship as the template for downstream projects.
+
+- No speculative features. Add features only when actively needed.
+- No premature abstraction. Don't create utilities until the same code appears three times.
+- Clarity over cleverness. Explicit, readable code over dense one-liners.
+- Justify new dependencies. Each one is attack surface and maintenance burden.
 - No phantom features. Don't document or validate features that aren't implemented.
 - Replace, don't deprecate. When a new implementation replaces an old one, remove the old one entirely.
 - Finish the job. Handle edge cases you can see. Clean up what you touched. Flag adjacent broken things.
-- Verify at every level. Set up linters, type checkers, and tests as the first step, not an afterthought.
+- Verify at every level. Linters, type checkers, tests are first-class, not afterthoughts.
 - Bias toward action. Decide and move for easily reversed choices. Ask before committing to interfaces, data models, or architecture.
+
+## Spec location
+
+In-flight work lives in `.planning/SPEC.md` (the working scratch dir that hooks and commands reference). When a release ships, the maintainer moves the finalized spec to `docs/specs/SPEC-NNN-<slug>.md` as historical record, then clears `.planning/`. See `docs/decisions/0002-planning-dir-convention.md` for the rationale.
 
 ## Workflow
 
-This project uses dwarves-kit. Available commands:
+The kit eats its own dog food. Active development cycles:
 
-- `/user:start` - Detect project state, suggest next command (entry point)
-- `/user:think` - Challenge an idea before writing spec
-- `/user:spec` - Generate development spec from intent
-- `/user:spec-validate` - Adversarial spec review (4 reviewers)
-- `/user:execute` - Autonomous execution with verification pipeline (worker > verifier > fix-agent retry loop)
-- `/user:next` - Pick next task from spec, load context, manual execution
-- `/user:review` - Paranoid code review (single-pass, all lenses)
-- `/user:review-team` - Parallel 3-lens review (security + architecture + test-coverage)
-- `/user:docs` - Update all docs to match current code
-- `/user:ship` - Review gate, test, version bump, changelog, commit, docs, PR
-- `/user:retro` - Retrospective: what worked, what hurt, action items
-- `/user:kit-health` - Self-assessment: checks kit against its own philosophy
+1. `/user:start` to detect state (in this repo, usually "no in-flight spec; start with /think or /spec").
+2. `/user:think` for any non-trivial change.
+3. `/user:spec` writes to `.planning/SPEC.md`.
+4. `/user:spec-validate` runs 4 adversarial reviewers.
+5. `/user:execute` (autonomous, verification pipeline) OR `/user:next` (manual, you drive).
+6. `/user:review-team` for any change touching hooks or security; `/user:review` for small docs/refactor changes.
+7. `/user:docs` syncs README/CHANGELOG with code.
+8. `/user:ship` gates on review verdict, bumps VERSION, writes CHANGELOG, tags, opens PR.
+9. `/user:retro` writes `docs/retro/v<version>.md`.
+10. After ship: move `.planning/SPEC.md` to `docs/specs/`.
 
-Subagents (dispatched automatically by commands):
-- `task-verifier` - Read-only verification of each task against spec acceptance criteria + tests
-- `fix-agent` - Targeted fixes when task-verifier returns FAIL:fixable (max 2 retries)
-- `security-auditor` - Deep security review, dispatched by /review-team
-- `reviewer` - Focused code reviewer with configurable lens (security/architecture/test-coverage)
-- `responding-to-review` - Responds to review findings with verify-before-implement, no performative agreement, YAGNI check
-- `research-stack` - Maps technology stack for brownfield /spec
-- `research-features` - Maps existing features related to target area
-- `research-architecture` - Maps architecture patterns and conventions
-- `research-pitfalls` - Finds landmines before implementation begins
+`/user:kit-health` is the maintainer-only self-assessment against PHILOSOPHY.md. Run it before tagging.
 
-Hooks run automatically:
-- SessionStart: context readiness check + command suggestion
-- PreToolUse(Bash): blocks rm-rf, push to main, force push
-- PreToolUse(Write): spec drift warning for unplanned files
-- PostToolUse(Write|Edit): auto-format (local formatters only, no network)
-- PostToolUse(compact): re-inject critical rules after compaction
-- PreCompact: backup session state before compaction
-- Stop: anti-rationalization guard (5 unambiguous patterns)
-- Stop: slop-cleaner (flags bloated code, nudge only)
-- Stop: session-state-save (persists progress to .claude/session-state/)
-- SubagentStop: session-state-save (catches worker/verifier completion)
-- Notification: desktop alert when Claude needs input
-- PermissionRequest: auto-approve read-only operations (pipe-safe)
-- StatusLine: model, branch, context %, cost, thinking mode
+Hooks fire on Claude Code events automatically; do not call them manually. Debug with `DWARVES_KIT_DEBUG=1`.
 
-Debug mode: set DWARVES_KIT_DEBUG=1 for verbose hook logging.
+## Template for downstream projects
 
-## Spec Location
-
-Development specs live in `.planning/`. Read `SPEC.md` before implementing any feature.
+If you are scaffolding a new project that will use dwarves-kit, do not copy THIS file. Use `examples/hello-spec/CLAUDE.md` as the template; it shows the full shape (Project, Tech Stack, Commands, Repository Structure, Code Quality Rules, Workflow, Spec Location) with realistic placeholder content.

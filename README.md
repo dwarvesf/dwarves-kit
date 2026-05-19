@@ -202,33 +202,31 @@ These tools complement the kit but are installed separately:
 
 ```
 dwarves-kit/
-  .claude-plugin/
-    plugin.json                 Plugin manifest (name, version, author, repo)
-    marketplace.json            Self-hosted single-plugin marketplace
-  .github/workflows/
-    test.yml                    CI: macOS + Ubuntu test matrix
-  agents/                       (9 files) Subagents dispatched by commands
-  hooks/                        (12 scripts + hooks.json plugin manifest)
-  commands/                     (12 markdown command prompts)
-  rules/                        Path-scoped coding-standard templates
-  skills/get-api-docs/          Context Hub integration
-  examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
-  tests/
-    test-hooks.sh               Hook behavior assertions
-    test-meta.sh                Structural integrity (manifests, frontmatter, cross-links)
-  docs/
-    PHILOSOPHY.md               Design principles, target user, NO list
-    COLLABORATIVE-DESIGN.md     Decision protocol for agents
-    decisions.md                ADRs (1-9)
-    dependencies.md             Required vs recommended tools
-    tasks.md                    Phased backlog
-    retro/                      Cycle retrospectives
-  settings.json                 Hook + statusline registration (bash install path)
-  install.sh                    Bash installer (alternative to plugin install)
+  tool.toml                     Kit metadata (name, version, language=bash, deps)
+  MANUAL.md                     Operator reference for the 12 commands
+  RUNBOOK.md                    Hook misbehavior diagnosis + recovery
+  README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template
-  CONTRIBUTING.md               Rejection-first contribution rules
-  CHANGELOG.md                  Version history (source of truth)
-  VERSION                       Current version
+  install.sh / settings.json    Bash install path
+  .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
+  .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
+  agents/                       (9 files) Subagents dispatched by commands
+  commands/                     (12 markdown command prompts)
+  hooks/                        (12 scripts + hooks.json plugin manifest)
+  skills/get-api-docs/          Context Hub integration
+  rules/                        Path-scoped coding-standard templates
+  examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
+  tests/test-hooks.sh           Hook behavior assertions
+  tests/test-meta.sh            Structural integrity (manifests, frontmatter, cross-links)
+  .planning/SPEC.md             Working spec (in-flight; moved to docs/specs/ at ship)
+  docs/
+    PHILOSOPHY.md               Design principles, target user, rejection list
+    architecture.md             Components, data flow, Collaborative Design Protocol, deps
+    decisions/0001-...0009-     One ADR per file
+    specs/                      Historical shipped specs (SPEC-NNN-<slug>.md)
+    handoff/v1.1.md, v1.2.md    Per-version handoff snapshots
+    retro/v1.3-v1.5.md          Cycle retrospectives
+  _meta/BACKLOG.md              Phased task backlog
 ```
 
 For the full file listing including individual agent/hook/command names, run `git ls-files` or browse the repo on GitHub. The previous embedded tree was a drift surface that lost sync with reality across 5 releases.

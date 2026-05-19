@@ -43,7 +43,7 @@ Focus exclusively on test quality:
 
 ## Decision protocol
 
-When you find something ambiguous (could be a problem or could be intentional), follow the Collaborative Design Protocol in docs/COLLABORATIVE-DESIGN.md. Present the concern, the conditions under which it's fine, and recommend whether to flag it.
+When you find something ambiguous (could be a problem or could be intentional), follow the Collaborative Design Protocol in docs/architecture.md. Present the concern, the conditions under which it's fine, and recommend whether to flag it.
 
 ## Output format
 

@@ -22,7 +22,7 @@ For the selected task, gather:
 - The task description and acceptance criteria from the spec
 - Relevant files mentioned in the task or in `.planning/CONTEXT.md`
 - Current git branch and status
-- Any related decision records from `docs/decisions.md`
+- Any related decision records from `docs/decisions/`
 
 ### Step 3: Present the task briefing
 

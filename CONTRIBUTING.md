@@ -43,12 +43,12 @@ These all map to specific principles in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.m
 
 - A bug fix with a reproducer and a regression test added to `tests/test-hooks.sh`.
 - A new component that traces to a proven pattern in another tool, with the source cited in the file's `Source:` line, plus a one-sentence README description.
-- Documentation that fixes drift between the code and the README/CHANGELOG/decisions.md.
+- Documentation that fixes drift between the code and the README/CHANGELOG/decisions/.
 - A test that strengthens the existing suite (e.g., a missing edge case in `permission-auto-approve`).
 
 ## Process
 
-1. Open an issue first if the change is non-trivial. We may already have it on the parking lot in `docs/tasks.md` or have rejected it before.
+1. Open an issue first if the change is non-trivial. We may already have it on the parking lot in `_meta/BACKLOG.md` or have rejected it before.
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
 3. Run `bash tests/test-hooks.sh` locally. CI runs it on push. If your change touches hook behavior, add an assertion.
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit.

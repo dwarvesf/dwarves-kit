@@ -90,7 +90,7 @@ TASK-[ID]: [description]
 
 ## Collaborative design protocol
 When you encounter a decision with 2+ valid approaches (data model choice, library selection,
-API design), follow the protocol in docs/COLLABORATIVE-DESIGN.md:
+API design), follow the protocol in docs/architecture.md:
 1. State the DECISION NEEDED in one sentence.
 2. Present 2-3 OPTIONS with tradeoffs.
 3. State your RECOMMENDATION and why.

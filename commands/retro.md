@@ -97,7 +97,7 @@ If learnings are reusable knowledge, remind the user they can capture them:
 Check if any action items should become:
 - New tasks in the next spec
 - Updates to the CLAUDE.md quality rules
-- New entries in docs/decisions.md
+- New entries in docs/decisions/
 - Adjustments to hook configuration
 
 Ask: "Any of these action items worth adding to the project CLAUDE.md or kit config?"

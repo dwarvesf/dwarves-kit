@@ -5,3 +5,6 @@
 node_modules/
 .env
 .env.local
+
+# Local Claude Code user state and per-machine settings
+.claude/
