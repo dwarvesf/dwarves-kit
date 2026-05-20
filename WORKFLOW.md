@@ -27,6 +27,7 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 | Phase    | Command | Exit when | Enforced by |
 |----------|---------|-----------|-------------|
 | Think    | /user:think | decision brief written (if BUILD) | advisory |
+| Design (opt-in) | /user:design | solution agreed + appended to the brief | advisory |
 | Spec     | /user:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /user:spec-validate | Status: VALIDATED | advisory (full lane) |
 | Build    | /user:execute or /user:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
