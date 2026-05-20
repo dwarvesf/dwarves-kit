@@ -25,7 +25,7 @@ If codebase-memory-mcp is available, use `get_structure()` instead of reading fi
 
 ## Output format
 
-Write to `.planning/research/stack.md`:
+Write to `docs/research/stack.md`:
 
 ```markdown
 # Stack Report

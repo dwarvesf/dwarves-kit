@@ -21,7 +21,7 @@ The kit's single source of truth for "what's left to do." Three tiers, decreasin
 
 Completed cycles live in `docs/handoff/v<version>.md` (build notes) and `docs/retro/v<version>.md` (cycle retros). Per-release CHANGELOG entries are the canonical "what shipped" record. Completed work is NOT mirrored back here, to avoid drift.
 
-> Schema note: this active-queue shape is bootstrapped by hand. **ID-006 (SPEC-005)** formalizes its schema, status vocabulary, and the session-start integration. Until then, treat the columns below as the working contract.
+> Schema note: the column + status-vocabulary contract is formalized in the **[Schema](#schema)** section below (SPEC-005 / ID-006). The session-start rendering of this queue is wired in SPEC-006.
 
 ## Active queue
 
@@ -46,6 +46,25 @@ Dependency notes:
 - ID-003 (research) gates SPEC-006 design; runs first.
 - ID-004/005/006 (state) land before ID-007/008 (the loop that reads that state).
 - ID-001/002 (absorption) are independent of the orchestration chain.
+
+## Schema
+
+The Active-queue contract (formalized per SPEC-005 / ID-006; the charter keeps the schema in this file, not a separate SCHEMAS file).
+
+| Column | Meaning |
+|---|---|
+| `ID` | `ID-NNN`, zero-padded, stable, assigned on entry, NEVER reused. |
+| `Title` | one-line description of the work. |
+| `Source` | where the item came from (a braindump item, a research finding, a dogfooding signal). |
+| `Target artifact` | the spec or doc this becomes (`SPEC-NNN`, or `(tiny, no spec)`). |
+| `Lane` | the WORKFLOW.md risk tier: `tiny` / `normal` / `full`. |
+| `Status` | the lifecycle state below. |
+
+**Status lifecycle:** `queued` (committed, no spec) -> `speccing` (spec drafting) -> `validated` (spec passed `/spec-validate`) -> `executing` (in build) -> `shipped`. Off-ramp: `parked` (a drafted spec deliberately set aside; the spec holds its own revisit note). SHIPPED items drop off the queue: the CHANGELOG is the canonical shipped record and completed work is not mirrored back here.
+
+**Consumer:** `/user:start` and `/user:next` render this queue when you ask "what's left?". That rendering is wired in SPEC-006, not here; SPEC-005 pins only the schema the spine reads.
+
+This is **not** `TODOS.md`: that file is gitignored, transient, per-diff `/review` output, not the backlog. See the state model in `docs/architecture.md`.
 
 ## v2 candidates (pending real usage signal)
 

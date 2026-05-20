@@ -9,7 +9,7 @@ The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 | Kit dir | CC primitive | Trigger | Count (v1.5.1) |
 |---|---|---|---|
 | `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) | 12 |
-| `commands/` | Slash command | Human typing `/user:<name>` | 12 |
+| `commands/` | Slash command | Human typing `/user:<name>` | 14 |
 | `agents/` | Custom subagent | Dispatched by a command via Task tool | 9 |
 | `skills/` | Skill | Claude auto-triggered from skill description | 1 |
 | `rules/` | Path-scoped rules | Active when Claude reads matching files | 2 templates |
@@ -59,6 +59,20 @@ The kit is intentionally flat. Component dirs sit at the top of the repo, not ne
 ```
 
 **Unified convention (ADR-0010)**: the diagram above applies to both the kit itself and downstream projects, which now share one spec location: `docs/specs/SPEC-NNN-<slug>.md`, tracked in place via a `Status:` header (DRAFT / VALIDATED / SHIPPED). No `.planning/` split, no migration step. The hooks keep a bounded `.planning/` deprecation fallback for one minor version (SPEC-010), then it is removed. See ADR-0010 (supersedes ADR-0002).
+
+## State model
+
+The kit has three durable/ephemeral state stores plus transient review output. Keeping them distinct prevents the "what's left vs what's active vs the contract" confusion (SPEC-005).
+
+| Store | Committed? | Lifetime | Role |
+|---|---|---|---|
+| `_meta/BACKLOG.md` | yes (git) | durable | the queue of committed work ("what's left"); schema lives in that file |
+| `docs/specs/SPEC-NNN-<slug>.md` | yes (git) | durable | the design contract per cycle ("the contract") |
+| `.claude/goals/<slug>.md` | no (gitignored) | ephemeral | candidate goal drafts ("what's active"); contract in ADR-0011 |
+| `.claude/last-goal.md` | no (gitignored) | ephemeral | the built-in `/goal`'s single active slot; the kit never writes it |
+| `TODOS.md`, `REVIEW*.md` | no (gitignored) | transient | per-diff `/review` output, NOT the backlog |
+
+`TODOS.md` is gitignored per-diff `/review` output, not the backlog; do not conflate them. The active spec among these is resolved by the SPEC-005 dual-mode rule (`docs/specs/` primary + branch-selected; `.planning/` deprecation fallback). The `/user:start`/`/user:next` rendering of the backlog queue + goal drafts is wired in SPEC-006.
 
 ## Verification pipeline (the load-bearing piece)
 
@@ -189,6 +203,10 @@ Beyond the repo itself, the kit writes to:
 | `~/.claude/dwarves-kit/logs/slop-cleaner.log` | Bloat detections | slop-cleaner.sh |
 | `.claude/session-state/last-state.md` | Latest session snapshot | session-state-save.sh |
 | `.claude/session-state/archive/*` | Last 10 rotated snapshots | session-state-save.sh |
+| `.claude/debug/<slug>.md` | Per-bug evidence ledger (Symptoms / Root cause / Evidence / Eliminated / Fix attempts / Resolution) | /user:debug |
+| `.claude/debug/<slug>.log` | `[DEBUG Hn]`-tagged instrumentation output | /user:debug |
+
+All `.claude/` paths are gitignored (the kit ignores `.claude/`); downstream templates ignore it too.
 
 Logs are the eval corpus for future prompt optimization. See PHILOSOPHY.md, "AutoResearch optimization" section.
 

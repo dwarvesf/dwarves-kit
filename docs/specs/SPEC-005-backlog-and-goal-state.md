@@ -142,45 +142,45 @@ One-sentence descriptions (gate 4):
 ### Task Breakdown
 
 **Phase 1: Detection (the bug fix)**
-- [ ] **TASK-1a: Branch-match selection + union drift-grep in the two hooks (reconciled with ADR-0010).** Replace the interim "highest non-SHIPPED/PARKED NNN" selector SPEC-010 shipped with the Part 1 rule (collect all non-SHIPPED/PARKED `docs/specs/` candidates; 1 -> use it; >1 -> branch-match; ambiguous -> emit `spec:ambiguous(...)`, pick none) in `context-readiness.sh`, and the union-grep (a file in ANY non-SHIPPED/PARKED spec is "known") in `spec-drift-guard.sh`. Keep the ADR-0010 order: `docs/specs/` primary, `.planning/` deprecation fallback. The two `set -euo pipefail` abort bugs this task originally bundled are ALREADY FIXED by ID-013 (`|| true` guards on the count + find pipelines); do not re-do them, just preserve them.
+- [x] **TASK-1a: Branch-match selection + union drift-grep in the two hooks (reconciled with ADR-0010).** Replace the interim "highest non-SHIPPED/PARKED NNN" selector SPEC-010 shipped with the Part 1 rule (collect all non-SHIPPED/PARKED `docs/specs/` candidates; 1 -> use it; >1 -> branch-match; ambiguous -> emit `spec:ambiguous(...)`, pick none) in `context-readiness.sh`, and the union-grep (a file in ANY non-SHIPPED/PARKED spec is "known") in `spec-drift-guard.sh`. Keep the ADR-0010 order: `docs/specs/` primary, `.planning/` deprecation fallback. The two `set -euo pipefail` abort bugs this task originally bundled are ALREADY FIXED by ID-013 (`|| true` guards on the count + find pipelines); do not re-do them, just preserve them.
   Acceptance (one checkbox each):
-  - [ ] `.planning/SPEC.md` fallback still resolves WITH a deprecation warning when no `docs/specs/` candidate exists
-  - [ ] `Status: SHIPPED (v1.6.0)` is correctly excluded (prefix match), verified by fixture
-  - [ ] with 3 non-SHIPPED specs and no branch match, emits `spec:ambiguous(...)`, picks none
-  - [ ] with a branch whose name contains a spec slug, selects that spec
-  - [ ] `spec-drift-guard` greps the union of non-SHIPPED specs; a file in any of them is "known"
-  - [ ] `context-readiness.sh` emits valid JSON and exits 0 on every fixture: empty `docs/specs/`, all-SHIPPED, zero-task spec, zero source files, both dirs present (exactly one `spec:` token)
-  - [ ] both hooks under 500ms at the current spec count; dir-size assumption stated
-- [ ] **TASK-1b: Dual-mode detection in the two command dispatchers.** Update `commands/next.md` and `commands/start.md` prose to cite the same detection rule (read `.planning/SPEC.md` first, else the branch-selected non-SHIPPED `docs/specs/` spec, else none).
+  - [x] `.planning/SPEC.md` fallback still resolves WITH a deprecation warning when no `docs/specs/` candidate exists
+  - [x] `Status: SHIPPED (v1.6.0)` is correctly excluded (prefix match), verified by fixture
+  - [x] with 3 non-SHIPPED specs and no branch match, emits `spec:ambiguous(...)`, picks none
+  - [x] with a branch whose name contains a spec slug, selects that spec
+  - [x] `spec-drift-guard` greps the union of non-SHIPPED specs; a file in any of them is "known"
+  - [x] `context-readiness.sh` emits valid JSON and exits 0 on every fixture: empty `docs/specs/`, all-SHIPPED, zero-task spec, zero source files, both dirs present (exactly one `spec:` token)
+  - [x] both hooks under 500ms at the current spec count; dir-size assumption stated
+- [x] **TASK-1b: Dual-mode detection in the two command dispatchers.** Update `commands/next.md` and `commands/start.md` prose to cite the same detection rule (read `.planning/SPEC.md` first, else the branch-selected non-SHIPPED `docs/specs/` spec, else none).
   - Acceptance: both commands describe the dual-mode order; neither hardcodes `.planning/` as the only path; ambiguous-case behavior described.
 
 **Phase 2: Leakage audit (the clarity fix)**
-- [ ] **TASK-2: Fix only the wrong kit-on-kit references.** Acceptance is grep-checkable: `grep -rn '\.planning/'` over the kit-on-kit doc set (NOT `examples/hello-spec/`, NOT the hooks' downstream branch) returns only references on a documented downstream-facing allowlist; every other hit is corrected to `docs/specs/`. Add one sentence to ADR-0002 + `WORKFLOW.md` that detection is dual-mode.
+- [x] **TASK-2: Fix only the wrong kit-on-kit references.** Acceptance is grep-checkable: `grep -rn '\.planning/'` over the kit-on-kit doc set (NOT `examples/hello-spec/`, NOT the hooks' downstream branch) returns only references on a documented downstream-facing allowlist; every other hit is corrected to `docs/specs/`. Add one sentence to ADR-0002 + `WORKFLOW.md` that detection is dual-mode.
   - Acceptance: the grep audit passes against the stated allowlist; ADR-0002 + WORKFLOW.md state dual-mode; `examples/hello-spec/` untouched.
 
 **Phase 3: Goal-store contract**
-- [ ] **TASK-3: `.claude/goals/` contract + ADR.** Document the layout, per-draft frontmatter, INDEX-as-derived-cache (filesystem authoritative), the "kit never writes `last-goal.md`" rule, the built-in-`/goal` precondition + graceful degradation, in `WORKFLOW.md` (goal-state subsection) and a new ADR (`docs/decisions/00NN-goal-registry.md`, number pinned at execute time to avoid a clash with SPEC-006's ADR). Confirm `.claude/goals/` is covered by the existing `.claude/` gitignore (`git check-ignore` returns `.gitignore:10`).
+- [x] **TASK-3: `.claude/goals/` contract + ADR.** Document the layout, per-draft frontmatter, INDEX-as-derived-cache (filesystem authoritative), the "kit never writes `last-goal.md`" rule, the built-in-`/goal` precondition + graceful degradation, in `WORKFLOW.md` (goal-state subsection) and a new ADR (`docs/decisions/00NN-goal-registry.md`, number pinned at execute time to avoid a clash with SPEC-006's ADR). Confirm `.claude/goals/` is covered by the existing `.claude/` gitignore (`git check-ignore` returns `.gitignore:10`).
   - Acceptance: contract documented; ADR records "draft store beside the built-in, not a shadow, kit never writes last-goal.md" + the external-dependency limitation; gitignore coverage confirmed by command output; NO command and NO /start-/next wiring in this spec (deferred to SPEC-006).
 
 **Phase 4: Backlog schema + state model**
-- [ ] **TASK-4: Formalize the queue + the state model.** Add a "Schema" subsection to `_meta/BACKLOG.md` pinning columns, the `ID-NNN` rule, the status lifecycle, the lane mapping. Add a "State model" section to `docs/architecture.md` with the three-store table and the `TODOS.md`-is-not-the-backlog clarification. State that `/user:start`/`/user:next` rendering of the queue is wired in SPEC-006.
+- [x] **TASK-4: Formalize the queue + the state model.** Add a "Schema" subsection to `_meta/BACKLOG.md` pinning columns, the `ID-NNN` rule, the status lifecycle, the lane mapping. Add a "State model" section to `docs/architecture.md` with the three-store table and the `TODOS.md`-is-not-the-backlog clarification. State that `/user:start`/`/user:next` rendering of the queue is wired in SPEC-006.
   - Acceptance: BACKLOG schema pinned; architecture state-model section present; the BACKLOG/TODOS.md/goals distinction stated; the "rendering wired in SPEC-006" note present.
 
 **Phase 5: Verify + hygiene**
-- [ ] **TASK-5: Tests + cross-refs.** `tests/test-hooks.sh`: fixtures for kit-on-kit detection (only `docs/specs/SPEC-001-x.md`, asserts `spec:` + `next:`), the `SHIPPED (vX)` exclusion, the ambiguous-multi-spec case, and the abort-path fixtures (empty dir, all-SHIPPED, zero-task, zero-source) asserting exit 0 + valid JSON. Use `mktemp -d`, trap cleanup, no fixture in the repo. `tests/test-meta.sh`: assert `_meta/BACKLOG.md` has Active-queue + Schema sections, `docs/architecture.md` has the state-model section, the goal-registry ADR exists. README/MANUAL note the dual-mode detection. CHANGELOG entry.
+- [x] **TASK-5: Tests + cross-refs.** `tests/test-hooks.sh`: fixtures for kit-on-kit detection (only `docs/specs/SPEC-001-x.md`, asserts `spec:` + `next:`), the `SHIPPED (vX)` exclusion, the ambiguous-multi-spec case, and the abort-path fixtures (empty dir, all-SHIPPED, zero-task, zero-source) asserting exit 0 + valid JSON. Use `mktemp -d`, trap cleanup, no fixture in the repo. `tests/test-meta.sh`: assert `_meta/BACKLOG.md` has Active-queue + Schema sections, `docs/architecture.md` has the state-model section, the goal-registry ADR exists. README/MANUAL note the dual-mode detection. CHANGELOG entry.
   - Acceptance: `bash tests/test-hooks.sh` passes incl. the new detection + abort-path tests (count rises from 42); `bash tests/test-meta.sh` passes (count rises by the documented delta); CHANGELOG entry.
 
 ## Acceptance Criteria (global)
-- [ ] All four spec-readers detect both conventions; downstream path unchanged; kit-on-kit path works
-- [ ] Selection excludes `SHIPPED*`, prefers branch match, emits ambiguous rather than guessing; drift-guard greps the union of non-SHIPPED specs
-- [ ] `context-readiness.sh` exits 0 + valid JSON on all abort-path fixtures (its two latent bugs fixed)
-- [ ] No kit-on-kit prose misroutes to `.planning/`; downstream references intact (grep audit passes)
-- [ ] `.claude/goals/` draft-store contract + ADR documented; kit never writes `last-goal.md`; built-in-`/goal` precondition + degradation stated; gitignored via existing rule
-- [ ] NO `/user:goals` command and NO /start-/next rendering in this spec (deferred to SPEC-006)
-- [ ] `_meta/BACKLOG.md` schema pinned; `docs/architecture.md` state-model section present; TODOS.md distinction stated
-- [ ] `bash tests/test-hooks.sh` passes incl. new tests; hooks under 500ms; `bash tests/test-meta.sh` passes (new count documented)
-- [ ] No new dependency, env var, or settings.json field; no new gitignore line
-- [ ] CHANGELOG entry
+- [x] All four spec-readers detect both conventions; downstream path unchanged; kit-on-kit path works
+- [x] Selection excludes `SHIPPED*`, prefers branch match, emits ambiguous rather than guessing; drift-guard greps the union of non-SHIPPED specs
+- [x] `context-readiness.sh` exits 0 + valid JSON on all abort-path fixtures (its two latent bugs fixed)
+- [x] No kit-on-kit prose misroutes to `.planning/`; downstream references intact (grep audit passes)
+- [x] `.claude/goals/` draft-store contract + ADR documented; kit never writes `last-goal.md`; built-in-`/goal` precondition + degradation stated; gitignored via existing rule
+- [x] NO `/user:goals` command and NO /start-/next rendering in this spec (deferred to SPEC-006)
+- [x] `_meta/BACKLOG.md` schema pinned; `docs/architecture.md` state-model section present; TODOS.md distinction stated
+- [x] `bash tests/test-hooks.sh` passes incl. new tests; hooks under 500ms; `bash tests/test-meta.sh` passes (new count documented)
+- [x] No new dependency, env var, or settings.json field; no new gitignore line
+- [x] CHANGELOG entry
 
 ## Known limitations
 1. **The multi-spec selection rule and the goal-draft-store directory are net-new, single-source, and have not met the PHILOSOPHY §5 "1 week on a real project" bar.** They extend cited patterns (CCGS `/start` single-file detection; a draft store beside an external single-slot tool) but the specific multi-file/branch selection and the directory format are originated here. Accepted under the indirect-lineage carve-out and labeled, not hidden (mirrors SPEC-003 DEC-003).

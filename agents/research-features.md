@@ -28,7 +28,7 @@ If codebase-memory-mcp is available, use `search_symbols()` and `trace_call_path
 
 ## Output format
 
-Write to `.planning/research/features.md`:
+Write to `docs/research/features.md`:
 
 ```markdown
 # Feature Map: [target area]

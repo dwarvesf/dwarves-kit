@@ -9,7 +9,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The 13 commands
+## The 14 commands
 
 ### `/user:start`
 
@@ -18,6 +18,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Writes:** nothing; advises in chat which command to run next
 **When to invoke:** opening a fresh session and you do not remember where you left off
 **Common gotcha:** the router suggests a next step but does not run it. You decide.
+**Spec resolution (dual-mode, SPEC-005):** the active spec is the lone non-SHIPPED/PARKED `docs/specs/SPEC-*.md`; with several live, the one whose slug matches the git branch; if zero or several match, it reports `spec:ambiguous(...)` and asks rather than guessing. Legacy `.planning/SPEC.md` is a deprecation fallback. The same rule drives the `context-readiness` hook, `spec-drift-guard` (which greps the union of active specs), and `/user:next`.
 
 **Modes (`$ARGUMENTS`):**
 - `/user:start --brief` -- one line, max 120 chars: state + suggested command + `[branch | N dirty | spec]`. For returning users who want a cue, not a report. Example: `Spec VALIDATED, 3/8 tasks -> /user:execute. [master | 2 dirty | VALIDATED]`
@@ -73,6 +74,14 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Writes:** code, tests; you drive the verification yourself
 **When to invoke:** when you want hands-on control or the next task needs subtle judgment that the verification pipeline might over-correct on
 **Common gotcha:** picks the next unchecked task only. To skip a task or pick a specific one, edit SPEC.md task ordering first.
+
+### `/user:debug`
+
+**Phase:** off-cycle (the `bug` lane: defect, regression, failing test, not a new feature)
+**Reads:** the bug report / error / failing test, `git diff`, `git log`, `git bisect`
+**Writes:** `.claude/debug/<slug>.md` (the evidence ledger), `.claude/debug/<slug>.log` (tagged instrumentation), then a failing test + a single root-cause fix
+**When to invoke:** when something is broken and you would otherwise guess-fix. Runs four phases (root cause -> pattern -> hypothesis -> fix) under the iron law "no fix without a recorded root cause," with a 3-failed-fixes-question-architecture wall.
+**Common gotcha:** while the ledger's `## Root cause` is blank, the anti-rationalization hook blocks any guess-fix "done" claim and sends you back to Phase 1. That guard is gated on an open debug session, so it never fires in normal coding. After a confirmed fix, run `/user:review` on the diff. Forked from `superpowers:systematic-debugging` + GSD/doraemonkeys mechanisms; see ADR-0012.
 
 ### `/user:review`
 

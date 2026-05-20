@@ -31,7 +31,7 @@ If codebase-memory-mcp is available, use `find_dead_code()` and `trace_call_path
 
 ## Output format
 
-Write to `.planning/research/pitfalls.md`:
+Write to `docs/research/pitfalls.md`:
 
 ```markdown
 # Pitfall Report
