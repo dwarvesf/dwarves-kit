@@ -1,6 +1,6 @@
 # MANUAL
 
-Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHILOSOPHY.md`. For component fit, see `docs/architecture.md`. For diagnosing a misbehaving hook, see `RUNBOOK.md`.
+Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHILOSOPHY.md`. For component fit, see `docs/architecture.md`. For diagnosing a misbehaving hook, see `RUNBOOK.md`. For the end-to-end workflow contract (phases, risk-tier lanes, gates), see `WORKFLOW.md`.
 
 ## Conventions
 

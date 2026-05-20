@@ -22,7 +22,7 @@ A solo technical lead handing off implementation to contractors. The kit covers 
 
 Also for: a builder using Claude Code 6-8 hours/day who wants a context-budget HUD, automatic safety guards, session-state persistence across compaction, and slop detection at stop points.
 
-See `examples/hello-spec/` for a small, self-contained walkthrough of the artifacts the kit produces.
+See `examples/hello-spec/` for a small, self-contained walkthrough of the artifacts the kit produces. The end-to-end workflow an agent follows (phases, risk-tier lanes, and the gate at each boundary) is the [`WORKFLOW.md`](WORKFLOW.md) contract.
 
 ## Who this is NOT for
 
