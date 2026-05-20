@@ -188,6 +188,52 @@ OUTPUT=$(cd /tmp && echo '{}' | bash "$KIT_DIR/hooks/context-readiness.sh" 2>/de
 echo "$OUTPUT" | jq '.' >/dev/null 2>&1 || true
 assert_exit "produces valid JSON" 0 $?
 
+# --- SPEC-005 dual-mode detection: branch-match selector, SHIPPED exclusion,
+# --- ambiguity, abort-path safety (reconciled to ADR-0010). ---
+mkfx() {  # mkfx <branch> : fresh throwaway git repo on <branch> with empty docs/specs
+  [ -n "${FX:-}" ] && rm -rf "$FX"
+  FX=$(mktemp -d "${TMPDIR:-/tmp}/dk-cr.XXXXXX")
+  ( cd "$FX" && git init -q && git checkout -q -b "$1" && mkdir -p docs/specs )
+}
+cr() { ( cd "$FX" && bash "$KIT_DIR/hooks/context-readiness.sh" 2>/dev/null ); }
+
+mkfx main
+printf 'Status: VALIDATED\n- [ ] t\n' > "$FX/docs/specs/SPEC-001-foo.md"
+assert_output_contains "single live spec is selected" "spec:VALIDATED" "$(cr)"
+
+mkfx main
+printf 'Status: SHIPPED (v1.6.0)\n' > "$FX/docs/specs/SPEC-001-foo.md"
+assert_output_contains "SHIPPED (vX) excluded, falls through" "no spec found" "$(cr)"
+
+mkfx main
+printf 'Status: VALIDATED\n' > "$FX/docs/specs/SPEC-001-foo.md"
+printf 'Status: VALIDATED\n' > "$FX/docs/specs/SPEC-002-bar.md"
+assert_output_contains "multi-spec, no branch match -> ambiguous" "spec:ambiguous(SPEC-001,SPEC-002)" "$(cr)"
+assert_output_not_contains "ambiguous never picks a single status" "spec:VALIDATED" "$(cr)"
+
+mkfx feat/bar-x
+printf 'Status: DRAFT\n' > "$FX/docs/specs/SPEC-001-foo.md"
+printf 'Status: VALIDATED\n- [ ] t\n' > "$FX/docs/specs/SPEC-002-bar.md"
+assert_output_contains "branch-match selects the matching spec" "spec:VALIDATED" "$(cr)"
+assert_output_not_contains "branch-match does not pick the other spec" "spec:DRAFT" "$(cr)"
+
+mkfx feat/alpha
+printf 'Status: VALIDATED\n' > "$FX/docs/specs/SPEC-001-alpha-one.md"
+printf 'Status: VALIDATED\n' > "$FX/docs/specs/SPEC-002-alpha-two.md"
+assert_output_contains "multiple branch matches -> ambiguous" "spec:ambiguous" "$(cr)"
+
+mkfx main
+printf 'Status: SHIPPED (v1)\n' > "$FX/docs/specs/SPEC-001-foo.md"
+printf 'Status: SHIPPED (v2)\n' > "$FX/docs/specs/SPEC-002-bar.md"
+assert_output_contains "all-SHIPPED -> no spec, no abort" "no spec found" "$(cr)"
+
+mkfx main  # abort-path: zero specs, ID-013 guards preserved
+RC=0; OUT=$(cr) || RC=$?
+assert_exit "empty docs/specs exits 0" 0 $RC
+echo "$OUT" | jq '.' >/dev/null 2>&1 || true
+assert_exit "empty docs/specs valid JSON" 0 $?
+[ -n "${FX:-}" ] && rm -rf "$FX"
+
 # ============================================================
 echo ""
 echo "=== slop-cleaner.sh ==="
