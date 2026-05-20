@@ -127,6 +127,38 @@ assert_exit "respects stop_hook_active guard" 0 $RC
 RC=$(run_hook anti-rationalization.sh '{"stop_hook_active":false,"assistant_response":"All tasks complete. Tests passing. Ready for review."}')
 assert_exit "allows clean completion" 0 $RC
 
+# --- SPEC-013 guess-fix guard: gated on an active root-cause-empty ledger.
+# The guard reads .claude/debug/ relative to CWD, so each case runs from a
+# throwaway fixture dir. trap-cleaned; never writes into the repo.
+mkdbg() {  # mkdbg : fresh dir with .claude/debug/
+  [ -n "${DBG:-}" ] && rm -rf "$DBG"
+  DBG=$(mktemp -d "${TMPDIR:-/tmp}/dk-dbg.XXXXXX")
+  mkdir -p "$DBG/.claude/debug"
+}
+ratdbg() {  # ratdbg <assistant_response_json_string> : run hook from $DBG, echo exit code
+  local RC=0
+  ( cd "$DBG" && echo "$1" | bash "$KIT_DIR/hooks/anti-rationalization.sh" >/dev/null 2>&1 ) || RC=$?
+  echo "$RC"
+}
+
+mkdbg
+printf '## Symptoms\nx fails\n\n## Root cause\n\n## Evidence\n' > "$DBG/.claude/debug/foo.md"
+RC=$(ratdbg '{"stop_hook_active":false,"assistant_response":"Let me just try a quick fix and see."}')
+assert_exit "blocks guess-fix when ledger root cause empty" 2 $RC
+
+mkdbg
+printf '## Symptoms\nx fails\n\n## Root cause\nNull deref in parse() when input is empty.\n\n## Evidence\n' > "$DBG/.claude/debug/foo.md"
+RC=$(ratdbg '{"stop_hook_active":false,"assistant_response":"Let me just try a quick fix and see."}')
+assert_exit "allows guess-fix language once root cause recorded" 0 $RC
+
+# no .claude/debug at all: guard is dormant, guess-fix language passes
+NODBG=$(mktemp -d "${TMPDIR:-/tmp}/dk-nodbg.XXXXXX")
+RC=0
+( cd "$NODBG" && echo '{"stop_hook_active":false,"assistant_response":"Let me just try a quick fix and see."}' | bash "$KIT_DIR/hooks/anti-rationalization.sh" >/dev/null 2>&1 ) || RC=$?
+assert_exit "no-block guess-fix outside any debug session" 0 $RC
+rm -rf "$NODBG"
+[ -n "${DBG:-}" ] && rm -rf "$DBG"
+
 # ============================================================
 echo ""
 echo "=== permission-auto-approve.sh ==="

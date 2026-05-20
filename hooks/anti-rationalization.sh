@@ -50,4 +50,50 @@ for PATTERN in "${PATTERNS[@]}"; do
   fi
 done
 
+# Guess-fix guard (SPEC-013). Backstop for the /user:debug iron law:
+# "no fix without a recorded root cause". Gated so it is silent outside a
+# debug session: it fires ONLY when an active ledger under .claude/debug/
+# still has an empty "## Root cause" AND the response shows a guess-fix smell.
+# This keeps false positives near zero in normal coding (PHILOSOPHY: detect, don't dictate).
+if [ -d ".claude/debug" ]; then
+  GUESS_FIX_PATTERNS=(
+    "let me just try"
+    "quick fix"
+    "let me try changing"
+    "let me try a different"
+    "that should fix"
+    "should be fixed now"
+  )
+  # A ledger is "undiagnosed" if its "## Root cause" block has no non-blank
+  # content (or the heading is absent). awk exits 0 when filled, 1 when empty.
+  UNDIAGNOSED=0
+  while IFS= read -r LEDGER; do
+    [ -f "$LEDGER" ] || continue
+    if ! awk '
+      /^## Root cause/ { inblock=1; next }
+      /^## / { inblock=0 }
+      inblock && NF { found=1 }
+      END { exit found?0:1 }
+    ' "$LEDGER"; then
+      UNDIAGNOSED=1
+      break
+    fi
+  done < <(find .claude/debug -maxdepth 1 -name '*.md' 2>/dev/null)
+
+  if [ "$UNDIAGNOSED" = "1" ]; then
+    for PATTERN in "${GUESS_FIX_PATTERNS[@]}"; do
+      if echo "$RESPONSE" | grep -qi "$PATTERN"; then
+        LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+        mkdir -p "$LOG_DIR"
+        echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-GUESSFIX | $PATTERN | $(pwd)" >> "$LOG_DIR/anti-rationalization.log"
+
+        [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:anti-rat] BLOCKED guess-fix: $PATTERN" >&2
+
+        echo "{\"decision\":\"block\",\"reason\":\"Guess-fix detected during an open debug session: a .claude/debug ledger still has an empty '## Root cause'. Find and record the root cause first (/user:debug Phase 1). No fix without a recorded root cause.\"}"
+        exit 2
+      fi
+    done
+  fi
+fi
+
 exit 0
