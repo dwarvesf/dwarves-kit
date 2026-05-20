@@ -3,7 +3,7 @@
 Generated: 2026-05-20
 Status: VALIDATED
 Source: upstream-audit-2026-05-20 (this session's audit of the 10 source repos against current upstream HEADs)
-Prior spec: docs/specs/SPEC-001-v1.5-polish.md
+Prior spec: docs/specs/SPEC-001-polish.md
 Validation: 4 reviewers run 2026-05-20 (security, failure-mode, assumption-destroyer, scope-critic). 1 critical + 8 warnings resolved inline. See Decision Log entries DEC-006 through DEC-014.
 
 ## Problem
@@ -119,7 +119,7 @@ Tasks are independent. No inter-task dependencies; can run in any order.
 - [ ] `.claude-plugin/plugin.json` version bumped to match (regression from v1.5.0 caught by `test-meta.sh` parity check)
 - [ ] Atomic conventional commits, one per TASK + 1 docs + 1 version bump
 - [ ] Tag `v1.6.0`
-- [ ] Flip this file's Status header to `SHIPPED` after the v1.6.0 tag lands (no move needed; the spec was drafted directly at `docs/specs/SPEC-002-v1.6-upstream-audit.md` per the post-cleanup convention)
+- [ ] Flip this file's Status header to `SHIPPED` after the v1.6.0 tag lands (no move needed; the spec was drafted directly at `docs/specs/SPEC-002-upstream-audit.md` per the post-cleanup convention)
 - [ ] Write `docs/retro/v1.6.md` after ship per the v1.5.1 retro action item ("add /retro to every release ritual")
 - [ ] Write `docs/handoff/v1.6.md` after ship (per v1.5.1 retro convention; build-narrative complementary to CHANGELOG's what-shipped record). See DEC-012.
 
