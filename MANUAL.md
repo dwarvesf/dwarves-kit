@@ -47,7 +47,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
 **Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
-**Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table (SPEC-009). Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present.
+**Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table (SPEC-009). Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present. It also pins `## Verification` (the command(s) that prove the spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so a validated spec is natively pointer-`/goal`-ready (SPEC-012 P1).
 
 ### `/user:spec-validate`
 

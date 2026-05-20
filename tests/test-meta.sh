@@ -212,6 +212,18 @@ for HEADING in "### Interfaces (I/O contract)" "## Failure modes"; do
   fi
 done
 
+# SPEC-012 P1: the /spec template carries goal stop-criteria (so any spec is pointer-/goal-ready).
+for HEADING in "## Verification" "## Open questions"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$HEADING" "$SPEC_CMD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} spec.md template has '$HEADING'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} spec.md template missing '$HEADING'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
 # SPEC-010: no stray .planning/ refs in command prose (the convention unified onto
 # docs/specs/). Hooks legitimately keep a bounded .planning/ deprecation fallback
 # (behavior-tested in test-hooks.sh), so they are NOT guarded here. The one allowed

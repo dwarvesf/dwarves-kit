@@ -124,6 +124,9 @@ Each task must be atomic: implementable in one session, fits in 50% of a context
 - [ ] Tests cover happy path + edge cases listed below
 - [ ] No regressions in existing functionality
 
+## Verification
+The exact command(s) that prove this spec done, so a pointer-/goal and the loop can check it. Name real commands, not "tests pass". Example: `bash tests/test-meta.sh && bash tests/test-hooks.sh`.
+
 ## Edge Cases
 1. [specific edge case and expected behavior]
 2. [specific edge case and expected behavior]
@@ -138,7 +141,10 @@ Optional; expected for full-lane specs that touch an external provider, data los
 - [thing explicitly excluded and why]
 
 ## Decision Log
-- DEC-001: [decision] — [rationale] — [alternatives rejected]
+- DEC-001: [decision], [rationale], [alternatives rejected]
+
+## Open questions
+(none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)
 ```
 
 **`docs/specs/CONTEXT.md`** (for Claude Code sessions):
