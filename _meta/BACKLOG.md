@@ -39,8 +39,14 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID-006 | Backlog as the canonical active session-start queue (schema in SPEC-005; `/start`-`/next` rendering in SPEC-006) | item c | SPEC-005 + SPEC-006 | normal | validated |
 | ID-007 | Orchestration spine: session-start -> goal-crafter breakdown -> full WORKFLOW per item | item d | SPEC-006 | full | validated |
 | ID-008 | Airtight Reflect phase: changes re-checked, every affected doc updated, nothing missed | item f | SPEC-006 | full | validated |
+| ID-009 | Solution-design depth lane: enrich `/spec` Solution template + add a design/extensibility reviewer to `/spec-validate` (forked from `superpowers:brainstorming`); opt-in `/user:design` beat deferred | dogfooding signal 2026-05-20 | SPEC-008 | normal | executing |
+| ID-010 | Port the I/O contract + failure-modes table into `/spec` (from ops-toolkit SDD template); optional + lane-scoped, reviewed by existing Reviewers 2 + 5 | cross-repo study 2026-05-20 | SPEC-009 | normal | executing |
+| ID-011 | Unify the spec-location convention onto `docs/specs/SPEC-NNN` (retire downstream `.planning/`; GSD-interop rationale obsolete); make detection + state worktree-safe for worktree-per-spec concurrency; supersede ADR-0002 | maintainer decision + research 2026-05-20 | SPEC-010 | full | executing |
+| ID-013 | Fix `context-readiness.sh` SRC_COUNT `set -e`/pipefail trap: a zero-source-file dir makes `grep -v` exit 1 and aborts the hook with no output. Found during SPEC-010 execution | execution discovery 2026-05-21 | (tiny, no spec) | tiny | queued |
+| ID-012 | Heavier test/review process for the autonomous goal WORKFLOW (build on the verification pipeline + SPEC-006 completeness clauses + SPEC-008 reviewer) | maintainer decision Q3 2026-05-20 | SPEC-011 (future) | full | queued |
 
 Dependency notes:
+- ID-012 (goal-loop QA) lands after ID-011 (unify), per maintainer Q3.
 - ID-003 (research) gates SPEC-006 design; runs first.
 - ID-004/005/006 (state) land before ID-007/008 (the loop that reads that state).
 - ID-001/002 (absorption) are independent of the orchestration chain.
