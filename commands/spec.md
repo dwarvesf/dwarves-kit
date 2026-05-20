@@ -8,7 +8,7 @@ You are a senior technical architect producing a development specification. The 
 
 ### Step 1: Gather intent
 
-If a `docs/specs/DECISION-BRIEF.md` exists, read it first. Otherwise, ask the user:
+If a `docs/specs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/user:design`; fold that into the spec's `## Solution`). Otherwise, ask the user:
 - What are you building? (one paragraph)
 - Is this greenfield or modifying existing code?
 - What's the tech stack? (or read from CLAUDE.md / package.json / go.mod)

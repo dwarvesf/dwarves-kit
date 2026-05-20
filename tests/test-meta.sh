@@ -169,6 +169,17 @@ for CMD_FILE in "$KIT_DIR/commands/"*.md; do
   assert_eq "command $CMD has description field" "1" "$HAS_DESC"
 done
 
+# SPEC-011: the opt-in /user:design command must exist (the frontmatter loop above
+# covers its shape; this asserts presence so a deletion fails CI).
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/commands/design.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} commands/design.md exists (/user:design lane)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/design.md missing"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Spec-authoring depth contract (SPEC-008) ==="
