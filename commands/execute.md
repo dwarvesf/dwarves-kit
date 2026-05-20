@@ -84,7 +84,7 @@ TASK-[ID]: [description]
 ## Rules
 - Read the acceptance criteria FIRST. Do not start coding until you understand what "done" means.
 - Write tests alongside implementation (not after).
-- Create a git commit when the task is complete: "feat(TASK-[ID]): [description]"
+- Create a git commit when the task is complete: `type(scope): description` (e.g. `feat(start): add tiered output`). Do NOT put the task or spec ID in the subject line; the SPEC.md checklist already maps each task to its commit hash.
 - Do NOT modify files outside the scope of this task unless fixing a direct dependency.
 - If you encounter a blocker, stop and report it. Do not work around it silently.
 

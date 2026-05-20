@@ -80,6 +80,7 @@ Types: feat, fix, refactor, test, docs, chore, style, perf
 Rules:
 - Subject line under 72 characters
 - Imperative mood ("add feature" not "added feature")
+- NO spec IDs, task IDs, or phase markers in the subject (e.g. no trailing `(SPEC-002 TASK-5)`); put that context in the body or PR description
 - If changes span multiple logical units, create separate commits for each
 - Include a body if the change touches more than 2 files
 

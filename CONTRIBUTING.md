@@ -53,7 +53,7 @@ Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explic
 1. Open an issue first if the change is non-trivial. We may already have it on the parking lot in `_meta/BACKLOG.md` or have rejected it before.
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
 3. Run `bash tests/test-hooks.sh` locally. CI runs it on push. If your change touches hook behavior, add an assertion.
-4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit.
+4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); that context belongs in the body or PR description.
 5. Update `CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial. The maintainer moves it to a versioned section at release time.
 
 ## Source
