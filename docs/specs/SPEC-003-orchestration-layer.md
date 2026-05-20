@@ -1,7 +1,7 @@
 # Spec: Orchestration layer (the workflow contract)
 
 Generated: 2026-05-20
-Status: VALIDATED
+Status: SHIPPED (v1.6.0)
 Source: agent-workflow-enforcement research, 2026-05-20 (full landscape + enforcement taxonomy at `ops-toolkit/research/2026-05-20-agent-workflow-enforcement-patterns.md`). Inspiration: hoangnb24/harness-experimental `AGENTS.md`; obra/superpowers; github/spec-kit; bmad-code-org/BMAD-METHOD; Cline Memory Bank; ghuntley/ralph; the AGENTS.md standard.
 Prior spec: docs/specs/SPEC-002-upstream-audit.md
 Validation: 4 reviewers run 2026-05-20 (scope-critic, assumption-destroyer, failure-mode, philosophy-fidelity). 6 blocking + multiple warnings resolved inline; see Decision Log DEC-006 through DEC-013 and the Validation section.

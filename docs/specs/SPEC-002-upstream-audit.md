@@ -1,7 +1,7 @@
 # Spec: v1.6 (upstream-audit absorption + lineage hygiene)
 
 Generated: 2026-05-20
-Status: VALIDATED
+Status: SHIPPED (v1.6.0)
 Source: upstream-audit-2026-05-20 (this session's audit of the 10 source repos against current upstream HEADs)
 Prior spec: docs/specs/SPEC-001-polish.md
 Validation: 4 reviewers run 2026-05-20 (security, failure-mode, assumption-destroyer, scope-critic). 1 critical + 8 warnings resolved inline. See Decision Log entries DEC-006 through DEC-014.
