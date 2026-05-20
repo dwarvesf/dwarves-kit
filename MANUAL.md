@@ -14,7 +14,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 ### `/user:start`
 
 **Phase:** entry router
-**Reads:** project state (existence of `.planning/SPEC.md`, git branch, dirty count, hook log activity)
+**Reads:** project state (existence of `docs/specs/SPEC-NNN-<slug>.md`, git branch, dirty count, hook log activity)
 **Writes:** nothing; advises in chat which command to run next
 **When to invoke:** opening a fresh session and you do not remember where you left off
 **Common gotcha:** the router suggests a next step but does not run it. You decide.
@@ -28,15 +28,15 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 
 **Phase:** challenge an idea before writing a spec
 **Reads:** the idea from chat
-**Writes:** `.planning/DECISION-BRIEF.md` only if the verdict is BUILD
+**Writes:** `docs/specs/DECISION-BRIEF.md` only if the verdict is BUILD
 **When to invoke:** before any non-trivial feature. Costs ~5 minutes.
 **Common gotcha:** the 6 forcing questions are confrontational by design. If you accept them too easily, the brief is weak.
 
 ### `/user:spec`
 
 **Phase:** generate the development spec
-**Reads:** `.planning/DECISION-BRIEF.md` (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
-**Writes:** `.planning/SPEC.md` (Status: DRAFT), `.planning/research/{stack,features,architecture,pitfalls}.md`
+**Reads:** `docs/specs/DECISION-BRIEF.md` (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
+**Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
 **Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
 **Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table (SPEC-009). Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present.
@@ -44,7 +44,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 ### `/user:spec-validate`
 
 **Phase:** adversarial review of the spec
-**Reads:** `.planning/SPEC.md`
+**Reads:** `docs/specs/SPEC-NNN-<slug>.md`
 **Writes:** comments in chat; the maintainer flips SPEC Status to VALIDATED manually after addressing findings
 **When to invoke:** before `/execute` on any spec longer than ~5 tasks
 **Common gotcha:** 5 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility) run sequentially. Budget ~10-12 minutes. The 5th reviewer (SPEC-008) flags shallow or non-extensible designs and is calibrated against false positives + legacy specs.
@@ -52,7 +52,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 ### `/user:execute`
 
 **Phase:** autonomous build
-**Reads:** `.planning/SPEC.md` (must be Status: VALIDATED or APPROVED)
+**Reads:** `docs/specs/SPEC-NNN-<slug>.md` (must be Status: VALIDATED or APPROVED)
 **Writes:** code, tests, marks SPEC task checkmarks, appends to SPEC Decision Log
 **Dispatches:** worker subagent per task, then task-verifier, then fix-agent on FAIL:fixable (retry max 2)
 **When to invoke:** when handing off to a contractor OR running the kit on yourself end-to-end
@@ -61,7 +61,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 ### `/user:next`
 
 **Phase:** manual single-task build
-**Reads:** `.planning/SPEC.md`
+**Reads:** `docs/specs/SPEC-NNN-<slug>.md`
 **Writes:** code, tests; you drive the verification yourself
 **When to invoke:** when you want hands-on control or the next task needs subtle judgment that the verification pipeline might over-correct on
 **Common gotcha:** picks the next unchecked task only. To skip a task or pick a specific one, edit SPEC.md task ordering first.
@@ -69,8 +69,8 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 ### `/user:review`
 
 **Phase:** paranoid single-pass review
-**Reads:** `git diff`, `.planning/SPEC.md`
-**Writes:** `.planning/REVIEW.md`
+**Reads:** `git diff`, `docs/specs/SPEC-NNN-<slug>.md`
+**Writes:** `REVIEW.md`
 **When to invoke:** small change (under ~300 lines diff) where one careful pass beats parallel lens-reviewers
 **Common gotcha:** outputs a verdict (`SHIP / FIX-REQUIRED / REJECT`). `/ship` reads this and gates on it.
 
@@ -79,7 +79,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Phase:** parallel 3-lens review
 **Reads:** `git diff`
 **Dispatches:** 3 `reviewer` subagents (security, architecture, test-coverage lenses) in parallel + the deeper `security-auditor` agent
-**Writes:** `.planning/REVIEW-{security,architecture,test-coverage}.md`
+**Writes:** `REVIEW-{security,architecture,test-coverage}.md`
 **When to invoke:** medium-to-large diff (>300 lines) or any change touching auth, payments, multi-tenant boundaries
 **Common gotcha:** the FIX-THEN-SHIP path dispatches `responding-to-review` to triage findings without performative agreement. Read both the findings AND the response triage before committing fixes.
 
@@ -94,7 +94,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 ### `/user:ship`
 
 **Phase:** review gate, version bump, changelog, commit, PR
-**Reads:** `.planning/SPEC.md`, `.planning/REVIEW*.md`, `VERSION`, `CHANGELOG.md`
+**Reads:** `docs/specs/SPEC-NNN-<slug>.md`, `REVIEW*.md`, `VERSION`, `CHANGELOG.md`
 **Writes:** bumped `VERSION`, new `CHANGELOG.md` entry, git tag, PR via `gh`
 **When to invoke:** review is green and docs are synced
 **Common gotcha:** blocks if any REVIEW*.md verdict is FIX-REQUIRED. Use `/review-team` and `responding-to-review` to triage before re-running ship.
@@ -102,7 +102,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 ### `/user:retro`
 
 **Phase:** post-release reflection
-**Reads:** `.planning/SPEC.md` (completion rate), `git log`, prior `docs/retro/*.md`
+**Reads:** `docs/specs/SPEC-NNN-<slug>.md` (completion rate), `git log`, prior `docs/retro/*.md`
 **Writes:** `docs/retro/v<version>.md`
 **When to invoke:** after `/ship` lands; one per minor or major release, patch releases append to parent retro
 **Common gotcha:** action items become real only if you carry them to the next cycle's spec. Track them, do not just write them.
@@ -120,7 +120,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 | Hook | Event | What to remember |
 |---|---|---|
 | `safety-gate` | PreToolUse(Bash) | Blocks `rm -rf`, push to main, force push. Override needs explicit user OK. |
-| `context-readiness` | SessionStart | Reads `.planning/SPEC.md` status, suggests next command. Silent when project is healthy. |
+| `context-readiness` | SessionStart | Reads `docs/specs/SPEC-NNN-<slug>.md` status, suggests next command. Silent when project is healthy. |
 | `anti-rationalization` | Stop | Catches premature-completion phrases. 5 patterns, narrow on purpose. |
 | `slop-cleaner` | Stop | Flags bloated code in recently modified files. Nudge only. |
 | `session-state-save` | Stop, SubagentStop | Persists state to `.claude/session-state/`. Rotates 10 archives. Fail-open. |

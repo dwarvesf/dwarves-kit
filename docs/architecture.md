@@ -16,49 +16,49 @@ The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 
 The kit is intentionally flat. Component dirs sit at the top of the repo, not nested under `src/`, because the kit IS a flat set of prompts and bash scripts; there is no compilation step that justifies a `src/` boundary.
 
-## Data flow through `.planning/SPEC.md`
+## Data flow through `docs/specs/SPEC-NNN-<slug>.md`
 
 > The imperative companion to the descriptive map below is [`WORKFLOW.md`](../WORKFLOW.md) (repo root): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes and the gate at each boundary.
 
-`.planning/SPEC.md` is the shared contract for the full lifecycle. It is the single source of truth that crosses command boundaries:
+`docs/specs/SPEC-NNN-<slug>.md` is the shared contract for the full lifecycle. It is the single source of truth that crosses command boundaries:
 
 ```
 /user:think      reads:  user idea (chat)
-                 writes: .planning/DECISION-BRIEF.md  (if BUILD)
+                 writes: docs/specs/DECISION-BRIEF.md  (if BUILD)
 
-/user:spec       reads:  .planning/DECISION-BRIEF.md, codebase via 4 research agents
-                 writes: .planning/SPEC.md  (Status: DRAFT)
-                         .planning/research/{stack,features,architecture,pitfalls}.md
+/user:spec       reads:  docs/specs/DECISION-BRIEF.md, codebase via 4 research agents
+                 writes: docs/specs/SPEC-NNN-<slug>.md  (Status: DRAFT)
+                         docs/research/{stack,features,architecture,pitfalls}.md
 
-/user:spec-validate  reads:  .planning/SPEC.md
-                     writes: .planning/SPEC.md  (Status: VALIDATED) or comments
+/user:spec-validate  reads:  docs/specs/SPEC-NNN-<slug>.md
+                     writes: docs/specs/SPEC-NNN-<slug>.md  (Status: VALIDATED) or comments
 
-/user:execute    reads:  .planning/SPEC.md
-                 writes: code, tests, .planning/SPEC.md task checkmarks, decision log
+/user:execute    reads:  docs/specs/SPEC-NNN-<slug>.md
+                 writes: code, tests, docs/specs/SPEC-NNN-<slug>.md task checkmarks, decision log
                  dispatches: worker -> task-verifier -> fix-agent (retry max 2)
 
-/user:next       reads:  .planning/SPEC.md
+/user:next       reads:  docs/specs/SPEC-NNN-<slug>.md
                  writes: code, tests; you drive verification
 
-/user:review     reads:  git diff, .planning/SPEC.md
-                 writes: .planning/REVIEW.md
+/user:review     reads:  git diff, docs/specs/SPEC-NNN-<slug>.md
+                 writes: REVIEW.md
 
 /user:review-team  reads:  git diff
                    dispatches: 3 lens-reviewers in parallel + security-auditor
-                   writes:  .planning/REVIEW-{security,architecture,test-coverage}.md
+                   writes:  REVIEW-{security,architecture,test-coverage}.md
 
 /user:docs       reads:  git diff
                  writes: README.md, CHANGELOG.md, other docs as drift dictates
 
-/user:ship       reads:  .planning/SPEC.md, .planning/REVIEW*.md, VERSION
+/user:ship       reads:  docs/specs/SPEC-NNN-<slug>.md, REVIEW*.md, VERSION
                  gate:   blocks if review verdict is FIX-REQUIRED
                  writes: VERSION, CHANGELOG.md entry, git tag, PR
 
-/user:retro      reads:  .planning/SPEC.md, git log
+/user:retro      reads:  docs/specs/SPEC-NNN-<slug>.md, git log
                  writes: docs/retro/v<version>.md
 ```
 
-**Convention split (kit-on-kit vs downstream projects)**: the diagram above describes the downstream-project flow, where hooks/commands write to `.planning/SPEC.md`. For the KIT ITSELF as a project, specs are drafted directly at `docs/specs/SPEC-NNN-<slug>.md` and tracked in place via a `Status:` header (DRAFT / VALIDATED / SHIPPED). No migration step. See ADR-0002.
+**Unified convention (ADR-0010)**: the diagram above applies to both the kit itself and downstream projects, which now share one spec location: `docs/specs/SPEC-NNN-<slug>.md`, tracked in place via a `Status:` header (DRAFT / VALIDATED / SHIPPED). No `.planning/` split, no migration step. The hooks keep a bounded `.planning/` deprecation fallback for one minor version (SPEC-010), then it is removed. See ADR-0010 (supersedes ADR-0002).
 
 ## Verification pipeline (the load-bearing piece)
 
@@ -66,7 +66,7 @@ The kit is intentionally flat. Component dirs sit at the top of the repo, not ne
 worker subagent completes task
   v
 task-verifier (read-only) checks acceptance criteria + tests
-  +--> PASS:  mark done in .planning/SPEC.md, continue
+  +--> PASS:  mark done in docs/specs/SPEC-NNN-<slug>.md, continue
   +--> FAIL:fixable:  dispatch fix-agent (write-scoped, retry_count < 2)
   |     |
   |     v
@@ -127,7 +127,7 @@ requirement is mentioned. JWT is simpler for this use case.
 - **Coder mode / subagent**: Orchestrator or verifier picks. If the recommendation aligns with the spec, proceed; if it contradicts, escalate.
 - **Autonomous mode** (/execute): Proceed with the recommendation. Log it. The task-verifier will catch misalignment.
 
-**Step 5: Record.** Append to `.planning/SPEC.md` Decision Log:
+**Step 5: Record.** Append to `docs/specs/SPEC-NNN-<slug>.md` Decision Log:
 ```
 - DEC-[N]: [decision] -- [rationale] -- [alternatives rejected] -- [who decided: human/orchestrator/auto]
 ```

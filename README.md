@@ -18,7 +18,7 @@ Install in any Claude Code session:
 
 ## Who this is for
 
-A solo technical lead handing off implementation to contractors. The kit covers the full lifecycle (think → spec → execute → review → ship → retro) with one shared spec format. The contractor running `/user:execute` reads the same `.planning/SPEC.md` you wrote with `/user:spec`.
+A solo technical lead handing off implementation to contractors. The kit covers the full lifecycle (think → spec → execute → review → ship → retro) with one shared spec format. The contractor running `/user:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote with `/user:spec`.
 
 Also for: a builder using Claude Code 6-8 hours/day who wants a context-budget HUD, automatic safety guards, session-state persistence across compaction, and slop detection at stop points.
 
@@ -55,7 +55,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 |---------|-------|-------------|
 | /user:start | Entry | Detect project state, suggest next command |
 | /user:think | Think | 6 forcing questions to stress-test an idea |
-| /user:spec | Spec | Generate .planning/SPEC.md with 4 parallel research agents |
+| /user:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /user:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /user:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /user:next | Build | Lightweight: picks next undone task, loads context, you drive |
@@ -218,7 +218,7 @@ dwarves-kit/
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
   tests/test-hooks.sh           Hook behavior assertions
   tests/test-meta.sh            Structural integrity (manifests, frontmatter, cross-links)
-  .planning/SPEC.md             Working spec (in-flight; moved to docs/specs/ at ship)
+  docs/specs/SPEC-NNN-<slug>.md  Specs, tracked in place via Status header (DRAFT/VALIDATED/SHIPPED)
   docs/
     PHILOSOPHY.md               Design principles, target user, rejection list
     architecture.md             Components, data flow, Collaborative Design Protocol, deps
@@ -246,7 +246,7 @@ See [CHANGELOG.md](CHANGELOG.md). It's the source of truth; the README does not 
 ## Credits
 
 Patterns extracted from:
-- [GSD](https://github.com/gsd-build/get-shit-done) - spec generation, .planning/ convention, 4 parallel researchers
+- [GSD](https://github.com/gsd-build/get-shit-done) - spec generation, the original .planning/ convention (since unified onto docs/specs/, ADR-0010), 4 parallel researchers
 - [gstack](https://github.com/garrytan/gstack) - /office-hours, /review, /ship patterns
 - [Trail of Bits](https://github.com/trailofbits/claude-code-config) - hook implementations, code quality rules, statusline pattern
 - [ClaudeKit](https://github.com/mrgoonie/claudekit-skills) - validation gate, adversarial review, session-state pattern

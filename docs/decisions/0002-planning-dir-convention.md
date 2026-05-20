@@ -1,6 +1,12 @@
 # ADR-0002: .planning/ directory convention (from GSD)
 
-## Status: accepted
+## Status: superseded by ADR-0010 (2026-05-21)
+
+> Superseded: the kit unified onto `docs/specs/` for both itself and downstream
+> (ADR-0010). The GSD-interop rationale below is obsolete: current GSD no longer
+> uses a single `.planning/SPEC.md`. The hooks keep a bounded `.planning/`
+> deprecation fallback for one minor version. The original record is preserved
+> below unchanged.
 
 ## Context
 Spec output needs a predictable location that hooks and commands can reference. GSD uses `.planning/`, other tools use `docs/`, `specs/`, or inline CLAUDE.md sections.

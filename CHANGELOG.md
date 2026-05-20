@@ -12,7 +12,8 @@ All notable changes to dwarves-kit are documented here.
 ### Changed
 
 - **`/user:spec` Solution template**: replaced the one-line `## Solution` block with scaffolded sub-sections (Approaches considered, Chosen approach + why, Extensibility & boundaries, Architecture) so specs carry design depth by default. Source: SPEC-008; forked from `superpowers:brainstorming` ("propose 2-3 approaches"). The opt-in `/user:design` interactive beat is deferred behind the PHILOSOPHY §5 bar.
-- **`tests/test-meta.sh`**: spec-authoring depth + contract assertions (3 Solution sub-headings + Reviewer 5 + the 5-reviewers header + a stale-"4 reviewer" drift guard, SPEC-008; the I/O contract + Failure modes headings, SPEC-009). Suite total: 121 → 129.
+- **`tests/test-meta.sh`**: spec-authoring depth + contract assertions (3 Solution sub-headings + Reviewer 5 + the 5-reviewers header + a stale-"4 reviewer" drift guard, SPEC-008; the I/O contract + Failure modes headings, SPEC-009; a no-stray-`.planning/` guard + the demo-migration assertions, SPEC-010). Suite total: 121 → 130.
+- **Unified the spec-location convention onto `docs/specs/SPEC-NNN-<slug>.md`** for both the kit and downstream projects (was: downstream `.planning/SPEC.md`). The 5 spec-aware hooks resolve the active spec from `docs/specs/` (interim selector: highest non-SHIPPED/PARKED `SPEC-NNN`; SPEC-005 dual-detect refines later) with a bounded `.planning/` deprecation fallback (removed next minor). Satellite artifacts: research -> `docs/research/`, retro -> `docs/retro/`, CONTEXT -> `docs/specs/CONTEXT.md`, decision-brief folded into the spec. The demo (`examples/hello-spec`) migrated. **ADR-0010 supersedes ADR-0002.** Source: SPEC-010 Part 1 (Part 2 worktree-safety pending).
 
 ## [1.6.0] - 2026-05-20
 
