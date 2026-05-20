@@ -31,7 +31,7 @@ We believe cherry-picking battle-tested patterns from mature tools is better tha
 - .planning/SPEC.md format: derived from architecture decision records (ADR), user story templates, and GSD's task breakdown convention. The format is a composition, not an invention.
 
 **v1.2 additions with direct lineage:**
-- task-verifier subagent: OMC's architect verification in the Ralph loop, adapted to a read-only Claude Code custom subagent. The verify-after-every-task pattern is the same; the mechanism changed from in-session check to isolated subagent.
+- task-verifier subagent: synthesized from the family of architect-verifier-in-Ralph-loop patterns, adapted to a read-only Claude Code custom subagent. The verify-after-every-task pattern is the same; the mechanism changed from in-session check to isolated subagent.
 - fix-agent subagent: Smart Ralph's fail-fix-re-verify loop, adapted to a write-scoped subagent dispatched only on FAIL:fixable verdicts.
 - /start command: CCGS's /start router (detects project stage and routes to the right agent), adapted to read .planning/SPEC.md status field.
 - context-readiness v2 (command suggestions): same CCGS /start detection pattern, injected into SessionStart hook context instead of requiring a command invocation.
@@ -60,7 +60,7 @@ We believe every task output should be verified by a dedicated agent before the 
 
 **Decision this already made:** /execute dispatches a read-only task-verifier subagent after each worker completes. The verifier checks acceptance criteria, runs tests, and checks scope compliance. On FAIL:fixable, a fix-agent applies targeted corrections (max 2 retries). On FAIL:escalate or after 2 failed retries, the human decides.
 
-**Source:** OMC's architect verification in Ralph loop (read-only verification after execution). Smart Ralph's fail-fix-re-verify loop (retry with feedback). Adapted: separate read-only verifier (cannot modify code) and write-scoped fix-agent (scoped to specific files). This separation prevents the verifier from "fixing" things by silently rewriting code.
+**Source:** synthesized from the family of architect-verifier-in-Ralph-loop patterns (read-only verification after execution); Smart Ralph's fail-fix-re-verify loop (retry with feedback). Adapted: separate read-only verifier (cannot modify code) and write-scoped fix-agent (scoped to specific files). This separation prevents the verifier from "fixing" things by silently rewriting code. See ADR-0005.
 
 **Decision this would reject:** "Let the worker self-verify before reporting done." Self-verification is the fox guarding the henhouse. The worker's context is biased toward its own implementation. A fresh context window with only the spec and the diff catches things the worker's context normalized away.
 
@@ -146,7 +146,7 @@ End of day or end of sprint: /retro to capture learnings.
 - **CI/CD**: The kit produces commits and PRs. GitHub Actions or whatever CI pipeline runs after that is a separate concern.
 - **Multi-agent coordination**: When 3+ contractors run Claude Code simultaneously, that's L5 orchestration (Nimbalyst/Intent territory). The kit is for one agent session at a time, with subagents dispatched within that session.
 - **Project management**: No sprint boards, no story points, no velocity tracking. Notion handles that.
-- **Parallel execution**: /execute dispatches tasks sequentially via the Task tool. Independent tasks in the same phase execute one at a time. For parallel execution use Agent Teams (experimental), GSD v2 (Pi SDK runtime), or OMC (Ultrapilot). The kit's thesis is lifecycle integration with verification, not competing with agent runtimes.
+- **Parallel execution**: /execute dispatches tasks sequentially via the Task tool. Independent tasks in the same phase execute one at a time. For parallel execution use Agent Teams (experimental), GSD v2 (Pi SDK runtime), or Ultrapilot. The kit's thesis is lifecycle integration with verification, not competing with agent runtimes.
 
 ---
 

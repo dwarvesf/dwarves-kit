@@ -54,7 +54,8 @@ PLANT
 # Class 2: hardcoded credential (placeholder value, not a real key pattern)
 cat > "$FIXTURE_DIR/config.ini" <<'PLANT'
 [auth]
-password = "PLACEHOLDER_not_a_real_secret"
+# gitleaks:allow  representative fixture, not a real secret
+credential = "PLACEHOLDER_not_a_real_secret"
 PLANT
 
 # Class 3: command injection (unsanitized input to a shell)
@@ -70,10 +71,14 @@ echo "=== /review-team security-lens prompt coverage ==="
 echo "  (fixture: $PLANTED planted files under $FIXTURE_DIR, removed on exit)"
 
 # At least 3 planted files covering 3 distinct vulnerability classes.
+# The fixture covers 3 vulnerability classes (SQL injection, hardcoded
+# credential, command injection). The 7-term prompt check below is broader by
+# design (DEC-001): it greps the review prompts for the full vocabulary, the
+# fixtures only represent the planted-bad shape, they are not fed to a scanner.
 if [ "$PLANTED" -ge 3 ]; then
-  assert "fixture has >= 3 planted vulnerability files" 0
+  assert "fixture has >= 3 planted files (SQL-i, hardcoded cred, command-i)" 0
 else
-  assert "fixture has >= 3 planted vulnerability files (got $PLANTED)" 1
+  assert "fixture has >= 3 planted files (SQL-i, hardcoded cred, command-i; got $PLANTED)" 1
 fi
 
 SEC="$KIT_DIR/agents/security-auditor.md"

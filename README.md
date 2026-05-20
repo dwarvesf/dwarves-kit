@@ -188,7 +188,7 @@ worker subagent completes task
      -> FAIL:escalate: stop, ask human
 ```
 
-Tasks execute sequentially within phases. Parallel dispatch is not yet supported. For parallel execution, use GSD v2 or OMC alongside the kit.
+Tasks execute sequentially within phases. Parallel dispatch is not yet supported. For parallel execution, use GSD v2 or Agent Teams alongside the kit.
 
 ## External dependencies (install alongside, not included)
 
