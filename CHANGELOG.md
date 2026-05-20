@@ -2,6 +2,19 @@
 
 All notable changes to dwarves-kit are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **`WORKFLOW.md`** (repo root): the agent-facing workflow contract. Names each lifecycle phase, routes work by risk tier (tiny / normal / full), and points at the existing guardrail that enforces each boundary. Delivered via the `CLAUDE.md` pointer (auto-loaded each session); it suggests and routes, it does not block. Downstream template ships at `examples/hello-spec/WORKFLOW.md` (`.planning/` path convention). Source: SPEC-003; harness-experimental intake model + the AGENTS.md pattern.
+- **`tests/test-meta.sh`**: 6 assertions for the WORKFLOW.md contract (four pinned section headers + per-file path-convention checks). Suite total: 104 → 110.
+
+### Changed
+
+- **`CLAUDE.md` Workflow section** (kit root + `examples/hello-spec/`): replaced the duplicated step list with a pointer to `WORKFLOW.md`, so the cycle lives in exactly one place.
+- **`docs/PHILOSOPHY.md`**: reconciled the canonical lifecycle phase count to 8 (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect); it previously said 7 in one place and 9 in another.
+- **`README.md`, `MANUAL.md`, `docs/architecture.md`**: one-line cross-reference to `WORKFLOW.md` (the architecture pointer frames it as the imperative companion to the data-flow diagram).
+
 ## [1.5.1] - 2026-04-21
 
 Audit-fix release. Same-day patch following a retroactive `/review-team` and `/retro` that surfaced gaps in the v1.4/v1.5 SDLC application.

@@ -55,9 +55,7 @@ spm/
 
 ## Workflow
 
-This project uses dwarves-kit. Available commands: `/user:start`, `/user:think`, `/user:spec`, `/user:spec-validate`, `/user:execute`, `/user:next`, `/user:review`, `/user:review-team`, `/user:docs`, `/user:ship`, `/user:retro`, `/user:kit-health`.
-
-Hooks (safety-gate, anti-rationalization, auto-format, spec-drift-guard, context-readiness, session-state-save, etc.) run automatically. See the kit README for the full list.
+This project uses dwarves-kit. The phases, the risk-tier lanes, and the gate at each boundary are defined in the [`WORKFLOW.md`](WORKFLOW.md) contract; read it after this file.
 
 ## Spec Location
 
