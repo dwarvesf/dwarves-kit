@@ -53,7 +53,7 @@ These are the kit's own dev rules. They apply to PRs into dwarves-kit. The same 
 
 For the kit's own work, specs live at `docs/specs/SPEC-NNN-<slug>.md` from draft to ship. The file's `Status:` header (DRAFT / VALIDATED / SHIPPED) tracks state in place; no migration step. Matches ops-toolkit `tools/tide/docs/specs/` shape.
 
-The kit's hooks/commands still reference `.planning/SPEC.md` for downstream projects that follow GSD's two-directory convention. That path remains valid for kit USERS; the kit ITSELF skips the indirection. See ADR-0002 for the convention split.
+The kit unified the spec location onto `docs/specs/SPEC-NNN-<slug>.md` for both itself and downstream projects (ADR-0010, supersedes ADR-0002). The hooks keep a bounded `.planning/` deprecation fallback for one minor version, then it is removed. See ADR-0010.
 
 ## Workflow
 
