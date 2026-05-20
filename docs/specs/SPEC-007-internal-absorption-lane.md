@@ -1,11 +1,28 @@
 # Spec: Internal absorption lane (Han's own dev-workflow skills/hooks)
 
 Generated: 2026-05-20
-Status: DRAFT
+Status: PARKED (2026-05-20; revisit later, see Parked note)
 Source: maintainer braindump 2026-05-20 (item e), split from SPEC-004 during its 2026-05-20 validation (SPEC-004 DEC-009). Backlog: ID-002.
 Prior spec: docs/specs/SPEC-004-absorption-cadence.md
 Depends on: SPEC-004 (the absorption ritual `docs/ABSORPTION.md`, the `docs/absorption/` proposal artifact, the `/user:absorb` command, and the inline adoption rubric, all of which this lane extends).
-Validation: to be filled by `/user:spec-validate`.
+Validation: ran 2026-05-20 (4 reviewers); verdict NEEDS REVISION; resolution = PARKED (maintainer decision 2026-05-20: "skip for now, hold the problems and goals, revert soon"). NOT validated, NOT for execution until revisited.
+
+## Parked: revisit later (the problems + goals are held here)
+
+This spec is parked, not dissolved. The braindump's item e (absorbing Han's own dev-workflow skills/hooks) and its goals are kept here intact for a future revisit. The 4-reviewer validation surfaced blockers that make it not worth shipping as-is; record them so the revisit starts informed.
+
+**Why parked (validation blockers, all verified against the filesystem 2026-05-20):**
+1. **Redundant: both near-term survivors are already SPEC-006's.** `goal-craft` is SPEC-006's `/user:assign` activator; `session-closer-hook` is SPEC-006's deferred doc-update-clause-to-hook promotion. Net new yield from a standalone lane is ~0.
+2. **Contradicts validated SPEC-006.** SPEC-006 makes `/user:assign` activator-agnostic and puts "reimplementing goal-crafting" out of scope (goal-craft is a *detected external activator*, not absorbed). SPEC-007's "fold goal-craft into a kit-owned `/user:assign`" reverses that. Keep SPEC-006's design; do NOT absorb goal-craft.
+3. **The soak proxy is broken.** `~/.claude/skills/` is not a git repo, so `git log --reverse` yields no first-commit date for most candidates; and commit-age proves authorship, not battle-testing. A revisit must use a **usage signal** (e.g. the candidate being wired into a live `settings.json`), not commit-age.
+4. **Mis-scoped ownership.** `content-spec`, `prompt-improver`, `knowledge-capture` are symlinks into the `dwarvesf/claude-skills` *team* repo, so they belong to the EXTERNAL lane (SPEC-004), not the internal one. A revisit needs an ownership check (resolve symlink -> check remote -> route to the correct lane) before scoring.
+5. **`--internal` is speculative.** The internal pool is finite/near-static; a recurring command mode has no recurring consumer. A one-time inventory + the doctrine is the real deliverable.
+
+**The one durable nugget to keep (the goal of any revisit):** the *in-house-lineage doctrine*: how an in-house invention earns kit entry (PHILOSOPHY §1 indirect-lineage carve-out + §5 soak measured by a **usage** signal). When revived, the cleanest home is likely a section in SPEC-004's `docs/ABSORPTION.md` rather than a standalone spec.
+
+**The honest item-e conclusion (held for the revisit):** a careful gate absorbs almost nothing net-new. Review/testing are already covered by the kit's moat; goal-craft is already integrated by the spine; session-closer is the deferred hook. The *value of item e* is this audit + the doctrine, not a pile of absorptions. The scored inventory below is the audit record; treat its verdicts as provisional (description-level, not deep reads).
+
+ID-002 stays `parked` in `_meta/BACKLOG.md` until this is revisited.
 
 ## Problem
 
