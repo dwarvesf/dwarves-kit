@@ -43,11 +43,11 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID-010 | Port the I/O contract + failure-modes table into `/spec` (from ops-toolkit SDD template); optional + lane-scoped, reviewed by existing Reviewers 2 + 5 | cross-repo study 2026-05-20 | SPEC-009 | normal | executing |
 | ID-011 | Unify the spec-location convention onto `docs/specs/SPEC-NNN` (retire downstream `.planning/`; GSD-interop rationale obsolete); make detection + state worktree-safe for worktree-per-spec concurrency; supersede ADR-0002 | maintainer decision + research 2026-05-20 | SPEC-010 | full | executing |
 | ID-013 | Fix `context-readiness.sh` + `session-state-save.sh` count fragility (`grep -v` / `grep -c` zero-match under `set -e`): hook aborted in source-file-free repos; 0-done-task specs rendered `0\n0/N`. Found during SPEC-010 execution | execution discovery 2026-05-21 | (tiny, no spec) | tiny | executing |
-| ID-012 | Heavier test/review process for the autonomous goal WORKFLOW (build on the verification pipeline + SPEC-006 completeness clauses + SPEC-008 reviewer) | maintainer decision Q3 2026-05-20 | SPEC-012 (future) | full | queued |
+| ID-012 | Goal-loop fidelity (one theme, two parts). P1: stop-criteria in the `/spec` template (pin `## Verification` + `## Open questions` so specs are pointer-`/goal`-ready) -- build now, tiny lane. P2: QA gate around the autonomous loop (verify-into-loops + SPEC-006 completeness clauses + Reviewer 5) -- held until the pointer-`/goal` pattern has real runs | maintainer Q3 2026-05-20 + goal-readiness convergence 2026-05-21 | SPEC-012 | normal (P1) / full (P2) | executing (P1) |
 | ID-014 | Build SPEC-008 Part C as the opt-in `/user:design` command (interactive solution-design beat between /think and /spec; forked from `superpowers:brainstorming`); closes the "ran without my feedback" half | SPEC-008 Part C / maintainer 2026-05-21 | SPEC-011 | normal | executing |
 
 Dependency notes:
-- ID-012 (goal-loop QA) lands after ID-011 (unify), per maintainer Q3.
+- ID-012 P1 (spec stop-criteria) builds now (tiny lane, contract `/goal`); P2 (loop QA gate) is held until the pointer-`/goal` pattern has real runs, since it overlaps the still-unbuilt SPEC-006 completeness clauses and the existing verification pipeline.
 - ID-003 (research) gates SPEC-006 design; runs first.
 - ID-004/005/006 (state) land before ID-007/008 (the loop that reads that state).
 - ID-001/002 (absorption) are independent of the orchestration chain.
