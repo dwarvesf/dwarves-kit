@@ -32,7 +32,7 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID | Title | Source | Target artifact | Lane | Status |
 |----|-------|--------|-----------------|------|--------|
 | ID-001 | Recurring upstream-absorption ritual, maintainer-triggered (generalize SPEC-002's one-shot audit) | item 1 | SPEC-004 | full | validated |
-| ID-002 | Absorb skills/hooks developed in ops-toolkit into the kit (internal lane; starts by enumerating real candidates) | item e | SPEC-007 (split from SPEC-004) | full | queued |
+| ID-002 | Absorb skills/hooks developed in ops-toolkit into the kit (internal lane; scored inventory grounds it) | item e | SPEC-007 (split from SPEC-004) | full | speccing |
 | ID-003 | Deep orchestration scan of the copied repos vs our WORKFLOW (report + absorb plan) | item 2 | `docs/research/2026-05-20-orchestration-deep-scan.md` | normal | shipped (report delivered; recs folded into SPEC-006) |
 | ID-004 | Resolve `.planning/` vs `docs/specs/` confusion + leakage audit | item a | SPEC-005 | normal | validated |
 | ID-005 | Multi-goal state: per-goal files so concurrent goals don't conflict (registry contract in SPEC-005; `/user:goals` command + rendering deferred to SPEC-006) | item b | SPEC-005 + SPEC-006 | full | validated |
