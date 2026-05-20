@@ -58,8 +58,8 @@ done
 [ -z "$SPEC_FILE" ] && SPEC_FILE=$(find .planning -maxdepth 2 -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
 if [ -n "$SPEC_FILE" ]; then
   SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
-  TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || echo 0)
-  DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+  TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)
+  DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || true)
   TASK_PROGRESS="${DONE}/${TOTAL} tasks complete"
 fi
 
