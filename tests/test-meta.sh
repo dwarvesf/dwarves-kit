@@ -103,6 +103,18 @@ for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
   assert_eq "agent $AGENT has name field" "1" "$HAS_NAME"
   HAS_DESC=$(awk '/^---$/{c++; if(c==2)exit} c==1 && /^description:/' "$AGENT_FILE" | wc -l | tr -d ' ')
   assert_eq "agent $AGENT has description field" "1" "$HAS_DESC"
+  # model: must be present and one of the accepted Claude Code model aliases.
+  # Same structural-parity intent as the plugin.json version check: grep-only
+  # presence isn't enough, the value has to be in the real model surface.
+  MODEL_VAL=$(awk -F': *' '/^---$/{c++; if(c==2)exit} c==1 && /^model:/{print $2; exit}' "$AGENT_FILE" | tr -d '[:space:]')
+  TOTAL=$((TOTAL + 1))
+  if echo "$MODEL_VAL" | grep -qE '^(sonnet|haiku|opus)$'; then
+    echo -e "  ${GREEN}PASS${NC} agent $AGENT model is sonnet|haiku|opus ($MODEL_VAL)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} agent $AGENT model invalid or missing ('$MODEL_VAL')"
+    FAIL=$((FAIL + 1))
+  fi
 done
 
 # MANUAL.md agent table cross-refs match agents/ files.
