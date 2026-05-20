@@ -50,14 +50,17 @@ LAST_COMMITS=$(git log --oneline -5 2>/dev/null || echo "no commits")
 # Spec state
 SPEC_STATUS="none"
 TASK_PROGRESS=""
-if [ -d ".planning" ]; then
-  SPEC_FILE=$(find .planning -maxdepth 2 -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
-  if [ -n "$SPEC_FILE" ]; then
-    SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
-    TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || echo 0)
-    DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || echo 0)
-    TASK_PROGRESS="${DONE}/${TOTAL} tasks complete"
-  fi
+# Active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED), then legacy .planning/.
+SPEC_FILE=""
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
+  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC_FILE="$F"; break; }
+done
+[ -z "$SPEC_FILE" ] && SPEC_FILE=$(find .planning -maxdepth 2 -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
+if [ -n "$SPEC_FILE" ]; then
+  SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
+  TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+  DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+  TASK_PROGRESS="${DONE}/${TOTAL} tasks complete"
 fi
 
 # Recently modified source files
@@ -82,7 +85,7 @@ ${LAST_COMMITS}
 ${RECENT_FILES}
 
 ## Resume instructions
-Read CLAUDE.md and .planning/SPEC.md for full context.
+Read CLAUDE.md and the active spec (docs/specs/SPEC-NNN) for full context.
 Check git status for uncommitted work.
 Run /user:start to detect what to do next.
 STATE

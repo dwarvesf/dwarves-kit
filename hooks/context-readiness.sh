@@ -23,42 +23,47 @@ fi
 [ ! -f "CLAUDE.md" ] && WARNINGS+="No CLAUDE.md in project root. "
 
 # Spec status + command suggestion
-if [ -d ".planning" ]; then
-  SPEC_FILE=""
+# Resolve the active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED) first,
+# then the legacy .planning/ convention (deprecated; removed next minor). The
+# highest-NNN heuristic is an interim selector; SPEC-005 dual-detect replaces it
+# with branch-based selection. See docs/specs/SPEC-010.
+SPEC_FILE=""
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
+  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC_FILE="$F"; break; }
+done
+if [ -z "$SPEC_FILE" ] && [ -d ".planning" ]; then
   for F in .planning/SPEC.md .planning/ROADMAP.md .planning/REQUIREMENTS.md; do
     [ -f "$F" ] && SPEC_FILE="$F" && break
   done
+  [ -n "$SPEC_FILE" ] && WARNINGS+=".planning/ is deprecated; move specs to docs/specs/SPEC-NNN. "
+fi
 
-  if [ -z "$SPEC_FILE" ]; then
-    WARNINGS+=".planning/ exists but no SPEC.md found. "
-    SUGGEST="consider /user:spec"
-  else
-    # Read spec status
-    SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
-    STATE+="spec:${SPEC_STATUS} "
-
-    case "$SPEC_STATUS" in
-      DRAFT)
-        SUGGEST="spec is DRAFT, consider /user:spec-validate" ;;
-      APPROVED|VALIDATED)
-        # Count tasks
-        TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || echo 0)
-        DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || echo 0)
-        STATE+="tasks:${DONE}/${TOTAL} "
-        if [ "$DONE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
-          if [ -f "REVIEW.md" ]; then
-            SUGGEST="all tasks done and reviewed, consider /user:ship"
-          else
-            SUGGEST="all tasks done, consider /user:review"
-          fi
-        else
-          SUGGEST="tasks in progress, /user:execute or /user:next"
-        fi
-        ;;
-    esac
-  fi
-else
+if [ -z "$SPEC_FILE" ]; then
   SUGGEST="no spec found, consider /user:think then /user:spec"
+else
+  # Read spec status
+  SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
+  STATE+="spec:${SPEC_STATUS} "
+
+  case "$SPEC_STATUS" in
+    DRAFT)
+      SUGGEST="spec is DRAFT, consider /user:spec-validate" ;;
+    APPROVED|VALIDATED)
+      # Count tasks
+      TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+      DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+      STATE+="tasks:${DONE}/${TOTAL} "
+      if [ "$DONE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
+        if [ -f "REVIEW.md" ]; then
+          SUGGEST="all tasks done and reviewed, consider /user:ship"
+        else
+          SUGGEST="all tasks done, consider /user:review"
+        fi
+      else
+        SUGGEST="tasks in progress, /user:execute or /user:next"
+      fi
+      ;;
+  esac
 fi
 
 # Git info (always useful, compact)

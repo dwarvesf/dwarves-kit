@@ -21,10 +21,13 @@ fi
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 ESSENTIALS+="BRANCH: ${BRANCH}\n"
 
-if [ -d ".planning" ]; then
-  SPEC=$(find .planning -name "SPEC.md" -o -name "ROADMAP.md" | head -1)
-  [ -n "$SPEC" ] && ESSENTIALS+="SPEC: ${SPEC} (read before implementing)\n"
-fi
+# Active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED), then legacy .planning/.
+SPEC=""
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
+  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC="$F"; break; }
+done
+[ -z "$SPEC" ] && SPEC=$(find .planning -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
+[ -n "$SPEC" ] && ESSENTIALS+="SPEC: ${SPEC} (read before implementing)\n"
 
 # Latest backup location
 LATEST_BACKUP=$(find .claude/backups -name "*.md" 2>/dev/null | sort | tail -1)
@@ -35,7 +38,7 @@ ESSENTIALS+="
 RULES (compaction may have dropped these):
 - Do NOT push to main/master. Use feature branches.
 - Do NOT use rm -rf. Use trash.
-- Read .planning/SPEC.md before implementing any task.
+- Read the active spec (docs/specs/SPEC-NNN) before implementing any task.
 - Write tests alongside implementation.
 - No phantom features. No premature abstraction.
 - Finish what you started before declaring done.

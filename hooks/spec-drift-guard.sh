@@ -24,17 +24,23 @@ case "$FILE" in
     exit 0 ;;
 esac
 
-# Only check if a planning directory exists
-PLAN_DIR=""
-[ -d ".planning" ] && PLAN_DIR=".planning"
-[ -d ".gsd" ] && PLAN_DIR=".gsd"
-[ -z "$PLAN_DIR" ] && exit 0
+# Resolve what to check the new file against: the active spec in docs/specs/
+# (highest non-SHIPPED/PARKED SPEC-NNN), else legacy .planning/SPEC.md, else .gsd/.
+# docs/specs/ holds many specs, so grep ONLY the active one (grepping all specs
+# would make drift detection meaningless). Interim selector; SPEC-005 refines it.
+SPEC_SRC=""
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
+  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC_SRC="$F"; break; }
+done
+[ -z "$SPEC_SRC" ] && [ -f ".planning/SPEC.md" ] && SPEC_SRC=".planning/SPEC.md"
+[ -z "$SPEC_SRC" ] && [ -d ".gsd" ] && SPEC_SRC=".gsd"
+[ -z "$SPEC_SRC" ] && exit 0
 
-# Check if file or its parent directory is mentioned anywhere in the spec
+# Check if file or its parent directory is mentioned in the active spec
 BASENAME=$(basename "$FILE")
 DIRNAME=$(dirname "$FILE")
 
-if grep -rq "$FILE\|$BASENAME\|$DIRNAME" "$PLAN_DIR/" 2>/dev/null; then
+if grep -rq "$FILE\|$BASENAME\|$DIRNAME" "$SPEC_SRC" 2>/dev/null; then
   # File is in the spec, all good
   exit 0
 fi
@@ -53,7 +59,7 @@ cat <<EOF
     "hookEventName": "PreToolUse",
     "permissionDecision": "allow"
   },
-  "additionalContext": "[dwarves-kit] '${FILE}' is not in the spec (${PLAN_DIR}/). Verify this file is needed."
+  "additionalContext": "[dwarves-kit] '${FILE}' is not in the spec (${SPEC_SRC}). Verify this file is needed."
 }
 EOF
 
