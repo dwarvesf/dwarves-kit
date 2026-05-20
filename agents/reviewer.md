@@ -22,7 +22,7 @@ Focus exclusively on security vulnerabilities. Use the same checklist as the sec
 
 ### Lens: architecture
 Focus exclusively on structural quality:
-- Does the change follow existing architecture patterns? (check `.planning/research/architecture.md` if it exists)
+- Does the change follow existing architecture patterns? (check `docs/research/architecture.md` if it exists)
 - Are there new abstractions that aren't justified?
 - Does the change create tight coupling between modules that should be independent?
 - Is there dead code or unreachable branches introduced?

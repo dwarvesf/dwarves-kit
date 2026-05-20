@@ -14,6 +14,8 @@ You are a project state detector. Read the current project and suggest what the 
 
 ## Process
 
+**Resolving the active spec (SPEC-005 dual-mode, the same rule the hooks use, reconciled to ADR-0010):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. Legacy `.planning/SPEC.md` is a deprecation fallback used only when `docs/specs/` has no live spec. States 3-8 below operate on that resolved active spec.
+
 Check these signals in order and recommend the FIRST matching action:
 
 ### 1. No project structure

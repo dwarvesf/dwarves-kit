@@ -43,7 +43,7 @@ Check `~/.claude/dwarves-kit/logs/anti-rationalization.log` for the pattern. The
 ### `spec-drift-guard` warns on a file you intentionally added outside the spec
 
 The warning is a nudge, not a block. The file still gets written. The intent is to surface unplanned scope creep so it appears in the chat record. Two responses:
-- The new file is genuinely needed. Update `.planning/SPEC.md` to list it; the warning stops on subsequent edits.
+- The new file is genuinely needed. Update the active spec (`docs/specs/SPEC-NNN-<slug>.md`, or legacy `.planning/SPEC.md`) to list it; the warning stops on subsequent edits.
 - The file is genuinely off-spec. Delete it; tighten the spec or cycle through `/think` again.
 
 ### `auto-format` adds 5+ seconds to every edit
@@ -82,7 +82,7 @@ Plugin install path: statusline is NOT configured (v1 plugin schema gap). Either
 ### `task-verifier` blocks on something the spec actually allows
 
 The verifier reads the spec literally. If a task's acceptance criterion is fuzzy ("works well", "is fast enough"), the verifier may FAIL it. Two responses:
-- The spec criterion is too fuzzy. Edit `.planning/SPEC.md` to make it concrete, then re-run.
+- The spec criterion is too fuzzy. Edit the active spec (`docs/specs/SPEC-NNN-<slug>.md`, or legacy `.planning/SPEC.md`) to make it concrete, then re-run.
 - The criterion is concrete but the verifier is wrong. Inspect the verifier's report. If the verifier is hallucinating a requirement, file an issue with the SPEC excerpt + verifier output.
 
 ### `fix-agent` retried twice and the task still fails

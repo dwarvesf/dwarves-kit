@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-12 hooks + 13 commands + 9 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push blocked).
+12 hooks + 14 commands + 9 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push blocked).
 
 Install in any Claude Code session:
 
@@ -60,6 +60,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 | /user:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /user:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /user:next | Build | Lightweight: picks next undone task, loads context, you drive |
+| /user:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
 | /user:review | Review | Paranoid single-pass code review |
 | /user:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage) |
 | /user:docs | Docs | Cross-reference diff against all doc files, fix drift |
@@ -205,7 +206,7 @@ These tools complement the kit but are installed separately:
 ```
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
-  MANUAL.md                     Operator reference for the 13 commands
+  MANUAL.md                     Operator reference for the 14 commands
   RUNBOOK.md                    Hook misbehavior diagnosis + recovery
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template
@@ -213,18 +214,18 @@ dwarves-kit/
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   agents/                       (9 files) Subagents dispatched by commands
-  commands/                     (12 markdown command prompts)
+  commands/                     (14 markdown command prompts)
   hooks/                        (12 scripts + hooks.json plugin manifest)
   skills/get-api-docs/          Context Hub integration
   rules/                        Path-scoped coding-standard templates
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
   tests/test-hooks.sh           Hook behavior assertions
   tests/test-meta.sh            Structural integrity (manifests, frontmatter, cross-links)
-  docs/specs/SPEC-NNN-<slug>.md  Specs, tracked in place via Status header (DRAFT/VALIDATED/SHIPPED)
+  docs/specs/SPEC-NNN-<slug>.md  Specs, tracked in place via Status header (DRAFT/VALIDATED/SHIPPED); hooks pick the active one by git branch (SPEC-005)
   docs/
     PHILOSOPHY.md               Design principles, target user, rejection list
     architecture.md             Components, data flow, Collaborative Design Protocol, deps
-    decisions/0001-...0009-     One ADR per file
+    decisions/0001-...0012-     One ADR per file
     specs/                      Historical shipped specs (SPEC-NNN-<slug>.md)
     handoff/v1.1.md, v1.2.md    Per-version handoff snapshots
     retro/v1.3-v1.5.md          Cycle retrospectives

@@ -182,6 +182,71 @@ fi
 
 # ============================================================
 echo ""
+echo "=== Debug loop (SPEC-013) ==="
+# ============================================================
+# The /user:debug command must exist and carry its load-bearing structure,
+# and the guess-fix guard's ledger contract must stay in sync with the hook.
+
+DEBUG_CMD="$KIT_DIR/commands/debug.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$DEBUG_CMD" ]; then
+  echo -e "  ${GREEN}PASS${NC} commands/debug.md exists (/user:debug, bug lane)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/debug.md missing"
+  FAIL=$((FAIL + 1))
+fi
+
+for HEADING in "## Phase 1: Root cause" "## Phase 2: Pattern" "## Phase 3: Hypothesis" "## Phase 4: Implementation"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$HEADING" "$DEBUG_CMD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} debug.md has '$HEADING'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} debug.md missing '$HEADING'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+for MARKER in "NO FIX WITHOUT A RECORDED ROOT CAUSE" "git bisect" "3-fix architecture wall"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$MARKER" "$DEBUG_CMD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} debug.md carries '$MARKER'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} debug.md missing '$MARKER'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# DEC-010: the guard's ledger heading "## Root cause" must appear in BOTH the
+# command (which writes the ledger) and the hook (which greps it). A rename on
+# one side would silently disable the guard; pinning both literals breaks the
+# build instead.
+RAT_HOOK="$KIT_DIR/hooks/anti-rationalization.sh"
+for FILE in "$DEBUG_CMD" "$RAT_HOOK"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF '## Root cause' "$FILE" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} '$(basename "$FILE")' pins the literal '## Root cause' (DEC-010)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} '$(basename "$FILE")' lost the '## Root cause' contract (guard would silently break)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# WORKFLOW.md must carry the bug lane that routes to /debug.
+TOTAL=$((TOTAL + 1))
+if grep -qE '^\| bug ' "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has the bug lane"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing the bug lane"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Spec-authoring depth contract (SPEC-008) ==="
 # ============================================================
 # The /spec Solution template must scaffold design depth (2-3 approaches +
@@ -230,6 +295,41 @@ done
 # command ref is the explicit "legacy" note in start.md.
 STRAY_PLANNING=$(grep -rn '\.planning' "$KIT_DIR/commands/" 2>/dev/null | grep -vi 'legacy' | wc -l | tr -d ' ')
 assert_eq "no stray .planning/ refs in commands/ (legacy note excepted)" "0" "$STRAY_PLANNING"
+
+# SPEC-005: the state model is documented (the dual-mode detection itself is
+# behavior-tested in test-hooks.sh). Backlog schema + architecture state-model
+# section + the goal-registry ADR must exist; agents/ carry no stray .planning ref.
+TOTAL=$((TOTAL + 1))
+if grep -qF '## Schema' "$KIT_DIR/_meta/BACKLOG.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} BACKLOG.md has the Active-queue Schema section (SPEC-005)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} BACKLOG.md missing the Schema section"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF '## State model' "$KIT_DIR/docs/architecture.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} architecture.md has the State model section (SPEC-005)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} architecture.md missing the State model section"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/docs/decisions/0011-goal-registry.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} ADR-0011 goal-registry exists (SPEC-005)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ADR-0011 goal-registry missing"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-005 TASK-2: agents/ carry no stray .planning ref either (same unify); the
+# "legacy ... fallback" pointers in task-verifier/responding-to-review are allowed.
+STRAY_PLANNING_AGENTS=$(grep -rn '\.planning' "$KIT_DIR/agents/" 2>/dev/null | grep -vi 'legacy' | wc -l | tr -d ' ')
+assert_eq "no stray .planning/ refs in agents/ (legacy fallback excepted)" "0" "$STRAY_PLANNING_AGENTS"
 
 VALIDATE_CMD="$KIT_DIR/commands/spec-validate.md"
 TOTAL=$((TOTAL + 1))

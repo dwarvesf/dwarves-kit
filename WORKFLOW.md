@@ -19,6 +19,7 @@ Pick a lane before you start. Smaller work skips ceremony.
 | tiny   | typo, copy, comment, one obvious edit | edit, verify, done. No spec. |
 | normal | one bounded feature or fix | /spec, /execute, /review, /ship |
 | full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec, /spec-validate, /execute, /review-team, /docs, /ship, /retro |
+| bug    | a defect, regression, or failing test (not a new feature) | /debug (root cause before any fix), then /review |
 
 When in doubt between two lanes, take the heavier one. Anything in the full-lane
 trigger list uses the full lane unless you explicitly narrow the scope and say why.
@@ -35,10 +36,12 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 | Docs     | /user:docs | README/CHANGELOG match code | advisory |
 | Ship     | /user:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
 | Reflect  | /user:retro | docs/retro/v<version>.md written | advisory |
+| Debug (off-cycle) | /user:debug | root cause recorded, fix verified, human-confirmed | iron law + guess-fix guard (anti-rationalization) |
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
 premature "done"; auto-format runs on edit; session-state-save and
-post-compact-reinject protect long sessions.
+post-compact-reinject protect long sessions. The Debug row is an off-cycle
+entry point (a bug-lane loop), not a linear phase between Reflect and the next cycle.
 
 ## Completion contract
 A task is done only when its acceptance criteria are met and the verifier has
@@ -52,3 +55,15 @@ normal-lane change or go straight to /next. The kit detects state
 (context-readiness hook) and suggests the next step; it never blocks
 progression. Hard stops are reserved for irreversible cost: destructive
 commands, push-to-main, premature completion, failed verification.
+
+## Goal drafts (.claude/goals/)
+The kit keeps candidate goal drafts in `.claude/goals/<slug>.md` (gitignored,
+per-machine) beside the built-in `/goal`'s single active slot
+`.claude/last-goal.md`. The kit writes the drafts plus a derived `INDEX.md`; it
+NEVER writes `last-goal.md`. Activating a draft means handing its body to
+whatever goal-loop activator is present (the built-in `/goal`, the `ralph-loop`
+plugin, or the `goal-craft` skill); if none is installed, the drafts still work
+as plain reusable files. Brainstorm many drafts, one is active at a time; each
+carries a `target_spec`/`id`. The `/user:goals` command and the
+`/user:start`/`/user:next` rendering of these are wired in SPEC-006, not here.
+Full contract and rationale: ADR-0011.
