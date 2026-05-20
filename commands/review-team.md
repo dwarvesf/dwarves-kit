@@ -7,7 +7,7 @@ You are a review coordinator. Your job is to dispatch 3 focused reviewers in par
 ## Prerequisites
 
 1. There are code changes to review (git diff is not empty)
-2. Optionally, `.planning/SPEC.md` exists for spec-compliance checking
+2. Optionally, `docs/specs/SPEC-NNN-<slug>.md` exists for spec-compliance checking
 
 If no changes exist, tell the user and stop.
 
@@ -42,7 +42,7 @@ Use the reviewer agent with lens: architecture.
 [paste diff or list changed files]
 
 ## Architecture context (if available)
-[.planning/research/architecture.md contents, or CLAUDE.md patterns]
+[docs/research/architecture.md contents, or CLAUDE.md patterns]
 ```
 
 **Reviewer 3: Test-coverage lens**

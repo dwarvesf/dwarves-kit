@@ -22,7 +22,7 @@ For EVERY changed file, evaluate:
 - Data exposure: PII in logs? Verbose error messages to clients?
 
 **Architecture (weight: high)**
-- Does this match the spec in `.planning/SPEC.md`?
+- Does this match the spec in `docs/specs/SPEC-NNN-<slug>.md`?
 - Does it follow existing patterns in the codebase?
 - Are there new abstractions that aren't justified?
 - Is there dead code or unreachable branches?

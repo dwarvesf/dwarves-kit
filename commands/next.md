@@ -8,7 +8,7 @@ You are a task dispatcher. Read the spec, find the next task to work on, and set
 
 ### Step 1: Find the next task
 
-Read `.planning/SPEC.md` (or `ROADMAP.md`, or `.gsd/` if using GSD).
+Read `docs/specs/SPEC-NNN-<slug>.md` (or `ROADMAP.md`, or `.gsd/` if using GSD).
 
 Find the first task that is:
 - Not marked as done (`[x]` or `DONE`)
@@ -20,7 +20,7 @@ If multiple tasks are available (independent, no ordering constraint), present t
 
 For the selected task, gather:
 - The task description and acceptance criteria from the spec
-- Relevant files mentioned in the task or in `.planning/CONTEXT.md`
+- Relevant files mentioned in the task or in `docs/specs/CONTEXT.md`
 - Current git branch and status
 - Any related decision records from `docs/decisions/`
 
@@ -59,7 +59,7 @@ Do NOT start implementing. This command is a dispatcher, not an executor. The us
 
 If the user runs `/user:next` again:
 1. Ask: "Is TASK-[previous] done? Mark it complete?"
-2. If yes, update `.planning/SPEC.md` to mark it `[x]` with the commit hash
+2. If yes, update `docs/specs/SPEC-NNN-<slug>.md` to mark it `[x]` with the commit hash
 3. Find and present the next task
 
 ## Edge cases

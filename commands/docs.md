@@ -37,7 +37,7 @@ Check each of these files (if they exist) against the diff:
 - Are request/response shapes accurate?
 - Are there new endpoints not yet documented?
 
-**.planning/SPEC.md** (if exists)
+**docs/specs/SPEC-NNN-<slug>.md** (if exists)
 - Mark completed tasks as done
 - Update status of in-progress tasks
 - Note any deviations from the original spec with rationale

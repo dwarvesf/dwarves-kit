@@ -6,7 +6,7 @@ A small, self-contained example showing what dwarves-kit produces when you run i
 
 A hypothetical Python CLI called `spm` ("simple package manager") needs a `--version` flag. This directory contains the three files dwarves-kit would generate or rely on to ship that change end-to-end. Each is a normal output, not a mock.
 
-The point: see what `.planning/SPEC.md` actually looks like; see how `CLAUDE.md` anchors a contractor's session; see how the kit's commands chain.
+The point: see what `docs/specs/SPEC-001-version-flag.md` actually looks like; see how `CLAUDE.md` anchors a contractor's session; see how the kit's commands chain.
 
 ## The three files
 
@@ -15,12 +15,12 @@ Project anchor. Read by Claude Code at session start, by `/user:spec` for stack 
 
 Generated once when the project is set up. Updated by `/user:docs` when the stack drifts.
 
-### `.planning/SPEC.md`
+### `docs/specs/SPEC-001-version-flag.md`
 The shared contract. Written by `/user:spec` (with optional adversarial review via `/user:spec-validate`). Read by `/user:execute` to dispatch worker subagents per task. Read by `/user:review` to check spec-compliance. Mutated only by the spec phase; treated as immutable during build.
 
 Status field cycles: `DRAFT` → `VALIDATED` → tasks marked `[x]` as they complete with verification.
 
-### `.planning/` (the directory)
+### `docs/specs/` (the directory)
 Convention from GSD (per ADR-002). All planning artifacts live under one directory so hooks (`spec-drift-guard`, `context-readiness`) can find them at predictable paths. The kit's `/user:spec` creates this directory; nothing should write outside it during planning.
 
 ## How the kit picks it up
@@ -29,7 +29,7 @@ Convention from GSD (per ADR-002). All planning artifacts live under one directo
 contractor opens project
    |
    v
-SessionStart hook (context-readiness) sees .planning/SPEC.md status=VALIDATED
+SessionStart hook (context-readiness) sees docs/specs/SPEC-001-version-flag.md status=VALIDATED
    |
    v
 hook injects "next: /user:execute" into Claude's context
@@ -50,9 +50,9 @@ PASS -> next task; FAIL:fixable -> fix-agent (max 2 retries); FAIL:escalate -> h
 ## Reading order
 
 1. Read `CLAUDE.md` first; it's the project anchor a contractor sees first.
-2. Then `.planning/SPEC.md`: the actual feature plan.
+2. Then `docs/specs/SPEC-001-version-flag.md`: the actual feature plan.
 3. Notice: no `--version` code yet. The spec is the input to `/user:execute`. The example stops at "spec ready to build", not "feature implemented", to keep the example readable.
 
 ---
 
-*Synthetic demo. The `spm` package and the feature it describes are fabricated for documentation purposes; there is no real `pip install spm`. The shape of `CLAUDE.md` and `.planning/SPEC.md`, however, is exactly what the kit's `/user:spec` command produces.*
+*Synthetic demo. The `spm` package and the feature it describes are fabricated for documentation purposes; there is no real `pip install spm`. The shape of `CLAUDE.md` and `docs/specs/SPEC-001-version-flag.md`, however, is exactly what the kit's `/user:spec` command produces.*
