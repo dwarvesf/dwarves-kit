@@ -331,6 +331,43 @@ fi
 STRAY_PLANNING_AGENTS=$(grep -rn '\.planning' "$KIT_DIR/agents/" 2>/dev/null | grep -vi 'legacy' | wc -l | tr -d ' ')
 assert_eq "no stray .planning/ refs in agents/ (legacy fallback excepted)" "0" "$STRAY_PLANNING_AGENTS"
 
+# SPEC-006: the orchestration spine is documented + /user:assign exists.
+WF_SPINE="$KIT_DIR/WORKFLOW.md"
+for HEADING in "## The spine" "#### Doc-impact map"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$HEADING" "$WF_SPINE" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has '$HEADING' (SPEC-006)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing '$HEADING'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Build decisions' "$WF_SPINE" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md documents the Build-decisions convention (SPEC-006)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing the Build-decisions convention"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/commands/assign.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} commands/assign.md exists (/user:assign, SPEC-006)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/assign.md missing"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Loop boundaries' "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} PHILOSOPHY has the bounded/unbounded loop note (SPEC-006)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} PHILOSOPHY missing the loop-boundaries note"
+  FAIL=$((FAIL + 1))
+fi
+
 VALIDATE_CMD="$KIT_DIR/commands/spec-validate.md"
 TOTAL=$((TOTAL + 1))
 if grep -qE "^### Reviewer 5:" "$VALIDATE_CMD" 2>/dev/null; then

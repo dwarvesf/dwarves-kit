@@ -9,7 +9,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The 14 commands
+## The 15 commands
 
 ### `/user:start`
 
@@ -40,6 +40,14 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Writes:** appends a `## Solution` section to `docs/specs/DECISION-BRIEF.md` (never clobbers the brief's product framing)
 **When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/user:spec`. Opt-in; skip it and `/user:spec` works as before.
 **Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
+
+### `/user:assign`
+
+**Phase:** orchestrate (backlog item -> goal draft -> lane)
+**Reads:** `_meta/BACKLOG.md` Active queue (by `ID-NNN`), the item's Lane column
+**Writes:** `.claude/goals/<slug>.md` (the SPEC-005 draft contract; never `.claude/last-goal.md`)
+**When to invoke:** you picked an item from "what's left?" and want it scoped into a goal and routed into the right lane
+**Common gotcha:** it is a mutator-dispatcher: it sets up the goal and hands off, it does NOT execute. It detects the goal-loop activator (built-in `/goal`, `ralph-loop`, or `goal-craft`) and degrades to a plain draft file if none is installed. Idempotent per id. Source: SPEC-006 + ADR-0011.
 
 ### `/user:spec`
 

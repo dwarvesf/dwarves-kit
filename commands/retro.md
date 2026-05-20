@@ -36,6 +36,10 @@ Present a summary:
 - Commits count and pattern (are they atomic or messy?)
 - Time span (when did work start vs ship)
 
+### Step 1b: Doc-impact + completeness sweep
+
+Run the pinned diff (the integration branch's merge-base) against the WORKFLOW doc-impact map and list any companion doc the diff should have updated but did not. Also read `~/.claude/dwarves-kit/logs/completeness.log` and surface un-cleared decision/doc warnings from this cycle. Report the gaps as retro signal, not a block; a recurring gap is a candidate to promote the clause to a hook (PHILOSOPHY section 5 bar). Source: SPEC-006.
+
 ### Step 2: Three questions
 
 Ask each question one at a time. Wait for the user's answer before moving on.

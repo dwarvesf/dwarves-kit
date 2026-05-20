@@ -43,11 +43,60 @@ premature "done"; auto-format runs on edit; session-state-save and
 post-compact-reinject protect long sessions. The Debug row is an off-cycle
 entry point (a bug-lane loop), not a linear phase between Reflect and the next cycle.
 
+## The spine
+How a committed backlog item becomes shipped work, end to end:
+
+```
+session start
+  -> /user:start          RENDER the BACKLOG Active queue (the "what's left?" list)
+                          and list active .claude/goals/ drafts. Read-only; a detector.
+  -> /user:assign ID-NNN  goal-crafter: break the item down, set objective + scope
+                          fence + termination-on-blocker, write .claude/goals/<slug>.md
+                          (the SPEC-005 contract), pick the lane, surface the draft body
+                          for whatever goal-loop activator is present, hand off to the
+                          lane's first command. Mutator; does NOT execute, never writes
+                          last-goal.md.
+  -> the lane runs        tiny | normal | full (see the cycle table above)
+       normal/full -> /user:spec -> /user:spec-validate -> /user:execute (verify pipeline)
+                      -> /user:review -> /user:docs -> /user:ship -> /user:retro
+  -> on ship              /user:ship reviews the completeness log; ID-NNN drops off the
+                          queue (CHANGELOG is the canonical shipped record).
+```
+
+**Detector/mutator split.** `/user:start` and `/user:next` only read and render; `/user:assign` is the only mutator. **Activator-agnostic.** `/user:assign` writes only the `.claude/goals/<slug>.md` draft (ADR-0011) and surfaces its body; activation (starting the loop) is done by whatever primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the `goal-craft` skill). The kit NEVER writes `.claude/last-goal.md`; if no activator exists, the draft is a plain reusable file. **"Even the goal loop follows WORKFLOW"** is delivered honestly: the safety subset is hard-enforced by existing hooks (anti-rationalization, the verification pipeline, the push-to-main blocker); decision/doc completeness is warned + logged to `~/.claude/dwarves-kit/logs/completeness.log` and reviewed at `/user:ship` + `/user:retro`, not hard-blocked mid-loop (PHILOSOPHY rejects hard-gating process completeness). State model: SPEC-005. Full design: SPEC-006.
+
 ## Completion contract
 A task is done only when its acceptance criteria are met and the verifier has
 actually run the tests, not when you claim they pass. If you cannot run the
 check, report that plainly; the anti-rationalization hook is the backstop for
 premature completion. Self-reported "done" is not proof; the task-verifier is.
+
+### Completeness clauses (warn + log, reviewed at ship)
+Two self-check clauses run during Build/Reflect. Both WARN and LOG to `~/.claude/dwarves-kit/logs/completeness.log` (the `spec-drift-guard` logging shape); neither hard-blocks. `/user:ship` and `/user:retro` review that log at the gate. Hard blocks stay reserved for the safety subset (PHILOSOPHY rejects hard-gating process completeness).
+
+- **Decision-translation.** Each decision in a spec's optional **Build decisions** sub-list (the decisions that imply implementation, tagged under a `### Build decisions` heading or a `Build:` prefix in the Decision Log) must be referenced by ID or `Implements:` target in a task or acceptance criterion; an orphan is warned + logged. Scope: ONLY the Build-decisions list. Rationale, rejected-alternative, and `(validation)`/`(reconciliation)` decisions are exempt. If a spec has no Build-decisions list, the clause is a no-op.
+- **Doc-update.** The diff against the integration branch's merge-base (pinned, not a floating base) is checked against the doc-impact map below; a change that touches X without its companion docs is warned + logged. Normal/full lanes only (tiny-lane ship suppresses it).
+
+#### Doc-impact map
+Per change-type, the companion docs that must move with it. This covers the enumerated change-types; an unenumerated type is a logged gap (a warning), not a guarantee.
+
+| If a change touches | Companion docs that must update |
+|---|---|
+| `hooks/*` | `RUNBOOK.md`, README hook table, `tests/test-meta.sh` count, `tests/test-hooks.sh` |
+| `commands/*` (new) | `MANUAL.md`, README command table, `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh`, and the command count everywhere it appears |
+| `agents/*` | README agent list, `tests/test-meta.sh` frontmatter checks |
+| `settings.json` (hook wiring) | README hook table, `RUNBOOK.md`, `install.sh` merge logic |
+| `install.sh` | README install steps, `tests/` |
+| `rules/*` | README path-scoped-rules note, `docs/architecture.md` |
+| `skills/*` | README, `MANUAL.md` |
+| `examples/hello-spec/*` | `examples/hello-spec/README.md`, the downstream-template note |
+| a PHILOSOPHY principle | `docs/PHILOSOPHY.md`, `commands/kit-health.md` reject-list |
+| a new `docs/decisions/` ADR | README + `docs/architecture.md` cross-refs |
+| a new `docs/specs/SPEC-NNN` | `_meta/BACKLOG.md` status, the spec's `Status:` header |
+| **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, README "Project structure", `docs/architecture.md` |
+| any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` version, `docs/retro/v<ver>.md` |
+
+The bolded row is self-maintaining: adding a new top-level dir must update this map. Source: SPEC-006.
 
 ## What this contract does NOT do
 It does not lock phases. An experienced operator may skip /spec-validate on a

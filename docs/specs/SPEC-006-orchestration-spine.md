@@ -6,6 +6,7 @@ Source: maintainer braindump 2026-05-20 (items d + f), plus the goal-store comma
 Prior spec: docs/specs/SPEC-005-backlog-and-goal-state.md
 Depends on: SPEC-005 (state model: backlog queue schema, `.claude/goals/` draft-store contract, dual-detect) + `docs/research/2026-05-20-orchestration-deep-scan.md` (the deep scan that scoped this).
 Validation: 4 reviewers run 2026-05-20 (scope-critic, assumption-destroyer, failure-mode, philosophy-fidelity). Pre-fix verdict NEEDS REVISION (design sound; overclaims + 2 factual errors + incompleteness). All resolved inline; see Decision Log DEC-009..DEC-020 and the Validation section.
+Reconciled: 2026-05-21, after SPEC-005 shipped (its `.claude/goals/` contract + backlog schema + branch-aware dual-detect, exactly as this spec depends on) and SPEC-013 shipped concurrently (the `/user:debug` bug lane). No design change: the dependency is satisfied as written. Two execution adjustments: the command-count baseline is now 14 (SPEC-013's `/user:debug`), so `/user:assign` makes 15 and TASK-7's ripple must also fix `.claude-plugin/{plugin,marketplace}.json` (left stale at 13); and TASK-6's §3 loop note now frames BOTH bounded in-session loops (goal + the SPEC-013 debug loop). See DEC-021.
 
 ## Problem
 
@@ -140,47 +141,47 @@ Per-part one-sentence descriptions (gate 4; the spec is multi-part, like SPEC-00
 ### Task Breakdown
 
 **Phase 1: Wire the seam + the command**
-- [ ] **TASK-1: `WORKFLOW.md` "The spine" section.** Pinned header `## The spine`; the backlog -> `/user:start` -> `/user:assign` -> lane -> ship diagram; the activator-agnostic handoff (kit never writes `last-goal.md`); the "enforcement reality" summary (safety subset hard-enforced; completeness warned+logged+ship-reviewed). Short; link to SPEC-005 + the cycle table.
+- [x] **TASK-1: `WORKFLOW.md` "The spine" section.** Pinned header `## The spine`; the backlog -> `/user:start` -> `/user:assign` -> lane -> ship diagram; the activator-agnostic handoff (kit never writes `last-goal.md`); the "enforcement reality" summary (safety subset hard-enforced; completeness warned+logged+ship-reviewed). Short; link to SPEC-005 + the cycle table.
   - Acceptance: `## The spine` exists; references the BACKLOG queue + `.claude/goals/` (SPEC-005) and the cycle table; states the no-`last-goal.md`-write rule and the warn+log+ship-review posture; ASCII-clean headers; no CAPS coercion.
-- [ ] **TASK-2: `commands/assign.md`.** `/user:assign ID-NNN`: read the backlog item, goal-craft the breakdown (objective + scope fence + termination-on-blocker), write `.claude/goals/<slug>.md` linked to `ID-NNN` (SPEC-005 contract, frontmatter keys pinned: `slug, id, target_spec, status, created`), pick the lane from the item's Lane column, detect the available goal-loop activator and surface the draft body for it (graceful-degrade to plain file if none), hand off to the lane's first command, set the backlog item status. Does NOT execute; does NOT write `last-goal.md`.
+- [x] **TASK-2: `commands/assign.md`.** `/user:assign ID-NNN`: read the backlog item, goal-craft the breakdown (objective + scope fence + termination-on-blocker), write `.claude/goals/<slug>.md` linked to `ID-NNN` (SPEC-005 contract, frontmatter keys pinned: `slug, id, target_spec, status, created`), pick the lane from the item's Lane column, detect the available goal-loop activator and surface the draft body for it (graceful-degrade to plain file if none), hand off to the lane's first command, set the backlog item status. Does NOT execute; does NOT write `last-goal.md`.
   - Acceptance (one checkbox each):
-    - [ ] frontmatter `description:` (parity check)
-    - [ ] reads the backlog by `ID-NNN`; errors clearly if the id is absent
-    - [ ] writes a draft via the SPEC-005 contract with the pinned frontmatter keys
-    - [ ] detects the activator (built-in `/goal` / `ralph-loop` / `goal-craft`) and degrades gracefully to a plain file if none; never assumes a specific one exists
-    - [ ] never writes `last-goal.md`; surfaces the body + hands off without executing
-    - [ ] idempotent: re-running for the same `ID-NNN` re-surfaces the existing draft rather than creating a duplicate (one draft per id; mirrors SPEC-005 edge 6)
-    - [ ] updates the backlog item status (`queued`->`speccing`/`executing`)
+    - [x] frontmatter `description:` (parity check)
+    - [x] reads the backlog by `ID-NNN`; errors clearly if the id is absent
+    - [x] writes a draft via the SPEC-005 contract with the pinned frontmatter keys
+    - [x] detects the activator (built-in `/goal` / `ralph-loop` / `goal-craft`) and degrades gracefully to a plain file if none; never assumes a specific one exists
+    - [x] never writes `last-goal.md`; surfaces the body + hands off without executing
+    - [x] idempotent: re-running for the same `ID-NNN` re-surfaces the existing draft rather than creating a duplicate (one draft per id; mirrors SPEC-005 edge 6)
+    - [x] updates the backlog item status (`queued`->`speccing`/`executing`)
 
 **Phase 2: Read-only rendering (SPEC-005 ID-006 deferred)**
-- [ ] **TASK-3: Render the queue + drafts in `/user:start` and `/user:next`.** `/user:start`: render the `_meta/BACKLOG.md` Active queue (SPEC-005 schema) as "what's left?" and list `.claude/goals/` drafts (`slug, target_spec, status`). `/user:next`: when no in-spec task remains, surface the backlog queue. Both read-only; both use SPEC-005 dual-detect. Both degrade gracefully on a malformed queue (render what parses, note unparseable rows, never error out of session start).
+- [x] **TASK-3: Render the queue + drafts in `/user:start` and `/user:next`.** `/user:start`: render the `_meta/BACKLOG.md` Active queue (SPEC-005 schema) as "what's left?" and list `.claude/goals/` drafts (`slug, target_spec, status`). `/user:next`: when no in-spec task remains, surface the backlog queue. Both read-only; both use SPEC-005 dual-detect. Both degrade gracefully on a malformed queue (render what parses, note unparseable rows, never error out of session start).
   - Acceptance: `commands/start.md` references `_meta/BACKLOG.md` + `.claude/goals/` (greppable); `/user:next` falls back to the queue when the active spec is complete; neither mutates; malformed-queue degradation stated; **rendering correctness is review-verified, not test-verified** (the kit has no command-behavior harness; TASK-7 asserts only the structural references).
 
 **Phase 3: Close the two leaks (warn + log)**
-- [ ] **TASK-4: Completion-contract clauses + doc-impact map + conventions.** In `WORKFLOW.md`: add the decision-translation clause (scoped to a spec's optional "Build decisions" sub-list; no-op if absent; DEC-ID regex handles `(validation)`/suffixes) and the doc-update clause (pinned diff base = merge-base of the integration branch; normal/full lanes only). Add the doc-impact map (the table above, incl. the self-maintenance row). Add the "Build decisions" sub-list convention to the spec format note. State the completeness-log sink path. Both clauses warn + log, never block.
+- [x] **TASK-4: Completion-contract clauses + doc-impact map + conventions.** In `WORKFLOW.md`: add the decision-translation clause (scoped to a spec's optional "Build decisions" sub-list; no-op if absent; DEC-ID regex handles `(validation)`/suffixes) and the doc-update clause (pinned diff base = merge-base of the integration branch; normal/full lanes only). Add the doc-impact map (the table above, incl. the self-maintenance row). Add the "Build decisions" sub-list convention to the spec format note. State the completeness-log sink path. Both clauses warn + log, never block.
   - Acceptance: both clauses present and warn+log (no "block"/"halt"); the decision clause is scoped to "Build decisions" and is a no-op without that list; the doc-update clause pins the diff base and the lane scope; the doc-impact map present with the self-row; the log path stated; the "Build decisions" convention documented.
-- [ ] **TASK-5: Gate review at ship + Reflect.** Extend `commands/ship.md` to read the completeness log and surface un-cleared decision/doc warnings as part of the ship gate (report, the maintainer decides; consistent with the existing ship gate that blocks only on FIX-REQUIRED). Extend `commands/retro.md` + the `docs` step to run the pinned diff against the doc-impact map and list un-updated companions.
+- [x] **TASK-5: Gate review at ship + Reflect.** Extend `commands/ship.md` to read the completeness log and surface un-cleared decision/doc warnings as part of the ship gate (report, the maintainer decides; consistent with the existing ship gate that blocks only on FIX-REQUIRED). Extend `commands/retro.md` + the `docs` step to run the pinned diff against the doc-impact map and list un-updated companions.
   - Acceptance: `/user:ship` reviews the completeness log at the gate and surfaces un-cleared warnings (does not auto-block on them); `/user:retro` + `/user:docs` run the pinned diff against the map and list un-updated companions; all report, none hard-block on completeness (hard-block stays reserved for the existing FIX-REQUIRED/safety gates).
 
 **Phase 4: Framing**
-- [ ] **TASK-6: PHILOSOPHY §3 loop note.** ADD (not "replace") a one-paragraph bounded/unbounded distinction to PHILOSOPHY §3, naming SPEC-003 DEC-005 as the prior framing and Anthropic `ralph-loop` as the source for the in-session primitive. Keep the unbounded outer bash loop firmly declined so the note cannot read as license for outer-loop creep.
+- [x] **TASK-6: PHILOSOPHY §3 loop note.** ADD (not "replace") a one-paragraph bounded/unbounded distinction to PHILOSOPHY §3, naming SPEC-003 DEC-005 as the prior framing and Anthropic `ralph-loop` as the source for the in-session primitive. Keep the unbounded outer bash loop firmly declined so the note cannot read as license for outer-loop creep.
   - Acceptance: §3 gains the bounded/unbounded distinction; cites SPEC-003 DEC-005 + `ralph-loop`; the unbounded outer loop stays explicitly declined; the spec's prose no longer claims "§3 declines loops wholesale" (it did not).
 
 **Phase 5: Verify + hygiene**
-- [ ] **TASK-7: Tests + cross-refs.** `tests/test-meta.sh`: assert `WORKFLOW.md` has `## The spine` + the doc-impact map heading + the "Build decisions" convention note; `commands/assign.md` exists with `description:`; PHILOSOPHY §3 contains the bounded/unbounded distinction. Assert for the PRESENCE of headings/markers, not exact prose (avoid brittle coupling). README/MANUAL row for `/user:assign` + note the `/start`-`/next` rendering. CHANGELOG entry.
+- [x] **TASK-7: Tests + cross-refs.** `tests/test-meta.sh`: assert `WORKFLOW.md` has `## The spine` + the doc-impact map heading + the "Build decisions" convention note; `commands/assign.md` exists with `description:`; PHILOSOPHY §3 contains the bounded/unbounded distinction. Assert for the PRESENCE of headings/markers, not exact prose (avoid brittle coupling). README/MANUAL row for `/user:assign` + note the `/start`-`/next` rendering. CHANGELOG entry.
   - Acceptance: `bash tests/test-meta.sh` passes (count rises by the documented delta); `bash tests/test-hooks.sh` 42/42 (no hook touched in this spec); `/user:assign` in the MANUAL inventory; CHANGELOG entry.
 
 ## Acceptance Criteria (global)
-- [ ] `WORKFLOW.md` has a `## The spine` section wiring backlog -> assign -> lane -> ship, with the no-`last-goal.md`-write rule and the warn+log+ship-review posture
-- [ ] `/user:assign ID-NNN` exists, is a mutator-dispatcher (no execution, no `last-goal.md` write), detects the activator + degrades gracefully, is idempotent per id
-- [ ] `/user:start` + `/user:next` render the queue + drafts read-only via SPEC-005 schema/dual-detect, degrade on malformed input; correctness review-verified
-- [ ] Both clauses warn + log (decision-translation scoped to "Build decisions"; doc-update pinned-diff, normal/full lanes); doc-impact map present incl. the self-row; "covers enumerated change-types" not "airtight"
-- [ ] `/user:ship` reviews the completeness log at the gate; `/user:retro` + `/user:docs` run the pinned diff against the map
-- [ ] PHILOSOPHY §3 gains the bounded/unbounded loop note (added, not a correction of nonexistent text); unbounded outer loop stays declined
-- [ ] No hard gate added for completeness; hard stops remain the existing safety/verify/FIX-REQUIRED gates
-- [ ] `bash tests/test-hooks.sh` 42/42; `bash tests/test-meta.sh` passes (new count documented)
-- [ ] No new dependency, env var, settings.json field; exactly one new command (`/user:assign`); `/start`/`/next`/`/ship`/`/retro`/`/docs` extended, not added; `--switch` deferred
-- [ ] CHANGELOG entry; consistent with SPEC-005 (consumes its state, owns its deferred command + rendering) and the deep-scan note
+- [x] `WORKFLOW.md` has a `## The spine` section wiring backlog -> assign -> lane -> ship, with the no-`last-goal.md`-write rule and the warn+log+ship-review posture
+- [x] `/user:assign ID-NNN` exists, is a mutator-dispatcher (no execution, no `last-goal.md` write), detects the activator + degrades gracefully, is idempotent per id
+- [x] `/user:start` + `/user:next` render the queue + drafts read-only via SPEC-005 schema/dual-detect, degrade on malformed input; correctness review-verified
+- [x] Both clauses warn + log (decision-translation scoped to "Build decisions"; doc-update pinned-diff, normal/full lanes); doc-impact map present incl. the self-row; "covers enumerated change-types" not "airtight"
+- [x] `/user:ship` reviews the completeness log at the gate; `/user:retro` + `/user:docs` run the pinned diff against the map
+- [x] PHILOSOPHY §3 gains the bounded/unbounded loop note (added, not a correction of nonexistent text); unbounded outer loop stays declined
+- [x] No hard gate added for completeness; hard stops remain the existing safety/verify/FIX-REQUIRED gates
+- [x] `bash tests/test-hooks.sh` 42/42; `bash tests/test-meta.sh` passes (new count documented)
+- [x] No new dependency, env var, settings.json field; exactly one new command (`/user:assign`); `/start`/`/next`/`/ship`/`/retro`/`/docs` extended, not added; `--switch` deferred
+- [x] CHANGELOG entry; consistent with SPEC-005 (consumes its state, owns its deferred command + rendering) and the deep-scan note
 
 ## Known limitations
 1. **The completeness clauses and the doc-impact map are net-new/originated-in-kit, warn+log (not the cited GSD hard gate), and have not met the PHILOSOPHY §5 "1 week on a real project" bar.** Grounded on the kit's own `spec-drift-guard` shape; labeled, not hidden (mirrors SPEC-003 DEC-003 / SPEC-005 DEC-014).
@@ -229,6 +230,7 @@ Per-part one-sentence descriptions (gate 4; the spec is multi-part, like SPEC-00
 - **DEC-018 (validation)**: Rendering correctness is review-verified, not test-verified; TASK-7 asserts only structural references. Rationale: the kit has no command-behavior harness; the AC must not claim a green suite proves rendering (scope C3).
 - **DEC-019 (validation)**: Synthesize row downgraded to ✓-with-caveat + a Known-limitations section added. Rationale: the clauses + map are net-new/warn+log (the cited GSD source is a hard gate); match the SPEC-003/005 honesty register (philosophy C2).
 - **DEC-020 (validation)**: TASK-7 asserts presence of headings/markers, not exact prose; draft frontmatter keys pinned (`slug, id, target_spec, status, created`) and aligned with SPEC-005. Rationale: brittle prose coupling + an unpinned `target` vs `target_spec` field name (assumption W2/W3).
+- **DEC-021 (reconciliation, 2026-05-21)**: No design reconcile needed (unlike SPEC-005): SPEC-005 shipped the `.claude/goals/` contract, backlog schema, and branch-aware dual-detect exactly as this spec depends on, and SPEC-006 carries no `.planning`/ADR-0002 assumption. Two execution adjustments from concurrent SPEC-013: (a) the command count is now 14 (SPEC-013's `/user:debug`), so `/user:assign` makes 15 and the TASK-7 ripple also fixes `.claude-plugin/plugin.json` + `marketplace.json`, which SPEC-013 left stale at 13; (b) TASK-6's §3 loop note frames BOTH bounded in-session loops (goal + debug) as native, keeping the unbounded outer loop declined.
 
 ## Source citations
 - Deep scan that scoped this spec (do-less steer, ADOPT/ADAPT/REJECT, the `ralph-loop` finding): `docs/research/2026-05-20-orchestration-deep-scan.md`.

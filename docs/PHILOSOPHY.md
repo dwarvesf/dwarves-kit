@@ -180,6 +180,15 @@ Reject a proposed feature if ANY of these are true:
 
 The kit is the glue layer. It doesn't compete with specialized tools.
 
+### Loop boundaries (bounded in-session, not unbounded outer)
+
+The kit ships bounded in-session loops and declines unbounded outer ones. This refines SPEC-003 DEC-005 (the prior "outer loops declined" framing), which read too bluntly.
+
+- **Unbounded outer bash loop** (an external `while` re-spawning sessions until done): declined. That is autonomous-runtime territory (GSD v2 / OMC); the fence stays firm (see "When to recommend an external tool instead" above).
+- **Bounded in-session Stop-hook loop** (a continuation that keeps the current session working until a condition holds): native and first-party-blessed (Anthropic's `ralph-loop` plugin: "the loop happens inside your current session"). The kit already owns this primitive twice: the **goal loop** (the anti-rationalization Stop hook backing a `/goal` / `goal-craft` / `ralph-loop`-activated objective, wired from the backlog by `/user:assign`, SPEC-006) and the **debug loop** (the `/user:debug` iron-law loop with its guess-fix guard, SPEC-013). Both are bounded by a model-evaluated stop condition and the existing safety subset, not by an external driver.
+
+The distinction: bounded loops continue *within* a session under a verifiable stop; unbounded loops spawn *new* sessions without one. The kit does the first, declines the second. Source: SPEC-006 (this note), SPEC-003 DEC-005 (prior framing), Anthropic `ralph-loop`.
+
 ---
 
 ## What we explicitly reject (from upstream observation)

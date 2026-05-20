@@ -16,6 +16,10 @@ Check if a review has been done:
 
 Do not silently skip the review check. The user must explicitly choose to ship without review.
 
+### Step 1b: Completeness log (warn, not block)
+
+Read `~/.claude/dwarves-kit/logs/completeness.log` (the warn+log sink from the WORKFLOW completeness clauses). Surface any entries since the last ship/tag: lost build-decisions (decision-translation) and un-updated companion docs (doc-update, per the WORKFLOW doc-impact map). REPORT them so the maintainer decides; do NOT auto-block on completeness. Hard blocks stay reserved for the REVIEW.md DO-NOT-SHIP verdict and the safety gates. If the log is absent or empty, say "completeness: clean". Source: SPEC-006.
+
 ### Step 2: Run tests
 
 Detect the test runner and execute:
@@ -89,7 +93,7 @@ Show the proposed commit(s) and ask for confirmation before committing.
 
 ### Step 7: Update docs
 
-Cross-reference the diff against every doc file in the project:
+Run the pinned diff (the merge-base of the integration branch) against the WORKFLOW doc-impact map and update every companion the map names for each change-type touched; log any companion that did not move. The map is the canonical list. The bullets below are the common cases:
 - `README.md` -- features, setup steps, env vars
 - `CLAUDE.md` -- tech stack, structure, commands
 - `CHANGELOG.md` -- already updated in Step 5
