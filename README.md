@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-12 hooks + 12 commands + 9 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push blocked).
+12 hooks + 13 commands + 9 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push blocked).
 
 Install in any Claude Code session:
 
@@ -55,6 +55,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 |---------|-------|-------------|
 | /user:start | Entry | Detect project state, suggest next command |
 | /user:think | Think | 6 forcing questions to stress-test an idea |
+| /user:design | Design | Opt-in: interactive solution-design beat (one question at a time) before /spec |
 | /user:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /user:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /user:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
@@ -126,6 +127,7 @@ Don't run both install paths on the same machine -- hooks would register twice. 
 ```
 /user:start          Detect state, suggest next command (entry point)
 /user:think          Challenge the idea (5 min)
+/user:design         Opt-in: shape the solution with you before /spec
 /user:spec           Generate the spec + 4 parallel researchers (15-30 min)
 /user:spec-validate  Stress-test the spec (10 min)
                      [hand off to contractor]
@@ -203,7 +205,7 @@ These tools complement the kit but are installed separately:
 ```
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
-  MANUAL.md                     Operator reference for the 12 commands
+  MANUAL.md                     Operator reference for the 13 commands
   RUNBOOK.md                    Hook misbehavior diagnosis + recovery
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template
