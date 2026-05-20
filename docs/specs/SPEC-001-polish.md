@@ -1,7 +1,7 @@
 # Spec: v1.5.0 Polish (CI + README hero + demo + contributing)
 Generated: 2026-04-21
-Status: VALIDATED
-Note: Previous v1.4 spec preserved in git history at commit 711b8a9.
+Status: SHIPPED
+Note: Previous v1.4 spec preserved in git history at commit 711b8a9. Shipped in v1.5.0 (CI, README hero, demo, CONTRIBUTING); follow-up fixes in v1.5.1.
 
 ## Problem
 
