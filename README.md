@@ -56,7 +56,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 | /user:start | Entry | Detect project state, suggest next command |
 | /user:think | Think | 6 forcing questions to stress-test an idea |
 | /user:spec | Spec | Generate .planning/SPEC.md with 4 parallel research agents |
-| /user:spec-validate | Spec | 4 adversarial reviewers attack the spec |
+| /user:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /user:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /user:next | Build | Lightweight: picks next undone task, loads context, you drive |
 | /user:review | Review | Paranoid single-pass code review |

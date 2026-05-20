@@ -39,6 +39,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Writes:** `.planning/SPEC.md` (Status: DRAFT), `.planning/research/{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
 **Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
+**Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table (SPEC-009). Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present.
 
 ### `/user:spec-validate`
 
@@ -46,7 +47,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Reads:** `.planning/SPEC.md`
 **Writes:** comments in chat; the maintainer flips SPEC Status to VALIDATED manually after addressing findings
 **When to invoke:** before `/execute` on any spec longer than ~5 tasks
-**Common gotcha:** 4 reviewers (security, failure-mode, assumption-destroyer, scope-critic) run sequentially. Budget ~10 minutes.
+**Common gotcha:** 5 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility) run sequentially. Budget ~10-12 minutes. The 5th reviewer (SPEC-008) flags shallow or non-extensible designs and is calibrated against false positives + legacy specs.
 
 ### `/user:execute`
 

@@ -76,9 +76,31 @@ Status: DRAFT | APPROVED
 [What user pain does this solve? Copy from decision brief if available.]
 
 ## Solution
-[High-level approach. Architecture diagram if needed.]
+<!-- Depth pattern forked from superpowers:brainstorming ("propose 2-3 approaches"; "design for isolation and clarity"). See docs/specs/SPEC-008. -->
+
+### Approaches considered
+2-3 candidate approaches. For each: one line of description + its main tradeoff.
+(If only one is viable, say why the obvious alternatives were rejected.)
+
+### Chosen approach + why
+Which one, and what the rejected alternatives traded away.
+
+### Extensibility & boundaries
+- What changes when the load-bearing dimension grows (more data, more scale, a new variant)? Name the dimension; don't hand-wave "it scales".
+- Unit boundaries: each piece has one purpose, a defined interface, testable independently. A unit needing more than 3 sentences to describe is a split candidate.
+
+### Architecture (diagram if it helps)
+[High-level shape / data flow.]
 
 ## Technical Design
+<!-- Interfaces + Failure modes forked from ops-toolkit SDD (agency-lead-radar / tide). See docs/specs/SPEC-009. -->
+
+### Interfaces (I/O contract)
+Optional; strongest when this spec exposes or consumes an interface. This is the concrete declared interface; "Extensibility & boundaries" above is the qualitative design lens.
+- Inputs / consumes: what existing data, files, APIs, or state this reads, and the shape it relies on.
+- Outputs / produces: what this writes or exposes (files, APIs, return shapes), and the contract downstream code can depend on.
+- Invariants: what must stay true across the boundary so a future change knows what it cannot break.
+
 ### Data model changes
 ### API changes (endpoints, request/response shapes)
 ### UI changes (screens, components, interactions)
@@ -105,6 +127,12 @@ Each task must be atomic: implementable in one session, fits in 50% of a context
 ## Edge Cases
 1. [specific edge case and expected behavior]
 2. [specific edge case and expected behavior]
+
+## Failure modes
+Optional; expected for full-lane specs that touch an external provider, data loss, or a migration. Edge Cases are specific input scenarios; Failure modes are systemic failure classes.
+| Failure class | Detection signal | Mitigation / recovery |
+|---|---|---|
+| [what can break] | [how you'd notice] | [what happens / how to recover] |
 
 ## Out of Scope
 - [thing explicitly excluded and why]

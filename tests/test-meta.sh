@@ -171,6 +171,64 @@ done
 
 # ============================================================
 echo ""
+echo "=== Spec-authoring depth contract (SPEC-008) ==="
+# ============================================================
+# The /spec Solution template must scaffold design depth (2-3 approaches +
+# chosen + extensibility), and /spec-validate must carry the 5th reviewer.
+# Assert on heading/marker presence only, not prose, to avoid brittle coupling.
+
+SPEC_CMD="$KIT_DIR/commands/spec.md"
+for HEADING in "### Approaches considered" "### Chosen approach" "### Extensibility & boundaries"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$HEADING" "$SPEC_CMD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} spec.md Solution template has '$HEADING'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} spec.md Solution template missing '$HEADING'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# SPEC-009: the I/O contract (under Technical Design) + the Failure modes section.
+for HEADING in "### Interfaces (I/O contract)" "## Failure modes"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$HEADING" "$SPEC_CMD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} spec.md template has '$HEADING'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} spec.md template missing '$HEADING'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+VALIDATE_CMD="$KIT_DIR/commands/spec-validate.md"
+TOTAL=$((TOTAL + 1))
+if grep -qE "^### Reviewer 5:" "$VALIDATE_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} spec-validate.md has Reviewer 5 (design/extensibility)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} spec-validate.md missing Reviewer 5"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF "## The 5 reviewers" "$VALIDATE_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} spec-validate.md header says 5 reviewers"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} spec-validate.md header not updated to 5 reviewers"
+  FAIL=$((FAIL + 1))
+fi
+
+# Count-drift guard: no live "4 reviewer(s)" reference may remain in the command
+# (the heading, frontmatter, and output-format intro must all agree). Historical
+# "4 reviewers run <date>" lines live in docs/specs/, not here, so this file is safe
+# to assert clean. Caught a real regression in the SPEC-008 review.
+STALE_COUNT=$(grep "4 reviewer" "$VALIDATE_CMD" 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "spec-validate.md has no stale '4 reviewer' references" "0" "$STALE_COUNT"
+
+# ============================================================
+echo ""
 echo "=== Demo project (examples/hello-spec) ==="
 # ============================================================
 

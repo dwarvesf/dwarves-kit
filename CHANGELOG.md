@@ -2,6 +2,18 @@
 
 All notable changes to dwarves-kit are documented here.
 
+## [Unreleased]
+
+### Added
+
+- **Reviewer 5 (Solution-Design & Extensibility Critic)** in `/user:spec-validate`: flags shallow or non-extensible designs, with a calibration clause (no false-positive storm) and a legacy-grace clause for specs predating the richer template. Source: SPEC-008; forked from `superpowers:brainstorming` ("design for isolation and clarity") + its spec-document-reviewer calibration. Not a runtime dependency.
+- **I/O contract + Failure modes sections** in the `/user:spec` template, plus pointer bullets in `/user:spec-validate` Reviewer 2 (failure modes) and Reviewer 5 (I/O contract). Both sections optional + lane-scoped. Source: SPEC-009; forked from ops-toolkit SDD (`agency-lead-radar` / `tide`). Not a runtime dependency.
+
+### Changed
+
+- **`/user:spec` Solution template**: replaced the one-line `## Solution` block with scaffolded sub-sections (Approaches considered, Chosen approach + why, Extensibility & boundaries, Architecture) so specs carry design depth by default. Source: SPEC-008; forked from `superpowers:brainstorming` ("propose 2-3 approaches"). The opt-in `/user:design` interactive beat is deferred behind the PHILOSOPHY §5 bar.
+- **`tests/test-meta.sh`**: spec-authoring depth + contract assertions (3 Solution sub-headings + Reviewer 5 + the 5-reviewers header + a stale-"4 reviewer" drift guard, SPEC-008; the I/O contract + Failure modes headings, SPEC-009). Suite total: 121 → 129.
+
 ## [1.6.0] - 2026-05-20
 
 Orchestration layer (SPEC-003) plus upstream-audit absorption and lineage hygiene (SPEC-002).
