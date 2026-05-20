@@ -23,22 +23,61 @@ fi
 [ ! -f "CLAUDE.md" ] && WARNINGS+="No CLAUDE.md in project root. "
 
 # Spec status + command suggestion
-# Resolve the active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED) first,
-# then the legacy .planning/ convention (deprecated; removed next minor). The
-# highest-NNN heuristic is an interim selector; SPEC-005 dual-detect replaces it
-# with branch-based selection. See docs/specs/SPEC-010.
+# Resolve the active spec (SPEC-005 dual-detect, reconciled to ADR-0010):
+# docs/specs/ is primary (kit + downstream). Among non-SHIPPED/PARKED specs:
+# exactly one -> use it; more than one -> the one whose slug matches the git
+# branch; zero/multiple branch matches -> emit spec:ambiguous and pick none
+# (never silently guess). Legacy .planning/ is a bounded deprecation fallback
+# (removed next minor). See docs/specs/SPEC-005, SPEC-010.
 SPEC_FILE=""
-for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
-  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC_FILE="$F"; break; }
-done
-if [ -z "$SPEC_FILE" ] && [ -d ".planning" ]; then
+SPEC_AMBIG=""
+CANDIDATES=$(
+  for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do
+    grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" && continue
+    grep -qiE '^Status:' "$F" || continue   # skip files with no parseable Status
+    printf '%s\n' "$F"
+  done
+)
+N=$(printf '%s\n' "$CANDIDATES" | grep -c . || true)
+if [ "$N" -eq 1 ]; then
+  SPEC_FILE="$CANDIDATES"
+elif [ "$N" -gt 1 ]; then
+  # Disambiguate by branch: a spec whose slug tokens appear in the branch name.
+  BRANCH_NAME=$(git branch --show-current 2>/dev/null || true)
+  MATCHED=""
+  if [ -n "$BRANCH_NAME" ]; then
+    while IFS= read -r F; do
+      [ -z "$F" ] && continue
+      SLUG=$(basename "$F" .md | sed -E 's/^SPEC-[0-9]+-//')
+      HIT=0
+      OLDIFS=$IFS; IFS='-'
+      for T in $SLUG; do
+        if [ -n "$T" ]; then
+          case "$BRANCH_NAME" in *"$T"*) HIT=1 ;; esac
+        fi
+      done
+      IFS=$OLDIFS
+      if [ "$HIT" -eq 1 ]; then MATCHED="${MATCHED}${F}"$'\n'; fi
+    done <<< "$CANDIDATES"
+  fi
+  MN=$(printf '%s\n' "$MATCHED" | grep -c . || true)
+  if [ "$MN" -eq 1 ]; then
+    SPEC_FILE=$(printf '%s\n' "$MATCHED" | grep -m1 .)
+  else
+    SPEC_AMBIG=$(printf '%s\n' "$CANDIDATES" | sed -E 's#.*(SPEC-[0-9]+)-.*#\1#' | paste -sd, -)
+  fi
+fi
+if [ -z "$SPEC_FILE" ] && [ -z "$SPEC_AMBIG" ] && [ -d ".planning" ]; then
   for F in .planning/SPEC.md .planning/ROADMAP.md .planning/REQUIREMENTS.md; do
     [ -f "$F" ] && SPEC_FILE="$F" && break
   done
   [ -n "$SPEC_FILE" ] && WARNINGS+=".planning/ is deprecated; move specs to docs/specs/SPEC-NNN. "
 fi
 
-if [ -z "$SPEC_FILE" ]; then
+if [ -n "$SPEC_AMBIG" ]; then
+  STATE+="spec:ambiguous(${SPEC_AMBIG}) "
+  SUGGEST="multiple live specs, no branch match; disambiguate (check out a spec's branch, or ship/park the others)"
+elif [ -z "$SPEC_FILE" ]; then
   SUGGEST="no spec found, consider /user:think then /user:spec"
 else
   # Read spec status

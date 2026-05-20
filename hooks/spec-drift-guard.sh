@@ -24,24 +24,29 @@ case "$FILE" in
     exit 0 ;;
 esac
 
-# Resolve what to check the new file against: the active spec in docs/specs/
-# (highest non-SHIPPED/PARKED SPEC-NNN), else legacy .planning/SPEC.md, else .gsd/.
-# docs/specs/ holds many specs, so grep ONLY the active one (grepping all specs
-# would make drift detection meaningless). Interim selector; SPEC-005 refines it.
-SPEC_SRC=""
-for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
-  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC_SRC="$F"; break; }
+# Resolve what to check the new file against (SPEC-005 union rule, reconciled to
+# ADR-0010): the UNION of all non-SHIPPED/PARKED specs in docs/specs/ (a file in
+# ANY active design is "known"), else legacy .planning/SPEC.md, else .gsd/.
+# Grepping the union (not a single spec) avoids a false-positive storm while more
+# than one spec is open. See docs/specs/SPEC-005.
+SPEC_SRCS=""
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do
+  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" && continue
+  SPEC_SRCS="$SPEC_SRCS $F"
 done
-[ -z "$SPEC_SRC" ] && [ -f ".planning/SPEC.md" ] && SPEC_SRC=".planning/SPEC.md"
-[ -z "$SPEC_SRC" ] && [ -d ".gsd" ] && SPEC_SRC=".gsd"
-[ -z "$SPEC_SRC" ] && exit 0
+SPEC_SRCS=$(echo "$SPEC_SRCS" | sed 's/^ *//')
+[ -z "$SPEC_SRCS" ] && [ -f ".planning/SPEC.md" ] && SPEC_SRCS=".planning/SPEC.md"
+[ -z "$SPEC_SRCS" ] && [ -d ".gsd" ] && SPEC_SRCS=".gsd"
+[ -z "$SPEC_SRCS" ] && exit 0
 
-# Check if file or its parent directory is mentioned in the active spec
+# Check if file or its parent directory is mentioned in any active spec
 BASENAME=$(basename "$FILE")
 DIRNAME=$(dirname "$FILE")
 
-if grep -rq "$FILE\|$BASENAME\|$DIRNAME" "$SPEC_SRC" 2>/dev/null; then
-  # File is in the spec, all good
+# SPEC_SRCS is space-separated and intentionally unquoted so grep gets multiple
+# file/dir args (spec paths never contain spaces).
+if grep -rq "$FILE\|$BASENAME\|$DIRNAME" $SPEC_SRCS 2>/dev/null; then
+  # File is in an active spec, all good
   exit 0
 fi
 
@@ -59,7 +64,7 @@ cat <<EOF
     "hookEventName": "PreToolUse",
     "permissionDecision": "allow"
   },
-  "additionalContext": "[dwarves-kit] '${FILE}' is not in the spec (${SPEC_SRC}). Verify this file is needed."
+  "additionalContext": "[dwarves-kit] '${FILE}' is not in any active spec (${SPEC_SRCS}). Verify this file is needed."
 }
 EOF
 
