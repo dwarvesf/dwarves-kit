@@ -215,7 +215,7 @@ dwarves-kit/
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   agents/                       (9 files) Subagents dispatched by commands
-  commands/                     (14 markdown command prompts)
+  commands/                     (15 markdown command prompts)
   hooks/                        (12 scripts + hooks.json plugin manifest)
   skills/get-api-docs/          Context Hub integration
   rules/                        Path-scoped coding-standard templates

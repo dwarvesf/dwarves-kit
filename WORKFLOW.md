@@ -94,7 +94,7 @@ Per change-type, the companion docs that must move with it. This covers the enum
 | a new `docs/decisions/` ADR | README + `docs/architecture.md` cross-refs |
 | a new `docs/specs/SPEC-NNN` | `_meta/BACKLOG.md` status, the spec's `Status:` header |
 | **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, README "Project structure", `docs/architecture.md` |
-| any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` version, `docs/retro/v<ver>.md` |
+| any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` + `marketplace.json` version, `docs/retro/v<ver>.md` |
 
 The bolded row is self-maintaining: adding a new top-level dir must update this map. Source: SPEC-006.
 
@@ -113,6 +113,7 @@ NEVER writes `last-goal.md`. Activating a draft means handing its body to
 whatever goal-loop activator is present (the built-in `/goal`, the `ralph-loop`
 plugin, or the `goal-craft` skill); if none is installed, the drafts still work
 as plain reusable files. Brainstorm many drafts, one is active at a time; each
-carries a `target_spec`/`id`. The `/user:goals` command and the
-`/user:start`/`/user:next` rendering of these are wired in SPEC-006, not here.
+carries a `target_spec`/`id`. Picking a draft and routing it into a lane is `/user:assign`; `/user:start`/`/user:next`
+render the queue + drafts read-only (SPEC-006). There is no separate `/user:goals`
+list/switch command (SPEC-006 DEC-003, parked).
 Full contract and rationale: ADR-0011.

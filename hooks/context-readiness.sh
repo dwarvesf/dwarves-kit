@@ -49,11 +49,16 @@ elif [ "$N" -gt 1 ]; then
     while IFS= read -r F; do
       [ -z "$F" ] && continue
       SLUG=$(basename "$F" .md | sed -E 's/^SPEC-[0-9]+-//')
+      # whole-token match: a slug token must appear as a COMPLETE token in the
+      # branch (split on / _ . -), so short tokens (a, db, gate) don't
+      # substring-match an unrelated branch (e.g. "gate" in "gateway") and
+      # silently mis-select. BTOK is space-padded so the case glob is boundaried.
+      BTOK=" $(printf '%s' "$BRANCH_NAME" | tr '/_.-' '    ') "
       HIT=0
       OLDIFS=$IFS; IFS='-'
       for T in $SLUG; do
         if [ -n "$T" ]; then
-          case "$BRANCH_NAME" in *"$T"*) HIT=1 ;; esac
+          case "$BTOK" in *" $T "*) HIT=1 ;; esac
         fi
       done
       IFS=$OLDIFS
