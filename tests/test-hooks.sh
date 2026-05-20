@@ -6,6 +6,14 @@
 # Exit 0 = all tests pass. Exit 1 = failures found.
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Isolate hook logs to a temp dir so the suite never writes into the real
+# ~/.claude/dwarves-kit/logs. The log-writing hooks honor DWARVES_KIT_LOG_DIR
+# (default unchanged in production). Removed on exit; the :? guard refuses to
+# rm an empty path.
+export DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-test-logs.XXXXXX")"
+trap 'rm -rf "${DWARVES_KIT_LOG_DIR:?}"' EXIT
+
 PASS=0
 FAIL=0
 TOTAL=0

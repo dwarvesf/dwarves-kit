@@ -84,7 +84,7 @@ done <<< "$RECENT_FILES"
 
 if [ -n "$BLOAT_FILES" ]; then
   # Log for eval corpus
-  LOG_DIR="$HOME/.claude/dwarves-kit/logs"
+  LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR"
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | SLOP | $(echo -e "$BLOAT_FILES" | wc -l | tr -d ' ') files | $(pwd)" >> "$LOG_DIR/slop-cleaner.log"
 

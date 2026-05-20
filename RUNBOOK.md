@@ -22,6 +22,8 @@ Every hook logs to stderr what it matched and what it decided. Run the failing s
 | Statusline showing defaults | run `bash hooks/statusline.sh < /dev/null` and inspect |
 | Hook silently does nothing | `DWARVES_KIT_DEBUG=1` and re-trigger; check stderr |
 
+The four log paths above default to `~/.claude/dwarves-kit/logs/`. Set `DWARVES_KIT_LOG_DIR` to redirect them elsewhere; the test suite sets it to a throwaway `mktemp` dir so running tests never writes into your real `~/.claude` tree.
+
 ## Common failure modes
 
 ### `safety-gate` blocked a command I want to run
