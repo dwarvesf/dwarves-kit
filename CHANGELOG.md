@@ -2,18 +2,26 @@
 
 All notable changes to dwarves-kit are documented here.
 
-## [Unreleased]
+## [1.6.0] - 2026-05-20
+
+Orchestration layer (SPEC-003) plus upstream-audit absorption and lineage hygiene (SPEC-002).
 
 ### Added
 
 - **`WORKFLOW.md`** (repo root): the agent-facing workflow contract. Names each lifecycle phase, routes work by risk tier (tiny / normal / full), and points at the existing guardrail that enforces each boundary. Delivered via the `CLAUDE.md` pointer (auto-loaded each session); it suggests and routes, it does not block. Downstream template ships at `examples/hello-spec/WORKFLOW.md` (`.planning/` path convention). Source: SPEC-003; harness-experimental intake model + the AGENTS.md pattern.
-- **`tests/test-meta.sh`**: 6 assertions for the WORKFLOW.md contract (four pinned section headers + per-file path-convention checks). Suite total: 104 → 110.
+- **`tests/test-review-team-plants.sh`**: behavioral regression guard for the `/review-team` security lens. Plants 3 known-bad fixtures under `$TMPDIR` (trap-cleaned, never in the repo) and asserts the security-review prompts still carry the detection vocabulary for each class; a term missing from both `security-auditor.md` and `reviewer.md` fails the build. Wired into CI. Source: superpowers v5.1.0 (SPEC-002 TASK-1).
+- **Tiered `/user:start`**: `--brief` (one line, state + next command) and `--full` (SPEC task checklist, hook-log line counts, recent commits, phase-grouped command map) via `$ARGUMENTS`; default output is byte-for-byte unchanged. Source: GSD v1.43-rc2 (SPEC-002 TASK-3).
+- **`tests/test-meta.sh`**: 6 assertions for the WORKFLOW.md contract (SPEC-003) plus a `model:` parity check on every agent, value in `{sonnet,haiku,opus}` (SPEC-002 TASK-2). Suite total: 104 → 120 (the extra check is the new CONTRIBUTING.md cross-link from TASK-5).
 
 ### Changed
 
 - **`CLAUDE.md` Workflow section** (kit root + `examples/hello-spec/`): replaced the duplicated step list with a pointer to `WORKFLOW.md`, so the cycle lives in exactly one place.
-- **`docs/PHILOSOPHY.md`**: reconciled the canonical lifecycle phase count to 8 (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect); it previously said 7 in one place and 9 in another.
+- **`docs/PHILOSOPHY.md`**: reconciled the canonical lifecycle phase count to 8 (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect; was 7 in one place and 9 in another), and added a "What we explicitly reject (from upstream observation)" section enumerating four audited anti-patterns (vendor-skill sprawl, UI-shell creep, agent-persona theater, slop-PR submissions). `CONTRIBUTING.md` and `commands/kit-health.md` cross-reference it, and the same 9→8 count fix was applied in both. Source: SPEC-002 TASK-5.
 - **`README.md`, `MANUAL.md`, `docs/architecture.md`**: one-line cross-reference to `WORKFLOW.md` (the architecture pointer frames it as the imperative companion to the data-flow diagram).
+
+### Fixed
+
+- **OMC lineage correction**: the `task-verifier` pattern no longer claims the unverifiable "OMC" anchor. The README Credits bullet is removed and ADR-0005's Source line now owns the pattern as synthesized from the family of architect-verifier-in-Ralph-loop patterns. Source: SPEC-002 TASK-4 / DEC-003.
 
 ## [1.5.1] - 2026-04-21
 
