@@ -34,17 +34,17 @@ $(git log --oneline -5 2>/dev/null || echo "no commits")
 $(git diff --stat 2>/dev/null || echo "none")
 
 ### Active spec
-$(if [ -d ".planning" ]; then
-  SPEC=$(find .planning -name "SPEC.md" -o -name "ROADMAP.md" | head -1)
-  if [ -n "$SPEC" ]; then
-    echo "Spec: $SPEC"
-    # Extract just the task breakdown section
-    sed -n '/## Task Breakdown/,/## /p' "$SPEC" 2>/dev/null | head -30 || echo "(could not extract tasks)"
-  else
-    echo "No spec found in .planning/"
-  fi
+$(SPEC=""
+for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
+  grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC="$F"; break; }
+done
+[ -z "$SPEC" ] && SPEC=$(find .planning -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
+if [ -n "$SPEC" ]; then
+  echo "Spec: $SPEC"
+  # Extract just the task breakdown section
+  sed -n '/## Task Breakdown/,/## /p' "$SPEC" 2>/dev/null | head -30 || echo "(could not extract tasks)"
 else
-  echo "No .planning/ directory"
+  echo "No spec found (docs/specs/ or .planning/)"
 fi)
 
 ### Recent file changes (last 10 modified)
@@ -55,7 +55,7 @@ $(find . -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.go" -o -name 
 ## Context essentials (re-inject after compaction)
 
 Read CLAUDE.md for full project rules. Key reminders:
-- Check .planning/SPEC.md before implementing anything
+- Check the active spec (docs/specs/SPEC-NNN) before implementing anything
 - Do not push to main/master directly
 - Write tests before or alongside implementation
 - No phantom features, no premature abstraction
