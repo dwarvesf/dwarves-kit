@@ -1,10 +1,10 @@
 ---
-description: "Adversarial review of a spec before implementation. 4 reviewer personas attack the spec from different angles."
+description: "Adversarial review of a spec before implementation. 5 reviewer personas attack the spec from different angles."
 ---
 
 You are running an adversarial spec review. Read the spec from `.planning/SPEC.md` (or the most recent spec file in `.planning/`). If no spec exists, tell the user to run `/user:spec` first.
 
-## The 4 reviewers
+## The 5 reviewers
 
 Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer.
 
@@ -24,6 +24,7 @@ Look for:
 - What happens at 10x expected load?
 - What's the recovery path for each failure?
 - Are there any single points of failure?
+- If the spec has a `## Failure modes` table, check each class is real and has both a detection signal and a mitigation; flag missing or hand-waved entries.
 
 ### Reviewer 3: Assumption Destroyer
 Look for:
@@ -44,9 +45,22 @@ Look for:
 - Unclear acceptance criteria (not testable: "should be fast" is not testable, "response under 200ms at p95" is)
 - Missing dependency declarations (Task B clearly depends on Task A's output but doesn't say so)
 
+### Reviewer 5: Solution-Design & Extensibility Critic
+Look for:
+- Is the chosen approach the simplest design that satisfies the requirements, or is it over- or under-engineered for what the problem needs?
+- Are the 2-3 alternatives real and distinct, or strawmen? Are the tradeoffs honest?
+- Coupling & boundaries: does each unit have one clear purpose and a defined interface? Can internals change without breaking consumers? A unit that can't be described without reading its internals has a boundary problem.
+- Extensibility: does the design state what changes when the load-bearing dimension grows, and is that claim grounded or hand-waved? Flag "it scales" with no mechanism.
+- Is there a materially lower-coupling or more extensible design the spec didn't consider?
+- If the spec has an `### Interfaces (I/O contract)`, check inputs/outputs/invariants are concrete (named shapes, not "data in / data out").
+
+**Calibration (critical):** only flag issues that would produce a flawed implementation or a design that cannot evolve. Do NOT flag stylistic preferences, "this section could be longer", or theoretical extensibility nobody asked for (YAGNI). Approve unless there is a real design weakness. If a spec predates this template (no `Approaches considered` section), raise the absent structure as ONE advisory recommendation, not a per-point critical flag; do not storm legacy or downstream specs.
+
+Source: forked from superpowers:brainstorming ("design for isolation and clarity") + its spec-document-reviewer calibration. See docs/specs/SPEC-008.
+
 ## Output format
 
-After all 4 reviewers complete, produce a summary:
+After all 5 reviewers complete, produce a summary:
 
 ```markdown
 # Spec Validation Report

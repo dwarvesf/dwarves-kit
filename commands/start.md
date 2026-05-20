@@ -40,7 +40,7 @@ If `.planning/SPEC.md` exists and its Status line says `DRAFT`:
 
 ```
 Spec exists but not yet approved.
-Suggested: /user:spec-validate to run adversarial review (4 reviewers), then approve.
+Suggested: /user:spec-validate to run adversarial review (5 reviewers), then approve.
 ```
 
 ### 4. Spec is APPROVED or VALIDATED, tasks remain
