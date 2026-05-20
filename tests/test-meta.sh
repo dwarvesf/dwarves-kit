@@ -91,6 +91,20 @@ assert_eq "same event types in both files" "$EVENTS_SETTINGS" "$EVENTS_HOOKS"
 
 # ============================================================
 echo ""
+echo "=== Hook executability ==="
+# ============================================================
+
+# Every hook script must carry the exec bit. They run via `bash <script>`
+# at runtime so a missing bit is silent, which is exactly why CI never
+# caught session-state-save.sh shipping as 100644. kit-health flags it;
+# this asserts it so it cannot regress past CI again. Offenders are named
+# in the test label on failure.
+NON_EXEC=$(for f in "$KIT_DIR"/hooks/*.sh; do [ -x "$f" ] || basename "$f"; done | tr '\n' ' ' | sed 's/ $//')
+NON_EXEC_COUNT=$(printf '%s' "$NON_EXEC" | wc -w | tr -d ' ')
+assert_eq "all hooks/*.sh are executable (non-exec: ${NON_EXEC:-none})" "0" "$NON_EXEC_COUNT"
+
+# ============================================================
+echo ""
 echo "=== Agent files ==="
 # ============================================================
 
