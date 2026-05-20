@@ -130,13 +130,17 @@ Borrowed in spirit from superpowers' AGENTS.md "What We Will Not Accept". The ki
 1. **Compiled binaries.** Bash is the carve-in, statusline.sh's optional `mjs` polyfill is the only carve-out (PHILOSOPHY.md `Bash over binaries`). Any new `.exe`, `.bin`, `.so`, `.dylib` in the kit directory is a REJECT, no exceptions.
 2. **Hooks over 500ms.** Profile with `time` before merging. A slow hook degrades every session. (PHILOSOPHY.md `Maximum 500ms per hook execution`)
 3. **No source citation.** Every component must trace to a proven implementation. Net-new patterns without lineage get rejected and routed to "test as a standalone experiment first" (PHILOSOPHY.md `Synthesize, don't originate`)
-4. **Single-purpose features serving fewer than 2 of the 9 workflow phases.** Belongs as a standalone script, not a kit feature. (PHILOSOPHY.md feature rejection criterion 2)
+4. **Single-purpose features serving fewer than 2 of the 8 workflow phases.** Belongs as a standalone script, not a kit feature. (PHILOSOPHY.md feature rejection criterion 2)
 5. **Duplicates an external tool.** If chub, GSD, gstack, Trail of Bits, or a Claude Code plugin already does it, depend on it. Do not rebuild. (PHILOSOPHY.md `External tools are dependencies, not features`)
 6. **Cannot be explained in one sentence.** If the README table can't fit it on one line, the component is too complex. (PHILOSOPHY.md feature rejection criterion 4)
 7. **Non-bash hooks** (except the documented statusline carve-out). Adds runtime dependencies, slows startup, makes debugging harder. Per PHILOSOPHY.md: if a second exception is proposed, the `Bash over binaries` principle should be revisited entirely, not bent again. A second non-bash hook triggers REJECT until the principle is formally re-evaluated.
 8. **Phantom features.** Documented but not implemented, or validated but not used. (CLAUDE.md template `No phantom features`)
 9. **Speculative configuration.** Flags, options, or knobs added "in case we need them later". Build it when there's a real consumer.
 10. **Bundled unrelated changes** in one PR. Split. One feature, one PR, one source citation.
+11. **Vendor-skill sprawl.** Skills bundled to pad the catalog rather than serve 2+ phases from a single proven source. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)")
+12. **UI-shell creep.** A statusline/HUD grown into a stateful UI with caches, themes, or its own config surface. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)")
+13. **Agent-persona theater.** Agents named for personas ("studio", "agent company") instead of their function. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)")
+14. **Slop-PR submissions.** AI-generated PRs with no human involvement, or speculative fixes nobody asked for. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)"; CONTRIBUTING.md AI-agent wall)
 
 When kit-health detects any of these, the verdict is **REJECT**. Surface it to the user and recommend the fix path: either remove the violation or document an explicit carve-out in PHILOSOPHY.md with rationale. Do not paper over the finding silently.
 
