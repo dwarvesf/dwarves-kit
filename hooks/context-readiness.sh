@@ -50,8 +50,8 @@ else
       SUGGEST="spec is DRAFT, consider /user:spec-validate" ;;
     APPROVED|VALIDATED)
       # Count tasks
-      TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || echo 0)
-      DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || echo 0)
+      TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)
+      DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || true)
       STATE+="tasks:${DONE}/${TOTAL} "
       if [ "$DONE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
         if [ -f "REVIEW.md" ]; then
@@ -82,7 +82,7 @@ if [ -f "package.json" ]; then
 fi
 
 # L3.5 context: codebase-memory-mcp integration
-SRC_COUNT=$(find . -name "*.ts" -o -name "*.go" -o -name "*.py" -o -name "*.rs" 2>/dev/null | grep -v node_modules | wc -l | tr -d ' ')
+SRC_COUNT=$(find . -name "*.ts" -o -name "*.go" -o -name "*.py" -o -name "*.rs" 2>/dev/null | { grep -v node_modules || true; } | wc -l | tr -d ' ')
 if [ "$SRC_COUNT" -gt 50 ]; then
   # Check for codebase-memory-mcp index (v2 uses ~/.cache, older uses local dir)
   CBM_FOUND=false
