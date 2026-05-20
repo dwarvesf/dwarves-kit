@@ -5,6 +5,7 @@ Status: VALIDATED
 Source: maintainer braindump 2026-05-20 (items a + b + c). Backlog: ID-004, ID-005, ID-006.
 Prior spec: docs/specs/SPEC-004-absorption-cadence.md
 Validation: 4 reviewers run 2026-05-20 (scope-critic, assumption-destroyer, failure-mode, philosophy-fidelity). Pre-fix verdict NEEDS REVISION (8 critical + multiple warnings); all resolved inline. See Decision Log DEC-008..DEC-017 and the Validation section.
+Reconciled: 2026-05-21, after SPEC-010/ADR-0010 shipped (superseding ADR-0002) and ID-013 landed. Part 1's detection ORDER is inverted to docs/specs-first (ADR-0010 unified the convention; `.planning/` is now a bounded deprecation fallback, not downstream-precedence); the branch-match SELECTION rule within `docs/specs/` is retained as the still-valid core; TASK-1a's two abort fixes are marked done (ID-013). See DEC-019.
 
 ## Problem
 
@@ -41,26 +42,28 @@ docs/specs/SPEC-NNN-*.md  committed designs      "the contract"    (ID-004 detec
 One detection order, used by every spec-reader (`context-readiness.sh`, `spec-drift-guard.sh`, `commands/next.md`, `commands/start.md`):
 
 ```
-1. If .planning/SPEC.md exists      -> downstream mode; use it. (UNCHANGED behavior)
-2. Else if docs/specs/SPEC-*.md exists -> kit-on-kit mode:
-     candidates = specs whose `Status:` line exists AND does NOT start with "SHIPPED"
-                  (prefix test, so `Status: SHIPPED (v1.6.0)` is correctly excluded;
-                   a file with no parseable Status line is skipped, not treated as live)
+1. If docs/specs/SPEC-*.md exists -> primary mode (kit + downstream, ADR-0010):
+     candidates = specs whose `Status:` line exists AND does NOT start with
+                  "SHIPPED" or "PARKED" (prefix test, so `Status: SHIPPED (v1.6.0)`
+                  is excluded; a file with no parseable Status line is skipped,
+                  not treated as live)
      - exactly 1 candidate  -> use it.
      - more than 1 candidate -> prefer the candidate whose slug matches the current
                                 git branch name (slug tokens appear in the branch).
                                 If zero or multiple still match, emit
                                 `spec:ambiguous(SPEC-00X,00Y,...)` and suggest the
                                 maintainer disambiguate. NEVER silently pick one.
-     - 0 candidates (all SHIPPED) -> fall through to step 3.
-3. Else                             -> no spec; suggest /user:think then /user:spec. (UNCHANGED)
+     - 0 candidates (all SHIPPED/PARKED) -> fall through to step 2.
+2. Else if .planning/SPEC.md exists -> legacy deprecation fallback (removed next
+     minor, ADR-0010); use it AND emit a deprecation warning. (downstream mid-migration)
+3. Else                             -> no spec; suggest /user:think then /user:spec.
 ```
 
-This is "Detect, don't dictate" applied to spec location: the reader detects the convention in play instead of forcing one, and refuses to guess when intent is genuinely ambiguous. Downstream behavior is byte-for-byte unchanged (step 1 fires first). The kit finally sees its own specs (step 2). No convention is migrated; ADR-0002 stands.
+This is "Detect, don't dictate" applied to spec selection: among the unified `docs/specs/` specs the reader picks by branch and refuses to guess when intent is genuinely ambiguous. `docs/specs/` is primary for both the kit and downstream (ADR-0010); `.planning/SPEC.md` remains only as a bounded deprecation fallback (step 2, removed next minor). The interim "highest-NNN" selector SPEC-010 shipped is replaced here by branch-match-else-ambiguous.
 
-**`spec-drift-guard` in kit-on-kit mode greps the UNION of all non-SHIPPED specs**, not a single chosen one. A file referenced in ANY active design is "known" (matching the downstream dir-wide `grep -rq "$PLAN_DIR/"` semantics). Scoping to non-SHIPPED specs avoids both the false-positive storm of single-spec narrowing (a file for SPEC-004 flagged while you work SPEC-005) and the "grep everything, nothing drifts" failure of including SHIPPED specs.
+**`spec-drift-guard` greps the UNION of all non-SHIPPED/PARKED specs in `docs/specs/`**, not a single chosen one. A file referenced in ANY active design is "known" (matching the legacy dir-wide `grep -rq "$PLAN_DIR/"` semantics). Scoping to non-SHIPPED/PARKED specs avoids both the false-positive storm of single-spec narrowing (a file for SPEC-004 flagged while you work SPEC-005) and the "grep everything, nothing drifts" failure of including SHIPPED specs.
 
-**Why edit hooks when SPEC-003 cut a hook edit.** SPEC-003 DEC-002 cut a hook edit because it was a cosmetic delivery channel for a doc and carried abort risk. This edit is different: it fixes a real correctness bug (kit-on-kit blindness). Crucially, `context-readiness.sh` runs `set -euo pipefail` (line 11) and **already has two latent abort bugs** that TASK-1a must fix as part of touching it (see TASK-1a). `spec-drift-guard.sh` has NO `set -e`; it must NOT be blanket-retrofitted with one (that would turn previously-harmless non-zero greps into aborts); its only change is the union-grep scoping above. The edit is justified by the bug, implemented per-hook, not blanket.
+**Why edit hooks when SPEC-003 cut a hook edit.** SPEC-003 DEC-002 cut a hook edit because it was a cosmetic delivery channel for a doc and carried abort risk. This edit is different: it fixes a real correctness bug (the interim "highest-NNN" selector mis-routes when more than one spec is live). The two latent `set -euo pipefail` abort bugs SPEC-005 originally bundled here were **already fixed by ID-013** (the `|| true` guards on the count + find pipelines); TASK-1a no longer touches them, only preserves them. `spec-drift-guard.sh` has NO `set -e`; it must NOT be blanket-retrofitted with one (that would turn previously-harmless non-zero greps into aborts); its only change is the union-grep scoping above. The edit is justified by the selector bug, implemented per-hook, not blanket.
 
 ### Part 2: `.claude/goals/` draft-store contract (ID-005)
 
@@ -105,20 +108,20 @@ Formalize the bootstrapped shape:
 
 | Fork | CHOSEN | Rejected alt |
 |---|---|---|
-| Spec location | dual-detect (.planning first, then docs/specs) | (A) migrate kit to `.planning/`: churn, loses numbered-spec history, contradicts ADR-0002. (B) env var `DWARVES_KIT_SPEC_DIR`: speculative config. (C) docs-only, no wiring: leaves the blindness bug unfixed. |
+| Spec location | docs/specs primary (ADR-0010) + `.planning` deprecation fallback | (A) `.planning`-first precedence: reverts ADR-0010's unification. (B) env var `DWARVES_KIT_SPEC_DIR`: speculative config. (C) docs-only, no wiring: leaves the selector bug unfixed. |
 | Multi-spec selection | branch-match, else emit ambiguous (never guess) | (A) highest-SPEC-NNN-wins: picks the wrong spec whenever >1 DRAFT exists (the current state). (B) tie to goal pointer: over-couples SPEC-005 to SPEC-006. |
 | Goal piece scope | ship the draft-store CONTRACT only; command + rendering -> SPEC-006 | (A) ship `/user:goals` now: phantom feature (consumer unbuilt), fails 2-phase gate. (B) reimplement `/goal`: shadows the built-in. |
 | Backlog home | promote `_meta/BACKLOG.md` to active queue | (A) a second root queue file: two stores to sync. (B) derive from git+spec status only: no durable queue for unspecced items. |
 
 ### NO-list check
 One-sentence descriptions (gate 4):
-- *"Spec-readers detect `.planning/` for downstream and `docs/specs/` for the kit, picking by branch and refusing to guess when ambiguous."*
+- *"Spec-readers select among `docs/specs/` specs by branch (ADR-0010 unified location), fall back to legacy `.planning/`, and refuse to guess when ambiguous."*
 - *"`.claude/goals/` holds multiple goal drafts beside the built-in's single active `last-goal.md`, which the kit never writes."*
 - *"`_meta/BACKLOG.md`'s Active queue is the canonical list of what's left, with stable ids and a status lifecycle."*
 
 | Gate | Compliance |
 |---|---|
-| Bash over binaries | ✓ hook edits stay bash+jq; context-readiness fixed under `set -e`; spec-drift-guard not retrofitted; under 500ms |
+| Bash over binaries | ✓ hook edits stay bash+jq; context-readiness `set -e` aborts already fixed (ID-013); spec-drift-guard not retrofitted; under 500ms |
 | Serves 2+ phases | ✓ detection serves Spec/Build/Review; backlog serves Reflect/Think. (The goal piece is a CONTRACT/convention, not a command; the command's phase-justification is deferred to SPEC-006 where it has a consumer.) |
 | Detect, don't dictate | ✓ detection suggests, never blocks; refuses to guess rather than mis-route |
 | Synthesize, don't originate | **✓-with-caveat.** Dual-detect extends the CCGS `/start` single-file state pattern, but the multi-file newest/branch selection and the goal-draft-store directory are net-new, single-source, and have NOT met the §5 "1 week on a real project" bar. Recorded in Known limitations, not hidden (matching SPEC-003 DEC-003's honesty). |
@@ -139,11 +142,9 @@ One-sentence descriptions (gate 4):
 ### Task Breakdown
 
 **Phase 1: Detection (the bug fix)**
-- [ ] **TASK-1a: Dual-mode detection in the two hooks + fix the inherited aborts.** Implement the Part 1 selection rule (SHIPPED-prefix exclusion, branch-match-else-ambiguous, union drift-grep) in `context-readiness.sh` and `spec-drift-guard.sh`. While in `context-readiness.sh`, fix the two pre-existing `set -euo pipefail` aborts it inherits:
-  - `TOTAL=$(grep -c '^\- \[.\]' ... || echo 0)` emits `0\n0` on no match (grep prints `0` AND exits 1); replace with a pipefail-safe form (e.g. `$(grep -c ... ; true)` guarded, or `wc -l`).
-  - the `find ... | grep -v node_modules` pipeline (line ~80) trips `pipefail` when `find` is empty; guard with `|| true`.
+- [ ] **TASK-1a: Branch-match selection + union drift-grep in the two hooks (reconciled with ADR-0010).** Replace the interim "highest non-SHIPPED/PARKED NNN" selector SPEC-010 shipped with the Part 1 rule (collect all non-SHIPPED/PARKED `docs/specs/` candidates; 1 -> use it; >1 -> branch-match; ambiguous -> emit `spec:ambiguous(...)`, pick none) in `context-readiness.sh`, and the union-grep (a file in ANY non-SHIPPED/PARKED spec is "known") in `spec-drift-guard.sh`. Keep the ADR-0010 order: `docs/specs/` primary, `.planning/` deprecation fallback. The two `set -euo pipefail` abort bugs this task originally bundled are ALREADY FIXED by ID-013 (`|| true` guards on the count + find pipelines); do not re-do them, just preserve them.
   Acceptance (one checkbox each):
-  - [ ] downstream path (`.planning/SPEC.md` present) byte-for-byte unchanged (diff the downstream branch)
+  - [ ] `.planning/SPEC.md` fallback still resolves WITH a deprecation warning when no `docs/specs/` candidate exists
   - [ ] `Status: SHIPPED (v1.6.0)` is correctly excluded (prefix match), verified by fixture
   - [ ] with 3 non-SHIPPED specs and no branch match, emits `spec:ambiguous(...)`, picks none
   - [ ] with a branch whose name contains a spec slug, selects that spec
@@ -187,7 +188,7 @@ One-sentence descriptions (gate 4):
 3. **`switch` semantics (deferred to SPEC-006) are unsafe mid-loop.** Re-running the built-in `/goal` while a Stop-hook goal is actively iterating re-points the active slot; the prior goal's progress is not migrated, only its draft is preserved. SPEC-006 must warn on this.
 
 ## Edge Cases
-1. **Both `.planning/SPEC.md` and `docs/specs/` exist.** Step 1 wins (`.planning/` precedence); the kit-on-kit block is in the `else` only, so exactly one `spec:` token is emitted (asserted in TASK-5).
+1. **Both `docs/specs/` and `.planning/SPEC.md` exist.** Step 1 wins (`docs/specs/` is primary, ADR-0010); the `.planning/` fallback is in the `else` only, so exactly one `spec:` token is emitted (asserted in TASK-5).
 2. **`docs/specs/` has only SHIPPED specs.** 0 candidates; detection falls through to step 3 ("no spec, consider /user:think"). Correct for a fully-shipped repo. (This is the current near-future state; tested.)
 3. **More than one non-SHIPPED spec** (the state today: SPEC-004/005/006). Branch-match selects if the branch names a slug; otherwise `spec:ambiguous(...)` is emitted and nothing is auto-picked. drift-guard greps the union, so no false positives across the open set.
 4. **A spec with no parseable `Status:` line.** Skipped (not treated as a live candidate); the schema (TASK-4) requires a Status line and TASK-5 can assert it.
@@ -200,7 +201,7 @@ One-sentence descriptions (gate 4):
 - The orchestration loop that consumes this state (pick item -> craft goal -> activate -> run WORKFLOW): SPEC-006.
 - Reimplementing or shadowing the built-in `/goal`.
 - Committing goal drafts to git (intentionally ephemeral/per-machine).
-- Migrating the kit to `.planning/` or downstream to `docs/specs/` (ADR-0002 stands).
+- Re-introducing `.planning/`-first precedence or migrating away from the unified `docs/specs/` (ADR-0010 stands; ADR-0002 superseded).
 - A `DWARVES_KIT_SPEC_DIR` env var (speculative config).
 - Multi-session concurrent active goals (the kit is one-session).
 
@@ -223,6 +224,7 @@ One-sentence descriptions (gate 4):
 - **DEC-016 (validation)**: INDEX.md is a **derived cache**; the filesystem (`ls .claude/goals/*.md`) is authoritative. Rationale: a slash command is not transactional; INDEX can diverge and must self-heal (failure-mode W2).
 - **DEC-017 (validation)**: The goal-registry ADR **number is pinned at execute time**, not draft time. Rationale: SPEC-005 and SPEC-006 are drafted concurrently and could both claim 0010 (philosophy W3).
 - **DEC-018 (cross-spec, from SPEC-006 validation)**: The activation handoff names a goal-loop *activator* (built-in `/goal` / `ralph-loop` / `goal-craft`), detected at runtime, not a guaranteed built-in `/goal`. Rationale: `/goal` is not confirmed present in the environment (SPEC-006 assumption-destroyer finding); the kit must not assume a specific activator.
+- **DEC-019 (reconciliation, 2026-05-21)**: SPEC-010/ADR-0010 shipped after SPEC-005 was validated, superseding ADR-0002 and unifying the spec location onto `docs/specs/`. Part 1's detection ORDER is therefore inverted from the original `.planning`-first to **docs/specs-first, `.planning` as a bounded deprecation fallback**; the branch-match SELECTION rule within `docs/specs/` (DEC-009) is retained as the still-valid core (it replaces the interim "highest-NNN" selector SPEC-010 shipped). The two `context-readiness.sh` abort bugs (DEC-013) were already fixed by ID-013, so TASK-1a no longer touches them. Edits: Part 1 order, the "why edit hooks" note, the tradeoff / NO-list / out-of-scope ADR refs, Edge case 1, and TASK-1a scope. No reviewer re-run: the change narrows scope and aligns to already-shipped behavior; the design's risk surface did not grow.
 
 ## Source citations
 - Convention split: `docs/decisions/0002-planning-dir-convention.md` + `docs/specs/README.md`.
@@ -247,3 +249,5 @@ Critical concerns, all resolved inline:
 Warnings addressed: per-hook `set -e` language (DEC-013); "read by /start-/next" downgraded (DEC-015); INDEX derived cache (DEC-016); ADR number pinned (DEC-017); dependency declarations added to the Solution table; switch-mid-loop recorded as Known limitation 3.
 
 Status flipped to VALIDATED after inline resolution. Re-run `/user:spec-validate` if the design changes materially before execute.
+
+**Post-validation reconciliation (2026-05-21):** the design was realigned to ADR-0010 (see DEC-019). This narrows scope (drops the `.planning`-precedence order + the already-done abort fixes) and aligns to shipped behavior; it does not expand the risk surface, so a full reviewer re-run was not triggered. Status remains VALIDATED.
