@@ -253,7 +253,6 @@ Patterns extracted from:
 - [Context Hub](https://github.com/andrewyng/context-hub) - API docs skill
 - [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) - HUD/statusline, slop-cleaner pattern
 - [Claude-Code-Game-Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) - /start router, path-scoped rules, Collaborative Design Protocol
-- [OMC](https://github.com/OMC-tools) - task-verifier pattern (architect verification in Ralph loop)
 - [Smart Ralph](https://github.com/smart-ralph) - fix-agent retry pattern (fail-fix-re-verify loop)
 
 ## License
