@@ -256,6 +256,47 @@ fi
 
 # ============================================================
 echo ""
+echo "=== WORKFLOW.md contract ==="
+# ============================================================
+
+WF_ROOT="$KIT_DIR/WORKFLOW.md"
+WF_DEMO="$KIT_DIR/examples/hello-spec/WORKFLOW.md"
+
+# Kit-root WORKFLOW.md carries the four pinned sections (matched on ASCII prefixes
+# so the grep cannot drift on a parenthetical or a Unicode glyph in the header).
+for SECTION in "^## Required reading" "^## Size the work first" "^## The cycle" "^## Completion contract"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -q "$SECTION" "$WF_ROOT" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has '$SECTION'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing '$SECTION'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Downstream template uses the .planning/ convention; kit-root uses docs/specs/
+# (ADR-0002). Asserting each in its own file catches a copy-paste path error.
+TOTAL=$((TOTAL + 1))
+if grep -q '.planning/SPEC.md' "$WF_DEMO" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/WORKFLOW.md uses .planning/SPEC.md"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} examples/hello-spec/WORKFLOW.md missing .planning/SPEC.md"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -q 'docs/specs/' "$WF_ROOT" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md uses docs/specs/ convention"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing docs/specs/ convention"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

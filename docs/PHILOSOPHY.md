@@ -48,7 +48,7 @@ We believe a unified kit covering Think-through-Retro is more valuable than 4 be
 
 ### "Shallow and wide beats deep and narrow"
 
-We believe covering 7 lifecycle phases at 70% depth each is better than covering 2 phases at 100% depth. The biggest failures in AI-assisted development come from skipped phases (no spec, no review, no retro), not from insufficient depth in any one phase.
+We believe covering 8 lifecycle phases (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect) at 70% depth each is better than covering 2 phases at 100% depth. The biggest failures in AI-assisted development come from skipped phases (no spec, no review, no retro), not from insufficient depth in any one phase.
 
 **Decision this already made:** /execute uses Claude Code's native Task tool for subagent dispatch. It's not as sophisticated as GSD v2's Pi SDK runtime (which has crash recovery, token tracking, and automated git branching). But it exists, and it covers the execution gap that 0 commands would leave.
 
@@ -165,7 +165,7 @@ End of day or end of sprint: /retro to capture learnings.
 Reject a proposed feature if ANY of these are true:
 
 1. **It duplicates an external tool.** If Context Hub, GSD, gstack, or a plugin already does it well, depend on it instead.
-2. **It serves fewer than 2 of the 9 workflow phases.** Single-purpose tools belong as standalone scripts, not kit features.
+2. **It serves fewer than 2 of the 8 workflow phases.** Single-purpose tools belong as standalone scripts, not kit features.
 3. **It requires the user to change their existing Notion/GitHub workflow.** The kit adapts to how Dwarves already works. It doesn't impose a new project management system.
 4. **It can't be explained in one sentence.** If you can't describe what the hook/command does in one line of the README table, it's too complex.
 5. **It has no source citation.** Per the "synthesize, don't originate" principle, every pattern must trace to a proven implementation.

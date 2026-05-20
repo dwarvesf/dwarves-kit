@@ -57,18 +57,7 @@ The kit's hooks/commands still reference `.planning/SPEC.md` for downstream proj
 
 ## Workflow
 
-The kit eats its own dog food. Active development cycles:
-
-1. `/user:start` to detect state (in this repo, usually "no in-flight spec; start with /think or /spec").
-2. `/user:think` for any non-trivial change.
-3. `/user:spec` writes to `.planning/SPEC.md` by default; for kit-on-kit work, draft directly at `docs/specs/SPEC-NNN-<slug>.md` (current spec format).
-4. `/user:spec-validate` runs 4 adversarial reviewers.
-5. `/user:execute` (autonomous, verification pipeline) OR `/user:next` (manual, you drive).
-6. `/user:review-team` for any change touching hooks or security; `/user:review` for small docs/refactor changes.
-7. `/user:docs` syncs README/CHANGELOG with code.
-8. `/user:ship` gates on review verdict, bumps VERSION, writes CHANGELOG, tags, opens PR.
-9. `/user:retro` writes `docs/retro/v<version>.md`.
-10. After ship: flip the spec's `Status:` header to SHIPPED (no file move if drafted in `docs/specs/` already).
+The kit eats its own dog food. The full lifecycle, the risk-tier lanes, and the gate at each phase boundary live in one place: the [`WORKFLOW.md`](WORKFLOW.md) contract. Read it after this file. For kit-on-kit work, spec drafts live in `docs/specs/` (see Spec location above), not `.planning/`.
 
 `/user:kit-health` is the maintainer-only self-assessment against PHILOSOPHY.md. Run it before tagging.
 

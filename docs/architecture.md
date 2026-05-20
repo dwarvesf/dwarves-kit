@@ -18,6 +18,8 @@ The kit is intentionally flat. Component dirs sit at the top of the repo, not ne
 
 ## Data flow through `.planning/SPEC.md`
 
+> The imperative companion to the descriptive map below is [`WORKFLOW.md`](../WORKFLOW.md) (repo root): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes and the gate at each boundary.
+
 `.planning/SPEC.md` is the shared contract for the full lifecycle. It is the single source of truth that crosses command boundaries:
 
 ```
