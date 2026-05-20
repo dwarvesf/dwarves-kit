@@ -182,6 +182,32 @@ The kit is the glue layer. It doesn't compete with specialized tools.
 
 ---
 
+## What we explicitly reject (from upstream observation)
+
+The 2026-05-20 upstream audit (the 10 source repos checked at their then-current HEADs) surfaced four recurring anti-patterns in the wider Claude-Code-tooling ecosystem. The kit rejects each on sight. Each entry names the pattern, where it was observed, the principle it violates, and the review-criterion that catches it.
+
+1. **Vendor-skill sprawl.** Bundling ever more third-party skills into the kit so the install "does more."
+   - Observed: ClaudeKit (`mrgoonie/claudekit-skills`, HEAD @ 2026-05-20 audit), whose skill set drifts wider release over release.
+   - Violates: "External tools are dependencies, not features" and the NO-list one-sentence rule.
+   - Caught by: a new skill must serve 2+ workflow phases and trace to a single proven source; a skill that exists only to pad the catalog is rejected.
+
+2. **UI-shell creep.** Growing a statusline/HUD into a stateful UI layer with caches, themes, and its own config surface.
+   - Observed: oh-my-claudecode (`Yeachan-Heo/oh-my-claudecode`, HEAD @ 2026-05-20 audit), whose HUD accumulates cache-GC and theming concerns.
+   - Violates: "Bash over binaries" and "every script readable in 30 seconds"; a UI shell is a product, not glue.
+   - Caught by: the statusline carve-out is display-only; any cache, persisted state, or theme engine in a hook is rejected.
+
+3. **Agent-persona theater.** Wrapping agents in role-play personas (a "studio", an "agent company", named characters) to imply capability the mechanism does not have.
+   - Observed: the "agent-company OS" framing associated with the OMC name (`1mancompany/OneManCompany`, HEAD @ 2026-05-20 audit).
+   - Violates: "Guardrails over guidance" and ADR-0008 (persona/coercion prose is not enforcement).
+   - Caught by: agents are named for their function (task-verifier, fix-agent), never for a persona; identity or stake framing in a prompt is rejected.
+
+4. **Slop-PR submissions.** AI-generated pull requests with no human involvement, speculative fixes, or features nobody asked for: the rising threat to any popular AI-tooling repo.
+   - Observed: the defensive rejection wall in obra/superpowers `AGENTS.md` (v5.1.0), written precisely because the phenomenon is now common.
+   - Violates: "Synthesize, don't originate" and "No speculative features."
+   - Caught by: CONTRIBUTING.md's "If You Are an AI Agent" wall plus the rejection criteria above; a PR that cannot cite its source or name the phase it serves is closed.
+
+---
+
 ## 4. Differentiation thesis
 
 Why pick dwarves-kit over installing GSD + gstack + Trail of Bits separately?

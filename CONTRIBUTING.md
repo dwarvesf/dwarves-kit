@@ -30,7 +30,7 @@ These all map to specific principles in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.m
 | Non-bash hooks (Python, Node, compiled) | Same. Second exception triggers re-evaluation of the principle, not a one-line carve-out |
 | Hooks that take longer than 500ms | `Maximum 500ms per hook execution`. Profile with `time` |
 | Components with no source citation | `Synthesize, don't originate`. Every README credits row points at a real tool |
-| Components serving fewer than 2 of the 9 workflow phases | Single-purpose tools belong as standalone scripts, not kit features |
+| Components serving fewer than 2 of the 8 workflow phases | Single-purpose tools belong as standalone scripts, not kit features |
 | Duplicates of an external tool (Context Hub, GSD, gstack, Trail of Bits) | `External tools are dependencies, not features`. Depend, don't rebuild |
 | Components that can't be explained in one sentence | If the README table can't fit it on one line, it's too complex |
 | Speculative configuration (flags "in case we need them later") | Build it when there's a real consumer |
@@ -38,6 +38,8 @@ These all map to specific principles in [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.m
 | Bundled unrelated changes in one PR | One feature, one PR, one source citation. Split |
 | PRs that show no evidence of human involvement | A human must have reviewed the complete diff before submission |
 | New runtime dependencies (paid or free) | The kit must work with `bash + jq + git` only. Optional enhancements OK; required deps no |
+
+Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explicitly reject (from upstream observation)" for the four upstream anti-patterns the kit rejects on sight: vendor-skill sprawl, UI-shell creep, agent-persona theater, and slop-PR submissions.
 
 ## What we will accept
 
