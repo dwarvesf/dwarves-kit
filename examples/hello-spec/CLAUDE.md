@@ -41,12 +41,12 @@ spm/
   pyproject.toml       project metadata, dependencies
   README.md            user-facing docs
   CLAUDE.md            this file
-  .planning/SPEC.md    active development spec
+  docs/specs/SPEC-001-version-flag.md    active development spec
 ```
 
 ## Code Quality Rules
 
-- No speculative features. The CLI does install/freeze/list. New subcommands need a justification in `.planning/SPEC.md`.
+- No speculative features. The CLI does install/freeze/list. New subcommands need a justification in `docs/specs/SPEC-001-version-flag.md`.
 - No premature abstraction. We have 3 commands; no `BaseCommand` class until there are 6.
 - Clarity over cleverness. argparse subparsers, not metaprogramming.
 - Justify new dependencies. The CLI uses stdlib only at runtime; `pip` is invoked as a subprocess.
@@ -59,4 +59,4 @@ This project uses dwarves-kit. The phases, the risk-tier lanes, and the gate at 
 
 ## Spec Location
 
-Development specs live in `.planning/`. Read `SPEC.md` before implementing any feature.
+Development specs live in `docs/specs/` as `SPEC-NNN-<slug>.md`. Read the active spec before implementing any feature.

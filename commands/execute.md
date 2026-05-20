@@ -7,7 +7,7 @@ You are an execution orchestrator. Your job is to take an approved spec and driv
 ## Prerequisites
 
 Before starting, verify:
-1. `.planning/SPEC.md` (or `ROADMAP.md`) exists and has status `APPROVED` or `VALIDATED`
+1. `docs/specs/SPEC-NNN-<slug>.md` (or `ROADMAP.md`) exists and has status `APPROVED` or `VALIDATED`
 2. The spec has a `## Task Breakdown` section with tasks organized into phases
 3. Git is on a feature branch (not main/master)
 
@@ -32,7 +32,7 @@ Three agent roles work together:
 
 ### Step 1: Parse the spec
 
-Read `.planning/SPEC.md`. Extract:
+Read `docs/specs/SPEC-NNN-<slug>.md`. Extract:
 - All tasks grouped by phase (Phase 1, Phase 2, etc.)
 - For each task: ID, description, acceptance criteria, files to touch (if specified)
 - Dependencies between tasks (which tasks must complete before others start)
@@ -77,7 +77,7 @@ TASK-[ID]: [description]
 [copied from spec]
 
 ## Context
-[relevant section of .planning/CONTEXT.md if it exists]
+[relevant section of docs/specs/CONTEXT.md if it exists]
 [list of files to read before starting]
 [if codebase-memory-mcp is available: use graph queries instead of grepping to understand code structure]
 
@@ -170,7 +170,7 @@ if verdict still != "PASS":
 
 #### 2e. Update spec after successful task
 
-After each PASS verdict, mark it as done in `.planning/SPEC.md`:
+After each PASS verdict, mark it as done in `docs/specs/SPEC-NNN-<slug>.md`:
 ```
 - [x] TASK-001: [description] -- DONE (commit: abc1234, verified)
 ```

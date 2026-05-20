@@ -8,7 +8,7 @@
 
 ## Required reading (in order)
 1. CLAUDE.md            - project context: stack, structure, rules
-2. .planning/SPEC.md   - the active spec; the shared contract for the cycle
+2. docs/specs/SPEC-001-version-flag.md   - the active spec; the shared contract for the cycle
 3. docs/architecture.md - how the pieces fit (reference; not required per task)
 
 ## Size the work first (risk-tiered intake)

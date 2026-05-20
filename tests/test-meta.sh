@@ -201,6 +201,13 @@ for HEADING in "### Interfaces (I/O contract)" "## Failure modes"; do
   fi
 done
 
+# SPEC-010: no stray .planning/ refs in command prose (the convention unified onto
+# docs/specs/). Hooks legitimately keep a bounded .planning/ deprecation fallback
+# (behavior-tested in test-hooks.sh), so they are NOT guarded here. The one allowed
+# command ref is the explicit "legacy" note in start.md.
+STRAY_PLANNING=$(grep -rn '\.planning' "$KIT_DIR/commands/" 2>/dev/null | grep -vi 'legacy' | wc -l | tr -d ' ')
+assert_eq "no stray .planning/ refs in commands/ (legacy note excepted)" "0" "$STRAY_PLANNING"
+
 VALIDATE_CMD="$KIT_DIR/commands/spec-validate.md"
 TOTAL=$((TOTAL + 1))
 if grep -qE "^### Reviewer 5:" "$VALIDATE_CMD" 2>/dev/null; then
@@ -234,7 +241,7 @@ echo "=== Demo project (examples/hello-spec) ==="
 
 DEMO_DIR="$KIT_DIR/examples/hello-spec"
 
-for f in README.md CLAUDE.md .planning/SPEC.md; do
+for f in README.md CLAUDE.md docs/specs/SPEC-001-version-flag.md; do
   TOTAL=$((TOTAL + 1))
   if [ -f "$DEMO_DIR/$f" ]; then
     echo -e "  ${GREEN}PASS${NC} examples/hello-spec/$f exists"
@@ -248,7 +255,7 @@ done
 # Demo SPEC.md must contain the standard sections
 for SECTION in "## Problem" "## Solution" "## Technical Design" "## Task Breakdown" "## Acceptance Criteria" "## Edge Cases" "## Out of Scope" "## Decision Log"; do
   TOTAL=$((TOTAL + 1))
-  if grep -q "^${SECTION}" "$DEMO_DIR/.planning/SPEC.md" 2>/dev/null; then
+  if grep -q "^${SECTION}" "$DEMO_DIR/docs/specs/SPEC-001-version-flag.md" 2>/dev/null; then
     echo -e "  ${GREEN}PASS${NC} demo SPEC has '$SECTION'"
     PASS=$((PASS + 1))
   else
@@ -359,14 +366,14 @@ for SECTION in "^## Required reading" "^## Size the work first" "^## The cycle" 
   fi
 done
 
-# Downstream template uses the .planning/ convention; kit-root uses docs/specs/
+# Both the downstream template and the kit root now use docs/specs/ (post-unify, SPEC-010).
 # (ADR-0002). Asserting each in its own file catches a copy-paste path error.
 TOTAL=$((TOTAL + 1))
-if grep -qF '.planning/SPEC.md' "$WF_DEMO" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/WORKFLOW.md uses .planning/SPEC.md"
+if grep -qF 'docs/specs/' "$WF_DEMO" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/WORKFLOW.md uses docs/specs/"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} examples/hello-spec/WORKFLOW.md missing .planning/SPEC.md"
+  echo -e "  ${RED}FAIL${NC} examples/hello-spec/WORKFLOW.md missing docs/specs/"
   FAIL=$((FAIL + 1))
 fi
 

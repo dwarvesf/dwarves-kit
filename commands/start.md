@@ -25,9 +25,9 @@ This doesn't look like an initialized project.
 Suggested: Set up CLAUDE.md with project info, or describe what you want to build.
 ```
 
-### 2. No planning directory
+### 2. No spec directory
 
-If no `.planning/` directory exists:
+If no `docs/specs/` directory exists (and no legacy `.planning/`):
 
 ```
 No spec found.
@@ -36,7 +36,7 @@ Suggested: /user:think to challenge the idea, then /user:spec to generate a deve
 
 ### 3. Spec is DRAFT
 
-If `.planning/SPEC.md` exists and its Status line says `DRAFT`:
+If `docs/specs/SPEC-NNN-<slug>.md` exists and its Status line says `DRAFT`:
 
 ```
 Spec exists but not yet approved.
@@ -45,7 +45,7 @@ Suggested: /user:spec-validate to run adversarial review (5 reviewers), then app
 
 ### 4. Spec is APPROVED or VALIDATED, tasks remain
 
-If `.planning/SPEC.md` status is `APPROVED` or `VALIDATED` and there are unchecked tasks (`- [ ]`):
+If `docs/specs/SPEC-NNN-<slug>.md` status is `APPROVED` or `VALIDATED` and there are unchecked tasks (`- [ ]`):
 
 Count completed vs total tasks. Report progress.
 
@@ -97,7 +97,7 @@ Suggested: /user:retro if you haven't captured learnings, or describe the next f
 Append to every recommendation:
 - Current git branch
 - Number of uncommitted changes (if any)
-- Whether `.planning/SPEC.md` exists and its status
+- Whether `docs/specs/SPEC-NNN-<slug>.md` exists and its status
 
 ## Output format
 
@@ -114,7 +114,7 @@ Branch: [branch] | Dirty: [N] files | Spec: [status or "none"]
 
 When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 
-1. **SPEC task checklist** -- parse `.planning/SPEC.md` for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
+1. **SPEC task checklist** -- parse `docs/specs/SPEC-NNN-<slug>.md` for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
 2. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
 3. **Recent commits** -- the output of `git log -5 --oneline`.
 4. **Command map by phase**:
@@ -129,6 +129,6 @@ When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 ## Source
 
 Pattern: CCGS /start router (detects project stage and routes to the right agent).
-Adapted: reads .planning/SPEC.md status field and dwarves-kit command names instead of game-dev-specific state.
+Adapted: reads docs/specs/SPEC-NNN-<slug>.md status field and dwarves-kit command names instead of game-dev-specific state.
 
 Tiered output (`--brief` / default / `--full`): GSD v1.43-rc2 `gsd-help --brief|--full|<topic>` pattern. Adapted to `--brief` + default + `--full` only, no `<topic>` mode (DEC-002: the kit's state space is small enough that section-level help is overkill).

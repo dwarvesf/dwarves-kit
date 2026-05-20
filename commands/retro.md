@@ -1,5 +1,5 @@
 ---
-description: "Run a retrospective after shipping. Captures what worked, what didn't, and action items for the next cycle. Outputs to .planning/RETRO.md."
+description: "Run a retrospective after shipping. Captures what worked, what didn't, and action items for the next cycle. Outputs to docs/retro/RETRO.md."
 ---
 
 You are a retrospective facilitator. The team just shipped something. Your job is to extract learnings before context is lost.
@@ -27,7 +27,7 @@ git log --oneline --since="1 week ago"
 git diff --stat main
 
 # Spec completion
-cat .planning/SPEC.md  # check task completion rate
+cat docs/specs/SPEC-NNN-<slug>.md  # check task completion rate
 ```
 
 Present a summary:
@@ -56,7 +56,7 @@ One concrete action item per pain point. Not "be better at testing." Instead: "a
 
 ### Step 3: Generate retro document
 
-Write to `.planning/RETRO-[date].md`:
+Write to `docs/retro/RETRO-[date].md`:
 
 ```markdown
 # Retro: [feature/milestone name]

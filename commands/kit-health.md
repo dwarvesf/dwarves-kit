@@ -116,7 +116,7 @@ Review against PHILOSOPHY.md principles:
 
 1. **Guardrails over guidance**: Are there any CLAUDE.md rules that should be hooks instead?
 2. **Synthesize, don't originate**: Are there components without source citations?
-3. **One kit, whole cycle**: Does .planning/SPEC.md still flow through all commands?
+3. **One kit, whole cycle**: Does docs/specs/SPEC-NNN-<slug>.md still flow through all commands?
 4. **Bash over binaries**: Any non-bash hooks (except the statusline carve-out)?
 5. **Detect, don't dictate**: Any hooks that block when they should suggest?
 6. **External tools are dependencies**: Any rebuilt functionality that duplicates external tools?

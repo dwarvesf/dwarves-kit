@@ -2,7 +2,7 @@
 description: "Adversarial review of a spec before implementation. 5 reviewer personas attack the spec from different angles."
 ---
 
-You are running an adversarial spec review. Read the spec from `.planning/SPEC.md` (or the most recent spec file in `.planning/`). If no spec exists, tell the user to run `/user:spec` first.
+You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-NNN-<slug>.md` (the most recent non-shipped spec if several exist). If no spec exists, tell the user to run `/user:spec` first.
 
 ## The 5 reviewers
 
@@ -79,6 +79,6 @@ Spec: [spec name]
 ## Verdict: APPROVED / NEEDS REVISION
 ```
 
-If NEEDS REVISION, update `.planning/SPEC.md` with the fixes and mark the Decision Log with entries for each change made.
+If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made.
 
 If APPROVED, update the Status line in SPEC.md to `VALIDATED`.

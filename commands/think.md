@@ -43,4 +43,4 @@ Do NOT be a yes-man. Do NOT validate the idea by default. Push hard on weak poin
 ## If KILL: what would have to be true to reconsider
 ```
 
-4. Save the brief to `.planning/DECISION-BRIEF.md` if the verdict is BUILD.
+4. Save the brief to `docs/specs/DECISION-BRIEF.md` if the verdict is BUILD.

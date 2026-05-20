@@ -93,7 +93,7 @@ Cross-reference the diff against every doc file in the project:
 - `README.md` -- features, setup steps, env vars
 - `CLAUDE.md` -- tech stack, structure, commands
 - `CHANGELOG.md` -- already updated in Step 5
-- `.planning/SPEC.md` -- mark completed tasks
+- `docs/specs/SPEC-NNN-<slug>.md` -- mark completed tasks
 - `ARCHITECTURE.md` -- structural changes
 - API docs (openapi.yaml, docs/api.md, etc.)
 
