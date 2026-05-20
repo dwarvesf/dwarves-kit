@@ -39,7 +39,7 @@ PATTERNS=(
 for PATTERN in "${PATTERNS[@]}"; do
   if echo "$RESPONSE" | grep -qi "$PATTERN"; then
     # Log for future eval corpus
-    LOG_DIR="$HOME/.claude/dwarves-kit/logs"
+    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
     mkdir -p "$LOG_DIR"
     echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $PATTERN | $(pwd)" >> "$LOG_DIR/anti-rationalization.log"
 

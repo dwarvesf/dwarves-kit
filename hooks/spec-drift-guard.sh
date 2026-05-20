@@ -40,7 +40,7 @@ if grep -rq "$FILE\|$BASENAME\|$DIRNAME" "$PLAN_DIR/" 2>/dev/null; then
 fi
 
 # Log the drift detection
-LOG_DIR="$HOME/.claude/dwarves-kit/logs"
+LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 mkdir -p "$LOG_DIR"
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | DRIFT | $FILE | $(pwd)" >> "$LOG_DIR/spec-drift-guard.log"
 

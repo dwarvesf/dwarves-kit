@@ -14,7 +14,7 @@ if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
   echo "[dwarves-kit:safety] checking: $(echo "$CMD" | head -c 80)" >&2
 fi
 
-LOG_DIR="$HOME/.claude/dwarves-kit/logs"
+LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 
 log_block() {
   mkdir -p "$LOG_DIR"
