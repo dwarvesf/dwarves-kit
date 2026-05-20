@@ -8,7 +8,7 @@
     {
       "name": "dwarves-kit",
       "source": ".",
-      "description": "Spec-driven Claude Code workflow with verification pipeline. 12 hooks + 13 commands + 9 agents."
+      "description": "Spec-driven Claude Code workflow with verification pipeline. 12 hooks + 15 commands + 9 agents."
     }
   ]
 }

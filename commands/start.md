@@ -100,6 +100,7 @@ Append to every recommendation:
 - Current git branch
 - Number of uncommitted changes (if any)
 - Whether `docs/specs/SPEC-NNN-<slug>.md` exists and its status
+- Active goal drafts in `.claude/goals/` (count, and `slug -> status`), if any
 
 ## Output format
 
@@ -116,13 +117,17 @@ Branch: [branch] | Dirty: [N] files | Spec: [status or "none"]
 
 When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 
-1. **SPEC task checklist** -- parse `docs/specs/SPEC-NNN-<slug>.md` for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
-2. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
-3. **Recent commits** -- the output of `git log -5 --oneline`.
-4. **Command map by phase**:
-   - Think: `/user:think`
+1. **Backlog queue (what's left?)** -- render the `_meta/BACKLOG.md` Active queue (the Schema there defines the columns) as `ID | Title | Lane | Status`, skipping shipped/parked rows. Read-only. If the queue is malformed, render what parses, note unparseable rows, and never error out of session start.
+2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)`. If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (ADR-0011).
+3. **SPEC task checklist** -- parse the active spec (resolved per the dual-mode rule above) for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
+4. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
+5. **Recent commits** -- the output of `git log -5 --oneline`.
+6. **Command map by phase**:
+   - Think: `/user:think`, `/user:design`
    - Spec: `/user:spec`, `/user:spec-validate`
+   - Orchestrate: `/user:assign` (backlog item -> goal draft -> lane)
    - Build: `/user:execute`, `/user:next`
+   - Debug: `/user:debug` (bug lane)
    - Review: `/user:review`, `/user:review-team`
    - Ship: `/user:docs`, `/user:ship`
    - Reflect: `/user:retro`

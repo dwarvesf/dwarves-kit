@@ -10,6 +10,8 @@ You are a documentation engineer. Your job is to ensure every doc file in the pr
 
 Run `git diff main --stat` (or `git diff HEAD~5 --stat` if on main) to see which files changed recently. Build a mental model of what was added, modified, or removed.
 
+Then run the pinned diff (the integration branch's merge-base) against the WORKFLOW doc-impact map: for each change-type touched, the map names the companion docs that must update. The map is the canonical companion list; the per-file checks in Step 2 are the common cases. Log any companion that did not move to `~/.claude/dwarves-kit/logs/completeness.log` (the warn+log doc-update clause). Source: SPEC-006.
+
 ### Step 2: Scan all doc files
 
 Check each of these files (if they exist) against the diff:
