@@ -12,7 +12,8 @@ A draft store at `.claude/goals/`, beside (not replacing) the built-in's single 
 
 ```
 .claude/goals/
-  <slug>.md    one goal draft. Frontmatter: slug, id (or target_spec), status, created.
+  <slug>.md    one goal draft. Frontmatter: slug, id, target_spec, status, created
+               (all five pinned by SPEC-006 DEC-020).
                Body = the goal text to run through an activator.
   INDEX.md     a DERIVED cache (one row per draft), rebuilt from the *.md files.
                The filesystem (ls .claude/goals/*.md) is the source of truth.

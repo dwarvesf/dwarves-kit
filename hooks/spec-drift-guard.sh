@@ -40,14 +40,19 @@ SPEC_SRCS=$(echo "$SPEC_SRCS" | sed 's/^ *//')
 [ -z "$SPEC_SRCS" ] && exit 0
 
 # Check if file or its parent directory is mentioned in any active spec
-BASENAME=$(basename "$FILE")
-DIRNAME=$(dirname "$FILE")
+BASENAME=$(basename -- "$FILE")
+DIRNAME=$(dirname -- "$FILE")
 
-# SPEC_SRCS is space-separated and intentionally unquoted so grep gets multiple
-# file/dir args (spec paths never contain spaces).
-if grep -rq "$FILE\|$BASENAME\|$DIRNAME" $SPEC_SRCS 2>/dev/null; then
-  # File is in an active spec, all good
-  exit 0
+# Fixed-string match (-F via -e): paths carry regex metacharacters ('.', '-'),
+# so a raw pattern would let "config.ts" match "configXts", and a repo-root
+# dirname "." would match every spec line (suppressing drift for ALL root-level
+# files). Skip the dirname term when it is "." (repo root). SPEC_SRCS is
+# space-separated and intentionally unquoted so grep gets multiple file args
+# (spec paths never contain spaces).
+if [ "$DIRNAME" = "." ]; then
+  grep -rqF -e "$FILE" -e "$BASENAME" $SPEC_SRCS 2>/dev/null && exit 0
+else
+  grep -rqF -e "$FILE" -e "$BASENAME" -e "$DIRNAME" $SPEC_SRCS 2>/dev/null && exit 0
 fi
 
 # Log the drift detection

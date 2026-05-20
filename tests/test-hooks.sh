@@ -264,6 +264,21 @@ RC=0; OUT=$(cr) || RC=$?
 assert_exit "empty docs/specs exits 0" 0 $RC
 echo "$OUT" | jq '.' >/dev/null 2>&1 || true
 assert_exit "empty docs/specs valid JSON" 0 $?
+
+# --- SPEC-005 spec-drift-guard: union grep + the regex-safety fixes from review
+# --- (grep -F so basenames/dirnames are literal; skip dirname "." at repo root). ---
+dg() {  # dg <file_path> : run spec-drift-guard from $FX, echo stdout
+  echo "{\"tool_input\":{\"file_path\":\"$1\"}}" | ( cd "$FX" && bash "$KIT_DIR/hooks/spec-drift-guard.sh" 2>/dev/null )
+}
+mkfx main
+printf 'Status: VALIDATED\nuses src/widget.go\n' > "$FX/docs/specs/SPEC-001-foo.md"
+printf 'Status: VALIDATED\nneeds pkg/alpha.rs\n'  > "$FX/docs/specs/SPEC-002-bar.md"
+assert_output_not_contains "drift-guard: file in SPEC-001 is known (union)" "not in any active spec" "$(dg src/widget.go)"
+assert_output_not_contains "drift-guard: file in SPEC-002 is known (union)" "not in any active spec" "$(dg pkg/alpha.rs)"
+assert_output_contains "drift-guard: root-level unrelated file drifts (review HIGH)" "not in any active spec" "$(dg orphan.ts)"
+mkfx main
+printf 'Status: VALIDATED\nthe configXts thing\n' > "$FX/docs/specs/SPEC-001-foo.md"
+assert_output_contains "drift-guard: basename dot is literal, config.ts drifts (review MED)" "not in any active spec" "$(dg src/config.ts)"
 [ -n "${FX:-}" ] && rm -rf "$FX"
 
 # ============================================================
