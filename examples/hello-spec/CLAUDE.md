@@ -1,4 +1,4 @@
-# CLAUDE.md — spm
+# CLAUDE.md: spm
 
 ## Project
 
