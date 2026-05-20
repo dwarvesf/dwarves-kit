@@ -278,7 +278,7 @@ done
 # Downstream template uses the .planning/ convention; kit-root uses docs/specs/
 # (ADR-0002). Asserting each in its own file catches a copy-paste path error.
 TOTAL=$((TOTAL + 1))
-if grep -q '.planning/SPEC.md' "$WF_DEMO" 2>/dev/null; then
+if grep -qF '.planning/SPEC.md' "$WF_DEMO" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} examples/hello-spec/WORKFLOW.md uses .planning/SPEC.md"
   PASS=$((PASS + 1))
 else
@@ -287,7 +287,7 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if grep -q 'docs/specs/' "$WF_ROOT" 2>/dev/null; then
+if grep -qF 'docs/specs/' "$WF_ROOT" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} WORKFLOW.md uses docs/specs/ convention"
   PASS=$((PASS + 1))
 else

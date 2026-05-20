@@ -18,7 +18,7 @@ Pick a lane before you start. Smaller work skips ceremony.
 |--------|------|------|
 | tiny   | typo, copy, comment, one obvious edit | edit, verify, done. No spec. |
 | normal | one bounded feature or fix | /spec, /execute, /review, /ship |
-| full   | touches auth, authz, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec, /spec-validate, /execute, /review-team, /docs, /ship, /retro |
+| full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec, /spec-validate, /execute, /review-team, /docs, /ship, /retro |
 
 When in doubt between two lanes, take the heavier one. Anything in the full-lane
 trigger list uses the full lane unless you explicitly narrow the scope and say why.
@@ -32,7 +32,7 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 | Build    | /user:execute or /user:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
 | Review   | /user:review or /user:review-team | review verdict recorded | advisory |
 | Docs     | /user:docs | README/CHANGELOG match code | advisory |
-| Ship     | /user:ship | tagged + PR | ship gate (blocks on FIX-REQUIRED), push-to-main blocker |
+| Ship     | /user:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
 | Reflect  | /user:retro | docs/retro/v<version>.md written | advisory |
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
