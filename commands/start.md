@@ -4,6 +4,14 @@ description: "Detect project state and suggest the right next command. The entry
 
 You are a project state detector. Read the current project and suggest what the user should do next. Do NOT execute anything. Just detect and recommend.
 
+## Output mode (read `$ARGUMENTS`)
+
+`$ARGUMENTS` selects how much to render. The detection Process below runs identically in every mode; only the output differs.
+
+- `--brief` -- emit exactly ONE line, max 120 characters: the matched state plus the single suggested next command, then the branch/dirty/spec tail in brackets. Nothing else. Example: `Spec VALIDATED, 3/8 tasks -> /user:execute. [master | 2 dirty | VALIDATED]`
+- (no argument) -- DEFAULT. Emit the standard 3-4 line orientation defined in "Output format" below. This default output is unchanged from prior versions; do not alter it.
+- `--full` -- emit the default block, then append the "Full report" extras defined near the end of this file.
+
 ## Process
 
 Check these signals in order and recommend the FIRST matching action:
@@ -102,7 +110,25 @@ Keep it to 3-4 lines maximum. The user wants a quick orientation, not a report.
 Branch: [branch] | Dirty: [N] files | Spec: [status or "none"]
 ```
 
+## Full report (`--full` only)
+
+When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
+
+1. **SPEC task checklist** -- parse `.planning/SPEC.md` for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
+2. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
+3. **Recent commits** -- the output of `git log -5 --oneline`.
+4. **Command map by phase**:
+   - Think: `/user:think`
+   - Spec: `/user:spec`, `/user:spec-validate`
+   - Build: `/user:execute`, `/user:next`
+   - Review: `/user:review`, `/user:review-team`
+   - Ship: `/user:docs`, `/user:ship`
+   - Reflect: `/user:retro`
+   - Utility: `/user:start`, `/user:kit-health`
+
 ## Source
 
 Pattern: CCGS /start router (detects project stage and routes to the right agent).
 Adapted: reads .planning/SPEC.md status field and dwarves-kit command names instead of game-dev-specific state.
+
+Tiered output (`--brief` / default / `--full`): GSD v1.43-rc2 `gsd-help --brief|--full|<topic>` pattern. Adapted to `--brief` + default + `--full` only, no `<topic>` mode (DEC-002: the kit's state space is small enough that section-level help is overkill).

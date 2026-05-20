@@ -19,6 +19,11 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **When to invoke:** opening a fresh session and you do not remember where you left off
 **Common gotcha:** the router suggests a next step but does not run it. You decide.
 
+**Modes (`$ARGUMENTS`):**
+- `/user:start --brief` -- one line, max 120 chars: state + suggested command + `[branch | N dirty | spec]`. For returning users who want a cue, not a report. Example: `Spec VALIDATED, 3/8 tasks -> /user:execute. [master | 2 dirty | VALIDATED]`
+- `/user:start` -- the default 3-4 line orientation (unchanged from prior versions).
+- `/user:start --full` -- the default block, then: SPEC task checklist, hook-log line counts (last 7 days, counts only, never raw lines), `git log -5 --oneline`, and the command map grouped by phase. For a new user or a deep status check.
+
 ### `/user:think`
 
 **Phase:** challenge an idea before writing a spec
