@@ -8,6 +8,7 @@ All notable changes to dwarves-kit are documented here.
 
 - **Reviewer 5 (Solution-Design & Extensibility Critic)** in `/user:spec-validate`: flags shallow or non-extensible designs, with a calibration clause (no false-positive storm) and a legacy-grace clause for specs predating the richer template. Source: SPEC-008; forked from `superpowers:brainstorming` ("design for isolation and clarity") + its spec-document-reviewer calibration. Not a runtime dependency.
 - **I/O contract + Failure modes sections** in the `/user:spec` template, plus pointer bullets in `/user:spec-validate` Reviewer 2 (failure modes) and Reviewer 5 (I/O contract). Both sections optional + lane-scoped. Source: SPEC-009; forked from ops-toolkit SDD (`agency-lead-radar` / `tide`). Not a runtime dependency.
+- **`/user:design` command (opt-in)**: an interactive solution-design beat between `/think` and `/spec` (propose 2-3 approaches one question at a time, present the design in sections, approve per section), appending the Solution to `docs/specs/DECISION-BRIEF.md` for `/spec` to fold in. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`. The kit is now 13 commands. Closes the "ran without my feedback" half of the original signal.
 
 ### Changed
 

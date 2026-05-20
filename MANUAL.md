@@ -9,7 +9,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The 12 commands
+## The 13 commands
 
 ### `/user:start`
 
@@ -31,6 +31,14 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Writes:** `docs/specs/DECISION-BRIEF.md` only if the verdict is BUILD
 **When to invoke:** before any non-trivial feature. Costs ~5 minutes.
 **Common gotcha:** the 6 forcing questions are confrontational by design. If you accept them too easily, the brief is weak.
+
+### `/user:design`
+
+**Phase:** opt-in interactive solution-design beat (between Think and Spec)
+**Reads:** `docs/specs/DECISION-BRIEF.md` (if present), the codebase
+**Writes:** appends a `## Solution` section to `docs/specs/DECISION-BRIEF.md` (never clobbers the brief's product framing)
+**When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/user:spec`. Opt-in; skip it and `/user:spec` works as before.
+**Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
 
 ### `/user:spec`
 
