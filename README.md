@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-14 hooks + 19 commands + 11 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
+14 hooks + 20 commands + 11 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
 
 Install in any Claude Code session:
 
@@ -26,7 +26,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 
 ## Who this is NOT for
 
-- Teams of 10+ with a dedicated DevOps pipeline. The kit is for one engineer (or one engineer + delegated contractors). Multi-agent orchestration across parallel sessions is L5 territory (Nimbalyst, Conductor) — install those alongside, not instead.
+- Teams of 10+ with a dedicated DevOps pipeline. The kit is for one engineer (or one engineer + delegated contractors). Multi-agent orchestration across parallel sessions is L5 territory (Nimbalyst, Conductor); install those alongside, not instead.
 - Anyone who wants a UI. The kit is bash hooks + markdown commands. Open any file in a text editor; it's all readable.
 - Projects already happily using GSD, gstack, or Trail of Bits' configs as standalone tools. The kit's value is integration; if format-translation overhead between standalone tools isn't actually hurting you, don't switch.
 
@@ -60,6 +60,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 | /user:design | Design | Opt-in: interactive solution-design beat (one question at a time) before /spec |
 | /user:devs-team | Design | Opt-in: 5-lens parallel critique of the solution (brief or spec), report-only |
 | /user:visual-team | Design | Opt-in: 5-lens parallel critique of a visual/UI design (downstream-facing) |
+| /user:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
 | /user:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
 | /user:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /user:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
@@ -213,7 +214,7 @@ These tools complement the kit but are installed separately:
 ```
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
-  MANUAL.md                     Operator reference for the 19 commands
+  MANUAL.md                     Operator reference for the 20 commands
   RUNBOOK.md                    Hook misbehavior diagnosis + recovery
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template
@@ -257,7 +258,9 @@ See [CHANGELOG.md](CHANGELOG.md). It's the source of truth; the README does not 
 
 Patterns extracted from:
 - [GSD](https://github.com/gsd-build/get-shit-done) - spec generation, the original .planning/ convention (since unified onto docs/specs/, ADR-0010), 4 parallel researchers
-- [gstack](https://github.com/garrytan/gstack) - /office-hours, /review, /ship patterns
+- [gstack](https://github.com/garrytan/gstack) - /office-hours, /review, /ship patterns; the /user:ui-design loop shapes (brief schema, injection-wrap, accumulated-feedback)
+- [frontend-design](https://github.com/anthropics/skills) - the external UI generator /user:ui-design delegates to; its aesthetic-direction brief shape
+- [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) - /user:ui-design brief sub-shapes (token ladder, states matrix, a11y bars, voice); generator + tooling rejected per bash-over-binaries
 - [Trail of Bits](https://github.com/trailofbits/claude-code-config) - hook implementations, code quality rules, statusline pattern
 - [ClaudeKit](https://github.com/mrgoonie/claudekit-skills) - validation gate, adversarial review, session-state pattern
 - [Context Hub](https://github.com/andrewyng/context-hub) - API docs skill
