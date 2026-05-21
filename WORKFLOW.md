@@ -60,6 +60,7 @@ session start
                           last-goal.md.
   -> the lane runs        tiny | normal | full (see the cycle table above)
        normal/full -> /user:spec -> /user:spec-validate -> /user:execute (verify pipeline)
+                      (opt-in: /user:devs-team + /user:visual-team before spec; /user:test-plan before execute)
                       -> /user:review -> /user:docs -> /user:ship -> /user:retro
   -> on ship              /user:ship reviews the completeness log; ID-NNN drops off the
                           queue (CHANGELOG is the canonical shipped record).
