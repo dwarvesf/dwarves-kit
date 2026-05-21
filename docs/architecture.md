@@ -6,10 +6,10 @@ How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file i
 
 The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 
-| Kit dir | CC primitive | Trigger | Count (v1.5.1) |
+| Kit dir | CC primitive | Trigger | Count (v1.6.0) |
 |---|---|---|---|
 | `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) | 12 |
-| `commands/` | Slash command | Human typing `/user:<name>` | 15 |
+| `commands/` | Slash command | Human typing `/user:<name>` | 18 |
 | `agents/` | Custom subagent | Dispatched by a command via Task tool | 9 |
 | `skills/` | Skill | Claude auto-triggered from skill description | 1 |
 | `rules/` | Path-scoped rules | Active when Claude reads matching files | 2 templates |
