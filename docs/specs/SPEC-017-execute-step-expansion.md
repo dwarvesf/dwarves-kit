@@ -1,7 +1,7 @@
 # Spec: Bite-sized step expansion in /user:execute (the kit's plan-artifact answer)
 
 Generated: 2026-05-21
-Status: DRAFT
+Status: VALIDATED
 Source: dogfood comparison 2026-05-21 (kit pipeline vs superpowers brainstorming + writing-plans on SPEC-016). The comparison found superpowers' writing-plans produces a more execution-ready, bite-sized plan than the kit's coarser spec task-breakdown, and the kit's target persona ("solo lead handing off to contractors with questionable taste", README) is exactly who that granularity serves. Maintainer decision 2026-05-21: fold the granularity into `/user:execute` rather than add a `/user:plan` command.
 Depends on: `commands/execute.md` (the worker-dispatch loop this enhances) + `agents/task-verifier.md` (the runtime gate, unchanged).
 Relates to: SPEC-016 (the spec whose dogfood surfaced this gap). Refines the kit's "coarse plan + strong runtime" bet by adding plan-time discipline at the worker, not a second artifact.
@@ -39,6 +39,7 @@ AFTER:   worker gets task + AC
 - **No new artifact.** The worker presents its step plan in its completion-protocol output, the same place it already presents Approach/Files/Decisions. No per-task plan file. Rationale: the worker is an ephemeral Task subagent; a persistent plan file is overhead the verifier already substitutes for at the result level.
 - **Generalized step shape.** "Smallest verifiable increment -> verify -> commit." Verify = a unit test (code), a `grep`/`bash` assertion (doc/config/command), or the project's test suite (`bash tests/test-meta.sh` etc.) where it applies. Rationale: the kit's own tasks are mostly non-pytest; a code-only TDD shape would not fit them (the literal writing-plans assumption).
 - **Runtime gate unchanged.** task-verifier and the max-2 fix loop are untouched. Step expansion is added discipline *before* the gate, not a second gate.
+- **Inner step-verify vs the result gate.** When a step's own verify fails, the worker fixes it *within the step* (its normal inner loop) before moving on; it does not push each step failure to the task-verifier. The task-verifier remains the single result-level gate after the worker commits (DEC-007).
 - **No new command, no new agent.** It is a prompt enhancement to `commands/execute.md` Step 2b. Rationale: "Synthesize, don't originate" (writing-plans is the source) + "no premature abstraction".
 
 ### Tradeoff table
@@ -77,11 +78,11 @@ One-sentence description: *"Each `/user:execute` worker expands its task into bi
 ### Task breakdown
 
 **Phase 1: The enhancement**
-- [ ] **TASK-1: `commands/execute.md` Step 2b.** Replace the worker prompt's "Before writing any code, also present your implementation plan: Approach / Files / Key decisions" block with a bite-sized step-expansion block: the worker decomposes the task into ordered steps, each step = the smallest verifiable increment + its verify command + expected result; TDD shape (write failing test -> run -> implement -> run -> commit) when a unit test fits, grep/bash-assertion or the project test suite for doc/config/command tasks; then works the steps in order, verifying each. Keep the existing collaborative-design protocol and decision-mode (lead pauses on the step plan; autonomous logs + proceeds). Do not touch the task-verifier / fix-agent sections.
-  - Acceptance: Step 2b requires an ordered bite-sized step plan before coding; the step shape is "increment -> verify -> commit" and explicitly generalizes beyond unit tests to grep/bash/test-suite verification; lead vs autonomous handling preserved; the verification pipeline sections (2c-2d) are unchanged.
+- [ ] **TASK-1: `commands/execute.md` Step 2b.** Replace the worker prompt's "Before writing any code, also present your implementation plan: Approach / Files / Key decisions" block with a bite-sized step-expansion block: the worker decomposes the task into ordered steps, each step = the smallest verifiable increment + its verify command + expected result; TDD shape (write failing test -> run -> implement -> run -> commit) when a unit test fits, grep/bash-assertion or the project test suite for doc/config/command tasks; then works the steps in order, verifying each. Keep the existing collaborative-design protocol and decision-mode (lead pauses on the step plan; autonomous logs + proceeds). Do not touch the task-verifier / fix-agent sections. Include the pinned marker phrase **`bite-sized steps`** in the new block so TASK-2 can assert it (DEC-008).
+  - Acceptance: Step 2b requires an ordered bite-sized step plan before coding; the step shape is "increment -> verify -> commit" and explicitly generalizes beyond unit tests to grep/bash/test-suite verification; lead vs autonomous handling preserved; the verification pipeline sections (2c-2d) are unchanged. The worker's *behavior* (that it actually generalizes well) is review-verified, not test-verified; TASK-2 asserts only the marker (mirrors SPEC-016 DEC-018).
 
 **Phase 2: Verify + hygiene**
-- [ ] **TASK-2: `tests/test-meta.sh` assertion.** Assert `commands/execute.md` contains the step-expansion marker (a pinned heading or phrase, e.g. `bite-sized steps`), so the discipline cannot silently regress. Assert presence of the marker, not exact prose (avoid brittle coupling).
+- [ ] **TASK-2: `tests/test-meta.sh` assertion.** Assert `commands/execute.md` contains the pinned marker phrase **`bite-sized steps`** (the exact phrase TASK-1 writes), so the discipline cannot silently regress. Assert presence of the marker, not surrounding prose (avoid brittle coupling).
   - Acceptance: a new test-meta assertion passes; `bash tests/test-meta.sh` green; `bash tests/test-hooks.sh` unchanged (no hook touched).
 - [ ] **TASK-3: MANUAL note + CHANGELOG.** Add a sentence to the `MANUAL.md` `/user:execute` section noting that workers expand each task into bite-sized verify-each-step increments before coding. CHANGELOG entry. No command count change (this adds no command).
   - Acceptance: MANUAL `/user:execute` mentions step expansion; CHANGELOG entry; command count unchanged.
@@ -101,6 +102,7 @@ One-sentence description: *"Each `/user:execute` worker expands its task into bi
 1. **The bite-sized rigor is worker-self-discipline, not a hard gate.** A worker can under-decompose; the task-verifier still backstops the *result*, but the *step quality* is not separately enforced (consistent with the kit's "guardrails for safety only" stance). Promotion to a checked artifact is deferred behind a PHILOSOPHY §5 drift signal.
 2. **The generalized verify shape is the kit's adaptation, not the literal writing-plans pattern** (which assumes code + pytest). Labeled here, not hidden.
 3. **No measurement yet that step expansion reduces escalations.** The dogfood is one comparison; whether the added plan-time discipline lowers verifier retries on a real contractor handoff is unproven (the §5 bar for any further promotion).
+4. **The worker prompt accretes.** Step 2b now carries the collaborative-design protocol, decision-mode, and step-expansion. Watch `execute.md` readability ("readable in 30s"); if the worker prompt grows further, split it into a referenced block. (Reviewer 5 advisory.)
 
 ## Edge Cases
 1. **A doc-only or config-only task** (most kit tasks): the worker uses grep/bash/test-suite verify steps, not "write a failing test". The generalized shape covers this.
@@ -108,6 +110,7 @@ One-sentence description: *"Each `/user:execute` worker expands its task into bi
 3. **A task too large** (already handled by execute.md "Task is too large -> split"): step expansion makes oversize tasks obvious earlier; the worker reports the task needs splitting rather than producing a 20-step plan.
 4. **Autonomous mode**: the worker logs the step plan and proceeds without pausing; the plan still appears in its output for the phase-checkpoint review.
 5. **Lead mode**: the worker pauses after presenting the step plan for human approval before coding, reusing the existing decision-mode mechanism.
+6. **A task with no mechanical verify** (subjective prose quality, a design-judgment edit): the step shape degrades to change -> human-review -> commit; the worker names that the verify is a human judgment, not a command (DEC-008).
 
 ## Out of Scope
 - A `/user:plan` command or any separate plan file (rejected: duplicates writing-plans, second belt vs the verifier).
@@ -123,6 +126,8 @@ One-sentence description: *"Each `/user:execute` worker expands its task into bi
 - **DEC-004**: Generalized step shape "increment -> verify -> commit", not literal pytest-TDD. The kit's own tasks are mostly markdown/bash/JSON; a code-only shape would not fit. This is the kit's adaptation of the writing-plans pattern.
 - **DEC-005**: The task-verifier runtime gate is unchanged. Step expansion is plan-time discipline added before the gate, not a replacement; the verifier stays the kit's moat.
 - **DEC-006**: No new command, no new agent (prompt enhancement only). "Synthesize, don't originate" + "no premature abstraction".
+- **DEC-007 (validation)**: A failed step-verify is fixed by the worker *within the step* (its inner loop); the task-verifier stays the single result-level gate after commit. Rationale: the interplay between intra-worker step-verify and the post-worker verifier was underspecified. (Reviewer 2.)
+- **DEC-008 (validation)**: The marker phrase `bite-sized steps` is pinned in both TASK-1 (writes it) and TASK-2 (asserts it); tasks with no mechanical verify degrade to change -> human-review -> commit; the worker's generalization behavior is review-verified, not test-verified. Rationale: marker coupling, the no-mechanical-verify gap, and an untestable behavior claim. (Reviewers 3, 4.)
 
 ## Source citations
 - Bite-sized step granularity + no-placeholders rigor: `superpowers:writing-plans` (the dogfood comparison source).
@@ -130,3 +135,12 @@ One-sentence description: *"Each `/user:execute` worker expands its task into bi
 - The runtime gate left unchanged: `agents/task-verifier.md` + `agents/fix-agent.md`.
 - The dogfood that surfaced the gap: this session's kit-vs-superpowers comparison on `docs/specs/SPEC-016-critique-and-test-lanes.md`.
 - The persona this serves: README ("a solo technical lead handing off implementation to contractors").
+
+## Validation
+`/user:spec-validate` dogfooded on this spec 2026-05-21 (5 reviewers run inline). Verdict: **APPROVED** (no critical issues; 5 warnings folded inline).
+
+- Warnings resolved: inner step-verify vs the result gate (DEC-007); no-mechanical-verify tasks degrade to human-review (DEC-008, edge 6); review-verified behavior claim + marker-string pin (DEC-008); worker-prompt accretion (limitation 4, advisory).
+- Passed: fold-into-execute over a new `/user:plan` command; atomic tasks; the generalized verify shape correctly rejects the pytest-only assumption; the runtime gate is preserved; no new security surface.
+- Contrast with SPEC-016 (NEEDS REVISION, a real critical): SPEC-017 is smaller and sounder, so APPROVED. The review is calibrated, not performative.
+
+Status set to VALIDATED per the `/user:spec-validate` APPROVED path.
