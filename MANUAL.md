@@ -72,7 +72,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
 **Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
-**Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table (SPEC-009). Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present. It also pins `## Verification` (the command(s) that prove the spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so a validated spec is natively pointer-`/goal`-ready (SPEC-012 P1).
+**Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table (SPEC-009). Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present. It also pins `## Verification` (the command(s) that prove the spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so a validated spec is natively pointer-`/goal`-ready (SPEC-012 P1). An optional, on-demand `## Amendments` section (added only when a mid-flight amend happens, never an empty scaffold) records add-scope provenance during a build (SPEC-027).
 
 ### `/user:spec-validate`
 
@@ -90,6 +90,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Dispatches:** worker subagent per task, then task-verifier, then fix-agent on FAIL:fixable (retry max 2)
 **When to invoke:** when handing off to a contractor OR running the kit on yourself end-to-end
 **Common gotcha:** verification adds ~2x token cost per task. Worth it for the FAIL:fixable catch rate; budget accordingly. Each worker first expands its task into bite-sized verify-each-step increments (TDD when a unit test fits; grep/bash/test-suite verify for doc and config tasks) before coding.
+**Mid-flight amend:** if a build reveals scope that must be added now ("also do Y"), do not silently edit the spec or restart the lane. With your approval, amend at a task checkpoint (append `- [ ]` tasks, record an `## Amendments` entry, Status stays VALIDATED) and resume with `/user:next`. The canonical rule is WORKFLOW.md "## Mid-flight amend"; the operator card is PLAYBOOK Scenario 7 (SPEC-027).
 
 ### `/user:next`
 
@@ -97,7 +98,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md`
 **Writes:** code, tests; you drive the verification yourself
 **When to invoke:** when you want hands-on control or the next task needs subtle judgment that the verification pipeline might over-correct on
-**Common gotcha:** picks the next unchecked task only. To skip a task or pick a specific one, edit SPEC.md task ordering first.
+**Common gotcha:** picks the next unchecked task only. To skip a task or pick a specific one, edit SPEC.md task ordering first. This unchecked-only behavior is also why `/user:next` (not a fresh `/user:execute`) is the way to resume after a mid-flight amend: it runs the newly appended tasks and skips the done rows (SPEC-027).
 
 ### `/user:debug`
 
