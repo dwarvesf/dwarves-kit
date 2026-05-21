@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-12 hooks + 18 commands + 9 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push blocked).
+14 hooks + 18 commands + 9 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
 
 Install in any Claude Code session:
 
@@ -36,7 +36,9 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 
 | Hook | Event | What it does |
 |------|-------|-------------|
-| safety-gate | PreToolUse(Bash) | Blocks rm -rf, push to main, force push |
+| safety-gate | PreToolUse(Bash) | Blocks rm -rf (build-artifact allowlist), push to main, force push, DROP TABLE, git reset --hard, kubectl delete |
+| secrets-guard | PreToolUse(Read\|Edit\|Bash) | Blocks reads of secret files (.env, ~/.ssh, ~/.aws, .pem); canonicalizes the path first |
+| commit-format | PreToolUse(Bash) | Blocks non-conventional / >72-char / spec-ID commit subjects |
 | context-readiness | SessionStart | Detects project state, suggests next command |
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |
 | slop-cleaner | Stop | Flags bloated code in recently modified files |

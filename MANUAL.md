@@ -156,9 +156,11 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 
 | Hook | Event | What to remember |
 |---|---|---|
-| `safety-gate` | PreToolUse(Bash) | Blocks `rm -rf`, push to main, force push. Override needs explicit user OK. |
+| `safety-gate` | PreToolUse(Bash) | Blocks `rm -rf` (build-artifact allowlist), push to main, force push, `DROP TABLE`, `git reset --hard`, `kubectl delete`. Override needs explicit user OK. |
+| `secrets-guard` | PreToolUse(Read\|Edit\|Bash) | Blocks reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`); canonicalizes the path first so alternate spellings cannot bypass. Allows `.env.example`. Best-effort on the Bash surface. |
+| `commit-format` | PreToolUse(Bash) | Blocks a `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker. Subject only; bodies and editor commits pass. |
 | `context-readiness` | SessionStart | Reads `docs/specs/SPEC-NNN-<slug>.md` status, suggests next command. Silent when project is healthy. |
-| `anti-rationalization` | Stop | Catches premature-completion phrases. 5 patterns, narrow on purpose. |
+| `anti-rationalization` | Stop | Blocks premature "done": rationalization phrases, guess-fix during an open `/debug` session, and unimplemented-stub markers in the diff. |
 | `slop-cleaner` | Stop | Flags bloated code in recently modified files. Nudge only. |
 | `session-state-save` | Stop, SubagentStop | Persists state to `.claude/session-state/`. Rotates 10 archives. Fail-open. |
 | `auto-format` | PostToolUse(Write\|Edit) | Detects local formatter, never network downloads. |

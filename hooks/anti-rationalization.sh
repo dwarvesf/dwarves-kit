@@ -96,4 +96,26 @@ if [ -d ".claude/debug" ]; then
   fi
 fi
 
+# Phantom-implementation guard (SPEC-014). On a completion claim, block if the
+# uncommitted diff's ADDED lines contain a strong "not implemented" stub marker.
+# Scoped tight (completion claim + added lines + strong markers only) so bare
+# TODO/FIXME and mid-work states never trip it. Source: claudekit self-review.
+if echo "$RESPONSE" | grep -qiE '\b(all done|done\b|complete|completed|finished|ready for review|ready to ship|all set|implemented (it|the))' \
+   && command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+  # Anchor to lines that ARE a stub statement, not lines that merely mention the
+  # token (so code that defines/tests these markers does not self-trigger).
+  PHANTOM_RE='^\+[[:space:]]*(raise[[:space:]]+NotImplementedError|unimplemented!\(|panic\(.*not implemented|throw[[:space:]]+new[[:space:]]+Error\(.*not implemented|throw[[:space:]]+new[[:space:]]+NotImplementedException)'
+  PHANTOM=$(git diff --no-color 2>/dev/null | grep -iE "$PHANTOM_RE" | head -1 || true)
+  if [ -n "$PHANTOM" ]; then
+    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    mkdir -p "$LOG_DIR"
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED-PHANTOM | $(pwd)" >> "$LOG_DIR/anti-rationalization.log"
+
+    [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:anti-rat] BLOCKED phantom-impl" >&2
+
+    echo "{\"decision\":\"block\",\"reason\":\"Completion claimed but the diff still adds an unimplemented stub (NotImplementedError / unimplemented!() / panic or throw 'not implemented'). Implement it for real or remove the claim before stopping.\"}"
+    exit 2
+  fi
+fi
+
 exit 0

@@ -8,7 +8,7 @@ The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 
 | Kit dir | CC primitive | Trigger | Count (v1.6.0) |
 |---|---|---|---|
-| `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) | 12 |
+| `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) | 14 |
 | `commands/` | Slash command | Human typing `/user:<name>` | 18 |
 | `agents/` | Custom subagent | Dispatched by a command via Task tool | 9 |
 | `skills/` | Skill | Claude auto-triggered from skill description | 1 |
@@ -199,6 +199,8 @@ Beyond the repo itself, the kit writes to:
 |---|---|---|
 | `~/.claude/dwarves-kit/logs/anti-rationalization.log` | Blocked Stop-event patterns | anti-rationalization.sh |
 | `~/.claude/dwarves-kit/logs/safety-gate.log` | Blocked destructive Bash commands | safety-gate.sh |
+| `~/.claude/dwarves-kit/logs/secrets-guard.log` | Blocked secret-file reads (path + tool, never contents) | secrets-guard.sh |
+| `~/.claude/dwarves-kit/logs/commit-format.log` | Blocked non-conventional commit subjects | commit-format.sh |
 | `~/.claude/dwarves-kit/logs/spec-drift-guard.log` | Files created outside the spec | spec-drift-guard.sh |
 | `~/.claude/dwarves-kit/logs/slop-cleaner.log` | Bloat detections | slop-cleaner.sh |
 | `.claude/session-state/last-state.md` | Latest session snapshot | session-state-save.sh |
