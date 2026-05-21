@@ -43,6 +43,9 @@ Three stores. Each flow reads and/or writes these; nothing is re-entered between
 **Detector vs mutator** (load-bearing): `/user:start` and `/user:next` only **read and
 render** the queue + drafts. `/user:assign` is the **only mutator**: it writes a goal
 draft, flips a backlog status, and hands off. No other entry point mutates state on intake.
+`/user:assign` accepts either an `ID-NNN` or **freeform intent** (the freeform front door,
+SPEC-026): given freeform it delegates the crystallize interview to `/user:think`, then
+allocates the ID + BACKLOG row (approve-before-allocate, sanitized) before routing as usual.
 
 ---
 
@@ -58,7 +61,7 @@ every lane is a longer or shorter walk along it.
   /user:start ........... DETECT: render the BACKLOG Active queue + active goal drafts
        │                  (read-only; suggests the next command)
        ▼
-  /user:assign ID-NNN ... MUTATE: goal-craft a draft (.claude/goals/<slug>.md),
+  /user:assign <ID|free> .. MUTATE: goal-craft a draft (.claude/goals/<slug>.md);
        │                  pick the lane from the item, detect the goal-loop activator,
        │                  flip status (queued -> speccing | executing), hand off.
        │                  Does NOT execute. Never writes last-goal.md.
@@ -338,7 +341,7 @@ mistake is irreversible:
 | Trigger | Starts | Stop condition | Enforcer |
 |---|---|---|---|
 | `/user:start` | render queue + drafts | output rendered | none (detector) |
-| `/user:assign ID-NNN` | goal draft + lane routing | draft written, status flipped, handed off | none (mutator; idempotent) |
+| `/user:assign <ID-NNN or freeform>` | goal draft + lane routing (freeform: delegate crystallize to `/user:think`, then allocate ID + BACKLOG row) | draft written, status flipped, handed off | none (mutator; idempotent; freeform gated by approve-before-allocate) |
 | `/user:think` | decision brief | brief written (if BUILD) | advisory |
 | `/user:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
 | `/user:spec-validate` | 5-lens adversarial review | `Status: VALIDATED` | advisory (full lane) |
