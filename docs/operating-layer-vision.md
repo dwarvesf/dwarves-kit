@@ -108,6 +108,8 @@ New UX invariants this vision adds:
 | VALIDATING | NEEDS REVISION | revisions required | SPECIFYING |
 | BUILDING | task FAIL:fixable | retries < 2 | BUILDING (fix-agent) |
 | BUILDING | task FAIL:escalate / retries == 2 | unfixable | BLOCKED |
+| BUILDING | "also do Y" / "amend the spec" | at a task checkpoint; completed tasks frozen; Status stays VALIDATED | SPECIFYING (amend, not restart) |
+| SPECIFYING | resume via `/next` | amend recorded | BUILDING (resume) |
 | BUILDING | all tasks done | **all PASS + integration PASS** (hard) | REVIEWING |
 | REVIEWING | verdict SHIP / FIX-applied | not DO-NOT-SHIP | DOCUMENTING |
 | REVIEWING | FIX THEN SHIP / DO NOT SHIP | findings open | SPECIFYING / BUILDING |
@@ -164,7 +166,7 @@ Most transitions already have a path. The real gaps, in priority order:
 | Gap | Scenario | Why it is a gap | Proposed |
 |---|---|---|---|
 | Freeform front door | 2, 5 | `/assign` is ID-only; freeform is bridged by hand | **SPEC-026 / ID-022** (drafted) |
-| Mid-flight spec amend | 7 | no path to amend a `VALIDATED`/building spec without restarting | **ID-023** (new) |
+| Mid-flight spec amend | 7 | no path to amend a `VALIDATED`/building spec without restarting | **SPEC-027 / ID-023** (validated) |
 | Context switch across specs | 9 | worktree-per-spec is the model but no switch affordance | **ID-024** (new) |
 | Re-open shipped | 13 | a `SHIPPED` spec has no follow-up convention | **ID-025** (new) |
 | Abandon terminal | 12 | only `parked` exists; no explicit drop | folded into ID-024 (state hygiene) or a tiny lane |
