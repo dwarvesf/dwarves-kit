@@ -135,6 +135,20 @@ else
 fi
 rm -rf "$TMP_HOME"
 
+# (3) In-place layout (README Option 2: the kit is cloned to ~/.claude/dwarves-kit)
+# must NOT clobber the real hook scripts. Regression: when KIT_DIR == the install
+# destination, the per-file link step rm'd each script and replaced it with a
+# self-referential broken symlink. Here the scripts must stay resolvable.
+INPLACE_HOME=$(mktemp -d)
+mkdir -p "$INPLACE_HOME/.claude/dwarves-kit"
+cp -R "$KIT_DIR/hooks" "$KIT_DIR/commands" "$KIT_DIR/agents" "$KIT_DIR/skills" \
+      "$KIT_DIR/settings.json" "$KIT_DIR/install.sh" "$INPLACE_HOME/.claude/dwarves-kit/" 2>/dev/null
+HOME="$INPLACE_HOME" bash "$INPLACE_HOME/.claude/dwarves-kit/install.sh" >/dev/null 2>&1
+INPLACE_BROKEN=$(for f in "$INPLACE_HOME/.claude/dwarves-kit/hooks/"*.sh; do [ -f "$f" ] || basename "$f"; done \
+  | tr '\n' ' ' | sed 's/ $//')
+assert_eq "in-place install keeps hook scripts resolvable (broken: ${INPLACE_BROKEN:-none})" "" "$INPLACE_BROKEN"
+rm -rf "$INPLACE_HOME"
+
 # ============================================================
 echo ""
 echo "=== Agent files ==="

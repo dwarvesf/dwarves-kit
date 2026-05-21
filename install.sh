@@ -45,7 +45,10 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   done
 
-  # Remove hook script links (and the dir if we created it)
+  # Remove the hook links we created (and the dir if it is now empty). Only
+  # symlinks are removed, so an in-place clone (KIT_DIR == ~/.claude/dwarves-kit,
+  # where the scripts are real files) keeps its hooks; that layout is torn down by
+  # deleting the clone, per the message at the end of this block.
   HOOKS_DEST="$CLAUDE_DIR/dwarves-kit/hooks"
   if [ -L "$HOOKS_DEST" ]; then
     rm "$HOOKS_DEST"
@@ -106,23 +109,37 @@ mkdir -p "$CLAUDE_DIR/commands" "$CLAUDE_DIR/skills"
 chmod +x "$KIT_DIR/hooks/"*.sh
 echo "[ok] Hook scripts are executable"
 
-# 1b. Link hook scripts into the path settings.json references.
+# 1b. Ensure the hook scripts exist at the path settings.json references.
 # settings.json hard-codes $HOME/.claude/dwarves-kit/hooks/<script>.sh, so the
-# scripts must exist there. Per-file symlinks (like commands) keep repo edits live
-# without re-running the installer. Without this step every hook fails with
-# "No such file or directory".
-HOOKS_DEST="$CLAUDE_DIR/dwarves-kit/hooks"
-# A previous run may have left a directory symlink here; drop it so we own a real dir.
-[ -L "$HOOKS_DEST" ] && rm "$HOOKS_DEST"
-mkdir -p "$HOOKS_DEST"
-for HOOK_FILE in "$KIT_DIR/hooks/"*.sh; do
-  LINK="$HOOKS_DEST/$(basename "$HOOK_FILE")"
-  if [ -L "$LINK" ] || [ -f "$LINK" ]; then
-    rm "$LINK"
-  fi
-  ln -s "$HOOK_FILE" "$LINK"
-done
-echo "[ok] Linked hook scripts into $HOOKS_DEST/"
+# scripts must live there. Two layouts:
+#   in-place : the kit was cloned to ~/.claude/dwarves-kit (README Option 2), so
+#              KIT_DIR already IS ~/.claude/dwarves-kit and the scripts are in
+#              place. Linking would point each script at itself, so skip it.
+#   elsewhere: a dev checkout, CI, or template dir. Link each hooks/*.sh into
+#              ~/.claude/dwarves-kit/hooks/ (per-file, like commands, so repo
+#              edits stay live). Without this every hook fails at runtime with
+#              "No such file or directory".
+# NOTE: detection relies on ~/.claude/dwarves-kit NOT existing yet on a first
+# out-of-place install. Do not mkdir "$CLAUDE_DIR/dwarves-kit" before this block,
+# or the in-place branch could false-match and skip linking.
+KIT_REAL="$(cd "$KIT_DIR" && pwd -P)"
+DEST_REAL="$(cd "$CLAUDE_DIR/dwarves-kit" 2>/dev/null && pwd -P || true)"
+if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
+  echo "[ok] Kit is installed in place; hooks already at \$HOME/.claude/dwarves-kit/hooks/"
+else
+  HOOKS_DEST="$CLAUDE_DIR/dwarves-kit/hooks"
+  # A previous run may have left a directory symlink here; drop it so we own a real dir.
+  [ -L "$HOOKS_DEST" ] && rm "$HOOKS_DEST"
+  mkdir -p "$HOOKS_DEST"
+  for HOOK_FILE in "$KIT_DIR/hooks/"*.sh; do
+    LINK="$HOOKS_DEST/$(basename "$HOOK_FILE")"
+    if [ -L "$LINK" ] || [ -f "$LINK" ]; then
+      rm "$LINK"
+    fi
+    ln -s "$HOOK_FILE" "$LINK"
+  done
+  echo "[ok] Linked hook scripts into $HOOKS_DEST/"
+fi
 
 # 2. Merge settings.json
 if [ ! -f "$SETTINGS_FILE" ]; then

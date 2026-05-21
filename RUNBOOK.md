@@ -26,6 +26,19 @@ The four log paths above default to `~/.claude/dwarves-kit/logs/`. Set `DWARVES_
 
 ## Common failure modes
 
+### Every hook fails with `No such file or directory` (bash install)
+
+Symptom: a session opens with `SessionStart:startup hook error ... bash: $HOME/.claude/dwarves-kit/hooks/context-readiness.sh: No such file or directory`, and no kit hook fires. `settings.json` references every hook at `$HOME/.claude/dwarves-kit/hooks/<script>.sh`; the scripts are not there.
+
+Cause: the bash installer was run from a checkout that is NOT `~/.claude/dwarves-kit` (a dev clone elsewhere, a CI clone, a template dir). Older `install.sh` (pre-SPEC-025) only worked when the repo was cloned in place at `~/.claude/dwarves-kit` (README Option 2); from anywhere else it never placed the scripts at the referenced path.
+
+Fix: re-run the installer (`bash <your-checkout>/install.sh`). The fixed installer links each `hooks/*.sh` into `~/.claude/dwarves-kit/hooks/` (and skips linking when the kit IS in place). Verify:
+```
+ls -l ~/.claude/dwarves-kit/hooks/   # every referenced *.sh resolves
+bash tests/test-meta.sh              # the "Installer materializes ..." guard is green
+```
+If you are pinned to an older installer, the in-place layout always works: clone (or move) the repo to `~/.claude/dwarves-kit` and run `install.sh` there.
+
 ### `safety-gate` blocked a command I want to run
 
 The hook's exit code 2 is final. Override paths in order:
