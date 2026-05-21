@@ -45,6 +45,19 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   done
 
+  # Remove hook script links (and the dir if we created it)
+  HOOKS_DEST="$CLAUDE_DIR/dwarves-kit/hooks"
+  if [ -L "$HOOKS_DEST" ]; then
+    rm "$HOOKS_DEST"
+    echo "[ok] Removed hooks symlink: $HOOKS_DEST"
+  elif [ -d "$HOOKS_DEST" ]; then
+    for HOOK_FILE in "$KIT_DIR/hooks/"*.sh; do
+      LINK="$HOOKS_DEST/$(basename "$HOOK_FILE")"
+      [ -L "$LINK" ] && rm "$LINK"
+    done
+    rmdir "$HOOKS_DEST" 2>/dev/null && echo "[ok] Removed hooks directory: $HOOKS_DEST"
+  fi
+
   # Remove dwarves-kit hooks from settings.json
   if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
     # Backup first
@@ -55,9 +68,11 @@ if [ "${1:-}" = "--uninstall" ]; then
     CLEANED=$(jq '
       .hooks |= (
         to_entries | map(
-          .value |= map(
-            .hooks |= map(select(.command | tostring | contains("dwarves-kit") | not))
-          ) | map(select(.hooks | length > 0))
+          .value |= (
+            map(
+              .hooks |= map(select(.command | tostring | contains("dwarves-kit") | not))
+            ) | map(select(.hooks | length > 0))
+          )
         ) | from_entries
       )
     ' "$SETTINGS_FILE" 2>/dev/null)
@@ -91,6 +106,24 @@ mkdir -p "$CLAUDE_DIR/commands" "$CLAUDE_DIR/skills"
 chmod +x "$KIT_DIR/hooks/"*.sh
 echo "[ok] Hook scripts are executable"
 
+# 1b. Link hook scripts into the path settings.json references.
+# settings.json hard-codes $HOME/.claude/dwarves-kit/hooks/<script>.sh, so the
+# scripts must exist there. Per-file symlinks (like commands) keep repo edits live
+# without re-running the installer. Without this step every hook fails with
+# "No such file or directory".
+HOOKS_DEST="$CLAUDE_DIR/dwarves-kit/hooks"
+# A previous run may have left a directory symlink here; drop it so we own a real dir.
+[ -L "$HOOKS_DEST" ] && rm "$HOOKS_DEST"
+mkdir -p "$HOOKS_DEST"
+for HOOK_FILE in "$KIT_DIR/hooks/"*.sh; do
+  LINK="$HOOKS_DEST/$(basename "$HOOK_FILE")"
+  if [ -L "$LINK" ] || [ -f "$LINK" ]; then
+    rm "$LINK"
+  fi
+  ln -s "$HOOK_FILE" "$LINK"
+done
+echo "[ok] Linked hook scripts into $HOOKS_DEST/"
+
 # 2. Merge settings.json
 if [ ! -f "$SETTINGS_FILE" ]; then
   # No existing settings, just copy ours
@@ -107,9 +140,11 @@ else
     EXISTING_CLEAN=$(jq '
       .hooks |= (
         to_entries | map(
-          .value |= map(
-            .hooks |= map(select(.command | tostring | contains("dwarves-kit") | not))
-          ) | map(select(.hooks | length > 0))
+          .value |= (
+            map(
+              .hooks |= map(select(.command | tostring | contains("dwarves-kit") | not))
+            ) | map(select(.hooks | length > 0))
+          )
         ) | from_entries
       )
     ' "$SETTINGS_FILE" 2>/dev/null || cat "$SETTINGS_FILE")
@@ -125,7 +160,7 @@ else
         | group_by(.key)
         | map({
             key: .[0].key,
-            value: [.[][][]] | unique_by(.hooks[0].command // "")
+            value: [.[].value[]] | unique_by(.hooks[0].command // "")
           })
         | from_entries
       )
