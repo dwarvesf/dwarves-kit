@@ -1,7 +1,7 @@
 # Spec: Bite-sized step expansion in /user:execute (the kit's plan-artifact answer)
 
 Generated: 2026-05-21
-Status: VALIDATED
+Status: SHIPPED
 Source: dogfood comparison 2026-05-21 (kit pipeline vs superpowers brainstorming + writing-plans on SPEC-016). The comparison found superpowers' writing-plans produces a more execution-ready, bite-sized plan than the kit's coarser spec task-breakdown, and the kit's target persona ("solo lead handing off to contractors with questionable taste", README) is exactly who that granularity serves. Maintainer decision 2026-05-21: fold the granularity into `/user:execute` rather than add a `/user:plan` command.
 Depends on: `commands/execute.md` (the worker-dispatch loop this enhances) + `agents/task-verifier.md` (the runtime gate, unchanged).
 Relates to: SPEC-016 (the spec whose dogfood surfaced this gap). Refines the kit's "coarse plan + strong runtime" bet by adding plan-time discipline at the worker, not a second artifact.

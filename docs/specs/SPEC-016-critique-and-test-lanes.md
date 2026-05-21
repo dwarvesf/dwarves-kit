@@ -1,7 +1,7 @@
 # Spec: Design-critique + test-plan lanes (devs-team, visual-team, test-plan)
 
 Generated: 2026-05-21
-Status: VALIDATED
+Status: SHIPPED
 Source: maintainer brainstorm 2026-05-21 (superpowers:brainstorming run), porting two external skills to the kit's house style: `az-skills/engineering/devs-roundtable` and `az-skills/design/design-roundtable` (zvadaadam/az-skills). The QA lane has no external source; it is the kit's own coverage-matrix shape.
 Depends on: SPEC-011 (the `/user:design` lane + `docs/specs/DECISION-BRIEF.md` contract this critiques), SPEC-008 (solution-design depth, the brief's `## Solution` sub-section shape), and the `/user:review-team` + `reviewer` parallel-multi-lens pattern this mirrors.
 Relates to: SPEC-006 (the orchestration spine; this is the first work to exercise its doc-impact map for new `commands/*`).
