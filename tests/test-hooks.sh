@@ -92,6 +92,38 @@ assert_exit "allows push to feature branch" 0 $RC
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":""}}')
 assert_exit "allows empty command" 0 $RC
 
+# SPEC-014 P4: build-artifact allowlist + new destructive patterns
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf node_modules"}}')
+assert_exit "allows rm -rf node_modules (artifact allowlist)" 0 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf node_modules dist"}}')
+assert_exit "allows rm -rf of multiple artifacts" 0 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf ~/project"}}')
+assert_exit "still blocks rm -rf of a non-artifact path" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf node_modules && rm -rf /"}}')
+assert_exit "blocks compound rm even with an artifact target" 2 $RC
+
+# C-1 (review): a .. traversal past an allowlisted artifact must NOT be allowed
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf node_modules/../.."}}')
+assert_exit "blocks rm -rf with .. traversal past an artifact" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf node_modules/.."}}')
+assert_exit "blocks rm -rf node_modules/.. (would delete cwd)" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf dist/../../etc"}}')
+assert_exit "blocks rm -rf dist/../../etc" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"psql -c \"DROP TABLE users\""}}')
+assert_exit "blocks DROP TABLE" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git reset --hard HEAD~3"}}')
+assert_exit "blocks git reset --hard" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"kubectl delete pod web-1"}}')
+assert_exit "blocks kubectl delete" 2 $RC
+
 # ============================================================
 echo ""
 echo "=== anti-rationalization.sh ==="
@@ -158,6 +190,115 @@ RC=0
 assert_exit "no-block guess-fix outside any debug session" 0 $RC
 rm -rf "$NODBG"
 [ -n "${DBG:-}" ] && rm -rf "$DBG"
+
+# --- SPEC-014 phantom-implementation guard: a completion claim + a strong stub
+# marker in the uncommitted diff's added lines blocks; clean diff or no claim passes.
+mkpha() {
+  [ -n "${PHA:-}" ] && rm -rf "$PHA"
+  PHA=$(mktemp -d "${TMPDIR:-/tmp}/dk-pha.XXXXXX")
+  ( cd "$PHA" && git init -q && git config user.email t@e && git config user.name t \
+    && printf 'def f():\n    return 1\n' > a.py && git add -A && git commit -qm base )
+}
+ratpha() {  # $1 = assistant_response json ; runs the hook from $PHA
+  local RC=0
+  ( cd "$PHA" && echo "$1" | bash "$KIT_DIR/hooks/anti-rationalization.sh" >/dev/null 2>&1 ) || RC=$?
+  echo "$RC"
+}
+
+mkpha
+( cd "$PHA" && printf 'def g():\n    raise NotImplementedError\n' >> a.py )
+RC=$(ratpha '{"stop_hook_active":false,"assistant_response":"All done, implemented the feature."}')
+assert_exit "blocks completion claim with NotImplementedError in diff" 2 $RC
+
+mkpha
+RC=$(ratpha '{"stop_hook_active":false,"assistant_response":"All done, tests passing."}')
+assert_exit "allows completion claim with a clean diff" 0 $RC
+
+mkpha
+( cd "$PHA" && printf 'def g():\n    raise NotImplementedError\n' >> a.py )
+RC=$(ratpha '{"stop_hook_active":false,"assistant_response":"Still investigating the parser behavior."}')
+assert_exit "allows a stub marker when no completion claim" 0 $RC
+[ -n "${PHA:-}" ] && rm -rf "$PHA"
+
+# ============================================================
+echo ""
+echo "=== secrets-guard.sh ==="
+# ============================================================
+# SPEC-014 P1: deny reads of secret files; canonicalize path first so alternate
+# spellings cannot bypass; allow .env.example; fail-open on malformed input.
+
+RC=$(run_hook secrets-guard.sh '{"tool_name":"Read","tool_input":{"file_path":"~/.ssh/id_rsa"}}')
+assert_exit "blocks Read of ~/.ssh/id_rsa" 2 $RC
+
+RC=$(run_hook secrets-guard.sh "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$HOME/.ssh/id_rsa\"}}")
+assert_exit "blocks Read of \$HOME/.ssh/id_rsa (normalization)" 2 $RC
+
+RC=$(run_hook secrets-guard.sh "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$HOME/x/../.ssh/id_rsa\"}}")
+assert_exit "blocks Read with .. spelling (normalization bypass)" 2 $RC
+
+RC=$(run_hook secrets-guard.sh '{"tool_name":"Read","tool_input":{"file_path":"/proj/.env"}}')
+assert_exit "blocks Read of .env" 2 $RC
+
+RC=$(run_hook secrets-guard.sh '{"tool_name":"Edit","tool_input":{"file_path":"/proj/secrets.pem"}}')
+assert_exit "blocks Edit of a .pem" 2 $RC
+
+RC=$(run_hook secrets-guard.sh '{"tool_name":"Read","tool_input":{"file_path":"/proj/.env.example"}}')
+assert_exit "allows .env.example (allowlist)" 0 $RC
+
+RC=$(run_hook secrets-guard.sh '{"tool_name":"Read","tool_input":{"file_path":"/proj/src/main.go"}}')
+assert_exit "allows a normal source read" 0 $RC
+
+RC=$(run_hook secrets-guard.sh '{"tool_name":"Bash","tool_input":{"command":"cat ~/.ssh/id_rsa"}}')
+assert_exit "blocks Bash cat of an ssh key" 2 $RC
+
+RC=$(run_hook secrets-guard.sh '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}')
+assert_exit "allows a normal Bash command" 0 $RC
+
+RC=$(run_hook secrets-guard.sh 'not json{')
+assert_exit "fail-open on malformed input" 0 $RC
+
+# H-1 (review): a symlink with an innocuous name pointing at a secret is blocked
+SLNK=$(mktemp -d "${TMPDIR:-/tmp}/dk-slnk.XXXXXX")
+mkdir -p "$SLNK/.ssh" && : > "$SLNK/.ssh/id_rsa" && ln -s "$SLNK/.ssh/id_rsa" "$SLNK/notes.txt"
+RC=$(run_hook secrets-guard.sh "{\"tool_name\":\"Read\",\"tool_input\":{\"file_path\":\"$SLNK/notes.txt\"}}")
+assert_exit "blocks Read of a symlink pointing at a secret" 2 $RC
+rm -rf "$SLNK"
+
+# H-2 (review): a blocked path containing a double-quote still emits valid JSON
+OUT=$(echo '{"tool_name":"Read","tool_input":{"file_path":"/proj/a\".pem"}}' | bash "$KIT_DIR/hooks/secrets-guard.sh" 2>/dev/null)
+echo "$OUT" | jq -e '.decision=="block"' >/dev/null 2>&1
+assert_exit "emits valid JSON when the blocked path contains a quote" 0 $?
+
+# ============================================================
+echo ""
+echo "=== commit-format.sh ==="
+# ============================================================
+# SPEC-014 P2: lint the commit subject (first -m line only); skip merge/fixup/
+# editor commits; ignore -m body args so a long body never trips the <=72 check.
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"random message no type\""}}')
+assert_exit "blocks non-conventional subject" 2 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"feat: add thing for SPEC-014\""}}')
+assert_exit "blocks spec-ID in subject" 2 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"feat(debug): add the bug lane and a guess-fix guard plus extras over the limit now\""}}')
+assert_exit "blocks subject over 72 chars" 2 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"feat(debug): add lane\""}}')
+assert_exit "allows a clean conventional subject" 0 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit -m \"fix(x): y\" -m \"a long body line that is well over seventy-two characters and must not trip the check\""}}')
+assert_exit "allows long body via second -m (subject-only lint)" 0 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit"}}')
+assert_exit "allows editor commit (no -m)" 0 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"git commit --amend --no-edit"}}')
+assert_exit "allows amend --no-edit" 0 $RC
+
+RC=$(run_hook commit-format.sh '{"tool_input":{"command":"ls -la"}}')
+assert_exit "ignores non-commit commands" 0 $RC
 
 # ============================================================
 echo ""
@@ -316,11 +457,11 @@ assert_exit "settings.json is valid JSON" 0 $?
 
 HOOK_COUNT=$(jq '[.hooks | to_entries[] | .value[] | .hooks[]] | length' "$KIT_DIR/settings.json" 2>/dev/null)
 TOTAL=$((TOTAL + 1))
-if [ "$HOOK_COUNT" -eq 12 ]; then
-  echo -e "  ${GREEN}PASS${NC} settings.json has 12 event hooks registered"
+if [ "$HOOK_COUNT" -eq 14 ]; then
+  echo -e "  ${GREEN}PASS${NC} settings.json has 14 event hooks registered"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 12)"
+  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 14)"
   FAIL=$((FAIL + 1))
 fi
 

@@ -129,6 +129,7 @@ else
           })
         | from_entries
       )
+      | .permissions = ((.permissions // {}) + {deny: (((.permissions.deny // []) + ($new.permissions.deny // [])) | unique)})
     ' 2>/dev/null)
 
     if [ -n "$MERGED" ] && echo "$MERGED" | jq '.' >/dev/null 2>&1; then
