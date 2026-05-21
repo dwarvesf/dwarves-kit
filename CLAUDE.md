@@ -57,7 +57,9 @@ The kit unified the spec location onto `docs/specs/SPEC-NNN-<slug>.md` for both 
 
 ## Workflow
 
-The kit eats its own dog food. The full lifecycle, the risk-tier lanes, and the gate at each phase boundary live in one place: the [`WORKFLOW.md`](WORKFLOW.md) contract. Read it after this file. For kit-on-kit work, spec drafts live in `docs/specs/` (see Spec location above), not `.planning/`.
+The operate-contract (read-order, task loop, done-definition, the "Pause if" list) is canonical in [`AGENTS.md`](AGENTS.md), the tool-agnostic front door. Read it first; this file is the Claude-Code layer on top of it. Do not restate the operate-contract here; point at `AGENTS.md`.
+
+The kit eats its own dog food. The full lifecycle, the risk-tier lanes, and the gate at each phase boundary live in one place: the [`WORKFLOW.md`](WORKFLOW.md) contract. Read it after `AGENTS.md` and this file. For kit-on-kit work, spec drafts live in `docs/specs/` (see Spec location above), not `.planning/`.
 
 `/user:kit-health` is the maintainer-only self-assessment against PHILOSOPHY.md. Run it before tagging.
 

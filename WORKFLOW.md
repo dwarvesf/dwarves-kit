@@ -7,9 +7,12 @@
 > hook, and the verification pipeline.
 
 ## Required reading (in order)
-1. CLAUDE.md            - project context: stack, structure, rules
-2. docs/specs/SPEC-NNN-<slug>.md - the active spec; the shared contract for the cycle
-3. docs/architecture.md - how the pieces fit (reference; not required per task)
+`AGENTS.md` is the front door and owns the read-order. Read it first, then this
+list; do not restate the order here. See `AGENTS.md` zone 1 ("Read in this order").
+1. AGENTS.md            - the operate-contract: read-order, task loop, done-definition, "Pause if"
+2. CLAUDE.md            - the Claude-Code layer: stack, structure, rules, hooks, commands, plugin
+3. docs/specs/SPEC-NNN-<slug>.md - the active spec; the shared contract for the cycle
+4. docs/architecture.md - how the pieces fit (reference; not required per task)
 
 ## Size the work first (risk-tiered intake)
 Pick a lane before you start. Smaller work skips ceremony.
@@ -71,10 +74,11 @@ session start
 **Detector/mutator split.** `/user:start` and `/user:next` only read and render; `/user:assign` is the only mutator. **Activator-agnostic.** `/user:assign` writes only the `.claude/goals/<slug>.md` draft and surfaces its body; activation (starting the loop) is done by whatever primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the `goal-craft` skill). The kit NEVER writes `.claude/last-goal.md`; if no activator exists, the draft is a plain reusable file. **"Even the goal loop follows WORKFLOW"** is delivered honestly: the safety subset is hard-enforced by existing hooks (anti-rationalization, the verification pipeline, the push-to-main blocker); decision/doc completeness is warned + logged to `~/.claude/dwarves-kit/logs/completeness.log` and reviewed at `/user:ship` + `/user:retro`, not hard-blocked mid-loop (PHILOSOPHY rejects hard-gating process completeness).
 
 ## Completion contract
-A task is done only when its acceptance criteria are met and the verifier has
-actually run the tests, not when you claim they pass. If you cannot run the
-check, report that plainly; the anti-rationalization hook is the backstop for
-premature completion. Self-reported "done" is not proof; the task-verifier is.
+The done-definition is canonical in `AGENTS.md` zone 3 ("Done means"); do not
+restate it here. In the kit, the task-verifier is what proves "done" (self-reported
+"done" is not proof), and the anti-rationalization hook is the backstop for
+premature completion. The clauses below add kit-specific completeness checks on top
+of that done-definition.
 
 ### Completeness clauses (warn + log, reviewed at ship)
 Two self-check clauses run during Build/Reflect. Both WARN and LOG to `~/.claude/dwarves-kit/logs/completeness.log` (the `spec-drift-guard` logging shape); neither hard-blocks. `/user:ship` and `/user:retro` review that log at the gate. Hard blocks stay reserved for the safety subset (PHILOSOPHY rejects hard-gating process completeness).
