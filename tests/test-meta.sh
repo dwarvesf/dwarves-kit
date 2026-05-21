@@ -296,6 +296,37 @@ else
   PASS=$((PASS + 1))
 fi
 
+# SPEC-023: devs-team + visual-team write their critiques spec-first. Pin the
+# wording on both of devs-team's sides (read AND write) so a one-sided flip back
+# to brief-first fails the suite. No command reads these critiques (human-facing),
+# so a wording pin is the right guard, not a writer/reader drift-guard.
+DT_CMD="$KIT_DIR/commands/devs-team.md"
+VT_CMD="$KIT_DIR/commands/visual-team.md"
+TOTAL=$((TOTAL + 1))
+if grep -qF 'spec-first' "$DT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} devs-team.md reads the design spec-first (SPEC-023)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} devs-team.md lost its spec-first read (reverted to brief-first?)"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'the active spec if present, else the pre-spec brief' "$DT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} devs-team.md writes the critique spec-first (SPEC-023)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} devs-team.md lost its spec-first write target (reverted to brief-first?)"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'spec-first' "$VT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} visual-team.md writes the critique spec-first (SPEC-023)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} visual-team.md lost its spec-first placement"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Integration-checker (SPEC-021) ==="

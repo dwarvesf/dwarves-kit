@@ -1,5 +1,5 @@
 ---
-description: "Parallel multi-lens critique of a solution design (the decision brief if present, else the active spec). Dispatches 5 engineering lenses, merges findings, reports a verdict. Report-only, never blocks."
+description: "Parallel multi-lens critique of a solution design (the active spec if present, else the decision brief). Dispatches 5 engineering lenses, merges findings, reports a verdict. Report-only, never blocks."
 ---
 
 You are a design-critique coordinator. Your job is to stress-test a solution DESIGN from 5 engineering angles in parallel, merge the findings, and report a verdict. This mirrors `/user:review-team` (which critiques code) one altitude up: it critiques the design before the spec hardens. It is an opt-in lane, report-only; it never blocks `/user:spec`.
@@ -8,12 +8,12 @@ You are a design-critique coordinator. Your job is to stress-test a solution DES
 
 ### Step 1: Find the design to critique
 
-Read the design's `## Solution` in this order:
+Read the design's `## Solution`, **spec-first**:
 
-1. `docs/specs/DECISION-BRIEF.md`'s `## Solution` section IF the brief exists and has one.
-2. ELSE the active `docs/specs/SPEC-NNN-<slug>.md`'s `## Solution` section.
+1. The active `docs/specs/SPEC-NNN-<slug>.md`'s `## Solution` section IF a spec exists. Resolve the active spec the way `/user:next` does (branch-aware, SPEC-005); if several specs match, ask the user which one, do not auto-pick.
+2. ELSE `docs/specs/DECISION-BRIEF.md`'s `## Solution` section (the pre-spec window, before a `SPEC-NNN` exists).
 
-`/user:design` is opt-in, so a `/think -> /spec` path produces no brief; the lane must still have a design to critique, hence the fallback. If neither has a `## Solution` (the brief is absent OR exists but has no `## Solution`, and no active spec has one), say so, suggest the user run `/user:design` or `/user:spec` first, and stop. Do not invent a design to critique.
+The spec is the carrier once it exists; the brief is the home only pre-spec (before `/user:spec`). If neither has a `## Solution` (no active spec with one, AND the brief is absent or has no `## Solution`), say so, suggest the user run `/user:design` or `/user:spec` first, and stop. Do not invent a design to critique.
 
 Note which doc holds the design; you will write the critique back to that same doc.
 
@@ -41,7 +41,7 @@ After the lenses complete:
 
 ### Step 4: Write the critique back to the design doc
 
-Append a `## Design critique` section to whichever doc holds the design (the brief if present, else the active spec). One critique section per doc: if a `## Design critique` already exists, REPLACE it; do not stack duplicates.
+Append a `## Design critique` section to whichever doc holds the design (the active spec if present, else the pre-spec brief, the same doc you read in Step 1). One critique section per doc: if a `## Design critique` already exists, REPLACE it; do not stack duplicates.
 
 ```markdown
 ## Design critique

@@ -43,11 +43,11 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 
 ### `/user:devs-team`
 
-Opt-in design-critique lane between `/user:design` and `/user:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution` in `docs/specs/DECISION-BRIEF.md` (or the active spec if there is no brief), merges findings, and appends a report-only `## Design critique` with a SOLID / REVISE / RECONSIDER verdict. Never blocks `/user:spec`. The design analogue of `/user:review-team`.
+Opt-in design-critique lane between `/user:design` and `/user:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution`, read spec-first (the active spec if one exists, else the pre-spec `docs/specs/DECISION-BRIEF.md`), merges findings, and appends a report-only `## Design critique` (SOLID / REVISE / RECONSIDER) to that same doc. Never blocks `/user:spec`. The design analogue of `/user:review-team`. Placement is spec-first per SPEC-023.
 
 ### `/user:visual-team`
 
-Opt-in visual-critique lane (downstream-facing; the kit has no UI). Dispatches 5 design lenses (hierarchy/typography, system-consistency, accessibility/contrast, restraint, expressiveness) in parallel against a described or linked visual design. Report-only. Does not generate mockups.
+Opt-in visual-critique lane (downstream-facing; the kit has no UI). Dispatches 5 design lenses (hierarchy/typography, system-consistency, accessibility/contrast, restraint, expressiveness) in parallel against a described or linked visual design. Report-only. Does not generate mockups. Writes `## Visual critique` spec-first (the active spec if one exists, else the pre-spec brief, else inline-only) per SPEC-023.
 
 ### `/user:test-plan`
 
