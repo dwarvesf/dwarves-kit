@@ -79,7 +79,7 @@ Each task is atomic: implementable in one session, fits in ~50% of a context win
 ### Phase 1: Operating layer
 - [x] TASK-001 (DONE 7c5015c, verified): Write `AGENTS.md` at kit root: ordered read list, task loop, done-definition (which MUST include "review recorded + report written, and the final response says what changed and what was not attempted"), and an explicit "Pause if / ask a human" list (architecture direction, source-of-truth hierarchy, validation removal, risk-classification change, privacy/security). State plainly that enforcement is Claude-Code-only; under other runtimes `AGENTS.md` is advisory. - AC: file exists; `grep -q 'Pause if' AGENTS.md`; the four portable zones (read list, task loop, done-definition, Pause-if) are present and named so `assign.md` can project them into the six-section goal.
 - [x] TASK-002 (DONE c343d92, verified): Make the CC-layer docs point at `AGENTS.md` for the operate-contract (replace, don't duplicate). Two files: (a) kit-root `CLAUDE.md` (NOT `examples/hello-spec/CLAUDE.md`, which TASK-003 handles) gets/keeps a one-line pointer to `AGENTS.md`; (b) `WORKFLOW.md` is the file that actually carries the operate-contract prose today (`## Required reading` ordered list + `## Completion contract` done-definition), so reconcile it to point at `AGENTS.md` as the read-order/done source rather than restating it. Pick one direction (`AGENTS.md` canonical, `WORKFLOW.md` points) and apply it to both. - AC: neither `CLAUDE.md` nor `WORKFLOW.md` restates the ordered read-order + done-definition that now live in `AGENTS.md`; both reference `AGENTS.md`; `WORKFLOW.md`'s required-reading list names `AGENTS.md` first.
-- [ ] TASK-003: Add `examples/hello-spec/AGENTS.md` as the downstream template (realistic placeholder content, same shape). - AC: file exists; the hello-spec README/template note references it.
+- [x] TASK-003 (DONE 5e4bfc1, verified): Add `examples/hello-spec/AGENTS.md` as the downstream template (realistic placeholder content, same shape). - AC: file exists; the hello-spec README/template note references it.
 
 ### Phase 2: Lanes + projection
 - [x] TASK-004 (DONE f9c04cf, verified): Add a `backfill` brownfield lane to `WORKFLOW.md` (lane table + cycle): review an existing codebase and write the operating-layer docs without changing application behavior; spec-optional, doc-output, no app-code edits. - AC: `grep -q backfill WORKFLOW.md`; lane row + a one-line description present.
@@ -90,24 +90,24 @@ Each task is atomic: implementable in one session, fits in ~50% of a context win
 - [x] TASK-007 (DONE 9fc3e25, verified): Update the `WORKFLOW.md` doc-impact map: add a "new top-level file" trigger row (the current bolded self-maintaining rule covers only a new top-level *dir*, so a top-level *file* like `AGENTS.md` slips through), add the `AGENTS.md` companion-doc row, and a `backfill`-lane reference. - AC: the map names `AGENTS.md` and carries a top-level-file trigger row.
 - [x] TASK-008 (DONE f51537e, verified): Update `README.md` "Project structure" and `docs/architecture.md` cross-refs to include `AGENTS.md` and the `backfill` lane. - AC: both name `AGENTS.md`.
 - [x] TASK-009 (DONE 6ec7880, verified; merge test passes on current install.sh -> no jq fix needed, DEC-004 resolved as no-bug): Update `tests/test-meta.sh` to assert `AGENTS.md` exists and carries the four portable zones, and that `assign.md` carries the six-section projection. Add a regression test that runs `install.sh` into a throwaway HOME whose `settings.json` already contains a third-party hook (the dogfood case), and asserts the user's hook survives the merge and the result is valid JSON. If that test fails on the current `install.sh`, apply the minimal jq fix to the merge/clean within this task. - AC: `bash tests/test-meta.sh` exercises the four-zone + projection checks AND the merge-with-existing-hooks case, and passes.
-- [x] TASK-010 (DONE 43fa85d, verified): Version bump (`VERSION`, `.claude-plugin/plugin.json`, `tool.toml`), `CHANGELOG.md` entry (include the install.sh jq fix as a fix line), and update the `install.sh` `AGENTS.md` tip. - AC: versions in sync; CHANGELOG records the feature + the install fix.
+- [x] TASK-010 (DONE 43fa85d, verified): Version bump (`VERSION`, `.claude-plugin/plugin.json`, `tool.toml`), `CHANGELOG.md` entry, and update the `install.sh` `AGENTS.md` tip. - AC: versions in sync; CHANGELOG records the feature and the install-merge regression test as coverage (not a fix; DEC-004 resolved as no-bug, see TASK-009).
 
 ## Acceptance Criteria (global)
-- [ ] All tasks pass their individual acceptance criteria.
-- [ ] `AGENTS.md` is the front door (root + examples) carrying the four portable zones; `CLAUDE.md` and `WORKFLOW.md` point at it (no restating); `backfill` lane present; `assign.md` projects the six sections; `spec.md` template has `## After state`.
-- [ ] No regressions: `bash tests/test-meta.sh && bash tests/test-hooks.sh` both exit 0.
+- [x] All tasks pass their individual acceptance criteria.
+- [x] `AGENTS.md` is the front door (root + examples) carrying the four portable zones; `CLAUDE.md` and `WORKFLOW.md` point at it (no restating); `backfill` lane present; `assign.md` projects the six sections; `spec.md` template has `## After state`.
+- [x] No regressions: `bash tests/test-meta.sh && bash tests/test-hooks.sh` both exit 0.
 
 ## Verification
 `bash tests/test-meta.sh && bash tests/test-hooks.sh` exit 0 AND `grep -q 'Pause if' AGENTS.md` AND `grep -q backfill WORKFLOW.md` AND `grep -q '## After state' commands/spec.md`
 
 ## After state
-Observable; each bullet is false today and a real check once shipped.
-- [ ] `AGENTS.md` exists at the kit root and `grep -q 'Pause if' AGENTS.md` passes. (Today: no `AGENTS.md` anywhere in the kit.)
-- [ ] `CLAUDE.md` points at `AGENTS.md` and no longer restates the read-order / done-definition / pause list.
-- [ ] `WORKFLOW.md` lists a `backfill` lane. (Today: only `tiny` / `normal` / `full` / `bug`.)
-- [ ] `commands/assign.md` produces a six-section directive (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if), not a one-line contract goal.
-- [ ] `commands/spec.md` template contains a `## After state` section, and a newly generated spec carries observable after-state bullets.
-- [ ] `examples/hello-spec/AGENTS.md` exists so a downstream repo inherits the front door.
+Observable; each bullet was false before this cycle and is a real check now (all verified at review).
+- [x] `AGENTS.md` exists at the kit root and `grep -q 'Pause if' AGENTS.md` passes. (Was: no `AGENTS.md` anywhere in the kit.)
+- [x] `CLAUDE.md` points at `AGENTS.md` and no longer restates the read-order / done-definition / pause list. (`WORKFLOW.md` likewise points; the no-restate invariant is now pinned by test-meta.)
+- [x] `WORKFLOW.md` lists a `backfill` lane. (Was: only `tiny` / `normal` / `full` / `bug`.)
+- [x] `commands/assign.md` produces a six-section directive (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if), not a one-line contract goal.
+- [x] `commands/spec.md` template contains a `## After state` section, and a newly generated spec carries observable after-state bullets.
+- [x] `examples/hello-spec/AGENTS.md` exists so a downstream repo inherits the front door.
 
 ## Edge Cases
 1. A non-CC runtime (Codex/Gemini) reads `AGENTS.md` but gets no hook enforcement: `AGENTS.md` must state enforcement is CC-only so no operator assumes the guardrails are portable.

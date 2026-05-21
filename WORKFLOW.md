@@ -6,13 +6,10 @@
 > safety-gate hook, the push-to-main blocker, the anti-rationalization Stop
 > hook, and the verification pipeline.
 
-## Required reading (in order)
-`AGENTS.md` is the front door and owns the read-order. Read it first, then this
-list; do not restate the order here. See `AGENTS.md` zone 1 ("Read in this order").
-1. AGENTS.md            - the operate-contract: read-order, task loop, done-definition, "Pause if"
-2. CLAUDE.md            - the Claude-Code layer: stack, structure, rules, hooks, commands, plugin
-3. docs/specs/SPEC-NNN-<slug>.md - the active spec; the shared contract for the cycle
-4. docs/architecture.md - how the pieces fit (reference; not required per task)
+## Required reading
+`AGENTS.md` is the front door and owns the read-order; it is the single source.
+Read `AGENTS.md` zone 1 ("Read in this order") for the full ordered list, then
+return here. This file does not restate the list, so the two cannot drift.
 
 ## Size the work first (risk-tiered intake)
 Pick a lane before you start. Smaller work skips ceremony.
@@ -68,6 +65,8 @@ session start
                       (opt-in: /user:devs-team + /user:visual-team before spec; /user:test-plan before execute;
                        /user:ui-design for downstream UI work, after /user:design)
                       -> /user:review -> /user:docs -> /user:ship -> /user:retro
+       backfill    -> review the codebase, write AGENTS.md / CLAUDE.md / specs, then
+                      /user:review (optional). No /user:execute; no app-code edits.
   -> on ship              /user:ship reviews the completeness log; ID-NNN drops off the
                           queue (CHANGELOG is the canonical shipped record).
 ```

@@ -34,13 +34,16 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID-002 | Absorb skills/hooks developed in ops-toolkit into the kit (internal lane) | item e | SPEC-007 (PARKED; see its Parked note) | full | parked |
 | ID-003 | Deep orchestration scan of the copied repos vs our WORKFLOW (report + absorb plan) | item 2 | `docs/research/2026-05-20-orchestration-deep-scan.md` | normal | shipped (report delivered; recs folded into SPEC-006) |
 | ID-012 | Goal-loop fidelity (one theme, two parts). P1: stop-criteria in the `/spec` template (pin `## Verification` + `## Open questions` so specs are pointer-`/goal`-ready) -- build now, tiny lane. P2: QA gate around the autonomous loop (verify-into-loops + SPEC-006 completeness clauses + Reviewer 5) -- held until the pointer-`/goal` pattern has real runs | maintainer Q3 2026-05-20 + goal-readiness convergence 2026-05-21 | SPEC-012 | normal (P1) / full (P2) | P1 shipped (see CHANGELOG); P2 held |
-| ID-015 | AGENTS.md operating layer: tool-agnostic entrypoint + brownfield backfill lane + six-section goal projection + observable After-state spec section (ships ADR-0013) | ADR-0013 (hoangnb24/harness-experimental study, 2026-05-21) | SPEC-024 | full | speccing |
+| ID-015 | AGENTS.md operating layer: tool-agnostic entrypoint + brownfield backfill lane + six-section goal projection + observable After-state spec section (ships ADR-0013) | ADR-0013 (hoangnb24/harness-experimental study, 2026-05-21) | SPEC-024 | full | executing (built + reviewed; ship next) |
 | ID-016 | Promote the "new SPEC -> BACKLOG status row" doc-impact check to a guard (a hook or a kit-health line); it was missed across multiple cycles | SPEC-025 retro 2026-05-21 (recurrence clears the PHILOSOPHY section 5 bar) | TBD | normal | queued |
 | ID-017 | Reconcile retro-file naming across the `retro` skill body + description, CLAUDE.md, and WORKFLOW.md to the repo's actual `RETRO-YYYY-MM-DD-<slug>.md` convention | SPEC-025 retro 2026-05-21 | TBD | tiny | queued |
+| ID-018 | install.sh prints blind `cp` tips for AGENTS.md and CLAUDE.md; harden both to copy-if-absent at the command level (`cp -n` or a guard) so the printed command matches its "if absent" prose, or record why prose-only suffices | SPEC-024 review 2026-05-21 (security lens) | TBD | tiny | queued |
+| ID-019 | Demo `examples/hello-spec/docs/specs/SPEC-001-version-flag.md` lacks a `## After state` section; add one so the demo is a complete exemplar of the post-SPEC-024 spec template | SPEC-024 review 2026-05-21 (test-coverage lens) | TBD | tiny | queued |
 Dependency notes:
 - ID-012 P1 (spec stop-criteria) shipped (SPEC-012, normal lane; see CHANGELOG); P2 (loop QA gate) is held until the pointer-`/goal` pattern has real runs; it will build on the now-shipped SPEC-006 completeness clauses + the existing verification pipeline.
 - ID-002 (internal absorption lane, SPEC-007) is parked; independent of the orchestration chain.
 - ID-016 / ID-017 came out of the SPEC-025 retro; both are kit-internal hygiene, independent of the SPEC-024 chain.
+- ID-018 / ID-019 came out of the SPEC-024 /review-team pass (deferred LOW findings); both are tiny-lane polish, independent of the SPEC-024 ship.
 
 ## Schema
 

@@ -231,6 +231,19 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# Review issue 2: the downstream template (the file real projects copy) must pin
+# all four zone headings too, not just "Pause if" - same teeth as the kit root.
+for ZONE in "## 1. Read in this order" "## 2. Task loop" "## 3. Done means" "## 4. Pause if (ask a human)"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$ZONE" "$DEMO_AGENTS" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md has zone '$ZONE'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md missing zone '$ZONE'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
 TOTAL=$((TOTAL + 1))
 if grep -qF '## After state' "$KIT_DIR/commands/spec.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} commands/spec.md template carries '## After state' (TASK-006)"
@@ -239,6 +252,27 @@ else
   echo -e "  ${RED}FAIL${NC} commands/spec.md template lost '## After state'"
   FAIL=$((FAIL + 1))
 fi
+
+# Review issue 6: assign.md Done-when must reference the spec's "## After state"
+# (the projection source), not merely carry the "Done-when" label.
+TOTAL=$((TOTAL + 1))
+if grep -qF '## After state' "$ASSIGN_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md Done-when references the spec's '## After state'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md Done-when lost the '## After state' projection source"
+  FAIL=$((FAIL + 1))
+fi
+
+# Review issue 1 (anti-drift): the spec's primary failure mode is a CC-layer doc
+# RESTATING the ordered read-list that AGENTS.md owns (zone 1 is the single source).
+# WORKFLOW.md and CLAUDE.md must point, not carry a numbered "1. AGENTS.md /
+# 2. CLAUDE.md ..." restatement. A reappearance is drift; fail loudly. Scoped to
+# these two CC-layer docs; AGENTS.md itself legitimately carries the list.
+for DOC in WORKFLOW.md CLAUDE.md; do
+  RESTATE=$(grep -cE '^[0-9]+\.[[:space:]]+(AGENTS|CLAUDE)\.md' "$KIT_DIR/$DOC" 2>/dev/null || true)
+  assert_eq "$DOC does not restate the AGENTS.md read-order list (no drift)" "0" "$RESTATE"
+done
 
 # ------------------------------------------------------------
 # Part B: install.sh merge-with-existing-hooks regression (DEC-004).
