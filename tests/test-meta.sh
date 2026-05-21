@@ -368,6 +368,18 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-016: the three opt-in critique/test lanes exist.
+for CMD in devs-team visual-team test-plan; do
+  TOTAL=$((TOTAL + 1))
+  if [ -f "$KIT_DIR/commands/$CMD.md" ]; then
+    echo -e "  ${GREEN}PASS${NC} commands/$CMD.md exists (/user:$CMD, SPEC-016)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} commands/$CMD.md missing"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
 VALIDATE_CMD="$KIT_DIR/commands/spec-validate.md"
 TOTAL=$((TOTAL + 1))
 if grep -qE "^### Reviewer 5:" "$VALIDATE_CMD" 2>/dev/null; then

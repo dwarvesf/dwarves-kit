@@ -9,7 +9,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The 15 commands
+## The 18 commands
 
 ### `/user:start`
 
@@ -40,6 +40,18 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **Writes:** appends a `## Solution` section to `docs/specs/DECISION-BRIEF.md` (never clobbers the brief's product framing)
 **When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/user:spec`. Opt-in; skip it and `/user:spec` works as before.
 **Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
+
+### `/user:devs-team`
+
+Opt-in design-critique lane between `/user:design` and `/user:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution` in `docs/specs/DECISION-BRIEF.md` (or the active spec if there is no brief), merges findings, and appends a report-only `## Design critique` with a SOLID / REVISE / RECONSIDER verdict. Never blocks `/user:spec`. The design analogue of `/user:review-team`.
+
+### `/user:visual-team`
+
+Opt-in visual-critique lane (downstream-facing; the kit has no UI). Dispatches 5 design lenses (hierarchy/typography, system-consistency, accessibility/contrast, restraint, expressiveness) in parallel against a described or linked visual design. Report-only. Does not generate mockups.
+
+### `/user:test-plan`
+
+Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active spec's acceptance criteria and writes a `TEST-PLAN.md` coverage matrix across happy-path / boundary / failure-injection / security / regression. A coverage target, not exhaustive; not a roundtable.
 
 ### `/user:assign`
 
