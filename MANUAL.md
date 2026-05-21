@@ -51,7 +51,7 @@ Opt-in visual-critique lane (downstream-facing; the kit has no UI). Dispatches 5
 
 ### `/user:test-plan`
 
-Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active spec's acceptance criteria and writes a `TEST-PLAN.md` coverage matrix across happy-path / boundary / failure-injection / security / regression. A coverage target, not exhaustive; not a roundtable.
+Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/user:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable.
 
 ### `/user:assign`
 
