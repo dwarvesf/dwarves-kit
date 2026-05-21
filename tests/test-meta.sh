@@ -329,6 +329,60 @@ rm -rf "$MERGE_HOME"
 
 # ============================================================
 echo ""
+echo "=== Freeform front door (SPEC-026) ==="
+# ============================================================
+# Pin the SPEC-026 contract in commands/assign.md so a wording flip on any of
+# the intake paths, the /user:think delegation, or the four invariants fails CI.
+# All literals exist in assign.md today; this guards them from silent drift.
+# ASSIGN_MD is set in the SPEC-024 block above.
+
+# Two-shape resolver: the ID-first regex AND the freeform branch must both be named.
+for LITERAL in '^ID-[0-9]+$' 'freeform'; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$LITERAL" "$ASSIGN_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} assign.md documents the '$LITERAL' intake shape (SPEC-026)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} assign.md lost the '$LITERAL' intake shape (resolver drift)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Delegation: the crystallize interview is delegated to /user:think, not embedded (DEC-003).
+TOTAL=$((TOTAL + 1))
+if grep -qF '/user:think' "$ASSIGN_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md delegates crystallize to /user:think (SPEC-026 DEC-003)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md lost the /user:think delegation (interview embedded?)"
+  FAIL=$((FAIL + 1))
+fi
+
+# The four invariants. atomic-allocate is pinned via BOTH its named marker and the
+# 'collision' guard wording, since both literals are load-bearing in assign.md.
+for INVARIANT in 'row-before-draft' 'approve-before-allocate' 'sanitize' 'atomic-allocate' 'collision'; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$INVARIANT" "$ASSIGN_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} assign.md pins the '$INVARIANT' invariant (SPEC-026)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} assign.md lost the '$INVARIANT' invariant (contract drift)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Slug hardening: the sanitized slug charset must stay pinned (path-traversal guard).
+TOTAL=$((TOTAL + 1))
+if grep -qF '[a-z0-9-]' "$ASSIGN_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md pins the '[a-z0-9-]' slug charset (SPEC-026 DEC-004)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md lost the '[a-z0-9-]' slug charset (slug hardening drift)"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Agent files ==="
 # ============================================================
 
