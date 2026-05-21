@@ -1,6 +1,6 @@
 # Spec: AGENTS.md operating layer + brownfield backfill lane
 Generated: 2026-05-21
-Status: VALIDATED
+Status: SHIPPED
 
 > Implements ADR-0013 (accepted 2026-05-21) and its After-state addendum. Backlog: ID-015 (full lane).
 > Validated 2026-05-21 via /user:spec-validate (5 lenses); revisions recorded in the Decision Log (DEC-004 corrected, DEC-005..DEC-008 added).
