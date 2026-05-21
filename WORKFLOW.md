@@ -29,8 +29,10 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 |----------|---------|-----------|-------------|
 | Think    | /user:think | decision brief written (if BUILD) | advisory |
 | Design (opt-in) | /user:design | solution agreed + appended to the brief | advisory |
+| Design critique (opt-in) | /user:devs-team, /user:visual-team | critique appended to the brief or spec | advisory (normal/full) |
 | Spec     | /user:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /user:spec-validate | Status: VALIDATED | advisory (full lane) |
+| Test plan (opt-in) | /user:test-plan | TEST-PLAN.md written | advisory (normal/full) |
 | Build    | /user:execute or /user:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
 | Review   | /user:review or /user:review-team | review verdict recorded | advisory |
 | Docs     | /user:docs | README/CHANGELOG match code | advisory |
