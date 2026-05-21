@@ -295,6 +295,37 @@ fi
 
 # ============================================================
 echo ""
+echo "=== Doc-verifier (SPEC-022) ==="
+# ============================================================
+# The doc-vs-code fact-checker must exist, stay read-only (no write tools), and
+# be dispatched by /docs. The generic agent-loop above checks name/desc/model
+# and the MANUAL cross-ref.
+
+DVA="$KIT_DIR/agents/doc-verifier.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$DVA" ]; then
+  echo -e "  ${GREEN}PASS${NC} agents/doc-verifier.md exists"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} agents/doc-verifier.md missing"
+  FAIL=$((FAIL + 1))
+fi
+
+DV_WRITE=$(grep -cE '^[[:space:]]*-[[:space:]]+(Edit|Write|MultiEdit|Bash)[[:space:]]*$' "$DVA" 2>/dev/null || true)
+assert_eq "doc-verifier has no write/bare-Bash tools (DEC-002)" "0" "$DV_WRITE"
+
+TOTAL=$((TOTAL + 1))
+if grep -q 'doc-verifier' "$KIT_DIR/commands/docs.md" 2>/dev/null \
+   && grep -q 'Step 4.5' "$KIT_DIR/commands/docs.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} commands/docs.md dispatches the doc-verifier at Step 4.5"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/docs.md does not wire the doc-verifier (+Step 4.5)"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Spec-authoring depth contract (SPEC-008) ==="
 # ============================================================
 # The /spec Solution template must scaffold design depth (2-3 approaches +

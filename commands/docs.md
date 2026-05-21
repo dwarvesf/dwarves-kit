@@ -78,6 +78,15 @@ For each file:
 - Add new content in the appropriate section, don't append at the bottom.
 - If removing documentation for a deleted feature, remove it cleanly (no "this feature was removed" tombstones unless the changelog needs it).
 
+### Step 4.5: Verify the docs against the code
+
+Before committing, dispatch the **doc-verifier** subagent (read-only) to independently fact-check the docs you just updated against the live code. It reads the uncommitted doc diff (your Step 4 edits are not committed yet) and verifies each checkable claim (counts, command/flag/env names, file paths, existence, cross-references). Route the verdict:
+- **PASS**: continue to Step 5.
+- **FAIL:fixable**: re-edit the named doc drift yourself (you are the writer; the doc-verifier is read-only), then re-run the doc-verifier. Cap at 2 rounds.
+- **FAIL:escalate** (or after 2 rounds): stop and report the contradiction to the user; do not commit.
+
+This is the docs-phase analogue of `/execute`'s task-verifier: the context that wrote the docs is not the right judge of them.
+
 ### Step 5: Commit
 
 Create a single commit: `docs: update [list of files] to match current codebase`

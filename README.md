@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-14 hooks + 18 commands + 10 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
+14 hooks + 18 commands + 11 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
 
 Install in any Claude Code session:
 
