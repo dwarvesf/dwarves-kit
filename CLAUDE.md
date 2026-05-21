@@ -67,4 +67,4 @@ Hooks fire on Claude Code events automatically; do not call them manually. Debug
 
 ## Template for downstream projects
 
-If you are scaffolding a new project that will use dwarves-kit, do not copy THIS file. Use `examples/hello-spec/CLAUDE.md` as the template; it shows the full shape (Project, Tech Stack, Commands, Repository Structure, Code Quality Rules, Workflow, Spec Location) with realistic placeholder content.
+If you are scaffolding a new project that will use dwarves-kit, do not copy THIS file. Use `examples/hello-spec/CLAUDE.md` as the template; it shows the full shape (Project, Tech Stack, Commands, Repository Structure, Code Quality Rules, Workflow, Spec Location) with realistic placeholder content. The downstream front door is `examples/hello-spec/AGENTS.md` (the tool-agnostic operate-contract); copy it alongside, with `CLAUDE.md` as the Claude-Code layer on top.

@@ -60,8 +60,8 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 ### `/user:assign`
 
 **Phase:** orchestrate (backlog item -> goal draft -> lane)
-**Reads:** `_meta/BACKLOG.md` Active queue (by `ID-NNN`), the item's Lane column
-**Writes:** `.claude/goals/<slug>.md` (the SPEC-005 draft contract; never `.claude/last-goal.md`)
+**Reads:** `_meta/BACKLOG.md` Active queue (by `ID-NNN`), the item's Lane column, `AGENTS.md` zones (the projection source for the six-section goal) + the active spec's `## Verification` / `## After state`
+**Writes:** `.claude/goals/<slug>.md` (the SPEC-005 draft contract; never `.claude/last-goal.md`), a six-section operating directive (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if)
 **When to invoke:** you picked an item from "what's left?" and want it scoped into a goal and routed into the right lane
 **Common gotcha:** it is a mutator-dispatcher: it sets up the goal and hands off, it does NOT execute. It detects the goal-loop activator (built-in `/goal`, `ralph-loop`, or `goal-craft`) and degrades to a plain draft file if none is installed. Idempotent per id. Source: SPEC-006 + ADR-0011.
 
