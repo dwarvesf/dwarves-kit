@@ -1,10 +1,10 @@
 name        = "dwarves-kit"
-description = "Spec-driven Claude Code workflow with a verification pipeline. Worker > task-verifier > fix-agent retry, by default. 12 hooks + 12 commands + 9 agents + 1 skill. Bash-first (every script readable in 30 seconds). Hook-enforced safety. Ships both as a Claude Code plugin and as a bash installer for older environments."
+description = "Spec-driven Claude Code workflow with a verification pipeline. Worker > task-verifier > fix-agent retry, by default. 12 hooks + 18 commands + 9 agents + 1 skill. Bash-first (every script readable in 30 seconds). Hook-enforced safety. Ships both as a Claude Code plugin and as a bash installer for older environments."
 language    = "bash"
 status      = "stable"
 entry       = "install.sh"
 created     = 2026-03-29
-version     = "1.5.1"
+version     = "1.6.0"
 
 # Consumer repos: any Dwarves project that adopts the spec-driven flow.
 # Not bound to a specific repo; the kit is per-machine, not per-project.
