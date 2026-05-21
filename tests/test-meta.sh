@@ -262,6 +262,39 @@ fi
 
 # ============================================================
 echo ""
+echo "=== Integration-checker (SPEC-021) ==="
+# ============================================================
+# The cross-task wiring verifier must exist, stay read-only (no write tools in
+# its frontmatter), and be dispatched by /execute. The generic agent-loop above
+# already checks its name/description/model and the MANUAL cross-ref.
+
+ICA="$KIT_DIR/agents/integration-checker.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$ICA" ]; then
+  echo -e "  ${GREEN}PASS${NC} agents/integration-checker.md exists"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} agents/integration-checker.md missing"
+  FAIL=$((FAIL + 1))
+fi
+
+# Read-only contract: no bare Bash and no Edit/Write/MultiEdit in the tools list.
+# Scoped Bash(...) entries do not match (they have a paren), so they are allowed.
+WRITE_TOOLS=$(grep -cE '^[[:space:]]*-[[:space:]]+(Edit|Write|MultiEdit|Bash)[[:space:]]*$' "$ICA" 2>/dev/null || true)
+assert_eq "integration-checker has no write/bare-Bash tools (DEC-006)" "0" "$WRITE_TOOLS"
+
+TOTAL=$((TOTAL + 1))
+if grep -q 'integration-checker' "$KIT_DIR/commands/execute.md" 2>/dev/null \
+   && grep -q 'base ref' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} commands/execute.md dispatches the integration-checker with a base ref"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/execute.md does not wire the integration-checker (+base ref)"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Spec-authoring depth contract (SPEC-008) ==="
 # ============================================================
 # The /spec Solution template must scaffold design depth (2-3 approaches +
