@@ -5,6 +5,8 @@
 > It suggests and routes; it does not block. The only hard stops are the
 > safety-gate hook, the push-to-main blocker, the anti-rationalization Stop
 > hook, and the verification pipeline.
+> For the visual flow/loop view (every flow + alt-flow, its trigger, and its
+> stop condition, with ASCII diagrams), see `docs/ORCHESTRATION.md`.
 
 ## Required reading
 `AGENTS.md` is the front door and owns the read-order; it is the single source.
