@@ -75,6 +75,35 @@ session start
 
 **Freeform front door.** `/user:assign` accepts freeform intent, not only an `ID-NNN`. Given freeform, it delegates the interview to `/user:think`, pauses for approval, then allocates the ID + BACKLOG row before routing as usual; the ID-first path is unchanged. **Detector/mutator split.** `/user:start` and `/user:next` only read and render; `/user:assign` is the only mutator. **Activator-agnostic.** `/user:assign` writes only the `.claude/goals/<slug>.md` draft and surfaces its body; activation (starting the loop) is done by whatever primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the `goal-craft` skill). The kit NEVER writes `.claude/last-goal.md`; if no activator exists, the draft is a plain reusable file. **"Even the goal loop follows WORKFLOW"** is delivered honestly: the safety subset is hard-enforced by existing hooks (anti-rationalization, the verification pipeline, the push-to-main blocker); decision/doc completeness is warned + logged to `~/.claude/dwarves-kit/logs/completeness.log` and reviewed at `/user:ship` + `/user:retro`, not hard-blocked mid-loop (PHILOSOPHY rejects hard-gating process completeness).
 
+## Mid-flight amend
+Canonical rule. You are mid-`/user:execute` on a `VALIDATED` spec and the work
+reveals scope that must be added now ("also do Y"). Amend the spec in place;
+do not restart the lane and do not silently mutate it. Other docs
+(PLAYBOOK, ORCHESTRATION, `commands/execute.md`) point here; they do not restate
+this rule. The state-model row (`BUILDING -> SPECIFYING -> BUILDING`) lives in
+`docs/operating-layer-vision.md` §3.3; this section carries the operational rule.
+
+The amend is governed by four invariants:
+
+- **No lane restart.** `Status:` stays `VALIDATED` across an amend; only the
+  DELTA is (re-)validated (full lane: `/spec-validate` on the new tasks; normal
+  lane: advisory). Dropping back to `DRAFT` would be a lane restart, the exact
+  thing this path removes.
+- **Completed work is frozen (add-only).** An amend may only ADD scope (new
+  `- [ ]` tasks, new acceptance criteria, new after-state bullets). It must not
+  rewrite an already-done (`- [x]`) task's contract; the `- [x]` rows are
+  byte-for-byte unchanged. Rewriting a done task is the heavier re-open / re-spec
+  path, not an amend.
+- **Recorded at a checkpoint, not mid-worker.** The amend happens between tasks:
+  the in-flight task is verified and committed first (or no task is in flight).
+  Record it as an entry in the spec's `## Amendments` section (optional,
+  on-demand; see `commands/spec.md`), one line per amend:
+  `AMEND-NNN: date | what | why | at which checkpoint | new tasks | re-validated`.
+- **Resume leads with `/user:next`, not a fresh `/user:execute`.** `/next` picks
+  the next undone `- [ ]` task and skips `- [x]` done rows, so resume runs only
+  the amended tasks. `/execute` re-parses and re-presents the whole plan, so it
+  is the wrong door after an amend.
+
 ## Completion contract
 The done-definition is canonical in `AGENTS.md` zone 3 ("Done means"); do not
 restate it here. In the kit, the task-verifier is what proves "done" (self-reported
