@@ -116,25 +116,25 @@ None. The kit ships no UI.
 
 ## Task Breakdown
 ### Phase 1: Resolver + freeform path
-- [ ] TASK-001: Add the arg resolver to `commands/assign.md` (`ID-NNN` vs freeform) with the ID
+- [x] TASK-001 (DONE d920df3, verified): Add the arg resolver to `commands/assign.md` (`ID-NNN` vs freeform) with the ID
   path unchanged. - AC: `assign.md` documents the two-shape argument + the `^ID-[0-9]+$` rule.
-- [ ] TASK-002: Specify the freeform path: **delegate crystallize to `/user:think`** -> approval
+- [x] TASK-002 (DONE d920df3, verified): Specify the freeform path: **delegate crystallize to `/user:think`** -> approval
   gate -> sanitize -> allocate ID + write BACKLOG row -> existing ID-first tail. The interview is
   delegated, not embedded (DEC-003). - AC: `assign.md` carries the ordered freeform steps, names the
   `/user:think` delegation, and the row-before-draft + approve-before-allocate invariants.
 
 ### Phase 2: Hardening
-- [ ] TASK-003: Sanitization + concurrency guard in `commands/assign.md`'s freeform path: escape
+- [x] TASK-003 (DONE d920df3, verified): Sanitization + concurrency guard in `commands/assign.md`'s freeform path: escape
   `|`/newlines in the BACKLOG row cells (table integrity); reduce the slug to `[a-z0-9-]+` (no `/`,
   no `..`); allocate the ID by re-reading max in the write step + a post-write equal-ID collision
   check that fails loud. - AC: `assign.md` documents the sanitization + atomic-allocate invariants
   (DEC-004, DEC-005).
 
 ### Phase 3: Guards + docs
-- [ ] TASK-004: `tests/test-meta.sh` assertions: `assign.md` documents both paths, the delegation,
+- [x] TASK-004 (DONE 1e59de8, verified): `tests/test-meta.sh` assertions: `assign.md` documents both paths, the delegation,
   and all four invariants (row-before-draft, approve-before-allocate, sanitization, atomic-allocate).
   - AC: `bash tests/test-meta.sh` exercises them and passes.
-- [ ] TASK-005: Update `docs/PLAYBOOK.md` (S2/S5/S8 -> native path) and the `WORKFLOW.md` spine
+- [x] TASK-005 (DONE 893753e, verified): Update `docs/PLAYBOOK.md` (S2/S5/S8 -> native path) and the `WORKFLOW.md` spine
   note. - AC: PLAYBOOK no longer calls the bridge "manual today"; the WORKFLOW spine says `/assign`
   accepts freeform.
 
