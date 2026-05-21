@@ -1,7 +1,7 @@
 # Spec: Orchestration spine (backlog -> goal-crafter -> WORKFLOW, airtight Reflect)
 
 Generated: 2026-05-20
-Status: VALIDATED
+Status: SHIPPED
 Source: maintainer braindump 2026-05-20 (items d + f), plus the goal-store command + queue rendering deferred here from SPEC-005 (ID-005, ID-006). Backlog: ID-005 (command half), ID-006 (rendering half), ID-007, ID-008.
 Prior spec: docs/specs/SPEC-005-backlog-and-goal-state.md
 Depends on: SPEC-005 (state model: backlog queue schema, `.claude/goals/` draft-store contract, dual-detect) + `docs/research/2026-05-20-orchestration-deep-scan.md` (the deep scan that scoped this).
