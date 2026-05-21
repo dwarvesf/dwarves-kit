@@ -105,6 +105,52 @@ assert_eq "all hooks/*.sh are executable (non-exec: ${NON_EXEC:-none})" "0" "$NO
 
 # ============================================================
 echo ""
+echo "=== Installer materializes the hooks settings.json references ==="
+# ============================================================
+# settings.json hard-codes $HOME/.claude/dwarves-kit/hooks/<script>.sh for every
+# hook (and the statusline). install.sh must place each script at that path, or
+# every hook fails at runtime with "No such file or directory". This regressed
+# once: settings referenced the hooks but install.sh never installed them, so a
+# fresh session greeted the user with a SessionStart hook error.
+
+# (1) Each referenced script exists in the repo's hooks/ dir.
+MISSING_IN_REPO=$(grep -oE 'dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' "$KIT_DIR/settings.json" \
+  | sed 's#.*/##' | sort -u \
+  | while read -r s; do [ -f "$KIT_DIR/hooks/$s" ] || echo "$s"; done \
+  | tr '\n' ' ' | sed 's/ $//')
+assert_eq "every settings.json hook script exists in hooks/ (missing: ${MISSING_IN_REPO:-none})" "" "$MISSING_IN_REPO"
+
+# (2) A real install into a throwaway HOME leaves every referenced path resolvable.
+# This is the direct regression guard: it fails on the buggy installer that never
+# materialized the scripts, and passes once install.sh links them into place.
+TMP_HOME=$(mktemp -d)
+if HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1; then
+  UNRESOLVED=$(grep -oE '\$HOME/\.claude/dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' "$TMP_HOME/.claude/settings.json" \
+    | sort -u \
+    | while read -r raw; do p=${raw/\$HOME/$TMP_HOME}; [ -f "$p" ] || echo "$p"; done \
+    | tr '\n' ' ' | sed 's/ $//')
+  assert_eq "install.sh resolves every dwarves-kit hook path (unresolved: ${UNRESOLVED:-none})" "" "$UNRESOLVED"
+else
+  assert_eq "install.sh runs cleanly into an isolated HOME" "ok" "failed"
+fi
+rm -rf "$TMP_HOME"
+
+# (3) In-place layout (README Option 2: the kit is cloned to ~/.claude/dwarves-kit)
+# must NOT clobber the real hook scripts. Regression: when KIT_DIR == the install
+# destination, the per-file link step rm'd each script and replaced it with a
+# self-referential broken symlink. Here the scripts must stay resolvable.
+INPLACE_HOME=$(mktemp -d)
+mkdir -p "$INPLACE_HOME/.claude/dwarves-kit"
+cp -R "$KIT_DIR/hooks" "$KIT_DIR/commands" "$KIT_DIR/agents" "$KIT_DIR/skills" \
+      "$KIT_DIR/settings.json" "$KIT_DIR/install.sh" "$INPLACE_HOME/.claude/dwarves-kit/" 2>/dev/null
+HOME="$INPLACE_HOME" bash "$INPLACE_HOME/.claude/dwarves-kit/install.sh" >/dev/null 2>&1
+INPLACE_BROKEN=$(for f in "$INPLACE_HOME/.claude/dwarves-kit/hooks/"*.sh; do [ -f "$f" ] || basename "$f"; done \
+  | tr '\n' ' ' | sed 's/ $//')
+assert_eq "in-place install keeps hook scripts resolvable (broken: ${INPLACE_BROKEN:-none})" "" "$INPLACE_BROKEN"
+rm -rf "$INPLACE_HOME"
+
+# ============================================================
+echo ""
 echo "=== Agent files ==="
 # ============================================================
 

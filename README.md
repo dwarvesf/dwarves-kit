@@ -121,6 +121,8 @@ cd ~/.claude/dwarves-kit && bash install.sh
 
 Requires: `jq` (for settings merge), `git`.
 
+Cloning in place (above) is simplest, but `install.sh` also runs from a checkout anywhere (a dev clone, CI, a template dir): it links each hook script into `~/.claude/dwarves-kit/hooks/` so the paths in `settings.json` resolve, and detects the in-place layout to avoid relinking.
+
 To uninstall:
 
 ```bash
