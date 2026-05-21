@@ -1051,6 +1051,58 @@ fi
 
 # ============================================================
 echo ""
+echo "=== Mid-flight amend convention (SPEC-027) ==="
+# ============================================================
+# Pin the BUILDING -> SPECIFYING -> BUILDING amend convention across its four
+# surfaces so a wording flip on any of them fails CI. WORKFLOW.md is the canonical
+# home of the rule; the other three are projections/the model row that point at it.
+
+# (a) execute.md reroutes the "don't modify the spec" anti-pattern to the declared
+# amend path: it must reference BOTH "amend" and "checkpoint".
+TOTAL=$((TOTAL + 1))
+if grep -qF 'amend' "$KIT_DIR/commands/execute.md" 2>/dev/null \
+   && grep -qF 'checkpoint' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} execute.md references the amend path (amend + checkpoint) (SPEC-027)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} execute.md lost the amend path (needs amend + checkpoint)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) WORKFLOW.md is the canonical home: it must carry the "Mid-flight amend" rule.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Mid-flight amend' "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md documents the Mid-flight amend rule (SPEC-027, canonical)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md lost the Mid-flight amend rule"
+  FAIL=$((FAIL + 1))
+fi
+
+# (c) spec.md documents the optional on-demand "## Amendments" provenance section.
+TOTAL=$((TOTAL + 1))
+if grep -qF '## Amendments' "$KIT_DIR/commands/spec.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} spec.md documents the '## Amendments' section (SPEC-027)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} spec.md lost the '## Amendments' section"
+  FAIL=$((FAIL + 1))
+fi
+
+# (d) operating-layer-vision.md carries the BUILDING -> SPECIFYING amend transition
+# row in §3.3. Pin the whole row (From cell BUILDING, the amend trigger, To cell
+# SPECIFYING) so the model stays legible; brittle-proofed via the full-row regex.
+TOTAL=$((TOTAL + 1))
+if grep -qE '\| BUILDING \|.*amend the spec.*\| SPECIFYING' "$KIT_DIR/docs/operating-layer-vision.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} operating-layer-vision.md has the BUILDING -> SPECIFYING amend row (SPEC-027)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} operating-layer-vision.md lost the BUILDING -> SPECIFYING amend transition row"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"
