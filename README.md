@@ -156,6 +156,8 @@ Don't run both install paths on the same machine -- hooks would register twice. 
 /user:retro          Retrospective (10 min, after shipping)
 ```
 
+Work is sized by risk lane before it starts (tiny / normal / full / bug, plus a `backfill` lane for brownfield: review an existing codebase and write the operating-layer docs without changing app behavior). The lanes, the gate at each phase boundary, and the operate-contract the agent follows live in [`AGENTS.md`](AGENTS.md) and [`WORKFLOW.md`](WORKFLOW.md).
+
 ## Debug mode
 
 Set `DWARVES_KIT_DEBUG=1` to see what every hook is doing:
@@ -216,10 +218,12 @@ These tools complement the kit but are installed separately:
 ```
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
+  AGENTS.md                     Tool-agnostic operate-contract front door (any runtime reads it first)
+  WORKFLOW.md                   The cycle, the risk-tier lanes, the gate at each boundary
   MANUAL.md                     Operator reference for the commands
   RUNBOOK.md                    Hook misbehavior diagnosis + recovery
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
-  CLAUDE.md                     Project template
+  CLAUDE.md                     Project template; the Claude-Code layer on top of AGENTS.md
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
