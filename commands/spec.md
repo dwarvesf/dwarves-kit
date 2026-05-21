@@ -119,6 +119,12 @@ Each task must be atomic: implementable in one session, fits in 50% of a context
 ### Phase 3: Polish
 - [ ] TASK-004: [description] — [acceptance criteria]
 
+## After state
+The definition-of-done picture. Each bullet is false now and true after, and each is checkable by a human or a command. This feeds `## Acceptance Criteria` below and projects into the goal's `Done-when`.
+Rule: observable, not narrated. If a bullet cannot be verified by reading a file, running a command, or seeing a state, it is fluff and gets cut (PHILOSOPHY: every file justifies its existence). Pair the after-state with a "(Today: ...)" current-state note where it sharpens the contrast.
+- [ ] [observable end state]. (Today: [current state].)
+- [ ] [observable end state, checkable by `<command>`].
+
 ## Acceptance Criteria (global)
 - [ ] All tasks pass their individual acceptance criteria
 - [ ] Tests cover happy path + edge cases listed below
