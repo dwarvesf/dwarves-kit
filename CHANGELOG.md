@@ -73,7 +73,7 @@ Audit-fix release. Same-day patch following a retroactive `/review-team` and `/r
 
 ### Changed
 
-- **README "Project structure" section**: replaced the embedded file tree (drifted across 5 releases — last accurate at v1.0) with a concise top-level overview pointing at `git ls-files` for the canonical listing. Removes a recurring drift surface.
+- **README "Project structure" section**: replaced the embedded file tree (drifted across 5 releases, last accurate at v1.0) with a concise top-level overview pointing at `git ls-files` for the canonical listing. Removes a recurring drift surface.
 - **README "Changelog" section**: removed the duplicated highlight bullets (last updated at v1.2.0). CHANGELOG.md is now sole source of truth for version history.
 - **README "v2 roadmap"**: removed "Plugin marketplace packaging" (shipped in v1.4); added "Multi-harness packaging" deferred line.
 - **`examples/hello-spec/README.md`**: added a one-line synthetic-demo disclaimer at the bottom (the `spm` package is fictional; the file shapes are real).
@@ -92,7 +92,7 @@ Audit-fix release. Same-day patch following a retroactive `/review-team` and `/r
 
 - All changes are additive. No breaking changes. No removals.
 - No new ADR: every change fits within existing principles. PHILOSOPHY.md unchanged.
-- README's component count line updated to "9 agents" (was "8") — tracks the `responding-to-review` agent added in v1.3.
+- README's component count line updated to "9 agents" (was "8"); tracks the `responding-to-review` agent added in v1.3.
 - CI is **descriptive**, not enforcing: PRs that fail CI are flagged but not auto-blocked. Enforcement still lives in the `safety-gate` hook locally.
 
 ## [1.4.0] - 2026-04-21
