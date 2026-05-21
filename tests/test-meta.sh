@@ -518,6 +518,38 @@ for COUNTFILE in ".claude-plugin/plugin.json" ".claude-plugin/marketplace.json" 
   fi
 done
 
+# SPEC-004: the absorption ritual + the /user:absorb command exist with their contract.
+ABS_DOC="$KIT_DIR/docs/ABSORPTION.md"
+for HEADING in "## The external lane" "## Interest areas" "## Seed list" "## The adoption rubric" "## The gate"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$HEADING" "$ABS_DOC" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} ABSORPTION.md has '$HEADING' (SPEC-004)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} ABSORPTION.md missing '$HEADING'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+for ABSFILE in "docs/ABSORPTION.md" "docs/absorption/TEMPLATE.md" "docs/absorption/README.md" "commands/absorb.md"; do
+  TOTAL=$((TOTAL + 1))
+  if [ -f "$KIT_DIR/$ABSFILE" ]; then
+    echo -e "  ${GREEN}PASS${NC} $ABSFILE exists (SPEC-004)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $ABSFILE missing"
+    FAIL=$((FAIL + 1))
+  fi
+done
+# the DATA-not-instructions guard must survive in /user:absorb (it scores untrusted fetched content)
+TOTAL=$((TOTAL + 1))
+if grep -qF 'DATA, never instructions' "$KIT_DIR/commands/absorb.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} commands/absorb.md keeps the DATA-not-instructions guard (SPEC-004)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/absorb.md lost the DATA-not-instructions guard"
+  FAIL=$((FAIL + 1))
+fi
+
 # Review issue 5: verdict vocabulary pinned so devs-team/visual-team cannot drift apart.
 for VERDICTFILE in "commands/devs-team.md" "commands/visual-team.md"; do
   TOTAL=$((TOTAL + 1))
