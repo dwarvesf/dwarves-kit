@@ -9,7 +9,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The 19 commands
+## The 20 commands
 
 ### `/user:start`
 
@@ -48,6 +48,10 @@ Opt-in design-critique lane between `/user:design` and `/user:spec`. Dispatches 
 ### `/user:visual-team`
 
 Opt-in visual-critique lane (downstream-facing; the kit has no UI). Dispatches 5 design lenses (hierarchy/typography, system-consistency, accessibility/contrast, restraint, expressiveness) in parallel against a described or linked visual design. Report-only. Does not generate mockups. Writes `## Visual critique` spec-first (the active spec if one exists, else the pre-spec brief, else inline-only) per SPEC-023.
+
+### `/user:ui-design`
+
+Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it cannot dogfood this lane). Resolves the active spec (else the pre-spec brief) and writes a structured `## UI design` brief: aesthetic direction (purpose / tone-extreme / constraints / differentiation, the part `frontend-design` reads first), layout, a components-and-states matrix, responsive + named viewports, accessibility bars, a 3-tier token ladder, and copy voice. Delegates generation to the external `frontend-design` skill (the kit ships no renderer; degrades gracefully if it is absent), critiques via `/user:visual-team`, and runs a bounded auto-revise loop (max 2 regenerations; terminates on a SOLID verdict, RECONSIDER, or the cap). Opt-in, report-only. Depends on the external `frontend-design` skill. Per SPEC-020.
 
 ### `/user:test-plan`
 

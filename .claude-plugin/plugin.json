@@ -1,7 +1,7 @@
 {
   "name": "dwarves-kit",
   "version": "1.6.0",
-  "description": "Spec-driven Claude Code workflow with verification pipeline. 14 hooks + 19 commands + 11 agents.",
+  "description": "Spec-driven Claude Code workflow with verification pipeline. 14 hooks + 20 commands + 11 agents.",
   "author": {
     "name": "Dwarves Foundation",
     "url": "https://dwarves.foundation"

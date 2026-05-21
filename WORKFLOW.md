@@ -30,6 +30,7 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 | Think    | /user:think | decision brief written (if BUILD) | advisory |
 | Design (opt-in) | /user:design | solution agreed + appended to the brief | advisory |
 | Design critique (opt-in) | /user:devs-team, /user:visual-team | critique appended to the active spec (else the brief) | advisory (normal/full) |
+| UI design (opt-in, downstream) | /user:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /user:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /user:spec-validate | Status: VALIDATED | advisory (full lane) |
 | Test plan (opt-in) | /user:test-plan | `## Test plan` written into the spec | advisory (normal/full) |
@@ -60,7 +61,8 @@ session start
                           last-goal.md.
   -> the lane runs        tiny | normal | full (see the cycle table above)
        normal/full -> /user:spec -> /user:spec-validate -> /user:execute (verify pipeline)
-                      (opt-in: /user:devs-team + /user:visual-team before spec; /user:test-plan before execute)
+                      (opt-in: /user:devs-team + /user:visual-team before spec; /user:test-plan before execute;
+                       /user:ui-design for downstream UI work, after /user:design)
                       -> /user:review -> /user:docs -> /user:ship -> /user:retro
   -> on ship              /user:ship reviews the completeness log; ID-NNN drops off the
                           queue (CHANGELOG is the canonical shipped record).

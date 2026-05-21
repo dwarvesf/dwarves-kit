@@ -327,6 +327,19 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-020: the ui-design loop. Assert the command exists, delegates generation
+# to frontend-design (the kit ships no renderer), critiques via visual-team, and
+# carries the `## UI design` brief heading. Downstream-facing; no behavior harness.
+UID_CMD="$KIT_DIR/commands/ui-design.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$UID_CMD" ] && grep -qF 'frontend-design' "$UID_CMD" && grep -qF '## UI design' "$UID_CMD" && grep -qF 'visual-team' "$UID_CMD"; then
+  echo -e "  ${GREEN}PASS${NC} ui-design.md exists + delegates generation + critiques via visual-team (SPEC-020)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ui-design.md missing or not wired (needs frontend-design + visual-team + '## UI design')"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Integration-checker (SPEC-021) ==="

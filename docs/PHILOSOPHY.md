@@ -191,7 +191,7 @@ The distinction: bounded loops continue *within* a session under a verifiable st
 
 ### Downstream-facing lanes (a recorded exception to "serves 2+ phases")
 
-Most kit features must serve 2+ of the kit's own workflow phases. `/user:visual-team` (SPEC-016) is a recorded exception: the kit is bash/CLI with no UI, so a visual-design critique serves no phase of the kit's *own* work. It is shipped because the kit is also a template for downstream projects that *do* have a UI. The kit dogfoods `/user:devs-team` and `/user:test-plan` but not `/user:visual-team`. This exception is named here, and in `commands/kit-health.md`, so the self-assessment does not flag the lane as a speculative feature. New downstream-only lanes must clear this same explicit bar: a named consumer outside the kit, not "might be useful someday."
+Most kit features must serve 2+ of the kit's own workflow phases. `/user:visual-team` (SPEC-016) and `/user:ui-design` (SPEC-020) are recorded exceptions: the kit is bash/CLI with no UI, so a visual-design critique and a UI-design loop serve no phase of the kit's *own* work. They are shipped because the kit is also a template for downstream projects that *do* have a UI. The kit dogfoods `/user:devs-team` and `/user:test-plan` but not the two visual lanes. These exceptions are named here, and in `commands/kit-health.md`, so the self-assessment does not flag the lanes as speculative features. New downstream-only lanes must clear this same explicit bar: a named consumer outside the kit, not "might be useful someday." Two such lanes now exist; a third should prompt reconsidering a downstream `ui` plugin namespace rather than a third individual carve-out.
 
 ---
 
