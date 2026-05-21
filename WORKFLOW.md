@@ -23,6 +23,7 @@ Pick a lane before you start. Smaller work skips ceremony.
 | normal | one bounded feature or fix | /spec, /execute, /review, /ship |
 | full   | touches auth, authz, hooks, data model, data loss, audit/security, an external provider, an API contract, a migration, or weakens validation | /think, /spec, /spec-validate, /execute, /review-team, /docs, /ship, /retro |
 | bug    | a defect, regression, or failing test (not a new feature) | /debug (root cause before any fix), then /review |
+| backfill | brownfield: review an existing codebase and write the operating-layer docs (AGENTS.md / CLAUDE.md / specs) | review the code, write the docs. Doc-output only; no app-behavior change, no app-code edits. /spec optional. |
 
 When in doubt between two lanes, take the heavier one. Anything in the full-lane
 trigger list uses the full lane unless you explicitly narrow the scope and say why.
@@ -62,7 +63,7 @@ session start
                           for whatever goal-loop activator is present, hand off to the
                           lane's first command. Mutator; does NOT execute, never writes
                           last-goal.md.
-  -> the lane runs        tiny | normal | full (see the cycle table above)
+  -> the lane runs        tiny | normal | full | bug | backfill (see the lane table above)
        normal/full -> /user:spec -> /user:spec-validate -> /user:execute (verify pipeline)
                       (opt-in: /user:devs-team + /user:visual-team before spec; /user:test-plan before execute;
                        /user:ui-design for downstream UI work, after /user:design)
