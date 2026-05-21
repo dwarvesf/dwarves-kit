@@ -1,7 +1,7 @@
 # Spec: Design-critique + test-plan lanes (devs-team, visual-team, test-plan)
 
 Generated: 2026-05-21
-Status: DRAFT
+Status: VALIDATED
 Source: maintainer brainstorm 2026-05-21 (superpowers:brainstorming run), porting two external skills to the kit's house style: `az-skills/engineering/devs-roundtable` and `az-skills/design/design-roundtable` (zvadaadam/az-skills). The QA lane has no external source; it is the kit's own coverage-matrix shape.
 Depends on: SPEC-011 (the `/user:design` lane + `docs/specs/DECISION-BRIEF.md` contract this critiques), SPEC-008 (solution-design depth, the brief's `## Solution` sub-section shape), and the `/user:review-team` + `reviewer` parallel-multi-lens pattern this mirrors.
 Relates to: SPEC-006 (the orchestration spine; this is the first work to exercise its doc-impact map for new `commands/*`).
@@ -199,4 +199,4 @@ Per-part one-sentence descriptions:
 - Warnings: partial-lens-failure handling (DEC-012); brief-without-Solution case (DEC-013); TASK-6 atomicity split (DEC-014); verdict-vocabulary drift across critique commands (DEC-015); visual-team untrusted-content handling (DEC-016).
 - Passed: opt-in/report-only matches PHILOSOPHY; generic lenses (not named personas); the visual-team downstream carve-out; inline-dispatch deferral is defensible YAGNI.
 
-Status held at DRAFT pending a re-validate after the fixes (and after the writing-plans plan is re-synced to DEC-011).
+Re-validated 2026-05-21 after the inline fixes: no critical issues remain (DEC-011 resolved the self-contradiction; the TASK-6 split renumbers cleanly to TASK-1..7), no new warnings. Verdict **APPROVED**; Status set to VALIDATED. One advisory carried forward: the Part-A pipeline diagram shows the brief path while the spec-fallback lives in the bullet prose. Note for implementation: the writing-plans plan at `docs/superpowers/plans/` is stale (its devs-team content predates DEC-011) and must be re-synced or regenerated before it is used to build.
