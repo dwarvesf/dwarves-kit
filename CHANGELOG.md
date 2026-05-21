@@ -42,9 +42,18 @@ All notable changes to dwarves-kit are documented here.
 - **`context-readiness.sh` + `session-state-save.sh` count fragility**: `find ... | grep -v` and `grep -c ... || echo 0` both mishandled the zero-match case under `set -e`/pipefail. In a source-file-free repo the hook aborted with no output; a spec with 0 done tasks rendered `tasks:0\n0/N` plus an `integer expected` error. Now uses `{ grep -v ... || true; }` and `grep -c ... || true`. Found during SPEC-010 execution (ID-013).
 - **`install.sh` never materialized the hooks `settings.json` references (SPEC-025)**: settings hard-code every hook (and the statusline) at `$HOME/.claude/dwarves-kit/hooks/<script>.sh`, but the bash installer only `chmod`'d the scripts at its own `$KIT_DIR/hooks/`, merged settings, and created `logs/`. That coincidence held only for the documented in-place clone (README Option 2: clone to `~/.claude/dwarves-kit`); from a dev checkout or CI clone elsewhere, `~/.claude/dwarves-kit/` got only `logs/` and all 14 hooks plus the statusline pointed at missing files, so a fresh session opened with `SessionStart ... No such file or directory` and every hook was silently dead. `install.sh` now links each `hooks/*.sh` into `~/.claude/dwarves-kit/hooks/` when the kit lives elsewhere (per-file symlinks, mirroring the existing `commands/` step, so dev edits stay live), detects the in-place layout and skips linking (a naive loop there deletes the real scripts and leaves broken self-referential symlinks, a regression the first cut shipped and the SDD pass then caught), and the uninstall removes only the symlinks it created. `tests/test-meta.sh` gains a 3-assertion guard (referenced scripts exist in `hooks/`; an isolated out-of-place install resolves every path; an in-place install keeps the scripts resolvable) so neither failure mode can regress past CI. Meta suite 213 -> 216.
 
-## [1.6.0] - 2026-05-20
+## [1.7.0] - 2026-05-21
 
-Orchestration layer (SPEC-003) plus upstream-audit absorption and lineage hygiene (SPEC-002).
+AGENTS.md operating-layer front door plus a brownfield backfill lane and a goal-projection enrichment (SPEC-024).
+
+### Added
+
+- **Kit-root `AGENTS.md`: a tool-agnostic operate-contract front door (SPEC-024).** A portable, four-zone operating layer (the same shape any agent runner can read) that fronts the kit's behavioral contract; `CLAUDE.md` and `WORKFLOW.md` now point at it so the cycle and house rules have one neutral entry point instead of being CLAUDE-only. Ships a downstream template at `examples/hello-spec/AGENTS.md` so a consuming project starts with the same front door. Source: SPEC-024.
+- **`backfill` brownfield lane (SPEC-024)**: an intake lane for adopting the kit into an existing repo (bring the operate-contract, specs convention, and guardrails onto code that predates them), recorded in `WORKFLOW.md` alongside the existing intake lanes.
+- **Six-section goal projection in `/user:assign`**: the goal draft `/user:assign` writes now projects the backlog item across six fixed sections, so a handed-off goal carries fuller context into its lane.
+- **`## After state` section in the `/user:spec` template**: specs now scaffold the post-implementation end state, complementing the existing Verification / Open-questions stop-criteria.
+- **doc-impact-map rows for `AGENTS.md` and the top-level files**: the WORKFLOW doc-impact map (reviewed by `/user:ship` + `/user:retro`) now lists `AGENTS.md` and the other root-level docs so a change that touches them is flagged for a doc update.
+- **Regression coverage for the install settings-merge against a pre-existing third-party hook (test/guard, not a fix)**: `tests/test-meta.sh` gains a block that asserts `install.sh`'s `settings.json` merge preserves an existing third-party hook entry. This is added coverage, not a bug fix: the current installer already preserves third-party hooks (the jq merge unions correctly), so no installer change was needed. The test pins that behavior so it cannot silently regress. Meta suite to 234 asserts.
 
 ### Added
 
