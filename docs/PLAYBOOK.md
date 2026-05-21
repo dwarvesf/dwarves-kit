@@ -201,6 +201,43 @@ straight into a spec is how scope drift starts.
 
 ---
 
+## Scenario 7: mid-build, "also do Y" (a mid-flight scope change)
+
+**Context.** You are mid-`/user:execute` on a `VALIDATED` spec (state BUILDING). Partway through,
+the work reveals scope that must be added now. You do **not** want to restart the lane or throw
+away the tasks already done.
+
+**What you say.** "also do Y", "while you're in here, add Z", "amend the spec to cover Y".
+
+**Automatic vs interpreted.**
+- *Not a keyword trigger.* No hook watches for "also do". Nothing auto-fires.
+- *Interpreted*: Claude recognizes this as a **mid-flight amend** and runs the declared
+  amend micro-loop (BUILDING -> SPECIFYING -> BUILDING) instead of silently editing the spec or
+  starting over. The full rule (when you may amend, the checkpoint guard, the recorded entry,
+  how to resume) is canonical in **`WORKFLOW.md` "## Mid-flight amend"**; this card is only the
+  what-you-say -> what-happens projection of it.
+
+**Resulting flow.** Amend in place at a checkpoint, then resume; the spec stays `VALIDATED`:
+```text
+  "also do Y"  (mid /user:execute, spec is VALIDATED)
+     -> reach a task checkpoint (finish + verify + commit the in-flight task first)
+     -> amend the spec: append new - [ ] TASK rows + delta the After-state / AC / Verification
+        (completed - [x] tasks are NOT touched), record an ## Amendments entry
+     -> re-validate the DELTA only (full lane: /spec-validate on the new tasks; normal: advisory)
+     -> /user:next  resumes, picking the next undone - [ ] task (skips the done rows)
+```
+
+**Decision / approval points.** You confirm the added scope before the amend lands; the
+delta-only re-validation verdict (full lane). The Status never drops to `DRAFT` (that would be a
+lane restart), and an amend only **adds** scope: rewriting an already-done task's contract is a
+heavier re-open decision, not an amend. See `WORKFLOW.md` "## Mid-flight amend" for the four
+invariants in full.
+
+**How to continue.** Say `next` to resume on the amended tasks. To add yet more scope later,
+repeat: each amend appends a fresh `## Amendments` line. To leave the build instead, `ship` it.
+
+---
+
 ## 8. The freeform -> ID front door (what `/user:assign` does internally)
 
 Scenarios 2 and 5 are freeform (no ID). The orchestration is ID-first, so `/user:assign` mints the

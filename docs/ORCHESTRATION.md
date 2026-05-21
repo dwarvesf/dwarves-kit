@@ -255,6 +255,39 @@ context, retries fixable failures, and checks cross-task wiring at the end. Self
       build complete ◀── re-check
 ```
 
+### 5.4 Mid-flight amend micro-loop (BUILDING -> checkpoint -> amend -> resume)
+
+A side excursion off the execute pipeline, not a fourth engine: when work mid-build reveals
+scope that must be added now ("also do Y"), the operator amends the active `VALIDATED` spec in
+place and resumes, **without** restarting the lane. The rule (the checkpoint guard, the
+add-only + frozen-completed-tasks + Status-stays-VALIDATED invariants, resume-via-`/next`) is
+canonical in **`WORKFLOW.md` "## Mid-flight amend"**; the state-model row
+(`BUILDING -> SPECIFYING -> BUILDING`) lives in `docs/operating-layer-vision.md` §3.3. This
+section only draws the loop; it does not restate the four invariants.
+
+- **Trigger**: operator says "also do Y" / "amend the spec" mid-`/user:execute`.
+- **Guard**: amend only at a task checkpoint (the in-flight task verified + committed first,
+  or none in flight); completed `- [x]` tasks are frozen.
+- **Resume**: `/user:next` (picks the next undone `- [ ]` row, skips done rows), **not** a fresh
+  `/user:execute` (which re-presents the whole plan). See `WORKFLOW.md` for why.
+
+```text
+   BUILDING (mid /user:execute, spec is VALIDATED)
+        │  trigger: "also do Y"
+        ▼
+   reach a task checkpoint  ──────────────────────────────┐
+   (in-flight task verified + committed; - [x] frozen)     │ not at a checkpoint yet?
+        │                                                  │ finish the in-flight task first
+        ▼                                                  └──────────────────────────────┘
+   SPECIFYING (amend, not restart)
+        - append new - [ ] TASK rows; delta After-state / AC / Verification
+        - record an ## Amendments entry
+        - re-validate the DELTA only (full: /spec-validate; normal: advisory)
+        │  Status STAYS VALIDATED (no drop to DRAFT)
+        ▼
+   /user:next  ──▶  BUILDING (resume; runs only the amended tasks)
+```
+
 ---
 
 ## 6. Opt-in side-flows (8)
