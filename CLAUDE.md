@@ -22,8 +22,8 @@ The kit deliberately uses no compiled binaries and no Node/Python in hooks (carv
 ## Commands (for dev on the kit)
 
 ```bash
-bash tests/test-hooks.sh      # 59 hook behavior tests
-bash tests/test-meta.sh       # 176 structural integrity tests
+bash tests/test-hooks.sh      # 92 hook behavior tests
+bash tests/test-meta.sh       # 196 structural integrity tests
 bash install.sh               # install into ~/.claude/ (idempotent)
 bash install.sh --uninstall   # clean removal
 DWARVES_KIT_DEBUG=1 ...       # verbose hook logging on stderr
