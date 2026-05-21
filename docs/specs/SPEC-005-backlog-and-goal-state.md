@@ -1,7 +1,7 @@
 # Spec: The kit's state model (backlog, goals, spec-location detection)
 
 Generated: 2026-05-20
-Status: VALIDATED
+Status: SHIPPED
 Source: maintainer braindump 2026-05-20 (items a + b + c). Backlog: ID-004, ID-005, ID-006.
 Prior spec: docs/specs/SPEC-004-absorption-cadence.md
 Validation: 4 reviewers run 2026-05-20 (scope-critic, assumption-destroyer, failure-mode, philosophy-fidelity). Pre-fix verdict NEEDS REVISION (8 critical + multiple warnings); all resolved inline. See Decision Log DEC-008..DEC-017 and the Validation section.

@@ -55,7 +55,7 @@ session start
                           and list active .claude/goals/ drafts. Read-only; a detector.
   -> /user:assign ID-NNN  goal-crafter: break the item down, set objective + scope
                           fence + termination-on-blocker, write .claude/goals/<slug>.md
-                          (the SPEC-005 contract), pick the lane, surface the draft body
+                          (the goal-draft contract), pick the lane, surface the draft body
                           for whatever goal-loop activator is present, hand off to the
                           lane's first command. Mutator; does NOT execute, never writes
                           last-goal.md.
@@ -68,7 +68,7 @@ session start
                           queue (CHANGELOG is the canonical shipped record).
 ```
 
-**Detector/mutator split.** `/user:start` and `/user:next` only read and render; `/user:assign` is the only mutator. **Activator-agnostic.** `/user:assign` writes only the `.claude/goals/<slug>.md` draft (ADR-0011) and surfaces its body; activation (starting the loop) is done by whatever primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the `goal-craft` skill). The kit NEVER writes `.claude/last-goal.md`; if no activator exists, the draft is a plain reusable file. **"Even the goal loop follows WORKFLOW"** is delivered honestly: the safety subset is hard-enforced by existing hooks (anti-rationalization, the verification pipeline, the push-to-main blocker); decision/doc completeness is warned + logged to `~/.claude/dwarves-kit/logs/completeness.log` and reviewed at `/user:ship` + `/user:retro`, not hard-blocked mid-loop (PHILOSOPHY rejects hard-gating process completeness). State model: SPEC-005. Full design: SPEC-006.
+**Detector/mutator split.** `/user:start` and `/user:next` only read and render; `/user:assign` is the only mutator. **Activator-agnostic.** `/user:assign` writes only the `.claude/goals/<slug>.md` draft and surfaces its body; activation (starting the loop) is done by whatever primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the `goal-craft` skill). The kit NEVER writes `.claude/last-goal.md`; if no activator exists, the draft is a plain reusable file. **"Even the goal loop follows WORKFLOW"** is delivered honestly: the safety subset is hard-enforced by existing hooks (anti-rationalization, the verification pipeline, the push-to-main blocker); decision/doc completeness is warned + logged to `~/.claude/dwarves-kit/logs/completeness.log` and reviewed at `/user:ship` + `/user:retro`, not hard-blocked mid-loop (PHILOSOPHY rejects hard-gating process completeness).
 
 ## Completion contract
 A task is done only when its acceptance criteria are met and the verifier has
@@ -87,9 +87,9 @@ Per change-type, the companion docs that must move with it. This covers the enum
 
 | If a change touches | Companion docs that must update |
 |---|---|
-| `hooks/*` | `RUNBOOK.md`, README hook table, `tests/test-meta.sh` count, `tests/test-hooks.sh`, the count surfaces (see below) |
-| `commands/*` (new) | `MANUAL.md`, README command table, `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh`, the count surfaces (see below) |
-| `agents/*` | README agent list, `tests/test-meta.sh` frontmatter checks, the count surfaces (see below) |
+| `hooks/*` | `RUNBOOK.md`, README hook table, `tests/test-hooks.sh`, `tests/test-meta.sh` |
+| `commands/*` (new) | `MANUAL.md`, README command table, `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh` |
+| `agents/*` | README agent list, `tests/test-meta.sh` frontmatter checks |
 | `settings.json` (hook wiring) | README hook table, `RUNBOOK.md`, `install.sh` merge logic |
 | `install.sh` | README install steps, `tests/` |
 | `rules/*` | README path-scoped-rules note, `docs/architecture.md` |
@@ -99,11 +99,11 @@ Per change-type, the companion docs that must move with it. This covers the enum
 | a new `docs/decisions/` ADR | README + `docs/architecture.md` cross-refs |
 | a new `docs/specs/SPEC-NNN` | `_meta/BACKLOG.md` status, the spec's `Status:` header |
 | **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, README "Project structure", `docs/architecture.md` |
-| any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` + `marketplace.json` version, `tool.toml` version, `docs/retro/v<ver>.md` |
+| any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` version, `tool.toml` version, `docs/retro/v<ver>.md` |
 
-The bolded row is self-maintaining: adding a new top-level dir must update this map. Source: SPEC-006.
+The bolded row is self-maintaining: adding a new top-level dir must update this map.
 
-**Count + version surfaces.** Two values are duplicated across many files; the rows above point here so the sweep is enumerated, not "everywhere it appears". The component-count line (`N hooks + N commands + N agents + N skill`) lives in `CLAUDE.md`, `README.md`, `MANUAL.md` ("The N commands"), `docs/architecture.md` (component table), and `tool.toml` (description). The version string lives in `VERSION`, `.claude-plugin/plugin.json`, `docs/architecture.md` (component-table header), and `tool.toml`. Changing any count or the version means sweeping every file in the matching list; `marketplace.json` inherits the version via `"source": "."` and needs no bump. The SPEC-016 ship updated most count surfaces but missed `docs/architecture.md` and `tool.toml`; enumerating them here closes that gap.
+**Version surfaces.** The version string is duplicated and must stay in sync: it lives in `VERSION` (the source of truth), `.claude-plugin/plugin.json`, and `tool.toml`. Bumping the version means updating those; `marketplace.json` inherits it via `"source": "."` and needs no bump. The kit does NOT keep component counts (`N hooks`, `N commands`, etc.) in prose: describe the component set qualitatively, never as a hand-maintained number that silently rots.
 
 ## What this contract does NOT do
 It does not lock phases. An experienced operator may skip /spec-validate on a
@@ -121,13 +121,12 @@ whatever goal-loop activator is present (the built-in `/goal`, the `ralph-loop`
 plugin, or the `goal-craft` skill); if none is installed, the drafts still work
 as plain reusable files. Brainstorm many drafts, one is active at a time; each
 carries a `target_spec`/`id`. Picking a draft and routing it into a lane is `/user:assign`; `/user:start`/`/user:next`
-render the queue + drafts read-only (SPEC-006). There is no separate `/user:goals`
-list/switch command (SPEC-006 DEC-003, parked).
-Full contract and rationale: ADR-0011.
+render the queue + drafts read-only. There is no separate `/user:goals`
+list/switch command (parked).
 
 ## Artifact placement and concurrency (multi-spec)
-The kit's concurrency model is **worktree-per-spec** (SPEC-010): many specs coexist
-in `docs/specs/`, one is active per branch (SPEC-005 branch-aware detection), and
+The kit's concurrency model is **worktree-per-spec**: many specs coexist
+in `docs/specs/`, one is active per branch (branch-aware detection), and
 "multiple active specs at once" means N git worktrees, each one-active. The kit's
 boundary stops at per-worktree detection + per-worktree state isolation; spawning,
 scheduling, or merging the N worktrees is an external runtime, not the kit's job.
@@ -135,28 +134,29 @@ scheduling, or merging the N worktrees is an external runtime, not the kit's job
 The placement rule that keeps this safe: **an artifact bound to a spec lives IN the
 active spec; a pre-spec or per-diff artifact stays a working-tree file (isolated by
 the worktree).** Lanes that produce a spec-bound result resolve "the active spec"
-through the one shared SPEC-005 path (so a writer and a later reader never split
+through the one shared active-spec path (so a writer and a later reader never split
 across two specs), and write into that spec, not a fixed-name root file. New lanes
 must follow this: if your output binds to a spec, append it as a `## Section` in the
 active spec (replace-not-stack), the way all four critique/plan lanes do
 (`/user:test-plan`, `/user:devs-team`, `/user:visual-team`, `/user:ui-design`).
 The shared invariant is the spec-first head; `/user:visual-team` adds an inline
-fallback because it alone can run with neither a spec nor a brief (SPEC-023).
+fallback because it alone can run with neither a spec nor a brief.
 
 | Artifact | Home | Scope | Why |
 |---|---|---|---|
 | `docs/specs/SPEC-NNN-<slug>.md` | committed, per-spec file | per-spec | the contract; unique name, no collision |
-| `## Test plan` (SPEC-018) | in the active spec | per-spec | build input `/user:execute` reads from the spec it runs |
-| `## Design critique` (`/user:devs-team`, SPEC-016 + SPEC-023) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
-| `## UI design` + `## Visual critique` (`/user:ui-design`, SPEC-020; `/user:visual-team`, SPEC-016 + SPEC-023) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
+| `## Test plan` | in the active spec | per-spec | build input `/user:execute` reads from the spec it runs |
+| `## Design critique` (`/user:devs-team`) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
+| `## UI design` + `## Visual critique` (`/user:ui-design`; `/user:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
 | `docs/specs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
 | `REVIEW.md`, `TODOS.md` | working-tree files (gitignored) | per-diff, per worktree | transient `/review` output, regenerated each run; not spec-bound |
-| kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree (SPEC-010 TASK-5) |
+| kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |
 
 The pre-spec brief is the one artifact that cannot be per-spec (no SPEC-NNN exists
 yet); in that window concurrency relies on worktree isolation, and `/spec` folds the
 brief into the spec so the spec becomes the carrier from then on. Same-directory
 branch-switching is NOT a supported concurrency mode; use a worktree per spec.
-Sources: SPEC-010 (worktree model + state namespacing), SPEC-016 DEC-011 +
-SPEC-018 + SPEC-020 DEC-008 (the in-spec placement rule), SPEC-023 (aligned
-`/user:devs-team` + `/user:visual-team` to spec-first).
+
+Design provenance for every rule in this contract lives in `docs/specs/` and
+`docs/decisions/`: the spec files and ADRs carry the rationale and history. This
+contract states the rules; it does not cite the spec IDs that decided them.

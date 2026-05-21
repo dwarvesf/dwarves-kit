@@ -6,13 +6,13 @@ How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file i
 
 The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 
-| Kit dir | CC primitive | Trigger | Count (v1.6.0) |
-|---|---|---|---|
-| `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) | 14 |
-| `commands/` | Slash command | Human typing `/user:<name>` | 19 |
-| `agents/` | Custom subagent | Dispatched by a command via Task tool | 11 |
-| `skills/` | Skill | Claude auto-triggered from skill description | 1 |
-| `rules/` | Path-scoped rules | Active when Claude reads matching files | 2 templates |
+| Kit dir | CC primitive | Trigger |
+|---|---|---|
+| `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) |
+| `commands/` | Slash command | Human typing `/user:<name>` |
+| `agents/` | Custom subagent | Dispatched by a command via Task tool |
+| `skills/` | Skill | Claude auto-triggered from skill description |
+| `rules/` | Path-scoped rules | Active when Claude reads matching files |
 
 The kit is intentionally flat. Component dirs sit at the top of the repo, not nested under `src/`, because the kit IS a flat set of prompts and bash scripts; there is no compilation step that justifies a `src/` boundary.
 

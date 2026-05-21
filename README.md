@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-14 hooks + 20 commands + 11 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
+Hooks, slash commands, subagents, and a skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
 
 Install in any Claude Code session:
 
@@ -214,7 +214,7 @@ These tools complement the kit but are installed separately:
 ```
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
-  MANUAL.md                     Operator reference for the 20 commands
+  MANUAL.md                     Operator reference for the commands
   RUNBOOK.md                    Hook misbehavior diagnosis + recovery
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template
