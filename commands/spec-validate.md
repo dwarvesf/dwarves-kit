@@ -1,5 +1,5 @@
 ---
-description: "Adversarial review of a spec before implementation. 5 reviewer personas attack the spec from different angles."
+description: "Adversarial review of a spec before implementation. 5 specialist lenses attack the spec from different angles."
 ---
 
 You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-NNN-<slug>.md` (the most recent non-shipped spec if several exist). If no spec exists, tell the user to run `/user:spec` first.

@@ -260,6 +260,42 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-018 DEC-003/DEC-006: the `## Test plan` heading is the writer/reader
+# contract; it must appear in BOTH test-plan.md (writer) and execute.md (reader).
+# A rename on one side silently disables execute's consumption of the plan.
+TP_CMD="$KIT_DIR/commands/test-plan.md"
+EXEC_CMD="$KIT_DIR/commands/execute.md"
+for FILE in "$TP_CMD" "$EXEC_CMD"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF '## Test plan' "$FILE" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} '$(basename "$FILE")' pins the literal '## Test plan' (SPEC-018)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} '$(basename "$FILE")' lost the '## Test plan' contract (execute would silently read no plan)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# SPEC-018 DEC-005: the test-plan matrix must carry the proof column.
+TOTAL=$((TOTAL + 1))
+if grep -qiF 'proof' "$TP_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md carries the 'proof' column (SPEC-018 DEC-005)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md dropped the 'proof' column"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-018 DEC-001: test-plan writes into the spec, not a root TEST-PLAN.md.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'TEST-PLAN.md' "$TP_CMD" 2>/dev/null; then
+  echo -e "  ${RED}FAIL${NC} test-plan.md still references a root TEST-PLAN.md (should write into the spec)"
+  FAIL=$((FAIL + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} test-plan.md writes into the spec, no root TEST-PLAN.md (SPEC-018 DEC-001)"
+  PASS=$((PASS + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Integration-checker (SPEC-021) ==="

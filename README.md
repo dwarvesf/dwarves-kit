@@ -63,7 +63,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 | /user:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
 | /user:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /user:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
-| /user:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into TEST-PLAN.md |
+| /user:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /user:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /user:next | Build | Lightweight: picks next undone task, loads context, you drive |
 | /user:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
