@@ -1,7 +1,7 @@
 # Retro: AGENTS.md operating-layer cycle
 Date: 2026-05-21
 Sprint: single-session cycle (spec-validate -> execute -> review-team -> docs -> ship)
-Spec: SPEC-024 (v1.7.0, PR #7)
+Spec: SPEC-024 (PR #7; CHANGELOG [Unreleased], no version bump)
 
 ## Metrics
 - Tasks planned: 10, completed: 10, deferred: 0 (2 LOW review findings -> backlog ID-018/019)
