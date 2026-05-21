@@ -380,6 +380,16 @@ for CMD in devs-team visual-team test-plan; do
   fi
 done
 
+# SPEC-017: /user:execute expands tasks into bite-sized steps.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'bite-sized steps' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} execute.md has the bite-sized step-expansion marker (SPEC-017)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} execute.md missing the bite-sized step-expansion marker"
+  FAIL=$((FAIL + 1))
+fi
+
 VALIDATE_CMD="$KIT_DIR/commands/spec-validate.md"
 TOTAL=$((TOTAL + 1))
 if grep -qE "^### Reviewer 5:" "$VALIDATE_CMD" 2>/dev/null; then

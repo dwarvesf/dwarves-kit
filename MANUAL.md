@@ -85,7 +85,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Writes:** code, tests, marks SPEC task checkmarks, appends to SPEC Decision Log
 **Dispatches:** worker subagent per task, then task-verifier, then fix-agent on FAIL:fixable (retry max 2)
 **When to invoke:** when handing off to a contractor OR running the kit on yourself end-to-end
-**Common gotcha:** verification adds ~2x token cost per task. Worth it for the FAIL:fixable catch rate; budget accordingly.
+**Common gotcha:** verification adds ~2x token cost per task. Worth it for the FAIL:fixable catch rate; budget accordingly. Each worker first expands its task into bite-sized verify-each-step increments (TDD when a unit test fits; grep/bash/test-suite verify for doc and config tasks) before coding.
 
 ### `/user:next`
 

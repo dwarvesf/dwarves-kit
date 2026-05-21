@@ -96,10 +96,12 @@ API design), follow the protocol in docs/architecture.md:
 3. State your RECOMMENDATION and why.
 4. Proceed with the recommendation (autonomous mode). Log the decision.
 
-Before writing any code, also present your implementation plan:
-- Approach: how you intend to implement this (1-2 sentences).
-- Files to create/modify: list them.
-- Key decisions made (using the protocol above if any were non-obvious).
+Before writing any code, expand this task into **bite-sized steps** and present them:
+- Decompose the task into ordered steps. Each step is the smallest verifiable increment plus its verify command and the expected result.
+- Use a TDD shape when a unit test fits: write the failing test, run it (expect fail), implement the minimum, run it (expect pass), commit.
+- For doc, config, command-prompt, or other non-code tasks, the verify is a `grep`/`bash` assertion or the project test suite (e.g. `bash tests/test-meta.sh`), not a unit test. For a task with no mechanical verify (subjective prose or design judgment), the step is change, human-review, commit, and you say so.
+- Also state in one or two sentences: Approach, Files to create/modify, and Key decisions (using the collaborative-design protocol above if any were non-obvious).
+- Then work the steps in order, verifying each. If a step's own verify fails, fix it within that step (your inner loop) before moving on; do not defer step-level failures to the verifier. The task-verifier remains the single result-level gate after you commit.
 
 ## Decision mode
 [lead: pause for human approval / autonomous: proceed with recommendation and log]
