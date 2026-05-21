@@ -85,9 +85,9 @@ Per change-type, the companion docs that must move with it. This covers the enum
 
 | If a change touches | Companion docs that must update |
 |---|---|
-| `hooks/*` | `RUNBOOK.md`, README hook table, `tests/test-meta.sh` count, `tests/test-hooks.sh` |
-| `commands/*` (new) | `MANUAL.md`, README command table, `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh`, and the command count everywhere it appears |
-| `agents/*` | README agent list, `tests/test-meta.sh` frontmatter checks |
+| `hooks/*` | `RUNBOOK.md`, README hook table, `tests/test-meta.sh` count, `tests/test-hooks.sh`, the count surfaces (see below) |
+| `commands/*` (new) | `MANUAL.md`, README command table, `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh`, the count surfaces (see below) |
+| `agents/*` | README agent list, `tests/test-meta.sh` frontmatter checks, the count surfaces (see below) |
 | `settings.json` (hook wiring) | README hook table, `RUNBOOK.md`, `install.sh` merge logic |
 | `install.sh` | README install steps, `tests/` |
 | `rules/*` | README path-scoped-rules note, `docs/architecture.md` |
@@ -97,9 +97,11 @@ Per change-type, the companion docs that must move with it. This covers the enum
 | a new `docs/decisions/` ADR | README + `docs/architecture.md` cross-refs |
 | a new `docs/specs/SPEC-NNN` | `_meta/BACKLOG.md` status, the spec's `Status:` header |
 | **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, README "Project structure", `docs/architecture.md` |
-| any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` + `marketplace.json` version, `docs/retro/v<ver>.md` |
+| any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` + `marketplace.json` version, `tool.toml` version, `docs/retro/v<ver>.md` |
 
 The bolded row is self-maintaining: adding a new top-level dir must update this map. Source: SPEC-006.
+
+**Count + version surfaces.** Two values are duplicated across many files; the rows above point here so the sweep is enumerated, not "everywhere it appears". The component-count line (`N hooks + N commands + N agents + N skill`) lives in `CLAUDE.md`, `README.md`, `MANUAL.md` ("The N commands"), `docs/architecture.md` (component table), and `tool.toml` (description). The version string lives in `VERSION`, `.claude-plugin/plugin.json`, `docs/architecture.md` (component-table header), and `tool.toml`. Changing any count or the version means sweeping every file in the matching list; `marketplace.json` inherits the version via `"source": "."` and needs no bump. The SPEC-016 ship updated most count surfaces but missed `docs/architecture.md` and `tool.toml`; enumerating them here closes that gap.
 
 ## What this contract does NOT do
 It does not lock phases. An experienced operator may skip /spec-validate on a
