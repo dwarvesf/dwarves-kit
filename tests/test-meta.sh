@@ -182,6 +182,21 @@ fi
 
 # ============================================================
 echo ""
+echo "=== Spec / ADR number-collision guard (shared-branch numbering) ==="
+# ============================================================
+# Two sessions assigning SPEC-NNN / ADR-NNNN against the same tree both read the
+# same max and pick max+1, colliding (surfaced only at merge). This turns that
+# silent collision into a loud CI failure. Allocation rule + conflict resolution
+# live in docs/specs/README.md ("Concurrent numbering").
+
+DUP_SPECS=$(ls "$KIT_DIR/docs/specs/" | grep -oE '^SPEC-[0-9]+' | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//')
+assert_eq "no duplicate SPEC numbers (dups: ${DUP_SPECS:-none})" "" "$DUP_SPECS"
+
+DUP_ADRS=$(ls "$KIT_DIR/docs/decisions/" | grep -oE '^[0-9]+' | sort | uniq -d | tr '\n' ' ' | sed 's/ *$//')
+assert_eq "no duplicate ADR numbers (dups: ${DUP_ADRS:-none})" "" "$DUP_ADRS"
+
+# ============================================================
+echo ""
 echo "=== Debug loop (SPEC-013) ==="
 # ============================================================
 # The /user:debug command must exist and carry its load-bearing structure,
