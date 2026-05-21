@@ -36,6 +36,6 @@ PR: #5 (fix/install-hook-links)
 
 ## Feed forward
 - The "test all install layouts" rule is encoded in `tests/test-meta.sh`; no CLAUDE.md change needed.
-- Two candidates for `_meta/BACKLOG.md` (deferred: that file holds uncommitted SPEC-024 WIP, so not edited here): (1) promote the new-SPEC-BACKLOG-row check to a guard; (2) reconcile the retro-file-naming inconsistency across the skill / CLAUDE.md / WORKFLOW.
+- Two kit-internal items were queued in `_meta/BACKLOG.md` as **ID-016** (promote the new-SPEC -> BACKLOG-row check to a guard, normal) and **ID-017** (reconcile the retro-file-naming inconsistency across the `retro` skill / CLAUDE.md / WORKFLOW, tiny). The rows are written but left **uncommitted**, since that file also carries the in-flight SPEC-024 / ID-015 WIP; they ride into the working tree and commit alongside SPEC-024, not into PR #5.
 - SPEC-025 `Status:` flips VALIDATED -> SHIPPED on PR #5 merge (DEC-005).
 - No new ADR (the symlink mechanism is an instance of the existing `commands/` link pattern, not a new decision).
