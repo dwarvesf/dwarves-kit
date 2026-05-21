@@ -9,7 +9,7 @@ The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 | Kit dir | CC primitive | Trigger | Count (v1.6.0) |
 |---|---|---|---|
 | `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) | 14 |
-| `commands/` | Slash command | Human typing `/user:<name>` | 18 |
+| `commands/` | Slash command | Human typing `/user:<name>` | 19 |
 | `agents/` | Custom subagent | Dispatched by a command via Task tool | 11 |
 | `skills/` | Skill | Claude auto-triggered from skill description | 1 |
 | `rules/` | Path-scoped rules | Active when Claude reads matching files | 2 templates |

@@ -9,7 +9,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The 18 commands
+## The 19 commands
 
 ### `/user:start`
 
@@ -143,6 +143,14 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Writes:** `docs/retro/v<version>.md`
 **When to invoke:** after `/ship` lands; one per minor or major release, patch releases append to parent retro
 **Common gotcha:** action items become real only if you carry them to the next cycle's spec. Track them, do not just write them.
+
+### `/user:absorb`
+
+**Phase:** maintainer connective tissue (external absorption audit)
+**Reads:** README Credits + the pinned seed list in `docs/ABSORPTION.md`; prior proposals under `docs/absorption/`
+**Writes:** a dated, proposal-only report under `docs/absorption/` (never a kit component; ends with a `git status` self-check)
+**When to invoke:** the monthly-ish absorption ritual, re-audit upstream sources for new/changed patterns worth adopting
+**Common gotcha:** maintainer-only and proposal-only, it never absorbs or adds a source to Credits itself (the human merge gate). Two lanes: Credits drift + a seed-rescan of the SPEC-014 set. QA/UI candidates needing binaries surface as "recommend external". Source: SPEC-004 + `docs/ABSORPTION.md`.
 
 ### `/user:kit-health`
 

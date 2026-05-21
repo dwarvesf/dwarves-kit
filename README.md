@@ -7,7 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-14 hooks + 18 commands + 11 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
+14 hooks + 19 commands + 11 agents + 1 skill. Every component traces to a proven pattern (no novel inventions). Bash-first hooks (every script readable in 30 seconds). Hook-enforced safety (`rm -rf`, push-to-main, force-push, secret-file reads blocked).
 
 Install in any Claude Code session:
 
@@ -73,6 +73,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 | /user:ship | Ship | Review gate, version bump, changelog, commit, PR |
 | /user:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /user:kit-health | Meta | Self-assessment against kit philosophy |
+| /user:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
 
 **Agents (subagents dispatched by commands):**
 
@@ -212,7 +213,7 @@ These tools complement the kit but are installed separately:
 ```
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
-  MANUAL.md                     Operator reference for the 18 commands
+  MANUAL.md                     Operator reference for the 19 commands
   RUNBOOK.md                    Hook misbehavior diagnosis + recovery
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template

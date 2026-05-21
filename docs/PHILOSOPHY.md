@@ -242,7 +242,7 @@ The thesis is not "better components" but "better integration." If that thesis i
 ### Adding a new component
 
 1. **Identify the source.** What existing tool or pattern does this come from? (principle: "synthesize, don't originate")
-2. **Score with /eval-tool rubric.** Layer fit + Pain match + Adoption cost + Timing. Must score 10+ to be ADOPT.
+2. **Score with the adoption rubric.** Layer fit + Pain match + Adoption cost + Timing; the scored table lives in `docs/ABSORPTION.md` (not a `/eval-tool` command). Must score 10+ to be ADOPT.
 3. **Check the NO list.** Does it violate any hard limit or rejection criterion?
 4. **File budget check.** Will the kit stay under 35 files? If not, what gets removed?
 5. **Performance check.** For hooks: does it complete in under 500ms?
