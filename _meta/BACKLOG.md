@@ -42,6 +42,9 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID-020 | Verification-pipeline absence-checks: teach task-verifier + integration-checker to assert that removed/replaced content is GONE for "replace, don't duplicate" / "remove X" tasks, not just that the new artifact exists. A replace-task left both copies and passed BOTH verifiers this cycle; only the independent review caught it | SPEC-024 retro 2026-05-21 (pipeline blind spot) | TBD | normal | queued |
 | ID-021 | Reduce execute-worker shell/hook friction: pre-warn the recurring gotchas in `commands/execute.md`'s worker template (fish `noclobber` -> `>|`; no heredoc commit `-m` -> `git commit -F`; no `rm` -> `mv`), and investigate the commit-format/commit-msg heredoc mis-parse (it read a multi-line `-m` body as a 459-char subject) | SPEC-024 retro 2026-05-21 (worker friction) | TBD | normal | queued |
 | ID-022 | Freeform front door: extend `/user:assign` to accept freeform intent (not only `ID-NNN`), auto-allocating an ID + BACKLOG row so "apply SDD to X" / a vague brief is a native one-shot intake (unparks the SPEC-024-deferred griller entry; preserves ID-first traceability) | PLAYBOOK.md scenarios 2026-05-22 | SPEC-026 | normal | speccing |
+| ID-023 | Mid-flight spec amend: a path to add scope to a VALIDATED / in-build spec without restarting the lane (state machine transition BUILDING -> SPECIFYING) | operating-layer-vision gap analysis 2026-05-22 | TBD | normal | queued |
+| ID-024 | Context-switch affordance across specs (worktree-per-spec) + an explicit ABANDONED terminal (state hygiene; vs the existing `parked`) | operating-layer-vision gap analysis 2026-05-22 | TBD | normal | queued |
+| ID-025 | Re-open-shipped convention: a follow-up spec spun from a SHIPPED one (state machine transition SHIPPED -> TRIAGING) | operating-layer-vision gap analysis 2026-05-22 | TBD | tiny | queued |
 Dependency notes:
 - ID-012 P1 (spec stop-criteria) shipped (SPEC-012, normal lane; see CHANGELOG); P2 (loop QA gate) is held until the pointer-`/goal` pattern has real runs; it will build on the now-shipped SPEC-006 completeness clauses + the existing verification pipeline.
 - ID-002 (internal absorption lane, SPEC-007) is parked; independent of the orchestration chain.
@@ -49,6 +52,7 @@ Dependency notes:
 - ID-018 / ID-019 came out of the SPEC-024 /review-team pass (deferred LOW findings); both are tiny-lane polish, independent of the SPEC-024 ship.
 - ID-020 / ID-021 came out of the SPEC-024 retro; ID-020 (verifier absence-checks) relates to ID-016 (both are guard/verifier hardening) and is the highest-signal kit finding of the cycle.
 - ID-022 came out of writing `docs/PLAYBOOK.md` (scenarios S2/S5): the freeform-intent gap. It unparks the SPEC-024-deferred griller entry; SPEC-026 drafts it. Independent of the other chains.
+- ID-023 / ID-024 / ID-025 came out of `docs/operating-layer-vision.md` (the SDLC state-machine gap analysis): the transitions with no clean path today. ID-022 is the highest-priority of the operating-layer set; these three follow it. All trace to the vision doc as their north-star.
 
 ## Schema
 

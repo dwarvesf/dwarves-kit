@@ -262,6 +262,7 @@ Until that ships, the bridge in Section 8 is the supported path.
 ---
 
 ## See also
+- `docs/operating-layer-vision.md` - the design-first vision + the SDLC state machine this playbook projects (the formal model behind these scenarios).
 - `docs/ORCHESTRATION.md` - the flow/loop view (lanes, loops, triggers, stop conditions, ASCII diagrams).
 - `WORKFLOW.md` - the rules contract (the cycle, the lanes, the gates).
 - `MANUAL.md` - per-command operator detail.

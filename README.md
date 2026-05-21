@@ -223,6 +223,7 @@ dwarves-kit/
   MANUAL.md                     Operator reference for the commands
   docs/ORCHESTRATION.md         The flow/loop view: lanes, loops, triggers, stop conditions (ASCII diagrams)
   docs/PLAYBOOK.md              The interaction view: what you say -> what happens (operator scenarios)
+  docs/operating-layer-vision.md  Design-first vision + the SDLC state machine (north-star for the operating-layer specs)
   RUNBOOK.md                    Hook misbehavior diagnosis + recovery
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template; the Claude-Code layer on top of AGENTS.md
