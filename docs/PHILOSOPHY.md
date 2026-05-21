@@ -189,6 +189,10 @@ The kit ships bounded in-session loops and declines unbounded outer ones. This r
 
 The distinction: bounded loops continue *within* a session under a verifiable stop; unbounded loops spawn *new* sessions without one. The kit does the first, declines the second. Source: SPEC-006 (this note), SPEC-003 DEC-005 (prior framing), Anthropic `ralph-loop`.
 
+### Downstream-facing lanes (a recorded exception to "serves 2+ phases")
+
+Most kit features must serve 2+ of the kit's own workflow phases. `/user:visual-team` (SPEC-016) is a recorded exception: the kit is bash/CLI with no UI, so a visual-design critique serves no phase of the kit's *own* work. It is shipped because the kit is also a template for downstream projects that *do* have a UI. The kit dogfoods `/user:devs-team` and `/user:test-plan` but not `/user:visual-team`. This exception is named here, and in `commands/kit-health.md`, so the self-assessment does not flag the lane as a speculative feature. New downstream-only lanes must clear this same explicit bar: a named consumer outside the kit, not "might be useful someday."
+
 ---
 
 ## What we explicitly reject (from upstream observation)
