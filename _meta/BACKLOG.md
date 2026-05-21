@@ -31,13 +31,12 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 
 | ID | Title | Source | Target artifact | Lane | Status |
 |----|-------|--------|-----------------|------|--------|
-| ID-001 | Recurring upstream-absorption ritual, maintainer-triggered (generalize SPEC-002's one-shot audit) | item 1 | SPEC-004 | full | validated |
 | ID-002 | Absorb skills/hooks developed in ops-toolkit into the kit (internal lane) | item e | SPEC-007 (PARKED; see its Parked note) | full | parked |
 | ID-003 | Deep orchestration scan of the copied repos vs our WORKFLOW (report + absorb plan) | item 2 | `docs/research/2026-05-20-orchestration-deep-scan.md` | normal | shipped (report delivered; recs folded into SPEC-006) |
 | ID-012 | Goal-loop fidelity (one theme, two parts). P1: stop-criteria in the `/spec` template (pin `## Verification` + `## Open questions` so specs are pointer-`/goal`-ready) -- build now, tiny lane. P2: QA gate around the autonomous loop (verify-into-loops + SPEC-006 completeness clauses + Reviewer 5) -- held until the pointer-`/goal` pattern has real runs | maintainer Q3 2026-05-20 + goal-readiness convergence 2026-05-21 | SPEC-012 | normal (P1) / full (P2) | P1 shipped (see CHANGELOG); P2 held |
 Dependency notes:
 - ID-012 P1 (spec stop-criteria) shipped (SPEC-012, normal lane; see CHANGELOG); P2 (loop QA gate) is held until the pointer-`/goal` pattern has real runs; it will build on the now-shipped SPEC-006 completeness clauses + the existing verification pipeline.
-- ID-001/002 (absorption) are independent of the orchestration chain.
+- ID-002 (internal absorption lane, SPEC-007) is parked; independent of the orchestration chain.
 
 ## Schema
 
