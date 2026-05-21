@@ -104,9 +104,13 @@ Per change-type, the companion docs that must move with it. This covers the enum
 | a new `docs/decisions/` ADR | README + `docs/architecture.md` cross-refs |
 | a new `docs/specs/SPEC-NNN` | `_meta/BACKLOG.md` status, the spec's `Status:` header |
 | **a new top-level dir under the kit root** | **this doc-impact map (WORKFLOW.md)**, README "Project structure", `docs/architecture.md` |
+| **a new top-level file under the kit root** | **this doc-impact map (WORKFLOW.md)**, README "Project structure", `docs/architecture.md` |
+| `AGENTS.md` (kit root) | `CLAUDE.md` + `WORKFLOW.md` pointers (must not drift), `examples/hello-spec/AGENTS.md` (downstream template), `commands/assign.md` (the six-section projection reads its zones), `tests/test-meta.sh` |
 | any shipped change (normal/full) | `CHANGELOG.md`, `VERSION`, `.claude-plugin/plugin.json` version, `tool.toml` version, `docs/retro/v<ver>.md` |
 
-The bolded row is self-maintaining: adding a new top-level dir must update this map.
+The bolded rows are self-maintaining: adding a new top-level dir or file must update this map.
+
+The `backfill` lane (see the lane table) produces operating-layer docs rather than touching a source path: a backfill run writes `AGENTS.md`, `CLAUDE.md`, and any specs for the reviewed codebase, so its companion docs are those it writes.
 
 **Version surfaces.** The version string is duplicated and must stay in sync: it lives in `VERSION` (the source of truth), `.claude-plugin/plugin.json`, and `tool.toml`. Bumping the version means updating those; `marketplace.json` inherits it via `"source": "."` and needs no bump. The kit does NOT keep component counts (`N hooks`, `N commands`, etc.) in prose: describe the component set qualitatively, never as a hand-maintained number that silently rots.
 
