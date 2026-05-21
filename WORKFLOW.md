@@ -94,10 +94,13 @@ The amend is governed by four invariants:
   rewrite an already-done (`- [x]`) task's contract; the `- [x]` rows are
   byte-for-byte unchanged. Rewriting a done task is the heavier re-open / re-spec
   path, not an amend.
-- **Recorded at a checkpoint, not mid-worker.** The amend happens between tasks:
-  the in-flight task is verified and committed first (or no task is in flight).
-  Record it as an entry in the spec's `## Amendments` section (optional,
-  on-demand; see `commands/spec.md`), one line per amend:
+- **Recorded at a checkpoint, operator-approved, not mid-worker.** The amend
+  happens between tasks: the in-flight task is verified and committed first (or no
+  task is in flight). Adding scope is an operator decision, never the loop's: an
+  autonomous `/user:execute` pauses for the operator to approve the added scope
+  before the amend lands (this is AGENTS.md zone 4 "Pause if", a scope / risk /
+  architecture change). Then record it as an entry in the spec's `## Amendments`
+  section (optional, on-demand; see `commands/spec.md`), one line per amend:
   `AMEND-NNN: date | what | why | at which checkpoint | new tasks | re-validated`.
 - **Resume leads with `/user:next`, not a fresh `/user:execute`.** `/next` picks
   the next undone `- [ ]` task and skips `- [x]` done rows, so resume runs only
