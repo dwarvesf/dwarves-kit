@@ -151,6 +151,150 @@ rm -rf "$INPLACE_HOME"
 
 # ============================================================
 echo ""
+echo "=== AGENTS.md operating layer (SPEC-024) ==="
+# ============================================================
+# Part A: pin the cycle's structural outputs so a wording flip fails CI.
+#   1. kit-root AGENTS.md exists + carries the four portable zones + the literal
+#      "Pause if" + the CC-only-enforcement statement.
+#   2. commands/assign.md carries the six-section /goal projection (the writer
+#      side of the AGENTS.md->assign.md projection).
+#   3. Low-cost regression guards for TASK-003 (hello-spec AGENTS.md) and
+#      TASK-006 (spec.md "## After state").
+
+AGENTS_MD="$KIT_DIR/AGENTS.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$AGENTS_MD" ]; then
+  echo -e "  ${GREEN}PASS${NC} AGENTS.md exists at kit root (SPEC-024)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AGENTS.md missing at kit root"
+  FAIL=$((FAIL + 1))
+fi
+
+# The four portable zones (DEC-005). Pin the heading literals, not prose.
+for ZONE in "## 1. Read in this order" "## 2. Task loop" "## 3. Done means" "## 4. Pause if (ask a human)"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$ZONE" "$AGENTS_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} AGENTS.md has zone '$ZONE'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AGENTS.md missing zone '$ZONE'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# The literal "Pause if" (the fourth zone's stable phrase, also the goal section).
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Pause if' "$AGENTS_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} AGENTS.md carries the literal 'Pause if'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AGENTS.md lost the literal 'Pause if'"
+  FAIL=$((FAIL + 1))
+fi
+
+# The CC-only-enforcement statement (PHILOSOPHY honesty rule: never over-claim
+# portable enforcement). A drift to "enforcement is portable" would be a lie.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Enforcement is Claude-Code-only' "$AGENTS_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} AGENTS.md states enforcement is Claude-Code-only"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AGENTS.md lost the CC-only-enforcement statement"
+  FAIL=$((FAIL + 1))
+fi
+
+# commands/assign.md carries the six-section projection (the writer side). A
+# wording flip on any section name breaks the AGENTS.md->assign.md projection.
+ASSIGN_MD="$KIT_DIR/commands/assign.md"
+for SECTION in "Context-to-read" "Constraints" "Operating rules" "Validation loop" "Done-when" "Pause-if"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$SECTION" "$ASSIGN_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} assign.md has projection section '$SECTION'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} assign.md missing projection section '$SECTION'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Low-cost regression guards: TASK-003 (hello-spec AGENTS.md w/ "Pause if") and
+# TASK-006 (spec.md template's "## After state"). Pin both so they cannot silently
+# regress.
+DEMO_AGENTS="$KIT_DIR/examples/hello-spec/AGENTS.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$DEMO_AGENTS" ] && grep -qF 'Pause if' "$DEMO_AGENTS" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md exists + carries 'Pause if' (TASK-003)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md missing or lost 'Pause if'"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF '## After state' "$KIT_DIR/commands/spec.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} commands/spec.md template carries '## After state' (TASK-006)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/spec.md template lost '## After state'"
+  FAIL=$((FAIL + 1))
+fi
+
+# ------------------------------------------------------------
+# Part B: install.sh merge-with-existing-hooks regression (DEC-004).
+# The existing installer test runs into a HOME with NO settings.json, so it never
+# exercises the jq clean+merge path. This test pre-seeds settings.json with a
+# THIRD-PARTY hook (a command that does NOT contain "dwarves-kit") and asserts the
+# merge preserves it, yields valid JSON, and still pulls in a dwarves-kit hook.
+MERGE_HOME=$(mktemp -d)
+mkdir -p "$MERGE_HOME/.claude"
+THIRD_PARTY_CMD="/opt/acme/hooks/audit-log.sh"
+# Build the pre-existing settings via jq so it is always well-formed JSON.
+jq -n --arg cmd "$THIRD_PARTY_CMD" '{
+  hooks: {
+    PreToolUse: [
+      { matcher: "Bash", hooks: [ { type: "command", command: $cmd } ] }
+    ]
+  }
+}' > "$MERGE_HOME/.claude/settings.json"
+
+HOME="$MERGE_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+MERGED_SETTINGS="$MERGE_HOME/.claude/settings.json"
+
+# (a) the third-party hook command survived the merge.
+TOTAL=$((TOTAL + 1))
+if grep -qF "$THIRD_PARTY_CMD" "$MERGED_SETTINGS" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} install merge preserves the third-party hook (DEC-004)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} install merge DROPPED the third-party hook (merge bug)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) the resulting settings.json is valid JSON.
+TOTAL=$((TOTAL + 1))
+if jq '.' "$MERGED_SETTINGS" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} merged settings.json is valid JSON"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} merged settings.json is not valid JSON (merge corrupted it)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (c) at least one dwarves-kit hook was merged in alongside the third-party one.
+TOTAL=$((TOTAL + 1))
+KIT_HOOK_COUNT=$(jq '[.hooks | to_entries[] | .value[] | .hooks[] | select(.command | tostring | contains("dwarves-kit"))] | length' "$MERGED_SETTINGS" 2>/dev/null || echo 0)
+if [ "${KIT_HOOK_COUNT:-0}" -gt 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} install merge added at least one dwarves-kit hook ($KIT_HOOK_COUNT)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} install merge added no dwarves-kit hooks"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$MERGE_HOME"
+
+# ============================================================
+echo ""
 echo "=== Agent files ==="
 # ============================================================
 
