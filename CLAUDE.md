@@ -4,7 +4,7 @@ Project instructions for working on **dwarves-kit itself** (the kit's own repo).
 
 ## Project
 
-dwarves-kit is a Claude Code workflow toolkit: 12 hooks + 15 commands + 9 agents + 1 skill. Spec-driven lifecycle (`/user:think` → `/user:spec` → `/user:execute` → `/user:review` → `/user:ship` → `/user:retro`) with a verification pipeline (worker → task-verifier → fix-agent retry, max 2). Distributed as a Claude Code plugin and as a bash installer. Maintainer: Han at Dwarves Foundation.
+dwarves-kit is a Claude Code workflow toolkit: 12 hooks + 18 commands + 9 agents + 1 skill. Spec-driven lifecycle (`/user:think` → `/user:spec` → `/user:execute` → `/user:review` → `/user:ship` → `/user:retro`) with a verification pipeline (worker → task-verifier → fix-agent retry, max 2). Distributed as a Claude Code plugin and as a bash installer. Maintainer: Han at Dwarves Foundation.
 
 For component fit and data flow, read `docs/architecture.md`. For operator detail per command, read `MANUAL.md`. For hook misbehavior, read `RUNBOOK.md`. Design rejection rules live in `docs/PHILOSOPHY.md` and are load-bearing.
 
@@ -22,8 +22,8 @@ The kit deliberately uses no compiled binaries and no Node/Python in hooks (carv
 ## Commands (for dev on the kit)
 
 ```bash
-bash tests/test-hooks.sh      # 42 hook behavior tests
-bash tests/test-meta.sh       # 121 structural integrity tests
+bash tests/test-hooks.sh      # 59 hook behavior tests
+bash tests/test-meta.sh       # 176 structural integrity tests
 bash install.sh               # install into ~/.claude/ (idempotent)
 bash install.sh --uninstall   # clean removal
 DWARVES_KIT_DEBUG=1 ...       # verbose hook logging on stderr

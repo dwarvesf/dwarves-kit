@@ -390,6 +390,31 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# Review issue 4: command-count strings agree with the actual file count.
+ACTUAL_CMDS=$(ls "$KIT_DIR/commands/"*.md | wc -l | tr -d ' ')
+for COUNTFILE in ".claude-plugin/plugin.json" ".claude-plugin/marketplace.json" "README.md" "MANUAL.md" "CLAUDE.md"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$ACTUAL_CMDS commands" "$KIT_DIR/$COUNTFILE" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} $COUNTFILE states '$ACTUAL_CMDS commands' (count parity)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $COUNTFILE missing '$ACTUAL_CMDS commands' (count drift)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Review issue 5: verdict vocabulary pinned so devs-team/visual-team cannot drift apart.
+for VERDICTFILE in "commands/devs-team.md" "commands/visual-team.md"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "SOLID / REVISE / RECONSIDER" "$KIT_DIR/$VERDICTFILE" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} $VERDICTFILE carries the shared verdict vocabulary (SOLID / REVISE / RECONSIDER)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $VERDICTFILE missing the shared verdict vocabulary (SOLID / REVISE / RECONSIDER)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
 VALIDATE_CMD="$KIT_DIR/commands/spec-validate.md"
 TOTAL=$((TOTAL + 1))
 if grep -qE "^### Reviewer 5:" "$VALIDATE_CMD" 2>/dev/null; then
