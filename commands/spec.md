@@ -149,6 +149,10 @@ Optional; expected for full-lane specs that touch an external provider, data los
 ## Decision Log
 - DEC-001: [decision], [rationale], [alternatives rejected]
 
+## Amendments
+Optional; added only when a mid-flight amend happens (like `## Failure modes` / `## Open questions`, never an empty scaffold in a fresh spec). A running provenance log of mid-build scope additions. `WORKFLOW.md` owns the amend rule (when you may amend, the checkpoint guard, resume); this section is just the recorded entry. Entry shape:
+- AMEND-NNN: [date] | [what scope was added] | why: [reason] | at [TASK-NNN] checkpoint | new tasks: [TASK-NNN..TASK-NNN] | re-validated: [delta-only (advisory / full lane)]
+
 ## Open questions
 (none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)
 ```
