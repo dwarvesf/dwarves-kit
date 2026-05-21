@@ -41,12 +41,14 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID-019 | Demo `examples/hello-spec/docs/specs/SPEC-001-version-flag.md` lacks a `## After state` section; add one so the demo is a complete exemplar of the post-SPEC-024 spec template | SPEC-024 review 2026-05-21 (test-coverage lens) | TBD | tiny | queued |
 | ID-020 | Verification-pipeline absence-checks: teach task-verifier + integration-checker to assert that removed/replaced content is GONE for "replace, don't duplicate" / "remove X" tasks, not just that the new artifact exists. A replace-task left both copies and passed BOTH verifiers this cycle; only the independent review caught it | SPEC-024 retro 2026-05-21 (pipeline blind spot) | TBD | normal | queued |
 | ID-021 | Reduce execute-worker shell/hook friction: pre-warn the recurring gotchas in `commands/execute.md`'s worker template (fish `noclobber` -> `>|`; no heredoc commit `-m` -> `git commit -F`; no `rm` -> `mv`), and investigate the commit-format/commit-msg heredoc mis-parse (it read a multi-line `-m` body as a 459-char subject) | SPEC-024 retro 2026-05-21 (worker friction) | TBD | normal | queued |
+| ID-022 | Freeform front door: extend `/user:assign` to accept freeform intent (not only `ID-NNN`), auto-allocating an ID + BACKLOG row so "apply SDD to X" / a vague brief is a native one-shot intake (unparks the SPEC-024-deferred griller entry; preserves ID-first traceability) | PLAYBOOK.md scenarios 2026-05-22 | SPEC-026 | normal | speccing |
 Dependency notes:
 - ID-012 P1 (spec stop-criteria) shipped (SPEC-012, normal lane; see CHANGELOG); P2 (loop QA gate) is held until the pointer-`/goal` pattern has real runs; it will build on the now-shipped SPEC-006 completeness clauses + the existing verification pipeline.
 - ID-002 (internal absorption lane, SPEC-007) is parked; independent of the orchestration chain.
 - ID-016 / ID-017 came out of the SPEC-025 retro; both are kit-internal hygiene, independent of the SPEC-024 chain.
 - ID-018 / ID-019 came out of the SPEC-024 /review-team pass (deferred LOW findings); both are tiny-lane polish, independent of the SPEC-024 ship.
 - ID-020 / ID-021 came out of the SPEC-024 retro; ID-020 (verifier absence-checks) relates to ID-016 (both are guard/verifier hardening) and is the highest-signal kit finding of the cycle.
+- ID-022 came out of writing `docs/PLAYBOOK.md` (scenarios S2/S5): the freeform-intent gap. It unparks the SPEC-024-deferred griller entry; SPEC-026 drafts it. Independent of the other chains.
 
 ## Schema
 
