@@ -122,3 +122,39 @@ carries a `target_spec`/`id`. Picking a draft and routing it into a lane is `/us
 render the queue + drafts read-only (SPEC-006). There is no separate `/user:goals`
 list/switch command (SPEC-006 DEC-003, parked).
 Full contract and rationale: ADR-0011.
+
+## Artifact placement and concurrency (multi-spec)
+The kit's concurrency model is **worktree-per-spec** (SPEC-010): many specs coexist
+in `docs/specs/`, one is active per branch (SPEC-005 branch-aware detection), and
+"multiple active specs at once" means N git worktrees, each one-active. The kit's
+boundary stops at per-worktree detection + per-worktree state isolation; spawning,
+scheduling, or merging the N worktrees is an external runtime, not the kit's job.
+
+The placement rule that keeps this safe: **an artifact bound to a spec lives IN the
+active spec; a pre-spec or per-diff artifact stays a working-tree file (isolated by
+the worktree).** Lanes that produce a spec-bound result resolve "the active spec"
+through the one shared SPEC-005 path (so a writer and a later reader never split
+across two specs), and write into that spec, not a fixed-name root file. New lanes
+must follow this: if your output binds to a spec, append it as a `## Section` in the
+active spec (replace-not-stack), the way `/user:test-plan` and `/user:ui-design` do.
+Two older lanes, `/user:devs-team` and `/user:visual-team`, predate this rule and
+still prefer the brief (or inline output); aligning them to spec-first is a tracked
+follow-up, noted in the table below.
+
+| Artifact | Home | Scope | Why |
+|---|---|---|---|
+| `docs/specs/SPEC-NNN-<slug>.md` | committed, per-spec file | per-spec | the contract; unique name, no collision |
+| `## Test plan` (SPEC-018) | in the active spec | per-spec | build input `/user:execute` reads from the spec it runs |
+| `## Design critique` (`/user:devs-team`, SPEC-016) | the pre-spec brief if present, else the active spec | per-brief pre-spec, else per-spec | runs pre-spec, prefers the brief; predates the spec-first rule (follow-up to align) |
+| `## UI design` + `## Visual critique` via `/user:ui-design` (SPEC-020) | active spec, else the pre-spec brief | per-spec when a spec exists | spec-first (DEC-008); spec-bound = multi-spec safe |
+| `## Visual critique` via standalone `/user:visual-team` (SPEC-016) | the pre-spec brief if present, else inline-only | per-brief / transient | no spec-write path today; predates the rule (follow-up to align) |
+| `docs/specs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
+| `REVIEW.md`, `TODOS.md` | working-tree files (gitignored) | per-diff, per worktree | transient `/review` output, regenerated each run; not spec-bound |
+| kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree (SPEC-010 TASK-5) |
+
+The pre-spec brief is the one artifact that cannot be per-spec (no SPEC-NNN exists
+yet); in that window concurrency relies on worktree isolation, and `/spec` folds the
+brief into the spec so the spec becomes the carrier from then on. Same-directory
+branch-switching is NOT a supported concurrency mode; use a worktree per spec.
+Sources: SPEC-010 (worktree model + state namespacing), SPEC-016 DEC-011 +
+SPEC-018 + SPEC-020 DEC-008 (the in-spec placement rule).
