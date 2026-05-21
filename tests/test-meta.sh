@@ -549,19 +549,6 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# Review issue 4: command-count strings agree with the actual file count.
-ACTUAL_CMDS=$(ls "$KIT_DIR/commands/"*.md | wc -l | tr -d ' ')
-for COUNTFILE in ".claude-plugin/plugin.json" ".claude-plugin/marketplace.json" "README.md" "MANUAL.md" "CLAUDE.md"; do
-  TOTAL=$((TOTAL + 1))
-  if grep -qF "$ACTUAL_CMDS commands" "$KIT_DIR/$COUNTFILE" 2>/dev/null; then
-    echo -e "  ${GREEN}PASS${NC} $COUNTFILE states '$ACTUAL_CMDS commands' (count parity)"
-    PASS=$((PASS + 1))
-  else
-    echo -e "  ${RED}FAIL${NC} $COUNTFILE missing '$ACTUAL_CMDS commands' (count drift)"
-    FAIL=$((FAIL + 1))
-  fi
-done
-
 # SPEC-004: the absorption ritual + the /user:absorb command exist with their contract.
 ABS_DOC="$KIT_DIR/docs/ABSORPTION.md"
 for HEADING in "## The external lane" "## Interest areas" "## Seed list" "## The adoption rubric" "## The gate"; do

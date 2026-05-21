@@ -9,7 +9,7 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The 20 commands
+## The commands
 
 ### `/user:start`
 

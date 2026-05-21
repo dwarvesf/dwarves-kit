@@ -1,7 +1,7 @@
 # Spec: Absorption cadence (recurring upstream intake)
 
 Generated: 2026-05-20
-Status: VALIDATED
+Status: SHIPPED
 Source: maintainer braindump 2026-05-20 (item 1). Backlog: ID-001. (Item e / ID-002, the internal ops-toolkit lane, is split to SPEC-007 per the 2026-05-20 validation; see Out of Scope.)
 Prior spec: docs/specs/SPEC-003-orchestration-layer.md
 Validation: 4 reviewers run 2026-05-20 (scope-critic, assumption-destroyer, failure-mode, philosophy-fidelity). Pre-fix verdict NEEDS REVISION (phantom `/eval-tool` gate, 2-phase gaming, speculative internal lane, prose-not-guardrail proposal-only). All resolved inline; the internal lane was split out. See Decision Log DEC-007..DEC-018 and the Validation section.
