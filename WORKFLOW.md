@@ -29,7 +29,7 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 |----------|---------|-----------|-------------|
 | Think    | /user:think | decision brief written (if BUILD) | advisory |
 | Design (opt-in) | /user:design | solution agreed + appended to the brief | advisory |
-| Design critique (opt-in) | /user:devs-team, /user:visual-team | critique appended to the brief or spec | advisory (normal/full) |
+| Design critique (opt-in) | /user:devs-team, /user:visual-team | critique appended to the active spec (else the brief) | advisory (normal/full) |
 | Spec     | /user:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /user:spec-validate | Status: VALIDATED | advisory (full lane) |
 | Test plan (opt-in) | /user:test-plan | `## Test plan` written into the spec | advisory (normal/full) |
@@ -136,18 +136,17 @@ the worktree).** Lanes that produce a spec-bound result resolve "the active spec
 through the one shared SPEC-005 path (so a writer and a later reader never split
 across two specs), and write into that spec, not a fixed-name root file. New lanes
 must follow this: if your output binds to a spec, append it as a `## Section` in the
-active spec (replace-not-stack), the way `/user:test-plan` and `/user:ui-design` do.
-Two older lanes, `/user:devs-team` and `/user:visual-team`, predate this rule and
-still prefer the brief (or inline output); aligning them to spec-first is a tracked
-follow-up, noted in the table below.
+active spec (replace-not-stack), the way all four critique/plan lanes do
+(`/user:test-plan`, `/user:devs-team`, `/user:visual-team`, `/user:ui-design`).
+The shared invariant is the spec-first head; `/user:visual-team` adds an inline
+fallback because it alone can run with neither a spec nor a brief (SPEC-023).
 
 | Artifact | Home | Scope | Why |
 |---|---|---|---|
 | `docs/specs/SPEC-NNN-<slug>.md` | committed, per-spec file | per-spec | the contract; unique name, no collision |
 | `## Test plan` (SPEC-018) | in the active spec | per-spec | build input `/user:execute` reads from the spec it runs |
-| `## Design critique` (`/user:devs-team`, SPEC-016) | the pre-spec brief if present, else the active spec | per-brief pre-spec, else per-spec | runs pre-spec, prefers the brief; predates the spec-first rule (follow-up to align) |
-| `## UI design` + `## Visual critique` via `/user:ui-design` (SPEC-020) | active spec, else the pre-spec brief | per-spec when a spec exists | spec-first (DEC-008); spec-bound = multi-spec safe |
-| `## Visual critique` via standalone `/user:visual-team` (SPEC-016) | the pre-spec brief if present, else inline-only | per-brief / transient | no spec-write path today; predates the rule (follow-up to align) |
+| `## Design critique` (`/user:devs-team`, SPEC-016 + SPEC-023) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
+| `## UI design` + `## Visual critique` (`/user:ui-design`, SPEC-020; `/user:visual-team`, SPEC-016 + SPEC-023) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
 | `docs/specs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
 | `REVIEW.md`, `TODOS.md` | working-tree files (gitignored) | per-diff, per worktree | transient `/review` output, regenerated each run; not spec-bound |
 | kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree (SPEC-010 TASK-5) |
@@ -157,4 +156,5 @@ yet); in that window concurrency relies on worktree isolation, and `/spec` folds
 brief into the spec so the spec becomes the carrier from then on. Same-directory
 branch-switching is NOT a supported concurrency mode; use a worktree per spec.
 Sources: SPEC-010 (worktree model + state namespacing), SPEC-016 DEC-011 +
-SPEC-018 + SPEC-020 DEC-008 (the in-spec placement rule).
+SPEC-018 + SPEC-020 DEC-008 (the in-spec placement rule), SPEC-023 (aligned
+`/user:devs-team` + `/user:visual-team` to spec-first).
