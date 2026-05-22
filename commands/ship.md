@@ -65,7 +65,7 @@ Use this exact check shape (kit-health's check uses the same shape; they must no
 # Graceful degrade: no VERSION or not in a git repo => silent no-op, never error or block.
 if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)   # strip whitespace so a trailing newline cannot break the pattern
-  if [ -z "$(git tag -l "v$VER")" ]; then
+  if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
     echo "WARN release-hygiene: phantom cut. VERSION names v$VER but no matching git tag exists."
     # Accumulation context: [Unreleased] non-empty => work piling above an untagged cut.
     if [ -f CHANGELOG.md ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' CHANGELOG.md | grep -q .; then
