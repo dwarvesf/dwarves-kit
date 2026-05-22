@@ -30,19 +30,19 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 ## The cycle (phase, exit, enforcer)
 | Phase    | Command | Exit when | Enforced by |
 |----------|---------|-----------|-------------|
-| Think    | /user:think | decision brief written (if BUILD) | advisory |
-| Design (opt-in) | /user:design | solution agreed + appended to the brief | advisory |
-| Design critique (opt-in) | /user:devs-team, /user:visual-team | critique appended to the active spec (else the brief) | advisory (normal/full) |
-| UI design (opt-in, downstream) | /user:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
-| Spec     | /user:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
-| Validate | /user:spec-validate | Status: VALIDATED | advisory (full lane) |
-| Test plan (opt-in) | /user:test-plan | `## Test plan` written into the spec | advisory (normal/full) |
-| Build    | /user:execute or /user:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
-| Review   | /user:review or /user:review-team | review verdict recorded | advisory |
-| Docs     | /user:docs | README/CHANGELOG match code | advisory |
-| Ship     | /user:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
-| Reflect  | /user:retro | docs/retro/v<version>.md written | advisory |
-| Debug (off-cycle) | /user:debug | root cause recorded, fix verified, human-confirmed | iron law + guess-fix guard (anti-rationalization) |
+| Think    | /kit:think | decision brief written (if BUILD) | advisory |
+| Design (opt-in) | /kit:design | solution agreed + appended to the brief | advisory |
+| Design critique (opt-in) | /kit:devs-team, /kit:visual-team | critique appended to the active spec (else the brief) | advisory (normal/full) |
+| UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
+| Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
+| Validate | /kit:spec-validate | Status: VALIDATED | advisory (full lane) |
+| Test plan (opt-in) | /kit:test-plan | `## Test plan` written into the spec | advisory (normal/full) |
+| Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
+| Review   | /kit:review or /kit:review-team | review verdict recorded | advisory |
+| Docs     | /kit:docs | README/CHANGELOG match code | advisory |
+| Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
+| Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
+| Debug (off-cycle) | /kit:debug | root cause recorded, fix verified, human-confirmed | iron law + guess-fix guard (anti-rationalization) |
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
 premature "done"; auto-format runs on edit; session-state-save and
@@ -54,29 +54,29 @@ How a committed backlog item becomes shipped work, end to end:
 
 ```
 session start
-  -> /user:start          RENDER the BACKLOG Active queue (the "what's left?" list)
+  -> /kit:start          RENDER the BACKLOG Active queue (the "what's left?" list)
                           and list active .claude/goals/ drafts. Read-only; a detector.
-  -> /user:assign ID-NNN  goal-crafter: break the item down, set objective + scope
+  -> /kit:assign ID-NNN  goal-crafter: break the item down, set objective + scope
                           fence + termination-on-blocker, write .claude/goals/<slug>.md
                           (the goal-draft contract), pick the lane, surface the draft body
                           for whatever goal-loop activator is present, hand off to the
                           lane's first command. Mutator; does NOT execute, never writes
                           last-goal.md.
   -> the lane runs        tiny | normal | full | bug | backfill (see the lane table above)
-       normal/full -> /user:spec -> /user:spec-validate -> /user:execute (verify pipeline)
-                      (opt-in: /user:devs-team + /user:visual-team before spec; /user:test-plan before execute;
-                       /user:ui-design for downstream UI work, after /user:design)
-                      -> /user:review -> /user:docs -> /user:ship -> /user:retro
+       normal/full -> /kit:spec -> /kit:spec-validate -> /kit:execute (verify pipeline)
+                      (opt-in: /kit:devs-team + /kit:visual-team before spec; /kit:test-plan before execute;
+                       /kit:ui-design for downstream UI work, after /kit:design)
+                      -> /kit:review -> /kit:docs -> /kit:ship -> /kit:retro
        backfill    -> review the codebase, write AGENTS.md / CLAUDE.md / specs, then
-                      /user:review (optional). No /user:execute; no app-code edits.
-  -> on ship              /user:ship reviews the completeness log; ID-NNN drops off the
+                      /kit:review (optional). No /kit:execute; no app-code edits.
+  -> on ship              /kit:ship reviews the completeness log; ID-NNN drops off the
                           queue (CHANGELOG is the canonical shipped record).
 ```
 
-**Freeform front door.** `/user:assign` accepts freeform intent, not only an `ID-NNN`. Given freeform, it delegates the interview to `/user:think`, pauses for approval, then allocates the ID + BACKLOG row before routing as usual; the ID-first path is unchanged. **Detector/mutator split.** `/user:start` and `/user:next` only read and render; `/user:assign` is the only mutator. **Activator-agnostic.** `/user:assign` writes only the `.claude/goals/<slug>.md` draft and surfaces its body; activation (starting the loop) is done by whatever primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the `goal-craft` skill). The kit NEVER writes `.claude/last-goal.md`; if no activator exists, the draft is a plain reusable file. **"Even the goal loop follows WORKFLOW"** is delivered honestly: the safety subset is hard-enforced by existing hooks (anti-rationalization, the verification pipeline, the push-to-main blocker); decision/doc completeness is warned + logged to `~/.claude/dwarves-kit/logs/completeness.log` and reviewed at `/user:ship` + `/user:retro`, not hard-blocked mid-loop (PHILOSOPHY rejects hard-gating process completeness).
+**Freeform front door.** `/kit:assign` accepts freeform intent, not only an `ID-NNN`. Given freeform, it delegates the interview to `/kit:think`, pauses for approval, then allocates the ID + BACKLOG row before routing as usual; the ID-first path is unchanged. **Detector/mutator split.** `/kit:start` and `/kit:next` only read and render; `/kit:assign` is the only mutator. **Activator-agnostic.** `/kit:assign` writes only the `.claude/goals/<slug>.md` draft and surfaces its body; activation (starting the loop) is done by whatever primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the `goal-craft` skill). The kit NEVER writes `.claude/last-goal.md`; if no activator exists, the draft is a plain reusable file. **"Even the goal loop follows WORKFLOW"** is delivered honestly: the safety subset is hard-enforced by existing hooks (anti-rationalization, the verification pipeline, the push-to-main blocker); decision/doc completeness is warned + logged to `~/.claude/dwarves-kit/logs/completeness.log` and reviewed at `/kit:ship` + `/kit:retro`, not hard-blocked mid-loop (PHILOSOPHY rejects hard-gating process completeness).
 
 ## Mid-flight amend
-Canonical rule. You are mid-`/user:execute` on a `VALIDATED` spec and the work
+Canonical rule. You are mid-`/kit:execute` on a `VALIDATED` spec and the work
 reveals scope that must be added now ("also do Y"). Amend the spec in place;
 do not restart the lane and do not silently mutate it. Other docs
 (PLAYBOOK, ORCHESTRATION, `commands/execute.md`) point here; they do not restate
@@ -97,12 +97,12 @@ The amend is governed by four invariants:
 - **Recorded at a checkpoint, operator-approved, not mid-worker.** The amend
   happens between tasks: the in-flight task is verified and committed first (or no
   task is in flight). Adding scope is an operator decision, never the loop's: an
-  autonomous `/user:execute` pauses for the operator to approve the added scope
+  autonomous `/kit:execute` pauses for the operator to approve the added scope
   before the amend lands (this is AGENTS.md zone 4 "Pause if", a scope / risk /
   architecture change). Then record it as an entry in the spec's `## Amendments`
   section (optional, on-demand; see `commands/spec.md`), one line per amend:
   `AMEND-NNN: date | what | why | at which checkpoint | new tasks | re-validated`.
-- **Resume leads with `/user:next`, not a fresh `/user:execute`.** `/next` picks
+- **Resume leads with `/kit:next`, not a fresh `/kit:execute`.** `/next` picks
   the next undone `- [ ]` task and skips `- [x]` done rows, so resume runs only
   the amended tasks. `/execute` re-parses and re-presents the whole plan, so it
   is the wrong door after an amend.
@@ -115,7 +115,7 @@ premature completion. The clauses below add kit-specific completeness checks on 
 of that done-definition.
 
 ### Completeness clauses (warn + log, reviewed at ship)
-Two self-check clauses run during Build/Reflect. Both WARN and LOG to `~/.claude/dwarves-kit/logs/completeness.log` (the `spec-drift-guard` logging shape); neither hard-blocks. `/user:ship` and `/user:retro` review that log at the gate. Hard blocks stay reserved for the safety subset (PHILOSOPHY rejects hard-gating process completeness).
+Two self-check clauses run during Build/Reflect. Both WARN and LOG to `~/.claude/dwarves-kit/logs/completeness.log` (the `spec-drift-guard` logging shape); neither hard-blocks. `/kit:ship` and `/kit:retro` review that log at the gate. Hard blocks stay reserved for the safety subset (PHILOSOPHY rejects hard-gating process completeness).
 
 - **Decision-translation.** Each decision in a spec's optional **Build decisions** sub-list (the decisions that imply implementation, tagged under a `### Build decisions` heading or a `Build:` prefix in the Decision Log) must be referenced by ID or `Implements:` target in a task or acceptance criterion; an orphan is warned + logged. Scope: ONLY the Build-decisions list. Rationale, rejected-alternative, and `(validation)`/`(reconciliation)` decisions are exempt. If a spec has no Build-decisions list, the clause is a no-op.
 - **Doc-update.** The diff against the integration branch's merge-base (pinned, not a floating base) is checked against the doc-impact map below; a change that touches X without its companion docs is warned + logged. Normal/full lanes only (tiny-lane ship suppresses it).
@@ -162,8 +162,8 @@ NEVER writes `last-goal.md`. Activating a draft means handing its body to
 whatever goal-loop activator is present (the built-in `/goal`, the `ralph-loop`
 plugin, or the `goal-craft` skill); if none is installed, the drafts still work
 as plain reusable files. Brainstorm many drafts, one is active at a time; each
-carries a `target_spec`/`id`. Picking a draft and routing it into a lane is `/user:assign`; `/user:start`/`/user:next`
-render the queue + drafts read-only. There is no separate `/user:goals`
+carries a `target_spec`/`id`. Picking a draft and routing it into a lane is `/kit:assign`; `/kit:start`/`/kit:next`
+render the queue + drafts read-only. There is no separate `/kit:goals`
 list/switch command (parked).
 
 ## Artifact placement and concurrency (multi-spec)
@@ -180,16 +180,16 @@ through the one shared active-spec path (so a writer and a later reader never sp
 across two specs), and write into that spec, not a fixed-name root file. New lanes
 must follow this: if your output binds to a spec, append it as a `## Section` in the
 active spec (replace-not-stack), the way all four critique/plan lanes do
-(`/user:test-plan`, `/user:devs-team`, `/user:visual-team`, `/user:ui-design`).
-The shared invariant is the spec-first head; `/user:visual-team` adds an inline
+(`/kit:test-plan`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`).
+The shared invariant is the spec-first head; `/kit:visual-team` adds an inline
 fallback because it alone can run with neither a spec nor a brief.
 
 | Artifact | Home | Scope | Why |
 |---|---|---|---|
 | `docs/specs/SPEC-NNN-<slug>.md` | committed, per-spec file | per-spec | the contract; unique name, no collision |
-| `## Test plan` | in the active spec | per-spec | build input `/user:execute` reads from the spec it runs |
-| `## Design critique` (`/user:devs-team`) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
-| `## UI design` + `## Visual critique` (`/user:ui-design`; `/user:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
+| `## Test plan` | in the active spec | per-spec | build input `/kit:execute` reads from the spec it runs |
+| `## Design critique` (`/kit:devs-team`) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
+| `## UI design` + `## Visual critique` (`/kit:ui-design`; `/kit:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
 | `docs/specs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
 | `REVIEW.md`, `TODOS.md` | working-tree files (gitignored) | per-diff, per worktree | transient `/review` output, regenerated each run; not spec-bound |
 | kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |

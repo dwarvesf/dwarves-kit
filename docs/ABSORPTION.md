@@ -4,7 +4,7 @@
 
 ## The external lane
 
-Two scan lanes, run by `/user:absorb`, both feeding one dated proposal under `docs/absorption/`:
+Two scan lanes, run by `/kit:absorb`, both feeding one dated proposal under `docs/absorption/`:
 
 - **Lane A, drift re-audit.** Re-check the README Credits source repos against what the kit has absorbed: have they shipped new patterns, deprecated old ones, or moved HEAD since the last run? Generalizes SPEC-002's one-shot audit.
 - **Lane B, seed-rescan.** Re-scan a pinned seed set (see `## Seed list`) for new/changed patterns in the kit's interest areas, generalizing SPEC-014's one-shot wide survey into a recurring scan. v1 is a re-scan of known repos, NOT open web-search discovery of brand-new sources (the kit has no discovery primitive; deferred until a real "we keep missing new repos" signal).
@@ -59,7 +59,7 @@ A candidate is ADOPT only if ALL hold:
 1. Rubric total **>= 10**.
 2. Passes the **NO-list** (PHILOSOPHY section 3): no compiled binary, no paid dep, no LLM-in-hook, readable in 30s.
 3. Passes the **reject-list** (PHILOSOPHY "What we explicitly reject").
-4. **Serves 2+ of the lifecycle phases** (this gate applies to the absorbed *candidate*, a feature; `/user:absorb` itself is connective tissue, exempt, like `/kit-health`).
+4. **Serves 2+ of the lifecycle phases** (this gate applies to the absorbed *candidate*, a feature; `/kit:absorb` itself is connective tissue, exempt, like `/kit-health`).
 5. **Does not duplicate** an existing kit component OR a recommended external tool.
 
 Fail any -> ADAPT (reimplement in kit idiom) or REJECT (with the reason, often "recommend external").
@@ -70,7 +70,7 @@ Fail any -> ADAPT (reimplement in kit idiom) or REJECT (with the reason, often "
 
 ## The proposal artifact
 
-`/user:absorb` writes a dated proposal under `docs/absorption/` (template: `docs/absorption/TEMPLATE.md`). It is **proposal-only**: the command edits no kit component and ends with a `git status` self-check asserting changes appear only under `docs/absorption/`. A no-drift run still writes a dated "no candidates" proposal, so the directory doubles as run history. Same-month re-runs append a numeric suffix; never overwrite (the point-in-time audit is the value).
+`/kit:absorb` writes a dated proposal under `docs/absorption/` (template: `docs/absorption/TEMPLATE.md`). It is **proposal-only**: the command edits no kit component and ends with a `git status` self-check asserting changes appear only under `docs/absorption/`. A no-drift run still writes a dated "no candidates" proposal, so the directory doubles as run history. Same-month re-runs append a numeric suffix; never overwrite (the point-in-time audit is the value).
 
 ## Handoff into WORKFLOW
 

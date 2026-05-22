@@ -15,17 +15,17 @@ the first fires on its own:
 | Layer | Fires how | Examples |
 |---|---|---|
 | **Hooks** | **Automatic**, on Claude Code events | `context-readiness` (SessionStart suggestion), `safety-gate`, `anti-rationalization`, `spec-drift-guard`, `push-to-main` |
-| **`/user:*` commands** | **Invoked** - you type `/user:x`, OR Claude reads your intent and runs it | `/user:start`, `/user:assign`, `/user:spec`, `/user:execute`, `/user:ship` |
+| **`/kit:*` commands** | **Invoked** - you type `/kit:x`, OR Claude reads your intent and runs it | `/kit:start`, `/kit:assign`, `/kit:spec`, `/kit:execute`, `/kit:ship` |
 | **Skills** | **Invoked** - Claude recognizes the situation and loads the skill | `goal-craft`, `superpowers:brainstorming`, `content-spec` |
 
 So when you say "apply SDD," no hook fires on the word "SDD." What happens is **Claude
 interprets** the phrase and **invokes** the right command/skill. The kit's hooks then act
 as guardrails around whatever runs. Keep this split in mind for every scenario below.
 
-A second load-bearing fact: the kit's orchestration is **BACKLOG-ID-first**. `/user:assign`
+A second load-bearing fact: the kit's orchestration is **BACKLOG-ID-first**. `/kit:assign`
 takes an `ID-NNN` **or** freeform intent ("apply SDD to this feature", a vague brief). When you
-hand it freeform, `/user:assign` runs the freeform front door natively (Section 8): it delegates
-the interview to `/user:think`, waits for your approval, then allocates the ID + BACKLOG row
+hand it freeform, `/kit:assign` runs the freeform front door natively (Section 8): it delegates
+the interview to `/kit:think`, waits for your approval, then allocates the ID + BACKLOG row
 before routing into the lane. The ID stays canonical; it is just minted on the fly. This shipped
 in SPEC-026 / ID-022 (Section 11).
 
@@ -35,25 +35,25 @@ in SPEC-026 / ID-022 (Section 11).
 
 **Context.** Fresh session, you want orientation before doing anything.
 
-**What you say.** "what's next", "what's left to do", "where were we", or `/user:start`
+**What you say.** "what's next", "what's left to do", "where were we", or `/kit:start`
 (`--brief` for one line, `--full` for the task checklist + recent commits).
 
 **Automatic vs interpreted.**
 - *Automatic*: the `context-readiness` hook already injected a one-line `next:` suggestion into
   Claude's context when the session started. You may see Claude reference it unprompted.
-- *Interpreted*: Claude reads "what's next" and runs the `/user:start` behavior (a **detector**):
+- *Interpreted*: Claude reads "what's next" and runs the `/kit:start` behavior (a **detector**):
   render the `_meta/BACKLOG.md` Active queue and the active `.claude/goals/` drafts. Read-only.
 
 **Resulting flow.** Detector only, no mutation:
 ```text
-  "what's next" -> /user:start -> renders:
+  "what's next" -> /kit:start -> renders:
      - BACKLOG Active queue (open ID-NNN + status: queued/speccing/validated/executing)
      - active goal drafts in .claude/goals/
      - the suggested next command
 ```
 
 **Decision / approval points.** None (nothing is changed). You then choose the next move:
-`/user:assign ID-NNN` to start an item, or `/user:next` to pick up the next undone task of the
+`/kit:assign ID-NNN` to start an item, or `/kit:next` to pick up the next undone task of the
 already-active spec.
 
 **How to continue.** Say `assign ID-007` (start that item) or `next` (continue the active spec).
@@ -72,19 +72,19 @@ If the queue is empty or you have a new idea, jump to Scenario 2 or 5.
 - *Interpreted*: Claude maps "SDD" to **the spec-driven lane** (normal or full) and proposes it.
   "SDD" is a keyword **for Claude to interpret**, not a mechanical trigger.
 
-**Resulting flow.** Because there is no ID, Claude invokes `/user:assign` with the freeform
-intent. `/user:assign` runs the **native freeform front door** (Section 8): it delegates the
-interview to `/user:think`, then allocates the ID + BACKLOG row, then routes into the lane. By
+**Resulting flow.** Because there is no ID, Claude invokes `/kit:assign` with the freeform
+intent. `/kit:assign` runs the **native freeform front door** (Section 8): it delegates the
+interview to `/kit:think`, then allocates the ID + BACKLOG row, then routes into the lane. By
 default Claude does **not** auto-run the whole flow; it sets up and starts the first step,
 checking the lane + scope with you:
 ```text
   "apply SDD to X"
      -> Claude picks the lane (normal vs full) and confirms scope with you
-     -> /user:assign "apply SDD to X"   (freeform front door, Section 8):
-          delegate crystallize to /user:think -> [you approve] -> allocate ID + BACKLOG row
-     -> /user:spec  (-> /user:spec-validate on full)
-     -> /user:execute (verification pipeline)
-     -> /user:review[-team] -> /user:docs -> /user:ship -> /user:retro
+     -> /kit:assign "apply SDD to X"   (freeform front door, Section 8):
+          delegate crystallize to /kit:think -> [you approve] -> allocate ID + BACKLOG row
+     -> /kit:spec  (-> /kit:spec-validate on full)
+     -> /kit:execute (verification pipeline)
+     -> /kit:review[-team] -> /kit:docs -> /kit:ship -> /kit:retro
 ```
 
 **Decision / approval points.** Lane + scope confirmation before the spec; the approve-before-allocate
@@ -92,7 +92,7 @@ gate inside the freeform front door; spec approval; the spec-validate verdict (f
 phase checkpoints. Claude stops at each unless you pre-authorize autonomy (Scenario 3).
 
 **Honest caveat.** "Apply SDD" does not auto-launch the full orchestration off a keyword. Claude
-still **interprets** the phrase and **invokes** `/user:assign` with it; the front door is a real
+still **interprets** the phrase and **invokes** `/kit:assign` with it; the front door is a real
 invoked command (SPEC-026, Section 11), not an auto-firing keyword. From there the hooks act as
 guardrails.
 
@@ -138,26 +138,26 @@ push and PR; only stop at the safety hard-stops or a real blocker."*
 This is the **opposite** of Scenario 3: maximal checkpoints, no autonomy.
 
 **What you say.** "let's discuss the solution", "iterate on the design", "get back on the design
-for X", "explore approaches for X", or `/user:design`.
+for X", "explore approaches for X", or `/kit:design`.
 
 **Automatic vs interpreted.**
-- *Interpreted*: Claude invokes `/user:design` (the opt-in interactive solution-design beat) and/or
-  `/user:devs-team` (5-lens engineering critique). For open-ended exploration, `superpowers:brainstorming`.
+- *Interpreted*: Claude invokes `/kit:design` (the opt-in interactive solution-design beat) and/or
+  `/kit:devs-team` (5-lens engineering critique). For open-ended exploration, `superpowers:brainstorming`.
 
 **Resulting flow (a human-in-the-loop loop).**
 ```text
-  /user:think (optional, if the idea needs challenging: 6 forcing questions)
-     -> /user:design  ── proposes 2-3 approaches, ONE question at a time,
+  /kit:think (optional, if the idea needs challenging: 6 forcing questions)
+     -> /kit:design  ── proposes 2-3 approaches, ONE question at a time,
      │                   holds for your approval PER SECTION, appends the
      │                   agreed Solution to docs/specs/DECISION-BRIEF.md
      │   <iterate: you redirect, it revises, re-presents> ◀──┐
      └───────────────────────────────────────────────────────┘
-     -> (optional) /user:devs-team  ── critique appended to the spec/brief
-     -> /user:spec  ── folds the DECISION-BRIEF Solution into the spec
+     -> (optional) /kit:devs-team  ── critique appended to the spec/brief
+     -> /kit:spec  ── folds the DECISION-BRIEF Solution into the spec
 ```
 
 **Stop condition.** The loop continues until **you approve** the solution section by section.
-It never auto-advances; every section pauses for you. `/user:design` is explicitly the
+It never auto-advances; every section pauses for you. `/kit:design` is explicitly the
 "ran without my feedback" antidote.
 
 **Decision / approval points.** Per section in `/design`; the critique verdict (SOLID / REVISE /
@@ -174,15 +174,15 @@ RECONSIDER); spec approval. To leave the loop: "the design is good, write the sp
 
 **Automatic vs interpreted.**
 - *Interpreted*: Claude **interviews / grills** you. There is **no "goal-griller" skill**; the
-  grilling is `/user:think` (6 forcing questions) and/or `superpowers:brainstorming` (intent +
+  grilling is `/kit:think` (6 forcing questions) and/or `superpowers:brainstorming` (intent +
   requirements exploration). The `goal-craft` skill **sharpens** a fuzzy intent into an
   outcome-shaped `/goal` (verification, scope fence, termination-on-blocker).
 
 **Resulting flow.**
 ```text
   vague brief
-     -> /user:assign "<vague brief>"   (native freeform front door, Section 8):
-          delegate crystallize to /user:think and/or superpowers:brainstorming
+     -> /kit:assign "<vague brief>"   (native freeform front door, Section 8):
+          delegate crystallize to /kit:think and/or superpowers:brainstorming
           (challenge the idea, surface requirements, name the real outcome)
      -> crystallize into a clear objective
      -> [YOU APPROVE the crystallized objective]   (approve-before-allocate gate)
@@ -190,9 +190,9 @@ RECONSIDER); spec approval. To leave the loop: "the design is good, write the sp
 ```
 
 **Will Claude auto-hook it into the SDD orchestration after you approve?** Yes, **on your "go"** -
-`/user:assign`'s freeform path allocates the ID + BACKLOG row and starts the lane's first command.
+`/kit:assign`'s freeform path allocates the ID + BACKLOG row and starts the lane's first command.
 This is the kit's native front door now, not Claude bridging by hand; the front door is still an
-**invoked command** (you, or Claude on your behalf, invoke `/user:assign`), not an auto-firing
+**invoked command** (you, or Claude on your behalf, invoke `/kit:assign`), not an auto-firing
 keyword. Claude will ask **how autonomous** to be from there (ties to Scenario 3).
 
 **Decision / approval points.** Claude will **not** write the spec or start the lane until you
@@ -203,7 +203,7 @@ straight into a spec is how scope drift starts.
 
 ## Scenario 7: mid-build, "also do Y" (a mid-flight scope change)
 
-**Context.** You are mid-`/user:execute` on a `VALIDATED` spec (state BUILDING). Partway through,
+**Context.** You are mid-`/kit:execute` on a `VALIDATED` spec (state BUILDING). Partway through,
 the work reveals scope that must be added now. You do **not** want to restart the lane or throw
 away the tasks already done.
 
@@ -219,12 +219,12 @@ away the tasks already done.
 
 **Resulting flow.** Amend in place at a checkpoint, then resume; the spec stays `VALIDATED`:
 ```text
-  "also do Y"  (mid /user:execute, spec is VALIDATED)
+  "also do Y"  (mid /kit:execute, spec is VALIDATED)
      -> reach a task checkpoint (finish + verify + commit the in-flight task first)
      -> amend the spec: append new - [ ] TASK rows + delta the After-state / AC / Verification
         (completed - [x] tasks are NOT touched), record an ## Amendments entry
      -> re-validate the DELTA only (full lane: /spec-validate on the new tasks; normal: advisory)
-     -> /user:next  resumes, picking the next undone - [ ] task (skips the done rows)
+     -> /kit:next  resumes, picking the next undone - [ ] task (skips the done rows)
 ```
 
 **Decision / approval points.** You confirm the added scope before the amend lands; the
@@ -238,14 +238,14 @@ repeat: each amend appends a fresh `## Amendments` line. To leave the build inst
 
 ---
 
-## 8. The freeform -> ID front door (what `/user:assign` does internally)
+## 8. The freeform -> ID front door (what `/kit:assign` does internally)
 
-Scenarios 2 and 5 are freeform (no ID). The orchestration is ID-first, so `/user:assign` mints the
+Scenarios 2 and 5 are freeform (no ID). The orchestration is ID-first, so `/kit:assign` mints the
 ID for you. Hand it freeform intent instead of an `ID-NNN` and its freeform path runs:
 
 ```text
-  /user:assign "<freeform intent>"
-     1. delegate crystallize -> /user:think (the idea-griller) runs the interview and
+  /kit:assign "<freeform intent>"
+     1. delegate crystallize -> /kit:think (the idea-griller) runs the interview and
                                 returns a crystallized objective + a lane. /assign does NOT
                                 embed the interview; it consumes /think's result.
      2. approve              -> pause for your approval of the crystallized objective
@@ -260,10 +260,10 @@ ID for you. Hand it freeform intent instead of an `ID-NNN` and its freeform path
                                 exactly as for an ID-NNN argument
 ```
 
-This is the **native freeform front door** (`/user:assign` runs it; you do not bookkeep by hand).
+This is the **native freeform front door** (`/kit:assign` runs it; you do not bookkeep by hand).
 It preserves ID-first traceability: even an ad-hoc idea gets a BACKLOG row and an ID before any
 draft is written, so nothing ships untracked. It is still an **invoked command**, not an
-auto-firing keyword: Claude interprets "apply SDD to X" and invokes `/user:assign` with it; the
+auto-firing keyword: Claude interprets "apply SDD to X" and invokes `/kit:assign` with it; the
 kit does not watch for the phrase. Shipped in SPEC-026 / ID-022 (Section 11).
 
 ---
@@ -288,14 +288,14 @@ are **never** waived by any autonomy level.
 
 | You say | Claude invokes | Fires automatically | Stops at |
 |---|---|---|---|
-| "what's next / what's left" | `/user:start` (detector) | context-readiness suggestion | nothing (read-only) |
-| "assign ID-007" / "start ID-007" | `/user:assign ID-007` | (none) | hands off to the lane |
-| "apply SDD to X" (no ID) | `/user:assign "<freeform>"` (freeform front door) -> `/user:spec` lane | spec-drift-guard once a spec exists | approve-before-allocate gate, lane + scope confirm, then per-phase |
-| "discuss / iterate the design" | `/user:design` (+ `/user:devs-team`) | (none) | every section (human-in-loop) |
-| "vague idea about X" | `/user:think` / brainstorming | (none) | your approval of the objective |
+| "what's next / what's left" | `/kit:start` (detector) | context-readiness suggestion | nothing (read-only) |
+| "assign ID-007" / "start ID-007" | `/kit:assign ID-007` | (none) | hands off to the lane |
+| "apply SDD to X" (no ID) | `/kit:assign "<freeform>"` (freeform front door) -> `/kit:spec` lane | spec-drift-guard once a spec exists | approve-before-allocate gate, lane + scope confirm, then per-phase |
+| "discuss / iterate the design" | `/kit:design` (+ `/kit:devs-team`) | (none) | every section (human-in-loop) |
+| "vague idea about X" | `/kit:think` / brainstorming | (none) | your approval of the objective |
 | "run the full lane, your call" | the lane, autonomously | anti-rationalization (in a /goal loop) | hard stops + push/PR |
-| "fix this bug / it regressed" | `/user:debug` (bug lane) | guess-fix guard | root cause + human-confirm |
-| "review this" / "ship it" | `/user:review[-team]` / `/user:ship` | ship gate, push-to-main | DO-NOT-SHIP verdict; the push/PR |
+| "fix this bug / it regressed" | `/kit:debug` (bug lane) | guess-fix guard | root cause + human-confirm |
+| "review this" / "ship it" | `/kit:review[-team]` / `/kit:ship` | ship gate, push-to-main | DO-NOT-SHIP verdict; the push/PR |
 
 ---
 
@@ -305,8 +305,8 @@ Scenarios 2 and 5 used to expose a real gap: freeform intent ("apply SDD to X", 
 no auto-path, so Claude bridged it by hand every run. SPEC-024 deferred the "freeform griller entry"
 to keep BACKLOG-ID-first canonical; SPEC-026 / ID-022 then closed the gap and **shipped**.
 
-**Shipped**: `/user:assign` (the one mutator) now accepts **freeform intent** in addition to
-`ID-NNN`. The freeform path delegates crystallization to `/user:think`, pauses for your approval,
+**Shipped**: `/kit:assign` (the one mutator) now accepts **freeform intent** in addition to
+`ID-NNN`. The freeform path delegates crystallization to `/kit:think`, pauses for your approval,
 sanitizes the input, atomically allocates the next ID, writes the BACKLOG row, then proceeds
 exactly as ID-first, so "apply SDD to X" is a genuine one-shot front door without losing ID
 traceability.
@@ -315,7 +315,7 @@ traceability.
 - Backlog: ID-022.
 - Command: `commands/assign.md` (the resolver + freeform path).
 
-The four invariants the front door upholds: delegate-to-`/user:think`, approve-before-allocate,
+The four invariants the front door upholds: delegate-to-`/kit:think`, approve-before-allocate,
 sanitize, atomic-allocate. The native path is Section 8. It stays an invoked command, not an
 auto-firing keyword.
 

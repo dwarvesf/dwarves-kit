@@ -9,7 +9,7 @@
 ## 1. Vision
 
 Today the kit is driven through an **interpret-and-bridge** layer: the operator types
-intent in chat, Claude maps it to a `/user:*` command or skill, and the hooks act as
+intent in chat, Claude maps it to a `/kit:*` command or skill, and the hooks act as
 guardrails. That works, but the operator cannot *see* the machine: there is no explicit
 notion of "what state am I in, what transitions are available from here, what guards each
 one, and how do I trigger it." The mapping lives only in Claude's interpretation, so it is
@@ -179,10 +179,10 @@ The kit dogfoods itself. The order:
 
 ```text
   1. THIS doc (vision + state machine)        <- design-first, done now
-  2. /user:assign ID-022   -> SPEC-026 (freeform front door): /spec-validate (drafted) -> /execute
-  3. /user:assign ID-023   -> mid-flight spec amend (spec it, then build)
-  4. /user:assign ID-024   -> context-switch affordance (+ abandon terminal)
-  5. /user:assign ID-025   -> re-open-shipped convention
+  2. /kit:assign ID-022   -> SPEC-026 (freeform front door): /spec-validate (drafted) -> /execute
+  3. /kit:assign ID-023   -> mid-flight spec amend (spec it, then build)
+  4. /kit:assign ID-024   -> context-switch affordance (+ abandon terminal)
+  5. /kit:assign ID-025   -> re-open-shipped convention
   6. align docs/PLAYBOOK.md to the shipped state machine (regenerate the scenario cards from it)
 ```
 

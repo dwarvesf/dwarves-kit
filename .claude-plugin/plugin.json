@@ -1,5 +1,5 @@
 {
-  "name": "dwarves-kit",
+  "name": "kit",
   "version": "1.6.0",
   "description": "Spec-driven Claude Code workflow with verification pipeline. Hooks, slash commands, and verification subagents.",
   "author": {

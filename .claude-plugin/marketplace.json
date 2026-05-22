@@ -6,7 +6,7 @@
   },
   "plugins": [
     {
-      "name": "dwarves-kit",
+      "name": "kit",
       "source": ".",
       "description": "Spec-driven Claude Code workflow with verification pipeline. Hooks, slash commands, and verification subagents."
     }

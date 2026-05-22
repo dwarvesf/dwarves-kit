@@ -45,4 +45,4 @@ Do NOT be a yes-man. Do NOT validate the idea by default. Push hard on weak poin
 
 4. Save the brief to `docs/specs/DECISION-BRIEF.md` if the verdict is BUILD.
 
-5. If BUILD, suggest (optional) `/user:design` to shape the solution interactively before `/user:spec`. It is opt-in; the user may go straight to `/user:spec`.
+5. If BUILD, suggest (optional) `/kit:design` to shape the solution interactively before `/kit:spec`. It is opt-in; the user may go straight to `/kit:spec`.

@@ -1,6 +1,6 @@
 # docs/absorption/
 
-Dated, proposal-only absorption reports written by `/user:absorb` (SPEC-004). Each file is a point-in-time audit of the kit's upstream sources against the kit, scored by the adoption rubric in `docs/ABSORPTION.md`. Nothing here is absorbed automatically; an approved proposal flows through the WORKFLOW.
+Dated, proposal-only absorption reports written by `/kit:absorb` (SPEC-004). Each file is a point-in-time audit of the kit's upstream sources against the kit, scored by the adoption rubric in `docs/ABSORPTION.md`. Nothing here is absorbed automatically; an approved proposal flows through the WORKFLOW.
 
 ## Naming + collisions
 

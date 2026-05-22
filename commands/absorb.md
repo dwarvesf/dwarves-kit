@@ -2,7 +2,7 @@
 description: "Maintainer-only: audit the kit's upstream sources (Credits drift + seed-rescan) and draft a dated, proposal-only absorption report. Does not execute, does not merge."
 ---
 
-You are running the kit's external absorption audit (SPEC-004; the ritual, rubric, and gate live in `docs/ABSORPTION.md`). Maintainer-only, connective tissue like `/user:kit-health`. You PROPOSE; the maintainer approves; you absorb nothing automatically and you add no source to README Credits yourself (the human merge gate).
+You are running the kit's external absorption audit (SPEC-004; the ritual, rubric, and gate live in `docs/ABSORPTION.md`). Maintainer-only, connective tissue like `/kit:kit-health`. You PROPOSE; the maintainer approves; you absorb nothing automatically and you add no source to README Credits yourself (the human merge gate).
 
 ## Process
 

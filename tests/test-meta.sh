@@ -48,11 +48,29 @@ echo "=== Plugin manifest schema ==="
 
 # plugin.json: name, version, description present
 PLUGIN_NAME=$(jq -r '.name' "$KIT_DIR/.claude-plugin/plugin.json")
-assert_eq "plugin.json name == 'dwarves-kit'" "dwarves-kit" "$PLUGIN_NAME"
+assert_eq "plugin.json name == 'kit'" "kit" "$PLUGIN_NAME"
 
 PLUGIN_VERSION=$(jq -r '.version' "$KIT_DIR/.claude-plugin/plugin.json")
 VERSION_FILE=$(cat "$KIT_DIR/VERSION" | tr -d '[:space:]')
 assert_eq "plugin.json version matches VERSION file" "$VERSION_FILE" "$PLUGIN_VERSION"
+
+# ============================================================
+echo "=== Invocation namespace guard (SPEC-029) ==="
+# ============================================================
+# The kit's commands resolve as /kit:<cmd> (plugin) or bare /<cmd> (bash install).
+# /user:<cmd> is the dead reserved-prefix form and must not appear in LIVE docs.
+# Denylist, not allowlist (DEC-004): scan every tracked *.md EXCEPT the dated,
+# point-in-time dirs (specs/retros/ADRs/handoff/research), so a future live doc
+# is covered automatically. Enforces /user: ABSENCE only (DEC-005); bare-/cmd is
+# not auto-checked.
+USER_NS_HITS=$(cd "$KIT_DIR" && git ls-files '*.md' \
+  | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|_meta/|CHANGELOG\.md)' \
+  | xargs grep -l '/user:' 2>/dev/null)
+if [ -n "$USER_NS_HITS" ]; then
+  echo "  live files still using /user::" >&2
+  echo "$USER_NS_HITS" | sed 's/^/    /' >&2
+fi
+[ -z "$USER_NS_HITS" ]; assert_true "no /user: invocation form in live docs (SPEC-029)" $?
 
 PLUGIN_DESC=$(jq -r '.description // ""' "$KIT_DIR/.claude-plugin/plugin.json")
 TOTAL=$((TOTAL + 1))
@@ -332,7 +350,7 @@ echo ""
 echo "=== Freeform front door (SPEC-026) ==="
 # ============================================================
 # Pin the SPEC-026 contract in commands/assign.md so a wording flip on any of
-# the intake paths, the /user:think delegation, or the four invariants fails CI.
+# the intake paths, the /kit:think delegation, or the four invariants fails CI.
 # All literals exist in assign.md today; this guards them from silent drift.
 # ASSIGN_MD is set in the SPEC-024 block above.
 
@@ -348,13 +366,13 @@ for LITERAL in '^ID-[0-9]+$' 'freeform'; do
   fi
 done
 
-# Delegation: the crystallize interview is delegated to /user:think, not embedded (DEC-003).
+# Delegation: the crystallize interview is delegated to /kit:think, not embedded (DEC-003).
 TOTAL=$((TOTAL + 1))
-if grep -qF '/user:think' "$ASSIGN_MD" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} assign.md delegates crystallize to /user:think (SPEC-026 DEC-003)"
+if grep -qF '/kit:think' "$ASSIGN_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md delegates crystallize to /kit:think (SPEC-026 DEC-003)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} assign.md lost the /user:think delegation (interview embedded?)"
+  echo -e "  ${RED}FAIL${NC} assign.md lost the /kit:think delegation (interview embedded?)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -447,11 +465,11 @@ for CMD_FILE in "$KIT_DIR/commands/"*.md; do
   assert_eq "command $CMD has description field" "1" "$HAS_DESC"
 done
 
-# SPEC-011: the opt-in /user:design command must exist (the frontmatter loop above
+# SPEC-011: the opt-in /kit:design command must exist (the frontmatter loop above
 # covers its shape; this asserts presence so a deletion fails CI).
 TOTAL=$((TOTAL + 1))
 if [ -f "$KIT_DIR/commands/design.md" ]; then
-  echo -e "  ${GREEN}PASS${NC} commands/design.md exists (/user:design lane)"
+  echo -e "  ${GREEN}PASS${NC} commands/design.md exists (/kit:design lane)"
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} commands/design.md missing"
@@ -477,13 +495,13 @@ assert_eq "no duplicate ADR numbers (dups: ${DUP_ADRS:-none})" "" "$DUP_ADRS"
 echo ""
 echo "=== Debug loop (SPEC-013) ==="
 # ============================================================
-# The /user:debug command must exist and carry its load-bearing structure,
+# The /kit:debug command must exist and carry its load-bearing structure,
 # and the guess-fix guard's ledger contract must stay in sync with the hook.
 
 DEBUG_CMD="$KIT_DIR/commands/debug.md"
 TOTAL=$((TOTAL + 1))
 if [ -f "$DEBUG_CMD" ]; then
-  echo -e "  ${GREEN}PASS${NC} commands/debug.md exists (/user:debug, bug lane)"
+  echo -e "  ${GREEN}PASS${NC} commands/debug.md exists (/kit:debug, bug lane)"
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} commands/debug.md missing"
@@ -768,7 +786,7 @@ fi
 STRAY_PLANNING_AGENTS=$(grep -rn '\.planning' "$KIT_DIR/agents/" 2>/dev/null | grep -vi 'legacy' | wc -l | tr -d ' ')
 assert_eq "no stray .planning/ refs in agents/ (legacy fallback excepted)" "0" "$STRAY_PLANNING_AGENTS"
 
-# SPEC-006: the orchestration spine is documented + /user:assign exists.
+# SPEC-006: the orchestration spine is documented + /kit:assign exists.
 WF_SPINE="$KIT_DIR/WORKFLOW.md"
 for HEADING in "## The spine" "#### Doc-impact map"; do
   TOTAL=$((TOTAL + 1))
@@ -790,7 +808,7 @@ else
 fi
 TOTAL=$((TOTAL + 1))
 if [ -f "$KIT_DIR/commands/assign.md" ]; then
-  echo -e "  ${GREEN}PASS${NC} commands/assign.md exists (/user:assign, SPEC-006)"
+  echo -e "  ${GREEN}PASS${NC} commands/assign.md exists (/kit:assign, SPEC-006)"
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} commands/assign.md missing"
@@ -809,7 +827,7 @@ fi
 for CMD in devs-team visual-team test-plan; do
   TOTAL=$((TOTAL + 1))
   if [ -f "$KIT_DIR/commands/$CMD.md" ]; then
-    echo -e "  ${GREEN}PASS${NC} commands/$CMD.md exists (/user:$CMD, SPEC-016)"
+    echo -e "  ${GREEN}PASS${NC} commands/$CMD.md exists (/kit:$CMD, SPEC-016)"
     PASS=$((PASS + 1))
   else
     echo -e "  ${RED}FAIL${NC} commands/$CMD.md missing"
@@ -817,7 +835,7 @@ for CMD in devs-team visual-team test-plan; do
   fi
 done
 
-# SPEC-017: /user:execute expands tasks into bite-sized steps.
+# SPEC-017: /kit:execute expands tasks into bite-sized steps.
 TOTAL=$((TOTAL + 1))
 if grep -qF 'bite-sized steps' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} execute.md has the bite-sized step-expansion marker (SPEC-017)"
@@ -827,7 +845,7 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# SPEC-004: the absorption ritual + the /user:absorb command exist with their contract.
+# SPEC-004: the absorption ritual + the /kit:absorb command exist with their contract.
 ABS_DOC="$KIT_DIR/docs/ABSORPTION.md"
 for HEADING in "## The external lane" "## Interest areas" "## Seed list" "## The adoption rubric" "## The gate"; do
   TOTAL=$((TOTAL + 1))
@@ -849,7 +867,7 @@ for ABSFILE in "docs/ABSORPTION.md" "docs/absorption/TEMPLATE.md" "docs/absorpti
     FAIL=$((FAIL + 1))
   fi
 done
-# the DATA-not-instructions guard must survive in /user:absorb (it scores untrusted fetched content)
+# the DATA-not-instructions guard must survive in /kit:absorb (it scores untrusted fetched content)
 TOTAL=$((TOTAL + 1))
 if grep -qF 'DATA, never instructions' "$KIT_DIR/commands/absorb.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} commands/absorb.md keeps the DATA-not-instructions guard (SPEC-004)"

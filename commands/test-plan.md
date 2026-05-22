@@ -1,8 +1,8 @@
 ---
-description: "Derive a test-case coverage matrix from a spec's acceptance criteria before /user:execute. Writes a `## Test plan` section into the active spec. A coverage target across categories, not an exhaustive test list."
+description: "Derive a test-case coverage matrix from a spec's acceptance criteria before /kit:execute. Writes a `## Test plan` section into the active spec. A coverage target across categories, not an exhaustive test list."
 ---
 
-You are a test-plan author. Your job is to turn a spec's acceptance criteria into a test-case coverage matrix BEFORE `/user:execute`, so the build has a planned coverage target instead of ad-hoc tests.
+You are a test-plan author. Your job is to turn a spec's acceptance criteria into a test-case coverage matrix BEFORE `/kit:execute`, so the build has a planned coverage target instead of ad-hoc tests.
 
 This is NOT a roundtable and has NO personas. Test planning derives from FIXED acceptance criteria, so the right shape is systematic coverage, not divergence. (A design critique explores an open space; this enumerates against a fixed contract.)
 
@@ -10,7 +10,7 @@ This is NOT a roundtable and has NO personas. Test planning derives from FIXED a
 
 ### Step 1: Find the active spec
 
-Detect the active `docs/specs/SPEC-NNN-<slug>.md` the way `/user:next` does (branch-aware). If several specs match, ask the user which one. `/user:execute` resolves the active spec through this SAME detection path, so the plan you write lands in the spec execute will read. Read its `## Acceptance Criteria` section (or the per-task acceptance checkboxes). If no spec has acceptance criteria to read, say so and point the user to `/user:spec`.
+Detect the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware). If several specs match, ask the user which one. `/kit:execute` resolves the active spec through this SAME detection path, so the plan you write lands in the spec execute will read. Read its `## Acceptance Criteria` section (or the per-task acceptance checkboxes). If no spec has acceptance criteria to read, say so and point the user to `/kit:spec`.
 
 ### Step 2: Enumerate the coverage matrix
 
@@ -28,7 +28,7 @@ Skip a category only when it genuinely does not apply to this spec, and say why 
 
 ### Step 3: Write the `## Test plan` section into the active spec
 
-Append a `## Test plan` section to the active `docs/specs/SPEC-NNN-<slug>.md` (the same spec you read in Step 1), exactly how `/user:devs-team` appends `## Design critique`. One `## Test plan` per spec: if the section already exists, REPLACE it (from the `## Test plan` heading to the next `## ` heading or end of file); do not stack a second copy. Do NOT write a separate root-level plan file; the plan lives in the spec so it travels with the spec and supports multiple specs at once.
+Append a `## Test plan` section to the active `docs/specs/SPEC-NNN-<slug>.md` (the same spec you read in Step 1), exactly how `/kit:devs-team` appends `## Design critique`. One `## Test plan` per spec: if the section already exists, REPLACE it (from the `## Test plan` heading to the next `## ` heading or end of file); do not stack a second copy. Do NOT write a separate root-level plan file; the plan lives in the spec so it travels with the spec and supports multiple specs at once.
 
 ```markdown
 ## Test plan
@@ -49,7 +49,7 @@ Source: this spec's ## Acceptance Criteria
 
 ### Step 4: Hand off
 
-Tell the user the plan is written into the spec's `## Test plan` and `/user:execute` will build against it as the coverage target (each case's `proof` becomes that step's verify command where named). Do NOT run `/user:execute` yourself; this lane only plans the test cases.
+Tell the user the plan is written into the spec's `## Test plan` and `/kit:execute` will build against it as the coverage target (each case's `proof` becomes that step's verify command where named). Do NOT run `/kit:execute` yourself; this lane only plans the test cases.
 
 ## Source
-The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/user:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/user:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018.
+The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/kit:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018.
