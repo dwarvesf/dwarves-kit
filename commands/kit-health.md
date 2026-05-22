@@ -78,6 +78,22 @@ echo "Source citations in README: $CREDITS"
 # 10. TODOs/FIXMEs in hook scripts
 TODOS=$(grep -r "TODO\|FIXME" ~/.claude/dwarves-kit/hooks/ 2>/dev/null | wc -l | tr -d ' ')
 echo "TODOs/FIXMEs in hooks: $TODOS"
+
+# 11. Release hygiene: a phantom version cut (VERSION names an untagged version)
+# Repo-scoped: reads the repo's .git + VERSION via the current working dir (git
+# tags + CHANGELOG live in the repo, not the installed copy under ~/.claude). The
+# guard degrades to a no-op outside a git repo / without VERSION, never errors.
+if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
+  VER=$(tr -d '[:space:]' < VERSION)
+  if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
+    echo "  [WARN] release hygiene: VERSION is $VER but tag v$VER does not exist (phantom cut)"
+    grep -q '^## \[Unreleased\]' CHANGELOG.md 2>/dev/null && echo "         and CHANGELOG [Unreleased] is accumulating above it"
+  else
+    echo "  release hygiene: ok (v$VER tagged, or clean)"
+  fi
+else
+  echo "  release hygiene: skipped (not in the kit repo / no VERSION)"
+fi
 ```
 
 ### Step 2: Present health report
