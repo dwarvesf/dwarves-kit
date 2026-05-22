@@ -55,6 +55,28 @@ If a version file exists:
 
 If no version file exists: skip this step silently.
 
+### Step 4a: Release-hygiene warn (warn, not block)
+
+At the version/tag decision, check for a **phantom cut**: `VERSION` names a version that has no matching git tag. Run the check, then REPORT to the maintainer; do NOT block the ship. Mirror the Step 1b "warn, not block" voice: hard blocks stay reserved for the REVIEW.md DO-NOT-SHIP verdict and the safety gates.
+
+Use this exact check shape (kit-health's check uses the same shape; they must not drift):
+
+```bash
+# Graceful degrade: no .git, no VERSION, or no git => silent no-op, never error/block.
+if [ -d .git ] && [ -f VERSION ] && command -v git >/dev/null 2>&1; then
+  VER=$(tr -d '[:space:]' < VERSION)   # strip whitespace so a trailing newline cannot break the pattern
+  if [ -z "$(git tag -l "v$VER")" ]; then
+    echo "WARN release-hygiene: phantom cut. VERSION names v$VER but no matching git tag exists."
+    # Accumulation context: [Unreleased] non-empty => work piling above an untagged cut.
+    if [ -f CHANGELOG.md ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' CHANGELOG.md | grep -q .; then
+      echo "         work is accumulating above an untagged cut v$VER."
+    fi
+  fi
+fi
+```
+
+If the phantom cut fires, surface it as a heads-up at the version step (remember to tag `v$VER`), then continue. During a real release this fires between the version-bump commit and the tag, where the warn is the correct "remember to tag" nudge. Source: SPEC-028 (DEC-001 warn-only, DEC-005 shared shape).
+
 ### Step 5: Generate changelog entry
 
 If `CHANGELOG.md` exists (or the project follows a changelog convention):
