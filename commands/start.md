@@ -8,7 +8,7 @@ You are a project state detector. Read the current project and suggest what the 
 
 `$ARGUMENTS` selects how much to render. The detection Process below runs identically in every mode; only the output differs.
 
-- `--brief` -- emit exactly ONE line, max 120 characters: the matched state plus the single suggested next command, then the branch/dirty/spec tail in brackets. Nothing else. Example: `Spec VALIDATED, 3/8 tasks -> /user:execute. [master | 2 dirty | VALIDATED]`
+- `--brief` -- emit exactly ONE line, max 120 characters: the matched state plus the single suggested next command, then the branch/dirty/spec tail in brackets. Nothing else. Example: `Spec VALIDATED, 3/8 tasks -> /kit:execute. [master | 2 dirty | VALIDATED]`
 - (no argument) -- DEFAULT. Emit the standard 3-4 line orientation defined in "Output format" below. This default output is unchanged from prior versions; do not alter it.
 - `--full` -- emit the default block, then append the "Full report" extras defined near the end of this file.
 
@@ -33,7 +33,7 @@ If no `docs/specs/` directory exists (and no legacy `.planning/`):
 
 ```
 No spec found.
-Suggested: /user:think to challenge the idea, then /user:spec to generate a development spec.
+Suggested: /kit:think to challenge the idea, then /kit:spec to generate a development spec.
 ```
 
 ### 3. Spec is DRAFT
@@ -42,7 +42,7 @@ If `docs/specs/SPEC-NNN-<slug>.md` exists and its Status line says `DRAFT`:
 
 ```
 Spec exists but not yet approved.
-Suggested: /user:spec-validate to run adversarial review (5 reviewers), then approve.
+Suggested: /kit:spec-validate to run adversarial review (5 reviewers), then approve.
 ```
 
 ### 4. Spec is APPROVED or VALIDATED, tasks remain
@@ -53,7 +53,7 @@ Count completed vs total tasks. Report progress.
 
 ```
 Spec approved. [N]/[M] tasks complete.
-Suggested: /user:execute to run the verification pipeline, or /user:next for manual task-by-task.
+Suggested: /kit:execute to run the verification pipeline, or /kit:next for manual task-by-task.
 ```
 
 If some tasks are checked and some aren't, also note which phase is in progress.
@@ -64,7 +64,7 @@ If all tasks in the spec are checked (`- [x]`) and no `REVIEW.md` exists:
 
 ```
 All tasks complete. No review on file.
-Suggested: /user:review for paranoid code review (security + architecture).
+Suggested: /kit:review for paranoid code review (security + architecture).
 ```
 
 ### 6. Review exists with issues
@@ -73,7 +73,7 @@ If `REVIEW.md` exists and contains CRITICAL or HIGH items, or verdict is not SHI
 
 ```
 Review found issues: [N] critical, [N] high.
-Suggested: Fix the issues, then re-run /user:review.
+Suggested: Fix the issues, then re-run /kit:review.
 ```
 
 ### 7. Review passed, not shipped
@@ -82,7 +82,7 @@ If `REVIEW.md` exists with verdict SHIP and there are uncommitted changes or no 
 
 ```
 Review passed. Ready to ship.
-Suggested: /user:docs to update documentation, then /user:ship to commit and PR.
+Suggested: /kit:docs to update documentation, then /kit:ship to commit and PR.
 ```
 
 ### 8. Clean state (shipped or nothing to do)
@@ -91,7 +91,7 @@ If git is clean, review passed, everything shipped:
 
 ```
 Project is in a clean state. Nothing pending.
-Suggested: /user:retro if you haven't captured learnings, or describe the next feature to start a new cycle.
+Suggested: /kit:retro if you haven't captured learnings, or describe the next feature to start a new cycle.
 ```
 
 ### Additional context (always show)
@@ -123,15 +123,15 @@ When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 4. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
 5. **Recent commits** -- the output of `git log -5 --oneline`.
 6. **Command map by phase**:
-   - Think: `/user:think`, `/user:design`
-   - Spec: `/user:spec`, `/user:spec-validate`
-   - Orchestrate: `/user:assign` (backlog item -> goal draft -> lane)
-   - Build: `/user:execute`, `/user:next`
-   - Debug: `/user:debug` (bug lane)
-   - Review: `/user:review`, `/user:review-team`
-   - Ship: `/user:docs`, `/user:ship`
-   - Reflect: `/user:retro`
-   - Utility: `/user:start`, `/user:kit-health`
+   - Think: `/kit:think`, `/kit:design`
+   - Spec: `/kit:spec`, `/kit:spec-validate`
+   - Orchestrate: `/kit:assign` (backlog item -> goal draft -> lane)
+   - Build: `/kit:execute`, `/kit:next`
+   - Debug: `/kit:debug` (bug lane)
+   - Review: `/kit:review`, `/kit:review-team`
+   - Ship: `/kit:docs`, `/kit:ship`
+   - Reflect: `/kit:retro`
+   - Utility: `/kit:start`, `/kit:kit-health`
 
 ## Source
 

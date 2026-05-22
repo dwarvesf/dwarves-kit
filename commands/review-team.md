@@ -99,7 +99,7 @@ Write to `REVIEW.md` in the project root. If issues are found, also append to `T
 
 ### Step 5: Decision gate
 
-If verdict is SHIP: suggest `/user:docs` then `/user:ship`.
+If verdict is SHIP: suggest `/kit:docs` then `/kit:ship`.
 If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. If they choose to address now, dispatch the `responding-to-review` agent with the findings as input -- it will verify each item, push back on incorrect feedback, and propose fixes in priority order without performative agreement.
 If verdict is DO NOT SHIP: explain what's fundamentally wrong.
 

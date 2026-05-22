@@ -26,14 +26,14 @@ trigger list uses the full lane unless you explicitly narrow the scope and say w
 ## The cycle (phase, exit, enforcer)
 | Phase    | Command | Exit when | Enforced by |
 |----------|---------|-----------|-------------|
-| Think    | /user:think | decision brief written (if BUILD) | advisory |
-| Spec     | /user:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
-| Validate | /user:spec-validate | Status: VALIDATED | advisory (full lane) |
-| Build    | /user:execute or /user:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
-| Review   | /user:review or /user:review-team | review verdict recorded | advisory |
-| Docs     | /user:docs | README/CHANGELOG match code | advisory |
-| Ship     | /user:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
-| Reflect  | /user:retro | docs/retro/v<version>.md written | advisory |
+| Think    | /kit:think | decision brief written (if BUILD) | advisory |
+| Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
+| Validate | /kit:spec-validate | Status: VALIDATED | advisory (full lane) |
+| Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
+| Review   | /kit:review or /kit:review-team | review verdict recorded | advisory |
+| Docs     | /kit:docs | README/CHANGELOG match code | advisory |
+| Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
+| Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
 
 Throughout: safety-gate blocks destructive Bash; anti-rationalization blocks
 premature "done"; auto-format runs on edit; session-state-save and

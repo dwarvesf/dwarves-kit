@@ -12,7 +12,7 @@ Check if a review has been done:
 - Does `REVIEW.md` exist? Read its verdict.
 - If verdict is `SHIP` or `FIX THEN SHIP` (with fixes applied): proceed.
 - If verdict is `DO NOT SHIP`: STOP. Tell the user to fix the issues first.
-- If no `REVIEW.md` exists: WARN. Ask: "(A) Run /user:review first / (B) Run /user:review-team for thorough review / (C) Skip review and ship anyway"
+- If no `REVIEW.md` exists: WARN. Ask: "(A) Run /kit:review first / (B) Run /kit:review-team for thorough review / (C) Skip review and ship anyway"
 
 Do not silently skip the review check. The user must explicitly choose to ship without review.
 

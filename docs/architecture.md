@@ -9,7 +9,7 @@ The kit ships five kinds of artifact. Each maps to a Claude Code primitive:
 | Kit dir | CC primitive | Trigger |
 |---|---|---|
 | `hooks/` | Hook | Event (PreToolUse, Stop, StatusLine, etc.) |
-| `commands/` | Slash command | Human typing `/user:<name>` |
+| `commands/` | Slash command | Human typing `/kit:<name>` |
 | `agents/` | Custom subagent | Dispatched by a command via Task tool |
 | `skills/` | Skill | Claude auto-triggered from skill description |
 | `rules/` | Path-scoped rules | Active when Claude reads matching files |
@@ -23,38 +23,38 @@ The kit is intentionally flat. Component dirs sit at the top of the repo, not ne
 `docs/specs/SPEC-NNN-<slug>.md` is the shared contract for the full lifecycle. It is the single source of truth that crosses command boundaries:
 
 ```
-/user:think      reads:  user idea (chat)
+/kit:think      reads:  user idea (chat)
                  writes: docs/specs/DECISION-BRIEF.md  (if BUILD)
 
-/user:spec       reads:  docs/specs/DECISION-BRIEF.md, codebase via 4 research agents
+/kit:spec       reads:  docs/specs/DECISION-BRIEF.md, codebase via 4 research agents
                  writes: docs/specs/SPEC-NNN-<slug>.md  (Status: DRAFT)
                          docs/research/{stack,features,architecture,pitfalls}.md
 
-/user:spec-validate  reads:  docs/specs/SPEC-NNN-<slug>.md
+/kit:spec-validate  reads:  docs/specs/SPEC-NNN-<slug>.md
                      writes: docs/specs/SPEC-NNN-<slug>.md  (Status: VALIDATED) or comments
 
-/user:execute    reads:  docs/specs/SPEC-NNN-<slug>.md
+/kit:execute    reads:  docs/specs/SPEC-NNN-<slug>.md
                  writes: code, tests, docs/specs/SPEC-NNN-<slug>.md task checkmarks, decision log
                  dispatches: worker -> task-verifier -> fix-agent (retry max 2)
 
-/user:next       reads:  docs/specs/SPEC-NNN-<slug>.md
+/kit:next       reads:  docs/specs/SPEC-NNN-<slug>.md
                  writes: code, tests; you drive verification
 
-/user:review     reads:  git diff, docs/specs/SPEC-NNN-<slug>.md
+/kit:review     reads:  git diff, docs/specs/SPEC-NNN-<slug>.md
                  writes: REVIEW.md
 
-/user:review-team  reads:  git diff
+/kit:review-team  reads:  git diff
                    dispatches: 3 lens-reviewers in parallel + security-auditor
                    writes:  REVIEW-{security,architecture,test-coverage}.md
 
-/user:docs       reads:  git diff
+/kit:docs       reads:  git diff
                  writes: README.md, CHANGELOG.md, other docs as drift dictates
 
-/user:ship       reads:  docs/specs/SPEC-NNN-<slug>.md, REVIEW*.md, VERSION
+/kit:ship       reads:  docs/specs/SPEC-NNN-<slug>.md, REVIEW*.md, VERSION
                  gate:   blocks if review verdict is FIX-REQUIRED
                  writes: VERSION, CHANGELOG.md entry, git tag, PR
 
-/user:retro      reads:  docs/specs/SPEC-NNN-<slug>.md, git log
+/kit:retro      reads:  docs/specs/SPEC-NNN-<slug>.md, git log
                  writes: docs/retro/v<version>.md
 ```
 
@@ -72,7 +72,7 @@ The kit has three durable/ephemeral state stores plus transient review output. K
 | `.claude/last-goal.md` | no (gitignored) | ephemeral | the built-in `/goal`'s single active slot; the kit never writes it |
 | `TODOS.md`, `REVIEW*.md` | no (gitignored) | transient | per-diff `/review` output, NOT the backlog |
 
-`TODOS.md` is gitignored per-diff `/review` output, not the backlog; do not conflate them. The active spec among these is resolved by the SPEC-005 dual-mode rule (`docs/specs/` primary + branch-selected; `.planning/` deprecation fallback). The `/user:start`/`/user:next` rendering of the backlog queue + goal drafts is wired in SPEC-006.
+`TODOS.md` is gitignored per-diff `/review` output, not the backlog; do not conflate them. The active spec among these is resolved by the SPEC-005 dual-mode rule (`docs/specs/` primary + branch-selected; `.planning/` deprecation fallback). The `/kit:start`/`/kit:next` rendering of the backlog queue + goal drafts is wired in SPEC-006.
 
 ## Verification pipeline (the load-bearing piece)
 
@@ -205,8 +205,8 @@ Beyond the repo itself, the kit writes to:
 | `~/.claude/dwarves-kit/logs/slop-cleaner.log` | Bloat detections | slop-cleaner.sh |
 | `.claude/session-state/last-state.md` | Latest session snapshot | session-state-save.sh |
 | `.claude/session-state/archive/*` | Last 10 rotated snapshots | session-state-save.sh |
-| `.claude/debug/<slug>.md` | Per-bug evidence ledger (Symptoms / Root cause / Evidence / Eliminated / Fix attempts / Resolution) | /user:debug |
-| `.claude/debug/<slug>.log` | `[DEBUG Hn]`-tagged instrumentation output | /user:debug |
+| `.claude/debug/<slug>.md` | Per-bug evidence ledger (Symptoms / Root cause / Evidence / Eliminated / Fix attempts / Resolution) | /kit:debug |
+| `.claude/debug/<slug>.log` | `[DEBUG Hn]`-tagged instrumentation output | /kit:debug |
 
 All `.claude/` paths are gitignored (the kit ignores `.claude/`); downstream templates ignore it too.
 

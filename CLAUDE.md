@@ -4,7 +4,7 @@ Project instructions for working on **dwarves-kit itself** (the kit's own repo).
 
 ## Project
 
-dwarves-kit is a Claude Code workflow toolkit: hooks, slash commands, subagents, and a skill. Spec-driven lifecycle (`/user:think` → `/user:spec` → `/user:execute` → `/user:review` → `/user:ship` → `/user:retro`) with a verification pipeline (worker → task-verifier → fix-agent retry, max 2). Distributed as a Claude Code plugin and as a bash installer. Maintainer: Han at Dwarves Foundation.
+dwarves-kit is a Claude Code workflow toolkit: hooks, slash commands, subagents, and a skill. Spec-driven lifecycle (`/kit:think` → `/kit:spec` → `/kit:execute` → `/kit:review` → `/kit:ship` → `/kit:retro`) with a verification pipeline (worker → task-verifier → fix-agent retry, max 2). Distributed as a Claude Code plugin and as a bash installer. Maintainer: Han at Dwarves Foundation.
 
 For component fit and data flow, read `docs/architecture.md`. For operator detail per command, read `MANUAL.md`. For hook misbehavior, read `RUNBOOK.md`. Design rejection rules live in `docs/PHILOSOPHY.md` and are load-bearing.
 
@@ -29,7 +29,7 @@ bash install.sh --uninstall   # clean removal
 DWARVES_KIT_DEBUG=1 ...       # verbose hook logging on stderr
 ```
 
-The kit ships its own slash commands (`/user:start` ... `/user:retro` ... `/user:kit-health`). Working on the kit means dogfooding: write a spec for your change, dispatch the verification pipeline, ship through `/user:ship`. The kit's commands are listed in `MANUAL.md`; do not duplicate the inventory here.
+The kit ships its own slash commands (`/kit:start` ... `/kit:retro` ... `/kit:kit-health`). Working on the kit means dogfooding: write a spec for your change, dispatch the verification pipeline, ship through `/kit:ship`. The kit's commands are listed in `MANUAL.md`; do not duplicate the inventory here.
 
 ## Repository structure
 
@@ -61,7 +61,7 @@ The operate-contract (read-order, task loop, done-definition, the "Pause if" lis
 
 The kit eats its own dog food. The full lifecycle, the risk-tier lanes, and the gate at each phase boundary live in one place: the [`WORKFLOW.md`](WORKFLOW.md) contract. Read it after `AGENTS.md` and this file. For kit-on-kit work, spec drafts live in `docs/specs/` (see Spec location above), not `.planning/`.
 
-`/user:kit-health` is the maintainer-only self-assessment against PHILOSOPHY.md. Run it before tagging.
+`/kit:kit-health` is the maintainer-only self-assessment against PHILOSOPHY.md. Run it before tagging.
 
 Hooks fire on Claude Code events automatically; do not call them manually. Debug with `DWARVES_KIT_DEBUG=1`.
 

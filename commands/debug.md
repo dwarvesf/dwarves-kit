@@ -92,6 +92,6 @@ If a fix does not work:
 
 ## Scope
 
-This loop is for defects, regressions, and test failures (the `bug` lane in WORKFLOW.md). A one-character obvious typo fix does not need it (tiny lane). After a confirmed fix, run `/user:review` on the diff.
+This loop is for defects, regressions, and test failures (the `bug` lane in WORKFLOW.md). A one-character obvious typo fix does not need it (tiny lane). After a confirmed fix, run `/kit:review` on the diff.
 
 Source: obra/superpowers `systematic-debugging` (four phases, iron law, 3-fix wall); glittercowboy/get-shit-done `gsd-debugger` (the evidence ledger, falsifiability); doraemonkeys/claude-code-debug-mode (`[DEBUG Hn]` tagged logs to a debug file, region-marker cleanup, human-confirm before victory); SuperClaude `/sc:troubleshoot` (fix gated behind confirm). Classic lineage: David Agans, "Debugging: The 9 Indispensable Rules" (audit trail, change one thing, "if you didn't fix it, it ain't fixed"); Andreas Zeller, "Why Programs Fail" (delta debugging / minimal reproduction). See docs/specs/SPEC-013-debug-loop.md and ADR-0012.

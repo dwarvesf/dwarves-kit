@@ -22,7 +22,7 @@ When the argument is freeform intent (does NOT match `^ID-[0-9]+$`), run these o
 - **approve-before-allocate**: pause for human approval of the crystallized objective BEFORE allocating an ID. A vague brief never auto-creates a row (DEC-002).
 - **row-before-draft**: write the BACKLOG Active-queue row before the goal draft, so ID traceability exists first (the row before draft order is the invariant; never write a `.claude/goals/` draft for an un-rowed intent).
 
-1. **Delegate crystallize to `/user:think`.** Hand the freeform intent to `/user:think` (the existing idea-griller). It runs the interview and returns a crystallized objective + a lane. `/assign` does NOT embed that interview (DEC-003); it only consumes `/think`'s result. If the intent is too vague to name an outcome, `/think` loops; do not allocate anything until it converges.
+1. **Delegate crystallize to `/kit:think`.** Hand the freeform intent to `/kit:think` (the existing idea-griller). It runs the interview and returns a crystallized objective + a lane. `/assign` does NOT embed that interview (DEC-003); it only consumes `/think`'s result. If the intent is too vague to name an outcome, `/think` loops; do not allocate anything until it converges.
 2. **Approval gate (approve-before-allocate).** Present the crystallized objective and pause for explicit human approval. Until the human approves, allocate nothing and write nothing. This is the gate that keeps half-baked rows out of the queue.
 3. **Dedup by slug.** Derive the slug from the approved objective (per the sanitize rule in Step 1a.4). If a `.claude/goals/<slug>.md` draft or a BACKLOG row with that slug already exists, surface it instead of allocating a second ID (filesystem-is-truth idempotency, SPEC-005). On a near-match slug, ask rather than silently merge or duplicate.
 4. **Sanitize (DEC-004).** Before the freeform text touches any file, sanitize it:
@@ -50,7 +50,7 @@ From the item's Title + Target artifact, craft the goal as a **six-section opera
 5. **Done-when** <- `AGENTS.md` zone 3 ("Done means") + the active spec's `## After state` (the observable bullets). The goal is done only when its AC are met, the check actually ran, review is recorded + a report written, and the final response says what changed and what was not attempted. Quote the spec's `## After state` observable bullets here verbatim as the done-picture. If the spec lacks an `## After state` section, fall back to `AGENTS.md` "Done means" alone.
 6. **Pause-if** <- `AGENTS.md` zone 4 ("Pause if"): stop and ask a human (with a named blocker note, no churn) on architecture direction, source-of-truth hierarchy, validation removal, risk-classification change, or privacy/security. This is where the old termination-on-blocker lives now.
 
-If the repo is spec-driven and the lane is normal/full, the directive is **spec-first**: its opening move is the lane's first command (`/user:spec`), not building code. This matches the `goal-craft` skill's spec-driven-repo rule.
+If the repo is spec-driven and the lane is normal/full, the directive is **spec-first**: its opening move is the lane's first command (`/kit:spec`), not building code. This matches the `goal-craft` skill's spec-driven-repo rule.
 
 ### Step 4: Write the draft (the SPEC-005 contract / ADR-0011)
 
@@ -79,7 +79,7 @@ created: <YYYY-MM-DD>
 - Set the item's `Status` in `_meta/BACKLOG.md`: `queued -> speccing` (normal/full, a spec comes next) or `-> executing` (tiny).
 - Hand off to the lane's first command:
   - tiny: "edit, verify, done" (no spec).
-  - normal/full: `/user:spec` (or `/user:think` first if the item is still fuzzy).
+  - normal/full: `/kit:spec` (or `/kit:think` first if the item is still fuzzy).
 - State what you wrote and what to run next. Do NOT run it.
 
 ## Edge cases
@@ -88,12 +88,12 @@ created: <YYYY-MM-DD>
 - **tiny lane**: craft the draft but route to "edit, verify, done"; no `/spec`.
 - **Re-run for the same id**: re-surface the existing draft; do not duplicate or double-advance status (idempotent).
 - **No activator installed**: the draft still works as a plain file; only one-step activation is lost.
-- **Queued item with no spec, normal/full lane**: hand off to `/user:spec` first.
-- **Freeform intent too vague**: `/user:think` loops until the objective is named; no ID is allocated until the approval gate passes (no half-baked rows).
+- **Queued item with no spec, normal/full lane**: hand off to `/kit:spec` first.
+- **Freeform intent too vague**: `/kit:think` loops until the objective is named; no ID is allocated until the approval gate passes (no half-baked rows).
 - **Duplicate freeform intent**: dedup by slug after crystallize; surface the existing row/draft instead of allocating a second ID, and ask on a near-match rather than silently merge.
 - **Concurrent freeform allocation**: both sessions re-read max in the write step; the post-write equal-ID collision check fails loud and the operator re-runs.
 - **`|` or newline in freeform intent**: sanitized (cells escape `|`, newlines become spaces) before the row is written, so the BACKLOG pipe table stays well-formed.
 
 ## What this command does NOT do
 
-It does not execute the task, does not write `.claude/last-goal.md`, and does not hard-gate. On the freeform path it does NOT embed a multi-turn interview either: the crystallize step is delegated to `/user:think`, and `/assign` keeps only allocate + route (DEC-003). It is the mutator that sets up a goal; the lane's commands do the work and `/user:start`/`/user:next` only render. Source: SPEC-006; SPEC-026 (the freeform front door + its four invariants: row-before-draft, approve-before-allocate, sanitize, atomic-allocate); dispatcher pattern from `commands/next.md` + CCGS `/start`; goal breakdown from the `goal-craft` skill; draft store from ADR-0011.
+It does not execute the task, does not write `.claude/last-goal.md`, and does not hard-gate. On the freeform path it does NOT embed a multi-turn interview either: the crystallize step is delegated to `/kit:think`, and `/assign` keeps only allocate + route (DEC-003). It is the mutator that sets up a goal; the lane's commands do the work and `/kit:start`/`/kit:next` only render. Source: SPEC-006; SPEC-026 (the freeform front door + its four invariants: row-before-draft, approve-before-allocate, sanitize, atomic-allocate); dispatcher pattern from `commands/next.md` + CCGS `/start`; goal breakdown from the `goal-craft` skill; draft store from ADR-0011.

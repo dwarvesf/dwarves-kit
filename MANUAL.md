@@ -4,28 +4,28 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 
 ## Conventions
 
-- Bash install path: commands invoked as `/user:<name>` (e.g. `/user:spec`).
-- Plugin install path: commands invoked as `/<name>` (the `/user:` namespace is bash-installer-specific).
+- Plugin install path (recommended): commands invoked as `/kit:<name>` (e.g. `/kit:spec`).
+- Bash install path: drop the prefix, commands invoked bare as `/<name>` (e.g. `/spec`).
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
 ## The commands
 
-### `/user:start`
+### `/kit:start`
 
 **Phase:** entry router
 **Reads:** project state (existence of `docs/specs/SPEC-NNN-<slug>.md`, git branch, dirty count, hook log activity)
 **Writes:** nothing; advises in chat which command to run next
 **When to invoke:** opening a fresh session and you do not remember where you left off
 **Common gotcha:** the router suggests a next step but does not run it. You decide.
-**Spec resolution (dual-mode, SPEC-005):** the active spec is the lone non-SHIPPED/PARKED `docs/specs/SPEC-*.md`; with several live, the one whose slug matches the git branch; if zero or several match, it reports `spec:ambiguous(...)` and asks rather than guessing. Legacy `.planning/SPEC.md` is a deprecation fallback. The same rule drives the `context-readiness` hook, `spec-drift-guard` (which greps the union of active specs), and `/user:next`.
+**Spec resolution (dual-mode, SPEC-005):** the active spec is the lone non-SHIPPED/PARKED `docs/specs/SPEC-*.md`; with several live, the one whose slug matches the git branch; if zero or several match, it reports `spec:ambiguous(...)` and asks rather than guessing. Legacy `.planning/SPEC.md` is a deprecation fallback. The same rule drives the `context-readiness` hook, `spec-drift-guard` (which greps the union of active specs), and `/kit:next`.
 
 **Modes (`$ARGUMENTS`):**
-- `/user:start --brief` -- one line, max 120 chars: state + suggested command + `[branch | N dirty | spec]`. For returning users who want a cue, not a report. Example: `Spec VALIDATED, 3/8 tasks -> /user:execute. [master | 2 dirty | VALIDATED]`
-- `/user:start` -- the default 3-4 line orientation (unchanged from prior versions).
-- `/user:start --full` -- the default block, then: SPEC task checklist, hook-log line counts (last 7 days, counts only, never raw lines), `git log -5 --oneline`, and the command map grouped by phase. For a new user or a deep status check.
+- `/kit:start --brief` -- one line, max 120 chars: state + suggested command + `[branch | N dirty | spec]`. For returning users who want a cue, not a report. Example: `Spec VALIDATED, 3/8 tasks -> /kit:execute. [master | 2 dirty | VALIDATED]`
+- `/kit:start` -- the default 3-4 line orientation (unchanged from prior versions).
+- `/kit:start --full` -- the default block, then: SPEC task checklist, hook-log line counts (last 7 days, counts only, never raw lines), `git log -5 --oneline`, and the command map grouped by phase. For a new user or a deep status check.
 
-### `/user:think`
+### `/kit:think`
 
 **Phase:** challenge an idea before writing a spec
 **Reads:** the idea from chat
@@ -33,39 +33,39 @@ Operator reference for dwarves-kit. For the WHY behind any choice, see `docs/PHI
 **When to invoke:** before any non-trivial feature. Costs ~5 minutes.
 **Common gotcha:** the 6 forcing questions are confrontational by design. If you accept them too easily, the brief is weak.
 
-### `/user:design`
+### `/kit:design`
 
 **Phase:** opt-in interactive solution-design beat (between Think and Spec)
 **Reads:** `docs/specs/DECISION-BRIEF.md` (if present), the codebase
 **Writes:** appends a `## Solution` section to `docs/specs/DECISION-BRIEF.md` (never clobbers the brief's product framing)
-**When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/user:spec`. Opt-in; skip it and `/user:spec` works as before.
+**When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/kit:spec`. Opt-in; skip it and `/kit:spec` works as before.
 **Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
 
-### `/user:devs-team`
+### `/kit:devs-team`
 
-Opt-in design-critique lane between `/user:design` and `/user:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution`, read spec-first (the active spec if one exists, else the pre-spec `docs/specs/DECISION-BRIEF.md`), merges findings, and appends a report-only `## Design critique` (SOLID / REVISE / RECONSIDER) to that same doc. Never blocks `/user:spec`. The design analogue of `/user:review-team`. Placement is spec-first per SPEC-023.
+Opt-in design-critique lane between `/kit:design` and `/kit:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution`, read spec-first (the active spec if one exists, else the pre-spec `docs/specs/DECISION-BRIEF.md`), merges findings, and appends a report-only `## Design critique` (SOLID / REVISE / RECONSIDER) to that same doc. Never blocks `/kit:spec`. The design analogue of `/kit:review-team`. Placement is spec-first per SPEC-023.
 
-### `/user:visual-team`
+### `/kit:visual-team`
 
 Opt-in visual-critique lane (downstream-facing; the kit has no UI). Dispatches 5 design lenses (hierarchy/typography, system-consistency, accessibility/contrast, restraint, expressiveness) in parallel against a described or linked visual design. Report-only. Does not generate mockups. Writes `## Visual critique` spec-first (the active spec if one exists, else the pre-spec brief, else inline-only) per SPEC-023.
 
-### `/user:ui-design`
+### `/kit:ui-design`
 
-Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it cannot dogfood this lane). Resolves the active spec (else the pre-spec brief) and writes a structured `## UI design` brief: aesthetic direction (purpose / tone-extreme / constraints / differentiation, the part `frontend-design` reads first), layout, a components-and-states matrix, responsive + named viewports, accessibility bars, a 3-tier token ladder, and copy voice. Delegates generation to the external `frontend-design` skill (the kit ships no renderer; degrades gracefully if it is absent), critiques via `/user:visual-team`, and runs a bounded auto-revise loop (max 2 regenerations; terminates on a SOLID verdict, RECONSIDER, or the cap). Opt-in, report-only. Depends on the external `frontend-design` skill. Per SPEC-020.
+Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it cannot dogfood this lane). Resolves the active spec (else the pre-spec brief) and writes a structured `## UI design` brief: aesthetic direction (purpose / tone-extreme / constraints / differentiation, the part `frontend-design` reads first), layout, a components-and-states matrix, responsive + named viewports, accessibility bars, a 3-tier token ladder, and copy voice. Delegates generation to the external `frontend-design` skill (the kit ships no renderer; degrades gracefully if it is absent), critiques via `/kit:visual-team`, and runs a bounded auto-revise loop (max 2 regenerations; terminates on a SOLID verdict, RECONSIDER, or the cap). Opt-in, report-only. Depends on the external `frontend-design` skill. Per SPEC-020.
 
-### `/user:test-plan`
+### `/kit:test-plan`
 
-Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/user:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable.
+Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable.
 
-### `/user:assign`
+### `/kit:assign`
 
 **Phase:** orchestrate (backlog item -> goal draft -> lane)
-**Reads:** `$ARGUMENTS` = either an `ID-NNN` (today's path) OR **freeform intent** (anything not matching `^ID-[0-9]+$`, e.g. "apply SDD to X"); `_meta/BACKLOG.md` Active queue, the item's Lane column, `AGENTS.md` zones (the projection source for the six-section goal) + the active spec's `## Verification` / `## After state`. Freeform delegates the crystallize interview to `/user:think`.
+**Reads:** `$ARGUMENTS` = either an `ID-NNN` (today's path) OR **freeform intent** (anything not matching `^ID-[0-9]+$`, e.g. "apply SDD to X"); `_meta/BACKLOG.md` Active queue, the item's Lane column, `AGENTS.md` zones (the projection source for the six-section goal) + the active spec's `## Verification` / `## After state`. Freeform delegates the crystallize interview to `/kit:think`.
 **Writes:** `.claude/goals/<slug>.md` (the SPEC-005 draft contract; never `.claude/last-goal.md`), a six-section operating directive (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if). On the **freeform path** it first writes a new sanitized `_meta/BACKLOG.md` row with a freshly allocated ID (row-before-draft, approve-before-allocate).
 **When to invoke:** you picked an `ID-NNN` from "what's left?", OR you have a freeform feature idea / vague brief with no ID yet, and want it scoped into a goal and routed into the right lane.
-**Common gotcha:** it is a mutator-dispatcher: it sets up the goal and hands off, it does NOT execute. The freeform path **delegates** the interview to `/user:think` (it does not embed one). It detects the goal-loop activator (built-in `/goal`, `ralph-loop`, or `goal-craft`) and degrades to a plain draft file if none is installed. Idempotent per id (and per slug for freeform). Source: SPEC-006 + ADR-0011; freeform front door SPEC-026.
+**Common gotcha:** it is a mutator-dispatcher: it sets up the goal and hands off, it does NOT execute. The freeform path **delegates** the interview to `/kit:think` (it does not embed one). It detects the goal-loop activator (built-in `/goal`, `ralph-loop`, or `goal-craft`) and degrades to a plain draft file if none is installed. Idempotent per id (and per slug for freeform). Source: SPEC-006 + ADR-0011; freeform front door SPEC-026.
 
-### `/user:spec`
+### `/kit:spec`
 
 **Phase:** generate the development spec
 **Reads:** `docs/specs/DECISION-BRIEF.md` (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
@@ -74,7 +74,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
 **Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table (SPEC-009). Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present. It also pins `## Verification` (the command(s) that prove the spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so a validated spec is natively pointer-`/goal`-ready (SPEC-012 P1). An optional, on-demand `## Amendments` section (added only when a mid-flight amend happens, never an empty scaffold) records add-scope provenance during a build (SPEC-027).
 
-### `/user:spec-validate`
+### `/kit:spec-validate`
 
 **Phase:** adversarial review of the spec
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md`
@@ -82,7 +82,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **When to invoke:** before `/execute` on any spec longer than ~5 tasks
 **Common gotcha:** 5 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility) run sequentially. Budget ~10-12 minutes. The 5th reviewer (SPEC-008) flags shallow or non-extensible designs and is calibrated against false positives + legacy specs.
 
-### `/user:execute`
+### `/kit:execute`
 
 **Phase:** autonomous build
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md` (must be Status: VALIDATED or APPROVED)
@@ -90,25 +90,25 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Dispatches:** worker subagent per task, then task-verifier, then fix-agent on FAIL:fixable (retry max 2)
 **When to invoke:** when handing off to a contractor OR running the kit on yourself end-to-end
 **Common gotcha:** verification adds ~2x token cost per task. Worth it for the FAIL:fixable catch rate; budget accordingly. Each worker first expands its task into bite-sized verify-each-step increments (TDD when a unit test fits; grep/bash/test-suite verify for doc and config tasks) before coding.
-**Mid-flight amend:** if a build reveals scope that must be added now ("also do Y"), do not silently edit the spec or restart the lane. With your approval, amend at a task checkpoint (append `- [ ]` tasks, record an `## Amendments` entry, Status stays VALIDATED) and resume with `/user:next`. The canonical rule is WORKFLOW.md "## Mid-flight amend"; the operator card is PLAYBOOK Scenario 7 (SPEC-027).
+**Mid-flight amend:** if a build reveals scope that must be added now ("also do Y"), do not silently edit the spec or restart the lane. With your approval, amend at a task checkpoint (append `- [ ]` tasks, record an `## Amendments` entry, Status stays VALIDATED) and resume with `/kit:next`. The canonical rule is WORKFLOW.md "## Mid-flight amend"; the operator card is PLAYBOOK Scenario 7 (SPEC-027).
 
-### `/user:next`
+### `/kit:next`
 
 **Phase:** manual single-task build
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md`
 **Writes:** code, tests; you drive the verification yourself
 **When to invoke:** when you want hands-on control or the next task needs subtle judgment that the verification pipeline might over-correct on
-**Common gotcha:** picks the next unchecked task only. To skip a task or pick a specific one, edit SPEC.md task ordering first. This unchecked-only behavior is also why `/user:next` (not a fresh `/user:execute`) is the way to resume after a mid-flight amend: it runs the newly appended tasks and skips the done rows (SPEC-027).
+**Common gotcha:** picks the next unchecked task only. To skip a task or pick a specific one, edit SPEC.md task ordering first. This unchecked-only behavior is also why `/kit:next` (not a fresh `/kit:execute`) is the way to resume after a mid-flight amend: it runs the newly appended tasks and skips the done rows (SPEC-027).
 
-### `/user:debug`
+### `/kit:debug`
 
 **Phase:** off-cycle (the `bug` lane: defect, regression, failing test, not a new feature)
 **Reads:** the bug report / error / failing test, `git diff`, `git log`, `git bisect`
 **Writes:** `.claude/debug/<slug>.md` (the evidence ledger), `.claude/debug/<slug>.log` (tagged instrumentation), then a failing test + a single root-cause fix
 **When to invoke:** when something is broken and you would otherwise guess-fix. Runs four phases (root cause -> pattern -> hypothesis -> fix) under the iron law "no fix without a recorded root cause," with a 3-failed-fixes-question-architecture wall.
-**Common gotcha:** while the ledger's `## Root cause` is blank, the anti-rationalization hook blocks any guess-fix "done" claim and sends you back to Phase 1. That guard is gated on an open debug session, so it never fires in normal coding. After a confirmed fix, run `/user:review` on the diff. Forked from `superpowers:systematic-debugging` + GSD/doraemonkeys mechanisms; see ADR-0012.
+**Common gotcha:** while the ledger's `## Root cause` is blank, the anti-rationalization hook blocks any guess-fix "done" claim and sends you back to Phase 1. That guard is gated on an open debug session, so it never fires in normal coding. After a confirmed fix, run `/kit:review` on the diff. Forked from `superpowers:systematic-debugging` + GSD/doraemonkeys mechanisms; see ADR-0012.
 
-### `/user:review`
+### `/kit:review`
 
 **Phase:** paranoid single-pass review
 **Reads:** `git diff`, `docs/specs/SPEC-NNN-<slug>.md`
@@ -116,7 +116,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **When to invoke:** small change (under ~300 lines diff) where one careful pass beats parallel lens-reviewers
 **Common gotcha:** outputs a verdict (`SHIP / FIX-REQUIRED / REJECT`). `/ship` reads this and gates on it.
 
-### `/user:review-team`
+### `/kit:review-team`
 
 **Phase:** parallel 3-lens review
 **Reads:** `git diff`
@@ -125,7 +125,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **When to invoke:** medium-to-large diff (>300 lines) or any change touching auth, payments, multi-tenant boundaries
 **Common gotcha:** the FIX-THEN-SHIP path dispatches `responding-to-review` to triage findings without performative agreement. Read both the findings AND the response triage before committing fixes.
 
-### `/user:docs`
+### `/kit:docs`
 
 **Phase:** doc sync
 **Reads:** `git diff`
@@ -133,7 +133,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **When to invoke:** after `/execute` succeeds, before `/ship`
 **Common gotcha:** the command does not invent doc content. If a feature is undocumented in the spec, the command will not document it from the diff alone.
 
-### `/user:ship`
+### `/kit:ship`
 
 **Phase:** review gate, version bump, changelog, commit, PR
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md`, `REVIEW*.md`, `VERSION`, `CHANGELOG.md`
@@ -142,7 +142,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Common gotcha:** blocks if any REVIEW*.md verdict is FIX-REQUIRED. Use `/review-team` and `responding-to-review` to triage before re-running ship.
 **Release-hygiene warn (Step 4a):** at the version step it warns (never blocks) on a phantom cut, `VERSION` naming a version with no matching git tag, with a heads-up when `[Unreleased]` is accumulating above it. Warn-only; tag `v<version>` or confirm intentional, then continue (SPEC-028).
 
-### `/user:retro`
+### `/kit:retro`
 
 **Phase:** post-release reflection
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md` (completion rate), `git log`, prior `docs/retro/*.md`
@@ -150,7 +150,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **When to invoke:** after `/ship` lands; one per minor or major release, patch releases append to parent retro
 **Common gotcha:** action items become real only if you carry them to the next cycle's spec. Track them, do not just write them.
 
-### `/user:absorb`
+### `/kit:absorb`
 
 **Phase:** maintainer connective tissue (external absorption audit)
 **Reads:** README Credits + the pinned seed list in `docs/ABSORPTION.md`; prior proposals under `docs/absorption/`
@@ -158,7 +158,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **When to invoke:** the monthly-ish absorption ritual, re-audit upstream sources for new/changed patterns worth adopting
 **Common gotcha:** maintainer-only and proposal-only, it never absorbs or adds a source to Credits itself (the human merge gate). Two lanes: Credits drift + a seed-rescan of the SPEC-014 set. QA/UI candidates needing binaries surface as "recommend external". Source: SPEC-004 + `docs/ABSORPTION.md`.
 
-### `/user:kit-health`
+### `/kit:kit-health`
 
 **Phase:** self-assessment against PHILOSOPHY.md
 **Reads:** the kit itself (file counts, hook performance, settings validity, source citations), plus a repo-scoped release-hygiene check (a phantom cut: `VERSION` names a version with no matching git tag; degrades to a no-op outside the repo)

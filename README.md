@@ -18,7 +18,7 @@ Install in any Claude Code session:
 
 ## Who this is for
 
-A solo technical lead handing off implementation to contractors. The kit covers the full lifecycle (think → spec → execute → review → ship → retro) with one shared spec format. The contractor running `/user:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote with `/user:spec`.
+A solo technical lead handing off implementation to contractors. The kit covers the full lifecycle (think → spec → execute → review → ship → retro) with one shared spec format. The contractor running `/kit:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote with `/kit:spec`.
 
 Also for: a builder using Claude Code 6-8 hours/day who wants a context-budget HUD, automatic safety guards, session-state persistence across compaction, and slop detection at stop points.
 
@@ -55,26 +55,26 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
-| /user:start | Entry | Detect project state, suggest next command |
-| /user:think | Think | 6 forcing questions to stress-test an idea |
-| /user:design | Design | Opt-in: interactive solution-design beat (one question at a time) before /spec |
-| /user:devs-team | Design | Opt-in: 5-lens parallel critique of the solution (brief or spec), report-only |
-| /user:visual-team | Design | Opt-in: 5-lens parallel critique of a visual/UI design (downstream-facing) |
-| /user:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
-| /user:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
-| /user:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
-| /user:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
-| /user:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
-| /user:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
-| /user:next | Build | Lightweight: picks next undone task, loads context, you drive |
-| /user:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
-| /user:review | Review | Paranoid single-pass code review |
-| /user:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage) |
-| /user:docs | Docs | Cross-reference diff against all doc files, fix drift |
-| /user:ship | Ship | Review gate, version bump, changelog, commit, PR |
-| /user:retro | Reflect | What worked, what hurt, action items for next cycle |
-| /user:kit-health | Meta | Self-assessment against kit philosophy |
-| /user:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
+| /kit:start | Entry | Detect project state, suggest next command |
+| /kit:think | Think | 6 forcing questions to stress-test an idea |
+| /kit:design | Design | Opt-in: interactive solution-design beat (one question at a time) before /spec |
+| /kit:devs-team | Design | Opt-in: 5-lens parallel critique of the solution (brief or spec), report-only |
+| /kit:visual-team | Design | Opt-in: 5-lens parallel critique of a visual/UI design (downstream-facing) |
+| /kit:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
+| /kit:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
+| /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
+| /kit:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
+| /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
+| /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
+| /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
+| /kit:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
+| /kit:review | Review | Paranoid single-pass code review |
+| /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage) |
+| /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
+| /kit:ship | Ship | Review gate, version bump, changelog, commit, PR |
+| /kit:retro | Reflect | What worked, what hurt, action items for next cycle |
+| /kit:kit-health | Meta | Self-assessment against kit philosophy |
+| /kit:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
 
 **Agents (subagents dispatched by commands):**
 
@@ -133,27 +133,29 @@ bash ~/.claude/dwarves-kit/install.sh --uninstall
 
 Don't run both install paths on the same machine -- hooks would register twice. The plugin install does not configure `statusLine` (not in the v1 plugin schema); use the bash install if you want the statusline HUD. This split is documented in ADR-009.
 
+**Invocation differs by path:** installed as the plugin, commands are namespaced `/kit:<name>` (e.g. `/kit:spec`); via the bash installer they resolve bare `/<name>` (e.g. `/spec`). The command tables above use the plugin form.
+
 ## Workflow
 
 ```
-/user:start          Detect state, suggest next command (entry point)
-/user:think          Challenge the idea (5 min)
-/user:design         Opt-in: shape the solution with you before /spec
-/user:spec           Generate the spec + 4 parallel researchers (15-30 min)
-/user:spec-validate  Stress-test the spec (10 min)
+/kit:start          Detect state, suggest next command (entry point)
+/kit:think          Challenge the idea (5 min)
+/kit:design         Opt-in: shape the solution with you before /spec
+/kit:spec           Generate the spec + 4 parallel researchers (15-30 min)
+/kit:spec-validate  Stress-test the spec (10 min)
                      [hand off to contractor]
-/user:execute        Autonomous: worker > verifier > fix-agent retry loop
+/kit:execute        Autonomous: worker > verifier > fix-agent retry loop
   or
-/user:next           Manual: pick next task, load context, you drive
+/kit:next           Manual: pick next task, load context, you drive
                      [hooks enforce during build]
                      [statusline shows context budget]
                      [session-state-save persists progress on every stop]
                      [slop-cleaner flags bloat at stop points]
-/user:review         Single-pass review (10 min)
-/user:review-team    Parallel 3-lens review (security + arch + tests)
-/user:docs           Update all docs to match code (5 min)
-/user:ship           Review gate, version bump, changelog, commit, PR
-/user:retro          Retrospective (10 min, after shipping)
+/kit:review         Single-pass review (10 min)
+/kit:review-team    Parallel 3-lens review (security + arch + tests)
+/kit:docs           Update all docs to match code (5 min)
+/kit:ship           Review gate, version bump, changelog, commit, PR
+/kit:retro          Retrospective (10 min, after shipping)
 ```
 
 Work is sized by risk lane before it starts (tiny / normal / full / bug, plus a `backfill` lane for brownfield: review an existing codebase and write the operating-layer docs without changing app behavior). The lanes, the gate at each phase boundary, and the operate-contract the agent follows live in [`AGENTS.md`](AGENTS.md) and [`WORKFLOW.md`](WORKFLOW.md).
@@ -267,9 +269,9 @@ See [CHANGELOG.md](CHANGELOG.md). It's the source of truth; the README does not 
 
 Patterns extracted from:
 - [GSD](https://github.com/gsd-build/get-shit-done) - spec generation, the original .planning/ convention (since unified onto docs/specs/, ADR-0010), 4 parallel researchers
-- [gstack](https://github.com/garrytan/gstack) - /office-hours, /review, /ship patterns; the /user:ui-design loop shapes (brief schema, injection-wrap, accumulated-feedback)
-- [frontend-design](https://github.com/anthropics/skills) - the external UI generator /user:ui-design delegates to; its aesthetic-direction brief shape
-- [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) - /user:ui-design brief sub-shapes (token ladder, states matrix, a11y bars, voice); generator + tooling rejected per bash-over-binaries
+- [gstack](https://github.com/garrytan/gstack) - /office-hours, /review, /ship patterns; the /kit:ui-design loop shapes (brief schema, injection-wrap, accumulated-feedback)
+- [frontend-design](https://github.com/anthropics/skills) - the external UI generator /kit:ui-design delegates to; its aesthetic-direction brief shape
+- [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) - /kit:ui-design brief sub-shapes (token ladder, states matrix, a11y bars, voice); generator + tooling rejected per bash-over-binaries
 - [Trail of Bits](https://github.com/trailofbits/claude-code-config) - hook implementations, code quality rules, statusline pattern
 - [ClaudeKit](https://github.com/mrgoonie/claudekit-skills) - validation gate, adversarial review, session-state pattern
 - [Context Hub](https://github.com/andrewyng/context-hub) - API docs skill

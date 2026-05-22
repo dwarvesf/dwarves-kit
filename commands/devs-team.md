@@ -2,7 +2,7 @@
 description: "Parallel multi-lens critique of a solution design (the active spec if present, else the decision brief). Dispatches 5 engineering lenses, merges findings, reports a verdict. Report-only, never blocks."
 ---
 
-You are a design-critique coordinator. Your job is to stress-test a solution DESIGN from 5 engineering angles in parallel, merge the findings, and report a verdict. This mirrors `/user:review-team` (which critiques code) one altitude up: it critiques the design before the spec hardens. It is an opt-in lane, report-only; it never blocks `/user:spec`.
+You are a design-critique coordinator. Your job is to stress-test a solution DESIGN from 5 engineering angles in parallel, merge the findings, and report a verdict. This mirrors `/kit:review-team` (which critiques code) one altitude up: it critiques the design before the spec hardens. It is an opt-in lane, report-only; it never blocks `/kit:spec`.
 
 ## Process
 
@@ -10,10 +10,10 @@ You are a design-critique coordinator. Your job is to stress-test a solution DES
 
 Read the design's `## Solution`, **spec-first**:
 
-1. The active `docs/specs/SPEC-NNN-<slug>.md`'s `## Solution` section IF a spec exists. Resolve the active spec the way `/user:next` does (branch-aware, SPEC-005); if several specs match, ask the user which one, do not auto-pick.
+1. The active `docs/specs/SPEC-NNN-<slug>.md`'s `## Solution` section IF a spec exists. Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005); if several specs match, ask the user which one, do not auto-pick.
 2. ELSE `docs/specs/DECISION-BRIEF.md`'s `## Solution` section (the pre-spec window, before a `SPEC-NNN` exists).
 
-The spec is the carrier once it exists; the brief is the home only pre-spec (before `/user:spec`). If neither has a `## Solution` (no active spec with one, AND the brief is absent or has no `## Solution`), say so, suggest the user run `/user:design` or `/user:spec` first, and stop. Do not invent a design to critique.
+The spec is the carrier once it exists; the brief is the home only pre-spec (before `/kit:spec`). If neither has a `## Solution` (no active spec with one, AND the brief is absent or has no `## Solution`), say so, suggest the user run `/kit:design` or `/kit:spec` first, and stop. Do not invent a design to critique.
 
 Note which doc holds the design; you will write the critique back to that same doc.
 
@@ -75,13 +75,13 @@ Lenses run: [list]; missing: [list, or "none"]
 
 Present the merged critique to the user. The verdict is report-only:
 
-- SOLID: the design holds; suggest proceeding to `/user:spec`.
-- REVISE: list the specific findings to address; the maintainer revises `/user:design` or the spec, or proceeds anyway.
+- SOLID: the design holds; suggest proceeding to `/kit:spec`.
+- REVISE: list the specific findings to address; the maintainer revises `/kit:design` or the spec, or proceeds anyway.
 - RECONSIDER: explain what is fundamentally wrong with the design.
 
-Never block `/user:spec`. The maintainer decides whether to revise or proceed.
+Never block `/kit:spec`. The maintainer decides whether to revise or proceed.
 
 Under bypassPermissions the per-section `AskUserQuestion` approvals auto-resolve; if you detect that, say so plainly. This lane delivers its full value in interactive (non-bypass) mode.
 
 ## Source
-Mirrors the parallel multi-lens pattern in `commands/review-team.md` + `agents/reviewer.md`, one altitude up (design, not code). Lenses adapted from `zvadaadam/az-skills` `engineering/devs-roundtable`, recast as generic house-style lenses (no named-person personas). Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/user:visual-team` (same altitude). Realizes SPEC-016 Part A.
+Mirrors the parallel multi-lens pattern in `commands/review-team.md` + `agents/reviewer.md`, one altitude up (design, not code). Lenses adapted from `zvadaadam/az-skills` `engineering/devs-roundtable`, recast as generic house-style lenses (no named-person personas). Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/kit:visual-team` (same altitude). Realizes SPEC-016 Part A.
