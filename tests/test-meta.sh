@@ -55,22 +55,25 @@ VERSION_FILE=$(cat "$KIT_DIR/VERSION" | tr -d '[:space:]')
 assert_eq "plugin.json version matches VERSION file" "$VERSION_FILE" "$PLUGIN_VERSION"
 
 # ============================================================
-echo "=== Invocation namespace guard (SPEC-029) ==="
+echo "=== Invocation namespace guard (SPEC-029, SPEC-030) ==="
 # ============================================================
 # The kit's commands resolve as /kit:<cmd> (plugin) or bare /<cmd> (bash install).
-# /user:<cmd> is the dead reserved-prefix form and must not appear in LIVE docs.
+# /user:<cmd> is the dead reserved-prefix form and must not appear in LIVE docs
+# OR in the runtime surfaces that print command hints (install.sh, hooks/*.sh).
 # Denylist, not allowlist (DEC-004): scan every tracked *.md EXCEPT the dated,
-# point-in-time dirs (specs/retros/ADRs/handoff/research), so a future live doc
-# is covered automatically. Enforces /user: ABSENCE only (DEC-005); bare-/cmd is
-# not auto-checked.
-USER_NS_HITS=$(cd "$KIT_DIR" && git ls-files '*.md' \
-  | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|_meta/|CHANGELOG\.md)' \
+# point-in-time dirs (specs/retros/ADRs/handoff/research), PLUS install.sh and
+# hooks/*.sh (SPEC-030 DEC-003), so a future live doc OR hook is covered
+# automatically. tests/ is NOT scanned: this file names /user: to describe the
+# guard. Enforces /user: ABSENCE only (DEC-005); bare-/cmd is not auto-checked.
+USER_NS_HITS=$(cd "$KIT_DIR" && { git ls-files '*.md' \
+      | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|_meta/|CHANGELOG\.md)'; \
+    git ls-files 'install.sh' 'hooks/*.sh'; } \
   | xargs grep -l '/user:' 2>/dev/null)
 if [ -n "$USER_NS_HITS" ]; then
   echo "  live files still using /user::" >&2
   echo "$USER_NS_HITS" | sed 's/^/    /' >&2
 fi
-[ -z "$USER_NS_HITS" ]; assert_true "no /user: invocation form in live docs (SPEC-029)" $?
+[ -z "$USER_NS_HITS" ]; assert_true "no /user: invocation form in live docs/install/hooks (SPEC-029, SPEC-030)" $?
 
 PLUGIN_DESC=$(jq -r '.description // ""' "$KIT_DIR/.claude-plugin/plugin.json")
 TOTAL=$((TOTAL + 1))

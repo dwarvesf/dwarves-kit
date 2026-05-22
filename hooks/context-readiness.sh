@@ -83,7 +83,7 @@ if [ -n "$SPEC_AMBIG" ]; then
   STATE+="spec:ambiguous(${SPEC_AMBIG}) "
   SUGGEST="multiple live specs, no branch match; disambiguate (check out a spec's branch, or ship/park the others)"
 elif [ -z "$SPEC_FILE" ]; then
-  SUGGEST="no spec found, consider /user:think then /user:spec"
+  SUGGEST="no spec found, consider 'think' then 'spec'"
 else
   # Read spec status
   SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
@@ -91,7 +91,7 @@ else
 
   case "$SPEC_STATUS" in
     DRAFT)
-      SUGGEST="spec is DRAFT, consider /user:spec-validate" ;;
+      SUGGEST="spec is DRAFT, consider 'spec-validate'" ;;
     APPROVED|VALIDATED)
       # Count tasks
       TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)
@@ -99,12 +99,12 @@ else
       STATE+="tasks:${DONE}/${TOTAL} "
       if [ "$DONE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
         if [ -f "REVIEW.md" ]; then
-          SUGGEST="all tasks done and reviewed, consider /user:ship"
+          SUGGEST="all tasks done and reviewed, consider 'ship'"
         else
-          SUGGEST="all tasks done, consider /user:review"
+          SUGGEST="all tasks done, consider 'review'"
         fi
       else
-        SUGGEST="tasks in progress, /user:execute or /user:next"
+        SUGGEST="tasks in progress, run 'execute' or 'next'"
       fi
       ;;
   esac

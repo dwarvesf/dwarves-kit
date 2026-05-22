@@ -87,7 +87,7 @@ ${RECENT_FILES}
 ## Resume instructions
 Read CLAUDE.md and the active spec (docs/specs/SPEC-NNN) for full context.
 Check git status for uncommitted work.
-Run /user:start to detect what to do next.
+Run 'start' to detect what to do next.
 STATE
 
 [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:session-state] state saved to $STATE_FILE" >&2

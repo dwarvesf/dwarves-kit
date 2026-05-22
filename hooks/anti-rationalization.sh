@@ -50,7 +50,7 @@ for PATTERN in "${PATTERNS[@]}"; do
   fi
 done
 
-# Guess-fix guard (SPEC-013). Backstop for the /user:debug iron law:
+# Guess-fix guard (SPEC-013). Backstop for the debug iron law:
 # "no fix without a recorded root cause". Gated so it is silent outside a
 # debug session: it fires ONLY when an active ledger under .claude/debug/
 # still has an empty "## Root cause" AND the response shows a guess-fix smell.
@@ -89,7 +89,7 @@ if [ -d ".claude/debug" ]; then
 
         [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:anti-rat] BLOCKED guess-fix: $PATTERN" >&2
 
-        echo "{\"decision\":\"block\",\"reason\":\"Guess-fix detected during an open debug session: a .claude/debug ledger still has an empty '## Root cause'. Find and record the root cause first (/user:debug Phase 1). No fix without a recorded root cause.\"}"
+        echo "{\"decision\":\"block\",\"reason\":\"Guess-fix detected during an open debug session: a .claude/debug ledger still has an empty '## Root cause'. Find and record the root cause first (debug Phase 1). No fix without a recorded root cause.\"}"
         exit 2
       fi
     done
