@@ -62,8 +62,8 @@ At the version/tag decision, check for a **phantom cut**: `VERSION` names a vers
 Use this exact check shape (kit-health's check uses the same shape; they must not drift):
 
 ```bash
-# Graceful degrade: no .git, no VERSION, or no git => silent no-op, never error/block.
-if [ -d .git ] && [ -f VERSION ] && command -v git >/dev/null 2>&1; then
+# Graceful degrade: no VERSION or not in a git repo => silent no-op, never error or block.
+if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)   # strip whitespace so a trailing newline cannot break the pattern
   if [ -z "$(git tag -l "v$VER")" ]; then
     echo "WARN release-hygiene: phantom cut. VERSION names v$VER but no matching git tag exists."
