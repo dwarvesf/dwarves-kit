@@ -1103,6 +1103,39 @@ fi
 
 # ============================================================
 echo ""
+echo "=== Release-hygiene guard (SPEC-028) ==="
+# ============================================================
+# Pin the PRESENCE of the phantom-cut warn on its two surfaces so a deletion or a
+# wording flip fails CI. DEC-004: assert the surfaces carry the check, NEVER that
+# the working tree is currently tag-clean ("VERSION named but untagged" is a
+# legitimate transient during a release and CI often does not fetch tags). So we
+# grep the command-prompt files; we never run the phantom-cut check against the repo.
+
+# (a) ship.md (Step 4a) carries the phantom-cut / git-tag check AND the warn-not-block stance.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'git tag -l' "$KIT_DIR/commands/ship.md" 2>/dev/null \
+   && grep -qiF 'phantom' "$KIT_DIR/commands/ship.md" 2>/dev/null \
+   && grep -qiF 'warn, not block' "$KIT_DIR/commands/ship.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} ship.md carries the release-hygiene warn (phantom-cut git-tag check + warn-not-block) (SPEC-028)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ship.md lost the release-hygiene warn (needs git-tag phantom-cut check + warn-not-block stance)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) kit-health.md carries the phantom-cut check.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'git tag -l' "$KIT_DIR/commands/kit-health.md" 2>/dev/null \
+   && grep -qiF 'phantom' "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} kit-health.md carries the phantom-cut check (git-tag check + phantom) (SPEC-028)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} kit-health.md lost the phantom-cut check (needs git-tag check + phantom)"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"
