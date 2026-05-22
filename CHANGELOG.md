@@ -4,6 +4,15 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Changed
+
+- **Plugin command namespace renamed `dwarves-kit` -> `kit` (ID-031).** Commands now resolve as `/kit:<cmd>` (e.g. `/kit:spec`); install is `/plugin install kit@dwarves-marketplace`. `plugin.json` + `marketplace.json` carry the new name; the meta-test name guard tracks it. The repo/project name is unchanged. `user` was rejected as the namespace: it is a reserved prefix (personal/project commands) and collides with their resolution. Discovered while migrating off the bash installer: CC 2.1.148 cannot install a local directory-source marketplace plugin, so the maintainer loads the kit via a `--plugin-dir` shell wrapper (namespace + live edits); github-source is the frozen end-user path. Reference: `ops-toolkit/research/2026-05-22-cc-plugin-local-install.md`.
+- **Swept the stale `/user:` invocation form to `/kit:` across the live docs (SPEC-029 / ID-031).** 326 `/user:<cmd>` occurrences became `/kit:<cmd>` across 31 files (`README.md`, `MANUAL.md`, `WORKFLOW.md`, `CLAUDE.md`, `docs/`, `commands/`, `examples/`). `/user:` never resolved the kit on CC 2.x (reserved prefix) and bare `/<cmd>` was only the flat-installer artifact. A new denylist meta-test guard (`tests/test-meta.sh`) fails on any `/user:` in live docs and auto-covers future files; dated/point-in-time records (`docs/specs`, `docs/retro`, `docs/decisions`, `docs/handoff`, `docs/research`) plus `CHANGELOG.md` and `_meta/` are exempt (rewriting records falsifies history). README + MANUAL gained a one-line plugin-vs-bash invocation note (`/kit:spec` vs bare `/spec`). Validated via `/kit:spec-validate` (the 5-lens pass caught an allowlist-vs-denylist guard flaw before it shipped). Meta suite to 257.
+
+### Added
+
+- **SPEC-029** (`docs/specs/SPEC-029-invocation-namespace-sweep.md`): the invocation-sweep spec, with the live-vs-historical scope split, the dual-ship invocation decision (DEC-001), and the denylist guard design (DEC-004..008).
+
 ## [1.6.0] - 2026-05-22
 
 ### Changed
