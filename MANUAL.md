@@ -140,6 +140,7 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 **Writes:** bumped `VERSION`, new `CHANGELOG.md` entry, git tag, PR via `gh`
 **When to invoke:** review is green and docs are synced
 **Common gotcha:** blocks if any REVIEW*.md verdict is FIX-REQUIRED. Use `/review-team` and `responding-to-review` to triage before re-running ship.
+**Release-hygiene warn (Step 4a):** at the version step it warns (never blocks) on a phantom cut, `VERSION` naming a version with no matching git tag, with a heads-up when `[Unreleased]` is accumulating above it. Warn-only; tag `v<version>` or confirm intentional, then continue (SPEC-028).
 
 ### `/user:retro`
 
@@ -160,9 +161,9 @@ Opt-in lane between `/user:spec-validate` and `/user:execute`. Reads the active 
 ### `/user:kit-health`
 
 **Phase:** self-assessment against PHILOSOPHY.md
-**Reads:** the kit itself (file counts, hook performance, settings validity, source citations)
+**Reads:** the kit itself (file counts, hook performance, settings validity, source citations), plus a repo-scoped release-hygiene check (a phantom cut: `VERSION` names a version with no matching git tag; degrades to a no-op outside the repo)
 **Writes:** verdict in chat (`SHIP / FIX-REQUIRED / REJECT`)
-**When to invoke:** maintainer-only, before tagging a release of the kit
+**When to invoke:** maintainer-only, before tagging a release of the kit (the release-hygiene check is exactly the "before tagging" guard)
 **Common gotcha:** the rejection-first verdict will REJECT on real violations. Do not soften the criteria; address them.
 
 ## Hooks (no invocation)
