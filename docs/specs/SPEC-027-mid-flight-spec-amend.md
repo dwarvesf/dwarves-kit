@@ -1,6 +1,6 @@
 # Spec: Mid-flight spec amend (BUILDING -> SPECIFYING -> BUILDING)
 Generated: 2026-05-22
-Status: VALIDATED
+Status: SHIPPED
 
 Source: `docs/operating-layer-vision.md` Scenario 7 + the Section 5 gap-analysis row "Mid-flight spec amend"; ID-023. Goal draft: `.claude/goals/mid-flight-spec-amend.md`.
 
