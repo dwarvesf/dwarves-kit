@@ -45,6 +45,9 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID-023 | Mid-flight spec amend: a path to add scope to a VALIDATED / in-build spec without restarting the lane (state machine transition BUILDING -> SPECIFYING) | operating-layer-vision gap analysis 2026-05-22 | SPEC-027 | normal | shipped (CHANGELOG [Unreleased]; local branch feat/mid-flight-amend, no tag/PR) |
 | ID-024 | Context-switch affordance across specs (worktree-per-spec) + an explicit ABANDONED terminal (state hygiene; vs the existing `parked`) | operating-layer-vision gap analysis 2026-05-22 | TBD | normal | queued |
 | ID-025 | Re-open-shipped convention: a follow-up spec spun from a SHIPPED one (state machine transition SHIPPED -> TRIAGING) | operating-layer-vision gap analysis 2026-05-22 | TBD | tiny | queued |
+| ID-026 | Release-hygiene guard: a kit-health line or hook that flags VERSION cut-but-untagged AND `[Unreleased]` spanning more than one spec (catch the messy-release state before it compounds) | SPEC-027 retro 2026-05-22 (recurrence of the SPEC-018 finding; clears the PHILOSOPHY section-5 bar) | TBD | normal | queued |
+| ID-027 | spec-validate autonomy-gate lens: for a spec whose behavior runs inside an autonomous loop (`/execute`, `/goal`), check whether it lets the loop make a scope / architecture / risk decision without a human gate | SPEC-027 retro 2026-05-22 (the cycle's HIGH was caught at review, should have been catchable at validate) | TBD | normal | queued |
+| ID-028 | execute.md: acknowledge disjoint-file parallel worker dispatch (sequential is the safe default only for shared-file or dependent tasks; independent non-overlapping tasks may parallelize) | SPEC-027 retro 2026-05-22 | TBD | tiny | queued |
 Dependency notes:
 - ID-012 P1 (spec stop-criteria) shipped (SPEC-012, normal lane; see CHANGELOG); P2 (loop QA gate) is held until the pointer-`/goal` pattern has real runs; it will build on the now-shipped SPEC-006 completeness clauses + the existing verification pipeline.
 - ID-002 (internal absorption lane, SPEC-007) is parked; independent of the orchestration chain.
@@ -52,7 +55,8 @@ Dependency notes:
 - ID-018 / ID-019 came out of the SPEC-024 /review-team pass (deferred LOW findings); both are tiny-lane polish, independent of the SPEC-024 ship.
 - ID-020 / ID-021 came out of the SPEC-024 retro; ID-020 (verifier absence-checks) relates to ID-016 (both are guard/verifier hardening) and is the highest-signal kit finding of the cycle.
 - ID-022 came out of writing `docs/PLAYBOOK.md` (scenarios S2/S5): the freeform-intent gap. It unparks the SPEC-024-deferred griller entry; SPEC-026 drafts it. Independent of the other chains.
-- ID-023 / ID-024 / ID-025 came out of `docs/operating-layer-vision.md` (the SDLC state-machine gap analysis): the transitions with no clean path today. ID-022 is the highest-priority of the operating-layer set; these three follow it. All trace to the vision doc as their north-star.
+- ID-023 / ID-024 / ID-025 came out of `docs/operating-layer-vision.md` (the SDLC state-machine gap analysis): the transitions with no clean path today. ID-022 is the highest-priority of the operating-layer set; these three follow it. All trace to the vision doc as their north-star. ID-023 shipped (SPEC-027); ID-024 / ID-025 remain queued.
+- ID-026 / ID-027 / ID-028 came out of the SPEC-027 retro. ID-026 (release-hygiene guard) is a two-cycle recurrence (SPEC-018 + SPEC-027) and relates to the ID-016 / ID-020 guard-promotion theme; it is the highest-signal of the three. ID-027 (validate autonomy-gate lens) would have caught the SPEC-027 review HIGH earlier. ID-028 is tiny-lane polish.
 
 ## Schema
 
