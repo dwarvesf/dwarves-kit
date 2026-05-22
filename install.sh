@@ -26,7 +26,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     LINK="$CLAUDE_DIR/commands/$CMD_NAME"
     if [ -L "$LINK" ]; then
       rm "$LINK"
-      echo "[ok] Removed command: /user:${CMD_NAME%.md}"
+      echo "[ok] Removed command: /${CMD_NAME%.md}"
     fi
   done
 
@@ -206,7 +206,7 @@ for CMD_FILE in "$KIT_DIR/commands/"*.md; do
     rm "$LINK"
   fi
   ln -s "$CMD_FILE" "$LINK"
-  echo "[ok] Linked command: /user:${CMD_NAME%.md}"
+  echo "[ok] Linked command: /${CMD_NAME%.md}"
 done
 
 # 4. Copy skills (symlinks don't always work for skills)
@@ -276,7 +276,7 @@ ls -1 "$KIT_DIR/hooks/"*.sh 2>/dev/null | while read f; do echo "  [hook] $(base
 echo "Commands:"
 ls -1 "$CLAUDE_DIR/commands/"*.md 2>/dev/null | while read f; do
   NAME=$(basename "$f" .md)
-  echo "  /user:$NAME"
+  echo "  /$NAME"
 done
 
 echo "Skills:"
@@ -294,7 +294,7 @@ done
 echo ""
 echo "=== Done ==="
 echo "Start a new Claude Code session to activate hooks."
-echo "Run /user:start to detect project state and get a suggestion."
+echo "Run /start to detect project state and get a suggestion."
 echo ""
 echo "Tip: Copy CLAUDE.md template to your project root:"
 echo "  cp $KIT_DIR/CLAUDE.md ./CLAUDE.md"
