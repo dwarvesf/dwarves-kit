@@ -13,7 +13,7 @@ Install in any Claude Code session:
 
 ```
 /plugin marketplace add dwarvesf/dwarves-kit
-/plugin install dwarves-kit@dwarves-marketplace
+/plugin install kit@dwarves-marketplace
 ```
 
 ## Who this is for
@@ -103,10 +103,10 @@ In any Claude Code session:
 
 ```
 /plugin marketplace add dwarvesf/dwarves-kit
-/plugin install dwarves-kit@dwarves-marketplace
+/plugin install kit@dwarves-marketplace
 ```
 
-That's it. Hooks, commands, agents, and the skill all install automatically. No bash, no `jq`, no symlinks. Updates via `/plugin update dwarves-kit`.
+That's it. Hooks, commands, agents, and the skill all install automatically. No bash, no `jq`, no symlinks. Updates via `/plugin update kit`.
 
 To get the kit listed on Anthropic's official marketplace (`claude-plugins-official`), submit it via [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit). One-time manual step; not blocking the self-hosted install above.
 

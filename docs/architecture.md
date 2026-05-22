@@ -216,5 +216,5 @@ Logs are the eval corpus for future prompt optimization. See PHILOSOPHY.md, "Aut
 
 Two paths, do not run both. See ADR-0009.
 
-1. **Plugin install** (recommended): `/plugin marketplace add dwarvesf/dwarves-kit` + `/plugin install dwarves-kit@dwarves-marketplace`. Uses `.claude-plugin/plugin.json` + `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` references. No `statusLine` (v1 plugin schema gap).
+1. **Plugin install** (recommended): `/plugin marketplace add dwarvesf/dwarves-kit` + `/plugin install kit@dwarves-marketplace`. Uses `.claude-plugin/plugin.json` + `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}` references. No `statusLine` (v1 plugin schema gap).
 2. **Bash install** (alternative): `bash install.sh`. Uses root `settings.json` with absolute paths. Configures `statusLine`. Requires `jq`, `git`, `bash`.

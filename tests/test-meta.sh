@@ -48,7 +48,7 @@ echo "=== Plugin manifest schema ==="
 
 # plugin.json: name, version, description present
 PLUGIN_NAME=$(jq -r '.name' "$KIT_DIR/.claude-plugin/plugin.json")
-assert_eq "plugin.json name == 'dwarves-kit'" "dwarves-kit" "$PLUGIN_NAME"
+assert_eq "plugin.json name == 'kit'" "kit" "$PLUGIN_NAME"
 
 PLUGIN_VERSION=$(jq -r '.version' "$KIT_DIR/.claude-plugin/plugin.json")
 VERSION_FILE=$(cat "$KIT_DIR/VERSION" | tr -d '[:space:]')
