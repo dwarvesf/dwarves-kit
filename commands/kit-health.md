@@ -87,7 +87,10 @@ if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)
   if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
     echo "  [WARN] release hygiene: VERSION is $VER but tag v$VER does not exist (phantom cut)"
-    grep -q '^## \[Unreleased\]' CHANGELOG.md 2>/dev/null && echo "         and CHANGELOG [Unreleased] is accumulating above it"
+    # Accumulation context: [Unreleased] NON-empty => work piling above an untagged cut (same awk as ship.md, DEC-006).
+    if [ -f CHANGELOG.md ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' CHANGELOG.md | grep -q .; then
+      echo "         and CHANGELOG [Unreleased] is accumulating above it"
+    fi
   else
     echo "  release hygiene: ok (v$VER tagged, or clean)"
   fi
