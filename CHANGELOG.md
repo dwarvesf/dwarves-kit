@@ -4,6 +4,8 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-22
+
 ### Changed
 
 - **Dropped hand-maintained component counts and stripped spec IDs from the WORKFLOW contract.** The exact `N hooks / N commands / N agents / N skill` strings are removed from every live surface (`.claude-plugin/{plugin,marketplace}.json`, `README.md`, `MANUAL.md`, `CLAUDE.md`, the `docs/architecture.md` component table, `tool.toml`) and replaced with qualitative phrasing; the `92`/`238` test-suite-total comments in `CLAUDE.md` are dropped too. Counts rot silently: this swept up live drift the guards never caught (`architecture.md` said 19 commands, `tool.toml` said 12 hooks / 18 commands / 9 agents). With nothing left to keep in sync, both count tests in `tests/test-meta.sh` are removed (the ID-013 component-count guard added earlier this cycle and the older command-count parity test); meta suite 238 -> 213. `WORKFLOW.md` no longer cites `SPEC-NNN`/`ADR-NNN` inline (the `docs/specs/SPEC-NNN-<slug>.md` filename pattern stays): rules are stated by concept with one provenance pointer to `docs/specs/` + `docs/decisions/`, and the count-sweep chore paragraph is replaced by a version-only note. SPEC-004 + SPEC-005 `Status:` reconciled VALIDATED -> SHIPPED (shipped alongside SPEC-006).
