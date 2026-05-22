@@ -1,6 +1,8 @@
 # ADR-0013: AGENTS.md as the tool-agnostic operating-layer entrypoint
 
-## Status: proposed (2026-05-21).
+## Status: accepted (2026-05-21). Scope approved 2026-05-21; ships as backlog item ID-015 / SPEC-024 (full lane, all six decisions). Entry stays BACKLOG-ID-first; the freeform "griller" entry (a casual intent with no ID) is deferred per that scope call.
+
+**Addendum (2026-05-21):** SPEC-024 scope also adds an observable **After-state** section: a definition-of-done picture made of statements that are false-now / true-after and each checkable by a human or command. It lands as a `## After state` spec-template section (feeding `## Acceptance Criteria`) and is projected into the six-section goal's `Done-when`. The matching anatomy piece is already added to the personal `goal-craft` skill so it applies beyond this repo. Load-bearing rule: observable, not narrated, or it is fluff and gets cut (PHILOSOPHY: every file justifies itself).
 
 ## Context
 A study of `hoangnb24/harness-experimental` (OpenAI "harness engineering" framing) showed an operator writing a rich, multi-section `/goal` (Context to read first / Constraints / Operating rules / Validation loop / Done when / Pause if) and running it reliably against a brownfield repo. That altitude is not prompt skill. Each section is a pointer to a *named artifact* the harness installs into the consuming repo: an ordered source-of-truth list, a feature-intake/risk doc, a test matrix, a done-definition, and an "ask before" list, all anchored by a single agent entrypoint, `AGENTS.md`. The operator references structure the repo already carries; they do not invent it in the prompt.

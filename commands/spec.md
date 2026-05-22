@@ -119,6 +119,12 @@ Each task must be atomic: implementable in one session, fits in 50% of a context
 ### Phase 3: Polish
 - [ ] TASK-004: [description] — [acceptance criteria]
 
+## After state
+The definition-of-done picture. Each bullet is false now and true after, and each is checkable by a human or a command. This feeds `## Acceptance Criteria` below and projects into the goal's `Done-when`.
+Rule: observable, not narrated. If a bullet cannot be verified by reading a file, running a command, or seeing a state, it is fluff and gets cut (PHILOSOPHY: every file justifies its existence). Pair the after-state with a "(Today: ...)" current-state note where it sharpens the contrast.
+- [ ] [observable end state]. (Today: [current state].)
+- [ ] [observable end state, checkable by `<command>`].
+
 ## Acceptance Criteria (global)
 - [ ] All tasks pass their individual acceptance criteria
 - [ ] Tests cover happy path + edge cases listed below
@@ -142,6 +148,10 @@ Optional; expected for full-lane specs that touch an external provider, data los
 
 ## Decision Log
 - DEC-001: [decision], [rationale], [alternatives rejected]
+
+## Amendments
+Optional; added only when a mid-flight amend happens (like `## Failure modes` / `## Open questions`, never an empty scaffold in a fresh spec). A running provenance log of mid-build scope additions. `WORKFLOW.md` owns the amend rule (when you may amend, the checkpoint guard, resume); this section is just the recorded entry. Entry shape:
+- AMEND-NNN: [date] | [what scope was added] | why: [reason] | at [TASK-NNN] checkpoint | new tasks: [TASK-NNN..TASK-NNN] | re-validated: [delta-only (advisory / full lane)]
 
 ## Open questions
 (none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)

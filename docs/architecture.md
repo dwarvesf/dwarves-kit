@@ -18,7 +18,7 @@ The kit is intentionally flat. Component dirs sit at the top of the repo, not ne
 
 ## Data flow through `docs/specs/SPEC-NNN-<slug>.md`
 
-> The imperative companion to the descriptive map below is [`WORKFLOW.md`](../WORKFLOW.md) (repo root): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes and the gate at each boundary.
+> The front door to all of this is [`AGENTS.md`](../AGENTS.md) (repo root): the tool-agnostic operate-contract that any runtime reads first; `CLAUDE.md` and `WORKFLOW.md` point at it rather than restate it. The imperative companion to the descriptive map below is [`WORKFLOW.md`](../WORKFLOW.md) (repo root): the same lifecycle phrased as the contract an agent follows, with risk-tier lanes (including the `backfill` brownfield lane: review an existing codebase and write the operating-layer docs, doc-output only, no app-behavior change) and the gate at each boundary.
 
 `docs/specs/SPEC-NNN-<slug>.md` is the shared contract for the full lifecycle. It is the single source of truth that crosses command boundaries:
 

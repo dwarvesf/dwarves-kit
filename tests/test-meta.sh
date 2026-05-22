@@ -151,6 +151,238 @@ rm -rf "$INPLACE_HOME"
 
 # ============================================================
 echo ""
+echo "=== AGENTS.md operating layer (SPEC-024) ==="
+# ============================================================
+# Part A: pin the cycle's structural outputs so a wording flip fails CI.
+#   1. kit-root AGENTS.md exists + carries the four portable zones + the literal
+#      "Pause if" + the CC-only-enforcement statement.
+#   2. commands/assign.md carries the six-section /goal projection (the writer
+#      side of the AGENTS.md->assign.md projection).
+#   3. Low-cost regression guards for TASK-003 (hello-spec AGENTS.md) and
+#      TASK-006 (spec.md "## After state").
+
+AGENTS_MD="$KIT_DIR/AGENTS.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$AGENTS_MD" ]; then
+  echo -e "  ${GREEN}PASS${NC} AGENTS.md exists at kit root (SPEC-024)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AGENTS.md missing at kit root"
+  FAIL=$((FAIL + 1))
+fi
+
+# The four portable zones (DEC-005). Pin the heading literals, not prose.
+for ZONE in "## 1. Read in this order" "## 2. Task loop" "## 3. Done means" "## 4. Pause if (ask a human)"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$ZONE" "$AGENTS_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} AGENTS.md has zone '$ZONE'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} AGENTS.md missing zone '$ZONE'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# The literal "Pause if" (the fourth zone's stable phrase, also the goal section).
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Pause if' "$AGENTS_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} AGENTS.md carries the literal 'Pause if'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AGENTS.md lost the literal 'Pause if'"
+  FAIL=$((FAIL + 1))
+fi
+
+# The CC-only-enforcement statement (PHILOSOPHY honesty rule: never over-claim
+# portable enforcement). A drift to "enforcement is portable" would be a lie.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Enforcement is Claude-Code-only' "$AGENTS_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} AGENTS.md states enforcement is Claude-Code-only"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AGENTS.md lost the CC-only-enforcement statement"
+  FAIL=$((FAIL + 1))
+fi
+
+# commands/assign.md carries the six-section projection (the writer side). A
+# wording flip on any section name breaks the AGENTS.md->assign.md projection.
+ASSIGN_MD="$KIT_DIR/commands/assign.md"
+for SECTION in "Context-to-read" "Constraints" "Operating rules" "Validation loop" "Done-when" "Pause-if"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$SECTION" "$ASSIGN_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} assign.md has projection section '$SECTION'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} assign.md missing projection section '$SECTION'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Low-cost regression guards: TASK-003 (hello-spec AGENTS.md w/ "Pause if") and
+# TASK-006 (spec.md template's "## After state"). Pin both so they cannot silently
+# regress.
+DEMO_AGENTS="$KIT_DIR/examples/hello-spec/AGENTS.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$DEMO_AGENTS" ] && grep -qF 'Pause if' "$DEMO_AGENTS" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md exists + carries 'Pause if' (TASK-003)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md missing or lost 'Pause if'"
+  FAIL=$((FAIL + 1))
+fi
+
+# Review issue 2: the downstream template (the file real projects copy) must pin
+# all four zone headings too, not just "Pause if" - same teeth as the kit root.
+for ZONE in "## 1. Read in this order" "## 2. Task loop" "## 3. Done means" "## 4. Pause if (ask a human)"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$ZONE" "$DEMO_AGENTS" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} examples/hello-spec/AGENTS.md has zone '$ZONE'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} examples/hello-spec/AGENTS.md missing zone '$ZONE'"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+TOTAL=$((TOTAL + 1))
+if grep -qF '## After state' "$KIT_DIR/commands/spec.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} commands/spec.md template carries '## After state' (TASK-006)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/spec.md template lost '## After state'"
+  FAIL=$((FAIL + 1))
+fi
+
+# Review issue 6: assign.md Done-when must reference the spec's "## After state"
+# (the projection source), not merely carry the "Done-when" label.
+TOTAL=$((TOTAL + 1))
+if grep -qF '## After state' "$ASSIGN_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md Done-when references the spec's '## After state'"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md Done-when lost the '## After state' projection source"
+  FAIL=$((FAIL + 1))
+fi
+
+# Review issue 1 (anti-drift): the spec's primary failure mode is a CC-layer doc
+# RESTATING the ordered read-list that AGENTS.md owns (zone 1 is the single source).
+# WORKFLOW.md and CLAUDE.md must point, not carry a numbered "1. AGENTS.md /
+# 2. CLAUDE.md ..." restatement. A reappearance is drift; fail loudly. Scoped to
+# these two CC-layer docs; AGENTS.md itself legitimately carries the list.
+for DOC in WORKFLOW.md CLAUDE.md; do
+  RESTATE=$(grep -cE '^[0-9]+\.[[:space:]]+(AGENTS|CLAUDE)\.md' "$KIT_DIR/$DOC" 2>/dev/null || true)
+  assert_eq "$DOC does not restate the AGENTS.md read-order list (no drift)" "0" "$RESTATE"
+done
+
+# ------------------------------------------------------------
+# Part B: install.sh merge-with-existing-hooks regression (DEC-004).
+# The existing installer test runs into a HOME with NO settings.json, so it never
+# exercises the jq clean+merge path. This test pre-seeds settings.json with a
+# THIRD-PARTY hook (a command that does NOT contain "dwarves-kit") and asserts the
+# merge preserves it, yields valid JSON, and still pulls in a dwarves-kit hook.
+MERGE_HOME=$(mktemp -d)
+mkdir -p "$MERGE_HOME/.claude"
+THIRD_PARTY_CMD="/opt/acme/hooks/audit-log.sh"
+# Build the pre-existing settings via jq so it is always well-formed JSON.
+jq -n --arg cmd "$THIRD_PARTY_CMD" '{
+  hooks: {
+    PreToolUse: [
+      { matcher: "Bash", hooks: [ { type: "command", command: $cmd } ] }
+    ]
+  }
+}' > "$MERGE_HOME/.claude/settings.json"
+
+HOME="$MERGE_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+MERGED_SETTINGS="$MERGE_HOME/.claude/settings.json"
+
+# (a) the third-party hook command survived the merge.
+TOTAL=$((TOTAL + 1))
+if grep -qF "$THIRD_PARTY_CMD" "$MERGED_SETTINGS" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} install merge preserves the third-party hook (DEC-004)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} install merge DROPPED the third-party hook (merge bug)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) the resulting settings.json is valid JSON.
+TOTAL=$((TOTAL + 1))
+if jq '.' "$MERGED_SETTINGS" >/dev/null 2>&1; then
+  echo -e "  ${GREEN}PASS${NC} merged settings.json is valid JSON"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} merged settings.json is not valid JSON (merge corrupted it)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (c) at least one dwarves-kit hook was merged in alongside the third-party one.
+TOTAL=$((TOTAL + 1))
+KIT_HOOK_COUNT=$(jq '[.hooks | to_entries[] | .value[] | .hooks[] | select(.command | tostring | contains("dwarves-kit"))] | length' "$MERGED_SETTINGS" 2>/dev/null || echo 0)
+if [ "${KIT_HOOK_COUNT:-0}" -gt 0 ]; then
+  echo -e "  ${GREEN}PASS${NC} install merge added at least one dwarves-kit hook ($KIT_HOOK_COUNT)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} install merge added no dwarves-kit hooks"
+  FAIL=$((FAIL + 1))
+fi
+rm -rf "$MERGE_HOME"
+
+# ============================================================
+echo ""
+echo "=== Freeform front door (SPEC-026) ==="
+# ============================================================
+# Pin the SPEC-026 contract in commands/assign.md so a wording flip on any of
+# the intake paths, the /user:think delegation, or the four invariants fails CI.
+# All literals exist in assign.md today; this guards them from silent drift.
+# ASSIGN_MD is set in the SPEC-024 block above.
+
+# Two-shape resolver: the ID-first regex AND the freeform branch must both be named.
+for LITERAL in '^ID-[0-9]+$' 'freeform'; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$LITERAL" "$ASSIGN_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} assign.md documents the '$LITERAL' intake shape (SPEC-026)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} assign.md lost the '$LITERAL' intake shape (resolver drift)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Delegation: the crystallize interview is delegated to /user:think, not embedded (DEC-003).
+TOTAL=$((TOTAL + 1))
+if grep -qF '/user:think' "$ASSIGN_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md delegates crystallize to /user:think (SPEC-026 DEC-003)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md lost the /user:think delegation (interview embedded?)"
+  FAIL=$((FAIL + 1))
+fi
+
+# The four invariants. atomic-allocate is pinned via BOTH its named marker and the
+# 'collision' guard wording, since both literals are load-bearing in assign.md.
+for INVARIANT in 'row-before-draft' 'approve-before-allocate' 'sanitize' 'atomic-allocate' 'collision'; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF "$INVARIANT" "$ASSIGN_MD" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} assign.md pins the '$INVARIANT' invariant (SPEC-026)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} assign.md lost the '$INVARIANT' invariant (contract drift)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# Slug hardening: the sanitized slug charset must stay pinned (path-traversal guard).
+TOTAL=$((TOTAL + 1))
+if grep -qF '[a-z0-9-]' "$ASSIGN_MD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md pins the '[a-z0-9-]' slug charset (SPEC-026 DEC-004)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md lost the '[a-z0-9-]' slug charset (slug hardening drift)"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
 echo "=== Agent files ==="
 # ============================================================
 
@@ -814,6 +1046,91 @@ if grep -qF 'docs/specs/' "$WF_ROOT" 2>/dev/null; then
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing docs/specs/ convention"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
+echo "=== Mid-flight amend convention (SPEC-027) ==="
+# ============================================================
+# Pin the BUILDING -> SPECIFYING -> BUILDING amend convention across its four
+# surfaces so a wording flip on any of them fails CI. WORKFLOW.md is the canonical
+# home of the rule; the other three are projections/the model row that point at it.
+
+# (a) execute.md reroutes the "don't modify the spec" anti-pattern to the declared
+# amend path: it must reference BOTH "amend" and "checkpoint".
+TOTAL=$((TOTAL + 1))
+if grep -qF 'amend' "$KIT_DIR/commands/execute.md" 2>/dev/null \
+   && grep -qF 'checkpoint' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} execute.md references the amend path (amend + checkpoint) (SPEC-027)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} execute.md lost the amend path (needs amend + checkpoint)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) WORKFLOW.md is the canonical home: it must carry the "Mid-flight amend" rule.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Mid-flight amend' "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md documents the Mid-flight amend rule (SPEC-027, canonical)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md lost the Mid-flight amend rule"
+  FAIL=$((FAIL + 1))
+fi
+
+# (c) spec.md documents the optional on-demand "## Amendments" provenance section.
+TOTAL=$((TOTAL + 1))
+if grep -qF '## Amendments' "$KIT_DIR/commands/spec.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} spec.md documents the '## Amendments' section (SPEC-027)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} spec.md lost the '## Amendments' section"
+  FAIL=$((FAIL + 1))
+fi
+
+# (d) operating-layer-vision.md carries the BUILDING -> SPECIFYING amend transition
+# row in §3.3. Pin the whole row (From cell BUILDING, the amend trigger, To cell
+# SPECIFYING) so the model stays legible; brittle-proofed via the full-row regex.
+TOTAL=$((TOTAL + 1))
+if grep -qE '\| BUILDING \|.*amend the spec.*\| SPECIFYING' "$KIT_DIR/docs/operating-layer-vision.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} operating-layer-vision.md has the BUILDING -> SPECIFYING amend row (SPEC-027)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} operating-layer-vision.md lost the BUILDING -> SPECIFYING amend transition row"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
+echo "=== Release-hygiene guard (SPEC-028) ==="
+# ============================================================
+# Pin the PRESENCE of the phantom-cut warn on its two surfaces so a deletion or a
+# wording flip fails CI. DEC-004: assert the surfaces carry the check, NEVER that
+# the working tree is currently tag-clean ("VERSION named but untagged" is a
+# legitimate transient during a release and CI often does not fetch tags). So we
+# grep the command-prompt files; we never run the phantom-cut check against the repo.
+
+# (a) ship.md (Step 4a) carries the phantom-cut / git-tag check AND the warn-not-block stance.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'git tag -l' "$KIT_DIR/commands/ship.md" 2>/dev/null \
+   && grep -qiF 'phantom' "$KIT_DIR/commands/ship.md" 2>/dev/null \
+   && grep -qiF 'warn, not block' "$KIT_DIR/commands/ship.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} ship.md carries the release-hygiene warn (phantom-cut git-tag check + warn-not-block) (SPEC-028)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ship.md lost the release-hygiene warn (needs git-tag phantom-cut check + warn-not-block stance)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) kit-health.md carries the phantom-cut check.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'git tag -l' "$KIT_DIR/commands/kit-health.md" 2>/dev/null \
+   && grep -qiF 'phantom' "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} kit-health.md carries the phantom-cut check (git-tag check + phantom) (SPEC-028)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} kit-health.md lost the phantom-cut check (needs git-tag check + phantom)"
   FAIL=$((FAIL + 1))
 fi
 

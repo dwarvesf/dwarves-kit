@@ -233,8 +233,8 @@ After all phases complete:
 
 - **Worker fails to complete**: Run task-verifier anyway on whatever exists. The verifier determines if partial work is salvageable (FAIL:fixable) or needs human input (FAIL:escalate).
 - **Tests break during execution**: task-verifier catches this. If fixable, fix-agent handles it. If not, escalate.
-- **Spec ambiguity discovered**: Stop and ask user to clarify. Do not guess. Do not dispatch fix-agent for spec problems.
-- **Task is too large**: Split it into subtasks, confirm with user, then dispatch.
+- **Spec ambiguity discovered**: If it is a genuine contradiction (the spec disagrees with itself), stop and ask the user to clarify. Do not guess. Do not dispatch fix-agent for spec problems. If instead the work reveals scope that must be ADDED now ("also do Y"), that is the declared mid-flight amend path, not an ambiguity: confirm the added scope with the user first (adding scope is not the loop's call), then amend at a checkpoint (append `- [ ]` tasks, record an `## Amendments` entry) and resume with `/user:next` (see WORKFLOW.md "## Mid-flight amend").
+- **Task is too large**: Split it into subtasks. If the split stays within the task's declared scope, confirm with user, then dispatch. If splitting means ADDING scope beyond the spec, confirm the added scope with the user, then route it through the mid-flight amend path (amend at a checkpoint, then resume with `/user:next`; see WORKFLOW.md "## Mid-flight amend").
 - **fix-agent reports it cannot fix an issue**: Escalate immediately. Don't retry with the same fix-agent.
 
 ## Anti-patterns to avoid
@@ -243,6 +243,6 @@ After all phases complete:
 - Do NOT skip verification. Every task goes through task-verifier, even if the worker says "all criteria met."
 - Do NOT skip the phase checkpoint. The user must approve before the next phase.
 - Do NOT auto-fix failing tests without the verification pipeline.
-- Do NOT modify the spec without asking.
+- Do NOT silently mutate the spec mid-build. An amend is not a silent edit: when the work reveals scope that must be added now, take the declared mid-flight amend path (pause at a task checkpoint, append new `- [ ]` tasks, record an `## Amendments` entry, resume with `/user:next`). See WORKFLOW.md "## Mid-flight amend". A silent rewrite of done (`- [x]`) tasks is still forbidden.
 - Do NOT retry FAIL:escalate verdicts. They need human judgment by definition.
 - Do NOT dispatch fix-agent for more than 2 issues at once. If the verifier found 5+, the task needs re-implementation, not patching. Escalate.
