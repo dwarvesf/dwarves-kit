@@ -1,6 +1,6 @@
 # Spec: Release-hygiene guard (phantom-cut warn)
 Generated: 2026-05-22
-Status: VALIDATED
+Status: SHIPPED
 
 Source: SPEC-027 retro ("What hurt": the release-hygiene tangle) + SPEC-018 retro (the first occurrence); ID-026. Goal draft: `.claude/goals/release-hygiene-guard.md`. A two-cycle recurrence, which clears the PHILOSOPHY section-5 bar for promoting a check.
 
