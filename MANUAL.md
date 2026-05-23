@@ -9,7 +9,24 @@ Operator reference for dwarves-kit: every command, hook, and agent, plus how to 
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 
-## The commands
+## Drive it by intent (start here)
+
+You do not memorize commands. Say what you want; the kit reads your intent, runs the right command(s), and stops only at the real decisions. This table is the interface: find your intent on the left, the kit handles the rest. The `/kit:*` names are shown if you prefer to type them, but you rarely need to.
+
+| You say | Claude invokes | Fires automatically | Stops at |
+|---|---|---|---|
+| "what's next / what's left" | `/kit:start` (detector) | context-readiness suggestion | nothing (read-only) |
+| "assign ID-007" / "start ID-007" | `/kit:assign ID-007` | (none) | hands off to the lane |
+| "apply SDD to X" (no ID) | `/kit:assign "<freeform>"` -> `/kit:spec` lane | spec-drift-guard once a spec exists | approve-before-allocate, lane/scope confirm, then per-phase |
+| "discuss / iterate the design" | `/kit:design` (+ `/kit:devs-team`) | (none) | every section (human-in-loop) |
+| "vague idea about X" | `/kit:think` / brainstorming | (none) | your approval of the objective |
+| "run the full lane, your call" | the lane, autonomously | anti-rationalization (in a /goal loop) | hard stops + push/PR |
+| "fix this bug / it regressed" | `/kit:debug` (bug lane) | guess-fix guard | root cause + human-confirm |
+| "review this" / "ship it" | `/kit:review[-team]` / `/kit:ship` | ship gate, push-to-main | DO-NOT-SHIP verdict; the push/PR |
+
+For the full playbook (every scenario, the autonomy dial, the freeform front door) see `## Operator scenarios`. For a per-command lookup see `## Command reference`. Hooks fire on their own; commands and skills are invoked, by you or by Claude reading your intent.
+
+## Command reference (the kit invokes these from your intent; you rarely type them)
 
 ### `/kit:start`
 
@@ -355,18 +372,7 @@ approve-before-allocate, sanitize, atomic-allocate.
 The 4 hard stops (`safety-gate`, `push-to-main`, `anti-rationalization`, the verification
 pipeline) are **never** waived by any autonomy level.
 
-### Cheat-sheet: what you say -> what happens
-
-| You say | Claude invokes | Fires automatically | Stops at |
-|---|---|---|---|
-| "what's next / what's left" | `/kit:start` (detector) | context-readiness suggestion | nothing (read-only) |
-| "assign ID-007" / "start ID-007" | `/kit:assign ID-007` | (none) | hands off to the lane |
-| "apply SDD to X" (no ID) | `/kit:assign "<freeform>"` -> `/kit:spec` lane | spec-drift-guard once a spec exists | approve-before-allocate, lane/scope confirm, then per-phase |
-| "discuss / iterate the design" | `/kit:design` (+ `/kit:devs-team`) | (none) | every section (human-in-loop) |
-| "vague idea about X" | `/kit:think` / brainstorming | (none) | your approval of the objective |
-| "run the full lane, your call" | the lane, autonomously | anti-rationalization (in a /goal loop) | hard stops + push/PR |
-| "fix this bug / it regressed" | `/kit:debug` (bug lane) | guess-fix guard | root cause + human-confirm |
-| "review this" / "ship it" | `/kit:review[-team]` / `/kit:ship` | ship gate, push-to-main | DO-NOT-SHIP verdict; the push/PR |
+(The at-a-glance intent cheat-sheet now lives at the top: see `## Drive it by intent (start here)`.)
 
 ## Troubleshooting and recovery
 
