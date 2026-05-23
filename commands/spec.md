@@ -146,12 +146,21 @@ Optional; expected for full-lane specs that touch an external provider, data los
 ## Out of Scope
 - [thing explicitly excluded and why]
 
+## Touches
+Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concurrent cross-goal fan-out). The directory-prefix globs this spec will write, one per line. Form is constrained to `dir/**` or `dir/sub/**`: no `*.md`, `**/x`, `a/*.ext`, or brace globs (the disjointness gate serializes any pair it cannot PROVE disjoint, so a non-prefix glob forces conservative serialization). Do NOT list the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, etc.); they are excluded automatically and the convergence step writes them once. The gate (`lib/dispatch-gate.sh`) reads this section; a dispatch-eligible spec lacking it is rejected, not assumed-empty.
+- path/to/area/**
+- another/area/**
+
 ## Decision Log
 - DEC-001: [decision], [rationale], [alternatives rejected]
 
 ## Amendments
 Optional; added only when a mid-flight amend happens (like `## Failure modes` / `## Open questions`, never an empty scaffold in a fresh spec). A running provenance log of mid-build scope additions. `WORKFLOW.md` owns the amend rule (when you may amend, the checkpoint guard, resume); this section is just the recorded entry. Entry shape:
 - AMEND-NNN: [date] | [what scope was added] | why: [reason] | at [TASK-NNN] checkpoint | new tasks: [TASK-NNN..TASK-NNN] | re-validated: [delta-only (advisory / full lane)]
+
+## Review
+Optional; written on-demand by `/kit:review` or `/kit:review-team`, never an empty scaffold. The single home for code-review output, replace-not-stack (a re-review overwrites it), so concurrent worktrees/sessions never share a review file; `/kit:ship` reads its verdict. Shape:
+- `### Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP`, then `### Findings` (by severity) and `### TODOs` (open follow-ups). `/kit:review-team` adds per-lens subsections (`### Security` / `### Architecture` / `### Test coverage`).
 
 ## Open questions
 (none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)

@@ -1,6 +1,6 @@
 # ADR-0011: Goal-draft store beside the built-in /goal (not a shadow)
 
-## Status: accepted (2026-05-21).
+## Status: accepted (2026-05-21). Superseded in part by ADR-0023 (the `INDEX.md` derived-cache is dropped: the filesystem is the sole source of truth, and drafts gain an archive-on-ship lifecycle). The rest of this ADR stands.
 
 ## Context
 The Claude Code built-in `/goal` writes a single `.claude/last-goal.md` and installs a Stop hook from it. It is single-slot by design: brainstorming a second goal overwrites the first. There is no way to hold several candidate goals while the kit's orchestration spine (SPEC-006) picks one to activate. The user-level `goal-craft` skill crafts the text but explicitly does not shadow `/goal`.

@@ -6,6 +6,7 @@ Source: maintainer braindump 2026-05-20 (items a + b + c). Backlog: ID-004, ID-0
 Prior spec: docs/specs/SPEC-004-absorption-cadence.md
 Validation: 4 reviewers run 2026-05-20 (scope-critic, assumption-destroyer, failure-mode, philosophy-fidelity). Pre-fix verdict NEEDS REVISION (8 critical + multiple warnings); all resolved inline. See Decision Log DEC-008..DEC-017 and the Validation section.
 Reconciled: 2026-05-21, after SPEC-010/ADR-0010 shipped (superseding ADR-0002) and ID-013 landed. Part 1's detection ORDER is inverted to docs/specs-first (ADR-0010 unified the convention; `.planning/` is now a bounded deprecation fallback, not downstream-precedence); the branch-match SELECTION rule within `docs/specs/` is retained as the still-valid core; TASK-1a's two abort fixes are marked done (ID-013). See DEC-019.
+Reconciled: 2026-05-23 (SPEC-037/ADR-0023). Part 2's `INDEX.md` derived cache was never built and is dropped: the filesystem (`ls .claude/goals/*.md`) is the sole source of truth, and drafts gain an archive-on-ship lifecycle (`lib/goal-drafts.sh archive` moves a shipped draft to `.claude/goals/done/`). The `INDEX.md` mentions in Part 2 and DEC-016 below are retained as the historical record; ADR-0023 is the live decision.
 
 ## Problem
 

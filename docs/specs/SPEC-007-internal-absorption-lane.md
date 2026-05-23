@@ -54,7 +54,7 @@ A candidate passes ONLY if ALL hold:
 2. **The SPEC-004 adoption rubric** score >= 10 (Layer fit + Pain match + Adoption cost + Timing, 0-4 each).
 3. **NO-list** (PHILOSOPHY §3) + **bash/md only** (no Python/Node in hooks).
 4. **Not a duplicate** of an existing kit component (the gate criterion SPEC-004 DEC-010 added). This is the load-bearing filter here: the kit's review + testing are already strong, so most review/testing candidates are duplicates.
-5. **Serves 2+ of the 8 phases** (applies to candidates; the lane mechanism itself is connective tissue per SPEC-004 DEC-008).
+5. **Serves 2+ lifecycle phases** (applies to candidates; the lane mechanism itself is connective tissue per SPEC-004 DEC-008).
 6. **The §5 soak** with the real date source above.
 
 ### The scored inventory (centerpiece)

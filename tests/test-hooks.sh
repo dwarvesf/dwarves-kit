@@ -477,6 +477,162 @@ fi
 
 # ============================================================
 echo ""
+echo "=== dispatch-gate: disjointness gate + drift guard (SPEC-032 / ADR-0019) ==="
+# ============================================================
+GATE="$KIT_DIR/lib/dispatch-gate.sh"
+GT=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-gate.XXXXXX")
+printf '# x\n## Touches\n- `a/**`\n\n## Task\n- do\n' > "$GT/spec-a.md"
+printf '# y\n## Touches\n- `b/**`\n' > "$GT/spec-b.md"
+printf '# z\n## Touches\n- `a/sub/**`\n' > "$GT/spec-asub.md"
+printf '# w\n## Touches\n- `ab/**`\n' > "$GT/spec-ab.md"
+printf '# u\n## Touches\n- `*.md`\n' > "$GT/spec-star.md"
+printf '# n\n## Task\n- do\n' > "$GT/spec-none.md"
+
+bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-b.md" >/dev/null 2>&1
+assert_exit "gate: a/** vs b/** -> disjoint (parallel)" 0 "$?"
+bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-asub.md" >/dev/null 2>&1
+assert_exit "gate: a/** vs a/sub/** -> overlap (serialize)" 1 "$?"
+bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-ab.md" >/dev/null 2>&1
+assert_exit "gate: a/** vs ab/** -> disjoint (segment boundary, not string-prefix)" 0 "$?"
+bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-star.md" >/dev/null 2>&1
+assert_exit "gate: a/** vs *.md -> overlap (conservative; non-prefix glob)" 1 "$?"
+bash "$GATE" disjoint "$GT/spec-a.md" "$GT/spec-none.md" >/dev/null 2>&1
+assert_exit "gate: undeclared ## Touches -> REJECT (not assumed-empty)" 2 "$?"
+GATE_PLAN=$(bash "$GATE" plan "$GT/spec-a.md" "$GT/spec-b.md" "$GT/spec-asub.md" 2>/dev/null)
+assert_output_contains "gate plan: spec-asub waits on spec-a (overlap serialized)" "WAIT.*spec-asub" "$GATE_PLAN"
+
+# drift guard: a throwaway git repo with goal branches + a hands-off list.
+GD=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drift.XXXXXX")
+git -C "$GD" init -q
+git -C "$GD" config user.email t@t; git -C "$GD" config user.name t
+printf '### Hands-off shared-surface list\n- `CHANGELOG.md`\n- `docs/retro/v*.md`\n\n### next\n' > "$GD/WF.md"
+printf '# spec\n## Touches\n- `a/**`\n' > "$GD/spec.md"
+printf 'seed\n' > "$GD/CHANGELOG.md"
+git -C "$GD" add -A; git -C "$GD" commit -qm base >/dev/null 2>&1
+GBASE=$(git -C "$GD" rev-parse HEAD)
+GDEF=$(git -C "$GD" rev-parse --abbrev-ref HEAD)
+git -C "$GD" switch -qc goal/clean; mkdir -p "$GD/a"; printf 'x\n' > "$GD/a/h.txt"
+git -C "$GD" add -A; git -C "$GD" commit -qm "feat: a" >/dev/null 2>&1
+git -C "$GD" switch -q "$GDEF"
+git -C "$GD" switch -qc goal/out; mkdir -p "$GD/c"; printf 'x\n' > "$GD/c/b.txt"
+git -C "$GD" add -A; git -C "$GD" commit -qm "feat: c" >/dev/null 2>&1
+git -C "$GD" switch -q "$GDEF"
+git -C "$GD" switch -qc goal/ho; printf 'y\n' > "$GD/CHANGELOG.md"
+git -C "$GD" add -A; git -C "$GD" commit -qm "feat: ch" >/dev/null 2>&1
+( cd "$GD" && DISPATCH_GATE_WORKFLOW="$GD/WF.md" bash "$GATE" drift "$GBASE" goal/clean "$GD/spec.md" >/dev/null 2>&1 )
+assert_exit "drift: worker inside its declared ## Touches -> clean" 0 "$?"
+( cd "$GD" && DISPATCH_GATE_WORKFLOW="$GD/WF.md" bash "$GATE" drift "$GBASE" goal/out "$GD/spec.md" >/dev/null 2>&1 )
+assert_exit "drift: worker writes outside its declared globs -> caught" 1 "$?"
+( cd "$GD" && DISPATCH_GATE_WORKFLOW="$GD/WF.md" bash "$GATE" drift "$GBASE" goal/ho "$GD/spec.md" >/dev/null 2>&1 )
+assert_exit "drift: worker writes a lead-owned hands-off surface -> caught" 1 "$?"
+rm -rf "$GT" "$GD"
+
+# ============================================================
+echo ""
+echo "=== lane-classify: task-type -> risk lane (the 3 sample types + more) ==="
+# ============================================================
+LANE() { bash "$KIT_DIR/lib/lane-classify.sh" classify "$1" 2>/dev/null; }
+# The three sample types the goal requires, plus normal + backfill for full coverage.
+assert_output_contains "lane: a doc fix -> tiny" "^tiny$" "$(LANE 'fix a typo in the README heading')"
+assert_output_contains "lane: a bug -> bug" "^bug$" "$(LANE 'the CSV parser crashes on empty input, fix the regression')"
+assert_output_contains "lane: a full feature -> full" "^full$" "$(LANE 'add user authentication with a JWT token flow and a users table migration')"
+assert_output_contains "lane: a bounded feature -> normal" "^normal$" "$(LANE 'add a --version flag to the CLI')"
+assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 'review the legacy service and write its AGENTS.md operating-layer docs')"
+
+# ============================================================
+echo ""
+echo "=== goal-registry: cross-session running-goal registry (SPEC-036 / ADR-0022) ==="
+# ============================================================
+REG="$KIT_DIR/lib/goal-registry.sh"
+# Isolate the registry in a temp dir (the override the lib reads), not the real .git.
+export GOAL_REGISTRY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-reg.XXXXXX")
+
+bash "$REG" claim goal-a full "src-a/**" >/dev/null 2>&1
+assert_exit "registry: claim goal-a (src-a/**) -> admitted" 0 "$?"
+bash "$REG" claim goal-b normal "src-b/**" >/dev/null 2>&1
+assert_exit "registry: claim goal-b (disjoint) -> admitted" 0 "$?"
+bash "$REG" claim goal-c normal "src-a/sub/**" >/dev/null 2>&1
+assert_exit "registry: claim goal-c (overlaps goal-a) -> REFUSED" 1 "$?"
+bash "$REG" claim "goal/withslash" normal "x/**" >/dev/null 2>&1
+assert_exit "registry: slashed slug rejected (no subdir split)" 64 "$?"
+
+REG_LIST=$(bash "$REG" list 2>/dev/null)
+assert_output_contains "registry: list shows admitted goal-a" "goal-a" "$REG_LIST"
+assert_output_contains "registry: list shows admitted goal-b" "goal-b" "$REG_LIST"
+printf '%s' "$REG_LIST" | grep -q 'goal-c'
+assert_exit "registry: list omits the refused goal-c" 1 "$?"
+
+bash "$REG" log goal-a "tried approach X" >/dev/null 2>&1
+assert_exit "registry: log goal-a appends -> ok" 0 "$?"
+ATT=$(cat "$GOAL_REGISTRY_DIR/goal-a.attempts" 2>/dev/null)
+assert_output_contains "registry: attempt log holds the line" "tried approach X" "$ATT"
+
+bash "$REG" status goal-a blocked >/dev/null 2>&1
+assert_exit "registry: status goal-a -> blocked" 0 "$?"
+REG_LIST2=$(bash "$REG" list 2>/dev/null)
+assert_output_contains "registry: list reflects the new status" "blocked" "$REG_LIST2"
+
+bash "$REG" release goal-a >/dev/null 2>&1
+assert_exit "registry: release goal-a -> ok" 0 "$?"
+[ -f "$GOAL_REGISTRY_DIR/goal-a.goal" ]
+assert_exit "registry: release removed the record" 1 "$?"
+bash "$REG" claim goal-c normal "src-a/sub/**" >/dev/null 2>&1
+assert_exit "registry: goal-c admitted after overlapping goal-a released" 0 "$?"
+
+rm -rf "$GOAL_REGISTRY_DIR"
+unset GOAL_REGISTRY_DIR
+
+# ============================================================
+echo ""
+echo "=== goal-drafts: archive-on-ship lifecycle (SPEC-037 / ADR-0023) ==="
+# ============================================================
+DRF="$KIT_DIR/lib/goal-drafts.sh"
+# Isolate both roots (the overrides the lib reads), not the real .claude/docs.
+export GOAL_DRAFTS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drf.XXXXXX")
+export GOAL_SPECS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-spec.XXXXXX")
+
+# Seed specs: one SHIPPED, one still-live.
+printf -- '---\nStatus: SHIPPED (v1.0.0)\n---\n' > "$GOAL_SPECS_DIR/SPEC-027-mid-flight.md"
+printf -- 'Status: DRAFT\n'                       > "$GOAL_SPECS_DIR/SPEC-099-live-thing.md"
+# Seed drafts: shipped-target, draft-target, specless.
+printf -- '---\nslug: shipped-one\ntarget_spec: SPEC-027\nstatus: drafted\n---\nbody\n' > "$GOAL_DRAFTS_DIR/shipped-one.md"
+printf -- '---\nslug: live-one\ntarget_spec: SPEC-099\nstatus: drafted\n---\nbody\n'     > "$GOAL_DRAFTS_DIR/live-one.md"
+printf -- '---\nslug: specless\ntarget_spec: (none yet)\nstatus: drafted\n---\nbody\n'    > "$GOAL_DRAFTS_DIR/specless.md"
+
+DRF_DRY=$(bash "$DRF" archive --dry-run 2>/dev/null)
+assert_output_contains "drafts: dry-run names the shipped-target draft" "shipped-one" "$DRF_DRY"
+[ -d "$GOAL_DRAFTS_DIR/done" ]
+assert_exit "drafts: dry-run creates no done/ dir" 1 "$?"
+[ -f "$GOAL_DRAFTS_DIR/shipped-one.md" ]
+assert_exit "drafts: dry-run moves nothing" 0 "$?"
+
+bash "$DRF" archive >/dev/null 2>&1
+assert_exit "drafts: archive -> ok" 0 "$?"
+[ -f "$GOAL_DRAFTS_DIR/done/shipped-one.md" ]
+assert_exit "drafts: shipped-target draft moved to done/" 0 "$?"
+[ -f "$GOAL_DRAFTS_DIR/shipped-one.md" ]
+assert_exit "drafts: shipped-target draft gone from top level (moved, not copied)" 1 "$?"
+[ -f "$GOAL_DRAFTS_DIR/live-one.md" ]
+assert_exit "drafts: live-target draft stays" 0 "$?"
+[ -f "$GOAL_DRAFTS_DIR/specless.md" ]
+assert_exit "drafts: specless draft stays" 0 "$?"
+assert_output_contains "drafts: archived draft status flipped to shipped" "status: shipped" "$(cat "$GOAL_DRAFTS_DIR/done/shipped-one.md")"
+
+DRF_LIST=$(bash "$DRF" list 2>/dev/null)
+assert_output_contains "drafts: list shows the live draft" "live-one" "$DRF_LIST"
+assert_output_not_contains "drafts: list omits the archived draft" "shipped-one" "$DRF_LIST"
+
+DRF_AGAIN=$(bash "$DRF" archive 2>/dev/null)
+assert_output_contains "drafts: re-archive is an idempotent no-op" "no shipped drafts to archive" "$DRF_AGAIN"
+
+bash "$DRF" bogus-subcommand >/dev/null 2>&1
+assert_exit "drafts: unknown subcommand -> usage error (64)" 64 "$?"
+
+rm -rf "$GOAL_DRAFTS_DIR" "$GOAL_SPECS_DIR"
+unset GOAL_DRAFTS_DIR GOAL_SPECS_DIR
+
+# ============================================================
+echo ""
 echo "=== File count ==="
 # ============================================================
 

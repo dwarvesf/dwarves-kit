@@ -27,8 +27,7 @@ fi
 # docs/specs/ is primary (kit + downstream). Among non-SHIPPED/PARKED specs:
 # exactly one -> use it; more than one -> the one whose slug matches the git
 # branch; zero/multiple branch matches -> emit spec:ambiguous and pick none
-# (never silently guess). Legacy .planning/ is a bounded deprecation fallback
-# (removed next minor). See docs/specs/SPEC-005, SPEC-010.
+# (never silently guess). See docs/specs/SPEC-005, SPEC-010.
 SPEC_FILE=""
 SPEC_AMBIG=""
 CANDIDATES=$(
@@ -72,13 +71,6 @@ elif [ "$N" -gt 1 ]; then
     SPEC_AMBIG=$(printf '%s\n' "$CANDIDATES" | sed -E 's#.*(SPEC-[0-9]+)-.*#\1#' | paste -sd, -)
   fi
 fi
-if [ -z "$SPEC_FILE" ] && [ -z "$SPEC_AMBIG" ] && [ -d ".planning" ]; then
-  for F in .planning/SPEC.md .planning/ROADMAP.md .planning/REQUIREMENTS.md; do
-    [ -f "$F" ] && SPEC_FILE="$F" && break
-  done
-  [ -n "$SPEC_FILE" ] && WARNINGS+=".planning/ is deprecated; move specs to docs/specs/SPEC-NNN. "
-fi
-
 if [ -n "$SPEC_AMBIG" ]; then
   STATE+="spec:ambiguous(${SPEC_AMBIG}) "
   SUGGEST="multiple live specs, no branch match; disambiguate (check out a spec's branch, or ship/park the others)"
@@ -98,7 +90,7 @@ else
       DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || true)
       STATE+="tasks:${DONE}/${TOTAL} "
       if [ "$DONE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
-        if [ -f "REVIEW.md" ]; then
+        if grep -q '^## Review' "$SPEC_FILE" 2>/dev/null; then
           SUGGEST="all tasks done and reviewed, consider 'ship'"
         else
           SUGGEST="all tasks done, consider 'review'"

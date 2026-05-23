@@ -8,7 +8,7 @@ You are a task dispatcher. Read the spec, find the next task to work on, and set
 
 ### Step 1: Find the next task
 
-Read the active spec. Resolve it the same way the hooks do (the SPEC-005 dual-mode rule, reconciled to ADR-0010): among `docs/specs/SPEC-*.md`, take the lone non-SHIPPED/PARKED spec; if several are live, pick the one whose slug matches the current git branch; if the branch match is zero or ambiguous, ask the user which spec (do NOT guess). Legacy `.planning/SPEC.md` (or `.gsd/`) is a deprecation fallback used only when `docs/specs/` has no live spec.
+Read the active spec. Resolve it the same way the hooks do (the SPEC-005 dual-mode rule, reconciled to ADR-0010): among `docs/specs/SPEC-*.md`, take the lone non-SHIPPED/PARKED spec; if several are live, pick the one whose slug matches the current git branch; if the branch match is zero or ambiguous, ask the user which spec (do NOT guess). `docs/specs/SPEC-NNN-<slug>.md` is the sole spec location (ADR-0010).
 
 Find the first task that is:
 - Not marked as done (`[x]` or `DONE`)
@@ -64,7 +64,7 @@ If the user runs `/kit:next` again:
 
 ## Edge cases
 
-- **All tasks done**: "All tasks in the spec are complete. Run `/kit:review` for code review, then `/kit:ship` to merge." Then surface the `_meta/BACKLOG.md` Active queue (read-only; the Schema there defines the columns) as "what's left next", plus any `.claude/goals/` drafts, so the next item can be picked with `/kit:assign ID-NNN`. Degrade gracefully on a malformed queue; never mutate.
+- **All tasks done**: "All tasks in the spec are complete. Run `/kit:review` for code review, then `/kit:ship` to merge." Then surface the `_meta/BACKLOG.md` Active queue (read-only; the Schema there defines the columns) as "what's left next", plus any `.claude/goals/` drafts (top-level `*.md` only; archived drafts under `.claude/goals/done/` are skipped), so the next item can be picked with `/kit:assign ID-NNN`. Degrade gracefully on a malformed queue; never mutate.
 - **No spec found**: "No spec found. Run `/kit:spec` to generate one first."
 - **Ambiguous spec** (several live `docs/specs/` specs, no single branch match): list them and ask which to work on; do not pick one silently (mirrors the hooks' `spec:ambiguous(...)`).
 - **Blocked task**: "TASK-[ID] depends on TASK-[X] which is not yet done. Complete TASK-[X] first, or choose a different task."

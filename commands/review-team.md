@@ -21,10 +21,10 @@ Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the 
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
-**Reviewer 1: Security lens**
+**Reviewer 1: Security (deep)**
 ```
 Review this code diff through the SECURITY lens only.
-Use the reviewer agent with lens: security.
+Use the security-auditor agent (the dedicated deep-security reviewer; more thorough than the reviewer's security lens).
 
 ## Diff
 [paste diff or list changed files]
@@ -95,7 +95,7 @@ Reviewers: security, architecture, test-coverage
 ## Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP
 ```
 
-Write to `REVIEW.md` in the project root. If issues are found, also append to `TODOS.md`.
+Write the unified report as a `## Review` section IN the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the SPEC-005 rule), **replacing** any prior `## Review` (replace-not-stack). Keep the per-lens findings as subsections (`### Security`, `### Architecture`, `### Test coverage`) and the open items under `### TODOs`. If no active spec exists, output the report inline in chat instead. NEVER write the review (or per-lens files) to fixed-name files in the repo root; that pattern collides across concurrent worktrees and sessions.
 
 ### Step 5: Decision gate
 

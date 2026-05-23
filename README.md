@@ -26,7 +26,7 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 
 ## Who this is NOT for
 
-- Teams of 10+ with a dedicated DevOps pipeline. The kit is for one engineer (or one engineer + delegated contractors). Multi-agent orchestration across parallel sessions is L5 territory (Nimbalyst, Conductor); install those alongside, not instead.
+- Teams of 10+ with a dedicated DevOps pipeline. The kit is for one engineer (or one engineer + delegated contractors). One lead session may fan out N isolated worktree workers over disjoint specs (`/kit:dispatch`, ADR-0019), and one operator may run N concurrent same-machine sessions over disjoint goals coordinated by a passive running-goal registry (`lib/goal-registry.sh`, ADR-0022). Multi-session orchestration across machines, by 3+ live operators, or with goal-ordering chains is L5 territory (Nimbalyst, Conductor), install those alongside, not instead.
 - Anyone who wants a UI. The kit is bash hooks + markdown commands. Open any file in a text editor; it's all readable.
 - Projects already happily using GSD, gstack, or Trail of Bits' configs as standalone tools. The kit's value is integration; if format-translation overhead between standalone tools isn't actually hurting you, don't switch.
 
@@ -62,11 +62,13 @@ See `examples/hello-spec/` for a small, self-contained walkthrough of the artifa
 | /kit:visual-team | Design | Opt-in: 5-lens parallel critique of a visual/UI design (downstream-facing) |
 | /kit:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
 | /kit:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
+| /kit:dispatch | Orchestrate | Fire N disjoint VALIDATED specs concurrently, each in its own worktree, behind a disjointness gate; lead-owned merge (ADR-0019) |
 | /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /kit:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
+| /kit:verify | Verify | Read-only re-run of task-verifier + integration-checker on the active spec, no rebuild |
 | /kit:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage) |
@@ -135,6 +137,18 @@ Don't run both install paths on the same machine -- hooks would register twice. 
 
 **Invocation differs by path:** installed as the plugin, commands are namespaced `/kit:<name>` (e.g. `/kit:spec`); via the bash installer they resolve bare `/<name>` (e.g. `/spec`). The command tables above use the plugin form.
 
+## Quickstart: your first cycle
+
+After install, open a Claude Code session in your project and run one full lap. A tiny change is the best first try:
+
+1. `/kit:start` orients you and suggests the next step.
+2. `/kit:think` and describe the change (e.g. "add a `--version` flag to the CLI"). It throws 6 forcing questions at the idea; answer them.
+3. `/kit:spec` writes the contract to `docs/specs/SPEC-NNN-<slug>.md`.
+4. `/kit:execute` runs the autonomous build: a worker implements the spec, a verifier checks it against the acceptance criteria, a fix-agent retries fixable failures (max 2).
+5. `/kit:review` then `/kit:ship`: review gate, then version bump, changelog, conventional commit, PR.
+
+That is the whole loop: **think → spec → execute → review → ship**. The spec is the unit of handoff: a contractor running `/kit:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote. To see the artifact set without running anything, browse [`examples/hello-spec/`](examples/hello-spec/). The kit's own `docs/` folder is its design history; you do not need it to use the kit (see [`docs/README.md`](docs/README.md)).
+
 ## Workflow
 
 ```
@@ -153,6 +167,7 @@ Don't run both install paths on the same machine -- hooks would register twice. 
                      [slop-cleaner flags bloat at stop points]
 /kit:review         Single-pass review (10 min)
 /kit:review-team    Parallel 3-lens review (security + arch + tests)
+/kit:verify         Re-run the tests read-only, no rebuild (on demand)
 /kit:docs           Update all docs to match code (5 min)
 /kit:ship           Review gate, version bump, changelog, commit, PR
 /kit:retro          Retrospective (10 min, after shipping)
@@ -205,7 +220,7 @@ worker subagent completes task
      -> FAIL:escalate: stop, ask human
 ```
 
-Tasks execute sequentially within phases. Parallel dispatch is not yet supported. For parallel execution, use GSD v2 or Agent Teams alongside the kit.
+Within one spec, tasks execute sequentially (`/kit:execute` is not parallelized). **Across** independent specs, `/kit:dispatch` fans out N disjoint `VALIDATED` specs concurrently, each in its own git worktree behind a disjointness gate + drift guard, with lead-owned convergence and human-gated merge (ADR-0019). **Across** independent *sessions*, one operator can open several Claude sessions on one machine (one goal each) and a passive running-goal registry (`lib/goal-registry.sh`, ADR-0022) keeps them from colliding: each session claims its goal, an overlapping claim is refused, and `bash lib/goal-registry.sh list` (surfaced in `/kit:start`) is the cross-session monitor. What the kit deliberately does NOT do is a DAG / wave scheduler / crash-recovery runtime, a coordinating daemon, or coordination across machines / 3+ live operators / goal-ordering chains: for those use GSD v2 (the standalone [gsd-build/gsd-2](https://github.com/gsd-build/gsd-2) agent, npm `gsd-pi`, a separate Pi-SDK runtime, not a newer version of the GSD plugin below) or Nimbalyst / Claude Code's experimental Agent Teams, alongside the kit.
 
 ## External dependencies (install alongside, not included)
 
@@ -221,12 +236,8 @@ These tools complement the kit but are installed separately:
 dwarves-kit/
   tool.toml                     Kit metadata (name, version, language=bash, deps)
   AGENTS.md                     Tool-agnostic operate-contract front door (any runtime reads it first)
-  WORKFLOW.md                   The cycle, the risk-tier lanes, the gate at each boundary
-  MANUAL.md                     Operator reference for the commands
-  docs/ORCHESTRATION.md         The flow/loop view: lanes, loops, triggers, stop conditions (ASCII diagrams)
-  docs/PLAYBOOK.md              The interaction view: what you say -> what happens (operator scenarios)
-  docs/operating-layer-vision.md  Design-first vision + the SDLC state machine (north-star for the operating-layer specs)
-  RUNBOOK.md                    Hook misbehavior diagnosis + recovery
+  WORKFLOW.md                   The cycle, the risk-tier lanes, the gates, and the flow/loop reference (ASCII diagrams)
+  MANUAL.md                     Operator reference: commands, hooks, agents, natural-language scenarios, troubleshooting
   README.md / CONTRIBUTING.md / CHANGELOG.md / VERSION / LICENSE
   CLAUDE.md                     Project template; the Claude-Code layer on top of AGENTS.md
   install.sh / settings.json    Bash install path
@@ -235,19 +246,24 @@ dwarves-kit/
   agents/                       (9 files) Subagents dispatched by commands
   commands/                     (15 markdown command prompts)
   hooks/                        (12 scripts + hooks.json plugin manifest)
+  lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
+  lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier (used by /kit:assign + /kit:dispatch)
+  lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor, ADR-0022)
+  lib/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/ (ADR-0023)
   skills/get-api-docs/          Context Hub integration
   rules/                        Path-scoped coding-standard templates
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
   tests/test-hooks.sh           Hook behavior assertions
   tests/test-meta.sh            Structural integrity (manifests, frontmatter, cross-links)
   docs/specs/SPEC-NNN-<slug>.md  Specs, tracked in place via Status header (DRAFT/VALIDATED/SHIPPED); hooks pick the active one by git branch (SPEC-005)
-  docs/
+  docs/                         The kit's design record (not needed to USE the kit; see docs/README.md)
+    README.md                   Map of docs/: what each file is, and that you can skip it to use the kit
     PHILOSOPHY.md               Design principles, target user, rejection list
-    architecture.md             Components, data flow, Collaborative Design Protocol, deps
-    decisions/0001-...0012-     One ADR per file
-    specs/                      Historical shipped specs (SPEC-NNN-<slug>.md)
-    handoff/v1.1.md, v1.2.md    Per-version handoff snapshots
-    retro/v1.3-v1.5.md          Cycle retrospectives
+    architecture.md             Components, data flow, the SDLC state machine, Collaborative Design Protocol, deps
+    decisions/                  One ADR per file (NNNN-<slug>.md); supersession recorded in the Status line
+    specs/                      Specs (SPEC-NNN-<slug>.md); also the live spec store the hooks detect
+    retro/                      Per-cycle retrospectives (output of /kit:retro)
+    research/                   Dated deep-scans that fed specific specs
   _meta/BACKLOG.md              Phased task backlog
 ```
 
@@ -261,14 +277,14 @@ See [CHANGELOG.md](CHANGELOG.md). It's the source of truth; the README does not 
 
 - Prompt-type anti-rationalization hook (Haiku evaluation instead of grep patterns)
 - /qa command with headless browser testing (requires Playwright)
-- Agent Teams parallel task dispatch in /execute
+- Intra-spec parallel task dispatch in /execute (cross-goal fan-out across specs already shipped as /kit:dispatch, ADR-0019; this is the deferred intra-spec case)
 - SessionEnd hook for automatic knowledge capture
 - Multi-harness packaging (Codex / Cursor / Gemini / OpenCode) -- defer until real demand
 
 ## Credits
 
 Patterns extracted from:
-- [GSD](https://github.com/gsd-build/get-shit-done) - spec generation, the original .planning/ convention (since unified onto docs/specs/, ADR-0010), 4 parallel researchers
+- [GSD v1 / get-shit-done](https://github.com/gsd-build/get-shit-done) - the Claude Code plugin (skills/agents/hooks): spec generation, the original planning-dir convention (since unified onto docs/specs/, ADR-0010), 4 parallel researchers. Distinct from GSD v2 ([gsd-build/gsd-2](https://github.com/gsd-build/gsd-2), npm `gsd-pi`), a separate standalone agent on the Pi SDK, referenced elsewhere as an external execution runtime, not a pattern source
 - [gstack](https://github.com/garrytan/gstack) - /office-hours, /review, /ship patterns; the /kit:ui-design loop shapes (brief schema, injection-wrap, accumulated-feedback)
 - [frontend-design](https://github.com/anthropics/skills) - the external UI generator /kit:ui-design delegates to; its aesthetic-direction brief shape
 - [ui-ux-pro-max-skill](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) - /kit:ui-design brief sub-shapes (token ladder, states matrix, a11y bars, voice); generator + tooling rejected per bash-over-binaries
