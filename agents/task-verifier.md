@@ -36,6 +36,17 @@ For each acceptance criterion in the spec:
 - If the criterion is "endpoint returns X", check the handler code.
 - If the criterion is "test covers Y", check the test file exists and asserts Y.
 
+### 1b. Removal-class absence (weight: critical)
+
+Presence verification (Section 1) is the default. It is not enough for removal-class tasks.
+
+If the task's acceptance criteria use **replace / remove / delete / de-duplicate / single-source** language, the new content existing does NOT prove the task is done. The OLD content must also be gone:
+- Identify the old marker, symbol, or path that was meant to be removed or replaced.
+- Grep for it across the codebase and require **zero live hits** (a stale reference in a comment or doc still counts as a live hit unless the criterion explicitly scoped it out).
+- If both the old copy and the new copy coexist, that is a **FAIL**, not a PASS. "Replace X with Y" is not satisfied while X is still present.
+
+Do not infer a removal trigger that the criteria do not state. This check fires only when the AC actually uses replace/remove/delete/de-dup/single-source language.
+
 ### 2. Test suite (weight: critical)
 
 Run the project's test suite:
