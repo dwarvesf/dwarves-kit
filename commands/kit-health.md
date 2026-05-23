@@ -127,7 +127,9 @@ Score: X/Y checks passed
 Verdict: SHIP / FIX-REQUIRED / REJECT
 ```
 
-If the verdict is REJECT, surface the specific violation and what would need to change to lift it. kit-health is a self-diagnostic command, not a safety hook -- it labels the state clearly and recommends, but does not block (per `Detect, don't dictate`). The user decides whether to act. Reserve actual blocking for the safety-gate hook.
+If the verdict is REJECT, surface the specific violation and what would need to change to lift it. kit-health is a self-diagnostic command, not a safety hook -- it labels the state clearly and recommends, but does not block (per `Detect, don't dictate`). The user decides whether to act. Reserve actual blocking for the two hooks that legitimately block irreversible-cost actions: the safety-gate hook (rm-rf, push-to-main, force-push) and, per ADR-0024, the ship-gate hook (a push/PR with a missing lane-required gate and no logged override). Both block only at irreversible boundaries; neither blocks mid-flight phase progression.
+
+*Exception (recorded):* the **ship-gate completeness block** (`hooks/ship-gate.sh`, ADR-0024: refuses a push/PR when the active spec's lane has a required gate with no `ran`/`override` ledger entry) is in-scope and is NOT a forbidden "rigid phase gate". It blocks only at the irreversible ship/push boundary (same logic as push-to-main), never mid-flight, and always honors a logged override. Do NOT flag it under `Detect, don't dictate` / "never block progression"; that principle governs mid-flight phases, and ADR-0024 records this boundary exception.
 
 ### Step 3: Philosophy alignment check
 

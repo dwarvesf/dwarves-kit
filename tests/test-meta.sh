@@ -1634,6 +1634,40 @@ fi
 
 # ============================================================
 echo ""
+echo "=== Gate ledger + ship enforcement (ADR-0024) ==="
+
+assert_true "lib/gate-ledger.sh exists and is executable" "$([ -x "$KIT_DIR/lib/gate-ledger.sh" ] && echo 0 || echo 1)"
+assert_true "hooks/ship-gate.sh exists and is executable" "$([ -x "$KIT_DIR/hooks/ship-gate.sh" ] && echo 0 || echo 1)"
+assert_true "ADR-0024 (gate ledger + ship enforcement) exists" "$([ -f "$KIT_DIR/docs/decisions/0024-gate-ledger-and-ship-enforcement.md" ] && echo 0 || echo 1)"
+assert_true "ship-gate registered in hooks.json (plugin path)" "$(grep -q 'hooks/ship-gate.sh' "$KIT_DIR/hooks/hooks.json" && echo 0 || echo 1)"
+assert_true "ship-gate registered in settings.json (bash-install path)" "$(grep -q 'hooks/ship-gate.sh' "$KIT_DIR/settings.json" && echo 0 || echo 1)"
+assert_true "PHILOSOPHY records the ADR-0024 ship-boundary bend" "$(grep -q 'ADR-0024' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+assert_true "kit-health records the ship-gate carve-out" "$(grep -q 'ship-gate' "$KIT_DIR/commands/kit-health.md" && echo 0 || echo 1)"
+
+# The lane×phase matrix is the single source for the lane->gate map; every value
+# cell must be one of the three tokens so gate-ledger.sh can parse it (ADR-0024).
+GL_BADCELLS=$(awk '
+  /^## Lane.*depth matrix/ {inmx=1; next}
+  inmx && /^## / {exit}
+  inmx && /^\| *Phase *\|/ {hdr=1; next}
+  inmx && hdr && /^\|/ {
+    if ($0 ~ /^\| *-+/) next;
+    n=split($0, c, "|");
+    for (i=3;i<n;i++){ v=c[i]; gsub(/^ +| +$/,"",v);
+      if (v!="" && v!="measure-twice" && v!="run-lite" && v!="skip") bad++ }
+  }
+  END{print bad+0}
+' "$KIT_DIR/WORKFLOW.md")
+assert_eq "lane×phase matrix cells are all measure-twice|run-lite|skip" "0" "$GL_BADCELLS"
+
+GL_REQ="$(bash "$KIT_DIR/lib/gate-ledger.sh" required normal 2>/dev/null | tr '\n' ' ')"
+assert_true "gate-ledger required(normal) derives spec+build+ship from the matrix" "$(echo "$GL_REQ" | grep -q 'spec' && echo "$GL_REQ" | grep -q 'build' && echo "$GL_REQ" | grep -q 'ship' && echo 0 || echo 1)"
+assert_true "WORKFLOW documents the gate-ledger + ship-enforcement convention" "$(grep -q 'Gate ledger and ship enforcement' "$KIT_DIR/WORKFLOW.md" && echo 0 || echo 1)"
+assert_true "ship.md records the Ship gate + names the override path" "$(grep -q 'gate-ledger.sh' "$KIT_DIR/commands/ship.md" && echo 0 || echo 1)"
+assert_true "AGENTS operate-contract points at the gate-ledger convention" "$(grep -q 'gate-ledger' "$KIT_DIR/AGENTS.md" && echo 0 || echo 1)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

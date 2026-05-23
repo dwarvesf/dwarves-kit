@@ -46,6 +46,17 @@ For each `## Acceptance Criteria (global)` that spans more than one task (a data
 
 New code added by the build that nothing reaches (no caller, no registration, no route). Distinct from "extra work" (task-verifier's job): this is about reachability, not need.
 
+### 4. No duplicate copies of single-sourced / relocated blocks (weight: high)
+
+The cross-file twin of presence verification. Section 1 proves a component reaches its activation point; this proves a block that was meant to live in ONE place does not live in two.
+
+When the build's tasks describe relocating a block, de-duplicating it, or making it single-sourced, grep across the task's touched files for that block (the function body, the config stanza, the doc section, the marker) and assert it appears in exactly one place:
+- A block that was MOVED from file A to file B must be present in B and absent from A. If it survives in both, that is a FAIL.
+- A block meant to be single-sourced must not have a second live copy in a sibling file.
+- Name the `file:block` pair that coexists when it should not.
+
+This fires only when the spec or task language calls for relocation / de-duplication / single-sourcing. Do not flag legitimately independent code that merely looks similar.
+
 ## What you must NOT do
 
 - **Do not invent links between independent tasks.** Many specs ship unrelated components in one build (e.g. two unrelated hooks). If the spec does not state that task A connects to task B, do not demand it. Verify each component reaches ITS OWN activation point and that the spec's stated chains hold. A defined-but-unregistered component IS a finding; an imagined cross-link is not.

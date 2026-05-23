@@ -1,6 +1,6 @@
 # Spec: freeform front door (intent -> ID -> lane, no manual bookkeeping)
 Generated: 2026-05-22
-Status: VALIDATED
+Status: SHIPPED
 
 > Source: the PLAYBOOK.md scenarios (S2 "apply SDD to X", S5 vague brief) and SPEC-024's
 > deferred "freeform griller entry". Backlog: ID-022.

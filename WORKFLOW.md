@@ -191,6 +191,18 @@ the V-model lens above. Every cell is one of:
 When a new phase is added to the cycle table (and the V-model lens gains a row),
 add a column here and assign a depth per lane before shipping the change.
 
+## Gate ledger and ship enforcement
+
+Every phase gate a run executes is recorded to a per-run ledger, so the run is
+auditable after the fact (ADR-0024). The lane×phase matrix above is the single
+source for which gates a lane *requires* (its `measure-twice` cells);
+`lib/gate-ledger.sh` parses it, with no second copy of the mapping.
+
+- **Record each gate as you run it:** `bash lib/gate-ledger.sh record <spec-slug> <Phase> ran "<note>"`, where `<Phase>` is a matrix row name (Spec, Validate, Build, Review, Docs, Ship, ...). Record a deliberate skip as `... <Phase> skipped "<why>"` so the skip is visible, not silent. Log actions with `action <spec-slug> "<what>"`.
+- **One append-only, redacted file per run** under `$DWARVES_KIT_LOG_DIR/runs/<slug>.log` (the existing hook-log convention; no command bodies or secret paths). It is an audit trail, never a source of state.
+- **Enforcement is at ship only.** `hooks/ship-gate.sh` refuses a feature-branch push or `gh pr create` when the active spec's lane has a `measure-twice` gate with no `ran`/`override` entry. Mid-flight phases are never blocked (Detect, don't dictate).
+- **Override, logged:** to ship past a missing gate, record a reason: `bash lib/gate-ledger.sh override <spec-slug> <Phase> "<reason>"`. The override is part of the audit trail; in a fully autonomous run it is agent-writable, so the guarantee is block-by-default plus every skip and override recorded, not a hard stop (ADR-0024).
+
 ## The spine
 How a committed backlog item becomes shipped work, end to end:
 
