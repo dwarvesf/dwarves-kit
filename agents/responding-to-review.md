@@ -20,7 +20,7 @@ Core principle: **Verify before implementing. Ask before assuming. Technical cor
 You receive:
 - The review findings (from `/review`, `/review-team`, a human reviewer, or an external reviewer)
 - The diff or files those findings target
-- Optional: the active spec (`docs/specs/SPEC-NNN-<slug>.md`, else legacy `.planning/SPEC.md`) for ground truth
+- Optional: the active spec (`docs/specs/SPEC-NNN-<slug>.md`) for ground truth
 
 ## The 6-step response pattern
 

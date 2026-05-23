@@ -14,7 +14,7 @@ You are a project state detector. Read the current project and suggest what the 
 
 ## Process
 
-**Resolving the active spec (SPEC-005 dual-mode, the same rule the hooks use, reconciled to ADR-0010):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. Legacy `.planning/SPEC.md` is a deprecation fallback used only when `docs/specs/` has no live spec. States 3-8 below operate on that resolved active spec.
+**Resolving the active spec (SPEC-005 dual-mode, the same rule the hooks use, reconciled to ADR-0010):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. `docs/specs/SPEC-NNN-<slug>.md` is the sole spec location (ADR-0010). States 3-8 below operate on that resolved active spec.
 
 Check these signals in order and recommend the FIRST matching action:
 
@@ -29,7 +29,7 @@ Suggested: Set up CLAUDE.md with project info, or describe what you want to buil
 
 ### 2. No spec directory
 
-If no `docs/specs/` directory exists (and no legacy `.planning/`):
+If no `docs/specs/` directory exists:
 
 ```
 No spec found.
@@ -60,7 +60,7 @@ If some tasks are checked and some aren't, also note which phase is in progress.
 
 ### 5. All tasks complete, no review
 
-If all tasks in the spec are checked (`- [x]`) and no `REVIEW.md` exists:
+If all tasks in the spec are checked (`- [x]`) and the spec has no `## Review` section:
 
 ```
 All tasks complete. No review on file.
@@ -69,7 +69,7 @@ Suggested: /kit:review for paranoid code review (security + architecture).
 
 ### 6. Review exists with issues
 
-If `REVIEW.md` exists and contains CRITICAL or HIGH items, or verdict is not SHIP:
+If the spec's `## Review` section contains CRITICAL or HIGH items, or verdict is not SHIP:
 
 ```
 Review found issues: [N] critical, [N] high.
@@ -78,7 +78,7 @@ Suggested: Fix the issues, then re-run /kit:review.
 
 ### 7. Review passed, not shipped
 
-If `REVIEW.md` exists with verdict SHIP and there are uncommitted changes or no PR:
+If the spec's `## Review` section has verdict SHIP and there are uncommitted changes or no PR:
 
 ```
 Review passed. Ready to ship.
@@ -101,6 +101,7 @@ Append to every recommendation:
 - Number of uncommitted changes (if any)
 - Whether `docs/specs/SPEC-NNN-<slug>.md` exists and its status
 - Active goal drafts in `.claude/goals/` (count, and `slug -> status`), if any
+- Running goals across sessions (the cross-session registry): the count from `bash lib/goal-registry.sh list`, so an operator opening a new session sees what other sessions already have in flight before starting a colliding goal. This is the kit-level companion to the native agent view (which sees only the current session's subagents, not goals across sessions).
 
 ## Output format
 
@@ -118,7 +119,8 @@ Branch: [branch] | Dirty: [N] files | Spec: [status or "none"]
 When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 
 1. **Backlog queue (what's left?)** -- render the `_meta/BACKLOG.md` Active queue (the Schema there defines the columns) as `ID | Title | Lane | Status`, skipping shipped/parked rows. Read-only. If the queue is malformed, render what parses, note unparseable rows, and never error out of session start.
-2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)`. If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (ADR-0011).
+2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)` (or run `bash lib/goal-drafts.sh list`). If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (no derived cache, ADR-0023). Archived drafts under `.claude/goals/done/` are skipped: the `*.md` glob is non-recursive, so a draft moved to `done/` on ship drops out automatically.
+2b. **Running goals (cross-session)** -- render `bash lib/goal-registry.sh list`: every goal currently claimed across sessions, with its lane / status / branch / start time (ADR-0022). If none, it prints "(no running goals)". This is the cross-session monitor: it shows goals other Claude sessions are running on this machine, which the native agent view cannot. A `running` entry with no live work is a stale claim from a crashed session; clear it with `bash lib/goal-registry.sh release <slug>`.
 3. **SPEC task checklist** -- parse the active spec (resolved per the dual-mode rule above) for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
 4. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
 5. **Recent commits** -- the output of `git log -5 --oneline`.

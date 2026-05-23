@@ -38,13 +38,12 @@ $(SPEC=""
 for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
   grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC="$F"; break; }
 done
-[ -z "$SPEC" ] && SPEC=$(find .planning -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
 if [ -n "$SPEC" ]; then
   echo "Spec: $SPEC"
   # Extract just the task breakdown section
   sed -n '/## Task Breakdown/,/## /p' "$SPEC" 2>/dev/null | head -30 || echo "(could not extract tasks)"
 else
-  echo "No spec found (docs/specs/ or .planning/)"
+  echo "No spec found (docs/specs/)"
 fi)
 
 ### Recent file changes (last 10 modified)

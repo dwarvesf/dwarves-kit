@@ -50,12 +50,11 @@ LAST_COMMITS=$(git log --oneline -5 2>/dev/null || echo "no commits")
 # Spec state
 SPEC_STATUS="none"
 TASK_PROGRESS=""
-# Active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED), then legacy .planning/.
+# Active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED).
 SPEC_FILE=""
 for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
   grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC_FILE="$F"; break; }
 done
-[ -z "$SPEC_FILE" ] && SPEC_FILE=$(find .planning -maxdepth 2 -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
 if [ -n "$SPEC_FILE" ]; then
   SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
   TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)

@@ -78,4 +78,21 @@ Completeness scoring:
 - 4/10: Works in demo, breaks in production
 - 1/10: Fundamentally incomplete
 
-Write the review to `REVIEW.md` in the project root. If issues are found, also append to `TODOS.md`.
+### Step 5: Write the review into the active spec
+
+Resolve the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the SPEC-005 rule) and write the summary, the verdict, and every TODO item as a `## Review` section IN that spec, **replacing** any prior `## Review` (replace-not-stack). The spec is the single carrier, so a re-review never stacks and two concurrent worktrees or sessions never write the same file:
+
+```
+## Review
+Date: YYYY-MM-DD | Reviewer: /kit:review
+
+### Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP
+
+### Findings
+[the per-issue blocks from Step 3, ordered by severity]
+
+### TODOs (open follow-ups)
+[one line per unresolved item]
+```
+
+If no active spec exists (reviewing an arbitrary diff or someone else's PR), output the report inline in chat instead. NEVER write the review to a fixed-name file in the repo root; that pattern collides across concurrent worktrees and sessions.

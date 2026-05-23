@@ -9,16 +9,16 @@ You are a release engineer. The user says the feature is done. Your job is to ve
 ### Step 1: Review gate
 
 Check if a review has been done:
-- Does `REVIEW.md` exist? Read its verdict.
+- Resolve the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the SPEC-005 rule) and read its `## Review` section verdict.
 - If verdict is `SHIP` or `FIX THEN SHIP` (with fixes applied): proceed.
 - If verdict is `DO NOT SHIP`: STOP. Tell the user to fix the issues first.
-- If no `REVIEW.md` exists: WARN. Ask: "(A) Run /kit:review first / (B) Run /kit:review-team for thorough review / (C) Skip review and ship anyway"
+- If the spec has no `## Review` section: WARN. Ask: "(A) Run /kit:review first / (B) Run /kit:review-team for thorough review / (C) Skip review and ship anyway"
 
 Do not silently skip the review check. The user must explicitly choose to ship without review.
 
 ### Step 1b: Completeness log (warn, not block)
 
-Read `~/.claude/dwarves-kit/logs/completeness.log` (the warn+log sink from the WORKFLOW completeness clauses). Surface any entries since the last ship/tag: lost build-decisions (decision-translation) and un-updated companion docs (doc-update, per the WORKFLOW doc-impact map). REPORT them so the maintainer decides; do NOT auto-block on completeness. Hard blocks stay reserved for the REVIEW.md DO-NOT-SHIP verdict and the safety gates. If the log is absent or empty, say "completeness: clean". Source: SPEC-006.
+Read `~/.claude/dwarves-kit/logs/completeness.log` (the warn+log sink from the WORKFLOW completeness clauses). Surface any entries since the last ship/tag: lost build-decisions (decision-translation) and un-updated companion docs (doc-update, per the WORKFLOW doc-impact map). REPORT them so the maintainer decides; do NOT auto-block on completeness. Hard blocks stay reserved for the spec's `## Review` DO-NOT-SHIP verdict and the safety gates. If the log is absent or empty, say "completeness: clean". Source: SPEC-006.
 
 ### Step 2: Run tests
 
@@ -57,7 +57,7 @@ If no version file exists: skip this step silently.
 
 ### Step 4a: Release-hygiene warn (warn, not block)
 
-At the version/tag decision, check for a **phantom cut**: `VERSION` names a version that has no matching git tag. Run the check, then REPORT to the maintainer; do NOT block the ship. Mirror the Step 1b "warn, not block" voice: hard blocks stay reserved for the REVIEW.md DO-NOT-SHIP verdict and the safety gates.
+At the version/tag decision, check for a **phantom cut**: `VERSION` names a version that has no matching git tag. Run the check, then REPORT to the maintainer; do NOT block the ship. Mirror the Step 1b "warn, not block" voice: hard blocks stay reserved for the spec's `## Review` DO-NOT-SHIP verdict and the safety gates.
 
 Use this exact check shape (kit-health's check uses the same shape; they must not drift):
 
@@ -126,6 +126,16 @@ Run the pinned diff (the merge-base of the integration branch) against the WORKF
 For each file: make the minimum edit needed, preserve existing style, no phantom features.
 Create a single commit: `docs: update [list of files] to match current codebase`
 
+### Step 7b: Archive shipped goal drafts
+
+Once the spec is marked SHIPPED, retire its goal draft so `.claude/goals/` stops showing finished work as live. Run:
+
+```bash
+bash lib/goal-drafts.sh archive
+```
+
+It moves every `.claude/goals/<slug>.md` whose `target_spec` resolves to a SHIPPED spec into `.claude/goals/done/` (moved, never deleted; status flipped to `shipped`) and leaves specless or still-live drafts in place. Idempotent, so it also sweeps up any draft whose spec shipped in an earlier cycle. Graceful no-op when `.claude/goals/` is absent. Report what moved in the Step 9 summary. Source: SPEC-037, ADR-0023.
+
 ### Step 8: Open PR (if on a feature branch)
 
 If the current branch is not main/master:
@@ -139,7 +149,7 @@ If the current branch is not main/master:
   [link to spec or decision brief if exists]
 
   ## Review
-  [review verdict from REVIEW.md, or "not reviewed"]
+  [review verdict from the spec's ## Review section, or "not reviewed"]
 
   ## Testing
   [what was tested, test results]
@@ -166,7 +176,8 @@ Tests: [pass/fail/skipped]
 Review: [SHIP / FIX THEN SHIP / skipped]
 Changelog: [updated / created / skipped]
 Docs updated: [list]
+Drafts archived: [list moved to .claude/goals/done/, or "none"]
 PR: [URL or "ready to push"]
 ```
 
-Source: ClaudeKit /ck:ship pipeline (merge > test > adversarial review > version > changelog > push > PR). Adapted: review gate checks existing REVIEW.md instead of running inline review. Version bump is optional and project-aware.
+Source: ClaudeKit /ck:ship pipeline (merge > test > adversarial review > version > changelog > push > PR). Adapted: review gate reads the spec's `## Review` section instead of running inline review. Version bump is optional and project-aware.

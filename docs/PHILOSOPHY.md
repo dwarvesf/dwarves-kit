@@ -28,12 +28,12 @@ We believe cherry-picking battle-tested patterns from mature tools is better tha
 - context-readiness.sh: analogous to CI pre-flight checks (GitHub Actions `if:` conditions, Buildkite pre-command hooks). Novel integration, proven pattern.
 - spec-drift-guard.sh: analogous to linting rules that flag undeclared variables. The "check against a manifest" pattern exists in package managers (lockfile drift checks), dependency auditing, and Terraform plan drift detection.
 - /kit-health: analogous to `npm audit`, `cargo clippy`, self-diagnostic commands in mature CLIs.
-- .planning/SPEC.md format: derived from architecture decision records (ADR), user story templates, and GSD's task breakdown convention. The format is a composition, not an invention.
+- the SPEC format (`docs/specs/SPEC-NNN-<slug>.md`): derived from architecture decision records (ADR), user story templates, and GSD's task breakdown convention. The format is a composition, not an invention.
 
 **v1.2 additions with direct lineage:**
 - task-verifier subagent: synthesized from the family of architect-verifier-in-Ralph-loop patterns, adapted to a read-only Claude Code custom subagent. The verify-after-every-task pattern is the same; the mechanism changed from in-session check to isolated subagent.
 - fix-agent subagent: Smart Ralph's fail-fix-re-verify loop, adapted to a write-scoped subagent dispatched only on FAIL:fixable verdicts.
-- /start command: CCGS's /start router (detects project stage and routes to the right agent), adapted to read .planning/SPEC.md status field.
+- /start command: CCGS's /start router (detects project stage and routes to the right agent), adapted to read the active spec's `Status:` field.
 - context-readiness v2 (command suggestions): same CCGS /start detection pattern, injected into SessionStart hook context instead of requiring a command invocation.
 
 **Decision this would reject:** "I have a new idea for a code review methodology nobody's tried." Test it as a standalone experiment first. If it works in production for 3+ months, then propose merging it into the kit with a source citation.
@@ -42,15 +42,19 @@ We believe cherry-picking battle-tested patterns from mature tools is better tha
 
 We believe a unified kit covering Think-through-Retro is more valuable than 4 best-of-breed tools that don't talk to each other. The spec format that /spec produces is the same format that /execute reads, that /review checks against, and that /docs updates. Data flows through the cycle; nothing is re-entered.
 
-**Decision this already made:** .planning/SPEC.md is the shared contract between /spec, /spec-validate, /execute, /next, /review, and /docs. The spec-drift-guard hook references the same directory.
+**Decision this already made:** the spec (`docs/specs/SPEC-NNN-<slug>.md`) is the shared contract between /spec, /spec-validate, /execute, /next, /review, and /docs. The spec-drift-guard hook references the same directory.
 
 **Decision this would reject:** "Let's use GSD for planning and a separate tool for execution with its own format." Format translation between tools is where context gets lost. One format, one directory, one kit.
 
 ### "Shallow and wide beats deep and narrow"
 
-We believe covering 8 lifecycle phases (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect) at 70% depth each is better than covering 2 phases at 100% depth. The biggest failures in AI-assisted development come from skipped phases (no spec, no review, no retro), not from insufficient depth in any one phase.
+We believe covering the full lifecycle (Think, Spec, Validate, Build, Review, Docs, Ship, Reflect) at 70% depth each is better than covering a couple of phases at 100% depth. The biggest failures in AI-assisted development come from skipped phases (no spec, no review, no retro), not from insufficient depth in any one phase.
+
+**This principle UPHOLDS cross-goal fan-out, it does not forbid it (ADR-0019).** Running N goals concurrently is *width* (N lifecycles at 70% depth each), not the *depth* of an in-kit scheduler. The boundary "Shallow and wide" draws is against rebuilding a runtime (a DAG, wave execution, crash recovery), not against breadth. Fan-out behind the disjointness gate stays shallow-and-wide; a topological scheduler would not, and is handed to GSD v2.
 
 **Decision this already made:** /execute uses Claude Code's native Task tool for subagent dispatch. It's not as sophisticated as GSD v2's Pi SDK runtime (which has crash recovery, token tracking, and automated git branching). But it exists, and it covers the execution gap that 0 commands would leave.
+
+> **"GSD v2" disambiguation.** Throughout this doc, *GSD v2* means the standalone agent at [gsd-build/gsd-2](https://github.com/gsd-build/gsd-2) (npm `gsd-pi`, a TypeScript runtime on the Pi SDK with its own CLI), **not** a newer release of the *GSD v1 / get-shit-done* Claude Code plugin. They are two separate products that share a brand. The kit absorbed *patterns* from the v1 plugin; it points at the v2 *runtime* as an external execution engine to integrate, never to rebuild.
 
 **Decision this would reject:** "Let's build a custom TypeScript runtime for task execution like GSD v2." That's building a product, not maintaining a kit. If execution depth becomes the bottleneck, adopt GSD v2 as the execution engine and integrate it, don't rebuild it.
 
@@ -78,7 +82,7 @@ We believe every hook should be a readable shell script, not a compiled binary o
 
 We believe the kit should detect the user's current state and suggest the right action, not require them to memorize 11 commands. A full-time coder in flow state doesn't want to remember whether the next step is /review or /docs or /ship. The kit should surface what's relevant based on project state.
 
-**Decision this already made:** context-readiness hook (v1.2) reads .planning/SPEC.md status, counts completed tasks, checks for REVIEW.md, and injects a one-line "next:" suggestion into Claude's context at session start. The /start command provides the same detection as an explicit entry point. Both detect and suggest; neither blocks.
+**Decision this already made:** context-readiness hook (v1.2) reads the active spec's status, counts completed tasks, checks whether the spec carries a `## Review` section, and injects a one-line "next:" suggestion into Claude's context at session start. The /start command provides the same detection as an explicit entry point. Both detect and suggest; neither blocks.
 
 **Decision this would reject:** "Add a phase-locking system that blocks /execute unless /spec-validate has been run." Rigid phase gates annoy experienced coders who know when to skip a step. Detect and suggest, never block workflow progression. The exception is safety hooks (rm-rf, push-to-main) which DO block because the cost of a mistake is irreversible.
 
@@ -114,7 +118,7 @@ Han at Dwarves Foundation. Two modes, one person.
 
 Both modes share the same spec format, hooks, and commands. The difference is frequency of interaction, not the workflow itself. A contractor using the kit operates in a variant of coder mode.
 
-Not: a team of 10 with a dedicated DevOps pipeline. Not: someone who needs multi-agent orchestration across parallel sessions (that's L5, use Nimbalyst/Conductor).
+Not: a team of 10 with a dedicated DevOps pipeline. Not: a team of 3+ live human operators, nor coordination across machines (that's L5, use Nimbalyst/Conductor). In-scope: one lead session fanning out N isolated worktree workers over disjoint specs (ADR-0019), and one operator running N concurrent same-machine sessions over disjoint goals, coordinated by the passive running-goal registry (ADR-0022). "Several sessions" means one human running several, not a team.
 
 ### What their week looks like
 
@@ -144,9 +148,9 @@ End of day or end of sprint: /retro to capture learnings.
 - **Ops work**: Contractor payments, hiring pipeline, client comms. These use Notion + existing Dwarves skills, not the kit.
 - **IDE choice**: The kit works from the terminal. VS Code, Neovim, whatever.
 - **CI/CD**: The kit produces commits and PRs. GitHub Actions or whatever CI pipeline runs after that is a separate concern.
-- **Multi-agent coordination**: When 3+ contractors run Claude Code simultaneously, that's L5 orchestration (Nimbalyst/Intent territory). The kit is for one agent session at a time, with subagents dispatched within that session.
+- **Multi-agent coordination across machines or by a team**: When 3+ contractors (multiple human operators) run Claude Code, or sessions must coordinate across machines, that's L5 orchestration (Nimbalyst/Intent territory). In-kit: one **lead** session orchestrating N isolated worktree workers within itself (ADR-0019), and one operator's N concurrent same-machine sessions over disjoint goals, coordinated by the passive running-goal registry (ADR-0022, the cross-session disjointness gate + monitor). What stays L5: coordination across machines, 3+ live human operators sharing a pool, and goal-ordering chains (B waits for A to merge).
 - **Project management**: No sprint boards, no story points, no velocity tracking. Notion handles that.
-- **Parallel execution**: /execute dispatches tasks sequentially via the Task tool. Independent tasks in the same phase execute one at a time. For parallel execution use Agent Teams (experimental), GSD v2 (Pi SDK runtime), or Ultrapilot. The kit's thesis is lifecycle integration with verification, not competing with agent runtimes.
+- **A cross-task DAG / scheduler / runtime**: bounded cross-goal fan-out IS in-scope (ADR-0019, SPEC-032): one lead session fans out N disjoint `VALIDATED` specs into isolated worktree workers behind a disjointness gate, with lead-owned convergence. What stays out: a topological / wave scheduler, crash-recovery durability, and intra-spec task parallelism (`/kit:execute` itself stays sequential, dispatching one task at a time via the Task tool). The moment goals develop real ordering chains (C needs A+B merged, then D needs C), hand execution to GSD v2 (Pi SDK runtime) or Agent Teams; the kit does not rebuild a runtime.
 
 ---
 
@@ -165,7 +169,7 @@ End of day or end of sprint: /retro to capture learnings.
 Reject a proposed feature if ANY of these are true:
 
 1. **It duplicates an external tool.** If Context Hub, GSD, gstack, or a plugin already does it well, depend on it instead.
-2. **It serves fewer than 2 of the 8 workflow phases.** Single-purpose tools belong as standalone scripts, not kit features.
+2. **It serves fewer than 2 lifecycle phases.** Single-purpose tools belong as standalone scripts, not kit features.
 3. **It requires the user to change their existing Notion/GitHub workflow.** The kit adapts to how Dwarves already works. It doesn't impose a new project management system.
 4. **It can't be explained in one sentence.** If you can't describe what the hook/command does in one line of the README table, it's too complex.
 5. **It has no source citation.** Per the "synthesize, don't originate" principle, every pattern must trace to a proven implementation.
@@ -229,9 +233,9 @@ The honest answer: dwarves-kit is less powerful than any of those tools in their
 
 What dwarves-kit offers is **lifecycle continuity**. The spec format that /spec produces flows unchanged into /execute, /review, /docs, and /ship. The hooks reinforce the commands: context-readiness checks for a spec before the build starts, spec-drift-guard warns during the build, anti-rationalization catches premature completion, post-compaction re-injection restores rules after long sessions.
 
-With separate tools, you get: GSD's .planning/ format, gstack's TODOS.md format, Trail of Bits' settings.json. Three tools, three conventions, three directories. The contractor has to learn all three. When something breaks between phases, nobody owns the gap.
+With separate tools, you get: GSD's planning-dir format, gstack's todo-file format, Trail of Bits' settings.json. Three tools, three conventions, three directories. The contractor has to learn all three. When something breaks between phases, nobody owns the gap.
 
-With dwarves-kit: one directory (.planning/), one convention, one install. The contractor runs `install.sh` and gets everything. The hooks protect them automatically. The commands guide them through the phases. The data flows.
+With dwarves-kit: one spec location (docs/specs/), one convention, one install. The contractor runs `install.sh` and gets everything. The hooks protect them automatically. The commands guide them through the phases. The data flows.
 
 The thesis is not "better components" but "better integration." If that thesis is wrong -- if the integration overhead isn't worth the depth tradeoff -- then the right answer is to use the specialized tools directly and accept the format translation cost.
 

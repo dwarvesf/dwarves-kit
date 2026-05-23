@@ -21,12 +21,11 @@ fi
 BRANCH=$(git branch --show-current 2>/dev/null || echo "unknown")
 ESSENTIALS+="BRANCH: ${BRANCH}\n"
 
-# Active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED), then legacy .planning/.
+# Active spec: docs/specs/SPEC-NNN (highest non-SHIPPED/PARKED).
 SPEC=""
 for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort -r || true); do
   grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" || { SPEC="$F"; break; }
 done
-[ -z "$SPEC" ] && SPEC=$(find .planning -name "SPEC.md" -o -name "ROADMAP.md" 2>/dev/null | head -1)
 [ -n "$SPEC" ] && ESSENTIALS+="SPEC: ${SPEC} (read before implementing)\n"
 
 # Latest backup location

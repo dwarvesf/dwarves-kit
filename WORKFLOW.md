@@ -5,8 +5,9 @@
 > It suggests and routes; it does not block. The only hard stops are the
 > safety-gate hook, the push-to-main blocker, the anti-rationalization Stop
 > hook, and the verification pipeline.
-> For the visual flow/loop view (every flow + alt-flow, its trigger, and its
-> stop condition, with ASCII diagrams), see `docs/ORCHESTRATION.md`.
+> The visual flow/loop view (every flow + alt-flow, its trigger, and its
+> stop condition, with ASCII diagrams) is the `## Flow and loop reference`
+> section at the end of this file.
 
 ## Required reading
 `AGENTS.md` is the front door and owns the read-order; it is the single source.
@@ -49,6 +50,147 @@ premature "done"; auto-format runs on edit; session-state-save and
 post-compact-reinject protect long sessions. The Debug row is an off-cycle
 entry point (a bug-lane loop), not a linear phase between Reflect and the next cycle.
 
+## The V-model lens
+
+The cycle table above is the canonical phase list. This section reads it as a **V**.
+The **left arm BUILDS**: each phase produces an artifact and statically reviews it
+(verification, "did we build this right?"). The **right arm TESTS**: it executes the
+test that validates each artifact and reports (validation, "does it actually work?").
+**Build** is the vertex. The V-model's core move is that every artifact gets *two*
+checks: a static review when it is produced (left/vertex) and a dynamic test later
+(right). The kit does not shift test design up the left arm (it has one late
+`/kit:test-plan` step), so the test-design + execution wing sits on the right.
+
+```
+   LEFT · BUILD (produce + review each artifact)        RIGHT · TEST (execute the mirror)
+   ============================================        =================================
+
+   Brief / Requirement ............................... Acceptance test   /kit:ship gate
+   build /kit:think · /kit:assign  · review (none)
+    Solution-design .................................. System test       project test suite
+    build /kit:design  · review /kit:devs-team
+     Spec ........................................... Integration test   integration-checker
+     build /kit:spec (+research-*) · review /kit:spec-validate
+      Code ......................................... Unit / task test    task-verifier
+      build /kit:execute · /kit:next                                    (fix-agent repairs)
+      review /kit:review · /kit:review-team (deep security: security-auditor)
+       ╲                                            ╱
+        ╰──── test design: /kit:test-plan writes the tests ────╯
+                         (vertex: build = code + test code)
+
+   UI track (downstream):  build /kit:ui-design · review /kit:visual-team
+   Docs:                   /kit:docs verifies docs vs code (-> doc-verifier)
+   Cross-phase (outside the V):  /kit:start · /kit:retro · /kit:debug · /kit:dispatch ·
+                                 /kit:kit-health · /kit:absorb · responding-to-review
+```
+
+**The duality, read across.** Each row is one artifact, checked twice: a static
+review when produced (left/vertex), a dynamic test when executed (right).
+
+| Artifact | Built by | Static review (when produced) | Dynamic test (executed later) |
+|---|---|---|---|
+| Brief / requirement | `/kit:think`, `/kit:assign` | (none; ship gate traces back) | Acceptance test (`/kit:ship`) |
+| Solution design | `/kit:design` | `/kit:devs-team` | System test (project suite) |
+| Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-checker`) |
+| Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `reviewer`; deep: `security-auditor`) | Unit / task test (`task-verifier`) |
+| UI design (downstream) | `/kit:ui-design` | `/kit:visual-team` | (visual; no dynamic test) |
+| Docs | (written during build) | `/kit:docs` (+ `doc-verifier`) | (doc-verifier confirms vs code) |
+
+So `/kit:spec-validate`, `/kit:devs-team`, `/kit:review`, `/kit:visual-team`, and
+`/kit:docs` are not a separate lane: each is the **static verification of one
+artifact, at the phase that produces it**, mirrored by the right-arm test that later
+validates the same artifact.
+
+**Commands vs agents.** A `/kit:...` entry is a *command* you invoke. A plain name
+(`task-verifier`, `integration-checker`, `reviewer`, `doc-verifier`) is an *agent*
+dispatched by a command, never invoked directly. The right-arm tests are executed by
+agents (dispatched inside `/kit:execute`) plus the `/kit:ship` gate. The unit +
+integration levels can also be re-run on demand, read-only, with `/kit:verify` (no rebuild).
+
+**Cycle-table mapping.** The V-phase names above map onto the cycle-table rows:
+Think, Design (opt-in), Design critique (opt-in), UI design (opt-in), Spec,
+Validate, Test plan (opt-in), Build, Review, Docs, Ship, Reflect, and
+Debug (off-cycle).
+
+**The mirror gaps.**
+
+- **Brief / Requirement** has no static-review command; the `/kit:spec-validate`
+  acceptance-criteria check + the `/kit:ship` gate trace back to the brief instead.
+- **Test design is one late step, not shifted left.** `/kit:test-plan` (opt-in)
+  writes the tests; workers write the test code at the vertex. The classic V designs
+  a test at every left phase; the kit concentrates it, which is why the testing wing
+  is on the right.
+- **No system-test command:** the project suite runs at build and at ship.
+
+### Coverage gaps
+
+The V is nearly complete. One open hole, judged against PHILOSOPHY criterion #2
+(a feature must serve >= 2 lifecycle phases) and "no phantom features":
+
+1. **CANDIDATE AGENT `acceptance-verifier`** (optional; v2 candidate). The acceptance
+   test is checked *inline* by `/kit:ship`; everywhere else the kit verifies with a
+   separate read-only agent (per "verify with a fresh context, not self-report").
+   Extracting acceptance into a read-only `acceptance-verifier` that both `/kit:ship`
+   and `/kit:verify` dispatch would complete the right-arm verifier set. Verdict:
+   **consider, not urgent** (the inline gate works today).
+
+Two gaps closed 2026-05-23: the `security-auditor` orphan (wired into `/kit:review-team`)
+and `/kit:verify` (shipped, SPEC-035, the on-demand right-arm executor). The V is now
+fully covered by commands + agents; the only open item is the optional `acceptance-verifier`
+(v2 candidate). Everything else would be a phantom.
+
+## Lane×phase depth matrix
+
+How much ceremony each lane applies at each phase of the V-model. Rows are the
+five risk-tier lanes (definitions and task-type mapping in the lane table above
+under "Size the work first"). Columns are the phases from the cycle table and
+the V-model lens above. Every cell is one of:
+
+- **measure-twice** -- full ceremony for this phase; do not skip.
+- **run-lite** -- lighter pass; advisory, opt-in, or quick-verify is enough.
+- **skip** -- this phase does not apply to this lane.
+
+| Phase | tiny | normal | full | bug | backfill |
+|---|---|---|---|---|---|
+| Think | skip | run-lite | measure-twice | skip | run-lite |
+| Design (opt-in) | skip | skip | measure-twice | skip | skip |
+| Design critique (opt-in) | skip | skip | measure-twice | skip | skip |
+| UI design (opt-in) | skip | skip | run-lite | skip | skip |
+| Spec | skip | measure-twice | measure-twice | skip | run-lite |
+| Validate | skip | skip | measure-twice | skip | skip |
+| Test plan (opt-in) | skip | run-lite | measure-twice | run-lite | skip |
+| Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
+| Review | skip | run-lite | measure-twice | measure-twice | run-lite |
+| Docs | skip | run-lite | measure-twice | skip | measure-twice |
+| Ship | skip | measure-twice | measure-twice | run-lite | skip |
+| Reflect | skip | skip | measure-twice | skip | skip |
+| Debug (off-cycle) | skip | skip | skip | measure-twice | skip |
+
+**Non-obvious depth calls** (logged for traceability):
+
+- **Think / normal = run-lite**, not measure-twice: the normal lane starts at
+  `/kit:spec`, not `/kit:think`. A brief is implied by the spec, but a full Think
+  session is not required. run-lite captures the light-touch intent check that
+  naturally precedes writing a spec.
+- **Test-plan / bug = run-lite**: a bug fix benefits from a reproduction plan
+  (what breaks, what proves it is fixed), but a full test-plan session is not
+  required. The verification pipeline and `/kit:debug`'s root-cause record cover
+  the intent; run-lite reflects "light reproduce + verify" rather than full
+  test-design.
+- **Review / bug = measure-twice**: a bug fix is a high-stakes narrow change.
+  The full lane uses review-team; the bug lane uses `/kit:review`, but the
+  scrutiny level for a regression fix should be full, not advisory.
+- **backfill / Spec = run-lite**: `/kit:spec` is optional for backfill (the lane
+  table says "Doc-output only; no app-behavior change"). run-lite reflects
+  "optional but encouraged for non-trivial backfills."
+- **backfill / Docs = measure-twice**: docs ARE the output of a backfill run
+  (AGENTS.md, CLAUDE.md, specs). This is the one phase that must be done fully.
+- **backfill / Build = skip**: the lane table explicitly prohibits app-code
+  edits; Build (the verification pipeline executing tasks) does not apply.
+
+When a new phase is added to the cycle table (and the V-model lens gains a row),
+add a column here and assign a depth per lane before shipping the change.
+
 ## The spine
 How a committed backlog item becomes shipped work, end to end:
 
@@ -78,10 +220,12 @@ session start
 ## Mid-flight amend
 Canonical rule. You are mid-`/kit:execute` on a `VALIDATED` spec and the work
 reveals scope that must be added now ("also do Y"). Amend the spec in place;
-do not restart the lane and do not silently mutate it. Other docs
-(PLAYBOOK, ORCHESTRATION, `commands/execute.md`) point here; they do not restate
-this rule. The state-model row (`BUILDING -> SPECIFYING -> BUILDING`) lives in
-`docs/operating-layer-vision.md` §3.3; this section carries the operational rule.
+do not restart the lane and do not silently mutate it. The operator card
+(`MANUAL.md` "## Operator scenarios") and `commands/execute.md` point here; they
+do not restate this rule. The state-machine row (`BUILDING -> SPECIFYING ->
+BUILDING`) lives in `docs/architecture.md` "## SDLC state machine"; this section
+carries the operational rule, and the `## Flow and loop reference` below draws the
+amend micro-loop.
 
 The amend is governed by four invariants:
 
@@ -125,12 +269,13 @@ Per change-type, the companion docs that must move with it. This covers the enum
 
 | If a change touches | Companion docs that must update |
 |---|---|
-| `hooks/*` | `RUNBOOK.md`, README hook table, `tests/test-hooks.sh`, `tests/test-meta.sh` |
+| `hooks/*` | `MANUAL.md` (hook table + Troubleshooting), README hook table, `tests/test-hooks.sh`, `tests/test-meta.sh` |
 | `commands/*` (new) | `MANUAL.md`, README command table, `.claude-plugin/plugin.json` + `marketplace.json`, `tests/test-meta.sh` |
 | `agents/*` | README agent list, `tests/test-meta.sh` frontmatter checks |
-| `settings.json` (hook wiring) | README hook table, `RUNBOOK.md`, `install.sh` merge logic |
+| `settings.json` (hook wiring) | README hook table, `MANUAL.md` (Troubleshooting), `install.sh` merge logic |
 | `install.sh` | README install steps, `tests/` |
 | `rules/*` | README path-scoped-rules note, `docs/architecture.md` |
+| `lib/*` | README "Project structure", `docs/architecture.md`, `tests/test-meta.sh` + `tests/test-hooks.sh` (helper unit tests) |
 | `skills/*` | README, `MANUAL.md` |
 | `examples/hello-spec/*` | `examples/hello-spec/README.md`, the downstream-template note |
 | a PHILOSOPHY principle | `docs/PHILOSOPHY.md`, `commands/kit-health.md` reject-list |
@@ -147,6 +292,66 @@ The `backfill` lane (see the lane table) produces operating-layer docs rather th
 
 **Version surfaces.** The version string is duplicated and must stay in sync: it lives in `VERSION` (the source of truth), `.claude-plugin/plugin.json`, and `tool.toml`. Bumping the version means updating those; `marketplace.json` inherits it via `"source": "."` and needs no bump. The kit does NOT keep component counts (`N hooks`, `N commands`, etc.) in prose: describe the component set qualitatively, never as a hand-maintained number that silently rots.
 
+## Lead-owned convergence
+
+When work fans out across branches or goal-loop iterations, certain surfaces are
+touched by every change. To prevent write conflicts and to keep the integration
+boundary clean, these surfaces are **hands-off for workers**; the lead integrates
+them once via `/kit:ship` after all workers finish.
+
+### Hands-off shared-surface list
+
+Workers MUST NOT write these paths. The lead writes them exactly once at
+`/kit:ship`:
+
+- `CHANGELOG.md`
+- `VERSION`
+- `.claude-plugin/plugin.json`
+- `tool.toml`
+- `tests/test-meta.sh`
+- `_meta/BACKLOG.md`
+- `docs/retro/v*.md`
+- `marketplace.json` (inherits version via `"source": "."`, also hands-off)
+
+Every entry above appears in the doc-impact map's shared-surface rows (the
+"any shipped change (normal/full)" row covers CHANGELOG, VERSION,
+plugin.json, tool.toml, and retro; the "commands/*", "hooks/*", "agents/*",
+and "AGENTS.md" rows cover test-meta.sh; the "docs/specs/SPEC-NNN" row
+covers BACKLOG.md; the version-surfaces note covers marketplace.json).
+This list is a subset of the doc-impact map; the subset invariant is enforced
+by `tests/test-meta.sh`.
+
+### Worker signal: READY or BLOCKED
+
+Each worker, when its branch task set is complete, emits exactly one signal:
+
+- `READY` -- all tasks verified, branch clean, no cross-task blocker seen.
+- `BLOCKED` -- a blocker was hit that the worker cannot resolve alone (name it).
+
+The worker records this signal as a one-line status in its branch's final
+commit message or a `READY.md` / `BLOCKED.md` working-tree note (gitignored).
+The lead collates these signals before running `/kit:ship`.
+
+### Non-duplication clause
+
+Convergence has three strictly bounded jobs: (1) enumerate and enforce the
+hands-off shared-surface list above, (2) collate the READY/BLOCKED signals from
+all worker branches, and (3) hand the integrated result to `/kit:ship`.
+
+It does NOT do cross-task wiring checks -- that is `integration-checker`'s job,
+run at `/kit:execute` Step 4. It does NOT write the shared surfaces -- that is
+`/kit:ship`'s job (Steps 1b/4a/7 already own those writes). Convergence
+writing to `CHANGELOG.md`, `VERSION`, or any other hands-off surface directly
+is a violation of this contract.
+
+### Enforcement: Detect, don't dictate
+
+Convergence follows the kit's "Detect, don't dictate" principle. A worker
+writing to a hands-off surface is warned and logged to
+`~/.claude/dwarves-kit/logs/completeness.log`; it is never a hard block.
+The lead reviews the log at `/kit:ship` before integrating. Hard blocks are
+reserved for the safety subset (safety-gate hook, push-to-main blocker).
+
 ## What this contract does NOT do
 It does not lock phases. An experienced operator may skip /spec-validate on a
 normal-lane change or go straight to /next. The kit detects state
@@ -157,8 +362,10 @@ commands, push-to-main, premature completion, failed verification.
 ## Goal drafts (.claude/goals/)
 The kit keeps candidate goal drafts in `.claude/goals/<slug>.md` (gitignored,
 per-machine) beside the built-in `/goal`'s single active slot
-`.claude/last-goal.md`. The kit writes the drafts plus a derived `INDEX.md`; it
-NEVER writes `last-goal.md`. Activating a draft means handing its body to
+`.claude/last-goal.md`. The kit writes the drafts; the filesystem
+(`ls .claude/goals/*.md`) is the sole source of truth, there is no derived cache
+(ADR-0023). The kit NEVER writes
+`last-goal.md`. Activating a draft means handing its body to
 whatever goal-loop activator is present (the built-in `/goal`, the `ralph-loop`
 plugin, or the `goal-craft` skill); if none is installed, the drafts still work
 as plain reusable files. Brainstorm many drafts, one is active at a time; each
@@ -166,12 +373,30 @@ carries a `target_spec`/`id`. Picking a draft and routing it into a lane is `/ki
 render the queue + drafts read-only. There is no separate `/kit:goals`
 list/switch command (parked).
 
+**Lifecycle (drafted -> archived-on-ship).** A draft lives at the top level of
+`.claude/goals/` while its work is live; once its `target_spec` ships,
+`lib/goal-drafts.sh archive` (run by `/kit:ship`) moves it to
+`.claude/goals/done/` (moved, never deleted; `status:` flipped to `shipped`).
+The render commands enumerate top-level `*.md` only, so an archived draft drops
+out of "what's active" with no filter code. This is the goal **draft** store
+("what's active"); do not confuse it with the cross-session running-goal
+**registry** under `.git/kit-goals/` ("what's executing now", ADR-0022). The
+shared slug ties a draft to its registry claim; the two stores sit side by side
+in `docs/architecture.md` "## State model".
+
 ## Artifact placement and concurrency (multi-spec)
 The kit's concurrency model is **worktree-per-spec**: many specs coexist
 in `docs/specs/`, one is active per branch (branch-aware detection), and
-"multiple active specs at once" means N git worktrees, each one-active. The kit's
-boundary stops at per-worktree detection + per-worktree state isolation; spawning,
-scheduling, or merging the N worktrees is an external runtime, not the kit's job.
+"multiple active specs at once" means N git worktrees, each one-active.
+**`/kit:dispatch` spawns the N worktree workers and converges them lead-owned**
+(ADR-0019; one lead session, the in-session `Agent(run_in_background,
+isolation:worktree)` primitive locked by ADR-0020), behind the disjointness gate
+(`lib/dispatch-gate.sh`): two specs run concurrently only when their `## Touches`
+globs are provably disjoint, and a post-task drift guard checks each worker stayed in
+its globs. What stays an **external runtime, NOT the kit's job**: a DAG / wave
+scheduler / topological ordering / crash-recovery durability (GSD v2), and auto-merge
+(the human merges at `/kit:ship`). The kit does flat fan-out + a pairwise gate + a
+wait-queue, and stops there.
 
 The placement rule that keeps this safe: **an artifact bound to a spec lives IN the
 active spec; a pre-spec or per-diff artifact stays a working-tree file (isolated by
@@ -179,8 +404,9 @@ the worktree).** Lanes that produce a spec-bound result resolve "the active spec
 through the one shared active-spec path (so a writer and a later reader never split
 across two specs), and write into that spec, not a fixed-name root file. New lanes
 must follow this: if your output binds to a spec, append it as a `## Section` in the
-active spec (replace-not-stack), the way all four critique/plan lanes do
-(`/kit:test-plan`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`).
+active spec (replace-not-stack), the way the critique, plan, and review lanes do
+(`/kit:test-plan`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`,
+`/kit:review`, `/kit:review-team`).
 The shared invariant is the spec-first head; `/kit:visual-team` adds an inline
 fallback because it alone can run with neither a spec nor a brief.
 
@@ -191,7 +417,7 @@ fallback because it alone can run with neither a spec nor a brief.
 | `## Design critique` (`/kit:devs-team`) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
 | `## UI design` + `## Visual critique` (`/kit:ui-design`; `/kit:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
 | `docs/specs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
-| `REVIEW.md`, `TODOS.md` | working-tree files (gitignored) | per-diff, per worktree | transient `/review` output, regenerated each run; not spec-bound |
+| `## Review` (`/kit:review`, `/kit:review-team`) | in the active spec | per-spec | review verdict + findings + TODOs; replace-not-stack; inline in chat if no spec exists |
 | kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |
 
 The pre-spec brief is the one artifact that cannot be per-spec (no SPEC-NNN exists
@@ -199,6 +425,276 @@ yet); in that window concurrency relies on worktree isolation, and `/spec` folds
 brief into the spec so the spec becomes the carrier from then on. Same-directory
 branch-switching is NOT a supported concurrency mode; use a worktree per spec.
 
+### Multi-session (cross-session) coordination
+`/kit:dispatch` above is the **single-session** case: one lead session fans out workers
+and holds disjointness in its own context. The kit also supports the **multi-session**
+case (ADR-0022, SPEC-036): one operator opens several Claude sessions on one machine, one
+goal per session, and walks away. There is no shared lead, so the coordination moves onto
+disk, a **passive running-goal registry** under `$(git rev-parse --git-common-dir)/kit-goals/`
+(shared by every worktree of the repo, inherently untracked, never committed):
+
+- **Claim before building.** `/kit:assign` runs `bash lib/goal-registry.sh claim <slug>
+  <lane> <glob>...`; the goal is admitted only if its declared globs are disjoint from
+  every active registered goal (the same `lib/dispatch-gate.sh` rule, reused). An overlap
+  is REFUSED with the colliding goal named; the operator serializes or repicks.
+- **One single-writer file per goal.** A session writes only its own `<slug>.goal`, the
+  same one-writer-per-surface model as the hands-off list; no shared write.
+- **Monitor from any session.** `bash lib/goal-registry.sh list` (surfaced in
+  `/kit:start`) shows every running goal + lane + status across sessions, the kit-level
+  companion to the native agent view (which sees only one session's subagents).
+- **Each goal leaves an attempt log.** `bash lib/goal-registry.sh log <slug> "..."`
+  appends a human-legible line of what the goal tried (`<slug>.attempts`).
+- **Release on completion.** `bash lib/goal-registry.sh release <slug>` drops the entry.
+  A stale `running` entry from a crashed session is visible in `list` and cleared the same
+  way; there is no GC daemon (that would be a runtime).
+
+What stays an **external runtime, NOT the kit's job** (unchanged): coordination across
+machines, by 3+ live human operators, or with goal-ordering chains (B waits for A to
+merge), all L5 (Nimbalyst / GSD v2). The registry records and compares; it never
+schedules, sequences, or merges.
+
 Design provenance for every rule in this contract lives in `docs/specs/` and
 `docs/decisions/`: the spec files and ADRs carry the rationale and history. This
 contract states the rules; it does not cite the spec IDs that decided them.
+
+## Flow and loop reference
+
+The visual companion to the contract above: the same machine drawn as flows and
+loops. The tables above are the rules; this section is the picture. For per-command
+operator detail read `MANUAL.md`; for component fit and the SDLC state machine read
+`docs/architecture.md`.
+
+At a glance: **1** backbone (the spine, above), **5** primary intake lanes (the lane
+table, above), **3** bounded loops (the engines, below), **8** opt-in side-flows,
+**7** alternate/branch flows, and **4** hard stops (the only blockers). Everything
+except the four hard stops **suggests and routes; it does not block**.
+
+### The state stores the flows move between
+
+Three stores; nothing is re-entered between phases. (The durable/ephemeral table is
+in `docs/architecture.md` "## State model"; this is the flow view.)
+
+```text
+  _meta/BACKLOG.md            docs/specs/SPEC-NNN-<slug>.md      .claude/goals/<slug>.md
+  ┌─────────────────┐         ┌──────────────────────────┐      ┌──────────────────────┐
+  │ the Active queue│         │ the contract             │      │ ephemeral goal drafts│
+  │ ID-NNN rows     │ ──────▶ │ Status: DRAFT            │ ◀──▶ │ (gitignored,         │
+  │ status:         │  assign │        -> VALIDATED      │      │  per-machine)        │
+  │ queued/speccing/│         │        -> SHIPPED        │      │ one draft per ID     │
+  │ validated/      │         │ tasks, AC, Verification, │      └──────────────────────┘
+  │ executing/      │         │ After state, Open Qs     │        the built-in /goal owns
+  │ shipped (parked)│         └──────────────────────────┘        .claude/last-goal.md;
+  └─────────────────┘                                             the kit NEVER writes it
+```
+
+**Detector vs mutator** (load-bearing): `/kit:start` and `/kit:next` only read and
+render the queue + drafts. `/kit:assign` is the only mutator: it writes a goal draft,
+flips a backlog status, and hands off. Given freeform intent instead of an `ID-NNN`,
+`/kit:assign` delegates the crystallize interview to `/kit:think`, then allocates the
+ID + BACKLOG row (approve-before-allocate, sanitized) before routing as usual.
+
+### Pick a lane (the decision tree)
+
+```text
+                       is it a defect / regression / failing test ?
+                                   │ yes            │ no
+                                   ▼                ▼
+                                 bug          new work on an existing repo
+                                              with no operate-layer docs ?
+                                                   │ yes        │ no
+                                                   ▼            ▼
+                                                backfill    how big / how risky ?
+                                                            ├─ trivial edit ....... tiny
+                                                            ├─ one bounded change . normal
+                                                            └─ risk-list match .... full
+```
+
+The `full` trigger list (see the lane table) is a hard tripwire: anything on it uses
+`full` unless you explicitly narrow the scope and say why.
+
+### The three bounded loops (engines)
+
+The kit ships **bounded in-session loops** and declines **unbounded outer loops**. A
+bounded loop continues *within* the current session under a model-evaluated stop
+condition plus the safety subset; an unbounded loop spawns *new* sessions without one
+(autonomous-runtime territory, out of scope). All three engines are bounded.
+
+**Goal loop.** A continuation that keeps the session working one objective until a
+verifiable stop holds. Wired from the backlog by `/kit:assign`, activated by whatever
+loop primitive is present (the built-in `/goal`, the `ralph-loop` plugin, or the
+`goal-craft` skill). Enforcer: the anti-rationalization Stop hook (blocks premature
+"done"), plus the rest of the safety subset. Stop: the objective's `## Verification`
+command(s) pass AND the done-definition holds; on an unresolvable blocker it appends a
+note to the spec's `## Open questions` and stops.
+
+```text
+   activator starts the objective
+            │
+            ▼
+   ┌───▶ do the next increment ──▶ run ## Verification
+   │            ▲                        │
+   │            │                  pass? │
+   │            │              ┌─────────┴─────────┐
+   │            │           no │                   │ yes
+   │            │              ▼                   ▼
+   │            │     anti-rationalization     ALL done? ──no──┐
+   │            │     blocks "done";           │ yes           │
+   │            └─────  keep working ◀─────────┘               │
+   │                                                            │
+   │   hit a blocker you can't resolve?                         ▼
+   └── write a note to spec ## Open questions ─────────────▶  STOP
+```
+
+**Debug loop** (`/kit:debug`, the `bug` lane). A systematic four-phase loop under one
+iron law: **NO FIX WITHOUT A RECORDED ROOT CAUSE.** Evidence accrues in an append-only
+ledger `.claude/debug/<slug>.md` whose `## Root cause` heading is the contract.
+Enforcer: the guess-fix guard (a gated mode of the anti-rationalization hook) blocks a
+fix/done claim while the open ledger's `## Root cause` is empty. Stop: root cause
+recorded + fix verified + human-confirmed.
+
+```text
+   /kit:debug
+       │
+       ▼
+   Phase 1: Root cause ─▶ Phase 2: Pattern ─▶ Phase 3: Hypothesis ─▶ Phase 4: Implementation
+       │  (ledger            (reproduce,          (predict, then         (apply the fix)
+       │  ## Root cause)     narrow; bisect        test the guess)            │
+       │                     if regression)             │                     ▼
+       │                                                │                verified? ──no──┐
+   guess-fix guard: a fix/done claim is BLOCKED         │                     │ yes      │
+   while ## Root cause is empty ◀───────────────────────┘                     ▼          │
+                                                                       human-confirm     │
+   3 failed fixes in a row ──▶ STOP: architecture wall (rethink design)        │         │
+                                                                               ▼         │
+                                                                             DONE ◀──────┘
+```
+
+**Execute verification pipeline** (the build engine). `/kit:execute` dispatches one
+worker per task, verifies each in a fresh context, retries fixable failures, and checks
+cross-task wiring at the end. Self-reported "done" is never proof; the verifier is.
+Enforcer: the verification pipeline is itself a hard stop. Stop: every task PASS **and**
+the integration-checker PASS (multi-task specs). Branches: `PASS` (advance),
+`FAIL:fixable` (retry via fix-agent, **max 2**), `FAIL:escalate` or retries exhausted
+(stop -> human).
+
+```text
+   /kit:execute  (record pre-build base ref)
+        │
+        ▼
+   ┌── for each task in phase ──────────────────────────────────────────┐
+   │     worker subagent (fresh context) ──▶ task-verifier (read-only)   │
+   │                          ┌───────────────────┼───────────────────┐  │
+   │                       PASS              FAIL:fixable        FAIL:escalate
+   │                          │                   │                    │  │
+   │                          │                   ▼                    │  │
+   │                          │            fix-agent (scoped)          │  │
+   │                          │            re-verify; retry < 2 ─┐     │  │
+   │                          │            retries == 2 ─────────┼────▶│  │
+   │                          ▼                                  │     ▼  │
+   │                   mark task done ◀────────────────────────────  ESCALATE
+   └──────────┬─────────────────────────────────────────────────────────┘
+              │ all tasks PASS
+              ▼
+   phase checkpoint (human: continue / review / stop)
+              ▼
+   integration-checker (read-only, diffs whole build from base ref)
+        ┌─────┼───────────────┐
+      PASS  FAIL:fixable   FAIL:escalate
+        │     │ (fix-agent)     ▼
+        ▼     ▼            ESCALATE
+      build complete ◀── re-check
+```
+
+**Mid-flight amend micro-loop** (a side excursion off the execute pipeline, not a
+fourth engine). The canonical rule + four invariants are in "## Mid-flight amend"
+above; this only draws the loop.
+
+```text
+   BUILDING (mid /kit:execute, spec is VALIDATED)
+        │  trigger: "also do Y"
+        ▼
+   reach a task checkpoint  ──────────────────────────────┐
+   (in-flight task verified + committed; - [x] frozen)     │ not at a checkpoint yet?
+        │                                                  │ finish the in-flight task first
+        ▼                                                  └──────────────────────────────┘
+   SPECIFYING (amend, not restart)
+        - append new - [ ] TASK rows; delta After-state / AC / Verification
+        - record an ## Amendments entry
+        - re-validate the DELTA only (full: /spec-validate; normal: advisory)
+        │  Status STAYS VALIDATED (no drop to DRAFT)
+        ▼
+   /kit:next  ──▶  BUILDING (resume; runs only the amended tasks)
+```
+
+### Opt-in side-flows (8)
+
+Advisory, never blocking. They enrich a lane but are not required by any. All write
+**into the active spec** when the output binds to a spec (replace-not-stack), so a
+later reader and an earlier writer never split across two specs.
+
+| # | Flow | Trigger | Writes to | Stop |
+|---|---|---|---|---|
+| 1 | `/kit:design` | between `/think` and `/spec`, when the solution needs working out | `docs/specs/DECISION-BRIEF.md` (folded into the spec by `/spec`) | solution agreed per section |
+| 2 | `/kit:devs-team` | before the spec hardens; 5 engineering lenses | `## Design critique` in the active spec (else the brief) | verdict recorded |
+| 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
+| 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |
+| 5 | `/kit:test-plan` | before `/execute`; derive a coverage matrix | `## Test plan` in the spec (consumed by `/execute`) | matrix written |
+| 6 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP |
+| 7 | `/kit:absorb` | maintainer-only external-absorption audit | dated report under `docs/absorption/` | proposal-only report (human merge gate) |
+| 8 | `/kit:kit-health` | maintainer self-assessment vs PHILOSOPHY, before tagging | report (stdout) | assessment rendered |
+
+### Alternate / branch flows (7)
+
+The edges that fire when the happy path does not hold.
+
+1. **Retry (fixable failure).** A `task-verifier` / `integration-checker` `FAIL:fixable`
+   dispatches a scoped fix-agent, then re-verifies. Cap: 2 retries. 1-2 cycles catch
+   import/assertion/off-by-one bugs; 3+ means a design problem.
+2. **Escalate (unfixable or exhausted).** `FAIL:escalate`, or retries hitting the cap,
+   stops the loop and hands to the human with full context. Never auto-retried.
+3. **Ambiguous spec.** When more than one non-`SHIPPED`/`PARKED` spec is active and the
+   branch slug does not disambiguate, the detectors emit `spec:ambiguous(...)` and ask
+   rather than silently pick.
+4. **No activator installed.** `/kit:assign` detects the goal-loop activator (`/goal` ->
+   `ralph-loop` -> `goal-craft`). If none is installed it degrades gracefully: the draft
+   is left as a plain reusable file. Only one-step activation is lost.
+5. **Idempotent re-run.** Re-running `/kit:assign` for an ID that already has a
+   `.claude/goals/<slug>.md` re-surfaces the existing draft instead of duplicating it or
+   double-advancing status. The filesystem is the source of truth.
+6. **DO-NOT-SHIP gate.** `/kit:ship` reads the spec's `## Review` verdict first.
+   `DO NOT SHIP` -> stop, fix first. `FIX THEN SHIP` -> apply fixes, then ship. No
+   `## Review` section -> warn and ask; never silently skipped.
+7. **Completeness warn + log (not a block).** Two self-checks (decision-translation and
+   doc-update) warn + log to `~/.claude/dwarves-kit/logs/completeness.log` without
+   blocking; `/kit:ship` and `/kit:retro` review that log at the gate. (Full rule: the
+   "## Completion contract" above.)
+
+### The four hard stops (the only blockers)
+
+Everything else suggests or warns. These four refuse to proceed, because the cost of the
+mistake is irreversible:
+
+| Hard stop | Fires on | Mechanism |
+|---|---|---|
+| safety-gate | destructive Bash (`rm -rf`, `DROP TABLE`, `git reset --hard`, `kubectl delete`; build-artifact allowlist exempt) | PreToolUse hook, exit 2 |
+| push-to-main blocker | a push to `main`/`master`/protected | PreToolUse hook, exit 2 |
+| anti-rationalization | premature "done" claim; phantom-impl stub in the diff; guess-fix while `## Root cause` empty | Stop hook |
+| verification pipeline | a task whose acceptance criteria are unmet or whose tests did not actually run | `/execute` gate (worker -> verifier -> fix -> escalate) |
+
+### Quick reference: trigger -> flow -> stop -> enforcer
+
+| Trigger | Starts | Stop condition | Enforcer |
+|---|---|---|---|
+| `/kit:start` | render queue + drafts | output rendered | none (detector) |
+| `/kit:assign <ID-NNN or freeform>` | goal draft + lane routing (freeform: delegate to `/kit:think`, then allocate ID + row) | draft written, status flipped, handed off | none (mutator; idempotent; approve-before-allocate) |
+| `/kit:dispatch <specs>` | disjointness gate -> N background worktree workers -> lead-owned convergence | all workers READY + drift-clean, converged via `/kit:ship` | disjointness gate + drift guard (`lib/dispatch-gate.sh`); no auto-merge; no DAG (ADR-0019) |
+| `/kit:think` | decision brief | brief written (if BUILD) | advisory |
+| `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
+| `/kit:spec-validate` | 5-lens adversarial review | `Status: VALIDATED` | advisory (full lane) |
+| `/kit:execute` | verification pipeline | all tasks + integration PASS | verification pipeline (hard) |
+| `/kit:debug` | 4-phase debug loop | root cause + fix verified + human-confirmed | iron law + guess-fix guard |
+| `/kit:review[-team]` | review | verdict recorded in the spec's `## Review` | advisory |
+| `/kit:docs` | doc sync + doc-verifier | docs match code | advisory |
+| `/kit:ship` | ship pipeline | tagged/PR; spec `SHIPPED`; ID off queue | ship gate + push-to-main blocker (hard) |
+| `/kit:retro` | retrospective | `docs/retro/RETRO-<date>-<slug>.md` written | advisory |
+| a `/goal` activator | goal loop | `## Verification` passes + done-definition | anti-rationalization (hard) |

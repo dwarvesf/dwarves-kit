@@ -67,12 +67,46 @@ created: <YYYY-MM-DD>
 <the six-section operating directive from Step 3 (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if), ready to paste into an activator>
 ```
 
-`.claude/` is gitignored (per-machine drafts). The filesystem (`ls .claude/goals/*.md`) is authoritative; if a `.claude/goals/INDEX.md` cache exists, rebuild its row from the files. Do NOT write `.claude/last-goal.md`: the built-in `/goal` owns that slot (ADR-0011).
+`.claude/` is gitignored (per-machine drafts). The filesystem (`ls .claude/goals/*.md`) is the sole source of truth; there is no derived cache (ADR-0023). A draft is retired (moved to `.claude/goals/done/`, never deleted) once its `target_spec` ships, via `lib/goal-drafts.sh archive` at `/kit:ship`. Do NOT write `.claude/last-goal.md`: the built-in `/goal` owns that slot (ADR-0011).
 
 ### Step 5: Pick the lane + detect the activator
 
-- **Lane**: read the item's Lane column (`tiny` / `normal` / `full`); it selects the WORKFLOW path.
+- **Lane**: read the item's Lane column (`tiny` / `normal` / `full` / `bug` / `backfill`); it selects the WORKFLOW path. If the column is blank, or you want a check, auto-classify from the title:
+
+  ```bash
+  bash lib/lane-classify.sh classify "<the item title / crystallized objective>"
+  ```
+
+  It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, full, bug, normal; "when in doubt, heavier"). Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: if you disagree, override and say why (a heavier lane is always safe). The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
 - **Activator**: detect what can run the loop, in order: the built-in `/goal` (if present), the `ralph-loop` plugin, or the `goal-craft` skill. Surface the draft body for whichever is available. If none is installed, say so and leave the draft as a plain reusable file (paste the body wherever). Never assume a specific activator exists.
+
+### Step 5b: Claim the goal in the cross-session registry (multi-session safety)
+
+If the operator may run other Claude sessions on this repo at the same time, claim the
+goal so two sessions never pick colliding file-sets (ADR-0022, SPEC-036). Use the slug,
+the lane from Step 5, and the goal's declared write-set (the target spec's `## Touches`
+globs if it has them, else the scope-fence dirs from the Constraints section, as `dir/**`
+prefix globs):
+
+```bash
+bash lib/goal-registry.sh claim <slug> <lane> <glob>...
+```
+
+- **CLAIMED** -> registered as one single-writer file under `.git/kit-goals/`; proceed to
+  hand-off. The goal now shows in `/kit:start`'s running-goals monitor.
+- **REFUSED: overlaps running goal '<other>'** -> another active session already owns an
+  overlapping file-set. Do NOT route this goal now; tell the operator to serialize (finish
+  and `release` the other goal first) or repick a disjoint goal. This is the cross-session
+  twin of the `/kit:dispatch` disjointness gate, reusing the same rule (`lib/dispatch-gate.sh`).
+
+This is advisory, not a hard gate (Detect, don't dictate): a single-session operator can
+ignore a stale entry and clear it with `bash lib/goal-registry.sh release <slug>`. On goal
+completion, the loop releases its claim (`release <slug>`).
+
+**Attempt-log convention.** Add one line to the directive's Operating rules so the loop
+leaves a human-legible trail of what it tried: after each attempt/iteration, run
+`bash lib/goal-registry.sh log <slug> "<one line of what was tried>"`. A human monitoring
+the registry then sees not just who is running but what each goal has attempted.
 
 ### Step 6: Update status + hand off
 

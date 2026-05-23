@@ -9,8 +9,10 @@ node_modules/
 # Local Claude Code user state and per-machine settings
 .claude/
 
-# Kit workflow artifacts: generated per-diff by /review and /review-team,
-# consumed by /ship and /start. Transient, regenerated each run, stale after
-# ship. Needed on disk during the lifecycle, never in version control.
+# Legacy / retired artifacts the kit no longer writes: review output now lives in
+# the spec's `## Review` section, and the spec location unified onto docs/specs/
+# (ADR-0010). Kept ignored so a stray copy (an older kit version, a downstream
+# project, or a manual run) can never slip into version control.
 REVIEW.md
 TODOS.md
+.planning/

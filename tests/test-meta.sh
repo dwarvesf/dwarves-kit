@@ -595,6 +595,35 @@ else
   PASS=$((PASS + 1))
 fi
 
+# ============================================================
+echo ""
+echo "=== Concurrency-safe review placement (## Review in the spec) ==="
+# ============================================================
+# Review output is concurrency-safe: it lives in the active spec as a `## Review`
+# section, never a fixed-name root file two worktrees/sessions could clobber. Pin
+# the writer/reader/home contract (same drift-guard shape as `## Test plan`):
+# spec.md documents the home, review + review-team write it, ship reads its verdict.
+REVIEW_CMD="$KIT_DIR/commands/review.md"
+RT_CMD="$KIT_DIR/commands/review-team.md"
+SHIP_CMD="$KIT_DIR/commands/ship.md"
+for FILE in "$KIT_DIR/commands/spec.md" "$REVIEW_CMD" "$RT_CMD" "$SHIP_CMD"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -qF '## Review' "$FILE" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} '$(basename "$FILE")' carries the '## Review' spec-section contract"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} '$(basename "$FILE")' lost the '## Review' contract (review placement drift)"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# No command may write or read a fixed-name root review/todo file (the thing the
+# move removes). A `REVIEW.md` / `REVIEW-*.md` / `TODOS.md` mention in review,
+# review-team, ship, or start is a regression back to the shared-namespace design.
+ROOT_REVIEW_HITS=$(grep -lE 'REVIEW\.md|REVIEW-[a-z]|TODOS\.md' \
+  "$REVIEW_CMD" "$RT_CMD" "$SHIP_CMD" "$KIT_DIR/commands/start.md" 2>/dev/null | tr '\n' ' ' | sed 's/ $//')
+assert_eq "no fixed-name REVIEW*/TODOS root file in review/ship/start (offenders: ${ROOT_REVIEW_HITS:-none})" "" "$ROOT_REVIEW_HITS"
+
 # SPEC-023: devs-team + visual-team write their critiques spec-first. Pin the
 # wording on both of devs-team's sides (read AND write) so a one-sided flip back
 # to brief-first fails the suite. No command reads these critiques (human-facing),
@@ -747,12 +776,13 @@ for HEADING in "## Verification" "## Open questions"; do
   fi
 done
 
-# SPEC-010: no stray .planning/ refs in command prose (the convention unified onto
-# docs/specs/). Hooks legitimately keep a bounded .planning/ deprecation fallback
-# (behavior-tested in test-hooks.sh), so they are NOT guarded here. The one allowed
-# command ref is the explicit "legacy" note in start.md.
-STRAY_PLANNING=$(grep -rn '\.planning' "$KIT_DIR/commands/" 2>/dev/null | grep -vi 'legacy' | wc -l | tr -d ' ')
-assert_eq "no stray .planning/ refs in commands/ (legacy note excepted)" "0" "$STRAY_PLANNING"
+# SPEC-010 + concurrency sweep (ADR-0010): docs/specs/ is the SOLE spec location;
+# the legacy .planning/ deprecation fallback is fully removed from every live surface
+# (commands, hooks, agents). No exception remains -- ANY .planning ref in these dirs
+# is a regression. (Dated ledgers under docs/specs|decisions|retro may still name it
+# as history; this file names it to describe the guard, so tests/ is not scanned.)
+STRAY_PLANNING=$(grep -rn '\.planning' "$KIT_DIR/commands/" "$KIT_DIR/hooks/" 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "no .planning/ refs in commands/ or hooks/ (fallback removed)" "0" "$STRAY_PLANNING"
 
 # SPEC-005: the state model is documented (the dual-mode detection itself is
 # behavior-tested in test-hooks.sh). Backlog schema + architecture state-model
@@ -784,10 +814,10 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# SPEC-005 TASK-2: agents/ carry no stray .planning ref either (same unify); the
-# "legacy ... fallback" pointers in task-verifier/responding-to-review are allowed.
-STRAY_PLANNING_AGENTS=$(grep -rn '\.planning' "$KIT_DIR/agents/" 2>/dev/null | grep -vi 'legacy' | wc -l | tr -d ' ')
-assert_eq "no stray .planning/ refs in agents/ (legacy fallback excepted)" "0" "$STRAY_PLANNING_AGENTS"
+# SPEC-005 TASK-2 + concurrency sweep: agents/ carry no .planning ref at all (the
+# legacy fallback pointers in task-verifier/responding-to-review were removed).
+STRAY_PLANNING_AGENTS=$(grep -rn '\.planning' "$KIT_DIR/agents/" 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "no .planning/ refs in agents/ (fallback removed)" "0" "$STRAY_PLANNING_AGENTS"
 
 # SPEC-006: the orchestration spine is documented + /kit:assign exists.
 WF_SPINE="$KIT_DIR/WORKFLOW.md"
@@ -1110,15 +1140,16 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# (d) operating-layer-vision.md carries the BUILDING -> SPECIFYING amend transition
-# row in §3.3. Pin the whole row (From cell BUILDING, the amend trigger, To cell
+# (d) architecture.md "## SDLC state machine" carries the BUILDING -> SPECIFYING amend
+# transition row. Pin the whole row (From cell BUILDING, the amend trigger, To cell
 # SPECIFYING) so the model stays legible; brittle-proofed via the full-row regex.
+# (This guard moved here when the operating-layer-vision doc was folded into architecture.md.)
 TOTAL=$((TOTAL + 1))
-if grep -qE '\| BUILDING \|.*amend the spec.*\| SPECIFYING' "$KIT_DIR/docs/operating-layer-vision.md" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} operating-layer-vision.md has the BUILDING -> SPECIFYING amend row (SPEC-027)"
+if grep -qE '\| BUILDING \|.*amend the spec.*\| SPECIFYING' "$KIT_DIR/docs/architecture.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} architecture.md has the BUILDING -> SPECIFYING amend row (SPEC-027)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} operating-layer-vision.md lost the BUILDING -> SPECIFYING amend transition row"
+  echo -e "  ${RED}FAIL${NC} architecture.md lost the BUILDING -> SPECIFYING amend transition row"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1152,6 +1183,452 @@ if grep -qF 'git tag -l' "$KIT_DIR/commands/kit-health.md" 2>/dev/null \
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} kit-health.md lost the phantom-cut check (needs git-tag check + phantom)"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
+echo "=== V-model lens, convergence, and inventory parity (SPEC-031) ==="
+# ============================================================
+
+# (a) No "8 (workflow|lifecycle )?phases" string in operating surfaces.
+# Scope: docs/, commands/, WORKFLOW.md, README.md, MANUAL.md, AGENTS.md --
+# EXCLUDING docs/specs/, docs/decisions/, docs/research/, docs/retro/, docs/handoff/
+# (AMEND-001: archive dirs are point-in-time and may reference old counts -- a retro
+# that documents the fix must be free to quote the forbidden string; only live
+# surfaces are checked).
+PHASES_8_HITS=$(cd "$KIT_DIR" && grep -rIn \
+  --exclude-dir=research --exclude-dir=specs --exclude-dir=decisions \
+  --exclude-dir=retro --exclude-dir=handoff \
+  -E "8 (workflow|lifecycle )?phases" \
+  docs/ commands/ WORKFLOW.md README.md MANUAL.md AGENTS.md 2>/dev/null | head -1)
+TOTAL=$((TOTAL + 1))
+if [ -z "$PHASES_8_HITS" ]; then
+  echo -e "  ${GREEN}PASS${NC} no '8 (workflow|lifecycle )?phases' string in operating surfaces (SPEC-031, AMEND-001)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} stale '8 phases' string found in operating surfaces (SPEC-031, AMEND-001)"
+  echo "    first hit: $PHASES_8_HITS" >&2
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) WORKFLOW.md carries both "## The V-model lens" and "## Lead-owned convergence"
+# sections, and the lens section lists every phase name from the cycle table.
+#
+# Implementation notes (simplification logged):
+# - Phase names are extracted from the cycle table (## The cycle ... ## The V-model lens).
+# - The "UI design (opt-in, downstream)" cycle-table entry is abbreviated to
+#   "UI design (opt-in)" in the lens's phase-names sentence. We strip the
+#   ", downstream" qualifier before matching so the test is not brittle to this
+#   intentional abbreviation. All other phase names are matched verbatim.
+# - We assert BOTH section headings PLUS each phase name within the lens block,
+#   not merely heading existence, so the test is not silently weakened.
+TOTAL=$((TOTAL + 1))
+if grep -q "^## The V-model lens" "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has '## The V-model lens' section (SPEC-031)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing '## The V-model lens' section"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -q "^## Lead-owned convergence" "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has '## Lead-owned convergence' section (SPEC-031)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md missing '## Lead-owned convergence' section"
+  FAIL=$((FAIL + 1))
+fi
+
+# Extract phase names from the cycle table (column 1, skipping header and separator).
+# Then check each (after stripping ", downstream" qualifier) appears in the lens section.
+LENS_SECTION=$(sed -n '/^## The V-model lens/,/^## /p' "$KIT_DIR/WORKFLOW.md")
+CYCLE_PHASES=$(sed -n '/^## The cycle/,/^## The V-model lens/p' "$KIT_DIR/WORKFLOW.md" \
+  | grep "^| " | grep -v "^| Phase\|^|---" \
+  | sed 's/^| \([^|]*\)|.*/\1/' | sed 's/[[:space:]]*$//')
+TOTAL=$((TOTAL + 1))
+if [ "$(printf '%s\n' "$CYCLE_PHASES" | grep -c .)" -ge 13 ]; then
+  echo -e "  ${GREEN}PASS${NC} CYCLE_PHASES extracted >= 13 entries (extraction not vacuous)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} CYCLE_PHASES extracted fewer than 13 entries (heading rename or parse break?)"
+  FAIL=$((FAIL + 1))
+fi
+PHASE_FAIL=0
+while IFS= read -r phase; do
+  # Strip ", downstream" qualifier (lens abbreviates "UI design (opt-in, downstream)"
+  # to "UI design (opt-in)"); all other names match verbatim.
+  trimmed=$(echo "$phase" | sed 's/, downstream//')
+  TOTAL=$((TOTAL + 1))
+  if echo "$LENS_SECTION" | grep -qF "$trimmed"; then
+    echo -e "  ${GREEN}PASS${NC} V-model lens references cycle phase '$phase'"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} V-model lens missing cycle phase '$phase' (searched as '$trimmed')"
+    FAIL=$((FAIL + 1))
+    PHASE_FAIL=$((PHASE_FAIL + 1))
+  fi
+done <<< "$CYCLE_PHASES"
+
+# (c) Every entry in the hands-off list (## Lead-owned convergence -> ### Hands-off
+# shared-surface list) also appears in the WORKFLOW.md #### Doc-impact map.
+# This enforces the "subset invariant" stated in WORKFLOW.md itself.
+# Implementation note: entries with wildcards (e.g. docs/retro/v*.md) are matched
+# on their base path (docs/retro/) since the doc-impact map uses the base path.
+# DOC_IMPACT_BLOCK intentionally spans the map + version-surfaces note (the range
+# ends at the next ## heading, which includes both the map table and the note below
+# it); matching against the full block is correct per DEC-005 (looser match is deliberate).
+DOC_IMPACT_BLOCK=$(sed -n '/^#### Doc-impact map/,/^## Lead-owned convergence/p' "$KIT_DIR/WORKFLOW.md")
+HANDS_OFF_ENTRIES=$(sed -n '/^### Hands-off shared-surface list/,/^###/p' "$KIT_DIR/WORKFLOW.md" \
+  | grep "^-" \
+  | sed "s/^- \`\([^\`]*\)\`.*/\1/" | sed "s/^- //")
+TOTAL=$((TOTAL + 1))
+if [ "$(printf '%s\n' "$HANDS_OFF_ENTRIES" | grep -c .)" -ge 8 ]; then
+  echo -e "  ${GREEN}PASS${NC} HANDS_OFF_ENTRIES extracted >= 8 entries (extraction not vacuous)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} HANDS_OFF_ENTRIES extracted fewer than 8 entries (heading rename or parse break?)"
+  FAIL=$((FAIL + 1))
+fi
+while IFS= read -r entry; do
+  # Strip wildcard suffix for matching (docs/retro/v*.md -> docs/retro/)
+  base=$(echo "$entry" | sed 's/\*\.md[^)]*$//' | sed 's/v\*$//')
+  TOTAL=$((TOTAL + 1))
+  if echo "$DOC_IMPACT_BLOCK" | grep -qF "$base"; then
+    echo -e "  ${GREEN}PASS${NC} hands-off entry '$entry' appears in doc-impact map (SPEC-031)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} hands-off entry '$entry' NOT in doc-impact map (subset invariant broken)"
+    FAIL=$((FAIL + 1))
+  fi
+done <<< "$HANDS_OFF_ENTRIES"
+
+# (d) The command/agent V-phase inventory table in docs/architecture.md has a row
+# count equal to the live file count (ls commands/*.md + ls agents/*.md).
+# Implementation note: rows are counted from the inventory table only, delimited
+# between "## Command and agent V-phase inventory" and "## State model" (the next
+# ## heading after the table). Only pipe-prefixed data rows are counted (excluding
+# the header row and separator row identified by "| Entry" and "|---").
+ARCH_TABLE_ROWS=$(sed -n '/^## Command and agent V-phase inventory/,/^## /p' \
+  "$KIT_DIR/docs/architecture.md" \
+  | grep "^|" | grep -v "^| Entry\|^|---" | wc -l | tr -d ' ')
+CMD_COUNT=$(ls "$KIT_DIR/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
+AGT_COUNT=$(ls "$KIT_DIR/agents/"*.md 2>/dev/null | wc -l | tr -d ' ')
+LIVE_COUNT=$((CMD_COUNT + AGT_COUNT))
+assert_eq "architecture.md inventory table rows == live file count ($ARCH_TABLE_ROWS == $LIVE_COUNT)" \
+  "$LIVE_COUNT" "$ARCH_TABLE_ROWS"
+
+# ============================================================
+echo ""
+echo "=== Parallel-execution boundary un-nerf (SPEC-032 C1 / ADR-0019) ==="
+# ============================================================
+
+# (a) The superseding ADR exists (the goal's "conflict settled by a recorded ADR").
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/docs/decisions/0019-parallel-execution-boundary.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} ADR-0019 (parallel-execution-boundary) exists (SPEC-032 C1)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ADR-0019 (parallel-execution-boundary) missing"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) The un-nerf is cross-referenced from the live policy + map docs (not silently
+# broken): PHILOSOPHY and architecture.md both cite ADR-0019.
+for doc in "docs/PHILOSOPHY.md" "docs/architecture.md"; do
+  TOTAL=$((TOTAL + 1))
+  if grep -q "ADR-0019" "$KIT_DIR/$doc" 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} $doc cross-references ADR-0019 (un-nerf recorded)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $doc must cross-reference ADR-0019"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# (c) The old hard-forbid claim no longer survives as a live PHILOSOPHY statement.
+# The bald "not competing with agent runtimes" ban was the C1 boundary; its reworded
+# form is the cross-goal fan-out carve-out. Scoped to PHILOSOPHY.md (the live policy);
+# specs/ADRs that QUOTE the old wording to document the supersession are exempt.
+TOTAL=$((TOTAL + 1))
+if grep -q "not competing with agent runtimes" "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null; then
+  echo -e "  ${RED}FAIL${NC} stale C1 ban ('not competing with agent runtimes') still live in PHILOSOPHY.md"
+  FAIL=$((FAIL + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} stale C1 ban absent from PHILOSOPHY.md (boundary reworded, ADR-0019)"
+  PASS=$((PASS + 1))
+fi
+
+# (d) kit-health carries the recorded fan-out carve-out so it does not flag dispatch.
+TOTAL=$((TOTAL + 1))
+if grep -qi "cross-goal fan-out" "$KIT_DIR/commands/kit-health.md" 2>/dev/null \
+   && grep -q "ADR-0019" "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} kit-health records the cross-goal fan-out carve-out (ADR-0019)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} kit-health must record the cross-goal fan-out carve-out (ADR-0019)"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
+echo "=== Dispatch moat: ## Touches + lib/dispatch-gate.sh (SPEC-032) ==="
+# ============================================================
+
+# (a) The gate/guard helper exists and is executable (pure-bash moat).
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/lib/dispatch-gate.sh" ] && [ -x "$KIT_DIR/lib/dispatch-gate.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/dispatch-gate.sh exists and is executable (SPEC-032)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} lib/dispatch-gate.sh missing or not executable"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) The spec template documents the `## Touches` section + the prefix-glob constraint.
+TOTAL=$((TOTAL + 1))
+if grep -q '^## Touches' "$KIT_DIR/commands/spec.md" 2>/dev/null \
+   && grep -qi 'directory-prefix' "$KIT_DIR/commands/spec.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} commands/spec.md documents ## Touches + the prefix-glob constraint (SPEC-032)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/spec.md must document ## Touches + the directory-prefix-glob constraint"
+  FAIL=$((FAIL + 1))
+fi
+
+# (c) The new lib/ dir is registered in the WORKFLOW doc-impact map (new-top-level-dir rule).
+TOTAL=$((TOTAL + 1))
+if grep -q '`lib/\*`' "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} lib/* row present in the WORKFLOW doc-impact map (SPEC-032)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW doc-impact map missing the lib/* row"
+  FAIL=$((FAIL + 1))
+fi
+
+# (d) The /kit:dispatch command exists with a description and is wired to the moat.
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/commands/dispatch.md" ] && grep -q '^description:' "$KIT_DIR/commands/dispatch.md"; then
+  echo -e "  ${GREEN}PASS${NC} commands/dispatch.md exists with a description (SPEC-032)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/dispatch.md missing or has no description"
+  FAIL=$((FAIL + 1))
+fi
+
+# (e) dispatch.md runs the gate + drift guard and converges without auto-merge.
+TOTAL=$((TOTAL + 1))
+if grep -q 'dispatch-gate.sh' "$KIT_DIR/commands/dispatch.md" 2>/dev/null \
+   && grep -qi 'no auto-merge\|never auto-merge\|NEVER auto-merge\|not.*auto-merge' "$KIT_DIR/commands/dispatch.md" 2>/dev/null \
+   && grep -q 'kit:ship' "$KIT_DIR/commands/dispatch.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} dispatch.md wires the gate + lead-owned convergence, no auto-merge (SPEC-032)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} dispatch.md must use lib/dispatch-gate.sh, converge via /kit:ship, and refuse auto-merge"
+  FAIL=$((FAIL + 1))
+fi
+
+# (f) dispatch.md is registered in the human-facing inventories (README + MANUAL).
+TOTAL=$((TOTAL + 1))
+if grep -q 'kit:dispatch' "$KIT_DIR/README.md" 2>/dev/null \
+   && grep -q 'kit:dispatch' "$KIT_DIR/MANUAL.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} /kit:dispatch registered in README + MANUAL command inventories (SPEC-032)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} /kit:dispatch must be in the README command table + MANUAL command list"
+  FAIL=$((FAIL + 1))
+fi
+
+# (g) The lane classifier exists, is executable, and is wired into the intake/dispatch path.
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/lib/lane-classify.sh" ] && [ -x "$KIT_DIR/lib/lane-classify.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/lane-classify.sh exists and is executable (lane auto-classification)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} lib/lane-classify.sh missing or not executable"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -q 'lane-classify.sh' "$KIT_DIR/commands/assign.md" 2>/dev/null \
+   && grep -q 'lane-classify.sh' "$KIT_DIR/commands/dispatch.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} lane-classify.sh wired into the intake (/kit:assign) + dispatch paths"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} lane-classify.sh must be wired into /kit:assign + /kit:dispatch"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
+echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="
+# ============================================================
+
+# (a) The cross-session registry helper exists and is executable (pure-bash substrate).
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/lib/goal-registry.sh" ] && [ -x "$KIT_DIR/lib/goal-registry.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/goal-registry.sh exists and is executable (SPEC-036)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} lib/goal-registry.sh missing or not executable"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) goal-registry reuses the dispatch-gate disjointness rule (no second moat).
+TOTAL=$((TOTAL + 1))
+if grep -q 'dispatch-gate.sh' "$KIT_DIR/lib/goal-registry.sh" 2>/dev/null \
+   && ! grep -q '^prefix_overlap()' "$KIT_DIR/lib/goal-registry.sh" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} goal-registry.sh sources dispatch-gate.sh, does not re-implement the gate (SPEC-036 DEC-002)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} goal-registry.sh must source dispatch-gate.sh and not redefine prefix_overlap"
+  FAIL=$((FAIL + 1))
+fi
+
+# (c) The multi-session boundary ADR exists.
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/docs/decisions/0022-multi-session-boundary.md" ]; then
+  echo -e "  ${GREEN}PASS${NC} ADR-0022 (multi-session boundary) exists (SPEC-036)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} docs/decisions/0022-multi-session-boundary.md missing"
+  FAIL=$((FAIL + 1))
+fi
+
+# (d) PHILOSOPHY's multi-session boundary is reworded (the blanket "stays L5" claim is
+#     gone) and references ADR-0022, so the bend is recorded, not silent.
+TOTAL=$((TOTAL + 1))
+if ! grep -q 'multi-session coordination across machines or live operators stays L5' "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null \
+   && grep -q 'ADR-0022' "$KIT_DIR/docs/PHILOSOPHY.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} PHILOSOPHY multi-session boundary reworded + cites ADR-0022 (SPEC-036 C4)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} PHILOSOPHY must rework the blanket multi-session 'stays L5' claim and cite ADR-0022"
+  FAIL=$((FAIL + 1))
+fi
+
+# (e) The claim is wired into /kit:assign and the monitor into /kit:start.
+TOTAL=$((TOTAL + 1))
+if grep -q 'goal-registry.sh' "$KIT_DIR/commands/assign.md" 2>/dev/null \
+   && grep -q 'goal-registry.sh' "$KIT_DIR/commands/start.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} goal-registry wired: claim in /kit:assign, monitor in /kit:start (SPEC-036)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} goal-registry must be wired into /kit:assign (claim) + /kit:start (list)"
+  FAIL=$((FAIL + 1))
+fi
+
+# (f) kit-health carries the recorded running-goal-registry carve-out (so it does not
+#     flag the registry as runtime duplication).
+TOTAL=$((TOTAL + 1))
+if grep -qi 'running-goal registry' "$KIT_DIR/commands/kit-health.md" 2>/dev/null \
+   && grep -q 'ADR-0022' "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} kit-health carries the running-goal-registry carve-out (ADR-0022) (SPEC-036)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} kit-health must record the running-goal-registry carve-out citing ADR-0022"
+  FAIL=$((FAIL + 1))
+fi
+
+# (g) ADR-0022 is cross-referenced from architecture.md (the concurrency boundary).
+TOTAL=$((TOTAL + 1))
+if grep -q 'ADR-0022' "$KIT_DIR/docs/architecture.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} architecture.md cross-references ADR-0022 (SPEC-036)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} docs/architecture.md must cross-reference ADR-0022"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
+echo "=== Goal-draft lifecycle: goal-drafts.sh + ADR-0023 (SPEC-037) ==="
+# ============================================================
+
+# (a) lib/goal-drafts.sh exists and is executable.
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/lib/goal-drafts.sh" ] && [ -x "$KIT_DIR/lib/goal-drafts.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/goal-drafts.sh exists and is executable (SPEC-037)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} lib/goal-drafts.sh missing or not executable"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) The LIVE goal-draft contract carries no INDEX.md (the phantom is gone; only the
+#     annotated historical record in ADR-0011/ADR-0023/SPEC-005 keeps the word).
+LIVE_INDEX=$(grep -l 'INDEX\.md' "$KIT_DIR/commands/assign.md" "$KIT_DIR/commands/start.md" "$KIT_DIR/commands/next.md" "$KIT_DIR/WORKFLOW.md" "$KIT_DIR/docs/architecture.md" 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "no INDEX.md in the live goal-draft contract (SPEC-037 / ADR-0023)" "0" "$LIVE_INDEX"
+
+# (c) ADR-0023 exists and ADR-0011 records the supersession (supersede, not rewrite).
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/docs/decisions/0023-goal-draft-lifecycle.md" ] \
+   && grep -q 'ADR-0023' "$KIT_DIR/docs/decisions/0011-goal-registry.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} ADR-0023 exists + ADR-0011 Status line names it (SPEC-037)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} ADR-0023 missing, or ADR-0011 does not record the supersession"
+  FAIL=$((FAIL + 1))
+fi
+
+# (d) The State model section names BOTH stores side by side (draft + registry).
+SM_SECTION=$(awk '/^## State model/{f=1; print; next} f && /^## /{exit} f{print}' "$KIT_DIR/docs/architecture.md" 2>/dev/null)
+TOTAL=$((TOTAL + 1))
+if printf '%s' "$SM_SECTION" | grep -q '\.claude/goals' && printf '%s' "$SM_SECTION" | grep -q 'kit-goals'; then
+  echo -e "  ${GREEN}PASS${NC} architecture.md State model names both the draft store and kit-goals registry (SPEC-037)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} architecture.md State model must show both .claude/goals and kit-goals side by side"
+  FAIL=$((FAIL + 1))
+fi
+
+# (e) The archive is wired into /kit:ship.
+TOTAL=$((TOTAL + 1))
+if grep -q 'goal-drafts.sh' "$KIT_DIR/commands/ship.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} goal-drafts.sh archive wired into /kit:ship (SPEC-037)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} /kit:ship must run lib/goal-drafts.sh archive"
+  FAIL=$((FAIL + 1))
+fi
+
+# ============================================================
+echo ""
+echo "=== /kit:verify command (SPEC-035) ==="
+# ============================================================
+
+# (a) commands/verify.md exists with a one-line description.
+TOTAL=$((TOTAL + 1))
+if [ -f "$KIT_DIR/commands/verify.md" ] && grep -q '^description:' "$KIT_DIR/commands/verify.md"; then
+  echo -e "  ${GREEN}PASS${NC} commands/verify.md exists with a description (SPEC-035)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} commands/verify.md missing or has no description"
+  FAIL=$((FAIL + 1))
+fi
+
+# (b) verify.md dispatches both read-only test agents (the right-arm levels).
+TOTAL=$((TOTAL + 1))
+if grep -q 'task-verifier' "$KIT_DIR/commands/verify.md" 2>/dev/null \
+   && grep -q 'integration-checker' "$KIT_DIR/commands/verify.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} verify.md dispatches task-verifier + integration-checker (SPEC-035)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} verify.md must dispatch task-verifier + integration-checker"
+  FAIL=$((FAIL + 1))
+fi
+
+# (c) verify.md is read-only: it must DECLARE that it never dispatches fix-agent.
+# Asserting the invariant is stated (not the mere absence of the string, which the
+# file's own "to fix, run /execute" prose would defeat). A missing/empty file yields
+# no match and fails, so this cannot pass vacuously.
+TOTAL=$((TOTAL + 1))
+if grep -qiE 'never dispatch[^.]*fix-agent' "$KIT_DIR/commands/verify.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} verify.md declares the read-only invariant (no fix-agent) (SPEC-035)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} verify.md must declare it does not dispatch fix-agent (read-only)"
   FAIL=$((FAIL + 1))
 fi
 

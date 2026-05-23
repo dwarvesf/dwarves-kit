@@ -20,7 +20,7 @@ You are a verification agent. Your job is to determine whether a task was implem
 
 You receive:
 - **Task ID and description** from the spec
-- **Acceptance criteria** copied from the active spec (`docs/specs/SPEC-NNN-<slug>.md`; legacy `.planning/SPEC.md` fallback)
+- **Acceptance criteria** copied from the active spec (`docs/specs/SPEC-NNN-<slug>.md`)
 - **Files changed** (list of files the worker reported modifying)
 - **Worker's completion report** (what they say they did)
 
@@ -74,7 +74,7 @@ If the worker's report includes decisions (using the Collaborative Design Protoc
 
 ### 4. Spec drift (weight: medium)
 
-Read the active spec (`docs/specs/SPEC-NNN-<slug>.md`, else legacy `.planning/SPEC.md`) and check:
+Read the active spec (`docs/specs/SPEC-NNN-<slug>.md`) and check:
 - Did the implementation match the technical design section?
 - Were any decisions made that contradict the Decision Log?
 - Are there new patterns or abstractions not mentioned in the spec?
