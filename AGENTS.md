@@ -44,6 +44,8 @@ How to do one unit of work. The smallest verifiable increment, verified, committ
 
 If you cannot make progress, see zone 4 (Pause if) and stop with a named blocker note. Do not churn.
 
+**Record your gates (ADR-0024).** When you run a phase gate (`/kit:spec`, `/kit:spec-validate`, `/kit:execute`, `/kit:review`, `/kit:docs`, `/kit:ship`, ...), record it so the run is auditable: `bash lib/gate-ledger.sh record <spec-slug> <Phase> ran`; record a deliberate skip as `skipped "<why>"`. The `ship-gate` hook refuses a push whose lane has a required gate with no `ran`/`override` entry. Full convention + the logged-override path: WORKFLOW.md "## Gate ledger and ship enforcement".
+
 ## 3. Done means
 
 A task or goal is done only when **its acceptance criteria are met AND the

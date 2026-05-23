@@ -20,6 +20,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/safety-gate.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/ship-gate.sh",
+            "timeout": 5
           }
         ]
       },

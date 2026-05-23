@@ -457,11 +457,11 @@ assert_exit "settings.json is valid JSON" 0 $?
 
 HOOK_COUNT=$(jq '[.hooks | to_entries[] | .value[] | .hooks[]] | length' "$KIT_DIR/settings.json" 2>/dev/null)
 TOTAL=$((TOTAL + 1))
-if [ "$HOOK_COUNT" -eq 14 ]; then
-  echo -e "  ${GREEN}PASS${NC} settings.json has 14 event hooks registered"
+if [ "$HOOK_COUNT" -eq 15 ]; then
+  echo -e "  ${GREEN}PASS${NC} settings.json has 15 event hooks registered"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 14)"
+  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 15)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -640,6 +640,47 @@ FILE_COUNT=$(find "$KIT_DIR" -type f | grep -v '.git/' | wc -l | tr -d ' ')
 TOTAL=$((TOTAL + 1))
 echo -e "  ${GREEN}PASS${NC} File count: $FILE_COUNT (no hard cap, every file must justify itself)"
 PASS=$((PASS + 1))
+
+# ============================================================
+echo ""
+echo "=== Gate ledger + ship-gate (ADR-0024) ==="
+GL="$KIT_DIR/lib/gate-ledger.sh"
+SG="$KIT_DIR/hooks/ship-gate.sh"
+
+# required: normal lists the measure-twice gates; tiny has none (exits 0)
+assert_output_contains "gate-ledger required(normal) includes ship" "ship" "$(bash "$GL" required normal)"
+bash "$GL" required tiny >/dev/null 2>&1; assert_exit "gate-ledger required(tiny) exits 0 (no required gates)" 0 $?
+
+# ledger written: record makes the per-run file with a GATE line; action appends ACTION
+RID="meta-gate-test"
+bash "$GL" record "$RID" Spec ran "x" >/dev/null 2>&1
+LF="$DWARVES_KIT_LOG_DIR/runs/$RID.log"
+assert_true "record writes a per-run ledger file" "$([ -f "$LF" ] && echo 0 || echo 1)"
+assert_output_contains "ledger has a GATE line" "GATE" "$(cat "$LF" 2>/dev/null)"
+bash "$GL" action "$RID" "did a thing" >/dev/null 2>&1
+assert_output_contains "action log appends an ACTION line" "ACTION" "$(cat "$LF" 2>/dev/null)"
+
+# skipped gate recorded as skipped, and still a gap until it actually runs
+bash "$GL" record "$RID" Build skipped "hand-built" >/dev/null 2>&1
+assert_output_contains "skipped gate recorded as skipped" "skipped" "$(cat "$LF" 2>/dev/null)"
+bash "$GL" check normal "$RID" >/dev/null 2>&1; assert_exit "check fails on a missing/skipped required gate" 1 $?
+
+# a real run + a logged override clears the gate
+bash "$GL" record "$RID" Build ran "rebuilt" >/dev/null 2>&1
+bash "$GL" override "$RID" Ship "maintainer: docs-only" >/dev/null 2>&1
+bash "$GL" check normal "$RID" >/dev/null 2>&1; assert_exit "check passes after ran + logged override" 0 $?
+
+# ship-gate integration: a feature push with an incomplete ledger is blocked, then allowed
+SGR="$DWARVES_KIT_LOG_DIR/sg-repo"; mkdir -p "$SGR"
+( cd "$SGR" && git init -q && git checkout -q -b feat/sg-demo && mkdir -p docs/specs \
+  && printf 'Lane: normal\n' > docs/specs/SPEC-001-sg-demo.md \
+  && git add -A && git -c user.email=t@t -c user.name=t commit -qm init ) >/dev/null 2>&1
+SG_OUT=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" 2>&1); SG_RC=$?
+assert_exit "ship-gate blocks a feature push with missing gates" 2 "$SG_RC"
+assert_output_contains "ship-gate names the missing gate" "MISSING-GATE" "$SG_OUT"
+for g in Spec Build Ship; do bash "$GL" record sg-demo "$g" ran "x" >/dev/null 2>&1; done
+SG_RC2=$(cd "$SGR" && echo '{"tool_input":{"command":"git push -u origin feat/sg-demo"}}' | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$SG" >/dev/null 2>&1; echo $?)
+assert_exit "ship-gate allows the push once gates are recorded" 0 "$SG_RC2"
 
 # ============================================================
 echo ""

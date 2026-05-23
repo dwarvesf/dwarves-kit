@@ -84,7 +84,7 @@ We believe the kit should detect the user's current state and suggest the right 
 
 **Decision this already made:** context-readiness hook (v1.2) reads the active spec's status, counts completed tasks, checks whether the spec carries a `## Review` section, and injects a one-line "next:" suggestion into Claude's context at session start. The /start command provides the same detection as an explicit entry point. Both detect and suggest; neither blocks.
 
-**Decision this would reject:** "Add a phase-locking system that blocks /execute unless /spec-validate has been run." Rigid phase gates annoy experienced coders who know when to skip a step. Detect and suggest, never block workflow progression. The exception is safety hooks (rm-rf, push-to-main) which DO block because the cost of a mistake is irreversible.
+**Decision this would reject:** "Add a phase-locking system that blocks /execute unless /spec-validate has been run." Rigid *mid-flight* phase gates annoy experienced coders who know when to skip a step. Detect and suggest, never block progression mid-flight. **The exception is irreversible-cost actions, which DO block:** safety hooks (rm-rf, push-to-main, force-push) and, per ADR-0024, the ship/push boundary, which refuses when a lane's required (measure-twice) gate has no `ran`/`override` entry in the run ledger. This is the same logic as push-to-main (ship is irreversible), not a new kind of gate: the block lives only at ship, never at a mid-flight phase, and a logged override always exists, so the mechanism records what was skipped rather than forcing every gate. See ADR-0024 (the ID-036 hooks-also-enforce-at-ship layering bend).
 
 ### "Verify, then trust"
 
