@@ -1668,6 +1668,27 @@ assert_true "AGENTS operate-contract points at the gate-ledger convention" "$(gr
 
 # ============================================================
 echo ""
+echo "=== Implementation-notes log (SPEC-041 / ID-041) ==="
+# ============================================================
+# The worker template + the orchestrator summary + the /kit:next hand-off must
+# carry the implementation-notes rule so any spec-driven build leaves an anchor
+# for the PR reviewer and the /wrap-session LAB_LOG entry. Four pins so the
+# rule cannot regress silently across the three insertion points.
+
+assert_true "execute.md worker template carries the implementation-notes rule" \
+  "$(grep -q 'implementation-notes' "$KIT_DIR/commands/execute.md" && echo 0 || echo 1)"
+
+assert_true "execute.md 'When done' reporting names the implementation-notes path" \
+  "$(awk '/^## When done/{f=1;next} f && /^## /{exit} f && /implementation-notes/{found=1} END{exit !found}' "$KIT_DIR/commands/execute.md" >/dev/null && echo 0 || echo 1)"
+
+assert_true "execute.md Step 4 completion summary surfaces the implementation-notes file" \
+  "$(awk '/^### Step 4: Completion/{f=1;next} f && /^### /{exit} f && /implementation-notes/{found=1} END{exit !found}' "$KIT_DIR/commands/execute.md" >/dev/null && echo 0 || echo 1)"
+
+assert_true "next.md Step 4 hand-off carries the implementation-notes reminder" \
+  "$(awk '/^### Step 4: Hand off/{f=1;next} f && /^### /{exit} f && /implementation-notes/{found=1} END{exit !found}' "$KIT_DIR/commands/next.md" >/dev/null && echo 0 || echo 1)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"
