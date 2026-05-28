@@ -53,6 +53,10 @@ For the selected task, gather:
 
 Say: "Ready to implement. Work through the acceptance criteria one by one. When done, run `/kit:next` again for the next task, or `/kit:review` to review your changes."
 
+**Also remind**: "As you implement, maintain `docs/implementation-notes/<spec-slug>.md`. Append an entry whenever you make a decision the spec did not pin down, deviate from the spec, hit a tradeoff worth surfacing, or discover a missing constraint. Entry shape: `## YYYY-MM-DD HH:MM <title>` with Context / Decision / Why / Alternatives considered / Impact lines. If TASK-[ID] runs with zero deviations, append a one-line `TASK-[ID]: no deviations` entry so the absence is intentional. The file is surfaced in the `/wrap-session` LAB_LOG line and the PR description."
+
+If the file does not yet exist, create it with a short header (`# Implementation notes: <spec-slug>` + a one-line pointer to the spec path) before handing off, so the implementor only has to append.
+
 Do NOT start implementing. This command is a dispatcher, not an executor. The user or contractor drives the implementation after seeing the briefing.
 
 ### Step 5: When called again after completion
