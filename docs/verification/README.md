@@ -64,6 +64,26 @@ the **branch diff**, not a spec, so it fires the same whether the work came thro
 - **Fails open on ambiguity** (no repo, empty diff, missing tooling) so a gate bug never
   blocks unrelated work.
 
+## Sibling discipline: the experiment / lab report (the research-paper twin)
+
+Proof of done and the **tool-eval-experiment** discipline (worked example:
+`ops-toolkit/experiments/codebase-tool-benchmark/`) are two dialects of one grammar: *a
+claim is only as good as the recorded, reproducible, falsifiable evidence behind it.* They
+differ by job: proof of done CONFIRMS a claim (did this change work, would it fail without
+the work) with a pass/block gate; the experiment ANSWERS a question (which tool, by how
+much) with measured numbers. Shared mechanisms, each borrowed across:
+
+- **Negative control = falsifiability check.** Our negative control (revert -> RED) is the
+  experiment's falsifiability check (query a marker where the answer is absent -> the metric
+  drops to 0). A check that cannot fail proves nothing, in either system.
+- **Single-source numbers.** Borrowed FROM the experiment's `gen_docs.py` pattern: a figure
+  is generated into a marked block, never hand-typed into N docs where it drifts. Here,
+  `lib/verif-counts.sh` writes the live suite counts into `docs/verification/COUNTS.md`
+  (the GEN block); a verification log links there instead of transcribing a count.
+
+Keep them distinct (confirmation vs comparison): do not grow a build system for a
+verification log, nor a benchmark for a one-line change.
+
 ## What this is
 
 One file per spec: `docs/verification/<spec-slug>.md` (same slug as the spec and the

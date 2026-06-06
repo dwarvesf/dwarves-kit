@@ -1788,6 +1788,17 @@ assert_true "convention documents the enforcement gate + override" \
 assert_true "PHILOSOPHY records the deferred enforcement hook is now built" \
   "$(grep -q 'proof-ledger' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
 
+# ---- single-source numbers: borrowed from the experiment sibling (no hand-typed drift) ----
+
+assert_true "lib/verif-counts.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/verif-counts.sh" ] && echo 0 || echo 1)"
+
+assert_true "COUNTS.md carries the generated single-source block" \
+  "$(grep -q 'BEGIN GEN:counts' "$KIT_DIR/docs/verification/COUNTS.md" 2>/dev/null && echo 0 || echo 1)"
+
+assert_true "convention names the experiment sibling + single-source borrow" \
+  "$(grep -qi 'sibling' "$KIT_DIR/docs/verification/README.md" && grep -qi 'single-source\|codebase-tool-benchmark\|falsifiab' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
