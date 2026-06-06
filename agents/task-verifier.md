@@ -47,12 +47,23 @@ If the task's acceptance criteria use **replace / remove / delete / de-duplicate
 
 Do not infer a removal trigger that the criteria do not state. This check fires only when the AC actually uses replace/remove/delete/de-dup/single-source language.
 
-### 2. Test suite (weight: critical)
+### 2. Test suite (weight: critical) -- run it and capture the run
 
-Run the project's test suite:
-- `npm test`, `go test ./...`, `pytest`, or `cargo test` depending on the stack.
+Run the project's test suite and **record the run as a re-runnable artifact**. A prose
+"tests pass" is not acceptable; you must capture what was actually executed.
+
+- `npm test`, `go test ./...`, `pytest`, `cargo test`, or for a doc/config/command task
+  the project's own check (e.g. `bash tests/test-meta.sh`, or the `grep`/`bash`
+  assertion the task's verify step used) depending on the stack.
+- Capture three things verbatim, never retyped from memory: the **exact command** you
+  ran, its **exit code** (`$?`), and an **output excerpt** (the decisive lines: pass/fail
+  counts, the failing assertion, the summary line). These go in the `Verification record`
+  block of your verdict (see Output format).
 - If tests fail, capture the failure output verbatim.
-- If no test command exists, flag this as a warning (not a failure).
+- **If no runnable check exists** (subjective prose, design judgment, a doc with no
+  assertion), do NOT pass it silently and do NOT call it a soft warning. Record the
+  verdict line as `[NO EXECUTABLE CHECK: <reason>]`. An honest no-check is allowed; a
+  fake PASS over an unrun check is a critical failure of this agent's job.
 
 ### 3. Scope compliance (weight: high)
 
@@ -99,7 +110,23 @@ Quick scan of changed files:
 
 ## Output format
 
-Respond with EXACTLY one of these three verdicts:
+Respond with EXACTLY one of these three verdicts. **Every verdict carries a
+`Verification record` block** , the captured proof of what you actually ran. The
+orchestrator transcribes this block into `docs/verification/<spec-slug>.md`, so it must
+be real and re-runnable, never paraphrased.
+
+The `Verification record` block, included under every verdict:
+
+```
+Verification record:
+- Command: `<exact, re-runnable command you ran>`
+- Exit: <captured exit code, the real $?>
+- Output (excerpt): <decisive lines: pass/fail counts, failing assertion, summary>
+```
+
+If there was no runnable check, the block's `Command:` is `none` and the verdict line
+is `[NO EXECUTABLE CHECK: <reason>]` (see Section 2) , do not invent a command or a
+passing exit code.
 
 ### PASS
 
@@ -108,6 +135,10 @@ VERDICT: PASS
 Task: TASK-[ID]
 Criteria met: [N]/[N]
 Tests: passing
+Verification record:
+- Command: `<exact command>`
+- Exit: 0
+- Output (excerpt): <decisive lines>
 Notes: [any observations, optional]
 ```
 

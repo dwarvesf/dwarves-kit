@@ -1689,6 +1689,44 @@ assert_true "next.md Step 4 hand-off carries the implementation-notes reminder" 
 
 # ============================================================
 echo ""
+echo "=== Verification log (execution-backed verify) ==="
+# ============================================================
+# "Verify before proceeding" is only real if the verification was actually run
+# and the run is recorded as a re-runnable artifact: command + exit + output
+# excerpt + verdict. Prose "Tests: passing" is not proof. Eight pins so the
+# convention cannot regress: a convention doc (+ its required fields), the
+# no-check marker, the agent's captured record, the two write-sites (execute +
+# verify), the completion-summary surface, and the PHILOSOPHY bend.
+
+assert_true "docs/verification/ convention doc exists" \
+  "$([ -f "$KIT_DIR/docs/verification/README.md" ] && echo 0 || echo 1)"
+
+assert_true "verification convention records command + exit + output excerpt + verdict" \
+  "$(grep -q 'Command:' "$KIT_DIR/docs/verification/README.md" && grep -q 'Exit:' "$KIT_DIR/docs/verification/README.md" && grep -q 'Output (excerpt)' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier emits the explicit no-check marker (no fake pass)" \
+  "$(grep -q '\[NO EXECUTABLE CHECK:' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier verdict captures the executed command + exit code" \
+  "$(grep -q 'Verification record' "$KIT_DIR/agents/task-verifier.md" && grep -q 'Command:' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "execute.md writes the verification log (docs/verification/)" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/commands/execute.md" && echo 0 || echo 1)"
+
+assert_true "execute.md Step 4 completion summary surfaces the verification-log path" \
+  "$(awk '/^### Step 4: Completion/{f=1;next} f && /^### /{exit} f && /docs\/verification\//{found=1} END{exit !found}' "$KIT_DIR/commands/execute.md" >/dev/null && echo 0 || echo 1)"
+
+assert_true "verify.md records the read-only run to the verification log" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/commands/verify.md" && echo 0 || echo 1)"
+
+assert_true "review.md reads test state from the verification log (static-judgment boundary)" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/commands/review.md" && echo 0 || echo 1)"
+
+assert_true "PHILOSOPHY records the execution-backed-verify bend" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

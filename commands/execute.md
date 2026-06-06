@@ -196,18 +196,24 @@ The "verified" tag distinguishes tasks that passed the verification pipeline fro
 
 After all tasks in a phase complete:
 
-1. Run the full test suite
-2. Show a summary:
+1. Run the full test suite, capturing the exact command, its exit code, and an output
+   excerpt.
+2. **Append a verification-log entry** to `docs/verification/<spec-slug>.md` (create the
+   file if missing; same slug as the spec and the implementation-notes file). One entry
+   per phase checkpoint, shape per `docs/verification/README.md`: the captured
+   `Command:` / `Exit:` / `Output (excerpt):` / `Verdict:`. If the phase had no runnable
+   check, record `[NO EXECUTABLE CHECK: <reason>]`, never a fake pass.
+3. Show a summary:
    ```
    Phase 1 complete.
    Tasks: 3/3 done (3 verified)
    Retries: [N] total across all tasks
-   Tests: [pass/fail]
+   Tests: [pass/fail]  (logged: docs/verification/<spec-slug>.md)
    Commits: [list]
 
    Phase 2 has 2 tasks. Continue?
    ```
-3. Ask: "(A) Continue to Phase 2 / (B) Review Phase 1 changes first / (C) Stop here"
+4. Ask: "(A) Continue to Phase 2 / (B) Review Phase 1 changes first / (C) Stop here"
 
 This is the human checkpoint. The user can review, adjust, or stop.
 
@@ -215,7 +221,11 @@ This is the human checkpoint. The user can review, adjust, or stop.
 
 After all phases complete:
 
-1. Run full test suite one final time
+1. Run full test suite one final time, capturing the command, exit code, and output
+   excerpt, and **append the final verification-log entry** to
+   `docs/verification/<spec-slug>.md` (verdict `integration` or `final`), per
+   `docs/verification/README.md`. This entry is the one a reviewer re-runs to confirm
+   the build still passes.
 2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-checker** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
    - **PASS**: continue to the summary.
    - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-checker.
@@ -232,6 +242,7 @@ After all phases complete:
    Tests: [pass/fail]
    Files changed: [list]
    Implementation notes: docs/implementation-notes/<spec-slug>.md ([N] entries, or "no deviations")
+   Verification log: docs/verification/<spec-slug>.md ([N] runs recorded; re-run any Command: line to regression-check)
 
    Recommended next steps:
    1. /kit:review -- full code review (security + architecture)

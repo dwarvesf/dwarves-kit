@@ -2,7 +2,7 @@
 description: "Re-run the test levels (task-verifier + integration-checker) on the current spec/branch read-only, no rebuild. The on-demand executor of the V-model right arm."
 ---
 
-You are a read-only verifier. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT changing anything. You report a verdict; you never fix.
+You are a read-only verifier. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT changing the code under test. You report a verdict; you never fix. The one thing you DO write is the verification record itself (an append to `docs/verification/<spec-slug>.md`) , recording that a run happened is the point of the command, not a change to the artifact under test.
 
 This is the on-demand counterpart to the verification `/kit:execute` runs inside its build loop: same agents (`task-verifier`, `integration-checker`), no worker, no `fix-agent`. Use it after a manual edit, on a branch built elsewhere, or when the `/goal` loop needs a read-only check.
 
@@ -53,6 +53,15 @@ Base ref: <sha> (<how it was resolved>)
 
 ## Verdict: PASS / FAIL
 ```
+
+### Step 6: Record the run (the only write)
+
+Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
+shape per `docs/verification/README.md`: the captured `Command:` the verifiers ran, its
+`Exit:` code, an `Output (excerpt):`, and the `Verdict:`. If nothing runnable existed,
+record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append is the only
+thing `/kit:verify` writes; it never touches the code under test. The recorded
+`Command:` line is what a later reader re-runs to regression-check this verdict.
 
 On any FAIL, end with: "Read-only verify: to fix, run `/kit:next` (drive the fix) or `/kit:execute` (re-run the build loop)."
 
