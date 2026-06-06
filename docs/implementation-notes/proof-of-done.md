@@ -21,3 +21,9 @@ behaviorally by driving the verify flow end-to-end via an independent agent.
 - Decision/Change: dispatch one `isolation:worktree` agent that follows the verify flow on a tiny real demo spec (`lib/proof-demo.sh`), runs the real check, performs the negative control (revert -> RED -> restore -> GREEN), and returns the captured records; I transcribe them into `docs/verification/proof-of-done-demo.md`.
 - Why: the worktree isolates its revert/restore from the shared checkout; the agent's returned command/exit/excerpt are real, not authored.
 - Alternatives considered: a standalone non-isolated run (rejected: reverting in the shared tree is unsafe); a foreign pytest/go demo (rejected: pollutes the bash-stack repo).
+
+## 2026-06-06 23:28 Behavioral proof landed
+- Context: dispatched the verify-flow agent (Agent tool) against SPEC-042.
+- Outcome: GREEN `bash tests/test-meta.sh` exit 0 (351/351); NEGATIVE CONTROL in a throwaway worktree exit 1 (337/351, 14 proof-of-done/verification pins fail); restore GREEN exit 0; shared checkout stayed clean; worktree removed. Records transcribed into `docs/verification/proof-of-done.md`.
+- Why it counts: the records came from an independent context's real executions, not me hand-following the convention , closing the structural-vs-behavioral gap Han flagged. The 351 -> 337 (delta 14) matches the pin count exactly.
+- Note: did NOT use `Agent(isolation:worktree)` because cwd is the ops-toolkit worktree; that flag would worktree the wrong repo. The agent created its own throwaway dwarves-kit worktree instead and cleaned it up.
