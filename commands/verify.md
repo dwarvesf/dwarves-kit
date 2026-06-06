@@ -63,13 +63,23 @@ record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append is
 thing `/kit:verify` writes; it never touches the code under test. The recorded
 `Command:` line is what a later reader re-runs to regression-check this verdict.
 
-For a load-bearing spec (a `normal` / `full` lane change, or when `$ARGUMENTS` includes
-`--negative-control`), also produce the **negative control** so the proof-of-done is
-trustworthy: in a throwaway `git worktree` off the merge-base, revert the change, re-run
-the SAME logged command, confirm it goes RED, discard the worktree, and append a
-`NEGATIVE CONTROL` entry (verdict `RED-as-expected`, the real failing exit + excerpt). A
-check that stays green when the change is reverted is a finding, not a pass. The shared
-checkout is never reverted.
+Gate what the proof needs by the spec's **proof class** (`lib/proof-gate.sh class
+"<spec title or task>"`):
+- **inert** (docs / comments / cosmetic): record `[PROOF OF DONE: exempt -- <reason>]`
+  and stop; no run can meaningfully fail.
+- **behavioral** (changes behavior): the recorded run must exercise the REAL primary
+  flow the change adds (not a tangential test), and you produce the negative control
+  below.
+- **stateful** (deploy / migration / data): the recorded run exercises the REAL flow on
+  a copy or dry-run and the entry notes rollback / reversibility; if it cannot be
+  exercised here, record `[UNAVAILABLE: <reason>]`, never a fake pass.
+
+For a behavioral or stateful spec (or when `$ARGUMENTS` includes `--negative-control`),
+produce the **negative control** so the proof-of-done is trustworthy: in a throwaway
+`git worktree` off the merge-base, revert the change, re-run the SAME logged command,
+confirm it goes RED, discard the worktree, and append a `NEGATIVE CONTROL` entry (verdict
+`RED-as-expected`, the real failing exit + excerpt). A check that stays green when the
+change is reverted is a finding, not a pass. The shared checkout is never reverted.
 
 On any FAIL, end with: "Read-only verify: to fix, run `/kit:next` (drive the fix) or `/kit:execute` (re-run the build loop)."
 

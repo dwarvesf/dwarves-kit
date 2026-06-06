@@ -18,6 +18,32 @@ re-run. A complete proof of done has three parts:
 For a load-bearing change, all three are required. Green-only is a weak proof; it says
 "it passes," not "it would have failed without the work."
 
+## When is a proof of done required? (risk classes)
+
+The discipline lands where the risk is and gets out of the way where it isn't. A task's
+**proof class** decides what "done" needs. Classify with `lib/proof-gate.sh class
+"<task>"` (it reuses `lib/lane-classify.sh`); it suggests, a human can override.
+
+| Proof class | What it is | Proof of done required |
+|---|---|---|
+| **stateful** | deployment, migration, anything touching data / persistent state | Exercise the REAL flow on a copy or dry-run, record the run, AND note rollback / reversibility. Never "done" without a recorded run + a rollback path. |
+| **behavioral** | implementation that changes behavior (a feature, a logic fix) | Run the REAL primary flow end-to-end (the path the change adds, not a tangential test), record it, AND include a negative control (revert -> RED -> restore). |
+| **inert** | docs, comments, cosmetic, pure text | Exempt. Record `[PROOF OF DONE: exempt -- <reason>]` on the task line or in the log. No run. |
+
+Two rules this encodes:
+
+- **Run the real primary flow, not a proxy.** For behavioral and stateful classes the
+  recorded run must exercise the actual path the change adds (the feature's flow, the
+  migration on a copy), not a tangential green test that happens to pass. A proxy that
+  passes without touching the change is the same trap as a green-only proof.
+- **Stateful needs reversibility.** A deploy/migration/data change records not just "it
+  ran" but how it rolls back. If a flow genuinely cannot be exercised in this repo (no
+  deploy/migration target here), record `[UNAVAILABLE: <reason>]` rather than faking a
+  run.
+
+The exempt marker is honest, not a loophole: it is only for inert work, and it states
+the reason. Marking a behavioral or stateful task exempt is a finding, not a pass.
+
 ## What this is
 
 One file per spec: `docs/verification/<spec-slug>.md` (same slug as the spec and the

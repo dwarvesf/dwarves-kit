@@ -1742,6 +1742,29 @@ assert_true "execute.md produces a negative control for load-bearing builds" \
 assert_true "verify.md produces a negative control for load-bearing specs" \
   "$(grep -qi 'NEGATIVE CONTROL' "$KIT_DIR/commands/verify.md" && echo 0 || echo 1)"
 
+# ---- risk-gated proof of done: the class gate (stateful | behavioral | inert) ----
+
+assert_true "lib/proof-gate.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/proof-gate.sh" ] && echo 0 || echo 1)"
+
+assert_true "proof-gate names the three proof classes (stateful, behavioral, inert)" \
+  "$(out=$(bash "$KIT_DIR/lib/proof-gate.sh" classes 2>/dev/null); echo "$out" | grep -q stateful && echo "$out" | grep -q behavioral && echo "$out" | grep -q inert && echo 0 || echo 1)"
+
+assert_true "convention defines the risk-class gate (stateful/behavioral/inert + proof-gate)" \
+  "$(grep -qi 'proof class' "$KIT_DIR/docs/verification/README.md" && grep -q 'proof-gate.sh' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "convention names the inert exempt marker + the run-the-real-flow rule" \
+  "$(grep -q 'PROOF OF DONE: exempt' "$KIT_DIR/docs/verification/README.md" && grep -qi 'real primary flow' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "execute.md gates the proof by class (proof-gate)" \
+  "$(grep -q 'proof-gate.sh' "$KIT_DIR/commands/execute.md" && echo 0 || echo 1)"
+
+assert_true "verify.md gates the proof by class (proof-gate)" \
+  "$(grep -q 'proof-gate.sh' "$KIT_DIR/commands/verify.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier reads proof class (inert exempt ok; stateful needs rollback)" \
+  "$(grep -q 'proof-gate.sh' "$KIT_DIR/agents/task-verifier.md" && grep -q 'PROOF OF DONE: exempt' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

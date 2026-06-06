@@ -541,6 +541,24 @@ assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 
 
 # ============================================================
 echo ""
+echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
+# ============================================================
+PGATE() { bash "$KIT_DIR/lib/proof-gate.sh" class "$1" 2>/dev/null; }
+# stateful: deploy / migration / data / persistent state.
+assert_output_contains "proof: a migration -> stateful" "^stateful$" "$(PGATE 'run the database migration to add a users table')"
+assert_output_contains "proof: a deploy -> stateful" "^stateful$" "$(PGATE 'deploy the worker to production')"
+# behavioral: implementation that changes behavior.
+assert_output_contains "proof: a feature -> behavioral" "^behavioral$" "$(PGATE 'add a --version flag to the CLI')"
+assert_output_contains "proof: a logic fix -> behavioral" "^behavioral$" "$(PGATE 'fix the CSV parser crash on empty input')"
+# inert: docs / cosmetic -> exempt.
+assert_output_contains "proof: a typo -> inert" "^inert$" "$(PGATE 'fix a typo in the README heading')"
+# requirement strings name the obligation per class.
+assert_output_contains "proof req: stateful names rollback" "rollback" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'deploy to production' 2>/dev/null)"
+assert_output_contains "proof req: behavioral names negative control" "negative control" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'add a flag' 2>/dev/null)"
+assert_output_contains "proof req: inert is exempt" "exempt" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'fix a typo' 2>/dev/null)"
+
+# ============================================================
+echo ""
 echo "=== goal-registry: cross-session running-goal registry (SPEC-036 / ADR-0022) ==="
 # ============================================================
 REG="$KIT_DIR/lib/goal-registry.sh"

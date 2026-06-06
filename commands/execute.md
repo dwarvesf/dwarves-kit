@@ -234,8 +234,19 @@ After all phases complete:
    `NEGATIVE CONTROL` entry (verdict `RED-as-expected`, the real failing exit + excerpt)
    to `docs/verification/<spec-slug>.md`. If reverting cannot produce a RED (the check
    does not bite), that is a finding: the acceptance check is too weak, fix it before
-   declaring done. Tiny / docs lanes may skip this with a one-line reason in the log
-   (`negative control skipped: <reason>`); load-bearing lanes may not skip silently.
+   declaring done.
+1c. **Gate by proof class (`lib/proof-gate.sh class "<task>"`).** What "done" needs
+   depends on the task's risk class, so the discipline lands where the risk is:
+   - **stateful** (deploy / migration / data / persistent state): the recorded run must
+     exercise the REAL flow on a copy or dry-run, and the entry must note rollback /
+     reversibility. No "done" without a recorded run + a rollback path. If the flow
+     cannot be exercised here, record `[UNAVAILABLE: <reason>]`, do not fake it.
+   - **behavioral** (changes behavior): run the REAL primary flow the change adds (not a
+     tangential test that happens to pass), record it, and produce the negative control
+     above.
+   - **inert** (docs / comments / cosmetic): exempt. Record
+     `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
+   Marking a behavioral or stateful task inert is a finding, not a pass.
 2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-checker** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
    - **PASS**: continue to the summary.
    - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-checker.
