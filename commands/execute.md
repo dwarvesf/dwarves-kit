@@ -16,7 +16,7 @@ If any prerequisite fails, tell the user what's missing and stop.
 ### Context layer detection
 
 Check once before dispatching any tasks:
-- **codebase-memory-mcp**: Is it configured in `.mcp.json` or `~/.claude/.mcp.json`? If yes, worker subagents should use `search_symbols`, `trace_call_path`, and `get_structure` instead of grepping. This reduces orientation cost by ~120x. Note this in each worker's context block.
+- **codebase-memory-mcp**: Is it configured in `.mcp.json` or `~/.claude/.mcp.json`? If yes, worker subagents should use `search_code`, `trace_path`, and `get_architecture` instead of grepping. This reduces orientation cost by ~120x. Note this in each worker's context block.
 - **Context Hub / Context7**: Are external API docs available? If `chub` is installed or Context7 MCP is configured, note relevant API doc references in each worker's context block.
 
 ## Execution model
