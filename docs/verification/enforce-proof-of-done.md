@@ -40,6 +40,21 @@ repo (proves the wall AND the bridge: no spec, still gated):
 - logged override turns a block into a pass and leaves a trace (proven in test-hooks:
   `pre-override -> BLOCK (exit 1)`, `logged override -> PASS (exit 0)`).
 
+## 2026-06-07 00:30 DOGFOOD -- the gate run against its own branch
+The real gate, run from the repo's own cwd against `feat/verify-by-execution` (the branch
+that built it), over the whole session's work:
+- `proof-ledger.sh classify . <merge-base master>` -> **behavioral**.
+- the branch added 4 proof-of-done logs (`verify-by-execution.md`, `proof-of-done.md`,
+  `risk-gated-proof-of-done.md`, `enforce-proof-of-done.md`), one per workflow shipped
+  this session.
+- `proof-ledger.sh check` -> **exit 0 (PASS)**; the real `ship-gate.sh` hook on a `git
+  push` -> **exit 0 (PASS)**. Our own work clears its own wall.
+- Dogfood negative control: in a throwaway worktree, remove the 4 proof logs (keep the
+  convention README so it stays opted-in) -> `check` **exit 1**, hook **exit 2 (BLOCKED:
+  proof of done. behavioral change ...)**. Worktree removed, shared checkout clean.
+- Conclusion: the branch passes ONLY because the proofs exist; strip them and the gate
+  blocks the very session that built it. Not a rubber stamp.
+
 ## Provenance
 - The gate is the kit's own dogfood: this very branch is behavioral, so it carries this
   proof-of-done entry (green + negative control), which is exactly what the gate requires.
