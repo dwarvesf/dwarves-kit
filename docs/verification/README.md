@@ -4,6 +4,20 @@
 > was **actually run** and the run is **recorded as a re-runnable artifact**. A prose
 > "Tests: passing" is a claim, not proof. This directory holds the proof.
 
+## Proof of done
+
+"Done" is not a claim, it is a **proof of done**: a recorded artifact a skeptic can
+re-run. A complete proof of done has three parts:
+
+1. **Green, captured.** The implemented check actually run, with the exact command, real
+   exit code, and output excerpt logged (not "tests pass" in prose).
+2. **A negative control.** The same check shown to go RED when the work is reverted, so
+   the green is not trivially green. A check that passes no matter what proves nothing.
+3. **Reproducible.** Re-running the logged `Command:` line reproduces the verdict.
+
+For a load-bearing change, all three are required. Green-only is a weak proof; it says
+"it passes," not "it would have failed without the work."
+
 ## What this is
 
 One file per spec: `docs/verification/<spec-slug>.md` (same slug as the spec and the

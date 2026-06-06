@@ -63,6 +63,14 @@ record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append is
 thing `/kit:verify` writes; it never touches the code under test. The recorded
 `Command:` line is what a later reader re-runs to regression-check this verdict.
 
+For a load-bearing spec (a `normal` / `full` lane change, or when `$ARGUMENTS` includes
+`--negative-control`), also produce the **negative control** so the proof-of-done is
+trustworthy: in a throwaway `git worktree` off the merge-base, revert the change, re-run
+the SAME logged command, confirm it goes RED, discard the worktree, and append a
+`NEGATIVE CONTROL` entry (verdict `RED-as-expected`, the real failing exit + excerpt). A
+check that stays green when the change is reverted is a finding, not a pass. The shared
+checkout is never reverted.
+
 On any FAIL, end with: "Read-only verify: to fix, run `/kit:next` (drive the fix) or `/kit:execute` (re-run the build loop)."
 
 ## Edge cases

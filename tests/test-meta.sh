@@ -1725,6 +1725,23 @@ assert_true "review.md reads test state from the verification log (static-judgme
 assert_true "PHILOSOPHY records the execution-backed-verify bend" \
   "$(grep -q 'docs/verification/' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
 
+# ---- proof of done: the negative control (a green check is only proof if it can fail) ----
+
+assert_true "convention defines proof of done (green + negative control + reproducible)" \
+  "$(grep -qi 'Proof of done' "$KIT_DIR/docs/verification/README.md" && grep -qi 'negative control' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier can run a bash/make project suite (not only npm/go/pytest/cargo)" \
+  "$(grep -qE 'Bash\(bash tests/\*\)|Bash\(make test\*\)' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier flags a weak/absent negative control on load-bearing tasks" \
+  "$(grep -qi 'Negative control' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "execute.md produces a negative control for load-bearing builds" \
+  "$(grep -qi 'NEGATIVE CONTROL' "$KIT_DIR/commands/execute.md" && echo 0 || echo 1)"
+
+assert_true "verify.md produces a negative control for load-bearing specs" \
+  "$(grep -qi 'NEGATIVE CONTROL' "$KIT_DIR/commands/verify.md" && echo 0 || echo 1)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

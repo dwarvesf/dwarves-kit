@@ -226,6 +226,16 @@ After all phases complete:
    `docs/verification/<spec-slug>.md` (verdict `integration` or `final`), per
    `docs/verification/README.md`. This entry is the one a reviewer re-runs to confirm
    the build still passes.
+1b. **Negative control (load-bearing builds: `normal` and `full` lanes).** A green run
+   does not prove the check exercises the build. Produce the negative control that makes
+   the proof-of-done trustworthy: in a throwaway worktree (`git worktree add` off the
+   build's base ref, never the shared checkout), revert this build's change, re-run the
+   SAME logged command, and confirm it goes RED; then discard the worktree. Append a
+   `NEGATIVE CONTROL` entry (verdict `RED-as-expected`, the real failing exit + excerpt)
+   to `docs/verification/<spec-slug>.md`. If reverting cannot produce a RED (the check
+   does not bite), that is a finding: the acceptance check is too weak, fix it before
+   declaring done. Tiny / docs lanes may skip this with a one-line reason in the log
+   (`negative control skipped: <reason>`); load-bearing lanes may not skip silently.
 2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-checker** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
    - **PASS**: continue to the summary.
    - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-checker.

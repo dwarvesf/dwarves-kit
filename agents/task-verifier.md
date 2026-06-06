@@ -9,6 +9,9 @@ tools:
   - Bash(go test*)
   - Bash(pytest*)
   - Bash(cargo test*)
+  - Bash(bash tests/*)
+  - Bash(make test*)
+  - Bash(just test*)
   - Bash(git diff*)
   - Bash(git log*)
 model: sonnet
@@ -64,6 +67,13 @@ Run the project's test suite and **record the run as a re-runnable artifact**. A
   assertion), do NOT pass it silently and do NOT call it a soft warning. Record the
   verdict line as `[NO EXECUTABLE CHECK: <reason>]`. An honest no-check is allowed; a
   fake PASS over an unrun check is a critical failure of this agent's job.
+- **Negative control (load-bearing tasks).** A green run alone does not prove the check
+  exercises the change , it could pass no matter what. For a load-bearing task you can
+  read whether the check actually bites: if the same check would pass with the change
+  reverted, flag `Negative control: WEAK (check may not exercise the change)` in your
+  Notes. You do not revert code yourself (you are read-only); producing the revert ->
+  RED -> restore -> GREEN negative control is the orchestrator's job (`/kit:execute`,
+  `/kit:verify`). Your job is to notice and flag when the proof-of-done is missing it.
 
 ### 3. Scope compliance (weight: high)
 
