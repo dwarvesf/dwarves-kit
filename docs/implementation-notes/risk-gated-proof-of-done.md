@@ -15,3 +15,7 @@ existing lane classifier rather than inventing a parallel system.
 - Context: Done needs >=1 high-risk class with a REAL recorded primary-flow run; dwarves-kit has no deploy/migration/data flow.
 - Decision/Change: the live behavioral-class demo is `lib/proof-gate.sh` itself , its primary flow is classification, which is real runnable bash. Record real `proof-gate.sh class "..."` runs + a negative control (break it -> wrong output). Mark `stateful` (deploy/migration/data) as `[UNAVAILABLE: no deploy/migration/data flow in dwarves-kit]` for the live run, defined in the convention rather than faked.
 - Why: honest , do not fabricate a migration. The behavioral class is genuinely exercisable here; the stateful class is not.
+
+## 2026-06-06 23:50 Behavioral proof landed + a worktree gotcha
+- Outcome: GREEN `proof-gate.sh class ...` returns correct classes (exit 0); NEGATIVE CONTROL removes the impl in a throwaway worktree -> classify exit 127 and the 8 proof-gate assertions fail (151 -> 143); shared checkout untouched. Inert exemption + stateful `[UNAVAILABLE]` recorded. Log: `docs/verification/risk-gated-proof-of-done.md`.
+- Gotcha (cost one false run): a `git worktree add ... HEAD` does NOT include uncommitted/untracked files, so the first negative-control attempt found no `proof-gate.sh` to remove (it was still untracked). Fix: commit the implementation FIRST, then the worktree off HEAD has it to revert. Same lesson as the SPEC-042 behavioral proof , commit before the worktree negative control.
