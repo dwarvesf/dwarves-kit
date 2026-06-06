@@ -44,6 +44,26 @@ Two rules this encodes:
 The exempt marker is honest, not a loophole: it is only for inert work, and it states
 the reason. Marking a behavioral or stateful task exempt is a finding, not a pass.
 
+## Enforcement: the ship/merge gate (advice becomes a wall)
+
+The rules above are not advice an agent can skip. `lib/proof-ledger.sh` (wired into
+`hooks/ship-gate.sh`, ADR-0025) is a **gate at the ship/push boundary**: a behavioral or
+stateful change cannot ship without a matching, fresh proof-of-done entry. It keys off
+the **branch diff**, not a spec, so it fires the same whether the work came through
+`/kit:execute` or a freeform `/goal` loop. Properties:
+
+- **Opt-in per repo.** Engages only where this convention is adopted (this
+  `docs/verification/README.md` exists). Other repos are never gated.
+- **Fresh proof only.** The entry must be one the branch itself added/modified, so an old
+  proof from unrelated work does not satisfy a new change.
+- **Honest passes.** Inert passes with no ritual; stateful passes with a rollback note or
+  `[UNAVAILABLE: reason]`.
+- **Logged override, never silent.** When you must ship without proof (an emergency),
+  `bash lib/proof-ledger.sh override <slug> "<reason>"` leaves an audit trace and lets the
+  push through. There is no silent bypass.
+- **Fails open on ambiguity** (no repo, empty diff, missing tooling) so a gate bug never
+  blocks unrelated work.
+
 ## What this is
 
 One file per spec: `docs/verification/<spec-slug>.md` (same slug as the spec and the

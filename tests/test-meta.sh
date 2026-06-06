@@ -1765,6 +1765,29 @@ assert_true "verify.md gates the proof by class (proof-gate)" \
 assert_true "task-verifier reads proof class (inert exempt ok; stateful needs rollback)" \
   "$(grep -q 'proof-gate.sh' "$KIT_DIR/agents/task-verifier.md" && grep -q 'PROOF OF DONE: exempt' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
 
+# ---- proof-of-done ENFORCEMENT: the ship/merge gate (advice -> wall) ----
+
+assert_true "lib/proof-ledger.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/proof-ledger.sh" ] && echo 0 || echo 1)"
+
+assert_true "ship-gate wires the diff-keyed proof-of-done gate" \
+  "$(grep -q 'proof-ledger.sh' "$KIT_DIR/hooks/ship-gate.sh" && echo 0 || echo 1)"
+
+assert_true "proof gate is opt-in (engages only where docs/verification/README.md exists)" \
+  "$(grep -q 'docs/verification/README.md' "$KIT_DIR/hooks/ship-gate.sh" && echo 0 || echo 1)"
+
+assert_true "proof-ledger provides a logged override (no silent bypass)" \
+  "$(grep -q 'override' "$KIT_DIR/lib/proof-ledger.sh" && grep -qi 'OVERRIDE' "$KIT_DIR/lib/proof-ledger.sh" && echo 0 || echo 1)"
+
+assert_true "ADR records the proof-of-done ship gate" \
+  "$([ -f "$KIT_DIR/docs/decisions/0025-proof-of-done-ship-gate.md" ] && echo 0 || echo 1)"
+
+assert_true "convention documents the enforcement gate + override" \
+  "$(grep -qi 'ship/merge gate\|enforcement' "$KIT_DIR/docs/verification/README.md" && grep -q 'proof-ledger' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "PHILOSOPHY records the deferred enforcement hook is now built" \
+  "$(grep -q 'proof-ledger' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
