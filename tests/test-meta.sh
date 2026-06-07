@@ -1689,6 +1689,115 @@ assert_true "next.md Step 4 hand-off carries the implementation-notes reminder" 
 
 # ============================================================
 echo ""
+echo "=== Verification log (execution-backed verify) ==="
+# ============================================================
+# "Verify before proceeding" is only real if the verification was actually run
+# and the run is recorded as a re-runnable artifact: command + exit + output
+# excerpt + verdict. Prose "Tests: passing" is not proof. Eight pins so the
+# convention cannot regress: a convention doc (+ its required fields), the
+# no-check marker, the agent's captured record, the two write-sites (execute +
+# verify), the completion-summary surface, and the PHILOSOPHY bend.
+
+assert_true "docs/verification/ convention doc exists" \
+  "$([ -f "$KIT_DIR/docs/verification/README.md" ] && echo 0 || echo 1)"
+
+assert_true "verification convention records command + exit + output excerpt + verdict" \
+  "$(grep -q 'Command:' "$KIT_DIR/docs/verification/README.md" && grep -q 'Exit:' "$KIT_DIR/docs/verification/README.md" && grep -q 'Output (excerpt)' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier emits the explicit no-check marker (no fake pass)" \
+  "$(grep -q '\[NO EXECUTABLE CHECK:' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier verdict captures the executed command + exit code" \
+  "$(grep -q 'Verification record' "$KIT_DIR/agents/task-verifier.md" && grep -q 'Command:' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "execute.md writes the verification log (docs/verification/)" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/commands/execute.md" && echo 0 || echo 1)"
+
+assert_true "execute.md Step 4 completion summary surfaces the verification-log path" \
+  "$(awk '/^### Step 4: Completion/{f=1;next} f && /^### /{exit} f && /docs\/verification\//{found=1} END{exit !found}' "$KIT_DIR/commands/execute.md" >/dev/null && echo 0 || echo 1)"
+
+assert_true "verify.md records the read-only run to the verification log" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/commands/verify.md" && echo 0 || echo 1)"
+
+assert_true "review.md reads test state from the verification log (static-judgment boundary)" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/commands/review.md" && echo 0 || echo 1)"
+
+assert_true "PHILOSOPHY records the execution-backed-verify bend" \
+  "$(grep -q 'docs/verification/' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+
+# ---- proof of done: the negative control (a green check is only proof if it can fail) ----
+
+assert_true "convention defines proof of done (green + negative control + reproducible)" \
+  "$(grep -qi 'Proof of done' "$KIT_DIR/docs/verification/README.md" && grep -qi 'negative control' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier can run a bash/make project suite (not only npm/go/pytest/cargo)" \
+  "$(grep -qE 'Bash\(bash tests/\*\)|Bash\(make test\*\)' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier flags a weak/absent negative control on load-bearing tasks" \
+  "$(grep -qi 'Negative control' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+assert_true "execute.md produces a negative control for load-bearing builds" \
+  "$(grep -qi 'NEGATIVE CONTROL' "$KIT_DIR/commands/execute.md" && echo 0 || echo 1)"
+
+assert_true "verify.md produces a negative control for load-bearing specs" \
+  "$(grep -qi 'NEGATIVE CONTROL' "$KIT_DIR/commands/verify.md" && echo 0 || echo 1)"
+
+# ---- risk-gated proof of done: the class gate (stateful | behavioral | inert) ----
+
+assert_true "lib/proof-gate.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/proof-gate.sh" ] && echo 0 || echo 1)"
+
+assert_true "proof-gate names the three proof classes (stateful, behavioral, inert)" \
+  "$(out=$(bash "$KIT_DIR/lib/proof-gate.sh" classes 2>/dev/null); echo "$out" | grep -q stateful && echo "$out" | grep -q behavioral && echo "$out" | grep -q inert && echo 0 || echo 1)"
+
+assert_true "convention defines the risk-class gate (stateful/behavioral/inert + proof-gate)" \
+  "$(grep -qi 'proof class' "$KIT_DIR/docs/verification/README.md" && grep -q 'proof-gate.sh' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "convention names the inert exempt marker + the run-the-real-flow rule" \
+  "$(grep -q 'PROOF OF DONE: exempt' "$KIT_DIR/docs/verification/README.md" && grep -qi 'real primary flow' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "execute.md gates the proof by class (proof-gate)" \
+  "$(grep -q 'proof-gate.sh' "$KIT_DIR/commands/execute.md" && echo 0 || echo 1)"
+
+assert_true "verify.md gates the proof by class (proof-gate)" \
+  "$(grep -q 'proof-gate.sh' "$KIT_DIR/commands/verify.md" && echo 0 || echo 1)"
+
+assert_true "task-verifier reads proof class (inert exempt ok; stateful needs rollback)" \
+  "$(grep -q 'proof-gate.sh' "$KIT_DIR/agents/task-verifier.md" && grep -q 'PROOF OF DONE: exempt' "$KIT_DIR/agents/task-verifier.md" && echo 0 || echo 1)"
+
+# ---- proof-of-done ENFORCEMENT: the ship/merge gate (advice -> wall) ----
+
+assert_true "lib/proof-ledger.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/proof-ledger.sh" ] && echo 0 || echo 1)"
+
+assert_true "ship-gate wires the diff-keyed proof-of-done gate" \
+  "$(grep -q 'proof-ledger.sh' "$KIT_DIR/hooks/ship-gate.sh" && echo 0 || echo 1)"
+
+assert_true "proof gate is opt-in (engages only where docs/verification/README.md exists)" \
+  "$(grep -q 'docs/verification/README.md' "$KIT_DIR/hooks/ship-gate.sh" && echo 0 || echo 1)"
+
+assert_true "proof-ledger provides a logged override (no silent bypass)" \
+  "$(grep -q 'override' "$KIT_DIR/lib/proof-ledger.sh" && grep -qi 'OVERRIDE' "$KIT_DIR/lib/proof-ledger.sh" && echo 0 || echo 1)"
+
+assert_true "ADR records the proof-of-done ship gate" \
+  "$([ -f "$KIT_DIR/docs/decisions/0025-proof-of-done-ship-gate.md" ] && echo 0 || echo 1)"
+
+assert_true "convention documents the enforcement gate + override" \
+  "$(grep -qi 'ship/merge gate\|enforcement' "$KIT_DIR/docs/verification/README.md" && grep -q 'proof-ledger' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+
+assert_true "PHILOSOPHY records the deferred enforcement hook is now built" \
+  "$(grep -q 'proof-ledger' "$KIT_DIR/docs/PHILOSOPHY.md" && echo 0 || echo 1)"
+
+# ---- single-source numbers: borrowed from the experiment sibling (no hand-typed drift) ----
+
+assert_true "lib/verif-counts.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/verif-counts.sh" ] && echo 0 || echo 1)"
+
+assert_true "COUNTS.md carries the generated single-source block" \
+  "$(grep -q 'BEGIN GEN:counts' "$KIT_DIR/docs/verification/COUNTS.md" 2>/dev/null && echo 0 || echo 1)"
+
+assert_true "convention names the experiment sibling + single-source borrow" \
+  "$(grep -qi 'sibling' "$KIT_DIR/docs/verification/README.md" && grep -qi 'single-source\|codebase-tool-benchmark\|falsifiab' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
 echo "=== codebase-memory auto-index hook (SPEC-043) ==="
 # ============================================================
 # The opt-in SessionStart hook must exist, be executable, be registered in both hook

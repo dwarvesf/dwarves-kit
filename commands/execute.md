@@ -196,18 +196,24 @@ The "verified" tag distinguishes tasks that passed the verification pipeline fro
 
 After all tasks in a phase complete:
 
-1. Run the full test suite
-2. Show a summary:
+1. Run the full test suite, capturing the exact command, its exit code, and an output
+   excerpt.
+2. **Append a verification-log entry** to `docs/verification/<spec-slug>.md` (create the
+   file if missing; same slug as the spec and the implementation-notes file). One entry
+   per phase checkpoint, shape per `docs/verification/README.md`: the captured
+   `Command:` / `Exit:` / `Output (excerpt):` / `Verdict:`. If the phase had no runnable
+   check, record `[NO EXECUTABLE CHECK: <reason>]`, never a fake pass.
+3. Show a summary:
    ```
    Phase 1 complete.
    Tasks: 3/3 done (3 verified)
    Retries: [N] total across all tasks
-   Tests: [pass/fail]
+   Tests: [pass/fail]  (logged: docs/verification/<spec-slug>.md)
    Commits: [list]
 
    Phase 2 has 2 tasks. Continue?
    ```
-3. Ask: "(A) Continue to Phase 2 / (B) Review Phase 1 changes first / (C) Stop here"
+4. Ask: "(A) Continue to Phase 2 / (B) Review Phase 1 changes first / (C) Stop here"
 
 This is the human checkpoint. The user can review, adjust, or stop.
 
@@ -215,7 +221,32 @@ This is the human checkpoint. The user can review, adjust, or stop.
 
 After all phases complete:
 
-1. Run full test suite one final time
+1. Run full test suite one final time, capturing the command, exit code, and output
+   excerpt, and **append the final verification-log entry** to
+   `docs/verification/<spec-slug>.md` (verdict `integration` or `final`), per
+   `docs/verification/README.md`. This entry is the one a reviewer re-runs to confirm
+   the build still passes.
+1b. **Negative control (load-bearing builds: `normal` and `full` lanes).** A green run
+   does not prove the check exercises the build. Produce the negative control that makes
+   the proof-of-done trustworthy: in a throwaway worktree (`git worktree add` off the
+   build's base ref, never the shared checkout), revert this build's change, re-run the
+   SAME logged command, and confirm it goes RED; then discard the worktree. Append a
+   `NEGATIVE CONTROL` entry (verdict `RED-as-expected`, the real failing exit + excerpt)
+   to `docs/verification/<spec-slug>.md`. If reverting cannot produce a RED (the check
+   does not bite), that is a finding: the acceptance check is too weak, fix it before
+   declaring done.
+1c. **Gate by proof class (`lib/proof-gate.sh class "<task>"`).** What "done" needs
+   depends on the task's risk class, so the discipline lands where the risk is:
+   - **stateful** (deploy / migration / data / persistent state): the recorded run must
+     exercise the REAL flow on a copy or dry-run, and the entry must note rollback /
+     reversibility. No "done" without a recorded run + a rollback path. If the flow
+     cannot be exercised here, record `[UNAVAILABLE: <reason>]`, do not fake it.
+   - **behavioral** (changes behavior): run the REAL primary flow the change adds (not a
+     tangential test that happens to pass), record it, and produce the negative control
+     above.
+   - **inert** (docs / comments / cosmetic): exempt. Record
+     `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
+   Marking a behavioral or stateful task inert is a finding, not a pass.
 2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-checker** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
    - **PASS**: continue to the summary.
    - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-checker.
@@ -232,6 +263,7 @@ After all phases complete:
    Tests: [pass/fail]
    Files changed: [list]
    Implementation notes: docs/implementation-notes/<spec-slug>.md ([N] entries, or "no deviations")
+   Verification log: docs/verification/<spec-slug>.md ([N] runs recorded; re-run any Command: line to regression-check)
 
    Recommended next steps:
    1. /kit:review -- full code review (security + architecture)

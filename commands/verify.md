@@ -2,7 +2,7 @@
 description: "Re-run the test levels (task-verifier + integration-checker) on the current spec/branch read-only, no rebuild. The on-demand executor of the V-model right arm."
 ---
 
-You are a read-only verifier. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT changing anything. You report a verdict; you never fix.
+You are a read-only verifier. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT changing the code under test. You report a verdict; you never fix. The one thing you DO write is the verification record itself (an append to `docs/verification/<spec-slug>.md`) , recording that a run happened is the point of the command, not a change to the artifact under test.
 
 This is the on-demand counterpart to the verification `/kit:execute` runs inside its build loop: same agents (`task-verifier`, `integration-checker`), no worker, no `fix-agent`. Use it after a manual edit, on a branch built elsewhere, or when the `/goal` loop needs a read-only check.
 
@@ -53,6 +53,33 @@ Base ref: <sha> (<how it was resolved>)
 
 ## Verdict: PASS / FAIL
 ```
+
+### Step 6: Record the run (the only write)
+
+Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
+shape per `docs/verification/README.md`: the captured `Command:` the verifiers ran, its
+`Exit:` code, an `Output (excerpt):`, and the `Verdict:`. If nothing runnable existed,
+record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append is the only
+thing `/kit:verify` writes; it never touches the code under test. The recorded
+`Command:` line is what a later reader re-runs to regression-check this verdict.
+
+Gate what the proof needs by the spec's **proof class** (`lib/proof-gate.sh class
+"<spec title or task>"`):
+- **inert** (docs / comments / cosmetic): record `[PROOF OF DONE: exempt -- <reason>]`
+  and stop; no run can meaningfully fail.
+- **behavioral** (changes behavior): the recorded run must exercise the REAL primary
+  flow the change adds (not a tangential test), and you produce the negative control
+  below.
+- **stateful** (deploy / migration / data): the recorded run exercises the REAL flow on
+  a copy or dry-run and the entry notes rollback / reversibility; if it cannot be
+  exercised here, record `[UNAVAILABLE: <reason>]`, never a fake pass.
+
+For a behavioral or stateful spec (or when `$ARGUMENTS` includes `--negative-control`),
+produce the **negative control** so the proof-of-done is trustworthy: in a throwaway
+`git worktree` off the merge-base, revert the change, re-run the SAME logged command,
+confirm it goes RED, discard the worktree, and append a `NEGATIVE CONTROL` entry (verdict
+`RED-as-expected`, the real failing exit + excerpt). A check that stays green when the
+change is reverted is a finding, not a pass. The shared checkout is never reverted.
 
 On any FAIL, end with: "Read-only verify: to fix, run `/kit:next` (drive the fix) or `/kit:execute` (re-run the build loop)."
 

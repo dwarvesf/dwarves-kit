@@ -23,6 +23,30 @@ BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exit 0
 SLUG="${BRANCH#*/}"   # strip the type/ prefix (feat/, docs/, ...)
 
+# --- Proof-of-done gate (diff-keyed, SPEC-INDEPENDENT). This is the bridge: it fires on
+# freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
+# load-bearing (behavioral/stateful) change cannot ship without a matching proof-of-done
+# entry. Fails open on ambiguity (handled inside proof-ledger). Exit 2 = block. ---
+PROOF="${CLAUDE_PLUGIN_ROOT:-$ROOT}/lib/proof-ledger.sh"
+# OPT-IN: engage only in a repo that adopted the proof-of-done convention. A repo with
+# no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
+# not every repo the user touches).
+if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
+  DEFAULT=$(git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1 && echo origin/main \
+    || { git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master; })
+  BASE=$(git -C "$ROOT" merge-base HEAD "$DEFAULT" 2>/dev/null || true)
+  HEADSHA=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
+  if [ -n "$BASE" ] && [ "$BASE" != "$HEADSHA" ]; then
+    if ! PMSG=$(bash "$PROOF" check "$ROOT" "$BASE" "$SLUG" 2>&1); then
+      LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+      mkdir -p "$LOG_DIR" 2>/dev/null || true
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | proof-gate | $SLUG" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+      printf '%s\n' "$PMSG" >&2
+      exit 2
+    fi
+  fi
+fi
+
 # Resolve the spec for this slug; fail open if there is no spec-driven run.
 SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
 [ -n "$SPEC" ] || exit 0

@@ -457,11 +457,11 @@ assert_exit "settings.json is valid JSON" 0 $?
 
 HOOK_COUNT=$(jq '[.hooks | to_entries[] | .value[] | .hooks[]] | length' "$KIT_DIR/settings.json" 2>/dev/null)
 TOTAL=$((TOTAL + 1))
-if [ "$HOOK_COUNT" -eq 15 ]; then
-  echo -e "  ${GREEN}PASS${NC} settings.json has 15 event hooks registered"
+if [ "$HOOK_COUNT" -eq 16 ]; then
+  echo -e "  ${GREEN}PASS${NC} settings.json has 16 event hooks registered"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 15)"
+  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 16)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -538,6 +538,91 @@ assert_output_contains "lane: a bug -> bug" "^bug$" "$(LANE 'the CSV parser cras
 assert_output_contains "lane: a full feature -> full" "^full$" "$(LANE 'add user authentication with a JWT token flow and a users table migration')"
 assert_output_contains "lane: a bounded feature -> normal" "^normal$" "$(LANE 'add a --version flag to the CLI')"
 assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 'review the legacy service and write its AGENTS.md operating-layer docs')"
+
+# ============================================================
+echo ""
+echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
+# ============================================================
+PGATE() { bash "$KIT_DIR/lib/proof-gate.sh" class "$1" 2>/dev/null; }
+# stateful: deploy / migration / data / persistent state.
+assert_output_contains "proof: a migration -> stateful" "^stateful$" "$(PGATE 'run the database migration to add a users table')"
+assert_output_contains "proof: a deploy -> stateful" "^stateful$" "$(PGATE 'deploy the worker to production')"
+# behavioral: implementation that changes behavior.
+assert_output_contains "proof: a feature -> behavioral" "^behavioral$" "$(PGATE 'add a --version flag to the CLI')"
+assert_output_contains "proof: a logic fix -> behavioral" "^behavioral$" "$(PGATE 'fix the CSV parser crash on empty input')"
+# inert: docs / cosmetic -> exempt.
+assert_output_contains "proof: a typo -> inert" "^inert$" "$(PGATE 'fix a typo in the README heading')"
+# requirement strings name the obligation per class.
+assert_output_contains "proof req: stateful names rollback" "rollback" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'deploy to production' 2>/dev/null)"
+assert_output_contains "proof req: behavioral names negative control" "negative control" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'add a flag' 2>/dev/null)"
+assert_output_contains "proof req: inert is exempt" "exempt" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'fix a typo' 2>/dev/null)"
+
+# ============================================================
+echo ""
+echo "=== proof-ledger: the proof-of-done ship gate (diff-keyed, spec-independent) ==="
+# ============================================================
+PL="$KIT_DIR/lib/proof-ledger.sh"
+export DWARVES_KIT_LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-proof.XXXXXX")
+# Build a temp repo with a base commit; echo "<root> <base>".
+_pl_repo() {
+  local d; d=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-pl.XXXXXX")
+  git -C "$d" init -q; git -C "$d" config user.email t@t.t; git -C "$d" config user.name t
+  git -C "$d" commit -q --allow-empty -m "chore: base"
+  printf '%s %s' "$d" "$(git -C "$d" rev-parse HEAD)"
+}
+# behavioral change, NO proof -> classify behavioral + check blocks (exit 1).
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c feat/x; mkdir -p "$ROOT/lib"; echo 'x' > "$ROOT/lib/f.sh"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(x): add a behavior change"
+assert_output_contains "ledger: behavioral diff -> behavioral" "^behavioral$" "$(bash "$PL" classify "$ROOT" "$BASE" 2>/dev/null)"
+bash "$PL" check "$ROOT" "$BASE" x >/dev/null 2>&1; assert_exit "ledger: behavioral, no proof -> BLOCK" 1 "$?"
+# add a green + NEGATIVE CONTROL proof -> check passes (exit 0).
+mkdir -p "$ROOT/docs/verification"; printf '## PASS\n- Exit: 0\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/x.md"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(x): proof of done"
+bash "$PL" check "$ROOT" "$BASE" x >/dev/null 2>&1; assert_exit "ledger: behavioral, with proof -> PASS" 0 "$?"
+# inert (doc-only) diff -> classify inert + pass with no proof (no ritual).
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c docs/y; echo '# notes' > "$ROOT/NOTES.md"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "docs: add notes"
+assert_output_contains "ledger: doc-only diff -> inert" "^inert$" "$(bash "$PL" classify "$ROOT" "$BASE" 2>/dev/null)"
+bash "$PL" check "$ROOT" "$BASE" y >/dev/null 2>&1; assert_exit "ledger: inert -> PASS (no ritual)" 0 "$?"
+# stateful change, NO proof -> classify stateful + block; [UNAVAILABLE] -> pass.
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c feat/mig; echo 'sql' > "$ROOT/add_users_migration.sql"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(db): add a users migration"
+assert_output_contains "ledger: migration diff -> stateful" "^stateful$" "$(bash "$PL" classify "$ROOT" "$BASE" 2>/dev/null)"
+bash "$PL" check "$ROOT" "$BASE" mig >/dev/null 2>&1; assert_exit "ledger: stateful, no proof -> BLOCK" 1 "$?"
+mkdir -p "$ROOT/docs/verification"; printf '## entry\n- Command: x\n- Verdict: [UNAVAILABLE: no staging db]\n' > "$ROOT/docs/verification/mig.md"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(db): proof unavailable"
+bash "$PL" check "$ROOT" "$BASE" mig >/dev/null 2>&1; assert_exit "ledger: stateful, [UNAVAILABLE] -> PASS" 0 "$?"
+# logged override turns a block into a pass (and leaves a trace).
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c feat/hot; mkdir -p "$ROOT/lib"; echo z > "$ROOT/lib/z.sh"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(z): urgent behavior change"
+bash "$PL" check "$ROOT" "$BASE" hot >/dev/null 2>&1; assert_exit "ledger: pre-override -> BLOCK" 1 "$?"
+bash "$PL" override hot "emergency, proof to follow" >/dev/null 2>&1
+bash "$PL" check "$ROOT" "$BASE" hot >/dev/null 2>&1; assert_exit "ledger: logged override -> PASS" 0 "$?"
+assert_true "ledger: override leaves a trace" "$([ -f "$DWARVES_KIT_LOG_DIR/proof-overrides.log" ] && grep -q hot "$DWARVES_KIT_LOG_DIR/proof-overrides.log" && echo 0 || echo 1)"
+
+# the ship-gate HOOK itself blocks (exit 2) a behavioral change with no proof in an
+# opted-in, SPEC-LESS repo (proves the wall + the bridge), and passes when proof exists.
+R=$(_pl_repo); ROOT=${R% *}
+mkdir -p "$ROOT/docs/verification"; echo '# convention' > "$ROOT/docs/verification/README.md"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "chore: adopt proof-of-done convention"
+git -C "$ROOT" switch -q -c feat/w; mkdir -p "$ROOT/lib"; echo w > "$ROOT/lib/w.sh"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(w): a behavior change"
+( cd "$ROOT" && CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" <<< '{"tool_input":{"command":"git push origin feat/w"}}' >/dev/null 2>&1 )
+assert_exit "ship-gate hook: behavioral + no proof + no spec -> BLOCK (exit 2)" 2 "$?"
+printf '## PASS\n- Exit: 0\n## NEGATIVE CONTROL\n- Exit: 1\n' > "$ROOT/docs/verification/w.md"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(w): proof of done"
+( cd "$ROOT" && CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" <<< '{"tool_input":{"command":"git push origin feat/w"}}' >/dev/null 2>&1 )
+assert_exit "ship-gate hook: proof present -> PASS (exit 0)" 0 "$?"
+# a NON-opted-in repo (no convention README) is never gated -> fail open.
+R=$(_pl_repo); ROOT=${R% *}
+git -C "$ROOT" switch -q -c feat/u; mkdir -p "$ROOT/lib"; echo u > "$ROOT/lib/u.sh"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(u): behavior change, repo not opted in"
+( cd "$ROOT" && CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" <<< '{"tool_input":{"command":"git push origin feat/u"}}' >/dev/null 2>&1 )
+assert_exit "ship-gate hook: repo not opted in -> PASS (fail open)" 0 "$?"
 
 # ============================================================
 echo ""

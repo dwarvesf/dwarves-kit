@@ -96,3 +96,7 @@ Date: YYYY-MM-DD | Reviewer: /kit:review
 ```
 
 If no active spec exists (reviewing an arbitrary diff or someone else's PR), output the report inline in chat instead. NEVER write the review to a fixed-name file in the repo root; that pattern collides across concurrent worktrees and sessions.
+
+## Test state comes from the verification log, not from prose
+
+`/kit:review` is static judgment, not test execution: it does not run the suite and does not write `docs/verification/`. When a finding or the verdict turns on whether the code passes its checks (the Step 2 "Is the new code covered by tests? Do tests actually assert behavior?" questions), cite the **verification log** (`docs/verification/<spec-slug>.md`) , the re-runnable record of what `/kit:execute` or `/kit:verify` actually ran , rather than asserting "tests pass" from inspection. No verification-log entry, or a `[NO EXECUTABLE CHECK]` where a runnable check was expected, is itself a review finding. Running and recording the check is `/kit:verify`'s job; review reads that record and judges.
