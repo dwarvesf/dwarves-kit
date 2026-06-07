@@ -254,6 +254,16 @@ For the full file listing including individual agent/hook/command names, run `gi
 - [Context7](https://github.com/upstash/context7) - MCP server for library docs
 - [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) - AST-level codebase indexing
 
+**Codebase index (opt-in).** If `codebase-memory-mcp` is installed, the
+`codebase-index.sh` SessionStart hook keeps the current repo's structural index fresh
+in the background (built on the first session in a repo, incremental refresh after),
+so `/kit:spec` and `/kit:execute` query the index (`search_code`, `search_graph`,
+`get_architecture`, `trace_path`) instead of grepping, cutting orientation cost. With
+the tool absent the hook no-ops and the kit greps exactly as before, nothing to
+configure and nothing breaks. Enable: put the binary on `PATH`, run
+`claude mcp add --scope user codebase-memory -- codebase-memory-mcp`, then re-run
+`install.sh`.
+
 ## v2 roadmap (not yet built)
 
 - Prompt-type anti-rationalization hook (Haiku evaluation instead of grep patterns)

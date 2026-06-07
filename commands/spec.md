@@ -35,12 +35,12 @@ If the formal agents are NOT installed, dispatch 4 Task tool subagents with thes
 
 **Stack research:**
 ```
-Map the technology stack. Read package.json / go.mod / Cargo.toml / pyproject.toml and config files. Report: languages, frameworks, versions, key dependencies (top 5-10), build/test/deploy commands. If codebase-memory-mcp is available, use get_structure(). Max 50 lines. Write to docs/research/stack.md.
+Map the technology stack. Read package.json / go.mod / Cargo.toml / pyproject.toml and config files. Report: languages, frameworks, versions, key dependencies (top 5-10), build/test/deploy commands. If codebase-memory-mcp is available, use get_architecture(). Max 50 lines. Write to docs/research/stack.md.
 ```
 
 **Feature research:**
 ```
-Map existing features related to [user's feature area]. Find: relevant endpoints/routes, data models, UI components, test coverage, recent git history for this area. If codebase-memory-mcp is available, use search_symbols() and trace_call_path(). Max 80 lines. Write to docs/research/features.md.
+Map existing features related to [user's feature area]. Find: relevant endpoints/routes, data models, UI components, test coverage, recent git history for this area. If codebase-memory-mcp is available, use search_code() and trace_path(). Max 80 lines. Write to docs/research/features.md.
 ```
 
 **Architecture research:**

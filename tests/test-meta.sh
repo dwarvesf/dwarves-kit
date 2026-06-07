@@ -1798,6 +1798,20 @@ assert_true "COUNTS.md carries the generated single-source block" \
 
 assert_true "convention names the experiment sibling + single-source borrow" \
   "$(grep -qi 'sibling' "$KIT_DIR/docs/verification/README.md" && grep -qi 'single-source\|codebase-tool-benchmark\|falsifiab' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
+echo "=== codebase-memory auto-index hook (SPEC-043) ==="
+# ============================================================
+# The opt-in SessionStart hook must exist, be executable, be registered in both hook
+# registries, and guard on git rev-parse (NOT '[ -d .git ]', which silently skips
+# worktrees because .git is a file there).
+
+assert_true "hooks/codebase-index.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/hooks/codebase-index.sh" ] && echo 0 || echo 1)"
+
+assert_true "auto-index hook guards on git rev-parse (worktree-correct, not [ -d .git ])" \
+  "$(grep -q 'git rev-parse --is-inside-work-tree' "$KIT_DIR/hooks/codebase-index.sh" && ! grep -qE '^\[ -d \.git \]' "$KIT_DIR/hooks/codebase-index.sh" && echo 0 || echo 1)"
+
+assert_true "auto-index hook registered as SessionStart in both registries" \
+  "$(grep -q 'codebase-index.sh' "$KIT_DIR/settings.json" && grep -q 'codebase-index.sh' "$KIT_DIR/hooks/hooks.json" && echo 0 || echo 1)"
 
 # ============================================================
 echo ""
