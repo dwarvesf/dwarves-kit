@@ -9,6 +9,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/codebase-index.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [

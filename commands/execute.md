@@ -16,7 +16,7 @@ If any prerequisite fails, tell the user what's missing and stop.
 ### Context layer detection
 
 Check once before dispatching any tasks:
-- **codebase-memory-mcp**: Is it configured in `.mcp.json` or `~/.claude/.mcp.json`? If yes, worker subagents should use `search_symbols`, `trace_call_path`, and `get_structure` instead of grepping. This reduces orientation cost by ~120x. Note this in each worker's context block.
+- **codebase-memory-mcp**: Is it configured in `.mcp.json` or `~/.claude/.mcp.json`? If yes, worker subagents should use `search_code`, `trace_path`, and `get_architecture` instead of grepping. This reduces orientation cost by ~120x. Note this in each worker's context block.
 - **Context Hub / Context7**: Are external API docs available? If `chub` is installed or Context7 MCP is configured, note relevant API doc references in each worker's context block.
 
 ## Execution model
@@ -91,6 +91,7 @@ TASK-[ID]: [description]
 - Create a git commit when the task is complete: `type(scope): description` (e.g. `feat(start): add tiered output`). Do NOT put the task or spec ID in the subject line; the SPEC.md checklist already maps each task to its commit hash.
 - Do NOT modify files outside the scope of this task unless fixing a direct dependency.
 - If you encounter a blocker, stop and report it. Do not work around it silently.
+- **Maintain `docs/implementation-notes/<spec-slug>.md` as you work.** Append an entry whenever you (a) decide something the spec did not pin down, (b) deviate from the spec, (c) hit a tradeoff worth surfacing, or (d) discover a constraint the spec missed. Entry shape: `## YYYY-MM-DD HH:MM <short title>` with bullet lines for Context, Decision/Change, Why, Alternatives considered, Impact. If your task runs with zero deviations, append a single line: `TASK-[ID]: no deviations`. Create the file (header only) if it does not exist. This is for the human reviewer, not the verifier; do not let it block your commit.
 
 ## Shell gotchas (pre-warn)
 These traps recur cycle after cycle. Use the correct form up front:
@@ -118,7 +119,9 @@ Before writing any code, expand this task into **bite-sized steps** and present 
 
 ## When done
 Report: what you implemented, what tests you wrote, what files you changed, decisions made
-(with protocol format), and whether all acceptance criteria are met.
+(with protocol format), whether all acceptance criteria are met, and the path
++ count of entries appended to `docs/implementation-notes/<spec-slug>.md` (or
+`no deviations logged` if you appended the no-deviations line).
 ```
 
 #### 2c. Verify worker output (THE VERIFICATION PIPELINE)
@@ -228,11 +231,12 @@ After all phases complete:
    Commits: [N]
    Tests: [pass/fail]
    Files changed: [list]
+   Implementation notes: docs/implementation-notes/<spec-slug>.md ([N] entries, or "no deviations")
 
    Recommended next steps:
    1. /kit:review -- full code review (security + architecture)
    2. /kit:docs -- update documentation
-   3. /kit:ship -- commit and PR
+   3. /kit:ship -- commit and PR (include the implementation-notes path in the PR body)
    ```
 
 ## Error handling

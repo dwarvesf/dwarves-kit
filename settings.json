@@ -10,6 +10,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/codebase-index.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [
