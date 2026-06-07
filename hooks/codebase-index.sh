@@ -24,9 +24,11 @@ if ! command -v codebase-memory-mcp >/dev/null 2>&1; then
   exit 0
 fi
 
-# Only index real git repos.
-[ -d .git ] || exit 0
-REPO="$(pwd)"
+# Only index real git repos. `git rev-parse` handles a worktree (where `.git` is a FILE,
+# not a dir, so the old `[ -d .git ]` test silently skipped worktrees) and being in a
+# subdir; index the repo TOPLEVEL, not the cwd subdir.
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+REPO="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 
 # Background, detached so it survives the hook returning. Build if new, incremental
 # refresh if already indexed.
