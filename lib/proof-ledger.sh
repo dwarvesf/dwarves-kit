@@ -116,6 +116,8 @@ check() {
 
   local files f ok=1
   files="$(_fresh_proof_files "$root" "$base")"
+  # per-file (back-compat): a flat docs/verification/<slug>.md or a co-located
+  # proof-of-done.md carries both markers in one file.
   if [ -n "$files" ]; then
     while IFS= read -r f; do
       [ -n "$f" ] || continue
@@ -126,6 +128,31 @@ check() {
         grep -qiE 'rollback|\[UNAVAILABLE' "$p" && grep -qE 'Command:|Exit:' "$p" && ok=0 && break
       fi
     done <<< "$files"
+  fi
+  # set-wise (directory layout): under docs/verification/<slug>/ the green run and the
+  # negative control may live in different runs/ files. Group by the <slug>/ prefix and
+  # satisfy when the UNION of a group's files carries both markers.
+  if [ "$ok" -ne 0 ] && [ -n "$files" ]; then
+    local groups g content
+    groups="$(printf '%s\n' "$files" | sed -nE 's#^(docs/verification/[^/]+/).*#\1#p' | sort -u)"
+    while IFS= read -r g; do
+      [ -n "$g" ] || continue
+      content=""
+      while IFS= read -r f; do
+        case "$f" in
+          "$g"*) [ -f "$root/$f" ] && content+="$(cat "$root/$f")"$'\n' ;;
+        esac
+      done <<< "$files"
+      if [ "$class" = "behavioral" ]; then
+        printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
+          && printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' \
+          && ok=0 && break
+      else # stateful
+        printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
+          && printf '%s' "$content" | grep -qE 'Command:|Exit:' \
+          && ok=0 && break
+      fi
+    done <<< "$groups"
   fi
   [ "$ok" -eq 0 ] && return 0
 
