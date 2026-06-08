@@ -58,11 +58,17 @@ else
   pass "green-only correctly BLOCKED (negative control is required)"
 fi
 
-# 3. NEGATIVE CONTROL B: pre-change lib on the split fixture -> BLOCK (set-wise is load-bearing)
+# 3. NEGATIVE CONTROL B: pre-change lib on the split fixture -> BLOCK (set-wise is load-bearing).
+# Take the lib as it was at the fork point (merge-base with master), so this stays valid no
+# matter how many commits land on the branch after the set-wise change. HEAD would be wrong
+# once the change is committed (HEAD then HAS set-wise).
 F=/tmp/vf-gate-split   # reuse the split fixture (has both runs/ files)
 OLD=/tmp/vf-oldlib.sh
-git -C "$KIT" show HEAD:lib/proof-ledger.sh > "$OLD" 2>/dev/null
-if [ -s "$OLD" ]; then
+BASEREF=$(git -C "$KIT" merge-base HEAD master 2>/dev/null \
+  || git -C "$KIT" merge-base HEAD origin/master 2>/dev/null \
+  || git -C "$KIT" rev-parse master 2>/dev/null)
+git -C "$KIT" show "${BASEREF:-HEAD}:lib/proof-ledger.sh" > "$OLD" 2>/dev/null
+if [ -s "$OLD" ] && ! grep -q 'set-wise' "$OLD"; then
   if bash "$OLD" check "$F" "$(base "$F")" vf-fix >/dev/null 2>&1; then
     fail "pre-change lib should BLOCK the split layout but it passed"
   else
