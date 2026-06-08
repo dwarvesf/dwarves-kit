@@ -127,6 +127,13 @@ work came through `/kit:execute` or a freeform `/goal` loop. Properties:
 
 ## test-design.md shape (written once, stage 1+2)
 
+> **Quality bar for what goes in it:** `docs/verification/test-design-standard.md` , the
+> coverage rule (every AC -> a test), the test ladder (smoke -> unit -> integration -> live ->
+> adversarial), falsifiability (a negative control per load-bearing claim), the one-source /
+> three-roles split, and the pre-done sign-off checklist. The matrix lives in `test-design.md`;
+> `runs/` are the records; a report is an index, never a copy.
+
+
 ````markdown
 # Test design -- <slug>
 Profile: eval | tool-build | feature
