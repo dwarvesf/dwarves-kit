@@ -56,16 +56,20 @@ classify() {
   local changed subjects blob
   changed="$(_changed "$root" "$base")"
   [ -n "$changed" ] || { echo inert; return 0; }   # empty diff: nothing to gate
-  subjects="$(_subjects "$root" "$base")"
-  blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
 
-  # stateful: deploy / migration / data / persistent-state signals.
-  if printf '%s' "$blob" | grep -qE 'deploy|rollout|production|migrat|schema|data[ -]model|database|/db/|\bseed\b|backup|restore|persistent|drop .*(table|column)|alter table|data loss'; then
-    echo stateful; return 0
-  fi
-  # inert: the diff is only markdown / text (docs, comments).
+  # inert FIRST: a markdown/txt-only diff is docs, never load-bearing, regardless of what the
+  # commit subject says. Checking stateful keywords against the subject before this misread a
+  # markdown-only "migrate" doc change as stateful (see SPEC-046, the classify-md-inert dogfood).
   if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$')" ]; then
     echo inert; return 0
+  fi
+
+  subjects="$(_subjects "$root" "$base")"
+  blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
+  # stateful: deploy / migration / data / persistent-state signals (only reached when the diff
+  # touches non-doc files, so a docs-only commit can no longer be misclassified by its subject).
+  if printf '%s' "$blob" | grep -qE 'deploy|rollout|production|migrat|schema|data[ -]model|database|/db/|\bseed\b|backup|restore|persistent|drop .*(table|column)|alter table|data loss'; then
+    echo stateful; return 0
   fi
   echo behavioral
 }

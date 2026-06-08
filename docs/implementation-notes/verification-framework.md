@@ -70,3 +70,21 @@ ops-toolkit's two competing convention docs to pointers. Runs as a /goal loop.
   sibling + single-source borrow"). Restored the sibling wording (honest: the experiment IS a
   sibling profile, not test-gaming). Re-run 390/390. Lesson: rewriting a canonical doc can trip
   a meta-pin; always re-run test-meta after editing docs/verification/README.md.
+
+## 2026-06-08 dogfood: finish the feature by fixing a real bug, proven on REAL state
+- Context: the proof so far used synthetic /tmp fixtures (unit tests of the gate logic). The
+  framework's actual primary flow had never been captured as a recorded LIVE run on real repo
+  state. Chosen real work-item: the `migrate`-keyword classifier false-positive (initially
+  scoped OUT, now the dogfood).
+- Decision: reorder `proof-ledger.sh classify()` so the markdown-only (inert) check runs BEFORE
+  the stateful keyword check. A docs-only commit can no longer be misread as stateful by its
+  subject; a code+migrate diff still hits the stateful check (has non-md files).
+- Recorded live run (real state, not a fixture): on the real ops-toolkit branch
+  `worktree-verification-framework` (commit 140a147 is markdown-only), classify went `stateful`
+  (pre-fix HEAD lib) -> `inert` (patched lib), the negative control (pre-fix lib) reproduces
+  `stateful`, and the installed ship-gate hook now ALLOWS the push with no rollback-note
+  workaround. Captured in `docs/verification/classify-md-inert/`.
+- Regression: `tests/test-classify-md-inert.sh` 4/4 (incl. the negative control); meta 390/390;
+  dir-layout 3/3 + ship-gate-profiles 6/6 unbroken.
+- The earlier ops-toolkit rollback-note entry is now moot for the gate (the branch is honestly
+  inert) but left as a historical record; not load-bearing anymore.

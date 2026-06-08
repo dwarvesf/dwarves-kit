@@ -39,8 +39,9 @@ Name the scientific method that was already implicit and make it one spine:
 In: the canonical convention doc; the set-wise gate change; the quality-loop verify contract
 (doc + reference); migrating the three existing dialects; reducing ops-toolkit's two convention
 docs to pointers. Out: a new orchestrator / swarm runtime; coupling to OpenClaw or
-pi-messenger-swarm (patterns borrowed, not imported); tightening the `migrate`-keyword
-stateful classifier; retrofitting every tool (three dogfood instances is the bar).
+pi-messenger-swarm (patterns borrowed, not imported); retrofitting every tool (three dogfood
+instances is the bar). The `migrate`-keyword classifier false-positive was originally scoped
+out, then pulled in as the recorded-live-run dogfood (see `docs/verification/classify-md-inert/`).
 
 ## Acceptance criteria
 
