@@ -3,6 +3,7 @@
 Generated: 2026-06-08
 Status: DRAFT
 Source: maintainer session 2026-06-08 (Han). Grew out of building a data-pull CLI in ops-toolkit and discovering the "what counts as done" standard was being reinvented ad-hoc instead of routed through the kit. Brainstormed + design approved 2026-06-08.
+Prior spec: SPEC-042 (proof of done , the 3-part recorded artifact + negative control) and its later ship-gate enforcement (ADR-0025). This spec adds the task-TYPE axis on top of that foundation.
 Depends on: the existing verification framework, which this EXTENDS, not replaces: `lib/proof-gate.sh` (proof-class classifier), `lib/lane-classify.sh` (risk-lane classifier), `lib/proof-ledger.sh` + `hooks/ship-gate.sh` (the ship/merge gate, ADR-0025), `docs/verification/README.md` + `docs/verification/proof-of-done.md` (the discipline).
 Lane: full (touches hooks + the enforcement gate).
 This spec's own proof class: behavioral (changes the gate's output + adds a classifier); its proof of done is a recorded run of the gate on sample tasks + a negative control (a task that should fail the gate does).
@@ -75,10 +76,23 @@ Human override always wins; the registry suggests. More types get appended as ne
 1. `lib/task-type-classify.sh classify "<desc>"` returns a type for each of the 6 seed types on representative descriptions; `... types` lists them.
 2. `docs/verification/task-types.md` exists with one row per seed type (type, artifact, skill, default class).
 3. `proof-gate.sh contract "<desc>"` composes CLASS + TYPE and returns the type-specific requirement + skill pointer (e.g. a CLI-build desc returns the recorded-run requirement pointing at `ops-tool-shape`).
-4. Proof of done for THIS spec: a recorded run showing the new classifier + contract on sample tasks, plus a negative control (a description that should NOT match a type falls through to a sane default), captured in `docs/verification/SPEC-008.md`.
+4. Proof of done for THIS spec: a recorded run showing the new classifier + contract on sample tasks, plus a negative control (a description that should NOT match a type falls through to a sane default), captured in `docs/verification/SPEC-044.md`.
 5. `tests/test-meta.sh` still passes (no duplicate SPEC number; registry well-formed).
 
-## Open questions
+## Resolved decisions (during build)
 
-- Registry format: markdown table (human-first, greppable) vs TSV/toml (machine-first). Lean markdown table to match `MANIFEST.md`/`CONSUMERS.md` precedent; the classifier parses it.
-- Does `task-type-classify` live as its own file or fold into `proof-gate.sh`? Lean own file, mirroring `lane-classify.sh`, so each classifier is single-purpose.
+- Registry format: **markdown table** (`docs/verification/task-types.md`), parsed by `proof-gate.sh` via awk; matches the `MANIFEST.md`/`CONSUMERS.md` precedent and stays human-greppable. Cells use no `|` or `->` so the parse stays trivial.
+- Classifier home: **own file** `lib/task-type-classify.sh`, mirroring `lane-classify.sh` (single-purpose), not folded into `proof-gate.sh`.
+- Gate type-awareness (first cut): the diff-based ship-gate can derive the proof CLASS from a diff but not the TYPE (which needs task intent). So the BLOCKED message now **points to `proof-gate.sh contract "<task>"`** for the type-specific artifact, rather than auto-typing a diff. Auto-typing from a diff is the deferred follow-up.
+
+## Implementation status (2026-06-08)
+
+Implemented + self-verified on `feat/proof-done-task-types`. Acceptance criteria mapped to evidence:
+
+1. classifier 6 types + `types` , **met** (test-meta pins `classify -> {eval,research,doc,migration,data-tool}` + default `spec-feature`).
+2. registry with a row per type , **met** (`docs/verification/task-types.md`; test-meta pins each row).
+3. `proof-gate.sh contract` composes , **met** (test-meta pins the data-tool artifact+owner + the migration class upgrade).
+4. proof of done for this spec , **met** (`docs/verification/SPEC-044.md`: green run + negative control + reproducible).
+5. `tests/test-meta.sh` passes , **met** (389/389, Exit 0; SPEC-008 collision resolved by renumber to 044).
+
+Remaining to reach SHIPPED (NOT done autonomously, by design): `/kit:spec-validate` (full-lane, 5-lens) + `/kit:review` + a version/CHANGELOG bump + merge/tag. These need a **dwarves-kit session** (the `/kit:*` commands resolve against the session's project; this loop ran from an ops-toolkit session) and a human merge to master. This is the kit's enforcement core, so it should be adversarially validated + reviewed, not self-shipped. See `docs/implementation-notes/SPEC-044-proof-done-task-types.md`.

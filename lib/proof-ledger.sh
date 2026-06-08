@@ -133,6 +133,7 @@ check() {
     else
       echo "  Need: a docs/verification/<slug>.md added by this branch with a recorded run AND a rollback note, or [UNAVAILABLE: reason] if no such flow exists here."
     fi
+    echo "  Type-specific shape (SPEC-044): run 'bash lib/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"
     echo "    bash lib/proof-ledger.sh override '${slug:-<branch-slug>}' \"<reason>\""
   } >&2
