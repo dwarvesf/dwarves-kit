@@ -32,7 +32,9 @@
 
 set -euo pipefail
 
-PROOF_GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# pwd -P (physical): when invoked through a symlinked install dir (~/.claude/dwarves-kit/lib),
+# resolve to the real repo so ../docs/verification/task-types.md still loads (SPEC-045).
+PROOF_GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 proof_class() {
   local desc lc lane

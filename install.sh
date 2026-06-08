@@ -61,6 +61,14 @@ if [ "${1:-}" = "--uninstall" ]; then
     rmdir "$HOOKS_DEST" 2>/dev/null && echo "[ok] Removed hooks directory: $HOOKS_DEST"
   fi
 
+  # Remove the lib symlink we created (SPEC-045). Only a symlink is removed; an
+  # in-place clone keeps its real lib/ (torn down by deleting the clone).
+  LIB_DEST="$CLAUDE_DIR/dwarves-kit/lib"
+  if [ -L "$LIB_DEST" ]; then
+    rm "$LIB_DEST"
+    echo "[ok] Removed lib symlink: $LIB_DEST"
+  fi
+
   # Remove dwarves-kit hooks from settings.json
   if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
     # Backup first
@@ -139,6 +147,21 @@ else
     ln -s "$HOOK_FILE" "$LINK"
   done
   echo "[ok] Linked hook scripts into $HOOKS_DEST/"
+fi
+
+# 1c. Deploy lib/ so the gates (proof-ledger, gate-ledger) resolve from the stable
+# install path even when pushing a CONSUMER repo (SPEC-045). A consumer repo has no
+# lib/, and bash-install mode has no CLAUDE_PLUGIN_ROOT, so without this the ship-gate
+# fails open in every repo but dwarves-kit itself. Dir symlink keeps repo edits live.
+if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
+  echo "[ok] Kit is installed in place; lib already at \$HOME/.claude/dwarves-kit/lib/"
+else
+  LIB_DEST="$CLAUDE_DIR/dwarves-kit/lib"
+  mkdir -p "$CLAUDE_DIR/dwarves-kit"
+  [ -L "$LIB_DEST" ] && rm "$LIB_DEST"
+  [ -d "$LIB_DEST" ] && [ ! -L "$LIB_DEST" ] && rm -rf "$LIB_DEST"
+  ln -s "$KIT_DIR/lib" "$LIB_DEST"
+  echo "[ok] Linked lib into $LIB_DEST"
 fi
 
 # 2. Merge settings.json
