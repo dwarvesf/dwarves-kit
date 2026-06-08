@@ -58,24 +58,21 @@ else
   pass "green-only correctly BLOCKED (negative control is required)"
 fi
 
-# 3. NEGATIVE CONTROL B: pre-change lib on the split fixture -> BLOCK (set-wise is load-bearing).
-# Take the lib as it was at the fork point (merge-base with master), so this stays valid no
-# matter how many commits land on the branch after the set-wise change. HEAD would be wrong
-# once the change is committed (HEAD then HAS set-wise).
+# 3. NEGATIVE CONTROL B: a lib with the set-wise block STRIPPED -> BLOCKS the split layout.
+# History-independent: construct the pre-change lib from the CURRENT one (awk the set-wise
+# block out), so this stays valid even after the feature is merged to master. Reading the lib
+# from git history breaks the moment master HAS the change.
 F=/tmp/vf-gate-split   # reuse the split fixture (has both runs/ files)
 OLD=/tmp/vf-oldlib.sh
-BASEREF=$(git -C "$KIT" merge-base HEAD master 2>/dev/null \
-  || git -C "$KIT" merge-base HEAD origin/master 2>/dev/null \
-  || git -C "$KIT" rev-parse master 2>/dev/null)
-git -C "$KIT" show "${BASEREF:-HEAD}:lib/proof-ledger.sh" > "$OLD" 2>/dev/null
+awk '/# set-wise \(directory layout\)/{s=1} /\[ "\$ok" -eq 0 \] && return 0/{s=0} !s' "$LIB" > "$OLD"
 if [ -s "$OLD" ] && ! grep -q 'set-wise' "$OLD"; then
   if bash "$OLD" check "$F" "$(base "$F")" vf-fix >/dev/null 2>&1; then
-    fail "pre-change lib should BLOCK the split layout but it passed"
+    fail "set-wise-stripped lib should BLOCK the split layout but it passed"
   else
-    pass "pre-change lib BLOCKS the split layout (the set-wise code is load-bearing)"
+    pass "set-wise-stripped lib BLOCKS the split layout (the set-wise code is load-bearing)"
   fi
 else
-  echo "[NO EXECUTABLE CHECK: cannot read HEAD:lib/proof-ledger.sh]"; fails=$((fails+1))
+  echo "[NO EXECUTABLE CHECK: could not strip the set-wise block]"; fails=$((fails+1))
 fi
 
 echo "---"
