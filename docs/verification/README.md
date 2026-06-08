@@ -64,10 +64,13 @@ report. The location and lifecycle are identical , one grammar, three dialects:
 | **tool build / port** | Definition of Done, acceptance criteria, the proof-script command | a recorded live run of the real commands | `ops-tool-shape` Done gate |
 | **feature / goal** | the test-plan derived from the spec | a `/kit:verify` run + its negative control | dwarves-kit |
 
-The experiment's **falsifiability check** and the feature's **negative control** are the
-same idea (a check that cannot fail proves nothing). The experiment's single-source
-GENERATED numbers and the kit's `COUNTS.md` are the same idea (a figure is generated once,
-never hand-typed into N docs where it drifts). Keep the profiles distinct in JOB
+The three profiles are **siblings**, not rivals: the eval/experiment profile (worked example
+`ops-toolkit/experiments/codebase-tool-benchmark/`) is the research-paper twin of the
+feature profile's proof of done. The experiment's **falsifiability check** and the feature's
+**negative control** are the same idea (a check that cannot fail proves nothing). The
+experiment's single-source GENERATED numbers and the kit's `COUNTS.md` are the same idea (a
+figure is generated once, never hand-typed into N docs where it drifts). Keep the profiles
+distinct in JOB
 (confirmation vs comparison); do not grow a build system for a one-line change, nor a
 benchmark for a verification log.
 

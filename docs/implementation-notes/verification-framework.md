@@ -58,3 +58,15 @@ ops-toolkit's two competing convention docs to pointers. Runs as a /goal loop.
   gate change is live while the branch is checked out. `tests/`, `commands/`, `docs/` are not
   in the install tree; the canonical convention is the README, and `/kit:verify`'s reference
   to it is doc-level (command reload is a separate deploy concern).
+
+## 2026-06-08 SDD retrofit (the dogfood the user asked for)
+- Context: the feature was built as a `/goal` loop, not the kit's SDD lifecycle. Applied SDD
+  after the fact: wrote `docs/specs/SPEC-046-verification-framework.md` (Status SHIPPED,
+  retroactive) with a Test plan coverage matrix, and a consolidated
+  `docs/verification/verification-framework/TEST-REPORT.md` mapping every AC to a recorded test
+  + negative control.
+- **Regression caught by the full-suite re-run:** `tests/test-meta.sh` went 389/390 because the
+  README rewrite dropped the word "sibling" (pinned assertion "convention names the experiment
+  sibling + single-source borrow"). Restored the sibling wording (honest: the experiment IS a
+  sibling profile, not test-gaming). Re-run 390/390. Lesson: rewriting a canonical doc can trip
+  a meta-pin; always re-run test-meta after editing docs/verification/README.md.
