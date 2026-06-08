@@ -56,28 +56,36 @@ classify() {
   local changed subjects blob
   changed="$(_changed "$root" "$base")"
   [ -n "$changed" ] || { echo inert; return 0; }   # empty diff: nothing to gate
-  subjects="$(_subjects "$root" "$base")"
-  blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
 
-  # stateful: deploy / migration / data / persistent-state signals.
-  if printf '%s' "$blob" | grep -qE 'deploy|rollout|production|migrat|schema|data[ -]model|database|/db/|\bseed\b|backup|restore|persistent|drop .*(table|column)|alter table|data loss'; then
-    echo stateful; return 0
-  fi
-  # inert: the diff is only markdown / text (docs, comments).
+  # inert FIRST: a markdown/txt-only diff is docs, never load-bearing, regardless of what the
+  # commit subject says. Checking stateful keywords against the subject before this misread a
+  # markdown-only "migrate" doc change as stateful (see SPEC-046, the classify-md-inert dogfood).
   if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$')" ]; then
     echo inert; return 0
+  fi
+
+  subjects="$(_subjects "$root" "$base")"
+  blob="$(printf '%s\n%s' "$changed" "$subjects" | tr 'A-Z' 'a-z')"
+  # stateful: deploy / migration / data / persistent-state signals (only reached when the diff
+  # touches non-doc files, so a docs-only commit can no longer be misclassified by its subject).
+  if printf '%s' "$blob" | grep -qE 'deploy|rollout|production|migrat|schema|data[ -]model|database|/db/|\bseed\b|backup|restore|persistent|drop .*(table|column)|alter table|data loss'; then
+    echo stateful; return 0
   fi
   echo behavioral
 }
 
 # the verification-log files this branch added/modified (excludes the convention README).
+# Two accepted shapes: the repo-root convention (docs/verification/<slug>.md) AND a proof
+# co-located with its subject anywhere in the tree (any path ending /proof-of-done.md, e.g.
+# a monorepo's tools/<name>/docs/proof-of-done.md). The content check in check() validates
+# either the same way; location is just where the proof lives.
 _fresh_proof_files() {
   local root="$1" base="$2"
   { git -C "$root" diff --name-only "$base"..HEAD 2>/dev/null
     git -C "$root" diff --name-only HEAD 2>/dev/null
     git -C "$root" diff --name-only --cached 2>/dev/null
     git -C "$root" ls-files --others --exclude-standard 2>/dev/null
-  } | sort -u | grep -E '^docs/verification/.+\.md$' | grep -v '/README\.md$' || true
+  } | sort -u | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' | grep -v '/README\.md$' || true
 }
 
 is_overridden() {
@@ -112,6 +120,8 @@ check() {
 
   local files f ok=1
   files="$(_fresh_proof_files "$root" "$base")"
+  # per-file (back-compat): a flat docs/verification/<slug>.md or a co-located
+  # proof-of-done.md carries both markers in one file.
   if [ -n "$files" ]; then
     while IFS= read -r f; do
       [ -n "$f" ] || continue
@@ -122,6 +132,31 @@ check() {
         grep -qiE 'rollback|\[UNAVAILABLE' "$p" && grep -qE 'Command:|Exit:' "$p" && ok=0 && break
       fi
     done <<< "$files"
+  fi
+  # set-wise (directory layout): under docs/verification/<slug>/ the green run and the
+  # negative control may live in different runs/ files. Group by the <slug>/ prefix and
+  # satisfy when the UNION of a group's files carries both markers.
+  if [ "$ok" -ne 0 ] && [ -n "$files" ]; then
+    local groups g content
+    groups="$(printf '%s\n' "$files" | sed -nE 's#^(docs/verification/[^/]+/).*#\1#p' | sort -u)"
+    while IFS= read -r g; do
+      [ -n "$g" ] || continue
+      content=""
+      while IFS= read -r f; do
+        case "$f" in
+          "$g"*) [ -f "$root/$f" ] && content+="$(cat "$root/$f")"$'\n' ;;
+        esac
+      done <<< "$files"
+      if [ "$class" = "behavioral" ]; then
+        printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
+          && printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' \
+          && ok=0 && break
+      else # stateful
+        printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
+          && printf '%s' "$content" | grep -qE 'Command:|Exit:' \
+          && ok=0 && break
+      fi
+    done <<< "$groups"
   fi
   [ "$ok" -eq 0 ] && return 0
 

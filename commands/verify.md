@@ -81,6 +81,21 @@ confirm it goes RED, discard the worktree, and append a `NEGATIVE CONTROL` entry
 `RED-as-expected`, the real failing exit + excerpt). A check that stays green when the
 change is reverted is a finding, not a pass. The shared checkout is never reverted.
 
+### Quality-loop contract (when iterating with review)
+
+When a behavioral/stateful artifact is hardened across rounds (produce -> critique via
+`/kit:review-team` -> revise), follow the bounded quality-loop contract in
+`docs/verification/README.md`: a **distinct** reviewer (never self-review), bounded to a
+hard round cap (default 3), stopping when findings reach zero. Each round's reviewer ends
+with `[[QL-VERDICT round=N clean=BOOL findings=K]]`, and the finding count must **strictly
+fall** across rounds (a loop where findings do not decrease is a finding, not a pass). Record
+the converged verdict + the round-by-round counts in the run. `/kit:verify` itself is
+read-only (it reports, it does not revise); the revise step is `/kit:next` / `/kit:execute`.
+
+The run record follows the layout in `docs/verification/README.md`: the directory shape
+`docs/verification/<slug>/runs/<timestamp>.md` (one immutable file per execution) for new
+work, or the back-compat flat `docs/verification/<slug>.md` (append-entry) for existing logs.
+
 On any FAIL, end with: "Read-only verify: to fix, run `/kit:next` (drive the fix) or `/kit:execute` (re-run the build loop)."
 
 ## Edge cases
