@@ -71,13 +71,17 @@ classify() {
 }
 
 # the verification-log files this branch added/modified (excludes the convention README).
+# Two accepted shapes: the repo-root convention (docs/verification/<slug>.md) AND a proof
+# co-located with its subject anywhere in the tree (any path ending /proof-of-done.md, e.g.
+# a monorepo's tools/<name>/docs/proof-of-done.md). The content check in check() validates
+# either the same way; location is just where the proof lives.
 _fresh_proof_files() {
   local root="$1" base="$2"
   { git -C "$root" diff --name-only "$base"..HEAD 2>/dev/null
     git -C "$root" diff --name-only HEAD 2>/dev/null
     git -C "$root" diff --name-only --cached 2>/dev/null
     git -C "$root" ls-files --others --exclude-standard 2>/dev/null
-  } | sort -u | grep -E '^docs/verification/.+\.md$' | grep -v '/README\.md$' || true
+  } | sort -u | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' | grep -v '/README\.md$' || true
 }
 
 is_overridden() {
