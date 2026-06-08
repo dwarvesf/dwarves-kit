@@ -154,8 +154,8 @@ if HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1; then
   # SPEC-045: install must materialize lib/ so the gates resolve from the stable
   # install path in consumer repos (else the proof-of-done gate fails open everywhere
   # but dwarves-kit). -e follows the dir symlink to the real file.
-  assert_true "install.sh materializes lib/proof-ledger.sh (SPEC-045)" \
-    "$([ -e "$TMP_HOME/.claude/dwarves-kit/lib/proof-ledger.sh" ] && echo 0 || echo 1)"
+  [ -e "$TMP_HOME/.claude/dwarves-kit/lib/proof-ledger.sh" ]
+  assert_true "install.sh materializes lib/proof-ledger.sh (SPEC-045)" $?
 else
   assert_eq "install.sh runs cleanly into an isolated HOME" "ok" "failed"
 fi

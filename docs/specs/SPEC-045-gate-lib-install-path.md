@@ -1,7 +1,7 @@
 # Spec: Gate resolves its lib from the install path (consumer-repo enforcement fix)
 
 Generated: 2026-06-08
-Status: DRAFT
+Status: SHIPPED
 Source: maintainer session 2026-06-08 (Han), found while preparing to adopt the proof-of-done gate in consumer repos (ops-toolkit + others). The gate did not actually enforce in any consumer repo.
 Prior spec: SPEC-042 (proof of done), SPEC-044 (task-type contracts), ADR-0024/0025 (the gates + ledger).
 Lane: full (touches the ship-gate hook + the installer).
@@ -37,3 +37,7 @@ Out: changing the gate's block LOGIC (unchanged, still proof-ledger), the proof 
 ## Verification
 
 `bash tests/test-meta.sh` (exit 0). Plus the consumer-gate repro recorded in the proof file.
+
+## Validation + ship record (2026-06-08)
+
+Adversarial review via the kit `reviewer` agent (ran from an ops-toolkit session, so `/kit:*` could not target dwarves-kit): verdict **SHIP** (9/10), 0 blockers. Two LOW items, both applied: a `$HOME`-unset fail-open guard in ship-gate, and the `assert_true $?` idiom in the new pin. Verified: idempotent reinstall + `--uninstall` clean, `pwd -P` keeps `contract` resolving, gate block-logic byte-identical to master, test-meta 390/390, test-hooks 164/164. Shipped via merge of the PR to master.

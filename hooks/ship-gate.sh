@@ -8,6 +8,9 @@
 # repo, no spec, no lane, missing tooling) so a bug here can never block unrelated
 # work. push-to-main and force-push stay safety-gate.sh's job. Exit 2 = block.
 set -uo pipefail
+# Preserve fail-open even on the pathological case (HOME unset under set -u): the lib
+# fallback below uses $HOME, so default it to empty rather than error-exit (SPEC-045 review).
+HOME="${HOME:-}"
 INPUT=$(cat)
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -z "$CMD" ] && exit 0
