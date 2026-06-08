@@ -40,15 +40,16 @@ F=/tmp/cls-codemig; build "$F" code "migrate the database schema"
 F=/tmp/cls-code; build "$F" code "tweak the helper"
 [ "$(cls "$LIB" "$F")" = behavioral ] && pass "code-only diff -> behavioral" || fail "code-only should be behavioral, got $(cls "$LIB" "$F")"
 
-# AC2 negative control: the pre-fix lib (merge-base) classifies md-only 'migrate' as stateful
+# AC2 negative control: a lib with the inert-FIRST block STRIPPED classifies md-only 'migrate'
+# as stateful (the bug). History-independent: construct the pre-fix lib from the CURRENT one
+# (awk the inert-FIRST block out), so this stays valid even after the fix is merged to master.
 F=/tmp/cls-md   # reuse the md-only 'migrate' fixture
 OLD=/tmp/cls-oldlib.sh
-BASEREF=$(git -C "$KIT" merge-base HEAD master 2>/dev/null || git -C "$KIT" rev-parse master 2>/dev/null)
-git -C "$KIT" show "${BASEREF:-HEAD}:lib/proof-ledger.sh" > "$OLD" 2>/dev/null
+awk '/# inert FIRST/{s=1} /^  subjects=/{s=0} !s' "$LIB" > "$OLD"
 if [ -s "$OLD" ] && grep -q 'stateful: deploy' "$OLD" && ! grep -q 'inert FIRST' "$OLD"; then
-  [ "$(cls "$OLD" "$F")" = stateful ] && pass "pre-fix lib classifies md-only 'migrate' as stateful (the bug; fix is load-bearing)" || fail "pre-fix lib should reproduce the stateful bug, got $(cls "$OLD" "$F")"
+  [ "$(cls "$OLD" "$F")" = stateful ] && pass "inert-FIRST-stripped lib classifies md-only 'migrate' as stateful (the bug; fix is load-bearing)" || fail "stripped lib should reproduce the stateful bug, got $(cls "$OLD" "$F")"
 else
-  echo "[NO EXECUTABLE CHECK: could not resolve a pre-fix lib without the inert-first reorder]"; fails=$((fails+1))
+  echo "[NO EXECUTABLE CHECK: could not strip the inert-FIRST block]"; fails=$((fails+1))
 fi
 
 echo "---"
