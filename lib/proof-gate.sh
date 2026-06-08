@@ -75,6 +75,7 @@ _registry_field() {
   awk -F'|' -v t="$1" -v c="$2" '
     /^\|/ {
       f2=$2; gsub(/^[ \t]+|[ \t]+$/, "", f2)
+      if (f2 == "task-type" || f2 ~ /^-+$/) next   # skip the header + separator rows
       if (f2 == t) { v=$c; gsub(/^[ \t]+|[ \t]+$/, "", v); print v; exit }
     }' "$TASK_TYPE_REGISTRY" 2>/dev/null
 }
@@ -82,6 +83,7 @@ _registry_field() {
 proof_contract() {
   local desc class type artifact skill
   desc="$*"
+  [ -n "$desc" ] || { echo "usage: proof-gate.sh contract \"<task description>\"" >&2; return 64; }
   class="$(proof_class "$desc")"
   type="$(bash "$PROOF_GATE_DIR/task-type-classify.sh" classify "$desc" 2>/dev/null || echo spec-feature)"
   artifact="$(_registry_field "$type" 3)"

@@ -1,7 +1,7 @@
 # Spec: Proof-of-Done task-type contracts (a compose axis on the verification gate)
 
 Generated: 2026-06-08
-Status: DRAFT
+Status: SHIPPED
 Source: maintainer session 2026-06-08 (Han). Grew out of building a data-pull CLI in ops-toolkit and discovering the "what counts as done" standard was being reinvented ad-hoc instead of routed through the kit. Brainstormed + design approved 2026-06-08.
 Prior spec: SPEC-042 (proof of done , the 3-part recorded artifact + negative control) and its later ship-gate enforcement (ADR-0025). This spec adds the task-TYPE axis on top of that foundation.
 Depends on: the existing verification framework, which this EXTENDS, not replaces: `lib/proof-gate.sh` (proof-class classifier), `lib/lane-classify.sh` (risk-lane classifier), `lib/proof-ledger.sh` + `hooks/ship-gate.sh` (the ship/merge gate, ADR-0025), `docs/verification/README.md` + `docs/verification/proof-of-done.md` (the discipline).
@@ -41,7 +41,7 @@ Worked examples:
 1. **`lib/task-type-classify.sh`** , deterministic `desc -> task-type`, keyword-based, mirrors `lane-classify.sh` (suggests, never blocks; human override). Precedence-ordered, first match wins. Pure bash + grep.
 2. **A declarative registry** `docs/verification/task-types.md` , one row per type: `task-type | artifact shape | owning skill | default proof class`. **This is the extension point**: a new work-type later = add one row (+ optionally one classifier rule). No code change to add a type's contract.
 3. **`proof-gate.sh` gains a `contract` subcommand** (or extends `requirement`) that composes CLASS + TYPE: reads the registry, returns the type-specific requirement string + the owning skill pointer, at the class's rigor.
-4. **`proof-ledger.sh` / `ship-gate.sh` become type-aware**: when checking for a fresh proof on a behavioral/stateful change, consult the type's expected artifact from the registry (e.g. a `data-tool` change wants a `proof-of-done.md` diff; an `eval` wants a `TEST-REPORT`). The fresh-proof + branch-diff mechanism is unchanged; only the *expected artifact* becomes type-derived. Stays opt-in per repo, logged-override, fails-open.
+4. **The ship-gate message becomes type-aware (first cut, messaging only)**: the diff-based gate derives the proof CLASS from a diff but cannot derive the TYPE (which needs task intent), so the `proof-ledger.sh` BLOCKED message now points to `proof-gate.sh contract "<task>"` for the type-specific artifact + skill. The fresh-proof + branch-diff enforcement mechanism is **unchanged** (opt-in per repo, logged-override, fails-open); `hooks/ship-gate.sh` is untouched. **Phase 2 (deferred, see Scope):** auto-deriving the expected artifact for a type from the diff so the gate hard-enforces the exact shape.
 
 ### Seed registry (extensible)
 
@@ -95,4 +95,8 @@ Implemented + self-verified on `feat/proof-done-task-types`. Acceptance criteria
 4. proof of done for this spec , **met** (`docs/verification/SPEC-044.md`: green run + negative control + reproducible).
 5. `tests/test-meta.sh` passes , **met** (389/389, Exit 0; SPEC-008 collision resolved by renumber to 044).
 
-Remaining to reach SHIPPED (NOT done autonomously, by design): `/kit:spec-validate` (full-lane, 5-lens) + `/kit:review` + a version/CHANGELOG bump + merge/tag. These need a **dwarves-kit session** (the `/kit:*` commands resolve against the session's project; this loop ran from an ops-toolkit session) and a human merge to master. This is the kit's enforcement core, so it should be adversarially validated + reviewed, not self-shipped. See `docs/implementation-notes/SPEC-044-proof-done-task-types.md`.
+Validation + ship record: the `/kit:*` commands could not target dwarves-kit from the ops-toolkit session that ran this loop, so the validate + review gates ran as **adversarial sub-agents** on the branch diff (the kit's `reviewer` + `security-auditor` agents, the same agents `/kit:spec-validate` / `/kit:review-team` dispatch):
+- Security/regression audit: **SHIP** , gate control-flow byte-identical to master, no injection, `test-hooks.sh` 164/164, `hooks/ship-gate.sh` untouched.
+- Correctness/architecture: **FIX-FIRST** , 0 correctness defects; flagged 2 spec-honesty + 1 precedence-doc + 2 cheap hardening items. All resolved before merge: Design item 4 marked messaging-only/Phase-2; migration>data-tool precedence documented; CHANGELOG count corrected (18 assertions, suite 371->389); `_registry_field` skips the header/separator rows; `contract` with no arg errors (exit 64).
+
+Shipped via merge of PR #16 to master. CHANGELOG entry under [Unreleased] (no version bump; ships under the next tag, per the kit's release cadence). See `docs/implementation-notes/SPEC-044-proof-done-task-types.md`.

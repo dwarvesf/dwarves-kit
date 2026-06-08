@@ -11,7 +11,10 @@
 #
 # Precedence (first match wins). eval/research win over doc because their
 # deliverable IS a report (a doc) but the WORK is eval/research; doc (pure docs)
-# wins over migration/data-tool because a doc about a tool is still a doc:
+# wins over migration/data-tool because a doc about a tool is still a doc;
+# migration wins over data-tool because a tool that deploys to production or touches
+# live state warrants the stricter stateful proof regardless of artifact type (this
+# mirrors proof-gate's stateful > behavioral rule; it errs strict, never permissive):
 #   1. eval         -- benchmark / evaluate / compare tools -> a TEST-REPORT
 #   2. research     -- investigate / survey / landscape      -> a cited report
 #   3. doc          -- write docs / readme / changelog        -> doc-verifier match
