@@ -1815,6 +1815,44 @@ assert_true "auto-index hook registered as SessionStart in both registries" \
 
 # ============================================================
 echo ""
+echo "=== Task-type contracts (SPEC-044) ==="
+# ============================================================
+# Second axis of the verification gate: task TYPE -> proof artifact + owning skill,
+# composed with the proof CLASS. Pins the classifier, the registry, and the
+# proof-gate `contract` compose. These go RED if SPEC-044 is reverted (negative control).
+
+TTC="$KIT_DIR/lib/task-type-classify.sh"
+TTREG="$KIT_DIR/docs/verification/task-types.md"
+
+assert_true "lib/task-type-classify.sh exists and is executable" \
+  "$([ -x "$TTC" ] && echo 0 || echo 1)"
+
+assert_eq "classify -> eval" "eval" "$(bash "$TTC" classify 'benchmark X vs Y for retrieval' 2>/dev/null)"
+assert_eq "classify -> research" "research" "$(bash "$TTC" classify 'research the tooling landscape' 2>/dev/null)"
+assert_eq "classify -> doc" "doc" "$(bash "$TTC" classify 'write the README for the tool' 2>/dev/null)"
+assert_eq "classify -> migration" "migration" "$(bash "$TTC" classify 'migrate the database schema' 2>/dev/null)"
+assert_eq "classify -> data-tool" "data-tool" "$(bash "$TTC" classify 'build a CLI to pull data from the API' 2>/dev/null)"
+# Negative control: an unmatched description falls through to the default, not a wrong type.
+assert_eq "classify default (neg control) -> spec-feature" "spec-feature" "$(bash "$TTC" classify 'add a sort button to the trade log' 2>/dev/null)"
+
+assert_eq "task-type-classify types lists 6" "6" "$(bash "$TTC" types 2>/dev/null | grep -c .)"
+
+assert_true "task-types.md registry exists" "$([ -f "$TTREG" ] && echo 0 || echo 1)"
+for T in eval research doc migration data-tool spec-feature; do
+  assert_true "registry has a row for '$T'" \
+    "$(grep -qE "^\| *$T *\|" "$TTREG" && echo 0 || echo 1)"
+done
+
+CONTRACT_OUT="$(bash "$KIT_DIR/lib/proof-gate.sh" contract 'build a CLI to pull data from the API' 2>/dev/null)"
+assert_true "proof-gate contract names the data-tool type" \
+  "$(printf '%s' "$CONTRACT_OUT" | grep -q 'type=data-tool' && echo 0 || echo 1)"
+assert_true "proof-gate contract names the recorded-run artifact + owning skill" \
+  "$(printf '%s' "$CONTRACT_OUT" | grep -qi 'recorded live run' && printf '%s' "$CONTRACT_OUT" | grep -qi 'ops-tool-shape' && echo 0 || echo 1)"
+assert_true "proof-gate contract upgrades a migration to stateful (class wins on rigor)" \
+  "$(bash "$KIT_DIR/lib/proof-gate.sh" contract 'migrate the database schema' 2>/dev/null | grep -q 'class=stateful' && echo 0 || echo 1)"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"

@@ -65,13 +65,45 @@ proof_requirement() {
   esac
 }
 
+# SPEC-044: compose the proof CLASS (rigor) with the task TYPE (artifact shape +
+# owning skill). The type comes from task-type-classify.sh; the artifact + skill come
+# from the registry docs/verification/task-types.md. Class still wins on rigor.
+TASK_TYPE_REGISTRY="$PROOF_GATE_DIR/../docs/verification/task-types.md"
+
+_registry_field() {
+  # $1 = task type, $2 = column index (3=artifact, 4=skill, 5=default class)
+  awk -F'|' -v t="$1" -v c="$2" '
+    /^\|/ {
+      f2=$2; gsub(/^[ \t]+|[ \t]+$/, "", f2)
+      if (f2 == "task-type" || f2 ~ /^-+$/) next   # skip the header + separator rows
+      if (f2 == t) { v=$c; gsub(/^[ \t]+|[ \t]+$/, "", v); print v; exit }
+    }' "$TASK_TYPE_REGISTRY" 2>/dev/null
+}
+
+proof_contract() {
+  local desc class type artifact skill
+  desc="$*"
+  [ -n "$desc" ] || { echo "usage: proof-gate.sh contract \"<task description>\"" >&2; return 64; }
+  class="$(proof_class "$desc")"
+  type="$(bash "$PROOF_GATE_DIR/task-type-classify.sh" classify "$desc" 2>/dev/null || echo spec-feature)"
+  artifact="$(_registry_field "$type" 3)"
+  skill="$(_registry_field "$type" 4)"
+  [ -n "$artifact" ] || artifact="(no registry row for type '$type'; default: run the real primary flow + a negative control)"
+  [ -n "$skill" ] || skill="(none)"
+  echo "type=$type class=$class"
+  echo "proof: $artifact"
+  echo "owner: $skill"
+  echo "rigor: $(proof_requirement "$desc")"
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     class)       proof_class "$@";;
     requirement) proof_requirement "$@";;
+    contract)    proof_contract "$@";;
     classes)     printf 'stateful\nbehavioral\ninert\n';;
-    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|classes}" >&2; return 64;;
+    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|classes}" >&2; return 64;;
   esac
 }
 
