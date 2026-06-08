@@ -27,7 +27,11 @@ SLUG="${BRANCH#*/}"   # strip the type/ prefix (feat/, docs/, ...)
 # freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
 # load-bearing (behavioral/stateful) change cannot ship without a matching proof-of-done
 # entry. Fails open on ambiguity (handled inside proof-ledger). Exit 2 = block. ---
-PROOF="${CLAUDE_PLUGIN_ROOT:-$ROOT}/lib/proof-ledger.sh"
+# Resolve the lib from the kit's INSTALL location, not the repo being pushed (SPEC-045):
+# in bash-install mode CLAUDE_PLUGIN_ROOT is unset, and a consumer repo has no lib/, so a
+# $ROOT fallback fails open in every consumer. The stable install path fixes that; plugin
+# mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
+PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/proof-ledger.sh"
 # OPT-IN: engage only in a repo that adopted the proof-of-done convention. A repo with
 # no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
 # not every repo the user touches).
@@ -53,7 +57,7 @@ SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
 LANE=$(grep -m1 -iE '^Lane:' "$SPEC" 2>/dev/null | sed -E 's/^[Ll]ane:[[:space:]]*//; s/[[:space:]].*$//' || true)
 [ -n "$LANE" ] || exit 0
 
-LEDGER="${CLAUDE_PLUGIN_ROOT:-$ROOT}/lib/gate-ledger.sh"
+LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate-ledger.sh"
 [ -f "$LEDGER" ] || exit 0
 
 if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
