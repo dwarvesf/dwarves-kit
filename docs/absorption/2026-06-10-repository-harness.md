@@ -18,8 +18,8 @@ from dwarves-kit, which is enforcing-but-Claude-Code-only.
 |---|---|---|---|---|
 | A1 | CLAUDE.md `@AGENTS.md` import instead of a prose "read AGENTS.md" pointer (their `--claude` shim) | The import actually loads the contract into context; a pointer only hopes the agent reads it | Low/Low | **ABSORBED in this PR** |
 | A2 | adopt `--dry-run` (preview) + `--refresh` (re-sync the managed block) (their installer modes) | adopt was merge-only; preview-before-write + re-sync-after-a-kit-update are everyday needs | Low/Low | **ABSORBED in this PR** |
-| A3 | Explicit 10-flag risk checklist + count-based decision tree (0-1/2-3/4+ flags, hard gates) for lane classification | Our `lane-classify` is keyword-prose and under-classified the adopt command as `normal` this cycle; a flag-count tree is auditable and would catch kit-machinery changes | Med/Med | PROPOSE (next) |
-| A4 | Decision-capture as a routine terminal lane step (their `docs/decisions/` flow) | Make the reflect gate emit a short structured decision file, not just narrative | Med/Low | PROPOSE (next) |
+| A3 | Explicit 10-flag risk checklist + count-based decision tree (0-1/2-3/4+ flags, hard gates) for lane classification | Our `lane-classify` is keyword-prose and under-classified the adopt command as `normal` this cycle; a flag-count tree is auditable and would catch kit-machinery changes | Med/Med | **ABSORBED** (PR #26, SPEC-050; flag-scoring + `explain` + kit-machinery hard-gate) |
+| A4 | Decision-capture as a routine terminal lane step (their `docs/decisions/` flow) | Make the reflect gate emit a short structured decision file, not just narrative | Med/Low | **ABSORBED (lite)** (PR #27, SPEC-051; advisory `/kit:retro` nudge, NOT a forced emission, the kit already has ADRs + retro + Build-decisions and PHILOSOPHY rejects hard-gating completeness) |
 | A5 | `--directory` + `--override` adopt modes | Round out the mode set; `--directory` is covered by our positional arg | Low | DEFER (low value) |
 | B1 | Prebuilt Rust `harness-cli` + sha256 + CI version-bump | Compiled binary + release burden for no enforcement gain on our single-platform bash + CC surface | High | **SKIP** |
 | B2 | PowerShell installer / Windows | We are macOS + CC only | Med | **SKIP** |
@@ -43,5 +43,8 @@ thin-contract one).
 
 ## Footer (seed tracking)
 
-repository-harness is a non-Credits external source. If we keep tracking it, add it to
-`docs/ABSORPTION.md` `## Seed list`. Source HEAD not pinned (read via README, not a clone).
+repository-harness is now a CREDITED source (README `## Credits`, 2026-06-10), so it is already in
+Lane B's rescan set via the "live README Credits parse" UNION; it does NOT also go in the
+`docs/ABSORPTION.md` `## Seed list` extras (those are the non-Credits-only repos). Source HEAD not
+pinned (read via README + FEATURE_INTAKE.md over WebFetch, not a clone); a future Lane-B rescan
+records the baseline SHA.

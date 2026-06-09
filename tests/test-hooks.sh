@@ -539,6 +539,32 @@ assert_output_contains "lane: a full feature -> full" "^full$" "$(LANE 'add user
 assert_output_contains "lane: a bounded feature -> normal" "^normal$" "$(LANE 'add a --version flag to the CLI')"
 assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 'review the legacy service and write its AGENTS.md operating-layer docs')"
 
+# SPEC-050: flag-scoring -- the kit-machinery hard-gate catches the 2026-06-10 misses (a change
+# naming the gate machinery is always full, even with no auth/migration keyword).
+assert_output_contains "lane: kit-machinery (classifier) -> full" "^full$" "$(LANE 'rewrite lib/lane-classify.sh into a flag-scoring classifier')"
+assert_output_contains "lane: kit-machinery (adopt) -> full" "^full$" "$(LANE 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
+assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full" "^full$" "$(LANE 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
+# SPEC-050: soft-flag count -- 4 weak signals with no hard-gate keyword still escalate to full.
+assert_output_contains "lane: 4 soft flags -> full" "^full$" "$(LANE 'a cross-platform change to existing behavior that is untested and spans two domains')"
+# SPEC-050: explain is auditable -- it names the flag that fired, not just the lane.
+EXPLAIN() { bash "$KIT_DIR/lib/lane-classify.sh" explain "$1" 2>/dev/null; }
+assert_output_contains "explain names the kit-machinery flag" "kit-machinery" "$(EXPLAIN 'ship AGENTS.md into the install via install.sh so adopt works')"
+assert_output_contains "explain prints a reason line" "^reason:" "$(EXPLAIN 'add a --version flag to the CLI')"
+# SPEC-050 precedence: tiny BEATS the hard-gate -- a typo about auth is still a typo (catches a
+# precedence flip that the keyword-free typo test cannot).
+assert_output_contains "lane: tiny beats the auth hard-gate" "^tiny$" "$(LANE 'fix a typo in the auth comment')"
+# SPEC-050 soft-count band: exactly 2 and exactly 3 soft flags stay normal (pins the -ge 2 / -ge 4
+# thresholds; without these an off-by-one is invisible because the default is also normal).
+assert_output_contains "lane: 2 soft flags -> normal" "^normal$" "$(LANE 'a cross-platform change to existing behavior')"
+assert_output_contains "lane: 3 soft flags -> normal" "^normal$" "$(LANE 'a cross-platform change to existing behavior that is untested')"
+assert_output_contains "explain: 3 soft flags reason says soft" "soft flags" "$(EXPLAIN 'a cross-platform change to existing behavior that is untested')"
+# SPEC-050 contract edges: empty description -> normal; the `flags` subcommand lists the new flag.
+assert_output_contains "lane: empty description -> normal" "^normal$" "$(LANE '')"
+assert_output_contains "flags subcommand lists kit-machinery" "kit-machinery" "$(bash "$KIT_DIR/lib/lane-classify.sh" flags 2>/dev/null)"
+# SPEC-050 DEC-003: security stays a hard-gate (was bare 'security' in the old full branch); the
+# narrowing was validation-only, so security-relevant work does not silently downgrade.
+assert_output_contains "lane: security middleware -> full" "^full$" "$(LANE 'add security middleware to the request pipeline')"
+
 # ============================================================
 echo ""
 echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
