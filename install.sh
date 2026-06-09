@@ -180,7 +180,15 @@ else
   mkdir -p "$CLAUDE_DIR/dwarves-kit"
   for CONTRACT in AGENTS.md WORKFLOW.md; do
     LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
-    if [ -L "$LINK" ] || [ -f "$LINK" ]; then rm -f "$LINK"; fi
+    if [ -L "$LINK" ]; then
+      rm "$LINK"                              # refresh a stale symlink
+    elif [ -e "$LINK" ]; then
+      # A real file here (a user's own AGENTS.md, or a manual install) is left intact and used
+      # as-is; clobbering it with rm -f would be silent data loss (review HIGH). adopt resolves
+      # the source from $KIT_ROOT either way, so a real file still works.
+      echo "[skip] $CONTRACT at $LINK is a real file, not a symlink; leaving it untouched"
+      continue
+    fi
     ln -s "$KIT_DIR/$CONTRACT" "$LINK"
   done
   echo "[ok] Linked AGENTS.md + WORKFLOW.md into $CLAUDE_DIR/dwarves-kit/"
