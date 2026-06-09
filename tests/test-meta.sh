@@ -1682,6 +1682,13 @@ assert_true "WORKFLOW documents the gate-ledger + ship-enforcement convention" "
 assert_true "ship.md records the Ship gate + names the override path" "$(grep -q 'gate-ledger.sh' "$KIT_DIR/commands/ship.md" && echo 0 || echo 1)"
 assert_true "AGENTS operate-contract points at the gate-ledger convention" "$(grep -q 'gate-ledger' "$KIT_DIR/AGENTS.md" && echo 0 || echo 1)"
 
+# SPEC-051 (A4-lite): /kit:retro carries the advisory decision-capture nudge, and it is framed
+# advisory (the assertion pins both, so a future edit cannot quietly turn it into a hard gate).
+assert_true "retro.md has the decision-capture nudge pointing at docs/decisions/" \
+  "$(awk '/Decision-capture nudge/{f=1} f && /^### Step 2/{exit} f && /docs\/decisions\//{found=1} END{exit !found}' "$KIT_DIR/commands/retro.md" && echo 0 || echo 1)"
+assert_true "retro decision-capture nudge is framed advisory, never a block" \
+  "$(awk '/Decision-capture nudge/{f=1} f && /advisory, never a block/{found=1} END{exit !found}' "$KIT_DIR/commands/retro.md" && echo 0 || echo 1)"
+
 # ============================================================
 echo ""
 echo "=== Implementation-notes log (SPEC-041 / ID-041) ==="
