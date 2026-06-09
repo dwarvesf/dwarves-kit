@@ -74,7 +74,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 22 commands + 11 agents = **33 entries** (9 build · 3 code · 5 test · 9 gate · 7 cross-phase).
+Total: 23 commands + 11 agents = **34 entries** (9 build · 3 code · 5 test · 9 gate · 8 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -128,6 +128,7 @@ Total: 22 commands + 11 agents = **33 entries** (9 build · 3 code · 5 test · 
 |---|---|---|---|---|
 | `/kit:retro` | command | Reflect | cross-phase | Post-ship narrative mirror of the entire V; captures learnings, not a gate |
 | `/kit:start` | command | Session entry | cross-phase | Detects project state and recommends the right next command; never executes |
+| `/kit:adopt` | command | Repo onboarding | cross-phase | Injects the operate-contract + proof marker + a CLAUDE.md pointer into a target repo (idempotent, via `lib/adopt.sh`); wires the classifiers so the ship-gate engages there |
 | `/kit:kit-health` | command | Maintainer audit | cross-phase | Self-assessment against PHILOSOPHY.md; run before tagging; not part of the normal cycle |
 | `/kit:absorb` | command | Upstream maintenance | cross-phase | Audits Credits drift + seed-rescan; proposal-only; maintainer-only connective tissue |
 | `/kit:debug` | command | Bug lane (off-cycle) | cross-phase | Off-cycle loop: root cause before any fix; evidence ledger; 3-fix architecture wall |
