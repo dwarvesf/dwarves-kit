@@ -103,6 +103,7 @@ Total: 23 commands + 11 agents = **34 entries** (9 build · 3 code · 5 test · 
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
 | `/kit:test-plan` | command | Test design (write tests) | test | Opt-in; derives the coverage matrix from AC before /execute so the build has a planned target; the kit's single test-design step |
+| `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 5 lenses adversarially critique the `## Test plan` + bounded revise loop, between /test-plan and /execute; report-only (SPEC-047) |
 | `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite after each worker; read-only; primary enforcer in the verification pipeline |
 | `integration-checker` | agent | Integration test | test | Verifies cross-task wiring at /execute Step 4 for multi-task specs; read-only |
 | `/kit:ship` | command | Acceptance test (gate) | test | Executes the acceptance check; blocks on DO-NOT-SHIP; bumps version, writes changelog, cuts PR |
