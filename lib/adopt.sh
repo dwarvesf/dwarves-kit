@@ -4,21 +4,37 @@
 # Adoption = the per-repo trigger that makes an agent classify + pick a lane and that makes the
 # ship-gate engage. It injects the CONTRACT + a proof marker + pointers; it never copies the
 # engine (lib/, the full WORKFLOW matrix) -- the gate machinery reads those from the install
-# ($KIT_ROOT). Non-destructive: existing files are never overwritten; re-run is a clean no-op.
+# ($KIT_ROOT). Non-destructive: AGENTS.md + the proof marker are never overwritten.
 #
-# Usage: adopt.sh [--check] <target-dir>
-#   --check : report status only (exit 0 adopted / 1 not), write nothing.
+# The CLAUDE.md loader uses an `@AGENTS.md` import (Claude Code includes the file, not just a
+# "go read it" pointer; absorbed from repository-harness's --claude shim).
+#
+# Usage: adopt.sh [--check | --dry-run | --refresh] <target-dir>
+#   --check   : report status only (exit 0 adopted / 1 not), write nothing.
+#   --dry-run : print what would change, write nothing.
+#   --refresh : re-sync the kit-managed pieces (WORKFLOW pointer + the CLAUDE.md loader block)
+#               to their current form. AGENTS.md + the proof marker are still never overwritten.
 set -uo pipefail
 
 KIT_ROOT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd "$SELF_DIR/.." && pwd)"   # the dwarves-kit repo root when run from its lib/
-MARKER="<!-- kit:adopt -->"              # idempotency sentinel in the consumer CLAUDE.md
+START="<!-- kit:adopt -->"               # managed-block markers in the consumer CLAUDE.md
+END="<!-- /kit:adopt -->"
 
-usage() { echo "usage: adopt.sh [--check] <target-dir>" >&2; exit 64; }
+usage() { echo "usage: adopt.sh [--check | --dry-run | --refresh] <target-dir>" >&2; exit 64; }
 
-CHECK=0
-[ "${1:-}" = "--check" ] && { CHECK=1; shift; }
+CHECK=0 DRY=0 REFRESH=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --check) CHECK=1; shift;;
+    --dry-run) DRY=1; shift;;
+    --refresh) REFRESH=1; shift;;
+    --) shift; break;;
+    -*) usage;;
+    *) break;;
+  esac
+done
 TARGET="${1:-}"; [ -n "$TARGET" ] || usage
 [ -d "$TARGET" ] || { echo "adopt: target dir not found: $TARGET" >&2; exit 1; }
 
@@ -29,14 +45,13 @@ marker="$TARGET/docs/verification/README.md"
 
 is_adopted() {
   [ -f "$agents" ] && [ -f "$marker" ] && [ -f "$claude" ] \
-    && grep -q "$MARKER" "$claude" 2>/dev/null
+    && grep -q "$START" "$claude" 2>/dev/null
 }
 
 if [ "$CHECK" -eq 1 ]; then
   is_adopted && { echo "adopted: $TARGET"; exit 0; } || { echo "not adopted: $TARGET"; exit 1; }
 fi
 
-# Adoption is filesystem-level, but a non-git target usually means a wrong path; warn (SPEC-047 edge 3).
 git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
   || echo "adopt: warning: $TARGET is not a git repo (adopting at filesystem level anyway)" >&2
 
@@ -47,46 +62,72 @@ for c in "$SRC_ROOT/AGENTS.md" "$KIT_ROOT/AGENTS.md"; do
 done
 [ -n "$src_agents" ] || { echo "adopt: no source AGENTS.md (looked in $SRC_ROOT, $KIT_ROOT)" >&2; exit 1; }
 
-changed=0
-
-# 1. AGENTS.md -- the operate-contract. Never overwrite.
-if [ ! -f "$agents" ]; then cp "$src_agents" "$agents"; changed=1; fi
-
-# 2. WORKFLOW.md -- a POINTER, not the 49KB matrix (the gate reads the install's copy).
-if [ ! -f "$workflow" ]; then
-  cat > "$workflow" <<EOF
+workflow_block() {
+  cat <<EOF
 # WORKFLOW.md (pointer)
 
 This repo is adopted into the dwarves-kit. The canonical lanes and the lane x phase gate matrix
 live in the installed kit: \`$KIT_ROOT/WORKFLOW.md\`. Read that for the lanes and the gate at each
 phase boundary. The gate machinery (gate-ledger, ship-gate) parses that copy, not this file.
 EOF
-  changed=1
+}
+
+claude_block() {
+  printf '%s\n' "$START"
+  printf '## Operating layer (dwarves-kit)\n\n'
+  printf '@AGENTS.md\n\n'
+  printf 'Before touching code, classify the lane: `bash %s/lib/lane-classify.sh classify "<task>"`.\n' "$KIT_ROOT"
+  printf 'A full-lane change records its gates via `%s/lib/gate-ledger.sh` or the ship-gate blocks the push.\n' "$KIT_ROOT"
+  printf '%s\n' "$END"
+}
+
+did=0
+note() { echo "adopt: would $*"; }
+
+# 1. AGENTS.md -- the operate-contract. NEVER overwritten (even on --refresh).
+if [ ! -f "$agents" ]; then
+  if [ "$DRY" -eq 1 ]; then note "create AGENTS.md (from $src_agents)"; else cp "$src_agents" "$agents"; fi
+  did=1
 fi
 
-# 3. CLAUDE.md loader pointer -- Claude Code auto-loads CLAUDE.md, not AGENTS.md. Append once.
-if [ ! -f "$claude" ] || ! grep -q "$MARKER" "$claude" 2>/dev/null; then
-  {
-    printf '\n%s\n' "$MARKER"
-    printf '## Operating layer (dwarves-kit)\n\n'
-    printf 'Read **AGENTS.md** first: it is the operate-contract. Before touching code, classify\n'
-    printf 'the work and pick a lane: `bash %s/lib/lane-classify.sh classify "<task>"`. A full-lane\n' "$KIT_ROOT"
-    printf 'change records its gates via `%s/lib/gate-ledger.sh` or the ship-gate blocks the push.\n' "$KIT_ROOT"
-  } >> "$claude"
-  changed=1
+# 2. WORKFLOW.md pointer -- create if absent; --refresh overwrites to current.
+if [ ! -f "$workflow" ] || { [ "$REFRESH" -eq 1 ] && ! cmp -s <(workflow_block) "$workflow"; }; then
+  if [ "$DRY" -eq 1 ]; then note "write WORKFLOW.md pointer"; else workflow_block > "$workflow"; fi
+  did=1
 fi
 
-# 4. proof marker -- presence opts this repo into the ship-gate.
+# 3. CLAUDE.md loader (@AGENTS.md import) -- append once; --refresh replaces the managed block.
+if [ ! -f "$claude" ] || ! grep -q "$START" "$claude" 2>/dev/null; then
+  if [ "$DRY" -eq 1 ]; then note "append the CLAUDE.md @AGENTS.md loader block"; else
+    tmp="$(mktemp)"; { [ -f "$claude" ] && cat "$claude"; printf '\n'; claude_block; } > "$tmp"; mv "$tmp" "$claude"
+  fi
+  did=1
+elif [ "$REFRESH" -eq 1 ]; then
+  if [ "$DRY" -eq 1 ]; then note "refresh the CLAUDE.md loader block"; else
+    tmp="$(mktemp)"
+    awk -v s="$START" -v e="$END" '$0==s{drop=1} drop&&$0==e{drop=0;next} !drop{print}' "$claude" > "$tmp"
+    claude_block >> "$tmp"; mv "$tmp" "$claude"
+  fi
+  did=1
+fi
+
+# 4. proof marker -- presence opts this repo into the ship-gate. NEVER overwritten.
 if [ ! -f "$marker" ]; then
-  mkdir -p "$(dirname "$marker")"
-  cat > "$marker" <<EOF
+  if [ "$DRY" -eq 1 ]; then note "create docs/verification/README.md (proof marker)"; else
+    mkdir -p "$(dirname "$marker")"
+    cat > "$marker" <<EOF
 # Verification (proof-of-done marker)
 
 Presence of this file opts this repo into the dwarves-kit proof-of-done ship-gate. A
 behavioral/stateful change owes a recorded run here; the shape per loop type comes from the
 install: \`bash $KIT_ROOT/lib/proof-gate.sh contract "<task>"\`.
 EOF
-  changed=1
+  fi
+  did=1
 fi
 
-echo "adopt: $TARGET ($([ "$changed" -eq 1 ] && echo updated || echo 'already adopted, no-op'))"
+if [ "$DRY" -eq 1 ]; then
+  echo "adopt: --dry-run for $TARGET ($([ "$did" -eq 1 ] && echo 'changes above' || echo 'already adopted, nothing to do'))"
+else
+  echo "adopt: $TARGET ($([ "$did" -eq 1 ] && echo updated || echo 'already adopted, no-op'))"
+fi
