@@ -22,7 +22,10 @@ SRC_ROOT="$(cd "$SELF_DIR/.." && pwd)"   # the dwarves-kit repo root when run fr
 START="<!-- kit:adopt -->"               # managed-block markers in the consumer CLAUDE.md
 END="<!-- /kit:adopt -->"
 
-usage() { echo "usage: adopt.sh [--check | --dry-run | --refresh] <target-dir>" >&2; exit 64; }
+tmp=""                                   # scratch file; the trap cleans it up on any early exit
+trap 'rm -f "$tmp"' EXIT
+
+usage() { echo "usage: adopt.sh [--check | --dry-run | --refresh] [--] <target-dir>" >&2; exit 64; }
 
 CHECK=0 DRY=0 REFRESH=0
 while [ $# -gt 0 ]; do
@@ -44,8 +47,10 @@ claude="$TARGET/CLAUDE.md"
 marker="$TARGET/docs/verification/README.md"
 
 is_adopted() {
+  # -qxF: the marker must be its own full line (matches how awk strips the block). A substring
+  # grep would mis-detect a marker quoted inside prose and skip the append path (review #6).
   [ -f "$agents" ] && [ -f "$marker" ] && [ -f "$claude" ] \
-    && grep -q "$START" "$claude" 2>/dev/null
+    && grep -qxF "$START" "$claude" 2>/dev/null
 }
 
 if [ "$CHECK" -eq 1 ]; then
@@ -90,25 +95,41 @@ if [ ! -f "$agents" ]; then
   did=1
 fi
 
-# 2. WORKFLOW.md pointer -- create if absent; --refresh overwrites to current.
+# 2. WORKFLOW.md pointer -- create if absent; --refresh overwrites to current. Write atomically
+# (tmp + mv) so a kill / full disk mid-write can't leave a half-written pointer (review #3).
 if [ ! -f "$workflow" ] || { [ "$REFRESH" -eq 1 ] && ! cmp -s <(workflow_block) "$workflow"; }; then
-  if [ "$DRY" -eq 1 ]; then note "write WORKFLOW.md pointer"; else workflow_block > "$workflow"; fi
+  if [ "$DRY" -eq 1 ]; then note "write WORKFLOW.md pointer"; else
+    tmp="$(mktemp)"; workflow_block > "$tmp"; mv "$tmp" "$workflow"
+  fi
   did=1
 fi
 
 # 3. CLAUDE.md loader (@AGENTS.md import) -- append once; --refresh replaces the managed block.
-if [ ! -f "$claude" ] || ! grep -q "$START" "$claude" 2>/dev/null; then
+if [ ! -f "$claude" ] || ! grep -qxF "$START" "$claude" 2>/dev/null; then
   if [ "$DRY" -eq 1 ]; then note "append the CLAUDE.md @AGENTS.md loader block"; else
     tmp="$(mktemp)"; { [ -f "$claude" ] && cat "$claude"; printf '\n'; claude_block; } > "$tmp"; mv "$tmp" "$claude"
   fi
   did=1
 elif [ "$REFRESH" -eq 1 ]; then
-  if [ "$DRY" -eq 1 ]; then note "refresh the CLAUDE.md loader block"; else
-    tmp="$(mktemp)"
-    awk -v s="$START" -v e="$END" '$0==s{drop=1} drop&&$0==e{drop=0;next} !drop{print}' "$claude" > "$tmp"
-    claude_block >> "$tmp"; mv "$tmp" "$claude"
+  # Refuse to refresh a block with a START but no END: the awk strip would drop everything from
+  # START to EOF and mv would install the truncated file (silent data loss; review CRITICAL #1).
+  # This is exactly the legacy single-sentinel shape, so the operator migrates it by hand.
+  if ! grep -qxF "$END" "$claude" 2>/dev/null; then
+    echo "adopt: $claude has '$START' but no '$END' line; refusing --refresh (would truncate)." >&2
+    echo "adopt: add an '$END' line after the managed block, or delete the block, then re-run." >&2
+    exit 1
   fi
-  did=1
+  if [ "$DRY" -eq 1 ]; then note "refresh the CLAUDE.md loader block"; did=1; else
+    tmp="$(mktemp)"
+    # END{if(drop)exit 3}: belt-and-suspenders against an unterminated block slipping past the
+    # guard above; the `|| exit` stops us from mv-ing a truncated file when awk bails.
+    awk -v s="$START" -v e="$END" '
+      $0==s{drop=1; next} drop&&$0==e{drop=0; next} !drop{print}
+      END{if(drop) exit 3}' "$claude" > "$tmp" \
+      || { echo "adopt: failed to strip the managed block from $claude (unterminated?)" >&2; exit 1; }
+    claude_block >> "$tmp"
+    if cmp -s "$tmp" "$claude"; then rm -f "$tmp"; else mv "$tmp" "$claude"; did=1; fi
+  fi
 fi
 
 # 4. proof marker -- presence opts this repo into the ship-gate. NEVER overwritten.
