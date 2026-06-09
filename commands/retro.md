@@ -40,6 +40,14 @@ Present a summary:
 
 Run the pinned diff (the integration branch's merge-base) against the WORKFLOW doc-impact map and list any companion doc the diff should have updated but did not. Also read `~/.claude/dwarves-kit/logs/completeness.log` and surface un-cleared decision/doc warnings from this cycle. Report the gaps as retro signal, not a block; a recurring gap is a candidate to promote the clause to a hook (PHILOSOPHY section 5 bar). Source: SPEC-006.
 
+### Step 1c: Decision-capture nudge (advisory)
+
+Ask once: **did this cycle make a non-obvious, reversible-with-cost decision that is NOT already recorded in a SPEC Decision Log or an existing ADR?** Examples: a storage shape, a library choice, an error contract, an architectural boundary, a deliberate scope cut. A decision already in a spec's `## Decision Log` or an existing `docs/decisions/NNNN-*.md` does not need a second home; this is only for the ones that fell through.
+
+If yes, suggest drafting `docs/decisions/NNNN-<slug>.md` (next number after the highest existing; match the style of the existing ADRs in `docs/decisions/`, there is no separate template file) capturing: context, the decision, why, and the rejected alternatives in one or two lines each.
+
+This is **advisory, never a block** (PHILOSOPHY "Detect, don't dictate": the kit reports completeness as retro signal, never a mid-flight gate). If the operator declines, log one line to `~/.claude/dwarves-kit/logs/completeness.log` (`decision-capture: declined <cycle/slug>`) so a recurring skip is visible as retro signal, exactly like Step 1b. Source: SPEC-051 (absorbed from repository-harness's decision-capture flow, A4-lite).
+
 ### Step 2: Three questions
 
 Ask each question one at a time. Wait for the user's answer before moving on.
