@@ -48,10 +48,54 @@ docs/verification/<slug>/
 ```
 
 `<slug>` is the feature branch name minus its `type/` prefix (same slug as the spec and
-`docs/implementation-notes/<slug>.md`). **Back-compat:** the older flat shape
-`docs/verification/<slug>.md` (append-entry, one file) and a co-located
-`tools/<name>/docs/proof-of-done.md` are still accepted by the gate; new work uses the
-directory layout.
+`docs/implementation-notes/<slug>.md`). The older flat shape `docs/verification/<slug>.md`
+(append-entry, one file) is still accepted by the gate.
+
+## Two homes: repo-root layout or co-located with the tool (ADR-0026)
+
+A proof has two equally-valid homes. Pick per context:
+
+- **Repo-root** `docs/verification/<slug>/{test-design.md, runs/}` , the default for a feature
+  branch with no single tool home.
+- **Co-located** `tools/<name>/docs/proof-of-done.md` , first-class for a tool in a `tools/<name>/`
+  monorepo, so the proof travels WITH the code it proves. Optional `tools/<name>/docs/runs/<ts>.md`
+  (immutable history) and `tools/<name>/docs/test-design.md` sit beside it.
+
+**The filename is load-bearing.** The gate's only co-located match is a file literally named
+`proof-of-done.md` (regex `(^|/)proof-of-done\.md$` in `lib/proof-ledger.sh`); a co-located `runs/`
+directory is invisible to the gate. So a co-located canonical proof MUST be the `proof-of-done.md`
+file itself and MUST carry the literal gate markers (`Command:`, `Exit:`, `NEGATIVE CONTROL`,
+`rollback` / `[UNAVAILABLE`) in its body.
+
+### Optional table-first review layout
+
+Any proof (either home) MAY use a **table-first** layout optimized for a reviewer scanning top-down,
+instead of the run-log shape below. The tables are the human surface; the run-detail section keeps the
+literal markers, so the gate is unaffected:
+
+```markdown
+# Proof of done: <name>
+Profile: tool-build|feature|eval   Proof class: stateful|behavioral|inert
+
+## 1. Acceptance criteria     | # | Criterion | Status | Evidence |   (the AC table, at the top)
+## 2. Implementation          | Aspect | Detail |   (What / Where / How it runs / Reversibility)
+## 3. Confirmation (runs)      | Run | When (ISO+tz) | Command | Exit | Verdict |
+## 4. Run detail               ### R1 GREEN — Command: … Exit: … Verdict: PASS
+                               ### R2 NEGATIVE CONTROL — … ; ### R3 ROLLBACK/RESTORE — …
+## 5. Reproduce                `<idempotent re-run command>`
+```
+
+### Work-type dialects (one spine, the body adapts)
+
+| Work-type | Confirmation shape | extra |
+|---|---|---|
+| one-shot CLI / data tool | green run + negative control (revert -> RED) | reversibility = git revert / N-A |
+| stateful daemon / service | green = liveness; negative control = kill -> down; restore = rollback | topology (what runs where) |
+| recurring action / loop / workflow / cron | an append-only run ledger (row + detail per execution) + a liveness/monitoring signal | schedule + monitored signal |
+| eval / experiment | a thin pointer to `experiments/<slug>/TEST-REPORT.md` (the single source of measured numbers) | numbers never copied out |
+
+Worked reference: ops-toolkit `tools/{zedra-deploy,growatt-pull,spec-to-cli}/docs/proof-of-done.md`
+(SPEC-016). New work uses the directory layout OR the co-located `proof-of-done.md`; both are first-class.
 
 ## Three profiles of one spine (not three reinventions)
 
