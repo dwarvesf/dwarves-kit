@@ -58,7 +58,23 @@ fi
 SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
 [ -n "$SPEC" ] || exit 0
 LANE=$(grep -m1 -iE '^Lane:' "$SPEC" 2>/dev/null | sed -E 's/^[Ll]ane:[[:space:]]*//; s/[[:space:]].*$//' || true)
-[ -n "$LANE" ] || exit 0
+if [ -z "$LANE" ]; then
+  # Spec exists but declares no lane. In an ADOPTED repo (proof marker present) this is a gap,
+  # not a pass: fail CLOSED so a spec-driven change cannot ship lane-less (the growatt-tui hole).
+  # Everywhere else (no marker) stay fail-open: the gate never blocks unrelated work.
+  if [ -f "$ROOT/docs/verification/README.md" ]; then
+    LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG (no-lane)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
+    {
+      echo "BLOCKED: ship-gate. Spec '$SLUG' has no 'Lane:' header, so its required gates cannot be checked."
+      echo "Add a lane to $SPEC (e.g. 'Lane: full'). Classify with:"
+      echo "  bash \"${CLAUDE_PLUGIN_ROOT:-\$HOME/.claude/dwarves-kit}/lib/lane-classify.sh\" classify \"<task>\""
+    } >&2
+    exit 2
+  fi
+  exit 0
+fi
 
 LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate-ledger.sh"
 [ -f "$LEDGER" ] || exit 0
