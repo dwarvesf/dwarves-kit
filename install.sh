@@ -69,6 +69,12 @@ if [ "${1:-}" = "--uninstall" ]; then
     echo "[ok] Removed lib symlink: $LIB_DEST"
   fi
 
+  # Remove the operate-contract symlinks (SPEC-049). Only symlinks are removed.
+  for CONTRACT in AGENTS.md WORKFLOW.md; do
+    LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
+    if [ -L "$LINK" ]; then rm "$LINK" && echo "[ok] Removed $CONTRACT symlink: $LINK"; fi
+  done
+
   # Remove dwarves-kit hooks from settings.json
   if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
     # Backup first
@@ -162,6 +168,22 @@ else
   [ -d "$LIB_DEST" ] && [ ! -L "$LIB_DEST" ] && rm -rf "$LIB_DEST"
   ln -s "$KIT_DIR/lib" "$LIB_DEST"
   echo "[ok] Linked lib into $LIB_DEST"
+fi
+
+# 1d. Deploy the operate-contract files so they resolve from the stable install path. adopt.sh
+# needs a source AGENTS.md at $KIT_ROOT; gate-ledger reads the lane x phase matrix from
+# $KIT_ROOT/WORKFLOW.md. Without these, adopt + the lane gate are broken from the install
+# (SPEC-049). Symlink to keep repo edits live, mirroring hooks + lib.
+if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
+  echo "[ok] Kit is installed in place; AGENTS.md + WORKFLOW.md already at \$HOME/.claude/dwarves-kit/"
+else
+  mkdir -p "$CLAUDE_DIR/dwarves-kit"
+  for CONTRACT in AGENTS.md WORKFLOW.md; do
+    LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
+    if [ -L "$LINK" ] || [ -f "$LINK" ]; then rm -f "$LINK"; fi
+    ln -s "$KIT_DIR/$CONTRACT" "$LINK"
+  done
+  echo "[ok] Linked AGENTS.md + WORKFLOW.md into $CLAUDE_DIR/dwarves-kit/"
 fi
 
 # 2. Merge settings.json
