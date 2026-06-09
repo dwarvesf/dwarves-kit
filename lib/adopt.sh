@@ -36,6 +36,10 @@ if [ "$CHECK" -eq 1 ]; then
   is_adopted && { echo "adopted: $TARGET"; exit 0; } || { echo "not adopted: $TARGET"; exit 1; }
 fi
 
+# Adoption is filesystem-level, but a non-git target usually means a wrong path; warn (SPEC-047 edge 3).
+git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 \
+  || echo "adopt: warning: $TARGET is not a git repo (adopting at filesystem level anyway)" >&2
+
 # Resolve a source AGENTS.md: the kit repo (dev) first, then the install.
 src_agents=""
 for c in "$SRC_ROOT/AGENTS.md" "$KIT_ROOT/AGENTS.md"; do
