@@ -156,6 +156,17 @@ if HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1; then
   # but dwarves-kit). -e follows the dir symlink to the real file.
   [ -e "$TMP_HOME/.claude/dwarves-kit/lib/proof-ledger.sh" ]
   assert_true "install.sh materializes lib/proof-ledger.sh (SPEC-045)" $?
+  # SPEC-049: install must materialize the operate-contract too, so adopt (needs a source
+  # AGENTS.md) + gate-ledger (reads WORKFLOW.md) work from the install, not only the dev
+  # checkout. Asserts the REAL install run, not test-install-contract.sh's simulated layout.
+  [ -e "$TMP_HOME/.claude/dwarves-kit/AGENTS.md" ]
+  assert_true "install.sh materializes AGENTS.md (SPEC-049)" $?
+  [ -e "$TMP_HOME/.claude/dwarves-kit/WORKFLOW.md" ]
+  assert_true "install.sh materializes WORKFLOW.md (SPEC-049)" $?
+  # SPEC-049: uninstall removes the two contract symlinks (the new uninstall code path).
+  HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" --uninstall >/dev/null 2>&1
+  { [ ! -L "$TMP_HOME/.claude/dwarves-kit/AGENTS.md" ] && [ ! -L "$TMP_HOME/.claude/dwarves-kit/WORKFLOW.md" ]; }
+  assert_true "uninstall removes the AGENTS.md + WORKFLOW.md symlinks (SPEC-049)" $?
 else
   assert_eq "install.sh runs cleanly into an isolated HOME" "ok" "failed"
 fi
