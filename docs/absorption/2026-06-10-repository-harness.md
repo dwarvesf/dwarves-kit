@@ -43,5 +43,8 @@ thin-contract one).
 
 ## Footer (seed tracking)
 
-repository-harness is a non-Credits external source. If we keep tracking it, add it to
-`docs/ABSORPTION.md` `## Seed list`. Source HEAD not pinned (read via README, not a clone).
+repository-harness is now a CREDITED source (README `## Credits`, 2026-06-10), so it is already in
+Lane B's rescan set via the "live README Credits parse" UNION; it does NOT also go in the
+`docs/ABSORPTION.md` `## Seed list` extras (those are the non-Credits-only repos). Source HEAD not
+pinned (read via README + FEATURE_INTAKE.md over WebFetch, not a clone); a future Lane-B rescan
+records the baseline SHA.
