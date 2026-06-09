@@ -33,6 +33,8 @@ Pinned non-Credits extras (from the SPEC-014 survey set, repos not in README Cre
 - claude-flow , multi-agent orchestration
 - ouroboros , self-referential loop / evolution
 - `doraemonkeys/claude-code-debug-mode` , tagged-log debug patterns
+- `EveryInc/compound-engineering-plugin` , parallel-persona review -> structured-JSON merge gate (apply-class safe/gated/manual), QA-matrix auto-fix-until-green, screenshot/GIF PR evidence (surveyed 2026-06-08; review/test layer is the prize)
+- `cursor/plugins` (cursor-team-kit/skills) , `verify-this` falsifiable baseline-vs-treatment single-verdict evidence gate, `deslop`, `thermo-nuclear` <1k-line maintainability gate (surveyed 2026-06-08; runtime-needing UI pieces route to recommend-external per PHILOSOPHY)
 
 **Since-last-run baseline.** Lane B detects "changed" per repo by comparing its current HEAD SHA (`gh api repos/{owner}/{repo}/commits/HEAD --jq .sha`) to the SHA recorded in the most recent prior proposal's footer; the first run flags every repo as new and records the baseline. WebFetch has no diff capability, so the SHA ledger is the baseline.
 
