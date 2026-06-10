@@ -1703,6 +1703,23 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-063: run legibility. plan/progress/trace exist; AGENTS carries the show-the-road
+# rule + grill disposition recording; assign prints the plan; grill records itself.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'plan)     plan "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
+   && grep -qF 'progress) progress "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
+   && grep -qF 'trace)    trace "$@" ;;' "$KIT_DIR/lib/lane-telemetry.sh" \
+   && grep -qF 'Show the road, then your position on it (SPEC-063)' "$KIT_DIR/AGENTS.md" \
+   && grep -qF 'record <slug> grill' "$KIT_DIR/AGENTS.md" \
+   && grep -qF 'gate-ledger.sh plan' "$KIT_DIR/commands/assign.md" \
+   && grep -qF 'record <slug> grill ran' "$KIT_DIR/commands/grill.md"; then
+  echo -e "  ${GREEN}PASS${NC} run legibility wired: plan/progress/trace + AGENTS/assign/grill (SPEC-063)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} run legibility wiring incomplete (SPEC-063)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

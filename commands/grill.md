@@ -122,6 +122,9 @@ The moment an answer resolves something, write it where it lives:
 
 ### Step 4: Hand off to phase 0
 
+Record the interview for telemetry (SPEC-063):
+`bash lib/gate-ledger.sh record <slug> grill ran "<N> questions, <M> contradictions, banks: <type>"`.
+
 End by proposing the `Done =` line the answers imply (the phase-0 definition the task loop
 requires before any work runs), plus the re-classification check: if the answers changed the
 work's type or weight, re-run `task-type-classify` / `lane-classify` and say so, the floor

@@ -120,6 +120,11 @@ created: <YYYY-MM-DD>
   ```
 
   The repo is auto-detected. `lib/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).
+
+- **Show the road (SPEC-063).** Print the checklist the run will walk so the operator sees
+  the steps up front: `bash lib/gate-ledger.sh plan "<chosen lane>"`. From here on, each
+  phase entry prints `bash lib/gate-ledger.sh progress "<spec-slug>" "<chosen lane>"` (the
+  `step k/n` line; AGENTS.md Task loop carries the standing rule).
 - **Activator**: detect what can run the loop, in order: the built-in `/goal` (if present), the `ralph-loop` plugin, or the `goal-craft` skill. Surface the draft body for whichever is available. If none is installed, say so and leave the draft as a plain reusable file (paste the body wherever). Never assume a specific activator exists.
 
 ### Step 5b: Claim the goal in the cross-session registry (multi-session safety)
