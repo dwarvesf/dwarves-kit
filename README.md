@@ -137,6 +137,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | Command | Phase | What it does |
 |---------|-------|-------------|
 | /kit:start | Entry | Detect project state, suggest next command |
+| /kit:grill | Intake | Universal intake interview: type-shaped questions, one at a time, answers written as they resolve |
 | /kit:think | Think | 6 forcing questions to stress-test an idea |
 | /kit:design | Design | Opt-in: interactive solution-design beat (one question at a time) before /spec |
 | /kit:devs-team | Design | Opt-in: 5-lens parallel critique of the solution (brief or spec), report-only |
@@ -290,6 +291,7 @@ Patterns extracted from:
 - [oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) - HUD/statusline, slop-cleaner pattern
 - [Claude-Code-Game-Studios](https://github.com/Donchitos/Claude-Code-Game-Studios) - /start router, path-scoped rules, Collaborative Design Protocol
 - [Smart Ralph](https://github.com/smart-ralph) - fix-agent retry pattern (fail-fix-re-verify loop)
+- [mattpocock/skills grill-with-docs](https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md) - /kit:grill mechanics: one-question-at-a-time with recommended answers, glossary/ADR write-as-you-go, the 3-criteria ADR bar, contradiction-first interviewing
 - [repository-harness](https://github.com/hoangnb24/repository-harness) - the FEATURE_INTAKE flag-count lane-classification model (A3: hard-gate + soft-count + auditable `explain`), the `@AGENTS.md` CLAUDE.md import shim (A1), adopt `--dry-run`/`--refresh` modes (A2), and the decision-capture-at-reflect flow (A4-lite, advisory). The enforcing dual of our enforcing/CC-only kit; absorbed 2026-06-10, see [docs/absorption/2026-06-10-repository-harness.md](docs/absorption/2026-06-10-repository-harness.md)
 
 ## License

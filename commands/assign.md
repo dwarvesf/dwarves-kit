@@ -22,7 +22,7 @@ When the argument is freeform intent (does NOT match `^ID-[0-9]+$`), run these o
 - **approve-before-allocate**: pause for human approval of the crystallized objective BEFORE allocating an ID. A vague brief never auto-creates a row (DEC-002).
 - **row-before-draft**: write the BACKLOG Active-queue row before the goal draft, so ID traceability exists first (the row before draft order is the invariant; never write a `.claude/goals/` draft for an un-rowed intent).
 
-1. **Delegate crystallize to `/kit:think`.** Hand the freeform intent to `/kit:think` (the existing idea-griller). It runs the interview and returns a crystallized objective + a lane. `/assign` does NOT embed that interview (DEC-003); it only consumes `/think`'s result. If the intent is too vague to name an outcome, `/think` loops; do not allocate anything until it converges.
+1. **Delegate crystallize to `/kit:think`.** Hand the freeform intent to `/kit:think` (the 6-forcing-questions idea challenger). It runs the interview and returns a crystallized objective + a lane. `/assign` does NOT embed that interview (DEC-003); it only consumes `/think`'s result. If the intent is too vague to name an outcome, `/think` loops; do not allocate anything until it converges.
 2. **Approval gate (approve-before-allocate).** Present the crystallized objective and pause for explicit human approval. Until the human approves, allocate nothing and write nothing. This is the gate that keeps half-baked rows out of the queue.
 3. **Dedup by slug.** Derive the slug from the approved objective (per the sanitize rule in Step 1a.4). If a `.claude/goals/<slug>.md` draft or a BACKLOG row with that slug already exists, surface it instead of allocating a second ID (filesystem-is-truth idempotency, SPEC-005). On a near-match slug, ask rather than silently merge or duplicate.
 4. **Sanitize (DEC-004).** Before the freeform text touches any file, sanitize it:
@@ -85,6 +85,11 @@ created: <YYYY-MM-DD>
   `docs/verification/task-types.md`), and the proof artifact it owes (same registry;
   `bash lib/proof-gate.sh contract "<title>"` prints the composed contract). Lanes still apply
   to the RISK of any code the loop touches; the loop supplies the cycle.
+
+  **Grill before you define done.** Run `/kit:grill` (or drive its bank inline): type-shaped
+  questions, one at a time with recommended answers, until the task is understood; the Q&A
+  digest lands in the draft's Context and resolved terms/decisions land in the glossary/ADRs
+  as they resolve. Tiny lane exempt.
 
   **Every goal draft carries a `Done =` line (PHILOSOPHY §6 N3), whatever the type.** Derive it
   from the proof contract (`bash lib/proof-gate.sh contract "<title>"`) plus the type's
