@@ -1196,6 +1196,67 @@ RC=$(BACKLOG_FILE="$BLF" bash "$BL" set ID-999 queued >/dev/null 2>&1; echo $?)
 assert_exit "set rejects an unknown ID" 1 "$RC"
 rm -f "$BLF"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-070: rid = branch slug (gate-ledger rid verb) ==="
+# ============================================================
+GL70="$KIT_DIR/lib/gate-ledger.sh"
+RIDD=$(mktemp -d "${TMPDIR:-/tmp}/dk-rid.XXXXXX")
+( cd "$RIDD" && git init -q -b master . && git config user.email t@e && git config user.name t \
+  && git commit -qm base --allow-empty )
+
+# AC2: on master -> exit 1, empty stdout
+OUT=$(cd "$RIDD" && bash "$GL70" rid 2>/dev/null); RC=$?
+assert_exit "rid refuses master" 1 $RC
+assert_eq_str() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (expected '$2', got '$3')"; FAIL=$((FAIL+1)); fi; }
+assert_eq_str "rid on master prints nothing on stdout" "" "$OUT"
+
+# AC2: detached HEAD -> exit 1
+( cd "$RIDD" && git switch -q --detach HEAD )
+OUT=$(cd "$RIDD" && bash "$GL70" rid 2>/dev/null); RC=$?
+assert_exit "rid refuses detached HEAD" 1 $RC
+assert_eq_str "rid on detached HEAD prints nothing on stdout" "" "$OUT"
+
+# AC1: feat/x-y -> x-y, exit 0
+( cd "$RIDD" && git switch -q -c feat/x-y )
+OUT=$(cd "$RIDD" && bash "$GL70" rid 2>/dev/null); RC=$?
+assert_exit "rid succeeds on a work branch" 0 $RC
+assert_eq_str "rid strips the type/ prefix (feat/x-y -> x-y)" "x-y" "$OUT"
+
+# AC3: no type prefix -> unchanged
+( cd "$RIDD" && git switch -q -c hotfix-z )
+OUT=$(cd "$RIDD" && bash "$GL70" rid 2>/dev/null); RC=$?
+assert_exit "rid succeeds on a prefixless branch" 0 $RC
+assert_eq_str "rid passes a prefixless branch through (hotfix-z)" "hotfix-z" "$OUT"
+
+# AC2: a repo whose default branch is main -> same refusal
+RIDM=$(mktemp -d "${TMPDIR:-/tmp}/dk-ridm.XXXXXX")
+( cd "$RIDM" && git init -q -b main . && git config user.email t@e && git config user.name t \
+  && git commit -qm base --allow-empty )
+OUT=$(cd "$RIDM" && bash "$GL70" rid 2>/dev/null); RC=$?
+assert_exit "rid refuses main" 1 $RC
+assert_eq_str "rid on main prints nothing on stdout" "" "$OUT"
+rm -rf "$RIDM"
+
+# Test 7: multi-slash matches ship-gate byte-for-byte (#*/ strips FIRST segment only)
+( cd "$RIDD" && git switch -q -c feat/a/b )
+OUT=$(cd "$RIDD" && bash "$GL70" rid 2>/dev/null)
+assert_eq_str "rid on feat/a/b prints the normalized a-b (ledger filename stem)" "a-b" "$OUT"
+
+# AC4 live parity: NOTE this re-applies the same #*/ expansion, so it cannot
+# falsify the transform itself (the test-meta agreement pin does that); its value
+# is as a negative-control canary -- it goes RED if the verb stops dispatching.
+SG_SLUG=$(cd "$RIDD" && B=$(git rev-parse --abbrev-ref HEAD) && printf '%s' "${B#*/}" | tr '/ ' '--')
+assert_eq_str "rid output converges with ship-gate slug at the ledger-file level" "$SG_SLUG" "$OUT"
+
+# AC6 source-text pin ONLY (behavioral test impossible: git rejects trailing-slash
+# branch names), so this greps the guard string; renaming the message breaks it here first.
+# so pin the guard line; the agreement pin in test-meta covers the transform itself)
+RC=0; grep -q "strips to an empty slug" "$GL70" || RC=1
+assert_exit "rid carries the empty-slug guard" 0 $RC
+rm -rf "$RIDD"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

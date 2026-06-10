@@ -145,7 +145,7 @@ This replaces the manual merge of Step 8's output, not Step 8 itself.
 ### Step 8: Open PR (if on a feature branch)
 
 If the current branch is not main/master:
-- **Record the ship gate (ADR-0024):** `bash lib/gate-ledger.sh record <spec-slug> Ship ran "shipping pr=#<N>"` (carry the PR number once it exists; lane telemetry reads it as the run outcome, SPEC-061). The `ship-gate` hook will refuse the push below if the active spec's lane still has a `measure-twice` gate with no `ran`/`override` entry; it names the missing gate(s). Run the missing gate, or log a reason: `bash lib/gate-ledger.sh override <spec-slug> <Phase> "<reason>"` (recorded in the audit trail). See WORKFLOW.md "## Gate ledger and ship enforcement".
+- **Record the ship gate (ADR-0024):** `bash lib/gate-ledger.sh record <rid> Ship ran "shipping pr=#<N>"` (carry the PR number once it exists; lane telemetry reads it as the run outcome, SPEC-061). The `ship-gate` hook will refuse the push below if the active spec's lane still has a `measure-twice` gate with no `ran`/`override` entry; it names the missing gate(s). Run the missing gate, or log a reason: `bash lib/gate-ledger.sh override <rid> <Phase> "<reason>"` (recorded in the audit trail). See WORKFLOW.md "## Gate ledger and ship enforcement".
 - Run `git push origin [branch]`
 - Generate a PR description from the commits:
   ```

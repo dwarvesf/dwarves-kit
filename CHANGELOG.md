@@ -5,6 +5,16 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **One canonical rid: the branch slug (SPEC-070 / ID-059).** `lib/gate-ledger.sh rid`
+  prints the runid-normalized branch slug (refuses master/main/detached/empty-stem,
+  loudly), the same key `hooks/ship-gate.sh` checks at push, so assign-time records
+  and ship-time enforcement meet on one ledger: the mirror-record dance (5x in one
+  day, worst friction of the quality wave) is gone and lane-telemetry's untracked
+  metric becomes honest for new runs. Every gate-ledger RID call site swept from
+  `<spec-slug>`/`<slug>` to `<rid>` (debug.md's escaped-from spec reference exempt);
+  agreement pin guards the duplicated transform; `ledger_file` gains an empty-stem
+  guard (review S1: a `feat/@` branch would have merged audit trails into a hidden
+  .log). Multi-lens reviewed (3 lenses, 2 HIGH + 3 MEDIUM found and fixed in-branch).
 
 - **Retro follow-ups: detect what prose forgot, escalate where it bled, color the walk (SPEC-069 / ID-058).** The operator's 5-question retro became machinery: (1) telemetry detects **boardless runs** (ledgered work the board never saw; the whole quality wave ran un-boarded until caught, because the rule was prose and prose loses to context decay) and **shipped-incomplete runs** (a ship gate over un-disposed phases, the spec-064 think class), both surfaced at S1/misfires + a ship-gate advisory line; (2) runs touching lib/ or hooks/ now owe the multi-lens /kit:review-team (two 2-HIGH drafts, both in those surfaces, are the evidence); (3) grill orientation points unfamiliar-code questions at codebase-memory before blind grep; (4) plan/progress/trace gain TTY-gated colors (green disposed, bold-yellow pointer, dim pending, red MISFIRE), piped output byte-identical so 300+ test pins pass untouched; (5) spec-064's missing think gate retro-patched with an honest note. First live run of the detectors immediately flagged the real pre-discipline history (3 boardless, 2 shipped-incomplete).
 

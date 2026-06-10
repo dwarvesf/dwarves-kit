@@ -17,6 +17,7 @@
 #   show     <rid>                     print the run's ledger
 #   plan     <lane>                    the lane's ordered phase checklist (SPEC-063)
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist (SPEC-063)
+#   rid                                the canonical run id for the cwd: branch slug (SPEC-070)
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,7 +36,13 @@ else
   C_DONE=""; C_CUR=""; C_DIM=""; C_BOLD=""; C_OFF=""
 fi
 runid() { printf '%s' "$1" | tr '/ ' '--' | tr -cd '[:alnum:]._-'; }
-ledger_file() { printf '%s/%s.log' "$RUNS_DIR" "$(runid "$1")"; }
+ledger_file() {
+  # Guard (SPEC-070 review S1): a slug of only special chars normalizes to "",
+  # which would silently merge audit trails into a hidden RUNS_DIR/.log.
+  local safe; safe="$(runid "$1")"
+  [ -n "$safe" ] || { echo "ledger_file: rid '$1' normalizes to an empty filename" >&2; return 1; }
+  printf '%s/%s.log' "$RUNS_DIR" "$safe"
+}
 
 # Stable key for a phase name: drop "(...)", lowercase, spaces -> dashes.
 # "Design (opt-in)"->design, "Design critique (opt-in)"->design-critique,
@@ -190,6 +197,29 @@ progress() {
   printf ' %s\n' "$list"
 }
 
+# The canonical run id (SPEC-070 / ID-059): the current branch with its leading
+# `type/` segment stripped, the EXACT transform ship-gate keys its ledger check by
+# (`${branch#*/}` here == `${BRANCH#*/}` in hooks/ship-gate.sh; agreement-pinned in tests/test-meta.sh).
+# One rid from assign to ship means no mirror records. Fails loudly off a work
+# branch: a wrong rid recorded silently is worse than no rid.
+rid() {
+  local branch slug
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  case "$branch" in
+    ""|HEAD|master|main)
+      echo "rid: not on a work branch (got '${branch:-none}'); create the branch first, then derive the rid" >&2
+      return 1 ;;
+  esac
+  slug="${branch#*/}"
+  if [ -z "$slug" ] || [ -z "$(runid "$slug")" ]; then
+    echo "rid: branch '$branch' strips to an empty slug" >&2
+    return 1
+  fi
+  # Emit the runid-normalized form (review S2): the visible key equals the
+  # ledger filename stem, so forensic review never chases two spellings.
+  printf '%s\n' "$(runid "$slug")"
+}
+
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
@@ -201,5 +231,6 @@ case "$cmd" in
   show)     show "$@" ;;
   plan)     plan "$@" ;;
   progress) progress "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show|plan|progress} ..." >&2; exit 64 ;;
+  rid)      rid "$@" ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show|plan|progress|rid} ..." >&2; exit 64 ;;
 esac
