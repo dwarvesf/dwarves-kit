@@ -86,6 +86,12 @@ created: <YYYY-MM-DD>
   `bash lib/proof-gate.sh contract "<title>"` prints the composed contract). Lanes still apply
   to the RISK of any code the loop touches; the loop supplies the cycle.
 
+  **Every goal draft carries a `Done =` line (PHILOSOPHY §6 N3), whatever the type.** Derive it
+  from the proof contract (`bash lib/proof-gate.sh contract "<title>"`) plus the type's
+  test-design dialect (test-design-standard §5b): one boolean the completion audit can compare
+  evidence against. A draft without a `Done =` line is not assignable; defining done is phase 0
+  of every loop, before any work runs (the V-model right arm, type-agnostic).
+
 - **Lane**: read the item's Lane column (`tiny` / `normal` / `full` / `bug` / `backfill`); it selects the WORKFLOW path. If the column is blank, or you want a check, auto-classify from the title:
 
   ```bash

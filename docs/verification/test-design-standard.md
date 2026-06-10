@@ -81,6 +81,11 @@ work's type (`lib/task-type-classify.sh`); design in the dialect that fits, not 
 | migration | inventory coverage (every affected item enumerated) + conform/drift classification + a rollback REHEARSAL (not a rollback paragraph); cleanup sweeps use this dialect (convention migration) |
 | data-tool | recorded live run of the real commands + a negative control (dead credential, fake field) proving the green is falsifiable; ledger immutable under `runs/` |
 | doc | doc-verifier match: each claim in the doc greps against the live code/artifact it describes; a stale claim is a RED, not a style note |
+| incident | evidence ledger: every hypothesis explicitly ruled in/out before the fix; the done check is the fired signal now silent + a regression guard on the root cause |
+| reconcile | inventory coverage: every item enumerated with a verdict; negative control = a deliberately seeded drifted item must be caught by the sweep |
+| operate | run ledger: an append-only per-execution record (command/exit/outcome) + a liveness/monitoring line proving the next deviation will alert |
+| planning | inventory coverage over inputs: every source (board, PRs, calendar) swept; every decision in the digest traces to an input; the enqueued rows ARE the checkable output |
+| learning | self-check matrix: concepts -> exercises -> pass bar; a score below the bar is a RED that loops back to practice, not a style note |
 
 The dialect changes the SHAPE of the design, never the bar: every dialect still owes the
 traceability of §1, the falsifiability of §3, and the recorded immutable runs of §5.

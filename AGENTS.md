@@ -36,7 +36,19 @@ Orient before you touch anything. Read top to bottom; stop when you have enough.
 
 How to do one unit of work. The smallest verifiable increment, verified, committed.
 
-1. **Size the lane.** Pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`. When in doubt between two lanes, take the heavier one.
+0. **Take work.** Handed a task: use it. Not handed one: pull the board's top queued item,
+   `bash lib/backlog.sh next`, claim it (goal-registry) and flip it to `claimed` (the
+   `/kit:assign --next` flow). The BACKLOG is the board; its Status column is the state
+   machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, + parked/
+   dropped). Operator-named work is unchanged; pull is an additional trigger, never a daemon.
+1. **Classify the type, then size the lane.** `bash lib/task-type-classify.sh classify "<task>"`
+   first: `spec-feature` picks a lane below; any other type (incident / reconcile / operate /
+   planning / learning / eval / research / doc / migration / data-tool) runs its TYPE LOOP per
+   `WORKFLOW.md ## Type loops`, with its executor from the registry's `agent` column. For code:
+   pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`; when in doubt between
+   two lanes, take the heavier one. **Whatever the type, phase 0 is defining the done scenario**
+   (`bash lib/proof-gate.sh contract "<task>"` + the type's test-design dialect,
+   test-design-standard §5b) BEFORE any work runs; the goal draft carries the `Done =` line.
 2. **Read the spec and its acceptance criteria.** For a spec-driven task: the active spec's task row, its AC, its `## Verification`, and its `## After state`. No spec (tiny lane): the one obvious edit.
 3. **Implement the smallest verifiable increment.** One logical change. No speculative features, no premature abstraction; clarity over cleverness.
 4. **Verify.** Run the spec's `## Verification` command (or the lane's check). Do not claim a result you did not run.
@@ -50,7 +62,10 @@ If you cannot make progress, see zone 4 (Pause if) and stop with a named blocker
 
 A task or goal is done only when **its acceptance criteria are met AND the
 verifier actually ran the check**, not when you claim they pass. Self-reported
-"done" is not proof.
+"done" is not proof. The check compares against the `Done =` scenario defined at
+phase 0, whatever the work's type (PHILOSOPHY §6 N3): if no done scenario was
+defined before the work ran, the work was not assignable, and "done" has nothing
+to be measured against.
 
 Concretely, done means: **acceptance criteria met, the check actually ran (not
 just asserted), review recorded + report written, and the final response says

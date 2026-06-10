@@ -90,6 +90,11 @@ DEFINE (left arm)                                   VERIFY (right arm)
      Test-design  ═════════════════════════════  Unit / task          task-verifier,
      (/kit:test-plan                               + test-exec         test execution
       -> test-plan-review-team, SPEC-052)
+
+> Type-agnostic (SPEC-057): the right arm applies to EVERY work type in the registry, not just
+> code. The test-design dialect (test-design-standard §5b) changes the design's SHAPE per type
+> (claim matrix, run ledger, inventory coverage, self-check matrix...); it never removes the
+> arm. Phase 0 of every type loop is defining the done scenario the arm will verify against.
                                                                         docs match code?
        (UI-design ══ visual-team, opt-in arm)      Docs                doc-verifier
                                                                   ▲

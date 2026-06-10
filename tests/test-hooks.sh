@@ -554,6 +554,10 @@ assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 
 # SPEC-050: flag-scoring -- the kit-machinery hard-gate catches the 2026-06-10 misses (a change
 # naming the gate machinery is always full, even with no auth/migration keyword).
 assert_output_contains "lane: kit-machinery (classifier) -> full" "^full$" "$(LANE 'rewrite lib/lane-classify.sh into a flag-scoring classifier')"
+# SPEC-057 review finding: the kit-machinery flag enumerated lib files by name and missed the
+# newer helpers, under-sizing their work to normal. Pin the additions.
+assert_output_contains "lane: task-type-classify work -> full" "^full$" "$(LANE 'expand lib/task-type-classify.sh to 11 types')"
+assert_output_contains "lane: backlog.sh work -> full" "^full$" "$(LANE 'change backlog.sh board rendering')"
 assert_output_contains "lane: kit-machinery (adopt) -> full" "^full$" "$(LANE 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
 assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full" "^full$" "$(LANE 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
 # SPEC-050: soft-flag count -- 4 weak signals with no hard-gate keyword still escalate to full.
@@ -598,6 +602,41 @@ bash "$KIT_DIR/lib/lane-classify.sh" check normal 'add user authentication with 
 assert_exit "floor: never blocks (exit 0 on a downgrade)" 0 "$?"
 # 7. a downgrade is logged to completeness.log (reviewed at /kit:ship); a match is not.
 assert_output_contains "floor: downgrade logged to completeness.log" "LANE-CHECK" "$(cat "$DWARVES_KIT_LOG_DIR/completeness.log" 2>/dev/null)"
+
+# ============================================================
+echo ""
+echo "=== task-type-classify: the 11-type truth table (SPEC-057) ==="
+# ============================================================
+TTYPE() { bash "$KIT_DIR/lib/task-type-classify.sh" classify "$1" 2>/dev/null; }
+# the 5 new types
+assert_output_contains "type: alert triage -> incident" "^incident$" "$(TTYPE 'triage the INC-008 alert')"
+assert_output_contains "type: weekly priorities -> planning" "^planning$" "$(TTYPE 'plan next week priorities for the team')"
+assert_output_contains "type: payroll run -> operate" "^operate$" "$(TTYPE 'run the monthly payroll procedure')"
+assert_output_contains "type: status drift -> reconcile" "^reconcile$" "$(TTYPE 'reconcile the backlog statuses against reality')"
+assert_output_contains "type: course day -> learning" "^learning$" "$(TTYPE 'process Day-12 of the quantum course')"
+# precedence regression: the 6 old types still classify as before
+assert_output_contains "type: benchmark -> eval (regression)" "^eval$" "$(TTYPE 'benchmark X vs Y')"
+assert_output_contains "type: landscape -> research (regression)" "^research$" "$(TTYPE 'research the landscape of agent kits')"
+assert_output_contains "type: readme -> doc (regression)" "^doc$" "$(TTYPE 'update the README for the new flag')"
+assert_output_contains "type: daemon deploy -> migration (regression + new keyword)" "^migration$" "$(TTYPE 'deploy the daemon to the mini')"
+assert_output_contains "type: api wrapper -> data-tool (regression)" "^data-tool$" "$(TTYPE 'wrap the growatt api as a restish surface')"
+assert_output_contains "type: feature -> spec-feature (regression default)" "^spec-feature$" "$(TTYPE 'add a --version flag')"
+# precedence edge: planning anchors do not steal a build phrase
+assert_output_contains "type: plan the schema migration -> migration (anchor edge)" "^migration$" "$(TTYPE 'plan the schema migration rollout')"
+# SPEC-057 review F12: negative pins for the false positives the review found live.
+# A future widening of any new rule goes RED here, not in production classification.
+assert_output_contains "type: 'of course' does not steal -> doc" "^doc$" "$(TTYPE 'of course, update the readme')"
+assert_output_contains "type: code cleanup is not reconcile" "^spec-feature$" "$(TTYPE 'clean up error handling in auth module')"
+assert_output_contains "type: css drift is not reconcile" "^spec-feature$" "$(TTYPE 'fix the css layout drift')"
+assert_output_contains "type: research about alerts stays research" "^research$" "$(TTYPE 'research alert fatigue in monitoring')"
+assert_output_contains "type: pagerduty eval stays eval" "^eval$" "$(TTYPE 'evaluate pagerduty vs opsgenie')"
+assert_output_contains "type: alert UI feature stays spec-feature" "^spec-feature$" "$(TTYPE 'add an alert banner to the UI')"
+assert_output_contains "type: monthly-report bug stays spec-feature" "^spec-feature$" "$(TTYPE 'fix the monthly report generator bug')"
+assert_output_contains "type: excel workbook is not learning" "^spec-feature$" "$(TTYPE 'build a pricing workbook in excel')"
+assert_output_contains "type: migrate stale records -> migration (F6 order)" "^migration$" "$(TTYPE 'migrate stale records to new schema')"
+assert_output_contains "type: estate cleanup IS reconcile" "^reconcile$" "$(TTYPE 'clean up the stale branches across the estate')"
+# SPEC-057 review F9: incident composes the stateful class in proof-gate
+assert_output_contains "proof class: incident -> stateful (F9)" "^stateful$" "$(bash "$KIT_DIR/lib/proof-gate.sh" class 'triage the INC-008 alert' 2>/dev/null)"
 
 # ============================================================
 echo ""

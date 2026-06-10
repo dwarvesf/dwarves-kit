@@ -48,7 +48,7 @@ proof_class() {
   fi
 
   # 2. stateful: deployment, migration, or data / persistent-state surfaces.
-  if printf '%s' "$lc" | grep -qE 'deploy|rollout|release to|ship to prod|production|migrat|schema|data[ -]model|database|\bdb\b|backfill data|seed|backup|restore|persistent|stateful|drop[s]? .*(table|column)|alter table|data loss|delete[s]? .*data'; then
+  if printf '%s' "$lc" | grep -qE 'deploy|rollout|release to|ship to prod|production|migrat|schema|data[ -]model|database|\bdb\b|backfill data|seed|backup|restore|persistent|stateful|drop[s]? .*(table|column)|alter table|data loss|delete[s]? .*data|\bincident\b|\binc-[0-9]+|triage'; then
     echo stateful; return 0
   fi
 
