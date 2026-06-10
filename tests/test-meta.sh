@@ -1755,6 +1755,18 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-068: precedent lookup exists and intake reads it (assign + grill).
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/precedent.sh" ] \
+   && grep -qF 'precedent.sh find' "$KIT_DIR/commands/assign.md" \
+   && grep -qF 'precedent.sh find' "$KIT_DIR/commands/grill.md"; then
+  echo -e "  ${GREEN}PASS${NC} precedent lookup wired into intake (SPEC-068)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} precedent lookup missing or unwired (SPEC-068)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

@@ -193,6 +193,26 @@ assert_true "uninstall: managed WORKFLOW.md removed" "$([ ! -e "$IC2_DIR/dwarves
 assert_true "uninstall: stamp removed" "$([ ! -e "$IC2_DIR/dwarves-kit/INSTALL-STAMP" ]; echo $?)"
 assert_output_contains "uninstall: user AGENTS.md untouched" "# MY OWN AGENTS" "$(head -1 "$IC2_DIR/dwarves-kit/AGENTS.md")"
 
+# ============================================================
+echo ""
+echo "=== precedent: the intake read-back (SPEC-068) ==="
+# ============================================================
+PRE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-pre.XXXXXX")
+mkdir -p "$PRE_DIR/docs/specs" "$PRE_DIR/logs/runs"
+git -C "$PRE_DIR" init -q
+printf '# SPEC-001: Widget frobnicator pipeline\nfrobnicate the widget pipeline twice\n' > "$PRE_DIR/docs/specs/SPEC-001-widget.md"
+printf '# SPEC-002: Unrelated\nnothing here\n' > "$PRE_DIR/docs/specs/SPEC-002-other.md"
+PRE() ( cd "$PRE_DIR" && DWARVES_KIT_LOG_DIR="$PRE_DIR/logs" bash "$KIT_DIR/lib/precedent.sh" "$@" )
+assert_output_contains "precedent: finds the matching spec" "SPEC-001-widget.md" "$(PRE find 'extend the widget frobnicator pipeline')"
+assert_output_contains "precedent: ranks by distinct keyword hits" "^ 3x" "$(PRE find 'extend the widget frobnicator pipeline')"
+assert_output_not_contains "precedent: unrelated spec not surfaced" "SPEC-002-other.md" "$(PRE find 'extend the widget frobnicator pipeline')"
+assert_output_contains "precedent: no-keyword input is honest" "no searchable keywords" "$(PRE find 'a an to of')"
+RC=0; bash "$KIT_DIR/lib/precedent.sh" bogus 2>/dev/null || RC=$?
+assert_exit "precedent: usage error exits 64" 64 $RC
+# negative control: remove the matching spec -> it drops from the results
+rm "$PRE_DIR/docs/specs/SPEC-001-widget.md"
+assert_output_not_contains "precedent: negative control (source removed -> gone)" "SPEC-001-widget.md" "$(PRE find 'extend the widget frobnicator pipeline')"
+
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -fr /tmp/bar"}}')
 assert_exit "blocks rm -fr" 2 $RC
 
