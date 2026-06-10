@@ -1658,7 +1658,7 @@ fi
 # (d) WORKFLOW names the judging criteria.
 TOTAL=$((TOTAL + 1))
 if grep -qF 'start)    start "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
-   && grep -qF 'usage: start <rid> <chosen-lane> <classified-lane> <type> [repo]' "$KIT_DIR/lib/gate-ledger.sh"; then
+   && grep -qF 'usage: start <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]' "$KIT_DIR/lib/gate-ledger.sh"; then
   echo -e "  ${GREEN}PASS${NC} gate-ledger has the START routing verb (SPEC-061)"
   PASS=$((PASS + 1))
 else
@@ -1685,6 +1685,21 @@ if grep -qF 'Lane telemetry sweep (SPEC-061)' "$KIT_DIR/commands/retro.md" \
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} telemetry wiring incomplete (SPEC-061)"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-062: telemetry closure. The operator scenarios live in WORKFLOW; debug carries the
+# escaped-from marker; test-plan commands record their outcome.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'What the operator sees, and when (SPEC-062)' "$KIT_DIR/WORKFLOW.md" \
+   && grep -qF 'escaped-from=' "$KIT_DIR/commands/debug.md" \
+   && grep -qF 'gate-ledger.sh record <spec-slug> test-plan ran' "$KIT_DIR/commands/test-plan.md" \
+   && grep -qF 'gate-ledger.sh record <spec-slug> test-plan ran' "$KIT_DIR/commands/test-plan-review-team.md" \
+   && grep -qF 'classified-type' "$KIT_DIR/lib/gate-ledger.sh"; then
+  echo -e "  ${GREEN}PASS${NC} telemetry closure wired: scenarios + escaped-from + test-plan records + ctype (SPEC-062)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} telemetry closure wiring incomplete (SPEC-062)"
   FAIL=$((FAIL + 1))
 fi
 

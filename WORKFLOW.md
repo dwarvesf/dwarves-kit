@@ -344,6 +344,44 @@ The questions the report answers, and what each signal means:
 Telemetry proposes; the human at retro disposes ("Detect, don't dictate"). No daemon, no new
 store: the pipe-delimited ledgers under `~/.claude/dwarves-kit/logs/` are the only substrate.
 
+#### What the operator sees, and when (SPEC-062)
+
+| Scenario | Trigger | What appears |
+|---|---|---|
+| S1 session open | `/kit:start`, whenever run ledgers exist | the `misfires` shortlist: every chosen!=classified pair (lane AND type) + floor-check downgrades, 2-10 lines |
+| S2 retro sweep | operator runs `/kit:retro` (recommended after 3-5 days of runs) | the full `report` below + the Step 1d disposition pass over every misfire |
+| S3 escaped defect | recorded at `/kit:debug` ledger-open when a defect indicts a shipped spec; SURFACES at the next S1/S2 | the `escaped defects` section naming which spec's test plan missed it |
+| ad hoc | `bash lib/lane-telemetry.sh report\|misfires` any time | same as S2's data, no disposition pass |
+
+Sample `report` (fixture-shaped; this is the artifact the retro reads):
+
+```text
+runs: 12   lane-misrouted: 2   type-misrouted: 1   shipped: 9   untracked (no START): 1
+
+lane          runs   mis  gates  skip   ovr  ships
+normal           7     1     28     2     0      6
+tiny             3     0      3     1     0      2
+full             2     1     11     0     1      1
+
+type            runs
+spec-feature       8
+operate            2
+research           1
+?                  1
+
+escaped defects (bug runs tracing to a shipped spec's test plan):
+  spec-061 <- bug-cache-stampede
+
+runs (rid  repo  lane<-classified  type<-ctype  review  first..last):
+  spec-062   dwarves-kit   normal<-bug   spec-feature<-spec-feature   SHIP 8/10 ...
+  ...
+```
+
+Reading it: `lane-misrouted`/`type-misrouted` feed keyword fixes + pins (SPEC-060 pattern);
+`untracked` measures adoption (work bypassing `/kit:assign`); `escaped defects` indicts a
+specific spec's test plan, the per-spec answer to "are the test scenarios we design any
+good"; gate `skip`/`ovr` per lane flags ceremony misfit.
+
 ### Completeness clauses (warn + log, reviewed at ship)
 Two self-check clauses run during Build/Reflect. Both WARN and LOG to `~/.claude/dwarves-kit/logs/completeness.log` (the `spec-drift-guard` logging shape); neither hard-blocks. `/kit:ship` and `/kit:retro` review that log at the gate. Hard blocks stay reserved for the safety subset (PHILOSOPHY rejects hard-gating process completeness).
 

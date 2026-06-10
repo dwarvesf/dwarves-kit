@@ -20,7 +20,7 @@ một feedback loop để cải thiện.")
 
 Write side (one new verb, everything else reuses existing machinery):
 
-1. `lib/gate-ledger.sh start <rid> <chosen-lane> <classified-lane> <type> [repo]` appends a
+1. `lib/gate-ledger.sh start <rid> <chosen-lane> <classified-lane> <type> [repo]` (signature superseded by SPEC-062: `+[classified-type]` before `[repo]`) appends a
    `TS | START | lane=.. classified=.. type=.. repo=..` line to the run's existing ledger.
    Repo auto-detected from git. Called by `/kit:assign` right after the floor check.
 2. Review verdicts reuse the EXISTING `record` verb: `/kit:review`, `/kit:review-team`,

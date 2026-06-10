@@ -116,7 +116,7 @@ created: <YYYY-MM-DD>
 - **Record the routing facts (SPEC-061).** One line, right after the lane is committed, so lane telemetry has the chosen-vs-classified pair to aggregate:
 
   ```bash
-  bash lib/gate-ledger.sh start "<spec-slug>" "<chosen lane>" "<classifier's suggested lane>" "<work type>"
+  bash lib/gate-ledger.sh start "<spec-slug>" "<chosen lane>" "<classifier's suggested lane>" "<chosen work type>" "<classifier's suggested type>"
   ```
 
   The repo is auto-detected. `lib/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).

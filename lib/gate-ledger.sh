@@ -9,7 +9,7 @@
 #
 # Subcommands:
 #   required <lane>                     print the lane's required (measure-twice) gate keys
-#   start    <rid> <chosen-lane> <classified-lane> <type> [repo]   record routing facts (SPEC-061)
+#   start    <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]   record routing facts (SPEC-061/062)
 #   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision
 #   action   <rid> <text>              append an action-log line
 #   override <rid> <phase> <reason>    record a human override for a gate
@@ -71,14 +71,22 @@ required() {
 # operator chose, the classifier's suggestion, the work type, and the repo. One line per
 # run, written at assign/start time; lib/lane-telemetry.sh aggregates these read-side.
 start() {
-  local rid="${1:-}" lane="${2:-}" classified="${3:-}" type="${4:-}" repo="${5:-}"
+  local rid="${1:-}" lane="${2:-}" classified="${3:-}" type="${4:-}" ctype="${5:-}" repo="${6:-}"
   if [ -z "$rid" ] || [ -z "$lane" ] || [ -z "$classified" ] || [ -z "$type" ]; then
-    echo "usage: start <rid> <chosen-lane> <classified-lane> <type> [repo]" >&2; return 64
+    echo "usage: start <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]" >&2; return 64
   fi
   [ -n "$repo" ] || repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
-  repo="$(printf '%s' "$repo" | tr ' ' '-')"  # the KV blob is space-split read-side
+  # the KV blob is space-split read-side; a space in any value corrupts the parse
+  repo="$(printf '%s' "$repo" | tr ' ' '-')"
+  type="$(printf '%s' "$type" | tr ' ' '-')"
+  ctype="$(printf '%s' "$ctype" | tr ' ' '-')"
+  lane="$(printf '%s' "$lane" | tr ' ' '-')"
+  classified="$(printf '%s' "$classified" | tr ' ' '-')"
   mkdir -p "$RUNS_DIR"
-  printf '%s | START | lane=%s classified=%s type=%s repo=%s\n' "$(now)" "$lane" "$classified" "$type" "$repo" >> "$(ledger_file "$rid")"
+  local line
+  line="$(printf '%s | START | lane=%s classified=%s type=%s' "$(now)" "$lane" "$classified" "$type")"
+  [ -n "$ctype" ] && line="$line ctype=$ctype"
+  printf '%s repo=%s\n' "$line" "$repo" >> "$(ledger_file "$rid")"
 }
 
 record() {
