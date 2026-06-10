@@ -85,3 +85,6 @@ Under bypassPermissions the per-section `AskUserQuestion` approvals auto-resolve
 
 ## Source
 Mirrors the parallel multi-lens pattern in `commands/review-team.md` + `agents/reviewer.md`, one altitude up (design, not code). Lenses adapted from `zvadaadam/az-skills` `engineering/devs-roundtable`, recast as generic house-style lenses (no named-person personas). Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/kit:visual-team` (same altitude). Realizes SPEC-016 Part A.
+
+After the verdict, record it for lane telemetry (SPEC-061), one line:
+`bash lib/gate-ledger.sh record <spec-slug> review ran "<verdict> findings=<K>"`.

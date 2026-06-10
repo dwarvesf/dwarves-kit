@@ -112,6 +112,14 @@ created: <YYYY-MM-DD>
   ```
 
   If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "anything on the full-trigger list uses full unless you narrow the scope and say why"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap (SPEC-053): the classifier suggested, but nothing caught an under-sized choice until now.
+
+- **Record the routing facts (SPEC-061).** One line, right after the lane is committed, so lane telemetry has the chosen-vs-classified pair to aggregate:
+
+  ```bash
+  bash lib/gate-ledger.sh start "<spec-slug>" "<chosen lane>" "<classifier's suggested lane>" "<work type>"
+  ```
+
+  The repo is auto-detected. `lib/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).
 - **Activator**: detect what can run the loop, in order: the built-in `/goal` (if present), the `ralph-loop` plugin, or the `goal-craft` skill. Surface the draft body for whichever is available. If none is installed, say so and leave the draft as a plain reusable file (paste the body wherever). Never assume a specific activator exists.
 
 ### Step 5b: Claim the goal in the cross-session registry (multi-session safety)

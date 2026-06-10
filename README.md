@@ -220,6 +220,7 @@ dwarves-kit/
   lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch)
   lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
   lib/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/
+  lib/lane-telemetry.sh         Read-side lane-effectiveness aggregator over the run ledgers: report + misfires (reviewed at /kit:retro)
   skills/get-api-docs/          Context Hub integration
   rules/                        Path-scoped coding-standard templates
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough

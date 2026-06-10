@@ -9,6 +9,7 @@
 #
 # Subcommands:
 #   required <lane>                     print the lane's required (measure-twice) gate keys
+#   start    <rid> <chosen-lane> <classified-lane> <type> [repo]   record routing facts (SPEC-061)
 #   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision
 #   action   <rid> <text>              append an action-log line
 #   override <rid> <phase> <reason>    record a human override for a gate
@@ -66,6 +67,20 @@ required() {
   return 0
 }
 
+# START records the run's routing facts for lane telemetry (SPEC-061): the lane the
+# operator chose, the classifier's suggestion, the work type, and the repo. One line per
+# run, written at assign/start time; lib/lane-telemetry.sh aggregates these read-side.
+start() {
+  local rid="${1:-}" lane="${2:-}" classified="${3:-}" type="${4:-}" repo="${5:-}"
+  if [ -z "$rid" ] || [ -z "$lane" ] || [ -z "$classified" ] || [ -z "$type" ]; then
+    echo "usage: start <rid> <chosen-lane> <classified-lane> <type> [repo]" >&2; return 64
+  fi
+  [ -n "$repo" ] || repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+  repo="$(printf '%s' "$repo" | tr ' ' '-')"  # the KV blob is space-split read-side
+  mkdir -p "$RUNS_DIR"
+  printf '%s | START | lane=%s classified=%s type=%s repo=%s\n' "$(now)" "$lane" "$classified" "$type" "$repo" >> "$(ledger_file "$rid")"
+}
+
 record() {
   local rid="${1:-}" raw="${2:-}" state="${3:-}"; shift 3 2>/dev/null || { echo "usage: record <rid> <phase> <ran|skipped> [reason]" >&2; return 64; }
   case "$state" in ran|skipped) ;; *) echo "state must be ran|skipped" >&2; return 64;; esac
@@ -106,10 +121,11 @@ check() {
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
+  start)    start "$@" ;;
   record)   record "$@" ;;
   action)   action "$@" ;;
   override) override "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|record|action|override|check|show} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show} ..." >&2; exit 64 ;;
 esac

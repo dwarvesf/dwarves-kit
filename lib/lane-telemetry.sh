@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+# lane-telemetry.sh -- the read side of lane effectiveness (SPEC-061).
+#
+# The kit records run facts in append-only ledgers (lib/gate-ledger.sh -> logs/runs/<rid>.log,
+# lane downgrades -> logs/completeness.log) but until SPEC-061 nothing AGGREGATED them, so
+# lane misfires died in chat instead of becoming classifier fixes + pins. This is the
+# aggregator: pure bash/awk over the existing pipe-delimited logs, no new store, no daemon.
+# Advisory: it reports, /kit:retro disposes (Detect, don't dictate).
+#
+# Usage:
+#   lane-telemetry.sh report   -> per-lane + per-type aggregates over every run ledger
+#   lane-telemetry.sh misfires -> the runs where chosen lane != classified lane, plus
+#                                 completeness.log LANE-CHECK lines: the feed for keyword fixes
+#
+# Line formats consumed (produced by gate-ledger.sh):
+#   TS | START | lane=<chosen> classified=<suggested> type=<t> repo=<r>
+#   TS | GATE | <phase> | ran|skipped|override | <reason>
+# A run with no START line surfaces as lane "?" (an untracked run is itself a signal).
+#
+# DWARVES_KIT_LOG_DIR overrides the log root (tests point it at a fixture copy).
+set -euo pipefail
+
+LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+RUNS_DIR="$LOG_DIR/runs"
+COMPLETENESS="$LOG_DIR/completeness.log"
+
+# one TSV row per run: rid repo lane classified type ran skip ovr mis ship review first last
+_rows() {
+  local f rid
+  for f in "$RUNS_DIR"/*.log; do
+    [ -e "$f" ] || continue
+    rid="$(basename "$f" .log)"
+    awk -v rid="$rid" '
+      BEGIN { FS=" \\| " }
+      NR==1 { first=$1 }
+      { last=$1 }
+      $2=="START" {
+        n=split($3, kv, " ")
+        for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+      }
+      $2=="GATE" && $4=="ran"      { ran++ }
+      $2=="GATE" && $4=="skipped"  { skip++ }
+      $2=="GATE" && $4=="override" { ovr++ }
+      $2=="GATE" && $3=="review" && $4=="ran" { review=$5; for (i=6; i<=NF; i++) review = review " | " $i }
+      $2=="GATE" && $3=="ship"   && $4=="ran" { ship=1 }
+      END {
+        lane=(m["lane"]==""?"?":m["lane"]); cls=(m["classified"]==""?"?":m["classified"])
+        type=(m["type"]==""?"?":m["type"]); repo=(m["repo"]==""?"?":m["repo"])
+        mis=(lane!="?" && cls!="?" && lane!=cls) ? 1 : 0
+        if (review=="") review="-"
+        gsub(/\t/, " ", review)
+        printf "%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\t%d\t%s\t%s\t%s\n", \
+          rid, repo, lane, cls, type, ran+0, skip+0, ovr+0, mis, ship+0, review, first, last
+      }' "$f"
+  done
+}
+
+report() {
+  [ -d "$RUNS_DIR" ] || { echo "(no runs dir at $RUNS_DIR)"; return 0; }
+  local rows; rows="$(_rows)"
+  [ -n "$rows" ] || { echo "(no run ledgers)"; return 0; }
+  printf '%s\n' "$rows" | awk '
+    BEGIN { FS="\t" }
+    {
+      runs[$3]++; types[$5]++; ran[$3]+=$6; skip[$3]+=$7; ovr[$3]+=$8
+      mis[$3]+=$9; ships[$3]+=$10; total++; tmis+=$9; tships+=$10
+      if ($3=="?") untracked++
+    }
+    END {
+      printf "runs: %d   misrouted (chosen != classified): %d   shipped: %d   untracked (no START): %d\n\n", \
+        total, tmis, tships, untracked+0
+      printf "%-12s %5s %5s %6s %5s %5s %6s\n", "lane", "runs", "mis", "gates", "skip", "ovr", "ships"
+      for (l in runs) printf "%-12s %5d %5d %6d %5d %5d %6d\n", l, runs[l], mis[l], ran[l], skip[l], ovr[l], ships[l]
+      printf "\n%-14s %5s\n", "type", "runs"
+      for (t in types) printf "%-14s %5d\n", t, types[t]
+    }'
+  echo ""
+  echo "runs (rid  repo  lane<-classified  type  review  first..last):"
+  printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"} { printf "  %-28s %-12s %s<-%s  %-13s %-24s %s .. %s\n", $1, $2, $3, $4, $5, $11, $12, $13 }'
+}
+
+misfires() {
+  local any=0
+  if [ -d "$RUNS_DIR" ]; then
+    local lines
+    lines="$(_rows | awk 'BEGIN{FS="\t"} $9==1 { printf "  %s: chosen=%s classified=%s (type=%s repo=%s)\n", $1, $3, $4, $5, $2 }')"
+    if [ -n "$lines" ]; then
+      echo "routing misfires (chosen lane != classified):"
+      printf '%s\n' "$lines"; any=1
+    fi
+  fi
+  if [ -f "$COMPLETENESS" ] && grep -q 'LANE-CHECK' "$COMPLETENESS" 2>/dev/null; then
+    echo "floor-check downgrades (completeness.log):"
+    grep 'LANE-CHECK' "$COMPLETENESS" | sed 's/^/  /'; any=1
+  fi
+  [ "$any" -eq 1 ] || echo "(no misfires recorded)"
+  return 0
+}
+
+main() {
+  local sub="${1:-}"; shift || true
+  case "$sub" in
+    report)   report ;;
+    misfires) misfires ;;
+    *) echo "usage: lane-telemetry.sh {report|misfires}" >&2; return 64 ;;
+  esac
+}
+
+main "$@"

@@ -323,6 +323,27 @@ restate it here. In the kit, the task-verifier is what proves "done" (self-repor
 premature completion. The clauses below add kit-specific completeness checks on top
 of that done-definition.
 
+### How lanes are judged (lane telemetry, SPEC-061)
+
+Lanes are not assumed effective; they are measured. Every `/kit:assign` records a START line
+(chosen lane, classified lane, work type, repo) into the run's gate ledger, reviews record
+their verdicts, and `/kit:ship` records the PR outcome. `lib/lane-telemetry.sh report|misfires`
+aggregates read-side; `/kit:retro` Step 1d reviews it with a disposition contract (every
+misfire becomes a keyword fix + pin, a BACKLOG row, or a recorded accepted-noise line).
+
+The questions the report answers, and what each signal means:
+
+| Signal | Healthy | Unhealthy means |
+|---|---|---|
+| Misclassification rate (chosen != classified, both directions) | rare, explained | intake miscalibrated: tune keywords from the real phrasing (SPEC-060 pattern) |
+| Gate skip/override rate per lane | occasional, reasoned | a chronically skipped gate is the wrong gate for that lane: move it in the matrix |
+| Review findings curve per lane | a healthy nonzero | always-0 = dull lens; always-high = intake too loose (grill harder) |
+| Duration vs lane weight (first..last ledger TS) | tiny short, full long | a tiny run spanning days = misrouted or blocked |
+| Untracked runs (no START line) | ~0 | work is entering lanes outside /kit:assign: wire the entry point |
+
+Telemetry proposes; the human at retro disposes ("Detect, don't dictate"). No daemon, no new
+store: the pipe-delimited ledgers under `~/.claude/dwarves-kit/logs/` are the only substrate.
+
 ### Completeness clauses (warn + log, reviewed at ship)
 Two self-check clauses run during Build/Reflect. Both WARN and LOG to `~/.claude/dwarves-kit/logs/completeness.log` (the `spec-drift-guard` logging shape); neither hard-blocks. `/kit:ship` and `/kit:retro` review that log at the gate. Hard blocks stay reserved for the safety subset (PHILOSOPHY rejects hard-gating process completeness).
 

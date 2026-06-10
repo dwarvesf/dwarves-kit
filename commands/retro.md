@@ -48,6 +48,16 @@ If yes, suggest drafting `docs/decisions/NNNN-<slug>.md` (next number after the 
 
 This is **advisory, never a block** (PHILOSOPHY "Detect, don't dictate": the kit reports completeness as retro signal, never a mid-flight gate). If the operator declines, log one line to `~/.claude/dwarves-kit/logs/completeness.log` (`decision-capture: declined <cycle/slug>`) so a recurring skip is visible as retro signal, exactly like Step 1b. Source: SPEC-051 (absorbed from repository-harness's decision-capture flow, A4-lite).
 
+### Step 1d: Lane telemetry sweep (SPEC-061)
+
+Run `bash lib/lane-telemetry.sh report` and `bash lib/lane-telemetry.sh misfires`. Surface
+the aggregates (per-lane runs, misroute count, gate skip/override counts, ship rate, untracked
+runs) as retro signal. **Disposition contract:** every misfire line MUST leave the retro as one
+of (a) a classifier keyword fix + truth-table pin (the SPEC-057/SPEC-060 pattern: a real
+misfire becomes a test row), (b) a kit BACKLOG row, or (c) one recorded "accepted noise:
+<reason>" line in the retro doc. A misfire that leaves as nothing is the open-circuit this
+step exists to close.
+
 ### Step 2: Three questions
 
 Ask each question one at a time. Wait for the user's answer before moving on.
