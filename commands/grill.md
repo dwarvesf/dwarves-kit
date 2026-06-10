@@ -21,6 +21,9 @@ Read what already answers questions so you never ask one the repo answers:
    already made. A question whose answer sits in an ADR is a wasted turn; a claim that
    CONTRADICTS one is your first question.
 3. The active spec / BACKLOG row / goal draft, whatever context the item already carries.
+4. `bash lib/precedent.sh find "<task>"` (SPEC-068): the repo's own prior art. A question
+   answered by a past spec/retro is a wasted turn; a precedent that CONTRADICTS the ask
+   is your first question.
 
 ### Step 2: Interview, one question at a time
 
