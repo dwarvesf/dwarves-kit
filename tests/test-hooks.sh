@@ -662,6 +662,31 @@ assert_output_contains "type: budget absorb stays spec-feature" "^spec-feature$"
 
 # ============================================================
 echo ""
+echo "=== lane-telemetry: read-side aggregation over run ledgers (SPEC-061) ==="
+# ============================================================
+LT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lt.XXXXXX")
+mkdir -p "$LT_DIR/runs"
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=full type=spec-feature repo=kitA\n2026-06-10T07:05:00Z | GATE | spec | ran | spec written\n2026-06-10T07:30:00Z | GATE | review | ran | FIX-FIRST findings=5\n2026-06-10T08:00:00Z | GATE | ship | ran | shipping pr=#38\n' > "$LT_DIR/runs/spec-a.log"
+printf '2026-06-10T09:00:00Z | START | lane=tiny classified=tiny type=doc repo=kitB\n2026-06-10T09:10:00Z | GATE | build | skipped | tiny lane\n' > "$LT_DIR/runs/spec-b.log"
+printf '2026-06-10T10:00:00Z | GATE | spec | ran | legacy run, no START\n' > "$LT_DIR/runs/spec-c.log"
+printf '2026-06-09T01:00:00Z | LANE-CHECK | downgrade | chosen=tiny suggested=full | risky thing\n' > "$LT_DIR/completeness.log"
+LT() { DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" 2>/dev/null; }
+# headline aggregates: 3 runs, 1 misroute, 1 ship, 1 untracked
+assert_output_contains "telemetry: headline counts" "runs: 3   misrouted (chosen != classified): 1   shipped: 1   untracked (no START): 1" "$(LT report)"
+# the per-lane table carries the misrouted normal run with its ship
+assert_output_contains "telemetry: normal lane row" "normal  *1  *1  *3  *0  *0  *1" "$(LT report)"
+# misfires names the chosen-vs-classified pair AND surfaces the floor-check line
+assert_output_contains "telemetry: misfire pair" "spec-a: chosen=normal classified=full" "$(LT misfires)"
+assert_output_contains "telemetry: floor-check passthrough" "LANE-CHECK" "$(LT misfires)"
+# start verb round-trip: gate-ledger writes what telemetry reads
+DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" start spec-d full full eval kitC
+assert_output_contains "telemetry: start verb round-trip" "runs: 4" "$(LT report)"
+# negative control: remove the START line -> the run goes untracked, misroute count drops
+grep -v 'START' "$LT_DIR/runs/spec-a.log" > "$LT_DIR/runs/spec-a.log.tmp" && mv -f "$LT_DIR/runs/spec-a.log.tmp" "$LT_DIR/runs/spec-a.log"
+assert_output_contains "telemetry: negative control (START removed -> untracked)" "misrouted (chosen != classified): 0" "$(LT report)"
+
+# ============================================================
+echo ""
 echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
 # ============================================================
 PGATE() { bash "$KIT_DIR/lib/proof-gate.sh" class "$1" 2>/dev/null; }

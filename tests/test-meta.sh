@@ -1653,6 +1653,41 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-061: lane telemetry. (a) gate-ledger has the start verb; (b) the read-side
+# aggregator exists with both subcommands; (c) retro carries the disposition contract;
+# (d) WORKFLOW names the judging criteria.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'start)    start "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
+   && grep -qF 'usage: start <rid> <chosen-lane> <classified-lane> <type> [repo]' "$KIT_DIR/lib/gate-ledger.sh"; then
+  echo -e "  ${GREEN}PASS${NC} gate-ledger has the START routing verb (SPEC-061)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} gate-ledger missing the START verb (SPEC-061)"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/lane-telemetry.sh" ] && grep -qF 'report)' "$KIT_DIR/lib/lane-telemetry.sh" \
+   && grep -qF 'misfires)' "$KIT_DIR/lib/lane-telemetry.sh"; then
+  echo -e "  ${GREEN}PASS${NC} lane-telemetry.sh exists with report+misfires (SPEC-061)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} lane-telemetry.sh missing or incomplete (SPEC-061)"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Lane telemetry sweep (SPEC-061)' "$KIT_DIR/commands/retro.md" \
+   && grep -qF 'Disposition contract' "$KIT_DIR/commands/retro.md" \
+   && grep -qF 'How lanes are judged' "$KIT_DIR/WORKFLOW.md" \
+   && grep -qF 'gate-ledger.sh start' "$KIT_DIR/commands/assign.md"; then
+  echo -e "  ${GREEN}PASS${NC} telemetry wired: retro Step 1d + WORKFLOW criteria + assign START (SPEC-061)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} telemetry wiring incomplete (SPEC-061)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

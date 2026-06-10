@@ -8,6 +8,10 @@ You are running a health check on the dwarves-kit installation. This command eva
 
 ### Step 1: Run automated checks
 
+Include the lane-telemetry probe (SPEC-061): `bash lib/lane-telemetry.sh report` must exit 0
+and print either aggregates or `(no run ledgers)`; a parse failure means the ledger format and
+the reader have drifted apart.
+
 Execute these checks and collect results:
 
 ```bash

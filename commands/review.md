@@ -72,6 +72,10 @@ Completeness: [X]/10
 ### Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP
 ```
 
+After the verdict, record it for lane telemetry (SPEC-061), one line:
+`bash lib/gate-ledger.sh record <spec-slug> review ran "<verdict> findings=<K>"`.
+
+
 Completeness scoring:
 - 10/10: All edge cases handled, full test coverage, docs updated
 - 7/10: Happy path solid, some edge cases missing, decent tests
