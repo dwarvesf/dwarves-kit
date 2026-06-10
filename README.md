@@ -1,13 +1,26 @@
 # dwarves-kit
 
-> Spec-driven Claude Code workflow with a verification pipeline. Worker → verifier → fix-agent retry, by default.
+> A closed-loop Claude Code workflow: you set the goal and the gates, agents loop until the gates pass. Worker → verifier → fix-agent retry, by default.
 
 [![CI](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml/badge.svg)](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml)
 [![Version](https://img.shields.io/github/v/tag/dwarvesf/dwarves-kit?label=version)](https://github.com/dwarvesf/dwarves-kit/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-dwarves-kit drives a Claude Code project through one spec-driven lifecycle: **think → spec → execute → review → ship → retro**. Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked).
+Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, agents iterate inside them. The loop is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
+
+```
+  goal --> think --> spec --> execute --> review --> ship --> retro --+
+            |          |         |           |          |             |
+        6 forcing   the spec   worker ->   verdict   ship gate +      |
+        questions   is the     verifier -> recorded  push-to-main     |
+                    contract   fix-agent             blocker          |
+                               (max 2)                                |
+   ^                                                                  |
+   +------------------ retro feeds the next cycle --------------------+
+```
+
+Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked).
 
 **You drive it by intent, not by memorizing commands.** Say what you want; the kit reads your intent, runs the right step, and stops only at the real decisions:
 
@@ -22,6 +35,17 @@ The `/kit:*` commands below are those same actions named explicitly, for when yo
 It is bash-first (every hook readable in 30 seconds), and every component traces to a proven pattern, no novel inventions. The point of the kit is the handoff: a solo technical lead writes the spec, a contractor runs `/kit:execute` against the *same* spec.
 
 New here? **Install** below, then run **your first cycle**. The full operator reference (every command, hook, and agent, plus troubleshooting) lives in [`MANUAL.md`](MANUAL.md).
+
+## Why a closed loop
+
+An open loop (the agent roams free and judges its own output) is a fast slop machine unless your standard is airtight and your budget is unlimited. The kit takes the closed shape instead: a human designs the path once, agents iterate inside it. What makes the loop trustworthy is that every gate is mechanical, never the agent grading its own homework.
+
+| Open loop | dwarves-kit (closed) |
+|-----------|----------------------|
+| agent plans its own route | the spec is the contract, written and validated before any build |
+| agent grades its own work | gates are mechanical: bash hooks, tests, read-only verifiers |
+| loops until the budget dies | bounded: fix-agent retries max 2, then escalates to a human |
+| one loop size fits all | risk lanes: tiny work skips the ceremony entirely |
 
 ## Install
 
@@ -95,14 +119,33 @@ Work is sized by risk lane before it starts (tiny / normal / full / bug, plus a 
 
 ## Verification pipeline (/execute)
 
-Every task goes through: worker > task-verifier > fix-agent (if needed).
+Every task goes through: worker > task-verifier > fix-agent (if needed). The worker never grades its own work; the verifier is a separate read-only agent.
 
 ```
-worker subagent completes task
-  -> task-verifier (read-only) checks acceptance criteria + tests
-     -> PASS: mark done, continue
-     -> FAIL:fixable: dispatch fix-agent (max 2 retries)
-     -> FAIL:escalate: stop, ask human
+            /kit:execute (orchestrator)
+            owns the spec's task list,
+            dispatches one task at a time
+                       |
+                       v
+              +----------------+
+              | worker         |  implements the task
+              +----------------+
+                       |
+                       v
+              +----------------------+
+              | task-verifier        |  read-only gate: acceptance
+              | (cannot edit code)   |  criteria + tests
+              +----------------------+
+                 |        |          |
+               PASS  FAIL:fixable  FAIL:escalate
+                 |        |          |
+                 v        v          v
+            mark done  +-----------+  stop,
+            next task  | fix-agent |  ask the human
+                       +-----------+
+                            |
+                            +--> back to task-verifier
+                                 (max 2 retries, then escalate)
 ```
 
 Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out disjoint `VALIDATED` specs into parallel git worktrees behind a disjointness gate; across sessions, a passive goal registry (`lib/goal-registry.sh`) keeps concurrent same-machine sessions from colliding. The kit deliberately stops short of a DAG scheduler, a coordinating daemon, or cross-machine orchestration. For those, run GSD v2 or Nimbalyst alongside it.
