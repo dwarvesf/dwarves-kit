@@ -83,6 +83,18 @@ assert_exit "blocks push to main" 2 $RC
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push --force origin feature"}}')
 assert_exit "blocks force push" 2 $RC
 
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push origin feature --force"}}')
+assert_exit "blocks trailing --force" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push origin +feature"}}')
+assert_exit "blocks refspec force (+branch)" 2 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push --force-with-lease origin feature"}}')
+assert_exit "allows --force-with-lease (the sanctioned escape hatch)" 0 $RC
+
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push origin feature --force-with-lease"}}')
+assert_exit "allows trailing --force-with-lease" 0 $RC
+
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"ls -la"}}')
 assert_exit "allows ls -la" 0 $RC
 
