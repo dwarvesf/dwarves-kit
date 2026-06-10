@@ -60,8 +60,11 @@ if echo "$CMD" | grep -qE 'git\s+push\s+.*\b(main|master)\b'; then
   exit 2
 fi
 
-# Block force push anywhere
-if echo "$CMD" | grep -qE 'git\s+push\s+.*--force'; then
+# Block bare force push anywhere. --force-with-lease (and --force-if-includes) are
+# the sanctioned escape hatch this very message recommends, so they must NOT match:
+# require the flag to END at --force (next char is not a hyphen). Refspec force
+# (`git push origin +branch`) is also blocked: it is --force without the lease.
+if echo "$CMD" | grep -qE 'git\s+push\s+.*(--force([^-]|$)|\s\+[^[:space:]]+)'; then
   log_block "force-push"
   echo "BLOCKED: Force push is dangerous. Use --force-with-lease if you must overwrite remote history." >&2
   exit 2
