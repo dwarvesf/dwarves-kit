@@ -74,3 +74,12 @@ Roadmap: ops-toolkit `_meta/megagoals/kit-north-star/`. Specs: SPEC-054/055/056 
 - Lesson: happy-path truth tables pass CI while broad regexes rot classification; the review's
   live adversarial probing is what caught it. Negative pins are now part of the classifier's
   definition of done.
+
+## 2026-06-10 operating-layer sync (maintainer follow-up on the SDD audit)
+- Context: AGENTS.md (the contract /kit:adopt ships into consumer repos) had ZERO mentions of
+  the board, type routing, or done-first; WORKFLOW lacked a "where work comes from" section.
+- Decision: Task-loop gains step 0 (take work from the board) and a rewritten step 1
+  (type-first, then lane, phase-0 done scenario); "Done means" anchors against the phase-0
+  Done=; WORKFLOW gains the board section. Pinned (operating-layer parity meta pin).
+- Why it mattered: adopted consumer repos would have received the OLD code-only contract while
+  the kit itself routed by type, drift at the exact file whose job is preventing drift.

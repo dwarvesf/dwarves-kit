@@ -14,6 +14,17 @@
 Read `AGENTS.md` zone 1 ("Read in this order") for the full ordered list, then
 return here. This file does not restate the list, so the two cannot drift.
 
+## Where work comes from (the board)
+
+`_meta/BACKLOG.md` is the kanban board (SPEC-055): one row per work item, the Status column is
+the state machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, plus
+`parked` / `dropped`). Render it with `bash lib/backlog.sh board`; flip states mechanically with
+`backlog.sh set <ID> <state>` (the leading keyword changes, the row's annotation prose
+survives). Work arrives two ways, and they coexist: an operator names an item
+(`/kit:assign ID-NNN`), or a session pulls the top queued item (`/kit:assign --next` =
+`backlog.sh next` -> goal-registry claim -> flip to `claimed`). No daemon, no parallel task
+database: the markdown file is the one source of truth.
+
 ## Size the work first (risk-tiered intake)
 Pick a lane before you start. Smaller work skips ceremony.
 

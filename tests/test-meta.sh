@@ -1594,6 +1594,19 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-057 operating-layer parity: AGENTS.md (the adopt-shipped contract) must carry the
+# intake story: board pull, type-first classification, done-first phase 0. Losing any leg
+# strands consumer repos on the old code-only contract.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'backlog.sh next' "$KIT_DIR/AGENTS.md" && grep -qF 'task-type-classify.sh classify' "$KIT_DIR/AGENTS.md" \
+   && grep -qF 'Done =' "$KIT_DIR/AGENTS.md" && grep -qF 'Where work comes from' "$KIT_DIR/WORKFLOW.md"; then
+  echo -e "  ${GREEN}PASS${NC} operating layer carries the intake story: board + type-first + done-first (SPEC-057)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} AGENTS.md/WORKFLOW.md lost the intake story (board/type/done-first) (SPEC-057)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="
