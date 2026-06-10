@@ -34,6 +34,29 @@ check`): once a lane is chosen, it re-classifies the task text and warns + logs 
 deterministic floor, so an under-sized `full`/`bug` task does not slip through silently.
 It warns; it never blocks (Detect, don't dictate). Over-sizing is always silent (safe).
 
+## Type loops (the non-code cycles)
+
+Lanes size CODE work. The classifier's other five types each get their own right-sized cycle
+(PHILOSOPHY §6 N1). Same intake either way: `lib/task-type-classify.sh` names the type; code work
+picks a lane above, everything else runs its type's loop below. Chat stays chat, a loop engages
+when a task is being executed, not on every message. The executor per type (preassigned or
+dynamic) lives in the registry (`docs/verification/task-types.md`, `agent` column); the proof
+artifact and rigor live there too.
+
+| Type | Loop (entry -> phases -> exit) |
+|------|-------------------------------|
+| research | frame the question -> multi-modal sweep (parallel angles) -> adversarially verify every load-bearing claim -> cited report |
+| eval | frame + define metrics -> hand-verify seed data -> climb the test ladder (smoke -> live) -> TEST-REPORT with falsifiability controls -> verdict |
+| doc | diff sweep (what changed) -> update every affected doc -> doc-verifier confirms docs match code |
+| migration | inventory the estate -> dry-run on a copy -> staged apply -> verify + record the run -> rollback path proven |
+| data-tool | spec/port the surface -> build -> recorded live run + negative control -> Done gate (proof-of-done indexes the run ledgers) |
+| spec-feature | (code) pick a lane in "Size the work first" above |
+
+A loop is right-sized or it is wrong: a research loop that feels like ceremony for a research
+task is a defect, not rigor. Tool comparisons are evals; test-design passes ride the owning
+work item's test-plan phase; cleanup sweeps are migrations of convention (inventory -> classify
+conform/drift -> migrate -> reference-fix -> gate check).
+
 ## The cycle (phase, exit, enforcer)
 | Phase    | Command | Exit when | Enforced by |
 |----------|---------|-----------|-------------|

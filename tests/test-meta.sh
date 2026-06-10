@@ -1518,6 +1518,40 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-054: every work type has a defined loop + executor. Three legs: the registry's agent
+# column (all 6 rows), the WORKFLOW Type-loops table (all 6 types), the assign type-routing.
+TOTAL=$((TOTAL + 1))
+AGENT_OK=$(awk -F'|' '/^\|/ {f2=$2; gsub(/^[ \t]+|[ \t]+$/, "", f2);
+  if (f2 == "task-type" || f2 ~ /^-+$/) next; n++
+  v=$6; gsub(/^[ \t]+|[ \t]+$/, "", v)
+  if (v ~ /preassigned|dynamic|per lane/) ok++ } END { print (n==6 && ok==6) ? "yes" : "no" }' "$KIT_DIR/docs/verification/task-types.md")
+if [ "$AGENT_OK" = "yes" ]; then
+  echo -e "  ${GREEN}PASS${NC} task-types registry: all 6 rows carry an agent entry (SPEC-054)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} task-types registry agent column incomplete (SPEC-054)"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+LOOP_ROWS=$(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/WORKFLOW.md" | grep -cE '^\| (research|eval|doc|migration|data-tool|spec-feature) \|')
+if [ "$(grep -c '^## Type loops' "$KIT_DIR/WORKFLOW.md")" -eq 1 ] && [ "$LOOP_ROWS" -eq 6 ]; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md Type-loops table covers all 6 types (SPEC-054)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} WORKFLOW.md Type-loops table missing or incomplete (SPEC-054, rows=$LOOP_ROWS)"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF 'task-type-classify.sh classify' "$KIT_DIR/commands/assign.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md routes by task type before sizing (SPEC-054)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md lost the type-routing step (SPEC-054)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

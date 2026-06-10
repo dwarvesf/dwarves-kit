@@ -34,6 +34,7 @@ If no `docs/specs/` directory exists:
 ```
 No spec found.
 Suggested: /kit:think to challenge the idea, then /kit:spec to generate a development spec.
+(If the described work is not code, run `bash lib/task-type-classify.sh classify "<it>"` first: a non-spec-feature type follows its type loop, WORKFLOW.md `## Type loops`, instead of the spec cycle.)
 ```
 
 ### 3. Spec is DRAFT

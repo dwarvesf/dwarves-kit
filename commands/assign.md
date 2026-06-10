@@ -71,6 +71,19 @@ created: <YYYY-MM-DD>
 
 ### Step 5: Pick the lane + detect the activator
 
+- **Type first**: classify the work KIND before sizing it:
+
+  ```bash
+  bash lib/task-type-classify.sh classify "<the item title / crystallized objective>"
+  ```
+
+  `spec-feature` continues below (pick a lane). Any other type (research / eval / doc /
+  migration / data-tool) runs its TYPE LOOP instead of the code cycle: the goal draft names the
+  loop's phases (WORKFLOW.md `## Type loops`), the executor (the registry's `agent` column in
+  `docs/verification/task-types.md`), and the proof artifact it owes (same registry;
+  `bash lib/proof-gate.sh contract "<title>"` prints the composed contract). Lanes still apply
+  to the RISK of any code the loop touches; the loop supplies the cycle.
+
 - **Lane**: read the item's Lane column (`tiny` / `normal` / `full` / `bug` / `backfill`); it selects the WORKFLOW path. If the column is blank, or you want a check, auto-classify from the title:
 
   ```bash
