@@ -45,3 +45,17 @@ Roadmap: ops-toolkit `_meta/megagoals/kit-north-star/`. Specs: SPEC-054/055/056 
   push-like phrases inside heredoc prose re-trigger it.
 - Decision: audited proof-ledger override (the branch carries its own gate-green proof);
   bug + suggested fix filed in the mega-goal FEEDBACK.md. Candidate for a follow-up kit fix.
+
+## 2026-06-10 SPEC-057: taxonomy expansion decisions
+- Context: LAB_LOG evidence sweep (Explore agent over all entries + skills) found 8 misfit
+  kinds; only 5 earned rows.
+- Decision: folds > rows where the loop shape already exists (deployment=migration shape;
+  agent-org config=spec-feature lanes; discovery splits research/reconcile by intent).
+  Planning keywords are schedule-anchored so "plan the schema migration rollout" stays
+  migration (pinned as the anchor-edge test).
+- Tradeoff: `operate` vs `reconcile` keyword overlap ("recon run" finance vs "reconcile X
+  against Y"); resolved by anchoring operate on procedure words (payroll/monthly/runbook)
+  and reconcile on drift words.
+- Note: proof-gate contract prints class from the DESCRIPTION (behavioral for "triage the
+  alert") while the registry row carries the stateful DEFAULT; the registry doc already says
+  the column is a default the gate may override. Left as designed.

@@ -601,6 +601,27 @@ assert_output_contains "floor: downgrade logged to completeness.log" "LANE-CHECK
 
 # ============================================================
 echo ""
+echo "=== task-type-classify: the 11-type truth table (SPEC-057) ==="
+# ============================================================
+TTYPE() { bash "$KIT_DIR/lib/task-type-classify.sh" classify "$1" 2>/dev/null; }
+# the 5 new types
+assert_output_contains "type: alert triage -> incident" "^incident$" "$(TTYPE 'triage the INC-008 alert')"
+assert_output_contains "type: weekly priorities -> planning" "^planning$" "$(TTYPE 'plan next week priorities for the team')"
+assert_output_contains "type: payroll run -> operate" "^operate$" "$(TTYPE 'run the monthly payroll procedure')"
+assert_output_contains "type: status drift -> reconcile" "^reconcile$" "$(TTYPE 'reconcile the backlog statuses against reality')"
+assert_output_contains "type: course day -> learning" "^learning$" "$(TTYPE 'process Day-12 of the quantum course')"
+# precedence regression: the 6 old types still classify as before
+assert_output_contains "type: benchmark -> eval (regression)" "^eval$" "$(TTYPE 'benchmark X vs Y')"
+assert_output_contains "type: landscape -> research (regression)" "^research$" "$(TTYPE 'research the landscape of agent kits')"
+assert_output_contains "type: readme -> doc (regression)" "^doc$" "$(TTYPE 'update the README for the new flag')"
+assert_output_contains "type: daemon deploy -> migration (regression + new keyword)" "^migration$" "$(TTYPE 'deploy the daemon to the mini')"
+assert_output_contains "type: api wrapper -> data-tool (regression)" "^data-tool$" "$(TTYPE 'wrap the growatt api as a restish surface')"
+assert_output_contains "type: feature -> spec-feature (regression default)" "^spec-feature$" "$(TTYPE 'add a --version flag')"
+# precedence edge: planning anchors do not steal a build phrase
+assert_output_contains "type: plan the schema migration -> migration (anchor edge)" "^migration$" "$(TTYPE 'plan the schema migration rollout')"
+
+# ============================================================
+echo ""
 echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
 # ============================================================
 PGATE() { bash "$KIT_DIR/lib/proof-gate.sh" class "$1" 2>/dev/null; }

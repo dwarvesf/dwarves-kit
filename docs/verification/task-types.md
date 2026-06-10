@@ -26,6 +26,11 @@ way it owns lane paths; this registry owns artifact/owner/rigor/agent).
 | migration | dry-run on a copy + recorded run + rollback path | (kit native, stateful) | stateful | preassigned: main session + task-verifier |
 | data-tool | recorded live run of the real commands (generated run ledgers under docs/runs/; the hand-authored proof-of-done.md indexes them) | ops-tool-shape Done gate | behavioral | preassigned: ops-tool-shape owner (main session) |
 | spec-feature | the real primary flow run end to end + tests/acceptance met | /execute task-verifier | behavioral | per lane: /execute workers + task-verifier |
+| incident | INC-NNN incident record + verified recovery (the fired signal now silent) | incident-workflow (consumer) + /kit:debug | stateful | preassigned: main session + debug evidence ledger |
+| reconcile | inventory with a verdict per item + reference-fix diff; a seeded drifted item is caught | doc-compaction / migrate-convention family | behavioral | preassigned: main; dynamic: parallel inventory subagents for estate-wide sweeps |
+| operate | append-only run-ledger entry + a liveness/monitoring line | the procedure's owning runner skill + job-monitoring-onboarding | stateful | preassigned: the procedure's runner |
+| planning | the plan/digest + the enqueued/re-ranked board rows | plan-for-goal / plan-for-mega-goal | inert | preassigned: lead session |
+| learning | workbook + scored self-check (>= the track's bar) | consumer learning skills (learning-day-process etc.) | inert | preassigned: consumer learning skills |
 
 Each type's TEST-DESIGN dialect lives in `test-design-standard.md` §5b (one spine, six
 bodies); `/kit:test-plan` picks it from the type. Human override always wins; the type + class are suggestions. The class column is the

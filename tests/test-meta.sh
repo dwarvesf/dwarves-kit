@@ -1524,19 +1524,19 @@ TOTAL=$((TOTAL + 1))
 AGENT_OK=$(awk -F'|' '/^\|/ {f2=$2; gsub(/^[ \t]+|[ \t]+$/, "", f2);
   if (f2 == "task-type" || f2 ~ /^-+$/) next; n++
   v=$6; gsub(/^[ \t]+|[ \t]+$/, "", v)
-  if (v ~ /preassigned|dynamic|per lane/) ok++ } END { print (n==6 && ok==6) ? "yes" : "no" }' "$KIT_DIR/docs/verification/task-types.md")
+  if (v ~ /preassigned|dynamic|per lane/) ok++ } END { print (n==11 && ok==11) ? "yes" : "no" }' "$KIT_DIR/docs/verification/task-types.md")
 if [ "$AGENT_OK" = "yes" ]; then
-  echo -e "  ${GREEN}PASS${NC} task-types registry: all 6 rows carry an agent entry (SPEC-054)"
+  echo -e "  ${GREEN}PASS${NC} task-types registry: all 11 rows carry an agent entry (SPEC-054/057)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} task-types registry agent column incomplete (SPEC-054)"
+  echo -e "  ${RED}FAIL${NC} task-types registry agent column incomplete (SPEC-054/057)"
   FAIL=$((FAIL + 1))
 fi
 
 TOTAL=$((TOTAL + 1))
-LOOP_ROWS=$(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/WORKFLOW.md" | grep -cE '^\| (research|eval|doc|migration|data-tool|spec-feature) \|')
-if [ "$(grep -c '^## Type loops' "$KIT_DIR/WORKFLOW.md")" -eq 1 ] && [ "$LOOP_ROWS" -eq 6 ]; then
-  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md Type-loops table covers all 6 types (SPEC-054)"
+LOOP_ROWS=$(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/WORKFLOW.md" | grep -cE '^\| (incident|learning|planning|operate|eval|research|reconcile|doc|migration|data-tool|spec-feature) \|')
+if [ "$(grep -c '^## Type loops' "$KIT_DIR/WORKFLOW.md")" -eq 1 ] && [ "$LOOP_ROWS" -eq 11 ]; then
+  echo -e "  ${GREEN}PASS${NC} WORKFLOW.md Type-loops table covers all 11 types (SPEC-054/057)"
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} WORKFLOW.md Type-loops table missing or incomplete (SPEC-054, rows=$LOOP_ROWS)"
@@ -1567,13 +1567,30 @@ fi
 # SPEC-056: per-type test dialects. Three legs: the 6-row dialect table, the type-aware
 # test-plan step, the default flip in the cycle table.
 TOTAL=$((TOTAL + 1))
-DIALECT_ROWS=$(awk '/^## 5b/,/^## 6/' "$KIT_DIR/docs/verification/test-design-standard.md" | grep -cE '^\| (spec-feature|eval|research|migration|data-tool|doc) \|')
-if [ "$DIALECT_ROWS" -eq 6 ] && grep -qF 'task-type-classify' "$KIT_DIR/commands/test-plan.md" \
+DIALECT_ROWS=$(awk '/^## 5b/,/^## 6/' "$KIT_DIR/docs/verification/test-design-standard.md" | grep -cE '^\| (incident|learning|planning|operate|eval|research|reconcile|doc|migration|data-tool|spec-feature) \|')
+if [ "$DIALECT_ROWS" -eq 11 ] && grep -qF 'task-type-classify' "$KIT_DIR/commands/test-plan.md" \
    && grep -qF 'Test plan (default' "$KIT_DIR/WORKFLOW.md"; then
-  echo -e "  ${GREEN}PASS${NC} test dialects wired: 6-type table + type-aware test-plan + default flip (SPEC-056)"
+  echo -e "  ${GREEN}PASS${NC} test dialects wired: 11-type table + type-aware test-plan + default flip (SPEC-056/057)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} test dialects incomplete (rows=$DIALECT_ROWS) (SPEC-056)"
+  echo -e "  ${RED}FAIL${NC} test dialects incomplete (rows=$DIALECT_ROWS) (SPEC-056/057)"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-057 parity: every registry type has BOTH a WORKFLOW loop row AND a dialect row.
+# A half-added type (registry row without loop/dialect) is a phantom and goes RED here.
+TOTAL=$((TOTAL + 1))
+REG_N=$(awk -F'|' '/^\|/ {f2=$2; gsub(/^[ \t]+|[ \t]+$/, "", f2); if (f2 == "task-type" || f2 ~ /^-+$/) next; print f2}' "$KIT_DIR/docs/verification/task-types.md" | sort)
+PARITY_OK=yes
+while IFS= read -r ty; do
+  grep -qE "^\| ${ty} \|" <(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/WORKFLOW.md") || PARITY_OK="no-loop:$ty"
+  grep -qE "^\| ${ty} \|" <(awk '/^## 5b/,/^## 6/' "$KIT_DIR/docs/verification/test-design-standard.md") || PARITY_OK="no-dialect:$ty"
+done <<< "$REG_N"
+if [ "$PARITY_OK" = "yes" ] && [ "$(echo "$REG_N" | grep -c .)" -eq 11 ]; then
+  echo -e "  ${GREEN}PASS${NC} type parity: every registry type has a loop row AND a dialect row (SPEC-057)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} type parity broken: $PARITY_OK (SPEC-057)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1959,7 +1976,7 @@ assert_eq "classify -> data-tool" "data-tool" "$(bash "$TTC" classify 'build a C
 # Negative control: an unmatched description falls through to the default, not a wrong type.
 assert_eq "classify default (neg control) -> spec-feature" "spec-feature" "$(bash "$TTC" classify 'add a sort button to the trade log' 2>/dev/null)"
 
-assert_eq "task-type-classify types lists 6" "6" "$(bash "$TTC" types 2>/dev/null | grep -c .)"
+assert_eq "task-type-classify types lists 11" "11" "$(bash "$TTC" types 2>/dev/null | grep -c .)"
 
 assert_true "task-types.md registry exists" "$([ -f "$TTREG" ] && echo 0 || echo 1)"
 for T in eval research doc migration data-tool spec-feature; do

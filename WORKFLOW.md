@@ -43,6 +43,12 @@ when a task is being executed, not on every message. The executor per type (prea
 dynamic) lives in the registry (`docs/verification/task-types.md`, `agent` column); the proof
 artifact and rigor live there too.
 
+**Phase 0 is universal (PHILOSOPHY §6 N3): every loop starts by defining its done scenario**,
+the proof contract (`bash lib/proof-gate.sh contract "<task>"`) plus the test design in the
+type's dialect (test-design-standard §5b), BEFORE any phase below runs. What follows is what
+gets compared against that definition when the work claims done (the V-model right arm,
+type-agnostic).
+
 | Type | Loop (entry -> phases -> exit) |
 |------|-------------------------------|
 | research | frame the question -> multi-modal sweep (parallel angles) -> adversarially verify every load-bearing claim -> cited report |
@@ -50,12 +56,17 @@ artifact and rigor live there too.
 | doc | diff sweep (what changed) -> update every affected doc -> doc-verifier confirms docs match code |
 | migration | inventory the estate -> dry-run on a copy -> staged apply -> verify + record the run -> rollback path proven |
 | data-tool | spec/port the surface -> build -> recorded live run + negative control -> Done gate (proof-of-done indexes the run ledgers) |
+| incident | alert/symptom -> triage (witr/logs) -> root-cause BEFORE any fix (/kit:debug discipline) -> fix/mitigate -> INC-NNN record -> monitoring follow-up |
+| reconcile | inventory the estate -> classify conform/drift -> migrate/fix -> reference-fix -> gate check |
+| operate | trigger (schedule/operator) -> pre-checks -> run the procedure -> record the run -> alert on deviation |
+| planning | gather state (board + PRs + calendar) -> prioritize -> enqueue/re-rank board rows -> digest |
+| learning | ingest material -> explain/companion -> practice -> self-check >= the track's bar |
 | spec-feature | (code) pick a lane in "Size the work first" above |
 
 A loop is right-sized or it is wrong: a research loop that feels like ceremony for a research
 task is a defect, not rigor. Tool comparisons are evals; test-design passes ride the owning
-work item's test-plan phase; cleanup sweeps are migrations of convention (inventory -> classify
-conform/drift -> migrate -> reference-fix -> gate check).
+work item's test-plan phase; cleanup/drift sweeps are the reconcile loop; deployments ride
+migration (same dry-run + rollback shape); agent-org config rides spec-feature lanes.
 
 ## The cycle (phase, exit, enforcer)
 | Phase    | Command | Exit when | Enforced by |
