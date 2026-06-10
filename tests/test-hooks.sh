@@ -213,6 +213,45 @@ assert_exit "precedent: usage error exits 64" 64 $RC
 rm "$PRE_DIR/docs/specs/SPEC-001-widget.md"
 assert_output_not_contains "precedent: negative control (source removed -> gone)" "SPEC-001-widget.md" "$(PRE find 'extend the widget frobnicator pipeline')"
 
+# ============================================================
+echo ""
+echo "=== telemetry detectors: boardless + shipped-incomplete (SPEC-069) ==="
+# ============================================================
+BD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-bd.XXXXXX")
+mkdir -p "$BD_DIR/repo/_meta" "$BD_DIR/logs/runs"
+git -C "$BD_DIR" init -q "$BD_DIR/repo"
+REPO_BASE="$(basename "$BD_DIR/repo")"
+printf '| ID-001 | something | queued |\n' > "$BD_DIR/repo/_meta/BACKLOG.md"
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-ghost.log"
+BDT() ( cd "$BD_DIR/repo" && DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" )
+assert_output_contains "detector: boardless run named" "spec-ghost" "$(BDT misfires)"
+assert_output_contains "detector: boardless count in report" "boardless runs (ledgered but never on the board): 1" "$(BDT report)"
+# shipped-incomplete: ship gate but un-disposed phases
+printf '2026-06-10T08:00:00Z | GATE | ship | ran | shipping\n' >> "$BD_DIR/logs/runs/spec-ghost.log"
+assert_output_contains "detector: shipped-incomplete named" "spec-ghost (normal)" "$(BDT misfires)"
+# negative control: reference the rid on the board -> boardless drops
+printf '| ID-002 | the ghost work | shipped [run spec-ghost] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
+assert_output_not_contains "detector: negative control (board row added -> not boardless)" "boardless runs" "$(BDT misfires)"
+# T2 (review): false-positive guard, a COMPLETE shipped run is never flagged
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-done.log"
+for PH in grill think spec test-plan build review docs ship; do
+  printf '2026-06-10T08:00:00Z | GATE | %s | ran | done\n' "$PH" >> "$BD_DIR/logs/runs/spec-done.log"
+done
+printf '| ID-003 | done work | shipped [run spec-done] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
+assert_output_not_contains "detector: false-positive guard (complete run not flagged)" "spec-done" "$(BDT misfires)"
+# A4 seam-agreement pin: the cross-lib contract is the literal word 'complete' on both sides
+assert_true "seam: gate-ledger progress prints the agreed literal" "$(grep -q "complete (%d/%d)" "$KIT_DIR/lib/gate-ledger.sh"; echo $?)"
+assert_true "seam: lane-telemetry greps the agreed literal" "$(grep -q "grep -q 'complete'" "$KIT_DIR/lib/lane-telemetry.sh"; echo $?)"
+# T1 (review): color smoke under a real PTY, at least one escape byte must render
+if command -v script >/dev/null 2>&1; then
+  # falsifiable: progress under a real PTY must emit escape bytes; piped (same command,
+  # no PTY) must emit zero. Breaking the TTY gate in either direction flips one of these.
+  TTY_ESC=$(script -q /dev/null bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" 2>/dev/null | od -c | grep -c '033' || true)
+  assert_true "colors: PTY progress emits escape bytes" "$([ "${TTY_ESC:-0}" -ge 1 ]; echo $?)"
+  PIPE_ESC=$(DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/gate-ledger.sh" progress spec-done normal 2>/dev/null | od -c | grep -c '033' || true)
+  assert_true "colors: piped progress emits ZERO escape bytes" "$([ "${PIPE_ESC:-0}" -eq 0 ]; echo $?)"
+fi
+
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -fr /tmp/bar"}}')
 assert_exit "blocks rm -fr" 2 $RC
 

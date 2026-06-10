@@ -1767,6 +1767,21 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-069: retro follow-ups wired (escalation rule, advisory, grill line, color gate).
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Review escalation (SPEC-069)' "$KIT_DIR/WORKFLOW.md" \
+   && grep -qF 'review-team' "$KIT_DIR/AGENTS.md" \
+   && grep -qF 'codebase-memory' "$KIT_DIR/commands/grill.md" \
+   && grep -qF 'appears nowhere in _meta/BACKLOG.md' "$KIT_DIR/hooks/ship-gate.sh" \
+   && grep -qF 'NO_COLOR' "$KIT_DIR/lib/gate-ledger.sh" \
+   && grep -qF '_boardless' "$KIT_DIR/lib/lane-telemetry.sh"; then
+  echo -e "  ${GREEN}PASS${NC} retro follow-ups wired: escalation + advisory + grill + colors + detectors (SPEC-069)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} retro follow-ups incomplete (SPEC-069)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

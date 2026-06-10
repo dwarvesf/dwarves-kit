@@ -26,6 +26,14 @@ LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 RUNS_DIR="$LOG_DIR/runs"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# TTY-gated colors (SPEC-069): escape codes emit ONLY on an interactive stdout with
+# NO_COLOR unset, so every piped consumer (300+ test pins, scripts) sees plain bytes.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  C_DONE=$'\033[32m'; C_CUR=$'\033[1;33m'; C_DIM=$'\033[2m'; C_BOLD=$'\033[1m'; C_OFF=$'\033[0m'
+else
+  C_DONE=""; C_CUR=""; C_DIM=""; C_BOLD=""; C_OFF=""
+fi
 runid() { printf '%s' "$1" | tr '/ ' '--' | tr -cd '[:alnum:]._-'; }
 ledger_file() { printf '%s/%s.log' "$RUNS_DIR" "$(runid "$1")"; }
 
@@ -166,18 +174,18 @@ progress() {
     total=$((total+1))
     # disposed = ran / override / skipped WITH a reason; a bare skip stays visible as a gap
     if [ -f "$f" ] && awk -F' [|] ' -v p="$ph" '$2=="GATE" && $3==p && ($4!="skipped" || (NF>=5 && $5!="")) {found=1} END{exit !found}' "$f"; then
-      done_n=$((done_n+1)); list="$list ✓$ph"
+      done_n=$((done_n+1)); list="$list ${C_DONE}✓$ph${C_OFF}"
     elif [ -z "$cur" ]; then
-      cur="$ph"; cur_idx="$idx"; list="$list ▶$ph"
+      cur="$ph"; cur_idx="$idx"; list="$list ${C_CUR}▶$ph${C_OFF}"
     else
-      list="$list ·$ph"
+      list="$list ${C_DIM}·$ph${C_OFF}"
     fi
   done < <(plan "$lane")
   [ "$total" -gt 0 ] || return 1
   if [ -z "$cur" ]; then
-    printf '%s · %s · complete (%d/%d)\n' "$rid" "$lane" "$done_n" "$total"
+    printf '%s%s · %s · complete (%d/%d)%s\n' "$C_DONE" "$rid" "$lane" "$done_n" "$total" "$C_OFF"
   else
-    printf '%s · %s · step %s/%d (%s)\n' "$rid" "$lane" "$cur_idx" "$total" "$cur"
+    printf '%s%s · %s · step %s/%d (%s)%s\n' "$C_BOLD" "$rid" "$lane" "$cur_idx" "$total" "$cur" "$C_OFF"
   fi
   printf ' %s\n' "$list"
 }
