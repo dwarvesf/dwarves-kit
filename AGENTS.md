@@ -36,7 +36,11 @@ Orient before you touch anything. Read top to bottom; stop when you have enough.
 
 How to do one unit of work. The smallest verifiable increment, verified, committed.
 
-0. **Take work.** Handed a task: use it. Not handed one: pull the board's top queued item,
+0. **Take work.** Handed a task: use it. **Handed a WAVE (2+ items approved in one
+   conversation): enqueue every item as a board row FIRST (queued; the in-flight one
+   executing), then pull them one at a time.** Work that never touches the board is
+   invisible to the board's state machine even when its runs are ledgered, the gap an
+   operator caught live on 2026-06-10 (SPEC-064). Not handed one: pull the board's top queued item,
    `bash lib/backlog.sh next`, claim it (goal-registry) and flip it to `claimed` (the
    `/kit:assign --next` flow). The BACKLOG is the board; its Status column is the state
    machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, + parked/
@@ -70,6 +74,9 @@ print the checklist the run will walk: `bash lib/gate-ledger.sh plan <lane>`. At
 entry, print where the run stands: `bash lib/gate-ledger.sh progress <spec-slug> <lane>`
 (one status line: `<rid> · <lane> · step k/n (<phase>)` + the ✓/▶/· checklist). For the
 full story of a past or in-flight run: `bash lib/lane-telemetry.sh trace <rid>`.
+
+**Escalate the review for enforcement surfaces (SPEC-069).** A run touching `lib/` or
+`hooks/` uses `/kit:review-team` (multi-lens), not a single reviewer.
 
 **Record your gates (ADR-0024).** When you run a phase gate (`/kit:spec`, `/kit:spec-validate`, `/kit:execute`, `/kit:review`, `/kit:docs`, `/kit:ship`, ...), record it so the run is auditable: `bash lib/gate-ledger.sh record <spec-slug> <Phase> ran`; record a deliberate skip as `skipped "<why>"`. The `ship-gate` hook refuses a push whose lane has a required gate with no `ran`/`override` entry. Full convention + the logged-override path: WORKFLOW.md "## Gate ledger and ship enforcement".
 

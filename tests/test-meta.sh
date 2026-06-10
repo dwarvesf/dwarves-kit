@@ -1720,6 +1720,68 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-065: stack-merge exists with both verbs + dry-run; ship.md points at it.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/stack-merge.sh" ] && grep -qF 'next_link' "$KIT_DIR/lib/stack-merge.sh" \
+   && grep -qF 'dry-run' "$KIT_DIR/lib/stack-merge.sh" \
+   && grep -qF 'stack-merge.sh chain' "$KIT_DIR/commands/ship.md"; then
+  echo -e "  ${GREEN}PASS${NC} stack-merge codified + wired into ship (SPEC-065)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} stack-merge missing or unwired (SPEC-065)"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-066: the install copies (no ln -s on hook files) and stamps; kit-health probes staleness.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'cp "$HOOK_FILE" "$LINK"' "$KIT_DIR/install.sh" \
+   && ! grep -qF 'ln -s "$HOOK_FILE"' "$KIT_DIR/install.sh" \
+   && grep -qF 'INSTALL-STAMP' "$KIT_DIR/install.sh" \
+   && grep -qF 'INSTALL-STAMP' "$KIT_DIR/commands/kit-health.md"; then
+  echo -e "  ${GREEN}PASS${NC} install-by-copy + stamp + staleness probe (SPEC-066)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} install-by-copy incomplete (SPEC-066)"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-067: the golden run exists, is executable, and CI runs it.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/tests/test-e2e.sh" ] && grep -qF 'test-e2e.sh' "$KIT_DIR/.github/workflows/test.yml"; then
+  echo -e "  ${GREEN}PASS${NC} golden-run e2e exists + CI runs it (SPEC-067)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} golden-run e2e missing or not in CI (SPEC-067)"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-068: precedent lookup exists and intake reads it (assign + grill).
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/precedent.sh" ] \
+   && grep -qF 'precedent.sh find' "$KIT_DIR/commands/assign.md" \
+   && grep -qF 'precedent.sh find' "$KIT_DIR/commands/grill.md"; then
+  echo -e "  ${GREEN}PASS${NC} precedent lookup wired into intake (SPEC-068)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} precedent lookup missing or unwired (SPEC-068)"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-069: retro follow-ups wired (escalation rule, advisory, grill line, color gate).
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Review escalation (SPEC-069)' "$KIT_DIR/WORKFLOW.md" \
+   && grep -qF 'review-team' "$KIT_DIR/AGENTS.md" \
+   && grep -qF 'codebase-memory' "$KIT_DIR/commands/grill.md" \
+   && grep -qF 'appears nowhere in _meta/BACKLOG.md' "$KIT_DIR/hooks/ship-gate.sh" \
+   && grep -qF 'NO_COLOR' "$KIT_DIR/lib/gate-ledger.sh" \
+   && grep -qF '_boardless' "$KIT_DIR/lib/lane-telemetry.sh"; then
+  echo -e "  ${GREEN}PASS${NC} retro follow-ups wired: escalation + advisory + grill + colors + detectors (SPEC-069)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} retro follow-ups incomplete (SPEC-069)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

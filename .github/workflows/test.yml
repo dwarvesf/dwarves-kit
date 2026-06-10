@@ -35,6 +35,8 @@ jobs:
 
       - name: Run meta integrity tests
         run: bash tests/test-meta.sh
+      - name: Golden run (e2e)
+        run: bash tests/test-e2e.sh
 
       - name: Run review-team plant tests
         run: bash tests/test-review-team-plants.sh

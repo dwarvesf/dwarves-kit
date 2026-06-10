@@ -15,12 +15,43 @@ INPUT=$(cat)
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -z "$CMD" ] && exit 0
 
-# Engage only on a ship action: a git push or a gh pr create.
-echo "$CMD" | grep -qE 'git[[:space:]]+push|gh[[:space:]]+pr[[:space:]]+create' || exit 0
-# Leave push-to-main / force-push to safety-gate; do not double-handle.
-echo "$CMD" | grep -qE '\b(main|master)\b|--force' && exit 0
+# SPEC-064: strip heredoc bodies BEFORE the engage check, so "git push" appearing in
+# generated prose (PR bodies, test fixtures) never engages the gate. Same normalizer
+# shape as safety-gate.sh.
+CMD_CODE=$(printf '%s\n' "$CMD" | awk '
+  BEGIN { inhd = 0 }
+  {
+    line = $0
+    if (inhd) { t = line; gsub(/^[ \t]+/, "", t); if (t == marker) inhd = 0; next }
+    if (match(line, /<<-?[ \t]*["'\'']?[A-Za-z_][A-Za-z0-9_]*["'\'']?/)) {
+      m = substr(line, RSTART, RLENGTH)
+      sub(/<<-?[ \t]*/, "", m); gsub(/["'\'']/, "", m)
+      marker = m; inhd = 1
+      line = substr(line, 1, RSTART - 1)
+    }
+    print line
+  }')
 
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+# Engage only on a ship action: a git push or a gh pr create (in CODE, not prose).
+echo "$CMD_CODE" | grep -qE 'git[[:space:]]+push|gh[[:space:]]+pr[[:space:]]+create' || exit 0
+# Leave push-to-main / force-push to safety-gate; do not double-handle.
+echo "$CMD_CODE" | grep -qE '\b(main|master)\b|--force' && exit 0
+
+# SPEC-064: a command that cd's elsewhere ships THAT repo, not the session cwd (the
+# cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
+# repo's spec). Resolve the repo from a leading cd prefix when present.
+# BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
+CDDIR=$(printf '%s' "$CMD_CODE" | grep -oE '^[[:space:]]*cd[[:space:]]+[^&;|]+' | head -1 \
+  | sed -E 's/^[[:space:]]*cd[[:space:]]+//; s/[[:space:]]+$//; s/^"//; s/"$//' || true)
+case "$CDDIR" in *'$'*) CDDIR="" ;; esac   # variables cannot be resolved: fall back
+CDDIR="${CDDIR/#\~/$HOME}"
+# Test affordance: print the resolved cd-target and exit (never set outside tests).
+if [ "${DWARVES_KIT_PRINT_CDDIR:-0}" = "1" ]; then printf '%s\n' "$CDDIR"; exit 0; fi
+if [ -n "$CDDIR" ] && [ -d "$CDDIR" ]; then
+  ROOT=$(git -C "$CDDIR" rev-parse --show-toplevel 2>/dev/null || true)
+else
+  ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
+fi
 [ -n "$ROOT" ] || exit 0
 BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exit 0
@@ -91,4 +122,10 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
   } >&2
   exit 2
 fi
+# SPEC-069 advisory (never blocks): a push whose branch slug is nowhere on the repo's
+# board is probably un-boarded work; say so once and let it through.
+if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2>/dev/null | grep -qF -- "$SLUG"; then
+  echo "[advisory] branch slug '$SLUG' appears nowhere in _meta/BACKLOG.md; if this is real work, give it a board row (SPEC-069)" >&2
+fi
+
 exit 0

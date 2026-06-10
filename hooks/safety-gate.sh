@@ -1,10 +1,22 @@
 #!/bin/bash
-# safety-gate.sh — PreToolUse hook, matcher: Bash
+# safety-gate.sh, PreToolUse hook, matcher: Bash
 # Blocks destructive deletes and direct pushes to main/master.
 # Source: Trail of Bits claude-code-config (adapted for dwarves-kit)
 # Exit 2 = block action, stderr = reason shown to Claude
+#
+# SPEC-064: parse-aware, not prose-aware. The original grepped the WHOLE command
+# string, so heredoc bodies, quoted prose, and unrelated flags tripped it (five
+# logged false positives on 2026-06-10 alone, including the gate firing on a
+# BACKLOG row's prose that merely DESCRIBED the bug). Now the command is
+# normalized first (heredoc bodies stripped, compound commands split into
+# segments) and every rule keys on the segment's actual argv: an `rm` rule only
+# fires on a segment whose command IS rm; a push rule only reads the ref tokens
+# of a segment whose command IS git push. Known accepted hole: a ref hidden in a
+# variable (`B=main; git push origin $B`) is not resolved; fail-open there, the
+# remote branch protection is the backstop.
 
 set -euo pipefail
+set -f  # no globbing while we word-split segments
 INPUT=$(cat)
 CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 [ -z "$CMD" ] && exit 0
@@ -21,74 +33,135 @@ log_block() {
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $1 | $(pwd) | $(echo "$CMD" | head -c 120)" >> "$LOG_DIR/safety-gate.log"
 }
 
-# Build-artifact allowlist: a SINGLE, simple `rm -rf` of only regenerable
-# artifacts (node_modules/dist/.next/target/...) is safe and should not trip the
-# destructive-delete block. Compound commands (&&, ;, |, $( ), backticks) are
-# NOT allowlisted: they fall through and are blocked. (gstack `careful` allowlist.)
-if echo "$CMD" | grep -qE '\brm\s+-[a-zA-Z]*[rf]' && ! echo "$CMD" | grep -qE '(&&|\|\||;|\||\$\(|`)'; then
-  RM_TAIL=$(echo "$CMD" | sed -E 's/^[[:space:]]*rm[[:space:]]+-[a-zA-Z]+[[:space:]]+//')
-  ALL_SAFE=1; HAVE_TARGET=0
-  for t in $RM_TAIL; do
-    case "$t" in
-      *..*) ALL_SAFE=0; break ;;   # any parent-traversal token is never safe (C-1)
-      -*) ;;
-      node_modules|node_modules/|node_modules/*|./node_modules|./node_modules/|./node_modules/*|\
-      dist|dist/|dist/*|./dist|./dist/|./dist/*|\
-      build|build/|build/*|./build|./build/|./build/*|\
-      .next|.next/|.next/*|./.next|./.next/|./.next/*|\
-      .nuxt|.nuxt/|.nuxt/*|.turbo|.turbo/|.turbo/*|.cache|.cache/|.cache/*|\
-      target|target/|target/*|./target|./target/|./target/*|\
-      coverage|coverage/|coverage/*|out|out/|out/*)
-        HAVE_TARGET=1 ;;
-      *) ALL_SAFE=0; break ;;
+block() {  # <rule> <message>
+  log_block "$1"
+  echo "BLOCKED: $2" >&2
+  exit 2
+}
+
+# --- Normalize: strip heredoc bodies, then split compounds into one segment per line ---
+# Heredoc bodies are DATA (test fixtures, generated file content, prose); rules must
+# never read them. After stripping, &&, ||, ;, |, newlines, and subshell punctuation
+# become segment boundaries, so each segment is one simple command whose first word is
+# the binary the rules key on.
+SEGMENTS=$(printf '%s\n' "$CMD" | awk '
+  BEGIN { inhd = 0 }
+  {
+    line = $0
+    if (inhd) {
+      t = line; gsub(/^[ \t]+/, "", t)
+      if (t == marker) inhd = 0
+      next
+    }
+    if (match(line, /<<-?[ \t]*["'\'']?[A-Za-z_][A-Za-z0-9_]*["'\'']?/)) {
+      m = substr(line, RSTART, RLENGTH)
+      sub(/<<-?[ \t]*/, "", m); gsub(/["'\'']/, "", m)
+      marker = m; inhd = 1
+      line = substr(line, 1, RSTART - 1)
+    }
+    print line
+  }' | awk '{ gsub(/&&|\|\||;|\|/, "\n"); gsub(/[$()`]/, " "); print }')
+
+# UNWRAP quotes (keep content, drop the quote marks) so a quoted ref ("main") still
+# reaches the token scan while rule scoping (per-segment binary) keeps prose harmless:
+# a commit -m sentence never reaches the push rule because its segment's subcommand is
+# commit, not push. (Review F1/F2: deleting spans both opened a quoted-ref bypass AND
+# broke the quoted-allowlist-target case.)
+strip_quotes() {
+  printf '%s' "$1" | sed -E "s/\"([^\"]*)\"/\\1/g; s/'([^']*)'/\\1/g"
+}
+
+while IFS= read -r SEG; do
+  [ -n "${SEG// /}" ] || continue
+  # shellcheck disable=SC2086
+  set -- $(strip_quotes "$SEG")
+  # skip wrappers and env assignments to find the real binary
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      *=*) shift ;;
+      sudo|command|exec|nohup|time|env|eval|xargs) shift ;;
+      bash|sh|zsh) shift; [ "${1:-}" = "-c" ] || [ "${1:-}" = "-s" ] && shift || break ;;
+      *) break ;;
     esac
   done
-  [ "$ALL_SAFE" = "1" ] && [ "$HAVE_TARGET" = "1" ] && exit 0
-fi
+  [ $# -eq 0 ] && continue
+  BIN="$1"; shift
 
-# Block rm -rf / rm -fr patterns
-if echo "$CMD" | grep -qE '\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f|--recursive\s+--force|-[a-zA-Z]*f[a-zA-Z]*r)\b'; then
-  log_block "rm-rf"
-  echo "BLOCKED: Destructive delete detected. Use 'trash' or 'mv' to a temp directory instead of rm -rf (build artifacts like node_modules/dist are allowlisted)." >&2
-  exit 2
-fi
-
-# Block direct push to main/master
-if echo "$CMD" | grep -qE 'git\s+push\s+.*\b(main|master)\b'; then
-  log_block "push-to-main"
-  echo "BLOCKED: Do not push directly to main/master. Create a feature branch and open a PR." >&2
-  exit 2
-fi
-
-# Block bare force push anywhere. --force-with-lease (and --force-if-includes) are
-# the sanctioned escape hatch this very message recommends, so they must NOT match:
-# require the flag to END at --force (next char is not a hyphen). Refspec force
-# (`git push origin +branch`) is also blocked: it is --force without the lease.
-if echo "$CMD" | grep -qE 'git\s+push\s+.*(--force([^-]|$)|\s\+[^[:space:]]+)'; then
-  log_block "force-push"
-  echo "BLOCKED: Force push is dangerous. Use --force-with-lease if you must overwrite remote history." >&2
-  exit 2
-fi
-
-# Block destructive SQL DROP TABLE
-if echo "$CMD" | grep -qiE '\bDROP\s+TABLE\b'; then
-  log_block "drop-table"
-  echo "BLOCKED: DROP TABLE is destructive. Run it manually after a backup, or use a reversible migration." >&2
-  exit 2
-fi
-
-# Block git reset --hard (silent loss of uncommitted work)
-if echo "$CMD" | grep -qE 'git\s+reset\s+.*--hard'; then
-  log_block "git-reset-hard"
-  echo "BLOCKED: 'git reset --hard' discards uncommitted work. Use 'git stash' first, or 'git reset --keep'." >&2
-  exit 2
-fi
-
-# Block kubectl delete (destructive cluster mutation)
-if echo "$CMD" | grep -qE '\bkubectl\s+delete\b'; then
-  log_block "kubectl-delete"
-  echo "BLOCKED: 'kubectl delete' mutates a live cluster. Confirm the context and run it manually." >&2
-  exit 2
-fi
+  case "$BIN" in
+    rm)
+      HAS_R=0; HAS_F=0; ALL_SAFE=1; HAVE_TARGET=0
+      for t in "$@"; do
+        case "$t" in
+          --recursive) HAS_R=1 ;;
+          --force) HAS_F=1 ;;
+          --*) ;;
+          -*r*f*|-*f*r*) HAS_R=1; HAS_F=1 ;;
+          -*r*) HAS_R=1 ;;
+          -*f*) HAS_F=1 ;;
+        esac
+      done
+      if [ "$HAS_R" = 1 ] && [ "$HAS_F" = 1 ]; then
+        # Build-artifact allowlist: regenerable dirs only; any other target blocks.
+        for t in "$@"; do
+          case "$t" in
+            -*) ;;
+            *..*) ALL_SAFE=0; break ;;   # parent traversal is never safe (C-1)
+            node_modules|node_modules/|node_modules/*|./node_modules|./node_modules/|./node_modules/*|\
+            dist|dist/|dist/*|./dist|./dist/|./dist/*|\
+            build|build/|build/*|./build|./build/|./build/*|\
+            .next|.next/|.next/*|./.next|./.next/|./.next/*|\
+            .nuxt|.nuxt/|.nuxt/*|.turbo|.turbo/|.turbo/*|.cache|.cache/|.cache/*|\
+            target|target/|target/*|./target|./target/|./target/*|\
+            coverage|coverage/|coverage/*|out|out/|out/*)
+              HAVE_TARGET=1 ;;
+            *) ALL_SAFE=0; break ;;
+          esac
+        done
+        if [ "$ALL_SAFE" = 1 ] && [ "$HAVE_TARGET" = 1 ]; then
+          :  # safe regenerable delete
+        else
+          block "rm-rf" "Destructive delete detected. Use 'trash' or 'mv' to a temp directory instead of rm -rf (build artifacts like node_modules/dist are allowlisted)."
+        fi
+      fi
+      ;;
+    git)
+      # find the git subcommand (first non-flag arg, skipping -C <path>)
+      SUB=""; SKIP_NEXT=0
+      for t in "$@"; do
+        if [ "$SKIP_NEXT" = 1 ]; then SKIP_NEXT=0; continue; fi
+        case "$t" in
+          -C|--git-dir|--work-tree) SKIP_NEXT=1 ;;
+          -*) ;;
+          *) SUB="$t"; break ;;
+        esac
+      done
+      case "$SUB" in
+        push)
+          for t in "$@"; do
+            case "$t" in
+              --force|-f) block "force-push" "Force push is dangerous. Use --force-with-lease if you must overwrite remote history." ;;
+              --force-with-lease*|--force-if-includes) ;;
+              +*) block "force-push" "Refspec force push (+ref) is --force without the lease. Use --force-with-lease." ;;
+              main|master|*:main|*:master) block "push-to-main" "Do not push directly to main/master. Create a feature branch and open a PR." ;;
+            esac
+          done
+          ;;
+        reset)
+          for t in "$@"; do
+            [ "$t" = "--hard" ] && block "git-reset-hard" "'git reset --hard' discards uncommitted work. Use 'git stash' first, or 'git reset --keep'."
+          done
+          ;;
+      esac
+      ;;
+    kubectl)
+      SUB=""
+      for t in "$@"; do case "$t" in -*) ;; *) SUB="$t"; break ;; esac; done
+      [ "$SUB" = "delete" ] && block "kubectl-delete" "'kubectl delete' mutates a live cluster. Confirm the context and run it manually."
+      ;;
+    psql|mysql|sqlite3)
+      printf '%s' "$SEG" | grep -qiE '\bDROP[ \t]+TABLE\b' && block "drop-table" "DROP TABLE is destructive. Run it manually after a backup, or use a reversible migration."
+      ;;
+  esac
+done <<< "$SEGMENTS"
 
 exit 0

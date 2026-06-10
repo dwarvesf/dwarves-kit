@@ -58,6 +58,18 @@ assert_output_not_contains() {
   fi
 }
 
+assert_true() {
+  local NAME="$1" ACTUAL="$2"
+  TOTAL=$((TOTAL + 1))
+  if [ "$ACTUAL" -eq 0 ] 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} $NAME"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $NAME (condition false)"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 # Helper: run hook and capture exit code safely
 run_hook() {
   local HOOK="$1"
@@ -73,6 +85,178 @@ echo "=== safety-gate.sh ==="
 
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf /tmp/foo"}}')
 assert_exit "blocks rm -rf" 2 $RC
+
+# SPEC-064: parse-aware precision. Every 2026-06-10 false positive is a permanent pin:
+# the gate must read argv, never heredoc bodies / quoted prose / other binaries' flags.
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git merge -X ours -q -m \"merge upstream default branch (squash of #38)\" ca3e5b8"}}')
+assert_exit "FP1: merge-by-SHA with branch word in -m is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push -q && gh pr edit 41 --base master"}}')
+assert_exit "FP2: push + gh base-edit compound is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"bash -s <<EOF\nrm -rf \"/tmp/x\"\nEOF\necho done"}}')
+assert_exit "FP3: delete literal inside a heredoc body is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git commit -m \"docs: never git push origin main manually\""}}')
+assert_exit "FP4: quoted prose naming push-to-main is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"echo \"git push --force is bad\""}}')
+assert_exit "FP5: echo prose naming force push is allowed" 0 $RC
+# and the rules still bite on real argv (precision must not cost recall):
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push -q origin HEAD:master"}}')
+assert_exit "still blocks HEAD:master refspec push" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push origin +feat"}}')
+assert_exit "still blocks +refspec force push" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"cd x && rm -rf src"}}')
+assert_exit "still blocks compound rm of source" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"psql -c \"DROP TABLE users\""}}')
+assert_exit "still blocks DROP TABLE via psql" 2 $RC
+
+# SPEC-064 review F1/F2/F3: quotes unwrap (not delete); shell wrappers are descended into.
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push origin \"main\""}}')
+assert_exit "F1: quoted main ref still blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf \"node_modules\""}}')
+assert_exit "F2: quoted allowlist target still allows" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"bash -c \"git push origin main\""}}')
+assert_exit "F3a: bash -c smuggle blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"eval \"rm -rf src\""}}')
+assert_exit "F3b: eval smuggle blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"xargs rm -rf < list.txt"}}')
+assert_exit "F3c: xargs rm blocks" 2 $RC
+# F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
+CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
+assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
+
+# SPEC-064 / ID-052: spec-next collision guard sees specs dir + branches + commit subjects.
+assert_output_contains "spec-next: check flags a taken number" "TAKEN" "$(bash "$KIT_DIR/lib/spec-next.sh" check 13 2>&1 || true)"
+assert_exit "spec-next: taken number exits 1" 1 "$(bash "$KIT_DIR/lib/spec-next.sh" check 13 >/dev/null 2>&1; echo $?)"
+assert_output_contains "spec-next: next is numeric" "^[0-9][0-9][0-9]$" "$(bash "$KIT_DIR/lib/spec-next.sh" next)"
+
+# ============================================================
+echo ""
+echo "=== stack-merge: the squash-stack dance, codified (SPEC-065) ==="
+# ============================================================
+SM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-sm.XXXXXX")
+cat > "$SM_DIR/gh" <<'GHEOF'
+#!/bin/bash
+case "$*" in
+  *"view 10 --json headRefName"*) echo "feat/parent" ;;
+  *"view 10 --json baseRefName"*) echo "master" ;;
+  *"pr list"*) echo "11" ;;
+  *"view 11 --json headRefName"*) echo "feat/child" ;;
+  *) echo "" ;;
+esac
+GHEOF
+chmod +x "$SM_DIR/gh"
+SM_OUT=$(PATH="$SM_DIR:$PATH" bash "$KIT_DIR/lib/stack-merge.sh" next 10 --dry-run 2>&1)
+# the ordering that prevents the auto-close gotcha: retarget BEFORE merge BEFORE reconcile
+assert_output_contains "stack-merge: retargets the child first" "retarget #11 (feat/child) -> master" "$SM_OUT"
+assert_output_contains "stack-merge: dry-run executes nothing" "DRY: gh pr merge 10 --squash --delete-branch" "$SM_OUT"
+assert_output_contains "stack-merge: reconciles by SHA superset rule" "merge -X ours" "$SM_OUT"
+R1=$(printf '%s\n' "$SM_OUT" | grep -n 'retarget #11' | cut -d: -f1)
+R2=$(printf '%s\n' "$SM_OUT" | grep -n 'squash-merge #10' | cut -d: -f1)
+R3=$(printf '%s\n' "$SM_OUT" | grep -n 'reconcile feat/child' | cut -d: -f1)
+assert_true "stack-merge: ordering retarget < merge < reconcile" "$([ "$R1" -lt "$R2" ] && [ "$R2" -lt "$R3" ]; echo $?)"
+RC=0; bash "$KIT_DIR/lib/stack-merge.sh" bogus 2>/dev/null || RC=$?
+assert_exit "stack-merge: usage error exits 64" 64 $RC
+RC=0; bash "$KIT_DIR/lib/stack-merge.sh" chain --dry-run 2>/dev/null || RC=$?
+assert_exit "stack-merge: zero-arg chain is loud, not a silent no-op" 64 $RC
+
+# ============================================================
+echo ""
+echo "=== install-by-copy: pinned install, no branch-following symlinks (SPEC-066) ==="
+# ============================================================
+IC_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic.XXXXXX")
+CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_true "install: hooks are real files, not symlinks" "$([ -f "$IC_DIR/dwarves-kit/hooks/safety-gate.sh" ] && [ ! -L "$IC_DIR/dwarves-kit/hooks/safety-gate.sh" ]; echo $?)"
+assert_true "install: lib is a real dir" "$([ -d "$IC_DIR/dwarves-kit/lib" ] && [ ! -L "$IC_DIR/dwarves-kit/lib" ]; echo $?)"
+assert_true "install: contract files are real" "$([ -f "$IC_DIR/dwarves-kit/AGENTS.md" ] && [ ! -L "$IC_DIR/dwarves-kit/AGENTS.md" ]; echo $?)"
+assert_output_contains "install: stamp carries version+sha" "version=" "$(cat "$IC_DIR/dwarves-kit/INSTALL-STAMP")"
+assert_output_contains "install: stamp carries sha" "sha=" "$(cat "$IC_DIR/dwarves-kit/INSTALL-STAMP")"
+# idempotent re-run refreshes the kit-managed copies (the stamp marks them kit-managed)
+CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_exit "install: re-run is idempotent" 0 $?
+# negative control: a hook copied then locally EDITED is overwritten by re-install
+# (the pin is the point: the clone is the source of truth, the install is derived)
+echo "# drift" >> "$IC_DIR/dwarves-kit/hooks/safety-gate.sh"
+CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_output_not_contains "install: re-run reverts hand-edited installed hook (anti-drift)" "# drift" "$(tail -1 "$IC_DIR/dwarves-kit/hooks/safety-gate.sh")"
+# AC3 durability (review F1): a USER-owned contract file survives MULTIPLE installs,
+# because kit-managed-ness is the stamp's managed= list, not stamp presence.
+IC2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic2.XXXXXX")
+mkdir -p "$IC2_DIR/dwarves-kit"
+echo "# MY OWN AGENTS" > "$IC2_DIR/dwarves-kit/AGENTS.md"
+CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_output_contains "install: user AGENTS.md survives two runs" "# MY OWN AGENTS" "$(head -1 "$IC2_DIR/dwarves-kit/AGENTS.md")"
+assert_output_contains "install: stamp manages only the copied contract" "^managed=WORKFLOW.md$" "$(grep '^managed=' "$IC2_DIR/dwarves-kit/INSTALL-STAMP")"
+# uninstall removes copies (review F2) but never the user file
+CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" --uninstall >/dev/null 2>&1
+assert_true "uninstall: copied lib dir removed" "$([ ! -e "$IC2_DIR/dwarves-kit/lib" ]; echo $?)"
+assert_true "uninstall: managed WORKFLOW.md removed" "$([ ! -e "$IC2_DIR/dwarves-kit/WORKFLOW.md" ]; echo $?)"
+assert_true "uninstall: stamp removed" "$([ ! -e "$IC2_DIR/dwarves-kit/INSTALL-STAMP" ]; echo $?)"
+assert_output_contains "uninstall: user AGENTS.md untouched" "# MY OWN AGENTS" "$(head -1 "$IC2_DIR/dwarves-kit/AGENTS.md")"
+
+# ============================================================
+echo ""
+echo "=== precedent: the intake read-back (SPEC-068) ==="
+# ============================================================
+PRE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-pre.XXXXXX")
+mkdir -p "$PRE_DIR/docs/specs" "$PRE_DIR/logs/runs"
+git -C "$PRE_DIR" init -q
+printf '# SPEC-001: Widget frobnicator pipeline\nfrobnicate the widget pipeline twice\n' > "$PRE_DIR/docs/specs/SPEC-001-widget.md"
+printf '# SPEC-002: Unrelated\nnothing here\n' > "$PRE_DIR/docs/specs/SPEC-002-other.md"
+PRE() ( cd "$PRE_DIR" && DWARVES_KIT_LOG_DIR="$PRE_DIR/logs" bash "$KIT_DIR/lib/precedent.sh" "$@" )
+assert_output_contains "precedent: finds the matching spec" "SPEC-001-widget.md" "$(PRE find 'extend the widget frobnicator pipeline')"
+assert_output_contains "precedent: ranks by distinct keyword hits" "^ 3x" "$(PRE find 'extend the widget frobnicator pipeline')"
+assert_output_not_contains "precedent: unrelated spec not surfaced" "SPEC-002-other.md" "$(PRE find 'extend the widget frobnicator pipeline')"
+assert_output_contains "precedent: no-keyword input is honest" "no searchable keywords" "$(PRE find 'a an to of')"
+RC=0; bash "$KIT_DIR/lib/precedent.sh" bogus 2>/dev/null || RC=$?
+assert_exit "precedent: usage error exits 64" 64 $RC
+# negative control: remove the matching spec -> it drops from the results
+rm "$PRE_DIR/docs/specs/SPEC-001-widget.md"
+assert_output_not_contains "precedent: negative control (source removed -> gone)" "SPEC-001-widget.md" "$(PRE find 'extend the widget frobnicator pipeline')"
+
+# ============================================================
+echo ""
+echo "=== telemetry detectors: boardless + shipped-incomplete (SPEC-069) ==="
+# ============================================================
+BD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-bd.XXXXXX")
+mkdir -p "$BD_DIR/repo/_meta" "$BD_DIR/logs/runs"
+git -C "$BD_DIR" init -q "$BD_DIR/repo"
+REPO_BASE="$(basename "$BD_DIR/repo")"
+printf '| ID-001 | something | queued |\n' > "$BD_DIR/repo/_meta/BACKLOG.md"
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-ghost.log"
+BDT() ( cd "$BD_DIR/repo" && DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" )
+assert_output_contains "detector: boardless run named" "spec-ghost" "$(BDT misfires)"
+assert_output_contains "detector: boardless count in report" "boardless runs (ledgered but never on the board): 1" "$(BDT report)"
+# shipped-incomplete: ship gate but un-disposed phases
+printf '2026-06-10T08:00:00Z | GATE | ship | ran | shipping\n' >> "$BD_DIR/logs/runs/spec-ghost.log"
+assert_output_contains "detector: shipped-incomplete named" "spec-ghost (normal)" "$(BDT misfires)"
+# negative control: reference the rid on the board -> boardless drops
+printf '| ID-002 | the ghost work | shipped [run spec-ghost] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
+assert_output_not_contains "detector: negative control (board row added -> not boardless)" "boardless runs" "$(BDT misfires)"
+# T2 (review): false-positive guard, a COMPLETE shipped run is never flagged
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-done.log"
+for PH in grill think spec test-plan build review docs ship; do
+  printf '2026-06-10T08:00:00Z | GATE | %s | ran | done\n' "$PH" >> "$BD_DIR/logs/runs/spec-done.log"
+done
+printf '| ID-003 | done work | shipped [run spec-done] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
+assert_output_not_contains "detector: false-positive guard (complete run not flagged)" "spec-done" "$(BDT misfires)"
+# A4 seam-agreement pin: the cross-lib contract is the literal word 'complete' on both sides
+assert_true "seam: gate-ledger progress prints the agreed literal" "$(grep -q "complete (%d/%d)" "$KIT_DIR/lib/gate-ledger.sh"; echo $?)"
+assert_true "seam: lane-telemetry greps the agreed literal" "$(grep -q "grep -q 'complete'" "$KIT_DIR/lib/lane-telemetry.sh"; echo $?)"
+# T1 (review): color smoke under a real PTY, at least one escape byte must render
+if command -v script >/dev/null 2>&1; then
+  # falsifiable: progress under a real PTY must emit escape bytes; piped (same command,
+  # no PTY) must emit zero. Breaking the TTY gate in either direction flips one of these.
+  # script(1) syntax differs per flavor: BSD/macOS takes [file [command...]],
+  # util-linux takes -c "command" [file] and errors on the BSD positional form
+  if script --version 2>/dev/null | grep -qi util-linux; then
+    TTY_ESC=$(script -qec "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" /dev/null 2>/dev/null | od -c | grep -c '033' || true)
+  else
+    TTY_ESC=$(script -q /dev/null bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" 2>/dev/null | od -c | grep -c '033' || true)
+  fi
+  assert_true "colors: PTY progress emits escape bytes" "$([ "${TTY_ESC:-0}" -ge 1 ]; echo $?)"
+  PIPE_ESC=$(DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/gate-ledger.sh" progress spec-done normal 2>/dev/null | od -c | grep -c '033' || true)
+  assert_true "colors: piped progress emits ZERO escape bytes" "$([ "${PIPE_ESC:-0}" -eq 0 ]; echo $?)"
+fi
 
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -fr /tmp/bar"}}')
 assert_exit "blocks rm -fr" 2 $RC
