@@ -122,4 +122,10 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
   } >&2
   exit 2
 fi
+# SPEC-069 advisory (never blocks): a push whose branch slug is nowhere on the repo's
+# board is probably un-boarded work; say so once and let it through.
+if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2>/dev/null | grep -qF -- "$SLUG"; then
+  echo "[advisory] branch slug '$SLUG' appears nowhere in _meta/BACKLOG.md; if this is real work, give it a board row (SPEC-069)" >&2
+fi
+
 exit 0

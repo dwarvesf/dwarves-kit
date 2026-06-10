@@ -75,6 +75,9 @@ entry, print where the run stands: `bash lib/gate-ledger.sh progress <spec-slug>
 (one status line: `<rid> · <lane> · step k/n (<phase>)` + the ✓/▶/· checklist). For the
 full story of a past or in-flight run: `bash lib/lane-telemetry.sh trace <rid>`.
 
+**Escalate the review for enforcement surfaces (SPEC-069).** A run touching `lib/` or
+`hooks/` uses `/kit:review-team` (multi-lens), not a single reviewer.
+
 **Record your gates (ADR-0024).** When you run a phase gate (`/kit:spec`, `/kit:spec-validate`, `/kit:execute`, `/kit:review`, `/kit:docs`, `/kit:ship`, ...), record it so the run is auditable: `bash lib/gate-ledger.sh record <spec-slug> <Phase> ran`; record a deliberate skip as `skipped "<why>"`. The `ship-gate` hook refuses a push whose lane has a required gate with no `ran`/`override` entry. Full convention + the logged-override path: WORKFLOW.md "## Gate ledger and ship enforcement".
 
 ## 3. Done means

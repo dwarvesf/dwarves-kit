@@ -344,6 +344,14 @@ The questions the report answers, and what each signal means:
 Telemetry proposes; the human at retro disposes ("Detect, don't dictate"). No daemon, no new
 store: the pipe-delimited ledgers under `~/.claude/dwarves-kit/logs/` are the only substrate.
 
+#### Review escalation (SPEC-069)
+
+A run that touches `lib/` or `hooks/` (the enforcement layer itself) owes the multi-lens
+review (`/kit:review-team`, 3 parallel lenses), not a single lens: the 2026-06-10 quality
+wave shipped two drafts with 2 HIGH findings each, both in those surfaces, both caught
+only because the single reviewer happened to look in the right place. Lens diversity is
+the cheap insurance.
+
 #### What the operator sees, and when (SPEC-062)
 
 | Scenario | Trigger | What appears |

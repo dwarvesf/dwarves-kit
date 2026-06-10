@@ -25,6 +25,52 @@ set -euo pipefail
 LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 RUNS_DIR="$LOG_DIR/runs"
 COMPLETENESS="$LOG_DIR/completeness.log"
+KIT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# TTY-gated colors (SPEC-069): plain bytes whenever piped or NO_COLOR is set.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  C_RED=$'\033[1;31m'; C_BOLD=$'\033[1m'; C_OFF=$'\033[0m'
+else
+  C_RED=""; C_BOLD=""; C_OFF=""
+fi
+
+# Boardless runs (SPEC-069): a run ledger whose repo matches the cwd repo but whose rid
+# the board never mentions. Detection only; the board file is the repo's own.
+_boardless() {
+  local root board myrepo f rid
+  # worktree-safe (review A1): --git-common-dir resolves the MAIN checkout even from a
+  # .claude/worktrees/<branch> session, where --show-toplevel's basename is the branch.
+  local common; common="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  [ -n "$common" ] || return 0
+  root="$(cd "$(dirname "$common")" 2>/dev/null && pwd)" || return 0
+  board="$root/_meta/BACKLOG.md"; [ -f "$board" ] || return 0
+  myrepo="$(basename "$root")"
+  for f in "$RUNS_DIR"/*.log; do
+    [ -e "$f" ] || continue
+    rid="$(basename "$f" .log)"
+    grep -qF -- "repo=$myrepo" "$f" 2>/dev/null || continue
+    grep -qF -- "$rid" "$board" 2>/dev/null || printf '%s\n' "$rid"
+  done
+}
+
+# Shipped-incomplete (SPEC-069): a shipped run whose plan still has un-disposed phases
+# (the spec-064 think class). Reads lane from the START line, asks gate-ledger progress.
+# INTENTIONAL SEAM (review A4): this is lane-telemetry's ONE runtime call into
+# gate-ledger, delegated to avoid duplicating the lane->phase map (WORKFLOW matrix
+# parsing). The agreement is the literal word "complete" in progress's status line; a
+# test pin asserts both sides carry it so a rename breaks the build, not the detector.
+_shipped_incomplete() {
+  local f rid lane
+  for f in "$RUNS_DIR"/*.log; do
+    [ -e "$f" ] || continue
+    grep -q '| GATE | ship | ran' "$f" 2>/dev/null || continue
+    rid="$(basename "$f" .log)"
+    lane="$(grep -m1 '| START |' "$f" 2>/dev/null | grep -oE 'lane=[^ ]+' | head -1 | cut -d= -f2 || true)"
+    [ -n "$lane" ] || continue
+    bash "$KIT_LIB/gate-ledger.sh" progress "$rid" "$lane" 2>/dev/null | head -1 | grep -q 'complete' \
+      || printf '%s (%s)\n' "$rid" "$lane"
+  done
+}
 
 # one TSV row per run: rid repo lane classified type ctype ran skip ovr mis tmis ship review first last
 _rows() {
@@ -92,6 +138,8 @@ report() {
       printf "\n%-14s %5s\n", "type", "runs"
       for (t in types) printf "%-14s %5d\n", t, types[t]
     }'
+  local bl; bl="$(_boardless | grep -c . || true)"
+  [ "${bl:-0}" -gt 0 ] && printf '%sboardless runs (ledgered but never on the board): %s%s\n' "$C_RED" "$bl" "$C_OFF"
   local esc; esc="$(_escapes)"
   if [ -n "$esc" ]; then
     echo ""
@@ -118,6 +166,16 @@ misfires() {
       printf '%s\n' "$lines"; any=1
     fi
   fi
+  local bl_list; bl_list="$(_boardless)"
+  if [ -n "$bl_list" ]; then
+    echo "boardless runs (SPEC-069: work that never touched the board):"
+    printf '%s\n' "$bl_list" | sed 's/^/  /'; any=1
+  fi
+  local si_list; si_list="$(_shipped_incomplete)"
+  if [ -n "$si_list" ]; then
+    echo "shipped-incomplete runs (a ship gate over un-disposed phases):"
+    printf '%s\n' "$si_list" | sed 's/^/  /'; any=1
+  fi
   if [ -f "$COMPLETENESS" ] && grep -q 'LANE-CHECK' "$COMPLETENESS" 2>/dev/null; then
     echo "floor-check downgrades (completeness.log):"
     grep 'LANE-CHECK' "$COMPLETENESS" | sed 's/^/  /'; any=1
@@ -133,7 +191,7 @@ trace() {
   local rid="${1:-}"; [ -n "$rid" ] || { echo "usage: trace <rid>" >&2; return 64; }
   local f="$RUNS_DIR/$rid.log"
   [ -f "$f" ] || { echo "(no ledger for '$rid' at $f)" >&2; return 1; }
-  awk -v rid="$rid" '
+  awk -v rid="$rid" -v red="$C_RED" -v off="$C_OFF" '
     BEGIN { FS=" \\| " }
     {
       ts=$1; sub(/T/, " ", ts); sub(/Z$/, "", ts)
@@ -164,8 +222,8 @@ trace() {
       lane=(m["lane"]==""?"?":m["lane"]); cls=(m["classified"]==""?"?":m["classified"])
       type=(m["type"]==""?"?":m["type"]); ctype=(m["ctype"]==""?"?":m["ctype"])
       repo=(m["repo"]==""?"?":m["repo"])
-      lflag=(lane!="?" && cls!="?" && lane!=cls) ? "  << LANE MISFIRE" : ""
-      tflag=(type!="?" && ctype!="?" && type!=ctype) ? "  << TYPE MISFIRE" : ""
+      lflag=(lane!="?" && cls!="?" && lane!=cls) ? "  " red "<< LANE MISFIRE" off : ""
+      tflag=(type!="?" && ctype!="?" && type!=ctype) ? "  " red "<< TYPE MISFIRE" off : ""
       printf "run: %s   repo: %s%s\n", rid, repo, (starts>1 ? sprintf("   << MULTI-START (n=%d; first wins)", starts) : "")
       printf "  lane: %s (classified: %s)%s\n", lane, cls, lflag
       printf "  type: %s (classified: %s)%s\n", type, ctype, tflag
