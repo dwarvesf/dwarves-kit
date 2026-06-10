@@ -1,6 +1,6 @@
 # dwarves-kit
 
-> A closed-loop Claude Code workflow: you set the goal and the gates, agents loop until the gates pass. Worker → verifier → fix-agent retry, by default.
+> A closed-loop Claude Code workflow: you set the goal and the gates, agents loop until the verifier passes. Worker → verifier → fix-agent retry, by default.
 
 [![CI](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml/badge.svg)](https://github.com/dwarvesf/dwarves-kit/actions/workflows/test.yml)
 [![Version](https://img.shields.io/github/v/tag/dwarvesf/dwarves-kit?label=version)](https://github.com/dwarvesf/dwarves-kit/releases)
@@ -14,7 +14,7 @@ Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluat
             |          |         |           |          |             |
         6 forcing   the spec   worker ->   verdict   ship gate +      |
         questions   is the     verifier -> recorded  push-to-main     |
-                    contract   fix-agent             blocker          |
+        (advisory)  contract   fix-agent   (advisory) blocker         |
                                (max 2)                                |
    ^                                                                  |
    +------------------ retro feeds the next cycle --------------------+
@@ -38,12 +38,12 @@ New here? **Install** below, then run **your first cycle**. The full operator re
 
 ## Why a closed loop
 
-An open loop (the agent roams free and judges its own output) is a fast slop machine unless your standard is airtight and your budget is unlimited. The kit takes the closed shape instead: a human designs the path once, agents iterate inside it. What makes the loop trustworthy is that every gate is mechanical, never the agent grading its own homework.
+An open loop (the agent roams free and judges its own output) is a fast slop machine unless your standard is airtight and your budget is unlimited. The kit takes the closed shape instead: a human designs the path once, agents iterate inside it. What makes the loop trustworthy is that the gates that block are mechanical (bash hooks, tests, read-only verifiers), never the agent grading its own homework. The remaining phase gates advise and route rather than block: detect, don't dictate.
 
 | Open loop | dwarves-kit (closed) |
 |-----------|----------------------|
-| agent plans its own route | the spec is the contract, written and validated before any build |
-| agent grades its own work | gates are mechanical: bash hooks, tests, read-only verifiers |
+| agent plans its own route | the spec is the contract, written before any build (validated on the full lane) |
+| agent grades its own work | hard gates are mechanical: bash hooks, tests, read-only verifiers |
 | loops until the budget dies | bounded: fix-agent retries max 2, then escalates to a human |
 | one loop size fits all | risk lanes: tiny work skips the ceremony entirely |
 
