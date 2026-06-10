@@ -640,6 +640,28 @@ assert_output_contains "proof class: incident -> stateful (F9)" "^stateful$" "$(
 
 # ============================================================
 echo ""
+echo "=== task-type-classify: real-session recall truth table (SPEC-060) ==="
+# ============================================================
+# Anchors mined from an 8-ask live probe of a real working arc (2026-06-10), where
+# 7/8 fell to the spec-feature default. Real phrasing beats invented phrasing.
+assert_output_contains "type: absorb into kit -> spec-feature (4b guard, not eval)" "^spec-feature$" "$(TTYPE 'evaluate mattpocock skills and absorb the worthwhile ones into the kit')"
+assert_output_contains "type: merge the PR stack -> operate" "^operate$" "$(TTYPE 'merge the 6-PR stack sequentially and close the superseded one')"
+assert_output_contains "type: untangle stranded branches -> reconcile" "^reconcile$" "$(TTYPE 'untangle the stranded kit branches and PRs')"
+assert_output_contains "type: session wrap + lablog -> operate" "^operate$" "$(TTYPE 'wrap up the session and add the LAB_LOG entry')"
+assert_output_contains "type: wrap up commit merge -> operate" "^operate$" "$(TTYPE 'wrap up, commit, merge PR and clean up worktree')"
+assert_output_contains "type: mega-goal scaffold -> planning" "^planning$" "$(TTYPE 'scaffold the mega-goal roadmap and run the goal loop')"
+assert_output_contains "type: skill authoring stays spec-feature" "^spec-feature$" "$(TTYPE 'add handoff and zoom-out skills to the personal estate')"
+assert_output_contains "type: skill update stays spec-feature" "^spec-feature$" "$(TTYPE 'update the learning-day skill to bind two destinations')"
+# negative pins: the new anchors must not steal adjacent phrasings.
+assert_output_contains "type: model eval w/o kit-absorb stays eval" "^eval$" "$(TTYPE 'evaluate the two OCR models and pick one')"
+assert_output_contains "type: merging functions stays spec-feature" "^spec-feature$" "$(TTYPE 'merge the two helper functions into one')"
+assert_output_contains "type: untangle code stays spec-feature" "^spec-feature$" "$(TTYPE 'untangle the dependency cycle in the parser')"
+assert_output_contains "type: scaffold feature stays spec-feature" "^spec-feature$" "$(TTYPE 'scaffold the new auth feature')"
+assert_output_contains "type: wrap helper stays spec-feature" "^spec-feature$" "$(TTYPE 'wrap the response in a retry helper')"
+assert_output_contains "type: budget absorb stays spec-feature" "^spec-feature$" "$(TTYPE 'absorb the loss into the q2 budget')"
+
+# ============================================================
+echo ""
 echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
 # ============================================================
 PGATE() { bash "$KIT_DIR/lib/proof-gate.sh" class "$1" 2>/dev/null; }
