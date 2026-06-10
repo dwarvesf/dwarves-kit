@@ -27,6 +27,7 @@ way it owns lane paths; this registry owns artifact/owner/rigor/agent).
 | data-tool | recorded live run of the real commands (generated run ledgers under docs/runs/; the hand-authored proof-of-done.md indexes them) | ops-tool-shape Done gate | behavioral | preassigned: ops-tool-shape owner (main session) |
 | spec-feature | the real primary flow run end to end + tests/acceptance met | /execute task-verifier | behavioral | per lane: /execute workers + task-verifier |
 
-Human override always wins; the type + class are suggestions. The class column is the
+Each type's TEST-DESIGN dialect lives in `test-design-standard.md` §5b (one spine, six
+bodies); `/kit:test-plan` picks it from the type. Human override always wins; the type + class are suggestions. The class column is the
 DEFAULT only; `proof-gate.sh` still upgrades to `stateful` when the task touches data or
 deploys, and downgrades to `inert` for a cosmetic/tiny change, regardless of type.

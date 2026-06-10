@@ -12,6 +12,19 @@ This is NOT a roundtable and has NO personas. Test planning derives from FIXED a
 
 Detect the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware). If several specs match, ask the user which one. `/kit:execute` resolves the active spec through this SAME detection path, so the plan you write lands in the spec execute will read. Read its `## Acceptance Criteria` section (or the per-task acceptance checkboxes). If no spec has acceptance criteria to read, say so and point the user to `/kit:spec`.
 
+### Step 1b: Pick the dialect from the work's type
+
+```bash
+bash lib/task-type-classify.sh classify "<the spec's objective / title>"
+```
+
+`spec-feature` uses the BDD-style category matrix below (Step 2). Any other type designs in its
+own dialect per `docs/verification/test-design-standard.md` §5b (eval -> metrics + hand-verified
+seeds + falsifiability controls; research -> claim-verification matrix; migration/cleanup ->
+inventory + rollback rehearsal; data-tool -> recorded live run + negative control; doc ->
+doc-verifier match). The section written into the spec is still `## Test plan`; the dialect
+changes the matrix's shape, not the heading, the AC-traceability, or the proof-per-case rule.
+
 ### Step 2: Enumerate the coverage matrix
 
 Enumerate test cases across these categories. Map each case to the acceptance criterion (or criteria) it covers.
