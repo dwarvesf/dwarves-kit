@@ -2206,6 +2206,20 @@ assert_eq "assign.md derives RID via gate-ledger rid" 0 $RC
 RC=0; grep -q 'SPEC-070' "$KIT_DIR/AGENTS.md" || RC=1
 assert_eq "AGENTS.md carries the one-rid-per-run contract" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-073 + ID-060: doc-loop second entry + eval design parked ==="
+# ============================================================
+RC=0; grep -qF 'standalone revision, content brief' "$KIT_DIR/WORKFLOW.md" || RC=1
+assert_eq "doc loop carries the standalone-revision entry path (ID-060)" 0 $RC
+RC=0; grep -qF 'doc-verifier confirming docs match code' "$KIT_DIR/WORKFLOW.md" || RC=1
+assert_eq "doc loop both entries share the doc-verifier exit" 0 $RC
+RC=0; grep -qF 'EXECUTION PARKED until 3-5 days' "$KIT_DIR/docs/specs/SPEC-073-telemetry-eval-design.md" || RC=1
+assert_eq "telemetry eval design exists and is parked-until-data (ID-067)" 0 $RC
+RC=0; grep -qF 'the design pins the WINDOW, not the flag' "$KIT_DIR/docs/specs/SPEC-073-telemetry-eval-design.md" || RC=1
+assert_eq "eval design pins its data window honestly" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

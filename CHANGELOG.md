@@ -5,6 +5,13 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Doc-loop second entry path + telemetry-eval design (ID-060, ID-067 / SPEC-073).**
+  The WORKFLOW doc loop now names BOTH entry paths (code-diff-triggered diff sweep;
+  standalone revision via content brief), one shared doc-verifier exit. The
+  telemetry/PoD effectiveness evaluation is fully designed (10 metrics with
+  thresholds + dispositions decided before the data exists) and PARKED until 3-5
+  days of post-rid-standardization usage; doc-verifier caught 2 overclaims in the
+  design (a phantom --since flag, a phantom escapes subcommand), corrected.
 - **Classifier anchor recall fixes (SPEC-072 / ID-057, ID-064).** data-tool no
   longer steals feature-work-ON-a-CLI (bare `cli` anchor narrowed to
   build/write/create/wrap/ship verb phrasings; `make` deliberately excluded);
