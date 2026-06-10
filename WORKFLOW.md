@@ -610,8 +610,10 @@ note to the spec's `## Open questions` and stops.
    └── write a note to spec ## Open questions ─────────────▶  STOP
 ```
 
-**Debug loop** (`/kit:debug`, the `bug` lane). A systematic four-phase loop under one
-iron law: **NO FIX WITHOUT A RECORDED ROOT CAUSE.** Evidence accrues in an append-only
+**Debug loop** (`/kit:debug`, the `bug` lane). A systematic loop (Phase 0 + four phases)
+under one iron law: **NO FIX WITHOUT A RECORDED ROOT CAUSE.** Phase 0 builds the feedback
+loop first: a fast, deterministic, agent-runnable pass/fail signal that every later phase
+consumes (SPEC-059). Evidence accrues in an append-only
 ledger `.claude/debug/<slug>.md` whose `## Root cause` heading is the contract.
 Enforcer: the guess-fix guard (a gated mode of the anti-rationalization hook) blocks a
 fix/done claim while the open ledger's `## Root cause` is empty. Stop: root cause
@@ -621,7 +623,7 @@ recorded + fix verified + human-confirmed.
    /kit:debug
        │
        ▼
-   Phase 1: Root cause ─▶ Phase 2: Pattern ─▶ Phase 3: Hypothesis ─▶ Phase 4: Implementation
+   Phase 0: Feedback loop ─▶ Phase 1: Root cause ─▶ Phase 2: Pattern ─▶ Phase 3: Hypothesis ─▶ Phase 4: Implementation
        │  (ledger            (reproduce,          (predict, then         (apply the fix)
        │  ## Root cause)     narrow; bisect        test the guess)            │
        │                     if regression)             │                     ▼
@@ -757,7 +759,7 @@ mistake is irreversible:
 | `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
 | `/kit:spec-validate` | 5-lens adversarial review | `Status: VALIDATED` | advisory (full lane) |
 | `/kit:execute` | verification pipeline | all tasks + integration PASS | verification pipeline (hard) |
-| `/kit:debug` | 4-phase debug loop | root cause + fix verified + human-confirmed | iron law + guess-fix guard |
+| `/kit:debug` | feedback-loop-first debug loop (Phase 0 + 4 phases) | root cause + fix verified + human-confirmed | iron law + guess-fix guard |
 | `/kit:review[-team]` | review | verdict recorded in the spec's `## Review` | advisory |
 | `/kit:docs` | doc sync + doc-verifier | docs match code | advisory |
 | `/kit:ship` | ship pipeline | tagged/PR; spec `SHIPPED`; ID off queue | ship gate + push-to-main blocker (hard) |

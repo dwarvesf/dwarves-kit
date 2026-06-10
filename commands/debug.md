@@ -39,6 +39,28 @@ Write `.claude/debug/<slug>.md` from this template, and **append to it before ea
 
 Leave `## Root cause` blank until you have actually found it. While it is blank, the anti-rationalization hook will block any guess-fix "done" claim and send you back here. That is intended.
 
+## Phase 0: Build a feedback loop
+
+**This is most of the skill.** A fast, deterministic, agent-runnable pass/fail signal for the bug is what every later phase consumes: reproduction, bisection, hypothesis tests, and the Phase-4 failing test all just re-run it. Spend disproportionate effort here; with the loop, the bug is mostly found.
+
+Ways to construct one, in rough order of preference:
+
+1. **Failing test** at whatever seam reaches the bug (unit, integration, e2e).
+2. **Curl / HTTP script** against a running dev server.
+3. **CLI invocation** with a fixture input, diffing stdout against a known-good snapshot.
+4. **Headless browser script** that drives the UI and asserts on DOM / console / network.
+5. **Replay a captured trace.** Save a real request / payload / event log to disk; replay it through the code path in isolation.
+6. **Throwaway harness.** A minimal subset of the system (one service, mocked deps) that exercises the bug path in a single call.
+7. **Property / fuzz loop.** When the bug is "sometimes wrong output", run hundreds of random inputs and look for the failure mode.
+8. **Bisection harness.** If the bug appeared between two known states (commit, dataset, version), automate "boot at state X, check" so `git bisect run` can consume it.
+9. **Differential loop.** Same input through old vs new version (or two configs), diff the outputs.
+
+Then iterate on the loop itself: make it **faster** (cache setup, skip unrelated init, narrow the scope), **sharper** (assert the specific symptom, not "didn't crash"), and **more deterministic** (pin time, seed RNG, isolate filesystem, freeze network). A 2-second deterministic loop is the difference between debugging and guessing; a 30-second flaky one is barely better than none.
+
+Non-deterministic bugs: the goal is a HIGHER reproduction rate, not an instantly clean repro. Loop the trigger 100x, parallelize, add stress, narrow timing windows, inject sleeps; keep raising the rate until it is debuggable.
+
+If you genuinely cannot build a loop: stop and say so explicitly. List what you tried, then ask for (a) access to an environment that reproduces it, (b) a captured artifact (HAR file, log dump, core dump, recording with timestamps), or (c) permission to add temporary production instrumentation. Do NOT proceed to hypothesize without a loop.
+
 ## Phase 1: Root cause investigation
 
 Do all of this before forming any fix.
@@ -70,7 +92,7 @@ Record findings in `## Evidence` as you go. When you can name the cause and poin
 
 ## Phase 4: Implementation
 
-1. **Write the failing test first.** The simplest reproduction, automated. This is the concrete pass/fail signal; it feeds the existing verification pipeline (worker -> task-verifier -> fix-agent) the same way `/execute` tasks do. No test, no fix.
+1. **Write the failing test first** (or promote the Phase-0 loop: if the feedback loop you built is already a failing automated test at the right seam, that IS this test; otherwise convert the loop's signal into one now). The simplest reproduction, automated. This is the concrete pass/fail signal; it feeds the existing verification pipeline (worker -> task-verifier -> fix-agent) the same way `/execute` tasks do. No test, no fix.
 2. **One fix, at the root cause.** No "while I'm here" changes, no bundled refactoring.
 3. **Verify.** The new test passes; no other test broke; the original symptom is gone.
 4. **Clean up.** Remove all instrumentation in one pass over the region markers (`sed '/# #region DEBUG/,/# #endregion/d'` or equivalent). Confirm `git bisect reset` ran if you bisected.
@@ -94,4 +116,4 @@ If a fix does not work:
 
 This loop is for defects, regressions, and test failures (the `bug` lane in WORKFLOW.md). A one-character obvious typo fix does not need it (tiny lane). After a confirmed fix, run `/kit:review` on the diff.
 
-Source: obra/superpowers `systematic-debugging` (four phases, iron law, 3-fix wall); glittercowboy/get-shit-done `gsd-debugger` (the evidence ledger, falsifiability); doraemonkeys/claude-code-debug-mode (`[DEBUG Hn]` tagged logs to a debug file, region-marker cleanup, human-confirm before victory); SuperClaude `/sc:troubleshoot` (fix gated behind confirm). Classic lineage: David Agans, "Debugging: The 9 Indispensable Rules" (audit trail, change one thing, "if you didn't fix it, it ain't fixed"); Andreas Zeller, "Why Programs Fail" (delta debugging / minimal reproduction). See docs/specs/SPEC-013-debug-loop.md and ADR-0012.
+Source: obra/superpowers `systematic-debugging` (four phases, iron law, 3-fix wall); glittercowboy/get-shit-done `gsd-debugger` (the evidence ledger, falsifiability); doraemonkeys/claude-code-debug-mode (`[DEBUG Hn]` tagged logs to a debug file, region-marker cleanup, human-confirm before victory); SuperClaude `/sc:troubleshoot` (fix gated behind confirm); mattpocock/skills `diagnose` (Phase 0: the feedback-loop-first discipline, the loop-construction catalog, the repro-rate guidance for non-deterministic bugs; SPEC-059). Classic lineage: David Agans, "Debugging: The 9 Indispensable Rules" (audit trail, change one thing, "if you didn't fix it, it ain't fixed"); Andreas Zeller, "Why Programs Fail" (delta debugging / minimal reproduction). See docs/specs/SPEC-013-debug-loop.md and ADR-0012.
