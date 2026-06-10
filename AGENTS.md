@@ -50,7 +50,11 @@ How to do one unit of work. The smallest verifiable increment, verified, committ
    one-question-at-a-time discipline driven inline): interview until the task is actually
    understood, type-shaped questions, recommended answers, contradictions checked against the
    repo, answers WRITTEN as they resolve (glossary / sparse ADR / the goal draft's Context).
-   Tiny lane exempt. **Then phase 0: define the done scenario**
+   Tiny lane exempt. **Record the grill's disposition either way** (SPEC-063):
+   `bash lib/gate-ledger.sh record <slug> grill ran "<N> branches resolved"`, or, when the
+   conversation already resolved the banks, `... record <slug> grill skipped "<why>"`; a
+   skip without a reason is invisible to telemetry, which defeats the point.
+   **Then phase 0: define the done scenario**
    (`bash lib/proof-gate.sh contract "<task>"` + the type's test-design dialect,
    test-design-standard §5b) BEFORE any work runs; the grill's answers are the done's raw
    material, and the goal draft carries the `Done =` line.
@@ -60,6 +64,12 @@ How to do one unit of work. The smallest verifiable increment, verified, committ
 5. **Commit.** Conventional commit, one logical change. No spec/ticket IDs in the subject line.
 
 If you cannot make progress, see zone 4 (Pause if) and stop with a named blocker note. Do not churn.
+
+**Show the road, then your position on it (SPEC-063).** Right after a lane is committed,
+print the checklist the run will walk: `bash lib/gate-ledger.sh plan <lane>`. At each phase
+entry, print where the run stands: `bash lib/gate-ledger.sh progress <spec-slug> <lane>`
+(one status line: `<rid> · <lane> · step k/n (<phase>)` + the ✓/▶/· checklist). For the
+full story of a past or in-flight run: `bash lib/lane-telemetry.sh trace <rid>`.
 
 **Record your gates (ADR-0024).** When you run a phase gate (`/kit:spec`, `/kit:spec-validate`, `/kit:execute`, `/kit:review`, `/kit:docs`, `/kit:ship`, ...), record it so the run is auditable: `bash lib/gate-ledger.sh record <spec-slug> <Phase> ran`; record a deliberate skip as `skipped "<why>"`. The `ship-gate` hook refuses a push whose lane has a required gate with no `ran`/`override` entry. Full convention + the logged-override path: WORKFLOW.md "## Gate ledger and ship enforcement".
 

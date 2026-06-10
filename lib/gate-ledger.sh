@@ -15,6 +15,8 @@
 #   override <rid> <phase> <reason>    record a human override for a gate
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
 #   show     <rid>                     print the run's ledger
+#   plan     <lane>                    the lane's ordered phase checklist (SPEC-063)
+#   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist (SPEC-063)
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -126,6 +128,60 @@ check() {
   return "$missing"
 }
 
+# plan: the lane's ordered phase checklist, derived from the WORKFLOW matrix (skip cells
+# omitted; measure-twice = required, run-lite = lite). grill is prepended as the universal
+# intake phase (SPEC-058; tiny lane exempt). This is what /kit:assign prints right after a
+# lane is committed, so the operator sees the road before the run starts (SPEC-063).
+plan() {
+  local lane="${1:-}"; [ -n "$lane" ] || { echo "usage: plan <lane>" >&2; return 64; }
+  local rows; rows="$(matrix_for_lane "$lane")"
+  [ -n "$rows" ] || { echo "unknown lane '$lane' (not a column in the WORKFLOW matrix)" >&2; return 1; }
+  local i=0 ph cell mark
+  if [ "$lane" != "tiny" ]; then
+    i=1; printf '%2d. %-18s %s\n' 1 "grill" "intake (universal, SPEC-058)"
+  fi
+  while IFS=$'\t' read -r ph cell; do
+    case "$cell" in
+      measure-twice) mark="required" ;;
+      run-lite)      mark="lite" ;;
+      *) continue ;;
+    esac
+    i=$((i+1))
+    printf '%2d. %-18s %s\n' "$i" "$(normalize_phase "$ph")" "$mark"
+  done <<< "$rows"
+}
+
+# progress: plan x ledger -> one status line + checklist. A phase counts done when the
+# ledger carries ANY entry for it (ran, skipped-with-reason, override); the current step
+# is the first phase without one. Commands print this at phase entry (SPEC-063).
+progress() {
+  local rid="${1:-}" lane="${2:-}"
+  [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: progress <rid> <lane>" >&2; return 64; }
+  local f; f="$(ledger_file "$rid")"
+  local total=0 done_n=0 cur="" cur_idx=0 list=""
+  local idx ph rest
+  while IFS= read -r pline; do
+    idx="${pline%%.*}"; idx="$(printf '%s' "$idx" | tr -d ' ')"
+    ph="$(printf '%s' "$pline" | awk '{print $2}')"
+    total=$((total+1))
+    # disposed = ran / override / skipped WITH a reason; a bare skip stays visible as a gap
+    if [ -f "$f" ] && awk -F' [|] ' -v p="$ph" '$2=="GATE" && $3==p && ($4!="skipped" || (NF>=5 && $5!="")) {found=1} END{exit !found}' "$f"; then
+      done_n=$((done_n+1)); list="$list ✓$ph"
+    elif [ -z "$cur" ]; then
+      cur="$ph"; cur_idx="$idx"; list="$list ▶$ph"
+    else
+      list="$list ·$ph"
+    fi
+  done < <(plan "$lane")
+  [ "$total" -gt 0 ] || return 1
+  if [ -z "$cur" ]; then
+    printf '%s · %s · complete (%d/%d)\n' "$rid" "$lane" "$done_n" "$total"
+  else
+    printf '%s · %s · step %s/%d (%s)\n' "$rid" "$lane" "$cur_idx" "$total" "$cur"
+  fi
+  printf ' %s\n' "$list"
+}
+
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
@@ -135,5 +191,7 @@ case "$cmd" in
   override) override "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show} ..." >&2; exit 64 ;;
+  plan)     plan "$@" ;;
+  progress) progress "$@" ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show|plan|progress} ..." >&2; exit 64 ;;
 esac

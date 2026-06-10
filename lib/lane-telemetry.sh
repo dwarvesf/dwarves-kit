@@ -8,9 +8,10 @@
 # Advisory: it reports, /kit:retro disposes (Detect, don't dictate).
 #
 # Usage:
-#   lane-telemetry.sh report   -> per-lane + per-type aggregates over every run ledger
-#   lane-telemetry.sh misfires -> the runs where chosen lane != classified lane, plus
-#                                 completeness.log LANE-CHECK lines: the feed for keyword fixes
+#   lane-telemetry.sh report      -> per-lane + per-type aggregates over every run ledger
+#   lane-telemetry.sh misfires    -> the runs where chosen lane != classified lane, plus
+#                                    completeness.log LANE-CHECK lines: the feed for keyword fixes
+#   lane-telemetry.sh trace <rid> -> one run's full story, formatted for review (SPEC-063)
 #
 # Line formats consumed (produced by gate-ledger.sh):
 #   TS | START | lane=<chosen> classified=<suggested> type=<t> [ctype=<suggested-type>] repo=<r>
@@ -125,12 +126,61 @@ misfires() {
   return 0
 }
 
+# trace: one run's ledger rendered as a reviewable story (SPEC-063): routing header with
+# misfire flags, then the humanized timeline (gates with state + reason, actions, with
+# escaped-from indictments called out).
+trace() {
+  local rid="${1:-}"; [ -n "$rid" ] || { echo "usage: trace <rid>" >&2; return 64; }
+  local f="$RUNS_DIR/$rid.log"
+  [ -f "$f" ] || { echo "(no ledger for '$rid' at $f)" >&2; return 1; }
+  awk -v rid="$rid" '
+    BEGIN { FS=" \\| " }
+    {
+      ts=$1; sub(/T/, " ", ts); sub(/Z$/, "", ts)
+      if (first=="") first=$1
+      last=$1
+    }
+    $2=="START" {
+      starts++
+      if (m["lane"] != "") next   # first START wins; later ones noted in the header
+      n=split($3, kv, " ")
+      for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+      next
+    }
+    $2=="GATE" {
+      reason=$5; for (i=6; i<=NF; i++) reason = reason " | " $i
+      lines[++ln] = sprintf("  %s  %-10s %-9s %s", ts, $3, $4, reason)
+      next
+    }
+    $2=="ACTION" {
+      reason=$3; for (i=4; i<=NF; i++) reason = reason " | " $i
+      flag=""
+      if (reason ~ /escaped-from=/) flag="  << indicts a shipped spec test plan"
+      lines[++ln] = sprintf("  %s  %-10s %-9s %s%s", ts, "action", "-", reason, flag)
+      next
+    }
+    { lines[++ln] = sprintf("  %s  %s", ts, $0) }
+    END {
+      lane=(m["lane"]==""?"?":m["lane"]); cls=(m["classified"]==""?"?":m["classified"])
+      type=(m["type"]==""?"?":m["type"]); ctype=(m["ctype"]==""?"?":m["ctype"])
+      repo=(m["repo"]==""?"?":m["repo"])
+      lflag=(lane!="?" && cls!="?" && lane!=cls) ? "  << LANE MISFIRE" : ""
+      tflag=(type!="?" && ctype!="?" && type!=ctype) ? "  << TYPE MISFIRE" : ""
+      printf "run: %s   repo: %s%s\n", rid, repo, (starts>1 ? sprintf("   << MULTI-START (n=%d; first wins)", starts) : "")
+      printf "  lane: %s (classified: %s)%s\n", lane, cls, lflag
+      printf "  type: %s (classified: %s)%s\n", type, ctype, tflag
+      printf "  window: %s .. %s\n\n", first, last
+      for (i=1; i<=ln; i++) print lines[i]
+    }' "$f"
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     report)   report ;;
     misfires) misfires ;;
-    *) echo "usage: lane-telemetry.sh {report|misfires}" >&2; return 64 ;;
+    trace)    trace "$@" ;;
+    *) echo "usage: lane-telemetry.sh {report|misfires|trace <rid>}" >&2; return 64 ;;
   esac
 }
 
