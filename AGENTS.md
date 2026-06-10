@@ -36,7 +36,11 @@ Orient before you touch anything. Read top to bottom; stop when you have enough.
 
 How to do one unit of work. The smallest verifiable increment, verified, committed.
 
-0. **Take work.** Handed a task: use it. Not handed one: pull the board's top queued item,
+0. **Take work.** Handed a task: use it. **Handed a WAVE (2+ items approved in one
+   conversation): enqueue every item as a board row FIRST (queued; the in-flight one
+   executing), then pull them one at a time.** Work that never touches the board is
+   invisible to the board's state machine even when its runs are ledgered, the gap an
+   operator caught live on 2026-06-10 (SPEC-064). Not handed one: pull the board's top queued item,
    `bash lib/backlog.sh next`, claim it (goal-registry) and flip it to `claimed` (the
    `/kit:assign --next` flow). The BACKLOG is the board; its Status column is the state
    machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, + parked/

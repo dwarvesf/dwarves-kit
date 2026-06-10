@@ -65,7 +65,10 @@ Source: GSD v1's 4 parallel researchers. Mode A uses formal `.claude/agents/` fi
 
 Create `docs/specs/` directory if it doesn't exist. Generate these files:
 
-**`docs/specs/SPEC-NNN-<slug>.md`** (main spec):
+**`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
+`bash lib/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
+names and recent commit subjects, the two surfaces where a number ages invisibly inside
+an unmerged PR (two collisions in one week before this guard, SPEC-064 / ID-052):
 
 ```markdown
 # Spec: [feature name]

@@ -58,6 +58,18 @@ assert_output_not_contains() {
   fi
 }
 
+assert_true() {
+  local NAME="$1" ACTUAL="$2"
+  TOTAL=$((TOTAL + 1))
+  if [ "$ACTUAL" -eq 0 ] 2>/dev/null; then
+    echo -e "  ${GREEN}PASS${NC} $NAME"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} $NAME (condition false)"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 # Helper: run hook and capture exit code safely
 run_hook() {
   local HOOK="$1"
@@ -73,6 +85,48 @@ echo "=== safety-gate.sh ==="
 
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf /tmp/foo"}}')
 assert_exit "blocks rm -rf" 2 $RC
+
+# SPEC-064: parse-aware precision. Every 2026-06-10 false positive is a permanent pin:
+# the gate must read argv, never heredoc bodies / quoted prose / other binaries' flags.
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git merge -X ours -q -m \"merge upstream default branch (squash of #38)\" ca3e5b8"}}')
+assert_exit "FP1: merge-by-SHA with branch word in -m is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push -q && gh pr edit 41 --base master"}}')
+assert_exit "FP2: push + gh base-edit compound is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"bash -s <<EOF\nrm -rf \"/tmp/x\"\nEOF\necho done"}}')
+assert_exit "FP3: delete literal inside a heredoc body is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git commit -m \"docs: never git push origin main manually\""}}')
+assert_exit "FP4: quoted prose naming push-to-main is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"echo \"git push --force is bad\""}}')
+assert_exit "FP5: echo prose naming force push is allowed" 0 $RC
+# and the rules still bite on real argv (precision must not cost recall):
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push -q origin HEAD:master"}}')
+assert_exit "still blocks HEAD:master refspec push" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push origin +feat"}}')
+assert_exit "still blocks +refspec force push" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"cd x && rm -rf src"}}')
+assert_exit "still blocks compound rm of source" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"psql -c \"DROP TABLE users\""}}')
+assert_exit "still blocks DROP TABLE via psql" 2 $RC
+
+# SPEC-064 review F1/F2/F3: quotes unwrap (not delete); shell wrappers are descended into.
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"git push origin \"main\""}}')
+assert_exit "F1: quoted main ref still blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -rf \"node_modules\""}}')
+assert_exit "F2: quoted allowlist target still allows" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"bash -c \"git push origin main\""}}')
+assert_exit "F3a: bash -c smuggle blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"eval \"rm -rf src\""}}')
+assert_exit "F3b: eval smuggle blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"xargs rm -rf < list.txt"}}')
+assert_exit "F3c: xargs rm blocks" 2 $RC
+# F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
+CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
+assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
+
+# SPEC-064 / ID-052: spec-next collision guard sees specs dir + branches + commit subjects.
+assert_output_contains "spec-next: check flags a taken number" "TAKEN" "$(bash "$KIT_DIR/lib/spec-next.sh" check 13 2>&1 || true)"
+assert_exit "spec-next: taken number exits 1" 1 "$(bash "$KIT_DIR/lib/spec-next.sh" check 13 >/dev/null 2>&1; echo $?)"
+assert_output_contains "spec-next: next is numeric" "^[0-9][0-9][0-9]$" "$(bash "$KIT_DIR/lib/spec-next.sh" next)"
 
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -fr /tmp/bar"}}')
 assert_exit "blocks rm -fr" 2 $RC
