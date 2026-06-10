@@ -78,6 +78,14 @@ created: <YYYY-MM-DD>
   ```
 
   It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, full, bug, normal; "when in doubt, heavier"). Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: if you disagree, override and say why (a heavier lane is always safe). The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
+
+- **Floor check (advisory).** Once the lane is committed (from the column, or your override, or the classifier), run the floor check so an under-sized choice cannot pass silently:
+
+  ```bash
+  bash lib/lane-classify.sh check "<the chosen lane>" "<the item title / crystallized objective>"
+  ```
+
+  If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "anything on the full-trigger list uses full unless you narrow the scope and say why"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap (SPEC-053): the classifier suggested, but nothing caught an under-sized choice until now.
 - **Activator**: detect what can run the loop, in order: the built-in `/goal` (if present), the `ralph-loop` plugin, or the `goal-craft` skill. Surface the draft body for whichever is available. If none is installed, say so and leave the draft as a plain reusable file (paste the body wherever). Never assume a specific activator exists.
 
 ### Step 5b: Claim the goal in the cross-session registry (multi-session safety)

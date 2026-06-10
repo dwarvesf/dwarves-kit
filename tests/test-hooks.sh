@@ -579,6 +579,28 @@ assert_output_contains "lane: security middleware -> full" "^full$" "$(LANE 'add
 
 # ============================================================
 echo ""
+echo "=== lane-classify: floor check (SPEC-053, the under-size guard) ==="
+# ============================================================
+# CHK merges stderr (the warning is on stderr) so the assertions can read it.
+CHK() { bash "$KIT_DIR/lib/lane-classify.sh" check "$1" "$2" 2>&1; }
+# 1. chose a lighter lane than the text's full floor -> warns.
+assert_output_contains "floor: full text + normal chosen -> LANE-DOWNGRADE" "LANE-DOWNGRADE" "$(CHK normal 'add a hook that touches auth token validation')"
+# 2. chose at the floor -> silent.
+assert_output_not_contains "floor: full text + full chosen -> silent" "LANE-DOWNGRADE" "$(CHK full 'add a hook that touches auth token validation')"
+# 3. tiny chosen for non-cosmetic text -> warns (rank 1 < 2).
+assert_output_contains "floor: tiny chosen for a real feature -> LANE-DOWNGRADE" "LANE-DOWNGRADE" "$(CHK tiny 'add a --version flag to the CLI')"
+# 4. over-sized (heavier than the floor) -> silent (over-sizing is always safe).
+assert_output_not_contains "floor: full chosen for a typo -> silent" "LANE-DOWNGRADE" "$(CHK full 'fix a typo in the README heading')"
+# 5. an unrecognized chosen lane -> distinct warn, not a crash.
+assert_output_contains "floor: unknown lane -> LANE-UNKNOWN" "LANE-UNKNOWN" "$(CHK huge 'add user auth')"
+# 6. advisory: never blocks, even on a downgrade (exit 0).
+bash "$KIT_DIR/lib/lane-classify.sh" check normal 'add user authentication with a jwt migration' >/dev/null 2>&1
+assert_exit "floor: never blocks (exit 0 on a downgrade)" 0 "$?"
+# 7. a downgrade is logged to completeness.log (reviewed at /kit:ship); a match is not.
+assert_output_contains "floor: downgrade logged to completeness.log" "LANE-CHECK" "$(cat "$DWARVES_KIT_LOG_DIR/completeness.log" 2>/dev/null)"
+
+# ============================================================
+echo ""
 echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
 # ============================================================
 PGATE() { bash "$KIT_DIR/lib/proof-gate.sh" class "$1" 2>/dev/null; }

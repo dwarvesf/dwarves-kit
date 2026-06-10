@@ -28,6 +28,12 @@ Pick a lane before you start. Smaller work skips ceremony.
 When in doubt between two lanes, take the heavier one. Anything in the full-lane
 trigger list uses the full lane unless you explicitly narrow the scope and say why.
 
+`/kit:assign` backs this tree with an **advisory floor check** (`lib/lane-classify.sh
+check`): once a lane is chosen, it re-classifies the task text and warns + logs (to
+`completeness.log`, reviewed at `/kit:ship`) when the choice is lighter than the
+deterministic floor, so an under-sized `full`/`bug` task does not slip through silently.
+It warns; it never blocks (Detect, don't dictate). Over-sizing is always silent (safe).
+
 ## The cycle (phase, exit, enforcer)
 | Phase    | Command | Exit when | Enforced by |
 |----------|---------|-----------|-------------|

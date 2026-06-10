@@ -20,11 +20,16 @@
 # stays above the hard-gate so "a typo about auth" is still a typo; backfill stays first so a
 # keyword inside a doc task (e.g. "write its AGENTS.md") does not escalate.
 #
+# The `check` subcommand adds the floor guard (SPEC-053): given the lane actually CHOSEN
+# plus the task text, it warns (advisory, exit 0) when the choice is lighter than the
+# suggestion, so an under-sized full/bug task does not slip through /kit:assign unnoticed.
+#
 # Usage:
-#   lane-classify.sh classify "<desc>"   -> prints the lane, exit 0
-#   lane-classify.sh explain  "<desc>"   -> prints the lane + reason + fired flags
-#   lane-classify.sh lanes                -> prints the 5 lane names
-#   lane-classify.sh flags                -> prints the flag names
+#   lane-classify.sh classify "<desc>"                 -> prints the lane, exit 0
+#   lane-classify.sh explain  "<desc>"                 -> prints the lane + reason + fired flags
+#   lane-classify.sh check <chosen-lane> "<desc>"      -> warn+log if chosen < floor, exit 0
+#   lane-classify.sh lanes                              -> prints the 5 lane names
+#   lane-classify.sh flags                              -> prints the flag names
 
 set -euo pipefail
 
@@ -97,14 +102,61 @@ classify_core() {
   LANE=normal; REASON="bounded feature/fix (default)"; FIRED="${soft# }"; FIRED="${FIRED:-none}"; return 0
 }
 
+# Risk rank for the floor check (SPEC-053). Under-sizing (a lighter lane than the text
+# implies) is the only dangerous direction; over-sizing is always safe ("when in doubt,
+# heavier"). normal/bug/backfill share rank 2 (same ceremony weight); full is the headline
+# floor. An unrecognized lane returns -1 so lane_check can flag it distinctly.
+lane_rank() {
+  case "$1" in
+    tiny)                echo 1;;
+    normal|bug|backfill) echo 2;;
+    full)                echo 3;;
+    *)                   echo -1;;
+  esac
+}
+
+# Advisory floor check: compare the lane a human/LLM CHOSE against the deterministic
+# suggestion for the same text. Warn (stderr) + log (completeness.log) ONLY when the
+# chosen lane is lighter than the floor. Never blocks; always exits 0 ("Detect, don't
+# dictate"). This is the guard the classify-then-route audit found missing: classify
+# suggests, but nothing caught an under-sized choice.
+lane_check() {
+  local chosen desc suggested cr sr log_dir desc_trunc
+  chosen="${1:-}"; shift 2>/dev/null || true
+  desc="$*"
+  [ -n "$chosen" ] || { echo "usage: lane-classify.sh check <chosen-lane> \"<description>\"" >&2; return 64; }
+
+  cr="$(lane_rank "$chosen")"
+  if [ "$cr" -lt 0 ]; then
+    echo "LANE-UNKNOWN: '$chosen' is not a lane (tiny|normal|full|bug|backfill); not checked" >&2
+    return 0
+  fi
+
+  classify_core "$desc"
+  suggested="$LANE"
+  sr="$(lane_rank "$suggested")"
+
+  if [ "$cr" -lt "$sr" ]; then
+    echo "LANE-DOWNGRADE: chosen=$chosen suggested=$suggested -- the task text matches a heavier lane; size up or say why" >&2
+    desc_trunc="$(printf '%s' "$desc" | tr '\n' ' ' | cut -c1-100)"
+    log_dir="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    mkdir -p "$log_dir" 2>/dev/null || true
+    printf '%s | LANE-CHECK | downgrade | chosen=%s suggested=%s | %s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$chosen" "$suggested" "$desc_trunc" \
+      >> "$log_dir/completeness.log" 2>/dev/null || true
+  fi
+  return 0
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     classify) classify_core "$@"; printf '%s\n' "$LANE";;
     explain)  classify_core "$@"; printf '%s\nreason: %s\nflags: %s\n' "$LANE" "$REASON" "${FIRED:-none}";;
+    check)    lane_check "$@";;
     lanes)    printf 'tiny\nnormal\nfull\nbug\nbackfill\n';;
     flags)    printf '%s\n' "${_hard_name[@]}" "${_soft_name[@]}";;
-    *) echo "usage: lane-classify.sh {classify \"<desc>\"|explain \"<desc>\"|lanes|flags}" >&2; return 64;;
+    *) echo "usage: lane-classify.sh {classify \"<desc>\"|explain \"<desc>\"|check <chosen-lane> \"<desc>\"|lanes|flags}" >&2; return 64;;
   esac
 }
 
