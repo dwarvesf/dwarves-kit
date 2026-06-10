@@ -81,8 +81,10 @@ main() {
     [ "$a" = "--dry-run" ] && DRY=1 || args+=("$a")
   done
   case "$sub" in
-    next)  next_link "${args[@]}" ;;
-    chain) chain "${args[@]}" ;;
+    # ${args[@]+...}: bash 3.2's set -u errors on empty-array expansion (fixed in 4.4);
+    # stock macOS /bin/bash is 3.2, so a bare "${args[@]}" turns zero-arg usage into exit 1
+    next)  next_link ${args[@]+"${args[@]}"} ;;
+    chain) chain ${args[@]+"${args[@]}"} ;;
     *) echo "usage: stack-merge.sh {next <pr#>|chain <pr#>...} [--dry-run]" >&2; return 64 ;;
   esac
 }
