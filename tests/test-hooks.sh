@@ -128,6 +128,36 @@ assert_output_contains "spec-next: check flags a taken number" "TAKEN" "$(bash "
 assert_exit "spec-next: taken number exits 1" 1 "$(bash "$KIT_DIR/lib/spec-next.sh" check 13 >/dev/null 2>&1; echo $?)"
 assert_output_contains "spec-next: next is numeric" "^[0-9][0-9][0-9]$" "$(bash "$KIT_DIR/lib/spec-next.sh" next)"
 
+# ============================================================
+echo ""
+echo "=== stack-merge: the squash-stack dance, codified (SPEC-065) ==="
+# ============================================================
+SM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-sm.XXXXXX")
+cat > "$SM_DIR/gh" <<'GHEOF'
+#!/bin/bash
+case "$*" in
+  *"view 10 --json headRefName"*) echo "feat/parent" ;;
+  *"view 10 --json baseRefName"*) echo "master" ;;
+  *"pr list"*) echo "11" ;;
+  *"view 11 --json headRefName"*) echo "feat/child" ;;
+  *) echo "" ;;
+esac
+GHEOF
+chmod +x "$SM_DIR/gh"
+SM_OUT=$(PATH="$SM_DIR:$PATH" bash "$KIT_DIR/lib/stack-merge.sh" next 10 --dry-run 2>&1)
+# the ordering that prevents the auto-close gotcha: retarget BEFORE merge BEFORE reconcile
+assert_output_contains "stack-merge: retargets the child first" "retarget #11 (feat/child) -> master" "$SM_OUT"
+assert_output_contains "stack-merge: dry-run executes nothing" "DRY: gh pr merge 10 --squash --delete-branch" "$SM_OUT"
+assert_output_contains "stack-merge: reconciles by SHA superset rule" "merge -X ours" "$SM_OUT"
+R1=$(printf '%s\n' "$SM_OUT" | grep -n 'retarget #11' | cut -d: -f1)
+R2=$(printf '%s\n' "$SM_OUT" | grep -n 'squash-merge #10' | cut -d: -f1)
+R3=$(printf '%s\n' "$SM_OUT" | grep -n 'reconcile feat/child' | cut -d: -f1)
+assert_true "stack-merge: ordering retarget < merge < reconcile" "$([ "$R1" -lt "$R2" ] && [ "$R2" -lt "$R3" ]; echo $?)"
+RC=0; bash "$KIT_DIR/lib/stack-merge.sh" bogus 2>/dev/null || RC=$?
+assert_exit "stack-merge: usage error exits 64" 64 $RC
+RC=0; bash "$KIT_DIR/lib/stack-merge.sh" chain --dry-run 2>/dev/null || RC=$?
+assert_exit "stack-merge: zero-arg chain is loud, not a silent no-op" 64 $RC
+
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -fr /tmp/bar"}}')
 assert_exit "blocks rm -fr" 2 $RC
 

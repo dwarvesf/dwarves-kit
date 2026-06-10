@@ -1720,6 +1720,18 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-065: stack-merge exists with both verbs + dry-run; ship.md points at it.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/stack-merge.sh" ] && grep -qF 'next_link' "$KIT_DIR/lib/stack-merge.sh" \
+   && grep -qF 'dry-run' "$KIT_DIR/lib/stack-merge.sh" \
+   && grep -qF 'stack-merge.sh chain' "$KIT_DIR/commands/ship.md"; then
+  echo -e "  ${GREEN}PASS${NC} stack-merge codified + wired into ship (SPEC-065)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} stack-merge missing or unwired (SPEC-065)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="
