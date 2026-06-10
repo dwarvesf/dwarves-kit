@@ -136,6 +136,12 @@ bash lib/goal-drafts.sh archive
 
 It moves every `.claude/goals/<slug>.md` whose `target_spec` resolves to a SHIPPED spec into `.claude/goals/done/` (moved, never deleted; status flipped to `shipped`) and leaves specless or still-live drafts in place. Idempotent, so it also sweeps up any draft whose spec shipped in an earlier cycle. Graceful no-op when `.claude/goals/` is absent. Report what moved in the Step 9 summary. Source: SPEC-037, ADR-0023.
 
+**Stacked PRs (SPEC-065):** when the OPEN PRs form a squash-stacked chain and the human
+says merge, do not merge by hand: `bash lib/stack-merge.sh chain <bottom-pr#> ...` runs the
+proven per-link dance (retarget child BEFORE merging the parent, squash-merge, reconcile
+the child on the new tip with a superset-safe merge). `--dry-run` prints the plan first.
+This replaces the manual merge of Step 8's output, not Step 8 itself.
+
 ### Step 8: Open PR (if on a feature branch)
 
 If the current branch is not main/master:
