@@ -671,6 +671,28 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-052: the test-plan-review-team lane. Pin the literal `## Test plan critique`
+# heading + the `spec-first` write target (same drift-guard shape as devs-team's
+# critique, SPEC-023). No command reads this critique (human-facing), so a wording
+# pin is the right guard. Also pin the bounded-loop contract it must carry.
+TPRT_CMD="$KIT_DIR/commands/test-plan-review-team.md"
+TOTAL=$((TOTAL + 1))
+if [ -f "$TPRT_CMD" ] && grep -qF '## Test plan critique' "$TPRT_CMD" && grep -qF 'spec-first' "$TPRT_CMD"; then
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md exists + writes '## Test plan critique' spec-first (SPEC-052)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan-review-team.md missing or lost its '## Test plan critique' / spec-first contract"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF '[[QL-VERDICT' "$TPRT_CMD" 2>/dev/null && grep -qF 'test-design-standard.md' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md carries the QL-VERDICT loop + encodes test-design-standard.md (SPEC-052)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan-review-team.md lost the QL-VERDICT loop or the standard reference"
+  FAIL=$((FAIL + 1))
+fi
+
 # SPEC-020: the ui-design loop. Assert the command exists, delegates generation
 # to frontend-design (the kit ships no renderer), critiques via visual-team, and
 # carries the `## UI design` brief heading. Downstream-facing; no behavior harness.

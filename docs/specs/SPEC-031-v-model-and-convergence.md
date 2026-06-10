@@ -88,7 +88,8 @@ DEFINE (left arm)                                   VERIFY (right arm)
    (/kit:design, devs-team)                       + code review        /kit:review(-team)
                                                                         each task correct?
      Test-design  ═════════════════════════════  Unit / task          task-verifier,
-     (/kit:test-plan)                              + test-exec         test execution
+     (/kit:test-plan                               + test-exec         test execution
+      -> test-plan-review-team, SPEC-052)
                                                                         docs match code?
        (UI-design ══ visual-team, opt-in arm)      Docs                doc-verifier
                                                                   ▲
