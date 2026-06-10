@@ -1552,6 +1552,31 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-055: the backlog kanban. The helper exists, assign documents pull mode, the
+# vocabulary carries the claimed state. A drop on any leg makes pull a phantom.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/backlog.sh" ] && grep -qF -- '--next' "$KIT_DIR/commands/assign.md" \
+   && grep -qF '`claimed`' "$KIT_DIR/_meta/BACKLOG.md"; then
+  echo -e "  ${GREEN}PASS${NC} backlog kanban wired: lib/backlog.sh + assign --next + claimed state (SPEC-055)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} backlog kanban incomplete: need lib/backlog.sh executable + assign --next + claimed vocab (SPEC-055)"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-056: per-type test dialects. Three legs: the 6-row dialect table, the type-aware
+# test-plan step, the default flip in the cycle table.
+TOTAL=$((TOTAL + 1))
+DIALECT_ROWS=$(awk '/^## 5b/,/^## 6/' "$KIT_DIR/docs/verification/test-design-standard.md" | grep -cE '^\| (spec-feature|eval|research|migration|data-tool|doc) \|')
+if [ "$DIALECT_ROWS" -eq 6 ] && grep -qF 'task-type-classify' "$KIT_DIR/commands/test-plan.md" \
+   && grep -qF 'Test plan (default' "$KIT_DIR/WORKFLOW.md"; then
+  echo -e "  ${GREEN}PASS${NC} test dialects wired: 6-type table + type-aware test-plan + default flip (SPEC-056)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test dialects incomplete (rows=$DIALECT_ROWS) (SPEC-056)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

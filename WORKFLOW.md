@@ -66,7 +66,7 @@ conform/drift -> migrate -> reference-fix -> gate check).
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /kit:spec-validate | Status: VALIDATED | advisory (full lane) |
-| Test plan (opt-in) | /kit:test-plan | `## Test plan` written into the spec | advisory (normal/full) |
+| Test plan (default for normal/full) | /kit:test-plan | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b) | advisory default (normal/full); tiny exempt |
 | Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
 | Review   | /kit:review or /kit:review-team | review verdict recorded | advisory |
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
@@ -138,7 +138,7 @@ integration levels can also be re-run on demand, read-only, with `/kit:verify` (
 
 **Cycle-table mapping.** The V-phase names above map onto the cycle-table rows:
 Think, Design (opt-in), Design critique (opt-in), UI design (opt-in), Spec,
-Validate, Test plan (opt-in), Build, Review, Docs, Ship, Reflect, and
+Validate, Test plan (default for normal/full), Build, Review, Docs, Ship, Reflect, and
 Debug (off-cycle).
 
 **The mirror gaps.**
@@ -187,7 +187,7 @@ the V-model lens above. Every cell is one of:
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
 | Validate | skip | skip | measure-twice | skip | skip |
-| Test plan (opt-in) | skip | run-lite | measure-twice | run-lite | skip |
+| Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
 | Review | skip | run-lite | measure-twice | measure-twice | run-lite |
 | Docs | skip | run-lite | measure-twice | skip | measure-twice |

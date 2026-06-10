@@ -68,6 +68,25 @@ Drift comes from copying. Keep each fact in exactly one place:
 
 If a report restates what a run already says, delete the restatement and link the run.
 
+## 5b. Dialects: one spine, six bodies (per work type)
+
+The six rules above are the spine for EVERY profile. How a test is DESIGNED differs by the
+work's type (`lib/task-type-classify.sh`); design in the dialect that fits, not one-size BDD:
+
+| Type | Test-design dialect |
+|---|---|
+| spec-feature | BDD-style scenario/coverage matrix over the acceptance criteria (the `## Test plan` /kit:test-plan writes: happy / boundary / failure-injection / security / regression, each with a proof command) |
+| eval | metrics defined up front + HAND-VERIFIED seed data + falsifiability controls (a negative control that must go RED, a reproducibility re-run); the TEST-REPORT carries the numbers |
+| research | claim-verification matrix: every load-bearing claim names its source AND an adversarial check (a refutation attempt, a second independent source, or a live probe); unverifiable claims are marked, not asserted |
+| migration | inventory coverage (every affected item enumerated) + conform/drift classification + a rollback REHEARSAL (not a rollback paragraph); cleanup sweeps use this dialect (convention migration) |
+| data-tool | recorded live run of the real commands + a negative control (dead credential, fake field) proving the green is falsifiable; ledger immutable under `runs/` |
+| doc | doc-verifier match: each claim in the doc greps against the live code/artifact it describes; a stale claim is a RED, not a style note |
+
+The dialect changes the SHAPE of the design, never the bar: every dialect still owes the
+traceability of §1, the falsifiability of §3, and the recorded immutable runs of §5.
+`/kit:test-plan` picks the dialect from the task's type; the registry
+(`docs/verification/task-types.md`) maps type -> artifact -> owning skill.
+
 ## 6. Sign-off checklist (the gate before you call it done)
 
 A work-item's tests are done only when every line is true:

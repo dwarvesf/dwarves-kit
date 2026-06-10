@@ -829,6 +829,43 @@ assert_exit "ship-gate allows the push once gates are recorded" 0 "$SG_RC2"
 
 # ============================================================
 echo ""
+echo "=== backlog.sh: the Active queue as a kanban board (SPEC-055) ==="
+# ============================================================
+# Fixture: a minimal BACKLOG copy; BACKLOG_FILE points the helper at it.
+BLF=$(mktemp "${TMPDIR:-/tmp}/dk-backlog.XXXXXX.md")
+cat > "$BLF" <<'BLEOF'
+# Backlog
+| ID | Title | Source | Target artifact | Lane | Status |
+|----|-------|--------|-----------------|------|--------|
+| **section header** | | | | | |
+| ID-901 | First queued thing | test | TBD | normal | queued |
+| ID-902 | Second queued thing | test | TBD | tiny | queued [note kept] |
+| ID-903 | Done thing | test | SPEC-001 | full | shipped (CHANGELOG) |
+BLEOF
+BL="$KIT_DIR/lib/backlog.sh"
+B_OUT=$(BACKLOG_FILE="$BLF" bash "$BL" board 2>&1)
+assert_output_contains "backlog board renders the queued column" "ID-901" "$B_OUT"
+assert_output_contains "backlog board renders shipped" "ID-903" "$B_OUT"
+assert_output_not_contains "backlog board skips section headers" "section header" "$B_OUT"
+N_OUT=$(BACKLOG_FILE="$BLF" bash "$BL" next 2>&1)
+assert_output_contains "backlog next picks the FIRST queued (file order = priority)" "ID-901" "$N_OUT"
+BACKLOG_FILE="$BLF" bash "$BL" set ID-901 claimed "pulled by test" >/dev/null 2>&1
+assert_exit "backlog set flips a state (exit 0)" 0 "$?"
+S_OUT=$(BACKLOG_FILE="$BLF" bash "$BL" board 2>&1)
+assert_output_contains "flipped row shows under claimed" "claimed" "$S_OUT"
+N2_OUT=$(BACKLOG_FILE="$BLF" bash "$BL" next 2>&1)
+assert_output_contains "next now picks the second queued item" "ID-902" "$N2_OUT"
+# annotation prose after the keyword survives a flip
+BACKLOG_FILE="$BLF" bash "$BL" set ID-902 claimed >/dev/null 2>&1
+assert_output_contains "set preserves the cell's annotation prose" "note kept" "$(grep 'ID-902' "$BLF")"
+RC=$(BACKLOG_FILE="$BLF" bash "$BL" set ID-901 bogus-state >/dev/null 2>&1; echo $?)
+assert_exit "set rejects an unknown state" 64 "$RC"
+RC=$(BACKLOG_FILE="$BLF" bash "$BL" set ID-999 queued >/dev/null 2>&1; echo $?)
+assert_exit "set rejects an unknown ID" 1 "$RC"
+rm -f "$BLF"
+
+# ============================================================
+echo ""
 echo "=== Results ==="
 # ============================================================
 echo -e "Passed: ${GREEN}${PASS}${NC} / ${TOTAL}"
