@@ -1745,6 +1745,16 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-067: the golden run exists, is executable, and CI runs it.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/tests/test-e2e.sh" ] && grep -qF 'test-e2e.sh' "$KIT_DIR/.github/workflows/test.yml"; then
+  echo -e "  ${GREEN}PASS${NC} golden-run e2e exists + CI runs it (SPEC-067)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} golden-run e2e missing or not in CI (SPEC-067)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="
