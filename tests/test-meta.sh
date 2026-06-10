@@ -1498,6 +1498,26 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-053: the advisory lane floor-check must exist in the classifier AND be wired
+# into /kit:assign Step 5. A drop on either side makes the under-size guard a phantom.
+TOTAL=$((TOTAL + 1))
+if grep -qE '^[[:space:]]*check\)' "$KIT_DIR/lib/lane-classify.sh" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} lane-classify.sh exposes a 'check' subcommand (SPEC-053 floor guard)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} lane-classify.sh lost the 'check' subcommand (SPEC-053 floor guard)"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF 'lane-classify.sh check' "$KIT_DIR/commands/assign.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} assign.md wires the lane floor-check into Step 5 (SPEC-053)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} assign.md lost the lane floor-check wiring (SPEC-053)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

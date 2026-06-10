@@ -216,7 +216,7 @@ dwarves-kit/
   commands/                     (22 markdown command prompts)
   hooks/                        (14 scripts + hooks.json plugin manifest)
   lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
-  lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier (used by /kit:assign + /kit:dispatch)
+  lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch)
   lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
   lib/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/
   skills/get-api-docs/          Context Hub integration
