@@ -283,3 +283,86 @@ The bar for AutoResearch: only run it when manual iteration has plateaued AND yo
 - **v3.x**: Agent-type hooks for deep verification. Multi-runtime support (Codex, Gemini). AutoResearch-optimized prompts.
 
 No timeline commitment. Version bumps happen when real usage exposes the limits of the current version, not on a calendar schedule.
+
+---
+
+## 6. North-star criteria (2026-06)
+
+Direction, not an implementation commitment. Set by the maintainer 2026-06-10 after the SPEC-016 /
+proof-colocation arc exposed the pattern: the kit is excellent at routing CODE work and silent about
+everything else. Every proposal that touches intake, loops, the backlog, or quality MUST state which
+criterion it serves; a proposal that serves none of them and none of §1's principles is a NO-list
+candidate by default.
+
+### N1 — Every work type earns a right-sized loop
+
+We believe a research task, an eval, a tool comparison, a test-design pass, and a cleanup sweep each
+deserve a defined loop the same way coding work deserves a lane, sized to the work, not inflated to
+the full ceremony and not collapsed into freestyle chat. Coexistence is explicit: chat stays chat;
+the kit engages when a task is being executed. Each loop names its executing agent, either
+preassigned (a named subagent or owning skill) or selected dynamically (a persona/profile chosen at
+dispatch).
+
+**What exists today:** `lib/task-type-classify.sh` already classifies six work types
+(eval / research / doc / migration / data-tool / spec-feature) and maps each to a proof artifact +
+owning skill in `docs/verification/task-types.md`. Lanes give spec-feature work five right-sized
+paths.
+
+**The gap:** the five non-code types have proof SHAPES but no defined CYCLE: no entry -> phases ->
+exit, no agent designation. In practice they run as unstructured chat, which is exactly the
+"important work gets the full cycle, everything small runs shallow" failure the maintainer flagged.
+
+**A conforming proposal looks like:** it extends the existing registry (loop + agent columns), reuses
+existing commands/skills as loop bodies, and keeps "right-sized" honest, a research loop that feels
+like ceremony for a research task is a rejection, not a win. **It would reject:** a new slash command
+per type (registry rows, not surface area); "everything goes through the full lane" (that is the
+opposite of right-sized).
+
+### N2 — Work is pulled from a board, not pushed by an operator
+
+We believe the backlog should behave like a kanban board: classified work parks there with an honest
+status, and an agent can PULL the next queued item without the maintainer sitting at the keyboard
+typing "go". Operator-driven chat keeps working; pull is an additional trigger, not a replacement.
+
+**What exists today:** `_meta/BACKLOG.md` is the proto-kanban (ID-NNN rows, hand-noted statuses);
+`/kit:assign` turns a named item into a routed goal; `lib/goal-registry.sh` already guards
+cross-session claims.
+
+**The gap:** rows have no status state machine, there is no board view, and nothing can take "the
+next queued item", every dispatch needs the human to name the item. Assignment is push-only.
+
+**A conforming proposal looks like:** it makes the BACKLOG itself the board (states + mechanical
+transitions + a render), wires pull into the existing assign/claim machinery, and stays
+minimum-infra (no daemon, no web UI; autonomous triggering is a later, separately-argued step).
+**It would reject:** a parallel task database beside the BACKLOG (two sources of truth); a scheduler
+runtime (the "Shallow and wide" boundary already hands that to external engines).
+
+### N3 — Quality is test-first, shaped per type, and proof-stored
+
+We believe a work item's tests are designed BEFORE execution, in the dialect that fits its type:
+BDD-style scenarios for features, metrics + hand-verified seeds for evals, claim-verification
+matrices for research, inventory + rollback rehearsal for migrations/cleanups, and that every
+quality-check execution lands as an immutable recorded run the proof gate can see. The depth of the
+test design tracks the weight of the task, not a one-size template.
+
+**What exists today:** the deepest-built criterion: `docs/verification/test-design-standard.md` (the
+spine), `/kit:test-plan` + `/kit:test-plan-review-team` (authoring + adversarial critique), the
+verification framework (test-design + immutable `runs/`), and the proof-of-done ship-gate.
+
+**The gap:** test-plan is opt-in, so most work skips design-first; and the standard speaks one
+dialect (feature-shaped), so non-code types have no fitting way to design their checks even when
+they want to.
+
+**A conforming proposal looks like:** it specializes the ONE standard per type (dialects, not forked
+documents), reads the type to pick the dialect automatically, and flips test-first from opt-in to
+default-suggested where a behavioral/stateful proof is owed, advisory, never a hard block ("Detect,
+don't dictate"). **It would reject:** a second test standard; a blocking test-first gate (the
+ship-gate already owns blocking).
+
+### How the three compound
+
+They are one system, not three features: the board rows (N2) carry the work's type, the type picks
+the loop and its agent (N1), and the loop's first phase designs the type-shaped tests whose runs
+become the proofs (N3). A proposal advancing one criterion should say what it assumes about the
+other two; a proposal that advances one by breaking another (e.g. a pull mechanism (N2) that
+dispatches work with no test design (N3)) is not conforming.
