@@ -1620,6 +1620,39 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-059: the absorb wave. (a) debug.md opens with the feedback-loop-first phase and its
+# load-bearing catalog tactics; (b) review-team's architecture lens carries the deep-module
+# vocabulary; (c) PHILOSOPHY carries the skill-routing rule that routes future absorbs.
+TOTAL=$((TOTAL + 1))
+if grep -qF '## Phase 0: Build a feedback loop' "$KIT_DIR/commands/debug.md" \
+   && grep -qF 'Differential loop' "$KIT_DIR/commands/debug.md" \
+   && grep -qF 'bisect run' "$KIT_DIR/commands/debug.md"; then
+  echo -e "  ${GREEN}PASS${NC} debug.md has Phase 0 feedback-loop catalog (SPEC-059)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} debug.md missing Phase 0 feedback-loop catalog (SPEC-059)"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF 'deletion test' "$KIT_DIR/commands/review-team.md" \
+   && grep -qF 'locality' "$KIT_DIR/commands/review-team.md"; then
+  echo -e "  ${GREEN}PASS${NC} review-team architecture lens carries deep-module vocabulary (SPEC-059)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} review-team architecture lens missing deep-module vocabulary (SPEC-059)"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Skill routing: what belongs in the kit' "$KIT_DIR/docs/PHILOSOPHY.md"; then
+  echo -e "  ${GREEN}PASS${NC} PHILOSOPHY carries the skill-routing rule (SPEC-059)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} PHILOSOPHY missing skill-routing rule (SPEC-059)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

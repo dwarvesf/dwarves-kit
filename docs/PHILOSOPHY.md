@@ -58,6 +58,16 @@ We believe covering the full lifecycle (Think, Spec, Validate, Build, Review, Do
 
 **Decision this would reject:** "Let's build a custom TypeScript runtime for task execution like GSD v2." That's building a product, not maintaining a kit. If execution depth becomes the bottleneck, adopt GSD v2 as the execution engine and integrate it, don't rebuild it.
 
+### Skill routing: what belongs in the kit
+
+The kit owns LOOP MACHINERY: lanes, type loops, gates, proof dialects, the board, and the commands that drive them. Two other skill tiers live OUTSIDE the kit, in the operator's own skill estate: **reflex skills** (instant, gate-free responses: explain a concept, zoom out to a module map, hand off a session) and **domain procedures** (incident runbooks, learning-day pipelines, payroll closes). The type registry's owning-skill/agent column is the bridge: a kit loop may NAME an external procedure as its executor, but the kit never absorbs the procedure itself.
+
+Absorb routing follows mechanically: an external skill that describes how a loop, gate, or proof should run is absorbed into the kit (`/kit:absorb`, with citation). An external skill that is a reflex or a domain procedure lands in the operator's skill estate and at most earns a registry reference. Chat stays chat (§6 N1's coexistence corollary: the kit engages only when a task is being executed); reflexes stay reflexes.
+
+**Decision this already made:** `/kit:grill` absorbed grill-with-docs (intake is loop machinery, SPEC-058); `handoff` and `zoom-out` were routed to the operator estate; `teach`'s ideas routed to the operator's learning procedure (SPEC-059).
+
+**Decision this would reject:** "Add a /kit:explain command so users can ask concept questions inside the kit." That is a reflex, not a loop; absorbing it grows the kit's surface without adding any gate, proof, or loop value.
+
 ### "Verify before proceeding"
 
 We believe every task output should be verified by a dedicated agent before the orchestrator moves on. Self-reported "done" from a worker agent is not proof of completion. The verification pipeline (worker > verifier > fix-agent retry) catches issues at the cheapest point: right after the task, before downstream tasks build on top of a broken foundation.

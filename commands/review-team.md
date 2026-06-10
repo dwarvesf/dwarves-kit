@@ -38,6 +38,15 @@ Use the security-auditor agent (the dedicated deep-security reviewer; more thoro
 Review this code diff through the ARCHITECTURE lens only.
 Use the reviewer agent with lens: architecture.
 
+Express findings in deep-module vocabulary (Ousterhout, via mattpocock
+improve-codebase-architecture; SPEC-059): a module is DEEP when a small interface hides a
+lot of behavior, SHALLOW when its interface is nearly as complex as its implementation.
+Apply the deletion test to suspect modules: delete it mentally; if complexity vanishes it
+was a pass-through, if complexity reappears across N callers it earns its keep. Name seams
+explicitly (one adapter = hypothetical seam, two adapters = real seam) and justify each
+finding in terms of leverage (what callers gain) and locality (where change, bugs, and
+knowledge concentrate).
+
 ## Diff
 [paste diff or list changed files]
 
@@ -108,4 +117,4 @@ If verdict is DO NOT SHIP: explain what's fundamentally wrong.
 - `/review` (existing): Single-pass review by one agent. Faster, cheaper. Good for small changes, solo work, quick iteration.
 - `/review-team` (this command): Parallel 3-lens review. More thorough, 3x the tokens. Good for: PRs before merge, contractor work review, pre-release code, anything touching auth/payments/data.
 
-Source: Addy Osmani's parallel agent review pattern. gstack /review for the paranoid tone. Claude Code Agent Teams documentation for parallel subagent dispatch.
+Source: Addy Osmani's parallel agent review pattern. gstack /review for the paranoid tone. Claude Code Agent Teams documentation for parallel subagent dispatch. mattpocock/skills improve-codebase-architecture for the architecture lens's deep-module vocabulary (SPEC-059).
