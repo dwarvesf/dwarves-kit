@@ -46,9 +46,14 @@ How to do one unit of work. The smallest verifiable increment, verified, committ
    planning / learning / eval / research / doc / migration / data-tool) runs its TYPE LOOP per
    `WORKFLOW.md ## Type loops`, with its executor from the registry's `agent` column. For code:
    pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`; when in doubt between
-   two lanes, take the heavier one. **Whatever the type, phase 0 is defining the done scenario**
+   two lanes, take the heavier one. **Between classification and done comes the grill** (`/kit:grill`, or its
+   one-question-at-a-time discipline driven inline): interview until the task is actually
+   understood, type-shaped questions, recommended answers, contradictions checked against the
+   repo, answers WRITTEN as they resolve (glossary / sparse ADR / the goal draft's Context).
+   Tiny lane exempt. **Then phase 0: define the done scenario**
    (`bash lib/proof-gate.sh contract "<task>"` + the type's test-design dialect,
-   test-design-standard §5b) BEFORE any work runs; the goal draft carries the `Done =` line.
+   test-design-standard §5b) BEFORE any work runs; the grill's answers are the done's raw
+   material, and the goal draft carries the `Done =` line.
 2. **Read the spec and its acceptance criteria.** For a spec-driven task: the active spec's task row, its AC, its `## Verification`, and its `## After state`. No spec (tiny lane): the one obvious edit.
 3. **Implement the smallest verifiable increment.** One logical change. No speculative features, no premature abstraction; clarity over cleverness.
 4. **Verify.** Run the spec's `## Verification` command (or the lane's check). Do not claim a result you did not run.

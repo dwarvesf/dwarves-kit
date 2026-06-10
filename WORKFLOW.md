@@ -54,7 +54,9 @@ when a task is being executed, not on every message. The executor per type (prea
 dynamic) lives in the registry (`docs/verification/task-types.md`, `agent` column); the proof
 artifact and rigor live there too.
 
-**Phase 0 is universal (PHILOSOPHY §6 N3): every loop starts by defining its done scenario**,
+**Phase 0 is universal (PHILOSOPHY §6 N3): every loop starts with the grill, then the done
+scenario.** First `/kit:grill`, the type-shaped intake interview (one question at a time,
+recommended answers, write-as-you-go; tiny exempt). Then define the done scenario,
 the proof contract (`bash lib/proof-gate.sh contract "<task>"`) plus the test design in the
 type's dialect (test-design-standard §5b), BEFORE any phase below runs. What follows is what
 gets compared against that definition when the work claims done (the V-model right arm,

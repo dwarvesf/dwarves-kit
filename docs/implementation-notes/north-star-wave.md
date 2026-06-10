@@ -83,3 +83,18 @@ Roadmap: ops-toolkit `_meta/megagoals/kit-north-star/`. Specs: SPEC-054/055/056 
   Done=; WORKFLOW gains the board section. Pinned (operating-layer parity meta pin).
 - Why it mattered: adopted consumer repos would have received the OLD code-only contract while
   the kit itself routed by type, drift at the exact file whose job is preventing drift.
+
+## 2026-06-10 SPEC-058 /kit:grill (the vanished grilling step, restored)
+- Context: maintainer's pre-kit habit (mattpocock grill-with-docs) interviewed before any work;
+  the new intake lost it. Ordering question resolved: classify FIRST (type-shaped questions
+  beat generic; classification needs one sentence; a re-classify guard after the grill covers
+  the reverse direction, with the floor-check guarding downgrades).
+- Decisions: 11 type-shaped banks (4-6 questions each) instead of one generic bank; altitudes
+  kept distinct (grill=requirements, think=challenge, design=solution); write-as-you-go to
+  glossary/sparse-ADR/goal-draft Context = the second-brain feed; tiny exempt.
+- Review (kit:reviewer): FIX-FIRST 7/10, both MEDIUMs were doc-honesty (unrecorded manual
+  negative control; placeholder ## Review while SHIPPED), the kit's own discipline biting its
+  own PR twice in one day. Fixed; verdict SHIP.
+- Dogfood note: the cp -i alias parked a background command even WITH -f (the alias may be a
+  function); used python shutil instead. The board flips (queued -> claimed -> executing ->
+  shipped) all rode backlog.sh on this PR's own row, ID-049.

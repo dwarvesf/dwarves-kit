@@ -1607,6 +1607,19 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-058: the grill. The command exists with all 11 type banks AND the three wiring legs
+# (AGENTS task loop, assign, WORKFLOW phase-0) route classify -> grill -> Done=.
+TOTAL=$((TOTAL + 1))
+GRILL_BANKS=$(grep -cE '^### (incident|reconcile|operate|planning|learning|eval|research|doc|migration|data-tool|spec-feature)$' "$KIT_DIR/commands/grill.md" 2>/dev/null || echo 0)
+if [ "$GRILL_BANKS" -eq 11 ] && grep -qF 'kit:grill' "$KIT_DIR/AGENTS.md" \
+   && grep -qF 'kit:grill' "$KIT_DIR/commands/assign.md" && grep -qF 'grill' "$KIT_DIR/WORKFLOW.md"; then
+  echo -e "  ${GREEN}PASS${NC} grill intake wired: 11 type banks + AGENTS/assign/WORKFLOW legs (SPEC-058)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} grill intake incomplete (banks=$GRILL_BANKS) (SPEC-058)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="
