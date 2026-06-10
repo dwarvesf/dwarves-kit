@@ -103,7 +103,7 @@ task_type_classify() {
   fi
 
   # 10. data-tool: a CLI / API client / scraper / data puller.
-  if printf '%s' "$lc" | grep -qE '\bcli\b|command[ -]line|api client|api wrapper|wrap .* api|scraper|scrape|crawl|data pull|pull .* (data|from)|fetch .* (api|from)|integrate .* api|port .* (to a )?cli|connector'; then
+  if printf '%s' "$lc" | grep -qE '(build|write|create|wrap|ship) .{0,24}\bcli\b|command[ -]line (tool|client|utility|interface)|api client|api wrapper|wrap .* api|scraper|scrape|crawl|data pull|pull .* (data|from)|fetch .* (api|from)|integrate .* api|port .* (to a )?cli|connector'; then
     echo data-tool; return 0
   fi
 

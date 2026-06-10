@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Classifier anchor recall fixes (SPEC-072 / ID-057, ID-064).** data-tool no
+  longer steals feature-work-ON-a-CLI (bare `cli` anchor narrowed to
+  build/write/create/wrap/ship verb phrasings; `make` deliberately excluded);
+  markdown-only / doc-tree bootstrap work classifies tiny via a new 3b precedence
+  slot that runs AFTER the hard-gate pass, so a README about auth tokens or kit
+  machinery still classifies full (multi-lens review HIGH: the first draft put the
+  anchors at tiny's precedence 2, silently preempting hard-gates). The negative
+  control itself found and closed an unpinned regex arm.
 - **Four gate/ledger defect fixes (SPEC-071 / ID-061, ID-063, ID-062, ID-050).**
   proof-gate's class now floors at the task-type registry default (a doc task is
   `inert`, not blanket `behavioral`; migration/incident/operate floor at `stateful`,

@@ -87,6 +87,14 @@ classify_core() {
     LANE=full; REASON="hard-gate flag(s):$hard"; FIRED="${hard# }"; return 0
   fi
 
+  # 3b. doc-bootstrap (SPEC-072 / ID-064), deliberately AFTER the hard-gate pass:
+  # markdown-only or doc-tree bootstrap work is tiny, but these anchors describe the
+  # SUBJECT of the work, not a cosmetic surface, so a README about auth tokens or
+  # gate machinery must let the hard-gate win first (review HIGH, SPEC-072).
+  if printf '%s' "$lc" | grep -qE 'markdown[ -]only|bootstrap .{0,40}(readme|notes|reading list|learning track)'; then
+    LANE=tiny; REASON="doc bootstrap (markdown-only / doc-tree), no hard-gate subject"; FIRED=doc-bootstrap; return 0
+  fi
+
   # 4. bug: a defect, not a new feature.
   if printf '%s' "$lc" | grep -qE '\bbug\b|regression|failing test|broken|crash|defect|hotfix|stack ?trace|exception|fix the|fix a |repro'; then
     LANE=bug; REASON="defect / regression"; FIRED=bug; return 0

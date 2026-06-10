@@ -1338,6 +1338,48 @@ OUT=$(DWARVES_KIT_LOG_DIR="$LOG50" bash "$GL71" progress seq-run bug 2>&1)
 assert_output_not_contains "ID-050: in-order ledger renders no legend" "disposed out of order" "$OUT"
 rm -rf "$LOG50"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-072: classifier anchor recall (ID-057 / ID-064) ==="
+# ============================================================
+TTC72="$KIT_DIR/lib/task-type-classify.sh"
+LC72="$KIT_DIR/lib/lane-classify.sh"
+
+# ID-057: feature work ON a CLI is spec-feature, not data-tool (live: SPEC-067 golden run)
+OUT=$(bash "$TTC72" classify "add a --version flag to the demo CLI")
+assert_output_contains "ID-057: flag-on-a-CLI classifies spec-feature" "spec-feature" "$OUT"
+OUT=$(bash "$TTC72" classify "build a CLI to pull inverter data from the vendor API")
+assert_output_contains "ID-057 negative: building a CLI stays data-tool" "data-tool" "$OUT"
+OUT=$(bash "$TTC72" classify "write a small cli for the team")
+assert_output_contains "ID-057: verb-arm-only phrasing stays data-tool (NC-discovered unpinned arm)" "data-tool" "$OUT"
+OUT=$(bash "$TTC72" classify "port the exporter to a cli")
+assert_output_contains "ID-057 negative: porting to a cli stays data-tool" "data-tool" "$OUT"
+
+# ID-064: markdown-only bootstrap is tiny (live: economics-track session)
+OUT=$(bash "$LC72" classify "bootstrap a learning track folder with README, notes and reading list (markdown only)")
+assert_output_contains "ID-064: markdown-only bootstrap classifies tiny" "tiny" "$OUT"
+OUT=$(bash "$LC72" classify "bootstrap the server user on the mini with launchd daemons")
+assert_output_contains "ID-064 negative companion: server bootstrap lands a real lane" "normal" "$OUT"
+assert_output_not_contains "ID-064 negative: server bootstrap is not tiny" "tiny" "$OUT"
+OUT=$(bash "$LC72" classify "scaffold the agent skeleton in go with tests")
+assert_output_contains "ID-064 negative companion: code scaffold lands a real lane" "normal" "$OUT"
+assert_output_not_contains "ID-064 negative: code scaffold is not tiny" "tiny" "$OUT"
+
+# review HIGH: the doc-bootstrap anchor must NOT preempt a hard-gate subject
+OUT=$(bash "$LC72" classify "bootstrap a learning track with README covering auth tokens and secrets")
+assert_output_contains "ID-064 hard-gate wins: auth/secrets README bootstrap is full" "full" "$OUT"
+OUT=$(bash "$LC72" classify "bootstrap notes for gate-ledger internals, markdown only")
+assert_output_contains "ID-064 hard-gate wins: kit-machinery notes bootstrap is full" "full" "$OUT"
+
+# review: bare-cli false-positive guard + noun-arm phrasing consistency
+OUT=$(bash "$TTC72" classify "fix the cli help text typo")
+assert_output_contains "ID-057: bare cli in a fix phrase stays spec-feature" "spec-feature" "$OUT"
+OUT=$(bash "$TTC72" classify "implement --version in the CLI tool")
+assert_output_contains "ID-057: modifying the CLI tool stays spec-feature" "spec-feature" "$OUT"
+OUT=$(bash "$TTC72" classify "make the cli faster")
+assert_output_contains "ID-057: make-the-cli-faster is not data-tool" "spec-feature" "$OUT"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
