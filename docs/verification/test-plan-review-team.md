@@ -36,6 +36,7 @@
 | R2 meta-test | 2026-06-09 | `bash tests/test-meta.sh` | 0 | PASS (394/394) |
 | R3 NEGATIVE CONTROL | 2026-06-09 | dispatch Coverage + Oracle lenses on a seeded-gap `## Test plan` | n/a | RED-as-expected (both CRITICAL, 2/10) |
 | R4 green | 2026-06-09 | same 2 lenses on a fixed `## Test plan` | n/a | PASS (no CRITICAL, 7/10) |
+| R5 live loop (dogfood) | 2026-06-09 (markers recorded 2026-06-10) | full 3-round loop on this spec's own `## Test plan` | n/a | REVISE at cap; matchers resolved post-cap (see R5 detail) |
 
 ## 4. Run detail
 
@@ -71,6 +72,24 @@ The fixed plan: AC2 covered by a failure-injection case + a boundary case; concr
   Oracle lens:   oracles checkable, proofs concrete, negative controls exist. No CRITICAL. SCORE: 7/10
   ```
 - Verdict: PASS. CRITICAL findings cleared, scores 2/10 -> 7/10. The gap closing is exactly what the revise loop drives toward; the lenses reward a real plan and punish a hollow one.
+
+### R5, live dogfood loop on the lane's own spec (2026-06-09, attested; markers verbatim)
+
+The full bounded loop ran for real against this spec's own `## Test plan` (the dogfood in
+SPEC-052 `## Test plan critique`). The reviser subagent (distinct from the lens reviewers,
+producer != reviewer) revised the plan between rounds. Round markers, verbatim:
+
+```
+[[QL-VERDICT round=1 clean=false findings=13]]
+[[QL-VERDICT round=2 clean=false findings=11]]
+[[QL-VERDICT round=3 clean=false findings=5]]
+```
+
+- Strictly-falling held (13 > 11 > 5); the 3-round hard cap stopped a still-falling run, so
+  the cap (not convergence) was the stopping cause , the boundary Case 8b names.
+- Verdict at cap: REVISE with 4 matcher findings; resolved post-cap by the 2026-06-10
+  operator pass (pins 1a/9/11 matchers corrected against ground truth; this R5 record
+  satisfies pin 8a's contract). See the spec's critique section for the round-by-round record.
 
 ## 5. Reproduce
 
