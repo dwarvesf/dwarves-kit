@@ -66,3 +66,6 @@ Tell the user the plan is written into the spec's `## Test plan` and `/kit:execu
 
 ## Source
 The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/kit:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018.
+
+After writing the plan, record it for lane telemetry (SPEC-062), one line:
+`bash lib/gate-ledger.sh record <spec-slug> test-plan ran "matrix rows=<N> categories=<list>"`.

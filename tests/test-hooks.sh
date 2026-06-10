@@ -672,7 +672,7 @@ printf '2026-06-10T10:00:00Z | GATE | spec | ran | legacy run, no START\n' > "$L
 printf '2026-06-09T01:00:00Z | LANE-CHECK | downgrade | chosen=tiny suggested=full | risky thing\n' > "$LT_DIR/completeness.log"
 LT() { DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" 2>/dev/null; }
 # headline aggregates: 3 runs, 1 misroute, 1 ship, 1 untracked
-assert_output_contains "telemetry: headline counts" "runs: 3   misrouted (chosen != classified): 1   shipped: 1   untracked (no START): 1" "$(LT report)"
+assert_output_contains "telemetry: headline counts" "runs: 3   lane-misrouted: 1   type-misrouted: 0   shipped: 1   untracked (no START): 1" "$(LT report)"
 # the per-lane table carries the misrouted normal run with its ship
 assert_output_contains "telemetry: normal lane row" "normal  *1  *1  *3  *0  *0  *1" "$(LT report)"
 # misfires names the chosen-vs-classified pair AND surfaces the floor-check line
@@ -683,7 +683,30 @@ DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" start spec-d fu
 assert_output_contains "telemetry: start verb round-trip" "runs: 4" "$(LT report)"
 # negative control: remove the START line -> the run goes untracked, misroute count drops
 grep -v 'START' "$LT_DIR/runs/spec-a.log" > "$LT_DIR/runs/spec-a.log.tmp" && mv -f "$LT_DIR/runs/spec-a.log.tmp" "$LT_DIR/runs/spec-a.log"
-assert_output_contains "telemetry: negative control (START removed -> untracked)" "misrouted (chosen != classified): 0" "$(LT report)"
+assert_output_contains "telemetry: negative control (START removed -> untracked)" "lane-misrouted: 0" "$(LT report)"
+
+# ============================================================
+echo ""
+echo "=== lane-telemetry: type misroutes + escaped defects (SPEC-062) ==="
+# ============================================================
+LT2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lt2.XXXXXX")
+mkdir -p "$LT2_DIR/runs"
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=spec-feature ctype=eval repo=kitA\n2026-06-10T08:00:00Z | GATE | ship | ran | shipping pr=#41\n' > "$LT2_DIR/runs/spec-x.log"
+printf '2026-06-11T07:00:00Z | START | lane=bug classified=bug type=incident repo=kitA\n2026-06-11T07:01:00Z | ACTION | defect traced: escaped-from=spec-x cache stampede\n' > "$LT2_DIR/runs/bug-stampede.log"
+LT2() { DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" 2>/dev/null; }
+# type misroute counted in the headline and named in misfires
+assert_output_contains "telemetry: type-misroute headline" "type-misrouted: 1" "$(LT2 report)"
+assert_output_contains "telemetry: type misfire pair" "spec-x: type=spec-feature classified-type=eval" "$(LT2 misfires)"
+# escaped defect section indicts the source spec
+assert_output_contains "telemetry: escaped defect named" "spec-x <- bug-stampede" "$(LT2 report)"
+# 5-arg start writes ctype; 4-arg (no ctype) still well-formed (backward compat)
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" start spec-y tiny tiny doc doc kitB
+assert_output_contains "telemetry: 5-arg start ctype round-trip" "ctype=doc" "$(cat "$LT2_DIR/runs/spec-y.log")"
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" start spec-z full full migration
+assert_output_contains "telemetry: 4-arg start still well-formed" "lane=full classified=full type=migration repo=" "$(cat "$LT2_DIR/runs/spec-z.log")"
+# negative control: strip the ctype KV -> type-misroute count drops to 0
+sed 's/ ctype=eval//' "$LT2_DIR/runs/spec-x.log" > "$LT2_DIR/runs/spec-x.log.tmp" && mv -f "$LT2_DIR/runs/spec-x.log.tmp" "$LT2_DIR/runs/spec-x.log"
+assert_output_contains "telemetry: negative control (ctype stripped -> 0)" "type-misrouted: 0" "$(LT2 report)"
 
 # ============================================================
 echo ""

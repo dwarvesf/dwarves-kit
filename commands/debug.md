@@ -39,6 +39,11 @@ Write `.claude/debug/<slug>.md` from this template, and **append to it before ea
 
 Leave `## Root cause` blank until you have actually found it. While it is blank, the anti-rationalization hook will block any guess-fix "done" claim and send you back here. That is intended.
 
+**Escaped-defect marker (SPEC-062).** If this defect traces to a SHIPPED spec whose test plan
+should have caught it, record the indictment so lane telemetry can aggregate test-design
+quality per spec: `bash lib/gate-ledger.sh action <slug> "escaped-from=<spec-slug>"`. Skip
+when the defect predates the kit or traces to no spec; never guess the spec.
+
 ## Phase 0: Build a feedback loop
 
 **This is most of the skill.** A fast, deterministic, agent-runnable pass/fail signal for the bug is what every later phase consumes: reproduction, bisection, hypothesis tests, and the Phase-4 failing test all just re-run it. Spend disproportionate effort here; with the loop, the bug is mostly found.
