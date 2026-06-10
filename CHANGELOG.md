@@ -5,6 +5,16 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Four gate/ledger defect fixes (SPEC-071 / ID-061, ID-063, ID-062, ID-050).**
+  proof-gate's class now floors at the task-type registry default (a doc task is
+  `inert`, not blanket `behavioral`; migration/incident/operate floor at `stateful`,
+  planning/learning at `inert`); the SPEC-069 boardless advisory relocated above the
+  spec check so spec-less pushes finally get the nudge; new evidence-dies-with-the-
+  session advisory (a build-ran run shipping no docs/verification record warns, never
+  blocks, covering the proof-gate's deliberate fail-open seams); progress renders a
+  disposed-past-the-pointer phase as `*` with a legend instead of a misleading ✓.
+  Failing-test-first (5 RED pre-fix), multi-lens reviewed (7/7/7, all findings fixed
+  in-branch).
 - **One canonical rid: the branch slug (SPEC-070 / ID-059).** `lib/gate-ledger.sh rid`
   prints the runid-normalized branch slug (refuses master/main/detached/empty-stem,
   loudly), the same key `hooks/ship-gate.sh` checks at push, so assign-time records

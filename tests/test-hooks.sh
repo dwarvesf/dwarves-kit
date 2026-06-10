@@ -1257,6 +1257,87 @@ RC=0; grep -q "strips to an empty slug" "$GL70" || RC=1
 assert_exit "rid carries the empty-slug guard" 0 $RC
 rm -rf "$RIDD"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-071: gate + ledger defect fixes (ID-061/063/062/050) ==="
+# ============================================================
+PG71="$KIT_DIR/lib/proof-gate.sh"
+GL71="$KIT_DIR/lib/gate-ledger.sh"
+
+# --- ID-061: proof_class honors the registry default for the classified type ---
+OUT=$(bash "$PG71" contract "rewrite the README closed-loop framing; doc only, no behavior change" 2>/dev/null | head -1)
+assert_output_contains "ID-061: doc task floors at registry inert" "class=inert" "$OUT"
+OUT=$(bash "$PG71" contract "rewrite the README and migrate the schema for the docs database" 2>/dev/null | head -1)
+assert_output_contains "ID-061: stateful keywords still upgrade a doc task" "class=stateful" "$OUT"
+OUT=$(bash "$PG71" contract "run the monthly payroll close for contractors" 2>/dev/null | head -1)
+assert_output_contains "ID-061: operate type floors at registry stateful" "class=stateful" "$OUT"
+OUT=$(bash "$PG71" contract "plan the mega-goal roadmap for the quarter" 2>/dev/null | head -1)
+assert_output_contains "ID-061: planning type floors at registry inert" "class=inert" "$OUT"
+# Row 3 (no-registry fallback) is unreachable via classify today (every type has a
+# registry row; the classifier itself falls back to spec-feature). Source-text pin:
+RC=0; grep -q "4. behavioral: the fallback for types with no registry row" "$PG71" || RC=1
+assert_exit "ID-061: rowless-type behavioral fallback still present (source pin)" 0 $RC
+
+# --- ID-063: boardless advisory reachable on a SPEC-LESS push ---
+SG71=$(mktemp -d "${TMPDIR:-/tmp}/dk-sg71.XXXXXX")
+( cd "$SG71" && git init -q -b main . && git config user.email t@e && git config user.name t \
+  && mkdir -p _meta && printf '| ID-900 | some other row | x | x | tiny | queued |\n' > _meta/BACKLOG.md \
+  && git add -A && git commit -qm base \
+  && git switch -q -c feat/offboard-work && printf 'x\n' > f.txt && git add -A && git commit -qm work )
+OUT=$( cd "$SG71" && printf '%s' '{"tool_input":{"command":"git push origin feat/offboard-work"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" 2>&1 ); RC=$?
+assert_exit "ID-063: spec-less boardless push still exits 0" 0 $RC
+assert_output_contains "ID-063: spec-less push gets the boardless advisory" "appears nowhere in _meta/BACKLOG.md" "$OUT"
+# negative: slug on a board row -> silent
+( cd "$SG71" && printf '| ID-901 | offboard-work fix | x | x | tiny | queued |\n' >> _meta/BACKLOG.md && git add -A && git commit -qm row )
+OUT=$( cd "$SG71" && printf '%s' '{"tool_input":{"command":"git push origin feat/offboard-work"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT_DIR" bash "$KIT_DIR/hooks/ship-gate.sh" 2>&1 )
+assert_output_not_contains "ID-063: boarded spec-less push is silent" "appears nowhere" "$OUT"
+
+# --- ID-062: build-ran run shipping no verification record -> advisory ---
+LOG62=$(mktemp -d "${TMPDIR:-/tmp}/dk-log62.XXXXXX")
+mkdir -p "$LOG62/runs"
+printf '%s\n' \
+  '2026-06-11T00:00:00Z | START | lane=bug classified=bug type=bug-fix repo=x' \
+  '2026-06-11T00:01:00Z | GATE | build | ran | fix applied' > "$LOG62/runs/offboard-work.log"
+OUT=$( cd "$SG71" && printf '%s' '{"tool_input":{"command":"git push origin feat/offboard-work"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOG62" bash "$KIT_DIR/hooks/ship-gate.sh" 2>&1 ); RC=$?
+assert_exit "ID-062: warn never blocks" 0 $RC
+assert_output_contains "ID-062: build-ran + no verification file -> advisory" "ships no docs/verification/ record" "$OUT"
+# silenced when the branch carries a verification record
+( cd "$SG71" && mkdir -p docs/verification && printf 'Exit: 0\nNEGATIVE CONTROL\nVERDICT: PASS\n' > docs/verification/offboard-work.md \
+  && git add -A && git commit -qm proof )
+OUT=$( cd "$SG71" && printf '%s' '{"tool_input":{"command":"git push origin feat/offboard-work"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOG62" bash "$KIT_DIR/hooks/ship-gate.sh" 2>&1 )
+assert_output_not_contains "ID-062: verification file in diff silences the warn" "ships no docs/verification/ record" "$OUT"
+# tiny lane never warns
+printf '%s\n' \
+  '2026-06-11T00:00:00Z | START | lane=tiny classified=tiny type=doc repo=x' \
+  '2026-06-11T00:01:00Z | GATE | build | ran | typo' > "$LOG62/runs/offboard-work.log"
+( cd "$SG71" && git rm -q -r docs/verification && git commit -qm unproof )
+OUT=$( cd "$SG71" && printf '%s' '{"tool_input":{"command":"git push origin feat/offboard-work"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOG62" bash "$KIT_DIR/hooks/ship-gate.sh" 2>&1 )
+assert_output_not_contains "ID-062: tiny-lane run never warns" "ships no docs/verification/ record" "$OUT"
+rm -rf "$SG71" "$LOG62"
+
+# --- ID-050: out-of-order disposed phase gets * + legend; in-order stays clean ---
+LOG50=$(mktemp -d "${TMPDIR:-/tmp}/dk-log50.XXXXXX")
+mkdir -p "$LOG50/runs"
+printf '%s\n' \
+  '2026-06-11T00:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T00:02:00Z | GATE | review | ran | early verdict' > "$LOG50/runs/ooo-run.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG50" bash "$GL71" progress ooo-run bug 2>&1)
+assert_output_contains "ID-050: disposed-past-pointer renders as *review" "*review" "$OUT"
+assert_output_contains "ID-050: legend appears when an out-of-order mark exists" "(* = disposed out of order)" "$OUT"
+assert_output_contains "ID-050: pointer still at the first gap" "▶test-plan" "$OUT"
+printf '%s\n' \
+  '2026-06-11T00:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T00:01:00Z | GATE | test-plan | ran | rows' > "$LOG50/runs/seq-run.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG50" bash "$GL71" progress seq-run bug 2>&1)
+assert_output_not_contains "ID-050: in-order ledger renders no legend" "disposed out of order" "$OUT"
+rm -rf "$LOG50"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
