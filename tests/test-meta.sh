@@ -1552,6 +1552,18 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-055: the backlog kanban. The helper exists, assign documents pull mode, the
+# vocabulary carries the claimed state. A drop on any leg makes pull a phantom.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/backlog.sh" ] && grep -qF -- '--next' "$KIT_DIR/commands/assign.md" \
+   && grep -qF '`claimed`' "$KIT_DIR/_meta/BACKLOG.md"; then
+  echo -e "  ${GREEN}PASS${NC} backlog kanban wired: lib/backlog.sh + assign --next + claimed state (SPEC-055)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} backlog kanban incomplete: need lib/backlog.sh executable + assign --next + claimed vocab (SPEC-055)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

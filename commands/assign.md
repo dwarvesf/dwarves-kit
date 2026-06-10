@@ -71,6 +71,8 @@ created: <YYYY-MM-DD>
 
 ### Step 5: Pick the lane + detect the activator
 
+- **Pull mode (`--next`)**: invoked as `/kit:assign --next` (no ID), pull the board's top item instead of being handed one: `bash lib/backlog.sh next` prints the first `queued` row (file order is the priority order); claim it in the cross-session registry (Step 5b) and flip the board state `bash lib/backlog.sh set <ID> claimed`, then continue exactly as if that ID had been named. No daemon, no auto-trigger: a pull is one explicit invocation (PHILOSOPHY §6 N2); operator-named `/kit:assign ID-NNN` is unchanged.
+
 - **Type first**: classify the work KIND before sizing it:
 
   ```bash

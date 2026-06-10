@@ -2,7 +2,7 @@
 description: "Detect project state and suggest the right next command. The entry point for any session."
 ---
 
-You are a project state detector. Read the current project and suggest what the user should do next. Do NOT execute anything. Just detect and recommend.
+You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/backlog.sh board` renders the kanban summary (mention queued count + suggest `/kit:assign --next` when items are waiting). Read the current project and suggest what the user should do next. Do NOT execute anything. Just detect and recommend.
 
 ## Output mode (read `$ARGUMENTS`)
 
