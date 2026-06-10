@@ -671,14 +671,14 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# SPEC-047: the test-plan-review-team lane. Pin the literal `## Test plan critique`
+# SPEC-052: the test-plan-review-team lane. Pin the literal `## Test plan critique`
 # heading + the `spec-first` write target (same drift-guard shape as devs-team's
 # critique, SPEC-023). No command reads this critique (human-facing), so a wording
 # pin is the right guard. Also pin the bounded-loop contract it must carry.
 TPRT_CMD="$KIT_DIR/commands/test-plan-review-team.md"
 TOTAL=$((TOTAL + 1))
 if [ -f "$TPRT_CMD" ] && grep -qF '## Test plan critique' "$TPRT_CMD" && grep -qF 'spec-first' "$TPRT_CMD"; then
-  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md exists + writes '## Test plan critique' spec-first (SPEC-047)"
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md exists + writes '## Test plan critique' spec-first (SPEC-052)"
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} test-plan-review-team.md missing or lost its '## Test plan critique' / spec-first contract"
@@ -686,7 +686,7 @@ else
 fi
 TOTAL=$((TOTAL + 1))
 if grep -qF '[[QL-VERDICT' "$TPRT_CMD" 2>/dev/null && grep -qF 'test-design-standard.md' "$TPRT_CMD" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md carries the QL-VERDICT loop + encodes test-design-standard.md (SPEC-047)"
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md carries the QL-VERDICT loop + encodes test-design-standard.md (SPEC-052)"
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} test-plan-review-team.md lost the QL-VERDICT loop or the standard reference"

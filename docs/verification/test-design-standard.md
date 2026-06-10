@@ -52,7 +52,7 @@ Climb deliberately; do not skip rungs and do not stop early:
 - **Bounded loop:** produce -> critique -> revise, stop on zero findings or a hard round cap.
   Emit a machine-readable verdict and require the **finding count to strictly fall** across
   rounds. A loop where findings hold steady is a finding, not a pass.
-- **Executor:** `/kit:test-plan-review-team` (SPEC-047) runs this section on a spec's `## Test plan`
+- **Executor:** `/kit:test-plan-review-team` (SPEC-052) runs this section on a spec's `## Test plan`
   , 5 lenses in parallel, the bounded revise loop, a `## Test plan critique` verdict. It sits between
   `/kit:test-plan` (writes the plan) and `/kit:execute` (runs it). Report-only.
 

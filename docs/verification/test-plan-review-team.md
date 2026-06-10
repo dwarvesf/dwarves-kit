@@ -1,10 +1,10 @@
-# Proof of done: /kit:test-plan-review-team (SPEC-047)
+# Proof of done: /kit:test-plan-review-team (SPEC-052)
 
 | | |
 |---|---|
 | **Profile** | feature (a new kit command) |
 | **Proof class** | behavioral (the command's critique output) |
-| **Spec** | [`docs/specs/SPEC-047-test-plan-review-team.md`](specs/SPEC-047-test-plan-review-team.md) |
+| **Spec** | [`docs/specs/SPEC-052-test-plan-review-team.md`](specs/SPEC-052-test-plan-review-team.md) |
 | **Canonical** | this file (table-first per ADR-0026) |
 
 ## 1. Acceptance criteria
@@ -44,8 +44,8 @@
 - Exit: 0
 - Output (excerpt):
   ```
-  PASS test-plan-review-team.md exists + writes '## Test plan critique' spec-first (SPEC-047)
-  PASS test-plan-review-team.md carries the QL-VERDICT loop + encodes test-design-standard.md (SPEC-047)
+  PASS test-plan-review-team.md exists + writes '## Test plan critique' spec-first (SPEC-052)
+  PASS test-plan-review-team.md carries the QL-VERDICT loop + encodes test-design-standard.md (SPEC-052)
   Passed: 394 / 394
   ```
 - Verdict: PASS. New pins green; the prior suite (incl. the architecture inventory row count) stays green after adding the command's inventory row.

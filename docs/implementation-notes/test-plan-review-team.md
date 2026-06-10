@@ -1,4 +1,4 @@
-# Implementation notes: /kit:test-plan-review-team (SPEC-047)
+# Implementation notes: /kit:test-plan-review-team (SPEC-052)
 
 Adversarial test-design critique command. Mirrors `/kit:devs-team` one altitude down (the test
 design, not the solution design). Slots between `/kit:test-plan` and `/kit:execute`.

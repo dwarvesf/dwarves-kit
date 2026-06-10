@@ -1,4 +1,4 @@
-# SPEC-047: /kit:test-plan-review-team (adversarial test-design critique)
+# SPEC-052: /kit:test-plan-review-team (adversarial test-design critique)
 
 Status: Implemented
 Date: 2026-06-09
@@ -144,7 +144,7 @@ control (Coverage/Oracle lenses bite) and convergence.
 
 ## Test plan critique
 Date: 2026-06-09
-Spec: SPEC-047
+Spec: SPEC-052
 Lenses run: coverage, oracle, feasibility, test-ladder, determinism (round 1+2 full; round 3 re-ran oracle, feasibility, test-ladder, the lenses holding the open critical, and carried coverage/determinism from round 2)
 Rounds:
 - `[[QL-VERDICT round=1 clean=false findings=13]]`
