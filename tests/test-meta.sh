@@ -1732,6 +1732,19 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-066: the install copies (no ln -s on hook files) and stamps; kit-health probes staleness.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'cp "$HOOK_FILE" "$LINK"' "$KIT_DIR/install.sh" \
+   && ! grep -qF 'ln -s "$HOOK_FILE"' "$KIT_DIR/install.sh" \
+   && grep -qF 'INSTALL-STAMP' "$KIT_DIR/install.sh" \
+   && grep -qF 'INSTALL-STAMP' "$KIT_DIR/commands/kit-health.md"; then
+  echo -e "  ${GREEN}PASS${NC} install-by-copy + stamp + staleness probe (SPEC-066)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} install-by-copy incomplete (SPEC-066)"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="

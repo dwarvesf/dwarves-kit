@@ -9,7 +9,7 @@
 set -euo pipefail
 
 KIT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLAUDE_DIR="$HOME/.claude"
+CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"   # overridable for fixture installs (SPEC-066)
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 BACKUP_DIR="$CLAUDE_DIR/backups"
 KIT_MARKER="dwarves-kit"
@@ -56,20 +56,31 @@ if [ "${1:-}" = "--uninstall" ]; then
   elif [ -d "$HOOKS_DEST" ]; then
     for HOOK_FILE in "$KIT_DIR/hooks/"*.sh; do
       LINK="$HOOKS_DEST/$(basename "$HOOK_FILE")"
-      [ -L "$LINK" ] && rm "$LINK"
+      # symlinks (pre-SPEC-066) and copied files (SPEC-066) both belong to the kit
+      { [ -L "$LINK" ] || [ -f "$LINK" ]; } && rm "$LINK"
     done
     rmdir "$HOOKS_DEST" 2>/dev/null && echo "[ok] Removed hooks directory: $HOOKS_DEST"
   fi
 
-  # Remove the lib symlink we created (SPEC-045). Only a symlink is removed; an
-  # in-place clone keeps its real lib/ (torn down by deleting the clone).
+  # Remove the lib we deployed (SPEC-045; symlink pre-066, real dir post-066).
   LIB_DEST="$CLAUDE_DIR/dwarves-kit/lib"
   if [ -L "$LIB_DEST" ]; then
-    rm "$LIB_DEST"
-    echo "[ok] Removed lib symlink: $LIB_DEST"
+    rm "$LIB_DEST" && echo "[ok] Removed lib symlink: $LIB_DEST"
+  elif [ -d "$LIB_DEST" ] && [ -f "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" ]; then
+    rm -rf "$LIB_DEST" && echo "[ok] Removed copied lib dir: $LIB_DEST"
   fi
 
-  # Remove the operate-contract symlinks (SPEC-049). Only symlinks are removed.
+  # Remove the operate-contract files (SPEC-049 symlinks, or SPEC-066 copies recorded in
+  # the stamp's managed= list; a user's own file is never in the list and never removed).
+  UNMANAGED="$(grep '^managed=' "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" 2>/dev/null | cut -d= -f2- || true)"
+  for CONTRACT in AGENTS.md WORKFLOW.md; do
+    LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
+    if [ -L "$LINK" ]; then rm "$LINK" && echo "[ok] Removed $CONTRACT symlink: $LINK"
+    elif [ -f "$LINK" ] && printf '%s' " $UNMANAGED " | grep -q " $CONTRACT "; then
+      rm "$LINK" && echo "[ok] Removed kit-managed $CONTRACT: $LINK"
+    fi
+  done
+  [ -f "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" ] && rm "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" && echo "[ok] Removed install stamp"
   for CONTRACT in AGENTS.md WORKFLOW.md; do
     LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
     if [ -L "$LINK" ]; then rm "$LINK" && echo "[ok] Removed $CONTRACT symlink: $LINK"; fi
@@ -145,20 +156,24 @@ else
   # A previous run may have left a directory symlink here; drop it so we own a real dir.
   [ -L "$HOOKS_DEST" ] && rm "$HOOKS_DEST"
   mkdir -p "$HOOKS_DEST"
+  # SPEC-066: COPY, never symlink. A symlinked hook follows the CHECKED-OUT BRANCH of
+  # the clone, so switching branches silently swaps the live enforcement code (observed
+  # 2026-06-08: a fixed safety-gate regressed to the old build mid-session). Copies pin
+  # the installed version; upgrades are an explicit re-run of install.sh.
   for HOOK_FILE in "$KIT_DIR/hooks/"*.sh; do
     LINK="$HOOKS_DEST/$(basename "$HOOK_FILE")"
     if [ -L "$LINK" ] || [ -f "$LINK" ]; then
       rm "$LINK"
     fi
-    ln -s "$HOOK_FILE" "$LINK"
+    cp "$HOOK_FILE" "$LINK" && chmod +x "$LINK"
   done
-  echo "[ok] Linked hook scripts into $HOOKS_DEST/"
+  echo "[ok] Copied hook scripts into $HOOKS_DEST/ (pinned; re-run install.sh to upgrade)"
 fi
 
 # 1c. Deploy lib/ so the gates (proof-ledger, gate-ledger) resolve from the stable
 # install path even when pushing a CONSUMER repo (SPEC-045). A consumer repo has no
 # lib/, and bash-install mode has no CLAUDE_PLUGIN_ROOT, so without this the ship-gate
-# fails open in every repo but dwarves-kit itself. Dir symlink keeps repo edits live.
+# fails open in every repo but dwarves-kit itself. Copied, not symlinked (SPEC-066).
 if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
   echo "[ok] Kit is installed in place; lib already at \$HOME/.claude/dwarves-kit/lib/"
 else
@@ -166,32 +181,58 @@ else
   mkdir -p "$CLAUDE_DIR/dwarves-kit"
   [ -L "$LIB_DEST" ] && rm "$LIB_DEST"
   [ -d "$LIB_DEST" ] && [ ! -L "$LIB_DEST" ] && rm -rf "$LIB_DEST"
-  ln -s "$KIT_DIR/lib" "$LIB_DEST"
-  echo "[ok] Linked lib into $LIB_DEST"
+  cp -R "$KIT_DIR/lib" "$LIB_DEST"
+  echo "[ok] Copied lib into $LIB_DEST (pinned, SPEC-066)"
 fi
 
 # 1d. Deploy the operate-contract files so they resolve from the stable install path. adopt.sh
 # needs a source AGENTS.md at $KIT_ROOT; gate-ledger reads the lane x phase matrix from
 # $KIT_ROOT/WORKFLOW.md. Without these, adopt + the lane gate are broken from the install
-# (SPEC-049). Symlink to keep repo edits live, mirroring hooks + lib.
+# (SPEC-049). Copied and version-pinned, mirroring hooks + lib (SPEC-066).
 if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
   echo "[ok] Kit is installed in place; AGENTS.md + WORKFLOW.md already at \$HOME/.claude/dwarves-kit/"
 else
   mkdir -p "$CLAUDE_DIR/dwarves-kit"
+  # A real file is kit-managed ONLY if a prior run recorded it in the stamp's managed=
+  # list; presence of the stamp alone is not enough (review HIGH: the stamp is written by
+  # the same run that first sees the user's file, so stamp-presence destroys it on run 2).
+  PRIOR_MANAGED=""
+  [ -f "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" ] \
+    && PRIOR_MANAGED="$(grep '^managed=' "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" 2>/dev/null | cut -d= -f2- || true)"
+  MANAGED_CONTRACTS=""
+  COPIED_CONTRACTS=""
   for CONTRACT in AGENTS.md WORKFLOW.md; do
     LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
     if [ -L "$LINK" ]; then
       rm "$LINK"                              # refresh a stale symlink
-    elif [ -e "$LINK" ]; then
-      # A real file here (a user's own AGENTS.md, or a manual install) is left intact and used
-      # as-is; clobbering it with rm -f would be silent data loss (review HIGH). adopt resolves
-      # the source from $KIT_ROOT either way, so a real file still works.
-      echo "[skip] $CONTRACT at $LINK is a real file, not a symlink; leaving it untouched"
+    elif [ -e "$LINK" ] && ! printf '%s' " $PRIOR_MANAGED " | grep -q " $CONTRACT "; then
+      # A real file never recorded as kit-managed = the user's own file; leave it intact
+      # (clobbering would be silent data loss, the SPEC-049 review rule, made durable).
+      echo "[skip] $CONTRACT at $LINK is a user file (not in the stamp's managed list); leaving it untouched"
       continue
     fi
-    ln -s "$KIT_DIR/$CONTRACT" "$LINK"
+    cp "$KIT_DIR/$CONTRACT" "$LINK"
+    MANAGED_CONTRACTS="$MANAGED_CONTRACTS $CONTRACT"
+    COPIED_CONTRACTS="$COPIED_CONTRACTS $CONTRACT"
   done
-  echo "[ok] Linked AGENTS.md + WORKFLOW.md into $CLAUDE_DIR/dwarves-kit/"
+  if [ -n "$COPIED_CONTRACTS" ]; then
+    echo "[ok] Copied$COPIED_CONTRACTS into $CLAUDE_DIR/dwarves-kit/ (pinned, SPEC-066)"
+  else
+    echo "[ok] Contract files left as user files (none kit-managed)"
+  fi
+fi
+
+# 1e. Version stamp (SPEC-066): records WHAT is installed so kit-health can flag a stale
+# install (the upgrade path is: pull the repo, re-run install.sh). Skipped for in-place
+# installs (the clone IS the install).
+if [ -z "$DEST_REAL" ] || [ "$KIT_REAL" != "$DEST_REAL" ]; then
+  {
+    echo "version=$(cat "$KIT_DIR/VERSION" 2>/dev/null || echo unknown)"
+    echo "sha=$(git -C "$KIT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+    echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "managed=${MANAGED_CONTRACTS# }"
+  } > "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP"
+  echo "[ok] Stamped install: $(tr '\n' ' ' < "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP")"
 fi
 
 # 2. Merge settings.json
@@ -280,7 +321,7 @@ if [ -d "$KIT_DIR/agents" ]; then
 fi
 
 # 5. Create log directory
-mkdir -p "$HOME/.claude/dwarves-kit/logs"
+mkdir -p "$CLAUDE_DIR/dwarves-kit/logs"
 echo "[ok] Log directory ready"
 
 # 6. Install path-scoped rules templates

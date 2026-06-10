@@ -158,6 +158,41 @@ assert_exit "stack-merge: usage error exits 64" 64 $RC
 RC=0; bash "$KIT_DIR/lib/stack-merge.sh" chain --dry-run 2>/dev/null || RC=$?
 assert_exit "stack-merge: zero-arg chain is loud, not a silent no-op" 64 $RC
 
+# ============================================================
+echo ""
+echo "=== install-by-copy: pinned install, no branch-following symlinks (SPEC-066) ==="
+# ============================================================
+IC_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic.XXXXXX")
+CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_true "install: hooks are real files, not symlinks" "$([ -f "$IC_DIR/dwarves-kit/hooks/safety-gate.sh" ] && [ ! -L "$IC_DIR/dwarves-kit/hooks/safety-gate.sh" ]; echo $?)"
+assert_true "install: lib is a real dir" "$([ -d "$IC_DIR/dwarves-kit/lib" ] && [ ! -L "$IC_DIR/dwarves-kit/lib" ]; echo $?)"
+assert_true "install: contract files are real" "$([ -f "$IC_DIR/dwarves-kit/AGENTS.md" ] && [ ! -L "$IC_DIR/dwarves-kit/AGENTS.md" ]; echo $?)"
+assert_output_contains "install: stamp carries version+sha" "version=" "$(cat "$IC_DIR/dwarves-kit/INSTALL-STAMP")"
+assert_output_contains "install: stamp carries sha" "sha=" "$(cat "$IC_DIR/dwarves-kit/INSTALL-STAMP")"
+# idempotent re-run refreshes the kit-managed copies (the stamp marks them kit-managed)
+CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_exit "install: re-run is idempotent" 0 $?
+# negative control: a hook copied then locally EDITED is overwritten by re-install
+# (the pin is the point: the clone is the source of truth, the install is derived)
+echo "# drift" >> "$IC_DIR/dwarves-kit/hooks/safety-gate.sh"
+CLAUDE_DIR="$IC_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_output_not_contains "install: re-run reverts hand-edited installed hook (anti-drift)" "# drift" "$(tail -1 "$IC_DIR/dwarves-kit/hooks/safety-gate.sh")"
+# AC3 durability (review F1): a USER-owned contract file survives MULTIPLE installs,
+# because kit-managed-ness is the stamp's managed= list, not stamp presence.
+IC2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-ic2.XXXXXX")
+mkdir -p "$IC2_DIR/dwarves-kit"
+echo "# MY OWN AGENTS" > "$IC2_DIR/dwarves-kit/AGENTS.md"
+CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
+assert_output_contains "install: user AGENTS.md survives two runs" "# MY OWN AGENTS" "$(head -1 "$IC2_DIR/dwarves-kit/AGENTS.md")"
+assert_output_contains "install: stamp manages only the copied contract" "^managed=WORKFLOW.md$" "$(grep '^managed=' "$IC2_DIR/dwarves-kit/INSTALL-STAMP")"
+# uninstall removes copies (review F2) but never the user file
+CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" --uninstall >/dev/null 2>&1
+assert_true "uninstall: copied lib dir removed" "$([ ! -e "$IC2_DIR/dwarves-kit/lib" ]; echo $?)"
+assert_true "uninstall: managed WORKFLOW.md removed" "$([ ! -e "$IC2_DIR/dwarves-kit/WORKFLOW.md" ]; echo $?)"
+assert_true "uninstall: stamp removed" "$([ ! -e "$IC2_DIR/dwarves-kit/INSTALL-STAMP" ]; echo $?)"
+assert_output_contains "uninstall: user AGENTS.md untouched" "# MY OWN AGENTS" "$(head -1 "$IC2_DIR/dwarves-kit/AGENTS.md")"
+
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"rm -fr /tmp/bar"}}')
 assert_exit "blocks rm -fr" 2 $RC
 
