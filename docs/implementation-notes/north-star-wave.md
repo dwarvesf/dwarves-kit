@@ -59,3 +59,18 @@ Roadmap: ops-toolkit `_meta/megagoals/kit-north-star/`. Specs: SPEC-054/055/056 
 - Note: proof-gate contract prints class from the DESCRIPTION (behavioral for "triage the
   alert") while the registry row carries the stateful DEFAULT; the registry doc already says
   the column is a default the gate may override. Left as designed.
+
+## 2026-06-10 SPEC-057 SDD-audit pass (maintainer: "apply SDD back on PR 36")
+- Context: post-ship audit found the review gate had never run, the lane said normal while the
+  spec declared full, and a stale "six work types" line sat in PHILOSOPHY.
+- Decisions: (a) the lane mismatch was itself a classifier bug, the kit-machinery hard flag
+  enumerated lib files by name and missed task-type-classify/backlog/goal-registry/dispatch-gate;
+  fixed + pinned, and the floor-check now fires LANE-DOWNGRADE on this very work. (b) Dispatched
+  a real adversarial kit:reviewer on the diff: FIX-FIRST 4/10, 3 CRITICAL regex over-matches
+  proven by live probes. All fixed; reconcile moved after migration; 12 negative pins added so
+  the exact false positives are RED-guards. (c) proof-gate stateful set gains incident signals
+  (the registry default and the gate now agree for incident phrasing). (d) Full-lane gates
+  recorded honestly incl. two skipped-with-reason (design-critique, reflect).
+- Lesson: happy-path truth tables pass CI while broad regexes rot classification; the review's
+  live adversarial probing is what caught it. Negative pins are now part of the classifier's
+  definition of done.

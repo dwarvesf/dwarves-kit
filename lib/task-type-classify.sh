@@ -21,16 +21,17 @@
 #   4. operate      -- recurring procedure run (payroll...)   -> append-only run ledger
 #   5. eval         -- benchmark / evaluate / compare tools -> a TEST-REPORT
 #   6. research     -- investigate / survey / landscape      -> a cited report
-#   7. reconcile    -- drift / cleanup / records-vs-reality   -> inventory + verdicts
-#   8. doc          -- write docs / readme / changelog        -> doc-verifier match
-#   9. migration    -- deploy / migrate / schema / rollout    -> dry-run + rollback
+#   7. doc          -- write docs / readme / changelog        -> doc-verifier match
+#   8. migration    -- deploy / migrate / schema / rollout    -> dry-run + rollback
+#   9. reconcile    -- drift / cleanup / records-vs-reality   -> inventory + verdicts
 #  10. data-tool    -- a CLI / API client / scraper / puller  -> a recorded live run
 #  11. spec-feature -- the default: implement a feature/fix   -> tests + acceptance
 #
 # New-type precedence rationale (SPEC-057): incident first (alert language must never fall
 # through to research/doc); learning/planning/operate are schedule/material-anchored so they
-# cannot steal build phrases; reconcile sits before doc/migration so drift/cleanup language
-# wins, while "migrate the schema" still lands on migration.
+# cannot steal build phrases; reconcile sits AFTER migration (review F6: explicit migratory
+# phrasing like "migrate stale records" wins) but its drift/cleanup anchors are estate-scoped
+# so routine code cleanup falls through to spec-feature.
 #
 # Usage:
 #   task-type-classify.sh classify "<task description>"  -> the type, exit 0
@@ -43,12 +44,12 @@ task_type_classify() {
   lc="$(printf '%s' "$desc" | tr '[:upper:]' '[:lower:]')"
 
   # 1. incident: reactive triage of a fired signal (SPEC-057).
-  if printf '%s' "$lc" | grep -qE 'incident|\binc-[0-9]+|triage|\balert\b|outage|post-?mortem|\bcrit\b|false positive|on-?call|pager'; then
+  if printf '%s' "$lc" | grep -qE 'incident|\binc-[0-9]+|triage|(respond to|investigate|silence|ack(nowledge)?) (the )?.{0,20}alert|alert (fired|firing|triggered|storm)|(respond|triage|investigat|recover|mitigat)[a-z]* .{0,20}outage|outage (response|triage|recovery|report)|post-?mortem|\bsev-?(0|1|crit)\b|false positive|on-?call (response|triage|incident|page)'; then
     echo incident; return 0
   fi
 
   # 2. learning: study material -> workbook/self-check (SPEC-057).
-  if printf '%s' "$lc" | grep -qE 'learn(ing)? (track|course|day|path)|process day[- ]?[0-9]|\bcourse\b|workbook|study (the|this|session)|lesson|flashcard|anki|self-?check'; then
+  if printf '%s' "$lc" | grep -qE 'learn(ing)? (track|course|day|path)|process day[- ]?[0-9]|course (material|track|day|module|transcript)|(study|learning|practice|math|quant) workbook|workbook (for|on) |study (session|track|plan)|lesson (plan|module|series|[0-9])|flashcard|anki|self-?check'; then
     echo learning; return 0
   fi
 
@@ -59,7 +60,7 @@ task_type_classify() {
   fi
 
   # 4. operate: a recurring, defined procedure run (SPEC-057).
-  if printf '%s' "$lc" | grep -qE 'payroll|monthly (close|run|report|sweep|review)|quarterly (close|run)|run the .*(procedure|playbook|runbook)|recurring (run|task|job)|scheduled run|babysit|routine (run|check)|lead radar'; then
+  if printf '%s' "$lc" | grep -qE 'payroll|run (the )?monthly|monthly close|month-?end (close|run)|quarterly (close|run)|run the .*(procedure|playbook|runbook|radar|sweep)|recurring (run|task|job)|scheduled run|babysit|routine (run|check)'; then
     echo operate; return 0
   fi
 
@@ -73,11 +74,6 @@ task_type_classify() {
     echo research; return 0
   fi
 
-  # 7. reconcile: records-vs-reality drift, cleanup, hygiene sweeps (SPEC-057).
-  if printf '%s' "$lc" | grep -qE 'reconcil|\bdrift\b|clean ?up|stale (branch|status|row|record|reference)|parity (check|audit)|hygiene|deadwood|prune|audit .* against|sweep (the )?(estate|repo|backlog|branches)'; then
-    echo reconcile; return 0
-  fi
-
   # 8. doc: documentation / readme / changelog / comments (a doc about anything is a doc).
   if printf '%s' "$lc" | grep -qE 'write (the )?(docs|documentation|readme|manual)|update (the )?(docs|documentation|readme|changelog|manual)|document the|\breadme\b|changelog|add (a )?comment|add comments|docstring|explainer|write[ -]?up'; then
     echo doc; return 0
@@ -86,6 +82,11 @@ task_type_classify() {
   # 9. migration: deployment / data / persistent-state change.
   if printf '%s' "$lc" | grep -qE 'deploy|rollout|roll out|release to|ship to prod|production|migrat|schema|data[ -]model|database|backfill data|seed data|backup|restore|launchd|\bdaemon\b|provision'; then
     echo migration; return 0
+  fi
+
+  # 9b. reconcile (after migration, so explicit migratory phrasing wins; SPEC-057 review F6): records-vs-reality drift, cleanup, hygiene sweeps (SPEC-057).
+  if printf '%s' "$lc" | grep -qE 'reconcil|(config|state|schema|status|record|convention) drift|drift (audit|check|sweep|report)|clean ?up .{0,30}(estate|backlog|branch|reference|record|status|stash|worktree)|stale (branch|status|row|record|reference)|parity (check|audit)|hygiene|deadwood|prune .{0,20}(stale|branch|deadwood)|audit .* against|sweep (the )?(estate|repo|backlog|branches)'; then
+    echo reconcile; return 0
   fi
 
   # 10. data-tool: a CLI / API client / scraper / data puller.
@@ -101,7 +102,7 @@ main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     classify) task_type_classify "$@";;
-    types)    printf 'incident\nlearning\nplanning\noperate\neval\nresearch\nreconcile\ndoc\nmigration\ndata-tool\nspec-feature\n';;
+    types)    printf 'incident\nlearning\nplanning\noperate\neval\nresearch\ndoc\nmigration\nreconcile\ndata-tool\nspec-feature\n';;
     *) echo "usage: task-type-classify.sh {classify \"<description>\"|types}" >&2; return 64;;
   esac
 }

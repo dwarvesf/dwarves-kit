@@ -554,6 +554,10 @@ assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 
 # SPEC-050: flag-scoring -- the kit-machinery hard-gate catches the 2026-06-10 misses (a change
 # naming the gate machinery is always full, even with no auth/migration keyword).
 assert_output_contains "lane: kit-machinery (classifier) -> full" "^full$" "$(LANE 'rewrite lib/lane-classify.sh into a flag-scoring classifier')"
+# SPEC-057 review finding: the kit-machinery flag enumerated lib files by name and missed the
+# newer helpers, under-sizing their work to normal. Pin the additions.
+assert_output_contains "lane: task-type-classify work -> full" "^full$" "$(LANE 'expand lib/task-type-classify.sh to 11 types')"
+assert_output_contains "lane: backlog.sh work -> full" "^full$" "$(LANE 'change backlog.sh board rendering')"
 assert_output_contains "lane: kit-machinery (adopt) -> full" "^full$" "$(LANE 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
 assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full" "^full$" "$(LANE 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
 # SPEC-050: soft-flag count -- 4 weak signals with no hard-gate keyword still escalate to full.
@@ -619,6 +623,20 @@ assert_output_contains "type: api wrapper -> data-tool (regression)" "^data-tool
 assert_output_contains "type: feature -> spec-feature (regression default)" "^spec-feature$" "$(TTYPE 'add a --version flag')"
 # precedence edge: planning anchors do not steal a build phrase
 assert_output_contains "type: plan the schema migration -> migration (anchor edge)" "^migration$" "$(TTYPE 'plan the schema migration rollout')"
+# SPEC-057 review F12: negative pins for the false positives the review found live.
+# A future widening of any new rule goes RED here, not in production classification.
+assert_output_contains "type: 'of course' does not steal -> doc" "^doc$" "$(TTYPE 'of course, update the readme')"
+assert_output_contains "type: code cleanup is not reconcile" "^spec-feature$" "$(TTYPE 'clean up error handling in auth module')"
+assert_output_contains "type: css drift is not reconcile" "^spec-feature$" "$(TTYPE 'fix the css layout drift')"
+assert_output_contains "type: research about alerts stays research" "^research$" "$(TTYPE 'research alert fatigue in monitoring')"
+assert_output_contains "type: pagerduty eval stays eval" "^eval$" "$(TTYPE 'evaluate pagerduty vs opsgenie')"
+assert_output_contains "type: alert UI feature stays spec-feature" "^spec-feature$" "$(TTYPE 'add an alert banner to the UI')"
+assert_output_contains "type: monthly-report bug stays spec-feature" "^spec-feature$" "$(TTYPE 'fix the monthly report generator bug')"
+assert_output_contains "type: excel workbook is not learning" "^spec-feature$" "$(TTYPE 'build a pricing workbook in excel')"
+assert_output_contains "type: migrate stale records -> migration (F6 order)" "^migration$" "$(TTYPE 'migrate stale records to new schema')"
+assert_output_contains "type: estate cleanup IS reconcile" "^reconcile$" "$(TTYPE 'clean up the stale branches across the estate')"
+# SPEC-057 review F9: incident composes the stateful class in proof-gate
+assert_output_contains "proof class: incident -> stateful (F9)" "^stateful$" "$(bash "$KIT_DIR/lib/proof-gate.sh" class 'triage the INC-008 alert' 2>/dev/null)"
 
 # ============================================================
 echo ""

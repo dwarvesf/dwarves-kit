@@ -41,7 +41,7 @@ the right arm is type-agnostic.
 
 - AC1: 11-type truth table green (5 new + 6 regression + 1 precedence edge) in tests/test-hooks.sh.
 - AC2: registry/loops/dialects at 11/11/11 with the parity pin (a half-added type goes RED).
-- AC3: `proof-gate.sh contract` composes correctly for a new type (incident prints its INC artifact + owner).
+- AC3: `proof-gate.sh contract` composes correctly for a new type (incident prints its INC artifact + owner AND class=stateful, review F9).
 - AC4: assign requires `Done =`; WORKFLOW states phase 0; SPEC-031 carries the type-agnostic note.
 - AC5: negative controls recorded (keyword rule commented -> truth-table RED; dialect row dropped -> parity RED).
 
@@ -51,10 +51,26 @@ the right arm is type-agnostic.
 |---|---|---|
 | 1 | truth table | 12 TTYPE assertions in tests/test-hooks.sh (5 new, 6 regression, 1 anchor edge) |
 | 2 | parity | SPEC-057 parity pin in tests/test-meta.sh counts registry=loops=dialects=11 |
-| 3 | contract composition | `bash lib/proof-gate.sh contract "triage the INC-008 alert"` -> type=incident + INC artifact |
+| 3 | contract composition | `bash lib/proof-gate.sh contract "triage the INC-008 alert"` -> type=incident + INC artifact + class=stateful |
 | 4 | done-first wiring | `grep -c 'Done =' commands/assign.md` >= 1 AND `grep -c 'Phase 0 is universal' WORKFLOW.md` == 1 |
 | 5 | negative controls | comment the incident rule -> its test RED; delete the reconcile dialect row -> parity RED; restore both (recorded in the build gate) |
 
 ## Rollback
 
 `git revert`. Classifier additions + doc/table rows; parser column-count unchanged; no host state.
+
+## Review
+
+Date: 2026-06-10. Reviewer: kit:reviewer subagent (correctness + regression lens), adversarial,
+live-probed. Round-1 verdict: **FIX-FIRST, 4/10**, 3 CRITICAL + 3 HIGH + 4 MEDIUM findings, all
+regex over-matches proven by live probes ("of course" -> learning; "clean up error handling" ->
+reconcile; "research alert fatigue" -> incident; "fix the monthly report bug" -> operate;
+"lead radar" hardcoded; reconcile stealing "migrate stale records"; bare crit/workbook/lesson;
+proof-gate class=behavioral for incident).
+
+All findings fixed in the same PR: incident/learning/operate/reconcile rules narrowed with
+context anchors; `lead radar` removed; reconcile moved after migration (F6); proof-gate stateful
+set gains incident signals (F9); 11 negative truth-table pins + 1 class pin added (F12) so the
+exact false positives found are now RED-guards. Every reviewer probe re-run green post-fix.
+Verdict after fixes: SHIP (the structural work was clean; the regex layer is now adversarially
+pinned).
