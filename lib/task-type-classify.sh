@@ -27,6 +27,10 @@
 #  10. data-tool    -- a CLI / API client / scraper / puller  -> a recorded live run
 #  11. spec-feature -- the default: implement a feature/fix   -> tests + acceptance
 #
+# SPEC-060 recall tuning: the rules below carry anchors mined from REAL session phrasing
+# (an 8-ask live probe found 7/8 falling to the spec-feature default). A 4b absorb guard
+# sits above eval: absorb-into-kit work is implementation, not measurement.
+#
 # New-type precedence rationale (SPEC-057): incident first (alert language must never fall
 # through to research/doc); learning/planning/operate are schedule/material-anchored so they
 # cannot steal build phrases; reconcile sits AFTER migration (review F6: explicit migratory
@@ -55,13 +59,22 @@ task_type_classify() {
 
   # 3. planning: schedule-anchored prioritization (SPEC-057). Tight anchors so
   # "plan the schema migration" still lands on migration.
-  if printf '%s' "$lc" | grep -qE 'plan(ning)? (for )?(the )?(next |this )?(week|sprint|month|quarter)|weekly (plan|priorit|digest)|priorit(ize|ies|y) (the )?(backlog|queue|board|work)|re-?rank|groom (the )?backlog'; then
+  if printf '%s' "$lc" | grep -qE 'plan(ning)? (for )?(the )?(next |this )?(week|sprint|month|quarter)|weekly (plan|priorit|digest)|priorit(ize|ies|y) (the )?(backlog|queue|board|work)|re-?rank|groom (the )?backlog|mega-?goal|scaffold .{0,25}roadmap|(draft|write) (the )?roadmap'; then
     echo planning; return 0
   fi
 
   # 4. operate: a recurring, defined procedure run (SPEC-057).
-  if printf '%s' "$lc" | grep -qE 'payroll|run (the )?monthly|monthly close|month-?end (close|run)|quarterly (close|run)|run the .*(procedure|playbook|runbook|radar|sweep)|recurring (run|task|job)|scheduled run|babysit|routine (run|check)'; then
+  if printf '%s' "$lc" | grep -qE 'payroll|run (the )?monthly|monthly close|month-?end (close|run)|quarterly (close|run)|run the .*(procedure|playbook|runbook|radar|sweep)|recurring (run|task|job)|scheduled run|babysit|routine (run|check)|merge (the )?.{0,25}(stack|merge train|pr queue)|wrap.?up .{0,25}session|wrap.?up,? (and )?(commit|push|merge)|session (close|wrap)|lab.?log entry'; then
     echo operate; return 0
+  fi
+
+  # 4b. absorb guard (SPEC-060): absorbing external skill/command mechanics into the kit
+  # is implementation work (spec-feature), NOT an eval; "evaluate X and absorb into the
+  # kit" must not impose eval's metrics+seeds dialect. The evaluation prologue lives in
+  # /kit:absorb (proposal-only) + PHILOSOPHY's "Skill routing" rule. Requires kit/skill/
+  # command co-occurrence so "absorb the loss" / domain phrasings fall through untouched.
+  if printf '%s' "$lc" | grep -qE 'absor(b|ption)' && printf '%s' "$lc" | grep -qE '\bkit\b|\bskill|\bcommand\b|operator estate'; then
+    echo spec-feature; return 0
   fi
 
   # 5. eval: measuring or comparing tools/options.
@@ -85,7 +98,7 @@ task_type_classify() {
   fi
 
   # 9b. reconcile (after migration, so explicit migratory phrasing wins; SPEC-057 review F6): records-vs-reality drift, cleanup, hygiene sweeps (SPEC-057).
-  if printf '%s' "$lc" | grep -qE 'reconcil|(config|state|schema|status|record|convention) drift|drift (audit|check|sweep|report)|clean ?up .{0,30}(estate|backlog|branch|reference|record|status|stash|worktree)|stale (branch|status|row|record|reference)|parity (check|audit)|hygiene|deadwood|prune .{0,20}(stale|branch|deadwood)|audit .* against|sweep (the )?(estate|repo|backlog|branches)'; then
+  if printf '%s' "$lc" | grep -qE 'reconcil|(config|state|schema|status|record|convention) drift|drift (audit|check|sweep|report)|clean ?up .{0,30}(estate|backlog|branch|reference|record|status|stash|worktree)|stale (branch|status|row|record|reference)|parity (check|audit)|hygiene|deadwood|prune .{0,20}(stale|branch|deadwood)|audit .* against|sweep (the )?(estate|repo|backlog|branches)|untangle .{0,30}(branch|pr|backlog|estate|stack)|stranded .{0,25}(branch|pr|spec)|orphan(ed)? .{0,20}(branch|pr|worktree)'; then
     echo reconcile; return 0
   fi
 
