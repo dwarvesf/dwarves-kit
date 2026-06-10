@@ -67,6 +67,15 @@ directory is invisible to the gate. So a co-located canonical proof MUST be the 
 file itself and MUST carry the literal gate markers (`Command:`, `Exit:`, `NEGATIVE CONTROL`,
 `rollback` / `[UNAVAILABLE`) in its body.
 
+**Generators write run ledgers, never the canonical.** A prover script (a `prove.py`-style "run the
+real commands and capture the results" helper) writes immutable, accumulating records under
+`runs/<ts>.md`; the canonical `proof-of-done.md` is hand-authored and only references the latest
+ledger. A generator that targets `proof-of-done.md` itself clobbers the review layer on every run
+(found live: a consumer tool's prover overwrote the hand-authored canonical; the fix was a
+one-line output-path change). Corollary for multi-feature tools: ONE `proof-of-done.md` per tool,
+structured as a feature index, because per-feature names like `proof-of-done-<feature>.md` do not
+match the gate regex and are invisible to it.
+
 ### Optional table-first review layout
 
 Any proof (either home) MAY use a **table-first** layout optimized for a reviewer scanning top-down,
