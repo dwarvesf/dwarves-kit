@@ -8,6 +8,12 @@ You are running a health check on the dwarves-kit installation. This command eva
 
 ### Step 1: Run automated checks
 
+Include the install-staleness probe (SPEC-066): if `~/.claude/dwarves-kit/INSTALL-STAMP`
+exists, compare its `sha=` against `git rev-parse --short HEAD` of the kit repo; a mismatch
+means the pinned install predates the checkout: report "stale install; re-run install.sh"
+(advisory). No stamp + symlinked hooks = a pre-SPEC-066 install; recommend re-running
+install.sh to pin.
+
 Include the lane-telemetry probe (SPEC-061): `bash lib/lane-telemetry.sh report` must exit 0
 and print either aggregates or `(no run ledgers)`; a parse failure means the ledger format and
 the reader have drifted apart.
