@@ -246,7 +246,13 @@ assert_true "seam: lane-telemetry greps the agreed literal" "$(grep -q "grep -q 
 if command -v script >/dev/null 2>&1; then
   # falsifiable: progress under a real PTY must emit escape bytes; piped (same command,
   # no PTY) must emit zero. Breaking the TTY gate in either direction flips one of these.
-  TTY_ESC=$(script -q /dev/null bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" 2>/dev/null | od -c | grep -c '033' || true)
+  # script(1) syntax differs per flavor: BSD/macOS takes [file [command...]],
+  # util-linux takes -c "command" [file] and errors on the BSD positional form
+  if script --version 2>/dev/null | grep -qi util-linux; then
+    TTY_ESC=$(script -qec "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" /dev/null 2>/dev/null | od -c | grep -c '033' || true)
+  else
+    TTY_ESC=$(script -q /dev/null bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" 2>/dev/null | od -c | grep -c '033' || true)
+  fi
   assert_true "colors: PTY progress emits escape bytes" "$([ "${TTY_ESC:-0}" -ge 1 ]; echo $?)"
   PIPE_ESC=$(DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/gate-ledger.sh" progress spec-done normal 2>/dev/null | od -c | grep -c '033' || true)
   assert_true "colors: piped progress emits ZERO escape bytes" "$([ "${PIPE_ESC:-0}" -eq 0 ]; echo $?)"
