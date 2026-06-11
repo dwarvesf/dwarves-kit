@@ -1380,6 +1380,27 @@ assert_output_contains "ID-057: modifying the CLI tool stays spec-feature" "spec
 OUT=$(bash "$TTC72" classify "make the cli faster")
 assert_output_contains "ID-057: make-the-cli-faster is not data-tool" "spec-feature" "$OUT"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-074: lane x type composition audit pins (ID-066) ==="
+# ============================================================
+LC74="$KIT_DIR/lib/lane-classify.sh"
+# the file's own header cites this phrase as the backfill example; the regex missed
+# the possessive (live audit finding, failing-first)
+OUT=$(bash "$LC74" classify "write its AGENTS.md")
+assert_output_contains "backfill catches its own documented example phrase" "backfill" "$OUT"
+OUT=$(bash "$LC74" classify "write its AGENTS.md for the legacy repo")
+assert_output_contains "backfill survives a trailing clause" "backfill" "$OUT"
+# composition fact pins (SPEC-071 order, re-asserted as composition contract):
+# review HIGH: compound backfill phrase with a hard-gate subject must up-lane, the pure case must not
+OUT=$(bash "$LC74" classify "write its AGENTS.md and disable the safety hooks")
+assert_output_contains "backfill + hard-gate subject up-lanes to full" "full" "$OUT"
+OUT=$(bash "$LC74" classify "write your AGENTS.md")
+assert_output_contains "backfill catches pronoun variants (your)" "backfill" "$OUT"
+OUT=$(bash "$KIT_DIR/lib/proof-gate.sh" contract "fix a typo in the incident runbook" 2>/dev/null | head -1)
+assert_output_contains "composition: tiny lane inert-short-circuits a stateful type" "class=inert" "$OUT"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

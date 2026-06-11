@@ -48,7 +48,9 @@ How to do one unit of work. The smallest verifiable increment, verified, committ
 1. **Classify the type, then size the lane.** `bash lib/task-type-classify.sh classify "<task>"`
    first: `spec-feature` picks a lane below; any other type (incident / reconcile / operate /
    planning / learning / eval / research / doc / migration / data-tool) runs its TYPE LOOP per
-   `WORKFLOW.md ## Type loops`, with its executor from the registry's `agent` column. For code:
+   `WORKFLOW.md ## Type loops`, with its executor from the registry's `agent` column. The lane
+   is STILL sized for every type (it is the evidence contract ship-gate enforces via the spec's
+   `Lane:` header; the type is the content contract , `WORKFLOW.md ### Lane x type composition`). For code:
    pick `tiny` / `normal` / `full` / `bug` / `backfill` per `WORKFLOW.md`; when in doubt between
    two lanes, take the heavier one. **Between classification and done comes the grill** (`/kit:grill`, or its
    one-question-at-a-time discipline driven inline): interview until the task is actually

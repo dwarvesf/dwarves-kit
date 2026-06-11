@@ -69,7 +69,16 @@ classify_core() {
 
   # 1. backfill: brownfield operating-layer documentation (first, so an in-doc keyword like
   #    "write its AGENTS.md" does not pull the task into the kit-machinery hard-gate).
-  if printf '%s' "$lc" | grep -qE 'backfill|operating[ -]layer|brownfield|document the existing|write (agents|claude)\.md'; then
+  if printf '%s' "$lc" | grep -qE 'backfill|operating[ -]layer|brownfield|document the existing|writes?\b.{0,12}(agents|claude)\.md'; then
+    # SPEC-074 review HIGH: a backfill phrase that ALSO carries a hard-gate subject
+    # ("write its AGENTS.md and disable the safety hooks") must not be down-laned;
+    # the pure doc case carries no hard keyword and stays backfill.
+    local j
+    for j in "${!_hard_re[@]}"; do
+      if printf '%s' "$lc" | grep -qE "${_hard_re[$j]}"; then
+        LANE=full; REASON="backfill phrase + hard-gate subject (${_hard_name[$j]})"; FIRED="${_hard_name[$j]}"; return 0
+      fi
+    done
     LANE=backfill; REASON="brownfield operating-layer docs"; FIRED=backfill; return 0
   fi
 
