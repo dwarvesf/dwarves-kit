@@ -1658,7 +1658,7 @@ fi
 # (d) WORKFLOW names the judging criteria.
 TOTAL=$((TOTAL + 1))
 if grep -qF 'start)    start "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
-   && grep -qF 'usage: start <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]' "$KIT_DIR/lib/gate-ledger.sh"; then
+   && grep -qF 'usage: $uprefix <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]' "$KIT_DIR/lib/gate-ledger.sh"; then
   echo -e "  ${GREEN}PASS${NC} gate-ledger has the START routing verb (SPEC-061)"
   PASS=$((PASS + 1))
 else
@@ -2242,6 +2242,14 @@ RC=0; grep -q '^  descent)' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
 assert_eq "gate-ledger dispatches the descent verb" 0 $RC
 RC=0; grep -qF 'descent violation' "$KIT_DIR/hooks/ship-gate.sh" || RC=1
 assert_eq "ship-gate carries the descent advisory" 0 $RC
+
+
+# SPEC-077: per-link self-reconcile wired (the unit fixtures cover the helper; this
+# pins the call site that gh-dependent flow tests cannot reach)
+RC=0; grep -qF 'ensure_reconciled "$head" "$base"' "$KIT_DIR/lib/stack-merge.sh" || RC=1
+assert_eq "stack-merge next_link self-reconciles every link" 0 $RC
+RC=0; grep -qF 'start --amend' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+assert_eq "gate-ledger documents the amend path" 0 $RC
 
 echo ""
 echo "=== Results ==="
