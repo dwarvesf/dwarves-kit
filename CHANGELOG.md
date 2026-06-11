@@ -5,6 +5,12 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Absorption proposal: the two pinned kits (ID-069).** compound-engineering +
+  cursor/plugins scanned proposal-only: 6 gate-passers (anchored-confidence merge
+  15/16, apply-class routing 15/16, verify-this INCONCLUSIVE verdict 14/16, model
+  tiering 14/16, per-finding validators 13/16, two quality tripwires 13/16), 8
+  rejections, licenses MIT. Lane-A drift fixed (upstream deprecated safe_auto).
+  Adoption waits on the human merge gate.
 - **Use-case path audit + eval/research anchor recall (SPEC-075 / ID-065).** The
   three real loop shapes traced end to end: research routes 2/3 (now 3/3),
   build-experiment 1/3 (now 3/3), autoreview 0/3 , the 12th-type decision is
