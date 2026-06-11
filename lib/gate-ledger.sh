@@ -228,29 +228,6 @@ rid() {
   printf '%s\n' "$(runid "$slug")"
 }
 
-# The canonical run id (SPEC-070 / ID-059): the current branch with its leading
-# `type/` segment stripped, the EXACT transform ship-gate keys its ledger check by
-# (`${branch#*/}` here == `${BRANCH#*/}` in hooks/ship-gate.sh; agreement-pinned in tests/test-meta.sh).
-# One rid from assign to ship means no mirror records. Fails loudly off a work
-# branch: a wrong rid recorded silently is worse than no rid.
-rid() {
-  local branch slug
-  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-  case "$branch" in
-    ""|HEAD|master|main)
-      echo "rid: not on a work branch (got '${branch:-none}'); create the branch first, then derive the rid" >&2
-      return 1 ;;
-  esac
-  slug="${branch#*/}"
-  if [ -z "$slug" ] || [ -z "$(runid "$slug")" ]; then
-    echo "rid: branch '$branch' strips to an empty slug" >&2
-    return 1
-  fi
-  # Emit the runid-normalized form (review S2): the visible key equals the
-  # ledger filename stem, so forensic review never chases two spellings.
-  printf '%s\n' "$(runid "$slug")"
-}
-
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
