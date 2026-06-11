@@ -66,7 +66,7 @@ type-agnostic).
 |------|-------------------------------|
 | research | frame the question -> multi-modal sweep (parallel angles) -> adversarially verify every load-bearing claim -> cited report |
 | eval | frame + define metrics -> hand-verify seed data -> climb the test ladder (smoke -> live) -> TEST-REPORT with falsifiability controls -> verdict |
-| doc | diff sweep (what changed) -> update every affected doc -> doc-verifier confirms docs match code |
+| doc | two entry paths (SPEC-073/ID-060): code-diff-triggered, diff sweep (what changed) -> update every affected doc; OR standalone revision, content brief (what the doc must say + for whom) -> rewrite. Both exit through doc-verifier confirming docs match code |
 | migration | inventory the estate -> dry-run on a copy -> staged apply -> verify + record the run -> rollback path proven |
 | data-tool | spec/port the surface -> build -> recorded live run + negative control -> Done gate (proof-of-done indexes the run ledgers) |
 | incident | alert/symptom -> triage (witr/logs) -> root-cause BEFORE any fix (/kit:debug discipline) -> fix/mitigate -> INC-NNN record -> monitoring follow-up |
