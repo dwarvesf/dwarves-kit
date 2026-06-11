@@ -5,6 +5,13 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **review-team apply-class routing + model tiering (SPEC-078 / ID-076, ID-078;
+  EveryInc, MIT).** Every finding carries a Route (gated_auto -> responding-to-
+  review, manual -> board row, advisory -> spec record; conservative on lens
+  disagreement; no auto-apply class). Security lens dispatches with an explicit
+  session-model override (its agent frontmatter would silently down-tier
+  otherwise , review catch); the other lenses run mid-tier, cutting the
+  command's token cost to ~1.5-2x from 3x.
 - **START amend path + stack-merge self-reconcile (SPEC-077 / ID-072, ID-073).**
   `gate-ledger.sh start --amend` writes a sanctioned START-AMEND correction; every
   reader (report, misfires, trace, ship-gate) takes the last amend, else the first
