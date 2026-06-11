@@ -1583,6 +1583,34 @@ assert_exit "ensure-reconciled is a no-op on an already-reconciled branch" 0 $RC
 assert_output_contains "no-op says so" "already reconciled" "$OUT"
 rm -rf "$SMW"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-079: the 12th task type: review (ID-074) ==="
+# ============================================================
+TTC79="$KIT_DIR/lib/task-type-classify.sh"
+OUT=$(bash "$TTC79" classify "review this PR adversarially")
+assert_output_contains "review type: adversarial PR review" "review" "$OUT"
+OUT=$(bash "$TTC79" classify "run a multi-lens review of the diff")
+assert_output_contains "review type: multi-lens diff review" "review" "$OUT"
+OUT=$(bash "$TTC79" classify "audit the changes on this branch for security issues")
+assert_output_contains "review type: branch security audit" "review" "$OUT"
+OUT=$(bash "$TTC79" classify "address the review feedback on the parser PR")
+assert_output_contains "negative: acting on review feedback stays spec-feature" "spec-feature" "$OUT"
+OUT=$(bash "$TTC79" classify "review the quarterly roadmap plan priorities")
+assert_output_not_contains "negative: roadmap review is not the code-review type" "^review$" "$OUT"
+OUT=$(bash "$TTC79" classify "peer review the research note on caching")
+assert_output_not_contains "negative: paper review stays research" "^review$" "$OUT"
+# AC3: registry floor -> inert
+OUT=$(bash "$TTC79" classify "review and merge the PR")
+assert_output_not_contains "negative: review-and-merge is an action, not the review type" "^review$" "$OUT"
+OUT=$(bash "$TTC79" classify "self-review before pushing the branch")
+assert_output_not_contains "negative: self-review is pre-push hygiene, not the review type" "^review$" "$OUT"
+N79=$(bash "$TTC79" types | wc -l | tr -d ' ')
+assert_exit "types subcommand enumerates 12" 0 $([ "$N79" = "12" ]; echo $?)
+OUT=$(bash "$KIT_DIR/lib/proof-gate.sh" contract "review this PR adversarially" 2>/dev/null | head -1)
+assert_output_contains "review type floors at registry inert" "class=inert" "$OUT"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

@@ -79,7 +79,7 @@ created: <YYYY-MM-DD>
   bash lib/task-type-classify.sh classify "<the item title / crystallized objective>"
   ```
 
-  `spec-feature` continues below (pick a lane). Any other type (research / eval / doc /
+  `spec-feature` continues below (pick a lane). Any other type (research / eval / review / doc /
   migration / data-tool) runs its TYPE LOOP instead of the code cycle: the goal draft names the
   loop's phases (WORKFLOW.md `## Type loops`), the executor (the registry's `agent` column in
   `docs/verification/task-types.md`), and the proof artifact it owes (same registry;

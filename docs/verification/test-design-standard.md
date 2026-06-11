@@ -78,6 +78,7 @@ work's type (`lib/task-type-classify.sh`); design in the dialect that fits, not 
 | spec-feature | BDD-style scenario/coverage matrix over the acceptance criteria (the `## Test plan` /kit:test-plan writes: happy / boundary / failure-injection / security / regression, each with a proof command) |
 | eval | metrics defined up front + HAND-VERIFIED seed data + falsifiability controls (a negative control that must go RED, a reproducibility re-run); the TEST-REPORT carries the numbers |
 | research | claim-verification matrix: every load-bearing claim names its source AND an adversarial check (a refutation attempt, a second independent source, or a live probe); unverifiable claims are marked, not asserted |
+| review | the report IS the proof: a verdict + findings each citing file:line (re-findable on the artifact), severity + Route per finding; a finding that cannot be located at its citation is killed, an empty-findings review states what was probed |
 | migration | inventory coverage (every affected item enumerated) + conform/drift classification + a rollback REHEARSAL (not a rollback paragraph); cleanup sweeps use this dialect (convention migration) |
 | data-tool | recorded live run of the real commands + a negative control (dead credential, fake field) proving the green is falsifiable; ledger immutable under `runs/` |
 | doc | doc-verifier match: each claim in the doc greps against the live code/artifact it describes; a stale claim is a RED, not a style note |
