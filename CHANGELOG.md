@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Lane x type composition rule + audit (SPEC-074 / ID-066).** The 55 (lane,
+  type) pairs now have a written contract: the type names the CONTENT (loop steps,
+  proof dialect, executor), the lane names the EVIDENCE (the depth-matrix gates
+  ship-gate enforces); loop steps map into the canonical phases, gaps record
+  skipped-with-loop-note. Three precedence facts pinned (tiny/backfill inert
+  short-circuit; bug+incident; degenerate lanes). The audit also caught the
+  backfill anchor missing its own documented example (fixed, failing-first) and
+  review hardened it against compound phrases carrying hard-gate subjects.
 - **Doc-loop second entry path + telemetry-eval design (ID-060, ID-067 / SPEC-073).**
   The WORKFLOW doc loop now names BOTH entry paths (code-diff-triggered diff sweep;
   standalone revision via content brief), one shared doc-verifier exit. The

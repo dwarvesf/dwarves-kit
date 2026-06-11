@@ -2220,6 +2220,20 @@ assert_eq "telemetry eval design exists and is parked-until-data (ID-067)" 0 $RC
 RC=0; grep -qF 'the design pins the WINDOW, not the flag' "$KIT_DIR/docs/specs/SPEC-073-telemetry-eval-design.md" || RC=1
 assert_eq "eval design pins its data window honestly" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-074: composition section + 3-surface parity (ID-066) ==="
+# ============================================================
+RC=0; grep -qF 'Lane x type composition (SPEC-074 / ID-066)' "$KIT_DIR/WORKFLOW.md" || RC=1
+assert_eq "WORKFLOW carries the lane x type composition rule" 0 $RC
+RC=0; grep -qF 'recorded `skipped "<loop-step note>"`' "$KIT_DIR/WORKFLOW.md" || RC=1
+assert_eq "composition names the skip-with-loop-note mapping" 0 $RC
+# 3-surface parity: every type in the loops table has a registry row and vice versa
+LOOPT=$(awk '/## Type loops/,/### Lane x type composition/' "$KIT_DIR/WORKFLOW.md" | grep '^| ' | cut -d'|' -f2 | tr -d ' ' | grep -v '^Type$' | grep -v '^-*$' | sort)
+REGT=$(grep '^|' "$KIT_DIR/docs/verification/task-types.md" | cut -d'|' -f2 | tr -d ' ' | grep -v '^task-type$' | grep -v '^-*$' | sort)
+assert_eq "type loops table and registry agree on the 11 types" "$LOOPT" "$REGT"
+
 echo ""
 echo "=== Results ==="
 # ============================================================

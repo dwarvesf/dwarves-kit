@@ -23,7 +23,8 @@
 #   1. inert     -- the lane classifier calls it tiny or backfill (a typo in a migration
 #                   file is still a typo; cosmetic wins over subject matter)
 #   2. stateful  -- deploy / migration / data / persistent-state keywords
-#   3. behavioral-- the default for anything that changes behavior
+#   3. registry   -- the classified type's default class (task-types.md, SPEC-071)
+#   4. behavioral -- the fallback for types with no registry row
 #
 # Usage:
 #   proof-gate.sh class "<task description>"        -> stateful | behavioral | inert

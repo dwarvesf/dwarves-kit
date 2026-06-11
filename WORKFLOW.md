@@ -47,7 +47,7 @@ It warns; it never blocks (Detect, don't dictate). Over-sizing is always silent 
 
 ## Type loops (the non-code cycles)
 
-Lanes size CODE work. The classifier's other five types each get their own right-sized cycle
+Lanes size the EVIDENCE contract for ALL work (see the composition rule below); the loop content is the type's. The classifier's other ten types each get their own right-sized cycle
 (PHILOSOPHY §6 N1). Same intake either way: `lib/task-type-classify.sh` names the type; code work
 picks a lane above, everything else runs its type's loop below. Chat stays chat, a loop engages
 when a task is being executed, not on every message. The executor per type (preassigned or
@@ -75,6 +75,33 @@ type-agnostic).
 | planning | gather state (board + PRs + calendar) -> prioritize -> enqueue/re-rank board rows -> digest |
 | learning | ingest material -> explain/companion -> practice -> self-check >= the track's bar |
 | spec-feature | (code) pick a lane in "Size the work first" above |
+
+### Lane x type composition (SPEC-074 / ID-066)
+
+The classifiers always emit BOTH a lane and a type; every (lane, type) pair is legal.
+Two axes, two contracts:
+
+- **The type names the CONTENT contract**: which loop steps run, which proof dialect
+  is owed, which executor (registry: `docs/verification/task-types.md`).
+- **The lane names the EVIDENCE contract**: which canonical phases are measure-twice
+  (the depth matrix above). The ship-gate enforces the spec's `Lane:` header
+  regardless of type; the lane is what blocks a push, the type is what shapes the work.
+
+Mapping rule (the lived wave-1 practice, now written): loop steps execute INSIDE the
+canonical phases (a loop's "sweep"/"dry-run"/"triage" is its build; its "frame the
+question" is think/spec). A matrix-required phase with no equivalent loop step is
+recorded `skipped "<loop-step note>"`, which disposes it (SPEC-063), never silently.
+
+Three precedence facts, already true in code, pinned in the suites:
+
+1. **Proof class**: tiny/backfill lane short-circuits to `inert` BEFORE stateful
+   keywords and the registry type default (full order: lane-inert > stateful keywords > registry default > behavioral; SPEC-071 added the registry step), so `fix a typo in the
+   incident runbook` (tiny + incident) owes no INC record.
+2. **bug + incident** (`fix the prod crash, alert firing`): the incident loop's
+   root-cause-before-fix IS the bug lane's debug discipline; incident supplies the
+   loop content + INC-NNN artifact, bug supplies the bug-lane plan (6 phases, 3 required gates: build, review, debug).
+3. **Degenerate lanes**: tiny (1 phase) and backfill (5 phases) bound the ceremony
+   for ANY type; a heavy type on a tiny diff stays tiny (see fact 1).
 
 A loop is right-sized or it is wrong: a research loop that feels like ceremony for a research
 task is a defect, not rigor. Tool comparisons are evals; test-design passes ride the owning
