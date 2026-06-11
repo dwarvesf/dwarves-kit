@@ -2268,6 +2268,24 @@ assert_eq "model tiering named per lens (ID-078)" 0 $RC
 RC=0; grep -qiF 'if the override is unavailable' "$RT" || RC=1
 assert_eq "tiering fallback sentence present" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-080: verify-this delta + tripwires (ID-077/080) ==="
+# ============================================================
+VF="$KIT_DIR/commands/verify.md"
+RT80="$KIT_DIR/commands/review-team.md"
+RC=0; grep -qF 'condition + metric + threshold' "$VF" || RC=1
+assert_eq "verify carries the claim-restatement preamble (ID-077)" 0 $RC
+RC=0; grep -qF 'PASS / FAIL / INCONCLUSIVE' "$VF" && grep -qF 'honest third verdict' "$VF" || RC=1
+assert_eq "INCONCLUSIVE is a legal verdict with named causes" 0 $RC
+RC=0; grep -qF 'Baseline:' "$KIT_DIR/docs/verification/README.md" || RC=1
+assert_eq "verification README carries the comparative-evidence line" 0 $RC
+RC=0; grep -qF '1k lines' "$RT80" && grep -qiF 'spaghetti' "$RT80" || RC=1
+assert_eq "Reviewer 2 carries both tripwires (ID-080)" 0 $RC
+RC=0; grep -qiE "Verdict:.*INCONCLUSIVE" "$KIT_DIR/lib/proof-ledger.sh" || RC=1
+assert_eq "proof-ledger REJECTS an INCONCLUSIVE verdict (SPEC-080 guard present)" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

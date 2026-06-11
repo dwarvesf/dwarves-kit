@@ -38,6 +38,13 @@ If the spec's `## Task Breakdown` had more than one task, dispatch the **integra
 
 ### Step 5: Report (do NOT fix)
 
+**Restate the claim first (SPEC-080 / ID-077, cursor verify-this pattern):** before
+reading any result, write what is being verified as condition + metric + threshold
+("X holds when <condition>, measured by <metric>, passing at <threshold>"). A verdict
+without a falsifiable restatement is an opinion. For comparative claims (faster,
+smaller, fewer), the evidence is a baseline-vs-treatment PAIR run with the same
+command, data, and environment.
+
 Print a verdict. **Never dispatch `fix-agent`; never write code.** A FAIL is reported, not repaired.
 
 ```markdown
@@ -51,8 +58,14 @@ Base ref: <sha> (<how it was resolved>)
 ## Integration level (integration-checker)
 - PASS | FAIL -- [wiring gap]
 
-## Verdict: PASS / FAIL
+## Verdict: PASS / FAIL / INCONCLUSIVE
 ```
+
+`INCONCLUSIVE` (SPEC-080) is the honest third verdict, legal when: no valid
+baseline exists, the signal is noisy across reruns, or a confound (env drift,
+concurrent change) breaks attribution. Name the cause. INCONCLUSIVE is NOT a
+pass: the proof-of-done gate still demands a green run; an INCONCLUSIVE verify
+means design a better measurement, not ship.
 
 ### Step 6: Record the run (the only write)
 
@@ -97,6 +110,7 @@ The run record follows the layout in `docs/verification/README.md`: the director
 work, or the back-compat flat `docs/verification/<slug>.md` (append-entry) for existing logs.
 
 On any FAIL, end with: "Read-only verify: to fix, run `/kit:next` (drive the fix) or `/kit:execute` (re-run the build loop)."
+On INCONCLUSIVE, end with: "Measurement ambiguous; design a better check (baseline pair, fixed env), then re-run `/kit:verify`."
 
 ## Edge cases
 

@@ -110,7 +110,7 @@ check() {
   # fail open: base must resolve to a real commit.
   git -C "$root" rev-parse --verify -q "$base" >/dev/null 2>&1 || return 0
 
-  local class; class="$(classify "$root" "$base")"
+  local class last_v; class="$(classify "$root" "$base")"
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
 
   if [ -n "$slug" ] && is_overridden "$slug"; then
@@ -127,7 +127,12 @@ check() {
       [ -n "$f" ] || continue
       local p="$root/$f"; [ -f "$p" ] || continue
       if [ "$class" = "behavioral" ]; then
-        grep -qi 'NEGATIVE CONTROL' "$p" && grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" && ok=0 && break
+        # SPEC-080: an INCONCLUSIVE verdict never satisfies the gate, even with Exit: 0.
+        # LAST-verdict-wins (review lens 2): the documented append shape retries after a
+        # noisy run, so only the most recent Verdict: line in the file decides.
+        last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
+        grep -qi 'NEGATIVE CONTROL' "$p" && grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" \
+          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' && ok=0 && break
       else # stateful
         grep -qiE 'rollback|\[UNAVAILABLE' "$p" && grep -qE 'Command:|Exit:' "$p" && ok=0 && break
       fi
@@ -146,10 +151,14 @@ check() {
         case "$f" in
           "$g"*) [ -f "$root/$f" ] && content+="$(cat "$root/$f")"$'\n' ;;
         esac
-      done <<< "$files"
+      done <<< "$(printf '%s\n' "$files" | sort)"
       if [ "$class" = "behavioral" ]; then
+        # SPEC-080 last-verdict-wins, set-wise: files concatenate in sorted (= chronological)
+        # order, so the union's final Verdict: line is the latest run's.
+        last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
         printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
           && printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' \
+          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' \
           && ok=0 && break
       else # stateful
         printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \

@@ -68,7 +68,7 @@ not a single-purpose script.
 
 - **Inputs:** the active spec `docs/specs/SPEC-NNN-<slug>.md` (its done `- [x]` tasks +
   acceptance criteria); the git working tree / branch; optional `SPEC-NNN` argument.
-- **Outputs:** a PASS / FAIL verdict to stdout with the verifier findings. Read-only:
+- **Outputs:** a PASS / FAIL / INCONCLUSIVE (since SPEC-080) verdict to stdout with the verifier findings. Read-only:
   writes no code, dispatches no `fix-agent`.
 - **Invariants:** never mutates the repo; never dispatches `fix-agent`; the test logic
   lives in the agent files, not restated here.

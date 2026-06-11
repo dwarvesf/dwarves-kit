@@ -1611,6 +1611,39 @@ assert_exit "types subcommand enumerates 12" 0 $([ "$N79" = "12" ]; echo $?)
 OUT=$(bash "$KIT_DIR/lib/proof-gate.sh" contract "review this PR adversarially" 2>/dev/null | head -1)
 assert_output_contains "review type floors at registry inert" "class=inert" "$OUT"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-080: INCONCLUSIVE never satisfies the proof gate ==="
+# ============================================================
+PL80="$KIT_DIR/lib/proof-ledger.sh"
+PR80=$(mktemp -d "${TMPDIR:-/tmp}/dk-pr80.XXXXXX")
+( cd "$PR80" && git init -q -b main . && git config user.email t@e && git config user.name t \
+  && mkdir -p docs/verification && printf 'convention\n' > docs/verification/README.md \
+  && printf 'x\n' > app.sh && git add -A && git commit -qm base \
+  && git switch -q -c feat/incl && printf 'y\n' >> app.sh \
+  && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\n' > docs/verification/incl.md \
+  && git add -A && git commit -qm change )
+BASE80=$( cd "$PR80" && git merge-base feat/incl main )
+RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
+assert_exit "an INCONCLUSIVE record does NOT satisfy the behavioral proof gate" 1 $RC
+( cd "$PR80" && python3 -c "
+s=open('docs/verification/incl.md').read().replace('Verdict: INCONCLUSIVE','Verdict: PASS')
+open('docs/verification/incl.md','w').write(s)" && git add -A && git commit -qm pass )
+RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
+assert_exit "the same record with Verdict: PASS satisfies the gate (control)" 0 $RC
+# retry workflow (lens 2): an OLD INCONCLUSIVE run + a NEW appended PASS run passes
+( cd "$PR80" && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: INCONCLUSIVE\nCommand: rerun\nExit: 0\nVerdict: PASS\n' > docs/verification/incl.md \
+  && git add -A && git commit -qm retry )
+RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
+assert_exit "append-shape retry: old INCONCLUSIVE + new PASS satisfies the gate" 0 $RC
+# and the reverse order still blocks (PASS then INCONCLUSIVE = latest is inconclusive)
+( cd "$PR80" && printf 'Command: run\nExit: 0\nNEGATIVE CONTROL\nVerdict: PASS\nCommand: rerun\nExit: 0\nVerdict: INCONCLUSIVE\n' > docs/verification/incl.md \
+  && git add -A && git commit -qm flip )
+RC=0; ( cd "$PR80" && bash "$PL80" check "$PR80" "$BASE80" incl >/dev/null 2>&1 ) || RC=$?
+assert_exit "latest INCONCLUSIVE blocks even after an older PASS" 1 $RC
+rm -rf "$PR80"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
