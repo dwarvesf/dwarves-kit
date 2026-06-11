@@ -4,6 +4,15 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **The nameless hooks-suite flake (ID-081), root-caused and fixed.** BSD
+  `script(1)` copies terminal attrs from its own stdin; when a harness hands
+  the suite a SOCKET stdin (agent runners), the ioctl fails and `script` exits
+  before the child runs, so the PTY color test saw zero bytes, flaky only
+  because stdin's type varies by harness. The test now feeds `script` an
+  explicit `/dev/null` stdin and reads the typescript file instead of racing
+  stdout. The negative control still flips RED when the color gate is broken.
+
 ### Added
 - **Session-start board wire (SPEC-083 / ID-033, I1 closed).** The
   `context-readiness` SessionStart hook now sees the board: a `board:<N>q`

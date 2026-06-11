@@ -248,12 +248,22 @@ if command -v script >/dev/null 2>&1; then
   # no PTY) must emit zero. Breaking the TTY gate in either direction flips one of these.
   # script(1) syntax differs per flavor: BSD/macOS takes [file [command...]],
   # util-linux takes -c "command" [file] and errors on the BSD positional form
+  # ID-081 root cause: BSD script(1) copies terminal attrs from ITS OWN stdin
+  # (tcgetattr). When the suite's stdin is a socket (agent/CI harnesses), that
+  # ioctl fails with ENOTSUP and script exits 1 BEFORE running the child, so
+  # the capture is empty, flaky only because stdin's type varies by harness.
+  # Fix: feed script an explicit /dev/null stdin (handled gracefully) and read
+  # the typescript FILE (flushed at exit) instead of racing script's stdout.
+  # Falsifiability: a real color-gate break writes a typescript with ZERO
+  # escapes, the assertion still fails; only the environment trap is removed.
+  PTY_TS="$BD_DIR/pty-typescript.txt"
   if script --version 2>/dev/null | grep -qi util-linux; then
-    TTY_ESC=$(script -qec "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" /dev/null 2>/dev/null | od -c | grep -c '033' || true)
+    script -qec "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" "$PTY_TS" >/dev/null 2>&1 </dev/null || true
   else
-    TTY_ESC=$(script -q /dev/null bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" 2>/dev/null | od -c | grep -c '033' || true)
+    script -q "$PTY_TS" bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" >/dev/null 2>&1 </dev/null || true
   fi
-  assert_true "colors: PTY progress emits escape bytes" "$([ "${TTY_ESC:-0}" -ge 1 ]; echo $?)"
+  TTY_ESC=$(od -c "$PTY_TS" 2>/dev/null | grep -c '033' || true)
+  assert_true "colors: PTY progress emits escape bytes (stdin-safe, ID-081)" "$([ "${TTY_ESC:-0}" -ge 1 ]; echo $?)"
   PIPE_ESC=$(DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/gate-ledger.sh" progress spec-done normal 2>/dev/null | od -c | grep -c '033' || true)
   assert_true "colors: piped progress emits ZERO escape bytes" "$([ "${PIPE_ESC:-0}" -eq 0 ]; echo $?)"
 fi
