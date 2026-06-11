@@ -2345,6 +2345,25 @@ S4=$(grep -n '### Step 4' "$RT82" | head -1 | cut -d: -f1)
 RC=0; [ -n "$G" ] && [ -n "$B" ] && [ -n "$S4" ] && [ "$G" -lt "$B" ] && [ "$B" -lt "$S4" ] || RC=1
 assert_eq "Step 3b sits between the confidence gate and Step 4" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-083: session-start board wire (ID-033) ==="
+# ============================================================
+CR83="$KIT_DIR/hooks/context-readiness.sh"
+RC=0; grep -qF 'board:${BOARD_Q}q' "$CR83" || RC=1
+assert_eq "hook emits the board state token" 0 $RC
+RC=0; grep -qF 'Twin of lib/backlog.sh _rows' "$CR83" || RC=1
+assert_eq "hook documents the parser-twin coupling" 0 $RC
+RC=0; grep -qF 'state the task, or /kit:assign --next' "$CR83" || RC=1
+assert_eq "queue suggestion is intent-first + assign --next" 0 $RC
+RC=0; [ "$(grep -cF "say '" "$CR83")" -ge 4 ] || RC=1
+assert_eq "cycle suggestions speak intent-first (4+ say-branches)" 0 $RC
+RC=0; grep -qF '`_meta/BACKLOG.md` queue)' "$KIT_DIR/MANUAL.md" || RC=1
+assert_eq "MANUAL /kit:start Reads mentions the board" 0 $RC
+RC=0; grep -qF 'board:Nq' "$KIT_DIR/MANUAL.md" || RC=1
+assert_eq "MANUAL hook row carries the board token" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

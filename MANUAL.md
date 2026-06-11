@@ -31,7 +31,7 @@ For the full playbook (every scenario, the autonomy dial, the freeform front doo
 ### `/kit:start`
 
 **Phase:** entry router
-**Reads:** project state (existence of `docs/specs/SPEC-NNN-<slug>.md`, git branch, dirty count, hook log activity)
+**Reads:** project state (existence of `docs/specs/SPEC-NNN-<slug>.md`, git branch, dirty count, hook log activity, `_meta/BACKLOG.md` queue)
 **Writes:** nothing; advises in chat which command to run next
 **When to invoke:** opening a fresh session and you do not remember where you left off
 **Common gotcha:** the router suggests a next step but does not run it. You decide.
@@ -233,7 +233,7 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 | `safety-gate` | PreToolUse(Bash) | Blocks `rm -rf` (build-artifact allowlist), push to main, force push, `DROP TABLE`, `git reset --hard`, `kubectl delete`. Override needs explicit user OK. |
 | `secrets-guard` | PreToolUse(Read\|Edit\|Bash) | Blocks reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`); canonicalizes the path first so alternate spellings cannot bypass. Allows `.env.example`. Best-effort on the Bash surface. |
 | `commit-format` | PreToolUse(Bash) | Blocks a `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker. Subject only; bodies and editor commits pass. |
-| `context-readiness` | SessionStart | Reads `docs/specs/SPEC-NNN-<slug>.md` status, suggests next command. Silent when project is healthy. |
+| `context-readiness` | SessionStart | Reads `docs/specs/SPEC-NNN-<slug>.md` status + the board's queued count (`board:Nq`, SPEC-083), suggests the next step intent-first ("state the task", command in parentheses). Silent when project is healthy. |
 | `anti-rationalization` | Stop | Blocks premature "done": rationalization phrases, guess-fix during an open `/debug` session, and unimplemented-stub markers in the diff. |
 | `slop-cleaner` | Stop | Flags bloated code in recently modified files. Nudge only. |
 | `session-state-save` | Stop, SubagentStop | Persists state to `.claude/session-state/`. Rotates 10 archives. Fail-open. |

@@ -618,6 +618,47 @@ printf 'Status: VALIDATED\nthe configXts thing\n' > "$FX/docs/specs/SPEC-001-foo
 assert_output_contains "drift-guard: basename dot is literal, config.ts drifts (review MED)" "not in any active spec" "$(dg src/config.ts)"
 [ -n "${FX:-}" ] && rm -rf "$FX"
 
+# --- SPEC-083: session-start board wire (ID-033). The hook is the entry
+# --- surface; it must see the board and speak intent-first. ---
+mkfx main
+mkdir -p "$FX/_meta"
+cat > "$FX/_meta/BACKLOG.md" <<'BOARDEOF'
+| ID | Title | Source | Spec | Lane | Status |
+|---|---|---|---|---|---|
+| ID-101 | first thing queued style | s | TBD | normal | queued |
+| ID-102 | second thing | s | TBD | tiny | queued [re-eval prose mentioning claimed] |
+| ID-103 | third thing | s | TBD | full | claimed [claimed 2026-06-11 branch x] |
+BOARDEOF
+assert_output_contains "board token counts leading-queued only" "board:2q" "$(cr)"
+assert_output_contains "no-spec + queue: intent-first phrasing" "state the task" "$(cr)"
+assert_output_contains "no-spec + queue: names /kit:assign --next" "/kit:assign --next" "$(cr)"
+
+printf 'Status: VALIDATED\n- [ ] t\n' > "$FX/docs/specs/SPEC-001-foo.md"
+assert_output_contains "live spec: cycle suggestion wins over board pull" "/kit:execute" "$(cr)"
+assert_output_contains "live spec: intent phrasing on cycle suggestion" "say 'continue'" "$(cr)"
+assert_output_contains "live spec: board token still present" "board:2q" "$(cr)"
+assert_output_not_contains "live spec: board-pull suggestion absent" "assign --next" "$(cr)"
+
+printf 'Status: DRAFT\n' > "$FX/docs/specs/SPEC-001-foo.md"
+assert_output_contains "DRAFT: intent-first validate suggestion" "say 'validate it'" "$(cr)"
+
+printf 'Status: VALIDATED\n- [x] t\n' > "$FX/docs/specs/SPEC-001-foo.md"
+assert_output_contains "all done unreviewed: intent-first review suggestion" "say 'review it'" "$(cr)"
+
+printf 'Status: VALIDATED\n- [x] t\n## Review\n' > "$FX/docs/specs/SPEC-001-foo.md"
+assert_output_contains "reviewed: intent-first ship suggestion" "say 'ship it'" "$(cr)"
+
+mkfx main
+assert_output_not_contains "no board file -> no board token" "board:" "$(cr)"
+assert_output_contains "no-spec no-board: intent-first line" "state the task (the kit routes it)" "$(cr)"
+
+mkfx main
+mkdir -p "$FX/_meta"
+printf '| ID-101 | t | s | TBD | normal | claimed |\n' > "$FX/_meta/BACKLOG.md"
+assert_output_contains "board with 0 queued emits 0q token" "board:0q" "$(cr)"
+assert_output_not_contains "0 queued: no board-pull suggestion" "assign --next" "$(cr)"
+[ -n "${FX:-}" ] && rm -rf "$FX"
+
 # ============================================================
 echo ""
 echo "=== slop-cleaner.sh ==="
