@@ -4,6 +4,8 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-11
+
 ### Added
 - **Operator doc sync + README parity pins (SPEC-085 / ID-070, the 2026-06-10
   intake wave closes 8/8).** README's hook and command tables had drifted
