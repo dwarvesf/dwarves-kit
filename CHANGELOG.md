@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Anchored-confidence merge for review-team (SPEC-081 / ID-075; EveryInc, MIT,
+  15/16 , the top absorption candidate).** Reviewers return findings with a
+  confidence at 5 behavioral anchors (each with a self-test); fingerprint dedup
+  (file + line-bucket +-3 + normalized title); cross-lens corroboration promotes
+  one anchor step; a LATE <75 gate (CRITICAL survives at 50+) suppresses weak
+  findings into a never-dropped appendix AFTER they get their promotion chance.
+  Review closed 2 logic holes: suppressed findings can no longer be routed at the
+  decision gate, and telemetry findings=K now counts the main report only.
 - **verify-this delta + architecture tripwires (SPEC-080 / ID-077, ID-080;
   cursor, MIT).** /kit:verify restates the claim falsifiably (condition + metric
   + threshold) before measuring and may return INCONCLUSIVE (named causes; not a
