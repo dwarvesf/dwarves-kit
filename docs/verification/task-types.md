@@ -22,6 +22,7 @@ way it owns lane paths; this registry owns artifact/owner/rigor/agent).
 |---|---|---|---|---|
 | eval | TEST-REPORT (5 pillars) + PROVENANCE | tool-eval-experiment | behavioral | preassigned: tool-eval-experiment runner (main session, /goal loop) |
 | research | cited report + verified sources | deep-research | behavioral | dynamic: parallel research subagents, one persona per sweep angle |
+| review | review report / spec `## Review`: verdict + findings (severity + Route per SPEC-078), each citing file:line | /kit:review (single) or /kit:review-team (multi-lens) | inert | preassigned: reviewer; review-team dispatch per the SPEC-069 escalation rule |
 | doc | doc-verifier confirms docs match code | /docs (doc-verifier) | inert | preassigned: doc-verifier agent |
 | migration | dry-run on a copy + recorded run + rollback path | (kit native, stateful) | stateful | preassigned: main session + task-verifier |
 | data-tool | recorded live run of the real commands (generated run ledgers under docs/runs/; the hand-authored proof-of-done.md indexes them) | ops-tool-shape Done gate | behavioral | preassigned: ops-tool-shape owner (main session) |

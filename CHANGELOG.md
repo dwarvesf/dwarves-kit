@@ -5,6 +5,13 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **The 12th task type: review (SPEC-079 / ID-074).** Standalone review of a code
+  artifact now routes from intake (the ID-065 trace had it at 0/3): classifier
+  rule with an acting-on-feedback negative guard, registry row (inert: the report
+  IS the proof), loops row wired to SPEC-078 routing, 5b dialect, grill bank,
+  every count + list swept 11->12. Review found 2 CRITICAL false-pass meta pins
+  (hardcoded 11-type alternation stayed green without the new row) , both made
+  falsifiable at 12.
 - **review-team apply-class routing + model tiering (SPEC-078 / ID-076, ID-078;
   EveryInc, MIT).** Every finding carries a Route (gated_auto -> responding-to-
   review, manual -> board row, advisory -> spec record; conservative on lens

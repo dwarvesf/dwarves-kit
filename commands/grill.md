@@ -88,6 +88,13 @@ step left unanswered):
 - What would CHANGE based on the answer (no consumer = no research)?
 - What does the claim-verification bar look like for this topic (live probe vs citation)?
 
+### review (SPEC-079)
+
+1. What exact artifact is under review (PR number, branch, diff range)? Pin the SHA.
+2. Single lens or multi-lens? (lib/ or hooks/ touched -> review-team per the SPEC-069 escalation rule.)
+3. What verdict gate applies , advisory report, or does a FIX-FIRST block something?
+4. Who acts on the findings, and in which run? (Acting on feedback is a separate spec-feature task.)
+
 ### doc
 - Who reads this, and what do they DO right after reading it?
 - Which code/artifact is the source of truth the doc must match?

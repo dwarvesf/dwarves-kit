@@ -89,6 +89,16 @@ task_type_classify() {
     echo research; return 0
   fi
 
+  # 6b. review (SPEC-079 / ID-074): standalone review of a CODE artifact. Acting on
+  # feedback is build work (spec-feature); plan/paper review belongs to its subject.
+  # Known precedence consequences (documented, accepted): incident (rule 1) and
+  # research (rule 6) pre-empt , "review the incident triage report" is incident
+  # work, and "review the research methodology in the diff" routes research.
+  if printf '%s' "$lc" | grep -qE '(review|audit) .{0,24}(\bpr\b|diff|branch|changes|commit|codebase|\bcode\b)|(adversarial|multi-lens|code|security) review\b|review .{0,16}adversari' \
+     && ! printf '%s' "$lc" | grep -qE 'review feedback|(address|respond to|act on|incorporate) .{0,20}review|\bself-review\b|review and (merge|push|ship|close)'; then
+    echo review; return 0
+  fi
+
   # 8. doc: documentation / readme / changelog / comments (a doc about anything is a doc).
   if printf '%s' "$lc" | grep -qE 'write (the )?(docs|documentation|readme|manual)|update (the )?(docs|documentation|readme|changelog|manual)|document the|\breadme\b|changelog|add (a )?comment|add comments|docstring|explainer|write[ -]?up'; then
     echo doc; return 0
@@ -117,7 +127,7 @@ main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     classify) task_type_classify "$@";;
-    types)    printf 'incident\nlearning\nplanning\noperate\neval\nresearch\ndoc\nmigration\nreconcile\ndata-tool\nspec-feature\n';;
+    types)    printf 'incident\nlearning\nplanning\noperate\neval\nresearch\nreview\ndoc\nmigration\nreconcile\ndata-tool\nspec-feature\n';;
     *) echo "usage: task-type-classify.sh {classify \"<description>\"|types}" >&2; return 64;;
   esac
 }

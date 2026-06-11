@@ -47,7 +47,7 @@ It warns; it never blocks (Detect, don't dictate). Over-sizing is always silent 
 
 ## Type loops (the non-code cycles)
 
-Lanes size the EVIDENCE contract for ALL work (see the composition rule below); the loop content is the type's. The classifier's other ten types each get their own right-sized cycle
+Lanes size the EVIDENCE contract for ALL work (see the composition rule below); the loop content is the type's. The classifier's other eleven types each get their own right-sized cycle
 (PHILOSOPHY §6 N1). Same intake either way: `lib/task-type-classify.sh` names the type; code work
 picks a lane above, everything else runs its type's loop below. Chat stays chat, a loop engages
 when a task is being executed, not on every message. The executor per type (preassigned or
@@ -65,6 +65,7 @@ type-agnostic).
 | Type | Loop (entry -> phases -> exit) |
 |------|-------------------------------|
 | research | frame the question -> multi-modal sweep (parallel angles) -> adversarially verify every load-bearing claim -> cited report |
+| review | scope the artifact (diff/PR/branch) -> pick lens count (single, or multi per the escalation rule) -> dispatch read-only reviewer(s) -> merge + Route findings (SPEC-078) -> verdict -> record (spec `## Review` or report) |
 | eval | frame + define metrics -> hand-verify seed data -> climb the test ladder (smoke -> live) -> TEST-REPORT with falsifiability controls -> verdict |
 | doc | two entry paths (SPEC-073/ID-060): code-diff-triggered, diff sweep (what changed) -> update every affected doc; OR standalone revision, content brief (what the doc must say + for whom) -> rewrite. Both exit through doc-verifier confirming docs match code |
 | migration | inventory the estate -> dry-run on a copy -> staged apply -> verify + record the run -> rollback path proven |

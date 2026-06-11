@@ -313,10 +313,10 @@ the kit engages when a task is being executed. Each loop names its executing age
 preassigned (a named subagent or owning skill) or selected dynamically (a persona/profile chosen at
 dispatch).
 
-**What exists today:** `lib/task-type-classify.sh` classifies eleven work types (six when this
+**What exists today:** `lib/task-type-classify.sh` classifies twelve work types (six when this
 criterion was set 2026-06-10; expanded the same day by SPEC-054/057) and maps each to a proof
 artifact + owning skill + executor in `docs/verification/task-types.md`. Lanes give spec-feature
-work five right-sized paths; the other ten types carry their own loops (WORKFLOW `## Type loops`).
+work five right-sized paths; the other eleven types carry their own loops (WORKFLOW `## Type loops`).
 
 **The gap:** the five non-code types have proof SHAPES but no defined CYCLE: no entry -> phases ->
 exit, no agent designation. In practice they run as unstructured chat, which is exactly the
