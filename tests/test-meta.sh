@@ -2286,6 +2286,38 @@ assert_eq "Reviewer 2 carries both tripwires (ID-080)" 0 $RC
 RC=0; grep -qiE "Verdict:.*INCONCLUSIVE" "$KIT_DIR/lib/proof-ledger.sh" || RC=1
 assert_eq "proof-ledger REJECTS an INCONCLUSIVE verdict (SPEC-080 guard present)" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-081: anchored-confidence merge (ID-075) ==="
+# ============================================================
+RT81="$KIT_DIR/commands/review-team.md"
+RC=0; grep -qF 'Confidence anchors (SPEC-081' "$RT81" || RC=1
+assert_eq "Step 2 carries the confidence-anchor contract" 0 $RC
+for a in "another lens would likely agree" "I can name the failing input" "the logic is airtight"; do
+  RC=0; grep -qF "$a" "$RT81" || RC=1
+  assert_eq "anchor self-test present: $a" 0 $RC
+done
+RC=0; grep -qF 'line-bucket' "$RT81" && grep -qF 'normalized title' "$RT81" || RC=1
+assert_eq "fingerprint dedup rule present" 0 $RC
+RC=0; grep -qF 'ONE anchor step' "$RT81" || RC=1
+assert_eq "corroboration promotion rule present" 0 $RC
+RC=0; grep -qF 'below 75 are suppressed' "$RT81" && grep -qF 'CRITICAL survives at 50' "$RT81" || RC=1
+assert_eq "late confidence gate present (<75; CRITICAL at 50+)" 0 $RC
+RC=0; grep -qF 'never silently dropped' "$RT81" && grep -qF 'Suppressed findings (below the confidence gate)' "$RT81" || RC=1
+assert_eq "suppressed-appendix never-drop rule + template section present" 0 $RC
+RC=0; grep -qF 'Confidence: ' "$RT81" || RC=1
+assert_eq "report rows carry Confidence" 0 $RC
+# AC4 ordering: promotion paragraph before the gate paragraph
+# (one-occurrence assumption: both anchor strings must stay unique in the file)
+RC=0; [ "$(grep -c 'ONE anchor step' "$RT81")" = "1" ] && [ "$(grep -c 'below 75 are suppressed' "$RT81")" = "1" ] || RC=1
+assert_eq "ordering-pin anchor strings are unique" 0 $RC
+P=$(grep -n 'ONE anchor step' "$RT81" | head -1 | cut -d: -f1)
+G=$(grep -n 'below 75 are suppressed' "$RT81" | head -1 | cut -d: -f1)
+RC=0; [ -n "$P" ] && [ -n "$G" ] && [ "$P" -lt "$G" ] || RC=1
+assert_eq "the confidence gate runs LATE (after promotion, by file order)" 0 $RC
+
+
 echo ""
 echo "=== Results ==="
 # ============================================================
