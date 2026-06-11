@@ -2364,6 +2364,37 @@ assert_eq "MANUAL /kit:start Reads mentions the board" 0 $RC
 RC=0; grep -qF 'board:Nq' "$KIT_DIR/MANUAL.md" || RC=1
 assert_eq "MANUAL hook row carries the board token" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-084: hook fallback layer (ID-036) ==="
+# ============================================================
+ARCH84="$KIT_DIR/docs/architecture.md"
+RC=0; grep -qF '## Hook fallback layer (closing the layering contract)' "$ARCH84" || RC=1
+assert_eq "the section exists" 0 $RC
+RC=0; grep -qF 'fallback for failure modes that survive prose instruction' "$ARCH84" || RC=1
+assert_eq "the 3-layer fallback rule stated" 0 $RC
+RC=0; grep -qF 'survive prose AND the damage is irreversible' "$ARCH84" || RC=1
+assert_eq "placement decision test: hard criterion" 0 $RC
+# parity: one table row per hooks/*.sh file, both sides computed
+HOOK_FILES=$(ls "$KIT_DIR"/hooks/*.sh | wc -l | tr -d ' ')
+HOOK_ROWS=$(awk '/^## Hook fallback layer/,/^## [^H]/' "$ARCH84" | grep -cE '^\| `[a-z-]+` \|' || true)
+assert_eq "parity: table rows == hook files ($HOOK_FILES)" "$HOOK_FILES" "$HOOK_ROWS"
+for H in safety-gate secrets-guard ship-gate commit-format anti-rationalization; do
+  RC=0; awk '/^## Hook fallback layer/,/^## [^H]/' "$ARCH84" | grep -E "^\| .$H. \|" | grep -q 'hard' || RC=1
+  assert_eq "hard class declared: $H" 0 $RC
+done
+RC=0; grep -qF 'guardrail = the hard subset' "$ARCH84" || RC=1
+assert_eq "C3 reconciliation present (bounded guardrail)" 0 $RC
+RC=0; grep -qF 'ID-012 P2' "$ARCH84" && grep -qF 'ID-027' "$ARCH84" || RC=1
+assert_eq "folded concerns dispositioned" 0 $RC
+RC=0; grep -qF 'autonomous loop' "$KIT_DIR/commands/spec-validate.md" || RC=1
+assert_eq "spec-validate Reviewer 4 autonomy-gate bullet" 0 $RC
+RC=0; grep -qF 'the hook-fallback layer is still open' "$ARCH84" && RC=1
+assert_eq "the still-open marker is gone" 0 $RC
+RC=0; grep -qF '"Hook fallback layer"' "$KIT_DIR/AGENTS.md" || RC=1
+assert_eq "AGENTS.md points at the layering contract" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

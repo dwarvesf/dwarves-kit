@@ -161,7 +161,79 @@ Two failure modes this rule catches:
 - **Phantom command**: a command for something only ever dispatched by a step (you would never type `/kit:task-verify`). Verification is an agent, not a command.
 - **Orphan agent**: an agent no command dispatches and the user cannot invoke is dead code. Every agent needs a trigger.
 
-This is the command/agent half of the ID-036 layering contract (orchestration / agents / hooks); the hook-fallback layer is still open there.
+This is the command/agent half of the ID-036 layering contract (orchestration / agents / hooks); the hook half is declared in the next section.
+
+## Hook fallback layer (closing the layering contract)
+
+The three layers compose orchestration-first (SPEC-084 / ID-036):
+
+```
+Layer 1  ORCHESTRATION  AGENTS.md operate-contract + commands + type loops.
+         (LLM-driven)   Decides and acts. ALL guidance lives here.
+Layer 2  AGENTS         Isolated step-actors (previous section). Exist for
+                        fresh-context verification and parallel fan-out.
+Layer 3  HOOKS          Fallback enforcement ONLY. A hook exists when, and
+         (fallback)     only when, prose instruction is not enough.
+```
+
+Hooks are the bottom layer by design: each one costs latency on every matching
+event and risks false-positive friction, so the kit reaches for one last, as
+fallback for failure modes that survive prose instruction (rationalizing
+"done", rushing a destructive command, reading a secret "just to check",
+shipping without proof). Everything an instructed LLM reliably does belongs in
+Layer 1.
+
+**Placement decision test** for the next proposed hook, in order:
+
+1. Can the orchestration layer be trusted to do it every time when told in
+   prose? -> Layer 1 (AGENTS.md / a command). Not a hook.
+2. Does the failure mode survive prose AND the damage is irreversible
+   (destroyed files, leaked secret, polluted main, false "done")? -> HARD hook:
+   blocks (exit 2 / deny).
+3. Does it survive prose but the drift is recoverable and a human may
+   legitimately override? -> ADVISORY hook: warns (exit 0 + context), never
+   blocks.
+4. Is there no judgment involved at all (formatting, state save, HUD)? ->
+   CONVENIENCE hook: declared non-enforcement, so nobody mistakes auto-format
+   for a guardrail.
+
+**The inventory** (one row per `hooks/*.sh`; the parity check pins row count to
+file count so this table cannot drift):
+
+| Hook | Event | Class | Failure mode it backstops |
+|---|---|---|---|
+| `safety-gate` | PreToolUse Bash | hard | destructive deletes, push-to-main, force-push under deadline pressure |
+| `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
+| `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary) |
+| `commit-format` | PreToolUse Bash | hard | drifting commit subjects (type, length, ticket-tag leakage) |
+| `anti-rationalization` | Stop | hard | declaring work complete while rationalizing known-incomplete work |
+| `spec-drift-guard` | PreToolUse Write | advisory | creating files the active spec never mentions |
+| `slop-cleaner` | Stop | advisory | long-session code bloat; suggests, never blocks |
+| `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step (SPEC-083) |
+| `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |
+| `statusline` | StatusLine | convenience | none (HUD) |
+| `notification` | Notification | convenience | none (desktop notify) |
+| `permission-auto-approve` | PermissionRequest | convenience | none (removes approve-20-times friction for read-only ops) |
+| `session-state-save` | Stop | convenience | none (state persistence) |
+| `pre-compact-backup` | PreCompact | convenience | none (session snapshot) |
+| `post-compact-reinject` | PostToolUse compact | convenience | none (re-injects rules compaction stripped) |
+| `codebase-index` | SessionStart (opt-in) | convenience | none (background indexing) |
+
+**C3 reconciled.** PHILOSOPHY's "Guardrails over guidance" is bounded, not
+blanket: guardrail = the hard subset, where trust fails AND damage is
+irreversible. Everything else stays guidance in Layer 1, because a hard hook
+is the most expensive enforcement the kit has (every event, every repo, every
+false positive). ADR-0024 is the boundary discipline that keeps it cheap:
+gates collect advisory evidence mid-flight and enforce once, at ship.
+
+**Folded concerns, dispositioned.** ID-012 P2 (the autonomous-loop QA gate) is
+a worked example of the placement test, not a new hook: the loop's QA is
+Layer 1 (`/kit:verify` inside the loop) plus the existing `ship-gate` at the
+boundary; rule 1 says prose suffices for the loop's own verify step, rule 2
+already covers the ship boundary. ID-027 (the autonomy-gate lens) lands in
+Layer 1 as a `/kit:spec-validate` Reviewer 4 bullet: a spec whose behavior
+runs inside an autonomous loop must not let the loop make a scope /
+architecture / risk decision without a human gate.
 
 ## State model
 
