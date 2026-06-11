@@ -123,6 +123,28 @@ After all 3 complete:
    `suppressed=<S>`).
 7. Compute a combined score: average of the 3 lens scores
 
+### Step 3b: Validate verdict-driving findings (SPEC-082 / ID-079)
+
+For every UNSUPPRESSED finding with severity CRITICAL or HIGH (the ones that drive a
+FIX-THEN-SHIP / DO-NOT-SHIP verdict), dispatch ONE independent read-only validator
+subagent PER finding, never batched , a single batched validator pattern-matches
+across findings and recreates the persona-bias problem (EveryInc Stage 5b). MEDIUM /
+LOW findings are not validated (scaled down: 3 lenses produce far fewer findings
+than upstream's 9 personas).
+
+The validator is an adversarial REFUTER: it tries to DISPROVE the finding at its
+file:line citation and returns confirmed (with the evidence) or refuted (with the
+counter-evidence). Dispositions:
+
+- refuted -> findings DEMOTE to the suppressed appendix carrying the refutation;
+- confirmed -> the finding stays, marked validated in its report row.
+
+Fail-safe: a validator infra failure (error, timeout) NEVER drops a CRITICAL/HIGH
+finding , it stays in the main report marked `unvalidated`, and the verdict treats
+it as live. Losing a P0 to tooling noise is worse than reading one unvalidated row.
+Dispatch validators mid-tier (`model: sonnet`): each reads one file:line context,
+not the full diff.
+
 ### Step 4: Present unified report
 
 ```markdown
@@ -132,10 +154,10 @@ Files reviewed: [N]
 Reviewers: security, architecture, test-coverage
 
 ## Critical issues (must fix)
-1. [issue] -- found by: [lens(es)] -- Confidence: [NN] -- Route: [gated_auto|manual|advisory] -- [fix]
+1. [issue] -- found by: [lens(es)] -- Confidence: [NN] -- Status: [validated|unvalidated] -- Route: [gated_auto|manual|advisory] -- [fix]
 
 ## High issues (should fix)
-1. [issue] -- found by: [lens(es)] -- Confidence: [NN] -- Route: [gated_auto|manual|advisory] -- [fix]
+1. [issue] -- found by: [lens(es)] -- Confidence: [NN] -- Status: [validated|unvalidated] -- Route: [gated_auto|manual|advisory] -- [fix]
 
 ## Medium issues
 1. ...
@@ -143,8 +165,8 @@ Reviewers: security, architecture, test-coverage
 ## Low issues
 1. ...
 
-## Suppressed findings (below the confidence gate)
-[collapsed list: each with its anchor + self-test; kept for the record, not actioned]
+## Suppressed findings (below the confidence gate, or refuted by a validator)
+[collapsed list , below-gate: anchor + self-test; refuted: the validator counter-evidence; a reason field names which. Kept for the record, not actioned]
 
 (All severity rows use the same finding-line format: lens(es), Confidence, Route, fix.
 The verdict is determined by UNSUPPRESSED findings only.)
@@ -166,12 +188,12 @@ Record the verdict for lane telemetry (SPEC-061), one line:
 ### Step 5: Decision gate
 
 If verdict is SHIP: suggest `/kit:docs` then `/kit:ship`.
-If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Route by class (SPEC-078), UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
+If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Unvalidated CRITICAL/HIGH findings are treated as LIVE (the SPEC-082 fail-safe); responding-to-review notes the unvalidated status when proposing their fixes. Route by class (SPEC-078), UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
 If verdict is DO NOT SHIP: explain what's fundamentally wrong.
 
 ## When to use /review-team vs /review
 
 - `/review` (existing): Single-pass review by one agent. Faster, cheaper. Good for small changes, solo work, quick iteration.
-- `/review-team` (this command): Parallel 3-lens review. More thorough, ~1.5-2x the tokens with model tiering (3x untiered). Good for: PRs before merge, contractor work review, pre-release code, anything touching auth/payments/data.
+- `/review-team` (this command): Parallel 3-lens review. More thorough, ~1.5-2x the tokens with model tiering (3x untiered); each unsuppressed CRITICAL/HIGH finding adds one mid-tier validator subagent (SPEC-082). Good for: PRs before merge, contractor work review, pre-release code, anything touching auth/payments/data.
 
 Source: Addy Osmani's parallel agent review pattern. EveryInc/compound-engineering-plugin (MIT) for the apply-class rubric + model tiering (SPEC-078, absorption 2026-06-11). gstack /review for the paranoid tone. Claude Code Agent Teams documentation for parallel subagent dispatch. mattpocock/skills improve-codebase-architecture for the architecture lens's deep-module vocabulary (SPEC-059).
