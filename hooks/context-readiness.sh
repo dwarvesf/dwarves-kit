@@ -22,6 +22,19 @@ fi
 # Only warn about missing essentials, don't confirm present ones
 [ ! -f "CLAUDE.md" ] && WARNINGS+="No CLAUDE.md in project root. "
 
+# Board awareness (SPEC-083 / ID-033): the SessionStart injection is the entry
+# surface, so it must see the board, or queued work is invisible at session
+# start. Twin of lib/backlog.sh _rows: status = second-to-last pipe cell,
+# leading keyword before space/bracket/paren (keep the two parsers in sync).
+BOARD_Q=""
+if [ -f "_meta/BACKLOG.md" ]; then
+  BOARD_Q=$(awk -F'|' '/^\| *ID-[0-9]+ *\|/ {
+    s=$(NF-1); gsub(/^[ \t]+|[ \t]+$/, "", s); split(s, a, /[ \[(]/)
+    if (a[1] == "queued") n++
+  } END { print n+0 }' "_meta/BACKLOG.md" 2>/dev/null || echo "")
+  [ -n "$BOARD_Q" ] && STATE+="board:${BOARD_Q}q "
+fi
+
 # Spec status + command suggestion
 # Resolve the active spec (SPEC-005 dual-detect, reconciled to ADR-0010):
 # docs/specs/ is primary (kit + downstream). Among non-SHIPPED/PARKED specs:
@@ -75,7 +88,13 @@ if [ -n "$SPEC_AMBIG" ]; then
   STATE+="spec:ambiguous(${SPEC_AMBIG}) "
   SUGGEST="multiple live specs, no branch match; disambiguate (check out a spec's branch, or ship/park the others)"
 elif [ -z "$SPEC_FILE" ]; then
-  SUGGEST="no spec found, consider 'think' then 'spec'"
+  # Intent-first (SPEC-083): the operator states intent; commands are named in
+  # parentheses for reference. A non-empty queue routes to the board pull.
+  if [ -n "$BOARD_Q" ] && [ "$BOARD_Q" -gt 0 ]; then
+    SUGGEST="${BOARD_Q} queued on the board; state the task, or /kit:assign --next"
+  else
+    SUGGEST="no spec found; state the task (the kit routes it), or /kit:think then /kit:spec"
+  fi
 else
   # Read spec status
   SPEC_STATUS=$(grep -m1 '^Status:' "$SPEC_FILE" 2>/dev/null | sed 's/Status:\s*//' | tr -d '[:space:]' || echo "unknown")
@@ -83,20 +102,22 @@ else
 
   case "$SPEC_STATUS" in
     DRAFT)
-      SUGGEST="spec is DRAFT, consider 'spec-validate'" ;;
+      SUGGEST="spec is DRAFT; say 'validate it' (or /kit:spec-validate)" ;;
     APPROVED|VALIDATED)
       # Count tasks
       TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)
       DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || true)
       STATE+="tasks:${DONE}/${TOTAL} "
+      # A live spec's cycle suggestion beats the board pull (SPEC-083:
+      # mid-cycle, finishing beats starting); the board: token stays either way.
       if [ "$DONE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
         if grep -q '^## Review' "$SPEC_FILE" 2>/dev/null; then
-          SUGGEST="all tasks done and reviewed, consider 'ship'"
+          SUGGEST="all tasks done and reviewed; say 'ship it' (or /kit:ship)"
         else
-          SUGGEST="all tasks done, consider 'review'"
+          SUGGEST="all tasks done; say 'review it' (or /kit:review)"
         fi
       else
-        SUGGEST="tasks in progress, run 'execute' or 'next'"
+        SUGGEST="tasks in progress; say 'continue' (or /kit:execute, /kit:next)"
       fi
       ;;
   esac

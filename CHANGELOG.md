@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Session-start board wire (SPEC-083 / ID-033, I1 closed).** The
+  `context-readiness` SessionStart hook now sees the board: a `board:<N>q`
+  state token whenever `_meta/BACKLOG.md` exists, and a queue-aware
+  intent-first suggestion ("N queued on the board; state the task, or
+  /kit:assign --next"). Every cycle suggestion was rewired to speak intent
+  first with the command in parentheses; a live spec's cycle suggestion beats
+  the board pull. The 5-hop wire audit (session start -> orchestration ->
+  commands) is recorded in the spec; hop 1 was the only break.
 - **Per-finding validator wave (SPEC-082 / ID-079; EveryInc, MIT , the final
   absorption candidate, 6/6 done).** Every unsuppressed CRITICAL/HIGH finding
   gets ONE adversarial refuter subagent (never batched: batching recreates
