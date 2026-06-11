@@ -18,6 +18,7 @@
 #   plan     <lane>                    the lane's ordered phase checklist (SPEC-063)
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist (SPEC-063)
 #   rid                                the canonical run id for the cwd: branch slug (SPEC-070)
+#   descent  <rid> <lane>              plan-order timeline check; violations detected, never blocked (SPEC-076)
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -205,6 +206,43 @@ progress() {
   return 0
 }
 
+# Descent check (SPEC-076 / ID-068): the lane's plan order IS the V-model descent
+# order. Replay the ledger timeline; a phase recorded while an EARLIER plan phase is
+# still undisposed at that moment is a descent violation. Detection only: exit 0
+# always (ADR-0024, mid-flight never blocks); ship-gate surfaces the count as an
+# advisory. Disposal semantics agree with progress(): ran / override / skipped WITH
+# a non-empty reason dispose; a bare skip does not.
+descent() {
+  local rid="${1:-}" lane="${2:-}"
+  [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: descent <rid> <lane>" >&2; return 64; }
+  local f; f="$(ledger_file "$rid")" || return 0
+  [ -f "$f" ] || { echo "descent clean (no ledger)"; return 0; }
+  # phase + depth pairs: run-lite/intake phases are implicit checkpoints (review
+  # HIGH: an unrecorded run-lite phase must not produce false violations); only
+  # measure-twice (printed as "required") phases gate the descent when unrecorded.
+  local plan_list; plan_list="$(plan "$lane" | awk '{print $2"="$3}' | tr '\n' ' ')" || return 0
+  [ -n "$plan_list" ] || { echo "descent clean (no plan)"; return 0; }
+  local out
+  out="$(awk -F' [|] ' -v plan="$plan_list" '
+    BEGIN {
+      n=split(plan, R, " ")
+      for (i=1;i<=n;i++) if (R[i]!="") {
+        split(R[i], kv, "="); P[i]=kv[1]; order[kv[1]]=i
+        if (kv[2]=="lite") disposed[kv[1]]=1   # run-lite only; grill (intake) + required phases stay real checkpoints
+      }
+    }
+    $2=="GATE" {
+      p=$3; if (!(p in order)) next
+      for (j=1; j<order[p]; j++) if (P[j]!="" && !(P[j] in disposed) && !((p SUBSEP P[j]) in seen)) {
+        printf "DESCENT: %s recorded before %s disposed\n", p, P[j]
+        seen[p SUBSEP P[j]]=1   # dedup: one line per (phase, gap) pair
+      }
+      if ($4!="skipped" || (NF>=5 && $5!="")) disposed[p]=1
+    }' "$f")"
+  if [ -n "$out" ]; then printf '%s\n' "$out"; else echo "descent clean"; fi
+  return 0
+}
+
 # The canonical run id (SPEC-070 / ID-059): the current branch with its leading
 # `type/` segment stripped, the EXACT transform ship-gate keys its ledger check by
 # (`${branch#*/}` here == `${BRANCH#*/}` in hooks/ship-gate.sh; agreement-pinned in tests/test-meta.sh).
@@ -240,5 +278,6 @@ case "$cmd" in
   plan)     plan "$@" ;;
   progress) progress "$@" ;;
   rid)      rid "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show|plan|progress|rid} ..." >&2; exit 64 ;;
+  descent)  descent "$@" ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
 esac

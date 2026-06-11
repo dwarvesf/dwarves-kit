@@ -2234,6 +2234,15 @@ LOOPT=$(awk '/## Type loops/,/### Lane x type composition/' "$KIT_DIR/WORKFLOW.m
 REGT=$(grep '^|' "$KIT_DIR/docs/verification/task-types.md" | cut -d'|' -f2 | tr -d ' ' | grep -v '^task-type$' | grep -v '^-*$' | sort)
 assert_eq "type loops table and registry agree on the 11 types" "$LOOPT" "$REGT"
 
+
+# SPEC-076: descent contract wired
+RC=0; grep -qF 'The V-model descent contract (SPEC-076 / ID-068)' "$KIT_DIR/WORKFLOW.md" || RC=1
+assert_eq "WORKFLOW carries the descent contract" 0 $RC
+RC=0; grep -q '^  descent)' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+assert_eq "gate-ledger dispatches the descent verb" 0 $RC
+RC=0; grep -qF 'descent violation' "$KIT_DIR/hooks/ship-gate.sh" || RC=1
+assert_eq "ship-gate carries the descent advisory" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

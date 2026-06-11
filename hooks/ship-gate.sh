@@ -107,8 +107,10 @@ fi
 LEDGER62="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate-ledger.sh"
 if [ -f "$LEDGER62" ]; then
   RLED=$(bash "$LEDGER62" show "$SLUG" 2>/dev/null || true)
+  # RLANE derived from START unconditionally (review: descent must not depend on the
+  # ID-062 build-ran gate; a run can violate order without ever recording build).
+  RLANE=$(printf '%s' "$RLED" | grep '| START |' | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
   if printf '%s' "$RLED" | grep -q '| GATE | build | ran'; then
-    RLANE=$(printf '%s' "$RLED" | grep '| START |' | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
     case "$RLANE" in
       normal|full|bug)
         DEF62=$(_resolve_base)
@@ -119,6 +121,16 @@ if [ -f "$LEDGER62" ]; then
           echo "[advisory] run '$SLUG' (lane $RLANE) recorded a build but this branch ships no docs/verification/ record; the session ledger is not committable evidence (SPEC-071/ID-062)" >&2
         fi ;;
     esac
+  fi
+fi
+
+# SPEC-076 advisory (never blocks): V-model descent , phases recorded out of the
+# lane's plan order. Lane from the ledger START line (same source as the ID-062 warn).
+if [ -f "$LEDGER62" ] && [ -n "${RLANE:-}" ]; then
+  DOUT=$(bash "$LEDGER62" descent "$SLUG" "$RLANE" 2>/dev/null || true)
+  DN=$(printf '%s' "$DOUT" | grep -c '^DESCENT:' || true)
+  if [ "${DN:-0}" -gt 0 ] 2>/dev/null; then
+    echo "[advisory] run '$SLUG': $DN descent violation(s), phases recorded before an earlier plan phase disposed; see: bash <kit>/lib/gate-ledger.sh descent $SLUG $RLANE (SPEC-076)" >&2
   fi
 fi
 
