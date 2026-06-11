@@ -107,7 +107,7 @@ Reviewers: security, architecture, test-coverage
 Write the unified report as a `## Review` section IN the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the SPEC-005 rule), **replacing** any prior `## Review` (replace-not-stack). Keep the per-lens findings as subsections (`### Security`, `### Architecture`, `### Test coverage`) and the open items under `### TODOs`. If no active spec exists, output the report inline in chat instead. NEVER write the review (or per-lens files) to fixed-name files in the repo root; that pattern collides across concurrent worktrees and sessions.
 
 Record the verdict for lane telemetry (SPEC-061), one line:
-`bash lib/gate-ledger.sh record <spec-slug> review ran "<verdict> findings=<K>"`.
+`bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K>"`.
 
 ### Step 5: Decision gate
 

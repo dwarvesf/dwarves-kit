@@ -1693,8 +1693,8 @@ fi
 TOTAL=$((TOTAL + 1))
 if grep -qF 'What the operator sees, and when (SPEC-062)' "$KIT_DIR/WORKFLOW.md" \
    && grep -qF 'escaped-from=' "$KIT_DIR/commands/debug.md" \
-   && grep -qF 'gate-ledger.sh record <spec-slug> test-plan ran' "$KIT_DIR/commands/test-plan.md" \
-   && grep -qF 'gate-ledger.sh record <spec-slug> test-plan ran' "$KIT_DIR/commands/test-plan-review-team.md" \
+   && grep -qF 'gate-ledger.sh record <rid> test-plan ran' "$KIT_DIR/commands/test-plan.md" \
+   && grep -qF 'gate-ledger.sh record <rid> test-plan ran' "$KIT_DIR/commands/test-plan-review-team.md" \
    && grep -qF 'classified-type' "$KIT_DIR/lib/gate-ledger.sh"; then
   echo -e "  ${GREEN}PASS${NC} telemetry closure wired: scenarios + escaped-from + test-plan records + ctype (SPEC-062)"
   PASS=$((PASS + 1))
@@ -1710,9 +1710,9 @@ if grep -qF 'plan)     plan "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
    && grep -qF 'progress) progress "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
    && grep -qF 'trace)    trace "$@" ;;' "$KIT_DIR/lib/lane-telemetry.sh" \
    && grep -qF 'Show the road, then your position on it (SPEC-063)' "$KIT_DIR/AGENTS.md" \
-   && grep -qF 'record <slug> grill' "$KIT_DIR/AGENTS.md" \
+   && grep -qF 'record <rid> grill' "$KIT_DIR/AGENTS.md" \
    && grep -qF 'gate-ledger.sh plan' "$KIT_DIR/commands/assign.md" \
-   && grep -qF 'record <slug> grill ran' "$KIT_DIR/commands/grill.md"; then
+   && grep -qF 'record <rid> grill ran' "$KIT_DIR/commands/grill.md"; then
   echo -e "  ${GREEN}PASS${NC} run legibility wired: plan/progress/trace + AGENTS/assign/grill (SPEC-063)"
   PASS=$((PASS + 1))
 else
@@ -2181,6 +2181,31 @@ assert_true "proof-gate contract upgrades a migration to stateful (class wins on
   "$(bash "$KIT_DIR/lib/proof-gate.sh" contract 'migrate the database schema' 2>/dev/null | grep -q 'class=stateful' && echo 0 || echo 1)"
 
 # ============================================================
+
+# ============================================================
+echo ""
+echo "=== SPEC-070: rid standardization pins ==="
+# ============================================================
+# Agreement pin (INTENTIONAL SEAM): both ends of the rid contract carry the
+# exact #*/ strip transform; if either drops it, the contract is broken.
+RC=0; grep -qF '#*/' "$KIT_DIR/hooks/ship-gate.sh" || RC=1
+assert_eq "agreement pin: ship-gate carries the #*/ transform" 0 $RC
+RC=0; grep -qF '#*/' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+assert_eq "agreement pin: gate-ledger rid carries the #*/ transform" 0 $RC
+RC=0; grep -q '^  rid)' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+assert_eq "gate-ledger dispatches the rid verb" 0 $RC
+
+# Sweep pin (AC5): no gate-ledger call site still uses <spec-slug> as a rid
+# (debug.md's escaped-from spec REFERENCE is exempt; doc-path uses are not calls).
+RESIDUAL=$(grep -rn 'spec-slug\|record <slug>' "$KIT_DIR/commands/" "$KIT_DIR/AGENTS.md" "$KIT_DIR/WORKFLOW.md" 2>/dev/null | grep 'gate-ledger' | grep -v 'escaped-from' | wc -l | tr -d ' ')
+assert_eq "sweep pin: zero gate-ledger rid call sites say spec-slug" "0" "$RESIDUAL"
+
+# Entry-point wiring: assign derives the rid; AGENTS documents the contract once.
+RC=0; grep -q 'gate-ledger.sh rid' "$KIT_DIR/commands/assign.md" || RC=1
+assert_eq "assign.md derives RID via gate-ledger rid" 0 $RC
+RC=0; grep -q 'SPEC-070' "$KIT_DIR/AGENTS.md" || RC=1
+assert_eq "AGENTS.md carries the one-rid-per-run contract" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

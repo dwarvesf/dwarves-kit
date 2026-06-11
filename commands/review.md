@@ -73,7 +73,7 @@ Completeness: [X]/10
 ```
 
 After the verdict, record it for lane telemetry (SPEC-061), one line:
-`bash lib/gate-ledger.sh record <spec-slug> review ran "<verdict> findings=<K>"`.
+`bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K>"`.
 
 
 Completeness scoring:
