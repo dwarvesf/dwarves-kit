@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **V-model descent contract (SPEC-076 / ID-068).** Every left-arm step now
+  carries a review obligation on EVERY lane (tiny gains a run-lite Review; weight
+  scales, the obligation never waives) and descent order is detected: the lane's
+  plan order IS the descent order, `gate-ledger.sh descent <rid> <lane>` replays
+  the ledger timeline (run-lite phases implicit, grill + required phases real
+  checkpoints, one deduped line per gap), ship-gate surfaces violations as an
+  advisory , never a mid-flight block (ADR-0024). Promotion to a hard gate waits
+  on SPEC-073 telemetry.
 - **Absorption proposal: the two pinned kits (ID-069).** compound-engineering +
   cursor/plugins scanned proposal-only: 6 gate-passers (anchored-confidence merge
   15/16, apply-class routing 15/16, verify-this INCONCLUSIVE verdict 14/16, model

@@ -100,7 +100,7 @@ Three precedence facts, already true in code, pinned in the suites:
 2. **bug + incident** (`fix the prod crash, alert firing`): the incident loop's
    root-cause-before-fix IS the bug lane's debug discipline; incident supplies the
    loop content + INC-NNN artifact, bug supplies the bug-lane plan (6 phases, 3 required gates: build, review, debug).
-3. **Degenerate lanes**: tiny (1 phase) and backfill (5 phases) bound the ceremony
+3. **Degenerate lanes**: tiny (2 phases: build + review since SPEC-076) and backfill (5 phases) bound the ceremony
    for ANY type; a heavy type on a tiny diff stays tiny (see fact 1).
 
 A loop is right-sized or it is wrong: a research loop that feels like ceremony for a research
@@ -219,6 +219,18 @@ and `/kit:verify` (shipped, SPEC-035, the on-demand right-arm executor). The V i
 fully covered by commands + agents; the only open item is the optional `acceptance-verifier`
 (v2 candidate). Everything else would be a phantom.
 
+## The V-model descent contract (SPEC-076 / ID-068)
+
+Every left-arm step passes its review lens BEFORE the work descends, on EVERY lane:
+the lane's plan order (derived from the matrix below) IS the descent order, and the
+review obligation now exists on all five lanes (tiny carries a run-lite Review: a
+recorded self-review line; weight scales, the obligation never waives). Descent is
+DETECTED, never blocked mid-flight (ADR-0024): `bash lib/gate-ledger.sh descent
+<rid> <lane>` replays the ledger timeline and names every phase recorded while an
+earlier plan phase was still undisposed; ship-gate surfaces the count as an
+advisory. Promotion to a hard gate is a retro decision after SPEC-073 telemetry
+shows violations correlate with escaped defects.
+
 ## Lane×phase depth matrix
 
 How much ceremony each lane applies at each phase of the V-model. Rows are the
@@ -240,7 +252,7 @@ the V-model lens above. Every cell is one of:
 | Validate | skip | skip | measure-twice | skip | skip |
 | Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
-| Review | skip | run-lite | measure-twice | measure-twice | run-lite |
+| Review | run-lite | run-lite | measure-twice | measure-twice | run-lite |
 | Docs | skip | run-lite | measure-twice | skip | measure-twice |
 | Ship | skip | measure-twice | measure-twice | run-lite | skip |
 | Reflect | skip | skip | measure-twice | skip | skip |

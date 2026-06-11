@@ -1427,6 +1427,99 @@ assert_output_not_contains "ID-065 negative: deep-dive a non-research subject do
 OUT=$(bash "$TTC75" classify "trial the new library for the parser")
 assert_output_contains "ID-065: trial-the-library (review F1: article-free) classifies eval" "eval" "$OUT"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-076: V-model descent contract (ID-068) ==="
+# ============================================================
+GL76="$KIT_DIR/lib/gate-ledger.sh"
+# AC1: tiny now carries the review obligation (plan), enforcement set unchanged (required)
+OUT=$(bash "$GL76" plan tiny)
+assert_output_contains "tiny plan lists review (obligation everywhere)" "review" "$OUT"
+N=$(bash "$GL76" plan tiny | wc -l | tr -d ' ')
+assert_exit "tiny plan is exactly 2 phases" 0 $([ "$N" = "2" ]; echo $?)
+OUT=$(bash "$GL76" required tiny)
+assert_output_not_contains "tiny required still excludes review (run-lite, not measure-twice)" "review" "$OUT"
+
+# AC2: descent violation + clean
+LOG76=$(mktemp -d "${TMPDIR:-/tmp}/dk-log76.XXXXXX")
+mkdir -p "$LOG76/runs"
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | build | ran | jumped the gun' \
+  '2026-06-11T01:05:00Z | GATE | grill | ran | late intake' > "$LOG76/runs/viol.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent viol bug 2>&1); RC=$?
+assert_exit "descent never blocks (exit 0 on violation)" 0 $RC
+assert_output_contains "descent names the violation" "build recorded before grill disposed" "$OUT"
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T01:02:00Z | GATE | test-plan | ran | rows' \
+  '2026-06-11T01:05:00Z | GATE | build | ran | done' > "$LOG76/runs/clean.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent clean bug 2>&1)
+assert_output_contains "descent clean on an in-order ledger" "descent clean" "$OUT"
+
+# AC4: disposal parity with progress (skipped WITH reason disposes; bare skip does not)
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T01:01:00Z | GATE | build | ran | done' \
+  '2026-06-11T01:02:00Z | GATE | review | skipped | reviewed inline with the pair' \
+  '2026-06-11T01:03:00Z | GATE | debug | ran | rc found' > "$LOG76/runs/skipok.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent skipok bug 2>&1)
+assert_output_contains "skipped-with-reason disposes for descent" "descent clean" "$OUT"
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T01:01:00Z | GATE | build | ran | done' \
+  '2026-06-11T01:02:00Z | GATE | review | skipped | ' \
+  '2026-06-11T01:03:00Z | GATE | debug | ran | rc' > "$LOG76/runs/skipbad.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent skipbad bug 2>&1)
+assert_output_contains "a bare skip does NOT dispose for descent" "debug recorded before review disposed" "$OUT"
+
+# review HIGH: a run-lite plan phase never recorded must NOT produce violations
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T01:02:00Z | GATE | build | ran | done' \
+  '2026-06-11T01:03:00Z | GATE | review | ran | ok' \
+  '2026-06-11T01:04:00Z | GATE | debug | ran | rc' > "$LOG76/runs/natural.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent natural bug 2>&1)
+assert_output_contains "unrecorded run-lite phases are implicit checkpoints (natural skip clean)" "descent clean" "$OUT"
+# off-plan phase recorded -> ignored cleanly
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T01:01:00Z | GATE | reflect | ran | off-plan for bug' \
+  '2026-06-11T01:02:00Z | GATE | build | ran | done' > "$LOG76/runs/crosslane.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent crosslane bug 2>&1)
+assert_output_contains "off-plan phases are ignored" "descent clean" "$OUT"
+# dedup: two premature build records, one violation line per pair
+printf '%s\n' \
+  '2026-06-11T01:00:00Z | GATE | build | ran | first try' \
+  '2026-06-11T01:01:00Z | GATE | build | ran | retry' \
+  '2026-06-11T01:05:00Z | GATE | grill | ran | late' > "$LOG76/runs/dup.log"
+N=$(DWARVES_KIT_LOG_DIR="$LOG76" bash "$GL76" descent dup bug 2>&1 | grep -c 'DESCENT:')
+assert_exit "violations dedup to one line per (phase, gap) pair" 0 $([ "$N" = "1" ]; echo $?)
+
+# AC3: ship-gate advisory (violating ledger) + silence (clean)
+SG76=$(mktemp -d "${TMPDIR:-/tmp}/dk-sg76.XXXXXX")
+( cd "$SG76" && git init -q -b main . && git config user.email t@e && git config user.name t \
+  && mkdir -p _meta && printf '| ID-1 | viol work | x | x | tiny | queued |\n' > _meta/BACKLOG.md \
+  && git add -A && git commit -qm base && git switch -q -c feat/viol && printf 'x\n' > f && git add -A && git commit -qm w )
+printf '%s\n' \
+  '2026-06-11T00:59:00Z | START | lane=bug classified=bug type=bug-fix repo=x' \
+  '2026-06-11T01:00:00Z | GATE | build | ran | early' \
+  '2026-06-11T01:05:00Z | GATE | grill | ran | late' > "$LOG76/runs/viol2.log"
+mv "$LOG76/runs/viol2.log" "$LOG76/runs/viol.log" 2>/dev/null || true
+OUT=$( cd "$SG76" && printf '%s' '{"tool_input":{"command":"git push origin feat/viol"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOG76" bash "$KIT_DIR/hooks/ship-gate.sh" 2>&1 ); RC=$?
+assert_exit "descent advisory never blocks the push" 0 $RC
+assert_output_contains "ship-gate prints the descent advisory" "descent violation" "$OUT"
+printf '%s\n' \
+  '2026-06-11T00:59:00Z | START | lane=bug classified=bug type=bug-fix repo=x' \
+  '2026-06-11T01:00:00Z | GATE | grill | ran | q' \
+  '2026-06-11T01:02:00Z | GATE | test-plan | ran | rows' \
+  '2026-06-11T01:05:00Z | GATE | build | ran | done' > "$LOG76/runs/viol.log"
+OUT=$( cd "$SG76" && printf '%s' '{"tool_input":{"command":"git push origin feat/viol"}}' \
+  | CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOG76" bash "$KIT_DIR/hooks/ship-gate.sh" 2>&1 )
+assert_output_not_contains "clean run gets no descent advisory" "descent violation" "$OUT"
+rm -rf "$LOG76" "$SG76"
+
 # ============================================================
 echo ""
 echo "=== Results ==="
