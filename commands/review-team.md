@@ -56,6 +56,11 @@ explicitly (one adapter = hypothetical seam, two adapters = real seam) and justi
 finding in terms of leverage (what callers gain) and locality (where change, bugs, and
 knowledge concentrate).
 
+Two hard tripwires (SPEC-080 / ID-080, cursor, MIT): (1) the diff must not push any
+file from under 1k lines to over 1k lines without a stated strong reason in the PR ,
+flag it as a finding, not a nit; (2) weird if-statements in random places are a DESIGN
+problem (spaghetti growth), never a style nit , name the structural cause.
+
 ## Diff
 [paste diff or list changed files]
 

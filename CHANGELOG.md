@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **verify-this delta + architecture tripwires (SPEC-080 / ID-077, ID-080;
+  cursor, MIT).** /kit:verify restates the claim falsifiably (condition + metric
+  + threshold) before measuring and may return INCONCLUSIVE (named causes; not a
+  pass). Review found the gate hole TWICE: an INCONCLUSIVE record with Exit: 0
+  satisfied proof-ledger, and the first guard then blocked the documented
+  append-retry workflow , final semantics: last-verdict-wins on both check
+  paths, 4 behavioral fixtures. Reviewer 2 gains the 1k-line and
+  spaghetti-growth tripwires.
 - **The 12th task type: review (SPEC-079 / ID-074).** Standalone review of a code
   artifact now routes from intake (the ID-065 trace had it at 0/3): classifier
   rule with an acting-on-feedback negative guard, registry row (inert: the report

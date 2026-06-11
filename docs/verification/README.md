@@ -24,6 +24,10 @@ The design is written **once** and is stable. Each **execution** produces its **
 immutable, versioned report** , re-running never overwrites a prior run, it adds a new one.
 A skeptic re-runs any recorded execution's `Command:` and reaches the same verdict.
 
+For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
+(SPEC-080): `Baseline:` and `Treatment:` (same command, data, env), with
+`Delta:` and `Threshold:` , a comparative verdict without the pair is INCONCLUSIVE.
+
 ## What "done" means: a proof of done has three parts
 
 "Done" is not a claim, it is a **proof of done**: a recorded artifact a skeptic can re-run.
@@ -214,7 +218,7 @@ Proof class: stateful | behavioral | inert
   ```
   <the decisive lines: pass/fail counts, the failing assertion, the QL-VERDICT marker>
   ```
-- Verdict: PASS | FAIL | RED-as-expected | [NO EXECUTABLE CHECK: <reason>]
+- Verdict: PASS | FAIL | INCONCLUSIVE | RED-as-expected | [NO EXECUTABLE CHECK: <reason>]
 - Note: <optional one line, e.g. which AC this covers, or the round-by-round finding counts>
 ````
 
