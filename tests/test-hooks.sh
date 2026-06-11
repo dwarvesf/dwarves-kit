@@ -1401,6 +1401,32 @@ assert_output_contains "backfill catches pronoun variants (your)" "backfill" "$O
 OUT=$(bash "$KIT_DIR/lib/proof-gate.sh" contract "fix a typo in the incident runbook" 2>/dev/null | head -1)
 assert_output_contains "composition: tiny lane inert-short-circuits a stateful type" "class=inert" "$OUT"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-075: use-case loop anchors (ID-065) ==="
+# ============================================================
+TTC75="$KIT_DIR/lib/task-type-classify.sh"
+# build-experiment phrasings classify eval (live trace misfires 5/6)
+OUT=$(bash "$TTC75" classify "spin up a quick experiment to test if X works")
+assert_output_contains "ID-065: spin-up-experiment classifies eval" "eval" "$OUT"
+OUT=$(bash "$TTC75" classify "trial a new library, throwaway code, log findings")
+assert_output_contains "ID-065: trial-a-library classifies eval" "eval" "$OUT"
+# research snapshot phrasing (misfire 1)
+OUT=$(bash "$TTC75" classify "deep-dive how Z works across our repos and snapshot it")
+assert_output_contains "ID-065: deep-dive-and-snapshot classifies research" "research" "$OUT"
+# negatives: experiment/trial words inside feature work must NOT flip
+OUT=$(bash "$TTC75" classify "add an experimental flag to the parser feature")
+assert_output_contains "ID-065 negative: experimental flag stays spec-feature" "spec-feature" "$OUT"
+OUT=$(bash "$TTC75" classify "fix the clinical trial data importer crash")
+assert_output_not_contains "ID-065 negative: clinical-trial phrasing is not eval" "eval" "$OUT"
+OUT=$(bash "$TTC75" classify "snapshot the database before the migration")
+assert_output_contains "ID-065 negative: db snapshot routes to migration, not research" "migration" "$OUT"
+OUT=$(bash "$TTC75" classify "deep-dive the database backup and restore plan")
+assert_output_not_contains "ID-065 negative: deep-dive a non-research subject does not steal research" "research" "$OUT"
+OUT=$(bash "$TTC75" classify "trial the new library for the parser")
+assert_output_contains "ID-065: trial-the-library (review F1: article-free) classifies eval" "eval" "$OUT"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

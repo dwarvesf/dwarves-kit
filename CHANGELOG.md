@@ -5,6 +5,11 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Use-case path audit + eval/research anchor recall (SPEC-075 / ID-065).** The
+  three real loop shapes traced end to end: research routes 2/3 (now 3/3),
+  build-experiment 1/3 (now 3/3), autoreview 0/3 , the 12th-type decision is
+  ID-074 on the board with all SPEC-057 parity surfaces named. Kit-vs-skills
+  verdict: no destination conflicts; the gap class was recall, not capability.
 - **Lane x type composition rule + audit (SPEC-074 / ID-066).** The 55 (lane,
   type) pairs now have a written contract: the type names the CONTENT (loop steps,
   proof dialect, executor), the lane names the EVIDENCE (the depth-matrix gates

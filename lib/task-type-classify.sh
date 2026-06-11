@@ -77,13 +77,15 @@ task_type_classify() {
     echo spec-feature; return 0
   fi
 
+  # NOTE: the `run .* experiment` arm relies on operate (rule 4) being checked FIRST
+  # to catch procedure-run phrasings; reorder with care (SPEC-075 review F3).
   # 5. eval: measuring or comparing tools/options.
-  if printf '%s' "$lc" | grep -qE 'benchmark|evaluat|\beval\b|compare .*(vs|versus|against)|which (tool|one|option)|is .* better|lab[ -]test|a/b test'; then
+  if printf '%s' "$lc" | grep -qE 'benchmark|evaluat|\beval\b|compare .*(vs|versus|against)|which (tool|one|option)|is .* better|lab[ -]test|a/b test|(spin up|run|do) .{0,12}(quick )?experiment|experiment to (test|see|check)|trial .{0,16}(library|tool|service|framework)|throwaway (code|prototype|script)'; then
     echo eval; return 0
   fi
 
   # 6. research: investigation / survey / landscape (no measured comparison).
-  if printf '%s' "$lc" | grep -qE 'research|investigat|survey|landscape|literature|state of the art|find out (how|whether|if)|cited report'; then
+  if printf '%s' "$lc" | grep -qE 'research|investigat|survey|landscape|literature|state of the art|find out (how|whether|if)|cited report|deep[ -]dive .{0,60}(snapshot|write[ -]up|note)|(snapshot|write up) (how|what|the way)'; then
     echo research; return 0
   fi
 
