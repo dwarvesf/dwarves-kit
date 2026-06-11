@@ -2395,6 +2395,32 @@ assert_eq "the still-open marker is gone" 0 $RC
 RC=0; grep -qF '"Hook fallback layer"' "$KIT_DIR/AGENTS.md" || RC=1
 assert_eq "AGENTS.md points at the layering contract" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-085: operator doc sync (ID-070) ==="
+# ============================================================
+RM85="$KIT_DIR/README.md"
+# parity: hooks , summary number == file count == row count (all computed)
+HF=$(ls "$KIT_DIR"/hooks/*.sh | wc -l | tr -d ' ')
+HSUM=$(grep -oE '<summary><b>Hooks</b> \(([0-9]+)' "$RM85" | grep -oE '[0-9]+' || echo 0)
+HROWS=$(awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep -cE '^\| [a-z]' || true)
+assert_eq "README hooks summary == hook files ($HF)" "$HF" "$HSUM"
+assert_eq "README hooks rows == hook files ($HF)" "$HF" "$HROWS"
+# parity: commands
+CF=$(ls "$KIT_DIR"/commands/*.md | wc -l | tr -d ' ')
+CSUM=$(grep -oE '<summary><b>Commands</b> \(([0-9]+)' "$RM85" | grep -oE '[0-9]+' || echo 0)
+CROWS=$(awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -cE '^\| /kit:' || true)
+assert_eq "README commands summary == command files ($CF)" "$CF" "$CSUM"
+assert_eq "README commands rows == command files ($CF)" "$CF" "$CROWS"
+# content: the hard hook is in the public table; the two missing commands exist
+RC=0; awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep -q '^| ship-gate' || RC=1
+assert_eq "README hooks table carries ship-gate" 0 $RC
+RC=0; awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -q 'kit:adopt' && awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -q 'kit:test-plan-review-team' || RC=1
+assert_eq "README commands table carries adopt + test-plan-review-team" 0 $RC
+RC=0; awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep '^| context-readiness' | grep -q 'board' || RC=1
+assert_eq "README context-readiness row is board-aware (SPEC-083)" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

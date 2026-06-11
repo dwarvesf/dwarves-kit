@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Operator doc sync + README parity pins (SPEC-085 / ID-070, the 2026-06-10
+  intake wave closes 8/8).** README's hook and command tables had drifted
+  (claimed 14 hooks vs 16 real, 22 commands vs 25; `ship-gate`, the hook that
+  blocks unproven ships, was absent from the public table). Counts fixed, four
+  rows added, six stale descriptions refreshed (board-aware context-readiness,
+  confidence-gated review-team, INCONCLUSIVE verify), and the README tables now
+  carry the same computed parity pins as the architecture inventories, so the
+  next drift fails the suite instead of waiting for a reader to notice.
 - **Hook fallback layer declared (SPEC-084 / ID-036, I3 closed , the layering
   contract is complete).** `docs/architecture.md` now states the 3-layer rule
   (orchestration decides, agents isolate, hooks are fallback ONLY for failure

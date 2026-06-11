@@ -108,8 +108,8 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
                      [session-state-save persists progress on every stop]
                      [slop-cleaner flags bloat at stop points]
 /kit:review         Single-pass review (10 min)
-/kit:review-team    Parallel 3-lens review (security + arch + tests)
-/kit:verify         Re-run the tests read-only, no rebuild (on demand)
+/kit:review-team    Parallel 3-lens review, confidence-gated + validated findings
+/kit:verify         Re-run tests read-only; PASS / FAIL / INCONCLUSIVE
 /kit:docs           Update all docs to match code (5 min)
 /kit:ship           Review gate, version bump, changelog, commit, PR
 /kit:retro          Retrospective (10 min, after shipping)
@@ -153,14 +153,15 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (14, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (16, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
 | safety-gate | PreToolUse(Bash) | Blocks rm -rf (build-artifact allowlist), push to main, force push, DROP TABLE, git reset --hard, kubectl delete |
 | secrets-guard | PreToolUse(Read\|Edit\|Bash) | Blocks reads of secret files (.env, ~/.ssh, ~/.aws, .pem); canonicalizes the path first |
 | commit-format | PreToolUse(Bash) | Blocks non-conventional / >72-char / spec-ID commit subjects |
-| context-readiness | SessionStart | Detects project state, suggests next command |
+| ship-gate | PreToolUse(Bash) | Blocks push/PR without a proof-of-done record + recorded lane gates (ADR-0024 boundary) |
+| context-readiness | SessionStart | Detects project + board state (`board:Nq`), suggests the next step intent-first |
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
 | session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
@@ -171,11 +172,14 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | notification | Notification | Desktop alert when Claude needs input |
 | permission-auto-approve | PermissionRequest | Auto-approves read-only operations (pipe-safe) |
 | statusline | StatusLine | Shows model, branch, context %, cost, thinking mode |
+| codebase-index | SessionStart (opt-in) | Background-indexes the repo into codebase-memory-mcp |
+
+Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.md` "Hook fallback layer" (hard / advisory / convenience, parity-pinned).
 
 </details>
 
 <details>
-<summary><b>Commands</b> (22, manual, human-triggered)</summary>
+<summary><b>Commands</b> (25, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -193,10 +197,12 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
-| /kit:verify | Verify | Read-only re-run of task-verifier + integration-checker on the active spec, no rebuild |
+| /kit:verify | Verify | Read-only re-run of task-verifier + integration-checker, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
 | /kit:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
 | /kit:review | Review | Paranoid single-pass code review |
-| /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage) |
+| /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
+| /kit:test-plan-review-team | Verify | 5-lens adversarial critique of the spec's `## Test plan`, bounded revise loop, report-only |
+| /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
 | /kit:ship | Ship | Review gate, version bump, changelog, commit, PR |
 | /kit:retro | Reflect | What worked, what hurt, action items for next cycle |

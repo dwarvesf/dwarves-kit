@@ -527,8 +527,8 @@ reserved for the safety subset (safety-gate hook, push-to-main blocker).
 ## What this contract does NOT do
 It does not lock phases. An experienced operator may skip /spec-validate on a
 normal-lane change or go straight to /next. The kit detects state
-(context-readiness hook) and suggests the next step; it never blocks
-progression. Hard stops are reserved for irreversible cost: destructive
+(context-readiness hook: spec status + the board's queued count) and suggests
+the next step intent-first (SPEC-083); it never blocks progression. Hard stops are reserved for irreversible cost: destructive
 commands, push-to-main, premature completion, failed verification.
 
 ## Goal drafts (.claude/goals/)
@@ -813,7 +813,7 @@ later reader and an earlier writer never split across two specs.
 | 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
 | 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |
 | 5 | `/kit:test-plan` | before `/execute`; derive a coverage matrix | `## Test plan` in the spec (consumed by `/execute`) | matrix written |
-| 6 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP |
+| 6 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel; confidence anchors + fingerprint dedup + per-finding validators (SPEC-081/082) | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP, unsuppressed findings drive it |
 | 7 | `/kit:absorb` | maintainer-only external-absorption audit | dated report under `docs/absorption/` | proposal-only report (human merge gate) |
 | 8 | `/kit:kit-health` | maintainer self-assessment vs PHILOSOPHY, before tagging | report (stdout) | assessment rendered |
 
