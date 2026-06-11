@@ -2304,7 +2304,7 @@ RC=0; grep -qF 'ONE anchor step' "$RT81" || RC=1
 assert_eq "corroboration promotion rule present" 0 $RC
 RC=0; grep -qF 'below 75 are suppressed' "$RT81" && grep -qF 'CRITICAL survives at 50' "$RT81" || RC=1
 assert_eq "late confidence gate present (<75; CRITICAL at 50+)" 0 $RC
-RC=0; grep -qF 'never silently dropped' "$RT81" && grep -qF 'Suppressed findings (below the confidence gate)' "$RT81" || RC=1
+RC=0; grep -qF 'never silently dropped' "$RT81" && grep -qF 'Suppressed findings (below the confidence gate, or refuted by a validator)' "$RT81" || RC=1
 assert_eq "suppressed-appendix never-drop rule + template section present" 0 $RC
 RC=0; grep -qF 'Confidence: ' "$RT81" || RC=1
 assert_eq "report rows carry Confidence" 0 $RC
@@ -2317,6 +2317,33 @@ G=$(grep -n 'below 75 are suppressed' "$RT81" | head -1 | cut -d: -f1)
 RC=0; [ -n "$P" ] && [ -n "$G" ] && [ "$P" -lt "$G" ] || RC=1
 assert_eq "the confidence gate runs LATE (after promotion, by file order)" 0 $RC
 
+
+
+# ============================================================
+echo ""
+echo "=== SPEC-082: per-finding validators (ID-079) ==="
+# ============================================================
+RT82="$KIT_DIR/commands/review-team.md"
+RC=0; grep -qF 'Step 3b: Validate verdict-driving findings' "$RT82" || RC=1
+assert_eq "Step 3b exists" 0 $RC
+RC=0; grep -qF 'PER finding, never batched' "$RT82" || RC=1
+assert_eq "per-finding never-batch rule present" 0 $RC
+RC=0; grep -qF 'recreates the persona-bias problem' "$RT82" || RC=1
+assert_eq "upstream rationale quoted" 0 $RC
+RC=0; grep -qF 'adversarial REFUTER' "$RT82" && grep -qF 'DEMOTE to the suppressed appendix carrying the refutation' "$RT82" || RC=1
+assert_eq "refuter framing + refuted disposition present" 0 $RC
+RC=0; grep -qF 'marked validated' "$RT82" || RC=1
+assert_eq "confirmed disposition present" 0 $RC
+RC=0; grep -qF 'NEVER drops a CRITICAL/HIGH' "$RT82" && grep -qF 'unvalidated' "$RT82" || RC=1
+assert_eq "infra-failure fail-safe present" 0 $RC
+RC=0; grep -qF 'UNSUPPRESSED finding with severity CRITICAL or HIGH' "$RT82" || RC=1
+assert_eq "scope line present (unsuppressed P0/P1 only)" 0 $RC
+# ordering: 3b after the late gate, before Step 4
+G=$(grep -n 'below 75 are suppressed' "$RT82" | head -1 | cut -d: -f1)
+B=$(grep -n 'Step 3b: Validate verdict-driving findings' "$RT82" | head -1 | cut -d: -f1)
+S4=$(grep -n '### Step 4' "$RT82" | head -1 | cut -d: -f1)
+RC=0; [ -n "$G" ] && [ -n "$B" ] && [ -n "$S4" ] && [ "$G" -lt "$B" ] && [ "$B" -lt "$S4" ] || RC=1
+assert_eq "Step 3b sits between the confidence gate and Step 4" 0 $RC
 
 echo ""
 echo "=== Results ==="

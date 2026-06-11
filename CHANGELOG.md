@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Per-finding validator wave (SPEC-082 / ID-079; EveryInc, MIT , the final
+  absorption candidate, 6/6 done).** Every unsuppressed CRITICAL/HIGH finding
+  gets ONE adversarial refuter subagent (never batched: batching recreates
+  persona bias); refuted findings demote to the appendix with the
+  counter-evidence, confirmed ones are marked validated, and a validator infra
+  failure NEVER drops a P0/P1 (stays, marked unvalidated, verdict treats as
+  live). Validators run mid-tier; the cost note tells the truth about the
+  added subagents.
 - **Anchored-confidence merge for review-team (SPEC-081 / ID-075; EveryInc, MIT,
   15/16 , the top absorption candidate).** Reviewers return findings with a
   confidence at 5 behavioral anchors (each with a self-test); fingerprint dedup
