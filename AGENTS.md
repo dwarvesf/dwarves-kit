@@ -15,7 +15,9 @@ under Claude Code. Under any other runtime (Codex, Gemini, a bare LLM)
 enforces it. Do not assume the guardrails are portable. They are not, until the
 v3.x multi-runtime agent-hook work lands. See `docs/PHILOSOPHY.md` (honesty rule:
 never over-claim portable enforcement) and `CLAUDE.md` for the CC-specific layer
-(hooks, slash commands, plugin).
+(hooks, slash commands, plugin). The full layering contract, which hook
+backstops what and why (hard / advisory / convenience), is
+`docs/architecture.md` "Hook fallback layer".
 
 The rest of this file is four portable zones. The goal-crafter
 (`commands/assign.md`) projects them into a six-section `/goal` (see "How a goal

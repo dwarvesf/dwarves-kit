@@ -4,6 +4,18 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Hook fallback layer declared (SPEC-084 / ID-036, I3 closed , the layering
+  contract is complete).** `docs/architecture.md` now states the 3-layer rule
+  (orchestration decides, agents isolate, hooks are fallback ONLY for failure
+  modes that survive prose), a 4-step placement decision test for the next
+  proposed hook, and a classed 16-row inventory (5 hard, 3 advisory, 8
+  convenience) with a parity pin so the table cannot drift. "Guardrails over
+  guidance" is reconciled as bounded: guardrail = the hard subset where trust
+  fails and damage is irreversible. ID-027 landed as a spec-validate
+  Reviewer 4 autonomy-gate bullet; ID-012 P2 is dispositioned as a worked
+  example (loop QA stays orchestration + ship-gate, no new hook).
+
 ### Fixed
 - **The nameless hooks-suite flake (ID-081), root-caused and fixed.** BSD
   `script(1)` copies terminal attrs from its own stdin; when a harness hands
