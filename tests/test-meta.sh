@@ -2251,6 +2251,23 @@ assert_eq "stack-merge next_link self-reconciles every link" 0 $RC
 RC=0; grep -qF 'start --amend' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
 assert_eq "gate-ledger documents the amend path" 0 $RC
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-078: review-team routing + tiering (ID-076/078) ==="
+# ============================================================
+RT="$KIT_DIR/commands/review-team.md"
+RC=0; grep -qF 'gated_auto' "$RT" && grep -qF 'advisory' "$RT" && grep -qF 'route conservatively' "$RT" || RC=1
+assert_eq "review-team carries the 3 apply-classes + conservative rule (ID-076)" 0 $RC
+RC=0; grep -qF 'Route:' "$RT" || RC=1
+assert_eq "report template carries the Route line" 0 $RC
+RC=0; grep -qF 'becomes a board row' "$RT" && grep -qF 'responding-to-review' "$RT" || RC=1
+assert_eq "decision gate routes each class to its destination" 0 $RC
+RC=0; grep -qF 'matching the session model' "$RT" && grep -qF 'model: sonnet' "$RT" && grep -qF 'silently down-tier' "$RT" || RC=1
+assert_eq "model tiering named per lens (ID-078)" 0 $RC
+RC=0; grep -qiF 'if the override is unavailable' "$RT" || RC=1
+assert_eq "tiering fallback sentence present" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

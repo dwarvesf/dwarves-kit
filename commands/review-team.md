@@ -21,6 +21,15 @@ Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the 
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
+**Model tiering (SPEC-078 / ID-078, EveryInc Stage 4 pattern):** dispatch the
+security reviewer with an EXPLICIT model override matching the session model ,
+the security-auditor agent's frontmatter defaults to sonnet, so omitting the
+override would silently down-tier the high-stakes lens, not inherit; dispatch
+the architecture and test-coverage reviewers with the mid-tier override
+(`model: sonnet`). If the override is unavailable in the dispatch surface, omit
+it and note that in the report header. This roughly halves the command's token
+cost without dulling the lens that catches exploits.
+
 **Reviewer 1: Security (deep)**
 ```
 Review this code diff through the SECURITY lens only.
@@ -73,7 +82,16 @@ After all 3 complete:
 1. Collect all issues from all 3 reviewers
 2. Deduplicate (same file + same line + similar issue = one finding, note which lenses caught it)
 3. Sort by severity (CRITICAL > HIGH > MEDIUM > LOW)
-4. Compute a combined score: average of the 3 lens scores
+4. **Classify each finding's Route (SPEC-078 / ID-076, EveryInc action-class
+   rubric):** severity says how URGENT, the Route says what FOLLOW-UP SHAPE:
+   - `gated_auto` , a concrete suggested fix exists; applied after judgment at
+     the decision gate (never blindly).
+   - `manual` , needs design input or a scope decision; not fixable inline.
+   - `advisory` , worth recording, no action owed.
+   When lenses disagree on a finding's class, route conservatively: manual beats
+   gated_auto, advisory never downgrades a class another lens raised.
+   (Upstream deprecated `safe_auto`; there is deliberately no auto-apply class.)
+5. Compute a combined score: average of the 3 lens scores
 
 ### Step 4: Present unified report
 
@@ -84,10 +102,10 @@ Files reviewed: [N]
 Reviewers: security, architecture, test-coverage
 
 ## Critical issues (must fix)
-1. [issue] -- found by: [lens(es)] -- [fix]
+1. [issue] -- found by: [lens(es)] -- Route: [gated_auto|manual|advisory] -- [fix]
 
 ## High issues (should fix)
-1. [issue] -- found by: [lens(es)] -- [fix]
+1. [issue] -- found by: [lens(es)] -- Route: [gated_auto|manual|advisory] -- [fix]
 
 ## Medium issues
 1. ...
@@ -112,12 +130,12 @@ Record the verdict for lane telemetry (SPEC-061), one line:
 ### Step 5: Decision gate
 
 If verdict is SHIP: suggest `/kit:docs` then `/kit:ship`.
-If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. If they choose to address now, dispatch the `responding-to-review` agent with the findings as input -- it will verify each item, push back on incorrect feedback, and propose fixes in priority order without performative agreement.
+If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Route by class (SPEC-078): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
 If verdict is DO NOT SHIP: explain what's fundamentally wrong.
 
 ## When to use /review-team vs /review
 
 - `/review` (existing): Single-pass review by one agent. Faster, cheaper. Good for small changes, solo work, quick iteration.
-- `/review-team` (this command): Parallel 3-lens review. More thorough, 3x the tokens. Good for: PRs before merge, contractor work review, pre-release code, anything touching auth/payments/data.
+- `/review-team` (this command): Parallel 3-lens review. More thorough, ~1.5-2x the tokens with model tiering (3x untiered). Good for: PRs before merge, contractor work review, pre-release code, anything touching auth/payments/data.
 
-Source: Addy Osmani's parallel agent review pattern. gstack /review for the paranoid tone. Claude Code Agent Teams documentation for parallel subagent dispatch. mattpocock/skills improve-codebase-architecture for the architecture lens's deep-module vocabulary (SPEC-059).
+Source: Addy Osmani's parallel agent review pattern. EveryInc/compound-engineering-plugin (MIT) for the apply-class rubric + model tiering (SPEC-078, absorption 2026-06-11). gstack /review for the paranoid tone. Claude Code Agent Teams documentation for parallel subagent dispatch. mattpocock/skills improve-codebase-architecture for the architecture lens's deep-module vocabulary (SPEC-059).
