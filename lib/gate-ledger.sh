@@ -173,7 +173,7 @@ progress() {
   local rid="${1:-}" lane="${2:-}"
   [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: progress <rid> <lane>" >&2; return 64; }
   local f; f="$(ledger_file "$rid")"
-  local total=0 done_n=0 cur="" cur_idx=0 list=""
+  local total=0 done_n=0 cur="" cur_idx=0 list="" ooo=0
   local idx ph rest
   while IFS= read -r pline; do
     idx="${pline%%.*}"; idx="$(printf '%s' "$idx" | tr -d ' ')"
@@ -181,7 +181,13 @@ progress() {
     total=$((total+1))
     # disposed = ran / override / skipped WITH a reason; a bare skip stays visible as a gap
     if [ -f "$f" ] && awk -F' [|] ' -v p="$ph" '$2=="GATE" && $3==p && ($4!="skipped" || (NF>=5 && $5!="")) {found=1} END{exit !found}' "$f"; then
-      done_n=$((done_n+1)); list="$list ${C_DONE}✓$ph${C_OFF}"
+      # SPEC-071 / ID-050: a phase disposed AFTER the current pointer gets its own
+      # marker (*), so an out-of-order ✓ can't mislead the at-a-glance read.
+      if [ -n "$cur" ]; then
+        done_n=$((done_n+1)); ooo=1; list="$list ${C_DONE}*$ph${C_OFF}"
+      else
+        done_n=$((done_n+1)); list="$list ${C_DONE}✓$ph${C_OFF}"
+      fi
     elif [ -z "$cur" ]; then
       cur="$ph"; cur_idx="$idx"; list="$list ${C_CUR}▶$ph${C_OFF}"
     else
@@ -195,6 +201,31 @@ progress() {
     printf '%s%s · %s · step %s/%d (%s)%s\n' "$C_BOLD" "$rid" "$lane" "$cur_idx" "$total" "$cur" "$C_OFF"
   fi
   printf ' %s\n' "$list"
+  [ "$ooo" -eq 1 ] && printf '%s  (* = disposed out of order)%s\n' "$C_DIM" "$C_OFF"
+  return 0
+}
+
+# The canonical run id (SPEC-070 / ID-059): the current branch with its leading
+# `type/` segment stripped, the EXACT transform ship-gate keys its ledger check by
+# (`${branch#*/}` here == `${BRANCH#*/}` in hooks/ship-gate.sh; agreement-pinned in tests/test-meta.sh).
+# One rid from assign to ship means no mirror records. Fails loudly off a work
+# branch: a wrong rid recorded silently is worse than no rid.
+rid() {
+  local branch slug
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  case "$branch" in
+    ""|HEAD|master|main)
+      echo "rid: not on a work branch (got '${branch:-none}'); create the branch first, then derive the rid" >&2
+      return 1 ;;
+  esac
+  slug="${branch#*/}"
+  if [ -z "$slug" ] || [ -z "$(runid "$slug")" ]; then
+    echo "rid: branch '$branch' strips to an empty slug" >&2
+    return 1
+  fi
+  # Emit the runid-normalized form (review S2): the visible key equals the
+  # ledger filename stem, so forensic review never chases two spellings.
+  printf '%s\n' "$(runid "$slug")"
 }
 
 # The canonical run id (SPEC-070 / ID-059): the current branch with its leading

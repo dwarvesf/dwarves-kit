@@ -36,6 +36,10 @@ set -euo pipefail
 # resolve to the real repo so ../docs/verification/task-types.md still loads (SPEC-045).
 PROOF_GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
+# Single source for the type derivation (review: proof_contract + proof_class each
+# forked their own classify; one helper, one fork per caller, zero divergence risk).
+_classify_type() { bash "$PROOF_GATE_DIR/task-type-classify.sh" classify "$@" 2>/dev/null || true; }
+
 proof_class() {
   local desc lc lane
   desc="$*"
@@ -52,7 +56,20 @@ proof_class() {
     echo stateful; return 0
   fi
 
-  # 3. behavioral: the default -- it changes behavior.
+  # 3. registry default for the classified type (SPEC-071 / ID-061): a doc task is
+  # inert by its own registry row; the blanket behavioral default was overriding it.
+  # Deliberate side effect (reviewed): migration/incident/operate now floor at
+  # stateful and planning/learning at inert even without step-2 keywords; the
+  # spec-feature/eval/research/data-tool/reconcile rows stay behavioral (no change).
+  # _registry_field column 5 = "default class" (awk -F'|': $2=type $3=artifact $4=skill $5=class).
+  local rtype rclass
+  rtype="$(_classify_type "$desc")"
+  if [ -n "$rtype" ]; then
+    rclass="$(_registry_field "$rtype" 5)"
+    case "$rclass" in stateful|behavioral|inert) echo "$rclass"; return 0;; esac
+  fi
+
+  # 4. behavioral: the fallback for types with no registry row.
   echo behavioral
 }
 
@@ -87,7 +104,7 @@ proof_contract() {
   desc="$*"
   [ -n "$desc" ] || { echo "usage: proof-gate.sh contract \"<task description>\"" >&2; return 64; }
   class="$(proof_class "$desc")"
-  type="$(bash "$PROOF_GATE_DIR/task-type-classify.sh" classify "$desc" 2>/dev/null || echo spec-feature)"
+  type="$(_classify_type "$desc")"; [ -n "$type" ] || type=spec-feature
   artifact="$(_registry_field "$type" 3)"
   skill="$(_registry_field "$type" 4)"
   [ -n "$artifact" ] || artifact="(no registry row for type '$type'; default: run the real primary flow + a negative control)"

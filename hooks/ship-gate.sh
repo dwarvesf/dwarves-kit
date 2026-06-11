@@ -57,6 +57,12 @@ BRANCH=$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)
 [ -n "$BRANCH" ] || exit 0
 SLUG="${BRANCH#*/}"   # strip the type/ prefix (feat/, docs/, ...)
 
+# One copy of the three-way default-branch fallback (review: was duplicated per block).
+_resolve_base() {
+  git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1 && echo origin/main \
+    || { git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master; }
+}
+
 # --- Proof-of-done gate (diff-keyed, SPEC-INDEPENDENT). This is the bridge: it fires on
 # freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
 # load-bearing (behavioral/stateful) change cannot ship without a matching proof-of-done
@@ -70,8 +76,7 @@ PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/proof-ledger.sh"
 # no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
 # not every repo the user touches).
 if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
-  DEFAULT=$(git -C "$ROOT" rev-parse --verify -q origin/main >/dev/null 2>&1 && echo origin/main \
-    || { git -C "$ROOT" rev-parse --verify -q main >/dev/null 2>&1 && echo main || echo master; })
+  DEFAULT=$(_resolve_base)
   BASE=$(git -C "$ROOT" merge-base HEAD "$DEFAULT" 2>/dev/null || true)
   HEADSHA=$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || true)
   if [ -n "$BASE" ] && [ "$BASE" != "$HEADSHA" ]; then
@@ -82,6 +87,38 @@ if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
       printf '%s\n' "$PMSG" >&2
       exit 2
     fi
+  fi
+fi
+
+# SPEC-069 advisory (never blocks), relocated ABOVE the spec check (SPEC-071 / ID-063):
+# spec-less freeform pushes are exactly the work most likely to be un-boarded, and the
+# old placement exited before the nudge could fire.
+if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2>/dev/null | grep -qF -- "$SLUG"; then
+  echo "[advisory] branch slug '$SLUG' appears nowhere in _meta/BACKLOG.md; if this is real work, give it a board row (SPEC-069)" >&2
+fi
+
+# SPEC-071 / ID-062 advisory (never blocks): a run that recorded real build work but
+# ships no committable verification record dies with the session (the run ledger is
+# gitignored by design). The proof-gate BLOCKS behavioral diffs in adopted repos; this
+# covers its deliberate fail-open seams (non-adopted repo, tests/CI-only diff). Lane
+# comes from the ledger's own START line, never the spec; base is computed locally.
+# Placed deliberately AFTER the proof block: in adopted repos a behavioral diff already
+# hard-BLOCKS above; this covers only the proof-gate's fail-open seams.
+LEDGER62="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate-ledger.sh"
+if [ -f "$LEDGER62" ]; then
+  RLED=$(bash "$LEDGER62" show "$SLUG" 2>/dev/null || true)
+  if printf '%s' "$RLED" | grep -q '| GATE | build | ran'; then
+    RLANE=$(printf '%s' "$RLED" | grep '| START |' | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
+    case "$RLANE" in
+      normal|full|bug)
+        DEF62=$(_resolve_base)
+        BASE62=$(git -C "$ROOT" merge-base HEAD "$DEF62" 2>/dev/null || true)
+        if [ -n "$BASE62" ] && ! git -C "$ROOT" diff --name-only "$BASE62" HEAD 2>/dev/null \
+            | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' \
+            | grep -vq '/README\.md$'; then
+          echo "[advisory] run '$SLUG' (lane $RLANE) recorded a build but this branch ships no docs/verification/ record; the session ledger is not committable evidence (SPEC-071/ID-062)" >&2
+        fi ;;
+    esac
   fi
 fi
 
@@ -122,10 +159,4 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
   } >&2
   exit 2
 fi
-# SPEC-069 advisory (never blocks): a push whose branch slug is nowhere on the repo's
-# board is probably un-boarded work; say so once and let it through.
-if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2>/dev/null | grep -qF -- "$SLUG"; then
-  echo "[advisory] branch slug '$SLUG' appears nowhere in _meta/BACKLOG.md; if this is real work, give it a board row (SPEC-069)" >&2
-fi
-
 exit 0
