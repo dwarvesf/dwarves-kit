@@ -109,7 +109,7 @@ if [ -f "$LEDGER62" ]; then
   RLED=$(bash "$LEDGER62" show "$SLUG" 2>/dev/null || true)
   # RLANE derived from START unconditionally (review: descent must not depend on the
   # ID-062 build-ran gate; a run can violate order without ever recording build).
-  RLANE=$(printf '%s' "$RLED" | grep '| START |' | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
+  RLANE=$( { printf '%s' "$RLED" | grep '| START-AMEND |' | tail -1; printf '%s' "$RLED" | grep '| START |' | head -1; } | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
   if printf '%s' "$RLED" | grep -q '| GATE | build | ran'; then
     case "$RLANE" in
       normal|full|bug)

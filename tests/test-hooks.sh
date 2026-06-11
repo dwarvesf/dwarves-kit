@@ -1520,6 +1520,69 @@ OUT=$( cd "$SG76" && printf '%s' '{"tool_input":{"command":"git push origin feat
 assert_output_not_contains "clean run gets no descent advisory" "descent violation" "$OUT"
 rm -rf "$LOG76" "$SG76"
 
+
+# ============================================================
+echo ""
+echo "=== SPEC-077: START amend + stack-merge self-reconcile (ID-072/073) ==="
+# ============================================================
+GL77="$KIT_DIR/lib/gate-ledger.sh"
+LT77="$KIT_DIR/lib/lane-telemetry.sh"
+SM77="$KIT_DIR/lib/stack-merge.sh"
+LOG77=$(mktemp -d "${TMPDIR:-/tmp}/dk-log77.XXXXXX")
+mkdir -p "$LOG77/runs"
+
+# ID-072: amend verb + unified read contract
+( export DWARVES_KIT_LOG_DIR="$LOG77"
+  bash "$GL77" start am-run bug full bug-fix bug-fix repo1 >/dev/null 2>&1
+  bash "$GL77" start --amend am-run full full bug-fix bug-fix repo1 >/dev/null 2>&1
+  bash "$GL77" record am-run build ran ok >/dev/null 2>&1 )
+RC=0; grep -q '| START-AMEND |' "$LOG77/runs/am-run.log" || RC=1
+assert_exit "start --amend writes a START-AMEND line" 0 $RC
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG77" bash "$LT77" trace am-run 2>&1)
+assert_output_contains "trace reads the amended lane" "lane: full" "$OUT"
+assert_output_contains "trace notes the amend" "amended" "$OUT"
+assert_output_not_contains "a sanctioned amend does not flag MULTI-START" "MULTI-START" "$OUT"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG77" bash "$LT77" report 2>&1)
+assert_output_not_contains "report counts the amended lane (no misroute from the corrected line)" "lane-misrouted: 1" "$OUT"
+# review F1: AMEND-first then a plain START , the amend still wins in report
+LOGAF=$(mktemp -d "${TMPDIR:-/tmp}/dk-logaf.XXXXXX")
+mkdir -p "$LOGAF/runs"
+printf '%s\n' \
+  '2026-06-11T02:00:00Z | START-AMEND | lane=full classified=full type=bug-fix repo=r' \
+  '2026-06-11T02:01:00Z | START | lane=bug classified=bug type=bug-fix repo=r' > "$LOGAF/runs/af-run.log"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOGAF" bash "$LT77" report 2>&1)
+assert_output_not_contains "AMEND-first: a later plain START cannot reopen the window (report)" "lane-misrouted: 1" "$OUT"
+OUT=$(DWARVES_KIT_LOG_DIR="$LOGAF" bash "$LT77" trace af-run 2>&1)
+assert_output_contains "AMEND-first: trace lane stays the amended one" "lane: full" "$OUT"
+rm -rf "$LOGAF"
+
+# AC2 regression: plain duplicate STARTs still flag
+( export DWARVES_KIT_LOG_DIR="$LOG77"
+  bash "$GL77" start dup-run bug bug bug-fix bug-fix repo1 >/dev/null 2>&1
+  bash "$GL77" start dup-run full full bug-fix bug-fix repo1 >/dev/null 2>&1 )
+OUT=$(DWARVES_KIT_LOG_DIR="$LOG77" bash "$LT77" trace dup-run 2>&1)
+assert_output_contains "plain duplicate STARTs still flag MULTI-START" "MULTI-START" "$OUT"
+rm -rf "$LOG77"
+
+# ID-073: _ensure_reconciled unit fixtures (local bare remote, no gh)
+SMW=$(mktemp -d "${TMPDIR:-/tmp}/dk-smw.XXXXXX")
+( cd "$SMW" && git init -q --bare remote.git \
+  && git clone -q remote.git work 2>/dev/null && cd work \
+  && git config user.email t@e && git config user.name t \
+  && git switch -q -c main 2>/dev/null || git switch -q main; printf 'a\n' > f && git add -A && git commit -qm base && git push -qu origin main >/dev/null 2>&1 \
+  && git switch -q -c feat/child && printf 'b\n' > g && git add -A && git commit -qm child && git push -qu origin feat/child >/dev/null 2>&1 \
+  && git switch -q main && printf 'c\n' > h && git add -A && git commit -qm advance && git push -q origin main >/dev/null 2>&1 )
+# branch is BEHIND main now -> ensure-reconciled must merge + push
+OUT=$( cd "$SMW/work" && bash "$SM77" ensure-reconciled feat/child main 2>&1 ); RC=$?
+assert_exit "ensure-reconciled succeeds on a behind branch" 0 $RC
+RC=0; ( cd "$SMW/work" && git fetch -q && git merge-base --is-ancestor origin/main origin/feat/child ) || RC=1
+assert_exit "after ensure-reconciled the base IS an ancestor of the branch (pushed)" 0 $RC
+# already reconciled -> no-op success
+OUT=$( cd "$SMW/work" && bash "$SM77" ensure-reconciled feat/child main 2>&1 ); RC=$?
+assert_exit "ensure-reconciled is a no-op on an already-reconciled branch" 0 $RC
+assert_output_contains "no-op says so" "already reconciled" "$OUT"
+rm -rf "$SMW"
+
 # ============================================================
 echo ""
 echo "=== Results ==="

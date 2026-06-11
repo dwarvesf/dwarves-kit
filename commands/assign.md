@@ -126,6 +126,8 @@ created: <YYYY-MM-DD>
   bash lib/gate-ledger.sh start "$RID" "<chosen lane>" "<classifier's suggested lane>" "<chosen work type>" "<classifier's suggested type>"
   ```
 
+  Mis-recorded the lane or type? Correct it with `bash lib/gate-ledger.sh start --amend "$RID" "<correct lane>" ...` , a sanctioned START-AMEND every reader takes as canonical (last amend wins; SPEC-077); an honest fix never reads as a MULTI-START misfire.
+
   The repo is auto-detected. `lib/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).
 
 - **Show the road (SPEC-063).** Print the checklist the run will walk so the operator sees

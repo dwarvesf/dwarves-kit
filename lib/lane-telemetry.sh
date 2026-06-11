@@ -65,7 +65,7 @@ _shipped_incomplete() {
     [ -e "$f" ] || continue
     grep -q '| GATE | ship | ran' "$f" 2>/dev/null || continue
     rid="$(basename "$f" .log)"
-    lane="$(grep -m1 '| START |' "$f" 2>/dev/null | grep -oE 'lane=[^ ]+' | head -1 | cut -d= -f2 || true)"
+    lane="$( { grep '| START-AMEND |' "$f" 2>/dev/null | tail -1; grep -m1 '| START |' "$f" 2>/dev/null; } | head -1 | grep -oE 'lane=[^ ]+' | head -1 | cut -d= -f2 || true)"
     [ -n "$lane" ] || continue
     bash "$KIT_LIB/gate-ledger.sh" progress "$rid" "$lane" 2>/dev/null | head -1 | grep -q 'complete' \
       || printf '%s (%s)\n' "$rid" "$lane"
@@ -82,7 +82,13 @@ _rows() {
       BEGIN { FS=" \\| " }
       NR==1 { first=$1 }
       { last=$1 }
-      $2=="START" {
+      $2=="START" && !started {
+        started=1
+        n=split($3, kv, " ")
+        for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+      }
+      $2=="START-AMEND" {   # sanctioned correction: last amend wins (SPEC-077)
+        started=1   # review F1: an amend also closes the plain-START first-wins window
         n=split($3, kv, " ")
         for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
       }
@@ -200,7 +206,13 @@ trace() {
     }
     $2=="START" {
       starts++
-      if (m["lane"] != "") next   # first START wins; later ones noted in the header
+      if (m["lane"] != "") next   # first plain START wins; later plain ones flag MULTI-START
+      n=split($3, kv, " ")
+      for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
+      next
+    }
+    $2=="START-AMEND" {   # sanctioned correction (SPEC-077): last amend wins, no MULTI-START flag
+      amended++
       n=split($3, kv, " ")
       for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
       next
@@ -224,7 +236,8 @@ trace() {
       repo=(m["repo"]==""?"?":m["repo"])
       lflag=(lane!="?" && cls!="?" && lane!=cls) ? "  " red "<< LANE MISFIRE" off : ""
       tflag=(type!="?" && ctype!="?" && type!=ctype) ? "  " red "<< TYPE MISFIRE" off : ""
-      printf "run: %s   repo: %s%s\n", rid, repo, (starts>1 ? sprintf("   << MULTI-START (n=%d; first wins)", starts) : "")
+      msflag=(starts>1 ? sprintf("   << MULTI-START (n=%d; %s)", starts, (amended>0 ? "lane from last amend" : "first wins")) : "")
+      printf "run: %s   repo: %s%s%s\n", rid, repo, msflag, (amended>0 ? sprintf("   (amended x%d, last wins)", amended) : "")
       printf "  lane: %s (classified: %s)%s\n", lane, cls, lflag
       printf "  type: %s (classified: %s)%s\n", type, ctype, tflag
       printf "  window: %s .. %s\n\n", first, last

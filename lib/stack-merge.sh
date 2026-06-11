@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # stack-merge.sh -- merge a squash-stacked PR chain without the manual dance (SPEC-065).
 #
-# Squash-merging a stacked chain by hand requires, per link: retarget the child PR's base
-# BEFORE merging the parent (or GitHub auto-closes it), squash-merge the parent, then
+# Squash-merging a stacked chain by hand requires, per link: SELF-RECONCILE the link's
+# own branch onto its base first (state-keyed, SPEC-077; resumes used to skip this and
+# hit GraphQL conflicts), retarget the child PR's base BEFORE merging the parent (or
+# GitHub auto-closes it), squash-merge the parent, then
 # reconcile the child branch against the new default tip with `merge -X ours` BY SHA
 # (the branch is a superset of its squashed parents, and naming the default branch in
 # the command text used to trip the prose-matching safety gate). Done by hand twice on
@@ -29,13 +31,54 @@ _clean_tree() {
   [ -z "$(git status --porcelain)" ] || { echo "working tree not clean; commit or stash first" >&2; return 1; }
 }
 
-# one link: retarget child -> merge parent -> reconcile child branch on the new tip
+# Reconcile <branch> onto <base> when behind, keyed to BRANCH STATE (SPEC-077 /
+# ID-073: both live chain failures were links whose own branch was never
+# reconciled; the old flow only reconciled the merged PR's child). Asserts
+# ancestry + a pushed tip afterwards, or aborts loudly.
+ensure_reconciled() {
+  local branch="${1:-}" base="${2:-}"
+  [ -n "$branch" ] && [ -n "$base" ] || { echo "usage: ensure-reconciled <branch> <base>" >&2; return 64; }
+  git fetch -q origin
+  git rev-parse --verify -q "refs/remotes/origin/$branch" >/dev/null \
+    || { echo "ensure-reconciled: origin/$branch not found" >&2; return 1; }
+  git rev-parse --verify -q "refs/remotes/origin/$base" >/dev/null \
+    || { echo "ensure-reconciled: origin/$base not found" >&2; return 1; }
+  if git merge-base --is-ancestor "origin/$base" "origin/$branch"; then
+    echo "already reconciled: origin/$base is an ancestor of origin/$branch"
+    return 0
+  fi
+  _clean_tree || return 1
+  local tip orig; tip=$(git rev-parse "origin/$base"); orig=$(git branch --show-current || true)
+  git switch -q "$branch"
+  # review F2: a stale local copy would commit an unpushable merge; ff-sync first.
+  git merge -q --ff-only "origin/$branch" 2>/dev/null \
+    || { echo "ensure-reconciled: local $branch diverged from origin/$branch; sync by hand" >&2; return 1; }
+  git merge -X ours -q -m "reconcile on the base tip (stack-merge ensure-reconciled)" "$tip" \
+    || { echo "ensure-reconciled: merge failed on $branch; resolve by hand" >&2; return 1; }
+  git push -q origin "$branch" || { echo "ensure-reconciled: push failed for $branch" >&2; return 1; }
+  git fetch -q origin
+  git merge-base --is-ancestor "origin/$base" "origin/$branch" \
+    || { echo "ensure-reconciled: ancestry STILL false after merge+push on $branch (silent-failure guard)" >&2; return 1; }
+  # review F3: restore where the operator was (the no-child last link otherwise
+  # strands them on a branch whose remote the squash-merge is about to delete).
+  [ -n "$orig" ] && [ "$orig" != "$branch" ] && git switch -q "$orig" 2>/dev/null || true
+}
+
+# one link: self-reconcile -> retarget child -> merge parent -> reconcile child
 next_link() {
   local pr="${1:-}"; [ -n "$pr" ] || { echo "usage: next <parent-pr#> [--dry-run]" >&2; return 64; }
   local head base child childhead
   head=$(gh pr view "$pr" --json headRefName -q .headRefName)
   base=$(gh pr view "$pr" --json baseRefName -q .baseRefName)
   child=$(gh pr list --state open --base "$head" --json number -q '.[0].number // empty')
+
+  # SPEC-077: the link's OWN branch must sit on its base before the squash
+  # (unconditional, state-keyed; fixes the resume-skips-reconcile class).
+  if [ "$DRY" = 1 ]; then
+    _say "DRY: ensure-reconciled $head $base"
+  else
+    ensure_reconciled "$head" "$base" || return 1
+  fi
 
   if [ -n "$child" ]; then
     childhead=$(gh pr view "$child" --json headRefName -q .headRefName)
@@ -85,7 +128,8 @@ main() {
     # stock macOS /bin/bash is 3.2, so a bare "${args[@]}" turns zero-arg usage into exit 1
     next)  next_link ${args[@]+"${args[@]}"} ;;
     chain) chain ${args[@]+"${args[@]}"} ;;
-    *) echo "usage: stack-merge.sh {next <pr#>|chain <pr#>...} [--dry-run]" >&2; return 64 ;;
+    ensure-reconciled) ensure_reconciled ${args[@]+"${args[@]}"} ;;
+    *) echo "usage: stack-merge.sh {next <pr#>|chain <pr#>...|ensure-reconciled <branch> <base>} [--dry-run]" >&2; return 64 ;;
   esac
 }
 

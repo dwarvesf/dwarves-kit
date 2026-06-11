@@ -5,6 +5,14 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **START amend path + stack-merge self-reconcile (SPEC-077 / ID-072, ID-073).**
+  `gate-ledger.sh start --amend` writes a sanctioned START-AMEND correction; every
+  reader (report, misfires, trace, ship-gate) takes the last amend, else the first
+  plain START , an honest lane fix no longer reads as a MULTI-START misfire (and
+  the audit found report/trace already disagreed on which START wins; unified).
+  stack-merge now self-reconciles every link's own branch onto its base before the
+  squash (state-keyed; both wave-1 and wave-2 chain resumes had hit GraphQL
+  conflicts), with ff-sync, post-push ancestry assertion, and branch restore.
 - **V-model descent contract (SPEC-076 / ID-068).** Every left-arm step now
   carries a review obligation on EVERY lane (tiny gains a run-lite Review; weight
   scales, the obligation never waives) and descent order is detected: the lane's
