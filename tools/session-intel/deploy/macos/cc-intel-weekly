@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Launcher for the cc-intel weekly digest. Kept as a top-level no-extension executable
+# (not *.sh, not wrapped in /bin/bash) per the repo's BTM-friendly plist authoring rule,
+# so Login Items & Extensions shows "cc-intel-weekly" with the exec icon.
+set -euo pipefail
+exec "$HOME/.local/bin/cc-intel" run --out "$HOME/.claude/intel"

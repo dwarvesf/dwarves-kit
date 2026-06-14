@@ -1,0 +1,168 @@
+#!/usr/bin/env python3
+"""cc-intel: a weekly read-only intelligence digest for my Claude Code + repos.
+
+Assembles ONE dated digest from four sources:
+  observe    `cc-observe report` (usage + latency)        [shell-out, degrades if missing]
+  sweep      `repo-sweep run` (cross-repo health)         [shell-out, degrades if missing]
+  synthesis  near-duplicate concepts across the learned-ledger + GLOSSARYs (merge proposals)
+  repeat     bash-command 3-grams repeated >= N across recent transcripts (extract-workflow proposals)
+
+Propose-don't-dispose: writes ONE digest file and never edits the ledger, GLOSSARYs, til, or boards.
+No mini.ollama, no LLM: synthesis + repeat are deterministic heuristics (a human reviews the proposals).
+
+  cc-intel run [--out DIR]                         write the full digest (default ~/.claude/intel)
+  cc-intel synthesis [--ledger F --glossaries D]   just the merge proposals (stdout)
+  cc-intel repeat [--transcripts D --min N]        just the repeat proposals (stdout)
+
+Env for tests: CC_INTEL_OBSERVE_CMD, CC_INTEL_SWEEP_CMD (shell strings), CC_INTEL_DATE (YYYY-MM-DD).
+Stdlib only.
+"""
+import argparse
+import datetime
+import glob
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+from collections import Counter, defaultdict
+
+HOME = os.path.expanduser("~")
+OT = os.path.join(HOME, "workspace/tieubao/ops-toolkit")
+DEFAULT_OUT = os.path.join(HOME, ".claude/intel")
+DEFAULT_LEDGER = os.path.join(OT, "_meta/learned-ledger.md")
+DEFAULT_GLOSSARIES = os.path.join(OT, "learning")
+DEFAULT_TRANSCRIPTS = os.path.join(HOME, ".claude/projects")
+
+
+def _run(cmd, timeout=120):
+    try:
+        r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=timeout)
+        return (r.returncode == 0, (r.stdout or "") + (r.stderr or ""))
+    except (OSError, subprocess.SubprocessError) as e:
+        return (False, str(e))
+
+
+def _norm(s):
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+def synthesis(ledger, glossaries):
+    """Concept names appearing >1x (normalized) across the ledger + GLOSSARYs -> merge candidates."""
+    names = []  # (normalized, raw, source)
+    if ledger and os.path.isfile(ledger):
+        for line in open(ledger, encoding="utf-8"):
+            cells = [c.strip() for c in line.split("|")]
+            if len(cells) >= 6 and re.match(r"\d{4}-\d{2}-\d{2}$", cells[1]):
+                names.append((_norm(cells[2]), cells[2], "ledger"))
+    if glossaries and os.path.isdir(glossaries):
+        for f in glob.glob(os.path.join(glossaries, "**", "GLOSSARY.md"), recursive=True):
+            for line in open(f, encoding="utf-8"):
+                m = re.match(r"#{2,4}\s+(.+)", line)
+                if m:
+                    names.append((_norm(m.group(1)), m.group(1).strip(), os.path.relpath(f, glossaries)))
+    groups = defaultdict(list)
+    for n, raw, src in names:
+        if n:
+            groups[n].append((raw, src))
+    return sorted([(n, v) for n, v in groups.items() if len(v) > 1])
+
+
+def _bash_cmds(ev):
+    msg = ev.get("message") if isinstance(ev, dict) else None
+    content = (msg or {}).get("content") if isinstance(msg, dict) else None
+    if isinstance(content, list):
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Bash":
+                c = (b.get("input") or {}).get("command", "")
+                c = c.strip().splitlines()[0] if c.strip() else ""
+                c = re.sub(r"\s+", " ", c)[:100]
+                if c:
+                    yield c
+
+
+def repeat_detect(transcripts, min_count, max_files=40):
+    """Consecutive bash-command 3-grams repeated >= min_count across recent transcripts."""
+    files = sorted(glob.glob(os.path.join(transcripts, "**", "*.jsonl"), recursive=True),
+                   key=lambda f: os.path.getmtime(f), reverse=True)[:max_files]
+    grams = Counter()
+    for f in files:
+        seq = []
+        try:
+            for line in open(f, encoding="utf-8"):
+                try:
+                    ev = json.loads(line)
+                except ValueError:
+                    continue
+                seq.extend(_bash_cmds(ev))
+        except OSError:
+            continue
+        for i in range(len(seq) - 2):
+            grams[" => ".join(seq[i:i + 3])] += 1
+    return [(g, n) for g, n in grams.most_common() if n >= min_count]
+
+
+def _fmt_merges(merges):
+    out = []
+    for _n, v in merges:
+        raws = "; ".join(f"{raw} ({src})" for raw, src in v)
+        out.append(f"- merge candidate: {raws}")
+    return "\n".join(out)
+
+
+def _fmt_reps(reps):
+    return "\n".join(f"- x{n}: `{g}`" for g, n in reps)
+
+
+def cmd_synthesis(args):
+    merges = synthesis(args.ledger, args.glossaries)
+    print(_fmt_merges(merges) if merges else "(no merge candidates)")
+    return 0
+
+
+def cmd_repeat(args):
+    reps = repeat_detect(args.transcripts, args.min)
+    print(_fmt_reps(reps) if reps else "(no repeated sequences)")
+    return 0
+
+
+def cmd_run(args):
+    os.makedirs(args.out, exist_ok=True)
+    day = os.environ.get("CC_INTEL_DATE") or datetime.date.today().isoformat()
+    path = os.path.join(args.out, f"intel-{day}.md")
+    ok_o, out_o = _run(os.environ.get("CC_INTEL_OBSERVE_CMD", "cc-observe report"))
+    ok_s, out_s = _run(os.environ.get("CC_INTEL_SWEEP_CMD", "repo-sweep run"))
+    merges = synthesis(args.ledger, args.glossaries)
+    reps = repeat_detect(args.transcripts, args.min)
+    parts = [
+        f"# Intel digest {day}",
+        "## Claude Code usage (cc-observe)\n\n" + (out_o.strip() if ok_o else "_unavailable_"),
+        "## Repo health (repo-sweep)\n\n" + (out_s.strip() if ok_s else "_unavailable_"),
+        "## Merge proposals (synthesis)\n\n" + (_fmt_merges(merges) if merges else "_none_"),
+        "## Repeated sequences, extract-workflow candidates (repeat-detect)\n\n" + (_fmt_reps(reps) if reps else "_none_"),
+        "_Proposals only. Nothing was written to the ledger, GLOSSARYs, til, or boards._",
+    ]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n\n".join(parts) + "\n")
+    print(path)
+    return 0
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="cc-intel", description="Weekly read-only intelligence digest.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name in ("run", "synthesis", "repeat"):
+        sp = sub.add_parser(name)
+        sp.add_argument("--ledger", default=DEFAULT_LEDGER)
+        sp.add_argument("--glossaries", default=DEFAULT_GLOSSARIES)
+        sp.add_argument("--transcripts", default=DEFAULT_TRANSCRIPTS)
+        sp.add_argument("--min", type=int, default=3)
+        if name == "run":
+            sp.add_argument("--out", default=DEFAULT_OUT)
+    args = p.parse_args(argv)
+    return {"run": cmd_run, "synthesis": cmd_synthesis, "repeat": cmd_repeat}[args.cmd](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

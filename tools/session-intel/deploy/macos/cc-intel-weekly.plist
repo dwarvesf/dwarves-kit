@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  cc-intel-weekly: weekly read-only intelligence digest (cc-observe + repo-sweep +
+  synthesis + repeat-detect) -> ~/.claude/intel/intel-YYYY-MM-DD.md.
+
+  Type:    LaunchAgent (gui domain, user tieubao). Default host: the Air (work is local + read-only).
+  BTM:     ProgramArguments[0] is the bare-name launcher `cc-intel-weekly` (no .sh, no /bin/bash),
+           so Login Items & Extensions shows "cc-intel-weekly" with the exec icon.
+  Install: cp tools/cc-intel/deploy/macos/cc-intel-weekly.plist ~/Library/LaunchAgents/
+           launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/cc-intel-weekly.plist
+  Status:  launchctl print gui/$(id -u)/cc-intel-weekly
+  Run now: launchctl kickstart -k gui/$(id -u)/cc-intel-weekly
+  Unload:  launchctl bootout gui/$(id -u)/cc-intel-weekly
+  Anti-drift: edit this template in the repo then redeploy; never hand-edit the installed copy.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>cc-intel-weekly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/tieubao/workspace/tieubao/ops-toolkit/tools/cc-intel/deploy/macos/cc-intel-weekly</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>9</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/tieubao/.claude/intel/cc-intel-weekly.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/tieubao/.claude/intel/cc-intel-weekly.log</string>
+</dict>
+</plist>

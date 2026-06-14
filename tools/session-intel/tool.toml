@@ -1,0 +1,15 @@
+name        = "cc-intel"
+description = "Weekly read-only intelligence digest for my Claude Code + repos: assembles cc-observe (usage/latency) + repo-sweep (cross-repo health) + deterministic synthesis (near-dup concept merge proposals over the ledger + GLOSSARYs) + repeat-detect (bash 3-grams repeated across recent transcripts -> extract-workflow proposals) into one dated digest. Propose-don't-dispose; no LLM. cc-elevation-r2 sub-goal 06. 2026-06."
+language    = "python"
+status      = "pilot"
+entry       = "bin/cc-intel"
+created     = 2026-06-15
+
+# Personal/standalone weekly digest (LaunchAgent on the Air).
+consumers   = []
+
+systems     = ["claude-code", "launchd", "git"]
+
+secrets     = []
+
+depends_on  = ["cc-observe", "repo-sweep"]
