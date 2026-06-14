@@ -1,0 +1,6 @@
+# cc-observe local noise
+__pycache__/
+*.pyc
+# any locally generated reports / ingest output
+out/
+*.report.json

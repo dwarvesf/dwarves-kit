@@ -1,0 +1,249 @@
+#!/usr/bin/env python3
+"""cc-observe: read Claude Code session transcripts and report my own usage.
+
+Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
+  skills  - which Skills fired, how often, with what error rate
+  tools   - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
+  hooks   - per-hook execution latency (count/p50/p95/max) + hook errors
+  report  - all three, the weekly self-observability digest
+
+Why JSONL and not a hook wrapper: the transcript already records, per entry,
+`hookInfos: [{command, durationMs}]` and `hookErrors`, plus every `tool_use`
+and `tool_result` block. So hook latency AND tool/skill usage come from one
+source with zero instrumentation, no dotfiles change, no always-on daemon.
+
+Stdlib only (no external deps) so it can run anywhere, including from a hook.
+"""
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+import time
+from collections import Counter, defaultdict
+
+DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
+
+
+def iter_files(args):
+    """Resolve the set of transcript files to read from the CLI args."""
+    if args.file:
+        yield args.file
+        return
+    root = args.root or DEFAULT_ROOT
+    if args.project:
+        root = os.path.join(root, args.project)
+    cutoff = time.time() - args.days * 86400 if args.days else None
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in files:
+            if not fn.endswith(".jsonl"):
+                continue
+            path = os.path.join(dirpath, fn)
+            # Coarse window: skip files whose last write predates the cutoff.
+            if cutoff is not None:
+                try:
+                    if os.path.getmtime(path) < cutoff:
+                        continue
+                except OSError:
+                    continue
+            yield path
+
+
+def iter_entries(path):
+    """Yield parsed JSON objects from one transcript, skipping unparseable lines."""
+    try:
+        fh = open(path, encoding="utf-8")
+    except OSError:
+        return
+    with fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
+def blocks(entry):
+    """Content blocks of a user/assistant entry, or empty."""
+    msg = entry.get("message") or {}
+    c = msg.get("content")
+    return c if isinstance(c, list) else []
+
+
+def hook_label(command):
+    """Normalize a hook command string to a stable, mostly-readable label.
+
+    Script hooks collapse to their basename (foo.sh); inline `echo` guard hooks
+    are indistinguishable by name, so they key on a short hash of the command
+    (distinct echo hooks stay distinct rows); everything else uses its first
+    token's basename.
+    """
+    c = command.strip()
+    m = re.search(r"([\w.-]+\.(?:sh|py|js|ts|rb|bash))\b", c)
+    if m:
+        return m.group(1)
+    if c.startswith("echo"):
+        return "inline-echo:" + hashlib.sha1(c.encode()).hexdigest()[:8]
+    tok = c.split()[0] if c.split() else "?"
+    return tok.rsplit("/", 1)[-1][:40] or "?"
+
+
+def pctl(vals, p):
+    """Nearest-rank percentile (integer ms). Empty -> 0."""
+    if not vals:
+        return 0
+    s = sorted(vals)
+    i = min(len(s) - 1, int(round((p / 100) * (len(s) - 1))))
+    return int(s[i])
+
+
+def collect(args):
+    """Single pass over all selected transcripts -> usage + latency tallies."""
+    tool_n, tool_err = Counter(), Counter()
+    skill_n, skill_err = Counter(), Counter()
+    id_tool, id_skill = {}, {}  # tool_use_id -> name (a tool_result references it)
+    hook_durs = defaultdict(list)
+    hook_sample = {}
+    hook_errors = 0
+    files = 0
+
+    for path in iter_files(args):
+        files += 1
+        for entry in iter_entries(path):
+            # hookInfos/hookErrors ride on (mostly) system entries.
+            hi = entry.get("hookInfos")
+            if isinstance(hi, list):
+                for h in hi:
+                    if not isinstance(h, dict):
+                        continue
+                    lab = hook_label(str(h.get("command", "?")))
+                    hook_durs[lab].append(h.get("durationMs") or 0)
+                    hook_sample.setdefault(lab, str(h.get("command", ""))[:60])
+            he = entry.get("hookErrors")
+            if isinstance(he, list):
+                hook_errors += len(he)
+
+            for b in blocks(entry):
+                if not isinstance(b, dict):
+                    continue
+                bt = b.get("type")
+                if bt == "tool_use":
+                    name = b.get("name") or "?"
+                    tool_n[name] += 1
+                    tid = b.get("id")
+                    if tid:
+                        id_tool[tid] = name
+                    if name == "Skill":
+                        sk = (b.get("input") or {}).get("skill") or "?"
+                        skill_n[sk] += 1
+                        if tid:
+                            id_skill[tid] = sk
+                elif bt == "tool_result" and b.get("is_error"):
+                    tid = b.get("tool_use_id")
+                    if tid in id_tool:
+                        tool_err[id_tool[tid]] += 1
+                    if tid in id_skill:
+                        skill_err[id_skill[tid]] += 1
+
+    return {
+        "files": files,
+        "tools": tool_n,
+        "tool_err": tool_err,
+        "skills": skill_n,
+        "skill_err": skill_err,
+        "hook_durs": hook_durs,
+        "hook_sample": hook_sample,
+        "hook_errors": hook_errors,
+    }
+
+
+def print_table(headers, rows):
+    """Left/right-aligned fixed-width table. First column left, rest right."""
+    if not rows:
+        print("  (none)")
+        return
+    cols = list(zip(*([headers] + rows)))
+    widths = [max(len(str(x)) for x in col) for col in cols]
+    def fmt(row):
+        out = [str(row[0]).ljust(widths[0])]
+        out += [str(v).rjust(widths[i]) for i, v in enumerate(row[1:], 1)]
+        return "  ".join(out)
+    print("  " + fmt(headers))
+    print("  " + "  ".join("-" * w for w in widths))
+    for r in rows:
+        print("  " + fmt(r))
+
+
+def usage_rows(counts, errs, top):
+    rows = []
+    for name, n in counts.most_common(top or None):
+        e = errs.get(name, 0)
+        rate = f"{100 * e / n:.0f}%" if n else "0%"
+        rows.append([name, n, e, rate])
+    return rows
+
+
+def hook_rows(durs, sample, top):
+    rows = []
+    ranked = sorted(durs.items(), key=lambda kv: max(kv[1]) if kv[1] else 0, reverse=True)
+    if top:
+        ranked = ranked[:top]
+    for lab, vals in ranked:
+        rows.append([lab, len(vals), pctl(vals, 50), pctl(vals, 95), max(vals) if vals else 0, sample.get(lab, "")])
+    return rows
+
+
+def emit(args, data):
+    if args.json:
+        out = {
+            "files": data["files"],
+            "skills": [{"skill": k, "count": v, "errors": data["skill_err"].get(k, 0)} for k, v in data["skills"].most_common()],
+            "tools": [{"tool": k, "count": v, "errors": data["tool_err"].get(k, 0)} for k, v in data["tools"].most_common()],
+            "hooks": [{"hook": lab, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for lab, v in data["hook_durs"].items()],
+            "hook_errors": data["hook_errors"],
+        }
+        print(json.dumps(out, indent=2))
+        return
+
+    want = args.cmd
+    if want in ("skills", "report"):
+        print(f"# skills  ({data['files']} transcripts)")
+        print_table(["skill", "count", "errors", "rate"], usage_rows(data["skills"], data["skill_err"], args.top))
+        print()
+    if want in ("tools", "report"):
+        print(f"# tools  ({data['files']} transcripts)")
+        print_table(["tool", "count", "errors", "rate"], usage_rows(data["tools"], data["tool_err"], args.top))
+        print()
+    if want in ("hooks", "report"):
+        print(f"# hooks  ({data['hook_errors']} hook errors across {data['files']} transcripts)")
+        print_table(["hook", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
+        print()
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="cc-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "report"], help="which view")
+    src = p.add_mutually_exclusive_group()
+    src.add_argument("--file", help="parse a single transcript file (used by tests)")
+    src.add_argument("--project", help="project slug under ~/.claude/projects/")
+    p.add_argument("--root", help=f"transcripts root (default {DEFAULT_ROOT})")
+    p.add_argument("--days", type=int, default=0, help="only files modified within N days (0 = all)")
+    p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all)")
+    p.add_argument("--json", action="store_true", help="machine-readable output (for vps-mon ingest)")
+    args = p.parse_args(argv)
+
+    if args.file and not os.path.exists(args.file):
+        print(f"cc-observe: file not found: {args.file}", file=sys.stderr)
+        return 1
+
+    data = collect(args)
+    emit(args, data)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
