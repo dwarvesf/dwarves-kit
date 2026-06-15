@@ -70,7 +70,7 @@ echo "[6] run degrades gracefully when observe/sweep fail"
 OUT2="$TMP/out2"
 env CC_INTEL_DATE=2026-06-15 CC_INTEL_OBSERVE_CMD="false" CC_INTEL_SWEEP_CMD="false" \
   python3 "$BIN" run --out "$OUT2" --ledger "$LED_CLEAN" --glossaries "$TMP/none" --transcripts "$TMP/tclean" --min 3 >/dev/null 2>&1
-if grep -q '_unavailable_' "$OUT2/intel-2026-06-15.md"; then ok "unavailable sections marked"; else no "no degrade: $(head "$OUT2/intel-2026-06-15.md" 2>&1)"; fi
+if [[ "$(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")" -eq 2 ]]; then ok "both observe+sweep sections degraded (count 2)"; else no "degrade count != 2: $(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

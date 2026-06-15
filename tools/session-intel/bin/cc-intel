@@ -29,7 +29,7 @@ import sys
 from collections import Counter, defaultdict
 
 HOME = os.path.expanduser("~")
-OT = os.path.join(HOME, "workspace/tieubao/ops-toolkit")
+OT = os.environ.get("OPS_TOOLKIT", os.path.join(HOME, "workspace/tieubao/ops-toolkit"))  # override on non-Air machines
 DEFAULT_OUT = os.path.join(HOME, ".claude/intel")
 DEFAULT_LEDGER = os.path.join(OT, "_meta/learned-ledger.md")
 DEFAULT_GLOSSARIES = os.path.join(OT, "learning")
@@ -154,10 +154,12 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("run", "synthesis", "repeat"):
         sp = sub.add_parser(name)
-        sp.add_argument("--ledger", default=DEFAULT_LEDGER)
-        sp.add_argument("--glossaries", default=DEFAULT_GLOSSARIES)
-        sp.add_argument("--transcripts", default=DEFAULT_TRANSCRIPTS)
-        sp.add_argument("--min", type=int, default=3)
+        if name in ("run", "synthesis"):   # ledger + glossaries feed synthesis (and run)
+            sp.add_argument("--ledger", default=DEFAULT_LEDGER)
+            sp.add_argument("--glossaries", default=DEFAULT_GLOSSARIES)
+        if name in ("run", "repeat"):       # transcripts + min feed repeat-detect (and run)
+            sp.add_argument("--transcripts", default=DEFAULT_TRANSCRIPTS)
+            sp.add_argument("--min", type=int, default=3)
         if name == "run":
             sp.add_argument("--out", default=DEFAULT_OUT)
     args = p.parse_args(argv)
