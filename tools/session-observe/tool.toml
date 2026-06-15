@@ -5,11 +5,13 @@ status      = "pilot"
 entry       = "bin/cc-observe"
 created     = 2026-06-14
 
-# Personal/standalone tool. Feeds the weekly self-observability digest (vps-mon ingest is a later deploy step).
+# Personal/standalone tool. `bin/cc-vps-report` bridges the weekly digest to the live
+# vps-mon (HMAC-signed /v1/snapshot + cc-intel-weekly heartbeat -> public /status).
 consumers   = []
 
-systems     = ["claude-code"]
+systems     = ["claude-code", "vps-mon"]
 
-secrets     = []
+# cc-vps-report reads these at runtime (op:// refs); HMAC_KEY_CC_AIR lives on the worker.
+secrets     = ["op://Toolkit/cc-vps-report/credential", "op://Toolkit/cc-vps-report/hb_token"]
 
 depends_on  = []

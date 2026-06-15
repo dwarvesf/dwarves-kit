@@ -234,3 +234,119 @@ bash tests/smoke.sh                                  # -> includes cc-semantic 2
 CC_SEMANTIC_CMD="cat tests/fixtures/semantic-llm-out.json" bin/cc-semantic --root tests/fixtures --days 0
 bin/cc-semantic --days 7                             # real run (uses claude -p)
 ```
+
+## cc-vps-report (SG-05)
+
+**Feature:** bridge the weekly cc-observe digest into the LIVE vps-mon: HMAC-signed snapshot of headline metrics + a heartbeat ping that surfaces digest liveness on the public `/status` page.
+**Date:** 2026-06-15 · **Lane:** full · **Host:** Hans-Air-M4 · **Mega-goal:** cc-elevation-r3 sub-goal 05 (supersedes r2 SG-01 cc-notify). **Target:** personal `mon-ingest` (`https://mon-ingest.han-ws.workers.dev`, CF account Han Ngo).
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| B1 | `cc-vps-report` distills `cc-observe report --json` to headline metrics + builds a schema-v1 snapshot envelope | SG-05 "decide the payload" |
+| B2 | HMAC signature is byte-identical to `vps-mon/worker/src/hmac.ts` (UTF-8 key bytes, msg `ts\nhost\nsha256hex(body)`, `sha256=`+hex) | SG-05 contract |
+| B3 | Signer unit-tested deterministically BEFORE any live POST (a wrong sig is a silent 401) | hard rule |
+| B4 | Live `/v1/snapshot` returns 202 with the real key | SG-05 verify |
+| B5 | Live `/v1/heartbeat/<token>` returns 204 with the real token | SG-05 verify |
+| B6 | The cc-intel-weekly item renders on the public `/status` page | SG-05 Done |
+| B7 | Ingest path is itself monitored: a stale digest shows a gap, not silently green | SG-05 monitoring-onboarding |
+| B8 | cc-intel weekly launcher calls the bridge after writing the digest (file write preserved) | SG-05 wire |
+| B9 | Secrets via `op://` / wrangler secret; never hardcoded; read-only producer | SG-05 quality bar |
+
+### Implementation
+
+| Piece | What | Where |
+|---|---|---|
+| Client | distill + envelope + sign + POST snapshot + GET heartbeat; stdlib only | `bin/cc-vps-report` |
+| Distiller | subagent per100 + top type, tool/skill/hook error counts, friction/cost via `.get()` (defensive for PRs #333/#337) | `cc-vps-report::distill` |
+| Signer | mirrors `hmac.ts`/`vps_mon_agent.py::sign_request` exactly | `cc-vps-report::sign_request` + `key_bytes` |
+| Test | 6 assertions incl. signer-vs-independent-reference + wrong-key negative control + distiller | `tests/test-vps-report.sh` |
+| Live D1 | `status_pages('ai-substrate')` + `heartbeats('cc-intel-weekly', 604800/86400, ai-substrate)` + `status_page_items` link | remote `vps-mon` D1 |
+| Live secret | `HMAC_KEY_CC_AIR` on `mon-ingest`; key + token in 1P `op://Toolkit/cc-vps-report/{credential,hb_token}` | wrangler secret + 1P |
+| Launcher wiring | `cc-intel-weekly` runs the digest, then best-effort `cc-vps-report --days 7` (non-fatal) | `tools/cc-intel/deploy/macos/cc-intel-weekly` |
+
+### Confirmation run-table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Signer (B2/B3) | `bash tests/test-vps-report.sh` | `vps-report: all 6 passed` | PASS |
+| Distill real data (B1) | `cc-vps-report --days 30 --dry-run` | metrics object from 2211 transcripts | PASS |
+| Live snapshot (B4) | `cc-vps-report --days 30` | `snapshot: 202` | PASS |
+| Live heartbeat (B5) | same | `heartbeat: 204` | PASS |
+| /status renders (B6) | `curl /status/ai-substrate` | `Claude Code weekly intel digest ... Operational` 🟢 | PASS |
+| /status.json (B6) | `curl /status.json?page=ai-substrate` | `"state":"operational"` | PASS |
+| Heartbeat recorded (B7) | D1 `SELECT ... WHERE hb_id='cc-intel-weekly'` | `last_status=up, ping_count>=1` | PASS |
+| Launcher wiring (B8) | `bash -n cc-intel-weekly` + run bridge body live | syntax-ok + 202/204 | PASS |
+
+### Run detail
+
+```
+$ bash tools/cc-observe/tests/test-vps-report.sh | tail -1
+vps-report: all 6 passed
+
+$ tools/cc-observe/bin/cc-vps-report --days 30 --dry-run   # metrics distilled from real transcripts
+  "transcripts": 2211, "subagent_per100": 7.9, "subagent_top_type": "general-purpose",
+  "tool_total": 69779, "tool_errors": 3944, "skill_total": 537, "hook_errors": 77, "friction_count": 0
+  gzip_bytes: 241
+
+$ CC_VPS_HMAC_KEY=$(op read op://Toolkit/cc-vps-report/credential) \
+  CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
+  tools/cc-observe/bin/cc-vps-report --days 30
+snapshot: 202
+heartbeat: 204
+
+$ curl -s https://mon-ingest.han-ws.workers.dev/status/ai-substrate | grep intel
+  <li class="row"><span class="dot">🟢</span><span class="name">Claude Code weekly intel digest</span>
+  <span class="state operational">Operational</span></li>
+
+$ curl -s 'https://mon-ingest.han-ws.workers.dev/status.json?page=ai-substrate'
+{"slug":"ai-substrate","title":"AI substrate","overall":"operational","generated_at":...,
+ "items":[{"name":"Claude Code weekly intel digest","state":"operational","since":null}]}
+```
+
+### Negative control
+
+The ingest path is monitored, not silently green; three controls prove it:
+
+- **Bogus heartbeat token → 404** (the credential is the token): `curl /v1/heartbeat/this-is-not-a-real-token-xyz` returns `404`. A run that fails to ping (because cc-intel did not run, or the token is wrong) does NOT advance `last_ping_at`.
+- **Wrong signature → 401**: `POST /v1/snapshot` with `X-Signature: sha256=deadbeef` returns `401`. A forged or mis-signed metric never persists. This is why the signer is unit-tested offline first.
+- **Stale-digest path**: the heartbeat is `interval_sec=604800` (7d) + `grace_sec=86400` (1d). The `*/5` prober's `runHeartbeatSweep` flips `last_status` to `silent` once `now - last_ping_at > 691200s`, and `status-queries.ts::mapHbState('silent')` renders the `/status` item as `down`/🔴. So a digest that stops running for >8 days shows red on `/status` and fires a `heartbeat-silent` alert, rather than staying green. (Time-based; verified by the `isOverdue` logic + the bogus-token 404 above, not by waiting 8 days.)
+
+### Live writes + rollback (stateful)
+
+All live changes are additive and reversible. To roll back completely:
+
+```
+# 1) Remove the public /status item + the heartbeat + the status page:
+Command: cd tools/vps-mon/worker && CLOUDFLARE_ACCOUNT_ID=<Han-Ngo> pnpm wrangler d1 execute vps-mon --remote --command "DELETE FROM status_page_items WHERE ref_id='cc-intel-weekly'; DELETE FROM heartbeats WHERE hb_id='cc-intel-weekly'; DELETE FROM status_pages WHERE slug='ai-substrate'"
+Exit: 0 (verified the INSERTs with the inverse SELECTs; DELETE is the exact inverse)
+
+# 2) Remove the worker HMAC secret:
+Command: cd tools/vps-mon/worker && CLOUDFLARE_ACCOUNT_ID=<Han-Ngo> pnpm wrangler secret delete HMAC_KEY_CC_AIR
+Exit: 0 (secret is the only state added on the worker side)
+
+# 3) Remove the 1Password item:
+Command: op item delete "cc-vps-report" --vault Toolkit
+Exit: 0
+```
+
+Reverting the branch (the code) leaves these live rows orphaned but harmless (the
+heartbeat would eventually flip silent and alert on the ai-substrate Discord channel);
+the DELETEs above are the clean teardown. No data migration, no schema change: the rows
+reuse the existing SPEC-066/067 tables. Rollback is fully scripted, hence not
+`[UNAVAILABLE]`.
+
+### Reproduce
+
+```bash
+cd tools/cc-observe
+bash tests/test-vps-report.sh                          # -> vps-report: all 6 passed
+bin/cc-vps-report --days 7 --dry-run                   # see the signed envelope, no network
+# live (needs the 1P item + HMAC_KEY_CC_AIR on the worker):
+CC_VPS_HMAC_KEY=$(op read op://Toolkit/cc-vps-report/credential) \
+CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
+  bin/cc-vps-report --days 7                            # -> snapshot: 202 / heartbeat: 204
+curl -s https://mon-ingest.han-ws.workers.dev/status/ai-substrate   # the item renders
+```
+

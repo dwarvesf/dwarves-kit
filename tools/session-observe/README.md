@@ -73,6 +73,27 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
 - `--days` is a coarse file-mtime window.
 - Read-only by contract: cc-observe never writes anything.
 
-## Next (not in this tool yet)
+## cc-vps-report: weekly bridge to vps-mon + `/status`
 
-Schedule `cc-observe report --days 7 --json` on a cadence and feed it to vps-mon. That deploy step is deferred; the tool stands alone today.
+`bin/cc-vps-report` distills `cc-observe report --json` into a handful of headline
+metrics (subagent per100 + top type, tool/skill/hook error counts, friction/cost when
+present), HMAC-signs a schema-v1 snapshot the same way the vps-mon host agent does, POSTs
+it to the personal `mon-ingest` Worker's `/v1/snapshot`, then pings the `cc-intel-weekly`
+heartbeat. The heartbeat surfaces digest liveness on the public `/status` page: if no
+digest lands for >8 days (interval 7d + grace 1d) the item flips to 🔴 and a
+`heartbeat-silent` alert fires, so a stopped digest is never silently green.
+
+```bash
+bash tests/test-vps-report.sh            # deterministic signer + distiller test (no network)
+bin/cc-vps-report --days 7 --dry-run     # see the signed envelope, no POST
+# live (secrets from 1Password; HMAC_KEY_CC_AIR set on the worker):
+CC_VPS_HMAC_KEY=$(op read op://Toolkit/cc-vps-report/credential) \
+CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
+  bin/cc-vps-report --days 7             # -> snapshot: 202 / heartbeat: 204
+```
+
+Read-only producer: cc-observe/cc-vps-report never store state; only vps-mon does. The
+signing scheme is the secret string's UTF-8 bytes (not base64-decode) per
+`vps-mon/worker/src/hmac.ts`; see `docs/implementation-notes/01-observability.md`. The
+`cc-intel-weekly` launcher calls this after writing the weekly digest (best-effort,
+non-fatal).

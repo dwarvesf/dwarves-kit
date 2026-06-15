@@ -59,3 +59,23 @@ Delta from `_meta/megagoals/cc-elevation/goals/01-observability.md`. Not a resta
 - **Live run deferred in-loop.** Exercising a real `claude -p` nests a live claude session inside this one (hang/recursion risk). The deterministic injected/degrade/empty paths are the proof (smoke 27-30); the live path is wired + documented for manual use. Honest gap, not a silent skip.
 - **Propose-only is structural**, not just a label: the script has zero write calls; `git status` after a run shows no tool-created files. Bounded by `--cap` (200) + per-prompt truncation (300 chars) for cost.
 - Impact: new `tools/cc-observe/bin/cc-semantic` + `tests/fixtures/semantic-llm-out.json`; smoke +4 (27-30); proof-of-done gained a `## cc-semantic` section.
+
+## 2026-06-15 14:30 cc-vps-report: signing scheme is UTF-8 key bytes, NOT base64-decode
+- Context: building the SG-05 bridge (`bin/cc-vps-report`) to POST a distilled digest to the live vps-mon and ping a heartbeat.
+- Decision / Change: the HMAC key is the secret string's **UTF-8 bytes** (trimmed), not a base64-decode of it. `key_bytes(secret) = secret.strip().encode()`. Output is `"sha256=" + hex`.
+- Why: `vps-mon/worker/src/hmac.ts::keyFromSecret` is literally `encoder.encode(secret.trim())`, and `vps_mon_agent.py::load_key` reads the key file's raw bytes rstrip'd. The wrangler.toml comment says "base64-decoded to raw bytes inside the Worker", that comment is **stale/wrong** for the live code. The SG-05 task brief inherited the same wrong assumption. Verified by reading hmac.ts + ingest.ts and cross-checking the signature two independent ways (python hmac == node crypto == cc-vps-report::sign_request) before any live POST. We still store a base64 string in the secret value (it is just opaque key material), but both sides UTF-8 it, so the base64-ness never enters the math.
+- Alternatives considered: (a) base64-decode per the comment, rejected, would produce a signature the Worker rejects with a silent 401; (b) import vps_mon_agent.py, rejected, it is a root-owned host agent with a state dir + key file, wrong shape for a one-shot env-driven client.
+- Impact: `bin/cc-vps-report`, `tests/test-vps-report.sh` (deterministic signer test gates the live call).
+
+## 2026-06-15 14:35 personal mon-ingest had ZERO status_pages; created one
+- Context: SG-05 says "pick the right status page slug by reading status_pages first". On the personal `mon-ingest` that table was empty (`/status` returned "no status pages configured"); the dwarves/icy/landing pages were seeded only on the OTHER (trading) instance via the UptimeRobot import.
+- Decision / Change: created a new public status page `slug='ai-substrate'` (title "AI substrate") to host the cc-intel-weekly item, since `/status` renders nothing without a `status_pages` row + a `status_page_items` link. Slug matches the `channel='ai-substrate'` all the personal heartbeats already use.
+- Why: it is the only way the digest liveness reaches the public `/status` page; the spec assumed a page existed.
+- Alternatives considered: (a) reuse an existing slug, none existed; (b) only insert the heartbeat (no status page), rejected, the heartbeat would be swept + alertable but would NOT appear on `/status`, failing the SG-05 Done.
+- Impact: live `vps-mon` D1 (additive: 1 status_pages row, 1 heartbeats row, 1 status_page_items row; all reversible by DELETE).
+
+## 2026-06-15 14:40 bridge is best-effort in the launcher; needs a ~/.local/bin symlink
+- Context: wiring `cc-intel-weekly` to call the bridge after the digest write.
+- Decision / Change: the launcher dropped `exec` (it cannot append after exec), runs `cc-intel run` first, then a non-fatal `bridge_to_vps_mon`. The bridge no-ops (returns 0) if `op` is unavailable, if `~/.local/bin/cc-vps-report` is missing, or if either `op read` fails. A vps-mon outage must never fail the weekly digest (read-only producer).
+- Why: the digest file is the must-not-regress behavior; delivery is best-effort.
+- Impact: `tools/cc-intel/deploy/macos/cc-intel-weekly`. Deploy adds one symlink `ln -sf .../tools/cc-observe/bin/cc-vps-report ~/.local/bin/cc-vps-report` (documented in the cc-intel runbook). No launchd redeploy needed (the launcher path is unchanged; only its body changed), but a `launchctl kickstart -k gui/$(id -u)/cc-intel-weekly` proves it end to end.
