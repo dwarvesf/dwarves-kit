@@ -48,7 +48,7 @@ if [[ $rc -eq 1 ]]; then ok "exit 1 on missing file"; else no "got rc=$rc"; fi
 
 echo "[9] report runs all sections"
 out="$("$CC" report --file "$FIX")"
-if grep -q '# skills' <<<"$out" && grep -q '# tools' <<<"$out" && grep -q '# hooks' <<<"$out" && grep -q '# subagents' <<<"$out" && grep -q '# friction' <<<"$out" && grep -q '# sessions' <<<"$out"; then ok "report has all sections"; else no "report incomplete"; fi
+if grep -q '# skills' <<<"$out" && grep -q '# tools' <<<"$out" && grep -q '# hooks' <<<"$out" && grep -q '# subagents' <<<"$out" && grep -q '# friction' <<<"$out" && grep -q '# sessions' <<<"$out" && grep -q '# cost' <<<"$out"; then ok "report has all sections"; else no "report incomplete"; fi
 
 echo "[10] subagents: 2 main-session spawns on 2026-06-14, 1 prompt, per100=200.0"
 out="$("$CC" subagents --file "$FIX")"
@@ -92,6 +92,19 @@ if grep -Eq '08[[:space:]]+2[[:space:]]+2' <<<"$out"; then ok "circadian hour 08
 echo "[22] sessions archetype negative control: main fixture (has sidechain) classifies NO session"
 out="$("$CC" sessions --file "$FIX")"
 if grep -q 'archetype mix:' <<<"$out" && ! grep -Eq '(quick|standard|deep|marathon|automation)[[:space:]]+[0-9]+[[:space:]]+[0-9]+%' <<<"$out"; then ok "sidechain transcript excluded from archetype"; else no "sidechain wrongly classified: $out"; fi
+
+echo "[23] cost by-model: opus est \$93.22 (1M in / 1M out / 900k cache-rd / 100k cache-wr)"
+out="$("$CC" cost --file "$FIX")"
+if grep -Eq 'claude-opus-4-8[[:space:]]+1000000[[:space:]]+1000000[[:space:]]+900000[[:space:]]+100000[[:space:]]+\$93.22' <<<"$out"; then ok "opus row + est\$93.22"; else no "cost opus row wrong: $out"; fi
+
+echo "[24] cost: haiku priced at \$0.80 (1M input)"
+if grep -Eq 'claude-haiku-4-5-20251001[[:space:]]+1000000.+\$0.80' <<<"$out"; then ok "haiku \$0.80"; else no "haiku cost wrong: $out"; fi
+
+echo "[25] cost negative control: fable (unknown family) counts tokens but shows ? not \$"
+if grep -Eq 'claude-fable-5[[:space:]]+1000000.+[[:space:]]\?$' <<<"$out"; then ok "fable tokens counted, \$ = ? (unknown pricing)"; else no "fable should be ?: $out"; fi
+
+echo "[26] cost cache-hit ratio: 90% (900k read / 100k write) in header"
+if grep -q 'cache-hit 90%' <<<"$out"; then ok "cache-hit 90%"; else no "cache-hit wrong: $out"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

@@ -1,7 +1,7 @@
 # Proof of Done: cc-observe
 
-**Feature:** report Claude Code skill/tool usage + per-hook latency + subagent-spawn mix + deterministic friction + session-shape signals from session transcripts.
-**Date:** 2026-06-14 (skills/tools/hooks); 2026-06-15 (subagents, friction, sessions views) · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Mega-goal:** cc-elevation SG-01; subagents per ID-100; friction = cc-elevation-r3 SG-01; sessions = cc-elevation-r3 SG-02 / `research/2026-06-15-claude-code-usage-metrics-and-tooling.md`
+**Feature:** report Claude Code skill/tool usage + per-hook latency + subagent mix + friction + session-shape + token-cost signals from session transcripts.
+**Date:** 2026-06-14 (skills/tools/hooks); 2026-06-15 (subagents, friction, sessions, cost views) · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Mega-goal:** cc-elevation SG-01; subagents per ID-100; friction/sessions/cost = cc-elevation-r3 SG-01/02/03 / `research/2026-06-15-claude-code-usage-metrics-and-tooling.md`
 
 ## Acceptance criteria
 
@@ -26,6 +26,10 @@
 | A17 | `sessions` interruption: `[Request interrupted` turns counted; a clean turn is not (negative control) | r3 SG-02 |
 | A18 | `sessions` circadian: prompt-turns + tool-uses bucketed by UTC hour | r3 SG-02 |
 | A19 | Subagent transcripts (`isSidechain`) excluded from archetype (negative control: do not inflate `automation`); `sessions` in `report` + `--json` | r3 SG-02 |
+| A20 | `cost` tokens-by-model: input/output/cache-read/cache-create summed per `message.model`, with a `$` estimate from the dated `PRICING` table | r3 SG-03 |
+| A21 | `cost` unknown family (fable): tokens counted, `$` shown as `?` (negative control) | r3 SG-03 |
+| A22 | `cost` cache economics: cache-read / (read + create) hit ratio | r3 SG-03 |
+| A23 | `cost` in `report` + `--json`; cost-per-merged-PR documented as out-of-scope (cross-repo + squash-merge) | r3 SG-03 |
 
 ## Implementation
 
@@ -38,7 +42,8 @@
 | Subagents | count `Agent`/`Task` spawns by day + `subagent_type`, skip `isSidechain`; per100 = spawns / user-prompt turns | `bin/cc-observe` `collect()` + `subagent_*_rows()` |
 | Friction | per-session Edit/Write counts -> thrash; `PERM_MARKERS` in tool_result -> permission-friction; `isCompactSummary` -> context-pressure; errored skills -> skill-precision | `bin/cc-observe` `collect()` + `thrash_rows`/`perm_rows`/`compact_rows`/`skill_precision_rows` |
 | Fixture | + a thrice-edited file, a once-edited file (control), a permission-denied Bash, an errored Skill, a compaction entry; + `session-sample.jsonl` (clean 10.5-min/2-turn session, 1 interrupted) | `tests/fixtures/sample.jsonl` + `session-sample.jsonl` |
-| Tests | 22 assertions incl. latency + sidechain + thrash + skill-precision + interruption + archetype-sidechain negative controls | `tests/smoke.sh` |
+| Cost | sum `message.usage` per `message.model`; `model_cost` applies dated `PRICING` (unknown -> `?`); cache-hit = read/(read+create) | `bin/cc-observe` `collect()` + `model_cost`/`cost_rows` |
+| Tests | 26 assertions incl. latency + sidechain + thrash + skill-precision + interruption + archetype-sidechain + unknown-family-cost negative controls | `tests/smoke.sh` |
 
 No wrapper, no daemon, no dotfiles change (the transcript already records hook timing). See `docs/implementation-notes/01-observability.md`.
 
@@ -46,7 +51,7 @@ No wrapper, no daemon, no dotfiles change (the transcript already records hook t
 
 | Check | Command | Expected | Result |
 |---|---|---|---|
-| Smoke (all) | `bash tests/smoke.sh` | `smoke: all 22 passed` | PASS |
+| Smoke (all) | `bash tests/smoke.sh` | `smoke: all 26 passed` | PASS |
 | Skills (A1) | `cc-observe skills --file fixture` | `prose-rag 1` | PASS |
 | Tools + errors (A2) | `cc-observe tools --file fixture` | `Bash 3 2`, `Read 1 0` | PASS |
 | Hook latency (A3) | `cc-observe hooks --file fixture` | `slow-hook.sh max 500` | PASS |
@@ -68,12 +73,23 @@ No wrapper, no daemon, no dotfiles change (the transcript already records hook t
 | Circadian (A18) | same | hour `08 2 2` | PASS |
 | Archetype sidechain-excl (A19) | `cc-observe sessions --file main-fixture` | archetype `(none)` | PASS |
 | Sessions real data | `cc-observe sessions --days 7` | 946 sessions: quick 81% / automation 1% (after sidechain exclusion) | PASS |
+| Cost by-model (A20) | `cc-observe cost --file fixture` | opus row `$93.22`, haiku `$0.80` | PASS |
+| Cost unknown (A21) | same | fable: tokens counted, `?` (no $) | PASS |
+| Cost cache (A22) | same | header `cache-hit 90%` | PASS |
+| Cost real data | `cc-observe cost --days 7` | est ~$32k attribution, cache-hit 97%, opus-4-8 dominant, fable `?` | PASS |
 
 ## Run detail
 
 ```
 $ bash tools/cc-observe/tests/smoke.sh | tail -1
-smoke: all 22 passed
+smoke: all 26 passed
+
+$ tools/cc-observe/bin/cc-observe cost --days 7 --top 3
+# cost  (est $32,201.61, cache-hit 97%, 951 transcripts; Max-plan flat-rate, this is attribution not a bill)
+  model              input    output     cache-rd   cache-wr      est$
+  claude-opus-4-8  24862092  56965802  12968381497  350511351  $30670.03
+  claude-fable-5    6947549   7548018   2200784188   45701673         ?
+  claude-opus-4-7     48471   6149434    185220626   35414715   $1403.79
 
 $ tools/cc-observe/bin/cc-observe sessions --days 7 --top 3
 # sessions  (946 sessions, 23 interrupted, 36 interrupts = 1.4/100 turns)
@@ -149,15 +165,17 @@ Two controls prove the numbers are real, not incidental:
 - **Skill-precision selectivity**: `flaky-skill` errored (shows 100% inert) while `prose-rag` succeeded (absent from the precision table); smoke items 17-18 assert both. If precision listed all skills, a clean skill would show 0% and bury the real mis-fires.
 - **Interruption selectivity**: the session fixture has 2 turns, one carrying `[Request interrupted`; `sessions` reports 1 interrupt, not 2; smoke item 20 asserts it. If any turn counted, the rate would double.
 - **Archetype sidechain exclusion**: the main fixture is one transcript containing a sidechain entry; `sessions` classifies NO archetype for it (smoke item 22). Without the skip, every subagent transcript would land in `automation` (it inflated the real run from 1% to 38% before the fix).
+- **Cost unknown-family**: the fixture's `fable` entry has 1M tokens but no `PRICING` family, so `cost` shows `?` not a fabricated `$` (smoke item 25). A naive `dict.get(...) or 0` would silently report `$0.00` and hide untracked spend; `?` makes the gap visible. opus/haiku price to exact known values ($93.22 / $0.80), proving the table is applied, not guessed.
 
 ## Reproduce
 
 ```bash
 cd tools/cc-observe
-bash tests/smoke.sh                              # -> smoke: all 22 passed
+bash tests/smoke.sh                              # -> smoke: all 26 passed
 bin/cc-observe report --days 7 --top 10          # real digest, last 7 days
 bin/cc-observe subagents --days 7                # spawn mix per day + per type, per100 prompts
 bin/cc-observe friction --days 7                 # thrash / permission / context-pressure / skill mis-fires
 bin/cc-observe sessions --days 7                 # archetype mix / circadian / interruption rate
+bin/cc-observe cost --days 7                     # tokens by model + cache economics + $ estimate
 bin/cc-observe hooks --days 7 | sort -t$'\t' -k5 # slowest hooks first
 ```

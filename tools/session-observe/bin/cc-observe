@@ -9,6 +9,7 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
   friction  - deterministic friction: thrash (rework), permission-prompts, context
               pressure (compactions), skill mis-fires
   sessions  - session shape: archetype mix, circadian (by hour), interruption rate
+  cost      - tokens by model + cache economics + $ estimate (attribution, not a bill)
   report    - all of the above, the weekly self-observability digest
 
 The subagents view answers "is my subagent mix drifting?" that a raw tool count
@@ -48,6 +49,24 @@ PERM_MARKERS = ("Permission to use ", "doesn't want to proceed", "denied by your
 ARCH = {"marathon": (120, 300), "deep": (30, 80), "quick": (5, 15)}
 # The user-message text a turn carries when interrupted mid-flight.
 INTERRUPT_MARK = "[Request interrupted"
+# $/million tokens, approximate list price as of 2026-06-15, keyed by model-family
+# substring: (input, output, cache_read, cache_write). Max-plan billing is flat-rate,
+# so these are ATTRIBUTION estimates, not a bill. Unknown families (e.g. fable) count
+# tokens but contribute no $ (shown as "?"). Update the date if you refresh prices.
+PRICING = {
+    "opus": (15.0, 75.0, 1.5, 18.75),
+    "sonnet": (3.0, 15.0, 0.30, 3.75),
+    "haiku": (0.80, 4.0, 0.08, 1.0),
+}
+
+
+def model_cost(model, t):
+    """Estimated USD for one model's [input, output, cache_read, cache_write] tokens, or None if family unknown."""
+    fam = next((f for f in PRICING if f in model), None)
+    if not fam:
+        return None
+    inp, out, cr, cw = PRICING[fam]
+    return (t[0] * inp + t[1] * out + t[2] * cr + t[3] * cw) / 1_000_000
 
 
 def parse_ts(ts):
@@ -167,6 +186,7 @@ def collect(args):
     circ = defaultdict(lambda: [0, 0])  # hour-of-day (UTC) -> [prompt turns, tool_uses]
     interruptions = 0        # total interrupted turns
     interrupt_sessions = 0   # sessions with >= 1 interruption
+    tok = defaultdict(lambda: [0, 0, 0, 0])  # model -> [input, output, cache_read, cache_create]
 
     for path in iter_files(args):
         files += 1
@@ -189,6 +209,15 @@ def collect(args):
                 if f_first is None:
                     f_first = ts
                 f_last = ts
+            # token economy: the usage block rides on assistant messages.
+            msg = entry.get("message") or {}
+            u = msg.get("usage")
+            if isinstance(u, dict):
+                t = tok[msg.get("model") or "?"]
+                t[0] += u.get("input_tokens") or 0
+                t[1] += u.get("output_tokens") or 0
+                t[2] += u.get("cache_read_input_tokens") or 0
+                t[3] += u.get("cache_creation_input_tokens") or 0
             # A prompt turn is a real user message (text), not a tool_result carrier.
             if entry.get("type") == "user" and not side and day:
                 c = (entry.get("message") or {}).get("content")
@@ -303,6 +332,7 @@ def collect(args):
         "circ": circ,
         "interruptions": interruptions,
         "interrupt_sessions": interrupt_sessions,
+        "tok": tok,
     }
 
 
@@ -391,6 +421,15 @@ def skill_precision_rows(skill_n, skill_err, top):
     return rows[:top] if top else rows
 
 
+def cost_rows(tok, top):
+    rows = []
+    for model, t in tok.items():
+        c = model_cost(model, t)
+        rows.append([model, t[0], t[1], t[2], t[3], f"${c:.2f}" if c is not None else "?"])
+    rows.sort(key=lambda r: float(r[5][1:]) if r[5] != "?" else -1, reverse=True)
+    return rows[:top] if top else rows
+
+
 def arch_rows(arch):
     order = ["quick", "standard", "deep", "marathon", "automation"]
     total = sum(arch.values())
@@ -425,6 +464,12 @@ def emit(args, data):
                 "circadian": [{"hour": h, "turns": data["circ"][h][0], "tools": data["circ"][h][1]} for h in sorted(data["circ"])],
                 "interruptions": data["interruptions"],
                 "interrupt_sessions": data["interrupt_sessions"],
+            },
+            "cost": {
+                "by_model": [{"model": m, "input": t[0], "output": t[1], "cache_read": t[2], "cache_create": t[3], "est_usd": model_cost(m, t)} for m, t in data["tok"].items()],
+                "total_est_usd": sum((model_cost(m, t) or 0) for m, t in data["tok"].items()),
+                "cache_read": sum(t[2] for t in data["tok"].values()),
+                "cache_create": sum(t[3] for t in data["tok"].values()),
             },
         }
         print(json.dumps(out, indent=2))
@@ -471,11 +516,20 @@ def emit(args, data):
         print("  circadian (UTC hour):")
         print_table(["hour", "turns", "tools"], circ_rows(data["circ"], args.top))
         print()
+    if want in ("cost", "report"):
+        tok = data["tok"]
+        total = sum((model_cost(m, t) or 0) for m, t in tok.items())
+        cr = sum(t[2] for t in tok.values())
+        cw = sum(t[3] for t in tok.values())
+        hit = f"{100 * cr / (cr + cw):.0f}%" if (cr + cw) else "-"
+        print(f"# cost  (est ${total:,.2f}, cache-hit {hit}, {data['files']} transcripts; Max-plan flat-rate, this is attribution not a bill)")
+        print_table(["model", "input", "output", "cache-rd", "cache-wr", "est$"], cost_rows(tok, args.top))
+        print()
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="cc-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")

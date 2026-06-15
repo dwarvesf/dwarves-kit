@@ -19,12 +19,12 @@ This is sub-goal 01 of the `cc-elevation` mega-goal (self-observability axis). S
 ## CLI contract
 
 ```
-cc-observe <skills|tools|hooks|subagents|friction|sessions|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--json]
+cc-observe <skills|tools|hooks|subagents|friction|sessions|cost|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--json]
 ```
 
 | Arg | Default | Meaning |
 |---|---|---|
-| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, `sessions`, or `report` (all of them) |
+| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, `sessions`, `cost`, or `report` (all of them) |
 | `--file F` | none | parse a single transcript (used by tests) |
 | `--project=SLUG` | none | one project dir under the root. Slugs start with `-` (cwd-derived), so the **equals form is required**. |
 | `--root DIR` | `~/.claude/projects` | transcripts root (all projects) |
@@ -46,6 +46,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
    - `tool_use` named `Agent`/`Task` in a non-sidechain entry -> count a subagent spawn by `timestamp` day and by `input.subagent_type`. A real user-message turn (text content, non-sidechain) -> count a prompt for that day (the `per100` denominator). Sidechain entries are the subagents' own runs, excluded from both.
    - friction: `Edit`/`Write`/`MultiEdit` -> per-session edit count by `file_path`, folded into `thrash` at end of each transcript (`>= THRASH_MIN`); `tool_result` content matching a `PERM_MARKERS` string -> a permission-friction event attributed to the tool via `tool_use_id` (Bash labeled by command); `isCompactSummary` entry -> a compaction for that day; a Skill's errored `tool_result` -> a skill mis-fire (skill-precision).
    - sessions: per transcript, track first/last `timestamp` (wall-clock), tool-use count, prompt-turn count -> `classify_session` buckets it (quick/standard/deep/marathon/automation, thresholds in `ARCH`); sidechain transcripts are skipped (not Han's sessions). Prompt-turns + tool-uses are bucketed by UTC hour (`circadian`). A prompt turn whose text holds `INTERRUPT_MARK` is an interruption.
+   - cost: `message.usage` (input/output/cache-read/cache-create) summed per `message.model`; `model_cost` applies the dated `PRICING` table by family substring (unknown family -> tokens counted, `$` shown as `?`). Cache-hit = cache-read / (read + create). cost-per-merged-PR is out of scope (see Non-goals).
 3. Emit the requested view(s) as aligned tables, or one JSON object with `--json`.
 
 **Hook labels**: script hooks collapse to their basename (`slop-cleaner.sh`); inline `echo` guard hooks key on a short command hash (`inline-echo:ab12cd34`); other commands use their first token. Known limitation: long-text inline/condition hooks (e.g. the `/goal` Stop-hook, whose command is the goal text) fragment by first word. Script hooks, the ones with actionable latency, label cleanly.
@@ -53,7 +54,8 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
 ## Non-goals
 
 - No instrumentation / wrapper / daemon. Read-only over existing transcripts.
-- No cost/$ accounting (Max plan; usage + latency are the signal here). Token cost is a later, separate concern.
+- The `cost` view's `$` is an **attribution estimate** from a static dated `PRICING` table, NOT a bill (Max plan is flat-rate). No live pricing fetch.
+- **No cost-per-merged-PR.** It was in SG-03's outcome but has no clean data path: transcripts span all repos while merges are per-repo, and ops-toolkit squash-merges (so `git log --merges` finds ~0). Deferred to NOTES proposed-additions; needs PR data (gh), not transcript data.
 - No live dashboard. `--json` feeds vps-mon; rendering lives there.
 - No writes anywhere. This tool only reads.
 
@@ -68,7 +70,7 @@ Exercised by `tests/smoke.sh` against `tests/fixtures/sample.jsonl` (Skill, thre
 5. `hooks` surfaces the hook-error count.
 6. `--json` emits valid JSON.
 7. missing `--file` exits 1.
-8. `report` prints all sections (skills, tools, hooks, subagents, friction, sessions).
+8. `report` prints all sections (skills, tools, hooks, subagents, friction, sessions, cost).
 9. `subagents` counts 2 spawns on the day, 1 prompt, per100=200.0.
 10. `subagents` excludes the sidechain spawn (negative control: total 2 not 3, Explore 1 not 2).
 11. `friction` thrash: the thrice-edited file shows sessions 1 / max-edits 3; the once-edited file is NOT flagged (negative control).
@@ -83,7 +85,14 @@ Plus, against `tests/fixtures/session-sample.jsonl` (a clean 10.5-min, 2-turn se
 17. `sessions` circadian: hour 08 shows 2 turns / 2 tools.
 18. `sessions` archetype on the sidechain-tainted main fixture: NO session is classified (negative control: subagent transcripts excluded).
 
-Plus real-data runs (`friction --days 7`, `sessions --days 7`) in `docs/proof-of-done.md`.
+Plus, against `sample.jsonl`'s three appended usage entries (opus 1M/1M/900k-rd/100k-wr, haiku 1M-in, fable 1M-in):
+
+19. `cost` by-model: the opus row prices to `$93.22`.
+20. `cost`: haiku 1M input prices to `$0.80`.
+21. `cost` negative control: fable (unknown family) counts tokens but shows `?`, not a `$`.
+22. `cost` cache-hit: 90% (900k read / 100k create) in the header.
+
+Plus real-data runs (`friction --days 7`, `sessions --days 7`, `cost --days 7`) in `docs/proof-of-done.md`.
 
 ## Dependencies
 
