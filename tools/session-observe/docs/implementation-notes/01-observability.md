@@ -22,3 +22,10 @@ Delta from `_meta/megagoals/cc-elevation/goals/01-observability.md`. Not a resta
 
 ## 2026-06-14 Real-run finding worth acting on
 - `slop-cleaner.sh`: 1072 runs, p50 ~2967ms, max ~10303ms. That is a Stop hook adding multiple seconds to most turns. Surfaced to NOTES proposed-additions as a candidate backlog item (this is exactly the signal the tool was built to find).
+
+## 2026-06-15 subagents view: count both `Agent` and `Task`; prompt-turn denominator
+- Context: added the `subagents` view (ID-100) after a session investigating subagent-mix drift.
+- Decision / Change: count `tool_use` named **both** `Agent` and `Task`. This harness names the spawn tool `Agent`; older Claude Code transcripts name it `Task`. Counting both keeps the view correct across the rename + any mixed-age transcript window. The SPEC states the sidechain-exclusion + per100 design; this note holds only the two implementation choices the spec leaves open.
+- Why: a single-name match would silently undercount on whichever transcripts use the other name.
+- Alternatives considered: (a) count only `Agent` , rejected, breaks on historical transcripts; (b) normalize per "task" , rejected, transcripts have no clean task boundary, so the denominator is **user-prompt turns** (a turn = a non-sidechain `user` entry with a text block, i.e. a real prompt, not a tool_result carrier). per100 = spawns / prompts * 100.
+- Impact: `bin/cc-observe` `collect()` (turn + spawn tallies), `emit()` + `subagent_*_rows()`; fixture gained a text prompt, 2 main spawns, 1 sidechain spawn; smoke 9 -> 12 assertions.

@@ -2,10 +2,17 @@
 """cc-observe: read Claude Code session transcripts and report my own usage.
 
 Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
-  skills  - which Skills fired, how often, with what error rate
-  tools   - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
-  hooks   - per-hook execution latency (count/p50/p95/max) + hook errors
-  report  - all three, the weekly self-observability digest
+  skills    - which Skills fired, how often, with what error rate
+  tools     - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
+  hooks     - per-hook execution latency (count/p50/p95/max) + hook errors
+  subagents - subagent (Agent/Task) spawns per day + by type, normalized per prompt
+  report    - all of the above, the weekly self-observability digest
+
+The subagents view answers "is my subagent mix drifting?" that a raw tool count
+hides: it splits spawns by subagent_type (Explore vs general-purpose vs reviewer
+...) and normalizes by user-prompt turns (per100 = spawns per 100 prompts), so a
+busy day and a quiet day are comparable. Sidechain entries (the subagents' own
+transcripts) are excluded, so each spawn is counted once from the main session.
 
 Why JSONL and not a hook wrapper: the transcript already records, per entry,
 `hookInfos: [{command, durationMs}]` and `hookErrors`, plus every `tool_use`
@@ -110,10 +117,29 @@ def collect(args):
     hook_sample = {}
     hook_errors = 0
     files = 0
+    sub_day = Counter()      # day -> subagent spawns (main sessions only)
+    sub_type = Counter()     # subagent_type -> spawns
+    turns_day = Counter()    # day -> user-prompt turns (the per100 denominator)
 
     for path in iter_files(args):
         files += 1
         for entry in iter_entries(path):
+            # day + sidechain are needed by both the prompt-turn count and the
+            # subagent-spawn count; a spawn in a sidechain file is the subagent's
+            # OWN run, not a spawn, so it must not be double-counted.
+            ts = entry.get("timestamp")
+            day = ts[:10] if isinstance(ts, str) and len(ts) >= 10 else None
+            side = bool(entry.get("isSidechain"))
+            # A prompt turn is a real user message (text), not a tool_result carrier.
+            if entry.get("type") == "user" and not side and day:
+                c = (entry.get("message") or {}).get("content")
+                has_text = isinstance(c, str) or any(
+                    isinstance(b, dict) and b.get("type") == "text"
+                    for b in (c if isinstance(c, list) else [])
+                )
+                if has_text:
+                    turns_day[day] += 1
+
             # hookInfos/hookErrors ride on (mostly) system entries.
             hi = entry.get("hookInfos")
             if isinstance(hi, list):
@@ -142,6 +168,10 @@ def collect(args):
                         skill_n[sk] += 1
                         if tid:
                             id_skill[tid] = sk
+                    if name in ("Agent", "Task") and not side and day:
+                        st = (b.get("input") or {}).get("subagent_type") or "(default)"
+                        sub_day[day] += 1
+                        sub_type[st] += 1
                 elif bt == "tool_result" and b.get("is_error"):
                     tid = b.get("tool_use_id")
                     if tid in id_tool:
@@ -158,6 +188,9 @@ def collect(args):
         "hook_durs": hook_durs,
         "hook_sample": hook_sample,
         "hook_errors": hook_errors,
+        "sub_day": sub_day,
+        "sub_type": sub_type,
+        "turns_day": turns_day,
     }
 
 
@@ -197,6 +230,25 @@ def hook_rows(durs, sample, top):
     return rows
 
 
+def subagent_day_rows(sub_day, turns_day, top):
+    """Per-day spawns with the per-100-prompts normalization (newest day first)."""
+    rows = []
+    for day in sorted(sub_day, reverse=True):
+        n = sub_day[day]
+        t = turns_day.get(day, 0)
+        per100 = f"{100 * n / t:.1f}" if t else "-"
+        rows.append([day, n, t, per100])
+    return rows[:top] if top else rows
+
+
+def subagent_type_rows(sub_type, top):
+    total = sum(sub_type.values())
+    return [
+        [st, n, f"{100 * n / total:.0f}%" if total else "0%"]
+        for st, n in sub_type.most_common(top or None)
+    ]
+
+
 def emit(args, data):
     if args.json:
         out = {
@@ -205,6 +257,10 @@ def emit(args, data):
             "tools": [{"tool": k, "count": v, "errors": data["tool_err"].get(k, 0)} for k, v in data["tools"].most_common()],
             "hooks": [{"hook": lab, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for lab, v in data["hook_durs"].items()],
             "hook_errors": data["hook_errors"],
+            "subagents": {
+                "by_day": [{"day": d, "spawns": data["sub_day"][d], "prompts": data["turns_day"].get(d, 0)} for d in sorted(data["sub_day"], reverse=True)],
+                "by_type": [{"subagent_type": k, "count": v} for k, v in data["sub_type"].most_common()],
+            },
         }
         print(json.dumps(out, indent=2))
         return
@@ -222,11 +278,19 @@ def emit(args, data):
         print(f"# hooks  ({data['hook_errors']} hook errors across {data['files']} transcripts)")
         print_table(["hook", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
         print()
+    if want in ("subagents", "report"):
+        total_sub = sum(data["sub_type"].values())
+        total_prompts = sum(data["turns_day"].values())
+        print(f"# subagents  ({total_sub} spawns, {total_prompts} prompts, {data['files']} transcripts)")
+        print_table(["day", "spawns", "prompts", "per100"], subagent_day_rows(data["sub_day"], data["turns_day"], args.top))
+        print()
+        print_table(["subagent_type", "count", "share"], subagent_type_rows(data["sub_type"], args.top))
+        print()
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="cc-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")

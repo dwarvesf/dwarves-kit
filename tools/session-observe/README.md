@@ -15,12 +15,13 @@ Needs only `python3` (stdlib).
 ## Use
 
 ```bash
-cc-observe report                 # all three views, all projects, all time
-cc-observe report --days 7        # the weekly digest (recommended cadence)
-cc-observe skills --days 30       # which skills fired in the last 30 days
-cc-observe tools  --days 7        # tool usage + error rates
-cc-observe hooks  --days 7        # per-hook p50/p95/max latency + hook errors
-cc-observe report --days 7 --json # machine-readable, for vps-mon ingest
+cc-observe report                   # all views, all projects, all time
+cc-observe report --days 7          # the weekly digest (recommended cadence)
+cc-observe skills --days 30         # which skills fired in the last 30 days
+cc-observe tools  --days 7          # tool usage + error rates
+cc-observe hooks  --days 7          # per-hook p50/p95/max latency + hook errors
+cc-observe subagents --days 7       # subagent spawns per day + by type, per100 prompts
+cc-observe report --days 7 --json   # machine-readable, for vps-mon ingest
 ```
 
 Scope to one project (note the **equals form**, slugs start with `-`):
@@ -35,6 +36,7 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
 
 - **skills / tools**: count `tool_use` by name (Skill by `input.skill`); attribute `is_error` results back via `tool_use_id`.
 - **hooks**: group `hookInfos[].durationMs` by a normalized hook label; count `hookErrors`.
+- **subagents**: count `tool_use` named `Agent`/`Task` by day and by `input.subagent_type`, normalized by user-prompt turns (`per100` = spawns per 100 prompts). Sidechain entries (`isSidechain`) are the subagents' own runs, so they are excluded to avoid double-counting. Answers "is my subagent mix drifting?" (e.g. Explore -> general-purpose) which a raw tool count hides.
 
 ## Output (real run, abbreviated)
 

@@ -5,3 +5,7 @@
 {"type":"user","timestamp":"2026-06-14T10:00:04Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_3","is_error":false,"content":"hi"}]}}
 {"type":"assistant","timestamp":"2026-06-14T10:00:05Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_4","name":"Read","input":{"file_path":"/x"}}]}}
 {"type":"system","timestamp":"2026-06-14T10:00:06Z","hookCount":2,"hookErrors":["slow-hook.sh failed once"],"hookInfos":[{"command":"bash /x/slow-hook.sh","durationMs":500},{"command":"echo approve","durationMs":12}]}
+{"type":"user","timestamp":"2026-06-14T10:00:07Z","message":{"role":"user","content":[{"type":"text","text":"do the thing"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:08Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_5","name":"Agent","input":{"subagent_type":"Explore","description":"search"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:09Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_6","name":"Agent","input":{"subagent_type":"general-purpose","description":"build"}}]}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-06-14T10:00:10Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_7","name":"Agent","input":{"subagent_type":"Explore","description":"nested spawn inside a subagent, must NOT be counted"}}]}}
