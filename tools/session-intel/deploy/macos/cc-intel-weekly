@@ -3,4 +3,24 @@
 # (not *.sh, not wrapped in /bin/bash) per the repo's BTM-friendly plist authoring rule,
 # so Login Items & Extensions shows "cc-intel-weekly" with the exec icon.
 set -euo pipefail
-exec "$HOME/.local/bin/cc-intel" run --out "$HOME/.claude/intel"
+
+INTEL_DIR="$HOME/.claude/intel"
+
+# 1) Write the weekly digest file (the primary, must-not-regress behavior).
+"$HOME/.local/bin/cc-intel" run --out "$INTEL_DIR"
+
+# 2) Bridge headline metrics to vps-mon + ping the cc-intel-weekly heartbeat
+#    (cc-elevation-r3 SG-05). Best-effort: a vps-mon outage or a missing op
+#    session must NEVER fail the digest, so this whole block is non-fatal.
+#    Secrets resolve from 1Password at runtime (op:// refs, never hardcoded).
+bridge_to_vps_mon() {
+  command -v op >/dev/null 2>&1 || { echo "cc-intel-weekly: op unavailable, skipping vps-mon bridge"; return 0; }
+  command -v "$HOME/.local/bin/cc-vps-report" >/dev/null 2>&1 || { echo "cc-intel-weekly: cc-vps-report not on PATH, skipping bridge"; return 0; }
+  CC_VPS_HMAC_KEY="$(op read 'op://Toolkit/cc-vps-report/credential' 2>/dev/null)" || return 0
+  CC_VPS_HB_TOKEN="$(op read 'op://Toolkit/cc-vps-report/hb_token' 2>/dev/null)" || return 0
+  export CC_VPS_HMAC_KEY CC_VPS_HB_TOKEN
+  # Reuse the same 7-day window cc-observe report uses; cc-vps-report self-runs
+  # cc-observe report --json when given no piped/--report-json input.
+  "$HOME/.local/bin/cc-vps-report" --days 7
+}
+bridge_to_vps_mon || echo "cc-intel-weekly: vps-mon bridge failed (non-fatal)"
