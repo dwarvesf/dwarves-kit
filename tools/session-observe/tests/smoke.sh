@@ -10,6 +10,7 @@ set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 CC="${DIR}/bin/cc-observe"
 FIX="${DIR}/tests/fixtures/sample.jsonl"
+SFIX="${DIR}/tests/fixtures/session-sample.jsonl"  # clean session (no sidechain) for archetype/circadian
 
 pass=0; fail=0
 ok() { echo "  ok: $*"; pass=$((pass+1)); }
@@ -47,7 +48,7 @@ if [[ $rc -eq 1 ]]; then ok "exit 1 on missing file"; else no "got rc=$rc"; fi
 
 echo "[9] report runs all sections"
 out="$("$CC" report --file "$FIX")"
-if grep -q '# skills' <<<"$out" && grep -q '# tools' <<<"$out" && grep -q '# hooks' <<<"$out" && grep -q '# subagents' <<<"$out" && grep -q '# friction' <<<"$out"; then ok "report has all sections"; else no "report incomplete"; fi
+if grep -q '# skills' <<<"$out" && grep -q '# tools' <<<"$out" && grep -q '# hooks' <<<"$out" && grep -q '# subagents' <<<"$out" && grep -q '# friction' <<<"$out" && grep -q '# sessions' <<<"$out"; then ok "report has all sections"; else no "report incomplete"; fi
 
 echo "[10] subagents: 2 main-session spawns on 2026-06-14, 1 prompt, per100=200.0"
 out="$("$CC" subagents --file "$FIX")"
@@ -77,6 +78,20 @@ if grep -Eq 'flaky-skill[[:space:]]+1[[:space:]]+1[[:space:]]+100%' <<<"$out"; t
 
 echo "[18] friction skill-precision negative control: prose-rag (succeeded) NOT in precision"
 if ! grep -Eq 'prose-rag[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+%' <<<"$out"; then ok "prose-rag excluded from precision (no mis-fire)"; else no "prose-rag wrongly in precision: $out"; fi
+
+echo "[19] sessions archetype: the 10.5-min / 2-turn session classifies as standard"
+out="$("$CC" sessions --file "$SFIX")"
+if grep -Eq 'standard[[:space:]]+1[[:space:]]+100%' <<<"$out"; then ok "archetype standard 1 (100%)"; else no "archetype wrong: $out"; fi
+
+echo "[20] sessions interruption: 1 interrupt of 2 turns (negative control: clean turn not counted)"
+if grep -q '1 interrupted, 1 interrupts' <<<"$out"; then ok "1 interrupt / 1 session (clean turn excluded)"; else no "interruption wrong: $out"; fi
+
+echo "[21] sessions circadian: hour 08 has 2 turns / 2 tools"
+if grep -Eq '08[[:space:]]+2[[:space:]]+2' <<<"$out"; then ok "circadian hour 08 = 2 turns 2 tools"; else no "circadian wrong: $out"; fi
+
+echo "[22] sessions archetype negative control: main fixture (has sidechain) classifies NO session"
+out="$("$CC" sessions --file "$FIX")"
+if grep -q 'archetype mix:' <<<"$out" && ! grep -Eq '(quick|standard|deep|marathon|automation)[[:space:]]+[0-9]+[[:space:]]+[0-9]+%' <<<"$out"; then ok "sidechain transcript excluded from archetype"; else no "sidechain wrongly classified: $out"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

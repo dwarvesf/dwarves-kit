@@ -19,12 +19,12 @@ This is sub-goal 01 of the `cc-elevation` mega-goal (self-observability axis). S
 ## CLI contract
 
 ```
-cc-observe <skills|tools|hooks|subagents|friction|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--json]
+cc-observe <skills|tools|hooks|subagents|friction|sessions|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--json]
 ```
 
 | Arg | Default | Meaning |
 |---|---|---|
-| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, or `report` (all of them) |
+| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, `sessions`, or `report` (all of them) |
 | `--file F` | none | parse a single transcript (used by tests) |
 | `--project=SLUG` | none | one project dir under the root. Slugs start with `-` (cwd-derived), so the **equals form is required**. |
 | `--root DIR` | `~/.claude/projects` | transcripts root (all projects) |
@@ -45,6 +45,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
    - `hookInfos[]` -> collect `durationMs` per normalized hook label; `hookErrors` -> counted.
    - `tool_use` named `Agent`/`Task` in a non-sidechain entry -> count a subagent spawn by `timestamp` day and by `input.subagent_type`. A real user-message turn (text content, non-sidechain) -> count a prompt for that day (the `per100` denominator). Sidechain entries are the subagents' own runs, excluded from both.
    - friction: `Edit`/`Write`/`MultiEdit` -> per-session edit count by `file_path`, folded into `thrash` at end of each transcript (`>= THRASH_MIN`); `tool_result` content matching a `PERM_MARKERS` string -> a permission-friction event attributed to the tool via `tool_use_id` (Bash labeled by command); `isCompactSummary` entry -> a compaction for that day; a Skill's errored `tool_result` -> a skill mis-fire (skill-precision).
+   - sessions: per transcript, track first/last `timestamp` (wall-clock), tool-use count, prompt-turn count -> `classify_session` buckets it (quick/standard/deep/marathon/automation, thresholds in `ARCH`); sidechain transcripts are skipped (not Han's sessions). Prompt-turns + tool-uses are bucketed by UTC hour (`circadian`). A prompt turn whose text holds `INTERRUPT_MARK` is an interruption.
 3. Emit the requested view(s) as aligned tables, or one JSON object with `--json`.
 
 **Hook labels**: script hooks collapse to their basename (`slop-cleaner.sh`); inline `echo` guard hooks key on a short command hash (`inline-echo:ab12cd34`); other commands use their first token. Known limitation: long-text inline/condition hooks (e.g. the `/goal` Stop-hook, whose command is the goal text) fragment by first word. Script hooks, the ones with actionable latency, label cleanly.
@@ -67,7 +68,7 @@ Exercised by `tests/smoke.sh` against `tests/fixtures/sample.jsonl` (Skill, thre
 5. `hooks` surfaces the hook-error count.
 6. `--json` emits valid JSON.
 7. missing `--file` exits 1.
-8. `report` prints all sections (skills, tools, hooks, subagents, friction).
+8. `report` prints all sections (skills, tools, hooks, subagents, friction, sessions).
 9. `subagents` counts 2 spawns on the day, 1 prompt, per100=200.0.
 10. `subagents` excludes the sidechain spawn (negative control: total 2 not 3, Explore 1 not 2).
 11. `friction` thrash: the thrice-edited file shows sessions 1 / max-edits 3; the once-edited file is NOT flagged (negative control).
@@ -75,7 +76,14 @@ Exercised by `tests/smoke.sh` against `tests/fixtures/sample.jsonl` (Skill, thre
 13. `friction` context-pressure: 1 compaction on the day.
 14. `friction` skill-precision: the errored skill shows 100% inert; a clean skill is NOT in the precision table (negative control).
 
-Plus a real-data run (`friction --days 7`) in `docs/proof-of-done.md`.
+Plus, against `tests/fixtures/session-sample.jsonl` (a clean 10.5-min, 2-turn session, one turn interrupted, no sidechain):
+
+15. `sessions` archetype: the session classifies as `standard` (1, 100%).
+16. `sessions` interruption: 1 interrupt of 2 turns (negative control: the clean turn is not counted).
+17. `sessions` circadian: hour 08 shows 2 turns / 2 tools.
+18. `sessions` archetype on the sidechain-tainted main fixture: NO session is classified (negative control: subagent transcripts excluded).
+
+Plus real-data runs (`friction --days 7`, `sessions --days 7`) in `docs/proof-of-done.md`.
 
 ## Dependencies
 

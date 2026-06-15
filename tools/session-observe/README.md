@@ -22,6 +22,7 @@ cc-observe tools  --days 7          # tool usage + error rates
 cc-observe hooks  --days 7          # per-hook p50/p95/max latency + hook errors
 cc-observe subagents --days 7       # subagent spawns per day + by type, per100 prompts
 cc-observe friction --days 7        # thrash / permission-friction / context-pressure / skill mis-fires
+cc-observe sessions --days 7        # archetype mix / circadian (by hour) / interruption rate
 cc-observe report --days 7 --json   # machine-readable, for vps-mon ingest
 ```
 
@@ -39,6 +40,7 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
 - **hooks**: group `hookInfos[].durationMs` by a normalized hook label; count `hookErrors`.
 - **subagents**: count `tool_use` named `Agent`/`Task` by day and by `input.subagent_type`, normalized by user-prompt turns (`per100` = spawns per 100 prompts). Sidechain entries (`isSidechain`) are the subagents' own runs, so they are excluded to avoid double-counting. Answers "is my subagent mix drifting?" (e.g. Explore -> general-purpose) which a raw tool count hides.
 - **friction**: four deterministic working-pattern signals. **thrash** = a file edited `>= THRASH_MIN` (3) times in one session (rework/debug spiral). **permission-friction** = `tool_result` content matching a real permission marker (capital-P `"Permission to use "`, `"doesn't want to proceed"`, `"denied by your permission"`), attributed to the tool (Bash by command). **context-pressure** = `isCompactSummary` entries per day (the window collapsing). **skill-precision** = skills that mis-fired (errored), ranked by inert-rate, surfaced from the skill-error data the `skills` view buries.
+- **sessions**: per-transcript shape. **archetype** = each session bucketed quick / standard / deep / marathon / automation from wall-clock (first->last `timestamp`) + tool-use volume + whether a human prompted; subagent transcripts (`isSidechain`) are excluded so they do not inflate `automation`. **circadian** = prompt-turns + tool-uses by UTC hour-of-day. **interruption rate** = user turns carrying `"[Request interrupted"`, as a count + per-100-turns.
 
 ## Output (real run, abbreviated)
 
