@@ -350,3 +350,27 @@ CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
 curl -s https://mon-ingest.han-ws.workers.dev/status/ai-substrate   # the item renders
 ```
 
+
+## Native OTel eval (SG-06)
+
+**Type:** eval, not code. SG-06 owes a written adopt-or-skip verdict, not a behavioral run, so its
+proof **is** the verdict. Canonical artifact:
+`research/2026-06-15-claude-code-usage-metrics-and-tooling.md`, section "Native OTel eval (SG-06)".
+
+**Verdict:** CONDITIONAL-ADOPT, the metric source is valuable (live cost + per-turn/per-tool
+latency the transcript views cannot produce); wiring is gated on (i) vps-mon gaining OTLP ingest
+and (ii) scoped-env discipline (never settings.json -> Remote-Control regression). Follow-up wiring
+tracked as BACKLOG ID-101 (parked).
+
+**Live observation: RAN (not docs-grounded only).** A scoped, single-shot console-exporter probe
+(`CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=console OTEL_LOGS_EXPORTER=console
+claude -p "say PONG"`, no settings.json touched) emitted real metrics to local stdout from one
+trivial turn: `claude_code.token.usage` split by token type at `model: claude-opus-4-8[1m]`,
+`claude_code.cost.usage` in USD, plus `api_request` / `active_time.total` / `session.count` /
+hook + mcp events. Confirmed no Anthropic endpoint involved (console exporter = local stdout;
+`OTEL_EXPORTER_OTLP_ENDPOINT` unset). Remote-Control was not regressed (one-shot inline env, no
+sticky settings.json injection). The probe log carried identity attrs (`user.account_uuid`) and was
+discarded, never committed (it lived in `/tmp`).
+
+No new acceptance criteria for cc-observe: SG-06 changes no cc-observe behavior. This entry records
+that the eval's done-gate (a recorded eval ending in a written verdict) is satisfied.

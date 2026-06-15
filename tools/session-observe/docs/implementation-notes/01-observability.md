@@ -79,3 +79,10 @@ Delta from `_meta/megagoals/cc-elevation/goals/01-observability.md`. Not a resta
 - Decision / Change: the launcher dropped `exec` (it cannot append after exec), runs `cc-intel run` first, then a non-fatal `bridge_to_vps_mon`. The bridge no-ops (returns 0) if `op` is unavailable, if `~/.local/bin/cc-vps-report` is missing, or if either `op read` fails. A vps-mon outage must never fail the weekly digest (read-only producer).
 - Why: the digest file is the must-not-regress behavior; delivery is best-effort.
 - Impact: `tools/cc-intel/deploy/macos/cc-intel-weekly`. Deploy adds one symlink `ln -sf .../tools/cc-observe/bin/cc-vps-report ~/.local/bin/cc-vps-report` (documented in the cc-intel runbook). No launchd redeploy needed (the launcher path is unchanged; only its body changed), but a `launchctl kickstart -k gui/$(id -u)/cc-intel-weekly` proves it end to end.
+
+## 2026-06-15 SG-06 native OTel eval: complement, not replacement (no cc-observe code change)
+- Context: cc-elevation-r3 SG-06 evaluated whether `CLAUDE_CODE_ENABLE_TELEMETRY=1` should feed vps-mon, as an alternative/complement to cc-observe's transcript parsing.
+- Decision / Change: CONDITIONAL-ADOPT, recorded as a verdict section in `research/2026-06-15-claude-code-usage-metrics-and-tooling.md`; no cc-observe behavior changed. Native OTel and cc-observe are complements: OTel gives live cost + model/tool/turn latency (which transcript parsing cannot produce live); cc-observe keeps the harness-health + semantic + zero-infra niche. Wiring deferred to BACKLOG ID-101, gated on vps-mon OTLP ingest.
+- Why: the eval is a research/decision deliverable; cc-observe stays the transcript-side spine, so the right home for the output is the research note + this delta, not new code.
+- Alternatives considered: (a) SKIP, rejected, transcript parsing provably does not cover live cost/latency; (b) ADOPT-now, rejected, vps-mon has no OTLP collector yet and the env hazard wants scoped-env discipline first.
+- Impact: research note (new SG-06 section), proof-of-done (SG-06 entry), BACKLOG ID-101. No `bin/cc-observe` edit.
