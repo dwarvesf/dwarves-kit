@@ -75,21 +75,30 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
 
 ## cc-vps-report: weekly bridge to vps-mon + `/status`
 
-`bin/cc-vps-report` distills `cc-observe report --json` into a handful of headline
-metrics (subagent per100 + top type, tool/skill/hook error counts, friction/cost when
-present), HMAC-signs a schema-v1 snapshot the same way the vps-mon host agent does, POSTs
-it to the personal `mon-ingest` Worker's `/v1/snapshot`, then pings the `cc-intel-weekly`
-heartbeat. The heartbeat surfaces digest liveness on the public `/status` page: if no
-digest lands for >8 days (interval 7d + grace 1d) the item flips to 🔴 and a
-`heartbeat-silent` alert fires, so a stopped digest is never silently green.
+`bin/cc-vps-report` pings the `cc-intel-weekly` heartbeat (the default action). The
+heartbeat surfaces digest liveness on the public `/status` page: if no digest lands for
+>8 days (interval 7d + grace 1d) the item flips to 🔴 and a `heartbeat-silent` alert
+fires, so a stopped digest is never silently green.
+
+It can ALSO distill `cc-observe report --json` into a handful of headline metrics
+(subagent per100 + top type, tool/skill/hook error counts, friction/cost when present),
+HMAC-sign a schema-v1 snapshot the same way the vps-mon host agent does, and POST it to
+the `mon-ingest` Worker's `/v1/snapshot`, but only behind the opt-in `--snapshot` flag
+(default OFF). The snapshot registers a vps-mon `hosts` row subject to the prober's
+hardcoded 600s `agent-silent` rule, which false-fires for a weekly pusher (incident
+2026-06-15); the heartbeat is the correct weekly liveness signal and does not touch that
+table. Only opt in to `--snapshot` once vps-mon exempts low-frequency hosts.
 
 ```bash
 bash tests/test-vps-report.sh            # deterministic signer + distiller test (no network)
 bin/cc-vps-report --days 7 --dry-run     # see the signed envelope, no POST
-# live (secrets from 1Password; HMAC_KEY_CC_AIR set on the worker):
+# default = heartbeat-only (the weekly path; no hosts-row, no agent-silent risk):
+CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
+  bin/cc-vps-report                       # -> heartbeat: 204
+# opt-in snapshot (only once vps-mon exempts low-frequency hosts):
 CC_VPS_HMAC_KEY=$(op read op://Toolkit/cc-vps-report/credential) \
 CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
-  bin/cc-vps-report --days 7             # -> snapshot: 202 / heartbeat: 204
+  bin/cc-vps-report --snapshot --days 7  # -> snapshot: 202 / heartbeat: 204
 ```
 
 Read-only producer: cc-observe/cc-vps-report never store state; only vps-mon does. The

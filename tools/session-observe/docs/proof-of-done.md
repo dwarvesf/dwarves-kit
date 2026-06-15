@@ -240,6 +240,8 @@ bin/cc-semantic --days 7                             # real run (uses claude -p)
 **Feature:** bridge the weekly cc-observe digest into the LIVE vps-mon: HMAC-signed snapshot of headline metrics + a heartbeat ping that surfaces digest liveness on the public `/status` page.
 **Date:** 2026-06-15 · **Lane:** full · **Host:** Hans-Air-M4 · **Mega-goal:** cc-elevation-r3 sub-goal 05 (supersedes r2 SG-01 cc-notify). **Target:** personal `mon-ingest` (`https://mon-ingest.han-ws.workers.dev`, CF account Han Ngo).
 
+> **Post-ship fix (2026-06-15, PR #347-follow-up): heartbeat-only by default, snapshot opt-in.** The original design had the weekly run POST `/v1/snapshot` (registers a vps-mon `hosts` row) AND ping the heartbeat. The snapshot UPSERT made `cc-air` subject to the prober's hardcoded `agent-silent` rule (`AGENT_SILENT_THRESHOLD_SEC = 600s`, `tools/vps-mon/worker/src/prober.ts`), which CRITs any host whose `last_seen` is older than 600s. Because the pusher runs WEEKLY, `cc-air` looked silent 6 days out of 7 → a guaranteed weekly false CRIT (fired once 2026-06-15 19:50). Mitigation: deleted the `cc-air` host row + acked the alert. Fix: the heartbeat GET is now the DEFAULT action, and the `/v1/snapshot` POST is behind an opt-in `--snapshot` flag (default OFF); `cc-intel-weekly` calls `cc-vps-report` with no flag (heartbeat-only). The heartbeat (interval 604800 + grace 86400) does not touch the `hosts` table, so the 600s rule cannot see it; it is the correct weekly liveness signal. The signer + snapshot code are kept (valid + tested), usable via `--snapshot` once/if vps-mon grows a per-host exempt for low-frequency pushers. The B4/B6/B7 live verifications below were performed once at original ship (#343); they remain valid for the `--snapshot` path and were NOT re-run for this code-only change.
+
 ### Acceptance criteria
 
 | # | Criterion | Source |
@@ -264,7 +266,7 @@ bin/cc-semantic --days 7                             # real run (uses claude -p)
 | Test | 6 assertions incl. signer-vs-independent-reference + wrong-key negative control + distiller | `tests/test-vps-report.sh` |
 | Live D1 | `status_pages('ai-substrate')` + `heartbeats('cc-intel-weekly', 604800/86400, ai-substrate)` + `status_page_items` link | remote `vps-mon` D1 |
 | Live secret | `HMAC_KEY_CC_AIR` on `mon-ingest`; key + token in 1P `op://Toolkit/cc-vps-report/{credential,hb_token}` | wrangler secret + 1P |
-| Launcher wiring | `cc-intel-weekly` runs the digest, then best-effort `cc-vps-report --days 7` (non-fatal) | `tools/cc-intel/deploy/macos/cc-intel-weekly` |
+| Launcher wiring | `cc-intel-weekly` runs the digest, then best-effort `cc-vps-report` heartbeat-only, no `--snapshot` (non-fatal) | `tools/cc-intel/deploy/macos/cc-intel-weekly` |
 
 ### Confirmation run-table
 
@@ -343,10 +345,13 @@ reuse the existing SPEC-066/067 tables. Rollback is fully scripted, hence not
 cd tools/cc-observe
 bash tests/test-vps-report.sh                          # -> vps-report: all 6 passed
 bin/cc-vps-report --days 7 --dry-run                   # see the signed envelope, no network
-# live (needs the 1P item + HMAC_KEY_CC_AIR on the worker):
+# default = heartbeat-only (the weekly path, no hosts-row, no agent-silent risk):
+CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
+  bin/cc-vps-report                                     # -> heartbeat: 204
+# opt-in snapshot (only once vps-mon exempts low-frequency hosts; else weekly false CRIT):
 CC_VPS_HMAC_KEY=$(op read op://Toolkit/cc-vps-report/credential) \
 CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
-  bin/cc-vps-report --days 7                            # -> snapshot: 202 / heartbeat: 204
+  bin/cc-vps-report --snapshot --days 7                 # -> snapshot: 202 / heartbeat: 204
 curl -s https://mon-ingest.han-ws.workers.dev/status/ai-substrate   # the item renders
 ```
 
