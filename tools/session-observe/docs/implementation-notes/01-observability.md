@@ -51,3 +51,11 @@ Delta from `_meta/megagoals/cc-elevation/goals/01-observability.md`. Not a resta
 - **`$` is attribution, not billing.** Max plan is flat-rate; the `PRICING` table (dated 2026-06-15, $/M tokens by family substring) estimates relative spend. Unknown families (`fable`, a stray `<synthetic>`) count tokens but show `?` , NOT `$0.00` , so untracked spend stays visible rather than silently zeroed.
 - **Cache-hit ratio = read / (read + create)** across all models; on real data it runs ~97%, confirming caching is doing its job (the biggest cost lever per the research note).
 - Impact: `bin/cc-observe` `collect()` (per-model usage tally) + `model_cost`/`cost_rows` + `cost` view; `PRICING` constant; fixture +3 usage entries (opus/haiku/fable); smoke 22 -> 26. Non-goal #2 in SPEC.md rewritten (it previously said "no cost accounting", now superseded).
+
+## 2026-06-15 cc-semantic (SG-04): separate script, injectable LLM, live run deferred
+- Context: cc-elevation-r3 SG-04 added LLM-derived semantic signals (topic-drift + self-correction). Off main, independent of the SG-01/02/03 stack.
+- **Separate script, not a cc-observe view.** cc-observe is stdlib-only + "runs anywhere including from a hook"; adding an LLM/subprocess call would break that contract. So SG-04 is a sibling `bin/cc-semantic` (still part of the cc-observe tool dir + proof). cc-observe stays pure.
+- **LLM command is injectable** (`CC_SEMANTIC_CMD`, prompt piped to stdin) so tests run with a fixed response , no live model, deterministic. Default is `claude -p` (Haiku tier intent; binary at `~/.local/bin/claude`). `parse_json` requires both expected keys or returns None -> the tool degrades to `_unavailable_` rather than fabricating.
+- **Live run deferred in-loop.** Exercising a real `claude -p` nests a live claude session inside this one (hang/recursion risk). The deterministic injected/degrade/empty paths are the proof (smoke 27-30); the live path is wired + documented for manual use. Honest gap, not a silent skip.
+- **Propose-only is structural**, not just a label: the script has zero write calls; `git status` after a run shows no tool-created files. Bounded by `--cap` (200) + per-prompt truncation (300 chars) for cost.
+- Impact: new `tools/cc-observe/bin/cc-semantic` + `tests/fixtures/semantic-llm-out.json`; smoke +4 (27-30); proof-of-done gained a `## cc-semantic` section.

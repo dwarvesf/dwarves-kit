@@ -27,6 +27,15 @@ cc-observe cost --days 7            # tokens by model + cache economics + $ esti
 cc-observe report --days 7 --json   # machine-readable, for vps-mon ingest
 ```
 
+**`cc-semantic`** (sibling script) , LLM-derived signals that a deterministic parser cannot produce, as **proposals only** (writes nothing durable):
+
+```bash
+cc-semantic --days 7                 # topic-drift + self-correction over recent prompts (uses claude -p)
+CC_SEMANTIC_CMD="cat resp.json" cc-semantic ...   # inject a fixed model response (tests)
+```
+
+It feeds a windowed, capped sample of recent user prompts to Claude Haiku (`claude -p`, overridable via `CC_SEMANTIC_CMD`), which returns `{topics, self_corrections}`. Degrades to `_unavailable_` if the model is missing , it never fabricates. These are NLP estimates (noisier than the deterministic views); a human acts on them. NOT mini.ollama.
+
 Scope to one project (note the **equals form**, slugs start with `-`):
 
 ```bash

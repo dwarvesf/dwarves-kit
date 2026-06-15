@@ -179,3 +179,58 @@ bin/cc-observe sessions --days 7                 # archetype mix / circadian / i
 bin/cc-observe cost --days 7                     # tokens by model + cache economics + $ estimate
 bin/cc-observe hooks --days 7 | sort -t$'\t' -k5 # slowest hooks first
 ```
+
+---
+
+## cc-semantic (cc-elevation-r3 SG-04)
+
+**Feature:** LLM-derived semantic signals over recent prompts , topic-drift + self-correction , as PROPOSALS ONLY (writes nothing durable). A sibling script to `cc-observe`; off main (independent of the SG-01/02/03 stack).
+**Date:** 2026-06-15 · **Lane:** full · **Host:** Hans-Air-M4.
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| S1 | A cheap model (`claude -p`, overridable by `CC_SEMANTIC_CMD`) is fed a windowed/capped prompt sample and returns topics + self-correction count | r3 SG-04 |
+| S2 | Output is propose-only: NOTHING durable is written (no ledger/GLOSSARY/board/file) | r3 SG-04 quality bar |
+| S3 | Degrades to `_unavailable_` on missing/failed/unparseable model output (never fabricates) , negative control | r3 SG-04 |
+| S4 | Empty window -> "no prompts", no proposal (clean-fixture negative control) | r3 SG-04 |
+| S5 | Bounded: prompt window capped (`--cap`, default 200) + per-prompt truncation; Haiku not mini.ollama | r3 SG-04 |
+
+### Confirmation run-table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Injected output (S1) | `CC_SEMANTIC_CMD="cat fixture" cc-semantic --root fixtures --days 0` | topics + `self-corrections: 1` + `PROPOSAL ONLY` banner | PASS (smoke 27) |
+| Unavailable (S3) | `CC_SEMANTIC_CMD=false cc-semantic ...` | `_unavailable_` | PASS (smoke 28) |
+| Empty (S4) | `cc-semantic --root /tmp/none --days 0` | `no prompts` | PASS (smoke 29) |
+| JSON | `... --json \| python3 -m json.tool` | valid JSON | PASS (smoke 30) |
+| Propose-only (S2) | run, then `git status` | no new files created by the run | PASS (only my own edits + untracked new tool files) |
+| Real collection | `cc-semantic --days 1 --cap 50` (fake LLM) | 50 prompts sampled from real transcripts | PASS |
+
+### Negative control
+
+- **Never fabricates**: a failing/garbage model command yields `_unavailable_`, not a made-up topic split (smoke 28). The `parse_json` requires both `topics` and `self_corrections` keys or returns None.
+- **Propose-only**: the script has zero write calls; after a run `git status` shows no new files from the tool (only the source files I added). The signal is for a human to act on.
+
+### Run detail
+
+```
+$ CC_SEMANTIC_CMD="cat tests/fixtures/semantic-llm-out.json" bin/cc-semantic --root tests/fixtures --days 0
+# semantic  (1 prompts sampled; PROPOSAL ONLY , estimates, nothing written)
+  topic drift:
+       3  cc-observe tooling
+       1  git ops
+  self-corrections: 1 of 1 prompts
+```
+
+Live `claude -p` path is wired (binary at `~/.local/bin/claude`) but not exercised inside the loop to avoid nesting a live claude session; the deterministic injected/degrade/empty paths above are the proof. Run `cc-semantic --days 7` manually for a real topic split.
+
+### Reproduce
+
+```bash
+cd tools/cc-observe
+bash tests/smoke.sh                                  # -> includes cc-semantic 27-30
+CC_SEMANTIC_CMD="cat tests/fixtures/semantic-llm-out.json" bin/cc-semantic --root tests/fixtures --days 0
+bin/cc-semantic --days 7                             # real run (uses claude -p)
+```
