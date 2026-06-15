@@ -9,3 +9,12 @@
 {"type":"assistant","timestamp":"2026-06-14T10:00:08Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_5","name":"Agent","input":{"subagent_type":"Explore","description":"search"}}]}}
 {"type":"assistant","timestamp":"2026-06-14T10:00:09Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_6","name":"Agent","input":{"subagent_type":"general-purpose","description":"build"}}]}}
 {"type":"assistant","isSidechain":true,"timestamp":"2026-06-14T10:00:10Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_7","name":"Agent","input":{"subagent_type":"Explore","description":"nested spawn inside a subagent, must NOT be counted"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:11Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_8","name":"Edit","input":{"file_path":"/x/thrash.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:12Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_9","name":"Edit","input":{"file_path":"/x/thrash.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:13Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_10","name":"Write","input":{"file_path":"/x/thrash.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:14Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_11","name":"Edit","input":{"file_path":"/x/once.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:15Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_12","name":"Bash","input":{"command":"deploy --prod"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:16Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_12","is_error":true,"content":"Permission to use Bash with command deploy --prod was denied"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:17Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_13","name":"Skill","input":{"skill":"flaky-skill","args":""}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:18Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_13","is_error":true,"content":"skill blew up"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:19Z","isCompactSummary":true,"message":{"role":"assistant","content":[{"type":"text","text":"(compacted)"}]}}

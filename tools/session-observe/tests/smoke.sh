@@ -19,9 +19,9 @@ echo "[1] skills: prose-rag counted once"
 out="$("$CC" skills --file "$FIX")"
 if grep -q 'prose-rag' <<<"$out" && grep -Eq 'prose-rag[[:space:]]+1' <<<"$out"; then ok "skill prose-rag count 1"; else no "skills output: $out"; fi
 
-echo "[2] tools: Bash counted twice with one error"
+echo "[2] tools: Bash counted (3: ls, echo, denied deploy) with two errors"
 out="$("$CC" tools --file "$FIX")"
-if grep -Eq 'Bash[[:space:]]+2[[:space:]]+1' <<<"$out"; then ok "Bash count 2, errors 1"; else no "tools output: $out"; fi
+if grep -Eq 'Bash[[:space:]]+3[[:space:]]+2' <<<"$out"; then ok "Bash count 3, errors 2"; else no "tools output: $out"; fi
 
 echo "[3] tools: Read present (count 1, no error)"
 if grep -Eq 'Read[[:space:]]+1[[:space:]]+0' <<<"$out"; then ok "Read count 1, errors 0"; else no "Read row wrong: $out"; fi
@@ -47,7 +47,7 @@ if [[ $rc -eq 1 ]]; then ok "exit 1 on missing file"; else no "got rc=$rc"; fi
 
 echo "[9] report runs all sections"
 out="$("$CC" report --file "$FIX")"
-if grep -q '# skills' <<<"$out" && grep -q '# tools' <<<"$out" && grep -q '# hooks' <<<"$out" && grep -q '# subagents' <<<"$out"; then ok "report has all sections"; else no "report incomplete"; fi
+if grep -q '# skills' <<<"$out" && grep -q '# tools' <<<"$out" && grep -q '# hooks' <<<"$out" && grep -q '# subagents' <<<"$out" && grep -q '# friction' <<<"$out"; then ok "report has all sections"; else no "report incomplete"; fi
 
 echo "[10] subagents: 2 main-session spawns on 2026-06-14, 1 prompt, per100=200.0"
 out="$("$CC" subagents --file "$FIX")"
@@ -58,6 +58,25 @@ if grep -q '2 spawns' <<<"$out" && grep -Eq 'Explore[[:space:]]+1[[:space:]]' <<
 
 echo "[12] subagents: general-purpose type counted"
 if grep -Eq 'general-purpose[[:space:]]+1[[:space:]]' <<<"$out"; then ok "general-purpose type counted"; else no "type table wrong: $out"; fi
+
+echo "[13] friction thrash: /x/thrash.py edited 3x in 1 session"
+out="$("$CC" friction --file "$FIX")"
+if grep -Eq '/x/thrash.py[[:space:]]+1[[:space:]]+3' <<<"$out"; then ok "thrash.py 1 session / 3 max-edits"; else no "thrash wrong: $out"; fi
+
+echo "[14] friction thrash negative control: /x/once.py (edited once) NOT flagged"
+if ! grep -q '/x/once.py' <<<"$out"; then ok "once.py excluded (< THRASH_MIN)"; else no "once.py wrongly flagged: $out"; fi
+
+echo "[15] friction permission: Bash:deploy denial attributed (1)"
+if grep -Eq 'Bash:deploy[[:space:]]+1' <<<"$out"; then ok "permission friction Bash:deploy 1"; else no "perm wrong: $out"; fi
+
+echo "[16] friction context-pressure: 1 compaction on 2026-06-14"
+if grep -Eq '2026-06-14[[:space:]]+1' <<<"$out"; then ok "compaction 2026-06-14 = 1"; else no "compaction wrong: $out"; fi
+
+echo "[17] friction skill-precision: flaky-skill 100% inert"
+if grep -Eq 'flaky-skill[[:space:]]+1[[:space:]]+1[[:space:]]+100%' <<<"$out"; then ok "flaky-skill inert 100%"; else no "skill-precision wrong: $out"; fi
+
+echo "[18] friction skill-precision negative control: prose-rag (succeeded) NOT in precision"
+if ! grep -Eq 'prose-rag[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]+[0-9]+%' <<<"$out"; then ok "prose-rag excluded from precision (no mis-fire)"; else no "prose-rag wrongly in precision: $out"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

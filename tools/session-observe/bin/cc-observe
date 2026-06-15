@@ -6,6 +6,8 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
   tools     - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
   hooks     - per-hook execution latency (count/p50/p95/max) + hook errors
   subagents - subagent (Agent/Task) spawns per day + by type, normalized per prompt
+  friction  - deterministic friction: thrash (rework), permission-prompts, context
+              pressure (compactions), skill mis-fires
   report    - all of the above, the weekly self-observability digest
 
 The subagents view answers "is my subagent mix drifting?" that a raw tool count
@@ -31,6 +33,14 @@ import time
 from collections import Counter, defaultdict
 
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
+
+# A file edited this many+ times within one session is "thrash" (a rework/debug spiral).
+THRASH_MIN = 3
+# Real permission-friction markers in tool_result content. NOTE: the lowercase
+# substring "permission to use" is a FALSE positive (it appears in skill-description
+# text); the genuine prompt is capital-P "Permission to use <Tool> ...". Denials and
+# config-fences are the other two.
+PERM_MARKERS = ("Permission to use ", "doesn't want to proceed", "denied by your permission")
 
 
 def iter_files(args):
@@ -120,9 +130,15 @@ def collect(args):
     sub_day = Counter()      # day -> subagent spawns (main sessions only)
     sub_type = Counter()     # subagent_type -> spawns
     turns_day = Counter()    # day -> user-prompt turns (the per100 denominator)
+    thrash = Counter()       # file_path -> # sessions where it was edited >= THRASH_MIN times
+    thrash_max = {}          # file_path -> worst single-session edit count
+    perm = Counter()         # tool/cmd label -> permission-friction events
+    id_cmd = {}              # tool_use_id -> short Bash command (for perm labeling)
+    compact_day = Counter()  # day -> compaction events (context pressure)
 
     for path in iter_files(args):
         files += 1
+        file_edits = Counter()   # per-session edit counts, reset each transcript
         for entry in iter_entries(path):
             # day + sidechain are needed by both the prompt-turn count and the
             # subagent-spawn count; a spawn in a sidechain file is the subagent's
@@ -139,6 +155,10 @@ def collect(args):
                 )
                 if has_text:
                     turns_day[day] += 1
+
+            # context pressure: a compaction collapses the window mid-session.
+            if entry.get("isCompactSummary") and day:
+                compact_day[day] += 1
 
             # hookInfos/hookErrors ride on (mostly) system entries.
             hi = entry.get("hookInfos")
@@ -172,12 +192,34 @@ def collect(args):
                         st = (b.get("input") or {}).get("subagent_type") or "(default)"
                         sub_day[day] += 1
                         sub_type[st] += 1
-                elif bt == "tool_result" and b.get("is_error"):
+                    if name in ("Edit", "Write", "MultiEdit"):
+                        fp = (b.get("input") or {}).get("file_path")
+                        if fp:
+                            file_edits[fp] += 1
+                    if name == "Bash" and tid:
+                        cmd = (b.get("input") or {}).get("command") or ""
+                        id_cmd[tid] = cmd.split()[0][:24] if cmd.split() else ""
+                elif bt == "tool_result":
                     tid = b.get("tool_use_id")
-                    if tid in id_tool:
-                        tool_err[id_tool[tid]] += 1
-                    if tid in id_skill:
-                        skill_err[id_skill[tid]] += 1
+                    if b.get("is_error"):
+                        if tid in id_tool:
+                            tool_err[id_tool[tid]] += 1
+                        if tid in id_skill:
+                            skill_err[id_skill[tid]] += 1
+                    # permission friction: the prompt/denial rides in the result content.
+                    content = b.get("content")
+                    ctext = content if isinstance(content, str) else (json.dumps(content) if content is not None else "")
+                    if any(m in ctext for m in PERM_MARKERS):
+                        label = id_tool.get(tid, "?")
+                        if label == "Bash" and tid in id_cmd and id_cmd[tid]:
+                            label = "Bash:" + id_cmd[tid]
+                        perm[label] += 1
+
+        # end of transcript (= one session): fold per-session edit counts into thrash
+        for fp, n in file_edits.items():
+            if n >= THRASH_MIN:
+                thrash[fp] += 1
+                thrash_max[fp] = max(thrash_max.get(fp, 0), n)
 
     return {
         "files": files,
@@ -191,6 +233,10 @@ def collect(args):
         "sub_day": sub_day,
         "sub_type": sub_type,
         "turns_day": turns_day,
+        "thrash": thrash,
+        "thrash_max": thrash_max,
+        "perm": perm,
+        "compact_day": compact_day,
     }
 
 
@@ -249,6 +295,36 @@ def subagent_type_rows(sub_type, top):
     ]
 
 
+def shorten_path(fp, n=48):
+    parts = fp.split("/")
+    s = "/".join(parts[-3:]) if len(parts) > 3 else fp
+    return ("..." + s[-(n - 3):]) if len(s) > n else s
+
+
+def thrash_rows(thrash, thrash_max, top):
+    ranked = sorted(thrash, key=lambda fp: thrash_max.get(fp, 0), reverse=True)
+    rows = [[shorten_path(fp), thrash[fp], thrash_max.get(fp, 0)] for fp in ranked]
+    return rows[:top] if top else rows
+
+
+def perm_rows(perm, top):
+    return [[lab, n] for lab, n in perm.most_common(top or None)]
+
+
+def compact_rows(compact_day, top):
+    rows = [[d, compact_day[d]] for d in sorted(compact_day, reverse=True)]
+    return rows[:top] if top else rows
+
+
+def skill_precision_rows(skill_n, skill_err, top):
+    """Only skills that ever mis-fired (errored), ranked by inert-rate. The raw
+    `skills` view sorts by count and buries these; precision surfaces them."""
+    ranked = sorted((s for s in skill_n if skill_err.get(s, 0)),
+                    key=lambda s: skill_err[s] / skill_n[s], reverse=True)
+    rows = [[s, skill_n[s], skill_err[s], f"{100 * skill_err[s] / skill_n[s]:.0f}%"] for s in ranked]
+    return rows[:top] if top else rows
+
+
 def emit(args, data):
     if args.json:
         out = {
@@ -260,6 +336,12 @@ def emit(args, data):
             "subagents": {
                 "by_day": [{"day": d, "spawns": data["sub_day"][d], "prompts": data["turns_day"].get(d, 0)} for d in sorted(data["sub_day"], reverse=True)],
                 "by_type": [{"subagent_type": k, "count": v} for k, v in data["sub_type"].most_common()],
+            },
+            "friction": {
+                "thrash": [{"file": fp, "sessions": data["thrash"][fp], "max_edits": data["thrash_max"].get(fp, 0)} for fp in data["thrash"]],
+                "permission": [{"label": k, "events": v} for k, v in data["perm"].most_common()],
+                "context_pressure": [{"day": d, "compactions": data["compact_day"][d]} for d in sorted(data["compact_day"], reverse=True)],
+                "skill_precision": [{"skill": s, "fires": data["skills"][s], "inert": data["skill_err"][s]} for s in data["skills"] if data["skill_err"].get(s, 0)],
             },
         }
         print(json.dumps(out, indent=2))
@@ -286,11 +368,22 @@ def emit(args, data):
         print()
         print_table(["subagent_type", "count", "share"], subagent_type_rows(data["sub_type"], args.top))
         print()
+    if want in ("friction", "report"):
+        print(f"# friction  ({data['files']} transcripts)")
+        print(f"  thrash (file edited >= {THRASH_MIN}x in one session):")
+        print_table(["file", "sessions", "max-edits"], thrash_rows(data["thrash"], data["thrash_max"], args.top))
+        print("  permission-friction (prompts/denials by tool):")
+        print_table(["tool/cmd", "events"], perm_rows(data["perm"], args.top))
+        print("  context-pressure (compactions per day):")
+        print_table(["day", "compactions"], compact_rows(data["compact_day"], args.top))
+        print("  skill-precision (skills that mis-fired):")
+        print_table(["skill", "fires", "inert", "inert%"], skill_precision_rows(data["skills"], data["skill_err"], args.top))
+        print()
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="cc-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")

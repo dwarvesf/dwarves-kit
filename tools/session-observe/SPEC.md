@@ -19,12 +19,12 @@ This is sub-goal 01 of the `cc-elevation` mega-goal (self-observability axis). S
 ## CLI contract
 
 ```
-cc-observe <skills|tools|hooks|subagents|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--json]
+cc-observe <skills|tools|hooks|subagents|friction|report> [--file F | --project=SLUG] [--root DIR] [--days N] [--top N] [--json]
 ```
 
 | Arg | Default | Meaning |
 |---|---|---|
-| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, or `report` (all of them) |
+| `<cmd>` | required | `skills`, `tools`, `hooks`, `subagents`, `friction`, or `report` (all of them) |
 | `--file F` | none | parse a single transcript (used by tests) |
 | `--project=SLUG` | none | one project dir under the root. Slugs start with `-` (cwd-derived), so the **equals form is required**. |
 | `--root DIR` | `~/.claude/projects` | transcripts root (all projects) |
@@ -44,6 +44,7 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
    - `tool_result` blocks with `is_error` -> attribute the error to the tool/skill via `tool_use_id`.
    - `hookInfos[]` -> collect `durationMs` per normalized hook label; `hookErrors` -> counted.
    - `tool_use` named `Agent`/`Task` in a non-sidechain entry -> count a subagent spawn by `timestamp` day and by `input.subagent_type`. A real user-message turn (text content, non-sidechain) -> count a prompt for that day (the `per100` denominator). Sidechain entries are the subagents' own runs, excluded from both.
+   - friction: `Edit`/`Write`/`MultiEdit` -> per-session edit count by `file_path`, folded into `thrash` at end of each transcript (`>= THRASH_MIN`); `tool_result` content matching a `PERM_MARKERS` string -> a permission-friction event attributed to the tool via `tool_use_id` (Bash labeled by command); `isCompactSummary` entry -> a compaction for that day; a Skill's errored `tool_result` -> a skill mis-fire (skill-precision).
 3. Emit the requested view(s) as aligned tables, or one JSON object with `--json`.
 
 **Hook labels**: script hooks collapse to their basename (`slop-cleaner.sh`); inline `echo` guard hooks key on a short command hash (`inline-echo:ab12cd34`); other commands use their first token. Known limitation: long-text inline/condition hooks (e.g. the `/goal` Stop-hook, whose command is the goal text) fragment by first word. Script hooks, the ones with actionable latency, label cleanly.
@@ -57,20 +58,24 @@ The intended recurring use is `cc-observe report --days 7 --json` (the weekly di
 
 ## Verification (acceptance criteria)
 
-Exercised by `tests/smoke.sh` against `tests/fixtures/sample.jsonl` (Skill, two Bash one errored, a Read, a system entry with a 500ms slow hook + a 12ms fast hook + one hook error, a text prompt turn, two main-session Agent spawns (Explore + general-purpose), and one sidechain Agent spawn):
+Exercised by `tests/smoke.sh` against `tests/fixtures/sample.jsonl` (Skill, three Bash two errored incl. a denied deploy, a Read, a system entry with a 500ms slow hook + a 12ms fast hook + one hook error, a text prompt turn, two main-session Agent spawns + one sidechain spawn, a thrice-edited file + a once-edited file, a permission-denied Bash, an errored Skill, a compaction entry):
 
 1. `skills` counts the Skill once.
-2. `tools` counts Bash twice with one error; Read once with zero.
+2. `tools` counts Bash 3x with two errors; Read once with zero.
 3. `hooks` flags the slow hook with max >= 500ms.
 4. `hooks` keeps the fast hook < 100ms (negative control: latency discriminates).
 5. `hooks` surfaces the hook-error count.
 6. `--json` emits valid JSON.
 7. missing `--file` exits 1.
-8. `report` prints all sections (skills, tools, hooks, subagents).
+8. `report` prints all sections (skills, tools, hooks, subagents, friction).
 9. `subagents` counts 2 spawns on the day, 1 prompt, per100=200.0.
 10. `subagents` excludes the sidechain spawn (negative control: total 2 not 3, Explore 1 not 2).
+11. `friction` thrash: the thrice-edited file shows sessions 1 / max-edits 3; the once-edited file is NOT flagged (negative control).
+12. `friction` permission: the denied Bash is attributed (`Bash:deploy` 1).
+13. `friction` context-pressure: 1 compaction on the day.
+14. `friction` skill-precision: the errored skill shows 100% inert; a clean skill is NOT in the precision table (negative control).
 
-Plus a real-data run (`report --days 2`, 225 transcripts, 0.47s) in `docs/proof-of-done.md`.
+Plus a real-data run (`friction --days 7`) in `docs/proof-of-done.md`.
 
 ## Dependencies
 
