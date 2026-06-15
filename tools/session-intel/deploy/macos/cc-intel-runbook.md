@@ -40,13 +40,17 @@
 
 ## vps-mon bridge (SG-05)
 
-After writing the digest, the launcher best-effort calls `cc-vps-report` to POST headline
-metrics to the personal `mon-ingest` Worker (`/v1/snapshot`, HMAC-signed) and ping the
-`cc-intel-weekly` heartbeat, which surfaces digest liveness on the public `/status` page
-(`/status/ai-substrate`). A stopped digest (no ping in 7d + 1d grace) flips the item to 🔴
-and fires `heartbeat-silent`; it is never silently green.
+After writing the digest, the launcher best-effort calls `cc-vps-report` heartbeat-only
+(no `--snapshot`) to ping the `cc-intel-weekly` heartbeat, which surfaces digest liveness
+on the public `/status` page (`/status/ai-substrate`). A stopped digest (no ping in 7d +
+1d grace) flips the item to 🔴 and fires `heartbeat-silent`; it is never silently green.
+The `/v1/snapshot` metrics POST is intentionally OFF in the weekly path: it registers a
+vps-mon `hosts` row subject to the hardcoded 600s `agent-silent` rule, which false-fires
+for a weekly pusher (incident 2026-06-15). Use `cc-vps-report --snapshot` only manually,
+and only once vps-mon exempts low-frequency hosts.
 
-- Secrets resolve at runtime from 1Password: `op://Toolkit/cc-vps-report/{credential,hb_token}`.
+- Secret resolves at runtime from 1Password: `op://Toolkit/cc-vps-report/hb_token` (the
+  heartbeat-only path needs just the HB token; `credential` is read only by `--snapshot`).
   The bridge no-ops (non-fatal) if `op` is unavailable or the symlink is missing, so a
   vps-mon outage never breaks the weekly digest.
 - The Worker side needs the HMAC secret installed once:
