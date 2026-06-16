@@ -8,9 +8,12 @@
 # item between `queued` and `speccing`; the cross-session claim itself lives in
 # lib/goal-registry.sh, this only records the board state).
 #
-# Rows are `| ID-NNN | ... | <status...> |` in the Active queue table; the status cell
+# Rows are `| <ID> | ... | <status...> |` in the Active queue table, where <ID> is a
+# prefixed id like ID-NNN (ops-toolkit), DS-NNN, DF-NNN, BK-NNN, FO-NNN. The status cell
 # may carry prose after the keyword (e.g. "queued [re-eval ...]"); only the LEADING
-# keyword is the state. Section-header rows (no ID-NNN) are ignored.
+# keyword is the state. Section-header rows (no id cell) are ignored.
+#
+# BACKLOG_ID_RE overrides the id pattern (default `[A-Z]+-[0-9]+`, matches any prefix).
 #
 # Usage:
 #   backlog.sh board               -> kanban columns (state -> ID + title), exit 0
@@ -26,10 +29,11 @@ BACKLOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKLOG_FILE="${BACKLOG_FILE:-$BACKLOG_DIR/../_meta/BACKLOG.md}"
 
 STATES="queued claimed speccing validated executing shipped parked dropped"
+BACKLOG_ID_RE="${BACKLOG_ID_RE:-[A-Z]+-[0-9]+}"
 
 _rows() {  # emit: ID<TAB>title<TAB>leading-status
-  awk -F'|' '
-    /^\| *ID-[0-9]+ *\|/ {
+  awk -F'|' -v idre="$BACKLOG_ID_RE" '
+    $0 ~ ("^\\| *" idre " *\\|") {
       id=$2;    gsub(/^[ \t]+|[ \t]+$/, "", id)
       title=$3; gsub(/^[ \t]+|[ \t]+$/, "", title); gsub(/\*\*/, "", title)
       status=$(NF-1); gsub(/^[ \t]+|[ \t]+$/, "", status)
