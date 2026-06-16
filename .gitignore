@@ -6,6 +6,9 @@ node_modules/
 .env
 .env.local
 
+# Tool caches (serena local index; the kit uses codebase-memory, not serena)
+.serena/
+
 # Local Claude Code user state and per-machine settings
 .claude/
 
