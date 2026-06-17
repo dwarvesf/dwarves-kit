@@ -139,7 +139,13 @@ if [ -f "package.json" ]; then
 fi
 
 # L3.5 context: codebase-memory-mcp integration
-SRC_COUNT=$(find . -name "*.ts" -o -name "*.go" -o -name "*.py" -o -name "*.rs" 2>/dev/null | { grep -v node_modules || true; } | wc -l | tr -d ' ')
+# Only need to know whether there are >50 source files, so prune the heavy dirs
+# DURING traversal (not grep -v after, which still descends into them and cost
+# ~4s cold on a big repo) and stop at 51. The `|| true` neutralizes pipefail:
+# head closing the pipe early sends find a SIGPIPE (141) that set -e would abort on.
+SRC_COUNT=$(find . \( -name node_modules -o -name .git -o -name .venv -o -name .cache \) -prune -o \
+  \( -name "*.ts" -o -name "*.go" -o -name "*.py" -o -name "*.rs" \) -print 2>/dev/null \
+  | head -51 | wc -l | tr -d ' ' || true)
 if [ "$SRC_COUNT" -gt 50 ]; then
   # Check for codebase-memory-mcp index (v2 uses ~/.cache, older uses local dir)
   CBM_FOUND=false
