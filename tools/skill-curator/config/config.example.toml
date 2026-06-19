@@ -1,0 +1,19 @@
+# cc-self-improve config. Copy to ~/.claude/cc-self-improve/config.toml (install.sh does this).
+# Every value here is also overridable by the matching CC_SI_* env var (env wins), which is how
+# the tests inject fixtures. None of these are secrets.
+
+# --- reviewer (Phase A) ---
+enabled        = true            # master switch for the skill-review hook
+model          = "haiku"         # reviewer model (claude -p --model); cheap by default
+max_turns      = 2               # claude -p --max-turns; the reviewer is a single-shot pure function
+transcript_k   = 40              # last K user+assistant turns fed to the reviewer
+# The reviewer ALWAYS runs --allowedTools "" (no filesystem write); not configurable (SPEC-103 DEC-008).
+
+# --- paths (defaults; override via CC_SI_* env for tests) ---
+# state_dir     = "~/.claude/cc-self-improve"     # ledger.jsonl + state/reviewer.lock + config.toml
+# proposals_dir = "~/.claude/skill-proposals"     # staging gate (NOT ~/.claude/skills/)
+# skills_dir    = "~/.claude/skills"              # curator input (Phase C)
+
+# --- curator (Phase C; not active until installed) ---
+# curator_enabled = false
+# curator_model   = "haiku"

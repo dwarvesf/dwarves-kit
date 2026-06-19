@@ -1,0 +1,10 @@
+# cc-self-improve runtime state is NEVER tracked. Drafts can echo transcript content
+# (incl. accidentally-printed secrets); the ledger holds session ids + cost. All local-only.
+ledger.jsonl
+*.log
+state/
+config.toml          # the rendered config; only config.example.toml is tracked
+
+# Never track staged skill proposals if they ever land under the tool dir (they live in
+# ~/.claude/skill-proposals/ by default, but guard against a misconfigured CC_SI_PROPOSALS_DIR).
+skill-proposals/
