@@ -34,24 +34,35 @@ DEC-008). Promotion into the live library is a separate, human-run step.
 
 ## Status
 
-- **Phase A (shipped, this sub-goal): the skill-draft reviewer.** Transcript parser, the no-write
-  reviewer, the trusted staging writer + cost ledger, `cc-improve status`.
-- Phase B (next): `/skill-review` promote gate + SessionStart surfacing + install.sh + the full
-  async/reentrancy/staging-gate test suite.
-- Phase C (after): `cc-improve curate` consolidation + archive (never delete) + optional weekly
+- **Phase A (shipped): the skill-draft reviewer.** Transcript parser, the no-write reviewer, the
+  trusted staging writer + cost ledger, `cc-improve status`.
+- **Phase B (shipped): the gate + visibility + install.** `/skill-review` promote gate
+  (`bin/skill-review`), SessionStart surfacing, idempotent `deploy/install.sh` / `uninstall.sh`,
+  and the full staging-gate / async / reentrancy test suite.
+- Phase C (next): `cc-improve curate` consolidation + archive (never delete) + optional weekly
   propose-only launchd.
 
-## Install (documented; not auto-wired)
+## Install
 
-Phase A ships the reviewer; the live hook wiring lands with `deploy/install.sh` in Phase B. To try
-it now, add this entry (marked async) to the `PreCompact` and `SessionEnd` arrays in
-`~/.claude/settings.json`, pointing at `hooks/skill-review.sh`:
-
-```json
-{ "type": "command", "command": "/abs/path/tools/cc-self-improve/hooks/skill-review.sh", "async": true }
+```bash
+bash deploy/install.sh        # idempotent: wires the hooks (async) into ~/.claude/settings.json, backs it up first
 ```
 
-Then review `~/.claude/skill-proposals/` and promote by hand (Phase B adds `/skill-review`).
+This adds the skill-review reviewer on PreCompact + SessionEnd and the surfacing hook on
+SessionStart (all `"async": true`), seeds `~/.claude/cc-self-improve/config.toml`, and is safe to
+re-run (no duplicate entries). `deploy/uninstall.sh` removes only this tool's entries (state and
+staged drafts are kept). Tune via the config; `CC_SI_SETTINGS` lets you target a non-default
+settings.json.
+
+After a session stages drafts, review them:
+
+```bash
+skill-review list                 # what the loop proposed
+skill-review promote <slug>       # vet (writing-skills) then move into ~/.claude/skills/
+skill-review reject <slug>        # move to _rejected/ (recoverable)
+```
+
+Or run `/skill-review` (the skill) for the guided, vet-each-draft flow.
 
 ## Knobs
 
@@ -65,13 +76,25 @@ also overridable by `CC_SI_<KEY>` (env wins; tests use this).
   7-day loop spend and the staged-draft count. Dial back by raising `transcript_k` cost via a bigger
   `model` only if needed, or disable via `enabled = false`.
 
+- `auto_promote` (default OFF): closer Hermes parity; auto-passes only the lowest-risk class (a
+  `references/` add to an existing umbrella) via `skill-review auto`. Everything else stays manual.
+
 ## Test
 
 ```bash
+# Phase A
 bash tests/test-transcript-parse.sh   # parser locked against a committed sample (6)
 bash tests/test-reviewer.sh           # wrapper: stage / null / secret-drop / unavailable / lock (10)
 bash tests/test-hook-async.sh         # hook returns fast; detached reviewer; reentrancy; disabled (4)
+# Phase B
+bash tests/test-staging-gate.sh       # draft stays in proposals/; traversal slug contained; no model write (5)
+bash tests/test-promote.sh            # promote/reject/force-backup/secret-refuse/auto-eligibility (9)
+bash tests/test-surface.sh            # SessionStart counts + JSON; disabled control (4)
+bash tests/test-async.sh              # sleep-30 reviewer never blocks the hook (2)
+bash tests/test-reentrancy.sh         # a reviewer cannot trigger a reviewer (3)
+bash tests/test-install.sh            # idempotent install + surgical uninstall, temp settings.json (6)
 ```
 
-All use a mock reviewer (`CC_SI_REVIEWER_CMD`); no live model. Proof + a recorded run:
+All use a mock reviewer (`CC_SI_REVIEWER_CMD`) / temp dirs; no live model, never the real
+settings.json. Proof + a recorded run:
 `docs/proof-of-done.md`.

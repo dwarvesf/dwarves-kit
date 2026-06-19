@@ -6,7 +6,7 @@ is built in three phases (cc-elevation-r4 sub-goals 02/03/04); each phase append
 | Phase / feature | Sub-goal | Status |
 |---|---|---|
 | **A , skill-draft reviewer** (parser + no-write reviewer + trusted staging + cost ledger) | 02 | DONE (below) |
-| B , promote gate + SessionStart surfacing + install + full async/reentrancy/staging-gate suite | 03 | pending |
+| **B , promote gate + SessionStart surfacing + install + full async/reentrancy/staging-gate suite** | 03 | DONE (below) |
 | C , skill-library curator (consolidate + archive, never delete) + weekly propose-only launchd | 04 | pending |
 
 ---
@@ -109,4 +109,114 @@ jq -n --arg tp tests/fixtures/sample-transcript.jsonl '{session_id:"x",transcrip
 jq -nc '{type:"result",total_cost_usd:0.001,result:({draft:{slug:"demo",name:"demo",description:"d",body:"---\nname: demo\n---\n# demo\n"},reason:"r"}|tojson)}' > $TMP/env.json
 CC_SI_REVIEWER_CMD="cat $TMP/env.json" bash lib/reviewer-run.sh $TMP/pay.json
 cat $TMP/p/demo/SKILL.md; cat $CC_SI_STATE_DIR/ledger.jsonl
+```
+
+---
+
+## Feature B: promote gate + surfacing + install (cc-elevation-r4 sub-goal 03)
+
+**Date:** 2026-06-19 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** SPEC-103 TASK-006..010
+
+Closes the human gate and makes the loop visible + installable. `/skill-review` (via `bin/skill-review`)
+is the ONLY writer of `~/.claude/skills/`; the background reviewer never is.
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| B1 | `skill-review promote` moves a draft into `~/.claude/skills/`; reject discards (to `_rejected/`, never rm) | TASK-007 |
+| B2 | promote refuses to overwrite a live skill without `--force`; `--force` backs up the old (never rm) | TASK-007 |
+| B3 | promote refuses a draft that still contains a secret | TASK-007 + secret guard |
+| B4 | promote/reject leave unrelated live skills untouched | TASK-007 |
+| B5 | the staging-by-path gate: a draft lands only under proposals/; a traversal slug cannot escape; model has no write | TASK-006 |
+| B6 | SessionStart surfacing shows "N memory, M skill drafts, $X/wk" | TASK-008 |
+| B7 | a `sleep 30` reviewer does not delay the hook return (fully async) | TASK-009 / first-class AC |
+| B8 | a reviewer cannot trigger a reviewer (no runaway recursion) | TASK-009 |
+| B9 | install is idempotent (twice = no dup), backs up settings.json, all entries `async:true` | TASK-010 |
+| B10 | uninstall removes ONLY this tool's entries; auto_promote knob default OFF, references-add-only | TASK-010 + goal |
+
+### Implementation
+
+| Piece | What | Where |
+|---|---|---|
+| Promote core | list / promote (refuse-overwrite, secret-refuse, force-backup) / reject (-> `_rejected/`) | `lib/promote.sh` |
+| Promote CLI | the only writer of `~/.claude/skills/` | `bin/skill-review` |
+| Promote skill | human slash-command; delegates the quality bar to `superpowers:writing-skills` | `skills/skill-review/SKILL.md` |
+| Surfacing | line = cc-harvest queued-memory count + draft count + 7-day spend | `lib/surface.sh` + `hooks/sessionstart-surface.sh` |
+| Install | idempotent jq read-merge-write (PreCompact+SessionEnd+SessionStart, async), backup-first, atomic | `deploy/install.sh` / `uninstall.sh` |
+| auto_promote | OFF by default; references-add-to-existing-umbrella only (never new skill / body edit) | `lib/promote.sh:auto_promote_eligible` |
+
+### Confirmation run-table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Promote gate (B1-B4,B10) | `bash tests/test-promote.sh` | `all 9 passed` | PASS |
+| Staging gate (B5) | `bash tests/test-staging-gate.sh` | `all 5 passed` | PASS |
+| Surfacing (B6) | `bash tests/test-surface.sh` | `all 4 passed` | PASS |
+| Fully async (B7) | `bash tests/test-async.sh` | `all 2 passed` | PASS |
+| Reentrancy (B8) | `bash tests/test-reentrancy.sh` | `all 3 passed` | PASS |
+| Install idempotent (B9,B10) | `bash tests/test-install.sh` | `all 6 passed` | PASS |
+| shellcheck | `shellcheck -S warning ...` | clean | PASS |
+
+### Run detail
+
+```
+$ for t in test-staging-gate test-promote test-surface test-async test-reentrancy test-install; do bash tests/$t.sh | tail -1; done
+test-staging-gate: all 5 passed
+test-promote: all 9 passed
+test-surface: all 4 passed
+test-async: all 2 passed
+test-reentrancy: all 3 passed
+test-install: all 6 passed
+
+$ bash tests/test-async.sh | sed -n '1,2p'
+[1] a slow (sleep 30) reviewer does not delay the hook return (<1.5s)
+  ok: hook returned in 0.12s while the reviewer still sleeps 30s
+```
+
+### Negative controls (Feature B)
+
+- **Promote is the only skills/ writer (B5)**: a draft with a path-traversal slug
+  (`../../../skills/evil`) is sanitized by `safe_slug` and lands contained under proposals/; nothing
+  appears under skills/. The reviewer source pins `--allowedTools ""` (model has no write at all).
+- **Reject never deletes (B1)**: reject MOVES the draft to `_rejected/` (asserted recoverable),
+  never `rm`. `--force` promote backs the displaced live skill up to `_replaced/` before replacing.
+- **Secret cannot be promoted (B3)**: a draft body carrying a synthetic `sk-ant-...` is refused
+  (exit 3, not moved). Without the scan it would promote.
+- **Fully async (B7)**: a `sleep 30` reviewer still returns the hook in ~0.12s; the reviewer only
+  launches (LAUNCHED marker), it is never awaited.
+- **No reviewer recursion (B8)**: a reviewer mock that re-invokes the hook increments its counter
+  exactly once , the nested hook no-ops because `CLAUDE_REVIEWING` is set for the model call.
+- **Install surgical (B9/B10)**: a pre-existing unrelated hook survives install + uninstall; a second
+  install adds zero duplicate entries; uninstall removes only `cc-self-improve` commands.
+
+### Reproduce (Feature B)
+
+```bash
+cd tools/cc-self-improve
+for t in test-promote test-staging-gate test-surface test-async test-reentrancy test-install; do bash tests/$t.sh; done
+# install dry-run against a throwaway settings.json (never the real one):
+TMP=$(mktemp -d); CC_SI_SETTINGS=$TMP/settings.json CC_SI_STATE_DIR=$TMP/state bash deploy/install.sh
+jq '.hooks | {PreCompact,SessionEnd,SessionStart}' $TMP/settings.json
+CC_SI_SETTINGS=$TMP/settings.json CC_SI_STATE_DIR=$TMP/state bash deploy/uninstall.sh
+```
+
+### Rollback (Feature B install touches a persistent file: ~/.claude/settings.json)
+
+`deploy/install.sh` is the only state-mutating step (it edits `settings.json`). It is fully
+reversible and tested:
+
+- **Rollback path 1 (surgical):** `deploy/uninstall.sh` removes ONLY this tool's hook entries,
+  leaving any other hooks intact (test-install B5). It is idempotent.
+- **Rollback path 2 (restore):** install backs the file up FIRST to `settings.json.bak-<ts>` before
+  writing (test-install B3); restore by copying that backup back over `settings.json`.
+- The write is atomic (jq to a temp file, validated, then `mv`); a jq failure leaves `settings.json`
+  unchanged. No partial writes.
+
+Recorded rollback run (against a throwaway settings.json, never the real one):
+
+```
+Command: CC_SI_SETTINGS=$T bash deploy/install.sh   # 3 cc-self-improve entries added
+Command: CC_SI_SETTINGS=$T bash deploy/uninstall.sh # entries removed, unrelated kept
+Exit: 0   (verified by tests/test-install.sh -> "test-install: all 6 passed")
 ```

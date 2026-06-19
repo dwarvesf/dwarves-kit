@@ -9,6 +9,15 @@ max_turns      = 2               # claude -p --max-turns; the reviewer is a sing
 transcript_k   = 40              # last K user+assistant turns fed to the reviewer
 # The reviewer ALWAYS runs --allowedTools "" (no filesystem write); not configurable (SPEC-103 DEC-008).
 
+# --- promote gate (Phase B) ---
+# Closer Hermes parity WITHOUT losing the default human gate. When true, `skill-review auto`
+# auto-promotes ONLY the lowest-risk class: a draft explicitly tagged `cc-si-kind: references-add`
+# that targets a `references/<topic>.md` under an umbrella that ALREADY EXISTS in skills/, and that
+# passes the secret scan. NEVER a new skill, NEVER a SKILL.md-body/trigger edit. Everything else
+# still stages for manual `/skill-review`. RISK: an auto-applied additive reference can still be
+# wrong; you only skip the human read for the safest class. Default OFF.
+auto_promote   = false
+
 # --- paths (defaults; override via CC_SI_* env for tests) ---
 # state_dir     = "~/.claude/cc-self-improve"     # ledger.jsonl + state/reviewer.lock + config.toml
 # proposals_dir = "~/.claude/skill-proposals"     # staging gate (NOT ~/.claude/skills/)
