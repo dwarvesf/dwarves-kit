@@ -3,10 +3,10 @@
 ## Stack
 - **Bash** for everything (hooks, reviewer wrapper, curator CLI). No build step. See SPEC-103 DEC-001.
 - **`claude -p`** (Claude Code headless) as the review/curate engine. Auth = the harness's own
-  (no API key in this tool). Flags used: `--bare --no-session-persistence --allowedTools Read,Write
-  --model haiku --max-turns 4 --output-format json`.
+  (no API key in this tool). Flags used: `--bare --no-session-persistence --allowedTools ""
+  --model haiku --max-turns 2 --output-format json` (the model has NO write tool; DEC-008 / ADR-0001).
 - **jq** for transcript JSONL parsing + ledger reads (already on both Mini and Air).
-- **flock** for the single-flight reviewer lock.
+- **atomic mkdir lock** for the single-flight reviewer lock (macOS has no `flock(1)`; see ADR-0004).
 - Optional **launchd** (Phase C weekly curator), BTM-friendly per repo CLAUDE.md.
 
 ## Conventions
@@ -24,14 +24,19 @@
 ## Key files (to be created)
 | Path | Purpose |
 |---|---|
-| `hooks/stop-reviewer.sh` | Stop hook: per-session counter, trigger, detached spawn |
+| `hooks/skill-review.sh` | PreCompact/SessionEnd hook: reentrancy + enabled gate, payload to tempfile, detached spawn, return fast |
 | `hooks/sessionstart-surface.sh` | SessionStart hook: emit `additionalContext` (staged counts + spend) |
-| `bin/cc-improve` | CLI: `curate`, `restore`, `status` (no `.sh`, BTM-friendly) |
-| `lib/reviewer-run.sh` | runs `claude -p`, parses cost → ledger, writes staging |
-| `lib/common.sh` | shared paths, config load, sentinel, lock helpers |
+| `bin/cc-improve` | CLI: `status`, `curate [--apply]`, `restore` (no `.sh`, BTM-friendly) |
+| `bin/skill-review` | CLI: `list`, `promote`, `reject`, `auto` (the human promote gate) |
+| `lib/reviewer-run.sh` | runs `claude -p`, two-layer parse, secret-drop, writes staging + cost ledger |
+| `lib/reviewer-spawn.sh` | thin detached wrapper the hook spawns: run reviewer-run, then rm the temp payload |
+| `lib/promote.sh` | the trusted promote core (the only writer of `~/.claude/skills/`) |
+| `lib/curate.sh` | the curator (inventory, plan, report, git-mv archive, restore) |
+| `lib/surface.sh` | build the SessionStart status line (read-only counts) |
+| `lib/common.sh` | shared paths, config load, sentinel, mkdir-lock helpers |
 | `lib/transcript.sh` | parse `transcript_path` JSONL → last K turns compact text |
-| `prompts/review-memory.md` | reviewer prompt (Phase A) |
-| `prompts/review-skill.md` | reviewer prompt (Phase B) |
+| `prompts/review-skill.md` | reviewer prompt (Phase A) |
+| `prompts/curator.md` | curator prompt (Phase C) |
 | `prompts/curator.md` | curator prompt (Phase C) |
 | `deploy/install.sh` / `uninstall.sh` | idempotent settings.json merge + dirs + config |
 | `deploy/macos/mini.cc-curator.plist` | optional weekly curator (Phase C) |

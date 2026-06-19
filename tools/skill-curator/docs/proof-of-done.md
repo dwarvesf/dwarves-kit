@@ -7,7 +7,7 @@ is built in three phases (cc-elevation-r4 sub-goals 02/03/04); each phase append
 |---|---|---|
 | **A , skill-draft reviewer** (parser + no-write reviewer + trusted staging + cost ledger) | 02 | DONE (below) |
 | **B , promote gate + SessionStart surfacing + install + full async/reentrancy/staging-gate suite** | 03 | DONE (below) |
-| C , skill-library curator (consolidate + archive, never delete) + weekly propose-only launchd | 04 | pending |
+| **C , skill-library curator** (consolidate + archive never delete) + weekly propose-only launchd + round close-out | 04 | DONE (below) |
 
 ---
 
@@ -220,3 +220,112 @@ Command: CC_SI_SETTINGS=$T bash deploy/install.sh   # 3 cc-self-improve entries 
 Command: CC_SI_SETTINGS=$T bash deploy/uninstall.sh # entries removed, unrelated kept
 Exit: 0   (verified by tests/test-install.sh -> "test-install: all 6 passed")
 ```
+
+---
+
+## Feature C: skill-library curator + round close-out (cc-elevation-r4 sub-goal 04)
+
+**Date:** 2026-06-19 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** SPEC-103 TASK-011..014 · **Merge: GATE (held for Han's click)**
+
+The explicitly-missing piece: a curator that consolidates the skill library into umbrellas and
+archives stale/superseded skills , **never deletes**. Propose-only by default; a weekly launchd runs
+report-only; the human runs `--apply`.
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| C1 | `cc-improve curate` reports clusters + archive candidates and changes NOTHING without `--apply` | TASK-011 |
+| C2 | The curator MODEL has no write (`--allowedTools ""`); the trusted wrapper does the git mv | DEC-008 |
+| C3 | `--apply` archives via `git mv` to `skills/_archive/` , NEVER `rm` (no `rm` in the code path) | TASK-012 |
+| C4 | `cc-improve restore <name>` round-trips an archived skill back | TASK-012 |
+| C5 | A pinned/protected skill is never archived (wrapper guard, not just prompt) | hermes-patterns C rule 2 |
+| C6 | Non-git `skills/` falls back to `mv` + manifest + warning (still no rm) | TASK-012 |
+| C7 | `absorbed_into` recorded in the archive manifest | hermes-patterns C archive-forwarding |
+| C8 | curator-unavailable / bad JSON -> nothing changed, exit 0 | safe-to-wire |
+| C9 | The weekly launchd is propose-only (no `--apply` in the plist), BTM-friendly | TASK-013 |
+
+### Implementation
+
+| Piece | What | Where |
+|---|---|---|
+| Inventory | name + description + first paragraph + mtime + pinned, over skills/ | `lib/curate.sh:curate_inventory` |
+| Curator (no write) | `claude -p --allowedTools ""` returns a JSON plan; seam `CC_SI_CURATOR_CMD` | `lib/curate.sh:run_curator` |
+| Report | propose-only banner + the model's narrative + proposed archives/clusters | `lib/curate.sh:curate_run` |
+| Archive | `git mv` to `_archive/` (non-git -> `mv`+manifest+warn); pinned-guard; never rm | `lib/curate.sh:_archive_one` |
+| Restore | `git mv` back (or `mv`) | `lib/curate.sh:curate_restore` |
+| Prompt | hermes-patterns C: umbrella-building, never-delete, pairwise-distinctness-wrong-bar, propose-only banner | `prompts/curator.md` |
+| Launchd | weekly propose-only; `ProgramArguments` = `bin/cc-improve curate` (no `--apply`, no `.sh`) | `deploy/macos/mini.cc-curator.plist` + runbook |
+
+### Confirmation run-table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Curator suite (C1-C8) | `bash tests/test-curate.sh` | `all 9 passed` | PASS |
+| Propose-only no-op (C1) | test-curate 2 | report+heartbeat written, no skill moved | PASS |
+| git-mv archive (C3) | test-curate 3 | deploy-gcp moved to _archive/, content intact | PASS |
+| no rm in path (C3) | test-curate 6 | no `rm` command in curate.sh | PASS |
+| pinned protected (C5) | test-curate 4 | keep-me not archived | PASS |
+| restore round-trip (C4) | test-curate 7 | skill moved back, content intact | PASS |
+| non-git fallback (C6) | test-curate 8 | mv-archived + manifest | PASS |
+| absorbed_into (C7) | test-curate 5 | manifest records `absorbed_into=deploy-aws` | PASS |
+| unavailable-safe (C8) | test-curate 9 | exit 0, no change | PASS |
+| plist valid + propose-only (C9) | `plutil -lint`; grep plist | OK; no `--apply` | PASS |
+| shellcheck | `shellcheck -S warning ...` | clean | PASS |
+
+### Run detail
+
+```
+$ bash tests/test-curate.sh | tail -1
+test-curate: all 9 passed
+
+$ CC_SI_CURATOR_CMD="cat env.json" cc-improve curate          # propose-only, fresh state dir
+curate: report -> .../curator-report-20260619-172755.md
+curate: propose-only , 1 archive candidate(s); nothing changed. Review ..., then --apply.
+$ cat .../curator.heartbeat
+2026-06-19T17:27:55+0700
+
+$ CC_SI_CURATOR_CMD="cat env.json" cc-improve curate --apply
+curate --apply: archived 1 skill(s) via git mv to _archive/ (none deleted)
+$ ls skills skills/_archive
+skills:        deploy-aws
+skills/_archive: deploy-gcp  manifest.tsv
+```
+
+### Negative controls (Feature C)
+
+- **Propose-only is real (C1)**: a curate with a non-empty archive plan moves NOTHING and writes a
+  report; skills/ is byte-for-byte unchanged. Only `--apply` mutates.
+- **Never deletes (C3)**: archive is `git mv` (content preserved under `_archive/`, recoverable); a
+  test greps the curate code path and finds no `rm` command. Restore round-trips it.
+- **Pinned is protected (C5)**: a plan that (mis)names a pinned skill does not archive it , the
+  wrapper refuses by frontmatter, independent of the prompt.
+- **Unavailable-safe (C8)**: a non-zero / bad-JSON curator leaves the library unchanged and exits 0.
+
+### Rollback / live deploy (gate; host-touching launchd)
+
+The curator code is read-only by default; the only persistent-state action is `--apply` (archive),
+which is reversible via `cc-improve restore <name>` (git mv back) , nothing is ever deleted. The
+weekly launchd + vps-mon onboarding are the operator's deploy-time steps at approval:
+
+```
+Command: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/mini.cc-curator.plist
+Command: launchctl print gui/$(id -u)/mini.cc-curator | grep -i program   # = .../bin/cc-improve
+Exit: 0
+Rollback: launchctl bootout gui/$(id -u)/mini.cc-curator ; rm the plist copy (the repo template stays)
+```
+
+- **vps-mon `monitored` confirmation: [UNAVAILABLE: requires live Mini deploy].** The job is
+  auto-discovered by the Mini launchd collector once installed; the curator emits
+  `~/.claude/cc-self-improve/curator.heartbeat` each run for the scheduled-job liveness signal. The
+  live `monitored` check is in `deploy/macos/cc-curator-runbook.md` for Han to run at deploy. Held
+  for his click (this is the `gate` sub-goal).
+
+### Reproduce (Feature C)
+
+```bash
+cd tools/cc-self-improve
+bash tests/test-curate.sh
+plutil -lint deploy/macos/mini.cc-curator.plist
+```
+

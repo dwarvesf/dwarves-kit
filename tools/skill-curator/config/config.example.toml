@@ -23,6 +23,8 @@ auto_promote   = false
 # proposals_dir = "~/.claude/skill-proposals"     # staging gate (NOT ~/.claude/skills/)
 # skills_dir    = "~/.claude/skills"              # curator input (Phase C)
 
-# --- curator (Phase C; not active until installed) ---
-# curator_enabled = false
-# curator_model   = "haiku"
+# --- curator (Phase C) ---
+# `cc-improve curate` is propose-only by default and runs on demand or via the optional weekly
+# `mini.cc-curator` launchd (report-only). It NEVER deletes (git mv to _archive/; restore brings
+# a skill back). `cc-improve curate --apply` is the only state-mutating path, never run unattended.
+# curator_model = "haiku"      # defaults to `model` above if unset

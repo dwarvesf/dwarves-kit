@@ -68,7 +68,7 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
 ### Architecture
 ```
  PreCompact / SessionEnd  ──▶  cc-self-improve skill-review hook (async)
-   (own hook entry, same events as cc-harvest)  │ nohup reviewer-run.sh & ; hook returns now
+   (own hook entry, same events as cc-harvest)  │ setsid/nohup bash lib/reviewer-spawn.sh <payload> & ; hook returns now
                                                 ▼
    reviewer-run.sh (TRUSTED bash):
      transcript last-K turns ──stdin──▶ CLAUDE_REVIEWING=1 claude -p --bare
@@ -111,7 +111,7 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
 ```
 ~/.claude/cc-self-improve/
   config.toml                  # rendered on install
-  state/reviewer.lock          # single-flight (flock)
+  state/reviewer.lock.d/       # single-flight (atomic mkdir lock; macOS has no flock(1), see ADR-0004)
   ledger.jsonl                 # suite cost ledger
 ~/.claude/skill-proposals/<slug>/SKILL.md   # the staging gate (gitignored / unsynced)
 ~/.claude/skills/_archive/<name>/           # curator archive (git-tracked if skills is a repo)
@@ -135,7 +135,7 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
       schema findings; does NOT import cc-harvest's Python (cross-language). AC: fixture test green
       against a committed sample transcript.
 - [ ] TASK-003: Skill-review hook + detached spawn. Own PreCompact/SessionEnd hook entry;
-      `nohup reviewer-run.sh &` with `--bare` + `CLAUDE_REVIEWING` + single-flight `flock`.
+      `setsid/nohup bash lib/reviewer-spawn.sh <payload> &` (the thin wrapper runs `reviewer-run.sh` then removes the temp payload) with `--bare` + `CLAUDE_REVIEWING` + single-flight via an atomic mkdir lock (ADR-0004; macOS has no `flock(1)`).
       AC: hook returns < 200 ms (measured); reviewer runs out-of-band; lock skips a concurrent fire.
 - [ ] TASK-004: Reviewer pure-function. `claude -p --allowedTools "" --model haiku --output-format
       json` reads the session summary on stdin and returns JSON `{draft|null, cost}`; the draft, when
@@ -196,8 +196,9 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
       curator + surfacing run automatically, background, non-blocking, propose-and-stage.
       (Suite-level Hermes parity = this + cc-harvest + the cc-harvest per-turn sibling goal; that
       parity is asserted at the mega-goal, not checked here.)
-- [ ] **Cost observable** (first-class #1): every reviewer/curate run logs `total_cost_usd`;
-      SessionStart surfaces 7-day loop spend; dial-back levers documented.
+- [ ] **Cost observable** (first-class #1): every **reviewer** run logs `total_cost_usd` to the
+      ledger (the curator writes a report + heartbeat, not a ledger row, so 7-day spend is
+      reviewer-only); SessionStart surfaces 7-day loop spend; dial-back levers documented.
 - [ ] **Fully async** (first-class #2): the skill-review hook spawns detached and returns
       immediately (`tests/test-async.sh`).
 - [ ] **Zero interface blocking** (first-class #3): negative control proves a slow reviewer never
@@ -217,7 +218,7 @@ Plus a recorded live run in `docs/proof-of-done.md`: a real session producing a 
 a ledger line, and `cc-improve curate` producing a report.
 
 ## Edge Cases
-1. **Reviewer pile-up.** Single-flight `flock`: a second trigger while one is in flight is skipped
+1. **Reviewer pile-up.** Single-flight via an atomic mkdir lock (ADR-0004): a second trigger while one is in flight is skipped
    (logged), bounding cost.
 2. **Malformed/empty `claude -p` JSON.** Wrapper logs and continues; no partial draft written.
 3. **`claude` not on PATH / auth expired / non-zero exit.** Wrapper exits 0 with a log line; no

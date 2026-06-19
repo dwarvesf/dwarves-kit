@@ -2,9 +2,11 @@
 
 Delta from SPEC-103 (TASK-001..005) + goal `02-skill-reviewer.md`. Only what the spec does NOT pin.
 
-## 2026-06-19, CONTEXT.md `--allowedTools Read,Write` is stale; DEC-008 wins
-- CONTEXT.md line 7 still lists `--allowedTools Read,Write` (pre-DEC-008). The reviewer runs
+## 2026-06-19, CONTEXT.md `--allowedTools Read,Write` was stale; DEC-008 wins
+- At build time CONTEXT.md still listed `--allowedTools Read,Write` (pre-DEC-008). The reviewer runs
   `--allowedTools ""` (no model write) per SPEC-103 DEC-008 + Interfaces invariant. Followed DEC-008.
+  (CONTEXT.md was corrected to `--allowedTools ""` in the 04 doc pass after a doc-verifier flagged it;
+  see ADR-0001.)
 
 ## 2026-06-19, wrapper-side secret scan (defense in depth beyond prompt + promote)
 - Spec puts the secret guard in the reviewer PROMPT + the promote checklist. With the model mocked

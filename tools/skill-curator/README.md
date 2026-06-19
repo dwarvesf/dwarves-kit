@@ -9,6 +9,10 @@ read-only, propose-and-stage, background, non-blocking.
 Master spec: `docs/specs/SPEC-103-cc-self-improve.md` (VALIDATED). Suite parity is asserted at the
 cc-elevation-r4 mega-goal, not here.
 
+> Daily use: [MANUAL.md](./MANUAL.md). Diagrams + trust boundary: [docs/architecture.md](./docs/architecture.md).
+> Incident recovery: [RUNBOOK.md](./RUNBOOK.md). Doc index: [SPEC.md](./SPEC.md). Why it is built this
+> way: [docs/decisions/](./docs/decisions/). Proof: [docs/proof-of-done.md](./docs/proof-of-done.md).
+
 ## The one idea: the model has no write
 
 ```
@@ -39,8 +43,13 @@ DEC-008). Promotion into the live library is a separate, human-run step.
 - **Phase B (shipped): the gate + visibility + install.** `/skill-review` promote gate
   (`bin/skill-review`), SessionStart surfacing, idempotent `deploy/install.sh` / `uninstall.sh`,
   and the full staging-gate / async / reentrancy test suite.
-- Phase C (next): `cc-improve curate` consolidation + archive (never delete) + optional weekly
-  propose-only launchd.
+- **Phase C (shipped): the curator.** `cc-improve curate` consolidates the library into umbrellas and
+  archives stale/superseded skills via `git mv` , **never deletes** (`cc-improve restore` brings one
+  back). Propose-only by default; an optional weekly `mini.cc-curator` launchd runs report-only.
+
+This completes the suite: **cc-harvest (memory) + cc-self-improve (skill draft + promote + curator)
++ unified surfacing = Hermes self-improvement-loop parity** (memory + skill, automatic, background,
+non-blocking, propose-and-stage).
 
 ## Install
 
@@ -63,6 +72,16 @@ skill-review reject <slug>        # move to _rejected/ (recoverable)
 ```
 
 Or run `/skill-review` (the skill) for the guided, vet-each-draft flow.
+
+Periodically consolidate the library (propose-only; nothing changes without `--apply`):
+
+```bash
+cc-improve curate                 # report: umbrella clusters + archive candidates (nothing changed)
+cc-improve curate --apply         # archive the proposed skills via git mv to _archive/ (never rm)
+cc-improve restore <name>         # bring an archived skill back
+```
+
+A weekly `mini.cc-curator` launchd (report-only) is available , see `deploy/macos/cc-curator-runbook.md`.
 
 ## Knobs
 
@@ -92,6 +111,7 @@ bash tests/test-promote.sh            # promote/reject/force-backup/secret-refus
 bash tests/test-surface.sh            # SessionStart counts + JSON; disabled control (4)
 bash tests/test-async.sh              # sleep-30 reviewer never blocks the hook (2)
 bash tests/test-reentrancy.sh         # a reviewer cannot trigger a reviewer (3)
+bash tests/test-curate.sh             # Phase C: curate propose-only / git-mv archive / restore / pinned-guard (9)
 bash tests/test-install.sh            # idempotent install + surgical uninstall, temp settings.json (6)
 ```
 
