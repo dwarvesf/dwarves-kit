@@ -379,3 +379,51 @@ discarded, never committed (it lived in `/tmp`).
 
 No new acceptance criteria for cc-observe: SG-06 changes no cc-observe behavior. This entry records
 that the eval's done-gate (a recorded eval ending in a written verdict) is satisfied.
+
+
+## ID-117 faithfulness (cc-token-reduction SG-02)
+
+**Type:** verify-and-close, not new code. ID-117 said "capture the metric deltas, do not adopt token-dashboard." This section proves cc-observe's subagent-attribution and cache-hit math are faithful to token-dashboard's formulas (`research/2026-06-15-claude-code-usage-metrics-and-tooling.md`). **Verdict: FAITHFUL, no drift, no code change.**
+
+**Date:** 2026-06-20 · **Host:** Hans-Air-M4 · **Mega-goal:** cc-token-reduction SG-02.
+
+### What was checked, against the code
+
+| Formula | token-dashboard reference | cc-observe implementation | Faithful? |
+|---|---|---|---|
+| **cache-hit** | `read / (read + create)` | `bin/cc-observe:524` , `100 * cr / (cr + cw)` where `cr=sum(cache_read)`, `cw=sum(cache_create)` | YES, byte-for-byte |
+| **subagent attribution: sidechain-aware** | spawn counted once, never double-counted in the subagent's own transcript | `bin/cc-observe:274` , `if name in ("Agent","Task") and not side and day` (gated on `not isSidechain`) | YES |
+| **subagent attribution: per-task denominator** | normalize by user-prompt turns | `bin/cc-observe:222-229` counts real user-text turns into `turns_day`; `subagent_day_rows:381` computes `per100 = 100 * spawns / turns` | YES |
+| **`report --json` emits the breakdown** | per-day + per-type + per-100 | `bin/cc-observe:452-455` , `subagents.by_day` (day, spawns, prompts) + `by_type` (subagent_type, count); per100 derives from spawns/prompts and renders in the human view | YES |
+
+### Confirmation run-table (live, 7-day window ending 2026-06-20)
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Subagent breakdown in JSON | `cc-observe report --days 7 --json` -> `.subagents` | `by_day` w/ spawns+prompts, `by_type` w/ counts | PASS (by_day: day/spawns/prompts; by_type general-purpose 83, reviewer 55, Explore 54) |
+| Cache-hit = read/(read+create) | hand-compute `100*cr/(cr+cw)` vs printed header | equal | PASS (15,067,439,959 / (15,067,439,959 + 622,965,779) = 96.0% = header `cache-hit 96%`) |
+| Sidechain-aware (neg. control) | `bash tests/smoke.sh` items 10-11, 22 | spawn counted once; sidechain excluded | PASS (total 2 not 3, Explore 1 not 2; archetype excludes sidechain) |
+| Cache-hit formula (fixture) | `bash tests/smoke.sh` item 26 | 90% = 900k/(900k+100k) | PASS |
+| Suite green | `bash tests/smoke.sh \| tail -1` | all passed | PASS (smoke: all 30 passed) |
+
+### Run detail
+
+```
+$ cc-observe report --days 7 --json | python3 -c "import sys,json;d=json.load(sys.stdin)['subagents'];print(d['by_day'][:2]);print(d['by_type'][:3])"
+[{'day': '2026-06-20', 'spawns': 5, 'prompts': 103}, {'day': '2026-06-19', 'spawns': 18, 'prompts': 5158}]
+[{'subagent_type': 'general-purpose', 'count': 83}, {'subagent_type': 'reviewer', 'count': 55}, {'subagent_type': 'Explore', 'count': 54}]
+
+$ cc-observe cost --days 7 --json | python3 -c "import sys,json;c=json.load(sys.stdin)['cost'];cr=c['cache_read'];cw=c['cache_create'];print(f'{100*cr/(cr+cw):.1f}%')"
+96.0%
+$ cc-observe cost --days 7 | head -1
+# cost  (est $33,126.46, cache-hit 96%, 5737 transcripts; Max-plan flat-rate, this is attribution not a bill)
+
+$ bash tests/smoke.sh | grep -E "sidechain|cache-hit|all .* passed"
+[11] subagents: sidechain spawn EXCLUDED (negative control: total 2 not 3, Explore 1 not 2)  -> ok
+[26] cost cache-hit ratio: 90% (900k read / 100k write) in header  -> ok
+smoke: all 30 passed
+```
+
+### Negative control
+
+Drift would surface as one of: (a) the printed cache-hit% diverging from a hand-computed `read/(read+create)` , it does not (96.0% both, live); (b) sidechain spawns double-counted , smoke item 11 proves exclusion (2 not 3); (c) the JSON missing the subagent breakdown , it is present (`by_day` + `by_type`). All three hold, so no code change was required; had any failed, the fix plus a new smoke assertion would ride this same PR.
