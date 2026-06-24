@@ -119,6 +119,11 @@ check() {
   fi
 
   local files f ok=1
+  # A committed screenshot/GIF embed counts as captured run-evidence too: visual/demo
+  # work proves "it actually ran" with a picture, not only a text run-table. The semantic
+  # marker (NEGATIVE CONTROL / rollback) is still required; this only widens the "it ran"
+  # half from text-output-only to {text-output OR screenshot OR GIF}.
+  local img_re='!\[[^]]*\]\([^)]*\.(png|gif|jpe?g|svg|webp)\)'
   files="$(_fresh_proof_files "$root" "$base")"
   # per-file (back-compat): a flat docs/verification/<slug>.md or a co-located
   # proof-of-done.md carries both markers in one file.
@@ -131,10 +136,10 @@ check() {
         # LAST-verdict-wins (review lens 2): the documented append shape retries after a
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
-        grep -qi 'NEGATIVE CONTROL' "$p" && grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" \
+        grep -qi 'NEGATIVE CONTROL' "$p" && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || grep -qiE "$img_re" "$p"; } \
           && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' && ok=0 && break
       else # stateful
-        grep -qiE 'rollback|\[UNAVAILABLE' "$p" && grep -qE 'Command:|Exit:' "$p" && ok=0 && break
+        grep -qiE 'rollback|\[UNAVAILABLE' "$p" && { grep -qE 'Command:|Exit:' "$p" || grep -qiE "$img_re" "$p"; } && ok=0 && break
       fi
     done <<< "$files"
   fi
@@ -157,12 +162,12 @@ check() {
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
         printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
-          && printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' \
+          && { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || printf '%s' "$content" | grep -qiE "$img_re"; } \
           && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' \
           && ok=0 && break
       else # stateful
         printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
-          && printf '%s' "$content" | grep -qE 'Command:|Exit:' \
+          && { printf '%s' "$content" | grep -qE 'Command:|Exit:' || printf '%s' "$content" | grep -qiE "$img_re"; } \
           && ok=0 && break
       fi
     done <<< "$groups"
@@ -174,8 +179,10 @@ check() {
     echo "BLOCKED: proof of done. This is a '$class' change; it cannot ship/merge without a matching proof-of-done entry in docs/verification/."
     if [ "$class" = "behavioral" ]; then
       echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
+      echo "        ('green run' = a text run-table (Command:/Exit:/Verdict: PASS) OR a committed screenshot/GIF embed for visual/demo work.)"
     else
       echo "  Need: a docs/verification/<slug>.md added by this branch with a recorded run AND a rollback note, or [UNAVAILABLE: reason] if no such flow exists here."
+      echo "        ('recorded run' = Command:/Exit: text OR a committed screenshot/GIF embed for visual/demo work.)"
     fi
     echo "  Type-specific shape (SPEC-044): run 'bash lib/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"

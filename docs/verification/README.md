@@ -32,8 +32,12 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
 
 "Done" is not a claim, it is a **proof of done**: a recorded artifact a skeptic can re-run.
 
-1. **Green, captured.** The check actually run, with the exact command, real exit code, and
-   output excerpt logged (not "tests pass" in prose).
+1. **Green, captured.** The check actually run, captured as evidence, not "tests pass" in prose.
+   The capture is EITHER a text run-table (the exact `Command:`, real `Exit:` code, and output
+   excerpt) OR, for visual/demo work (a UI, a rendered doc, a CLI demo), a committed **screenshot
+   or GIF** embedded in the proof (`![...](path.png|gif|...)`). The gate accepts either form , a
+   picture of the thing running counts as "it ran". Pick the form that fits the work-type; non-visual
+   logic still owes a run-table.
 2. **A negative control.** The same check shown to go RED when the work is reverted, so the
    green is not trivially green. A check that passes no matter what proves nothing.
 3. **Reproducible.** Re-running the logged `Command:` reproduces the verdict.
