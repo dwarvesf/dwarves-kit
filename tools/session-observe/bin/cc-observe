@@ -142,19 +142,31 @@ def blocks(entry):
 def hook_label(command):
     """Normalize a hook command string to a stable, mostly-readable label.
 
-    Script hooks collapse to their basename (foo.sh); inline `echo` guard hooks
-    are indistinguishable by name, so they key on a short hash of the command
-    (distinct echo hooks stay distinct rows); everything else uses its first
-    token's basename.
+    Script hooks collapse to their basename (foo.sh), but only when the script is
+    NAMED EARLY (within the first two whitespace tokens, i.e. it is the executable
+    being run, optionally after a runner like `bash`/`node`). A long re-injected
+    prompt such as a `/goal` Stop hook often MENTIONS a *.sh / *.py deep in its
+    prose; matching that would mislabel the goal as that file (and merge unrelated
+    goals onto one row), so the early-token guard keeps prose out of the script
+    branch.
+
+    Inline hooks have no stable first word: the `echo` guard hooks AND the long
+    re-injected `/goal`-style prompts would otherwise each scatter into many rows,
+    keyed by an arbitrary first word (Drive/Outcome:/Execute/...) or an incidentally
+    mentioned filename. Both key on a short hash of the WHOLE command instead, so
+    each UNIQUE inline hook collapses to a single stable `inline-echo:<hash>` row.
+    Everything else uses its first token's basename.
     """
     c = command.strip()
-    m = re.search(r"([\w.-]+\.(?:sh|py|js|ts|rb|bash))\b", c)
+    toks = c.split()
+    m = re.search(r"([\w.-]+\.(?:sh|py|js|ts|rb|bash))\b", " ".join(toks[:2]))
     if m:
         return m.group(1)
-    if c.startswith("echo"):
+    if c.startswith("echo") or len(c) > 120:
         return "inline-echo:" + hashlib.sha1(c.encode()).hexdigest()[:8]
-    tok = c.split()[0] if c.split() else "?"
-    return tok.rsplit("/", 1)[-1][:40] or "?"
+    if not toks:
+        return "?"
+    return toks[0].rsplit("/", 1)[-1][:40] or "?"
 
 
 def pctl(vals, p):

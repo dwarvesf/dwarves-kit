@@ -14,6 +14,7 @@ FIX="${DIR}/tests/fixtures/sample.jsonl"
 SEMOUT="${DIR}/tests/fixtures/semantic-llm-out.json"  # injected fake model response
 SFIX="${DIR}/tests/fixtures/session-sample.jsonl"  # clean session (no sidechain) for archetype/circadian
 LFIX="${DIR}/tests/fixtures/skill-latency-sample.jsonl"  # per-skill wall-time: tiny-frequent 3x50ms=150, rare-slow 1x100ms=100
+GFIX="${DIR}/tests/fixtures/goal-hook-sample.jsonl"  # /goal Stop hooks: alpha x3, beta x2 (both first-word "Drive"), gamma x2 (prose mentions build.sh), + one real script hook
 
 pass=0; fail=0
 ok() { echo "  ok: $*"; pass=$((pass+1)); }
@@ -143,6 +144,57 @@ if ! grep -q '# skill wall-time' <<<"$out"; then ok "wall-time table absent with
 echo "[35] skills --latency --json: skill_latency present, ranked by total_ms"
 jout="$("$CC" skills --latency --file "$LFIX" --json)"
 if echo "$jout" | python3 -c 'import json,sys; d=json.load(sys.stdin); sl=d["skill_latency"]; assert sl[0]["skill"]=="tiny-frequent" and sl[0]["total_ms"]==150 and sl[0]["fires"]==3, sl; assert sl[1]["skill"]=="rare-slow" and sl[1]["total_ms"]==100, sl'; then ok "json skill_latency ranked + correct totals"; else no "json skill_latency wrong: $jout"; fi
+
+echo "[36] hooks: the alpha /goal Stop hook (fired 3 turns) collapses to ONE hash-keyed row of count 3 (not N first-word rows)"
+gjson="$("$CC" hooks --file "$GFIX" --json)"
+if echo "$gjson" | python3 -c '
+import json,sys,hashlib
+d=json.load(sys.stdin)
+# recompute the inline-echo label for the alpha goal command straight from the fixture
+import re
+cmds=[]
+for line in open(sys.argv[1],encoding="utf-8"):
+    line=line.strip()
+    if not line: continue
+    e=json.loads(line)
+    for h in e.get("hookInfos") or []:
+        cmds.append(h["command"])
+alpha=cmds[0].strip()
+lab="inline-echo:"+hashlib.sha1(alpha.encode()).hexdigest()[:8]
+rows=[h for h in d["hooks"] if h["hook"]==lab]
+assert len(rows)==1, ("alpha goal not a single row: "+str(rows))
+assert rows[0]["count"]==3, ("alpha goal count != 3 (turns merged wrong): "+str(rows[0]))
+' "$GFIX"; then ok "alpha goal = one inline-echo row, count 3"; else no "alpha goal row wrong: $gjson"; fi
+
+echo "[37] hooks: each unique /goal collapses to its own row (3 distinct inline-echo rows, counts 3/2/2)"
+if echo "$gjson" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+ie=sorted(h["count"] for h in d["hooks"] if h["hook"].startswith("inline-echo:"))
+assert ie==[2,2,3], ("expected 3 inline-echo rows with counts [2,2,3], got "+str(ie))
+'; then ok "3 inline-echo rows, counts [2,2,3]"; else no "inline-echo rows wrong: $gjson"; fi
+
+echo "[38] hooks negative control: first-word 'Drive' merge bug gone (no row labelled exactly 'Drive')"
+if echo "$gjson" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert not any(h["hook"]=="Drive" for h in d["hooks"]), "a first-word Drive row survived (alpha+beta wrongly merged)"
+'; then ok "no first-word 'Drive' row (alpha/beta not merged)"; else no "Drive merge row present: $gjson"; fi
+
+echo "[39] hooks negative control: prose-mentioned filename not mislabelled (no phantom 'build.sh' row)"
+if echo "$gjson" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+assert not any(h["hook"]=="build.sh" for h in d["hooks"]), "gamma goal mislabelled as build.sh (regex matched prose, not the executable)"
+'; then ok "no phantom 'build.sh' row from gamma prose"; else no "build.sh phantom row present: $gjson"; fi
+
+echo "[40] hooks negative control: a REAL script hook still labels by basename (real-hook.sh, count 1)"
+if echo "$gjson" | python3 -c '
+import json,sys
+d=json.load(sys.stdin)
+rows=[h for h in d["hooks"] if h["hook"]=="real-hook.sh"]
+assert len(rows)==1 and rows[0]["count"]==1, ("real script hook label/count changed: "+str(rows))
+'; then ok "real-hook.sh unchanged (script-hook labelling preserved)"; else no "real script hook wrong: $gjson"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

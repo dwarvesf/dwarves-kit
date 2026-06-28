@@ -502,3 +502,78 @@ bash tests/smoke.sh                              # -> smoke: all 35 passed (incl
 bin/cc-observe skills --latency --top 15 --days 30   # per-skill total wall-time, ranked
 bin/cc-observe skills --latency --json --days 7      # additive skill_latency key
 ```
+
+
+## ID-229 collapse `/goal` Stop-hook rows via hash label
+
+**Feature:** a `/goal` Stop hook injects the long goal prose as its hook `command`. `hook_label()` keyed those by first word, so one feature scattered across many rows (Drive / Outcome: / Execute / Mega-goal: / ...), DISTINCT goals sharing a first word merged onto one "Drive" row, and the script-filename regex matched a `*.sh`/`*.py` mentioned deep in the prose, mislabelling goals as `build.sh` / `lib.sh` / `marked.js` / `lane-classify.sh`. Fix: match a script filename only in the first two whitespace tokens (the executable), and hash any long inline command into the existing `inline-echo:<hash>` scheme, so each UNIQUE inline hook collapses to one stable row. Only the `hooks` view changes; all other views are byte-for-byte unchanged.
+**Date:** 2026-06-28 · **Lane:** full · **Host:** Hans-Air-M4 · **Backlog:** ID-229 (polish part 1).
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| G1 | A `/goal` Stop hook fired across several turns collapses to ONE hash-keyed `inline-echo:<hash>` row, count == turns | ID-229 goal |
+| G2 | Each UNIQUE goal command gets its own stable row (distinct goals no longer merged by first word) | ID-229 "one stable hash per unique inline command" |
+| G3 | The first-word merge row (`Drive`) no longer exists (negative control) | ID-229 |
+| G4 | A filename mentioned in goal PROSE no longer creates a phantom script row (`build.sh`) (negative control) | ID-229 |
+| G5 | A REAL script hook (executable named early) still labels by basename, unchanged (negative control) | "keep other views byte-for-byte unchanged" |
+
+### Implementation
+
+| Piece | What | Where |
+|---|---|---|
+| Early-token script guard | regex matches `*.sh/.py/.js/.ts/.rb/.bash` only within `" ".join(toks[:2])`, so prose mentions are not matched | `bin/cc-observe` `hook_label()` |
+| Long-inline hash | `c.startswith("echo") or len(c) > 120` -> `inline-echo:<sha1[:8]>` (reuses the existing echo scheme) | `bin/cc-observe` `hook_label()` |
+| Fixture | alpha x3 + beta x2 (both first-word "Drive"), gamma x2 (prose mentions `build.sh`), + one real `bash /x/real-hook.sh` | `tests/fixtures/goal-hook-sample.jsonl` |
+| Tests | smoke 36-40: single-goal-one-row + per-unique-row + no-Drive + no-phantom-build.sh + real-hook-unchanged | `tests/smoke.sh` |
+
+### Confirmation run-table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Suite green | `bash tests/smoke.sh \| tail -1` | `smoke: all 40 passed` | PASS |
+| One goal -> one row (G1) | `cc-observe hooks --file goal-hook-sample.jsonl --json` | alpha = one `inline-echo:` row, count 3 | PASS (smoke 36) |
+| Per-unique row (G2) | same | 3 `inline-echo:` rows, counts `[2,2,3]` | PASS (smoke 37) |
+| No first-word merge (G3) | same | no row labelled `Drive` | PASS (smoke 38) |
+| No phantom prose-file (G4) | same | no row labelled `build.sh` | PASS (smoke 39) |
+| Real script hook intact (G5) | same | `real-hook.sh` present, count 1 | PASS (smoke 40) |
+| Other views unchanged | `cmp` old-vs-new `skills`/`tools`/`cost`/`subagents`/`friction`/`sessions`, real data | identical (only `hooks`/`report` change, in the hooks section) | PASS |
+| Real data | `cc-observe hooks --days 60` | goal rows render as `inline-echo:` w/ goal-text sample; script hooks unchanged | PASS |
+
+### Run detail
+
+```
+$ bash tools/cc-observe/tests/smoke.sh | tail -1
+smoke: all 40 passed
+
+# the goal fixture, OLD code (HEAD) vs NEW (branch):
+$ python3 HEAD:cc-observe hooks --file tests/fixtures/goal-hook-sample.jsonl --json   # OLD
+[('Drive', 5), ('build.sh', 2), ('real-hook.sh', 1)]
+        # alpha+beta WRONGLY merged onto Drive(5); gamma MISLABELLED build.sh
+
+$ tools/cc-observe/bin/cc-observe hooks --file tests/fixtures/goal-hook-sample.jsonl --json  # NEW
+[('inline-echo:00187976', 2), ('inline-echo:9ce9456c', 2), ('inline-echo:ca1ac1ac', 3), ('real-hook.sh', 1)]
+        # each unique goal = one stable row (alpha 3, beta 2, gamma 2); real-hook.sh unchanged
+
+# real data, 60-day window:
+OLD: 51 hook rows, incl. 13 phantom first-word/mislabelled goal rows (Drive, build.sh, lib.sh, ...)
+NEW: 109 hook rows, 94 stable inline-echo: goal rows (each unique goal once);
+     real script hooks intact (slop-cleaner.sh, secret-guard-stop.sh, node)
+```
+
+### Negative control
+
+The fixture is built so the OLD code provably fails the new assertions, proving they test the fix (not a tautology):
+- **First-word merge (G3)**: alpha + beta both start "Drive" -> OLD emits a single `Drive` row of count 5, conflating two unrelated goals' latencies. NEW emits two distinct rows (3 + 2). Smoke 38 asserts no `Drive` row survives.
+- **Prose-filename mislabel (G4)**: gamma's prose says "run build.sh" -> OLD's whole-command regex labels it `build.sh` (a phantom script row). NEW's first-two-token guard ignores the prose mention and hashes it. Smoke 39 asserts no `build.sh` row.
+- **Real-hook isolation (G5)**: `bash /x/real-hook.sh` names the executable in token 2 -> both OLD and NEW label it `real-hook.sh`. Smoke 40 asserts the script-hook path is untouched, so the fix did not over-reach into legitimate hooks. On real data, `cmp` of the `skills`/`tools`/`cost`/`subagents`/`friction`/`sessions` views (HEAD vs branch) is byte-identical; only the `hooks` view (and the hooks section inside `report`) changed.
+
+### Reproduce
+
+```bash
+cd tools/cc-observe
+bash tests/smoke.sh                                          # -> smoke: all 40 passed (incl. 36-40)
+bin/cc-observe hooks --file tests/fixtures/goal-hook-sample.jsonl --json   # 3 inline-echo rows + real-hook.sh
+bin/cc-observe hooks --days 30                               # real data: goal rows now stable inline-echo:<hash>
+```
