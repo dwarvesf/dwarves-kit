@@ -72,6 +72,39 @@ env CC_INTEL_DATE=2026-06-15 CC_INTEL_OBSERVE_CMD="false" CC_INTEL_SWEEP_CMD="fa
   python3 "$BIN" run --out "$OUT2" --ledger "$LED_CLEAN" --glossaries "$TMP/none" --transcripts "$TMP/tclean" --min 3 >/dev/null 2>&1
 if [[ "$(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")" -eq 2 ]]; then ok "both observe+sweep sections degraded (count 2)"; else no "degrade count != 2: $(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")"; fi
 
+# ID-226: benign idiom chain dropped, genuine non-benign chain kept
+TDB="$TMP/tbenign/p1"; mkdir -p "$TDB"
+{ for _ in 1 2 3; do bashev "git add ."; bashev "git commit -m wip"; bashev "git push origin"; done
+  for _ in 1 2 3; do bashev "make build"; bashev "make deploy"; bashev "curl localhost"; done; } > "$TDB/s.jsonl"
+
+echo "[7] repeat-detect filters benign idioms (ID-226) but keeps a genuine chain"
+out="$(run repeat --transcripts "$TMP/tbenign" --min 3 2>&1)"
+if ! grep -q 'git add . => git commit -m wip => git push origin' <<<"$out" \
+   && grep -q 'make build => make deploy => curl localhost' <<<"$out"; then
+  ok "benign dropped, genuine kept"; else no "benign filter: $out"; fi
+
+# ID-227: ranked top-N merge proposals with a truncation note.
+# 12 count-2 groups + 1 count-3 group ("Top Concept") -> 13 total, top-10 shown.
+LED_MANY="$TMP/ledger-many.md"
+{ echo "# led"
+  for i in $(seq 1 12); do
+    printf '| 2026-06-01 | Concept %02d | c | til | queued |\n' "$i"
+    printf '| 2026-06-02 | concept-%02d | c | til | queued |\n' "$i"
+  done
+  printf '| 2026-06-01 | Top Concept | c | til | queued |\n'
+  printf '| 2026-06-02 | top-concept | c | til | queued |\n'
+  printf '| 2026-06-03 | TOP CONCEPT | c | til | queued |\n'
+} > "$LED_MANY"
+
+echo "[8] synthesis ranks by match count, caps at top-10, notes truncation (ID-227)"
+out="$(run synthesis --ledger "$LED_MANY" --glossaries "$TMP/none" 2>&1)"
+shown="$(grep -c '^- merge candidate:' <<<"$out" || true)"
+first="$(grep '^- merge candidate:' <<<"$out" | head -1)"
+if [[ "$shown" -eq 10 ]] \
+   && grep -qi 'top concept' <<<"$first" \
+   && grep -q '3 more merge candidate' <<<"$out"; then
+  ok "ranked top-10 + truncation note"; else no "rank/top-N: shown=$shown first=$first :: $out"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"
