@@ -13,6 +13,7 @@ CS="${DIR}/bin/cc-semantic"                         # SG-04 LLM-derived signals
 FIX="${DIR}/tests/fixtures/sample.jsonl"
 SEMOUT="${DIR}/tests/fixtures/semantic-llm-out.json"  # injected fake model response
 SFIX="${DIR}/tests/fixtures/session-sample.jsonl"  # clean session (no sidechain) for archetype/circadian
+LFIX="${DIR}/tests/fixtures/skill-latency-sample.jsonl"  # per-skill wall-time: tiny-frequent 3x50ms=150, rare-slow 1x100ms=100
 
 pass=0; fail=0
 ok() { echo "  ok: $*"; pass=$((pass+1)); }
@@ -122,6 +123,26 @@ if grep -q 'no prompts' <<<"$out"; then ok "empty window handled"; else no "empt
 
 echo "[30] cc-semantic --json: valid JSON with status ok"
 if CC_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$DIR/tests/fixtures" --days 0 --json | python3 -m json.tool >/dev/null 2>&1; then ok "valid json"; else no "json invalid"; fi
+
+echo "[31] skills --latency: tiny-frequent total 150ms over 3 fires (max 50)"
+out="$("$CC" skills --latency --file "$LFIX")"
+if grep -Eq 'tiny-frequent[[:space:]]+3[[:space:]]+150[[:space:]]+50[[:space:]]+50[[:space:]]+50' <<<"$out"; then ok "tiny-frequent fires 3 / total 150 / max 50"; else no "skill wall-time tiny-frequent wrong: $out"; fi
+
+echo "[32] skills --latency: rare-slow total 100ms over 1 fire (max 100)"
+if grep -Eq 'rare-slow[[:space:]]+1[[:space:]]+100[[:space:]]+100[[:space:]]+100[[:space:]]+100' <<<"$out"; then ok "rare-slow fires 1 / total 100 / max 100"; else no "skill wall-time rare-slow wrong: $out"; fi
+
+echo "[33] skills --latency: ranked by TOTAL not max (tiny-frequent 150 above rare-slow 100, death-by-a-thousand-cuts)"
+tf="$(awk '/# skill wall-time/{f=1} f&&/tiny-frequent/{print NR; exit}' <<<"$out")"
+rs="$(awk '/# skill wall-time/{f=1} f&&/rare-slow/{print NR; exit}' <<<"$out")"
+if [[ -n "$tf" && -n "$rs" && "$tf" -lt "$rs" ]]; then ok "tiny-frequent (line $tf) ranked above rare-slow (line $rs)"; else no "sort-by-total wrong: tf=$tf rs=$rs : $out"; fi
+
+echo "[34] skills (no --latency) negative control: wall-time table NOT printed"
+out="$("$CC" skills --file "$LFIX")"
+if ! grep -q '# skill wall-time' <<<"$out"; then ok "wall-time table absent without --latency (existing view unchanged)"; else no "wall-time leaked into default skills view: $out"; fi
+
+echo "[35] skills --latency --json: skill_latency present, ranked by total_ms"
+jout="$("$CC" skills --latency --file "$LFIX" --json)"
+if echo "$jout" | python3 -c 'import json,sys; d=json.load(sys.stdin); sl=d["skill_latency"]; assert sl[0]["skill"]=="tiny-frequent" and sl[0]["total_ms"]==150 and sl[0]["fires"]==3, sl; assert sl[1]["skill"]=="rare-slow" and sl[1]["total_ms"]==100, sl'; then ok "json skill_latency ranked + correct totals"; else no "json skill_latency wrong: $jout"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi

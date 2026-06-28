@@ -427,3 +427,78 @@ smoke: all 30 passed
 ### Negative control
 
 Drift would surface as one of: (a) the printed cache-hit% diverging from a hand-computed `read/(read+create)` , it does not (96.0% both, live); (b) sidechain spawns double-counted , smoke item 11 proves exclusion (2 not 3); (c) the JSON missing the subagent breakdown , it is present (`by_day` + `by_type`). All three hold, so no code change was required; had any failed, the fix plus a new smoke assertion would ride this same PR.
+
+
+## ID-225 per-skill total wall-time view (`skills --latency`)
+
+**Feature:** surface death-by-a-thousand-cuts skill overhead , total wall-time per skill summed across every fire (a skill firing 100x at 50ms = 5s hidden, vs a one-off slow skill). New `--latency` flag on the `skills` view; existing views byte-for-byte unchanged.
+**Date:** 2026-06-28 · **Lane:** full · **Host:** Hans-Air-M4 · **Backlog:** ID-225.
+
+### Data-path verification (before any code)
+
+The transcript carries no `durationMs` for a Skill `tool_use` (confirmed by dumping the entry/block keys). So per-skill wall-time is derived honestly from the timestamp delta: `ts(tool_result) - ts(tool_use)`, matched by `tool_use_id`. Across all 7711 transcripts this yielded 449 skill use/result pairs with **0 negative deltas and 0 missing timestamps**, so the delta is well-defined. This measures skill-invocation overhead (loading the SKILL.md body into context), which is exactly the hidden-overhead signal ID-225 asked for.
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| L1 | `skills --latency` adds a per-skill table summing wall-time across every fire | ID-225 goal |
+| L2 | Ranked by TOTAL ms, not by max (so a frequent fast skill out-ranks a one-off slow one) | ID-225 "death by a thousand cuts" |
+| L3 | Wall-time per fire = `ts(tool_result) - ts(tool_use)`; no fabricated timings | verify-before-trust |
+| L4 | Existing `skills` / `report` views byte-for-byte unchanged (flag-gated) | "keep existing views unchanged" |
+| L5 | `--latency --json` emits an additive `skill_latency` key (existing keys untouched) | machine-readable parity |
+
+### Confirmation run-table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Suite green (L1) | `bash tests/smoke.sh \| tail -1` | `smoke: all 35 passed` | PASS |
+| Total summed (L1) | `cc-observe skills --latency --file skill-latency-sample.jsonl` | `tiny-frequent 3 150 50 50 50` | PASS (smoke 31) |
+| One-off slow (L1) | same | `rare-slow 1 100 100 100 100` | PASS (smoke 32) |
+| Ranked by total (L2) | same | tiny-frequent (150) listed above rare-slow (100) despite lower max | PASS (smoke 33) |
+| Existing view unchanged (L4) | `cmp` old-vs-new `skills` + `report` output, real data | identical | PASS |
+| Default view negative control (L4) | `cc-observe skills --file fixture` | no `# skill wall-time` table | PASS (smoke 34) |
+| JSON additive key (L5) | `cc-observe skills --latency --file fixture --json` | `skill_latency[0]=tiny-frequent/150`, `[1]=rare-slow/100` | PASS (smoke 35) |
+| Real data (L1/L2/L3) | `cc-observe skills --latency --top 8 --days 30` | per-skill total table, prompt-improver leads | PASS |
+
+### Run detail
+
+```
+$ bash tools/cc-observe/tests/smoke.sh | tail -1
+smoke: all 35 passed
+
+$ tools/cc-observe/bin/cc-observe skills --latency --top 8 --days 30
+# skill wall-time  (total ms summed per skill, ranked by total; 7711 transcripts)
+  skill                             fires  total_ms  p50ms  p95ms  maxms
+  --------------------------------  -----  --------  -----  -----  -----
+  prompt-improver                      81      3551     37     82    267
+  plan-for-mega-goal                   40      1958     34     68    434
+  wrap-session                         16      1567     39    261    787
+  kit:spec-validate                    29      1180     35     65    110
+  kit:spec                             20       833     40     60     64
+  superpowers:brainstorming            19       826     43     58     67
+  job-monitoring-onboarding             5       787     63    594    594
+  superpowers:systematic-debugging      4       668     50    556    556
+
+# existing views byte-for-byte unchanged (HEAD vs branch, real data):
+$ cmp <(python3 HEAD:cc-observe skills --top 5 --days 7) <(cc-observe skills --top 5 --days 7)
+IDENTICAL: default skills view byte-for-byte unchanged
+IDENTICAL: report view unchanged
+```
+
+The real run produced the intended finding: `prompt-improver` fires 81 times at a ~37ms median but sums to 3.55s total , the death-by-a-thousand-cuts pattern the raw `skills` count (which would also rank it #1, but as a bare count) and the per-fire view both fail to quantify in wall-time. By per-fire max, `wrap-session` (787ms) would look like the worst offender; by TOTAL it sits third behind two higher-frequency skills, which is the ranking ID-225 wanted.
+
+### Negative control
+
+Two controls prove the total is real and the sort is by total, not incidental:
+- **Sort-by-total, not max** (fixture `skill-latency-sample.jsonl`): `tiny-frequent` fires 3x50ms (total 150, max 50) and `rare-slow` fires 1x100ms (total 100, max 100). The view ranks `tiny-frequent` ABOVE `rare-slow` (smoke 33). If it sorted by max (like `hooks`), the order would flip , so this asserts the death-by-a-thousand-cuts ranking specifically.
+- **Existing-view isolation**: without `--latency`, the `skills` view emits no wall-time table (smoke 34), and a `cmp` of the full `skills` and `report` output (HEAD vs branch, real data) is byte-identical. If the new collection had leaked into the shared tallies, the diff would be non-empty.
+
+### Reproduce
+
+```bash
+cd tools/cc-observe
+bash tests/smoke.sh                              # -> smoke: all 35 passed (incl. 31-35)
+bin/cc-observe skills --latency --top 15 --days 30   # per-skill total wall-time, ranked
+bin/cc-observe skills --latency --json --days 7      # additive skill_latency key
+```

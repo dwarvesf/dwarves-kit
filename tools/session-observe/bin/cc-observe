@@ -3,6 +3,7 @@
 
 Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
   skills    - which Skills fired, how often, with what error rate
+              (--latency adds a per-skill total wall-time table, ranked by summed ms)
   tools     - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
   hooks     - per-hook execution latency (count/p50/p95/max) + hook errors
   subagents - subagent (Agent/Task) spawns per day + by type, normalized per prompt
@@ -170,6 +171,8 @@ def collect(args):
     tool_n, tool_err = Counter(), Counter()
     skill_n, skill_err = Counter(), Counter()
     id_tool, id_skill = {}, {}  # tool_use_id -> name (a tool_result references it)
+    id_skill_ts = {}            # tool_use_id -> Skill tool_use timestamp (for wall-time)
+    skill_durs = defaultdict(list)  # skill -> [wall-time ms], one per fire (ts(result)-ts(use))
     hook_durs = defaultdict(list)
     hook_sample = {}
     hook_errors = 0
@@ -271,6 +274,8 @@ def collect(args):
                         skill_n[sk] += 1
                         if tid:
                             id_skill[tid] = sk
+                            if ts:
+                                id_skill_ts[tid] = ts
                     if name in ("Agent", "Task") and not side and day:
                         st = (b.get("input") or {}).get("subagent_type") or "(default)"
                         sub_day[day] += 1
@@ -289,6 +294,16 @@ def collect(args):
                             tool_err[id_tool[tid]] += 1
                         if tid in id_skill:
                             skill_err[id_skill[tid]] += 1
+                    # per-skill wall-time: ts(tool_result) - ts(tool_use). The transcript
+                    # carries no durationMs for a Skill, so the timestamp delta is the only
+                    # honest source. Summed across fires, this surfaces death-by-a-thousand-
+                    # cuts overhead a raw count hides (a 50ms skill firing 100x = 5s hidden).
+                    if tid in id_skill and tid in id_skill_ts and ts:
+                        a, b2 = parse_ts(id_skill_ts[tid]), parse_ts(ts)
+                        if a and b2:
+                            d = (b2 - a).total_seconds() * 1000.0
+                            if d >= 0:
+                                skill_durs[id_skill[tid]].append(d)
                     # permission friction: the prompt/denial rides in the result content.
                     content = b.get("content")
                     ctext = content if isinstance(content, str) else (json.dumps(content) if content is not None else "")
@@ -318,6 +333,7 @@ def collect(args):
         "tool_err": tool_err,
         "skills": skill_n,
         "skill_err": skill_err,
+        "skill_durs": skill_durs,
         "hook_durs": hook_durs,
         "hook_sample": hook_sample,
         "hook_errors": hook_errors,
@@ -369,6 +385,23 @@ def hook_rows(durs, sample, top):
         ranked = ranked[:top]
     for lab, vals in ranked:
         rows.append([lab, len(vals), pctl(vals, 50), pctl(vals, 95), max(vals) if vals else 0, sample.get(lab, "")])
+    return rows
+
+
+def skill_latency_rows(skill_durs, top):
+    """Per-skill total wall-time (ms), summed across every fire, sorted by total desc.
+
+    Mirrors hook_rows (count/p50/p95/max) but ranks by TOTAL not max: a fast skill
+    firing many times can out-cost a one-off slow skill. That total is the column
+    the raw `skills` view (sorted by count) and the hooks view (sorted by max) both
+    hide. Duration per fire = ts(tool_result) - ts(tool_use)."""
+    ranked = sorted(skill_durs, key=lambda s: sum(skill_durs[s]), reverse=True)
+    if top:
+        ranked = ranked[:top]
+    rows = []
+    for s in ranked:
+        v = skill_durs[s]
+        rows.append([s, len(v), int(round(sum(v))), pctl(v, 50), pctl(v, 95), int(round(max(v))) if v else 0])
     return rows
 
 
@@ -446,6 +479,7 @@ def emit(args, data):
         out = {
             "files": data["files"],
             "skills": [{"skill": k, "count": v, "errors": data["skill_err"].get(k, 0)} for k, v in data["skills"].most_common()],
+            "skill_latency": [{"skill": r[0], "fires": r[1], "total_ms": r[2], "p50_ms": r[3], "p95_ms": r[4], "max_ms": r[5]} for r in skill_latency_rows(data["skill_durs"], 0)],
             "tools": [{"tool": k, "count": v, "errors": data["tool_err"].get(k, 0)} for k, v in data["tools"].most_common()],
             "hooks": [{"hook": lab, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for lab, v in data["hook_durs"].items()],
             "hook_errors": data["hook_errors"],
@@ -480,6 +514,10 @@ def emit(args, data):
         print(f"# skills  ({data['files']} transcripts)")
         print_table(["skill", "count", "errors", "rate"], usage_rows(data["skills"], data["skill_err"], args.top))
         print()
+        if args.latency:
+            print(f"# skill wall-time  (total ms summed per skill, ranked by total; {data['files']} transcripts)")
+            print_table(["skill", "fires", "total_ms", "p50ms", "p95ms", "maxms"], skill_latency_rows(data["skill_durs"], args.top))
+            print()
     if want in ("tools", "report"):
         print(f"# tools  ({data['files']} transcripts)")
         print_table(["tool", "count", "errors", "rate"], usage_rows(data["tools"], data["tool_err"], args.top))
@@ -536,6 +574,7 @@ def main(argv=None):
     p.add_argument("--root", help=f"transcripts root (default {DEFAULT_ROOT})")
     p.add_argument("--days", type=int, default=0, help="only files modified within N days (0 = all)")
     p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all)")
+    p.add_argument("--latency", action="store_true", help="(skills) add a per-skill total wall-time table, ranked by summed ms")
     p.add_argument("--json", action="store_true", help="machine-readable output (for vps-mon ingest)")
     args = p.parse_args(argv)
 
