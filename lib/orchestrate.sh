@@ -29,6 +29,11 @@ CLAUDE_CMD="${CLAUDE_CMD:-claude}"
 # so the mock's prompt stays the last arg.
 CLAUDE_FLAGS="${CLAUDE_FLAGS:---dangerously-skip-permissions}"
 
+# Hot-handoff size cap (SPEC-087 Mechanism B, two-tier). The HOT HANDOFF.md is injected in full,
+# so it must stay small or it recreates the marathon. Over the cap -> inject head + a notice and
+# point at the file. The WARM DECISIONS.md ledger is never injected in full (pointer only).
+HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
+
 _say() { printf '%s\n' "$*"; }
 
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
@@ -65,10 +70,27 @@ _build_prompt() {
     printf '\nGOAL FILE (%s, the contract for this sub-goal):\n' "$(basename "$gf")"
     cat "$gf"
   fi
+  # Two-tier feed-forward (SPEC-087 Mechanism B):
+  #   HOT  HANDOFF.md  -- overwritten each transition; injected in FULL but capped. Carries the
+  #                      next action + read-pointers so re-discovery becomes a read.
+  #   WARM DECISIONS.md -- append-only ledger of invariants + dead-ends; injected as a POINTER
+  #                      only (path + size), read on demand, so it never bloats the prompt.
   if [ -s "$dir/HANDOFF.md" ]; then
-    printf '\nHANDOFF from the previous sub-goal (verify before trusting):\n'
-    cat "$dir/HANDOFF.md"
+    local lines; lines=$(wc -l < "$dir/HANDOFF.md" | tr -d ' ')
+    printf '\nHOT HANDOFF from the previous sub-goal (verify before trusting):\n'
+    if [ "$lines" -gt "$HANDOFF_MAX_LINES" ]; then
+      head -n "$HANDOFF_MAX_LINES" "$dir/HANDOFF.md"
+      printf '[... HANDOFF.md truncated at %s/%s lines; read the file for the rest]\n' "$HANDOFF_MAX_LINES" "$lines"
+    else
+      cat "$dir/HANDOFF.md"
+    fi
   fi
+  if [ -s "$dir/DECISIONS.md" ]; then
+    local dlines; dlines=$(wc -l < "$dir/DECISIONS.md" | tr -d ' ')
+    printf '\nWARM LEDGER: %s exists (%s lines) -- invariants + dead-ends. Read it on demand before re-deciding; it is NOT inlined here to keep this prompt lean.\n' "$dir/DECISIONS.md" "$dlines"
+  fi
+  # pi-swarm wording: the next session reads these records, not your transcript.
+  printf '\nWhen you finish: report findings IN the records (overwrite HANDOFF.md with the next action + read-pointers as file:line; append durable invariants/dead-ends to DECISIONS.md), NOT only in your response text. The next sub-goal reads the files, not this transcript.\n'
 }
 
 cmd_next() {
@@ -109,12 +131,19 @@ cmd_run() {
     fi
 
     _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p) ..."
-    local prompt; prompt=$(_build_prompt "$dir" "$id")
+    # Inject the prompt via a TEMP FILE on stdin, not a shell-interpolated argv arg (pi-swarm
+    # borrow). Removes the backtick/${}/secret-guard bug class when the handoff body carries shell
+    # metachars, and dodges ARG_MAX on a large injected handoff. `claude -p` reads the prompt from
+    # stdin when no positional prompt is given.
+    local pfile; pfile=$(mktemp)
+    _build_prompt "$dir" "$id" > "$pfile"
     # shellcheck disable=SC2086 # CLAUDE_FLAGS is operator config; word-splitting is intended.
-    if ! "$CLAUDE_CMD" -p $CLAUDE_FLAGS "$prompt"; then
+    if ! "$CLAUDE_CMD" -p $CLAUDE_FLAGS < "$pfile"; then
+      rm -f "$pfile"
       echo "[orchestrate] session for $id exited nonzero; stopping." >&2
       return 1
     fi
+    rm -f "$pfile"
 
     # grounded completion: advance only if the box actually flipped.
     local checked; checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')

@@ -81,6 +81,25 @@ Distinct from `POINTER_PROMPT.md`, which is static (it points at the ROADMAP). T
 dynamic, per-transition, and must be **grounded** (cite real files / PRs), so it cannot become
 an optimistic lie about the next step; the receiving session verifies before trusting.
 
+**Two-tier feed-forward (the contract).** A single handoff file either bloats (carrying every
+decision forward) or forgets (carrying only "files located"). Split it by access pattern:
+
+| Tier | File | Lifecycle | Injection | Carries |
+|---|---|---|---|---|
+| HOT | `HANDOFF.md` | overwritten each transition | injected in FULL, capped to `HANDOFF_MAX_LINES` (default 80) | next sub-goal, the exact first action, read-pointers as `file:line` |
+| WARM | `DECISIONS.md` | append-only ledger | injected as a POINTER only (path + line count) | durable invariants + dead-ends, read on demand |
+
+The orchestrator inlines the hot handoff (head + a truncation notice if over the cap, so a
+runaway handoff cannot recreate the marathon) and inlines only a pointer to the warm ledger, so
+the append-only ledger never grows the prompt. The finishing session **reports IN the records,
+not in its response text** (the next session reads the files, not the transcript): it overwrites
+`HANDOFF.md` with the next action + read-pointers and appends durable invariants / dead-ends to
+`DECISIONS.md`. A committed sample pair lives at `tests/fixtures/handoff-sample/`.
+
+The prompt is injected via a **temp file on stdin** (`claude -p ... < tmp`), not a shell-
+interpolated argv arg, so a handoff body containing backticks / `${...}` / secret-shaped strings
+cannot trip shell evaluation or the secret-guard hook, and a large handoff cannot hit `ARG_MAX`.
+
 ### Session invocation (the per-sub-goal `claude -p` call)
 
 Resolves the former OQ-001. Two things were under-specified: what goes into each session's
