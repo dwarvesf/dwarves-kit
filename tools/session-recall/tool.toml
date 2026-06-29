@@ -1,0 +1,16 @@
+name        = "cc-recall"
+description = "Lossless, turn-grouped recall over Claude Code transcripts. Read-only structure-preserving substring search over raw ~/.claude/projects/<slug>/*.jsonl: a session retrieves a prior decision/fact straight from the source transcript, even across compactions, without re-reading whole files. Ports pi-vcc's vcc_recall. Companion to cc-deterministic-compaction (the compactor) and prose-rag (semantic search over prose, which this deliberately does NOT duplicate). Part of token-optim-v3 (SG-03)."
+language    = "python"
+status      = "pilot"
+entry       = "bin/cc-recall"
+created     = 2026-06-29
+
+# Personal/standalone. Read-only over local transcripts; no network, no writes.
+consumers   = []
+
+systems     = ["claude-code"]
+
+# Stdlib only; reads no credentials.
+secrets     = []
+
+depends_on  = []
