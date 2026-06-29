@@ -188,6 +188,35 @@ dispatched by a command, never invoked directly. The right-arm tests are execute
 agents (dispatched inside `/kit:execute`) plus the `/kit:ship` gate. The unit +
 integration levels can also be re-run on demand, read-only, with `/kit:verify` (no rebuild).
 
+**Verification cost routing (cheap-first).** Route each check to the cheapest tier that can
+decide it, so Opus is not burned on mechanical pass/fail (the forensic found Opus = 86.5% of
+spend). In order of preference:
+
+1. **Deterministic check** , a unit test, a linter, a `grep`/`bash` assertion. If the criterion
+   is mechanical (does it compile, does the test pass, is the string present), a deterministic
+   check is the verifier; no model judgment is needed. `task-verifier` runs these.
+2. **Cheap-model verifier** , for a judgment that is shallow but not mechanical, prefer a cheap
+   tier (set the dispatched agent's `model:` to a cheaper model) over Opus.
+3. **Opus reviewer** , reserve for genuine judgment calls (architecture, security reasoning,
+   subtle correctness). `/kit:review` / `/kit:review-team`.
+
+Pick the deterministic check whenever the acceptance criterion is mechanical; escalate only when
+the question actually needs judgment.
+
+**Output discipline (keep tool output out of context).** The forensic also found thousands of
+>2k-token tool outputs riding in context. Two levers:
+
+- **Bash, at the source:** set `BASH_MAX_OUTPUT_LENGTH` (e.g. `8000`) in your `settings.json`
+  `env` block. This caps shell output BEFORE it enters context , the only lever that removes the
+  tokens for the current turn. For a single command, redirect to a file and read a slice
+  (`cmd > out.txt; grep -n X out.txt`) instead of letting it all stream back.
+- **Non-Bash tools:** the `output-offload.sh` PostToolUse hook detects a `tool_response` over
+  `OFFLOAD_MAX_TOKENS` (~2000), writes the FULL payload to a recoverable file under
+  `~/.cache/dwarves-kit/offload/`, and injects a terse pointer. It cannot strip the current
+  turn's output (PostToolUse runs after capture), so treat the pointer as a nudge: read the file
+  or narrow the next call (`offset`/`limit`, `head`, `grep`) rather than re-requesting the whole
+  output.
+
 **Cycle-table mapping.** The V-phase names above map onto the cycle-table rows:
 Think, Design (opt-in), Design critique (opt-in), UI design (opt-in), Spec,
 Validate, Test plan (default for normal/full), Build, Review, Docs, Ship, Reflect, and

@@ -211,6 +211,7 @@ file count so this table cannot drift):
 | `slop-cleaner` | Stop | advisory | long-session code bloat; suggests, never blocks |
 | `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step (SPEC-083) |
 | `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |
+| `output-offload` | PostToolUse * | advisory | oversized tool output bloating context; offloads the full payload to a file + nudges, never blocks |
 | `statusline` | StatusLine | convenience | none (HUD) |
 | `notification` | Notification | convenience | none (desktop notify) |
 | `permission-auto-approve` | PermissionRequest | convenience | none (removes approve-20-times friction for read-only ops) |
