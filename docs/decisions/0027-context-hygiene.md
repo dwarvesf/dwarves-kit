@@ -30,6 +30,8 @@ This ADR's v1 proposed an advisory "safe to /clear" signal that a human performs
 
 5. **Additive.** No change to the three-store state model, the execute control flow, or any gate. The interactive `/goal` loop still works for hands-on runs; the orchestrator is an additional outer driver.
 
+6. **Carve-out from ADR-0022's goal-ordering-chain fence.** ADR-0022 keeps goal-ordering chains (B waits for A to merge) at L5, and the README says the kit stops short of a DAG scheduler / coordinating daemon / cross-machine orchestration. This orchestrator runs sub-goals in order and advances on a checkbox flip, which is a *linear* ordering chain, so the boundary must be argued, not assumed. It is in scope because it is narrowly bounded: ONE mega-goal, ONE machine, a one-shot script (not a daemon), strictly LINEAR (not a DAG, no parallel fan-out), and it HALTS at the first gate (it never auto-crosses a shared-repo merge). What stays fenced at L5 / out of scope is unchanged: cross-repo or cross-machine coordination, 3+ concurrent operators, parallel DAG fan-out, and any always-on supervising daemon. The orchestrator is the linear-single-mega-goal slice of that space, deliberately the smallest thing that removes the marathon.
+
 ## Alternatives considered
 
 - **Operator checkpoint signal (this ADR's v1).** Rejected: needs a human to perform the clear; defeats the automation premise.

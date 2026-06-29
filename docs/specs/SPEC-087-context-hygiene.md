@@ -59,7 +59,9 @@ orchestrator (bash/SDK, NOT an LLM context)
 - **Completion is grounded, not self-claimed**: after a session returns, the orchestrator
   re-reads the ROADMAP; it advances only if the sub-goal's checkbox flipped to `[x]`. A
   session that returns without checking its box is a failure, and the orchestrator stops
-  rather than spinning.
+  rather than spinning. (Future guard, noted not yet built: also assert the working tree is
+  clean before advancing, so a session that died mid-edit halts the loop rather than handing a
+  dirty baseline to the next sub-goal.)
 
 ### Mechanism B: feed-forward handoff (kills the re-discovery tax)
 
@@ -78,6 +80,26 @@ HANDOFF.md (written by the sub-goal that just finished)
 Distinct from `POINTER_PROMPT.md`, which is static (it points at the ROADMAP). The handoff is
 dynamic, per-transition, and must be **grounded** (cite real files / PRs), so it cannot become
 an optimistic lie about the next step; the receiving session verifies before trusting.
+
+### Session invocation (the per-sub-goal `claude -p` call)
+
+Resolves the former OQ-001. Two things were under-specified: what goes into each session's
+prompt, and what permission posture it runs with.
+
+**Prompt structure.** For each sub-goal the orchestrator feeds, in order, the *content* (not
+just paths) of: (1) `POINTER_PROMPT.md`, (2) the sub-goal's goal file `goals/NN-*.md`, (3) the
+previous `HANDOFF.md` if present. Injecting the goal-file content (not a path hint) is what
+actually eliminates re-discovery, and is why a fresh run with no handoff still works (the goal
+file carries the contract). The HANDOFF's `goal file: goals/NN-*.md` line is a human pointer;
+the orchestrator injects the file's body.
+
+**Permission posture.** Default: `--dangerously-skip-permissions` (Han, 2026-06-29). An
+unattended sub-goal session must edit, commit, push, and open a PR, so it needs full tool
+access; a prompt-per-action permission wall would stall the loop. This is a deliberate
+blast-radius choice for the auto chain, mitigated by the gate-stop (shared-repo merges stay
+human) and by each sub-goal being a disposable session. The posture is **overridable** via the
+`CLAUDE_FLAGS` env var (e.g. a tight `--allowedTools` allowlist) or by running the session
+inside an agentkernel sandbox via `CLAUDE_CMD`; these are options, not the default.
 
 ### Mechanism C: distilled subagent returns (within-sub-goal; phase 2)
 
@@ -104,10 +126,13 @@ Phase 1 (SG-04, this cycle):
   the stop point) without invoking `claude`, so the control flow is testable and cheap.
 - AC3: The orchestrator stops at the first `gate` sub-goal and prints the held PR; it advances
   past an `auto` sub-goal only when the ROADMAP checkbox flipped to `[x]`.
-- AC4: The previous sub-goal's `HANDOFF.md` is injected into the next session's prompt; a
-  fresh run with no handoff still works.
+- AC4: The previous sub-goal's `HANDOFF.md` AND the goal-file content are injected into the
+  next session's prompt; a fresh run with no handoff still works (the goal file carries the
+  contract).
 - AC5: A `tests/test-orchestrate.sh` exercises the above with a mock `claude` (via `CLAUDE_CMD`),
-  including a negative control (a session that does not check its box halts the loop).
+  including a negative control (a session that does not check its box halts the loop) and a
+  check that the default permission posture (`--dangerously-skip-permissions` via `CLAUDE_FLAGS`)
+  is passed and is overridable.
 
 Phase 2 (follow-up): the distilled-return contract (Mechanism C) in the agent defs, measured by
 a before / after `token-forensic --loops` comparison of an equivalent run (lower `cache_read`/turn
@@ -146,6 +171,6 @@ bash lib/orchestrate.sh run <megagoal-dir> --dry-run   # ordered plan, no claude
 
 ## Open questions
 
-- OQ-001: `claude -p` permission mode + flag set for an unattended sub-goal session (resolved
-  at impl; kept configurable via `CLAUDE_CMD` so the test mocks it and the operator tunes it).
+- OQ-001: RESOLVED , see "Session invocation": default `--dangerously-skip-permissions`,
+  overridable via `CLAUDE_FLAGS`; prompt = POINTER + goal-file content + HANDOFF.
 - OQ-002: Exact distilled-return field set + length bound per role (phase 2).
