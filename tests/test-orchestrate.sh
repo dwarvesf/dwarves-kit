@@ -183,5 +183,46 @@ CAP_FILE="$TMP/cap2.txt" CAP_RM="$D8/ROADMAP.md" HANDOFF_MAX_LINES=5 \
   && pass "hot HANDOFF capped at HANDOFF_MAX_LINES with a truncation notice" \
   || { fail "handoff cap wrong"; }
 
+# ============================ TEST 7 + 8: model/effort routing ============================
+# Mixed-tier fixture: SG-01 carries Model:/Effort: hints, SG-02 carries none (inherit).
+mk_routed() {
+  local d="$1"; mk_megagoal "$d"
+  cat > "$d/goals/01-first.md" <<'EOF'
+# SG-01
+Model: sonnet
+Effort: low
+
+GOALFILE-MARKER-01 contract for SG-01
+EOF
+  # SG-02 deliberately has NO goal file -> no hints -> inherit.
+}
+
+# TEST 7: --dry-run prints the chosen tier per sub-goal (and "inherit" when absent).
+DR="$TMP/mgr"; mk_routed "$DR"
+out=$(bash "$ORCH" run "$DR" --dry-run)
+echo "$out" | grep -qE 'SG-01 \(auto\).*model: sonnet, effort: low' \
+  && pass "dry-run shows SG-01 routed model/effort" || { fail "dry-run SG-01 tier wrong"; echo "$out"; }
+echo "$out" | grep -qE 'SG-02 \(auto\).*model: inherit, effort: inherit' \
+  && pass "dry-run shows SG-02 inherit (no hints)" || { fail "dry-run SG-02 inherit wrong"; echo "$out"; }
+
+# TEST 8: real run passes --model/--effort for the hinted sub-goal, none for the inherit one.
+# Prompt arrives on STDIN now, so the mock logs "<id>|<flags>" from "$@" (flags only, no prompt arg).
+cat > "$TMP/claude-route" <<'EOF'
+#!/usr/bin/env bash
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+printf '%s|%s\n' "$id" "$*" >> "$ROUTE_LOG"
+awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$ROUTE_RM" > "$ROUTE_RM.tmp" && mv "$ROUTE_RM.tmp" "$ROUTE_RM"
+EOF
+chmod +x "$TMP/claude-route"
+
+DR2="$TMP/mgr2"; mk_routed "$DR2"; : > "$TMP/route.log"
+ROUTE_LOG="$TMP/route.log" ROUTE_RM="$DR2/ROADMAP.md" CLAUDE_FLAGS="" \
+  CLAUDE_CMD="$TMP/claude-route" bash "$ORCH" run "$DR2" >/dev/null 2>&1
+grep -q '^SG-01|.*--model sonnet --effort low' "$TMP/route.log" \
+  && pass "run passes --model/--effort for hinted SG-01" || { fail "SG-01 routing flags missing"; cat "$TMP/route.log"; }
+{ grep '^SG-02|' "$TMP/route.log" | grep -qv -- '--model'; } \
+  && pass "run passes no --model for inherit SG-02" || { fail "SG-02 got an unexpected --model"; cat "$TMP/route.log"; }
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }

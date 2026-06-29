@@ -58,14 +58,32 @@ _subgoals() {
 # Next unchecked sub-goal as "id<TAB>policy", or empty.
 _next() { _subgoals "$1" | awk -F'\t' '$3==0 {print $1"\t"$2; exit}'; }
 
+# Resolve a sub-goal's goal file path (goals/<NN>-*.md), or empty.
+_goalfile() {
+  local dir="$1" id="$2" f
+  for f in "$dir/goals/${id#SG-}-"*.md; do [ -f "$f" ] && { printf '%s\n' "$f"; return; }; done
+}
+
+# Emit "model<TAB>effort" read from a goal file's `Model:`/`Effort:` lines (empty when absent).
+# Bare `Key: value` header lines, not YAML; first match each, value trimmed. Absent field or
+# absent file -> empty -> the orchestrator emits no flag and the session inherits its tier
+# (SPEC-087 "Model / Effort routing"). The biggest $ lever: Opus only on the hard sub-goals.
+_route() {
+  local gf="${1:-}" model="" effort=""
+  if [ -f "$gf" ]; then
+    model=$(grep -iE '^Model:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+    effort=$(grep -iE '^Effort:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+  fi
+  printf '%s\t%s\n' "$model" "$effort"
+}
+
 _build_prompt() {
   local dir="$1" id="$2"
   cat "$dir/POINTER_PROMPT.md" 2>/dev/null
   printf '\n\nNEXT SUB-GOAL: %s\n' "$id"
   # Inject the goal file's CONTENT (not just a path), so the session has the contract and
   # re-discovery is actually eliminated (SPEC-087 "Session invocation").
-  local gf="" f
-  for f in "$dir/goals/${id#SG-}-"*.md; do [ -f "$f" ] && { gf="$f"; break; }; done
+  local gf; gf=$(_goalfile "$dir" "$id")
   if [ -n "$gf" ]; then
     printf '\nGOAL FILE (%s, the contract for this sub-goal):\n' "$(basename "$gf")"
     cat "$gf"
@@ -112,7 +130,9 @@ cmd_run() {
     local any=0
     while IFS=$'\t' read -r sg ppolicy; do
       any=1
-      _say "  -> $sg ($ppolicy)  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
+      local rmodel reffort
+      IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$sg")")
+      _say "  -> $sg ($ppolicy)  [model: ${rmodel:-inherit}, effort: ${reffort:-inherit}]  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
       [ "$ppolicy" = gate ] && { _say "  == STOP at $sg (gate: human review) =="; break; }
     done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
     [ "$any" = 1 ] || _say "  (no unchecked sub-goals)"
@@ -130,15 +150,22 @@ cmd_run() {
       return 0
     fi
 
-    _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p) ..."
+    # Per-sub-goal model/effort routing (SPEC-087): read the goal file's hints and pass them as
+    # flags, so this sub-goal runs on its own tier instead of inheriting Opus-for-everything.
+    # Absent hint -> no flag -> inherit.
+    local rmodel reffort route_flags=""
+    IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$id")")
+    [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
+    [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
+    _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p, model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
     # Inject the prompt via a TEMP FILE on stdin, not a shell-interpolated argv arg (pi-swarm
     # borrow). Removes the backtick/${}/secret-guard bug class when the handoff body carries shell
     # metachars, and dodges ARG_MAX on a large injected handoff. `claude -p` reads the prompt from
     # stdin when no positional prompt is given.
     local pfile; pfile=$(mktemp)
     _build_prompt "$dir" "$id" > "$pfile"
-    # shellcheck disable=SC2086 # CLAUDE_FLAGS is operator config; word-splitting is intended.
-    if ! "$CLAUDE_CMD" -p $CLAUDE_FLAGS < "$pfile"; then
+    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+    if ! "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile"; then
       rm -f "$pfile"
       echo "[orchestrate] session for $id exited nonzero; stopping." >&2
       return 1
