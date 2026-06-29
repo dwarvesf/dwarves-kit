@@ -9,7 +9,11 @@
 #
 # Usage:
 #   orchestrate.sh next <megagoal-dir>             print the next unchecked sub-goal + policy
-#   orchestrate.sh run  <megagoal-dir> [--dry-run] drive the loop (dry-run prints the plan only)
+#   orchestrate.sh run  <megagoal-dir> [--dry-run] [--step] [--stream]
+#       --dry-run  print the plan only (no claude)
+#       --step     pause for the operator after each sub-goal (resume on Enter, q to stop)
+#       --stream   stream each session live (stream-json) + capture to .orchestrate/<id>.stream.jsonl
+#   --step/--stream are opt-in; default behavior is unchanged (SG-01, SPEC-087 Mechanism A).
 #
 # <megagoal-dir> holds: ROADMAP.md (sub-goal lines `- [ ] SG-NN ... , auto|gate , ...`),
 # POINTER_PROMPT.md (static resume prompt), HANDOFF.md (feed-forward, written by each sub-goal).
@@ -118,15 +122,42 @@ cmd_next() {
   if [ -n "$nx" ]; then printf '%s\n' "$nx"; else _say "(none unchecked)"; fi
 }
 
+# Pause after a completed sub-goal in --step mode. Reads ONE line from the driver's stdin (free:
+# the prompt is fed to claude via a temp file, not here). Empty/y/c -> continue; q/n -> stop;
+# EOF (no operator attached) -> stop (can't get consent, so don't march on). pi-swarm confirmAction.
+_step_pause() {
+  local id="$1" ans
+  printf '[orchestrate] --step: %s done. [Enter]=continue  q=stop: ' "$id" >&2
+  if ! IFS= read -r ans; then
+    _say "[orchestrate] --step: stdin closed; stopping after $id."
+    return 1
+  fi
+  case "$ans" in
+    q|Q|n|N|quit|stop) _say "[orchestrate] --step: operator stopped after $id."; return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 cmd_run() {
-  local dir="${1:-}" dry=0
-  [ "${2:-}" = "--dry-run" ] && dry=1
+  local dir="" dry=0 step=0 stream=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run) dry=1 ;;
+      --step)    step=1 ;;
+      --stream)  stream=1 ;;
+      --*)       echo "unknown flag: $1" >&2; return 64 ;;
+      *)         if [ -z "$dir" ]; then dir="$1"; else echo "unexpected arg: $1" >&2; return 64; fi ;;
+    esac
+    shift
+  done
   [ -d "$dir" ] || { echo "no such megagoal dir: '$dir'" >&2; return 64; }
   local roadmap="$dir/ROADMAP.md"
   [ -f "$roadmap" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
 
   if [ "$dry" = 1 ]; then
     _say "[plan] mega-goal: $dir"
+    [ "$step" = 1 ]   && _say "  (--step: pause for the operator after each sub-goal)"
+    [ "$stream" = 1 ] && _say "  (--stream: each session streamed live + captured to .orchestrate/<id>.stream.jsonl)"
     local any=0
     while IFS=$'\t' read -r sg ppolicy; do
       any=1
@@ -134,6 +165,7 @@ cmd_run() {
       IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$sg")")
       _say "  -> $sg ($ppolicy)  [model: ${rmodel:-inherit}, effort: ${reffort:-inherit}]  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
       [ "$ppolicy" = gate ] && { _say "  == STOP at $sg (gate: human review) =="; break; }
+      [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
     done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
     [ "$any" = 1 ] || _say "  (no unchecked sub-goals)"
     return 0
@@ -164,13 +196,25 @@ cmd_run() {
     # stdin when no positional prompt is given.
     local pfile; pfile=$(mktemp)
     _build_prompt "$dir" "$id" > "$pfile"
-    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-    if ! "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile"; then
-      rm -f "$pfile"
+    # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
+    # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
+    # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
+    local rc=0
+    if [ "$stream" = 1 ]; then
+      local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
+      local slog="$logdir/${id}.stream.jsonl"
+      _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
+      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
+    else
+      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+      "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
+    fi
+    rm -f "$pfile"
+    if [ "$rc" != 0 ]; then
       echo "[orchestrate] session for $id exited nonzero; stopping." >&2
       return 1
     fi
-    rm -f "$pfile"
 
     # grounded completion: advance only if the box actually flipped.
     local checked; checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
@@ -179,6 +223,15 @@ cmd_run() {
       return 1
     fi
     _say "[orchestrate] $id complete (box checked); advancing."
+    # --step: pause for the operator between sub-goals, but only when the NEXT one is auto (the
+    # loop would actually run it). If next is a gate, the gate-stop below is the natural halt, so
+    # don't double up with a pause first.
+    if [ "$step" = 1 ]; then
+      local nxt; nxt=$(_next "$roadmap")
+      if [ -n "$nxt" ] && [ "$(printf '%s' "$nxt" | cut -f2)" = auto ]; then
+        _step_pause "$id" || return 0
+      fi
+    fi
   done
 }
 
@@ -187,7 +240,7 @@ main() {
   case "$cmd" in
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
-    *) echo "usage: orchestrate.sh {next|run} <megagoal-dir> [--dry-run]" >&2; exit 64 ;;
+    *) echo "usage: orchestrate.sh {next|run} <megagoal-dir> [--dry-run] [--step] [--stream]" >&2; exit 64 ;;
   esac
 }
 

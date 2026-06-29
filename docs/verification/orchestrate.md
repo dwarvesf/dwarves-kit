@@ -79,3 +79,61 @@ Applied the review findings; the suite grew from 12 to 15 assertions, all green;
 New coverage: permission posture default + override (2 assertions); goal-file CONTENT injection
 into the prompt (1 assertion, closes the path-vs-content gap); policy parser hardened to
 exact-field match, unknown fail-safes to `gate`. NEGATIVE CONTROL still green. Verdict: PASS.
+
+## SG-01 addendum: run-modes `--step` + `--stream` (2026-06-29, token-optim-v2)
+
+Adds two opt-in observability mechanisms (SPEC-087 Mechanism A): `--step` (pause for the operator
+after each completed auto sub-goal, resume on Enter / `q` to stop) and `--stream` (stream each
+session as stream-json, tee'd to `.orchestrate/<id>.stream.jsonl` for a live tail + capture).
+Both off by default => the default invocation is byte-identical.
+
+### Acceptance criteria (SG-01)
+
+| # | Criterion | Met |
+|---|---|---|
+| AC1 | `--step` pauses after each sub-goal, resumes on Enter, `q` stops cleanly (exit 0) | yes (tests 9b, 9c) |
+| AC2 | `--step --dry-run` plan shows the pause points, no claude invoked | yes (test 9a) |
+| AC3 | `--stream` streams live AND captures to `.orchestrate/<id>.stream.jsonl` | yes (test 10) |
+| AC4 | default (no `--step`/`--stream`) behavior unchanged; the `/goal` loop + Stop hook untouched | yes (test 9d, all prior tests green) |
+| AC5 | unknown `--flag` rejected (exit 64) | yes (test 10) |
+
+### Confirmation run-table
+
+| Command | Exit | Result |
+|---|---|---|
+| `bash tests/test-orchestrate.sh` | 0 | 34/34 PASS (`ALL PASS`; was 15, +19 for run-modes) |
+| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+| `bash tests/test-meta.sh` | 0 | 500/500 (README lib row parity held) |
+| `bash lib/orchestrate.sh run <megagoal> --step --dry-run` | 0 | plan annotated with `(--step: pause ...)` |
+| (negative control) default run, stdin closed | 0 | no pause prompt; auto chain runs unchanged |
+
+### Run detail: captured `--step` + `--stream` terminal slice (2026-06-29)
+
+```
+[orchestrate] running SG-01 in a fresh session (... -p, model: inherit, effort: inherit) ...
+[orchestrate] streaming SG-01 -> .../.orchestrate/SG-01.stream.jsonl (live tail + captured)
+{"type":"assistant","text":"working on SG-01"}
+{"type":"result","sg":"SG-01"}
+[orchestrate] SG-01 complete (box checked); advancing.
+[orchestrate] --step: SG-01 done. [Enter]=continue  q=stop:        # <- PAUSED here; operator hits Enter
+[orchestrate] running SG-02 in a fresh session ...                 # <- RESUMED
+[orchestrate] streaming SG-02 -> .../.orchestrate/SG-02.stream.jsonl (live tail + captured)
+{"type":"assistant","text":"working on SG-02"}
+{"type":"result","sg":"SG-02"}
+[orchestrate] SG-02 complete (box checked); advancing.
+[orchestrate] STOP: SG-03 is a gate sub-goal; ...                  # <- gate-stop, no redundant pause
+```
+
+Captured `.orchestrate/SG-01.stream.jsonl`:
+```
+{"type":"assistant","text":"working on SG-01"}
+{"type":"result","sg":"SG-01"}
+```
+
+### NEGATIVE CONTROL (SG-01)
+
+Test 9d runs the default loop (no `--step`, stdin closed via `</dev/null`) and asserts NO `--step:`
+prompt appears while the auto chain still completes (SG-02 box flips). So the pause is genuinely
+gated on the flag, not always-on; an unattended `run` cannot deadlock waiting on a keypress.
+
+Verdict: PASS (Exit: 0 on the suite; pause-gating proven by the default-mode negative control).
