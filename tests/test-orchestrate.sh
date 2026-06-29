@@ -26,6 +26,8 @@ mk_megagoal() {
 - [ ] SG-03 third thing , gate , PR #__
 EOF
   echo "POINTER: resume from ROADMAP" > "$d/POINTER_PROMPT.md"
+  mkdir -p "$d/goals"
+  echo "GOALFILE-MARKER-01 contract for SG-01" > "$d/goals/01-first.md"
 }
 
 # --- mock claude: flips the named sub-goal's box + writes a handoff (the "good" session) ---
@@ -33,7 +35,7 @@ mk_mock_good() {
   cat > "$TMP/claude-good" <<'EOF'
 #!/usr/bin/env bash
 # args: -p "<prompt>"  ; env: MOCK_ROADMAP, MOCK_DIR
-prompt="${2:-}"
+prompt="${!#}"   # last arg = the prompt, robust to any leading flags (e.g. --dangerously-skip-permissions)
 id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
 awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' \
   "$MOCK_ROADMAP" > "$MOCK_ROADMAP.tmp" && mv "$MOCK_ROADMAP.tmp" "$MOCK_ROADMAP"
@@ -83,10 +85,10 @@ grep -q 'STOP: SG-03 is a gate' "$TMP/run.out" && pass "stopped at gate with mes
 D3="$TMP/mg3"; mk_megagoal "$D3"
 cat > "$TMP/claude-probe" <<EOF
 #!/usr/bin/env bash
-prompt="\${2:-}"
+prompt="\${!#}"
 id=\$(printf '%s' "\$prompt" | grep -oE 'SG-[0-9]+' | head -1)
 # record whether this turn's prompt carried a HANDOFF section
-printf '%s handoff=%s\n' "\$id" "\$(printf '%s' "\$prompt" | grep -c 'HANDOFF from the previous')" >> "$TMP/probe.log"
+printf '%s handoff=%s goal=%s\n' "\$id" "\$(printf '%s' "\$prompt" | grep -c 'HANDOFF from the previous')" "\$(printf '%s' "\$prompt" | grep -c 'GOALFILE-MARKER-01')" >> "$TMP/probe.log"
 awk -v id="\$id" '{ if (\$0 ~ ("^- \\\\[ \\\\] " id " ")) sub(/\\[ \\]/, "[x]"); print }' "$D3/ROADMAP.md" > "$D3/ROADMAP.md.tmp" && mv "$D3/ROADMAP.md.tmp" "$D3/ROADMAP.md"
 echo "h" > "$D3/HANDOFF.md"
 EOF
@@ -96,6 +98,8 @@ CLAUDE_CMD="$TMP/claude-probe" bash "$ORCH" run "$D3" >/dev/null 2>&1
 # SG-01: no handoff yet (0); SG-02: handoff injected (1)
 grep -q 'SG-01 handoff=0' "$TMP/probe.log" && grep -q 'SG-02 handoff=1' "$TMP/probe.log" \
   && pass "handoff injected into SG-02's prompt but not SG-01's" || { fail "handoff injection wrong"; cat "$TMP/probe.log"; }
+grep -q 'SG-01 .*goal=1' "$TMP/probe.log" \
+  && pass "goal-file content injected into the prompt (not just a path)" || { fail "goal-file not injected"; cat "$TMP/probe.log"; }
 
 # ============================ TEST 4: negative control ============================
 D4="$TMP/mg4"; mk_megagoal "$D4"; mk_mock_bad
@@ -104,6 +108,31 @@ rc=$?
 [ "$rc" != 0 ] && pass "negative control: run halts nonzero when box not flipped" || fail "neg control did not halt (rc=$rc)"
 grep -q 'did not check its ROADMAP box' "$TMP/neg.out" && pass "negative control: explains the halt" || fail "no halt message"
 grep -q '^- \[ \] SG-01' "$D4/ROADMAP.md" && pass "negative control: SG-01 stays unchecked" || fail "SG-01 wrongly checked"
+
+# ============================ TEST 5: permission posture flag ============================
+# A mock that records its args + flips the box (so the auto chain completes). ARGS_LOG/ARGS_RM
+# are set per-run so one mock serves multiple fixtures.
+cat > "$TMP/claude-args" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$@" >> "$ARGS_LOG"
+prompt="${!#}"
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$ARGS_RM" > "$ARGS_RM.tmp" && mv "$ARGS_RM.tmp" "$ARGS_RM"
+EOF
+chmod +x "$TMP/claude-args"
+
+D5="$TMP/mg5"; mk_megagoal "$D5"; : > "$TMP/args.log"
+ARGS_LOG="$TMP/args.log" ARGS_RM="$D5/ROADMAP.md" CLAUDE_CMD="$TMP/claude-args" bash "$ORCH" run "$D5" >/dev/null 2>&1
+grep -q -- '--dangerously-skip-permissions' "$TMP/args.log" \
+  && pass "default posture flag (--dangerously-skip-permissions) passed to claude" \
+  || { fail "default posture flag missing"; cat "$TMP/args.log"; }
+
+D6="$TMP/mg6"; mk_megagoal "$D6"; : > "$TMP/args.log"
+ARGS_LOG="$TMP/args.log" ARGS_RM="$D6/ROADMAP.md" CLAUDE_FLAGS="--allowedTools Read" \
+  CLAUDE_CMD="$TMP/claude-args" bash "$ORCH" run "$D6" >/dev/null 2>&1
+{ grep -q -- '--allowedTools' "$TMP/args.log" && ! grep -q -- '--dangerously-skip-permissions' "$TMP/args.log"; } \
+  && pass "CLAUDE_FLAGS overrides the default posture" \
+  || { fail "CLAUDE_FLAGS override wrong"; cat "$TMP/args.log"; }
 
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }
