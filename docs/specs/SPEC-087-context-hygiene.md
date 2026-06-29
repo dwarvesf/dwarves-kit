@@ -1,125 +1,151 @@
-# SPEC-087: Inter-sub-goal context hygiene (distilled returns + checkpoint signal)
+# SPEC-087: Inter-sub-goal context hygiene (orchestrator + feed-forward handoff + distilled returns)
 
 Status: DRAFT
 Date: 2026-06-29
 Lane: normal (classified: normal)
-Type: design (design-only; implementation is a follow-up, token-hygiene SG-04)
-Board: token-hygiene mega-goal SG-03 (ops-toolkit `_meta/megagoals/token-hygiene/`); kit intake ID operator-assigned
+Type: design + impl (orchestrator built in token-hygiene SG-04; distilled-returns is phase 2)
+Board: token-hygiene mega-goal SG-03/SG-04 (ops-toolkit `_meta/megagoals/token-hygiene/`); kit intake ID operator-assigned
 
 ## Problem
 
 A mega-goal run under the kit is one un-cleared session whose context grows monotonically
-across 6-10h. Two structural drivers:
+across 6-10h. Cost is dominated by `cache_read`: the whole accumulated context is re-read
+every turn (~58.5% of spend; ops-toolkit `research/2026-06-28-token-spend-forensic.md`). Three
+drivers:
 
-1. **Full subagent returns.** `/kit:execute` dispatches 5-9 subagents per sub-goal (workers,
-   task-verifiers, reviewers) and the lead absorbs each one's FULL output. The kit's own
-   state flow shows three stores with nothing distilled between phases
-   (`WORKFLOW.md:651-652`); the execute loop re-enters the lead after every increment
-   (`WORKFLOW.md:707-712`). A 16-25K-token return per subagent, multiplied across a sub-goal,
-   lands permanently in the lead context.
+1. **One marathon session.** The `/goal` loop runs every sub-goal in a single session whose
+   context only grows. The kit cannot fix this by self-`/clear`ing: a `/clear` inside the loop
+   kills the loop's own driving context.
 
-2. **No clear-able boundary.** The loop never signals a safe seam to `/clear`. Cost is
-   dominated by `cache_read`: the whole accumulated context is re-read every turn (~58.5% of
-   spend; ops-toolkit `research/2026-06-28-token-spend-forensic.md`). The longer the
-   un-cleared marathon, the more each turn costs.
+2. **Full subagent returns.** Inside a sub-goal, `/kit:execute` dispatches 5-9 subagents
+   (workers, task-verifiers, reviewers) and the lead absorbs each one's FULL output. The state
+   flow distils nothing between phases (`WORKFLOW.md:651-652`); the execute loop re-enters the
+   lead after every increment (`WORKFLOW.md:707-712`). A 16-25K-token return per subagent,
+   multiplied across a sub-goal, lands permanently in the lead.
 
-The kit cannot fix (2) by self-clearing: a `/clear` inside the loop kills the loop's own
-driving context. So the design centers on (a) shrinking what the lead absorbs per subagent
-and (b) emitting an operator signal at each safe seam, leaving the actual `/clear` to the
-operator or an outer harness.
+3. **Re-discovery tax.** Reading a real run's log, each step spends many turns re-finding
+   context (which files, which interface) that an earlier step already knew, because nothing
+   is handed forward (operator observation, 2026-06-29).
+
+This SPEC supersedes its own v1 ("operator checkpoint signal"): an advisory "safe to /clear"
+that a human performs defeats the kit's automation premise (the kit exists to run without a
+human in the middle). The fix is to move the loop OUT of the LLM session.
 
 ## Design
 
-### Mechanism 1: distilled subagent returns (return contract)
+### Mechanism A: outer orchestrator (the structural fix)
 
-Subagent definitions and the dispatch convention gain a **return contract**: a subagent's
-final message (the value the lead absorbs) is a bounded, structured summary, not the full
-diff / log / transcript.
-
-- Structured fields: `verdict` (pass / fail / inconclusive), `key findings` (a few bullets),
-  `artifacts` (paths or refs where the full detail lives), `read-next` (the one slice the
-  lead should pull IF a finding needs more).
-- The full output is not lost: it stays in the subagent's own transcript
-  (`agent-<id>.jsonl` / the task output file), recoverable on demand. The lead absorbs the
-  summary and pulls detail only when a finding requires it.
-- Applies to the kit's dispatched roles: worker (execute), task-verifier,
-  integration-checker, reviewer / review-team, research-* (spec). Each role's agent
-  definition states its return-contract shape.
-
-Effect: the lead grows by a few hundred tokens per subagent instead of 16-25K.
-
-### Mechanism 2: post-sub-goal checkpoint signal
-
-At a sub-goal completion boundary (sub-goal merged-or-held AND its ROADMAP line updated), the
-loop emits an explicit operator signal:
+A **non-LLM** driver owns the loop; the LLM work happens only in disposable per-sub-goal
+sessions.
 
 ```
-Sub-goal NN complete (PR #N). Context checkpoint.
-  Safe to /clear now; resume by pasting POINTER_PROMPT.md into a fresh /goal.
-  POINTER_PROMPT freshness: <verified current | STALE: update before clearing>.
+orchestrator (bash/SDK, NOT an LLM context)
+   ├─ claude -p (fresh session, empty context) -> SG-01 -> ship PR -> write HANDOFF -> exit
+   ├─ claude -p (fresh session, empty context) -> SG-02 -> ship PR -> write HANDOFF -> exit
+   └─ ... stop at the first `gate` sub-goal (shared-repo review needs a human)
 ```
 
-- The signal is advisory: the kit prints it; the operator or an outer harness performs the
-  `/clear` + resume. The kit never self-clears.
-- Precondition guard: before advising `/clear`, the loop checks that POINTER_PROMPT.md +
-  ROADMAP.md encode enough to re-bootstrap losslessly (the resume contract). If
-  POINTER_PROMPT is stale, the signal says STALE and the loop refreshes it (or asks the
-  operator) instead of advising a lossy clear.
-- This makes each sub-goal a clear-able unit: `/clear` + POINTER_PROMPT resume between
-  sub-goals kills the monotonic growth (the #1 cost driver) without losing the thread.
+- Each `claude -p` invocation is a new session, so the `/clear` happens for free; no session
+  ever holds more than one sub-goal's context. The monotonic growth (driver 1) is removed
+  structurally, with no human and no kit self-clear.
+- **The driver must be non-LLM** (DEC-004). If the orchestrator were itself a persistent
+  Claude session spawning a subagent per sub-goal, that session would re-accumulate every
+  return and become the new marathon. A subagent reports back into a parent LLM context; only
+  a dumb driver avoids re-accumulation.
+- **Gate sub-goals stop the orchestrator** (DEC-005). A shared-repo (`gate`) sub-goal needs
+  team review before its dependents proceed; the orchestrator runs the `auto` chain
+  back-to-back and halts at the first `gate`, printing the held PR. "No human in the middle"
+  holds for the auto chain, not for shared-repo merges (which are intentionally human).
+- **Completion is grounded, not self-claimed**: after a session returns, the orchestrator
+  re-reads the ROADMAP; it advances only if the sub-goal's checkbox flipped to `[x]`. A
+  session that returns without checking its box is a failure, and the orchestrator stops
+  rather than spinning.
 
-### Where it lives (impl pointers for SG-04, not built here)
+### Mechanism B: feed-forward handoff (kills the re-discovery tax)
 
-- Return contract: the dispatched-role agent definitions (`agents/*.md`: worker,
-  task-verifier, integration-checker, reviewer) plus the dispatch prose in `/kit:execute` and
-  `WORKFLOW.md`.
-- Checkpoint signal: the sub-goal-boundary step of the mega-goal loop (`plan-for-mega-goal` /
-  the `/goal` loop's sub-goal-complete path) plus a POINTER_PROMPT freshness check.
+Each sub-goal session, on completion, writes a `HANDOFF.md` for the next one; the orchestrator
+injects the previous HANDOFF into the next session's prompt. This turns driver 3's
+re-discovery into a read.
 
-## Acceptance criteria (for the SG-04 implementation)
+```
+HANDOFF.md (written by the sub-goal that just finished)
+- Next sub-goal: SG-NN  (goal file: goals/NN-*.md)
+- Files / symbols it will touch: <paths, the ones already located>
+- Constraints already fixed: <e.g. SG-01 named the field `parent`; reuse it>
+- Open risks / gotchas: <...>
+```
 
-- AC1: Each kit-dispatched subagent role's definition carries a return-contract section
-  bounding its final message to a structured summary + artifact pointers, not full output.
-- AC2: `/kit:execute` and the dispatch prose instruct the lead to absorb the summary and pull
-  detail on demand only.
-- AC3: A sub-goal-boundary checkpoint signal is emitted (advisory, operator-performed
-  `/clear`), gated on a POINTER_PROMPT freshness check.
-- AC4: The kit never self-`/clear`s; verified by inspection (no `/clear` emitted as an
-  executed command in the loop).
-- AC5: A before / after `token-forensic --loops` comparison of an equivalent mega-goal run
-  shows lower `cache_read`/turn and lower total (the mega-goal's success metric).
+Distinct from `POINTER_PROMPT.md`, which is static (it points at the ROADMAP). The handoff is
+dynamic, per-transition, and must be **grounded** (cite real files / PRs), so it cannot become
+an optimistic lie about the next step; the receiving session verifies before trusting.
+
+### Mechanism C: distilled subagent returns (within-sub-goal; phase 2)
+
+Bounds growth INSIDE one sub-goal. Each kit-dispatched role returns a bounded structured
+summary (`verdict`, `key findings`, `artifacts`, `read-next`), not the full diff / log; the
+full output stays recoverable in the subagent transcript. The lead absorbs the summary and
+pulls detail on demand. Applies to worker, task-verifier, integration-checker, reviewer /
+review-team, research-*. This is additive to A+B and is built as a follow-up increment.
+
+### Where it lives
+
+- Orchestrator (A) + handoff (B): a new `lib/orchestrate.sh` (bash, matching the other lib
+  drivers) plus the handoff convention documented in `WORKFLOW.md` / `plan-for-mega-goal`.
+- Distilled returns (C): the dispatched-role agent definitions (`agents/*.md`) + the dispatch
+  prose in `/kit:execute`.
+
+## Acceptance criteria
+
+Phase 1 (SG-04, this cycle):
+- AC1: `lib/orchestrate.sh` parses a mega-goal ROADMAP, finds the next unchecked sub-goal +
+  its policy, and (real mode) runs it via a fresh `claude -p` session; the loop driver holds
+  no LLM context.
+- AC2: `--dry-run` prints the ordered plan (each sub-goal, its policy, the injected handoff,
+  the stop point) without invoking `claude`, so the control flow is testable and cheap.
+- AC3: The orchestrator stops at the first `gate` sub-goal and prints the held PR; it advances
+  past an `auto` sub-goal only when the ROADMAP checkbox flipped to `[x]`.
+- AC4: The previous sub-goal's `HANDOFF.md` is injected into the next session's prompt; a
+  fresh run with no handoff still works.
+- AC5: A `tests/test-orchestrate.sh` exercises the above with a mock `claude` (via `CLAUDE_CMD`),
+  including a negative control (a session that does not check its box halts the loop).
+
+Phase 2 (follow-up): the distilled-return contract (Mechanism C) in the agent defs, measured by
+a before / after `token-forensic --loops` comparison of an equivalent run (lower `cache_read`/turn
+and lower total, the mega-goal success metric).
 
 ## Verification
 
 ```
 # in the dwarves-kit checkout
-ls docs/specs/ | grep -i context-hygiene      # SPEC present
-ls docs/decisions/ | grep -i context-hygiene  # ADR present
+bash tests/test-orchestrate.sh            # phase-1 control flow + negative control
+bash lib/orchestrate.sh run <megagoal-dir> --dry-run   # ordered plan, no claude spawned
 ```
-
-Design-only; the behavioral verification (AC5) is owned by the SG-04 implementation PR.
 
 ## Out of scope
 
-- The implementation itself (token-hygiene SG-04).
-- Self-clearing inside the loop (rejected: kills the loop's own context; see ADR-0027).
-- Changing the three-store state model or the execute loop's control flow. This is additive
-  (what the lead absorbs + an advisory signal), not a re-architecture.
+- Replacing the interactive `/goal` loop; the orchestrator is an additive outer driver, the
+  in-session loop still works for hands-on runs.
+- A full Agent-SDK orchestrator (TypeScript/Python). Bash `claude -p` is phase 1; the SDK is
+  the upgrade path when structured handoffs / retries / inline distilled returns are wanted.
+- Self-clearing inside a session (rejected; kills the loop's own context).
 
 ## Decision log
 
-- DEC-001: Distill returns rather than route subagent output to a side file the lead must
-  re-read. Rationale: the cheapest token is the one never absorbed; a structured summary is
-  the absorption.
-- DEC-002: Checkpoint is an operator signal, not a self-`/clear`. Rationale: the kit cannot
-  clear its own driving context without killing the loop. The operator or outer harness owns
-  the clear; the kit owns the safe-seam signal + resume contract.
-- DEC-003: Full output stays recoverable in the subagent transcript, not discarded.
-  Rationale: honesty + debuggability; distillation must not destroy evidence.
+- DEC-001: Distill returns rather than route subagent output to a side file the lead re-reads.
+  The cheapest token is the one never absorbed.
+- DEC-002 (superseded by DEC-004): v1 made the checkpoint an operator signal. Replaced: a
+  human-performed clear defeats the automation premise.
+- DEC-003: Full subagent output stays recoverable in the transcript, not discarded.
+- DEC-004: The loop driver MUST be non-LLM. An LLM orchestrator spawning a subagent per
+  sub-goal re-accumulates every return and becomes the new marathon; only a dumb driver
+  running disposable fresh sessions removes the growth.
+- DEC-005: Gate sub-goals halt the orchestrator. The auto chain runs unattended; shared-repo
+  merges are an intentional human gate, not a flaw.
+- DEC-006: The handoff is feed-forward and grounded, distinct from the static POINTER_PROMPT;
+  it must cite real artifacts and the receiver verifies before trusting.
 
 ## Open questions
 
-- OQ-001: Does the checkpoint signal belong in `plan-for-mega-goal`, the built-in `/goal`
-  loop, or a kit hook? Resolved at SG-04 impl by where the sub-goal boundary is observable.
-- OQ-002: Exact return-contract field set + length bound per role. Tuned at impl; AC1 fixes
-  the shape, not the numbers.
+- OQ-001: `claude -p` permission mode + flag set for an unattended sub-goal session (resolved
+  at impl; kept configurable via `CLAUDE_CMD` so the test mocks it and the operator tunes it).
+- OQ-002: Exact distilled-return field set + length bound per role (phase 2).

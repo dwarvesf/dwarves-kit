@@ -1,4 +1,4 @@
-# 0027. Inter-sub-goal context hygiene: distilled returns + operator checkpoint, never self-/clear
+# 0027. Inter-sub-goal context hygiene: move the loop out of the LLM session (non-LLM orchestrator)
 
 Date: 2026-06-29
 Status: Proposed
@@ -6,39 +6,42 @@ Relates-to: SPEC-087 (the design this records), ops-toolkit token-hygiene mega-g
 
 ## Decision (one line)
 
-The kit reduces a mega-goal run's marathon-context growth two ways, both additive: (1) dispatched subagents return a distilled summary the lead absorbs instead of full output, and (2) the loop emits an operator checkpoint signal at each sub-goal boundary so the operator can `/clear` and resume from POINTER_PROMPT. The kit never self-`/clear`s.
+A mega-goal run stops being one un-cleared marathon by moving the loop OUT of the LLM session: a non-LLM orchestrator runs each sub-goal in a fresh `claude -p` session (so the `/clear` is free), each session writes a feed-forward `HANDOFF.md` for the next (so the fresh start skips re-discovery), and inside a sub-goal the dispatched subagents return distilled summaries. The kit never self-`/clear`s, and the orchestrator halts at gate sub-goals.
 
 ## Context
 
-A mega-goal run is one un-cleared session whose context grows across 6-10h, and the cost of an LLM turn scales with the context re-read each turn (`cache_read`, ~58.5% of measured spend; ops-toolkit `research/2026-06-28-token-spend-forensic.md`). Two kit behaviors feed that growth:
+A mega-goal run is one un-cleared session whose context grows across 6-10h, and the cost of an LLM turn scales with the context re-read each turn (`cache_read`, ~58.5% of measured spend; ops-toolkit `research/2026-06-28-token-spend-forensic.md`). Three behaviors feed the growth:
 
-1. **Full subagent returns.** `/kit:execute` fans out 5-9 subagents per sub-goal and the lead absorbs each one's full output. The state flow distils nothing between phases (`WORKFLOW.md:651-652`), and the execute loop re-enters the lead after every increment (`WORKFLOW.md:707-712`), so each 16-25K-token return is permanent context for the rest of the run.
+1. **One marathon session.** The `/goal` loop runs every sub-goal in a single session whose context only grows.
+2. **Full subagent returns.** `/kit:execute` fans out 5-9 subagents per sub-goal and the lead absorbs each one's full output (`WORKFLOW.md:651-652`, `707-712`); each 16-25K-token return is permanent context for the rest of the run.
+3. **Re-discovery tax.** Each step re-finds context an earlier step already knew, because nothing is handed forward (operator observation, 2026-06-29).
 
-2. **No safe-seam signal.** The loop never marks a point where `/clear` is lossless, so the marathon never breaks into clear-able units.
-
-The obvious fix for (2), a `/clear` inside the loop, is unavailable: clearing the session that drives the loop kills the loop. Whatever the kit does about (2) must keep the loop alive, which means the actual clear is the operator's (or an outer harness's), not the kit's.
+This ADR's v1 proposed an advisory "safe to /clear" signal that a human performs. Rejected on review (Han, 2026-06-29): a human-in-the-middle clear defeats the kit's reason to exist (unattended automation). The clear that the kit cannot do to itself, an outer driver can do for free by simply starting a new session.
 
 ## Decision
 
-1. **Return contract (Mechanism 1).** Every kit-dispatched subagent role (worker, task-verifier, integration-checker, reviewer / review-team, research-*) gains a return contract: its final message, the thing the lead absorbs, is a bounded structured summary (`verdict`, `key findings`, `artifacts`, `read-next`), not the full diff / log / transcript. The full output remains recoverable in the subagent's own transcript; the lead pulls detail only when a finding demands it.
+1. **Non-LLM orchestrator (Mechanism A).** A dumb driver (`lib/orchestrate.sh`, bash; the Agent SDK is the upgrade path) owns the loop and runs each sub-goal in a fresh `claude -p` session. No session holds more than one sub-goal's context, so the marathon growth is gone. The driver MUST NOT be an LLM context: an LLM orchestrator spawning a subagent per sub-goal would re-accumulate every return and become the new marathon. This is the load-bearing call.
 
-2. **Operator checkpoint signal (Mechanism 2).** At a sub-goal boundary (merged-or-held + ROADMAP updated) the loop prints an advisory checkpoint: "safe to `/clear`, resume from POINTER_PROMPT", gated on a POINTER_PROMPT-freshness check so the advised clear is always lossless. The operator or an outer harness performs the clear.
+2. **Feed-forward handoff (Mechanism B).** Each sub-goal session writes a grounded `HANDOFF.md` (next sub-goal, files/symbols already located, fixed constraints, open risks); the orchestrator injects it into the next session's prompt, turning re-discovery into a read. It is dynamic and per-transition, distinct from the static `POINTER_PROMPT.md`, and the receiver verifies before trusting.
 
-3. **Never self-`/clear`.** The kit emits the signal but never executes the clear; doing so would destroy its own driving context. This is the hard boundary that shapes the whole design.
+3. **Distilled subagent returns (Mechanism C, phase 2).** Within a sub-goal, each dispatched role returns a bounded structured summary (`verdict`, `key findings`, `artifacts`, `read-next`) instead of full output; the full output stays recoverable in the transcript. Bounds the within-sub-goal growth that the orchestrator does not touch.
 
-4. **Strictly additive.** Both mechanisms are convention + prompt + advisory-output changes. No change to the three-store state model, the execute control flow, or any gate. The implementation (token-hygiene SG-04) realizes this; this ADR + SPEC-087 are design only.
+4. **Gate sub-goals halt the orchestrator; the kit never self-`/clear`s.** The auto chain runs unattended; a shared-repo (`gate`) sub-goal stops the loop for team review. The kit emits no `/clear` against its own session.
+
+5. **Additive.** No change to the three-store state model, the execute control flow, or any gate. The interactive `/goal` loop still works for hands-on runs; the orchestrator is an additional outer driver.
 
 ## Alternatives considered
 
-- **Self-`/clear` inside the loop.** Rejected: kills the loop's own context. This is the constraint, not an option.
-- **Route full subagent output to a side file the lead re-reads on demand.** Rejected (SPEC-087 DEC-001): re-reading is still absorption; distilling at the source is the cheaper token.
-- **Rely on the operator runbook (token-hygiene SG-02) alone.** Rejected: the runbook is the manual practice; the structural win needs the kit to shrink returns by default, not by operator vigilance.
+- **Operator checkpoint signal (this ADR's v1).** Rejected: needs a human to perform the clear; defeats the automation premise.
+- **LLM orchestrator that spawns a subagent per sub-goal.** Rejected (DEC-004): the orchestrating session re-accumulates every return and becomes the new marathon. The driver must be dumb.
+- **Self-`/clear` inside the loop.** Rejected: kills the loop's own driving context.
+- **Route full subagent output to a side file the lead re-reads.** Rejected: re-reading is still absorption; distilling at the source is cheaper.
 - **A hard token budget that aborts the loop.** Rejected: blunt; the goal is lower cost per equivalent run, not a truncated run.
 
 ## Consequences
 
-- The lead grows by hundreds of tokens per subagent instead of tens of thousands; each sub-goal becomes a clear-able unit, so `/clear` + resume between sub-goals removes the dominant `cache_read` growth.
-- Evidence is preserved: distillation points at the full transcript rather than discarding it.
-- Reversible: the change is docs + prompts + one advisory output; reverting the SG-04 diff restores prior behavior with no state migration.
-- Success is measurable: a before / after `token-forensic --loops` comparison of an equivalent run (lower `cache_read`/turn and lower total) is the mega-goal's acceptance metric (SPEC-087 AC5).
-- Slightly more prose in each dispatched-role definition (the return contract); mitigated by a shared contract shape reused across roles.
+- The dominant cost driver (a context that grows for hours and is re-read every turn) is removed structurally, not trimmed: each sub-goal runs in a near-fresh session.
+- A bounded cold-start tax replaces it (each fresh session reloads CLAUDE.md + pointer + handoff, a few K tokens); the grounded handoff keeps it small. Net win is large and measurable via `token-forensic --loops` (before / after an equivalent run).
+- Reversible: the orchestrator is additive bash + a doc convention; removing it restores the in-session loop with no state migration.
+- The orchestrator is harder to watch live than one session, but yields one clean transcript per sub-goal (better post-hoc forensics).
+- Evidence preserved throughout: handoffs and distilled returns point at full artifacts rather than discarding them.

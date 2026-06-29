@@ -3,6 +3,22 @@
 Delta-only notes for the design sub-goal (token-hygiene SG-03). The design itself is in
 SPEC-087 + ADR-0027; this records off-spec authoring decisions.
 
+## 2026-06-29 v2: design re-centered on a non-LLM orchestrator (operator review)
+
+- Context: Han reviewed the v1 design (distilled returns + operator checkpoint signal) and
+  rejected the operator-signal half: a human-performed `/clear` defeats the kit's unattended
+  automation premise.
+- Change: SPEC-087 + ADR-0027 rewritten to make a **non-LLM orchestrator** (Mechanism A) the
+  primary fix, with a **feed-forward grounded handoff** (Mechanism B) replacing the operator
+  signal, and distilled returns demoted to phase-2 Mechanism C. The load-bearing call
+  (DEC-004): the loop driver must be dumb code, not an LLM session, or it re-accumulates and
+  becomes the new marathon.
+- Impl choice: phase-1 implementation is bash `lib/orchestrate.sh` driving `claude -p`
+  (matches the existing lib/ drivers; Agent SDK is the upgrade path). The `claude` binary is
+  injected via `CLAUDE_CMD` so the test mocks it and the operator tunes the permission flags.
+- PR split: the spec/ADR revision rides the SG-03 design PR (#80); the orchestrator code is a
+  stacked SG-04 PR off this branch.
+
 ## 2026-06-29 Numbering: skipped SPEC-086 to avoid an in-flight collision
 - Context: master's highest SPEC is SPEC-085; next free is 086. But the active
   `feat/proof-visual-evidence` branch already claims `SPEC-086-stop-hook-scan-cost.md`
