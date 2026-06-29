@@ -80,6 +80,16 @@
         ]
       },
       {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/output-offload.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
         "matcher": "compact",
         "hooks": [
           {

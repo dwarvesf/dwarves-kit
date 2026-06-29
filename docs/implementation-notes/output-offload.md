@@ -33,6 +33,15 @@ Delta from the goal. Only off-spec calls live here.
 - Full payloads go to `${XDG_CACHE_HOME:-$HOME/.cache}/dwarves-kit/offload/`, not the repo, so
   the offload never dirties the working tree or needs a gitignore entry. Pointer is an abs path.
 
+## 2026-06-29 adding a hook = 4-file parity (CI caught it)
+- Adding a hook is not just hooks.json. The meta test enforces hook-count + doc parity, so a new
+  hook also needs: `settings.json` (installed hook list, count must equal hooks.json),
+  `README.md` (the `<summary>Hooks (N)` count + a table row), `docs/architecture.md` (the
+  SPEC-084 "Hook fallback layer" table row + class), and the hardcoded count assertion in
+  `tests/test-hooks.sh`. Missed on first push (ran test-hooks.sh but not test-meta.sh locally);
+  CI went red on parity. Fix: run BOTH `test-hooks.sh` AND `test-meta.sh` before pushing a hook.
+- output-offload classed `advisory` (backstops context bloat; offloads + nudges, never blocks).
+
 ## 2026-06-29 matcher = all tools
 - The PostToolUse entry uses a match-all matcher (the hook self-filters by size), so MCP tools
   and future tools are covered without editing hooks.json. Cheap because of the fast path.

@@ -153,7 +153,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (16, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (17, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
@@ -166,6 +166,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
 | session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
+| output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
 | pre-compact-backup | PreCompact | Saves structured session snapshot before compaction |
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
