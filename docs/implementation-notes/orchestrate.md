@@ -29,3 +29,12 @@ Delta-only. Design is in SPEC-087 + ADR-0027; this records impl decisions not in
 - README line ~151 says the kit stops short of a DAG scheduler / daemon / cross-machine
   orchestration. The orchestrator is a LINEAR, single-machine, session-per-sub-goal mega-goal
   driver, not any of those; the README row says so explicitly to avoid the apparent tension.
+
+## 2026-06-29 Review fixes (PR #81 review, 7/10)
+- Policy parser: exact comma-field match in awk (was a regex that false-matched "(gate review)");
+  unknown policy fail-safes to `gate` not `auto`.
+- pipefail `|| true` on the `_subgoals` grep|while (no-match no longer escapes `set -o pipefail`).
+- Permission posture (OQ-001): `CLAUDE_FLAGS` (default `--dangerously-skip-permissions`) word-split
+  into `claude -p`; mocks read prompt as LAST arg. Two tests (default + override).
+- `_build_prompt` injects the goal-file CONTENT (glob, shellcheck-clean), matching AC4; one test.
+- Cosmetic: `pid` -> `sg`.

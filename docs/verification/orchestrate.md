@@ -66,3 +66,16 @@ cd <dwarves-kit>
 bash tests/test-orchestrate.sh
 bash lib/orchestrate.sh run ~/workspace/tieubao/ops-toolkit/_meta/megagoals/token-hygiene --dry-run
 ```
+
+## Review-fix addendum (2026-06-29, PR #81 review)
+
+Applied the review findings; the suite grew from 12 to 15 assertions, all green; shellcheck clean.
+
+| Command | Exit | Result |
+|---|---|---|
+| `bash tests/test-orchestrate.sh` | 0 | 15/15 PASS (`ALL PASS`) |
+| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+
+New coverage: permission posture default + override (2 assertions); goal-file CONTENT injection
+into the prompt (1 assertion, closes the path-vs-content gap); policy parser hardened to
+exact-field match, unknown fail-safes to `gate`. NEGATIVE CONTROL still green. Verdict: PASS.
