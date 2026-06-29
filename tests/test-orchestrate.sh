@@ -285,5 +285,63 @@ grep -q '^- \[x\] SG-01' "$D12/ROADMAP.md" && pass "--stream run still advances 
 bash "$ORCH" run "$DS" --bogus > "$TMP/bogus.out" 2>&1; rc=$?
 { [ "$rc" = 64 ] && grep -q 'unknown flag' "$TMP/bogus.out"; } && pass "unknown flag -> exit 64" || fail "unknown flag not rejected (rc=$rc)"
 
+# ============================ TEST 11: board-view / event-sourced status (SG-10) ============
+# 11a: detect default -> backlog.sh present => both; dry-run renders the board + derives BOARD.md.
+DB="$TMP/mgb"; mk_megagoal "$DB"
+out=$(bash "$ORCH" run "$DB" --dry-run)
+{ echo "$out" | grep -q 'board mode: both' && [ -f "$DB/BOARD.md" ] && grep -q '| SG-01 |' "$DB/BOARD.md"; } \
+  && pass "detect default -> both; dry-run derives BOARD.md" || { fail "board detect/derive wrong"; echo "$out"; }
+# dry-run must NOT write an events.log (board derived from ROADMAP only, no execution)
+[ ! -f "$DB/.orchestrate/events.log" ] && pass "dry-run board writes no events.log (no execution)" || fail "dry-run wrote events"
+
+# 11b: roadmap fallback -> no kanban tooling => roadmap mode, no board rendered.
+DBF="$TMP/mgbf"; mk_megagoal "$DBF"
+out=$(BACKLOG_LIB="$TMP/nope.sh" bash "$ORCH" run "$DBF" --dry-run)
+{ ! echo "$out" | grep -q 'board mode' && [ ! -f "$DBF/BOARD.md" ]; } \
+  && pass "no backlog.sh -> detect fail-safes to roadmap (no board)" || { fail "roadmap fallback wrong"; echo "$out"; }
+
+# 11c: explicit --board=roadmap suppresses the board even when backlog.sh is present.
+DBR="$TMP/mgbr"; mk_megagoal "$DBR"
+out=$(bash "$ORCH" run "$DBR" --board=roadmap --dry-run)
+{ ! echo "$out" | grep -q 'board mode' && [ ! -f "$DBR/BOARD.md" ]; } \
+  && pass "--board=roadmap suppresses the board" || { fail "--board=roadmap wrong"; echo "$out"; }
+
+# 11d: ready/blocked derivation from deps. SG-03 depends on unchecked SG-02 => blocked; SG-02 has
+# no deps => ready; SG-01 checked => shipped.
+DBD="$TMP/mgbd"; mk_megagoal "$DBD"
+cat > "$DBD/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [x] SG-01 done thing , auto , PR #1
+- [ ] SG-02 ready thing , auto , PR #__
+- [ ] SG-03 blocked thing , gate , PR #__ , depends SG-02
+EOF
+bash "$ORCH" run "$DBD" --board=kanban --dry-run >/dev/null
+{ grep -q '| SG-01 | .* | shipped |' "$DBD/BOARD.md" \
+  && grep -q '| SG-02 | .* | queued \[ready\] |' "$DBD/BOARD.md" \
+  && grep -q '| SG-03 | .* | parked \[blocked: needs SG-02\] |' "$DBD/BOARD.md"; } \
+  && pass "board derives shipped / ready / blocked-on-dep from ROADMAP" || { fail "board state derivation wrong"; cat "$DBD/BOARD.md"; }
+
+# 11e: event-sourced replay. A real run emits executing then shipped for SG-01; BOARD.md (derived
+# by replay, last event wins) shows SG-01 shipped. SG-02 gate => a blocked event.
+DBE="$TMP/mgbe"; mk_megagoal "$DBE"
+cat > "$DBE/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 only auto , auto , PR #__
+- [ ] SG-02 the gate , gate , PR #__
+EOF
+export MOCK_ROADMAP="$DBE/ROADMAP.md" MOCK_DIR="$DBE"
+CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$DBE" --board=both >/dev/null 2>&1 < /dev/null
+ev_has() { awk -F'\t' -v id="$1" -v st="$2" '$2==id && $3==st{f=1} END{exit !f}' "$DBE/.orchestrate/events.log"; }
+{ ev_has SG-01 executing && ev_has SG-01 shipped; } \
+  && pass "event log records executing then shipped for SG-01" || { fail "event log wrong"; cat "$DBE/.orchestrate/events.log" 2>&1; }
+ev_has SG-02 blocked && pass "gate sub-goal emits a blocked event" || fail "no gate blocked event"
+grep -q '| SG-01 | .* | shipped |' "$DBE/BOARD.md" && pass "board derived by replay shows SG-01 shipped" || { fail "board replay wrong"; cat "$DBE/BOARD.md"; }
+
+# 11f: unknown --board mode rejected.
+bash "$ORCH" run "$DB" --board=bogus --dry-run > "$TMP/bm.out" 2>&1; rc=$?
+{ [ "$rc" != 0 ] && grep -q "unknown --board mode" "$TMP/bm.out"; } && pass "unknown --board mode rejected" || fail "bad --board mode not rejected (rc=$rc)"
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }

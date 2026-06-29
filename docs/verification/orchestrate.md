@@ -137,3 +137,87 @@ prompt appears while the auto chain still completes (SG-02 box flips). So the pa
 gated on the flag, not always-on; an unattended `run` cannot deadlock waiting on a keypress.
 
 Verdict: PASS (Exit: 0 on the suite; pause-gating proven by the default-mode negative control).
+
+## SG-10 addendum: board-view / event-sourced status (2026-06-29, token-optim-v2)
+
+Adds `--board=roadmap|kanban|both` (default detects: `backlog.sh` present -> `both`, else
+`roadmap`). In kanban/both the loop emits append-only status EVENTS to
+`<dir>/.orchestrate/events.log` and DERIVES a per-mega-goal `<dir>/BOARD.md` by replay (last
+event per sub-goal wins, never mutated in place). `BOARD.md` is a `backlog.sh`-format kanban
+table, rendered via `lib/backlog.sh`. ROADMAP.md + the goal files stay canonical; the repo-wide
+BACKLOG cockpit is never touched. Stacked on SG-01 (`feat/orchestrator-run-modes`).
+
+### Acceptance criteria (SG-10)
+
+| # | Criterion | Met |
+|---|---|---|
+| AC1 | `--board=roadmap\|kanban\|both`, default detects (backlog.sh -> both, else roadmap) | yes (tests 11a, 11b) |
+| AC2 | kanban/both derives `<dir>/BOARD.md` via `backlog.sh`; repo BACKLOG untouched | yes (11a, 11d) |
+| AC3 | Status is event-sourced: events appended, board derived by replay (never mutated) | yes (11e) |
+| AC4 | States distinguish shipped / ready / blocked(reason) [+ stalled, emitted by SG-11] | yes (11d) |
+| AC5 | roadmap-only fallback when no kanban tooling; explicit `--board=roadmap` suppresses | yes (11b, 11c) |
+| AC6 | ROADMAP.md stays canonical (no Done=/close-the-loop in board rows) | yes (board carries id/title/notes/status only) |
+
+### Confirmation run-table
+
+| Command | Exit | Result |
+|---|---|---|
+| `bash tests/test-orchestrate.sh` | 0 | 43/43 PASS (+9 for board-view) |
+| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+| `bash tests/test-meta.sh` | 0 | 500/500 |
+| `bash lib/orchestrate.sh run <fixture> --board=both --dry-run` | 0 | both surfaces; no repo BACKLOG / events written |
+
+### Run detail: `--board=both --dry-run` (deps fixture, captured 2026-06-29)
+
+ROADMAP: SG-01 `[x]`; SG-02 `[ ]` (no deps); SG-03 `[ ]` depends SG-01+SG-02; SG-04 `[ ]`
+depends SG-09.
+
+```
+[plan] mega-goal: <fixture>
+  -> SG-02 (auto)  ...
+  -> SG-03 (gate)  ...
+  == STOP at SG-03 (gate: human review) ==
+
+[board mode: both]
+[board] derived per-mega-goal view -> <fixture>/BOARD.md (ROADMAP stays canonical)
+queued:
+  SG-02  second lever
+shipped:
+  SG-01  first lever
+parked:
+  SG-03  needs the first two
+  SG-04  blocked on missing
+```
+
+Derived `BOARD.md` (event-replay falls back to ROADMAP + dep-analysis when no events yet):
+```
+| ID | Item | Notes & source | Status |
+|----|------|----------------|--------|
+| SG-01 | first lever         | auto | shipped |
+| SG-02 | second lever        | auto | queued [ready] |
+| SG-03 | needs the first two | gate | parked [blocked: needs SG-02] |
+| SG-04 | blocked on missing  | auto | parked [blocked: needs SG-09] |
+```
+
+Note SG-03 blocks only on the ONE unchecked dep (SG-02), not the checked SG-01 -- dep-analysis
+reads the ROADMAP checkboxes. dry-run wrote NO `.orchestrate/events.log` (no execution).
+
+### Event-replay detail (real run via the good mock, `--board=both`)
+
+```
+$ cat <dir>/.orchestrate/events.log
+<ts>  SG-01  executing  model=inherit effort=inherit
+<ts>  SG-01  shipped    box checked
+<ts>  SG-02  blocked    gate: human review
+```
+The derived `BOARD.md` then shows `SG-01 ... shipped` by replay. The append-only log is the
+progress signal SG-11's watchdog reuses (goal 11 "reuse SG-10's event log").
+
+### NEGATIVE CONTROL (SG-10)
+
+Test 11b points `BACKLOG_LIB` at a non-existent path: detection fail-safes to `roadmap`, no
+`BOARD.md` is written, and no board output appears. So the board is genuinely gated on the
+tooling being present (a kit without `backlog.sh` still runs), and `--board=roadmap` (11c)
+suppresses it even when present. Unknown `--board=bogus` is rejected (exit 64, test 11f).
+
+Verdict: PASS (Exit: 0 on the suite; tooling-gating + ROADMAP-canonical proven by 11b/11c).

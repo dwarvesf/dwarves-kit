@@ -13,6 +13,9 @@
 #       --dry-run  print the plan only (no claude)
 #       --step     pause for the operator after each sub-goal (resume on Enter, q to stop)
 #       --stream   stream each session live (stream-json) + capture to .orchestrate/<id>.stream.jsonl
+#       --board=roadmap|kanban|both  surface progress as a per-mega-goal kanban (SG-10); default
+#                  detects (backlog.sh present -> both, else roadmap). Event-sourced + derived;
+#                  ROADMAP.md stays canonical, the repo-wide BACKLOG cockpit is never touched.
 #   --step/--stream are opt-in; default behavior is unchanged (SG-01, SPEC-087 Mechanism A).
 #
 # <megagoal-dir> holds: ROADMAP.md (sub-goal lines `- [ ] SG-NN ... , auto|gate , ...`),
@@ -38,6 +41,11 @@ CLAUDE_FLAGS="${CLAUDE_FLAGS:---dangerously-skip-permissions}"
 # point at the file. The WARM DECISIONS.md ledger is never injected in full (pointer only).
 HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
 
+# Kanban renderer reused by the board-view (SG-10). Resolved next to this script; override in
+# tests. When absent, board mode fail-safes to roadmap-only so a kit without the tooling runs.
+ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKLOG_LIB="${BACKLOG_LIB:-$ORCH_DIR/backlog.sh}"
+
 _say() { printf '%s\n' "$*"; }
 
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
@@ -61,6 +69,103 @@ _subgoals() {
 
 # Next unchecked sub-goal as "id<TAB>policy", or empty.
 _next() { _subgoals "$1" | awk -F'\t' '$3==0 {print $1"\t"$2; exit}'; }
+
+# ---- SG-10 board-view / event-sourced status -----------------------------------------------
+# Event-sourced status (pi-swarm borrow): the loop APPENDS status events; the board is DERIVED
+# by replay (last event per sub-goal wins), NEVER mutated in place -> a crashed/concurrent
+# session cannot corrupt a checkbox. ROADMAP.md + the goal files stay canonical; the board is a
+# regenerated view-sync. SG-11's watchdog reuses this file (mtime + last status) as its signal.
+_events_file() { printf '%s/.orchestrate/events.log\n' "$1"; }
+
+_emit_event() {  # dir id status [note]
+  local dir="$1" id="$2" status="$3" note="${4:-}" ef
+  ef=$(_events_file "$dir"); mkdir -p "$(dirname "$ef")"
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$id" "$status" "$note" >> "$ef"
+}
+
+# Last event for a sub-goal by replay, as "status<TAB>note" (empty if none).
+_event_status() {  # dir id
+  local ef; ef=$(_events_file "$1")
+  [ -f "$ef" ] || return 0
+  awk -F'\t' -v id="$2" '$2==id{s=$3; n=$4} END{ if(s!="") printf "%s\t%s", s, n }' "$ef"
+}
+
+# Raw ROADMAP line for a sub-goal id (or empty).
+_sg_line() { grep -E "^- \[[ xX]\] $2 " "$1" 2>/dev/null | head -1; }
+
+# Human title from a ROADMAP line: text after "SG-NN " up to the first " , " policy separator.
+_sg_title() {  # raw-line id
+  printf '%s' "$1" | sed -E "s/^- \[[ xX]\] $2 //; s/ , .*$//" | cut -c1-60
+}
+
+# Blocking deps: SG-NN tokens in the line's `depends ...` tail that are NOT yet checked (space-
+# separated, empty if none). Non-SG deps (e.g. #81 = a prerequisite PR) are out of board scope.
+_sg_deps_blocked() {  # roadmap raw-line
+  local roadmap="$1" line="$2" deps d blockers=""
+  deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+  for d in $deps; do
+    _subgoals "$roadmap" | awk -F'\t' -v i="$d" '$1==i && $3==1{f=1} END{exit !f}' || blockers="$blockers $d"
+  done
+  printf '%s' "${blockers# }"
+}
+
+# Derive the per-mega-goal BOARD.md (kanban table in backlog.sh's row format, so backlog.sh
+# renders it and the cockpit format stays consistent). State = shipped if the box is checked,
+# else the replayed event status, else dep-analysis (queued=ready / parked=blocked). The
+# ready/blocked/stalled nuance rides as status PROSE (backlog.sh supports it). Prints the path.
+_derive_board() {  # dir roadmap
+  local dir="$1" roadmap="$2"
+  local board="$dir/BOARD.md"
+  {
+    printf '# Board (derived view): %s\n\n' "$(basename "$dir")"
+    printf '> DERIVED by "orchestrate.sh --board" from ROADMAP.md + .orchestrate/events.log. Do NOT\n'
+    printf '> hand-edit: ROADMAP.md + the goal files are canonical; this is a regenerated view-sync.\n'
+    printf '> Per-mega-goal only; the repo-wide BACKLOG cockpit is never touched.\n\n'
+    printf '## Active queue\n\n'
+    printf '| ID | Item | Notes & source | Status |\n'
+    printf '|----|------|----------------|--------|\n'
+    local id policy checked line title es estatus enote status blockers
+    while IFS=$'\t' read -r id policy checked; do
+      line=$(_sg_line "$roadmap" "$id"); title=$(_sg_title "$line" "$id")
+      es=$(_event_status "$dir" "$id")
+      estatus=$(printf '%s' "$es" | cut -f1); enote=$(printf '%s' "$es" | cut -f2)
+      if [ "$checked" = 1 ]; then
+        status="shipped"
+      elif [ "$estatus" = executing ] || [ "$estatus" = stalled ]; then
+        status="executing"
+        [ "$estatus" = stalled ] && status="executing [stalled${enote:+: $enote}]"
+      else
+        blockers=$(_sg_deps_blocked "$roadmap" "$line")
+        if [ -n "$blockers" ]; then status="parked [blocked: needs $blockers]"; else status="queued [ready]"; fi
+      fi
+      printf '| %s | %s | %s | %s |\n' "$id" "${title:-?}" "$policy" "$status"
+    done < <(_subgoals "$roadmap")
+  } > "$board"
+  printf '%s\n' "$board"
+}
+
+# Render the board surface to stdout for a mode. roadmap -> nothing (checkboxes ARE the view);
+# kanban|both -> derive BOARD.md then render its columns via backlog.sh (fallback: cat the file).
+_render_board() {  # dir roadmap mode
+  local dir="$1" roadmap="$2" mode="$3" board
+  case "$mode" in
+    roadmap|"") return 0 ;;
+    kanban|both)
+      board=$(_derive_board "$dir" "$roadmap")
+      _say "[board] derived per-mega-goal view -> $board (ROADMAP stays canonical)"
+      if [ -f "$BACKLOG_LIB" ]; then
+        BACKLOG_FILE="$board" bash "$BACKLOG_LIB" board 2>/dev/null || cat "$board"
+      else
+        cat "$board"
+      fi ;;
+    *) echo "unknown --board mode: '$mode' (want roadmap|kanban|both)" >&2; return 64 ;;
+  esac
+}
+
+# Resolve the board mode: explicit wins; empty -> detect (backlog.sh present -> both, else
+# roadmap so a kit without the kanban tooling still runs).
+_resolve_board_mode() { if [ -n "$1" ]; then printf '%s' "$1"; elif [ -f "$BACKLOG_LIB" ]; then printf 'both'; else printf 'roadmap'; fi; }
+# --------------------------------------------------------------------------------------------
 
 # Resolve a sub-goal's goal file path (goals/<NN>-*.md), or empty.
 _goalfile() {
@@ -139,20 +244,24 @@ _step_pause() {
 }
 
 cmd_run() {
-  local dir="" dry=0 step=0 stream=0
+  local dir="" dry=0 step=0 stream=0 board_arg=""
   while [ $# -gt 0 ]; do
     case "$1" in
-      --dry-run) dry=1 ;;
-      --step)    step=1 ;;
-      --stream)  stream=1 ;;
-      --*)       echo "unknown flag: $1" >&2; return 64 ;;
-      *)         if [ -z "$dir" ]; then dir="$1"; else echo "unexpected arg: $1" >&2; return 64; fi ;;
+      --dry-run)  dry=1 ;;
+      --step)     step=1 ;;
+      --stream)   stream=1 ;;
+      --board)    board_arg="both" ;;
+      --board=*)  board_arg="${1#--board=}" ;;
+      --*)        echo "unknown flag: $1" >&2; return 64 ;;
+      *)          if [ -z "$dir" ]; then dir="$1"; else echo "unexpected arg: $1" >&2; return 64; fi ;;
     esac
     shift
   done
   [ -d "$dir" ] || { echo "no such megagoal dir: '$dir'" >&2; return 64; }
   local roadmap="$dir/ROADMAP.md"
   [ -f "$roadmap" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
+  local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
+  case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
 
   if [ "$dry" = 1 ]; then
     _say "[plan] mega-goal: $dir"
@@ -168,6 +277,10 @@ cmd_run() {
       [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
     done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
     [ "$any" = 1 ] || _say "  (no unchecked sub-goals)"
+    if [ "$board_mode" != roadmap ]; then
+      _say ""; _say "[board mode: $board_mode]"
+      _render_board "$dir" "$roadmap" "$board_mode"
+    fi
     return 0
   fi
 
@@ -178,6 +291,8 @@ cmd_run() {
     id=$(printf '%s' "$nx" | cut -f1); policy=$(printf '%s' "$nx" | cut -f2)
 
     if [ "$policy" = gate ]; then
+      _emit_event "$dir" "$id" blocked "gate: human review"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
       _say "[orchestrate] STOP: $id is a gate sub-goal; open/await its PR for review, then re-run."
       return 0
     fi
@@ -189,6 +304,8 @@ cmd_run() {
     IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$id")")
     [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
     [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
+    _emit_event "$dir" "$id" executing "model=${rmodel:-inherit} effort=${reffort:-inherit}"
+    [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
     _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p, model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
     # Inject the prompt via a TEMP FILE on stdin, not a shell-interpolated argv arg (pi-swarm
     # borrow). Removes the backtick/${}/secret-guard bug class when the handoff body carries shell
@@ -212,6 +329,8 @@ cmd_run() {
     fi
     rm -f "$pfile"
     if [ "$rc" != 0 ]; then
+      _emit_event "$dir" "$id" blocked "session exited nonzero ($rc)"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
       echo "[orchestrate] session for $id exited nonzero; stopping." >&2
       return 1
     fi
@@ -219,9 +338,13 @@ cmd_run() {
     # grounded completion: advance only if the box actually flipped.
     local checked; checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
     if [ "$checked" != 1 ]; then
+      _emit_event "$dir" "$id" blocked "box not flipped (no self-claim)"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
       echo "[orchestrate] $id did not check its ROADMAP box; halting (no self-claim)." >&2
       return 1
     fi
+    _emit_event "$dir" "$id" shipped "box checked"
+    [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
     _say "[orchestrate] $id complete (box checked); advancing."
     # --step: pause for the operator between sub-goals, but only when the NEXT one is auto (the
     # loop would actually run it). If next is a gate, the gate-stop below is the natural halt, so
@@ -240,7 +363,7 @@ main() {
   case "$cmd" in
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
-    *) echo "usage: orchestrate.sh {next|run} <megagoal-dir> [--dry-run] [--step] [--stream]" >&2; exit 64 ;;
+    *) echo "usage: orchestrate.sh {next|run} <megagoal-dir> [--dry-run] [--step] [--stream] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
   esac
 }
 
