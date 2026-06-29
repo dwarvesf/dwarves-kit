@@ -101,6 +101,26 @@ human) and by each sub-goal being a disposable session. The posture is **overrid
 `CLAUDE_FLAGS` env var (e.g. a tight `--allowedTools` allowlist) or by running the session
 inside an agentkernel sandbox via `CLAUDE_CMD`; these are options, not the default.
 
+### Model / effort routing (the biggest $ lever)
+
+Forensic (2026-06-28): Opus = 86.5% of measured spend. Running every sub-goal on Opus is the
+single largest waste; most sub-goals (discovery, light edits, doc passes) do not need it. So
+each sub-goal declares its own tier and the orchestrator dispatches accordingly.
+
+Each goal file `goals/NN-*.md` MAY carry, as bare `Key: value` header lines (not YAML):
+
+```
+Model: <tier>     # e.g. haiku | sonnet | opus; omit to inherit the parent session's model
+Effort: <level>   # e.g. low | medium | high; omit to inherit
+```
+
+The orchestrator reads these and passes `--model <tier>` / `--effort <level>` to the
+per-sub-goal `claude -p` call (both flags exist on the CLI). An absent field emits no flag, so
+the session inherits its tier; a missing goal file means inherit for both. `run ... --dry-run`
+prints the resolved tier per sub-goal (`[model: X, effort: Y]`, or `inherit`) so the routing is
+auditable before any session spends a token. The GENERATOR that emits these fields into composed
+goal files is a separate increment (`plan-for-mega-goal`); the orchestrator only consumes them.
+
 ### Mechanism C: distilled subagent returns (within-sub-goal; phase 2)
 
 Bounds growth INSIDE one sub-goal. Each kit-dispatched role returns a bounded structured
