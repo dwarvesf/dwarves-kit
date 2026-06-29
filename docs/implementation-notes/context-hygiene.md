@@ -38,3 +38,13 @@ SPEC-087 + ADR-0027; this records off-spec authoring decisions.
 - Decision: SPEC declares `Lane: normal`. The diff is markdown-only (SPEC + ADR), which the
   proof-gate classifies inert, so no proof-of-done is owed. Gate-ledger recorded for the
   normal lane so the kit ship-gate does not block the push.
+
+## 2026-06-29 v3: review fixes (PR #80 review)
+- Resolved OQ-001 (a HIGH review gap that would block SG-04's first run): default session
+  posture `--dangerously-skip-permissions` (Han's call), overridable via `CLAUDE_FLAGS` or an
+  agentkernel sandbox via `CLAUDE_CMD`. Added a "Session invocation" section.
+- Specified prompt structure (POINTER + goal-file CONTENT + HANDOFF), closing the path-vs-content
+  ambiguity; AC4 updated.
+- Added an ADR-0027 carve-out vs ADR-0022's goal-ordering-chain fence (linear / single-mega-goal
+  / single-machine / halt-at-gate scope).
+- Noted (not built) the clean-working-tree guard as a future failure-mode check.
