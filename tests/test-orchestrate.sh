@@ -34,8 +34,8 @@ EOF
 mk_mock_good() {
   cat > "$TMP/claude-good" <<'EOF'
 #!/usr/bin/env bash
-# args: -p "<prompt>"  ; env: MOCK_ROADMAP, MOCK_DIR
-prompt="${!#}"   # last arg = the prompt, robust to any leading flags (e.g. --dangerously-skip-permissions)
+# the prompt now arrives on STDIN (orchestrator pipes a temp file); env: MOCK_ROADMAP, MOCK_DIR
+prompt=$(cat)
 id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
 awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' \
   "$MOCK_ROADMAP" > "$MOCK_ROADMAP.tmp" && mv "$MOCK_ROADMAP.tmp" "$MOCK_ROADMAP"
@@ -85,7 +85,7 @@ grep -q 'STOP: SG-03 is a gate' "$TMP/run.out" && pass "stopped at gate with mes
 D3="$TMP/mg3"; mk_megagoal "$D3"
 cat > "$TMP/claude-probe" <<EOF
 #!/usr/bin/env bash
-prompt="\${!#}"
+prompt=\$(cat)
 id=\$(printf '%s' "\$prompt" | grep -oE 'SG-[0-9]+' | head -1)
 # record whether this turn's prompt carried a HANDOFF section
 printf '%s handoff=%s goal=%s\n' "\$id" "\$(printf '%s' "\$prompt" | grep -c 'HANDOFF from the previous')" "\$(printf '%s' "\$prompt" | grep -c 'GOALFILE-MARKER-01')" >> "$TMP/probe.log"
@@ -115,7 +115,7 @@ grep -q '^- \[ \] SG-01' "$D4/ROADMAP.md" && pass "negative control: SG-01 stays
 cat > "$TMP/claude-args" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$@" >> "$ARGS_LOG"
-prompt="${!#}"
+prompt=$(cat)
 id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
 awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$ARGS_RM" > "$ARGS_RM.tmp" && mv "$ARGS_RM.tmp" "$ARGS_RM"
 EOF
@@ -134,7 +134,56 @@ ARGS_LOG="$TMP/args.log" ARGS_RM="$D6/ROADMAP.md" CLAUDE_FLAGS="--allowedTools R
   && pass "CLAUDE_FLAGS overrides the default posture" \
   || { fail "CLAUDE_FLAGS override wrong"; cat "$TMP/args.log"; }
 
-# ============================ TEST 6 + 7: model/effort routing ============================
+# ============================ TEST 6: two-tier handoff injection ============================
+# Probe mock dumps the received prompt (stdin) to a capture file, then flips the box.
+cat > "$TMP/claude-cap" <<'EOF'
+#!/usr/bin/env bash
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+printf '%s' "$prompt" > "$CAP_FILE"
+awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$CAP_RM" > "$CAP_RM.tmp" && mv "$CAP_RM.tmp" "$CAP_RM"
+EOF
+chmod +x "$TMP/claude-cap"
+
+# Fixture: single auto sub-goal, pre-seeded with the committed HOT/WARM pair.
+D7="$TMP/mg7"; mk_megagoal "$D7"
+# make SG-01 the only runnable (gate at SG-02 so the loop stops right after SG-01)
+cat > "$D7/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 only auto , auto , PR #__
+- [ ] SG-02 gate , gate , PR #__
+EOF
+cp "$KIT/tests/fixtures/handoff-sample/HANDOFF.md" "$D7/HANDOFF.md"
+cp "$KIT/tests/fixtures/handoff-sample/DECISIONS.md" "$D7/DECISIONS.md"
+CAP_FILE="$TMP/cap.txt" CAP_RM="$D7/ROADMAP.md" CLAUDE_CMD="$TMP/claude-cap" bash "$ORCH" run "$D7" >/dev/null 2>&1
+
+# 6a: HOT handoff injected in full (small file -> a deep body line present, no truncation notice)
+{ grep -q 'Read-pointers (verified this run)' "$TMP/cap.txt" && ! grep -q 'truncated at' "$TMP/cap.txt"; } \
+  && pass "hot HANDOFF injected in full (under cap)" || { fail "hot handoff not fully injected"; }
+# 6b: WARM ledger injected as a POINTER only (path present, body NOT inlined)
+{ grep -q 'WARM LEDGER' "$TMP/cap.txt" && grep -q 'DECISIONS.md' "$TMP/cap.txt" && ! grep -q 'append-only: invariants + dead-ends, read on demand' "$TMP/cap.txt"; } \
+  && pass "warm DECISIONS injected as pointer, body not inlined" || { fail "warm ledger leaked its body or missing pointer"; }
+# 6c: the "report IN the records" wording is present
+grep -q 'report findings IN the records' "$TMP/cap.txt" \
+  && pass "report-in-the-records wording injected" || fail "missing report-in-records wording"
+
+# 6d: hot handoff CAP -> head + truncation notice when over HANDOFF_MAX_LINES
+D8="$TMP/mg8"; mk_megagoal "$D8"
+cat > "$D8/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 only auto , auto , PR #__
+- [ ] SG-02 gate , gate , PR #__
+EOF
+seq 1 20 | sed 's/^/LINE-/' > "$D8/HANDOFF.md"   # 20 lines: LINE-1 .. LINE-20
+CAP_FILE="$TMP/cap2.txt" CAP_RM="$D8/ROADMAP.md" HANDOFF_MAX_LINES=5 \
+  CLAUDE_CMD="$TMP/claude-cap" bash "$ORCH" run "$D8" >/dev/null 2>&1
+{ grep -q 'LINE-5' "$TMP/cap2.txt" && ! grep -q 'LINE-20' "$TMP/cap2.txt" && grep -q 'truncated at 5/20 lines' "$TMP/cap2.txt"; } \
+  && pass "hot HANDOFF capped at HANDOFF_MAX_LINES with a truncation notice" \
+  || { fail "handoff cap wrong"; }
+
+# ============================ TEST 7 + 8: model/effort routing ============================
 # Mixed-tier fixture: SG-01 carries Model:/Effort: hints, SG-02 carries none (inherit).
 mk_routed() {
   local d="$1"; mk_megagoal "$d"
@@ -148,7 +197,7 @@ EOF
   # SG-02 deliberately has NO goal file -> no hints -> inherit.
 }
 
-# TEST 6: --dry-run prints the chosen tier per sub-goal (and "inherit" when absent).
+# TEST 7: --dry-run prints the chosen tier per sub-goal (and "inherit" when absent).
 DR="$TMP/mgr"; mk_routed "$DR"
 out=$(bash "$ORCH" run "$DR" --dry-run)
 echo "$out" | grep -qE 'SG-01 \(auto\).*model: sonnet, effort: low' \
@@ -156,14 +205,13 @@ echo "$out" | grep -qE 'SG-01 \(auto\).*model: sonnet, effort: low' \
 echo "$out" | grep -qE 'SG-02 \(auto\).*model: inherit, effort: inherit' \
   && pass "dry-run shows SG-02 inherit (no hints)" || { fail "dry-run SG-02 inherit wrong"; echo "$out"; }
 
-# TEST 7: real run passes --model/--effort for the hinted sub-goal, none for the inherit one.
-# Mock logs "<id>|<flags>" per call (drops the last arg, the prompt, which has newlines).
+# TEST 8: real run passes --model/--effort for the hinted sub-goal, none for the inherit one.
+# Prompt arrives on STDIN now, so the mock logs "<id>|<flags>" from "$@" (flags only, no prompt arg).
 cat > "$TMP/claude-route" <<'EOF'
 #!/usr/bin/env bash
-prompt="${!#}"
+prompt=$(cat)
 id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
-args=("$@"); [ "${#args[@]}" -gt 0 ] && unset 'args[${#args[@]}-1]'
-printf '%s|%s\n' "$id" "${args[*]}" >> "$ROUTE_LOG"
+printf '%s|%s\n' "$id" "$*" >> "$ROUTE_LOG"
 awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$ROUTE_RM" > "$ROUTE_RM.tmp" && mv "$ROUTE_RM.tmp" "$ROUTE_RM"
 EOF
 chmod +x "$TMP/claude-route"
