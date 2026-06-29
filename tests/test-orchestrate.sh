@@ -224,5 +224,66 @@ grep -q '^SG-01|.*--model sonnet --effort low' "$TMP/route.log" \
 { grep '^SG-02|' "$TMP/route.log" | grep -qv -- '--model'; } \
   && pass "run passes no --model for inherit SG-02" || { fail "SG-02 got an unexpected --model"; cat "$TMP/route.log"; }
 
+# ============================ TEST 9: --step run-modes (SG-01) ============================
+# 9a: --step --dry-run annotates the plan with pause points (no claude invoked).
+DS="$TMP/mgs"; mk_megagoal "$DS"
+out=$(bash "$ORCH" run "$DS" --step --dry-run)
+{ echo "$out" | grep -q 'pause for the operator after each sub-goal' \
+  && echo "$out" | grep -q '\[--step\] pause here'; } \
+  && pass "--step --dry-run shows pause points" || { fail "--step dry-run missing pauses"; echo "$out"; }
+grep -q '^- \[ \] SG-01' "$DS/ROADMAP.md" && pass "--step --dry-run did not execute" || fail "--step dry-run had side effects"
+
+# 9b: --step real run, operator resumes (Enter) -> chain completes, stops at gate.
+D9="$TMP/mg9"; mk_megagoal "$D9"; mk_mock_good
+export MOCK_ROADMAP="$D9/ROADMAP.md" MOCK_DIR="$D9"
+printf '\n\n' | CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$D9" --step > "$TMP/step.out" 2>&1
+{ grep -q '^- \[x\] SG-01' "$D9/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$D9/ROADMAP.md" \
+  && grep -q '^- \[ \] SG-03' "$D9/ROADMAP.md"; } \
+  && pass "--step resume: SG-01+SG-02 ran, gate SG-03 untouched" || { fail "--step resume wrong"; cat "$TMP/step.out"; }
+grep -q '\-\-step: SG-01 done' "$TMP/step.out" && pass "--step paused after SG-01" || { fail "no pause prompt"; cat "$TMP/step.out"; }
+
+# 9c: --step real run, operator quits (q) after SG-01 -> SG-02 NOT run, exit 0.
+D10="$TMP/mg10"; mk_megagoal "$D10"
+export MOCK_ROADMAP="$D10/ROADMAP.md" MOCK_DIR="$D10"
+printf 'q\n' | CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$D10" --step > "$TMP/quit.out" 2>&1
+rc=$?
+{ [ "$rc" = 0 ] && grep -q '^- \[x\] SG-01' "$D10/ROADMAP.md" && grep -q '^- \[ \] SG-02' "$D10/ROADMAP.md"; } \
+  && pass "--step quit: SG-01 ran, SG-02 stopped, exit 0" || { fail "--step quit wrong (rc=$rc)"; cat "$TMP/quit.out"; }
+grep -q 'operator stopped after SG-01' "$TMP/quit.out" && pass "--step quit: explains the stop" || fail "no quit message"
+
+# Negative control for SG-01: default (no --step) run does NOT pause (unchanged behavior).
+D11="$TMP/mg11"; mk_megagoal "$D11"
+export MOCK_ROADMAP="$D11/ROADMAP.md" MOCK_DIR="$D11"
+CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$D11" > "$TMP/nostep.out" 2>&1 < /dev/null
+{ ! grep -q -- '--step:' "$TMP/nostep.out" && grep -q '^- \[x\] SG-02' "$D11/ROADMAP.md"; } \
+  && pass "default (no --step) does not pause; chain runs unchanged" || { fail "default mode changed"; cat "$TMP/nostep.out"; }
+
+# ============================ TEST 10: --stream capture (SG-01) ============================
+# Mock emits two lines (simulated stream-json) and flips the box; orchestrator tee's to capture.
+cat > "$TMP/claude-stream" <<'EOF'
+#!/usr/bin/env bash
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+printf '{"type":"assistant","sg":"%s"}\n{"type":"result"}\n' "$id"
+awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$STREAM_RM" > "$STREAM_RM.tmp" && mv "$STREAM_RM.tmp" "$STREAM_RM"
+EOF
+chmod +x "$TMP/claude-stream"
+D12="$TMP/mg12"; mk_megagoal "$D12"
+cat > "$D12/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 only auto , auto , PR #__
+- [ ] SG-02 gate , gate , PR #__
+EOF
+STREAM_RM="$D12/ROADMAP.md" CLAUDE_CMD="$TMP/claude-stream" bash "$ORCH" run "$D12" --stream > "$TMP/stream.out" 2>&1 < /dev/null
+{ [ -f "$D12/.orchestrate/SG-01.stream.jsonl" ] && grep -q '"type":"result"' "$D12/.orchestrate/SG-01.stream.jsonl"; } \
+  && pass "--stream captured the session output to .orchestrate/SG-01.stream.jsonl" || { fail "--stream capture missing"; cat "$TMP/stream.out"; }
+grep -q '"type":"result"' "$TMP/stream.out" && pass "--stream tee'd output live to stdout" || fail "--stream not teed live"
+grep -q '^- \[x\] SG-01' "$D12/ROADMAP.md" && pass "--stream run still advances on box flip" || fail "--stream did not advance"
+
+# Unknown flag is rejected.
+bash "$ORCH" run "$DS" --bogus > "$TMP/bogus.out" 2>&1; rc=$?
+{ [ "$rc" = 64 ] && grep -q 'unknown flag' "$TMP/bogus.out"; } && pass "unknown flag -> exit 64" || fail "unknown flag not rejected (rc=$rc)"
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }
