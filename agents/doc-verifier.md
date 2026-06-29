@@ -81,3 +81,14 @@ Contradictions:
 - Keep output compact so `/docs` parses the verdict quickly.
 
 Source: GSD `agents/gsd-doc-verifier.md` (read-only adversarial doc fact-checker, "assume every claim is wrong until the filesystem proves it"); adapted to the kit's three-verdict shape. Reuses the verification-pipeline split (read-only verifier; the writer applies the fix), ADR-0005. Sibling of `integration-checker` (SPEC-021). See docs/specs/SPEC-022-doc-verifier.md and ADR-0016.
+
+## Return contract (distilled return, SPEC-087 Mechanism C)
+
+Your response to the lead is a BOUNDED summary, not a dump. Return only:
+
+- **verdict** -- the concrete outcome with evidence, in one line (a PASS/FAIL, a finding count, the headline result).
+- **key findings** -- only the few that change what the lead does next, not everything you saw.
+- **artifacts** -- paths you wrote or changed, so the lead can open them.
+- **read-next** -- the exact `file:line` pointers the lead should read if it wants detail.
+
+Report findings IN this summary, not as a re-paste of diffs, full test logs, or whole files; the full output stays recoverable in your subagent transcript (and in any file you wrote). The lead absorbs the summary and pulls detail on demand. This return contract bounds within-sub-goal context growth to hundreds of tokens per dispatch instead of tens of thousands.

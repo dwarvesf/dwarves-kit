@@ -68,6 +68,11 @@ Tasks with no dependencies or whose dependencies are all complete can run in any
 
 #### 2b. Dispatch each task as a worker subagent
 
+> A subagent is NOT automatically cheaper: a subagent-heavy workflow can cost several times a
+> single thread. Dispatch one when isolating a task's noise (large reads, long tool chains) from
+> the lead's context is worth the setup overhead, NOT for one-prompt tasks, a single tool call,
+> or when near a rate/budget limit. (research/2026-06-28-token-efficient-design.md Part 1.)
+
 For each task, use the **Task tool** with this prompt structure:
 
 ```
@@ -117,11 +122,18 @@ Before writing any code, expand this task into **bite-sized steps** and present 
 ## Decision mode
 [lead: pause for human approval / autonomous: proceed with recommendation and log]
 
-## When done
-Report: what you implemented, what tests you wrote, what files you changed, decisions made
-(with protocol format), whether all acceptance criteria are met, and the path
-+ count of entries appended to `docs/implementation-notes/<spec-slug>.md` (or
-`no deviations logged` if you appended the no-deviations line).
+## When done (distilled return contract, SPEC-087 Mechanism C)
+Your response to the lead is a BOUNDED summary, not a dump. Return only:
+- **verdict** -- one line: all acceptance criteria met? + the commit hash.
+- **key findings** -- decisions made (protocol format) + any blocker; the few things that
+  change what the lead does next.
+- **artifacts** -- files you changed, the tests you wrote, and the path + count of entries
+  appended to `docs/implementation-notes/<spec-slug>.md` (or `no deviations logged`).
+- **read-next** -- `file:line` pointers if the lead wants detail.
+
+Report findings IN this summary, not as a re-paste of full diffs or test logs; the full output
+stays recoverable in your subagent transcript. The lead absorbs the summary and pulls detail on
+demand (and passes it to the task-verifier).
 ```
 
 #### 2c. Verify worker output (THE VERIFICATION PIPELINE)

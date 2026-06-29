@@ -106,8 +106,21 @@ inside an agentkernel sandbox via `CLAUDE_CMD`; these are options, not the defau
 Bounds growth INSIDE one sub-goal. Each kit-dispatched role returns a bounded structured
 summary (`verdict`, `key findings`, `artifacts`, `read-next`), not the full diff / log; the
 full output stays recoverable in the subagent transcript. The lead absorbs the summary and
-pulls detail on demand. Applies to worker, task-verifier, integration-checker, reviewer /
-review-team, research-*. This is additive to A+B and is built as a follow-up increment.
+pulls detail on demand. Implemented as a `## Return contract` section appended to every
+`agents/*.md` (the worker has no agent file, so its contract lives in the `/kit:execute`
+dispatch prose). The wording is grounded in pi-swarm (`spawn.ts:180`, "report findings IN the
+record, not your response text"); the verdict is a "concrete outcome with evidence". This bounds
+the lead's growth to hundreds of tokens per dispatch instead of the 16-25K a full dump costs.
+
+**Decision rule (when to dispatch at all).** A subagent is NOT automatically cheaper: a
+subagent-heavy workflow can cost several times a single thread (setup + the return still lands in
+the lead). Dispatch one only when isolating a task's noise (large reads, long tool chains) from
+the lead's context is worth that overhead, NOT for one-prompt tasks, a single tool call, or when
+near a rate/budget limit (research/2026-06-28-token-efficient-design.md Part 1). The return
+contract makes the dispatch-and-absorb path cheap; the decision rule keeps it from being overused.
+
+Applies to worker, task-verifier, integration-checker, reviewer / review-team, research-*. This
+is additive to A+B.
 
 ### Where it lives
 

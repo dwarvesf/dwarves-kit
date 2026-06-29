@@ -58,3 +58,14 @@ Write to `docs/research/features.md`:
 - Max 80 lines. Focus on the 10-15 most relevant files, not exhaustive listing.
 - Use `git log` to find which files are actively maintained vs abandoned.
 - If the area doesn't exist yet (no related code found), say so explicitly. That means it's greenfield within a brownfield project.
+
+## Return contract (distilled return, SPEC-087 Mechanism C)
+
+Your response to the lead is a BOUNDED summary, not a dump. Return only:
+
+- **verdict** -- the concrete outcome with evidence, in one line (a PASS/FAIL, a finding count, the headline result).
+- **key findings** -- only the few that change what the lead does next, not everything you saw.
+- **artifacts** -- paths you wrote or changed, so the lead can open them.
+- **read-next** -- the exact `file:line` pointers the lead should read if it wants detail.
+
+Report findings IN this summary, not as a re-paste of diffs, full test logs, or whole files; the full output stays recoverable in your subagent transcript (and in any file you wrote). The lead absorbs the summary and pulls detail on demand. This return contract bounds within-sub-goal context growth to hundreds of tokens per dispatch instead of tens of thousands.
