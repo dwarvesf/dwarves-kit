@@ -4,6 +4,15 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Added
+- **spec-index: read-only registry view across co-located docs/specs namespaces
+  (no numbering/discovery change).** New `lib/spec-index.sh` scans every
+  `*/docs/specs/SPEC-*.md` in the repo and lists them grouped by namespace
+  (`central docs/specs` and co-located ones like `tools/<name>`), each group
+  sorted by local number. Numbering stays deliberately per-namespace and local;
+  this view is NOT wired into `spec-next` / `goal-drafts` / `precedent`, which
+  remain namespace-scoped. Covered by `tests/test-spec-index.sh`.
+
 ## [1.7.0] - 2026-06-11
 
 ### Added
