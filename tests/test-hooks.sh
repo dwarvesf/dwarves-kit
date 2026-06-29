@@ -1696,6 +1696,36 @@ assert_exit "latest INCONCLUSIVE blocks even after an older PASS" 1 $RC
 rm -rf "$PR80"
 
 # ============================================================
+# output-offload.sh -- threshold + reversible offload (SG-06)
+# ============================================================
+OFFLOAD_CACHE="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-offload-test.XXXXXX")"
+trap 'rm -rf "${DWARVES_KIT_LOG_DIR:?}" "${OFFLOAD_CACHE:?}"' EXIT
+run_offload() {  # $1=input json ; sets OFFLOAD_OUT ; budget = 25 tokens (~100 chars)
+  OFFLOAD_OUT=$(printf '%s' "$1" | XDG_CACHE_HOME="$OFFLOAD_CACHE" OFFLOAD_MAX_TOKENS=25 \
+    bash "$KIT_DIR/hooks/output-offload.sh" 2>/dev/null)
+}
+
+# small response (80 chars, under the ~100-char budget) -> pass through, no offload
+SMALL=$(printf 'x%.0s' $(seq 1 80))
+IN_SMALL=$(jq -cn --arg r "$SMALL" '{tool_name:"Read",tool_response:$r}')
+run_offload "$IN_SMALL"
+assert_output_not_contains "small output is not offloaded" "offload threshold" "$OFFLOAD_OUT"
+
+# large response (400 chars, over budget) -> offloaded: pointer emitted + full payload on disk
+BIG=$(printf 'y%.0s' $(seq 1 400))
+IN_BIG=$(jq -cn --arg r "$BIG" '{tool_name:"Read",tool_response:$r}')
+run_offload "$IN_BIG"
+assert_output_contains "large output emits an offload pointer" "offload threshold" "$OFFLOAD_OUT"
+assert_output_contains "pointer names the saved file" "Full payload saved to" "$OFFLOAD_OUT"
+# reversibility: the offload file exists and holds the FULL 400-char payload (nothing dropped)
+OFFLOAD_FILE=$(find "$OFFLOAD_CACHE/dwarves-kit/offload" -type f 2>/dev/null | head -1)
+assert_true "offload file was written" "$([ -s "$OFFLOAD_FILE" ]; echo $?)"
+SAVED_LEN=$(wc -c < "$OFFLOAD_FILE" 2>/dev/null | tr -d ' ')
+assert_true "offload file holds the full payload (400 chars + newline)" "$([ "$SAVED_LEN" = 401 ]; echo $?)"
+# the pointer is terse: it must NOT echo the payload back into context (no re-bloat)
+assert_output_not_contains "pointer does not re-paste the payload" "yyyyyyyyyy" "$OFFLOAD_OUT"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 # ============================================================
