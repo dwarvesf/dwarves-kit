@@ -343,5 +343,62 @@ grep -q '| SG-01 | .* | shipped |' "$DBE/BOARD.md" && pass "board derived by rep
 bash "$ORCH" run "$DB" --board=bogus --dry-run > "$TMP/bm.out" 2>&1; rc=$?
 { [ "$rc" != 0 ] && grep -q "unknown --board mode" "$TMP/bm.out"; } && pass "unknown --board mode rejected" || fail "bad --board mode not rejected (rc=$rc)"
 
+# ============================ TEST 12: loop robustness (SG-11) ==============================
+evlog_has() { awk -F'\t' -v id="$1" -v st="$2" '$2==id && $3==st{f=1} END{exit !f}' "$3"; }
+
+# 12a: stalled-watchdog. Mock emits nothing for ~3s (pid alive) then flips the box. With
+# WATCHDOG_STALL_SECS=1 the watchdog flags `stalled` (event + WARN) but does NOT kill -> the
+# session recovers and ships.
+DW="$TMP/mgw"; mk_megagoal "$DW"
+cat > "$TMP/claude-slow" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+sleep 3
+awk '{ if ($0 ~ /^- \[ \] SG-01 /) sub(/\[ \]/, "[x]"); print }' "$SLOW_RM" > "$SLOW_RM.t" && mv "$SLOW_RM.t" "$SLOW_RM"
+echo "late output"
+EOF
+chmod +x "$TMP/claude-slow"
+SLOW_RM="$DW/ROADMAP.md" WATCHDOG_STALL_SECS=1 WATCHDOG_POLL_SECS=1 \
+  CLAUDE_CMD="$TMP/claude-slow" bash "$ORCH" run "$DW" --board=roadmap > "$TMP/wd.out" 2>&1 < /dev/null
+{ grep -q '\[watchdog\] WARN: SG-01 stalled' "$TMP/wd.out" && evlog_has SG-01 stalled "$DW/.orchestrate/events.log"; } \
+  && pass "watchdog flags a stalled session (event + WARN)" || { fail "watchdog stall detection wrong"; cat "$TMP/wd.out"; }
+{ evlog_has SG-01 shipped "$DW/.orchestrate/events.log" && grep -q '^- \[x\] SG-01' "$DW/ROADMAP.md"; } \
+  && pass "watchdog is advisory: stalled-but-alive session not killed, recovers + ships" || fail "watchdog wrongly killed/blocked the session"
+
+# 12b: dead-session reconciliation. Under the watchdog, a session that exits nonzero halts the
+# loop (rc!=0), does NOT advance the box, and records a blocked event (no self-claim on a dead run).
+DD="$TMP/mgd"; mk_megagoal "$DD"
+cat > "$TMP/claude-die" <<'EOF'
+#!/usr/bin/env bash
+cat >/dev/null
+exit 7
+EOF
+chmod +x "$TMP/claude-die"
+WATCHDOG_STALL_SECS=1 WATCHDOG_POLL_SECS=1 CLAUDE_CMD="$TMP/claude-die" bash "$ORCH" run "$DD" --board=roadmap > "$TMP/dd.out" 2>&1 < /dev/null
+rc=$?
+{ [ "$rc" != 0 ] && grep -q '^- \[ \] SG-01' "$DD/ROADMAP.md" && evlog_has SG-01 blocked "$DD/.orchestrate/events.log"; } \
+  && pass "watchdog dead-session: halts, box not advanced, blocked event recorded" || { fail "dead-session reconcile wrong (rc=$rc)"; cat "$TMP/dd.out"; }
+
+# 12c: guardrail. An AUTO sub-goal with no goals/ file warns before launch (re-discovery hazard).
+DG="$TMP/mgg"; mkdir -p "$DG"
+cat > "$DG/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 no goal file , auto , PR #__
+- [ ] SG-02 gate , gate , PR #__
+EOF
+echo "POINTER" > "$DG/POINTER_PROMPT.md"   # NOTE: deliberately no goals/ dir
+export MOCK_ROADMAP="$DG/ROADMAP.md" MOCK_DIR="$DG"
+CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$DG" --board=roadmap > "$TMP/gg.out" 2>&1 < /dev/null
+grep -q '\[guardrail\] WARN: SG-01 has no goals/ file' "$TMP/gg.out" \
+  && pass "guardrail warns on a sub-goal missing its goal file" || { fail "missing-goal-file guardrail wrong"; cat "$TMP/gg.out"; }
+
+# 12d: default (watchdog OFF) is unchanged -- no [watchdog] lines, synchronous path runs.
+DO="$TMP/mgo"; mk_megagoal "$DO"
+export MOCK_ROADMAP="$DO/ROADMAP.md" MOCK_DIR="$DO"
+CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$DO" --board=roadmap > "$TMP/wo.out" 2>&1 < /dev/null
+{ ! grep -q '\[watchdog\]' "$TMP/wo.out" && grep -q '^- \[x\] SG-02' "$DO/ROADMAP.md"; } \
+  && pass "watchdog off by default: no bg path, chain runs unchanged" || { fail "default watchdog-off changed"; cat "$TMP/wo.out"; }
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }

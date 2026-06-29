@@ -221,3 +221,59 @@ tooling being present (a kit without `backlog.sh` still runs), and `--board=road
 suppresses it even when present. Unknown `--board=bogus` is rejected (exit 64, test 11f).
 
 Verdict: PASS (Exit: 0 on the suite; tooling-gating + ROADMAP-canonical proven by 11b/11c).
+
+## SG-11 addendum: loop robustness (2026-06-29, token-optim-v2)
+
+Adds an advisory stall-watchdog + PID-liveness + a tool-baked guardrail to `lib/orchestrate.sh`.
+`WATCHDOG_STALL_SECS=0` (default) keeps the synchronous run path UNCHANGED; `>0` backgrounds each
+session and polls liveness (`kill -0`, no daemon) + the session-log mtime. A session with no
+output for `WATCHDOG_STALL_SECS` while its process is alive is flagged `stalled` (event + WARN)
+and NOT killed (advisory). A dead/incomplete session never advances its box. Branched off master
+after SG-01 (#86) + SG-10 (#87) merged; reuses SG-10's event log.
+
+### Acceptance criteria (SG-11)
+
+| # | Criterion | Met |
+|---|---|---|
+| AC1 | Stalled-watchdog: no progress in N -> flagged `stalled` (event + advisory WARN, no kill) | yes (test 12a) |
+| AC2 | PID-liveness probe (no daemon); dead session reconciled -> box not advanced | yes (test 12b) |
+| AC3 | Tool-baked guardrail warns on a wrong move (sub-goal with no goal file) | yes (test 12c) |
+| AC4 | Watchdog advisory/reversible by default; default (off) behavior unchanged | yes (test 12d) |
+
+### Confirmation run-table
+
+| Command | Exit | Result |
+|---|---|---|
+| `bash tests/test-orchestrate.sh` | 0 | 48/48 PASS (+5 for robustness) |
+| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+| `bash tests/test-meta.sh` | 0 | 500/500 |
+
+### Run detail: watchdog flags a stall but does not kill (captured 2026-06-29)
+
+Mock emits nothing for ~3s (pid alive) then flips its box; `WATCHDOG_STALL_SECS=1`:
+
+```
+[orchestrate] [guardrail] WARN: SG-01 has no goals/ file; session runs without its contract ...
+[orchestrate] [watchdog] SG-01: output -> .../.orchestrate/SG-01.session.log (stall=1s, poll=1s; advisory, never kills)
+[orchestrate] [watchdog] WARN: SG-01 stalled -- no output for 1s, pid 86522 still alive. Not killing (advisory); ...
+[orchestrate] SG-01 complete (box checked); advancing.
+
+$ cat .orchestrate/events.log
+<ts>  SG-01  executing  model=inherit effort=inherit
+<ts>  SG-01  stalled    no output for 1s (pid 86522 alive)
+<ts>  SG-01  shipped    box checked
+```
+
+The `stalled` event is recorded AND the session is left to recover (advisory). The event log is
+the SG-10 record SG-11 appends to (goal 11 "reuse SG-10's event log").
+
+### NEGATIVE CONTROL (SG-11)
+
+Test 12b runs a session that exits nonzero under the watchdog: the loop halts (rc!=0), the box is
+NOT advanced, and a `blocked` event is recorded -- a dead session cannot self-claim completion.
+Test 12d proves the watchdog is genuinely gated: with `WATCHDOG_STALL_SECS` unset (0), no
+`[watchdog]` line appears and the synchronous chain runs unchanged, so an interactive run pays no
+background-process cost.
+
+Verdict: PASS (Exit: 0 on the suite; advisory-not-fatal proven by 12a recovery, dead-session
+reconciliation by 12b, default-off by 12d).

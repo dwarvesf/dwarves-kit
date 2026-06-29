@@ -17,6 +17,10 @@
 #                  detects (backlog.sh present -> both, else roadmap). Event-sourced + derived;
 #                  ROADMAP.md stays canonical, the repo-wide BACKLOG cockpit is never touched.
 #   --step/--stream are opt-in; default behavior is unchanged (SG-01, SPEC-087 Mechanism A).
+#   Env (SG-11 robustness, advisory): WATCHDOG_STALL_SECS>0 backgrounds each session + flags it
+#   `stalled` after that many seconds with no output (WATCHDOG_POLL_SECS poll interval); never
+#   kills. Default 0 = off (synchronous path unchanged). A dead/incomplete session never advances
+#   its box (`[guardrail]` halt); a sub-goal with no goals/ file warns before launch.
 #
 # <megagoal-dir> holds: ROADMAP.md (sub-goal lines `- [ ] SG-NN ... , auto|gate , ...`),
 # POINTER_PROMPT.md (static resume prompt), HANDOFF.md (feed-forward, written by each sub-goal).
@@ -46,7 +50,18 @@ HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
 ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKLOG_LIB="${BACKLOG_LIB:-$ORCH_DIR/backlog.sh}"
 
+# Loop robustness (SG-11, advisory). WATCHDOG_STALL_SECS=0 (default) keeps the synchronous run
+# path UNCHANGED. >0 backgrounds each session and polls every WATCHDOG_POLL_SECS: if the session
+# emits no output for WATCHDOG_STALL_SECS while its process is still alive, it is flagged
+# `stalled` (event + warn) -- never killed (flag, don't kill). Liveness is a `kill -0` probe (no
+# daemon, per the pi-swarm thesis).
+WATCHDOG_STALL_SECS="${WATCHDOG_STALL_SECS:-0}"
+WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
+
 _say() { printf '%s\n' "$*"; }
+
+# Portable file mtime (epoch secs): BSD/macOS `stat -f`, GNU `stat -c`. Empty if absent.
+_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
 
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
 # Policy is the comma-separated field that EQUALS auto|gate after trim (not a regex hit on the
@@ -243,6 +258,33 @@ _step_pause() {
   esac
 }
 
+# Run a session under the stall-watchdog (SG-11). Backgrounds claude (output -> a session log),
+# polls liveness (`kill -0`, no daemon) + the log's mtime; after WATCHDOG_STALL_SECS of no new
+# output while the process is still alive, emits a `stalled` event + WARN ONCE (advisory: never
+# kills). Returns the session's exit code. The captured output is surfaced after completion.
+_run_session_watchdog() {  # dir id pfile route_flags
+  local dir="$1" id="$2" pfile="$3" rflags="$4"
+  local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
+  local slog="$logdir/${id}.session.log"; : > "$slog"
+  _say "[orchestrate] [watchdog] $id: output -> $slog (stall=${WATCHDOG_STALL_SECS}s, poll=${WATCHDOG_POLL_SECS}s; advisory, never kills)"
+  # shellcheck disable=SC2086 # rflags + CLAUDE_FLAGS are operator/goal config; word-splitting is intended.
+  { "$CLAUDE_CMD" -p $rflags $CLAUDE_FLAGS < "$pfile" > "$slog" 2>&1; } &
+  local spid=$! warned=0 now last age
+  while kill -0 "$spid" 2>/dev/null; do
+    sleep "$WATCHDOG_POLL_SECS"
+    kill -0 "$spid" 2>/dev/null || break
+    now=$(date +%s); last=$(_mtime "$slog"); [ -n "$last" ] || last=$now; age=$((now - last))
+    if [ "$age" -ge "$WATCHDOG_STALL_SECS" ] && [ "$warned" = 0 ]; then
+      warned=1
+      _emit_event "$dir" "$id" stalled "no output for ${age}s (pid $spid alive)"
+      echo "[orchestrate] [watchdog] WARN: $id stalled -- no output for ${age}s, pid $spid still alive. Not killing (advisory); tail $slog." >&2
+    fi
+  done
+  wait "$spid"; local rc=$?
+  cat "$slog"
+  return "$rc"
+}
+
 cmd_run() {
   local dir="" dry=0 step=0 stream=0 board_arg=""
   while [ $# -gt 0 ]; do
@@ -304,6 +346,11 @@ cmd_run() {
     IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$id")")
     [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
     [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
+    # Guardrail (SG-11): a sub-goal with no goals/ file runs without its contract -- a re-discovery
+    # hazard. Warn loudly (advisory; the loop still runs it on POINTER_PROMPT + handoff alone).
+    if [ -z "$(_goalfile "$dir" "$id")" ]; then
+      echo "[orchestrate] [guardrail] WARN: $id has no goals/ file; session runs without its contract (re-discovery hazard)." >&2
+    fi
     _emit_event "$dir" "$id" executing "model=${rmodel:-inherit} effort=${reffort:-inherit}"
     [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
     _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p, model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
@@ -317,7 +364,10 @@ cmd_run() {
     # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
     # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
     local rc=0
-    if [ "$stream" = 1 ]; then
+    if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
+      # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
+      _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
+    elif [ "$stream" = 1 ]; then
       local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
       local slog="$logdir/${id}.stream.jsonl"
       _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
@@ -340,7 +390,7 @@ cmd_run() {
     if [ "$checked" != 1 ]; then
       _emit_event "$dir" "$id" blocked "box not flipped (no self-claim)"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
-      echo "[orchestrate] $id did not check its ROADMAP box; halting (no self-claim)." >&2
+      echo "[orchestrate] [guardrail] $id did not check its ROADMAP box; halting (no self-claim, no advance on a dead/incomplete session)." >&2
       return 1
     fi
     _emit_event "$dir" "$id" shipped "box checked"
