@@ -60,8 +60,15 @@ WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 
 _say() { printf '%s\n' "$*"; }
 
-# Portable file mtime (epoch secs): BSD/macOS `stat -f`, GNU `stat -c`. Empty if absent.
-_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+# Portable file mtime (epoch secs). GNU `stat -c` FIRST: it errors cleanly on BSD/macOS, so the
+# `stat -f` fallback runs there; the reverse order is unsafe because GNU `stat -f` SUCCEEDS with
+# filesystem text (starting "File:"), starving the fallback and poisoning `$(( ))`. Digit-guarded
+# so any non-numeric stat output yields empty rather than breaking arithmetic. Empty if absent.
+_mtime() {
+  local m
+  m=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)
+  case "$m" in ''|*[!0-9]*) return 0 ;; *) printf '%s' "$m" ;; esac
+}
 
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
 # Policy is the comma-separated field that EQUALS auto|gate after trim (not a regex hit on the
