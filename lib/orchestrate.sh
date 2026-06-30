@@ -45,6 +45,14 @@ CLAUDE_FLAGS="${CLAUDE_FLAGS:---dangerously-skip-permissions}"
 # point at the file. The WARM DECISIONS.md ledger is never injected in full (pointer only).
 HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
 
+# Deterministic handoff (token-optim-v3 SG-02). Off (0) by default -> the per-session invocation
+# stays byte-identical and the LLM session writes its own HANDOFF.md/DECISIONS.md (unchanged). On
+# (1) -> the session is captured to stream-json and, after grounded completion, the two-tier
+# handoff is REGENERATED deterministically from that transcript by lib/handoff-gen (SPEC-087 Mech
+# B fields preserved; no LLM in the handoff path). Always-produced + reproducible beats
+# occasionally-excellent-but-skippable.
+DETERMINISTIC_HANDOFF="${DETERMINISTIC_HANDOFF:-0}"
+
 # Kanban renderer reused by the board-view (SG-10). Resolved next to this script; override in
 # tests. When absent, board mode fail-safes to roadmap-only so a kit without the tooling runs.
 ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -370,16 +378,25 @@ cmd_run() {
     # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
     # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
     # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
-    local rc=0
+    local rc=0 slog=""
     if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
       # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
+      # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
+      # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
       _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
-    elif [ "$stream" = 1 ]; then
+    elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; then
+      # Capture stream-json when either the operator wants a live tail (--stream) OR the
+      # deterministic handoff needs the transcript (DETERMINISTIC_HANDOFF=1). The live `tee` to
+      # the terminal happens only under --stream; det-handoff capture is silent.
       local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
-      local slog="$logdir/${id}.stream.jsonl"
-      _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
+      slog="$logdir/${id}.stream.jsonl"
       # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
+      if [ "$stream" = 1 ]; then
+        _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
+        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
+      else
+        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
+      fi
     else
       # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
       "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
@@ -403,6 +420,26 @@ cmd_run() {
     _emit_event "$dir" "$id" shipped "box checked"
     [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
     _say "[orchestrate] $id complete (box checked); advancing."
+
+    # Deterministic handoff (SG-02): regenerate the two-tier handoff for the NEXT sub-goal from
+    # this session's captured transcript, so the handoff is always produced and reproducible
+    # rather than depending on the model having written a good one. Overwrites HANDOFF.md (hot)
+    # and appends DECISIONS.md (warm, idempotent). Failure is non-fatal: the loop continues and
+    # the session's own HANDOFF.md (if any) stands.
+    if [ "$DETERMINISTIC_HANDOFF" = 1 ] && [ -s "$slog" ]; then
+      local nx2 nid nraw ntitle
+      nx2=$(_next "$roadmap")
+      if [ -n "$nx2" ]; then
+        nid=$(printf '%s' "$nx2" | cut -f1)
+        nraw=$(_sg_line "$roadmap" "$nid"); ntitle=$(_sg_title "$nraw" "$nid")
+        if "$ORCH_DIR/handoff-gen" "$slog" --dir "$dir" --next-id "$nid" --next-title "$ntitle" --date "$(date -u +%F)"; then
+          _emit_event "$dir" "$id" handoff "deterministic -> $nid"
+          _say "[orchestrate] deterministic handoff written for $nid (HANDOFF.md overwritten, DECISIONS.md appended)."
+        else
+          echo "[orchestrate] WARN: deterministic handoff generation failed for $id; the session's own HANDOFF.md (if any) stands." >&2
+        fi
+      fi
+    fi
     # --step: pause for the operator between sub-goals, but only when the NEXT one is auto (the
     # loop would actually run it). If next is a gate, the gate-stop below is the natural halt, so
     # don't double up with a pause first.

@@ -1,0 +1,58 @@
+PASS next -> SG-01 auto
+PASS dry-run lists SG-01, SG-02, STOP at gate SG-03
+PASS dry-run did not execute anything
+PASS run exited 0
+PASS auto SG-01 + SG-02 boxes flipped
+PASS gate SG-03 left unchecked (stopped)
+PASS stopped at gate with message
+PASS HANDOFF.md written for the next sub-goal
+PASS handoff injected into SG-02's prompt but not SG-01's
+PASS goal-file content injected into the prompt (not just a path)
+PASS negative control: run halts nonzero when box not flipped
+PASS negative control: explains the halt
+PASS negative control: SG-01 stays unchecked
+PASS default posture flag (--dangerously-skip-permissions) passed to claude
+PASS CLAUDE_FLAGS overrides the default posture
+PASS hot HANDOFF injected in full (under cap)
+PASS warm DECISIONS injected as pointer, body not inlined
+PASS report-in-the-records wording injected
+PASS hot HANDOFF capped at HANDOFF_MAX_LINES with a truncation notice
+PASS dry-run shows SG-01 routed model/effort
+PASS dry-run shows SG-02 inherit (no hints)
+PASS run passes --model/--effort for hinted SG-01
+PASS run passes no --model for inherit SG-02
+PASS --step --dry-run shows pause points
+PASS --step --dry-run did not execute
+PASS --step resume: SG-01+SG-02 ran, gate SG-03 untouched
+PASS --step paused after SG-01
+PASS --step quit: SG-01 ran, SG-02 stopped, exit 0
+PASS --step quit: explains the stop
+PASS default (no --step) does not pause; chain runs unchanged
+PASS --stream captured the session output to .orchestrate/SG-01.stream.jsonl
+PASS --stream tee'd output live to stdout
+PASS --stream run still advances on box flip
+PASS unknown flag -> exit 64
+PASS detect default -> both; dry-run derives BOARD.md
+PASS dry-run board writes no events.log (no execution)
+PASS no backlog.sh -> detect fail-safes to roadmap (no board)
+PASS --board=roadmap suppresses the board
+PASS board derives shipped / ready / blocked-on-dep from ROADMAP
+PASS event log records executing then shipped for SG-01
+PASS gate sub-goal emits a blocked event
+PASS board derived by replay shows SG-01 shipped
+PASS unknown --board mode rejected
+PASS watchdog flags a stalled session (event + WARN)
+PASS watchdog is advisory: stalled-but-alive session not killed, recovers + ships
+PASS watchdog dead-session: halts, box not advanced, blocked event recorded
+PASS guardrail warns on a sub-goal missing its goal file
+PASS watchdog off by default: no bg path, chain runs unchanged
+PASS deterministic handoff: HANDOFF.md + DECISIONS.md byte-identical across runs (cmp-clean)
+PASS deterministic handoff: DECISIONS append is idempotent (1 block after 2 runs)
+PASS deterministic handoff: all load-bearing anchors present, negative control absent
+PASS hot HANDOFF carries next-sub-goal + grounded read-pointers
+PASS deterministic handoff: no LLM/network imports (no-LLM contract)
+PASS DETERMINISTIC_HANDOFF=1: orchestrator regenerated HANDOFF.md from the transcript (overwrote LLM's)
+PASS DETERMINISTIC_HANDOFF=1: DECISIONS.md appended deterministically
+PASS default (flag off): no deterministic regeneration, no forced capture (behavior unchanged)
+----
+ALL PASS
