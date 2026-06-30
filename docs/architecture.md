@@ -136,8 +136,8 @@ Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test ·
 | `/kit:debug` | command | Bug lane (off-cycle) | cross-phase | Off-cycle loop: root cause before any fix; evidence ledger; 3-fix architecture wall |
 | `/kit:dispatch` | command | Concurrent fan-out | cross-phase | Fans out N disjoint VALIDATED specs into isolated worktree workers behind the disjointness gate (`lib/dispatch-gate.sh`); drift-guards each; lead-owned convergence; no DAG / no auto-merge (ADR-0019) |
 | `responding-to-review` | agent | Review response | cross-phase | Responds to review feedback with technical rigor; proposes fixes, does not apply them |
-| `/kit:draft-agent` | command | Meta-tooling | cross-phase | Dispatches the `meta-agent` to draft a subagent or sub-goal file from a description; DRAFT-only, never installs |
-| `meta-agent` | agent | Meta-tooling | cross-phase | Drafts a new subagent definition or mega-goal sub-goal file from a one-line description; determines minimal tools; output is DRAFT-for-review, never self-installed |
+| `/kit:draft-agent` | command | Meta-tooling | cross-phase | Generates a subagent (or sub-goal file) via the `meta-agent`; installs the subagent by default (roster-sync + `cp` to `~/.claude/agents/`); `--draft` stops at a staged draft |
+| `meta-agent` | agent | Meta-tooling | cross-phase | Drafts a new subagent definition or mega-goal sub-goal file from a one-line description; determines minimal tools; the subagent writes to staging only, the command promotes/installs |
 
 **Classification notes:**
 - The right arm is *test execution*; the static gates are *review*. Both are "verification" loosely, but only the right arm runs tests. `/kit:spec-validate`, `/kit:review`, `/kit:docs` review; `task-verifier`, `integration-checker`, `/kit:ship` test.

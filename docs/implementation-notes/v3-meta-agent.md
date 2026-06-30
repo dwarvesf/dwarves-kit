@@ -30,6 +30,22 @@ Goal file said `PR base: dwarves-kit main`; the repo default is `master` (confir
 `git symbolic-ref refs/remotes/origin/HEAD`). Based the branch + PR on `master`, matching the
 POINTER_PROMPT ("SG-05/06 -> dwarves-kit master").
 
+## 2026-07-01 , default-INSTALL (Han directive, supersedes the draft-only Done=)
+
+The SG-05 goal specced "draft-only, never installs." Han changed it post-build: he wants the
+meta-agent to output an agent "triggerable immediately at runtime," and chose default-install over an
+opt-in flag or a personal-dotfiles home. Implemented as: the SUBAGENT still only drafts to staging
+(unchanged, stays minimal-tool), and the `/kit:draft-agent` COMMAND (running as the main agent, full
+tools) installs by default , strip marker -> `agents/<name>.md` -> roster-sync (MANUAL/architecture/
+README) -> `bash tests/test-meta.sh` -> `cp` to `~/.claude/agents/<name>.md`. `--draft` is the opt-out.
+Why the command, not the subagent: install needs Edit/Bash for the roster rows + the runtime copy,
+which the minimal subagent deliberately lacks. Runtime reality: CC discovers agents at session start,
+so "immediate" = live next session/reload, not mid-conversation. Team safety preserved at the git
+layer: install writes the local `~/.claude/agents/` copy + uncommitted repo edits; teammates only get
+the agent when it is committed + merged (still PR-reviewed). The read-before-live gate is dropped
+locally; mitigated by printing the granted tools loudly + trivial undo (`rm`). Install-promotion is
+proven by a simulated test (strip marker -> lint-passing marker-free `<name>.md`).
+
 ## 2026-07-01 , staging path, never agents/ directly
 
 The drafter writes to a `drafts/`-style staging path (the test used `tests/fixtures/meta-agent/`),

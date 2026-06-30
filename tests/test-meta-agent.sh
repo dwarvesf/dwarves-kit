@@ -43,12 +43,17 @@ MA="$KIT_DIR/agents/meta-agent.md"
 [ -f "$MA" ]; chk "agents/meta-agent.md exists" $?
 lint_agent_frontmatter "meta-agent" "$MA" 1
 grep -q "Mode A" "$MA" && grep -q "Mode B" "$MA"; chk "meta-agent documents both draft modes" $?
-grep -q "DRAFT" "$MA" && grep -qi "never" "$MA"; chk "meta-agent states DRAFT-only / never installs" $?
+# the SUBAGENT itself never installs (it drafts to staging); promotion is the command's job.
+grep -qi 'never install\|only draft to staging' "$MA"; chk "meta-agent (subagent) itself never installs , drafts to staging" $?
 grep -q '^| `meta-agent` ' "$KIT_DIR/MANUAL.md"; chk "meta-agent listed in MANUAL.md (test-meta.sh cross-ref)" $?
-[ -f "$KIT_DIR/commands/draft-agent.md" ] && head -1 "$KIT_DIR/commands/draft-agent.md" | grep -q '^---$'; chk "commands/draft-agent.md exists with frontmatter" $?
-# pin the safety contract in the command body (not just its existence): staging-path + never-installs
-grep -qi 'drafts/' "$KIT_DIR/commands/draft-agent.md"; chk "draft-agent pins the concrete drafts/ staging path" $?
-grep -qi 'never install\|not install\|stop at the draft' "$KIT_DIR/commands/draft-agent.md"; chk "draft-agent pins the never-install gate" $?
+DA_CMD="$KIT_DIR/commands/draft-agent.md"
+[ -f "$DA_CMD" ] && head -1 "$DA_CMD" | grep -q '^---$'; chk "commands/draft-agent.md exists with frontmatter" $?
+# pin the NEW contract: default-install + a --draft opt-out + the roster/test-meta guard + runtime activation.
+grep -qi 'install' "$DA_CMD" && grep -qi 'default' "$DA_CMD"; chk "draft-agent installs by default" $?
+grep -q -- '--draft' "$DA_CMD"; chk "draft-agent keeps a --draft opt-out (stop at the staged draft)" $?
+grep -q 'test-meta.sh' "$DA_CMD"; chk "draft-agent runs test-meta.sh after install (roster guard stays green)" $?
+grep -q '~/.claude/agents' "$DA_CMD"; chk "draft-agent activates the agent for runtime (~/.claude/agents)" $?
+grep -qi 'drafts/' "$DA_CMD"; chk "draft-agent still names the concrete drafts/ staging path (for --draft)" $?
 
 MARKER='<!-- DRAFT , review before use. Drafted by meta-agent. Not installed. -->'
 
@@ -60,6 +65,18 @@ DA="$FIX/drafted-agent.md"
 lint_agent_frontmatter "drafted-agent" "$DA" 2   # frontmatter starts after the marker line
 EMDASH=$(printf '\xe2\x80\x94')   # U+2014 as raw UTF-8 bytes (portable: no grep -P)
 LC_ALL=C grep -qF "$EMDASH" "$DA" && bad "drafted-agent.md: no em-dash" || ok "drafted-agent.md: no em-dash"
+
+# Simulate the DEFAULT install promotion of the golden draft (strip marker -> agents/<name>.md),
+# into a temp dir so the real repo + ~/.claude are untouched. Proves the install path yields a
+# valid, marker-free, lint-passing agent that is dispatchable-shaped.
+TMPAG="$(mktemp -d "${TMPDIR:-/tmp}/meta-install.XXXXXX")"
+tail -n +2 "$DA" > "$TMPAG/installed.md"   # drop the line-1 DRAFT marker
+[ "$(head -1 "$TMPAG/installed.md")" = "---" ]; chk "install: marker stripped, frontmatter is now line 1" $?
+LC_ALL=C grep -qF "$MARKER" "$TMPAG/installed.md" && bad "install: no DRAFT marker remains" || ok "install: no DRAFT marker remains"
+lint_agent_frontmatter "installed-agent" "$TMPAG/installed.md" 1   # passes the SAME lint as a live kit agent
+INAME=$(awk -F': *' '/^---$/{c++; if(c==2)exit} c==1 && /^name:/{print $2; exit}' "$TMPAG/installed.md" | tr -d '[:space:]')
+[ -n "$INAME" ] && cp "$TMPAG/installed.md" "$TMPAG/$INAME.md" && [ -f "$TMPAG/$INAME.md" ]; chk "install: lands as <name>.md in the agents dir (runtime-discoverable shape)" $?
+rm -rf "$TMPAG"
 
 echo ""
 echo "=== golden draft: sub-goal file (Mode B) ==="
