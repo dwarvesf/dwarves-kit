@@ -46,6 +46,9 @@ grep -q "Mode A" "$MA" && grep -q "Mode B" "$MA"; chk "meta-agent documents both
 grep -q "DRAFT" "$MA" && grep -qi "never" "$MA"; chk "meta-agent states DRAFT-only / never installs" $?
 grep -q '^| `meta-agent` ' "$KIT_DIR/MANUAL.md"; chk "meta-agent listed in MANUAL.md (test-meta.sh cross-ref)" $?
 [ -f "$KIT_DIR/commands/draft-agent.md" ] && head -1 "$KIT_DIR/commands/draft-agent.md" | grep -q '^---$'; chk "commands/draft-agent.md exists with frontmatter" $?
+# pin the safety contract in the command body (not just its existence): staging-path + never-installs
+grep -qi 'staging' "$KIT_DIR/commands/draft-agent.md"; chk "draft-agent pins the staging-path rule" $?
+grep -qi 'never install\|not install\|stop at the draft' "$KIT_DIR/commands/draft-agent.md"; chk "draft-agent pins the never-install gate" $?
 
 MARKER='<!-- DRAFT , review before use. Drafted by meta-agent. Not installed. -->'
 
