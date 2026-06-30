@@ -260,6 +260,7 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 | `research-features` | `/spec` | Brownfield feature inventory |
 | `research-architecture` | `/spec` | Brownfield architecture patterns |
 | `research-pitfalls` | `/spec` | Landmine surfacing pre-build |
+| `meta-agent` | `/kit:draft-agent` | Drafts a new subagent or sub-goal file from a description; DRAFT-only, never installs |
 
 ## Path-scoped rules
 

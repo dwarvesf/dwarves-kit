@@ -180,7 +180,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (25, manual, human-triggered)</summary>
+<summary><b>Commands</b> (26, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -209,6 +209,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
 | /kit:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
+| /kit:draft-agent | Meta | Gated meta-agent: drafts a subagent or sub-goal file from a description; DRAFT-only, never installs |
 
 </details>
 
