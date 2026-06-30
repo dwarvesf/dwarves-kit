@@ -1,5 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # route-suggest.sh -- data-driven model routing suggester (token-optim-v3 SG-06).
+# Needs bash 4+ (mapfile); #!/usr/bin/env bash resolves Homebrew bash, not macOS stock 3.2.
 #
 # Reads the v2 SG-09 ablation ledger (the 12-column TSV the eval harness emits)
 # and SUGGESTS the model tier for a given benchmark task: the cheapest model that
@@ -48,10 +49,12 @@ if [ "${#PASSES[@]}" -eq 0 ]; then
   exit 2
 fi
 
-# Reduce to cheapest total_tokens per tier.
+# Reduce to cheapest total_tokens per tier. A short/malformed row (no numeric total_tokens) is
+# skipped rather than crashing the `-lt` arithmetic (schema-drift / hand-edit robustness).
 declare -A MIN
 for row in "${PASSES[@]}"; do
   model="${row%%$'\t'*}"; tok="${row##*$'\t'}"
+  case "$tok" in ''|*[!0-9]*) continue ;; esac   # non-numeric -> not a usable token count
   tier="$(tier_of "$model")"
   if [ -z "${MIN[$tier]:-}" ] || [ "$tok" -lt "${MIN[$tier]}" ]; then MIN[$tier]="$tok"; fi
 done
@@ -63,12 +66,14 @@ if [ "$NTIERS" -lt 2 ]; then
   exit 2
 fi
 
-# >=2 tiers passed: suggest the cheapest by measured total_tokens.
+# >=2 tiers passed: suggest the cheapest by measured total_tokens. Iterate tiers in a fixed sorted
+# order + strict `-lt` so a tie resolves deterministically to the alphabetically-first tier (bash
+# associative-array iteration order is otherwise unspecified).
 best_tier=""; best_tok=""
 basis=""
-for tier in "${!MIN[@]}"; do
+while IFS= read -r tier; do
   basis="${basis:+$basis, }$tier=${MIN[$tier]}tok"
   if [ -z "$best_tok" ] || [ "${MIN[$tier]}" -lt "$best_tok" ]; then best_tok="${MIN[$tier]}"; best_tier="$tier"; fi
-done
+done < <(printf '%s\n' "${!MIN[@]}" | sort)
 echo "SUGGEST	model=$best_tier	effort=abstain	basis=cheapest-at-parity for '$TASK': $basis (all PASS)"
 exit 0

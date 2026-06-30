@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # test-routing.sh -- data-driven model routing suggester (token-optim-v3 SG-06).
 # Verifies lib/route-suggest.sh against v2 SG-09's ledger schema:
 #   - rich data: suggests the measured-cheapest model that PASSED at parity
@@ -43,6 +43,33 @@ echo "=== no passing data: abstain ==="
 OUT3=$(bash "$RS" "$FIX/rich-ledger.tsv" no-such-task); RC3=$?
 echo "  -> $OUT3"
 [ "$RC3" -eq 2 ] && echo "$OUT3" | grep -q 'no-passing-data'; chk "unknown task: abstains with no-passing-data" $?
+
+echo ""
+echo "=== missing ledger file: abstain (no crash) ==="
+OUT4=$(bash "$RS" "$FIX/does-not-exist.tsv" any-task); RC4=$?
+echo "  -> $OUT4"
+[ "$RC4" -eq 2 ] && echo "$OUT4" | grep -q 'no-ledger'; chk "missing ledger: abstains with no-ledger" $?
+
+echo ""
+echo "=== exact multi-model tie: deterministic (alphabetical) winner ==="
+TIE="$(mktemp "${TMPDIR:-/tmp}/tie-ledger.XXXXXX")"
+# haiku and sonnet both PASS at the SAME token count -> tie-break must be stable across runs.
+printf 'code-add-flag\tb-haiku\tpass\t500000\t40\t900\t450000\t49060\t5\t0.1\thaiku-4-5\ts1\n'  > "$TIE"
+printf 'code-add-flag\tb-sonnet\tpass\t500000\t40\t900\t450000\t49060\t5\t0.2\tsonnet-4-6\ts2\n' >> "$TIE"
+T1=$(bash "$RS" "$TIE" code-add-flag); T2=$(bash "$RS" "$TIE" code-add-flag)
+[ "$T1" = "$T2" ]; chk "tie: suggestion is identical across runs (deterministic)" $?
+echo "$T1" | grep -q 'model=haiku'; chk "tie: alphabetically-first tier (haiku) wins the tie" $?
+rm -f "$TIE"
+
+echo ""
+echo "=== malformed/short row: skipped, no arithmetic crash ==="
+BAD="$(mktemp "${TMPDIR:-/tmp}/bad-ledger.XXXXXX")"
+printf 'code-add-flag\tb-haiku\tpass\t300000\t40\t900\t250000\t49060\t5\t0.1\thaiku-4-5\ts1\n' > "$BAD"
+printf 'code-add-flag\tb-haiku\tpass\n' >> "$BAD"   # short row: no numeric total_tokens column
+OUT5=$(bash "$RS" "$BAD" code-add-flag 2>&1); RC5=$?
+echo "  -> $OUT5"
+echo "$OUT5" | grep -qiE 'unary operator|integer expression'; if [ $? -eq 0 ]; then bad "malformed row: no bash arithmetic error"; else ok "malformed row: no bash arithmetic error (skipped)"; fi
+rm -f "$BAD"
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
