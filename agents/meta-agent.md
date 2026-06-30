@@ -32,6 +32,24 @@ Draft a `plan-for-mega-goal` sub-goal file. Match the template at
 `~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md`
 (read it if reachable). Required shape: `# Sub-goal NN: <name>`; then `**Merge policy:**` (`auto|gate`, default `gate`), `**Time budget:**`, `**Proof:**` (evidence form scaled to complexity), `**Depends on:**`, bare `Model:` / `Effort:` lines (omit to inherit), `**Branch:**`, `**PR base:**`; then `## Outcome`, `## Quality bar`, `## How to close the loop` ending in a bold `**Done =**` boolean, `## Handoff on completion`, `## Scope edges` (In/Out/Not), `## Where to look`, `## PR body`, `## Notes`. `Done =` MUST be specific to this sub-goal, mappable to captured evidence, never "I ran it and it worked".
 
+## Data-driven routing (Mode B `Model:` / `Effort:`)
+
+When drafting a sub-goal file (Mode B), do NOT guess the `Model:` / `Effort:` fields. If a v2 SG-09
+ablation ledger is available, ask the router for the measured-cheapest-at-parity model:
+
+```
+bash lib/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
+# SUGGEST  model=<tier>  ... -> write that tier into the bare `Model:` line
+# ABSTAIN  reason=thin-data ... -> OMIT the `Model:` line (inherit the parent tier); never overfit
+```
+
+It is a SUGGESTER, not an auto-router: surface the suggestion (or the abstention) in the draft's
+`## Notes` so the human sees the basis. Effort is not in SG-09's measured schema, so the router
+abstains on effort; leave `Effort:` to inherit unless the human sets it. With no ledger, omit both
+lines (inherit) and say so. The default heuristic when abstaining: most sub-goals do not need opus
+(Opus dominated measured spend), so a human-set default of `sonnet` with `opus` reserved for genuinely
+hard reasoning is the safe fallback, but that is the human's call, not a silent auto-write.
+
 ## DRAFT marker (mandatory)
 
 Every artifact you write begins, on the FIRST line, with exactly:
