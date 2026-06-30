@@ -53,12 +53,17 @@ echo "  -> $OUT4"
 echo ""
 echo "=== exact multi-model tie: deterministic (alphabetical) winner ==="
 TIE="$(mktemp "${TMPDIR:-/tmp}/tie-ledger.XXXXXX")"
-# haiku and sonnet both PASS at the SAME token count -> tie-break must be stable across runs.
+# haiku and sonnet both PASS at the SAME token count. The tie-break contract: the winner is the
+# alphabetically-first tier, and the basis string is emitted in that same sorted order.
 printf 'code-add-flag\tb-haiku\tpass\t500000\t40\t900\t450000\t49060\t5\t0.1\thaiku-4-5\ts1\n'  > "$TIE"
 printf 'code-add-flag\tb-sonnet\tpass\t500000\t40\t900\t450000\t49060\t5\t0.2\tsonnet-4-6\ts2\n' >> "$TIE"
-T1=$(bash "$RS" "$TIE" code-add-flag); T2=$(bash "$RS" "$TIE" code-add-flag)
-[ "$T1" = "$T2" ]; chk "tie: suggestion is identical across runs (deterministic)" $?
-echo "$T1" | grep -q 'model=haiku'; chk "tie: alphabetically-first tier (haiku) wins the tie" $?
+T1=$(bash "$RS" "$TIE" code-add-flag)
+echo "  -> $T1"
+# Contract assertion: winner == alphabetically-first of the tied tiers (not a hash-order accident).
+echo "$T1" | grep -q 'model=haiku'; chk "tie: alphabetically-first tier (haiku) wins" $?
+# Direct sort-ran proof: basis lists tiers in sorted order, so 'haiku=' precedes 'sonnet='. Without
+# the sort the basis follows assoc-array hash order (haiku AFTER sonnet on this host) -> this FAILs.
+echo "$T1" | grep -qE 'haiku=[0-9]+tok, sonnet=[0-9]+tok'; chk "tie: basis emitted in sorted (haiku-before-sonnet) order , proves the sort ran" $?
 rm -f "$TIE"
 
 echo ""
