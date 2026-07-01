@@ -72,17 +72,17 @@ Before dispatching each task's worker, decide whether it needs a specialist role
 a synthesized role is injected as the worker's prompt PREAMBLE, not installed as a file (Claude Code
 loads the agent registry at session start, so a file written now is only dispatchable next session).
 
-1. **Classify the task's domain** with a cheap inline keyword heuristic , no subagent call. Match the
-   task description + acceptance criteria against these domains (extend as needed):
-   - `security` (auth, crypto, secrets, input validation, injection, permissions)
-   - `db-migration` (schema change, migration, backfill, index, data model)
-   - `frontend` (UI, component, CSS, accessibility, render)
-   - `performance` (latency, throughput, profiling, cache, hot path)
-   - `data-etl` (pipeline, transform, parse, ingest, DuckDB/SQL)
-   - `infra` (deploy, CI, container, daemon, plist, IaC)
-   - `api` (endpoint, handler, contract, schema, client)
-   No clear match → **`generic`**: skip to 2b with today's generic worker (default, unchanged). This
-   fall-through is what keeps plain tasks from being over-specialized.
+1. **Classify the task's domain** with the shared classifier (deterministic, no subagent call):
+
+   ```bash
+   bash lib/role-classify.sh classify "<task description + acceptance criteria>"
+   # -> security | db-migration | frontend | performance | data-etl | infra | api | generic
+   ```
+
+   This is the SPEC-089 shared primitive (a peer of `lane-classify.sh` / `task-type-classify.sh`), so
+   every command that dispatches task workers classifies the same way. A **`generic`** result → skip to
+   2b with today's generic worker (default, unchanged). That fall-through is what keeps plain tasks from
+   being over-specialized.
 
 2. **Reuse an existing specialist if present** (cheapest path):
    - If a predefined agent already fits the domain (dispatchable `subagent_type` this session), dispatch
