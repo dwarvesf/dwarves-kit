@@ -6,7 +6,7 @@ Relates-to: ADR-0017 (mega-decomposition lane), ADR-0018 (v-model phase frame), 
 
 ## Decision (one line)
 
-Make the kit's autonomous SDD loop run start-to-finish and stop only at ONE final human review: deeper planning + front-loaded questions up front, a review at every V-model step, auto-merge of each sub-goal past its ship-gate, an extra review lens + an over-suggest pass before the final gate, plus agent-effectiveness validation and a conditional deployable-done , all riding ON TOP of the kit's shipped guardrails, configurable, without re-opening the blessed boundaries.
+Make the kit's autonomous SDD loop run start-to-finish and stop only at ONE final human review: deeper planning + front-loaded questions up front, a review at every V-model step (left AND right arm , the right arm is executor-only today), auto-merge of each sub-goal past its ship-gate, one configurable generic advisor as an extra lens (critique + over-suggest) before the final gate, plus agent-effectiveness validation, meta-agent-scaffolded specialist reviewers, and a conditional deployable-done , all riding ON TOP of the kit's shipped guardrails, configurable, without re-opening the blessed boundaries.
 
 ## Context
 
@@ -28,9 +28,11 @@ Eight properties, each reusing an existing kit pattern, each inside its boundary
 - **P2 front-loaded clarification** , decompose gathers EVERY sub-goal's clarification question and asks the human ONCE up front (mirrors the `plan-for-mega-goal` skill's single checkpoint); unattended thereafter.
 - **P3 run-to-final + auto-merge** , the orchestrator runs all sub-goals start-to-finish and auto-merges each once its ship-gate passes (ADR-0024/0025 still hard-gate every merge), stopping only at the final PR for the human (gated-final). Configurable; default auto-to-final for operator-owned runs.
 - **P4 every-step review** , every V-model phase (left + right arm) has a review step that RUNS , a command, a predefined subagent, or a runtime subagent , recorded to the gate-ledger and enforced at ship. No phase is `skip` in this lane. NOT a mid-flight hard-block (ADR-0024 + PHILOSOPHY preserved): the review runs and records; hard enforcement is at ship.
-- **P5 extra review lens at integration/UAT** , before the final gate, an extra review-lens pass runs at the integration + UAT boundary, on top of the per-step reviews. KIT DEFAULT (runs on every applicable run, not opt-in).
-- **P6 over-suggest before final** , a generative enhancement pass proposes additional ideas / sub-goals to improve the work, surfaced to the human just before the final review (a completeness-critic in the generative direction). KIT DEFAULT (runs before every final review, not opt-in).
+- **P5 generic advisor (the extra lens)** , the extra review-lens at the integration + UAT boundary is realized as ONE configurable GENERIC advisor (a defined model + config), run as a uniform lens ON TOP of the specialized per-phase reviewers , it does NOT replace them (2026-07-01 decision; see Refinement). Its model/config knob rides the kit's existing cheap-first per-agent tiering. KIT DEFAULT (runs on every applicable run, not opt-in).
+- **P6 over-suggest before final** , the generative enhancement pass (proposes additional ideas / sub-goals to improve the work, surfaced to the human just before the final review) is a SECOND MODE of the same generic advisor (critique mode = P5, over-suggest mode = P6); one advisor, two modes, both at the final boundary. KIT DEFAULT (runs before every final review, not opt-in).
 - **Agent-effectiveness validation** (SPEC-088) , the agents that drive the loop are effectiveness-checked (tools / trigger / instructions / tier), not just structure-linted. Read-only / advisory / fail-safe / diff-keyed.
+- **Right-arm review parity** (2026-07-01 decision; implements P4's right-arm half, which is aspirational-only today) , every right-arm test step gets a review/re-audit lens mirroring the left arm's static reviews. Two holes: (a) the Acceptance and System-test rows have NO agent at all; (b) `integration-checker` and `task-verifier` run UNREVIEWED , nothing re-audits a PASS. The fix supplies the missing agents plus a fresh-context re-audit lens over each right-arm PASS , which IS the ADR's trust metric ("% of autonomous done-claims that survive a fresh-context re-audit"). The right arm has no such re-audit today.
+- **Meta-agent-scaffolded experts** (2026-07-01 decision) , the new specialized reviewers (`brief-reviewer`, `acceptance-auditor`, `test-reauditor`, the generic `advisor`) are generated via the shipped meta-agent (`/kit:draft-agent`), then GATED by the agent-effectiveness validator above. This closes the loop that makes autonomous runs trustable: the meta-agent builds agents we did not hand-write, and the effectiveness validator is what lets us trust them (planted-bad caught, roster clean).
 - **Conditional deployable-done** , for deployable work, done = deploy-proof + UAT (reuse ADR-0025 stateful shape, enforce at ship); inert / library work unchanged.
 
 ## How it stays inside the blessed boundaries
@@ -55,6 +57,16 @@ Net: AUTHORING is the skill (+ `/kit:mega` mirror); ENFORCEMENT + the review DEF
 ## The one team-facing change (flag)
 
 Auto-merge-to-final on the SHARED kit repo defers per-PR team review to the final gate. For the operator's solo / owned runs this is the default. For team runs it is a per-run config (a team member may require per-PR review). The team should accept this consciously , hence this ADR is Proposed.
+
+## Refinement (2026-07-01, operator)
+
+Three calls made after confirming the current V-model against the source. Deltas from the ADR as first written; folded into the properties above. Status stays Proposed (the ADR is not yet team-blessed).
+
+1. **Keep the specialized per-phase reviewers; add the generic advisor as an EXTRA lens, not a replacement.** The kit's value is the tailored mirror (`spec-validate` ≠ `review-team` ≠ `doc-verifier`); a single generic advisor reviewing everything uniformly would lose that. So P5 = one configurable generic advisor run ON TOP; P6 over-suggest = that same advisor's second mode.
+2. **Fix the right arm.** P4 claims "left + right arm" review coverage, but the right arm is executor-only and two of its rows have no agent, and no PASS is ever re-audited. Right-arm review parity (new property) makes P4's right-arm half concrete and lands the fresh-context re-audit the trust metric depends on.
+3. **Use the meta-agent to scaffold the new experts, gated by the effectiveness validator.** The recently-shipped `/kit:draft-agent` (meta-agent) generates `brief-reviewer` / `acceptance-auditor` / `test-reauditor` / `advisor`; SG-01's agent-effectiveness validator gates them. Meta-agent builds, validator trusts , the closed loop is the point.
+
+These add ONE sub-goal to the wave (SG-06: right-arm parity + meta-agent scaffolding) and reshape SG-05 (over-suggest -> generic advisor). See the kit-hardening mega-goal ROADMAP.
 
 ## Alternatives considered
 
