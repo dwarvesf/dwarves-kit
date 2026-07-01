@@ -69,6 +69,24 @@ TOOLS is advisory only: an inline-dispatched worker cannot be tool-restricted (o
 file's frontmatter can), so name the minimal set for the human's eyes and for the caller to cache. Keep
 the whole return under ~200 words: it is prepended to a worker prompt, not stored.
 
+## Data-driven routing (Mode B `Model:` / `Effort:`)
+
+When drafting a sub-goal file (Mode B), do NOT guess the `Model:` / `Effort:` fields. If a v2 SG-09
+ablation ledger is available, ask the router for the measured-cheapest-at-parity model:
+
+```
+bash lib/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
+# SUGGEST  model=<tier>  ... -> write that tier into the bare `Model:` line
+# ABSTAIN  reason=thin-data ... -> OMIT the `Model:` line (inherit the parent tier); never overfit
+```
+
+It is a SUGGESTER, not an auto-router: surface the suggestion (or the abstention) in the draft's
+`## Notes` so the human sees the basis. Effort is not in SG-09's measured schema, so the router
+abstains on effort; leave `Effort:` to inherit unless the human sets it. With no ledger, omit both
+lines (inherit) and say so. The default heuristic when abstaining: most sub-goals do not need opus
+(Opus dominated measured spend), so a human-set default of `sonnet` with `opus` reserved for genuinely
+hard reasoning is the safe fallback, but that is the human's call, not a silent auto-write.
+
 ## DRAFT marker (mandatory)
 
 Every artifact you write begins, on the FIRST line, with exactly:
