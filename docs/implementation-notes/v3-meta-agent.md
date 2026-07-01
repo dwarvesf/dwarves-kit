@@ -30,6 +30,46 @@ Goal file said `PR base: dwarves-kit main`; the repo default is `master` (confir
 `git symbolic-ref refs/remotes/origin/HEAD`). Based the branch + PR on `master`, matching the
 POINTER_PROMPT ("SG-05/06 -> dwarves-kit master").
 
+## 2026-07-01 , Mode C: same-run specialist dispatch (Han directive) + auto-classify in /kit:execute
+
+The real ask behind "trigger immediately at runtime": during SDD, a task with no predefined agent
+should get a specialist synthesized AND dispatched THIS run. Hard CC constraint: the subagent registry
+is frozen at session start, so a file written now is not dispatchable by name until next session, the
+default-install path (below) is next-session, wrong lever for this. Fix: the kit's `/kit:execute`
+already dispatches each task worker as a generic Task-tool call with a prompt (no per-task role agent),
+so immediacy = synthesize a role PREAMBLE in-session and inject it into that worker. Added:
+- meta-agent **Mode C** (inline role spec): returns NAME / TOOLS(advisory) / PREAMBLE, writes NO file,
+  no DRAFT marker. TOOLS is advisory because an inline-dispatched general worker cannot be
+  tool-restricted (only a registered agent file's frontmatter can), a real limitation of the immediate
+  path; the minimal set is named for the human + the cache.
+- `execute.md` **2b-0**: classify each task's domain by a cheap INLINE keyword heuristic (no subagent
+  hop), reuse a predefined/cached specialist if present, else dispatch Mode C, inject the preamble into
+  the worker NOW, and cache the spec to `~/.claude/agents/<name>.md` (local, next-session reuse, no repo
+  churn / no roster-sync burden). No-domain-match falls through to today's generic worker.
+
+Trigger policy = **auto-classify every task** (Han chose it over spec-opt-in / complex-only). Mis-fire +
+cost mitigated by: classification is inline (no LLM hop), synthesis fires only on a clear domain match,
+and generic is the default fall-through, so plain tasks are unchanged. Reconciliation with the
+default-install path: install-to-repo (`/kit:draft-agent`) = the deliberate, reviewed way to make a
+specialist a SHARED, named kit agent; Mode C + `~/.claude/agents/` cache = the automatic, local,
+immediate path. Two mechanisms, one for reuse-by-name, one for use-now.
+
+## 2026-07-01 , default-INSTALL (Han directive, supersedes the draft-only Done=)
+
+The SG-05 goal specced "draft-only, never installs." Han changed it post-build: he wants the
+meta-agent to output an agent "triggerable immediately at runtime," and chose default-install over an
+opt-in flag or a personal-dotfiles home. Implemented as: the SUBAGENT still only drafts to staging
+(unchanged, stays minimal-tool), and the `/kit:draft-agent` COMMAND (running as the main agent, full
+tools) installs by default , strip marker -> `agents/<name>.md` -> roster-sync (MANUAL/architecture/
+README) -> `bash tests/test-meta.sh` -> `cp` to `~/.claude/agents/<name>.md`. `--draft` is the opt-out.
+Why the command, not the subagent: install needs Edit/Bash for the roster rows + the runtime copy,
+which the minimal subagent deliberately lacks. Runtime reality: CC discovers agents at session start,
+so "immediate" = live next session/reload, not mid-conversation. Team safety preserved at the git
+layer: install writes the local `~/.claude/agents/` copy + uncommitted repo edits; teammates only get
+the agent when it is committed + merged (still PR-reviewed). The read-before-live gate is dropped
+locally; mitigated by printing the granted tools loudly + trivial undo (`rm`). Install-promotion is
+proven by a simulated test (strip marker -> lint-passing marker-free `<name>.md`).
+
 ## 2026-07-01 , staging path, never agents/ directly
 
 The drafter writes to a `drafts/`-style staging path (the test used `tests/fixtures/meta-agent/`),
