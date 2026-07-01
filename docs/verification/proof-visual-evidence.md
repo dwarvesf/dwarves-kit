@@ -33,7 +33,40 @@ grep -qi 'NEGATIVE CONTROL' /tmp/p.md && { grep -qE 'Exit:[[:space:]]*0|PASS' /t
 bash tests/test-proof-dir-layout.sh
 ```
 
+## Follow-up hardening (review fix #1 + test #2)
+
+Review found the embed was matched by STRING only: a dangling `![x](missing.gif)` (a file that does
+not exist) passed the gate, contradicting the "committed screenshot/GIF" intent and re-opening the
+fabrication surface the gate exists to close. Fixed: a new `_has_committed_image` helper resolves each
+embedded image path (relative to the proof file's dir, then the repo root) and the image branch now
+requires the file to actually EXIST. Wired into all four sites (per-file + set-wise, behavioral +
+stateful). A real committed image still passes; a dangling reference now BLOCKS.
+
+Automated regression test added (`tests/test-proof-visual-evidence.sh`, wired into CI), so the path is
+guarded, not just manually reproduced:
+
+| Case | Evidence | Expected | Result |
+|---|---|---|---|
+| real image | `![demo](vf-vis-demo.gif)` + the committed .gif | ACCEPT | PASS |
+| dangling image | `![demo](vf-vis-missing.gif)`, no file | **BLOCK (fix #1)** | PASS |
+| text run-table | `Command:`/`Exit: 0`/`Verdict: PASS` | ACCEPT (regression) | PASS |
+| no evidence | marker only | BLOCK | PASS |
+
+```
+Command: bash tests/test-proof-visual-evidence.sh
+Exit: 0
+Verdict: PASS (ALL PASS 4/4)
+```
+Regression: `bash tests/test-proof-dir-layout.sh` still 3/3; `bash tests/test-meta.sh` 500/500.
+
+## NEGATIVE CONTROL (fix #1)
+
+Reverting `_has_committed_image` (making the image branch string-only again) flips the `dangling image`
+case in `tests/test-proof-visual-evidence.sh` from BLOCK back to ACCEPT , the test goes RED, confirming
+the hardening is load-bearing.
+
 ## Rollback
 
-Pure additive widening of two grep conditions (per-file + set-wise, both classes) + doc text.
-`git revert <sha>` restores text-only evidence. No schema/state; the gate stays strictly tighter-or-equal for any existing text-run-table proof.
+Pure additive widening of two grep conditions (per-file + set-wise, both classes) + the
+`_has_committed_image` existence guard + doc text. `git revert <sha>` restores text-only evidence. No
+schema/state; the gate stays strictly tighter-or-equal for any existing text-run-table proof.
