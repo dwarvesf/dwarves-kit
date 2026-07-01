@@ -20,7 +20,7 @@ Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluat
    +------------------ retro feeds the next cycle --------------------+
 ```
 
-Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked).
+Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked). The worker is also **specialized per task**: when a task needs a role no built-in agent covers (security, migration, a doc writer, ...), the kit synthesizes one on the fly and dispatches it, or `/kit:draft-agent` installs a reusable named agent ([SPEC-089](docs/specs/SPEC-089-dynamic-agent-synthesis.md)).
 
 **You drive it by intent, not by memorizing commands.** Say what you want; the kit reads your intent, runs the right step, and stops only at the real decisions:
 
@@ -86,7 +86,7 @@ After install, open a Claude Code session in your project and run one full lap. 
 1. `/kit:start` orients you and suggests the next step.
 2. `/kit:think` and describe the change (e.g. "add a `--version` flag to the CLI"). It throws 6 forcing questions at the idea; answer them.
 3. `/kit:spec` writes the contract to `docs/specs/SPEC-NNN-<slug>.md`.
-4. `/kit:execute` runs the autonomous build: a worker implements the spec, a verifier checks it against the acceptance criteria, a fix-agent retries fixable failures (max 2).
+4. `/kit:execute` runs the autonomous build: a worker implements the spec (specialized on-demand per task , a security/migration/etc. role synthesized and injected when the task warrants it, SPEC-089), a verifier checks it against the acceptance criteria, a fix-agent retries fixable failures (max 2).
 5. `/kit:review` then `/kit:ship`: review gate, then version bump, changelog, conventional commit, PR.
 
 That is the whole loop. The spec is the unit of handoff: a contractor running `/kit:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote. To see the artifact set without running anything, browse [`examples/hello-spec/`](examples/hello-spec/).
@@ -153,7 +153,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (16, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (17, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
@@ -166,6 +166,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
 | session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
+| output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
 | pre-compact-backup | PreCompact | Saves structured session snapshot before compaction |
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
@@ -179,7 +180,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (25, manual, human-triggered)</summary>
+<summary><b>Commands</b> (26, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -208,6 +209,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
 | /kit:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
+| /kit:draft-agent | Meta | Meta-agent agent-builder: generates a subagent (or sub-goal file) from a description and installs it by default (`--draft` to stop at a review draft) |
 
 </details>
 
@@ -270,6 +272,7 @@ dwarves-kit/
   lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
   lib/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/
   lib/lane-telemetry.sh         Read-side lane-effectiveness aggregator over the run ledgers: report + misfires (reviewed at /kit:retro)
+  lib/orchestrate.sh            Non-LLM mega-goal driver: one fresh `claude -p` session per sub-goal so no session marathons (SPEC-087); linear + session-per-sub-goal, NOT a DAG scheduler or daemon. `run <dir>` flags: `--dry-run` (plan only), `--step` (pause for the operator between sub-goals), `--stream` (live stream-json tee'd to `.orchestrate/<id>.stream.jsonl`), `--board=roadmap|kanban|both` (event-sourced per-mega-goal kanban derived to `<dir>/BOARD.md` via `lib/backlog.sh`; default detects, ROADMAP stays canonical). Robustness env (advisory): `WATCHDOG_STALL_SECS>0` backgrounds each session + flags it `stalled` after that long with no output (never kills); a dead/incomplete session never advances its box. Gitignore `.orchestrate/` + `BOARD.md` (derived/runtime)
   skills/get-api-docs/          Context Hub integration
   rules/                        Path-scoped coding-standard templates
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough

@@ -41,5 +41,14 @@ jobs:
       - name: Run review-team plant tests
         run: bash tests/test-review-team-plants.sh
 
+      - name: Run orchestrator tests
+        run: bash tests/test-orchestrate.sh
+
+      - name: Run role-classify tests (SPEC-089)
+        run: bash tests/test-role-classify.sh
+
+      - name: Run meta-agent tests (SPEC-089 / dynamic agent synthesis)
+        run: bash tests/test-meta-agent.sh
+
       - name: Run proof visual-evidence tests
         run: bash tests/test-proof-visual-evidence.sh

@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+# orchestrate.sh -- drive a mega-goal as ONE fresh `claude -p` session per sub-goal, so the
+# loop lives in this dumb (non-LLM) driver and no session accumulates more than one sub-goal's
+# context (SPEC-087, ADR-0027). Each `claude -p` is a new session, so the `/clear` between
+# sub-goals is free; the kit never self-`/clear`s. Each sub-goal session writes HANDOFF.md for
+# the next, and the orchestrator injects it (re-discovery becomes a read). The driver MUST stay
+# non-LLM: an LLM orchestrator spawning a subagent per sub-goal would re-accumulate every return
+# and become the new marathon (DEC-004).
+#
+# Usage:
+#   orchestrate.sh next <megagoal-dir>             print the next unchecked sub-goal + policy
+#   orchestrate.sh run  <megagoal-dir> [--dry-run] [--step] [--stream]
+#       --dry-run  print the plan only (no claude)
+#       --step     pause for the operator after each sub-goal (resume on Enter, q to stop)
+#       --stream   stream each session live (stream-json) + capture to .orchestrate/<id>.stream.jsonl
+#       --board=roadmap|kanban|both  surface progress as a per-mega-goal kanban (SG-10); default
+#                  detects (backlog.sh present -> both, else roadmap). Event-sourced + derived;
+#                  ROADMAP.md stays canonical, the repo-wide BACKLOG cockpit is never touched.
+#   --step/--stream are opt-in; default behavior is unchanged (SG-01, SPEC-087 Mechanism A).
+#   Env (SG-11 robustness, advisory): WATCHDOG_STALL_SECS>0 backgrounds each session + flags it
+#   `stalled` after that many seconds with no output (WATCHDOG_POLL_SECS poll interval); never
+#   kills. Default 0 = off (synchronous path unchanged). A dead/incomplete session never advances
+#   its box (`[guardrail]` halt); a sub-goal with no goals/ file warns before launch.
+#
+# <megagoal-dir> holds: ROADMAP.md (sub-goal lines `- [ ] SG-NN ... , auto|gate , ...`),
+# POINTER_PROMPT.md (static resume prompt), HANDOFF.md (feed-forward, written by each sub-goal).
+# Grounded completion: a sub-goal session MUST flip its ROADMAP checkbox to [x]; the
+# orchestrator advances only then (no self-claim). It STOPS at the first `gate` sub-goal
+# (shared-repo review needs a human).
+#
+# The `claude` invocation is `$CLAUDE_CMD` (default: claude), so tests mock it and operators
+# tune the permission flags.
+set -uo pipefail
+
+CLAUDE_CMD="${CLAUDE_CMD:-claude}"
+# Permission posture for the unattended sub-goal session (SPEC-087 "Session invocation"). Default
+# is full access so the session can edit/commit/push/open-PR without a permission wall stalling
+# the loop; override with a tighter `--allowedTools` allowlist or an agentkernel sandbox via
+# CLAUDE_CMD. Word-split intentionally (operator config, not user data). Tests set CLAUDE_FLAGS=""
+# so the mock's prompt stays the last arg.
+CLAUDE_FLAGS="${CLAUDE_FLAGS:---dangerously-skip-permissions}"
+
+# Hot-handoff size cap (SPEC-087 Mechanism B, two-tier). The HOT HANDOFF.md is injected in full,
+# so it must stay small or it recreates the marathon. Over the cap -> inject head + a notice and
+# point at the file. The WARM DECISIONS.md ledger is never injected in full (pointer only).
+HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
+
+# Deterministic handoff (token-optim-v3 SG-02). Off (0) by default -> the per-session invocation
+# stays byte-identical and the LLM session writes its own HANDOFF.md/DECISIONS.md (unchanged). On
+# (1) -> the session is captured to stream-json and, after grounded completion, the two-tier
+# handoff is REGENERATED deterministically from that transcript by lib/handoff-gen (SPEC-087 Mech
+# B fields preserved; no LLM in the handoff path). Always-produced + reproducible beats
+# occasionally-excellent-but-skippable.
+DETERMINISTIC_HANDOFF="${DETERMINISTIC_HANDOFF:-0}"
+
+# Kanban renderer reused by the board-view (SG-10). Resolved next to this script; override in
+# tests. When absent, board mode fail-safes to roadmap-only so a kit without the tooling runs.
+ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKLOG_LIB="${BACKLOG_LIB:-$ORCH_DIR/backlog.sh}"
+
+# Loop robustness (SG-11, advisory). WATCHDOG_STALL_SECS=0 (default) keeps the synchronous run
+# path UNCHANGED. >0 backgrounds each session and polls every WATCHDOG_POLL_SECS: if the session
+# emits no output for WATCHDOG_STALL_SECS while its process is still alive, it is flagged
+# `stalled` (event + warn) -- never killed (flag, don't kill). Liveness is a `kill -0` probe (no
+# daemon, per the pi-swarm thesis).
+WATCHDOG_STALL_SECS="${WATCHDOG_STALL_SECS:-0}"
+WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
+
+_say() { printf '%s\n' "$*"; }
+
+# Portable file mtime (epoch secs). GNU `stat -c` FIRST: it errors cleanly on BSD/macOS, so the
+# `stat -f` fallback runs there; the reverse order is unsafe because GNU `stat -f` SUCCEEDS with
+# filesystem text (starting "File:"), starving the fallback and poisoning `$(( ))`. Digit-guarded
+# so any non-numeric stat output yields empty rather than breaking arithmetic. Empty if absent.
+_mtime() {
+  local m
+  m=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)
+  case "$m" in ''|*[!0-9]*) return 0 ;; *) printf '%s' "$m" ;; esac
+}
+
+# Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
+# Policy is the comma-separated field that EQUALS auto|gate after trim (not a regex hit on the
+# description, so "(gate review)" or "gate-aware" do not false-match). Unknown -> gate (fail-safe:
+# a malformed line stops the loop for a human rather than silently auto-running). The trailing
+# `|| true` keeps a no-match grep from escaping under `set -o pipefail`.
+_subgoals() {
+  local roadmap="$1"
+  grep -E '^- \[[ xX]\] SG-[0-9]+' "$roadmap" 2>/dev/null | while IFS= read -r line; do
+    local id policy checked=0
+    id=$(printf '%s' "$line" | grep -oE 'SG-[0-9]+' | head -1)
+    [ -n "$id" ] || continue
+    policy=$(printf '%s' "$line" | awk -F',' '{for(i=1;i<=NF;i++){f=$i; gsub(/^[ \t]+|[ \t]+$/,"",f); lf=tolower(f); if(lf=="auto"||lf=="gate"){print lf; exit}}}')
+    case "$line" in
+      '- ['[xX]']'*) checked=1 ;;
+    esac
+    printf '%s\t%s\t%s\n' "$id" "${policy:-gate}" "$checked"
+  done || true
+}
+
+# Next unchecked sub-goal as "id<TAB>policy", or empty.
+_next() { _subgoals "$1" | awk -F'\t' '$3==0 {print $1"\t"$2; exit}'; }
+
+# ---- SG-10 board-view / event-sourced status -----------------------------------------------
+# Event-sourced status (pi-swarm borrow): the loop APPENDS status events; the board is DERIVED
+# by replay (last event per sub-goal wins), NEVER mutated in place -> a crashed/concurrent
+# session cannot corrupt a checkbox. ROADMAP.md + the goal files stay canonical; the board is a
+# regenerated view-sync. SG-11's watchdog reuses this file (mtime + last status) as its signal.
+_events_file() { printf '%s/.orchestrate/events.log\n' "$1"; }
+
+_emit_event() {  # dir id status [note]
+  local dir="$1" id="$2" status="$3" note="${4:-}" ef
+  ef=$(_events_file "$dir"); mkdir -p "$(dirname "$ef")"
+  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$id" "$status" "$note" >> "$ef"
+}
+
+# Last event for a sub-goal by replay, as "status<TAB>note" (empty if none).
+_event_status() {  # dir id
+  local ef; ef=$(_events_file "$1")
+  [ -f "$ef" ] || return 0
+  awk -F'\t' -v id="$2" '$2==id{s=$3; n=$4} END{ if(s!="") printf "%s\t%s", s, n }' "$ef"
+}
+
+# Raw ROADMAP line for a sub-goal id (or empty).
+_sg_line() { grep -E "^- \[[ xX]\] $2 " "$1" 2>/dev/null | head -1; }
+
+# Human title from a ROADMAP line: text after "SG-NN " up to the first " , " policy separator.
+_sg_title() {  # raw-line id
+  printf '%s' "$1" | sed -E "s/^- \[[ xX]\] $2 //; s/ , .*$//" | cut -c1-60
+}
+
+# Blocking deps: SG-NN tokens in the line's `depends ...` tail that are NOT yet checked (space-
+# separated, empty if none). Non-SG deps (e.g. #81 = a prerequisite PR) are out of board scope.
+_sg_deps_blocked() {  # roadmap raw-line
+  local roadmap="$1" line="$2" deps d blockers=""
+  deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+  for d in $deps; do
+    _subgoals "$roadmap" | awk -F'\t' -v i="$d" '$1==i && $3==1{f=1} END{exit !f}' || blockers="$blockers $d"
+  done
+  printf '%s' "${blockers# }"
+}
+
+# Derive the per-mega-goal BOARD.md (kanban table in backlog.sh's row format, so backlog.sh
+# renders it and the cockpit format stays consistent). State = shipped if the box is checked,
+# else the replayed event status, else dep-analysis (queued=ready / parked=blocked). The
+# ready/blocked/stalled nuance rides as status PROSE (backlog.sh supports it). Prints the path.
+_derive_board() {  # dir roadmap
+  local dir="$1" roadmap="$2"
+  local board="$dir/BOARD.md"
+  {
+    printf '# Board (derived view): %s\n\n' "$(basename "$dir")"
+    printf '> DERIVED by "orchestrate.sh --board" from ROADMAP.md + .orchestrate/events.log. Do NOT\n'
+    printf '> hand-edit: ROADMAP.md + the goal files are canonical; this is a regenerated view-sync.\n'
+    printf '> Per-mega-goal only; the repo-wide BACKLOG cockpit is never touched.\n\n'
+    printf '## Active queue\n\n'
+    printf '| ID | Item | Notes & source | Status |\n'
+    printf '|----|------|----------------|--------|\n'
+    local id policy checked line title es estatus enote status blockers
+    while IFS=$'\t' read -r id policy checked; do
+      line=$(_sg_line "$roadmap" "$id"); title=$(_sg_title "$line" "$id")
+      es=$(_event_status "$dir" "$id")
+      estatus=$(printf '%s' "$es" | cut -f1); enote=$(printf '%s' "$es" | cut -f2)
+      if [ "$checked" = 1 ]; then
+        status="shipped"
+      elif [ "$estatus" = executing ] || [ "$estatus" = stalled ]; then
+        status="executing"
+        [ "$estatus" = stalled ] && status="executing [stalled${enote:+: $enote}]"
+      else
+        blockers=$(_sg_deps_blocked "$roadmap" "$line")
+        if [ -n "$blockers" ]; then status="parked [blocked: needs $blockers]"; else status="queued [ready]"; fi
+      fi
+      printf '| %s | %s | %s | %s |\n' "$id" "${title:-?}" "$policy" "$status"
+    done < <(_subgoals "$roadmap")
+  } > "$board"
+  printf '%s\n' "$board"
+}
+
+# Render the board surface to stdout for a mode. roadmap -> nothing (checkboxes ARE the view);
+# kanban|both -> derive BOARD.md then render its columns via backlog.sh (fallback: cat the file).
+_render_board() {  # dir roadmap mode
+  local dir="$1" roadmap="$2" mode="$3" board
+  case "$mode" in
+    roadmap|"") return 0 ;;
+    kanban|both)
+      board=$(_derive_board "$dir" "$roadmap")
+      _say "[board] derived per-mega-goal view -> $board (ROADMAP stays canonical)"
+      if [ -f "$BACKLOG_LIB" ]; then
+        BACKLOG_FILE="$board" bash "$BACKLOG_LIB" board 2>/dev/null || cat "$board"
+      else
+        cat "$board"
+      fi ;;
+    *) echo "unknown --board mode: '$mode' (want roadmap|kanban|both)" >&2; return 64 ;;
+  esac
+}
+
+# Resolve the board mode: explicit wins; empty -> detect (backlog.sh present -> both, else
+# roadmap so a kit without the kanban tooling still runs).
+_resolve_board_mode() { if [ -n "$1" ]; then printf '%s' "$1"; elif [ -f "$BACKLOG_LIB" ]; then printf 'both'; else printf 'roadmap'; fi; }
+# --------------------------------------------------------------------------------------------
+
+# Resolve a sub-goal's goal file path (goals/<NN>-*.md), or empty.
+_goalfile() {
+  local dir="$1" id="$2" f
+  for f in "$dir/goals/${id#SG-}-"*.md; do [ -f "$f" ] && { printf '%s\n' "$f"; return; }; done
+}
+
+# Emit "model<TAB>effort" read from a goal file's `Model:`/`Effort:` lines (empty when absent).
+# Bare `Key: value` header lines, not YAML; first match each, value trimmed. Absent field or
+# absent file -> empty -> the orchestrator emits no flag and the session inherits its tier
+# (SPEC-087 "Model / Effort routing"). The biggest $ lever: Opus only on the hard sub-goals.
+_route() {
+  local gf="${1:-}" model="" effort=""
+  if [ -f "$gf" ]; then
+    model=$(grep -iE '^Model:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+    effort=$(grep -iE '^Effort:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+  fi
+  printf '%s\t%s\n' "$model" "$effort"
+}
+
+_build_prompt() {
+  local dir="$1" id="$2"
+  cat "$dir/POINTER_PROMPT.md" 2>/dev/null
+  printf '\n\nNEXT SUB-GOAL: %s\n' "$id"
+  # Inject the goal file's CONTENT (not just a path), so the session has the contract and
+  # re-discovery is actually eliminated (SPEC-087 "Session invocation").
+  local gf; gf=$(_goalfile "$dir" "$id")
+  if [ -n "$gf" ]; then
+    printf '\nGOAL FILE (%s, the contract for this sub-goal):\n' "$(basename "$gf")"
+    cat "$gf"
+  fi
+  # Two-tier feed-forward (SPEC-087 Mechanism B):
+  #   HOT  HANDOFF.md  -- overwritten each transition; injected in FULL but capped. Carries the
+  #                      next action + read-pointers so re-discovery becomes a read.
+  #   WARM DECISIONS.md -- append-only ledger of invariants + dead-ends; injected as a POINTER
+  #                      only (path + size), read on demand, so it never bloats the prompt.
+  if [ -s "$dir/HANDOFF.md" ]; then
+    local lines; lines=$(wc -l < "$dir/HANDOFF.md" | tr -d ' ')
+    printf '\nHOT HANDOFF from the previous sub-goal (verify before trusting):\n'
+    if [ "$lines" -gt "$HANDOFF_MAX_LINES" ]; then
+      head -n "$HANDOFF_MAX_LINES" "$dir/HANDOFF.md"
+      printf '[... HANDOFF.md truncated at %s/%s lines; read the file for the rest]\n' "$HANDOFF_MAX_LINES" "$lines"
+    else
+      cat "$dir/HANDOFF.md"
+    fi
+  fi
+  if [ -s "$dir/DECISIONS.md" ]; then
+    local dlines; dlines=$(wc -l < "$dir/DECISIONS.md" | tr -d ' ')
+    printf '\nWARM LEDGER: %s exists (%s lines) -- invariants + dead-ends. Read it on demand before re-deciding; it is NOT inlined here to keep this prompt lean.\n' "$dir/DECISIONS.md" "$dlines"
+  fi
+  # pi-swarm wording: the next session reads these records, not your transcript.
+  printf '\nWhen you finish: report findings IN the records (overwrite HANDOFF.md with the next action + read-pointers as file:line; append durable invariants/dead-ends to DECISIONS.md), NOT only in your response text. The next sub-goal reads the files, not this transcript.\n'
+}
+
+cmd_next() {
+  local dir="${1:-}"
+  [ -f "$dir/ROADMAP.md" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
+  local nx; nx=$(_next "$dir/ROADMAP.md")
+  if [ -n "$nx" ]; then printf '%s\n' "$nx"; else _say "(none unchecked)"; fi
+}
+
+# Pause after a completed sub-goal in --step mode. Reads ONE line from the driver's stdin (free:
+# the prompt is fed to claude via a temp file, not here). Empty/y/c -> continue; q/n -> stop;
+# EOF (no operator attached) -> stop (can't get consent, so don't march on). pi-swarm confirmAction.
+_step_pause() {
+  local id="$1" ans
+  printf '[orchestrate] --step: %s done. [Enter]=continue  q=stop: ' "$id" >&2
+  if ! IFS= read -r ans; then
+    _say "[orchestrate] --step: stdin closed; stopping after $id."
+    return 1
+  fi
+  case "$ans" in
+    q|Q|n|N|quit|stop) _say "[orchestrate] --step: operator stopped after $id."; return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
+# Run a session under the stall-watchdog (SG-11). Backgrounds claude (output -> a session log),
+# polls liveness (`kill -0`, no daemon) + the log's mtime; after WATCHDOG_STALL_SECS of no new
+# output while the process is still alive, emits a `stalled` event + WARN ONCE (advisory: never
+# kills). Returns the session's exit code. The captured output is surfaced after completion.
+_run_session_watchdog() {  # dir id pfile route_flags
+  local dir="$1" id="$2" pfile="$3" rflags="$4"
+  local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
+  local slog="$logdir/${id}.session.log"; : > "$slog"
+  _say "[orchestrate] [watchdog] $id: output -> $slog (stall=${WATCHDOG_STALL_SECS}s, poll=${WATCHDOG_POLL_SECS}s; advisory, never kills)"
+  # shellcheck disable=SC2086 # rflags + CLAUDE_FLAGS are operator/goal config; word-splitting is intended.
+  { "$CLAUDE_CMD" -p $rflags $CLAUDE_FLAGS < "$pfile" > "$slog" 2>&1; } &
+  local spid=$! warned=0 now last age
+  while kill -0 "$spid" 2>/dev/null; do
+    sleep "$WATCHDOG_POLL_SECS"
+    kill -0 "$spid" 2>/dev/null || break
+    now=$(date +%s); last=$(_mtime "$slog"); [ -n "$last" ] || last=$now; age=$((now - last))
+    if [ "$age" -ge "$WATCHDOG_STALL_SECS" ] && [ "$warned" = 0 ]; then
+      warned=1
+      _emit_event "$dir" "$id" stalled "no output for ${age}s (pid $spid alive)"
+      echo "[orchestrate] [watchdog] WARN: $id stalled -- no output for ${age}s, pid $spid still alive. Not killing (advisory); tail $slog." >&2
+    fi
+  done
+  wait "$spid"; local rc=$?
+  cat "$slog"
+  return "$rc"
+}
+
+cmd_run() {
+  local dir="" dry=0 step=0 stream=0 board_arg=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --dry-run)  dry=1 ;;
+      --step)     step=1 ;;
+      --stream)   stream=1 ;;
+      --board)    board_arg="both" ;;
+      --board=*)  board_arg="${1#--board=}" ;;
+      --*)        echo "unknown flag: $1" >&2; return 64 ;;
+      *)          if [ -z "$dir" ]; then dir="$1"; else echo "unexpected arg: $1" >&2; return 64; fi ;;
+    esac
+    shift
+  done
+  [ -d "$dir" ] || { echo "no such megagoal dir: '$dir'" >&2; return 64; }
+  local roadmap="$dir/ROADMAP.md"
+  [ -f "$roadmap" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
+  local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
+  case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
+
+  if [ "$dry" = 1 ]; then
+    _say "[plan] mega-goal: $dir"
+    [ "$step" = 1 ]   && _say "  (--step: pause for the operator after each sub-goal)"
+    [ "$stream" = 1 ] && _say "  (--stream: each session streamed live + captured to .orchestrate/<id>.stream.jsonl)"
+    local any=0
+    while IFS=$'\t' read -r sg ppolicy; do
+      any=1
+      local rmodel reffort
+      IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$sg")")
+      _say "  -> $sg ($ppolicy)  [model: ${rmodel:-inherit}, effort: ${reffort:-inherit}]  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
+      [ "$ppolicy" = gate ] && { _say "  == STOP at $sg (gate: human review) =="; break; }
+      [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
+    done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
+    [ "$any" = 1 ] || _say "  (no unchecked sub-goals)"
+    if [ "$board_mode" != roadmap ]; then
+      _say ""; _say "[board mode: $board_mode]"
+      _render_board "$dir" "$roadmap" "$board_mode"
+    fi
+    return 0
+  fi
+
+  while :; do
+    local nx id policy
+    nx=$(_next "$roadmap")
+    [ -n "$nx" ] || { _say "[orchestrate] all sub-goals checked; done."; return 0; }
+    id=$(printf '%s' "$nx" | cut -f1); policy=$(printf '%s' "$nx" | cut -f2)
+
+    if [ "$policy" = gate ]; then
+      _emit_event "$dir" "$id" blocked "gate: human review"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      _say "[orchestrate] STOP: $id is a gate sub-goal; open/await its PR for review, then re-run."
+      return 0
+    fi
+
+    # Per-sub-goal model/effort routing (SPEC-087): read the goal file's hints and pass them as
+    # flags, so this sub-goal runs on its own tier instead of inheriting Opus-for-everything.
+    # Absent hint -> no flag -> inherit.
+    local rmodel reffort route_flags=""
+    IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$id")")
+    [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
+    [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
+    # Guardrail (SG-11): a sub-goal with no goals/ file runs without its contract -- a re-discovery
+    # hazard. Warn loudly (advisory; the loop still runs it on POINTER_PROMPT + handoff alone).
+    if [ -z "$(_goalfile "$dir" "$id")" ]; then
+      echo "[orchestrate] [guardrail] WARN: $id has no goals/ file; session runs without its contract (re-discovery hazard)." >&2
+    fi
+    _emit_event "$dir" "$id" executing "model=${rmodel:-inherit} effort=${reffort:-inherit}"
+    [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+    _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p, model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
+    # Inject the prompt via a TEMP FILE on stdin, not a shell-interpolated argv arg (pi-swarm
+    # borrow). Removes the backtick/${}/secret-guard bug class when the handoff body carries shell
+    # metachars, and dodges ARG_MAX on a large injected handoff. `claude -p` reads the prompt from
+    # stdin when no positional prompt is given.
+    local pfile; pfile=$(mktemp)
+    _build_prompt "$dir" "$id" > "$pfile"
+    # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
+    # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
+    # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
+    local rc=0 slog=""
+    if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
+      # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
+      # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
+      # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
+      _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
+    elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; then
+      # Capture stream-json when either the operator wants a live tail (--stream) OR the
+      # deterministic handoff needs the transcript (DETERMINISTIC_HANDOFF=1). The live `tee` to
+      # the terminal happens only under --stream; det-handoff capture is silent.
+      local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
+      slog="$logdir/${id}.stream.jsonl"
+      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+      if [ "$stream" = 1 ]; then
+        _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
+        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
+      else
+        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
+      fi
+    else
+      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+      "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
+    fi
+    rm -f "$pfile"
+    if [ "$rc" != 0 ]; then
+      _emit_event "$dir" "$id" blocked "session exited nonzero ($rc)"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      echo "[orchestrate] session for $id exited nonzero; stopping." >&2
+      return 1
+    fi
+
+    # grounded completion: advance only if the box actually flipped.
+    local checked; checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
+    if [ "$checked" != 1 ]; then
+      _emit_event "$dir" "$id" blocked "box not flipped (no self-claim)"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      echo "[orchestrate] [guardrail] $id did not check its ROADMAP box; halting (no self-claim, no advance on a dead/incomplete session)." >&2
+      return 1
+    fi
+    _emit_event "$dir" "$id" shipped "box checked"
+    [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+    _say "[orchestrate] $id complete (box checked); advancing."
+
+    # Deterministic handoff (SG-02): regenerate the two-tier handoff for the NEXT sub-goal from
+    # this session's captured transcript, so the handoff is always produced and reproducible
+    # rather than depending on the model having written a good one. Overwrites HANDOFF.md (hot)
+    # and appends DECISIONS.md (warm, idempotent). Failure is non-fatal: the loop continues and
+    # the session's own HANDOFF.md (if any) stands.
+    if [ "$DETERMINISTIC_HANDOFF" = 1 ] && [ -s "$slog" ]; then
+      local nx2 nid nraw ntitle
+      nx2=$(_next "$roadmap")
+      if [ -n "$nx2" ]; then
+        nid=$(printf '%s' "$nx2" | cut -f1)
+        nraw=$(_sg_line "$roadmap" "$nid"); ntitle=$(_sg_title "$nraw" "$nid")
+        if "$ORCH_DIR/handoff-gen" "$slog" --dir "$dir" --next-id "$nid" --next-title "$ntitle" --date "$(date -u +%F)"; then
+          _emit_event "$dir" "$id" handoff "deterministic -> $nid"
+          _say "[orchestrate] deterministic handoff written for $nid (HANDOFF.md overwritten, DECISIONS.md appended)."
+        else
+          echo "[orchestrate] WARN: deterministic handoff generation failed for $id; the session's own HANDOFF.md (if any) stands." >&2
+        fi
+      fi
+    fi
+    # --step: pause for the operator between sub-goals, but only when the NEXT one is auto (the
+    # loop would actually run it). If next is a gate, the gate-stop below is the natural halt, so
+    # don't double up with a pause first.
+    if [ "$step" = 1 ]; then
+      local nxt; nxt=$(_next "$roadmap")
+      if [ -n "$nxt" ] && [ "$(printf '%s' "$nxt" | cut -f2)" = auto ]; then
+        _step_pause "$id" || return 0
+      fi
+    fi
+  done
+}
+
+main() {
+  local cmd="${1:-}"; shift 2>/dev/null || true
+  case "$cmd" in
+    next) cmd_next "$@" ;;
+    run)  cmd_run "$@" ;;
+    *) echo "usage: orchestrate.sh {next|run} <megagoal-dir> [--dry-run] [--step] [--stream] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
+  esac
+}
+
+main "$@"

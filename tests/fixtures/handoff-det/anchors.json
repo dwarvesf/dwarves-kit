@@ -1,0 +1,17 @@
+{
+  "_doc": "Hand-labeled load-bearing anchors for seed.jsonl. Each `present` substring MUST appear in the compacted output (fidelity). The `negative_control` substring MUST NOT appear (it is not in the transcript; guards against hallucination/boilerplate injection).",
+  "present": [
+    "exponential-backoff retry wrapper",
+    "src/fetch_client.py",
+    "tests/test_fetch_client.py",
+    "manual backoff loop because we avoid adding a new dependency",
+    "cap retries at 5",
+    "feat(client): add backoff retry wrapper",
+    "wire the retry config into the CLI flags"
+  ],
+  "file_edit_counts": {
+    "src/fetch_client.py": 2,
+    "tests/test_fetch_client.py": 1
+  },
+  "negative_control": "PostgreSQL connection pooling"
+}
