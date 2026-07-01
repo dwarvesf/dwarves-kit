@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# kit: stable dispatcher to the dwarves-kit lib/ scripts.
+#
+# Purpose (SPEC-090): once dwarves-kit is plugin-only, docs can no longer call
+# `bash ~/.claude/dwarves-kit/lib/<x>.sh` (that install.sh path is gone), and the
+# plugin cache path is version-pinned while ${CLAUDE_PLUGIN_ROOT} is unset in a
+# doc-instructed bash call. This one small, rarely-changing script is the stable
+# PATH entrypoint; it resolves the *current* lib/ at runtime so callers never
+# hardcode a version or install location.
+#
+# Usage:
+#   kit <script> [args...]   ->   bash <resolved-lib>/<script>.sh [args...]
+#   kit --lib                ->   print the resolved lib dir (for debugging)
+#   kit --install            ->   symlink this dispatcher into ~/.local/bin/kit
+#   kit --help               ->   this help
+#
+# Resolution order (first hit wins):
+#   1. newest installed plugin cache:
+#      ~/.claude/plugins/cache/dwarves-marketplace/kit/*/lib   (version-sorted)
+#   2. the repo checkout this script ships in: <dir of bin/kit>/../lib
+#
+# ponytail: two sources is enough. A third (env override) gets added only if a
+# real deployment needs it.
+set -euo pipefail
+
+_kit_resolve_lib() {
+  local cache="$HOME/.claude/plugins/cache/dwarves-marketplace/kit"
+  if [ -d "$cache" ]; then
+    local newest
+    newest=$(find "$cache" -maxdepth 2 -type d -name lib 2>/dev/null | sort -V | tail -1)
+    if [ -n "$newest" ] && [ -d "$newest" ]; then
+      printf '%s\n' "$newest"
+      return 0
+    fi
+  fi
+  # Repo checkout fallback: this file is <repo>/bin/kit, so lib is ../lib.
+  local self_lib
+  self_lib="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)/lib"
+  if [ -d "$self_lib" ]; then
+    printf '%s\n' "$self_lib"
+    return 0
+  fi
+  return 1
+}
+
+_kit_die() { printf 'kit: %s\n' "$1" >&2; exit 1; }
+
+_kit_help() {
+  sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+}
+
+main() {
+  case "${1:-}" in
+    ""|-h|--help)
+      _kit_help
+      exit 0
+      ;;
+    --lib)
+      _kit_resolve_lib || _kit_die "no dwarves-kit lib/ found (is the kit plugin installed?)"
+      exit 0
+      ;;
+    --install)
+      local self
+      self="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/kit"
+      mkdir -p "$HOME/.local/bin"
+      ln -sf "$self" "$HOME/.local/bin/kit"
+      printf 'linked %s/.local/bin/kit -> %s\n' "$HOME" "$self"
+      exit 0
+      ;;
+  esac
+
+  local name="$1"; shift
+  local lib script
+  lib="$(_kit_resolve_lib)" || _kit_die "cannot locate dwarves-kit lib/ (is the kit plugin installed?)"
+  script="$lib/$name.sh"
+  [ -f "$script" ] || _kit_die "no such script '$name' in $lib"
+  exec bash "$script" "$@"
+}
+
+main "$@"
