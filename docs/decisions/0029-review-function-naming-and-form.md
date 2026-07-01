@@ -41,7 +41,7 @@ Retire `-checker`, `-validate`-as-a-suffix, `-auditor`, and bare `reviewer` as r
 |---|---|---|---|---|---|
 | `integration-checker` | -> | `integration-verifier` | shipped agent | 31 files, clean token | mechanical sed + `test-meta.sh` |
 | `reviewer` | -> | `code-reviewer` | shipped agent | 81 files, COLLIDES with the English word | NOT a blind sed , rename the frontmatter `name:` + dispatch call-sites only, by word boundary; leave prose "reviewer" |
-| `security-auditor` | -> | `security-reviewer` | shipped agent | 19 files + external harness registry | breaks external `kit:security-auditor` callers , see Open sub-decision |
+| `security-auditor` | -> | `security-reviewer` | shipped agent | 19 files + external harness registry | RESOLVED one-axis (Han 2026-07-01); migration MUST also update the external `kit:security-auditor` registry exposure + any caller |
 | `task-verifier` | -> | `task-verifier` | shipped agent | , | already conforms |
 | `doc-verifier` | -> | `doc-verifier` | shipped agent | , | already conforms (verifies docs vs code = validation) |
 | `acceptance-auditor` | -> | `acceptance-verifier` | SG-06 (unbuilt) | 0 | free plan-fix |
@@ -60,9 +60,9 @@ Gated (team-facing rename): open the PR, `/kit:review-team`, human ships (this A
 3. **Negative control:** `grep -rwn '<old-name>'` over `agents/ commands/ lib/ tests/ docs/ *.md` returns ZERO agent-name hits (prose mentions in historical `docs/research/` snapshots are exempt and noted).
 4. `test-meta.sh` green.
 
-## Open sub-decision (one, for the human)
+## Resolved sub-decision (2026-07-01, Han)
 
-`security-auditor` -> `security-reviewer` collapses the `audit`/`review` distinction. If you want a TWO-TIER review vocabulary , `reviewer` = standard, `auditor` = deep/adversarial , then KEEP `-auditor` as a reserved second tier (rename `security-auditor` -> stays, and the axis gains a depth qualifier). Default in this ADR: one axis, `security-reviewer`. Flagged for your call before SG-08 runs.
+`security-auditor` -> `security-reviewer`, ONE AXIS. The two-tier option (keep `-auditor` as a reserved deep/adversarial tier) was considered and rejected: full vocabulary consistency wins over the depth nuance (the "deep" is already carried by the agent's instructions, not its suffix). Consequence: external callers of `kit:security-auditor` break , SG-08 MUST update the external skills/agents registry exposure in the same change, not just the in-repo references.
 
 ## Alternatives considered
 
@@ -75,7 +75,7 @@ Gated (team-facing rename): open the PR, `/kit:review-team`, human ships (this A
 - New reviewers (SG-06's, and any future) are born under the convention , predictable name + form.
 - A one-time gated rename of 3 shipped agents (SG-08), the `reviewer` one boundary-careful. `task-verifier` / `doc-verifier` untouched.
 - The V-model lens (ADR-0018) gains a naming rule row so the convention is enforced going forward (a new arm/reviewer names itself by this axis).
-- Cost: the rename touches ~50 unique reference sites across the 3 agents; external callers of `kit:security-auditor` break unless we keep the `-auditor` tier (the open sub-decision).
+- Cost: the rename touches ~50 unique reference sites across the 3 agents; external callers of `kit:security-auditor` break (one-axis resolved , SG-08 updates the external registry exposure too).
 
 ## Out of Scope
 
