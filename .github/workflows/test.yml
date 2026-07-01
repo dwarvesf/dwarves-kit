@@ -43,3 +43,9 @@ jobs:
 
       - name: Run orchestrator tests
         run: bash tests/test-orchestrate.sh
+
+      - name: Run role-classify tests (SPEC-089)
+        run: bash tests/test-role-classify.sh
+
+      - name: Run meta-agent tests (SPEC-089 / dynamic agent synthesis)
+        run: bash tests/test-meta-agent.sh

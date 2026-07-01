@@ -66,6 +66,48 @@ For each phase:
 
 Tasks with no dependencies or whose dependencies are all complete can run in any order. Execute them one at a time (sequential dispatch; parallel dispatch is a future upgrade).
 
+#### 2b-0. Role classification + specialist synthesis (auto)
+
+Before dispatching each task's worker, decide whether it needs a specialist role. This is same-run:
+a synthesized role is injected as the worker's prompt PREAMBLE, not installed as a file (Claude Code
+loads the agent registry at session start, so a file written now is only dispatchable next session).
+
+The role space is OPEN-ENDED: the classifier below is only a cheap fast path for common domains; the
+`meta-agent` (Mode C) can name ANY role for the long tail (technical-doc-writer, typescript-dev, ...).
+
+1. **Fast-path classify** with the shared primitive (deterministic, no subagent call):
+
+   ```bash
+   bash lib/role-classify.sh classify "<task description + acceptance criteria>"
+   # known domain: security | db-migration | frontend | performance | data-etl | infra | api
+   # OR: generic  (= no fast-path match; does NOT mean "generic worker", see step 3)
+   ```
+
+   This is the SPEC-089 shared primitive (a peer of `lane-classify.sh` / `task-type-classify.sh`), so
+   every command that dispatches task workers classifies the same way.
+
+2. **Reuse an existing specialist if present** (cheapest path, both known-domain and cached roles):
+   - If a predefined agent fits (dispatchable `subagent_type` this session), dispatch THAT, skip synthesis.
+   - Else if `~/.claude/agents/*<role>*.md` cached from a prior run fits the task, use its body as the
+     PREAMBLE. No re-synthesis.
+
+3. **Synthesize open-ended (when no reuse hit):** dispatch the `meta-agent` in **Mode C** with the task +
+   acceptance criteria + the classifier hint (even if the hint is `generic`, the meta-agent infers the
+   real role). It returns EITHER `NAME` / `TOOLS (advisory)` / `PREAMBLE`, OR `NO_SPECIALIST: <why>`.
+   Only `NO_SPECIALIST` → dispatch today's generic worker (2b, unchanged). Do NOT let it write a file.
+   Cost control: a known fast-path domain (step 1) may skip straight to synthesis with that role in hand;
+   the meta-agent hop is mainly for the long tail the classifier does not know.
+
+4. **Dispatch + cache:** prepend the `PREAMBLE` to the 2b worker prompt (replace the generic
+   "You are implementing a single task…" opener) and dispatch the worker NOW. After it returns, cache the
+   spec to `~/.claude/agents/<NAME>.md` (local dir, no repo change, no roster-sync needed) so a FUTURE
+   session reuses or dispatches it by name , the cache grows into your real role library. Promoting a
+   cached specialist into the SHARED kit (`agents/` + roster + review) stays the deliberate
+   `/kit:draft-agent` path, never automatic.
+
+Keep the orchestrator lean: classification is inline; synthesis is one bounded `meta-agent` call per
+non-reused task; the worker itself is the same Task-tool dispatch as always.
+
 #### 2b. Dispatch each task as a worker subagent
 
 > A subagent is NOT automatically cheaper: a subagent-heavy workflow can cost several times a
@@ -73,7 +115,7 @@ Tasks with no dependencies or whose dependencies are all complete can run in any
 > the lead's context is worth the setup overhead, NOT for one-prompt tasks, a single tool call,
 > or when near a rate/budget limit. (research/2026-06-28-token-efficient-design.md Part 1.)
 
-For each task, use the **Task tool** with this prompt structure:
+For each task, use the **Task tool** with this prompt structure (when 2b-0 produced a specialist PREAMBLE, that preamble REPLACES the generic "You are implementing a single task…" opener below):
 
 ```
 You are implementing a single task from a development spec.
