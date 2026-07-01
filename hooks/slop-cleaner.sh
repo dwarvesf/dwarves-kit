@@ -20,19 +20,32 @@ if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
   echo "[dwarves-kit:slop-cleaner] checking recently modified files" >&2
 fi
 
+# Session-start marker. Path is overridable for tests; prod default unchanged.
+MARKER="${DWARVES_KIT_SESSION_MARKER:-/tmp/.dwarves-kit-session-start}"
+
 # If no session marker exists, create one and skip this run
 # (first Stop of the session -- no baseline to compare against)
-if [ ! -f /tmp/.dwarves-kit-session-start ]; then
-  touch /tmp/.dwarves-kit-session-start
+if [ ! -f "$MARKER" ]; then
+  touch "$MARKER"
   exit 0
 fi
 
-# Find source files modified since session start
+# Bounded blast radius: only scan inside a git work tree. Outside a repo (a
+# session at $HOME or a multi-repo workspace root) "find ." would walk an
+# unbounded tree, and there is nothing meaningful to bloat-check anyway.
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
+
+# Find source files modified since session start.
+# Prune heavy dirs DURING traversal (not via post-filter grep): from a large
+# tree (monorepo, Obsidian vault, nested repos) the old "find . | grep -v"
+# walked node_modules/.git/vector-dbs first, pegging CPU on every Stop event.
 RECENT_FILES=$(find . \
-  \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \
-     -o -name "*.go" -o -name "*.py" -o -name "*.rs" \) \
-  -newer /tmp/.dwarves-kit-session-start 2>/dev/null \
-  | grep -v node_modules | grep -v vendor | grep -v dist \
+  \( -type d \( -name node_modules -o -name vendor -o -name dist -o -name .git \
+       -o -name target -o -name build -o -name .venv -o -name __pycache__ \
+       -o -name .obsidian -o -name .claude -o -name '.smtcmp_*' \) -prune \) -o \
+  \( -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \
+       -o -name "*.go" -o -name "*.py" -o -name "*.rs" \) \
+     -newer "$MARKER" -print \) 2>/dev/null \
   | head -20 || true)
 
 [ -z "$RECENT_FILES" ] && exit 0

@@ -62,11 +62,25 @@ if [ -n "$SPEC_FILE" ]; then
   TASK_PROGRESS="${DONE}/${TOTAL} tasks complete"
 fi
 
-# Recently modified source files
-RECENT_FILES=$(find . \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.go" -o -name "*.py" -o -name "*.rs" \) \
-  -newer /tmp/.dwarves-kit-session-start 2>/dev/null \
-  | grep -v node_modules | grep -v vendor | grep -v dist \
-  | head -10 || echo "none")
+# Recently modified source files.
+# Marker path overridable for tests; prod default unchanged.
+MARKER="${DWARVES_KIT_SESSION_MARKER:-/tmp/.dwarves-kit-session-start}"
+# Only scan inside a git work tree (bounded blast radius, see slop-cleaner.sh).
+# Outside a repo there is nothing repo-meaningful to record; "find ." there
+# would walk an unbounded tree. The rest of the state still gets written.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  # Prune heavy dirs during traversal (see slop-cleaner.sh rationale).
+  RECENT_FILES=$(find . \
+    \( -type d \( -name node_modules -o -name vendor -o -name dist -o -name .git \
+         -o -name target -o -name build -o -name .venv -o -name __pycache__ \
+         -o -name .obsidian -o -name .claude -o -name '.smtcmp_*' \) -prune \) -o \
+    \( -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" \
+         -o -name "*.go" -o -name "*.py" -o -name "*.rs" \) \
+       -newer "$MARKER" -print \) 2>/dev/null \
+    | head -10 || echo "none")
+else
+  RECENT_FILES="none"
+fi
 
 # Write state
 cat > "$STATE_FILE" << STATE

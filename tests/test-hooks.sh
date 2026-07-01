@@ -680,6 +680,52 @@ assert_exit "never blocks (exit 0)" 0 $RC
 RC=$(run_hook slop-cleaner.sh '{"stop_hook_active":true,"assistant_response":"done"}')
 assert_exit "respects stop_hook_active" 0 $RC
 
+# --- SPEC-086: prune-during-traversal + git-work-tree guard, locked against drift.
+# A throwaway git repo, a marker set in the past, source files created "now".
+# Hooks honor DWARVES_KIT_SESSION_MARKER so the suite never touches the real
+# /tmp marker. The build/ canary is the falsifiable signal: the OLD grep-after
+# code filtered only node_modules|vendor|dist, so build/canary.py WOULD surface;
+# pruned, it must not. (CPU-descent perf is benched in the proof-of-done.)
+SCAN_MARKER=$(mktemp "${TMPDIR:-/tmp}/dk-mark.XXXXXX")
+touch -t 202001010000 "$SCAN_MARKER"
+SCAN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-scan.XXXXXX")
+( cd "$SCAN_DIR" && git init -q )
+printf 'v%s = 1\n' $(seq 350) > "$SCAN_DIR/touched.py"        # >300 lines -> bloat, at root
+mkdir -p "$SCAN_DIR/build"
+printf 'v%s = 1\n' $(seq 350) > "$SCAN_DIR/build/canary.py"   # bloated, but under a pruned dir
+SLOP_OUT=$( cd "$SCAN_DIR" && echo '{"stop_hook_active":false,"assistant_response":"done"}' \
+  | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/slop-cleaner.sh" 2>/dev/null )
+assert_output_contains "slop: reports a bloated root source file (scan works)" "touched.py" "$SLOP_OUT"
+assert_output_not_contains "slop: prunes build/ (SPEC-086 canary, falsifiable)" "canary.py" "$SLOP_OUT"
+
+# guard: same bloated file in a NON-git dir -> hook skips the scan, no nudge
+NOGIT=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit.XXXXXX")
+printf 'v%s = 1\n' $(seq 350) > "$NOGIT/orphan.py"
+SLOP_NG=$( cd "$NOGIT" && echo '{"stop_hook_active":false,"assistant_response":"done"}' \
+  | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/slop-cleaner.sh" 2>/dev/null )
+assert_output_not_contains "slop: no scan outside a git work tree (guard)" "orphan.py" "$SLOP_NG"
+
+# ============================================================
+echo ""
+echo "=== session-state-save.sh (SPEC-086) ==="
+# ============================================================
+# Reuses the SCAN_DIR/SCAN_MARKER fixture above. State file lists changed source.
+( cd "$SCAN_DIR" && echo '{"stop_hook_active":false}' \
+  | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
+SS_STATE=$(cat "$SCAN_DIR/.claude/session-state/last-state.md" 2>/dev/null)
+assert_output_contains "session-state: lists a changed source file" "touched.py" "$SS_STATE"
+assert_output_not_contains "session-state: prunes build/ (SPEC-086 canary)" "canary.py" "$SS_STATE"
+
+# guard: outside a git work tree, does not scan (RECENT_FILES=none)
+NOGIT2=$(mktemp -d "${TMPDIR:-/tmp}/dk-nogit2.XXXXXX")
+printf 'q = 9\n' > "$NOGIT2/orphan.py"
+( cd "$NOGIT2" && echo '{"stop_hook_active":false}' \
+  | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
+SS_NG=$(cat "$NOGIT2/.claude/session-state/last-state.md" 2>/dev/null)
+assert_output_not_contains "session-state: no scan outside a git work tree (guard)" "orphan.py" "$SS_NG"
+
+rm -rf "$SCAN_DIR" "$NOGIT" "$NOGIT2" "$SCAN_MARKER"
+
 # ============================================================
 echo ""
 echo "=== statusline.sh ==="
