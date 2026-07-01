@@ -1,7 +1,7 @@
 # 0029. Review-function naming and form convention (both V-model arms)
 
 Date: 2026-07-01
-Status: Proposed
+Status: Accepted (2026-07-01, Han , one-axis `security-reviewer`; convention machine-enforced in test-meta per SG-08)
 Relates-to: ADR-0018 (V-model phase frame , this names the reviewers that lens defines), ADR-0005 (read-only verifier pattern), ADR-0015 (integration-checker), ADR-0016 (doc-verifier), ADR-0024 (gate-ledger), ADR-0028 (autonomous-loop hardening , SG-06 births new reviewers, SG-08 migrates the legacy names), SPEC-088 (agent-effectiveness validator)
 
 ## Context
@@ -74,7 +74,7 @@ Gated (team-facing rename): open the PR, `/kit:review-team`, human ships (this A
 
 - New reviewers (SG-06's, and any future) are born under the convention , predictable name + form.
 - A one-time gated rename of 3 shipped agents (SG-08), the `reviewer` one boundary-careful. `task-verifier` / `doc-verifier` untouched.
-- The V-model lens (ADR-0018) gains a naming rule row so the convention is enforced going forward (a new arm/reviewer names itself by this axis).
+- The V-model lens (ADR-0018) gains a naming rule row, and `test-meta.sh` asserts every review-agent name matches the axis (`-reviewer` | `-verifier` | `-team` | `advisor`) so a future off-axis name FAILS CLOSED (SG-08, default-2 Han 2026-07-01). The convention is machine-enforced, not just documented.
 - Cost: the rename touches ~50 unique reference sites across the 3 agents; external callers of `kit:security-auditor` break (one-axis resolved , SG-08 updates the external registry exposure too).
 
 ## Out of Scope

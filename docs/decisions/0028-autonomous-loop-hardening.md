@@ -1,7 +1,7 @@
 # 0028. Full-autonomous-to-final SDD lane (autonomous-loop hardening)
 
 Date: 2026-06-29
-Status: Proposed
+Status: Accepted (2026-07-01, Han , team-blessed; the 2026-07-01 Refinement folded in)
 Relates-to: ADR-0017 (mega-decomposition lane), ADR-0018 (v-model phase frame), ADR-0024 (gate-ledger + ship-enforcement), ADR-0025 (proof-of-done ship gate), ADR-0026 (co-located table-first proof), SPEC-034 (mega-goal lane), SPEC-076 (v-model descent), SPEC-082 (finding-validators), SPEC-087 (inter-sub-goal context hygiene), ops-toolkit `plan-for-mega-goal` skill + `_meta/megagoals/{token-optim-v3,kit-hardening}`
 
 ## Decision (one line)
