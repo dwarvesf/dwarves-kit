@@ -39,7 +39,7 @@ bash tests/test-agent-effectiveness.sh   # AC1 planted-bad flagged · AC2 roster
 Proof-of-done: a table-first run-table (ADR-0026) with the planted-bad catch, the clean-roster pass, and the fail-safe negative control.
 
 ## Review
-Gated (shared kit repo): open the PR, `/kit:review-team`, human ships. Per ADR-0028 this implements only AFTER the ADR is team-blessed.
+Integration-branch + gated-final (ADR-0028 merge posture): this sub-goal's PR targets `mega/kit-hardening` and auto-merges past its OWN ship-gate (V-model phase reviews recorded + green checks + proof-of-done), NOT a per-PR human ship. The single human review (`/kit:review-team`) runs once at the final `mega/kit-hardening -> master` PR. Per ADR-0028 this implements only AFTER the ADR is team-blessed.
 
 ## Out of Scope
 - A hard pre-use gate on agents (stays advisory + ship-visible, like its sibling validators).
