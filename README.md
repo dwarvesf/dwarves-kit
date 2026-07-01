@@ -86,7 +86,7 @@ After install, open a Claude Code session in your project and run one full lap. 
 1. `/kit:start` orients you and suggests the next step.
 2. `/kit:think` and describe the change (e.g. "add a `--version` flag to the CLI"). It throws 6 forcing questions at the idea; answer them.
 3. `/kit:spec` writes the contract to `docs/specs/SPEC-NNN-<slug>.md`.
-4. `/kit:execute` runs the autonomous build: a worker implements the spec, a verifier checks it against the acceptance criteria, a fix-agent retries fixable failures (max 2).
+4. `/kit:execute` runs the autonomous build: a worker implements the spec (specialized on-demand per task , a security/migration/etc. role synthesized and injected when the task warrants it, SPEC-089), a verifier checks it against the acceptance criteria, a fix-agent retries fixable failures (max 2).
 5. `/kit:review` then `/kit:ship`: review gate, then version bump, changelog, conventional commit, PR.
 
 That is the whole loop. The spec is the unit of handoff: a contractor running `/kit:execute` reads the same `docs/specs/SPEC-NNN-<slug>.md` you wrote. To see the artifact set without running anything, browse [`examples/hello-spec/`](examples/hello-spec/).

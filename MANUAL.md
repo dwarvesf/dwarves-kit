@@ -151,6 +151,17 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **When to invoke:** when you want hands-on control or the next task needs subtle judgment that the verification pipeline might over-correct on
 **Common gotcha:** picks the next unchecked task only. To skip a task or pick a specific one, edit SPEC.md task ordering first. This unchecked-only behavior is also why `/kit:next` (not a fresh `/kit:execute`) is the way to resume after a mid-flight amend: it runs the newly appended tasks and skips the done rows (SPEC-027).
 
+### `/kit:draft-agent`
+
+**Phase:** build (meta-tooling)
+**Reads:** a one-line role description (or a unit-of-work description) from `$ARGUMENTS`
+**Writes:** by default INSTALLS a new subagent , `agents/<name>.md` + the roster rows (MANUAL/architecture/README) + `~/.claude/agents/<name>.md` for runtime; `--draft` stops at a staged draft; `subgoal:` mode drafts a mega-goal sub-goal file (never installed)
+**Dispatches:** the `meta-agent` (drafts to staging; the command promotes/installs)
+**When to invoke:** when a task needs a specialist role no existing agent covers and you want it as a reusable, named kit agent. For a one-off same-run specialist during `/kit:execute`, you do NOT invoke this , 2b-0 role synthesis handles it inline (see below).
+**Common gotcha:** a freshly installed agent is dispatchable only NEXT session (Claude Code loads the agent registry at session start); the command prints the granted tools + an `rm` undo. Sharing an installed agent with the team still goes through a reviewed PR. Design: SPEC-089.
+
+Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classified by `lib/role-classify.sh`; a specialist-worthy task gets a role synthesized by the `meta-agent` (Mode C, open-ended , any role) and injected into the worker THIS run, cached to `~/.claude/agents/` for reuse. Plain tasks fall through to the generic worker. This is automatic; `/kit:draft-agent` is the manual, install-a-named-agent path. Both share the `meta-agent` + `role-classify.sh` primitives (SPEC-089).
+
 ### `/kit:debug`
 
 **Phase:** off-cycle (the `bug` lane: defect, regression, failing test, not a new feature)
