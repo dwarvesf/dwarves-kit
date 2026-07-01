@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # role-classify.sh -- deterministic task description -> SPECIALIST DOMAIN (SPEC-089).
 #
-# The third kit classifier, a peer of lane-classify.sh (which lane) and
-# task-type-classify.sh (which work type). This one answers: does a task need a
-# specialist ROLE, and which one? It is the shared primitive behind dynamic agent
-# synthesis: any command (/kit:execute 2b-0, /kit:next, /kit:dispatch, a mega-goal
-# orchestrator) calls it to decide whether to synthesize + inject a specialist
-# preamble (via meta-agent Mode C) or fall through to a generic worker.
+# A cheap FAST-PATH hint for high-frequency specialist domains. It is NOT the role
+# universe: the role space is open-ended, and the meta-agent (Mode C) is the
+# authority that can name ANY role (technical-doc-writer, typescript-dev,
+# ui-designer, solidity-auditor, ...). This classifier only exists to skip the LLM
+# hop for the common domains it DOES know.
+#
+# So a `generic` result does NOT mean "use a generic worker". It means "no fast-path
+# match, escalate to meta-agent Mode C for open-ended role inference"; only Mode C's
+# own NO_SPECIALIST verdict falls through to a plain worker. See SPEC-089.
 #
 # Pure keyword heuristic: no LLM, no network, deterministic (same desc -> same
-# domain). "generic" is the deliberate default so plain tasks are never
-# over-specialized. First clear match wins; order is specificity, not priority.
+# domain). First clear match wins; order is specificity, not priority. Peer of
+# lane-classify.sh (which lane) and task-type-classify.sh (which work type).
 #
 # Usage:
 #   role-classify.sh classify "<task description>"   -> the domain, exit 0

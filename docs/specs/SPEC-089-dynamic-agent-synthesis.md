@@ -11,6 +11,15 @@ no predefined agent covers. Today the kit dispatches every task worker as a GENE
 with a generic "You are implementing a single task" preamble (`execute.md` 2b). We want: when a task
 needs a specialist, synthesize that role and dispatch it FOR THAT TASK, immediately, this run.
 
+## Governing philosophy (Han 2026-07-01)
+
+The kit is an instrument for CLEAR specs and easy-to-medium goals: it supplies the structure (lanes,
+gates, verification, roles). For HARD or unclear goals, no fixed process can figure the task out; the
+agent must reason DYNAMICALLY, and the kit's job narrows to ensuring the docs + decisions get logged
+(proof-of-done, impl-notes, ADRs). Dynamic agent synthesis is the "reason dynamically" half made
+concrete: the set of roles a hard goal needs is unknowable up front, so it must be synthesized on
+demand, not enumerated. This is why the role space below is OPEN-ENDED, not a fixed menu.
+
 ## The hard constraint (why "install a file" does not work)
 
 Claude Code loads the subagent registry at **session start**. A subagent is dispatchable by
@@ -32,29 +41,43 @@ The cache bridges them: a synthesized specialist used now becomes a named, dispa
 session, with no repo churn. Promoting it into the SHARED kit (`agents/` + roster + review) stays the
 deliberate `/kit:draft-agent` path.
 
-## Generalization: a shared primitive, not a per-command hack (the core of this spec)
+## Open-ended roles: the classifier is a fast path, the meta-agent is the authority
 
-The classification logic must NOT live inside `execute.md`. It is a shared kit primitive, a third
-peer of the existing classifiers:
+The role space is UNBOUNDED. A fixed enum (security, frontend, ...) can never cover the tail
+(`technical-doc-writer`, `typescript-dev`, `ui-designer`, `solidity-auditor`, `market-researcher`, ...).
+So authority is split:
 
-- `lib/lane-classify.sh` , which LANE (build/incident/...)
-- `lib/task-type-classify.sh` , which WORK TYPE
-- **`lib/role-classify.sh` (new)** , which SPECIALIST DOMAIN (security | db-migration | frontend |
-  performance | data-etl | infra | api | generic)
+- **`lib/role-classify.sh` = a cheap FAST-PATH hint** for high-frequency domains only. Deterministic
+  keyword heuristic, no LLM. It is NOT the role universe. Its `generic` output means "no fast-path
+  match, escalate", NOT "use a generic worker". A third peer of `lib/lane-classify.sh` (which LANE) and
+  `lib/task-type-classify.sh` (which WORK TYPE), so every command classifies the common domains the
+  same cheap way.
+- **`meta-agent` Mode C = the OPEN-ENDED authority.** Given any task (+ the optional hint), it infers
+  the best-fit role BY NAME, whatever it is, or returns `NO_SPECIALIST` for a genuinely plain task.
+  Only `NO_SPECIALIST` falls through to a generic worker.
 
-Deterministic keyword heuristic, no LLM, `generic` as the safe default. Any command that dispatches
-task workers calls the SAME primitive, so specialization is consistent everywhere.
+The classifier is thus purely a cost optimization (skip the LLM for the ~7 common domains); the role
+coverage is unbounded because the LLM names the long tail. The `~/.claude/agents/` cache accumulates
+the roles actually hit into a growing, reusable role library , the system gets cheaper the more it is
+used (more cache hits, fewer synthesis calls).
+
+The classification logic must NOT live inside `execute.md`; it is the shared `lib/` primitive so any
+command reuses it.
 
 ### The dispatch contract (any command follows these 4 steps)
 
 ```
-1. domain = bash lib/role-classify.sh classify "<task desc + acceptance criteria>"
-2. domain == generic            -> dispatch the generic worker (unchanged). STOP.
-3. reuse: a predefined agent fits (dispatch by name), OR ~/.claude/agents/<domain>-specialist.md
-   exists (use its body as PREAMBLE). If hit, skip 4's synthesis.
-4. synthesize: dispatch meta-agent Mode C -> inject PREAMBLE into the worker NOW ->
-   cache the spec to ~/.claude/agents/<name>.md for next-session reuse.
+1. hint = bash lib/role-classify.sh classify "<task desc + acceptance criteria>"   # fast-path only
+2. reuse: a predefined agent fits (dispatch by name), OR a cached ~/.claude/agents/*<role>*.md fits
+   (use its body as PREAMBLE). If hit, skip synthesis.
+3. synthesize: dispatch meta-agent Mode C (task + hint). It returns EITHER a role
+   (NAME/TOOLS/PREAMBLE) OR NO_SPECIALIST.
+     - NO_SPECIALIST        -> dispatch the generic worker (unchanged). STOP.
+     - a role               -> inject PREAMBLE into the worker NOW.
+4. cache the synthesized spec to ~/.claude/agents/<name>.md for next-session reuse.
 ```
+Note: `generic` from step 1 is NOT a stop condition , it escalates to step 3. Only the meta-agent's
+`NO_SPECIALIST` verdict falls through to a generic worker.
 
 ### Consumers
 

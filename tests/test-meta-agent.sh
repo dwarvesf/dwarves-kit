@@ -45,6 +45,9 @@ lint_agent_frontmatter "meta-agent" "$MA" 1
 grep -q "Mode A" "$MA" && grep -q "Mode B" "$MA" && grep -q "Mode C" "$MA"; chk "meta-agent documents all three modes (A/B draft, C inline)" $?
 # Mode C = immediate same-run dispatch: returns an inline spec, writes no file, exempt from the marker.
 grep -qi 'inline role spec' "$MA" && grep -qi 'PREAMBLE' "$MA"; chk "meta-agent Mode C returns an inline PREAMBLE (no file)" $?
+# Mode C is the OPEN-ENDED authority: infers any role, or returns NO_SPECIALIST for a plain task.
+grep -qi 'open-ended' "$MA" && grep -q 'NO_SPECIALIST' "$MA"; chk "meta-agent Mode C is open-ended (any role) + can return NO_SPECIALIST" $?
+grep -qi 'fast-path\|fast path' "$KIT_DIR/lib/role-classify.sh"; chk "role-classify is framed as a fast-path hint, not the role universe" $?
 # the execute workflow auto-classifies each task and injects a synthesized specialist preamble.
 EX="$KIT_DIR/commands/execute.md"
 grep -q '2b-0' "$EX" && grep -qi 'classif' "$EX"; chk "execute.md has the 2b-0 role-classification step" $?
