@@ -400,5 +400,92 @@ CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$DO" --board=roadmap > "$TMP/wo.
 { ! grep -q '\[watchdog\]' "$TMP/wo.out" && grep -q '^- \[x\] SG-02' "$DO/ROADMAP.md"; } \
   && pass "watchdog off by default: no bg path, chain runs unchanged" || { fail "default watchdog-off changed"; cat "$TMP/wo.out"; }
 
+# ============================ TEST 13: deterministic handoff (v3 SG-02) ====================
+HGEN="$KIT/lib/handoff-gen"
+SEED="$KIT/tests/fixtures/handoff-det/seed.jsonl"
+ANCHORS="$KIT/tests/fixtures/handoff-det/anchors.json"
+
+# 13a: determinism -- same transcript + args + --date => byte-identical HANDOFF.md and DECISIONS.md.
+H1="$TMP/h1"; H2="$TMP/h2"; mkdir -p "$H1" "$H2"
+"$HGEN" "$SEED" --dir "$H1" --next-id SG-04 --next-title "distilled returns" --date 2026-06-30 2>/dev/null
+"$HGEN" "$SEED" --dir "$H2" --next-id SG-04 --next-title "distilled returns" --date 2026-06-30 2>/dev/null
+{ cmp -s "$H1/HANDOFF.md" "$H2/HANDOFF.md" && cmp -s "$H1/DECISIONS.md" "$H2/DECISIONS.md"; } \
+  && pass "deterministic handoff: HANDOFF.md + DECISIONS.md byte-identical across runs (cmp-clean)" \
+  || { fail "handoff not deterministic"; }
+
+# 13b: idempotent append -- re-running into the SAME dir does not duplicate the DECISIONS block.
+"$HGEN" "$SEED" --dir "$H1" --next-id SG-04 --next-title "distilled returns" --date 2026-06-30 2>/dev/null
+n=$(grep -c '<!-- handoff-gen:' "$H1/DECISIONS.md")
+[ "$n" = 1 ] && pass "deterministic handoff: DECISIONS append is idempotent (1 block after 2 runs)" \
+  || fail "DECISIONS appended duplicate blocks ($n)"
+
+# 13c: fidelity + negative control -- every load-bearing anchor appears in the combined two-tier
+# output; the negative control (never in the transcript) does NOT. Reuses SG-01's hand-labeled fixture.
+cat "$H1/HANDOFF.md" "$H1/DECISIONS.md" > "$TMP/combined.md"
+if python3 - "$ANCHORS" "$TMP/combined.md" <<'PY'
+import json, sys
+anchors = json.load(open(sys.argv[1]))
+text = open(sys.argv[2]).read()
+missing = [a for a in anchors["present"] if a not in text]
+leaked = anchors["negative_control"] in text
+if missing: sys.stderr.write("MISSING: %r\n" % missing)
+if leaked: sys.stderr.write("LEAKED negative control\n")
+sys.exit(1 if (missing or leaked) else 0)
+PY
+then pass "deterministic handoff: all load-bearing anchors present, negative control absent"
+else fail "handoff fidelity/negative-control failed"; fi
+
+# 13d: the HOT handoff carries the contract fields (next sub-goal + read-pointers grounded in real files).
+{ grep -q 'Next sub-goal: SG-04' "$H1/HANDOFF.md" \
+  && grep -q 'Read-pointers' "$H1/HANDOFF.md" \
+  && grep -q 'src/fetch_client.py' "$H1/HANDOFF.md"; } \
+  && pass "hot HANDOFF carries next-sub-goal + grounded read-pointers" || { fail "hot handoff fields wrong"; cat "$H1/HANDOFF.md"; }
+
+# 13e: no-LLM contract -- the generator + ported extractor import no network/model libs.
+! grep -REq '\b(import|from)\b.*\b(anthropic|openai|requests|httpx|urllib|socket)\b' "$KIT/lib/handoff/" \
+  && pass "deterministic handoff: no LLM/network imports (no-LLM contract)" || fail "handoff code imports a network/model lib"
+
+# 13f: orchestrator integration -- DETERMINISTIC_HANDOFF=1 regenerates the handoff from the
+# captured transcript, OVERWRITING the LLM-written one. Mock emits the seed fixture as its
+# "stream" then flips the box.
+cat > "$TMP/claude-dh" <<EOF
+#!/usr/bin/env bash
+cat >/dev/null
+cat "$SEED"
+id=\$(grep -oE 'SG-[0-9]+' "\$DH_RM" | head -1)
+awk '{ if (\$0 ~ /^- \[ \] SG-01 /) sub(/\[ \]/, "[x]"); print }' "\$DH_RM" > "\$DH_RM.t" && mv "\$DH_RM.t" "\$DH_RM"
+EOF
+chmod +x "$TMP/claude-dh"
+DH="$TMP/mgdh"; mk_megagoal "$DH"
+cat > "$DH/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 first thing , auto , PR #__
+- [ ] SG-02 second thing , gate , PR #__
+EOF
+echo "STALE LLM HANDOFF that should be overwritten" > "$DH/HANDOFF.md"
+DH_RM="$DH/ROADMAP.md" DETERMINISTIC_HANDOFF=1 CLAUDE_CMD="$TMP/claude-dh" \
+  bash "$ORCH" run "$DH" > "$TMP/dh.out" 2>&1 < /dev/null
+{ grep -q 'Next sub-goal: SG-02' "$DH/HANDOFF.md" && ! grep -q 'STALE LLM HANDOFF' "$DH/HANDOFF.md" \
+  && grep -q 'src/fetch_client.py' "$DH/HANDOFF.md"; } \
+  && pass "DETERMINISTIC_HANDOFF=1: orchestrator regenerated HANDOFF.md from the transcript (overwrote LLM's)" \
+  || { fail "deterministic handoff not wired into orchestrator"; cat "$TMP/dh.out"; echo "--"; cat "$DH/HANDOFF.md"; }
+{ [ -s "$DH/DECISIONS.md" ] && grep -q 'manual backoff loop' "$DH/DECISIONS.md"; } \
+  && pass "DETERMINISTIC_HANDOFF=1: DECISIONS.md appended deterministically" || fail "DECISIONS not appended by orchestrator"
+
+# 13g: negative control -- default (flag OFF) does NOT regenerate; the session's own HANDOFF stands.
+DHN="$TMP/mgdhn"; mk_megagoal "$DHN"
+cat > "$DHN/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 first thing , auto , PR #__
+- [ ] SG-02 second thing , gate , PR #__
+EOF
+DH_RM="$DHN/ROADMAP.md" CLAUDE_CMD="$TMP/claude-dh" bash "$ORCH" run "$DHN" > "$TMP/dhn.out" 2>&1 < /dev/null
+{ [ ! -f "$DHN/HANDOFF.md" ] || ! grep -q 'Next sub-goal: SG-02' "$DHN/HANDOFF.md"; } \
+  && [ ! -f "$DHN/.orchestrate/SG-01.stream.jsonl" ] \
+  && pass "default (flag off): no deterministic regeneration, no forced capture (behavior unchanged)" \
+  || { fail "deterministic handoff fired with flag off"; cat "$TMP/dhn.out"; }
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }
