@@ -127,6 +127,36 @@ echo "=== dwarves-kit installer ==="
 echo "Kit location: $KIT_DIR"
 echo ""
 
+# --- Plugin-aware compat mode --------------------------------------------
+# If the kit is already installed as a Claude Code plugin, the plugin provides
+# the hooks, commands, agents, and lib/ at runtime via ${CLAUDE_PLUGIN_ROOT}.
+# Running the full bash install here would DOUBLE-register hooks (settings.json
+# AND the plugin) and could pin a different lib/ version, which is exactly the
+# "don't run both paths" hazard the README warns about.
+#
+# So on a plugin machine we do a COMPAT-ONLY install: symlink the legacy
+# ~/.claude/dwarves-kit paths (lib, WORKFLOW.md, AGENTS.md) that docs still call
+# as plain bash (`bash ~/.claude/dwarves-kit/lib/<x>.sh`, where CLAUDE_PLUGIN_ROOT
+# is not set). No settings.json hooks, no flat commands. The symlinks track this
+# checkout (KIT_DIR), which is also the marketplace source, so a `git pull`
+# updates them. Force the full bash install with KIT_FORCE_FULL=1.
+PLUGIN_LIB="$(ls -d "$CLAUDE_DIR"/plugins/cache/dwarves-marketplace/kit/*/lib 2>/dev/null | sort -V | tail -1 || true)"
+if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
+  echo "[plugin detected] kit@dwarves-marketplace is installed; runtime comes from the plugin."
+  echo "Doing a COMPAT-ONLY install (legacy path shims), not the full bash install,"
+  echo "to avoid double-registering hooks."
+  mkdir -p "$CLAUDE_DIR/dwarves-kit"
+  for f in lib WORKFLOW.md AGENTS.md; do
+    ln -sfn "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
+    echo "[ok] compat symlink ~/.claude/dwarves-kit/$f -> $KIT_DIR/$f"
+  done
+  echo ""
+  echo "Legacy doc paths (bash ~/.claude/dwarves-kit/lib/*.sh) now resolve."
+  echo "Full bash install anyway: KIT_FORCE_FULL=1 bash install.sh"
+  exit 0
+fi
+# --- end plugin-aware compat mode ----------------------------------------
+
 # Ensure ~/.claude exists
 mkdir -p "$CLAUDE_DIR/commands" "$CLAUDE_DIR/skills"
 
