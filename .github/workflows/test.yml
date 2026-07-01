@@ -49,3 +49,6 @@ jobs:
 
       - name: Run meta-agent tests (SPEC-089 / dynamic agent synthesis)
         run: bash tests/test-meta-agent.sh
+
+      - name: Run proof visual-evidence tests
+        run: bash tests/test-proof-visual-evidence.sh

@@ -104,6 +104,25 @@ override() {
   echo "proof-of-done override logged for '$slug' (trace: $OVERRIDE_LOG)"
 }
 
+# _has_committed_image <proof-file> <root>: 0 iff the file embeds an image whose target
+# actually EXISTS in the tree (resolved relative to the proof file's dir, then the repo root).
+# Closes the fabrication hole: a bare `![x](missing.gif)` string must not count as "it ran" ,
+# the picture has to really be there. A committed proof image satisfies this at push time; a
+# dangling or typo'd reference does not.
+_has_committed_image() {
+  local pf="$1" root="$2" path
+  [ -f "$pf" ] || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    path="${path%%[#?]*}"          # strip #anchor / ?query
+    path="${path#./}"
+    [ -f "$(dirname "$pf")/$path" ] && return 0
+    [ -f "$root/$path" ] && return 0
+  done < <(grep -oiE '!\[[^]]*\]\([^)]*\.(png|gif|jpe?g|svg|webp)\)' "$pf" 2>/dev/null \
+            | sed -E 's/^.*\(([^)]*)\)$/\1/')
+  return 1
+}
+
 check() {
   local root="${1:-}" base="${2:-}" slug="${3:-}"
   [ -n "$root" ] && [ -n "$base" ] || { echo "usage: check <root> <base> [slug]" >&2; return 64; }
@@ -119,6 +138,10 @@ check() {
   fi
 
   local files f ok=1
+  # A committed screenshot/GIF embed counts as captured run-evidence too (visual/demo work
+  # proves "it actually ran" with a picture, not only a text run-table). The semantic marker
+  # (NEGATIVE CONTROL / rollback) is still required, and the image must actually EXIST , see
+  # _has_committed_image, so a dangling `![x](missing.gif)` reference does not count.
   files="$(_fresh_proof_files "$root" "$base")"
   # per-file (back-compat): a flat docs/verification/<slug>.md or a co-located
   # proof-of-done.md carries both markers in one file.
@@ -131,10 +154,10 @@ check() {
         # LAST-verdict-wins (review lens 2): the documented append shape retries after a
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
-        grep -qi 'NEGATIVE CONTROL' "$p" && grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" \
+        grep -qi 'NEGATIVE CONTROL' "$p" && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } \
           && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' && ok=0 && break
       else # stateful
-        grep -qiE 'rollback|\[UNAVAILABLE' "$p" && grep -qE 'Command:|Exit:' "$p" && ok=0 && break
+        grep -qiE 'rollback|\[UNAVAILABLE' "$p" && { grep -qE 'Command:|Exit:' "$p" || _has_committed_image "$p" "$root"; } && ok=0 && break
       fi
     done <<< "$files"
   fi
@@ -142,14 +165,14 @@ check() {
   # negative control may live in different runs/ files. Group by the <slug>/ prefix and
   # satisfy when the UNION of a group's files carries both markers.
   if [ "$ok" -ne 0 ] && [ -n "$files" ]; then
-    local groups g content
+    local groups g content grp_img
     groups="$(printf '%s\n' "$files" | sed -nE 's#^(docs/verification/[^/]+/).*#\1#p' | sort -u)"
     while IFS= read -r g; do
       [ -n "$g" ] || continue
-      content=""
+      content=""; grp_img=1     # grp_img=0 iff some file in the group embeds a REAL image
       while IFS= read -r f; do
         case "$f" in
-          "$g"*) [ -f "$root/$f" ] && content+="$(cat "$root/$f")"$'\n' ;;
+          "$g"*) [ -f "$root/$f" ] && { content+="$(cat "$root/$f")"$'\n'; _has_committed_image "$root/$f" "$root" && grp_img=0; } ;;
         esac
       done <<< "$(printf '%s\n' "$files" | sort)"
       if [ "$class" = "behavioral" ]; then
@@ -157,12 +180,12 @@ check() {
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
         printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
-          && printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' \
+          && { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } \
           && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' \
           && ok=0 && break
       else # stateful
         printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
-          && printf '%s' "$content" | grep -qE 'Command:|Exit:' \
+          && { printf '%s' "$content" | grep -qE 'Command:|Exit:' || [ "$grp_img" -eq 0 ]; } \
           && ok=0 && break
       fi
     done <<< "$groups"
@@ -174,8 +197,10 @@ check() {
     echo "BLOCKED: proof of done. This is a '$class' change; it cannot ship/merge without a matching proof-of-done entry in docs/verification/."
     if [ "$class" = "behavioral" ]; then
       echo "  Need: a docs/verification/<slug>.md added by this branch with a green run AND a NEGATIVE CONTROL (revert -> RED -> restore)."
+      echo "        ('green run' = a text run-table (Command:/Exit:/Verdict: PASS) OR a committed screenshot/GIF embed for visual/demo work.)"
     else
       echo "  Need: a docs/verification/<slug>.md added by this branch with a recorded run AND a rollback note, or [UNAVAILABLE: reason] if no such flow exists here."
+      echo "        ('recorded run' = Command:/Exit: text OR a committed screenshot/GIF embed for visual/demo work.)"
     fi
     echo "  Type-specific shape (SPEC-044): run 'bash lib/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"
