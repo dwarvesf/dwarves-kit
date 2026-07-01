@@ -73,9 +73,9 @@ cd ~/.claude/dwarves-kit && bash install.sh
 
 Requires `jq` (for settings merge) and `git`. Cloning in place is simplest, but `install.sh` also runs from a checkout anywhere. To uninstall: `bash ~/.claude/dwarves-kit/install.sh --uninstall`.
 
-### Pick one
+### Pick one (the bash installer is plugin-aware)
 
-Don't run both paths on the same machine, hooks would register twice. The plugin install does not configure `statusLine` (not in the v1 plugin schema); use the bash install if you want the statusline HUD.
+The two paths no longer collide. If the plugin is already installed, `install.sh` detects it and does a **compat-only** install: it symlinks the legacy `~/.claude/dwarves-kit/{lib,WORKFLOW.md,AGENTS.md}` paths, so docs that still call `bash ~/.claude/dwarves-kit/lib/<x>.sh` (plain bash, where `${CLAUDE_PLUGIN_ROOT}` is unset) keep resolving, and skips the hook + command registration the plugin already owns. No double-registered hooks. Force the full bash install with `KIT_FORCE_FULL=1 bash install.sh` (e.g. for the `statusLine` HUD, which the v1 plugin schema does not configure).
 
 **Invocation differs by path:** installed as the plugin, commands are namespaced `/kit:<name>` (e.g. `/kit:spec`); via the bash installer they resolve bare `/<name>` (e.g. `/spec`). This README uses the plugin form.
 

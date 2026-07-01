@@ -4,6 +4,22 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+> **Release hold:** the next version bump is deferred until the **kit-hardening
+> megagoal** completes. Keep accumulating changes under `[Unreleased]`; do not cut
+> a tagged release (or run `/kit:ship`'s version bump) until that megagoal ships.
+
+### Fixed
+- **install.sh is now plugin-aware, no more double-registered hooks.** When the
+  kit plugin (`kit@dwarves-marketplace`) is already installed, `install.sh`
+  detects it and does a COMPAT-ONLY install: it symlinks the legacy
+  `~/.claude/dwarves-kit/{lib,WORKFLOW.md,AGENTS.md}` paths (so docs that still
+  call `bash ~/.claude/dwarves-kit/lib/<x>.sh` in plain bash, where
+  `${CLAUDE_PLUGIN_ROOT}` is unset, keep resolving) and skips the settings.json
+  hook merge + flat-command symlinks the plugin already owns. This removes the
+  "don't run both paths" footgun: running both previously double-registered every
+  hook and could pin a drifting lib/ version. Force the full bash install with
+  `KIT_FORCE_FULL=1`. Covered by `tests/test-install-compat.sh`.
+
 ### Added
 - **spec-index: read-only registry view across co-located docs/specs namespaces
   (no numbering/discovery change).** New `lib/spec-index.sh` scans every
