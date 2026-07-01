@@ -42,7 +42,14 @@ echo "=== meta-agent definition ==="
 MA="$KIT_DIR/agents/meta-agent.md"
 [ -f "$MA" ]; chk "agents/meta-agent.md exists" $?
 lint_agent_frontmatter "meta-agent" "$MA" 1
-grep -q "Mode A" "$MA" && grep -q "Mode B" "$MA"; chk "meta-agent documents both draft modes" $?
+grep -q "Mode A" "$MA" && grep -q "Mode B" "$MA" && grep -q "Mode C" "$MA"; chk "meta-agent documents all three modes (A/B draft, C inline)" $?
+# Mode C = immediate same-run dispatch: returns an inline spec, writes no file, exempt from the marker.
+grep -qi 'inline role spec' "$MA" && grep -qi 'PREAMBLE' "$MA"; chk "meta-agent Mode C returns an inline PREAMBLE (no file)" $?
+# the execute workflow auto-classifies each task and injects a synthesized specialist preamble.
+EX="$KIT_DIR/commands/execute.md"
+grep -q '2b-0' "$EX" && grep -qi 'classif' "$EX"; chk "execute.md has the 2b-0 role-classification step" $?
+grep -qi 'Mode C' "$EX" && grep -qi 'preamble' "$EX"; chk "execute.md dispatches Mode C + injects the preamble same-run" $?
+grep -qi 'generic' "$EX"; chk "execute.md falls through to the generic worker on no-domain-match" $?
 # the SUBAGENT itself never installs (it drafts to staging); promotion is the command's job.
 grep -qi 'never install\|only draft to staging' "$MA"; chk "meta-agent (subagent) itself never installs , drafts to staging" $?
 grep -q '^| `meta-agent` ' "$KIT_DIR/MANUAL.md"; chk "meta-agent listed in MANUAL.md (test-meta.sh cross-ref)" $?
@@ -94,6 +101,17 @@ for SEC in '## Outcome' '## Quality bar' '## How to close the loop' '## Scope ed
   grep -qF "$SEC" "$DS"; chk "drafted-subgoal.md: has '$SEC'" $?
 done
 LC_ALL=C grep -qF "$EMDASH" "$DS" && bad "drafted-subgoal.md: no em-dash" || ok "drafted-subgoal.md: no em-dash"
+
+echo ""
+echo "=== golden inline role spec (Mode C, immediate-dispatch) ==="
+IC="$FIX/inline-role-spec.txt"
+[ -f "$IC" ]; chk "inline-role-spec.txt exists" $?
+grep -qE '^NAME:' "$IC";              chk "Mode C: has NAME field" $?
+grep -qE '^TOOLS \(advisory\):' "$IC"; chk "Mode C: has advisory TOOLS field" $?
+grep -qE '^PREAMBLE:' "$IC";          chk "Mode C: has PREAMBLE field" $?
+grep -qi 'specialist' "$IC";          chk "Mode C: preamble frames a specialist role" $?
+head -1 "$IC" | grep -qF "$MARKER" && bad "Mode C: no DRAFT marker (it writes no file)" || ok "Mode C: no DRAFT marker (inline, not a file)"
+LC_ALL=C grep -qF "$EMDASH" "$IC" && bad "inline-role-spec.txt: no em-dash" || ok "inline-role-spec.txt: no em-dash"
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

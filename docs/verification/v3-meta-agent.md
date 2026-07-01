@@ -9,6 +9,7 @@
 | 3 | Both outputs marked draft-for-review | met (DRAFT marker on line 1 of each) |
 | 4 | Run-table records the lint passes | met (below) |
 | 5 | The subagent never self-installs; the command installs by DEFAULT (Han 2026-07-01: runtime-ready, not draft-only), `--draft` opt-out | met (subagent writes to staging only; the command strips marker -> `agents/<name>.md` -> roster-sync -> `test-meta.sh` -> `cp` to `~/.claude/agents/`; install-promotion simulated in the test) |
+| 6 | **Mode C: same-run specialist dispatch** (Han 2026-07-01). `/kit:execute` auto-classifies each task; a specialist-worthy task gets a synthesized role PREAMBLE injected into its worker NOW (no next-session file), cached to `~/.claude/agents/` for reuse | met (meta-agent Mode C returns NAME/TOOLS/PREAMBLE inline; execute.md 2b-0 classify -> Mode C -> inject -> cache, generic fall-through preserved; golden fixture `inline-role-spec.txt` proves a concrete security preamble; 6 structural + 6 fixture assertions) |
 
 ## Implementation
 
