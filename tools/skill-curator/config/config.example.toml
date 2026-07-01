@@ -9,6 +9,15 @@ max_turns      = 2               # claude -p --max-turns; the reviewer is a sing
 transcript_k   = 40              # last K user+assistant turns fed to the reviewer
 # The reviewer ALWAYS runs --allowedTools "" (no filesystem write); not configurable (SPEC-103 DEC-008).
 
+# Deterministic signal-marker pre-gate. When true, a session summary carrying ZERO cheap markers of
+# a draftable signal (user correction/frustration, a fix/technique/debug path, a skill-was-wrong
+# note) is skipped BEFORE the model call, preserving quota. RISK: the gate is a heuristic and cannot
+# see signal type "a non-trivial technique emerged" without keywords, so it can drop a real signal
+# (false negative = a lost skill). Default OFF; skips are ledgered as `skip-no-signal` so you can
+# audit the false-negative rate before trusting it. `signal_markers` overrides the regex.
+signal_gate    = false
+# signal_markers = "actually|instead|wrong|fix|workaround|..."   # override the default marker regex
+
 # --- promote gate (Phase B) ---
 # Closer Hermes parity WITHOUT losing the default human gate. When true, `skill-review auto`
 # auto-promotes ONLY the lowest-risk class: a draft explicitly tagged `cc-si-kind: references-add`

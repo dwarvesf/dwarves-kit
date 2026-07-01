@@ -13,9 +13,11 @@ self-improvement run must never break your session), and nothing here ever delet
 - **Detect:** `cc-improve status`; or `jq -s 'map(.total_cost_usd)|add' ~/.claude/cc-self-improve/ledger.jsonl`.
 - **Why:** one Haiku call per substantial session; the per-session trigger + single-flight lock bound
   it, so a spike usually means many short sessions or a too-large `transcript_k`.
-- **Fix:** lower nothing first, check the rows. Then either keep `model = haiku`, raise `transcript_k`
-  only if drafts lack context (it does not lower cost to lower it below the default), set
-  `enabled = false`, or `bash deploy/uninstall.sh` as the kill switch.
+- **Fix:** lower nothing first, check the rows. Then, cheapest lever first, set `signal_gate = true`
+  to skip the model on no-signal sessions (audit the `skip-no-signal` ledger rows first; ADR-0010);
+  otherwise keep `model = haiku`, raise `transcript_k` only if drafts lack context (it does not lower
+  cost to lower it below the default), set `enabled = false`, or `bash deploy/uninstall.sh` as the
+  kill switch.
 - **Gap to know:** `curate` does NOT log a cost row, so a runaway weekly curator would NOT show in
   this line. Check the curator separately (incident 6).
 

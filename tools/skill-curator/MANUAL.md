@@ -96,6 +96,8 @@ wins** over the file. Tests use the env path; you will normally edit the file.
 | `max_turns` / `CC_SI_MAX_TURNS` | `2` | `claude -p --max-turns` for both calls |
 | `transcript_k` / `CC_SI_TRANSCRIPT_K` | `40` | last-K turns fed to the reviewer (smaller = cheaper) |
 | `auto_promote` / `CC_SI_AUTO_PROMOTE` | `false` | enable `skill-review auto` (references-add to an existing umbrella only) |
+| `signal_gate` / `CC_SI_SIGNAL_GATE` | `false` | skip the model call for a summary with zero signal markers (opt-in cost gate; ADR-0010) |
+| `signal_markers` / `CC_SI_SIGNAL_MARKERS` | (built-in regex) | override the marker pattern the gate matches on |
 | `CC_SI_STATE_DIR` | `~/.claude/cc-self-improve` | ledger + lock + config + reports |
 | `CC_SI_PROPOSALS_DIR` | `~/.claude/skill-proposals` | the staging gate |
 | `CC_SI_SKILLS_DIR` | `~/.claude/skills` | the live library + `_archive/` |
@@ -105,7 +107,9 @@ wins** over the file. Tests use the env path; you will normally edit the file.
 
 To spend less: raise `transcript_k` only if drafts are missing context (smaller is cheaper), keep
 `model = haiku`, or set `enabled = false`. The per-session trigger + single-flight lock already bound
-cost to roughly one Haiku call per substantial session.
+cost to roughly one Haiku call per substantial session. For a sharper cut, set `signal_gate = true`
+to skip the model entirely on sessions with no signal markers (opt-in; skips are ledgered as
+`skip-no-signal` so you can audit what it dropped before trusting it , see ADR-0010).
 
 **Gotcha:** the reviewer always runs `--allowedTools ""` (the model can write nothing); that is not
 configurable by design (SPEC-103 DEC-008 / ADR-0001).

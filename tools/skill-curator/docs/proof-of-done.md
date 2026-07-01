@@ -8,6 +8,7 @@ is built in three phases (cc-elevation-r4 sub-goals 02/03/04); each phase append
 | **A , skill-draft reviewer** (parser + no-write reviewer + trusted staging + cost ledger) | 02 | DONE (below) |
 | **B , promote gate + SessionStart surfacing + install + full async/reentrancy/staging-gate suite** | 03 | DONE (below) |
 | **C , skill-library curator** (consolidate + archive never delete) + weekly propose-only launchd + round close-out | 04 | DONE (below) |
+| **D , signal-marker pre-gate** (opt-in deterministic skip before the model call, quota preservation) | , | DONE (below) |
 
 ---
 
@@ -327,5 +328,68 @@ Rollback: launchctl bootout gui/$(id -u)/mini.cc-curator ; rm the plist copy (th
 cd tools/cc-self-improve
 bash tests/test-curate.sh
 plutil -lint deploy/macos/mini.cc-curator.plist
+```
+
+---
+
+## Feature D: signal-marker pre-gate (opt-in cost gate)
+
+**Date:** 2026-07-02 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **ADR:** 0010
+
+### Acceptance criteria
+
+| # | Criterion | Source |
+|---|---|---|
+| D1 | Gate default OFF: a marker-free session still runs the reviewer (no behaviour change on upgrade) | ADR 0010 (default-off) |
+| D2 | Gate ON + marker-free summary: model call skipped BEFORE the lock, ledgered `skip-no-signal`, exit 0 | ADR 0010 (the gate) |
+| D3 | Recall guard PER marker category (correction, frustration, technique, fix, debug, skill-patch): each keeps the session | ADR 0010 (keep bias) + review HIGH |
+| D4 | A gated session stages nothing under `proposals/` | negative control |
+| D5 | `signal_markers` / `CC_SI_SIGNAL_MARKERS` overrides the marker regex | ADR 0010 (override seam) |
+| D6 | Gate short-circuits BEFORE the lock: a marker-free run skips even while a lock is held | review MED (placement) |
+| D7 | Empty transcript short-circuits BEFORE the gate: no `skip-no-signal` row for an empty session | review LOW (ordering) |
+| D8 | `cc-improve status` breaks out `gate-skips (7d)` from real `reviewer runs (7d)` | review MED (honesty) |
+
+### Confirmation run-table
+
+| Check | Command | Result |
+|---|---|---|
+| Full gate suite (D1-D7) | `bash tests/test-signal-gate.sh` | **all 12 passed**, exit 0 |
+| Status honesty (D8) | seed a `skip-no-signal` + `staged` + `null-draft` row, `cc-improve status` | `reviewer runs (7d): 2   staged: 1   gate-skips: 1` (skip excluded from runs, 0-cost so spend unchanged) |
+| Regression (reviewer unchanged) | `bash tests/test-reviewer.sh` | **all 10 passed**, exit 0 |
+| Full tool suite (no regression) | all 11 `tests/test-*.sh` | **63/63 passed** |
+| Lint | `shellcheck -S warning -x bin/cc-improve lib/reviewer-run.sh tests/test-signal-gate.sh` | clean, exit 0 |
+
+Recorded run , `Command: bash tests/test-signal-gate.sh` , `Exit: 0`:
+
+```
+[3] recall guard PER MARKER CATEGORY: each category of the built-in regex must keep a session
+  ok: recall [correction]: kept a 'correction' session (model ran)
+  ok: recall [frustration]: kept a 'frustration' session (model ran)
+  ok: recall [technique]: kept a 'technique' session (model ran)
+  ok: recall [fix]: kept a 'fix' session (model ran)
+  ok: recall [debug]: kept a 'debug' session (model ran)
+  ok: recall [skill-patch]: kept a 'skill-patch' session (model ran)
+[6] gate runs BEFORE the lock: a marker-free run skips even while another holds the lock
+  ok: gate short-circuits before the lock (skip-no-signal despite a held lock)
+[7] empty transcript short-circuits BEFORE the gate (no skip-no-signal, no model call)
+  ok: empty transcript returns before the gate (no skip-no-signal row)
+
+test-signal-gate: all 12 passed
+```
+
+**Negative controls:** D1 is the gate's negative control , with `signal_gate` unset the same
+marker-free session that D2 skips instead runs the model; if the gate fired unconditionally, D1
+fails. D3 is the recall control, one representative token PER regex category, so a regression on one
+half of the pattern is caught in isolation. D6 discriminates gate-before-lock: a held lock would
+divert a post-lock gate to the single-flight path (no `skip-no-signal`), so the row's presence
+proves the gate ran first. D7: `has_signal_markers("")` is also false, so the absence of a
+`skip-no-signal` row proves the empty-check still wins over the gate.
+
+### Reproduce (Feature D)
+
+```bash
+cd tools/cc-self-improve
+bash tests/test-signal-gate.sh
+shellcheck -x lib/reviewer-run.sh tests/test-signal-gate.sh
 ```
 

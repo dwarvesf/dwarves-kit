@@ -26,8 +26,10 @@ cmd_status() {
     local cutoff; cutoff="$(date -v-7d '+%Y-%m-%d' 2>/dev/null || date -d '7 days ago' '+%Y-%m-%d' 2>/dev/null || echo '0000-00-00')"
     jq -rs --arg cut "$cutoff" '
       [ .[] | select((.ts // "") >= $cut) ] as $w
-      | "  reviewer runs (7d): \($w | length)"
+      | ([ $w[] | select(.note=="skip-no-signal") ] | length) as $skips
+      | "  reviewer runs (7d): \(($w | length) - $skips)"
       + "   staged: \([ $w[] | select(.staged==true) ] | length)"
+      + (if $skips > 0 then "   gate-skips: \($skips)" else "" end)
       + "\n  loop spend (7d): $\(( [ $w[].total_cost_usd // 0 ] | add ) // 0 )"
     ' "$CC_SI_LEDGER" 2>/dev/null || echo "  ledger: (unreadable)"
   else

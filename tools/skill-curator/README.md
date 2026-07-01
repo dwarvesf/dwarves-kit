@@ -97,6 +97,9 @@ also overridable by `CC_SI_<KEY>` (env wins; tests use this).
 
 - `auto_promote` (default OFF): closer Hermes parity; auto-passes only the lowest-risk class (a
   `references/` add to an existing umbrella) via `skill-review auto`. Everything else stays manual.
+- `signal_gate` (default OFF): a deterministic pre-gate that skips the reviewer model call for a
+  session summary with zero signal markers, preserving quota. Broad, keep-biased pattern
+  (overridable via `signal_markers`); skips are ledgered as `skip-no-signal` for audit. See ADR-0010.
 
 ## Test
 

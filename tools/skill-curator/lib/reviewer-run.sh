@@ -27,6 +27,15 @@ main() {
   local summary; summary="$(transcript_compact "$transcript_path" "$(cfg transcript_k 40)")"
   if [ -z "${summary//[[:space:]]/}" ]; then si_log "reviewer: empty transcript, nothing to review"; return 0; fi
 
+  # Deterministic signal-marker pre-gate (opt-in via signal_gate): skip the model call for a summary
+  # with zero cheap markers of a draftable signal, preserving quota. Conservative by design (broad
+  # pattern biases toward KEEPING a session over dropping a real one); skips are ledgered so the
+  # false-negative rate is auditable before the gate is trusted. Runs before the lock + the model.
+  if [ "$(cfg signal_gate false)" = "true" ] && ! has_signal_markers "$summary"; then
+    si_log "reviewer: signal-gate , no signal markers in summary, skipping (quota preserved)"
+    _ledger false "" 0 0 0 "skip-no-signal"; return 0
+  fi
+
   # Single-flight: a reviewer already in flight holds the lock; skip rather than pile up cost.
   if ! si_acquire_lock; then si_log "reviewer: single-flight , another reviewer in flight, skipping"; return 0; fi
   trap 'si_release_lock' EXIT
@@ -99,6 +108,19 @@ run_reviewer() {
       --allowedTools "" --model "$(cfg model haiku)" --max-turns "$(cfg max_turns 2)" \
       --output-format json 2>>"$CC_SI_LOG"
   fi
+}
+
+# has_signal_markers <text>: deterministic pre-gate. Returns 0 if the summary carries any cheap
+# marker of a draftable signal (user correction / frustration, a fix / technique / debug path, or a
+# skill-was-wrong note , mirroring prompts/review-skill.md's signal list), 1 if none are present.
+# The pattern is intentionally broad: a false positive only wastes one null-draft call, whereas a
+# false negative drops a real signal, so the gate keeps by default. Override via `signal_markers`
+# (config) / CC_SI_SIGNAL_MARKERS (env).
+has_signal_markers() {
+  local text="$1" pat
+  pat="$(cfg signal_markers '')"
+  [ -n "$pat" ] || pat="actually|instead|no,|nope|stop (doing|that)|do(n't| not)|too (verbose|much)|just (give|tell|answer|the)|you (always|keep|never)|wrong|not what|that's not|should (have|not)|why did you|prefer|fix(ed|es)?|workaround|root cause|turns out|the (trick|issue|problem|fix)|gotcha|debug|figured out|missing a step|outdated|patch"
+  printf '%s' "$text" | grep -qiE -- "$pat"
 }
 
 # _ledger <staged-bool> <slug> <cost> <itok> <otok> <note>
