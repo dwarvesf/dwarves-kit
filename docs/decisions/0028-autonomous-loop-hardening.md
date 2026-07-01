@@ -66,7 +66,11 @@ Three calls made after confirming the current V-model against the source. Deltas
 2. **Fix the right arm.** P4 claims "left + right arm" review coverage, but the right arm is executor-only and two of its rows have no agent, and no PASS is ever re-audited. Right-arm review parity (new property) makes P4's right-arm half concrete and lands the fresh-context re-audit the trust metric depends on.
 3. **Use the meta-agent to scaffold the new experts, gated by the effectiveness validator.** The recently-shipped `/kit:draft-agent` (meta-agent) generates `brief-reviewer` / `acceptance-auditor` / `test-reauditor` / `advisor`; SG-01's agent-effectiveness validator gates them. Meta-agent builds, validator trusts , the closed loop is the point.
 
-These add ONE sub-goal to the wave (SG-06: right-arm parity + meta-agent scaffolding) and reshape SG-05 (over-suggest -> generic advisor). See the kit-hardening mega-goal ROADMAP.
+4. **Escalate the lane mid-flight on emergent scope.** The lane is frozen at classify time (every re-classify trigger keys on the task TEXT , classify-time, `/kit:grill` answers, the spec-drift text re-check , never on emergent scope), so a `tiny`/`normal` task that grows into an auth / data-model / migration change stays mis-laned. Re-run `lane-classify` against the SPEC at the spec->build boundary (the first point real scope is concrete); a heavier-lane trip escalates + re-plans the gate-ledger (up-only; the downgrade guard stays; advisory + recorded). The kit already has the heavy destinations (full lane, ADR-0017 mega-goal promotion); this supplies the missing escalation TRIGGER. An untrustable autonomous run silently under-sizing its lane is the same failure class this ADR targets.
+
+These add TWO sub-goals to the wave (SG-06: right-arm parity + meta-agent scaffolding; SG-07: lane-escalation) and reshape SG-05 (over-suggest -> generic advisor). See the kit-hardening mega-goal ROADMAP.
+
+The UI/UX workflow gap (per-feature UI generation with no persistent design-system/guideline bootstrap and no UX layer) is real but PARKED as a SEPARATE effort , its proof-of-done needs a downstream UI-bearing repo (the kit has no UI to dogfood), so it is not a kit-hardening sub-goal. Tracked in the mega-goal NOTES `## Proposed additions`.
 
 ## Alternatives considered
 
