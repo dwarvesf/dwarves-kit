@@ -1,0 +1,84 @@
+# 0029. Review-function naming and form convention (both V-model arms)
+
+Date: 2026-07-01
+Status: Proposed
+Relates-to: ADR-0018 (V-model phase frame , this names the reviewers that lens defines), ADR-0005 (read-only verifier pattern), ADR-0015 (integration-checker), ADR-0016 (doc-verifier), ADR-0024 (gate-ledger), ADR-0028 (autonomous-loop hardening , SG-06 births new reviewers, SG-08 migrates the legacy names), SPEC-088 (agent-effectiveness validator)
+
+## Context
+
+The kit's review functions grew organically, so the same concept (a read-only reviewer of one V-model artifact) wears many names across two forms. The V-model lens (ADR-0018) names the arms but not the reviewers, so nothing constrains how a new reviewer is named or shaped. The result, today:
+
+| Arm | Artifact | Review function | Form | Suffix |
+|---|---|---|---|---|
+| Left | spec | `spec-validate` | command (5 inline lenses) | `-validate` |
+| Left | design | `devs-team` | command (5 inline lenses) | `-team` |
+| Left | code | `review` / `review-team` -> `reviewer`, `security-auditor` | command -> agents | bare / `-auditor` |
+| Left | UI | `visual-team` | command (5 inline lenses) | `-team` |
+| Left | docs | `docs` -> `doc-verifier` | command -> agent | `-verifier` |
+| Right | integration | `integration-checker` | agent (auto in execute) | `-checker` |
+| Right | task/code | `task-verifier` | agent (auto in execute) | `-verifier` |
+| Right | acceptance | ship-gate | hook | , |
+
+Three inconsistencies: (1) FORM , left-arm reviews are commands you invoke, right-arm reviews are agents auto-dispatched in `/kit:execute`; (2) SUFFIX ZOO , one concept wears `-validate` / `-team` / `-checker` / `-verifier` / `-auditor` / bare; (3) TWO WORDS FOR ONE IDEA , `check` vs `verify`, `audit` vs `review` vs `validate`. ADR-0028's SG-06 was about to add three MORE suffixes (`-auditor`, `-reauditor`, `-reviewer`); this ADR is written before those agents are built so they are born consistent.
+
+## Decision
+
+Name every review function by its ROLE on one axis, and make the panel-command the only command form.
+
+**Naming (role axis):**
+- **`<x>-reviewer`** , a LEFT-arm STATIC review of one artifact ("did we build it right", verification). E.g. `code-reviewer`, `brief-reviewer`, `docs-reviewer`.
+- **`<x>-verifier`** , a RIGHT-arm DYNAMIC test of one artifact ("does it actually work", validation). E.g. `task-verifier`, `integration-verifier`, `acceptance-verifier`, `system-verifier`.
+- **`<x>-team`** , a COMMAND that runs a PANEL of `-reviewer` lenses in parallel. The only command-form review. E.g. `devs-team`, `review-team`, `visual-team`.
+- **`advisor`** , the single cross-cutting generic lens (ADR-0028 SG-05); legitimately its own noun, not per-artifact.
+
+Retire `-checker`, `-validate`-as-a-suffix, `-auditor`, and bare `reviewer` as review-function names.
+
+**Form:** every review is an AGENT (the ADR-0005 read-only verifier pattern). A `-team` command is an ORCHESTRATOR that dispatches reviewer agents; a single-lens review is the agent, invoked via its phase command. The left/right difference is only WHEN it runs (invoked as a phase on the left; auto-dispatched inside `/kit:execute` on the right), NOT a difference in form. This makes the two arms symmetric: both are agents, some fronted by `-team` panels.
+
+## The rename map
+
+| Current | -> | Convention | Kind | Blast radius | Note |
+|---|---|---|---|---|---|
+| `integration-checker` | -> | `integration-verifier` | shipped agent | 31 files, clean token | mechanical sed + `test-meta.sh` |
+| `reviewer` | -> | `code-reviewer` | shipped agent | 81 files, COLLIDES with the English word | NOT a blind sed , rename the frontmatter `name:` + dispatch call-sites only, by word boundary; leave prose "reviewer" |
+| `security-auditor` | -> | `security-reviewer` | shipped agent | 19 files + external harness registry | breaks external `kit:security-auditor` callers , see Open sub-decision |
+| `task-verifier` | -> | `task-verifier` | shipped agent | , | already conforms |
+| `doc-verifier` | -> | `doc-verifier` | shipped agent | , | already conforms (verifies docs vs code = validation) |
+| `acceptance-auditor` | -> | `acceptance-verifier` | SG-06 (unbuilt) | 0 | free plan-fix |
+| `test-reauditor` | -> | `recheck-verifier` | SG-06 (unbuilt) | 0 | free; the one new role , a fresh-context verifier OF a verifier's PASS |
+| `brief-reviewer` | -> | `brief-reviewer` | SG-06 (unbuilt) | 0 | already conforms |
+| (new) `system-verifier` | | `system-verifier` | SG-06 (new) | 0 | right-arm mirror of design (was the agent-less "project suite") |
+
+Inline panel lenses (the 5 role specs inside `devs-team` / `spec-validate` / `visual-team`) are NOT agent files , they are role labels the command dispatches ad hoc. Aligning their labels to the convention is OPTIONAL / secondary; the named agent files are the priority.
+
+## Migration (SG-08)
+
+Gated (team-facing rename): open the PR, `/kit:review-team`, human ships (this ADR must be Accepted first, per ADR-0028's gate-zero).
+
+1. Per shipped rename: rename `agents/<old>.md` -> `agents/<new>.md`, update the frontmatter `name:`, update every dispatch call-site + doc/test/MANUAL/architecture reference by WORD BOUNDARY (never blind `sed s/reviewer/code-reviewer/` , the `reviewer` token collides with prose).
+2. Roster sync (`test-meta.sh` fails closed): MANUAL agent table + `docs/architecture.md` V-phase inventory + README command rows.
+3. **Negative control:** `grep -rwn '<old-name>'` over `agents/ commands/ lib/ tests/ docs/ *.md` returns ZERO agent-name hits (prose mentions in historical `docs/research/` snapshots are exempt and noted).
+4. `test-meta.sh` green.
+
+## Open sub-decision (one, for the human)
+
+`security-auditor` -> `security-reviewer` collapses the `audit`/`review` distinction. If you want a TWO-TIER review vocabulary , `reviewer` = standard, `auditor` = deep/adversarial , then KEEP `-auditor` as a reserved second tier (rename `security-auditor` -> stays, and the axis gains a depth qualifier). Default in this ADR: one axis, `security-reviewer`. Flagged for your call before SG-08 runs.
+
+## Alternatives considered
+
+- **Collapse all reviews into agents, drop the `-team` commands.** Rejected: the panels are genuinely multi-lens orchestrators; a command that dispatches N lenses is the right shape (ADR-0018 lead-owned convergence). The fix is naming + a stated form rule, not removing the orchestration layer.
+- **Leave it; document the map only.** Rejected: the inconsistency actively misleads (a reader cannot predict a reviewer's name or form), and SG-06 was about to entrench three new suffixes. A convention that new agents must follow is the durable fix.
+- **Rename everything including `task-verifier`/`doc-verifier` for total uniformity.** Rejected: those two already conform; renaming conformant names is churn for nothing (surgical-change discipline).
+
+## Consequences
+
+- New reviewers (SG-06's, and any future) are born under the convention , predictable name + form.
+- A one-time gated rename of 3 shipped agents (SG-08), the `reviewer` one boundary-careful. `task-verifier` / `doc-verifier` untouched.
+- The V-model lens (ADR-0018) gains a naming rule row so the convention is enforced going forward (a new arm/reviewer names itself by this axis).
+- Cost: the rename touches ~50 unique reference sites across the 3 agents; external callers of `kit:security-auditor` break unless we keep the `-auditor` tier (the open sub-decision).
+
+## Out of Scope
+
+- Renaming non-review agents (`fix-agent`, `responding-to-review`, `research-*`, `meta-agent`) , they are not reviewers.
+- The inline panel lens labels (optional, secondary , see the Decision).
+- Changing WHAT any reviewer does (this is naming + form only, no behavior change).
