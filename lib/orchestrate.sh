@@ -100,7 +100,7 @@ _lock_stale() {  # lockdir
   local lockdir="$1" pid age now mt
   [ -n "$lockdir" ] || return 1
   [ -d "$lockdir" ] || return 1
-  pid=$(tr -dc '0-9' < "$lockdir/pid" 2>/dev/null)
+  pid=$( [ -f "$lockdir/pid" ] && tr -dc '0-9' < "$lockdir/pid" 2>/dev/null )  # guard the open: benign mkdir-before-pid-write race must not leak stderr
   if [ -n "$pid" ]; then
     kill -0 "$pid" 2>/dev/null && return 1   # holder alive -> not stale
     return 0                                  # recorded holder dead -> reclaim (crashed)
@@ -138,7 +138,7 @@ _unlock() {  # lockdir
   local lockdir="$1" pid
   [ -n "$lockdir" ] || return 0
   [ -d "$lockdir" ] || return 0
-  pid=$(tr -dc '0-9' < "$lockdir/pid" 2>/dev/null)
+  pid=$( [ -f "$lockdir/pid" ] && tr -dc '0-9' < "$lockdir/pid" 2>/dev/null )  # guard the open: benign mkdir-before-pid-write race must not leak stderr
   if [ -z "$pid" ] || [ "$pid" = "$$" ]; then
     [ -e "$lockdir/pid" ] && mv -f "$lockdir/pid" "${TMPDIR:-/tmp}/flip-own-pid.$$.$RANDOM" 2>/dev/null
     rmdir "$lockdir" 2>/dev/null
