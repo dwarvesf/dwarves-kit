@@ -264,6 +264,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 | `fix-agent` | `/execute` | Targeted fixes on FAIL:fixable (max 2 retries) |
 | `integration-checker` | `/execute` (Step 4, multi-task) | Read-only: verifies the tasks wire together (each component reaches its activation point + the spec's end-to-end chains) |
 | `doc-verifier` | `/docs` (Step 4.5) | Read-only: fact-checks the just-updated docs against the live code (counts, names, existence, cross-refs); reports drift, `/docs` fixes |
+| `agent-effectiveness` | `/kit:draft-agent` (Step 4.7) | Read-only: validates a new/changed agent def's effectiveness (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits); diff-keyed, advisory, fail-safe |
 | `reviewer` | `/review-team` | Focused review with configurable lens |
 | `security-auditor` | `/review-team` | Deep OWASP-style audit |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
