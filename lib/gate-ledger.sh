@@ -63,7 +63,10 @@ ledger_file() {
 # "Design (opt-in)"->design, "Design critique (opt-in)"->design-critique,
 # "Test plan (opt-in)"->test-plan, "Debug (off-cycle)"->debug, "UI design"->ui-design.
 normalize_phase() {
-  printf '%s' "$1" | sed -E 's/\([^)]*\)//g' | tr 'A-Z' 'a-z' \
+  # collapse newlines first (security review, defense-in-depth): a phase arg with an embedded
+  # newline would otherwise emit a second physical ledger line. Unreachable today (all callers
+  # pass a hardcoded phase literal), but the guard is one tr and matches oneline()'s intent.
+  printf '%s' "$1" | tr '\n\r' '  ' | sed -E 's/\([^)]*\)//g' | tr 'A-Z' 'a-z' \
     | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/-/g'
 }
 
@@ -165,6 +168,17 @@ show() { local f; f="$(ledger_file "${1:-}")"; if [ -f "$f" ]; then cat "$f"; el
 # exit 0 if every required (measure-twice) gate has a ran|override entry; else 1 + list gaps.
 check() {
   local lane="${1:-}" rid="${2:-}"; [ -n "$lane" ] && [ -n "$rid" ] || { echo "usage: check <lane> <rid>" >&2; return 64; }
+  # FAIL CLOSED on an unknown lane (security review, TIER-4): `required` returns nonzero for a
+  # lane that is not a WORKFLOW matrix column (a typo, or "mega"). Reading its EMPTY stream in
+  # the loop below would leave missing=0 and vacuously PASS -- so an unknown lane would let
+  # mega-merge auto-merge (and ship-gate pass) with zero gates enforced. Distinguish it from a
+  # VALID lane that legitimately has zero measure-twice gates (e.g. `tiny`): `required` exits 0
+  # there with empty output, which correctly passes.
+  local req
+  if ! req="$(required "$lane" 2>/dev/null)"; then
+    echo "check: unknown lane '$lane' (not a WORKFLOW matrix column: tiny|normal|full|bug|backfill); refusing, fail-closed" >&2
+    return 1
+  fi
   local f; f="$(ledger_file "$rid")"
   local missing=0 phase
   while IFS= read -r phase; do
@@ -173,7 +187,7 @@ check() {
       echo "MISSING-GATE: $phase (required for lane '$lane'; no ran/override entry in the ledger)" >&2
       missing=1
     fi
-  done < <(required "$lane")
+  done <<< "$req"
   return "$missing"
 }
 
