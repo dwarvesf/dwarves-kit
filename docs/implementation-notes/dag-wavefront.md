@@ -44,3 +44,34 @@ admission, `_run_one_session` extraction, TASK-004 split, per-edge HANDOFF write
 `WAVE_CAP`, mkdir-lock hardening, mock-barrier test, gitignore, etc.) are captured in the spec's
 `## Review` section and will be applied in ONE coherent revision AFTER Q1 is decided (they interact
 with the task list Q1 reshapes), to avoid revising twice.
+
+## 2026-07-03 , Q1 resolved provisionally (Option B) + first revision applied
+
+Han away >60s on the Q1 scope ask -> took **Option B** (opt-in Touches; generator/schema retrofit =
+follow-up ID-085-followup). Rationale: scope-faithful to the brief, fully reversible, A = B + generator
+(no rework). Applied all ~19 mechanical fixes. Committed 1b9726f. See spec DEC-006..DEC-011.
+
+## 2026-07-03 , second revision (delta re-validation found 3 real new bugs)
+
+Fresh-context re-validation caught bugs the first revision introduced. Applied:
+- **Byte-identity fix (was false):** `_ready_set` returns ALL unchecked when no deps (nothing blocks),
+  so raw ready size is N, not 1. Size-dispatch now keys on ADMITTED (post-`_wave_gate`) size: admitted
+  <=1 -> untouched serial body on the first ready pick; admitted>=2 -> wave. admitted==0 (Touches-less,
+  the real case) -> serial fallback -> byte-identical. Corrects the earlier wrong premise.
+- **`_wave_gate` admission:** a candidate is admitted iff it declares its OWN `## Touches` AND proves
+  disjoint vs every already-admitted member (`gate_plan` admits the first vacuously, so self-Touches is
+  the real opt-in gate). Touches-less -> never admitted -> serial.
+- **Per-edge HANDOFF keyed on DEPENDENTS, not deps:** a sub-goal writes `HANDOFF-<own-id>.md` iff
+  something `depends` on it; the read side falls back to plain `HANDOFF.md` when the per-edge file is
+  absent. Fixes feed-forward loss at every chain's root.
+- **`WAVE_CAP` default = 1 (was 2), a deliberate deviation from the brief.** At default 2, existing
+  mega-goals whose `gate` meant global-stop silently migrate to chain-stop , exactly the linear-chain
+  regression the goal forbids ("any regression on it is a failed goal"). Default 1 => serial path
+  always, gate stays global, byte-identical; waves + chain-`gate` activate only when the operator sets
+  `WAVE_CAP>=2`. Conservative-everywhere per the quality bar. This overrides the brief's "cap default 2".
+- **Flip-contract injection deferred:** a real wave session needs the `cmd_flip <abs-megadir> <id>`
+  instruction injected into its prompt (else it edits its worktree's ROADMAP copy, invisible to the
+  driver). That prompt/authoring change bundles with ID-085-followup (real-wave activation); the
+  machinery + mock-barrier tests ship now, real waves activate in the followup. Documented as inert.
+- **Split convergence into its own task** (TASK-004c) so the missing-merge closure has its own
+  acceptance, not proven only transitively.

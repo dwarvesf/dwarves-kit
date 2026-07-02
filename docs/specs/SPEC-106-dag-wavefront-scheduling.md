@@ -42,7 +42,7 @@ parallel engine; 3 builds a parallel gate).
 ### Extensibility & boundaries
 
 - **Load-bearing dimension = wave width.** Growth = more dep-independent sub-goals ready at once.
-  Bounded deliberately by the concurrency cap (default 2, configurable); the design does NOT try to
+  Bounded deliberately by the concurrency cap `WAVE_CAP` (default 1 = off, opt-in to `>=2`); the design does NOT try to
   schedule the whole frontier, it caps the wave. Raising the cap is a config change, not a redesign.
 - **Unit boundaries:** (a) ready-set computation (pure function of ROADMAP boxes + deps), (b) the
   disjointness gate call over wave pairs (delegated to `dispatch-gate.sh`), (c) concurrent session
@@ -55,7 +55,7 @@ parallel engine; 3 builds a parallel gate).
 run() loop, per cycle:
   READY = { sg : sg unchecked AND every `depends SG-NN` of sg is checked }   # _sg_deps_blocked, exists
   WAVE  = dispatch-gate over READY pairs -> prove-disjoint keep-parallel, else serialize   # DEC-008
-  for sg in WAVE[:CAP]:  spawn `claude -p` in worktree .claude/worktrees/<sg-id>   # cap default 2
+  for sg in WAVE[:CAP]:  spawn `claude -p` in worktree .claude/worktrees/<sg-id>   # WAVE_CAP, default 1 (off)
   on each grounded box-flip (flock-guarded):  recompute READY, launch next wave
   crash/restart:  recompute READY from ROADMAP boxes + PR states (idempotent, no state store)
   gate sub-goal:  holds only its dependent chain; independent branches continue
@@ -102,14 +102,20 @@ golden test alone:
    three run-paths (watchdog / `--stream` / plain, L418-439) out of `cmd_run` into one helper keyed
    on `dir id pfile route_flags`. Serial and wave both call it, so all three paths are preserved for
    both and never forked. This is TASK-000, lands + tests green before any wave code.
-2. **Dispatch on ready-set size.** `cmd_run` computes the ready set each cycle; if `size <= 1` OR
-   `WAVE_CAP == 1`, run the EXISTING serial body unchanged (`_run_one_session` on the single pick).
-   Only `size > 1 AND WAVE_CAP > 1` routes to `_wave_run`. A no-deps mega-goal always has ready
-   size 1 -> serial path -> byte-identical.
-3. **Greedy-in-ROADMAP-order admission** (`_wave_gate`) , pairwise disjointness does not compose, so
-   admit a ready sub-goal iff it proves disjoint against EVERY already-admitted wave member, stop at
-   `WAVE_CAP`, defer the rest to the next cycle. Deterministic (ROADMAP order); the no-deps/CAP=1
-   cases fall out identical.
+2. **Dispatch on ADMITTED size, not raw ready size.** `_ready_set` returns ALL unchecked sub-goals
+   with no blocking deps , for a no-deps mega-goal that is every unchecked sub-goal (size N), NOT 1
+   (nothing blocks them). So raw size cannot gate the serial path. Instead: run `_wave_gate` first,
+   then if `admitted <= 1` OR `WAVE_CAP == 1`, run the EXISTING serial body unchanged
+   (`_run_one_session` on the FIRST ready sub-goal , exactly `_next`'s pick). Only `admitted >= 2`
+   routes to `_wave_run`. A Touches-less mega-goal (every real one today) admits 0 -> serial fallback
+   on the first ready pick -> byte-identical. `WAVE_CAP` defaults to **1** (see DEC-002), so waves are
+   opt-in and default behavior is byte-identical.
+3. **Greedy-in-ROADMAP-order admission** (`_wave_gate`) , a ready sub-goal is admitted iff (a) it
+   declares its OWN `## Touches` section AND (b) it proves disjoint (`dispatch-gate.sh gate_disjoint`)
+   against EVERY already-admitted wave member; stop at `WAVE_CAP`; defer the rest. Self-Touches is the
+   real opt-in gate: `gate_plan` admits the first member vacuously, so without the self-Touches
+   requirement a Touches-less sub-goal would be wrongly admitted. Deterministic (ROADMAP order); the
+   no-deps / Touches-less / CAP=1 cases all fall through to the serial body.
 
 ### Completion + convergence (from spec-validate)
 
@@ -117,7 +123,11 @@ golden test alone:
   run in per-sub-goal worktrees (separate checkouts), so a box flip must NOT go to the worktree's own
   ROADMAP copy (the driver would never see it). `cmd_flip <megadir> <id>` writes `$megadir/ROADMAP.md`
   (absolute), and the session's contract calls `cmd_flip`, not a local `sed`. The event log
-  (`$megadir/.orchestrate/`) is likewise shared.
+  (`$megadir/.orchestrate/`) is likewise shared. **Deferral (Option-B):** injecting the `cmd_flip
+  <abs-megadir> <id>` instruction into a real wave session's PROMPT is authoring-adjacent (it changes
+  what sessions are told), so it bundles with real-wave activation in ID-085-followup. Until then the
+  `cmd_flip` helper exists + is unit-tested and the mock-barrier tests script it, but real wave
+  sessions are not yet wired (waves are `WAVE_CAP`-opt-in and Touches-gated, so none run by default).
 - **Wave convergence:** after a wave's sessions land on their worktree branches, the lead merges them
   **one-at-a-time under the flip lock** (reusing `lib/mega-merge.sh` one-at-a-time; its SEMANTICS are
   untouched per scope , this only sequences existing merges). Concurrent same-base merges never race.
@@ -137,14 +147,16 @@ golden test alone:
 ### Interfaces (I/O contract)
 
 - **Consumes:** ROADMAP.md sub-goal lines (`- [ ] SG-NN ... , auto|gate|gate! [depends SG-MM]`);
-  sub-goal files; each sub-goal's `## Touches` section IF PRESENT (opt-in, per Q1/Option-B , absent
-  => that sub-goal serializes); dep-parents' `HANDOFF-<id>.md`; env `WAVE_CAP` (default 2, integer
+  sub-goal files; each sub-goal's OWN `## Touches` section IF PRESENT (opt-in, per Q1/Option-B ,
+  absent => never wave-admitted, runs serial); dep-parents' `HANDOFF-<id>.md` (falls back to plain
+  `HANDOFF.md` if absent); env `WAVE_CAP` (**default 1** = waves off, byte-identical; integer
   `>=1`, parsed like `WATCHDOG_STALL_SECS`; `<1`/non-numeric rejected), `FLIP_LOCK_STALE_SECS`
   (default 120).
 - **Produces:** up to `WAVE_CAP` concurrent `claude -p` sessions in per-sub-goal worktrees
   (`.claude/worktrees/<id>`); lock-guarded box flips in the SHARED `$megadir/ROADMAP.md`; append-only
   event-log entries (`note` field truncated `< PIPE_BUF` = 512B so concurrent appends stay atomic);
-  per-edge `HANDOFF-<id>.md` (deps) or plain `HANDOFF.md` (no-deps, byte-identical).
+  `HANDOFF-<own-id>.md` iff the sub-goal HAS DEPENDENTS (something `depends` on it), else plain
+  `HANDOFF.md` (a leaf / linear-tail stays byte-identical).
 - **Helper wire formats** (bash-3.2: no assoc-arrays/namerefs; stdout lines are the contract):
   `_ready_set` -> `id<TAB>policy` lines (like `_subgoals`); `_wave_gate` -> `run<TAB>id` /
   `defer<TAB>id` lines; `_wave_run` consumes the `run` lines and maintains an in-band `pid<TAB>id`
@@ -179,12 +191,13 @@ wavefront spec; it eats its own dogfood).
   test that kills a flip mid-lock -> next flip reclaims (PID dead). depends: none.
 
 ### Phase 2: Core wave loop
-- [ ] TASK-003: `_wave_gate()` , greedy-in-ROADMAP-order admission: admit a ready sub-goal iff it
-  proves disjoint (`dispatch-gate.sh gate_disjoint`) against every already-admitted member, stop at
-  `WAVE_CAP`; stdout `run<TAB>id` / `defer<TAB>id`. Gate exit-2 (no `## Touches` declared) => quiet
-  conservative `defer` (Q1/Option-B: opt-in), distinct from exit-1 (overlap). Acceptance:
-  exit-criterion 2 (Touches-OVERLAPPING pair -> both deferred/serialized, negative control).
-  depends: TASK-001.
+- [ ] TASK-003: `_wave_gate()` , greedy-in-ROADMAP-order admission: admit a ready sub-goal iff (a)
+  it declares its OWN `## Touches` AND (b) it proves disjoint (`dispatch-gate.sh gate_disjoint`)
+  against every already-admitted member; stop at `WAVE_CAP`; stdout `run<TAB>id` / `defer<TAB>id`.
+  Self-Touches is required because `gate_plan` admits the first member vacuously , without it a
+  Touches-less sub-goal would be wrongly admitted. Acceptance: (i) exit-criterion 2 (Touches-declaring
+  but OVERLAPPING pair -> second deferred, negative control); (ii) a Touches-LESS ready set ->
+  all-`defer` (opt-in gate holds). depends: TASK-001.
 - [ ] TASK-004a: `_wave_run()` primitive , spawn the `run` set (each in `.claude/worktrees/<id>`,
   reuse-or-recreate on a stale worktree: reuse only if clean + branch/box matches the resume, else
   recreate; never blind `git worktree add`), background via `_run_one_session`, maintain a
@@ -194,17 +207,26 @@ wavefront spec; it eats its own dogfood).
   temporal overlap (mock-barrier fifo: session A's mock blocks until B's mock signals; timeout =
   not-concurrent = FAIL), both land; a sibling-fail case drains + reports failed, no orphans.
   depends: TASK-000, TASK-001, TASK-002.
-- [ ] TASK-004b: Wire `_wave_run` into `cmd_run` , size-dispatch (ready<=1 or `WAVE_CAP`==1 -> the
-  untouched serial body; else -> `_wave_gate` then `_wave_run`); recompute-and-launch serialized
-  under the flip lock; convergence merges landed wave branches one-at-a-time under the lock (reuse
-  `mega-merge.sh`, semantics untouched). Acceptance: exit-criterion 1 (two disjoint independents run
-  concurrently AND both merge back to advance the mega-goal). depends: TASK-003, TASK-004a.
-- [ ] TASK-005: Per-edge HANDOFF (read AND write) , `_build_prompt` (new signature, reads
-  `depends`, injects each dep-parent's `HANDOFF-<id>.md`); the session-write instruction (L282) and
-  `handoff-gen` (L471) write `HANDOFF-<id>.md` when the sub-goal has deps, else plain `HANDOFF.md`;
-  reconcile the `DETERMINISTIC_HANDOFF` gen path (L465-478) under CAP>1. Acceptance: a diamond child
-  prompt contains both parents' handoffs; the LINEAR/no-dep fixture writes+reads plain `HANDOFF.md`
-  byte-for-byte (tests/test-orchestrate.sh L42,80,93,157,179,408-485 green). depends: TASK-004b.
+- [ ] TASK-004b: Wire `_wave_run` into `cmd_run` , size-dispatch on ADMITTED count: run
+  `_wave_gate` first; if `admitted<=1` OR `WAVE_CAP==1` -> the UNTOUCHED serial body on the first
+  ready pick (`_next`'s pick); else -> `_wave_run` on the admitted set. Recompute-and-launch
+  serialized under the flip lock. Acceptance: exit-criterion 1 (two Touches-disjoint independents run
+  concurrently at `WAVE_CAP=2`) AND a no-deps/Touches-less mega-goal takes the serial body
+  (admitted==0). depends: TASK-003, TASK-004a.
+- [ ] TASK-004c: Wave convergence , after a wave's sessions land on their worktree branches, merge
+  them back one-at-a-time under the flip lock, reusing `lib/mega-merge.sh` (its merge SEMANTICS
+  untouched; this only SEQUENCES the merges). Acceptance: two concurrent landed sub-goals both merge
+  to the mega-goal base with no race; a same-file cross-wave edit is detected, not clean-merged wrong.
+  depends: TASK-004b.
+- [ ] TASK-005: Per-edge HANDOFF (read AND write, keyed on DEPENDENTS) , a sub-goal writes
+  `HANDOFF-<own-id>.md` iff some sub-goal `depends` on it (has dependents); the session-write
+  instruction (L282) and `handoff-gen` (L471) target that file, else plain `HANDOFF.md`.
+  `_build_prompt` (new signature, reads `depends`) injects each dep-parent's `HANDOFF-<parent>.md`,
+  FALLING BACK to plain `HANDOFF.md` if the per-edge file is absent (so a chain root that wrote plain
+  HANDOFF still feeds its child). Reconcile the `DETERMINISTIC_HANDOFF` gen path (L465-478) under
+  CAP>1. Acceptance: a diamond child prompt contains both parents' handoffs; the LINEAR/no-dependents
+  fixture writes+reads plain `HANDOFF.md` byte-for-byte (tests/test-orchestrate.sh
+  L42,80,93,157,179,408-485 green). depends: TASK-004b.
 
 ### Phase 3: Resilience, gate semantics, regression
 - [ ] TASK-006: Idempotent resume + wait-vs-complete termination , `cmd_run` recomputes ready from
@@ -223,13 +245,13 @@ wavefront spec; it eats its own dogfood).
   sessions) + golden linear-chain capture + **an Option-B honesty control: a real Touches-less
   mega-goal's `goals/` dir gates to all-`defer` (serializes), asserting the inert-until-Touches
   behavior is visible, not hidden**. Acceptance: exit-criterion 5 (no-deps byte-identical) + all five
-  green + the Touches-less-serializes assertion. depends: TASK-004b, TASK-005, TASK-006, TASK-007.
+  green + the Touches-less-serializes assertion. depends: TASK-004b, TASK-004c, TASK-005, TASK-006, TASK-007.
 
 ## After state
 
 - [ ] `orchestrate.sh run` computes a ready set each cycle and runs dep-independent, disjoint,
-  Touches-declaring sub-goals concurrently (up to `WAVE_CAP`, default 2), each in its own worktree,
-  merging landed branches back one-at-a-time. (Today: strictly serial, one sub-goal at a time.)
+  Touches-declaring sub-goals concurrently when `WAVE_CAP>=2` (default 1 = off), each in its own
+  worktree, merging landed branches back one-at-a-time. (Today: strictly serial, one at a time.)
 - [ ] A sub-goal WITHOUT a `## Touches` section serializes (Option-B opt-in), and TASK-009 asserts
   this visibly. (Today: N/A , no wave path.)
 - [ ] `_run_one_session` extracted; a no-deps mega-goal takes the untouched serial path and is
@@ -302,8 +324,11 @@ wavefront spec; it eats its own dogfood).
 ## Decision Log
 - DEC-001: Reuse `dispatch-gate.sh` for wave-pair disjointness rather than a new gate , ONE
   disjointness authority; rejected building a parallel primitive.
-- DEC-002: Concurrency cap default 2 (configurable) , the cost center is long-session cache-read
-  (2026-07-02 token audit), so small waves; rejected unbounded frontier scheduling.
+- DEC-002: Concurrency cap `WAVE_CAP` default **1** (waves OFF by default; opt-in to `>=2`). This
+  DEVIATES from the brief's "default 2" , spec-validate showed default 2 silently migrates existing
+  `gate` (global-stop) to chain-stop, a linear-chain regression the goal forbids. Default 1 => serial
+  path always, gate stays global, byte-identical. Waves cap small when enabled (cost center is
+  long-session cache-read, 2026-07-02 audit). Rejected unbounded frontier scheduling.
 - DEC-003: No separate state store; resume recomputes from ROADMAP boxes + PR state , stays inside
   ADR-0030's boundary (a state store is GSD-v2).
 - DEC-004: Reconcile the 2026-05-22 concurrent-goal-dispatch note's "wave = tripwire to gsd-2" rule
@@ -314,26 +339,40 @@ wavefront spec; it eats its own dogfood).
   New shared helper; wave-completion wait is a `kill -0` poll (as `_run_session_watchdog`), not
   `wait -n` (bash 4.3+). Arrays empty-guarded `${arr[@]+"${arr[@]}"}` per `lib/mega-merge.sh:224`.
 - DEC-006 (spec-validate): the byte-identical serial invariant is STRUCTURAL, not test-only ,
-  extract `_run_one_session` first (TASK-000), then size-dispatch (ready<=1 or CAP=1 -> untouched
-  serial body). A golden test alone was rejected as insufficient.
+  extract `_run_one_session` first (TASK-000), then size-dispatch on ADMITTED count (admitted<=1 or
+  CAP=1 -> untouched serial body). A golden test alone was rejected as insufficient.
 - DEC-007 (spec-validate): `_wave_gate` is greedy-in-ROADMAP-order (admit vs every admitted member,
   stop at CAP), because pairwise disjointness does not compose. Deterministic; no-deps identical.
 - DEC-008 (spec-validate): flip targets the SHARED absolute-path `$megadir/ROADMAP.md` (outside
   worktrees); convergence merges wave branches one-at-a-time under the flip lock reusing
   `mega-merge.sh` (its semantics untouched , only sequenced).
 - DEC-009 (spec-validate): lock at `$megadir/.orchestrate/flip.lock` (not `/tmp`), PID-liveness
-  stale reclaim via `rmdir` + `[ -n ]` guard; `WAVE_CAP` env (default 2, integer `>=1`),
-  `FLIP_LOCK_STALE_SECS` (default 120); event `note` truncated `< PIPE_BUF`.
+  stale reclaim via `rmdir` + `[ -n ]` guard; `WAVE_CAP` env (default 1 = off, see DEC-002; integer
+  `>=1`), `FLIP_LOCK_STALE_SECS` (default 120); event `note` truncated `< PIPE_BUF`.
 - DEC-010 (spec-validate): `gate` narrows to chain-stop; NEW `gate!` preserves today's global
   human-stop (autonomy gate not weakened , the operator opts into whichever).
 - DEC-011 (Q1, provisional , Han away): Option B , concurrency is opt-in (a sub-goal declares
   `## Touches` to be wave-eligible; absent it serializes). Ship machinery + fixtures + TASK-009
   honesty control; the generator/schema retrofit is follow-up ID-085-followup. A = B + generator
   change (no rework). Han override: "do Option A".
+- DEC-012 (delta re-validation): three fixes to the first revision , (a) size-dispatch keys on
+  ADMITTED (post-gate) count, not raw ready size (a no-deps mega-goal has ready size N, not 1);
+  (b) `_wave_gate` requires the candidate's OWN `## Touches` to admit (`gate_plan` admits the first
+  vacuously); (c) `HANDOFF-<id>.md` keyed on having DEPENDENTS with a plain-`HANDOFF.md` read
+  fallback (keying on deps loses feed-forward at every chain root). `WAVE_CAP` default 1 (DEC-002);
+  flip-contract prompt injection deferred to ID-085-followup; convergence is its own TASK-004c.
 
 ## Review
 
-### Verdict: NEEDS REVISION (spec-validate, 2026-07-03, 5-lens adversarial)
+### Verdict: RE-VALIDATED (2026-07-03) after two revision passes
+
+5-lens adversarial spec-validate -> first revision (~19 fixes) -> fresh-context delta re-validation
+found 3 new bugs the first revision introduced (byte-identity premise false; HANDOFF keyed on wrong
+edge end; `_wave_gate` all-defer vs `gate_plan` vacuous-first) -> second revision (DEC-012) closed
+them. The re-validator's remaining items (WAVE_CAP default, convergence-as-own-task, flip-contract
+deferral) are all applied. Design is implementable; proceeding to `/kit:execute`. History below.
+
+### Prior verdict: NEEDS REVISION (spec-validate, 2026-07-03, 5-lens adversarial)
 
 One scope decision blocks re-validation (see Open questions Q1); the rest are fixes applied in the
 revision pass. Findings, deduped across the five lenses:
