@@ -43,7 +43,7 @@ fi
 # Boardless runs (SPEC-069): a run ledger whose repo matches the cwd repo but whose rid
 # the board never mentions. Detection only; the board file is the repo's own.
 _boardless() {
-  local root board myrepo f rid
+  local root board myrepo f rid tok matched
   # worktree-safe (review A1): --git-common-dir resolves the MAIN checkout even from a
   # .claude/worktrees/<branch> session, where --show-toplevel's basename is the branch.
   local common; common="$(git rev-parse --git-common-dir 2>/dev/null || true)"
@@ -55,16 +55,26 @@ _boardless() {
     [ -e "$f" ] || continue
     rid="$(basename "$f" .log)"
     grep -qF -- "repo=$myrepo" "$f" 2>/dev/null || continue
-    grep -qF -- "$rid" "$board" 2>/dev/null || printf '%s\n' "$rid"
+    # On-board if the board names the run by rid (the `[run <rid>]` convention), OR by any
+    # ID-NNN / PR #N token the run's own ledger carries (SPEC-073 metric 9a: real board rows
+    # key on ID/PR, not the raw rid, so a raw-rid-only match false-flagged tracked runs).
+    grep -qF -- "$rid" "$board" 2>/dev/null && continue
+    matched=""
+    while IFS= read -r tok; do
+      [ -n "$tok" ] || continue   # while-read (not for): a "PR #N" token carries a space
+      grep -qF -- "$tok" "$board" 2>/dev/null && { matched=1; break; }
+    done < <(grep -oE 'ID-[0-9]+|PR #[0-9]+' "$f" 2>/dev/null | sort -u)
+    [ -n "$matched" ] || printf '%s\n' "$rid"
   done
 }
 
-# Shipped-incomplete (SPEC-069): a shipped run whose plan still has un-disposed phases
-# (the spec-064 think class). Reads lane from the START line, asks gate-ledger progress.
-# INTENTIONAL SEAM (review A4): this is lane-telemetry's ONE runtime call into
-# gate-ledger, delegated to avoid duplicating the lane->phase map (WORKFLOW matrix
-# parsing). The agreement is the literal word "complete" in progress's status line; a
-# test pin asserts both sides carry it so a rename breaks the build, not the detector.
+# Shipped-incomplete (SPEC-069): a shipped run that would NOT pass its own ship-gate, i.e.
+# a REQUIRED (measure-twice) gate lacks a ran/override entry. Reads lane from the START line,
+# asks gate-ledger check. INTENTIONAL SEAM (review A4): this is lane-telemetry's ONE runtime
+# call into gate-ledger, delegated to avoid duplicating the lane->phase map (WORKFLOW matrix
+# parsing). It uses `check` (the same required-gate contract hooks/ship-gate.sh enforces), so
+# run-lite phases -- e.g. `ui-design` on a non-UI full-lane run -- never trip it (SPEC-073
+# metric 9b); a test pin asserts the detector calls `check` so a rename breaks the build.
 _shipped_incomplete() {
   local f rid lane
   for f in "$RUNS_DIR"/*.log; do
@@ -73,7 +83,7 @@ _shipped_incomplete() {
     rid="$(basename "$f" .log)"
     lane="$( { grep '| START-AMEND |' "$f" 2>/dev/null | tail -1; grep -m1 '| START |' "$f" 2>/dev/null; } | head -1 | grep -oE 'lane=[^ ]+' | head -1 | cut -d= -f2 || true)"
     [ -n "$lane" ] || continue
-    bash "$KIT_LIB/gate-ledger.sh" progress "$rid" "$lane" 2>/dev/null | head -1 | grep -q 'complete' \
+    bash "$KIT_LIB/gate-ledger.sh" check "$lane" "$rid" >/dev/null 2>&1 \
       || printf '%s (%s)\n' "$rid" "$lane"
   done
 }
