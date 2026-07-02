@@ -100,6 +100,23 @@ _subgoals() {
 # Next unchecked sub-goal as "id<TAB>policy", or empty.
 _next() { _subgoals "$1" | awk -F'\t' '$3==0 {print $1"\t"$2; exit}'; }
 
+# Wavefront ready set (SPEC-106 TASK-001): every sub-goal that is unchecked AND has no blocking
+# deps, in ROADMAP order, as "id<TAB>policy" (the _subgoals shape minus the checked column).
+# Ready = checked==0 AND `_sg_deps_blocked` empty (reuses the existing dep parser at L133; no
+# reimplementation). PURE READ helper: it changes NO scheduling (nothing calls it into the run
+# loop yet). Backward-compat invariant: on a no-deps ROADMAP nothing blocks, so it returns ALL
+# unchecked sub-goals and its FIRST line equals `_next`'s pick (the size-1 superset invariant ,
+# `_next` is `_ready_set | head -1` semantically). Process-sub (not a pipe) so the caller's shell
+# owns the loop, matching _derive_board L172.
+_ready_set() {
+  local roadmap="$1" id policy checked line
+  while IFS=$'\t' read -r id policy checked; do
+    [ "$checked" = 0 ] || continue
+    line=$(_sg_line "$roadmap" "$id")
+    [ -z "$(_sg_deps_blocked "$roadmap" "$line")" ] && printf '%s\t%s\n' "$id" "$policy"
+  done < <(_subgoals "$roadmap")
+}
+
 # ---- SG-10 board-view / event-sourced status -----------------------------------------------
 # Event-sourced status (pi-swarm borrow): the loop APPENDS status events; the board is DERIVED
 # by replay (last event per sub-goal wins), NEVER mutated in place -> a crashed/concurrent
@@ -517,4 +534,8 @@ main() {
   esac
 }
 
-main "$@"
+# Only run main when executed, not when sourced (so tests can source and call the internal
+# helpers, e.g. _ready_set, directly). Same guard as lib/dispatch-gate.sh.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+fi

@@ -89,3 +89,26 @@ former inline capture.
 is a local not a global so it cannot be read implicitly like `WATCHDOG_STALL_SECS`/`DETERMINISTIC_HANDOFF`.
 **Impact.** Zero behavior change: the watchdog / stream-json / plain branches moved verbatim (comments
 included). tests/test-orchestrate.sh 59/59 green, tests/test-meta.sh 578/578 green, before and after.
+
+## 2026-07-03 , TASK-001 add _ready_set + source guard for unit-testability
+
+**Context.** TASK-001 adds the pure `_ready_set` read helper. Its unit test needs to call the
+internal function directly (it is intentionally NOT wired into any CLI subcommand this task), but
+`orchestrate.sh` ended with an unconditional `main "$@"`, so sourcing it fired `main` (usage +
+`exit 64`) and killed the sourced test before any assert.
+**Decision.** Wrapped the tail call in the source guard `if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+main "$@"; fi`, the exact pattern already in `lib/dispatch-gate.sh:208`. The new test SOURCES
+orchestrate.sh and calls `_ready_set` / `_next` directly.
+**Why.** House pattern (not an invention); behavior-preserving when executed (`bash orchestrate.sh
+<cmd>` still runs main because `BASH_SOURCE[0] == $0`). Alternative rejected: adding a hidden
+`ready` subcommand, which would add CLI surface the spec did not ask for and risk reading as
+scheduling wiring.
+**Ready-set edge behavior (pinned by the fixtures).** (a) no-deps ROADMAP -> ALL unchecked returned
+in ROADMAP order, first line == `_next` (size-1 superset invariant tested every cycle); (b) diamond
+-> root alone, then {SG-02,SG-03} as a wave, then the join, cycle by cycle; (c) all-checked ->
+empty output, matching empty `_next`. Reused `_subgoals`/`_sg_line`/`_sg_deps_blocked` verbatim, no
+dep parsing reimplemented. Process-sub loop (`< <(_subgoals ...)`) not a pipe, matching
+`_derive_board` L172, so the caller shell owns the loop under `set -uo pipefail`.
+**Impact.** `bash tests/test-orchestrate-wavefront.sh` 16/16 green (bash 3.2.57 + default);
+`bash tests/test-orchestrate.sh` 59/59 green (no regression). No scheduling change; `_ready_set`
+has zero call sites in the run loop (TASK-004b wires it later).
