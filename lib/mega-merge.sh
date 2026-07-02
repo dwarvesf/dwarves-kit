@@ -57,8 +57,12 @@ LOG_DIR="$(kit_resolve_log_dir)"
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 _log() {  # rid text
+  # Collapse newlines in both fields before writing (mirrors gate-ledger's oneline; security
+  # review defense-in-depth): today's rid sources (branch slug / gate-ledger rid) can't carry a
+  # raw newline, but a future caller must not be able to forge a second log line.
   mkdir -p "$LOG_DIR" 2>/dev/null || true
-  printf '%s | %s | %s\n' "$(now)" "${1:-?}" "${2:-}" >> "$LOG_DIR/mega-merge.log" 2>/dev/null || true
+  local a b; a="$(printf '%s' "${1:-?}" | tr '\n\r' '  ')"; b="$(printf '%s' "${2:-}" | tr '\n\r' '  ')"
+  printf '%s | %s | %s\n' "$(now)" "$a" "$b" >> "$LOG_DIR/mega-merge.log" 2>/dev/null || true
 }
 
 # gate <rid> <lane> -- DECISION ONLY. No file writes, no gh calls. Reuses

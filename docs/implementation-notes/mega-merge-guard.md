@@ -57,3 +57,21 @@ never calls gh).
   natively blocks draft merges = an intrinsic second layer), and filed ID-089 to enforce
   always-mark-at-creation in commands/mega.md (out of SG-05 scope). A comma-in-a-label can
   only over-block (fail-safe), never under-block.
+
+## 2026-07-02 TIER-4 cross-cutting security sweep: 1 BLOCKER + 2 SHOULD-FIX
+
+- BLOCKER (FIXED): `gate-ledger.sh check()` vacuous-passed an UNKNOWN lane. `required <bad-lane>`
+  returns nonzero + empty; the `while ... < <(required)` loop read the empty stream, left
+  missing=0, and returned 0 (pass). `mega-merge merge <rid> mega --execute` (mega = a plausible
+  typo, not a real WORKFLOW column) thus auto-merged with ZERO gates, and the same hole weakened
+  ship-gate. Fixed: capture `required`'s exit code; nonzero (unknown lane) -> return 1 fail-closed;
+  a VALID lane with zero measure-twice gates (`tiny`) still exits 0 empty -> passes correctly.
+  Pinned (test-mega-merge AC7b, real gate-ledger). This is SG-01's file but a merge-path hole
+  surfaced only by assembling SG-05 on top, so it rides in this held PR.
+- SHOULD-FIX (FIXED): `mega-merge _log()` had no newline guard (unlike gate-ledger oneline);
+  collapsed \n\r in both fields. Low exploitability (rid sources can't hold newlines) but
+  defense-in-depth parity with the SG-01-hardened sibling sink.
+- SHOULD-FIX (FIXED): `normalize_phase` now collapses newlines first, so a record/override phase
+  arg can't forge a second ledger line. Unreachable today (hardcoded phase literals); guard is
+  one tr. `start()`'s KV fields are left as-is , structurally safe (lane/type are classifier
+  enums, repo is a `basename`, none can carry a raw newline).

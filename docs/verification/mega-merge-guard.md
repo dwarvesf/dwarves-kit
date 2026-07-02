@@ -17,7 +17,8 @@ Verdict: PASS
 | AC6c | whitespace/case-variant hold label blocks | PR#8 (`  Gated-Final  `) -> BLOCKED (normalized) | PASS |
 | AC8b [load-bearing] | held PR + `--execute` never calls gh | PR#2 + `--execute` -> BLOCKED, gh marker absent | PASS |
 | AC7 [gate preserved] | clear PR + failing gate still blocked by the gate | PR#1 + failing gate-ledger -> "ship-gate not satisfied" | PASS |
-| AC8 [no regression] | sibling + full suites green | `test-mega-reconcile` 35/35, `test-meta` 578/578, `test-hooks` 438/438 | PASS |
+| AC7b [TIER-4 security] | unknown lane fails closed, never reaches gh | `merge 1 someridZ mega --execute` (real gate-ledger) -> BLOCKED, no `gh pr merge` (check() no longer vacuous-passes an unknown lane) | PASS |
+| AC8 [no regression] | sibling + full suites green | `test-mega-reconcile` 35/35, `test-meta` 578/578, `test-hooks` 438/438, `test-ledger-durability` 32/32, `test-lane-escalation` 22/22, `test-deployable-done` 16/16 | PASS |
 
 ## Implementation
 
@@ -34,7 +35,7 @@ Verdict: PASS
 
 | Command | Exit | Result |
 |---------|------|--------|
-| `bash tests/test-mega-merge.sh` | 0 | 18/18 passed (incl. glob-safety, fail-closed-on-garbage, --execute-never-calls-gh) |
+| `bash tests/test-mega-merge.sh` | 0 | 20/20 passed (incl. glob-safety, fail-closed-on-garbage, --execute-never-calls-gh, unknown-lane fail-closed) |
 | `bash tests/test-mega-reconcile.sh` | 0 | 35/35 passed |
 | `bash tests/test-meta.sh` | 0 | 578/578 passed |
 | `bash tests/test-hooks.sh` | 0 | 438/438 passed |

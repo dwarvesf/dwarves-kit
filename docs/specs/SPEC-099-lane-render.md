@@ -41,7 +41,7 @@ snapshot lands at `docs/research/2026-07-02-lane-usage-snapshot.md`.
 
 ## Verification
 ```
-bash tests/test-lane-telemetry.sh   # AC1-AC5, 13 pins
+bash tests/test-lane-telemetry.sh   # AC1-AC5 + review pins, 18 pins
 bash lib/lane-telemetry.sh render          # real-corpus capture
 bash lib/lane-telemetry.sh render full     # filtered capture
 bash tests/test-meta.sh ; bash tests/test-hooks.sh   # stay green

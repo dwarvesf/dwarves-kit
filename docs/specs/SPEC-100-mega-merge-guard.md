@@ -56,11 +56,17 @@ where the PR is OPENED. Two consequences, both honest:
 - AC6b [injection safety]: a label of `*` is a literal string, never glob-expanded (clear, no crash).
 - AC6c: a hold label with surrounding whitespace / odd case still blocks (normalized match).
 - AC8b [load-bearing]: a held PR with `--execute` never invokes `gh` (exclusion runs before the execute branch).
+- AC7b [TIER-4 security, unknown-lane fail-closed]: `merge <rid> <unknown-lane> --execute` is refused (the gate's `check()` no longer vacuous-passes an unknown lane), never reaching `gh`.
 - AC7 [gate preserved]: a clear PR with a FAILING gate is still blocked by the gate (exclusion did not bypass it).
 - AC8 [no regression]: `test-mega-reconcile.sh` (35), `test-meta.sh` (578), `test-hooks.sh` (438) stay green.
 
 ## Tasks
-- T1: `lib/mega-merge.sh` -- `_pr_info` + `_merge_exclusion` + wire into `merge()` before the gate; header comment.
+- T0 [TIER-4 security]: `lib/gate-ledger.sh` `check()` -- fail CLOSED on an unknown lane
+  (`required` nonzero) instead of vacuously passing on its empty stream; `_log`/`normalize_phase`
+  newline-guarded (defense-in-depth for the merge-log + phase sinks). This closes a cross-piece
+  hole: `mega-merge merge <rid> mega --execute` (a plausible typo'd lane) used to auto-merge with
+  zero gates enforced, and the same silent-pass weakened `ship-gate`.
+- T1: `lib/mega-merge.sh` -- `_pr_info` + `_merge_exclusion` + wire into `merge()` before the gate; header comment; `_log` newline guard.
 - T2: `tests/test-mega-merge.sh` (new) -- AC1-AC7, fully offline (inject gate-ledger + PR-state).
 - T3: `tests/test-mega-reconcile.sh` -- inject a CLEAR PR-state stub so its fake-PR merge tests keep testing the gate/posture path (the exclusion would otherwise fail-close on a fake PR).
 - T4: `docs/verification/mega-merge-guard.md` -- table-first proof.
@@ -68,7 +74,7 @@ where the PR is OPENED. Two consequences, both honest:
 
 ## Verification
 ```
-bash tests/test-mega-merge.sh       # AC1-AC7, 12 pins
+bash tests/test-mega-merge.sh       # AC1-AC8b, 18 pins
 bash tests/test-mega-reconcile.sh   # stays green (35)
 bash tests/test-meta.sh ; bash tests/test-hooks.sh
 ```
