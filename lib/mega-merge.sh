@@ -208,9 +208,33 @@ merge() {
   gh pr merge "$pr" --squash --delete-branch
 }
 
+# mark <pr> [repo] -- the MARK half of the SPEC-100 guard (SG-04, ID-089). The guard
+# (_merge_exclusion) defends a PR that CARRIES a mark but cannot synthesize one, so an
+# UN-marked gate/gated-final PR would slip through. This opens the mark: it puts a
+# gate-tagged sub-goal PR (and the held final PR) into exactly the state the guard refuses
+# -- a DRAFT (GitHub-intrinsic: GitHub itself blocks merging a draft) PLUS the `do-not-merge`
+# hold label (the belt-and-suspenders the code guard also reads). Called by commands/mega.md
+# right after such a PR is opened. Idempotent (safe to re-run); routes gh through MEGA_MERGE_GH
+# so tests assert the calls without touching GitHub. The label is ensured first so a later
+# `--add-label` never fails on a repo that lacks it.
+mark() {
+  local pr="${1:-}" repo="${2:-}"
+  case "$pr" in ''|*[!0-9]*) echo "mark: <pr> must be a bare PR number (got '$pr')" >&2; return 64 ;; esac
+  local gh="${MEGA_MERGE_GH:-gh}"
+  local rf=(); [ -n "$repo" ] && rf=(--repo "$repo")
+  # idempotent label-ensure (|| true: already exists is the common case)
+  "$gh" label create do-not-merge "${rf[@]}" --color B60205 --description "held: do not auto-merge (mega gate/gated-final)" >/dev/null 2>&1 || true
+  # draft = the primary, GitHub-intrinsic block; `pr ready --undo` converts an open PR to draft
+  "$gh" pr ready "$pr" "${rf[@]}" --undo >/dev/null 2>&1 || true
+  # do-not-merge label = the mark the code guard (_merge_exclusion) reads
+  "$gh" pr edit "$pr" "${rf[@]}" --add-label do-not-merge >/dev/null 2>&1 || true
+  echo "marked PR #$pr held: draft + do-not-merge"
+}
+
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   gate)  gate "$@" ;;
   merge) merge "$@" ;;
-  *) echo "usage: mega-merge.sh {gate <rid> <lane>|merge <pr> <rid> <lane> [--execute] [--posture=<auto-to-final|per-pr-review>]}" >&2; exit 64 ;;
+  mark)  mark "$@" ;;
+  *) echo "usage: mega-merge.sh {gate <rid> <lane>|merge <pr> <rid> <lane> [--execute] [--posture=<auto-to-final|per-pr-review>]|mark <pr> [repo]}" >&2; exit 64 ;;
 esac

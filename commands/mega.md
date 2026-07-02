@@ -153,6 +153,22 @@ passed to `mega-merge.sh merge` at all -- routing those to the human is this
 command's job, exactly as `/kit:dispatch` and the skill already do; `mega-merge.sh`
 itself only ever sees a PR it has been explicitly asked to consider auto-merging.
 
+**Mark the held PR at creation (SPEC-100 mark half, ID-089).** The instant such a PR
+is opened, mark it so the merge guard always has a mark to catch (an UN-marked held PR
+would slip past `_merge_exclusion`, which defends a marked PR but cannot synthesize a
+mark):
+
+```bash
+gh pr create --draft ...                      # open held: draft is the GitHub-intrinsic block
+bash lib/mega-merge.sh mark <pr> [repo]        # ensure the do-not-merge label + draft + add label (idempotent)
+```
+
+`mega-merge.sh mark` ensures the `do-not-merge` label exists (so `--label` never fails),
+converts the PR to a draft, and adds the label -- exactly the state `_merge_exclusion`
+refuses. Draft plus label is belt-and-suspenders: GitHub itself refuses to merge a draft,
+and the code guard reads the label. Do this for every `gate`-tagged sub-goal PR and the
+`gated-final` PR; a normal `auto` PR is left un-marked so the guard clears it.
+
 ## What this refuses (mirrors `/kit:dispatch`'s "What this command refuses")
 
 - **Merging a PR whose ship-gate has not passed.** `gate` is the only question

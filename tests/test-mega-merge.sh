@@ -114,5 +114,27 @@ has "BLOCKED" "$O10"; ok "AC8: held PR + --execute is still BLOCKED" $?
 ok "AC8 [load-bearing]: held PR + --execute never invokes gh" $([ -f "$GH_MARK" ] && echo 1 || echo 0)
 
 echo ""
+echo "=== mega-merge mark (SPEC-100 mark half, SG-04 / ID-089) ==="
+# A mock gh that records its args, so `mark`'s calls are asserted without touching GitHub.
+GH_LOG="$TMP/mark-gh.log"; : > "$GH_LOG"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\nexit 0\n' "$GH_LOG" > "$TMP/mark-gh"; chmod +x "$TMP/mark-gh"
+MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 42 >/dev/null 2>&1
+MARKED_CALLS="$(cat "$GH_LOG")"
+has "label create do-not-merge" "$MARKED_CALLS"; ok "mark: ensures the do-not-merge label (so --label never fails)" $?
+has "pr ready 42 --undo" "$MARKED_CALLS"; ok "mark: converts the PR to a draft (GitHub-intrinsic block)" $?
+has "pr edit 42 --add-label do-not-merge" "$MARKED_CALLS"; ok "mark: adds the do-not-merge hold label" $?
+# mark <-> guard MEET (end-to-end): the state mark produces is exactly what _merge_exclusion refuses.
+O_LABEL="$(run "$TMP/gl-pass" 2)"   # scenario 2 = the do-not-merge label the mark adds; gate PASSES
+if ! has "gh pr merge 2" "$O_LABEL" && has "hold label" "$O_LABEL"; then ok "mark<->guard: a do-not-merge PR is refused even with a passing gate" 0; else ok "mark<->guard: a do-not-merge PR is refused even with a passing gate" 1; fi
+O_DRAFT="$(run "$TMP/gl-pass" 3)"   # scenario 3 = the draft the mark sets; gate PASSES
+if ! has "gh pr merge 3" "$O_DRAFT" && has "is a draft" "$O_DRAFT"; then ok "mark<->guard: a draft PR is refused (GitHub-intrinsic + code guard)" 0; else ok "mark<->guard: a draft PR is refused" 1; fi
+# negative control: an UN-marked normal auto PR clears the guard + merges.
+O_UNMARKED="$(run "$TMP/gl-pass" 1)"
+has "gh pr merge 1" "$O_UNMARKED"; ok "mark negative control: an un-marked auto PR clears the guard + merges" $?
+# input guard + idempotence
+MB="$(bash "$MM" mark notanum 2>&1)"; has "must be a bare PR number" "$MB"; ok "mark: rejects a non-numeric PR (exit 64)" $?
+MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 42 >/dev/null 2>&1; ok "mark: idempotent (re-run exits 0)" $([ $? -eq 0 ] && echo 0 || echo 1)
+
+echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
