@@ -42,7 +42,11 @@ set -uo pipefail
 
 MM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GATE_LEDGER="${MEGA_MERGE_GATE_LEDGER:-$MM_DIR/gate-ledger.sh}"
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
+# shellcheck source=lib/kit-log-dir.sh
+source "$MM_DIR/kit-log-dir.sh"
+kit_migrate_log_dir || true
+LOG_DIR="$(kit_resolve_log_dir)"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 

@@ -22,10 +22,14 @@
 # DWARVES_KIT_LOG_DIR overrides the log root (tests point it at a fixture copy).
 set -euo pipefail
 
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+KIT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
+# shellcheck source=lib/kit-log-dir.sh
+source "$KIT_LIB/kit-log-dir.sh"
+kit_migrate_log_dir || true
+LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
 COMPLETENESS="$LOG_DIR/completeness.log"
-KIT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # TTY-gated colors (SPEC-069): plain bytes whenever piped or NO_COLOR is set.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then

@@ -35,6 +35,13 @@
 
 set -euo pipefail
 
+# Durable run-telemetry root (SPEC-097): the LANE-CHECK downgrade writer below must land
+# in the same durable dir lane-telemetry.sh reads from, or downgrades go split-brain
+# (written to the legacy path, invisible to the migrated reader).
+LC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/kit-log-dir.sh
+source "$LC_DIR/kit-log-dir.sh"
+
 # Hard-gate flags (any hit -> full). name <-> regex, index-aligned.
 _hard_name=(auth data-model audit-security external-provider public-contract weaken-validation kit-machinery)
 _hard_re=(
@@ -158,7 +165,8 @@ lane_check() {
   if [ "$cr" -lt "$sr" ]; then
     echo "LANE-DOWNGRADE: chosen=$chosen suggested=$suggested -- the task text matches a heavier lane; size up or say why" >&2
     desc_trunc="$(printf '%s' "$desc" | tr '\n' ' ' | cut -c1-100)"
-    log_dir="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+    kit_migrate_log_dir || true
+    log_dir="$(kit_resolve_log_dir)"
     mkdir -p "$log_dir" 2>/dev/null || true
     printf '%s | LANE-CHECK | downgrade | chosen=%s suggested=%s | %s\n' \
       "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$chosen" "$suggested" "$desc_trunc" \
