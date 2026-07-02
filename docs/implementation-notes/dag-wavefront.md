@@ -188,3 +188,66 @@ New tests: (a) disjoint declaring pair @cap 2 -> both run; (b) overlapping decla
 run/second defer (exit-criterion-2 negative control); (c) Touches-less ready set -> all defer
 (Option-B gate); (d) cap 1 on the disjoint pair -> at most one run; (e) Touches-less-first/declaring-
 second -> defer/run (per-candidate self-Touches, not first-wins); (f) unset WAVE_CAP == cap 1.
+
+## 2026-07-03 01:37 TASK-004a `_wave_run` concurrent spawn/reap primitive
+
+Delta from SPEC-106 (TASK-004a / invariant 5 / failure-modes table). The judgment calls the spec
+left open:
+
+- **Worktree-in-tests = a real throwaway `git init` repo (not a stub).** The spec offered "real git
+  repo OR factor `_wave_worktree` so a test points it at a tmp dir". Chose the real-repo path for ALL
+  wave tests: a `mk_git_mega` helper `git init`s a throwaway repo with the mega-goal dir at
+  `<repo>/mega`, so `_wave_run` derives the repo root via `git -C "$megadir" rev-parse
+  --show-toplevel` and stands up GENUINE worktrees at `<repo>/.claude/worktrees/<id>` (the repo-wide
+  location per the global rule, NOT the megadir). This exercises the real collision/reuse/recreate
+  logic instead of mocking it. `_wave_worktree` is still factored as its own helper (clean seam), but
+  no test escape-hatch was added. Note: `show-toplevel` returns the symlink-resolved path, so
+  worktrees land under `/private/var/...` while `$TMP` is `/var/...`; self-consistent, harmless.
+- **Reap map = index-aligned plain arrays (`_WAVE_PIDS` / `wave_ids` / `wave_done` / `wave_pfiles`),
+  NOT an assoc array.** bash 3.2 has no `declare -A`. `_WAVE_PIDS` is a GLOBAL (not a `_wave_run`
+  local) precisely so the INT/TERM `_wave_abort` trap can reach the PID set while `_wave_run` is on
+  the stack; the parallel arrays are locals. Empty-guarded `${_WAVE_PIDS[@]+"..."}` in the trap
+  (DEC-005) for the fire-before-any-spawn case.
+- **Reap = `kill -0` poll + `wait`, never `wait -n`.** Generalized `_run_session_watchdog`'s single-
+  PID `while kill -0 "$spid"` (L493) to N PIDs: each poll iterates all not-yet-done indices, and a
+  PID that fails `kill -0` is reaped once with `wait "$pid"` (bash caches a finished background job's
+  status until waited, so the reap after bash's own SIGCHLD-reap still yields the real rc). `wait -n`
+  is bash 4.3+ and absent on the macOS 3.2 CI.
+- **Drain semantics = set-a-flag, never-break.** On a nonzero exit OR an unflipped box, `wave_failed=1`
+  and the loop CONTINUES; healthy in-flight siblings are never `kill`ed and drain to completion in
+  their worktrees; `_wave_run` returns nonzero only after every PID is reaped (invariant 5). The trap
+  is the ONLY path that kills, and only on an operator abort (INT/TERM), so a normal sibling-failure
+  never orphans or murders a peer.
+- **Grounded check reads the SHARED roadmap, never flips.** Per DEC-008 the SESSION flips its own box
+  (via the locked `orchestrate.sh flip` CLI); `_wave_run` only CHECKS via `_subgoals` on
+  `$megadir/ROADMAP.md`. Sessions are backgrounded `cd`'d INTO their worktree for genuine isolation;
+  `_run_one_session`'s `_ROS_SLOG` global is unused on the wave path (det-handoff regen is TASK-005),
+  so losing it in the subshell is fine.
+
+**Concurrency-proof mechanism (the load-bearing test).** Two disjoint admitted sub-goals; each mock
+opens its OWN fifo AND the sibling's fifo read-write (`exec 3<>IN; exec 4<>OUT` , the RDWR open is
+non-blocking so a lone process does not deadlock on `open`), writes a token to the sibling, then
+`read -t <IN`. A read only unblocks once the sibling has WRITTEN, which requires the sibling to be
+ALIVE at that instant , true temporal overlap. A SERIAL impl runs A fully first; A's `read -t` finds
+no writer and TIMES OUT (4s) , A exits nonzero WITHOUT flipping , the "both boxes flipped + rc 0"
+assertion FAILS. Verified a serial run fails via a standalone probe (A-alone timed out at 4s, rc 7).
+
+**Deviation worth logging , the concurrent-flip lost-update.** First green-barrier run FAILED: both
+mocks passed the barrier and both flipped, but their raw `awk+mv` flips RACED and the second `mv`
+clobbered the first (SG-01's flip lost). Fix: the barrier mock flips via `bash "$ORCH" flip
+"$MEGADIR" "$id"` , the mkdir-locked `cmd_flip` CLI (TASK-002) , exactly the real session contract
+(DEC-008 "the session's contract calls `cmd_flip`, not a local `sed`"). So the concurrency test now
+also proves concurrent flips are lock-safe (no lost update), not just temporal overlap. This is the
+V-CRIT-2 / DEC-008 hazard surfacing live in a test.
+
+**Orphan check.** Each mock touches `$RUNDIR/<id>.running` on start, clears it on EXIT (trap); the
+test asserts zero `.running` files after `_wave_run` returns, proving no mock was left orphaned by
+either the normal drain or a sibling failure.
+
+**Scope.** `_wave_run` has ZERO call sites in the run loop (cmd_run untouched); wiring + size-dispatch
+on admitted count is TASK-004b. Cleanup removes wave worktrees via `git worktree remove --force`
+(never `rm -rf` a worktree path). `WAVE_POLL_SECS` (default 0.2) added as the reap-poll interval knob.
+
+**Impact.** `bash tests/test-orchestrate-wavefront.sh` 43/43 green (35 prior + 8 new; bash 3.2.57 AND
+5.3, stable over 9 repeated runs , no flake); `bash tests/test-orchestrate.sh` 59/59 green (no
+regression, both bashes); `shellcheck -s bash lib/orchestrate.sh` fully clean.

@@ -294,5 +294,173 @@ got=$(unset WAVE_CAP; _wave_gate "$GA" "$GA/ROADMAP.md")
 [ "$got" = "$(printf 'run\tSG-01\ndefer\tSG-02')" ] && pass "wave_gate f: default cap (unset) == 1 (only SG-01 runs)" \
   || { fail "wave_gate f: default cap != 1"; printf 'got:\n%s\n' "$got"; }
 
+# ============================ TASK-004a: _wave_run concurrent spawn/reap ============================
+# _wave_run <megadir> <roadmap> takes the admitted `run` set (via _wave_gate), stands up a worktree
+# per admitted sub-goal at <repo>/.claude/worktrees/<id>, backgrounds a MOCK session in each, tracks
+# a pid->id reap map, polls `kill -0`, and does the grounded box-flip check per sub-goal. A sibling
+# nonzero-exit lets healthy siblings DRAIN, then the wave returns nonzero. All tests use a real
+# throwaway `git init` repo so worktree creation is genuinely exercised, and a MOCK CLAUDE_CMD (no
+# real claude, no network).
+
+# Stand up a throwaway git repo (so _wave_run creates REAL worktrees). The mega-goal dir lives at
+# <repo>/mega; _wave_run derives the repo root from it via `git rev-parse --show-toplevel`.
+mk_git_mega() {  # repo-root
+  local repo="$1"
+  mkdir -p "$repo"
+  git -C "$repo" init -q
+  git -C "$repo" config user.email t@example.com
+  git -C "$repo" config user.name test
+  git -C "$repo" commit -q --allow-empty -m init
+}
+
+# ---- (g) CONCURRENCY PROOF via mock-barrier fifo (REQUIRED) ----
+# Two admitted, disjoint sub-goals. Each mock opens its OWN fifo read-write (a non-blocking open),
+# writes a token to the SIBLING's fifo, then `read -t` its own fifo. That read only unblocks once the
+# sibling has WRITTEN, which requires the sibling to be ALIVE at that instant -> proven temporal
+# overlap. A SERIAL impl runs A fully before B; A's `read -t` finds no writer and TIMES OUT -> A
+# exits nonzero WITHOUT flipping its box -> the "both boxes flipped + rc 0" assertion FAILS. So a
+# serial implementation cannot pass this test.
+WCR="$TMP/wave-cc-repo"
+mk_git_mega "$WCR"
+WCM="$WCR/mega"; mkdir -p "$WCM"
+cat > "$WCM/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-concurrent
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$WCM/POINTER_PROMPT.md"
+make_goal "$WCM" SG-01 "lib/wave-a/**"
+make_goal "$WCM" SG-02 "lib/wave-b/**"
+
+FIFODIR="$TMP/fifos-cc"; mkdir -p "$FIFODIR"
+mkfifo "$FIFODIR/SG-01.fifo" "$FIFODIR/SG-02.fifo"
+
+# The single mock serves BOTH sub-goals (one CLAUDE_CMD, different prompt/id). It records a .running
+# marker on start and clears it on EXIT, so a leftover marker == an orphaned/killed-and-not-reaped
+# process.
+cat > "$TMP/claude-barrier" <<'MOCK'
+#!/usr/bin/env bash
+# env: FIFODIR, WAVE_MOCK_IDS, ORCH, MEGADIR, BARRIER_T, RUNDIR
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+: > "$RUNDIR/$id.running"
+trap 'rm -f "$RUNDIR/$id.running"' EXIT
+IN="$FIFODIR/$id.fifo"; OUT=""
+for x in $WAVE_MOCK_IDS; do [ "$x" != "$id" ] && OUT="$FIFODIR/$x.fifo"; done
+exec 3<>"$IN"; exec 4<>"$OUT"       # RDWR opens: non-blocking, so a lone process does not deadlock
+printf 'r\n' >&4                    # signal the sibling
+if read -t "${BARRIER_T:-4}" _tok <&3; then
+  # Sibling proven concurrently alive -> flip our box in the SHARED roadmap. Two wave sessions flip
+  # the SAME file at once, so this MUST go through the locked `orchestrate.sh flip` CLI (DEC-008),
+  # not a raw sed/awk+mv (which would race and lose one flip). This mirrors the real session contract.
+  bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+  exit 0
+fi
+exit 7                              # timed out: sibling never overlapped (serial) -> do NOT flip
+MOCK
+chmod +x "$TMP/claude-barrier"
+
+RUNDIR_CC="$TMP/run-cc"; mkdir -p "$RUNDIR_CC"
+wrc=0
+( export FIFODIR="$FIFODIR" WAVE_MOCK_IDS="SG-01 SG-02" ORCH="$ORCH" MEGADIR="$WCM" \
+    RUNDIR="$RUNDIR_CC" BARRIER_T=4 CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-barrier"
+  _wave_run "$WCM" "$WCM/ROADMAP.md" ) > "$TMP/cc.out" 2>&1 || wrc=$?
+
+cc_b1=$(_sg_line "$WCM/ROADMAP.md" SG-01); cc_b2=$(_sg_line "$WCM/ROADMAP.md" SG-02)
+cc_ok=1
+[ "$wrc" = 0 ] || cc_ok=0
+case "$cc_b1" in '- [x] SG-01'*) ;; *) cc_ok=0 ;; esac
+case "$cc_b2" in '- [x] SG-02'*) ;; *) cc_ok=0 ;; esac
+if [ "$cc_ok" = 1 ]; then
+  pass "wave_run g: concurrency PROVEN via mock-barrier (both boxes flipped, rc 0)"
+else
+  fail "wave_run g: concurrency NOT proven (rc=$wrc b1='$cc_b1' b2='$cc_b2')"; cat "$TMP/cc.out"
+fi
+cc_left=$(ls "$RUNDIR_CC"/*.running 2>/dev/null | wc -l | tr -d ' ')
+[ "$cc_left" = 0 ] && pass "wave_run g: no orphaned mock processes remain" || fail "wave_run g: $cc_left mock(s) still running"
+
+# ---- (h) SIBLING-FAILURE DRAIN ----
+# Two admitted sub-goals; the doomed one exits nonzero FAST without flipping, the healthy one sleeps
+# briefly (so it is provably still in-flight when the doomed sibling has already died) then flips +
+# exits 0. Assert: the healthy sibling still completed (drained, not killed), the doomed box stayed
+# unflipped, _wave_run returned nonzero, and no mock was left orphaned.
+WFR="$TMP/wave-fail-repo"
+mk_git_mega "$WFR"
+WFM="$WFR/mega"; mkdir -p "$WFM"
+cat > "$WFM/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-fail
+## Sub-goals
+- [ ] SG-01 healthy , auto , PR #__
+- [ ] SG-02 doomed , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$WFM/POINTER_PROMPT.md"
+make_goal "$WFM" SG-01 "lib/heal/**"
+make_goal "$WFM" SG-02 "lib/doom/**"
+
+cat > "$TMP/claude-sibfail" <<'MOCK'
+#!/usr/bin/env bash
+# env: WAVE_FAIL_ID, ORCH, MEGADIR, RUNDIR
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+: > "$RUNDIR/$id.running"
+trap 'rm -f "$RUNDIR/$id.running"' EXIT
+if [ "$id" = "$WAVE_FAIL_ID" ]; then
+  exit 5                            # doomed: dies fast, box left unflipped
+fi
+sleep 1                            # healthy: still working when the doomed sibling has already died
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1   # locked flip via the CLI (real session contract)
+exit 0
+MOCK
+chmod +x "$TMP/claude-sibfail"
+
+RUNDIR_SF="$TMP/run-sf"; mkdir -p "$RUNDIR_SF"
+frc=0
+( export WAVE_FAIL_ID=SG-02 ORCH="$ORCH" MEGADIR="$WFM" RUNDIR="$RUNDIR_SF" \
+    CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-sibfail"
+  _wave_run "$WFM" "$WFM/ROADMAP.md" ) > "$TMP/sf.out" 2>&1 || frc=$?
+
+sf_h=$(_sg_line "$WFM/ROADMAP.md" SG-01)
+case "$sf_h" in '- [x] SG-01'*) pass "wave_run h: healthy sibling drained to completion (box flipped, not killed)" ;; *) fail "wave_run h: healthy sibling did NOT complete (got '$sf_h')" ;; esac
+sf_d=$(_sg_line "$WFM/ROADMAP.md" SG-02)
+case "$sf_d" in '- [ ] SG-02'*) pass "wave_run h: doomed sub-goal box stayed unflipped" ;; *) fail "wave_run h: doomed box unexpectedly flipped (got '$sf_d')" ;; esac
+[ "$frc" != 0 ] && pass "wave_run h: wave returns nonzero after a sibling failure" || fail "wave_run h: wave returned 0 despite a sibling failure"
+sf_left=$(ls "$RUNDIR_SF"/*.running 2>/dev/null | wc -l | tr -d ' ')
+[ "$sf_left" = 0 ] && pass "wave_run h: no orphaned mock processes after drain" || fail "wave_run h: $sf_left mock(s) still running"
+
+# ---- (i) idempotent resume: an already-checked box in the admitted set is skipped, not re-run ----
+WIR="$TMP/wave-idem-repo"
+mk_git_mega "$WIR"
+WIM="$WIR/mega"; mkdir -p "$WIM"
+cat > "$WIM/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-idem
+## Sub-goals
+- [x] SG-01 already done , auto , PR #1
+EOF
+echo "POINTER: resume from ROADMAP" > "$WIM/POINTER_PROMPT.md"
+make_goal "$WIM" SG-01 "lib/idem/**"
+# a mock that would FAIL loudly if ever invoked on a checked box
+cat > "$TMP/claude-nope" <<'MOCK'
+#!/usr/bin/env bash
+cat >/dev/null
+: > "$RUNDIR/RAN"
+exit 9
+MOCK
+chmod +x "$TMP/claude-nope"
+RUNDIR_ID="$TMP/run-idem"; mkdir -p "$RUNDIR_ID"
+irc=0
+( export RUNDIR="$RUNDIR_ID" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-nope"
+  _wave_run "$WIM" "$WIM/ROADMAP.md" ) > "$TMP/idem.out" 2>&1 || irc=$?
+[ ! -f "$RUNDIR_ID/RAN" ] && pass "wave_run i: already-checked box was NOT re-run (idempotent resume)" || fail "wave_run i: re-ran a checked sub-goal"
+[ "$irc" = 0 ] && pass "wave_run i: empty/skip-only wave returns 0" || fail "wave_run i: skip-only wave returned $irc"
+
+# ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
+for wtrepo in "$WCR" "$WFR" "$WIR"; do
+  [ -d "$wtrepo" ] || continue
+  git -C "$wtrepo" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}' | while read -r w; do
+    case "$w" in *"/.claude/worktrees/"*) git -C "$wtrepo" worktree remove --force "$w" 2>/dev/null ;; esac
+  done
+done
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }

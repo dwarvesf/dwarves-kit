@@ -544,6 +544,195 @@ _run_one_session() {  # dir id pfile route_flags stream
   return "$rc"
 }
 
+# ---- Wavefront spawn/reap primitive (SPEC-106 TASK-004a, DEC-005) -----------------------------
+# The concurrent-wave engine: take the admitted `run` set, run those sub-goals concurrently (each in
+# its OWN worktree), reap on completion, drain safely on a sibling failure. bash-3.2 throughout: no
+# assoc arrays (the reap map is index-aligned plain arrays), no `wait -n` (poll `kill -0` like
+# `_run_session_watchdog`), no `flock`. Standalone-testable with a MOCK CLAUDE_CMD; wiring into
+# cmd_run (size-dispatch on admitted count) is the NEXT task (TASK-004b), so `_wave_run` has ZERO
+# call sites in the run loop after this task.
+
+# A sub-goal's declared branch from its goal file's `**Branch:** <type>/<slug>` header (same parse
+# as `_emit_start`), or a stable `wave/<id-lower>` fallback when absent so a worktree can still be
+# stood up. One branch per sub-goal id => distinct branches => no "already checked out" clash.
+_sg_branch() {  # goalfile id
+  local gf="${1:-}" id="$2" branch=""
+  [ -n "$gf" ] && [ -f "$gf" ] && branch=$(grep -iE '^\*\*Branch:\*\*' "$gf" | head -1 | sed -E 's/^\*\*[Bb]ranch:\*\*[[:space:]]*//; s/[[:space:]].*$//')
+  [ -n "$branch" ] || branch="wave/$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]')"
+  printf '%s\n' "$branch"
+}
+
+# Create OR reuse a per-sub-goal worktree at <repo>/.claude/worktrees/<id> on <branch> (the repo-wide
+# worktree location, per the global worktree rule). REUSE only on a clean crash-resume (edge 5): the
+# path is already a REGISTERED git worktree, its tree is clean, AND it is on <branch>. Otherwise
+# RECREATE. NEVER a blind `git worktree add` onto an existing path: a stale/dirty/mismatched worktree
+# is dropped with `git worktree remove --force` (git's own remover, which refuses paths outside its
+# admin list), and a leftover NON-worktree dir is moved aside (never `rm -rf`). Prunes stale admin
+# entries first so a dir removed out-of-band cannot wedge `worktree add`. Echoes the worktree path;
+# nonzero on failure.
+_wave_worktree() {  # repo id branch
+  local repo="$1" id="$2" branch="$3"
+  local wt="$repo/.claude/worktrees/$id"
+  git -C "$repo" worktree prune 2>/dev/null || true
+
+  if [ -e "$wt/.git" ]; then
+    # A linked worktree carries a `.git` FILE (a gitdir pointer). Clean + on <branch> => resume.
+    local dirty cur
+    dirty=$(git -C "$wt" status --porcelain 2>/dev/null)
+    cur=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -z "$dirty" ] && [ "$cur" = "$branch" ]; then
+      printf '%s\n' "$wt"; return 0
+    fi
+    git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
+  elif [ -e "$wt" ]; then
+    # non-worktree collision at the path (leftover from a crash): move aside, never delete.
+    mv -f "$wt" "${TMPDIR:-/tmp}/wave-wt-stale.$id.$$.$RANDOM" 2>/dev/null || true
+  fi
+  git -C "$repo" worktree prune 2>/dev/null || true
+
+  mkdir -p "$repo/.claude/worktrees" 2>/dev/null || true
+  # Reuse the branch if it already exists (a resume that lost only its checkout), else create it
+  # off HEAD.
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$repo" worktree add "$wt" "$branch" >/dev/null 2>&1 || return 1
+  else
+    git -C "$repo" worktree add -b "$branch" "$wt" >/dev/null 2>&1 || return 1
+  fi
+  printf '%s\n' "$wt"
+}
+
+# Abort handler for `_wave_run`'s INT/TERM trap: kill every still-live wave PID then reap, so an
+# operator ctrl-C never leaves an orphaned `claude -p` (mock) child. `_WAVE_PIDS` is a GLOBAL (not a
+# `_wave_run` local) precisely so this handler can reach it while `_wave_run` is on the stack. The
+# empty-guard `${arr[@]+...}` keeps `set -u` happy when the trap fires before any PID is recorded.
+_wave_abort() {
+  local p
+  for p in ${_WAVE_PIDS[@]+"${_WAVE_PIDS[@]}"}; do
+    kill "$p" 2>/dev/null
+  done
+  wait 2>/dev/null
+  echo "[orchestrate] [wave] aborted; killed + reaped the wave PID set (no orphaned children)." >&2
+  return 130
+}
+
+# _wave_run <megadir> <roadmap>: spawn the admitted wave, reap on completion, drain on sibling fail.
+# Computes the admitted set via `_wave_gate` (its `run<TAB>id` lines). For each admitted sub-goal:
+#   * skip an already-checked box (idempotent resume, invariant 1),
+#   * stand up its worktree (`_wave_worktree`: reuse-clean-else-recreate, never blind add),
+#   * build its prompt (`_build_prompt`) and BACKGROUND a session via `_run_one_session`,
+#     cd'd INTO the worktree so siblings are genuinely isolated,
+#   * record `pid -> sg-id` in the index-aligned reap map (`_WAVE_PIDS` / `wave_ids`).
+# Then the REAP LOOP polls all live PIDs with `kill -0` (NOT `wait -n`, bash 4.3+). As each PID
+# exits it is reaped with `wait` (retrieves the status bash cached for the finished job) and the
+# GROUNDED completion check runs for THAT sub-goal: its box must be flipped in the SHARED
+# $megadir/ROADMAP.md (read via `_subgoals`; the SESSION flips its own box, we only CHECK, never
+# `cmd_flip` here).
+#
+# Failure semantics (invariant 5 / failure-modes table "Sibling session exits nonzero mid-wave"): a
+# sub-goal that exits NONZERO or dies with its box UNFLIPPED marks the wave failed, but in-flight
+# siblings are LET DRAIN to completion in their isolated worktrees (the reap loop never breaks early
+# and never kills a healthy sibling); the run returns nonzero only AFTER every wave PID is reaped.
+# The INT/TERM `trap` reaps+kills the whole PID set on an abort so nothing is orphaned.
+#
+# Returns 0 iff every admitted sub-goal completed with a flipped box; nonzero otherwise (incl. a
+# worktree-setup failure). An empty admitted set (all deferred / all already checked) is a no-op 0.
+_wave_run() {  # megadir roadmap
+  local megadir="$1" roadmap="$2"
+  local repo; repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null)
+  [ -n "$repo" ] || { echo "[orchestrate] [wave] '$megadir' is not inside a git repo; cannot stand up worktrees." >&2; return 64; }
+
+  # Reap map = index-aligned plain arrays (bash 3.2 has no assoc arrays). `_WAVE_PIDS` is global so
+  # `_wave_abort` can reach it; the rest are locals.
+  _WAVE_PIDS=()
+  local wave_ids=() wave_done=() wave_pfiles=()
+  local wave_failed=0 spawned=0
+
+  # Reap/kill the wave PID set on an abort so no `claude -p` (mock) child is orphaned. Cleared
+  # before the normal return paths below.
+  trap '_wave_abort' INT TERM
+
+  local decision id gf branch wt route_flags rmodel reffort pfile pid checked
+  while IFS=$'\t' read -r decision id; do
+    [ "$decision" = run ] || continue
+    # Idempotent resume: a box already checked is skipped, never re-run.
+    checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
+    [ "$checked" = 1 ] && { _say "[orchestrate] [wave] $id already checked; skipping (idempotent)."; continue; }
+
+    gf=$(_goalfile "$megadir" "$id")
+    branch=$(_sg_branch "$gf" "$id")
+    if ! wt=$(_wave_worktree "$repo" "$id" "$branch"); then
+      echo "[orchestrate] [wave] $id: worktree setup failed; marking wave failed." >&2
+      wave_failed=1
+      continue
+    fi
+
+    # Per-sub-goal model/effort routing (matches cmd_run); absent hint -> no flag -> inherit.
+    route_flags=""
+    IFS=$'\t' read -r rmodel reffort < <(_route "$gf")
+    [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
+    [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
+
+    pfile=$(mktemp)
+    _build_prompt "$megadir" "$id" > "$pfile"
+    _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
+
+    # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
+    # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
+    # path (deterministic-handoff regen is TASK-005), so losing it in the subshell is fine. The
+    # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
+    ( cd "$wt" 2>/dev/null && _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
+    pid=$!
+    _WAVE_PIDS+=("$pid")
+    wave_ids+=("$id")
+    wave_pfiles+=("$pfile")
+    wave_done+=(0)
+    spawned=$((spawned + 1))
+    _say "[orchestrate] [wave] spawned $id (pid $pid) in $wt"
+  done < <(_wave_gate "$megadir" "$roadmap")
+
+  # Empty wave (nothing admitted, or every admitted box already checked): not a failure unless a
+  # worktree setup already failed above.
+  if [ "$spawned" = 0 ]; then
+    trap - INT TERM
+    return "$wave_failed"
+  fi
+
+  # Reap loop: poll ALL live PIDs with `kill -0` (the `_run_session_watchdog` pattern, NOT `wait -n`
+  # which is bash 4.3+/absent on macOS). As each PID exits, reap it with `wait`, then run the
+  # grounded box-flip check for THAT sub-goal. A nonzero exit OR an unflipped box marks the wave
+  # failed but does NOT break the loop: in-flight siblings DRAIN to completion (never killed).
+  local remaining="$spawned" i rc box
+  while [ "$remaining" -gt 0 ]; do
+    for i in $(seq 0 $((spawned - 1))); do
+      [ "${wave_done[$i]}" = 1 ] && continue
+      pid="${_WAVE_PIDS[$i]}"; id="${wave_ids[$i]}"
+      kill -0 "$pid" 2>/dev/null && continue   # still in-flight -> leave it alone (do not kill)
+      rc=0; wait "$pid" 2>/dev/null || rc=$?    # exited -> reap the cached status
+      wave_done[i]=1
+      remaining=$((remaining - 1))
+      rm -f "${wave_pfiles[$i]}" 2>/dev/null
+      box=$(_subgoals "$roadmap" | awk -F'\t' -v x="$id" '$1==x {print $3}')
+      if [ "$rc" != 0 ]; then
+        wave_failed=1
+        _emit_event "$megadir" "$id" blocked "wave session exited nonzero ($rc)"
+        echo "[orchestrate] [wave] $id session exited nonzero ($rc); draining siblings, then failing." >&2
+      elif [ "$box" != 1 ]; then
+        wave_failed=1
+        _emit_event "$megadir" "$id" blocked "wave: box not flipped (no self-claim)"
+        echo "[orchestrate] [wave] $id finished but did not flip its ROADMAP box; draining siblings, then failing." >&2
+      else
+        _emit_event "$megadir" "$id" shipped "wave: box checked"
+        _say "[orchestrate] [wave] $id complete (box checked)."
+      fi
+    done
+    [ "$remaining" -gt 0 ] && sleep "${WAVE_POLL_SECS:-0.2}"
+  done
+
+  trap - INT TERM
+  return "$wave_failed"
+}
+# -----------------------------------------------------------------------------------------------
+
 cmd_run() {
   local dir="" dry=0 step=0 stream=0 board_arg=""
   while [ $# -gt 0 ]; do
