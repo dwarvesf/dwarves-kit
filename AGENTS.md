@@ -102,6 +102,21 @@ that plainly; the anti-rationalization hook is the backstop for premature
 completion under Claude Code, but the honesty obligation is yours under any
 runtime.
 
+**Deployable-done (ADR-0028, reusing ADR-0025).** DEPLOYABLE work is anything that runs
+somewhere , a service, a daemon, a feature behind a flag, or any change `lib/proof-ledger.sh
+classify` puts in its `stateful` class (deploy / rollout / production / migration / schema /
+database / persistent-state signals in the diff or commit subjects). For deployable work,
+`done` = **a deploy-proof + a UAT/acceptance run**: the existing ADR-0025 stateful proof
+shape (a recorded run with `Command:`/`Exit:` AND a `rollback` note or `[UNAVAILABLE:
+reason]`) PLUS a UAT/acceptance line recording that the change was exercised in the target
+environment and accepted. This is enforced at ship by the SAME `hooks/ship-gate.sh` ->
+`proof-ledger.sh check` wall every stateful change already passes through , the ship-gate
+already DETECTS deployability (it classifies `stateful`), so a deployable item marked done
+without the deploy-proof is blocked exactly like any other unproven stateful change, or
+needs a logged override (`proof-ledger.sh override <slug> "<reason>"`). INERT, library,
+refactor, and docs work (the `inert`/`behavioral` classes) is unchanged , it owes no
+deploy-proof or UAT.
+
 ## 4. Pause if (ask a human)
 
 Stop and ask a human before acting on any of these. These are decisions with
