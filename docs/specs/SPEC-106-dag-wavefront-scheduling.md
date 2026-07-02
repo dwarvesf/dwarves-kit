@@ -175,20 +175,25 @@ into `cmd_run` (already 154 lines, L335-489). `depends` edges declared per task 
 wavefront spec; it eats its own dogfood).
 
 ### Phase 0: Surgical refactor (zero behavior change; unblocks byte-identity)
-- [ ] TASK-000: Extract `_run_one_session()` , lift the three run-paths (watchdog / `--stream` /
+- [x] TASK-000: Extract `_run_one_session()` , lift the three run-paths (watchdog / `--stream` /
   plain, L418-439) out of `cmd_run` into one helper. Acceptance: `bash tests/test-orchestrate.sh`
   stays fully green (byte-identical serial behavior); `cmd_run` shrinks; no wave code yet.
+  DONE (commit b5d4d17, verified: task-verifier PASS 4/4, test-orchestrate 59/59).
 
 ### Phase 1: Foundation primitives (no scheduling change yet)
-- [ ] TASK-001: `_ready_set()` , emit every sub-goal with checked==0 AND `_sg_deps_blocked` empty
+- [x] TASK-001: `_ready_set()` , emit every sub-goal with checked==0 AND `_sg_deps_blocked` empty
   (reuses L133), stdout `id<TAB>policy`. Acceptance: unit test over fixtures (linear, diamond, gated)
   returns the correct ready set; on a no-deps ROADMAP it returns exactly `_next`'s first pick
   (size-1 superset invariant). depends: none.
-- [ ] TASK-002: `_lock`/`_unlock` (mkdir at `$megadir/.orchestrate/flip.lock` + PID file;
+  DONE (commit 01544a0, verified: task-verifier PASS 4/4; wavefront 16/16, orchestrate 59/59). Added
+  the house source-guard so the file is unit-test-sourceable (behavior-preserving).
+- [x] TASK-002: `_lock`/`_unlock` (mkdir at `$megadir/.orchestrate/flip.lock` + PID file;
   PID-liveness stale reclaim via `rmdir`, `[ -n ]` guarded, `FLIP_LOCK_STALE_SECS` default 120) +
   `cmd_flip <megadir> <id>` flipping the SHARED absolute-path ROADMAP under the lock (write-temp-then
   -`mv`). Acceptance: N parallel `flip` on distinct boxes -> ROADMAP well-formed, no torn lines; a
   test that kills a flip mid-lock -> next flip reclaims (PID dead). depends: none.
+  DONE (commit 21cceb0 + fix 73e342c, verified: task-verifier PASS 4/4 with adversarial live-holder +
+  6-way parallel hammer; wavefront 29/29, orchestrate 59/59). 3-state PID staleness; `FLIP_LOCK_POLL_SECS`=0.1.
 
 ### Phase 2: Core wave loop
 - [ ] TASK-003: `_wave_gate()` , greedy-in-ROADMAP-order admission: admit a ready sub-goal iff (a)
@@ -198,6 +203,8 @@ wavefront spec; it eats its own dogfood).
   Touches-less sub-goal would be wrongly admitted. Acceptance: (i) exit-criterion 2 (Touches-declaring
   but OVERLAPPING pair -> second deferred, negative control); (ii) a Touches-LESS ready set ->
   all-`defer` (opt-in gate holds). depends: TASK-001.
+  DONE (commit b3793bd, verified: task-verifier PASS 6/6 with independent adversarial fixture + `$-`
+  no-`set -e`-leak probe; wavefront 35/35). Reuses dispatch-gate via SUBPROCESS to contain its `set -e`.
 - [ ] TASK-004a: `_wave_run()` primitive , spawn the `run` set (each in `.claude/worktrees/<id>`,
   reuse-or-recreate on a stale worktree: reuse only if clean + branch/box matches the resume, else
   recreate; never blind `git worktree add`), background via `_run_one_session`, maintain a
@@ -207,17 +214,29 @@ wavefront spec; it eats its own dogfood).
   temporal overlap (mock-barrier fifo: session A's mock blocks until B's mock signals; timeout =
   not-concurrent = FAIL), both land; a sibling-fail case drains + reports failed, no orphans.
   depends: TASK-000, TASK-001, TASK-002.
+  DONE (commit d028331, verified: task-verifier PASS, 9 flake-free runs, EMPIRICALLY reproduced
+  serial-fails-the-mock-barrier; the test caught+fixed a live awk+mv flip race, now flips via the
+  locked CLI). Coverage follow-up for TASK-009: add isolated tests for the "exits 0 but box unflipped"
+  branch and the internal `checked=1` skip.
 - [ ] TASK-004b: Wire `_wave_run` into `cmd_run` , size-dispatch on ADMITTED count: run
   `_wave_gate` first; if `admitted<=1` OR `WAVE_CAP==1` -> the UNTOUCHED serial body on the first
   ready pick (`_next`'s pick); else -> `_wave_run` on the admitted set. Recompute-and-launch
   serialized under the flip lock. Acceptance: exit-criterion 1 (two Touches-disjoint independents run
   concurrently at `WAVE_CAP=2`) AND a no-deps/Touches-less mega-goal takes the serial body
   (admitted==0). depends: TASK-003, TASK-004a.
-- [ ] TASK-004c: Wave convergence , after a wave's sessions land on their worktree branches, merge
-  them back one-at-a-time under the flip lock, reusing `lib/mega-merge.sh` (its merge SEMANTICS
-  untouched; this only SEQUENCES the merges). Acceptance: two concurrent landed sub-goals both merge
-  to the mega-goal base with no race; a same-file cross-wave edit is detected, not clean-merged wrong.
-  depends: TASK-004b.
+  DONE (commit 5ebdcfa, verified: task-verifier PASS 4/4; byte-identity diff +39/-0 serial body
+  untouched, guard short-circuits at default; WAVE_CAP=0/abc/-1 exit 64; wave path reachable via
+  barrier test; test-orchestrate 59/59, wavefront 53/53 x3 no flake).
+- [ ] TASK-004c: Wave convergence SEQUENCER , `_wave_converge` merges landed wave sub-goals
+  one-at-a-time in ROADMAP order under the flip lock via a MOCKABLE merge hook (real `gh pr merge`
+  through `lib/mega-merge.sh` rides with ID-085-followup, same deferral as the flip-contract , waves
+  are off at default WAVE_CAP=1, and real merge needs `gh`/real PRs). `mega-merge.sh` semantics
+  untouched (only sequenced). Acceptance: a mock-merge test asserts two landed sub-goals merge
+  strictly one-at-a-time (never concurrently) in ROADMAP order under the lock; a same-file cross-wave
+  edit is flagged, not silently clean-merged. depends: TASK-004b.
+  DONE (commit 44f36d8, verified: task-verifier , serialization proven by interleave assertion,
+  same-file flagged, `mega-merge.sh` untouched, byte-identical serial; test-orchestrate 59/59,
+  wavefront 61/61). `WAVE_MERGE_CMD` mockable; real gh merge deferred to ID-085-followup.
 - [ ] TASK-005: Per-edge HANDOFF (read AND write, keyed on DEPENDENTS) , a sub-goal writes
   `HANDOFF-<own-id>.md` iff some sub-goal `depends` on it (has dependents); the session-write
   instruction (L282) and `handoff-gen` (L471) target that file, else plain `HANDOFF.md`.
@@ -227,6 +246,9 @@ wavefront spec; it eats its own dogfood).
   CAP>1. Acceptance: a diamond child prompt contains both parents' handoffs; the LINEAR/no-dependents
   fixture writes+reads plain `HANDOFF.md` byte-for-byte (tests/test-orchestrate.sh
   L42,80,93,157,179,408-485 green). depends: TASK-004b.
+  DONE (commit 089ea23, verified: task-verifier PASS 5/5; write keyed on DEPENDENTS , V-CRIT-6 root
+  case passes; read-side additive `elif`, fallback + diamond tested; test-orchestrate 59/59 zero-diff,
+  wavefront 67/67).
 
 ### Phase 3: Resilience, gate semantics, regression
 - [ ] TASK-006: Idempotent resume + wait-vs-complete termination , `cmd_run` recomputes ready from
