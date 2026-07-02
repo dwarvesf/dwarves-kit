@@ -24,3 +24,23 @@ forbidden); a plain branch is the fallback.
 **Alternatives rejected.** (a) manual `git -C dwarves-kit worktree add` , forbidden by CLAUDE.md;
 (b) delegate the whole SDD loop to one `Agent(isolation:worktree, cwd:dwarves-kit)` , too coarse for
 an interactive kit command loop where the lead drives `/spec` -> `/spec-validate` -> `/kit:execute`.
+
+## 2026-07-03 , spec-validate found a load-bearing gap the brief missed (STOP for Han)
+
+**Context.** 5-lens adversarial spec-validate on SPEC-106.
+**Finding (V-CRIT-1).** The brief's central reuse claim ("reuse `dispatch-gate.sh` across wave
+pairs") assumes sub-goals declare `## Touches`. Evidence: 0 of 684 real sub-goal files have it, and
+no generator emits one. `gate_disjoint` returns exit-2 REJECT without Touches -> `gate_plan`
+serializes -> concurrency is inert on every real mega-goal. The brief's own "unprovable = serialize
+(conservative)" becomes the always-case.
+**Why this is a STOP, not a proceed.** It is a scope decision the brief + ADR-0030 do not cover
+(Option A expands scope into the sub-goal generator; Option B ships opt-in + defers). A and B change
+the task list and whether the feature works on real data now. The goal says "EXECUTES that brief,
+does not re-design" + "unclassifiable state = stop with a reason" -> autonomy gate. Recorded as
+SPEC-106 Open-question Q1 with a recommendation (Option A minimal). Loop stopped; `.planning/
+BLOCKER-spec-touches.md` written.
+**The ~19 mechanical findings** (ROADMAP-in-worktree flip target, convergence task, greedy
+admission, `_run_one_session` extraction, TASK-004 split, per-edge HANDOFF write-side, `gate!`,
+`WAVE_CAP`, mkdir-lock hardening, mock-barrier test, gitignore, etc.) are captured in the spec's
+`## Review` section and will be applied in ONE coherent revision AFTER Q1 is decided (they interact
+with the task list Q1 reshapes), to avoid revising twice.

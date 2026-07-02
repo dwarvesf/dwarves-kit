@@ -1,6 +1,6 @@
 # Spec: DAG-wavefront scheduling in the orchestrator
 Generated: 2026-07-03
-Status: APPROVED
+Status: DRAFT (spec-validate: NEEDS REVISION , blocked on Open-question Q1, a scope decision for Han)
 Lane: full
 Authorizes: ADR-0030 (Accepted) · Source brief: docs/specs/DECISION-BRIEF-dag-wavefront.md (board ID-084)
 
@@ -218,5 +218,81 @@ into `cmd_run` (already 154 lines, L335-489, the file's split candidate).
   New shared helper; wave-completion wait is a `kill -0` poll (as `_run_session_watchdog`), not
   `wait -n` (bash 4.3+). Arrays empty-guarded `${arr[@]+"${arr[@]}"}` per `lib/mega-merge.sh:224`.
 
+## Review
+
+### Verdict: NEEDS REVISION (spec-validate, 2026-07-03, 5-lens adversarial)
+
+One scope decision blocks re-validation (see Open questions Q1); the rest are fixes applied in the
+revision pass. Findings, deduped across the five lenses:
+
+**Load-bearing (blocks): the `## Touches` reuse assumption is false.**
+- V-CRIT-1: 0 of 684 real sub-goal files carry a `## Touches` section; no generator emits one.
+  `dispatch-gate.sh gate_disjoint` returns exit-2 REJECT with no Touches, and `gate_plan` maps that
+  to "serialize". So on every real mega-goal, every wave pair serializes , concurrency is inert on
+  real data; the feature ships as a serial loop unless sub-goals gain Touches. -> Q1 decides scope.
+
+**Critical (fix in revision, fork-independent):**
+- V-CRIT-2: ROADMAP.md is per-worktree. A session flipping its box in its own worktree checkout is
+  invisible to the driver reading the shared mega-goal-dir copy , grounded completion (L449) never
+  sees the flip; the lock is irrelevant (different files). Fix: the `flip` helper targets the
+  SHARED mega-goal-dir ROADMAP via absolute path (outside any worktree); completion is read there.
+- V-CRIT-3: No wave-convergence step. N green sub-goal branches never merge back to advance the
+  mega-goal. Fix: add a convergence task , the lead merges wave branches one-at-a-time under a
+  merge lock (reusing `mega-merge.sh` one-at-a-time; its SEMANTICS stay untouched per scope).
+- V-CRIT-4: `_wave_gate` partition undefined , pairwise disjointness does not compose (A⊥B, B⊥C,
+  A∩C). Fix: greedy-in-ROADMAP-order admission , admit a ready sub-goal iff it proves disjoint
+  against every already-admitted wave member, stop at CAP, defer the rest. No-deps falls out
+  byte-identical.
+- V-CRIT-5: TASK-004 not atomic. Split into 004a (`_wave_run` spawn/reap primitive: worktree-per-sg,
+  pid->sg-id map, `kill -0` poll-all, done-vs-died distinction, siblings drain on a sibling's
+  failure, trap to reap/kill all wave PIDs) and 004b (wire into `cmd_run` at the grounded-completion
+  contract L448-455 + next-wave recompute, serialized under the flip lock to avoid CAP overshoot /
+  double-launch).
+- V-CRIT-6: Per-edge HANDOFF fixes only the READ side (TASK-005 touches `_build_prompt`); the WRITE
+  side still clobbers , the session instruction (L282 "overwrite HANDOFF.md") and `handoff-gen`
+  (L471) both write one hot file. Fix: conditional rule , no-deps writes plain `HANDOFF.md`
+  (byte-identical, keeps tests/test-orchestrate.sh green); deps write/read `HANDOFF-<id>.md`.
+  Reconcile the `DETERMINISTIC_HANDOFF` gen path (L465-478) under CAP>1.
+- V-CRIT-7: `gate` human-stop silently narrowed global->chain , an autonomy-gate weakening: the
+  scheduler mutates other branches while a human is at a checkpoint. Fix: keep `gate` = chain-stop
+  but add `gate!` = stop-all opt-out; state the semantic change explicitly.
+
+**Warnings (fix in revision):** event-log append atomicity only holds under PIPE_BUF (512B) , cap
+the `note` field; reader-writer torn read of ROADMAP , reader takes the lock or flips are
+write-temp-then-`mv`; `WAVE_CAP` env var (name it, default 2, validate `>=1` numeric, parse like
+`WATCHDOG_STALL_SECS`) + add to Interfaces "Consumes"; pin helper stdout wire formats
+(`_ready_set` -> `id<TAB>policy`; `_wave_gate` -> `run<TAB>id` / `defer<TAB>id`; `_wave_run` consumes
+`run` lines); extract a shared `_run_one_session` helper FIRST so serial stays byte-identical and all
+three run-paths (watchdog/--stream/plain) are preserved for both serial and wave; stale-worktree
+(edge 4) reuse-or-clean rule pinned into 004a (detect dirty-vs-clean, never blind `git worktree add`);
+mkdir-lock at `$dir/.orchestrate/flip.lock` (not `/tmp`), PID-liveness stale reclaim via `rmdir` +
+`[ -n "$lockdir" ]` guard (never `rm -rf`), timeout value stated; termination (ready-empty +
+unchecked-remain -> wait, not false-complete) owned by a task + acceptance; serialize order
+deterministic (ROADMAP order), unprovable-disjoint logged (safe vs corruption, not vs wrong-ordering);
+gate exit-2 (undeclared) handled as quiet conservative serialize, distinct from exit-1 (overlap);
+inter-task `depends TASK-NN` edges declared; concurrency test needs a mock-barrier fifo to PROVE
+temporal overlap (a serial impl must FAIL criterion 1); add a criterion asserting a real
+Touches-less mega-goal serializes (makes the V-CRIT-1 gap visible, not hidden); `.gitignore` add
+`_meta/megagoals/**/{HANDOFF*.md,.orchestrate/}` + `*.session.log` + `*.stream.jsonl` (session logs
+can carry resolved `op://` values). Security surface otherwise minimal; stdin-injection discipline is
+preserved by keeping the multi-parent concat inside `_build_prompt`'s stdout.
+
 ## Open questions
-(none yet; the loop appends here + stops if it hits a decision this spec does not cover)
+
+- **Q1 (BLOCKS re-validation , scope decision for Han).** Sub-goal files carry no `## Touches`
+  section (0/684) and no generator emits one, so `dispatch-gate.sh` reuse serializes every real wave
+  , the feature is inert on real mega-goals as scoped. Two ways forward:
+  - **Option A , make it work now (expands scope):** add a `## Touches` schema for sub-goal files +
+    teach the sub-goal generator (`commands/mega.md`) to emit it, as part of THIS goal. Cost: the
+    brief's "In" scope did not include the generator; adds an authoring convention others depend on.
+    Payoff: concurrency actually runs on real mega-goals; delivers the operator's ask.
+  - **Option B , ship opt-in + defer (tight scope):** ship the wavefront machinery + fixtures + a
+    documented "concurrency is opt-in: a sub-goal must declare `## Touches` to be wave-eligible;
+    absent it, it serializes (safe)"; file the generator/schema retrofit as a follow-up board row.
+    Cost: inert on today's mega-goals until the follow-up lands. Payoff: stays inside the brief's
+    literal "In" list; smallest diff; fully reversible.
+  - **Recommendation: Option A (minimal).** Shipping a concurrency feature that never runs
+    concurrently on any real mega-goal defeats the brief's own motivation (the kit-telemetry serial
+    cost). The generator change is small (an optional `## Touches` block in the sub-goal template) and
+    the retrofit of existing sub-goals can stay lazy (they serialize until edited). But it does widen
+    scope past the brief, so it is Han's call, not the loop's.
