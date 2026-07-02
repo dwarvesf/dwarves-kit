@@ -661,6 +661,75 @@ op_seq=$(tr '\n' ' ' < "$MERGE_LOG_O" | sed 's/ *$//')
 [ "$op_seq" = "enter:SG-02:301 exit:SG-02:301" ] && pass "converge o: only the real-PR sub-goal (SG-02) merged; placeholder SG-01 skipped" \
   || fail "converge o: sequence '$op_seq' != 'enter:SG-02:301 exit:SG-02:301'"
 
+# ==================== FIXTURE H: per-edge HANDOFF (SPEC-106 TASK-005) ====================
+# WRITE keyed on DEPENDENTS (a sub-goal with dependents writes HANDOFF-<id>.md); READ keyed on a
+# sub-goal's OWN deps, injecting each dep-parent's HANDOFF-<parent>.md with a plain-HANDOFF.md
+# fallback. The linear/no-dependents path stays plain (byte-identical, guarded by test-orchestrate).
+HB="$TMP/mg-handoff-edge"; mkdir -p "$HB"
+cat > "$HB/ROADMAP.md" <<'EOF'
+# Mega-goal: diamond-handoff
+## Sub-goals
+- [ ] SG-01 root , auto , PR #__
+- [ ] SG-02 left , auto , PR #__ , depends SG-01
+- [ ] SG-03 right , auto , PR #__ , depends SG-01
+- [ ] SG-04 join , gate , PR #__ , depends SG-02 SG-03
+EOF
+echo "POINTER: resume the mega-goal" > "$HB/POINTER_PROMPT.md"
+make_goal "$HB" SG-01; make_goal "$HB" SG-02; make_goal "$HB" SG-03; make_goal "$HB" SG-04
+
+# (a) dependents detection: SG-01 has dependents; SG-04 (the join leaf) has none.
+_sg_dependents "$HB/ROADMAP.md" SG-01 && pass "edge a: SG-01 has dependents" || fail "edge a: SG-01 should have dependents"
+_sg_dependents "$HB/ROADMAP.md" SG-04 && fail "edge a: SG-04 (leaf) should have NO dependents" || pass "edge a: SG-04 leaf has no dependents"
+
+# (a) WRITE side: SG-01's prompt tells it to overwrite the per-edge HANDOFF-SG-01.md.
+p01=$(_build_prompt "$HB" SG-01)
+printf '%s' "$p01" | grep -q 'overwrite HANDOFF-SG-01.md with' \
+  && pass "edge a: SG-01 (has dependents) write-target is HANDOFF-SG-01.md" \
+  || { fail "edge a: SG-01 write-target not per-edge"; printf '%s\n' "$p01" | grep -i overwrite; }
+
+# (a) READ side: SG-04 injects BOTH parents' per-edge handoffs.
+printf 'HOTFEED-FROM-SG02-unique\n' > "$HB/HANDOFF-SG-02.md"
+printf 'HOTFEED-FROM-SG03-unique\n' > "$HB/HANDOFF-SG-03.md"
+p04=$(_build_prompt "$HB" SG-04)
+{ printf '%s' "$p04" | grep -q 'HOTFEED-FROM-SG02-unique' && printf '%s' "$p04" | grep -q 'HOTFEED-FROM-SG03-unique'; } \
+  && pass "edge a: SG-04 prompt injects BOTH dep-parent handoffs (HANDOFF-SG-02 + HANDOFF-SG-03)" \
+  || { fail "edge a: SG-04 missing a parent handoff"; printf '%s\n' "$p04"; }
+
+# (b) fallback: SG-02 depends SG-01, but SG-01 wrote only plain HANDOFF.md (no per-edge file)
+#     -> SG-02 still gets the plain handoff injected (no lost feed-forward).
+HFB="$TMP/mg-handoff-fallback"; mkdir -p "$HFB"
+cat > "$HFB/ROADMAP.md" <<'EOF'
+# Mega-goal: fallback-handoff
+## Sub-goals
+- [ ] SG-01 root , auto , PR #__
+- [ ] SG-02 child , auto , PR #__ , depends SG-01
+EOF
+echo "POINTER: resume" > "$HFB/POINTER_PROMPT.md"
+make_goal "$HFB" SG-01; make_goal "$HFB" SG-02
+printf 'PLAIN-HANDOFF-fallback-unique\n' > "$HFB/HANDOFF.md"   # parent wrote plain; no HANDOFF-SG-01.md
+pfb=$(_build_prompt "$HFB" SG-02)
+printf '%s' "$pfb" | grep -q 'PLAIN-HANDOFF-fallback-unique' \
+  && pass "edge b: absent per-edge file -> child falls back to plain HANDOFF.md" \
+  || { fail "edge b: fallback lost the plain handoff"; printf '%s\n' "$pfb"; }
+
+# (c) linear/no-dependents: plain HANDOFF.md written+read, no per-edge filename anywhere.
+HLN="$TMP/mg-handoff-linear"; mkdir -p "$HLN"
+cat > "$HLN/ROADMAP.md" <<'EOF'
+# Mega-goal: linear-handoff
+## Sub-goals
+- [ ] SG-01 first , auto , PR #__
+- [ ] SG-02 second , auto , PR #__
+EOF
+echo "POINTER: resume" > "$HLN/POINTER_PROMPT.md"
+make_goal "$HLN" SG-01; make_goal "$HLN" SG-02
+printf 'PLAIN-LINEAR-unique\n' > "$HLN/HANDOFF.md"
+pln=$(_build_prompt "$HLN" SG-02)
+{ printf '%s' "$pln" | grep -q 'PLAIN-LINEAR-unique' \
+  && printf '%s' "$pln" | grep -q 'overwrite HANDOFF.md with' \
+  && ! printf '%s' "$pln" | grep -q 'HANDOFF-SG'; } \
+  && pass "edge c: linear/no-deps writes+reads plain HANDOFF.md (no per-edge filename)" \
+  || { fail "edge c: linear path not plain"; printf '%s\n' "$pln"; }
+
 # ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
 for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$CVR" "$CFR" "$CPR"; do
   [ -d "$wtrepo" ] || continue

@@ -340,3 +340,37 @@ coarse `date +%s` gap, and portable , macOS BSD `date` has no sub-second `%N`).
 Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identical serial invariant holds);
 `bash tests/test-orchestrate-wavefront.sh` 61/61 (53 prior + 8 new: m serial-order proof, n same-file
 flag + no-merge + message, o placeholder-PR skip). Stable over repeated runs, no flake.
+
+## 2026-07-03 14:20 TASK-005 per-edge HANDOFF keyed on dependents
+
+Context. One hot `HANDOFF.md` per mega-goal; under CAP>1 parallel siblings would clobber it. Fix:
+a sub-goal writes `HANDOFF-<own-id>.md` IFF it HAS DEPENDENTS; a child injects each dep-parent's
+`HANDOFF-<parent>.md`, falling back to plain `HANDOFF.md` when the per-edge file is absent.
+
+Decision (dependents detection). New read-only helper `_sg_dependents <roadmap> <id>` (exit 0 iff
+some OTHER sub-goal's `depends` names `<id>`). It reuses the exact `depends[^,]* -> SG-[0-9]+` token
+parse from `_sg_deps_blocked`; no new format. This is the WRITE-side key (dependents), distinct from
+the READ-side key (a sub-goal's OWN `depends`).
+
+Decision (write target). `handoff-gen` was left UNTOUCHED: it always writes `$dir/HANDOFF.md`, and
+the orchestrator post-`mv`s it to `$dir/HANDOFF-<id>.md` when `_sg_dependents "$roadmap" "$id"` holds
+(the just-completed `$id`). Smallest diff, no risky edit to the Python generator (the task allowed
+post-mv). The prompt-instruction write-target (`_build_prompt`) is set the same way: `hf="HANDOFF.md"`
+by default, `HANDOFF-<id>.md` only when `$id` has dependents.
+
+Decision (read side + fallback). `_build_prompt` derives `roadmap="$dir/ROADMAP.md"` internally (no
+signature change, so both call sites at L695/L983 are untouched) and parses `<id>`'s OWN `depends`.
+If non-empty, a NEW branch injects each parent's `HANDOFF-<MM>.md`, falling back to `$dir/HANDOFF.md`
+per-parent when absent. If empty, control falls through to the ORIGINAL plain-`HANDOFF.md` block,
+now guarded as an `elif` but otherwise byte-for-byte the pre-change code.
+
+Why byte-identical for the no-deps case. Every real mega-goal today declares zero `depends`, so
+`_sg_dependents` returns nonzero (write stays plain `HANDOFF.md`, the printf renders identical text
+via `%s`) and `mydeps` is empty (read takes the untouched `elif` plain path). The deterministic
+`mv` is gated on dependents too, so it never fires without deps. Guard: `tests/test-orchestrate.sh`
+stayed 59/59 (its HANDOFF assertions at L42/80/93/157/179/408-485 are the byte-identity tripwire).
+
+Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds);
+`bash tests/test-orchestrate-wavefront.sh` 67/67 (61 prior + 6 new: FIXTURE H diamond dependents
+detection, SG-01 per-edge write-target, SG-04 dual-parent read injection, plain-HANDOFF fallback,
+linear no-per-edge-filename). Stable across repeated runs.

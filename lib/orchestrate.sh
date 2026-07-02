@@ -238,6 +238,24 @@ _sg_deps_blocked() {  # roadmap raw-line
   printf '%s' "${blockers# }"
 }
 
+# Dependents test (SPEC-106 TASK-005): does any OTHER sub-goal's `depends` list name <id>?
+# Exit 0 iff <id> HAS DEPENDENTS (something feeds forward FROM it), else nonzero. Reuses the same
+# `depends SG-NN` token parse as _sg_deps_blocked (no new format). Read-only. This is the WRITE-side
+# key: a sub-goal writes HANDOFF-<id>.md only when this holds; a leaf / linear-tail has none and
+# keeps writing plain HANDOFF.md, so the no-deps mega-goal stays byte-identical.
+_sg_dependents() {  # roadmap id
+  local roadmap="$1" id="$2" other _p _c line deps d
+  while IFS=$'\t' read -r other _p _c; do
+    [ "$other" = "$id" ] && continue
+    line=$(_sg_line "$roadmap" "$other")
+    deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+    for d in $deps; do
+      [ "$d" = "$id" ] && return 0
+    done
+  done < <(_subgoals "$roadmap")
+  return 1
+}
+
 # Derive the per-mega-goal BOARD.md (kanban table in backlog.sh's row format, so backlog.sh
 # renders it and the cockpit format stays consistent). State = shipped if the box is checked,
 # else the replayed event status, else dep-analysis (queued=ready / parked=blocked). The
@@ -416,7 +434,29 @@ _build_prompt() {
   #                      next action + read-pointers so re-discovery becomes a read.
   #   WARM DECISIONS.md -- append-only ledger of invariants + dead-ends; injected as a POINTER
   #                      only (path + size), read on demand, so it never bloats the prompt.
-  if [ -s "$dir/HANDOFF.md" ]; then
+  # Per-edge feed-forward (SPEC-106 TASK-005): if <id> DECLARES deps, inject each dep-PARENT's
+  # HANDOFF-<MM>.md (falling back to plain HANDOFF.md when the per-edge file is absent, so a chain
+  # root that only wrote plain still feeds forward). A sub-goal with NO deps takes the ORIGINAL
+  # plain path below UNCHANGED (byte-identical) -- do not fold the two together.
+  local roadmap="$dir/ROADMAP.md" mydeps=""
+  [ -f "$roadmap" ] && mydeps=$(printf '%s' "$(_sg_line "$roadmap" "$id")" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+  if [ -n "$mydeps" ]; then
+    local mm hp lines
+    printf '\nHOT HANDOFF from dep-parent(s) (verify before trusting):\n'
+    for mm in $mydeps; do
+      hp="$dir/HANDOFF-$mm.md"
+      [ -s "$hp" ] || hp="$dir/HANDOFF.md"   # fallback: parent wrote plain HANDOFF.md, no per-edge file
+      [ -s "$hp" ] || continue
+      lines=$(wc -l < "$hp" | tr -d ' ')
+      printf '\n-- from %s (%s):\n' "$mm" "$(basename "$hp")"
+      if [ "$lines" -gt "$HANDOFF_MAX_LINES" ]; then
+        head -n "$HANDOFF_MAX_LINES" "$hp"
+        printf '[... %s truncated at %s/%s lines; read the file for the rest]\n' "$(basename "$hp")" "$HANDOFF_MAX_LINES" "$lines"
+      else
+        cat "$hp"
+      fi
+    done
+  elif [ -s "$dir/HANDOFF.md" ]; then
     local lines; lines=$(wc -l < "$dir/HANDOFF.md" | tr -d ' ')
     printf '\nHOT HANDOFF from the previous sub-goal (verify before trusting):\n'
     if [ "$lines" -gt "$HANDOFF_MAX_LINES" ]; then
@@ -431,7 +471,12 @@ _build_prompt() {
     printf '\nWARM LEDGER: %s exists (%s lines) -- invariants + dead-ends. Read it on demand before re-deciding; it is NOT inlined here to keep this prompt lean.\n' "$dir/DECISIONS.md" "$dlines"
   fi
   # pi-swarm wording: the next session reads these records, not your transcript.
-  printf '\nWhen you finish: report findings IN the records (overwrite HANDOFF.md with the next action + read-pointers as file:line; append durable invariants/dead-ends to DECISIONS.md), NOT only in your response text. The next sub-goal reads the files, not this transcript.\n'
+  # Per-edge WRITE target (SPEC-106 TASK-005): a sub-goal that HAS DEPENDENTS writes its own
+  # HANDOFF-<id>.md so parallel siblings never clobber one hot file; a leaf / linear-tail keeps
+  # writing plain HANDOFF.md, so the instruction stays byte-identical for the no-dependents case.
+  local hf="HANDOFF.md"
+  { [ -f "$roadmap" ] && _sg_dependents "$roadmap" "$id"; } && hf="HANDOFF-$id.md"
+  printf '\nWhen you finish: report findings IN the records (overwrite %s with the next action + read-pointers as file:line; append durable invariants/dead-ends to DECISIONS.md), NOT only in your response text. The next sub-goal reads the files, not this transcript.\n' "$hf"
 }
 
 cmd_next() {
@@ -1020,6 +1065,12 @@ cmd_run() {
         nid=$(printf '%s' "$nx2" | cut -f1)
         nraw=$(_sg_line "$roadmap" "$nid"); ntitle=$(_sg_title "$nraw" "$nid")
         if "$ORCH_DIR/handoff-gen" "$slog" --dir "$dir" --next-id "$nid" --next-title "$ntitle" --date "$(date -u +%F)"; then
+          # Per-edge WRITE (SPEC-106 TASK-005): handoff-gen always writes $dir/HANDOFF.md; if the
+          # JUST-completed $id HAS DEPENDENTS, rename it to the per-edge HANDOFF-<id>.md so parallel
+          # siblings (CAP>1) never clobber one hot file. No dependents -> leave plain (byte-identical).
+          if _sg_dependents "$roadmap" "$id"; then
+            mv -f "$dir/HANDOFF.md" "$dir/HANDOFF-$id.md" 2>/dev/null || true
+          fi
           _emit_event "$dir" "$id" handoff "deterministic -> $nid"
           _say "[orchestrate] deterministic handoff written for $nid (HANDOFF.md overwritten, DECISIONS.md appended)."
         else
