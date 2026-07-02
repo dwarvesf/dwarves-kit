@@ -42,10 +42,19 @@ bash lib/lane-classify.sh classify "explain mega-merge.sh in the architecture do
 bash tests/test-lane-classify.sh   # 23/23; the new edit-vs-mention block + regression guard
 ```
 
-Pins (in `tests/test-lane-classify.sh`, the SG-03 suite): mention-with-`--files` -> not full;
-edit (`--files lib/…` or `hooks/…`) -> full; a test-only edit that names machinery -> not full;
-semantic `auth` still full with `--files`; **no-`--files` -> current text behavior unchanged**
-(the regression guard). All green on bash 5.x AND bash 3.2 (the macos CI runner).
+Pins (in `tests/test-lane-classify.sh`, the classifier suite created by the prior kit-telemetry
+wave): mention-with-`--files` -> not full; edit (`--files lib/…` or `hooks/…`) -> full; a test-only
+edit that names machinery -> not full; semantic `auth` still full with `--files`; **no-`--files` ->
+current text behavior unchanged** (the regression guard). All green on bash 5.x AND bash 3.2 (the
+macos CI runner).
+
+**Not yet wired into callers (in scope: the discriminator + interface only).** No command passes
+`--files` yet (`commands/assign.md`, `commands/dispatch.md`, `lib/orchestrate.sh:_emit_start` all
+still classify text-only), so the over-gate this fixes still occurs in practice until a follow-up
+wires `--files` at a site that has the touched-file list (the `git diff` at spec->build). That
+wiring is deliberately out of this sub-goal (it owed the signal, not the plumbing); tracked as a
+follow-up in the mega-goal NOTES `## Proposed additions`. This sub-goal ships the capability + its
+proof, not a live behavior change on existing callers.
 
 ## After state
 

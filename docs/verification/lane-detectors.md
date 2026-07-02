@@ -54,6 +54,8 @@ bash tests/test-hooks.sh        # detector pins 218-268 (incl. the 4 new + updat
 bash lib/lane-telemetry.sh misfires   # live: boardless shrinks, shipped-incomplete empties
 ```
 
-Note: the 3 residual boardless runs are legacy (their ledgers predate recording a board ID);
-making every future run self-declare its board ID is a start-wiring/assign concern, out of this
-sub-goal's scope.
+Note: the 3 residual boardless runs are legacy (their ledgers carry no board-linked ID/PR token
+this detector can match). Fully clearing them for future runs needs the START line itself to carry
+a `board=<ID|PR>` field, which neither this sub-goal nor the shipped SG-01 adds today; that is a
+distinct follow-up (add a `board=` field to `gate-ledger.sh start`, tracked in the kit-telem-cleanup
+NOTES `## Proposed additions`), not something SG-01 already covers.

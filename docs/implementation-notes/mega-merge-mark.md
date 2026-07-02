@@ -34,6 +34,17 @@ nothing when empty.
 5.x default. Lesson: test new array code in mega-merge on `/bin/bash` (3.2) locally to match the
 macos CI runner.
 
+## 2026-07-02 TIER-4: mark verifies its own effect
+
+**Context:** TIER-4 security review (Medium): the three `gh` calls are `|| true`, and mark printed
+success + returned 0 unconditionally, so a silent gh no-op (auth / rate-limit / wrong repo /
+creation race) left a held PR unprotected while claiming otherwise.
+**Decision:** after the three calls, reuse `_merge_exclusion "$pr"` as the verifier -- mark succeeds
+(prints "held", exits 0) iff the guard would now REFUSE the PR (rc 0); rc 1/2 => WARN + nonzero.
+**Why:** symmetric + DRY (the guard IS the definition of "held"; no re-parsing of `_pr_info`). A
+caller/CI can now detect a failed mark. Pins added: post-state-confirm + a silent-failure negative
+control (mark a would-clear PR -> WARN + nonzero).
+
 ## 2026-07-02 guard unchanged
 
 The SPEC-100 `_merge_exclusion` guard is byte-unchanged; this sub-goal adds only the mark half.

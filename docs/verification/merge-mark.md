@@ -1,7 +1,12 @@
 # Proof of done: mega-merge-mark (SPEC-104 / ID-089)
 
-The SPEC-100 merge-guard loop is closed: `commands/mega.md` opens gate/gated-final PRs marked
-(draft + `do-not-merge`), and the shipped `_merge_exclusion` guard refuses exactly that state.
+The SPEC-100 merge-guard loop is closed **for the `commands/mega.md`-driven PR-open path**:
+mega.md opens gate/gated-final PRs marked (draft + `do-not-merge`), and the shipped
+`_merge_exclusion` guard refuses exactly that state. Scope note (TIER-4): ID-089 also named the
+bounded `/goal` loop's own gated-final PR-open step; that path is not auto-wired to `mark` here
+(it currently relies on the human/loop calling `mark`, as this wave's own final PR does). The
+durable close for every PR-open site is a `mega-merge sweep` follow-up (mega-goal NOTES
+`## Proposed additions`), not this sub-goal.
 
 ## Acceptance criteria
 
@@ -11,7 +16,8 @@ The SPEC-100 merge-guard loop is closed: `commands/mega.md` opens gate/gated-fin
 | 2 | Fed the state `mark` produces, `_merge_exclusion` refuses even with a passing gate (the halves meet) | PASS |
 | 3 | A normal `auto` PR is un-marked and the guard clears it | PASS |
 | 4 | `commands/mega.md` calls `mega-merge.sh mark` at the held-PR open step | PASS |
-| 5 | `tests/test-mega-merge.sh` + `test-meta` + `test-hooks` + `test-e2e` green | PASS |
+| 5 | `mark` VERIFIES the mark landed (reuses `_merge_exclusion`); WARNs + exits nonzero on a silent no-op (TIER-4 security fix) | PASS |
+| 6 | `tests/test-mega-merge.sh` (30/30, bash 5 + 3.2) + `test-meta` + `test-hooks` + `test-e2e` green | PASS |
 
 ## Implementation
 

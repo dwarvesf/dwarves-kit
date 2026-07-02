@@ -32,3 +32,14 @@ only `kit-machinery` is a file-surface proxy. A pin asserts `auth` stays `full` 
 invocation is a fresh process, so the globals start at defaults with no cross-call leakage.
 **bash 3.2:** `REMAIN` is expanded with the set-u-safe `${REMAIN[@]+"${REMAIN[@]}"}` idiom (same
 class of bug the SG-04 mark verb hit); verified on `/bin/bash` 3.2.57.
+
+## 2026-07-02 TIER-4: quoted the file-list split + trusted-source note
+
+**Context:** TIER-4 security review (Low): `_files_touch_machinery` used a bare `for f in $FILES`
+(word-split + glob).
+**Decision:** split with `IFS=' ' read -ra` and iterate the quoted array.
+**Why:** hygiene; no live exploit found (the reviewer confirmed the over-gate direction is safe and
+no caller passes `--files` yet), but a classifier that gates risk should not glob its input. The
+more important half is a DESIGN note now in the code + SPEC-105: whoever wires `--files` must source
+it from a trusted `git diff --name-only`, not a model-authored free-text claim, or a curated list
+could under-gate a real machinery edit.

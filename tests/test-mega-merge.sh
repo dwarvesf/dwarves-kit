@@ -116,13 +116,20 @@ ok "AC8 [load-bearing]: held PR + --execute never invokes gh" $([ -f "$GH_MARK" 
 echo ""
 echo "=== mega-merge mark (SPEC-100 mark half, SG-04 / ID-089) ==="
 # A mock gh that records its args, so `mark`'s calls are asserted without touching GitHub.
+# PR 3 = the prinfo `draft` scenario, so mark's post-state verify (_merge_exclusion) confirms held.
 GH_LOG="$TMP/mark-gh.log"; : > "$GH_LOG"
 printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\nexit 0\n' "$GH_LOG" > "$TMP/mark-gh"; chmod +x "$TMP/mark-gh"
-MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 42 >/dev/null 2>&1
+MARK_OUT="$(MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 3 2>&1)"; MARK_RC=$?
 MARKED_CALLS="$(cat "$GH_LOG")"
 has "label create do-not-merge" "$MARKED_CALLS"; ok "mark: ensures the do-not-merge label (so --label never fails)" $?
-has "pr ready 42 --undo" "$MARKED_CALLS"; ok "mark: converts the PR to a draft (GitHub-intrinsic block)" $?
-has "pr edit 42 --add-label do-not-merge" "$MARKED_CALLS"; ok "mark: adds the do-not-merge hold label" $?
+has "pr ready 3 --undo" "$MARKED_CALLS"; ok "mark: converts the PR to a draft (GitHub-intrinsic block)" $?
+has "pr edit 3 --add-label do-not-merge" "$MARKED_CALLS"; ok "mark: adds the do-not-merge hold label" $?
+# post-state verification (SPEC-104 TIER-4): mark confirms the mark landed + exits 0 on success.
+{ [ "$MARK_RC" -eq 0 ] && has "marked PR #3 held" "$MARK_OUT"; }; ok "mark: confirms the mark landed (exit 0 + 'held')" $?
+# NEGATIVE CONTROL (the silent-failure guard): mark a PR whose post-state is NOT held (scenario 1
+# = clear) -> mark must WARN + exit nonzero instead of falsely reporting success.
+MARK_FAIL="$(MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 1 2>&1)"; MF_RC=$?
+{ [ "$MF_RC" -ne 0 ] && has "NOT confirmed held" "$MARK_FAIL"; }; ok "mark: silent-failure guard -- unconfirmed mark WARNs + exits nonzero" $?
 # mark <-> guard MEET (end-to-end): the state mark produces is exactly what _merge_exclusion refuses.
 O_LABEL="$(run "$TMP/gl-pass" 2)"   # scenario 2 = the do-not-merge label the mark adds; gate PASSES
 if ! has "gh pr merge 2" "$O_LABEL" && has "hold label" "$O_LABEL"; then ok "mark<->guard: a do-not-merge PR is refused even with a passing gate" 0; else ok "mark<->guard: a do-not-merge PR is refused even with a passing gate" 1; fi
@@ -133,7 +140,7 @@ O_UNMARKED="$(run "$TMP/gl-pass" 1)"
 has "gh pr merge 1" "$O_UNMARKED"; ok "mark negative control: an un-marked auto PR clears the guard + merges" $?
 # input guard + idempotence
 MB="$(bash "$MM" mark notanum 2>&1)"; has "must be a bare PR number" "$MB"; ok "mark: rejects a non-numeric PR (exit 64)" $?
-MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 42 >/dev/null 2>&1; ok "mark: idempotent (re-run exits 0)" $([ $? -eq 0 ] && echo 0 || echo 1)
+MEGA_MERGE_GH="$TMP/mark-gh" bash "$MM" mark 3 >/dev/null 2>&1; ok "mark: idempotent (re-run exits 0)" $([ $? -eq 0 ] && echo 0 || echo 1)
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

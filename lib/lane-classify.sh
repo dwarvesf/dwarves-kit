@@ -81,8 +81,13 @@ FILES=""; FILES_SET=0; REMAIN=()
 # enforcement layer (SPEC-069's own definition of the machinery surface). This is the FILE
 # fact that separates an EDIT to a machinery lib from a mere textual MENTION of its basename.
 _files_touch_machinery() {
-  local f
-  for f in $FILES; do
+  # Quote the split (read -ra, not a bare `for f in $FILES`) so a path with a space or a
+  # literal glob char is not word-split / pathname-expanded (TIER-4 security nit). NOTE for the
+  # future caller that wires --files: source the list from a trusted `git diff --name-only`, not
+  # a model-authored free-text claim, or a curated/incomplete list could under-gate a real edit.
+  local f _files=()
+  IFS=' ' read -ra _files <<< "$FILES"
+  for f in ${_files[@]+"${_files[@]}"}; do
     case "$f" in
       lib/*|hooks/*|*/lib/*|*/hooks/*) return 0 ;;
     esac
