@@ -74,7 +74,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test · 9 gate · 8 cross-phase).
+Total: 25 commands + 15 agents = **40 entries** (10 build · 3 code · 9 test · 10 gate · 8 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -108,6 +108,9 @@ Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test ·
 | `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite after each worker; read-only; primary enforcer in the verification pipeline |
 | `integration-verifier` | agent | Integration test | test | Verifies cross-task wiring at /execute Step 4 for multi-task specs; read-only |
 | `/kit:ship` | command | Acceptance test (gate) | test | Executes the acceptance check; blocks on DO-NOT-SHIP; bumps version, writes changelog, cuts PR |
+| `acceptance-verifier` | agent | Acceptance test | test | Executes the spec's own `## Verification` section end to end and maps each AC to a passing check; read-only; fills the right arm's previously agent-less Acceptance row (ADR-0028 right-arm parity) |
+| `system-verifier` | agent | System test | test | Runs the whole assembled project test suite, unscoped, as the dynamic mirror of the design phase; read-only; fills the right arm's previously agent-less System-test row (ADR-0028 right-arm parity) |
+| `recheck-verifier` | agent | Re-audit (fresh-context) | test | Dispatched after a right-arm verifier (task-verifier/integration-verifier/acceptance-verifier/system-verifier) returns PASS; RE-EXECUTES the recorded verification command in a fresh context and re-judges, never a read-back; the ADR-0028 trust metric ("% of done-claims that survive a fresh-context re-audit") made real; advisory + recorded, never a mid-flight hard block (ADR-0024) |
 | `/kit:verify` | command | Test re-run (on demand) | test | Read-only re-run of the unit + integration levels (dispatches `task-verifier` + `integration-verifier`) against the active spec; no rebuild, no fix; the right arm on demand |
 
 ### Static quality gates (static verification of each artifact; review, not test execution)
@@ -125,6 +128,7 @@ Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test ·
 | `doc-verifier` | agent | Docs verification | gate | Verifies doc claims against live codebase after /docs updates; read-only; the doc-sync twin of task-verifier |
 | `agent-effectiveness` | agent | Agent-def review | gate | Validates a new/changed agent definition's effectiveness across 4 lenses (tools/description/instructions/tier); dispatched diff-keyed by /kit:draft-agent Step 4.7; read-only, advisory, fail-safe (SPEC-088) |
 | `advisor` | agent | Cross-cutting review (extra lens) | gate | Kit-default generic lens at the final integration/UAT boundary; two modes (P5 critique via /review-team Step 2b, P6 over-suggest before the final review); additive to the specialized reviewers, read-only, advisory (SPEC-091, ADR-0028) |
+| `brief-reviewer` | agent | Brief review | gate | Static left-arm reviewer of the design brief / requirement (`DECISION-BRIEF.md` or a spec's Problem/Context) for clarity, completeness, and testability before it hardens into a spec; read-only; the mirror the brief row previously lacked (ADR-0028 right-arm parity, ADR-0029) |
 
 ### Cross-phase (outside the V)
 

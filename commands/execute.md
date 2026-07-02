@@ -206,6 +206,28 @@ The task-verifier will return one of three verdicts:
 
 **FAIL:escalate** -> Stop and present the issue to the user. Do not attempt to fix it.
 
+#### 2c-1. Fresh-context re-audit of a task-verifier PASS (recheck-verifier)
+
+Right-arm PASSes are unreviewed by default (ADR-0028 "Right-arm review parity"). When
+task-verifier returns PASS, dispatch the **recheck-verifier** subagent in a FRESH context
+(a new Task-tool call, not a continuation of the task-verifier's own context) with the
+task-verifier's full verdict block (including its `Verification record`). recheck-verifier
+RE-EXECUTES the recorded `Command:` itself and re-judges the outcome from what it observes,
+it never reads back the recorded `Exit:`/`Output (excerpt):` text as evidence -- this is
+what lets it catch a stale or fabricated PASS. Route its verdict:
+
+- **PASS** (the fresh re-execution reproduces the recorded PASS): record `Re-audit: PASS`
+  next to the task's verified line in `docs/verification/<spec-slug>.md`; continue.
+- **FAIL:fixable / FAIL:escalate** (the fresh re-execution does NOT reproduce the recorded
+  PASS): this is a caught stale/fabricated done-claim. Record `Re-audit: FAIL -- <finding>`
+  in `docs/verification/<spec-slug>.md` and surface it to the user at the next phase
+  checkpoint (Step 3).
+
+This step is ADVISORY + RECORDED, never a mid-flight hard block (ADR-0024): a recheck-verifier
+FAIL does not reopen the retry loop and does not block the next task from dispatching; it is
+evidence for the human at the checkpoint. This realizes ADR-0028's trust metric: "% of
+autonomous done-claims that survive a fresh-context re-audit."
+
 #### 2d. Retry loop (max 2 attempts)
 
 When task-verifier returns FAIL:fixable:
@@ -306,6 +328,20 @@ After all phases complete:
    - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-verifier.
    - **FAIL:escalate** (or retry >= 2): stop and report the broken seam to the human; do not declare the build complete.
    A single-task spec skips this step (nothing to wire).
+2b. **Fresh-context re-audit of the integration-verifier PASS (recheck-verifier).** When the
+   integration-verifier above returns PASS, dispatch the **recheck-verifier** subagent in a
+   FRESH context with its full verdict block. recheck-verifier RE-EXECUTES the recorded
+   verification command itself and re-judges, never reading back the recorded record as
+   evidence -- this is what catches a stale or fabricated PASS (ADR-0028 "Right-arm review
+   parity", the trust metric "% of autonomous done-claims that survive a fresh-context
+   re-audit"). Route its verdict:
+   - **PASS**: append `Re-audit: PASS` to the integration verification-log entry (Step 4 item
+     1) and continue.
+   - **FAIL:fixable / FAIL:escalate**: this is a caught stale/fabricated done-claim. Append
+     `Re-audit: FAIL -- <finding>` to the same entry and surface it to the user alongside the
+     execution summary (Step 4 item 3). ADVISORY + RECORDED, never a mid-flight hard block
+     (ADR-0024): it does not reopen the integration retry loop.
+   A single-task spec skips this step (nothing was checked by integration-verifier to re-audit).
 3. Show execution summary:
    ```
    ## Execution complete
