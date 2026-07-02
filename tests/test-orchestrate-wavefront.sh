@@ -730,6 +730,94 @@ pln=$(_build_prompt "$HLN" SG-02)
   && pass "edge c: linear/no-deps writes+reads plain HANDOFF.md (no per-edge filename)" \
   || { fail "edge c: linear path not plain"; printf '%s\n' "$pln"; }
 
+# ============================ TASK-006: idempotent resume (exit-criterion 3) ============================
+# Killing the orchestrator mid-run and restarting must RE-DERIVE state from the ROADMAP boxes and
+# NEVER re-run a checked sub-goal. Model: run 1 flips SG-01+SG-02 then stops at the gate SG-03 (the
+# "stop mid-run" boundary); each mock invocation appends to a per-id runlog. Run 2 (the restart)
+# re-derives from the same ROADMAP -- SG-01+SG-02 are already checked so `_next` skips them -- and we
+# assert each checked id's runlog count did NOT increase. Serial path (no WAVE_CAP), no git repo.
+RES="$TMP/mg-resume"; mkdir -p "$RES"
+cat > "$RES/ROADMAP.md" <<'EOF'
+# Mega-goal: resume
+## Sub-goals
+- [ ] SG-01 first , auto , PR #__
+- [ ] SG-02 second , auto , PR #__
+- [ ] SG-03 gated , gate , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$RES/POINTER_PROMPT.md"
+make_goal "$RES" SG-01; make_goal "$RES" SG-02; make_goal "$RES" SG-03
+RESLOG="$TMP/resume-runlog"; mkdir -p "$RESLOG"
+# Mock: append one line to <id>.runs per invocation, then flip the box via the locked flip CLI.
+cat > "$TMP/claude-resume" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR, RESLOG
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo 1 >> "$RESLOG/$id.runs"
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+MOCK
+chmod +x "$TMP/claude-resume"
+# Run 1: flips SG-01+SG-02, stops at the gate SG-03 (partway; the kill boundary).
+( export ORCH="$ORCH" MEGADIR="$RES" RESLOG="$RESLOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-resume"
+  bash "$ORCH" run "$RES" ) > "$TMP/resume1.out" 2>&1
+c1_r1=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r1=$(wc -l < "$RESLOG/SG-02.runs" 2>/dev/null | tr -d ' ')
+{ grep -q '^- \[x\] SG-01' "$RES/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$RES/ROADMAP.md" \
+    && grep -q '^- \[ \] SG-03' "$RES/ROADMAP.md" && [ "$c1_r1" = 1 ] && [ "$c2_r1" = 1 ]; } \
+  && pass "resume: run 1 flips SG-01+SG-02, stops at gate (each ran once)" \
+  || { fail "resume: run 1 partial-progress wrong (c1=$c1_r1 c2=$c2_r1)"; cat "$TMP/resume1.out"; }
+# Run 2 (the restart): re-derive from ROADMAP; already-checked boxes must NOT be re-run.
+( export ORCH="$ORCH" MEGADIR="$RES" RESLOG="$RESLOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-resume"
+  bash "$ORCH" run "$RES" ) > "$TMP/resume2.out" 2>&1
+c1_r2=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r2=$(wc -l < "$RESLOG/SG-02.runs" 2>/dev/null | tr -d ' ')
+{ [ "$c1_r2" = 1 ] && [ "$c2_r2" = 1 ]; } \
+  && pass "resume: restart re-runs NO already-checked sub-goal (SG-01/SG-02 count unchanged)" \
+  || { fail "resume: a checked sub-goal was re-invoked (c1=$c1_r2 c2=$c2_r2)"; cat "$TMP/resume2.out"; }
+
+# ==================== TASK-006: wave-path termination guard (wait-vs-complete) ====================
+# On the WAVE path (WAVE_CAP>=2), when unchecked sub-goals REMAIN but the ready set is EMPTY (all
+# dep-blocked, nothing runnable, no in-flight producer), the loop must HALT with a "blocked: N
+# unchecked, none runnable" message + NONZERO exit -- NOT a false "all sub-goals checked; done", NOT
+# a spin, and NOT run a dep-blocked sub-goal. Fixture: a mutual-dep cycle (SG-02 depends SG-03, SG-03
+# depends SG-02) with SG-01 pre-checked, so admitted==0 and _ready_set is empty while 2 remain
+# unchecked. (Without the guard, the dep-ignorant serial `_next` fallthrough ran BOTH boxes to a
+# false "done" -- proven pre-fix.)
+TG="$TMP/mg-wave-blocked"; mkdir -p "$TG"
+cat > "$TG/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-blocked
+## Sub-goals
+- [x] SG-01 done , auto , PR #__
+- [ ] SG-02 needs three , auto , PR #__ , depends SG-03
+- [ ] SG-03 needs two , auto , PR #__ , depends SG-02
+EOF
+echo "POINTER: resume from ROADMAP" > "$TG/POINTER_PROMPT.md"
+make_goal "$TG" SG-02 "lib/tg-a/**"; make_goal "$TG" SG-03 "lib/tg-b/**"
+TGLOG="$TMP/wave-blocked-runlog"; : > "$TGLOG"
+# A mock that would flip+log if ever invoked -- it must NOT be, because nothing is runnable.
+cat > "$TMP/claude-blocked" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR, TGLOG
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo "INVOKED $id" >> "$TGLOG"
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+MOCK
+chmod +x "$TMP/claude-blocked"
+tgrc=0
+( export ORCH="$ORCH" MEGADIR="$TG" TGLOG="$TGLOG" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-blocked"
+  bash "$ORCH" run "$TG" ) > "$TMP/wave-blocked.out" 2>&1 || tgrc=$?
+# (1) nonzero exit, not a false-complete
+{ [ "$tgrc" != 0 ] && ! grep -q 'all sub-goals checked; done' "$TMP/wave-blocked.out"; } \
+  && pass "wave-block: halts nonzero, no false-complete" \
+  || { fail "wave-block: did not halt nonzero / false-completed (rc=$tgrc)"; cat "$TMP/wave-blocked.out"; }
+# (2) clear blocked message naming the unchecked count
+grep -q 'blocked: 2 unchecked, none runnable' "$TMP/wave-blocked.out" \
+  && pass "wave-block: clear 'blocked: N unchecked, none runnable' message" \
+  || { fail "wave-block: no blocked message"; cat "$TMP/wave-blocked.out"; }
+# (3) no dep-blocked sub-goal was run; boxes untouched
+{ [ ! -s "$TGLOG" ] && grep -q '^- \[ \] SG-02' "$TG/ROADMAP.md" && grep -q '^- \[ \] SG-03' "$TG/ROADMAP.md"; } \
+  && pass "wave-block: ran no dep-blocked sub-goal (boxes untouched)" \
+  || { fail "wave-block: a dep-blocked sub-goal ran"; cat "$TGLOG"; }
+
 # ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
 for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$CVR" "$CFR" "$CPR"; do
   [ -d "$wtrepo" ] || continue

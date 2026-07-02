@@ -987,6 +987,26 @@ cmd_run() {
         echo "[orchestrate] [wave] a wave sub-goal did not complete (nonzero exit or unflipped box); halting (no self-claim)." >&2
         return 1
       fi
+      # Wait-vs-complete termination guard (SPEC-106 TASK-006, Edge case 1). Reached only when
+      # admitted<2 (no wave launched this cycle). If unchecked sub-goals REMAIN but the ready set is
+      # EMPTY -- every remaining unchecked is dep-blocked, nothing is runnable, and no wave is in
+      # flight (`_wave_run` blocks to drain before we get here) -- the dep-IGNORANT serial `_next`
+      # below would wrongly RUN a dep-blocked sub-goal (proven: a mutual-dep cycle ran both boxes to
+      # a false "done"). Halt for a human instead: a clear blocked message + NONZERO exit, never a
+      # false-complete, never a spin. Guarded by `unchecked>0` so the legit all-checked completion
+      # still falls through to `_next`'s empty -> "done" return-0 path. Only reachable on the wave
+      # path (WAVE_CAP>=2); the serial default never enters this block, so serial stays byte-identical.
+      local unchecked_n ready_n
+      unchecked_n=$(_subgoals "$roadmap" | awk -F'\t' '$3==0 {n++} END{print n+0}')
+      if [ "$unchecked_n" -gt 0 ]; then
+        ready_n=$(_ready_set "$roadmap" | awk 'END{print NR+0}')
+        if [ "$ready_n" -eq 0 ]; then
+          _emit_event "$dir" "-" blocked "$unchecked_n unchecked, none runnable"
+          [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+          echo "[orchestrate] [wave] blocked: $unchecked_n unchecked, none runnable (all remaining sub-goals are dep-blocked; no in-flight producer). Halting for human review (not a false-complete)." >&2
+          return 1
+        fi
+      fi
     fi
 
     local nx id policy

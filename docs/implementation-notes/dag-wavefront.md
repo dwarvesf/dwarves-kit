@@ -374,3 +374,41 @@ Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds);
 `bash tests/test-orchestrate-wavefront.sh` 67/67 (61 prior + 6 new: FIXTURE H diamond dependents
 detection, SG-01 per-edge write-target, SG-04 dual-parent read injection, plain-HANDOFF fallback,
 linear no-per-edge-filename). Stable across repeated runs.
+
+## 2026-07-03 02:41 TASK-006 idempotent resume + wave termination guard
+
+Context. Two exit-criteria: (3) killing the orchestrator mid-run and restarting must re-derive
+state from the ROADMAP boxes and never re-run a checked sub-goal; and a wait-vs-complete guard so
+the loop cannot false-complete when unchecked sub-goals remain but none are runnable.
+
+Finding: resume was ALREADY correct, no code change. `_next` returns only the FIRST UNCHECKED
+sub-goal, so on restart every checked box is skipped by construction: the ROADMAP boxes ARE the
+durable state and the serial loop re-derives from them. Verified with a new test (run 1 flips
+SG-01+SG-02, stops at gate SG-03; run 2 re-runs and each checked id's per-id runlog count stays 1).
+
+Finding: the wave path COULD false-run, proven empirically. At WAVE_CAP>=2, when every remaining
+unchecked sub-goal is dep-blocked (a mutual-dep cycle: `_ready_set` empty, `_wave_gate` admits 0),
+the loop fell through to the dep-IGNORANT serial `_next`, which returned a dep-blocked sub-goal and
+RAN it. A mutual-dep-cycle fixture ran BOTH boxes to a false "all sub-goals checked; done." (exit 0).
+Not a spin, not literally a false-complete-with-remaining, but a silent DAG-order violation that
+terminated as success.
+
+Decision (guard placement). Added a wait-vs-complete guard INSIDE the `if [ "$WAVE_CAP" -ge 2 ]`
+block, AFTER the `admitted>=2` wave-run branch and BEFORE the serial `_next` fallthrough. When
+admitted<2: if `unchecked>0` AND `_ready_set` is empty (nothing runnable, and no wave is in flight
+because `_wave_run` blocks to drain), emit a `blocked` event + render board + print
+`[wave] blocked: N unchecked, none runnable ...` + `return 1`. Guarded by `unchecked>0` so the
+legit all-checked completion still falls through to `_next`'s empty -> "done" return-0 path.
+
+Why serial stays byte-identical. The guard lives entirely inside `WAVE_CAP>=2`; the default
+WAVE_CAP=1 never enters that block, so the serial `_next`/"done" path is untouched. Confirmed:
+`bash tests/test-orchestrate.sh` 59/59 before and after.
+
+Scope note (deferred, not a regression). The guard covers the ready-EMPTY edge only. A case where
+`_ready_set` is NON-empty but `_next`'s dep-ignorant first-unchecked pick is an EARLIER dep-blocked
+sub-goal can still run a dep-blocked sub-goal on the wave path. That is a wider dep-aware-serial-pick
+change beyond TASK-006's minimal ready-empty termination guard; left for a follow-up.
+
+Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds);
+`bash tests/test-orchestrate-wavefront.sh` 72/72 (67 prior + 5 new: 2 idempotent-resume, 3
+wave-termination-guard). Stable across repeated runs.
