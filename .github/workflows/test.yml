@@ -47,6 +47,12 @@ jobs:
       - name: Run role-classify tests (SPEC-089)
         run: bash tests/test-role-classify.sh
 
+      - name: Run lane-classify rule tests (SPEC-098)
+        run: bash tests/test-lane-classify.sh
+
+      - name: Run ledger-durability tests (SPEC-097)
+        run: bash tests/test-ledger-durability.sh
+
       - name: Run meta-agent tests (SPEC-089 / dynamic agent synthesis)
         run: bash tests/test-meta-agent.sh
 
