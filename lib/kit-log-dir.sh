@@ -45,11 +45,23 @@ kit_migrate_log_dir() {
   [ "$durable" = "$legacy" ] && return 0
   [ -f "$durable/.migrated" ] && return 0
   mkdir -p "$durable" 2>/dev/null || return 0
-  if [ -d "$legacy" ]; then
+  if [ -d "$legacy" ] && [ ! -L "$legacy" ]; then
     # -R recursive, -n no-clobber (never overwrite a file already durable). The trailing
     # /. copies contents, not the dir itself. Legacy is never touched.
-    cp -Rn "$legacy/." "$durable/" 2>/dev/null || true
+    # Sentinel is dropped ONLY on cp success (security review S3): a partial/failed copy
+    # (perm, disk) leaves NO sentinel so the next access retries and completes.
+    if cp -Rn "$legacy/." "$durable/" 2>/dev/null; then
+      : > "$durable/.migrated" 2>/dev/null || true
+    fi
+  elif [ -L "$legacy" ]; then
+    # Refuse to migrate THROUGH a symlink (security review B2): cp would dereference it and
+    # fan an attacker-planted target's contents into the corpus /kit:retro + the eval read.
+    # Warn, and sentinel so we do not re-scan a hostile link every command.
+    echo "kit-log-dir: legacy log dir is a symlink; refusing to migrate through it ($legacy)" >&2
+    : > "$durable/.migrated" 2>/dev/null || true
+  else
+    # Fresh install: no legacy dir ever existed. Nothing to migrate; mark done.
+    : > "$durable/.migrated" 2>/dev/null || true
   fi
-  : > "$durable/.migrated" 2>/dev/null || true
   return 0
 }

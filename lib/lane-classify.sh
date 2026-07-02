@@ -40,7 +40,7 @@ set -euo pipefail
 # (written to the legacy path, invisible to the migrated reader).
 LC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/kit-log-dir.sh
-source "$LC_DIR/kit-log-dir.sh"
+source "$LC_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 
 # Hard-gate flags (any hit -> full). name <-> regex, index-aligned.
 _hard_name=(auth data-model audit-security external-provider public-contract weaken-validation kit-machinery)
@@ -165,6 +165,9 @@ lane_check() {
   if [ "$cr" -lt "$sr" ]; then
     echo "LANE-DOWNGRADE: chosen=$chosen suggested=$suggested -- the task text matches a heavier lane; size up or say why" >&2
     desc_trunc="$(printf '%s' "$desc" | tr '\n' ' ' | cut -c1-100)"
+    # NB (arch review): unlike the other 5 corpus libs (which migrate at load), lane-classify
+    # migrates HERE, at the downgrade-write path -- classify/explain run far more often WITHOUT
+    # a downgrade, so deferring the mkdir/stat to the actual write is a small deliberate win.
     kit_migrate_log_dir || true
     log_dir="$(kit_resolve_log_dir)"
     mkdir -p "$log_dir" 2>/dev/null || true

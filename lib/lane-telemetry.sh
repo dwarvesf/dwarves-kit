@@ -25,7 +25,7 @@ set -euo pipefail
 KIT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
 # shellcheck source=lib/kit-log-dir.sh
-source "$KIT_LIB/kit-log-dir.sh"
+source "$KIT_LIB/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"

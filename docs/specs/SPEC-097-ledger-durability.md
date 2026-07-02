@@ -44,6 +44,13 @@ Two changes, both additive and fail-safe.
    same run's ledger. A distinct reason per gate passes; re-applying the same
    reason to the SAME phase (idempotent re-run) is allowed.
 
+3. **Ledger-integrity hardening (security review).** `record`/`action`/`override`
+   collapse newlines/CRs in free-text to spaces (`oneline()`), so a reason cannot
+   forge extra pipe-delimited ledger lines (log-injection -> gate-bypass). Migration
+   refuses to copy through a symlinked legacy dir (no arbitrary-file exfiltration),
+   drops the sentinel only on cp SUCCESS (a partial copy retries), and every consumer
+   guards the `source` of `kit-log-dir.sh` with a clear fatal message.
+
 ## Acceptance criteria
 - AC1 [durable default]: with `DWARVES_KIT_LOG_DIR` unset and `XDG_STATE_HOME`
   set to a temp dir, a `gate-ledger.sh record` writes under
@@ -70,6 +77,11 @@ Two changes, both additive and fail-safe.
   or mutate real machine state).
 - AC9 [no regression]: `test-hooks.sh`, `test-meta.sh`, `test-lane-escalation.sh`,
   `test-mega-reconcile.sh` stay green.
+- SEC1 [log-injection blocked]: a `reason`/action containing an embedded newline is
+  collapsed to a single ledger line; a forged `| GATE | <p> | ran |` fragment inside
+  the reason does NOT satisfy `check()` for `<p>`.
+- SEC2 [symlink refusal]: if the legacy log dir is a symlink, migration refuses to
+  copy through it (no arbitrary-file exfiltration into the corpus) and still works.
 
 ## Tasks
 - T1: `lib/kit-log-dir.sh` -- new resolver + legacy + migration functions.
@@ -125,3 +137,14 @@ loses records. `override` refuses a reason reused across gates in one run.
   on every fallible op) AND every call site adds `|| true` -- a migration hiccup
   must never abort a lib load under `set -e`, which would make `gate-ledger check`
   exit nonzero and fail-close the ship-gate.
+- DEC-007 (security B1): free-text is sanitized (newlines->spaces) at WRITE time in
+  `record`/`action`/`override`, not validated at read time -- the append-only ledger
+  is trusted by many readers; making a forged line impossible to write is simpler and
+  safer than teaching every reader to detect one. Collapse (not reject) preserves the
+  audit text on one line without breaking any caller.
+- DEC-008 (security B2): migration refuses a symlinked legacy dir via an explicit
+  `[ ! -L ]` test (cp dereferences a `/.`-suffixed symlink, so `-P` does not help),
+  warns, and sentinels so a hostile link is not re-scanned every command.
+- DEC-009 (security S3): the `.migrated` sentinel is written only inside the
+  cp-success branch, so a partial/failed copy leaves no sentinel and the next access
+  completes the migration (protects the additive guarantee).

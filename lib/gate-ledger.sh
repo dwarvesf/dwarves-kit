@@ -28,12 +28,20 @@ WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration out of the
 # ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
 # shellcheck source=lib/kit-log-dir.sh
-source "$GATE_DIR/kit-log-dir.sh"
+source "$GATE_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# Collapse newlines/carriage-returns in operator/LLM-supplied free text to spaces before it
+# is written to the append-only ledger (security review B1). Without this, a reason/action
+# containing an embedded newline splits into extra pipe-delimited lines that readers
+# (check/progress/descent + the SPEC-097 override guard) cannot distinguish from real GATE
+# lines -- a prompt-injection -> ledger-forgery -> gate-bypass chain (a forged `| ran |`
+# line makes check() believe a required gate ran). One ledger line per call, always.
+oneline() { printf '%s' "${*:-}" | tr '\n\r' '  '; }
 
 # TTY-gated colors (SPEC-069): escape codes emit ONLY on an interactive stdout with
 # NO_COLOR unset, so every piped consumer (300+ test pins, scripts) sees plain bytes.
@@ -121,18 +129,18 @@ record() {
   local rid="${1:-}" raw="${2:-}" state="${3:-}"; shift 3 2>/dev/null || { echo "usage: record <rid> <phase> <ran|skipped> [reason]" >&2; return 64; }
   case "$state" in ran|skipped) ;; *) echo "state must be ran|skipped" >&2; return 64;; esac
   mkdir -p "$RUNS_DIR"
-  printf '%s | GATE | %s | %s | %s\n' "$(now)" "$(normalize_phase "$raw")" "$state" "${*:-}" >> "$(ledger_file "$rid")"
+  printf '%s | GATE | %s | %s | %s\n' "$(now)" "$(normalize_phase "$raw")" "$state" "$(oneline "$@")" >> "$(ledger_file "$rid")"
 }
 
 action() {
   local rid="${1:-}"; shift 2>/dev/null || { echo "usage: action <rid> <text>" >&2; return 64; }
   mkdir -p "$RUNS_DIR"
-  printf '%s | ACTION | %s\n' "$(now)" "${*:-}" >> "$(ledger_file "$rid")"
+  printf '%s | ACTION | %s\n' "$(now)" "$(oneline "$@")" >> "$(ledger_file "$rid")"
 }
 
 override() {
   local rid="${1:-}" raw="${2:-}"; shift 2 2>/dev/null || { echo "usage: override <rid> <phase> <reason>" >&2; return 64; }
-  local reason="${*:-}"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
+  local reason; reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
   local phase; phase="$(normalize_phase "$raw")"
   local f; f="$(ledger_file "$rid")"
   # Blanket-override guard (SPEC-097): a reason already used to override a DIFFERENT phase

@@ -40,6 +40,17 @@ kit logs are split across two roots until a future sweep unifies hooks; noted so
 an operator is not surprised. `ship-gate` still READS the ledger through
 `gate-ledger.sh check` (resolver-aware), so enforcement is unaffected.
 
+## 2026-07-02 security review: two BLOCKERs fixed (pre-existing + new)
+
+- B1 log-injection (PRE-EXISTING in record/action, now also relevant to the new override
+  guard): free text with an embedded newline forged extra ledger lines that `check()` read
+  as real gates. Fixed with `oneline()` (collapse `\n\r` -> space) in all three writers.
+  This hardens the audit trail SPEC-097's override half exists to protect, so it belongs
+  in this sub-goal even though record/action predate it.
+- B2 symlink-follow in migration (NEW, mine): `cp -Rn legacy/.` dereferences a symlinked
+  legacy dir. Fixed with an explicit `[ ! -L ]` refusal + warning (cp `-P` does not help
+  the `/.`-suffixed form). Sentinel now drops only on cp success (partial copy retries).
+
 Correction (validate finding B1): the first draft left `lib/lane-classify.sh` out of
 the moved set. It WRITES the `completeness.log` LANE-CHECK downgrade lines; the moved
 `lane-telemetry.sh` READS them. Split writer/reader across old/new paths = downgrades

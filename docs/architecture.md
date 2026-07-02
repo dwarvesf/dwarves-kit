@@ -385,6 +385,9 @@ Beyond the repo itself, the kit writes to:
 
 | Path | What | Who writes |
 |---|---|---|
+| `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/runs/<rid>.log` | Per-run gate/routing ledger, the retro + eval corpus (DURABLE: outside the plugin-reinstall blast zone, SPEC-097; legacy `~/.claude/dwarves-kit/logs` migrated in additively) | gate-ledger.sh |
+| `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/completeness.log` | Lane-downgrade / completeness records | lane-classify.sh (write), lane-telemetry.sh (read) |
+| `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/proof-overrides.log` | Logged proof-of-done overrides | proof-ledger.sh |
 | `~/.claude/dwarves-kit/logs/anti-rationalization.log` | Blocked Stop-event patterns | anti-rationalization.sh |
 | `~/.claude/dwarves-kit/logs/safety-gate.log` | Blocked destructive Bash commands | safety-gate.sh |
 | `~/.claude/dwarves-kit/logs/secrets-guard.log` | Blocked secret-file reads (path + tool, never contents) | secrets-guard.sh |
