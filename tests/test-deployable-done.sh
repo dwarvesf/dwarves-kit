@@ -116,6 +116,19 @@ fi
 grep -qF "| deploy-noproof-override | OVERRIDE | emergency hotfix, deploy verified manually" "$LOGDIR/proof-overrides.log" 2>/dev/null
 assert "AC4: the override is logged to the audit trail (slug + reason present)" $?
 
+# --- cc-hyg-04: an override does NOT excuse application source code outside deploy/.
+# (deploy scripts above stay override-able; a lib/ source change must not.)
+D4B="$(mktemp -d)"; mkrepo "$D4B"
+B4B="$(base "$D4B")"
+mkdir -p "$D4B/lib"; printf 'echo broken\n' > "$D4B/lib/handler.sh"
+git -C "$D4B" add -A; git -C "$D4B" commit -qm "feat(handler): urgent source change"
+DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LIB" override src-noproof-override "urgent, trust me" >/dev/null 2>&1
+if run_check "$D4B" "$B4B" "src-noproof-override" >/dev/null 2>&1; then
+  assert "AC4b: override on NON-deploy source is still REJECTED (rtk-611 hole closed)" 1
+else
+  assert "AC4b: override on NON-deploy source is still REJECTED (rtk-611 hole closed)" 0
+fi
+
 # ============================================================
 echo ""
 echo "=== AC5 [contract]: AGENTS.md zone 3 carries the Deployable-done clause ==="

@@ -52,6 +52,18 @@ RECENT_FILES=$(find . \
 
 BLOAT_FILES=""
 
+# Resolution memory (cc-hyg-04): report a flagged file once per session, or until
+# its content changes. Without this the same files re-nudge on every Stop (measured:
+# the same ~7 files re-flagged up to 19x in a row). State is per-session, keyed by
+# session_id, storing "path<TAB>contenthash" for each already-reported file.
+SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // "default"' 2>/dev/null || echo default)
+SEEN_LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+mkdir -p "$SEEN_LOG_DIR" 2>/dev/null || true
+SEEN_FILE="$SEEN_LOG_DIR/slop-seen-${SESSION_ID//[^A-Za-z0-9._-]/_}.tsv"
+# Prune stale seen-files (>7d) so the dir does not grow unbounded across sessions.
+find "$SEEN_LOG_DIR" -name 'slop-seen-*.tsv' -mtime +7 -delete 2>/dev/null || true
+TAB=$(printf '\t')
+
 while IFS= read -r FILE; do
   [ ! -f "$FILE" ] && continue
   ISSUES=""
@@ -91,6 +103,18 @@ while IFS= read -r FILE; do
   [ "$DUPES" -gt 0 ] && ISSUES+="$DUPES duplicate code blocks, "
 
   if [ -n "$ISSUES" ]; then
+    # Resolution memory: skip if already reported this session at the same content
+    # hash; re-report only when the file's content changed since the last nudge.
+    FHASH=$( (shasum "$FILE" 2>/dev/null || sha1sum "$FILE" 2>/dev/null) | awk '{print $1}' )
+    if [ -n "$FHASH" ] && grep -qF "${FILE}${TAB}${FHASH}" "$SEEN_FILE" 2>/dev/null; then
+      continue
+    fi
+    if [ -n "$FHASH" ]; then
+      # Replace any stale hash line for this file, then record the current hash.
+      grep -vF "${FILE}${TAB}" "$SEEN_FILE" 2>/dev/null > "${SEEN_FILE}.tmp" || true
+      mv -f "${SEEN_FILE}.tmp" "$SEEN_FILE" 2>/dev/null || true
+      printf '%s\t%s\n' "$FILE" "$FHASH" >> "$SEEN_FILE"
+    fi
     BLOAT_FILES+="  $FILE: ${ISSUES%, }\n"
   fi
 done <<< "$RECENT_FILES"
