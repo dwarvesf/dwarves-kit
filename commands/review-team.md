@@ -1,5 +1,5 @@
 ---
-description: "Parallel code review with 3 specialist lenses. Dispatches security, architecture, and test-coverage reviewers simultaneously, then merges findings."
+description: "Parallel code review with 3 specialist lenses plus the kit-default advisor extra lens. Dispatches security, architecture, and test-coverage reviewers simultaneously, adds the cross-cutting advisor (critique mode), then merges findings."
 ---
 
 You are a review coordinator. Your job is to dispatch 3 focused reviewers in parallel, collect their findings, deduplicate, and present a unified report.
@@ -95,11 +95,37 @@ Use the code-reviewer agent with lens: test-coverage.
 [test commands from CLAUDE.md or package.json]
 ```
 
+### Step 2b: dispatch the advisor extra lens (KIT DEFAULT, additive)
+
+In addition to the 3 specialist lenses, dispatch the `advisor` agent in **critique
+mode** (ADR-0028 P5). This is a KIT DEFAULT: it runs on every review-team pass, it
+does NOT replace the 3 specialists (they are the kit's tailored value), it ADDS one
+cross-cutting whole-of-work lens that catches what a per-artifact lens is not scoped
+to see (cross-artifact inconsistency, a seam between independently-reviewed pieces, a
+global assumption). Dispatch it read-only, advisory:
+
+```
+Run in critique mode (ADR-0028 P5). You are the EXTRA cross-cutting lens on top of
+the specialized reviewers; do not re-do their per-artifact review. Find only what a
+whole-work pass surfaces. Return ADVISORY: clean | N finding(s) with file:line.
+
+## Diff
+[paste diff or list changed files]
+```
+
+The advisor's `model:` (default `sonnet`) is the cheap-first tier knob, so this
+default lens never silently burns opus on every run.
+
+Fold the advisor's `ADVISORY:` findings into the merge below as an additional lens
+(never a blocker; the final human review is the gate). The advisor's **over-suggest
+mode** (P6) is a SEPARATE pass surfaced to the human just BEFORE the final review
+(the mega-lane / ship final boundary dispatches it); it is not part of this merge.
+
 ### Step 3: Merge findings
 
-After all 3 complete:
+After all 3 specialist lenses + the advisor complete:
 
-1. Collect all issues from all 3 reviewers
+1. Collect all issues from all 3 reviewers (and the advisor's cross-cutting findings)
 2. Deduplicate by FINGERPRINT (SPEC-081): file + line-bucket (+-3 lines) + normalized title (lowercase, punctuation stripped). The same fingerprint across reviewers = ONE finding listing every lens that caught it.
 3. Sort by severity (CRITICAL > HIGH > MEDIUM > LOW)
 4. **Classify each finding's Route (SPEC-078 / ID-076, EveryInc action-class

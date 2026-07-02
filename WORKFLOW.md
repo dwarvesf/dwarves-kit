@@ -249,6 +249,27 @@ and `/kit:verify` (shipped, SPEC-035, the on-demand right-arm executor). The V i
 fully covered by commands + agents; the only open item is the optional `acceptance-verifier`
 (v2 candidate). Everything else would be a phantom.
 
+## The advisor: the kit-default extra lens (ADR-0028 P5/P6)
+
+One generic `advisor` agent runs at the FINAL integration / UAT boundary as a KIT
+DEFAULT (on every applicable run, not opt-in), in two modes:
+
+- **Critique (P5)** -- an EXTRA, uniform, cross-cutting review lens dispatched ON TOP
+  of the specialized per-phase reviewers (it does NOT replace them: the tailored
+  lenses are the kit's value). It catches what a per-artifact lens is not scoped to
+  see -- cross-artifact inconsistency, a seam between independently-reviewed pieces, a
+  global assumption. Wired into `/kit:review-team` Step 2b. Advisory; folds into the
+  merged findings, never a blocker.
+- **Over-suggest (P6)** -- a generative pass surfaced to the human JUST BEFORE the
+  final review: it proposes additional ideas / sub-goals the completed work now makes
+  cheap or valuable. Dispatched at the ship / mega-lane final boundary (`/kit:mega`,
+  SG-08, consumes it). Proposals only; the human filters.
+
+One agent, two modes. Its `model:` (default `sonnet`) is the cheap-first tier knob so
+a kit-default lens never silently burns `opus` on every run (WORKFLOW.md verification
+cost routing). Born under ADR-0029 as the named-noun `advisor`, gated by the SG-01
+`agent-effectiveness` validator.
+
 ## The V-model descent contract (SPEC-076 / ID-068)
 
 Every left-arm step passes its review lens BEFORE the work descends, on EVERY lane:

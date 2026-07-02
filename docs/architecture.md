@@ -124,6 +124,7 @@ Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test ·
 | `security-reviewer` | agent | Security review | gate | Deep security analysis; dispatched by `/kit:review-team` as the security reviewer (replacing the generic code-reviewer security lens); also invocable directly for an ad-hoc deep pass |
 | `doc-verifier` | agent | Docs verification | gate | Verifies doc claims against live codebase after /docs updates; read-only; the doc-sync twin of task-verifier |
 | `agent-effectiveness` | agent | Agent-def review | gate | Validates a new/changed agent definition's effectiveness across 4 lenses (tools/description/instructions/tier); dispatched diff-keyed by /kit:draft-agent Step 4.7; read-only, advisory, fail-safe (SPEC-088) |
+| `advisor` | agent | Cross-cutting review (extra lens) | gate | Kit-default generic lens at the final integration/UAT boundary; two modes (P5 critique via /review-team Step 2b, P6 over-suggest before the final review); additive to the specialized reviewers, read-only, advisory (SPEC-091, ADR-0028) |
 
 ### Cross-phase (outside the V)
 
