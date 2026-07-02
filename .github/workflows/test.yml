@@ -53,6 +53,9 @@ jobs:
       - name: Run lane-telemetry render tests (SPEC-099)
         run: bash tests/test-lane-telemetry.sh
 
+      - name: Run mega-merge exclusion tests (SPEC-100)
+        run: bash tests/test-mega-merge.sh
+
       - name: Run ledger-durability tests (SPEC-097)
         run: bash tests/test-ledger-durability.sh
 

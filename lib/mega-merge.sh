@@ -31,9 +31,13 @@
 #                       result, so a team run keeps a human on every PR.
 #   Resolution: --posture=<value> flag > MEGA_MERGE_POSTURE env > default auto-to-final.
 #
-# This script never sees a `gate`-tagged sub-goal or the held final PR under
-# `gated-final` -- routing those away from `merge` is commands/mega.md's job (mirrors
-# /kit:dispatch and the skill: a human always merges those).
+# commands/mega.md routes a `gate`-tagged sub-goal or the held final PR away from `merge`
+# at the PROMPT level (mirrors /kit:dispatch and the skill: a human always merges those).
+# SPEC-100 (ID-083) adds a CODE-LEVEL backstop: `merge` itself calls `_merge_exclusion`,
+# which reads the PR's GitHub STATE (draft / hold-label / bracketed title marker) and
+# refuses , fail-closed on unreadable state , so a prompt-rationalizing model cannot merge
+# past the exclusion even if the prompt-level rule is absent. Defense-in-depth, not a
+# replacement for the routing.
 #
 # Subcommands:
 #   gate  <rid> <lane>
@@ -71,6 +75,42 @@ _resolve_posture() {
   printf '%s\n' "${MEGA_MERGE_POSTURE:-auto-to-final}"
 }
 
+# _pr_info <pr> -- prints "<isDraft><US><comma-labels><US><title>" for the PR (US = the
+# ASCII Unit Separator \037), reading GitHub STATE (never conversation intent). Overridable
+# for tests via MEGA_MERGE_PR_INFO_CMD. The separator is a NON-whitespace control char so an
+# empty labels field is preserved by `read` (a tab/space collapses empty fields, a \037 does
+# not). Returns nonzero if the state cannot be read (gh error / offline) -> caller fails closed.
+_pr_info() {
+  if [ -n "${MEGA_MERGE_PR_INFO_CMD:-}" ]; then "$MEGA_MERGE_PR_INFO_CMD" "$1"; return; fi
+  gh pr view "$1" --json isDraft,labels,title \
+    --jq '[(.isDraft|tostring), ([.labels[].name]|join(",")), .title] | join("")' 2>/dev/null
+}
+
+# _merge_exclusion <pr> -- the CODE-LEVEL gate/held-final exclusion (SPEC-100, ID-083),
+# defense-in-depth over commands/mega.md's prompt-only rule. Reads PR STATE:
+#   return 0 + a reason  -> this PR must NOT auto-merge (draft / hold-label / title marker)
+#   return 1             -> clear to auto-merge (normal `auto` sub-goal PR)
+#   return 2             -> UNCLASSIFIABLE (state unreadable): caller fails closed, refuses.
+# A prompt-rationalizing model cannot merge past this; it keys on state, not on being told.
+_merge_exclusion() {
+  local pr="$1" info draft labels title l
+  info="$(_pr_info "$pr")" || return 2
+  [ -n "$info" ] || return 2
+  IFS=$'\037' read -r draft labels title <<< "$info"
+  [ "$draft" = "true" ] && { echo "PR #$pr is a draft"; return 0; }
+  # hold labels: any of these (case-insensitive) block auto-merge.
+  local hold=" do-not-merge donotmerge gated-final hold blocked wip no-merge "
+  for l in ${labels//,/ }; do
+    case "$hold" in *" $(printf '%s' "$l" | tr 'A-Z' 'a-z') "*)
+      echo "PR #$pr carries the hold label '$l'"; return 0 ;; esac
+  done
+  # bracketed title markers, e.g. [HOLD] [gated-final] [do not merge] [WIP] [final]
+  if printf '%s' "$title" | grep -qiE '\[(hold|gated-final|gated final|do[ -]?not[ -]?merge|wip|final|no-merge)\]'; then
+    echo "PR #$pr title carries a hold marker"; return 0
+  fi
+  return 1
+}
+
 # merge <pr> <rid> <lane> [--execute] [--posture=<val>] -- ACTION.
 merge() {
   local pr="${1:-}" rid="${2:-}" lane="${3:-}"
@@ -91,6 +131,20 @@ merge() {
     esac
   done
   local posture; posture="$(_resolve_posture "$posture_flag")"
+
+  # CODE-LEVEL gate/held-final exclusion (SPEC-100, ID-083), checked BEFORE the gate so a
+  # held PR is refused even if its gates pass. Fail-closed: unreadable state is refused.
+  local excl rc
+  excl="$(_merge_exclusion "$pr")"; rc=$?
+  if [ "$rc" -eq 0 ]; then
+    echo "BLOCKED: refusing to auto-merge PR #$pr -- $excl. Gated / held-final PRs are merged by a human, not the loop (mega-merge exclusion)." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (exclusion: $excl)"
+    return 1
+  elif [ "$rc" -eq 2 ]; then
+    echo "BLOCKED: cannot read PR #$pr state (gh unavailable/offline); failing closed and refusing auto-merge. Verify + merge manually if intended." >&2
+    _log "$rid" "BLOCKED merge pr=$pr (unclassifiable state, fail-closed)"
+    return 1
+  fi
 
   local gate_out
   if ! gate_out="$(gate "$rid" "$lane" 2>&1)"; then

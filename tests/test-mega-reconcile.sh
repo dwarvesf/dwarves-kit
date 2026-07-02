@@ -66,6 +66,15 @@ EOF
 chmod +x "$FAKEBIN/gh"
 export PATH="$FAKEBIN:$PATH"
 
+# SPEC-100: mega-merge now checks a PR-state exclusion BEFORE the gate (via `gh pr view`).
+# These tests use fake PR numbers, so inject a CLEAR PR-state stub -- otherwise the fake gh
+# returns empty and the exclusion fail-closes, masking the gate/posture behavior under test.
+# The exclusion itself is covered by tests/test-mega-merge.sh.
+PRINFO_STUB="$FAKEBIN/prinfo-clear"
+printf '#!/usr/bin/env bash\nprintf '"'"'false\\037\\037clear test PR\\n'"'"'\n' > "$PRINFO_STUB"
+chmod +x "$PRINFO_STUB"
+export MEGA_MERGE_PR_INFO_CMD="$PRINFO_STUB"
+
 LANE=full
 REQUIRED="$(bash "$GL" required "$LANE")"
 
