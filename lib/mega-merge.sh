@@ -231,7 +231,19 @@ mark() {
   "$gh" pr ready "$pr" ${rf[@]+"${rf[@]}"} --undo >/dev/null 2>&1 || true
   # do-not-merge label = the mark the code guard (_merge_exclusion) reads
   "$gh" pr edit "$pr" ${rf[@]+"${rf[@]}"} --add-label do-not-merge >/dev/null 2>&1 || true
-  echo "marked PR #$pr held: draft + do-not-merge"
+  # Confirm the mark actually landed (SPEC-104 TIER-4 security review, Medium). The three calls
+  # above are best-effort (|| true) so a gh auth/rate-limit/wrong-repo/creation-race failure never
+  # crashes the loop -- but a silent no-op that still reported success would leave a held PR
+  # UNPROTECTED while claiming otherwise. Reuse _merge_exclusion as the verifier: mark succeeded
+  # iff the guard would now REFUSE the PR (rc 0 = held). rc 1 (clear) or 2 (unreadable) => the
+  # mark did not land; WARN + nonzero so a caller/CI can react instead of trusting a success string.
+  _merge_exclusion "$pr" >/dev/null 2>&1; local mrc=$?
+  if [ "$mrc" -eq 0 ]; then
+    echo "marked PR #$pr held: draft + do-not-merge"
+    return 0
+  fi
+  echo "mark: WARN PR #$pr is NOT confirmed held after marking (exclusion rc=$mrc); the draft/label may not have landed (gh auth / wrong repo / PR not yet visible). Verify + re-mark manually before relying on the guard." >&2
+  return 1
 }
 
 cmd="${1:-}"; shift 2>/dev/null || true

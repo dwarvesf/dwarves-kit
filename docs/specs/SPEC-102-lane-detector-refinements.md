@@ -74,6 +74,8 @@ Pins (added where the detector suite already lives, `tests/test-hooks.sh`):
 ## Open questions
 
 Legacy runs whose ledger carries no board-linked ID/PR (`kit-clean-01-startwire`, `cc-hyg-04`)
-remain boardless-flagged: a data gap (the run recorded no ID), not a detector bug. Making every
-future run self-declare its board ID is a start-wiring/assign concern, out of this sub-goal's
-scope (SG-01 boundary). Noted, not fixed here.
+remain boardless-flagged: a data gap (the run recorded no ID), not a detector bug. Fully clearing
+future runs needs the START line to carry a `board=<ID|PR>` field, which neither this sub-goal nor
+the shipped SG-01 adds; that is a distinct follow-up (TIER-4 advisor P6-2, tracked in the
+kit-telem-cleanup NOTES `## Proposed additions`), not something SG-01 already covers. Noted, not
+fixed here.

@@ -70,8 +70,50 @@ _soft_re=(
 
 LANE=""; REASON=""; FIRED=""
 
+# Edit-vs-mention signal (SPEC-105 / ID-088). FILES = the change's touched files (space-
+# separated); FILES_SET = 1 when the caller passed --files (even empty). Default: no files
+# supplied -> the kit-machinery hard-gate keeps its legacy text-only behavior (a mention
+# escalates), so nothing regresses for callers that pass none. Set per-invocation by
+# _extract_files below; a fresh CLI process starts at the defaults.
+FILES=""; FILES_SET=0; REMAIN=()
+
+# _files_touch_machinery -- true if any touched file is under lib/ or hooks/, the kit's
+# enforcement layer (SPEC-069's own definition of the machinery surface). This is the FILE
+# fact that separates an EDIT to a machinery lib from a mere textual MENTION of its basename.
+_files_touch_machinery() {
+  # Quote the split (read -ra, not a bare `for f in $FILES`) so a path with a space or a
+  # literal glob char is not word-split / pathname-expanded (TIER-4 security nit). NOTE for the
+  # future caller that wires --files: source the list from a trusted `git diff --name-only`, not
+  # a model-authored free-text claim, or a curated/incomplete list could under-gate a real edit.
+  local f _files=()
+  IFS=' ' read -ra _files <<< "$FILES"
+  for f in ${_files[@]+"${_files[@]}"}; do
+    case "$f" in
+      lib/*|hooks/*|*/lib/*|*/hooks/*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# _extract_files "$@" -- pull an optional `--files <list>` / `--files=<list>` out of the args,
+# set FILES + FILES_SET, and leave the remaining (description) args in REMAIN. Anywhere in the
+# arg list; the value is one shell word (quote a multi-file list at the call site).
+_extract_files() {
+  FILES=""; FILES_SET=0; REMAIN=()
+  local a skip=0
+  for a in "$@"; do
+    if [ "$skip" = 1 ]; then FILES="$a"; skip=0; continue; fi
+    case "$a" in
+      --files)   FILES_SET=1; skip=1 ;;
+      --files=*) FILES_SET=1; FILES="${a#--files=}" ;;
+      *)         REMAIN+=("$a") ;;
+    esac
+  done
+}
+
 # classify_core "<desc>" -- sets LANE, REASON, FIRED. The single source of truth both
-# `classify` and `explain` read.
+# `classify` and `explain` read. Reads the FILES/FILES_SET globals for the edit-vs-mention
+# discriminator (SPEC-105); callers that don't set them get the legacy text-only path.
 classify_core() {
   local lc; lc="$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]')"
   LANE=""; REASON=""; FIRED=""
@@ -99,6 +141,20 @@ classify_core() {
   # 3. hard-gate flags -> full.
   local i hard=""
   for i in "${!_hard_re[@]}"; do
+    if [ "${_hard_name[$i]}" = kit-machinery ]; then
+      # Edit-vs-mention (SPEC-105 / ID-088): kit-machinery is a proxy for "touches the
+      # enforcement surface", which is a FILE fact, not a semantic one (unlike auth /
+      # data-model, which are risky by subject regardless of files). When the caller supplied
+      # --files, the FILE is authoritative: escalate on an actual EDIT to lib/ or hooks/, NOT
+      # on a description that merely names a basename. No --files -> legacy text-only (a mention
+      # escalates), so nothing regresses.
+      if [ "$FILES_SET" = 1 ]; then
+        _files_touch_machinery && hard="$hard kit-machinery"
+      elif printf '%s' "$lc" | grep -qE "${_hard_re[$i]}"; then
+        hard="$hard kit-machinery"
+      fi
+      continue
+    fi
     if printf '%s' "$lc" | grep -qE "${_hard_re[$i]}"; then hard="$hard ${_hard_name[$i]}"; fi
   done
   if [ -n "$hard" ]; then
@@ -217,13 +273,13 @@ escalate() {
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
-    classify) classify_core "$@"; printf '%s\n' "$LANE";;
-    explain)  classify_core "$@"; printf '%s\nreason: %s\nflags: %s\n' "$LANE" "$REASON" "${FIRED:-none}";;
-    check)    lane_check "$@";;
+    classify) _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; printf '%s\n' "$LANE";;
+    explain)  _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; printf '%s\nreason: %s\nflags: %s\n' "$LANE" "$REASON" "${FIRED:-none}";;
+    check)    _extract_files "$@"; lane_check ${REMAIN[@]+"${REMAIN[@]}"};;
     escalate) escalate "$@";;
     lanes)    printf 'tiny\nnormal\nfull\nbug\nbackfill\n';;
     flags)    printf '%s\n' "${_hard_name[@]}" "${_soft_name[@]}";;
-    *) echo "usage: lane-classify.sh {classify \"<desc>\"|explain \"<desc>\"|check <chosen-lane> \"<desc>\"|escalate <current-lane> <spec-file>|lanes|flags}" >&2; return 64;;
+    *) echo "usage: lane-classify.sh {classify [--files \"<paths>\"] \"<desc>\"|explain [--files ...] \"<desc>\"|check [--files ...] <chosen-lane> \"<desc>\"|escalate <current-lane> <spec-file>|lanes|flags}" >&2; return 64;;
   esac
 }
 

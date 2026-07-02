@@ -54,8 +54,15 @@ Pins added to `tests/test-mega-merge.sh` (offline, `MEGA_MERGE_GH` mock):
 - `lib/mega-merge.sh` has a `mark` verb; `commands/mega.md` calls it at the held-PR open step.
 - `README.md` mega-merge entry + `MANUAL.md` held-PR note document the mark.
 - `docs/verification/merge-mark.md` carries the run-table + the mark<->guard end-to-end proof.
-- Closes the ID-083 / ID-089 guard pair: the guard defends a marked PR; this guarantees the mark.
+- Closes the ID-083 / ID-089 guard pair FOR THE `commands/mega.md`-driven PR-open path: the guard
+  defends a marked PR; `mark` guarantees (and now verifies) the mark on that path.
 
 ## Open questions
 
-None.
+- **Second PR-open site (TIER-4 advisor P5-2).** ID-089 also named the bounded `/goal` loop's own
+  gated-final PR-open step; only `commands/mega.md` calls `mark` here. The loop currently relies on
+  the human/loop invoking `mark` (as this wave's own final held PR does). A `mega-merge sweep` that
+  scans open gate/gated-final PRs for a missing mark (surfaced at `/kit:retro` like boardless runs)
+  is the durable close for every site; tracked in the mega-goal NOTES `## Proposed additions`.
+- `mark` was hardened at TIER-4 to VERIFY the mark landed (reuse `_merge_exclusion`; WARN + nonzero
+  on a silent gh no-op) rather than trust a hardcoded success string.
