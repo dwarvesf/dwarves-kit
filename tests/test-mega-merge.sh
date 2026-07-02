@@ -34,12 +34,20 @@ case "\$1" in
   4) printf 'false%s%s[HOLD] gated final\\n' "\$US" "\$US" ;;             # title marker
   5) exit 1 ;;                                                            # unreadable
   6) printf 'false%sci-red,gated-final%smixed labels\\n' "\$US" "\$US" ;; # hold among others
+  7) printf 'false%s*%sglob label\\n' "\$US" "\$US" ;;                    # label '*' must not glob/clear-crash
+  8) printf 'false%s  Gated-Final  %swhitespace and case\\n' "\$US" "\$US" ;; # normalized hold match
+  9) echo "not json at all {{{" ;;                                        # malformed non-empty -> fail closed
 esac
 SH
 chmod +x "$TMP/prinfo"
 export MEGA_MERGE_PR_INFO_CMD="$TMP/prinfo"
 
 run() { MEGA_MERGE_GATE_LEDGER="$1" bash "$MM" merge "$2" somerid full 2>&1; }
+
+# fake gh on PATH that marks if invoked, so "a held PR never reaches gh even with --execute"
+# is a real assertion (the exclusion runs BEFORE the execute/posture branch).
+GH_MARK="$TMP/gh-called"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s"\nexit 0\n' "$GH_MARK" > "$TMP/gh"; chmod +x "$TMP/gh"
 
 echo "=== mega-merge exclusion (SPEC-100 AC1-AC6) ==="
 
@@ -72,10 +80,31 @@ if has "gh pr merge" "$O5"; then ok "AC5: never prints a merge command for an un
 O6="$(run "$TMP/gl-pass" 6)"
 has "gated-final" "$O6"; ok "AC6: hold label detected among multiple labels" $?
 
+# AC6b [injection safety]: a label of "*" is treated as a literal string, never glob-expanded
+# (the label loop must not word-split/glob an attacker-set label); it is not a hold word -> clear.
+O8="$(cd "$TMP" && touch fa fb && run "$TMP/gl-pass" 7)"
+has "gh pr merge 7" "$O8"; ok "AC6b: label '*' is literal, no glob expansion / no crash" $?
+# AC6c: a hold label with surrounding whitespace + odd case still blocks (normalized match).
+O9="$(run "$TMP/gl-pass" 8)"
+has "hold label" "$O9"; ok "AC6c: whitespace/case-variant hold label still blocks" $?
+
+# AC5b [fail-closed on garbage]: non-empty but malformed PR state (not the 3-field shape) is
+# refused, NOT parsed to a garbage draft that falls through to clear (security review B2).
+O5b="$(run "$TMP/gl-pass" 9)"
+has "cannot read PR" "$O5b"; ok "AC5b [NC]: malformed non-empty PR state fails closed (not cleared)" $?
+if has "gh pr merge" "$O5b"; then ok "AC5b: never prints a merge command for malformed state" 1; else ok "AC5b: never prints a merge command for malformed state" 0; fi
+
 # AC7 [gate still enforced]: a CLEAR PR with a FAILING gate is still blocked (exclusion did
 # not bypass the ship-gate). Exclusion is checked first, but a clear PR then hits the gate.
 O7="$(run "$TMP/gl-fail" 1)"
 has "ship-gate not satisfied" "$O7"; ok "AC7: clear PR + failing gate still blocked by the gate" $?
+
+# AC8 [load-bearing]: a held PR with --execute NEVER calls gh (exclusion runs before the
+# execute branch). Would catch a future reorder that moved the check after --execute.
+rm -f "$GH_MARK"
+O10="$(PATH="$TMP:$PATH" MEGA_MERGE_GATE_LEDGER="$TMP/gl-pass" bash "$MM" merge 2 somerid full --execute 2>&1)"
+has "BLOCKED" "$O10"; ok "AC8: held PR + --execute is still BLOCKED" $?
+ok "AC8 [load-bearing]: held PR + --execute never invokes gh" $([ -f "$GH_MARK" ] && echo 1 || echo 0)
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

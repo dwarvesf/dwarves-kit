@@ -11,7 +11,11 @@ Verdict: PASS
 | AC3 [NC] | draft PR refused | PR#3 (draft) -> "is a draft" BLOCKED | PASS |
 | AC4 [NC] | bracketed-title-marker PR refused | PR#4 (`[HOLD]`) -> "title carries a hold marker" BLOCKED | PASS |
 | AC5 [NC, fail-closed] | unreadable state refused, no merge cmd printed | PR#5 (gh error) -> "cannot read PR" BLOCKED, exit != 0, no `gh pr merge` | PASS |
+| AC5b [NC, fail-closed] | malformed non-empty state refused (not cleared) | PR#9 (`not json {{{`) -> "cannot read PR" BLOCKED, no merge cmd (security B2) | PASS |
 | AC6 | hold label among multiple labels still blocks | PR#6 (`ci-red,gated-final`) -> BLOCKED on `gated-final` | PASS |
+| AC6b [injection] | label `*` is literal, no glob/crash | PR#7 (`*` + files in CWD) -> clear, no expansion (security glob fix) | PASS |
+| AC6c | whitespace/case-variant hold label blocks | PR#8 (`  Gated-Final  `) -> BLOCKED (normalized) | PASS |
+| AC8b [load-bearing] | held PR + `--execute` never calls gh | PR#2 + `--execute` -> BLOCKED, gh marker absent | PASS |
 | AC7 [gate preserved] | clear PR + failing gate still blocked by the gate | PR#1 + failing gate-ledger -> "ship-gate not satisfied" | PASS |
 | AC8 [no regression] | sibling + full suites green | `test-mega-reconcile` 35/35, `test-meta` 578/578, `test-hooks` 438/438 | PASS |
 
@@ -30,7 +34,7 @@ Verdict: PASS
 
 | Command | Exit | Result |
 |---------|------|--------|
-| `bash tests/test-mega-merge.sh` | 0 | 12/12 passed |
+| `bash tests/test-mega-merge.sh` | 0 | 18/18 passed (incl. glob-safety, fail-closed-on-garbage, --execute-never-calls-gh) |
 | `bash tests/test-mega-reconcile.sh` | 0 | 35/35 passed |
 | `bash tests/test-meta.sh` | 0 | 578/578 passed |
 | `bash tests/test-hooks.sh` | 0 | 438/438 passed |

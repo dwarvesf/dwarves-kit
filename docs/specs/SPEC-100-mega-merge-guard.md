@@ -31,13 +31,31 @@ refused even if its gates pass. It reads PR STATE (never conversation intent):
 `merge()` calls it right after posture resolution; a refusal prints the reason, logs it, and
 returns nonzero without touching `gh`.
 
+### Threat model + a known limitation (security review B1)
+This guard reads PR STATE, so it defends a held PR that CARRIES a distinguishing mark (draft,
+hold label, or bracketed title marker). It does NOT invent a mark: an un-marked gate/gated-final
+PR carries no state to key off, so the code guard alone clears it. The mark must be applied
+where the PR is OPENED. Two consequences, both honest:
+- The claim is narrowed to: "a prompt-rationalizing model cannot merge past the exclusion for a
+  MARKED held PR." That is exactly the "PR label/state cross-check" ID-083 asked for , the
+  complementary half (ALWAYS mark a gate/gated-final PR at creation) is enforcement in
+  `commands/mega.md`, out of SG-05's scope, filed as **ID-089**.
+- STRONG mitigation available today: open held PRs as DRAFTS. GitHub itself refuses to merge a
+  draft PR (an intrinsic backstop), and this guard also refuses it , two independent layers, one
+  not dependent on any label discipline. This mega-goal's own held-final PR is opened labelled
+  `do-not-merge` AND should be a draft.
+
 ## Acceptance criteria
 - AC1 [positive control]: a clear, gate-passing PR still reaches the merge (dry-run prints `gh pr merge`).
 - AC2 [NC]: a hold-labelled PR is refused even with a passing gate; the refusal names the label.
 - AC3 [NC]: a draft PR is refused.
 - AC4 [NC]: a bracketed-title-marker PR is refused.
-- AC5 [NC, fail-closed]: unreadable PR state is refused with a reason; no merge command is printed.
+- AC5 [NC, fail-closed]: unreadable PR state (gh error/empty) is refused with a reason; no merge command is printed.
+- AC5b [NC, fail-closed]: malformed non-empty state (not the 3-field shape) is refused, not parsed to a garbage draft that clears.
 - AC6: a hold label among multiple labels still blocks.
+- AC6b [injection safety]: a label of `*` is a literal string, never glob-expanded (clear, no crash).
+- AC6c: a hold label with surrounding whitespace / odd case still blocks (normalized match).
+- AC8b [load-bearing]: a held PR with `--execute` never invokes `gh` (exclusion runs before the execute branch).
 - AC7 [gate preserved]: a clear PR with a FAILING gate is still blocked by the gate (exclusion did not bypass it).
 - AC8 [no regression]: `test-mega-reconcile.sh` (35), `test-meta.sh` (578), `test-hooks.sh` (438) stay green.
 
@@ -70,3 +88,11 @@ bash tests/test-meta.sh ; bash tests/test-hooks.sh
   gate still runs for a clear PR (AC7).
 - DEC-004: Unit-Separator delimiter, not tab -- tab is whitespace, so `read` collapses an
   empty labels field and mis-assigns the title; \037 (non-whitespace) preserves empty fields.
+- DEC-005 (security B2): validate the parsed shape (exactly two \037 separators AND a boolean
+  draft) before trusting it, else `return 2` (fail-closed) -- a `gh` wrapper banner or any
+  non-conforming non-empty output must not parse to a garbage `draft` and fall through to clear.
+- DEC-006 (security B1): the guard defends MARKED held PRs; it does not synthesize a mark.
+  The claim is narrowed accordingly and the always-mark-at-creation enforcement is ID-089.
+  Labels are glob-safe (`read -ra`, quoted) and normalized (whitespace/case); a comma inside a
+  label name can only OVER-block (split into a spurious token that might match a hold word),
+  never under-block -- fail-safe for a security guard.

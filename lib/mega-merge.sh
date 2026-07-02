@@ -35,8 +35,10 @@
 # at the PROMPT level (mirrors /kit:dispatch and the skill: a human always merges those).
 # SPEC-100 (ID-083) adds a CODE-LEVEL backstop: `merge` itself calls `_merge_exclusion`,
 # which reads the PR's GitHub STATE (draft / hold-label / bracketed title marker) and
-# refuses , fail-closed on unreadable state , so a prompt-rationalizing model cannot merge
-# past the exclusion even if the prompt-level rule is absent. Defense-in-depth, not a
+# refuses , fail-closed on unreadable OR malformed state , so a prompt-rationalizing model
+# cannot merge past the exclusion for a MARKED held PR even if the prompt-level rule is
+# absent. It defends a MARKED PR; it does not synthesize a mark (an un-marked held PR must be
+# opened draft/labelled at creation , enforcement tracked as ID-089). Defense-in-depth, not a
 # replacement for the routing.
 #
 # Subcommands:
@@ -96,12 +98,24 @@ _merge_exclusion() {
   local pr="$1" info draft labels title l
   info="$(_pr_info "$pr")" || return 2
   [ -n "$info" ] || return 2
+  # Fail CLOSED on malformed-but-non-empty state (security review B2): a `gh` wrapper banner
+  # or any output not of the exact 3-field <draft>US<labels>US<title> shape must NOT parse to
+  # a garbage `draft` that then falls through to "clear". Require EXACTLY two \037 separators
+  # and a boolean draft, else refuse as unclassifiable.
+  [ "$(printf '%s' "$info" | tr -cd '\037' | wc -c | tr -d ' ')" = "2" ] || return 2
   IFS=$'\037' read -r draft labels title <<< "$info"
+  case "$draft" in true|false) ;; *) return 2 ;; esac
   [ "$draft" = "true" ] && { echo "PR #$pr is a draft"; return 0; }
-  # hold labels: any of these (case-insensitive) block auto-merge.
+  # hold labels: any of these (case-insensitive) block auto-merge. Split on comma with
+  # `read -ra` (NOT an unquoted `for l in ${labels//,/ }`, which would word-split AND GLOB an
+  # attacker-set label like `*`); the loop var is always quoted.
   local hold=" do-not-merge donotmerge gated-final hold blocked wip no-merge "
-  for l in ${labels//,/ }; do
-    case "$hold" in *" $(printf '%s' "$l" | tr 'A-Z' 'a-z') "*)
+  local larr=() l ll
+  IFS=',' read -ra larr <<< "$labels"
+  for l in "${larr[@]}"; do
+    ll="$(printf '%s' "$l" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+    [ -n "$ll" ] || continue
+    case "$hold" in *" $ll "*)
       echo "PR #$pr carries the hold label '$l'"; return 0 ;; esac
   done
   # bracketed title markers, e.g. [HOLD] [gated-final] [do not merge] [WIP] [final]

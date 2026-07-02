@@ -32,3 +32,28 @@ even its own sub-goal's PR. Han does the final merge.
 SG-05 classified `full` at intake because SG-03 added `mega-merge` to the kit-machinery
 hard-gate. Third wave sub-goal whose own lane was corrected by an earlier sub-goal of the
 same wave.
+
+## 2026-07-02 review: glob-injection in the label loop (BLOCKER, fixed)
+
+First cut iterated labels with `for l in ${labels//,/ }` (unquoted), which word-splits AND
+pathname-expands. A GitHub label is attacker-influenced (anyone who can label a PR), so a
+label of `*` run from a CWD with matching files expanded into filenames, making hold
+detection depend on `$PWD` , non-deterministic in a security backstop. Fixed to
+`IFS=',' read -ra larr <<< "$labels"` + quoted `"${larr[@]}"` + whitespace/case normalization
+(`tr -d '[:space:]'`), so an attacker label is a literal string and a whitespaced/odd-case
+hold label still matches. Pinned (AC6b glob-literal, AC6c whitespace/case, AC8 held+--execute
+never calls gh).
+
+## 2026-07-02 security review: 2 BLOCKERs
+
+- B2 fail-open on malformed state (FIXED): `_pr_info` only guarded empty/nonzero, so a
+  non-empty non-conforming line (a gh-wrapper banner) parsed to a garbage `draft` and fell
+  through to CLEAR , the opposite of the fail-closed promise. Fixed: validate exactly two
+  \037 separators AND `draft in {true,false}`, else `return 2`. Pinned (AC5b).
+- B1 blind to an UN-marked held PR (ACKNOWLEDGED + narrowed, not "fixed in code"): the guard
+  keys off PR state, so it only defends a MARKED held PR; nothing in-repo auto-applies the
+  mark. Honest resolution: narrowed the SPEC claim to "marked held PR" (which IS the
+  label/state cross-check ID-083 asked for), recommend opening held PRs as DRAFTS (GitHub
+  natively blocks draft merges = an intrinsic second layer), and filed ID-089 to enforce
+  always-mark-at-creation in commands/mega.md (out of SG-05 scope). A comma-in-a-label can
+  only over-block (fail-safe), never under-block.
