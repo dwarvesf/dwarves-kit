@@ -239,9 +239,36 @@ for PH in grill think spec test-plan build review docs ship; do
 done
 printf '| ID-003 | done work | shipped [run spec-done] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
 assert_output_not_contains "detector: false-positive guard (complete run not flagged)" "spec-done" "$(BDT misfires)"
-# A4 seam-agreement pin: the cross-lib contract is the literal word 'complete' on both sides
-assert_true "seam: gate-ledger progress prints the agreed literal" "$(grep -q "complete (%d/%d)" "$KIT_DIR/lib/gate-ledger.sh"; echo $?)"
-assert_true "seam: lane-telemetry greps the agreed literal" "$(grep -q "grep -q 'complete'" "$KIT_DIR/lib/lane-telemetry.sh"; echo $?)"
+# A4 seam-agreement pin (SPEC-102): shipped-incomplete now delegates to `gate-ledger.sh check`
+# (the ship-gate's required-gate contract), so run-lite phases never trip it. The seam is the
+# check call; a rename breaks the build, not the detector.
+assert_true "seam: lane-telemetry shipped-incomplete calls gate-ledger check" "$(grep -q 'gate-ledger.sh" check' "$KIT_DIR/lib/lane-telemetry.sh"; echo $?)"
+
+# --- SPEC-102 detector refinements (ID-086): boardless + shipped-incomplete false-flag fixes ---
+# 9a boardless-false-flag-now-clean: a run linked to its board row by ID (not raw rid) is on-board.
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-byid.log"
+printf '2026-06-10T07:10:00Z | GATE | spec | ran | implements ID-007\n' >> "$BD_DIR/logs/runs/spec-byid.log"
+printf '| ID-007 | work tracked by id only | shipped |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"   # row keys on ID-007, NOT the rid
+assert_output_not_contains "detector 9a: boardless cleared by ledger ID/PR match (not raw rid)" "spec-byid" "$(BDT misfires)"
+# 9a negative control: a run with no rid-on-board and no board-linked ID/PR token still flags.
+printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-orphan.log"
+printf '2026-06-10T07:10:00Z | GATE | spec | ran | no board link at all\n' >> "$BD_DIR/logs/runs/spec-orphan.log"
+assert_output_contains "detector 9a: genuinely boardless run still flagged (negative control)" "spec-orphan" "$(BDT misfires)"
+# 9b shipped-incomplete-false-flag-now-clean: a full-lane NON-UI run with every REQUIRED gate
+# disposed but the lite ui-design un-disposed is NOT flagged.
+printf '2026-06-10T07:00:00Z | START | lane=full classified=full type=spec-feature repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/full-noui.log"
+for PH in think design design-critique spec validate test-plan build review docs ship reflect; do
+  printf '2026-06-10T08:00:00Z | GATE | %s | ran | done\n' "$PH" >> "$BD_DIR/logs/runs/full-noui.log"
+done
+printf '| ID-008 | full non-ui work | shipped [run full-noui] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
+assert_output_not_contains "detector 9b: full non-UI run (ui-design lite un-disposed) not flagged" "full-noui" "$(BDT misfires)"
+# 9b negative control: a full-lane run missing a REQUIRED gate (review) still flags.
+printf '2026-06-10T07:00:00Z | START | lane=full classified=full type=spec-feature repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/full-gap.log"
+for PH in think design design-critique spec validate test-plan build docs ship reflect; do
+  printf '2026-06-10T08:00:00Z | GATE | %s | ran | done\n' "$PH" >> "$BD_DIR/logs/runs/full-gap.log"   # note: no `review`
+done
+printf '| ID-009 | full run missing review | shipped [run full-gap] |\n' >> "$BD_DIR/repo/_meta/BACKLOG.md"
+assert_output_contains "detector 9b: full run missing a required gate still flagged (negative control)" "full-gap (full)" "$(BDT misfires)"
 # T1 (review): color smoke under a real PTY, at least one escape byte must render
 if command -v script >/dev/null 2>&1; then
   # falsifiable: progress under a real PTY must emit escape bytes; piped (same command,
