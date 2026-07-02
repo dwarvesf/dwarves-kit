@@ -30,6 +30,27 @@ tools_violation() {
     | grep -E '^[[:space:]]*-[[:space:]]*(Edit|Write|NotebookEdit|MultiEdit)[[:space:]]*$|^[[:space:]]*-[[:space:]]*Bash[[:space:]]*$'
 }
 
+# --- GATE MODE (SG-03/04 reuse): `test-agent-effectiveness.sh <agent-path>` runs
+# the DETERMINISTIC lens subset (the parts of the 4 lenses machine-checkable in CI:
+# read-only tools for a reviewer, valid model tier, on-axis name) against ONE agent
+# and exits 0 iff it passes. This is the CI proxy for "gated by the 01 validator" a
+# meta-agent-scaffolded review agent passes through; the full four-lens judgment is
+# the LLM agent's job at runtime, this catches the mechanical defects. ---
+if [ "${1:-}" != "" ] && [ -f "${1:-}" ]; then
+  A="$1"; N=$(basename "$A" .md)
+  echo "=== agent-effectiveness GATE: $A ==="
+  [ -z "$(tools_violation "$A")" ]; assert "gate: $N declares read-only tools only" $?
+  MODEL=$(awk -F': *' '/^---$/{c++; if(c==2)exit} c==1 && /^model:/{print $2; exit}' "$A" | tr -d '[:space:]')
+  echo "$MODEL" | grep -qE '^(sonnet|haiku|opus)$'; assert "gate: $N model tier valid ($MODEL)" $?
+  if echo "$N" | grep -qE -- '-checker$|-auditor$|^reviewer$|-validate$'; then
+    assert "gate: $N name is not a retired review suffix" 1
+  else
+    assert "gate: $N name is not a retired review suffix" 0
+  fi
+  echo ""; echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
+  [ "$FAIL" -eq 0 ]; exit $?
+fi
+
 echo "=== agent-effectiveness validator (SPEC-088 AC1-AC5) ==="
 
 # --- AC3: the validator uses ONLY read-only tools (deterministic) ------------

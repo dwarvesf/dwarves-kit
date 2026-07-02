@@ -267,6 +267,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 | `agent-effectiveness` | `/kit:draft-agent` (Step 4.7) | Read-only: validates a new/changed agent def's effectiveness (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits); diff-keyed, advisory, fail-safe |
 | `code-reviewer` | `/review-team` | Focused review with configurable lens |
 | `security-reviewer` | `/review-team` | Deep OWASP-style audit |
+| `advisor` | `/review-team` (Step 2b, critique) + ship/mega final boundary (over-suggest) | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
 | `research-stack` | `/spec` | Brownfield stack mapping |
 | `research-features` | `/spec` | Brownfield feature inventory |
