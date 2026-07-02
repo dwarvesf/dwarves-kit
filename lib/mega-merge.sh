@@ -106,8 +106,16 @@ _merge_exclusion() {
   # or any output not of the exact 3-field <draft>US<labels>US<title> shape must NOT parse to
   # a garbage `draft` that then falls through to "clear". Require EXACTLY two \037 separators
   # and a boolean draft, else refuse as unclassifiable.
+  local US=$'\037'
   [ "$(printf '%s' "$info" | tr -cd '\037' | wc -c | tr -d ' ')" = "2" ] || return 2
-  IFS=$'\037' read -r draft labels title <<< "$info"
+  # Split on the Unit Separator with pure PARAMETER EXPANSION, not `IFS= read` , the
+  # empty-labels-middle-field case mis-parsed under the macos-latest CI bash (title landed in
+  # labels), even though it parsed correctly under local bash 3.2/5.x. Parameter expansion is
+  # deterministic for empty fields on every bash build.
+  draft="${info%%"$US"*}"                      # up to the 1st US
+  local rest="${info#*"$US"}"                   # after the 1st US
+  labels="${rest%%"$US"*}"                     # up to the 2nd US
+  title="${rest#*"$US"}"                        # after the 2nd US
   case "$draft" in true|false) ;; *) return 2 ;; esac
   [ "$draft" = "true" ] && { echo "PR #$pr is a draft"; return 0; }
   # hold labels: any of these (case-insensitive) block auto-merge. Split on comma with
