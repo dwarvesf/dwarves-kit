@@ -14,6 +14,14 @@ GL="$KIT_DIR/lib/gate-ledger.sh"
 EX="$KIT_DIR/commands/execute.md"
 FIX="$KIT_DIR/tests/fixtures/lane-escalation"
 
+# Isolate the completeness.log writer so test fixtures never pollute the operator's real
+# telemetry (SPEC-103 / ID-087). The `lane-classify check` at the AC2 downgrade guard below
+# writes a LANE-CHECK line; without this export it would land in the real
+# ~/.local/state/dwarves-kit/logs/completeness.log (the 12 leaked "jwt sessions" lines the
+# SPEC-073 eval found). Mirrors tests/test-hooks.sh's file-wide export. Per-command
+# `DWARVES_KIT_LOG_DIR="$LOG_DIR"` prefixes below intentionally override this for the ledger AC.
+export DWARVES_KIT_LOG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lane-esc.XXXXXX")"
+
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
