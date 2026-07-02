@@ -121,9 +121,12 @@ reserved for the BACKLOG cockpit, never a working roadmap).
 ### Step 5: Hand off, then enforce at ship (never bypass)
 
 Hand the pointer to the activator (paste into `/goal`, or drive it
-non-interactively via `lib/orchestrate.sh run <dir>`). The loop works sub-goals in
-chain order; for each one that finishes with `Done =` verified and its PR's CI
-green:
+non-interactively via `lib/orchestrate.sh run <dir>`). The driver emits a
+`gate-ledger start` per dispatched sub-goal (rid derived from the goal file's
+`**Branch:**`), the automated mirror of the START `commands/assign.md` makes, so
+mega-dispatched runs are tracked in `lane-telemetry`, not `?` (SPEC-101). The loop
+works sub-goals in chain order; for each one that finishes with `Done =` verified and
+its PR's CI green:
 
 ```bash
 RID=$(bash lib/gate-ledger.sh rid)                                # or the sub-goal's own branch slug

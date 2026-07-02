@@ -216,6 +216,38 @@ _route() {
   printf '%s\t%s\n' "$model" "$effort"
 }
 
+# Emit a gate-ledger START for a dispatched sub-goal (SPEC-101 / ID-085), the automated
+# mirror of the `gate-ledger.sh start` that `commands/assign.md` makes for hand-run work.
+# Without it, mega-dispatched runs are untracked (`?` lane/type) in lane-telemetry, the root
+# cause of the SPEC-073 eval's NULL lane/type/skip/escape rates. Advisory + non-fatal: a
+# missing goal file or a goal file with no `**Branch:**` WARNs and skips (a rid that does not
+# match the session's real branch would only orphan the START). The rid is derived from the
+# goal file's declared `**Branch:** <type>/<slug>` (branch does not exist yet at dispatch;
+# gate-ledger keys the ledger by the rid string, and `runid` is idempotent, so the driver's
+# raw slug and the session's later normalized rid resolve to one ledger file). chosen ==
+# classified on both axes: the automated path takes the classifier verbatim (no human
+# override), which is honest and never reads as a misroute.
+_emit_start() {  # dir id
+  local dir="$1" id="$2"
+  local gf; gf=$(_goalfile "$dir" "$id")
+  [ -n "$gf" ] || return 0   # no goal file already warns loudly in cmd_run
+  local branch slug
+  branch=$(grep -iE '^\*\*Branch:\*\*' "$gf" | head -1 | sed -E 's/^\*\*[Bb]ranch:\*\*[[:space:]]*//; s/[[:space:]].*$//')
+  if [ -z "$branch" ]; then
+    echo "[orchestrate] [telemetry] WARN: $id goal file has no '**Branch:**' header; cannot derive rid, skipping START (run will be '?' in lane-telemetry)." >&2
+    return 0
+  fi
+  slug="${branch#*/}"   # strip the type/ prefix, matching gate-ledger.sh rid
+  local title lane type
+  title=$(_sg_title "$(_sg_line "$dir/ROADMAP.md" "$id")" "$id")
+  lane=$(bash "$ORCH_DIR/lane-classify.sh" classify "$title" 2>/dev/null | tail -1)
+  type=$(bash "$ORCH_DIR/task-type-classify.sh" classify "$title" 2>/dev/null | tail -1)
+  [ -n "$lane" ] || lane=normal
+  [ -n "$type" ] || type=spec-feature
+  bash "$ORCH_DIR/gate-ledger.sh" start "$slug" "$lane" "$lane" "$type" "$type" \
+    && _say "[orchestrate] [telemetry] $id START recorded (rid=$slug lane=$lane type=$type)."
+}
+
 _build_prompt() {
   local dir="$1" id="$2"
   cat "$dir/POINTER_PROMPT.md" 2>/dev/null
@@ -367,6 +399,10 @@ cmd_run() {
       echo "[orchestrate] [guardrail] WARN: $id has no goals/ file; session runs without its contract (re-discovery hazard)." >&2
     fi
     _emit_event "$dir" "$id" executing "model=${rmodel:-inherit} effort=${reffort:-inherit}"
+    # SPEC-101: record the run's routing facts so mega-dispatched runs are as measurable
+    # as hand-run ones (assign.md makes this same START call). Before the session spawns,
+    # so a run that dies mid-session is still tracked, not '?'.
+    _emit_start "$dir" "$id"
     [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
     _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p, model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
     # Inject the prompt via a TEMP FILE on stdin, not a shell-interpolated argv arg (pi-swarm
