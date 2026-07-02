@@ -68,7 +68,6 @@ has "is a draft" "$O3"; ok "AC3 [NC]: draft PR refused" $?
 
 # AC4 [NC]: a bracketed-title-marker PR is refused.
 O4="$(run "$TMP/gl-pass" 4)"
-echo "AC4-DEBUG prinfo=[$(printf '%s' "$("$TMP/prinfo" 4)" | cat -v)] O4=[$(printf '%s' "$O4" | cat -v)]"
 has "title carries a hold marker" "$O4"; ok "AC4 [NC]: title-marker PR refused" $?
 
 # AC5 [NC, fail-closed]: unreadable PR state is refused with a reason (never merged on doubt).

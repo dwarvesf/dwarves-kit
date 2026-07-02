@@ -123,13 +123,17 @@ _merge_exclusion() {
   # attacker-set label like `*`); the loop var is always quoted.
   local hold=" do-not-merge donotmerge gated-final hold blocked wip no-merge "
   local larr=() l ll
-  IFS=',' read -ra larr <<< "$labels"
-  for l in "${larr[@]}"; do
-    ll="$(printf '%s' "$l" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
-    [ -n "$ll" ] || continue
-    case "$hold" in *" $ll "*)
-      echo "PR #$pr carries the hold label '$l'"; return 0 ;; esac
-  done
+  # Guard the empty-labels case: `"${larr[@]}"` on an EMPTY array throws "unbound variable"
+  # under `set -u` on bash 3.2 (the macos-latest CI runner). Only iterate when labels exist.
+  if [ -n "$labels" ]; then
+    IFS=',' read -ra larr <<< "$labels"
+    for l in "${larr[@]}"; do
+      ll="$(printf '%s' "$l" | tr 'A-Z' 'a-z' | tr -d '[:space:]')"
+      [ -n "$ll" ] || continue
+      case "$hold" in *" $ll "*)
+        echo "PR #$pr carries the hold label '$l'"; return 0 ;; esac
+    done
+  fi
   # bracketed title markers, e.g. [HOLD] [gated-final] [do-not-merge] [WIP] [final]. Pure-bash
   # case-glob (not grep -E): identical across bash 3.2/5.x and every grep build (a BSD/CI grep
   # quirk on the -E pattern flaked this check on macos-latest; bash string matching is portable).
