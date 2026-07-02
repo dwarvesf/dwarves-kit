@@ -268,6 +268,10 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 | `code-reviewer` | `/review-team` | Focused review with configurable lens |
 | `security-reviewer` | `/review-team` | Deep OWASP-style audit |
 | `advisor` | `/review-team` (Step 2b, critique) + ship/mega final boundary (over-suggest) | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
+| `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF.md` or a spec's Problem/Context) for clarity, completeness, testability |
+| `acceptance-verifier` | (right-arm parity roster; dispatchable at the spec's acceptance boundary) | Read-only dynamic verifier: executes the active spec's `## Verification` section end to end, maps each AC to a passing check |
+| `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
+| `recheck-verifier` | `/execute` (fresh-context re-audit over a right-arm PASS) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
 | `research-stack` | `/spec` | Brownfield stack mapping |
 | `research-features` | `/spec` | Brownfield feature inventory |

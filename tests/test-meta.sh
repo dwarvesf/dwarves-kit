@@ -2483,7 +2483,7 @@ done
 # SG-01) is intentionally on this list too: it reviews an AGENT DEFINITION,
 # not a V-model work artifact, so like `advisor` it is a named-noun validator,
 # NOT a naming violation -- do not "fix" its name to *-reviewer.
-REVIEW_AGENTS="task-verifier doc-verifier integration-verifier code-reviewer security-reviewer agent-effectiveness advisor"
+REVIEW_AGENTS="task-verifier doc-verifier integration-verifier code-reviewer security-reviewer agent-effectiveness advisor brief-reviewer acceptance-verifier system-verifier recheck-verifier"
 for NAME in $REVIEW_AGENTS; do
   TOTAL=$((TOTAL + 1))
   if is_on_review_axis "$NAME"; then
