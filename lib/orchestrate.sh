@@ -74,6 +74,12 @@ WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 FLIP_LOCK_STALE_SECS="${FLIP_LOCK_STALE_SECS:-120}"
 FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
 
+# Wavefront concurrency cap (SPEC-106 DEC-002/009). Default 1 = waves OFF: the run loop takes the
+# serial path always, byte-identical to the pre-wavefront loop. >=2 opts into concurrent waves. A
+# non-numeric or <1 value is REJECTED at cmd_run entry (see the validation there), NOT silently
+# coerced, per DEC-009 / Edge case 4. Defaulted here so the top-of-loop `-ge 2` test is `set -u`-safe.
+WAVE_CAP="${WAVE_CAP:-1}"
+
 _say() { printf '%s\n' "$*"; }
 
 # Portable file mtime (epoch secs). GNU `stat -c` FIRST: it errors cleanly on BSD/macOS, so the
@@ -753,6 +759,16 @@ cmd_run() {
   local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
   case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
 
+  # WAVE_CAP parse-time validation (SPEC-106 TASK-004b / DEC-009 / Edge case 4). Default 1 (waves
+  # off). A non-numeric or <1 value is REJECTED with a clear error + nonzero exit here, NOT silently
+  # coerced to 1 elsewhere, so a typo (`WAVE_CAP=0`, `WAVE_CAP=two`) fails loudly instead of quietly
+  # running serial. The digit-class check rejects empty / non-numeric / negative (the sign char is a
+  # non-digit); the `-lt 1` check then rejects 0.
+  case "$WAVE_CAP" in
+    ''|*[!0-9]*) echo "orchestrate: WAVE_CAP must be a positive integer >=1 (got: '$WAVE_CAP')" >&2; return 64 ;;
+  esac
+  [ "$WAVE_CAP" -lt 1 ] && { echo "orchestrate: WAVE_CAP must be >=1 (got: '$WAVE_CAP')" >&2; return 64; }
+
   if [ "$dry" = 1 ]; then
     _say "[plan] mega-goal: $dir"
     [ "$step" = 1 ]   && _say "  (--step: pause for the operator after each sub-goal)"
@@ -775,6 +791,29 @@ cmd_run() {
   fi
 
   while :; do
+    # SPEC-106 TASK-004b size-dispatch (DEC-002/006/012): serial-vs-wave decided per cycle on the
+    # ADMITTED count (post-`_wave_gate`), NOT the raw ready size (a no-deps mega-goal has ready size
+    # N, so raw size can't gate the serial path). WAVE_CAP defaults to 1 (waves OFF) => this guard is
+    # FALSE => the loop falls straight through to the byte-identical serial body below, exactly as the
+    # pre-wavefront loop ran (the sacred invariant). Only WAVE_CAP>=2 even consults `_wave_gate`; only
+    # `admitted>=2` (dep-free, Touches-declaring, provably-disjoint sub-goals) routes to `_wave_run`.
+    # admitted<=1 falls through to the serial body on `_next`'s pick, byte-identical for that cycle.
+    # `_wave_run` serializes its own flips under the flip lock and blocks until the wave drains, so we
+    # `continue` to recompute the next cycle from the freshly re-read ROADMAP: one blocking wave per
+    # cycle means no double-launch and no CAP overshoot across cycles. (Gate/`--step`/`--stream`/
+    # `--board` on the wave path are TASK-005/007's scope; at the default CAP=1 they are untouched.)
+    if [ "$WAVE_CAP" -ge 2 ]; then
+      local admitted_n
+      admitted_n=$(_wave_gate "$dir" "$roadmap" | awk -F'\t' '$1=="run"{n++} END{print n+0}')
+      if [ "$admitted_n" -ge 2 ]; then
+        if _wave_run "$dir" "$roadmap"; then
+          continue
+        fi
+        echo "[orchestrate] [wave] a wave sub-goal did not complete (nonzero exit or unflipped box); halting (no self-claim)." >&2
+        return 1
+      fi
+    fi
+
     local nx id policy
     nx=$(_next "$roadmap")
     [ -n "$nx" ] || { _say "[orchestrate] all sub-goals checked; done."; return 0; }

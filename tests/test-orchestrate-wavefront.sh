@@ -454,8 +454,103 @@ irc=0
 [ ! -f "$RUNDIR_ID/RAN" ] && pass "wave_run i: already-checked box was NOT re-run (idempotent resume)" || fail "wave_run i: re-ran a checked sub-goal"
 [ "$irc" = 0 ] && pass "wave_run i: empty/skip-only wave returns 0" || fail "wave_run i: skip-only wave returned $irc"
 
+# ============================ TASK-004b: cmd_run size-dispatch (serial-vs-wave) ============================
+# Wire `_wave_run` into `cmd_run` via ADMITTED-count size-dispatch. Sacred invariant: the default
+# (WAVE_CAP=1) path is byte-identical to the serial loop. Driven OUT-OF-PROCESS (`bash "$ORCH" run`)
+# so the real WAVE_CAP env + parse-time validation are exercised, with a MOCK CLAUDE_CMD.
+
+# ---- (j) no-deps / Touches-less mega-goal at DEFAULT WAVE_CAP -> serial path (admitted 0) ----
+# A Touches-less mega-goal admits nothing (Option-B opt-in gate), so even if a wave were considered
+# the admitted count is 0 -> the loop falls through to the byte-identical serial body on `_next`'s
+# pick and completes serially, exactly as pre-wavefront cmd_run did. No git repo needed (the serial
+# path stands up no worktrees). WAVE_CAP is left UNSET so the module default (1) applies.
+JA="$TMP/mg-dispatch-serial"; mkdir -p "$JA"
+cat > "$JA/ROADMAP.md" <<'EOF'
+# Mega-goal: dispatch-serial
+## Sub-goals
+- [ ] SG-01 first , auto , PR #__
+- [ ] SG-02 second , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$JA/POINTER_PROMPT.md"
+make_goal "$JA" SG-01   # Touches-less -> never wave-admitted
+make_goal "$JA" SG-02   # Touches-less -> never wave-admitted
+# Confirm the admission premise: even at cap 2 this mega-goal admits NOTHING (all defer).
+assert_gate "dispatch j: Touches-less mega admits nothing (serial fallback premise)" 2 "$JA" "$JA/ROADMAP.md" \
+  "$(printf 'defer\tSG-01\ndefer\tSG-02')"
+# A serial mock that flips its own box via the locked flip CLI (grounded completion).
+cat > "$TMP/claude-serial" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR ; flips its own box (grounded completion) via the locked CLI.
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+MOCK
+chmod +x "$TMP/claude-serial"
+jrc=0
+( unset WAVE_CAP; export ORCH="$ORCH" MEGADIR="$JA" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-serial"
+  bash "$ORCH" run "$JA" ) > "$TMP/dispatch-serial.out" 2>&1 || jrc=$?
+[ "$jrc" = 0 ] && pass "dispatch j: default-WAVE_CAP run exits 0" || { fail "dispatch j: run exited $jrc"; cat "$TMP/dispatch-serial.out"; }
+{ grep -q '^- \[x\] SG-01' "$JA/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$JA/ROADMAP.md"; } \
+  && pass "dispatch j: both boxes flipped (serial completion)" || fail "dispatch j: boxes not flipped serially"
+# The serial marker must appear and the wave path must NOT have been taken.
+grep -q 'running SG-01 in a fresh session' "$TMP/dispatch-serial.out" \
+  && pass "dispatch j: took the serial body (fresh-session marker present)" || { fail "dispatch j: no serial marker"; cat "$TMP/dispatch-serial.out"; }
+grep -q '\[wave\]' "$TMP/dispatch-serial.out" \
+  && { fail "dispatch j: wave path was taken on the default serial run"; cat "$TMP/dispatch-serial.out"; } \
+  || pass "dispatch j: wave path NOT taken at default WAVE_CAP (byte-identical serial)"
+
+# ---- (k) WAVE_CAP=2 + two Touches-disjoint ready sub-goals -> WAVE path runs (proven concurrent) ----
+# Drive the FULL wire cmd_run -> _wave_run through the mock-barrier fifo: a serial impl would time out
+# on the barrier and leave a box unflipped, so passing this proves cmd_run routed to the concurrent
+# wave. Reuses the barrier mock ($TMP/claude-barrier) defined in TASK-004a (g).
+WKR="$TMP/wave-dispatch-repo"
+mk_git_mega "$WKR"
+WKM="$WKR/mega"; mkdir -p "$WKM"
+cat > "$WKM/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-dispatch
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$WKM/POINTER_PROMPT.md"
+make_goal "$WKM" SG-01 "lib/disp-a/**"
+make_goal "$WKM" SG-02 "lib/disp-b/**"
+FIFODIR_K="$TMP/fifos-k"; mkdir -p "$FIFODIR_K"
+mkfifo "$FIFODIR_K/SG-01.fifo" "$FIFODIR_K/SG-02.fifo"
+RUNDIR_K="$TMP/run-k"; mkdir -p "$RUNDIR_K"
+krc=0
+( export FIFODIR="$FIFODIR_K" WAVE_MOCK_IDS="SG-01 SG-02" ORCH="$ORCH" MEGADIR="$WKM" \
+    RUNDIR="$RUNDIR_K" BARRIER_T=6 CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-barrier"
+  bash "$ORCH" run "$WKM" ) > "$TMP/dispatch-wave.out" 2>&1 || krc=$?
+k_b1=$(_sg_line "$WKM/ROADMAP.md" SG-01); k_b2=$(_sg_line "$WKM/ROADMAP.md" SG-02)
+k_ok=1
+[ "$krc" = 0 ] || k_ok=0
+case "$k_b1" in '- [x] SG-01'*) ;; *) k_ok=0 ;; esac
+case "$k_b2" in '- [x] SG-02'*) ;; *) k_ok=0 ;; esac
+if [ "$k_ok" = 1 ]; then
+  pass "dispatch k: cmd_run routed to the WAVE path (both boxes flipped concurrently, rc 0)"
+else
+  fail "dispatch k: wave not taken/failed (rc=$krc b1='$k_b1' b2='$k_b2')"; cat "$TMP/dispatch-wave.out"
+fi
+grep -q '\[wave\] spawned' "$TMP/dispatch-wave.out" \
+  && pass "dispatch k: wave-path marker present ([wave] spawned)" || { fail "dispatch k: no wave marker"; cat "$TMP/dispatch-wave.out"; }
+k_left=$(ls "$RUNDIR_K"/*.running 2>/dev/null | wc -l | tr -d ' ')
+[ "$k_left" = 0 ] && pass "dispatch k: no orphaned mock processes remain" || fail "dispatch k: $k_left mock(s) still running"
+
+# ---- (l) WAVE_CAP=0 / non-numeric -> REJECTED at parse (nonzero exit + clear message) ----
+# Validation lands AFTER the dir/roadmap/board checks, so a VALID mega dir is used to reach it.
+# DEC-009 / Edge case 4: reject, never silently coerce.
+lrc=0
+( export WAVE_CAP=0 CLAUDE_CMD="$TMP/claude-nope"; bash "$ORCH" run "$JA" ) > "$TMP/cap-zero.out" 2>&1 || lrc=$?
+{ [ "$lrc" != 0 ] && grep -qi 'WAVE_CAP' "$TMP/cap-zero.out"; } \
+  && pass "dispatch l: WAVE_CAP=0 rejected (nonzero exit + message)" || { fail "dispatch l: WAVE_CAP=0 not rejected (rc=$lrc)"; cat "$TMP/cap-zero.out"; }
+mrc=0
+( export WAVE_CAP=two CLAUDE_CMD="$TMP/claude-nope"; bash "$ORCH" run "$JA" ) > "$TMP/cap-nan.out" 2>&1 || mrc=$?
+{ [ "$mrc" != 0 ] && grep -qi 'WAVE_CAP' "$TMP/cap-nan.out"; } \
+  && pass "dispatch l: non-numeric WAVE_CAP rejected (nonzero exit + message)" || { fail "dispatch l: non-numeric WAVE_CAP not rejected (rc=$mrc)"; cat "$TMP/cap-nan.out"; }
+
 # ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
-for wtrepo in "$WCR" "$WFR" "$WIR"; do
+for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR"; do
   [ -d "$wtrepo" ] || continue
   git -C "$wtrepo" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}' | while read -r w; do
     case "$w" in *"/.claude/worktrees/"*) git -C "$wtrepo" worktree remove --force "$w" 2>/dev/null ;; esac

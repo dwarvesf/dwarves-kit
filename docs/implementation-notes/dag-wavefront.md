@@ -251,3 +251,44 @@ on admitted count is TASK-004b. Cleanup removes wave worktrees via `git worktree
 **Impact.** `bash tests/test-orchestrate-wavefront.sh` 43/43 green (35 prior + 8 new; bash 3.2.57 AND
 5.3, stable over 9 repeated runs , no flake); `bash tests/test-orchestrate.sh` 59/59 green (no
 regression, both bashes); `shellcheck -s bash lib/orchestrate.sh` fully clean.
+
+## 2026-07-03 01:53 TASK-004b , size-dispatch `cmd_run` to the wave path
+
+Context / Decision. Wired `_wave_run` into `cmd_run` via ADMITTED-count size-dispatch, keeping the
+default (WAVE_CAP=1) path byte-identical to the pre-wavefront serial loop (the sacred invariant).
+
+Dispatch shape (how the serial path stayed byte-identical). A single new guarded block sits at the
+TOP of the `while :;` loop, textually BEFORE the untouched `local nx id policy` serial body:
+`if [ "$WAVE_CAP" -ge 2 ]; then admitted_n=$(_wave_gate ... | awk '$1=="run"'); [ "$admitted_n" -ge 2 ]
+&& { _wave_run && continue || return 1; }; fi`. The serial body below it is not edited at all , the
+wave branch either `continue`s (recompute next cycle from the re-read ROADMAP) or `return 1`s, else
+falls through. Because WAVE_CAP defaults to 1, the `-ge 2` guard is FALSE on the default path, so
+`_wave_gate`/`_wave_run` are NEVER called and the loop runs exactly as before , byte-identity is
+STRUCTURAL (the guard short-circuits), not merely test-asserted. This deviates slightly from the
+spec's literal "compute `_wave_gate` each cycle": at CAP=1 the gate is provably all-`<=1`-admitted, so
+skipping it is logically equivalent AND strictly safer for the byte-identical invariant (zero new
+subprocess forks on the default path). Recompute-and-relaunch cannot double-launch / overshoot CAP
+because `_wave_run` blocks until the wave drains (one blocking wave per cycle) and re-reads ROADMAP.
+
+Why dispatch on ADMITTED, not raw ready size (DEC-012a). A no-deps mega-goal has ready size N (nothing
+blocks), so raw ready size can never gate the serial path; `_wave_gate` first, then branch on the
+`run`-line count. A Touches-less mega (every real one today) admits 0 -> serial fallback.
+
+WAVE_CAP validation placement. Global default `WAVE_CAP="${WAVE_CAP:-1}"` added next to the other env
+knobs (so the top-of-loop `-ge 2` test is `set -u`-safe), and PARSE-TIME rejection added at `cmd_run`
+entry, AFTER the dir/roadmap/board checks and BEFORE the `--dry-run` block (so `--dry-run` also
+rejects a bad cap): `case ... ''|*[!0-9]*) return 64` (empty/non-numeric/negative) then `[ -lt 1 ]
+return 64` (rejects 0). Non-numeric / <1 fails loudly with a `WAVE_CAP`-named message + exit 64,
+never silently coerced (DEC-009 / Edge case 4). `_wave_gate`'s own belt-and-braces coerce-to-1 stays
+as defense for direct (non-`cmd_run`) callers; the entry rejection is the real gate.
+
+Gate / `--step` / `--stream` / `--board` on the wave path are intentionally NOT handled here , that is
+TASK-005/007 scope. At the default CAP=1 they are all untouched (serial path), which is the only
+invariant 004b owes. A gate sub-goal cannot reach a wave on any real mega-goal today anyway (needs its
+own `## Touches`, which no real sub-goal has , Option-B), so no live gate-bypass ships.
+
+Impact. `bash tests/test-orchestrate.sh` 59/59 (unchanged , byte-identical serial invariant holds);
+`bash tests/test-orchestrate-wavefront.sh` 53/53 (43 prior + 10 new: j serial-fallback, k full
+cmd_run->wave concurrency via the barrier fifo, l WAVE_CAP=0/non-numeric rejection). Stable over
+repeated runs, no flake. Tests j-l drive `cmd_run` OUT-OF-PROCESS so the real WAVE_CAP env + parse
+validation are exercised.
