@@ -259,6 +259,10 @@ wavefront spec; it eats its own dogfood).
   found+fixed a REAL wave-path bug , dep-blocked fallthrough to `_next` false-completed; guard halts
   with nonzero; byte-identical serial; test-orchestrate 59/59, wavefront 72/72). Deferred to
   ID-090: dep-aware serial-fallback pick when ready is non-empty.
+  UPDATE (review-team fixes, 2026-07-03): ID-090 item (d) is now DONE, not deferred , the WAVE_CAP>=2
+  fallthrough verifies `_next`'s pick is a member of `_ready_set` before running it, halting with a
+  "dep-blocked (not in ready set)" message otherwise. See `docs/implementation-notes/dag-wavefront.md`
+  "2026-07-03 review-team fixes" and `_meta/BACKLOG.md` ID-090.
 - [x] TASK-007: `gate` = chain-stop (holds only its dependent chain; independent branches keep
   running) + NEW `gate!` = stop-all (preserves today's global human-stop, L382-387, for operators who
   want quiesce-everything). Acceptance: exit-criterion 4 (a `gate` holds its chain while an

@@ -84,7 +84,7 @@ WAVE_CAP="${WAVE_CAP:-1}"
 # branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
 # `_wave_converge`); the actual merge goes through THIS mockable hook. Default is the real path
 # (`lib/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
-# but real gh-backed merge is DEFERRED to ID-085-followup (waves are off at the default WAVE_CAP=1, and
+# but real gh-backed merge is DEFERRED to ID-090 (waves are off at the default WAVE_CAP=1, and
 # a real merge needs `gh` + real PRs). Tests set WAVE_MERGE_CMD to a mock that records merge ordering.
 # Word-split intentionally (operator config, not user data), mirroring CLAUDE_FLAGS.
 WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
@@ -210,6 +210,9 @@ _events_file() { printf '%s/.orchestrate/events.log\n' "$1"; }
 
 _emit_event() {  # dir id status [note]
   local dir="$1" id="$2" status="$3" note="${4:-}" ef
+  # Review-fix FIX 3 (DEC-009): truncate comfortably under PIPE_BUF (512B) so the atomic-append
+  # guarantee concurrent wave sessions rely on is structural, not by-convention.
+  note=${note:0:400}
   ef=$(_events_file "$dir"); mkdir -p "$(dirname "$ef")"
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$id" "$status" "$note" >> "$ef"
 }
@@ -669,17 +672,32 @@ _wave_worktree() {  # repo id branch
   printf '%s\n' "$wt"
 }
 
-# Abort handler for `_wave_run`'s INT/TERM trap: kill every still-live wave PID then reap, so an
-# operator ctrl-C never leaves an orphaned `claude -p` (mock) child. `_WAVE_PIDS` is a GLOBAL (not a
-# `_wave_run` local) precisely so this handler can reach it while `_wave_run` is on the stack. The
-# empty-guard `${arr[@]+...}` keeps `set -u` happy when the trap fires before any PID is recorded.
+# Abort handler for `_wave_run`'s INT/TERM trap: kill every still-live wave job's PROCESS GROUP then
+# reap, so an operator ctrl-C never leaves an orphaned `claude -p` (mock) grandchild. `_WAVE_PIDS`
+# holds the backgrounded SUBSHELL WRAPPER pid (`( cd ... && _run_one_session ... ) &`), not the
+# `claude -p` process itself -- a plain `kill "$p"` only signals the wrapper, so the grandchild
+# reparents to init and survives (confirmed live; review-fix FIX 1). Each job was spawned under
+# `set -m`, so its pgid == its pid; a NEGATIVE pid (`-"$p"`) signals the whole group instead. Falls
+# back to a plain `kill "$p"` if the group signal fails (e.g. job control was unavailable at spawn
+# time, or the job already exited on its own). `_WAVE_PIDS` is a GLOBAL (not a `_wave_run` local)
+# precisely so this handler can reach it while `_wave_run` is on the stack. The empty-guard
+# `${arr[@]+...}` keeps `set -u` happy when the trap fires before any PID is recorded.
 _wave_abort() {
-  local p
+  local p ok=1
   for p in ${_WAVE_PIDS[@]+"${_WAVE_PIDS[@]}"}; do
-    kill "$p" 2>/dev/null
+    kill -TERM -- -"$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || ok=0
   done
   wait 2>/dev/null
-  echo "[orchestrate] [wave] aborted; killed + reaped the wave PID set (no orphaned children)." >&2
+  # Review-fix FIX 8: clean up any prompt temp files an interrupted wave leaves behind (they hold
+  # the injected HANDOFF content; a Ctrl-C otherwise leaks them into ${TMPDIR:-/tmp}).
+  rm -f "${_WAVE_PFILES[@]+"${_WAVE_PFILES[@]}"}" 2>/dev/null
+  # Only claim a clean kill when every group/plain TERM actually landed; a partial failure gets
+  # softer wording instead of a confirmation that may be false (review-fix FIX 1).
+  if [ "$ok" = 1 ]; then
+    echo "[orchestrate] [wave] aborted; sent TERM to each wave job's process group (pgid==pid) and reaped -- grandchild sessions killed too, not just the subshell wrapper." >&2
+  else
+    echo "[orchestrate] [wave] aborted; reaped the wave PID set, but at least one TERM signal failed (process/group may already be gone)." >&2
+  fi
   return 130
 }
 
@@ -716,7 +734,11 @@ _wave_run() {  # megadir roadmap
   # sub-goal id here so the caller (`cmd_run`) can hand the landed set to `_wave_converge` after the
   # wave drains. Reset per run so a prior wave's ids never leak. Empty-guarded at every read site.
   _WAVE_LANDED=()
-  local wave_ids=() wave_done=() wave_pfiles=()
+  # `_WAVE_PFILES` is GLOBAL too (review-fix FIX 8): each spawned session's prompt temp file, so
+  # `_wave_abort` can `rm -f` any still-live ones on an INT/TERM instead of leaking them into
+  # ${TMPDIR:-/tmp}. Index-aligned with `_WAVE_PIDS` / wave_ids, same as the other reap-map arrays.
+  _WAVE_PFILES=()
+  local wave_ids=() wave_done=()
   local wave_failed=0 spawned=0
 
   # Reap/kill the wave PID set on an abort so no `claude -p` (mock) child is orphaned. Cleared
@@ -734,6 +756,9 @@ _wave_run() {  # megadir roadmap
     branch=$(_sg_branch "$gf" "$id")
     if ! wt=$(_wave_worktree "$repo" "$id" "$branch"); then
       echo "[orchestrate] [wave] $id: worktree setup failed; marking wave failed." >&2
+      # Review-fix FIX 6: every other _wave_run failure path emits an event (the replay source of
+      # truth); this one previously only echoed to stderr.
+      _emit_event "$megadir" "$id" blocked "wave: worktree setup failed"
       wave_failed=1
       continue
     fi
@@ -752,11 +777,22 @@ _wave_run() {  # megadir roadmap
     # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
     # path (deterministic-handoff regen is TASK-005), so losing it in the subshell is fine. The
     # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
+    #
+    # Job control ON only around the spawn itself (review-fix FIX 1): under `set -m` a `&` job
+    # becomes its OWN PROCESS GROUP (pgid == the job's pid), so `_wave_abort` can signal the WHOLE
+    # group -- the backgrounded subshell wrapper AND its `claude -p` grandchild -- via a negative-pid
+    # `kill`. Without this, `kill "$p"` reaches only the wrapper; the grandchild reparents to init and
+    # survives an abort (confirmed live: the prior "no orphaned children" claim was false). Scoped
+    # tightly (set +m right after `$!`) so monitor mode's job-control side effects never leak into the
+    # rest of the spawn loop or the reap loop below. bash 3.2 macOS has no `setsid`; job control is
+    # the only portable no-setsid way to get a fresh process group.
+    set -m
     ( cd "$wt" 2>/dev/null && _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
     pid=$!
+    set +m
     _WAVE_PIDS+=("$pid")
     wave_ids+=("$id")
-    wave_pfiles+=("$pfile")
+    _WAVE_PFILES+=("$pfile")
     wave_done+=(0)
     spawned=$((spawned + 1))
     _say "[orchestrate] [wave] spawned $id (pid $pid) in $wt"
@@ -782,7 +818,7 @@ _wave_run() {  # megadir roadmap
       rc=0; wait "$pid" 2>/dev/null || rc=$?    # exited -> reap the cached status
       wave_done[i]=1
       remaining=$((remaining - 1))
-      rm -f "${wave_pfiles[$i]}" 2>/dev/null
+      rm -f "${_WAVE_PFILES[$i]}" 2>/dev/null
       box=$(_subgoals "$roadmap" | awk -F'\t' -v x="$id" '$1==x {print $3}')
       if [ "$rc" != 0 ]; then
         wave_failed=1
@@ -812,7 +848,7 @@ _wave_run() {  # megadir roadmap
 # same-base merges never race. This is a THIN SEQUENCER: it does NOT reimplement merging. Each merge
 # goes through the MOCKABLE `$WAVE_MERGE_CMD` hook (default `lib/mega-merge.sh merge`, whose merge
 # SEMANTICS stay untouched per scope , we only sequence calls to it). Real gh-backed merge is DEFERRED
-# to ID-085-followup (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
+# to ID-090 (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
 # path stays byte-identical; a real merge also needs `gh` + real PRs).
 
 # Files a wave branch changed vs the base: three-dot diff = changes on <branch> since its merge-base
@@ -824,7 +860,7 @@ _wave_branch_files() {  # repo base branch
 
 # The PR number on a sub-goal's ROADMAP line (`... , PR #<n>`), or empty for a placeholder (`PR #__`)
 # / absent. A sub-goal with no real PR cannot be merged yet, so `_wave_converge` SKIPS it (the real
-# PR-open + merge wiring is ID-085-followup), never fails on it.
+# PR-open + merge wiring is ID-090), never fails on it.
 _sg_pr() {  # roadmap id
   _sg_line "$1" "$2" | sed -nE 's/.*PR #([0-9]+).*/\1/p' | head -1
 }
@@ -1030,6 +1066,25 @@ cmd_run() {
           echo "[orchestrate] [wave] blocked: $unchecked_n unchecked, none runnable (all remaining sub-goals are dep-blocked; no in-flight producer). Halting for human review (not a false-complete)." >&2
           return 1
         fi
+        # Dep-blocked serial-fallthrough halt (review-fix FIX 2 / ID-090 item (d)). Reached only when
+        # admitted<2 but ready_n>0: the code below falls through to `_next`'s pick, which is DEP-
+        # IGNORANT (first unchecked ROADMAP line regardless of `depends`). If that pick is itself NOT
+        # a member of the ready set (i.e. it IS dep-blocked -- proven live: a ROADMAP with an
+        # unsatisfiable-dep sub-goal listed before independent ready ones got silently run/checked),
+        # halt instead of falling through, same shape as the guard above. Entirely inside
+        # WAVE_CAP>=2 so the serial `_next` pick below stays byte-identical. Membership is read from
+        # awk's PRINTED output, not the pipe's exit status: `_ready_set`'s while-read loop always
+        # returns nonzero on its own EOF, which under `pipefail` would corrupt an exit-code-based
+        # check (pipefail reports the rightmost NONZERO stage, not simply the last stage).
+        local fallthrough_pick found
+        fallthrough_pick=$(_next "$roadmap" | cut -f1)
+        found=$(_ready_set "$roadmap" | awk -F'\t' -v x="$fallthrough_pick" '$1==x{print "1"; exit}')
+        if [ -n "$fallthrough_pick" ] && [ -z "$found" ]; then
+          _emit_event "$dir" "$fallthrough_pick" blocked "dep-blocked, not in ready set"
+          [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+          echo "[orchestrate] [wave] blocked: $fallthrough_pick is dep-blocked (not in ready set); halting for human review (not a false-complete)." >&2
+          return 1
+        fi
       fi
     fi
 
@@ -1081,6 +1136,11 @@ cmd_run() {
     # metachars, and dodges ARG_MAX on a large injected handoff. `claude -p` reads the prompt from
     # stdin when no positional prompt is given.
     local pfile; pfile=$(mktemp)
+    # Review-fix FIX 8: a Ctrl-C while this session is in flight otherwise leaves the prompt temp
+    # file (it holds the injected HANDOFF content) sitting in ${TMPDIR:-/tmp}. The explicit `rm -f`
+    # below covers the happy path; this trap covers an interrupt. Cheap to reset every cycle (only
+    # EXIT trap this script sets on the serial path).
+    trap 'rm -f "$pfile"' EXIT
     _build_prompt "$dir" "$id" > "$pfile"
     # Run the session via the extracted helper (TASK-000): it picks the correct run-path
     # (watchdog / --stream|det-handoff stream-json / plain) and returns the session exit code.
@@ -1090,6 +1150,7 @@ cmd_run() {
     _run_one_session "$dir" "$id" "$pfile" "$route_flags" "$stream" || rc=$?
     slog="$_ROS_SLOG"
     rm -f "$pfile"
+    trap - EXIT
     if [ "$rc" != 0 ]; then
       _emit_event "$dir" "$id" blocked "session exited nonzero ($rc)"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null

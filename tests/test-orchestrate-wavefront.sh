@@ -182,10 +182,18 @@ tmpleft=$(ls "$MGP"/.roadmap.flip.* 2>/dev/null | wc -l | tr -d ' ')
 MGS="$TMP/mg-stale"; mkdir -p "$MGS/.orchestrate"
 LOCK="$MGS/.orchestrate/flip.lock"
 mkdir "$LOCK"
-# a guaranteed-dead PID: spawn a trivial process, reap it, reuse its (now-free) PID number
-sh -c 'exit 0' & deadpid=$!; wait "$deadpid" 2>/dev/null
+# a guaranteed-dead PID: spawn a trivial process, reap it, reuse its (now-free) PID number. Actually
+# RETRY (review-fix FIX 7) rather than just claiming one in a comment: a fresh PID can theoretically
+# be reused by an unrelated process between reap and the `kill -0` check, so loop until we observe a
+# genuinely-dead pid instead of failing the test outright on that (rare) race.
+deadpid=""
+for _dp_try in 1 2 3 4 5; do
+  sh -c 'exit 0' & cand=$!; wait "$cand" 2>/dev/null
+  kill -0 "$cand" 2>/dev/null || { deadpid="$cand"; break; }
+done
+[ -n "$deadpid" ] || fail "stale reclaim: could not obtain a dead pid after 5 tries (PID reuse race)"
 printf '%s\n' "$deadpid" > "$LOCK/pid"
-kill -0 "$deadpid" 2>/dev/null && fail "stale reclaim: test setup pid still alive (retry)" || pass "stale reclaim: dead holder pid confirmed dead"
+pass "stale reclaim: dead holder pid confirmed dead"
 # attempt the acquire in the background; poll for success with a hard timeout so a hang = FAIL
 : > "$MGS/acquired"
 ( _lock "$LOCK" && printf 'ok\n' > "$MGS/acquired" ) &
@@ -389,6 +397,74 @@ fi
 cc_left=$(ls "$RUNDIR_CC"/*.running 2>/dev/null | wc -l | tr -d ' ')
 [ "$cc_left" = 0 ] && pass "wave_run g: no orphaned mock processes remain" || fail "wave_run g: $cc_left mock(s) still running"
 
+# ---- (g2) EXIT-CRITERION 2 [NEGATIVE CONTROL] (runtime): the gate's DECISION is ENFORCED at runtime ----
+# Block (b) above only proves `_wave_gate` DECIDES to serialize an overlapping pair (`defer\tSG-02`).
+# This proves that decision actually holds in WALL-CLOCK time when driven through the real
+# `cmd_run`/`_wave_run` wire, mirroring EXIT-CRITERION 1's mock-barrier fifo technique but INVERTED:
+# instead of proving overlap, we prove its ABSENCE. Both mocks always flip + exit 0 (so cmd_run keeps
+# running both sub-goals rather than stopping on a mid-loop nonzero), but each records whether its own
+# `read -t` on the shared fifo pair overlapped its sibling or timed out. A serial run means SG-01
+# finishes (and its fifo-write goes nowhere live) before SG-02 even starts, so SG-02's read MUST time
+# out -- if the gate's defer decision were NOT enforced at runtime (e.g. both ran concurrently anyway),
+# SG-02's read would find SG-01's write waiting and overlap instead.
+GR2="$TMP/wave-gate-runtime-repo"
+mk_git_mega "$GR2"
+GM2="$GR2/mega"; mkdir -p "$GM2"
+cat > "$GM2/ROADMAP.md" <<'EOF'
+# Mega-goal: gate-runtime-negctrl
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$GM2/POINTER_PROMPT.md"
+make_goal "$GM2" SG-01 "lib/shared/**"
+make_goal "$GM2" SG-02 "lib/shared/**"   # OVERLAPS SG-01's Touches -> _wave_gate defers it
+assert_gate "EXIT-CRITERION 2 [NEGATIVE CONTROL] (runtime) premise: overlapping pair still serializes" 2 "$GM2" "$GM2/ROADMAP.md" \
+  "$(printf 'run\tSG-01\ndefer\tSG-02')"
+
+FIFODIR2="$TMP/fifos-negctrl"; mkdir -p "$FIFODIR2"
+mkfifo "$FIFODIR2/SG-01.fifo" "$FIFODIR2/SG-02.fifo"
+RESULTDIR2="$TMP/results-negctrl"; mkdir -p "$RESULTDIR2"
+# A SOFT variant of the (g) barrier mock: it records overlap-vs-timeout but NEVER fails the session
+# on a timeout (always flips + exits 0), so a genuinely-serial run still completes both sub-goals
+# through cmd_run instead of halting after SG-01.
+cat > "$TMP/claude-barrier-soft" <<'MOCK'
+#!/usr/bin/env bash
+# env: FIFODIR, WAVE_MOCK_IDS, ORCH, MEGADIR, BARRIER_T, RESULTDIR
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+IN="$FIFODIR/$id.fifo"; OUT=""
+for x in $WAVE_MOCK_IDS; do [ "$x" != "$id" ] && OUT="$FIFODIR/$x.fifo"; done
+exec 3<>"$IN"; exec 4<>"$OUT"
+printf 'r\n' >&4
+if read -t "${BARRIER_T:-1}" _tok <&3; then
+  echo overlap > "$RESULTDIR/$id.result"
+else
+  echo timeout > "$RESULTDIR/$id.result"
+fi
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+exit 0
+MOCK
+chmod +x "$TMP/claude-barrier-soft"
+
+g2rc=0
+( export FIFODIR="$FIFODIR2" WAVE_MOCK_IDS="SG-01 SG-02" ORCH="$ORCH" MEGADIR="$GM2" \
+    RESULTDIR="$RESULTDIR2" BARRIER_T=1 CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-barrier-soft"
+  bash "$ORCH" run "$GM2" ) > "$TMP/negctrl.out" 2>&1 || g2rc=$?
+# (1) both sub-goals actually ran (both flipped) -- the negative result below is meaningful, not vacuous.
+{ [ "$g2rc" = 0 ] && grep -q '^- \[x\] SG-01' "$GM2/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$GM2/ROADMAP.md"; } \
+  && pass "EXIT-CRITERION 2 [NEGATIVE CONTROL] (runtime): both sub-goals ran to completion (rc 0, both flipped)" \
+  || { fail "EXIT-CRITERION 2 (runtime): run did not complete cleanly (rc=$g2rc)"; cat "$TMP/negctrl.out"; }
+# (2) the SECOND sub-goal's barrier read TIMED OUT -- it never overlapped SG-01 in wall-clock time.
+g2_res2=$(cat "$RESULTDIR2/SG-02.result" 2>/dev/null)
+[ "$g2_res2" = timeout ] \
+  && pass "EXIT-CRITERION 2 [NEGATIVE CONTROL] (runtime): SG-02's barrier read TIMED OUT (never overlapped SG-01 -- gate decision enforced at runtime)" \
+  || { fail "EXIT-CRITERION 2 (runtime): SG-02 result='$g2_res2' (want timeout -- overlap would mean the gate's defer was NOT enforced)"; cat "$TMP/negctrl.out"; }
+# (3) neither sub-goal took the wave path (admitted_n=1 -> serial fallback the whole way through).
+grep -q '\[wave\] spawned' "$TMP/negctrl.out" \
+  && { fail "EXIT-CRITERION 2 (runtime): wave path was taken despite admitted_n=1"; cat "$TMP/negctrl.out"; } \
+  || pass "EXIT-CRITERION 2 [NEGATIVE CONTROL] (runtime): took the serial fallback, not the wave path (admitted_n=1)"
+
 # ---- (h) SIBLING-FAILURE DRAIN ----
 # Two admitted sub-goals; the doomed one exits nonzero FAST without flipping, the healthy one sleeps
 # briefly (so it is provably still in-flight when the doomed sibling has already died) then flips +
@@ -436,6 +512,67 @@ case "$sf_d" in '- [ ] SG-02'*) pass "wave_run h: doomed sub-goal box stayed unf
 [ "$frc" != 0 ] && pass "wave_run h: wave returns nonzero after a sibling failure" || fail "wave_run h: wave returned 0 despite a sibling failure"
 sf_left=$(ls "$RUNDIR_SF"/*.running 2>/dev/null | wc -l | tr -d ' ')
 [ "$sf_left" = 0 ] && pass "wave_run h: no orphaned mock processes after drain" || fail "wave_run h: $sf_left mock(s) still running"
+
+# ---- (h2) ABORT/TRAP PATH: SIGTERM mid-wave kills the WHOLE process group (review-fix FIX 1) ----
+# `_WAVE_PIDS` holds the backgrounded SUBSHELL WRAPPER pid (`( cd "$wt" && _run_one_session ... ) &`),
+# NOT the `claude -p` (mock) GRANDCHILD. A plain `kill "$p"` only signals the wrapper; the grandchild
+# reparents to init and survives (confirmed live pre-fix; the old "no orphaned children" log line was
+# printed unconditionally and was FALSE). Prove the fix: spawn a 2-wide wave whose mock writes its OWN
+# pid to a marker file then sleeps 30 (long enough to still be alive when signaled), SIGTERM the
+# DRIVER (the `_wave_run` subshell, not the test process) mid-wave, and assert BOTH mock pids are
+# ACTUALLY DEAD afterward (`kill -0` fails) -- not just that the driver claimed cleanup.
+WAR="$TMP/wave-abort-repo"
+mk_git_mega "$WAR"
+WAM="$WAR/mega"; mkdir -p "$WAM"
+cat > "$WAM/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-abort
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$WAM/POINTER_PROMPT.md"
+make_goal "$WAM" SG-01 "lib/ab-a/**"
+make_goal "$WAM" SG-02 "lib/ab-b/**"
+
+RUNDIR_AB="$TMP/run-abort"; mkdir -p "$RUNDIR_AB"
+cat > "$TMP/claude-longsleep" <<'MOCK'
+#!/usr/bin/env bash
+# env: RUNDIR ; writes its OWN pid then sleeps long enough to still be alive when the driver is
+# signaled -- the marker file IS the grandchild's real pid (not the wrapper's), by construction.
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo $$ > "$RUNDIR/$id.pid"
+sleep 30
+MOCK
+chmod +x "$TMP/claude-longsleep"
+
+( export RUNDIR="$RUNDIR_AB" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-longsleep"
+  _wave_run "$WAM" "$WAM/ROADMAP.md" ) > "$TMP/abort.out" 2>&1 &
+driver_pid=$!
+
+# Poll for both marker files (bounded wait, not a fixed sleep -- the mocks must actually be up).
+ab_started=0
+for _i in $(seq 1 40); do
+  [ -f "$RUNDIR_AB/SG-01.pid" ] && [ -f "$RUNDIR_AB/SG-02.pid" ] && { ab_started=1; break; }
+  sleep 0.25
+done
+if [ "$ab_started" != 1 ]; then
+  fail "wave_run h2: both mock sessions never started (marker files missing)"; cat "$TMP/abort.out"
+  kill -9 "$driver_pid" 2>/dev/null; wait "$driver_pid" 2>/dev/null
+else
+  mock1=$(cat "$RUNDIR_AB/SG-01.pid"); mock2=$(cat "$RUNDIR_AB/SG-02.pid")
+  kill -TERM "$driver_pid" 2>/dev/null
+  wait "$driver_pid" 2>/dev/null
+  sleep 0.5   # give the signaled grandchildren a beat to actually exit
+  m1_dead=1; kill -0 "$mock1" 2>/dev/null && m1_dead=0
+  m2_dead=1; kill -0 "$mock2" 2>/dev/null && m2_dead=0
+  if [ "$m1_dead" = 1 ] && [ "$m2_dead" = 1 ]; then
+    pass "wave_run h2: SIGTERM to the driver kills BOTH mock GRANDCHILD processes (process-group kill via job control, not just the subshell wrapper)"
+  else
+    fail "wave_run h2: a mock grandchild survived the abort (SG-01 pid=$mock1 dead=$m1_dead, SG-02 pid=$mock2 dead=$m2_dead)"
+    cat "$TMP/abort.out"
+  fi
+fi
 
 # ---- (i) idempotent resume: an already-checked box in the admitted set is skipped, not re-run ----
 WIR="$TMP/wave-idem-repo"
@@ -830,6 +967,62 @@ c1_r2=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r2=$(wc -l < "
   && pass "EXIT-CRITERION 3 (resume): restart re-runs NO already-checked sub-goal (SG-01/SG-02 count unchanged)" \
   || { fail "resume: a checked sub-goal was re-invoked (c1=$c1_r2 c2=$c2_r2)"; cat "$TMP/resume2.out"; }
 
+# ---- review-fix FIX 5: strengthens EXIT-CRITERION 3 for the WAVE path (mixed-state resume) ----
+# The wave-path resume coverage so far (block i) only starts from an ALL-CHECKED/empty-ready-set
+# ROADMAP (a static no-op case). This is a genuine two-run DYNAMIC resume at WAVE_CAP=2, driven through
+# the real `cmd_run` wire, from a MIXED state: two disjoint Touches-declaring sub-goals admit as a real
+# 2-wide wave in run 1, but the mock withholds SG-02's flip (simulating a crash mid-wave that landed
+# SG-01 but not SG-02) so run 1 exits nonzero. Run 2 (the restart, same ROADMAP.md) must SKIP SG-01
+# (its per-id runlog count stays unchanged -- never re-invoked) and run ONLY SG-02.
+WRR="$TMP/wave-resume-repo"
+mk_git_mega "$WRR"
+WRM="$WRR/mega"; mkdir -p "$WRM"
+cat > "$WRM/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-resume
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$WRM/POINTER_PROMPT.md"
+make_goal "$WRM" SG-01 "lib/wr-a/**"
+make_goal "$WRM" SG-02 "lib/wr-b/**"
+WRLOG="$TMP/wave-resume-runlog"; mkdir -p "$WRLOG"
+# Mock: logs every invocation, but only flips ids listed in WRFLIP_IDS (space-separated). Run 1
+# allows only SG-01 to flip; run 2 (the restart) allows both.
+cat > "$TMP/claude-wave-resume" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR, WRLOG, WRFLIP_IDS
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo 1 >> "$WRLOG/$id.runs"
+for allow in $WRFLIP_IDS; do
+  [ "$allow" = "$id" ] && bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+done
+MOCK
+chmod +x "$TMP/claude-wave-resume"
+# Run 1: WAVE_CAP=2 admits both (disjoint, Touches-declaring) -> a real 2-wide wave; only SG-01 is
+# allowed to flip -- SG-02's session runs but withholds its flip (grounded-completion failure), so
+# the wave (and the overall run) exits nonzero, simulating a crash that landed SG-01 but not SG-02.
+wr1rc=0
+( export ORCH="$ORCH" MEGADIR="$WRM" WRLOG="$WRLOG" WRFLIP_IDS="SG-01" CLAUDE_FLAGS="" WAVE_CAP=2 \
+    CLAUDE_CMD="$TMP/claude-wave-resume"
+  bash "$ORCH" run "$WRM" ) > "$TMP/wave-resume1.out" 2>&1 || wr1rc=$?
+wr_c1_r1=$(wc -l < "$WRLOG/SG-01.runs" 2>/dev/null | tr -d ' '); wr_c2_r1=$(wc -l < "$WRLOG/SG-02.runs" 2>/dev/null | tr -d ' ')
+{ [ "$wr1rc" != 0 ] && grep -q '^- \[x\] SG-01' "$WRM/ROADMAP.md" && grep -q '^- \[ \] SG-02' "$WRM/ROADMAP.md" \
+    && [ "$wr_c1_r1" = 1 ] && [ "$wr_c2_r1" = 1 ]; } \
+  && pass "FIX 5 wave-resume: run 1 lands SG-01 only via a real wave (SG-02 ran once but withheld its flip -- crash-mid-wave, rc nonzero)" \
+  || { fail "FIX 5 wave-resume: run 1 mixed state wrong (rc=$wr1rc c1=$wr_c1_r1 c2=$wr_c2_r1)"; cat "$TMP/wave-resume1.out"; }
+# Run 2 (the restart, still WAVE_CAP=2): re-derive from ROADMAP.md; SG-01 (checked) must be SKIPPED
+# (never re-invoked -- its runlog count stays at 1), SG-02 (still open) must run and land.
+wr2rc=0
+( export ORCH="$ORCH" MEGADIR="$WRM" WRLOG="$WRLOG" WRFLIP_IDS="SG-01 SG-02" CLAUDE_FLAGS="" WAVE_CAP=2 \
+    CLAUDE_CMD="$TMP/claude-wave-resume"
+  bash "$ORCH" run "$WRM" ) > "$TMP/wave-resume2.out" 2>&1 || wr2rc=$?
+wr_c1_r2=$(wc -l < "$WRLOG/SG-01.runs" 2>/dev/null | tr -d ' '); wr_c2_r2=$(wc -l < "$WRLOG/SG-02.runs" 2>/dev/null | tr -d ' ')
+{ [ "$wr2rc" = 0 ] && [ "$wr_c1_r2" = 1 ] && [ "$wr_c2_r2" = 2 ] && grep -q '^- \[x\] SG-02' "$WRM/ROADMAP.md"; } \
+  && pass "FIX 5 wave-resume (strengthens EXIT-CRITERION 3, wave path): restart at WAVE_CAP=2 skips already-checked SG-01 (runlog count unchanged) and runs only SG-02" \
+  || { fail "FIX 5 wave-resume: restart wrong (rc=$wr2rc c1=$wr_c1_r2 c2=$wr_c2_r2)"; cat "$TMP/wave-resume2.out"; }
+
 # ==================== TASK-006: wave-path termination guard (wait-vs-complete) ====================
 # On the WAVE path (WAVE_CAP>=2), when unchecked sub-goals REMAIN but the ready set is EMPTY (all
 # dep-blocked, nothing runnable, no in-flight producer), the loop must HALT with a "blocked: N
@@ -874,6 +1067,61 @@ grep -q 'blocked: 2 unchecked, none runnable' "$TMP/wave-blocked.out" \
 { [ ! -s "$TGLOG" ] && grep -q '^- \[ \] SG-02' "$TG/ROADMAP.md" && grep -q '^- \[ \] SG-03' "$TG/ROADMAP.md"; } \
   && pass "wave-block: ran no dep-blocked sub-goal (boxes untouched)" \
   || { fail "wave-block: a dep-blocked sub-goal ran"; cat "$TGLOG"; }
+
+# ---- TASK-006 item (d) / review-fix FIX 2: dep-blocked serial-fallthrough halt (ready set NON-empty) ----
+# The guard above only covers ready==EMPTY. This covers the DISTINCT gap: ready_n>0 but admitted<2, so
+# the loop falls through to `_next`'s DEP-IGNORANT pick (first unchecked ROADMAP line regardless of
+# `depends`). Fixture: SG-01 `depends SG-99` (an id that never exists -> permanently unsatisfiable) is
+# listed FIRST; SG-02/SG-03 are independent and ready. Only SG-02 declares `## Touches`, so
+# `_wave_gate` admits just it (admitted_n=1, not >=2 -> no wave this cycle). Pre-fix, the dep-ignorant
+# `_next` fallthrough picked SG-01 (ROADMAP order) and ran/checked it despite the unmet dep.
+DF="$TMP/mg-dep-fallthrough"; mkdir -p "$DF"
+cat > "$DF/ROADMAP.md" <<'EOF'
+# Mega-goal: dep-fallthrough
+## Sub-goals
+- [ ] SG-01 blocked , auto , PR #__ , depends SG-99
+- [ ] SG-02 ready-a , auto , PR #__
+- [ ] SG-03 ready-b , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$DF/POINTER_PROMPT.md"
+make_goal "$DF" SG-01                  # dep-blocked; Touches is irrelevant (never reaches the gate)
+make_goal "$DF" SG-02 "lib/df-a/**"    # ONLY SG-02 declares Touches -> admitted_n=1, not a wave
+make_goal "$DF" SG-03                  # Touches-less -> would defer anyway
+# Premise: admitted_n is 1 (not >=2), so cycle 1 falls through toward `_next`'s dep-ignorant pick
+# instead of launching a wave.
+assert_gate "FIX 2 premise: only SG-02 admits (admitted_n=1, not a wave this cycle)" 2 "$DF" "$DF/ROADMAP.md" \
+  "$(printf 'run\tSG-02\ndefer\tSG-03')"
+DFLOG="$TMP/dep-fallthrough-runlog"; : > "$DFLOG"
+# A mock that would flip+log if ever invoked -- NOTHING should run: the halt fires before any
+# dispatch (the dep-ignorant `_next` pick is checked, and rejected, before the serial body runs).
+cat > "$TMP/claude-depft" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR, DFLOG
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo "INVOKED $id" >> "$DFLOG"
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+MOCK
+chmod +x "$TMP/claude-depft"
+dfrc=0
+( export ORCH="$ORCH" MEGADIR="$DF" DFLOG="$DFLOG" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-depft"
+  bash "$ORCH" run "$DF" ) > "$TMP/dep-fallthrough.out" 2>&1 || dfrc=$?
+# (1) halts nonzero, no false-complete
+{ [ "$dfrc" != 0 ] && ! grep -q 'all sub-goals checked; done' "$TMP/dep-fallthrough.out"; } \
+  && pass "FIX 2 dep-fallthrough: halts nonzero, no false-complete" \
+  || { fail "FIX 2 dep-fallthrough: did not halt nonzero (rc=$dfrc)"; cat "$TMP/dep-fallthrough.out"; }
+# (2) clear message naming the dep-blocked pick (distinct wording from the ready-EMPTY guard above)
+grep -q 'blocked: SG-01 is dep-blocked (not in ready set)' "$TMP/dep-fallthrough.out" \
+  && pass "FIX 2 dep-fallthrough: clear 'SG-01 is dep-blocked (not in ready set)' message" \
+  || { fail "FIX 2 dep-fallthrough: no dep-blocked-pick message"; cat "$TMP/dep-fallthrough.out"; }
+# (3) NOTHING ran: SG-01 (dep-blocked) is never invoked/checked, and the halt precedes any dispatch
+# (so SG-02, though ready, also never ran this cycle) -- all three boxes stay untouched.
+{ [ ! -s "$DFLOG" ] \
+  && grep -q '^- \[ \] SG-01' "$DF/ROADMAP.md" \
+  && grep -q '^- \[ \] SG-02' "$DF/ROADMAP.md" \
+  && grep -q '^- \[ \] SG-03' "$DF/ROADMAP.md"; } \
+  && pass "FIX 2 dep-fallthrough: dep-blocked SG-01 never ran, boxes untouched (halted before dispatch)" \
+  || { fail "FIX 2 dep-fallthrough: a sub-goal ran despite the halt"; cat "$DFLOG"; }
 
 # ============================ TASK-007: gate! global-stop + gate chain-hold ============================
 # `gate` narrows to a CHAIN-stop (holds only its dependent chain; independent ready branches keep

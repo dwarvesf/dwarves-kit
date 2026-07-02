@@ -509,3 +509,104 @@ Impact. `bash tests/test-orchestrate-wavefront.sh` 89/89 (80 prior + 9 new: 5 go
 4 exit-0-unflipped), stable across 3 back-to-back runs (concurrency tests non-flaky). `bash
 tests/test-orchestrate.sh` still 59/59 (no lib change, byte-identity holds). No `lib/orchestrate.sh`
 edit.
+
+## 2026-07-03 review-team fixes
+
+Context. A review-team pass on `feat/dag-wavefront` flagged 8 findings (1 BLOCKER, 5 SHOULD-FIX, 2
+NICE) against the opt-in wave path (`WAVE_CAP>=2`, off by default). All 8 applied in one commit,
+scoped entirely to `lib/orchestrate.sh` + `tests/test-orchestrate-wavefront.sh` (+ the two doc-trail
+files this note is part of). Hard constraint held throughout: `bash tests/test-orchestrate.sh` stayed
+59/59 byte-identical at every step.
+
+Decision -- FIX 1 [BLOCKER] `_wave_abort` orphan leak. `_WAVE_PIDS` holds the backgrounded SUBSHELL
+WRAPPER pid (`( cd "$wt" && _run_one_session ... ) &`), not the `claude -p` GRANDCHILD; a plain
+`kill "$p"` only reached the wrapper, so the grandchild session reparented to init and survived an
+abort -- the old "killed + reaped ... no orphaned children" log line was printed unconditionally and
+was FALSE (confirmed live before the fix). macOS bash 3.2 has no `setsid`, so the fix uses bash JOB
+CONTROL instead: `set -m` scoped tightly around just the `&` spawn line (on, spawn, `set +m`) makes
+each wave job its OWN PROCESS GROUP (pgid == the job's pid -- verified empirically: a subshell
+spawned under `set -m` running a real grandchild process showed `ps -o pgid=` identical for both
+pids). `_wave_abort` now signals the WHOLE group with a negative pid (`kill -TERM -- -"$p"`), falling
+back to a plain `kill -TERM "$p"` if the group signal fails, and only prints the "grandchild killed
+too" confirmation when every signal actually landed (softened wording otherwise, per the review
+note). New test `wave_run h2` (ABORT/TRAP PATH): a 2-wide wave with a mock that writes its OWN pid to
+a marker file then `sleep 30`, SIGTERM sent to the `_wave_run` driver mid-wave (via its own
+backgrounded subshell pid, not the test process), asserting BOTH marker pids are genuinely dead
+(`kill -0` fails) afterward -- not just that the driver claimed cleanup. This is the first test to
+exercise the INT/TERM trap path at all.
+
+Decision -- FIX 2 [SHOULD-FIX] dep-blocked serial-fallthrough halt (ID-090 item (d), pulled forward).
+At `WAVE_CAP>=2`, when `admitted<2` but the ready set is non-empty, the loop fell through to the
+dep-IGNORANT `_next` (first unchecked ROADMAP line regardless of `depends`), silently
+running/checking a dep-blocked sub-goal (repro: `SG-01 depends SG-99` unsatisfiable, listed before
+two independent ready sub-goals with only one declaring Touches so `admitted_n=1`). Fix: before
+falling through, verify `_next`'s pick is a member of `_ready_set`; halt with a "dep-blocked (not in
+ready set)" message + nonzero if not, entirely inside the `WAVE_CAP -ge 2` block so the serial pick
+stays byte-identical. Debugging note (load-bearing): the first implementation checked membership via
+the PIPE'S EXIT STATUS (`_ready_set ... | awk '... END{exit !f}'`) and was WRONG -- `_ready_set`'s own
+`while read` loop always returns nonzero on its internal EOF (standard while-read idiom), and under
+`set -o pipefail` the pipeline's exit status is the RIGHTMOST NONZERO stage, not simply the last
+stage's code, so `_ready_set`'s spurious nonzero corrupted the check even when awk printed the
+correct answer and exited 0 itself. Fixed by reading awk's PRINTED output (`found=$(... | awk
+'$1==x{print "1"; exit}')`) instead of relying on pipe exit-code propagation. This surfaced as a
+regression in the pre-existing `gate n` chain-hold test (cycle 2 of that fixture hits the exact same
+fallthrough with a ready, non-dep-blocked `gate` pick) before the output-based fix was applied.
+Landed as ID-090 item (d) DONE (see `_meta/BACKLOG.md` + `docs/specs/SPEC-106-*` TASK-006 update);
+items (a)/(b)/(c) remain open. New test: a dedicated dep-fallthrough fixture asserting nonzero halt,
+the exact message, and that NOTHING ran (the halt precedes any dispatch, so even the ready SG-02
+never got a turn that cycle).
+
+Decision -- FIX 3 [SHOULD-FIX] event-log note truncation. `_emit_event` now truncates `note` to 400
+chars (`note=${note:0:400}`) so the DEC-009 "note stays under PIPE_BUF (512B) for atomic concurrent
+appends" guarantee is structural, not by-convention. No test (per the review instruction); noted here
+per the implementation-notes contract.
+
+Decision -- FIX 4 [SHOULD-FIX] EXIT-CRITERION 2 runtime negative control. The existing negative
+control only asserted `_wave_gate`'s DECISION (`defer\tSG-02` for an overlapping pair) -- not that the
+decision is enforced at RUNTIME. New test (g2) mirrors EXIT-CRITERION 1's mock-barrier fifo technique
+but inverted: both mocks always flip + exit 0 regardless of barrier outcome (so a serial run doesn't
+halt cmd_run after SG-01), but each records overlap-vs-timeout. A genuinely serial run makes SG-02's
+`read -t` time out (SG-01 already exited before SG-02 even starts), which is exactly what was
+observed; an `overlap` result would have meant the gate's defer decision was NOT enforced. Also
+asserts no `[wave] spawned` marker appears (admitted_n=1 the whole way through, never a real wave).
+
+Decision -- FIX 5 [SHOULD-FIX] wave-path mixed-state resume. Prior wave-path resume coverage (block
+i) only started from an all-checked/empty-ready-set ROADMAP (a static no-op). New test: two disjoint
+Touches-declaring sub-goals admit as a real 2-wide wave in run 1; the mock withholds SG-02's flip
+(simulating a crash mid-wave that landed SG-01 but not SG-02), so run 1 exits nonzero. Run 2 (the
+restart, same ROADMAP.md, still `WAVE_CAP=2`) must skip SG-01 (its per-id runlog count stays at 1,
+never re-invoked) and run only SG-02 (count goes 1 -> 2, box flips).
+
+Decision -- FIX 6 [NICE] worktree-setup failure emits a blocked event. The worktree-setup failure
+path in `_wave_run` only did `echo >&2; wave_failed=1; continue`, unlike every other failure path in
+that function; added `_emit_event ... blocked "wave: worktree setup failed"` alongside the echo so
+the event log (the replay source of truth) sees it too. No dedicated test (already exercised
+indirectly by the worktree-collision paths in `_wave_worktree`'s own coverage; the review only asked
+for the missing event emission).
+
+Decision -- FIX 7 [NICE] stale-lock test message. The dead-PID stale-lock test's "(retry)" wording
+implied a retry that never happened. Fixed by actually looping (bounded, 5 tries) the throwaway-PID
+setup instead of just relabeling the comment -- a fresh PID can in principle be reused by an unrelated
+process between reap and the `kill -0` check, so a real retry is strictly more correct than dropping
+the word.
+
+Decision -- FIX 8 [MED security] pfile cleanup trap. `pfile=$(mktemp)` (the built prompt, including
+injected HANDOFF content) was `rm -f`'d only on the happy path; a Ctrl-C left it in
+`${TMPDIR:-/tmp}`. Serial path: `trap 'rm -f "$pfile"' EXIT` set right after `mktemp`, cleared
+(`trap - EXIT`) right after the explicit `rm -f` on the happy path -- cheap to reset every loop cycle,
+the only EXIT trap this script sets on the serial path, and safe across `bash "$ORCH" run`'s
+always-subprocess test-harness pattern (no collision with a test's own EXIT trap, which lives in a
+different process). Wave path: `wave_pfiles` promoted to a GLOBAL `_WAVE_PFILES` array (same pattern
+as `_WAVE_PIDS`/`_WAVE_LANDED`) so `_wave_abort` can `rm -f "${_WAVE_PFILES[@]+"${_WAVE_PFILES[@]}"}"`
+on an INT/TERM instead of leaking every still-live wave job's prompt file. No dedicated test (per the
+review instruction: "keep it minimal").
+
+Why. All 8 were review-team findings against already-shipped-but-opt-in wave machinery; none change
+the sacred invariant (`WAVE_CAP=1` byte-identical) and all stay inside `lib/orchestrate.sh` +
+`tests/test-orchestrate-wavefront.sh` (scope-locked, no cascading changes to `commands/mega.md` or
+other files).
+
+Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds, unchanged file). `bash
+tests/test-orchestrate-wavefront.sh` 100/100 (89 prior + 11 new: 1 abort/trap test, 4 dep-fallthrough
+halt, 4 runtime negative-control, 2 wave-resume), stable across 3 back-to-back runs (no flake).
+`shellcheck -s bash lib/orchestrate.sh` exit 0.
