@@ -150,11 +150,11 @@ checks: a static review when it is produced (left/vertex) and a dynamic test lat
    build /kit:think · /kit:assign  · review (none)
     Solution-design .................................. System test       project test suite
     build /kit:design  · review /kit:devs-team
-     Spec ........................................... Integration test   integration-checker
+     Spec ........................................... Integration test   integration-verifier
      build /kit:spec (+research-*) · review /kit:spec-validate
       Code ......................................... Unit / task test    task-verifier
       build /kit:execute · /kit:next                                    (fix-agent repairs)
-      review /kit:review · /kit:review-team (deep security: security-auditor)
+      review /kit:review · /kit:review-team (deep security: security-reviewer)
        ╲                                            ╱
         ╰──── test design: /kit:test-plan writes the tests ────╯
                          (vertex: build = code + test code)
@@ -172,8 +172,8 @@ review when produced (left/vertex), a dynamic test when executed (right).
 |---|---|---|---|
 | Brief / requirement | `/kit:think`, `/kit:assign` | (none; ship gate traces back) | Acceptance test (`/kit:ship`) |
 | Solution design | `/kit:design` | `/kit:devs-team` | System test (project suite) |
-| Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-checker`) |
-| Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `reviewer`; deep: `security-auditor`) | Unit / task test (`task-verifier`) |
+| Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-verifier`) |
+| Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `code-reviewer`; deep: `security-reviewer`) | Unit / task test (`task-verifier`) |
 | UI design (downstream) | `/kit:ui-design` | `/kit:visual-team` | (visual; no dynamic test) |
 | Docs | (written during build) | `/kit:docs` (+ `doc-verifier`) | (doc-verifier confirms vs code) |
 
@@ -183,7 +183,7 @@ artifact, at the phase that produces it**, mirrored by the right-arm test that l
 validates the same artifact.
 
 **Commands vs agents.** A `/kit:...` entry is a *command* you invoke. A plain name
-(`task-verifier`, `integration-checker`, `reviewer`, `doc-verifier`) is an *agent*
+(`task-verifier`, `integration-verifier`, `code-reviewer`, `doc-verifier`) is an *agent*
 dispatched by a command, never invoked directly. The right-arm tests are executed by
 agents (dispatched inside `/kit:execute`) plus the `/kit:ship` gate. The unit +
 integration levels can also be re-run on demand, read-only, with `/kit:verify` (no rebuild).
@@ -244,7 +244,7 @@ The V is nearly complete. One open hole, judged against PHILOSOPHY criterion #2
    and `/kit:verify` dispatch would complete the right-arm verifier set. Verdict:
    **consider, not urgent** (the inline gate works today).
 
-Two gaps closed 2026-05-23: the `security-auditor` orphan (wired into `/kit:review-team`)
+Two gaps closed 2026-05-23: the `security-reviewer` orphan (wired into `/kit:review-team`)
 and `/kit:verify` (shipped, SPEC-035, the on-demand right-arm executor). The V is now
 fully covered by commands + agents; the only open item is the optional `acceptance-verifier`
 (v2 candidate). Everything else would be a phantom.
@@ -539,7 +539,7 @@ Convergence has three strictly bounded jobs: (1) enumerate and enforce the
 hands-off shared-surface list above, (2) collate the READY/BLOCKED signals from
 all worker branches, and (3) hand the integrated result to `/kit:ship`.
 
-It does NOT do cross-task wiring checks -- that is `integration-checker`'s job,
+It does NOT do cross-task wiring checks -- that is `integration-verifier`'s job,
 run at `/kit:execute` Step 4. It does NOT write the shared surfaces -- that is
 `/kit:ship`'s job (Steps 1b/4a/7 already own those writes). Convergence
 writing to `CHANGELOG.md`, `VERSION`, or any other hands-off surface directly
@@ -776,7 +776,7 @@ recorded + fix verified + human-confirmed.
 worker per task, verifies each in a fresh context, retries fixable failures, and checks
 cross-task wiring at the end. Self-reported "done" is never proof; the verifier is.
 Enforcer: the verification pipeline is itself a hard stop. Stop: every task PASS **and**
-the integration-checker PASS (multi-task specs). Branches: `PASS` (advance),
+the integration-verifier PASS (multi-task specs). Branches: `PASS` (advance),
 `FAIL:fixable` (retry via fix-agent, **max 2**), `FAIL:escalate` or retries exhausted
 (stop -> human).
 
@@ -800,7 +800,7 @@ the integration-checker PASS (multi-task specs). Branches: `PASS` (advance),
               ▼
    phase checkpoint (human: continue / review / stop)
               ▼
-   integration-checker (read-only, diffs whole build from base ref)
+   integration-verifier (read-only, diffs whole build from base ref)
         ┌─────┼───────────────┐
       PASS  FAIL:fixable   FAIL:escalate
         │     │ (fix-agent)     ▼
@@ -850,7 +850,7 @@ later reader and an earlier writer never split across two specs.
 
 The edges that fire when the happy path does not hold.
 
-1. **Retry (fixable failure).** A `task-verifier` / `integration-checker` `FAIL:fixable`
+1. **Retry (fixable failure).** A `task-verifier` / `integration-verifier` `FAIL:fixable`
    dispatches a scoped fix-agent, then re-verifies. Cap: 2 retries. 1-2 cycles catch
    import/assertion/off-by-one bugs; 3+ means a design problem.
 2. **Escalate (unfixable or exhausted).** `FAIL:escalate`, or retries hitting the cap,

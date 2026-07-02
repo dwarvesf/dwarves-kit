@@ -1,5 +1,5 @@
 ---
-name: integration-checker
+name: integration-verifier
 description: Verifies that the tasks of a completed build actually wire together. Dispatched once at /execute Step 4 for multi-task specs. Read-only -- cannot modify the codebase. Checks cross-task wiring + global acceptance, not per-task acceptance.
 tools:
   - Read
