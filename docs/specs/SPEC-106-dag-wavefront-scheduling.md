@@ -1,6 +1,6 @@
 # Spec: DAG-wavefront scheduling in the orchestrator
 Generated: 2026-07-03
-Status: DRAFT (spec-validate: NEEDS REVISION , blocked on Open-question Q1, a scope decision for Han)
+Status: VALIDATED (spec-validate revision applied; Q1 resolved provisionally as Option B , see Open questions; Han may flip to A cheaply)
 Lane: full
 Authorizes: ADR-0030 (Accepted) · Source brief: docs/specs/DECISION-BRIEF-dag-wavefront.md (board ID-084)
 
@@ -93,72 +93,153 @@ Grounded in `lib/orchestrate.sh` (500 lines) as it stands on `master`. Anchors:
   exists today. All "flock-guarded" language in the brief means this mkdir-lock.
 - Wave-completion wait = `kill -0` poll loop (as `_run_session_watchdog` L320), never `wait -n`.
 
+### Structural design (from spec-validate; the byte-identical invariant rides on THIS)
+
+The invariant "no-deps mega-goal == today, byte-identical" is guaranteed STRUCTURALLY, not by a
+golden test alone:
+
+1. **Extract `_run_one_session()` FIRST** (surgical refactor, zero behavior change) , lift the
+   three run-paths (watchdog / `--stream` / plain, L418-439) out of `cmd_run` into one helper keyed
+   on `dir id pfile route_flags`. Serial and wave both call it, so all three paths are preserved for
+   both and never forked. This is TASK-000, lands + tests green before any wave code.
+2. **Dispatch on ready-set size.** `cmd_run` computes the ready set each cycle; if `size <= 1` OR
+   `WAVE_CAP == 1`, run the EXISTING serial body unchanged (`_run_one_session` on the single pick).
+   Only `size > 1 AND WAVE_CAP > 1` routes to `_wave_run`. A no-deps mega-goal always has ready
+   size 1 -> serial path -> byte-identical.
+3. **Greedy-in-ROADMAP-order admission** (`_wave_gate`) , pairwise disjointness does not compose, so
+   admit a ready sub-goal iff it proves disjoint against EVERY already-admitted wave member, stop at
+   `WAVE_CAP`, defer the rest to the next cycle. Deterministic (ROADMAP order); the no-deps/CAP=1
+   cases fall out identical.
+
+### Completion + convergence (from spec-validate)
+
+- **Flip targets the SHARED mega-goal-dir ROADMAP via absolute path**, outside any worktree. Sessions
+  run in per-sub-goal worktrees (separate checkouts), so a box flip must NOT go to the worktree's own
+  ROADMAP copy (the driver would never see it). `cmd_flip <megadir> <id>` writes `$megadir/ROADMAP.md`
+  (absolute), and the session's contract calls `cmd_flip`, not a local `sed`. The event log
+  (`$megadir/.orchestrate/`) is likewise shared.
+- **Wave convergence:** after a wave's sessions land on their worktree branches, the lead merges them
+  **one-at-a-time under the flip lock** (reusing `lib/mega-merge.sh` one-at-a-time; its SEMANTICS are
+  untouched per scope , this only sequences existing merges). Concurrent same-base merges never race.
+
+### Locking (from spec-validate)
+
+- `_lock`/`_unlock` = `mkdir "$megadir/.orchestrate/flip.lock"` (atomic; NOT `/tmp`, same trust
+  domain as the ROADMAP it guards). Holder writes its PID to `flip.lock/pid`.
+- **Stale reclaim = PID-liveness, not bare mtime:** reclaim only when `[ -n "$lockdir" ]` AND the
+  recorded PID fails `kill -0` (crashed holder) OR age exceeds `FLIP_LOCK_STALE_SECS` (default 120)
+  AND PID dead. Reclaim with `rmdir` (refuses non-empty/odd paths), never `rm -rf`.
+- The **reader takes the same lock** for ready-set recompute, OR flips are write-temp-then-`mv`
+  (atomic rename) so a reader never sees a torn ROADMAP.
+- The **recompute-and-launch decision is serialized under the lock** so two near-simultaneous
+  completions cannot both launch and overshoot `WAVE_CAP` / double-launch a now-ready sub-goal.
+
 ### Interfaces (I/O contract)
 
-- **Consumes:** ROADMAP.md sub-goal lines (`- [ ] SG-NN ... depends SG-MM`), sub-goal files, each
-  sub-goal's `## Touches` section (for the gate), dep-parents' `HANDOFF-<id>.md`.
-- **Produces:** concurrent `claude -p` sessions in per-sub-goal worktrees; flock-guarded box flips
-  in ROADMAP.md; append-only event-log entries; per-edge `HANDOFF-<id>.md` files.
+- **Consumes:** ROADMAP.md sub-goal lines (`- [ ] SG-NN ... , auto|gate|gate! [depends SG-MM]`);
+  sub-goal files; each sub-goal's `## Touches` section IF PRESENT (opt-in, per Q1/Option-B , absent
+  => that sub-goal serializes); dep-parents' `HANDOFF-<id>.md`; env `WAVE_CAP` (default 2, integer
+  `>=1`, parsed like `WATCHDOG_STALL_SECS`; `<1`/non-numeric rejected), `FLIP_LOCK_STALE_SECS`
+  (default 120).
+- **Produces:** up to `WAVE_CAP` concurrent `claude -p` sessions in per-sub-goal worktrees
+  (`.claude/worktrees/<id>`); lock-guarded box flips in the SHARED `$megadir/ROADMAP.md`; append-only
+  event-log entries (`note` field truncated `< PIPE_BUF` = 512B so concurrent appends stay atomic);
+  per-edge `HANDOFF-<id>.md` (deps) or plain `HANDOFF.md` (no-deps, byte-identical).
+- **Helper wire formats** (bash-3.2: no assoc-arrays/namerefs; stdout lines are the contract):
+  `_ready_set` -> `id<TAB>policy` lines (like `_subgoals`); `_wave_gate` -> `run<TAB>id` /
+  `defer<TAB>id` lines; `_wave_run` consumes the `run` lines and maintains an in-band `pid<TAB>id`
+  reap map (poll-all `kill -0`, map each dead PID back to its sub-goal for the grounded check).
 - **Invariants:** (1) a checked box is never re-run (idempotent resume); (2) an unprovably-disjoint
-  pair is serialized, never run concurrently; (3) no-deps mega-goal == today, byte-identical;
-  (4) box flips are atomic under concurrency (flock or the repo's lock primitive).
-
-### Infrastructure changes
-
-A small `orchestrate flip <id>` box-flip helper wrapped in a mutual-exclusion lock (flock if
-available on the host; otherwise the portable fallback the repo already uses , to be confirmed by
-pitfalls research). Per-edge handoff files replace the single hot `HANDOFF.md` (linear chain =
-degenerate single-parent case).
+  OR Touches-less pair is serialized, never concurrent; (3) no-deps mega-goal == today,
+  byte-identical (guaranteed by the size-dispatch above, verified by the golden); (4) box flips +
+  the launch decision are atomic under the flip lock; (5) a sibling's nonzero exit lets in-flight
+  siblings DRAIN to completion in their isolated worktrees, then the run is marked failed (a `trap`
+  reaps/kills the wave's PID set on abort , no orphaned `claude -p` children).
 
 ## Task Breakdown
 
-Grounded in the real function structure. Wavefront logic lands in NEW `_wave_*` helpers, not inlined
-into `cmd_run` (already 154 lines, L335-489, the file's split candidate).
+Grounded in the real function structure. Wavefront logic lands in NEW `_wave_*` helpers, never inlined
+into `cmd_run` (already 154 lines, L335-489). `depends` edges declared per task (this is a
+wavefront spec; it eats its own dogfood).
 
-### Phase 1: Foundation (primitives, no behavior change yet)
-- [ ] TASK-001: `_ready_set()` helper , emit every sub-goal with checked==0 AND `_sg_deps_blocked`
-  empty (reuses L133). Acceptance: unit test over fixture ROADMAPs (linear, diamond, gated) returns
-  the correct ready set each cycle; on a no-deps ROADMAP it returns exactly what `_next` would pick
-  first (superset invariant).
-- [ ] TASK-002: `_lock`/`_unlock` mkdir-based lock helper (stale-timeout) + `cmd_flip <dir> <id>`
-  that flips a ROADMAP box under the lock. Acceptance: a test hammering N parallel `flip` calls on
-  distinct boxes leaves ROADMAP.md well-formed (all N flipped, no torn lines); `flock` absent is
-  fine (no flock used).
+### Phase 0: Surgical refactor (zero behavior change; unblocks byte-identity)
+- [ ] TASK-000: Extract `_run_one_session()` , lift the three run-paths (watchdog / `--stream` /
+  plain, L418-439) out of `cmd_run` into one helper. Acceptance: `bash tests/test-orchestrate.sh`
+  stays fully green (byte-identical serial behavior); `cmd_run` shrinks; no wave code yet.
+
+### Phase 1: Foundation primitives (no scheduling change yet)
+- [ ] TASK-001: `_ready_set()` , emit every sub-goal with checked==0 AND `_sg_deps_blocked` empty
+  (reuses L133), stdout `id<TAB>policy`. Acceptance: unit test over fixtures (linear, diamond, gated)
+  returns the correct ready set; on a no-deps ROADMAP it returns exactly `_next`'s first pick
+  (size-1 superset invariant). depends: none.
+- [ ] TASK-002: `_lock`/`_unlock` (mkdir at `$megadir/.orchestrate/flip.lock` + PID file;
+  PID-liveness stale reclaim via `rmdir`, `[ -n ]` guarded, `FLIP_LOCK_STALE_SECS` default 120) +
+  `cmd_flip <megadir> <id>` flipping the SHARED absolute-path ROADMAP under the lock (write-temp-then
+  -`mv`). Acceptance: N parallel `flip` on distinct boxes -> ROADMAP well-formed, no torn lines; a
+  test that kills a flip mid-lock -> next flip reclaims (PID dead). depends: none.
 
 ### Phase 2: Core wave loop
-- [ ] TASK-003: `_wave_gate()` , take the ready set, run `dispatch-gate.sh` over its pairs, return
-  the disjoint sub-set to run concurrently + the rest to serialize. Verify the gate's `## Touches`
-  parser works on goal files, not just specs (pitfalls caveat). Acceptance: exit-criterion 2
-  (overlapping pair serialized , negative control) as a unit test on the gate call.
-- [ ] TASK-004: `_wave_run()` , spawn up to CAP (default 2) ready+disjoint sub-goals concurrently,
-  each in its own worktree, poll completion via `kill -0` + grounded box-flip (reuse the
-  `_run_session_watchdog` background+poll pattern L312), recompute ready set, next wave. Wire into
-  `cmd_run` behind the same grounded-completion contract (L448-455). Acceptance: exit-criterion 1
-  (two disjoint independents run concurrently, both land).
-- [ ] TASK-005: Per-edge `HANDOFF-<id>.md` , `_build_prompt` (L267-282) injects a child's
-  dep-parents' handoffs; single-parent/no-dep path keeps writing/reading plain `HANDOFF.md`
-  byte-for-byte (tests/test-orchestrate.sh L42,80,93,157,179,408-485 must stay green). Acceptance:
-  a diamond fixture's child prompt contains both parents' handoffs; the linear fixture is unchanged.
+- [ ] TASK-003: `_wave_gate()` , greedy-in-ROADMAP-order admission: admit a ready sub-goal iff it
+  proves disjoint (`dispatch-gate.sh gate_disjoint`) against every already-admitted member, stop at
+  `WAVE_CAP`; stdout `run<TAB>id` / `defer<TAB>id`. Gate exit-2 (no `## Touches` declared) => quiet
+  conservative `defer` (Q1/Option-B: opt-in), distinct from exit-1 (overlap). Acceptance:
+  exit-criterion 2 (Touches-OVERLAPPING pair -> both deferred/serialized, negative control).
+  depends: TASK-001.
+- [ ] TASK-004a: `_wave_run()` primitive , spawn the `run` set (each in `.claude/worktrees/<id>`,
+  reuse-or-recreate on a stale worktree: reuse only if clean + branch/box matches the resume, else
+  recreate; never blind `git worktree add`), background via `_run_one_session`, maintain a
+  `pid<TAB>id` reap map, poll-all `kill -0`, on each dead PID do the grounded box-flip check for THAT
+  id; a sibling nonzero-exit lets in-flight siblings DRAIN then marks the run failed; `trap` reaps/
+  kills all wave PIDs on abort. Acceptance: standalone test , two mock sessions run with proven
+  temporal overlap (mock-barrier fifo: session A's mock blocks until B's mock signals; timeout =
+  not-concurrent = FAIL), both land; a sibling-fail case drains + reports failed, no orphans.
+  depends: TASK-000, TASK-001, TASK-002.
+- [ ] TASK-004b: Wire `_wave_run` into `cmd_run` , size-dispatch (ready<=1 or `WAVE_CAP`==1 -> the
+  untouched serial body; else -> `_wave_gate` then `_wave_run`); recompute-and-launch serialized
+  under the flip lock; convergence merges landed wave branches one-at-a-time under the lock (reuse
+  `mega-merge.sh`, semantics untouched). Acceptance: exit-criterion 1 (two disjoint independents run
+  concurrently AND both merge back to advance the mega-goal). depends: TASK-003, TASK-004a.
+- [ ] TASK-005: Per-edge HANDOFF (read AND write) , `_build_prompt` (new signature, reads
+  `depends`, injects each dep-parent's `HANDOFF-<id>.md`); the session-write instruction (L282) and
+  `handoff-gen` (L471) write `HANDOFF-<id>.md` when the sub-goal has deps, else plain `HANDOFF.md`;
+  reconcile the `DETERMINISTIC_HANDOFF` gen path (L465-478) under CAP>1. Acceptance: a diamond child
+  prompt contains both parents' handoffs; the LINEAR/no-dep fixture writes+reads plain `HANDOFF.md`
+  byte-for-byte (tests/test-orchestrate.sh L42,80,93,157,179,408-485 green). depends: TASK-004b.
 
-### Phase 3: Resilience + regression
-- [ ] TASK-006: Idempotent resume , `cmd_run` recomputes the ready set from ROADMAP boxes on every
-  cycle (already the model); add a test that kills mid-wave and restarts. Acceptance:
-  exit-criterion 3 (no checked sub-goal re-runs).
-- [ ] TASK-007: `gate`-policy sub-goal holds only its dependent chain , an independent branch's
-  ready sub-goals still run while a `gate` blocks its own chain (today a gate stops the whole loop,
-  L382-387). Acceptance: exit-criterion 4.
-- [ ] TASK-008: `tests/test-orchestrate-wavefront.sh` with all five controls + golden linear-chain
-  capture. Acceptance: exit-criterion 5 (no-deps mega-goal byte-identical to current master).
+### Phase 3: Resilience, gate semantics, regression
+- [ ] TASK-006: Idempotent resume + wait-vs-complete termination , `cmd_run` recomputes ready from
+  ROADMAP each cycle; when ready==empty AND unchecked>0 it WAITS (does not false-complete); done only
+  when unchecked==0. Acceptance: exit-criterion 3 (kill mid-wave, restart, no checked sub-goal
+  re-runs) + a test that ready-empty+unchecked-remain waits. depends: TASK-004b.
+- [ ] TASK-007: `gate` = chain-stop (holds only its dependent chain; independent branches keep
+  running) + NEW `gate!` = stop-all (preserves today's global human-stop, L382-387, for operators who
+  want quiesce-everything). Acceptance: exit-criterion 4 (a `gate` holds its chain while an
+  independent branch completes) + a `gate!` test that halts the whole loop. depends: TASK-004b.
+- [ ] TASK-008: `.gitignore` add `_meta/megagoals/**/{HANDOFF*.md,.orchestrate/}`, `*.session.log`,
+  `*.stream.jsonl` (session logs can carry resolved `op://` values; per-edge handoffs multiply the
+  surface). Acceptance: `git status` on a mega-goal mid-run shows none of these as tracked/eligible.
+  depends: none.
+- [ ] TASK-009: `tests/test-orchestrate-wavefront.sh` , the five controls (mock-`CLAUDE_CMD`, no real
+  sessions) + golden linear-chain capture + **an Option-B honesty control: a real Touches-less
+  mega-goal's `goals/` dir gates to all-`defer` (serializes), asserting the inert-until-Touches
+  behavior is visible, not hidden**. Acceptance: exit-criterion 5 (no-deps byte-identical) + all five
+  green + the Touches-less-serializes assertion. depends: TASK-004b, TASK-005, TASK-006, TASK-007.
 
 ## After state
 
-- [ ] `orchestrate.sh run` computes a ready set each cycle and runs dep-independent, disjoint
-  sub-goals concurrently (cap 2). (Today: strictly serial, one sub-goal at a time.)
-- [ ] `tests/test-orchestrate-wavefront.sh` exists and is green on all five controls, checkable by
-  `bash tests/test-orchestrate-wavefront.sh`.
+- [ ] `orchestrate.sh run` computes a ready set each cycle and runs dep-independent, disjoint,
+  Touches-declaring sub-goals concurrently (up to `WAVE_CAP`, default 2), each in its own worktree,
+  merging landed branches back one-at-a-time. (Today: strictly serial, one sub-goal at a time.)
+- [ ] A sub-goal WITHOUT a `## Touches` section serializes (Option-B opt-in), and TASK-009 asserts
+  this visibly. (Today: N/A , no wave path.)
+- [ ] `_run_one_session` extracted; a no-deps mega-goal takes the untouched serial path and is
+  byte-identical to current master (golden capture + `bash tests/test-orchestrate.sh` green).
+- [ ] `tests/test-orchestrate-wavefront.sh` exists and is green on all five controls (+ the
+  Touches-less-serializes control), checkable by `bash tests/test-orchestrate-wavefront.sh`.
 - [ ] `docs/verification/orchestrate-wavefront.md` has a five-row run-table, rows 2 and 5 marked as
   negative controls.
-- [ ] A no-deps mega-goal behaves byte-identically to current master (golden capture in the test).
+- [ ] `gate!` global-stop exists alongside `gate` chain-stop; `.gitignore` covers the new
+  handoff/session-log surface.
 
 ## Acceptance Criteria (global)
 - [ ] All tasks pass their individual acceptance criteria.
@@ -172,29 +253,44 @@ into `cmd_run` (already 154 lines, L335-489, the file's split candidate).
 `bash tests/test-orchestrate.sh` (regression, confirmed present) green.
 
 ## Edge Cases
-1. Ready set is empty but unchecked sub-goals remain (all blocked on an unfinished gate) , loop
-   waits, does not spin or falsely complete.
-2. A wave pair is dep-independent but `## Touches` is missing on one , gate cannot prove disjoint,
-   so serialize (conservative).
-3. Cap = 1 (config) , behaves exactly like the serial loop.
-4. A worktree for a sub-goal id already exists from a prior crashed run , reuse or clean, never
-   collide.
-5. Two boxes flip within the same lock window , second waits, both land, event log intact.
+1. Ready set empty but unchecked sub-goals remain (blocked on an unfinished gate) , loop WAITS, does
+   not spin or false-complete (TASK-006).
+2. A ready sub-goal has no `## Touches` , `gate_disjoint` exit-2 => quiet `defer` => serialize
+   (Option-B opt-in). With ALL sub-goals Touches-less, the whole run serializes (TASK-009 asserts it).
+3. `WAVE_CAP=1` , size-dispatch takes the untouched serial body (byte-identical).
+4. `WAVE_CAP` = 0 / non-numeric , rejected at parse with a clear error (never no-spawn / infinite
+   wait).
+5. A worktree for a sub-goal id exists from a prior crashed run , reuse only if clean AND branch/box
+   matches the resume, else recreate; never blind `git worktree add`.
+6. Two boxes flip within the same lock window , second waits on the mkdir-lock, both land, event log
+   intact.
+7. Two sessions complete near-simultaneously , the recompute-and-launch decision is serialized under
+   the flip lock, so `WAVE_CAP` is never overshot and no sub-goal double-launches.
+8. A `gate!` sub-goal is reached , the whole loop halts for a human (preserves today's global stop),
+   distinct from `gate` which holds only its chain.
 
 ## Failure modes
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
-| Parallel writers corrupt ROADMAP.md | garbled boxes / lost flip | flock-guarded `flip` helper; append-only event log is the source of truth |
-| `flock` absent on host (macOS) | helper errors / no mutual exclusion | portable lock fallback (confirm repo's existing primitive in pitfalls research) |
-| Disjointness gate false-negative (serializes safe pair) | slower than ideal, never unsafe | acceptable by design (conservative); logged |
-| Disjointness gate false-positive (parallel unsafe pair) | `.git/index.lock` / merge conflict | one worktree per session isolates writers; drift guard after |
-| Crash mid-wave leaves a half-done sub-goal | box unchecked, worktree present | idempotent resume recomputes ready set; unchecked = re-runnable |
+| Parallel writers corrupt shared ROADMAP.md | garbled boxes / lost flip | `mkdir`-lock `cmd_flip` on the absolute-path shared ROADMAP + write-temp-then-`mv`; append-only event log is the replay source of truth |
+| Lock holder crashes holding `flip.lock` | next flip blocks; lock age + `kill -0` PID fails | PID-liveness stale reclaim via `rmdir` (never `rm -rf`), `FLIP_LOCK_STALE_SECS` default 120 |
+| Box flip written to a worktree's own ROADMAP copy (invisible to driver) | driver never sees the flip; session loops | flip helper targets `$megadir/ROADMAP.md` (absolute, outside worktrees); session contract calls `cmd_flip`, never a local `sed` |
+| Disjointness gate false-negative (serializes safe pair) OR no `## Touches` | slower than ideal, never unsafe | acceptable by design (Q1/Option-B conservative); TASK-009 asserts the serialize-everything outcome is visible |
+| Disjointness gate false-positive (parallel unsafe pair) | `.git/index.lock` avoided by worktrees; risk is a clean-but-wrong merge | one worktree per session; convergence detects same-file edits across the wave, not just git conflicts |
+| Sibling session exits nonzero mid-wave | reap map sees dead PID + unchecked box | in-flight siblings DRAIN in isolated worktrees, run marked failed after drain; `trap` reaps/kills the wave PID set (no orphaned `claude -p`) |
+| Crash mid-wave leaves a half-done sub-goal | box unchecked, worktree present | idempotent resume recomputes ready set; stale worktree reused only if clean+matching, else recreated |
+| Event-log line exceeds PIPE_BUF (concurrent appends interleave) | garbled event line | `note` field truncated `< 512B` so O_APPEND stays atomic |
 
 ## Out of Scope
 - Priority scheduling · cross-machine execution · new retry policies · a separate crash-recovery
   state store · speculative execution · DAG visualization beyond the existing board. (ADR-0030's
   GSD-v2 boundary; any of these in the diff = scope failure.)
-- `/kit:dispatch` (untouched), `lib/mega-merge.sh` semantics, the ops-toolkit skill.
+- `/kit:dispatch` (untouched), `lib/mega-merge.sh` semantics (convergence only SEQUENCES its
+  existing merges under the lock; it does not change how a merge works), the ops-toolkit skill.
+- **The `## Touches` schema for sub-goals + the sub-goal generator (`commands/mega.md`) change**
+  , deferred to follow-up **ID-085-followup** per Q1/Option-B. Without it, wave-eligibility is
+  opt-in and real mega-goals serialize until their sub-goals declare Touches. (Han can pull this in
+  by choosing Option A.)
 
 ## Touches
 <!-- This spec is NOT run via /kit:dispatch (it is a single-writer full-lane build), so Touches is
@@ -217,6 +313,23 @@ into `cmd_run` (already 154 lines, L335-489, the file's split candidate).
 - DEC-005: Lock primitive is `mkdir <lockdir>` + stale-timeout, NOT `flock` (absent on macOS CI).
   New shared helper; wave-completion wait is a `kill -0` poll (as `_run_session_watchdog`), not
   `wait -n` (bash 4.3+). Arrays empty-guarded `${arr[@]+"${arr[@]}"}` per `lib/mega-merge.sh:224`.
+- DEC-006 (spec-validate): the byte-identical serial invariant is STRUCTURAL, not test-only ,
+  extract `_run_one_session` first (TASK-000), then size-dispatch (ready<=1 or CAP=1 -> untouched
+  serial body). A golden test alone was rejected as insufficient.
+- DEC-007 (spec-validate): `_wave_gate` is greedy-in-ROADMAP-order (admit vs every admitted member,
+  stop at CAP), because pairwise disjointness does not compose. Deterministic; no-deps identical.
+- DEC-008 (spec-validate): flip targets the SHARED absolute-path `$megadir/ROADMAP.md` (outside
+  worktrees); convergence merges wave branches one-at-a-time under the flip lock reusing
+  `mega-merge.sh` (its semantics untouched , only sequenced).
+- DEC-009 (spec-validate): lock at `$megadir/.orchestrate/flip.lock` (not `/tmp`), PID-liveness
+  stale reclaim via `rmdir` + `[ -n ]` guard; `WAVE_CAP` env (default 2, integer `>=1`),
+  `FLIP_LOCK_STALE_SECS` (default 120); event `note` truncated `< PIPE_BUF`.
+- DEC-010 (spec-validate): `gate` narrows to chain-stop; NEW `gate!` preserves today's global
+  human-stop (autonomy gate not weakened , the operator opts into whichever).
+- DEC-011 (Q1, provisional , Han away): Option B , concurrency is opt-in (a sub-goal declares
+  `## Touches` to be wave-eligible; absent it serializes). Ship machinery + fixtures + TASK-009
+  honesty control; the generator/schema retrofit is follow-up ID-085-followup. A = B + generator
+  change (no rework). Han override: "do Option A".
 
 ## Review
 
@@ -291,8 +404,13 @@ preserved by keeping the multi-parent concat inside `_build_prompt`'s stdout.
     absent it, it serializes (safe)"; file the generator/schema retrofit as a follow-up board row.
     Cost: inert on today's mega-goals until the follow-up lands. Payoff: stays inside the brief's
     literal "In" list; smallest diff; fully reversible.
-  - **Recommendation: Option A (minimal).** Shipping a concurrency feature that never runs
-    concurrently on any real mega-goal defeats the brief's own motivation (the kit-telemetry serial
-    cost). The generator change is small (an optional `## Touches` block in the sub-goal template) and
-    the retrofit of existing sub-goals can stay lazy (they serialize until edited). But it does widen
-    scope past the brief, so it is Han's call, not the loop's.
+  - **Loop recommended A; RESOLVED provisionally as B** (2026-07-03, Han away >60s on the ask).
+    Rationale for taking B autonomously: B is the scope-faithful reading of the brief ("EXECUTES that
+    brief, does not re-design"; the brief's own "unprovable = serialize" IS B's behavior), it is fully
+    reversible, and **A = B + an additive generator/schema change**, so B is a strict subset , zero
+    rework if Han upgrades to A. A expands scope into `commands/mega.md`, which the loop will not
+    self-approve while Han is away. B is honest, not a silent no-op: TASK-009 asserts a real
+    Touches-less mega-goal serializes, the opt-in is documented, and the generator/schema retrofit is
+    filed as follow-up **ID-085-followup (Touches-on-sub-goals)** for Han to pick up if he wants A.
+    **Han override path:** to switch to A, say "do Option A" , the loop adds the generator + schema
+    tasks on top of the shipped B machinery (no rebuild).
