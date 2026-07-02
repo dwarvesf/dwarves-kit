@@ -48,7 +48,7 @@ with the task list Q1 reshapes), to avoid revising twice.
 ## 2026-07-03 , Q1 resolved provisionally (Option B) + first revision applied
 
 Han away >60s on the Q1 scope ask -> took **Option B** (opt-in Touches; generator/schema retrofit =
-follow-up ID-085-followup). Rationale: scope-faithful to the brief, fully reversible, A = B + generator
+follow-up ID-090). Rationale: scope-faithful to the brief, fully reversible, A = B + generator
 (no rework). Applied all ~19 mechanical fixes. Committed 1b9726f. See spec DEC-006..DEC-011.
 
 ## 2026-07-03 , second revision (delta re-validation found 3 real new bugs)
@@ -71,7 +71,7 @@ Fresh-context re-validation caught bugs the first revision introduced. Applied:
   `WAVE_CAP>=2`. Conservative-everywhere per the quality bar. This overrides the brief's "cap default 2".
 - **Flip-contract injection deferred:** a real wave session needs the `cmd_flip <abs-megadir> <id>`
   instruction injected into its prompt (else it edits its worktree's ROADMAP copy, invisible to the
-  driver). That prompt/authoring change bundles with ID-085-followup (real-wave activation); the
+  driver). That prompt/authoring change bundles with ID-090 (real-wave activation); the
   machinery + mock-barrier tests ship now, real waves activate in the followup. Documented as inert.
 - **Split convergence into its own task** (TASK-004c) so the missing-merge closure has its own
   acceptance, not proven only transitively.
@@ -302,12 +302,12 @@ lock. Deviations / decisions the spec did not pin down:
 WAVE_MERGE_CMD deferral. The actual merge is a MOCKABLE hook `WAVE_MERGE_CMD` (default
 `$ORCH_DIR/mega-merge.sh merge`), word-split like CLAUDE_FLAGS. `mega-merge.sh` is NOT edited , its merge
 semantics stay untouched; convergence only SEQUENCES calls to it (spec Out-of-Scope). Real gh-backed
-merge stays DEFERRED to ID-085-followup (same posture as the flip-contract prompt injection): waves are
+merge stays DEFERRED to ID-090 (same posture as the flip-contract prompt injection): waves are
 off at the default WAVE_CAP=1 so the hook is never reached in the serial path, and a real merge needs
 `gh` + real PRs. The hook is invoked `$WAVE_MERGE_CMD <pr> <id>`. The default real target's own signature
 is `merge <pr> <rid> <lane>`, so `<pr> <id>` would be a usage error , acceptable because the default is
 never invoked under CAP=1 (no wave) and tests always override WAVE_MERGE_CMD with a recording mock. Full
-`<pr> <rid> <lane>` wiring lands with ID-085-followup.
+`<pr> <rid> <lane>` wiring lands with ID-090.
 
 Same-file detection approach. Belt-and-suspenders over dispatch-gate's PRE-admission disjointness (the
 SPEC-106 risk row: a disjointness false-positive could yield a clean-but-wrong merge). For each landed
@@ -442,7 +442,7 @@ holds), while INDEPENDENT ready sub-goals are still admitted + run in the wave. 
 gate (ready) + its dep-blocked chain remain, admitted drops below 2, the loop falls through to
 the serial `_next`, picks the gate, and stops cleanly (rc 0). So exit-criterion 4 is met
 end-to-end: independent branches complete, gate chain holds, loop stops at the gate. Nothing was
-deferred to ID-085-followup for this task.
+deferred to ID-090 for this task.
 
 Why this shape. Keeping `gate!` as a NEW global-stop branch and leaving the serial `gate` branch
 literally untouched is what preserves byte-identity: `test-orchestrate.sh` (serial, gate-stop

@@ -31,7 +31,7 @@ Re-run any `Command:` line to regression-check.
 - Exit: 0
 - Output (excerpt): wavefront 67/67 `ALL PASS`; orchestrate 59/59 `ALL PASS`. `shellcheck -s bash lib/orchestrate.sh` exit 0.
 - Verdict: PASS (5 task-verifiers, all 4-6/N). Highlights: the mock-barrier concurrency proof EMPIRICALLY fails serially (verified); byte-identity diff for the wiring is +39/-0 (serial body untouched); the concurrency test caught+fixed a live awk+mv flip race (now flips via the locked CLI); convergence serialization proven by a reversed-id interleave assertion; per-edge HANDOFF keyed on DEPENDENTS (V-CRIT-6 root case passes).
-- Re-audit: <pending Phase-2 recheck-verifier>
-- Proof class: behavioral. The wave path is REACHABLE + tested at WAVE_CAP>=2 (barrier mock), and DORMANT at default WAVE_CAP=1 (serial byte-identical). Real-wave ACTIVATION (flip-contract prompt injection + real gh merge signature) is deferred to ID-085-followup per Option B. Negative control for the wave behavior = the barrier test (serial impl fails it); the full Step-4 revert-to-RED control lands at completion.
+- Re-audit: PASS (Phase-2 recheck re-executed both suites fresh x2, no flake; byte-identical serial confirmed , dispatch guard `WAVE_CAP -ge 2` at L972 short-circuits at default, falls to `_next` serial body; concurrency proof genuinely concurrency-dependent; no live `rm -rf`/`wait -n`/`declare -A`).
+- Proof class: behavioral. The wave path is REACHABLE + tested at WAVE_CAP>=2 (barrier mock), and DORMANT at default WAVE_CAP=1 (serial byte-identical). Real-wave ACTIVATION (flip-contract prompt injection + real gh merge signature) is deferred to ID-090 per Option B. Negative control for the wave behavior = the barrier test (serial impl fails it); the full Step-4 revert-to-RED control lands at completion.
 
 

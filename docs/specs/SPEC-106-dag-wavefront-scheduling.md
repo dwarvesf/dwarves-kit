@@ -125,7 +125,7 @@ golden test alone:
   (absolute), and the session's contract calls `cmd_flip`, not a local `sed`. The event log
   (`$megadir/.orchestrate/`) is likewise shared. **Deferral (Option-B):** injecting the `cmd_flip
   <abs-megadir> <id>` instruction into a real wave session's PROMPT is authoring-adjacent (it changes
-  what sessions are told), so it bundles with real-wave activation in ID-085-followup. Until then the
+  what sessions are told), so it bundles with real-wave activation in ID-090. Until then the
   `cmd_flip` helper exists + is unit-tested and the mock-barrier tests script it, but real wave
   sessions are not yet wired (waves are `WAVE_CAP`-opt-in and Touches-gated, so none run by default).
 - **Wave convergence:** after a wave's sessions land on their worktree branches, the lead merges them
@@ -196,7 +196,7 @@ wavefront spec; it eats its own dogfood).
   6-way parallel hammer; wavefront 29/29, orchestrate 59/59). 3-state PID staleness; `FLIP_LOCK_POLL_SECS`=0.1.
 
 ### Phase 2: Core wave loop
-- [ ] TASK-003: `_wave_gate()` , greedy-in-ROADMAP-order admission: admit a ready sub-goal iff (a)
+- [x] TASK-003: `_wave_gate()` , greedy-in-ROADMAP-order admission: admit a ready sub-goal iff (a)
   it declares its OWN `## Touches` AND (b) it proves disjoint (`dispatch-gate.sh gate_disjoint`)
   against every already-admitted member; stop at `WAVE_CAP`; stdout `run<TAB>id` / `defer<TAB>id`.
   Self-Touches is required because `gate_plan` admits the first member vacuously , without it a
@@ -205,7 +205,7 @@ wavefront spec; it eats its own dogfood).
   all-`defer` (opt-in gate holds). depends: TASK-001.
   DONE (commit b3793bd, verified: task-verifier PASS 6/6 with independent adversarial fixture + `$-`
   no-`set -e`-leak probe; wavefront 35/35). Reuses dispatch-gate via SUBPROCESS to contain its `set -e`.
-- [ ] TASK-004a: `_wave_run()` primitive , spawn the `run` set (each in `.claude/worktrees/<id>`,
+- [x] TASK-004a: `_wave_run()` primitive , spawn the `run` set (each in `.claude/worktrees/<id>`,
   reuse-or-recreate on a stale worktree: reuse only if clean + branch/box matches the resume, else
   recreate; never blind `git worktree add`), background via `_run_one_session`, maintain a
   `pid<TAB>id` reap map, poll-all `kill -0`, on each dead PID do the grounded box-flip check for THAT
@@ -218,7 +218,7 @@ wavefront spec; it eats its own dogfood).
   serial-fails-the-mock-barrier; the test caught+fixed a live awk+mv flip race, now flips via the
   locked CLI). Coverage follow-up for TASK-009: add isolated tests for the "exits 0 but box unflipped"
   branch and the internal `checked=1` skip.
-- [ ] TASK-004b: Wire `_wave_run` into `cmd_run` , size-dispatch on ADMITTED count: run
+- [x] TASK-004b: Wire `_wave_run` into `cmd_run` , size-dispatch on ADMITTED count: run
   `_wave_gate` first; if `admitted<=1` OR `WAVE_CAP==1` -> the UNTOUCHED serial body on the first
   ready pick (`_next`'s pick); else -> `_wave_run` on the admitted set. Recompute-and-launch
   serialized under the flip lock. Acceptance: exit-criterion 1 (two Touches-disjoint independents run
@@ -227,17 +227,17 @@ wavefront spec; it eats its own dogfood).
   DONE (commit 5ebdcfa, verified: task-verifier PASS 4/4; byte-identity diff +39/-0 serial body
   untouched, guard short-circuits at default; WAVE_CAP=0/abc/-1 exit 64; wave path reachable via
   barrier test; test-orchestrate 59/59, wavefront 53/53 x3 no flake).
-- [ ] TASK-004c: Wave convergence SEQUENCER , `_wave_converge` merges landed wave sub-goals
+- [x] TASK-004c: Wave convergence SEQUENCER , `_wave_converge` merges landed wave sub-goals
   one-at-a-time in ROADMAP order under the flip lock via a MOCKABLE merge hook (real `gh pr merge`
-  through `lib/mega-merge.sh` rides with ID-085-followup, same deferral as the flip-contract , waves
+  through `lib/mega-merge.sh` rides with ID-090, same deferral as the flip-contract , waves
   are off at default WAVE_CAP=1, and real merge needs `gh`/real PRs). `mega-merge.sh` semantics
   untouched (only sequenced). Acceptance: a mock-merge test asserts two landed sub-goals merge
   strictly one-at-a-time (never concurrently) in ROADMAP order under the lock; a same-file cross-wave
   edit is flagged, not silently clean-merged. depends: TASK-004b.
   DONE (commit 44f36d8, verified: task-verifier , serialization proven by interleave assertion,
   same-file flagged, `mega-merge.sh` untouched, byte-identical serial; test-orchestrate 59/59,
-  wavefront 61/61). `WAVE_MERGE_CMD` mockable; real gh merge deferred to ID-085-followup.
-- [ ] TASK-005: Per-edge HANDOFF (read AND write, keyed on DEPENDENTS) , a sub-goal writes
+  wavefront 61/61). `WAVE_MERGE_CMD` mockable; real gh merge deferred to ID-090.
+- [x] TASK-005: Per-edge HANDOFF (read AND write, keyed on DEPENDENTS) , a sub-goal writes
   `HANDOFF-<own-id>.md` iff some sub-goal `depends` on it (has dependents); the session-write
   instruction (L282) and `handoff-gen` (L471) target that file, else plain `HANDOFF.md`.
   `_build_prompt` (new signature, reads `depends`) injects each dep-parent's `HANDOFF-<parent>.md`,
@@ -251,23 +251,35 @@ wavefront spec; it eats its own dogfood).
   wavefront 67/67).
 
 ### Phase 3: Resilience, gate semantics, regression
-- [ ] TASK-006: Idempotent resume + wait-vs-complete termination , `cmd_run` recomputes ready from
+- [x] TASK-006: Idempotent resume + wait-vs-complete termination , `cmd_run` recomputes ready from
   ROADMAP each cycle; when ready==empty AND unchecked>0 it WAITS (does not false-complete); done only
   when unchecked==0. Acceptance: exit-criterion 3 (kill mid-wave, restart, no checked sub-goal
   re-runs) + a test that ready-empty+unchecked-remain waits. depends: TASK-004b.
-- [ ] TASK-007: `gate` = chain-stop (holds only its dependent chain; independent branches keep
+  DONE (commit c3bebaa, verified: task-verifier; resume already correct , proven by runlog test;
+  found+fixed a REAL wave-path bug , dep-blocked fallthrough to `_next` false-completed; guard halts
+  with nonzero; byte-identical serial; test-orchestrate 59/59, wavefront 72/72). Deferred to
+  ID-090: dep-aware serial-fallback pick when ready is non-empty.
+- [x] TASK-007: `gate` = chain-stop (holds only its dependent chain; independent branches keep
   running) + NEW `gate!` = stop-all (preserves today's global human-stop, L382-387, for operators who
   want quiesce-everything). Acceptance: exit-criterion 4 (a `gate` holds its chain while an
   independent branch completes) + a `gate!` test that halts the whole loop. depends: TASK-004b.
-- [ ] TASK-008: `.gitignore` add `_meta/megagoals/**/{HANDOFF*.md,.orchestrate/}`, `*.session.log`,
+  DONE (commit 4521d39, verified: task-verifier; policy parse `auto|gate|gate!`; `_wave_gate` defers
+  gate sub-goals so chain-hold + independent-branch-runs proven end-to-end (exit-crit 4); `gate!`
+  global-stop both paths; serial `gate` byte-identical; test-orchestrate 59/59, wavefront 80/80).
+- [x] TASK-008: `.gitignore` add `_meta/megagoals/**/{HANDOFF*.md,.orchestrate/}`, `*.session.log`,
   `*.stream.jsonl` (session logs can carry resolved `op://` values; per-edge handoffs multiply the
   surface). Acceptance: `git status` on a mega-goal mid-run shows none of these as tracked/eligible.
   depends: none.
-- [ ] TASK-009: `tests/test-orchestrate-wavefront.sh` , the five controls (mock-`CLAUDE_CMD`, no real
+  DONE (commit 9e55427, done inline + verified: `git check-ignore` confirms all 3 artifact types
+  ignored; also `__pycache__/*.pyc` + untracked the one stray tracked `.pyc`; suites green).
+- [x] TASK-009: `tests/test-orchestrate-wavefront.sh` , the five controls (mock-`CLAUDE_CMD`, no real
   sessions) + golden linear-chain capture + **an Option-B honesty control: a real Touches-less
   mega-goal's `goals/` dir gates to all-`defer` (serializes), asserting the inert-until-Touches
   behavior is visible, not hidden**. Acceptance: exit-criterion 5 (no-deps byte-identical) + all five
   green + the Touches-less-serializes assertion. depends: TASK-004b, TASK-004c, TASK-005, TASK-006, TASK-007.
+  DONE (commit 4854ba9; all 5 EXIT-CRITERION markers labeled + grep-able, 2 & 5 negative controls,
+  Option-B honesty control, exits-0-unflipped coverage; wavefront 89/89 no-flake x3, orchestrate 59/59;
+  test-only, no lib change).
 
 ## After state
 
@@ -332,7 +344,7 @@ wavefront spec; it eats its own dogfood).
 - `/kit:dispatch` (untouched), `lib/mega-merge.sh` semantics (convergence only SEQUENCES its
   existing merges under the lock; it does not change how a merge works), the ops-toolkit skill.
 - **The `## Touches` schema for sub-goals + the sub-goal generator (`commands/mega.md`) change**
-  , deferred to follow-up **ID-085-followup** per Q1/Option-B. Without it, wave-eligibility is
+  , deferred to follow-up **ID-090** per Q1/Option-B. Without it, wave-eligibility is
   opt-in and real mega-goals serialize until their sub-goals declare Touches. (Han can pull this in
   by choosing Option A.)
 
@@ -375,14 +387,14 @@ wavefront spec; it eats its own dogfood).
   human-stop (autonomy gate not weakened , the operator opts into whichever).
 - DEC-011 (Q1, provisional , Han away): Option B , concurrency is opt-in (a sub-goal declares
   `## Touches` to be wave-eligible; absent it serializes). Ship machinery + fixtures + TASK-009
-  honesty control; the generator/schema retrofit is follow-up ID-085-followup. A = B + generator
+  honesty control; the generator/schema retrofit is follow-up ID-090. A = B + generator
   change (no rework). Han override: "do Option A".
 - DEC-012 (delta re-validation): three fixes to the first revision , (a) size-dispatch keys on
   ADMITTED (post-gate) count, not raw ready size (a no-deps mega-goal has ready size N, not 1);
   (b) `_wave_gate` requires the candidate's OWN `## Touches` to admit (`gate_plan` admits the first
   vacuously); (c) `HANDOFF-<id>.md` keyed on having DEPENDENTS with a plain-`HANDOFF.md` read
   fallback (keying on deps loses feed-forward at every chain root). `WAVE_CAP` default 1 (DEC-002);
-  flip-contract prompt injection deferred to ID-085-followup; convergence is its own TASK-004c.
+  flip-contract prompt injection deferred to ID-090; convergence is its own TASK-004c.
 
 ## Review
 
@@ -472,6 +484,6 @@ preserved by keeping the multi-parent concat inside `_build_prompt`'s stdout.
     rework if Han upgrades to A. A expands scope into `commands/mega.md`, which the loop will not
     self-approve while Han is away. B is honest, not a silent no-op: TASK-009 asserts a real
     Touches-less mega-goal serializes, the opt-in is documented, and the generator/schema retrofit is
-    filed as follow-up **ID-085-followup (Touches-on-sub-goals)** for Han to pick up if he wants A.
+    filed as follow-up **ID-090 (Touches-on-sub-goals)** for Han to pick up if he wants A.
     **Han override path:** to switch to A, say "do Option A" , the loop adds the generator + schema
     tasks on top of the shipped B machinery (no rebuild).
