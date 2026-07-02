@@ -269,7 +269,7 @@ dwarves-kit/
   commands/                     (27 markdown command prompts)
   hooks/                        (14 scripts + hooks.json plugin manifest)
   lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
-  lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch)
+  lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
   lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
   lib/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/
   lib/lane-telemetry.sh         Read-side lane-effectiveness aggregator over the run ledgers: report + misfires (reviewed at /kit:retro)

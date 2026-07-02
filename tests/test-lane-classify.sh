@@ -49,6 +49,32 @@ classify_is "add user authentication with jwt sessions"      full   "AC6 auth ha
 classify_is "add a date picker to the settings page"         normal "AC6 plain feature still normal"
 classify_is "fix a typo in the README"                       tiny   "AC6 plain typo still tiny"
 
+# classify_files_is <files> <desc> <expected-lane> <label>
+classify_files_is() {
+  TOTAL=$((TOTAL+1)); local got; got="$(bash "$LC" classify --files "$1" "$2" 2>/dev/null)"
+  if [ "$got" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $4 ($3)"; PASS=$((PASS+1))
+  else echo -e "  ${RED}FAIL${NC} $4 -- got '$got', expected '$3'"; FAIL=$((FAIL+1)); fi
+}
+
+echo ""
+echo "=== lane-classify edit-vs-mention (SPEC-105 / ID-088) ==="
+
+# A MENTION of a machinery basename with --files that does NOT touch lib/ or hooks/ must NOT
+# escalate (the over-gate metric 9 / the lane-rule audit named): a doc/research task ABOUT the
+# machinery is not an edit.
+classify_files_is "" "explain mega-merge.sh in the architecture doc" normal "mention: --files '' about mega-merge -> not full"
+classify_files_is "docs/architecture.md" "document how gate-ledger.sh works" normal "mention: editing a doc that names gate-ledger -> not full"
+# An EDIT to a machinery lib (a touched file under lib/ or hooks/) DOES escalate, even when the
+# description carries no machinery basename.
+classify_files_is "lib/mega-merge.sh" "add a guard clause" full "edit: --files lib/mega-merge.sh -> full"
+classify_files_is "hooks/ship-gate.sh" "tweak a message" full "edit: --files hooks/ship-gate.sh -> full"
+# A test-only edit that MENTIONS the machinery does not escalate on the machinery gate.
+classify_files_is "tests/test-x.sh" "extend the lane-telemetry test fixtures" normal "edit a test that names lane-telemetry -> not full"
+# Semantic hard-gates (auth) are subject-risky regardless of files: still full even with a doc file.
+classify_files_is "docs/x.md" "add user authentication with jwt sessions" full "semantic auth hard-gate still full with --files"
+# Regression guard: with NO --files, the text-only behavior is UNCHANGED (a mention still escalates).
+classify_is "explain mega-merge.sh in the architecture doc" full "no --files: legacy text-only mention still escalates (regression guard)"
+
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
