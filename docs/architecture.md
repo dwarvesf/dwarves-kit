@@ -46,7 +46,7 @@ Two dirs hold bash that is not a CC primitive: `tests/` (the suites) and `lib/` 
                  writes: ## Review section in the active spec (else inline)
 
 /kit:review-team  reads:  git diff
-                   dispatches: security-auditor (security) + reviewer agent x2 (architecture, test-coverage)
+                   dispatches: security-reviewer (security) + code-reviewer agent x2 (architecture, test-coverage)
                    writes:  ## Review section (per-lens subsections) in the active spec (else inline)
 
 /kit:docs       reads:  git diff
@@ -106,9 +106,9 @@ Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test ·
 | `/kit:test-plan` | command | Test design (write tests) | test | Opt-in; derives the coverage matrix from AC before /execute so the build has a planned target; the kit's single test-design step |
 | `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 5 lenses adversarially critique the `## Test plan` + bounded revise loop, between /test-plan and /execute; report-only (SPEC-052) |
 | `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite after each worker; read-only; primary enforcer in the verification pipeline |
-| `integration-checker` | agent | Integration test | test | Verifies cross-task wiring at /execute Step 4 for multi-task specs; read-only |
+| `integration-verifier` | agent | Integration test | test | Verifies cross-task wiring at /execute Step 4 for multi-task specs; read-only |
 | `/kit:ship` | command | Acceptance test (gate) | test | Executes the acceptance check; blocks on DO-NOT-SHIP; bumps version, writes changelog, cuts PR |
-| `/kit:verify` | command | Test re-run (on demand) | test | Read-only re-run of the unit + integration levels (dispatches `task-verifier` + `integration-checker`) against the active spec; no rebuild, no fix; the right arm on demand |
+| `/kit:verify` | command | Test re-run (on demand) | test | Read-only re-run of the unit + integration levels (dispatches `task-verifier` + `integration-verifier`) against the active spec; no rebuild, no fix; the right arm on demand |
 
 ### Static quality gates (static verification of each artifact; review, not test execution)
 
@@ -117,11 +117,11 @@ Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test ·
 | `/kit:spec-validate` | command | Spec review | gate | Adversarial pre-build gate; 5 lenses attack the spec; sets Status: VALIDATED |
 | `/kit:devs-team` | command | Design critique | gate | Opt-in; 5 engineering lenses stress-test the solution design before the spec hardens |
 | `/kit:review` | command | Code review | gate | Single-pass paranoid review; security, architecture, regressions, edge cases |
-| `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches the `reviewer` agent x3 (security / architecture / test-coverage lenses) |
+| `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches the `code-reviewer` agent x3 (security / architecture / test-coverage lenses) |
 | `/kit:visual-team` | command | Visual critique | gate | Opt-in; 5 design lenses critique UI output; mirrors review-team for visual work |
 | `/kit:docs` | command | Doc sync | gate | Diffs code vs docs and patches drift; dispatches doc-verifier before committing |
-| `reviewer` | agent | Code review | gate | Focused single-lens reviewer; dispatched by /review-team with a lens (architecture / test-coverage; security now uses security-auditor) |
-| `security-auditor` | agent | Security review | gate | Deep security analysis; dispatched by `/kit:review-team` as the security reviewer (replacing the generic reviewer security lens); also invocable directly for an ad-hoc deep pass |
+| `code-reviewer` | agent | Code review | gate | Focused single-lens reviewer; dispatched by /review-team with a lens (architecture / test-coverage; security now uses security-reviewer) |
+| `security-reviewer` | agent | Security review | gate | Deep security analysis; dispatched by `/kit:review-team` as the security reviewer (replacing the generic code-reviewer security lens); also invocable directly for an ad-hoc deep pass |
 | `doc-verifier` | agent | Docs verification | gate | Verifies doc claims against live codebase after /docs updates; read-only; the doc-sync twin of task-verifier |
 | `agent-effectiveness` | agent | Agent-def review | gate | Validates a new/changed agent definition's effectiveness across 4 lenses (tools/description/instructions/tier); dispatched diff-keyed by /kit:draft-agent Step 4.7; read-only, advisory, fail-safe (SPEC-088) |
 
@@ -141,8 +141,8 @@ Total: 25 commands + 11 agents = **36 entries** (10 build · 3 code · 6 test ·
 | `meta-agent` | agent | Meta-tooling | cross-phase | Drafts a new subagent definition or mega-goal sub-goal file from a one-line description; determines minimal tools; the subagent writes to staging only, the command promotes/installs |
 
 **Classification notes:**
-- The right arm is *test execution*; the static gates are *review*. Both are "verification" loosely, but only the right arm runs tests. `/kit:spec-validate`, `/kit:review`, `/kit:docs` review; `task-verifier`, `integration-checker`, `/kit:ship` test.
-- `/kit:execute` is the vertex (code); it also dispatches the right-arm test agents (`task-verifier`, `integration-checker`), which are listed once, under the TEST arm.
+- The right arm is *test execution*; the static gates are *review*. Both are "verification" loosely, but only the right arm runs tests. `/kit:spec-validate`, `/kit:review`, `/kit:docs` review; `task-verifier`, `integration-verifier`, `/kit:ship` test.
+- `/kit:execute` is the vertex (code); it also dispatches the right-arm test agents (`task-verifier`, `integration-verifier`), which are listed once, under the TEST arm.
 - Cross-phase entries span arms or sit outside the V (debug, maintenance, session routing). Forcing them onto one arm would misrepresent them.
 - A new command or agent adds exactly one row; the parity check asserts row count == live file count to keep this table from drifting.
 
@@ -274,7 +274,7 @@ Read-only verifier and write-scoped fix-agent are different subagents on purpose
 
 ## Collaborative Design Protocol
 
-When an agent encounters a 2+ way design decision during implementation, it follows this 5-step protocol. Referenced by `agents/reviewer.md`, `agents/security-auditor.md`, `commands/execute.md`. Original ADR: 0007.
+When an agent encounters a 2+ way design decision during implementation, it follows this 5-step protocol. Referenced by `agents/code-reviewer.md`, `agents/security-reviewer.md`, `commands/execute.md`. Original ADR: 0007.
 
 ### When to invoke
 - 2+ valid implementation approaches and the choice materially affects the outcome
@@ -491,7 +491,7 @@ guard), and how do I trigger it.
 
 ### Sub-machines
 
-- **BUILDING** expands to: `worker -> task-verifier -> {PASS | FAIL:fixable -> fix-agent (<=2) | FAIL:escalate} -> integration-checker`. The diagram is in `WORKFLOW.md` "## Flow and loop reference" (the execute pipeline), and the read-only contract is in "## Verification pipeline" above.
+- **BUILDING** expands to: `worker -> task-verifier -> {PASS | FAIL:fixable -> fix-agent (<=2) | FAIL:escalate} -> integration-verifier`. The diagram is in `WORKFLOW.md` "## Flow and loop reference" (the execute pipeline), and the read-only contract is in "## Verification pipeline" above.
 - **DEBUGGING** expands to: `Phase 1 Root cause -> Phase 2 Pattern -> Phase 3 Hypothesis -> Phase 4 Implementation`, under the iron law (no fix without a recorded root cause), guarded by the guess-fix guard. The diagram is in `WORKFLOW.md` "## Flow and loop reference" (the debug loop).
 
 ### Hard stops as guards (the only blockers)

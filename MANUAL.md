@@ -182,7 +182,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 
 **Phase:** parallel 3-lens review
 **Reads:** `git diff`
-**Dispatches:** 3 `reviewer` subagents (security, architecture, test-coverage lenses) in parallel + the deeper `security-auditor` agent
+**Dispatches:** 3 `code-reviewer` subagents (security, architecture, test-coverage lenses) in parallel + the deeper `security-reviewer` agent
 **Writes:** a `## Review` section in the active spec with per-lens subsections (replace-not-stack); inline in chat if no spec exists
 **When to invoke:** medium-to-large diff (>300 lines) or any change touching auth, payments, multi-tenant boundaries
 **Common gotcha:** the FIX-THEN-SHIP path dispatches `responding-to-review` to triage findings without performative agreement. Read both the findings AND the response triage before committing fixes.
@@ -191,7 +191,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 
 **Phase:** on-demand test re-run (V-model right arm), read-only
 **Reads:** the active `docs/specs/SPEC-NNN-<slug>.md` (done tasks + acceptance criteria), the working tree / branch
-**Dispatches:** `task-verifier` (per done task) + `integration-checker` (multi-task), read-only
+**Dispatches:** `task-verifier` (per done task) + `integration-verifier` (multi-task), read-only
 **Writes:** nothing; prints a PASS/FAIL verdict (never dispatches `fix-agent`)
 **When to invoke:** after a manual edit post-build, on a branch built elsewhere, or for a read-only `/goal`-loop check, when you want the test levels re-run without a rebuild
 **Common gotcha:** it reports, it does not fix. On FAIL, run `/kit:next` or `/kit:execute` to repair. The integration base ref is the merge-base with the default branch (no build base ref exists outside `/execute`).
@@ -262,11 +262,11 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 |---|---|---|
 | `task-verifier` | `/execute` | Read-only verification per task |
 | `fix-agent` | `/execute` | Targeted fixes on FAIL:fixable (max 2 retries) |
-| `integration-checker` | `/execute` (Step 4, multi-task) | Read-only: verifies the tasks wire together (each component reaches its activation point + the spec's end-to-end chains) |
+| `integration-verifier` | `/execute` (Step 4, multi-task) | Read-only: verifies the tasks wire together (each component reaches its activation point + the spec's end-to-end chains) |
 | `doc-verifier` | `/docs` (Step 4.5) | Read-only: fact-checks the just-updated docs against the live code (counts, names, existence, cross-refs); reports drift, `/docs` fixes |
 | `agent-effectiveness` | `/kit:draft-agent` (Step 4.7) | Read-only: validates a new/changed agent def's effectiveness (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits); diff-keyed, advisory, fail-safe |
-| `reviewer` | `/review-team` | Focused review with configurable lens |
-| `security-auditor` | `/review-team` | Deep OWASP-style audit |
+| `code-reviewer` | `/review-team` | Focused review with configurable lens |
+| `security-reviewer` | `/review-team` | Deep OWASP-style audit |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
 | `research-stack` | `/spec` | Brownfield stack mapping |
 | `research-features` | `/spec` | Brownfield feature inventory |

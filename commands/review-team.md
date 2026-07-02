@@ -23,7 +23,7 @@ Dispatch these 3 subagents via the Task tool. They can run simultaneously since 
 
 **Model tiering (SPEC-078 / ID-078, EveryInc Stage 4 pattern):** dispatch the
 security reviewer with an EXPLICIT model override matching the session model ,
-the security-auditor agent's frontmatter defaults to sonnet, so omitting the
+the security-reviewer agent's frontmatter defaults to sonnet, so omitting the
 override would silently down-tier the high-stakes lens, not inherit; dispatch
 the architecture and test-coverage reviewers with the mid-tier override
 (`model: sonnet`). If the override is unavailable in the dispatch surface, omit
@@ -48,7 +48,7 @@ self-test sentence, suggested fix (when gated_auto).
 **Reviewer 1: Security (deep)**
 ```
 Review this code diff through the SECURITY lens only.
-Use the security-auditor agent (the dedicated deep-security reviewer; more thorough than the reviewer's security lens).
+Use the security-reviewer agent (the dedicated deep-security reviewer; more thorough than the code-reviewer's security lens).
 
 ## Diff
 [paste diff or list changed files]
@@ -60,7 +60,7 @@ Use the security-auditor agent (the dedicated deep-security reviewer; more thoro
 **Reviewer 2: Architecture lens**
 ```
 Review this code diff through the ARCHITECTURE lens only.
-Use the reviewer agent with lens: architecture.
+Use the code-reviewer agent with lens: architecture.
 
 Express findings in deep-module vocabulary (Ousterhout, via mattpocock
 improve-codebase-architecture; SPEC-059): a module is DEEP when a small interface hides a
@@ -86,7 +86,7 @@ problem (spaghetti growth), never a style nit , name the structural cause.
 **Reviewer 3: Test-coverage lens**
 ```
 Review this code diff through the TEST-COVERAGE lens only.
-Use the reviewer agent with lens: test-coverage.
+Use the code-reviewer agent with lens: test-coverage.
 
 ## Diff
 [paste diff or list changed files]

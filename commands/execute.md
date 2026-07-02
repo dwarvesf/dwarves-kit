@@ -56,7 +56,7 @@ Sequential tasks: TASK-003 > TASK-004 > TASK-005
 
 Ask: "Execute this plan? (A) Start Phase 1 / (B) Adjust task order / (C) Skip to specific task"
 
-Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-checker at Step 4 diffs the whole build from it.
+Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-verifier at Step 4 diffs the whole build from it.
 
 ### Step 2: Execute phase by phase
 
@@ -301,9 +301,9 @@ After all phases complete:
    - **inert** (docs / comments / cosmetic): exempt. Record
      `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
    Marking a behavioral or stateful task inert is a finding, not a pass.
-2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-checker** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
+2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
    - **PASS**: continue to the summary.
-   - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-checker.
+   - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-verifier.
    - **FAIL:escalate** (or retry >= 2): stop and report the broken seam to the human; do not declare the build complete.
    A single-task spec skips this step (nothing to wire).
 3. Show execution summary:

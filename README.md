@@ -198,7 +198,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
-| /kit:verify | Verify | Read-only re-run of task-verifier + integration-checker, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
+| /kit:verify | Verify | Read-only re-run of task-verifier + integration-verifier, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
 | /kit:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
@@ -219,10 +219,10 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
 | task-verifier | /execute | Read-only verification against spec + tests |
-| integration-checker | /execute, /verify | Read-only cross-task wiring + global acceptance check (multi-task specs) |
+| integration-verifier | /execute, /verify | Read-only cross-task wiring + global acceptance check (multi-task specs) |
 | fix-agent | /execute | Targeted fixes on FAIL:fixable (max 2 retries) |
-| reviewer | /review-team | Focused review with configurable lens |
-| security-auditor | /review-team | Deep OWASP-style security audit |
+| code-reviewer | /review-team | Focused review with configurable lens |
+| security-reviewer | /review-team | Deep OWASP-style security audit |
 | responding-to-review | /review-team | Verifies review findings, pushes back when wrong, proposes fixes (no performative agreement) |
 | doc-verifier | /docs | Read-only check that docs match the live codebase |
 | research-stack | /spec | Maps technology stack (brownfield) |

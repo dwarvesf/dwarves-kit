@@ -5,7 +5,7 @@
 # needed to catch each planted class.
 #
 # We cannot dispatch a live Claude reviewer in CI, so we test prompt completeness
-# instead: every required term must appear in security-auditor.md OR reviewer.md.
+# instead: every required term must appear in security-reviewer.md OR code-reviewer.md.
 # A term missing from BOTH means a vulnerability class was silently dropped from
 # the review checklist -- the exact drift observed when adopting superpowers
 # v5.1.0. See SPEC-002 TASK-1 (DEC-001, DEC-006, DEC-007).
@@ -81,11 +81,11 @@ else
   assert "fixture has >= 3 planted files (SQL-i, hardcoded cred, command-i; got $PLANTED)" 1
 fi
 
-SEC="$KIT_DIR/agents/security-auditor.md"
-REV="$KIT_DIR/agents/reviewer.md"
+SEC="$KIT_DIR/agents/security-reviewer.md"
+REV="$KIT_DIR/agents/code-reviewer.md"
 
-# Each required term must appear in security-auditor.md OR reviewer.md. The
-# reviewer's security lens inherits the security-auditor checklist, so a term in
+# Each required term must appear in security-reviewer.md OR code-reviewer.md. The
+# code-reviewer's security lens inherits the security-reviewer checklist, so a term in
 # either file covers the class; a term missing from BOTH fails the build.
 for TERM in "SQL injection" "Command injection" "Path traversal" "XSS" "hardcoded" "PII" "CORS"; do
   if grep -qi "$TERM" "$SEC" || grep -qi "$TERM" "$REV"; then

@@ -81,7 +81,7 @@ grep -qi 'do not cry wolf\|both failure modes\|no real defect is a PASS\|CORRECT
 assert "AC2: validator prompt guards against false positives on a good agent" $?
 # The hand-authored read-only roster must not trip the over-grant core (AC2 in practice).
 ROSTER_OK=0
-for a in task-verifier doc-verifier integration-checker; do
+for a in task-verifier doc-verifier integration-verifier; do
   [ -f "$KIT_DIR/agents/$a.md" ] && [ -n "$(tools_violation "$KIT_DIR/agents/$a.md")" ] && ROSTER_OK=1
 done
 assert "AC2: real read-only roster agents (task/doc/integration) carry no over-grant" $ROSTER_OK
