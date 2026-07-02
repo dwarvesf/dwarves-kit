@@ -26,7 +26,7 @@ Verdict: PASS
 
 | Command | Exit | Result |
 |---------|------|--------|
-| `bash tests/test-lane-telemetry.sh` | 0 | 13/13 passed |
+| `bash tests/test-lane-telemetry.sh` | 0 | 18/18 passed (incl. metachar-literal, coverage-dedup, filter-over-inclusion pins) |
 | `bash tests/test-meta.sh` | 0 | 578/578 passed |
 | `bash tests/test-hooks.sh` | 0 | 438/438 passed |
 | `NO_COLOR=1 bash lib/lane-telemetry.sh render` | 0 | full routing diagram (captured in the snapshot doc) |

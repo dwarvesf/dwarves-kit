@@ -26,3 +26,13 @@ kit-machinery hard-gate one PR earlier. The wave's own fix corrected the wave's 
 DEC-002: the filter is a bare substring match on lane OR type, not a `--lane=`/`--type=` flag
 pair. One positional arg covers the common asks ("full", "eval") and keeps the surface tiny
 (ponytail); a flag grammar would be speculative for a read-only view.
+
+## 2026-07-02 review fixes (8/10, no BLOCKER)
+
+- SHOULD-FIX: gate-coverage counted raw `GATE|phase|ran` LINES, so a phase re-recorded in
+  one run (a retry) inflated the count past the header run total. Fixed to dedupe per
+  (rid=FILENAME, phase) so it counts distinct runs (DEC-004). Pinned.
+- NIT: header said "1 runs"; pluralized to "run"/"runs".
+- NIT: the lane-OR-type substring filter intentionally over-includes (a `normal`-lane run
+  with a `full-stack` TYPE matches `render full`). Working-as-designed per DEC-002; added a
+  test pinning it + a SPEC note so the boundary can't silently regress.

@@ -58,6 +58,12 @@ bash tests/test-meta.sh ; bash tests/test-hooks.sh   # stay green
 - DEC-002: the filter is a LITERAL substring match (awk `index()`, not `~`) on lane OR type
   -- one arg covers "show me the full-lane runs" and "show me the eval runs" without a flag
   grammar, and a filter that is a regex metacharacter (`.`, `[`) is a plain string, never an
-  awk regex that over-matches or crashes (review robustness fix).
+  awk regex that over-matches or crashes (review robustness fix). The match is lane OR type,
+  so `render full` intentionally also includes a `normal`-lane run whose TYPE contains "full"
+  (e.g. `full-stack`); this is by design (one filter for "the full lane" and "full-stack
+  work") and is pinned in the test so the substring boundary can't silently regress.
+- DEC-004 (review): gate-coverage counts DISTINCT runs per phase (dedupe on rid+phase), not
+  raw ledger lines, so a phase re-recorded within one run (a retry) never inflates the count
+  past the header's run total.
 - DEC-003: graceful-empty returns exit 0 with an honest message (not an error) -- a fresh
   install running `render` is a normal state, not a failure.

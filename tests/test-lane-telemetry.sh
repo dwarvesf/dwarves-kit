@@ -55,6 +55,23 @@ has "no runs match" "$OUTD"; ok "filter '.' is literal (no regex over-match)" $?
 OUTB="$(NO_COLOR=1 bash "$LT" render "[" 2>&1)"
 if printf '%s' "$OUTB" | grep -qiE 'awk|character class|syntax'; then ok "filter '[' does not crash awk [NC]" 1; else ok "filter '[' does not crash awk [NC]" 0; fi
 
+# --- gate coverage counts DISTINCT runs, not raw lines (a re-recorded phase counts once) ---
+DD="$(mktemp -d)/logs"
+DWARVES_KIT_LOG_DIR="$DD" bash "$GL" start rr full full spec-feature spec-feature rp >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$DD" bash "$GL" record rr think ran x >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$DD" bash "$GL" record rr think ran "retry" >/dev/null 2>&1   # same phase, same run, twice
+OUTC="$(DWARVES_KIT_LOG_DIR="$DD" NO_COLOR=1 bash "$LT" render 2>&1)"
+has "1 run," "$OUTC"; ok "single run pluralizes as 'run' not 'runs'" $?
+# coverage line for think must read 1 (distinct runs), not 2 (raw lines)
+if printf '%s' "$OUTC" | grep -E 'think +[2-9]' >/dev/null; then ok "gate coverage dedupes a re-recorded phase (think=1, not 2)" 1; else ok "gate coverage dedupes a re-recorded phase (think=1, not 2)" 0; fi
+
+# --- filter matches lane OR type substring (DEC-002, intentional): a type substring hits too ---
+DT="$(mktemp -d)/logs"
+DWARVES_KIT_LOG_DIR="$DT" bash "$GL" start t1 normal normal full-stack full-stack rp >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$DT" bash "$GL" record t1 think ran x >/dev/null 2>&1
+OUTT="$(DWARVES_KIT_LOG_DIR="$DT" NO_COLOR=1 bash "$LT" render full 2>&1)"
+has "full-stack" "$OUTT"; ok "filter matches a TYPE substring too (DEC-002 lane-OR-type), not only lane" $?
+
 # --- graceful-empty NEGATIVE CONTROL: empty/fresh LOG_DIR ---
 OUTE="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/empty" NO_COLOR=1 bash "$LT" render 2>&1)"
 has "no runs recorded" "$OUTE"; ok "empty corpus renders an honest 'no runs recorded' [NC]" $?

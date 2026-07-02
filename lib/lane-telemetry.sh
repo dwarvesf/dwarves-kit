@@ -275,7 +275,8 @@ render() {
   n="$(printf '%s\n' "$rows" | grep -c .)"
   first="$(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $14}' | sort | head -1)"
   last="$(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $15}' | sort | tail -1)"
-  printf '%sLane routing%s  (%s runs%s, window %s .. %s)\n\n' "$C_BOLD" "$C_OFF" "$n" "${filter:+, filter=$filter}" "$first" "$last"
+  local runword="runs"; [ "$n" = "1" ] && runword="run"
+  printf '%sLane routing%s  (%s %s%s, window %s .. %s)\n\n' "$C_BOLD" "$C_OFF" "$n" "$runword" "${filter:+, filter=$filter}" "$first" "$last"
 
   # type -> lane aggregate table (sorted)
   printf '  %-16s     %-9s %5s  %-13s %6s\n' "task-type" "lane" "runs" "gates r/s/o" "ships"
@@ -305,7 +306,10 @@ render() {
   while IFS= read -r rid; do [ -n "$rid" ] && [ -f "$RUNS_DIR/$rid.log" ] && files+=("$RUNS_DIR/$rid.log"); done \
     < <(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $1}')
   local cov=""
-  [ "${#files[@]}" -gt 0 ] && cov="$(awk -F' [|] ' '$2=="GATE" && $4=="ran"{ gsub(/^ | $/,"",$3); c[$3]++ }
+  # count DISTINCT runs recording each phase (dedupe per rid=FILENAME + phase), not raw
+  # lines: a phase re-recorded within one run (a retry) must not inflate past the run count.
+  [ "${#files[@]}" -gt 0 ] && cov="$(awk -F' [|] ' '$2=="GATE" && $4=="ran"{ gsub(/^ | $/,"",$3);
+      k=FILENAME SUBSEP $3; if (!(k in seen)) { seen[k]=1; c[$3]++ } }
     END{ for (p in c) printf "    %-16s %d\n", p, c[p] }' "${files[@]}" 2>/dev/null | sort -k2 -rn)"
   [ -n "$cov" ] && printf '%s\n' "$cov" || echo "    (none)"
 
