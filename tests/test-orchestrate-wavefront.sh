@@ -549,8 +549,120 @@ mrc=0
 { [ "$mrc" != 0 ] && grep -qi 'WAVE_CAP' "$TMP/cap-nan.out"; } \
   && pass "dispatch l: non-numeric WAVE_CAP rejected (nonzero exit + message)" || { fail "dispatch l: non-numeric WAVE_CAP not rejected (rc=$mrc)"; cat "$TMP/cap-nan.out"; }
 
+# ============================ TASK-004c: _wave_converge convergence sequencer ============================
+# _wave_converge <megadir> [<id>...] merges the LANDED wave sub-goals back to the mega-goal base ONE AT
+# A TIME (never concurrently), in ROADMAP order, each under the flip lock, through the MOCKABLE
+# WAVE_MERGE_CMD hook (real gh-backed merge via lib/mega-merge.sh is deferred to ID-085-followup). It is
+# a THIN sequencer: it does not reimplement merging, only orders the calls. Before merging it runs a
+# same-file cross-wave guard (belt-and-suspenders over dispatch-gate's pre-admission disjointness): if
+# two landed branches changed the SAME file it FLAGS (nonzero + message/event) rather than land a
+# clean-but-wrong merge. Tests set WAVE_MERGE_CMD to a mock recording merge ordering.
+
+# A merge-recording mock: append an enter/exit marker around a brief sleep. A SERIAL sequencer emits
+# non-interleaved pairs (enter:A exit:A enter:B exit:B); a concurrent one would interleave them, so the
+# exact-sequence assertion below is a strict no-temporal-overlap proof. args: <pr> <id>; env: MERGE_LOG.
+cat > "$TMP/merge-mock" <<'MOCK'
+#!/usr/bin/env bash
+printf 'enter:%s:%s\n' "$2" "$1" >> "$MERGE_LOG"
+sleep 0.2
+printf 'exit:%s:%s\n' "$2" "$1" >> "$MERGE_LOG"
+MOCK
+chmod +x "$TMP/merge-mock"
+
+# Stand up two wave branches off the base, each editing a DISTINCT file per the id:file pairs given.
+# make_wave_branches <repo> <base> <pair...>  where pair = "SG-NN:relpath".
+make_wave_branches() {  # repo base pair...
+  local repo="$1" base="$2"; shift 2
+  local pair id f br
+  for pair in "$@"; do
+    id="${pair%%:*}"; f="${pair#*:}"
+    br="feat/$(printf '%s' "$id" | tr 'A-Z' 'a-z')"
+    git -C "$repo" worktree add -q -b "$br" "$repo/.claude/worktrees/$id" "$base" 2>/dev/null
+    printf '%s\n' "$id" > "$repo/.claude/worktrees/$id/$f"
+    git -C "$repo/.claude/worktrees/$id" add "$f"
+    git -C "$repo/.claude/worktrees/$id" commit -q -m "$id: edit $f"
+  done
+}
+
+# ---- (m) two landed, DISJOINT sub-goals -> merged strictly one-at-a-time in ROADMAP order ----
+# Args are passed REVERSED (SG-02 SG-01) to prove the sequencer orders by ROADMAP position, not argv.
+CVR="$TMP/converge-repo"
+mk_git_mega "$CVR"
+CVM="$CVR/mega"; mkdir -p "$CVM"
+cat > "$CVM/ROADMAP.md" <<'EOF'
+# Mega-goal: converge
+## Sub-goals
+- [x] SG-01 alpha , auto , PR #101
+- [x] SG-02 beta , auto , PR #102
+EOF
+echo "POINTER: resume" > "$CVM/POINTER_PROMPT.md"
+make_goal "$CVM" SG-01 "lib/cv-a/**"
+make_goal "$CVM" SG-02 "lib/cv-b/**"
+cv_base=$(git -C "$CVR" rev-parse --abbrev-ref HEAD)
+make_wave_branches "$CVR" "$cv_base" "SG-01:a.txt" "SG-02:b.txt"
+MERGE_LOG_M="$TMP/merge-order.log"; : > "$MERGE_LOG_M"
+cvrc=0
+( export MERGE_LOG="$MERGE_LOG_M" WAVE_MERGE_CMD="$TMP/merge-mock"
+  _wave_converge "$CVM" SG-02 SG-01 ) > "$TMP/cv.out" 2>&1 || cvrc=$?
+[ "$cvrc" = 0 ] && pass "converge m: sequencer returns 0 on a clean disjoint wave" || { fail "converge m: rc=$cvrc"; cat "$TMP/cv.out"; }
+cv_merges=$(grep -c '^enter:' "$MERGE_LOG_M")
+[ "$cv_merges" = 2 ] && pass "converge m: exactly 2 merges recorded" || fail "converge m: $cv_merges merges (want 2)"
+cv_seq=$(tr '\n' ' ' < "$MERGE_LOG_M" | sed 's/ *$//')
+cv_want="enter:SG-01:101 exit:SG-01:101 enter:SG-02:102 exit:SG-02:102"
+[ "$cv_seq" = "$cv_want" ] && pass "converge m: merges strictly serialized in ROADMAP order (no temporal overlap, argv order ignored)" \
+  || fail "converge m: sequence '$cv_seq' != '$cv_want'"
+
+# ---- (n) same-file cross-wave edit -> flagged (nonzero), NOT merged ----
+CFR="$TMP/converge-samefile-repo"
+mk_git_mega "$CFR"
+CFM="$CFR/mega"; mkdir -p "$CFM"
+cat > "$CFM/ROADMAP.md" <<'EOF'
+# Mega-goal: converge-samefile
+## Sub-goals
+- [x] SG-01 alpha , auto , PR #201
+- [x] SG-02 beta , auto , PR #202
+EOF
+echo "POINTER: resume" > "$CFM/POINTER_PROMPT.md"
+make_goal "$CFM" SG-01 "lib/shared/**"
+make_goal "$CFM" SG-02 "lib/shared/**"
+cf_base=$(git -C "$CFR" rev-parse --abbrev-ref HEAD)
+# BOTH branches edit the SAME file (collide.txt) -> the cross-wave overlap the guard must catch.
+make_wave_branches "$CFR" "$cf_base" "SG-01:collide.txt" "SG-02:collide.txt"
+MERGE_LOG_N="$TMP/merge-order-n.log"; : > "$MERGE_LOG_N"
+nfrc=0
+( export MERGE_LOG="$MERGE_LOG_N" WAVE_MERGE_CMD="$TMP/merge-mock"
+  _wave_converge "$CFM" SG-01 SG-02 ) > "$TMP/cf.out" 2>&1 || nfrc=$?
+[ "$nfrc" != 0 ] && pass "converge n: same-file cross-wave edit flagged (nonzero)" || { fail "converge n: not flagged (rc=$nfrc)"; cat "$TMP/cf.out"; }
+nf_merges=$(grep -c '^enter:' "$MERGE_LOG_N")
+[ "$nf_merges" = 0 ] && pass "converge n: no merge attempted on the flagged wave (not silently merged)" || fail "converge n: $nf_merges merge(s) attempted despite same-file overlap"
+grep -qi 'same-file' "$TMP/cf.out" && pass "converge n: clear same-file message emitted" || { fail "converge n: no same-file message"; cat "$TMP/cf.out"; }
+
+# ---- (o) a landed sub-goal with a PLACEHOLDER PR (#__) is skipped, not failed (merge wiring deferred) ----
+CPR="$TMP/converge-placeholder-repo"
+mk_git_mega "$CPR"
+CPM="$CPR/mega"; mkdir -p "$CPM"
+cat > "$CPM/ROADMAP.md" <<'EOF'
+# Mega-goal: converge-placeholder
+## Sub-goals
+- [x] SG-01 alpha , auto , PR #__
+- [x] SG-02 beta , auto , PR #301
+EOF
+echo "POINTER: resume" > "$CPM/POINTER_PROMPT.md"
+make_goal "$CPM" SG-01 "lib/cp-a/**"
+make_goal "$CPM" SG-02 "lib/cp-b/**"
+cp_base=$(git -C "$CPR" rev-parse --abbrev-ref HEAD)
+make_wave_branches "$CPR" "$cp_base" "SG-01:a.txt" "SG-02:b.txt"
+MERGE_LOG_O="$TMP/merge-order-o.log"; : > "$MERGE_LOG_O"
+oprc=0
+( export MERGE_LOG="$MERGE_LOG_O" WAVE_MERGE_CMD="$TMP/merge-mock"
+  _wave_converge "$CPM" SG-01 SG-02 ) > "$TMP/co.out" 2>&1 || oprc=$?
+[ "$oprc" = 0 ] && pass "converge o: placeholder-PR sub-goal skipped, wave converges 0" || { fail "converge o: rc=$oprc"; cat "$TMP/co.out"; }
+op_seq=$(tr '\n' ' ' < "$MERGE_LOG_O" | sed 's/ *$//')
+[ "$op_seq" = "enter:SG-02:301 exit:SG-02:301" ] && pass "converge o: only the real-PR sub-goal (SG-02) merged; placeholder SG-01 skipped" \
+  || fail "converge o: sequence '$op_seq' != 'enter:SG-02:301 exit:SG-02:301'"
+
 # ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
-for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR"; do
+for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$CVR" "$CFR" "$CPR"; do
   [ -d "$wtrepo" ] || continue
   git -C "$wtrepo" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}' | while read -r w; do
     case "$w" in *"/.claude/worktrees/"*) git -C "$wtrepo" worktree remove --force "$w" 2>/dev/null ;; esac

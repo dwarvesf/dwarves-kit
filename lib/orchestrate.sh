@@ -80,6 +80,15 @@ FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
 # coerced, per DEC-009 / Edge case 4. Defaulted here so the top-of-loop `-ge 2` test is `set -u`-safe.
 WAVE_CAP="${WAVE_CAP:-1}"
 
+# Wave-convergence merge hook (SPEC-106 TASK-004c). After a wave lands its sub-goals on their worktree
+# branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
+# `_wave_converge`); the actual merge goes through THIS mockable hook. Default is the real path
+# (`lib/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
+# but real gh-backed merge is DEFERRED to ID-085-followup (waves are off at the default WAVE_CAP=1, and
+# a real merge needs `gh` + real PRs). Tests set WAVE_MERGE_CMD to a mock that records merge ordering.
+# Word-split intentionally (operator config, not user data), mirroring CLAUDE_FLAGS.
+WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
+
 _say() { printf '%s\n' "$*"; }
 
 # Portable file mtime (epoch secs). GNU `stat -c` FIRST: it errors cleanly on BSD/macOS, so the
@@ -650,6 +659,10 @@ _wave_run() {  # megadir roadmap
   # Reap map = index-aligned plain arrays (bash 3.2 has no assoc arrays). `_WAVE_PIDS` is global so
   # `_wave_abort` can reach it; the rest are locals.
   _WAVE_PIDS=()
+  # `_WAVE_LANDED` is GLOBAL (like `_WAVE_PIDS`): the wave-success path appends each grounded-complete
+  # sub-goal id here so the caller (`cmd_run`) can hand the landed set to `_wave_converge` after the
+  # wave drains. Reset per run so a prior wave's ids never leak. Empty-guarded at every read site.
+  _WAVE_LANDED=()
   local wave_ids=() wave_done=() wave_pfiles=()
   local wave_failed=0 spawned=0
 
@@ -728,6 +741,7 @@ _wave_run() {  # megadir roadmap
         echo "[orchestrate] [wave] $id finished but did not flip its ROADMAP box; draining siblings, then failing." >&2
       else
         _emit_event "$megadir" "$id" shipped "wave: box checked"
+        _WAVE_LANDED+=("$id")
         _say "[orchestrate] [wave] $id complete (box checked)."
       fi
     done
@@ -736,6 +750,114 @@ _wave_run() {  # megadir roadmap
 
   trap - INT TERM
   return "$wave_failed"
+}
+# -----------------------------------------------------------------------------------------------
+
+# ---- Wave convergence sequencer (SPEC-106 TASK-004c, DEC-008) ----------------------------------
+# After a wave lands its sub-goals on their worktree branches, their merges back to the mega-goal base
+# MUST happen ONE AT A TIME (never concurrently), in ROADMAP order, each under the flip lock , so two
+# same-base merges never race. This is a THIN SEQUENCER: it does NOT reimplement merging. Each merge
+# goes through the MOCKABLE `$WAVE_MERGE_CMD` hook (default `lib/mega-merge.sh merge`, whose merge
+# SEMANTICS stay untouched per scope , we only sequence calls to it). Real gh-backed merge is DEFERRED
+# to ID-085-followup (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
+# path stays byte-identical; a real merge also needs `gh` + real PRs).
+
+# Files a wave branch changed vs the base: three-dot diff = changes on <branch> since its merge-base
+# with <base>. Empty when the branch has no commits (e.g. a session that only flipped its box) or is
+# absent (git errors, swallowed). Read-only.
+_wave_branch_files() {  # repo base branch
+  git -C "$1" diff --name-only "$2...$3" 2>/dev/null
+}
+
+# The PR number on a sub-goal's ROADMAP line (`... , PR #<n>`), or empty for a placeholder (`PR #__`)
+# / absent. A sub-goal with no real PR cannot be merged yet, so `_wave_converge` SKIPS it (the real
+# PR-open + merge wiring is ID-085-followup), never fails on it.
+_sg_pr() {  # roadmap id
+  _sg_line "$1" "$2" | sed -nE 's/.*PR #([0-9]+).*/\1/p' | head -1
+}
+
+# _wave_converge <megadir> [<id>...]: sequence the merges of a landed wave. With explicit ids it merges
+# exactly those; with none, it reads the just-landed set from the global `_WAVE_LANDED` (populated by
+# `_wave_run`). Steps:
+#   1. Order the target ids by ROADMAP position (NOT argv order) , merges land in ROADMAP order.
+#   2. SAME-FILE cross-wave guard (belt-and-suspenders over dispatch-gate's PRE-admission disjointness,
+#      the SPEC-106 risk row): diff each landed branch vs the base; if two branches changed the SAME
+#      file, FLAG (event + message + nonzero) and REFUSE to merge , never silently land a clean-but-
+#      wrong merge. A file appearing from >=2 branches (union `sort | uniq -d`) is the overlap.
+#   3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, through `$WAVE_MERGE_CMD`. A
+#      sub-goal with no real PR (placeholder `#__`) is SKIPPED (merge wiring deferred), not failed.
+# bash-3.2: no assoc arrays (membership via a space-padded string match); arrays empty-guarded
+# `${arr[@]+"${arr[@]}"}` (DEC-005, mega-merge.sh:224). Returns 0 iff every mergeable sub-goal's hook
+# succeeded and no same-file overlap was found; nonzero on an overlap flag or a merge-hook failure.
+_wave_converge() {  # megadir [id...]
+  local megadir="$1"; shift 2>/dev/null || true
+  local roadmap="$megadir/ROADMAP.md"
+  [ -f "$roadmap" ] || { echo "[orchestrate] [converge] no ROADMAP.md in '$megadir'" >&2; return 64; }
+
+  # Target set: explicit args, else the just-landed set from `_wave_run`.
+  local targets=()
+  if [ "$#" -gt 0 ]; then
+    targets=("$@")
+  else
+    targets=( ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"} )
+  fi
+  [ "${#targets[@]}" -gt 0 ] || { _say "[orchestrate] [converge] no landed wave sub-goals to converge (no-op)."; return 0; }
+
+  local repo; repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null)
+  [ -n "$repo" ] || { echo "[orchestrate] [converge] '$megadir' is not inside a git repo; cannot converge." >&2; return 64; }
+  local base; base=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null); [ -n "$base" ] || base=HEAD
+
+  # 1. Order the targets by ROADMAP position. Walk `_subgoals` (ROADMAP order) and keep those in the
+  #    target set; membership via a space-padded string match (bash-3.2 has no assoc arrays).
+  local want=" $(printf '%s ' "${targets[@]}")"
+  local ordered=() sgid sgpol sgchk
+  while IFS=$'\t' read -r sgid sgpol sgchk; do
+    case "$want" in *" $sgid "*) ordered+=("$sgid") ;; esac
+  done < <(_subgoals "$roadmap")
+  [ "${#ordered[@]}" -gt 0 ] || { _say "[orchestrate] [converge] none of the requested ids are in the ROADMAP (no-op)."; return 0; }
+
+  # 2. Same-file cross-wave guard. Each branch's file list is deduped (`sort -u`); across the union, a
+  #    file that appears >=2 times (`uniq -d`) was touched by >=2 branches , the overlap.
+  local id gf branch overlap
+  overlap=$(
+    for id in "${ordered[@]}"; do
+      gf=$(_goalfile "$megadir" "$id")
+      branch=$(_sg_branch "$gf" "$id")
+      _wave_branch_files "$repo" "$base" "$branch" | sort -u
+    done | sort | uniq -d
+  )
+  if [ -n "$overlap" ]; then
+    _emit_event "$megadir" "wave" blocked "converge: same-file cross-wave edit"
+    {
+      echo "[orchestrate] [converge] SAME-FILE cross-wave edit detected across the landed wave; REFUSING to merge (a clean-but-wrong merge is the hazard dispatch-gate's disjointness guards against). Overlapping file(s):"
+      printf '%s\n' "$overlap" | sed 's/^/    /'
+    } >&2
+    return 1
+  fi
+
+  # 3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, via the mockable hook.
+  local lockdir="$megadir/.orchestrate/flip.lock"
+  local pr rc
+  for id in "${ordered[@]}"; do
+    pr=$(_sg_pr "$roadmap" "$id")
+    if [ -z "$pr" ]; then
+      _say "[orchestrate] [converge] $id has no real PR yet (placeholder); skipping its merge (real PR/merge wiring is deferred)."
+      continue
+    fi
+    _lock "$lockdir" || { echo "[orchestrate] [converge] could not acquire the flip lock to merge $id" >&2; return 1; }
+    rc=0
+    # shellcheck disable=SC2086 # WAVE_MERGE_CMD is operator config; word-splitting is intended (mirrors CLAUDE_FLAGS).
+    $WAVE_MERGE_CMD "$pr" "$id" || rc=$?
+    _unlock "$lockdir"
+    if [ "$rc" != 0 ]; then
+      _emit_event "$megadir" "$id" blocked "converge: merge hook failed (PR #$pr, rc $rc)"
+      echo "[orchestrate] [converge] $id merge hook failed (PR #$pr, rc $rc); stopping convergence (no self-claim)." >&2
+      return "$rc"
+    fi
+    _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
+    _say "[orchestrate] [converge] $id merged (PR #$pr)."
+  done
+  return 0
 }
 # -----------------------------------------------------------------------------------------------
 
@@ -807,6 +929,14 @@ cmd_run() {
       admitted_n=$(_wave_gate "$dir" "$roadmap" | awk -F'\t' '$1=="run"{n++} END{print n+0}')
       if [ "$admitted_n" -ge 2 ]; then
         if _wave_run "$dir" "$roadmap"; then
+          # Converge the landed wave (TASK-004c): merge its sub-goals ONE AT A TIME under the flip
+          # lock, in ROADMAP order, via the mockable hook. A same-file cross-wave edit or a merge-hook
+          # failure halts the loop (no self-claim). At the default WAVE_CAP=1 this block is unreachable,
+          # so the serial path stays byte-identical.
+          if ! _wave_converge "$dir" ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"}; then
+            echo "[orchestrate] [wave] convergence flagged a same-file cross-wave conflict or a merge failure; halting (no self-claim)." >&2
+            return 1
+          fi
           continue
         fi
         echo "[orchestrate] [wave] a wave sub-goal did not complete (nonzero exit or unflipped box); halting (no self-claim)." >&2

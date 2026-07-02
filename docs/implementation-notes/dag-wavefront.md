@@ -292,3 +292,51 @@ Impact. `bash tests/test-orchestrate.sh` 59/59 (unchanged , byte-identical seria
 cmd_run->wave concurrency via the barrier fifo, l WAVE_CAP=0/non-numeric rejection). Stable over
 repeated runs, no flake. Tests j-l drive `cmd_run` OUT-OF-PROCESS so the real WAVE_CAP env + parse
 validation are exercised.
+
+## 2026-07-03 02:10 TASK-004c , wave convergence sequencer
+
+`_wave_converge <megadir> [<id>...]` added to `lib/orchestrate.sh`, right after `_wave_run`. It merges a
+landed wave's sub-goals back to the mega-goal base ONE AT A TIME, in ROADMAP order, each under the flip
+lock. Deviations / decisions the spec did not pin down:
+
+WAVE_MERGE_CMD deferral. The actual merge is a MOCKABLE hook `WAVE_MERGE_CMD` (default
+`$ORCH_DIR/mega-merge.sh merge`), word-split like CLAUDE_FLAGS. `mega-merge.sh` is NOT edited , its merge
+semantics stay untouched; convergence only SEQUENCES calls to it (spec Out-of-Scope). Real gh-backed
+merge stays DEFERRED to ID-085-followup (same posture as the flip-contract prompt injection): waves are
+off at the default WAVE_CAP=1 so the hook is never reached in the serial path, and a real merge needs
+`gh` + real PRs. The hook is invoked `$WAVE_MERGE_CMD <pr> <id>`. The default real target's own signature
+is `merge <pr> <rid> <lane>`, so `<pr> <id>` would be a usage error , acceptable because the default is
+never invoked under CAP=1 (no wave) and tests always override WAVE_MERGE_CMD with a recording mock. Full
+`<pr> <rid> <lane>` wiring lands with ID-085-followup.
+
+Same-file detection approach. Belt-and-suspenders over dispatch-gate's PRE-admission disjointness (the
+SPEC-106 risk row: a disjointness false-positive could yield a clean-but-wrong merge). For each landed
+sub-goal I diff its branch vs the base , `git diff --name-only <base>...<branch>` (three-dot = changes on
+the branch since its merge-base) , dedupe per branch (`sort -u`), then across the union a file appearing
+>=2 times (`sort | uniq -d`) was touched by >=2 branches => overlap. On overlap: emit a `blocked` event,
+print the offending file(s) to stderr, return nonzero, and merge NOTHING (refuse rather than land a
+clean-but-wrong merge). base = the mega repo's current HEAD branch (`rev-parse --abbrev-ref HEAD`);
+branch = `_sg_branch` (the goal file's `**Branch:**` header, else `wave/<id-lower>`).
+
+Placeholder-PR skip (new, spec did not specify). A landed sub-goal whose ROADMAP line still has `PR #__`
+(no real PR opened yet) is SKIPPED with a notice, not failed. This keeps the deferral honest (no real PRs
+exist yet) AND keeps the existing TASK-004b dispatch test `k` green: its barrier mock flips boxes but
+opens no PR, so convergence now runs on it (via the wiring below) and must no-op cleanly. `_sg_pr` parses
+`PR #<n>`; empty => skip.
+
+Wiring point. Called from `cmd_run`'s wave-success path (the TASK-004b `if _wave_run ...; then` block),
+BEFORE the `continue`: `_wave_run` now appends each grounded-complete id to a new GLOBAL `_WAVE_LANDED`
+(reset per run, sibling of `_WAVE_PIDS`), and `cmd_run` hands that set to `_wave_converge`. A convergence
+flag (same-file overlap or merge-hook failure) halts the loop (`return 1`, no self-claim). At the default
+WAVE_CAP=1 the whole wave block is unreachable, so the serial path is byte-identical
+(`tests/test-orchestrate.sh` 59/59 unchanged). Ordering is by ROADMAP position, not argv , test `m`
+passes ids reversed (SG-02 SG-01) and still asserts SG-01 merges first.
+
+Serialization proof. The mock appends `enter:<id>:<pr>` / `exit:...` around a 0.2s sleep; test `m` asserts
+the exact non-interleaved sequence `enter:SG-01 exit:SG-01 enter:SG-02 exit:SG-02`. A concurrent
+sequencer would interleave the markers, so this is a strict no-temporal-overlap proof (stronger than a
+coarse `date +%s` gap, and portable , macOS BSD `date` has no sub-second `%N`).
+
+Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identical serial invariant holds);
+`bash tests/test-orchestrate-wavefront.sh` 61/61 (53 prior + 8 new: m serial-order proof, n same-file
+flag + no-merge + message, o placeholder-PR skip). Stable over repeated runs, no flake.
