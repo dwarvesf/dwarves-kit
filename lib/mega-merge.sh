@@ -122,10 +122,13 @@ _merge_exclusion() {
     case "$hold" in *" $ll "*)
       echo "PR #$pr carries the hold label '$l'"; return 0 ;; esac
   done
-  # bracketed title markers, e.g. [HOLD] [gated-final] [do not merge] [WIP] [final]
-  if printf '%s' "$title" | grep -qiE '\[(hold|gated-final|gated final|do[ -]?not[ -]?merge|wip|final|no-merge)\]'; then
-    echo "PR #$pr title carries a hold marker"; return 0
-  fi
+  # bracketed title markers, e.g. [HOLD] [gated-final] [do-not-merge] [WIP] [final]. Pure-bash
+  # case-glob (not grep -E): identical across bash 3.2/5.x and every grep build (a BSD/CI grep
+  # quirk on the -E pattern flaked this check on macos-latest; bash string matching is portable).
+  local tl m; tl="$(printf '%s' "$title" | tr 'A-Z' 'a-z')"
+  for m in '[hold]' '[gated-final]' '[do-not-merge]' '[wip]' '[final]' '[no-merge]'; do
+    case "$tl" in *"$m"*) echo "PR #$pr title carries a hold marker"; return 0 ;; esac
+  done
   return 1
 }
 

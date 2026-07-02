@@ -75,3 +75,12 @@ never calls gh).
   arg can't forge a second ledger line. Unreachable today (hardcoded phase literals); guard is
   one tr. `start()`'s KV fields are left as-is , structurally safe (lane/type are classifier
   enums, repo is a `basename`, none can carry a raw newline).
+
+## 2026-07-02 CI portability: title-marker check flaked on macos-latest
+
+The bracketed-title-marker check used `grep -qiE`. It passed locally (both bash 3.2 and 5.x,
+BSD grep) and on ubuntu CI, but FAILED only on macos-latest CI (AC4, 19/20) , a grep
+build/locale quirk on that runner I could not reproduce locally. Replaced grep with a
+pure-bash lowercase + `case`-glob loop over the exact bracketed tokens. No external grep, no
+`-E` pattern, identical across bash 3.2/5.x and every runner. Dropped the fuzzy space/optional-
+hyphen variants (`[do not merge]`) , a title marker should be an exact bracketed token anyway.
