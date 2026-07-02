@@ -462,3 +462,50 @@ Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds). `bash
 tests/test-orchestrate-wavefront.sh` 80/80 (72 prior + 8 new: 4 gate! global-stop case (m),
 4 gate chain-hold exit-criterion-4 case (n), each with an `assert_gate` admission-premise check).
 shellcheck -S error clean. Stable across repeated runs.
+
+## 2026-07-03 03:07 TASK-009 label the five exit-criteria + fill coverage gaps
+
+Context. TASK-009 is a TEST-consolidation task: the five SPEC-106 exit-criterion controls already
+existed across the 80-test wavefront file (grown task-by-task through TASK-001..007), but were not
+individually labeled as "the canonical five", so a reviewer could not map each brief criterion to a
+passing test. No `lib/orchestrate.sh` change was needed or made.
+
+Decision -- relabeled in place (no new coverage, just unmistakable labels):
+- EXIT-CRITERION 1 = the TASK-004a `wave_run g` mock-barrier concurrency proof (two disjoint
+  independents run concurrently, both land). Header + pass-label now carry `EXIT-CRITERION 1`.
+- EXIT-CRITERION 2 [NEGATIVE CONTROL] = the TASK-003 `wave_gate b` overlapping-pair test
+  (Touches-overlapping pair serialized by the gate, second deferred).
+- EXIT-CRITERION 3 = the TASK-006 idempotent-resume runlog test (kill mid-run, restart re-derives
+  from ROADMAP, no checked sub-goal re-runs).
+- EXIT-CRITERION 4 = the TASK-007 `gate n` chain-hold test (a `gate` holds only its chain while an
+  independent branch completes). Comment already said "exit-criterion 4"; promoted to the grep-able
+  marker + pass label.
+- OPTION-B HONESTY CONTROL = the TASK-003 `wave_gate c` Touches-less test (a mega-goal whose goals/
+  files declare no `## Touches` gates to ALL-`defer` at WAVE_CAP>=2). Relabeled as the canonical
+  honesty control rather than duplicated (dispatch-j drives the same gate through the full cmd_run
+  wire, cross-referenced in the comment).
+
+Decision -- ADDED (genuinely-missing coverage):
+- EXIT-CRITERION 5 [NEGATIVE CONTROL / GOLDEN] (new block before cleanup): a real 3-step linear
+  no-deps mega-goal run at DEFAULT WAVE_CAP with an order-recording mock. Captures the run output and
+  asserts the golden serial contract: rc 0, NO `[wave]` marker anywhere, one `running SG-NN in a
+  fresh session` marker per sub-goal, invoked strictly in ROADMAP order (`SG-01 SG-02 SG-03`), all
+  boxes flipped. The goal files DECLARE `## Touches` on purpose -- the golden must hold because
+  size-dispatch takes the serial body whenever WAVE_CAP==1 REGARDLESS of Touches (strongest
+  regression guarantee; distinct angle from dispatch-j, which is Touches-less).
+- exits-0-but-unflipped coverage (`wave_run i2`, new block after `wave_run i`): the `_wave_run`
+  grounded-completion branch (rc==0 but box != 1) had no direct test. A mock that exits 0 without
+  flipping must be treated as failed: asserts both mocks ran (branch reached), wave returns nonzero
+  (no false-complete), boxes stay unchecked, and the "did not flip its ROADMAP box" diagnostic is
+  emitted.
+- The internal `checked=1` skip is already covered by `wave_run i` (idempotent resume skips an
+  already-checked box) -- not duplicated.
+
+Why. The brief's acceptance is "a reader can map each of the five brief criteria to a passing test";
+grep-able `EXIT-CRITERION N` markers (5 comment headers + baked into the primary pass label of each)
+make that mapping mechanical. Rows 2 and 5 carry `[NEGATIVE CONTROL]` inline.
+
+Impact. `bash tests/test-orchestrate-wavefront.sh` 89/89 (80 prior + 9 new: 5 golden criterion-5,
+4 exit-0-unflipped), stable across 3 back-to-back runs (concurrency tests non-flaky). `bash
+tests/test-orchestrate.sh` still 59/59 (no lib change, byte-identity holds). No `lib/orchestrate.sh`
+edit.

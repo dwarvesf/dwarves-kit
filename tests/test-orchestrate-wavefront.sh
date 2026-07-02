@@ -244,7 +244,10 @@ make_goal "$GA" SG-02 "lib/wave-b/**"
 assert_gate "wave_gate a: disjoint declaring pair (cap 2) -> both run" 2 "$GA" "$GA/ROADMAP.md" \
   "$(printf 'run\tSG-01\nrun\tSG-02')"
 
-# ---- (b) Touches-DECLARING but OVERLAPPING pair -> first run, second defer (negative control) ----
+# ---- (b) EXIT-CRITERION 2 [NEGATIVE CONTROL]: Touches-OVERLAPPING pair is SERIALIZED by the gate ----
+# SPEC-106 exit-criterion 2 (the first NEGATIVE control): a dep-independent but Touches-OVERLAPPING
+# pair must NEVER run concurrently -- the disjointness gate defers the second so it serializes.
+# Touches-DECLARING but OVERLAPPING pair -> first run, second defer.
 GB="$TMP/mg-gate-b"; mkdir -p "$GB"
 cat > "$GB/ROADMAP.md" <<'EOF'
 # Mega-goal: gate-b
@@ -254,10 +257,14 @@ cat > "$GB/ROADMAP.md" <<'EOF'
 EOF
 make_goal "$GB" SG-01 "lib/shared/**"
 make_goal "$GB" SG-02 "lib/shared/**"
-assert_gate "wave_gate b: overlapping declaring pair (cap 2) -> SG-01 run, SG-02 defer" 2 "$GB" "$GB/ROADMAP.md" \
+assert_gate "EXIT-CRITERION 2 [NEGATIVE CONTROL] (wave_gate b): overlapping pair SERIALIZED (SG-01 run, SG-02 defer)" 2 "$GB" "$GB/ROADMAP.md" \
   "$(printf 'run\tSG-01\ndefer\tSG-02')"
 
-# ---- (c) Touches-LESS ready set -> ALL defer (the Option-B opt-in gate) ----
+# ---- (c) OPTION-B HONESTY CONTROL: Touches-LESS ready set -> ALL defer (waves are inert/opt-in) ----
+# SPEC-106 DEC-011 (Option B) honesty control: a mega-goal whose goals/ files declare NO `## Touches`
+# gates to ALL-`defer` even at WAVE_CAP>=2. This makes the "waves do NOTHING until a sub-goal opts in
+# by declaring Touches" behavior VISIBLE, not hidden (the V-CRIT-1 gap made explicit). See also the
+# dispatch-j serial-fallback premise, which drives this same gate through the full cmd_run wire.
 GC="$TMP/mg-gate-c"; mkdir -p "$GC"
 cat > "$GC/ROADMAP.md" <<'EOF'
 # Mega-goal: gate-c
@@ -267,7 +274,7 @@ cat > "$GC/ROADMAP.md" <<'EOF'
 EOF
 make_goal "$GC" SG-01   # no ## Touches
 make_goal "$GC" SG-02   # no ## Touches
-assert_gate "wave_gate c: Touches-less ready set (cap 2) -> all defer" 2 "$GC" "$GC/ROADMAP.md" \
+assert_gate "OPTION-B HONESTY CONTROL (wave_gate c): Touches-less ready set (cap 2) -> ALL defer (waves inert until opt-in)" 2 "$GC" "$GC/ROADMAP.md" \
   "$(printf 'defer\tSG-01\ndefer\tSG-02')"
 
 # ---- (d) WAVE_CAP=1 on the disjoint pair -> at most one run (serial default) ----
@@ -313,7 +320,9 @@ mk_git_mega() {  # repo-root
   git -C "$repo" commit -q --allow-empty -m init
 }
 
-# ---- (g) CONCURRENCY PROOF via mock-barrier fifo (REQUIRED) ----
+# ---- (g) EXIT-CRITERION 1: CONCURRENCY PROOF via mock-barrier fifo (REQUIRED) ----
+# SPEC-106 exit-criterion 1: two dep-independent, Touches-DISJOINT sub-goals run CONCURRENTLY and
+# BOTH land. This IS the canonical criterion-1 control (a serial impl cannot pass the barrier below).
 # Two admitted, disjoint sub-goals. Each mock opens its OWN fifo read-write (a non-blocking open),
 # writes a token to the SIBLING's fifo, then `read -t` its own fifo. That read only unblocks once the
 # sibling has WRITTEN, which requires the sibling to be ALIVE at that instant -> proven temporal
@@ -373,7 +382,7 @@ cc_ok=1
 case "$cc_b1" in '- [x] SG-01'*) ;; *) cc_ok=0 ;; esac
 case "$cc_b2" in '- [x] SG-02'*) ;; *) cc_ok=0 ;; esac
 if [ "$cc_ok" = 1 ]; then
-  pass "wave_run g: concurrency PROVEN via mock-barrier (both boxes flipped, rc 0)"
+  pass "EXIT-CRITERION 1 (wave_run g): concurrency PROVEN via mock-barrier (both boxes flipped, rc 0)"
 else
   fail "wave_run g: concurrency NOT proven (rc=$wrc b1='$cc_b1' b2='$cc_b2')"; cat "$TMP/cc.out"
 fi
@@ -453,6 +462,52 @@ irc=0
   _wave_run "$WIM" "$WIM/ROADMAP.md" ) > "$TMP/idem.out" 2>&1 || irc=$?
 [ ! -f "$RUNDIR_ID/RAN" ] && pass "wave_run i: already-checked box was NOT re-run (idempotent resume)" || fail "wave_run i: re-ran a checked sub-goal"
 [ "$irc" = 0 ] && pass "wave_run i: empty/skip-only wave returns 0" || fail "wave_run i: skip-only wave returned $irc"
+
+# ---- (i2) COVERAGE: a session that exits 0 but NEVER flips its box -> treated as failed, no false-complete ----
+# The grounded-completion branch (_wave_run: rc==0 but box != 1) had no direct test. A mock that reads
+# its prompt and exits 0 WITHOUT flipping must NOT be counted as done: the wave marks itself failed,
+# emits a "box not flipped (no self-claim)" event, leaves the box unchecked, and returns nonzero. Two
+# disjoint Touches-declaring sub-goals so a real 2-wide wave spawns; both exit-0-unflipped.
+WUR="$TMP/wave-unflipped-repo"
+mk_git_mega "$WUR"
+WUM="$WUR/mega"; mkdir -p "$WUM"
+cat > "$WUM/ROADMAP.md" <<'EOF'
+# Mega-goal: wave-unflipped
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$WUM/POINTER_PROMPT.md"
+make_goal "$WUM" SG-01 "lib/uf-a/**"
+make_goal "$WUM" SG-02 "lib/uf-b/**"
+# Mock: consume the prompt, record it ran, exit 0 -- but deliberately DO NOT flip the box.
+cat > "$TMP/claude-noflip" <<'MOCK'
+#!/usr/bin/env bash
+# env: RUNDIR ; exits 0 without flipping (the "no self-claim" case).
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+: > "$RUNDIR/$id.ran"
+exit 0
+MOCK
+chmod +x "$TMP/claude-noflip"
+RUNDIR_UF="$TMP/run-uf"; mkdir -p "$RUNDIR_UF"
+ufrc=0
+( export RUNDIR="$RUNDIR_UF" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-noflip"
+  _wave_run "$WUM" "$WUM/ROADMAP.md" ) > "$TMP/uf.out" 2>&1 || ufrc=$?
+# (1) both mocks DID run (so this exercises the branch, not an empty/skip wave)
+{ [ -f "$RUNDIR_UF/SG-01.ran" ] && [ -f "$RUNDIR_UF/SG-02.ran" ]; } \
+  && pass "wave_run i2: both exit-0 sessions ran (branch reached)" \
+  || { fail "wave_run i2: sessions did not both run"; cat "$TMP/uf.out"; }
+# (2) exit-0-without-flip is NOT a false-complete: wave returns nonzero
+[ "$ufrc" != 0 ] && pass "wave_run i2: exit-0-but-unflipped wave returns nonzero (no false-complete)" \
+  || { fail "wave_run i2: unflipped wave returned 0 (false-complete)"; cat "$TMP/uf.out"; }
+# (3) boxes stay unchecked (nothing was falsely marked done)
+{ grep -q '^- \[ \] SG-01' "$WUM/ROADMAP.md" && grep -q '^- \[ \] SG-02' "$WUM/ROADMAP.md"; } \
+  && pass "wave_run i2: unflipped boxes stay unchecked" || fail "wave_run i2: a box was checked despite no flip"
+# (4) the diagnostic message names the no-self-claim cause
+grep -q 'did not flip its ROADMAP box' "$TMP/uf.out" \
+  && pass "wave_run i2: clear 'did not flip its ROADMAP box' diagnostic emitted" \
+  || { fail "wave_run i2: no unflipped-box diagnostic"; cat "$TMP/uf.out"; }
 
 # ============================ TASK-004b: cmd_run size-dispatch (serial-vs-wave) ============================
 # Wire `_wave_run` into `cmd_run` via ADMITTED-count size-dispatch. Sacred invariant: the default
@@ -730,7 +785,9 @@ pln=$(_build_prompt "$HLN" SG-02)
   && pass "edge c: linear/no-deps writes+reads plain HANDOFF.md (no per-edge filename)" \
   || { fail "edge c: linear path not plain"; printf '%s\n' "$pln"; }
 
-# ============================ TASK-006: idempotent resume (exit-criterion 3) ============================
+# ==================== EXIT-CRITERION 3: idempotent resume (TASK-006) ====================
+# SPEC-106 exit-criterion 3: kill the orchestrator mid-wave; restart recomputes the ready set and
+# NEVER re-runs a checked sub-goal (idempotent resume).
 # Killing the orchestrator mid-run and restarting must RE-DERIVE state from the ROADMAP boxes and
 # NEVER re-run a checked sub-goal. Model: run 1 flips SG-01+SG-02 then stops at the gate SG-03 (the
 # "stop mid-run" boundary); each mock invocation appends to a per-id runlog. Run 2 (the restart)
@@ -770,7 +827,7 @@ c1_r1=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r1=$(wc -l < "
   bash "$ORCH" run "$RES" ) > "$TMP/resume2.out" 2>&1
 c1_r2=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r2=$(wc -l < "$RESLOG/SG-02.runs" 2>/dev/null | tr -d ' ')
 { [ "$c1_r2" = 1 ] && [ "$c2_r2" = 1 ]; } \
-  && pass "resume: restart re-runs NO already-checked sub-goal (SG-01/SG-02 count unchanged)" \
+  && pass "EXIT-CRITERION 3 (resume): restart re-runs NO already-checked sub-goal (SG-01/SG-02 count unchanged)" \
   || { fail "resume: a checked sub-goal was re-invoked (c1=$c1_r2 c2=$c2_r2)"; cat "$TMP/resume2.out"; }
 
 # ==================== TASK-006: wave-path termination guard (wait-vs-complete) ====================
@@ -875,7 +932,9 @@ grep -q 'STOP (gate!): global halt for human review' "$TMP/gatebang.out" \
   && pass "gate! m: quiesced everything (no sub-goal ran, all boxes untouched)" \
   || { fail "gate! m: something ran under a gate! stop"; cat "$GBLOG"; }
 
-# ---- (n) exit-criterion 4: a `gate` holds its chain while an INDEPENDENT branch completes (WAVE_CAP=2) ----
+# ---- (n) EXIT-CRITERION 4: a `gate` holds its chain while an INDEPENDENT branch completes (WAVE_CAP=2) ----
+# SPEC-106 exit-criterion 4: a `gate` sub-goal holds ONLY its dependent chain; an independent branch
+# still completes concurrently.
 # SG-01 `gate` (independent) holds the chain of SG-04 (`depends SG-01`). SG-02/SG-03 are independent,
 # disjoint, Touches-declaring. Cycle 1: SG-01 gate is DEFERRED (never admitted), SG-02+SG-03 admit ->
 # a 2-wide wave runs and completes them. Cycle 2: only the gate (ready) + SG-04 (dep-blocked) remain;
@@ -927,11 +986,66 @@ chrc=0
 # (3) the gate + its dependent chain HELD: neither ran, both boxes untouched
 { ! grep -q 'INVOKED SG-01' "$CHLOG" && ! grep -q 'INVOKED SG-04' "$CHLOG" \
   && grep -q '^- \[ \] SG-01' "$CPM/ROADMAP.md" && grep -q '^- \[ \] SG-04' "$CPM/ROADMAP.md"; } \
-  && pass "gate n: gate chain held (SG-01 gate + dependent SG-04 never ran, boxes untouched)" \
+  && pass "EXIT-CRITERION 4 (gate n): gate chain held (SG-01 gate + dependent SG-04 never ran) while independents completed" \
   || { fail "gate n: gate chain did not hold"; cat "$CHLOG"; }
 
+# ==================== EXIT-CRITERION 5 [NEGATIVE CONTROL / GOLDEN]: linear no-deps == serial master ====================
+# SPEC-106 exit-criterion 5 (the second NEGATIVE control, the regression GOLDEN): a linear-chain
+# (no-deps) mega-goal behaves IDENTICALLY to current master -- the wave path is NEVER taken and the
+# run walks the untouched serial body, one sub-goal at a time, in ROADMAP order. This runs a real
+# 3-step no-deps mega-goal at the DEFAULT WAVE_CAP (=1) with a mock, CAPTURES its behavior/output, and
+# asserts the golden serial contract. The goal files DECLARE `## Touches` on purpose: the golden holds
+# because size-dispatch takes the serial body whenever WAVE_CAP==1, REGARDLESS of Touches -- the
+# strongest regression guarantee (declaring Touches does not sneak a default run onto the wave path).
+GOLD="$TMP/mg-golden-linear"; mkdir -p "$GOLD"
+cat > "$GOLD/ROADMAP.md" <<'EOF'
+# Mega-goal: golden-linear
+## Sub-goals
+- [ ] SG-01 first , auto , PR #__
+- [ ] SG-02 second , auto , PR #__
+- [ ] SG-03 third , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$GOLD/POINTER_PROMPT.md"
+make_goal "$GOLD" SG-01 "lib/gold-a/**"
+make_goal "$GOLD" SG-02 "lib/gold-b/**"
+make_goal "$GOLD" SG-03 "lib/gold-c/**"
+# A serial mock that records the ORDER it was invoked in, then flips its own box via the locked CLI.
+GOLDLOG="$TMP/golden-order.log"; : > "$GOLDLOG"
+cat > "$TMP/claude-golden" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR, GOLDLOG ; records invocation order, then flips its own box (grounded completion).
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo "$id" >> "$GOLDLOG"
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+MOCK
+chmod +x "$TMP/claude-golden"
+gdrc=0
+( unset WAVE_CAP; export ORCH="$ORCH" MEGADIR="$GOLD" GOLDLOG="$GOLDLOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-golden"
+  bash "$ORCH" run "$GOLD" ) > "$TMP/golden.out" 2>&1 || gdrc=$?
+# (1) clean completion
+[ "$gdrc" = 0 ] && pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: linear no-deps run exits 0 (serial master parity)" \
+  || { fail "EXIT-CRITERION 5: linear run exited $gdrc"; cat "$TMP/golden.out"; }
+# (2) the wave path was NEVER taken (no [wave] marker anywhere in the captured output) -- the golden invariant
+grep -q '\[wave\]' "$TMP/golden.out" \
+  && { fail "EXIT-CRITERION 5: wave path taken on a no-deps default run (NOT serial-master-identical)"; cat "$TMP/golden.out"; } \
+  || pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: wave path NEVER taken (byte-identical serial body)"
+# (3) each sub-goal took the untouched serial "fresh session" body (one marker per sub-goal)
+gd_fresh=$(grep -c 'running SG-0[123] in a fresh session' "$TMP/golden.out")
+[ "$gd_fresh" = 3 ] && pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: all 3 sub-goals took the serial fresh-session body" \
+  || { fail "EXIT-CRITERION 5: fresh-session markers = $gd_fresh (want 3)"; cat "$TMP/golden.out"; }
+# (4) GOLDEN behavior: invoked strictly one-at-a-time in ROADMAP order, all boxes checked
+gd_seq=$(tr '\n' ' ' < "$GOLDLOG" | sed 's/ *$//')
+[ "$gd_seq" = "SG-01 SG-02 SG-03" ] \
+  && pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: sub-goals ran serially in ROADMAP order (SG-01 SG-02 SG-03)" \
+  || { fail "EXIT-CRITERION 5: serial order '$gd_seq' != 'SG-01 SG-02 SG-03'"; cat "$TMP/golden.out"; }
+{ grep -q '^- \[x\] SG-01' "$GOLD/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$GOLD/ROADMAP.md" \
+    && grep -q '^- \[x\] SG-03' "$GOLD/ROADMAP.md"; } \
+  && pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: all boxes flipped (linear chain fully drained serially)" \
+  || fail "EXIT-CRITERION 5: not all boxes flipped"
+
 # ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
-for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$CVR" "$CFR" "$CPR" "$CHR"; do
+for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$WUR" "$CVR" "$CFR" "$CPR" "$CHR"; do
   [ -d "$wtrepo" ] || continue
   git -C "$wtrepo" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}' | while read -r w; do
     case "$w" in *"/.claude/worktrees/"*) git -C "$wtrepo" worktree remove --force "$w" 2>/dev/null ;; esac
