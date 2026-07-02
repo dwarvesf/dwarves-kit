@@ -66,6 +66,14 @@ BACKLOG_LIB="${BACKLOG_LIB:-$ORCH_DIR/backlog.sh}"
 WATCHDOG_STALL_SECS="${WATCHDOG_STALL_SECS:-0}"
 WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 
+# Flip-lock stale-reclaim threshold (SPEC-106 TASK-002 / DEC-009). The box-flip mutual-exclusion
+# primitive is a `mkdir` lock (atomic on POSIX; flock is absent on macOS and unused in this repo).
+# A lock whose recorded holder PID is DEAD (crashed) is reclaimed immediately; a lock with no
+# readable PID (a racy just-created lock) is reclaimed only after this many seconds. Default 120.
+# FLIP_LOCK_POLL_SECS is the short retry sleep while the lock is held by a live holder.
+FLIP_LOCK_STALE_SECS="${FLIP_LOCK_STALE_SECS:-120}"
+FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
+
 _say() { printf '%s\n' "$*"; }
 
 # Portable file mtime (epoch secs). GNU `stat -c` FIRST: it errors cleanly on BSD/macOS, so the
@@ -76,6 +84,65 @@ _mtime() {
   local m
   m=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)
   case "$m" in ''|*[!0-9]*) return 0 ;; *) printf '%s' "$m" ;; esac
+}
+
+# ---- Portable mkdir-based mutual exclusion (SPEC-106 TASK-002 / DEC-009) ----------------------
+# `mkdir "$lockdir"` is the atomic acquire (NOT `flock`: absent on macOS, zero repo usage). The
+# holder writes its PID to "$lockdir/pid"; `_lock` blocks/retries with a short sleep until it wins.
+# A STALE lock is reclaimed ONLY when: [ -n "$lockdir" ] AND the recorded PID fails `kill -0` (the
+# holder crashed) OR the lock age exceeds FLIP_LOCK_STALE_SECS AND that PID is dead. Reclaim is
+# `rmdir` after moving the pid file aside -- NEVER `rm -rf` (rmdir refuses a non-empty/odd path).
+
+# 0 = stale (reclaimable) / 1 = fresh. A LIVE holder PID is never stale (the holder is working);
+# a DEAD recorded PID is stale (crash); an unreadable/absent PID is stale only past the timeout so
+# a lock created microseconds ago (mkdir done, pid not yet written) is never yanked out of a race.
+_lock_stale() {  # lockdir
+  local lockdir="$1" pid age now mt
+  [ -n "$lockdir" ] || return 1
+  [ -d "$lockdir" ] || return 1
+  pid=$(tr -dc '0-9' < "$lockdir/pid" 2>/dev/null)
+  if [ -n "$pid" ]; then
+    kill -0 "$pid" 2>/dev/null && return 1   # holder alive -> not stale
+    return 0                                  # recorded holder dead -> reclaim (crashed)
+  fi
+  now=$(date +%s); mt=$(_mtime "$lockdir"); [ -n "$mt" ] || return 1
+  age=$((now - mt))
+  [ "$age" -ge "$FLIP_LOCK_STALE_SECS" ] && return 0 || return 1
+}
+
+# Reclaim a stale lock: move the stale pid file aside (never `rm`), then `rmdir` the emptied dir.
+_lock_reclaim() {  # lockdir
+  local lockdir="$1"
+  [ -n "$lockdir" ] || return 1
+  [ -e "$lockdir/pid" ] && mv -f "$lockdir/pid" "${TMPDIR:-/tmp}/flip-stale-pid.$$.$RANDOM" 2>/dev/null
+  rmdir "$lockdir" 2>/dev/null
+}
+
+# Acquire the lock (blocks until held), writing our PID into it; reclaims a crashed holder.
+_lock() {  # lockdir
+  local lockdir="$1"
+  [ -n "$lockdir" ] || { echo "_lock: empty lockdir" >&2; return 64; }
+  mkdir -p "$(dirname "$lockdir")" 2>/dev/null || true
+  while :; do
+    if mkdir "$lockdir" 2>/dev/null; then
+      printf '%s\n' "$$" > "$lockdir/pid"
+      return 0
+    fi
+    if _lock_stale "$lockdir"; then _lock_reclaim "$lockdir"; continue; fi
+    sleep "$FLIP_LOCK_POLL_SECS"
+  done
+}
+
+# Release a lock we hold (or an empty one); never yank a different LIVE holder's lock.
+_unlock() {  # lockdir
+  local lockdir="$1" pid
+  [ -n "$lockdir" ] || return 0
+  [ -d "$lockdir" ] || return 0
+  pid=$(tr -dc '0-9' < "$lockdir/pid" 2>/dev/null)
+  if [ -z "$pid" ] || [ "$pid" = "$$" ]; then
+    [ -e "$lockdir/pid" ] && mv -f "$lockdir/pid" "${TMPDIR:-/tmp}/flip-own-pid.$$.$RANDOM" 2>/dev/null
+    rmdir "$lockdir" 2>/dev/null
+  fi
 }
 
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
@@ -306,6 +373,42 @@ cmd_next() {
   if [ -n "$nx" ]; then printf '%s\n' "$nx"; else _say "(none unchecked)"; fi
 }
 
+# cmd_flip <megadir> <id>: flip "- [ ] SG-NN" -> "- [x]" in the SHARED absolute-path
+# `$megadir/ROADMAP.md` (never a per-sub-goal worktree copy: the driver only sees the shared one,
+# SPEC-106 DEC-008), UNDER the flip lock, via write-temp-then-`mv` (atomic rename) so a concurrent
+# reader/flip never sees a torn file. Idempotent: flipping an already-checked box is a no-op
+# success. Unknown id -> nonzero + a clear message. NO scheduling is wired here (waves land later);
+# this is the mutual-exclusion primitive the wave loop will call for grounded box-flips.
+cmd_flip() {  # megadir id
+  local megadir="${1:-}" id="${2:-}"
+  [ -n "$megadir" ] && [ -n "$id" ] || { echo "usage: orchestrate.sh flip <megadir> <SG-NN>" >&2; return 64; }
+  local roadmap="$megadir/ROADMAP.md"
+  [ -f "$roadmap" ] || { echo "flip: no ROADMAP.md in '$megadir'" >&2; return 64; }
+  [ -n "$(_sg_line "$roadmap" "$id")" ] || { echo "flip: unknown sub-goal '$id' in $roadmap" >&2; return 65; }
+
+  local lockdir="$megadir/.orchestrate/flip.lock"
+  _lock "$lockdir" || { echo "flip: could not acquire lock $lockdir" >&2; return 1; }
+
+  # Re-read the line UNDER the lock: a sibling flip may have checked it since the pre-lock probe.
+  local line rc=0
+  line=$(_sg_line "$roadmap" "$id")
+  case "$line" in
+    '- ['[xX]']'*) _unlock "$lockdir"; return 0 ;;   # already checked -> idempotent no-op
+  esac
+
+  local tmp
+  tmp=$(mktemp "$megadir/.roadmap.flip.XXXXXX" 2>/dev/null) || { _unlock "$lockdir"; echo "flip: mktemp failed" >&2; return 1; }
+  if awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$roadmap" > "$tmp" && mv -f "$tmp" "$roadmap"; then
+    _emit_event "$megadir" "$id" flip "box checked"
+  else
+    rc=1
+    [ -e "$tmp" ] && mv -f "$tmp" "${TMPDIR:-/tmp}/flip-tmp.$$.$RANDOM" 2>/dev/null
+    echo "flip: failed to write $roadmap" >&2
+  fi
+  _unlock "$lockdir"
+  return "$rc"
+}
+
 # Pause after a completed sub-goal in --step mode. Reads ONE line from the driver's stdin (free:
 # the prompt is fed to claude via a temp file, not here). Empty/y/c -> continue; q/n -> stop;
 # EOF (no operator attached) -> stop (can't get consent, so don't march on). pi-swarm confirmAction.
@@ -530,7 +633,8 @@ main() {
   case "$cmd" in
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
-    *) echo "usage: orchestrate.sh {next|run} <megagoal-dir> [--dry-run] [--step] [--stream] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
+    flip) cmd_flip "$@" ;;
+    *) echo "usage: orchestrate.sh {next|run|flip} <megagoal-dir> [<SG-NN>] [--dry-run] [--step] [--stream] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
   esac
 }
 

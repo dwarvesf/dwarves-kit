@@ -112,3 +112,40 @@ dep parsing reimplemented. Process-sub loop (`< <(_subgoals ...)`) not a pipe, m
 **Impact.** `bash tests/test-orchestrate-wavefront.sh` 16/16 green (bash 3.2.57 + default);
 `bash tests/test-orchestrate.sh` 59/59 green (no regression). No scheduling change; `_ready_set`
 has zero call sites in the run loop (TASK-004b wires it later).
+
+## 2026-07-03 15:00 , TASK-002 mkdir-lock + cmd_flip
+
+**Context.** TASK-002 needs a mutual-exclusion primitive for concurrent box flips plus a `cmd_flip`
+subcommand. Spec pins the mechanism (`mkdir` lock, PID-liveness stale reclaim, write-temp-then-`mv`)
+but leaves a few knobs to the implementer.
+
+**Decisions (the deltas the spec/DEC-009 did not pin).**
+- **Retry sleep = `FLIP_LOCK_POLL_SECS` default `0.1`.** A new env knob (not in the spec) for the
+  short block-and-retry interval while a LIVE holder owns the lock. BSD `sleep` on the macOS CI
+  runner accepts fractional seconds. Reclaim of a crashed holder is immediate (`continue`, no
+  sleep), so the poll interval only paces waiting on a genuinely-busy holder.
+- **Empty/unreadable pid file is stale only past the timeout, not immediately.** The spec's reclaim
+  rule keys on "recorded PID dead". A pid file that is absent/unreadable (the race window: `mkdir`
+  won but `printf $$ > pid` has not landed yet) is treated as stale ONLY once the lock age exceeds
+  `FLIP_LOCK_STALE_SECS`, so a lock created microseconds ago by a live sibling is never yanked. A
+  present-but-dead PID is reclaimed immediately (crash case). This maps the spec's two clauses onto
+  three concrete states (alive / dead / unreadable).
+- **`_unlock` ownership guard.** Releases only a lock whose pid == `$$` (or an empty pid); never
+  rmdir's a different LIVE holder's lock. Defends against a double-unlock / reclaim-race yanking the
+  wrong holder.
+- **No `rm` anywhere.** Reclaim + unlock move the pid file to `$TMPDIR` then `rmdir` the emptied
+  dir (spec: "removing the pid file then rmdir", never `rm -rf`). The failed-write path likewise
+  `mv`s the temp aside rather than `rm`-ing it. Satisfies the repo's no-bare-`rm` safety rule.
+- **Atomic flip via same-dir mktemp.** The temp is `mktemp "$megadir/.roadmap.flip.XXXXXX"` (same
+  filesystem as ROADMAP.md) so `mv -f` is a true atomic rename; the leading dot + non-`- [` prefix
+  keeps a stray temp from ever matching a sub-goal grep. Idempotency + existence are re-checked
+  UNDER the lock (a sibling may have flipped the box between the pre-lock probe and acquire).
+- **Optional event emitted.** `cmd_flip` appends a `flip / box checked` event to the shared
+  `.orchestrate/events.log` (the spec allowed this as optional). NO scheduling wired: `cmd_flip` +
+  the lock helpers have zero call sites in the run loop; waves land in TASK-003/004.
+
+**Impact.** `bash tests/test-orchestrate-wavefront.sh` 29/29 green (16 existing + 13 new; bash
+3.2.57 + bash 5.3); `bash tests/test-orchestrate.sh` 59/59 green (no regression); `shellcheck -s
+bash lib/orchestrate.sh` clean. New tests cover: correct-box flip + idempotency + unknown-id, 6
+parallel flips on distinct boxes all landing with a well-formed ROADMAP, and a dead-PID stale-lock
+reclaim guarded by a poll-timeout so a hang reads as FAIL.

@@ -122,5 +122,85 @@ got=$(_ready_set "$Z")
 [ -z "$got" ] && pass "all-checked: ready set empty" || { fail "all-checked: ready set not empty"; printf 'got: %q\n' "$got"; }
 assert_next_invariant "all-checked: head-1 == _next (both empty)" "$Z"
 
+# ============================ TASK-002: mkdir-lock + cmd_flip ============================
+# The CLI is exercised out-of-process (real distinct PIDs) for the concurrency + stale tests;
+# `_lock` is called directly (sourced) for the reclaim probe. ORCH = the script under test.
+ORCH="$KIT/lib/orchestrate.sh"
+
+# ---- (a) cmd_flip flips the correct box, is idempotent, rejects an unknown id ----
+MG="$TMP/mg-flip"; mkdir -p "$MG"
+cat > "$MG/ROADMAP.md" <<'EOF'
+# Mega-goal: flip
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+- [ ] SG-03 gamma , gate , PR #__
+EOF
+cmd_flip "$MG" SG-02 >/dev/null 2>&1
+after=$(_sg_line "$MG/ROADMAP.md" SG-02)
+case "$after" in '- [x] SG-02'*) pass "flip: SG-02 box checked" ;; *) fail "flip: SG-02 not checked (got: $after)" ;; esac
+_sg_line "$MG/ROADMAP.md" SG-01 | grep -q '^- \[ \] SG-01' && pass "flip: SG-01 untouched" || fail "flip: SG-01 mutated"
+_sg_line "$MG/ROADMAP.md" SG-03 | grep -q '^- \[ \] SG-03' && pass "flip: SG-03 untouched" || fail "flip: SG-03 mutated"
+# idempotent: flipping an already-checked box is a no-op success
+cmd_flip "$MG" SG-02 >/dev/null 2>&1; rc=$?
+[ "$rc" = 0 ] && pass "flip: idempotent re-flip returns 0" || fail "flip: idempotent rc=$rc"
+after2=$(_sg_line "$MG/ROADMAP.md" SG-02)
+[ "$after2" = "$after" ] && pass "flip: idempotent re-flip leaves the line byte-identical" || fail "flip: re-flip changed the line"
+# ROADMAP still well-formed: exactly 3 sub-goal lines, no torn/duplicated lines
+lc=$(grep -cE '^- \[[ xX]\] SG-' "$MG/ROADMAP.md")
+[ "$lc" = 3 ] && pass "flip: ROADMAP keeps its 3 sub-goal lines" || fail "flip: sub-goal line count = $lc (want 3)"
+# unknown id -> nonzero + no mutation
+cp "$MG/ROADMAP.md" "$MG/ROADMAP.before"
+cmd_flip "$MG" SG-99 >/dev/null 2>&1; rc=$?
+[ "$rc" != 0 ] && pass "flip: unknown id returns nonzero" || fail "flip: unknown id returned 0"
+cmp -s "$MG/ROADMAP.md" "$MG/ROADMAP.before" && pass "flip: unknown id leaves ROADMAP unchanged" || fail "flip: unknown id mutated ROADMAP"
+
+# ---- (b) N (>=5) parallel flips on DISTINCT boxes all land, ROADMAP well-formed ----
+# Each flip rewrites the WHOLE file; without the lock, concurrent rewrites would lose updates
+# (torn/lost lines). Run them as real separate processes to get distinct holder PIDs.
+MGP="$TMP/mg-par"; mkdir -p "$MGP"
+{
+  printf '# Mega-goal: parallel\n## Sub-goals\n'
+  for n in 01 02 03 04 05 06; do printf -- '- [ ] SG-%s box%s , auto , PR #__\n' "$n" "$n"; done
+} > "$MGP/ROADMAP.md"
+for n in 01 02 03 04 05 06; do
+  bash "$ORCH" flip "$MGP" "SG-$n" >/dev/null 2>&1 &
+done
+wait
+allchecked=1
+for n in 01 02 03 04 05 06; do
+  _sg_line "$MGP/ROADMAP.md" "SG-$n" | grep -q "^- \[x\] SG-$n " || allchecked=0
+done
+[ "$allchecked" = 1 ] && pass "parallel flip: all 6 distinct boxes checked" || fail "parallel flip: some boxes lost"
+plc=$(grep -cE '^- \[[ xX]\] SG-' "$MGP/ROADMAP.md")
+[ "$plc" = 6 ] && pass "parallel flip: ROADMAP well-formed (6 sub-goal lines, none torn/lost)" || fail "parallel flip: line count = $plc (want 6)"
+# no leftover temp files leaked into the mega-goal dir
+tmpleft=$(ls "$MGP"/.roadmap.flip.* 2>/dev/null | wc -l | tr -d ' ')
+[ "$tmpleft" = 0 ] && pass "parallel flip: no temp files leaked" || fail "parallel flip: $tmpleft temp files leaked"
+
+# ---- (c) stale-lock reclaim: a lock held by a DEAD pid is reclaimed (no infinite hang) ----
+MGS="$TMP/mg-stale"; mkdir -p "$MGS/.orchestrate"
+LOCK="$MGS/.orchestrate/flip.lock"
+mkdir "$LOCK"
+# a guaranteed-dead PID: spawn a trivial process, reap it, reuse its (now-free) PID number
+sh -c 'exit 0' & deadpid=$!; wait "$deadpid" 2>/dev/null
+printf '%s\n' "$deadpid" > "$LOCK/pid"
+kill -0 "$deadpid" 2>/dev/null && fail "stale reclaim: test setup pid still alive (retry)" || pass "stale reclaim: dead holder pid confirmed dead"
+# attempt the acquire in the background; poll for success with a hard timeout so a hang = FAIL
+: > "$MGS/acquired"
+( _lock "$LOCK" && printf 'ok\n' > "$MGS/acquired" ) &
+lpid=$!
+ok=0
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  [ -s "$MGS/acquired" ] && { ok=1; break; }
+  sleep 0.5
+done
+kill "$lpid" 2>/dev/null
+if [ "$ok" = 1 ]; then
+  pass "stale reclaim: _lock reclaimed a dead-holder lock (did not hang)"
+else
+  fail "stale reclaim: _lock hung on a dead-holder lock (never acquired)"
+fi
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }
