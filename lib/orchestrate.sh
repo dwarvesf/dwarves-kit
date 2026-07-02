@@ -862,9 +862,9 @@ _wave_converge() {  # megadir [id...]
 
   # 1. Order the targets by ROADMAP position. Walk `_subgoals` (ROADMAP order) and keep those in the
   #    target set; membership via a space-padded string match (bash-3.2 has no assoc arrays).
-  local want=" $(printf '%s ' "${targets[@]}")"
-  local ordered=() sgid sgpol sgchk
-  while IFS=$'\t' read -r sgid sgpol sgchk; do
+  local want; want=" $(printf '%s ' "${targets[@]}")"   # split decl+assign so the printf status is not masked (SC2155)
+  local ordered=() sgid _p _c                            # _p/_c: policy+checked fields read but unused here
+  while IFS=$'\t' read -r sgid _p _c; do
     case "$want" in *" $sgid "*) ordered+=("$sgid") ;; esac
   done < <(_subgoals "$roadmap")
   [ "${#ordered[@]}" -gt 0 ] || { _say "[orchestrate] [converge] none of the requested ids are in the ROADMAP (no-op)."; return 0; }
