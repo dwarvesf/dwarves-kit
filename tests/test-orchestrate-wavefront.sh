@@ -818,8 +818,120 @@ grep -q 'blocked: 2 unchecked, none runnable' "$TMP/wave-blocked.out" \
   && pass "wave-block: ran no dep-blocked sub-goal (boxes untouched)" \
   || { fail "wave-block: a dep-blocked sub-goal ran"; cat "$TGLOG"; }
 
+# ============================ TASK-007: gate! global-stop + gate chain-hold ============================
+# `gate` narrows to a CHAIN-stop (holds only its dependent chain; independent ready branches keep
+# running); NEW `gate!` is the GLOBAL stop (halts the whole loop for a human, preserving the
+# pre-wavefront global `gate` behavior). Serial `gate` is unchanged (test-orchestrate.sh 59/59 guards
+# that byte-identity). These two cases prove the wave-path additions (SPEC-106 DEC-010 / Edge case 8 /
+# V-CRIT-7). Driven OUT-OF-PROCESS (`bash "$ORCH" run`) so the real WAVE_CAP env is exercised.
+
+# ---- (m) gate! GLOBAL-STOP at WAVE_CAP=2 halts everything even with other ready sub-goals ----
+# SG-01 is `gate!` and independent; SG-02/SG-03 are independent, Touches-declaring, disjoint -> absent
+# the gate! stop they would form a 2-wide wave. The gate! scan runs BEFORE admission, so the loop must
+# STOP (rc 0, clear message) and run NOTHING. No git repo needed: the stop precedes any worktree.
+GBM="$TMP/mg-gatebang"; mkdir -p "$GBM"
+cat > "$GBM/ROADMAP.md" <<'EOF'
+# Mega-goal: gatebang
+## Sub-goals
+- [ ] SG-01 halt-all , gate! , PR #__
+- [ ] SG-02 alpha , auto , PR #__
+- [ ] SG-03 beta , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$GBM/POINTER_PROMPT.md"
+make_goal "$GBM" SG-01 "lib/gb-g/**"
+make_goal "$GBM" SG-02 "lib/gb-a/**"
+make_goal "$GBM" SG-03 "lib/gb-b/**"
+# Confirm the admission premise: absent the gate! stop, SG-02+SG-03 WOULD be a 2-wide wave (the gate!
+# is deferred, never admitted). This makes (m) a real preemption, not a vacuous no-wave case.
+assert_gate "gate! m: premise -- gate! deferred, SG-02+SG-03 admit (would wave)" 2 "$GBM" "$GBM/ROADMAP.md" \
+  "$(printf 'defer\tSG-01\nrun\tSG-02\nrun\tSG-03')"
+GBLOG="$TMP/gatebang-runlog"; : > "$GBLOG"
+# A mock that flips+logs if ever invoked -- it MUST NOT be, because gate! quiesces the whole loop.
+cat > "$TMP/claude-gatebang" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR, GBLOG
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo "INVOKED $id" >> "$GBLOG"
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+MOCK
+chmod +x "$TMP/claude-gatebang"
+gbrc=0
+( export ORCH="$ORCH" MEGADIR="$GBM" GBLOG="$GBLOG" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-gatebang"
+  bash "$ORCH" run "$GBM" ) > "$TMP/gatebang.out" 2>&1 || gbrc=$?
+# (1) clean human-stop: rc 0, no false-complete
+{ [ "$gbrc" = 0 ] && ! grep -q 'all sub-goals checked; done' "$TMP/gatebang.out"; } \
+  && pass "gate! m: WAVE_CAP=2 global stop exits 0 (clean human-stop, no false-complete)" \
+  || { fail "gate! m: bad exit (rc=$gbrc)"; cat "$TMP/gatebang.out"; }
+# (2) clear global-halt message naming the gate! sub-goal
+grep -q 'STOP (gate!): global halt for human review' "$TMP/gatebang.out" \
+  && pass "gate! m: clear 'STOP (gate!): global halt' message" \
+  || { fail "gate! m: no gate! message"; cat "$TMP/gatebang.out"; }
+# (3) NOTHING ran: mock never invoked, every box still unchecked (independent sub-goals held too)
+{ [ ! -s "$GBLOG" ] \
+  && grep -q '^- \[ \] SG-01' "$GBM/ROADMAP.md" \
+  && grep -q '^- \[ \] SG-02' "$GBM/ROADMAP.md" \
+  && grep -q '^- \[ \] SG-03' "$GBM/ROADMAP.md"; } \
+  && pass "gate! m: quiesced everything (no sub-goal ran, all boxes untouched)" \
+  || { fail "gate! m: something ran under a gate! stop"; cat "$GBLOG"; }
+
+# ---- (n) exit-criterion 4: a `gate` holds its chain while an INDEPENDENT branch completes (WAVE_CAP=2) ----
+# SG-01 `gate` (independent) holds the chain of SG-04 (`depends SG-01`). SG-02/SG-03 are independent,
+# disjoint, Touches-declaring. Cycle 1: SG-01 gate is DEFERRED (never admitted), SG-02+SG-03 admit ->
+# a 2-wide wave runs and completes them. Cycle 2: only the gate (ready) + SG-04 (dep-blocked) remain;
+# admitted<2 falls through to `_next`, which picks the gate SG-01 and STOPS the loop (rc 0). Net: the
+# independent branches completed, the gate chain held (SG-01 + its dependent SG-04 never ran). A real
+# git repo is needed (the wave stands up worktrees).
+CHR="$TMP/gate-chainhold-repo"
+mk_git_mega "$CHR"
+CPM="$CHR/mega"; mkdir -p "$CPM"
+cat > "$CPM/ROADMAP.md" <<'EOF'
+# Mega-goal: gate-chainhold
+## Sub-goals
+- [ ] SG-01 review-gate , gate , PR #__
+- [ ] SG-02 alpha , auto , PR #__
+- [ ] SG-03 beta , auto , PR #__
+- [ ] SG-04 after-gate , auto , PR #__ , depends SG-01
+EOF
+echo "POINTER: resume from ROADMAP" > "$CPM/POINTER_PROMPT.md"
+make_goal "$CPM" SG-01 "lib/ch-g/**"
+make_goal "$CPM" SG-02 "lib/ch-a/**"
+make_goal "$CPM" SG-03 "lib/ch-b/**"
+make_goal "$CPM" SG-04 "lib/ch-d/**"
+# Premise: cycle-1 admission defers the gate + the dep-blocked SG-04, admits the two independents.
+assert_gate "gate n: premise -- gate + dep-blocked deferred, independents admit" 2 "$CPM" "$CPM/ROADMAP.md" \
+  "$(printf 'defer\tSG-01\nrun\tSG-02\nrun\tSG-03')"
+CHLOG="$TMP/chainhold-runlog"; : > "$CHLOG"
+# A wave flip mock: logs its id and flips its own box in the SHARED mega via the locked CLI (works
+# from the worktree cwd because MEGADIR is absolute). SG-01/SG-04 must NEVER appear in the log.
+cat > "$TMP/claude-chainhold" <<'MOCK'
+#!/usr/bin/env bash
+# env: ORCH, MEGADIR, CHLOG
+prompt=$(cat)
+id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
+echo "INVOKED $id" >> "$CHLOG"
+bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
+MOCK
+chmod +x "$TMP/claude-chainhold"
+chrc=0
+( export ORCH="$ORCH" MEGADIR="$CPM" CHLOG="$CHLOG" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-chainhold"
+  bash "$ORCH" run "$CPM" ) > "$TMP/chainhold.out" 2>&1 || chrc=$?
+# (1) the loop stops cleanly at the gate (rc 0, gate chain-stop message)
+{ [ "$chrc" = 0 ] && grep -q 'STOP: SG-01 is a gate sub-goal' "$TMP/chainhold.out"; } \
+  && pass "gate n: loop stopped at the gate (rc 0, chain-stop message)" \
+  || { fail "gate n: did not stop cleanly at the gate (rc=$chrc)"; cat "$TMP/chainhold.out"; }
+# (2) the INDEPENDENT branches completed (their boxes flipped)
+{ grep -q '^- \[x\] SG-02' "$CPM/ROADMAP.md" && grep -q '^- \[x\] SG-03' "$CPM/ROADMAP.md"; } \
+  && pass "gate n: independent branches completed while the gate held (SG-02+SG-03 flipped)" \
+  || { fail "gate n: independent branches did not complete"; cat "$TMP/chainhold.out"; }
+# (3) the gate + its dependent chain HELD: neither ran, both boxes untouched
+{ ! grep -q 'INVOKED SG-01' "$CHLOG" && ! grep -q 'INVOKED SG-04' "$CHLOG" \
+  && grep -q '^- \[ \] SG-01' "$CPM/ROADMAP.md" && grep -q '^- \[ \] SG-04' "$CPM/ROADMAP.md"; } \
+  && pass "gate n: gate chain held (SG-01 gate + dependent SG-04 never ran, boxes untouched)" \
+  || { fail "gate n: gate chain did not hold"; cat "$CHLOG"; }
+
 # ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
-for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$CVR" "$CFR" "$CPR"; do
+for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$CVR" "$CFR" "$CPR" "$CHR"; do
   [ -d "$wtrepo" ] || continue
   git -C "$wtrepo" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}' | while read -r w; do
     case "$w" in *"/.claude/worktrees/"*) git -C "$wtrepo" worktree remove --force "$w" 2>/dev/null ;; esac

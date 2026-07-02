@@ -412,3 +412,53 @@ change beyond TASK-006's minimal ready-empty termination guard; left for a follo
 Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds);
 `bash tests/test-orchestrate-wavefront.sh` 72/72 (67 prior + 5 new: 2 idempotent-resume, 3
 wave-termination-guard). Stable across repeated runs.
+
+## 2026-07-03 15:40 TASK-007 gate! global-stop + gate chain-hold
+
+Context. Under wavefront, today's `gate` (whole-loop human stop) would silently narrow to
+"hold only this chain" while independent branches keep running autonomously (V-CRIT-7, an
+autonomy-gate weakening). DEC-010 fix: `gate` = chain-stop, NEW `gate!` = stop-all (preserves
+today's global human-stop).
+
+Decision (policy parse). `_subgoals` awk now matches `lf=="auto"||lf=="gate"||lf=="gate!"`. The
+`!` survives both `tolower` and the exact-string compare, so `gate!` stays distinct from `gate`;
+the fail-safe default (unknown -> `gate`) is unchanged.
+
+Decision (gate! global-stop). Implemented as TWO twin stops, both a clean human-stop (blocked
+event + message + `return 0`), byte-for-byte the pre-wavefront global-stop shape:
+- Wave path: a ready-set scan at the TOP of the `WAVE_CAP>=2` block, BEFORE `_wave_gate`
+  admission, so a ready `gate!` quiesces everything even when independent ready sub-goals could
+  otherwise form a wave. Message `STOP (gate!): global halt for human review`.
+- Serial path: a `[ "$policy" = "gate!" ]` branch placed BEFORE the existing `gate` branch in the
+  `_next` section. On WAVE_CAP=1 this is the only gate! stop (the wave-block twin is skipped); it
+  is also the catch-all when the wave path falls through to `_next` with a gate! pick.
+Also added a `gate!` break to the `--dry-run` plan for an honest plan preview.
+
+Decision (gate chain-hold on the WAVE path -- IMPLEMENTED, not deferred). `_wave_gate` now
+`defer`s any `gate`/`gate!` sub-goal unconditionally (a `case "$policy"` guard before the
+Touches/disjoint logic) and never admits it. That single change gives the full chain-hold:
+the gate sub-goal is never run, so anything that `depends` on it stays dep-blocked (its chain
+holds), while INDEPENDENT ready sub-goals are still admitted + run in the wave. When only the
+gate (ready) + its dep-blocked chain remain, admitted drops below 2, the loop falls through to
+the serial `_next`, picks the gate, and stops cleanly (rc 0). So exit-criterion 4 is met
+end-to-end: independent branches complete, gate chain holds, loop stops at the gate. Nothing was
+deferred to ID-085-followup for this task.
+
+Why this shape. Keeping `gate!` as a NEW global-stop branch and leaving the serial `gate` branch
+literally untouched is what preserves byte-identity: `test-orchestrate.sh` (serial, gate-stop
+assertions) stays 59/59 because no serial test uses a `gate!` policy and the `gate` value's code
+path is unchanged. The wave-path chain-hold is gated behind `WAVE_CAP>=2` (the serial default
+never enters the `_wave_gate` never-admit path in a way that alters the serial `gate` stop).
+
+Alternatives considered. (a) A single pre-loop scan that stops on ANY ready `gate!` for BOTH
+paths -- rejected: on the serial path it would fire preemptively (before earlier auto sub-goals
+ran), diverging from "stop when reached in order", and it risked touching the serial `gate`
+code path. The two-twin design keeps serial reached-in-order semantics and wave quiesce-all
+semantics without cross-contamination. (b) Handling `gate` chain-hold via explicit dependent-set
+computation in cmd_run -- rejected as over-engineered: `_wave_gate` deferring the gate already
+holds the chain for free through the existing dep-blocked `_ready_set`, no new graph walk.
+
+Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds). `bash
+tests/test-orchestrate-wavefront.sh` 80/80 (72 prior + 8 new: 4 gate! global-stop case (m),
+4 gate chain-hold exit-criterion-4 case (n), each with an `assert_gate` admission-premise check).
+shellcheck -S error clean. Stable across repeated runs.

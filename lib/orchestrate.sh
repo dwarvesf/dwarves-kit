@@ -161,17 +161,19 @@ _unlock() {  # lockdir
 }
 
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
-# Policy is the comma-separated field that EQUALS auto|gate after trim (not a regex hit on the
-# description, so "(gate review)" or "gate-aware" do not false-match). Unknown -> gate (fail-safe:
-# a malformed line stops the loop for a human rather than silently auto-running). The trailing
-# `|| true` keeps a no-match grep from escaping under `set -o pipefail`.
+# Policy is the comma-separated field that EQUALS auto|gate|gate! after trim (not a regex hit on the
+# description, so "(gate review)" or "gate-aware" do not false-match). `gate!` (SPEC-106 TASK-007) is
+# the global-stop policy; the `!` survives tolower and the exact-match compare, so it is kept distinct
+# from plain `gate` (chain-stop). Unknown -> gate (fail-safe: a malformed line stops the loop for a
+# human rather than silently auto-running). The trailing `|| true` keeps a no-match grep from escaping
+# under `set -o pipefail`.
 _subgoals() {
   local roadmap="$1"
   grep -E '^- \[[ xX]\] SG-[0-9]+' "$roadmap" 2>/dev/null | while IFS= read -r line; do
     local id policy checked=0
     id=$(printf '%s' "$line" | grep -oE 'SG-[0-9]+' | head -1)
     [ -n "$id" ] || continue
-    policy=$(printf '%s' "$line" | awk -F',' '{for(i=1;i<=NF;i++){f=$i; gsub(/^[ \t]+|[ \t]+$/,"",f); lf=tolower(f); if(lf=="auto"||lf=="gate"){print lf; exit}}}')
+    policy=$(printf '%s' "$line" | awk -F',' '{for(i=1;i<=NF;i++){f=$i; gsub(/^[ \t]+|[ \t]+$/,"",f); lf=tolower(f); if(lf=="auto"||lf=="gate"||lf=="gate!"){print lf; exit}}}')
     case "$line" in
       '- ['[xX]']'*) checked=1 ;;
     esac
@@ -356,6 +358,12 @@ _wave_gate() {  # megadir roadmap
   while IFS=$'\t' read -r id policy; do
     [ -n "$id" ] || continue
     decision=defer
+    # A `gate` / `gate!` sub-goal is NEVER admitted to a wave (SPEC-106 TASK-007, DEC-010). This is
+    # what makes the wave-path chain-hold work: the gate sub-goal is not run, so anything that
+    # `depends` on it stays dep-blocked (its chain holds), while INDEPENDENT ready sub-goals are still
+    # admitted below. `gate!` (global stop) is caught earlier in cmd_run; deferring it here too is
+    # belt-and-suspenders so a wave can never run either gate kind autonomously (the V-CRIT-7 fix).
+    case "$policy" in gate|'gate!') printf '%s\t%s\n' defer "$id"; continue ;; esac
     gf=$(_goalfile "$megadir" "$id")
     # (a) self-Touches REQUIRED, and (b) room under the cap, and (c) disjoint vs every admitted member.
     if [ -n "$gf" ] && [ -n "$(bash "$gate" touches "$gf" 2>/dev/null)" ] && [ "$admitted_n" -lt "$cap" ]; then
@@ -946,6 +954,7 @@ cmd_run() {
       local rmodel reffort
       IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$sg")")
       _say "  -> $sg ($ppolicy)  [model: ${rmodel:-inherit}, effort: ${reffort:-inherit}]  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
+      [ "$ppolicy" = "gate!" ] && { _say "  == STOP at $sg (gate!: global halt for human review) =="; break; }
       [ "$ppolicy" = gate ] && { _say "  == STOP at $sg (gate: human review) =="; break; }
       [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
     done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
@@ -970,6 +979,21 @@ cmd_run() {
     # cycle means no double-launch and no CAP overshoot across cycles. (Gate/`--step`/`--stream`/
     # `--board` on the wave path are TASK-005/007's scope; at the default CAP=1 they are untouched.)
     if [ "$WAVE_CAP" -ge 2 ]; then
+      # gate! GLOBAL-STOP (SPEC-106 TASK-007 / DEC-010 / Edge case 8): a ready `gate!` sub-goal halts
+      # the WHOLE loop for a human, even when independent ready sub-goals could still wave. Checked
+      # BEFORE admission so nothing is admitted alongside it -- the wave quiesces entirely. This is
+      # the wave-path twin of the serial `gate!` stop below; plain `gate` is NOT caught here (it is a
+      # chain-stop: `_wave_gate` just never admits it, then it stops via the serial `_next` branch when
+      # it becomes the pick). Clean human-stop: blocked event + message + return 0, exactly like the
+      # pre-wavefront global `gate` stop.
+      local gbang
+      gbang=$(_ready_set "$roadmap" | awk -F'\t' '$2=="gate!"{print $1; exit}')
+      if [ -n "$gbang" ]; then
+        _emit_event "$dir" "$gbang" blocked "gate!: global halt for human review"
+        [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+        _say "[orchestrate] STOP (gate!): global halt for human review; $gbang is a gate! sub-goal. Resolve, then re-run."
+        return 0
+      fi
       local admitted_n
       admitted_n=$(_wave_gate "$dir" "$roadmap" | awk -F'\t' '$1=="run"{n++} END{print n+0}')
       if [ "$admitted_n" -ge 2 ]; then
@@ -1013,6 +1037,18 @@ cmd_run() {
     nx=$(_next "$roadmap")
     [ -n "$nx" ] || { _say "[orchestrate] all sub-goals checked; done."; return 0; }
     id=$(printf '%s' "$nx" | cut -f1); policy=$(printf '%s' "$nx" | cut -f2)
+
+    # gate! GLOBAL-STOP on the serial path too (SPEC-106 TASK-007): when the pick is a `gate!`
+    # sub-goal, halt the WHOLE loop for a human, preserving the pre-wavefront global `gate` stop
+    # exactly (blocked event + message + return 0). Checked BEFORE plain `gate` since they are
+    # distinct policy values. On WAVE_CAP=1 this is the ONLY gate! stop (the wave-block twin above
+    # is skipped), and it is also the catch-all when the wave path falls through to `_next`.
+    if [ "$policy" = "gate!" ]; then
+      _emit_event "$dir" "$id" blocked "gate!: global halt for human review"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      _say "[orchestrate] STOP (gate!): global halt for human review; $id is a gate! sub-goal. Resolve, then re-run."
+      return 0
+    fi
 
     if [ "$policy" = gate ]; then
       _emit_event "$dir" "$id" blocked "gate: human review"
