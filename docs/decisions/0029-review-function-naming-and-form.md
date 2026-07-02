@@ -26,14 +26,21 @@ Three inconsistencies: (1) FORM , left-arm reviews are commands you invoke, righ
 Name every review function by its ROLE on one axis, and make the panel-command the only command form.
 
 **Naming (role axis):**
-- **`<x>-reviewer`** , a LEFT-arm STATIC review of one artifact ("did we build it right", verification). E.g. `code-reviewer`, `brief-reviewer`, `docs-reviewer`.
-- **`<x>-verifier`** , a RIGHT-arm DYNAMIC test of one artifact ("does it actually work", validation). E.g. `task-verifier`, `integration-verifier`, `acceptance-verifier`, `system-verifier`.
+- **`<x>-reviewer`** , a LEFT-arm STATIC review of one artifact ("did we build it right"): it READS the artifact and judges it. E.g. `code-reviewer`, `brief-reviewer`, `docs-reviewer`.
+- **`<x>-verifier`** , a RIGHT-arm DYNAMIC test of one artifact ("does it actually work"): it EXECUTES the artifact and observes. E.g. `task-verifier`, `integration-verifier`, `acceptance-verifier`, `system-verifier`.
 - **`<x>-team`** , a COMMAND that runs a PANEL of `-reviewer` lenses in parallel. The only command-form review. E.g. `devs-team`, `review-team`, `visual-team`.
 - **`advisor`** , the single cross-cutting generic lens (ADR-0028 SG-05); legitimately its own noun, not per-artifact.
 
 Retire `-checker`, `-validate`-as-a-suffix, `-auditor`, and bare `reviewer` as review-function names.
 
 **Form:** every review is an AGENT (the ADR-0005 read-only verifier pattern). A `-team` command is an ORCHESTRATOR that dispatches reviewer agents; a single-lens review is the agent, invoked via its phase command. The left/right difference is only WHEN it runs (invoked as a phase on the left; auto-dispatched inside `/kit:execute` on the right), NOT a difference in form. This makes the two arms symmetric: both are agents, some fronted by `-team` panels.
+
+## Amendment (2026-07-02, operator)
+
+Two clarifications, no decision change:
+
+1. **The stated axis is STATIC vs DYNAMIC, not verification vs validation.** The original gloss tagged `-reviewer` "(verification)" and `-verifier` "(validation)"; dropped. Under strict ISTQB vocabulary a right-arm test against acceptance criteria (i.e. against spec) is itself verification, so the ver/val tags fought the very names they glossed , "a verifier doing validation". The distinction that does the real work: a `-reviewer` READS the artifact (static), a `-verifier` EXECUTES it (dynamic). The slogans stay; the ver/val tags go.
+2. **`recheck-verifier` semantics pinned: re-execution.** The fresh-context re-audit RE-RUNS the verification commands and re-judges the outcome; it is NOT a read-back of the recorded evidence (a read-back cannot catch stale or fabricated evidence, which is exactly what the ADR-0028 trust metric needs caught). This keeps it on the dynamic side, so the `-verifier` suffix is correct on the convention's own axis.
 
 ## The rename map
 
@@ -43,9 +50,9 @@ Retire `-checker`, `-validate`-as-a-suffix, `-auditor`, and bare `reviewer` as r
 | `reviewer` | -> | `code-reviewer` | shipped agent | 81 files, COLLIDES with the English word | NOT a blind sed , rename the frontmatter `name:` + dispatch call-sites only, by word boundary; leave prose "reviewer" |
 | `security-auditor` | -> | `security-reviewer` | shipped agent | 19 files + external harness registry | RESOLVED one-axis (Han 2026-07-01); migration MUST also update the external `kit:security-auditor` registry exposure + any caller |
 | `task-verifier` | -> | `task-verifier` | shipped agent | , | already conforms |
-| `doc-verifier` | -> | `doc-verifier` | shipped agent | , | already conforms (verifies docs vs code = validation) |
+| `doc-verifier` | -> | `doc-verifier` | shipped agent | , | already conforms (tests doc claims against the live codebase = dynamic side) |
 | `acceptance-auditor` | -> | `acceptance-verifier` | SG-06 (unbuilt) | 0 | free plan-fix |
-| `test-reauditor` | -> | `recheck-verifier` | SG-06 (unbuilt) | 0 | free; the one new role , a fresh-context verifier OF a verifier's PASS |
+| `test-reauditor` | -> | `recheck-verifier` | SG-06 (unbuilt) | 0 | free; the one new role , a fresh-context verifier OF a verifier's PASS; RE-EXECUTES the verification commands, never a read-back of recorded evidence (see Amendment) |
 | `brief-reviewer` | -> | `brief-reviewer` | SG-06 (unbuilt) | 0 | already conforms |
 | (new) `system-verifier` | | `system-verifier` | SG-06 (new) | 0 | right-arm mirror of design (was the agent-less "project suite") |
 
