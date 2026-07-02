@@ -49,6 +49,12 @@ if has "normal" "$OUTF"; then ok "filter excludes the normal-lane run [NC]" 1; e
 OUTN="$(NO_COLOR=1 bash "$LT" render nosuchlane 2>&1)"
 has "no runs match" "$OUTN"; ok "filter with no match degrades gracefully" $?
 
+# --- filter is a LITERAL substring, not a regex: metachars don't over-match or crash ---
+OUTD="$(NO_COLOR=1 bash "$LT" render "." 2>&1)"
+has "no runs match" "$OUTD"; ok "filter '.' is literal (no regex over-match)" $?
+OUTB="$(NO_COLOR=1 bash "$LT" render "[" 2>&1)"
+if printf '%s' "$OUTB" | grep -qiE 'awk|character class|syntax'; then ok "filter '[' does not crash awk [NC]" 1; else ok "filter '[' does not crash awk [NC]" 0; fi
+
 # --- graceful-empty NEGATIVE CONTROL: empty/fresh LOG_DIR ---
 OUTE="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/empty" NO_COLOR=1 bash "$LT" render 2>&1)"
 has "no runs recorded" "$OUTE"; ok "empty corpus renders an honest 'no runs recorded' [NC]" $?

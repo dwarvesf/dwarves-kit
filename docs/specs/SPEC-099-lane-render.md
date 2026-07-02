@@ -55,7 +55,9 @@ bash tests/test-meta.sh ; bash tests/test-hooks.sh   # stay green
 ## Decision Log
 - DEC-001: reuse `_rows()` rather than a new parser -- one aggregation source, and render
   automatically inherits START-AMEND / first-wins semantics.
-- DEC-002: the filter is a substring match on lane OR type -- one arg covers "show me the
-  full-lane runs" and "show me the eval runs" without a flag grammar.
+- DEC-002: the filter is a LITERAL substring match (awk `index()`, not `~`) on lane OR type
+  -- one arg covers "show me the full-lane runs" and "show me the eval runs" without a flag
+  grammar, and a filter that is a regex metacharacter (`.`, `[`) is a plain string, never an
+  awk regex that over-matches or crashes (review robustness fix).
 - DEC-003: graceful-empty returns exit 0 with an honest message (not an error) -- a fresh
   install running `render` is a normal state, not a failure.

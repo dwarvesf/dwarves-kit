@@ -263,7 +263,9 @@ render() {
   fi
   local rows; rows="$(_rows)"
   if [ -n "$filter" ]; then
-    rows="$(printf '%s\n' "$rows" | awk -v f="$filter" 'BEGIN{FS="\t"} $3 ~ f || $5 ~ f')"
+    # LITERAL substring match (index), not a regex (~), so a filter like "." or "[" is a
+    # plain string, never an awk regex that over-matches or crashes (review robustness).
+    rows="$(printf '%s\n' "$rows" | awk -v f="$filter" 'BEGIN{FS="\t"} index($3,f)>0 || index($5,f)>0')"
   fi
   if [ -z "$rows" ]; then
     [ -n "$filter" ] && echo "Lane routing: no runs match '$filter'." || echo "Lane routing: no runs recorded yet."
