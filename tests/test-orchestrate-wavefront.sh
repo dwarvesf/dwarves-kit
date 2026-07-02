@@ -202,5 +202,97 @@ else
   fail "stale reclaim: _lock hung on a dead-holder lock (never acquired)"
 fi
 
+# ============================ TASK-003: _wave_gate greedy admission ============================
+# _wave_gate <megadir> <roadmap> reads the ready set, then admits ready sub-goals GREEDILY in
+# ROADMAP order: a candidate is admitted iff (a) its goal file declares its OWN `## Touches` section
+# AND (b) it proves disjoint (dispatch-gate.sh gate_disjoint) against EVERY already-admitted member;
+# it stops admitting at WAVE_CAP (default 1). Output: one `run<TAB>id` / `defer<TAB>id` line per ready
+# sub-goal, in ROADMAP order. Self-Touches is REQUIRED because gate_disjoint admits the first member
+# vacuously (empty admitted set), so a Touches-less sub-goal would otherwise be wrongly admitted.
+
+# Build a mega-goal dir with a ROADMAP + per-sub-goal goal files carrying (or lacking) ## Touches.
+# make_goal <megadir> <id> [touches-glob]: write goals/<NN>-<id>.md; omit the glob for a Touches-less
+# goal file (the Option-B opt-out).
+make_goal() {  # megadir id [glob]
+  local mg="$1" id="$2" glob="${3:-}"
+  mkdir -p "$mg/goals"
+  {
+    printf '# %s: sub-goal\n' "$id"
+    printf '**Branch:** feat/%s\n' "$(printf '%s' "$id" | tr 'A-Z' 'a-z')"
+    if [ -n "$glob" ]; then printf '\n## Touches\n- %s\n' "$glob"; fi
+  } > "$mg/goals/${id#SG-}-${id}.md"
+}
+
+# assert_gate <label> <cap> <megadir> <roadmap> <expected>: run WAVE_CAP=cap _wave_gate and compare.
+# The command substitution is a subshell, so the inline WAVE_CAP assignment never leaks to the parent.
+assert_gate() {  # label cap megadir roadmap expected
+  local label="$1" cap="$2" mg="$3" rm="$4" expected="$5" got
+  got=$(WAVE_CAP="$cap" _wave_gate "$mg" "$rm")
+  [ "$got" = "$expected" ] && pass "$label" || { fail "$label"; printf 'got:\n%s\nwant:\n%s\n' "$got" "$expected"; }
+}
+
+# ---- (a) Touches-DECLARING + DISJOINT pair, WAVE_CAP=2 -> both run ----
+GA="$TMP/mg-gate-a"; mkdir -p "$GA"
+cat > "$GA/ROADMAP.md" <<'EOF'
+# Mega-goal: gate-a
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+make_goal "$GA" SG-01 "lib/wave-a/**"
+make_goal "$GA" SG-02 "lib/wave-b/**"
+assert_gate "wave_gate a: disjoint declaring pair (cap 2) -> both run" 2 "$GA" "$GA/ROADMAP.md" \
+  "$(printf 'run\tSG-01\nrun\tSG-02')"
+
+# ---- (b) Touches-DECLARING but OVERLAPPING pair -> first run, second defer (negative control) ----
+GB="$TMP/mg-gate-b"; mkdir -p "$GB"
+cat > "$GB/ROADMAP.md" <<'EOF'
+# Mega-goal: gate-b
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+make_goal "$GB" SG-01 "lib/shared/**"
+make_goal "$GB" SG-02 "lib/shared/**"
+assert_gate "wave_gate b: overlapping declaring pair (cap 2) -> SG-01 run, SG-02 defer" 2 "$GB" "$GB/ROADMAP.md" \
+  "$(printf 'run\tSG-01\ndefer\tSG-02')"
+
+# ---- (c) Touches-LESS ready set -> ALL defer (the Option-B opt-in gate) ----
+GC="$TMP/mg-gate-c"; mkdir -p "$GC"
+cat > "$GC/ROADMAP.md" <<'EOF'
+# Mega-goal: gate-c
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+make_goal "$GC" SG-01   # no ## Touches
+make_goal "$GC" SG-02   # no ## Touches
+assert_gate "wave_gate c: Touches-less ready set (cap 2) -> all defer" 2 "$GC" "$GC/ROADMAP.md" \
+  "$(printf 'defer\tSG-01\ndefer\tSG-02')"
+
+# ---- (d) WAVE_CAP=1 on the disjoint pair -> at most one run (serial default) ----
+assert_gate "wave_gate d: disjoint pair at cap 1 -> only SG-01 runs" 1 "$GA" "$GA/ROADMAP.md" \
+  "$(printf 'run\tSG-01\ndefer\tSG-02')"
+
+# ---- (e) mixed: a Touches-less FIRST candidate defers, a declaring second still admits ----
+# Proves self-Touches is checked per-candidate (not "the first ready one wins"): SG-01 has no Touches
+# so it defers; SG-02 declares Touches and, being the first ADMITTED member, admits vacuously.
+GE="$TMP/mg-gate-e"; mkdir -p "$GE"
+cat > "$GE/ROADMAP.md" <<'EOF'
+# Mega-goal: gate-e
+## Sub-goals
+- [ ] SG-01 alpha , auto , PR #__
+- [ ] SG-02 beta , auto , PR #__
+EOF
+make_goal "$GE" SG-01              # Touches-less -> defer
+make_goal "$GE" SG-02 "lib/only/**"
+assert_gate "wave_gate e: Touches-less first defers, declaring second admits" 2 "$GE" "$GE/ROADMAP.md" \
+  "$(printf 'defer\tSG-01\nrun\tSG-02')"
+
+# ---- (f) default WAVE_CAP (unset) behaves as cap 1 ----
+got=$(unset WAVE_CAP; _wave_gate "$GA" "$GA/ROADMAP.md")
+[ "$got" = "$(printf 'run\tSG-01\ndefer\tSG-02')" ] && pass "wave_gate f: default cap (unset) == 1 (only SG-01 runs)" \
+  || { fail "wave_gate f: default cap != 1"; printf 'got:\n%s\n' "$got"; }
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }

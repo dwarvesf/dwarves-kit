@@ -149,3 +149,42 @@ but leaves a few knobs to the implementer.
 bash lib/orchestrate.sh` clean. New tests cover: correct-box flip + idempotency + unknown-id, 6
 parallel flips on distinct boxes all landing with a well-formed ROADMAP, and a dead-PID stale-lock
 reclaim guarded by a poll-timeout so a hang reads as FAIL.
+
+## 2026-07-03 14:30 TASK-003 `_wave_gate` greedy admission
+
+Delta from SPEC-106 (TASK-003 / DEC-007 / DEC-012b). Two judgment calls the spec left to the
+implementer:
+
+- **REUSE via SUBPROCESS, not source (2+-option call).** dispatch-gate.sh is the one disjointness
+  authority (DEC-001), so `_wave_gate` must reuse it, not reimplement glob-disjointness. Options: (A)
+  `source lib/dispatch-gate.sh` and call `gate_touches`/`gate_disjoint` in-process; (B) call
+  `bash "$gate" touches|disjoint ...` as a subprocess. Chose **B**. Decider: dispatch-gate.sh runs
+  `set -euo pipefail` at load (L26); sourcing it leaks `-e` into orchestrate.sh's deliberate `set -uo`
+  posture (L33) AND into the sourced test harness (test-orchestrate-wavefront.sh sources
+  orchestrate.sh), which would flip the whole harness to errexit. The subprocess boundary contains
+  the `-e`; verified with `source lib/orchestrate.sh; case "$-" in *e*)` -> no leak. Fork-per-pair
+  cost is negligible for a wave-launch decision over a small ready set. `disjoint` exit 0 = provably
+  disjoint => admit-eligible; any nonzero (1 overlap / 2 undeclared) => not disjoint => defer.
+- **Self-Touches detection = `gate_touches` non-empty.** A candidate admits only if
+  `bash "$gate" touches "$gf"` is non-empty (its goal file declares its OWN `## Touches`). This is the
+  real opt-in gate (DEC-012b): `gate_disjoint` admits the first member vacuously (empty admitted set),
+  so a Touches-less sub-goal would be wrongly admitted without this. Touches-less or goal-file-less
+  => always `defer`.
+- **Admitted-set accumulation = plain bash array (not assoc).** bash 3.2 has no assoc arrays; the
+  admitted set is `admitted_files=()` (goal-file paths), iterated with the empty-guard
+  `${arr[@]+"${arr[@]}"}` (DEC-005, mega-merge.sh:224). The ready set is fed by **process-sub**
+  (`< <(_ready_set ...)`) not a pipe, so the admitted state lives in THIS shell, not a while-subshell.
+- **Defensive cap guard (belt-and-braces).** `case "$cap" in ''|*[!0-9]*) cap=1` prevents a
+  non-numeric WAVE_CAP from making `[ -lt ]` emit a bash integer error on a direct call. The
+  spec's parse-time rejection of `<1`/non-numeric WAVE_CAP is TASK-004b's wiring boundary; the wired
+  path only ever hands `_wave_gate` a validated cap, so this fallback is never a substitute for that.
+
+**Placement + scope.** `_wave_gate` sits right after `_goalfile` (both deps `_ready_set` + `_goalfile`
+defined above). PURE decision helper: spawns nothing, zero call sites in cmd_run (wiring is TASK-004).
+
+**Impact.** `bash tests/test-orchestrate-wavefront.sh` 35/35 green (29 existing + 6 new; bash 3.2.57);
+`bash tests/test-orchestrate.sh` 59/59 green (no regression); `shellcheck lib/orchestrate.sh` clean.
+New tests: (a) disjoint declaring pair @cap 2 -> both run; (b) overlapping declaring pair -> first
+run/second defer (exit-criterion-2 negative control); (c) Touches-less ready set -> all defer
+(Option-B gate); (d) cap 1 on the disjoint pair -> at most one run; (e) Touches-less-first/declaring-
+second -> defer/run (per-candidate self-Touches, not first-wins); (f) unset WAVE_CAP == cap 1.

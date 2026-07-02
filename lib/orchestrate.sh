@@ -287,6 +287,59 @@ _goalfile() {
   for f in "$dir/goals/${id#SG-}-"*.md; do [ -f "$f" ] && { printf '%s\n' "$f"; return; }; done
 }
 
+# Wavefront admission gate (SPEC-106 TASK-003, DEC-007/011/012). PURE DECISION helper: it decides
+# which ready sub-goals may run concurrently; it spawns NOTHING and is not yet wired into cmd_run
+# (that is TASK-004). Reads the ready set (`_ready_set`), then admits GREEDILY in ROADMAP order , a
+# candidate is admitted iff (a) its goal file declares its OWN `## Touches` section AND (b) it proves
+# disjoint (dispatch-gate.sh, the ONE disjointness authority per DEC-001) against EVERY already-
+# admitted member. Admission stops at WAVE_CAP (env, default 1 => at most one `run`, serial default).
+#
+# Self-Touches is REQUIRED (DEC-012b): dispatch-gate admits the FIRST member vacuously (empty admitted
+# set => nothing to prove disjoint against), so without demanding the candidate's own `## Touches` a
+# Touches-less sub-goal would be wrongly admitted. A goal file with no `## Touches` => always `defer`
+# (the Option-B opt-in gate).
+#
+# dispatch-gate.sh is REUSED as a SUBPROCESS (`bash "$gate" touches|disjoint ...`), NOT sourced: it
+# runs `set -euo pipefail` at load, which would leak `-e` into this driver's deliberate `set -uo`
+# posture (L33) and break the sourced test harness. The subprocess boundary contains that; a fork per
+# pair is negligible for a wave-launch decision over a small ready set. `disjoint` exit 0 = provably
+# disjoint (admit-eligible); any nonzero (1 overlap / 2 undeclared) = not disjoint => defer.
+#
+# Output: one `run<TAB>id` or `defer<TAB>id` line per ready sub-goal, in ROADMAP order. Wire format
+# per SPEC-106 "Helper wire formats". bash-3.2 safe: no assoc-arrays; the admitted set is a plain
+# array of goal-file paths, empty-guarded `${arr[@]+"${arr[@]}"}` (DEC-005, mega-merge.sh:224).
+# Process-sub (not a pipe) feeds the loop so the admitted state lives in THIS shell, not a subshell.
+_wave_gate() {  # megadir roadmap
+  local megadir="$1" roadmap="$2"
+  local cap="${WAVE_CAP:-1}"
+  # Defensive numeric guard: a non-numeric/empty cap would make the `-lt` test emit a bash integer
+  # error. The parse-time rejection of `<1`/non-numeric WAVE_CAP is TASK-004b's wiring boundary; this
+  # helper only ever sees a validated cap in the wired path, so falling back to 1 here is belt-and-
+  # braces for a direct call, never a substitute for that rejection.
+  case "$cap" in ''|*[!0-9]*) cap=1 ;; esac
+  local gate="$ORCH_DIR/dispatch-gate.sh"
+  local admitted_files=() admitted_n=0
+  local id policy gf a decision ok
+  while IFS=$'\t' read -r id policy; do
+    [ -n "$id" ] || continue
+    decision=defer
+    gf=$(_goalfile "$megadir" "$id")
+    # (a) self-Touches REQUIRED, and (b) room under the cap, and (c) disjoint vs every admitted member.
+    if [ -n "$gf" ] && [ -n "$(bash "$gate" touches "$gf" 2>/dev/null)" ] && [ "$admitted_n" -lt "$cap" ]; then
+      ok=1
+      for a in ${admitted_files[@]+"${admitted_files[@]}"}; do
+        bash "$gate" disjoint "$gf" "$a" >/dev/null 2>&1 || { ok=0; break; }
+      done
+      if [ "$ok" = 1 ]; then
+        decision=run
+        admitted_files+=("$gf")
+        admitted_n=$((admitted_n + 1))
+      fi
+    fi
+    printf '%s\t%s\n' "$decision" "$id"
+  done < <(_ready_set "$roadmap")
+}
+
 # Emit "model<TAB>effort" read from a goal file's `Model:`/`Effort:` lines (empty when absent).
 # Bare `Key: value` header lines, not YAML; first match each, value trimmed. Absent field or
 # absent file -> empty -> the orchestrator emits no flag and the session inherits its tier
