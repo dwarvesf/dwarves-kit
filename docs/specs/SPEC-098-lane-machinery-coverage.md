@@ -1,4 +1,4 @@
-# SPEC-098: kit-machinery hard-gate covers all enforcement/telemetry libs
+# SPEC-098: kit-machinery hard-gate covers the enforcement/orchestration/telemetry libs (read-helpers held at normal)
 
 Status: VALIDATED
 Date: 2026-07-02
@@ -14,8 +14,12 @@ task shapes that ACTUALLY occurred in the kit-hardening + kit-telemetry waves, i
 covers `gate-ledger`, `ship-gate`, `lane-classify`, `proof-gate`, `task-type-classify`,
 `goal-registry`, `dispatch-gate`, `backlog.sh`, `install.sh`, `adopt.sh`, `workflow.md`
 but MISSES four libs that are equally enforcement/telemetry machinery:
-`lane-telemetry`, `mega-merge`, `proof-ledger`, `kit-log-dir`. Work on them classifies as
-`normal`, under-sizing the lane for enforcement-surface changes.
+`lane-telemetry`, `mega-merge`, `proof-ledger`, `kit-log-dir`, and (review completeness pass)
+`orchestrate.sh`, `stack-merge`, `role-classify`, `goal-drafts`. Work on them classifies as
+`normal`, under-sizing the lane for enforcement-surface changes. The remaining read/helper
+libs (`precedent`, `route-suggest`, `spec-index`, `spec-next`, `verif-counts`) are
+DELIBERATELY held at `normal` , they are read-back / navigation / counting helpers, not
+enforcement surfaces.
 
 Evidence (occurred shapes, `lib/lane-classify.sh classify`):
 - `add a render subcommand to lib/lane-telemetry.sh` -> **normal** (should be full)
@@ -28,17 +32,28 @@ These are not speculative shapes: SG-01 (this wave) touched all four; SG-04/05 (
 merge-guard) touch `lane-telemetry`/`mega-merge`.
 
 ## Decision
-Add the four missing lib basenames to the `kit-machinery` hard-gate regex:
-`lane-telemetry|mega-merge|proof-ledger|kit-log-dir`. Nothing else changes. The
-precedence order (backfill > tiny > hard-gate) is untouched, so a cosmetic edit to one of
-these libs still classifies `tiny` (a typo is still a typo).
+Add the missing machinery lib basenames to the `kit-machinery` hard-gate regex:
+`lane-telemetry|mega-merge|stack-merge|proof-ledger|kit-log-dir|orchestrate\.sh|role-classify|goal-drafts`.
+`orchestrate` is anchored to `\.sh` because the bare word is common English (a non-kit
+"orchestrate the launch" must NOT escalate); the rest are distinctive compounds. Nothing
+else changes. The precedence order (backfill > tiny > hard-gate) is untouched, so a cosmetic
+edit to one of these libs still classifies `tiny`.
+
+**Known limitation (pre-existing, out of scope):** the hard-gate matches a textual MENTION
+of a basename, not an actual diff touching the file, so a doc/research task ABOUT these libs
+(e.g. "explain mega-merge.sh in the architecture doc") over-classifies to `full`. This
+predates SPEC-098 (true for `gate-ledger` etc. already) and fixing it needs an edit-vs-mention
+signal the classifier does not have (a rewrite, explicitly out of scope). Widening the token
+set widens this surface; filed as a follow-up board row, not fixed here.
 
 ## Acceptance criteria
 - AC1: `classify "add a render subcommand to lib/lane-telemetry.sh"` -> `full`.
 - AC2: `classify "add a code-level guard to lib/mega-merge.sh"` -> `full`.
 - AC3: `classify "log overrides in lib/proof-ledger.sh"` -> `full`.
 - AC4: `classify "durable resolver in lib/kit-log-dir.sh"` -> `full`.
+- AC1b-AC4b [completeness]: `orchestrate.sh`, `stack-merge`, `role-classify`, `goal-drafts` work -> `full`.
 - AC5 [precedence preserved, negative control]: `classify "fix a typo in lib/lane-telemetry.sh"` -> `tiny` (tiny beats the hard-gate).
+- AC5b [over-match negative control]: a bare-word `orchestrate` non-kit task -> `normal` (anchoring works); a read-helper lib (`route-suggest`) -> `normal` (held).
 - AC6 [no regression]: previously-covered machinery (`gate-ledger`, `lane-classify`) still `full`; a plain feature (`add a date picker`) still `normal`; `test-meta.sh`, `test-hooks.sh`, `test-lane-escalation.sh` stay green.
 
 ## Tasks

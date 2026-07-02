@@ -10,7 +10,9 @@ Verdict: PASS
 | AC2 | `mega-merge.sh` work -> full | test: `classify "...lib/mega-merge.sh"` = full | PASS |
 | AC3 | `proof-ledger.sh` work -> full | test: `classify "...lib/proof-ledger.sh"` = full | PASS |
 | AC4 | `kit-log-dir.sh` work -> full | test: `classify "...lib/kit-log-dir.sh"` = full | PASS |
+| AC1b-4b [completeness] | orchestrate.sh/stack-merge/role-classify/goal-drafts -> full | test: all four = full | PASS |
 | AC5 [precedence NC] | cosmetic edit to a covered lib stays tiny | test: `classify "fix a typo in lib/lane-telemetry.sh"` = tiny | PASS |
+| AC5b [over-match NC] | bare 'orchestrate' + read-helper libs stay normal | test: "orchestrate the marketing launch" = normal; route-suggest = normal | PASS |
 | AC6 [no regression] | prior machinery still full; plain feature still normal; suites green | test: gate-ledger/lane-classify/auth = full, feature = normal, typo = tiny; `test-meta` 578, `test-hooks` 438, `test-lane-escalation` 22 | PASS |
 
 ## Audit findings (the deliverable)
@@ -32,7 +34,7 @@ Verdict: PASS
 
 | Command | Exit | Result |
 |---------|------|--------|
-| `bash tests/test-lane-classify.sh` | 0 | 10/10 passed |
+| `bash tests/test-lane-classify.sh` | 0 | 16/16 passed |
 | `bash tests/test-meta.sh` | 0 | 578/578 passed |
 | `bash tests/test-hooks.sh` | 0 | 438/438 passed |
 | `bash tests/test-lane-escalation.sh` | 0 | 22/22 passed |
