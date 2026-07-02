@@ -25,8 +25,11 @@ TODOS.md
 # into its mega-goal dir; session logs + stream json can carry resolved op:// values, and
 # the per-edge handoffs multiply the surface. Never commit them. (`.claude/worktrees/` is
 # already covered by the `.claude/` rule above.)
-_meta/megagoals/**/HANDOFF*.md
-_meta/megagoals/**/.orchestrate/
+# LOCATION-INDEPENDENT: `orchestrate.sh run <dir>` accepts ANY megadir (the "promote to
+# project" workflow moves a live mega-goal to `<repo>/projects/<slug>/`), so these must NOT
+# be scoped to `_meta/megagoals/**` or a promoted megadir's handoffs leak (security review).
+HANDOFF*.md
+**/.orchestrate/
 *.session.log
 *.stream.jsonl
 
