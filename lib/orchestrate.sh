@@ -332,6 +332,45 @@ _run_session_watchdog() {  # dir id pfile route_flags
   return "$rc"
 }
 
+# _run_one_session: run ONE sub-goal session via the correct mutually-exclusive run-path
+# (SG-11 watchdog / --stream|DETERMINISTIC_HANDOFF stream-json / plain claude -p). Keyed on
+# `dir id pfile route_flags stream` (stream is a cmd_run local, so it is passed explicitly).
+# Returns the session exit code; exposes the stream-log path via the global _ROS_SLOG so the
+# caller can wire post-session logic (grounded completion, deterministic handoff) to it. Extracted
+# from cmd_run (TASK-000) so the serial and wave paths share ONE copy and the three run-paths are
+# never forked. Zero behavior change vs the former inline block.
+_run_one_session() {  # dir id pfile route_flags stream
+  local dir="$1" id="$2" pfile="$3" route_flags="$4" stream="$5"
+  # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
+  # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
+  # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
+  local rc=0 slog=""
+  if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
+    # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
+    # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
+    # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
+    _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
+  elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; then
+    # Capture stream-json when either the operator wants a live tail (--stream) OR the
+    # deterministic handoff needs the transcript (DETERMINISTIC_HANDOFF=1). The live `tee` to
+    # the terminal happens only under --stream; det-handoff capture is silent.
+    local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
+    slog="$logdir/${id}.stream.jsonl"
+    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+    if [ "$stream" = 1 ]; then
+      _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
+      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
+    else
+      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
+    fi
+  else
+    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+    "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
+  fi
+  _ROS_SLOG="$slog"
+  return "$rc"
+}
+
 cmd_run() {
   local dir="" dry=0 step=0 stream=0 board_arg=""
   while [ $# -gt 0 ]; do
@@ -411,32 +450,13 @@ cmd_run() {
     # stdin when no positional prompt is given.
     local pfile; pfile=$(mktemp)
     _build_prompt "$dir" "$id" > "$pfile"
-    # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
-    # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
-    # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
+    # Run the session via the extracted helper (TASK-000): it picks the correct run-path
+    # (watchdog / --stream|det-handoff stream-json / plain) and returns the session exit code.
+    # slog (the stream-log path, "" when no capture happened) comes back via _ROS_SLOG for the
+    # grounded-completion + deterministic-handoff logic below.
     local rc=0 slog=""
-    if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
-      # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
-      # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
-      # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
-      _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
-    elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; then
-      # Capture stream-json when either the operator wants a live tail (--stream) OR the
-      # deterministic handoff needs the transcript (DETERMINISTIC_HANDOFF=1). The live `tee` to
-      # the terminal happens only under --stream; det-handoff capture is silent.
-      local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
-      slog="$logdir/${id}.stream.jsonl"
-      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-      if [ "$stream" = 1 ]; then
-        _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
-        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
-      else
-        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
-      fi
-    else
-      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-      "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
-    fi
+    _run_one_session "$dir" "$id" "$pfile" "$route_flags" "$stream" || rc=$?
+    slog="$_ROS_SLOG"
     rm -f "$pfile"
     if [ "$rc" != 0 ]; then
       _emit_event "$dir" "$id" blocked "session exited nonzero ($rc)"

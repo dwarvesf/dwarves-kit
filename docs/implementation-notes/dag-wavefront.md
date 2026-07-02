@@ -75,3 +75,17 @@ Fresh-context re-validation caught bugs the first revision introduced. Applied:
   machinery + mock-barrier tests ship now, real waves activate in the followup. Documented as inert.
 - **Split convergence into its own task** (TASK-004c) so the missing-merge closure has its own
   acceptance, not proven only transitively.
+
+## 2026-07-03 14:30 , TASK-000 extract _run_one_session
+
+**Context.** The spec keys the helper on `dir id pfile route_flags`, but the three run-paths also
+read `stream` (a `cmd_run` local, set from `--stream`) and must return both the exit code and the
+`slog` stream-log path that post-session logic (grounded completion, deterministic handoff) consumes.
+**Decision.** Passed `stream` as an explicit 5th positional arg (`dir id pfile route_flags stream`);
+exposed `slog` via a global `_ROS_SLOG` that the caller reads immediately after the call
+(`slog="$_ROS_SLOG"`). Return value carries `rc` via `|| rc=$?` at the call site, matching the
+former inline capture.
+**Why.** bash 3.2 has no namerefs, so a return-by-name for `slog` uses a well-known global; `stream`
+is a local not a global so it cannot be read implicitly like `WATCHDOG_STALL_SECS`/`DETERMINISTIC_HANDOFF`.
+**Impact.** Zero behavior change: the watchdog / stream-json / plain branches moved verbatim (comments
+included). tests/test-orchestrate.sh 59/59 green, tests/test-meta.sh 578/578 green, before and after.
