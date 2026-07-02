@@ -74,6 +74,16 @@ classify() {
   echo behavioral
 }
 
+# deployable <root> <base>: prints yes|no by mapping classify()'s existing "stateful" class
+# to "deployable" (SG-07: deployable-done, ADR-0028/ADR-0025). PURELY ADDITIVE -- a relabel
+# of classify()'s output for readability at call sites, never a second classifier. Does not
+# read or touch classify()'s logic, and classify()/check() are otherwise byte-unchanged.
+deployable() {
+  local root="${1:-}" base="${2:-}"
+  [ -n "$root" ] && [ -n "$base" ] || { echo "usage: deployable <root> <base>" >&2; return 64; }
+  [ "$(classify "$root" "$base")" = "stateful" ] && echo yes || echo no
+}
+
 # the verification-log files this branch added/modified (excludes the convention README).
 # Two accepted shapes: the repo-root convention (docs/verification/<slug>.md) AND a proof
 # co-located with its subject anywhere in the tree (any path ending /proof-of-done.md, e.g.
@@ -215,5 +225,6 @@ case "$cmd" in
   check)         check "$@" ;;
   override)      override "$@" ;;
   is-overridden) is_overridden "$@" ;;
-  *) echo "usage: proof-ledger.sh {classify|check|override|is-overridden} ..." >&2; exit 64 ;;
+  deployable)    deployable "$@" ;;
+  *) echo "usage: proof-ledger.sh {classify|check|override|is-overridden|deployable} ..." >&2; exit 64 ;;
 esac
