@@ -147,7 +147,36 @@ check() {
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
 
   if [ -n "$slug" ] && is_overridden "$slug"; then
-    echo "proof-of-done: OVERRIDDEN for '$slug' (logged, see $OVERRIDE_LOG)" >&2
+    # cc-hyg-04: an override excuses docs / deploy-inert work, NOT application source
+    # code. A blanket override that silently passes an unproven SOURCE change is the
+    # rtk-611 hole (2026-07-01: an overridden branch shipped a broken source change,
+    # reverted 9h later). Deploy scripts under a deploy/ path stay override-able (they
+    # are verified via deploy-proof/UAT per SPEC-095); source code elsewhere is not.
+    # Build the source-code remainder. A file counts as source if it has a code
+    # extension OR is an extensionless shebang script (e.g. the kit's own
+    # lib/handoff-gen); deploy scripts at a SANCTIONED location (repo-root deploy/
+    # or a per-tool tools/<name>/deploy/) are exempt -- but a `deploy` dir nested
+    # anywhere else (src/deploy/, lib/deploy/) is NOT, or it would reopen the hole.
+    local src_remainder="" f
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      case "$f" in deploy/*|tools/*/deploy/*) continue ;; esac   # sanctioned deploy: override-able
+      if printf '%s' "$f" | grep -qE '\.(sh|bash|zsh|py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|c|h|cc|cpp|hpp|java|php|swift|kt|kts|scala|clj|cljs|ex|exs|lua|pl|pm|r|m|mm|sql)$'; then
+        src_remainder="${src_remainder}${f}"$'\n'; continue
+      fi
+      # extensionless file (no dot in basename): treat as source if it is a shebang script.
+      case "$(basename "$f")" in
+        *.*) : ;;
+        *) [ -f "$root/$f" ] && [ "$(head -c2 "$root/$f" 2>/dev/null)" = '#!' ] && src_remainder="${src_remainder}${f}"$'\n' ;;
+      esac
+    done < <(_changed "$root" "$base")
+    if [ -n "$src_remainder" ]; then
+      echo "proof-of-done: override for '$slug' REJECTED -- the branch changes source files with no proof of done:" >&2
+      printf '%s' "$src_remainder" | sed 's/^/    - /' >&2
+      echo "  An override excuses docs / deploy-inert work only. Provide a proof of done for the source change (run /kit:verify), or split it out." >&2
+      return 1
+    fi
+    echo "proof-of-done: OVERRIDDEN for '$slug' (docs/deploy-inert remainder; logged, see $OVERRIDE_LOG)" >&2
     return 0
   fi
 

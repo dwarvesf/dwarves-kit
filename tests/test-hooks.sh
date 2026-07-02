@@ -705,6 +705,19 @@ SLOP_NG=$( cd "$NOGIT" && echo '{"stop_hook_active":false,"assistant_response":"
   | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/slop-cleaner.sh" 2>/dev/null )
 assert_output_not_contains "slop: no scan outside a git work tree (guard)" "orphan.py" "$SLOP_NG"
 
+# --- cc-hyg-04: resolution memory. A flagged file nudges once per session, then
+# stays silent until its content changes (kills the "same 7 files re-flagged 19x" tax).
+MEM_MARK=$(mktemp "${TMPDIR:-/tmp}/dk-memmark.XXXXXX"); touch -t 202001010000 "$MEM_MARK"
+MEM_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-mem.XXXXXX"); ( cd "$MEM_DIR" && git init -q )
+printf 'v%s = 1\n' $(seq 350) > "$MEM_DIR/big.py"      # >300 lines -> bloat
+_slop_mem() { ( cd "$MEM_DIR" && echo '{"stop_hook_active":false,"session_id":"memtest"}' \
+  | DWARVES_KIT_SESSION_MARKER="$MEM_MARK" bash "$KIT_DIR/hooks/slop-cleaner.sh" 2>/dev/null ); }
+MEM1=$(_slop_mem); assert_output_contains "slop-mem: first Stop reports the file" "big.py" "$MEM1"
+MEM2=$(_slop_mem); assert_output_not_contains "slop-mem: second Stop (unchanged) is silent" "big.py" "$MEM2"
+printf 'x%s = 2\n' $(seq 360) > "$MEM_DIR/big.py"      # content changes, still bloated
+MEM3=$(_slop_mem); assert_output_contains "slop-mem: content change re-flags" "big.py" "$MEM3"
+rm -rf "$MEM_DIR" "$MEM_MARK"
+
 # ============================================================
 echo ""
 echo "=== session-state-save.sh (SPEC-086) ==="
@@ -723,6 +736,28 @@ printf 'q = 9\n' > "$NOGIT2/orphan.py"
   | DWARVES_KIT_SESSION_MARKER="$SCAN_MARKER" bash "$KIT_DIR/hooks/session-state-save.sh" 2>/dev/null )
 SS_NG=$(cat "$NOGIT2/.claude/session-state/last-state.md" 2>/dev/null)
 assert_output_not_contains "session-state: no scan outside a git work tree (guard)" "orphan.py" "$SS_NG"
+
+# --- cc-hyg-04: change-gated debounce. An unchanged Stop skips the rewrite+rotate;
+# a real change writes again (cuts the every-Stop tax without staleness risk).
+DB_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dk-db.XXXXXX")
+( cd "$DB_DIR" && git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m base )
+# DEBUG=1 makes the hook print a "skipping" line when it debounces -- a robust
+# signal (archive filenames collide at 1s resolution, so counting is flaky).
+_ss_run() { ( cd "$DB_DIR" && echo '{"stop_hook_active":false}' | DWARVES_KIT_DEBUG=1 bash "$KIT_DIR/hooks/session-state-save.sh" 2>&1 ); }
+_ss_run >/dev/null                                          # first save (establishes fingerprint)
+DB2=$(_ss_run)                                              # unchanged -> should debounce
+assert_output_contains "session-state: debounce skips when unchanged" "skipping" "$DB2"
+( cd "$DB_DIR" && git commit -q --allow-empty -m change )   # HEAD changes -> fingerprint differs
+DB3=$(_ss_run)
+assert_output_not_contains "session-state: writes again after a real change" "skipping" "$DB3"
+# finding 3: further edits to an ALREADY-dirty file (dirty COUNT unchanged) must re-save.
+# A count-based fingerprint would wrongly debounce this; a content hash re-saves.
+( cd "$DB_DIR" && echo one > tracked.txt && git add tracked.txt && git commit -q -m addfile && echo edit1 >> tracked.txt )
+_ss_run >/dev/null                                          # save with tracked.txt dirty (1 dirty file)
+( cd "$DB_DIR" && echo edit2-more >> tracked.txt )          # same file, still 1 dirty -> count unchanged
+DB4=$(_ss_run)
+assert_output_not_contains "session-state: content change to an already-dirty file re-saves (not count)" "skipping" "$DB4"
+rm -rf "$DB_DIR"
 
 rm -rf "$SCAN_DIR" "$NOGIT" "$NOGIT2" "$SCAN_MARKER"
 
@@ -1084,14 +1119,40 @@ bash "$PL" check "$ROOT" "$BASE" mig >/dev/null 2>&1; assert_exit "ledger: state
 mkdir -p "$ROOT/docs/verification"; printf '## entry\n- Command: x\n- Verdict: [UNAVAILABLE: no staging db]\n' > "$ROOT/docs/verification/mig.md"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "test(db): proof unavailable"
 bash "$PL" check "$ROOT" "$BASE" mig >/dev/null 2>&1; assert_exit "ledger: stateful, [UNAVAILABLE] -> PASS" 0 "$?"
-# logged override turns a block into a pass (and leaves a trace).
+# cc-hyg-04: an override excuses docs / deploy-inert work, NOT source code.
+# (a) override on a SOURCE change -> still REJECTED (rtk-611 hole closed).
 R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
 git -C "$ROOT" switch -q -c feat/hot; mkdir -p "$ROOT/lib"; echo z > "$ROOT/lib/z.sh"
-git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(z): urgent behavior change"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(z): urgent source change"
 bash "$PL" check "$ROOT" "$BASE" hot >/dev/null 2>&1; assert_exit "ledger: pre-override -> BLOCK" 1 "$?"
 bash "$PL" override hot "emergency, proof to follow" >/dev/null 2>&1
-bash "$PL" check "$ROOT" "$BASE" hot >/dev/null 2>&1; assert_exit "ledger: logged override -> PASS" 0 "$?"
+bash "$PL" check "$ROOT" "$BASE" hot >/dev/null 2>&1; assert_exit "ledger: override on SOURCE -> still REJECTED (cc-hyg-04)" 1 "$?"
 assert_true "ledger: override leaves a trace" "$([ -f "$DWARVES_KIT_LOG_DIR/proof-overrides.log" ] && grep -q hot "$DWARVES_KIT_LOG_DIR/proof-overrides.log" && echo 0 || echo 1)"
+# (b) override on a docs/deploy-inert (non-source) change -> PASS.
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c feat/cfg; mkdir -p "$ROOT/deploy"; printf 'port: 8080\n' > "$ROOT/deploy/app.yaml"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "chore(deploy): bump port"
+bash "$PL" check "$ROOT" "$BASE" cfg >/dev/null 2>&1; assert_exit "ledger: config-only pre-override -> BLOCK" 1 "$?"
+bash "$PL" override cfg "config-only, no behavioral claim" >/dev/null 2>&1
+bash "$PL" check "$ROOT" "$BASE" cfg >/dev/null 2>&1; assert_exit "ledger: override on deploy-inert -> PASS (cc-hyg-04)" 0 "$?"
+# (c) a `deploy` dir NESTED under source (src/deploy/) is NOT the sanctioned location -> REJECTED.
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c feat/nest; mkdir -p "$ROOT/src/deploy"; echo 'print(1)' > "$ROOT/src/deploy/core.py"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat: nested deploy source"
+bash "$PL" override nest "trust me" >/dev/null 2>&1
+bash "$PL" check "$ROOT" "$BASE" nest >/dev/null 2>&1; assert_exit "ledger: override on src/deploy source -> REJECTED (nested deploy not sanctioned)" 1 "$?"
+# (c2) a per-tool tools/<name>/deploy/ script IS sanctioned -> override PASSES.
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c feat/tooldep; mkdir -p "$ROOT/tools/foo/deploy"; echo 'echo go' > "$ROOT/tools/foo/deploy/roll.sh"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "chore: tool deploy script"
+bash "$PL" override tooldep "manual deploy verified" >/dev/null 2>&1
+bash "$PL" check "$ROOT" "$BASE" tooldep >/dev/null 2>&1; assert_exit "ledger: override on tools/*/deploy script -> PASS (sanctioned)" 0 "$?"
+# (d) an extensionless shebang script counts as source -> override REJECTED.
+R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
+git -C "$ROOT" switch -q -c feat/shebang; printf '#!/usr/bin/env bash\necho hi\n' > "$ROOT/mytool"; chmod +x "$ROOT/mytool"
+git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat: extensionless tool"
+bash "$PL" override shebang "trust me" >/dev/null 2>&1
+bash "$PL" check "$ROOT" "$BASE" shebang >/dev/null 2>&1; assert_exit "ledger: override on extensionless shebang script -> REJECTED" 1 "$?"
 
 # the ship-gate HOOK itself blocks (exit 2) a behavioral change with no proof in an
 # opted-in, SPEC-LESS repo (proves the wall + the bridge), and passes when proof exists.

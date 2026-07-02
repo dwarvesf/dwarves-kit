@@ -30,6 +30,25 @@ trap 'exit 0' ERR
 
 mkdir -p "$STATE_DIR" "$ARCHIVE_DIR"
 
+# Change-gated debounce (cc-hyg-04): skip the rewrite+rotate when nothing material
+# changed since the last save. The existing last-state.md is still accurate for crash
+# recovery, so skipping is safe, and it cuts the every-Stop tax (measured ~38 min/mo)
+# with no staleness risk. Fingerprint = branch | uncommitted-count | HEAD sha.
+FP_FILE="$STATE_DIR/.last-fingerprint"
+# Fingerprint the CONTENT of the working state, not a dirty-file count: hash the
+# tracked diff (`git diff HEAD`) plus the untracked file list. A count would miss
+# further edits to an already-dirty file (same count -> stale crash-recovery
+# snapshot for the rest of a single-file editing streak). Exclude the hook's own
+# untracked .claude/session-state/ output, else the fingerprint never stabilizes.
+FP=$(printf '%s|%s|%s' \
+  "$(git branch --show-current 2>/dev/null || echo -)" \
+  "$( { git diff HEAD 2>/dev/null; git status --porcelain --untracked-files=all 2>/dev/null | { grep -vF '.claude/session-state/' || true; }; } | { shasum 2>/dev/null || sha1sum 2>/dev/null; } | awk '{print $1}')" \
+  "$(git rev-parse HEAD 2>/dev/null || echo -)")
+if [ -f "$STATE_FILE" ] && [ -f "$FP_FILE" ] && [ "$FP" = "$(cat "$FP_FILE" 2>/dev/null)" ]; then
+  [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:session-state] unchanged since last save, skipping" >&2
+  exit 0
+fi
+
 # Rotate: archive current state before overwriting
 if [ -f "$STATE_FILE" ]; then
   ARCHIVE_TS=$(date +"%Y%m%d-%H%M%S")
@@ -102,6 +121,9 @@ Read CLAUDE.md and the active spec (docs/specs/SPEC-NNN) for full context.
 Check git status for uncommitted work.
 Run 'start' to detect what to do next.
 STATE
+
+# Record the fingerprint so the next unchanged Stop can debounce.
+printf '%s' "$FP" > "$FP_FILE" 2>/dev/null || true
 
 [ "${DWARVES_KIT_DEBUG:-0}" = "1" ] && echo "[dwarves-kit:session-state] state saved to $STATE_FILE" >&2
 
