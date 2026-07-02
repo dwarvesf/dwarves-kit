@@ -221,13 +221,16 @@ mark() {
   local pr="${1:-}" repo="${2:-}"
   case "$pr" in ''|*[!0-9]*) echo "mark: <pr> must be a bare PR number (got '$pr')" >&2; return 64 ;; esac
   local gh="${MEGA_MERGE_GH:-gh}"
+  # ${rf[@]+"${rf[@]}"} is the set -u-safe empty-array expansion (bash 3.2 on the macos CI runner
+  # throws "unbound variable" on a bare "${rf[@]}" over an empty array under set -u; same guard as
+  # _merge_exclusion's larr handling above).
   local rf=(); [ -n "$repo" ] && rf=(--repo "$repo")
   # idempotent label-ensure (|| true: already exists is the common case)
-  "$gh" label create do-not-merge "${rf[@]}" --color B60205 --description "held: do not auto-merge (mega gate/gated-final)" >/dev/null 2>&1 || true
+  "$gh" label create do-not-merge ${rf[@]+"${rf[@]}"} --color B60205 --description "held: do not auto-merge (mega gate/gated-final)" >/dev/null 2>&1 || true
   # draft = the primary, GitHub-intrinsic block; `pr ready --undo` converts an open PR to draft
-  "$gh" pr ready "$pr" "${rf[@]}" --undo >/dev/null 2>&1 || true
+  "$gh" pr ready "$pr" ${rf[@]+"${rf[@]}"} --undo >/dev/null 2>&1 || true
   # do-not-merge label = the mark the code guard (_merge_exclusion) reads
-  "$gh" pr edit "$pr" "${rf[@]}" --add-label do-not-merge >/dev/null 2>&1 || true
+  "$gh" pr edit "$pr" ${rf[@]+"${rf[@]}"} --add-label do-not-merge >/dev/null 2>&1 || true
   echo "marked PR #$pr held: draft + do-not-merge"
 }
 

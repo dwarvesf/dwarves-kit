@@ -21,6 +21,19 @@ is the belt-and-suspenders the code guard reads. `gh pr ready <pr> --undo` is th
 command. All steps `|| true` for idempotence (re-mark is safe; a re-run over an already-draft PR
 does not error the verb).
 
+## 2026-07-02 bash 3.2 empty-array expansion (macos CI caught it)
+
+**Context:** first CI run failed only on macos-latest (bash 3.2.57); the 3 `mark` gh-call pins
+failed. `mega-merge.sh` runs under `set -uo pipefail`.
+**Decision:** expand the optional `--repo` flag array with `${rf[@]+"${rf[@]}"}`, not bare
+`"${rf[@]}"`.
+**Why:** bash 3.2 throws "unbound variable" on `"${rf[@]}"` over an EMPTY array under `set -u`
+(the same quirk `_merge_exclusion`'s `larr` guard documents). The set-u-safe idiom expands to
+nothing when empty.
+**Impact:** verified against real bash 3.2 (`/bin/bash` on this Mac) before re-push, not just the
+5.x default. Lesson: test new array code in mega-merge on `/bin/bash` (3.2) locally to match the
+macos CI runner.
+
 ## 2026-07-02 guard unchanged
 
 The SPEC-100 `_merge_exclusion` guard is byte-unchanged; this sub-goal adds only the mark half.
