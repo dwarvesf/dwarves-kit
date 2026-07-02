@@ -425,7 +425,16 @@ Every hook logs to stderr what it matched and what it decided. Run the failing s
 | Statusline showing defaults | run `bash hooks/statusline.sh < /dev/null` and inspect |
 | Hook silently does nothing | `DWARVES_KIT_DEBUG=1` and re-trigger; check stderr |
 
-The log paths default to `~/.claude/dwarves-kit/logs/` (line format `timestamp | EVENT | detail | project_dir`; these build the eval corpus for future AutoResearch optimization). Set `DWARVES_KIT_LOG_DIR` to redirect them elsewhere; the test suite sets it to a throwaway `mktemp` dir so running tests never writes into your real `~/.claude` tree.
+Log paths (line format `timestamp | EVENT | detail | project_dir`). The **run corpus**
+that feeds `/kit:retro` and the effectiveness eval (`runs/<rid>.log`, `completeness.log`,
+`proof-overrides.log`) defaults to `${XDG_STATE_HOME:-~/.local/state}/dwarves-kit/logs/`
+(SPEC-097: outside the plugin-reinstall blast zone so it survives a reinstall; an existing
+`~/.claude/dwarves-kit/logs` corpus is migrated in additively on first use). The **hook
+diagnostic logs** above (`safety-gate.log`, `slop-cleaner.log`, etc.) stay at
+`~/.claude/dwarves-kit/logs/` , they are ephemeral breadcrumbs, not corpus. Set
+`DWARVES_KIT_LOG_DIR` to redirect the corpus elsewhere (it also disables auto-migration, so
+an explicit path never ingests the legacy corpus); the test suite sets it to a throwaway
+`mktemp` dir so running tests never writes into your real tree.
 
 ### Common failure modes
 

@@ -31,7 +31,11 @@
 set -uo pipefail
 
 PROOF_LEDGER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
+# shellcheck source=lib/kit-log-dir.sh
+source "$PROOF_LEDGER_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+kit_migrate_log_dir || true
+LOG_DIR="$(kit_resolve_log_dir)"
 OVERRIDE_LOG="$LOG_DIR/proof-overrides.log"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }

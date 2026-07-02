@@ -25,10 +25,23 @@ set -euo pipefail
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT_ROOT="$(cd "$GATE_DIR/.." && pwd)"
 WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
-LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
+# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration out of the
+# ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
+# shellcheck source=lib/kit-log-dir.sh
+source "$GATE_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+kit_migrate_log_dir || true
+LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# Collapse newlines/carriage-returns in operator/LLM-supplied free text to spaces before it
+# is written to the append-only ledger (security review B1). Without this, a reason/action
+# containing an embedded newline splits into extra pipe-delimited lines that readers
+# (check/progress/descent + the SPEC-097 override guard) cannot distinguish from real GATE
+# lines -- a prompt-injection -> ledger-forgery -> gate-bypass chain (a forged `| ran |`
+# line makes check() believe a required gate ran). One ledger line per call, always.
+oneline() { printf '%s' "${*:-}" | tr '\n\r' '  '; }
 
 # TTY-gated colors (SPEC-069): escape codes emit ONLY on an interactive stdout with
 # NO_COLOR unset, so every piped consumer (300+ test pins, scripts) sees plain bytes.
@@ -116,20 +129,35 @@ record() {
   local rid="${1:-}" raw="${2:-}" state="${3:-}"; shift 3 2>/dev/null || { echo "usage: record <rid> <phase> <ran|skipped> [reason]" >&2; return 64; }
   case "$state" in ran|skipped) ;; *) echo "state must be ran|skipped" >&2; return 64;; esac
   mkdir -p "$RUNS_DIR"
-  printf '%s | GATE | %s | %s | %s\n' "$(now)" "$(normalize_phase "$raw")" "$state" "${*:-}" >> "$(ledger_file "$rid")"
+  printf '%s | GATE | %s | %s | %s\n' "$(now)" "$(normalize_phase "$raw")" "$state" "$(oneline "$@")" >> "$(ledger_file "$rid")"
 }
 
 action() {
   local rid="${1:-}"; shift 2>/dev/null || { echo "usage: action <rid> <text>" >&2; return 64; }
   mkdir -p "$RUNS_DIR"
-  printf '%s | ACTION | %s\n' "$(now)" "${*:-}" >> "$(ledger_file "$rid")"
+  printf '%s | ACTION | %s\n' "$(now)" "$(oneline "$@")" >> "$(ledger_file "$rid")"
 }
 
 override() {
   local rid="${1:-}" raw="${2:-}"; shift 2 2>/dev/null || { echo "usage: override <rid> <phase> <reason>" >&2; return 64; }
-  local reason="${*:-}"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
+  local reason; reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
+  local phase; phase="$(normalize_phase "$raw")"
+  local f; f="$(ledger_file "$rid")"
+  # Blanket-override guard (SPEC-097): a reason already used to override a DIFFERENT phase
+  # in this run is one pasted across all gates, which defeats the per-gate audit trail --
+  # reject it (exit 65). Re-applying the same reason to the SAME phase (idempotent re-run)
+  # is fine. Split on ' | ' so fields line up with the write format below.
+  if [ -f "$f" ] && awk -F' [|] ' -v p="$phase" -v r="$reason" '
+        $2=="GATE" && $4=="override" && $3!=p {
+          rr=$5; for (i=6; i<=NF; i++) rr=rr " | " $i   # reason may contain " | "
+          if (rr==r) found=1
+        }
+        END { exit !found }' "$f"; then
+    echo "override rejected: reason already used for another gate in run '$rid' -- each gate override needs its own reason (SPEC-097)" >&2
+    return 65
+  fi
   mkdir -p "$RUNS_DIR"
-  printf '%s | GATE | %s | override | %s\n' "$(now)" "$(normalize_phase "$raw")" "$reason" >> "$(ledger_file "$rid")"
+  printf '%s | GATE | %s | override | %s\n' "$(now)" "$phase" "$reason" >> "$f"
 }
 
 show() { local f; f="$(ledger_file "${1:-}")"; if [ -f "$f" ]; then cat "$f"; else echo "(no ledger for '${1:-}')" >&2; return 1; fi; }
