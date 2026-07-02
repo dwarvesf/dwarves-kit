@@ -11,6 +11,8 @@
 #   lane-telemetry.sh report      -> per-lane + per-type aggregates over every run ledger
 #   lane-telemetry.sh misfires    -> the runs where chosen lane != classified lane, plus
 #                                    completeness.log LANE-CHECK lines: the feed for keyword fixes
+#   lane-telemetry.sh render      -> task-type -> lane -> gate routing diagram + run counts
+#                                    (SPEC-099 / ID-150); ASCII, graceful-empty, no new dep
 #   lane-telemetry.sh trace <rid> -> one run's full story, formatted for review (SPEC-063)
 #
 # Line formats consumed (produced by gate-ledger.sh):
@@ -249,13 +251,82 @@ trace() {
     }' "$f"
 }
 
+# render: the task-type -> lane -> gate routing DIAGRAM with run counts over the durable
+# ledgers (SPEC-099 / ID-150). ASCII + markdown only, no new dependency, renders over ssh.
+# Reuses _rows() (no second parser); degrades gracefully to an honest "no runs recorded"
+# on an empty/fresh install rather than crashing or printing fake zeros.
+render() {
+  local filter="${1:-}"   # optional: keep only runs whose lane OR type contains this string
+  if [ ! -d "$RUNS_DIR" ]; then
+    echo "Lane routing: no runs recorded yet (no ledger dir at $RUNS_DIR)."
+    return 0
+  fi
+  local rows; rows="$(_rows)"
+  if [ -n "$filter" ]; then
+    # LITERAL substring match (index), not a regex (~), so a filter like "." or "[" is a
+    # plain string, never an awk regex that over-matches or crashes (review robustness).
+    rows="$(printf '%s\n' "$rows" | awk -v f="$filter" 'BEGIN{FS="\t"} index($3,f)>0 || index($5,f)>0')"
+  fi
+  if [ -z "$rows" ]; then
+    [ -n "$filter" ] && echo "Lane routing: no runs match '$filter'." || echo "Lane routing: no runs recorded yet."
+    return 0
+  fi
+  local n first last
+  n="$(printf '%s\n' "$rows" | grep -c .)"
+  first="$(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $14}' | sort | head -1)"
+  last="$(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $15}' | sort | tail -1)"
+  local runword="runs"; [ "$n" = "1" ] && runword="run"
+  printf '%sLane routing%s  (%s %s%s, window %s .. %s)\n\n' "$C_BOLD" "$C_OFF" "$n" "$runword" "${filter:+, filter=$filter}" "$first" "$last"
+
+  # type -> lane aggregate table (sorted)
+  printf '  %-16s     %-9s %5s  %-13s %6s\n' "task-type" "lane" "runs" "gates r/s/o" "ships"
+  printf '  %s\n' "-------------------------------------------------------------"
+  printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}
+    { k=$5 SUBSEP $3; cnt[k]++; ran[k]+=$7; skip[k]+=$8; ovr[k]+=$9; ship[k]+=$12 }
+    END { for (k in cnt) { split(k,a,SUBSEP);
+      printf "  %-16s ->  %-9s %5d  %-13s %6d\n", a[1], a[2], cnt[k], ran[k]"/"skip[k]"/"ovr[k], ship[k] } }' \
+    | sort
+
+  # ASCII flow: for each lane, the task-types that routed into it + run count
+  echo ""
+  printf '  routing flow (task-type -> lane -> gates):\n\n'
+  printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}
+    { laneruns[$3]++
+      if (index(SUBSEP seen[$3] SUBSEP, SUBSEP $5 SUBSEP)==0) {
+        types[$3]=types[$3] (types[$3]?", ":"") $5; seen[$3]=seen[$3] SUBSEP $5 } }
+    END { for (l in laneruns) printf "    %-40s --> %-9s (%d run%s)\n",
+            substr(types[l],1,40), l, laneruns[l], (laneruns[l]==1?"":"s") }' \
+    | sort -t'>' -k2
+
+  # gate coverage across the (possibly filtered) runs: per phase, how many runs recorded it ran
+  echo ""
+  printf '  gate coverage (runs recording each phase as ran):\n'
+  local files=()
+  local rid
+  while IFS= read -r rid; do [ -n "$rid" ] && [ -f "$RUNS_DIR/$rid.log" ] && files+=("$RUNS_DIR/$rid.log"); done \
+    < <(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $1}')
+  local cov=""
+  # count DISTINCT runs recording each phase (dedupe per rid=FILENAME + phase), not raw
+  # lines: a phase re-recorded within one run (a retry) must not inflate past the run count.
+  [ "${#files[@]}" -gt 0 ] && cov="$(awk -F' [|] ' '$2=="GATE" && $4=="ran"{ gsub(/^ | $/,"",$3);
+      k=FILENAME SUBSEP $3; if (!(k in seen)) { seen[k]=1; c[$3]++ } }
+    END{ for (p in c) printf "    %-16s %d\n", p, c[p] }' "${files[@]}" 2>/dev/null | sort -k2 -rn)"
+  [ -n "$cov" ] && printf '%s\n' "$cov" || echo "    (none)"
+
+  echo ""
+  printf '  legend: gates r/s/o = ran / skipped / override summed over those runs;\n'
+  printf '          "?" lane/type = runs with no START line (untracked; see ID-085).\n'
+  return 0
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     report)   report ;;
     misfires) misfires ;;
+    render)   render "$@" ;;
     trace)    trace "$@" ;;
-    *) echo "usage: lane-telemetry.sh {report|misfires|trace <rid>}" >&2; return 64 ;;
+    *) echo "usage: lane-telemetry.sh {report|misfires|render|trace <rid>}" >&2; return 64 ;;
   esac
 }
 
