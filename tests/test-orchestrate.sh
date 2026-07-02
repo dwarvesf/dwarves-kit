@@ -487,5 +487,57 @@ DH_RM="$DHN/ROADMAP.md" CLAUDE_CMD="$TMP/claude-dh" bash "$ORCH" run "$DHN" > "$
   && pass "default (flag off): no deterministic regeneration, no forced capture (behavior unchanged)" \
   || { fail "deterministic handoff fired with flag off"; cat "$TMP/dhn.out"; }
 
+# ============ TEST 14: gate-ledger START wiring (SPEC-101 / ID-085) ============
+# The automated dispatch emits a START per sub-goal so mega-dispatched runs are tracked
+# (real lane/type), not '?' in lane-telemetry. rid derived from the goal file's **Branch:**.
+mk_mock_good
+LOGDIR="$TMP/startwire-logs"; mkdir -p "$LOGDIR"
+
+# fixture: goal files carry **Branch:** so the driver can derive the rid
+SW="$TMP/mgsw"; mkdir -p "$SW/goals"
+cat > "$SW/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 add a guard clause , auto , PR #__
+- [ ] SG-02 second thing , gate , PR #__
+EOF
+echo "POINTER" > "$SW/POINTER_PROMPT.md"
+printf '# SG-01\n**Branch:** feat/kit-clean-fx1-startwire\n' > "$SW/goals/01-first.md"
+export MOCK_ROADMAP="$SW/ROADMAP.md" MOCK_DIR="$SW"
+DWARVES_KIT_LOG_DIR="$LOGDIR" CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$SW" >/dev/null 2>&1
+SWLOG="$LOGDIR/runs/kit-clean-fx1-startwire.log"
+{ [ -f "$SWLOG" ] && grep -q 'START' "$SWLOG" && grep -qE 'lane=[a-z]+ ' "$SWLOG" && grep -qE 'type=[a-z-]+' "$SWLOG"; } \
+  && ! grep -q 'lane=? ' "$SWLOG" \
+  && pass "START wiring: dispatched SG-01 carries a START with lane+type (rid from **Branch:**)" \
+  || { fail "START wiring: no tracked START line"; ls "$LOGDIR/runs" 2>&1; cat "$SWLOG" 2>&1; }
+
+# negative control: a goal file with NO **Branch:** emits NO START (run left untracked, '?')
+SWN="$TMP/mgswn"; mkdir -p "$SWN/goals"
+cat > "$SWN/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 add a guard clause , auto , PR #__
+- [ ] SG-02 second thing , gate , PR #__
+EOF
+echo "POINTER" > "$SWN/POINTER_PROMPT.md"
+printf '# SG-01\nno branch header here\n' > "$SWN/goals/01-first.md"
+LOGDIRN="$TMP/startwire-logs-neg"; mkdir -p "$LOGDIRN"
+export MOCK_ROADMAP="$SWN/ROADMAP.md" MOCK_DIR="$SWN"
+DWARVES_KIT_LOG_DIR="$LOGDIRN" CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$SWN" > "$TMP/swn.out" 2>&1
+{ [ ! -d "$LOGDIRN/runs" ] || ! grep -rq 'START' "$LOGDIRN/runs" 2>/dev/null; } \
+  && grep -q "no '\*\*Branch:\*\*' header" "$TMP/swn.out" \
+  && pass "START wiring negative control: no **Branch:** -> no START (still '?'), WARN emitted" \
+  || { fail "neg control: START emitted or no WARN"; cat "$TMP/swn.out"; ls "$LOGDIRN/runs" 2>&1; }
+
+# dry-run stays side-effect-free: no START
+SWD="$TMP/mgswd"; mkdir -p "$SWD/goals"
+cp "$SW/ROADMAP.md" "$SWD/ROADMAP.md"; echo "POINTER" > "$SWD/POINTER_PROMPT.md"
+printf '# SG-01\n**Branch:** feat/kit-clean-fxd-startwire\n' > "$SWD/goals/01-first.md"
+LOGDIRD="$TMP/startwire-logs-dry"; mkdir -p "$LOGDIRD"
+DWARVES_KIT_LOG_DIR="$LOGDIRD" bash "$ORCH" run "$SWD" --dry-run >/dev/null 2>&1
+{ [ ! -d "$LOGDIRD/runs" ] || ! grep -rq 'START' "$LOGDIRD/runs" 2>/dev/null; } \
+  && pass "START wiring: --dry-run emits no START (side-effect-free)" \
+  || { fail "dry-run emitted a START"; ls "$LOGDIRD/runs" 2>&1; }
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }
