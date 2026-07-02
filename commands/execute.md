@@ -13,6 +13,40 @@ Before starting, verify:
 
 If any prerequisite fails, tell the user what's missing and stop.
 
+### Spec->build lane re-check (SPEC-094, ADR-0028 refinement point 4)
+
+The lane is frozen at `/kit:assign` classify time -- every re-classify trigger up to
+this point keys on the ORIGINAL task text (intake, `/kit:grill` answers, the
+spec-drift re-check), never on scope that only became concrete once the spec was
+written. This is the spec->build boundary: the spec is VALIDATED/APPROVED and build
+is about to start, so it is the first point a `tiny`/`normal` task's emergent
+auth/data-model/migration scope is visible. Re-classify, up-only, before dispatching
+Step 1:
+
+```bash
+RID=$(bash lib/gate-ledger.sh rid)
+# CURRENT_LANE = the lane already recorded for this run (the spec's `Lane:` header,
+# or the last `gate-ledger.sh start`/`start --amend` line for $RID if the header is
+# missing).
+bash lib/lane-classify.sh escalate "$CURRENT_LANE" docs/specs/SPEC-NNN-<slug>.md
+```
+
+- **`ESCALATE <current> -> <heavier>`**: the spec's own text matches a heavier lane
+  than the one it carries. Re-plan up-only -- this never stops the run, it only adds
+  rigor:
+  1. `bash lib/gate-ledger.sh start --amend "$RID" <heavier> <classified-lane> <chosen-type> <ctype> <repo>` -- readers take the LAST START-AMEND (SPEC-077), so the ledger's effective lane becomes `<heavier>` and `required <heavier>`'s extra measure-twice gates are now required for this run.
+  2. Bump the spec's `Lane:` header UP to `<heavier>` (never down) -- `hooks/ship-gate.sh` reads that header to pick the required gate set, so the heavier set is enforced at ship, not just recorded mid-flight.
+  3. `bash lib/gate-ledger.sh action "$RID" "lane escalated <current> -> <heavier> at spec->build boundary (SPEC-094)"` -- one durable line naming the escalation.
+- **`HOLD <current>`**: the spec-implied lane is the same or lighter than the current
+  one. Do nothing. This is the downgrade guard (mirrors `lane-classify.sh check`):
+  escalation only ever adds rigor, it never removes it, and a lighter re-classification
+  is refused.
+
+Advisory + recorded, not a hard block (ADR-0024, PHILOSOPHY): `escalate` always exits
+0, and a missed or skipped re-check does not stop `/kit:execute`. An unescalated
+under-sized lane still surfaces later, the same place every other lane gap does
+(`hooks/ship-gate.sh` at push, `lib/lane-telemetry.sh misfires` at `/kit:retro`).
+
 ### Context layer detection
 
 Check once before dispatching any tasks:
