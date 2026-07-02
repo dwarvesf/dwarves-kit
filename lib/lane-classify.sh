@@ -28,6 +28,8 @@
 #   lane-classify.sh classify "<desc>"                 -> prints the lane, exit 0
 #   lane-classify.sh explain  "<desc>"                 -> prints the lane + reason + fired flags
 #   lane-classify.sh check <chosen-lane> "<desc>"      -> warn+log if chosen < floor, exit 0
+#   lane-classify.sh escalate <current-lane> <spec-file>  -> up-only spec->build re-classify
+#                                                            (ESCALATE <cur> -> <heavier> | HOLD <cur>), exit 0
 #   lane-classify.sh lanes                              -> prints the 5 lane names
 #   lane-classify.sh flags                              -> prints the flag names
 
@@ -165,15 +167,52 @@ lane_check() {
   return 0
 }
 
+# Spec->build-boundary re-classification (SPEC-094, ADR-0028 refinement point 4,
+# kit-hardening SG-06). `check` above compares the CHOSEN lane against the original
+# task TEXT at intake; `escalate` compares the lane RECORDED at intake against the
+# SPEC's own text at the point the spec is validated and build is about to start --
+# the first point emergent scope (auth / data-model / migration the one-line task
+# description never carried) is concrete. Up-only: a heavier spec-implied lane
+# escalates; a same-or-lighter one HOLDS (the downgrade guard -- reuses lane_rank,
+# same as lane_check, so a lighter re-class can never win). Advisory: prints the
+# decision and exits 0 always ("Detect, don't dictate"; ADR-0024 mid-flight never
+# hard-blocks). It does NOT mutate the gate-ledger or the spec file itself -- the
+# caller (commands/execute.md Prerequisites) does the recording on ESCALATE.
+escalate() {
+  local current="${1:-}" spec_file="${2:-}" cr spec_lane sr
+  if [ -z "$current" ] || [ -z "$spec_file" ]; then
+    echo "usage: lane-classify.sh escalate <current-lane> <spec-file>" >&2; return 64
+  fi
+  [ -f "$spec_file" ] || { echo "escalate: spec file '$spec_file' not found" >&2; return 64; }
+
+  cr="$(lane_rank "$current")"
+  if [ "$cr" -lt 0 ]; then
+    echo "LANE-UNKNOWN: '$current' is not a lane (tiny|normal|full|bug|backfill); not checked" >&2
+    return 0
+  fi
+
+  classify_core "$(cat "$spec_file")"
+  spec_lane="$LANE"
+  sr="$(lane_rank "$spec_lane")"
+
+  if [ "$sr" -gt "$cr" ]; then
+    printf 'ESCALATE %s -> %s\n' "$current" "$spec_lane"
+  else
+    printf 'HOLD %s\n' "$current"
+  fi
+  return 0
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     classify) classify_core "$@"; printf '%s\n' "$LANE";;
     explain)  classify_core "$@"; printf '%s\nreason: %s\nflags: %s\n' "$LANE" "$REASON" "${FIRED:-none}";;
     check)    lane_check "$@";;
+    escalate) escalate "$@";;
     lanes)    printf 'tiny\nnormal\nfull\nbug\nbackfill\n';;
     flags)    printf '%s\n' "${_hard_name[@]}" "${_soft_name[@]}";;
-    *) echo "usage: lane-classify.sh {classify \"<desc>\"|explain \"<desc>\"|check <chosen-lane> \"<desc>\"|lanes|flags}" >&2; return 64;;
+    *) echo "usage: lane-classify.sh {classify \"<desc>\"|explain \"<desc>\"|check <chosen-lane> \"<desc>\"|escalate <current-lane> <spec-file>|lanes|flags}" >&2; return 64;;
   esac
 }
 

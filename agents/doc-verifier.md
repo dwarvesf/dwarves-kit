@@ -80,7 +80,7 @@ Contradictions:
 - Be precise: "the count is wrong" is useless; "README.md:10 says `14 hooks` but `ls hooks/*.sh` shows 15" is useful.
 - Keep output compact so `/docs` parses the verdict quickly.
 
-Source: GSD `agents/gsd-doc-verifier.md` (read-only adversarial doc fact-checker, "assume every claim is wrong until the filesystem proves it"); adapted to the kit's three-verdict shape. Reuses the verification-pipeline split (read-only verifier; the writer applies the fix), ADR-0005. Sibling of `integration-checker` (SPEC-021). See docs/specs/SPEC-022-doc-verifier.md and ADR-0016.
+Source: GSD `agents/gsd-doc-verifier.md` (read-only adversarial doc fact-checker, "assume every claim is wrong until the filesystem proves it"); adapted to the kit's three-verdict shape. Reuses the verification-pipeline split (read-only verifier; the writer applies the fix), ADR-0005. Sibling of `integration-verifier` (SPEC-021). See docs/specs/SPEC-022-doc-verifier.md and ADR-0016.
 
 ## Return contract (distilled return, SPEC-087 Mechanism C)
 

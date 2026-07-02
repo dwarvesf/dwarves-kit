@@ -18,7 +18,7 @@ The dispatch prompt names the mode and gives the description. If unstated, infer
 
 ### Mode A: subagent definition (`agents/<slug>.md`)
 
-Draft a new kit subagent. Match `agents/reviewer.md` / `agents/research-architecture.md` exactly:
+Draft a new kit subagent. Match `agents/code-reviewer.md` / `agents/research-architecture.md` exactly:
 
 - Frontmatter (YAML, in this order): `name:` (kebab slug), `description:` (one line: what it does + who dispatches it + read-only?), `tools:` (a YAML list), `model:` one of `sonnet|haiku|opus`.
 - **Determine MINIMAL tools.** Start from nothing; add only what the role provably needs. Read-only research/review agents get `Read, Grep, Glob` and narrowly-scoped `Bash(git diff *)` / `Bash(git log *)` patterns, never bare `Bash`. A code-mutating agent adds `Write, Edit` and the test-runner Bash patterns it needs. Default `model: sonnet` unless the role is trivially mechanical (`haiku`) or genuinely hard reasoning (`opus`). Justify the tool list and model in one line in the body.

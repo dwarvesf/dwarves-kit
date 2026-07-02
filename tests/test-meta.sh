@@ -708,34 +708,34 @@ fi
 
 # ============================================================
 echo ""
-echo "=== Integration-checker (SPEC-021) ==="
+echo "=== Integration-verifier (SPEC-021) ==="
 # ============================================================
 # The cross-task wiring verifier must exist, stay read-only (no write tools in
 # its frontmatter), and be dispatched by /execute. The generic agent-loop above
 # already checks its name/description/model and the MANUAL cross-ref.
 
-ICA="$KIT_DIR/agents/integration-checker.md"
+ICA="$KIT_DIR/agents/integration-verifier.md"
 TOTAL=$((TOTAL + 1))
 if [ -f "$ICA" ]; then
-  echo -e "  ${GREEN}PASS${NC} agents/integration-checker.md exists"
+  echo -e "  ${GREEN}PASS${NC} agents/integration-verifier.md exists"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} agents/integration-checker.md missing"
+  echo -e "  ${RED}FAIL${NC} agents/integration-verifier.md missing"
   FAIL=$((FAIL + 1))
 fi
 
 # Read-only contract: no bare Bash and no Edit/Write/MultiEdit in the tools list.
 # Scoped Bash(...) entries do not match (they have a paren), so they are allowed.
 WRITE_TOOLS=$(grep -cE '^[[:space:]]*-[[:space:]]+(Edit|Write|MultiEdit|Bash)[[:space:]]*$' "$ICA" 2>/dev/null || true)
-assert_eq "integration-checker has no write/bare-Bash tools (DEC-006)" "0" "$WRITE_TOOLS"
+assert_eq "integration-verifier has no write/bare-Bash tools (DEC-006)" "0" "$WRITE_TOOLS"
 
 TOTAL=$((TOTAL + 1))
-if grep -q 'integration-checker' "$KIT_DIR/commands/execute.md" 2>/dev/null \
+if grep -q 'integration-verifier' "$KIT_DIR/commands/execute.md" 2>/dev/null \
    && grep -q 'base ref' "$KIT_DIR/commands/execute.md" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} commands/execute.md dispatches the integration-checker with a base ref"
+  echo -e "  ${GREEN}PASS${NC} commands/execute.md dispatches the integration-verifier with a base ref"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} commands/execute.md does not wire the integration-checker (+base ref)"
+  echo -e "  ${RED}FAIL${NC} commands/execute.md does not wire the integration-verifier (+base ref)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1933,11 +1933,11 @@ fi
 # (b) verify.md dispatches both read-only test agents (the right-arm levels).
 TOTAL=$((TOTAL + 1))
 if grep -q 'task-verifier' "$KIT_DIR/commands/verify.md" 2>/dev/null \
-   && grep -q 'integration-checker' "$KIT_DIR/commands/verify.md" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} verify.md dispatches task-verifier + integration-checker (SPEC-035)"
+   && grep -q 'integration-verifier' "$KIT_DIR/commands/verify.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} verify.md dispatches task-verifier + integration-verifier (SPEC-035)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} verify.md must dispatch task-verifier + integration-checker"
+  echo -e "  ${RED}FAIL${NC} verify.md must dispatch task-verifier + integration-verifier"
   FAIL=$((FAIL + 1))
 fi
 
@@ -2420,6 +2420,101 @@ RC=0; awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -q 'kit:ado
 assert_eq "README commands table carries adopt + test-plan-review-team" 0 $RC
 RC=0; awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep '^| context-readiness' | grep -q 'board' || RC=1
 assert_eq "README context-readiness row is board-aware (SPEC-083)" 0 $RC
+
+# ============================================================
+echo ""
+echo "=== ADR-0029: review-function naming convention (SG-08) ==="
+# ============================================================
+# The SG-08 rename (three retired-suffix agent names migrated onto the
+# reviewer/verifier/team axis; see ADR-0029) is a one-time migration; this
+# block is the machine enforcement that keeps a FUTURE off-axis review-agent
+# name from landing silently. Two pure-function checks below (name -> pass/fail)
+# back both the real-roster scan (a)/(b) and the negative control (c), so the
+# same logic that gates the repo is the logic proven to discriminate.
+
+# is_retired_suffix NAME -> 0 (banned) | 1 (not banned)
+# Retired per the ADR-0029 rename map: -checker, -auditor, bare "reviewer",
+# and "-validate" used as a review-function suffix.
+is_retired_suffix() {
+  case "$1" in
+    *-checker) return 0 ;;
+    *-auditor) return 0 ;;
+    reviewer) return 0 ;;
+    *-validate) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# is_on_review_axis NAME -> 0 (conforms) | 1 (off-axis)
+# The convention's positive axis: a review-function name ends in -reviewer
+# (static/left-arm), -verifier (dynamic/right-arm), or -team (panel command).
+# advisor and agent-effectiveness are the named-noun exceptions (see (b)).
+is_on_review_axis() {
+  case "$1" in
+    *-reviewer) return 0 ;;
+    *-verifier) return 0 ;;
+    *-team) return 0 ;;
+    advisor) return 0 ;;
+    agent-effectiveness) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# (a) GLOBAL BAN: no agent file's frontmatter `name:` may use a retired suffix.
+# This is what makes a future off-axis review name FAIL CLOSED -- a new
+# `foo-checker.md` or `foo-auditor.md` (or a re-introduced bare `reviewer`)
+# breaks this loop the moment it is added, without anyone updating this test.
+for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
+  AGENT_NAME=$(awk -F': ' '/^name:/{print $2; exit}' "$AGENT_FILE" | tr -d '[:space:]')
+  TOTAL=$((TOTAL + 1))
+  if is_retired_suffix "$AGENT_NAME"; then
+    echo -e "  ${RED}FAIL${NC} agents/$(basename "$AGENT_FILE") uses a retired suffix (name: $AGENT_NAME)"
+    FAIL=$((FAIL + 1))
+  else
+    echo -e "  ${GREEN}PASS${NC} agents/$(basename "$AGENT_FILE") name '$AGENT_NAME' is not a retired suffix"
+    PASS=$((PASS + 1))
+  fi
+done
+
+# (b) POSITIVE AXIS: every current V-model review agent must be on-axis, i.e.
+# end in -reviewer/-verifier/-team, OR be one of the two allowed named-noun
+# validators. `advisor` is the ADR-0028 cross-cutting generic lens (not
+# per-artifact, so it earns its own noun). `agent-effectiveness` (SPEC-088,
+# SG-01) is intentionally on this list too: it reviews an AGENT DEFINITION,
+# not a V-model work artifact, so like `advisor` it is a named-noun validator,
+# NOT a naming violation -- do not "fix" its name to *-reviewer.
+REVIEW_AGENTS="task-verifier doc-verifier integration-verifier code-reviewer security-reviewer agent-effectiveness advisor brief-reviewer acceptance-verifier system-verifier recheck-verifier"
+for NAME in $REVIEW_AGENTS; do
+  TOTAL=$((TOTAL + 1))
+  if is_on_review_axis "$NAME"; then
+    echo -e "  ${GREEN}PASS${NC} review agent '$NAME' is on the naming axis (reviewer|verifier|team|named-noun)"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} review agent '$NAME' is OFF the ADR-0029 naming axis"
+    FAIL=$((FAIL + 1))
+  fi
+done
+
+# (c) NEGATIVE CONTROL: prove the ban logic actually discriminates, not just
+# that it always passes. Feed it fake names only (never a real agents/ file).
+RC=0
+is_retired_suffix "foo-checker" || RC=1
+is_retired_suffix "foo-auditor" || RC=1
+is_retired_suffix "reviewer" || RC=1
+is_retired_suffix "foo-validate" || RC=1
+assert_eq "negative control: is_retired_suffix REJECTS foo-checker/foo-auditor/reviewer/foo-validate" 0 $RC
+
+RC=0
+is_retired_suffix "foo-reviewer" && RC=1
+is_retired_suffix "foo-verifier" && RC=1
+is_retired_suffix "foo-team" && RC=1
+is_retired_suffix "advisor" && RC=1
+assert_eq "negative control: is_retired_suffix does NOT flag conforming names (no false positives)" 0 $RC
+
+RC=0
+is_on_review_axis "foo-checker" && RC=1
+is_on_review_axis "foo-auditor" && RC=1
+assert_eq "negative control: is_on_review_axis REJECTS off-axis fake names" 0 $RC
 
 echo ""
 echo "=== Results ==="

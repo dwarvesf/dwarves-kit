@@ -13,6 +13,40 @@ Before starting, verify:
 
 If any prerequisite fails, tell the user what's missing and stop.
 
+### Spec->build lane re-check (SPEC-094, ADR-0028 refinement point 4)
+
+The lane is frozen at `/kit:assign` classify time -- every re-classify trigger up to
+this point keys on the ORIGINAL task text (intake, `/kit:grill` answers, the
+spec-drift re-check), never on scope that only became concrete once the spec was
+written. This is the spec->build boundary: the spec is VALIDATED/APPROVED and build
+is about to start, so it is the first point a `tiny`/`normal` task's emergent
+auth/data-model/migration scope is visible. Re-classify, up-only, before dispatching
+Step 1:
+
+```bash
+RID=$(bash lib/gate-ledger.sh rid)
+# CURRENT_LANE = the lane already recorded for this run (the spec's `Lane:` header,
+# or the last `gate-ledger.sh start`/`start --amend` line for $RID if the header is
+# missing).
+bash lib/lane-classify.sh escalate "$CURRENT_LANE" docs/specs/SPEC-NNN-<slug>.md
+```
+
+- **`ESCALATE <current> -> <heavier>`**: the spec's own text matches a heavier lane
+  than the one it carries. Re-plan up-only -- this never stops the run, it only adds
+  rigor:
+  1. `bash lib/gate-ledger.sh start --amend "$RID" <heavier> <classified-lane> <chosen-type> <ctype> <repo>` -- readers take the LAST START-AMEND (SPEC-077), so the ledger's effective lane becomes `<heavier>` and `required <heavier>`'s extra measure-twice gates are now required for this run.
+  2. Bump the spec's `Lane:` header UP to `<heavier>` (never down) -- `hooks/ship-gate.sh` reads that header to pick the required gate set, so the heavier set is enforced at ship, not just recorded mid-flight.
+  3. `bash lib/gate-ledger.sh action "$RID" "lane escalated <current> -> <heavier> at spec->build boundary (SPEC-094)"` -- one durable line naming the escalation.
+- **`HOLD <current>`**: the spec-implied lane is the same or lighter than the current
+  one. Do nothing. This is the downgrade guard (mirrors `lane-classify.sh check`):
+  escalation only ever adds rigor, it never removes it, and a lighter re-classification
+  is refused.
+
+Advisory + recorded, not a hard block (ADR-0024, PHILOSOPHY): `escalate` always exits
+0, and a missed or skipped re-check does not stop `/kit:execute`. An unescalated
+under-sized lane still surfaces later, the same place every other lane gap does
+(`hooks/ship-gate.sh` at push, `lib/lane-telemetry.sh misfires` at `/kit:retro`).
+
 ### Context layer detection
 
 Check once before dispatching any tasks:
@@ -56,7 +90,7 @@ Sequential tasks: TASK-003 > TASK-004 > TASK-005
 
 Ask: "Execute this plan? (A) Start Phase 1 / (B) Adjust task order / (C) Skip to specific task"
 
-Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-checker at Step 4 diffs the whole build from it.
+Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-verifier at Step 4 diffs the whole build from it.
 
 ### Step 2: Execute phase by phase
 
@@ -206,6 +240,28 @@ The task-verifier will return one of three verdicts:
 
 **FAIL:escalate** -> Stop and present the issue to the user. Do not attempt to fix it.
 
+#### 2c-1. Fresh-context re-audit of a task-verifier PASS (recheck-verifier)
+
+Right-arm PASSes are unreviewed by default (ADR-0028 "Right-arm review parity"). When
+task-verifier returns PASS, dispatch the **recheck-verifier** subagent in a FRESH context
+(a new Task-tool call, not a continuation of the task-verifier's own context) with the
+task-verifier's full verdict block (including its `Verification record`). recheck-verifier
+RE-EXECUTES the recorded `Command:` itself and re-judges the outcome from what it observes,
+it never reads back the recorded `Exit:`/`Output (excerpt):` text as evidence -- this is
+what lets it catch a stale or fabricated PASS. Route its verdict:
+
+- **PASS** (the fresh re-execution reproduces the recorded PASS): record `Re-audit: PASS`
+  next to the task's verified line in `docs/verification/<spec-slug>.md`; continue.
+- **FAIL:fixable / FAIL:escalate** (the fresh re-execution does NOT reproduce the recorded
+  PASS): this is a caught stale/fabricated done-claim. Record `Re-audit: FAIL -- <finding>`
+  in `docs/verification/<spec-slug>.md` and surface it to the user at the next phase
+  checkpoint (Step 3).
+
+This step is ADVISORY + RECORDED, never a mid-flight hard block (ADR-0024): a recheck-verifier
+FAIL does not reopen the retry loop and does not block the next task from dispatching; it is
+evidence for the human at the checkpoint. This realizes ADR-0028's trust metric: "% of
+autonomous done-claims that survive a fresh-context re-audit."
+
 #### 2d. Retry loop (max 2 attempts)
 
 When task-verifier returns FAIL:fixable:
@@ -301,11 +357,25 @@ After all phases complete:
    - **inert** (docs / comments / cosmetic): exempt. Record
      `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
    Marking a behavioral or stateful task inert is a finding, not a pass.
-2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-checker** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
+2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
    - **PASS**: continue to the summary.
-   - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-checker.
+   - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-verifier.
    - **FAIL:escalate** (or retry >= 2): stop and report the broken seam to the human; do not declare the build complete.
    A single-task spec skips this step (nothing to wire).
+2b. **Fresh-context re-audit of the integration-verifier PASS (recheck-verifier).** When the
+   integration-verifier above returns PASS, dispatch the **recheck-verifier** subagent in a
+   FRESH context with its full verdict block. recheck-verifier RE-EXECUTES the recorded
+   verification command itself and re-judges, never reading back the recorded record as
+   evidence -- this is what catches a stale or fabricated PASS (ADR-0028 "Right-arm review
+   parity", the trust metric "% of autonomous done-claims that survive a fresh-context
+   re-audit"). Route its verdict:
+   - **PASS**: append `Re-audit: PASS` to the integration verification-log entry (Step 4 item
+     1) and continue.
+   - **FAIL:fixable / FAIL:escalate**: this is a caught stale/fabricated done-claim. Append
+     `Re-audit: FAIL -- <finding>` to the same entry and surface it to the user alongside the
+     execution summary (Step 4 item 3). ADVISORY + RECORDED, never a mid-flight hard block
+     (ADR-0024): it does not reopen the integration retry loop.
+   A single-task spec skips this step (nothing was checked by integration-verifier to re-audit).
 3. Show execution summary:
    ```
    ## Execution complete

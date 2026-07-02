@@ -89,7 +89,15 @@ Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active sp
 **Reads:** `$ARGUMENTS` = the specs to fire (or detects `Status: VALIDATED` specs with a `## Touches` section); each spec's `## Touches` directory-prefix globs; the lead-owned hands-off shared-surface list (from WORKFLOW.md, via `lib/dispatch-gate.sh`).
 **Writes:** nothing in the main checkout itself. Each dispatched worker writes its own `goal/<slug>` branch in an isolated worktree; the lead integrates the hands-off surfaces once via `/kit:ship`.
 **When to invoke:** you have 2+ INDEPENDENT validated specs and want to fire them, tab away, and collect finished branches. The disjointness gate (`lib/dispatch-gate.sh`) decides which run in parallel vs serialize; the drift guard checks each worker stayed in its globs.
-**Common gotcha:** cross-goal ONLY (it never parallelizes one spec's tasks; that is `/kit:execute`, still sequential). It NEVER auto-merges (the human merges at `/kit:ship`) and is NOT a DAG: dependent/sequenced sub-goals are `/kit:mega` (parked), a real ordering graph is GSD v2. A spec without `## Touches` is rejected by the gate, not assumed-empty. Runs under bypassPermissions for tab-away. Source: SPEC-032; ADR-0019 (boundary), ADR-0020 (primitive), SPEC-031 (convergence).
+**Common gotcha:** cross-goal ONLY (it never parallelizes one spec's tasks; that is `/kit:execute`, still sequential). It NEVER auto-merges (the human merges at `/kit:ship`) and is NOT a DAG: dependent/sequenced sub-goals are `/kit:mega` territory, a real ordering graph is GSD v2. A spec without `## Touches` is rejected by the gate, not assumed-empty. Runs under bypassPermissions for tab-away. Source: SPEC-032; ADR-0019 (boundary), ADR-0020 (primitive), SPEC-031 (convergence).
+
+### `/kit:mega`
+
+**Phase:** orchestrate / cross-phase (one destination -> 3-8 dependent sub-goals -> one bounded loop, one PR per sub-goal)
+**Reads:** the conversation's multi-objective intent; `CLAUDE.md` for a `megagoal_root:` / `mega_merge_posture:` hint; each sub-goal's `Done =` + ship-gate ledger via `lib/gate-ledger.sh`; `lib/proof-ledger.sh deployable` (SG-07's classifier) to decide the deploy/UAT terminus.
+**Writes:** the scaffold (`ROADMAP.md`, `goals/NN-*.md`, `POINTER_PROMPT.md`, `HANDOFF.md`, `DECISIONS.md`) at the resolved mega-goal directory (SPEC-034 DEC-002: `.claude/goals/<slug>/` for this repo, never `_meta/`, which is reserved for the BACKLOG cockpit). Nothing else until the loop runs; `/kit:mega` itself opens no PR.
+**When to invoke:** ONE destination reached through 3-8 genuinely DEPENDENT sub-goals (a single chain, no fan-in/fan-out) -- the sequenced complement to `/kit:dispatch`'s independent/parallel case.
+**Common gotcha:** it MIRRORS the ops-toolkit `plan-for-mega-goal` skill's decompose + front-load-checkpoint + per-run-merge-config beats; it does not fork or replace the skill (prefer the skill when installed for anything this command does not cover). Ship-layer auto-merge is real but narrow: only an `auto`-tagged sub-goal's PR can auto-merge, and only once `lib/mega-merge.sh gate` confirms its ship-gate passed (`lib/gate-ledger.sh check`, reused verbatim, never re-implemented); a failing/missing gate REFUSES unconditionally, and the action is dry-run unless `--execute` is passed. `gate`-tagged sub-goals and the final PR under the default `gated-final` posture always stop for a human. `MEGA_MERGE_POSTURE=per-pr-review` (or `--posture=per-pr-review`) forces dry-run on every PR for a team run, overriding `--execute`. Source: ADR-0028 P2/P3; SPEC-034 (roadmap conventions, ID-037); SPEC-096 (this command + `lib/mega-merge.sh`, kit-hardening SG-08); SPEC-095 / SG-07 (the reused `deployable` classifier).
 
 ### Multi-session concurrency (the running-goal registry, `lib/goal-registry.sh`)
 
@@ -182,7 +190,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 
 **Phase:** parallel 3-lens review
 **Reads:** `git diff`
-**Dispatches:** 3 `reviewer` subagents (security, architecture, test-coverage lenses) in parallel + the deeper `security-auditor` agent
+**Dispatches:** 3 `code-reviewer` subagents (security, architecture, test-coverage lenses) in parallel + the deeper `security-reviewer` agent
 **Writes:** a `## Review` section in the active spec with per-lens subsections (replace-not-stack); inline in chat if no spec exists
 **When to invoke:** medium-to-large diff (>300 lines) or any change touching auth, payments, multi-tenant boundaries
 **Common gotcha:** the FIX-THEN-SHIP path dispatches `responding-to-review` to triage findings without performative agreement. Read both the findings AND the response triage before committing fixes.
@@ -191,7 +199,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 
 **Phase:** on-demand test re-run (V-model right arm), read-only
 **Reads:** the active `docs/specs/SPEC-NNN-<slug>.md` (done tasks + acceptance criteria), the working tree / branch
-**Dispatches:** `task-verifier` (per done task) + `integration-checker` (multi-task), read-only
+**Dispatches:** `task-verifier` (per done task) + `integration-verifier` (multi-task), read-only
 **Writes:** nothing; prints a PASS/FAIL verdict (never dispatches `fix-agent`)
 **When to invoke:** after a manual edit post-build, on a branch built elsewhere, or for a read-only `/goal`-loop check, when you want the test levels re-run without a rebuild
 **Common gotcha:** it reports, it does not fix. On FAIL, run `/kit:next` or `/kit:execute` to repair. The integration base ref is the merge-base with the default branch (no build base ref exists outside `/execute`).
@@ -262,10 +270,16 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 |---|---|---|
 | `task-verifier` | `/execute` | Read-only verification per task |
 | `fix-agent` | `/execute` | Targeted fixes on FAIL:fixable (max 2 retries) |
-| `integration-checker` | `/execute` (Step 4, multi-task) | Read-only: verifies the tasks wire together (each component reaches its activation point + the spec's end-to-end chains) |
+| `integration-verifier` | `/execute` (Step 4, multi-task) | Read-only: verifies the tasks wire together (each component reaches its activation point + the spec's end-to-end chains) |
 | `doc-verifier` | `/docs` (Step 4.5) | Read-only: fact-checks the just-updated docs against the live code (counts, names, existence, cross-refs); reports drift, `/docs` fixes |
-| `reviewer` | `/review-team` | Focused review with configurable lens |
-| `security-auditor` | `/review-team` | Deep OWASP-style audit |
+| `agent-effectiveness` | `/kit:draft-agent` (Step 4.7) | Read-only: validates a new/changed agent def's effectiveness (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits); diff-keyed, advisory, fail-safe |
+| `code-reviewer` | `/review-team` | Focused review with configurable lens |
+| `security-reviewer` | `/review-team` | Deep OWASP-style audit |
+| `advisor` | `/review-team` (Step 2b, critique) + ship/mega final boundary (over-suggest) | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
+| `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF.md` or a spec's Problem/Context) for clarity, completeness, testability |
+| `acceptance-verifier` | (right-arm parity roster; dispatchable at the spec's acceptance boundary) | Read-only dynamic verifier: executes the active spec's `## Verification` section end to end, maps each AC to a passing check |
+| `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
+| `recheck-verifier` | `/execute` (fresh-context re-audit over a right-arm PASS) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
 | `research-stack` | `/spec` | Brownfield stack mapping |
 | `research-features` | `/spec` | Brownfield feature inventory |

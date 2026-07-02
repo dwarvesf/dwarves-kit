@@ -80,7 +80,7 @@
   <text x="74" y="410" font-size="13" font-weight="700" fill="#111827">Code</text>
   <text x="74" y="429" font-size="11" fill="#4f46e5" font-family="ui-monospace, Menlo, monospace">build: /kit:execute &#183; /kit:next <tspan fill="#9ca3af">(+fix-agent)</tspan></text>
   <text x="74" y="446" font-size="11" fill="#4f46e5" font-family="ui-monospace, Menlo, monospace">review: /kit:review &#183; /kit:review-team</text>
-  <text x="74" y="463" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">+ security-auditor (deep security, via /kit:review-team)</text>
+  <text x="74" y="463" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">+ security-reviewer (deep security, via /kit:review-team)</text>
 
   <!-- ============ RIGHT COLUMN: TEST ============ -->
   <!-- R1 Acceptance test -->
@@ -105,7 +105,7 @@
     <rect x="680" y="296" width="300" height="3" rx="1.5" fill="#9ca3af"/>
   </g>
   <text x="694" y="318" font-size="13" font-weight="700" fill="#111827">Integration test</text>
-  <text x="694" y="340" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">integration-checker  (agent)</text>
+  <text x="694" y="340" font-size="11" fill="#6b7280" font-family="ui-monospace, Menlo, monospace">integration-verifier  (agent)</text>
 
   <!-- R4 Unit / task test -->
   <g filter="url(#shadow)">

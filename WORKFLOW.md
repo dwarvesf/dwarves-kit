@@ -146,15 +146,15 @@ checks: a static review when it is produced (left/vertex) and a dynamic test lat
    LEFT · BUILD (produce + review each artifact)        RIGHT · TEST (execute the mirror)
    ============================================        =================================
 
-   Brief / Requirement ............................... Acceptance test   /kit:ship gate
-   build /kit:think · /kit:assign  · review (none)
-    Solution-design .................................. System test       project test suite
+   Brief / Requirement ............................... Acceptance test   acceptance-verifier · /kit:verify
+   build /kit:think · /kit:assign  · review brief-reviewer (/kit:think)
+    Solution-design .................................. System test       system-verifier · /kit:verify
     build /kit:design  · review /kit:devs-team
-     Spec ........................................... Integration test   integration-checker
+     Spec ........................................... Integration test   integration-verifier
      build /kit:spec (+research-*) · review /kit:spec-validate
       Code ......................................... Unit / task test    task-verifier
       build /kit:execute · /kit:next                                    (fix-agent repairs)
-      review /kit:review · /kit:review-team (deep security: security-auditor)
+      review /kit:review · /kit:review-team (deep security: security-reviewer)
        ╲                                            ╱
         ╰──── test design: /kit:test-plan writes the tests ────╯
                          (vertex: build = code + test code)
@@ -170,10 +170,12 @@ review when produced (left/vertex), a dynamic test when executed (right).
 
 | Artifact | Built by | Static review (when produced) | Dynamic test (executed later) |
 |---|---|---|---|
-| Brief / requirement | `/kit:think`, `/kit:assign` | (none; ship gate traces back) | Acceptance test (`/kit:ship`) |
-| Solution design | `/kit:design` | `/kit:devs-team` | System test (project suite) |
-| Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-checker`) |
-| Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `reviewer`; deep: `security-auditor`) | Unit / task test (`task-verifier`) |
+| Brief / requirement | `/kit:think`, `/kit:assign` | `brief-reviewer` (dispatched by `/kit:think`) | Acceptance test (`acceptance-verifier`, dispatched by `/kit:verify`; `/kit:ship`'s own test-run step is an inline check, not an agent dispatch) |
+| Solution design | `/kit:design` | `/kit:devs-team` | System test (`system-verifier`, dispatched by `/kit:verify`) |
+| Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-verifier`) |
+| Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `code-reviewer`; deep: `security-reviewer`) | Unit / task test (`task-verifier`) |
+| (any right-arm PASS) | -- | -- | Fresh-context re-audit (`recheck-verifier`, re-executes the recorded command) |
+| (whole assembled work) | -- | `advisor` (kit-default extra lens, P5) | -- |
 | UI design (downstream) | `/kit:ui-design` | `/kit:visual-team` | (visual; no dynamic test) |
 | Docs | (written during build) | `/kit:docs` (+ `doc-verifier`) | (doc-verifier confirms vs code) |
 
@@ -183,7 +185,7 @@ artifact, at the phase that produces it**, mirrored by the right-arm test that l
 validates the same artifact.
 
 **Commands vs agents.** A `/kit:...` entry is a *command* you invoke. A plain name
-(`task-verifier`, `integration-checker`, `reviewer`, `doc-verifier`) is an *agent*
+(`task-verifier`, `integration-verifier`, `code-reviewer`, `doc-verifier`) is an *agent*
 dispatched by a command, never invoked directly. The right-arm tests are executed by
 agents (dispatched inside `/kit:execute`) plus the `/kit:ship` gate. The unit +
 integration levels can also be re-run on demand, read-only, with `/kit:verify` (no rebuild).
@@ -222,32 +224,89 @@ Think, Design (opt-in), Design critique (opt-in), UI design (opt-in), Spec,
 Validate, Test plan (default for normal/full), Build, Review, Docs, Ship, Reflect, and
 Debug (off-cycle).
 
-**The mirror gaps.**
+**The mirror gaps (mostly closed by SG-03/04).**
 
-- **Brief / Requirement** has no static-review command; the `/kit:spec-validate`
-  acceptance-criteria check + the `/kit:ship` gate trace back to the brief instead.
+- **Brief / Requirement** now HAS a static-review agent, `brief-reviewer`, dispatched
+  by `/kit:think` (SG-04 + TIER-4 close-gate wiring); `acceptance-verifier`, dispatched
+  by `/kit:verify`, validates it on the right arm. `/kit:ship`'s own test-run step
+  remains an inline check, not an `acceptance-verifier` dispatch.
 - **Test design is one late step, not shifted left.** `/kit:test-plan` (opt-in)
   writes the tests; workers write the test code at the vertex. The classic V designs
   a test at every left phase; the kit concentrates it, which is why the testing wing
   is on the right.
-- **No system-test command:** the project suite runs at build and at ship.
+- **System test now HAS an agent**, `system-verifier`, dispatched by `/kit:verify`
+  (SG-04 + TIER-4 close-gate wiring); it runs the whole assembled suite (each
+  command's own test-run step still runs at build and at ship too, but that is an
+  inline check, not this agent).
 
-### Coverage gaps
+### Coverage: the V is fully covered (SG-04)
 
-The V is nearly complete. One open hole, judged against PHILOSOPHY criterion #2
-(a feature must serve >= 2 lifecycle phases) and "no phantom features":
+Every V-model artifact now has BOTH a static review and a dynamic test (SG-04 closed
+the last right-arm holes). Judged against PHILOSOPHY criterion #2 (a feature must
+serve >= 2 lifecycle phases) and "no phantom features":
 
-1. **CANDIDATE AGENT `acceptance-verifier`** (optional; v2 candidate). The acceptance
-   test is checked *inline* by `/kit:ship`; everywhere else the kit verifies with a
-   separate read-only agent (per "verify with a fresh context, not self-report").
-   Extracting acceptance into a read-only `acceptance-verifier` that both `/kit:ship`
-   and `/kit:verify` dispatch would complete the right-arm verifier set. Verdict:
-   **consider, not urgent** (the inline gate works today).
+- **`acceptance-verifier` (SHIPPED, SG-04)** -- the acceptance test is now a read-only
+  agent, dispatched by `/kit:verify` (TIER-4 close-gate wiring closed the orphan;
+  `/kit:ship`'s own test-run step stays inline, not this agent). The former "v2
+  candidate" is built.
+- **`system-verifier`, `brief-reviewer` (SHIPPED, SG-04)** -- fill the previously
+  agent-less System-test and Brief rows, and are now actually dispatched:
+  `system-verifier` by `/kit:verify`, `brief-reviewer` by `/kit:think` (TIER-4
+  close-gate wiring).
+- **`recheck-verifier` (SHIPPED, SG-04)** -- a fresh-context re-audit that re-executes
+  any right-arm PASS's recorded command, catching a stale or fabricated PASS.
 
-Two gaps closed 2026-05-23: the `security-auditor` orphan (wired into `/kit:review-team`)
-and `/kit:verify` (shipped, SPEC-035, the on-demand right-arm executor). The V is now
-fully covered by commands + agents; the only open item is the optional `acceptance-verifier`
-(v2 candidate). Everything else would be a phantom.
+Prior gaps closed 2026-05-23: the `security-reviewer` orphan (wired into
+`/kit:review-team`) and `/kit:verify` (SPEC-035). With SG-04, every left AND right
+arm phase has a review/verifier agent; nothing further would be a phantom.
+
+### Every-step review in the full-autonomous lane (P4, SG-05)
+
+In the full lane, EVERY V-model phase maps to a review step that RUNS and records to
+the gate-ledger; no review-bearing phase is `skip`. The mapping (the phase -> review
+that validates it):
+
+| Phase | Review that runs (records to the gate-ledger) |
+|---|---|
+| Think / Brief | `brief-reviewer` (static, dispatched by `/kit:think`) |
+| Design | `/kit:devs-team` (static) · `system-verifier` (dynamic, dispatched by `/kit:verify`) |
+| Spec | `/kit:spec-validate` (static) · `integration-verifier` (dynamic) |
+| Test plan | `/kit:test-plan-review-team` (static) |
+| Build / Code | `/kit:review` · `/kit:review-team` (+ `code-reviewer`, deep `security-reviewer`) · `task-verifier` (dynamic) |
+| Review | `advisor` critique (kit-default EXTRA lens, on top of the specialists) |
+| Docs | `/kit:docs` (+ `doc-verifier`) |
+| Acceptance / Ship | `acceptance-verifier` (dynamic, dispatched by `/kit:verify`) + `/kit:ship`'s own gate (an inline test-run + spec-lane check, not an `acceptance-verifier` dispatch) |
+| (any right-arm PASS) | `recheck-verifier` fresh-context re-audit |
+| Final boundary | `advisor` over-suggest (P6) before the human review |
+
+**Enforcement is at ship, never mid-flight (ADR-0024 + PHILOSOPHY).** Each phase's
+review RUNS and records (`bash lib/gate-ledger.sh record <rid> <phase> ran`);
+mid-flight a failing review is advisory and does NOT halt the run. The only wall is at
+ship: `hooks/ship-gate.sh` refuses a push whose lane has a `measure-twice` phase with
+no `ran`/`override` entry (the lane's required set is parsed from the lane x phase
+matrix). So the full lane inherits full-coverage review for free from bare `/kit:*`,
+with the hard gate at push and advisory records throughout.
+
+## The advisor: the kit-default extra lens (ADR-0028 P5/P6)
+
+One generic `advisor` agent runs at the FINAL integration / UAT boundary as a KIT
+DEFAULT (on every applicable run, not opt-in), in two modes:
+
+- **Critique (P5)** -- an EXTRA, uniform, cross-cutting review lens dispatched ON TOP
+  of the specialized per-phase reviewers (it does NOT replace them: the tailored
+  lenses are the kit's value). It catches what a per-artifact lens is not scoped to
+  see -- cross-artifact inconsistency, a seam between independently-reviewed pieces, a
+  global assumption. Wired into `/kit:review-team` Step 2b. Advisory; folds into the
+  merged findings, never a blocker.
+- **Over-suggest (P6)** -- a generative pass surfaced to the human JUST BEFORE the
+  final review: it proposes additional ideas / sub-goals the completed work now makes
+  cheap or valuable. Dispatched at the ship / mega-lane final boundary (`/kit:mega`,
+  SG-08, consumes it). Proposals only; the human filters.
+
+One agent, two modes. Its `model:` (default `sonnet`) is the cheap-first tier knob so
+a kit-default lens never silently burns `opus` on every run (WORKFLOW.md verification
+cost routing). Born under ADR-0029 as the named-noun `advisor`, gated by the SG-01
+`agent-effectiveness` validator.
 
 ## The V-model descent contract (SPEC-076 / ID-068)
 
@@ -539,7 +598,7 @@ Convergence has three strictly bounded jobs: (1) enumerate and enforce the
 hands-off shared-surface list above, (2) collate the READY/BLOCKED signals from
 all worker branches, and (3) hand the integrated result to `/kit:ship`.
 
-It does NOT do cross-task wiring checks -- that is `integration-checker`'s job,
+It does NOT do cross-task wiring checks -- that is `integration-verifier`'s job,
 run at `/kit:execute` Step 4. It does NOT write the shared surfaces -- that is
 `/kit:ship`'s job (Steps 1b/4a/7 already own those writes). Convergence
 writing to `CHANGELOG.md`, `VERSION`, or any other hands-off surface directly
@@ -776,7 +835,7 @@ recorded + fix verified + human-confirmed.
 worker per task, verifies each in a fresh context, retries fixable failures, and checks
 cross-task wiring at the end. Self-reported "done" is never proof; the verifier is.
 Enforcer: the verification pipeline is itself a hard stop. Stop: every task PASS **and**
-the integration-checker PASS (multi-task specs). Branches: `PASS` (advance),
+the integration-verifier PASS (multi-task specs). Branches: `PASS` (advance),
 `FAIL:fixable` (retry via fix-agent, **max 2**), `FAIL:escalate` or retries exhausted
 (stop -> human).
 
@@ -800,7 +859,7 @@ the integration-checker PASS (multi-task specs). Branches: `PASS` (advance),
               ▼
    phase checkpoint (human: continue / review / stop)
               ▼
-   integration-checker (read-only, diffs whole build from base ref)
+   integration-verifier (read-only, diffs whole build from base ref)
         ┌─────┼───────────────┐
       PASS  FAIL:fixable   FAIL:escalate
         │     │ (fix-agent)     ▼
@@ -850,7 +909,7 @@ later reader and an earlier writer never split across two specs.
 
 The edges that fire when the happy path does not hold.
 
-1. **Retry (fixable failure).** A `task-verifier` / `integration-checker` `FAIL:fixable`
+1. **Retry (fixable failure).** A `task-verifier` / `integration-verifier` `FAIL:fixable`
    dispatches a scoped fix-agent, then re-verifies. Cap: 2 retries. 1-2 cycles catch
    import/assertion/off-by-one bugs; 3+ means a design problem.
 2. **Escalate (unfixable or exhausted).** `FAIL:escalate`, or retries hitting the cap,

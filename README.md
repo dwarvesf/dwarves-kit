@@ -180,7 +180,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (26, manual, human-triggered)</summary>
+<summary><b>Commands</b> (27, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -193,12 +193,13 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
 | /kit:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
 | /kit:dispatch | Orchestrate | Fire N disjoint VALIDATED specs concurrently, each in its own worktree, behind a disjointness gate; lead-owned merge |
+| /kit:mega | Orchestrate | Mirrors the plan-for-mega-goal skill: decompose 3-8 dependent sub-goals, front-load every clarification once, set the per-run merge config, hand off to the bounded loop; ship-layer auto-merge rides the ship-gate via `lib/mega-merge.sh`, never bypasses it |
 | /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /kit:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
-| /kit:verify | Verify | Read-only re-run of task-verifier + integration-checker, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
+| /kit:verify | Verify | Read-only re-run of task-verifier + integration-verifier, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
 | /kit:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
@@ -219,10 +220,10 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
 | task-verifier | /execute | Read-only verification against spec + tests |
-| integration-checker | /execute, /verify | Read-only cross-task wiring + global acceptance check (multi-task specs) |
+| integration-verifier | /execute, /verify | Read-only cross-task wiring + global acceptance check (multi-task specs) |
 | fix-agent | /execute | Targeted fixes on FAIL:fixable (max 2 retries) |
-| reviewer | /review-team | Focused review with configurable lens |
-| security-auditor | /review-team | Deep OWASP-style security audit |
+| code-reviewer | /review-team | Focused review with configurable lens |
+| security-reviewer | /review-team | Deep OWASP-style security audit |
 | responding-to-review | /review-team | Verifies review findings, pushes back when wrong, proposes fixes (no performative agreement) |
 | doc-verifier | /docs | Read-only check that docs match the live codebase |
 | research-stack | /spec | Maps technology stack (brownfield) |
@@ -265,7 +266,7 @@ dwarves-kit/
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   agents/                       (11 files) Subagents dispatched by commands
-  commands/                     (22 markdown command prompts)
+  commands/                     (27 markdown command prompts)
   hooks/                        (14 scripts + hooks.json plugin manifest)
   lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch)
@@ -273,6 +274,7 @@ dwarves-kit/
   lib/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/
   lib/lane-telemetry.sh         Read-side lane-effectiveness aggregator over the run ledgers: report + misfires (reviewed at /kit:retro)
   lib/orchestrate.sh            Non-LLM mega-goal driver: one fresh `claude -p` session per sub-goal so no session marathons (SPEC-087); linear + session-per-sub-goal, NOT a DAG scheduler or daemon. `run <dir>` flags: `--dry-run` (plan only), `--step` (pause for the operator between sub-goals), `--stream` (live stream-json tee'd to `.orchestrate/<id>.stream.jsonl`), `--board=roadmap|kanban|both` (event-sourced per-mega-goal kanban derived to `<dir>/BOARD.md` via `lib/backlog.sh`; default detects, ROADMAP stays canonical). Robustness env (advisory): `WATCHDOG_STALL_SECS>0` backgrounds each session + flags it `stalled` after that long with no output (never kills); a dead/incomplete session never advances its box. Gitignore `.orchestrate/` + `BOARD.md` (derived/runtime)
+  lib/mega-merge.sh             Ship-layer auto-merge ENFORCEMENT for /kit:mega (ADR-0028 P2/P3): `gate <rid> <lane>` (decision, reuses `lib/gate-ledger.sh check`) + `merge <pr> <rid> <lane> [--execute] [--posture=<val>]` (action; refuses unconditionally on a failing/missing gate, dry-run by default, `MEGA_MERGE_POSTURE` team-review opt-out)
   skills/get-api-docs/          Context Hub integration
   rules/                        Path-scoped coding-standard templates
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
