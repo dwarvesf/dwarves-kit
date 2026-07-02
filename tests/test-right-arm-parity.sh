@@ -75,7 +75,7 @@ grep -qE '^VERDICT: PASS' "$PLANTED"; assert "AC4: fixture literally claims VERD
 FIXTURE_CMD=$(grep -m1 '^- Command:' "$PLANTED" | sed -E 's/^- Command: `(.*)`$/\1/')
 if [ -n "$FIXTURE_CMD" ]; then
   assert "AC4: fixture's recorded Command line is extractable" 0
-  eval "$FIXTURE_CMD" >/dev/null 2>&1
+  bash -c "$FIXTURE_CMD" >/dev/null 2>&1
   RC=$?
   if [ "$RC" -ne 0 ]; then
     assert "AC4 [NEGATIVE CONTROL]: fixture's Command ('$FIXTURE_CMD') re-run FAILS (exit $RC), contradicting its own recorded PASS" 0
@@ -100,6 +100,18 @@ RECHECK_HITS=$(grep -c 'recheck-verifier' "$EXEC" 2>/dev/null || echo 0)
 grep -qiE 're-execute|re-run|fresh' "$EXEC"; assert "AC5: execute.md's wiring uses re-execute/re-run/fresh vocabulary, not a read-back framing" $?
 grep -qi 'advisory' "$EXEC" && grep -qi 'never a mid-flight hard block' "$EXEC"
 assert "AC5: execute.md states the re-audit is advisory + recorded, never a mid-flight hard block (ADR-0024)" $?
+
+# --- AC6 [NO-ORPHAN REGRESSION GUARD]: every SG-04 right-arm agent is DISPATCHED by ----
+# --- at least one commands/ file. TIER-4 close-gate fix: brief-reviewer, acceptance-  ---
+# --- verifier, and system-verifier existed (gated + rostered + documented) but had NO --
+# --- command dispatching them; this pins the fix so the orphan cannot recur silently. --
+for NAME in $AGENTS; do
+  if grep -rl "$NAME" "$KIT_DIR/commands/" >/dev/null 2>&1; then
+    assert "AC6 [NO-ORPHAN]: $NAME is dispatched by at least one file under commands/" 0
+  else
+    assert "AC6 [NO-ORPHAN]: $NAME is dispatched by at least one file under commands/" 1
+  fi
+done
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

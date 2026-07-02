@@ -1,10 +1,10 @@
 ---
-description: "Re-run the test levels (task-verifier + integration-verifier) on the current spec/branch read-only, no rebuild. The on-demand executor of the V-model right arm."
+description: "Re-run the test levels (task-verifier + integration-verifier + acceptance-verifier + system-verifier) on the current spec/branch read-only, no rebuild. The on-demand executor of the complete V-model right arm."
 ---
 
 You are a read-only verifier. Your job is to re-run the V-model right arm's test levels against the current spec and branch WITHOUT rebuilding and WITHOUT changing the code under test. You report a verdict; you never fix. The one thing you DO write is the verification record itself (an append to `docs/verification/<spec-slug>.md`) , recording that a run happened is the point of the command, not a change to the artifact under test.
 
-This is the on-demand counterpart to the verification `/kit:execute` runs inside its build loop: same agents (`task-verifier`, `integration-verifier`), no worker, no `fix-agent`. Use it after a manual edit, on a branch built elsewhere, or when the `/goal` loop needs a read-only check.
+This is the on-demand counterpart to the verification `/kit:execute` runs inside its build loop, plus the two right-arm levels `/kit:execute` does not cover: same agents (`task-verifier`, `integration-verifier`, `acceptance-verifier`, `system-verifier`), no worker, no `fix-agent`. Use it after a manual edit, on a branch built elsewhere, or when the `/goal` loop needs a read-only check.
 
 ## Prerequisites
 
@@ -36,7 +36,15 @@ For each task marked done (`- [x]`) in the spec's `## Task Breakdown`, dispatch 
 
 If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only), passing the base ref from Step 2, to check cross-task wiring (every new component reaches its activation point; the spec's end-to-end chains hold). Single-task specs skip this step.
 
-### Step 5: Report (do NOT fix)
+### Step 5: Dispatch the acceptance level (read-only)
+
+Dispatch the **acceptance-verifier** subagent (read-only) against the spec's own `## Verification` section and its `## Acceptance criteria`. It re-runs each command the spec itself designates as the acceptance gate and maps every AC to a passing check, independent of any task-level or integration-level PASS already collected in Steps 3-4 -- a prior verifier's PASS is not evidence here. If the spec has no `## Verification` section, or no command in it is runnable in this environment, note "no executable acceptance check for this spec" and continue; do not invent a substitute check.
+
+### Step 6: Dispatch the system level (read-only)
+
+Dispatch the **system-verifier** subagent (read-only) to run the whole project's test/build suite, UNSCOPED -- not filtered to this spec's files -- as the dynamic mirror of the design phase. If the project defines no suite runnable in this environment, note "no executable project suite" and continue; do not invent a substitute check.
+
+### Step 7: Report (do NOT fix)
 
 **Restate the claim first (SPEC-080 / ID-077, cursor verify-this pattern):** before
 reading any result, write what is being verified as condition + metric + threshold
@@ -58,6 +66,12 @@ Base ref: <sha> (<how it was resolved>)
 ## Integration level (integration-verifier)
 - PASS | FAIL -- [wiring gap]
 
+## Acceptance level (acceptance-verifier)
+- PASS | FAIL -- [AC-N gap, or NO EXECUTABLE CHECK]
+
+## System level (system-verifier)
+- PASS | FAIL -- [suite/regression, or NO EXECUTABLE CHECK]
+
 ## Verdict: PASS / FAIL / INCONCLUSIVE
 ```
 
@@ -67,7 +81,7 @@ concurrent change) breaks attribution. Name the cause. INCONCLUSIVE is NOT a
 pass: the proof-of-done gate still demands a green run; an INCONCLUSIVE verify
 means design a better measurement, not ship.
 
-### Step 6: Record the run (the only write)
+### Step 8: Record the run (the only write)
 
 Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
 shape per `docs/verification/README.md`: the captured `Command:` the verifiers ran, its
@@ -117,6 +131,8 @@ On INCONCLUSIVE, end with: "Measurement ambiguous; design a better check (baseli
 - **No spec / no `SPEC-NNN`**: stop cleanly (Step 1), do not guess.
 - **No done tasks**: skip the unit level; run integration only, or report "nothing to verify".
 - **Single-task spec**: skip Step 4 (integration-verifier is multi-task only).
+- **No `## Verification` section**: skip the acceptance level (Step 5); note "no executable acceptance check for this spec".
+- **No project suite defined**: skip the system level (Step 6); note "no executable project suite".
 - **Dirty working tree**: verify the working tree as-is; note uncommitted changes in the report.
 - **`task-verifier` returns FAIL:fixable**: report it as FAIL with the findings. Do NOT fix (that is `/kit:execute` / `/kit:next`).
 - **A verifier cannot run the suite** (broken build, missing deps): report FAIL:escalate; do not crash.
@@ -124,8 +140,8 @@ On INCONCLUSIVE, end with: "Measurement ambiguous; design a better check (baseli
 
 ## When to use /verify vs /review vs /execute
 
-- `/kit:verify` (this command): re-run the **test** levels (acceptance-criteria + wiring), read-only, no rebuild. The right arm on demand.
+- `/kit:verify` (this command): re-run the **test** levels (acceptance-criteria + wiring + spec-level acceptance + whole-project system), read-only, no rebuild. The complete right arm on demand.
 - `/kit:review` / `/kit:review-team`: static **code review** (security, architecture, regressions). Judgment, not test execution.
 - `/kit:execute` / `/kit:next`: build, which runs the same verification inline AND fixes on FAIL:fixable.
 
-Source: SPEC-035 / ADR-0021. Reuses the `task-verifier` + `integration-verifier` agents (ADR-0005 verify-then-trust lineage); adds only a read-only on-demand trigger.
+Source: SPEC-035 / ADR-0021. Reuses the `task-verifier` + `integration-verifier` agents (ADR-0005 verify-then-trust lineage); adds only a read-only on-demand trigger. Extended (TIER-4 close-gate fix) to also dispatch `acceptance-verifier` + `system-verifier` (ADR-0028 right-arm parity, SG-04) -- both agents existed and were gated/rostered/documented but had no command dispatching them; this closes that gap, so `/kit:verify` is now the on-demand executor of the FULL right arm (unit, integration, acceptance, system), not just its first two levels.

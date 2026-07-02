@@ -146,9 +146,9 @@ checks: a static review when it is produced (left/vertex) and a dynamic test lat
    LEFT · BUILD (produce + review each artifact)        RIGHT · TEST (execute the mirror)
    ============================================        =================================
 
-   Brief / Requirement ............................... Acceptance test   acceptance-verifier · /kit:ship
-   build /kit:think · /kit:assign  · review brief-reviewer
-    Solution-design .................................. System test       system-verifier · project suite
+   Brief / Requirement ............................... Acceptance test   acceptance-verifier · /kit:verify
+   build /kit:think · /kit:assign  · review brief-reviewer (/kit:think)
+    Solution-design .................................. System test       system-verifier · /kit:verify
     build /kit:design  · review /kit:devs-team
      Spec ........................................... Integration test   integration-verifier
      build /kit:spec (+research-*) · review /kit:spec-validate
@@ -170,8 +170,8 @@ review when produced (left/vertex), a dynamic test when executed (right).
 
 | Artifact | Built by | Static review (when produced) | Dynamic test (executed later) |
 |---|---|---|---|
-| Brief / requirement | `/kit:think`, `/kit:assign` | `brief-reviewer` | Acceptance test (`acceptance-verifier` + `/kit:ship`) |
-| Solution design | `/kit:design` | `/kit:devs-team` | System test (`system-verifier` + project suite) |
+| Brief / requirement | `/kit:think`, `/kit:assign` | `brief-reviewer` (dispatched by `/kit:think`) | Acceptance test (`acceptance-verifier`, dispatched by `/kit:verify`; `/kit:ship`'s own test-run step is an inline check, not an agent dispatch) |
+| Solution design | `/kit:design` | `/kit:devs-team` | System test (`system-verifier`, dispatched by `/kit:verify`) |
 | Spec | `/kit:spec` (+ research-* agents) | `/kit:spec-validate` | Integration test (`integration-verifier`) |
 | Code | `/kit:execute`, `/kit:next` (+ `fix-agent`) | `/kit:review`, `/kit:review-team` (+ `code-reviewer`; deep: `security-reviewer`) | Unit / task test (`task-verifier`) |
 | (any right-arm PASS) | -- | -- | Fresh-context re-audit (`recheck-verifier`, re-executes the recorded command) |
@@ -226,14 +226,18 @@ Debug (off-cycle).
 
 **The mirror gaps (mostly closed by SG-03/04).**
 
-- **Brief / Requirement** now HAS a static-review agent, `brief-reviewer` (SG-04); the
-  `/kit:ship` acceptance gate + `acceptance-verifier` still validate it on the right arm.
+- **Brief / Requirement** now HAS a static-review agent, `brief-reviewer`, dispatched
+  by `/kit:think` (SG-04 + TIER-4 close-gate wiring); `acceptance-verifier`, dispatched
+  by `/kit:verify`, validates it on the right arm. `/kit:ship`'s own test-run step
+  remains an inline check, not an `acceptance-verifier` dispatch.
 - **Test design is one late step, not shifted left.** `/kit:test-plan` (opt-in)
   writes the tests; workers write the test code at the vertex. The classic V designs
   a test at every left phase; the kit concentrates it, which is why the testing wing
   is on the right.
-- **System test now HAS an agent**, `system-verifier` (SG-04); it runs the whole
-  assembled suite (the project suite still runs at build and at ship too).
+- **System test now HAS an agent**, `system-verifier`, dispatched by `/kit:verify`
+  (SG-04 + TIER-4 close-gate wiring); it runs the whole assembled suite (each
+  command's own test-run step still runs at build and at ship too, but that is an
+  inline check, not this agent).
 
 ### Coverage: the V is fully covered (SG-04)
 
@@ -242,10 +246,13 @@ the last right-arm holes). Judged against PHILOSOPHY criterion #2 (a feature mus
 serve >= 2 lifecycle phases) and "no phantom features":
 
 - **`acceptance-verifier` (SHIPPED, SG-04)** -- the acceptance test is now a read-only
-  agent dispatched by `/kit:ship` and `/kit:verify`, no longer only inline. The former
-  "v2 candidate" is built.
+  agent, dispatched by `/kit:verify` (TIER-4 close-gate wiring closed the orphan;
+  `/kit:ship`'s own test-run step stays inline, not this agent). The former "v2
+  candidate" is built.
 - **`system-verifier`, `brief-reviewer` (SHIPPED, SG-04)** -- fill the previously
-  agent-less System-test and Brief rows.
+  agent-less System-test and Brief rows, and are now actually dispatched:
+  `system-verifier` by `/kit:verify`, `brief-reviewer` by `/kit:think` (TIER-4
+  close-gate wiring).
 - **`recheck-verifier` (SHIPPED, SG-04)** -- a fresh-context re-audit that re-executes
   any right-arm PASS's recorded command, catching a stale or fabricated PASS.
 
@@ -261,14 +268,14 @@ that validates it):
 
 | Phase | Review that runs (records to the gate-ledger) |
 |---|---|
-| Think / Brief | `brief-reviewer` (static) |
-| Design | `/kit:devs-team` (static) · `system-verifier` (dynamic) |
+| Think / Brief | `brief-reviewer` (static, dispatched by `/kit:think`) |
+| Design | `/kit:devs-team` (static) · `system-verifier` (dynamic, dispatched by `/kit:verify`) |
 | Spec | `/kit:spec-validate` (static) · `integration-verifier` (dynamic) |
 | Test plan | `/kit:test-plan-review-team` (static) |
 | Build / Code | `/kit:review` · `/kit:review-team` (+ `code-reviewer`, deep `security-reviewer`) · `task-verifier` (dynamic) |
 | Review | `advisor` critique (kit-default EXTRA lens, on top of the specialists) |
 | Docs | `/kit:docs` (+ `doc-verifier`) |
-| Acceptance / Ship | `acceptance-verifier` + the `/kit:ship` gate |
+| Acceptance / Ship | `acceptance-verifier` (dynamic, dispatched by `/kit:verify`) + `/kit:ship`'s own gate (an inline test-run + spec-lane check, not an `acceptance-verifier` dispatch) |
 | (any right-arm PASS) | `recheck-verifier` fresh-context re-audit |
 | Final boundary | `advisor` over-suggest (P6) before the human review |
 
