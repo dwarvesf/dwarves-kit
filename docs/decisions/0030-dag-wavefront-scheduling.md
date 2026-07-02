@@ -58,6 +58,24 @@ Priority scheduling · cross-machine execution · new retry policies · a separa
 - The GSD-v2 line is now explicit rather than bundled: a future ordered-graph engine is a clean re-open of this ADR + ADR-0017/0019, not a surprise.
 - This ADR also closes ADR-0028's dangling "tracked in the kit-hardening mega-goal NOTES" reference (the brief notes that tracking never actually landed there).
 
+### Reconciliation with the 2026-05-22 concurrent-goal-dispatch note (status: active)
+
+`docs/research/2026-05-22-concurrent-goal-dispatch.md` §5 set the rule: *"'we need a DAG' is the
+tripwire that says you have outgrown the native model. When that day comes, hand execution to
+gsd-2; do not build a scheduler inside the kit."* That note also fenced "rich goal ordering chains
+(C needs A+B merged, D needs C...)" as genuine DAG scheduling = a runtime = hand to gsd-2.
+
+This ADR **narrows that rule, it does not discard it.** The note conflates two things the brief
+separates: (a) *wave scheduling over an already-parsed dependency edge set*, and (b) *a runtime*
+(scheduler + separate state store + crash-recovery engine + per-provider retry + auto-advance). The
+note's "hand to gsd-2" verdict is correct for (b). Wavefront is (a): it needs none of the runtime
+machinery , no state store (resume recomputes from ROADMAP boxes), no crash-recovery engine
+(idempotent re-run), no provider retry , and it reuses the shipped `depends` parser + grounded
+box-flip + watchdog backgrounding + `dispatch-gate.sh`. So the tripwire now reads: **a wave
+scheduler over declared `depends` edges WITHIN a mega-goal stays in-kit (this ADR); a true runtime
+(cross-machine, durable state store, priority, provider-retry, auto-recovery) is still the gsd-2
+handoff.** The 2026-05-22 note gets a supersession pointer to this ADR.
+
 ## Verification (exit criteria the build must satisfy , from the brief)
 
 1. Two dep-independent, Touches-disjoint sub-goals run concurrently in separate worktrees; both land with green proofs.

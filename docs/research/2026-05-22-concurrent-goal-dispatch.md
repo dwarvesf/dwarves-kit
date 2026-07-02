@@ -6,9 +6,19 @@ feeds: a future SPEC for concurrent goal dispatch in /kit:execute
 benchmarked_against: docs/PHILOSOPHY.md (shallow-and-wide, one-session, runtime-integration boundary), SPEC-010 (worktree concurrency), SPEC-002 (v2 candidates), README.md
 clarifies: README.md + docs/PHILOSOPHY.md (the "GSD v1.4x" plugin vs "GSD v2" runtime naming implied one product; disambiguated 2026-05-22). NOTE: an earlier draft of this note claimed several docs "label gsd-2 as a plugin"; on review that was an overstatement (see section 1).
 status: active
+superseded_in_part_by: docs/decisions/0030-dag-wavefront-scheduling.md (2026-07-03)
 ---
 
 # Concurrent goal dispatch
+
+> **Partial supersession (2026-07-03, ADR-0030):** §5's rule "wave execution over dependency edges
+> is the tripwire to hand off to gsd-2, do not build a scheduler in-kit" is NARROWED, not discarded.
+> ADR-0030 (Accepted) authorizes an in-kit *wavefront* scheduler over the already-parsed `depends`
+> edges WITHIN a mega-goal, because it needs none of the runtime machinery this note fences off
+> (no state store, no crash-recovery engine, no provider retry , resume recomputes from ROADMAP).
+> A true runtime (cross-machine, durable state, priority, provider-retry, auto-recovery) is STILL
+> the gsd-2 handoff. The rest of this note stands. See ADR-0030 "Reconciliation" for the full
+> argument.
 
 This note captures a maintainer discussion that started as "is gsd-2 a separate app?" and converged on a concrete parallelism model for the kit. Two outputs: (1) a factual correction about gsd-2 that several existing kit docs get wrong, (2) a decided execution model for "fire a goal, walk away, get it done concurrently," with its build scope and the DAG question answered.
 
