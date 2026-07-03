@@ -39,8 +39,9 @@ SIG_CLASSIFY="$QG_DIR/significance-classify.sh"
 GATE_LEDGER="$QG_DIR/gate-ledger.sh"
 
 # _primary_file <ref> -- the first non-doc, non-test changed file in READING order (reuses
-# lib/explain.sh's grounded ordering). This is the code the quiz drills. Empty if the change is
-# docs/tests only.
+# lib/explain.sh's grounded ordering). This is the code the quiz drills. Prints NOTHING when the
+# change is docs/tests only (no code file), so cmd_questions can fire its "touches only docs/tests"
+# branch instead of mis-labeling a doc as the primary code file.
 _primary_file() {
   local ref="$1" f
   while IFS= read -r f; do
@@ -51,8 +52,8 @@ _primary_file() {
     esac
     printf '%s\n' "$f"; return 0
   done < <(bash "$EXPLAIN" order "$ref" 2>/dev/null)
-  # fall back to the very first changed file (docs/tests-only change)
-  bash "$EXPLAIN" order "$ref" 2>/dev/null | head -1
+  # docs/tests-only change: no primary code file. Print nothing (empty), do not degrade to a doc.
+  return 0
 }
 
 # _added_lines <ref> <file> -- the actual `+` lines the diff introduced for <file> (never the commit

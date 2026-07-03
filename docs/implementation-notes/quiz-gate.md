@@ -61,3 +61,24 @@ the README `<b>Commands</b> (28 -> 29)` summary count (asserted), and added READ
 command-table + MANUAL entries. The minimal WHEN-it-fires wiring lines went to WORKFLOW.md (after the
 Understanding-debt marker bullet) and `commands/ship.md` (Step 8); the understanding-axis NARRATIVE stays
 for SG-06. Impact: `bash tests/test-meta.sh` green at 667/667.
+
+## 2026-07-04 12:40 Multi-lens review fixes (SPEC-069): a real code gap + 4 coverage gaps
+
+Context: the SPEC-069 multi-lens review (security + architecture + test-coverage, fresh-context) came back
+security CLEAN, architecture 10/10, test-coverage 7/10 with 2 MAJOR + 3 MINOR findings.
+Decision: fixed all five. One was a REAL CODE gap, not just a test gap:
+- **MAJOR-2 (code fix):** `_primary_file` fell back to the first changed file (a doc) on a docs/tests-only
+  change, so the `cmd_questions` "touches only docs/tests" Q3 branch was dead code and a doc got
+  mis-labeled as the primary code file. Fixed `_primary_file` to print NOTHING (empty) for a
+  docs/tests-only change, so the intended branch fires. Added a docs/tests-only fixture asserting it.
+- **MAJOR-1 (test fix):** the AC2 "never masquerades as a GATE" check counted `| GATE |` lines in a
+  DEBT-only ledger , tautological (the writer hardcodes `| DEBT |`). Replaced it with a BEHAVIORAL check:
+  a DEBT-only ledger run through the real `gate-ledger.sh check full <rid>` must still report
+  `MISSING-GATE`. This exercises `check()`'s reader; a regression widening its awk predicate to match DEBT
+  would now fail.
+- **MINOR-3/4/5:** added a range-ref (`A..B`) case, a no-recorded-proof case asserting Q4 falls back to
+  `[no recorded test result]` (the honesty guarantee, on the existing narrative-NC fixture), and an
+  each-of-Q1..Q5-exactly-once check (a dup+drop would still count 5).
+Why: MAJOR-2 was a genuine behavioral bug the negative-space of the original fixtures hid. Impact: test grew
+24 -> 29 assertions, all green; `test-meta` still 667/667; siblings unaffected. Architecture + security lenses
+found nothing to fix.

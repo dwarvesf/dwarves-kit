@@ -49,6 +49,11 @@ echo "=== AC1: exactly 5 diff-grounded quiz questions ==="
 QOUT="$( cd "$DA" && bash "$QG" questions "$REFA" )"
 NQ=$(printf '%s\n' "$QOUT" | grep -c '^Q[1-5]\.')
 assert "AC1 exactly 5 questions (Q1..Q5), got $NQ" "$([ "$NQ" -eq 5 ] && echo 0 || echo 1)"
+# ...and each of Q1..Q5 appears exactly once (a duplicated label + a dropped one would still count 5)
+EACH_ONCE=0; for n in 1 2 3 4 5; do
+  [ "$(printf '%s\n' "$QOUT" | grep -c "^Q$n\.")" -eq 1 ] || EACH_ONCE=1
+done
+assert "AC1 each of Q1..Q5 appears exactly once (no dup/drop)" "$EACH_ONCE"
 # grounded: a question names a real changed file
 assert "AC1 questions reference a real changed file (widget.js)" \
   "$(printf '%s' "$QOUT" | grep -q 'widget.js' && echo 0 || echo 1)"
@@ -70,10 +75,13 @@ assert "AC2 three | DEBT | response= lines written, got $NRESP" "$([ "$NRESP" -e
 assert "AC2 engage logged"  "$(grep -q '| DEBT | response=engage' "$LF" && echo 0 || echo 1)"
 assert "AC2 defer logged"   "$(grep -q '| DEBT | response=defer'  "$LF" && echo 0 || echo 1)"
 assert "AC2 wave logged"    "$(grep -q '| DEBT | response=wave'   "$LF" && echo 0 || echo 1)"
-# the DEBT response line is additive: gate-ledger's check() must NOT read it as a GATE (never fakes a gate)
-NGATE=$(grep -c '| GATE |' "$LF" 2>/dev/null); NGATE="${NGATE:-0}"
-assert "AC2 response lines never masquerade as | GATE | lines (0 gate lines, got $NGATE)" \
-  "$([ "$NGATE" -eq 0 ] && echo 0 || echo 1)"
+# BEHAVIORAL additive-marker guard: a ledger of ONLY debt-response lines must NOT satisfy any required
+# gate. Run the real gate-ledger check() against a lane with required gates; it must still report the
+# gates MISSING (the DEBT lines did not fake a `| GATE | ran`). This exercises check()'s reader, not the
+# writer's format -- a regression widening check()'s awk predicate to match DEBT would fail HERE.
+CHK="$( bash "$GL" check full "$RID" 2>&1 )"; CHK_RC=$?
+assert "AC2 a DEBT-only ledger fails gate check (response lines never satisfy a required gate)" \
+  "$([ "$CHK_RC" -ne 0 ] && printf '%s' "$CHK" | grep -q 'MISSING-GATE' && echo 0 || echo 1)"
 
 echo "=== AC3: engage routes through deep-understand (dispatch, not reimplementation) ==="
 ROUT="$( cd "$DA" && bash "$QG" respond "engage-rid-$$" engage --ref "$REFA" )"
@@ -107,6 +115,32 @@ assert "AC4 quiz describes the DIFF (names 'subtract')" \
   "$(printf '%s' "$QB" | grep -q 'subtract' && echo 0 || echo 1)"
 assert "AC4 quiz does NOT parrot the false narrative ('multiply')" \
   "$(printf '%s' "$QB" | grep -qi 'multiply' && echo 1 || echo 0)"
+# MINOR-4: Fixture B has a code change but NO recorded proof -> Q4 must fall back to the honest
+# "[no recorded test result]" string, never an invented verdict (the honesty guarantee).
+assert "AC4 no recorded proof -> Q4 says '[no recorded test result]' (does not invent a verdict)" \
+  "$(printf '%s' "$QB" | grep -q '\[no recorded test result' && echo 0 || echo 1)"
+
+echo "=== Edges: docs/tests-only change + a range ref ==="
+# MAJOR-2: a change touching ONLY docs/ + tests/ has no primary code file -> Q3 fires the
+# "touches only docs/tests" branch (not a doc mis-labeled as the primary code file).
+DD="$(mktemp -d)"; mkrepo "$DD"
+printf 'seed\n' > "$DD/seed.txt"; gitq "$DD" add -A; gitq "$DD" commit -qm "seed"
+mkdir -p "$DD/docs" "$DD/tests"
+printf '# Doc\nnew doc line\n'   > "$DD/docs/note.md"
+printf 'echo doc-only test\n'    > "$DD/tests/test-note.sh"
+gitq "$DD" add -A; gitq "$DD" commit -qm "docs and tests only"
+REFD="$(gitq "$DD" rev-parse HEAD)"
+QD="$( cd "$DD" && bash "$QG" questions "$REFD" )"
+assert "Edge docs/tests-only: still exactly 5 questions" \
+  "$([ "$(printf '%s\n' "$QD" | grep -c '^Q[1-5]\.')" -eq 5 ] && echo 0 || echo 1)"
+assert "Edge docs/tests-only: Q3 fires the 'touches only docs/tests' branch (no mis-labeled primary)" \
+  "$(printf '%s' "$QD" | grep -qi 'only docs/tests' && echo 0 || echo 1)"
+
+# MINOR-3: a range ref (A..B) is the code's other resolve branch; assert it grounds the same as a SHA.
+BASEA="$(gitq "$DA" rev-parse "${REFA}^1")"
+QRANGE="$( cd "$DA" && bash "$QG" questions "${BASEA}..${REFA}" )"
+assert "Edge range ref (A..B): 5 questions, still names the real changed file (widget.js)" \
+  "$([ "$(printf '%s\n' "$QRANGE" | grep -c '^Q[1-5]\.')" -eq 5 ] && printf '%s' "$QRANGE" | grep -q 'widget.js' && echo 0 || echo 1)"
 
 echo "=== AC5: WIRING negative control (fires on tap, absent on wave / not-significant / non-gate) ==="
 TAP_DESC="add a new data model migration that introduces a primitive future work will build on"    # -> tap
