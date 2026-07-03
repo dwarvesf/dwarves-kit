@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# explain.sh -- the grounding + ordering engine behind /kit:explain (ADR-0031 §2, SPEC-122).
+# explain.sh -- the grounding + ordering engine behind /kit:explain (ADR-0031 §2, SPEC-124).
 #
 # Turns a merged change into a LITERATE-DIFF explainer skeleton: background -> goal + intuition
 # -> a PROSE-ORDERED diff (reading order, NOT git alphabetical) -> a diagram. It is the mechanical,
@@ -13,7 +13,7 @@
 # could. If the artifact ever described the agent's intent instead of the diff, that would be a bug in
 # a DIFFERENT layer, never here.
 #
-# Reading-order rank (spec SPEC-122): within a rank, git order is preserved.
+# Reading-order rank (spec SPEC-124): within a rank, git order is preserved.
 #   rank 0  background     docs/, specs (SPEC-*), ADRs/decisions -- the context the reader needs first
 #   rank 1  new concept    newly-ADDED files -- the thing introduced, before its wiring
 #   rank 2  integration    modified non-test files -- how the new thing is wired in
@@ -58,7 +58,7 @@ _resolve() {
 
 # _rank <status> <path> -> 0..3 (see header). Precedence: background, then verification, then new, else integration.
 # Globs are ANCHORED on the path segment / basename, not loose substrings, so `latest-value.js`
-# or `aerospec.txt` do NOT misclassify as tests (review finding, SPEC-122 impl-notes).
+# or `aerospec.txt` do NOT misclassify as tests (review finding, SPEC-124 impl-notes).
 _rank() {
   local status="$1" path="$2" lc bn
   lc="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"

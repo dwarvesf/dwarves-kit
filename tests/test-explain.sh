@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-explain.sh -- SPEC-122, understanding-gate SG-03.
+# test-explain.sh -- SPEC-124, understanding-gate SG-03.
 # Proves /kit:explain's grounding engine (lib/explain.sh) emits a LITERATE-DIFF explainer:
 #   AC1  the 4 sections appear in reading order (background -> goal+intuition -> diff -> diagram)
 #   AC2  the diff is in PROSE order, NOT git/alphabetical order

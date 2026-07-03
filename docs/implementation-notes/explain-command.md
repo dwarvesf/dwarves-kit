@@ -1,6 +1,6 @@
-# Implementation notes , /kit:explain (SPEC-122)
+# Implementation notes , /kit:explain (SPEC-124)
 
-The DELTA from SPEC-122 / ADR-0031 §2. Decisions the spec did not pin down, deviations, and the
+The DELTA from SPEC-124 / ADR-0031 §2. Decisions the spec did not pin down, deviations, and the
 constraints that shaped the build. Not a mirror of the spec.
 
 ## 2026-07-03 12:00 Lane = normal (not full), by the classifier

@@ -1,4 +1,4 @@
-# Proof of done: /kit:explain literate-diff explainer (SPEC-122, understanding-gate SG-03)
+# Proof of done: /kit:explain literate-diff explainer (SPEC-124, understanding-gate SG-03)
 
 A new `/kit:explain <ref>` emits the artifact a human READS to understand a change (ADR-0031 §2's
 AFTER gate): background -> goal + intuition -> a PROSE-ordered diff -> a diagram. It composes

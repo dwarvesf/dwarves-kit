@@ -95,5 +95,5 @@ gate the merge; the explainer is advisory (ADR-0031: engage / defer / wave, neve
 
 ## Source
 
-ADR-0031 §2 (the AFTER gate) + SPEC-122. Engine: `lib/explain.sh`. Proof: `tests/test-explain.sh`
+ADR-0031 §2 (the AFTER gate) + SPEC-124. Engine: `lib/explain.sh`. Proof: `tests/test-explain.sh`
 (section-order, prose!=alphabetical, mermaid-valid, and the grounded-in-diff negative control).

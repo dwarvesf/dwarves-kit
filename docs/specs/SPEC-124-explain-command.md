@@ -1,4 +1,4 @@
-# SPEC-122: /kit:explain literate-diff explainer
+# SPEC-124: /kit:explain literate-diff explainer
 
 Status: VALIDATED
 Lane: normal

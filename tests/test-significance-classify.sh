@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-significance-classify.sh -- SPEC-122, understanding-gate SG-02.
+# test-significance-classify.sh -- SPEC-123, understanding-gate SG-02.
 # Behavioral suite for lib/significance-classify.sh: the two-signal (significance x
 # understanding-worthiness) verdict, the impl-notes feed, the gate-ledger debt marker, and
 # determinism. Mirrors tests/test-lane-classify.sh's shape.
