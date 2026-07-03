@@ -42,16 +42,21 @@ def sum_usage(transcript_path: str) -> dict:
     kit's canonical assistant detector). User turns carry no usage; result/system
     events are skipped by the same filter.
     """
+    def _int(x):
+        try:
+            return int(x or 0)
+        except (TypeError, ValueError):
+            return 0   # a malformed usage value is skipped, not a crash (defensive; review LOW-3)
     entries = cc.load(transcript_path)
     tot = {"in": 0, "out": 0, "cache_read": 0, "cache_create": 0}
     for e in entries:
         if not cc._is_assistant(e):
             continue
         u = (e.get("message") or {}).get("usage") or {}
-        tot["in"] += int(u.get("input_tokens") or 0)
-        tot["out"] += int(u.get("output_tokens") or 0)
-        tot["cache_read"] += int(u.get("cache_read_input_tokens") or 0)
-        tot["cache_create"] += int(u.get("cache_creation_input_tokens") or 0)
+        tot["in"] += _int(u.get("input_tokens"))
+        tot["out"] += _int(u.get("output_tokens"))
+        tot["cache_read"] += _int(u.get("cache_read_input_tokens"))
+        tot["cache_create"] += _int(u.get("cache_creation_input_tokens"))
     return tot
 
 

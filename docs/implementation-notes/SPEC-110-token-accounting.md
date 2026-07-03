@@ -42,6 +42,15 @@ per-round / per-subagent separation IS technically possible (filter by `isSidech
 v1 sums all assistant usage into the RUN total (run-granularity) by design; per-round rework share is
 a viable FOLLOW-UP, not impossible , filed to mega NOTES.
 
+## Review (SHIP) , 3 LOW findings dispositioned
+
+Multi-lens review verdict SHIP; all lenses verified against real code + an adversarial injection
+run. LOW findings: (1) `cost` allowed multiple dots , comment corrected to match (display-only,
+never summed), no strict-single-dot enforcement needed. (2) re-run TOKENS lines accumulate into a
+run's tokens-to-done , CONSCIOUS: that is the true total incl. retries (unlike gate coverage which
+dedups); left as-is. (3) a malformed non-integer usage value would crash `sum_usage` , FIXED with a
+`_int()` guard (skips to 0), so a direct CLI call on a malformed stream no longer tracebacks.
+
 ## Not touched (scope)
 
 WORKFLOW.md carries no token/usage over-claim to reconcile (its `token` mentions are the unrelated

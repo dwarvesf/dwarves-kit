@@ -156,7 +156,7 @@ tokens() {
       out)          outtok="$(printf '%s' "$v" | tr -cd '0-9')"; outtok="${outtok:-0}" ;;
       cache_read)   cread="$(printf '%s' "$v" | tr -cd '0-9')"; cread="${cread:-0}" ;;
       cache_create) ccreate="$(printf '%s' "$v" | tr -cd '0-9')"; ccreate="${ccreate:-0}" ;;
-      cost)         cost="$(printf '%s' "$v" | tr -cd '0-9.')" ;;   # decimal dollars: allow one dot
+      cost)         cost="$(printf '%s' "$v" | tr -cd '0-9.')" ;;   # decimal dollars: digits + dot(s); display-only, never summed
     esac
   done
   mkdir -p "$RUNS_DIR"
