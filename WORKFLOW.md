@@ -133,6 +133,10 @@ entry point (a bug-lane loop), not a linear phase between Reflect and the next c
 
 ## The V-model lens
 
+> The ASCII V below is the canonical rendering. For a rendered vector version, see
+> [`docs/v-model.svg`](docs/v-model.svg). (The README hero is a 6-phase mermaid lifecycle, the
+> 10-second view; this section + the SVG are the full V.)
+
 The cycle table above is the canonical phase list. This section reads it as a **V**.
 The **left arm BUILDS**: each phase produces an artifact and statically reviews it
 (verification, "did we build this right?"). The **right arm TESTS**: it executes the

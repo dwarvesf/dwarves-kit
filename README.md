@@ -9,16 +9,18 @@
 
 Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, agents iterate inside them. The loop is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
 
+```mermaid
+flowchart LR
+  goal([goal + gates<br/>set up front]) --> T
+  T[think<br/>forcing questions] -->|advisory| S[spec<br/>the contract]
+  S -->|spec-drift guard| X[execute<br/>worker → verifier → fix-agent]
+  X -->|BLOCKING: verification pipeline| R[review<br/>verdict recorded]
+  R -->|advisory| SH[ship<br/>version + PR]
+  SH -->|BLOCKING: ship-gate + push-to-main| RE[retro]
+  RE -.->|feeds the next cycle| T
 ```
-  goal --> think --> spec --> execute --> review --> ship --> retro --+
-            |          |         |           |          |             |
-        6 forcing   the spec   worker ->   verdict   ship gate +      |
-        questions   is the     verifier -> recorded  push-to-main     |
-        (advisory)  contract   fix-agent   (advisory) blocker         |
-                               (max 2)                                |
-   ^                                                                  |
-   +------------------ retro feeds the next cycle --------------------+
-```
+
+Two gate classes sit on those boundaries: **blocking** (the verification pipeline, the ship-gate, the push-to-main blocker , mechanical, they stop a bad outcome) and **advisory** (think, review , they surface findings, never block). The autonomous-loop hardening adds a fresh-context re-audit of every done-claim, a kit-default cross-cutting advisor lens on top of the specialized reviewers, and a deployable-done proof gate, so a closed loop can run long without drifting into self-graded slop.
 
 Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked). The worker is also **specialized per task**: when a task needs a role no built-in agent covers (security, migration, a doc writer, ...), the kit synthesizes one on the fly and dispatches it, or `/kit:draft-agent` installs a reusable named agent ([SPEC-089](docs/specs/SPEC-089-dynamic-agent-synthesis.md)).
 
@@ -265,9 +267,9 @@ dwarves-kit/
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
-  agents/                       (11 files) Subagents dispatched by commands
+  agents/                       (24 files) Subagents dispatched by commands
   commands/                     (27 markdown command prompts)
-  hooks/                        (14 scripts + hooks.json plugin manifest)
+  hooks/                        (17 scripts + hooks.json plugin manifest)
   lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
   lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)

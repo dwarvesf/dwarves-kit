@@ -1357,6 +1357,14 @@ LIVE_COUNT=$((CMD_COUNT + AGT_COUNT))
 assert_eq "architecture.md inventory table rows == live file count ($ARCH_TABLE_ROWS == $LIVE_COUNT)" \
   "$LIVE_COUNT" "$ARCH_TABLE_ROWS"
 
+# SPEC-113: the README directory-layout counts stay pinned to the LIVE file counts (the 11-vs-live
+# agents drift class , "died untested once, never again" , dies like the architecture pin above).
+README_AGT=$(grep -oE 'agents/ *\([0-9]+ files\)' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+README_HOOK=$(grep -oE 'hooks/ *\([0-9]+ ' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+HOOK_COUNT=$(ls "$KIT_DIR/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "README agents/ layout count == live agents ($README_AGT == $AGT_COUNT)" "$AGT_COUNT" "$README_AGT"
+assert_eq "README hooks/ layout count == live hooks ($README_HOOK == $HOOK_COUNT)" "$HOOK_COUNT" "$README_HOOK"
+
 # ============================================================
 echo ""
 echo "=== Parallel-execution boundary un-nerf (SPEC-032 C1 / ADR-0019) ==="
