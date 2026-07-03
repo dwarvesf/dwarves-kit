@@ -4,9 +4,71 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
-> **Release hold:** the next version bump is deferred until the **kit-hardening
-> megagoal** completes. Keep accumulating changes under `[Unreleased]`; do not cut
-> a tagged release (or run `/kit:ship`'s version bump) until that megagoal ships.
+## [2.0.0] - 2026-07-03
+
+The release hold lifts: its stated condition , the **kit-hardening** megagoal , is complete, and
+the **kit-face** megagoal (production-facing + cost-measured) ships on top of it. The major bump is
+driven by the three agent renames below (a breaking change for any repo that dispatches them by
+name) and by tool.toml joining VERSION + plugin.json as a pinned version surface.
+
+### BREAKING
+- **Three agents renamed to the `<x>-reviewer` / `<x>-verifier` convention (ADR-0029).** A repo
+  that dispatches these by `subagent_type` or scaffolds them in an invocation template must update:
+
+  | old | new |
+  |---|---|
+  | `integration-checker` | `integration-verifier` |
+  | `reviewer` | `code-reviewer` |
+  | `security-auditor` | `security-reviewer` |
+
+  A grep across the sibling consumer repos (`~/workspace/tieubao/*`) found the old names ONLY in
+  historical research notes, `LAB_LOG`/`BACKLOG` entries, and the `plan-for-mega-goal`
+  invocation-template , NO live `subagent_type:` dispatch wiring , but the template and any consumer
+  that dispatches by these names should update.
+
+### Added , kit-face megagoal (each sub-goal = one merged PR; #128-136)
+- **Cheap-first tier default, one stance across three surfaces (SPEC-107, #128).** `/kit:execute`
+  workers dispatch `sonnet` by default with an optional bare `Model:` header on the spec as the
+  hard-reasoning escape hatch; `meta-agent` Mode B writes `Model: sonnet` on abstain (reversing the
+  earlier "human's call"); the `plan-for-mega-goal` subgoal-template defaults `Model: sonnet`. Opus
+  is now the deliberate exception, not the silent default (SPEC-087's "Opus only on the hard
+  sub-goals").
+- **Meta-agent provenance + a runtime efficacy metric (SPEC-108, #129).** Generated agents carry a
+  `generated-by: draft-agent <date> <context>` frontmatter key (backfilled on the 5
+  kit-hardening-generated agents; `/kit:draft-agent` stamps it going forward). SPEC-073 gains metric
+  11, generated-agent catch count: SPEC-088 validates the definition at install, metric 11 validates
+  the deployment at runtime.
+- **Capture-gated token accounting + efficiency metrics (SPEC-110, #132).** A new `gate-ledger.sh
+  tokens` subcommand records a `| TOKENS |` ledger line (an additive, gate-invisible marker);
+  `handoff_gen.py sum-usage` extracts per-session usage from the stream-json capture; `lane-telemetry
+  report` grows a token section (median tokens-to-done per lane, cache efficiency, run-granularity
+  rework share) and `render --mermaid` annotates each lane with its median. Capture-gated: only
+  `--stream` / `DETERMINISTIC_HANDOFF` runs record TOKENS; the default `claude -p` invocation is
+  byte-unchanged (SPEC-087 pin) and honest runs report `usage=?`, never a fake zero.
+- **Operator-persona design lens (SPEC-109, #130).** `/kit:visual-team` accepts an operator-supplied
+  `persona: <archetype>` as an inline 6th critique lens (same contract, uniform merge), threaded from
+  `/kit:ui-design`. DEC-017 records the boundary vs DEC-003 (a runtime operator archetype is
+  supplied-not-baked; the kit ships no persona, the taste liability is the operator's), with a
+  `/kit:kit-health` check-13 carve-out so the sanctioned path is not flagged as persona theater.
+- **UI done-modes + a bounded quiescence loop (SPEC-112, #134).** `/kit:ui-design` gains a
+  `Done-mode` flag , `proof` (mandatory floor) | `over-test` (adds a test-plan + coverage-delta) |
+  `quiescence` (Phase B extended into a converging loop: two-sided stop , zero NEW >=HIGH AND no OPEN
+  >=HIGH , cap 3, `[[QL-VERDICT]]` markers, a `### Deferred findings` ledger). DEC-018 records the
+  cap divergence (quiescence 3 vs plain REVISE 2).
+- **Starter role-specialized agent roster (SPEC-111, #133).** Six domain specialists, mixed by fit,
+  each gated + provenance-stamped, with two live dispatch paths: workers (`db-migration-worker`,
+  `data-etl-worker`) via `/kit:execute` 2b-0's reuse branch (a new `role-classify.sh agent-for`
+  lookup makes the hit deterministic), reviewers (`performance`/`api`/`frontend`/`infra-reviewer`)
+  via `/kit:review-team`'s opt-in domain lens. Reconciles SPEC-089: 2b-0's reuse-known-worker vs
+  synthesize-novel branch is the single router; `generic` escalates to Mode-C (the dynamic long tail).
+- **README mermaid lifecycle hero + test-pinned layout counts (SPEC-113, #135).** The hand-drawn
+  ASCII lifecycle becomes a native mermaid flowchart (6 phases, gate classes); the directory-layout
+  counts are corrected (24 agents, 17 hooks) and a computed test-meta parity pin kills the
+  count-drift class. `docs/v-model.svg` is linked from WORKFLOW.md (which keeps the ASCII canon).
+- **Navigable docs map (SPEC-114, #136).** `docs/README.md` extends below its verbatim front door
+  into a thematic map covering every record class , adding `implementation-notes/` and
+  `verification/` (the load-bearing `verification/README.md` the ship-gate keys on) , with a
+  `lib/spec-index.sh` pointer for the specs and no rotting counts.
 
 ### Fixed
 - **install.sh is now plugin-aware, no more double-registered hooks.** When the

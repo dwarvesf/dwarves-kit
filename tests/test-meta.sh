@@ -54,6 +54,11 @@ PLUGIN_VERSION=$(jq -r '.version' "$KIT_DIR/.claude-plugin/plugin.json")
 VERSION_FILE=$(cat "$KIT_DIR/VERSION" | tr -d '[:space:]')
 assert_eq "plugin.json version matches VERSION file" "$VERSION_FILE" "$PLUGIN_VERSION"
 
+# SPEC-115: the THIRD version surface (tool.toml) must match too , the v1.7.0 cut
+# missed it (tool.toml drifted to 1.6.0); this three-surface pin kills that class.
+TOOL_TOML_VERSION=$(grep -E '^version' "$KIT_DIR/tool.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+assert_eq "tool.toml version matches VERSION file (3-surface pin, SPEC-115)" "$VERSION_FILE" "$TOOL_TOML_VERSION"
+
 # ============================================================
 echo "=== Invocation namespace guard (SPEC-029, SPEC-030) ==="
 # ============================================================
