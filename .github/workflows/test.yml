@@ -71,6 +71,9 @@ jobs:
       - name: Run lane-classify rule tests (SPEC-098)
         run: bash tests/test-lane-classify.sh
 
+      - name: Run significance-classify tests (SPEC-122)
+        run: bash tests/test-significance-classify.sh
+
       - name: Run lane-telemetry render tests (SPEC-099)
         run: bash tests/test-lane-telemetry.sh
 

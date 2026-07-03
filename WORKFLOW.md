@@ -399,6 +399,7 @@ source for which gates a lane *requires* (its `measure-twice` cells);
 - **One append-only, redacted file per run** under `$DWARVES_KIT_LOG_DIR/runs/<slug>.log` (the existing hook-log convention; no command bodies or secret paths). It is an audit trail, never a source of state.
 - **Enforcement is at ship only.** `hooks/ship-gate.sh` refuses a feature-branch push or `gh pr create` when the active spec's lane has a `measure-twice` gate with no `ran`/`override` entry. Mid-flight phases are never blocked (Detect, don't dictate).
 - **Override, logged:** to ship past a missing gate, record a reason: `bash lib/gate-ledger.sh override <rid> <Phase> "<reason>"`. The override is part of the audit trail; in a fully autonomous run it is agent-writable, so the guarantee is block-by-default plus every skip and override recorded, not a hard stop (ADR-0024).
+- **Understanding-debt marker (ADR-0031, SPEC-122):** at Ship, `bash lib/significance-classify.sh record <rid> "<what changed>"` classifies the change (significance x understanding-worthiness) and appends a `| DEBT |` marker via `gate-ledger.sh debt`; only a high x high verdict (`tap`) is worth a human's attention, everything else (`wave`/`not-significant`) is logged silently -- what happens on a `tap` is a separate gate (SG-04's nudge), out of scope for the marker itself.
 
 ## The spine
 How a committed backlog item becomes shipped work, end to end:
