@@ -15,6 +15,7 @@ symlink-follow in `lib/mutation-smoke.sh` (a symlinked candidate is skipped, not
 | 3 | explicit out-path outside docs/runs -> REJECTED (non-zero exit + stderr, no write) | H3 | PASS |
 | 4 | a normal rid still writes `docs/runs/<rid>.md` (no over-block) | H4 | PASS |
 | 5 | canonical `proof-of-done.md` basename still refused | H5 | PASS |
+| 5b | an out-location symlink pointing OUTSIDE docs/runs is not written through (TOCTOU hardening) | H6 | PASS |
 | 6 | HIGH **negative control**: reverted generator leaks outside docs/runs (RED) | H-NEG | PASS |
 | 7 | `=` in a `file=`/`reason=` value adds no second KV to the `\| MUTATION \|` line | M1 | PASS |
 | 8 | MEDIUM **negative control**: reverted `mutation()` leaks the `=` as extra KVs | M-NEG | PASS |
@@ -24,7 +25,7 @@ symlink-follow in `lib/mutation-smoke.sh` (a symlinked candidate is skipped, not
 
 | Run | Command | Exit | Verdict |
 |---|---|---|---|
-| green | `bash tests/test-security-hardening.sh` | 0 | PASS (18/18) |
+| green | `bash tests/test-security-hardening.sh` | 0 | PASS (20/20) |
 | HIGH neg-control | reverted `proof-table-gen.py` (origin/master) + absolute-rid PoC | n/a | RED-as-expected (writes outside docs/runs) |
 | MEDIUM neg-control | reverted `mutation()` line + `=`-bearing value | n/a | RED-as-expected (4 KV tokens, `=` leaked) |
 | no-regression | `bash tests/test-proof-table-gen.sh` | 0 | PASS (25/25) |
@@ -78,11 +79,22 @@ guard prevents a write-through. L1 asserts the loop's decision (`regular AND not
 symlink but still processes a real file; L2 greps the real source to confirm the guard is wired into
 the candidate loop immediately after the `-f` check (not dead code).
 
+## Security review (fresh-context)
+
+A fresh-context `kit:security-reviewer` audited the diff. Verdict: no CRITICAL/HIGH; the three
+PoC findings + the requested edges (prefix-collision sibling, `..`-after-normalization, empty
+rid, explicit-out-path) all confirmed closed. It surfaced one new MEDIUM **in the new code** , a
+TOCTOU where the confinement checked `realpath(out_path)` but the write used the unresolved
+`out_path`, so a concurrent local process could swap a final-component symlink in the gap. Fixed:
+the write now targets the ALREADY-RESOLVED path and opens with `O_NOFOLLOW` (proof-table-gen.py),
+covered deterministically by H6. LOW (locale caveat on the charset-equivalence claim) and NIT
+(vestigial `_kit_root` param) addressed by softening the docstring + a comment.
+
 ## Reproduce
 
 ```
 cd <repo>                                        # branch fix/kri-security-hardening
-bash tests/test-security-hardening.sh            # 18/18 green (HIGH+MEDIUM+LOW, both neg-controls)
+bash tests/test-security-hardening.sh            # 20/20 green (HIGH+MEDIUM+LOW, both neg-controls, TOCTOU)
 /bin/bash tests/test-security-hardening.sh       # cross-platform, macOS bash 3.2.57
 bash tests/test-proof-table-gen.sh               # 25/25, no regression
 bash tests/test-mutation-smoke.sh                # 33/33, no regression

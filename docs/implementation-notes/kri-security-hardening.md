@@ -33,3 +33,20 @@ any argument (confirmed: `rid "../../victim/pwned"` returns the branch slug), so
 normalize an arbitrary caller-supplied rid. Shelling out would not do the job; a charset-exact
 Python port is the correct reuse.
 Impact: one small pure function; unit-covered against the `../../` and absolute-path PoCs.
+
+## 2026-07-04 TOCTOU hardening (from fresh-context security review)
+
+Context: a `kit:security-reviewer` pass on the diff found no HIGH but flagged a MEDIUM TOCTOU in
+the NEW confinement code: the check validated `realpath(out_path)` but the write used the
+unresolved `open(out_path)`, re-resolving symlink components at write time (a concurrent local
+process could swap a final-component symlink in the check->write gap and escape runs_root).
+Decision: write to the already-resolved `resolved_out` and open the final component with
+`os.O_NOFOLLOW` (via `os.open`+`os.fdopen`); on refusal, fail with a non-zero exit.
+Why: closes the check-vs-use gap for the realistic local-race model; the deterministic
+symlink-target case (symlink pointing outside) is already caught by the realpath confinement (H6),
+and O_NOFOLLOW covers the residual post-check swap.
+Also from the review: softened the `_normalize_rid` docstring's "EXACTLY" claim (GNU `tr`
+`[:alnum:]` is locale-aware, no `LC_ALL=C` pin; the Python port is deliberately stricter ASCII, so
+never a path-escape, only a multibyte-filename correctness edge), and documented that
+`gate_ledger_sh`'s `_kit_root` param is vestigial (also closes a latent KIT_ROOT script-hijack).
+Impact: proof-table-gen.py write path + two doc-comments; new H6 assertion (20/20).

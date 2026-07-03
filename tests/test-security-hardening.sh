@@ -74,6 +74,15 @@ bash "$GEN" "normal-rid" "$CANON" >/dev/null 2>&1; RC_H5=$?
 eq "H5: proof-of-done.md basename still refused" "$RC_H5" "1"
 if [ ! -f "$CANON" ]; then ok "H5: canonical file not created by the refused call"; else bad "H5: canonical file was written"; fi
 
+# H6: a symlink sitting AT the (confined) output location, pointing OUTSIDE docs/runs, must not be
+# written through -- realpath follows it, the confinement sees the outside target, and rejects. The
+# generator writes the RESOLVED path + opens with O_NOFOLLOW, so no data lands on the symlink target.
+SENTINEL="$LEAKZONE/toctou-target.md"; printf 'ORIGINAL\n' > "$SENTINEL"
+ln -s "$SENTINEL" "$RUNS/evil-symlink.md"     # a symlink inside docs/runs -> outside
+bash "$GEN" evil-symlink >/dev/null 2>&1; RC_H6=$?   # default out-path resolves to the symlink
+eq "H6: write through an out->outside symlink is refused (non-zero exit)" "$RC_H6" "1"
+eq "H6: the symlink's outside target is untouched (no write-through)" "$(cat "$SENTINEL")" "ORIGINAL"
+
 # H-NEG: revert BOTH the normalization + confinement (use origin/master's generator) and show the
 # same absolute-rid PoC leaks. Proves H1-H3 actually bite.
 echo "--- HIGH negative control (reverted generator leaks) ---"

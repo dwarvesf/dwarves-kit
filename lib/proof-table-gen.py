@@ -42,11 +42,15 @@ CANONICAL_BASENAME = "proof-of-done.md"
 
 
 def _normalize_rid(raw):
-    """Normalize a caller-supplied rid to lib/gate-ledger.sh's runid() charset EXACTLY
-    (SPEC-134). runid() is `tr '/ ' '--' | tr -cd '[:alnum:]._-'`: replace '/' and space
-    with '-', then drop every char outside [A-Za-z0-9._-]. This strips path separators (no
-    '/' survives, so no `..` can act as a parent-dir step) before the rid is ever joined
-    into a filesystem path. ASCII [:alnum:] to match tr's C-locale behavior."""
+    """Normalize a caller-supplied rid to lib/gate-ledger.sh's runid() charset (SPEC-134).
+    runid() is `tr '/ ' '--' | tr -cd '[:alnum:]._-'`: replace '/' and space with '-', then
+    drop every char outside [A-Za-z0-9._-]. This strips path separators (no '/' survives, so
+    no `..` can act as a parent-dir step) before the rid is ever joined into a filesystem path.
+    We match runid()'s ASCII intent but are DELIBERATELY STRICTER: this port is pure ASCII,
+    whereas GNU tr's `[:alnum:]` is locale-aware and MAY admit multibyte alnums under a UTF-8
+    locale (runid() pins no LC_ALL=C). The Python side only ever strips MORE, so this is never
+    a path-escape; on an exotic multibyte rid the two could disagree on the exact filename (a
+    correctness edge, not a security one). Real rids are ASCII branch slugs, so they agree."""
     swapped = raw.replace("/", "-").replace(" ", "-")
     return re.sub(r"[^A-Za-z0-9._-]", "", swapped)
 
@@ -136,6 +140,10 @@ def _kit_lib_root():
 
 
 def gate_ledger_sh(_kit_root=None):
+    # `_kit_root` is VESTIGIAL (SPEC-134): callers still pass kit_root, but it is intentionally
+    # ignored -- the helper is resolved via __file__, never via the (now caller-influenceable)
+    # KIT_ROOT. This also closes a latent path-hijack: the old `os.path.join(kit_root, "lib",
+    # "gate-ledger.sh")` would have exec'd whatever script sat at an attacker-set KIT_ROOT/lib.
     return os.path.join(_kit_lib_root(), "lib", "gate-ledger.sh")
 
 
@@ -285,14 +293,25 @@ def main(argv):
     lane, gate_rows, outcomes = parse_ledger(ledger_path)
     content = render(rid, ledger_path, kit_root, lane, gate_rows, outcomes)
 
-    out_dir = os.path.dirname(out_path)
+    # SPEC-134: write to the ALREADY-RESOLVED path (not the unresolved out_path), and open the
+    # final component with O_NOFOLLOW. The confinement check above validated `resolved_out`; using
+    # a bare `open(out_path)` would re-resolve symlink components at write time, so a concurrent
+    # local process could swap a final-component symlink in the check->write gap (TOCTOU) and land
+    # the write outside runs_root. Writing `resolved_out` + refusing to follow a final-component
+    # symlink closes that gap for the realistic local-race model.
+    out_dir = os.path.dirname(resolved_out)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(resolved_out, flags, 0o644)
+    except OSError as e:
+        fail(f"refusing to write '{resolved_out}': {e.strerror} (final component may be a symlink)", 1)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
 
     print(
-        f"wrote {out_path} (rid={rid}, lane={lane or 'unknown'}, "
+        f"wrote {resolved_out} (rid={rid}, lane={lane or 'unknown'}, "
         f"gates={len(gate_rows)}, outcomes={len(outcomes)})"
     )
     return 0
