@@ -214,6 +214,7 @@ run() {  # [<base>]
   while IFS="$(printf '\t')" read -r file lineno orig mut; do
     [ "$attempts" -ge "$MAX" ] && break
     [ -f "$file" ] || continue
+    [ -L "$file" ] && continue   # SPEC-134: never mutate through a symlink (defense-in-depth)
     attempts=$((attempts+1))
 
     CUR_FILE="$file"; CUR_BK="$(mktemp)"; cp "$file" "$CUR_BK"

@@ -534,8 +534,9 @@ mutation() {
   for kv in "$@"; do
     k="${kv%%=*}"; v="${kv#*=}"
     # every value is single-token (space-split read-side); collapse spaces + neuter embedded "="
-    # in free text so a value can never smuggle a second KV or split the ledger line.
-    v="$(printf '%s' "$v" | tr '\n\r' '  ' | tr ' ' '_')"
+    # in free text so a value can never smuggle a second KV or split the ledger line. The "="->":"
+    # step (SPEC-134) matches debt()'s pre-existing neutering and makes this line's comment true.
+    v="$(printf '%s' "$v" | tr '\n\r' '  ' | tr ' ' '_' | tr '=' ':')"
     case "$k" in
       verdict) verdict="$v" ;;
       *)       rest="$rest $k=$v" ;;

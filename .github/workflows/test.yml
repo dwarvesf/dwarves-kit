@@ -116,5 +116,8 @@ jobs:
       - name: Run generated proof-table tests (SPEC-132, kit-run-integrity SG-05)
         run: bash tests/test-proof-table-gen.sh
 
+      - name: Run security-hardening tests (SPEC-134, kit-run-integrity TIER-4)
+        run: bash tests/test-security-hardening.sh
+
       - name: Run coverage-delta gate tests (SPEC-130, advisory)
         run: bash tests/test-coverage-delta.sh
