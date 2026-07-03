@@ -120,12 +120,28 @@ _last_debt_line() {
   grep '| DEBT |' "$1" 2>/dev/null | tail -n1 || true
 }
 
+# _last_fat_debt_line <ledger-file> -- the last `| DEBT |` line carrying significance= (a "fat"
+# line: SG-02's classifier via gate-ledger.sh debt(), or a forward-carried debt-response()). Readers
+# use this to walk back past a THIN response-only line (pre-forward-carry history, or the classifier
+# genuinely never ran) so significance/worthiness still display instead of going blank. Returns ""
+# (via `|| true`) when no fat line exists at all -- an honest gap, not fabricated data.
+_last_fat_debt_line() {
+  grep '| DEBT |' "$1" 2>/dev/null | grep 'significance=' | tail -n1 || true
+}
+
 # _kv <line> <key> -- extract KEY=value (no embedded spaces in the value) from a ledger line.
-# Safe even when a later `reason=...` field embeds spaces, because the regex stops at the first
-# space. `|| true`: a key that is not present (e.g. `response=` on a silent SG-02 wave) is an
-# expected empty result, never a script-aborting failure.
+# Security LOW (TIER-4 close): a free-text `reason=...` value can itself contain a token shaped
+# like a control field (e.g. `reason=response=engage`); grepping the WHOLE line would misread that
+# as the real control key. The writer (gate-ledger.sh debt()/debt_response()) always emits control
+# keys BEFORE `reason=` and now also neuters any `=` inside the reason value itself (belt-and-
+# suspenders) -- so cutting the line at the first ` reason=` and parsing control keys from that
+# prefix ONLY is both correct (real control fields never appear after `reason=`) and sufficient.
+# `|| true`: a key that is not present (e.g. `response=` on a silent SG-02 wave) is an expected
+# empty result, never a script-aborting failure.
 _kv() {
-  printf '%s' "$1" | grep -oE "$2=[^ ]+" | head -n1 | cut -d= -f2- || true
+  local line="$1" key="$2" struct
+  struct="${line%% reason=*}"
+  printf '%s' "$struct" | grep -oE "$key=[^ ]+" | head -n1 | cut -d= -f2- || true
 }
 
 # _disposition <debt-line> -- prints "waved"|"deferred"|"pending"|"paid"|"not-significant" for the
@@ -192,13 +208,23 @@ _strip_ug_prefix() {
 
 cmd_list() {
   _parse_common "$@" || return $?
-  local f disp rid last sig wor ts
+  local f disp rid last sig wor ts fat
   _collectible_files | while IFS=$'\t' read -r f disp; do
     [ -n "$f" ] || continue
     rid="$(basename "$f" .log)"
     last="$(_last_debt_line "$f")"
     sig="$(_kv "$last" significance)"
     wor="$(_kv "$last" worthiness)"
+    if [ -z "$sig" ] || [ -z "$wor" ]; then
+      # Walk-back (TIER-4 close fix): the LAST line is a thin response= line with no sig/wor.
+      # Fall back to the last FAT line for display; if none exists, blank stays honest (documented
+      # gap until `significance-classify record` is wired -- out of scope here).
+      fat="$(_last_fat_debt_line "$f")"
+      if [ -n "$fat" ]; then
+        [ -z "$sig" ] && sig="$(_kv "$fat" significance)"
+        [ -z "$wor" ] && wor="$(_kv "$fat" worthiness)"
+      fi
+    fi
     ts="$(printf '%s' "$last" | awk -F' [|] ' '{print $1}')"
     printf '%s\t%s\t%s\t%s\t%s\n' "$rid" "$disp" "$sig" "$wor" "$ts"
   done
@@ -206,7 +232,7 @@ cmd_list() {
 
 cmd_collect() {
   _parse_common "$@" || return $?
-  local rows f disp rid last sig wor reason ts notes_slug notes_path explainer_path
+  local rows f disp rid last sig wor reason ts notes_slug notes_path explainer_path fat
   rows="$(_collectible_files)"
   local n_waved=0 n_deferred=0 n=0
   local body=""
@@ -219,6 +245,14 @@ cmd_collect() {
     last="$(_last_debt_line "$f")"
     sig="$(_kv "$last" significance)"
     wor="$(_kv "$last" worthiness)"
+    if [ -z "$sig" ] || [ -z "$wor" ]; then
+      # Walk-back (TIER-4 close fix): see cmd_list's matching comment.
+      fat="$(_last_fat_debt_line "$f")"
+      if [ -n "$fat" ]; then
+        [ -z "$sig" ] && sig="$(_kv "$fat" significance)"
+        [ -z "$wor" ] && wor="$(_kv "$fat" worthiness)"
+      fi
+    fi
     reason="$(printf '%s' "$last" | grep -oE 'reason=.*' | cut -d= -f2- || true)"
     ts="$(printf '%s' "$last" | awk -F' [|] ' '{print $1}')"
 
@@ -265,11 +299,17 @@ cmd_mark_paid() {
   [ -f "$f" ] || { echo "mark-paid: no ledger file for rid '$rid' ($f)" >&2; return 1; }
   local last; last="$(_last_debt_line "$f")"
   [ -n "$last" ] || { echo "mark-paid: rid '$rid' has no debt-ledger entry -- nothing to close" >&2; return 1; }
-  local sig wor verdict reason
-  sig="$(_kv "$last" significance)"; wor="$(_kv "$last" worthiness)"; verdict="$(_kv "$last" verdict)"
-  reason="paid via weekend batch $(date -u +%Y-%m-%d)"
+  local reason; reason="paid via weekend batch $(date -u +%Y-%m-%d)"
   [ -n "$note" ] && reason="$reason: $note"
-  bash "$GATE_LEDGER" debt "$rid" "significance=$sig" "worthiness=$wor" "verdict=$verdict" "response=engage" "reason=$reason"
+  # Close via debt-response, NEVER the raw fat `debt` verb (TIER-4 close finding). The last debt
+  # line here is very often a THIN response= line (SG-04's quiz-gate respond / debt-response is the
+  # live default path today -- the fat `debt`-verb classifier, `significance-classify record`, is
+  # unwired), which carries no significance=/worthiness=/verdict= to re-emit. Re-emitting empties
+  # through the fat `debt` verb's required-enum validation used to crash mark-paid with exit 64.
+  # debt-response only requires a valid response enum (engage here), and now forward-carries
+  # sig/wor/verdict from the last FAT line when one exists -- so paying down a classified item still
+  # closes with its full context, and paying down an unclassified (thin-only) item still closes clean.
+  bash "$GATE_LEDGER" debt-response "$rid" engage "$reason"
 }
 
 usage() { sed -n '2,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }

@@ -161,6 +161,79 @@ else
   skip "AC4 (dotfiles path absent -- same as AC2)"
 fi
 
+echo ""
+echo "=== TIER-4 regression: respond -> collect -> mark-paid via the REAL codepaths (thin response, no prior classifier) ==="
+# This is the bug: SG-02's classifier writes a FAT line; SG-04's quiz-gate/debt-response wrote a
+# THIN line (response= only). The old mark-paid re-emitted the last line's sig/wor/verdict through
+# the fat `debt` verb and crashed (exit 64) on the empty enums -- and because `significance-classify
+# record` (the fat writer) is unwired today, EVERY live debt-response is thin, making this the
+# DEFAULT path. The prior test suite only ever hand-seeded fat lines, masking the seam.
+RID_THIN="ug-20-thin-response-$$"
+( cd "$KIT_DIR" && bash "$GL" start "$RID_THIN" normal normal bug "" fixture-repo ) >/dev/null
+( cd "$KIT_DIR" && bash "$GL" debt-response "$RID_THIN" defer "deferred to weekend" ) >/dev/null
+THIN_LOG="$RUNS/$RID_THIN.log"
+assert "regression setup: debt-response wrote a THIN line (no significance=) -- there was no prior classifier line" \
+  "$(grep '| DEBT |' "$THIN_LOG" | tail -n1 | grep -q 'significance=' && echo 1 || echo 0)"
+
+COLLECT_THIN="$(cd "$KIT_DIR" && bash "$WB" collect --repo fixture-repo --repo-root "$FIXREPO")"
+assert "regression: collect lists $RID_THIN as deferred/collectible BEFORE mark-paid" \
+  "$(printf '%s\n' "$COLLECT_THIN" | grep -A2 "^## ${RID_THIN}\$" | grep -q 'disposition: deferred' && echo 0 || echo 1)"
+
+( cd "$KIT_DIR" && bash "$WB" mark-paid "$RID_THIN" --note "regression test" ) >/dev/null 2>&1
+MP_THIN_RC=$?
+assert "regression: mark-paid on a THIN response-only item exits 0 (was exit 64 before this fix)" "$MP_THIN_RC"
+
+LIST_AFTER_THIN="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo)"
+assert "regression: $RID_THIN is no longer collectible after mark-paid (disposed paid, never re-collected)" \
+  "$(printf '%s\n' "$LIST_AFTER_THIN" | grep -q "$RID_THIN" && echo 1 || echo 0)"
+
+echo ""
+echo "=== Forward-carry: a FAT classifier line precedes a response line ==="
+RID_FAT="ug-21-fat-then-response-$$"
+( cd "$KIT_DIR" && bash "$GL" start "$RID_FAT" normal normal bug "" fixture-repo ) >/dev/null
+( cd "$KIT_DIR" && bash "$GL" debt "$RID_FAT" significance=high worthiness=high verdict=tap "reason=sig:design-bearing wor:primitive" ) >/dev/null
+( cd "$KIT_DIR" && bash "$GL" debt-response "$RID_FAT" defer "deferred after classification" ) >/dev/null
+FAT_LOG="$RUNS/$RID_FAT.log"
+LAST_FAT_RESP_LINE="$(grep '| DEBT |' "$FAT_LOG" | tail -n1)"
+assert "forward-carry: the response line carries significance=high from the earlier classifier line" \
+  "$(printf '%s' "$LAST_FAT_RESP_LINE" | grep -q 'significance=high' && echo 0 || echo 1)"
+assert "forward-carry: the response line carries worthiness=high from the earlier classifier line" \
+  "$(printf '%s' "$LAST_FAT_RESP_LINE" | grep -q 'worthiness=high' && echo 0 || echo 1)"
+assert "forward-carry: the response line carries verdict=tap from the earlier classifier line" \
+  "$(printf '%s' "$LAST_FAT_RESP_LINE" | grep -q 'verdict=tap' && echo 0 || echo 1)"
+assert "forward-carry: the response line still carries its own response=defer" \
+  "$(printf '%s' "$LAST_FAT_RESP_LINE" | grep -q 'response=defer' && echo 0 || echo 1)"
+
+COLLECT_FAT="$(cd "$KIT_DIR" && bash "$WB" collect --repo fixture-repo --repo-root "$FIXREPO")"
+assert "forward-carry: the digest shows real sig/wor for $RID_FAT (high / high), not blanks" \
+  "$(printf '%s\n' "$COLLECT_FAT" | grep -A2 "^## ${RID_FAT}\$" | grep -q 'significance: high / worthiness: high' && echo 0 || echo 1)"
+
+echo ""
+echo "=== Security LOW: a reason= value cannot smuggle a control token ==="
+# Layer 1 (writer): gate-ledger.sh debt-response neuters "=" inside the reason value at write time.
+RID_INJECT="ug-22-reason-injection-$$"
+( cd "$KIT_DIR" && bash "$GL" start "$RID_INJECT" normal normal bug "" fixture-repo ) >/dev/null
+( cd "$KIT_DIR" && bash "$GL" debt-response "$RID_INJECT" defer "legit reason containing response=engage as free text" ) >/dev/null
+INJECT_LOG="$RUNS/$RID_INJECT.log"
+assert "security [writer]: only ONE 'response=<word>' token survives on the line (the real control field; the embedded one was neutered)" \
+  "$([ "$(grep '| DEBT |' "$INJECT_LOG" | tail -n1 | grep -oE 'response=[a-z]+' | wc -l | tr -d ' ')" -eq 1 ] && echo 0 || echo 1)"
+LIST_INJECT="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
+DISP_INJECT="$(printf '%s\n' "$LIST_INJECT" | grep -F "$RID_INJECT" | cut -f2)"
+assert "security [writer]: $RID_INJECT disposition is deferred (NOT paid) despite the injected 'response=engage' text" \
+  "$([ "$DISP_INJECT" = deferred ] && echo 0 || echo 1)"
+
+# Layer 2 (reader, belt-and-suspenders): a HAND-CRAFTED ledger line that bypasses the writer entirely
+# (simulating an older ledger line, or any future writer that forgets the guard) still must not let
+# an embedded control token past weekend-batch.sh's own _kv/_disposition parse.
+RID_RAW="ug-23-raw-injection-$$"
+RAW_LOG="$RUNS/$RID_RAW.log"
+printf '%s | START | lane=normal classified=normal type=bug repo=fixture-repo\n' "$NOW" > "$RAW_LOG"
+printf '%s | DEBT | response=defer reason=free text with response=engage embedded\n' "$NOW" >> "$RAW_LOG"
+LIST_RAW="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
+DISP_RAW="$(printf '%s\n' "$LIST_RAW" | grep -F "$RID_RAW" | cut -f2)"
+assert "security [reader]: a hand-crafted line with 'response=engage' inside reason= still reads disposition=deferred (struct-prefix cut)" \
+  "$([ "$DISP_RAW" = deferred ] && echo 0 || echo 1)"
+
 # Capture the fixture-A collect digest as the proof artifact (mirrors test-explain.sh's
 # sample-explainer.md capture).
 PROOF_DIR="$KIT_DIR/docs/verification/weekend-batch"
