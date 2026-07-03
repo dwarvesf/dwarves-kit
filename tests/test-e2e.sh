@@ -66,13 +66,16 @@ LANE="normal"   # chosen (a flag still wants a spec + tests in this demo)
 # --- 3. START + the road ---
 GL start e2e-demo "$LANE" "$LANE" "$TYPE" "$TYPE" e2e-repo >/dev/null || { bad "GL start failed"; exit 1; }
 expect "plan: announces the road" "grill" "$(GL plan "$LANE")"
-expect "progress: opens at step 1" "step 1/8 (grill)" "$(GL progress e2e-demo "$LANE")"
+expect "progress: opens at step 1" "step 1/9 (grill)" "$(GL progress e2e-demo "$LANE")"
 
 # --- 4. walk the phases ---
+# (SPEC-122 adds a "Design record" row, run-lite for normal lane, between spec and
+# test-plan in plan order -- the normal-lane plan grows from 8 to 9 steps)
 GL record e2e-demo grill ran "2 questions resolved" >/dev/null
 GL record e2e-demo think ran "intent confirmed" >/dev/null
 GL record e2e-demo spec ran "spec written" >/dev/null
-expect "progress: mid-run pointer" "step 4/8 (test-plan)" "$(GL progress e2e-demo "$LANE")"
+GL record e2e-demo design-record ran "obvious: <why> collapse noted (SPEC-122)" >/dev/null
+expect "progress: mid-run pointer" "step 5/9 (test-plan)" "$(GL progress e2e-demo "$LANE")"
 GL record e2e-demo test-plan skipped "lite; matrix in spec" >/dev/null
 GL record e2e-demo build ran "flag implemented, tests green" >/dev/null
 GL record e2e-demo review ran "SHIP findings=0" >/dev/null
@@ -81,7 +84,7 @@ GL record e2e-demo ship ran "shipping pr=#1" >/dev/null
 
 # --- 5. the three surfaces agree ---
 if GL check "$LANE" e2e-demo >/dev/null 2>&1; then ok "gate-ledger: check passes"; else bad "gate-ledger: check failed"; fi
-expect "progress: complete" "complete (8/8)" "$(GL progress e2e-demo "$LANE")"
+expect "progress: complete" "complete (9/9)" "$(GL progress e2e-demo "$LANE")"
 REPORT=$(LT report)
 expect "telemetry: the run is counted" "runs: 1" "$REPORT"
 expect "telemetry: the ship is counted" "shipped: 1" "$REPORT"
