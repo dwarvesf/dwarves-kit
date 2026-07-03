@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# test-proof-table-gen.sh -- the generated proof-of-done confirmation table (SPEC-132).
+# test-proof-table-gen.sh -- the generated proof-of-done confirmation table (SPEC-132,
+# reconciled to 01's real marker shape per SPEC-133).
 #
-# Pins: round-trip against a fixture ledger, additive-tolerance BOTH ways (01's
-# caught=/dur_ms= marker present vs. entirely absent), the hard "never overwrite the
-# canonical proof-of-done.md" backstop (explicit path + the default path), the
-# coverage-delta row with a known lane and with an unknown lane, and a fully empty
+# Pins: round-trip against a fixture ledger, additive-tolerance BOTH ways (01's real
+# start/end caught=/dur_s= marker pair present vs. entirely absent), the hard "never
+# overwrite the canonical proof-of-done.md" backstop (explicit path + the default path),
+# the coverage-delta row with a known lane and with an unknown lane, and a fully empty
 # ledger (no crash).
 #
 # Run: bash tests/test-proof-table-gen.sh
@@ -44,29 +45,31 @@ BODY1="$(cat "$OUT1" 2>/dev/null)"
 expect "T1: confirmation row for spec (phase/when/state/reason, round-trip)" "| 1 | spec | 2026-07-04T09:00:01Z | ran | spec authored |" "$BODY1"
 expect "T1: confirmation row for build" "| 2 | build | 2026-07-04T09:00:02Z | ran | implemented |" "$BODY1"
 expect "T1: confirmation row for ship (skipped state preserved)" "| 3 | ship | 2026-07-04T09:00:03Z | skipped | held for review |" "$BODY1"
-refute "T1 (implies T3): no Caught/Duration columns when zero OUTCOME lines exist" "Duration (ms)" "$BODY1"
+refute "T1 (implies T3): no Caught/Duration columns when zero OUTCOME lines exist" "Duration (s)" "$BODY1"
 expect "T6: coverage-delta covers spec+build" "Covered: build, spec" "$BODY1"
 expect "T6: coverage-delta names ship as uncovered (required, only skipped)" "Uncovered: ship" "$BODY1"
 expect "T6: acceptance row reflects lane=normal" "lane \`normal\`" "$BODY1"
 
 # ============================================================
 echo ""
-echo "=== T2: additive-tolerance, OUTCOME markers present (assumed 01 shape) ==="
+echo "=== T2: additive-tolerance, OUTCOME markers present (SPEC-129 real 01 shape) ==="
 # ============================================================
 RID2="fixture-outcomes"
 cat > "$DWARVES_KIT_LOG_DIR/runs/$RID2.log" <<'EOF'
 2026-07-04T09:00:00Z | START | lane=normal classified=normal type=spec-feature repo=dwarves-kit
 2026-07-04T09:00:01Z | GATE | spec | ran | spec authored
 2026-07-04T09:00:02Z | GATE | build | ran | implemented
-2026-07-04T09:00:01Z | OUTCOME | spec | caught=false start=2026-07-04T09:00:01Z end=2026-07-04T09:00:01Z dur_ms=1200
-2026-07-04T09:00:02Z | OUTCOME | build | caught=true dur_ms=4300
+2026-07-04T09:00:01Z | OUTCOME | spec | start | at=1000
+2026-07-04T09:00:01Z | OUTCOME | spec | end | at=1012 caught=false dur_s=12
+2026-07-04T09:00:02Z | OUTCOME | build | start | at=2000
+2026-07-04T09:00:02Z | OUTCOME | build | end | at=2043 caught=true dur_s=43
 EOF
 OUT2="$WORK/out2.md"
 bash "$GEN" "$RID2" "$OUT2" >/dev/null 2>&1
 BODY2="$(cat "$OUT2" 2>/dev/null)"
-expect "T2: Caught/Duration columns appear when OUTCOME lines exist" "Caught | Duration (ms)" "$BODY2"
-expect "T2: spec row populates caught=false dur=1200" "| 1 | spec | 2026-07-04T09:00:01Z | ran | spec authored | false | 1200 |" "$BODY2"
-expect "T2: build row populates caught=true dur=4300" "| 2 | build | 2026-07-04T09:00:02Z | ran | implemented | true | 4300 |" "$BODY2"
+expect "T2: Caught/Duration columns appear when OUTCOME lines exist" "Caught | Duration (s)" "$BODY2"
+expect "T2: spec row populates caught=false dur=12 from real 01 start/end pair" "| 1 | spec | 2026-07-04T09:00:01Z | ran | spec authored | false | 12 |" "$BODY2"
+expect "T2: build row populates caught=true dur=43 from real 01 start/end pair" "| 2 | build | 2026-07-04T09:00:02Z | ran | implemented | true | 43 |" "$BODY2"
 
 # same fixture, add a phase with NO outcome line -> that row degrades to n/a per-row
 RID2B="fixture-outcomes-partial"
@@ -74,12 +77,28 @@ cat > "$DWARVES_KIT_LOG_DIR/runs/$RID2B.log" <<'EOF'
 2026-07-04T09:00:00Z | START | lane=normal classified=normal type=spec-feature repo=dwarves-kit
 2026-07-04T09:00:01Z | GATE | spec | ran | spec authored
 2026-07-04T09:00:03Z | GATE | ship | ran | opened PR
-2026-07-04T09:00:01Z | OUTCOME | spec | caught=false dur_ms=900
+2026-07-04T09:00:01Z | OUTCOME | spec | start | at=500
+2026-07-04T09:00:01Z | OUTCOME | spec | end | at=509 caught=false dur_s=9
 EOF
 OUT2B="$WORK/out2b.md"
 bash "$GEN" "$RID2B" "$OUT2B" >/dev/null 2>&1
 BODY2B="$(cat "$OUT2B" 2>/dev/null)"
+expect "T2: spec row still populates in the partial fixture" "| 1 | spec | 2026-07-04T09:00:01Z | ran | spec authored | false | 9 |" "$BODY2B"
 expect "T2: per-row degrade -- a phase with no OUTCOME line gets n/a, not a crash" "| 2 | ship | 2026-07-04T09:00:03Z | ran | opened PR | n/a | n/a |" "$BODY2B"
+
+# same shape, but the end line omits dur_s= (defensive case) -> duration falls back to
+# the end.at - start.at epoch delta, the same arithmetic outcome()'s own emitter uses
+RID2C="fixture-outcomes-fallback-duration"
+cat > "$DWARVES_KIT_LOG_DIR/runs/$RID2C.log" <<'EOF'
+2026-07-04T09:00:00Z | START | lane=normal classified=normal type=spec-feature repo=dwarves-kit
+2026-07-04T09:00:01Z | GATE | spec | ran | spec authored
+2026-07-04T09:00:01Z | OUTCOME | spec | start | at=100
+2026-07-04T09:00:01Z | OUTCOME | spec | end | at=145 caught=true
+EOF
+OUT2C="$WORK/out2c.md"
+bash "$GEN" "$RID2C" "$OUT2C" >/dev/null 2>&1
+BODY2C="$(cat "$OUT2C" 2>/dev/null)"
+expect "T2: dur_s= absent -> duration derived from end.at - start.at epoch delta (45)" "| 1 | spec | 2026-07-04T09:00:01Z | ran | spec authored | true | 45 |" "$BODY2C"
 
 # ============================================================
 echo ""
