@@ -12,11 +12,15 @@ Parses three ledger line shapes (space-pipe-split, the same convention
 `lib/gate-ledger.sh`'s own awk uses):
   TS | START | lane=<l> classified=<c> type=<t> [ctype=<ct>] repo=<r>
   TS | GATE | <phase> | ran|skipped|override | [reason]
-  TS | OUTCOME | <phase> | caught=<true|false> [dur_ms=<N>] [start=<ISO>] [end=<ISO>]
+  TS | OUTCOME | <phase> | start | at=<epoch>
+  TS | OUTCOME | <phase> | end | at=<epoch> caught=<true|false> dur_s=<N>
 
-The OUTCOME line is an ASSUMED shape for sub-goal 01 (gate-outcome-emit), which may not
-be merged yet -- see SPEC-132 "Assumed 01 marker shape". Additive-tolerant: an entirely
-absent OUTCOME marker degrades the table (fewer columns), never crashes.
+The OUTCOME line is sub-goal 01's REAL, now-merged marker shape (gate-outcome-emit,
+SPEC-129's `outcome()`/`outcome_read()` in lib/gate-ledger.sh): a start/end pair per
+phase (field 3 = phase, field 4 = event `start|end`); `caught=`/`dur_s=` appear only on
+the `end` line, duration in SECONDS (not the `dur_ms` this parser assumed before
+SPEC-129 merged). Additive-tolerant: an entirely absent OUTCOME marker degrades the
+table (fewer columns), never crashes.
 
 Usage: proof-table-gen.py <rid> [out-path]
 Env (set by the lib/proof-table-gen.sh wrapper, not re-derived here):
@@ -39,7 +43,8 @@ def fail(msg, code=1):
 def parse_ledger(ledger_path):
     lane = None
     gate_rows = []       # ordered list of dict(ts, phase, state, reason)
-    outcomes = {}        # phase -> dict(caught, dur_ms)  (last OUTCOME line per phase wins)
+    outcomes = {}        # phase -> dict(caught, dur_s)  (last END line per phase wins)
+    starts = {}          # phase -> start epoch (from the `start` line's at=), fallback-only
 
     if not os.path.isfile(ledger_path):
         return lane, gate_rows, outcomes
@@ -66,19 +71,41 @@ def parse_ledger(ledger_path):
             reason = " | ".join(parts[4:]) if len(parts) > 4 else ""
             gate_rows.append({"ts": ts, "phase": phase, "state": state, "reason": reason})
 
-        elif marker == "OUTCOME" and len(parts) >= 3:
+        elif marker == "OUTCOME" and len(parts) >= 4:
+            # Real shape (SPEC-129): field 3 = phase, field 4 = event (start|end); the
+            # kv blob (caught=/dur_s=) lives only on the end line.
             phase = parts[2]
-            kv_blob = " ".join(parts[3:])
+            event = parts[3]
+            kv_blob = parts[4] if len(parts) > 4 else ""
+
+            if event == "start":
+                m_at = re.search(r"\bat=(\d+)", kv_blob)
+                if m_at:
+                    starts[phase] = m_at.group(1)
+                continue
+
+            if event != "end":
+                continue
+
             caught = None
-            dur_ms = None
+            dur_s = None
             mcaught = re.search(r"caught=(\S+)", kv_blob)
             if mcaught:
                 caught = mcaught.group(1)
-            mdur = re.search(r"dur_ms=(\S+)", kv_blob)
+            mdur = re.search(r"dur_s=(\S+)", kv_blob)
             if mdur:
-                dur_ms = mdur.group(1)
-            if caught is not None or dur_ms is not None:
-                outcomes[phase] = {"caught": caught, "dur_ms": dur_ms}
+                dur_s = mdur.group(1)
+            if dur_s is None:
+                # Fallback: derive duration from this end line's at= minus the matching
+                # start line's at=, same epoch-delta the emitter itself uses.
+                m_end_at = re.search(r"\bat=(\d+)", kv_blob)
+                start_epoch = starts.get(phase)
+                if m_end_at and start_epoch:
+                    delta = int(m_end_at.group(1)) - int(start_epoch)
+                    if delta >= 0:
+                        dur_s = str(delta)
+            if caught is not None or dur_s is not None:
+                outcomes[phase] = {"caught": caught, "dur_s": dur_s}
 
     return lane, gate_rows, outcomes
 
@@ -150,7 +177,7 @@ def render(rid, ledger_path, kit_root, lane, gate_rows, outcomes):
     out.append("## 2. Confirmation (gate runs)")
     out.append("")
     if has_outcomes:
-        out.append("| # | Phase | When (ISO8601) | State | Reason | Caught | Duration (ms) |")
+        out.append("| # | Phase | When (ISO8601) | State | Reason | Caught | Duration (s) |")
         out.append("|---|---|---|---|---|---|---|")
     else:
         out.append("| # | Phase | When (ISO8601) | State | Reason |")
@@ -161,7 +188,7 @@ def render(rid, ledger_path, kit_root, lane, gate_rows, outcomes):
             if has_outcomes:
                 o = outcomes.get(r["phase"])
                 caught = o["caught"] if o and o["caught"] else "n/a"
-                dur = o["dur_ms"] if o and o["dur_ms"] else "n/a"
+                dur = o["dur_s"] if o and o["dur_s"] else "n/a"
                 out.append(f"| {i} | {r['phase']} | {r['ts']} | {r['state']} | {reason} | {caught} | {dur} |")
             else:
                 out.append(f"| {i} | {r['phase']} | {r['ts']} | {r['state']} | {reason} |")
