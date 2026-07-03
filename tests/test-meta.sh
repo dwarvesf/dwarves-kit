@@ -2583,6 +2583,30 @@ assert_eq "DEC-017 recorded in SPEC-109 + reciprocal pointer in SPEC-016 (SPEC-1
 RC=0; grep -qiF 'operator-supplied' "$KIT_DIR/commands/kit-health.md" || RC=1
 assert_eq "kit-health check-13 carries the operator-persona carve-out (SPEC-109)" 0 $RC
 
+# ============================================================
+# SPEC-112: UI done-modes , the Done-mode flag + the TWO-SIDED quiescence stop (the no-false-
+# quiescence NC pinned as the full conjunction) + the fixture traces in the proof-of-done.
+# ============================================================
+UIDM="$KIT_DIR/commands/ui-design.md"
+RC=0; grep -qiE 'Done-mode' "$UIDM" || RC=1
+assert_eq "ui-design consumes a Done-mode flag (SPEC-112)" 0 $RC
+RC=0; grep -qiE 'zero NEW findings >=HIGH AND no OPEN finding >=HIGH' "$UIDM" || RC=1
+assert_eq "quiescence stop is TWO-SIDED: zero NEW >=HIGH AND no OPEN >=HIGH (no-false-quiescence NC)" 0 $RC
+RC=0; grep -qiE 'does NOT quiesce|re-finds an|falsely-calm' "$UIDM" || RC=1
+assert_eq "the re-found-CRITICAL-does-not-quiesce trap is stated (SPEC-112)" 0 $RC
+RC=0; grep -qF '[[QL-VERDICT' "$UIDM" || RC=1
+assert_eq "quiescence emits QL-VERDICT round markers (SPEC-112)" 0 $RC
+RC=0; grep -qiE 'Deferred findings' "$UIDM" || RC=1
+assert_eq "Deferred findings subsection defined (SPEC-112)" 0 $RC
+RC=0; { grep -qiE 'Round cap: 3' "$UIDM" && grep -qiE 'cap of 2' "$UIDM"; } || RC=1
+assert_eq "cap divergence pinned: quiescence 3, plain REVISE 2 (SPEC-112 DEC-018)" 0 $RC
+RC=0; grep -qiE 'COVERAGE-DELTA|ACs-covered' "$UIDM" || RC=1
+assert_eq "over-test coverage-delta row defined (SPEC-112)" 0 $RC
+# fixture TRACES pinned in the proof-of-done (the goal's crux proof, not just the contract text):
+DMPROOF="$KIT_DIR/docs/verification/done-modes.md"
+RC=0; { grep -qiE 'converge' "$DMPROOF" && grep -qiE 'cap-out|round 3|round cap 3' "$DMPROOF" && grep -qiE 're-found|does NOT quiesce|falsely' "$DMPROOF" && grep -qiE 'plain REVISE|cap.*2' "$DMPROOF"; } || RC=1
+assert_eq "done-modes proof carries the 3 quiescence fixtures + plain-REVISE regression (SPEC-112)" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================
