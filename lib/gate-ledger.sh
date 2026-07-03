@@ -16,6 +16,8 @@
 #   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
 #                                       append an understanding-debt verdict (ADR-0031, SPEC-123);
 #                                       additive marker, ignored by check()/override()/descent()
+#   debt-response <rid> <engage|defer|wave> [reason]  append the HUMAN's ★-tap choice (ADR-0031 §3,
+#                                       SG-04); additive `| DEBT |` marker, same ignore rules as debt
 #   override <rid> <phase> <reason>    record a human override for a gate
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
 #   show     <rid>                     print the run's ledger
@@ -195,6 +197,24 @@ debt() {
   case "$verdict" in tap|wave|not-significant) ;; *) echo "debt: verdict must be tap|wave|not-significant (got '$verdict')" >&2; return 64;; esac
   mkdir -p "$RUNS_DIR"
   local line; line="$(printf 'significance=%s worthiness=%s verdict=%s' "$sig" "$wor" "$verdict")"
+  [ -n "$reason" ] && line="$line reason=$reason"
+  printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
+}
+
+# debt-response: record the HUMAN's ★-tap choice as the SEPARATE `| DEBT |` line the debt() header
+# anticipates (ADR-0031 §3, SG-04). Where debt() writes the CLASSIFIER's verdict (worker side), this
+# writes the conductor-side human response to a `tap`: engage (pull the quiz) / defer (weekend batch,
+# SG-05) / wave (accept the debt knowingly). All three are logged , the only real failure is UNTRACKED
+# debt, so waving is a first-class RECORDED choice, never a hard block. Same additive shape: check()/
+# override()/descent()/_rows() ignore `| DEBT |`, so a response line can never fake or mask a gate.
+# Usage: debt-response <rid> <engage|defer|wave> [reason]
+debt_response() {
+  local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: debt-response <rid> <engage|defer|wave> [reason]" >&2; return 64; }
+  [ -n "$rid" ] || { echo "debt-response requires a rid" >&2; return 64; }
+  case "$response" in engage|defer|wave) ;; *) echo "debt-response: response must be engage|defer|wave (got '$response')" >&2; return 64;; esac
+  local reason; reason="$(oneline "$@")"
+  mkdir -p "$RUNS_DIR"
+  local line; line="response=$response"
   [ -n "$reason" ] && line="$line reason=$reason"
   printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
 }
@@ -379,6 +399,7 @@ case "$cmd" in
   action)   action "$@" ;;
   tokens)   tokens "$@" ;;
   debt)     debt "$@" ;;
+  debt-response) debt_response "$@" ;;
   override) override "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
@@ -386,5 +407,5 @@ case "$cmd" in
   progress) progress "$@" ;;
   rid)      rid "$@" ;;
   descent)  descent "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
 esac

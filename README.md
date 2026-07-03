@@ -114,6 +114,7 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 /kit:verify         Re-run tests read-only; PASS / FAIL / INCONCLUSIVE
 /kit:docs           Update all docs to match code (5 min)
 /kit:explain        Literate-diff explainer: understand a change, not click-to-merge it (ADR-0031)
+/kit:quiz-gate      ★-tap nudge: a 5-question quiz from the diff before merging a significant PR (ADR-0031)
 /kit:ship           Review gate, version bump, changelog, commit, PR
 /kit:retro          Retrospective (10 min, after shipping)
 ```
@@ -183,7 +184,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (28, manual, human-triggered)</summary>
+<summary><b>Commands</b> (29, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -210,6 +211,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
 | /kit:explain | Understand | Literate-diff explainer (background -> intuition -> prose-ordered diff -> diagram); composes narrate-log + svg-knowledge-diagram, grounded in the diff not the agent's narrative (ADR-0031) |
+| /kit:quiz-gate | Understand | ★-tap nudge before merging a significant+worthy gate PR: 5 diff-grounded quiz questions routed through deep-understand, three logged responses (engage/defer/wave), advisory never must-pass (ADR-0031) |
 | /kit:ship | Ship | Review gate, version bump, changelog, commit, PR |
 | /kit:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
