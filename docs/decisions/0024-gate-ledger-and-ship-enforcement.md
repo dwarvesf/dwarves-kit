@@ -39,3 +39,15 @@ The per-lane depth is already designed: WORKFLOW.md's **lane×phase depth matrix
 - The lane×phase matrix gains a machine contract (the token guard), so future edits cannot break the parser silently.
 - **Override threat model (honest scope).** In a fully autonomous `bypassPermissions` run the agent can run any command, so it can also write the override entry. The guarantee is therefore **block-by-default + every skip and every override recorded and auditable**, not cryptographic prevention. True prevention still requires a human at the ship boundary. This matches the goal's wording ("cannot ship unless an override is logged") and is the realistic ceiling for an in-repo bash mechanism; we do not over-claim a hard stop the runtime cannot give.
 - Source: ID-036 + ID-012 P2. Reuses the WORKFLOW-extract pattern (ADR-0019/0020 lineage) and the existing hook log infra; no net-new logging convention.
+
+## Addendum (2026-07-04, kit-run-integrity)
+
+The additive-marker convention this ADR established for `| GATE |` (and later extended to
+`| DEBT |`, ADR-0031) gained two more additive verbs, same contract, no new convention:
+`| OUTCOME |` (SPEC-129 -- a `start`/`end` pair bracketing a gate with `caught=`/duration,
+emitted today only by `hooks/ship-gate.sh` at the ship boundary) and `| MUTATION |` (SPEC-131
+-- an advisory mutation-smoke flag, emitted from `commands/verify.md`'s Step 6b, off the push
+blocker). Both are ignored by every existing reader keyed on field 2 (`check()` /
+`override()` / `descent()` / `_rows()` / `_token_agg()`), preserving the additive-equivalence
+property this ADR's Decision 1 relies on. Full detail: WORKFLOW.md "## Gate ledger and ship
+enforcement" and "## Advisory measurement gates".

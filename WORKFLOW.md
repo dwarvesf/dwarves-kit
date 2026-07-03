@@ -412,6 +412,46 @@ source for which gates a lane *requires* (its `measure-twice` cells);
   a SEPARATE axis (advisory, never a ship block). See "## The understanding axis" below for the
   debt-budget model, where each beat fires, and a known wiring gap stated honestly rather than
   papered over.
+- **Gate-outcome markers (SPEC-129), a fourth additive verb:** beside `ran`/`skipped`, a gate
+  can also emit `bash lib/gate-ledger.sh outcome <rid> <phase> start|end [caught=<bool>]` -- a
+  `start`/`end` pair bracketing the gate with a duration (`dur_s=`, the epoch delta of the two
+  lines) plus whether the gate caught a defect. Same additive contract as `| GATE |` and the
+  understanding-axis `| DEBT |` above: `check()` / `override()` / `descent()` / `_rows()` /
+  `_token_agg()` all key on field 2 and ignore `| OUTCOME |` entirely. The only live emitter
+  today is `hooks/ship-gate.sh` at the ship boundary (`caught=true` on a block, `caught=false`
+  on a clean pass) -- HOOK-ENFORCED, but ship-boundary-only, not yet per-phase (a future change
+  could extend `outcome()` calls to the spec/review boundaries; not done here). Read a phase's
+  outcome back with `outcome-read`.
+- **The confirmation table is GENERATED, never hand-authored (SPEC-132):** `bash
+  lib/proof-table-gen.sh <rid>` renders the SPEC-016 table-first shape from a rid's gate/run
+  ledger under `docs/runs/<rid>.md`, surfacing the OUTCOME marker above (Caught/Duration
+  columns) when present and degrading gracefully when absent; it hard-refuses any out-path
+  whose basename is `proof-of-done.md` (the canonical stays hand-authored) and confines its
+  resolved path under `docs/runs/` (path-traversal hardening, SPEC-134). Full convention:
+  `docs/verification/README.md` "Generators write run ledgers, never the canonical."
+
+## Advisory measurement gates (coverage-delta, mutation-smoke)
+
+Two ADVISORY signals ride the existing gate-ledger marker convention, closing the
+kit-run-integrity benchmark's coverage-gap and honesty-gap findings. State their enforcement
+level PLAINLY rather than certifying either "wired" on the weakest reading: both are
+PROSE-INVOKED, not hook-enforced -- an agent that skips the command inside the source markdown
+named below leaves zero trace, and neither is visible to `check()` / `required()` / `plan()` /
+`progress()` / `descent()`, the ledger's own status/dashboard surfaces (an agent working from
+those surfaces alone would not know either ran, or was skipped, this run).
+
+| Gate | What it checks | Live call site | Enforcement | Honesty note |
+|---|---|---|---|---|
+| `lib/coverage-delta.sh` (SPEC-130) | a behavioral diff moved source with no matching test change | `commands/review-team.md` Step 1, the Build->Review boundary | PROSE-INVOKED (inside `/kit:review-team`'s own markdown, off the push blocker); records `\| GATE \| coverage-delta \| ran \|`, ALWAYS exits 0 | a diff-LINE HEURISTIC (changed non-test lines vs changed test lines), NOT a real %-coverage delta; `COVERAGE_DELTA_RUNNER` hooks in a real runner but is unset by default |
+| `lib/mutation-smoke.sh` (SPEC-131) | a suite that stays green when a changed line is mutated (a false proof of correctness) | `commands/verify.md` Step 6b, inside `/kit:verify` | PROSE-INVOKED (inside `/kit:verify`'s own markdown, off the push blocker); records `\| MUTATION \|`, ALWAYS exits 0, `MUTATION_SMOKE_MAX` (default 5) bounds the run | a small FIXED mutation-operator set on the CHANGED HUNKS only, first-survivor-stops -- NOT a full mutation-testing sweep |
+
+**Advisory-to-block promotion is Han's call, not taken here.** Once the ledger has accrued real
+`caught=` data from the OUTCOME marker above, a future retro can ask whether either gate has
+earned a hard block; the mega-goal's own advisor pass recommends NOT YET (there is no per-gate
+`caught=` accrual today -- OUTCOME is ship-boundary-only, see above -- so there is nothing to
+measure a false-positive rate against yet). See ops-toolkit `_meta/megagoals/kit-run-integrity/NOTES.md`
+"Proposed additions (TIER-4)" for the full recommendation. This section documents the gates as
+they ship; it does not promote them.
 
 ## The understanding axis (ADR-0031)
 
@@ -720,6 +760,23 @@ sub-goal's dispatch (both the serial and the concurrent-wave path route the same
 Route by the sub-goal's DOMINANT work-type at decompose time, not per-phase (a session
 can't switch model mid-run): **opus** for planning/design-heavy sub-goals, **sonnet** for
 execution-dominant ones, **haiku** for trivial ones.
+
+### Wavefront SPEC-number reservation (SPEC-128)
+
+A concurrent wave (2+ admitted sub-goals dispatched at once) closes the SPEC-number race at
+DISPATCH, not at spec-time: `_wave_reserve_spec` (in `lib/orchestrate.sh`) atomically claims
+the next free number per sub-goal via `bash lib/spec-next.sh reserve` -- a portable
+`mkdir`-based mutex (no `flock` on stock macOS) over an append-only reservations ledger --
+and injects the reserved `SPEC-NNN` into that worker's dispatch prompt, before the worker (or
+a sibling) can race `spec-next.sh next` at spec-writing time. `spec-next.sh`'s scan (specs +
+branches + commits) is unchanged; the reservation is an additional surface it folds into the
+same scan, so a reserved number reads as taken immediately, and a crashed worker's stale
+reservation self-expires (24h TTL) rather than permanently inflating the max. Best-effort: a
+reserve failure degrades to the worker self-computing its own number (still scan-safe via the
+same folded-in ledger), never wedging the wave. This is the general orchestrate.sh fix; the
+conductor's own per-run manual pre-assignment (used when dispatch goes through the Agent tool
+rather than `orchestrate.sh`'s wavefront path) is a separate, independent belt-and-suspenders
+layer, not this mechanism.
 
 ### The ledger-under-delegation guarantee
 
