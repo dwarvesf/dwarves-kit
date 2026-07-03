@@ -12,6 +12,11 @@
 #     then {SG-02,SG-03}, then SG-04, cycle by cycle.
 #   - partially-checked -> checked boxes drop out; a dep on an unchecked box still blocks.
 set -uo pipefail
+# TIER4_CLOSE=0 (SPEC-118): several cases here run a Touches-less/linear mega-goal to the _next-empty
+# terminal, where the TIER-4 mega-close now fires by default and would dispatch a verifier session the
+# wave mocks don't model. This suite tests wave/serial SCHEDULING, not the close (which has its own
+# tests/test-tier4-close.sh), so opt the whole suite out of the close.
+export TIER4_CLOSE=0
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib/orchestrate.sh
 source "$KIT/lib/orchestrate.sh"   # guard in orchestrate.sh keeps main from running when sourced

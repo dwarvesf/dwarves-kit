@@ -78,7 +78,10 @@ run_serial_case() {  # tier(opus|sonnet|haiku|none) expect_flag(--model X or emp
   else
     mk_megagoal_tiered "$d" "Model: $tier"
   fi
-  ROUTE_LOG="$log" ROUTE_RM="$d/ROADMAP.md" CLAUDE_FLAGS="" \
+  # TIER4_CLOSE=0 (SPEC-118): this all-auto single-sub-goal fixture reaches the _next-empty terminal,
+  # where the TIER-4 mega-close now fires by default. This suite only tests per-sub-goal model routing,
+  # so opt out of the close here -- it is exercised by its own dedicated tests/test-tier4-close.sh.
+  ROUTE_LOG="$log" ROUTE_RM="$d/ROADMAP.md" CLAUDE_FLAGS="" TIER4_CLOSE=0 \
     CLAUDE_CMD="$TMP/claude-route" bash "$ORCH" run "$d" >/dev/null 2>&1
   if [ -n "$want" ]; then
     grep -q "^SG-01|.*$want" "$log" \

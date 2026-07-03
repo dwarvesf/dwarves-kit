@@ -30,6 +30,13 @@
 # orchestrator advances only then (no self-claim). It STOPS at the first `gate` sub-goal
 # (shared-repo review needs a human).
 #
+# TIER-4 mega-close (SPEC-118, env TIER4_CLOSE=1 default): when EVERY box is checked, the run does a
+# real mega-level close over the ASSEMBLED WAVE -- a mechanical no-orphan sweep (a dispatchable agent
+# defined-but-never-dispatched is BLOCKING, the c6fbd99 class) + a dispatched verifier session
+# (integration-verifier + review-team incl. security + advisor both modes) -- THEN it HOLDS the final
+# human gate (never auto-merges past it). TIER4_CLOSE=0 restores the bare "done"-and-return;
+# TIER4_CORPUS overrides the no-orphan sweep root (default: the megadir's git repo root).
+#
 # The `claude` invocation is `$CLAUDE_CMD` (default: claude), so tests mock it and operators
 # tune the permission flags.
 set -uo pipefail
@@ -108,6 +115,18 @@ WAVE_CAP="${WAVE_CAP:-2}"
 # clean no-op. Tests set WAVE_MERGE_CMD to a mock that records merge ordering. Word-split intentionally
 # (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
 WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
+
+# TIER-4 mega-close (SPEC-118, executes ADR-0032 section 5). Default ON (1): when EVERY sub-goal box
+# is checked, `cmd_run` runs a real mega-level close over the ASSEMBLED WAVE instead of just printing
+# "done" -- a mechanical no-orphan sweep (a dispatchable AGENT defined-but-never-dispatched is a
+# BLOCKING finding, the kit-hardening c6fbd99 class) THEN a dispatched `claude -p` verifier session
+# (integration-verifier vs the mega OBJECTIVE + review-team incl. the security lens + the advisor in
+# both modes), THEN it HOLDS the final human gate (it NEVER auto-merges past it -- gated-final).
+# TIER4_CLOSE=0 restores the bare "done"-and-return (the escape hatch an unrelated all-auto-completion
+# test uses so the close fires only in its own dedicated test). TIER4_CORPUS overrides the no-orphan
+# sweep root (default: the megadir's git repo root); unset AND unresolvable -> the sweep is SKIPPED
+# with a WARN (there is no corpus to sweep, so it must not manufacture a false halt).
+TIER4_CLOSE="${TIER4_CLOSE:-1}"
 
 _say() { printf '%s\n' "$*"; }
 
@@ -1008,6 +1027,124 @@ _wave_converge() {  # megadir [id...]
 }
 # -----------------------------------------------------------------------------------------------
 
+# ---- TIER-4 mega-close (SPEC-118, executes ADR-0032 section 5) ---------------------------------
+# Runs AFTER every sub-goal box is checked, over the ASSEMBLED WAVE -- it does NOT re-run each
+# sub-goal's per-task V-model (that already fired). Three steps: (1) a mechanical no-orphan sweep,
+# (2) a dispatched `claude -p` verifier session (integration-verifier + review-team + advisor), then
+# (3) HOLD the human gate (never auto-merge). Replaces the "done"-and-return in cmd_run.
+
+# _no_orphan_check <corpus>: mechanical sweep for the c6fbd99 orphan class. For each agents/<name>.md
+# under <corpus>, the agent is DISPATCHED iff its <name> appears as a WHOLE WORD (grep -wF, so an agent
+# named `advisor` does not false-match the word `advisory`, and the fixed-string form neutralizes any
+# regex metachar) somewhere under commands/ or lib/, or in AGENTS.md / WORKFLOW.md. Zero dispatch refs
+# => a BLOCKING orphan (defined + gated + rostered + documented but never DISPATCHED). agents/ itself is
+# NOT searched (an agent is dispatched by a COMMAND, not by another agent), so an agent's own definition
+# cannot self-satisfy the check. This is the agent-dispatch class ONLY -- the reliable, deterministic
+# one; the softer flag/step/path wiring is the close SESSION's integration-verifier's job (its judgment
+# lens, exactly as in c6fbd99). Prints one `[no-orphan] BLOCKING: ...` line per orphan. Returns 0 (clean)
+# / 1 (>=1 orphan) / 2 (no corpus to sweep -- the caller treats 2 as a skip, never a halt).
+_no_orphan_check() {  # corpus
+  local corpus="${1:-}"
+  [ -n "$corpus" ] && [ -d "$corpus/agents" ] || return 2   # nothing to sweep
+  local found=0 af name hit
+  for af in "$corpus"/agents/*.md; do
+    [ -f "$af" ] || continue                                  # empty-glob guard (no agents/*.md)
+    name=$(basename "$af" .md)
+    # Search the dispatch corpus (commands/ + lib/ + the two workflow docs), NOT agents/. Missing
+    # paths (a fixture without lib/ or AGENTS.md) just error to the swallowed stderr and are skipped.
+    hit=$(grep -rlwF -- "$name" \
+            "$corpus/commands" "$corpus/lib" "$corpus/AGENTS.md" "$corpus/WORKFLOW.md" 2>/dev/null \
+            | head -1)
+    if [ -z "$hit" ]; then
+      found=1
+      printf '[no-orphan] BLOCKING: agent %s defined (agents/%s.md) but never dispatched (no whole-word reference in commands/, lib/, AGENTS.md, WORKFLOW.md).\n' "$name" "$name"
+    fi
+  done
+  [ "$found" = 0 ] && return 0 || return 1
+}
+
+# _build_close_prompt <dir> <roadmap>: compose the verifier close-session prompt. The mega-goal
+# OBJECTIVE is the ROADMAP `**Destination:**` line if present, else the `# Mega-goal:` title line
+# (fixtures carry the title; the real orchestrate-hardening ROADMAP carries Destination).
+_build_close_prompt() {  # dir roadmap
+  local dir="$1" roadmap="$2" objective=""
+  objective=$(grep -m1 -iE '^\*\*Destination:\*\*' "$roadmap" 2>/dev/null | sed -E 's/^\*\*[^*]*\*\*[[:space:]]*//')
+  [ -n "$objective" ] || objective=$(grep -m1 -E '^# Mega-goal:' "$roadmap" 2>/dev/null | sed -E 's/^# Mega-goal:[[:space:]]*//')
+  cat <<EOF
+TIER-4 MEGA-CLOSE for the mega-goal at: $dir
+
+Every sub-goal box is checked. Verify the ASSEMBLED WAVE as a WHOLE. Do NOT re-run each sub-goal's
+per-task V-model (that already fired); verify that the sub-goals WIRE TOGETHER and meet the OBJECTIVE.
+
+Mega-goal OBJECTIVE:
+  $objective
+
+Run, over the assembled result:
+1. integration-verifier against the OBJECTIVE above (cross-sub-goal wiring + global acceptance).
+2. /kit:review-team INCLUDING the security-reviewer lens.
+3. the advisor in BOTH modes: critique (an extra uniform lens on top of the per-phase reviewers) AND
+   over-suggest (additional ideas/sub-goals to improve the work).
+
+Report a terse verdict (SHIP / HOLD-WITH-FINDINGS) and any blocking findings. Do NOT merge anything;
+the final human gate is HELD after you report.
+EOF
+}
+
+# _tier4_close <dir> <roadmap>: the close STEP. no-orphan sweep -> verifier session -> HOLD the gate.
+# Returns 0 (held clean, verifiers ran) / 1 (BLOCKED: an orphan, or a nonzero verifier session).
+# NEVER merges (gated-final). Replaces the "done"-and-return.
+_tier4_close() {  # dir roadmap
+  local dir="$1" roadmap="$2"
+  _emit_event "$dir" close running "TIER-4 mega-close over the assembled wave"
+  _say "[orchestrate] [close] all sub-goals checked; running the TIER-4 mega-close over the assembled wave (no-orphan sweep + integration-verifier + review-team + advisor) BEFORE the human gate ..."
+
+  # 1. Mechanical no-orphan sweep (fail-fast: a blocking orphan halts before an LLM session is spent).
+  #    Corpus = TIER4_CORPUS, else the megadir's git repo root. Let `_no_orphan_check`'s own return
+  #    code drive all three arms (0 clean / 1 orphan / 2 no-corpus) -- do NOT pre-guard the corpus here
+  #    (that duplicated the callee's guard, made rc=2 dead, and would have silently mis-reported a
+  #    would-be rc=2 as "clean"; the callee owns the "no corpus to sweep" decision).
+  local corpus="${TIER4_CORPUS:-}"
+  [ -n "$corpus" ] || corpus=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)
+  local orphans rc_no=0
+  orphans=$(_no_orphan_check "$corpus") || rc_no=$?
+  case "$rc_no" in
+    1)  # >=1 orphan -> BLOCKING halt (fail-fast, before the LLM session).
+      _emit_event "$dir" close blocked "no-orphan: an artifact was defined-but-never-dispatched"
+      {
+        echo "[orchestrate] [close] BLOCKING: the assembled wave has an orphan (defined-but-never-dispatched) artifact -- halting for human review (the c6fbd99 class; NOT held clean):"
+        printf '%s\n' "$orphans" | sed 's/^/    /'
+      } >&2
+      return 1 ;;
+    2)  # no corpus to sweep -> advisory skip (never a false halt; the verifier session + hold still run).
+      echo "[orchestrate] [close] WARN: no corpus to sweep (TIER4_CORPUS unset and '$dir' has no resolvable git root with agents/); skipping the no-orphan sweep (advisory, not a halt)." >&2 ;;
+    *)  # 0 = clean.
+      _say "[orchestrate] [close] no-orphan sweep clean over $corpus (every agent has a live dispatch)." ;;
+  esac
+
+  # 2. Dispatch ONE verifier close session (plain `claude -p`; NEVER --stream to the conductor,
+  #    ADR-0032 section 1). Prompt via a temp file on stdin, mirroring cmd_run's dispatch seam.
+  local pfile; pfile=$(mktemp)
+  trap 'rm -f "$pfile"' EXIT
+  _build_close_prompt "$dir" "$roadmap" > "$pfile"
+  _emit_event "$dir" close verifying "dispatching the integration-verifier + review-team + advisor session"
+  _say "[orchestrate] [close] dispatching the verifier session ($CLAUDE_CMD -p) ..."
+  local rc=0
+  # shellcheck disable=SC2086 # CLAUDE_FLAGS is operator config; word-splitting is intended.
+  "$CLAUDE_CMD" -p $CLAUDE_FLAGS < "$pfile" || rc=$?
+  rm -f "$pfile"; trap - EXIT
+  if [ "$rc" != 0 ]; then
+    _emit_event "$dir" close blocked "verifier session exited nonzero ($rc)"
+    echo "[orchestrate] [close] the verifier session exited nonzero ($rc); halting for human review (not held clean)." >&2
+    return 1
+  fi
+
+  # 3. HOLD the human gate -- verifiers ran; NEVER auto-merge past it (gated-final).
+  _emit_event "$dir" close held "verifiers ran (no-orphan + integration-verifier + review-team + advisor); HELD for the final human gate; NOT auto-merged"
+  _say "[orchestrate] [close] TIER-4 mega-close complete: the no-orphan sweep + integration-verifier + review-team (security lens) + advisor (both modes) ran over the assembled wave. HELD for the final human gate -- NOT auto-merged (gated-final). Review the held PR, then merge."
+  return 0
+}
+# -----------------------------------------------------------------------------------------------
+
 cmd_run() {
   local dir="" dry=0 step=0 stream=0 board_arg=""
   while [ $# -gt 0 ]; do
@@ -1055,6 +1192,11 @@ cmd_run() {
       [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
     done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
     [ "$any" = 1 ] || _say "  (no unchecked sub-goals)"
+    # Preview the terminal action too (SPEC-118): with TIER4_CLOSE=1 a real run does NOT just print
+    # "done" at the all-checked terminal -- it dispatches a live verifier session + a no-orphan sweep.
+    # An operator previewing the plan must see that a `claude -p` session is about to fire.
+    [ "$TIER4_CLOSE" = 1 ] \
+      && _say "  -> (when all boxes are checked) TIER-4 mega-close: no-orphan sweep + verifier session ($CLAUDE_CMD -p: integration-verifier + review-team + advisor), then HOLD the human gate [TIER4_CLOSE=1]"
     if [ "$board_mode" != roadmap ]; then
       _say ""; _say "[board mode: $board_mode]"
       _render_board "$dir" "$roadmap" "$board_mode"
@@ -1150,7 +1292,13 @@ cmd_run() {
 
     local nx id policy
     nx=$(_next "$roadmap")
-    [ -n "$nx" ] || { _say "[orchestrate] all sub-goals checked; done."; return 0; }
+    if [ -z "$nx" ]; then
+      # All boxes checked. TIER-4 mega-close (SPEC-118) replaces the bare "done"-and-return: verify
+      # the assembled wave (no-orphan sweep + integration-verifier + review-team + advisor) THEN HOLD
+      # the human gate. TIER4_CLOSE=0 restores the old return (the unrelated-all-auto-test escape hatch).
+      if [ "$TIER4_CLOSE" = 1 ]; then _tier4_close "$dir" "$roadmap"; return $?; fi
+      _say "[orchestrate] all sub-goals checked; done."; return 0
+    fi
     id=$(printf '%s' "$nx" | cut -f1); policy=$(printf '%s' "$nx" | cut -f2)
 
     # gate! GLOBAL-STOP on the serial path too (SPEC-106 TASK-007): when the pick is a `gate!`
