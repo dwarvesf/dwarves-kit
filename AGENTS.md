@@ -117,6 +117,12 @@ needs a logged override (`proof-ledger.sh override <slug> "<reason>"`). INERT, l
 refactor, and docs work (the `inert`/`behavioral` classes) is unchanged , it owes no
 deploy-proof or UAT.
 
+**Understanding is a separate, advisory axis (ADR-0031) -- orthogonal to Done means above.**
+A design record (before build) and an explainer + quiz nudge (at merge) gate the human's
+PARTICIPATION and ATTENTION, never correctness: they never change what "done" means here, never
+block a correct build, and are not enforced by any hook the way the verification gates are.
+Full model: `WORKFLOW.md` "## The understanding axis".
+
 ## 4. Pause if (ask a human)
 
 Stop and ask a human before acting on any of these. These are decisions with

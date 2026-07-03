@@ -408,8 +408,56 @@ source for which gates a lane *requires* (its `measure-twice` cells);
 - **One append-only, redacted file per run** under `$DWARVES_KIT_LOG_DIR/runs/<slug>.log` (the existing hook-log convention; no command bodies or secret paths). It is an audit trail, never a source of state.
 - **Enforcement is at ship only.** `hooks/ship-gate.sh` refuses a feature-branch push or `gh pr create` when the active spec's lane has a `measure-twice` gate with no `ran`/`override` entry. Mid-flight phases are never blocked (Detect, don't dictate).
 - **Override, logged:** to ship past a missing gate, record a reason: `bash lib/gate-ledger.sh override <rid> <Phase> "<reason>"`. The override is part of the audit trail; in a fully autonomous run it is agent-writable, so the guarantee is block-by-default plus every skip and override recorded, not a hard stop (ADR-0024).
-- **Understanding-debt marker (ADR-0031, SPEC-123):** at Ship, `bash lib/significance-classify.sh record <rid> "<what changed>"` classifies the change (significance x understanding-worthiness) and appends a `| DEBT |` marker via `gate-ledger.sh debt`; only a high x high verdict (`tap`) is worth a human's attention, everything else (`wave`/`not-significant`) is logged silently -- what happens on a `tap` is a separate gate (SG-04's nudge), out of scope for the marker itself.
-- **Understanding-gate nudge (ADR-0031 §2/§3, SPEC-125):** on a `tap` verdict at the merge boundary of a `gate`/gated-final PR, `/kit:quiz-gate` (`lib/quiz-gate.sh`) fires the ★-tap NUDGE: a 5-question quiz built from the actual diff+tests, routed through `deep-understand`, with three logged responses (`engage`/`defer`/`wave` via `gate-ledger.sh debt-response`). It gates the human's ATTENTION, never the merge -- a waved change still merges (advisory, never must-pass). A `wave`/`not-significant` change is never nudged (anti-fatigue).
+- **Understanding-axis markers (ADR-0031):** the same ledger also carries `| DEBT |` markers for
+  a SEPARATE axis (advisory, never a ship block). See "## The understanding axis" below for the
+  debt-budget model, where each beat fires, and a known wiring gap stated honestly rather than
+  papered over.
+
+## The understanding axis (ADR-0031)
+
+A second axis, orthogonal to the verification gates above (ADR-0024/0025 stay the only hard
+stops): not "is it correct?" but "does the human understand the change enough to shape the next
+loop?" Advisory by construction -- nothing below ever blocks a correct build.
+
+- **BEFORE: the design record (SG-01, ADR-0031 §1, SPEC-122).** A design-bearing spec (new
+  component/module, non-obvious control flow, schema/data-model change, external integration, an
+  irreversible choice, or 2+ viable approaches) must carry a non-empty `## Design` block before
+  `/kit:execute` writes code. Fires at **Spec** (the template `/kit:spec` generates already
+  carries the section); enforced **BLOCKING at Validate** (`/kit:spec-validate` Reviewer 6 refuses
+  `VALIDATED` on an empty/missing block for design-bearing work -- the one reviewer of six that can
+  block). Otherwise-obvious work collapses the whole block to one line (`obvious: <why>`). See the
+  "Design record" row in the lane x phase depth matrix above.
+- **AFTER: the explainer + quiz (SG-03/SG-04, ADR-0031 §2).** `/kit:explain` (`lib/explain.sh`)
+  turns a shipped change into a literate-diff explainer -- background, goal+intuition, a
+  prose-ordered (not alphabetical) diff, a diagram -- composing `narrate-log` +
+  `svg-knowledge-diagram`, grounded in the actual diff + recorded tests, never the agent's
+  narrative. Human-invoked, on demand; no auto-fire. On a `gate`/gated-final PR, `/kit:ship`'s
+  Step 8 runs `lib/quiz-gate.sh tap`, which asks `lib/significance-classify.sh classify` for the
+  verdict (two signals: significance x understanding-worthiness) and, ONLY on a `tap` (high x
+  high), prints the ★-tap nudge: a one-line "worth understanding: <why>" plus a 5-question quiz
+  grounded in the diff+tests, routed through `deep-understand`'s mastery gate.
+- **The conscious debt-budget model (ADR-0031 Refinement).** The goal is CONSCIOUS debt, not zero
+  debt: two signals (significance x worthiness) resolve to a verdict (`tap` / `wave` /
+  `not-significant`); a `tap` offers three responses -- **engage** now (pull the quiz),
+  **defer** (to the weekend batch), **wave** (accept the debt knowingly) -- and all three write to
+  one ledger (`gate-ledger.sh debt-response`, an additive `| DEBT |` line). Every response still
+  merges the PR; the only real failure is UNTRACKED debt, not deferred or waved debt.
+- **Weekend batch (SG-05, ADR-0031 §3, SPEC-126).** Han-invoked only, no scheduled job:
+  `lib/weekend-batch.sh collect` (this repo) reads the `| DEBT |` ledger and surfaces the week's
+  WAVED/DEFERRED items; the ops-toolkit `weekend-debt-paydown` skill orchestrates the collected
+  items into the operator's existing learning skills (`learning-day-process`, `learning-ledger`,
+  `deep-understand`, `knowledge-capture`) rather than reinventing a second batching engine;
+  `weekend-batch.sh mark-paid <rid>` closes an item so it is never re-collected.
+- **Known wiring gap, stated honestly (not papered over).** `significance-classify.sh record` --
+  the verb that PERSISTS a raw `significance=/worthiness=/verdict=` `| DEBT |` marker independent
+  of the quiz nudge -- has no invoking command anywhere in this repo today; only its `classify`
+  verb (transient, no ledger write) is live, called from `lib/quiz-gate.sh`'s `tap`. Practical
+  consequence: a significant-but-low-worthiness (`wave`) or `not-significant` change that is NEVER
+  part of a `gate`/gated-final PR (so `quiz-gate.sh tap` never runs) is not yet logged to the debt
+  ledger at all -- only changes that at least reach the tap decision are. This does not weaken any
+  hard gate (the axis is advisory either way); it is tracked as a follow-up in
+  `docs/implementation-notes/significance-classify.md` and this sub-goal's own impl-notes, not
+  silently claimed as working.
 
 ## The spine
 How a committed backlog item becomes shipped work, end to end:

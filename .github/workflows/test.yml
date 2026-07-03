@@ -88,3 +88,18 @@ jobs:
 
       - name: Run proof visual-evidence tests
         run: bash tests/test-proof-visual-evidence.sh
+
+      - name: Run design-record tests (SPEC-122, understanding-gate SG-01)
+        run: bash tests/test-design-record.sh
+
+      - name: Run explain-command tests (SPEC-124, understanding-gate SG-03)
+        run: bash tests/test-explain.sh
+
+      - name: Run quiz-gate tests (SPEC-125, understanding-gate SG-04)
+        run: bash tests/test-quiz-gate.sh
+
+      - name: Run weekend-batch tests (SPEC-126, understanding-gate SG-05)
+        run: bash tests/test-weekend-batch.sh
+
+      - name: Run understanding-axis no-orphan wiring tests (SPEC-127, understanding-gate SG-06)
+        run: bash tests/test-understanding-wiring.sh
