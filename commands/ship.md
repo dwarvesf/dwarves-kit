@@ -169,6 +169,7 @@ If the current branch is not main/master:
   ```
 - If the spec references issue numbers, link them in the PR.
 - Tell the user the PR is ready.
+- **Understanding-gate nudge (ADR-0031, SPEC-125):** on a `gate`/gated-final PR, after the Understanding-debt marker is recorded, run `bash lib/quiz-gate.sh tap <rid> --files "<files>" --pr-kind gate "<what changed>"`. On a `tap` verdict it prints the ★-tap nudge; present it and route the human's engage/defer/wave via `/kit:quiz-gate` (`lib/quiz-gate.sh respond`). Advisory, never blocks the merge; a `wave`/`not-significant` change prints nothing.
 
 If on main: warn that they should have used a feature branch.
 

@@ -221,6 +221,15 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 **Composes:** `narrate-log` (the prose arc) + `svg-knowledge-diagram` (a richer figure); the kit does not reinvent pedagogy.
 **Common gotcha:** the explainer is grounded in the diff, NOT the agent's narrative , if the commit message or your recollection contradicts the code, the diff wins. The 5-question quiz built ON this artifact is a separate step (`deep-understand`); this command produces the material, not the quiz.
 
+### `/kit:quiz-gate`
+
+**Phase:** understanding (the AFTER gate's speed regulator, ADR-0031 §2/§3)
+**Reads:** a git ref + `<rid>` (`$ARGUMENTS`), the ACTUAL diff + recorded tests via `lib/quiz-gate.sh` (which reuses `lib/explain.sh`), and `lib/significance-classify.sh`'s verdict for the change
+**Writes:** the human's engage/defer/wave choice to the debt ledger (`| DEBT | response=...` via `gate-ledger.sh debt-response`); on engage, dispatches the `deep-understand` mastery gate with 5 diff-grounded questions
+**When to invoke:** at the merge boundary of a `gate`/gated-final PR. It NUDGES only when the change is `tap` (significant AND understanding-worthy); a `wave` or `not-significant` change is never quizzed (anti-fatigue). Advisory, never must-pass , a waved change still merges.
+**Composes:** `deep-understand` (the AskUserQuestion mastery gate); the kit builds the questions and routes, it scores nothing.
+**Common gotcha:** the quiz questions come from the DIFF + recorded tests, NEVER the agent's narrative , a quiz on the agent's misconceptions is worse than none. `questions`/`route` take a git ref only, so a false story cannot leak in. This gates the human's ATTENTION, not the merge.
+
 ### `/kit:ship`
 
 **Phase:** review gate, version bump, changelog, commit, PR
