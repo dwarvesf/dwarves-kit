@@ -196,7 +196,13 @@ debt() {
       worthiness)   wor="$v" ;;
       verdict)      verdict="$v" ;;
       response)     response="$v" ;;
-      reason)       reason="$(oneline "$v")" ;;
+      # Security LOW (TIER-4 close): a reason value containing a literal "=" can smuggle a
+      # fake control token (e.g. "reason=response=engage") past a naive downstream KV-parse
+      # (weekend-batch.sh's _kv, which greps the whole line). Belt-and-suspenders alongside
+      # the struct-prefix cut in weekend-batch.sh: neuter it here at the source by replacing
+      # "=" with ":" (matches the pre-existing "sig:full-lane" reason-text convention), so a
+      # reason can never contain a real KEY=value control token.
+      reason)       reason="$(oneline "$v" | tr '=' ':')" ;;
     esac
   done
   case "$sig" in low|high) ;; *) echo "debt: significance must be low|high (got '$sig')" >&2; return 64;; esac
@@ -218,16 +224,44 @@ debt() {
 # SG-05) / wave (accept the debt knowingly). All three are logged , the only real failure is UNTRACKED
 # debt, so waving is a first-class RECORDED choice, never a hard block. Same additive shape: check()/
 # override()/descent()/_rows() ignore `| DEBT |`, so a response line can never fake or mask a gate.
+#
+# FORWARD-CARRY (TIER-4 close finding): SG-02's classifier (`debt()`) writes a FAT line
+# (significance=/worthiness=/verdict=); this command historically wrote a THIN line (response= only,
+# no sig/wor/verdict). The ledger is last-line-wins for readers, so any consumer that re-emits the
+# LAST debt line's sig/wor/verdict through the fat `debt` verb (e.g. weekend-batch.sh mark-paid) saw
+# empty enums and crashed -- and because `significance-classify record` (the fat writer) is unwired
+# today, EVERY live debt-response is thin, making this the DEFAULT path, not an edge case. Fix: look
+# back at the ledger for THIS rid's last FAT line (one carrying verdict=) and, if found, re-emit its
+# sig/wor/verdict alongside response= -- making the response line self-describing without inventing
+# data. If no fat line exists (the live today-flow), write the thin line as before; blank stays blank.
 # Usage: debt-response <rid> <engage|defer|wave> [reason]
 debt_response() {
   local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: debt-response <rid> <engage|defer|wave> [reason]" >&2; return 64; }
   [ -n "$rid" ] || { echo "debt-response requires a rid" >&2; return 64; }
   case "$response" in engage|defer|wave) ;; *) echo "debt-response: response must be engage|defer|wave (got '$response')" >&2; return 64;; esac
-  local reason; reason="$(oneline "$@")"
+  # Security LOW (TIER-4 close), same guard as debt(): neuter a "=" in reason so it can never
+  # smuggle a control token past a naive downstream KV-parse.
+  local reason; reason="$(oneline "$@" | tr '=' ':')"
   mkdir -p "$RUNS_DIR"
-  local line; line="response=$response"
+  local f; f="$(ledger_file "$rid")" || return 1
+  local sig="" wor="" verdict="" last_fat
+  if [ -f "$f" ]; then
+    last_fat="$(grep '| DEBT |' "$f" 2>/dev/null | grep 'verdict=' | tail -n1)" || true
+    if [ -n "$last_fat" ]; then
+      sig="$(printf '%s' "$last_fat" | grep -oE 'significance=[^ ]+' | head -n1 | cut -d= -f2-)" || true
+      wor="$(printf '%s' "$last_fat" | grep -oE 'worthiness=[^ ]+' | head -n1 | cut -d= -f2-)" || true
+      verdict="$(printf '%s' "$last_fat" | grep -oE 'verdict=[^ ]+' | head -n1 | cut -d= -f2-)" || true
+    fi
+  fi
+  local line
+  if [ -n "$verdict" ]; then
+    line="$(printf 'significance=%s worthiness=%s verdict=%s response=%s' "$sig" "$wor" "$verdict" "$response")"
+  else
+    line="response=$response"
+  fi
   [ -n "$reason" ] && line="$line reason=$reason"
-  printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
+  mkdir -p "$RUNS_DIR"
+  printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$f"
 }
 
 override() {
