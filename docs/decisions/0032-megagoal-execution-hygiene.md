@@ -1,7 +1,7 @@
 # 0032. Mega-goal execution hygiene (delegation, model routing, ledgers, multiplexer)
 
 Date: 2026-07-03
-Status: Proposed
+Status: Accepted
 Relates-to: ADR-0017 (mega-decomposition lane), ADR-0027 (context hygiene), SPEC-087 (inter-sub-goal context hygiene), ADR-0030 (dag-wavefront scheduling), `lib/orchestrate.sh`, `lib/route-suggest.sh`, ops-toolkit `plan-for-mega-goal` skill + `research/2026-07-03-megagoal-execution-hygiene.md` (the rationale) + the kit-face token ledger + understanding-gate debt ledger
 
 ## Context
