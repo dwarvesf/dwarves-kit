@@ -140,6 +140,23 @@ $(diff <(printf '%s' "$B_ROWS") <(printf '%s' "$A_ROWS"))" 1
 echo "$B_SHOW" | while IFS= read -r line; do gl show base 2>&1 | grep -qF "$line" || exit 1; done && assert "AC7 show() preserves every pre-existing line" 0 || assert "AC7 show() preserves every pre-existing line" 1
 
 # ---------------------------------------------------------------------------
+# AC7b: additive property is SENSITIVE -- OUTCOME emitted via the REAL verb must not
+# change descent() output. This is the NEGATIVE-CONTROL TARGET: descent() keys on
+# $2=="GATE" and treats any gate line's phase as disposed. If the verb's marker field-2
+# were flipped from OUTCOME to GATE, descent would pick up the outcome lines as gate rows
+# and this assertion goes RED. grill is left UNDISPOSED so a flipped `think` outcome line
+# manufactures a "think recorded before grill disposed" violation.
+# ---------------------------------------------------------------------------
+new_log
+gl start nc full full spec-feature spec-feature dwarves-kit >/dev/null 2>&1
+gl record nc build ran seeded >/dev/null 2>&1   # a LATE phase; grill/think left undisposed
+NC_BEFORE="$(gl descent nc full 2>&1)"
+gl outcome nc think start >/dev/null 2>&1
+gl outcome nc think end caught=false >/dev/null 2>&1
+NC_AFTER="$(gl descent nc full 2>&1)"
+[ "$NC_BEFORE" = "$NC_AFTER" ] && assert "AC7b descent() unchanged by OUTCOME via the real verb (additive property; negative-control target)" 0 || assert "AC7b descent() unchanged by OUTCOME via the real verb (BEFORE!=AFTER)" 1
+
+# ---------------------------------------------------------------------------
 # AC8: PORTABILITY -- no BSD-only date/stat constructs in the changed code.
 # ---------------------------------------------------------------------------
 # Strip comment lines first: the file's own docstrings NAME the `date -d` trap they avoid.
