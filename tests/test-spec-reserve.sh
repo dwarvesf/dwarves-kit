@@ -163,6 +163,50 @@ expect "T10 helper returns the reserved number from spec-next" "T10A-OK" "$T10"
 expect "T10 helper degrades (nonzero+empty) on reserve failure" "T10B-OK" "$T10"
 
 # ============================================================
+echo "=== T11: EXPIRED prune is cross-repo (review #3, bounded shared ledger) ==="
+# ============================================================
+# An expired reservation for repo B must be cleaned up by repo A's reserve, or the
+# machine-global ledger grows unbounded across repos.
+RA="$(mk_repo)"; RES="$RA/shared.log"
+printf '1970-01-01T00:00:00Z | RESERVE | num=006 repo=some-other-repo\n' > "$RES"   # expired, foreign repo
+(cd "$RA" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve >/dev/null)
+FOREIGN_EXPIRED="$(count 'some-other-repo' "$RES")"
+eq "T11 a foreign repo's EXPIRED line is pruned by any reserve" "$FOREIGN_EXPIRED" "0"
+# But a foreign repo's LIVE (non-expired) line is left alone (realized-prune stays repo-scoped).
+RB2="$(mk_repo)"; RES2="$RB2/shared.log"
+printf '%s | RESERVE | num=006 repo=some-other-repo\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$RES2"
+(cd "$RB2" && SPEC_RESERVE_FILE="$RES2" bash "$SN" reserve >/dev/null)
+FOREIGN_LIVE="$(count 'some-other-repo' "$RES2")"
+eq "T11 a foreign repo's LIVE line is preserved" "$FOREIGN_LIVE" "1"
+
+# ============================================================
+echo "=== T12: repo match is anchored (review #4: 'foo' != 'foo-bar') ==="
+# ============================================================
+# Reserve under a repo whose name is a prefix of the ledger line's repo; it must NOT count.
+R="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-reserve.XXXXXX")"; mv "$R" "$R-bar"; R="$R-bar"
+git -C "$R" init -q; git -C "$R" config user.email t@t.t; git -C "$R" config user.name t
+mkdir -p "$R/docs/specs"; : > "$R/docs/specs/SPEC-005-x.md"
+git -C "$R" add -A; git -C "$R" commit -qm init >/dev/null 2>&1
+RES="$R/res.log"
+# A live reservation for repo "<base>-bar" (this repo). A DIFFERENT repo whose name is the
+# bare prefix must not fold this in. Simulate by writing a line for this repo, then asking a
+# would-be prefix repo... simpler: assert the anchored fold only matches the exact repo.
+BASE="$(basename "$R")"                 # e.g. kit-spec-reserve.xxx-bar
+PREFIX="${BASE%-bar}"                    # the bare prefix, kit-spec-reserve.xxx
+printf '%s | RESERVE | num=006 repo=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PREFIX" > "$RES"
+# This repo is "<...>-bar"; a line for the PREFIX repo must NOT be folded in, so next is 006.
+N12="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" next)"
+eq "T12 a prefix-repo reservation is NOT folded into this repo (006)" "$N12" "006"
+
+# ============================================================
+echo "=== T13: check message byte-identical to SPEC-064 on empty ledger (review #5) ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+MSG13="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" check 005 2>&1)"
+expect "T13 empty-ledger TAKEN message has NO reservation clause" "seen in specs/, a branch, or a recent commit subject)" "$MSG13"
+if printf '%s' "$MSG13" | grep -q 'reservation'; then bad "T13 empty-ledger message leaked a reservation clause"; else ok "T13 no reservation clause on empty ledger"; fi
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"

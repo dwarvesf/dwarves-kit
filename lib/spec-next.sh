@@ -70,7 +70,9 @@ _reservations() {
   local cutoff; cutoff=$(( $(now_epoch) - SPEC_RESERVE_TTL ))
   while IFS= read -r line; do
     case "$line" in *"| RESERVE |"*) ;; *) continue;; esac
-    case "$line" in *"repo=$REPO"*) ;; *) continue;; esac
+    # Anchored to end-of-line (review LOW #4): `repo=` is always the trailing field, so this
+    # exact-suffix match stops repo `foo` from also matching a line for `foo-bar`.
+    case "$line" in *"repo=$REPO") ;; *) continue;; esac
     local iso num e
     iso="${line%% | *}"
     num="$(printf '%s' "$line" | grep -oE 'num=[0-9]+' | head -1 | cut -d= -f2)"
@@ -100,7 +102,11 @@ check() {
   local n="${1:-}"; [ -n "$n" ] || { echo "usage: check <NNN>" >&2; return 64; }
   n="$(printf '%03d' "$((10#$n))")"
   if _numbers | grep -qx "$((10#$n))" || _numbers | grep -qx "$n"; then
-    echo "SPEC-$n is TAKEN (seen in specs/, a branch, a recent commit subject, or a live reservation)" >&2
+    # Byte-identical to SPEC-064 when no reservations exist (Acceptance 4): the reservation
+    # clause is appended ONLY when the ledger actually contributed a live number (review LOW #5).
+    local src="seen in specs/, a branch, or a recent commit subject"
+    [ -n "$(_reservations)" ] && src="seen in specs/, a branch, a recent commit subject, or a live reservation"
+    echo "SPEC-$n is TAKEN ($src)" >&2
     return 1
   fi
   echo "SPEC-$n is free"
@@ -108,8 +114,14 @@ check() {
 
 # ---- SPEC-128: atomic reservation ---------------------------------------------------------
 # Prune dead reservation lines IN PLACE (called only while the lock is held, so the rewrite
-# is serialized). Drops lines that are REALIZED (number now in the real scan) or EXPIRED
-# (older than TTL). Repo-scoped: lines for OTHER repos are always kept verbatim.
+# is serialized). Two independent rules:
+#   * EXPIRED (older than TTL) -> dropped for EVERY repo. Expiry is pure timestamp math and
+#     does not need the calling repo's git state, so a one-shot / archived repo's abandoned
+#     lines are cleaned up by ANY later reserve -- the machine-global ledger stays bounded
+#     (review MEDIUM #3). Non-RESERVE lines and unparseable timestamps are always kept.
+#   * REALIZED (number now in the real scan) -> dropped only for THIS repo, because "realized"
+#     is scoped to this repo's branches/specs/commits. Other repos' realized-ness is theirs
+#     to prune when they next reserve.
 _prune_reservations() {
   [ -f "$RES_FILE" ] || return 0
   local realized cutoff tmp
@@ -117,19 +129,21 @@ _prune_reservations() {
   cutoff=$(( $(now_epoch) - SPEC_RESERVE_TTL ))
   tmp="$RES_FILE.tmp.$$"
   : > "$tmp"
-  local line iso num e keep
+  local line iso num e keep is_res is_repo
   while IFS= read -r line; do
     keep=1
-    if printf '%s' "$line" | grep -q "| RESERVE |" && printf '%s' "$line" | grep -q "repo=$REPO"; then
+    is_res=0; case "$line" in *"| RESERVE |"*) is_res=1;; esac
+    if [ "$is_res" = 1 ]; then
       iso="${line%% | *}"
       num="$(printf '%s' "$line" | grep -oE 'num=[0-9]+' | head -1 | cut -d= -f2)"
-      if [ -n "$num" ]; then
-        # realized? (match both the zero-padded and the bare-integer form, as check() does:
-        # _scan_numbers emits zero-padded "006" while $((10#$num)) is "6").
+      # EXPIRED, cross-repo: drop any RESERVE line older than the TTL.
+      e="$(_iso_to_epoch "$iso")"
+      if [ -n "$e" ] && [ "$e" -lt "$cutoff" ]; then keep=0; fi
+      # REALIZED, this-repo only (anchored repo match, review LOW #4): drop if the number is
+      # now in this repo's real scan. Match both zero-padded and bare-int, as check() does.
+      is_repo=0; case "$line" in *"repo=$REPO") is_repo=1;; esac
+      if [ "$keep" = 1 ] && [ "$is_repo" = 1 ] && [ -n "$num" ]; then
         if printf '%s\n' "$realized" | grep -qx "$num" || printf '%s\n' "$realized" | grep -qx "$((10#$num))"; then keep=0; fi
-        # expired?
-        e="$(_iso_to_epoch "$iso")"
-        if [ -n "$e" ] && [ "$e" -lt "$cutoff" ]; then keep=0; fi
       fi
     fi
     [ "$keep" = 1 ] && printf '%s\n' "$line" >> "$tmp"
@@ -137,13 +151,30 @@ _prune_reservations() {
   mv -f "$tmp" "$RES_FILE" 2>/dev/null || rm -f "$tmp"
 }
 
+_lock_mtime_epoch() {
+  local d="$1"
+  stat -f %m "$d" 2>/dev/null || stat -c %Y "$d" 2>/dev/null || printf ''
+}
+
+# Release the lock ONLY if we still own it (review MAJOR #1). The owner token guards against
+# deleting a lock a stale-reclaim already handed to another process: a reserve that lost the
+# lock mid-flight must never rmdir the new holder's lock. Idempotent + best-effort.
+_reserve_unlock() {
+  [ "$(cat "$RES_LOCK/owner" 2>/dev/null)" = "${_LOCK_TOKEN:-}" ] || return 0
+  rm -f "$RES_LOCK/owner" 2>/dev/null || true
+  rmdir "$RES_LOCK" 2>/dev/null || true
+}
+
 # Acquire the mkdir-mutex (portable; macOS has no flock, orchestrate.sh is no-flock by
-# contract). Exactly one racer creates the dir; the rest retry with a randomized backoff.
-# A lock DIR older than TTL is reclaimed (a dead holder must not wedge the wave). Loud fail
-# after a bounded number of tries so a live contender never spins forever silently.
+# contract). Exactly one racer creates the dir; the winner stamps an OWNER TOKEN inside so a
+# later reclaim + the release path can tell a live holder from a dead one. A lock DIR older
+# than TTL is reclaimed (a dead holder must not wedge the wave). Loud fail after a bounded
+# number of tries so a live contender never spins forever silently.
 _reserve_lock() {
   mkdir -p "$RES_DIR" 2>/dev/null || true
-  local tries=0 max=600   # ~ up to 30s at 50ms; ample for a wave of a few workers
+  # Per-acquire unique token: pid + a random nonce + epoch defeats pid-reuse aliasing.
+  _LOCK_TOKEN="$$.${RANDOM}.$(now_epoch)"
+  local tries=0 max=600   # ~ up to 30s; ample for a wave of a few workers
   while ! mkdir "$RES_LOCK" 2>/dev/null; do
     # stale-lock reclaim: if the lock dir is older than TTL, a prior holder died with it held.
     if [ -d "$RES_LOCK" ]; then
@@ -152,6 +183,9 @@ _reserve_lock() {
       if [ -n "$e" ]; then
         lockage=$(( $(now_epoch) - e ))
         if [ "$lockage" -gt "$SPEC_RESERVE_TTL" ]; then
+          # Reclaim a genuinely-old lock: remove its owner stamp then the dir (rmdir refuses a
+          # non-empty dir, so the owner file must go first). Never a recursive rm.
+          rm -f "$RES_LOCK/owner" 2>/dev/null || true
           rmdir "$RES_LOCK" 2>/dev/null || true
           continue
         fi
@@ -162,30 +196,44 @@ _reserve_lock() {
     # randomized sub-100ms backoff to desynchronize racers
     sleep "0.0$(( (RANDOM % 9) + 1 ))"
   done
+  printf '%s' "$_LOCK_TOKEN" > "$RES_LOCK/owner" 2>/dev/null || true
   return 0
 }
 
-_lock_mtime_epoch() {
-  local d="$1"
-  stat -f %m "$d" 2>/dev/null || stat -c %Y "$d" 2>/dev/null || printf ''
-}
-
 # reserve: atomically claim + print the next free number. acquire -> compute next (folding
-# live reservations) -> append the claim -> prune dead lines -> release. Indivisible, so two
-# concurrent `reserve` calls serialize and get DISTINCT numbers.
+# live reservations) -> RE-VALIDATE ownership -> append the claim -> prune dead lines ->
+# release. Indivisible, so two concurrent `reserve` calls serialize and get DISTINCT numbers.
+# The ownership re-check (review MAJOR #1) closes the window where a TTL-stale reclaim could
+# hand our lock to another process WHILE we were still scanning: if we no longer own the
+# lock, discard this attempt and retry rather than append under a lock we lost.
 reserve() {
-  _reserve_lock || return 1
-  # Free the lock on any exit from here (crash-safety: a killed reserve must not wedge).
-  trap 'rmdir "$RES_LOCK" 2>/dev/null || true' EXIT INT TERM
-  local n
-  n="$(next)"
-  mkdir -p "$RES_DIR" 2>/dev/null || true
-  printf '%s | RESERVE | num=%s repo=%s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$n" "$REPO" >> "$RES_FILE"
-  _prune_reservations
-  rmdir "$RES_LOCK" 2>/dev/null || true
-  trap - EXIT INT TERM
-  printf '%s\n' "$n"
+  local attempt=0 n
+  while [ "$attempt" -lt 5 ]; do
+    attempt=$((attempt + 1))
+    _reserve_lock || return 1
+    # Split traps (review MAJOR #2): a bare `trap ... INT TERM` releases the lock but bash then
+    # RESUMES the critical section unprotected. On a signal we must actually EXIT after cleanup.
+    trap '_reserve_unlock' EXIT
+    trap '_reserve_unlock; exit 130' INT
+    trap '_reserve_unlock; exit 143' TERM
+    n="$(next)"
+    if [ "$(cat "$RES_LOCK/owner" 2>/dev/null)" != "$_LOCK_TOKEN" ]; then
+      # Lost the lock to a stale-reclaim mid-scan. We do NOT own it, so do NOT unlock
+      # (that is the new holder's lock); clear the trap and retry from scratch.
+      trap - EXIT INT TERM
+      continue
+    fi
+    mkdir -p "$RES_DIR" 2>/dev/null || true
+    printf '%s | RESERVE | num=%s repo=%s\n' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$n" "$REPO" >> "$RES_FILE"
+    _prune_reservations
+    _reserve_unlock
+    trap - EXIT INT TERM
+    printf '%s\n' "$n"
+    return 0
+  done
+  echo "spec-next reserve: lost the lock to a stale-reclaim race ${attempt}x; giving up" >&2
+  return 1
 }
 
 main() {

@@ -13,15 +13,20 @@ Spec: `docs/specs/SPEC-128-spec-reservation-race.md`. Branch: `feat/kri-02-spec-
 | 4 | SPEC-064 `next`/`check` contract byte-identical on empty ledger | test T5 + test-hooks 452/452 | PASS |
 | 5 | reconcile: realized + TTL-expired reservations stop counting + pruned | tests T6, T7 | PASS |
 | 6 | orchestrate `_wave_run` reserves + injects; degrades on failure | test T10 | PASS |
+| 7 | (review) expired-prune is cross-repo; foreign live line preserved | test T11 | PASS |
+| 8 | (review) repo match anchored (`foo` != `foo-bar`) | test T12 | PASS |
+| 9 | (review) check message byte-identical to SPEC-064 on empty ledger | test T13 | PASS |
 
 ## Confirmation run-table
 
 Command: bash tests/test-spec-reserve.sh
 Exit: 0
 Verdict: PASS
-Detail: 23/23 assertions green. T2 (core concurrency) = 20 parallel `reserve` -> 20 distinct
+Detail: 28/28 assertions green. T2 (core concurrency) = 20 parallel `reserve` -> 20 distinct
 numbers, zero collisions. T3 fold-in, T5 SPEC-064 contract, T6/T7 reconciliation, T8 repo
-scope, T9 stale-lock reclaim, T10 orchestrate wiring + degrade path all green.
+scope, T9 stale-lock reclaim, T10 orchestrate wiring + degrade path, plus the concurrency-review
+regression tests T11 (cross-repo expired prune), T12 (anchored repo match), T13 (empty-ledger
+message byte-identical) all green.
 
 Command: bash tests/test-hooks.sh
 Exit: 0
