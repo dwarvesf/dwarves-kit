@@ -20,3 +20,33 @@ This folder is large because the kit was built **through its own workflow**: eve
 ## How to read it (for maintainers)
 
 Start with `architecture.md` for the mental model, then `PHILOSOPHY.md` for the guardrails. From there, a spec (`specs/SPEC-NNN-*.md`) is the contract for one feature and an ADR (`decisions/NNNN-*.md`) is the reasoning behind one decision; ADRs supersede each other in place (the `## Status:` line names the superseder) rather than being rewritten.
+
+## The full record, by theme
+
+The `## What's here` table above is the quick map. The complete set of record classes, for a
+maintainer navigating the whole `docs/` tree (every path below is in place; this is one central
+map, not per-dir READMEs , `specs/` and `verification/` keep their own, deliberately):
+
+**Design + decisions**
+- [`specs/`](specs/) , one spec per feature, the live spec store. Numbering is per-namespace and
+  local (each `*/docs/specs/` owns its own `SPEC-001..` sequence). Enumerate them with
+  `bash lib/spec-index.sh` (the read-only registry view) rather than a per-file list here , a
+  hand-kept list would rot. See [`specs/README.md`](specs/README.md) for the numbering convention.
+- [`decisions/`](decisions/) , ADRs (`NNNN-<slug>.md`), superseded in place.
+
+**Build trail (what the workflow leaves behind , the two classes the quick map omits)**
+- [`implementation-notes/`](implementation-notes/) , per-spec DELTA logs: the decisions made
+  *during* a build that the spec did not pin, deviations, and constraints future-you should know.
+  One file per spec-slug.
+- [`verification/`](verification/) , per-feature proof-of-done records (run-tables + negative
+  controls). **LOAD-BEARING:** [`verification/README.md`](verification/README.md) is the
+  proof-of-done marker the ship-gate keys on (`hooks/ship-gate.sh`) , link it, never move it.
+- [`retro/`](retro/) , per-cycle retrospectives (output of `/kit:retro`).
+
+**Sourcing**
+- [`research/`](research/) , dated deep-scans that fed specific specs.
+- [`absorption/`](absorption/) , templates + index for the `/kit:absorb` workflow.
+
+No counts live in this map on purpose (a count rots; the README's directory-layout counts are the
+ones under a test-meta parity pin). To count or list any class, read the directory or run
+`bash lib/spec-index.sh` for specs.
