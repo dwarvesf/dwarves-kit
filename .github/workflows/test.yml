@@ -65,6 +65,9 @@ jobs:
       - name: Run spec-index tests
         run: bash tests/test-spec-index.sh
 
+      - name: Run spec-reservation race tests (SPEC-128)
+        run: bash tests/test-spec-reserve.sh
+
       - name: Run role-classify tests (SPEC-089)
         run: bash tests/test-role-classify.sh
 

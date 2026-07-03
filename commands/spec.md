@@ -68,7 +68,10 @@ Create `docs/specs/` directory if it doesn't exist. Generate these files:
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
 `bash lib/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
 names and recent commit subjects, the two surfaces where a number ages invisibly inside
-an unmerged PR (two collisions in one week before this guard, SPEC-064 / ID-052):
+an unmerged PR (two collisions in one week before this guard, SPEC-064 / ID-052). If a
+wavefront dispatch already RESERVED a number for you (a `RESERVED SPEC NUMBER` block in
+your prompt, SPEC-128), use THAT number instead of re-deriving one: it was claimed
+atomically at dispatch so no sibling wave worker can take it.
 
 ```markdown
 # Spec: [feature name]

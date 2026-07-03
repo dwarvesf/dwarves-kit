@@ -734,6 +734,22 @@ _sg_branch() {  # goalfile id
   printf '%s\n' "$branch"
 }
 
+# Atomically reserve ONE SPEC number for a wave sub-goal at dispatch (SPEC-128), so a
+# concurrent wave cannot hand the same number to two workers. Delegates to `spec-next.sh
+# reserve` (mkdir-mutex + reservation ledger folded into the scan). Best-effort by contract:
+# on any failure it echoes nothing and returns nonzero, and the caller degrades to letting
+# the worker compute its own number , the reservation is an optimization over a correct scan,
+# never a new hard dependency that could wedge the wave. `$SPEC_NEXT_CMD` overrides the binary
+# for tests (a mock). Echoes the reserved SPEC number (e.g. 128); empty on failure.
+_wave_reserve_spec() {
+  local sn="${SPEC_NEXT_CMD:-$ORCH_DIR/spec-next.sh}" n
+  [ -x "$sn" ] || [ -r "$sn" ] || return 1
+  n="$(bash "$sn" reserve 2>/dev/null)" || return 1
+  n="$(printf '%s' "$n" | grep -oE '^[0-9]+$' | head -1)"
+  [ -n "$n" ] || return 1
+  printf '%s\n' "$n"
+}
+
 # Create OR reuse a per-sub-goal worktree at <repo>/.claude/worktrees/<id> on <branch> (the repo-wide
 # worktree location, per the global worktree rule). REUSE only on a clean crash-resume (edge 5): the
 # path is already a REGISTERED git worktree, its tree is clean, AND it is on <branch>. Otherwise
@@ -1076,6 +1092,25 @@ _wave_run() {  # megadir roadmap
       printf 'It flips your box in the SHARED ROADMAP under a lock. The orchestrator advances only\n'
       printf 'once your box is flipped there (grounded completion; no self-claim).\n'
     } >> "$pfile"
+
+    # Reserved SPEC number injection (SPEC-128). Claim a number atomically at DISPATCH , before
+    # this worker (and its siblings) can race `spec-next next` at spec-time , and tell the worker
+    # to use exactly it. Best-effort: a reserve failure leaves no block, and the worker falls back
+    # to computing its own number (the reservation ledger it would then scan already folds in any
+    # sibling claims, so even the fallback is collision-safe). Appended AFTER the flip-contract so
+    # the serial path's prompt stays byte-identical (this whole block is WAVE-only).
+    local reserved_spec
+    if reserved_spec="$(_wave_reserve_spec)"; then
+      {
+        printf '\n\n---\nRESERVED SPEC NUMBER (SPEC-128 wavefront reservation)\n'
+        printf 'This wave dispatch reserved SPEC-%s for your sub-goal. When you run /kit:spec (or\n' "$reserved_spec"
+        printf 'call lib/spec-next.sh), USE SPEC-%s , it is already claimed for you under a lock, so\n' "$reserved_spec"
+        printf 'no sibling wave worker can take it. Do NOT re-derive a different number.\n'
+      } >> "$pfile"
+      _say "[orchestrate] [wave] $id reserved SPEC-$reserved_spec"
+    else
+      _say "[orchestrate] [wave] $id: SPEC reservation unavailable; worker will self-compute (degraded, still scan-safe)."
+    fi
     _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
 
     if [ "$MULTIPLEXER" = 1 ]; then
