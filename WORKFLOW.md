@@ -628,6 +628,88 @@ writing to a hands-off surface is warned and logged to
 The lead reviews the log at `/kit:ship` before integrating. Hard blocks are
 reserved for the safety subset (safety-gate hook, push-to-main blocker).
 
+## Mega-goal delegate execution (ADR-0032)
+
+`/kit:dispatch` above fans out N *disjoint* specs across worktrees in one session. A
+**mega-goal** (`_meta/megagoals/<slug>/`, `lib/orchestrate.sh`) is a different shape: N
+*dependent*, ROADMAP-ordered sub-goals, each too large to share one session's context
+without hitting the ceiling (a 9-sub-goal run hit 873k tokens / 87% context before this
+ADR). This section is what actually dispatches; every claim below is proven by
+`tests/test-docs-wiring.sh`'s no-orphan sweep against `lib/orchestrate.sh`.
+
+### Two run modes; `/goal` stays the official outer loop
+
+- **INLINE** -- the `/goal` loop executes each sub-goal in its own context, in-session.
+  Simple; only for small runs (<=4 sub-goals).
+- **DELEGATE** (default for >4 sub-goals) -- the loop becomes a THIN CONDUCTOR: for each
+  sub-goal it makes ONE call to a fresh headless `claude -p` that runs that sub-goal's
+  full lifecycle in ITS OWN context and returns only a terse result line (box flipped,
+  PR #, proof). The conductor absorbs one line per sub-goal; it never reads a child's
+  transcript. `orchestrate.sh run <megagoal-dir>` is the bash-driven form (enforces
+  delegation deterministically); a delegating `/goal` conductor is the model-driven form.
+  **`/goal` remains the official outer loop either way** -- delegate changes what the
+  loop *does* (spawn a fresh session per sub-goal), not which command runs it (ADR-0017
+  activator-agnostic stands; the kit does not re-document `/goal`'s own internals).
+- **Hard rule:** the delegate call is plain `claude -p <route flags>`, **never**
+  `--stream`/`--verbose` piped straight to the conductor -- that tees the child
+  transcript into the parent's context, the exact accumulation trap this ADR closes.
+
+### Per-sub-goal model routing
+
+Each sub-goal file's `Model:`/`Effort:` header becomes `--model`/`--effort` flags on that
+sub-goal's dispatch (both the serial and the concurrent-wave path route the same way).
+Route by the sub-goal's DOMINANT work-type at decompose time, not per-phase (a session
+can't switch model mid-run): **opus** for planning/design-heavy sub-goals, **sonnet** for
+execution-dominant ones, **haiku** for trivial ones.
+
+### The ledger-under-delegation guarantee
+
+Splitting one mega-goal across many child sessions must not lose the kit's audit trail:
+
+- **Gate / proof / run ledgers survive by construction** -- each delegated session
+  records its own gates under its own `rid` (`bash lib/gate-ledger.sh rid`), exactly as
+  it would running standalone. Delegation changes nothing here; there is no
+  reconciliation step because there is nothing to reconcile.
+- **Token ledger: stream-to-FILE, never to the conductor.** Token capture needs
+  `--stream`'s usage data, but the hard rule above forbids `--stream` reaching the
+  conductor. Reconciled via `--capture-tokens` (`CAPTURE_TOKENS=1`): the delegated child
+  streams SILENTLY to a file (`.orchestrate/<id>.stream.jsonl`), the conductor extracts
+  usage from that file after the child exits and records it as a `| TOKENS |` ledger line
+  (`lib/gate-ledger.sh tokens`) -- the conductor's own stdout never carries the child's
+  transcript. `--stream` (a separate opt-in) additionally tees that same file live to the
+  operator's terminal for a real-time tail; `--capture-tokens` alone stays silent.
+- **Debt ledger: split conductor/worker.** The worker session writes the
+  significance/worthiness marker; the human-facing nudge fires at the conductor, where
+  the human actually is.
+
+### The mega TIER-4 close
+
+When every sub-goal's ROADMAP box is checked, the run does not just report "done" (that
+was the pre-ADR-0032 gap). By default (`TIER4_CLOSE=1`) it runs one close step over the
+whole assembled wave, in order: (1) a mechanical **no-orphan sweep** over the mega-goal's
+corpus -- the same c6fbd99 bug class this section itself is proven against -- that halts
+before spending an LLM session if it finds a defined-but-never-dispatched artifact; (2)
+**one** dispatched verifier session (plain `claude -p`, never `--stream` to the
+conductor) running `integration-verifier` + `/kit:review-team` (including the
+security-reviewer lens) + the advisor in both modes (critique and over-suggest); (3) the
+run **HOLDS the human gate** -- it never auto-merges past this point, regardless of
+verdict. `TIER4_CLOSE=0` restores the bare pre-ADR-0032 "done"-and-return.
+
+### The multiplexer: opt-in, off by default
+
+Pure orchestration needs no multiplexer -- a bash driver spawning and reaping `claude -p`
+children works fully headless. The multiplexer exists only for an operator who wants to
+**watch and intervene** in concurrent wave sessions (`WAVE_CAP>1` admitting >=2
+sub-goals with disjoint `## Touches` at once). It is **opt-in and off by default**
+(`MULTIPLEXER=0`); when the operator sets `MULTIPLEXER=1`, each admitted wave session's
+real `claude -p` process is spawned into its own tmux window inside one shared
+per-megagoal tmux session, so `tmux capture-pane` reads its live output and `tmux
+send-keys` can intervene directly. The pane's command is passed as separate argv tokens
+after `--`, never a joined shell string (a hostile mega-goal PR could otherwise inject a
+host command through the unsanitized `Model:`/`Effort:` header into a `$SHELL -c`
+re-parse; closed in PR #143). **Do not describe the multiplexer as default-on anywhere**
+-- that over-claim is exactly what `tests/test-docs-wiring.sh`'s negative control catches.
+
 ## What this contract does NOT do
 It does not lock phases. An experienced operator may skip /spec-validate on a
 normal-lane change or go straight to /next. The kit detects state
