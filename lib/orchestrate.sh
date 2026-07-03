@@ -726,6 +726,9 @@ _wave_run() {  # megadir roadmap
   local megadir="$1" roadmap="$2"
   local repo; repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null)
   [ -n "$repo" ] || { echo "[orchestrate] [wave] '$megadir' is not inside a git repo; cannot stand up worktrees." >&2; return 64; }
+  # Absolute mega-goal dir for the flip-contract injection: a wave session runs in a worktree (a
+  # different cwd), so it must target the SHARED ROADMAP by absolute path, never a relative one.
+  local mega_abs; mega_abs=$(cd "$megadir" 2>/dev/null && pwd); [ -n "$mega_abs" ] || mega_abs="$megadir"
 
   # Reap map = index-aligned plain arrays (bash 3.2 has no assoc arrays). `_WAVE_PIDS` is global so
   # `_wave_abort` can reach it; the rest are locals.
@@ -771,6 +774,19 @@ _wave_run() {  # megadir roadmap
 
     pfile=$(mktemp)
     _build_prompt "$megadir" "$id" > "$pfile"
+    # Flip-contract injection (WAVE sessions only, ID-090 activation). A wave session runs in its
+    # own worktree , a separate checkout , so editing ROADMAP.md there flips only the worktree's
+    # copy, invisible to the driver, which reads the SHARED mega-goal-dir ROADMAP. Tell the session
+    # to flip via the lock-guarded CLI against the shared ABSOLUTE path instead. Appended AFTER
+    # `_build_prompt` so the SERIAL path's prompt is untouched (serial stays byte-identical).
+    {
+      printf '\n\n---\nWAVE SESSION , SHARED-ROADMAP FLIP CONTRACT (read carefully)\n'
+      printf 'You run in an ISOLATED git worktree for sub-goal %s. Do the work here, then mark\n' "$id"
+      printf 'completion by running EXACTLY this command (do NOT hand-edit ROADMAP.md , your worktree\n'
+      printf 'copy is invisible to the orchestrator):\n\n    %s flip %s %s\n\n' "$ORCH_DIR/orchestrate.sh" "$mega_abs" "$id"
+      printf 'It flips your box in the SHARED ROADMAP under a lock. The orchestrator advances only\n'
+      printf 'once your box is flipped there (grounded completion; no self-claim).\n'
+    } >> "$pfile"
     _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
 
     # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the

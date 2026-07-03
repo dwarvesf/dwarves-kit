@@ -44,6 +44,22 @@ suite, restored via `git checkout`:
 The load-bearing concurrency primitive (the flip lock) is genuinely exercised: without it the
 acceptance suite goes RED, so the green run is trustworthy, not vacuous.
 
+## Real end-to-end wave run (de-risk , closes the "never actually run" gap)
+
+The suite proves the machinery with mock sessions. To close the reviewers' concern that the wave path
+had never spawned a real session, two throwaway end-to-end runs of the REAL orchestrator
+(`orchestrate.sh run <demo> WAVE_CAP=2`, 2 disjoint-`## Touches` sub-goals):
+
+| Run | Session | Result |
+|---|---|---|
+| Plumbing | scripted (non-LLM) | run exit 0; **both sessions started 5µs apart** (genuine overlap); each worked in its own worktree; each ran the injected `orchestrate.sh flip <abs-megadir> <id>` → both boxes `[x]` in the SHARED ROADMAP; driver reaped both, converge safe-skipped placeholders, clean exit |
+| Real LLM | `claude -p` (v2.1.199) | run exit 0 (~42s); two real Claude sessions ran concurrently in separate worktrees, wrote the correct files (`alpha`/`beta`), and **each obeyed the injected flip contract** ("flipped SG-0N in the shared roadmap via the contract command") → both boxes `[x]`; driver advanced + completed |
+
+This required implementing the **flip-contract injection** (a wave session is told to flip via the
+lock-guarded CLI against the shared absolute ROADMAP, since its worktree copy is invisible to the
+driver) , ID-090 item (b), now DONE + regression-guarded (`tests/test-orchestrate-wavefront.sh`,
+`flip-injection` cases). Both proofs were on throwaway git repos; no repo state touched.
+
 ## Scope / deferral honesty
 
 Waves are DORMANT at the shipped default (`WAVE_CAP=1`), and real-wave ACTIVATION is deferred to

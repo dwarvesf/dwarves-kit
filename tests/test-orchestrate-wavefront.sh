@@ -1292,8 +1292,34 @@ gd_seq=$(tr '\n' ' ' < "$GOLDLOG" | sed 's/ *$//')
   && pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: all boxes flipped (linear chain fully drained serially)" \
   || fail "EXIT-CRITERION 5: not all boxes flipped"
 
+# ---- flip-contract injection (ID-090 activation): a WAVE session runs in its own worktree, so it
+#      must flip the SHARED ROADMAP via the CLI, not its worktree copy. Assert each wave session's
+#      prompt carries `orchestrate.sh flip <abs-megadir> <id>`, AND that obeying it drives completion.
+#      (Proven end-to-end with a real claude -p wave; this is the deterministic regression guard.) ----
+FIR="$TMP/flipinj-repo"; mk_git_mega "$FIR"
+FMG="$FIR/mega"; mkdir -p "$FMG"
+printf '# flipinj\n- [ ] SG-01 a , auto\n- [ ] SG-02 b , auto\n' > "$FMG/ROADMAP.md"
+printf 'ptr\n' > "$FMG/POINTER_PROMPT.md"
+make_goal "$FMG" SG-01 'fa/**'
+make_goal "$FMG" SG-02 'fb/**'
+git -C "$FIR" add -A >/dev/null 2>&1; git -C "$FIR" commit -q -m mega
+FCAP="$TMP/flipinj-prompts.txt"; : > "$FCAP"
+FSESS="$TMP/flipinj-sess"
+{ echo '#!/usr/bin/env bash'
+  echo 'p=$(cat); printf "%s\n===END===\n" "$p" >> "'"$FCAP"'"'
+  echo 'f=$(printf "%s\n" "$p" | grep -oE "[^ ]*orchestrate\.sh flip [^ ]+ SG-[0-9]+" | head -1); eval "$f"'
+} > "$FSESS"; chmod +x "$FSESS"
+WAVE_CAP=2 CLAUDE_CMD="$FSESS" CLAUDE_FLAGS="" WAVE_MERGE_CMD="echo x" bash "$ORCH" run "$FMG" >/dev/null 2>&1
+FABS=$(cd "$FMG" && pwd)
+{ grep -qF "flip $FABS SG-01" "$FCAP" && grep -qF "flip $FABS SG-02" "$FCAP"; } \
+  && pass "flip-injection: each wave session's prompt carries 'flip <abs-megadir> <id>' (shared-ROADMAP contract)" \
+  || fail "flip-injection: prompt missing the shared-flip instruction"
+{ grep -q '^- \[x\] SG-01' "$FMG/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$FMG/ROADMAP.md"; } \
+  && pass "flip-injection: obeying the contract flipped BOTH boxes in the shared ROADMAP (end-to-end)" \
+  || fail "flip-injection: boxes not flipped via the contract"
+
 # ---- cleanup: remove wave worktrees via git's own remover (never rm -rf a tracked path) ----
-for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$WUR" "$CVR" "$CFR" "$CPR" "$CHR"; do
+for wtrepo in "$WCR" "$WFR" "$WIR" "$WKR" "$WUR" "$CVR" "$CFR" "$CPR" "$CHR" "$FIR"; do
   [ -d "$wtrepo" ] || continue
   git -C "$wtrepo" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print $2}' | while read -r w; do
     case "$w" in *"/.claude/worktrees/"*) git -C "$wtrepo" worktree remove --force "$w" 2>/dev/null ;; esac

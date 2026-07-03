@@ -610,3 +610,22 @@ Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds, unchanged f
 tests/test-orchestrate-wavefront.sh` 100/100 (89 prior + 11 new: 1 abort/trap test, 4 dep-fallthrough
 halt, 4 runtime negative-control, 2 wave-resume), stable across 3 back-to-back runs (no flake).
 `shellcheck -s bash lib/orchestrate.sh` exit 0.
+
+## 2026-07-03 , flip-contract injection + real end-to-end de-risk (ID-090 item b)
+
+**Context.** Han asked to de-risk before making DAG the default; the review flagged the wave path had
+never spawned a real session. A real wave needs each session to flip the SHARED ROADMAP, but a wave
+session runs in its own worktree (a separate checkout), so editing ROADMAP.md there is invisible to
+the driver.
+**Change.** `_wave_run` now appends a flip-contract to each wave session's prompt (AFTER `_build_prompt`,
+so the serial path is byte-identical): "run `orchestrate.sh flip <abs-megadir> <id>`". Absolute megadir
+computed once per wave. Regression-guarded by `flip-injection` tests (mock session dumps its prompt +
+obeys the contract).
+**Proof.** Two throwaway end-to-end runs of the REAL orchestrator at WAVE_CAP=2 (`docs/verification/
+orchestrate-wavefront.md` "Real end-to-end wave run"): (1) scripted session , both spawned 5µs apart,
+both flipped the shared box, clean exit; (2) **real `claude -p`** , two LLM sessions ran concurrently
+in separate worktrees, wrote the right files, and each obeyed the injected flip command. Closes the
+"never actually run" gap.
+**Still deferred (ID-090 a + c).** The sub-goal generator emitting `## Touches` (without it real
+mega-goals still serialize) and the real `mega-merge.sh` arity. Flipping `WAVE_CAP` default to 2
+waits on (a) + a gate audit.
