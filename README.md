@@ -113,6 +113,7 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 /kit:review-team    Parallel 3-lens review, confidence-gated + validated findings
 /kit:verify         Re-run tests read-only; PASS / FAIL / INCONCLUSIVE
 /kit:docs           Update all docs to match code (5 min)
+/kit:explain        Literate-diff explainer: understand a change, not click-to-merge it (ADR-0031)
 /kit:ship           Review gate, version bump, changelog, commit, PR
 /kit:retro          Retrospective (10 min, after shipping)
 ```
@@ -182,7 +183,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (27, manual, human-triggered)</summary>
+<summary><b>Commands</b> (28, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -208,6 +209,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:test-plan-review-team | Verify | 5-lens adversarial critique of the spec's `## Test plan`, bounded revise loop, report-only |
 | /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
+| /kit:explain | Understand | Literate-diff explainer (background -> intuition -> prose-ordered diff -> diagram); composes narrate-log + svg-knowledge-diagram, grounded in the diff not the agent's narrative (ADR-0031) |
 | /kit:ship | Ship | Review gate, version bump, changelog, commit, PR |
 | /kit:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
