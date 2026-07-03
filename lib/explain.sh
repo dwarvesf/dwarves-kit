@@ -35,13 +35,18 @@ set -uo pipefail
 EMPTY_TREE=4b825dc642cb6eb9a060e54bf8d69288fbee4904
 
 # _resolve <ref> -> prints "BASE\tHEAD" for git diff. Handles range, merge, root commit.
+# Hard-fails on an unresolvable ref: without this, `set -uo pipefail` (no -e) would let a typo'd ref
+# fall through to the empty-tree base and silently emit an empty "grounded" explainer (review finding).
 _resolve() {
   local ref="$1" base head
   if [[ "$ref" == *..* ]]; then
     base="${ref%%..*}"; head="${ref##*..}"
+    git rev-parse -q --verify "${base}^{commit}" >/dev/null 2>&1 || git rev-parse -q --verify "$base" >/dev/null 2>&1 || { echo "explain.sh: cannot resolve base ref '$base'" >&2; exit 3; }
+    git rev-parse -q --verify "${head}^{commit}" >/dev/null 2>&1 || git rev-parse -q --verify "$head" >/dev/null 2>&1 || { echo "explain.sh: cannot resolve head ref '$head'" >&2; exit 3; }
     printf '%s\t%s\n' "$base" "$head"; return 0
   fi
   head="$ref"
+  git rev-parse -q --verify "${head}^{commit}" >/dev/null 2>&1 || { echo "explain.sh: cannot resolve ref '$ref'" >&2; exit 3; }
   # first parent if it exists, else the empty tree (root commit)
   if git rev-parse -q --verify "${ref}^1" >/dev/null 2>&1; then
     base="${ref}^1"
@@ -52,15 +57,19 @@ _resolve() {
 }
 
 # _rank <status> <path> -> 0..3 (see header). Precedence: background, then verification, then new, else integration.
+# Globs are ANCHORED on the path segment / basename, not loose substrings, so `latest-value.js`
+# or `aerospec.txt` do NOT misclassify as tests (review finding, SPEC-122 impl-notes).
 _rank() {
-  local status="$1" path="$2" lc
+  local status="$1" path="$2" lc bn
   lc="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
+  bn="${lc##*/}"
   # rank 0: background (docs / specs / ADRs / decisions)
-  if [[ "$lc" == docs/* || "$path" == *SPEC-* || "$lc" == *decisions/* || "$lc" == *adr-* ]]; then
+  if [[ "$lc" == docs/* || "$path" == *SPEC-* || "$lc" == *decisions/* || "$bn" == adr-* ]]; then
     echo 0; return
   fi
-  # rank 3: verification (tests)
-  if [[ "$lc" == tests/* || "$lc" == */tests/* || "$lc" == *test-* || "$lc" == *_test.* || "$lc" == *.test.* || "$lc" == *spec.* || "$lc" == */spec/* ]]; then
+  # rank 3: verification (tests) -- anchored: a tests/ path segment, or a basename that is clearly a test.
+  if [[ "$lc" == tests/* || "$lc" == */tests/* || "$lc" == */spec/* \
+     || "$bn" == test-* || "$bn" == test_* || "$bn" == *_test.* || "$bn" == *.test.* || "$bn" == *.spec.* ]]; then
     echo 3; return
   fi
   # rank 1: newly-added concept
@@ -81,10 +90,30 @@ _namestatus() {
   done
 }
 
+# _change_shape <base> <head> -> a one-line goal DERIVED FROM THE DIFF (never the commit message):
+# what files were added / modified / removed. This is the grounded answer to "what is this change FOR",
+# and it cannot be fooled by a lying commit subject.
+_change_shape() {
+  local base="$1" head="$2" added="" modified="" removed=""
+  while IFS=$'\t' read -r status path; do
+    [ -z "$path" ] && continue
+    case "$status" in
+      A*) added="${added:+$added, }$path" ;;
+      D*) removed="${removed:+$removed, }$path" ;;
+      *)  modified="${modified:+$modified, }$path" ;;   # M / R / C / T
+    esac
+  done < <(_namestatus "$base" "$head")
+  local parts=""
+  [ -n "$added" ]    && parts="${parts:+$parts; }adds ${added}"
+  [ -n "$modified" ] && parts="${parts:+$parts; }modifies ${modified}"
+  [ -n "$removed" ]  && parts="${parts:+$parts; }removes ${removed}"
+  echo "${parts:-no file changes}"
+}
+
 # order: emit changed files in reading order (stable within rank).
 cmd_order() {
   local ref="$1" base head
-  IFS=$'\t' read -r base head < <(_resolve "$ref")
+  local _r; _r="$(_resolve "$ref")" || exit 3; IFS=$'\t' read -r base head <<<"$_r"
   # prefix each file with its rank + a sequence index, stable-sort, strip.
   local i=0
   _namestatus "$base" "$head" | while IFS=$'\t' read -r status path; do
@@ -97,7 +126,7 @@ cmd_order() {
 # mermaid: a valid ```mermaid change-map. Buckets present in the change are chained (>=1 edge always).
 cmd_mermaid() {
   local ref="$1" base head
-  IFS=$'\t' read -r base head < <(_resolve "$ref")
+  local _r; _r="$(_resolve "$ref")" || exit 3; IFS=$'\t' read -r base head <<<"$_r"
 
   # collect basenames per rank bucket
   local -a names=("Background (docs/specs)" "New (added)" "Integration (modified)" "Verification (tests)")
@@ -106,6 +135,7 @@ cmd_mermaid() {
     [ -z "$path" ] && continue
     local r; r="$(_rank "$status" "$path")"
     local bn; bn="$(basename "$path")"
+    bn="${bn//\"/\'}"   # a literal double-quote in a filename would break the quoted mermaid label
     if [ -z "${buckets[$r]}" ]; then buckets[$r]="$bn"; else buckets[$r]="${buckets[$r]}<br/>${bn}"; fi
   done < <(_namestatus "$base" "$head")
 
@@ -140,7 +170,7 @@ cmd_mermaid() {
 # tests: fold in the RECORDED test verdict from docs/verification/, never an invented one.
 cmd_tests() {
   local ref="$1" base head repo_root vdir
-  IFS=$'\t' read -r base head < <(_resolve "$ref")
+  local _r; _r="$(_resolve "$ref")" || exit 3; IFS=$'\t' read -r base head <<<"$_r"
   repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   vdir="$repo_root/docs/verification"
 
@@ -175,16 +205,22 @@ cmd_render() {
     esac
   done
 
-  local base head subject
-  IFS=$'\t' read -r base head < <(_resolve "$ref")
-  subject="$(git log -1 --format='%s' "$head" 2>/dev/null || echo "$ref")"
+  local base head subject shape
+  local _r; _r="$(_resolve "$ref")" || exit 3; IFS=$'\t' read -r base head <<<"$_r"
+  # The commit subject is the AUTHOR's narrative, NOT the diff. It is surfaced ONCE, explicitly
+  # labeled UNVERIFIED, and NEVER used as the title or the goal -- else a lying message ("adds
+  # multiply" over a diff that adds subtract) would teach the reader the wrong model (ADR-0031 §2,
+  # the exact leak the review caught). The goal is DERIVED FROM THE DIFF via _change_shape.
+  subject="$(git log -1 --format='%s' "$head" 2>/dev/null || echo "(no subject)")"
+  shape="$(_change_shape "$base" "$head")"
 
   _render_body() {
-    echo "# Explainer: ${subject}"
+    echo "# Explainer for \`${ref}\`"
     echo
-    echo "> Literate-diff explainer for \`${ref}\` (base \`${base}\`). Grounded in the ACTUAL diff +"
-    echo "> recorded test results, NOT any agent narrative (ADR-0031 §2). Read top to bottom; the diff"
-    echo "> below is in READING order, not git's alphabetical order."
+    echo "> Literate-diff explainer (base \`${base}\`). Grounded in the ACTUAL diff + recorded test"
+    echo "> results, NOT any agent/author narrative (ADR-0031 §2). Read top to bottom; the diff below is"
+    echo "> in READING order, not git's alphabetical order. The commit message is shown as UNVERIFIED"
+    echo "> metadata only; where it disagrees with the code, the code below is the source of truth."
     echo
 
     echo "## Background"
@@ -192,16 +228,16 @@ cmd_render() {
     echo "The context a reader needs before the change. Files that carry it (specs, ADRs, docs) come"
     echo "first in the reading order below. narrate-log supplies the prose arc; the grounded facts:"
     echo
-    echo "- Change subject: ${subject}"
     echo "- Files touched (reading order): $(cmd_order "$ref" | tr '\n' ' ')"
+    echo "- Commit subject (UNVERIFIED author metadata, cross-check against the diff): ${subject}"
     echo
 
     echo "## Goal and intuition"
     echo
-    echo "Concepts before code: what this change is FOR and the intuition, before any hunk. Seeded from"
-    echo "the commit subject + the background files; commands/explain.md enriches this via narrate-log."
+    echo "Concepts before code: what this change is FOR, read OFF THE DIFF (not the commit message)."
+    echo "commands/explain.md enriches this via narrate-log, keeping every claim traceable to a hunk below."
     echo
-    echo "- Goal (from the change itself): ${subject}"
+    echo "- Goal (derived from the diff): ${shape}"
     echo
 
     echo "## The change, in reading order"

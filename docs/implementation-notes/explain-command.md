@@ -23,19 +23,38 @@ diagram ON TOP of the grounded skeleton. Why: making the constraint STRUCTURAL (
 beats making it a prose promise the LLM might break. Impact: the load-bearing NC (AC4) tests the lib
 directly and is deterministic.
 
-## 2026-07-03 12:20 The negative-control fixture carries the false narrative in the commit BODY, not subject
+## 2026-07-03 12:20 REVERSED after review: the commit subject IS a narrative channel , it leaked
 
-Context: AC4 needs "the agent's stated intent differs from the diff". Naive reading: put the false
-intent in the commit message. Constraint the spec missed: the engine seeds the "Goal" line from
-`git log -1 --format=%s` (the SUBJECT), so a "multiply" subject would legitimately surface in the
-artifact and the `! grep multiply` assertion would misfire. Decision: the NC fixture keeps the subject
-NEUTRAL ("update calc helper") and carries the false "multiply" narrative in (a) the commit BODY (which
-the engine never reads) and (b) an uncommitted `AGENT_NARRATIVE.txt` (outside the ref's diff entirely).
-The diff truthfully adds `subtract`. Assertion: the explainer names `subtract` and never says `multiply`.
-Why this is the RIGHT test, not a dodge: it proves the real guarantee , the tool has no narrative
-channel, so only the committed diff + subject-as-label reach the output. A commit-message claim that
-contradicts the code is exactly untrusted narrative; the diff wins. (The subject IS metadata the engine
-surfaces as an unverified label, so an honest fixture does not weaponize the one field the engine reads.)
+Context: the first cut of the NC (AC4) kept the commit subject NEUTRAL and put the false narrative only in
+the commit BODY + an untracked file (channels the engine never reads). I justified this as "proving the
+tool has no narrative channel". A fresh-context review (kit:code-reviewer, architecture lens) correctly
+called this a hole: the engine DID read the commit subject (`git log -1 --format=%s`) and echoed it as
+`# Explainer: <subject>` and `Goal (from the change itself): <subject>` , unverified. A repro confirmed:
+subject "add multiply operation" over a diff that adds `subtract` produced an explainer whose Goal said
+"multiply". That is exactly the plausible-but-wrong narrative ADR-0031 §2 exists to block, and my NC was
+constructed to sidestep the one channel that leaked. The reviewer was right; I waved a real MAJOR the
+first time.
+
+Fix (reversed decision): (1) the engine now DERIVES the Goal from the diff (`_change_shape`: adds/modifies/
+removes which files), never from the subject; the title is `# Explainer for <ref>` (no subject); the
+subject is surfaced ONCE, explicitly labeled "Commit subject (UNVERIFIED author metadata, cross-check
+against the diff)". (2) AC4 gains fixture C , the STRONG control , where the commit SUBJECT itself lies
+("add multiply") while the diff adds `subtract`; it asserts the Goal is diff-derived, the title is clean,
+and every `multiply` occurrence sits on an UNVERIFIED-labeled line (0 trusted leaks). The original body/
+untracked-file case is kept as AC4a (it still proves the no-arg-channel guarantee); AC4b is the one that
+matters. Lesson: the commit message is the author's narrative; grounding "in the diff" means the code
+wins over the message everywhere, including the subject line.
+
+## 2026-07-03 12:25 Three review MINORs fixed (rank anchoring, invalid-ref, mermaid escaping)
+
+Same review pass flagged three minors, all fixed: (1) `_rank`'s test-bucket globs were loose substrings
+(`*test-*`, `*spec.*`) that misclassified `latest-value.js` / `aerospec.txt` as tests , anchored to the
+basename (`test-*`, `*_test.*`, `*.spec.*`) + path segments (`tests/`, `/spec/`). (2) `_resolve` treated a
+typo'd ref as a root commit and, under `set -uo pipefail` (no `-e`), silently emitted an empty "grounded"
+explainer , now it `git rev-parse -q --verify`s the head up front and exits 3 with a message (call sites
+switched from process-sub to `$(...) || exit 3` so the failure propagates). (3) mermaid node labels built
+from raw basenames , a `"` in a filename would break the quoted label , now escaped. None change the
+happy-path behavior; they close silent-degradation edges.
 
 ## 2026-07-03 12:30 Frozen surfaces: no BLOCKED flag needed
 

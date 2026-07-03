@@ -1,23 +1,24 @@
-# Explainer: wire beta helper into alpha and zebra
+# Explainer for `c54a169716c965fd9afb52d9293d5aa1803ef940`
 
-> Literate-diff explainer for `6d1ccd7d70e09b388abc4b5c4aa44416f5b25386` (base `6d1ccd7d70e09b388abc4b5c4aa44416f5b25386^1`). Grounded in the ACTUAL diff +
-> recorded test results, NOT any agent narrative (ADR-0031 §2). Read top to bottom; the diff
-> below is in READING order, not git's alphabetical order.
+> Literate-diff explainer (base `c54a169716c965fd9afb52d9293d5aa1803ef940^1`). Grounded in the ACTUAL diff + recorded test
+> results, NOT any agent/author narrative (ADR-0031 §2). Read top to bottom; the diff below is
+> in READING order, not git's alphabetical order. The commit message is shown as UNVERIFIED
+> metadata only; where it disagrees with the code, the code below is the source of truth.
 
 ## Background
 
 The context a reader needs before the change. Files that carry it (specs, ADRs, docs) come
 first in the reading order below. narrate-log supplies the prose arc; the grounded facts:
 
-- Change subject: wire beta helper into alpha and zebra
 - Files touched (reading order): docs/guide.md beta.js alpha.js zebra.js tests/test-beta.sh 
+- Commit subject (UNVERIFIED author metadata, cross-check against the diff): wire beta helper into alpha and zebra
 
 ## Goal and intuition
 
-Concepts before code: what this change is FOR and the intuition, before any hunk. Seeded from
-the commit subject + the background files; commands/explain.md enriches this via narrate-log.
+Concepts before code: what this change is FOR, read OFF THE DIFF (not the commit message).
+commands/explain.md enriches this via narrate-log, keeping every claim traceable to a hunk below.
 
-- Goal (from the change itself): wire beta helper into alpha and zebra
+- Goal (derived from the diff): adds beta.js, docs/guide.md, tests/test-beta.sh; modifies alpha.js, zebra.js
 
 ## The change, in reading order
 
@@ -104,4 +105,4 @@ flowchart TD
 
 ### Recorded test result
 
-[no recorded test result for 6d1ccd7d70e09b388abc4b5c4aa44416f5b25386]
+[no recorded test result for c54a169716c965fd9afb52d9293d5aa1803ef940]

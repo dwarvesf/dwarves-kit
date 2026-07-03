@@ -98,10 +98,39 @@ REFB="$(gitq "$DB" rev-parse HEAD)"
 ARTB="$(mktemp)"
 ( cd "$DB" && bash "$LIB" render "$REFB" ) > "$ARTB"
 
-assert "AC4 explainer describes the DIFF (names 'subtract')" \
+assert "AC4a explainer describes the DIFF (names 'subtract')" \
   "$(grep -q 'subtract' "$ARTB" && echo 0 || echo 1)"
-assert "AC4 explainer does NOT parrot the false narrative ('multiply')" \
+assert "AC4a explainer does NOT parrot the body/untracked narrative ('multiply')" \
   "$(grep -qi 'multiply' "$ARTB" && echo 1 || echo 0)"
+
+# Fixture C: the STRONGER control. The false narrative is in the ONE channel the engine actually reads,
+# the commit SUBJECT (git log %s). The diff adds `subtract`; the subject lies "add multiply operation".
+# The engine must (a) still describe the diff (subtract) and derive its Goal from the diff, and (b) surface
+# the subject ONLY as explicitly-UNVERIFIED metadata, never as a trusted goal/title. So every occurrence of
+# the false word must sit on an UNVERIFIED-labeled line, and no derived-Goal line may carry it.
+DC="$(mktemp -d)"; mkrepo "$DC"
+printf '// calc\n' > "$DC/calc.js"
+gitq "$DC" add -A; gitq "$DC" commit -qm "init calc"
+printf '// calc\nfunction subtract(a, b) { return a - b; }\n' > "$DC/calc.js"   # DIFF truth: subtract
+gitq "$DC" add -A
+gitq "$DC" commit -qm "feat(calc): add multiply operation as requested"          # SUBJECT lies: multiply
+REFC="$(gitq "$DC" rev-parse HEAD)"
+ARTC="$(mktemp)"
+( cd "$DC" && bash "$LIB" render "$REFC" ) > "$ARTC"
+
+assert "AC4b (subject channel) explainer still describes the DIFF (names 'subtract')" \
+  "$(grep -q 'subtract' "$ARTC" && echo 0 || echo 1)"
+# every line mentioning the false word must also carry the UNVERIFIED label (i.e. it is metadata, not a claim)
+LEAK=$(grep -i 'multiply' "$ARTC" | grep -vi 'unverified' | wc -l | tr -d ' ')
+assert "AC4b false subject appears ONLY as UNVERIFIED metadata (leaked trusted lines: $LEAK)" \
+  "$([ "$LEAK" -eq 0 ] && echo 0 || echo 1)"
+# the derived Goal line is grounded in the diff, never the subject
+GOAL_LEAK=$(grep -i 'Goal (derived from the diff)' "$ARTC" | grep -ci 'multiply')
+assert "AC4b the derived-Goal line does NOT carry the false subject" \
+  "$([ "$GOAL_LEAK" -eq 0 ] && echo 0 || echo 1)"
+# and the title is not the lying subject either
+assert "AC4b the H1 title does NOT carry the false subject" \
+  "$(head -1 "$ARTC" | grep -qi 'multiply' && echo 1 || echo 0)"
 
 # Capture the fixture-A explainer as the proof artifact.
 PROOF_DIR="$KIT_DIR/docs/verification/explain-command"
