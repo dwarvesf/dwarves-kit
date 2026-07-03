@@ -37,6 +37,14 @@
 # human gate (never auto-merges past it). TIER4_CLOSE=0 restores the bare "done"-and-return;
 # TIER4_CORPUS overrides the no-orphan sweep root (default: the megadir's git repo root).
 #
+# Multiplexer panes (SPEC-119, env MULTIPLEXER=0 default -- OPT-IN, ADR-0032 s4): when a wave
+# actually admits >=1 sub-goal concurrently (WAVE_CAP>1 + disjoint `## Touches`), MULTIPLEXER=1
+# spawns each wave session into its own tmux window (`tmux new-window`) instead of a plain
+# background job, so an operator can `tmux capture-pane` its live output or `tmux send-keys` into
+# it (watch + intervene across tabs). Off by default: `_wave_run`'s spawn/reap take the exact
+# pre-existing kill-0/wait path and $TMUX_CMD is never invoked. TMUX_CMD mirrors CLAUDE_CMD's mock
+# seam; TMUX_SESSION overrides the derived per-megagoal tmux session name.
+#
 # The `claude` invocation is `$CLAUDE_CMD` (default: claude), so tests mock it and operators
 # tune the permission flags.
 set -uo pipefail
@@ -115,6 +123,18 @@ WAVE_CAP="${WAVE_CAP:-2}"
 # clean no-op. Tests set WAVE_MERGE_CMD to a mock that records merge ordering. Word-split intentionally
 # (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
 WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
+
+# Multiplexer panes (SPEC-119, executes ADR-0032 section 4). Opt-in (default 0/off): when a wave
+# runs (MULTIPLEXER=1, WAVE_CAP>1, sub-goals declaring disjoint Touches so >=1 is actually
+# admitted concurrently), each spawned wave session runs inside a tmux window instead of a plain
+# background job, so the operator can `tmux capture-pane`/`send-keys` it (watch + intervene across
+# tabs, ADR-0032 s4). OFF by default: `_wave_run`'s spawn/reap take the exact pre-existing
+# kill-0/wait code path and $TMUX_CMD is never invoked (the off-path-unchanged property this
+# sub-goal's Proof is built on). TMUX_CMD mirrors CLAUDE_CMD's mock seam (tests point it at a fake
+# `tmux` so no real tmux server is needed in CI). TMUX_SESSION overrides the derived per-megagoal
+# tmux session name (default: sanitized from the megadir path, see _mux_session_name).
+MULTIPLEXER="${MULTIPLEXER:-0}"
+TMUX_CMD="${TMUX_CMD:-tmux}"
 
 # TIER-4 mega-close (SPEC-118, executes ADR-0032 section 5). Default ON (1): when EVERY sub-goal box
 # is checked, `cmd_run` runs a real mega-level close over the ASSEMBLED WAVE instead of just printing
@@ -728,6 +748,61 @@ _wave_worktree() {  # repo id branch
   printf '%s\n' "$wt"
 }
 
+# ---- Multiplexer panes (SPEC-119, ADR-0032 s4) ------------------------------------------------
+# The per-megagoal tmux session name a wave's panes live in: $TMUX_SESSION if the operator set
+# one, else derived from the megadir's basename (sanitized to tmux-safe chars). Pure function.
+_mux_session_name() {  # megadir
+  [ -n "${TMUX_SESSION:-}" ] && { printf '%s\n' "$TMUX_SESSION"; return 0; }
+  local base; base=$(basename "$(cd "$1" 2>/dev/null && pwd || printf '%s' "$1")")
+  printf 'orch-%s\n' "$(printf '%s' "$base" | tr -c 'A-Za-z0-9_-' '-')"
+}
+
+# Spawn ONE wave sub-goal's REAL session inside a tmux window (visibility + intervention, ADR-0032
+# s4) instead of a plain backgrounded job. `tmux new-window` cannot call a bash function in THIS
+# process -- it execs a fresh command line -- so the pane re-enters `orchestrate.sh` via the hidden
+# `_pane-exec` subcommand, which runs the exact same `_run_one_session` the plain path uses (no
+# duplicated dispatch logic). Ensures the shared per-megagoal tmux session exists first (`has-session`
+# else `new-session -d`, so the first pane doesn't need a pre-existing session). `tmux new-window`
+# returns as soon as the window is created, before the pane's command exits, so a pid-based `wait`
+# in the caller cannot observe its completion; the pane's command writes its exit code to
+# `$donefile` instead (the caller's reap loop polls for that file). Mockable via `$TMUX_CMD`;
+# nonzero on any tmux failure (missing binary, no server, etc.).
+#
+# spec-validate finding (Failure Mode Analyst): a sub-goal whose PREVIOUS wave attempt failed
+# (session exited nonzero / crashed) leaves its named window sitting in the shared per-megagoal
+# tmux session -- nothing kills a completed pane's window on the normal path (only `_wave_abort`
+# kills windows, and only still-in-flight ones on an operator Ctrl-C). A retry (`_wave_gate`
+# re-admits an unchecked box on the next `orchestrate.sh run`) would then `new-window -n "$id"`
+# a SECOND window sharing that name, and tmux's `session:name` target resolution is not
+# guaranteed to pick the new one -- `capture-pane`/`send-keys` could address the stale pane.
+# Pre-clean idempotently (mirrors `_wave_worktree`'s reuse-clean-else-recreate stance for
+# worktrees): a no-op `|| true` when no such window exists yet.
+_pane_spawn() {  # megadir id wt pfile route_flags donefile
+  local megadir="$1" id="$2" wt="$3" pfile="$4" route_flags="$5" donefile="$6"
+  local mux; mux=$(_mux_session_name "$megadir")
+  "$TMUX_CMD" has-session -t "$mux" 2>/dev/null || "$TMUX_CMD" new-session -d -s "$mux" -n _init 2>/dev/null || return 1
+  "$TMUX_CMD" kill-window -t "$mux:$id" 2>/dev/null || true
+  "$TMUX_CMD" new-window -d -t "$mux" -n "$id" -c "$wt" \
+    "\"$ORCH_DIR/orchestrate.sh\" _pane-exec \"$megadir\" \"$id\" \"$pfile\" \"$route_flags\" \"$donefile\""
+}
+
+# Read a wave session's live pane output (the visibility half of the Proof: "a capture-pane read
+# returns the wave session's live output"). `-p` prints to stdout; `-t <mux>:<id>` addresses the
+# window by name (unique per megagoal wave, one window per sub-goal id).
+_pane_capture() {  # megadir id
+  local mux; mux=$(_mux_session_name "$1")
+  "$TMUX_CMD" capture-pane -p -t "$mux:$2" 2>/dev/null
+}
+
+# Send keys into a wave session's pane (the control/intervene half of the Proof) -- e.g. an
+# operator nudging a stuck session or Ctrl-C-ing it directly in its own pane.
+_pane_send_keys() {  # megadir id keys...
+  local megadir="$1" id="$2"; shift 2
+  local mux; mux=$(_mux_session_name "$megadir")
+  "$TMUX_CMD" send-keys -t "$mux:$id" "$@"
+}
+# -----------------------------------------------------------------------------------------------
+
 # Abort handler for `_wave_run`'s INT/TERM trap: kill every still-live wave job's PROCESS GROUP then
 # reap, so an operator ctrl-C never leaves an orphaned `claude -p` (mock) grandchild. `_WAVE_PIDS`
 # holds the backgrounded SUBSHELL WRAPPER pid (`( cd ... && _run_one_session ... ) &`), not the
@@ -741,9 +816,21 @@ _wave_worktree() {  # repo id branch
 _wave_abort() {
   local p ok=1
   for p in ${_WAVE_PIDS[@]+"${_WAVE_PIDS[@]}"}; do
+    [ -n "$p" ] || continue   # SPEC-119: a muxed entry has no reapable pid; handled below instead
     kill -TERM -- -"$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || ok=0
   done
   wait 2>/dev/null
+  # SPEC-119: a muxed wave session's REAL process lives in a tmux pane, not this shell's job
+  # table, so the pid loop above cannot reach it -- kill its window directly instead (best-effort;
+  # a failure here does not flip `ok`, the pid-loop TERM confirmation is unrelated to pane cleanup).
+  local n="${#_WAVE_DONEFILES[@]}" i mux
+  if [ -n "${_WAVE_MUX_MEGADIR:-}" ] && [ "$n" -gt 0 ]; then
+    mux=$(_mux_session_name "$_WAVE_MUX_MEGADIR")
+    for i in $(seq 0 $((n - 1))); do
+      [ -n "${_WAVE_DONEFILES[$i]:-}" ] || continue
+      "$TMUX_CMD" kill-window -t "$mux:${_WAVE_IDS[$i]}" 2>/dev/null || true
+    done
+  fi
   # Review-fix FIX 8: clean up any prompt temp files an interrupted wave leaves behind (they hold
   # the injected HANDOFF content; a Ctrl-C otherwise leaks them into ${TMPDIR:-/tmp}).
   rm -f "${_WAVE_PFILES[@]+"${_WAVE_PFILES[@]}"}" 2>/dev/null
@@ -795,16 +882,24 @@ _wave_run() {  # megadir roadmap
   _WAVE_LANDED=()
   # `_WAVE_PFILES` is GLOBAL too (review-fix FIX 8): each spawned session's prompt temp file, so
   # `_wave_abort` can `rm -f` any still-live ones on an INT/TERM instead of leaking them into
-  # ${TMPDIR:-/tmp}. Index-aligned with `_WAVE_PIDS` / wave_ids, same as the other reap-map arrays.
+  # ${TMPDIR:-/tmp}. Index-aligned with `_WAVE_PIDS` / `_WAVE_IDS`, same as the other reap-map arrays.
   _WAVE_PFILES=()
-  local wave_ids=() wave_done=()
+  # `_WAVE_IDS` / `_WAVE_DONEFILES` are GLOBAL (SPEC-119, same reason as `_WAVE_PIDS`): a muxed
+  # entry has no reapable pid, so `_wave_abort` needs the sub-goal id (to address its tmux window)
+  # and `_WAVE_DONEFILES[i]` non-empty is what marks index `i` as muxed vs plain-backgrounded.
+  # `_WAVE_MUX_MEGADIR` lets the abort handler derive the tmux session name; harmless when unset
+  # (the `n -gt 0` / non-empty-donefile guards make the whole block a no-op for a non-muxed wave).
+  _WAVE_IDS=()
+  _WAVE_DONEFILES=()
+  _WAVE_MUX_MEGADIR="$megadir"
+  local wave_done=()
   local wave_failed=0 spawned=0
 
   # Reap/kill the wave PID set on an abort so no `claude -p` (mock) child is orphaned. Cleared
   # before the normal return paths below.
   trap '_wave_abort' INT TERM
 
-  local decision id gf branch wt route_flags rmodel reffort pfile pid checked
+  local decision id gf branch wt route_flags rmodel reffort pfile pid donefile checked
   while IFS=$'\t' read -r decision id; do
     [ "$decision" = run ] || continue
     # Idempotent resume: a box already checked is skipped, never re-run.
@@ -845,29 +940,48 @@ _wave_run() {  # megadir roadmap
     } >> "$pfile"
     _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
 
-    # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
-    # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
-    # path (deterministic-handoff regen is TASK-005), so losing it in the subshell is fine. The
-    # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
-    #
-    # Job control ON only around the spawn itself (review-fix FIX 1): under `set -m` a `&` job
-    # becomes its OWN PROCESS GROUP (pgid == the job's pid), so `_wave_abort` can signal the WHOLE
-    # group -- the backgrounded subshell wrapper AND its `claude -p` grandchild -- via a negative-pid
-    # `kill`. Without this, `kill "$p"` reaches only the wrapper; the grandchild reparents to init and
-    # survives an abort (confirmed live: the prior "no orphaned children" claim was false). Scoped
-    # tightly (set +m right after `$!`) so monitor mode's job-control side effects never leak into the
-    # rest of the spawn loop or the reap loop below. bash 3.2 macOS has no `setsid`; job control is
-    # the only portable no-setsid way to get a fresh process group.
-    set -m
-    ( cd "$wt" 2>/dev/null && _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
-    pid=$!
-    set +m
+    if [ "$MULTIPLEXER" = 1 ]; then
+      # SPEC-119: host the REAL session inside a tmux pane instead of a plain background job (the
+      # off-by-default path below is untouched). `tmux new-window` returns as soon as the window is
+      # created, before the pane's command exits, so there is no pid to `wait` on here -- the pane
+      # writes its own exit code to $donefile instead (the reap loop polls it, see below).
+      donefile=$(mktemp -u)
+      if ! _pane_spawn "$megadir" "$id" "$wt" "$pfile" "$route_flags" "$donefile"; then
+        echo "[orchestrate] [wave] [mux] $id: tmux pane spawn failed; marking wave failed." >&2
+        _emit_event "$megadir" "$id" blocked "wave: tmux pane spawn failed"
+        wave_failed=1
+        rm -f "$pfile"
+        continue
+      fi
+      pid=""
+      _say "[orchestrate] [wave] [mux] spawned $id in tmux pane $(_mux_session_name "$megadir"):$id (worktree $wt)"
+    else
+      # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
+      # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
+      # path (deterministic-handoff regen is TASK-005), so losing it in the subshell is fine. The
+      # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
+      #
+      # Job control ON only around the spawn itself (review-fix FIX 1): under `set -m` a `&` job
+      # becomes its OWN PROCESS GROUP (pgid == the job's pid), so `_wave_abort` can signal the WHOLE
+      # group -- the backgrounded subshell wrapper AND its `claude -p` grandchild -- via a negative-pid
+      # `kill`. Without this, `kill "$p"` reaches only the wrapper; the grandchild reparents to init and
+      # survives an abort (confirmed live: the prior "no orphaned children" claim was false). Scoped
+      # tightly (set +m right after `$!`) so monitor mode's job-control side effects never leak into the
+      # rest of the spawn loop or the reap loop below. bash 3.2 macOS has no `setsid`; job control is
+      # the only portable no-setsid way to get a fresh process group.
+      set -m
+      ( cd "$wt" 2>/dev/null && _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
+      pid=$!
+      set +m
+      donefile=""
+      _say "[orchestrate] [wave] spawned $id (pid $pid) in $wt"
+    fi
     _WAVE_PIDS+=("$pid")
-    wave_ids+=("$id")
+    _WAVE_IDS+=("$id")
+    _WAVE_DONEFILES+=("$donefile")
     _WAVE_PFILES+=("$pfile")
     wave_done+=(0)
     spawned=$((spawned + 1))
-    _say "[orchestrate] [wave] spawned $id (pid $pid) in $wt"
   done < <(_wave_gate "$megadir" "$roadmap")
 
   # Empty wave (nothing admitted, or every admitted box already checked): not a failure unless a
@@ -881,13 +995,21 @@ _wave_run() {  # megadir roadmap
   # which is bash 4.3+/absent on macOS). As each PID exits, reap it with `wait`, then run the
   # grounded box-flip check for THAT sub-goal. A nonzero exit OR an unflipped box marks the wave
   # failed but does NOT break the loop: in-flight siblings DRAIN to completion (never killed).
-  local remaining="$spawned" i rc box
+  # SPEC-119: a muxed index (`_WAVE_DONEFILES[i]` non-empty) has no reapable pid -- `tmux
+  # new-window` already returned -- so that index polls for its donefile instead of `kill -0`.
+  local remaining="$spawned" i rc box donefile
   while [ "$remaining" -gt 0 ]; do
     for i in $(seq 0 $((spawned - 1))); do
       [ "${wave_done[$i]}" = 1 ] && continue
-      pid="${_WAVE_PIDS[$i]}"; id="${wave_ids[$i]}"
-      kill -0 "$pid" 2>/dev/null && continue   # still in-flight -> leave it alone (do not kill)
-      rc=0; wait "$pid" 2>/dev/null || rc=$?    # exited -> reap the cached status
+      pid="${_WAVE_PIDS[$i]}"; id="${_WAVE_IDS[$i]}"; donefile="${_WAVE_DONEFILES[$i]}"
+      if [ -n "$donefile" ]; then
+        [ -f "$donefile" ] || continue          # still in-flight -> leave it alone
+        rc=0; read -r rc < "$donefile" 2>/dev/null || rc=0
+        rm -f "$donefile"
+      else
+        kill -0 "$pid" 2>/dev/null && continue   # still in-flight -> leave it alone (do not kill)
+        rc=0; wait "$pid" 2>/dev/null || rc=$?    # exited -> reap the cached status
+      fi
       wave_done[i]=1
       remaining=$((remaining - 1))
       rm -f "${_WAVE_PFILES[$i]}" 2>/dev/null
@@ -1438,12 +1560,28 @@ cmd_run() {
   done
 }
 
+# Hidden re-entry point for a tmux-hosted wave session (SPEC-119): `_pane_spawn` execs THIS
+# subcommand as the pane's command line -- `tmux new-window` always execs a fresh command line, it
+# cannot call a bash function living in the orchestrator's own process. Runs the EXACT same
+# `_run_one_session` the plain background-job path uses (no duplicated dispatch logic), then writes
+# its exit code to $donefile so `_wave_run`'s reap loop (which cannot `wait` on a grandchild in a
+# different process tree) can poll for completion instead of `kill -0`/`wait`. Never invoked by an
+# operator directly; deliberately absent from the `usage:` string in `main()` below.
+cmd_pane_exec() {  # megadir id pfile route_flags donefile
+  local megadir="$1" id="$2" pfile="$3" route_flags="$4" donefile="$5"
+  _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0
+  local rc=$?
+  printf '%s\n' "$rc" > "$donefile"
+  return "$rc"
+}
+
 main() {
   local cmd="${1:-}"; shift 2>/dev/null || true
   case "$cmd" in
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
+    _pane-exec) cmd_pane_exec "$@" ;;
     *) echo "usage: orchestrate.sh {next|run|flip} <megagoal-dir> [<SG-NN>] [--dry-run] [--step] [--stream] [--capture-tokens] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
   esac
 }
