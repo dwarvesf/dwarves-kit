@@ -13,6 +13,9 @@
 #   start --amend <same args>           sanctioned correction; readers take the last AMEND (SPEC-077)
 #   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision
 #   action   <rid> <text>              append an action-log line
+#   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
+#                                       append an understanding-debt verdict (ADR-0031, SPEC-122);
+#                                       additive marker, ignored by check()/override()/descent()
 #   override <rid> <phase> <reason>    record a human override for a gate
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
 #   show     <rid>                     print the run's ledger
@@ -163,6 +166,37 @@ tokens() {
   local line; line="$(printf 'in=%s out=%s cache_read=%s cache_create=%s' "$intok" "$outtok" "$cread" "$ccreate")"
   [ -n "$cost" ] && line="$line cost=$cost"
   printf '%s | TOKENS | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
+}
+
+# debt: record an understanding-debt verdict as an ADDITIVE marker (ADR-0031, SPEC-122),
+# the exact `| TOKENS |` shape reused for a second concern: a `| DEBT |` line that check()/
+# override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a debt
+# line can never fake a gate or be mistaken for one. Written by `lib/significance-classify.sh
+# record` (the worker side, ADR-0032 section 3: "the worker session writes the significance/
+# worthiness marker"); the human-facing ★-tap nudge (engage/defer/wave) is a LATER, SEPARATE
+# `| DEBT |` line appended by the conductor-side nudge (SG-04) -- this command only ever
+# writes the classifier's verdict, never a human response.
+# Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
+debt() {
+  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]" >&2; return 64; }
+  [ -n "$rid" ] || { echo "debt requires a rid" >&2; return 64; }
+  local sig="" wor="" verdict="" reason="" kv k v
+  for kv in "$@"; do
+    k="${kv%%=*}"; v="${kv#*=}"
+    case "$k" in
+      significance) sig="$v" ;;
+      worthiness)   wor="$v" ;;
+      verdict)      verdict="$v" ;;
+      reason)       reason="$(oneline "$v")" ;;
+    esac
+  done
+  case "$sig" in low|high) ;; *) echo "debt: significance must be low|high (got '$sig')" >&2; return 64;; esac
+  case "$wor" in low|high) ;; *) echo "debt: worthiness must be low|high (got '$wor')" >&2; return 64;; esac
+  case "$verdict" in tap|wave|not-significant) ;; *) echo "debt: verdict must be tap|wave|not-significant (got '$verdict')" >&2; return 64;; esac
+  mkdir -p "$RUNS_DIR"
+  local line; line="$(printf 'significance=%s worthiness=%s verdict=%s' "$sig" "$wor" "$verdict")"
+  [ -n "$reason" ] && line="$line reason=$reason"
+  printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
 }
 
 override() {
@@ -344,6 +378,7 @@ case "$cmd" in
   record)   record "$@" ;;
   action)   action "$@" ;;
   tokens)   tokens "$@" ;;
+  debt)     debt "$@" ;;
   override) override "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
