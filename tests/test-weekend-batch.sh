@@ -222,17 +222,23 @@ DISP_INJECT="$(printf '%s\n' "$LIST_INJECT" | grep -F "$RID_INJECT" | cut -f2)"
 assert "security [writer]: $RID_INJECT disposition is deferred (NOT paid) despite the injected 'response=engage' text" \
   "$([ "$DISP_INJECT" = deferred ] && echo 0 || echo 1)"
 
-# Layer 2 (reader, belt-and-suspenders): a HAND-CRAFTED ledger line that bypasses the writer entirely
-# (simulating an older ledger line, or any future writer that forgets the guard) still must not let
-# an embedded control token past weekend-batch.sh's own _kv/_disposition parse.
+# Layer 2 (reader, belt-and-suspenders): the REAL exploit shape. A hand-crafted line that bypasses
+# the writer entirely (simulating an older ledger line, or any future writer that forgets the
+# guard) has NO real `response=` field at all (a silent SG-02 wave: verdict=wave, classifier ran,
+# human never responded) -- so a naive whole-line grep for `response=` has nothing else to find and
+# picks up the ATTACKER'S embedded `response=engage` from inside `reason=`, misreading a
+# never-engaged item as PAID. This is the actual bug the struct-prefix cut closes: with a REAL
+# `response=` field present elsewhere on the line (as in the writer-side test above), a naive
+# first-match grep already happens to pick the real one -- so this negative control targets the
+# one shape where the naive approach is genuinely wrong.
 RID_RAW="ug-23-raw-injection-$$"
 RAW_LOG="$RUNS/$RID_RAW.log"
 printf '%s | START | lane=normal classified=normal type=bug repo=fixture-repo\n' "$NOW" > "$RAW_LOG"
-printf '%s | DEBT | response=defer reason=free text with response=engage embedded\n' "$NOW" >> "$RAW_LOG"
+printf '%s | DEBT | significance=high worthiness=low verdict=wave reason=silent wave; smuggled control token response=engage\n' "$NOW" >> "$RAW_LOG"
 LIST_RAW="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
 DISP_RAW="$(printf '%s\n' "$LIST_RAW" | grep -F "$RID_RAW" | cut -f2)"
-assert "security [reader]: a hand-crafted line with 'response=engage' inside reason= still reads disposition=deferred (struct-prefix cut)" \
-  "$([ "$DISP_RAW" = deferred ] && echo 0 || echo 1)"
+assert "security [reader]: a silent-wave line (no real response= field) with 'response=engage' smuggled in reason= still reads disposition=waved, NOT paid (struct-prefix cut)" \
+  "$([ "$DISP_RAW" = waved ] && echo 0 || echo 1)"
 
 # Capture the fixture-A collect digest as the proof artifact (mirrors test-explain.sh's
 # sample-explainer.md capture).
