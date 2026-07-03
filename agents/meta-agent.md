@@ -77,15 +77,17 @@ ablation ledger is available, ask the router for the measured-cheapest-at-parity
 ```
 bash lib/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
 # SUGGEST  model=<tier>  ... -> write that tier into the bare `Model:` line
-# ABSTAIN  reason=thin-data ... -> OMIT the `Model:` line (inherit the parent tier); never overfit
+# ABSTAIN  reason=thin-data ... -> write `Model: sonnet` (the cheap-first default, SPEC-107); OMIT only to deliberately inherit
 ```
 
 It is a SUGGESTER, not an auto-router: surface the suggestion (or the abstention) in the draft's
 `## Notes` so the human sees the basis. Effort is not in SG-09's measured schema, so the router
-abstains on effort; leave `Effort:` to inherit unless the human sets it. With no ledger, omit both
-lines (inherit) and say so. The default heuristic when abstaining: most sub-goals do not need opus
-(Opus dominated measured spend), so a human-set default of `sonnet` with `opus` reserved for genuinely
-hard reasoning is the safe fallback, but that is the human's call, not a silent auto-write.
+abstains on effort; leave `Effort:` to inherit unless the human sets it. With no ledger, write
+`Model: sonnet` (the cheap-first default) and OMIT `Effort:` (inherit), saying the basis is the
+SPEC-107 default, not a measurement. The stance (SPEC-107, reversing the earlier "human's call"):
+most sub-goals do not need opus (Opus dominated measured spend), so `sonnet` is the WRITTEN default
+on abstain, `opus` reserved for genuinely hard reasoning, and OMIT available as a deliberate
+"inherit the parent tier" choice a human can still pick.
 
 ## DRAFT marker (mandatory)
 

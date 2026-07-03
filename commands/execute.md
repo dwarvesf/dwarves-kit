@@ -149,6 +149,15 @@ non-reused task; the worker itself is the same Task-tool dispatch as always.
 > the lead's context is worth the setup overhead, NOT for one-prompt tasks, a single tool call,
 > or when near a rate/budget limit. (research/2026-06-28-token-efficient-design.md Part 1.)
 
+**Model tiering (SPEC-107, cheap-first default).** Workers dispatch at `sonnet` by default ,
+mid-tier is the stated cheap-first stance (SPEC-087: Opus only on the hard sub-goals). The active
+spec's optional bare `Model:` header is the hard-reasoning escape hatch: a spec carrying
+`Model: opus` dispatches its workers on opus; absent, workers default to sonnet. Verifiers keep
+their own frontmatter tiers (unchanged). A fable-tier session still dispatches workers at sonnet ,
+the cheap-first default is stated policy, not a silent down-tier (SPEC-078: an explicit tier
+override is intentional). If the dispatch surface cannot pass a model override, omit it and note
+that in the run record (the SPEC-078 / review-team graceful-degrade clause).
+
 For each task, use the **Task tool** with this prompt structure (when 2b-0 produced a specialist PREAMBLE, that preamble REPLACES the generic "You are implementing a single task…" opener below):
 
 ```
