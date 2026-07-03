@@ -66,6 +66,102 @@ verdict_is --files "lib/orchestrate.sh" --impl-notes "$NONEMPTY_NOTE" "add a mec
   "tap" "AC4b non-empty impl-note flips worthiness low->high -> tap"
 
 echo ""
+echo "=== significance-classify: per-trigger regex coverage (review MEDIUM fix) ==="
+# Each of the 7 pinned regex groups gets its own assertion by name (via `explain`), not just
+# incidental coverage through AC1/AC2 -- a broken regex in any one of these must not ship silent.
+
+explain_fires() {
+  # explain_fires <desc-args...> -- <expected-substring-in-signal-line> <label>
+  local args=() expect label out
+  while [ "${1:-}" != "--" ]; do args+=("$1"); shift; done
+  shift
+  expect="$1"; label="$2"
+  TOTAL=$((TOTAL+1))
+  out="$(bash "$SC" explain "${args[@]}" 2>/dev/null)"
+  if printf '%s' "$out" | grep -qF "$expect"; then
+    echo -e "  ${GREEN}PASS${NC} $label (fired: $expect)"
+    PASS=$((PASS+1))
+  else
+    echo -e "  ${RED}FAIL${NC} $label -- expected '$expect' in:"$'\n'"$out"
+    FAIL=$((FAIL+1))
+  fi
+}
+
+# Significance triggers, independent of "full lane" (no --files, or files that do not touch
+# lib/hooks, so the ONLY way significance can be high is the named regex itself).
+explain_fires "this introduces a non-obvious control flow in a new module" -- \
+  "significance: high (design-bearing)" "design-bearing trigger fires significance"
+explain_fires "add a new public method to the library for callers" -- \
+  "significance: high (new-public-surface)" "new-public-surface trigger fires significance"
+
+# Worthiness triggers, each isolated (paired with a full-lane --files so significance is high
+# independent of the worthiness text, mirroring AC2's independence discipline).
+explain_fires --files "lib/orchestrate.sh" "this has a first-of-kind novel pattern, no precedent" -- \
+  "worthiness: high (novel)" "novel trigger fires worthiness (asserted by name, not incidental)"
+explain_fires --files "lib/orchestrate.sh" "the blast radius is high, used by every consumer" -- \
+  "worthiness: high (blast-radius)" "blast-radius trigger fires worthiness"
+explain_fires --files "lib/orchestrate.sh" "the human will have to explain and defend this design decision" -- \
+  "worthiness: high (must-explain)" "must-explain trigger fires worthiness"
+
+echo ""
+echo "=== significance-classify: tunable knob SIGNIFICANCE_WORTHINESS_MIN (review MEDIUM fix) ==="
+# A description carrying exactly ONE worthiness trigger: default (min=1) -> high/tap;
+# raising the knob to 2 -> low/wave, proving the knob actually gates the count, not a no-op.
+ONE_TRIGGER_DESC="this has a first-of-kind novel pattern"
+TOTAL=$((TOTAL+1))
+got_default="$(bash "$SC" classify --files "lib/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
+if [ "$got_default" = "tap" ]; then
+  echo -e "  ${GREEN}PASS${NC} default SIGNIFICANCE_WORTHINESS_MIN=1: one trigger -> tap"
+  PASS=$((PASS+1))
+else
+  echo -e "  ${RED}FAIL${NC} default knob -- got '$got_default', expected 'tap'"
+  FAIL=$((FAIL+1))
+fi
+
+TOTAL=$((TOTAL+1))
+got_raised="$(SIGNIFICANCE_WORTHINESS_MIN=2 bash "$SC" classify --files "lib/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
+if [ "$got_raised" = "wave" ]; then
+  echo -e "  ${GREEN}PASS${NC} SIGNIFICANCE_WORTHINESS_MIN=2: one trigger no longer enough -> wave"
+  PASS=$((PASS+1))
+else
+  echo -e "  ${RED}FAIL${NC} raised knob -- got '$got_raised', expected 'wave'"
+  FAIL=$((FAIL+1))
+fi
+
+echo ""
+echo "=== significance-classify: edge cases (review LOW fix) ==="
+TOTAL=$((TOTAL+1))
+empty_verdict="$(bash "$SC" classify "" 2>/dev/null)"
+if [ "$empty_verdict" = "not-significant" ]; then
+  echo -e "  ${GREEN}PASS${NC} empty description classifies not-significant, does not error"
+  PASS=$((PASS+1))
+else
+  echo -e "  ${RED}FAIL${NC} empty description -- got '$empty_verdict', expected 'not-significant'"
+  FAIL=$((FAIL+1))
+fi
+
+TOTAL=$((TOTAL+1))
+nonexistent_note_verdict="$(bash "$SC" classify --files "lib/orchestrate.sh" --impl-notes "$TMPDIR_T/does-not-exist.md" "mechanical reversible test-covered guard" 2>/dev/null)"
+if [ "$nonexistent_note_verdict" = "wave" ]; then
+  echo -e "  ${GREEN}PASS${NC} --impl-notes pointing at a nonexistent file degrades to no-signal (wave, not a crash)"
+  PASS=$((PASS+1))
+else
+  echo -e "  ${RED}FAIL${NC} nonexistent impl-notes path -- got '$nonexistent_note_verdict', expected 'wave'"
+  FAIL=$((FAIL+1))
+fi
+
+TOTAL=$((TOTAL+1))
+FRESH_LOGDIR="$TMPDIR_T/fresh-nonexistent-logdir"
+DWARVES_KIT_LOG_DIR="$FRESH_LOGDIR" bash "$SC" record "edge-rid-$$" "fix a typo in the README" >/dev/null 2>&1
+if [ -f "$FRESH_LOGDIR/runs/edge-rid-$$.log" ]; then
+  echo -e "  ${GREEN}PASS${NC} record auto-creates a nonexistent log dir (mkdir -p), does not error"
+  PASS=$((PASS+1))
+else
+  echo -e "  ${RED}FAIL${NC} record did not create the ledger under a fresh log dir"
+  FAIL=$((FAIL+1))
+fi
+
+echo ""
 echo "=== significance-classify: gate-ledger debt marker (AC5) ==="
 RID_T="sigclass-test-$$"
 LOGDIR_T="$TMPDIR_T/kitlogs"

@@ -117,11 +117,20 @@ classify_core() {
   # 1. Significance: full lane (delegates to lane-classify.sh, so there is exactly one place
   #    that knows the lane-escalation rules) OR a design-bearing / new-public-surface phrase.
   SIGNIFICANCE=low; SIG_REASON="no significance trigger"
-  local lane
+  local lane lane_rc=0
   if [ -n "$FILES" ]; then
-    lane="$(bash "$LANE_CLASSIFY" classify --files "$FILES" "$desc" 2>/dev/null || echo "")"
+    lane="$(bash "$LANE_CLASSIFY" classify --files "$FILES" "$desc" 2>/dev/null)" || lane_rc=$?
   else
-    lane="$(bash "$LANE_CLASSIFY" classify "$desc" 2>/dev/null || echo "")"
+    lane="$(bash "$LANE_CLASSIFY" classify "$desc" 2>/dev/null)" || lane_rc=$?
+  fi
+  # Fail LOUD (not silent) if the lane-classify.sh dependency itself broke (SPEC-122 review
+  # architecture MEDIUM): a swallowed subprocess failure would silently drop the "full lane"
+  # leg of significance to LOW, exactly the untracked-debt failure ADR-0031 exists to prevent.
+  # This is still non-fatal (the OTHER significance triggers below still run), but it is now
+  # visible on stderr instead of indistinguishable from a legitimate non-full classification.
+  if [ "$lane_rc" -ne 0 ]; then
+    echo "significance-classify: lane-classify.sh classify failed (exit $lane_rc); the 'full lane' significance leg is degrading to its own text-only triggers only" >&2
+    lane=""
   fi
   if [ "$lane" = full ]; then
     SIGNIFICANCE=high; SIG_REASON="full lane"
