@@ -14,7 +14,7 @@
 #   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision
 #   action   <rid> <text>              append an action-log line
 #   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
-#                                       append an understanding-debt verdict (ADR-0031, SPEC-122);
+#                                       append an understanding-debt verdict (ADR-0031, SPEC-123);
 #                                       additive marker, ignored by check()/override()/descent()
 #   override <rid> <phase> <reason>    record a human override for a gate
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
@@ -168,7 +168,7 @@ tokens() {
   printf '%s | TOKENS | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
 }
 
-# debt: record an understanding-debt verdict as an ADDITIVE marker (ADR-0031, SPEC-122),
+# debt: record an understanding-debt verdict as an ADDITIVE marker (ADR-0031, SPEC-123),
 # the exact `| TOKENS |` shape reused for a second concern: a `| DEBT |` line that check()/
 # override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a debt
 # line can never fake a gate or be mistaken for one. Written by `lib/significance-classify.sh

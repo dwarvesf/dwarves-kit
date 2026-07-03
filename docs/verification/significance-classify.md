@@ -1,4 +1,4 @@
-# Proof of done -- significance-classify (SPEC-122)
+# Proof of done -- significance-classify (SPEC-123)
 
 ## Acceptance criteria
 

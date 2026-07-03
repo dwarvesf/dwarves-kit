@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# significance-classify.sh -- deterministic understanding-gate classifier (ADR-0031, SPEC-122).
+# significance-classify.sh -- deterministic understanding-gate classifier (ADR-0031, SPEC-123).
 #
 # Sibling to lib/lane-classify.sh (same shape: pure bash + grep, no binary, no LLM). Where
 # lane-classify decides HOW MUCH RISK a task carries, this decides WHEN the understanding gate
@@ -123,7 +123,7 @@ classify_core() {
   else
     lane="$(bash "$LANE_CLASSIFY" classify "$desc" 2>/dev/null)" || lane_rc=$?
   fi
-  # Fail LOUD (not silent) if the lane-classify.sh dependency itself broke (SPEC-122 review
+  # Fail LOUD (not silent) if the lane-classify.sh dependency itself broke (SPEC-123 review
   # architecture MEDIUM): a swallowed subprocess failure would silently drop the "full lane"
   # leg of significance to LOW, exactly the untracked-debt failure ADR-0031 exists to prevent.
   # This is still non-fatal (the OTHER significance triggers below still run), but it is now

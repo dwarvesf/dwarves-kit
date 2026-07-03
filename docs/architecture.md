@@ -123,6 +123,7 @@ Total: 25 commands + 15 agents = **40 entries** (10 build · 3 code · 9 test ·
 | `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches the `code-reviewer` agent x3 (security / architecture / test-coverage lenses) |
 | `/kit:visual-team` | command | Visual critique | gate | Opt-in; 5 design lenses critique UI output; mirrors review-team for visual work |
 | `/kit:docs` | command | Doc sync | gate | Diffs code vs docs and patches drift; dispatches doc-verifier before committing |
+| `/kit:explain` | command | Understanding (AFTER gate) | gate | ADR-0031 §2; emits a literate-diff explainer (background -> goal+intuition -> prose-ordered diff -> diagram) via `lib/explain.sh`, composing narrate-log + svg-knowledge-diagram; grounded in the diff + test results, advisory |
 | `code-reviewer` | agent | Code review | gate | Focused single-lens reviewer; dispatched by /review-team with a lens (architecture / test-coverage; security now uses security-reviewer) |
 | `security-reviewer` | agent | Security review | gate | Deep security analysis; dispatched by `/kit:review-team` as the security reviewer (replacing the generic code-reviewer security lens); also invocable directly for an ad-hoc deep pass |
 | `doc-verifier` | agent | Docs verification | gate | Verifies doc claims against live codebase after /docs updates; read-only; the doc-sync twin of task-verifier |

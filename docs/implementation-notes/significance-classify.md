@@ -1,6 +1,6 @@
 # Implementation notes -- significance-classify
 
-Delta from ADR-0031 / SPEC-122. The spec pins the exact regexes and marker format; this logs
+Delta from ADR-0031 / SPEC-123. The spec pins the exact regexes and marker format; this logs
 decisions the spec left to build time and one deliberate deviation.
 
 ## 2026-07-03 Marker name: `DEBT`, not `UNDERSTANDING` or `WORTHINESS`
@@ -58,7 +58,7 @@ decisions the spec left to build time and one deliberate deviation.
   ... already does most of the anti-fatigue work"), so the default is not tuned defensively a
   second time. If the tap rate proves too eager once this runs against real changes,
   `SIGNIFICANCE_WORTHINESS_MIN=2` is the single lever to raise the bar without touching code.
-- Not yet measured in production (no live caller wired this sub-goal, see SPEC-122 "Open
+- Not yet measured in production (no live caller wired this sub-goal, see SPEC-123 "Open
   questions"); the default is a reasoned starting point, not an empirically-tuned one.
 
 ## 2026-07-03 No live caller wired (matches SPEC-105's precedent, deliberately out of scope)

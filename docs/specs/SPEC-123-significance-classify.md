@@ -1,4 +1,4 @@
-# SPEC-122: understanding-worthiness classifier (two signals)
+# SPEC-123: understanding-worthiness classifier (two signals)
 
 Status: VALIDATED
 Lane: full
