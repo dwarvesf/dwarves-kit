@@ -1,6 +1,10 @@
 # Spec: DAG-wavefront scheduling in the orchestrator
 Generated: 2026-07-03
-Status: VALIDATED (spec-validate revision applied; Q1 resolved provisionally as Option B , see Open questions; Han may flip to A cheaply)
+Status: SHIPPED-PENDING (PR #125). Shipped as Q1 Option B (opt-in), then ACTIVATED in the same PR per
+Han "do it all now": ID-090 (a generator + b flip-injection + c merge arity + d dep-aware halt) done
+and `WAVE_CAP` default flipped 1->2 (waves ON by default; `WAVE_CAP=1` forces serial). The Option-B
+framing below is the spec's shipped-design history; the default flip is the ID-090 amendment on top
+(DEC-002 recorded default 1 at design time). See `docs/verification/orchestrate-wavefront.md`.
 Lane: full
 Authorizes: ADR-0030 (Accepted) · Source brief: docs/specs/DECISION-BRIEF-dag-wavefront.md (board ID-084)
 

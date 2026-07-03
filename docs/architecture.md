@@ -269,7 +269,7 @@ sub-goal (SPEC-087: no session accumulates more than one sub-goal's context). By
 **strictly serially**. Opt-in **wavefront** scheduling (SPEC-106, ADR-0030) lets dep-independent
 sub-goals run as concurrent waves. The whole wave subsystem is gated behind one env var.
 
-### The per-cycle dispatch decision (serial is the default; wave is opt-in)
+### The per-cycle dispatch decision (waves are the default; serial is the opt-out)
 
 Each loop cycle the driver decides serial-vs-wave on the **admitted** count, never raw readiness:
 
@@ -289,10 +289,13 @@ Each loop cycle the driver decides serial-vs-wave on the **admitted** count, nev
                         └───────┴──────────────────────────────────────────────────────────┘
 ```
 
-`WAVE_CAP` defaults to **1** ⇒ the `WAVE_CAP < 2` branch is always taken ⇒ `_wave_*` is never
-reached ⇒ behavior is byte-identical to the pre-wavefront serial loop. Set `WAVE_CAP>=2` to enable
-waves. Dispatch keys on the **admitted** count (not raw ready-set size) because a no-deps mega-goal
-has *every* unchecked sub-goal ready at once; only sub-goals that survive admission run concurrently.
+`WAVE_CAP` defaults to **2** (ID-090 activation) ⇒ dep-independent sub-goals whose `## Touches` are
+provably disjoint run concurrently. A mega-goal whose sub-goals declare NO `## Touches` still
+serializes (admitted=0 ⇒ the `WAVE_CAP < 2` branch is not taken but `_wave_gate` admits nothing ⇒
+serial fallthrough ⇒ byte-identical), so the default is a no-op for un-migrated mega-goals. Set
+`WAVE_CAP=1` to force the old always-serial loop regardless of Touches. Dispatch keys on the
+**admitted** count (not raw ready-set size) because a no-deps mega-goal has *every* unchecked
+sub-goal ready at once; only sub-goals that survive admission run concurrently.
 
 ### The wavefront pipeline (what runs a wave)
 
@@ -312,10 +315,10 @@ has *every* unchecked sub-goal ready at once; only sub-goals that survive admiss
 
 Disjointness reuses `lib/dispatch-gate.sh` (ONE disjointness authority, ADR-0019). The **self-Touches**
 requirement matters: `dispatch-gate` admits the first member of a set vacuously, so without requiring a
-candidate's own `## Touches`, a Touches-less sub-goal would be wrongly admitted. Because **0 of the
-repo's real sub-goal files declare `## Touches` today**, every real wave currently serializes (the
-Option-B opt-in; real activation , a Touches schema + generator + prompt-injection , is deferred to
-board **ID-090**).
+candidate's own `## Touches`, a Touches-less sub-goal would be wrongly admitted. `commands/mega.md`
+now emits a `## Touches` section per generated sub-goal (ID-090), so newly-decomposed mega-goals are
+wave-eligible by default; an existing mega-goal whose sub-goals predate that convention simply
+serializes until its goal files declare Touches (the conservative fallback, never wrong).
 
 ### Completion, gates, and the concurrency-safety model
 
@@ -341,11 +344,13 @@ which the driver would never see). Two **gate** policies:
 - `gate`  , **chain-stop**: holds only its own dependent chain; independent branches keep running.
 - `gate!` , **stop-all**: quiesces the whole loop for a human (today's global-stop, preserved).
 
-At `WAVE_CAP=1` both reduce to "stop the serial loop" (nothing else is running), so existing ROADMAPs
-are unaffected , the reason `WAVE_CAP` defaults to 1 rather than the brief's original 2 (default 2 would
-silently migrate `gate` from global-stop to chain-stop, a linear-chain regression).
+On a Touches-less mega-goal (no concurrency) a `gate` still stops the whole loop via the serial
+fallthrough, so `gate` semantics only visibly differ once sub-goals declare Touches and a real wave
+forms , at which point `gate` holds its chain while independent branches run, and the driver emits a
+one-time advisory pointing to `gate!` for a global stop-all. The default flip to `WAVE_CAP=2` (ID-090)
+was gated on an audit that no live mega-goal ROADMAP relies on `gate`=global-stop (clean).
 
-**Env surface:** `WAVE_CAP` (default 1 = off; integer `>=1`), `FLIP_LOCK_STALE_SECS` (default 120),
+**Env surface:** `WAVE_CAP` (default **2** = waves on; `1` forces serial; integer `>=1`), `FLIP_LOCK_STALE_SECS` (default 120),
 `WAVE_MERGE_CMD` (the convergence merge hook; real `gh`-backed wiring is ID-090). Full design +
 exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `docs/verification/orchestrate-wavefront.md`.
 

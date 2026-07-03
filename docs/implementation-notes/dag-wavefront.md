@@ -629,3 +629,22 @@ in separate worktrees, wrote the right files, and each obeyed the injected flip 
 **Still deferred (ID-090 a + c).** The sub-goal generator emitting `## Touches` (without it real
 mega-goals still serialize) and the real `mega-merge.sh` arity. Flipping `WAVE_CAP` default to 2
 waits on (a) + a gate audit.
+
+## 2026-07-03 , ID-090 activation: waves ON by default ("do it all now")
+
+Folded the full ID-090 activation into PR #125 on Han's go:
+- **(a) generator**: `commands/mega.md` Step 4 now instructs a `## Touches` section per generated
+  sub-goal (dir/** globs from the sub-goal's scope edges) so new mega-goals are wave-eligible; the
+  ROADMAP-line note now lists `gate!` too.
+- **(c) merge arity**: `_wave_converge` calls the hook with `<pr> <rid> <lane>` (mega-merge's real
+  signature); rid = the sub-goal branch slug (lowercase kebab, from `**Branch:**`), lane via
+  `WAVE_MERGE_LANE` (default full). Two converge tests updated (recorder logs the rid, not the id).
+- **default flip**: `WAVE_CAP` default 1 -> 2. Regression: `test-orchestrate.sh` stayed 59/59 (Touches-
+  less mega-goals serialize regardless). The golden EXIT-CRITERION 5 was repointed from `unset WAVE_CAP`
+  (which used to mean 1) to an explicit `WAVE_CAP=1` (the serial opt-out); a new `[DEFAULT]` companion
+  proves a Touches-less mega-goal serializes at the default. Proven waves fire BY DEFAULT (no WAVE_CAP
+  set + disjoint Touches -> wave path, sessions concurrent).
+- **gate safety**: audit clean (no live ROADMAP uses bare `gate`); added a bare-`gate`-under-
+  concurrency advisory pointing at `gate!`.
+Docs updated to "waves ON by default": README, docs/architecture.md, the verification proof, the
+SPEC-106 Status line (Option-B framing kept as design history; the flip is the ID-090 amendment).

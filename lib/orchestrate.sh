@@ -74,19 +74,24 @@ WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 FLIP_LOCK_STALE_SECS="${FLIP_LOCK_STALE_SECS:-120}"
 FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
 
-# Wavefront concurrency cap (SPEC-106 DEC-002/009). Default 1 = waves OFF: the run loop takes the
-# serial path always, byte-identical to the pre-wavefront loop. >=2 opts into concurrent waves. A
-# non-numeric or <1 value is REJECTED at cmd_run entry (see the validation there), NOT silently
-# coerced, per DEC-009 / Edge case 4. Defaulted here so the top-of-loop `-ge 2` test is `set -u`-safe.
-WAVE_CAP="${WAVE_CAP:-1}"
+# Wavefront concurrency cap (SPEC-106 DEC-002/009; default flipped to 2 in the ID-090 activation).
+# Default 2 = waves ON: dep-independent sub-goals that BOTH declare disjoint `## Touches` run
+# concurrently. A mega-goal whose sub-goals declare NO `## Touches` still runs fully serially
+# (admitted=0 -> serial fallthrough), so the flip is a no-op for Touches-less mega-goals except that
+# a `depends`-declaring one is now dep-aware (halts rather than running a dep-blocked sub-goal). Set
+# WAVE_CAP=1 to force the old always-serial loop. A non-numeric or <1 value is REJECTED at cmd_run
+# entry (NOT silently coerced), per DEC-009 / Edge case 4. Defaulted here so the top-of-loop `-ge 2`
+# test is `set -u`-safe.
+WAVE_CAP="${WAVE_CAP:-2}"
 
 # Wave-convergence merge hook (SPEC-106 TASK-004c). After a wave lands its sub-goals on their worktree
 # branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
 # `_wave_converge`); the actual merge goes through THIS mockable hook. Default is the real path
 # (`lib/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
-# but real gh-backed merge is DEFERRED to ID-090 (waves are off at the default WAVE_CAP=1, and
-# a real merge needs `gh` + real PRs). Tests set WAVE_MERGE_CMD to a mock that records merge ordering.
-# Word-split intentionally (operator config, not user data), mirroring CLAUDE_FLAGS.
+# invoked with mega-merge's real `<pr> <rid> <lane>` arity (ID-090). It only fires for a sub-goal that
+# has a real recorded PR#; a placeholder `#__` is skipped, so a wave with no real PRs converges to a
+# clean no-op. Tests set WAVE_MERGE_CMD to a mock that records merge ordering. Word-split intentionally
+# (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
 WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
 
 _say() { printf '%s\n' "$*"; }
@@ -941,18 +946,23 @@ _wave_converge() {  # megadir [id...]
   fi
 
   # 3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, via the mockable hook.
+  #    The default hook is `lib/mega-merge.sh merge`, whose signature is `<pr> <rid> <lane>` (ID-090:
+  #    the arity was `<pr> <id>` before). rid = the sub-goal's run id (its branch slug, from the goal
+  #    file's `**Branch:**`); lane = the mega-goal's lane (`WAVE_MERGE_LANE`, default full , mega-goals
+  #    run the full lane). Tests override `WAVE_MERGE_CMD` with a recorder, so the extra arg is inert.
   local lockdir="$megadir/.orchestrate/flip.lock"
-  local pr rc
+  local pr rc branch rid lane="${WAVE_MERGE_LANE:-full}"
   for id in "${ordered[@]}"; do
     pr=$(_sg_pr "$roadmap" "$id")
     if [ -z "$pr" ]; then
       _say "[orchestrate] [converge] $id has no real PR yet (placeholder); skipping its merge (real PR/merge wiring is deferred)."
       continue
     fi
+    branch=$(_sg_branch "$(_goalfile "$megadir" "$id")" "$id"); rid="${branch#*/}"; [ -n "$rid" ] || rid="$id"
     _lock "$lockdir" || { echo "[orchestrate] [converge] could not acquire the flip lock to merge $id" >&2; return 1; }
     rc=0
     # shellcheck disable=SC2086 # WAVE_MERGE_CMD is operator config; word-splitting is intended (mirrors CLAUDE_FLAGS).
-    $WAVE_MERGE_CMD "$pr" "$id" || rc=$?
+    $WAVE_MERGE_CMD "$pr" "$rid" "$lane" || rc=$?
     _unlock "$lockdir"
     if [ "$rc" != 0 ]; then
       _emit_event "$megadir" "$id" blocked "converge: merge hook failed (PR #$pr, rc $rc)"
@@ -1125,6 +1135,11 @@ cmd_run() {
       _emit_event "$dir" "$id" blocked "gate: human review"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
       _say "[orchestrate] STOP: $id is a gate sub-goal; open/await its PR for review, then re-run."
+      # Advisory (ID-090 default flip): under the concurrent default (WAVE_CAP>=2) a `gate` holds only
+      # its OWN dependent chain , independent branches with disjoint `## Touches` keep running in the
+      # wave. If you meant "quiesce EVERYTHING for review", use `gate!` (global stop-all) instead. (On
+      # a Touches-less mega-goal there is no concurrency, so this `gate` still stopped the whole loop.)
+      [ "$WAVE_CAP" -ge 2 ] && echo "[orchestrate] [advisory] '$id' is a chain-stop \`gate\`; under WAVE_CAP=$WAVE_CAP independent Touches-disjoint branches keep running. Use \`gate!\` for a global stop-all." >&2
       return 0
     fi
 

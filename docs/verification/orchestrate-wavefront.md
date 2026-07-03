@@ -60,14 +60,21 @@ lock-guarded CLI against the shared absolute ROADMAP, since its worktree copy is
 driver) , ID-090 item (b), now DONE + regression-guarded (`tests/test-orchestrate-wavefront.sh`,
 `flip-injection` cases). Both proofs were on throwaway git repos; no repo state touched.
 
-## Scope / deferral honesty
+## Scope , ACTIVATED (ID-090, waves ON by default)
 
-Waves are DORMANT at the shipped default (`WAVE_CAP=1`), and real-wave ACTIVATION is deferred to
-**ID-090** (per Option B, ADR-0030): (a) a `## Touches` schema + sub-goal generator so real
-mega-goals become wave-eligible, (b) the `cmd_flip` prompt-injection into wave sessions, (c) the real
-`mega-merge.sh merge <pr> <rid> <lane>` signature behind `WAVE_MERGE_CMD`, (d) the dep-aware
-serial-fallback pick when `_ready_set` is non-empty. What ships now is the full, tested machinery with
-mock seams (`CLAUDE_CMD`, `WAVE_MERGE_CMD`) + the five exit criteria green + serial byte-identical.
+SPEC-106 first shipped Option B (waves dormant at `WAVE_CAP=1`). The ID-090 activation, folded into
+this same PR, turned waves ON: all four deferrals are DONE , (a) `commands/mega.md` emits `## Touches`
+per generated sub-goal + the schema is documented, (b) the `cmd_flip` prompt-injection into wave
+sessions, (c) the real `mega-merge.sh merge <pr> <rid> <lane>` arity behind `WAVE_MERGE_CMD`, (d) the
+dep-aware serial-fallback halt , and **`WAVE_CAP` now defaults to 2**, gated on a gate audit (no live
+mega-goal ROADMAP relies on `gate`=global-stop) + a bare-`gate`-under-concurrency advisory.
+
+Proven that waves fire BY DEFAULT: a real `claude -p` wave (above) plus a scripted run with NO
+`WAVE_CAP` set + disjoint `## Touches` took the wave path (both sessions spawned concurrently, both
+flipped the shared ROADMAP). The regression guarantee is preserved two ways in the suite: EXIT-CRITERION
+5 pins `WAVE_CAP=1` (explicit serial opt-out is byte-identical even with Touches declared), and its
+`[DEFAULT]` companion proves a Touches-LESS mega-goal serializes at the default (the flip is a no-op
+for un-migrated mega-goals). `WAVE_CAP=1` forces the always-serial loop.
 
 ## Reproduce
 

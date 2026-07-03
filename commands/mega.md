@@ -102,12 +102,25 @@ here re-derives that logic, it is the same three-knob shape at the kit layer.
 Once Steps 1-3 are approved, write (matching `lib/orchestrate.sh`'s expected shape,
 so the existing driver can walk it unmodified):
 
-- `<dir>/ROADMAP.md` -- one line per sub-goal: `- [ ] SG-NN <title> , auto|gate ,
+- `<dir>/ROADMAP.md` -- one line per sub-goal: `- [ ] SG-NN <title> , auto|gate|gate! ,
   depends SG-<N-1>`. The checkbox plus a recorded PR# is the ONLY source of truth
-  for "done" (`- [x] SG-NN ... -- PR #N`, never a bare checked box).
+  for "done" (`- [x] SG-NN ... -- PR #N`, never a bare checked box). Policy: `auto`
+  runs unattended; `gate` pauses only its OWN dependent chain (independent branches
+  keep running under a wave); `gate!` halts the WHOLE loop for a human (use `gate!`
+  when you mean "quiesce everything so I can review the full state", SPEC-106).
 - `<dir>/goals/NN-<slug>.md` -- one `plan-for-goal`-shaped file per sub-goal
   (`Model:` / `Effort:` header lines so `lib/orchestrate.sh`'s per-sub-goal routing
   works; `Done =`; scope edges; the proof expectation from Step 1).
+  **Include a `## Touches` section** listing the directory-prefix globs this sub-goal
+  will write, one per line, form `dir/**` (or `dir/sub/**`) -- the SAME shape
+  `lib/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
+  **wave-eligible**: `lib/orchestrate.sh` runs dep-independent sub-goals whose
+  `## Touches` are provably disjoint CONCURRENTLY (default `WAVE_CAP=2`, SPEC-106).
+  Derive the globs from the sub-goal's scope edges you already decided in Step 1 --
+  each sub-goal should own a distinct slice of the tree so waves can form. A sub-goal
+  with NO `## Touches` (or one that overlaps a wave-mate) simply runs serially -- the
+  conservative default, never wrong, just not parallel. Do NOT list lead-owned shared
+  surfaces (CHANGELOG, VERSION, plugin.json); the convergence step writes those once.
 - `<dir>/POINTER_PROMPT.md` -- the raw prompt for whatever activator is present;
   encodes the hard constraints in "Step 5" below.
 - `<dir>/HANDOFF.md` + `<dir>/DECISIONS.md` -- empty stubs

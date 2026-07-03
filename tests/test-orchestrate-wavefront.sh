@@ -800,7 +800,9 @@ cvrc=0
 cv_merges=$(grep -c '^enter:' "$MERGE_LOG_M")
 [ "$cv_merges" = 2 ] && pass "converge m: exactly 2 merges recorded" || fail "converge m: $cv_merges merges (want 2)"
 cv_seq=$(tr '\n' ' ' < "$MERGE_LOG_M" | sed 's/ *$//')
-cv_want="enter:SG-01:101 exit:SG-01:101 enter:SG-02:102 exit:SG-02:102"
+# the merge hook now receives <pr> <rid> <lane> (ID-090 arity fix); rid = the sub-goal's branch slug
+# (lowercase kebab, from `**Branch:** feat/sg-01`), so the recorder logs `sg-01`/`sg-02`, not the id.
+cv_want="enter:sg-01:101 exit:sg-01:101 enter:sg-02:102 exit:sg-02:102"
 [ "$cv_seq" = "$cv_want" ] && pass "converge m: merges strictly serialized in ROADMAP order (no temporal overlap, argv order ignored)" \
   || fail "converge m: sequence '$cv_seq' != '$cv_want'"
 
@@ -850,8 +852,8 @@ oprc=0
   _wave_converge "$CPM" SG-01 SG-02 ) > "$TMP/co.out" 2>&1 || oprc=$?
 [ "$oprc" = 0 ] && pass "converge o: placeholder-PR sub-goal skipped, wave converges 0" || { fail "converge o: rc=$oprc"; cat "$TMP/co.out"; }
 op_seq=$(tr '\n' ' ' < "$MERGE_LOG_O" | sed 's/ *$//')
-[ "$op_seq" = "enter:SG-02:301 exit:SG-02:301" ] && pass "converge o: only the real-PR sub-goal (SG-02) merged; placeholder SG-01 skipped" \
-  || fail "converge o: sequence '$op_seq' != 'enter:SG-02:301 exit:SG-02:301'"
+[ "$op_seq" = "enter:sg-02:301 exit:sg-02:301" ] && pass "converge o: only the real-PR sub-goal (SG-02, rid sg-02) merged; placeholder SG-01 skipped" \
+  || fail "converge o: sequence '$op_seq' != 'enter:sg-02:301 exit:sg-02:301'"
 
 # ==================== FIXTURE H: per-edge HANDOFF (SPEC-106 TASK-005) ====================
 # WRITE keyed on DEPENDENTS (a sub-goal with dependents writes HANDOFF-<id>.md); READ keyed on a
@@ -1241,10 +1243,13 @@ chrc=0
 # SPEC-106 exit-criterion 5 (the second NEGATIVE control, the regression GOLDEN): a linear-chain
 # (no-deps) mega-goal behaves IDENTICALLY to current master -- the wave path is NEVER taken and the
 # run walks the untouched serial body, one sub-goal at a time, in ROADMAP order. This runs a real
-# 3-step no-deps mega-goal at the DEFAULT WAVE_CAP (=1) with a mock, CAPTURES its behavior/output, and
-# asserts the golden serial contract. The goal files DECLARE `## Touches` on purpose: the golden holds
-# because size-dispatch takes the serial body whenever WAVE_CAP==1, REGARDLESS of Touches -- the
-# strongest regression guarantee (declaring Touches does not sneak a default run onto the wave path).
+# 3-step no-deps mega-goal at the EXPLICIT SERIAL OPT-OUT `WAVE_CAP=1` with a mock, CAPTURES its
+# behavior/output, and asserts the golden serial contract. The goal files DECLARE `## Touches` on
+# purpose: the golden holds because size-dispatch takes the serial body whenever WAVE_CAP==1,
+# REGARDLESS of Touches -- the strongest regression guarantee (declaring Touches does not sneak a run
+# onto the wave path when the operator has explicitly opted out with WAVE_CAP=1). (The DEFAULT is now
+# WAVE_CAP=2 per the ID-090 activation, so the serial guarantee is tested at the explicit opt-out;
+# the companion assertion below proves a Touches-LESS mega-goal ALSO serializes at the default.)
 GOLD="$TMP/mg-golden-linear"; mkdir -p "$GOLD"
 cat > "$GOLD/ROADMAP.md" <<'EOF'
 # Mega-goal: golden-linear
@@ -1269,7 +1274,7 @@ bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
 MOCK
 chmod +x "$TMP/claude-golden"
 gdrc=0
-( unset WAVE_CAP; export ORCH="$ORCH" MEGADIR="$GOLD" GOLDLOG="$GOLDLOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-golden"
+( export WAVE_CAP=1 ORCH="$ORCH" MEGADIR="$GOLD" GOLDLOG="$GOLDLOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-golden"
   bash "$ORCH" run "$GOLD" ) > "$TMP/golden.out" 2>&1 || gdrc=$?
 # (1) clean completion
 [ "$gdrc" = 0 ] && pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: linear no-deps run exits 0 (serial master parity)" \
@@ -1291,6 +1296,27 @@ gd_seq=$(tr '\n' ' ' < "$GOLDLOG" | sed 's/ *$//')
     && grep -q '^- \[x\] SG-03' "$GOLD/ROADMAP.md"; } \
   && pass "EXIT-CRITERION 5 [NEGATIVE/GOLDEN]: all boxes flipped (linear chain fully drained serially)" \
   || fail "EXIT-CRITERION 5: not all boxes flipped"
+
+# (5) DEFAULT-serialization companion (ID-090 default flip): with the DEFAULT WAVE_CAP (now 2) and a
+# Touches-LESS mega-goal (every real un-migrated mega-goal today), the run STILL serializes , admitted=0
+# -> serial fallthrough -> no [wave] marker, one fresh-session body per sub-goal, ROADMAP order. This is
+# the guard that flipping the default to 2 did NOT change behavior for mega-goals whose sub-goals do not
+# declare Touches. (Distinct from (1)-(4), which pin WAVE_CAP=1 explicitly.)
+GOLD2="$TMP/mg-golden-default"; mkdir -p "$GOLD2"
+printf '# golden-default\n- [ ] SG-01 first , auto\n- [ ] SG-02 second , auto\n- [ ] SG-03 third , auto\n' > "$GOLD2/ROADMAP.md"
+echo "POINTER: resume" > "$GOLD2/POINTER_PROMPT.md"
+make_goal "$GOLD2" SG-01   # NO ## Touches (un-migrated)
+make_goal "$GOLD2" SG-02
+make_goal "$GOLD2" SG-03
+GOLD2LOG="$TMP/golden-default-order.log"; : > "$GOLD2LOG"
+gd2rc=0
+( unset WAVE_CAP; export ORCH="$ORCH" MEGADIR="$GOLD2" GOLDLOG="$GOLD2LOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-golden"
+  bash "$ORCH" run "$GOLD2" ) > "$TMP/golden2.out" 2>&1 || gd2rc=$?
+gd2_fresh=$(grep -c 'running SG-0[123] in a fresh session' "$TMP/golden2.out")
+gd2_seq=$(tr '\n' ' ' < "$GOLD2LOG" | sed 's/ *$//')
+{ [ "$gd2rc" = 0 ] && ! grep -q '\[wave\]' "$TMP/golden2.out" && [ "$gd2_fresh" = 3 ] && [ "$gd2_seq" = "SG-01 SG-02 SG-03" ]; } \
+  && pass "EXIT-CRITERION 5 [DEFAULT]: Touches-less mega-goal serializes at the DEFAULT WAVE_CAP=2 (no [wave], serial order) , the default flip is a no-op for un-migrated mega-goals" \
+  || { fail "EXIT-CRITERION 5 [DEFAULT]: Touches-less run at default not serial (rc=$gd2rc fresh=$gd2_fresh seq='$gd2_seq')"; cat "$TMP/golden2.out"; }
 
 # ---- flip-contract injection (ID-090 activation): a WAVE session runs in its own worktree, so it
 #      must flip the SHARED ROADMAP via the CLI, not its worktree copy. Assert each wave session's
