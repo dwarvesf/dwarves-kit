@@ -84,6 +84,12 @@ one-line output-path change). Corollary for multi-feature tools: ONE `proof-of-d
 structured as a feature index, because per-feature names like `proof-of-done-<feature>.md` do not
 match the gate regex and are invisible to it.
 
+For the kit's OWN runs (a `rid`'s gate/run ledger, `lib/gate-ledger.sh`), the generator is
+`lib/proof-table-gen.sh <rid>` (SPEC-132): it renders the confirmation table from
+`logs/runs/<rid>.log` under `docs/runs/<rid>.md`, hard-refuses any out-path whose basename is
+`proof-of-done.md`, and surfaces sub-goal 01's `caught=`/timing marker when present, degrading
+gracefully when absent.
+
 ### Optional table-first review layout
 
 Any proof (either home) MAY use a **table-first** layout optimized for a reviewer scanning top-down,
