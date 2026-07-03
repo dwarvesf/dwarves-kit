@@ -1,6 +1,6 @@
 # Explainer: wire beta helper into alpha and zebra
 
-> Literate-diff explainer for `d7414cbb684cab033cab5aa13119d77d4518a192` (base `d7414cbb684cab033cab5aa13119d77d4518a192^1`). Grounded in the ACTUAL diff +
+> Literate-diff explainer for `6d1ccd7d70e09b388abc4b5c4aa44416f5b25386` (base `6d1ccd7d70e09b388abc4b5c4aa44416f5b25386^1`). Grounded in the ACTUAL diff +
 > recorded test results, NOT any agent narrative (ADR-0031 §2). Read top to bottom; the diff
 > below is in READING order, not git's alphabetical order.
 
@@ -104,4 +104,4 @@ flowchart TD
 
 ### Recorded test result
 
-[no recorded test result for d7414cbb684cab033cab5aa13119d77d4518a192]
+[no recorded test result for 6d1ccd7d70e09b388abc4b5c4aa44416f5b25386]
