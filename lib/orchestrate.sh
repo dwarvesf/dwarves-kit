@@ -13,6 +13,8 @@
 #       --dry-run  print the plan only (no claude)
 #       --step     pause for the operator after each sub-goal (resume on Enter, q to stop)
 #       --stream   stream each session live (stream-json) + capture to .orchestrate/<id>.stream.jsonl
+#       --capture-tokens  stream each session SILENTLY to .orchestrate/<id>.stream.jsonl for token
+#                  usage extraction (SPEC-117); the conductor stays lean (no tee). Also CAPTURE_TOKENS=1.
 #       --board=roadmap|kanban|both  surface progress as a per-mega-goal kanban (SG-10); default
 #                  detects (backlog.sh present -> both, else roadmap). Event-sourced + derived;
 #                  ROADMAP.md stays canonical, the repo-wide BACKLOG cockpit is never touched.
@@ -52,6 +54,19 @@ HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
 # B fields preserved; no LLM in the handoff path). Always-produced + reproducible beats
 # occasionally-excellent-but-skippable.
 DETERMINISTIC_HANDOFF="${DETERMINISTIC_HANDOFF:-0}"
+
+# Lean token capture under delegation (SPEC-117, executes ADR-0032 section 3). Off (0) by default.
+# On (1, via CAPTURE_TOKENS=1 or the --capture-tokens flag) -> the delegated child streams to a FILE
+# (`claude -p --stream > .orchestrate/<id>.stream.jsonl`) purely so the post-session token hook can
+# extract usage; the conductor reads only the box-flip, NEVER the child transcript. It is a THIRD,
+# DECOUPLED trigger for the SAME silent `> "$slog"` stream-to-file branch that DETERMINISTIC_HANDOFF
+# uses -- NOT `--stream` (that tees the transcript to the conductor = the ADR-0032 section 1 forbidden
+# bloat path) and NOT coupled to handoff regeneration. Read as a GLOBAL (like DETERMINISTIC_HANDOFF,
+# not a positional arg) so it inherits into the wave subshell on fork with no `_run_one_session`
+# signature change and no `_wave_run` call-site touch. The serial token hook is already `$slog`-gated,
+# so this needs no hook change; the wave-path per-sub-goal ledger extraction is a declared gap (the
+# child.jsonl is still written lean-to-file under waves, only the extraction is deferred).
+CAPTURE_TOKENS="${CAPTURE_TOKENS:-0}"
 
 # Kanban renderer reused by the board-view (SG-10). Resolved next to this script; override in
 # tests. When absent, board mode fail-safes to roadmap-only so a kit without the tooling runs.
@@ -609,10 +624,12 @@ _run_one_session() {  # dir id pfile route_flags stream
     # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
     # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
     _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
-  elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; then
-    # Capture stream-json when either the operator wants a live tail (--stream) OR the
-    # deterministic handoff needs the transcript (DETERMINISTIC_HANDOFF=1). The live `tee` to
-    # the terminal happens only under --stream; det-handoff capture is silent.
+  elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ]; then
+    # Capture stream-json when the operator wants a live tail (--stream) OR the deterministic
+    # handoff needs the transcript (DETERMINISTIC_HANDOFF=1) OR lean token capture is on
+    # (CAPTURE_TOKENS=1, SPEC-117). The live `tee` to the terminal happens ONLY under --stream;
+    # det-handoff and capture-tokens both take the SILENT `> "$slog"` branch below, so the child
+    # transcript lands in the FILE only and never reaches the conductor's stdout (ADR-0032 s3).
     local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
     slog="$logdir/${id}.stream.jsonl"
     # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
@@ -620,6 +637,11 @@ _run_one_session() {  # dir id pfile route_flags stream
       _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
       "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
     else
+      # ponytail: fd1-only redirect. The transcript (the ADR-0032 accumulation trap) is claude's
+      # STDOUT and goes to the file; `--verbose` STDERR (diagnostic, no usage/turn content) is left
+      # on fd2. Redirecting stderr too (`2>...`) is a deferred hardening for a stdout+stderr-merging
+      # conductor invocation -- skipped because it would also silence real error output on this opt-in
+      # path, and the driver is non-LLM bash so stderr is not an accumulation vector.
       "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
     fi
   else
@@ -993,6 +1015,7 @@ cmd_run() {
       --dry-run)  dry=1 ;;
       --step)     step=1 ;;
       --stream)   stream=1 ;;
+      --capture-tokens) CAPTURE_TOKENS=1 ;;   # SPEC-117: lean token capture (silent stream-to-file); sets the global
       --board)    board_arg="both" ;;
       --board=*)  board_arg="${1#--board=}" ;;
       --*)        echo "unknown flag: $1" >&2; return 64 ;;
@@ -1020,6 +1043,7 @@ cmd_run() {
     _say "[plan] mega-goal: $dir"
     [ "$step" = 1 ]   && _say "  (--step: pause for the operator after each sub-goal)"
     [ "$stream" = 1 ] && _say "  (--stream: each session streamed live + captured to .orchestrate/<id>.stream.jsonl)"
+    [ "$CAPTURE_TOKENS" = 1 ] && _say "  (--capture-tokens: each session streamed to .orchestrate/<id>.stream.jsonl for usage extraction; conductor stays lean)"
     local any=0
     while IFS=$'\t' read -r sg ppolicy; do
       any=1
@@ -1272,7 +1296,7 @@ main() {
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
-    *) echo "usage: orchestrate.sh {next|run|flip} <megagoal-dir> [<SG-NN>] [--dry-run] [--step] [--stream] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
+    *) echo "usage: orchestrate.sh {next|run|flip} <megagoal-dir> [<SG-NN>] [--dry-run] [--step] [--stream] [--capture-tokens] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
   esac
 }
 
