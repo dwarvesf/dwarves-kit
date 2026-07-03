@@ -22,11 +22,11 @@ Spec: `docs/specs/SPEC-128-spec-reservation-race.md`. Branch: `feat/kri-02-spec-
 Command: bash tests/test-spec-reserve.sh
 Exit: 0
 Verdict: PASS
-Detail: 28/28 assertions green. T2 (core concurrency) = 20 parallel `reserve` -> 20 distinct
+Detail: 35/35 assertions green. T2 (core concurrency) = 20 parallel `reserve` -> 20 distinct
 numbers, zero collisions. T3 fold-in, T5 SPEC-064 contract, T6/T7 reconciliation, T8 repo
 scope, T9 stale-lock reclaim, T10 orchestrate wiring + degrade path, plus the concurrency-review
-regression tests T11 (cross-repo expired prune), T12 (anchored repo match), T13 (empty-ledger
-message byte-identical) all green.
+regression tests T11-T13 and the Linux-mutex-fix guards T14 (normal reserve frees the lock) +
+T15 (a fresh foreign lock is respected, not stolen) all green. CI green on BOTH ubuntu + macos.
 
 Command: bash tests/test-hooks.sh
 Exit: 0

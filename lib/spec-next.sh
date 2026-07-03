@@ -151,9 +151,20 @@ _prune_reservations() {
   mv -f "$tmp" "$RES_FILE" 2>/dev/null || rm -f "$tmp"
 }
 
+# Lock-dir mtime as epoch seconds, portable + POISON-PROOF. GNU coreutils (`stat -c %Y`)
+# FIRST, then BSD/macOS (`stat -f %m`). Critical: on Linux `stat -f %m` is the
+# `--file-system` format and prints a NON-numeric token with EXIT 0 (not an error), so a
+# BSD-first `stat -f %m || stat -c %Y` never reaches the fallback and returns garbage. That
+# garbage poisons the `lockage` arithmetic in `_reserve_lock`, making every fresh lock look
+# older-than-TTL -> every contender spuriously RECLAIMS a live sibling's lock -> the mutex
+# fails OPEN (the Linux-only T2/T9 failure the macOS CI masked). Only a pure-integer result
+# is accepted; anything else -> empty -> the caller treats the lock as not-yet-stale (safe:
+# it waits rather than steals). GNU-first so Linux hits the numeric path directly.
 _lock_mtime_epoch() {
-  local d="$1"
-  stat -f %m "$d" 2>/dev/null || stat -c %Y "$d" 2>/dev/null || printf ''
+  local d="$1" v=""
+  v="$(stat -c %Y "$d" 2>/dev/null)"; case "$v" in ''|*[!0-9]*) v="";; esac
+  if [ -z "$v" ]; then v="$(stat -f %m "$d" 2>/dev/null)"; case "$v" in ''|*[!0-9]*) v="";; esac; fi
+  printf '%s' "$v"
 }
 
 # Release the lock ONLY if we still own it (review MAJOR #1). The owner token guards against
@@ -174,7 +185,8 @@ _reserve_lock() {
   mkdir -p "$RES_DIR" 2>/dev/null || true
   # Per-acquire unique token: pid + a random nonce + epoch defeats pid-reuse aliasing.
   _LOCK_TOKEN="$$.${RANDOM}.$(now_epoch)"
-  local tries=0 max=600   # ~ up to 30s; ample for a wave of a few workers
+  # Bounded spin so a live contender never wedges forever; env-overridable for tests.
+  local tries=0 max="${SPEC_RESERVE_MAX_TRIES:-600}"   # ~ up to 30s; ample for a wave of a few workers
   while ! mkdir "$RES_LOCK" 2>/dev/null; do
     # stale-lock reclaim: if the lock dir is older than TTL, a prior holder died with it held.
     if [ -d "$RES_LOCK" ]; then

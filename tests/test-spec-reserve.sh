@@ -207,6 +207,30 @@ expect "T13 empty-ledger TAKEN message has NO reservation clause" "seen in specs
 if printf '%s' "$MSG13" | grep -q 'reservation'; then bad "T13 empty-ledger message leaked a reservation clause"; else ok "T13 no reservation clause on empty ledger"; fi
 
 # ============================================================
+echo "=== T14: a normal reserve FREES the lock (no held lock, no owner leak) ==="
+# ============================================================
+R="$(mk_repo)"; RES="$R/res.log"
+N14="$(cd "$R" && SPEC_RESERVE_FILE="$RES" bash "$SN" reserve)"
+eq "T14 normal reserve returns a number" "$N14" "006"
+eq "T14 lock dir freed after a normal reserve" "$([ -d "$RES.lock" ] && echo held || echo free)" "free"
+eq "T14 no owner file left behind" "$([ -e "$RES.lock/owner" ] && echo leak || echo clean)" "clean"
+
+# ============================================================
+echo "=== T15: a FRESH (non-stale) foreign lock is RESPECTED, not stolen ==="
+# ============================================================
+# This is the direct guard for the mutex fail-open the macOS CI masked: if lock-mtime reads
+# garbage (Linux `stat -f %m` = --file-system format), a FRESH lock looks older-than-TTL and
+# gets reclaimed -> the number is stolen. With correct mtime the fresh lock is respected, so a
+# bounded reserve times out (empty, nonzero) and the foreign lock is still held.
+R="$(mk_repo)"; RES="$R/res.log"
+mkdir -p "$(dirname "$RES")"; mkdir "$RES.lock"; printf 'foreign.owner.token' > "$RES.lock/owner"   # current mtime, foreign owner
+OUT15="$(cd "$R" && SPEC_RESERVE_MAX_TRIES=3 SPEC_RESERVE_FILE="$RES" bash "$SN" reserve 2>/dev/null; echo "rc=$?")"
+if printf '%s' "$OUT15" | grep -qE '^[0-9]{3}$'; then bad "T15 reserve STOLE a fresh foreign lock (fail-open: $OUT15)"; else ok "T15 reserve did not steal a fresh foreign lock"; fi
+expect "T15 bounded reserve fails loudly rather than fail-open" "rc=1" "$OUT15"
+eq "T15 the fresh foreign lock is still held" "$([ -d "$RES.lock" ] && echo held || echo free)" "held"
+eq "T15 the foreign owner token is untouched" "$(cat "$RES.lock/owner" 2>/dev/null)" "foreign.owner.token"
+
+# ============================================================
 echo ""
 echo "=== Results ==="
 echo -e "Passed: ${GREEN}$PASS${NC} / $TOTAL"
