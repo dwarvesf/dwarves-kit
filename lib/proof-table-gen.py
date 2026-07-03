@@ -5,8 +5,14 @@ regenerate.
 
 Hard rule (docs/verification/README.md: "Generators write run ledgers, never the
 canonical"): this script refuses to write to any out-path whose basename is literally
-`proof-of-done.md`, the exact filename `lib/proof-ledger.sh` keys the ship-gate on. The
-default out-path is always under `docs/runs/`.
+`proof-of-done.md`, the exact filename `lib/proof-ledger.sh` keys the ship-gate on.
+
+Path safety (SPEC-134): `rid` is CALLER-controlled, so it is normalized to
+`lib/gate-ledger.sh`'s `runid()` charset before it touches ANY path (read ledger + default
+write), and the FINAL resolved out-path is confined under `realpath(KIT_ROOT/docs/runs)` --
+enforced EVEN for an explicit out-path arg. So the default out-path is always under
+`docs/runs/`, and no `rid` or explicit path can escape it (the guarantee this docstring
+makes is now enforced, not merely asserted).
 
 Parses three ledger line shapes (space-pipe-split, the same convention
 `lib/gate-ledger.sh`'s own awk uses):
@@ -33,6 +39,20 @@ import subprocess
 import sys
 
 CANONICAL_BASENAME = "proof-of-done.md"
+
+
+def _normalize_rid(raw):
+    """Normalize a caller-supplied rid to lib/gate-ledger.sh's runid() charset (SPEC-134).
+    runid() is `tr '/ ' '--' | tr -cd '[:alnum:]._-'`: replace '/' and space with '-', then
+    drop every char outside [A-Za-z0-9._-]. This strips path separators (no '/' survives, so
+    no `..` can act as a parent-dir step) before the rid is ever joined into a filesystem path.
+    We match runid()'s ASCII intent but are DELIBERATELY STRICTER: this port is pure ASCII,
+    whereas GNU tr's `[:alnum:]` is locale-aware and MAY admit multibyte alnums under a UTF-8
+    locale (runid() pins no LC_ALL=C). The Python side only ever strips MORE, so this is never
+    a path-escape; on an exotic multibyte rid the two could disagree on the exact filename (a
+    correctness edge, not a security one). Real rids are ASCII branch slugs, so they agree."""
+    swapped = raw.replace("/", "-").replace(" ", "-")
+    return re.sub(r"[^A-Za-z0-9._-]", "", swapped)
 
 
 def fail(msg, code=1):
@@ -110,8 +130,21 @@ def parse_ledger(ledger_path):
     return lane, gate_rows, outcomes
 
 
-def gate_ledger_sh(kit_root):
-    return os.path.join(kit_root, "lib", "gate-ledger.sh")
+def _kit_lib_root():
+    """The REAL repo root (parent of this module's lib/ dir). SPEC-134 decouples helper-script
+    location from KIT_ROOT: gate-ledger.sh is a sibling of this module and always lives in the
+    real repo, whereas KIT_ROOT is now purely the output-confinement anchor (which a test may
+    point at a throwaway dir). Resolving the helper via __file__ keeps `required`/`check` reading
+    the real WORKFLOW.md even when KIT_ROOT is overridden."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def gate_ledger_sh(_kit_root=None):
+    # `_kit_root` is VESTIGIAL (SPEC-134): callers still pass kit_root, but it is intentionally
+    # ignored -- the helper is resolved via __file__, never via the (now caller-influenceable)
+    # KIT_ROOT. This also closes a latent path-hijack: the old `os.path.join(kit_root, "lib",
+    # "gate-ledger.sh")` would have exec'd whatever script sat at an attacker-set KIT_ROOT/lib.
+    return os.path.join(_kit_lib_root(), "lib", "gate-ledger.sh")
 
 
 def required_phases(kit_root, lane):
@@ -119,7 +152,7 @@ def required_phases(kit_root, lane):
     try:
         res = subprocess.run(
             ["bash", gate_ledger_sh(kit_root), "required", lane],
-            capture_output=True, text=True, cwd=kit_root, check=False,
+            capture_output=True, text=True, cwd=_kit_lib_root(), check=False,
         )
     except OSError:
         return None
@@ -133,7 +166,7 @@ def acceptance_status(kit_root, lane, rid):
     try:
         res = subprocess.run(
             ["bash", gate_ledger_sh(kit_root), "check", lane, rid],
-            capture_output=True, text=True, cwd=kit_root, check=False,
+            capture_output=True, text=True, cwd=_kit_lib_root(), check=False,
         )
     except OSError:
         return "n/a (gate-ledger.sh unavailable)"
@@ -215,7 +248,11 @@ def render(rid, ledger_path, kit_root, lane, gate_rows, outcomes):
 def main(argv):
     if len(argv) < 2:
         fail("usage: proof-table-gen.py <rid> [out-path]", 64)
-    rid = argv[1]
+    # SPEC-134: rid is caller-controlled; normalize it before it touches ANY path.
+    raw_rid = argv[1]
+    rid = _normalize_rid(raw_rid)
+    if not rid:
+        fail(f"rid {raw_rid!r} normalizes to empty (no [A-Za-z0-9._-] chars); refusing", 64)
 
     kit_root = os.environ.get("KIT_ROOT")
     log_dir = os.environ.get("KIT_LOG_DIR")
@@ -226,10 +263,14 @@ def main(argv):
             64,
         )
 
-    out_path = argv[2] if len(argv) > 2 else os.path.join(kit_root, "docs", "runs", f"{rid}.md")
+    # SPEC-134: the ONLY tree this generator may write into. realpath resolves symlinks +
+    # `..`, and needs no existence, so it is a portable confinement anchor.
+    runs_root = os.path.realpath(os.path.join(kit_root, "docs", "runs"))
+    out_path = argv[2] if len(argv) > 2 else os.path.join(runs_root, f"{rid}.md")
 
     # Hard backstop (SPEC-016 / SPEC-132 AC5): refuse the canonical filename regardless of
     # caller intent -- a code-level guard, not just a convention followed by discipline.
+    # Runs BEFORE the confinement check so the canonical-file case keeps its specific message.
     if os.path.basename(out_path) == CANONICAL_BASENAME:
         fail(
             f"refusing to write '{out_path}': basename is the canonical "
@@ -238,18 +279,39 @@ def main(argv):
             1,
         )
 
+    # SPEC-134: confine the FINAL resolved out-path under docs/runs/. Enforced for BOTH the
+    # default path and an explicit out-path arg -- the explicit branch no longer bypasses this.
+    resolved_out = os.path.realpath(out_path)
+    if resolved_out != runs_root and not resolved_out.startswith(runs_root + os.sep):
+        fail(
+            f"refusing to write '{out_path}': resolves to '{resolved_out}', outside the "
+            f"allowed run-table tree '{runs_root}' (this generator only writes under docs/runs/)",
+            1,
+        )
+
     ledger_path = os.path.join(log_dir, "runs", f"{rid}.log")
     lane, gate_rows, outcomes = parse_ledger(ledger_path)
     content = render(rid, ledger_path, kit_root, lane, gate_rows, outcomes)
 
-    out_dir = os.path.dirname(out_path)
+    # SPEC-134: write to the ALREADY-RESOLVED path (not the unresolved out_path), and open the
+    # final component with O_NOFOLLOW. The confinement check above validated `resolved_out`; using
+    # a bare `open(out_path)` would re-resolve symlink components at write time, so a concurrent
+    # local process could swap a final-component symlink in the check->write gap (TOCTOU) and land
+    # the write outside runs_root. Writing `resolved_out` + refusing to follow a final-component
+    # symlink closes that gap for the realistic local-race model.
+    out_dir = os.path.dirname(resolved_out)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    with open(out_path, "w", encoding="utf-8") as f:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(resolved_out, flags, 0o644)
+    except OSError as e:
+        fail(f"refusing to write '{resolved_out}': {e.strerror} (final component may be a symlink)", 1)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
 
     print(
-        f"wrote {out_path} (rid={rid}, lane={lane or 'unknown'}, "
+        f"wrote {resolved_out} (rid={rid}, lane={lane or 'unknown'}, "
         f"gates={len(gate_rows)}, outcomes={len(outcomes)})"
     )
     return 0

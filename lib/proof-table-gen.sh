@@ -13,13 +13,20 @@
 #   [out-path]  default: docs/runs/<rid>.md (a generated path; refuses proof-of-done.md)
 set -euo pipefail
 
-KIT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# SCRIPT_ROOT = where this script + its libs live (always the real repo); used to source
+# libs and locate the .py. KIT_ROOT = the LOGICAL kit root the generator confines output
+# under (docs/runs) and derives the default out-path from. KIT_ROOT defaults to SCRIPT_ROOT
+# but honors a pre-set env override (SPEC-134 test seam), so the SPEC-134 path confinement
+# can be exercised against a throwaway docs/runs without polluting the real repo. Libs are
+# always sourced from SCRIPT_ROOT, so a fake KIT_ROOT can never break sourcing.
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+KIT_ROOT="${KIT_ROOT:-$SCRIPT_ROOT}"
 # shellcheck source=lib/kit-log-dir.sh
-source "$KIT_ROOT/lib/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+source "$SCRIPT_ROOT/lib/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 
 export KIT_ROOT
 export KIT_LOG_DIR
 KIT_LOG_DIR="$(kit_resolve_log_dir)"
 
-exec python3 "$KIT_ROOT/lib/proof-table-gen.py" "$@"
+exec python3 "$SCRIPT_ROOT/lib/proof-table-gen.py" "$@"
