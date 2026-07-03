@@ -2516,6 +2516,26 @@ is_on_review_axis "foo-checker" && RC=1
 is_on_review_axis "foo-auditor" && RC=1
 assert_eq "negative control: is_on_review_axis REJECTS off-axis fake names" 0 $RC
 
+# ============================================================
+# SPEC-107: cheap-tier defaults , three authoring surfaces, one sonnet-first stance.
+# (Surface 2, the plan-for-mega-goal subgoal-template, lives in the dotfiles repo and
+#  is proven by a LOCAL diff, not here , its path is absent in CI.)
+# ============================================================
+EX="$KIT_DIR/commands/execute.md"
+RC=0; grep -qiE 'workers dispatch at .?sonnet.? by default' "$EX" || RC=1
+assert_eq "execute.md workers default to sonnet (SPEC-107 surface 1)" 0 $RC
+RC=0; grep -qiE 'Model:.*(escape hatch|hard[- ]reasoning|override)' "$EX" || RC=1
+assert_eq "execute.md names the spec Model: escape hatch (SPEC-107 surface 1)" 0 $RC
+
+MA="$KIT_DIR/agents/meta-agent.md"
+RC=0; grep -qiE 'write .?Model: sonnet' "$MA" || RC=1
+assert_eq "meta-agent Mode B writes Model: sonnet on abstain (SPEC-107 surface 3)" 0 $RC
+# Negative controls: the OLD contradicting stance is GONE, not merely supplemented.
+RC=0; grep -qF "human's call, not a silent auto-write" "$MA" && RC=1
+assert_eq "negative control: old 'human's call' contradiction removed from meta-agent" 0 $RC
+RC=0; grep -qE 'OMIT the .?Model:.? line' "$MA" && RC=1
+assert_eq "negative control: old 'OMIT the Model: line' abstain removed from meta-agent" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================
