@@ -539,5 +539,48 @@ DWARVES_KIT_LOG_DIR="$LOGDIRD" bash "$ORCH" run "$SWD" --dry-run >/dev/null 2>&1
   && pass "START wiring: --dry-run emits no START (side-effect-free)" \
   || { fail "dry-run emitted a START"; ls "$LOGDIRD/runs" 2>&1; }
 
+# ============ SPEC-110: token accounting (capture-gated) ============
+# sum-usage sums ASSISTANT-only usage from the seed transcript (6 assistant entries).
+SU="$(python3 "$KIT/lib/handoff/handoff_gen.py" sum-usage "$SEED")"
+[ "$SU" = "in=7200 out=480 cache_read=24000 cache_create=0" ] \
+  && pass "SPEC-110 sum-usage: seed transcript sums assistant usage" \
+  || fail "SPEC-110 sum-usage wrong: $SU"
+# NC: a final type:result event carries CUMULATIVE usage and must NOT be double-summed.
+SUR="$(python3 "$KIT/lib/handoff/handoff_gen.py" sum-usage "$KIT/tests/fixtures/handoff-det/usage-with-result.jsonl")"
+[ "$SUR" = "in=100 out=10 cache_read=50 cache_create=0" ] \
+  && pass "SPEC-110 sum-usage NC: type:result cumulative line not double-counted" \
+  || fail "SPEC-110 sum-usage result-line double-count: $SUR"
+
+# capture path: DETERMINISTIC_HANDOFF=1 (a stream capture) + a goal file with **Branch:** -> the
+# orchestrate token hook parses the capture and writes a TOKENS line for the run's rid.
+TOKMG="$TMP/mgtok"; mkdir -p "$TOKMG/goals"
+cat > "$TOKMG/ROADMAP.md" <<'EOF'
+# Mega-goal: fixture
+## Sub-goals
+- [ ] SG-01 first thing , auto , PR #__
+- [ ] SG-02 second thing , gate , PR #__
+EOF
+echo "POINTER" > "$TOKMG/POINTER_PROMPT.md"
+printf '# SG-01\n**Branch:** feat/kit-tok-fx1\n' > "$TOKMG/goals/01-first.md"
+TOKLOG="$TMP/tok-logs"; mkdir -p "$TOKLOG"
+DH_RM="$TOKMG/ROADMAP.md" DETERMINISTIC_HANDOFF=1 CLAUDE_CMD="$TMP/claude-dh" \
+  DWARVES_KIT_LOG_DIR="$TOKLOG" bash "$ORCH" run "$TOKMG" > "$TMP/tok.out" 2>&1 < /dev/null
+TL="$TOKLOG/runs/kit-tok-fx1.log"
+{ [ -f "$TL" ] && grep -q '| TOKENS |' "$TL" && grep -qE 'in=7200 out=480 cache_read=24000' "$TL"; } \
+  && pass "SPEC-110 wiring: capture path CALLS gate-ledger tokens (TOKENS line carries the seed sum)" \
+  || { fail "SPEC-110 wiring: no TOKENS line from the capture path"; cat "$TMP/tok.out"; cat "$TL" 2>&1; }
+
+# NC: the default (no-capture) path writes NO TOKENS line (honest usage=?, never a fake zero).
+TOKMGN="$TMP/mgtokn"; mkdir -p "$TOKMGN/goals"
+cp "$TOKMG/ROADMAP.md" "$TOKMGN/ROADMAP.md"; echo "POINTER" > "$TOKMGN/POINTER_PROMPT.md"
+printf '# SG-01\n**Branch:** feat/kit-tok-fxn\n' > "$TOKMGN/goals/01-first.md"
+TOKLOGN="$TMP/tok-logs-n"; mkdir -p "$TOKLOGN"
+DH_RM="$TOKMGN/ROADMAP.md" CLAUDE_CMD="$TMP/claude-dh" \
+  DWARVES_KIT_LOG_DIR="$TOKLOGN" bash "$ORCH" run "$TOKMGN" > "$TMP/tokn.out" 2>&1 < /dev/null
+TLN="$TOKLOGN/runs/kit-tok-fxn.log"
+{ [ ! -f "$TLN" ] || ! grep -q '| TOKENS |' "$TLN"; } \
+  && pass "SPEC-110 NC: default no-capture path writes NO TOKENS line (usage=?)" \
+  || { fail "SPEC-110 NC: a TOKENS line was written without a capture"; cat "$TLN" 2>&1; }
+
 echo "----"
 [ "$fails" = 0 ] && { echo "ALL PASS"; exit 0; } || { echo "$fails FAILED"; exit 1; }

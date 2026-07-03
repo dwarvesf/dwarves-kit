@@ -413,17 +413,27 @@ _route() {
 # raw slug and the session's later normalized rid resolve to one ledger file). chosen ==
 # classified on both axes: the automated path takes the classifier verbatim (no human
 # override), which is honest and never reads as a misroute.
+# _rid_for: the canonical rid (branch slug) for a sub-goal, from its goal file's **Branch:** header.
+# SHARED by _emit_start (writes the START line) and the SPEC-110 token hook (writes the TOKENS line)
+# so both land in the SAME <rid>.log (spec-validate: no drift into separate ledger files). Empty
+# output => no goal file or no **Branch:** header; the caller decides how to warn.
+_rid_for() {  # dir id
+  local dir="$1" id="$2" gf branch
+  gf=$(_goalfile "$dir" "$id"); [ -n "$gf" ] || return 0
+  branch=$(grep -iE '^\*\*Branch:\*\*' "$gf" | head -1 | sed -E 's/^\*\*[Bb]ranch:\*\*[[:space:]]*//; s/[[:space:]].*$//')
+  [ -n "$branch" ] || return 0
+  printf '%s\n' "${branch#*/}"   # strip the type/ prefix, matching gate-ledger.sh rid
+}
+
 _emit_start() {  # dir id
   local dir="$1" id="$2"
   local gf; gf=$(_goalfile "$dir" "$id")
   [ -n "$gf" ] || return 0   # no goal file already warns loudly in cmd_run
-  local branch slug
-  branch=$(grep -iE '^\*\*Branch:\*\*' "$gf" | head -1 | sed -E 's/^\*\*[Bb]ranch:\*\*[[:space:]]*//; s/[[:space:]].*$//')
-  if [ -z "$branch" ]; then
+  local slug; slug=$(_rid_for "$dir" "$id")
+  if [ -z "$slug" ]; then
     echo "[orchestrate] [telemetry] WARN: $id goal file has no '**Branch:**' header; cannot derive rid, skipping START (run will be '?' in lane-telemetry)." >&2
     return 0
   fi
-  slug="${branch#*/}"   # strip the type/ prefix, matching gate-ledger.sh rid
   local title lane type
   title=$(_sg_title "$(_sg_line "$dir/ROADMAP.md" "$id")" "$id")
   lane=$(bash "$ORCH_DIR/lane-classify.sh" classify "$title" 2>/dev/null | tail -1)
@@ -1223,6 +1233,24 @@ cmd_run() {
           _say "[orchestrate] deterministic handoff written for $nid (HANDOFF.md overwritten, DECISIONS.md appended)."
         else
           echo "[orchestrate] WARN: deterministic handoff generation failed for $id; the session's own HANDOFF.md (if any) stands." >&2
+        fi
+      fi
+    fi
+    # Token accounting (SPEC-110): whenever this session was CAPTURED to stream-json (--stream or
+    # DETERMINISTIC_HANDOFF both set $slog), extract per-session usage and record a TOKENS ledger
+    # line for this sub-goal's rid, so lane-telemetry can price the run. CAPTURE-GATED: the default
+    # no-capture path leaves $slog empty and writes NO token line (honest usage=?, never a fake
+    # zero). Additive marker; non-fatal (a parse miss must not stop the loop). SPEC-087 default
+    # invocation is untouched (this runs only when a capture exists).
+    if [ -n "$slog" ] && [ -s "$slog" ]; then
+      local trid tusage
+      trid=$(_rid_for "$dir" "$id")
+      if [ -n "$trid" ]; then
+        tusage=$(python3 "$ORCH_DIR/handoff/handoff_gen.py" sum-usage "$slog" 2>/dev/null) || tusage=""
+        if [ -n "$tusage" ]; then
+          # shellcheck disable=SC2086 # tusage is a controlled "in=N out=N cache_read=N cache_create=N" blob
+          bash "$ORCH_DIR/gate-ledger.sh" tokens "$trid" $tusage \
+            && _say "[orchestrate] [telemetry] $id TOKENS recorded (rid=$trid: $tusage)."
         fi
       fi
     fi

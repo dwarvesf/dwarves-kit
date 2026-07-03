@@ -33,6 +33,33 @@ import cc_compact as cc  # noqa: E402  (sibling module, ported SG-01 extractor)
 READ_POINTER_CAP = 8
 
 
+def sum_usage(transcript_path: str) -> dict:
+    """Sum token usage across ASSISTANT entries only (SPEC-110).
+
+    A real `claude --output-format stream-json` run ends with a `type:"result"`
+    event carrying CUMULATIVE usage; summing every usage block would double-count
+    it, so we sum assistant-message usage only (reusing cc._is_assistant, the
+    kit's canonical assistant detector). User turns carry no usage; result/system
+    events are skipped by the same filter.
+    """
+    def _int(x):
+        try:
+            return int(x or 0)
+        except (TypeError, ValueError):
+            return 0   # a malformed usage value is skipped, not a crash (defensive; review LOW-3)
+    entries = cc.load(transcript_path)
+    tot = {"in": 0, "out": 0, "cache_read": 0, "cache_create": 0}
+    for e in entries:
+        if not cc._is_assistant(e):
+            continue
+        u = (e.get("message") or {}).get("usage") or {}
+        tot["in"] += _int(u.get("input_tokens"))
+        tot["out"] += _int(u.get("output_tokens"))
+        tot["cache_read"] += _int(u.get("cache_read_input_tokens"))
+        tot["cache_create"] += _int(u.get("cache_creation_input_tokens"))
+    return tot
+
+
 def build_handoff(entries, next_id: str, next_title: str) -> str:
     """HOT tier: overwritten each transition, injected in full (capped upstream)."""
     files = cc.files_changed(entries)
@@ -124,6 +151,16 @@ def write_outputs(transcript: str, out_dir: str, next_id: str, next_title: str, 
 
 
 def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    # sum-usage mode (SPEC-110): a distinct subcommand so the existing positional
+    # `handoff_gen.py <transcript> --dir ...` interface stays byte-compatible.
+    if argv and argv[0] == "sum-usage":
+        if len(argv) < 2 or not os.path.isfile(argv[1]):
+            sys.stderr.write("handoff-gen sum-usage: transcript not found\n")
+            return 2
+        u = sum_usage(argv[1])
+        print(f"in={u['in']} out={u['out']} cache_read={u['cache_read']} cache_create={u['cache_create']}")
+        return 0
     p = argparse.ArgumentParser(prog="handoff-gen", description=__doc__)
     p.add_argument("transcript", help="the finishing session's transcript JSONL")
     p.add_argument("--dir", required=True, help="mega-goal dir to write HANDOFF.md/DECISIONS.md into")
