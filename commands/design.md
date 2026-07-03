@@ -27,13 +27,14 @@ Present the chosen design in sections scaled to complexity. After EACH section, 
 - Extensibility & boundaries (what changes when the load-bearing dimension grows; unit boundaries: one purpose, a defined interface, testable independently)
 - Interfaces (I/O contract), if this exposes or consumes one
 - Failure modes, if it touches an external provider, data loss, or a migration
+- **Diagram + ADR link(s) (ADR-0031 §1), when the design is design-bearing** (new component/module, non-obvious control flow, a schema/data-model change, an external integration, an irreversible choice, or 2+ viable approaches): ask which diagram shape actually clarifies it (sequence / state / ER / flowchart / C4 container-or-component, LITE, ONE level only), sketch it in Mermaid with the user, and note the ADR(s) that record any lasting/irreversible call the design makes. Skip this bullet entirely for obviously non-design-bearing work; do not manufacture a diagram nobody needs.
 Go back and revise when the user pushes back. Do not advance a section the user has not approved.
 
-### Step 5: Write the Solution into the brief
-Once the user approves the design, **append** a `## Solution` section (and `## Failure modes` / an I/O contract sub-section if produced) to `docs/specs/DECISION-BRIEF.md`, using the SPEC-008 sub-section shape: `### Approaches considered`, `### Chosen approach + why`, `### Extensibility & boundaries`. **Do NOT overwrite** the brief's existing product framing. If the brief does not exist, create it with a one-line Problem stub plus the Solution.
+### Step 5: Write the Solution (and Design) into the brief
+Once the user approves the design, **append** a `## Solution` section (and `## Failure modes` / an I/O contract sub-section if produced) to `docs/specs/DECISION-BRIEF.md`, using the SPEC-008 sub-section shape: `### Approaches considered`, `### Chosen approach + why`, `### Extensibility & boundaries`. **If Step 4 produced a diagram + ADR link(s)** (the design was design-bearing), also **append a `## Design` section** with `### Diagram` (the Mermaid block) and `### ADR link(s)` , the shape `/kit:spec`'s own `## Design` block expects (ADR-0031 §1). Skip the `## Design` append entirely when the design was not design-bearing; `/kit:spec`'s template collapses it to `obvious: <why>` on its own. **Do NOT overwrite** the brief's existing product framing. If the brief does not exist, create it with a one-line Problem stub plus the Solution.
 
 ### Step 6: Hand off
-Tell the user the design is captured and the next step is `/kit:spec`, which reads the brief and folds the Solution into the spec's `## Solution`. Do NOT run `/kit:spec` yourself; this lane only shapes and records the design.
+Tell the user the design is captured and the next step is `/kit:spec`, which reads the brief and folds the Solution into the spec's `## Solution` (and the Design section, if present, into the spec's `## Design`). Do NOT run `/kit:spec` yourself; this lane only shapes and records the design.
 
 ## Source
 Forked from `superpowers:brainstorming` (one-question-at-a-time, present-in-sections, per-section approval). Realizes SPEC-008 Part C; see `docs/specs/SPEC-011-design-lane.md`.

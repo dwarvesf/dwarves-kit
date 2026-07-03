@@ -355,6 +355,7 @@ the V-model lens above. Every cell is one of:
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
 | Validate | skip | skip | measure-twice | skip | skip |
+| Design record (design-bearing, ADR-0031 §1) | skip | run-lite | measure-twice | skip | skip |
 | Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
 | Review | run-lite | run-lite | measure-twice | measure-twice | run-lite |
@@ -384,6 +385,14 @@ the V-model lens above. Every cell is one of:
   (AGENTS.md, CLAUDE.md, specs). This is the one phase that must be done fully.
 - **backfill / Build = skip**: the lane table explicitly prohibits app-code
   edits; Build (the verification pipeline executing tasks) does not apply.
+- **Design record / normal = run-lite, not measure-twice**: a normal-lane spec is only
+  SOMETIMES design-bearing (new component, schema change); the common normal-lane case is the
+  obvious one that collapses to one line (`obvious: <why>`), so run-lite reflects "check it
+  collapsed correctly," not full ceremony. Full lane's usual triggers (auth/authz/schema/
+  external integration/migration) hit design-bearing far more often, so measure-twice.
+  Enforcement is `/kit:spec-validate` Reviewer 6, not a separate command; this row is a
+  DIFFERENT gate from `Design (opt-in)` above (the interactive `/kit:design` facilitator lane
+  the user pulls before `/kit:spec`), though `/kit:design`'s output can seed this row's block.
 
 When a new phase is added to the cycle table (and the V-model lens gains a row),
 add a column here and assign a depth per lane before shipping the change.
@@ -399,6 +408,7 @@ source for which gates a lane *requires* (its `measure-twice` cells);
 - **One append-only, redacted file per run** under `$DWARVES_KIT_LOG_DIR/runs/<slug>.log` (the existing hook-log convention; no command bodies or secret paths). It is an audit trail, never a source of state.
 - **Enforcement is at ship only.** `hooks/ship-gate.sh` refuses a feature-branch push or `gh pr create` when the active spec's lane has a `measure-twice` gate with no `ran`/`override` entry. Mid-flight phases are never blocked (Detect, don't dictate).
 - **Override, logged:** to ship past a missing gate, record a reason: `bash lib/gate-ledger.sh override <rid> <Phase> "<reason>"`. The override is part of the audit trail; in a fully autonomous run it is agent-writable, so the guarantee is block-by-default plus every skip and override recorded, not a hard stop (ADR-0024).
+- **Understanding-debt marker (ADR-0031, SPEC-122):** at Ship, `bash lib/significance-classify.sh record <rid> "<what changed>"` classifies the change (significance x understanding-worthiness) and appends a `| DEBT |` marker via `gate-ledger.sh debt`; only a high x high verdict (`tap`) is worth a human's attention, everything else (`wave`/`not-significant`) is logged silently -- what happens on a `tap` is a separate gate (SG-04's nudge), out of scope for the marker itself.
 
 ## The spine
 How a committed backlog item becomes shipped work, end to end:
