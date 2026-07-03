@@ -436,6 +436,33 @@ rid() {
   printf '%s\n' "$(runid "$slug")"
 }
 
+# mutation: record the ADVISORY mutation-smoke's verdict (SPEC-131, kit-run-integrity SG-04) as
+# an ADDITIVE marker -- the exact `| TOKENS |`/`| DEBT |` shape reused for a third concern: a
+# `| MUTATION |` line that check()/override()/descent()/_rows() all ignore (they key on
+# $2=="GATE"|START|ACTION), so a mutation verdict can never fake, satisfy, or mask a gate. This is
+# the additive property the kit relies on; no reader changes. The smoke is warn-only (gate-zero),
+# so this marker is a record of what it FOUND, never a gate the ship path enforces. Independent of
+# SG-01's `caught=` GATE-line marker -- a different surface (this is a whole new marker verb).
+# Usage: mutation <rid> verdict=<flag|clean|skip> [file=... line=... op=... attempts=N reason=...]
+mutation() {
+  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: mutation <rid> verdict=<flag|clean|skip> [k=v ...]" >&2; return 64; }
+  [ -n "$rid" ] || { echo "mutation requires a rid" >&2; return 64; }
+  local verdict="" rest="" kv k v
+  for kv in "$@"; do
+    k="${kv%%=*}"; v="${kv#*=}"
+    # every value is single-token (space-split read-side); collapse spaces + neuter embedded "="
+    # in free text so a value can never smuggle a second KV or split the ledger line.
+    v="$(printf '%s' "$v" | tr '\n\r' '  ' | tr ' ' '_')"
+    case "$k" in
+      verdict) verdict="$v" ;;
+      *)       rest="$rest $k=$v" ;;
+    esac
+  done
+  case "$verdict" in flag|clean|skip) ;; *) echo "mutation: verdict must be flag|clean|skip (got '$verdict')" >&2; return 64;; esac
+  mkdir -p "$RUNS_DIR"
+  printf '%s | MUTATION | verdict=%s%s\n' "$(now)" "$verdict" "$rest" >> "$(ledger_file "$rid")"
+}
+
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
@@ -445,6 +472,7 @@ case "$cmd" in
   tokens)   tokens "$@" ;;
   debt)     debt "$@" ;;
   debt-response) debt_response "$@" ;;
+  mutation) mutation "$@" ;;
   override) override "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
@@ -452,5 +480,5 @@ case "$cmd" in
   progress) progress "$@" ;;
   rid)      rid "$@" ;;
   descent)  descent "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|mutation|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
 esac
