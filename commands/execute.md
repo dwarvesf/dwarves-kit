@@ -121,7 +121,12 @@ The role space is OPEN-ENDED: the classifier below is only a cheap fast path for
    every command that dispatches task workers classifies the same way.
 
 2. **Reuse an existing specialist if present** (cheapest path, both known-domain and cached roles):
-   - If a predefined agent fits (dispatchable `subagent_type` this session), dispatch THAT, skip synthesis.
+   - **Deterministic worker lookup (SPEC-111):** `bash lib/role-classify.sh agent-for <domain>`. A
+     NON-EMPTY result names a predefined WORKER agent (an implementer) for this domain , dispatch
+     THAT as `subagent_type`, skip synthesis (a reuse HIT). Empty -> no static worker for this
+     domain; continue. Reviewers are deliberately NOT in this lookup: a read-only reviewer cannot
+     implement a task, so domain REVIEW lenses dispatch via `/kit:review-team`, not this worker slot.
+   - Else if a predefined agent otherwise fits (dispatchable `subagent_type` this session), dispatch THAT, skip synthesis.
    - Else if `~/.claude/agents/*<role>*.md` cached from a prior run fits the task, use its body as the
      PREAMBLE. No re-synthesis.
 

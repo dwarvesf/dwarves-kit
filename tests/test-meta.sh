@@ -2540,7 +2540,7 @@ assert_eq "negative control: old 'OMIT the Model: line' abstain removed from met
 # SPEC-108: meta-agent provenance , the generated agents carry a well-formed generated-by:,
 # and the key is SET-EQUAL to the known generated roster (no silent spread to hand-written agents).
 # ============================================================
-GEN_ROSTER="acceptance-verifier advisor brief-reviewer recheck-verifier system-verifier"
+GEN_ROSTER="acceptance-verifier advisor brief-reviewer recheck-verifier system-verifier api-reviewer data-etl-worker db-migration-worker frontend-reviewer infra-reviewer performance-reviewer"
 for a in $GEN_ROSTER; do
   RC=0; grep -qE '^generated-by: draft-agent [0-9]{4}-[0-9]{2}-[0-9]{2} .+' "$KIT_DIR/agents/$a.md" || RC=1
   assert_eq "generated agent $a carries a well-formed generated-by (SPEC-108)" 0 $RC

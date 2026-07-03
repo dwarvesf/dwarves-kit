@@ -308,6 +308,18 @@ a kit-default lens never silently burns `opus` on every run (WORKFLOW.md verific
 cost routing). Born under ADR-0029 as the named-noun `advisor`, gated by the SG-01
 `agent-effectiveness` validator.
 
+## Role-specialist roster: two dispatch paths by type (SPEC-111)
+
+The starter domain roster has ONE router with two live dispatch paths, matched to agent
+type: WORKER specialists (write-capable implementers, e.g. `db-migration-worker`,
+`data-etl-worker`) dispatch via `commands/execute.md` step 2b-0's reuse branch , the
+deterministic `role-classify.sh agent-for <domain>` lookup makes the reuse HIT. REVIEWER
+specialists (read-only judges, e.g. `performance-reviewer`, `api-reviewer`,
+`frontend-reviewer`, `infra-reviewer`) dispatch via `/kit:review-team`'s opt-in domain lens.
+A read-only reviewer is NOT a 2b-0 target (it cannot implement a task). `generic` and any
+unknown domain return empty from `agent-for` and escalate to SPEC-089 Mode-C synthesis (the
+dynamic long tail). 2b-0's reuse-vs-synthesize branch is the single router; no second one.
+
 ## The V-model descent contract (SPEC-076 / ID-068)
 
 Every left-arm step passes its review lens BEFORE the work descends, on EVERY lane:
