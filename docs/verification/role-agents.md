@@ -61,6 +61,37 @@ $ bash tests/test-meta.sh   -> 651/651 ; All meta tests passed.
 #   lane-telemetry 25/25, mega-merge 30/30, ledger-durability 35/35, meta 651/651, meta-agent 72/72, proof-visual 4/4
 ```
 
+## Recorded run + rollback (ship-gate shape)
+
+The ship-gate's `proof-ledger` keyword-classified this branch STATEFUL because the
+`db-migration-worker` AGENT's body contains "migration/schema/rollback/backfill" , but 09 EXECUTES
+no migration and creates no persistent state (`proof-gate.sh contract` correctly classifies it
+`behavioral`). The recorded run + rollback below satisfy the gate honestly.
+
+Recorded run:
+
+```
+Command: bash lib/role-classify.sh agent-for db-migration
+Exit: 0     Output: db-migration-worker
+Command: D=$(bash lib/role-classify.sh classify "write a migration to add a column and backfill"); bash lib/role-classify.sh agent-for "$D"
+Exit: 0     Output: db-migration-worker      # reuse-hit chain
+Command: for a in performance api frontend infra; do bash tests/test-agent-effectiveness.sh agents/$a-reviewer.md; done
+Exit: 0     Output: 3/3 passed (x4)           # reviewers gate
+Command: bash tests/test-meta.sh
+Exit: 0     Output: 651/651 ; All meta tests passed.
+```
+
+Negative control (behavioral, revert -> RED -> restore): reverting the `role-classify.sh agent-for`
+case makes `agent-for db-migration` return empty -> the `test-role-classify.sh` reuse-hit assert goes
+RED; restoring the case returns it to GREEN. The SPEC-108 set-equality guard is the second NC (a
+`generated-by:` key spreading to a hand-written agent fails it).
+
+Rollback: `git revert <merge-sha>` fully reverses this change (removes the 6 agent files + the
+`agent-for` case + the 2b-0 / review-team wiring + the MANUAL/architecture roster rows + the
+GEN_ROSTER expansion). NO persistent state, NO data migration, and NO deployed daemon is created by
+09 , the db-migration-worker agent only DESCRIBES migrations; it executes none here , so the revert
+is complete and side-effect-free (no cleanup, no backfill to undo).
+
 ## Notes
 
 - Advisory (worker gate, non-blocking): `db-migration-worker`'s verify leans on the project test
