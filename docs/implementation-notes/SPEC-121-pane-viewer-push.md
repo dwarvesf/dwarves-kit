@@ -1,4 +1,4 @@
-# Implementation notes: SPEC-120 pane viewer push
+# Implementation notes: SPEC-121 pane viewer push
 
 Delta from the spec only; decisions the spec didn't pin, deviations, tradeoffs.
 

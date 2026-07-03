@@ -1,4 +1,4 @@
-# Proof of done: pane viewer push (SPEC-120, board ID-092)
+# Proof of done: pane viewer push (SPEC-121, board ID-092)
 
 The PUSH half of SPEC-119's pull-only multiplexer panes, DEFAULT ON (`PANE_VIEWER=auto`,
 operator decision 2026-07-03): on wave spawn under `MULTIPLEXER=1`, ONE viewer tab/surface
@@ -115,7 +115,7 @@ ran.
   `_viewer_resolve` unknown-value fallback (T3).
 - **Uncovered (declared):** real GUI viewers end-to-end (seam-mocked, same discipline as the
   TMUX_CMD/CLAUDE_CMD suites) - the iTerm2 `tmux -CC` control-mode path (documented as the
-  zero-code operator alternative in SPEC-120, deliberately not built) - a real cmux socket
+  zero-code operator alternative in SPEC-121, deliberately not built) - a real cmux socket
   round-trip (the `--focus false` pin is argv-asserted, not app-observed) - a genuinely hung
   viewer stalling test (fire-and-forget is proven by construction + disown, not by a live
   hang fixture) - closed-tab re-open (spec edge case 5, intended no-op).

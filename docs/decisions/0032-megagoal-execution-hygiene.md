@@ -90,10 +90,10 @@ default.
 - Replacing `/goal` (it stays the official activator; ADR-0017 activator-agnostic stands).
 - The weekend-batch / understanding-gate mechanics (their own ADR-0031 + mega-goal).
 
-## Addendum (2026-07-03, SPEC-120): viewer push widens section 4's surface
+## Addendum (2026-07-03, SPEC-121): viewer push widens section 4's surface
 
 Section 4 authorized tmux-only mechanics (`new-window` / `capture-pane` / `send-keys`), opt-in and
-off by default. SPEC-120 (operator decision 2026-07-03) adds the PUSH half on top: when a wave
+off by default. SPEC-121 (operator decision 2026-07-03) adds the PUSH half on top: when a wave
 spawns panes under `MULTIPLEXER=1`, `orchestrate.sh` opens ONE viewer tab/surface in the
 operator's own terminal app (cmux workspace, `kitty @ launch`, `wezterm cli spawn`,
 `open -na Ghostty`, or `osascript` against iTerm/Terminal) already attached to the wave's tmux
@@ -102,4 +102,4 @@ session , i.e. the authorized surface grows from in-tmux-server control to DEFAU
 only when the multiplexer is already on AND a viewer is detected on a real TTY (headless stays
 byte-identical, pull-only); `PANE_VIEWER=none` restores section 4's exact behavior; the exec is
 argv-direct + charset-gated + allowlist-validated (the #143 pattern), fire-and-forget, and can
-never fail a wave. Full design + security pins: `docs/specs/SPEC-120-pane-viewer-push.md`.
+never fail a wave. Full design + security pins: `docs/specs/SPEC-121-pane-viewer-push.md`.

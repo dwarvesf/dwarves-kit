@@ -1,7 +1,7 @@
 # 0031. The understanding gate (design record + explainer/quiz)
 
 Date: 2026-07-03
-Status: Accepted (2026-07-03, operator bless)
+Status: Accepted
 Relates-to: ADR-0018 (v-model phase frame , this adds a third axis to it), ADR-0024 (gate-ledger + ship-enforcement), ADR-0025 (proof-of-done ship gate , the VERIFICATION gate this complements), ADR-0028 (autonomous-loop hardening , the fast autonomous runs this counterbalances), SPEC-008 (solution-design depth), SPEC-011 (design lane), ops-toolkit `research/2026-07-03-understanding-bottleneck-sdlc.md` (the motivation) + the `understanding-gate` mega-goal + the learning skills (`deep-understand`, `narrate-log`, `svg-knowledge-diagram`, `interactive-concept-board`, `learning-ledger`)
 
 ## Context
