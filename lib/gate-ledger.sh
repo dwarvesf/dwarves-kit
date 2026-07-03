@@ -141,6 +141,30 @@ action() {
   printf '%s | ACTION | %s\n' "$(now)" "$(oneline "$@")" >> "$(ledger_file "$rid")"
 }
 
+# tokens: record a run's token usage as an ADDITIVE marker (SPEC-110). Emits a `| TOKENS |` line
+# that check()/override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a
+# token line can never fake a gate. Values are sanitized to non-negative integers.
+# Usage: tokens <rid> in=N out=N cache_read=N cache_create=N [cost=N]
+tokens() {
+  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: tokens <rid> in=N out=N cache_read=N cache_create=N [cost=N]" >&2; return 64; }
+  [ -n "$rid" ] || { echo "tokens requires a rid" >&2; return 64; }
+  local intok=0 outtok=0 cread=0 ccreate=0 cost="" kv k v
+  for kv in "$@"; do
+    k="${kv%%=*}"; v="${kv#*=}"
+    case "$k" in
+      in)           intok="$(printf '%s' "$v" | tr -cd '0-9')"; intok="${intok:-0}" ;;
+      out)          outtok="$(printf '%s' "$v" | tr -cd '0-9')"; outtok="${outtok:-0}" ;;
+      cache_read)   cread="$(printf '%s' "$v" | tr -cd '0-9')"; cread="${cread:-0}" ;;
+      cache_create) ccreate="$(printf '%s' "$v" | tr -cd '0-9')"; ccreate="${ccreate:-0}" ;;
+      cost)         cost="$(printf '%s' "$v" | tr -cd '0-9.')" ;;   # decimal dollars: allow one dot
+    esac
+  done
+  mkdir -p "$RUNS_DIR"
+  local line; line="$(printf 'in=%s out=%s cache_read=%s cache_create=%s' "$intok" "$outtok" "$cread" "$ccreate")"
+  [ -n "$cost" ] && line="$line cost=$cost"
+  printf '%s | TOKENS | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
+}
+
 override() {
   local rid="${1:-}" raw="${2:-}"; shift 2 2>/dev/null || { echo "usage: override <rid> <phase> <reason>" >&2; return 64; }
   local reason; reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
@@ -319,6 +343,7 @@ case "$cmd" in
   start)    start "$@" ;;
   record)   record "$@" ;;
   action)   action "$@" ;;
+  tokens)   tokens "$@" ;;
   override) override "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
@@ -326,5 +351,5 @@ case "$cmd" in
   progress) progress "$@" ;;
   rid)      rid "$@" ;;
   descent)  descent "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
 esac

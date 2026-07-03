@@ -141,6 +141,39 @@ _escapes() {
   done
 }
 
+# _token_agg: per-lane token aggregates over runs carrying a `| TOKENS |` line (SPEC-110).
+# Joins each run's TOKENS totals to its lane via _rows (rid->lane), then per lane emits a TSV:
+#   <lane>\t<runs_with_tokens>\t<median_tokens_to_done>\t<cache_eff_pct>
+# plus one summary line: __ALL__\t<runs_total>\t<runs_with_tokens>\t<usage_unknown>\t<rework_pct>.
+# Median via a portable insertion sort (macOS BWK awk has no asort). Runs with no TOKENS line are
+# counted as usage-unknown and EXCLUDED from medians (never zero-filled). No thresholds pinned.
+_token_agg() {
+  local rows; rows="$(_rows)"
+  [ -n "$rows" ] || return 0
+  { printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $1"\t"$3}' | while IFS=$'\t' read -r rid lane; do
+      [ -n "$rid" ] || continue
+      f="$RUNS_DIR/$rid.log"; [ -f "$f" ] || continue
+      awk -F' [|] ' -v lane="$lane" '
+        $2=="TOKENS"{ n=split($3,a," "); for(i=1;i<=n;i++){split(a[i],p,"="); s[p[1]]+=p[2]} has=1 }
+        END{ if(has) printf "%s\t%d\t%d\t%d\t1\n", lane, s["in"]+s["out"], s["cache_read"], s["in"];
+             else printf "%s\t0\t0\t0\t0\n", lane }' "$f"
+    done
+  } | awk -F'\t' '
+    { lane=$1; todone=$2; cr=$3; inp=$4; has=$5; total++
+      if(has){ withtok++; cnt[lane]++; vals[lane SUBSEP cnt[lane]]=todone; crsum[lane]+=cr; insum[lane]+=inp;
+               allto+=todone; if(lane=="bug") bugto+=todone }
+      else unknown++ }
+    END{
+      for(l in cnt){ m=cnt[l];
+        for(i=2;i<=m;i++){ key=vals[l SUBSEP i]; j=i-1;
+          while(j>=1 && vals[l SUBSEP j]>key){ vals[l SUBSEP (j+1)]=vals[l SUBSEP j]; j-- } vals[l SUBSEP (j+1)]=key }
+        if(m%2==1) med=vals[l SUBSEP ((m+1)/2)]; else med=int((vals[l SUBSEP (m/2)]+vals[l SUBSEP (m/2+1)])/2);
+        eff=(insum[l]+crsum[l])>0 ? int(100*crsum[l]/(insum[l]+crsum[l])) : 0;
+        printf "%s\t%d\t%d\t%d\n", l, cnt[l], med, eff }
+      rework=allto>0 ? int(100*bugto/allto) : 0;
+      printf "__ALL__\t%d\t%d\t%d\t%d\n", total, withtok, unknown, rework }'
+}
+
 report() {
   [ -d "$RUNS_DIR" ] || { echo "(no runs dir at $RUNS_DIR)"; return 0; }
   local rows; rows="$(_rows)"
@@ -171,6 +204,25 @@ report() {
   echo ""
   echo "runs (rid  repo  lane<-classified  type<-ctype  review  first..last):"
   printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"} { printf "  %-28s %-12s %s<-%s  %s<-%s  %-24s %s .. %s\n", $1, $2, $3, $4, $5, $6, $13, $14, $15 }'
+
+  # Token efficiency (SPEC-110): only over runs carrying a TOKENS line; a no-capture run is an
+  # honest usage=? and is EXCLUDED from medians (never a fake zero). No thresholds until a
+  # ~5-run baseline forms (the SPEC-073 pattern).
+  local tagg; tagg="$(_token_agg)"
+  echo ""
+  if [ -n "$tagg" ]; then
+    local summ rtot rtok runk rework
+    summ="$(printf '%s\n' "$tagg" | awk -F'\t' '$1=="__ALL__"')"
+    rtot=$(printf '%s' "$summ" | cut -f2); rtok=$(printf '%s' "$summ" | cut -f3)
+    runk=$(printf '%s' "$summ" | cut -f4); rework=$(printf '%s' "$summ" | cut -f5)
+    printf '  token efficiency (%s/%s runs captured; %s usage=? [no stream capture]):\n' "${rtok:-0}" "${rtot:-0}" "${runk:-0}"
+    if [ "${rtok:-0}" -gt 0 ]; then
+      printf '    %-12s %10s %8s\n' "lane" "med-tok" "cache"
+      printf '%s\n' "$tagg" | awk -F'\t' '$1!="__ALL__"{ printf "    %-12s %10d %7d%%\n", $1, $3, $4 }' | sort
+      printf '    rework share (bug-lane tokens / total, run-granularity v1): %s%%\n' "${rework:-0}"
+    fi
+    printf '    (no thresholds pinned; baseline forms after ~5 captured runs, SPEC-073 pattern)\n'
+  fi
 }
 
 misfires() {
@@ -266,6 +318,10 @@ trace() {
 # Reuses _rows() (no second parser); degrades gracefully to an honest "no runs recorded"
 # on an empty/fresh install rather than crashing or printing fake zeros.
 render() {
+  # SPEC-110: a leading --mermaid/mermaid selects the mermaid output MODE, consumed BEFORE the
+  # substring-filter positional so `render [filter]` (ASCII) stays byte-compatible.
+  local mode=ascii
+  case "${1:-}" in --mermaid|mermaid) mode=mermaid; shift ;; esac
   local filter="${1:-}"   # optional: keep only runs whose lane OR type contains this string
   if [ ! -d "$RUNS_DIR" ]; then
     echo "Lane routing: no runs recorded yet (no ledger dir at $RUNS_DIR)."
@@ -281,6 +337,30 @@ render() {
     [ -n "$filter" ] && echo "Lane routing: no runs match '$filter'." || echo "Lane routing: no runs recorded yet."
     return 0
   fi
+
+  # SPEC-110 mermaid mode: a GitHub-native task-type -> lane graph, each lane node annotated with
+  # its median tokens-to-done (usage=? when no run in that lane was captured). Per lane/per run,
+  # NOT per-phase (usage is per-session). Additive: the ASCII mode below is untouched.
+  if [ "$mode" = mermaid ]; then
+    # Per-lane medians as a SINGLE-LINE `lane=med;` map (macOS BWK awk rejects a newline in a -v
+    # string, so tagg's multi-line form cannot be passed directly).
+    local medmap; medmap="$(_token_agg | awk -F'\t' '$1!="__ALL__" && $1!=""{printf "%s=%s;", $1, $3}')"
+    echo "Lane routing (mermaid; lane nodes annotated with median tokens-to-done):"
+    echo '```mermaid'
+    echo 'graph TD'
+    printf '%s\n' "$rows" | awk -F'\t' -v medmap="$medmap" '
+      BEGIN{ n=split(medmap,pairs,";"); for(i=1;i<=n;i++){ if(pairs[i]!=""){ split(pairs[i],kv,"="); med[kv[1]]=kv[2] } } }
+      function nid(s){ gsub(/[^a-zA-Z0-9]/,"_",s); return s }   # mermaid IDs: alnum + underscore only
+      { lanes[$3]=1; edge[$5 SUBSEP $3]=1 }
+      END{
+        for(l in lanes){ lab=(l in med)? l " ~" med[l] " tok" : l " (usage=?)";
+          printf "  lane_%s[\"%s\"]\n", nid(l), lab }
+        for(e in edge){ split(e,a,SUBSEP); printf "  type_%s([\"%s\"]) --> lane_%s\n", nid(a[1]), a[1], nid(a[2]) }
+      }'
+    echo '```'
+    return 0
+  fi
+
   local n first last
   n="$(printf '%s\n' "$rows" | grep -c .)"
   first="$(printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"}{print $14}' | sort | head -1)"
