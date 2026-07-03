@@ -355,6 +355,7 @@ the V-model lens above. Every cell is one of:
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
 | Validate | skip | skip | measure-twice | skip | skip |
+| Design record (design-bearing, ADR-0031 §1) | skip | run-lite | measure-twice | skip | skip |
 | Test plan (default) | skip | run-lite | measure-twice | run-lite | skip |
 | Build | run-lite | measure-twice | measure-twice | measure-twice | skip |
 | Review | run-lite | run-lite | measure-twice | measure-twice | run-lite |
@@ -384,6 +385,14 @@ the V-model lens above. Every cell is one of:
   (AGENTS.md, CLAUDE.md, specs). This is the one phase that must be done fully.
 - **backfill / Build = skip**: the lane table explicitly prohibits app-code
   edits; Build (the verification pipeline executing tasks) does not apply.
+- **Design record / normal = run-lite, not measure-twice**: a normal-lane spec is only
+  SOMETIMES design-bearing (new component, schema change); the common normal-lane case is the
+  obvious one that collapses to one line (`obvious: <why>`), so run-lite reflects "check it
+  collapsed correctly," not full ceremony. Full lane's usual triggers (auth/authz/schema/
+  external integration/migration) hit design-bearing far more often, so measure-twice.
+  Enforcement is `/kit:spec-validate` Reviewer 6, not a separate command; this row is a
+  DIFFERENT gate from `Design (opt-in)` above (the interactive `/kit:design` facilitator lane
+  the user pulls before `/kit:spec`), though `/kit:design`'s output can seed this row's block.
 
 When a new phase is added to the cycle table (and the V-model lens gains a row),
 add a column here and assign a depth per lane before shipping the change.
