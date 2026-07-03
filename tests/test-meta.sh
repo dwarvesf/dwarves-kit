@@ -2549,6 +2549,40 @@ GEN_ACTUAL=$(grep -lE '^generated-by:' "$KIT_DIR/agents/"*.md 2>/dev/null | whil
 GEN_EXPECTED=$(printf '%s\n' $GEN_ROSTER | sort | tr '\n' ' ' | sed 's/ *$//')
 assert_eq "generated-by key set-equals the known generated roster (no spread to hand-written agents)" "$GEN_EXPECTED" "$GEN_ACTUAL"
 
+# ============================================================
+# SPEC-109: operator-persona design lens , opt-in 6th visual-team lens GATED on persona-supplied
+# (byte-compatible without the arg), persisted + threaded from ui-design, boundary recorded (DEC-017).
+# ============================================================
+VT="$KIT_DIR/commands/visual-team.md"
+RC=0; grep -qF 'persona: <archetype>' "$VT" || RC=1
+assert_eq "visual-team accepts a persona: <archetype> arg (SPEC-109)" 0 $RC
+RC=0; grep -qiF 'operator persona' "$VT" || RC=1
+assert_eq "visual-team has an operator-persona 6th lens (SPEC-109)" 0 $RC
+# F1 conditionality pins , the 6th lens AND the 6th Scores row carry a persona-supplied guard,
+# so an UNCONDITIONAL 6th lens (which would break byte-compat) fails the test, not just its absence.
+RC=0; grep -qiE 'ONLY when a .?persona' "$VT" || RC=1
+assert_eq "6th persona lens is GATED on persona-supplied (SPEC-109 conditionality)" 0 $RC
+RC=0; grep -qiE 'row appears ONLY when a .?persona' "$VT" || RC=1
+assert_eq "6th Scores row is GATED on persona-supplied (SPEC-109 conditionality)" 0 $RC
+# NEGATIVE CONTROL: the 5 existing lenses present verbatim + no-arg fires exactly 5, byte-identical.
+for L in 'Hierarchy / typography' 'System-consistency' 'Accessibility / contrast' 'Restraint / simplicity' 'Expressiveness / brand-fit'; do
+  RC=0; grep -qF "$L" "$VT" || RC=1
+  assert_eq "visual-team 5-lens NC: '$L' present unchanged (SPEC-109)" 0 $RC
+done
+RC=0; grep -qiF 'byte-identical' "$VT" || RC=1
+assert_eq "visual-team no-arg path is byte-identical / exactly 5 lenses (SPEC-109 NC)" 0 $RC
+# F2 ui-design PERSISTS (brief line) AND THREADS (forwards to visual-team $ARGUMENTS).
+UIDESIGN="$KIT_DIR/commands/ui-design.md"
+RC=0; grep -qiF 'Persona (optional)' "$UIDESIGN" || RC=1
+assert_eq "ui-design brief seeds a Persona line (SPEC-109 persist)" 0 $RC
+RC=0; grep -qF 'persona: <archetype>' "$UIDESIGN" || RC=1
+assert_eq "ui-design Step 3 forwards Persona into visual-team ARGUMENTS (SPEC-109 thread)" 0 $RC
+# Governance: DEC-017 formal in SPEC-109 + reciprocal pointer in SPEC-016 + kit-health carve-out.
+RC=0; { grep -q 'DEC-017' "$KIT_DIR/docs/specs/SPEC-109-persona-lens.md" && grep -q 'DEC-017' "$KIT_DIR/docs/specs/SPEC-016-critique-and-test-lanes.md"; } || RC=1
+assert_eq "DEC-017 recorded in SPEC-109 + reciprocal pointer in SPEC-016 (SPEC-109)" 0 $RC
+RC=0; grep -qiF 'operator-supplied' "$KIT_DIR/commands/kit-health.md" || RC=1
+assert_eq "kit-health check-13 carries the operator-persona carve-out (SPEC-109)" 0 $RC
+
 echo ""
 echo "=== Results ==="
 # ============================================================

@@ -170,7 +170,7 @@ Per-part one-sentence descriptions:
 ## Decision Log
 - **DEC-001**: The gap is design *critique*, not design *generation*. A generative roundtable would duplicate `/user:design` (Step 2/3) and violate "Replace, don't deprecate". devs-team/visual-team are "`review-team` for design."
 - **DEC-002**: devs-team is a separate command, not a beat inside `/user:design`. Kit precedent: code generation (`/execute`) and code critique (`/review`, `/review-team`) are separate; design follows the same split.
-- **DEC-003**: Generic house-style lenses, not named-person personas. Consistent with `/spec-validate` (5 reviewers) and `/review-team` (3 lenses).
+- **DEC-003**: Generic house-style lenses, not named-person personas. Consistent with `/spec-validate` (5 reviewers) and `/review-team` (3 lenses). **Amended by SPEC-109 DEC-017 (2026-07-03):** DEC-003 rejects BAKED (kit-shipped) personas; an OPERATOR-SUPPLIED runtime `persona:` archetype on `/kit:visual-team` is a distinct, sanctioned opt-in 6th lens (supplied-not-baked; the kit still ships none). The 5 baked lenses are unchanged.
 - **DEC-004**: `/user:test-plan` is a coverage-matrix generator, not a roundtable. Test planning derives from fixed acceptance criteria (systematic coverage), unlike open-space design critique (divergence). Calling it a roundtable would mislabel it.
 - **DEC-005**: `/user:visual-team` is critique, not generation. Consistency with the critique reframe, and visual generation needs render machinery that violates bash/no-binaries.
 - **DEC-006**: visual-team is downstream-facing; recorded via a PHILOSOPHY carve-out + a kit-health allow-note so the self-assessment does not flag it speculative. This is the recorded cost of the maintainer's bake-into-kit choice (over a standalone skill).

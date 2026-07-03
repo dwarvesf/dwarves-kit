@@ -173,7 +173,7 @@ Borrowed in spirit from superpowers' AGENTS.md "What We Will Not Accept". The ki
 10. **Bundled unrelated changes** in one PR. Split. One feature, one PR, one source citation.
 11. **Vendor-skill sprawl.** Skills bundled to pad the catalog rather than serve 2+ phases from a single proven source. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)")
 12. **UI-shell creep.** A statusline/HUD grown into a stateful UI with caches, themes, or its own config surface. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)")
-13. **Agent-persona theater.** Agents named for personas ("studio", "agent company") instead of their function. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)")
+13. **Agent-persona theater.** Agents named for personas ("studio", "agent company") instead of their function. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)") **Carve-out (SPEC-109 DEC-017):** an OPERATOR-SUPPLIED `persona: <archetype>` critique lens on `/kit:visual-team` is SANCTIONED, not theater , the kit ships no persona, it is an inline lens (no persona-named agent file), critique-only, and the taste liability is the operator's. The boundary is supplied-not-baked; do NOT flag the sanctioned operator-persona path.
 14. **Slop-PR submissions.** AI-generated PRs with no human involvement, or speculative fixes nobody asked for. (PHILOSOPHY.md "What we explicitly reject (from upstream observation)"; CONTRIBUTING.md AI-agent wall)
 
 When kit-health detects any of these, the verdict is **REJECT**. Surface it to the user and recommend the fix path: either remove the violation or document an explicit carve-out in PHILOSOPHY.md with rationale. Do not paper over the finding silently.
