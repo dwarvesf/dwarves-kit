@@ -4,6 +4,16 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Model-routing enforcement pinned + proven (SPEC-116).** Resolves `orchestrate-hardening`
+  open-fork 3: the enforcement site is `lib/orchestrate.sh` (`_route()` + the serial/wave delegate
+  dispatch sites, which already existed under SPEC-087), not `lib/route-suggest.sh` (a decompose-time
+  suggester with no dispatch-time call site, so it structurally cannot contradict an explicit
+  `Model:` field). The no-`Model:`-field fallback tier is confirmed as "inherit the parent session's
+  tier" (SPEC-107). `tests/test-model-routing.sh` proves the default-applied positive case for
+  opus/sonnet/haiku on the serial path plus one case on the concurrent wave path, and the fallback
+  negative control. No `lib/` behavior change; this is a proof + documentation pin.
+
 ## [2.0.0] - 2026-07-03
 
 The release hold lifts: its stated condition , the **kit-hardening** megagoal , is complete, and
