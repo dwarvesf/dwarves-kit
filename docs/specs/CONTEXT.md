@@ -1,31 +1,27 @@
-# Context for implementation (SPEC-031, ID-034)
+# Context for implementation , SPEC-106 DAG-wavefront scheduling
 
 ## Stack
-Bash + jq hooks; markdown docs; tests in bash (`tests/test-meta.sh` structural,
-`tests/test-hooks.sh` behavior). No Node/Python in hooks. Every script readable in
-30 seconds. This spec is contract + docs + tests only: no runtime code.
+- Pure bash (POSIX-leaning), jq for JSON. **CI is macOS `macos-latest` = bash 3.2** (`.github/workflows/test.yml`). No bash-4 features.
+- Tests are bash scripts under `tests/` (e.g. `tests/test-orchestrate.sh`). Run with `bash tests/<file>.sh`.
 
-## Conventions
-- Specs: `docs/specs/SPEC-NNN-<slug>.md`, `Status:` header tracks DRAFT/VALIDATED/SHIPPED in place (ADR-0010).
-- ADRs: `docs/decisions/NNNN-<slug>.md`, format Context / Decision / Consequences (see 0001-0016).
-- Replace, don't deprecate. No phantom features. Every file justifies its existence.
-- "Detect, don't dictate": completeness is warn+log to `~/.claude/dwarves-kit/logs/completeness.log`, never a hard block. Hard stops reserved for the safety subset.
-- The phase list has ONE source (WORKFLOW.md cycle table); other docs reference it, never restate it.
+## Conventions (match these)
+- `set -uo pipefail` at the top of `lib/orchestrate.sh` (L33). Empty arrays MUST use the guard `${arr[@]+"${arr[@]}"}` , precedent `lib/mega-merge.sh:224`, `lib/stack-merge.sh:127`.
+- Background+wait is `{ cmd; } &` / `spid=$!` / `kill -0 "$spid"` poll / `wait` (see `_run_session_watchdog` L312-333). NOT `wait -n` (bash 4.3+).
+- No `flock` anywhere (absent on macOS). Locking = `mkdir <lockdir>` atomic + stale-timeout (new helper; none exists yet).
+- Helper functions are small + named `_verb`; the event log is append-only and replay-derived (never mutated in place).
+- Grounded completion: never trust session stdout; re-read the ROADMAP box (L448-455).
+- Specs: `Status:` header tracks DRAFT/VALIDATED/SHIPPED in place (ADR-0010). Replace, don't deprecate.
 
 ## Key files
-- `WORKFLOW.md`, the cycle table (lines 30-50), lane table (16-28), doc-impact map (123-148), version-surfaces note (148), "Artifact placement and concurrency" (169-200). This spec ADDS sections here; it cites the doc-impact map, does not restate it.
-- `docs/PHILOSOPHY.md:51` and `:170`, the two "8 phases" sites (C2 reword targets).
-- `commands/kit-health.md:152`, the third "8 phases" site + reject-list.
-- `docs/architecture.md`, gets the command/agent → V-phase inventory table.
-- `agents/integration-checker.md` (+ SPEC-021, ADR-0015), cross-task wiring verifier. Convergence must NOT duplicate it.
-- `commands/ship.md`, Steps 1b/4a/7 already do the shared-surface write. Convergence must NOT duplicate it.
-- `agents/{task-verifier,fix-agent,doc-verifier}.md`, the existing verify arm; reference, do not change.
+- `lib/orchestrate.sh` (500L) , the driver. `_subgoals` L86, `_next` L101 (serial pick, being generalized), `_sg_deps_blocked` L133 (ready-set primitive), event log L108-121, `_build_prompt`/HANDOFF L267-282, `_run_session_watchdog` L312, `cmd_run` main loop L376-489 (grounded check L448-455).
+- `lib/dispatch-gate.sh` (211L) , prove-or-serialize disjointness over `## Touches` globs. `gate_disjoint` L84, `gate_plan` L115 (already a greedy wavefront-shaped admission loop). Reuse for wave pairs; verify it parses goal files, not only specs.
+- `tests/test-orchestrate.sh` , the regression baseline; asserts on plain `HANDOFF.md` at L42,80,93,157,179,408-485. Keep the no-deps/linear path byte-compatible.
+- `lib/mega-merge.sh:224`, `lib/stack-merge.sh:127` , copy the empty-array guard from here.
 
 ## External dependencies
-None. No APIs, no services, no new libraries. git + grep + bash are the only tools the verification command needs.
+- None new. Reuses `dispatch-gate.sh`, the `depends` parser, the watchdog, worktree discipline (`.claude/worktrees/<id>`).
 
-## The non-duplication boundary (read before writing convergence)
-- `task-verifier` answers "is THIS task correct?" (per-task gate, max-2 fix retry).
-- `integration-checker` answers "do the tasks CONNECT?" (cross-task wiring, once at /execute Step 4).
-- `/kit:ship` WRITES the shared surfaces (CHANGELOG, VERSION, plugin.json, tool.toml).
-- `convergence` (this spec) answers neither and writes nothing: it only enumerates the hands-off list and collates per-worktree branch-ready/blocker signals, then hands the write to `/kit:ship`.
+## Decision anchors
+- ADR-0030 (Accepted) authorizes the scope; DECISION-BRIEF-dag-wavefront pins the design + 5 exit criteria.
+- ADR-0030 supersedes-in-part `docs/research/2026-05-22-concurrent-goal-dispatch.md` §5 (see its Reconciliation section).
+- Research: `docs/research/pitfalls.md`, `docs/research/architecture-orchestrator-wavefront.md`.

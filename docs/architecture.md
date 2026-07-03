@@ -262,6 +262,98 @@ The kit keeps a small set of distinct state stores. Keeping them distinct preven
 
 The active spec among these is resolved by the SPEC-005 rule (`docs/specs/`, branch-selected when several are live). The `/kit:start`/`/kit:next` rendering of the backlog queue + goal drafts is wired in SPEC-006; both enumerate top-level `.claude/goals/*.md` (a non-recursive glob), so archived drafts under `done/` are skipped.
 
+## Mega-goal orchestration: serial and wavefront (`lib/orchestrate.sh`)
+
+`orchestrate.sh run <megagoal-dir>` drives a mega-goal ROADMAP as one fresh `claude -p` session per
+sub-goal (SPEC-087: no session accumulates more than one sub-goal's context). By default it runs
+**strictly serially**. Opt-in **wavefront** scheduling (SPEC-106, ADR-0030) lets dep-independent
+sub-goals run as concurrent waves. The whole wave subsystem is gated behind one env var.
+
+### The per-cycle dispatch decision (waves are the default; serial is the opt-out)
+
+Each loop cycle the driver decides serial-vs-wave on the **admitted** count, never raw readiness:
+
+```text
+                        ┌─────────────────────────── per cycle ───────────────────────────┐
+  ROADMAP.md            │                                                                  │
+  (- [ ] SG-NN          │   WAVE_CAP < 2 ?  ──yes──▶  SERIAL BODY  (unchanged, byte-        │
+     , auto|gate|gate!  │       │ no                   identical): _next() picks the first  │
+     [depends SG-MM])   │       ▼                      unchecked, run ONE claude -p session │
+        │               │   _wave_gate ▶ admitted set                                       │
+        ▼               │       │                                                           │
+   _ready_set  ───────▶ │   admitted < 2 ? ──yes──▶  SERIAL BODY (first READY pick)         │
+   (unchecked AND all   │       │ no                                                        │
+    `depends` checked)  │       ▼                                                           │
+                        │   _wave_run  ▶  run admitted concurrently (cap WAVE_CAP)          │
+                        │       │         then _wave_converge (merge one-at-a-time)         │
+                        └───────┴──────────────────────────────────────────────────────────┘
+```
+
+`WAVE_CAP` defaults to **2** (ID-090 activation) ⇒ dep-independent sub-goals whose `## Touches` are
+provably disjoint run concurrently. A mega-goal whose sub-goals declare NO `## Touches` still
+serializes (admitted=0 ⇒ the `WAVE_CAP < 2` branch is not taken but `_wave_gate` admits nothing ⇒
+serial fallthrough ⇒ byte-identical), so the default is a no-op for un-migrated mega-goals. Set
+`WAVE_CAP=1` to force the old always-serial loop regardless of Touches. Dispatch keys on the
+**admitted** count (not raw ready-set size) because a no-deps mega-goal has *every* unchecked
+sub-goal ready at once; only sub-goals that survive admission run concurrently.
+
+### The wavefront pipeline (what runs a wave)
+
+```text
+  _ready_set        _wave_gate                       _wave_run                    _wave_converge
+  ──────────        ──────────                       ─────────                    ──────────────
+  unchecked   ─▶    greedy, ROADMAP order:     ─▶    for each `run` id (cap N):   ─▶  merge landed
+  AND deps          admit iff (a) declares its        · git worktree per sub-goal      branches ONE
+  satisfied         OWN `## Touches` AND (b)           (.claude/worktrees/<id>)        AT A TIME,
+                    proves disjoint (dispatch-         · claude -p (own proc group)     ROADMAP order,
+                    gate.sh) vs every already-         · reap: kill -0 poll +           under the flip
+                    admitted member; else `defer`      grounded box-flip check          lock; same-file
+                    (Touches-less ⇒ always defer)      · sibling fails ⇒ drain,         overlap ⇒ refuse
+                                                        mark failed, no orphans         (never silently
+                                                        (SIGTERM kills the group)       clean-merge wrong)
+```
+
+Disjointness reuses `lib/dispatch-gate.sh` (ONE disjointness authority, ADR-0019). The **self-Touches**
+requirement matters: `dispatch-gate` admits the first member of a set vacuously, so without requiring a
+candidate's own `## Touches`, a Touches-less sub-goal would be wrongly admitted. `commands/mega.md`
+now emits a `## Touches` section per generated sub-goal (ID-090), so newly-decomposed mega-goals are
+wave-eligible by default; an existing mega-goal whose sub-goals predate that convention simply
+serializes until its goal files declare Touches (the conservative fallback, never wrong).
+
+### Completion, gates, and the concurrency-safety model
+
+```text
+  SHARED control plane (mega-goal dir)          per-session isolation (worktrees)
+  ────────────────────────────────────          ─────────────────────────────────
+  ROADMAP.md   ◀── cmd_flip <megadir> <id>       .claude/worktrees/<id>  (own checkout,
+    (canonical  │   flips the box under an          own branch; where code changes land)
+     boxes)     │   mkdir-lock, write-temp-       claude -p session (own process group,
+                │   then-mv (atomic rename)         so SIGTERM kills the whole tree)
+  .orchestrate/ │                                 HANDOFF-<id>.md  (per-edge feed-forward:
+    events.log  │   append-only, replay-derived    written iff the sub-goal has DEPENDENTS;
+    (completion │   (a crashed/concurrent           a child injects each dep-parent's file,
+     substrate) │    session cannot corrupt it)     falling back to plain HANDOFF.md)
+                ▼
+  flip.lock/    mkdir-lock: PID-liveness stale reclaim (alive⇒wait / dead⇒reclaim /
+                unreadable⇒reclaim past FLIP_LOCK_STALE_SECS), rmdir only, never rm -rf
+```
+
+Box flips target the **shared** `$megadir/ROADMAP.md` by absolute path (never a worktree's own copy,
+which the driver would never see). Two **gate** policies:
+
+- `gate`  , **chain-stop**: holds only its own dependent chain; independent branches keep running.
+- `gate!` , **stop-all**: quiesces the whole loop for a human (today's global-stop, preserved).
+
+On a Touches-less mega-goal (no concurrency) a `gate` still stops the whole loop via the serial
+fallthrough, so `gate` semantics only visibly differ once sub-goals declare Touches and a real wave
+forms , at which point `gate` holds its chain while independent branches run, and the driver emits a
+one-time advisory pointing to `gate!` for a global stop-all. The default flip to `WAVE_CAP=2` (ID-090)
+was gated on an audit that no live mega-goal ROADMAP relies on `gate`=global-stop (clean).
+
+**Env surface:** `WAVE_CAP` (default **2** = waves on; `1` forces serial; integer `>=1`), `FLIP_LOCK_STALE_SECS` (default 120),
+`WAVE_MERGE_CMD` (the convergence merge hook; real `gh`-backed wiring is ID-090). Full design +
+exit-criteria proof: `docs/specs/SPEC-106-dag-wavefront-scheduling.md` + `docs/verification/orchestrate-wavefront.md`.
+
 ## Verification pipeline (the load-bearing piece)
 
 ```

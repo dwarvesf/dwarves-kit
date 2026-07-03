@@ -66,6 +66,34 @@ BACKLOG_LIB="${BACKLOG_LIB:-$ORCH_DIR/backlog.sh}"
 WATCHDOG_STALL_SECS="${WATCHDOG_STALL_SECS:-0}"
 WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 
+# Flip-lock stale-reclaim threshold (SPEC-106 TASK-002 / DEC-009). The box-flip mutual-exclusion
+# primitive is a `mkdir` lock (atomic on POSIX; flock is absent on macOS and unused in this repo).
+# A lock whose recorded holder PID is DEAD (crashed) is reclaimed immediately; a lock with no
+# readable PID (a racy just-created lock) is reclaimed only after this many seconds. Default 120.
+# FLIP_LOCK_POLL_SECS is the short retry sleep while the lock is held by a live holder.
+FLIP_LOCK_STALE_SECS="${FLIP_LOCK_STALE_SECS:-120}"
+FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
+
+# Wavefront concurrency cap (SPEC-106 DEC-002/009; default flipped to 2 in the ID-090 activation).
+# Default 2 = waves ON: dep-independent sub-goals that BOTH declare disjoint `## Touches` run
+# concurrently. A mega-goal whose sub-goals declare NO `## Touches` still runs fully serially
+# (admitted=0 -> serial fallthrough), so the flip is a no-op for Touches-less mega-goals except that
+# a `depends`-declaring one is now dep-aware (halts rather than running a dep-blocked sub-goal). Set
+# WAVE_CAP=1 to force the old always-serial loop. A non-numeric or <1 value is REJECTED at cmd_run
+# entry (NOT silently coerced), per DEC-009 / Edge case 4. Defaulted here so the top-of-loop `-ge 2`
+# test is `set -u`-safe.
+WAVE_CAP="${WAVE_CAP:-2}"
+
+# Wave-convergence merge hook (SPEC-106 TASK-004c). After a wave lands its sub-goals on their worktree
+# branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
+# `_wave_converge`); the actual merge goes through THIS mockable hook. Default is the real path
+# (`lib/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
+# invoked with mega-merge's real `<pr> <rid> <lane>` arity (ID-090). It only fires for a sub-goal that
+# has a real recorded PR#; a placeholder `#__` is skipped, so a wave with no real PRs converges to a
+# clean no-op. Tests set WAVE_MERGE_CMD to a mock that records merge ordering. Word-split intentionally
+# (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
+WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
+
 _say() { printf '%s\n' "$*"; }
 
 # Portable file mtime (epoch secs). GNU `stat -c` FIRST: it errors cleanly on BSD/macOS, so the
@@ -78,18 +106,79 @@ _mtime() {
   case "$m" in ''|*[!0-9]*) return 0 ;; *) printf '%s' "$m" ;; esac
 }
 
+# ---- Portable mkdir-based mutual exclusion (SPEC-106 TASK-002 / DEC-009) ----------------------
+# `mkdir "$lockdir"` is the atomic acquire (NOT `flock`: absent on macOS, zero repo usage). The
+# holder writes its PID to "$lockdir/pid"; `_lock` blocks/retries with a short sleep until it wins.
+# A STALE lock is reclaimed ONLY when: [ -n "$lockdir" ] AND the recorded PID fails `kill -0` (the
+# holder crashed) OR the lock age exceeds FLIP_LOCK_STALE_SECS AND that PID is dead. Reclaim is
+# `rmdir` after moving the pid file aside -- NEVER `rm -rf` (rmdir refuses a non-empty/odd path).
+
+# 0 = stale (reclaimable) / 1 = fresh. A LIVE holder PID is never stale (the holder is working);
+# a DEAD recorded PID is stale (crash); an unreadable/absent PID is stale only past the timeout so
+# a lock created microseconds ago (mkdir done, pid not yet written) is never yanked out of a race.
+_lock_stale() {  # lockdir
+  local lockdir="$1" pid age now mt
+  [ -n "$lockdir" ] || return 1
+  [ -d "$lockdir" ] || return 1
+  pid=$( [ -f "$lockdir/pid" ] && tr -dc '0-9' < "$lockdir/pid" 2>/dev/null )  # guard the open: benign mkdir-before-pid-write race must not leak stderr
+  if [ -n "$pid" ]; then
+    kill -0 "$pid" 2>/dev/null && return 1   # holder alive -> not stale
+    return 0                                  # recorded holder dead -> reclaim (crashed)
+  fi
+  now=$(date +%s); mt=$(_mtime "$lockdir"); [ -n "$mt" ] || return 1
+  age=$((now - mt))
+  [ "$age" -ge "$FLIP_LOCK_STALE_SECS" ] && return 0 || return 1
+}
+
+# Reclaim a stale lock: move the stale pid file aside (never `rm`), then `rmdir` the emptied dir.
+_lock_reclaim() {  # lockdir
+  local lockdir="$1"
+  [ -n "$lockdir" ] || return 1
+  [ -e "$lockdir/pid" ] && mv -f "$lockdir/pid" "${TMPDIR:-/tmp}/flip-stale-pid.$$.$RANDOM" 2>/dev/null
+  rmdir "$lockdir" 2>/dev/null
+}
+
+# Acquire the lock (blocks until held), writing our PID into it; reclaims a crashed holder.
+_lock() {  # lockdir
+  local lockdir="$1"
+  [ -n "$lockdir" ] || { echo "_lock: empty lockdir" >&2; return 64; }
+  mkdir -p "$(dirname "$lockdir")" 2>/dev/null || true
+  while :; do
+    if mkdir "$lockdir" 2>/dev/null; then
+      printf '%s\n' "$$" > "$lockdir/pid"
+      return 0
+    fi
+    if _lock_stale "$lockdir"; then _lock_reclaim "$lockdir"; continue; fi
+    sleep "$FLIP_LOCK_POLL_SECS"
+  done
+}
+
+# Release a lock we hold (or an empty one); never yank a different LIVE holder's lock.
+_unlock() {  # lockdir
+  local lockdir="$1" pid
+  [ -n "$lockdir" ] || return 0
+  [ -d "$lockdir" ] || return 0
+  pid=$( [ -f "$lockdir/pid" ] && tr -dc '0-9' < "$lockdir/pid" 2>/dev/null )  # guard the open: benign mkdir-before-pid-write race must not leak stderr
+  if [ -z "$pid" ] || [ "$pid" = "$$" ]; then
+    [ -e "$lockdir/pid" ] && mv -f "$lockdir/pid" "${TMPDIR:-/tmp}/flip-own-pid.$$.$RANDOM" 2>/dev/null
+    rmdir "$lockdir" 2>/dev/null
+  fi
+}
+
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
-# Policy is the comma-separated field that EQUALS auto|gate after trim (not a regex hit on the
-# description, so "(gate review)" or "gate-aware" do not false-match). Unknown -> gate (fail-safe:
-# a malformed line stops the loop for a human rather than silently auto-running). The trailing
-# `|| true` keeps a no-match grep from escaping under `set -o pipefail`.
+# Policy is the comma-separated field that EQUALS auto|gate|gate! after trim (not a regex hit on the
+# description, so "(gate review)" or "gate-aware" do not false-match). `gate!` (SPEC-106 TASK-007) is
+# the global-stop policy; the `!` survives tolower and the exact-match compare, so it is kept distinct
+# from plain `gate` (chain-stop). Unknown -> gate (fail-safe: a malformed line stops the loop for a
+# human rather than silently auto-running). The trailing `|| true` keeps a no-match grep from escaping
+# under `set -o pipefail`.
 _subgoals() {
   local roadmap="$1"
   grep -E '^- \[[ xX]\] SG-[0-9]+' "$roadmap" 2>/dev/null | while IFS= read -r line; do
     local id policy checked=0
     id=$(printf '%s' "$line" | grep -oE 'SG-[0-9]+' | head -1)
     [ -n "$id" ] || continue
-    policy=$(printf '%s' "$line" | awk -F',' '{for(i=1;i<=NF;i++){f=$i; gsub(/^[ \t]+|[ \t]+$/,"",f); lf=tolower(f); if(lf=="auto"||lf=="gate"){print lf; exit}}}')
+    policy=$(printf '%s' "$line" | awk -F',' '{for(i=1;i<=NF;i++){f=$i; gsub(/^[ \t]+|[ \t]+$/,"",f); lf=tolower(f); if(lf=="auto"||lf=="gate"||lf=="gate!"){print lf; exit}}}')
     case "$line" in
       '- ['[xX]']'*) checked=1 ;;
     esac
@@ -100,6 +189,23 @@ _subgoals() {
 # Next unchecked sub-goal as "id<TAB>policy", or empty.
 _next() { _subgoals "$1" | awk -F'\t' '$3==0 {print $1"\t"$2; exit}'; }
 
+# Wavefront ready set (SPEC-106 TASK-001): every sub-goal that is unchecked AND has no blocking
+# deps, in ROADMAP order, as "id<TAB>policy" (the _subgoals shape minus the checked column).
+# Ready = checked==0 AND `_sg_deps_blocked` empty (reuses the existing dep parser at L133; no
+# reimplementation). PURE READ helper: it changes NO scheduling (nothing calls it into the run
+# loop yet). Backward-compat invariant: on a no-deps ROADMAP nothing blocks, so it returns ALL
+# unchecked sub-goals and its FIRST line equals `_next`'s pick (the size-1 superset invariant ,
+# `_next` is `_ready_set | head -1` semantically). Process-sub (not a pipe) so the caller's shell
+# owns the loop, matching _derive_board L172.
+_ready_set() {
+  local roadmap="$1" id policy checked line
+  while IFS=$'\t' read -r id policy checked; do
+    [ "$checked" = 0 ] || continue
+    line=$(_sg_line "$roadmap" "$id")
+    [ -z "$(_sg_deps_blocked "$roadmap" "$line")" ] && printf '%s\t%s\n' "$id" "$policy"
+  done < <(_subgoals "$roadmap")
+}
+
 # ---- SG-10 board-view / event-sourced status -----------------------------------------------
 # Event-sourced status (pi-swarm borrow): the loop APPENDS status events; the board is DERIVED
 # by replay (last event per sub-goal wins), NEVER mutated in place -> a crashed/concurrent
@@ -109,6 +215,9 @@ _events_file() { printf '%s/.orchestrate/events.log\n' "$1"; }
 
 _emit_event() {  # dir id status [note]
   local dir="$1" id="$2" status="$3" note="${4:-}" ef
+  # Review-fix FIX 3 (DEC-009): truncate comfortably under PIPE_BUF (512B) so the atomic-append
+  # guarantee concurrent wave sessions rely on is structural, not by-convention.
+  note=${note:0:400}
   ef=$(_events_file "$dir"); mkdir -p "$(dirname "$ef")"
   printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$id" "$status" "$note" >> "$ef"
 }
@@ -137,6 +246,24 @@ _sg_deps_blocked() {  # roadmap raw-line
     _subgoals "$roadmap" | awk -F'\t' -v i="$d" '$1==i && $3==1{f=1} END{exit !f}' || blockers="$blockers $d"
   done
   printf '%s' "${blockers# }"
+}
+
+# Dependents test (SPEC-106 TASK-005): does any OTHER sub-goal's `depends` list name <id>?
+# Exit 0 iff <id> HAS DEPENDENTS (something feeds forward FROM it), else nonzero. Reuses the same
+# `depends SG-NN` token parse as _sg_deps_blocked (no new format). Read-only. This is the WRITE-side
+# key: a sub-goal writes HANDOFF-<id>.md only when this holds; a leaf / linear-tail has none and
+# keeps writing plain HANDOFF.md, so the no-deps mega-goal stays byte-identical.
+_sg_dependents() {  # roadmap id
+  local roadmap="$1" id="$2" other _p _c line deps d
+  while IFS=$'\t' read -r other _p _c; do
+    [ "$other" = "$id" ] && continue
+    line=$(_sg_line "$roadmap" "$other")
+    deps=$(printf '%s' "$line" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+    for d in $deps; do
+      [ "$d" = "$id" ] && return 0
+    done
+  done < <(_subgoals "$roadmap")
+  return 1
 }
 
 # Derive the per-mega-goal BOARD.md (kanban table in backlog.sh's row format, so backlog.sh
@@ -203,6 +330,65 @@ _goalfile() {
   for f in "$dir/goals/${id#SG-}-"*.md; do [ -f "$f" ] && { printf '%s\n' "$f"; return; }; done
 }
 
+# Wavefront admission gate (SPEC-106 TASK-003, DEC-007/011/012). PURE DECISION helper: it decides
+# which ready sub-goals may run concurrently; it spawns NOTHING and is not yet wired into cmd_run
+# (that is TASK-004). Reads the ready set (`_ready_set`), then admits GREEDILY in ROADMAP order , a
+# candidate is admitted iff (a) its goal file declares its OWN `## Touches` section AND (b) it proves
+# disjoint (dispatch-gate.sh, the ONE disjointness authority per DEC-001) against EVERY already-
+# admitted member. Admission stops at WAVE_CAP (env, default 1 => at most one `run`, serial default).
+#
+# Self-Touches is REQUIRED (DEC-012b): dispatch-gate admits the FIRST member vacuously (empty admitted
+# set => nothing to prove disjoint against), so without demanding the candidate's own `## Touches` a
+# Touches-less sub-goal would be wrongly admitted. A goal file with no `## Touches` => always `defer`
+# (the Option-B opt-in gate).
+#
+# dispatch-gate.sh is REUSED as a SUBPROCESS (`bash "$gate" touches|disjoint ...`), NOT sourced: it
+# runs `set -euo pipefail` at load, which would leak `-e` into this driver's deliberate `set -uo`
+# posture (L33) and break the sourced test harness. The subprocess boundary contains that; a fork per
+# pair is negligible for a wave-launch decision over a small ready set. `disjoint` exit 0 = provably
+# disjoint (admit-eligible); any nonzero (1 overlap / 2 undeclared) = not disjoint => defer.
+#
+# Output: one `run<TAB>id` or `defer<TAB>id` line per ready sub-goal, in ROADMAP order. Wire format
+# per SPEC-106 "Helper wire formats". bash-3.2 safe: no assoc-arrays; the admitted set is a plain
+# array of goal-file paths, empty-guarded `${arr[@]+"${arr[@]}"}` (DEC-005, mega-merge.sh:224).
+# Process-sub (not a pipe) feeds the loop so the admitted state lives in THIS shell, not a subshell.
+_wave_gate() {  # megadir roadmap
+  local megadir="$1" roadmap="$2"
+  local cap="${WAVE_CAP:-1}"
+  # Defensive numeric guard: a non-numeric/empty cap would make the `-lt` test emit a bash integer
+  # error. The parse-time rejection of `<1`/non-numeric WAVE_CAP is TASK-004b's wiring boundary; this
+  # helper only ever sees a validated cap in the wired path, so falling back to 1 here is belt-and-
+  # braces for a direct call, never a substitute for that rejection.
+  case "$cap" in ''|*[!0-9]*) cap=1 ;; esac
+  local gate="$ORCH_DIR/dispatch-gate.sh"
+  local admitted_files=() admitted_n=0
+  local id policy gf a decision ok
+  while IFS=$'\t' read -r id policy; do
+    [ -n "$id" ] || continue
+    decision=defer
+    # A `gate` / `gate!` sub-goal is NEVER admitted to a wave (SPEC-106 TASK-007, DEC-010). This is
+    # what makes the wave-path chain-hold work: the gate sub-goal is not run, so anything that
+    # `depends` on it stays dep-blocked (its chain holds), while INDEPENDENT ready sub-goals are still
+    # admitted below. `gate!` (global stop) is caught earlier in cmd_run; deferring it here too is
+    # belt-and-suspenders so a wave can never run either gate kind autonomously (the V-CRIT-7 fix).
+    case "$policy" in gate|'gate!') printf '%s\t%s\n' defer "$id"; continue ;; esac
+    gf=$(_goalfile "$megadir" "$id")
+    # (a) self-Touches REQUIRED, and (b) room under the cap, and (c) disjoint vs every admitted member.
+    if [ -n "$gf" ] && [ -n "$(bash "$gate" touches "$gf" 2>/dev/null)" ] && [ "$admitted_n" -lt "$cap" ]; then
+      ok=1
+      for a in ${admitted_files[@]+"${admitted_files[@]}"}; do
+        bash "$gate" disjoint "$gf" "$a" >/dev/null 2>&1 || { ok=0; break; }
+      done
+      if [ "$ok" = 1 ]; then
+        decision=run
+        admitted_files+=("$gf")
+        admitted_n=$((admitted_n + 1))
+      fi
+    fi
+    printf '%s\t%s\n' "$decision" "$id"
+  done < <(_ready_set "$roadmap")
+}
+
 # Emit "model<TAB>effort" read from a goal file's `Model:`/`Effort:` lines (empty when absent).
 # Bare `Key: value` header lines, not YAML; first match each, value trimmed. Absent field or
 # absent file -> empty -> the orchestrator emits no flag and the session inherits its tier
@@ -264,7 +450,29 @@ _build_prompt() {
   #                      next action + read-pointers so re-discovery becomes a read.
   #   WARM DECISIONS.md -- append-only ledger of invariants + dead-ends; injected as a POINTER
   #                      only (path + size), read on demand, so it never bloats the prompt.
-  if [ -s "$dir/HANDOFF.md" ]; then
+  # Per-edge feed-forward (SPEC-106 TASK-005): if <id> DECLARES deps, inject each dep-PARENT's
+  # HANDOFF-<MM>.md (falling back to plain HANDOFF.md when the per-edge file is absent, so a chain
+  # root that only wrote plain still feeds forward). A sub-goal with NO deps takes the ORIGINAL
+  # plain path below UNCHANGED (byte-identical) -- do not fold the two together.
+  local roadmap="$dir/ROADMAP.md" mydeps=""
+  [ -f "$roadmap" ] && mydeps=$(printf '%s' "$(_sg_line "$roadmap" "$id")" | grep -oE 'depends[^,]*' | grep -oE 'SG-[0-9]+' || true)
+  if [ -n "$mydeps" ]; then
+    local mm hp lines
+    printf '\nHOT HANDOFF from dep-parent(s) (verify before trusting):\n'
+    for mm in $mydeps; do
+      hp="$dir/HANDOFF-$mm.md"
+      [ -s "$hp" ] || hp="$dir/HANDOFF.md"   # fallback: parent wrote plain HANDOFF.md, no per-edge file
+      [ -s "$hp" ] || continue
+      lines=$(wc -l < "$hp" | tr -d ' ')
+      printf '\n-- from %s (%s):\n' "$mm" "$(basename "$hp")"
+      if [ "$lines" -gt "$HANDOFF_MAX_LINES" ]; then
+        head -n "$HANDOFF_MAX_LINES" "$hp"
+        printf '[... %s truncated at %s/%s lines; read the file for the rest]\n' "$(basename "$hp")" "$HANDOFF_MAX_LINES" "$lines"
+      else
+        cat "$hp"
+      fi
+    done
+  elif [ -s "$dir/HANDOFF.md" ]; then
     local lines; lines=$(wc -l < "$dir/HANDOFF.md" | tr -d ' ')
     printf '\nHOT HANDOFF from the previous sub-goal (verify before trusting):\n'
     if [ "$lines" -gt "$HANDOFF_MAX_LINES" ]; then
@@ -279,7 +487,12 @@ _build_prompt() {
     printf '\nWARM LEDGER: %s exists (%s lines) -- invariants + dead-ends. Read it on demand before re-deciding; it is NOT inlined here to keep this prompt lean.\n' "$dir/DECISIONS.md" "$dlines"
   fi
   # pi-swarm wording: the next session reads these records, not your transcript.
-  printf '\nWhen you finish: report findings IN the records (overwrite HANDOFF.md with the next action + read-pointers as file:line; append durable invariants/dead-ends to DECISIONS.md), NOT only in your response text. The next sub-goal reads the files, not this transcript.\n'
+  # Per-edge WRITE target (SPEC-106 TASK-005): a sub-goal that HAS DEPENDENTS writes its own
+  # HANDOFF-<id>.md so parallel siblings never clobber one hot file; a leaf / linear-tail keeps
+  # writing plain HANDOFF.md, so the instruction stays byte-identical for the no-dependents case.
+  local hf="HANDOFF.md"
+  { [ -f "$roadmap" ] && _sg_dependents "$roadmap" "$id"; } && hf="HANDOFF-$id.md"
+  printf '\nWhen you finish: report findings IN the records (overwrite %s with the next action + read-pointers as file:line; append durable invariants/dead-ends to DECISIONS.md), NOT only in your response text. The next sub-goal reads the files, not this transcript.\n' "$hf"
 }
 
 cmd_next() {
@@ -287,6 +500,42 @@ cmd_next() {
   [ -f "$dir/ROADMAP.md" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
   local nx; nx=$(_next "$dir/ROADMAP.md")
   if [ -n "$nx" ]; then printf '%s\n' "$nx"; else _say "(none unchecked)"; fi
+}
+
+# cmd_flip <megadir> <id>: flip "- [ ] SG-NN" -> "- [x]" in the SHARED absolute-path
+# `$megadir/ROADMAP.md` (never a per-sub-goal worktree copy: the driver only sees the shared one,
+# SPEC-106 DEC-008), UNDER the flip lock, via write-temp-then-`mv` (atomic rename) so a concurrent
+# reader/flip never sees a torn file. Idempotent: flipping an already-checked box is a no-op
+# success. Unknown id -> nonzero + a clear message. NO scheduling is wired here (waves land later);
+# this is the mutual-exclusion primitive the wave loop will call for grounded box-flips.
+cmd_flip() {  # megadir id
+  local megadir="${1:-}" id="${2:-}"
+  [ -n "$megadir" ] && [ -n "$id" ] || { echo "usage: orchestrate.sh flip <megadir> <SG-NN>" >&2; return 64; }
+  local roadmap="$megadir/ROADMAP.md"
+  [ -f "$roadmap" ] || { echo "flip: no ROADMAP.md in '$megadir'" >&2; return 64; }
+  [ -n "$(_sg_line "$roadmap" "$id")" ] || { echo "flip: unknown sub-goal '$id' in $roadmap" >&2; return 65; }
+
+  local lockdir="$megadir/.orchestrate/flip.lock"
+  _lock "$lockdir" || { echo "flip: could not acquire lock $lockdir" >&2; return 1; }
+
+  # Re-read the line UNDER the lock: a sibling flip may have checked it since the pre-lock probe.
+  local line rc=0
+  line=$(_sg_line "$roadmap" "$id")
+  case "$line" in
+    '- ['[xX]']'*) _unlock "$lockdir"; return 0 ;;   # already checked -> idempotent no-op
+  esac
+
+  local tmp
+  tmp=$(mktemp "$megadir/.roadmap.flip.XXXXXX" 2>/dev/null) || { _unlock "$lockdir"; echo "flip: mktemp failed" >&2; return 1; }
+  if awk -v id="$id" '{ if ($0 ~ ("^- \\[ \\] " id " ")) sub(/\[ \]/, "[x]"); print }' "$roadmap" > "$tmp" && mv -f "$tmp" "$roadmap"; then
+    _emit_event "$megadir" "$id" flip "box checked"
+  else
+    rc=1
+    [ -e "$tmp" ] && mv -f "$tmp" "${TMPDIR:-/tmp}/flip-tmp.$$.$RANDOM" 2>/dev/null
+    echo "flip: failed to write $roadmap" >&2
+  fi
+  _unlock "$lockdir"
+  return "$rc"
 }
 
 # Pause after a completed sub-goal in --step mode. Reads ONE line from the driver's stdin (free:
@@ -332,6 +581,401 @@ _run_session_watchdog() {  # dir id pfile route_flags
   return "$rc"
 }
 
+# _run_one_session: run ONE sub-goal session via the correct mutually-exclusive run-path
+# (SG-11 watchdog / --stream|DETERMINISTIC_HANDOFF stream-json / plain claude -p). Keyed on
+# `dir id pfile route_flags stream` (stream is a cmd_run local, so it is passed explicitly).
+# Returns the session exit code; exposes the stream-log path via the global _ROS_SLOG so the
+# caller can wire post-session logic (grounded completion, deterministic handoff) to it. Extracted
+# from cmd_run (TASK-000) so the serial and wave paths share ONE copy and the three run-paths are
+# never forked. Zero behavior change vs the former inline block.
+_run_one_session() {  # dir id pfile route_flags stream
+  local dir="$1" id="$2" pfile="$3" route_flags="$4" stream="$5"
+  # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
+  # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
+  # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
+  local rc=0 slog=""
+  if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
+    # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
+    # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
+    # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
+    _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
+  elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; then
+    # Capture stream-json when either the operator wants a live tail (--stream) OR the
+    # deterministic handoff needs the transcript (DETERMINISTIC_HANDOFF=1). The live `tee` to
+    # the terminal happens only under --stream; det-handoff capture is silent.
+    local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
+    slog="$logdir/${id}.stream.jsonl"
+    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+    if [ "$stream" = 1 ]; then
+      _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
+      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
+    else
+      "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
+    fi
+  else
+    # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
+    "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
+  fi
+  _ROS_SLOG="$slog"
+  return "$rc"
+}
+
+# ---- Wavefront spawn/reap primitive (SPEC-106 TASK-004a, DEC-005) -----------------------------
+# The concurrent-wave engine: take the admitted `run` set, run those sub-goals concurrently (each in
+# its OWN worktree), reap on completion, drain safely on a sibling failure. bash-3.2 throughout: no
+# assoc arrays (the reap map is index-aligned plain arrays), no `wait -n` (poll `kill -0` like
+# `_run_session_watchdog`), no `flock`. Standalone-testable with a MOCK CLAUDE_CMD; wiring into
+# cmd_run (size-dispatch on admitted count) is the NEXT task (TASK-004b), so `_wave_run` has ZERO
+# call sites in the run loop after this task.
+
+# A sub-goal's declared branch from its goal file's `**Branch:** <type>/<slug>` header (same parse
+# as `_emit_start`), or a stable `wave/<id-lower>` fallback when absent so a worktree can still be
+# stood up. One branch per sub-goal id => distinct branches => no "already checked out" clash.
+_sg_branch() {  # goalfile id
+  local gf="${1:-}" id="$2" branch=""
+  [ -n "$gf" ] && [ -f "$gf" ] && branch=$(grep -iE '^\*\*Branch:\*\*' "$gf" | head -1 | sed -E 's/^\*\*[Bb]ranch:\*\*[[:space:]]*//; s/[[:space:]].*$//')
+  [ -n "$branch" ] || branch="wave/$(printf '%s' "$id" | tr '[:upper:]' '[:lower:]')"
+  printf '%s\n' "$branch"
+}
+
+# Create OR reuse a per-sub-goal worktree at <repo>/.claude/worktrees/<id> on <branch> (the repo-wide
+# worktree location, per the global worktree rule). REUSE only on a clean crash-resume (edge 5): the
+# path is already a REGISTERED git worktree, its tree is clean, AND it is on <branch>. Otherwise
+# RECREATE. NEVER a blind `git worktree add` onto an existing path: a stale/dirty/mismatched worktree
+# is dropped with `git worktree remove --force` (git's own remover, which refuses paths outside its
+# admin list), and a leftover NON-worktree dir is moved aside (never `rm -rf`). Prunes stale admin
+# entries first so a dir removed out-of-band cannot wedge `worktree add`. Echoes the worktree path;
+# nonzero on failure.
+_wave_worktree() {  # repo id branch
+  local repo="$1" id="$2" branch="$3"
+  local wt="$repo/.claude/worktrees/$id"
+  git -C "$repo" worktree prune 2>/dev/null || true
+
+  if [ -e "$wt/.git" ]; then
+    # A linked worktree carries a `.git` FILE (a gitdir pointer). Clean + on <branch> => resume.
+    local dirty cur
+    dirty=$(git -C "$wt" status --porcelain 2>/dev/null)
+    cur=$(git -C "$wt" rev-parse --abbrev-ref HEAD 2>/dev/null)
+    if [ -z "$dirty" ] && [ "$cur" = "$branch" ]; then
+      printf '%s\n' "$wt"; return 0
+    fi
+    git -C "$repo" worktree remove --force "$wt" 2>/dev/null || true
+  elif [ -e "$wt" ]; then
+    # non-worktree collision at the path (leftover from a crash): move aside, never delete.
+    mv -f "$wt" "${TMPDIR:-/tmp}/wave-wt-stale.$id.$$.$RANDOM" 2>/dev/null || true
+  fi
+  git -C "$repo" worktree prune 2>/dev/null || true
+
+  mkdir -p "$repo/.claude/worktrees" 2>/dev/null || true
+  # Reuse the branch if it already exists (a resume that lost only its checkout), else create it
+  # off HEAD.
+  if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
+    git -C "$repo" worktree add "$wt" "$branch" >/dev/null 2>&1 || return 1
+  else
+    git -C "$repo" worktree add -b "$branch" "$wt" >/dev/null 2>&1 || return 1
+  fi
+  printf '%s\n' "$wt"
+}
+
+# Abort handler for `_wave_run`'s INT/TERM trap: kill every still-live wave job's PROCESS GROUP then
+# reap, so an operator ctrl-C never leaves an orphaned `claude -p` (mock) grandchild. `_WAVE_PIDS`
+# holds the backgrounded SUBSHELL WRAPPER pid (`( cd ... && _run_one_session ... ) &`), not the
+# `claude -p` process itself -- a plain `kill "$p"` only signals the wrapper, so the grandchild
+# reparents to init and survives (confirmed live; review-fix FIX 1). Each job was spawned under
+# `set -m`, so its pgid == its pid; a NEGATIVE pid (`-"$p"`) signals the whole group instead. Falls
+# back to a plain `kill "$p"` if the group signal fails (e.g. job control was unavailable at spawn
+# time, or the job already exited on its own). `_WAVE_PIDS` is a GLOBAL (not a `_wave_run` local)
+# precisely so this handler can reach it while `_wave_run` is on the stack. The empty-guard
+# `${arr[@]+...}` keeps `set -u` happy when the trap fires before any PID is recorded.
+_wave_abort() {
+  local p ok=1
+  for p in ${_WAVE_PIDS[@]+"${_WAVE_PIDS[@]}"}; do
+    kill -TERM -- -"$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || ok=0
+  done
+  wait 2>/dev/null
+  # Review-fix FIX 8: clean up any prompt temp files an interrupted wave leaves behind (they hold
+  # the injected HANDOFF content; a Ctrl-C otherwise leaks them into ${TMPDIR:-/tmp}).
+  rm -f "${_WAVE_PFILES[@]+"${_WAVE_PFILES[@]}"}" 2>/dev/null
+  # Only claim a clean kill when every group/plain TERM actually landed; a partial failure gets
+  # softer wording instead of a confirmation that may be false (review-fix FIX 1).
+  if [ "$ok" = 1 ]; then
+    echo "[orchestrate] [wave] aborted; sent TERM to each wave job's process group (pgid==pid) and reaped -- grandchild sessions killed too, not just the subshell wrapper." >&2
+  else
+    echo "[orchestrate] [wave] aborted; reaped the wave PID set, but at least one TERM signal failed (process/group may already be gone)." >&2
+  fi
+  return 130
+}
+
+# _wave_run <megadir> <roadmap>: spawn the admitted wave, reap on completion, drain on sibling fail.
+# Computes the admitted set via `_wave_gate` (its `run<TAB>id` lines). For each admitted sub-goal:
+#   * skip an already-checked box (idempotent resume, invariant 1),
+#   * stand up its worktree (`_wave_worktree`: reuse-clean-else-recreate, never blind add),
+#   * build its prompt (`_build_prompt`) and BACKGROUND a session via `_run_one_session`,
+#     cd'd INTO the worktree so siblings are genuinely isolated,
+#   * record `pid -> sg-id` in the index-aligned reap map (`_WAVE_PIDS` / `wave_ids`).
+# Then the REAP LOOP polls all live PIDs with `kill -0` (NOT `wait -n`, bash 4.3+). As each PID
+# exits it is reaped with `wait` (retrieves the status bash cached for the finished job) and the
+# GROUNDED completion check runs for THAT sub-goal: its box must be flipped in the SHARED
+# $megadir/ROADMAP.md (read via `_subgoals`; the SESSION flips its own box, we only CHECK, never
+# `cmd_flip` here).
+#
+# Failure semantics (invariant 5 / failure-modes table "Sibling session exits nonzero mid-wave"): a
+# sub-goal that exits NONZERO or dies with its box UNFLIPPED marks the wave failed, but in-flight
+# siblings are LET DRAIN to completion in their isolated worktrees (the reap loop never breaks early
+# and never kills a healthy sibling); the run returns nonzero only AFTER every wave PID is reaped.
+# The INT/TERM `trap` reaps+kills the whole PID set on an abort so nothing is orphaned.
+#
+# Returns 0 iff every admitted sub-goal completed with a flipped box; nonzero otherwise (incl. a
+# worktree-setup failure). An empty admitted set (all deferred / all already checked) is a no-op 0.
+_wave_run() {  # megadir roadmap
+  local megadir="$1" roadmap="$2"
+  local repo; repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null)
+  [ -n "$repo" ] || { echo "[orchestrate] [wave] '$megadir' is not inside a git repo; cannot stand up worktrees." >&2; return 64; }
+  # Absolute mega-goal dir for the flip-contract injection: a wave session runs in a worktree (a
+  # different cwd), so it must target the SHARED ROADMAP by absolute path, never a relative one.
+  local mega_abs; mega_abs=$(cd "$megadir" 2>/dev/null && pwd); [ -n "$mega_abs" ] || mega_abs="$megadir"
+
+  # Reap map = index-aligned plain arrays (bash 3.2 has no assoc arrays). `_WAVE_PIDS` is global so
+  # `_wave_abort` can reach it; the rest are locals.
+  _WAVE_PIDS=()
+  # `_WAVE_LANDED` is GLOBAL (like `_WAVE_PIDS`): the wave-success path appends each grounded-complete
+  # sub-goal id here so the caller (`cmd_run`) can hand the landed set to `_wave_converge` after the
+  # wave drains. Reset per run so a prior wave's ids never leak. Empty-guarded at every read site.
+  _WAVE_LANDED=()
+  # `_WAVE_PFILES` is GLOBAL too (review-fix FIX 8): each spawned session's prompt temp file, so
+  # `_wave_abort` can `rm -f` any still-live ones on an INT/TERM instead of leaking them into
+  # ${TMPDIR:-/tmp}. Index-aligned with `_WAVE_PIDS` / wave_ids, same as the other reap-map arrays.
+  _WAVE_PFILES=()
+  local wave_ids=() wave_done=()
+  local wave_failed=0 spawned=0
+
+  # Reap/kill the wave PID set on an abort so no `claude -p` (mock) child is orphaned. Cleared
+  # before the normal return paths below.
+  trap '_wave_abort' INT TERM
+
+  local decision id gf branch wt route_flags rmodel reffort pfile pid checked
+  while IFS=$'\t' read -r decision id; do
+    [ "$decision" = run ] || continue
+    # Idempotent resume: a box already checked is skipped, never re-run.
+    checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
+    [ "$checked" = 1 ] && { _say "[orchestrate] [wave] $id already checked; skipping (idempotent)."; continue; }
+
+    gf=$(_goalfile "$megadir" "$id")
+    branch=$(_sg_branch "$gf" "$id")
+    if ! wt=$(_wave_worktree "$repo" "$id" "$branch"); then
+      echo "[orchestrate] [wave] $id: worktree setup failed; marking wave failed." >&2
+      # Review-fix FIX 6: every other _wave_run failure path emits an event (the replay source of
+      # truth); this one previously only echoed to stderr.
+      _emit_event "$megadir" "$id" blocked "wave: worktree setup failed"
+      wave_failed=1
+      continue
+    fi
+
+    # Per-sub-goal model/effort routing (matches cmd_run); absent hint -> no flag -> inherit.
+    route_flags=""
+    IFS=$'\t' read -r rmodel reffort < <(_route "$gf")
+    [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
+    [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
+
+    pfile=$(mktemp)
+    _build_prompt "$megadir" "$id" > "$pfile"
+    # Flip-contract injection (WAVE sessions only, ID-090 activation). A wave session runs in its
+    # own worktree , a separate checkout , so editing ROADMAP.md there flips only the worktree's
+    # copy, invisible to the driver, which reads the SHARED mega-goal-dir ROADMAP. Tell the session
+    # to flip via the lock-guarded CLI against the shared ABSOLUTE path instead. Appended AFTER
+    # `_build_prompt` so the SERIAL path's prompt is untouched (serial stays byte-identical).
+    {
+      printf '\n\n---\nWAVE SESSION , SHARED-ROADMAP FLIP CONTRACT (read carefully)\n'
+      printf 'You run in an ISOLATED git worktree for sub-goal %s. Do the work here, then mark\n' "$id"
+      printf 'completion by running EXACTLY this command (do NOT hand-edit ROADMAP.md , your worktree\n'
+      printf 'copy is invisible to the orchestrator):\n\n    %s flip %s %s\n\n' "$ORCH_DIR/orchestrate.sh" "$mega_abs" "$id"
+      printf 'It flips your box in the SHARED ROADMAP under a lock. The orchestrator advances only\n'
+      printf 'once your box is flipped there (grounded completion; no self-claim).\n'
+    } >> "$pfile"
+    _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
+
+    # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
+    # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
+    # path (deterministic-handoff regen is TASK-005), so losing it in the subshell is fine. The
+    # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
+    #
+    # Job control ON only around the spawn itself (review-fix FIX 1): under `set -m` a `&` job
+    # becomes its OWN PROCESS GROUP (pgid == the job's pid), so `_wave_abort` can signal the WHOLE
+    # group -- the backgrounded subshell wrapper AND its `claude -p` grandchild -- via a negative-pid
+    # `kill`. Without this, `kill "$p"` reaches only the wrapper; the grandchild reparents to init and
+    # survives an abort (confirmed live: the prior "no orphaned children" claim was false). Scoped
+    # tightly (set +m right after `$!`) so monitor mode's job-control side effects never leak into the
+    # rest of the spawn loop or the reap loop below. bash 3.2 macOS has no `setsid`; job control is
+    # the only portable no-setsid way to get a fresh process group.
+    set -m
+    ( cd "$wt" 2>/dev/null && _run_one_session "$megadir" "$id" "$pfile" "$route_flags" 0 ) &
+    pid=$!
+    set +m
+    _WAVE_PIDS+=("$pid")
+    wave_ids+=("$id")
+    _WAVE_PFILES+=("$pfile")
+    wave_done+=(0)
+    spawned=$((spawned + 1))
+    _say "[orchestrate] [wave] spawned $id (pid $pid) in $wt"
+  done < <(_wave_gate "$megadir" "$roadmap")
+
+  # Empty wave (nothing admitted, or every admitted box already checked): not a failure unless a
+  # worktree setup already failed above.
+  if [ "$spawned" = 0 ]; then
+    trap - INT TERM
+    return "$wave_failed"
+  fi
+
+  # Reap loop: poll ALL live PIDs with `kill -0` (the `_run_session_watchdog` pattern, NOT `wait -n`
+  # which is bash 4.3+/absent on macOS). As each PID exits, reap it with `wait`, then run the
+  # grounded box-flip check for THAT sub-goal. A nonzero exit OR an unflipped box marks the wave
+  # failed but does NOT break the loop: in-flight siblings DRAIN to completion (never killed).
+  local remaining="$spawned" i rc box
+  while [ "$remaining" -gt 0 ]; do
+    for i in $(seq 0 $((spawned - 1))); do
+      [ "${wave_done[$i]}" = 1 ] && continue
+      pid="${_WAVE_PIDS[$i]}"; id="${wave_ids[$i]}"
+      kill -0 "$pid" 2>/dev/null && continue   # still in-flight -> leave it alone (do not kill)
+      rc=0; wait "$pid" 2>/dev/null || rc=$?    # exited -> reap the cached status
+      wave_done[i]=1
+      remaining=$((remaining - 1))
+      rm -f "${_WAVE_PFILES[$i]}" 2>/dev/null
+      box=$(_subgoals "$roadmap" | awk -F'\t' -v x="$id" '$1==x {print $3}')
+      if [ "$rc" != 0 ]; then
+        wave_failed=1
+        _emit_event "$megadir" "$id" blocked "wave session exited nonzero ($rc)"
+        echo "[orchestrate] [wave] $id session exited nonzero ($rc); draining siblings, then failing." >&2
+      elif [ "$box" != 1 ]; then
+        wave_failed=1
+        _emit_event "$megadir" "$id" blocked "wave: box not flipped (no self-claim)"
+        echo "[orchestrate] [wave] $id finished but did not flip its ROADMAP box; draining siblings, then failing." >&2
+      else
+        _emit_event "$megadir" "$id" shipped "wave: box checked"
+        _WAVE_LANDED+=("$id")
+        _say "[orchestrate] [wave] $id complete (box checked)."
+      fi
+    done
+    [ "$remaining" -gt 0 ] && sleep "${WAVE_POLL_SECS:-0.2}"
+  done
+
+  trap - INT TERM
+  return "$wave_failed"
+}
+# -----------------------------------------------------------------------------------------------
+
+# ---- Wave convergence sequencer (SPEC-106 TASK-004c, DEC-008) ----------------------------------
+# After a wave lands its sub-goals on their worktree branches, their merges back to the mega-goal base
+# MUST happen ONE AT A TIME (never concurrently), in ROADMAP order, each under the flip lock , so two
+# same-base merges never race. This is a THIN SEQUENCER: it does NOT reimplement merging. Each merge
+# goes through the MOCKABLE `$WAVE_MERGE_CMD` hook (default `lib/mega-merge.sh merge`, whose merge
+# SEMANTICS stay untouched per scope , we only sequence calls to it). Real gh-backed merge is DEFERRED
+# to ID-090 (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
+# path stays byte-identical; a real merge also needs `gh` + real PRs).
+
+# Files a wave branch changed vs the base: three-dot diff = changes on <branch> since its merge-base
+# with <base>. Empty when the branch has no commits (e.g. a session that only flipped its box) or is
+# absent (git errors, swallowed). Read-only.
+_wave_branch_files() {  # repo base branch
+  git -C "$1" diff --name-only "$2...$3" 2>/dev/null
+}
+
+# The PR number on a sub-goal's ROADMAP line (`... , PR #<n>`), or empty for a placeholder (`PR #__`)
+# / absent. A sub-goal with no real PR cannot be merged yet, so `_wave_converge` SKIPS it (the real
+# PR-open + merge wiring is ID-090), never fails on it.
+_sg_pr() {  # roadmap id
+  _sg_line "$1" "$2" | sed -nE 's/.*PR #([0-9]+).*/\1/p' | head -1
+}
+
+# _wave_converge <megadir> [<id>...]: sequence the merges of a landed wave. With explicit ids it merges
+# exactly those; with none, it reads the just-landed set from the global `_WAVE_LANDED` (populated by
+# `_wave_run`). Steps:
+#   1. Order the target ids by ROADMAP position (NOT argv order) , merges land in ROADMAP order.
+#   2. SAME-FILE cross-wave guard (belt-and-suspenders over dispatch-gate's PRE-admission disjointness,
+#      the SPEC-106 risk row): diff each landed branch vs the base; if two branches changed the SAME
+#      file, FLAG (event + message + nonzero) and REFUSE to merge , never silently land a clean-but-
+#      wrong merge. A file appearing from >=2 branches (union `sort | uniq -d`) is the overlap.
+#   3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, through `$WAVE_MERGE_CMD`. A
+#      sub-goal with no real PR (placeholder `#__`) is SKIPPED (merge wiring deferred), not failed.
+# bash-3.2: no assoc arrays (membership via a space-padded string match); arrays empty-guarded
+# `${arr[@]+"${arr[@]}"}` (DEC-005, mega-merge.sh:224). Returns 0 iff every mergeable sub-goal's hook
+# succeeded and no same-file overlap was found; nonzero on an overlap flag or a merge-hook failure.
+_wave_converge() {  # megadir [id...]
+  local megadir="$1"; shift 2>/dev/null || true
+  local roadmap="$megadir/ROADMAP.md"
+  [ -f "$roadmap" ] || { echo "[orchestrate] [converge] no ROADMAP.md in '$megadir'" >&2; return 64; }
+
+  # Target set: explicit args, else the just-landed set from `_wave_run`.
+  local targets=()
+  if [ "$#" -gt 0 ]; then
+    targets=("$@")
+  else
+    targets=( ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"} )
+  fi
+  [ "${#targets[@]}" -gt 0 ] || { _say "[orchestrate] [converge] no landed wave sub-goals to converge (no-op)."; return 0; }
+
+  local repo; repo=$(git -C "$megadir" rev-parse --show-toplevel 2>/dev/null)
+  [ -n "$repo" ] || { echo "[orchestrate] [converge] '$megadir' is not inside a git repo; cannot converge." >&2; return 64; }
+  local base; base=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null); [ -n "$base" ] || base=HEAD
+
+  # 1. Order the targets by ROADMAP position. Walk `_subgoals` (ROADMAP order) and keep those in the
+  #    target set; membership via a space-padded string match (bash-3.2 has no assoc arrays).
+  local want; want=" $(printf '%s ' "${targets[@]}")"   # split decl+assign so the printf status is not masked (SC2155)
+  local ordered=() sgid _p _c                            # _p/_c: policy+checked fields read but unused here
+  while IFS=$'\t' read -r sgid _p _c; do
+    case "$want" in *" $sgid "*) ordered+=("$sgid") ;; esac
+  done < <(_subgoals "$roadmap")
+  [ "${#ordered[@]}" -gt 0 ] || { _say "[orchestrate] [converge] none of the requested ids are in the ROADMAP (no-op)."; return 0; }
+
+  # 2. Same-file cross-wave guard. Each branch's file list is deduped (`sort -u`); across the union, a
+  #    file that appears >=2 times (`uniq -d`) was touched by >=2 branches , the overlap.
+  local id gf branch overlap
+  overlap=$(
+    for id in "${ordered[@]}"; do
+      gf=$(_goalfile "$megadir" "$id")
+      branch=$(_sg_branch "$gf" "$id")
+      _wave_branch_files "$repo" "$base" "$branch" | sort -u
+    done | sort | uniq -d
+  )
+  if [ -n "$overlap" ]; then
+    _emit_event "$megadir" "wave" blocked "converge: same-file cross-wave edit"
+    {
+      echo "[orchestrate] [converge] SAME-FILE cross-wave edit detected across the landed wave; REFUSING to merge (a clean-but-wrong merge is the hazard dispatch-gate's disjointness guards against). Overlapping file(s):"
+      printf '%s\n' "$overlap" | sed 's/^/    /'
+    } >&2
+    return 1
+  fi
+
+  # 3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, via the mockable hook.
+  #    The default hook is `lib/mega-merge.sh merge`, whose signature is `<pr> <rid> <lane>` (ID-090:
+  #    the arity was `<pr> <id>` before). rid = the sub-goal's run id (its branch slug, from the goal
+  #    file's `**Branch:**`); lane = the mega-goal's lane (`WAVE_MERGE_LANE`, default full , mega-goals
+  #    run the full lane). Tests override `WAVE_MERGE_CMD` with a recorder, so the extra arg is inert.
+  local lockdir="$megadir/.orchestrate/flip.lock"
+  local pr rc branch rid lane="${WAVE_MERGE_LANE:-full}"
+  for id in "${ordered[@]}"; do
+    pr=$(_sg_pr "$roadmap" "$id")
+    if [ -z "$pr" ]; then
+      _say "[orchestrate] [converge] $id has no real PR yet (placeholder); skipping its merge (real PR/merge wiring is deferred)."
+      continue
+    fi
+    branch=$(_sg_branch "$(_goalfile "$megadir" "$id")" "$id"); rid="${branch#*/}"; [ -n "$rid" ] || rid="$id"
+    _lock "$lockdir" || { echo "[orchestrate] [converge] could not acquire the flip lock to merge $id" >&2; return 1; }
+    rc=0
+    # shellcheck disable=SC2086 # WAVE_MERGE_CMD is operator config; word-splitting is intended (mirrors CLAUDE_FLAGS).
+    $WAVE_MERGE_CMD "$pr" "$rid" "$lane" || rc=$?
+    _unlock "$lockdir"
+    if [ "$rc" != 0 ]; then
+      _emit_event "$megadir" "$id" blocked "converge: merge hook failed (PR #$pr, rc $rc)"
+      echo "[orchestrate] [converge] $id merge hook failed (PR #$pr, rc $rc); stopping convergence (no self-claim)." >&2
+      return "$rc"
+    fi
+    _emit_event "$megadir" "$id" merged "converge: PR #$pr merged (one-at-a-time under the flip lock)"
+    _say "[orchestrate] [converge] $id merged (PR #$pr)."
+  done
+  return 0
+}
+# -----------------------------------------------------------------------------------------------
+
 cmd_run() {
   local dir="" dry=0 step=0 stream=0 board_arg=""
   while [ $# -gt 0 ]; do
@@ -352,6 +996,16 @@ cmd_run() {
   local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
   case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
 
+  # WAVE_CAP parse-time validation (SPEC-106 TASK-004b / DEC-009 / Edge case 4). Default 1 (waves
+  # off). A non-numeric or <1 value is REJECTED with a clear error + nonzero exit here, NOT silently
+  # coerced to 1 elsewhere, so a typo (`WAVE_CAP=0`, `WAVE_CAP=two`) fails loudly instead of quietly
+  # running serial. The digit-class check rejects empty / non-numeric / negative (the sign char is a
+  # non-digit); the `-lt 1` check then rejects 0.
+  case "$WAVE_CAP" in
+    ''|*[!0-9]*) echo "orchestrate: WAVE_CAP must be a positive integer >=1 (got: '$WAVE_CAP')" >&2; return 64 ;;
+  esac
+  [ "$WAVE_CAP" -lt 1 ] && { echo "orchestrate: WAVE_CAP must be >=1 (got: '$WAVE_CAP')" >&2; return 64; }
+
   if [ "$dry" = 1 ]; then
     _say "[plan] mega-goal: $dir"
     [ "$step" = 1 ]   && _say "  (--step: pause for the operator after each sub-goal)"
@@ -362,6 +1016,7 @@ cmd_run() {
       local rmodel reffort
       IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$sg")")
       _say "  -> $sg ($ppolicy)  [model: ${rmodel:-inherit}, effort: ${reffort:-inherit}]  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
+      [ "$ppolicy" = "gate!" ] && { _say "  == STOP at $sg (gate!: global halt for human review) =="; break; }
       [ "$ppolicy" = gate ] && { _say "  == STOP at $sg (gate: human review) =="; break; }
       [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
     done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
@@ -374,15 +1029,117 @@ cmd_run() {
   fi
 
   while :; do
+    # SPEC-106 TASK-004b size-dispatch (DEC-002/006/012): serial-vs-wave decided per cycle on the
+    # ADMITTED count (post-`_wave_gate`), NOT the raw ready size (a no-deps mega-goal has ready size
+    # N, so raw size can't gate the serial path). WAVE_CAP defaults to 1 (waves OFF) => this guard is
+    # FALSE => the loop falls straight through to the byte-identical serial body below, exactly as the
+    # pre-wavefront loop ran (the sacred invariant). Only WAVE_CAP>=2 even consults `_wave_gate`; only
+    # `admitted>=2` (dep-free, Touches-declaring, provably-disjoint sub-goals) routes to `_wave_run`.
+    # admitted<=1 falls through to the serial body on `_next`'s pick, byte-identical for that cycle.
+    # `_wave_run` serializes its own flips under the flip lock and blocks until the wave drains, so we
+    # `continue` to recompute the next cycle from the freshly re-read ROADMAP: one blocking wave per
+    # cycle means no double-launch and no CAP overshoot across cycles. (Gate/`--step`/`--stream`/
+    # `--board` on the wave path are TASK-005/007's scope; at the default CAP=1 they are untouched.)
+    if [ "$WAVE_CAP" -ge 2 ]; then
+      # gate! GLOBAL-STOP (SPEC-106 TASK-007 / DEC-010 / Edge case 8): a ready `gate!` sub-goal halts
+      # the WHOLE loop for a human, even when independent ready sub-goals could still wave. Checked
+      # BEFORE admission so nothing is admitted alongside it -- the wave quiesces entirely. This is
+      # the wave-path twin of the serial `gate!` stop below; plain `gate` is NOT caught here (it is a
+      # chain-stop: `_wave_gate` just never admits it, then it stops via the serial `_next` branch when
+      # it becomes the pick). Clean human-stop: blocked event + message + return 0, exactly like the
+      # pre-wavefront global `gate` stop.
+      local gbang
+      gbang=$(_ready_set "$roadmap" | awk -F'\t' '$2=="gate!"{print $1; exit}')
+      if [ -n "$gbang" ]; then
+        _emit_event "$dir" "$gbang" blocked "gate!: global halt for human review"
+        [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+        _say "[orchestrate] STOP (gate!): global halt for human review; $gbang is a gate! sub-goal. Resolve, then re-run."
+        return 0
+      fi
+      local admitted_n
+      admitted_n=$(_wave_gate "$dir" "$roadmap" | awk -F'\t' '$1=="run"{n++} END{print n+0}')
+      if [ "$admitted_n" -ge 2 ]; then
+        if _wave_run "$dir" "$roadmap"; then
+          # Converge the landed wave (TASK-004c): merge its sub-goals ONE AT A TIME under the flip
+          # lock, in ROADMAP order, via the mockable hook. A same-file cross-wave edit or a merge-hook
+          # failure halts the loop (no self-claim). At the default WAVE_CAP=1 this block is unreachable,
+          # so the serial path stays byte-identical.
+          if ! _wave_converge "$dir" ${_WAVE_LANDED[@]+"${_WAVE_LANDED[@]}"}; then
+            echo "[orchestrate] [wave] convergence flagged a same-file cross-wave conflict or a merge failure; halting (no self-claim)." >&2
+            return 1
+          fi
+          continue
+        fi
+        echo "[orchestrate] [wave] a wave sub-goal did not complete (nonzero exit or unflipped box); halting (no self-claim)." >&2
+        return 1
+      fi
+      # Wait-vs-complete termination guard (SPEC-106 TASK-006, Edge case 1). Reached only when
+      # admitted<2 (no wave launched this cycle). If unchecked sub-goals REMAIN but the ready set is
+      # EMPTY -- every remaining unchecked is dep-blocked, nothing is runnable, and no wave is in
+      # flight (`_wave_run` blocks to drain before we get here) -- the dep-IGNORANT serial `_next`
+      # below would wrongly RUN a dep-blocked sub-goal (proven: a mutual-dep cycle ran both boxes to
+      # a false "done"). Halt for a human instead: a clear blocked message + NONZERO exit, never a
+      # false-complete, never a spin. Guarded by `unchecked>0` so the legit all-checked completion
+      # still falls through to `_next`'s empty -> "done" return-0 path. Only reachable on the wave
+      # path (WAVE_CAP>=2); the serial default never enters this block, so serial stays byte-identical.
+      local unchecked_n ready_n
+      unchecked_n=$(_subgoals "$roadmap" | awk -F'\t' '$3==0 {n++} END{print n+0}')
+      if [ "$unchecked_n" -gt 0 ]; then
+        ready_n=$(_ready_set "$roadmap" | awk 'END{print NR+0}')
+        if [ "$ready_n" -eq 0 ]; then
+          _emit_event "$dir" "-" blocked "$unchecked_n unchecked, none runnable"
+          [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+          echo "[orchestrate] [wave] blocked: $unchecked_n unchecked, none runnable (all remaining sub-goals are dep-blocked; no in-flight producer). Halting for human review (not a false-complete)." >&2
+          return 1
+        fi
+        # Dep-blocked serial-fallthrough halt (review-fix FIX 2 / ID-090 item (d)). Reached only when
+        # admitted<2 but ready_n>0: the code below falls through to `_next`'s pick, which is DEP-
+        # IGNORANT (first unchecked ROADMAP line regardless of `depends`). If that pick is itself NOT
+        # a member of the ready set (i.e. it IS dep-blocked -- proven live: a ROADMAP with an
+        # unsatisfiable-dep sub-goal listed before independent ready ones got silently run/checked),
+        # halt instead of falling through, same shape as the guard above. Entirely inside
+        # WAVE_CAP>=2 so the serial `_next` pick below stays byte-identical. Membership is read from
+        # awk's PRINTED output, not the pipe's exit status: `_ready_set`'s while-read loop always
+        # returns nonzero on its own EOF, which under `pipefail` would corrupt an exit-code-based
+        # check (pipefail reports the rightmost NONZERO stage, not simply the last stage).
+        local fallthrough_pick found
+        fallthrough_pick=$(_next "$roadmap" | cut -f1)
+        found=$(_ready_set "$roadmap" | awk -F'\t' -v x="$fallthrough_pick" '$1==x{print "1"; exit}')
+        if [ -n "$fallthrough_pick" ] && [ -z "$found" ]; then
+          _emit_event "$dir" "$fallthrough_pick" blocked "dep-blocked, not in ready set"
+          [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+          echo "[orchestrate] [wave] blocked: $fallthrough_pick is dep-blocked (not in ready set); halting for human review (not a false-complete)." >&2
+          return 1
+        fi
+      fi
+    fi
+
     local nx id policy
     nx=$(_next "$roadmap")
     [ -n "$nx" ] || { _say "[orchestrate] all sub-goals checked; done."; return 0; }
     id=$(printf '%s' "$nx" | cut -f1); policy=$(printf '%s' "$nx" | cut -f2)
 
+    # gate! GLOBAL-STOP on the serial path too (SPEC-106 TASK-007): when the pick is a `gate!`
+    # sub-goal, halt the WHOLE loop for a human, preserving the pre-wavefront global `gate` stop
+    # exactly (blocked event + message + return 0). Checked BEFORE plain `gate` since they are
+    # distinct policy values. On WAVE_CAP=1 this is the ONLY gate! stop (the wave-block twin above
+    # is skipped), and it is also the catch-all when the wave path falls through to `_next`.
+    if [ "$policy" = "gate!" ]; then
+      _emit_event "$dir" "$id" blocked "gate!: global halt for human review"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      _say "[orchestrate] STOP (gate!): global halt for human review; $id is a gate! sub-goal. Resolve, then re-run."
+      return 0
+    fi
+
     if [ "$policy" = gate ]; then
       _emit_event "$dir" "$id" blocked "gate: human review"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
       _say "[orchestrate] STOP: $id is a gate sub-goal; open/await its PR for review, then re-run."
+      # Advisory (ID-090 default flip): under the concurrent default (WAVE_CAP>=2) a `gate` holds only
+      # its OWN dependent chain , independent branches with disjoint `## Touches` keep running in the
+      # wave. If you meant "quiesce EVERYTHING for review", use `gate!` (global stop-all) instead. (On
+      # a Touches-less mega-goal there is no concurrency, so this `gate` still stopped the whole loop.)
+      [ "$WAVE_CAP" -ge 2 ] && echo "[orchestrate] [advisory] '$id' is a chain-stop \`gate\`; under WAVE_CAP=$WAVE_CAP independent Touches-disjoint branches keep running. Use \`gate!\` for a global stop-all." >&2
       return 0
     fi
 
@@ -410,34 +1167,21 @@ cmd_run() {
     # metachars, and dodges ARG_MAX on a large injected handoff. `claude -p` reads the prompt from
     # stdin when no positional prompt is given.
     local pfile; pfile=$(mktemp)
+    # Review-fix FIX 8: a Ctrl-C while this session is in flight otherwise leaves the prompt temp
+    # file (it holds the injected HANDOFF content) sitting in ${TMPDIR:-/tmp}. The explicit `rm -f`
+    # below covers the happy path; this trap covers an interrupt. Cheap to reset every cycle (only
+    # EXIT trap this script sets on the serial path).
+    trap 'rm -f "$pfile"' EXIT
     _build_prompt "$dir" "$id" > "$pfile"
-    # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
-    # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
-    # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
+    # Run the session via the extracted helper (TASK-000): it picks the correct run-path
+    # (watchdog / --stream|det-handoff stream-json / plain) and returns the session exit code.
+    # slog (the stream-log path, "" when no capture happened) comes back via _ROS_SLOG for the
+    # grounded-completion + deterministic-handoff logic below.
     local rc=0 slog=""
-    if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
-      # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
-      # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
-      # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
-      _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
-    elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; then
-      # Capture stream-json when either the operator wants a live tail (--stream) OR the
-      # deterministic handoff needs the transcript (DETERMINISTIC_HANDOFF=1). The live `tee` to
-      # the terminal happens only under --stream; det-handoff capture is silent.
-      local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
-      slog="$logdir/${id}.stream.jsonl"
-      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-      if [ "$stream" = 1 ]; then
-        _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
-        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
-      else
-        "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" || rc=$?
-      fi
-    else
-      # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
-      "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
-    fi
+    _run_one_session "$dir" "$id" "$pfile" "$route_flags" "$stream" || rc=$?
+    slog="$_ROS_SLOG"
     rm -f "$pfile"
+    trap - EXIT
     if [ "$rc" != 0 ]; then
       _emit_event "$dir" "$id" blocked "session exited nonzero ($rc)"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
@@ -469,6 +1213,12 @@ cmd_run() {
         nid=$(printf '%s' "$nx2" | cut -f1)
         nraw=$(_sg_line "$roadmap" "$nid"); ntitle=$(_sg_title "$nraw" "$nid")
         if "$ORCH_DIR/handoff-gen" "$slog" --dir "$dir" --next-id "$nid" --next-title "$ntitle" --date "$(date -u +%F)"; then
+          # Per-edge WRITE (SPEC-106 TASK-005): handoff-gen always writes $dir/HANDOFF.md; if the
+          # JUST-completed $id HAS DEPENDENTS, rename it to the per-edge HANDOFF-<id>.md so parallel
+          # siblings (CAP>1) never clobber one hot file. No dependents -> leave plain (byte-identical).
+          if _sg_dependents "$roadmap" "$id"; then
+            mv -f "$dir/HANDOFF.md" "$dir/HANDOFF-$id.md" 2>/dev/null || true
+          fi
           _emit_event "$dir" "$id" handoff "deterministic -> $nid"
           _say "[orchestrate] deterministic handoff written for $nid (HANDOFF.md overwritten, DECISIONS.md appended)."
         else
@@ -493,8 +1243,13 @@ main() {
   case "$cmd" in
     next) cmd_next "$@" ;;
     run)  cmd_run "$@" ;;
-    *) echo "usage: orchestrate.sh {next|run} <megagoal-dir> [--dry-run] [--step] [--stream] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
+    flip) cmd_flip "$@" ;;
+    *) echo "usage: orchestrate.sh {next|run|flip} <megagoal-dir> [<SG-NN>] [--dry-run] [--step] [--stream] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
   esac
 }
 
-main "$@"
+# Only run main when executed, not when sourced (so tests can source and call the internal
+# helpers, e.g. _ready_set, directly). Same guard as lib/dispatch-gate.sh.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  main "$@"
+fi

@@ -19,3 +19,20 @@ node_modules/
 REVIEW.md
 TODOS.md
 .planning/
+
+# Wavefront/orchestrator runtime artifacts (SPEC-106 TASK-008). A mega-goal run writes
+# per-edge handoffs, the event log / per-session logs / stream captures, and the flip lock
+# into its mega-goal dir; session logs + stream json can carry resolved op:// values, and
+# the per-edge handoffs multiply the surface. Never commit them. (`.claude/worktrees/` is
+# already covered by the `.claude/` rule above.)
+# LOCATION-INDEPENDENT: `orchestrate.sh run <dir>` accepts ANY megadir (the "promote to
+# project" workflow moves a live mega-goal to `<repo>/projects/<slug>/`), so these must NOT
+# be scoped to `_meta/megagoals/**` or a promoted megadir's handoffs leak (security review).
+HANDOFF*.md
+**/.orchestrate/
+*.session.log
+*.stream.jsonl
+
+# Python bytecode caches (e.g. lib/handoff/__pycache__) , regenerated, never tracked.
+__pycache__/
+*.pyc

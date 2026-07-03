@@ -1,0 +1,25 @@
+# Pitfall Report: concurrent wavefront scheduling in lib/orchestrate.sh
+
+## Critical (will block implementation)
+- Feature re-opens a closed decision: `docs/decisions/0028-autonomous-loop-hardening.md:94` explicitly puts "A DAG / dependency-graph orchestrator" out of scope (GSD-v2). A design already exists reconciling this: `docs/specs/DECISION-BRIEF-dag-wavefront.md` (2026-07-02, status DRAFT) says a mini-ADR amending ADR-0028's deferral scope is required BEFORE build. Do that first or the ship-gate/spec-validate lane will reject the work.
+- `flock` is not available on macOS by default (no util-linux flock; only a brew formula, not assumed present) and CI runs `macos-latest` (`.github/workflows/test.yml:19`). Nowhere in the repo is `flock` currently used (`grep -rn flock` = 0 hits) -- no mkdir-lock helper exists either. The decision brief's "flock-guarded" language (`DECISION-BRIEF-dag-wavefront.md:23,34`) needs a portable substitute: `mkdir <lockdir>` (atomic, POSIX, works on bash 3.2 + macOS) with a stale-lock timeout, not real flock.
+- bash 3.2 empty-array trap: `orchestrate.sh:33` runs `set -uo pipefail`. Any new code building an array of "ready sub-goal ids" or "wave pids" and expanding `"${arr[@]}"` when empty will throw `unbound variable` on macOS CI. Precedent fix already in-repo: `lib/mega-merge.sh:224` and `lib/stack-merge.sh:127` use `${arr[@]+"${arr[@]}"}`. Follow that pattern exactly; do not use `declare -A` (bash 4+) or `wait -n` (bash 4.3+, and macOS bash 3.2 lacks it) for the wave-completion wait loop -- poll with `kill -0` in a loop instead (same technique already used in `_run_session_watchdog`, `orchestrate.sh:320-329`).
+
+## Warnings (will cause problems if ignored)
+- `cmd_run()` is already 154 lines (`lib/orchestrate.sh:335-489`), the largest function in the file (500 lines total). Wavefront logic (ready-set computation, dispatch-gate check, wave spawn/wait, per-wave board render) should be split into new named helpers, not inlined into `cmd_run`, or it becomes unreviewable.
+- HANDOFF.md is a single hot file today (`orchestrate.sh:267-282`, written by `handoff-gen` at `orchestrate.sh:471`, stubbed by `commands/mega.md:113`). Two concurrent sessions writing/reading it will clobber. The decision brief's resolution (`DECISION-BRIEF-dag-wavefront.md:33`) is per-edge `HANDOFF-<id>.md` with the linear chain as the degenerate single-parent case -- confirmed backward-compatible with existing tests in `tests/test-orchestrate.sh` (lines 42, 80, 93, 157, 179, 408-485) which all assert on plain `HANDOFF.md`; keep that path untouched when no deps declared.
+- Read-modify-write race on ROADMAP.md checkbox flips: today only one session ever writes it (grounded completion check at `orchestrate.sh:449-455` just re-reads after the fact). With two worktrees editing the SAME file (ROADMAP.md is not per-worktree, it's in the mega-goal dir) simultaneously, both diffs can race on write. Needs the `flip <id>` helper the brief proposes (`DECISION-BRIEF-dag-wavefront.md:34`), mkdir-lock guarded, not a bare `sed -i`/append from each session.
+- No `git worktree add` call exists anywhere in `lib/` today (`grep -rn "worktree add"` = 0 hits); worktree creation is currently a human/Claude-native-tool action per global CLAUDE.md rules ("Worktree creation is lead-only; a subagent never creates one"), not something `orchestrate.sh` does programmatically. Spawning worktrees from inside the bash driver is new territory -- decide path convention explicitly (global rule: `.claude/worktrees/<name>`) and confirm cleanup-on-completion, since nothing in this repo currently does it.
+- `dispatch-gate.sh` (ADR-0019, DEC-008 prove-or-serialize) is the existing disjointness prover but is designed for VALIDATED specs, not sub-goals; the brief assumes reuse across wave pairs (`DECISION-BRIEF-dag-wavefront.md:32`) -- verify its `## Touches` parsing works against goal files, not just specs, before assuming drop-in reuse.
+
+## Noted (cosmetic, low risk)
+- `_sg_deps_blocked()` (`orchestrate.sh:133-140`) already parses `depends SG-NN` tokens but only feeds the board view today -- the DAG is declared and parsed, just unused for scheduling (per the brief, this is a real head start, not a gap).
+
+## Missing prerequisites
+- [ ] Mini-ADR amending ADR-0028's DAG-deferral scope (wavefront in, GSD-v2 still out) -- required before `/spec`/`/spec-validate` per the brief's own sequencing.
+- [ ] Portable lock primitive (mkdir-based, stale-timeout) added to a shared lib, since no lock helper exists anywhere in the repo today.
+- [ ] Decision on per-edge HANDOFF-<id>.md schema + how a child injects multiple dep-parents' handoffs into one prompt.
+- [ ] Board row ID-084 (already referenced in the brief) should exist on the cockpit before work starts.
+
+## Files over 500 lines (split candidates)
+- lib/orchestrate.sh: 500 lines -- `cmd_run()` (154 lines) is the split candidate; extract wavefront ready-set/dispatch/wait logic into new `_wave_*` helper functions before it grows further.
