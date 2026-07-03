@@ -44,6 +44,9 @@ jobs:
       - name: Run orchestrator tests
         run: bash tests/test-orchestrate.sh
 
+      - name: Run TIER-4 mega-close tests (SPEC-118)
+        run: bash tests/test-tier4-close.sh
+
       - name: Run role-classify tests (SPEC-089)
         run: bash tests/test-role-classify.sh
 
