@@ -72,20 +72,30 @@ case "$sub" in
     : > "$STATE/session.$name"
     ;;
   new-window)
-    session="" id="" dir="" cmdline=""
+    session="" id="" dir=""; cmd_argv=()
     while [ "$#" -gt 0 ]; do
       case "$1" in
         -d) shift ;;
         -t) session="$2"; shift 2 ;;
         -n) id="$2"; shift 2 ;;
         -c) dir="$2"; shift 2 ;;
-        *) cmdline="$1"; shift ;;
+        --) shift; cmd_argv=("$@"); break ;;             # fixed form: everything after -- is argv
+        *) cmd_argv=("$1"); shift ;;                     # legacy single-string form (kept for the
+                                                         # injection positive-control below)
       esac
     done
     : > "$STATE/session.$session"
     panelog="$STATE/pane.$session.$id.log"
     : > "$panelog"
-    ( cd "$dir" 2>/dev/null || exit 1; eval "$cmdline" ) > "$panelog" 2>&1 &
+    if [ "${#cmd_argv[@]}" -gt 1 ]; then
+      # Real tmux with a multi-arg command execs the argv DIRECTLY -- no `$SHELL -c`, no second
+      # parse. Modelled by running the array as-is (the fix's whole guarantee).
+      ( cd "$dir" 2>/dev/null || exit 1; "${cmd_argv[@]}" ) > "$panelog" 2>&1 &
+    else
+      # Real tmux with a single command STRING hands it to `$SHELL -c` -- a second shell parse,
+      # i.e. an eval. This is the pre-fix sink the injection positive-control exercises.
+      ( cd "$dir" 2>/dev/null || exit 1; eval "${cmd_argv[0]:-}" ) > "$panelog" 2>&1 &
+    fi
     ;;
   capture-pane)
     target=""
@@ -247,6 +257,46 @@ crc=0
 [ "$crc" = 0 ] && [ ! -s "$POISON_LOG2" ] \
   && pass "mux-off explicit (MULTIPLEXER=0) [NEGATIVE CONTROL]: tmux never invoked" \
   || { fail "mux-off explicit: rc=$crc, poison log: $(cat "$POISON_LOG2" 2>/dev/null)"; }
+
+# ============================ (D) command-injection NC (SPEC-119 security fix) ============================
+# `route_flags` is built from the goal file's UNSANITIZED `Model:` header. The pre-fix `_pane_spawn`
+# joined the pane command into ONE string that real tmux re-parses via `$SHELL -c` (an eval), so a
+# hostile `Model:` value broke out and ran on the host under MULTIPLEXER=1. The fix passes the
+# command as separate argv tokens after `--` (exec-direct, no re-parse). Two halves:
+#  D1 positive control -- proves the payload + the mock's eval path CAN inject (NC is non-vacuous);
+#  D2 the fix -- the real `_pane_spawn` (multi-arg) leaves the same payload inert.
+PWNED_POS="$TMP/pwned-positive"; PWNED_FIX="$TMP/pwned-fixed"
+rm -f "$PWNED_POS" "$PWNED_FIX" 2>/dev/null || true
+# A Model:-derived route_flags whose metachars CLOSE the escaped-quote wrapper the pre-fix code put
+# around each field (`\"$route_flags\"`), break out, run a command, then reopen the quote.
+INJ='--model opus"; touch '"$PWNED_POS"'; echo "'
+
+# D1: feed the OLD joined-string form (each field wrapped in escaped quotes, exactly as the pre-fix
+# `_pane_spawn` built it) straight to the mock's new-window -> the mock's eval path re-parses it.
+DSTATE="$TMP/inj-state"; mkdir -p "$DSTATE"
+INJ_CMDLINE="\"/bin/true\" _pane-exec \"x\" \"SG-01\" \"pf\" \"$INJ\" \"df\""
+TMUX_MOCK_STATE="$DSTATE" "$TMP/tmux-mock" new-window -d -t sess -n SG-01 -c "$TMP" \
+  "$INJ_CMDLINE" >/dev/null 2>&1
+for _ in 1 2 3 4 5 6 7 8; do [ -e "$PWNED_POS" ] && break; sleep 0.25; done
+if [ -e "$PWNED_POS" ]; then
+  pass "inj D1 positive control: the joined-string form DOES inject (payload + mock eval are live)"
+else
+  fail "inj D1 positive control: payload did not fire via the joined string -- NC would be vacuous"
+fi
+
+# D2: the real, fixed `_pane_spawn` with the SAME payload as route_flags -> exec-direct, no re-parse.
+D2STATE="$TMP/inj-fix-state"; mkdir -p "$D2STATE"
+( export TMUX_CMD="$TMP/tmux-mock" TMUX_MOCK_STATE="$D2STATE" TMUX_SESSION=orch-inj \
+    ORCH_DIR="$TMP" ORCH="$ORCH"
+  # a stub orchestrate.sh so the pane's exec target exists and is itself inert
+  printf '#!/usr/bin/env bash\n:\n' > "$TMP/orchestrate.sh"; chmod +x "$TMP/orchestrate.sh"
+  _pane_spawn "$TMP/mega-x" SG-01 "$TMP" "$TMP/pf" "$INJ" "$TMP/df" ) >/dev/null 2>&1
+for _ in 1 2 3 4 5 6 7 8; do [ -e "$PWNED_FIX" ] && break; sleep 0.25; done
+if [ -e "$PWNED_FIX" ]; then
+  fail "inj D2 [NEGATIVE CONTROL]: FIXED _pane_spawn STILL injected -- host command ran"
+else
+  pass "inj D2 [NEGATIVE CONTROL]: fixed _pane_spawn passes route_flags as argv; the metachar Model: value is inert (no host command)"
+fi
 
 echo "----"
 if [ "$fails" = 0 ]; then

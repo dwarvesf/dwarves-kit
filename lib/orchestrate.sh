@@ -782,8 +782,14 @@ _pane_spawn() {  # megadir id wt pfile route_flags donefile
   local mux; mux=$(_mux_session_name "$megadir")
   "$TMUX_CMD" has-session -t "$mux" 2>/dev/null || "$TMUX_CMD" new-session -d -s "$mux" -n _init 2>/dev/null || return 1
   "$TMUX_CMD" kill-window -t "$mux:$id" 2>/dev/null || true
-  "$TMUX_CMD" new-window -d -t "$mux" -n "$id" -c "$wt" \
-    "\"$ORCH_DIR/orchestrate.sh\" _pane-exec \"$megadir\" \"$id\" \"$pfile\" \"$route_flags\" \"$donefile\""
+  # SECURITY (SPEC-119 fix): pass the pane command as SEPARATE argv tokens after `--`, never a
+  # single joined string. tmux hands a lone command STRING to `$SHELL -c`, a second shell parse
+  # (an eval); with the multi-arg form it execs directly, no re-parse. `route_flags` is built from
+  # the goal file's unsanitized `Model:`/`Effort:` header, so the joined form was a host command
+  # injection reachable via a hostile mega-goal PR under MULTIPLEXER=1. It stays ONE argv token so
+  # cmd_pane_exec still receives 5 positional args (route_flags splits later, non-mux path parity).
+  "$TMUX_CMD" new-window -d -t "$mux" -n "$id" -c "$wt" -- \
+    "$ORCH_DIR/orchestrate.sh" _pane-exec "$megadir" "$id" "$pfile" "$route_flags" "$donefile"
 }
 
 # Read a wave session's live pane output (the visibility half of the Proof: "a capture-pane read
