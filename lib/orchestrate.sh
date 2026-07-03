@@ -45,7 +45,7 @@
 # pre-existing kill-0/wait path and $TMUX_CMD is never invoked. TMUX_CMD mirrors CLAUDE_CMD's mock
 # seam; TMUX_SESSION overrides the derived per-megagoal tmux session name.
 #
-# Pane viewer push (SPEC-120, env PANE_VIEWER=auto default): the push half of the multiplexer --
+# Pane viewer push (SPEC-121, env PANE_VIEWER=auto default): the push half of the multiplexer --
 # on wave spawn, ONE viewer tab/surface (cmux/kitty/wezterm/ghostty/iterm/terminal, auto-detected)
 # opens in the operator's terminal app already attached to the wave's tmux session. `none` = the
 # pull behavior above exactly; headless (no TTY / nothing detected) degrades silently to pull.
@@ -142,7 +142,7 @@ WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
 MULTIPLEXER="${MULTIPLEXER:-0}"
 TMUX_CMD="${TMUX_CMD:-tmux}"
 
-# Pane viewer push (SPEC-120). SPEC-119's panes are PULL-only (the operator must know the tmux
+# Pane viewer push (SPEC-121). SPEC-119's panes are PULL-only (the operator must know the tmux
 # session name and attach by hand); PANE_VIEWER is the PUSH half: on wave spawn, open ONE viewer
 # surface in the operator's own terminal app, already attached to the wave's tmux session (one
 # surface per wave session per run, never one per worker -- noise control; tmux's own window keys
@@ -833,7 +833,7 @@ _pane_send_keys() {  # megadir id keys...
   "$TMUX_CMD" send-keys -t "$mux:$id" "$@"
 }
 
-# ---- Pane viewer push (SPEC-120) ----------------------------------------------------------------
+# ---- Pane viewer push (SPEC-121) ----------------------------------------------------------------
 # The push half of SPEC-119's pull-only panes: on wave spawn, open ONE viewer tab/surface in the
 # operator's terminal app, attached to the wave's tmux session. Three functions: a pure env
 # detector, a mode resolver, and the best-effort opener. See the PANE_VIEWER env block up top.
@@ -844,7 +844,7 @@ _pane_send_keys() {  # megadir id keys...
 _viewer_tty() { [ -t 2 ]; }
 
 # Pure env sniff -> the running viewer's name, or nothing. Order is load-bearing: cmux embeds a
-# terminal that sets $TERM_PROGRAM too, so the cmux env must win (SPEC-120 edge case 1).
+# terminal that sets $TERM_PROGRAM too, so the cmux env must win (SPEC-121 edge case 1).
 _viewer_detect() {
   if [ -n "${CMUX_WORKSPACE_ID:-}" ]; then printf 'cmux\n'; return 0; fi
   case "${TERM_PROGRAM:-}" in
@@ -1093,7 +1093,7 @@ _wave_run() {  # megadir roadmap
       fi
       pid=""
       _say "[orchestrate] [wave] [mux] spawned $id in tmux pane $(_mux_session_name "$megadir"):$id (worktree $wt)"
-      # SPEC-120 push: open ONE viewer surface attached to this wave's tmux session. Reuse-guarded
+      # SPEC-121 push: open ONE viewer surface attached to this wave's tmux session. Reuse-guarded
       # inside (one surface per session per run) and best-effort (always rc 0) -- a viewer failure
       # never marks the wave failed. Scoped INSIDE the MULTIPLEXER=1 branch: with the multiplexer
       # off there is no tmux session to attach, so the default path stays byte-identical.
@@ -1441,7 +1441,7 @@ cmd_run() {
   esac
   [ "$WAVE_CAP" -lt 1 ] && { echo "orchestrate: WAVE_CAP must be >=1 (got: '$WAVE_CAP')" >&2; return 64; }
 
-  # PANE_VIEWER pre-flight allowlist (SPEC-120, mirrors the WAVE_CAP rejection above): an unknown
+  # PANE_VIEWER pre-flight allowlist (SPEC-121, mirrors the WAVE_CAP rejection above): an unknown
   # value is REJECTED loudly here, never silently coerced to none -- a typo (`PANE_VIEWER=kity`)
   # must not quietly disable the push the operator asked for. EXACT-token enumeration, not a
   # substring test against the joined allowlist (review fix, security P2: `PANE_VIEWER="cmux

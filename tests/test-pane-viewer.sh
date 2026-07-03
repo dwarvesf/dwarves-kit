@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-pane-viewer.sh (SPEC-120): pins the PUSH half of the SPEC-119 multiplexer. PANE_VIEWER
+# test-pane-viewer.sh (SPEC-121): pins the PUSH half of the SPEC-119 multiplexer. PANE_VIEWER
 # (default `auto`) opens ONE viewer tab/surface per wave attached to the wave's tmux session;
 # `none` = today's pull behavior exactly; headless (no TTY / nothing detected) degrades silently
 # so CI is byte-identical to today -- the named negative control. The viewer argv is exec-direct
@@ -22,7 +22,7 @@ fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
 
-# The viewer exec is fire-and-forget (backgrounded + disowned, SPEC-120 review fix), so a
+# The viewer exec is fire-and-forget (backgrounded + disowned, SPEC-121 review fix), so a
 # recorder/poison write can land shortly AFTER _viewer_open/_wave_run returns. wait_nonempty
 # polls for a positive write (bounded); settle gives a would-be late write time to land before
 # an emptiness or exact-count assertion.
