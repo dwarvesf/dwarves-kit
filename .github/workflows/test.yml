@@ -106,3 +106,6 @@ jobs:
 
       - name: Run understanding-axis no-orphan wiring tests (SPEC-127, understanding-gate SG-06)
         run: bash tests/test-understanding-wiring.sh
+
+      - name: Run generated proof-table tests (SPEC-132, kit-run-integrity SG-05)
+        run: bash tests/test-proof-table-gen.sh

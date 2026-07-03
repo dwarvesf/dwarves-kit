@@ -1,7 +1,7 @@
 # Spec: Generated proof-of-done confirmation table
 
 Generated: 2026-07-04
-Status: DRAFT
+Status: VALIDATED
 Lane: normal (a generator + tests over a known ledger schema; no new subsystem, no
 correctness-critical concurrency, mostly execution against SPEC-016 + gate-ledger's
 already-fixed shapes).
