@@ -68,6 +68,9 @@ jobs:
       - name: Run spec-reservation race tests (SPEC-128)
         run: bash tests/test-spec-reserve.sh
 
+      - name: Run mutation-smoke tests (SPEC-131)
+        run: bash tests/test-mutation-smoke.sh
+
       - name: Run role-classify tests (SPEC-089)
         run: bash tests/test-role-classify.sh
 
