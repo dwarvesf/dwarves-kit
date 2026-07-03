@@ -159,7 +159,16 @@ fi
 LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate-ledger.sh"
 [ -f "$LEDGER" ] || exit 0
 
+# SPEC-129: bracket the ship gate with an OUTCOME emit (caught= + START/END timing). This is
+# the live invocation path for the additive OUTCOME marker. It is BEST-EFFORT and writes ONLY
+# to the rid ledger, so it can never change this hook's fail-open contract, exit code, or
+# operator output. caught=true when the check BLOCKS (it caught a missing-gate defect),
+# caught=false on a clean pass. The `outcome` marker keys on $2=="OUTCOME"; check()/_rows()/
+# the ship-gate's own read all ignore it (they key on $2=="GATE").
+bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
+
 if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
+  bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
   LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG ($LANE)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
@@ -171,4 +180,5 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
   } >&2
   exit 2
 fi
+bash "$LEDGER" outcome "$SLUG" ship end caught=false >/dev/null 2>&1 || true
 exit 0

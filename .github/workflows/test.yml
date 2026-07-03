@@ -89,6 +89,9 @@ jobs:
       - name: Run ledger-durability tests (SPEC-097)
         run: bash tests/test-ledger-durability.sh
 
+      - name: Run gate-outcome emit tests (SPEC-129)
+        run: bash tests/test-gate-outcome.sh
+
       - name: Run meta-agent tests (SPEC-089 / dynamic agent synthesis)
         run: bash tests/test-meta-agent.sh
 

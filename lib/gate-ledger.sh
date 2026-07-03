@@ -18,6 +18,11 @@
 #                                       additive marker, ignored by check()/override()/descent()
 #   debt-response <rid> <engage|defer|wave> [reason]  append the HUMAN's ★-tap choice (ADR-0031 §3,
 #                                       SG-04); additive `| DEBT |` marker, same ignore rules as debt
+#   outcome  <rid> <phase> <start|end> [caught=<true|false>]   record a gate's OUTCOME as an
+#                                       ADDITIVE marker (SPEC-129): a start/end timing bracket
+#                                       (duration derivable) + caught=<bool>; ignored by
+#                                       check()/override()/descent()/_rows() (key on $2==GATE)
+#   outcome-read <rid> [phase]         read the outcome + duration back for a rid (round-trip)
 #   override <rid> <phase> <reason>    record a human override for a gate
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
 #   show     <rid>                     print the run's ledger
@@ -39,6 +44,11 @@ LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+# Machine-readable epoch seconds for duration math (SPEC-129). `date +%s` is identical on
+# GNU (ubuntu) and BSD (macOS); we deliberately do NOT parse the ISO8601 now() back to epoch
+# (that is the `date -d` vs `date -jf` portability trap the kit CI fails on). Duration is a
+# pure integer subtraction of two epochs carried explicitly on the OUTCOME start/end lines.
+now_epoch() { date +%s; }
 
 # Collapse newlines/carriage-returns in operator/LLM-supplied free text to spaces before it
 # is written to the append-only ledger (security review B1). Without this, a reason/action
@@ -264,6 +274,79 @@ debt_response() {
   printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$f"
 }
 
+# outcome: record a gate's OUTCOME as an ADDITIVE marker (SPEC-129) beside TOKENS + DEBT.
+# Emits a `| OUTCOME |` line that check()/override()/descent()/_rows()/_token_agg()/the
+# ship-gate all IGNORE (they key on $2=="GATE"|START|START-AMEND|TOKENS|ACTION|DEBT), so an
+# outcome line can never fake, mask, or be mistaken for a gate. Mirrors the `| GATE |` field
+# layout (field 3 = phase, field 4 = event=start|end). A start/end pair BRACKETS the gate;
+# duration is the epoch delta between them (now_epoch = date +%s, portable macOS + ubuntu --
+# no date -d/-r, no stat). `caught=` is derived at the CALL SITE from the gate's own recorded
+# state (non-pass -> true, clean pass -> false; open-fork 2 default) -- the verb only
+# validates + records it, never re-computes it. The timing bracket is unconditional.
+# Usage: outcome <rid> <phase> <start|end> [caught=<true|false>]
+outcome() {
+  local rid="${1:-}" raw="${2:-}" event="${3:-}"; shift 3 2>/dev/null || { echo "usage: outcome <rid> <phase> <start|end> [caught=<true|false>]" >&2; return 64; }
+  [ -n "$rid" ] || { echo "outcome requires a rid" >&2; return 64; }
+  local phase; phase="$(normalize_phase "$raw")"
+  [ -n "$phase" ] || { echo "outcome requires a phase" >&2; return 64; }
+  case "$event" in start|end) ;; *) echo "outcome: event must be start|end (got '$event')" >&2; return 64;; esac
+  mkdir -p "$RUNS_DIR"
+  local f; f="$(ledger_file "$rid")" || return 1
+  local epoch; epoch="$(now_epoch)"
+  if [ "$event" = "start" ]; then
+    printf '%s | OUTCOME | %s | start | at=%s\n' "$(now)" "$phase" "$epoch" >> "$f"
+    return 0
+  fi
+  # event=end: caught defaults to false (a clean pass is the safe default); duration is
+  # derived from THIS rid+phase's last start bracket (0 if none, so an unbracketed end stays
+  # honest rather than erroring).
+  local caught=false kv k v
+  for kv in "$@"; do
+    k="${kv%%=*}"; v="${kv#*=}"
+    case "$k" in caught) caught="$v" ;; esac
+  done
+  case "$caught" in true|false) ;; *) echo "outcome: caught must be true|false (got '$caught')" >&2; return 64;; esac
+  local start_epoch="" dur=0
+  if [ -f "$f" ]; then
+    start_epoch="$(awk -F' [|] ' -v p="$phase" '
+      $2=="OUTCOME" && $3==p && $4=="start" {
+        n=split($5,a," "); for(i=1;i<=n;i++){split(a[i],kv2,"="); if(kv2[1]=="at") v=kv2[2]}
+      } END{print v}' "$f")"
+    if [ -n "$start_epoch" ] && printf '%s' "$start_epoch" | grep -qE '^[0-9]+$'; then
+      dur=$((epoch - start_epoch)); [ "$dur" -ge 0 ] || dur=0
+    fi
+  fi
+  printf '%s | OUTCOME | %s | end | at=%s caught=%s dur_s=%s\n' "$(now)" "$phase" "$epoch" "$caught" "$dur" >> "$f"
+}
+
+# outcome-read: read a gate's OUTCOME back (SPEC-129 round-trip). For each completed
+# start/end bracket (or the one given phase), print "<phase> caught=<bool> dur_s=<N>" from
+# the LAST end line for that phase (last-end-wins, agreeing with the ledger's append-only
+# semantics). A phase with a start but no end prints "<phase> incomplete". Read-only.
+# Usage: outcome-read <rid> [phase]
+outcome_read() {
+  local rid="${1:-}" want="${2:-}"
+  [ -n "$rid" ] || { echo "usage: outcome-read <rid> [phase]" >&2; return 64; }
+  local f; f="$(ledger_file "$rid")" || return 1
+  [ -f "$f" ] || { echo "(no ledger for '$rid')" >&2; return 1; }
+  local filter=""
+  [ -n "$want" ] && filter="$(normalize_phase "$want")"
+  awk -F' [|] ' -v want="$filter" '
+    $2=="OUTCOME" && $4=="start" { started[$3]=1; if(!($3 in ord)) ord[$3]=++seq }
+    $2=="OUTCOME" && $4=="end" {
+      n=split($5,a," "); c=""; d=""
+      for(i=1;i<=n;i++){split(a[i],kv,"="); if(kv[1]=="caught")c=kv[2]; if(kv[1]=="dur_s")d=kv[2]}
+      caught[$3]=c; dur[$3]=d; ended[$3]=1; if(!($3 in ord)) ord[$3]=++seq
+    }
+    END {
+      for (p in ord) {
+        if (want!="" && p!=want) continue
+        if (p in ended) printf "%d\t%s caught=%s dur_s=%s\n", ord[p], p, caught[p], dur[p]
+        else            printf "%d\t%s incomplete\n", ord[p], p
+      }
+    }' "$f" | sort -n | cut -f2-
+}
+
 override() {
   local rid="${1:-}" raw="${2:-}"; shift 2 2>/dev/null || { echo "usage: override <rid> <phase> <reason>" >&2; return 64; }
   local reason; reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
@@ -472,6 +555,8 @@ case "$cmd" in
   tokens)   tokens "$@" ;;
   debt)     debt "$@" ;;
   debt-response) debt_response "$@" ;;
+  outcome)      outcome "$@" ;;
+  outcome-read) outcome_read "$@" ;;
   mutation) mutation "$@" ;;
   override) override "$@" ;;
   check)    check "$@" ;;
@@ -480,5 +565,5 @@ case "$cmd" in
   progress) progress "$@" ;;
   rid)      rid "$@" ;;
   descent)  descent "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|mutation|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
 esac
