@@ -25,7 +25,7 @@ A sub-goal file (Mode B) is NOT installable (it is project content, not an agent
 
 4. **Otherwise (default, mode `agent`): INSTALL it so it is dispatchable.** Do this as the main agent (you have the tools the subagent does not):
    1. Read the staged draft. Strip the first-line DRAFT marker.
-   2. Write it to `agents/<name>.md` (the repo source of truth), where `<name>` is the frontmatter `name:`.
+   2. Write it to `agents/<name>.md` (the repo source of truth), where `<name>` is the frontmatter `name:`. **Stamp provenance (SPEC-108):** add a `generated-by: draft-agent <YYYY-MM-DD> <one-line context>` line to the frontmatter (after `model:`) so a generated agent is distinguishable from a hand-written one forever, and metric 11 (SPEC-073) can count its runtime catches. Keep `<context>` COLON-FREE (an unquoted YAML scalar breaks on `: `); use commas. Only draft-agent-generated agents carry this key; never add it to a hand-written agent.
    3. Roster sync (REQUIRED , `test-meta.sh` fails closed otherwise): add a `| \`<name>\` | ... |` row to `MANUAL.md`'s agent table, a row to the `docs/architecture.md` "Command and agent V-phase inventory" table, and (only if you also added a command) the `README.md` command rows. Match the existing row formats.
    4. Run `bash tests/test-meta.sh`. It MUST pass (it lints the new agent's frontmatter + the cross-refs). If it fails, fix the roster rows until green; do not leave a half-installed agent.
    5. Activate it for runtime: `cp agents/<name>.md ~/.claude/agents/<name>.md` (the dir Claude Code scans at session start). It is dispatchable on your **next session / reload**, not mid-conversation (CC discovers agents at startup).

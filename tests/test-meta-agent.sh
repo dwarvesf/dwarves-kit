@@ -86,6 +86,12 @@ LC_ALL=C grep -qF "$MARKER" "$TMPAG/installed.md" && bad "install: no DRAFT mark
 lint_agent_frontmatter "installed-agent" "$TMPAG/installed.md" 1   # passes the SAME lint as a live kit agent
 INAME=$(awk -F': *' '/^---$/{c++; if(c==2)exit} c==1 && /^name:/{print $2; exit}' "$TMPAG/installed.md" | tr -d '[:space:]')
 [ -n "$INAME" ] && cp "$TMPAG/installed.md" "$TMPAG/$INAME.md" && [ -f "$TMPAG/$INAME.md" ]; chk "install: lands as <name>.md in the agents dir (runtime-discoverable shape)" $?
+# SPEC-108: the install step (draft-agent Step 4.2) STAMPS provenance. Simulate the stamp and
+# assert the emitted key is well-formed , a NEW-generation emit fixture, not just the backfill.
+STAMP="generated-by: draft-agent 2026-07-02 install-sim fixture (SPEC-108)"
+awk -v s="$STAMP" '{print} /^model:/{print s}' "$TMPAG/installed.md" > "$TMPAG/stamped.md"
+grep -qE '^generated-by: draft-agent [0-9]{4}-[0-9]{2}-[0-9]{2} .+' "$TMPAG/stamped.md"; chk "install: Step-4 stamps a well-formed generated-by (SPEC-108 emit fixture)" $?
+lint_agent_frontmatter "stamped-agent" "$TMPAG/stamped.md" 1   # still lints with the provenance key
 rm -rf "$TMPAG"
 
 echo ""

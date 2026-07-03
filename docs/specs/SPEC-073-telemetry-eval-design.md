@@ -36,6 +36,7 @@ metric. Runs before that merge are EXCLUDED from every denominator below.
 | 8 | proof-of-done friction | count of proof-gate BLOCKED lines vs legit ships in ship-gate.log | blocks are true positives | false-positive blocks -> proof-ledger classify fix (the SPEC-071 registry floor should have removed the doc-task class) |
 | 9 | boardless + shipped-incomplete counts | misfires | 0 boardless; shipped-incomplete only with retro-note | recurrence after the SPEC-069 detectors = the detector is advisory-blind: consider promoting to warn-at-assign |
 | 10 | full-lane ceremony cost on kit-machinery work | wall-clock + phase counts of wave-1 runs (rids: rid-branch-slug, gate-ledger-fixes, classifier-anchors, wave1-doc-cluster) vs defect yield | reviews keep catching HIGHs at this size | if 2+ consecutive full-lane kit-machinery runs yield zero review findings above LOW, propose a hard-gate carve-out for `<=2-file` machinery diffs |
+| 11 | generated-agent catch count (per `generated-by:` agent) | grep over `docs/verification/*` + spec `## Review` records for each generated agent's name (see `## Amendments`, SPEC-108) | each generated agent names >=1 real catch within its first live runs | an agent that never catches -> re-prompt or retire (SPEC-088 gates the DEFINITION at install; metric 11 gates the DEPLOYMENT at runtime) |
 
 ### Method
 
@@ -81,3 +82,26 @@ data-window note (no phantom flags).
 Date: 2026-06-11. Single doc-verifier lens (no machinery touched). Verdict:
 FAIL:fixable -> 2 overclaims corrected in-branch (--since flag did not exist;
 escapes was not a subcommand) -> re-verified clean. SHIP.
+
+## Amendments
+
+### 2026-07-03 (SPEC-108, kit-face wave): metric 11 , generated-agent catch count
+
+Adds metric-table row 11: the runtime-efficacy signal for draft-agent-generated agents (the ones
+carrying the `generated-by:` frontmatter key SPEC-108 introduces). SPEC-088 validates the agent
+DEFINITION at install; metric 11 validates the DEPLOYMENT , does a generated agent actually catch
+real issues once live? v1 is CATCHES-ONLY and a COUNT, not a rate: dispatch counts are not recorded
+today, so there is no denominator for a rate; the dispatch-count ACTION line is a filed follow-up
+(mega-goal NOTES `## Proposed additions`), not silent scope.
+
+Literal command (AC2-compliant , every figure traces to a command, coarse v1 name-match):
+
+    for a in $(grep -lE '^generated-by:' agents/*.md | xargs -n1 basename | sed 's/\.md$//'); do
+      n=$(grep -rIl -e "$a" docs/verification/ 2>/dev/null | wc -l | tr -d ' ')
+      echo "$a: named in $n verification/review record(s)"
+    done
+
+Distinct from metric 6 (review-findings curve): metric 6 is per-LENS findings-per-review across
+all reviewers; metric 11 is per-GENERATED-AGENT catch count. Same review-record source, different
+cut , do not double-count. v1 is a coarse name-match count; a Re-audit-line-scoped refinement is a
+future tightening if the count proves noisy.

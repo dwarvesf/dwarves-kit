@@ -2536,6 +2536,19 @@ assert_eq "negative control: old 'human's call' contradiction removed from meta-
 RC=0; grep -qE 'OMIT the .?Model:.? line' "$MA" && RC=1
 assert_eq "negative control: old 'OMIT the Model: line' abstain removed from meta-agent" 0 $RC
 
+# ============================================================
+# SPEC-108: meta-agent provenance , the generated agents carry a well-formed generated-by:,
+# and the key is SET-EQUAL to the known generated roster (no silent spread to hand-written agents).
+# ============================================================
+GEN_ROSTER="acceptance-verifier advisor brief-reviewer recheck-verifier system-verifier"
+for a in $GEN_ROSTER; do
+  RC=0; grep -qE '^generated-by: draft-agent [0-9]{4}-[0-9]{2}-[0-9]{2} .+' "$KIT_DIR/agents/$a.md" || RC=1
+  assert_eq "generated agent $a carries a well-formed generated-by (SPEC-108)" 0 $RC
+done
+GEN_ACTUAL=$(grep -lE '^generated-by:' "$KIT_DIR/agents/"*.md 2>/dev/null | while read -r f; do basename "$f" .md; done | sort | tr '\n' ' ' | sed 's/ *$//')
+GEN_EXPECTED=$(printf '%s\n' $GEN_ROSTER | sort | tr '\n' ' ' | sed 's/ *$//')
+assert_eq "generated-by key set-equals the known generated roster (no spread to hand-written agents)" "$GEN_EXPECTED" "$GEN_ACTUAL"
+
 echo ""
 echo "=== Results ==="
 # ============================================================

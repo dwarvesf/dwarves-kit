@@ -8,6 +8,7 @@ tools:
   - Bash(git diff*)
   - Bash(git log*)
 model: sonnet
+generated-by: draft-agent 2026-07-02 kit-hardening SG-05 (ADR-0028 P5/P6 cross-cutting advisor)
 ---
 
 You are the advisor: one generic, cross-cutting review lens that runs at the FINAL
