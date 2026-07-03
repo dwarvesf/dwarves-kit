@@ -45,6 +45,12 @@
 # pre-existing kill-0/wait path and $TMUX_CMD is never invoked. TMUX_CMD mirrors CLAUDE_CMD's mock
 # seam; TMUX_SESSION overrides the derived per-megagoal tmux session name.
 #
+# Pane viewer push (SPEC-120, env PANE_VIEWER=auto default): the push half of the multiplexer --
+# on wave spawn, ONE viewer tab/surface (cmux/kitty/wezterm/ghostty/iterm/terminal, auto-detected)
+# opens in the operator's terminal app already attached to the wave's tmux session. `none` = the
+# pull behavior above exactly; headless (no TTY / nothing detected) degrades silently to pull.
+# See the PANE_VIEWER env block below.
+#
 # The `claude` invocation is `$CLAUDE_CMD` (default: claude), so tests mock it and operators
 # tune the permission flags.
 set -uo pipefail
@@ -135,6 +141,25 @@ WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
 # tmux session name (default: sanitized from the megadir path, see _mux_session_name).
 MULTIPLEXER="${MULTIPLEXER:-0}"
 TMUX_CMD="${TMUX_CMD:-tmux}"
+
+# Pane viewer push (SPEC-120). SPEC-119's panes are PULL-only (the operator must know the tmux
+# session name and attach by hand); PANE_VIEWER is the PUSH half: on wave spawn, open ONE viewer
+# surface in the operator's own terminal app, already attached to the wave's tmux session (one
+# surface per wave session per run, never one per worker -- noise control; tmux's own window keys
+# do the per-worker drill-down). Default `auto` (push is the DEFAULT, operator decision
+# 2026-07-03): detect the running viewer -- cmux env (CMUX_WORKSPACE_ID) first, then
+# $TERM_PROGRAM (iTerm.app/ghostty/WezTerm/Apple_Terminal), then $KITTY_WINDOW_ID -- and
+# SILENTLY degrade to today's pull behavior when nothing is detected or stderr is not a TTY, so
+# headless CI stays byte-identical. `none` = pull exactly; an explicit viewer name skips
+# detection (operator intent; still best-effort). Unknown values are REJECTED at cmd_run
+# pre-flight (allowlist below), never coerced. VIEWER_CMD mirrors TMUX_CMD's mock seam: when
+# set, the whole viewer argv is handed to it instead of exec'd, so tests need no GUI and the
+# off paths get a poisonable negative control. A viewer failure warns and degrades; it NEVER
+# fails the wave. Zero-code alternative (documented, not built): an iTerm2 operator can
+# `tmux -CC attach -t <session>` for native-tab control mode with no orchestrator wiring.
+PANE_VIEWER="${PANE_VIEWER:-auto}"
+VIEWER_CMD="${VIEWER_CMD:-}"
+PANE_VIEWER_ALLOWED="auto cmux kitty wezterm ghostty iterm terminal none"
 
 # TIER-4 mega-close (SPEC-118, executes ADR-0032 section 5). Default ON (1): when EVERY sub-goal box
 # is checked, `cmd_run` runs a real mega-level close over the ASSEMBLED WAVE instead of just printing
@@ -807,6 +832,113 @@ _pane_send_keys() {  # megadir id keys...
   local mux; mux=$(_mux_session_name "$megadir")
   "$TMUX_CMD" send-keys -t "$mux:$id" "$@"
 }
+
+# ---- Pane viewer push (SPEC-120) ----------------------------------------------------------------
+# The push half of SPEC-119's pull-only panes: on wave spawn, open ONE viewer tab/surface in the
+# operator's terminal app, attached to the wave's tmux session. Three functions: a pure env
+# detector, a mode resolver, and the best-effort opener. See the PANE_VIEWER env block up top.
+
+# TTY probe, its own function so tests can override it after sourcing (CI has no TTY, so the
+# positive auto-detect path would otherwise be untestable). Stderr, not stdout: an operator
+# piping `run` output still has a terminal on stderr; a headless harness has neither.
+_viewer_tty() { [ -t 2 ]; }
+
+# Pure env sniff -> the running viewer's name, or nothing. Order is load-bearing: cmux embeds a
+# terminal that sets $TERM_PROGRAM too, so the cmux env must win (SPEC-120 edge case 1).
+_viewer_detect() {
+  if [ -n "${CMUX_WORKSPACE_ID:-}" ]; then printf 'cmux\n'; return 0; fi
+  case "${TERM_PROGRAM:-}" in
+    iTerm.app)      printf 'iterm\n'; return 0 ;;
+    ghostty)        printf 'ghostty\n'; return 0 ;;
+    WezTerm)        printf 'wezterm\n'; return 0 ;;
+    Apple_Terminal) printf 'terminal\n'; return 0 ;;
+  esac
+  [ -n "${KITTY_WINDOW_ID:-}" ] && { printf 'kitty\n'; return 0; }
+  return 0
+}
+
+# PANE_VIEWER mode -> the effective viewer (or `none`). `auto` degrades SILENTLY to none when
+# stderr is not a TTY or nothing is detected (headless CI byte-identical -- the named negative
+# control). An explicit name is operator intent and skips the TTY gate (DEC-005). An unknown
+# value maps to none here (defense-in-depth; cmd_run's pre-flight already rejected it loudly).
+_viewer_resolve() {
+  case "$PANE_VIEWER" in
+    none) printf 'none\n' ;;
+    auto)
+      if _viewer_tty; then
+        local d; d=$(_viewer_detect)
+        printf '%s\n' "${d:-none}"
+      else
+        printf 'none\n'
+      fi ;;
+    cmux|kitty|wezterm|ghostty|iterm|terminal) printf '%s\n' "$PANE_VIEWER" ;;
+    *) printf 'none\n' ;;
+  esac
+}
+
+# Exec seam for the viewer argv, mirroring $TMUX_CMD/$CLAUDE_CMD: VIEWER_CMD set -> the mock
+# receives the FULL argv (binary name first) so tests assert both the pick and the exact
+# arguments; unset -> exec the argv DIRECTLY ("$@": no string join, no `$SHELL -c` re-parse --
+# the SPEC-119 #143 exec-direct pattern). Missing real binary -> nonzero (caller warns).
+_viewer_exec() {
+  if [ -n "$VIEWER_CMD" ]; then "$VIEWER_CMD" "$@"; return $?; fi
+  command -v "$1" >/dev/null 2>&1 || return 127
+  "$@" </dev/null >/dev/null 2>&1
+}
+
+# Open ONE viewer surface attached to the wave's tmux session. Best-effort by contract: ALWAYS
+# returns 0 (a viewer is a visibility affordance; its failure must never mark the wave failed,
+# DEC-003). The exec itself is FIRE-AND-FORGET (backgrounded + disowned; review fix, architecture
+# P1): the osascript paths can block indefinitely on a first-run macOS Automation permission
+# dialog ("Terminal wants to control iTerm"), and a synchronous call here sits inside
+# `_wave_run`'s spawn loop, where a hang would stall every subsequent sub-goal -- exactly the
+# blocking-call class SG-11's watchdog exists for. `disown` drops the job from the shell's job
+# table so `_wave_abort`'s bare `wait` can never block on a hung viewer either. Reuse guard: one
+# attempt per tmux session name per run (`_VIEWER_OPENED`, a space-separated list -- bash 3.2 has
+# no assoc arrays), success or not, so a persistently broken viewer warns once instead of once
+# per wave. The guard key is a SANITIZED copy of the name (review fix: a raw operator
+# $TMUX_SESSION with an embedded space must not taint the space-separated list), so once-per-run
+# holds even for a name the charset gate below refuses. SECURITY: the session name is
+# charset-gated to `[A-Za-z0-9_-]` before any argv is built -- `_mux_session_name` already
+# sanitizes derived names, but an operator-set $TMUX_SESSION bypasses that sanitize, and two
+# viewer sinks are string contexts downstream of us (cmux --command types into a shell; Terminal
+# `do script` runs a shell line). The osascript paths pass the name as an osascript ARGV item
+# (`on run argv`), never spliced into the AppleScript source. cmux: `new-surface` takes no
+# command argument (CLI-verified), so the cmux path is `new-workspace --command`; `--focus
+# false` is pinned -- `--focus true` into the controlling session's own pane is a known cmux
+# RPC wedge.
+_viewer_open() {  # megadir
+  local viewer; viewer=$(_viewer_resolve)
+  [ -n "$viewer" ] && [ "$viewer" != none ] || return 0
+  local mux; mux=$(_mux_session_name "$1")
+  local key; key=$(printf '%s' "$mux" | tr -c 'A-Za-z0-9_-' '-')
+  case " ${_VIEWER_OPENED:-} " in *" $key "*) return 0 ;; esac
+  _VIEWER_OPENED="${_VIEWER_OPENED:-}${_VIEWER_OPENED:+ }$key"
+  case "$mux" in
+    ''|*[!A-Za-z0-9_-]*)
+      echo "[orchestrate] [viewer] session name '$mux' fails the [A-Za-z0-9_-] charset gate; refusing to hand it to a viewer (pull still works: tmux attach -t '<session>')." >&2
+      return 0 ;;
+  esac
+  # Build the argv positionally (bash-3.2-friendly), then hand it to the backgrounded exec.
+  case "$viewer" in
+    cmux)     set -- cmux new-workspace --name "orch:$mux" --command "tmux attach -t $mux" --focus false ;;
+    kitty)    set -- kitty @ launch --type=tab tmux attach -t "$mux" ;;
+    wezterm)  set -- wezterm cli spawn -- tmux attach -t "$mux" ;;
+    ghostty)  set -- open -na Ghostty --args -e tmux attach -t "$mux" ;;
+    iterm)    set -- osascript -e 'on run argv' -e 'tell application "iTerm" to create window with default profile command ("tmux attach -t " & item 1 of argv)' -e 'end run' "$mux" ;;
+    terminal) set -- osascript -e 'on run argv' -e 'tell application "Terminal" to do script ("tmux attach -t " & item 1 of argv)' -e 'end run' "$mux" ;;
+    *) return 0 ;;
+  esac
+  (
+    if _viewer_exec "$@"; then
+      _say "[orchestrate] [viewer] opened a $viewer surface attached to tmux session '$mux' (PANE_VIEWER=$PANE_VIEWER)."
+    else
+      echo "[orchestrate] [viewer] $viewer open failed (rc $?); degrading to pull for this run (tmux attach -t '$mux' by hand still works)." >&2
+    fi
+  ) &
+  disown 2>/dev/null || true
+  return 0
+}
 # -----------------------------------------------------------------------------------------------
 
 # Abort handler for `_wave_run`'s INT/TERM trap: kill every still-live wave job's PROCESS GROUP then
@@ -961,6 +1093,11 @@ _wave_run() {  # megadir roadmap
       fi
       pid=""
       _say "[orchestrate] [wave] [mux] spawned $id in tmux pane $(_mux_session_name "$megadir"):$id (worktree $wt)"
+      # SPEC-120 push: open ONE viewer surface attached to this wave's tmux session. Reuse-guarded
+      # inside (one surface per session per run) and best-effort (always rc 0) -- a viewer failure
+      # never marks the wave failed. Scoped INSIDE the MULTIPLEXER=1 branch: with the multiplexer
+      # off there is no tmux session to attach, so the default path stays byte-identical.
+      _viewer_open "$megadir"
     else
       # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
       # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
@@ -1303,6 +1440,18 @@ cmd_run() {
     ''|*[!0-9]*) echo "orchestrate: WAVE_CAP must be a positive integer >=1 (got: '$WAVE_CAP')" >&2; return 64 ;;
   esac
   [ "$WAVE_CAP" -lt 1 ] && { echo "orchestrate: WAVE_CAP must be >=1 (got: '$WAVE_CAP')" >&2; return 64; }
+
+  # PANE_VIEWER pre-flight allowlist (SPEC-120, mirrors the WAVE_CAP rejection above): an unknown
+  # value is REJECTED loudly here, never silently coerced to none -- a typo (`PANE_VIEWER=kity`)
+  # must not quietly disable the push the operator asked for. EXACT-token enumeration, not a
+  # substring test against the joined allowlist (review fix, security P2: `PANE_VIEWER="cmux
+  # kitty"` passed the old `case " $list " in *" $v "*` membership idiom, because two adjacent
+  # allowed words joined by one space are a substring of the list). $PANE_VIEWER_ALLOWED is only
+  # the error message's rendering of this same set.
+  case "$PANE_VIEWER" in
+    auto|cmux|kitty|wezterm|ghostty|iterm|terminal|none) ;;
+    *) echo "orchestrate: PANE_VIEWER must be one of: ${PANE_VIEWER_ALLOWED// /|} (got: '$PANE_VIEWER')" >&2; return 64 ;;
+  esac
 
   if [ "$dry" = 1 ]; then
     _say "[plan] mega-goal: $dir"

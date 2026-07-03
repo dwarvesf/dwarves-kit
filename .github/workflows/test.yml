@@ -44,8 +44,26 @@ jobs:
       - name: Run orchestrator tests
         run: bash tests/test-orchestrate.sh
 
+      - name: Run wavefront scheduling tests (SPEC-106)
+        run: bash tests/test-orchestrate-wavefront.sh
+
+      - name: Run multiplexer pane tests (SPEC-119)
+        run: bash tests/test-multiplexer.sh
+
       - name: Run TIER-4 mega-close tests (SPEC-118)
         run: bash tests/test-tier4-close.sh
+
+      - name: Run pane-viewer push tests (SPEC-120)
+        run: bash tests/test-pane-viewer.sh
+
+      - name: Run token-capture tests (SPEC-117)
+        run: bash tests/test-token-capture.sh
+
+      - name: Run model-routing tests (SPEC-116)
+        run: bash tests/test-model-routing.sh
+
+      - name: Run spec-index tests
+        run: bash tests/test-spec-index.sh
 
       - name: Run role-classify tests (SPEC-089)
         run: bash tests/test-role-classify.sh
