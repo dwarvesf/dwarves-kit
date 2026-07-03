@@ -176,25 +176,36 @@ tokens() {
 # worthiness marker"); the human-facing ★-tap nudge (engage/defer/wave) is a LATER, SEPARATE
 # `| DEBT |` line appended by the conductor-side nudge (SG-04) -- this command only ever
 # writes the classifier's verdict, never a human response.
-# Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
+#
+# response=<engage|defer|wave> (SPEC-126, understanding-gate SG-05): an OPTIONAL additive key,
+# the three-way human disposition ADR-0031's Refinement point 3 names. First written by
+# `lib/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
+# re-collected); SG-04's future ★-tap nudge is a second, later caller of the SAME field --
+# there is exactly one place a human response is recorded, never two.
+# Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
 debt() {
-  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]" >&2; return 64; }
+  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]" >&2; return 64; }
   [ -n "$rid" ] || { echo "debt requires a rid" >&2; return 64; }
-  local sig="" wor="" verdict="" reason="" kv k v
+  local sig="" wor="" verdict="" response="" reason="" kv k v
   for kv in "$@"; do
     k="${kv%%=*}"; v="${kv#*=}"
     case "$k" in
       significance) sig="$v" ;;
       worthiness)   wor="$v" ;;
       verdict)      verdict="$v" ;;
+      response)     response="$v" ;;
       reason)       reason="$(oneline "$v")" ;;
     esac
   done
   case "$sig" in low|high) ;; *) echo "debt: significance must be low|high (got '$sig')" >&2; return 64;; esac
   case "$wor" in low|high) ;; *) echo "debt: worthiness must be low|high (got '$wor')" >&2; return 64;; esac
   case "$verdict" in tap|wave|not-significant) ;; *) echo "debt: verdict must be tap|wave|not-significant (got '$verdict')" >&2; return 64;; esac
+  if [ -n "$response" ]; then
+    case "$response" in engage|defer|wave) ;; *) echo "debt: response must be engage|defer|wave (got '$response')" >&2; return 64;; esac
+  fi
   mkdir -p "$RUNS_DIR"
   local line; line="$(printf 'significance=%s worthiness=%s verdict=%s' "$sig" "$wor" "$verdict")"
+  [ -n "$response" ] && line="$line response=$response"
   [ -n "$reason" ] && line="$line reason=$reason"
   printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
 }
