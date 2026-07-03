@@ -17,6 +17,20 @@ If no changes exist, tell the user and stop.
 
 Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the list of changed files.
 
+**Advisory coverage-delta signal (SPEC-130, ADVISORY, never blocks).** Before dispatching the
+lenses, run the coverage-delta gate and fold its one line into the test-coverage lens's input:
+
+```
+bash lib/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid "$(bash lib/gate-ledger.sh rid 2>/dev/null)"
+```
+
+It prints one `[coverage-delta]` line , `WARNING under-tested` (source moved, no matching test
+change; it names the uncovered files), `ok` (source + test moved together), or `exempt`
+(docs/test/generated only). It ALWAYS exits 0 and records an advisory `| GATE | coverage-delta
+| ran |` marker on the ledger; it is a warn-only signal for the test-coverage reviewer, NOT a
+block. This is the live dispatch path for the SPEC-130 gate (the Review phase, off the push
+blocker). A `WARNING` is advisory input to the test-coverage lens, never a stop.
+
 ### Step 2: Dispatch 3 reviewers in parallel
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.

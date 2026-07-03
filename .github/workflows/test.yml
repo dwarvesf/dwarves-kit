@@ -68,6 +68,9 @@ jobs:
       - name: Run spec-reservation race tests (SPEC-128)
         run: bash tests/test-spec-reserve.sh
 
+      - name: Run mutation-smoke tests (SPEC-131)
+        run: bash tests/test-mutation-smoke.sh
+
       - name: Run role-classify tests (SPEC-089)
         run: bash tests/test-role-classify.sh
 
@@ -109,3 +112,9 @@ jobs:
 
       - name: Run understanding-axis no-orphan wiring tests (SPEC-127, understanding-gate SG-06)
         run: bash tests/test-understanding-wiring.sh
+
+      - name: Run generated proof-table tests (SPEC-132, kit-run-integrity SG-05)
+        run: bash tests/test-proof-table-gen.sh
+
+      - name: Run coverage-delta gate tests (SPEC-130, advisory)
+        run: bash tests/test-coverage-delta.sh
