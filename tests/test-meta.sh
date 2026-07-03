@@ -976,20 +976,29 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if grep -qF "## The 5 reviewers" "$VALIDATE_CMD" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} spec-validate.md header says 5 reviewers"
+if grep -qF "## The 6 reviewers" "$VALIDATE_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} spec-validate.md header says 6 reviewers"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} spec-validate.md header not updated to 5 reviewers"
+  echo -e "  ${RED}FAIL${NC} spec-validate.md header not updated to 6 reviewers"
   FAIL=$((FAIL + 1))
 fi
 
-# Count-drift guard: no live "4 reviewer(s)" reference may remain in the command
-# (the heading, frontmatter, and output-format intro must all agree). Historical
-# "4 reviewers run <date>" lines live in docs/specs/, not here, so this file is safe
-# to assert clean. Caught a real regression in the SPEC-008 review.
-STALE_COUNT=$(grep "4 reviewer" "$VALIDATE_CMD" 2>/dev/null | wc -l | tr -d ' ')
-assert_eq "spec-validate.md has no stale '4 reviewer' references" "0" "$STALE_COUNT"
+TOTAL=$((TOTAL + 1))
+if grep -qE "^### Reviewer 6:" "$VALIDATE_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} spec-validate.md has Reviewer 6 (design record, ADR-0031 §1, blocking)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} spec-validate.md missing Reviewer 6"
+  FAIL=$((FAIL + 1))
+fi
+
+# Count-drift guard: no live "4 reviewer(s)" / "5 reviewer(s)" reference may remain in the
+# command (the heading, frontmatter, and output-format intro must all agree). Historical
+# "N reviewers run <date>" lines live in docs/specs/, not here, so this file is safe
+# to assert clean. Caught a real regression in the SPEC-008 review; SPEC-122 bumps 5 -> 6.
+STALE_COUNT=$(grep -E "4 reviewer|5 reviewer" "$VALIDATE_CMD" 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "spec-validate.md has no stale '4 reviewer' / '5 reviewer' references" "0" "$STALE_COUNT"
 
 # ============================================================
 echo ""

@@ -8,7 +8,7 @@ You are a senior technical architect producing a development specification. The 
 
 ### Step 1: Gather intent
 
-If a `docs/specs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`). Otherwise, ask the user:
+If a `docs/specs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
 - What are you building? (one paragraph)
 - Is this greenfield or modifying existing code?
 - What's the tech stack? (or read from CLAUDE.md / package.json / go.mod)
@@ -92,8 +92,41 @@ Which one, and what the rejected alternatives traded away.
 - What changes when the load-bearing dimension grows (more data, more scale, a new variant)? Name the dimension; don't hand-wave "it scales".
 - Unit boundaries: each piece has one purpose, a defined interface, testable independently. A unit needing more than 3 sentences to describe is a split candidate.
 
-### Architecture (diagram if it helps)
-[High-level shape / data flow.]
+### Architecture
+See `## Design` below , ADR-0031 §1 promotes the diagram out of this sub-section into its
+own gated block, so a design-bearing spec cannot ship an empty architecture hint.
+
+## Design
+<!-- ADR-0031 §1 (the understanding gate, BEFORE half). Required (non-empty) for any spec
+     above the tiny lane that is DESIGN-BEARING: new component/module, non-obvious control
+     flow, schema/data-model change, external integration, an irreversible choice, or 2+
+     viable approaches. Otherwise collapse this WHOLE block to one line: `obvious: <why>` --
+     do not force a diagram or the sub-headings below on obvious work.
+     Enforced by /kit:spec-validate Reviewer 6: a design-bearing spec with an empty/missing
+     Design block is refused VALIDATED (blocking, unlike the other 5 advisory reviewers). -->
+
+### Approaches considered + chosen
+Point at `## Solution`'s `### Approaches considered` / `### Chosen approach + why` above (the
+same SPEC-008 depth); do not re-litigate it here unless the design view surfaces a new tradeoff.
+
+### Diagram (pick by fit, mermaid-first)
+One diagram, the kind that actually clarifies , not all five:
+- **sequence** -- control flow / protocol between actors
+- **state** -- an entity's lifecycle
+- **ER** -- schema / data-model shape
+- **flowchart** -- an algorithm / decision path
+- **C4 container-or-component (LITE)** -- where a new component sits; ONE level only, never
+  four cargo-culted levels
+
+Prefer Mermaid (GitHub-native, diffable, hand-editable) over a binary image.
+
+### ADR link(s)
+Link the ADR(s) that record any lasting or irreversible decision this design makes. If the
+decision is irreversible and no ADR exists yet, say so and note the follow-up.
+
+### Boundaries & failure modes
+Required when this design touches data, an external integration, or a migration. What is out
+of bounds for this design; point at `## Failure modes` below rather than duplicating its table.
 
 ## Technical Design
 <!-- Interfaces + Failure modes forked from ops-toolkit SDD (agency-lead-radar / tide). See docs/specs/SPEC-009. -->

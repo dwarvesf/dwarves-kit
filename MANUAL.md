@@ -54,7 +54,7 @@ For the full playbook (every scenario, the autonomy dial, the freeform front doo
 
 **Phase:** opt-in interactive solution-design beat (between Think and Spec)
 **Reads:** `docs/specs/DECISION-BRIEF.md` (if present), the codebase
-**Writes:** appends a `## Solution` section to `docs/specs/DECISION-BRIEF.md` (never clobbers the brief's product framing)
+**Writes:** appends a `## Solution` section to `docs/specs/DECISION-BRIEF.md` (never clobbers the brief's product framing); when the design is design-bearing, also appends a `## Design` section (diagram + ADR link(s), ADR-0031 §1 / SPEC-122) that `/kit:spec` folds into the spec
 **When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/kit:spec`. Opt-in; skip it and `/kit:spec` works as before.
 **Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
 
@@ -139,7 +139,7 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **Reads:** `docs/specs/SPEC-NNN-<slug>.md`
 **Writes:** comments in chat; the maintainer flips SPEC Status to VALIDATED manually after addressing findings
 **When to invoke:** before `/execute` on any spec longer than ~5 tasks
-**Common gotcha:** 5 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility) run sequentially. Budget ~10-12 minutes. The 5th reviewer (SPEC-008) flags shallow or non-extensible designs and is calibrated against false positives + legacy specs.
+**Common gotcha:** 6 reviewers (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility, design-record) run sequentially. Budget ~10-12 minutes. The 5th reviewer (SPEC-008) flags shallow or non-extensible designs and is calibrated against false positives + legacy specs. The 6th, Reviewer 6 (SPEC-122 / ADR-0031 §1), is the one BLOCKING check in the set: a design-bearing spec with an empty `## Design` block cannot flip to VALIDATED.
 
 ### `/kit:execute`
 
