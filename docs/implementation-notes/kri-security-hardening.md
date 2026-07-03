@@ -50,3 +50,24 @@ Also from the review: softened the `_normalize_rid` docstring's "EXACTLY" claim 
 never a path-escape, only a multibyte-filename correctness edge), and documented that
 `gate_ledger_sh`'s `_kit_root` param is vestigial (also closes a latent KIT_ROOT script-hijack).
 Impact: proof-table-gen.py write path + two doc-comments; new H6 assertion (20/20).
+
+## 2026-07-04 HIGH negative control was CI-fragile (origin/master ref)
+
+Context: PR #161 CI went RED on both platforms , `FAIL H-NEG: expected the reverted generator to
+leak but it did not`. Root cause: the negctl built its reverted generator via
+`git show origin/master:lib/proof-table-gen.py`, but GitHub's `actions/checkout@v4` defaults to
+`fetch-depth: 1` (shallow, single branch), so `origin/master` is not a ref in CI. `git show` failed,
+the redirect (`2>/dev/null`) swallowed it, the reverted-generator file was EMPTY, `python3 <empty>`
+wrote nothing, and the "should leak" assertion failed. Reproduced deterministically in a
+`git clone --depth 1 --single-branch` (master ref ABSENT -> identical RED).
+Decision: build the reverted generator by TRANSFORMING THE CURRENT FILE (`str.replace` on a stable
+string anchor), never a git ref. `mk_reverted` disables sanitization and/or confinement and ASSERTS
+the anchor was found (a drifted anchor fails loudly instead of a silent no-op leak-that-never-fires).
+Split into three per-guard controls (defense-in-depth honesty): NEG-1 confinement-off -> explicit
+out-of-tree path leaks; NEG-2 same generator but an absolute rid via default path stays confined by
+sanitization; NEG-3 both-off -> the rid escape returns.
+Why: the negctl must be self-contained (no repo-history dependency) and each guard proven load-bearing
+on the vector it uniquely owns. Verified the fixed test passes 22/22 in a ref-less shallow clone.
+Lesson: a negative control that reverts via a git ref is only as reliable as that ref's presence in
+CI; prefer an in-file transform with a found-anchor assertion.
+Impact: tests/test-security-hardening.sh negctl section (22/22); proof file negctl section updated.

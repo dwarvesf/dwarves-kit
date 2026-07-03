@@ -83,14 +83,50 @@ bash "$GEN" evil-symlink >/dev/null 2>&1; RC_H6=$?   # default out-path resolves
 eq "H6: write through an out->outside symlink is refused (non-zero exit)" "$RC_H6" "1"
 eq "H6: the symlink's outside target is untouched (no write-through)" "$(cat "$SENTINEL")" "ORIGINAL"
 
-# H-NEG: revert BOTH the normalization + confinement (use origin/master's generator) and show the
-# same absolute-rid PoC leaks. Proves H1-H3 actually bite.
-echo "--- HIGH negative control (reverted generator leaks) ---"
-ORIG_PY="$WORK/orig-proof-table-gen.py"
-git -C "$KIT_DIR" show origin/master:lib/proof-table-gen.py > "$ORIG_PY" 2>/dev/null
-NEG_ABS="$LEAKZONE/neg-abs-pwned"
-KIT_ROOT="$KIT_ROOT" KIT_LOG_DIR="$DWARVES_KIT_LOG_DIR" python3 "$ORIG_PY" "$NEG_ABS" >/dev/null 2>&1
-if [ -f "$NEG_ABS.md" ]; then ok "H-NEG: reverted generator DOES leak (writes $NEG_ABS.md outside docs/runs)"; else bad "H-NEG: expected the reverted generator to leak but it did not"; fi
+# HIGH negative controls: build a REVERTED generator by transforming the CURRENT file (NOT
+# origin/master -- CI's shallow checkout has no such ref, which silently made the old negctl a
+# no-op). mk_reverted disables one or both guards via STABLE STRING ANCHORS and asserts the anchor
+# was actually found (a drifted anchor fails loudly instead of a silent no-op leak-that-never-fires).
+# The two guards are defense-in-depth, so each is proven load-bearing on the vector it uniquely
+# owns, and the full escape is shown to return only when BOTH are removed.
+echo "--- HIGH negative controls (per-guard, reverting the CURRENT file) ---"
+mk_reverted() {  # <sanitize_off 0|1> <confine_off 0|1> <outfile>
+  python3 - "$PY" "$1" "$2" "$3" <<'PY'
+import sys
+src, san_off, conf_off, out = sys.argv[1], sys.argv[2] == "1", sys.argv[3] == "1", sys.argv[4]
+s = open(src).read()
+if san_off:
+    s2 = s.replace("rid = _normalize_rid(raw_rid)", "rid = raw_rid", 1)
+    assert s2 != s, "sanitize anchor not found (drifted); negctl would be a silent no-op"
+    s = s2
+if conf_off:
+    s2 = s.replace(
+        "if resolved_out != runs_root and not resolved_out.startswith(runs_root + os.sep):",
+        "if False:", 1)
+    assert s2 != s, "confine anchor not found (drifted); negctl would be a silent no-op"
+    s = s2
+open(out, "w").write(s)
+PY
+}
+run_rev() { KIT_ROOT="$KIT_ROOT" KIT_LOG_DIR="$DWARVES_KIT_LOG_DIR" python3 "$@" >/dev/null 2>&1; }
+
+# NEG-1: confinement is the SOLE guard on an explicit out-of-tree path (sanitization never touches an
+# explicit out-path). Disable confinement -> the explicit path MUST leak (RED-on-revert).
+REV_CONF="$WORK/rev-confine-off.py"; mk_reverted 0 1 "$REV_CONF" || bad "NEG setup: mk_reverted (confine-off) failed"
+run_rev "$REV_CONF" somerid "$LEAKZONE/neg1-explicit"
+if [ -f "$LEAKZONE/neg1-explicit" ] || [ -f "$LEAKZONE/neg1-explicit.md" ]; then ok "NEG-1 (confinement load-bearing): confinement-off -> explicit out-of-tree path LEAKS"; else bad "NEG-1: expected a leak with confinement removed, none occurred"; fi
+
+# NEG-2: with confinement OFF, sanitization ALONE still confines the rid vector (an absolute rid via
+# the DEFAULT out-path normalizes to a filename inside docs/runs). Proves sanitization is load-bearing
+# on the rid vector independently -- NO leak expected here.
+run_rev "$REV_CONF" "$LEAKZONE/neg2-absrid"
+present "NEG-2 (sanitization load-bearing): confinement-off but sanitization still confines the rid vector" "$LEAKZONE/neg2-absrid.md"
+
+# NEG-3: the full escape returns only when BOTH guards are removed. Disable sanitization AND
+# confinement -> an absolute rid via the default out-path MUST leak (RED-on-revert).
+REV_BOTH="$WORK/rev-both-off.py"; mk_reverted 1 1 "$REV_BOTH" || bad "NEG setup: mk_reverted (both-off) failed"
+run_rev "$REV_BOTH" "$LEAKZONE/neg3-absrid"
+if [ -f "$LEAKZONE/neg3-absrid.md" ]; then ok "NEG-3 (rid-vector guard load-bearing): both-off -> absolute rid LEAKS outside docs/runs"; else bad "NEG-3: expected a leak with both guards removed, none occurred"; fi
 
 # ============================================================
 echo ""

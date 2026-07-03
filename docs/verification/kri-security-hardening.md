@@ -16,7 +16,7 @@ symlink-follow in `lib/mutation-smoke.sh` (a symlinked candidate is skipped, not
 | 4 | a normal rid still writes `docs/runs/<rid>.md` (no over-block) | H4 | PASS |
 | 5 | canonical `proof-of-done.md` basename still refused | H5 | PASS |
 | 5b | an out-location symlink pointing OUTSIDE docs/runs is not written through (TOCTOU hardening) | H6 | PASS |
-| 6 | HIGH **negative control**: reverted generator leaks outside docs/runs (RED) | H-NEG | PASS |
+| 6 | HIGH **negative controls** (per-guard, defense-in-depth): confinement-off -> explicit path leaks; sanitization-off+confinement-off -> rid leaks; confinement-off alone -> sanitization still confines the rid | NEG-1, NEG-2, NEG-3 | PASS |
 | 7 | `=` in a `file=`/`reason=` value adds no second KV to the `\| MUTATION \|` line | M1 | PASS |
 | 8 | MEDIUM **negative control**: reverted `mutation()` leaks the `=` as extra KVs | M-NEG | PASS |
 | 9 | mutation-smoke skips a symlinked candidate; guard wired into the real loop | L1, L2 | PASS |
@@ -25,13 +25,14 @@ symlink-follow in `lib/mutation-smoke.sh` (a symlinked candidate is skipped, not
 
 | Run | Command | Exit | Verdict |
 |---|---|---|---|
-| green | `bash tests/test-security-hardening.sh` | 0 | PASS (20/20) |
-| HIGH neg-control | reverted `proof-table-gen.py` (origin/master) + absolute-rid PoC | n/a | RED-as-expected (writes outside docs/runs) |
+| green | `bash tests/test-security-hardening.sh` | 0 | PASS (22/22) |
+| HIGH neg-control | per-guard reverts of the CURRENT file (NEG-1/2/3) | n/a | RED-as-expected where a guard is removed (leaks) |
+| HIGH neg-control (CI-cond) | fixed test in a ref-less `--depth 1 --single-branch` clone | 0 | PASS (22/22) -- no `origin/master` dependency |
 | MEDIUM neg-control | reverted `mutation()` line + `=`-bearing value | n/a | RED-as-expected (4 KV tokens, `=` leaked) |
 | no-regression | `bash tests/test-proof-table-gen.sh` | 0 | PASS (25/25) |
 | no-regression | `bash tests/test-mutation-smoke.sh` | 0 | PASS (33/33) |
 | no-regression | `bash tests/test-meta.sh` | 0 | PASS (671 assertions) |
-| cross-platform | `/bin/bash tests/test-security-hardening.sh` (bash 3.2.57) | 0 | PASS (18/18) |
+| cross-platform | `/bin/bash tests/test-security-hardening.sh` (bash 3.2.57) | 0 | PASS (22/22) |
 
 ## Run detail
 
@@ -49,13 +50,26 @@ proof-table-gen: refusing to write '.../leakzone/explicit.md': resolves to '...'
 1
 ```
 
-NEGATIVE CONTROL , the reverted generator (origin/master's `proof-table-gen.py`, no
-normalization + no confinement) DOES leak, proving H1-H3 bite:
+NEGATIVE CONTROLS , the two guards are defense-in-depth, so the negctl **builds a reverted
+generator by transforming the CURRENT file** (a `str.replace` on a stable anchor, asserting the
+anchor was found so a drift fails loudly), NOT by fetching `origin/master` , CI's shallow
+`actions/checkout` (fetch-depth 1) has no `master` ref, and the old `git show origin/master:...`
+negctl silently produced an empty file that wrote nothing (the exact RED that this fix addresses;
+reproduced deterministically in a `--depth 1 --single-branch` clone). Each guard is proven
+load-bearing on the vector it uniquely owns:
 ```
-$ KIT_ROOT=... KIT_LOG_DIR=... python3 <origin/master proof-table-gen.py> "$LEAKZONE/neg-abs-pwned"
-wrote .../leakzone/neg-abs-pwned.md   (rid=/.../leakzone/neg-abs-pwned, ...)   <-- arbitrary write OUTSIDE docs/runs
+# NEG-1  confinement is the SOLE guard on an explicit out-of-tree path (sanitization never sees it)
+$ python3 <confinement-disabled> somerid "$LEAKZONE/neg1-explicit"
+   -> writes $LEAKZONE/neg1-explicit(.md)   <-- LEAK (confinement load-bearing here)
+# NEG-2  same reverted generator, but an ABSOLUTE rid via the DEFAULT out-path stays confined:
+$ python3 <confinement-disabled> "$LEAKZONE/neg2-absrid"
+   -> writes docs/runs/-...-neg2-absrid.md  ; no file at $LEAKZONE/neg2-absrid.md  (sanitization load-bearing here)
+# NEG-3  remove BOTH guards -> the rid escape returns:
+$ python3 <sanitization+confinement disabled> "$LEAKZONE/neg3-absrid"
+   -> writes $LEAKZONE/neg3-absrid.md        <-- LEAK outside docs/runs
 ```
-Restoring the fixed generator re-confines every case (18/18 green).
+The real (fixed) generator confines/rejects every case above (H1-H3), and the fixed test passes
+22/22 in a ref-less shallow clone (no `origin/master`), i.e. under CI conditions.
 
 ### MEDIUM , `=` neutered both ways (real ledger line)
 
@@ -94,7 +108,7 @@ covered deterministically by H6. LOW (locale caveat on the charset-equivalence c
 
 ```
 cd <repo>                                        # branch fix/kri-security-hardening
-bash tests/test-security-hardening.sh            # 20/20 green (HIGH+MEDIUM+LOW, both neg-controls, TOCTOU)
+bash tests/test-security-hardening.sh            # 22/22 green (HIGH+MEDIUM+LOW, per-guard neg-controls, TOCTOU)
 /bin/bash tests/test-security-hardening.sh       # cross-platform, macOS bash 3.2.57
 bash tests/test-proof-table-gen.sh               # 25/25, no regression
 bash tests/test-mutation-smoke.sh                # 33/33, no regression
