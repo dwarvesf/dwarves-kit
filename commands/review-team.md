@@ -21,6 +21,8 @@ Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the 
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
+**Domain lens (opt-in, SPEC-111).** In addition to the fixed 3, classify the changed files' domain , `bash lib/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`performance-reviewer`, `api-reviewer`, `frontend-reviewer`, `infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the SPEC-111 read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
+
 **Model tiering (SPEC-078 / ID-078, EveryInc Stage 4 pattern):** dispatch the
 security reviewer with an EXPLICIT model override matching the session model ,
 the security-reviewer agent's frontmatter defaults to sonnet, so omitting the

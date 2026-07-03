@@ -286,6 +286,12 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 | `research-architecture` | `/spec` | Brownfield architecture patterns |
 | `research-pitfalls` | `/spec` | Landmine surfacing pre-build |
 | `meta-agent` | `/kit:draft-agent` | Generates a new subagent (or a sub-goal file) from a description; the command installs the agent by default (`--draft` to stop at a review draft) |
+| `performance-reviewer` | `/review-team` | Read-only PERFORMANCE-lens reviewer (hot paths, N+1, allocations, caching, p95/p99, complexity); returns severity findings + a 0-10 score |
+| `api-reviewer` | `/review-team` | Read-only API-CONTRACT-lens reviewer (breaking changes, versioning, schema, error codes, backward compat, idempotency); severity findings + score |
+| `frontend-reviewer` | `/review-team` | Read-only FRONTEND-lens reviewer (a11y/ARIA, semantic HTML, focus/keyboard, loading/error/empty/disabled states, responsive, color-only signaling); severity findings + score |
+| `infra-reviewer` | `/review-team` | Read-only INFRA-lens reviewer (deploy/rollback safety, CI/CD, container/IaC least-privilege, secret handling, idempotent provisioning, blast radius); severity findings + score |
+| `db-migration-worker` | `/execute` 2b-0 | Write-capable schema-migration implementer; writes up + DOWN/rollback + batched backfill + index changes, guards long locks, never drops data without an explicit ask |
+| `data-etl-worker` | `/execute` 2b-0 | Write-capable data-pipeline implementer; extract/transform/load, DuckDB SQL for the transform, idempotent re-runs, schema validation, no silent row drops |
 
 ## Path-scoped rules
 

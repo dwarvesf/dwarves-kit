@@ -60,6 +60,19 @@ _role_match() {
   echo "generic	(no domain keyword matched)"; return 0
 }
 
+# agent-for <domain>: the predefined WORKER agent for a domain (the execute.md 2b-0 reuse target,
+# an IMPLEMENTER), or EMPTY. Reviewers are deliberately NOT here , a read-only reviewer cannot
+# implement a task, so it dispatches via /kit:review-team's domain lenses, not the 2b-0 worker slot
+# (SPEC-111). `generic` returns empty so 2b-0 falls through to Mode-C synthesis (SPEC-089:79, the
+# dynamic long tail); a generic->agent map would collapse that escalation.
+agent_for() {
+  case "${1:-}" in
+    db-migration) echo "db-migration-worker" ;;
+    data-etl)     echo "data-etl-worker" ;;
+    *)            : ;;   # reviewer domains / security / generic / unknown -> empty
+  esac
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   classify) [ -n "${1:-}" ] || { echo "usage: role-classify.sh classify \"<task>\"" >&2; exit 2; }
@@ -67,5 +80,7 @@ case "$cmd" in
   explain)  [ -n "${1:-}" ] || { echo "usage: role-classify.sh explain \"<task>\"" >&2; exit 2; }
             _role_match "$*" | awk -F'\t' '{print $1"  <- matched: "$2}' ;;
   domains)  printf '%s\n' $DOMAINS ;;
-  *) echo "usage: role-classify.sh {classify|explain|domains} [\"<task>\"]" >&2; exit 2 ;;
+  agent-for) [ -n "${1:-}" ] || { echo "usage: role-classify.sh agent-for <domain>" >&2; exit 2; }
+            agent_for "$1" ;;
+  *) echo "usage: role-classify.sh {classify|explain|domains|agent-for} [\"<task>\"|<domain>]" >&2; exit 2 ;;
 esac
