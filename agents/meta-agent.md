@@ -54,6 +54,8 @@ TOOLS (advisory): <minimal list, e.g. Read, Grep, Glob, Edit, Bash(npm test *)>
 PREAMBLE:
 You are a <role> specialist. <one-line focus>. <the 2-4 rules/gotchas that matter for THIS task>.
 Stay within the task's scope; do not <the one thing this specialist over-reaches on>.
+Post-condition: <one line: how the caller verifies this worker's output before treating the task
+done , a command to run, a file/state to check, a diff shape to expect. Not "it looks right".>
 ```
 
 2. The task is genuinely plain (a typo, a rename, a one-line doc tweak) , return exactly:
@@ -66,8 +68,11 @@ Rules for Mode C: the PREAMBLE is what makes the generic worker behave like the 
 be concrete to the task (name the real pitfalls of THAT role), not generic boilerplate. Judge honestly
 whether a role adds value , returning `NO_SPECIALIST` for a trivial task is correct, not a failure.
 TOOLS is advisory only: an inline-dispatched worker cannot be tool-restricted (only a registered agent
-file's frontmatter can), so name the minimal set for the human's eyes and for the caller to cache. Keep
-the whole return under ~200 words: it is prepended to a worker prompt, not stored.
+file's frontmatter can), so name the minimal set for the human's eyes and for the caller to cache.
+Post-condition is mandatory whenever a specialist is returned: name a concrete check (a command, a
+file, an expected diff shape) the caller runs to confirm the worker's output before trusting it done ,
+not a restatement of the task. Keep the whole return under ~200 words: it is prepended to a worker
+prompt, not stored.
 
 ## Data-driven routing (Mode B `Model:` / `Effort:`)
 

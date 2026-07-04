@@ -22,7 +22,7 @@ Work toward 2-3 candidate solution approaches. Ask ONE question per turn (`AskUs
 Present the approaches with their tradeoffs, lead with your recommended one and why. Ask the user to choose (`AskUserQuestion`).
 
 ### Step 4: Present the design in sections, approve per section
-Present the chosen design in sections scaled to complexity. After EACH section, ask "does this look right so far?" before moving to the next. Cover, as relevant:
+Present the chosen design in sections scaled to complexity. After EACH section, ask "does this look right so far?" before moving to the next. Where more than one decision is in play, work through them in order of likelihood-to-tweak: data models and public interfaces first (costliest to revise once other code depends on them), UX flows next, mechanical refactors last. Cover, as relevant:
 - Chosen approach + what the rejected alternatives traded away
 - Extensibility & boundaries (what changes when the load-bearing dimension grows; unit boundaries: one purpose, a defined interface, testable independently)
 - Interfaces (I/O contract), if this exposes or consumes one

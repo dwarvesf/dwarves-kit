@@ -77,6 +77,12 @@ atomically at dispatch so no sibling wave worker can take it.
 # Spec: [feature name]
 Generated: [date]
 Status: DRAFT | APPROVED
+References: [optional , one or more pointers to source code or docs that already implement the
+wanted semantics, each with one line on what to imitate (the specific behavior, interface
+shape, or algorithm , not "do it like this project" in general). Source beats a from-scratch
+description: point at the real thing before describing it in prose. Cross-language references
+are fine; the semantics transfer even where the syntax doesn't. Omit the whole line when there
+is no reference to point at.]
 
 ## Problem
 [What user pain does this solve? Copy from decision brief if available.]
@@ -107,6 +113,12 @@ own gated block, so a design-bearing spec cannot ship an empty architecture hint
      do not force a diagram or the sub-headings below on obvious work.
      Enforced by /kit:spec-validate Reviewer 6: a design-bearing spec with an empty/missing
      Design block is refused VALIDATED (blocking, unlike the other 5 advisory reviewers). -->
+
+**Ordering:** when this design covers more than one decision, write about them in order of
+likelihood-to-tweak , the parts most expensive to change once other code depends on them get
+the most attention first. Data models and public interfaces first (they harden fastest and are
+costliest to revise later), UX flows next, mechanical refactors last (cheapest to revisit,
+lowest design-review priority).
 
 ### Approaches considered + chosen
 Point at `## Solution`'s `### Approaches considered` / `### Chosen approach + why` above (the
