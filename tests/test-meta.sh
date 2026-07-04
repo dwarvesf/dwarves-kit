@@ -1603,6 +1603,22 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-147: the board-bridge mirror. board-mirror.sh exists and is executable, board.sh wires
+# both mirror and status dispatch cases to it, and the doc-impact map (README + architecture.md)
+# mentions the new lib file. A drop on any leg means the bridge is silently unwired.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/board-mirror.sh" ] \
+   && grep -qF 'mirror) shift; cmd_mirror "$@" ;;' "$KIT_DIR/lib/board.sh" \
+   && grep -qF 'status) shift; cmd_status "$@" ;;' "$KIT_DIR/lib/board.sh" \
+   && grep -qF 'lib/board-mirror.sh' "$KIT_DIR/README.md" \
+   && grep -qF 'board-mirror.sh' "$KIT_DIR/docs/architecture.md"; then
+  echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} board-bridge mirror incomplete: need lib/board-mirror.sh executable, board.sh mirror/status dispatch, README + architecture.md mentions (SPEC-147)"
+  FAIL=$((FAIL + 1))
+fi
+
 # SPEC-056: per-type test dialects. Three legs: the 6-row dialect table, the type-aware
 # test-plan step, the default flip in the cycle table.
 TOTAL=$((TOTAL + 1))
