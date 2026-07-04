@@ -11,7 +11,9 @@
 #   required <lane>                     print the lane's required (measure-twice) gate keys
 #   start    <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]   record routing facts (SPEC-061/062)
 #   start --amend <same args>           sanctioned correction; readers take the last AMEND (SPEC-077)
-#   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision
+#   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision (a `grill`+`skipped`
+#                                       reason MUST start with reason=<home-turf|density-low|
+#                                       operator-wave>, SPEC-138; every other phase/state is free text)
 #   action   <rid> <text>              append an action-log line
 #   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
 #                                       append an understanding-debt verdict (ADR-0031, SPEC-123);
@@ -146,8 +148,27 @@ start() {
 record() {
   local rid="${1:-}" raw="${2:-}" state="${3:-}"; shift 3 2>/dev/null || { echo "usage: record <rid> <phase> <ran|skipped> [reason]" >&2; return 64; }
   case "$state" in ran|skipped) ;; *) echo "state must be ran|skipped" >&2; return 64;; esac
+  local phase; phase="$(normalize_phase "$raw")"
+  local reason; reason="$(oneline "$@")"
+  # Grill unknown-density conditioning (SPEC-138): a grill SKIP must carry a reason= token from
+  # the closed enum below, as the FIRST word of its reason text, so the kit's least-used,
+  # highest-leverage gate (82% skipped over a 63-run probe) is auditable, not free text. The
+  # sibling harness-observatory `kit_gates` reader treats this field as opaque text either way
+  # (DECISIONS.md "01-kit-gates-lens"); the enum is enforced HERE, at write time, so a malformed
+  # skip is refused before it ever lands, not caught later at analysis time. Every other
+  # (phase, state) combination -- including grill+ran, and skipped on any OTHER phase -- is
+  # behaviorally identical to before this change.
+  if [ "$phase" = "grill" ] && [ "$state" = "skipped" ]; then
+    case "$reason" in
+      reason=home-turf*|reason=density-low*|reason=operator-wave*) ;;
+      *)
+        echo "record: a grill skip needs reason=<home-turf|density-low|operator-wave> as the first word of its reason (got: '${reason:-<empty>}')" >&2
+        return 64
+        ;;
+    esac
+  fi
   mkdir -p "$RUNS_DIR"
-  printf '%s | GATE | %s | %s | %s\n' "$(now)" "$(normalize_phase "$raw")" "$state" "$(oneline "$@")" >> "$(ledger_file "$rid")"
+  printf '%s | GATE | %s | %s | %s\n' "$(now)" "$phase" "$state" "$reason" >> "$(ledger_file "$rid")"
 }
 
 action() {

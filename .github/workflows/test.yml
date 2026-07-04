@@ -124,3 +124,6 @@ jobs:
 
       - name: Run kit-run-integrity docs-wiring no-orphan check (SPEC-135)
         run: bash tests/test-kri-wiring.sh
+
+      - name: Run grill-conditioning tests (SPEC-138, kit-absorptions sub-goal 04)
+        run: bash tests/test-grill-conditioning.sh
