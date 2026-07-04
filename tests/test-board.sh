@@ -94,8 +94,14 @@ REG
 
 echo "=== AC1/AC2: pb_rows + pb_queue_rows extract and allow-list a valid token ==="
 ROWS_OUT="$(bash "$PARSE_BOARD" rows "$FIXA/_meta/BACKLOG.md")"
-assert "pb_rows sees ID-001 as queued" "$(printf '%s\n' "$ROWS_OUT" | grep -qE '^ID-001\tqueued\t' && echo 0 || echo 1)"
-assert "pb_rows sees ID-008 as claimed" "$(printf '%s\n' "$ROWS_OUT" | grep -qE '^ID-008\tclaimed\t' && echo 0 || echo 1)"
+# NOTE: the pattern is built via bash ANSI-C quoting ($'...') so the literal tab byte is
+# embedded in the argv BEFORE grep sees it, rather than relying on grep's own '\t' escape
+# handling in a -E pattern. That escape is a GNU-grep-only convenience (BSD grep on macOS
+# interprets '\t' inside -E as a tab too, but GNU grep 3.x on Linux/CI does not -- it matches
+# a literal 't'), which silently broke this assertion on ubuntu-latest while staying green on
+# macos-latest. A real tab byte matches identically on both grep implementations.
+assert "pb_rows sees ID-001 as queued" "$(printf '%s\n' "$ROWS_OUT" | grep -qE $'^ID-001\tqueued\t' && echo 0 || echo 1)"
+assert "pb_rows sees ID-008 as claimed" "$(printf '%s\n' "$ROWS_OUT" | grep -qE $'^ID-008\tclaimed\t' && echo 0 || echo 1)"
 
 QROWS="$(bash "$PARSE_BOARD" queue-rows "$FIXA/_meta/BACKLOG.md" fixA "$FIXA" 2>/dev/null)"
 assert "ID-002 (megagoals dir) is allow-listed" "$(printf '%s\n' "$QROWS" | grep -q '^ID-002' && echo 0 || echo 1)"
