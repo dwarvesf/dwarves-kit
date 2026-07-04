@@ -29,7 +29,7 @@ If you can pull the current Claude Code subagent/tool docs with WebFetch to conf
 ### Mode B: mega-goal sub-goal file (`goals/NN-<slug>.md`)
 
 Draft a `plan-for-mega-goal` sub-goal file. Match the template at
-`~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md`
+`~/.claude/skills/plan-for-mega-goal/references/subgoal-template.md`
 (read it if reachable). Required shape: `# Sub-goal NN: <name>`; then `**Merge policy:**` (`auto|gate`, default `gate`), `**Time budget:**`, `**Proof:**` (evidence form scaled to complexity), `**Depends on:**`, bare `Model:` / `Effort:` lines (omit to inherit), `**Branch:**`, `**PR base:**`; then `## Outcome`, `## Quality bar`, `## How to close the loop` ending in a bold `**Done =**` boolean, `## Handoff on completion`, `## Scope edges` (In/Out/Not), `## Where to look`, `## PR body`, `## Notes`. `Done =` MUST be specific to this sub-goal, mappable to captured evidence, never "I ran it and it worked".
 
 ### Mode C: inline role spec (for immediate same-run dispatch)
