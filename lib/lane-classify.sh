@@ -30,6 +30,9 @@
 #   lane-classify.sh check <chosen-lane> "<desc>"      -> warn+log if chosen < floor, exit 0
 #   lane-classify.sh escalate <current-lane> <spec-file>  -> up-only spec->build re-classify
 #                                                            (ESCALATE <cur> -> <heavier> | HOLD <cur>), exit 0
+#   lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]
+#                                                        -> down-only SHIP-time size nudge (SPEC-141):
+#                                                           advisory line + ledger action, never blocks, exit 0
 #   lane-classify.sh lanes                              -> prints the 5 lane names
 #   lane-classify.sh flags                              -> prints the flag names
 
@@ -41,6 +44,8 @@ set -euo pipefail
 LC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/kit-log-dir.sh
 source "$LC_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# deescalate()'s ledger write only (SPEC-141); no other verb in this file touches gate-ledger.
+GATE_LEDGER="$LC_DIR/gate-ledger.sh"
 
 # Hard-gate flags (any hit -> full). name <-> regex, index-aligned.
 _hard_name=(auth data-model audit-security external-provider public-contract weaken-validation kit-machinery)
@@ -270,16 +275,117 @@ escalate() {
   return 0
 }
 
+# --- ship-time de-escalation (SPEC-141): the size-floor sibling of escalate() above. ---
+# escalate() is TEXT-based and up-only, at the spec->build boundary. deescalate() is
+# DIFF-SIZE-based and down-only, at the SHIP boundary: when the lane actually SHIPPED was
+# normal/full but the final diff stayed under a changed-lines floor, this is a NUDGE for next
+# time's classification habit, never a re-classification of the run that already shipped
+# (mirrors quiz-gate.sh's always-exit-0, never-block posture). Only an escalated lane
+# (normal/full) can ever be found "too heavy after all" -- tiny/bug/backfill never fire,
+# mirroring lane_rank's "over-sizing is always safe" stance (nothing here ever calls a bug or
+# backfill run oversized).
+#
+# Base resolution mirrors hooks/ship-gate.sh / lib/coverage-delta.sh's _resolve_base
+# (origin/HEAD symref -> origin/main -> main -> origin/master -> master).
+_deesc_default_branch() {
+  local root="$1" ref
+  ref="$(git -C "$root" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)"
+  if [ -n "$ref" ]; then printf '%s\n' "$ref"; return; fi
+  local c
+  for c in origin/main main origin/master master; do
+    git -C "$root" rev-parse --verify -q "$c" >/dev/null 2>&1 && { printf '%s\n' "$c"; return; }
+  done
+  printf '%s\n' master
+}
+_deesc_resolve_base() {
+  local root="$1" def
+  def="$(_deesc_default_branch "$root")"
+  git -C "$root" merge-base HEAD "$def" 2>/dev/null || git -C "$root" rev-parse HEAD 2>/dev/null || true
+}
+
+# Total added+deleted lines: committed base..HEAD + any uncommitted working-tree delta.
+# DELIBERATELY a 2-source sum, NOT the 3-way union coverage-delta.sh/proof-ledger.sh use
+# (base..HEAD + working-tree + --cached): `git diff HEAD` (working tree vs HEAD) already
+# folds in the staged delta, so adding `--cached` again would double-count every staged line.
+# That double-count is harmless for those two gates (it biases them toward MORE warnings,
+# their safe direction); it would bias THIS gate the wrong way (under-nudging a genuinely
+# small diff). See docs/specs/SPEC-141-lane-de-escalation.md "Design" for the full note.
+_deesc_changed_lines() {
+  local root="$1" base="$2" total=0 a d
+  while IFS=$'\t' read -r a d _rest; do
+    [ "$a" = "-" ] && a=0; [ "$d" = "-" ] && d=0
+    total=$((total + a + d))
+  done < <(
+    { git -C "$root" diff --numstat "$base"..HEAD -- . 2>/dev/null
+      git -C "$root" diff --numstat HEAD -- . 2>/dev/null
+    } 2>/dev/null
+  )
+  printf '%s' "$total"
+}
+
+# Usage: deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]
+# ALWAYS exits 0. Prints nothing and writes nothing unless the lane is normal/full AND the
+# diff is under the floor (LANE_DEESCALATE_FLOOR env var, default 20 -- see WORKFLOW.md
+# "Lane x phase depth matrix" for the rationale). The --rid ledger write is best-effort
+# (`|| true`): a write failure can never affect this command's own exit code.
+deescalate() {
+  local chosen="${1:-}"; shift 2>/dev/null || true
+  [ -n "$chosen" ] || {
+    echo "usage: lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]" >&2
+    return 64
+  }
+  local rid="" root="" base="" floor="${LANE_DEESCALATE_FLOOR:-20}"
+  local a skip=""
+  for a in "$@"; do
+    if [ -n "$skip" ]; then
+      case "$skip" in rid) rid="$a";; root) root="$a";; base) base="$a";; floor) floor="$a";; esac
+      skip=""; continue
+    fi
+    case "$a" in
+      --rid)     skip=rid ;;
+      --rid=*)   rid="${a#--rid=}" ;;
+      --root)    skip=root ;;
+      --root=*)  root="${a#--root=}" ;;
+      --base)    skip=base ;;
+      --base=*)  base="${a#--base=}" ;;
+      --floor)   skip=floor ;;
+      --floor=*) floor="${a#--floor=}" ;;
+    esac
+  done
+
+  # Lane guard: only normal/full can ever be found oversized for a small diff.
+  case "$chosen" in normal|full) ;; *) return 0 ;; esac
+
+  [ -n "$root" ] || root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  [ -n "$base" ] || base="$(_deesc_resolve_base "$root")"
+  [ -n "$base" ] || return 0   # no resolvable base (e.g. no commits yet) -- nothing to measure
+
+  [[ "$floor" =~ ^[0-9]+$ ]] || floor=20
+
+  local lines; lines="$(_deesc_changed_lines "$root" "$base")"
+  [[ "$lines" =~ ^[0-9]+$ ]] || return 0
+
+  if [ "$lines" -lt "$floor" ]; then
+    printf 'LANE-DEESCALATE: shipped as %s but the diff stayed tiny-sized (%s changed line(s) < floor=%s); consider `tiny` lane next time\n' \
+      "$chosen" "$lines" "$floor"
+    if [ -n "$rid" ]; then
+      bash "$GATE_LEDGER" action "$rid" "lane-deescalate chosen=$chosen lines=$lines floor=$floor verdict=misroute-tiny" >/dev/null 2>&1 || true
+    fi
+  fi
+  return 0
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     classify) _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; printf '%s\n' "$LANE";;
     explain)  _extract_files "$@"; classify_core ${REMAIN[@]+"${REMAIN[@]}"}; printf '%s\nreason: %s\nflags: %s\n' "$LANE" "$REASON" "${FIRED:-none}";;
     check)    _extract_files "$@"; lane_check ${REMAIN[@]+"${REMAIN[@]}"};;
-    escalate) escalate "$@";;
+    escalate)   escalate "$@";;
+    deescalate) deescalate "$@";;
     lanes)    printf 'tiny\nnormal\nfull\nbug\nbackfill\n';;
     flags)    printf '%s\n' "${_hard_name[@]}" "${_soft_name[@]}";;
-    *) echo "usage: lane-classify.sh {classify [--files \"<paths>\"] \"<desc>\"|explain [--files ...] \"<desc>\"|check [--files ...] <chosen-lane> \"<desc>\"|escalate <current-lane> <spec-file>|lanes|flags}" >&2; return 64;;
+    *) echo "usage: lane-classify.sh {classify [--files \"<paths>\"] \"<desc>\"|explain [--files ...] \"<desc>\"|check [--files ...] <chosen-lane> \"<desc>\"|escalate <current-lane> <spec-file>|deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]|lanes|flags}" >&2; return 64;;
   esac
 }
 

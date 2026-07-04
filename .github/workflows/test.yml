@@ -133,3 +133,6 @@ jobs:
 
       - name: Run pitch buy-in assembler tests (SPEC-140, kit-run-integrity sub-goal 06)
         run: bash tests/test-pitch.sh
+
+      - name: Run lane de-escalation tests (SPEC-141, kit-run-integrity sub-goal 07)
+        run: bash tests/test-lane-deescalate.sh

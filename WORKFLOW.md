@@ -397,6 +397,26 @@ the V-model lens above. Every cell is one of:
 When a new phase is added to the cycle table (and the V-model lens gains a row),
 add a column here and assign a depth per lane before shipping the change.
 
+### Ship-time de-escalation (SPEC-141)
+
+Escalation is not one-way. `/kit:assign`'s floor check (`lane-classify.sh check`, above) and
+`/kit:execute`'s spec->build re-classify (`lane-classify.sh escalate`, "## The V-model descent
+contract" below) both only ever push a lane UP -- correct, since under-sizing is the dangerous
+direction. At **ship**, `lane-classify.sh deescalate` closes the loop the other way: when the
+lane actually SHIPPED was `normal`/`full` but the final diff (`base..HEAD` + any working-tree
+delta) stayed under **`LANE_DEESCALATE_FLOOR`** changed (added+deleted) lines -- an env var,
+default **20**, overridable per-run -- it prints one advisory nudge ("shipped as `<lane>` but
+the diff stayed tiny-sized ... consider `tiny` next time") and appends a `| ACTION |
+lane-deescalate chosen=<lane> lines=<N> floor=<F> verdict=misroute-tiny` ledger line, the data
+source for `lib/lane-telemetry.sh`'s future misroute aggregation. 20 is loose enough that a
+real one-file bug tweak does not spuriously nudge, tight enough to catch a `normal`/`full`
+lane chosen for what turned out to be a copy-edit-sized diff; raise it to nudge less often,
+lower it to nudge more. `tiny`/`bug`/`backfill` never fire (nothing here ever calls a bug or
+backfill run "too heavy"). **ADVISORY ONLY**, the same posture as the ★-tap nudge and the
+pitch offer below: it never re-classifies the run that already shipped, never blocks the
+push, and never cuts a gate. Wired at `commands/ship.md` Step 8, after the SPEC-136
+significance record and the SPEC-140 pitch offer.
+
 ## Gate ledger and ship enforcement
 
 Every phase gate a run executes is recorded to a per-run ledger, so the run is
