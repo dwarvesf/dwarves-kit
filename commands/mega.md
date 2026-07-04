@@ -110,7 +110,18 @@ so the existing driver can walk it unmodified):
   when you mean "quiesce everything so I can review the full state", SPEC-106).
 - `<dir>/goals/NN-<slug>.md` -- one `plan-for-goal`-shaped file per sub-goal
   (`Model:` / `Effort:` header lines so `lib/orchestrate.sh`'s per-sub-goal routing
-  works; `Done =`; scope edges; the proof expectation from Step 1).
+  works; `Done =`; scope edges; the proof expectation from Step 1, plus a
+  coverage-delta row for substantial sub-goals). `Model:` / `Effort:` are BARE
+  lines, value only, no trailing comment -- the driver greps `^Model:` and takes
+  the whole rest of the line as the tier. **`Model:` defaults to `sonnet`**
+  (SPEC-107 cheap-first); route `opus` for planning/design-dominant hard
+  reasoning, `haiku` for trivial mechanical work, DELETE the line to deliberately
+  inherit the parent tier. Each sub-goal also names a **`Design:` field**
+  (`bearing | obvious`, ADR-0031 §1: `bearing` means the executor's spec MUST
+  carry a non-empty `## Design` block and `/kit:spec-validate` refuses VALIDATED
+  without it; omit to default `obvious`) and, for UI sub-goals ONLY, a
+  **`Done-mode:` line** (`proof | over-test | quiescence`, SPEC-112, consumed as
+  a `/kit:ui-design` `$ARGUMENTS` flag; omit for non-UI work).
   **Include a `## Touches` section** listing the directory-prefix globs this sub-goal
   will write, one per line, form `dir/**` (or `dir/sub/**`) -- the SAME shape
   `lib/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
@@ -134,7 +145,17 @@ reserved for the BACKLOG cockpit, never a working roadmap).
 ### Step 5: Hand off, then enforce at ship (never bypass)
 
 Hand the pointer to the activator (paste into `/goal`, or drive it
-non-interactively via `lib/orchestrate.sh run <dir>`). The driver emits a
+non-interactively via `lib/orchestrate.sh run <dir>`).
+
+**Run mode (mirrors the skill's knob).** The conductor dispatches ready sub-goals
+as parallel background SUBAGENTS by default (workers keep the kit's internal
+verifier/reviewer fan-out); a `claude -p` delegate per sub-goal is the pick for
+unattended runs or tmux-pane visibility; INLINE (execute in-session) only when the
+chain is <=4 sub-goals. Whichever mode runs, the checkpoint semantics below are
+identical -- the mode changes where a worker's context lives, never what it must
+record.
+
+The driver emits a
 `gate-ledger start` per dispatched sub-goal (rid derived from the goal file's
 `**Branch:**`), the automated mirror of the START `commands/assign.md` makes, so
 mega-dispatched runs are tracked in `lane-telemetry`, not `?` (SPEC-101). The loop
@@ -181,6 +202,12 @@ converts the PR to a draft, and adds the label -- exactly the state `_merge_excl
 refuses. Draft plus label is belt-and-suspenders: GitHub itself refuses to merge a draft,
 and the code guard reads the label. Do this for every `gate`-tagged sub-goal PR and the
 `gated-final` PR; a normal `auto` PR is left un-marked so the guard clears it.
+
+**Close the run visibly (mirrors the skill's close).** When the loop finishes (or
+halts at a `gate!`), emit `<dir>/RUN_REPORT.md` -- ASCII gantt + per-sub-goal gate
+matrix + the callable stack, markdown-only -- and render the timeline + totals in
+chat. The report reads from the rid ledger (`lib/gate-ledger.sh`) and the roadmap
+checkboxes, never from transcripts.
 
 ## What this refuses (mirrors `/kit:dispatch`'s "What this command refuses")
 
