@@ -93,6 +93,9 @@ Create a single commit: `docs: update [list of files] to match current codebase`
 
 This is a docs-only commit. Do NOT mix code changes with doc updates.
 
+After the commit, record it for lane telemetry (SPEC-139), one line:
+`bash lib/gate-ledger.sh record <rid> Docs ran "files=<list>"`.
+
 ## Rules
 
 - Never document features that don't exist in the code (no phantom features).

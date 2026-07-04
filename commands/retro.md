@@ -123,3 +123,7 @@ Check if any action items should become:
 - Adjustments to hook configuration
 
 Ask: "Any of these action items worth adding to the project CLAUDE.md or kit config?"
+
+After the retro document is written, record it for lane telemetry (SPEC-139), one line
+(the matrix row this command owns is `Reflect`, not `retro`):
+`bash lib/gate-ledger.sh record <rid> Reflect ran "action-items=<N>"`.

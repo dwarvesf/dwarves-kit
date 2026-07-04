@@ -85,6 +85,10 @@ Save the enriched explainer under `docs/verification/explain-command/` (or along
 Tell the user it is ready and that the quiz built on it is `deep-understand` (SG-04). Do NOT merge, do NOT
 gate the merge; the explainer is advisory (ADR-0031: engage / defer / wave, never must-pass).
 
+Record the run for lane telemetry (SPEC-139), one line (`explain` carries no matrix row of its
+own, same as `verify` -- RUN_REPORT observability, never a new required gate):
+`bash lib/gate-ledger.sh record <rid> explain ran "ref=<commit|PR|spec>"`.
+
 ## Rules
 
 - Ground every claim in the diff or a recorded verdict. The diff wins over the commit message and over memory.

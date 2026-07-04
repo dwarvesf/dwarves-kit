@@ -247,3 +247,6 @@ Ask: "Approve this spec, or do you want to adjust anything?"
 When approved, update the Status line in SPEC.md to `APPROVED`.
 
 Remind the user they can run `/kit:spec-validate` for adversarial review before implementation.
+
+After approval, record it for lane telemetry (SPEC-139), one line:
+`bash lib/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.
