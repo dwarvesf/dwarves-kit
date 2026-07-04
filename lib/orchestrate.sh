@@ -1772,7 +1772,7 @@ main() {
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
     _pane-exec) cmd_pane_exec "$@" ;;
-    # Overnight queue LAUNCHER (SPEC-146): a thin alias for the sibling lib/queue.sh, whose logic
+    # Overnight queue LAUNCHER (SPEC-148): a thin alias for the sibling lib/queue.sh, whose logic
     # lives entirely there (orchestrate.sh's own suite stays untouched). `orchestrate.sh queue
     # <src>` == `queue.sh run <src>`. It drives REAL interactive `/goal` sessions via terminal-mux
     # send-keys, NOT the headless `claude -p` per-sub-goal path the rest of this driver uses.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# queue.sh -- the overnight queue LAUNCHER (runner-fastpath sub-goal 03K, SPEC-146).
+# queue.sh -- the overnight queue LAUNCHER (runner-fastpath sub-goal 03K, SPEC-148).
 #
 # For each queued+tokened backlog mega, it opens a REAL interactive Claude Code `/goal` session
 # in a fresh terminal-mux window and DRIVES it via scripting-control (types `/goal ` + the pointer
@@ -314,7 +314,7 @@ _emit_rows() {  # src from_boards
 # .claude/goals/** before ever emitting a row -- but this launcher, driving an unattended
 # `--dangerously-skip-permissions` session, must not simply trust an upstream tool has no bugs. A
 # hand-authored tsv is EXEMPT (the operator authored it; that authorship IS the trust boundary for
-# that path, per SPEC-146). Checked against the pointer path RELATIVE TO ITS REPO (a pointer
+# that path, per SPEC-148). Checked against the pointer path RELATIVE TO ITS REPO (a pointer
 # outside the repo, or one that resolves via `..` OR a SYMLINK outside it, fails closed). Uses
 # `realpath` (present on both macOS/BSD and Linux/coreutils; verified on this host) so a symlink
 # planted INSIDE the allow-listed directory but pointing OUTSIDE the repo is caught too -- a

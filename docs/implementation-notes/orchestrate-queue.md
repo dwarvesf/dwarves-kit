@@ -1,6 +1,6 @@
-# Implementation notes: overnight queue launcher (SPEC-146)
+# Implementation notes: overnight queue launcher (SPEC-148)
 
-Delta from the spec only (not a mirror). Reference SPEC-146 for the design.
+Delta from the spec only (not a mirror). Reference SPEC-148 for the design.
 
 ## 2026-07-05 12:00 marker anchor relaxed after the live smoke
 
@@ -35,7 +35,7 @@ tests `error`.
 Decision: only `error` accrues toward the night-stop; `gated`/`stalled` are per-pointer stops that
 MOVE ON and RESET the counter; a `skipped` row is a pass-through (neither increments nor resets).
 Why: matches the rate-limit rationale ("assume account-level rate limit"), the risks table, and
-NC3. Documented in SPEC-146 `## Design` and proven fail-closed in the rung-4 red-team (RT-b2: a
+NC3. Documented in SPEC-148 `## Design` and proven fail-closed in the rung-4 red-team (RT-b2: a
 skip between two errors still stops).
 Impact: the consecutive-error semantics are the counter's whole contract; see NC3 + RT-b1/b2/b3.
 
@@ -52,14 +52,14 @@ Impact: `tests/test-queue.bats` is standalone; no orchestrate.sh test changed.
 
 ## No further deviations
 
-Everything else matches SPEC-146 verbatim: queue-row contract (`slug<TAB>repo<TAB>pointer`),
+Everything else matches SPEC-148 verbatim: queue-row contract (`slug<TAB>repo<TAB>pointer`),
 journal columns, preflight, `--dry-run`/`--max-megas`/`--from-boards`, CONSUMER config keys.
 
 ## 2026-07-05 13:00 multi-lens review found two CRITICAL + several lower findings, all fixed
 
 Context: per SPEC-069 ("a run touching `lib/` or `hooks/` uses `/kit:review-team`, not a single
 reviewer"), dispatched a security-reviewer + code-reviewer in parallel before push.
-Findings and fixes (full detail in SPEC-146's AMENDMENT section, not restated here):
+Findings and fixes (full detail in SPEC-148's AMENDMENT section, not restated here):
 
 1. **cmux dropped (architecture HIGH).** I had invented `cmux` verbs (`new-window --name --cwd --
    cmd`) without CLI-verifying them. The reviewer cited this repo's OWN prior findings
