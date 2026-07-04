@@ -114,7 +114,7 @@ or the mega run. Two absolute negative controls:
 ## Task Breakdown
 
 ### Phase 1: Emit sites
-- [ ] TASK-001: `commands/review-team.md` Step 2b -- after the advisor critique dispatch
+- [x] TASK-001: `commands/review-team.md` Step 2b -- after the advisor critique dispatch
   prompt, add the emit `bash lib/gate-ledger.sh record "$rid" advisor ran "mode=P5
   findings=<N> actor=$(git config user.name)" || echo "WARNING: ..." >&2`, where `<N>` is the
   advisor's own fresh-finding count (post rejected-findings-ledger, SPEC-144), not the merged
@@ -122,61 +122,61 @@ or the mega run. Two absolute negative controls:
   context: the FINAL sub-goal's rid). Acceptance: the emit line is present, fail-open (`||`
   fallback that never propagates a nonzero exit into the surrounding flow), and textually
   distinguishes the advisor's own count from the Step 3 merged `findings=<K>`.
-- [ ] TASK-002: `commands/mega.md` -- new convergence-gate paragraph immediately before "Close
+- [x] TASK-002: `commands/mega.md` -- new convergence-gate paragraph immediately before "Close
   the run visibly" (Step 5), naming an explicit in-harness dispatch of `advisor` P5 (critique)
   + P6 (over-suggest) over the assembled stack, each emitting its own `mode=P5`/`mode=P6` row
   under the FINAL sub-goal's rid (the de-facto convention the pre-existing free-text
   `kit-telem-05-mergeguard.log` / `kit-clean-05-editmention.log` ACTION lines already used),
   fail-open identically to TASK-001. Acceptance: the paragraph exists, names both modes
   explicitly, states the rid convention, and the emit is fail-open.
-- [ ] TASK-003: `agents/advisor.md` -- a short "Ledger emit" note (in the agent's own doc, not
+- [x] TASK-003: `agents/advisor.md` -- a short "Ledger emit" note (in the agent's own doc, not
   its dispatch instructions -- the agent itself never runs bash) recording that every dispatch
   site is EXPECTED to emit `mode=<P5|P6> findings=N actor=` so a future third dispatch site
   inherits the convention by reading this file. Acceptance: the note exists and names the exact
   grammar.
 
 ### Phase 2: Proof
-- [ ] TASK-004: a fixture rid ledger log exercising the new grammar (`mode=P5 findings=N
+- [x] TASK-004: a fixture rid ledger log exercising the new grammar (`mode=P5 findings=N
   actor=...` and `mode=P6 findings=N actor=...`), parsed by the merged `ledger-observatory`
   `kit_gates` reader (`uv run ledger gate-yield`) against a `DWARVES_KIT_LOG_DIR` pointed at a
   scratch dir containing only the fixture -- proving the new phase value needs zero
   ledger-observatory code change. Acceptance: the command's output shows an `advisor` row with
   the fixture's exact ran-count.
-- [ ] TASK-005: NC1 capture -- a second fixture rid with NO advisor row, same `gate-yield`
+- [x] TASK-005: NC1 capture -- a second fixture rid with NO advisor row, same `gate-yield`
   query, showing `advisor` absent/zero for that rid (never fabricated). Acceptance: captured
   output distinguishing the two rids.
-- [ ] TASK-006: NC2 capture -- point `DWARVES_KIT_LOG_DIR` (or the ledger file itself) at a
+- [x] TASK-006: NC2 capture -- point `DWARVES_KIT_LOG_DIR` (or the ledger file itself) at a
   read-only path and run the emit line from TASK-001/002 verbatim, showing the surrounding
   review flow completing with a printed warning, never a hard failure. Acceptance: captured
   exit code 0 (or explicitly non-fatal) plus the warning text.
-- [ ] TASK-007: `tests/test-advisor-ledger-emit.sh` -- grep-based regression pins (mirrors
+- [x] TASK-007: `tests/test-advisor-ledger-emit.sh` -- grep-based regression pins (mirrors
   `tests/test-advisor.sh`'s style) so a future edit cannot silently drop the emit, the
   fail-open fallback, or the rid-convention statement from either dispatch site.
 
 ### Phase 3: Close
-- [ ] TASK-008: `docs/verification/advisor-visibility.md` (proof, per `docs/verification/README.md`
+- [x] TASK-008: `docs/verification/advisor-visibility.md` (proof, per `docs/verification/README.md`
   flat-shape convention) + `docs/implementation-notes/advisor-visibility.md` (delta log,
   including the never-diverge discovery note). Commit, push, PR against `master`, CI green on
   both runners.
 
 ## After state
 
-- [ ] `commands/review-team.md` Step 2b emits a first-class `| GATE | advisor | ran | mode=P5
+- [x] `commands/review-team.md` Step 2b emits a first-class `| GATE | advisor | ran | mode=P5
   findings=<N> actor=<name> |` row per dispatch. (Today: the advisor's own count is folded
   invisibly into the merged `review ran` line.)
-- [ ] `commands/mega.md` names an explicit convergence-gate dispatch of advisor P5+P6 at the
+- [x] `commands/mega.md` names an explicit convergence-gate dispatch of advisor P5+P6 at the
   assembled-stack close, each emitting its own row under the final sub-goal's rid. (Today:
   zero mentions of `advisor` in `commands/mega.md`.)
-- [ ] `agents/advisor.md` documents the emit contract for future dispatch sites.
-- [ ] Both NCs captured and committed.
-- [ ] No lane's required-gate set changed; `hooks/ship-gate.sh` behavior is unchanged
+- [x] `agents/advisor.md` documents the emit contract for future dispatch sites.
+- [x] Both NCs captured and committed.
+- [x] No lane's required-gate set changed; `hooks/ship-gate.sh` behavior is unchanged
   (verified by the existing `tests/test-*.sh` suite staying green).
 
 ## Acceptance Criteria (global)
-- [ ] All tasks pass their individual acceptance criteria.
-- [ ] `bash tests/test-advisor.sh && bash tests/test-review-team-plants.sh && bash
+- [x] All tasks pass their individual acceptance criteria.
+- [x] `bash tests/test-advisor.sh && bash tests/test-review-team-plants.sh && bash
   tests/test-command-emit-sweep.sh && bash tests/test-advisor-ledger-emit.sh` all exit 0.
-- [ ] `bash tests/test-meta.sh` and `bash tests/test-hooks.sh` show no new failures (no
+- [x] `bash tests/test-meta.sh` and `bash tests/test-hooks.sh` show no new failures (no
   gate-requirement or ship-gate behavior changed).
 
 ## Verification
