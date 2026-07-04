@@ -30,7 +30,7 @@ GL="$KIT_DIR/lib/gate-ledger.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
-assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 $3"; FAIL=$((FAIL+1)); fi; }
+assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 ${3:-}"; FAIL=$((FAIL+1)); fi; }
 assert_eq() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (expected '$3', got '$2')"; FAIL=$((FAIL+1)); fi; }
 
 TMPS=()
@@ -77,6 +77,14 @@ gl record fixA grill skipped "reason=bogus-token: whatever" >/dev/null 2>&1
 rc=$?
 assert "check5: garbage reason= token refused (exit 64)" "$([ "$rc" -eq 64 ] && echo 0 || echo 1)"
 
+# Check 5b (negative control, security review finding): a LOOK-ALIKE token that merely starts
+# with a valid token's letters, but is not the token itself or the token+':' -- must ALSO be
+# refused (a prefix-only match would wrongly accept this; the enum must be closed, not a prefix)
+new_log
+gl record fixA grill skipped "reason=home-turfish-nonsense: not a real token" >/dev/null 2>&1
+rc=$?
+assert "check5b: look-alike token (prefix, not exact) refused (exit 64)" "$([ "$rc" -eq 64 ] && echo 0 || echo 1)"
+
 # Check 6 (regression): grill+ran needs no reason= token
 new_log
 gl record fixA grill ran "3 questions, 0 contradictions, banks: spec-feature" >/dev/null 2>&1
@@ -114,11 +122,23 @@ fire_rule() {
   echo "skip:density-low"
 }
 
-# portable relative-date helper (BSD `date -v`, GNU `date -d`), mirrors the kit's existing
-# cross-platform date convention (see gate-ledger.sh's now_epoch() comment).
-days_ago_iso() {
-  local n="$1"
-  date -u -v-"${n}"d +%Y-%m-%dT12:00:00 2>/dev/null || date -u -d "-${n} days" +%Y-%m-%dT12:00:00
+# Exact-epoch date helper (test-coverage review HIGH finding, hardened past just the fix
+# suggested): a calendar-day construction like `date -v-91d +...T12:00:00` is TWO ways flaky --
+# (a) with no `Z`/offset suffix, `git commit` parses GIT_AUTHOR_DATE/GIT_COMMITTER_DATE in the
+# LOCAL system timezone regardless of `date -u` generating the string, so the boundary silently
+# shifts by the host's UTC offset (reproduced RED under `TZ=UTC`, which is what GitHub Actions
+# runners default to); (b) even WITH a correct UTC suffix, pinning the commit to a fixed
+# wall-clock hour ("noon") means `age_days = floor((now - commit)/86400)` depends on the
+# CURRENT time-of-day relative to that fixed hour, so the exact N-day boundary can round down
+# to N-1 depending on when the suite happens to run. Fixed by computing the timestamp as an
+# EXACT epoch offset (`now_epoch - n*86400`) instead of a calendar day: the resulting age is
+# always exactly `n` days (mod the sub-second gap between capturing `now_epoch` here and
+# `s1_fired`'s own `date +%s` call later, which is never large enough to cross a day boundary).
+# `date -r <epoch>` (BSD) / `date -d @<epoch>` (GNU) both format an epoch as UTC under `-u`.
+epoch_days_ago_iso() {
+  local n="$1" target
+  target=$(( $(date +%s) - n * 86400 ))
+  date -u -r "$target" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@$target" +%Y-%m-%dT%H:%M:%SZ
 }
 
 mk_repo() {
@@ -131,7 +151,7 @@ mk_repo() {
 
 commit_dated() {
   local repo="$1" file="$2" days="$3" date_iso
-  date_iso="$(days_ago_iso "$days")"
+  date_iso="$(epoch_days_ago_iso "$days")"
   printf 'x\n' >> "$repo/$file"
   git -C "$repo" add "$file"
   GIT_AUTHOR_DATE="$date_iso" GIT_COMMITTER_DATE="$date_iso" git -C "$repo" commit -q -m "touch $file"

@@ -159,10 +159,16 @@ record() {
   # (phase, state) combination -- including grill+ran, and skipped on any OTHER phase -- is
   # behaviorally identical to before this change.
   if [ "$phase" = "grill" ] && [ "$state" = "skipped" ]; then
+    # CLOSED enum, not a prefix match (security review MEDIUM finding): the bare token
+    # ("reason=home-turf") or the token followed by its documented ":" delimiter
+    # ("reason=home-turf: <why>") both match; a look-alike like "reason=home-turfish-nonsense"
+    # does NOT, since it is neither exactly the token nor token+":".
     case "$reason" in
-      reason=home-turf*|reason=density-low*|reason=operator-wave*) ;;
+      reason=home-turf|reason=home-turf:*) ;;
+      reason=density-low|reason=density-low:*) ;;
+      reason=operator-wave|reason=operator-wave:*) ;;
       *)
-        echo "record: a grill skip needs reason=<home-turf|density-low|operator-wave> as the first word of its reason (got: '${reason:-<empty>}')" >&2
+        echo "record: a grill skip needs reason=<home-turf|density-low|operator-wave> (bare, or followed by ':') as its reason (got: '${reason:-<empty>}')" >&2
         return 64
         ;;
     esac

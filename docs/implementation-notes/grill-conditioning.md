@@ -81,5 +81,60 @@ Context: this change edits `lib/gate-ledger.sh`, so SPEC-069's escalation rule a
 touching `lib/` or `hooks/` owes multi-lens review, not a single pass).
 
 Decision: dispatched fresh-context `kit:security-reviewer` + `kit:code-reviewer` (architecture
-lens) + `kit:code-reviewer` (test-coverage lens) against the diff. See the PR body / gate-ledger
-`review` line for the verdicts and any fixes applied.
+lens) + `kit:code-reviewer` (test-coverage lens) against the diff. Security: SECURE, no
+HIGH/MEDIUM findings. Architecture: 9/10, no MEDIUM+ findings. Test-coverage: 6/10, one HIGH +
+one MEDIUM finding, both real, both fixed (see the two entries below). See the PR body /
+gate-ledger `review` line for the full verdicts.
+
+## 2026-07-04 10:45 Fix: closed-enum bypass via prefix glob (test-coverage review MEDIUM)
+
+Context: the original `record()` guard used `case "$reason" in reason=home-turf*|...`, a
+prefix-only glob. The reviewer found live that `reason=home-turfish-nonsense: not a real token`
+passed the guard (exit 0, line written), even though SPEC-138 calls the enum "closed."
+
+Decision: tightened the `case` patterns to `reason=home-turf|reason=home-turf:*` (repeated per
+token): the reason must be EXACTLY the bare token, or the token immediately followed by `:` (the
+documented `reason=<token>: <why>` convention). Added check 5b to
+`tests/test-grill-conditioning.sh` asserting the look-alike string is now rejected.
+
+Why: matches the spec's own stated invariant (a genuinely closed enum) rather than a permissive
+prefix match; the fix is a 3-line pattern change with no behavior change for any already-valid
+caller (grill.md's documented forms all end in `:` or are exact).
+
+Alternatives considered: leaving it as documented behavior (rejected -- contradicts the spec's
+explicit "closed enum" language and the security review's own framing of "prefix-match is by
+design," which was written before the reviewer's follow-up test-coverage pass caught the actual
+bypass); requiring a space after the token instead of `:` (rejected, `:` is what `grill.md`
+already documents).
+
+Impact: `lib/gate-ledger.sh`'s case block; `tests/test-grill-conditioning.sh` gained check 5b;
+SPEC-138's Technical Design + Test plan + Decision Log (DEC-005) updated to match.
+
+## 2026-07-04 10:50 Fix: TZ- and time-of-day-dependent boundary fixture (test-coverage review HIGH)
+
+Context: `days_ago_iso()` built a calendar-relative timestamp (`date -v-91d +...T12:00:00`, no
+`Z`/offset). The reviewer reproduced a live failure under `TZ=UTC` (GitHub Actions' default):
+`git commit`'s `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` parse in the LOCAL system timezone
+regardless of `-u` generating the string, so the 90-day boundary silently shifted with the host's
+UTC offset.
+
+Decision: replaced calendar-day construction with an EXACT epoch offset:
+`epoch_days_ago_iso() { target=$(( $(date +%s) - n*86400 )); date -u -r "$target" ... }` (BSD) /
+`date -u -d "@$target" ...` (GNU fallback). This is immune to both the TZ bug (the epoch itself
+is timezone-free; only the DISPLAY format needs `-u`) and a second, related bug the reviewer's
+fix suggestion did not fully cover: a fixed "noon" commit time is still time-of-day-dependent
+(the day-count boundary rounds differently depending on what time the suite happens to run,
+relative to noon). Exact epoch arithmetic removes both failure modes at once.
+
+Why: proven by re-running `tests/test-grill-conditioning.sh` under `TZ=UTC` and
+`TZ=America/Los_Angeles` in addition to the host's local TZ (ICT) -- all three show 23/23,
+including both the 89d-fresh and 91d-stale boundary checks.
+
+Alternatives considered: just appending `Z` to the existing noon-based string (the reviewer's
+literal suggestion; rejected as incomplete, since it fixes the TZ bug but leaves the
+time-of-day-rounding bug); moving the fixture days further from the edge (e.g. 60d/120d,
+also suggested; rejected, it would stop testing the actual 90-day boundary the over-test asks
+for).
+
+Impact: `tests/test-grill-conditioning.sh`'s `days_ago_iso` renamed to `epoch_days_ago_iso` and
+rewritten; `commit_dated`'s call site updated; SPEC-138's Decision Log (DEC-006) updated.

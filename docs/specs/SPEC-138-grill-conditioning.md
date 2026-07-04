@@ -125,10 +125,13 @@ so `commands/grill.md`'s prose and this spec agree on the exact branch order.
   - **Input (new branch only):** `rid`, `phase`, `state`, `reason...` (existing signature,
     unchanged arity).
   - **Invariant added:** IF `normalize_phase(raw) == "grill"` AND `state == "skipped"`, THEN the
-    joined reason text (`oneline "$@"`) MUST match `reason=home-turf*`, `reason=density-low*`, or
-    `reason=operator-wave*` (glob-anchored at the start), ELSE `record()` returns 64 and writes
-    nothing (no partial/malformed ledger line). Every other `(phase, state)` combination is
-    behaviorally identical to before this change.
+    joined reason text (`oneline "$@"`) MUST be EXACTLY `reason=home-turf`, `reason=density-low`,
+    or `reason=operator-wave`, OR one of those three followed immediately by `:` (the documented
+    `reason=<token>: <why>` convention), ELSE `record()` returns 64 and writes nothing (no
+    partial/malformed ledger line). This is a CLOSED-enum match, not a prefix match: a look-alike
+    string that merely starts with a token's letters (e.g. `reason=home-turfish-nonsense`) does
+    NOT match (test-coverage review MEDIUM finding, fixed pre-ship; see checks 5/5b). Every other
+    `(phase, state)` combination is behaviorally identical to before this change.
 
 ## After state
 - [ ] `commands/grill.md` carries a "Step 0: Unknown-density precheck" section naming the 3
@@ -180,6 +183,7 @@ logic is instructions, not code, the same honestly-stated limitation `test-desig
 | 3 | `record <rid> grill skipped "reason=operator-wave: ..."` succeeds | code assertion | same |
 | 4 | `record <rid> grill skipped "no reason token"` FAILS (exit 64), no ledger line written | code assertion (negative control) | same |
 | 5 | `record <rid> grill skipped "reason=bogus-token: ..."` FAILS (exit 64) | code assertion (negative control) | same |
+| 5b | `record <rid> grill skipped "reason=home-turfish-nonsense: ..."` (a look-alike PREFIX of a valid token, not the token itself) FAILS (exit 64) | code assertion (negative control, added after test-coverage review) | same |
 | 6 | `record <rid> grill ran "<N> questions..."` still succeeds with no reason= requirement | code assertion (regression) | same |
 | 7 | `record <rid> spec skipped "<any free text>"` (non-grill phase) still succeeds unchanged | code assertion (regression) | same |
 | 8 | `commands/grill.md`'s 11 `### <bank>` headers unchanged in count | structural assertion (regression) | `tests/test-meta.sh` (existing, re-run) |
@@ -195,9 +199,11 @@ logic is instructions, not code, the same honestly-stated limitation `test-desig
 | 18 | Live capture: one real ledger log carries a `reason=` skip line, parseable by the sibling `kit_gates` reader (opaque reason field, no crash, no special parse needed) | live capture + cross-repo cross-check | proof / PR body |
 | 19 | COVERAGE-DELTA row: what's newly covered that nothing covered before | narrative row | proof / PR body |
 
-**Negative controls:** checks 4 and 5 above (a missing/garbage `reason=` on a grill skip must be
-REJECTED, not silently accepted) are the load-bearing negative controls: without the `record()`
-guard, both would silently succeed today.
+**Negative controls:** checks 4, 5, and 5b above (a missing, garbage, or look-alike-prefix
+`reason=` on a grill skip must be REJECTED, not silently accepted) are the load-bearing negative
+controls: without the `record()` guard, all three would silently succeed. Confirmed live by
+reverting `lib/gate-ledger.sh` to its pre-change state and re-running the suite: exactly checks
+4/4b/5/5b flip RED, nothing else does (see `docs/verification/grill-conditioning.md`).
 
 ## Verification
 `bash tests/test-grill-conditioning.sh && bash tests/test-meta.sh`
@@ -253,6 +259,19 @@ guard, both would silently succeed today.
   research doc is explicit ("Blindspot pass = step 0, conditional on S2"); S1 (mere codebase
   novelty with a familiar domain) does not warrant a blindspot table, only genuine domain
   novelty does.
+- DEC-005: the `reason=` match is a CLOSED enum (exact token, or token+`:`), not a prefix glob.
+  Rationale: `kit:code-reviewer` (test-coverage lens) found live that the original
+  `reason=home-turf*` pattern accepted `reason=home-turfish-nonsense` (any string merely
+  starting with the token's letters), contradicting the spec's own "closed enum" language. Fixed
+  in `lib/gate-ledger.sh` before ship; see `docs/implementation-notes/grill-conditioning.md` for
+  the fix detail and check 5b for the regression test.
+- DEC-006: the threshold-edge fixture's date construction (`tests/test-grill-conditioning.sh`)
+  computes an EXACT epoch offset (`now_epoch - n*86400`) rather than a calendar-day-relative
+  timestamp at a fixed wall-clock hour. Rationale: the same reviewer found the original
+  construction was TZ-dependent (git parses `GIT_AUTHOR_DATE` in local TZ regardless of a `-u`
+  generated string) and additionally time-of-day-dependent (a fixed "noon" commit time makes the
+  day-count boundary shift with what time the suite happens to run). The epoch-offset form is
+  immune to both, proven by re-running the suite under `TZ=UTC` and `TZ=America/Los_Angeles`.
 
 ## Open questions
 (none, the sub-goal file states: "no new command, no new agent, no gate-REQUIREMENT change",
