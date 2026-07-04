@@ -28,7 +28,8 @@ three responses are recorded.
 
 Only a `tap` verdict (significant AND understanding-worthy) on a `gate`/gated-final PR is ever nudged , the
 anti-fatigue guard. A significant-but-low-worthiness change (`wave`) or a `not-significant` change is NEVER
-quizzed (it was already logged silently by SPEC-123's `significance-classify record` at Ship).
+quizzed (it is already logged silently by SPEC-123's `significance-classify record`, wired into `/kit:ship`
+Step 8 by SPEC-136, immediately before this tap).
 
 ```bash
 bash lib/quiz-gate.sh tap <rid> --files "<changed files>" --impl-notes docs/implementation-notes/<slug>.md --pr-kind gate "<what changed>"

@@ -472,8 +472,9 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   prose-ordered (not alphabetical) diff, a diagram -- composing `narrate-log` +
   `svg-knowledge-diagram`, grounded in the actual diff + recorded tests, never the agent's
   narrative. Human-invoked, on demand; no auto-fire. On a `gate`/gated-final PR, `/kit:ship`'s
-  Step 8 runs `lib/quiz-gate.sh tap`, which asks `lib/significance-classify.sh classify` for the
-  verdict (two signals: significance x understanding-worthiness) and, ONLY on a `tap` (high x
+  Step 8 first runs `lib/significance-classify.sh record` (SPEC-136, below), persisting the
+  `significance=`/`worthiness=`/`verdict=` marker to the debt ledger; then Step 8 runs `lib/quiz-gate.sh tap`, which asks `lib/significance-classify.sh classify` for the
+  same verdict (two signals: significance x understanding-worthiness) and, ONLY on a `tap` (high x
   high), prints the ★-tap nudge: a one-line "worth understanding: <why>" plus a 5-question quiz
   grounded in the diff+tests, routed through `deep-understand`'s mastery gate.
 - **The conscious debt-budget model (ADR-0031 Refinement).** The goal is CONSCIOUS debt, not zero
@@ -488,16 +489,20 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   items into the operator's existing learning skills (`learning-day-process`, `learning-ledger`,
   `deep-understand`, `knowledge-capture`) rather than reinventing a second batching engine;
   `weekend-batch.sh mark-paid <rid>` closes an item so it is never re-collected.
-- **Known wiring gap, stated honestly (not papered over).** `significance-classify.sh record` --
-  the verb that PERSISTS a raw `significance=/worthiness=/verdict=` `| DEBT |` marker independent
-  of the quiz nudge -- has no invoking command anywhere in this repo today; only its `classify`
-  verb (transient, no ledger write) is live, called from `lib/quiz-gate.sh`'s `tap`. Practical
-  consequence: a significant-but-low-worthiness (`wave`) or `not-significant` change that is NEVER
-  part of a `gate`/gated-final PR (so `quiz-gate.sh tap` never runs) is not yet logged to the debt
-  ledger at all -- only changes that at least reach the tap decision are. This does not weaken any
-  hard gate (the axis is advisory either way); it is tracked as a follow-up in
-  `docs/implementation-notes/significance-classify.md` and this sub-goal's own impl-notes, not
-  silently claimed as working.
+- **`significance-classify.sh record` wired at Ship (SPEC-136).** The verb that PERSISTS a raw
+  `significance=`/`worthiness=`/`verdict=` `| DEBT |` marker independent of the quiz nudge --
+  previously an honestly-documented gap with no invoking command -- is now called by
+  `/kit:ship` Step 8, immediately before `quiz-gate.sh tap`, using the same files/description
+  (advisory, guarded so a `record` failure never blocks the ship). Practical effect: EVERY
+  gate/gated-final ship now logs its classifier verdict, including the SILENT-WAVE case
+  (significant-but-low-worthiness, `verdict=wave`, no human response ever follows) -- the exact
+  gap ADR-0031 Refinement §2/§4 names as needing to be tracked, not silently dropped. A later
+  human `debt-response` (engage/defer/wave) forward-carries this recorded marker automatically
+  (the TIER-4-close seam fix, `docs/verification/debt-ledger-response-seam.md`). Remaining,
+  honestly-scoped limit: `record` fires only on `gate`/gated-final PRs (the same scope
+  `quiz-gate.sh tap` has always had, per ADR-0031 §2); a non-gate ship still writes no debt-ledger
+  marker at all -- that scope was never widened by this change, see SPEC-136 "Approaches
+  considered" (D).
 
 ## The spine
 How a committed backlog item becomes shipped work, end to end:

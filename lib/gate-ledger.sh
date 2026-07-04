@@ -239,11 +239,15 @@ debt() {
 # (significance=/worthiness=/verdict=); this command historically wrote a THIN line (response= only,
 # no sig/wor/verdict). The ledger is last-line-wins for readers, so any consumer that re-emits the
 # LAST debt line's sig/wor/verdict through the fat `debt` verb (e.g. weekend-batch.sh mark-paid) saw
-# empty enums and crashed -- and because `significance-classify record` (the fat writer) is unwired
-# today, EVERY live debt-response is thin, making this the DEFAULT path, not an edge case. Fix: look
-# back at the ledger for THIS rid's last FAT line (one carrying verdict=) and, if found, re-emit its
-# sig/wor/verdict alongside response= -- making the response line self-describing without inventing
-# data. If no fat line exists (the live today-flow), write the thin line as before; blank stays blank.
+# empty enums and crashed -- and at the time this fix landed, `significance-classify record` (the
+# fat writer) was unwired anywhere, making a thin-only debt-response the DEFAULT path, not an edge
+# case. SPEC-136 later wired `record` into `/kit:ship` Step 8 (before the quiz-gate tap), so a live
+# gate/gated-final ship now writes the fat line first; this forward-carry stays load-bearing for
+# any rid predating that wiring and for non-gate ships (record's scope is gate/gated-final only,
+# unchanged by SPEC-136). Fix: look back at the ledger for THIS rid's last FAT line (one carrying
+# verdict=) and, if found, re-emit its sig/wor/verdict alongside response= -- making the response
+# line self-describing without inventing data. If no fat line exists (a non-gate ship, or a rid
+# from before SPEC-136), write the thin line as before; blank stays blank.
 # Usage: debt-response <rid> <engage|defer|wave> [reason]
 debt_response() {
   local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: debt-response <rid> <engage|defer|wave> [reason]" >&2; return 64; }
