@@ -23,6 +23,7 @@ For EVERY changed file, evaluate:
 
 **Architecture (weight: high)**
 - Does this match the spec in `docs/specs/SPEC-NNN-<slug>.md`?
+- **Stale-ADR inversion.** Behavior that matches what a spec/ADR/intent doc claims is BY DESIGN, not a finding, even if it looks surprising at first glance. Code that has DRIFTED from what a spec/ADR/intent doc claims IS itself a finding: report the drift naming the doc's line and the code's line. A doc can never blanket-mute observed behavior. Emit a drift finding with a `stale-adr:` finding-key prefix (e.g. `stale-adr: <doc>:<line> claims X, <code>:<line> does Y`) so it reads as this lens type, distinct from other findings.
 - Does it follow existing patterns in the codebase?
 - Are there new abstractions that aren't justified?
 - Is there dead code or unreachable branches?
