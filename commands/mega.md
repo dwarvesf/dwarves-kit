@@ -29,6 +29,22 @@ bounded loop, one PR per sub-goal (SPEC-034). A real dependency GRAPH (fan-in,
 fan-out, waves, topological order) is neither; that is the GSD v2 handoff tripwire,
 not a reason to grow a scheduler here.
 
+The intake ladder below (mirrors the skill's ladder verbatim, SPEC-142) is the FIRST
+check, before Prerequisites: it decides whether this command is even the right one to
+invoke for the task at hand.
+
+<!-- BEGIN triage-ladder -->
+## Intake triage ladder (check first, before drafting anything)
+
+Before drafting a goal, a scaffold, or a plan, classify the task against three rungs. This is a MUST-check routing step, not advice: a task that fits a lower rung never gets a higher rung's ceremony.
+
+1. **DIRECT kit lane, in-session.** One file, one behavior, one obvious proof. `lane-classify` calls it tiny or small: one worker drafts the change, verifies it, opens one PR. No scaffold, no conductor; the gate-ledger still records. Worked example: fixing a broken link in one README section, one file changed, verified by rendering the link.
+2. **Single `/goal`.** One objective, multiple steps, one stopping condition. Worked example: "users can sort the trade log by realized PnL", a multi-step feature with one verification command, handed to `/goal` via `plan-for-goal`.
+3. **Mega-goal.** Multiple objectives, multiple repos, or multiple gates converging on one destination. Worked example: the runner-fastpath mega-goal itself, eight sub-goals across three repos (dotfiles, dwarves-kit, ops-toolkit) each running its own `/goal` with its own PR, converging on one overnight runner.
+
+Escape hatch: the user explicitly asking for a mega-goal overrides the ladder; never downgrade a request the user has already sized.
+<!-- END triage-ladder -->
+
 ## Prerequisites
 
 1. The conversation names **3-8 genuinely dependent sub-goals** sharing one
