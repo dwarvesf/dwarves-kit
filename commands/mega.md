@@ -9,9 +9,11 @@ whatever activator is present (`/goal`, `ralph-loop`, or the kit's own
 step you never merge a PR whose ship-gate has not passed.
 
 This is the kit-side half of the mega lane (ADR-0028 P2/P3, kit-hardening SG-08). It
-**mirrors** the ops-toolkit `plan-for-mega-goal` skill's authoring beats -- decompose,
-front-load every sub-goal's clarification question ONCE up front, set the per-run
-merge config -- so a bare-kit team gets the same shape without the skill installed.
+**mirrors** the ops-toolkit `plan-for-mega-goal` skill's authoring beats -- decompose
+(including the tiny-item batching rule), front-load every sub-goal's clarification
+question ONCE up front, set the per-run merge config, and (as its own mode) Consolidate
+overlapping same-project megas -- so a bare-kit team gets the same shape without the
+skill installed.
 It does **NOT fork** the skill: the skill stays the deeper authoring reference
 (stacking-tool detection, scaffold-path resolution across arbitrary repos, the full
 pointer-prompt convention, `NOTES.md`/`FEEDBACK.md`); this command is the kit-native
@@ -50,6 +52,15 @@ human-judgment step), and a proof expectation scaled to the sub-goal's complexit
 run-table for CLI/data work, a screenshot/GIF for visual work). Show this as plain
 text; nothing is written to disk until approved -- the wrong decomposition is the
 most expensive failure mode, catch it here.
+
+**Tiny items never earn their own sub-goal (mirrors the skill's tiny-item rule).** A
+one-liner-scale item (a config flip, a doc line, a one-line guard) does not earn a
+dedicated slot in a chain otherwise sized 3-8 substantial items. Batch every tiny item
+into ONE sweep sub-goal, each item keeping its own check line inside that sub-goal's
+`Done =` so it stays individually auditable, or route it as a `/kit:assign` `tiny`-lane
+task outside the mega-goal entirely (`lib/lane-classify.sh classify` will size it
+`tiny` on its own merits). Reserve dedicated sub-goals for work substantial enough to
+need its own PR, proof, and merge gate.
 
 **Deployable terminus (mirrors the skill's "definition of done extends past
 built").** Once real diffs exist, check `lib/proof-ledger.sh deployable <root>
@@ -168,7 +179,20 @@ LANE=$(grep -m1 -iE '^Lane:' docs/specs/SPEC-NNN-<slug>.md \
          | sed -E 's/^[Ll]ane:[[:space:]]*//; s/[[:space:]].*$//')  # per sub-goal
 bash lib/mega-merge.sh gate  "$RID" "$LANE"                        # decision only, no side effects
 bash lib/mega-merge.sh merge <pr> "$RID" "$LANE" [--execute]       # action; refuses on a failing gate
+bash lib/lane-classify.sh deescalate "$LANE" --rid "$RID"          # advisory nudge, mirrors ship.md Step 8
 ```
+
+**Ship-time de-escalation, mirrored here explicitly (SPEC-141).** `mega.md`'s per-sub-goal
+ship/close is this Step -- `gate-ledger` + `mega-merge.sh` -- never a call into
+`commands/ship.md`'s script, so its Step 8 bullets (the significance record, the ★-tap nudge,
+the pitch offer, the SPEC-141 de-escalation nudge) are not guaranteed to fire here just because
+they exist there. Worse, under DELEGATE mode (WORKFLOW.md "Mega-goal delegate execution",
+ADR-0032) each sub-goal runs in a fresh headless session, and the conductor "never reads a
+child's transcript" -- so even a child that happens to invoke `/kit:ship` internally would have
+any nudge it printed swallowed inside that invisible session. The fix reuses the SAME `LANE`
+and `RID` this Step already computes for the `mega-merge.sh gate` call above -- no new
+computation, no new verb, just the existing SPEC-141 `deescalate` call made explicit at the
+one place a human watching the mega run actually sees output.
 
 `lib/mega-merge.sh` is the ship-layer auto-merge ENFORCEMENT: `gate` reuses
 `lib/gate-ledger.sh check` verbatim (the lane's `measure-twice` gates -- the same
@@ -209,6 +233,61 @@ matrix + the callable stack, markdown-only -- and render the timeline + totals i
 chat. The report reads from the rid ledger (`lib/gate-ledger.sh`) and the roadmap
 checkboxes, never from transcripts.
 
+## Consolidate mode (remega, mirrors the skill's mode)
+
+A different input than the normal Step 1-5 flow: **2+ existing `.claude/goals/<slug>/`
+scaffold dirs of the SAME project** whose decompositions overlap because they were
+authored at different times with incomplete information. Given
+`consolidate=<slugA>,<slugB>[,...]`, re-decompose their UNION into ONE new scaffold and
+mark the old ones superseded -- operator-confirmed, never auto. This composes the
+command's OWN existing beats (decompose, front-load-once, `## Touches` authoring,
+spec-number reservation) over a union input; it invents no new scaffold shape and needs
+no new binary or `lib/` file. Full depth + a worked dry-run: the skill's
+`references/GUIDE.md` ("Consolidate mode (remega)") and
+`references/consolidate-dry-run-sample.md`.
+
+**The seven steps, at kit-native scoping:**
+
+1. **Inventory** every candidate mega's `ROADMAP.md` + `goals/NN` files: status, `## Touches`,
+   deps, `Done =`, `Merge policy`. A `- [x] ... -- PR #N` line imports untouched (never
+   re-run, it is history); an in-flight sub-goal finishes under its OLD mega first; a queued
+   one is the raw material the re-decompose actually re-plans.
+2. **Overlap analysis**: pairwise `## Touches` intersection across the megas via
+   `lib/dispatch-gate.sh` -- the SAME disjointness checker Step 4's wave-eligibility already
+   reuses, never a second checker -- plus a semantic pass for dedupe candidates (same outcome
+   authored twice) and merge candidates (same-module sub-goals for related outcomes).
+3. **Re-decompose the union**: write ONE new `ROADMAP.md` applying the dedupe + merge
+   decisions, with the dependency graph re-derived from ACTUAL code/interface dependencies
+   (not the old chains' authoring order), and `## Touches` re-sliced so each new sub-goal owns
+   a disjoint module slice. This re-slicing is what CREATES wave parallelism: sub-goals that
+   only chained because they were authored later, and that touch independent modules, now run
+   as one parallel wave. Pull any file every sub-goal touches (a shared gate, a dispatcher, a
+   VERBS map) into ONE owner sub-goal so the rest go parallel.
+4. **Front-load clarifications ONCE**, over the whole union -- Step 2's beat, reused
+   verbatim, just framed against the union rather than one mega.
+5. **Spec-number block reserve + release.** Reserve via `bash lib/spec-next.sh reserve`
+   (SPEC-128's mkdir-mutex reservations ledger, the same mechanism the wavefront dispatch
+   already uses at Step 4). This kit has no separate `release` verb: an unclaimed reservation
+   self-expires on its own stale-reclaim TTL, so "release the old megas' unused numbers" is a
+   no-op here, not a command to run -- the ledger prunes them without an operator step.
+6. **Provenance per sub-goal.** Every consolidated sub-goal records `from: <mega-A>/SG-03 +
+   <mega-B>/SG-01` on its roadmap line and in its goal file. Done imports keep their own
+   single origin + PR.
+7. **Supersede, never delete.** Old mega `ROADMAP.md` headers gain `superseded_by:
+   <new-slug>`. This kit's nearest archive analog is the goal-draft lifecycle already in
+   `WORKFLOW.md` ("Goal drafts (.claude/goals/)"): `lib/goal-drafts.sh archive` moves a
+   shipped single-goal draft to `.claude/goals/done/`. A superseded MEGA scaffold (a whole
+   `<slug>/` dir, not one file) moves the same way in spirit, to `.claude/goals/done/<slug>/`
+   -- mirroring that convention's intent rather than reusing the verb unchanged (it currently
+   only walks single `.md` drafts). **Never write the markers or move anything without an
+   explicit go from the human**: show the supersede plan first.
+
+**When NOT to consolidate:** any old mega **>=80% done** (just finish it, import nothing);
+**different merge postures or different tenants/repos** (a `full-auto` mega and a
+`gate`-heavy mega, or two different repos, do not share a merge train); **under ~2 megas x 3
+overlapping remaining sub-goals** (the re-planning session costs more than the overlap it
+removes).
+
 ## What this refuses (mirrors `/kit:dispatch`'s "What this command refuses")
 
 - **Merging a PR whose ship-gate has not passed.** `gate` is the only question
@@ -226,10 +305,15 @@ checkboxes, never from transcripts.
 - **Diverging from the skill's checkpoint semantics.** If the ops-toolkit skill is
   installed, this command's Steps 1-3 must produce the same front-load-once,
   same-defaults shape.
+- **Auto-superseding a mega scaffold.** Consolidate mode always shows the supersede plan
+  and waits for an explicit human go before writing a `superseded_by:` marker or moving
+  anything.
 
 Source: ADR-0028 P2/P3 (autonomous-loop hardening, "Where each layer lives" table);
 SPEC-034 (mega-goal lane, ID-037 -- the roadmap conventions + single-chain gate
 this command reuses); SPEC-095 / kit-hardening SG-07 (`lib/proof-ledger.sh
-deployable`, the terminus classifier reused here verbatim); `lib/gate-ledger.sh`
-(the required-gate set this rides on); ops-toolkit `plan-for-mega-goal` SKILL.md
-(the authoring mirror source).
+deployable`, the terminus classifier reused here verbatim); SPEC-141 (ship-time lane
+de-escalation, the `lib/lane-classify.sh deescalate` verb mirrored explicitly at Step 5);
+`lib/gate-ledger.sh` (the required-gate set this rides on); ops-toolkit
+`plan-for-mega-goal` SKILL.md (the authoring mirror source, incl. its tiny-item rule and
+its Consolidate mode).
