@@ -79,6 +79,29 @@ Output: `SUGGESTIONS: <N proposals>`, each a one-line idea + why it is now cheap
 These are proposals for the human, never auto-actioned. Over-suggesting is the point:
 offer more than will be taken; the human filters.
 
+## Ledger visibility (SPEC-145)
+
+You are read-only and never run `bash` yourself, so you do not emit your own ledger row --
+the DISPATCHER does, immediately after you return. This is documented here, not just at each
+call site, so a THIRD future dispatch site (beyond `/kit:review-team` Step 2b and
+`/kit:mega`'s convergence-gate step) inherits the contract by reading your own file rather
+than needing to discover it by grepping other commands:
+
+- Every dispatch of either mode is expected to record `bash lib/gate-ledger.sh record <rid>
+  advisor ran "mode=<P5|P6> findings=<N> actor=<git config user.name>"` right after you
+  return, where `<N>` is the count from YOUR OWN `ADVISORY: <N findings>` (critique) or
+  `SUGGESTIONS: <N proposals>` (over-suggest) line -- never a merged/combined count from a
+  surrounding multi-lens report.
+- The emit is FAIL-OPEN: a dispatcher that cannot write the ledger (read-only dir, full disk)
+  prints a warning and continues; it must never fail the surrounding review or dispatch on
+  your account (NC2, SPEC-145).
+- A rid that never dispatches you carries no `advisor` row at all -- honest-zero, never a
+  fabricated "ran" entry (NC1, SPEC-145).
+- In a mega/convergence-gate context, the emit records under the FINAL sub-goal's rid (the
+  pre-existing free-text `| ACTION |` convention this formalizes), not each sub-goal's own
+  rid -- because you run ONCE, at the assembled-stack close, after every sub-goal's rid
+  already exists.
+
 ## What you must NOT do
 
 - **Do not replace the specialized reviewers.** They ran; their tailored lenses are

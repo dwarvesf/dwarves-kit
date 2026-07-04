@@ -227,6 +227,53 @@ refuses. Draft plus label is belt-and-suspenders: GitHub itself refuses to merge
 and the code guard reads the label. Do this for every `gate`-tagged sub-goal PR and the
 `gated-final` PR; a normal `auto` PR is left un-marked so the guard clears it.
 
+**The convergence gate dispatches advisor P5+P6, explicitly, with an emit (SPEC-145).** Once
+every sub-goal in the chain is merged (or the run halts at the final `gate!`/`gated-final`
+boundary), dispatch the `advisor` agent TWICE, in-harness, over the assembled stack diff
+(`base..HEAD` across the whole mega-goal, not any one sub-goal's diff): once as **P5
+(critique)** -- the extra cross-cutting lens over the WHOLE chain, catching a cross-sub-goal
+inconsistency no single sub-goal's own review was scoped to see -- and once as **P6
+(over-suggest)** -- proposals surfaced to the human just before the final review, routed to
+the mega-goal's `NOTES.md` under `## Proposed additions`. This closes ONE gap a 2026-07-04
+audit found: `commands/mega.md` previously named no advisor invocation path at all, so a
+subagent-delegate run (where each child self-records its OWN `review ran` line per the worker
+contract, never a `/kit:review-team` dispatch) left the advisor completely unreached. It
+mirrors the ADVISOR SLICE of the ops-toolkit `plan-for-mega-goal` skill's own convergence-gate
+beat (`references/GUIDE.md` step 6a, `references/OPERATE.md` "The convergence gate is
+COMPOSED, not improvised"), which already prescribes this exact dispatch + grammar --
+"catching up" (never-diverge, SPEC-142) means this ONE beat, not full parity: the skill's
+convergence gate is COMPOSED of `/kit:verify` + `/kit:review-team` + advisor P5/P6 together,
+and this paragraph wires only the advisor third of that composition. `commands/mega.md` still
+names no `/kit:verify` or `/kit:review-team` dispatch of its own at the assembled-stack close
+(a pre-existing gap, out of this sub-goal's scope, not newly introduced or newly hidden by
+this paragraph).
+
+Record each mode's own ledger row the instant it returns, fail-open, under the FINAL
+sub-goal's rid -- the de-facto convention the older free-text `| ACTION |` lines already used,
+e.g. `kit-telem-05-mergeguard.log`'s "advisor P5=3 doc/board findings fixed... advisor P6=8
+additions surfaced". This rid does NOT require re-deriving from git state at convergence-gate
+time (the per-sub-goal `$RID`/`$LANE` this Step's loop computes above are scoped to that
+loop iteration, in whatever process/subagent ran that sub-goal, and are not guaranteed to
+still be in scope once the loop finishes): it is already KNOWN and static, the same value
+Step 4's own comment names ("or the sub-goal's own branch slug") -- the final sub-goal's
+`**Branch:**` header value from its `goals/NN-<slug>.md` file, `type/` prefix stripped, the
+exact transform `bash lib/gate-ledger.sh rid` applies when run on that branch:
+
+```
+FINAL_RID="<final sub-goal's Branch: value, type/ prefix stripped -- from its goals/NN-<slug>.md>"
+bash lib/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
+  || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
+bash lib/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P6 findings=<N> actor=$(git config user.name)" \
+  || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
+```
+
+Observability only: a missing `advisor` row never blocks the merge or the close (no lane's
+required-gate set gains an `advisor` entry; `mega-merge.sh gate`/`hooks/ship-gate.sh` are
+unchanged). `<N>` is each mode's own finding/proposal count (`ADVISORY: <N findings>` /
+`SUGGESTIONS: <N proposals>`), read the same way `commands/review-team.md` Step 2b's emit
+already reads it -- see `agents/advisor.md` "Ledger visibility" for the one shared contract
+both dispatch sites follow.
+
 **Close the run visibly (mirrors the skill's close).** When the loop finishes (or
 halts at a `gate!`), emit `<dir>/RUN_REPORT.md` -- ASCII gantt + per-sub-goal gate
 matrix + the callable stack, markdown-only -- and render the timeline + totals in

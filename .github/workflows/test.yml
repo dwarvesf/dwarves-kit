@@ -136,3 +136,6 @@ jobs:
 
       - name: Run lane de-escalation tests (SPEC-141, kit-run-integrity sub-goal 07)
         run: bash tests/test-lane-deescalate.sh
+
+      - name: Run advisor ledger-emit tests (SPEC-145, gate-review-absorptions sub-goal 06)
+        run: bash tests/test-advisor-ledger-emit.sh

@@ -134,6 +134,34 @@ whole-work pass surfaces. Return ADVISORY: clean | N finding(s) with file:line.
 The advisor's `model:` (default `sonnet`) is the cheap-first tier knob, so this
 default lens never silently burns opus on every run.
 
+**Record the advisor dispatch itself (SPEC-145, fail-open, never blocks).** The instant the
+advisor's critique pass returns, emit a first-class ledger row BEFORE folding its findings
+into the Step 3 merge, so the advisor's own contribution is machine-visible even when
+`kit_gates` (ledger-observatory) is asked "did the advisor run on this rid" independent of the
+merged report's combined `findings=<K>` count (Step 3's `review ran` line counts all 3
+specialists + advisor together, so it cannot answer that question alone):
+
+```
+bash lib/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
+  || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); review output unaffected" >&2
+```
+
+`<N>` is the advisor's OWN fresh-finding count read off its `ADVISORY: <N findings>` output
+line (post rejected-findings-ledger, SPEC-144) -- distinct from Step 3's merged `findings=<K>`.
+Fail-open: the `||` fallback means an emit failure (a read-only ledger dir, a full disk) can
+only ever print a warning, never fail the review or the dispatch (NC2). A rid that never
+reaches this line simply has no `advisor` row -- `kit_gates` renders it zero/absent, never
+fabricated (NC1).
+
+**RID convention (SPEC-145, pinned).** In a standalone `/kit:review-team` run, `$rid` is the
+current run's own rid (`bash lib/gate-ledger.sh rid`). In a mega/convergence-gate context
+(`commands/mega.md`'s convergence-gate step, below), the SAME advisor grammar records under
+the FINAL sub-goal's rid instead -- the de-facto convention the older TIER-4 free-text
+`| ACTION |` lines already used (e.g. `kit-telem-05-mergeguard.log`,
+`kit-clean-05-editmention.log`), now made structured -- so an observatory query finds every
+convergence-gate advisor row under one deterministic close-time key rather than scattered
+across every sub-goal's own rid.
+
 Fold the advisor's `ADVISORY:` findings into the merge below as an additional lens
 (never a blocker; the final human review is the gate). The advisor's **over-suggest
 mode** (P6) is a SEPARATE pass surfaced to the human just BEFORE the final review
