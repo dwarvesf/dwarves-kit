@@ -212,6 +212,17 @@ bash tests/test-hooks.sh
 - Auto-dispatch of the advisor anywhere beyond `/kit:review-team` Step 2b and the new
   `mega.md` convergence-gate step.
 - Any `lib/gate-ledger.sh` or `ledger-observatory` code change (verified unnecessary, TASK-004).
+- **Known pre-existing gap, NOT closed by this pass, flagged honestly (multi-lens review
+  finding, 2026-07-04):** `commands/mega.md` still names no `/kit:verify` or
+  `/kit:review-team` dispatch of its own at the assembled-stack close. The ops-toolkit
+  `plan-for-mega-goal` skill's convergence gate is COMPOSED of `/kit:verify` +
+  `/kit:review-team` + advisor P5/P6 together (`references/OPERATE.md` "The convergence gate
+  is COMPOSED, not improvised"); this sub-goal wires only the advisor third of that
+  composition into `commands/mega.md`, per the goal file's own scope edges (`## Scope edges`
+  names `commands/mega.md` convergence-gate step" for the advisor only). The mega.md prose
+  says explicitly it is mirroring "the ADVISOR SLICE," not claiming full parity with the
+  skill's composed gate -- a future sub-goal owns wiring `/kit:verify`/`/kit:review-team`
+  into `commands/mega.md`'s own convergence-gate step, if that gap is worth closing.
 
 ## Touches
 `commands/review-team.md`, `commands/mega.md`, `agents/advisor.md`, `tests/test-advisor-ledger-emit.sh`,
@@ -251,9 +262,54 @@ bash tests/test-hooks.sh
 
 ## Review
 Self-review via `/kit:spec-validate`-equivalent (6-reviewer pass), 2026-07-04. Verdict:
-APPROVED. Status flipped DRAFT -> VALIDATED. Multi-lens `/kit:review-team` pass (security,
-architecture, test-coverage, advisor critique) recorded separately below once the
-implementation lands (see `docs/verification/advisor-visibility.md`).
+APPROVED. Status flipped DRAFT -> VALIDATED.
+
+Multi-lens `/kit:review-team`-equivalent pass (4 real subagent dispatches: security,
+architecture, test-coverage, advisor critique P5), 2026-07-04, over
+`git diff master -- commands/review-team.md commands/mega.md agents/advisor.md
+tests/test-advisor-ledger-emit.sh docs/specs/SPEC-145-advisor-visibility.md`:
+
+- **Security: SECURE, 0 findings.** `$rid`/`$(git config user.name)` interpolation is
+  sanitized upstream by `runid()`; the fail-open `||` cannot hide a real security-gate
+  failure since nothing gate-worthy depends on this row; no secrets in the diff.
+- **Architecture: 1 LOW.** The advisor emit is the first `gate-ledger.sh record` call site to
+  wrap itself in an explicit `|| WARNING` fallback, unreconciled with ~15 bare sibling sites,
+  with no doc anchor explaining the asymmetry. FIXED: added a note to `WORKFLOW.md`'s "Gate
+  ledger and ship enforcement" section naming this fail-open behavior as SPEC-145-specific
+  (NC2), not a new ledger-wide default.
+- **Test-coverage: 3 findings (1 HIGH, 1 MEDIUM, 1 LOW-MEDIUM), all FIXED and re-verified.**
+  (1) HIGH, empirically reproduced: `fail_open_call()`'s awk used sticky global `found`/`ok`
+  flags, so stripping the fallback from ONLY `mega.md`'s second (P6) call site still passed
+  AC3 -- the earlier P5 match's `ok=1` masked it. Fixed: rewrote the check to test each match
+  independently (grep -n each call site, slice its own +2 lines, no shared state); reproduced
+  the original bug against the mutated file first, confirmed the rewrite catches it. (2)
+  MEDIUM: no test exercised the real `lib/gate-ledger.sh record` write path, only prose
+  describing it. Fixed: added AC8, which invokes the real script against a scratch log dir and
+  asserts the exact written line. (3) LOW-MEDIUM: AC5 didn't pin the "FINAL sub-goal" rid
+  convention text in `agents/advisor.md` itself, even though that file frames itself as the
+  convention's canonical home. Fixed: added the grep. Suite now 27/27 (was 23/23).
+- **Advisor critique (P5): 2 findings, both FIXED.** (1) The convergence-gate paragraph told
+  the reader to reuse "the SAME `RID`" a per-sub-goal loop computes, but that variable is
+  scoped to one loop iteration (and, under the default subagent/delegate run modes, a
+  different process entirely) -- not guaranteed to exist at convergence-gate time. Fixed:
+  reworded to name the final sub-goal's rid as a STATIC, already-known value (its `**Branch:**`
+  header, `type/` stripped -- the same transform Step 4's own comment already named), never a
+  live variable re-derivation. (2) The "mirrors... catching up" framing risked implying full
+  parity with the skill's COMPOSED convergence gate (`/kit:verify` + `/kit:review-team` +
+  advisor), when this sub-goal wires only the advisor third. Fixed: reworded to say "the
+  ADVISOR SLICE" explicitly, and added an honest Out of Scope bullet naming the
+  `/kit:verify`/`/kit:review-team` gap as pre-existing and unclosed by this pass. Previously
+  rejected: 0 (checked against `docs/verification/rejected-findings.md`).
+
+**Verdict: SHIP.** All 6 findings across 4 lenses addressed and re-verified (full suite green:
+`tests/test-advisor-ledger-emit.sh` 27/27, `tests/test-advisor.sh` 15/15,
+`tests/test-review-team-plants.sh` 8/8, `tests/test-command-emit-sweep.sh` 19/19,
+`tests/test-mega-reconcile.sh` 35/35, `tests/test-meta.sh` 669/669, `tests/test-hooks.sh`
+452/452). Ledger recorded: `bash lib/gate-ledger.sh record advisor-visibility review ran
+"SHIP findings=6 suppressed=0 rejected=0 actor=Han Ngo"` and, dogfooding this very sub-goal's
+own convention, `bash lib/gate-ledger.sh record advisor-visibility advisor ran "mode=P5
+findings=2 actor=Han Ngo"` -- this rid now itself carries a real `advisor` gate row.
+Full detail: `docs/verification/advisor-visibility.md`.
 
 ## Test plan
 Date: 2026-07-04
