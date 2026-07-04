@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# fake-board -- a STUB for the sub-goal-04 `board queue` emit, used by tests/test-queue.bats to
+# exercise queue.sh's `--from-boards` path without the real (not-yet-merged) board command. It is
+# invoked as `fake-board queue` and prints `slug<TAB>repo-path<TAB>pointer-path` rows read from
+# $QBOARD_ROWS. Documents the interface the two sub-goals composed on.
+set -u
+[ "${1:-}" = "queue" ] || { echo "fake-board: expected 'queue' arg" >&2; exit 64; }
+cat "${QBOARD_ROWS:?fake-board: QBOARD_ROWS unset}"
