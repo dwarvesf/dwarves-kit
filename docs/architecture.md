@@ -286,16 +286,23 @@ sub-goals run as concurrent waves. The whole wave subsystem is gated behind one 
 is the complementary layer ABOVE that: a dumb sequential scheduler that runs a QUEUE of drafted
 megas overnight, one after another. Crucially it uses a DIFFERENT mechanism , it drives the
 operator's **live interactive** Claude Code `/goal` session, not a headless `claude -p`. It opens a
-fresh terminal-mux window (`tmux`/`cmux`, `TERMINAL_MUX`), types `/goal <pointer>` via `send-keys`,
-and polls `capture-pane` for a line-anchored completion marker (`RUNNER_DONE` / `RUNNER_GATED:`).
-This rides the operator's already-authed login and sidesteps the AUTH/KILL-CLASS risk of a headless
-worker whose token expires or is killed independently (field-proven twice). It journals every
-verdict to `queue-journal.tsv` (idempotent nights: a `done` slug is skipped on re-run) and stops the
-whole night after two consecutive `error` megas (an account-rate-limit circuit-breaker). Sources:
-a hand-authored tsv (`slug<TAB>repo<TAB>pointer`) or `--from-boards` (runner-fastpath sub-goal 04's
-`board queue` emit). Exposed as `orchestrate.sh queue <src>` (a one-line alias; the logic lives in
-`queue.sh`, so orchestrate.sh's own suite is untouched). The mux/marker mechanism lives in
-`lib/queue.sh` `_launch_once` / `_scan_marker`.
+fresh `tmux` window (`TERMINAL_MUX`; cmux was tried and dropped -- no CLI-verified argv-safe
+launch primitive, per SPEC-119 DEC-001 / SPEC-121 DEC-004), types `/goal <pointer>` via
+`send-keys`, and polls `capture-pane` for the completion marker (`RUNNER_DONE` / `RUNNER_GATED:`),
+line-anchored AND blank-line-guarded (a marker line must be the first captured line or preceded by
+a blank line, so a soft-wrapped echo of the typed prompt -- designed to CONTAIN the marker text --
+cannot false-trigger; a 2026-07-05 security review found the naive line-anchor alone was not
+enough). This rides the operator's already-authed login and sidesteps the AUTH/KILL-CLASS risk of
+a headless worker whose token expires or is killed independently (field-proven twice). It journals
+every verdict to `queue-journal.tsv` (idempotent nights: a `done` slug is skipped on re-run) and
+stops the whole night after two consecutive `error`-or-`stalled` megas (both signal the launch
+mechanism itself is dysfunctional; an account-rate-limit circuit-breaker). Sources: a hand-authored
+tsv (`slug<TAB>repo<TAB>pointer`, allow-list-EXEMPT: operator authorship is the trust boundary) or
+`--from-boards` (runner-fastpath sub-goal 04's `board queue` emit; pointers additionally confined
+by a `realpath`-resolved allow-list, defense-in-depth on top of 04's own confinement). Exposed as
+`orchestrate.sh queue <src>` (a one-line alias; the logic lives in `queue.sh`, so orchestrate.sh's
+own suite is untouched). The mux/marker mechanism lives in `lib/queue.sh` `_launch_once` /
+`_scan_marker`; the allow-list in `_pointer_allowlist_reason`.
 
 ### The per-cycle dispatch decision (waves are the default; serial is the opt-out)
 

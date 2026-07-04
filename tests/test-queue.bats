@@ -1,8 +1,10 @@
 #!/usr/bin/env bats
 # test-queue.bats -- pins lib/queue.sh (SPEC-146, runner-fastpath sub-goal 03K): the overnight
 # queue LAUNCHER. Driven ENTIRELY by a STUB mux (tests/fixtures/queue/fake-mux via MUX_CMD) whose
-# capture-pane returns a canned transcript -- NO real UI, NO real `claude`. Five named negative
-# controls plus happy/dry-run/from-boards cases.
+# capture-pane returns a canned transcript -- NO real UI, NO real `claude`. The five ORIGINALLY
+# named negative controls (NC1-NC5) plus two ADDED after a 2026-07-05 security review found real
+# gaps (NC6 marker-wrap false-positive, NC7 stalled-twice-stops-night), plus T5/T6 locking the
+# allow-list fix from the same review.
 
 setup() {
   KIT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -79,17 +81,71 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   ! grep -q "type slug=d3" "$QLOG"                       # no send-keys happened
 }
 
-# T4 source: --from-boards consumes the stub `board queue` emit on the tsv contract
-@test "T4 from-boards: rows consumed from stub board queue emit" {
+# T4 source: --from-boards consumes the stub `board queue` emit on the tsv contract. The pointer
+# must resolve under the allow-listed glob (_meta/megagoals/** or .claude/goals/**) since
+# --from-boards rows get the defense-in-depth confinement check (T5/T6 below cover the boundary).
+@test "T4 from-boards: rows consumed from stub board queue emit, pointer allow-listed" {
   local repo="$WORK/r4"; mkrepo "$repo"
-  echo "x" > "$WORK/p4.txt"
-  row b4 "$repo" "$WORK/p4.txt" > "$WORK/board-rows.tsv"
-  seed_transcript b4 "RUNNER_DONE"
+  mkdir -p "$repo/_meta/megagoals/fx/goals"
+  echo "x" > "$repo/_meta/megagoals/fx/goals/p4.txt"
+  git -C "$repo" add -A; git -C "$repo" commit -qm "chore: fixture pointer"   # keep the repo clean
+  row b4 "$repo" "$repo/_meta/megagoals/fx/goals/p4.txt" > "$WORK/board-rows.tsv"
+  seed_transcript b4 "  RUNNER_DONE"
   export QUEUE_BOARD_CMD="$FIX/fake-board" QBOARD_ROWS="$WORK/board-rows.tsv"
 
   run bash "$QUEUE" run "" --from-boards
   [ "$status" -eq 0 ]
   [ "$(jverdict b4)" = "done" ]
+}
+
+# T5 from-boards allow-list: a --from-boards pointer OUTSIDE the allow-listed globs is skipped, no
+# window opened -- the CRITICAL security-review fix: defense-in-depth on top of sub-goal 04's own
+# allow-list, since this launcher must not simply trust an upstream tool has no bugs when the
+# destination is an unattended --dangerously-skip-permissions session.
+@test "T5 from-boards-pointer-allowlist: a non-allow-listed pointer is skipped, no window opened" {
+  local repo="$WORK/r5"; mkrepo "$repo"
+  echo "x" > "$WORK/rogue-pointer.txt"          # OUTSIDE the repo, outside any allow-listed glob
+  row rogue "$repo" "$WORK/rogue-pointer.txt" > "$WORK/board-rows2.tsv"
+  export QUEUE_BOARD_CMD="$FIX/fake-board" QBOARD_ROWS="$WORK/board-rows2.tsv"
+
+  run bash "$QUEUE" run "" --from-boards
+  [ "$status" -eq 0 ]
+  [ "$(jverdict rogue)" = "skipped" ]
+  awk -F'\t' '$2=="rogue"{print $4}' "$JOURNAL" | grep -qi "not allow-listed"
+  ! grep -q "new-window slug=rogue" "$QLOG"
+}
+
+# T6 hand-authored tsv is allow-list-EXEMPT (operator authorship is the trust boundary for the
+# plain tsv path; only --from-boards gets the defense-in-depth confinement).
+@test "T6 hand-tsv-allowlist-exempt: a plain tsv pointer outside the glob still launches" {
+  local repo="$WORK/r6"; mkrepo "$repo"
+  echo "x" > "$WORK/anywhere.txt"
+  seed_transcript hand6 "  RUNNER_DONE"
+  row hand6 "$repo" "$WORK/anywhere.txt" > "$WORK/q6.tsv"
+
+  run bash "$QUEUE" run "$WORK/q6.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict hand6)" = "done" ]
+}
+
+# T7 from-boards-symlink-escape: a SYMLINK planted INSIDE the allow-listed dir but pointing
+# OUTSIDE the repo must be rejected too -- a rung-4 red-team probe found the first cut (resolving
+# only the pointer's containing DIRECTORY, not the final path component) would have let such a
+# symlink read arbitrary file content into the /goal prompt while still LOOKING allow-listed.
+@test "T7 from-boards-symlink-escape: a symlink escaping the repo via the allow-listed dir is skipped" {
+  local repo="$WORK/r7"; mkrepo "$repo"
+  mkdir -p "$repo/_meta/megagoals/fx"
+  local outside="$WORK/OUTSIDE_SECRET.txt"; echo "secret" > "$outside"
+  local link="$repo/_meta/megagoals/fx/link.txt"
+  ln -sf "$outside" "$link"
+  git -C "$repo" add -A; git -C "$repo" commit -qm "chore: fixture symlink" 2>/dev/null || true
+  row esc7 "$repo" "$link" > "$WORK/board-rows7.tsv"
+  export QUEUE_BOARD_CMD="$FIX/fake-board" QBOARD_ROWS="$WORK/board-rows7.tsv"
+
+  run bash "$QUEUE" run "" --from-boards
+  [ "$status" -eq 0 ]
+  [ "$(jverdict esc7)" = "skipped" ]
+  ! grep -q "new-window slug=esc7" "$QLOG"
 }
 
 # =============================================================================================
@@ -172,4 +228,43 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   # the pointer metachars were typed verbatim (data), proving they went through argv, not a shell
   grep -F 'rm -f' "$QLOG"
   grep -F '$(touch' "$QLOG"
+}
+
+# NC6 marker-wrap false-positive (security review, CRITICAL #2): `_goal_line` flattens the whole
+# pointer into ONE long typed line, and a pointer is DESIGNED to instruct printing RUNNER_DONE. A
+# wide-enough pane soft-wraps that echoed line so the marker substring can land ALONE on its own
+# rendered row -- indistinguishable from a real completion by line-anchoring alone. This transcript
+# simulates exactly that: a wrapped echo whose last fragment IS "RUNNER_DONE", with NO blank line
+# above it (a genuine wrap continuation never has one). Must NOT be marked done.
+@test "NC6 marker-wrap-false-positive: a wrapped echo fragment never triggers done" {
+  local repo="$WORK/rw"; mkrepo "$repo"
+  echo "x" > "$WORK/pw.txt"
+  {
+    printf '❯ /goal Do the thing. End your final message with the exact line\n'
+    printf '  RUNNER_DONE\n'                     # wrap continuation, NO blank line above
+  } > "$QSTUB/wrap1.transcript"
+  row wrap1 "$repo" "$WORK/pw.txt" > "$WORK/q.tsv"
+
+  QUEUE_POLL_SECS=1 QUEUE_TIMEOUT_SECS=1 run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict wrap1)" = "stalled" ]            # NOT done -- the wrap fragment is rejected
+}
+
+# NC7 stalled-twice-stops-night: two consecutive `stalled` verdicts ALSO stop the night (extended
+# from the original error-only guard, security review MEDIUM: a hang, not just a crash, is an
+# equally valid "the mechanism is dysfunctional" signal and must not silently burn the whole
+# night's remaining queue).
+@test "NC7 stalled-twice-stops-night: 2 consecutive stalls stop the night, later rows untouched" {
+  local r1="$WORK/s1n" r2="$WORK/s2n" r3="$WORK/s3n"; mkrepo "$r1"; mkrepo "$r2"; mkrepo "$r3"
+  echo x > "$WORK/psn.txt"
+  # no transcript seeded for s1n/s2n -> capture-pane returns empty, never matches -> stalled
+  seed_transcript s3n "  RUNNER_DONE"
+  { row s1n "$r1" "$WORK/psn.txt"; row s2n "$r2" "$WORK/psn.txt"; row s3n "$r3" "$WORK/psn.txt"; } > "$WORK/q.tsv"
+
+  QUEUE_POLL_SECS=1 QUEUE_TIMEOUT_SECS=1 run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict s1n)" = "stalled" ]
+  [ "$(jverdict s2n)" = "stalled" ]
+  [ -z "$(jverdict s3n)" ]                       # row 3 never attempted -> no journal row
+  echo "$output" | grep -q "STOP THE NIGHT"
 }
