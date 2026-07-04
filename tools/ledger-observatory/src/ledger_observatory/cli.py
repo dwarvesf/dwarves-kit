@@ -163,6 +163,71 @@ def gate_yield(as_json: bool = _FMT):
     _emit(cols, rows, as_json)
 
 
+# Per-rid wall time (goal 05K, the original "where does the 2-3h go" ask): a
+# data-driven GROUP BY rid, no hardcoded gate whitelist, same convention as
+# `gate-yield`'s GROUP BY gate. `start_ts`/`end_ts` are the raw `at=<epoch>` VALUE
+# gate-ledger.sh's OUTCOME bracket writes (a Unix epoch integer as a string, see
+# `lib/gate-ledger.sh`'s `now_epoch`/`at=%s` , NOT an ISO8601 timestamp), so the wall
+# time is plain integer subtraction, not a date_diff over a parsed timestamp. A
+# `kit_gates` row missing EITHER timestamp (NULL start_ts or NULL end_ts -- true for
+# ~100% of the real corpus as of writing, see `adapters.read_kit_gates`'s docstring:
+# the OUTCOME bracket emitter is not yet wired into every gate) is excluded from the
+# per-rid min/max and counted separately by the second query below, never silently
+# dropped and never crashed on. TRY_CAST (not CAST) into BIGINT: a present-but-
+# unparseable value (e.g. a malformed `at=` token) degrades to a NULL epoch for that
+# one row (aggregates skip NULLs), never an uncaught DuckDB cast error for the whole
+# query.
+_MEGA_DURATIONS_SQL = """
+WITH bounded AS (
+    SELECT rid,
+           TRY_CAST(start_ts AS BIGINT) AS start_epoch,
+           TRY_CAST(end_ts AS BIGINT) AS end_epoch
+    FROM kit_gates
+    WHERE start_ts IS NOT NULL AND end_ts IS NOT NULL
+),
+per_rid AS (
+    SELECT rid, min(start_epoch) AS first_start, max(end_epoch) AS last_end,
+           count(*) AS n_gates_timed
+    FROM bounded
+    GROUP BY rid
+)
+SELECT rid, first_start, last_end, n_gates_timed,
+       (last_end - first_start) AS wall_seconds
+FROM per_rid
+ORDER BY rid
+"""
+
+_MEGA_DURATIONS_EXCLUDED_SQL = (
+    "SELECT count(*) AS n FROM kit_gates WHERE start_ts IS NULL OR end_ts IS NULL"
+)
+
+
+@app.command(name="mega-durations")
+def mega_durations(as_json: bool = _FMT):
+    """Per-rid wall time from `kit_gates`' OUTCOME start/end brackets: wall time =
+    max(end_ts) - min(start_ts) across every gate row that carries BOTH timestamps for
+    that rid (data-driven GROUP BY rid, no hardcoded gate whitelist, same convention as
+    `gate-yield`). A row missing either timestamp is excluded from the computation and
+    counted separately -- always reported alongside the table, honest-zero on a corpus
+    with no timed gates at all (0 rids, N excluded, exit 0, never a crash). Read-only,
+    same `materialize.query()` path every other command uses."""
+    cols, rows = materialize.query(_MEGA_DURATIONS_SQL)
+    _, excl_rows = materialize.query(_MEGA_DURATIONS_EXCLUDED_SQL)
+    n_excluded = excl_rows[0][0] if excl_rows else 0
+
+    if as_json:
+        out = {
+            "durations": [{c: _jsonable(v) for c, v in zip(cols, r)} for r in rows],
+            "n_rids_with_complete_timestamps": len(rows),
+            "n_rows_excluded": n_excluded,
+        }
+        typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
+        return
+
+    _emit(cols, rows, False)
+    typer.echo(f"{len(rows)} rid(s) with complete timestamps ({n_excluded} row(s) excluded)")
+
+
 # conventional-commit fix() subject: `fix:`, `fix(scope):`, `fix(scope)!:`, `fix!:`.
 _FIX_SUBJECT_RE = r"^fix(\(.*\))?!?:"
 
