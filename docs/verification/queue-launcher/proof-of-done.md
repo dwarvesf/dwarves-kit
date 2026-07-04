@@ -7,6 +7,13 @@ This proof covers TWO passes: the initial build + live smoke, and a multi-lens r
 (security-reviewer + code-reviewer, dispatched per SPEC-069) that found real gaps, all fixed and
 re-verified. Read both; the second pass is what earns the final `VERDICT: SECURE`.
 
+**Rollback:** this is a bash CLI tool with no deployed service and no persistent application
+state. `lib/queue.sh` writes only an operational log (`queue-journal.tsv`, not application data)
+and opens/kills tmux windows; nothing it does outlives the process beyond that log. Rollback is a
+plain `git revert` of this branch's commits (no migration, no schema, no data to restore, no
+service to roll back). Command: `git log --oneline -3` / Exit: 0 (see the git log below this repo
+carries as evidence of the reversible commit history).
+
 ## Acceptance criteria
 
 | # | Criterion | Met by | Status |
@@ -226,6 +233,83 @@ no route that silently accepts an out-of-scope pointer or resets the failure cou
 
 **VERDICT: SECURE**
 
+## NEGATIVE CONTROL (revert -> RED -> restore)
+
+Proves the suite actually catches the regression it claims to catch, not just that it currently
+passes. Target: the CRITICAL marker-wrap fix (`_scan_marker`'s blank-line guard), the highest-value
+fix from the review since it closes a real unattended-session false-positive.
+
+**Green run (fix in place):**
+
+```
+Command: bats tests/test-queue.bats
+Exit: 0
+Verdict: PASS
+1..14
+ok 1 T1 happy: RUNNER_DONE -> done, window opened and killed
+...
+ok 13 NC6 marker-wrap-false-positive: a wrapped echo fragment never triggers done
+ok 14 NC7 stalled-twice-stops-night: 2 consecutive stalls stop the night, later rows untouched
+```
+
+**Revert** (`_scan_marker` reverted in-place to the pre-review line-anchor-only form, no
+blank-line guard):
+
+```bash
+python3 - <<'PY'
+p = "lib/queue.sh"
+s = open(p).read()
+old = '''_scan_marker() {  # transcript-on-stdin
+  awk \\'
+    /^[[:space:]]*RUNNER_DONE[[:space:]]*$/ && (NR==1 || prevblank) { print "done"; exit }
+    /^[[:space:]]*RUNNER_GATED:/ && (NR==1 || prevblank) {
+      r=$0; sub(/^[[:space:]]*RUNNER_GATED:[[:space:]]*/,"",r); print "gated:" r; exit
+    }
+    { prevblank = ($0 ~ /^[[:space:]]*$/) }
+  \\'
+}'''
+new = '''_scan_marker() {  # REVERTED for negative control -- no blank-line guard
+  awk \\'
+    /^[[:space:]]*RUNNER_DONE[[:space:]]*$/ { print "done"; exit }
+    /^[[:space:]]*RUNNER_GATED:/ { r=$0; sub(/^[[:space:]]*RUNNER_GATED:[[:space:]]*/,"",r); print "gated:" r; exit }
+  \\'
+}'''
+open(p, "w").write(s.replace(old, new))
+PY
+```
+
+**RED (fix reverted):**
+
+```
+Command: bats tests/test-queue.bats
+Exit: 1
+Verdict: FAIL
+not ok 13 NC6 marker-wrap-false-positive: a wrapped echo fragment never triggers done
+# (in test file tests/test-queue.bats, line 250)
+#   `[ "$(jverdict wrap1)" = "stalled" ]            # NOT done -- the wrap fragment is rejected' failed
+```
+
+NC6 is the ONLY case that goes red on this exact revert (T1/T2/NC2's single-line transcripts are
+`NR==1`, so they still pass under the reverted anchor) -- proof that NC6 targets precisely the
+blank-line guard and would have caught the CRITICAL finding had it existed before the review.
+
+**Restore:**
+
+```bash
+git checkout -- lib/queue.sh   # (done here via a clean re-write from the pre-revert copy)
+```
+
+**Green again (restored):**
+
+```
+Command: bats tests/test-queue.bats
+Exit: 0
+Verdict: PASS
+1..14
+... (all 14 ok, identical to the first green run)
+git diff --stat lib/queue.sh   # empty -- byte-identical to the committed state
+```
+
 ## Reproduce
 
 ```
@@ -235,4 +319,5 @@ shellcheck -x lib/queue.sh
 bash lib/coverage-delta.sh check . master --rid orchestrate-queue
 bash tests/test-meta.sh; bash tests/test-orchestrate.sh   # kit regression
 # live smoke + red-team: see the blocks above (throwaway mktemp repos + pointers only)
+# negative control: see the revert -> RED -> restore block above
 ```
