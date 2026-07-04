@@ -83,7 +83,7 @@ if [ "$ORPHAN_RC" -eq 0 ]; then RC=0; else RC=1; fi
 assert "every command in commands/ mentions gate-ledger OR is exempted (0 orphans)" $RC
 
 TOTAL_COMMANDS=$(find "$COMMANDS_DIR" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')
-assert_eq "commands/ has 29 command files (the 2026-07-04 count; update this pin if it legitimately changes)" "$TOTAL_COMMANDS" "29"
+assert_eq "commands/ has 30 command files (the 2026-07-04 count, +1 for pitch.md/SPEC-140; update this pin if it legitimately changes)" "$TOTAL_COMMANDS" "30"
 
 echo ""
 echo "=== AC2: the exemption table names exactly the 9 expected utility commands ==="
