@@ -142,3 +142,6 @@ jobs:
 
       - name: Run cockpit board tests (SPEC-146, runner-fastpath sub-goal 04)
         run: bash tests/test-board.sh
+
+      - name: Run board-bridge mirror tests (SPEC-147, runner-fastpath sub-goal 07)
+        run: bash tests/test-board-mirror.sh
