@@ -24,10 +24,17 @@ bad() { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 has() { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 
 # ---- real CLI command surface (the ground truth every claim is checked against) -------------
-# Every `def NAME(` line immediately preceded by `@app.command()` is a real, live command.
+# Every `def NAME(` line immediately preceded by a bare `@app.command()` is a real, live
+# command named after its function; every `@app.command(name="...")` (05K fix: the original
+# regex only matched the bare-decorator shape, silently never checking name="..."-overridden
+# commands like gate-yield/defect-correlation/deviation-rate/review-yield/memory-sweep/
+# mega-durations against ANY doc claim -- a latent gap only surfaced once a doc first claimed
+# one of them) contributes its OWN overridden name instead.
 real_commands() {
   grep -A1 '@app\.command()' src/ledger_observatory/cli.py \
     | grep -oE '^def [a-zA-Z_]+\(' | sed -E 's/^def //; s/\(//'
+  grep -oE '@app\.command\(name="[a-zA-Z0-9_-]+"\)' src/ledger_observatory/cli.py \
+    | sed -E 's/^@app\.command\(name="//; s/"\)$//'
 }
 REAL_CMDS="$(real_commands)"
 has "no-orphan ground truth: real CLI commands extracted" "rebuild" "$REAL_CMDS"

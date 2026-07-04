@@ -1,13 +1,13 @@
 ---
 name: ledger-observatory
-description: Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers (the dwarves-kit gate/proof/telemetry corpus, tide file-move state, tg-cleanup snapshots, the learning ledger), and detect + propose backlog rows off anomalies in that state. Use when the operator asks to SEE ledger state -- "show me the ledger state", "my debt", "understanding debt", "telemetry", "token cost" / "how much am I spending on tokens", "kit runs" / "kit lane telemetry", "ledger status", "render the ledger", "ledger dashboard", "share this as an artifact" (mid-ledger-conversation) -- or to check/propose off it -- "any ledger anomalies", "is my debt over threshold", "propose a backlog row from the ledger state". Drives the read-only `ledger` CLI (ops-toolkit/tools/ledger-observatory) and renders the result as EITHER an in-terminal reply (bot-reply-formatting , tables + bar-fills) or a shareable web Artifact, both from the same one query; `ledger anomalies` is the feedback-loop path, PROPOSE-only (stages a cc-backlog candidate, never files a board row). READ-ONLY by hard contract over every source ledger , the CLI never writes back to a source ledger; the one exception is `ledger anomalies --propose`, whose ONLY write is the gitignored cc-backlog staging buffer. NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration (drive `ledger query`/`ledger show` directly for that; this skill is the rendered-answer path). NOT a persistent TUI/app -- there is no daemon here, only an on-demand agent-driven query + render + propose.
+description: Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers (the dwarves-kit gate/proof/telemetry corpus, tide file-move state, tg-cleanup snapshots, the learning ledger), and detect + propose backlog rows off anomalies in that state. Use when the operator asks to SEE ledger state -- "show me the ledger state", "my debt", "understanding debt", "telemetry", "token cost" / "how much am I spending on tokens", "kit runs" / "kit lane telemetry", "ledger status", "render the ledger", "ledger dashboard", "share this as an artifact" (mid-ledger-conversation) -- or to check/propose off it -- "any ledger anomalies", "is my debt over threshold", "propose a backlog row from the ledger state". Drives the read-only `ledger` CLI (dwarves-kit/tools/ledger-observatory) and renders the result as EITHER an in-terminal reply (bot-reply-formatting , tables + bar-fills) or a shareable web Artifact, both from the same one query; `ledger anomalies` is the feedback-loop path, PROPOSE-only (stages a cc-backlog candidate, never files a board row). READ-ONLY by hard contract over every source ledger , the CLI never writes back to a source ledger; the one exception is `ledger anomalies --propose`, whose ONLY write is the gitignored cc-backlog staging buffer. NOT for editing/mutating any ledger. NOT for ad-hoc SQL exploration (drive `ledger query`/`ledger show` directly for that; this skill is the rendered-answer path). NOT a persistent TUI/app -- there is no daemon here, only an on-demand agent-driven query + render + propose.
 ---
 
 # ledger-observatory
 
 Read-only, agent-callable observability over the ledgers dwarves-kit and its
 neighbors (tide, tg-cleanup, learned-ledger) already write. The tool dir is
-`~/workspace/tieubao/ops-toolkit/tools/ledger-observatory` (run `uv run ledger <cmd>`
+`~/workspace/tieubao/dwarves-kit/tools/ledger-observatory` (run `uv run ledger <cmd>`
 there). **Everything is read-only: the CLI never writes back to a source ledger; there
 is no path through this skill that mutates anything.**
 
@@ -53,7 +53,7 @@ lists what's materialized right now.
 ## Examples
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/tieubao/dwarves-kit/tools/ledger-observatory
 
 # Quick look: "show me the ledger state"
 uv run ledger render kit_runs --surface terminal --limit 10
@@ -79,8 +79,11 @@ step needed.
 ## Install
 
 This skill's canonical source is this file
-(`tools/ledger-observatory/skill/SKILL.md`), versioned with the tool , ops-toolkit
-ships zero skills directly into `~/.claude/skills/` from a tool PR. To make it fire in
+(`tools/ledger-observatory/skill/SKILL.md`), versioned with the tool , dwarves-kit
+ships zero skills directly into `~/.claude/skills/` from a tool PR (same convention
+this tool's docs used in ops-toolkit before the 05K move; dwarves-kit itself has no
+existing precedent for a skill living under `tools/<x>/skill/` rather than a top-level
+`skills/` dir -- see the tool's own implementation notes). To make it fire in
 a Claude Code session, symlink it in (see the tool README's "Install the render
 skill" section):
 
