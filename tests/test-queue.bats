@@ -18,6 +18,7 @@ setup() {
   export QSTUB QLOG
   export QUEUE_JOURNAL="$JOURNAL"
   export QUEUE_POLL_SECS=0 QUEUE_TIMEOUT_SECS=2 QUEUE_RETRY_SLEEP_SECS=0
+  export QUEUE_STARTUP_SECS=0 QUEUE_SUBMIT_SETTLE_SECS=0
   chmod +x "$FIX/fake-mux" "$FIX/fake-board" 2>/dev/null || true
 }
 
@@ -40,7 +41,9 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
 @test "T1 happy: RUNNER_DONE -> done, window opened and killed" {
   local repo="$WORK/r1"; mkrepo "$repo"
   echo "report HEAD then end" > "$WORK/p1.txt"
-  seed_transcript ok1 "RUNNER_DONE"
+  # INDENTED marker: the real Claude Code TUI renders the final line inside its message block,
+  # so the pane shows leading spaces. The live smoke proved a strict ^RUNNER_DONE$ misses this.
+  seed_transcript ok1 "  RUNNER_DONE"
   row ok1 "$repo" "$WORK/p1.txt" > "$WORK/q.tsv"
 
   run bash "$QUEUE" run "$WORK/q.tsv"
@@ -54,7 +57,7 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
 @test "T2 happy: RUNNER_GATED -> gated, moves on" {
   local repo="$WORK/r2"; mkrepo "$repo"
   echo "do the thing" > "$WORK/p2.txt"
-  seed_transcript g2 "RUNNER_GATED: held for human review"
+  seed_transcript g2 "  RUNNER_GATED: held for human review"
   row g2 "$repo" "$WORK/p2.txt" > "$WORK/q.tsv"
 
   run bash "$QUEUE" run "$WORK/q.tsv"

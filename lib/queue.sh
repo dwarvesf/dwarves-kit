@@ -46,6 +46,12 @@ QUEUE_CLAUDE_FLAGS="${QUEUE_CLAUDE_FLAGS:---dangerously-skip-permissions}"
 QUEUE_POLL_SECS="${QUEUE_POLL_SECS:-15}"
 QUEUE_TIMEOUT_SECS="${QUEUE_TIMEOUT_SECS:-7200}"
 QUEUE_RETRY_SLEEP_SECS="${QUEUE_RETRY_SLEEP_SECS:-1800}"
+# The interactive TUI takes several seconds to become input-ready; typing/submitting before it is
+# drops the Enter (the text lands but stays unsent -- caught by the live smoke). Wait for a
+# readiness signal (or this cap) BEFORE typing, and re-issue Enter until the prompt actually
+# submits. Both configurable; tests set them to 0.
+QUEUE_STARTUP_SECS="${QUEUE_STARTUP_SECS:-20}"
+QUEUE_SUBMIT_SETTLE_SECS="${QUEUE_SUBMIT_SETTLE_SECS:-2}"
 QUEUE_BOARD_CMD="${QUEUE_BOARD_CMD:-board}"
 QUEUE_JOURNAL="${QUEUE_JOURNAL:-${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/queue-journal.tsv}"
 
@@ -127,19 +133,52 @@ _mux_open() {  # slug repo
   esac
 }
 
-# Type <text> as LITERAL keystrokes, then a separate Enter. `-l -- "$text"` (tmux) treats the
-# argument as literal UTF-8 and stops option parsing, so a pointer starting with `-` or carrying
-# shell metachars is inert data, never re-parsed by any shell (the NC5 argv-safe property).
+# Type <text> as LITERAL keystrokes (no Enter). `-l -- "$text"` (tmux) treats the argument as
+# literal UTF-8 and stops option parsing, so a pointer starting with `-` or carrying shell
+# metachars is inert data, never re-parsed by any shell (the NC5 argv-safe property).
 _mux_type() {  # slug text
   local slug="$1" text="$2"
   case "$TERMINAL_MUX" in
-    tmux)
-      "$MUX_CMD" send-keys -t "$QUEUE_MUX_SESSION:$slug" -l -- "$text" || return 1
-      "$MUX_CMD" send-keys -t "$QUEUE_MUX_SESSION:$slug" -- Enter ;;
-    cmux)
-      "$MUX_CMD" send-keys --window "$slug" --literal -- "$text" || return 1
-      "$MUX_CMD" send-keys --window "$slug" -- Enter ;;
+    tmux) "$MUX_CMD" send-keys -t "$QUEUE_MUX_SESSION:$slug" -l -- "$text" ;;
+    cmux) "$MUX_CMD" send-keys --window "$slug" --literal -- "$text" ;;
   esac
+}
+
+# Send a single Enter (submit) into the window.
+_mux_enter() {  # slug
+  local slug="$1"
+  case "$TERMINAL_MUX" in
+    tmux) "$MUX_CMD" send-keys -t "$QUEUE_MUX_SESSION:$slug" -- Enter ;;
+    cmux) "$MUX_CMD" send-keys --window "$slug" -- Enter ;;
+  esac
+}
+
+# Wait for the launched interactive session to be input-ready before typing. Readiness signal: the
+# TUI footer ("bypass permissions") or an input prompt (`>`/`❯`) has drawn. Best-effort: proceeds
+# after QUEUE_STARTUP_SECS regardless (the re-submit loop + monitor timeout are the real backstops).
+_mux_wait_ready() {  # slug
+  local slug="$1" waited=0
+  while [ "$waited" -lt "$QUEUE_STARTUP_SECS" ]; do
+    _mux_capture "$slug" 2>/dev/null | grep -qE 'bypass permissions|^[[:space:]]*[>❯]' && return 0
+    sleep 2; waited=$((waited + 2))
+  done
+  return 0
+}
+
+# Submit the typed goal, then VERIFY it actually submitted and re-issue Enter if not. The live
+# smoke proved a single early Enter can be dropped while the text stays sitting on the `/goal`
+# input line; re-issuing until the prompt no longer shows the pending `/goal` command makes the
+# submit deterministic. Bounded (5 tries); an extra Enter on an empty prompt is a harmless no-op.
+_mux_submit() {  # slug
+  local slug="$1" tries=0
+  while [ "$tries" -lt 5 ]; do
+    _mux_enter "$slug"
+    sleep "$QUEUE_SUBMIT_SETTLE_SECS"
+    # unsent iff the input prompt line still carries the pending `/goal` command
+    _mux_capture "$slug" 2>/dev/null | grep -qE '[>❯][[:space:]]*/goal' || return 0
+    tries=$((tries + 1))
+  done
+  return 0
 }
 
 # Print the window's visible output on stdout. NONZERO exit = window gone (the launched claude
@@ -162,11 +201,15 @@ _mux_kill() {  # slug
 
 # ---- completion marker ------------------------------------------------------------------------
 # LINE-ANCHORED so prose (or the typed /goal command echo) quoting the marker text mid-line cannot
-# false-trigger. Returns: prints "done" / "gated:<reason>" / "" (no marker yet).
+# false-trigger. The marker must be the ONLY non-space token on its line: leading whitespace is
+# allowed because the real Claude Code TUI renders the assistant's final line INDENTED inside its
+# message block (confirmed by the live smoke -- a strict `^RUNNER_DONE$` misses the real pane),
+# but a line like `end with the line RUNNER_DONE` still cannot match (it has other words). Returns:
+# prints "done" / "gated:<reason>" / "" (no marker yet).
 _scan_marker() {  # transcript-on-stdin
   awk '
-    /^RUNNER_DONE$/           { print "done"; found=1; exit }
-    /^RUNNER_GATED:/          { r=$0; sub(/^RUNNER_GATED:[[:space:]]*/,"",r); print "gated:" r; found=1; exit }
+    /^[[:space:]]*RUNNER_DONE[[:space:]]*$/ { print "done"; exit }
+    /^[[:space:]]*RUNNER_GATED:/            { r=$0; sub(/^[[:space:]]*RUNNER_GATED:[[:space:]]*/,"",r); print "gated:" r; exit }
   '
 }
 
@@ -186,7 +229,9 @@ _goal_line() {  # pointer-path
 _launch_once() {  # slug repo pointer
   local slug="$1" repo="$2" pointer="$3"
   _mux_open "$slug" "$repo" || return 2
+  _mux_wait_ready "$slug"
   _mux_type "$slug" "$(_goal_line "$pointer")" || { _mux_kill "$slug"; return 2; }
+  _mux_submit "$slug"
 
   local start now elapsed out verdict cap_rc
   start=$(date +%s)

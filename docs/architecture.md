@@ -280,6 +280,23 @@ sub-goal (SPEC-087: no session accumulates more than one sub-goal's context). By
 **strictly serially**. Opt-in **wavefront** scheduling (SPEC-106, ADR-0030) lets dep-independent
 sub-goals run as concurrent waves. The whole wave subsystem is gated behind one env var.
 
+### The overnight queue launcher (`lib/queue.sh`, a sibling, SPEC-146)
+
+`orchestrate.sh` drives ONE mega-goal's sub-goals as headless `claude -p` sessions. `lib/queue.sh`
+is the complementary layer ABOVE that: a dumb sequential scheduler that runs a QUEUE of drafted
+megas overnight, one after another. Crucially it uses a DIFFERENT mechanism , it drives the
+operator's **live interactive** Claude Code `/goal` session, not a headless `claude -p`. It opens a
+fresh terminal-mux window (`tmux`/`cmux`, `TERMINAL_MUX`), types `/goal <pointer>` via `send-keys`,
+and polls `capture-pane` for a line-anchored completion marker (`RUNNER_DONE` / `RUNNER_GATED:`).
+This rides the operator's already-authed login and sidesteps the AUTH/KILL-CLASS risk of a headless
+worker whose token expires or is killed independently (field-proven twice). It journals every
+verdict to `queue-journal.tsv` (idempotent nights: a `done` slug is skipped on re-run) and stops the
+whole night after two consecutive `error` megas (an account-rate-limit circuit-breaker). Sources:
+a hand-authored tsv (`slug<TAB>repo<TAB>pointer`) or `--from-boards` (runner-fastpath sub-goal 04's
+`board queue` emit). Exposed as `orchestrate.sh queue <src>` (a one-line alias; the logic lives in
+`queue.sh`, so orchestrate.sh's own suite is untouched). The mux/marker mechanism lives in
+`lib/queue.sh` `_launch_once` / `_scan_marker`.
+
 ### The per-cycle dispatch decision (waves are the default; serial is the opt-out)
 
 Each loop cycle the driver decides serial-vs-wave on the **admitted** count, never raw readiness:
