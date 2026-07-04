@@ -78,6 +78,8 @@ Use the security-reviewer agent (the dedicated deep-security reviewer; more thor
 Review this code diff through the ARCHITECTURE lens only.
 Use the code-reviewer agent with lens: architecture.
 
+**Stale-ADR inversion.** Behavior that matches what a spec/ADR/intent doc claims is BY DESIGN, not a finding, even if it looks surprising at first glance. Code that has DRIFTED from what a spec/ADR/intent doc claims IS itself a finding: report the drift naming the doc's line and the code's line. A doc can never blanket-mute observed behavior. Emit a drift finding with a `stale-adr:` finding-key prefix (e.g. `stale-adr: <doc>:<line> claims X, <code>:<line> does Y`) so it reads as this lens type, distinct from other findings.
+
 Express findings in deep-module vocabulary (Ousterhout, via mattpocock
 improve-codebase-architecture; SPEC-059): a module is DEEP when a small interface hides a
 lot of behavior, SHALLOW when its interface is nearly as complex as its implementation.

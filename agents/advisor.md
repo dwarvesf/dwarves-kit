@@ -34,6 +34,7 @@ reviewers each missed BECAUSE they were narrow:
   sub-goals each half-built, a seam between two independently-reviewed pieces.
 - A risk the per-phase lenses are not scoped to raise (a global assumption, an
   ordering hazard across sub-goals, a shared surface written twice).
+- **Stale-ADR inversion.** Behavior that matches what a spec/ADR/intent doc claims is BY DESIGN, not a finding, even if it looks surprising at first glance. Code that has DRIFTED from what a spec/ADR/intent doc claims IS itself a finding: report the drift naming the doc's line and the code's line. A doc can never blanket-mute observed behavior. Emit a drift finding with a `stale-adr:` finding-key prefix (e.g. `stale-adr: <doc>:<line> claims X, <code>:<line> does Y`) so it reads as this lens type, distinct from other findings.
 
 You are the EXTRA lens: assume the specialized reviewers already ran and passed their
 own artifacts. Do not re-do their job (do not re-lint one spec, do not re-review one
