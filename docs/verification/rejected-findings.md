@@ -30,12 +30,23 @@ last one is SPEC-143's existing prefix convention, which this scheme generalizes
 named lens type to any lens), not the per-instance wording of the finding. `<file-path>` is
 the path the finding was raised against, repo-relative.
 
-**Match is on the WHOLE finding-key.** A previously-rejected `bare-except:tools/notify.py` row
-matches ONLY a fresh finding whose OWN finding-key is also `bare-except:tools/notify.py`. A
-different defect at the same file (say, `sql-injection:tools/notify.py`) has a different
-finding-key and is NOT a match: it always fires as a fresh finding. Matching on the file path
-alone (ignoring the slug) is the exact failure mode SPEC-144's load-bearing negative control
-proves against; see `docs/verification/spec-144-review-findings-memory.md`.
+**Match is on the WHOLE finding-key, pipe-anchored.** A previously-rejected
+`bare-except:tools/notify.py` row matches ONLY a fresh finding whose OWN finding-key is also
+`bare-except:tools/notify.py`. A different defect at the same file (say,
+`sql-injection:tools/notify.py`) has a different finding-key and is NOT a match: it always
+fires as a fresh finding. Matching on the file path alone (ignoring the slug) is one failure
+mode SPEC-144's load-bearing negative control proves against; see
+`docs/verification/spec-144-review-findings-memory.md`.
+
+**Consult with a pipe-anchored search, never a bare substring search.** Every row's
+finding-key cell is delimited by ` | ` on both sides (standard table formatting, one leading
+and one trailing space); consult it with `grep -F "| <finding-key> |" <this file>`, matching
+the whole cell. A bare `grep -F "<finding-key>"` substring-matches, so a shorter, unrelated
+slug that happens to be a suffix of a longer rejected one (e.g. `except:notify.py` against the
+`bare-except:notify.py` row above) would WRONGLY match -- kebab-case defect-slugs collide this
+way routinely (`auth` in `no-auth-check`, `leak` in `secret-leak`), not as a rare edge case.
+This was a real bug caught by a live architecture review of this file's own consult-step
+prose (SPEC-144 verification doc, "Run 3: pipe-anchoring").
 
 ## Append path
 

@@ -46,10 +46,14 @@ finalizing your `ADVISORY:` output, check each candidate finding against
 unreadable, or malformed ledger means "no memory" -- proceed exactly as if this step did not
 exist. For each candidate: compute its finding-key (`<defect-slug>:<file-path>`, a short
 kebab-case defect-shape slug colon-joined with the file path -- the same scheme the
-`stale-adr:` prefix above already uses), then check for that EXACT finding-key string in the
-ledger. **Match ONLY on the whole finding-key, never on file path alone** -- a previously-
-rejected finding at a file does NOT suppress a different, novel defect at that same file; a
-different defect-slug is a different finding-key and always fires. On a match with unchanged
+`stale-adr:` prefix above already uses), then check the ledger for that finding-key **anchored
+to its whole table cell** (`| <finding-key> |`, pipe-space-key-space-pipe), never a bare
+substring search: a bare substring match on just the finding-key text would WRONGLY match a
+shorter, unrelated slug that happens to be a suffix of a longer rejected one (e.g.
+`except:notify.py` against a `bare-except:notify.py` row). **Match ONLY on the whole
+finding-key, never on file path alone** -- a previously-rejected finding at a file does NOT
+suppress a different, novel defect at that same file; a different defect-slug is a different
+finding-key and always fires. On a match with unchanged
 evidence: pull it out of your findings count and list it in a separate `Previously rejected:`
 line (`<finding-key> -- previously rejected <date>: <reason>`), never silently dropped, never
 re-raised as new. On a match whose evidence has materially changed: keep it as a fresh

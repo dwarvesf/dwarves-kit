@@ -60,8 +60,14 @@ For each candidate finding:
 1. Compute its **finding-key**: `<defect-slug>:<file-path>` (a short kebab-case slug for the
    defect SHAPE, e.g. `bare-except`, `sql-injection`, `stale-adr`, colon-joined with the
    repo-relative file path).
-2. `grep -F "<finding-key>" docs/verification/rejected-findings.md` (exact substring match on
-   the WHOLE finding-key -- slug AND path together).
+2. `grep -F "| <finding-key> |" docs/verification/rejected-findings.md` -- the ledger's table
+   cell is delimited by ` | ` on both sides, so anchoring the search to `| <finding-key> |`
+   (pipe, single space, the key, single space, pipe) matches the WHOLE cell, never a
+   substring. **Do not** grep the bare finding-key with no pipe anchors: a bare `grep -F
+   "<finding-key>"` substring-matches, so a shorter, unrelated slug that happens to be a
+   suffix of a longer rejected one (e.g. searching `except:notify.py` against a
+   `bare-except:notify.py` row, or `leak:foo.py` against a `secret-leak:foo.py` row) would
+   WRONGLY match -- kebab-case defect-slugs collide this way routinely, not as an edge case.
 3. **No match** -> it is a fresh finding; it flows into Step 3 normally.
 4. **Match, evidence unchanged** -> do NOT list it as a fresh Step-3 finding. Instead add it to
    a separate `### Previously rejected` section (below the numbered findings, before the

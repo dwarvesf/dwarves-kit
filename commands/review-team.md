@@ -176,8 +176,12 @@ ledger = "no memory," never an error, never a blocked review.
 
 For each merged finding: compute its **finding-key** (`<defect-slug>:<file-path>`, a short
 kebab-case defect-shape slug colon-joined with the repo-relative file path -- SPEC-143's
-`stale-adr:` prefix is one instance of this scheme), then `grep -F "<finding-key>"
-docs/verification/rejected-findings.md` (exact substring match on the WHOLE finding-key).
+`stale-adr:` prefix is one instance of this scheme), then `grep -F "| <finding-key> |"
+docs/verification/rejected-findings.md` -- pipe-anchored (pipe, single space, the key, single
+space, pipe) to match the WHOLE table cell, never a substring. **Do not** grep the bare
+finding-key with no pipe anchors: a bare `grep -F "<finding-key>"` substring-matches, so a
+shorter slug that happens to be a suffix of a longer rejected one (e.g. `except:notify.py`
+against a `bare-except:notify.py` row) would WRONGLY match.
 
 - **No match** -> fresh finding, flows into Step 3b (validator dispatch) and Step 4 normally.
 - **Match, evidence unchanged** -> pull it OUT of the main merged-findings set (it is never

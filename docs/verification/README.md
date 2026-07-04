@@ -59,6 +59,14 @@ docs/verification/<slug>/
 `docs/implementation-notes/<slug>.md`). The older flat shape `docs/verification/<slug>.md`
 (append-entry, one file) is still accepted by the gate.
 
+**One deliberate exception: `docs/verification/rejected-findings.md` (SPEC-144).** Every other
+file directly under `docs/verification/` is a proof-of-done record scoped to one work item's
+slug. `rejected-findings.md` is not: it is a cross-cutting, ever-growing, consulted-at-runtime
+memory (the review surfaces' rejected-findings ledger), with no owning slug and no immutable
+"one record per run" shape. It lives here rather than under `docs/decisions/` because the
+sub-goal contract that created it names this exact path; treat it as the one named exception
+to the per-slug convention above, not a precedent for a second one.
+
 ## Two homes: repo-root layout or co-located with the tool (ADR-0026)
 
 A proof has two equally-valid homes. Pick per context:

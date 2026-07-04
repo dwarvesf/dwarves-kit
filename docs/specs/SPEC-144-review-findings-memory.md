@@ -178,6 +178,47 @@ Delta-from-contract notes: `docs/implementation-notes/spec-144-review-findings-m
 | T8 | Emit grammar | a live `gate-ledger.sh record ... review ran "... findings=N rejected=M actor=X"` line | parses via `ledger-observatory`'s `kit_gates` table, `reason` column carries the full string verbatim (AC6) |
 | T9 | Append path | operator rejects a finding in a review session | one new row appended to `docs/verification/rejected-findings.md`, existing rows untouched |
 | T10 | Coverage-delta advisory | `lib/coverage-delta.sh check` over this branch's diff | records, never blocks (informational; this is a prompt/doc-heavy change) |
+| T11 | Substring-collision (found live, fixed) | `grep -F "except:notify.py"` (bare) vs `grep -F "\| except:notify.py \|"` (pipe-anchored) against the `bare-except:notify.py` row | bare form WRONGLY matches (RED); pipe-anchored form correctly does not (GREEN) |
+
+## Coverage-delta row
+
+```
+$ bash lib/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid review-findings-memory
+[coverage-delta] exempt: no source change (docs/test/generated only)
+```
+Expected: this sub-goal is prose/prompt/doc surfaces, not application source; `exempt` is the
+correct classification, never `WARNING under-tested`.
+
+## Review
+Date: 2026-07-04 | Reviewer: `kit:code-reviewer` (architecture lens), real dispatch
+
+### Verdict: FIX THEN SHIP (at time of review) -> fixed, now SHIP
+
+### Findings
+1. **CRITICAL (FIXED): unanchored `grep -F "<finding-key>"` substring-matches, so a shorter
+   slug that is a suffix of a longer rejected one (e.g. `except:notify.py` vs
+   `bare-except:notify.py`) would wrongly match.** File: `commands/review.md`,
+   `commands/review-team.md`, `agents/advisor.md`, `docs/verification/rejected-findings.md`.
+   Fix applied: all four now specify `grep -F "| <finding-key> |"`, pipe-anchored to the whole
+   table cell. Verified red (bare form wrongly matches) -> green (anchored form correctly does
+   not); see `docs/verification/spec-144-review-findings-memory.md` "Run 3".
+2. **MEDIUM (ADDRESSED): `docs/verification/rejected-findings.md` is a cross-cutting,
+   ever-growing memory file living under a directory whose established convention is one
+   proof-of-done record per work-item slug, undocumented as an exception.** Fix applied: a
+   callout added to `docs/verification/README.md` naming this file as the one deliberate
+   exception (path fixed by the sub-goal contract; not a precedent for a second one).
+3. **LOW (ACCEPTED, consistent with existing convention): the consult-step prose is
+   triplicated near-verbatim across the three review surfaces.** Same pattern SPEC-143's
+   stale-adr rule already uses in the same three files; the contract explicitly weighed and
+   rejected a shared `lib/` helper for these LLM-consumed prose instructions. Not changed.
+4. **LOW (ACCEPTED, optional): `actor=$(git config user.name)` is computed caller-side in two
+   command docs rather than centralized in `gate-ledger.sh`.** Matches the pre-existing
+   convention (`findings=`/`suppressed=` were already caller-computed before this spec); worth
+   revisiting only if a third `record` call site needs the same field.
+
+### TODOs (open follow-ups)
+None blocking. Findings 3 and 4 are accepted as consistent with the repo's existing
+conventions; revisit only if a future review surface repeats the pattern a fourth time.
 
 ## Out of scope
 
