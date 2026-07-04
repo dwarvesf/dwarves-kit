@@ -88,7 +88,11 @@ For the kit's OWN runs (a `rid`'s gate/run ledger, `lib/gate-ledger.sh`), the ge
 `lib/proof-table-gen.sh <rid>` (SPEC-132): it renders the confirmation table from
 `logs/runs/<rid>.log` under `docs/runs/<rid>.md`, hard-refuses any out-path whose basename is
 `proof-of-done.md`, and surfaces sub-goal 01's `caught=`/timing marker when present, degrading
-gracefully when absent.
+gracefully when absent. **Honesty note:** today the only call site that emits the OUTCOME
+marker (SPEC-129) is `hooks/ship-gate.sh` at the ship boundary, so the generated Caught/Duration
+columns reflect the Ship phase only, not a per-phase measurement across the whole run, no
+matter how many phases the ledger otherwise records. WORKFLOW.md "## Gate ledger and ship
+enforcement" states this scope alongside the marker's own convention.
 
 ### Optional table-first review layout
 

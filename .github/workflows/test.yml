@@ -121,3 +121,6 @@ jobs:
 
       - name: Run coverage-delta gate tests (SPEC-130, advisory)
         run: bash tests/test-coverage-delta.sh
+
+      - name: Run kit-run-integrity docs-wiring no-orphan check (SPEC-135)
+        run: bash tests/test-kri-wiring.sh
