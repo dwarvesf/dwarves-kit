@@ -89,10 +89,14 @@ def _load_tide(con):
     """Copy tide's tables via a READ_ONLY sqlite ATTACH. Each table is copied
     INDEPENDENTLY (MED-3): a missing/older-schema table falls back to an empty table on
     its own, never discarding a sibling that copied fine.
+
+    `config.tide_db_path()` is None when `LEDGER_OBS_TIDE_DB` is unset (ops-toolkit-
+    specific source, no default post-05K-move): treated identically to "path does not
+    exist", never a crash.
     """
     tide_db = config.tide_db_path()
     attached = False
-    if tide_db.exists():
+    if tide_db is not None and tide_db.exists():
         try:
             con.execute(f"ATTACH '{tide_db}' AS tide_src (TYPE sqlite, READ_ONLY)")
             attached = True

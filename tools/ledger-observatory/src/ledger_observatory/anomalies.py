@@ -618,18 +618,37 @@ _STAGING_HEADER = (
 )
 
 
-def _ops_toolkit_root() -> str:
-    return os.environ.get("OPS_TOOLKIT", os.path.expanduser("~/workspace/tieubao/ops-toolkit"))
+def _ops_toolkit_root() -> str | None:
+    """ops-toolkit-specific (05K move): cc-backlog's staging buffer + board both live in
+    ops-toolkit's `_meta/`, a foreign repo now that this tool lives in dwarves-kit. No
+    hardcoded personal-path default post-move -- an unset `OPS_TOOLKIT` means "not
+    configured", not "guess the fallback and maybe write to the wrong place"."""
+    return os.environ.get("OPS_TOOLKIT")
 
 
-def staging_path() -> str:
-    """The cc-backlog staging buffer (the PROPOSAL surface). Same env var cc-backlog uses."""
-    return os.environ.get("CC_BACKLOG_STAGING", os.path.join(_ops_toolkit_root(), "_meta/backlog-staging.md"))
+def staging_path() -> str | None:
+    """The cc-backlog staging buffer (the PROPOSAL surface, the ONLY write target of
+    `--propose`). Same env var cc-backlog uses. None when neither `CC_BACKLOG_STAGING`
+    nor `OPS_TOOLKIT` is set (05K: ops-toolkit-specific, required-explicit post-move);
+    `stage_proposals` refuses to write rather than silently resolving a bogus relative
+    path off an empty root."""
+    explicit = os.environ.get("CC_BACKLOG_STAGING")
+    if explicit:
+        return explicit
+    root = _ops_toolkit_root()
+    return os.path.join(root, "_meta/backlog-staging.md") if root else None
 
 
-def backlog_path() -> str:
-    """The board (read ONLY, for dedup; never written by this tool). Same env var cc-backlog uses."""
-    return os.environ.get("CC_BACKLOG_BACKLOG", os.path.join(_ops_toolkit_root(), "_meta/BACKLOG.md"))
+def backlog_path() -> str | None:
+    """The board (read ONLY, for dedup; never written by this tool). Same env var
+    cc-backlog uses. None under the same conditions as `staging_path()`; `_existing_
+    titles` is already None-safe (a missing dedup source just means nothing to dedup
+    against)."""
+    explicit = os.environ.get("CC_BACKLOG_BACKLOG")
+    if explicit:
+        return explicit
+    root = _ops_toolkit_root()
+    return os.path.join(root, "_meta/BACKLOG.md") if root else None
 
 
 def _norm(s: str) -> str:
@@ -637,7 +656,7 @@ def _norm(s: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", str(s).lower()))
 
 
-def _existing_titles(backlog: str, staging: str) -> set[str]:
+def _existing_titles(backlog: str | None, staging: str | None) -> set[str]:
     """Normalized titles already on the board (Item col) OR already staged. Mirrors
     cc-backlog's `existing_titles` exactly, so a proposal never duplicates a board row or a
     prior staged proposal. Both files are opened READ-ONLY."""
@@ -675,14 +694,23 @@ def _today() -> str:
     return _dt.date.today().isoformat()
 
 
-def stage_proposals(anomalies: list[Anomaly], staging: str, backlog: str,
+def stage_proposals(anomalies: list[Anomaly], staging: str | None, backlog: str | None,
                     date: str | None = None) -> tuple[list[Anomaly], list[Anomaly]]:
     """Append a `## [staged]` block per NON-duplicate anomaly to the staging buffer. Returns
     (staged, skipped_as_duplicate). Dedup is by normalized title vs the board AND the staging
     file, so re-runs are idempotent and an already-promoted/rejected anomaly never re-stages.
 
     The ONLY write is to `staging`. `backlog` is read-only (dedup). This is the
-    propose-not-autofile guarantee (proven byte-identical in the test suite)."""
+    propose-not-autofile guarantee (proven byte-identical in the test suite).
+
+    `staging`/`backlog` are None when no destination is configured (05K: ops-toolkit-
+    specific, required-explicit post-move -- see `staging_path()`/`backlog_path()`). A
+    None `backlog` is harmless (nothing to dedup against, `_existing_titles` already
+    treats it that way). A None `staging` is fine too UNLESS there is something new to
+    actually write: raising here, instead of silently resolving a relative path off an
+    empty root, is the fix for the exact failure mode this function must never produce
+    (a `--propose` writing a stray `_meta/backlog-staging.md` relative to whatever the
+    caller's cwd happens to be)."""
     date = date or _today()
     existing = _existing_titles(backlog, staging)
     staged: list[Anomaly] = []
@@ -697,6 +725,12 @@ def stage_proposals(anomalies: list[Anomaly], staging: str, backlog: str,
         new_blocks.append(render_block(a, date))
         staged.append(a)
     if new_blocks:
+        if staging is None:
+            raise RuntimeError(
+                "ledger anomalies --propose has a proposal to stage but no destination is "
+                "configured: set CC_BACKLOG_STAGING (or OPS_TOOLKIT) to an explicit "
+                "absolute path (ops-toolkit-specific source, no default post-05K move)"
+            )
         _append_blocks(staging, new_blocks)
     return staged, skipped
 

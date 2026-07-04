@@ -191,6 +191,24 @@ has  "F-dedup second run marks duplicate" '"action": "duplicate"' "$OUT2"
 hasnt "F-dedup second run stages nothing"  '"action": "staged"'    "$OUT2"
 eq   "F-dedup still exactly one block"     "$(staged_n)" "1"
 
+echo "== F-no-staging-config (05K over-test): --propose with a real proposal to stage, but
+           NO staging destination configured, fails LOUD (clean CLI error, exit 2) -- never a
+           crash, and NEVER a silent write to a stray cwd-relative path (the exact failure
+           mode CC_BACKLOG_STAGING/OPS_TOOLKIT losing their ops-toolkit-hardcoded default
+           post-05K-move could have reintroduced) =="
+reset; kitrun ns1 "full full data data" 6; REBUILD   # debt fires, same shape as F-pnaf
+reset_staging
+nontransient_tree() { find "$ROOT" -type f -not -path '*/.venv/*' -not -path '*__pycache__*' -not -name '*.pyc' | sort; }
+TREE_BEFORE="$(nontransient_tree)"
+NS_RC=0
+NS_OUT="$(env -u CC_BACKLOG_STAGING -u CC_BACKLOG_BACKLOG -u OPS_TOOLKIT \
+  LEDGER_OBSERVATORY_DB="$LEDGER_OBSERVATORY_DB" uv run ledger anomalies --propose --json 2>&1)" || NS_RC=$?
+eq  "F-no-staging-config exits 2 (clean refusal, not a Python traceback)" "$NS_RC" "2"
+has "F-no-staging-config names the missing destination" "no destination is configured" "$NS_OUT"
+hasnt "F-no-staging-config never touched the real staging buffer" '"action": "staged"' "$NS_OUT"
+TREE_AFTER="$(nontransient_tree)"
+eq "F-no-staging-config no stray file appeared under \$ROOT (no cwd-relative write escaped)" "$TREE_AFTER" "$TREE_BEFORE"
+
 echo "== F-threshold-flag: the one --threshold flag tunes each cutoff =="
 reset; kitrun t1 "full full data data" 6; tide_costs 0.10 0.10 0.10 0.10 0.10 0.15; REBUILD
 DEF="$(R anomalies --json)"

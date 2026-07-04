@@ -203,9 +203,13 @@ def _tg_dialog_row(source_file: str, category, d: dict):
 def read_tgcleanup(directory: Path | None = None):
     """Normalize both documented shapes (array vs object-of-arrays). The category key
     of the object-of-arrays form is carried onto each dialog row (adapter-contracts §3).
+
+    `config.tgcleanup_dir()` is None when `LEDGER_OBS_TGCLEANUP_DIR` is unset
+    (ops-toolkit-specific source, no default post-05K-move): treated identically to a
+    directory that does not exist, never a crash.
     """
     d = directory or config.tgcleanup_dir()
-    if not d.exists():
+    if d is None or not d.exists():
         return TG_COLUMNS, []
     rows = []
     for f in sorted(d.glob("*.json")):
@@ -412,9 +416,13 @@ LEARNED_COLUMNS = schemas.column_names(schemas.LEARNED_SCHEMA)
 def read_learned(md_path: Path | None = None):
     """Parse the markdown table under the `## Ledger` heading (adapter-contracts §1).
     Rows are removed on flush, so this is a snapshot (possibly 0 rows), never an error.
+
+    `config.learned_md_path()` is None when `LEDGER_OBS_LEARNED_MD` is unset
+    (ops-toolkit-specific source, no default post-05K-move): treated identically to a
+    file that does not exist, never a crash.
     """
     p = md_path or config.learned_md_path()
-    if not p.exists():
+    if p is None or not p.exists():
         return LEARNED_COLUMNS, []
     rows = []
     in_ledger = False

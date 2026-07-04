@@ -406,9 +406,13 @@ def anomalies(
         _emit(cols, rows, as_json)
         return
 
-    staged, skipped = anomalies_mod.stage_proposals(
-        fired, anomalies_mod.staging_path(), anomalies_mod.backlog_path()
-    )
+    try:
+        staged, skipped = anomalies_mod.stage_proposals(
+            fired, anomalies_mod.staging_path(), anomalies_mod.backlog_path()
+        )
+    except RuntimeError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(2)
     cols = ["key", "title", "action"]
     rows = [[a.key, a.title, "staged"] for a in staged]
     rows += [[a.key, a.title, "duplicate"] for a in skipped]
@@ -520,9 +524,13 @@ def digest(
             "anomalies": [{"key": a.key, "title": a.title, "metric": a.metric} for a in fired],
         }
         if propose:
-            staged, skipped = anomalies_mod.stage_proposals(
-                fired, anomalies_mod.staging_path(), anomalies_mod.backlog_path()
-            )
+            try:
+                staged, skipped = anomalies_mod.stage_proposals(
+                    fired, anomalies_mod.staging_path(), anomalies_mod.backlog_path()
+                )
+            except RuntimeError as e:
+                typer.echo(f"error: {e}", err=True)
+                raise typer.Exit(2)
             out["staged"] = [a.key for a in staged]
             out["skipped_duplicate"] = [a.key for a in skipped]
         typer.echo(json.dumps(out, ensure_ascii=False, indent=2))
@@ -536,9 +544,13 @@ def digest(
     a_rows = [[a.key, a.title, a.metric] for a in fired]
     _emit(a_cols, a_rows, False)
     if propose:
-        staged, skipped = anomalies_mod.stage_proposals(
-            fired, anomalies_mod.staging_path(), anomalies_mod.backlog_path()
-        )
+        try:
+            staged, skipped = anomalies_mod.stage_proposals(
+                fired, anomalies_mod.staging_path(), anomalies_mod.backlog_path()
+            )
+        except RuntimeError as e:
+            typer.echo(f"error: {e}", err=True)
+            raise typer.Exit(2)
         typer.echo("")
         typer.echo("== staged ==")
         p_cols = ["key", "title", "action"]
