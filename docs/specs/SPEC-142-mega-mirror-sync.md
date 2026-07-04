@@ -157,6 +157,7 @@ Every beat either side carries, so the NEXT skill change has a diff target.
 | Tiny-item batching rule | `references/GUIDE.md` "How to use it" step 3, "Tiny items never become their own sub-goal" | Step 1 (this spec) | SYNCED (this PR) |
 | Consolidate mode (remega) | `references/GUIDE.md` "Consolidate mode (remega)" + `SKILL.md` `argument-hint` | `## Consolidate mode` (this spec) | SYNCED (this PR) |
 | Ship-time lane de-escalation | this kit's own `SPEC-141-lane-de-escalation.md` + `commands/ship.md` Step 8 bullet 4 (no skill-side counterpart -- kit-originated knob) | Step 5, added `deescalate` call (this spec) | SYNCED (this PR, kit-to-kit mirror for conductor visibility) |
+| Intake triage ladder (3-rung: direct kit lane / single `/goal` / mega-goal) | `goal-craft`/`plan-for-goal` `SKILL.md` `<!-- BEGIN/END triage-ladder -->` fence (shasum `a42939f37e91e61eadfa0a7e4de7034a3309a22c`) | before `## Prerequisites`, same fence markers, byte-identical (runner-fastpath sub-goal 02) | NEVER-DIVERGE -- byte-identical inside the markers; a drift here is a bug, re-copy the fence verbatim on any skill-side edit |
 | OPERATE.md RUN CONTRACT pointer | `references/OPERATE.md` | (none) | DELIBERATELY NOT MIRRORED -- private ops-toolkit path, parked on portability re-apply (ID-246), per #164 |
 
 ## Out of scope
