@@ -280,7 +280,7 @@ sub-goal (SPEC-087: no session accumulates more than one sub-goal's context). By
 **strictly serially**. Opt-in **wavefront** scheduling (SPEC-106, ADR-0030) lets dep-independent
 sub-goals run as concurrent waves. The whole wave subsystem is gated behind one env var.
 
-### The overnight queue launcher (`lib/queue.sh`, a sibling, SPEC-146)
+### The overnight queue launcher (`lib/queue.sh`, a sibling, SPEC-148)
 
 `orchestrate.sh` drives ONE mega-goal's sub-goals as headless `claude -p` sessions. `lib/queue.sh`
 is the complementary layer ABOVE that: a dumb sequential scheduler that runs a QUEUE of drafted

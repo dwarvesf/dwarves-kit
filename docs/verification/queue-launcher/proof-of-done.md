@@ -1,6 +1,6 @@
-# Proof of done: overnight queue launcher (SPEC-146, runner-fastpath sub-goal 03K)
+# Proof of done: overnight queue launcher (SPEC-148, runner-fastpath sub-goal 03K)
 
-Spec: `docs/specs/SPEC-146-overnight-queue-launcher.md` (incl. its 2026-07-05 AMENDMENT) · Lane:
+Spec: `docs/specs/SPEC-148-overnight-queue-launcher.md` (incl. its 2026-07-05 AMENDMENT) · Lane:
 full · rid: `orchestrate-queue`
 
 This proof covers TWO passes: the initial build + live smoke, and a multi-lens review round
@@ -27,7 +27,7 @@ carries as evidence of the reversible commit history).
 | A7 | Queue-row parse is argv-safe (metachars never reach a shell) | `while IFS=$'\t' read`; `send-keys -l --`; NC5 + red-team RT-a | PASS |
 | A8 | `--dry-run` lists would-launch, no send-keys, no journal | `cmd_run` dry branch; T3 + dry-run sample | PASS |
 | A9 | mux + interactive claude are CONSUMER config, nothing personal hardcoded | env block in `lib/queue.sh` | PASS |
-| A10 | bearing `## Design` block (state machine + mechanism ladder) | SPEC-146 `## Design` | PASS |
+| A10 | bearing `## Design` block (state machine + mechanism ladder) | SPEC-148 `## Design` | PASS |
 | A11 | `--from-boards` pointers are confined by an allow-list independent of the upstream board tool | `_pointer_allowlist_reason` (`realpath`-resolved); T5/T6/T7 | PASS |
 
 ## Implementation
