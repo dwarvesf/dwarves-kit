@@ -169,7 +169,9 @@ If the current branch is not main/master:
   ```
 - If the spec references issue numbers, link them in the PR.
 - Tell the user the PR is ready.
-- **Understanding-gate nudge (ADR-0031, SPEC-125):** on a `gate`/gated-final PR, after the Understanding-debt marker is recorded, run `bash lib/quiz-gate.sh tap <rid> --files "<files>" --pr-kind gate "<what changed>"`. On a `tap` verdict it prints the ★-tap nudge; present it and route the human's engage/defer/wave via `/kit:quiz-gate` (`lib/quiz-gate.sh respond`). Advisory, never blocks the merge; a `wave`/`not-significant` change prints nothing.
+- **Understanding-gate nudge (ADR-0031 Refinement §4, SPEC-125, SPEC-136):** on a `gate`/gated-final PR, first record the Understanding-debt marker, then decide whether to nudge:
+  1. `bash lib/significance-classify.sh record <rid> --files "<files>" "<what changed>" || true` -- writes the FAT `significance=`/`worthiness=`/`verdict=` line to the debt ledger LIVE, using the same files/description the tap call below uses. Guarded with `|| true`: advisory, a `record` failure must never block the ship. This is what makes the next bullet's "after the Understanding-debt marker is recorded" literally true, and it is what logs the SILENT-WAVE case (significant-but-low-worthiness, `verdict=wave`, no human response) even when the tap below prints nothing.
+  2. `bash lib/quiz-gate.sh tap <rid> --files "<files>" --pr-kind gate "<what changed>"`. On a `tap` verdict it prints the ★-tap nudge; present it and route the human's engage/defer/wave via `/kit:quiz-gate` (`lib/quiz-gate.sh respond`), which forward-carries the marker recorded in step 1 onto the human's response line. Advisory, never blocks the merge; a `wave`/`not-significant` change prints nothing further here (it is already logged by step 1).
 
 If on main: warn that they should have used a feature branch.
 

@@ -9,6 +9,11 @@
 #   AC3c window scoping: an item older than --days is excluded
 #   AC3d repo scoping: a different-repo item is excluded by default, included with --all-repos
 #   AC4  NEGATIVE CONTROL (reuse): the skill invokes, does not fork a second engine
+#   AC5  SPEC-136 payoff loop: a REAL `significance-classify.sh record` call (grounded in actual
+#        --files/desc, not a hand-seeded fixture line) -> a human debt-response forward-carries the
+#        classification -> collect shows real sig/wor -> mark-paid exits 0, disposed paid
+#   AC6  SPEC-136 silent-wave path: a REAL `record` call producing verdict=wave with NO human
+#        response ever following IS collected as waved -- the newly-live logged-wave path
 #
 # AC2/AC4 read a file in the SIBLING dotfiles repo (~/workspace/tieubao/dotfiles). That path is
 # ABSENT in CI (same precedent as SPEC-107's dotfiles-half check in tests/test-meta.sh: "its path
@@ -21,6 +26,7 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WB="$KIT_DIR/lib/weekend-batch.sh"
 GL="$KIT_DIR/lib/gate-ledger.sh"
+SC="$KIT_DIR/lib/significance-classify.sh"
 
 PASS=0; FAIL=0; SKIP=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
@@ -239,6 +245,77 @@ LIST_RAW="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
 DISP_RAW="$(printf '%s\n' "$LIST_RAW" | grep -F "$RID_RAW" | cut -f2)"
 assert "security [reader]: a silent-wave line (no real response= field) with 'response=engage' smuggled in reason= still reads disposition=waved, NOT paid (struct-prefix cut)" \
   "$([ "$DISP_RAW" = waved ] && echo 0 || echo 1)"
+
+echo ""
+echo "=== AC5 (SPEC-136): the payoff loop -- REAL record -> forward-carry -> collect -> mark-paid ==="
+# Unlike the forward-carry section above (which hand-calls the fat gate-ledger.sh debt verb
+# directly), this drives the ACTUAL /kit:ship call site verb, lib/significance-classify.sh record,
+# with real --files/description input -- the exact call SPEC-136 wired into commands/ship.md Step 8.
+# significance-classify.sh's classification is deterministic (SPEC-123): this is the GROUNDED-NC
+# assertion (AC6 of SPEC-136) that the recorded verdict traces to the real files/desc, not a
+# narrative.
+RID_E2E="ug-30-record-e2e-$$"
+( cd "$KIT_DIR" && bash "$GL" start "$RID_E2E" normal normal bug "" fixture-repo ) >/dev/null
+E2E_DESC="add a new data model migration that introduces a primitive future work will build on"
+E2E_VERDICT="$(cd "$KIT_DIR" && bash "$SC" record "$RID_E2E" --files "lib/x.sh" "$E2E_DESC")"
+assert "AC5a record's own stdout prints the verdict (tap, per this description's triggers)" \
+  "$([ "$E2E_VERDICT" = "tap" ] && echo 0 || echo 1)"
+E2E_LOG="$RUNS/$RID_E2E.log"
+FIRST_DEBT_LINE="$(grep '| DEBT |' "$E2E_LOG" | head -n1)"
+assert "AC5b record wrote a FAT | DEBT | line grounded in the real classification (significance=high worthiness=high verdict=tap)" \
+  "$(printf '%s' "$FIRST_DEBT_LINE" | grep -q 'significance=high worthiness=high verdict=tap' && echo 0 || echo 1)"
+
+# An open tap with no human response yet is PENDING -- not yet collectible (still Flow A's to
+# resolve; matches AC3b's bonus check on ug-16-pending-item above).
+LIST_E2E_PRE="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
+assert "AC5c before any human response, $RID_E2E is PENDING (not yet collectible)" \
+  "$(printf '%s\n' "$LIST_E2E_PRE" | grep -F "$RID_E2E" | grep -q . && echo 1 || echo 0)"
+
+# The human defers it (SG-04's live response path) -- this is what makes it collectible AND is
+# where the TIER-4-close forward-carry fires, using the FAT line record() just wrote.
+( cd "$KIT_DIR" && bash "$GL" debt-response "$RID_E2E" defer "deferred to weekend batch" ) >/dev/null
+LAST_E2E_LINE="$(grep '| DEBT |' "$E2E_LOG" | tail -n1)"
+assert "AC5d the human's defer response line forward-carries record's significance=high/worthiness=high/verdict=tap" \
+  "$(printf '%s' "$LAST_E2E_LINE" | grep -q 'significance=high worthiness=high verdict=tap response=defer' && echo 0 || echo 1)"
+
+COLLECT_E2E="$(cd "$KIT_DIR" && bash "$WB" collect --repo fixture-repo --repo-root "$FIXREPO")"
+assert "AC5e collect shows REAL significance/worthiness for $RID_E2E (high / high), not blank" \
+  "$(printf '%s\n' "$COLLECT_E2E" | grep -A2 "^## ${RID_E2E}\$" | grep -q 'significance: high / worthiness: high' && echo 0 || echo 1)"
+
+( cd "$KIT_DIR" && bash "$WB" mark-paid "$RID_E2E" --note "paid via AC5 e2e test" ) >/dev/null 2>&1
+MARKPAID_E2E_RC=$?
+assert "AC5f mark-paid on $RID_E2E exits 0 (the record->forward-carry->collect->mark-paid loop closes clean)" "$MARKPAID_E2E_RC"
+
+LIST_E2E_POST="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
+assert "AC5g $RID_E2E is disposed paid -- no longer collectible after mark-paid" \
+  "$(printf '%s\n' "$LIST_E2E_POST" | grep -F "$RID_E2E" | grep -q . && echo 1 || echo 0)"
+
+echo ""
+echo "=== AC6 (SPEC-136): the silent-wave path -- REAL record produces wave, no response ever follows ==="
+# ADR-0031 Refinement's whole point: a significant-but-low-worthiness change is fine to wave
+# WITHOUT a human ever responding, as long as it is a RECORDED (not silently dropped) choice. Before
+# SPEC-136, nothing ever called record, so this case was never logged at all unless quiz-gate.sh
+# tap happened to run (and even then, tap itself never writes the ledger -- record does). This is
+# the newly-live logged-wave path.
+RID_WAVE="ug-31-record-wave-$$"
+( cd "$KIT_DIR" && bash "$GL" start "$RID_WAVE" normal normal bug "" fixture-repo ) >/dev/null
+WAVE_DESC="add a mechanical, reversible, fully test-covered guard clause"
+WAVE_VERDICT="$(cd "$KIT_DIR" && bash "$SC" record "$RID_WAVE" --files "lib/orchestrate.sh lib/foo.sh" "$WAVE_DESC")"
+assert "AC6a record's own stdout prints the verdict (wave: significant full-lane change, no worthiness trigger)" \
+  "$([ "$WAVE_VERDICT" = "wave" ] && echo 0 || echo 1)"
+WAVE_LOG="$RUNS/$RID_WAVE.log"
+assert "AC6b record wrote a FAT | DEBT | line (significance=high worthiness=low verdict=wave)" \
+  "$(grep '| DEBT |' "$WAVE_LOG" | tail -n1 | grep -q 'significance=high worthiness=low verdict=wave' && echo 0 || echo 1)"
+
+# No human response EVER follows for this rid -- this is the point of the test.
+LIST_WAVE="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo --days 400)"
+DISP_WAVE="$(printf '%s\n' "$LIST_WAVE" | grep -F "$RID_WAVE" | cut -f2)"
+assert "AC6c [logged-wave path, live] $RID_WAVE IS collected with disposition=waved, with no human response ever recorded" \
+  "$([ "$DISP_WAVE" = waved ] && echo 0 || echo 1)"
+
+COLLECT_WAVE="$(cd "$KIT_DIR" && bash "$WB" collect --repo fixture-repo --repo-root "$FIXREPO")"
+assert "AC6d the collect digest shows $RID_WAVE's real significance/worthiness (high / low), grounded in the actual files/desc" \
+  "$(printf '%s\n' "$COLLECT_WAVE" | grep -A2 "^## ${RID_WAVE}\$" | grep -q 'significance: high / worthiness: low' && echo 0 || echo 1)"
 
 # Capture the fixture-A collect digest as the proof artifact (mirrors test-explain.sh's
 # sample-explainer.md capture).

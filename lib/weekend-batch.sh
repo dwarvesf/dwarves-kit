@@ -217,8 +217,10 @@ cmd_list() {
     wor="$(_kv "$last" worthiness)"
     if [ -z "$sig" ] || [ -z "$wor" ]; then
       # Walk-back (TIER-4 close fix): the LAST line is a thin response= line with no sig/wor.
-      # Fall back to the last FAT line for display; if none exists, blank stays honest (documented
-      # gap until `significance-classify record` is wired -- out of scope here).
+      # Fall back to the last FAT line for display; if none exists, blank stays honest. Since
+      # SPEC-136 wired `significance-classify record` into /kit:ship (before the quiz-gate tap),
+      # a live gate/gated-final rid almost always has a FAT line to walk back to; this stays the
+      # fallback for a non-gate ship or a rid predating that wiring.
       fat="$(_last_fat_debt_line "$f")"
       if [ -n "$fat" ]; then
         [ -z "$sig" ] && sig="$(_kv "$fat" significance)"
@@ -302,13 +304,16 @@ cmd_mark_paid() {
   local reason; reason="paid via weekend batch $(date -u +%Y-%m-%d)"
   [ -n "$note" ] && reason="$reason: $note"
   # Close via debt-response, NEVER the raw fat `debt` verb (TIER-4 close finding). The last debt
-  # line here is very often a THIN response= line (SG-04's quiz-gate respond / debt-response is the
-  # live default path today -- the fat `debt`-verb classifier, `significance-classify record`, is
-  # unwired), which carries no significance=/worthiness=/verdict= to re-emit. Re-emitting empties
-  # through the fat `debt` verb's required-enum validation used to crash mark-paid with exit 64.
-  # debt-response only requires a valid response enum (engage here), and now forward-carries
-  # sig/wor/verdict from the last FAT line when one exists -- so paying down a classified item still
-  # closes with its full context, and paying down an unclassified (thin-only) item still closes clean.
+  # line here CAN be a THIN response= line (SG-04's quiz-gate respond / debt-response), which
+  # carries no significance=/worthiness=/verdict= to re-emit on its own -- historically the
+  # default path, since the fat `debt`-verb classifier, `significance-classify record`, had no
+  # live caller anywhere; SPEC-136 wired it into /kit:ship (before the quiz-gate tap), so a live
+  # gate/gated-final rid now has a FAT line first, and this stays the fallback shape for a
+  # non-gate ship or a rid predating that wiring. Re-emitting empties through the fat `debt`
+  # verb's required-enum validation used to crash mark-paid with exit 64. debt-response only
+  # requires a valid response enum (engage here), and now forward-carries sig/wor/verdict from
+  # the last FAT line when one exists -- so paying down a classified item still closes with its
+  # full context, and paying down an unclassified (thin-only) item still closes clean.
   bash "$GATE_LEDGER" debt-response "$rid" engage "$reason"
 }
 
