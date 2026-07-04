@@ -145,3 +145,6 @@ jobs:
 
       - name: Run board-bridge mirror tests (SPEC-147, runner-fastpath sub-goal 07)
         run: bash tests/test-board-mirror.sh
+
+      - name: Run board-bridge writeback tests (SPEC-149, runner-fastpath sub-goal 08)
+        run: bash tests/test-board-writeback.sh
