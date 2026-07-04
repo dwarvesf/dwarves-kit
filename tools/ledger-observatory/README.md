@@ -6,6 +6,16 @@ token-cost markers) into one agent-callable, **read-only** observability surface
 feedback loop that proposes backlog rows off anomalies instead of letting them pile up
 unseen. See the mega-goal: `docs/megagoals/ledger-observatory/ROADMAP.md`.
 
+**Migrated into dwarves-kit 2026-07-05 (goal 05K).** This tool moved here verbatim from
+`ops-toolkit/tools/ledger-observatory/`: it reads gate-ledger telemetry (`kit_gates`,
+`kit_runs`) that already lives in this repo, so keeping the query engine on the other
+side of a repo boundary from its own data source was a split worth closing. Two adapter-
+default families changed shape in the move (kit-internal sources now default to this
+repo's own root; ops-toolkit-specific sources lost their hardcoded fallback and require
+an explicit env var) -- see "Source roots" below and `docs/implementation-notes/
+observatory-to-kit.md` for the full rationale. `docs/megagoals/harness-observatory/` (the
+mega-goal that built the 6 lens sub-goals below the original 5) moved alongside it.
+
 **DuckDB is a read-only LENS, never a second source of truth.** The FILES stay canonical;
 the db is derivable + disposable, delete it and re-materialize (`ledger rebuild`), you lose
 nothing. The tool never writes back to any source ledger (the icy-ops/asus-mesh/growatt-pull
@@ -21,7 +31,9 @@ that writes only the gitignored cc-backlog *staging* buffer, never a board, neve
 | 02 | the `ledger` DuckDB lens + agent-callable CLI | shipped, merged e6ff875b |
 | 03 | render skill: terminal + web Artifact, single data path | shipped, merged 7f8f7e2c |
 | 04 | feedback loop: `ledger anomalies` + propose-not-autofile | shipped, merged a0806ff3 |
-| 05 | this PR: docs finalized to reflect the wired state above | in progress |
+| 05 | docs finalized to reflect the wired state above | shipped |
+| 06-11 | 6 more lenses on the same SG-02 read path (`kit-gates`/`gate-yield`, `defect-correlation`, `deviation-rate`, `anomalies-advisor`, `sessions-digest`/`digest`, `memory-sweep`) | shipped (see `docs/megagoals/harness-observatory/`; not yet folded into this README's CLI walkthrough below -- a pre-existing doc gap, not introduced by the move) |
+| 05K | moved into dwarves-kit verbatim + adapter-default split + `ledger mega-durations` (per-rid wall time) | shipped, this PR |
 
 ### The `ledger` CLI (SG-02)
 
@@ -44,19 +56,52 @@ parser), `tide_moves` + `tide_tier_b_calls` (tide's `state.sqlite`), `tg_dialogs
 A write-shaped `query` is refused two ways: a statement guard rejects it before execution,
 and the query connection is opened `read_only=True`. Neither can mutate a source.
 
+### Per-rid wall time: `ledger mega-durations` (05K)
+
+The original ask this move folds in ("where does the 2-3h go"): per-rid wall time =
+`max(end_ts) - min(start_ts)` across every `kit_gates` row that carries BOTH OUTCOME
+timestamps for that rid (data-driven `GROUP BY rid`, no hardcoded gate whitelist).
+
+```bash
+uv run ledger mega-durations --table
+```
+
+A row missing either timestamp is excluded and counted separately ("N rows excluded"),
+honest-zero on a corpus with no timed gates at all (never a crash). As of this writing
+the OUTCOME bracket emitter is wired into very few gates in the real corpus, so most
+`kit_gates` rows have no timestamps yet -- `mega-durations` is ready for when more of the
+kit's gates start emitting OUTCOME brackets; see the live run pasted in
+`docs/proof-of-done.md` for today's actual (sparse) answer.
+
 ### Source roots (env-overridable; a missing source is skipped, never fatal)
 
-| Env | Default |
-|---|---|
-| `LEDGER_OBSERVATORY_DB` | `~/.cache/ledger-observatory/ledger.duckdb` (derivable; gitignored) |
-| `DWARVES_KIT_LOG_DIR` | `~/.local/state/dwarves-kit/logs` (lane-telemetry's own) |
-| `DWARVES_KIT_LIB` | `~/.claude/dwarves-kit/lib` |
-| `LEDGER_OBS_TIDE_DB` | `~/.local/state/tide/state.sqlite` |
-| `LEDGER_OBS_TGCLEANUP_DIR` | `tools/tg-cleanup` |
-| `LEDGER_OBS_LEARNED_MD` | `_meta/learned-ledger.md` |
-| `LEDGER_OBS_REPOS` | `~/workspace/tieubao/ops-toolkit,~/workspace/tieubao/dwarves-kit` (comma-separated repo ROOTS -- `rejected_findings`/`ledger review-yield`, SPEC-137; the tool's first genuinely multi-repo-in-one-materialization knob, see `config.rejected_findings_repos()`) |
-| `CC_BACKLOG_STAGING` | `_meta/backlog-staging.md` (the feedback loop's ONLY write target) |
-| `CC_BACKLOG_BACKLOG` | `_meta/BACKLOG.md` (read-only dedup source for the feedback loop) |
+Two families, since the 05K move into dwarves-kit (see the migration note above):
+**kit-internal** sources default to THIS repo's own root (computed dynamically, never
+hardcoded, so a future move never goes stale again); **ops-toolkit-specific** sources
+have NO default post-move (tide/tg-cleanup/learned-ledger/cc-backlog are ops-toolkit
+tools, not kit-generic ones) -- set the env var explicitly to opt in. Everything else
+was already host-generic (Claude Code's own dirs, XDG state) and is unaffected.
+
+| Env | Default | Family |
+|---|---|---|
+| `LEDGER_OBSERVATORY_DB` | `~/.cache/ledger-observatory/ledger.duckdb` (derivable; gitignored) | host-generic |
+| `DWARVES_KIT_LOG_DIR` | `~/.local/state/dwarves-kit/logs` (lane-telemetry's own) | host-generic |
+| `DWARVES_KIT_LIB` | this repo's own `lib/` | kit-internal |
+| `LEDGER_OBS_GIT_REPO_DIR` | this repo's own root | kit-internal |
+| `LEDGER_OBS_MEMORY_REPO_DIR` | this repo's own root | kit-internal |
+| `LEDGER_OBS_TIDE_DB` | none (was `~/.local/state/tide/state.sqlite`) | ops-toolkit-specific |
+| `LEDGER_OBS_TGCLEANUP_DIR` | none (was `tools/tg-cleanup`) | ops-toolkit-specific |
+| `LEDGER_OBS_LEARNED_MD` | none (was `_meta/learned-ledger.md`) | ops-toolkit-specific |
+| `LEDGER_OBS_REPOS` | none, empty list (was both ops-toolkit + dwarves-kit hardcoded; comma-separated repo ROOTS -- `rejected_findings`/`ledger review-yield`, SPEC-137, see `config.rejected_findings_repos()`) | ops-toolkit-specific |
+| `CC_BACKLOG_STAGING` | none (was `_meta/backlog-staging.md`; the feedback loop's ONLY write target) | ops-toolkit-specific |
+| `CC_BACKLOG_BACKLOG` | none (was `_meta/BACKLOG.md`; read-only dedup source for the feedback loop) | ops-toolkit-specific |
+| `LEDGER_OBS_SESSIONS_DIR` | `~/.claude/projects` | host-generic |
+| `LEDGER_OBS_SECRET_GUARD_LOG` | `~/.cache/claude-secret-guard.log` | host-generic |
+| `LEDGER_OBS_MEMORY_PROJECTS_ROOT` | `~/.claude/projects` | host-generic |
+
+`--propose` (the feedback loop's only write path) fails with a clean CLI error, never a
+silent write to the wrong place, if it has a real proposal to stage but neither
+`CC_BACKLOG_STAGING` nor `OPS_TOOLKIT` is set.
 
 A "missing source is skipped, never fatal" is honest as far as it goes but has a real gap:
 see tradeoff (4) below, there is currently no operator-visible signal distinguishing
@@ -140,12 +185,13 @@ suites listed below; these four are not, and the docs should not pretend otherwi
 3. **Anomaly `home` attribution is a static per-detector guess** (`"dwarves-kit"` for
    debt/misfire, `"ops-toolkit"` for cost-spike), not derived from the actual data; the
    operator re-homes on promote. Debt and misfire sums are GLOBAL across every repo in
-   `kit_runs`, not per-repo, while the proposal itself stages into ops-toolkit's own
-   `_meta/backlog-staging.md` regardless of which repo the signal came from, a real
-   attribution seam. And it is a seam over incomplete data: as measured on this repo's live
-   ledger, roughly 44% of `kit_runs` rows (35 of 79) carry `repo = "?"`, lane-telemetry's
-   marker for a run with no `repo=` field in its `START` line, so a meaningful slice of the
-   corpus an anomaly sums over is not attributable to any repo at all.
+   `kit_runs`, not per-repo, while the proposal itself stages into wherever
+   `CC_BACKLOG_STAGING`/`OPS_TOOLKIT` points (an explicit, ops-toolkit-specific opt-in
+   post-05K) regardless of which repo the signal came from, a real attribution seam. And
+   it is a seam over incomplete data: as measured on this repo's live ledger, roughly 44%
+   of `kit_runs` rows (35 of 79) carry `repo = "?"`, lane-telemetry's marker for a run with
+   no `repo=` field in its `START` line, so a meaningful slice of the corpus an anomaly
+   sums over is not attributable to any repo at all.
 4. **A missing source is skipped silently.** `ledger tables`/`rebuild` report a 0-row table
    for an absent source (e.g. no tide `state.sqlite` on this host) exactly the same way they
    report a genuinely-empty-but-present source. There is no `ledger doctor`-style
@@ -165,8 +211,9 @@ suites listed below; these four are not, and the docs should not pretend otherwi
 | `tests/test-ledger-cli.sh` | the over-test: rebuild, show/query both formats, a cross-ledger JOIN, delete-and-rematerialize, cross-format correctness across all 4 shapes, the read-only NC |
 | `tests/test-schema-conform.sh` | the SG-01 schema conformance proof |
 | `tests/test-render-skill.sh` | the SG-03 test: trigger phrases, queries-via-02 on a mocked JSON blob, both surfaces, the single-data-path NC |
-| `tests/test-feedback.sh` | the SG-04 over-test: threshold correctness both sides, the false-positive NC, propose-not-autofile, dedup idempotency, read-only NC |
+| `tests/test-feedback.sh` | the SG-04 over-test: threshold correctness both sides, the false-positive NC, propose-not-autofile, dedup idempotency, read-only NC, plus the 05K no-staging-config refusal NC |
 | `tests/test-docs-wiring.sh` | the SG-05 no-orphan wiring check: docs presence, skill-fires -> CLI-invoked -> work-intake-fed, and an over-claim negative control |
+| `tests/test-mega-durations.sh` | the 05K over-test: golden fixture with known per-rid durations, the all-NULL/stripped NC (exit 0, honest zero), delete-and-rematerialize, read-only NC |
 
 ### Run the tests
 
@@ -176,4 +223,12 @@ bash tools/ledger-observatory/tests/test-ledger-cli.sh       # SG-02
 bash tools/ledger-observatory/tests/test-render-skill.sh     # SG-03
 bash tools/ledger-observatory/tests/test-feedback.sh         # SG-04
 bash tools/ledger-observatory/tests/test-docs-wiring.sh      # SG-05
+bash tools/ledger-observatory/tests/test-mega-durations.sh   # 05K
+```
+
+Every `tests/test-*.sh` file in this directory is part of the suite (13 pre-existing +
+this one); run them all with a simple loop:
+
+```bash
+for f in tools/ledger-observatory/tests/test-*.sh; do bash "$f" || echo "FAILED: $f"; done
 ```
