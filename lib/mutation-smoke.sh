@@ -11,7 +11,7 @@
 #
 # ADVISORY BY CONTRACT (gate-zero, warn-only): every terminal path exits 0. A flag is a stderr
 # WARN + an additive `| MUTATION |` ledger marker. It sets no gate, blocks no push, and is wired
-# OFF the push blocker. A block would need Han's bless; the default is warn-only.
+# OFF the push blocker. A block would need the operator's bless; the default is warn-only.
 #
 # CHEAP + BOUNDED (open-fork 4): a small FIXED operator set on the CHANGED HUNKS ONLY, first
 # surviving mutation flags and stops, at most MUTATION_SMOKE_MAX (default 5) mutations attempted.
