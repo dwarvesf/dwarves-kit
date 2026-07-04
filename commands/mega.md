@@ -227,6 +227,42 @@ refuses. Draft plus label is belt-and-suspenders: GitHub itself refuses to merge
 and the code guard reads the label. Do this for every `gate`-tagged sub-goal PR and the
 `gated-final` PR; a normal `auto` PR is left un-marked so the guard clears it.
 
+**The convergence gate dispatches advisor P5+P6, explicitly, with an emit (SPEC-145).** Once
+every sub-goal in the chain is merged (or the run halts at the final `gate!`/`gated-final`
+boundary), dispatch the `advisor` agent TWICE, in-harness, over the assembled stack diff
+(`base..HEAD` across the whole mega-goal, not any one sub-goal's diff): once as **P5
+(critique)** -- the extra cross-cutting lens over the WHOLE chain, catching a cross-sub-goal
+inconsistency no single sub-goal's own review was scoped to see -- and once as **P6
+(over-suggest)** -- proposals surfaced to the human just before the final review, routed to
+the mega-goal's `NOTES.md` under `## Proposed additions`. This closes the gap a 2026-07-04 audit
+found: `commands/mega.md` previously named no advisor invocation path at all, so a
+subagent-delegate run (where each child self-records its OWN `review ran` line per the worker
+contract, never a `/kit:review-team` dispatch) left the advisor completely unreached. Mirrors
+the ops-toolkit `plan-for-mega-goal` skill's own convergence-gate beat (`references/GUIDE.md`
+step 6a, `references/OPERATE.md` "The convergence gate is COMPOSED, not improvised"), which
+already prescribes this exact dispatch + grammar; this paragraph is the kit side catching up
+(never-diverge, SPEC-142), not a new invention.
+
+Record each mode's own ledger row the instant it returns, fail-open, under the SAME
+`RID`/`LANE` this Step already derives above (the FINAL sub-goal's rid -- the de-facto
+convention the older free-text `| ACTION |` lines already used, e.g.
+`kit-telem-05-mergeguard.log`'s "advisor P5=3 doc/board findings fixed... advisor P6=8
+additions surfaced"):
+
+```
+bash lib/gate-ledger.sh record "$RID" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
+  || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
+bash lib/gate-ledger.sh record "$RID" advisor ran "mode=P6 findings=<N> actor=$(git config user.name)" \
+  || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
+```
+
+Observability only: a missing `advisor` row never blocks the merge or the close (no lane's
+required-gate set gains an `advisor` entry; `mega-merge.sh gate`/`hooks/ship-gate.sh` are
+unchanged). `<N>` is each mode's own finding/proposal count (`ADVISORY: <N findings>` /
+`SUGGESTIONS: <N proposals>`), read the same way `commands/review-team.md` Step 2b's emit
+already reads it -- see `agents/advisor.md` "Ledger visibility" for the one shared contract
+both dispatch sites follow.
+
 **Close the run visibly (mirrors the skill's close).** When the loop finishes (or
 halts at a `gate!`), emit `<dir>/RUN_REPORT.md` -- ASCII gantt + per-sub-goal gate
 matrix + the callable stack, markdown-only -- and render the timeline + totals in
