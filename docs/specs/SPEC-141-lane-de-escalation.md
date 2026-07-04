@@ -1,7 +1,7 @@
 # Spec: Ship-time lane de-escalation nudge (kit-run-integrity sub-goal 07, ID-257 kit half)
 
 Generated: 2026-07-04
-Status: DRAFT
+Status: SHIPPED
 Lane: normal (one advisory verb added to an existing `lib/` script + one `commands/ship.md`
 bullet + one `WORKFLOW.md` doc line + an over-test suite; ADVISORY by hard contract -- it
 never blocks, never re-classifies, never cuts a gate -- so it does not earn the full lane
@@ -137,6 +137,18 @@ the SPEC-140 pitch offer immediately above it in Step 8.
    its default, and that it is overridable.
 7. **`commands/ship.md` Step 8 wires the call** after the existing SPEC-136/SPEC-140 bullets,
    documented as advisory-only, never-blocks.
+
+## Review
+
+Self-reviewed inline (normal lane, matrix Validate=skip) against the 6 spec-validate lenses:
+no auth/secrets surface; failure modes guarded via `return 0` on an unresolvable base, a
+non-numeric line count, and (via `|| true`) a ledger-write failure; single ~40-line verb,
+well within scope atomicity; design mirrors the existing `escalate()`/`coverage-delta.sh`
+precedent, introduces no new ledger marker format. `tests/test-lane-deescalate.sh` (22
+assertions) is the load-bearing check: fire, ledger-append, the false-positive negative
+control (large diff stays silent), the lane guard (tiny/bug/backfill never fire), and the
+no-block negative control (fire case exits 0, including when the ledger write itself fails).
+Verdict: **SHIP**.
 
 ## Verification
 
