@@ -1,0 +1,17 @@
+name = "ledger-observatory"
+status = "active"
+summary = "Read-only DuckDB lens + agent-callable CLI over the scattered kit/tide/tg-cleanup/learned ledgers, with a render skill and an anomaly-detection feedback loop"
+language = "python"
+created = 2026-07-03
+
+# Consumer repos that use this tool's output. Personal/standalone: the render skill and the
+# `ledger anomalies --propose` feedback loop are both agent-driven, on-demand, and local to
+# whichever repo the agent session is in (ops-toolkit's own boards, via cc-backlog staging).
+# No consumer repo binding in the tool.toml sense.
+consumers = []
+
+# Sources it reads (all read-only, in place). Not external services; local ledger stores.
+systems = ["dwarves-kit-logs", "tide-state-sqlite", "tg-cleanup-json", "learned-ledger-md", "rejected-findings-md"]
+
+# No credentials: every source is a local file read read-only. No 1Password refs.
+secrets = []
