@@ -45,13 +45,16 @@ def _env_path_optional(name: str) -> Path | None:
 
 
 def _kit_repo_root() -> Path:
-    """This tool's own repo root, now that it lives inside dwarves-kit (05K move).
-    Mirrors `lib/weekend-batch.sh`'s `_repo_root()` shell convention: `git rev-parse
-    --show-toplevel` first (correct under a worktree checkout too), falling back to a
-    fixed parent-count walk from this file's own location if git is unavailable (e.g.
-    a non-git install). This file lives at
-    `tools/ledger-observatory/src/ledger_observatory/config.py`, four directories
-    below the repo root.
+    """This tool's own repo root, now that it lives inside dwarves-kit (05K move). The
+    primary lookup mirrors `lib/weekend-batch.sh`'s `_repo_root()` shell convention:
+    `git rev-parse --show-toplevel` (correct under a worktree checkout too). The
+    fallback deliberately does NOT mirror the shell version (which falls back to
+    `pwd`, the caller's cwd): a Python CLI can be invoked from any cwd, so falling
+    back to cwd here would be fragile. Instead this walks a fixed parent count from
+    this file's OWN location if git is unavailable (e.g. a non-git install) -- this
+    file lives at `tools/ledger-observatory/src/ledger_observatory/config.py`, four
+    directories below the repo root, so the fallback is cwd-independent by
+    construction.
     """
     try:
         out = subprocess.run(

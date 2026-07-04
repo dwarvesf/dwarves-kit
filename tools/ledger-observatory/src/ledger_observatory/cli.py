@@ -177,6 +177,16 @@ def gate_yield(as_json: bool = _FMT):
 # unparseable value (e.g. a malformed `at=` token) degrades to a NULL epoch for that
 # one row (aggregates skip NULLs), never an uncaught DuckDB cast error for the whole
 # query.
+#
+# `n_gates_timed` counts rows carrying non-null `start_ts`/`end_ts` FIELDS (the
+# `bounded` CTE's membership), not rows that successfully parsed to an epoch: a row
+# with two present-but-unparseable `at=` tokens still counts here even though its
+# TRY_CAST contribution to `first_start`/`last_end` is NULL (and so `wall_seconds` can
+# come out NULL despite `n_gates_timed > 0`, confirmed on the real `fix-malformed`
+# fixture in tests/fixtures/kit-gates/). This is a documented, low-likelihood edge
+# case (gate-ledger.sh always writes a real epoch via `now_epoch`; it is never seen on
+# a real corpus), never a crash -- exact row-accounting for a genuinely-malformed but
+# non-null timestamp is left as a named tradeoff rather than a second exclusion tier.
 _MEGA_DURATIONS_SQL = """
 WITH bounded AS (
     SELECT rid,
