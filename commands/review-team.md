@@ -167,6 +167,35 @@ After all 3 specialist lenses + the advisor complete:
    `suppressed=<S>`).
 7. Compute a combined score: average of the 3 lens scores
 
+### Step 3a: Consult the rejected-findings ledger (fail-open, SPEC-144)
+
+Before validating or reporting, check every UNSUPPRESSED merged finding (post-dedup, from
+Step 3.2-3.6, including the advisor's cross-cutting findings) against
+`docs/verification/rejected-findings.md`. **Fail-open:** missing, unreadable, or malformed
+ledger = "no memory," never an error, never a blocked review.
+
+For each merged finding: compute its **finding-key** (`<defect-slug>:<file-path>`, a short
+kebab-case defect-shape slug colon-joined with the repo-relative file path -- SPEC-143's
+`stale-adr:` prefix is one instance of this scheme), then `grep -F "<finding-key>"
+docs/verification/rejected-findings.md` (exact substring match on the WHOLE finding-key).
+
+- **No match** -> fresh finding, flows into Step 3b (validator dispatch) and Step 4 normally.
+- **Match, evidence unchanged** -> pull it OUT of the main merged-findings set (it is never
+  validated in Step 3b and never counted in `findings=<K>`); collect it into a
+  `## Previously rejected` report section instead: `<finding-key> -- previously rejected
+  <date>: <reason>`. Surfaced, never silently dropped, never re-raised as fresh.
+- **Match, evidence MATERIALLY changed** -> keep it in the main findings set as a FRESH
+  finding, naming the delta explicitly ("evidence changed since the `<date>` rejection:
+  `<what changed>`").
+
+**Load-bearing: match ONLY on the whole finding-key, never on file path alone.** A
+previously-rejected `bare-except:tools/notify.py` matches ONLY a fresh finding with that exact
+finding-key. A different defect at the SAME file (a different slug) is a different finding-key
+and is NOT a match -- it always stays in the main findings set. Matching on file path alone
+would wrongly suppress every future novel defect at a file that has ANY prior rejection; see
+`docs/verification/spec-144-review-findings-memory.md` for the proof (a deliberately-broken
+file-only match rule going RED, restored to finding-key matching going GREEN).
+
 ### Step 3b: Validate verdict-driving findings (SPEC-082 / ID-079)
 
 For every UNSUPPRESSED finding with severity CRITICAL or HIGH (the ones that drive a
@@ -212,6 +241,9 @@ Reviewers: security, architecture, test-coverage
 ## Suppressed findings (below the confidence gate, or refuted by a validator)
 [collapsed list , below-gate: anchor + self-test; refuted: the validator counter-evidence; a reason field names which. Kept for the record, not actioned]
 
+## Previously rejected (Step 3a, surfaced not re-raised)
+[one line per Step 3a match: `<finding-key> -- previously rejected <date>: <reason>`. "None" if Step 3a found no matches. Never counted in `findings=<K>` or in the verdict.]
+
 (All severity rows use the same finding-line format: lens(es), Confidence, Route, fix.
 The verdict is determined by UNSUPPRESSED findings only.)
 
@@ -226,14 +258,31 @@ The verdict is determined by UNSUPPRESSED findings only.)
 
 Write the unified report as a `## Review` section IN the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the SPEC-005 rule), **replacing** any prior `## Review` (replace-not-stack). Keep the per-lens findings as subsections (`### Security`, `### Architecture`, `### Test coverage`) and the open items under `### TODOs`. If no active spec exists, output the report inline in chat instead. NEVER write the review (or per-lens files) to fixed-name files in the repo root; that pattern collides across concurrent worktrees and sessions.
 
-Record the verdict for lane telemetry (SPEC-061), one line:
-`bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> suppressed=<S>"`.
+Record the verdict for lane telemetry (SPEC-061), one line, now carrying the
+rejected-findings-memory counts (SPEC-144): `findings=<K>` counts FRESH unsuppressed findings
+only (unchanged meaning), `rejected=<M>` counts the Step 3a previously-rejected matches, and
+`actor=<name>` is `git config user.name` read at record time:
+
+```
+bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> suppressed=<S> rejected=<M> actor=$(git config user.name)"
+```
 
 ### Step 5: Decision gate
 
 If verdict is SHIP: suggest `/kit:docs` then `/kit:ship`.
 If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Unvalidated CRITICAL/HIGH findings are treated as LIVE (the SPEC-082 fail-safe); responding-to-review notes the unvalidated status when proposing their fixes. Route by class (SPEC-078), UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
 If verdict is DO NOT SHIP: explain what's fundamentally wrong.
+
+### Step 6: Operator rejection appends to the ledger (SPEC-144)
+
+If the operator rejects one or more findings from the unified report (by-design, false
+positive, deliberate won't-fix), append ONE new row per rejected finding to
+`docs/verification/rejected-findings.md`'s table: today's date, the lens(es) that raised it
+(the `found by:` field from the report row), the finding's finding-key, `rejected`, and the
+operator's stated reason distilled to one clause. Append-only: never edit or remove an
+existing row. Create the file from its own template if it does not exist yet. Only an explicit
+operator rejection appends a row; a finding the operator fixes, defers to `_meta/BACKLOG.md`
+(the `manual` route), or says nothing about is never appended.
 
 ## When to use /review-team vs /review
 
