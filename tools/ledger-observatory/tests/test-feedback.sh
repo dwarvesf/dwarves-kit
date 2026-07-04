@@ -178,8 +178,12 @@ has  "F-pnaf staged block in buffer" "## [staged] Feedback: unpaid understanding
 BOARD_AFTER="$(shasum -a 256 "$CC_BACKLOG_BACKLOG")"
 eq   "F-pnaf board BYTE-IDENTICAL (not auto-filed)" "$BOARD_AFTER" "$BOARD_BEFORE"
 # the staged proposal is consumable by the REAL add-backlog human gate:
-ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
-has  "F-pnaf add-backlog lists the proposal" "unpaid understanding-debt over threshold" "$ADDBL_OUT"
+if [ -f "$ADDBL" ]; then
+  ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
+  has  "F-pnaf add-backlog lists the proposal" "unpaid understanding-debt over threshold" "$ADDBL_OUT"
+else
+  echo "SKIP  F-pnaf add-backlog cross-check (cc-backlog is an ops-toolkit-only sibling tool; not present in this repo)"
+fi
 
 echo "== F-dedup: a second --propose stages NOTHING new (idempotent) =="
 OUT2="$(R anomalies --propose --json)"   # same lens, staging already has the debt block

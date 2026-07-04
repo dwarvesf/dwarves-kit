@@ -81,17 +81,25 @@ fi
 
 # tide state.sqlite: every column the contract claims for `moves` must be a real column
 # in tools/tide/src/tide/state.py's CREATE TABLE (parses the adapter's own field-map).
+# tide is an ops-toolkit-only sibling tool (never migrates into this kit repo, per the
+# 05K goal's Quality bar: LEDGER_OBS_TIDE_DB is an ops-toolkit-specific source now
+# required-explicit, not a kit-generic one) -- this cross-repo check is skip-safe, not
+# fail-safe, when that sibling simply is not present in THIS repo.
 TIDE_SCHEMA="$(cd "$HERE/../../.." && pwd)/tools/tide/src/tide/state.py"
-tide_ok=1
-for col in id ts source_path target_path content_sha size_bytes route confidence ai_response_json undone_at; do
-  grep -q "^\s*${col} " "$TIDE_SCHEMA" || { tide_ok=0; echo "  missing column in state.py: $col"; }
-done
-if [ "$tide_ok" -eq 1 ]; then
-  echo "PASS  tide state.sqlite 'moves' field-map matches tools/tide/src/tide/state.py"
-  pass=$((pass + 1))
+if [ ! -f "$TIDE_SCHEMA" ]; then
+  echo "SKIP  tide state.py not present in this repo (ops-toolkit-only sibling tool; nothing to cross-check here)"
 else
-  echo "FAIL  tide state.sqlite field-map drifted from tools/tide/src/tide/state.py"
-  fail=$((fail + 1))
+  tide_ok=1
+  for col in id ts source_path target_path content_sha size_bytes route confidence ai_response_json undone_at; do
+    grep -q "^\s*${col} " "$TIDE_SCHEMA" || { tide_ok=0; echo "  missing column in state.py: $col"; }
+  done
+  if [ "$tide_ok" -eq 1 ]; then
+    echo "PASS  tide state.sqlite 'moves' field-map matches tools/tide/src/tide/state.py"
+    pass=$((pass + 1))
+  else
+    echo "FAIL  tide state.sqlite field-map drifted from tools/tide/src/tide/state.py"
+    fail=$((fail + 1))
+  fi
 fi
 
 # tg-cleanup *.json: the synthetic sample record must be valid JSON with every field

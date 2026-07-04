@@ -318,8 +318,12 @@ has  "P-propose staged block in buffer" "## [staged] Feedback: gate ran but neve
      "$(cat "$CC_BACKLOG_STAGING")"
 BOARD_AFTER="$(shasum -a 256 "$CC_BACKLOG_BACKLOG")"
 eq   "P-propose board BYTE-IDENTICAL (not auto-filed)" "$BOARD_AFTER" "$BOARD_BEFORE"
-ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
-has  "P-propose add-backlog lists the proposal" "gate ran but never caught anything" "$ADDBL_OUT"
+if [ -f "$ADDBL" ]; then
+  ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
+  has  "P-propose add-backlog lists the proposal" "gate ran but never caught anything" "$ADDBL_OUT"
+else
+  echo "SKIP  P-propose add-backlog cross-check (cc-backlog is an ops-toolkit-only sibling tool; not present in this repo)"
+fi
 OUT2="$(R anomalies --propose --json)"
 has  "P-dedup second run marks duplicate" '"action": "duplicate"' "$OUT2"
 eq   "P-dedup still exactly one block"    "$(staged_n)" "1"

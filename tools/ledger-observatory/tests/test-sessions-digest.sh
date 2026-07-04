@@ -409,8 +409,12 @@ DIGEST_STAGED="$(staged_n)"
 eq "P-digest-propose stages the SAME count as anomalies --propose (one path, not two)" \
    "$DIGEST_STAGED" "$DIRECT_STAGED"
 has "P-digest-propose stages token_runaway" '"key": "token_runaway"' "$DIGEST_OUT"
-ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
-has "P-digest-propose add-backlog sees the staged proposal" "token footprint over budget" "$ADDBL_OUT"
+if [ -f "$ADDBL" ]; then
+  ADDBL_OUT="$(python3 "$ADDBL" list 2>&1)"
+  has "P-digest-propose add-backlog sees the staged proposal" "token footprint over budget" "$ADDBL_OUT"
+else
+  echo "SKIP  P-digest-propose add-backlog cross-check (cc-backlog is an ops-toolkit-only sibling tool; not present in this repo)"
+fi
 
 echo ""
 echo "== $PASS passed, $FAIL failed =="

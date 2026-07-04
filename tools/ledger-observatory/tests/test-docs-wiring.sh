@@ -53,10 +53,17 @@ unwired_claims() {
 [ -s README.md ] && ok "README.md present + non-empty" || bad "README.md missing/empty"
 [ -s docs/proof-of-done.md ] && ok "docs/proof-of-done.md present + non-empty" || bad "proof-of-done.md missing/empty"
 [ -s tool.toml ] && ok "tool.toml present + non-empty" || bad "tool.toml missing/empty"
-if grep -q '\[`ledger-observatory`\]' "$OPS_TOOLKIT_ROOT/MANIFEST.md" 2>/dev/null; then
-  ok "MANIFEST.md carries a ledger-observatory row"
+if [ -f "$OPS_TOOLKIT_ROOT/MANIFEST.md" ]; then
+  if grep -q '\[`ledger-observatory`\]' "$OPS_TOOLKIT_ROOT/MANIFEST.md" 2>/dev/null; then
+    ok "MANIFEST.md carries a ledger-observatory row"
+  else
+    bad "MANIFEST.md has no ledger-observatory row"
+  fi
 else
-  bad "MANIFEST.md has no ledger-observatory row"
+  # No MANIFEST.md at this repo root: this tool now lives in dwarves-kit (05K), which has
+  # no top-level tools index equivalent to ops-toolkit's SPEC-044-lite MANIFEST.md as of
+  # this writing. Per 05K's Quality bar, that gap is reported, not invented here.
+  echo "SKIP  no top-level tools index in this repo (dwarves-kit has no MANIFEST.md-equivalent yet; see 05K report)"
 fi
 
 # ---- (b) no-orphan sweep -------------------------------------------------------------------
