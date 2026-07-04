@@ -127,3 +127,6 @@ jobs:
 
       - name: Run grill-conditioning tests (SPEC-138, kit-absorptions sub-goal 04)
         run: bash tests/test-grill-conditioning.sh
+
+      - name: Run command emit-sweep no-orphan check (SPEC-139, kit-run-integrity sub-goal 05)
+        run: bash tests/test-command-emit-sweep.sh

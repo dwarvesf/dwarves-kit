@@ -107,9 +107,14 @@ means design a better measurement, not ship.
 Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
 shape per `docs/verification/README.md`: the captured `Command:` the verifiers ran, its
 `Exit:` code, an `Output (excerpt):`, and the `Verdict:`. If nothing runnable existed,
-record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append is the only
-thing `/kit:verify` writes; it never touches the code under test. The recorded
-`Command:` line is what a later reader re-runs to regression-check this verdict.
+record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append (plus the
+lane-telemetry ledger line below) is the only thing `/kit:verify` writes; it never touches
+the code under test. The recorded `Command:` line is what a later reader re-runs to
+regression-check this verdict.
+
+Also record the verdict for lane telemetry (SPEC-139), one line (`verify` carries no matrix
+row of its own -- this is RUN_REPORT observability, never a new required gate):
+`bash lib/gate-ledger.sh record <rid> verify ran "<PASS|FAIL|INCONCLUSIVE>"`.
 
 Gate what the proof needs by the spec's **proof class** (`lib/proof-gate.sh class
 "<spec title or task>"`):

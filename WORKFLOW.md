@@ -453,6 +453,51 @@ measure a false-positive rate against yet). See ops-toolkit `_meta/megagoals/kit
 "Proposed additions (TIER-4)" for the full recommendation. This section documents the gates as
 they ship; it does not promote them.
 
+## Command emit coverage (SPEC-139)
+
+The gate-ledger's `RUN_REPORT.md` (`/kit:mega`'s per-sub-goal gate matrix) can only show a phase
+as covered if SOME command actually calls `gate-ledger.sh` for it. A 2026-07-04 audit of every
+file under `commands/` found 11 of 29 commands with a real `bash lib/gate-ledger.sh <verb>` call
+and 18 dark, with no distinction between "this phase genuinely has no ledger concern" and "nobody
+wired it yet" -- the RUN_REPORT under-counts silently either way. This section is the single
+source of truth for that distinction (parsed by `tests/test-command-emit-sweep.sh`, no second
+copy): every command in `commands/` either contains a `gate-ledger` call, or is listed below with
+a reason it legitimately does not need one.
+
+**9 commands wired this pass** (SPEC-139): `spec.md`, `spec-validate.md`, `verify.md`,
+`think.md`, `design.md`, `ui-design.md`, `docs.md`, `retro.md`, `explain.md` -- each now records
+one line (`record <rid> <Phase> ran "<summary>"`) at its natural hand-off point, the same
+single-line convention `test-plan.md` / `review.md` / `devs-team.md` already use. `verify` and
+`explain` are not `Lane x phase depth matrix` rows (no lane requires them), so their record is
+pure RUN_REPORT observability, never a new required gate; `think` / `design` / `docs` / `spec` /
+`validate` / `reflect` (the phase `retro.md` records) already ARE matrix rows and this closes
+their record-side gap.
+
+**9 utility commands, exempted (no direct emit by design):**
+
+| Command | Why no direct emit |
+|---|---|
+| `absorb.md` | Maintainer-only external-source absorption audit (SPEC-004); propose-only, approves/merges nothing itself, and runs outside any spec's rid/lane lifecycle. |
+| `adopt.md` | One-time repo-bootstrap into a NEW consumer repo (injects AGENTS.md/CLAUDE.md/WORKFLOW pointer); runs BEFORE any rid or lane exists in that repo. |
+| `next.md` | Pure read-only task dispatcher, own text says "Do NOT execute anything. Just detect and recommend."; hands off to `/kit:execute`, which is the one that emits. |
+| `start.md` | Pure read-only session entry-point detector, own text says "Do NOT execute anything."; same shape as `next.md`. |
+| `kit-health.md` | Self-assessment of the kit's OWN philosophy compliance (file count, hook perf, source citations); not a phase in any run's V-model lifecycle. |
+| `draft-agent.md` | Meta-agent generator (drafts a new subagent or mega-goal sub-goal file); a generator utility, not a V-model phase. |
+| `visual-team.md` | A critique lens invoked FROM `ui-design.md` Step 3, not an independent phase owner; the phase owner (`ui-design.md`) now emits `UI design` itself (SPEC-139), mirroring how `devs-team.md`'s own `review` emit already covers the design-critique lens it is invoked from. |
+| `mega.md` | Already emits via the driver: "The driver emits a `gate-ledger start` per dispatched sub-goal ... (SPEC-101)" (`commands/mega.md`, "Close the run visibly" section) -- the emission is real but happens in the orchestration driver at dispatch time, not as a literal call inside `mega.md`'s own prose. |
+| `dispatch.md` | Each fanned-out worker runs the FULL `/kit:execute` lifecycle (its own `gate-ledger.sh` calls) inside its own isolated worktree (see `commands/dispatch.md`'s worker prompt, "extends the `/kit:execute` worker contract"); `dispatch.md` itself is the fan-out lead, never a phase owner, and never calls `gate-ledger.sh` directly. |
+
+**Known pre-existing gap, NOT closed by this pass (out of scope, flagged honestly):** neither
+`Build` nor `Design record` -- both REQUIRED matrix rows -- has any command that calls
+`gate-ledger.sh record` for them; `execute.md` narrates the escalation/action verbs around a
+build but never records `build ran`, and no command records `design-record ran` (the design-record
+row is enforced statically by `/kit:spec-validate` Reviewer 6, never separately recorded to the
+ledger). SPEC-139 does not touch `execute.md` or add a new record call for either phase (both
+commands were already counted "emitting" in the 2026-07-04 audit and are out of this sub-goal's
+named scope); a run that needs those two gates satisfied records them manually
+(`bash lib/gate-ledger.sh record <rid> build ran "<note>"` / `... design-record ran "<note>"`),
+the same generic escape hatch AGENTS.md already names for any phase gate.
+
 ## The understanding axis (ADR-0031)
 
 A second axis, orthogonal to the verification gates above (ADR-0024/0025 stay the only hard

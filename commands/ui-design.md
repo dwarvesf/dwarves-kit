@@ -125,6 +125,10 @@ the ACCEPTED fixes (the per-round approval Phase B already has) -> re-render -> 
 - Terminate exactly as Phase B otherwise does on `SOLID` / `RECONSIDER` / a `frontend-design` error;
   the quiescence stop + cap 3 are the additional terminations. Final acceptance stays a `gate`.
 
+After the loop terminates (Phase A SOLID, or Phase B/quiescence's SOLID / RECONSIDER / cap), record
+it for lane telemetry (SPEC-139), one line:
+`bash lib/gate-ledger.sh record <rid> "UI design" ran "<verdict> rounds=<N>"`.
+
 ## Notes
 - Opt-in, report-only; never hard-gates `/kit:spec` or any build. The maintainer decides whether to proceed.
 - Under bypassPermissions the per-iteration `AskUserQuestion` approvals auto-resolve; the loop still terminates structurally (SOLID / RECONSIDER / max-2 cap). It delivers its full value in non-bypass mode.
