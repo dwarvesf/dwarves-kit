@@ -139,3 +139,6 @@ jobs:
 
       - name: Run advisor ledger-emit tests (SPEC-145, gate-review-absorptions sub-goal 06)
         run: bash tests/test-advisor-ledger-emit.sh
+
+      - name: Run cockpit board tests (SPEC-146, runner-fastpath sub-goal 04)
+        run: bash tests/test-board.sh

@@ -1586,6 +1586,23 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-146: the cockpit board command. board.sh + parse-board.sh exist and are executable,
+# board.sh actually delegates base render to backlog.sh (never reimplements it), and the
+# doc-impact map (README + architecture.md) mentions both new lib files. A drop on any leg
+# means the render-migration contract this depends on is silently unwired.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/board.sh" ] && [ -x "$KIT_DIR/lib/parse-board.sh" ] \
+   && grep -qF 'backlog.sh' "$KIT_DIR/lib/board.sh" \
+   && grep -qF 'lib/board.sh' "$KIT_DIR/README.md" \
+   && grep -qF 'lib/parse-board.sh' "$KIT_DIR/README.md" \
+   && grep -qF 'board.sh' "$KIT_DIR/docs/architecture.md"; then
+  echo -e "  ${GREEN}PASS${NC} cockpit board wired: lib/board.sh + lib/parse-board.sh executable, delegates to backlog.sh, doc-impact map updated (SPEC-146)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} cockpit board incomplete: need lib/board.sh + lib/parse-board.sh executable, backlog.sh delegation, README + architecture.md mentions (SPEC-146)"
+  FAIL=$((FAIL + 1))
+fi
+
 # SPEC-056: per-type test dialects. Three legs: the 6-row dialect table, the type-aware
 # test-plan step, the default flip in the cycle table.
 TOTAL=$((TOTAL + 1))
