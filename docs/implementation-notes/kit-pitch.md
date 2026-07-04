@@ -61,3 +61,30 @@ are asserted SEPARATELY as a "documents it never posts" check instead of being f
 same forbidden-pattern grep.
 
 **Impact:** none outside `tests/test-pitch.sh`; a test-design fix, not a product-code change.
+
+## 2026-07-04 15:20 AC1's two ledger-content checks moved off live machine state onto a frozen fixture (CI fix)
+
+**Decision:** AC1's structural checks (file written, 5 sections present, spec name) still assert
+against the live render (`bash lib/pitch.sh render kit-emit-sweep --out
+docs/verification/pitch-command/sample-pitch.md`, unchanged). The two checks that need ledger
+content -- the PR link and the grill-skip reason -- now assert against a NEW render of a frozen,
+committed fixture rid (`tests/fixtures/pitch/real-sample/`, via a new `_render_with_origin`
+helper) instead of that live output.
+
+**Why:** CI runs from a fresh checkout with no `~/.local/state/dwarves-kit/logs/runs/
+kit-emit-sweep.log` (that ledger only exists on a dev machine that already ran/shipped this rid,
+per `lib/kit-log-dir.sh`'s XDG-state default). The live render's spec/proof/implementation-notes
+lookups all resolve fine in CI (those ARE committed files), but `_ledger_pr`/`_ledger_grill`
+read from the machine-local ledger and come back empty, so the PR-link and grill-reason checks
+failed 27/29 in CI while passing 29/29 on a dev machine (confirmed by reproducing the exact 2
+failures locally with a scrubbed `HOME`, then confirming they clear once the checks target the
+fixture). `_render_with_origin` also `git init`s the scratch workspace and sets `origin` to the
+real `dwarvesf/dwarves-kit` remote (local config only, no network) so `_pr_url` resolves the
+same `.../pull/168` shape the live render would produce with a real git remote, rather than
+loosening the assertion to accept the bare `#168` fallback.
+
+**Impact:** none outside `tests/test-pitch.sh` and the new `tests/fixtures/pitch/real-sample/`
+fixture files; `lib/pitch.sh`, `commands/pitch.md`, and every other AC are untouched. The
+human-facing `docs/verification/pitch-command/sample-pitch.md` artifact keeps being regenerated
+against the live `kit-emit-sweep` rid on every local run (still genuinely real evidence on a
+machine that has the ledger); it is simply no longer a CI-verified input.

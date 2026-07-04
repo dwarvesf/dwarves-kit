@@ -4,7 +4,7 @@
 
 | # | Criterion | Result | Evidence |
 |---|---|---|---|
-| AC1 | Real sample: `lib/pitch.sh render <rid>` against a REAL recently-shipped rid produces all 5 sections, each grounded in a real file/ledger line | PASS | `docs/verification/pitch-command/sample-pitch.md` (rendered against `kit-emit-sweep`, PR #168); `tests/test-pitch.sh` AC1 block |
+| AC1 | Real sample: `lib/pitch.sh render <rid>` against a REAL recently-shipped rid produces all 5 sections, each grounded in a real file/ledger line. The two checks needing machine-local ledger content (PR link, grill-skip reason) assert against a frozen, committed snapshot of that same content (`tests/fixtures/pitch/real-sample/`) so the proof is CI-portable | PASS | `docs/verification/pitch-command/sample-pitch.md` (rendered against `kit-emit-sweep`, PR #168); `tests/fixtures/pitch/real-sample/`; `tests/test-pitch.sh` AC1 block |
 | AC2 | NEGATIVE CONTROL (load-bearing): a rid with NO grill record prints the literal `no grill record for this run`, never a fabricated grill answer | PASS | `tests/fixtures/pitch/no-grill/`; `tests/test-pitch.sh` AC2 block |
 | AC3 | NEGATIVE CONTROL (load-bearing): a rid with NO `docs/implementation-notes/<rid>.md` prints the literal `no implementation-notes file for this run`, never a fabricated deviation | PASS | `tests/fixtures/pitch/no-implnotes/`; `tests/test-pitch.sh` AC3 block |
 | AC4 | Contrastive: the SAME two checks against the `full` fixture (both sources present) do NOT print the absence lines, and DO print the real content (both grill + both deviation entries + the NC + the AC table + the Out-of-Scope block) | PASS | `tests/fixtures/pitch/full/`; `tests/test-pitch.sh` AC4a/AC4b/AC4c |
@@ -34,6 +34,7 @@
 | R4 RESTORE | 2026-07-04 08:39 | `git stash pop` then `bash tests/test-pitch.sh` | 0 | PASS 29/29 (restore-confirm) |
 | R5 REGRESSION | 2026-07-04 08:40 | `bash tests/test-meta.sh` | 0 | PASS 669/669 (incl. the README/architecture doc-parity checks, now 30==30 and 54==54) |
 | R6 REGRESSION | 2026-07-04 08:41 | `bash tests/test-hooks.sh && bash tests/test-understanding-wiring.sh && bash tests/test-kri-wiring.sh && bash tests/test-docs-wiring.sh && bash tests/test-significance-classify.sh && bash tests/test-quiz-gate.sh && bash tests/test-grill-conditioning.sh && bash tests/test-explain.sh && bash tests/test-references-field.sh` | 0 | 452/452, 19/19, 31/31, 22/22, 25/25, 29/29, 23/23, 14/14 (+15/15), all PASS |
+| R7 CI-PORTABILITY FIX | 2026-07-04 15:25 | `env HOME="$(mktemp -d)" bash tests/test-pitch.sh` (scrubbed `HOME`, no `~/.local/state/dwarves-kit` ledger for `kit-emit-sweep`, mimicking CI's fresh checkout; reproduced the real CI failure first by re-running this exact command against the pre-fix AC1, which printed the same 27/29 with the same two FAILs CI reported, before moving the two ledger-content checks onto `tests/fixtures/pitch/real-sample/`) | 0 | PASS 29/29 (both PR-link and grill-reason checks now pass with zero local machine state) |
 
 ## 4. Run detail
 

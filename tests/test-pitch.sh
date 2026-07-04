@@ -3,7 +3,12 @@
 #
 # Proves /kit:pitch's assembly engine (lib/pitch.sh) is a grounded ASSEMBLER, never a writer:
 #   AC1  real sample: render against a REAL recently-shipped rid (kit-emit-sweep) produces all
-#        5 sections; committed as docs/verification/pitch-command/sample-pitch.md
+#        5 sections; committed as docs/verification/pitch-command/sample-pitch.md. The two
+#        checks that depend on machine-local ledger state (the PR link, the grill-skip reason)
+#        assert against a FROZEN fixture (tests/fixtures/pitch/real-sample/, a snapshot of the
+#        same real content) instead of the live render, so CI's fresh checkout (no
+#        ~/.local/state/dwarves-kit ledger for kit-emit-sweep) can't fail a check that only
+#        ever worked on a dev machine that had already run/shipped that rid.
 #   AC2  LOAD-BEARING NC: a rid with NO grill record in its ledger prints the literal line
 #        "no grill record for this run" and nothing grill-shaped
 #   AC3  LOAD-BEARING NC: a rid with NO docs/implementation-notes/<rid>.md file prints the
@@ -51,6 +56,18 @@ _render() {  # <fixture-name>
   ( cd "$ws" && DWARVES_KIT_LOG_DIR="$ws/logs" bash "$LIB" render "$name" )
 }
 
+# _render_with_origin <fixture-name> -- same as _render, but the scratch workspace is also a
+# real (if empty) git repo with `origin` pointed at the real dwarvesf/dwarves-kit remote, so
+# `_pr_url`'s `git remote get-url origin` resolves and the PR link renders as a real
+# `.../pull/<N>` URL instead of the bare `#<N>` fallback. No network call: `git remote add`
+# only writes local config.
+_render_with_origin() {  # <fixture-name>
+  local name="$1" ws
+  ws="$(_mkws "$name")"
+  ( cd "$ws" && git init -q && git remote add origin https://github.com/dwarvesf/dwarves-kit.git \
+      && DWARVES_KIT_LOG_DIR="$ws/logs" bash "$LIB" render "$name" )
+}
+
 echo "=== AC1: real sample -- render against a REAL recently-shipped rid (kit-emit-sweep) ==="
 PROOF_DIR="$KIT_DIR/docs/verification/pitch-command"
 mkdir -p "$PROOF_DIR"
@@ -60,10 +77,16 @@ SECTIONS=$(grep -cE '^## [1-5]\. ' "$PROOF_DIR/sample-pitch.md")
 assert "AC1 all 5 numbered sections present (got $SECTIONS)" "$([ "$SECTIONS" -eq 5 ] && echo 0 || echo 1)"
 assert "AC1 outcome section names the real spec (SPEC-139-kit-emit-sweep)" \
   "$(grep -qi 'command emit sweep' "$PROOF_DIR/sample-pitch.md" && echo 0 || echo 1)"
+# The PR-link and grill-skip checks below need ledger content that only ever lives in
+# ~/.local/state/dwarves-kit/logs (machine-local, per lib/kit-log-dir.sh) -- absent on a fresh
+# CI checkout. Assert against a frozen, committed fixture (a snapshot of the same real
+# kit-emit-sweep content) rather than the live render, so the proof is CI-portable without
+# weakening what it proves.
+OUT_REAL_SAMPLE="$(_render_with_origin real-sample)"
 assert "AC1 evidence section carries a real PR link (#168)" \
-  "$(grep -q 'pull/168' "$PROOF_DIR/sample-pitch.md" && echo 0 || echo 1)"
+  "$(printf '%s' "$OUT_REAL_SAMPLE" | grep -q 'pull/168' && echo 0 || echo 1)"
 assert "AC1 unknowns section surfaces the real grill skip (reason=operator-wave)" \
-  "$(grep -q 'reason=operator-wave' "$PROOF_DIR/sample-pitch.md" && echo 0 || echo 1)"
+  "$(printf '%s' "$OUT_REAL_SAMPLE" | grep -q 'reason=operator-wave' && echo 0 || echo 1)"
 
 echo ""
 echo "=== AC2 + AC4a: grill record -- NO-grill fixture (load-bearing) vs full fixture (contrast) ==="
