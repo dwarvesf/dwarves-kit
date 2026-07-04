@@ -9,8 +9,10 @@
 #
 #   AC1  WORKFLOW.md + AGENTS.md declare the understanding axis; README notes /kit:explain
 #   AC2  no-orphan sweep: each of the 5 artifacts has a LIVE dispatch/invocation path
-#   AC3  the one honest exception (significance-classify.sh's `record` verb has no live caller)
-#        is stated as a gap, not silently claimed as wired
+#   AC3  significance-classify.sh's `record` verb, once the one honest exception with no live
+#        caller, is now WIRED into /kit:ship Step 8 (SPEC-136, before the quiz-gate tap); this
+#        AC proves the live dispatch path exists and precedes the tap call, not just that a
+#        string matches somewhere
 #   AC4  NEGATIVE CONTROL: a fabricated over-claim (a fake lib call, no caller, no honesty
 #        marker) is CAUGHT by the same sweep mechanism used for AC2/AC3 -- proving the sweep can
 #        actually catch the c6fbd99 bug class, not just that nothing untested exists
@@ -113,7 +115,8 @@ grep -qiE 'BLOCKING' "$KIT_DIR/commands/spec-validate.md" || RC=1
 assert "Design record: /kit:spec-validate Reviewer 6 is a BLOCKING enforcer (WIRED)" $RC
 
 # 2. significance-classify: the `classify` verb is live (called by lib/quiz-gate.sh); the
-#    `record` verb (the ledger-persisting one) is a KNOWN, HONESTLY-DOCUMENTED gap, not a claim.
+#    `record` verb (the ledger-persisting one) is now ALSO live -- wired into /kit:ship Step 8
+#    (SPEC-136), immediately before the quiz-gate tap, closing the "silent wave, but LOGGED" gap.
 claim_wired "$WORKFLOW" \
   'significance-classify\.sh classify' \
   'SIG_CLASSIFY.*classify|significance-classify\.sh"? *classify' \
@@ -126,7 +129,7 @@ claim_wired "$WORKFLOW" \
   'significance-classify\.sh"? *record' \
   "$KIT_DIR/commands" "$KIT_DIR/hooks"
 RC=$?
-assert "significance-classify: 'record' verb is an HONEST GAP (no silent over-claim)" $RC 3
+assert "significance-classify: 'record' verb is WIRED via commands/ship.md (SPEC-136)" $RC 0
 
 # 3. /kit:explain: the command file exists (plugin auto-registration, same convention as every
 #    other /kit:* command -- no central manifest lists commands, see .claude-plugin/plugin.json).
@@ -160,13 +163,32 @@ grep -A60 -E '^## The understanding axis' "$WORKFLOW" | grep -qiE 'weekend-debt-
 assert "weekend-batch: WORKFLOW.md honestly scopes it Han-invoked (no scheduled job), names the ops-toolkit skill" $RC
 
 echo ""
-echo "=== AC3: honesty check -- no command actually calls significance-classify.sh record today ==="
+echo "=== AC3: wiring check -- commands/ship.md now calls significance-classify.sh record (SPEC-136) ==="
+
+# Flipped from the prior "honest gap" assertion: SPEC-136 wired significance-classify.sh record
+# into /kit:ship Step 8, immediately before the quiz-gate tap call. This is a genuine grep-based
+# assertion against the real command file (mirrors how quiz-gate's own "Step 8 invokes tap" claim
+# is asserted above), not a tautology restating claim_wired's own regex.
+RC=0
+if ! grep -rlE 'significance-classify\.sh"? *record' "$KIT_DIR/commands" "$KIT_DIR/hooks" 2>/dev/null | grep -q .; then
+  RC=1  # no caller anywhere -- the gap would be back, and WORKFLOW.md's "wired" wording would be false
+fi
+assert "commands/*.md or hooks/*.sh calls significance-classify.sh record (live dispatch path)" $RC
 
 RC=0
-if grep -rlE 'significance-classify\.sh"? *record' "$KIT_DIR/commands" "$KIT_DIR/hooks" 2>/dev/null | grep -q .; then
-  RC=1  # a caller exists now -- the WORKFLOW.md "known gap" wording would be STALE/false
+SHIP_MD="$KIT_DIR/commands/ship.md"
+grep -qE 'significance-classify\.sh"? *record' "$SHIP_MD" || RC=1
+assert "specifically commands/ship.md calls significance-classify.sh record" $RC
+
+RC=0
+# Ordering: the record call's line number must be BEFORE the quiz-gate tap call's line number,
+# so the ledger marker really is written before the tap decision (not after, not unrelated).
+RECORD_LINE="$(grep -nE 'significance-classify\.sh"? *record' "$SHIP_MD" | head -n1 | cut -d: -f1)"
+TAP_LINE="$(grep -nE 'quiz-gate\.sh"? *tap' "$SHIP_MD" | head -n1 | cut -d: -f1)"
+if [ -z "$RECORD_LINE" ] || [ -z "$TAP_LINE" ] || [ "$RECORD_LINE" -ge "$TAP_LINE" ]; then
+  RC=1
 fi
-assert "no commands/*.md or hooks/*.sh calls significance-classify.sh record (matches the documented gap)" $RC
+assert "the record call precedes the quiz-gate tap call in commands/ship.md (record line=$RECORD_LINE, tap line=$TAP_LINE)" $RC
 
 echo ""
 echo "=== AC4: NEGATIVE CONTROL -- a fabricated over-claim IS caught by the sweep ==="
