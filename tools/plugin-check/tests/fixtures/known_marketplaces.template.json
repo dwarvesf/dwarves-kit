@@ -1,0 +1,17 @@
+{
+  "claude-plugins-official": {
+    "source": { "source": "github", "repo": "anthropics/claude-plugins-official" },
+    "installLocation": "@OFFICIAL_CLONE@",
+    "lastUpdated": "2026-06-20T04:37:47.103Z"
+  },
+  "ponytail": {
+    "source": { "source": "github", "repo": "DietrichGebert/ponytail" },
+    "installLocation": "@PONYTAIL_CLONE@",
+    "lastUpdated": "2026-06-20T03:58:26.832Z"
+  },
+  "dwarves-marketplace": {
+    "source": { "source": "directory", "path": "@KIT_DIR@" },
+    "installLocation": "@KIT_DIR@",
+    "lastUpdated": "2026-05-22T08:11:47.014Z"
+  }
+}
