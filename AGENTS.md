@@ -140,6 +140,29 @@ When you pause: write the named blocker, state the decision you are not making a
 
 ---
 
+## How the kit composes (subsystem modules)
+
+The kit is a **toolbox of self-contained subsystem modules under `lib/<subsystem>/`**
+(board, classify, gate, goal, queue, session, spec, stats, telemetry, plus the ledger
+substrate and single-purpose orphans), not one appliance you switch on. "tool" vs "lib"
+describes a module's SURFACE (leaf/human vs internal-helper), not its location; there is no
+separate `tools/` tree. Each multi-verb subsystem exposes a **standalone `<subsystem> <verb>`
+command** (`board next`, `gate ledger ...`, `classify ...`, `spec ...`, `goal ...`,
+`session ...`) that forwards to the script owning that verb; the internal
+`bash lib/<subsystem>/<file>.sh` form used throughout the task loop still works unchanged.
+There is no `kit` uber-dispatcher, each command's own `--help` is the discovery surface. The
+read plane is **`stats`**: a stateless projection recomputed on demand from the append-only
+ledger, never a persisted second source of truth.
+
+Adoption is **layered, not all-or-nothing**. `install.sh` wires the essential spine
+unconditionally (the SDD ship discipline: safety-gate, ship-gate, spec-drift-guard,
+secrets-guard, commit-format, anti-rationalization) and opt-in modules only when asked
+(`install.sh --with board,session,stats,...`), recording the enabled set in the consumer's
+`kit.toml [modules]` manifest, an install artifact that records the choice, never read at
+runtime. Full adoption model + rationale: `docs/PHILOSOPHY.md` and `README.md`.
+
+---
+
 ## How a goal is composed (for `commands/assign.md`)
 
 The goal-crafter projects these four zones into a six-section `/goal`. The mapping
