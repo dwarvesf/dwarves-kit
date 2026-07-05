@@ -107,6 +107,11 @@
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/pre-compact-backup.sh",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/harvest.sh",
+            "timeout": 30
           }
         ]
       }
@@ -127,6 +132,38 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/session-state-save.sh",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/citation-guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/backlog-stage.sh",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/harvest.sh --lab-log",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/context-hints.sh",
             "timeout": 5
           }
         ]
