@@ -35,6 +35,9 @@ jobs:
 
       - name: Run meta integrity tests
         run: bash tests/test-meta.sh
+
+      - name: Run layered-install module tests (ID-277 SG-04)
+        run: bash tests/test-install-modules.sh
       - name: Golden run (e2e)
         run: bash tests/test-e2e.sh
 
