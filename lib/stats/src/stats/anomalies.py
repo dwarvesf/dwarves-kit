@@ -686,7 +686,7 @@ def render_block(a: Anomaly, date: str) -> str:
         f"- Approach: {a.approach}\n"
         f"- Tags: {a.tags}\n"
         f"{home}"
-        f"- Source: ledger-observatory anomalies {date}\n\n"
+        f"- Source: stats anomalies {date}\n\n"
     )
 
 
