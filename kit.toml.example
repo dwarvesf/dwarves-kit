@@ -1,0 +1,84 @@
+# kit.toml , dwarves-kit configuration (TEMPLATE / reference)
+#
+# This is the FORWARD-LOOKING config surface for the harness. Two levels:
+#   1. kit-root  kit.toml         , the default that ships with the kit.
+#   2. <project>/.kit.toml        , per-project override (project keys WIN; write
+#                                    only the keys you change, the rest inherit).
+#
+# READ MODEL (locked, ADR pending): a single resolver `lib/config/kit-config.sh`
+# owns load + merge + precedence (mirrors lib/telemetry/kit-log-dir.sh , "one
+# place the default lives"). COMMANDS and feature libs call it AT INVOCATION; the
+# hot spine hooks NEVER read it (that keeps the no-runtime-manifest-read lint
+# green , the lint forbids HOOK reads, not command reads).
+#
+# STATUS TAGS on every key , do not assume an inert key does anything:
+#   [impl]     wired today; the resolver just needs to surface it (usually an env var)
+#   [design]   concretely designed, not built yet (has a design doc / mega)
+#   [reserved] placeholder for a planned feature; no code path yet
+#   [consumer] the toggle lives in an external consumer skill, not the kit engine;
+#              kept here so the harness has ONE control surface (Han, 2026-07-06)
+# ---------------------------------------------------------------------------
+
+# ======================= HARNESS OPS (ships today) =======================
+
+[modules]                       # [impl] install.sh KIT_KNOWN_MODULES; gates HOOKS only
+board          = true           #        commands/skills always install regardless
+session        = true
+advisor        = true
+cosmetic       = false
+queue          = true           # hookless (orchestrate/dispatch are commands)
+stats          = true           # hookless
+quiz_gate      = false          # hookless; backs commands/quiz-gate.md
+weekend_batch  = false          # hookless; backs lib/queue/weekend-batch.sh
+bridge         = false          # hookless; Hermes cockpit mirror
+team_mode      = false          # reserved , install.sh hard-rejects it today
+
+[ledger]                        # where the harness stores its operation record
+location            = "shared"  # [impl] "shared" (XDG, one root for all projects)
+                                #        | "isolated" (this project's own ./.kit/logs)
+                                #        | "<explicit path>".  Resolves KIT_LEDGER_DIR.
+telemetry           = true      # [impl] write run-tracking streams or not
+delivery_ratio_warn = 3         # [impl] KIT_DELIVERY_RATIO_WARN (proof-vs-real gate)
+delivery_real_floor = 40        # [impl] KIT_DELIVERY_REAL_FLOOR
+# retention         = ...       # [reserved] ledger is append-only today, no rotation
+
+[mega]                          # read when /kit:mega + orchestrate scaffold/run
+wave_cap           = 2          # [impl] WAVE_CAP
+tier4_close        = true       # [impl] TIER4_CLOSE (SPEC-118)
+multiplexer        = false      # [impl] MULTIPLEXER (SPEC-119)
+merge_autonomy     = "gated-final"      # [impl] "gated-final" | "full-auto"
+mega_merge_posture = "auto-to-final"    # [impl] "auto-to-final" | "per-pr-review"
+default_model      = "sonnet"   # [design] GLOBAL fallback. Real control today is the
+                                #        per-sub-goal `Model:` goal-file field. Kept as a
+                                #        global so an adopter on a DIFFERENT harness/model
+                                #        (not Claude Code) can set one default. Precedence:
+                                #        goal-file `Model:` > project cfg > this default.
+over_test          = false      # [design] GLOBAL default for scaffold rigor. Real control
+                                #        today is per-sub-goal `Done-mode: over-test`
+                                #        (SPEC-112). Global default for other-harness adopters.
+
+[gate]
+understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031). Always-on
+                                #        today; exposing an on/off toggle is NEW work.
+
+[features]                      # harness-adjacent toggles (kept as one control surface)
+auto_improvement = false        # [design] read-plane loop over the ledger -> backlog
+                                #        proposals. docs/research/2026-07-05-auto-improvement-loop-design.md
+learning_ledger  = true         # [consumer] the orchestration is an external skill
+                                #        (ops-toolkit/dotfiles, SPEC-126); the kit only
+                                #        collects (weekend-batch.sh) + routes. Toggle kept
+                                #        here so the harness config is the single surface.
+
+# =============== TEAM COLLABORATION (designed, not built , all off) ===============
+# Source: ops-toolkit/_meta/megagoals/team-mode/ (ROADMAP + DESIGN-01..07),
+#         docs/research/2026-07-04-team-collab-workflow-proposal.md (v3).
+# Held until kit-modularity ships; install.sh rejects team_mode until then.
+
+[team]
+actor_identity   = false        # [design] `actor=` on gate rows + Owner col + `claim` verb
+attestation      = false        # [design] docs/runs/<rid>.md branch-riding + `attested-for=`
+ci_recheck       = false        # [design] report-only GitHub Action, always exit 0
+spec_reservation = false        # [design] pushed spec-stub branch = SPEC-number reservation
+policy           = false        # [design] git-tracked [policy]: path fences, guarded verbs
+onboarding       = false        # [design] adopt --with team -> TEAM.md
+pilot            = false        # [design] end-to-end UAT (held)
