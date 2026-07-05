@@ -475,15 +475,42 @@ _wave_gate() {  # megadir roadmap
   done < <(_ready_set "$roadmap")
 }
 
+# ID-096: the allowlisted `Model:` tier names -- the same short names the decompose-time model
+# suggester's `tier_of()` normalizes to (haiku/sonnet/opus). Kept as one constant so the allowlist
+# and its error message never drift apart.
+_ROUTE_MODEL_ALLOWLIST="opus sonnet haiku"
+
 # Emit "model<TAB>effort" read from a goal file's `Model:`/`Effort:` lines (empty when absent).
 # Bare `Key: value` header lines, not YAML; first match each, value trimmed. Absent field or
 # absent file -> empty -> the orchestrator emits no flag and the session inherits its tier
 # (SPEC-087 "Model / Effort routing"). The biggest $ lever: Opus only on the hard sub-goals.
+#
+# ID-096: pre-flight allowlist validation. Before this fix, an off-allowlist `Model:` value (a
+# typo, e.g. `Model: sonet`) was passed VERBATIM into `--model <value>` and died mid-dispatch as an
+# opaque `claude` CLI error deep inside a spawned session (or, worse under a wave, mid-drain with
+# sibling sessions already in flight). Reject it HERE instead, before any session spawns: an
+# off-allowlist value prints a clear error to stderr and returns 64 (the same "bad input" exit code
+# `cmd_run`'s own WAVE_CAP/PANE_VIEWER pre-flight checks use), so a caller checking `_route`'s exit
+# status (`local out; out=$(_route "$gf"); rc=$?`, an assignment's `$?` reflects the command
+# substitution's own exit code) catches it before dispatch. Absent `Model:` (empty) is untouched,
+# still the documented inherit fallback (SPEC-107), never rejected. Case-insensitive: `Opus`/`OPUS`
+# match same as `opus` (goal files are hand-authored prose headers, not a strict schema).
 _route() {
-  local gf="${1:-}" model="" effort=""
+  local gf="${1:-}" model="" effort="" model_lc
   if [ -f "$gf" ]; then
     model=$(grep -iE '^Model:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
     effort=$(grep -iE '^Effort:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+  fi
+  if [ -n "$model" ]; then
+    model_lc=$(printf '%s' "$model" | tr 'A-Z' 'a-z')
+    case " $_ROUTE_MODEL_ALLOWLIST " in
+      *" $model_lc "*) ;;
+      *)
+        echo "orchestrate: invalid Model: tier '$model' in ${gf:-<no goal file>} (allowed: ${_ROUTE_MODEL_ALLOWLIST// /|}); rejecting pre-flight, not dispatching" >&2
+        printf '%s\t%s\n' "$model" "$effort"
+        return 64
+        ;;
+    esac
   fi
   printf '%s\t%s\n' "$model" "$effort"
 }
@@ -613,6 +640,7 @@ _build_prompt() {
 cmd_next() {
   local dir="${1:-}"
   [ -f "$dir/ROADMAP.md" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
+  _prune_streams "$dir"   # ID-095: age-cap sweep at the cheap, frequently-run "what's next" touchpoint
   local nx; nx=$(_next "$dir/ROADMAP.md")
   if [ -n "$nx" ]; then printf '%s\n' "$nx"; else _say "(none unchecked)"; fi
 }
@@ -669,6 +697,57 @@ _step_pause() {
   esac
 }
 
+# ---- Stream retention + redaction (ID-095) ----------------------------------------------------
+# Verified reality (orchestrate-hardening NOTES advisor #3): `.orchestrate/*.stream.jsonl` files
+# are NOT unbounded growth -- each is per-sub-goal-id and truncated (`: > "$slog"`) at the start of
+# every run, so the SET is bounded by the sub-goal count, not by wall-clock time. The real risk is
+# that a captured transcript (which can legitimately contain secret-shaped text -- an env var, a
+# pasted token, an `op://` value a session echoed) SITS ON DISK indefinitely with no age cap and no
+# redaction. Two independent, small mitigations, neither touching the stream FORMAT:
+STREAM_RETENTION_DAYS="${STREAM_RETENTION_DAYS:-14}"
+
+# Redact secret-shaped substrings from a captured stream/session-log file, IN PLACE, via a
+# write-temp-then-`mv` (never `sed -i`: GNU vs BSD `-i` take incompatible args, and an in-place
+# edit that dies mid-write must not truncate the original). Applied right after each write
+# completes (both `_run_one_session`'s stream-json/plain paths and `_run_session_watchdog`'s
+# capture path), so the window a secret sits UNREDACTED on disk is one session's write, not
+# indefinite. Best-effort: a missing/empty file or a `mktemp`/`sed` failure is a silent no-op
+# (redaction failing must never fail the sub-goal it is auxiliary to). Patterns cover the common
+# API-key/token shapes (OpenAI/Anthropic/GitHub/GitLab/Slack `PREFIX-`/`PREFIX_` tokens, AWS access
+# keys, bearer tokens) -- deliberately conservative (over-redact, never under-redact) since this is
+# a leak-prevention control, not a display filter.
+_redact_secrets_file() {  # file
+  local f="$1" tmp
+  [ -n "$f" ] && [ -s "$f" ] || return 0
+  tmp=$(mktemp 2>/dev/null) || return 0
+  if sed -E \
+      -e 's/(sk|gho|ghp|ghu|ghs|ghr|glpat)[_-][A-Za-z0-9_-]{8,}/[REDACTED]/g' \
+      -e 's/xox[baprs]-[A-Za-z0-9-]{8,}/[REDACTED]/g' \
+      -e 's/AKIA[0-9A-Z]{16}/[REDACTED]/g' \
+      -e 's/([Bb]earer)[[:space:]]+[A-Za-z0-9._-]{10,}/\1 [REDACTED]/g' \
+      "$f" > "$tmp" 2>/dev/null; then
+    mv -f "$tmp" "$f" 2>/dev/null || rm -f "$tmp"
+  else
+    rm -f "$tmp"
+  fi
+}
+
+# Prune `.orchestrate/*.stream.jsonl` and `*.session.log` files older than $STREAM_RETENTION_DAYS
+# (mtime-based; portable `find -mtime +N`, no GNU-only flags). Advisory sweep, called at natural
+# low-frequency touchpoints (`cmd_next`, the read-only "what's next" check an operator runs often,
+# and the start of a `cmd_run`), not a daemon -- a mega-goal dir that is never polled just keeps
+# its (still-bounded-by-count) files a while longer, never a correctness issue. Silent on a missing
+# `.orchestrate` dir (nothing to prune yet).
+_prune_streams() {  # dir
+  local dir="$1" n
+  local logdir="$dir/.orchestrate"
+  [ -d "$logdir" ] || return 0
+  n=$(find "$logdir" -maxdepth 1 \( -name '*.stream.jsonl' -o -name '*.session.log' \) -mtime "+${STREAM_RETENTION_DAYS}" 2>/dev/null | wc -l | tr -d ' ')
+  [ "${n:-0}" -gt 0 ] 2>/dev/null || return 0
+  find "$logdir" -maxdepth 1 \( -name '*.stream.jsonl' -o -name '*.session.log' \) -mtime "+${STREAM_RETENTION_DAYS}" -exec rm -f {} + 2>/dev/null
+  _say "[orchestrate] [retention] pruned $n stream/session file(s) older than ${STREAM_RETENTION_DAYS}d from $logdir"
+}
+
 # Run a session under the stall-watchdog (SG-11). Backgrounds claude (output -> a session log),
 # polls liveness (`kill -0`, no daemon) + the log's mtime; after WATCHDOG_STALL_SECS of no new
 # output while the process is still alive, emits a `stalled` event + WARN ONCE (advisory: never
@@ -715,6 +794,7 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
     fi
   done
   wait "$spid"; local rc=$?
+  _redact_secrets_file "$slog"   # ID-095: redact before it's surfaced (cat) or returned to the caller
   cat "$slog"
   _WD_SLOG=""
   [ "$capture" = 1 ] && _WD_SLOG="$slog"
@@ -768,6 +848,11 @@ _run_one_session() {  # dir id pfile route_flags stream
     # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
     "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
   fi
+  # ID-095: redact secret-shaped substrings from the captured file before it's handed back (the
+  # live `--stream` terminal tee above already happened by this point -- redacting the FILE closes
+  # the at-rest exposure, the primary risk this fix targets; a live-tee filter would need a
+  # process-substitution rewrite of the stream FORMAT plumbing, out of scope for this sweep).
+  [ -n "$slog" ] && _redact_secrets_file "$slog"
   _ROS_SLOG="$slog"
   return "$rc"
 }
@@ -1109,7 +1194,7 @@ _wave_run() {  # megadir roadmap
   # before the normal return paths below.
   trap '_wave_abort' INT TERM
 
-  local decision id gf branch wt route_flags rmodel reffort pfile pid donefile checked
+  local decision id gf branch wt route_flags rmodel reffort pfile pid donefile checked route_out route_rc
   while IFS=$'\t' read -r decision id; do
     [ "$decision" = run ] || continue
     # Idempotent resume: a box already checked is skipped, never re-run.
@@ -1128,8 +1213,18 @@ _wave_run() {  # megadir roadmap
     fi
 
     # Per-sub-goal model/effort routing (matches cmd_run); absent hint -> no flag -> inherit.
+    # ID-096: `route_out=$(_route "$gf")` assigns `$?` from `_route` itself (a simple command-
+    # substitution assignment, unlike `< <(...)` process substitution above it, which reflects
+    # `read`'s exit status instead) -- an off-allowlist `Model:` tier is rejected HERE, before this
+    # sub-goal's session ever spawns, same as a worktree-setup failure just above.
     route_flags=""
-    IFS=$'\t' read -r rmodel reffort < <(_route "$gf")
+    route_out=$(_route "$gf"); route_rc=$?
+    IFS=$'\t' read -r rmodel reffort <<<"$route_out"
+    if [ "$route_rc" != 0 ]; then
+      _emit_event "$megadir" "$id" blocked "wave: invalid Model: tier '$rmodel'"
+      wave_failed=1
+      continue
+    fi
     [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
     [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
 
@@ -1243,7 +1338,7 @@ _wave_run() {  # megadir roadmap
   # failed but does NOT break the loop: in-flight siblings DRAIN to completion (never killed).
   # SPEC-119: a muxed index (`_WAVE_DONEFILES[i]` non-empty) has no reapable pid -- `tmux
   # new-window` already returned -- so that index polls for its donefile instead of `kill -0`.
-  local remaining="$spawned" i rc box donefile
+  local remaining="$spawned" i rc box donefile mux
   while [ "$remaining" -gt 0 ]; do
     for i in $(seq 0 $((spawned - 1))); do
       [ "${wave_done[$i]}" = 1 ] && continue
@@ -1271,6 +1366,19 @@ _wave_run() {  # megadir roadmap
       else
         _emit_event "$megadir" "$id" shipped "wave: box checked"
         _WAVE_LANDED+=("$id")
+        # ID-098: happy-path tmux cleanup. Before this fix, ONLY `_wave_abort` ever killed a
+        # window (and only an in-flight one, on operator Ctrl-C) -- a clean, successful reap left
+        # the completed pane sitting in the shared per-megagoal tmux session forever, so a
+        # multi-wave run accumulated one stale window per landed sub-goal. `_pane_spawn` already
+        # pre-cleans a PRIOR attempt's stale window before spawning a retry, so this is belt-and-
+        # braces for the retry path too, not just tidiness. Muxed-only: a non-empty `$donefile`
+        # here means this index was tmux-spawned (see the spawn loop above); the plain background-
+        # job path has no window to kill. `|| true`: a missing window (already cleaned, or the
+        # multiplexer was never on) is not a failure.
+        if [ -n "$donefile" ]; then
+          mux=$(_mux_session_name "$megadir")
+          "$TMUX_CMD" kill-window -t "$mux:$id" 2>/dev/null || true
+        fi
         # Token accounting (ID-094): closes the SPEC-117 declared gap ("the wave-path per-sub-goal
         # ledger extraction is a declared gap"). The serial path reads $slog off `_ROS_SLOG`, a
         # global `_run_one_session` sets directly in the caller's shell; the wave path backgrounds
@@ -1630,6 +1738,9 @@ cmd_run() {
   [ -d "$dir" ] || { echo "no such megagoal dir: '$dir'" >&2; return 64; }
   local roadmap="$dir/ROADMAP.md"
   [ -f "$roadmap" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
+  # ID-095: age-cap sweep at the start of every REAL run, not just `next`. Skipped under --dry-run
+  # (dry=1): a preview must stay non-mutating, it never touches disk beyond reading.
+  [ "$dry" = 1 ] || _prune_streams "$dir"
   local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
   case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
 
@@ -1807,8 +1918,18 @@ cmd_run() {
     # Per-sub-goal model/effort routing (SPEC-087): read the goal file's hints and pass them as
     # flags, so this sub-goal runs on its own tier instead of inheriting Opus-for-everything.
     # Absent hint -> no flag -> inherit.
-    local rmodel reffort route_flags=""
-    IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$id")")
+    # ID-096: reject an off-allowlist `Model:` tier pre-flight (same command-substitution exit-
+    # code capture as the wave path above), same treatment as a `gate` sub-goal: halt the serial
+    # loop for a human instead of dispatching a session that would die mid-`claude` on a typo.
+    local rmodel reffort route_flags="" route_out route_rc
+    route_out=$(_route "$(_goalfile "$dir" "$id")"); route_rc=$?
+    IFS=$'\t' read -r rmodel reffort <<<"$route_out"
+    if [ "$route_rc" != 0 ]; then
+      _emit_event "$dir" "$id" blocked "invalid Model: tier '$rmodel'"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      _say "[orchestrate] STOP: $id has an invalid Model: tier '$rmodel' (allowed: ${_ROUTE_MODEL_ALLOWLIST// /|}); fix the goal file, then re-run."
+      return 0
+    fi
     [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
     [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
     # Guardrail (SG-11): a sub-goal with no goals/ file runs without its contract -- a re-discovery

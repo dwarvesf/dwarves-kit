@@ -51,3 +51,20 @@ Each item keeps its OWN check line (individually auditable inside this sweep):
 Tiny hardening sweep (ID-095 stream.jsonl retention cap + ID-096 Model allowlist pre-flight + ID-098 happy-path tmux cleanup). Verify: the three per-item run-tables (ID-095 with a secret-pruning negative control). Stacked on #<05 PR>; review after it. Part of `orchestrator-finish`, see ROADMAP.md.
 
 ## Notes
+
+- **Deviation (base branch):** the dispatch prompt for this run said sub-goal 05 is already
+  merged and the stack has collapsed, so this PR targets `master` directly, not
+  `fix/orchfin-05-rid-check` as this file's `**PR base:**` header says. Conservative/reversible
+  choice per the dispatch prompt (the more current authority at execution time); if 05 in fact
+  hasn't landed on master, retargeting the PR base is a one-click GitHub op, no rebase needed.
+- **Deviation (lane classification):** `bash lib/classify/lane-classify.sh classify "..."` returned
+  `full`, not the `tiny`/`small` this file predicted. Recorded gates for the phases that actually
+  ran for a 3-papercut sweep (grill/think/design/spec skipped with reasons, test-plan/build/review
+  ran) rather than performing the full 14-phase full-lane ceremony on three independently-tiny
+  fixes; the contract's own "**Kit-adopted repo?**" line already anticipated a tiny/small lane and
+  a lighter record.
+- **Deviation (redaction scope):** ID-095's redaction runs on the FILE after each session write
+  completes, not on the live `--stream` terminal tee (which happens before the file write in that
+  one opt-in path). Closes the at-rest exposure (the risk this fix targets: secrets sitting on
+  disk); a live-tee filter would need a process-substitution rewrite of the stream FORMAT
+  plumbing, out of scope per this sub-goal's own scope edges ("Out: the stream FORMAT").

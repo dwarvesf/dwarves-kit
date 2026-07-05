@@ -17,5 +17,6 @@
 
 ## Event log
 
+2026-07-06 · sub-goal 06 (orchestrate-sweep) built · ID-095 stream retention cap + secret redaction, ID-096 Model: allowlist pre-flight, ID-098 happy-path tmux kill-window; 9 new assertions in tests/test-orchestrate-hardening.sh, no regression to existing serial/wave/mux/model-routing suites. PR opened against master, held for operator review (last sub-goal on ROADMAP; see HANDOFF.md for TIER-4 close status)
 2026-07-06 · scaffolded · orchestrator-finish, 6 sub-goals (5 normal + 1 tiny-sweep), from the orphaned orchestrate-hardening spillover (ID-091,093,094,095,096,097,098,099)
 2026-07-06 · advisor pre-launch · P5 critique + P6 over-suggest run. P5 verdict: 1 CRITICAL (flat lib paths in POINTER + goal 01 , FIXED, all subdir now) + 2 MAJOR (stack-order 03-before-05 gap , noted-accepted; goal 03 NC not operationalized , FIXED with a pre-fix-shows-zero clause) + 1 MINOR (goal 02 Depends-on fragment , tidied). P6: 5 suggestions → ## Proposed additions. Scaffold now launch-ready.
