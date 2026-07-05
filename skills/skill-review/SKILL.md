@@ -8,8 +8,8 @@ disable-model-invocation: false
 
 skill-curator's background reviewer stages skill drafts under `~/.claude/skill-proposals/`. It
 NEVER writes `~/.claude/skills/`. This skill is the human gate that promotes a vetted draft into the
-live library. `bin/skill-review` (next to this skill in the tool, or on PATH) is the only writer of
-`~/.claude/skills/`.
+live library. `bin/skill-review` (from `tools/skill-curator/`, put it on PATH or invoke by its full
+path) is the only writer of `~/.claude/skills/`.
 
 ## Flow
 
