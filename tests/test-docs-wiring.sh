@@ -74,7 +74,7 @@ assert "AC6: Model: -> --model routing fires (live call site in lib/queue/orches
 
 _wired "$ORCH" 'bash "$LIB_ROOT/gate/gate-ledger.sh" tokens'
 assert "AC7: token capture records via gate-ledger.sh (live call site in lib/queue/orchestrate.sh)" $?
-_wired "$LEDGER" "printf '%s | TOKENS | %s\n'"
+_wired "$LEDGER" "printf '%s | TOKENS | %s'"
 assert "AC7: the TOKENS ledger marker is emitted (live call site in lib/gate/gate-ledger.sh)" $?
 
 _wired "$ORCH" '_tier4_close "$dir" "$roadmap"'
