@@ -4,7 +4,7 @@
 **Time budget:** 1-2 hours
 **Proof:** the moved files at their new homes + `docs/README.md` map matches the real tree + nothing load-bearing broke. Rung 1-2 (mostly safe doc-moves; a check that no reader referenced a moved path).
 **Design:** obvious
-**Depends on:** none (Track B; but land after 09/11 so the README map reflects the final tree)
+**Depends on:** 09, 11 (its README map must reflect the post-fold, post-move tree; the conductor reads this field mechanically, so the dep is real, not just prose , advisor P5 #3)
 Model: sonnet
 **Branch:** fix/harness-ops-13-doc-tidy
 **PR base:** main
