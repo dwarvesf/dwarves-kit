@@ -13,9 +13,12 @@ carry the per-sub-goal merge record. Internal refs to the old
 `ops-toolkit/_meta/megagoals/<slug>/` path are left as history (accurate at run
 time), per the ops-toolkit lifecycle rule.
 
-Active kit mega-goals still run from the ops-toolkit cockpit (`runner-fastpath`,
-`team-mode`, `kit-wiring`) and move here only when they close. CC-harness / token
-tuning goals not folded into the kit (`cc-*`, `token-optim-*`) stay in ops-toolkit.
+Active kit mega-goals still run from the ops-toolkit cockpit (`team-mode`,
+`kit-wiring`) and move here only when they close. The CC-harness / token-tuning
+history (`cc-elevation*`, `cc-hygiene`, `cc-token-reduction`, `token-optim-*`) also
+lives here: it is the harness Han is consolidating under the kit.
 
-Consolidated 2026-07-05: 4 completed (`gate-review-absorptions`, `harness-observatory`,
-`kit-absorptions`, `orchestrate-hardening`) + 11 previously archived in ops-toolkit.
+Consolidated 2026-07-05..06 (24 folders): 4 completed (`gate-review-absorptions`,
+`harness-observatory`, `kit-absorptions`, `orchestrate-hardening`) + 11 previously
+archived in ops-toolkit + the 8-folder CC-harness/token cluster + `runner-fastpath`
+(closed at 12/13, its last box rehomed to the shipped `kit-foldin`).
