@@ -1,0 +1,8 @@
+{"type":"assistant","timestamp":"2026-06-14T10:00:00.000Z","message":{"role":"assistant","model":"claude-opus-4-8","content":[{"type":"tool_use","name":"Skill","id":"sf1","input":{"skill":"tiny-frequent"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:00.050Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"sf1","is_error":false,"content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:10.000Z","message":{"role":"assistant","model":"claude-opus-4-8","content":[{"type":"tool_use","name":"Skill","id":"sf2","input":{"skill":"tiny-frequent"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:10.050Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"sf2","is_error":false,"content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:20.000Z","message":{"role":"assistant","model":"claude-opus-4-8","content":[{"type":"tool_use","name":"Skill","id":"sf3","input":{"skill":"tiny-frequent"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:20.050Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"sf3","is_error":false,"content":"ok"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:30.000Z","message":{"role":"assistant","model":"claude-opus-4-8","content":[{"type":"tool_use","name":"Skill","id":"rs1","input":{"skill":"rare-slow"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:30.100Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"rs1","is_error":false,"content":"ok"}]}}

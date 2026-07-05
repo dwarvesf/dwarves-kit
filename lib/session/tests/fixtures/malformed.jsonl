@@ -1,0 +1,3 @@
+{"type": "user", "timestamp": "2026-07-01T09:00:00Z", "message": {"role": "user", "content": "first turn, valid"}}
+{this is not valid json
+{"type": "assistant", "timestamp": "2026-07-01T09:00:01Z", "message": {"role": "assistant", "content": "second turn, valid, after the bad line"}}
