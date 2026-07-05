@@ -79,6 +79,36 @@
 #                                                               `seen_at` vs the BACKLOG.md's own
 #                                                               last git-log touch time.
 #
+#   board.sh board  --with-mega [--mega-code-root <path>] [--backlog-file <path>]
+#   board.sh status --with-mega [--mega-code-root <path>] [--repo-root <path>] [--registry <path>]
+#                                                               OPT-IN (kit-modularity sub-goal
+#                                                               08): appends a trailing
+#                                                               "MEGA ROLLUP" section listing, for
+#                                                               every ACTIVE mega under
+#                                                               <repo-root>/_meta/megagoals/*/
+#                                                               (>=1 unchecked sub-goal box), the
+#                                                               `lib/mega.sh status <slug>
+#                                                               --rollup-only` line (roadmap-vs-git
+#                                                               reconciliation, drift-flagged --
+#                                                               never a re-render of the roadmap's
+#                                                               own `[x]`/`[ ]` prose). DEFAULT OFF
+#                                                               on both `board` and `status`: it
+#                                                               makes real `gh` calls per
+#                                                               sub-goal, so it must never run
+#                                                               inside the byte-identical render
+#                                                               non-regression NC (test-board.sh's
+#                                                               NC-e) or slow down a plain render.
+#                                                               `--mega-code-root <path>` overrides
+#                                                               where the megas' OWN branches/PRs
+#                                                               live (default: the same repo
+#                                                               `--backlog-file`/`--repo-root`
+#                                                               resolves to -- override it when a
+#                                                               mega's ROADMAP.md lives in one repo
+#                                                               but its sub-goals build in a
+#                                                               DIFFERENT one, e.g. kit-modularity:
+#                                                               ROADMAP in ops-toolkit, PRs/
+#                                                               branches in dwarves-kit).
+#
 #   board.sh writeback [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
 #                       [--board-prefix <prefix>] [--branch <name>] [--pr-base <branch>]
 #                                                               the reverse leg (SPEC-149): reads
@@ -135,6 +165,7 @@ BACKLOG_SH="$BOARD_DIR/backlog.sh"
 PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
+MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega.sh"  # lib/mega.sh, one level up from lib/board/
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
 [ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
@@ -151,12 +182,12 @@ BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
 # ---------------------------------------------------------------------------
 OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
 OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
-OPT_BRANCH=""; OPT_PR_BASE=""
+OPT_BRANCH=""; OPT_PR_BASE=""; OPT_WITH_MEGA=0; OPT_MEGA_CODE_ROOT=""
 POSITIONAL=()
 _parse_flags() {
   OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
   OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
-  OPT_BRANCH=""; OPT_PR_BASE=""
+  OPT_BRANCH=""; OPT_PR_BASE=""; OPT_WITH_MEGA=0; OPT_MEGA_CODE_ROOT=""
   POSITIONAL=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -171,8 +202,31 @@ _parse_flags() {
       --remote-kit-path) OPT_REMOTE_KIT_PATH="${2:-}"; shift 2 ;;
       --branch)          OPT_BRANCH="${2:-}"; shift 2 ;;
       --pr-base)         OPT_PR_BASE="${2:-}"; shift 2 ;;
+      --with-mega)       OPT_WITH_MEGA=1; shift ;;
+      --mega-code-root)  OPT_MEGA_CODE_ROOT="${2:-}"; shift 2 ;;
       *) POSITIONAL+=("$1"); shift ;;
     esac
+  done
+}
+
+# _mega_rollups <repo-root> <code-root> -- one `mega status <slug> --rollup-only` line per
+# ACTIVE mega under <repo-root>/_meta/megagoals/*/ROADMAP.md (>=1 unchecked sub-goal box, same
+# activeness convention lib/board/board-mirror.sh's own extract_megas already uses). Silent no-op
+# (empty output) when there is no megagoals dir, no mega.sh, or a mega's status call errors --
+# this is an OPT-IN surfacing feature (--with-mega), never a hard requirement of board render.
+_mega_rollups() {  # <repo-root> <code-root>
+  local repo_root="$1" code_root="$2" mg_root dir slug rf out
+  mg_root="$repo_root/_meta/megagoals"
+  [ -d "$mg_root" ] || return 0
+  [ -f "$MEGA_SH" ] || return 0
+  for dir in "$mg_root"/*/; do
+    [ -d "$dir" ] || continue
+    slug="$(basename "$dir")"
+    rf="$dir/ROADMAP.md"
+    [ -f "$rf" ] || continue
+    grep -qE '^- \[ \]' "$rf" 2>/dev/null || continue   # skip fully-shipped / non-checkbox megas
+    out="$(bash "$MEGA_SH" status "$slug" --megagoals-root "$mg_root" --code-root "$code_root" --rollup-only 2>/dev/null)" || true
+    [ -n "$out" ] && printf '  %s\n' "$out"
   done
 }
 
@@ -321,7 +375,18 @@ cmd_board_single() {
     _priority_render "$OPT_BACKLOG_FILE" "${args[1]:-overview}"
     return 0
   fi
-  BACKLOG_FILE="$OPT_BACKLOG_FILE" bash "$BACKLOG_SH" "${args[@]}"
+  local rc
+  if BACKLOG_FILE="$OPT_BACKLOG_FILE" bash "$BACKLOG_SH" "${args[@]}"; then rc=0; else rc=$?; fi
+  # --with-mega is OPT-IN and only fires for the default `board` render (never `next`/`set`/
+  # `states`), so the byte-identical render non-regression NC (test-board.sh's NC-e, which never
+  # passes --with-mega) is untouched by construction.
+  if [ "$OPT_WITH_MEGA" -eq 1 ] && [ "${args[0]}" = "board" ]; then
+    local repo_root; repo_root="$(_repo_root_for "$OPT_BACKLOG_FILE")"
+    local code_root="${OPT_MEGA_CODE_ROOT:-$repo_root}"
+    local rollups; rollups="$(_mega_rollups "$repo_root" "$code_root")"
+    [ -n "$rollups" ] && printf '\nMEGA ROLLUP:\n%s\n' "$rollups"
+  fi
+  return "$rc"
 }
 
 # ---------------------------------------------------------------------------
@@ -539,6 +604,25 @@ cmd_status() {
   rm -f "$snap_tsv"
 
   echo "${changed} repos changed since last mirror, last synced ${newest:-never}"
+
+  # --with-mega (OPT-IN, kit-modularity sub-goal 08): a trailing MEGA ROLLUP section, one line
+  # per ACTIVE mega per registry repo. Off by default (real `gh` calls per sub-goal; must never
+  # fire inside test-board-mirror.sh's fixture registry, which never passes this flag).
+  if [ "$OPT_WITH_MEGA" -eq 1 ]; then
+    echo ""
+    echo "MEGA ROLLUP:"
+    while read -r name path _rest; do
+      [ -n "${name:-}" ] || continue
+      case "$name" in \#*) continue ;; esac
+      path="${path/#\~/$HOME}"
+      [ -f "$path" ] || continue
+      local mrepo_root mcode_root mrollups
+      mrepo_root="$(_repo_root_for "$path")"
+      mcode_root="${OPT_MEGA_CODE_ROOT:-$mrepo_root}"
+      mrollups="$(_mega_rollups "$mrepo_root" "$mcode_root")"
+      [ -n "$mrollups" ] && printf '%s\n' "$mrollups"
+    done < "$registry"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -602,7 +686,7 @@ cmd_writeback() {
   return 0
 }
 
-usage() { sed -n '2,78p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,159p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"
