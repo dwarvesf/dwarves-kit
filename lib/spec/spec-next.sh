@@ -27,9 +27,10 @@ REPO="$(basename "$ROOT")"
 # Sourced best-effort: if kit-log-dir.sh is missing (e.g. spec-next copied standalone), fall
 # back to a temp-dir ledger so `next`/`check` still work; only `reserve` needs the durable path.
 _SPEC_NEXT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [ -r "$_SPEC_NEXT_DIR/kit-log-dir.sh" ]; then
-  # shellcheck source=lib/kit-log-dir.sh
-  source "$_SPEC_NEXT_DIR/kit-log-dir.sh" 2>/dev/null || true
+LIB_ROOT="$(cd "$_SPEC_NEXT_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+if [ -r "$LIB_ROOT/telemetry/kit-log-dir.sh" ]; then
+  # shellcheck source=lib/telemetry/kit-log-dir.sh
+  source "$LIB_ROOT/telemetry/kit-log-dir.sh" 2>/dev/null || true
 fi
 if command -v kit_resolve_log_dir >/dev/null 2>&1; then
   RES_DIR="$(kit_resolve_log_dir)"

@@ -114,15 +114,15 @@ grep -qiE 'Reviewer 6' "$KIT_DIR/commands/spec-validate.md" || RC=1
 grep -qiE 'BLOCKING' "$KIT_DIR/commands/spec-validate.md" || RC=1
 assert "Design record: /kit:spec-validate Reviewer 6 is a BLOCKING enforcer (WIRED)" $RC
 
-# 2. significance-classify: the `classify` verb is live (called by lib/quiz-gate.sh); the
+# 2. significance-classify: the `classify` verb is live (called by lib/gate/quiz-gate.sh); the
 #    `record` verb (the ledger-persisting one) is now ALSO live -- wired into /kit:ship Step 8
 #    (SPEC-136), immediately before the quiz-gate tap, closing the "silent wave, but LOGGED" gap.
 claim_wired "$WORKFLOW" \
   'significance-classify\.sh classify' \
   'SIG_CLASSIFY.*classify|significance-classify\.sh"? *classify' \
-  "$KIT_DIR/lib/quiz-gate.sh"
+  "$KIT_DIR/lib/gate/quiz-gate.sh"
 RC=$?
-assert "significance-classify: 'classify' verb WIRED via lib/quiz-gate.sh" $RC 0
+assert "significance-classify: 'classify' verb WIRED via lib/gate/quiz-gate.sh" $RC 0
 
 claim_wired "$WORKFLOW" \
   'significance-classify\.sh record' \
@@ -139,23 +139,23 @@ assert "/kit:explain: commands/explain.md exists and is non-empty (auto-register
 RC=0; [ -x "$KIT_DIR/lib/explain.sh" ] || RC=1
 assert "/kit:explain: lib/explain.sh exists and is executable" $RC
 
-# 4. quiz-gate: /kit:ship's own Step 8 literally instructs running lib/quiz-gate.sh tap on a
+# 4. quiz-gate: /kit:ship's own Step 8 literally instructs running lib/gate/quiz-gate.sh tap on a
 #    gate/gated-final PR -- this IS the live merge-boundary dispatch path (SG-04's wiring claim).
 claim_wired "$WORKFLOW" \
-  'Step 8 runs `lib/quiz-gate\.sh tap`' \
-  'lib/quiz-gate\.sh tap' \
+  'Step 8 runs `lib/gate/quiz-gate\.sh tap`' \
+  'lib/gate/quiz-gate\.sh tap' \
   "$KIT_DIR/commands/ship.md"
 RC=$?
-assert "quiz-gate: /kit:ship Step 8 invokes 'lib/quiz-gate.sh tap' (WIRED)" $RC 0
+assert "quiz-gate: /kit:ship Step 8 invokes 'lib/gate/quiz-gate.sh tap' (WIRED)" $RC 0
 
 # 5. weekend-batch: Han-invoked only (no scheduled job) via the ops-toolkit weekend-debt-paydown
 #    skill; in THIS repo the collect/mark-paid verbs must actually exist as a live surface for
 #    that skill to call, and WORKFLOW.md must document the cross-repo invoker honestly (not claim
 #    an in-repo auto-fire that doesn't exist).
 RC=0
-grep -qE '^\s*collect\)' "$KIT_DIR/lib/weekend-batch.sh" || RC=1
-grep -qE '^\s*mark-paid\)' "$KIT_DIR/lib/weekend-batch.sh" || RC=1
-assert "weekend-batch: lib/weekend-batch.sh exposes 'collect' + 'mark-paid' verbs" $RC
+grep -qE '^\s*collect\)' "$KIT_DIR/lib/queue/weekend-batch.sh" || RC=1
+grep -qE '^\s*mark-paid\)' "$KIT_DIR/lib/queue/weekend-batch.sh" || RC=1
+assert "weekend-batch: lib/queue/weekend-batch.sh exposes 'collect' + 'mark-paid' verbs" $RC
 
 RC=0
 grep -A60 -E '^## The understanding axis' "$WORKFLOW" | grep -qiE 'Han-invoked|Han invoked' || RC=1

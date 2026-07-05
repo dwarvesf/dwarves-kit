@@ -51,7 +51,7 @@ spec ages inside an unmerged branch.
 2. **ship-gate.sh**: the engage check runs on heredoc-stripped CODE, and a leading
    `cd <path> &&` prefix resolves the gated repo (the cross-repo misfire fix). Fail-open
    posture unchanged.
-3. **`lib/spec-next.sh`** (ID-052): `next` prints max+1 over docs/specs/ filenames, ALL
+3. **`lib/spec/spec-next.sh`** (ID-052): `next` prints max+1 over docs/specs/ filenames, ALL
    branch names (local + remote), and the last 200 commit subjects; `check <NNN>` exits 1
    when taken. `commands/spec.md` now instructs picking NNN through it. This spec's own
    number came from the tool (dogfood: `next` printed 064).

@@ -5,13 +5,13 @@ Sprint: single session, 2026-05-23 (goal-loop continuation: audit -> spec -> exe
 ## Metrics
 - Tasks planned: 8 (SPEC-036), all built; verified green.
 - Tests: test-meta 304 -> 311 (+7), test-hooks 106 -> 120 (+14); both exit 0.
-- New files: `lib/goal-registry.sh`, `docs/decisions/0022-multi-session-boundary.md`, `docs/specs/SPEC-036-multi-session-concurrent-goals.md`.
+- New files: `lib/goal/goal-registry.sh`, `docs/decisions/0022-multi-session-boundary.md`, `docs/specs/SPEC-036-multi-session-concurrent-goals.md`.
 - Modified: PHILOSOPHY, kit-health, assign, start, dispatch, dispatch-gate (extracted `gate_normalize_glob`), WORKFLOW, architecture, MANUAL, README, CHANGELOG, BACKLOG, both test suites.
 - Not committed (multi-feature branch `docs/backlog-reeval`; ship structuring is a maintainer call).
 
 ## What worked
 - **Distrusting the prior BLOCKER.** The previous iteration left a BLOCKER claiming "work COMPLETE + verified", blocked only on a hook mechanism. Independent verification against the goal's own `Done =` clauses showed it had built the **single-session** `/kit:dispatch` fan-out (which the goal explicitly calls "just the single-session case") and declared the **multi-session** headline done. Reading the goal's literal words, not the BLOCKER's summary, surfaced the real gap.
-- **Reuse over re-implement.** The cross-session disjointness gate sources `lib/dispatch-gate.sh` (one shared `gate_normalize_glob` single-sources the prefix rule) instead of a second moat. One safety-critical comparison, one implementation.
+- **Reuse over re-implement.** The cross-session disjointness gate sources `lib/gate/dispatch-gate.sh` (one shared `gate_normalize_glob` single-sources the prefix rule) instead of a second moat. One safety-critical comparison, one implementation.
 - **The boundary location IS the fence.** Putting the registry under `$(git rev-parse --git-common-dir)` makes "same machine, same repo" structural: a different machine has a different `.git`, so cross-machine coordination is impossible by construction, not by a rule that can rot. The L5 fence holds for free.
 - **Proof by independent processes.** Could not spawn literal `claude` sessions, so proved cross-session coordination with three independent OS subshells hitting the shared on-disk registry (the faithful model of separate sessions): two disjoint admitted, one overlap refused, monitored, logged, released, zero git-tracked leak.
 

@@ -10,7 +10,7 @@ Proof class: behavioral (changes how the ship-gate gates a push). Reproduce:
 $ printf '{"tool_input":{"command":"git push -u origin HEAD"}}' | bash hooks/ship-gate.sh
 BLOCKED: ship-gate. Spec 'demo' has no 'Lane:' header, so its required gates cannot be checked.
 Add a lane to .../SPEC-001-demo.md (e.g. 'Lane: full'). Classify with:
-  bash ".../lib/lane-classify.sh" classify "<task>"
+  bash ".../lib/classify/lane-classify.sh" classify "<task>"
 $ echo $?
 2
 ```

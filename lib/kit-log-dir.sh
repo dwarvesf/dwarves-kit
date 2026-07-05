@@ -1,1 +1,0 @@
-telemetry/kit-log-dir.sh

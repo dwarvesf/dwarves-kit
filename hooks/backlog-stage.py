@@ -22,7 +22,7 @@ re-fire SessionEnd and recurse.
 
 Consumer seam (no hardcoded tenant path; per kit-foldin DECISIONS.md): the board and
 staging file default REPO-RELATIVE under `_meta/`, resolved from REPO_ROOT (env) else
-`git rev-parse --show-toplevel` else $PWD, mirroring lib/board.sh's own
+`git rev-parse --show-toplevel` else $PWD, mirroring lib/board/board.sh's own
 `_default_repo_root`/`_resolve_repo_root` precedent for the same `_meta/BACKLOG.md`
 convention. There is no ops-toolkit-specific fallback.
 
@@ -52,7 +52,7 @@ SECTION = "### Conversation intake (backlog-stage)"
 
 
 def _repo_root():
-    """REPO_ROOT env wins; else git top-level; else cwd. Mirrors lib/board.sh's
+    """REPO_ROOT env wins; else git top-level; else cwd. Mirrors lib/board/board.sh's
     _default_repo_root/_resolve_repo_root precedent -- no invented tenant var."""
     env = os.environ.get("REPO_ROOT")
     if env:

@@ -6,7 +6,7 @@ Profile: feature   Proof class: behavioral (advisory prompt-file + one write-tim
   domain novelty, S3 declared novelty) without changing which lanes REQUIRE grill or adding any
   new command/agent.
 - A grill auto-skip can be made auditable by a closed `reason=<home-turf|density-low|
-  operator-wave>` enum enforced at WRITE time in `lib/gate-ledger.sh record()`.
+  operator-wave>` enum enforced at WRITE time in `lib/gate/gate-ledger.sh record()`.
 - What would prove this false: a `grill`+`skipped` ledger line landing with no reason token, or
   the WORKFLOW.md lane×phase matrix changing as a side effect.
 
@@ -19,7 +19,7 @@ Profile: feature   Proof class: behavioral (advisory prompt-file + one write-tim
   for other prompt-text logic) and assert the over-test's boundary claims: exactly-2-signals
   fires, S3-alone fires, the 89d-fresh vs 91d-stale S1 boundary (via an exact-epoch, TZ-safe
   fixture, see DEC-006), 1-signal auto-skips.
-- Negative control (load-bearing): revert `lib/gate-ledger.sh` to its pre-change state and
+- Negative control (load-bearing): revert `lib/gate/gate-ledger.sh` to its pre-change state and
   re-run the same suite , exactly the 4 assertions exercising the new guard (checks 4/4b/5/5b)
   must flip RED, proving the suite is not vacuously green.
 - Full regression: `tests/test-meta.sh` (SPEC-058 bank-count + SPEC-063 literal-string
@@ -73,10 +73,10 @@ bash tests/test-meta.sh
 - Note: this is checks 1-7 + 10-17 from SPEC-138's `## Test plan` coverage matrix in one run.
 
 ### 2026-07-04 07:45 RED-as-expected -- grill-conditioning [negative-control]
-- Command: `bash tests/test-grill-conditioning.sh`, run against `lib/gate-ledger.sh` temporarily
-  reverted to its pre-change content (`git show HEAD~1:lib/gate-ledger.sh`, copied over the
+- Command: `bash tests/test-grill-conditioning.sh`, run against `lib/gate/gate-ledger.sh` temporarily
+  reverted to its pre-change content (`git show HEAD~1:lib/gate/gate-ledger.sh`, copied over the
   working file in the same tree; restored immediately after, confirmed clean by `git status
-  --short lib/gate-ledger.sh` showing no diff)
+  --short lib/gate/gate-ledger.sh` showing no diff)
 - Exit: 1
 - Output (excerpt):
   ```
@@ -100,7 +100,7 @@ bash tests/test-meta.sh
   committed state immediately after (confirmed via `git status --short`).
 
 ### 2026-07-04 07:50 PASS -- grill-conditioning [restore-confirm]
-- Command: `git status --short lib/gate-ledger.sh` (after restoring)
+- Command: `git status --short lib/gate/gate-ledger.sh` (after restoring)
 - Exit: 0
 - Output: (empty -- byte-identical to the committed state)
 - Verdict: PASS
@@ -128,7 +128,7 @@ bash tests/test-meta.sh
   items.
 
 ### 2026-07-04 07:26 PASS -- grill-conditioning [live capture, real ledger]
-- Command: `bash lib/gate-ledger.sh record spec138-live-demo grill skipped "reason=home-turf:
+- Command: `bash lib/gate/gate-ledger.sh record spec138-live-demo grill skipped "reason=home-turf:
   live capture for SPEC-138 proof, familiar territory + known domain nouns, 0 signals fired"`
 - Exit: 0
 - Output: appended to `~/.local/state/dwarves-kit/logs/runs/spec138-live-demo.log`:
@@ -158,13 +158,13 @@ bash tests/test-meta.sh
   `PASS edge: commit 91 days ago -> S1 DOES fire (stale)`).
 - Verdict: PASS
 - Note: supersedes the 22/22 run above after the two test-coverage-review fixes (closed-enum
-  `case` pattern in `lib/gate-ledger.sh`; exact-epoch date construction in
+  `case` pattern in `lib/gate/gate-ledger.sh`; exact-epoch date construction in
   `tests/test-grill-conditioning.sh`). The TZ cross-check directly answers the reviewer's HIGH
   finding (reproduced flaky under `TZ=UTC` before the fix; green under `TZ=UTC` and a third,
   non-UTC-non-local zone after it).
 
 ### 2026-07-04 10:42 RED-as-expected (post-fix) -- grill-conditioning [negative-control, re-run]
-- Command: same revert-`lib/gate-ledger.sh`-to-`HEAD~1` procedure as the first negative-control
+- Command: same revert-`lib/gate/gate-ledger.sh`-to-`HEAD~1` procedure as the first negative-control
   run above, re-run against the current (23-assertion) test file
 - Exit: 1
 - Output (excerpt): `PASS check1..3`, `FAIL check4`, `FAIL check4b`, `FAIL check5`,
@@ -173,7 +173,7 @@ bash tests/test-meta.sh
 - Note: the new check5b (the look-alike-token negative control added after the test-coverage
   review) flips RED here too, alongside checks 4/4b/5, confirming it is exercising the guard and
   not vacuously green either. Working tree restored and confirmed clean via `git status --short
-  lib/gate-ledger.sh` (shows only the pre-existing, intentional uncommitted diff at the time,
+  lib/gate/gate-ledger.sh` (shows only the pre-existing, intentional uncommitted diff at the time,
   not a corruption from the revert/restore cycle).
 
 ## Reviews (SPEC-069 multi-lens, `lib/` touched)

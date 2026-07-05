@@ -12,8 +12,8 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-GL="$KIT_DIR/lib/gate-ledger.sh"
-LT="$KIT_DIR/lib/lane-telemetry.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
+LT="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
 SHIP="$KIT_DIR/hooks/ship-gate.sh"
 
 PASS=0; FAIL=0; TOTAL=0

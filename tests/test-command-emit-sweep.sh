@@ -44,7 +44,7 @@ assert_eq() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PA
 # ---------------------------------------------------------------------------------------
 # exemption_list <workflow-md>: prints one bare command-name (no .md) per line, parsed from
 # WORKFLOW.md's "## Command emit coverage" section table (single source of truth; the
-# matrix_for_lane() precedent in lib/gate-ledger.sh parses WORKFLOW.md the same way, no
+# matrix_for_lane() precedent in lib/gate/gate-ledger.sh parses WORKFLOW.md the same way, no
 # second copy of the mapping). A row is `| \`<name>.md\` | <reason> |` -- ANCHORED at the
 # line start (the FIRST column only), so a rationale sentence that re-mentions its own or
 # another command's filename in backticks (e.g. mega's/dispatch's own rows do, explaining

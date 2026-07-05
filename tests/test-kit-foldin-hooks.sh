@@ -172,7 +172,7 @@ cat > "$TD/hv-lablog.sh" <<'EOF'
 #!/usr/bin/env bash
 cat <<'OUT'
 ## 2026-07-05 - repo-root-seam: adopted repo-relative default via REPO_ROOT
-- decided to mirror lib/board.sh's repo-root precedent
+- decided to mirror lib/board/board.sh's repo-root precedent
 OUT
 EOF
 chmod +x "$TD/hv-lablog.sh"

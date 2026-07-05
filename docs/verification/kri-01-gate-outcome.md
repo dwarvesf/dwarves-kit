@@ -44,7 +44,7 @@ emit (AC9).
 
 **Negative control (load-bearing property = ADDITIVE-EQUIVALENCE)** , the proof must be able
 to observe a FAILURE. Break: flip the emitted marker's field-2 from `OUTCOME` to `GATE` in
-`lib/gate-ledger.sh`'s two `outcome()` write lines, so existing `$2=="GATE"` readers wrongly
+`lib/gate/gate-ledger.sh`'s two `outcome()` write lines, so existing `$2=="GATE"` readers wrongly
 pick up the outcome lines. Re-run the suite:
 
 ```
@@ -77,7 +77,7 @@ The seven other RED assertions (AC1/2/3/5/6) fail because `outcome-read` (which 
 the marker identity is load-bearing. This proves the suite can SEE a non-additive marker;
 the additive-equivalence PASS is therefore meaningful, not vacuous.
 
-**Restore** , `git checkout lib/gate-ledger.sh` , re-run , `=== 22/22 passed, 0 failed ===`,
+**Restore** , `git checkout lib/gate/gate-ledger.sh` , re-run , `=== 22/22 passed, 0 failed ===`,
 exit 0. The test is sensitive to the marker identity; the OUTCOME field-2 is what keeps it
 green.
 
@@ -96,9 +96,9 @@ ubuntu-latest + macos-latest (PR #158).
 cd <clone>/dwarves-kit          # branch feat/kri-01-gate-outcome
 bash tests/test-gate-outcome.sh                 # 22/22 (incl. AC7b additive-equivalence via the real verb)
 # negative control:
-#   edit lib/gate-ledger.sh: outcome() two printf lines  | OUTCOME |  ->  | GATE |
+#   edit lib/gate/gate-ledger.sh: outcome() two printf lines  | OUTCOME |  ->  | GATE |
 bash tests/test-gate-outcome.sh                 # 14/22: AC7b (+ AC1/2/3/5/6) go RED
-git checkout lib/gate-ledger.sh
+git checkout lib/gate/gate-ledger.sh
 bash tests/test-gate-outcome.sh                 # 22/22 again
 bash tests/test-hooks.sh && bash tests/test-ledger-durability.sh   # no regression
 ```

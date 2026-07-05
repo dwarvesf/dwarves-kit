@@ -7,7 +7,7 @@ Delta from the spec/goal file only; decisions not already pinned there.
 Context: this is sub-goal 05 of the `orchestrate-hardening` mega-goal (docs-last).
 `/kit:spec`'s Mode A/B research dispatch (research-stack/features/architecture/pitfalls)
 exists to map an unfamiliar brownfield area before drafting. This session already read
-ADR-0032, all of `lib/orchestrate.sh`'s delegate/token/TIER-4/multiplexer sections, and
+ADR-0032, all of `lib/queue/orchestrate.sh`'s delegate/token/TIER-4/multiplexer sections, and
 the kit-hardening c6fbd99 no-orphan precedent directly (goal file's "Where to look" list).
 
 Decision: wrote SPEC-120 directly against the standard template instead of dispatching

@@ -159,8 +159,8 @@ if HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1; then
   # SPEC-045: install must materialize lib/ so the gates resolve from the stable
   # install path in consumer repos (else the proof-of-done gate fails open everywhere
   # but dwarves-kit). -e follows the dir symlink to the real file.
-  [ -e "$TMP_HOME/.claude/dwarves-kit/lib/proof-ledger.sh" ]
-  assert_true "install.sh materializes lib/proof-ledger.sh (SPEC-045)" $?
+  [ -e "$TMP_HOME/.claude/dwarves-kit/lib/gate/proof-ledger.sh" ]
+  assert_true "install.sh materializes lib/gate/proof-ledger.sh (SPEC-045)" $?
   # SPEC-049: install must materialize the operate-contract too, so adopt (needs a source
   # AGENTS.md) + gate-ledger (reads WORKFLOW.md) work from the install, not only the dev
   # checkout. Asserts the REAL install run, not test-install-contract.sh's simulated layout.
@@ -1433,16 +1433,16 @@ fi
 
 # ============================================================
 echo ""
-echo "=== Dispatch moat: ## Touches + lib/dispatch-gate.sh (SPEC-032) ==="
+echo "=== Dispatch moat: ## Touches + lib/gate/dispatch-gate.sh (SPEC-032) ==="
 # ============================================================
 
 # (a) The gate/guard helper exists and is executable (pure-bash moat).
 TOTAL=$((TOTAL + 1))
-if [ -f "$KIT_DIR/lib/dispatch-gate.sh" ] && [ -x "$KIT_DIR/lib/dispatch-gate.sh" ]; then
-  echo -e "  ${GREEN}PASS${NC} lib/dispatch-gate.sh exists and is executable (SPEC-032)"
+if [ -f "$KIT_DIR/lib/gate/dispatch-gate.sh" ] && [ -x "$KIT_DIR/lib/gate/dispatch-gate.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/gate/dispatch-gate.sh exists and is executable (SPEC-032)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} lib/dispatch-gate.sh missing or not executable"
+  echo -e "  ${RED}FAIL${NC} lib/gate/dispatch-gate.sh missing or not executable"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1485,7 +1485,7 @@ if grep -q 'dispatch-gate.sh' "$KIT_DIR/commands/dispatch.md" 2>/dev/null \
   echo -e "  ${GREEN}PASS${NC} dispatch.md wires the gate + lead-owned convergence, no auto-merge (SPEC-032)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} dispatch.md must use lib/dispatch-gate.sh, converge via /kit:ship, and refuse auto-merge"
+  echo -e "  ${RED}FAIL${NC} dispatch.md must use lib/gate/dispatch-gate.sh, converge via /kit:ship, and refuse auto-merge"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1502,11 +1502,11 @@ fi
 
 # (g) The lane classifier exists, is executable, and is wired into the intake/dispatch path.
 TOTAL=$((TOTAL + 1))
-if [ -f "$KIT_DIR/lib/lane-classify.sh" ] && [ -x "$KIT_DIR/lib/lane-classify.sh" ]; then
-  echo -e "  ${GREEN}PASS${NC} lib/lane-classify.sh exists and is executable (lane auto-classification)"
+if [ -f "$KIT_DIR/lib/classify/lane-classify.sh" ] && [ -x "$KIT_DIR/lib/classify/lane-classify.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/classify/lane-classify.sh exists and is executable (lane auto-classification)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} lib/lane-classify.sh missing or not executable"
+  echo -e "  ${RED}FAIL${NC} lib/classify/lane-classify.sh missing or not executable"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1523,7 +1523,7 @@ fi
 # SPEC-053: the advisory lane floor-check must exist in the classifier AND be wired
 # into /kit:assign Step 5. A drop on either side makes the under-size guard a phantom.
 TOTAL=$((TOTAL + 1))
-if grep -qE '^[[:space:]]*check\)' "$KIT_DIR/lib/lane-classify.sh" 2>/dev/null; then
+if grep -qE '^[[:space:]]*check\)' "$KIT_DIR/lib/classify/lane-classify.sh" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} lane-classify.sh exposes a 'check' subcommand (SPEC-053 floor guard)"
   PASS=$((PASS + 1))
 else
@@ -1577,12 +1577,12 @@ fi
 # SPEC-055: the backlog kanban. The helper exists, assign documents pull mode, the
 # vocabulary carries the claimed state. A drop on any leg makes pull a phantom.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/backlog.sh" ] && grep -qF -- '--next' "$KIT_DIR/commands/assign.md" \
+if [ -x "$KIT_DIR/lib/board/backlog.sh" ] && grep -qF -- '--next' "$KIT_DIR/commands/assign.md" \
    && grep -qF '`claimed`' "$KIT_DIR/_meta/BACKLOG.md"; then
-  echo -e "  ${GREEN}PASS${NC} backlog kanban wired: lib/backlog.sh + assign --next + claimed state (SPEC-055)"
+  echo -e "  ${GREEN}PASS${NC} backlog kanban wired: lib/board/backlog.sh + assign --next + claimed state (SPEC-055)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} backlog kanban incomplete: need lib/backlog.sh executable + assign --next + claimed vocab (SPEC-055)"
+  echo -e "  ${RED}FAIL${NC} backlog kanban incomplete: need lib/board/backlog.sh executable + assign --next + claimed vocab (SPEC-055)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1591,15 +1591,15 @@ fi
 # doc-impact map (README + architecture.md) mentions both new lib files. A drop on any leg
 # means the render-migration contract this depends on is silently unwired.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/board.sh" ] && [ -x "$KIT_DIR/lib/parse-board.sh" ] \
-   && grep -qF 'backlog.sh' "$KIT_DIR/lib/board.sh" \
-   && grep -qF 'lib/board.sh' "$KIT_DIR/README.md" \
-   && grep -qF 'lib/parse-board.sh' "$KIT_DIR/README.md" \
+if [ -x "$KIT_DIR/lib/board/board.sh" ] && [ -x "$KIT_DIR/lib/board/parse-board.sh" ] \
+   && grep -qF 'backlog.sh' "$KIT_DIR/lib/board/board.sh" \
+   && grep -qF 'lib/board/board.sh' "$KIT_DIR/README.md" \
+   && grep -qF 'lib/board/parse-board.sh' "$KIT_DIR/README.md" \
    && grep -qF 'board.sh' "$KIT_DIR/docs/architecture.md"; then
-  echo -e "  ${GREEN}PASS${NC} cockpit board wired: lib/board.sh + lib/parse-board.sh executable, delegates to backlog.sh, doc-impact map updated (SPEC-146)"
+  echo -e "  ${GREEN}PASS${NC} cockpit board wired: lib/board/board.sh + lib/board/parse-board.sh executable, delegates to backlog.sh, doc-impact map updated (SPEC-146)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} cockpit board incomplete: need lib/board.sh + lib/parse-board.sh executable, backlog.sh delegation, README + architecture.md mentions (SPEC-146)"
+  echo -e "  ${RED}FAIL${NC} cockpit board incomplete: need lib/board/board.sh + lib/board/parse-board.sh executable, backlog.sh delegation, README + architecture.md mentions (SPEC-146)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1607,15 +1607,15 @@ fi
 # both mirror and status dispatch cases to it, and the doc-impact map (README + architecture.md)
 # mentions the new lib file. A drop on any leg means the bridge is silently unwired.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/board-mirror.sh" ] \
-   && grep -qF 'mirror) shift; cmd_mirror "$@" ;;' "$KIT_DIR/lib/board.sh" \
-   && grep -qF 'status) shift; cmd_status "$@" ;;' "$KIT_DIR/lib/board.sh" \
-   && grep -qF 'lib/board-mirror.sh' "$KIT_DIR/README.md" \
+if [ -x "$KIT_DIR/lib/board/board-mirror.sh" ] \
+   && grep -qF 'mirror) shift; cmd_mirror "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
+   && grep -qF 'status) shift; cmd_status "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
+   && grep -qF 'lib/board/board-mirror.sh' "$KIT_DIR/README.md" \
    && grep -qF 'board-mirror.sh' "$KIT_DIR/docs/architecture.md"; then
-  echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
+  echo -e "  ${GREEN}PASS${NC} board-bridge mirror wired: lib/board/board-mirror.sh executable, board.sh dispatches mirror+status, doc-impact map updated (SPEC-147)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} board-bridge mirror incomplete: need lib/board-mirror.sh executable, board.sh mirror/status dispatch, README + architecture.md mentions (SPEC-147)"
+  echo -e "  ${RED}FAIL${NC} board-bridge mirror incomplete: need lib/board/board-mirror.sh executable, board.sh mirror/status dispatch, README + architecture.md mentions (SPEC-147)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1624,14 +1624,14 @@ fi
 # (README + architecture.md) mentions the new lib file. A drop on any leg means the writeback
 # leg is silently unwired.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/board-writeback.sh" ] \
-   && grep -qF 'writeback) shift; cmd_writeback "$@" ;;' "$KIT_DIR/lib/board.sh" \
-   && grep -qF 'lib/board-writeback.sh' "$KIT_DIR/README.md" \
+if [ -x "$KIT_DIR/lib/board/board-writeback.sh" ] \
+   && grep -qF 'writeback) shift; cmd_writeback "$@" ;;' "$KIT_DIR/lib/board/board.sh" \
+   && grep -qF 'lib/board/board-writeback.sh' "$KIT_DIR/README.md" \
    && grep -qF 'board-writeback.sh' "$KIT_DIR/docs/architecture.md"; then
-  echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
+  echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/board/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} board-bridge writeback incomplete: need lib/board-writeback.sh executable, board.sh writeback dispatch, README + architecture.md mentions (SPEC-149)"
+  echo -e "  ${RED}FAIL${NC} board-bridge writeback incomplete: need lib/board/board-writeback.sh executable, board.sh writeback dispatch, README + architecture.md mentions (SPEC-149)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1728,8 +1728,8 @@ fi
 # aggregator exists with both subcommands; (c) retro carries the disposition contract;
 # (d) WORKFLOW names the judging criteria.
 TOTAL=$((TOTAL + 1))
-if grep -qF 'start)    start "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
-   && grep -qF 'usage: $uprefix <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]' "$KIT_DIR/lib/gate-ledger.sh"; then
+if grep -qF 'start)    start "$@" ;;' "$KIT_DIR/lib/gate/gate-ledger.sh" \
+   && grep -qF 'usage: $uprefix <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]' "$KIT_DIR/lib/gate/gate-ledger.sh"; then
   echo -e "  ${GREEN}PASS${NC} gate-ledger has the START routing verb (SPEC-061)"
   PASS=$((PASS + 1))
 else
@@ -1738,8 +1738,8 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/lane-telemetry.sh" ] && grep -qF 'report)' "$KIT_DIR/lib/lane-telemetry.sh" \
-   && grep -qF 'misfires)' "$KIT_DIR/lib/lane-telemetry.sh"; then
+if [ -x "$KIT_DIR/lib/telemetry/lane-telemetry.sh" ] && grep -qF 'report)' "$KIT_DIR/lib/telemetry/lane-telemetry.sh" \
+   && grep -qF 'misfires)' "$KIT_DIR/lib/telemetry/lane-telemetry.sh"; then
   echo -e "  ${GREEN}PASS${NC} lane-telemetry.sh exists with report+misfires (SPEC-061)"
   PASS=$((PASS + 1))
 else
@@ -1766,7 +1766,7 @@ if grep -qF 'What the operator sees, and when (SPEC-062)' "$KIT_DIR/WORKFLOW.md"
    && grep -qF 'escaped-from=' "$KIT_DIR/commands/debug.md" \
    && grep -qF 'gate-ledger.sh record <rid> test-plan ran' "$KIT_DIR/commands/test-plan.md" \
    && grep -qF 'gate-ledger.sh record <rid> test-plan ran' "$KIT_DIR/commands/test-plan-review-team.md" \
-   && grep -qF 'classified-type' "$KIT_DIR/lib/gate-ledger.sh"; then
+   && grep -qF 'classified-type' "$KIT_DIR/lib/gate/gate-ledger.sh"; then
   echo -e "  ${GREEN}PASS${NC} telemetry closure wired: scenarios + escaped-from + test-plan records + ctype (SPEC-062)"
   PASS=$((PASS + 1))
 else
@@ -1777,9 +1777,9 @@ fi
 # SPEC-063: run legibility. plan/progress/trace exist; AGENTS carries the show-the-road
 # rule + grill disposition recording; assign prints the plan; grill records itself.
 TOTAL=$((TOTAL + 1))
-if grep -qF 'plan)     plan "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
-   && grep -qF 'progress) progress "$@" ;;' "$KIT_DIR/lib/gate-ledger.sh" \
-   && grep -qF 'trace)    trace "$@" ;;' "$KIT_DIR/lib/lane-telemetry.sh" \
+if grep -qF 'plan)     plan "$@" ;;' "$KIT_DIR/lib/gate/gate-ledger.sh" \
+   && grep -qF 'progress) progress "$@" ;;' "$KIT_DIR/lib/gate/gate-ledger.sh" \
+   && grep -qF 'trace)    trace "$@" ;;' "$KIT_DIR/lib/telemetry/lane-telemetry.sh" \
    && grep -qF 'Show the road, then your position on it (SPEC-063)' "$KIT_DIR/AGENTS.md" \
    && grep -qF 'record <rid> grill' "$KIT_DIR/AGENTS.md" \
    && grep -qF 'gate-ledger.sh plan' "$KIT_DIR/commands/assign.md" \
@@ -1793,8 +1793,8 @@ fi
 
 # SPEC-065: stack-merge exists with both verbs + dry-run; ship.md points at it.
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/stack-merge.sh" ] && grep -qF 'next_link' "$KIT_DIR/lib/stack-merge.sh" \
-   && grep -qF 'dry-run' "$KIT_DIR/lib/stack-merge.sh" \
+if [ -x "$KIT_DIR/lib/goal/stack-merge.sh" ] && grep -qF 'next_link' "$KIT_DIR/lib/goal/stack-merge.sh" \
+   && grep -qF 'dry-run' "$KIT_DIR/lib/goal/stack-merge.sh" \
    && grep -qF 'stack-merge.sh chain' "$KIT_DIR/commands/ship.md"; then
   echo -e "  ${GREEN}PASS${NC} stack-merge codified + wired into ship (SPEC-065)"
   PASS=$((PASS + 1))
@@ -1844,8 +1844,8 @@ if grep -qF 'Review escalation (SPEC-069)' "$KIT_DIR/WORKFLOW.md" \
    && grep -qF 'review-team' "$KIT_DIR/AGENTS.md" \
    && grep -qF 'codebase-memory' "$KIT_DIR/commands/grill.md" \
    && grep -qF 'appears nowhere in _meta/BACKLOG.md' "$KIT_DIR/hooks/ship-gate.sh" \
-   && grep -qF 'NO_COLOR' "$KIT_DIR/lib/gate-ledger.sh" \
-   && grep -qF '_boardless' "$KIT_DIR/lib/lane-telemetry.sh"; then
+   && grep -qF 'NO_COLOR' "$KIT_DIR/lib/gate/gate-ledger.sh" \
+   && grep -qF '_boardless' "$KIT_DIR/lib/telemetry/lane-telemetry.sh"; then
   echo -e "  ${GREEN}PASS${NC} retro follow-ups wired: escalation + advisory + grill + colors + detectors (SPEC-069)"
   PASS=$((PASS + 1))
 else
@@ -1860,18 +1860,18 @@ echo "=== Multi-session: goal-registry + ADR-0022 (SPEC-036) ==="
 
 # (a) The cross-session registry helper exists and is executable (pure-bash substrate).
 TOTAL=$((TOTAL + 1))
-if [ -f "$KIT_DIR/lib/goal-registry.sh" ] && [ -x "$KIT_DIR/lib/goal-registry.sh" ]; then
-  echo -e "  ${GREEN}PASS${NC} lib/goal-registry.sh exists and is executable (SPEC-036)"
+if [ -f "$KIT_DIR/lib/goal/goal-registry.sh" ] && [ -x "$KIT_DIR/lib/goal/goal-registry.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/goal/goal-registry.sh exists and is executable (SPEC-036)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} lib/goal-registry.sh missing or not executable"
+  echo -e "  ${RED}FAIL${NC} lib/goal/goal-registry.sh missing or not executable"
   FAIL=$((FAIL + 1))
 fi
 
 # (b) goal-registry reuses the dispatch-gate disjointness rule (no second moat).
 TOTAL=$((TOTAL + 1))
-if grep -q 'dispatch-gate.sh' "$KIT_DIR/lib/goal-registry.sh" 2>/dev/null \
-   && ! grep -q '^prefix_overlap()' "$KIT_DIR/lib/goal-registry.sh" 2>/dev/null; then
+if grep -q 'dispatch-gate.sh' "$KIT_DIR/lib/goal/goal-registry.sh" 2>/dev/null \
+   && ! grep -q '^prefix_overlap()' "$KIT_DIR/lib/goal/goal-registry.sh" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} goal-registry.sh sources dispatch-gate.sh, does not re-implement the gate (SPEC-036 DEC-002)"
   PASS=$((PASS + 1))
 else
@@ -1939,13 +1939,13 @@ echo ""
 echo "=== Goal-draft lifecycle: goal-drafts.sh + ADR-0023 (SPEC-037) ==="
 # ============================================================
 
-# (a) lib/goal-drafts.sh exists and is executable.
+# (a) lib/goal/goal-drafts.sh exists and is executable.
 TOTAL=$((TOTAL + 1))
-if [ -f "$KIT_DIR/lib/goal-drafts.sh" ] && [ -x "$KIT_DIR/lib/goal-drafts.sh" ]; then
-  echo -e "  ${GREEN}PASS${NC} lib/goal-drafts.sh exists and is executable (SPEC-037)"
+if [ -f "$KIT_DIR/lib/goal/goal-drafts.sh" ] && [ -x "$KIT_DIR/lib/goal/goal-drafts.sh" ]; then
+  echo -e "  ${GREEN}PASS${NC} lib/goal/goal-drafts.sh exists and is executable (SPEC-037)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} lib/goal-drafts.sh missing or not executable"
+  echo -e "  ${RED}FAIL${NC} lib/goal/goal-drafts.sh missing or not executable"
   FAIL=$((FAIL + 1))
 fi
 
@@ -1982,7 +1982,7 @@ if grep -q 'goal-drafts.sh' "$KIT_DIR/commands/ship.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} goal-drafts.sh archive wired into /kit:ship (SPEC-037)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} /kit:ship must run lib/goal-drafts.sh archive"
+  echo -e "  ${RED}FAIL${NC} /kit:ship must run lib/goal/goal-drafts.sh archive"
   FAIL=$((FAIL + 1))
 fi
 
@@ -2029,7 +2029,7 @@ fi
 echo ""
 echo "=== Gate ledger + ship enforcement (ADR-0024) ==="
 
-assert_true "lib/gate-ledger.sh exists and is executable" "$([ -x "$KIT_DIR/lib/gate-ledger.sh" ] && echo 0 || echo 1)"
+assert_true "lib/gate/gate-ledger.sh exists and is executable" "$([ -x "$KIT_DIR/lib/gate/gate-ledger.sh" ] && echo 0 || echo 1)"
 assert_true "hooks/ship-gate.sh exists and is executable" "$([ -x "$KIT_DIR/hooks/ship-gate.sh" ] && echo 0 || echo 1)"
 assert_true "ADR-0024 (gate ledger + ship enforcement) exists" "$([ -f "$KIT_DIR/docs/decisions/0024-gate-ledger-and-ship-enforcement.md" ] && echo 0 || echo 1)"
 assert_true "ship-gate registered in hooks.json (plugin path)" "$(grep -q 'hooks/ship-gate.sh' "$KIT_DIR/hooks/hooks.json" && echo 0 || echo 1)"
@@ -2053,7 +2053,7 @@ GL_BADCELLS=$(awk '
 ' "$KIT_DIR/WORKFLOW.md")
 assert_eq "lane×phase matrix cells are all measure-twice|run-lite|skip" "0" "$GL_BADCELLS"
 
-GL_REQ="$(bash "$KIT_DIR/lib/gate-ledger.sh" required normal 2>/dev/null | tr '\n' ' ')"
+GL_REQ="$(bash "$KIT_DIR/lib/gate/gate-ledger.sh" required normal 2>/dev/null | tr '\n' ' ')"
 assert_true "gate-ledger required(normal) derives spec+build+ship from the matrix" "$(echo "$GL_REQ" | grep -q 'spec' && echo "$GL_REQ" | grep -q 'build' && echo "$GL_REQ" | grep -q 'ship' && echo 0 || echo 1)"
 assert_true "WORKFLOW documents the gate-ledger + ship-enforcement convention" "$(grep -q 'Gate ledger and ship enforcement' "$KIT_DIR/WORKFLOW.md" && echo 0 || echo 1)"
 assert_true "ship.md records the Ship gate + names the override path" "$(grep -q 'gate-ledger.sh' "$KIT_DIR/commands/ship.md" && echo 0 || echo 1)"
@@ -2144,11 +2144,11 @@ assert_true "verify.md produces a negative control for load-bearing specs" \
 
 # ---- risk-gated proof of done: the class gate (stateful | behavioral | inert) ----
 
-assert_true "lib/proof-gate.sh exists and is executable" \
-  "$([ -x "$KIT_DIR/lib/proof-gate.sh" ] && echo 0 || echo 1)"
+assert_true "lib/gate/proof-gate.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/gate/proof-gate.sh" ] && echo 0 || echo 1)"
 
 assert_true "proof-gate names the three proof classes (stateful, behavioral, inert)" \
-  "$(out=$(bash "$KIT_DIR/lib/proof-gate.sh" classes 2>/dev/null); echo "$out" | grep -q stateful && echo "$out" | grep -q behavioral && echo "$out" | grep -q inert && echo 0 || echo 1)"
+  "$(out=$(bash "$KIT_DIR/lib/gate/proof-gate.sh" classes 2>/dev/null); echo "$out" | grep -q stateful && echo "$out" | grep -q behavioral && echo "$out" | grep -q inert && echo 0 || echo 1)"
 
 assert_true "convention defines the risk-class gate (stateful/behavioral/inert + proof-gate)" \
   "$(grep -qi 'proof class' "$KIT_DIR/docs/verification/README.md" && grep -q 'proof-gate.sh' "$KIT_DIR/docs/verification/README.md" && echo 0 || echo 1)"
@@ -2167,8 +2167,8 @@ assert_true "task-verifier reads proof class (inert exempt ok; stateful needs ro
 
 # ---- proof-of-done ENFORCEMENT: the ship/merge gate (advice -> wall) ----
 
-assert_true "lib/proof-ledger.sh exists and is executable" \
-  "$([ -x "$KIT_DIR/lib/proof-ledger.sh" ] && echo 0 || echo 1)"
+assert_true "lib/gate/proof-ledger.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/gate/proof-ledger.sh" ] && echo 0 || echo 1)"
 
 assert_true "ship-gate wires the diff-keyed proof-of-done gate" \
   "$(grep -q 'proof-ledger.sh' "$KIT_DIR/hooks/ship-gate.sh" && echo 0 || echo 1)"
@@ -2177,7 +2177,7 @@ assert_true "proof gate is opt-in (engages only where docs/verification/README.m
   "$(grep -q 'docs/verification/README.md' "$KIT_DIR/hooks/ship-gate.sh" && echo 0 || echo 1)"
 
 assert_true "proof-ledger provides a logged override (no silent bypass)" \
-  "$(grep -q 'override' "$KIT_DIR/lib/proof-ledger.sh" && grep -qi 'OVERRIDE' "$KIT_DIR/lib/proof-ledger.sh" && echo 0 || echo 1)"
+  "$(grep -q 'override' "$KIT_DIR/lib/gate/proof-ledger.sh" && grep -qi 'OVERRIDE' "$KIT_DIR/lib/gate/proof-ledger.sh" && echo 0 || echo 1)"
 
 assert_true "ADR records the proof-of-done ship gate" \
   "$([ -f "$KIT_DIR/docs/decisions/0025-proof-of-done-ship-gate.md" ] && echo 0 || echo 1)"
@@ -2190,8 +2190,8 @@ assert_true "PHILOSOPHY records the deferred enforcement hook is now built" \
 
 # ---- single-source numbers: borrowed from the experiment sibling (no hand-typed drift) ----
 
-assert_true "lib/verif-counts.sh exists and is executable" \
-  "$([ -x "$KIT_DIR/lib/verif-counts.sh" ] && echo 0 || echo 1)"
+assert_true "lib/gate/verif-counts.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/gate/verif-counts.sh" ] && echo 0 || echo 1)"
 
 assert_true "COUNTS.md carries the generated single-source block" \
   "$(grep -q 'BEGIN GEN:counts' "$KIT_DIR/docs/verification/COUNTS.md" 2>/dev/null && echo 0 || echo 1)"
@@ -2221,10 +2221,10 @@ echo "=== Task-type contracts (SPEC-044) ==="
 # composed with the proof CLASS. Pins the classifier, the registry, and the
 # proof-gate `contract` compose. These go RED if SPEC-044 is reverted (negative control).
 
-TTC="$KIT_DIR/lib/task-type-classify.sh"
+TTC="$KIT_DIR/lib/classify/task-type-classify.sh"
 TTREG="$KIT_DIR/docs/verification/task-types.md"
 
-assert_true "lib/task-type-classify.sh exists and is executable" \
+assert_true "lib/classify/task-type-classify.sh exists and is executable" \
   "$([ -x "$TTC" ] && echo 0 || echo 1)"
 
 assert_eq "classify -> eval" "eval" "$(bash "$TTC" classify 'benchmark X vs Y for retrieval' 2>/dev/null)"
@@ -2243,13 +2243,13 @@ for T in eval research doc migration data-tool spec-feature; do
     "$(grep -qE "^\| *$T *\|" "$TTREG" && echo 0 || echo 1)"
 done
 
-CONTRACT_OUT="$(bash "$KIT_DIR/lib/proof-gate.sh" contract 'build a CLI to pull data from the API' 2>/dev/null)"
+CONTRACT_OUT="$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract 'build a CLI to pull data from the API' 2>/dev/null)"
 assert_true "proof-gate contract names the data-tool type" \
   "$(printf '%s' "$CONTRACT_OUT" | grep -q 'type=data-tool' && echo 0 || echo 1)"
 assert_true "proof-gate contract names the recorded-run artifact + owning skill" \
   "$(printf '%s' "$CONTRACT_OUT" | grep -qi 'recorded live run' && printf '%s' "$CONTRACT_OUT" | grep -qi 'ops-tool-shape' && echo 0 || echo 1)"
 assert_true "proof-gate contract upgrades a migration to stateful (class wins on rigor)" \
-  "$(bash "$KIT_DIR/lib/proof-gate.sh" contract 'migrate the database schema' 2>/dev/null | grep -q 'class=stateful' && echo 0 || echo 1)"
+  "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract 'migrate the database schema' 2>/dev/null | grep -q 'class=stateful' && echo 0 || echo 1)"
 
 # ============================================================
 
@@ -2261,9 +2261,9 @@ echo "=== SPEC-070: rid standardization pins ==="
 # exact #*/ strip transform; if either drops it, the contract is broken.
 RC=0; grep -qF '#*/' "$KIT_DIR/hooks/ship-gate.sh" || RC=1
 assert_eq "agreement pin: ship-gate carries the #*/ transform" 0 $RC
-RC=0; grep -qF '#*/' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+RC=0; grep -qF '#*/' "$KIT_DIR/lib/gate/gate-ledger.sh" || RC=1
 assert_eq "agreement pin: gate-ledger rid carries the #*/ transform" 0 $RC
-RC=0; grep -q '^  rid)' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+RC=0; grep -q '^  rid)' "$KIT_DIR/lib/gate/gate-ledger.sh" || RC=1
 assert_eq "gate-ledger dispatches the rid verb" 0 $RC
 
 # Sweep pin (AC5): no gate-ledger call site still uses <spec-slug> as a rid
@@ -2309,7 +2309,7 @@ assert_eq "type loops table and registry agree on the 12 types" "$LOOPT" "$REGT"
 # SPEC-076: descent contract wired
 RC=0; grep -qF 'The V-model descent contract (SPEC-076 / ID-068)' "$KIT_DIR/WORKFLOW.md" || RC=1
 assert_eq "WORKFLOW carries the descent contract" 0 $RC
-RC=0; grep -q '^  descent)' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+RC=0; grep -q '^  descent)' "$KIT_DIR/lib/gate/gate-ledger.sh" || RC=1
 assert_eq "gate-ledger dispatches the descent verb" 0 $RC
 RC=0; grep -qF 'descent violation' "$KIT_DIR/hooks/ship-gate.sh" || RC=1
 assert_eq "ship-gate carries the descent advisory" 0 $RC
@@ -2317,9 +2317,9 @@ assert_eq "ship-gate carries the descent advisory" 0 $RC
 
 # SPEC-077: per-link self-reconcile wired (the unit fixtures cover the helper; this
 # pins the call site that gh-dependent flow tests cannot reach)
-RC=0; grep -qF 'ensure_reconciled "$head" "$base"' "$KIT_DIR/lib/stack-merge.sh" || RC=1
+RC=0; grep -qF 'ensure_reconciled "$head" "$base"' "$KIT_DIR/lib/goal/stack-merge.sh" || RC=1
 assert_eq "stack-merge next_link self-reconciles every link" 0 $RC
-RC=0; grep -qF 'start --amend' "$KIT_DIR/lib/gate-ledger.sh" || RC=1
+RC=0; grep -qF 'start --amend' "$KIT_DIR/lib/gate/gate-ledger.sh" || RC=1
 assert_eq "gate-ledger documents the amend path" 0 $RC
 
 
@@ -2354,7 +2354,7 @@ RC=0; grep -qF 'Baseline:' "$KIT_DIR/docs/verification/README.md" || RC=1
 assert_eq "verification README carries the comparative-evidence line" 0 $RC
 RC=0; grep -qF '1k lines' "$RT80" && grep -qiF 'spaghetti' "$RT80" || RC=1
 assert_eq "Reviewer 2 carries both tripwires (ID-080)" 0 $RC
-RC=0; grep -qiE "Verdict:.*INCONCLUSIVE" "$KIT_DIR/lib/proof-ledger.sh" || RC=1
+RC=0; grep -qiE "Verdict:.*INCONCLUSIVE" "$KIT_DIR/lib/gate/proof-ledger.sh" || RC=1
 assert_eq "proof-ledger REJECTS an INCONCLUSIVE verdict (SPEC-080 guard present)" 0 $RC
 
 
@@ -2424,7 +2424,7 @@ echo "=== SPEC-083: session-start board wire (ID-033) ==="
 CR83="$KIT_DIR/hooks/context-readiness.sh"
 RC=0; grep -qF 'board:${BOARD_Q}q' "$CR83" || RC=1
 assert_eq "hook emits the board state token" 0 $RC
-RC=0; grep -qF 'Twin of lib/backlog.sh _rows' "$CR83" || RC=1
+RC=0; grep -qF 'Twin of lib/board/backlog.sh _rows' "$CR83" || RC=1
 assert_eq "hook documents the parser-twin coupling" 0 $RC
 RC=0; grep -qF 'state the task, or /kit:assign --next' "$CR83" || RC=1
 assert_eq "queue suggestion is intent-first + assign --next" 0 $RC

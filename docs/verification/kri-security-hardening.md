@@ -1,10 +1,10 @@
 # Proof of done: security hardening (SPEC-134, kit-run-integrity TIER-4)
 
 Three PoC-confirmed findings remediated: HIGH path-traversal / arbitrary-file-write in
-`lib/proof-table-gen.py` (rid sanitized to `runid()` charset + final out-path realpath-confined
+`lib/gate/proof-table-gen.py` (rid sanitized to `runid()` charset + final out-path realpath-confined
 under `docs/runs/`, enforced even for an explicit out-path), MEDIUM `mutation()` comment/code
-mismatch in `lib/gate-ledger.sh` (`=` now neutered so a value cannot smuggle a second KV), LOW
-symlink-follow in `lib/mutation-smoke.sh` (a symlinked candidate is skipped, not written through).
+mismatch in `lib/gate/gate-ledger.sh` (`=` now neutered so a value cannot smuggle a second KV), LOW
+symlink-follow in `lib/gate/mutation-smoke.sh` (a symlinked candidate is skipped, not written through).
 
 ## Acceptance criteria -> confirmation
 
@@ -40,11 +40,11 @@ symlink-follow in `lib/mutation-smoke.sh` (a symlinked candidate is skipped, not
 
 FIXED (traversal + absolute rid confined; explicit out-of-tree rejected):
 ```
-$ bash lib/proof-table-gen.sh "../../victim-escapee"
+$ bash lib/gate/proof-table-gen.sh "../../victim-escapee"
 wrote .../dwarves-kit-kri-sec/docs/runs/..-..-victim-escapee.md   # confined, no escape
-$ bash lib/proof-table-gen.sh "$LEAKZONE/abs-pwned"
+$ bash lib/gate/proof-table-gen.sh "$LEAKZONE/abs-pwned"
 wrote .../dwarves-kit-kri-sec/docs/runs/-...-leakzone-abs-pwned.md ; no file at $LEAKZONE/abs-pwned.md
-$ bash lib/proof-table-gen.sh somerid "$LEAKZONE/explicit.md" ; echo $?
+$ bash lib/gate/proof-table-gen.sh somerid "$LEAKZONE/explicit.md" ; echo $?
 proof-table-gen: refusing to write '.../leakzone/explicit.md': resolves to '...', outside the
   allowed run-table tree '.../docs/runs' (this generator only writes under docs/runs/)
 1
@@ -76,7 +76,7 @@ The real (fixed) generator confines/rejects every case above (H1-H3), and the fi
 FIXED , a `reason` value carrying `=` is rewritten to `:`, so the emitted line has exactly the
 two intended KVs (`verdict=`, `reason=`):
 ```
-$ bash lib/gate-ledger.sh mutation med-rid verdict=flag 'reason=smuggled=second=kv'
+$ bash lib/gate/gate-ledger.sh mutation med-rid verdict=flag 'reason=smuggled=second=kv'
 <TS> | MUTATION | verdict=flag reason=smuggled:second:kv          # 2 KEY= tokens
 ```
 NEGATIVE CONTROL , reverting the `| tr '=' ':'` step (throwaway copy of gate-ledger.sh, sourced

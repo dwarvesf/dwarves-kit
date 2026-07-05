@@ -32,7 +32,8 @@
 set -uo pipefail
 
 PITCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GATE_LEDGER="$PITCH_DIR/gate-ledger.sh"
+LIB_ROOT="$PITCH_DIR"  # this is a bare root-level module; the lib/ dir IS its own dir. Cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
 
 # _safe_slug <slug> -- refuse a slug that could escape the intended docs/ subtree via the
 # filesystem globs below (review finding, self spec-validate Reviewer 1: a crafted rid like

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # parse-board.sh -- the ONE structured board parser (SPEC-146, runner-fastpath sub-goal 04).
 #
-# `lib/backlog.sh`'s own `_rows()` is a private, minimal row-extractor (id/title/status only).
-# This is the reusable, PUBLIC surface other tools parse a BACKLOG.md through: `lib/board.sh`'s
+# `lib/board/backlog.sh`'s own `_rows()` is a private, minimal row-extractor (id/title/status only).
+# This is the reusable, PUBLIC surface other tools parse a BACKLOG.md through: `lib/board/board.sh`'s
 # `queue` subcommand uses it today; the runner-fastpath design (SG-07/08, board-bridge mirror +
 # writeback) is EXPECTED to reuse it rather than re-parsing the markdown a third time.
 #
@@ -41,14 +41,14 @@
 #       4. existence: the resolved pointer file must actually exist (a dangling allow-listed
 #          pointer is useless to a downstream runner and is treated the same as malformed).
 #     Any failure is a SKIP, never a hard error: this function's job is "emit only what is safe",
-#     the caller (lib/board.sh queue) counts skips and always exits 0 (honest-empty is a result,
+#     the caller (lib/board/board.sh queue) counts skips and always exits 0 (honest-empty is a result,
 #     not a failure).
 #
 # Skip reasons are printed to STDERR as `parse-board: skip <id> (<repo-name>): <reason>`, never
 # mixed into the TAB-separated stdout stream (stdout stays machine-parseable for a downstream
 # argv-exec consumer; never eval'd, never passed through a shell).
 #
-# BACKLOG_ID_RE overrides the id pattern (default matches lib/backlog.sh's own default).
+# BACKLOG_ID_RE overrides the id pattern (default matches lib/board/backlog.sh's own default).
 
 set -euo pipefail
 

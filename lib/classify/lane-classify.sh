@@ -42,10 +42,11 @@ set -euo pipefail
 # in the same durable dir lane-telemetry.sh reads from, or downgrades go split-brain
 # (written to the legacy path, invisible to the migrated reader).
 LC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/kit-log-dir.sh
-source "$LC_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+LIB_ROOT="$(cd "$LC_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+# shellcheck source=lib/telemetry/kit-log-dir.sh
+source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 # deescalate()'s ledger write only (SPEC-141); no other verb in this file touches gate-ledger.
-GATE_LEDGER="$LC_DIR/gate-ledger.sh"
+GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
 
 # Hard-gate flags (any hit -> full). name <-> regex, index-aligned.
 _hard_name=(auth data-model audit-security external-provider public-contract weaken-validation kit-machinery)
@@ -285,7 +286,7 @@ escalate() {
 # mirroring lane_rank's "over-sizing is always safe" stance (nothing here ever calls a bug or
 # backfill run oversized).
 #
-# Base resolution mirrors hooks/ship-gate.sh / lib/coverage-delta.sh's _resolve_base
+# Base resolution mirrors hooks/ship-gate.sh / lib/gate/coverage-delta.sh's _resolve_base
 # (origin/HEAD symref -> origin/main -> main -> origin/master -> master).
 _deesc_default_branch() {
   local root="$1" ref

@@ -16,7 +16,7 @@ Output (tail): `Passed: 386 / 386`
 
 Command: `bash tests/test-meta.sh` -> 442/442. `bash tests/test-e2e.sh` -> 20/20.
 
-Live dogfood: `bash lib/gate-ledger.sh descent v-model-descent full` ->
+Live dogfood: `bash lib/gate/gate-ledger.sh descent v-model-descent full` ->
 `descent clean` on this very run.
 
 ## NEGATIVE CONTROL

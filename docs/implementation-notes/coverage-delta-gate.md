@@ -16,13 +16,13 @@ phase boundary. Studied ship-gate.sh only to learn the advisory-vs-block boundar
 Where-to-look), not to host the gate.
 Alternatives: ship-gate advisory line (rejected, on the push path); the Build verification
 pipeline (rejected, it retries/escalates , wrong home for a warn-only signal).
-Impact: the live invocation path is `commands/review-team.md` calling `bash lib/coverage-delta.sh`,
-the same pattern the file already uses for `lib/role-classify.sh`. The no-orphan wiring gate
+Impact: the live invocation path is `commands/review-team.md` calling `bash lib/gate/coverage-delta.sh`,
+the same pattern the file already uses for `lib/classify/role-classify.sh`. The no-orphan wiring gate
 (sub-goal 06 / TIER-4) sees a live path there.
 
 ## 2026-07-04 Reuse the anchored test-detection globs, not fresh regex
 
-Context: `lib/explain.sh:_rank` (rank 3 = tests) and `lib/quiz-gate.sh` already anchor their
+Context: `lib/explain.sh:_rank` (rank 3 = tests) and `lib/gate/quiz-gate.sh` already anchor their
 test/doc globs (`tests/*`, `*/tests/*`, `*_test.*`, `*.test.*`, `*.spec.*`) to avoid
 misclassifying names like `latest-value.js` as a test.
 Decision: mirror that anchored `[[ ==` glob style for the test class in `coverage-delta.sh`,

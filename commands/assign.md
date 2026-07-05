@@ -67,23 +67,23 @@ created: <YYYY-MM-DD>
 <the six-section operating directive from Step 3 (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if), ready to paste into an activator>
 ```
 
-`.claude/` is gitignored (per-machine drafts). The filesystem (`ls .claude/goals/*.md`) is the sole source of truth; there is no derived cache (ADR-0023). A draft is retired (moved to `.claude/goals/done/`, never deleted) once its `target_spec` ships, via `lib/goal-drafts.sh archive` at `/kit:ship`. Do NOT write `.claude/last-goal.md`: the built-in `/goal` owns that slot (ADR-0011).
+`.claude/` is gitignored (per-machine drafts). The filesystem (`ls .claude/goals/*.md`) is the sole source of truth; there is no derived cache (ADR-0023). A draft is retired (moved to `.claude/goals/done/`, never deleted) once its `target_spec` ships, via `lib/goal/goal-drafts.sh archive` at `/kit:ship`. Do NOT write `.claude/last-goal.md`: the built-in `/goal` owns that slot (ADR-0011).
 
 ### Step 5: Pick the lane + detect the activator
 
-- **Pull mode (`--next`)**: invoked as `/kit:assign --next` (no ID), pull the board's top item instead of being handed one: `bash lib/backlog.sh next` prints the first `queued` row (file order is the priority order); claim it in the cross-session registry (Step 5b) and flip the board state `bash lib/backlog.sh set <ID> claimed`, then continue exactly as if that ID had been named. No daemon, no auto-trigger: a pull is one explicit invocation (PHILOSOPHY §6 N2); operator-named `/kit:assign ID-NNN` is unchanged.
+- **Pull mode (`--next`)**: invoked as `/kit:assign --next` (no ID), pull the board's top item instead of being handed one: `bash lib/board/backlog.sh next` prints the first `queued` row (file order is the priority order); claim it in the cross-session registry (Step 5b) and flip the board state `bash lib/board/backlog.sh set <ID> claimed`, then continue exactly as if that ID had been named. No daemon, no auto-trigger: a pull is one explicit invocation (PHILOSOPHY §6 N2); operator-named `/kit:assign ID-NNN` is unchanged.
 
 - **Type first**: classify the work KIND before sizing it:
 
   ```bash
-  bash lib/task-type-classify.sh classify "<the item title / crystallized objective>"
+  bash lib/classify/task-type-classify.sh classify "<the item title / crystallized objective>"
   ```
 
   `spec-feature` continues below (pick a lane). Any other type (research / eval / review / doc /
   migration / data-tool) runs its TYPE LOOP instead of the code cycle: the goal draft names the
   loop's phases (WORKFLOW.md `## Type loops`), the executor (the registry's `agent` column in
   `docs/verification/task-types.md`), and the proof artifact it owes (same registry;
-  `bash lib/proof-gate.sh contract "<title>"` prints the composed contract). Lanes still apply
+  `bash lib/gate/proof-gate.sh contract "<title>"` prints the composed contract). Lanes still apply
   to the RISK of any code the loop touches; the loop supplies the cycle.
 
   **Grill before you define done.** Run `/kit:grill` (or drive its bank inline): type-shaped
@@ -92,7 +92,7 @@ created: <YYYY-MM-DD>
   as they resolve. Tiny lane exempt.
 
   **Every goal draft carries a `Done =` line (PHILOSOPHY §6 N3), whatever the type.** Derive it
-  from the proof contract (`bash lib/proof-gate.sh contract "<title>"`) plus the type's
+  from the proof contract (`bash lib/gate/proof-gate.sh contract "<title>"`) plus the type's
   test-design dialect (test-design-standard §5b): one boolean the completion audit can compare
   evidence against. A draft without a `Done =` line is not assignable; defining done is phase 0
   of every loop, before any work runs (the V-model right arm, type-agnostic).
@@ -100,7 +100,7 @@ created: <YYYY-MM-DD>
 - **Lane**: read the item's Lane column (`tiny` / `normal` / `full` / `bug` / `backfill`); it selects the WORKFLOW path. If the column is blank, or you want a check, auto-classify from the title:
 
   ```bash
-  bash lib/lane-classify.sh classify "<the item title / crystallized objective>"
+  bash lib/classify/lane-classify.sh classify "<the item title / crystallized objective>"
   ```
 
   It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, full, bug, normal; "when in doubt, heavier"). Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: if you disagree, override and say why (a heavier lane is always safe). The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
@@ -113,7 +113,7 @@ created: <YYYY-MM-DD>
 - **Floor check (advisory).** Once the lane is committed (from the column, or your override, or the classifier), run the floor check so an under-sized choice cannot pass silently:
 
   ```bash
-  bash lib/lane-classify.sh check "<the chosen lane>" "<the item title / crystallized objective>"
+  bash lib/classify/lane-classify.sh check "<the chosen lane>" "<the item title / crystallized objective>"
   ```
 
   If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "anything on the full-trigger list uses full unless you narrow the scope and say why"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap (SPEC-053): the classifier suggested, but nothing caught an under-sized choice until now.
@@ -122,17 +122,17 @@ created: <YYYY-MM-DD>
 
   ```bash
   git switch -c <type>/<slug>              # the work branch MUST exist first (SPEC-070)
-  RID=$(bash lib/gate-ledger.sh rid)       # canonical run id = branch slug
-  bash lib/gate-ledger.sh start "$RID" "<chosen lane>" "<classifier's suggested lane>" "<chosen work type>" "<classifier's suggested type>"
+  RID=$(bash lib/gate/gate-ledger.sh rid)       # canonical run id = branch slug
+  bash lib/gate/gate-ledger.sh start "$RID" "<chosen lane>" "<classifier's suggested lane>" "<chosen work type>" "<classifier's suggested type>"
   ```
 
-  Mis-recorded the lane or type? Correct it with `bash lib/gate-ledger.sh start --amend "$RID" "<correct lane>" ...` , a sanctioned START-AMEND every reader takes as canonical (last amend wins; SPEC-077); an honest fix never reads as a MULTI-START misfire.
+  Mis-recorded the lane or type? Correct it with `bash lib/gate/gate-ledger.sh start --amend "$RID" "<correct lane>" ...` , a sanctioned START-AMEND every reader takes as canonical (last amend wins; SPEC-077); an honest fix never reads as a MULTI-START misfire.
 
-  The repo is auto-detected. `lib/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).
+  The repo is auto-detected. `lib/telemetry/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).
 
 - **Show the road (SPEC-063).** Print the checklist the run will walk so the operator sees
-  the steps up front: `bash lib/gate-ledger.sh plan "<chosen lane>"`. From here on, each
-  phase entry prints `bash lib/gate-ledger.sh progress "<rid>" "<chosen lane>"` (the
+  the steps up front: `bash lib/gate/gate-ledger.sh plan "<chosen lane>"`. From here on, each
+  phase entry prints `bash lib/gate/gate-ledger.sh progress "<rid>" "<chosen lane>"` (the
   `step k/n` line; AGENTS.md Task loop carries the standing rule).
 - **Activator**: detect what can run the loop, in order: the built-in `/goal` (if present), the `ralph-loop` plugin, or the `goal-craft` skill. Surface the draft body for whichever is available. If none is installed, say so and leave the draft as a plain reusable file (paste the body wherever). Never assume a specific activator exists.
 
@@ -145,7 +145,7 @@ globs if it has them, else the scope-fence dirs from the Constraints section, as
 prefix globs):
 
 ```bash
-bash lib/goal-registry.sh claim <slug> <lane> <glob>...
+bash lib/goal/goal-registry.sh claim <slug> <lane> <glob>...
 ```
 
 - **CLAIMED** -> registered as one single-writer file under `.git/kit-goals/`; proceed to
@@ -153,15 +153,15 @@ bash lib/goal-registry.sh claim <slug> <lane> <glob>...
 - **REFUSED: overlaps running goal '<other>'** -> another active session already owns an
   overlapping file-set. Do NOT route this goal now; tell the operator to serialize (finish
   and `release` the other goal first) or repick a disjoint goal. This is the cross-session
-  twin of the `/kit:dispatch` disjointness gate, reusing the same rule (`lib/dispatch-gate.sh`).
+  twin of the `/kit:dispatch` disjointness gate, reusing the same rule (`lib/gate/dispatch-gate.sh`).
 
 This is advisory, not a hard gate (Detect, don't dictate): a single-session operator can
-ignore a stale entry and clear it with `bash lib/goal-registry.sh release <slug>`. On goal
+ignore a stale entry and clear it with `bash lib/goal/goal-registry.sh release <slug>`. On goal
 completion, the loop releases its claim (`release <slug>`).
 
 **Attempt-log convention.** Add one line to the directive's Operating rules so the loop
 leaves a human-legible trail of what it tried: after each attempt/iteration, run
-`bash lib/goal-registry.sh log <slug> "<one line of what was tried>"`. A human monitoring
+`bash lib/goal/goal-registry.sh log <slug> "<one line of what was tried>"`. A human monitoring
 the registry then sees not just who is running but what each goal has attempted.
 
 ### Step 6: Update status + hand off

@@ -18,8 +18,9 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
 PRECEDENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/kit-log-dir.sh
-source "$PRECEDENT_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+LIB_ROOT="$PRECEDENT_DIR"  # this is a bare root-level module; the lib/ dir IS its own dir. Cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+# shellcheck source=lib/telemetry/kit-log-dir.sh
+source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 

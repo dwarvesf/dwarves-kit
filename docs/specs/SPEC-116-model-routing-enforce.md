@@ -40,7 +40,7 @@ Type: spec-feature
 ADR-0032 section 2 (ACCEPTED) decides the routing RULE, planning-dominant sub-goals -> `opus`,
 execution-dominant -> `sonnet`, trivial -> `haiku`, and says the mechanism is "`Model:` field ->
 orchestrate `--model`". `orchestrate-hardening` open-fork 3 asks WHERE that enforcement lives
-(`lib/orchestrate.sh` vs `lib/route-suggest.sh`) and whether `route-suggest.sh`'s "Opus-spend"
+(`lib/queue/orchestrate.sh` vs `lib/classify/route-suggest.sh`) and whether `route-suggest.sh`'s "Opus-spend"
 suggester could silently disagree with an explicit `Model:` field. Neither question has a written
 answer, and no test proves the DEFAULT-applied case (a goal file that carries `Model: opus` and
 reaches a real `claude -p --model opus` dispatch) across all three tiers , `tests/test-orchestrate.sh`
@@ -49,7 +49,7 @@ and not the wave (concurrent) delegate path.
 
 ## Research (what already exists , this spec ENFORCES/PROVES, does not build)
 
-- `lib/orchestrate.sh:_route()` (SPEC-087, :392-403) already reads a goal file's bare `Model:` /
+- `lib/queue/orchestrate.sh:_route()` (SPEC-087, :392-403) already reads a goal file's bare `Model:` /
   `Effort:` lines and is already threaded into `--model`/`--effort` at BOTH delegate dispatch sites:
   the serial path (`cmd_run`, :1159-1162) and the concurrent wave path (`_wave_run`, :786-788). Both
   feed `route_flags` into the single shared `_run_one_session()` (:601-631), whose three mutually
@@ -58,20 +58,20 @@ and not the wave (concurrent) delegate path.
   , the session inherits the parent tier (documented at :394 and reaffirmed by SPEC-107's "one stance":
   `_route()`'s absent-field->inherit fallback is UNCHANGED by SPEC-107, only the write-time default on
   the authoring surfaces changed).
-- `lib/route-suggest.sh` (token-optim-v3 SG-06) is a standalone CLI invoked by a human/`agents/meta-agent.md`
+- `lib/classify/route-suggest.sh` (token-optim-v3 SG-06) is a standalone CLI invoked by a human/`agents/meta-agent.md`
   Mode B at DECOMPOSE time, when DRAFTING a goal file's `Model:` line from measured SG-09 ablation data.
   `grep -rn route-suggest.sh lib/ | grep -v route-suggest.sh` (i.e. every caller except the file itself)
-  returns zero hits inside `lib/orchestrate.sh` , the dispatch path never invokes it. It cannot silently
+  returns zero hits inside `lib/queue/orchestrate.sh` , the dispatch path never invokes it. It cannot silently
   override an explicit `Model:` field because it has no dispatch-time call site at all.
 
 ## Solution (pins open-fork 3; proves the existing wiring; adds the dedicated test)
 
-1. **Enforcement site (open-fork 3): `lib/orchestrate.sh`.** `_route()` + the two `route_flags`
+1. **Enforcement site (open-fork 3): `lib/queue/orchestrate.sh`.** `_route()` + the two `route_flags`
    dispatch sites are the enforcement mechanism; `route-suggest.sh` stays a decompose-time SUGGESTER
    only (per its own header comment: "a SUGGESTER, never an auto-router"). This is not a new decision,
    it is what the code already does; this spec is the first place it is written down and load-bearing.
 2. **Route-suggest alignment (structural, not runtime):** because `route-suggest.sh` has no call site
-   in `lib/orchestrate.sh`, an explicit `Model:` field can never be contradicted at dispatch time , the
+   in `lib/queue/orchestrate.sh`, an explicit `Model:` field can never be contradicted at dispatch time , the
    two surfaces operate in disjoint phases (decompose-time suggestion vs dispatch-time enforcement).
    `tests/test-model-routing.sh` pins this with a grep negative control (no `route-suggest` call site
    in the dispatch functions) instead of a runtime mock, since there is no runtime interaction to mock.
@@ -111,11 +111,11 @@ bash tests/test-meta.sh            # structural integrity unaffected
 ## After state
 
 - `docs/specs/SPEC-116-model-routing-enforce.md` (this file) pins open-fork 3: enforcement site =
-  `lib/orchestrate.sh`, fallback tier = inherit.
+  `lib/queue/orchestrate.sh`, fallback tier = inherit.
 - `tests/test-model-routing.sh` + `tests/fixtures/model-routing/` prove the default-applied positive
   case for opus/sonnet/haiku on both delegate paths, the route-suggest non-contradiction, and the
   no-`Model:`-field negative control.
-- No behavior change to `lib/orchestrate.sh` or `lib/route-suggest.sh` , this is a proof + pin, not a
+- No behavior change to `lib/queue/orchestrate.sh` or `lib/classify/route-suggest.sh` , this is a proof + pin, not a
   new feature.
 
 ## Scope edges

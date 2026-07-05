@@ -8,12 +8,12 @@ while building. Not a mirror of the spec.
 Context: SPEC-127's own contract framed the significance-classify wiring question as an example
 ("e.g. significance-classify is defined but nothing actually calls it at ship"). A live sweep of
 the merged SG-01..05 state confirmed this is not hypothetical: `WORKFLOW.md`'s pre-existing
-"Understanding-debt marker" bullet read "at Ship, run `bash lib/significance-classify.sh record
+"Understanding-debt marker" bullet read "at Ship, run `bash lib/classify/significance-classify.sh record
 <rid> ...`" as if this were a step `/kit:ship` executes, but `commands/ship.md` (the file
 `/kit:ship` actually runs) never mentions `significance-classify` at all -- confirmed by
 `docs/implementation-notes/significance-classify.md`'s own 2026-07-03 entry ("no command ...
 actually invokes `significance-classify.sh record` yet ... wiring the call site is SG-04's
-problem"). Tracing `lib/quiz-gate.sh`'s `cmd_tap` (SG-04's own machinery) shows it calls
+problem"). Tracing `lib/gate/quiz-gate.sh`'s `cmd_tap` (SG-04's own machinery) shows it calls
 `significance-classify.sh classify` (transient, computes a verdict, writes nothing) -- never
 `record` (the verb that actually appends the `| DEBT |` ledger marker via `gate-ledger.sh debt`).
 So SG-04 did not close the gap SG-02 deliberately left open; it is still open today.

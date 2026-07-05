@@ -71,7 +71,7 @@ HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
 # Deterministic handoff (token-optim-v3 SG-02). Off (0) by default -> the per-session invocation
 # stays byte-identical and the LLM session writes its own HANDOFF.md/DECISIONS.md (unchanged). On
 # (1) -> the session is captured to stream-json and, after grounded completion, the two-tier
-# handoff is REGENERATED deterministically from that transcript by lib/handoff-gen (SPEC-087 Mech
+# handoff is REGENERATED deterministically from that transcript by lib/goal/handoff-gen (SPEC-087 Mech
 # B fields preserved; no LLM in the handoff path). Always-produced + reproducible beats
 # occasionally-excellent-but-skippable.
 DETERMINISTIC_HANDOFF="${DETERMINISTIC_HANDOFF:-0}"
@@ -92,7 +92,8 @@ CAPTURE_TOKENS="${CAPTURE_TOKENS:-0}"
 # Kanban renderer reused by the board-view (SG-10). Resolved next to this script; override in
 # tests. When absent, board mode fail-safes to roadmap-only so a kit without the tooling runs.
 ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKLOG_LIB="${BACKLOG_LIB:-$ORCH_DIR/backlog.sh}"
+LIB_ROOT="$(cd "$ORCH_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+BACKLOG_LIB="${BACKLOG_LIB:-$LIB_ROOT/board/backlog.sh}"
 
 # Loop robustness (SG-11, advisory). WATCHDOG_STALL_SECS=0 (default) keeps the synchronous run
 # path UNCHANGED. >0 backgrounds each session and polls every WATCHDOG_POLL_SECS: if the session
@@ -123,12 +124,12 @@ WAVE_CAP="${WAVE_CAP:-2}"
 # Wave-convergence merge hook (SPEC-106 TASK-004c). After a wave lands its sub-goals on their worktree
 # branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
 # `_wave_converge`); the actual merge goes through THIS mockable hook. Default is the real path
-# (`lib/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
+# (`lib/goal/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
 # invoked with mega-merge's real `<pr> <rid> <lane>` arity (ID-090). It only fires for a sub-goal that
 # has a real recorded PR#; a placeholder `#__` is skipped, so a wave with no real PRs converges to a
 # clean no-op. Tests set WAVE_MERGE_CMD to a mock that records merge ordering. Word-split intentionally
 # (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
-WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$ORCH_DIR/mega-merge.sh merge}"
+WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$LIB_ROOT/goal/mega-merge.sh merge}"
 
 # Multiplexer panes (SPEC-119, executes ADR-0032 section 4). Opt-in (default 0/off): when a wave
 # runs (MULTIPLEXER=1, WAVE_CAP>1, sub-goals declaring disjoint Touches so >=1 is actually
@@ -439,7 +440,7 @@ _wave_gate() {  # megadir roadmap
   # helper only ever sees a validated cap in the wired path, so falling back to 1 here is belt-and-
   # braces for a direct call, never a substitute for that rejection.
   case "$cap" in ''|*[!0-9]*) cap=1 ;; esac
-  local gate="$ORCH_DIR/dispatch-gate.sh"
+  local gate="$LIB_ROOT/gate/dispatch-gate.sh"
   local admitted_files=() admitted_n=0
   local id policy gf a decision ok
   while IFS=$'\t' read -r id policy; do
@@ -515,11 +516,11 @@ _emit_start() {  # dir id
   fi
   local title lane type
   title=$(_sg_title "$(_sg_line "$dir/ROADMAP.md" "$id")" "$id")
-  lane=$(bash "$ORCH_DIR/lane-classify.sh" classify "$title" 2>/dev/null | tail -1)
-  type=$(bash "$ORCH_DIR/task-type-classify.sh" classify "$title" 2>/dev/null | tail -1)
+  lane=$(bash "$LIB_ROOT/classify/lane-classify.sh" classify "$title" 2>/dev/null | tail -1)
+  type=$(bash "$LIB_ROOT/classify/task-type-classify.sh" classify "$title" 2>/dev/null | tail -1)
   [ -n "$lane" ] || lane=normal
   [ -n "$type" ] || type=spec-feature
-  bash "$ORCH_DIR/gate-ledger.sh" start "$slug" "$lane" "$lane" "$type" "$type" \
+  bash "$LIB_ROOT/gate/gate-ledger.sh" start "$slug" "$lane" "$lane" "$type" "$type" \
     && _say "[orchestrate] [telemetry] $id START recorded (rid=$slug lane=$lane type=$type)."
 }
 
@@ -742,7 +743,7 @@ _sg_branch() {  # goalfile id
 # never a new hard dependency that could wedge the wave. `$SPEC_NEXT_CMD` overrides the binary
 # for tests (a mock). Echoes the reserved SPEC number (e.g. 128); empty on failure.
 _wave_reserve_spec() {
-  local sn="${SPEC_NEXT_CMD:-$ORCH_DIR/spec-next.sh}" n
+  local sn="${SPEC_NEXT_CMD:-$LIB_ROOT/spec/spec-next.sh}" n
   [ -x "$sn" ] || [ -r "$sn" ] || return 1
   n="$(bash "$sn" reserve 2>/dev/null)" || return 1
   n="$(printf '%s' "$n" | grep -oE '^[0-9]+$' | head -1)"
@@ -1104,7 +1105,7 @@ _wave_run() {  # megadir roadmap
       {
         printf '\n\n---\nRESERVED SPEC NUMBER (SPEC-128 wavefront reservation)\n'
         printf 'This wave dispatch reserved SPEC-%s for your sub-goal. When you run /kit:spec (or\n' "$reserved_spec"
-        printf 'call lib/spec-next.sh), USE SPEC-%s , it is already claimed for you under a lock, so\n' "$reserved_spec"
+        printf 'call lib/spec/spec-next.sh), USE SPEC-%s , it is already claimed for you under a lock, so\n' "$reserved_spec"
         printf 'no sibling wave worker can take it. Do NOT re-derive a different number.\n'
       } >> "$pfile"
       _say "[orchestrate] [wave] $id reserved SPEC-$reserved_spec"
@@ -1218,7 +1219,7 @@ _wave_run() {  # megadir roadmap
 # After a wave lands its sub-goals on their worktree branches, their merges back to the mega-goal base
 # MUST happen ONE AT A TIME (never concurrently), in ROADMAP order, each under the flip lock , so two
 # same-base merges never race. This is a THIN SEQUENCER: it does NOT reimplement merging. Each merge
-# goes through the MOCKABLE `$WAVE_MERGE_CMD` hook (default `lib/mega-merge.sh merge`, whose merge
+# goes through the MOCKABLE `$WAVE_MERGE_CMD` hook (default `lib/goal/mega-merge.sh merge`, whose merge
 # SEMANTICS stay untouched per scope , we only sequence calls to it). Real gh-backed merge is DEFERRED
 # to ID-090 (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
 # path stays byte-identical; a real merge also needs `gh` + real PRs).
@@ -1297,7 +1298,7 @@ _wave_converge() {  # megadir [id...]
   fi
 
   # 3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, via the mockable hook.
-  #    The default hook is `lib/mega-merge.sh merge`, whose signature is `<pr> <rid> <lane>` (ID-090:
+  #    The default hook is `lib/goal/mega-merge.sh merge`, whose signature is `<pr> <rid> <lane>` (ID-090:
   #    the arity was `<pr> <id>` before). rid = the sub-goal's run id (its branch slug, from the goal
   #    file's `**Branch:**`); lane = the mega-goal's lane (`WAVE_MERGE_LANE`, default full , mega-goals
   #    run the full lane). Tests override `WAVE_MERGE_CMD` with a recorder, so the extra arg is inert.
@@ -1706,7 +1707,7 @@ cmd_run() {
       if [ -n "$nx2" ]; then
         nid=$(printf '%s' "$nx2" | cut -f1)
         nraw=$(_sg_line "$roadmap" "$nid"); ntitle=$(_sg_title "$nraw" "$nid")
-        if "$ORCH_DIR/handoff-gen" "$slog" --dir "$dir" --next-id "$nid" --next-title "$ntitle" --date "$(date -u +%F)"; then
+        if "$LIB_ROOT/goal/handoff-gen" "$slog" --dir "$dir" --next-id "$nid" --next-title "$ntitle" --date "$(date -u +%F)"; then
           # Per-edge WRITE (SPEC-106 TASK-005): handoff-gen always writes $dir/HANDOFF.md; if the
           # JUST-completed $id HAS DEPENDENTS, rename it to the per-edge HANDOFF-<id>.md so parallel
           # siblings (CAP>1) never clobber one hot file. No dependents -> leave plain (byte-identical).
@@ -1730,10 +1731,10 @@ cmd_run() {
       local trid tusage
       trid=$(_rid_for "$dir" "$id")
       if [ -n "$trid" ]; then
-        tusage=$(python3 "$ORCH_DIR/handoff/handoff_gen.py" sum-usage "$slog" 2>/dev/null) || tusage=""
+        tusage=$(python3 "$LIB_ROOT/goal/handoff/handoff_gen.py" sum-usage "$slog" 2>/dev/null) || tusage=""
         if [ -n "$tusage" ]; then
           # shellcheck disable=SC2086 # tusage is a controlled "in=N out=N cache_read=N cache_create=N" blob
-          bash "$ORCH_DIR/gate-ledger.sh" tokens "$trid" $tusage \
+          bash "$LIB_ROOT/gate/gate-ledger.sh" tokens "$trid" $tusage \
             && _say "[orchestrate] [telemetry] $id TOKENS recorded (rid=$trid: $tusage)."
         fi
       fi
@@ -1772,7 +1773,7 @@ main() {
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
     _pane-exec) cmd_pane_exec "$@" ;;
-    # Overnight queue LAUNCHER (SPEC-148): a thin alias for the sibling lib/queue.sh, whose logic
+    # Overnight queue LAUNCHER (SPEC-148): a thin alias for the sibling lib/queue/queue.sh, whose logic
     # lives entirely there (orchestrate.sh's own suite stays untouched). `orchestrate.sh queue
     # <src>` == `queue.sh run <src>`. It drives REAL interactive `/goal` sessions via terminal-mux
     # send-keys, NOT the headless `claude -p` per-sub-goal path the rest of this driver uses.
@@ -1782,7 +1783,7 @@ main() {
 }
 
 # Only run main when executed, not when sourced (so tests can source and call the internal
-# helpers, e.g. _ready_set, directly). Same guard as lib/dispatch-gate.sh.
+# helpers, e.g. _ready_set, directly). Same guard as lib/gate/dispatch-gate.sh.
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   main "$@"
 fi

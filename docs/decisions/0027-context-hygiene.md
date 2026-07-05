@@ -20,7 +20,7 @@ This ADR's v1 proposed an advisory "safe to /clear" signal that a human performs
 
 ## Decision
 
-1. **Non-LLM orchestrator (Mechanism A).** A dumb driver (`lib/orchestrate.sh`, bash; the Agent SDK is the upgrade path) owns the loop and runs each sub-goal in a fresh `claude -p` session. No session holds more than one sub-goal's context, so the marathon growth is gone. The driver MUST NOT be an LLM context: an LLM orchestrator spawning a subagent per sub-goal would re-accumulate every return and become the new marathon. This is the load-bearing call.
+1. **Non-LLM orchestrator (Mechanism A).** A dumb driver (`lib/queue/orchestrate.sh`, bash; the Agent SDK is the upgrade path) owns the loop and runs each sub-goal in a fresh `claude -p` session. No session holds more than one sub-goal's context, so the marathon growth is gone. The driver MUST NOT be an LLM context: an LLM orchestrator spawning a subagent per sub-goal would re-accumulate every return and become the new marathon. This is the load-bearing call.
 
 2. **Feed-forward handoff (Mechanism B).** Each sub-goal session writes a grounded `HANDOFF.md` (next sub-goal, files/symbols already located, fixed constraints, open risks); the orchestrator injects it into the next session's prompt, turning re-discovery into a read. It is dynamic and per-transition, distinct from the static `POINTER_PROMPT.md`, and the receiver verifies before trusting.
 

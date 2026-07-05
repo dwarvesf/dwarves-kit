@@ -29,7 +29,7 @@ mention, case-insensitive), not a stricter invocation-shape regex.
 phrasing convention `spec.md`/`review.md`/etc. use). Running it against the real repo before
 trusting it surfaced a false negative: `commands/quiz-gate.md`'s real emit is phrased
 `` `gate-ledger.sh debt-response` `` (no `bash lib/` prefix in the same backtick span, since its
-prose describes the underlying `lib/quiz-gate.sh`'s own internal call rather than instructing
+prose describes the underlying `lib/gate/quiz-gate.sh`'s own internal call rather than instructing
 the reading agent to run gate-ledger.sh directly). A strict regex would have wrongly flagged a
 genuinely-wired command an orphan. The loose substring check trades false-negative risk for a
 coarser signal, matching what the sub-goal's own contract actually asks for ("either contains a
@@ -93,7 +93,7 @@ DO-NOT-change-lane-matrix-cells constraint, and against the "surgical changes" d
 touch what the task requires).
 
 **Impact:** for THIS sub-goal's own ship, both gates were satisfied by a MANUAL
-`bash lib/gate-ledger.sh record <rid> build ran "..."` / `... design-record ran "..."` call
+`bash lib/gate/gate-ledger.sh record <rid> build ran "..."` / `... design-record ran "..."` call
 (the same generic escape hatch AGENTS.md already names for any phase gate with no dedicated
 command instruction), not by editing any kit source file. WORKFLOW.md's new section names both
 gaps honestly as out of scope, with a candidate backlog note in

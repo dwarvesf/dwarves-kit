@@ -37,7 +37,7 @@ Once the user approves the design, **append** a `## Solution` section (and `## F
 Tell the user the design is captured and the next step is `/kit:spec`, which reads the brief and folds the Solution into the spec's `## Solution` (and the Design section, if present, into the spec's `## Design`). Do NOT run `/kit:spec` yourself; this lane only shapes and records the design.
 
 After Step 6, record it for lane telemetry (SPEC-139), one line:
-`bash lib/gate-ledger.sh record <rid> Design ran "approaches=<N> design-bearing=<yes|no>"`.
+`bash lib/gate/gate-ledger.sh record <rid> Design ran "approaches=<N> design-bearing=<yes|no>"`.
 
 ## Source
 Forked from `superpowers:brainstorming` (one-question-at-a-time, present-in-sections, per-section approval). Realizes SPEC-008 Part C; see `docs/specs/SPEC-011-design-lane.md`.

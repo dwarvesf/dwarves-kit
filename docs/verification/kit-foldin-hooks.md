@@ -24,7 +24,7 @@ ship-gate run-table + negative control.
 ## Implementation
 
 `.sh` shims `exec python3` on a co-located `.py` (the source tools are Python). Personal
-ops-toolkit paths become an opt-in `REPO_ROOT`/`_repo_root()` seam (mirrors `lib/board.sh`);
+ops-toolkit paths become an opt-in `REPO_ROOT`/`_repo_root()` seam (mirrors `lib/board/board.sh`);
 the context-hints skill map ships empty (`{}`). `install.sh`'s `hooks/*.sh` copy loop
 extended to copy `*.py`/`*.json` companions (excluding `hooks.json`), and its skill copy
 (install + uninstall) generalized to a `skills/*/SKILL.md` glob. Env vars renamed

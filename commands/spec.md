@@ -66,7 +66,7 @@ Source: GSD v1's 4 parallel researchers. Mode A uses formal `.claude/agents/` fi
 Create `docs/specs/` directory if it doesn't exist. Generate these files:
 
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
-`bash lib/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
+`bash lib/spec/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
 names and recent commit subjects, the two surfaces where a number ages invisibly inside
 an unmerged PR (two collisions in one week before this guard, SPEC-064 / ID-052). If a
 wavefront dispatch already RESERVED a number for you (a `RESERVED SPEC NUMBER` block in
@@ -198,7 +198,7 @@ Optional; expected for full-lane specs that touch an external provider, data los
 - [thing explicitly excluded and why]
 
 ## Touches
-Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concurrent cross-goal fan-out). The directory-prefix globs this spec will write, one per line. Form is constrained to `dir/**` or `dir/sub/**`: no `*.md`, `**/x`, `a/*.ext`, or brace globs (the disjointness gate serializes any pair it cannot PROVE disjoint, so a non-prefix glob forces conservative serialization). Do NOT list the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, etc.); they are excluded automatically and the convergence step writes them once. The gate (`lib/dispatch-gate.sh`) reads this section; a dispatch-eligible spec lacking it is rejected, not assumed-empty.
+Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concurrent cross-goal fan-out). The directory-prefix globs this spec will write, one per line. Form is constrained to `dir/**` or `dir/sub/**`: no `*.md`, `**/x`, `a/*.ext`, or brace globs (the disjointness gate serializes any pair it cannot PROVE disjoint, so a non-prefix glob forces conservative serialization). Do NOT list the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, etc.); they are excluded automatically and the convergence step writes them once. The gate (`lib/gate/dispatch-gate.sh`) reads this section; a dispatch-eligible spec lacking it is rejected, not assumed-empty.
 - path/to/area/**
 - another/area/**
 
@@ -249,4 +249,4 @@ When approved, update the Status line in SPEC.md to `APPROVED`.
 Remind the user they can run `/kit:spec-validate` for adversarial review before implementation.
 
 After approval, record it for lane telemetry (SPEC-139), one line:
-`bash lib/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.
+`bash lib/gate/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.

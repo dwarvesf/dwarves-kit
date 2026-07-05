@@ -53,7 +53,7 @@ sub-goal is over-tested.
 
 Per SPEC-070, the branch slug (`rid`) IS the spec slug IS the `docs/implementation-notes/
 <slug>.md` filename IS (usually) the `docs/verification/<slug>[.md|/]` name. `lib/pitch.sh`
-takes ONE argument and uses it for all four lookups, exactly like `bash lib/gate-ledger.sh
+takes ONE argument and uses it for all four lookups, exactly like `bash lib/gate/gate-ledger.sh
 show <rid>` already does for the ledger.
 
 ### Proof-file shape (two homes, both read)
@@ -79,7 +79,7 @@ never a stub -- the raw file is real evidence, just not pre-sectioned).
 1. `/kit:pitch <rid>` any time (primary).
 2. ONE advisory bullet added to `commands/ship.md` Step 8, immediately after the existing
    `significance-classify.sh record` + `quiz-gate.sh tap` calls (SPEC-136): read back the
-   verdict step 1 JUST wrote (`bash lib/gate-ledger.sh show <rid> | grep '| DEBT |' | tail -1`,
+   verdict step 1 JUST wrote (`bash lib/gate/gate-ledger.sh show <rid> | grep '| DEBT |' | tail -1`,
    never re-classify), and if that line contains `significance=high` AND the repo is
    team-shared (`bash lib/pitch.sh team-shared`, exit 0), print the offer. Advisory, exit-0,
    never blocks, same anti-fatigue posture as the ★-tap nudge it rides beside.

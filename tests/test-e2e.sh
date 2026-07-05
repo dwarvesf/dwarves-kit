@@ -41,9 +41,9 @@ cat > "$REPO/_meta/BACKLOG.md" <<'BOARD'
 | ID-001 | add a --version flag to the demo tool | queued |
 BOARD
 
-BACKLOG() { BACKLOG_FILE="$REPO/_meta/BACKLOG.md" bash "$KIT_DIR/lib/backlog.sh" "$@"; }
-GL() { bash "$KIT_DIR/lib/gate-ledger.sh" "$@"; }
-LT() { bash "$KIT_DIR/lib/lane-telemetry.sh" "$@"; }
+BACKLOG() { BACKLOG_FILE="$REPO/_meta/BACKLOG.md" bash "$KIT_DIR/lib/board/backlog.sh" "$@"; }
+GL() { bash "$KIT_DIR/lib/gate/gate-ledger.sh" "$@"; }
+LT() { bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" "$@"; }
 
 # --- 1. board pull ---
 NEXT=$(BACKLOG next)
@@ -57,8 +57,8 @@ TASK="add a --version flag to the demo tool"
 # NOTE: the original fixture said "demo CLI" and the type classifier returned data-tool
 # (the bare \bcli\b anchor steals feature-work-ON-a-cli). Real finding, filed as ID-057
 # per the telemetry disposition contract; the golden run uses a clean phrase.
-LANE=$(bash "$KIT_DIR/lib/lane-classify.sh" classify "$TASK")
-TYPE=$(bash "$KIT_DIR/lib/task-type-classify.sh" classify "$TASK")
+LANE=$(bash "$KIT_DIR/lib/classify/lane-classify.sh" classify "$TASK")
+TYPE=$(bash "$KIT_DIR/lib/classify/task-type-classify.sh" classify "$TASK")
 expect "classify: lane" "^tiny$\|^normal$" "$LANE"
 expect "classify: type is spec-feature" "^spec-feature$" "$TYPE"
 LANE="normal"   # chosen (a flag still wants a spec + tests in this demo)

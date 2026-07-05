@@ -11,7 +11,7 @@ example row." A placeholder example (`<slug>:<path>` literally, or a fabricated 
 be dead weight the first time a human reads the file.
 
 Decision: seeded `docs/verification/rejected-findings.md` with one REAL example row drawn from
-this repo's own history: `single-file-ledger:lib/gate-ledger.sh`, rejecting the (hypothetical
+this repo's own history: `single-file-ledger:lib/gate/gate-ledger.sh`, rejecting the (hypothetical
 but plausible) architecture objection that `gate-ledger.sh` should be split across files. This
 is consistent with ADR-0024's actual design decision (one append-only audit trail per run) and
 reads as a genuine worked example rather than a template stub.
@@ -132,7 +132,7 @@ hook inspects the WHOLE command string before any part executes and refused the 
 same `&&` chain never ran either, even though it had nothing to do with the violation.
 
 Decision: backfilled the `spec` GATE line once noticed, after `build` and `review` had already
-recorded. `bash lib/gate-ledger.sh descent review-findings-memory normal` correctly flags this
+recorded. `bash lib/gate/gate-ledger.sh descent review-findings-memory normal` correctly flags this
 as an advisory out-of-order descent; left the anomaly visible rather than editing the ledger
 after the fact (an edited ledger line would be a worse anti-pattern than an honest, explained
 one).

@@ -74,7 +74,7 @@ Run the project's test suite and **record the run as a re-runnable artifact**. A
   Notes. You do not revert code yourself (you are read-only); producing the revert ->
   RED -> restore -> GREEN negative control is the orchestrator's job (`/kit:execute`,
   `/kit:verify`). Your job is to notice and flag when the proof-of-done is missing it.
-- **Proof class gates what to expect** (`lib/proof-gate.sh class "<task>"`). An **inert**
+- **Proof class gates what to expect** (`lib/gate/proof-gate.sh class "<task>"`). An **inert**
   task (docs / comments / cosmetic) may carry `[PROOF OF DONE: exempt -- <reason>]`
   instead of a run; accept that, it is not a fake pass. A **behavioral** task must
   exercise the REAL primary flow (a tangential green test that would pass without the

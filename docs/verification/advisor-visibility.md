@@ -120,7 +120,7 @@ cd <dwarves-kit worktree>
 export DWARVES_KIT_LOG_DIR="$RO_DIR"
 rid="nc2-fixture"
 # the emit line VERBATIM from commands/review-team.md's Step 2b:
-bash lib/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=1 actor=Test Actor" \
+bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=1 actor=Test Actor" \
   || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); review output unaffected" >&2
 echo "exit code of the compound command: $?"
 echo "REVIEW OUTPUT: verdict=SHIP findings=1 (unaffected by the failed emit above)"
@@ -128,7 +128,7 @@ echo "REVIEW OUTPUT: verdict=SHIP findings=1 (unaffected by the failed emit abov
 
 Result (verbatim):
 ```
-lib/gate-ledger.sh: line 177: <RO_DIR>/runs/nc2-fixture.log: Permission denied
+lib/gate/gate-ledger.sh: line 177: <RO_DIR>/runs/nc2-fixture.log: Permission denied
 WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); review output unaffected
 exit code of the compound command: 0
 REVIEW OUTPUT: verdict=SHIP findings=1 (unaffected by the failed emit above)
@@ -162,7 +162,7 @@ SPEC-145-specific (NC2), not a new ledger-wide default.
 (reproduced live): `fail_open_call()`'s sticky global flags let a missing fallback on
 `mega.md`'s SECOND (P6) call site slip past AC3, masked by the first (P5) match. Fixed:
 per-match independent checking; reproduced the bug against a mutated copy first, confirmed the
-rewrite catches it. MEDIUM: no test called the real `lib/gate-ledger.sh record` write path.
+rewrite catches it. MEDIUM: no test called the real `lib/gate/gate-ledger.sh record` write path.
 Fixed: new AC8 invokes it live and asserts the exact written line. LOW-MEDIUM: AC5 didn't pin
 the rid-convention text in `agents/advisor.md` itself. Fixed. Suite: 23/23 -> 27/27.
 
@@ -179,10 +179,10 @@ rejected: 0.
 **Verdict: SHIP.** All 6 findings across 4 lenses fixed and re-verified. Recorded on this
 sub-goal's own rid, dogfooding the very convention this spec built:
 ```
-bash lib/gate-ledger.sh record advisor-visibility advisor ran "mode=P5 findings=2 actor=Han Ngo"
-bash lib/gate-ledger.sh record advisor-visibility review ran "SHIP findings=6 suppressed=0 rejected=0 actor=Han Ngo"
+bash lib/gate/gate-ledger.sh record advisor-visibility advisor ran "mode=P5 findings=2 actor=Han Ngo"
+bash lib/gate/gate-ledger.sh record advisor-visibility review ran "SHIP findings=6 suppressed=0 rejected=0 actor=Han Ngo"
 ```
-`bash lib/gate-ledger.sh show advisor-visibility` now itself contains a real
+`bash lib/gate/gate-ledger.sh show advisor-visibility` now itself contains a real
 `| GATE | advisor | ran | mode=P5 findings=2 actor=Han Ngo |` row -- a live, non-fixture
 confirmation that this rid's own review pass produced exactly the row shape this spec exists
 to make visible.

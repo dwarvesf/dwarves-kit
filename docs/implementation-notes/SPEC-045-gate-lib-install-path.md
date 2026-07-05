@@ -9,6 +9,6 @@
 
 ## 2026-06-08 Verification
 
-- `tests/test-meta.sh` 390/390 (new pin: install materializes lib/proof-ledger.sh).
+- `tests/test-meta.sh` 390/390 (new pin: install materializes lib/gate/proof-ledger.sh).
 - End-to-end consumer-gate repro recorded in `docs/verification/SPEC-045.md`: lib-unreachable -> exit 0 (fail open, the bug); lib-via-install -> exit 2 (BLOCK, the fix) with the SPEC-044 type-aware message; proof added -> exit 0 (PASS).
 - Cross-repo-session caveat (same as SPEC-044): driven from an ops-toolkit session, so validate/review run as adversarial sub-agents, not `/kit:*`.

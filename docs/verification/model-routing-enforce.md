@@ -7,7 +7,7 @@
 | 1 | Delegate call passes `--model` from the goal file's `Model:` field, default-applied, for opus/sonnet/haiku | met (run-table below; existing mechanism, SPEC-087, newly proven per-tier) |
 | 2 | `route-suggest.sh`'s heuristic confirmed non-contradictory with an explicit `Model:` | met (structural: zero call sites in the dispatch path) |
 | 3 | No-`Model:`-field fallback lands on the documented default (not a crash, not a silently wrong tier) | met (fallback = inherit, per SPEC-107; negative-control row below) |
-| 4 | Open-fork 3 (enforcement site) resolved | met: `lib/orchestrate.sh`, pinned in SPEC-116 |
+| 4 | Open-fork 3 (enforcement site) resolved | met: `lib/queue/orchestrate.sh`, pinned in SPEC-116 |
 | 5 | Tests green | met (below) |
 
 ## Why this is a proof-and-pin, not a new feature
@@ -32,13 +32,13 @@ comments and a different spec (SPEC-107), not yet load-bearing as an explicit pi
 | serial | `Model: haiku` | `--model haiku` | default-applied, proven |
 | serial | (no `Model:` line) | no `--model` flag | inherit fallback, proven (negative control) |
 | wave (concurrent) | `Model: opus` | `--model opus` | default-applied, proven |
-| n/a | `route-suggest.sh` call sites in `lib/orchestrate.sh` dispatch functions | 0 | structurally cannot contradict an explicit `Model:` |
+| n/a | `route-suggest.sh` call sites in `lib/queue/orchestrate.sh` dispatch functions | 0 | structurally cannot contradict an explicit `Model:` |
 
 ## GREEN run
 
 ```
 $ bash tests/test-model-routing.sh
-PASS route-suggest alignment: lib/orchestrate.sh has no route-suggest.sh call site (cannot contradict an explicit Model: field)
+PASS route-suggest alignment: lib/queue/orchestrate.sh has no route-suggest.sh call site (cannot contradict an explicit Model: field)
 PASS serial: Model: opus -> dispatch '--model opus' (default-applied)
 PASS serial: Model: sonnet -> dispatch '--model sonnet' (default-applied)
 PASS serial: Model: haiku -> dispatch '--model haiku' (default-applied)
@@ -68,7 +68,7 @@ gap unrelated to this change (confirmed present on `master` before this diff too
 
 `kit:code-reviewer` (test-coverage lens) mutation-tested the new suite: broke the `--model` flag build
 on the serial dispatch line and, separately, the wave dispatch line, in a scratch copy of
-`lib/orchestrate.sh`; the matching test cases correctly flipped to FAIL in each case, ruling out a
+`lib/queue/orchestrate.sh`; the matching test cases correctly flipped to FAIL in each case, ruling out a
 rubber-stamp test. No blocking findings. Two advisory gaps filed in the implementation notes (pre-
 existing `_route()` parse edge cases untested repo-wide; wave path covers only the opus tier by
 design).

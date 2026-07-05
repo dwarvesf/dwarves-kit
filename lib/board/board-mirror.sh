@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # board-mirror.sh -- git<->Hermes kanban bridge, read-mirror leg (SPEC-147, runner-fastpath
-# sub-goal 07). Reused by `lib/board.sh`'s `mirror`/`status` subcommands the same way `board.sh`
-# already reuses `lib/parse-board.sh` for `queue`; this file is the substantial logic, `board.sh`
+# sub-goal 07). Reused by `lib/board/board.sh`'s `mirror`/`status` subcommands the same way `board.sh`
+# already reuses `lib/board/parse-board.sh` for `queue`; this file is the substantial logic, `board.sh`
 # stays the thin, human-facing dispatcher.
 #
 # Design (full detail in docs/specs/SPEC-147-board-bridge-mirror.md's `## Design` block; this
 # header carries only what a reader needs to navigate the code):
 #
-#   EXTRACT   each opted-in repo's BACKLOG.md (via lib/parse-board.sh's pb_rows -- the ONE
+#   EXTRACT   each opted-in repo's BACKLOG.md (via lib/board/parse-board.sh's pb_rows -- the ONE
 #             structured parser, never re-forked) + each opted-in repo's ACTIVE mega-goals
 #             (_meta/megagoals/*/ROADMAP.md) -> normalized rows:
 #               origin \t repo \t id \t item \t notes \t status \t target_native \t row_hash
@@ -101,7 +101,7 @@ set -euo pipefail
 
 BM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARSE_BOARD_SH="$BM_DIR/parse-board.sh"
-[ -f "$PARSE_BOARD_SH" ] || { echo "board-mirror: lib/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
+[ -f "$PARSE_BOARD_SH" ] || { echo "board-mirror: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$PARSE_BOARD_SH"
 
@@ -140,7 +140,7 @@ _strip_routing_tags() {
 
 # ---------------------------------------------------------------------------
 # Portable helpers (bash 3.2 safe: no assoc arrays, no mapfile/readarray -- same discipline as
-# lib/orchestrate.sh / lib/parse-board.sh, since some CI runners resolve `bash` to the macOS
+# lib/queue/orchestrate.sh / lib/board/parse-board.sh, since some CI runners resolve `bash` to the macOS
 # system /bin/bash).
 # ---------------------------------------------------------------------------
 
@@ -160,9 +160,9 @@ _sha256_hex() {
 _now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 # _repo_root_for <path-to-backlog-md> -- the git top-level containing that file, else its dir.
-# Intentionally duplicated from lib/board.sh (not sourced): board.sh invokes this file as a
+# Intentionally duplicated from lib/board/board.sh (not sourced): board.sh invokes this file as a
 # SEPARATE PROCESS (`bash "$BOARD_MIRROR_SH" ...`), the same relationship board.sh has with
-# lib/parse-board.sh, so there is no shared-process function scope to reuse from.
+# lib/board/parse-board.sh, so there is no shared-process function scope to reuse from.
 _repo_root_for() {
   local dir; dir="$(cd "$(dirname "$1")" && pwd)"
   git -C "$dir" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$dir"

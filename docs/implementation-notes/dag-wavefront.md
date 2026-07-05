@@ -97,7 +97,7 @@ internal function directly (it is intentionally NOT wired into any CLI subcomman
 `orchestrate.sh` ended with an unconditional `main "$@"`, so sourcing it fired `main` (usage +
 `exit 64`) and killed the sourced test before any assert.
 **Decision.** Wrapped the tail call in the source guard `if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-main "$@"; fi`, the exact pattern already in `lib/dispatch-gate.sh:208`. The new test SOURCES
+main "$@"; fi`, the exact pattern already in `lib/gate/dispatch-gate.sh:208`. The new test SOURCES
 orchestrate.sh and calls `_ready_set` / `_next` directly.
 **Why.** House pattern (not an invention); behavior-preserving when executed (`bash orchestrate.sh
 <cmd>` still runs main because `BASH_SOURCE[0] == $0`). Alternative rejected: adding a hidden
@@ -146,7 +146,7 @@ but leaves a few knobs to the implementer.
 
 **Impact.** `bash tests/test-orchestrate-wavefront.sh` 29/29 green (16 existing + 13 new; bash
 3.2.57 + bash 5.3); `bash tests/test-orchestrate.sh` 59/59 green (no regression); `shellcheck -s
-bash lib/orchestrate.sh` clean. New tests cover: correct-box flip + idempotency + unknown-id, 6
+bash lib/queue/orchestrate.sh` clean. New tests cover: correct-box flip + idempotency + unknown-id, 6
 parallel flips on distinct boxes all landing with a well-formed ROADMAP, and a dead-PID stale-lock
 reclaim guarded by a poll-timeout so a hang reads as FAIL.
 
@@ -157,12 +157,12 @@ implementer:
 
 - **REUSE via SUBPROCESS, not source (2+-option call).** dispatch-gate.sh is the one disjointness
   authority (DEC-001), so `_wave_gate` must reuse it, not reimplement glob-disjointness. Options: (A)
-  `source lib/dispatch-gate.sh` and call `gate_touches`/`gate_disjoint` in-process; (B) call
+  `source lib/gate/dispatch-gate.sh` and call `gate_touches`/`gate_disjoint` in-process; (B) call
   `bash "$gate" touches|disjoint ...` as a subprocess. Chose **B**. Decider: dispatch-gate.sh runs
   `set -euo pipefail` at load (L26); sourcing it leaks `-e` into orchestrate.sh's deliberate `set -uo`
   posture (L33) AND into the sourced test harness (test-orchestrate-wavefront.sh sources
   orchestrate.sh), which would flip the whole harness to errexit. The subprocess boundary contains
-  the `-e`; verified with `source lib/orchestrate.sh; case "$-" in *e*)` -> no leak. Fork-per-pair
+  the `-e`; verified with `source lib/queue/orchestrate.sh; case "$-" in *e*)` -> no leak. Fork-per-pair
   cost is negligible for a wave-launch decision over a small ready set. `disjoint` exit 0 = provably
   disjoint => admit-eligible; any nonzero (1 overlap / 2 undeclared) => not disjoint => defer.
 - **Self-Touches detection = `gate_touches` non-empty.** A candidate admits only if
@@ -183,7 +183,7 @@ implementer:
 defined above). PURE decision helper: spawns nothing, zero call sites in cmd_run (wiring is TASK-004).
 
 **Impact.** `bash tests/test-orchestrate-wavefront.sh` 35/35 green (29 existing + 6 new; bash 3.2.57);
-`bash tests/test-orchestrate.sh` 59/59 green (no regression); `shellcheck lib/orchestrate.sh` clean.
+`bash tests/test-orchestrate.sh` 59/59 green (no regression); `shellcheck lib/queue/orchestrate.sh` clean.
 New tests: (a) disjoint declaring pair @cap 2 -> both run; (b) overlapping declaring pair -> first
 run/second defer (exit-criterion-2 negative control); (c) Touches-less ready set -> all defer
 (Option-B gate); (d) cap 1 on the disjoint pair -> at most one run; (e) Touches-less-first/declaring-
@@ -250,7 +250,7 @@ on admitted count is TASK-004b. Cleanup removes wave worktrees via `git worktree
 
 **Impact.** `bash tests/test-orchestrate-wavefront.sh` 43/43 green (35 prior + 8 new; bash 3.2.57 AND
 5.3, stable over 9 repeated runs , no flake); `bash tests/test-orchestrate.sh` 59/59 green (no
-regression, both bashes); `shellcheck -s bash lib/orchestrate.sh` fully clean.
+regression, both bashes); `shellcheck -s bash lib/queue/orchestrate.sh` fully clean.
 
 ## 2026-07-03 01:53 TASK-004b , size-dispatch `cmd_run` to the wave path
 
@@ -295,7 +295,7 @@ validation are exercised.
 
 ## 2026-07-03 02:10 TASK-004c , wave convergence sequencer
 
-`_wave_converge <megadir> [<id>...]` added to `lib/orchestrate.sh`, right after `_wave_run`. It merges a
+`_wave_converge <megadir> [<id>...]` added to `lib/queue/orchestrate.sh`, right after `_wave_run`. It merges a
 landed wave's sub-goals back to the mega-goal base ONE AT A TIME, in ROADMAP order, each under the flip
 lock. Deviations / decisions the spec did not pin down:
 
@@ -468,7 +468,7 @@ shellcheck -S error clean. Stable across repeated runs.
 Context. TASK-009 is a TEST-consolidation task: the five SPEC-106 exit-criterion controls already
 existed across the 80-test wavefront file (grown task-by-task through TASK-001..007), but were not
 individually labeled as "the canonical five", so a reviewer could not map each brief criterion to a
-passing test. No `lib/orchestrate.sh` change was needed or made.
+passing test. No `lib/queue/orchestrate.sh` change was needed or made.
 
 Decision -- relabeled in place (no new coverage, just unmistakable labels):
 - EXIT-CRITERION 1 = the TASK-004a `wave_run g` mock-barrier concurrency proof (two disjoint
@@ -507,14 +507,14 @@ make that mapping mechanical. Rows 2 and 5 carry `[NEGATIVE CONTROL]` inline.
 
 Impact. `bash tests/test-orchestrate-wavefront.sh` 89/89 (80 prior + 9 new: 5 golden criterion-5,
 4 exit-0-unflipped), stable across 3 back-to-back runs (concurrency tests non-flaky). `bash
-tests/test-orchestrate.sh` still 59/59 (no lib change, byte-identity holds). No `lib/orchestrate.sh`
+tests/test-orchestrate.sh` still 59/59 (no lib change, byte-identity holds). No `lib/queue/orchestrate.sh`
 edit.
 
 ## 2026-07-03 review-team fixes
 
 Context. A review-team pass on `feat/dag-wavefront` flagged 8 findings (1 BLOCKER, 5 SHOULD-FIX, 2
 NICE) against the opt-in wave path (`WAVE_CAP>=2`, off by default). All 8 applied in one commit,
-scoped entirely to `lib/orchestrate.sh` + `tests/test-orchestrate-wavefront.sh` (+ the two doc-trail
+scoped entirely to `lib/queue/orchestrate.sh` + `tests/test-orchestrate-wavefront.sh` (+ the two doc-trail
 files this note is part of). Hard constraint held throughout: `bash tests/test-orchestrate.sh` stayed
 59/59 byte-identical at every step.
 
@@ -602,14 +602,14 @@ on an INT/TERM instead of leaking every still-live wave job's prompt file. No de
 review instruction: "keep it minimal").
 
 Why. All 8 were review-team findings against already-shipped-but-opt-in wave machinery; none change
-the sacred invariant (`WAVE_CAP=1` byte-identical) and all stay inside `lib/orchestrate.sh` +
+the sacred invariant (`WAVE_CAP=1` byte-identical) and all stay inside `lib/queue/orchestrate.sh` +
 `tests/test-orchestrate-wavefront.sh` (scope-locked, no cascading changes to `commands/mega.md` or
 other files).
 
 Impact. `bash tests/test-orchestrate.sh` 59/59 (byte-identity holds, unchanged file). `bash
 tests/test-orchestrate-wavefront.sh` 100/100 (89 prior + 11 new: 1 abort/trap test, 4 dep-fallthrough
 halt, 4 runtime negative-control, 2 wave-resume), stable across 3 back-to-back runs (no flake).
-`shellcheck -s bash lib/orchestrate.sh` exit 0.
+`shellcheck -s bash lib/queue/orchestrate.sh` exit 0.
 
 ## 2026-07-03 , flip-contract injection + real end-to-end de-risk (ID-090 item b)
 

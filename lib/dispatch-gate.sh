@@ -1,1 +1,0 @@
-gate/dispatch-gate.sh

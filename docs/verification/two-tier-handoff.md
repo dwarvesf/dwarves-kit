@@ -23,7 +23,7 @@
 | Aspect | Detail |
 |---|---|
 | What | hot/warm split in `_build_prompt` (full+capped vs pointer-only) + stdin temp-file injection |
-| Where | `lib/orchestrate.sh` (`_build_prompt`, run path), `tests/test-orchestrate.sh` (TEST 6a-6d), `tests/fixtures/handoff-sample/`, SPEC-087 Mechanism B |
+| Where | `lib/queue/orchestrate.sh` (`_build_prompt`, run path), `tests/test-orchestrate.sh` (TEST 6a-6d), `tests/fixtures/handoff-sample/`, SPEC-087 Mechanism B |
 | How it runs | orchestrator inlines HANDOFF.md (capped), points at DECISIONS.md, pipes the prompt via `< tmp` |
 | Reversibility | additive: no HANDOFF/DECISIONS -> prior behavior; cap default 80 lines |
 

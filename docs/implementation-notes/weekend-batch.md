@@ -68,7 +68,7 @@ sweep, but then does NOT attempt impl-notes/explainer resolution (no local check
 knowable for an arbitrary `repo=` name read out of the ledger).
 
 **Why:** the debt ledger's `$LOG_DIR/runs/*.log` corpus is genuinely machine-wide (SPEC-097's
-resolver, not per-repo), but `lib/explain.sh` and `lib/significance-classify.sh` both already
+resolver, not per-repo), but `lib/explain.sh` and `lib/classify/significance-classify.sh` both already
 resolve their own repo-relative paths off `git rev-parse --show-toplevel` of cwd. Matching that
 convention means `weekend-batch.sh` behaves exactly like its siblings when Han (or the dotfiles
 skill) `cd`s into a specific repo and runs it there -- the common case -- while `--all-repos`
@@ -85,7 +85,7 @@ whether `var="$(helper ...)"` aborts the whole script on a "no match" grep depen
 nesting depth for command substitutions (a well-documented but easy-to-forget sharp edge:
 `x=$(false)` at top level aborts a `-e` script immediately, but the identical pattern one function
 call deeper sometimes does not, depending on bash version and how many `$()` layers deep it is).
-`lib/weekend-batch.sh`'s `_kv`, `_last_debt_line`, `_file_repo`, and `_find_artifact` all guard
+`lib/queue/weekend-batch.sh`'s `_kv`, `_last_debt_line`, `_file_repo`, and `_find_artifact` all guard
 their own pipelines with a trailing `|| true` (or an unconditional `return 0`) for exactly this
 reason -- an "absent key" or "no ledger entry yet" is an expected, non-error result, never a
 script-aborting one, and that has to be true regardless of how deeply nested the call is.

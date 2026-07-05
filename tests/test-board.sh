@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# test-board.sh -- SPEC-146 (runner-fastpath sub-goal 04): lib/board.sh + lib/parse-board.sh.
+# test-board.sh -- SPEC-146 (runner-fastpath sub-goal 04): lib/board/board.sh + lib/board/parse-board.sh.
 #
 # Proves:
-#   AC1  pb_rows / pb_queue_rows (lib/parse-board.sh) extract + validate queue tokens correctly
+#   AC1  pb_rows / pb_queue_rows (lib/board/parse-board.sh) extract + validate queue tokens correctly
 #   AC2  a valid #queue{} token on a queued row resolves to a real allow-listed pointer path
 #   AC3  a malformed token (missing key) is skipped, not emitted
 #   AC4  a #queue{} token on a NON-queued row is silently ignored (out of scope, not an error)
@@ -27,8 +27,8 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOARD="$KIT_DIR/lib/board.sh"
-PARSE_BOARD="$KIT_DIR/lib/parse-board.sh"
+BOARD="$KIT_DIR/lib/board/board.sh"
+PARSE_BOARD="$KIT_DIR/lib/board/parse-board.sh"
 
 PASS=0; FAIL=0; SKIP=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
@@ -71,7 +71,7 @@ cat > "$FIXA/_meta/BACKLOG.md" <<'BOARD_A'
 | ID-002 | Runner-eligible (megagoals dir) #queue{repo=fixA,pointer=_meta/megagoals/mg1/goals/g1.md} | test | TBD | normal | queued |
 | ID-003 | Runner-eligible (claude/goals dir) #queue{repo=fixA,pointer=.claude/goals/g2.md} | test | TBD | normal | queued |
 | ID-004 | Traversal attempt #queue{repo=fixA,pointer=../../../etc/passwd} | test | TBD | normal | queued |
-| ID-005 | Wrong-dir pointer #queue{repo=fixA,pointer=lib/board.sh} | test | TBD | normal | queued |
+| ID-005 | Wrong-dir pointer #queue{repo=fixA,pointer=lib/board/board.sh} | test | TBD | normal | queued |
 | ID-006 | Cross-repo spoof #queue{repo=fixB,pointer=_meta/megagoals/mg1/goals/g1.md} | test | TBD | normal | queued |
 | ID-007 | Malformed (no pointer key) #queue{repo=fixA} | test | TBD | normal | queued |
 | ID-008 | Non-queued with token #queue{repo=fixA,pointer=_meta/megagoals/mg1/goals/g1.md} | test | TBD | normal | claimed |
@@ -155,7 +155,7 @@ assert "NC-c: ID-004 ('../../../etc/passwd') is skipped" \
   "$(printf '%s\n' "$Q_FULL_ERR" | grep -q 'skip ID-004' && echo 0 || echo 1)"
 assert "NC-c: ID-004's reason names the traversal / disallowed component" \
   "$(printf '%s\n' "$Q_FULL_ERR" | grep 'ID-004' | grep -qi "\\.\\.\\|traversal\\|disallowed" && echo 0 || echo 1)"
-assert "NC-c: ID-005 (lib/board.sh, a real file OUTSIDE the allow-listed dirs) is skipped" \
+assert "NC-c: ID-005 (lib/board/board.sh, a real file OUTSIDE the allow-listed dirs) is skipped" \
   "$(printf '%s\n' "$Q_FULL_ERR" | grep -q 'skip ID-005' && echo 0 || echo 1)"
 assert "NC-c: ID-005's reason names 'outside allow-listed'" \
   "$(printf '%s\n' "$Q_FULL_ERR" | grep 'ID-005' | grep -qi 'outside allow-listed' && echo 0 || echo 1)"
@@ -199,7 +199,7 @@ for f in "$BOARD" "$PARSE_BOARD"; do
   grep -qE '(^|[^A-Za-z0-9_])eval[[:space:]]' "$f" && STATIC_RC=1
   grep -qE '\b(sh|bash)[[:space:]]+-c[[:space:]]+"\$' "$f" && STATIC_RC=1
 done
-assert "NC-d: static audit -- neither lib/board.sh nor lib/parse-board.sh ever eval/sh-c a parsed variable" "$([ "$STATIC_RC" -eq 0 ] && echo 0 || echo 1)"
+assert "NC-d: static audit -- neither lib/board/board.sh nor lib/board/parse-board.sh ever eval/sh-c a parsed variable" "$([ "$STATIC_RC" -eq 0 ] && echo 0 || echo 1)"
 
 echo ""
 echo "=== AC5: single-repo board/next/set/states/priority delegate correctly ==="
@@ -258,7 +258,7 @@ fi
 
 echo ""
 echo "=== Coverage delta ==="
-BEFORE_COUNT=0   # no lib/board.sh, no lib/parse-board.sh, no tests/test-board.sh before SPEC-146
+BEFORE_COUNT=0   # no lib/board/board.sh, no lib/board/parse-board.sh, no tests/test-board.sh before SPEC-146
 AFTER_COUNT="$TOTAL"
 assert "coverage delta: board.sh/parse-board.sh checks went from $BEFORE_COUNT to $AFTER_COUNT in this suite" "$([ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ] && echo 0 || echo 1)"
 

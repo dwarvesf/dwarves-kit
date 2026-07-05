@@ -55,5 +55,5 @@ stayed at ship and mid-flight stayed advisory.
 ```
 cd dwarves-kit
 bash tests/test-every-step-review.sh   # 17/17, exit 0
-bash lib/gate-ledger.sh required full    # the required phase set
+bash lib/gate/gate-ledger.sh required full    # the required phase set
 ```

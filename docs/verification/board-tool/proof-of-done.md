@@ -20,12 +20,12 @@ for real rather than skipping).
 
 ## Implementation
 
-- `lib/board.sh` (new): `board\|next\|set\|states\|priority [mode]` (single-repo, `--backlog-file`),
+- `lib/board/board.sh` (new): `board\|next\|set\|states\|priority [mode]` (single-repo, `--backlog-file`),
   `all <cmd>` (cross-repo, `--repo-root`/`--registry`), `queue [--dry-run]` (new). Base kanban
-  render delegates to the existing `lib/backlog.sh`, unmodified. The `priority` quadrant awk and
+  render delegates to the existing `lib/board/backlog.sh`, unmodified. The `priority` quadrant awk and
   the cross-repo `priority matrix` pivot are migrated verbatim from ops-toolkit's
   `_meta/board`/`_meta/board-all`.
-- `lib/parse-board.sh` (new): `pb_rows` / `pb_queue_rows`, the reusable structured parser + the
+- `lib/board/parse-board.sh` (new): `pb_rows` / `pb_queue_rows`, the reusable structured parser + the
   `#queue{}` allow-list (charset gate, repo self-consistency, `../` traversal hardening,
   existence check).
 - `tests/test-board.sh` (new): the run-table above, 45 assertions.
@@ -66,7 +66,7 @@ byte-identical to the pre-breakage file.
 
 ### 1. Allow-list breakage (repo self-consistency check neutered)
 
-`lib/parse-board.sh`'s repo-mismatch guard changed from
+`lib/board/parse-board.sh`'s repo-mismatch guard changed from
 `if [ "$repo" != "$repo_name" ]; then ...` to `if false && [ "$repo" != "$repo_name" ]; then ...`
 (unreachable condition, simulating the check silently disappearing):
 
@@ -86,7 +86,7 @@ NC-e, AC coverage) is unaffected, confirming they test independent behavior. Fil
 
 ### 2. Render breakage (priority quadrant logic changed)
 
-`lib/board.sh`'s `_priority_render` DO-NOW classification changed from
+`lib/board/board.sh`'s `_priority_render` DO-NOW classification changed from
 `if(u=="hi"&&f=="hi") t1[++n1]=row` to `if(u=="hi") t1[++n1]=row` (merges the DO-NOW and
 URGENT,HARDER quadrants -- the exact class of subtle regression the render-migration NC exists
 to catch):
@@ -112,7 +112,7 @@ Exactly the two `priority overview` render checks (single-repo and cross-repo) f
 the REAL ops-toolkit cockpit -- the `priority matrix` pivot (a separate awk block, untouched by
 this edit) stays green, confirming the checks are independently sensitive to the specific logic
 they cover. File restored (`cmp` confirmed byte-identical), suite re-confirmed GREEN (45/45),
-`shellcheck lib/board.sh lib/parse-board.sh` re-confirmed clean.
+`shellcheck lib/board/board.sh lib/board/parse-board.sh` re-confirmed clean.
 
 ## Byte-identical render proof (before/after, zero diff)
 
@@ -138,19 +138,19 @@ $ $OPS/_meta/board-all priority matrix                 > before.all-prio-matrix.
 $ $OPS/_meta/board-all priority full                   > before.all-prio-full.out
 $ $OPS/_meta/board-all states                          > before.all-states.out
 $ # AFTER: the new kit tool, invoked exactly as the shim would invoke it
-$ bash $KIT/lib/board.sh board --backlog-file $OPS/_meta/BACKLOG.md          > after.board.out
-$ bash $KIT/lib/board.sh next --backlog-file $OPS/_meta/BACKLOG.md           > after.next.out
-$ bash $KIT/lib/board.sh priority overview --backlog-file $OPS/_meta/BACKLOG.md > after.prio-overview.out
-$ bash $KIT/lib/board.sh priority full --backlog-file $OPS/_meta/BACKLOG.md  > after.prio-full.out
-$ bash $KIT/lib/board.sh priority brief --backlog-file $OPS/_meta/BACKLOG.md > after.prio-brief.out
-$ bash $KIT/lib/board.sh priority counts --backlog-file $OPS/_meta/BACKLOG.md > after.prio-counts.out
-$ bash $KIT/lib/board.sh states --backlog-file $OPS/_meta/BACKLOG.md         > after.states.out
-$ bash $KIT/lib/board.sh all board --repo-root $OPS                         > after.all-board.out
-$ bash $KIT/lib/board.sh all next --repo-root $OPS                         > after.all-next.out
-$ bash $KIT/lib/board.sh all priority overview --repo-root $OPS            > after.all-prio-overview.out
-$ bash $KIT/lib/board.sh all priority matrix --repo-root $OPS              > after.all-prio-matrix.out
-$ bash $KIT/lib/board.sh all priority full --repo-root $OPS                > after.all-prio-full.out
-$ bash $KIT/lib/board.sh all states --repo-root $OPS                       > after.all-states.out
+$ bash $KIT/lib/board/board.sh board --backlog-file $OPS/_meta/BACKLOG.md          > after.board.out
+$ bash $KIT/lib/board/board.sh next --backlog-file $OPS/_meta/BACKLOG.md           > after.next.out
+$ bash $KIT/lib/board/board.sh priority overview --backlog-file $OPS/_meta/BACKLOG.md > after.prio-overview.out
+$ bash $KIT/lib/board/board.sh priority full --backlog-file $OPS/_meta/BACKLOG.md  > after.prio-full.out
+$ bash $KIT/lib/board/board.sh priority brief --backlog-file $OPS/_meta/BACKLOG.md > after.prio-brief.out
+$ bash $KIT/lib/board/board.sh priority counts --backlog-file $OPS/_meta/BACKLOG.md > after.prio-counts.out
+$ bash $KIT/lib/board/board.sh states --backlog-file $OPS/_meta/BACKLOG.md         > after.states.out
+$ bash $KIT/lib/board/board.sh all board --repo-root $OPS                         > after.all-board.out
+$ bash $KIT/lib/board/board.sh all next --repo-root $OPS                         > after.all-next.out
+$ bash $KIT/lib/board/board.sh all priority overview --repo-root $OPS            > after.all-prio-overview.out
+$ bash $KIT/lib/board/board.sh all priority matrix --repo-root $OPS              > after.all-prio-matrix.out
+$ bash $KIT/lib/board/board.sh all priority full --repo-root $OPS                > after.all-prio-full.out
+$ bash $KIT/lib/board/board.sh all states --repo-root $OPS                       > after.all-states.out
 $ for pair in board next prio-overview prio-full prio-brief prio-counts states \
               all-board all-next all-prio-overview all-prio-matrix all-prio-full all-states; do
     /usr/bin/cmp -s before.$pair.out after.$pair.out && echo "PASS $pair byte-identical" || echo "FAIL $pair"
@@ -178,7 +178,7 @@ never touched.
 ## Live run: `board queue --dry-run` against the real ops-toolkit cockpit (read-only)
 
 ```
-$ bash lib/board.sh queue --dry-run --repo-root ~/workspace/tieubao/ops-toolkit
+$ bash lib/board/board.sh queue --dry-run --repo-root ~/workspace/tieubao/ops-toolkit
 queue: --dry-run has no additional effect (queue never mutates any BACKLOG.md)
 queue: 0 rows
 $ echo "exit=$?"
@@ -212,7 +212,7 @@ All tests passed.
 ## `shellcheck` (clean)
 
 ```
-$ shellcheck lib/board.sh lib/parse-board.sh tests/test-board.sh
+$ shellcheck lib/board/board.sh lib/board/parse-board.sh tests/test-board.sh
 $ echo $?
 0
 ```
@@ -239,7 +239,7 @@ Attempts, and why each is blocked:
    any `..` PATH COMPONENT at any position (leading, interior, trailing) before the pointer is
    ever joined with `repo_root`. Verified: NC-c, `tests/test-board.sh`.
 3. **Wrong-directory pointer (a real, existing file OUTSIDE the allow-listed dirs, e.g.
-   `lib/board.sh` itself).** Caught by the containment check: `_canon_path(repo_root/pointer)`
+   `lib/board/board.sh` itself).** Caught by the containment check: `_canon_path(repo_root/pointer)`
    must have `repo_root/_meta/megagoals/` or `repo_root/.claude/goals/` as a literal STRING
    prefix (trailing slash in the prefix, so `_meta/megagoals-evil` cannot match). A real,
    readable, existing file is still rejected if it sits outside those two directories. Verified:
@@ -255,8 +255,8 @@ Attempts, and why each is blocked:
    character class, so a metachar-bearing field can never be accepted as a valid token in the
    first place. Verified DYNAMICALLY: a live test wrote a `touch <canary-file>` payload into a
    pointer value and confirmed the canary file was NEVER created after running `board queue`.
-   Verified STATICALLY: `tests/test-board.sh`'s NC-d section greps both `lib/board.sh` and
-   `lib/parse-board.sh` for `eval` or `sh/bash -c "$var"` patterns and asserts NEITHER file ever
+   Verified STATICALLY: `tests/test-board.sh`'s NC-d section greps both `lib/board/board.sh` and
+   `lib/board/parse-board.sh` for `eval` or `sh/bash -c "$var"` patterns and asserts NEITHER file ever
    hands a parsed value to a shell for re-interpretation -- the structural guarantee behind
    "never executed" that holds regardless of the specific payload tried.
 6. **Malformed token (missing a required key).** A `#queue{repo=X}` with no `pointer=` (or vice
@@ -279,14 +279,14 @@ cd dwarves-kit
 bash tests/test-board.sh
 bash tests/test-meta.sh
 bash tests/test-hooks.sh
-shellcheck lib/board.sh lib/parse-board.sh tests/test-board.sh
+shellcheck lib/board/board.sh lib/board/parse-board.sh tests/test-board.sh
 
 # live, read-only:
-bash lib/board.sh queue --dry-run --repo-root ~/workspace/tieubao/ops-toolkit
+bash lib/board/board.sh queue --dry-run --repo-root ~/workspace/tieubao/ops-toolkit
 ```
 
-For the negative controls: in `lib/parse-board.sh`, change
+For the negative controls: in `lib/board/parse-board.sh`, change
 `if [ "$repo" != "$repo_name" ]; then` to `if false && [ "$repo" != "$repo_name" ]; then`, re-run
 `tests/test-board.sh`, observe the 3 NC-b failures above, then revert. Separately, in
-`lib/board.sh`, change `if(u=="hi"&&f=="hi") t1[++n1]=row` to `if(u=="hi") t1[++n1]=row` inside
+`lib/board/board.sh`, change `if(u=="hi"&&f=="hi") t1[++n1]=row` to `if(u=="hi") t1[++n1]=row` inside
 `_priority_render`, re-run, observe the 2 NC-e failures above, then revert.

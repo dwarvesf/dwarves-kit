@@ -97,4 +97,4 @@ Under bypassPermissions the per-section `AskUserQuestion` approvals auto-resolve
 Mirrors the parallel multi-lens pattern in `commands/devs-team.md` + `commands/review-team.md`, at the test-design altitude (the `## Test plan`, not the solution design or the code). The 5 lenses encode `docs/verification/test-design-standard.md` (the senior-test-lead standard, which previously had no executor). The bounded revise loop + `[[QL-VERDICT round=N clean=BOOL findings=K]]` marker + strictly-falling-findings rule are the verify contract from `docs/verification/README.md`. Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/kit:devs-team` and `/kit:visual-team`. Realizes SPEC-052.
 
 After the verdict, record it for lane telemetry (SPEC-062), one line:
-`bash lib/gate-ledger.sh record <rid> test-plan ran "<SOLID|REVISE|RECONSIDER> rounds=<N> findings=<K>"`.
+`bash lib/gate/gate-ledger.sh record <rid> test-plan ran "<SOLID|REVISE|RECONSIDER> rounds=<N> findings=<K>"`.

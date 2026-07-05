@@ -76,12 +76,12 @@ written assuming workers, and is reconciled here: workers -> 2b-0, reviewers -> 
 ```bash
 cd dwarves-kit
 # agent-for maps WORKER domains only; reviewers + generic + security -> empty (Mode-C / review-team)
-bash lib/role-classify.sh agent-for db-migration   # db-migration-worker
-bash lib/role-classify.sh agent-for data-etl        # data-etl-worker
-bash lib/role-classify.sh agent-for performance     # (empty: reviewer, review-team lens)
-bash lib/role-classify.sh agent-for generic         # (empty: Mode-C long tail, SPEC-089)
+bash lib/classify/role-classify.sh agent-for db-migration   # db-migration-worker
+bash lib/classify/role-classify.sh agent-for data-etl        # data-etl-worker
+bash lib/classify/role-classify.sh agent-for performance     # (empty: reviewer, review-team lens)
+bash lib/classify/role-classify.sh agent-for generic         # (empty: Mode-C long tail, SPEC-089)
 # reuse-HIT resolution: a worker-domain task resolves to THAT worker (2b-0 reuse source)
-D=$(bash lib/role-classify.sh classify "write a migration to add a column and backfill"); bash lib/role-classify.sh agent-for "$D"  # db-migration-worker
+D=$(bash lib/classify/role-classify.sh classify "write a migration to add a column and backfill"); bash lib/classify/role-classify.sh agent-for "$D"  # db-migration-worker
 # reviewers pass the mechanical effectiveness gate; workers carry write tools
 for a in performance-reviewer api-reviewer frontend-reviewer infra-reviewer; do bash tests/test-agent-effectiveness.sh "agents/$a.md" >/dev/null && echo "$a GATED-OK"; done
 grep -qE '^\s*-\s*(Edit|Write)' agents/db-migration-worker.md && echo "db-migration-worker is write-capable"
@@ -92,7 +92,7 @@ bash tests/test-role-classify.sh   # + the agent-for lookup + generic-empty + wo
 
 ## After state
 
-- `lib/role-classify.sh`: `agent-for <domain>` verb (worker-domains -> worker name; else empty).
+- `lib/classify/role-classify.sh`: `agent-for <domain>` verb (worker-domains -> worker name; else empty).
 - `commands/execute.md` 2b-0 step 2: consults `agent-for` for a deterministic worker reuse hit.
 - `commands/review-team.md`: opt-in domain-lens step (dispatch a domain reviewer when the diff
   touches its domain); the fixed 3 lenses unchanged.

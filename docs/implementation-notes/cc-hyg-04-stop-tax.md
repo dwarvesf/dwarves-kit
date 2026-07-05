@@ -55,7 +55,7 @@ The security review reproduced three real bypasses against the first cut; all fi
    Fix: exempt only SANCTIONED deploy locations via `case`: `deploy/*` (repo root) or
    `tools/*/deploy/*` (per-tool). Nested `src/deploy/`, `lib/deploy/` are NOT exempt.
 2. **Extensionless shebang scripts bypassed the extension regex** (the kit's own
-   `lib/handoff-gen` is such a file). Fix: a file with no dot in its basename counts
+   `lib/goal/handoff-gen` is such a file). Fix: a file with no dot in its basename counts
    as source if it is a shebang script (`head -c2 == '#!'`).
 3. **session-state debounce used a dirty-file COUNT** -> further edits to an
    already-dirty file (count unchanged) were silently skipped, staling crash recovery

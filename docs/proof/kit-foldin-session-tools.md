@@ -38,7 +38,7 @@ grep is actually true, not true-for-the-two-tools-the-design-note-named.
 
 ## Gate ledger
 
-`bash lib/gate-ledger.sh show kit-foldin-03-session` records: START (lane
+`bash lib/gate/gate-ledger.sh show kit-foldin-03-session` records: START (lane
 normal), GATE design (ran -- Design: bearing, the interface decision above),
 GATE build (ran -- move + extraction + rewire, 40+6+7+8 = 61 pre-existing
 tests green unmodified + 7 new parser-unit tests), GATE review (dispatched

@@ -11,8 +11,8 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LC="$KIT_DIR/lib/lane-classify.sh"
-GL="$KIT_DIR/lib/gate-ledger.sh"
+LC="$KIT_DIR/lib/classify/lane-classify.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 
 # Isolate the gate-ledger writer from the operator's real telemetry (mirrors
 # test-lane-escalation.sh's DWARVES_KIT_LOG_DIR export) -- CI-portability: every ledger
@@ -159,7 +159,7 @@ echo "=== T9: doc wiring -- WORKFLOW.md + commands/ship.md name the floor ==="
 # ============================================================
 grep -qF 'LANE_DEESCALATE_FLOOR' "$KIT_DIR/WORKFLOW.md"; assert "T9: WORKFLOW.md names the LANE_DEESCALATE_FLOOR tunable" $?
 grep -qE 'default \*\*20\*\*|default 20' "$KIT_DIR/WORKFLOW.md"; assert "T9: WORKFLOW.md states the default (20)" $?
-grep -qF 'lib/lane-classify.sh deescalate' "$KIT_DIR/commands/ship.md"; assert "T9: commands/ship.md wires the deescalate call" $?
+grep -qF 'lib/classify/lane-classify.sh deescalate' "$KIT_DIR/commands/ship.md"; assert "T9: commands/ship.md wires the deescalate call" $?
 grep -qiE 'never blocks|advisory only' "$KIT_DIR/commands/ship.md" | head -1 >/dev/null
 grep -A2 'Lane de-escalation nudge' "$KIT_DIR/commands/ship.md" | grep -qiE 'exit-0 always|never blocks'
 assert "T9: commands/ship.md documents the nudge as never-blocking" $?

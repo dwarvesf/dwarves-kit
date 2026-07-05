@@ -16,9 +16,9 @@ Profile: feature   Proof class: behavioral
 
 | Aspect | Detail |
 |---|---|
-| What | AGENTS.md `## 3. Done means` gains a "Deployable-done" clause; `lib/proof-ledger.sh` gains a purely-additive `deployable <root> <base>` verb (relabels `classify()`'s `stateful` -> `yes`); no change to `classify()`/`check()`. |
-| Where | `AGENTS.md` (zone 3), `lib/proof-ledger.sh` (new function + case-arm), `tests/fixtures/deployable-done/`, `tests/test-deployable-done.sh` |
-| How it runs | Ship-time, via the EXISTING `hooks/ship-gate.sh` -> `lib/proof-ledger.sh check` wall (ADR-0025); no new hook, no new enforcement path. |
+| What | AGENTS.md `## 3. Done means` gains a "Deployable-done" clause; `lib/gate/proof-ledger.sh` gains a purely-additive `deployable <root> <base>` verb (relabels `classify()`'s `stateful` -> `yes`); no change to `classify()`/`check()`. |
+| Where | `AGENTS.md` (zone 3), `lib/gate/proof-ledger.sh` (new function + case-arm), `tests/fixtures/deployable-done/`, `tests/test-deployable-done.sh` |
+| How it runs | Ship-time, via the EXISTING `hooks/ship-gate.sh` -> `lib/gate/proof-ledger.sh check` wall (ADR-0025); no new hook, no new enforcement path. |
 | Reversibility | `git revert` on this branch's commits restores the pre-SPEC-095 AGENTS.md/proof-ledger.sh; confirmed live (see NEGATIVE CONTROL run below). |
 
 ## 3. Confirmation (runs)
@@ -70,7 +70,7 @@ Profile: feature   Proof class: behavioral
 
 ### R1-NEG NEGATIVE CONTROL
 - Command: `git stash && bash tests/test-deployable-done.sh; git stash pop` (stashes the
-  tracked AGENTS.md + lib/proof-ledger.sh changes; the untracked test/fixtures stay in
+  tracked AGENTS.md + lib/gate/proof-ledger.sh changes; the untracked test/fixtures stay in
   place, so the test itself is unchanged -- only the implementation under test reverts)
 - Exit: 1
 - Output (excerpt):
@@ -95,7 +95,7 @@ Profile: feature   Proof class: behavioral
 - Command: `bash tests/test-proof-dir-layout.sh && bash tests/test-proof-visual-evidence.sh && bash tests/test-ship-gate-fail-closed.sh && bash tests/test-meta.sh && bash tests/test-hooks.sh`
 - Exit: 0 (each)
 - Output (excerpt): `ALL PASS (3/3)`, `ALL PASS (4/4)`, `PASS=5 FAIL=0`, `Passed: 576 / 576`, `Passed: 438 / 438`
-- Verdict: PASS -- proves `lib/proof-ledger.sh classify()`/`check()` are byte-unchanged in
+- Verdict: PASS -- proves `lib/gate/proof-ledger.sh classify()`/`check()` are byte-unchanged in
   behavior (AC6): every test that exercises the shared path independently of the new
   `deployable` verb passes identically to pre-branch behavior.
 

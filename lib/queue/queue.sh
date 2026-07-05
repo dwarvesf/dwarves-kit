@@ -142,7 +142,7 @@ _slug_ok() {  # slug
 }
 
 _mux_ensure_session() {
-  [ "$TERMINAL_MUX" = tmux ] || { _warn "queue: unsupported TERMINAL_MUX '$TERMINAL_MUX' (only 'tmux' is supported; see the cmux note in lib/queue.sh)"; return 2; }
+  [ "$TERMINAL_MUX" = tmux ] || { _warn "queue: unsupported TERMINAL_MUX '$TERMINAL_MUX' (only 'tmux' is supported; see the cmux note in lib/queue/queue.sh)"; return 2; }
   "$MUX_CMD" has-session -t "$QUEUE_MUX_SESSION" 2>/dev/null \
     || "$MUX_CMD" new-session -d -s "$QUEUE_MUX_SESSION" -n _init 2>/dev/null
 }

@@ -1,1 +1,0 @@
-goal/mega-merge.sh

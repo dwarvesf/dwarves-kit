@@ -21,7 +21,7 @@ Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the 
 lenses, run the coverage-delta gate and fold its one line into the test-coverage lens's input:
 
 ```
-bash lib/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid "$(bash lib/gate-ledger.sh rid 2>/dev/null)"
+bash lib/gate/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid "$(bash lib/gate/gate-ledger.sh rid 2>/dev/null)"
 ```
 
 It prints one `[coverage-delta]` line , `WARNING under-tested` (source moved, no matching test
@@ -35,7 +35,7 @@ blocker). A `WARNING` is advisory input to the test-coverage lens, never a stop.
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
-**Domain lens (opt-in, SPEC-111).** In addition to the fixed 3, classify the changed files' domain , `bash lib/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`performance-reviewer`, `api-reviewer`, `frontend-reviewer`, `infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the SPEC-111 read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
+**Domain lens (opt-in, SPEC-111).** In addition to the fixed 3, classify the changed files' domain , `bash lib/classify/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`performance-reviewer`, `api-reviewer`, `frontend-reviewer`, `infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the SPEC-111 read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
 
 **Model tiering (SPEC-078 / ID-078, EveryInc Stage 4 pattern):** dispatch the
 security reviewer with an EXPLICIT model override matching the session model ,
@@ -142,7 +142,7 @@ merged report's combined `findings=<K>` count (Step 3's `review ran` line counts
 specialists + advisor together, so it cannot answer that question alone):
 
 ```
-bash lib/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
+bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
   || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); review output unaffected" >&2
 ```
 
@@ -154,7 +154,7 @@ reaches this line simply has no `advisor` row -- `kit_gates` renders it zero/abs
 fabricated (NC1).
 
 **RID convention (SPEC-145, pinned).** In a standalone `/kit:review-team` run, `$rid` is the
-current run's own rid (`bash lib/gate-ledger.sh rid`). In a mega/convergence-gate context
+current run's own rid (`bash lib/gate/gate-ledger.sh rid`). In a mega/convergence-gate context
 (`commands/mega.md`'s convergence-gate step, below), the SAME advisor grammar records under
 the FINAL sub-goal's rid instead -- the de-facto convention the older TIER-4 free-text
 `| ACTION |` lines already used (e.g. `kit-telem-05-mergeguard.log`,
@@ -296,7 +296,7 @@ only (unchanged meaning), `rejected=<M>` counts the Step 3a previously-rejected 
 `actor=<name>` is `git config user.name` read at record time:
 
 ```
-bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> suppressed=<S> rejected=<M> actor=$(git config user.name)"
+bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> suppressed=<S> rejected=<M> actor=$(git config user.name)"
 ```
 
 ### Step 5: Decision gate

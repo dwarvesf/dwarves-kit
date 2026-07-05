@@ -46,7 +46,7 @@ hard-reasoning escape hatch , expressed consistently on all three AUTHORING surf
 
 **Write-time default, read-time honored (the honest scope of "one stance").** The sonnet
 default is applied at AUTHORING time: surfaces 2+3 bake `Model: sonnet` INTO each goal file.
-The existing dispatch reader `_route()` (lib/orchestrate.sh:396-403) then reads that explicit
+The existing dispatch reader `_route()` (lib/queue/orchestrate.sh:396-403) then reads that explicit
 line and dispatches `--model sonnet` , this is the genuine "default applied at dispatch" (proven
 by the existing test-orchestrate fixture, below), NOT a re-encoded rule in a test. `_route()`
 itself is UNCHANGED: its absent->inherit fallback is exactly the "deliberate OMIT = inherit"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-spec-index.sh -- the read-only SPEC registry view (lib/spec-index.sh).
+# test-spec-index.sh -- the read-only SPEC registry view (lib/spec/spec-index.sh).
 #
 # spec-index is purely a "list every SPEC across all */docs/specs/ namespaces,
 # grouped by namespace" READ view. Numbering stays per-namespace local; this lib
@@ -19,7 +19,7 @@ bad() { TOTAL=$((TOTAL+1)); FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} $1"; }
 expect()  { if printf '%s' "$3" | grep -q "$2"; then ok "$1"; else bad "$1 (missing '$2' in: $3)"; fi; }
 refute()  { if printf '%s' "$3" | grep -q "$2"; then bad "$1 (unexpected '$2')"; else ok "$1"; fi; }
 
-SPEC_INDEX="$KIT_DIR/lib/spec-index.sh"
+SPEC_INDEX="$KIT_DIR/lib/spec/spec-index.sh"
 
 mk_repo() {
   local r; r="$(mktemp -d "${TMPDIR:-/tmp}/kit-spec-index.XXXXXX")"

@@ -4,7 +4,7 @@
 
 | # | Criterion | Status |
 |---|---|---|
-| 1 | Router suggests per-sub-goal model from v2 SG-09's measured data | met (`lib/route-suggest.sh` reads the 12-col SG-09 ledger) |
+| 1 | Router suggests per-sub-goal model from v2 SG-09's measured data | met (`lib/classify/route-suggest.sh` reads the 12-col SG-09 ledger) |
 | 2 | Suggestion matches the measured-cheapest-at-parity choice | met (rich-data row below) |
 | 3 | A cheaper-but-FAILING arm is never suggested (infinite-cost guard) | met (negative control below) |
 | 4 | Abstains, not overfits, on thin data | met (thin-data row below, the real committed SG-09 state) |
@@ -51,8 +51,8 @@ the candidate set and haiku (cheapest PASS) wins. The test asserts `model=sonnet
 ```bash
 cd <kit-worktree>
 bash tests/test-routing.sh   # 10/10
-bash lib/route-suggest.sh tests/fixtures/routing/rich-ledger.tsv code-add-flag   # SUGGEST haiku
-bash lib/route-suggest.sh tests/fixtures/routing/thin-ledger.tsv mini-mega       # ABSTAIN thin-data
+bash lib/classify/route-suggest.sh tests/fixtures/routing/rich-ledger.tsv code-add-flag   # SUGGEST haiku
+bash lib/classify/route-suggest.sh tests/fixtures/routing/thin-ledger.tsv mini-mega       # ABSTAIN thin-data
 ```
 
 The thin fixture is a verbatim copy of v2 SG-09's committed proof ledger

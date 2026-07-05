@@ -28,7 +28,7 @@ the previously-unwired orchestrate-family suites.
 | N3 | `MULTIPLEXER` unset -> viewer logic unreachable even with an explicit viewer set | PASS (T8) |
 | N4 | SECURITY NC: a metachar session name (hostile `TMUX_SESSION`) is refused by the `[A-Za-z0-9_-]` charset gate -- viewer never invoked, loud warn; guard list stays untainted (sanitized key) | PASS (T11) |
 | N5 | A failing viewer (nonzero exec) warns + degrades to pull; wave rc 0, boxes still flip; real-exec missing-binary path (rc 127) degrades identically | PASS (T12, T13) |
-| R | Regressions unedited + green: multiplexer, orchestrate, orchestrate-wavefront, tier4-close, token-capture, model-routing, spec-index, meta, hooks, e2e, lane-classify, lane-telemetry, mega-merge, ledger-durability, meta-agent, review-team-plants, role-classify, proof-visual-evidence; `shellcheck -S error lib/orchestrate.sh tests/test-pane-viewer.sh` clean | PASS |
+| R | Regressions unedited + green: multiplexer, orchestrate, orchestrate-wavefront, tier4-close, token-capture, model-routing, spec-index, meta, hooks, e2e, lane-classify, lane-telemetry, mega-merge, ledger-durability, meta-agent, review-team-plants, role-classify, proof-visual-evidence; `shellcheck -S error lib/queue/orchestrate.sh tests/test-pane-viewer.sh` clean | PASS |
 
 The NCs are non-vacuous: every off/degrade case runs with a POISONED `$VIEWER_CMD` (any
 invocation writes a sentinel and exits 99), so a coupling leak on the pull paths fails the
@@ -86,7 +86,7 @@ Regression (all rc 0, unedited): `test-multiplexer.sh`, `test-orchestrate.sh`,
 `test-e2e.sh`, `test-lane-classify.sh`, `test-lane-telemetry.sh`, `test-mega-merge.sh`,
 `test-ledger-durability.sh`, `test-meta-agent.sh`, `test-review-team-plants.sh`,
 `test-role-classify.sh`, `test-proof-visual-evidence.sh`.
-`shellcheck -S error lib/orchestrate.sh tests/test-pane-viewer.sh` clean.
+`shellcheck -S error lib/queue/orchestrate.sh tests/test-pane-viewer.sh` clean.
 
 ## Reproduce
 
@@ -95,7 +95,7 @@ cd <dwarves-kit>
 bash tests/test-pane-viewer.sh              # ALL PASS (33 assertions, T1-T13)
 bash tests/test-multiplexer.sh              # regression: SPEC-119 pull half intact
 bash tests/test-orchestrate-wavefront.sh    # regression: wave path intact
-shellcheck -S error lib/orchestrate.sh
+shellcheck -S error lib/queue/orchestrate.sh
 ```
 
 Viewers are mocked via the `VIEWER_CMD` seam (recorder / poison / failing scripts), tmux via

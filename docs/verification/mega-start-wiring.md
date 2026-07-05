@@ -1,6 +1,6 @@
 # Proof of done: mega-start-wiring (SPEC-101 / ID-085)
 
-The automated mega dispatch (`lib/orchestrate.sh cmd_run`) emits a `gate-ledger start`
+The automated mega dispatch (`lib/queue/orchestrate.sh cmd_run`) emits a `gate-ledger start`
 per sub-goal, so mega-dispatched runs are tracked (real lane/type) in `lane-telemetry`,
 not `?`. Root cause of the SPEC-073 eval's untracked-run finding.
 
@@ -17,7 +17,7 @@ not `?`. Root cause of the SPEC-073 eval's untracked-run finding.
 
 ## Implementation
 
-- `lib/orchestrate.sh`: new `_emit_start <dir> <id>` helper, called in `cmd_run` after the
+- `lib/queue/orchestrate.sh`: new `_emit_start <dir> <id>` helper, called in `cmd_run` after the
   `executing` event and before the session spawns. Derives the rid from the goal file's
   `**Branch:** <type>/<slug>` (`${branch#*/}`), classifies lane + type from the sub-goal
   title (chosen == classified, no human override in the automated path), calls

@@ -26,7 +26,7 @@ is asserted as a negative control, not just a happy-path agreement check.
 ## 2026-07-01 , stacked on SG-05 (same repo), base feat/v3-meta-agent
 
 SG-06 "extends SG-05's meta-agent": it adds a `## Data-driven routing` section to `agents/meta-agent.md`
-(from SG-05's branch) plus `lib/route-suggest.sh` + test + fixtures. Same-repo dependency, so the branch
+(from SG-05's branch) plus `lib/classify/route-suggest.sh` + test + fixtures. Same-repo dependency, so the branch
 stacks on `feat/v3-meta-agent` (not master). Han merges bottom-up at end-review; no retarget dance.
 Goal file said PR base `main`; actual default is `master` (and here the base is the parent branch).
 

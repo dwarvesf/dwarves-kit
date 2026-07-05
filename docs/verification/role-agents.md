@@ -23,7 +23,7 @@ review-team domain lens), reconciling the SPEC-089 static-known vs dynamic-novel
 
 - `agents/{db-migration,data-etl}-worker.md` (write-capable) + `agents/{performance,api,frontend,infra}-reviewer.md`
   (read-only), each with `generated-by:` + tools/model justification.
-- `lib/role-classify.sh`: `agent-for <domain>` (workers -> worker name; reviewers/security/generic -> empty).
+- `lib/classify/role-classify.sh`: `agent-for <domain>` (workers -> worker name; reviewers/security/generic -> empty).
 - `commands/execute.md` 2b-0 step 2: consults `agent-for` for a deterministic worker reuse hit.
 - `commands/review-team.md`: opt-in domain-lens step (dispatch a domain reviewer when the diff touches
   its domain); fixed 3 lenses unchanged.
@@ -48,8 +48,8 @@ review-team domain lens), reconciling the SPEC-089 static-known vs dynamic-novel
 ## Run detail (captured 2026-07-03)
 
 ```
-$ bash lib/role-classify.sh agent-for db-migration   -> db-migration-worker
-$ bash lib/role-classify.sh agent-for performance    -> (empty)
+$ bash lib/classify/role-classify.sh agent-for db-migration   -> db-migration-worker
+$ bash lib/classify/role-classify.sh agent-for performance    -> (empty)
 $ D=$(role-classify classify "write a migration to add a column and backfill"); agent-for "$D" -> db-migration-worker
 $ for a in performance api frontend infra; do test-agent-effectiveness.sh agents/$a-reviewer.md; done  -> 3/3 each
 $ bash tests/test-meta.sh   -> 651/651 ; All meta tests passed.
@@ -71,9 +71,9 @@ no migration and creates no persistent state (`proof-gate.sh contract` correctly
 Recorded run:
 
 ```
-Command: bash lib/role-classify.sh agent-for db-migration
+Command: bash lib/classify/role-classify.sh agent-for db-migration
 Exit: 0     Output: db-migration-worker
-Command: D=$(bash lib/role-classify.sh classify "write a migration to add a column and backfill"); bash lib/role-classify.sh agent-for "$D"
+Command: D=$(bash lib/classify/role-classify.sh classify "write a migration to add a column and backfill"); bash lib/classify/role-classify.sh agent-for "$D"
 Exit: 0     Output: db-migration-worker      # reuse-hit chain
 Command: for a in performance api frontend infra; do bash tests/test-agent-effectiveness.sh agents/$a-reviewer.md; done
 Exit: 0     Output: 3/3 passed (x4)           # reviewers gate

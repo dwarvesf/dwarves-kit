@@ -50,4 +50,4 @@ Do NOT be a yes-man. Do NOT validate the idea by default. Push hard on weak poin
 6. If BUILD, suggest (optional) `/kit:design` to shape the solution interactively before `/kit:spec`. It is opt-in; the user may go straight to `/kit:spec`.
 
 After the verdict, record it for lane telemetry (SPEC-139), one line:
-`bash lib/gate-ledger.sh record <rid> Think ran "<verdict> <one-line thesis>"`.
+`bash lib/gate/gate-ledger.sh record <rid> Think ran "<verdict> <one-line thesis>"`.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # significance-classify.sh -- deterministic understanding-gate classifier (ADR-0031, SPEC-123).
 #
-# Sibling to lib/lane-classify.sh (same shape: pure bash + grep, no binary, no LLM). Where
+# Sibling to lib/classify/lane-classify.sh (same shape: pure bash + grep, no binary, no LLM). Where
 # lane-classify decides HOW MUCH RISK a task carries, this decides WHEN the understanding gate
 # fires: it emits TWO signals per ADR-0031's Refinement --
 #
@@ -45,8 +45,9 @@
 set -euo pipefail
 
 SC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_ROOT="$(cd "$SC_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 LANE_CLASSIFY="$SC_DIR/lane-classify.sh"
-GATE_LEDGER="$SC_DIR/gate-ledger.sh"
+GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
 
 # Significance triggers (any one -> high). "full lane" is checked separately (it calls out to
 # lane-classify.sh, not a regex here) so the two classifiers never carry two copies of the same

@@ -20,9 +20,9 @@ line), `docs/verification/README.md` (proof marker).
 ## Loop-type wiring reachable FROM the adopted repo
 
 ```
-$ (cd "$T" && bash <kit>/lib/proof-gate.sh contract "add a data-pull CLI command")
+$ (cd "$T" && bash <kit>/lib/gate/proof-gate.sh contract "add a data-pull CLI command")
 type=data-tool class=behavioral
-$ (cd "$T" && bash <kit>/lib/proof-gate.sh contract "benchmark tool X vs Y")
+$ (cd "$T" && bash <kit>/lib/gate/proof-gate.sh contract "benchmark tool X vs Y")
 type=eval class=behavioral
 ```
 

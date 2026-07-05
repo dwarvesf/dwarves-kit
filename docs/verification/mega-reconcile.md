@@ -9,24 +9,24 @@ Profile: feature   Proof class: behavioral
 | AC2 | auto-merge fires once every required gate for a lane is recorded (green gate) | PASS | R1, lines 12-18 |
 | AC3 | [LOAD-BEARING NEGATIVE CONTROL] one required gate missing -> `gate` nonzero AND `merge` REFUSES (no merge, exit nonzero, `BLOCKED` message), even with `--execute` | PASS | R1, lines 24-30 |
 | AC4 | dry-run is the default action -- `merge` on a passing gate never calls `gh` unless `--execute` is given | PASS | R1, lines 14-17 |
-| AC5 | deploy/UAT terminus reuses SG-07's `lib/proof-ledger.sh deployable` verbatim (yes for deployable, no for inert), documented in `mega.md` | PASS | R1, lines 32-36 |
+| AC5 | deploy/UAT terminus reuses SG-07's `lib/gate/proof-ledger.sh deployable` verbatim (yes for deployable, no for inert), documented in `mega.md` | PASS | R1, lines 32-36 |
 | AC6 | per-run merge config (`MEGA_MERGE_POSTURE` / `--posture=`) honored -- `per-pr-review` forces dry-run even with `--execute` on a passing gate | PASS | R1, lines 38-43 |
 
 ## 2. Implementation
 
 | Aspect | Detail |
 |---|---|
-| What | `commands/mega.md` (new command, mirrors the ops-toolkit `plan-for-mega-goal` skill's decompose + front-load-checkpoint + per-run-merge-config beats). `lib/mega-merge.sh` (new lib, `gate`/`merge` verbs -- ship-layer auto-merge enforcement that rides `lib/gate-ledger.sh check`, dry-run by default, refuses unconditionally on a failing/missing gate). |
-| Where | `commands/mega.md`, `lib/mega-merge.sh`, `tests/test-mega-reconcile.sh`, roster rows in `README.md` / `MANUAL.md` / `docs/architecture.md`. |
-| How it runs | `gate` and `merge` are plain bash, called by the mega-lane hand-off step (Step 5 of `mega.md`) once a sub-goal's PR is CI-green. `gate` is a pure decision (calls `lib/gate-ledger.sh check <lane> <rid>` verbatim); `merge` calls `gate` first and only proceeds to `gh pr merge` with `--execute`. No new hook, no new enforcement path -- the ship-gate itself (`hooks/ship-gate.sh`) is untouched. |
-| Reversibility | Both new files are additive (no existing file's logic changed); `git revert` on this branch's commits fully removes them. `lib/gate-ledger.sh` and `lib/proof-ledger.sh` are read-only consumed, never modified (confirmed: `git diff` on this branch touches neither file). |
+| What | `commands/mega.md` (new command, mirrors the ops-toolkit `plan-for-mega-goal` skill's decompose + front-load-checkpoint + per-run-merge-config beats). `lib/goal/mega-merge.sh` (new lib, `gate`/`merge` verbs -- ship-layer auto-merge enforcement that rides `lib/gate/gate-ledger.sh check`, dry-run by default, refuses unconditionally on a failing/missing gate). |
+| Where | `commands/mega.md`, `lib/goal/mega-merge.sh`, `tests/test-mega-reconcile.sh`, roster rows in `README.md` / `MANUAL.md` / `docs/architecture.md`. |
+| How it runs | `gate` and `merge` are plain bash, called by the mega-lane hand-off step (Step 5 of `mega.md`) once a sub-goal's PR is CI-green. `gate` is a pure decision (calls `lib/gate/gate-ledger.sh check <lane> <rid>` verbatim); `merge` calls `gate` first and only proceeds to `gh pr merge` with `--execute`. No new hook, no new enforcement path -- the ship-gate itself (`hooks/ship-gate.sh`) is untouched. |
+| Reversibility | Both new files are additive (no existing file's logic changed); `git revert` on this branch's commits fully removes them. `lib/gate/gate-ledger.sh` and `lib/gate/proof-ledger.sh` are read-only consumed, never modified (confirmed: `git diff` on this branch touches neither file). |
 
 ## 3. Confirmation (runs)
 
 | Run | When (ISO+tz) | Command | Exit | Verdict |
 |---|---|---|---|---|
 | R1 | 2026-07-02T00:00+07:00 | `bash tests/test-mega-reconcile.sh` | 0 | PASS (35/35) |
-| R1-NEG | 2026-07-02T00:00+07:00 | `git show mega/kit-hardening:commands/mega.md`; `git show mega/kit-hardening:lib/mega-merge.sh`; `git show mega/kit-hardening:tests/test-mega-reconcile.sh` | 128 (x3) | RED-as-expected: all three `fatal: invalid object name` -- none of the three new files (or their test) exist on the integration branch `mega/kit-hardening` this branch is stacked on, confirming the auto-merge enforcement is genuinely new, not a no-op re-add |
+| R1-NEG | 2026-07-02T00:00+07:00 | `git show mega/kit-hardening:commands/mega.md`; `git show mega/kit-hardening:lib/goal/mega-merge.sh`; `git show mega/kit-hardening:tests/test-mega-reconcile.sh` | 128 (x3) | RED-as-expected: all three `fatal: invalid object name` -- none of the three new files (or their test) exist on the integration branch `mega/kit-hardening` this branch is stacked on, confirming the auto-merge enforcement is genuinely new, not a no-op re-add |
 | R2 | 2026-07-02T00:00+07:00 | `bash tests/test-meta.sh` | 0 | PASS (578/578) |
 | R3 | 2026-07-02T00:00+07:00 | `bash tests/test-hooks.sh` | 0 | PASS (438/438) |
 | R4 | 2026-07-02T00:00+07:00 | `bash tests/test-ship-gate-profiles.sh` | 1 | [UNAVAILABLE: kit not installed at `~/.claude/dwarves-kit` in this dev sandbox; identical failure on `main` -- pre-existing environmental gap, not a regression] |
@@ -50,9 +50,9 @@ Profile: feature   Proof class: behavioral
     PASS AC1: mega.md carries the per-run-merge-config beat
     PASS AC1: mega.md names the ops-toolkit plan-for-mega-goal skill as the mirror source
     PASS AC1: mega.md states it mirrors, not forks, the skill
-    PASS AC1: mega.md wires lib/mega-merge.sh into the hand-off step
+    PASS AC1: mega.md wires lib/goal/mega-merge.sh into the hand-off step
 
-  === lib/mega-merge.sh exists, is executable, dispatches gate + merge ===
+  === lib/goal/mega-merge.sh exists, is executable, dispatches gate + merge ===
     PASS mega-merge.sh exists and is executable
     PASS mega-merge.sh dispatches 'gate'
     PASS mega-merge.sh dispatches 'merge'
@@ -74,9 +74,9 @@ Profile: feature   Proof class: behavioral
     PASS AC3 [NEGATIVE CONTROL]: a failing gate never calls gh, even with --execute
     PASS AC3 [NEGATIVE CONTROL]: --execute cannot force a merge past a failing gate
 
-  === AC5: deploy/UAT terminus via lib/proof-ledger.sh deployable (SG-07 reuse) ===
-    PASS AC5: a deployable diff -> lib/proof-ledger.sh deployable prints 'yes' (terminus engages)
-    PASS AC5: an inert diff -> lib/proof-ledger.sh deployable prints 'no' (terminus skipped)
+  === AC5: deploy/UAT terminus via lib/gate/proof-ledger.sh deployable (SG-07 reuse) ===
+    PASS AC5: a deployable diff -> lib/gate/proof-ledger.sh deployable prints 'yes' (terminus engages)
+    PASS AC5: an inert diff -> lib/gate/proof-ledger.sh deployable prints 'no' (terminus skipped)
     PASS AC5: mega.md documents the deploy/UAT terminus
     PASS AC5: mega.md wires the SG-07 deployable verb verbatim
 
@@ -130,7 +130,7 @@ bash tests/test-meta.sh             # 578/578
 bash tests/test-hooks.sh            # 438/438
 ```
 
-Rollback: `git checkout main -- commands/mega.md lib/mega-merge.sh` deletes both new
+Rollback: `git checkout main -- commands/mega.md lib/goal/mega-merge.sh` deletes both new
 files cleanly (nothing else references them until `mega.md`'s own Step 5, which is
 prose, not wired into any hook), and `git checkout main -- tests/test-mega-reconcile.sh
 README.md MANUAL.md docs/architecture.md` restores the roster to its pre-branch state.

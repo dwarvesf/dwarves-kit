@@ -16,7 +16,7 @@
 # to the close session's integration-verifier).
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ORCH="$KIT/lib/orchestrate.sh"
+ORCH="$KIT/lib/queue/orchestrate.sh"
 fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }

@@ -14,7 +14,7 @@ three responses are recorded.
 ## The two hard constraints (do not violate)
 
 1. **Grounded in the DIFF + recorded test results, NEVER the agent's narrative** (Litt's plausible-but-wrong
-   caveat). The questions come from `lib/quiz-gate.sh questions <ref>`, whose only input is a git ref , there
+   caveat). The questions come from `lib/gate/quiz-gate.sh questions <ref>`, whose only input is a git ref , there
    is no narrative channel, so a false story physically cannot leak in. Never hand-write quiz questions from
    memory, the commit message, or what you "meant" to do. If the commit message contradicts the diff, the
    diff wins.
@@ -32,7 +32,7 @@ quizzed (it is already logged silently by SPEC-123's `significance-classify reco
 Step 8 by SPEC-136, immediately before this tap).
 
 ```bash
-bash lib/quiz-gate.sh tap <rid> --files "<changed files>" --impl-notes docs/implementation-notes/<slug>.md --pr-kind gate "<what changed>"
+bash lib/gate/quiz-gate.sh tap <rid> --files "<changed files>" --impl-notes docs/implementation-notes/<slug>.md --pr-kind gate "<what changed>"
 ```
 
 If it prints nothing, there is no tap , stop, the merge proceeds untouched. If it prints the nudge, present
@@ -44,9 +44,9 @@ All three responses are logged to the debt ledger (`gate-ledger.sh debt-response
 the human made:
 
 ```bash
-bash lib/quiz-gate.sh respond <rid> engage --ref <ref>   # pull the quiz now
-bash lib/quiz-gate.sh respond <rid> defer                # send to the weekend batch (SG-05)
-bash lib/quiz-gate.sh respond <rid> wave                 # accept the debt knowingly
+bash lib/gate/quiz-gate.sh respond <rid> engage --ref <ref>   # pull the quiz now
+bash lib/gate/quiz-gate.sh respond <rid> defer                # send to the weekend batch (SG-05)
+bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt knowingly
 ```
 
 - **engage** , `respond ... engage --ref <ref>` emits the `deep-understand` dispatch payload (the 5
@@ -74,7 +74,7 @@ gate. The correctness gates (ADR-0024 ship-gate, ADR-0025 proof-of-done) remain 
 ## Source
 
 ADR-0031 §2 (the AFTER gate's quiz half) + §3 (the nudge, three responses, debt budget) + SPEC-125. Engine:
-`lib/quiz-gate.sh` (questions from the diff+tests, the tap decision keyed on `lib/significance-classify.sh`,
-the three logged responses via `lib/gate-ledger.sh debt-response`). Composes the `deep-understand` skill.
+`lib/gate/quiz-gate.sh` (questions from the diff+tests, the tap decision keyed on `lib/classify/significance-classify.sh`,
+the three logged responses via `lib/gate/gate-ledger.sh debt-response`). Composes the `deep-understand` skill.
 Proof: `tests/test-quiz-gate.sh` (5-from-diff, three-responses-logged, deep-understand routing, the grounded
 NC, the wiring NC, and never-must-pass).

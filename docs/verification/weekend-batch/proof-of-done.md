@@ -18,9 +18,9 @@ this run).
 
 ## Implementation
 
-- `lib/weekend-batch.sh` (new): `list` / `collect` / `mark-paid`, reads `$LOG_DIR/runs/*.log`
+- `lib/queue/weekend-batch.sh` (new): `list` / `collect` / `mark-paid`, reads `$LOG_DIR/runs/*.log`
   (SPEC-097's resolver), writes only via the existing `gate-ledger.sh debt`.
-- `lib/gate-ledger.sh`: `debt()` gains the additive, optional `response=<engage|defer|wave>` key.
+- `lib/gate/gate-ledger.sh`: `debt()` gains the additive, optional `response=<engage|defer|wave>` key.
 - `tests/test-weekend-batch.sh` (new): the run-table above.
 - (dotfiles repo, branch `feat/ug-05-weekend-batch`, local commit, not pushed):
   `home/dot_claude/skills/weekend-debt-paydown/SKILL.md`.
@@ -39,7 +39,7 @@ $ bash tests/test-weekend-batch.sh
 
 ## Negative control (load-bearing, confirmed RED then reverted)
 
-A targeted breakage of `lib/weekend-batch.sh`'s disposition filter (accepting `paid` /
+A targeted breakage of `lib/queue/weekend-batch.sh`'s disposition filter (accepting `paid` /
 `not-significant` / `pending` as collectible, not just `waved`/`deferred`) was applied in-place,
 the suite re-run, and the change reverted immediately after capturing the RED output:
 
@@ -56,7 +56,7 @@ $ bash tests/test-weekend-batch.sh   # (disposition filter neutered)
 
 Exactly the three negative-control assertions flip red (AC3a's exclusion check + both AC3b
 checks); every other assertion (AC1, AC2, AC3c, AC3d, AC4) is unaffected, confirming they test
-independent behavior. The file was restored immediately after (`lib/weekend-batch.sh` verified
+independent behavior. The file was restored immediately after (`lib/queue/weekend-batch.sh` verified
 byte-identical to its pre-breakage state), and the suite re-confirmed GREEN (22/22).
 
 ## Also verified: no regression to sibling suites
@@ -79,7 +79,7 @@ bash tests/test-significance-classify.sh
 bash tests/test-meta.sh
 ```
 
-For the negative control: edit `lib/weekend-batch.sh`'s `_collectible_files()` case statement from
+For the negative control: edit `lib/queue/weekend-batch.sh`'s `_collectible_files()` case statement from
 `case "$disp" in waved|deferred) ;; *) continue ;; esac` to also accept `paid|not-significant|
 pending|unknown`, re-run `bash tests/test-weekend-batch.sh`, observe the 3 failures above, then
 revert.

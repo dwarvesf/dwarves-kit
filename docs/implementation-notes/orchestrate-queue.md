@@ -41,8 +41,8 @@ Impact: the consecutive-error semantics are the counter's whole contract; see NC
 
 ## 2026-07-05 12:25 sibling lib, not an orchestrate.sh internal
 
-Context: the sub-goal allowed either an `orchestrate.sh queue` subcommand or a sibling `lib/queue.sh`.
-Decision: logic lives in `lib/queue.sh`; `orchestrate.sh` gets a one-line `queue) exec queue.sh
+Context: the sub-goal allowed either an `orchestrate.sh queue` subcommand or a sibling `lib/queue/queue.sh`.
+Decision: logic lives in `lib/queue/queue.sh`; `orchestrate.sh` gets a one-line `queue) exec queue.sh
 run "$@"` alias.
 Why: orchestrate.sh is 1783 lines with 70+ pinned tests driving a DIFFERENT mechanism (headless
 `claude -p` per sub-goal). The interactive-`/goal` launcher is a distinct mechanism; a sibling

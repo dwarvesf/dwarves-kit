@@ -5,9 +5,9 @@ Delta from the spec. Reference, do not restate.
 ## 2026-07-02 fix site is the driver, not the prose command
 
 **Context:** goal-file 01 + SPEC-101 name `commands/mega.md` as the dispatch owner.
-**Decision:** implement in `lib/orchestrate.sh cmd_run`; `commands/mega.md` gets a
+**Decision:** implement in `lib/queue/orchestrate.sh cmd_run`; `commands/mega.md` gets a
 one-line pointer only.
-**Why:** `commands/mega.md` Step 5 explicitly hands off to `lib/orchestrate.sh run
+**Why:** `commands/mega.md` Step 5 explicitly hands off to `lib/queue/orchestrate.sh run
 <dir>` (the non-LLM driver). The prose command never emits the START itself; the driver
 is the executable, testable dispatch. A START in prose cannot be pinned.
 **Alternatives:** emit inside the spawned `claude -p` session (rejected: the session runs

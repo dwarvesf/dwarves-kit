@@ -6,9 +6,9 @@ Delta from the spec + ADR-0032 §3. Reference, don't restate.
 
 Context: The goal said "VERIFY what is there, then close the specific gap." Audit found
 SPEC-110 already ships the whole extraction+ledger chain:
-- `lib/handoff/handoff_gen.py sum-usage <file>`, assistant-only usage extraction from a stream-json FILE.
-- `lib/gate-ledger.sh tokens <rid> ...`, the `| TOKENS |` additive marker.
-- `lib/orchestrate.sh` token hook (cmd_run ~L1245), gated on `$slog` non-empty → sum-usage → record TOKENS.
+- `lib/goal/handoff/handoff_gen.py sum-usage <file>`, assistant-only usage extraction from a stream-json FILE.
+- `lib/gate/gate-ledger.sh tokens <rid> ...`, the `| TOKENS |` additive marker.
+- `lib/queue/orchestrate.sh` token hook (cmd_run ~L1245), gated on `$slog` non-empty → sum-usage → record TOKENS.
 - `_run_one_session` already has BOTH a tee-to-conductor branch (`--stream`, L621) AND a
   silent `> "$slog"` stream-to-FILE branch (the `else` under `DETERMINISTIC_HANDOFF=1`, L623).
 

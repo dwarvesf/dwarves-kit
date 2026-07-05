@@ -3,7 +3,7 @@
 Generated: 2026-07-04
 Status: VALIDATED
 Lane: normal (advisory wording only, no new agent/gate/severity machinery, three
-files touched; classified `normal` by `lib/lane-classify.sh`).
+files touched; classified `normal` by `lib/classify/lane-classify.sh`).
 
 ## Problem
 

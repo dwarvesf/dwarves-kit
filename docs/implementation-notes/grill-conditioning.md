@@ -63,8 +63,8 @@ reader does not wonder where the SPEC-058 carve-out went.
 ## 2026-07-04 10:00 Doc-impact: README project structure left untouched (pre-existing gap, not fixed here)
 
 Context: the doc-impact map (`WORKFLOW.md`) names README "Project structure" as a companion for
-any `lib/*` change. `lib/gate-ledger.sh` has no dedicated row there today (it is only mentioned
-in passing inside `lib/mega-merge.sh`'s row); this predates this change.
+any `lib/*` change. `lib/gate/gate-ledger.sh` has no dedicated row there today (it is only mentioned
+in passing inside `lib/goal/mega-merge.sh`'s row); this predates this change.
 
 Decision: left as-is. `docs/architecture.md`'s existing prose paragraph describing
 `gate-ledger.sh` was updated instead (it already itemizes gate-ledger.sh directly).
@@ -77,7 +77,7 @@ Impact: none on shipped behavior; a documentation completeness note.
 
 ## 2026-07-04 10:30 Review: SPEC-069 multi-lens dispatch (lib/ touched)
 
-Context: this change edits `lib/gate-ledger.sh`, so SPEC-069's escalation rule applies (a run
+Context: this change edits `lib/gate/gate-ledger.sh`, so SPEC-069's escalation rule applies (a run
 touching `lib/` or `hooks/` owes multi-lens review, not a single pass).
 
 Decision: dispatched fresh-context `kit:security-reviewer` + `kit:code-reviewer` (architecture
@@ -107,7 +107,7 @@ design," which was written before the reviewer's follow-up test-coverage pass ca
 bypass); requiring a space after the token instead of `:` (rejected, `:` is what `grill.md`
 already documents).
 
-Impact: `lib/gate-ledger.sh`'s case block; `tests/test-grill-conditioning.sh` gained check 5b;
+Impact: `lib/gate/gate-ledger.sh`'s case block; `tests/test-grill-conditioning.sh` gained check 5b;
 SPEC-138's Technical Design + Test plan + Decision Log (DEC-005) updated to match.
 
 ## 2026-07-04 10:50 Fix: TZ- and time-of-day-dependent boundary fixture (test-coverage review HIGH)

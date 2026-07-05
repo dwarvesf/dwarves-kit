@@ -17,7 +17,7 @@ the front door verbatim, extend it into a navigable thematic map, no rotting cou
 
 Extend `docs/README.md` BELOW the existing content (front door byte-identical) with a "## The full
 record, by theme" section grouping every record class:
-- **Design + decisions:** `specs/` (enumerate via `bash lib/spec-index.sh`, no per-file rows, no
+- **Design + decisions:** `specs/` (enumerate via `bash lib/spec/spec-index.sh`, no per-file rows, no
   rotting count; per-namespace local numbering noted) + `decisions/` (ADRs).
 - **Build trail:** `implementation-notes/` + `verification/` (the two the quick map omits) +
   `retro/`. `verification/README.md` is flagged LOAD-BEARING (ship-gate consumer named), linked,
@@ -34,7 +34,7 @@ cd dwarves-kit
 git diff master -- docs/README.md | grep -E '^-' | grep -v '^---'   # empty
 # both omitted classes + the load-bearing link + the spec-index pointer present
 grep -q 'implementation-notes/' docs/README.md && grep -q 'verification/README.md' docs/README.md
-grep -q 'lib/spec-index.sh' docs/README.md
+grep -q 'lib/spec/spec-index.sh' docs/README.md
 # every relative link resolves; no rotting counts in the map
 bash tests/test-meta.sh   # proof-marker + spec-README pins unaffected (661/661)
 ```

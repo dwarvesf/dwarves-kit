@@ -158,7 +158,7 @@ green again (see the Confirmation run above, captured after restore).
 
 ## Live captures (one per phase family, real ledger lines from the real run log)
 
-Ledger file: `~/.local/state/dwarves-kit/logs/runs/kit-emit-sweep.log` (via `bash lib/gate-ledger.sh show kit-emit-sweep`):
+Ledger file: `~/.local/state/dwarves-kit/logs/runs/kit-emit-sweep.log` (via `bash lib/gate/gate-ledger.sh show kit-emit-sweep`):
 
 ```
 2026-07-04T07:46:49Z | START | lane=full classified=full type=spec-feature ctype=spec-feature repo=dwarves-kit
@@ -196,9 +196,9 @@ Ledger file: `~/.local/state/dwarves-kit/logs/runs/kit-emit-sweep.log` (via `bas
   produce well-formed lines, a throwaway dry-run against a SCRATCH log dir (never touching the
   real `kit-emit-sweep` ledger) confirms all three execute cleanly:
   ```
-  $ DWARVES_KIT_LOG_DIR="$(mktemp -d)" bash lib/gate-ledger.sh record smoke-rid Think ran "..."
-  $ DWARVES_KIT_LOG_DIR="$(mktemp -d)" bash lib/gate-ledger.sh record smoke-rid Design ran "..."
-  $ DWARVES_KIT_LOG_DIR="$(mktemp -d)" bash lib/gate-ledger.sh record smoke-rid "UI design" ran "..."
+  $ DWARVES_KIT_LOG_DIR="$(mktemp -d)" bash lib/gate/gate-ledger.sh record smoke-rid Think ran "..."
+  $ DWARVES_KIT_LOG_DIR="$(mktemp -d)" bash lib/gate/gate-ledger.sh record smoke-rid Design ran "..."
+  $ DWARVES_KIT_LOG_DIR="$(mktemp -d)" bash lib/gate/gate-ledger.sh record smoke-rid "UI design" ran "..."
   $ cat "$TESTDIR/runs/smoke-rid.log"
   2026-07-04T08:06:38Z | GATE | think | ran | BUILD one-line thesis: mechanical dry-run only ...
   2026-07-04T08:06:38Z | GATE | design | ran | approaches=2 design-bearing=no (mechanical dry-run only)

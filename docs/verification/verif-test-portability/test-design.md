@@ -5,7 +5,7 @@ Proof class: behavioral
 ## Hypothesis / assumptions
 - Hypothesis: a test's negative control must not read the "pre-change" lib from git history.
   `test-proof-dir-layout.sh` and `test-classify-md-inert.sh` did exactly that (merge-base /
-  HEAD `:lib/proof-ledger.sh`), so they passed pre-merge but went RED once the feature merged
+  HEAD `:lib/gate/proof-ledger.sh`), so they passed pre-merge but went RED once the feature merged
   to master (master then HAS the change, so there is no pre-change version to fetch).
 - Fix: construct the pre-change lib from the CURRENT one by stripping the feature block (awk),
   so the negative control holds regardless of git state.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-weekend-batch.sh -- SPEC-126, understanding-gate SG-05.
-# Proves lib/weekend-batch.sh (Flow B, the debt-paydown reader/closer):
+# Proves lib/queue/weekend-batch.sh (Flow B, the debt-paydown reader/closer):
 #   AC1  collects the week's deferred+waved debt-ledger items + impl-notes + explainers
 #   AC2  the dotfiles weekend-debt-paydown skill ROUTES through learning-day-process +
 #        learning-ledger + a privacy-stripped til flush (grep, best-effort cross-repo)
@@ -24,9 +24,9 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WB="$KIT_DIR/lib/weekend-batch.sh"
-GL="$KIT_DIR/lib/gate-ledger.sh"
-SC="$KIT_DIR/lib/significance-classify.sh"
+WB="$KIT_DIR/lib/queue/weekend-batch.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
+SC="$KIT_DIR/lib/classify/significance-classify.sh"
 
 PASS=0; FAIL=0; SKIP=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
@@ -114,7 +114,7 @@ if [ -f "$SKILL_MD" ]; then
   assert "AC2c skill invokes deep-understand for worthy items" "$(grep -q 'deep-understand' "$SKILL_MD" && echo 0 || echo 1)"
   assert "AC2d skill flushes evergreen concepts to til, privacy-stripped" \
     "$(grep -qi 'til' "$SKILL_MD" && grep -qi 'privacy' "$SKILL_MD" && echo 0 || echo 1)"
-  assert "AC2e skill closes the loop via lib/weekend-batch.sh mark-paid" \
+  assert "AC2e skill closes the loop via lib/queue/weekend-batch.sh mark-paid" \
     "$(grep -q 'mark-paid' "$SKILL_MD" && echo 0 || echo 1)"
 else
   skip "AC2 (dotfiles path absent -- $SKILL_MD; not present in CI, run locally to exercise, see docs/verification/weekend-batch/)"
@@ -249,7 +249,7 @@ assert "security [reader]: a silent-wave line (no real response= field) with 're
 echo ""
 echo "=== AC5 (SPEC-136): the payoff loop -- REAL record -> forward-carry -> collect -> mark-paid ==="
 # Unlike the forward-carry section above (which hand-calls the fat gate-ledger.sh debt verb
-# directly), this drives the ACTUAL /kit:ship call site verb, lib/significance-classify.sh record,
+# directly), this drives the ACTUAL /kit:ship call site verb, lib/classify/significance-classify.sh record,
 # with real --files/description input -- the exact call SPEC-136 wired into commands/ship.md Step 8.
 # significance-classify.sh's classification is deterministic (SPEC-123): this is the GROUNDED-NC
 # assertion (AC6 of SPEC-136) that the recorded verdict traces to the real files/desc, not a
@@ -300,7 +300,7 @@ echo "=== AC6 (SPEC-136): the silent-wave path -- REAL record produces wave, no 
 RID_WAVE="ug-31-record-wave-$$"
 ( cd "$KIT_DIR" && bash "$GL" start "$RID_WAVE" normal normal bug "" fixture-repo ) >/dev/null
 WAVE_DESC="add a mechanical, reversible, fully test-covered guard clause"
-WAVE_VERDICT="$(cd "$KIT_DIR" && bash "$SC" record "$RID_WAVE" --files "lib/orchestrate.sh lib/foo.sh" "$WAVE_DESC")"
+WAVE_VERDICT="$(cd "$KIT_DIR" && bash "$SC" record "$RID_WAVE" --files "lib/queue/orchestrate.sh lib/foo.sh" "$WAVE_DESC")"
 assert "AC6a record's own stdout prints the verdict (wave: significant full-lane change, no worthiness trigger)" \
   "$([ "$WAVE_VERDICT" = "wave" ] && echo 0 || echo 1)"
 WAVE_LOG="$RUNS/$RID_WAVE.log"
@@ -325,7 +325,7 @@ printf '%s\n' "$COLLECT_OUT" > "$PROOF_DIR/sample-digest.md"
 
 echo ""
 echo "=== Coverage delta ==="
-BEFORE_COUNT=0   # no lib/weekend-batch.sh, no tests/test-weekend-batch.sh before this spec
+BEFORE_COUNT=0   # no lib/queue/weekend-batch.sh, no tests/test-weekend-batch.sh before this spec
 AFTER_COUNT="$TOTAL"
 assert "coverage delta: weekend-batch checks went from $BEFORE_COUNT to $AFTER_COUNT in this suite" "$([ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ] && echo 0 || echo 1)"
 

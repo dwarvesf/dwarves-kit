@@ -1,11 +1,11 @@
-# SPEC-149: board-bridge writeback (`board.sh writeback`, `lib/board-writeback.sh`)
+# SPEC-149: board-bridge writeback (`board.sh writeback`, `lib/board/board-writeback.sh`)
 
 Status: SHIPPED (code + tests); the resulting PR is HELD for operator review, never auto-merged
 Lane: full
 Backlog: runner-fastpath sub-goal 08 (ops-toolkit `_meta/megagoals/runner-fastpath/goals/08-bridge-writeback.md`)
 Branch: feat/board-writeback
 Relates-to: SPEC-147 (the read-mirror leg this consumes: the NDJSON snapshot + `row_hash`
-conflict-rule input), SPEC-146 (the cockpit board command + `lib/parse-board.sh`), ops-toolkit
+conflict-rule input), SPEC-146 (the cockpit board command + `lib/board/parse-board.sh`), ops-toolkit
 `research/2026-07-04-board-hermes-bridge-design.md` (the binding design source, "Two-way without
 the graveyard" section + its 2026-07-05 amendment)
 
@@ -22,11 +22,11 @@ direct commit to any default branch.
 
 ## Solution shape
 
-`lib/board.sh` gains a `writeback` subcommand, backed by a new file, `lib/board-writeback.sh`,
-which SOURCES `lib/board-mirror.sh` (function-level reuse, not a re-fork -- the same discipline
-`board-mirror.sh` itself uses for `lib/parse-board.sh`).
+`lib/board/board.sh` gains a `writeback` subcommand, backed by a new file, `lib/board/board-writeback.sh`,
+which SOURCES `lib/board/board-mirror.sh` (function-level reuse, not a re-fork -- the same discipline
+`board-mirror.sh` itself uses for `lib/board/parse-board.sh`).
 
-1. **Diff**: `lib/board-writeback.sh diff` reads each opted-in repo's live Hermes board (ONE
+1. **Diff**: `lib/board/board-writeback.sh diff` reads each opted-in repo's live Hermes board (ONE
    batched `hermes kanban --board <b> list --json` call per board, not per row) and the SPEC-147
    mirror snapshot, and emits a validated NDJSON changeset of rows whose live Hermes status
    differs from what the snapshot recorded at mirror time.
@@ -37,9 +37,9 @@ which SOURCES `lib/board-mirror.sh` (function-level reuse, not a re-fork -- the 
    hash must still equal the value the snapshot recorded (the CONFLICT RULE -- git wins, always).
    A missing or corrupt snapshot REFUSES the entire run (explicit error, nonzero exit), never
    degrading to "no conflicts found, apply everything".
-3. **Apply**: `lib/board-writeback.sh apply` builds a fresh `chore/board-sync` branch in an
+3. **Apply**: `lib/board/board-writeback.sh apply` builds a fresh `chore/board-sync` branch in an
    ISOLATED `git worktree` off the CURRENT HEAD (never the caller's own checkout, never a cached
-   ref), edits ONLY the Status column of the matched rows (reusing `lib/backlog.sh`'s own `set`),
+   ref), edits ONLY the Status column of the matched rows (reusing `lib/board/backlog.sh`'s own `set`),
    commits with `actor=hermes` in the body, pushes, and opens the sync PR via `gh pr create`
    (argv-only; never auto-merged). Snapshot refresh after a successful apply updates only
    `hermes_status` (see `## Design`'s "Snapshot refresh" subsection for why `row_hash` stays
@@ -170,7 +170,7 @@ missed.
 - AC12 (rung-4 red-team, SECURITY): no card-text field (item/notes) ever reaches the commit
   message, the PR title/body, or any `gh`/`git` argv element -- only IDs matched against
   `BACKLOG_ID_RE` and status keywords drawn from the closed `LEGAL_STATES`/native-status
-  vocabularies. No `eval`/`sh -c` of any parsed variable anywhere in `lib/board-writeback.sh`.
+  vocabularies. No `eval`/`sh -c` of any parsed variable anywhere in `lib/board/board-writeback.sh`.
 
 ## Test plan
 
@@ -190,7 +190,7 @@ missed.
 
 ## Scope edges
 
-**In**: the `writeback` subcommand in `lib/board.sh` (thin dispatcher) + `lib/board-writeback.sh`
+**In**: the `writeback` subcommand in `lib/board/board.sh` (thin dispatcher) + `lib/board/board-writeback.sh`
 (the substantial diff/apply/PR logic), snapshot refresh, its docs/proof.
 
 **Out** (explicitly, per the sub-goal contract): new-card writeback (a card born on Hermes gets no
@@ -205,7 +205,7 @@ Python, DuckDB.
 
 ## Rollback
 
-`git revert`. Two new files (`lib/board-writeback.sh`, `tests/test-board-writeback.sh`), one new
+`git revert`. Two new files (`lib/board/board-writeback.sh`, `tests/test-board-writeback.sh`), one new
 `board.sh` dispatch case (`writeback`), a doc-impact map update, a CI step, and a `tests/test-meta.sh`
 structural pin. No daemon, no external state change on any real Hermes instance or real repo (this
 sub-goal's own live demos ran entirely against disposable, throwaway git fixtures + stubbed

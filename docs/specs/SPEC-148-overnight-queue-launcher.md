@@ -2,7 +2,7 @@
 
 Generated: 2026-07-05
 Status: VALIDATED
-Lane: full (classified `full` by `lib/lane-classify.sh`; drives a live
+Lane: full (classified `full` by `lib/classify/lane-classify.sh`; drives a live
 `--dangerously-skip-permissions` Claude Code session unattended overnight, so it is
 security-bearing and full-lane by the AGENTS.md trigger list even though it adds a new
 sibling lib rather than touching an existing enforcement surface)
@@ -30,7 +30,7 @@ real login and never manages a headless token.
 
 ## Solution
 
-A bash launcher, `lib/queue.sh`, exposed both standalone (`queue.sh run <src>`) and as an
+A bash launcher, `lib/queue/queue.sh`, exposed both standalone (`queue.sh run <src>`) and as an
 `orchestrate.sh queue <src>` alias (a one-line dispatch arm; the logic lives in `queue.sh`,
 so orchestrate.sh's existing suite is untouched). It is NOT an LLM and NOT a headless
 `claude -p` loop.
@@ -180,13 +180,13 @@ launcher opens a tmux window, sends `/goal <fixture>`, the session completes, jo
 
 ```
 bats tests/test-queue.bats          # all T/NC cases green (stub mux)
-bash lib/queue.sh run <tsv> --dry-run   # dry-run listing, no send-keys
+bash lib/queue/queue.sh run <tsv> --dry-run   # dry-run listing, no send-keys
 # live smoke: see docs/proof-of-done.md (real tmux, throwaway repo)
 ```
 
 ## After state
 
-- `lib/queue.sh` exists: the `run` launcher with preflight, mux send-keys, marker poll,
+- `lib/queue/queue.sh` exists: the `run` launcher with preflight, mux send-keys, marker poll,
   journal, error-twice-stops-night, `--dry-run`, `--max-megas`, `--from-boards`.
 - `orchestrate.sh queue <src>` dispatches to it (one-line arm).
 - `tests/test-queue.bats` green: T1-T4 + NC1-NC5.

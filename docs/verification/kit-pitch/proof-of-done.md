@@ -143,7 +143,7 @@ $ bash tests/test-references-field.sh    # 15/15
 ## 5. Live captures (real ledger lines from the real run log, rid=`kit-pitch`)
 
 ```
-$ bash lib/gate-ledger.sh show kit-pitch
+$ bash lib/gate/gate-ledger.sh show kit-pitch
 2026-07-04T08:25:10Z | START | lane=full classified=full type=spec-feature ctype=spec-feature repo=dwarves-kit
 2026-07-04T08:25:10Z | GATE | grill | skipped | reason=operator-wave: TIER1+3 framing done upstream ...
 2026-07-04T08:25:15Z | GATE | think | override | TIER1+3 framing done by conductor; ...

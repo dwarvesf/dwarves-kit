@@ -34,7 +34,7 @@ so the .py logic + the skill-map data file land alongside their `.sh` shim at
 
 **Consumer seam (no ops-toolkit path).** `backlog-stage.py` and `harvest.py` no longer read
 `OPS_TOOLKIT`; both resolve `_repo_root()` = `REPO_ROOT` env, else `git rev-parse
---show-toplevel`, else `$PWD` (mirroring `lib/board.sh`'s own `_default_repo_root`/
+--show-toplevel`, else `$PWD` (mirroring `lib/board/board.sh`'s own `_default_repo_root`/
 `_resolve_repo_root` precedent for the identical `_meta/BACKLOG.md` convention), then default
 their ledger/staging/draft paths repo-relative under `_meta/`. `context-hints.py` ships an
 **empty** `{}` skill map by default (the source `skills-map.json` was entirely ops-toolkit

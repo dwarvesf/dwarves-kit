@@ -34,8 +34,9 @@
 set -uo pipefail
 
 QG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXPLAIN="$QG_DIR/explain.sh"
-SIG_CLASSIFY="$QG_DIR/significance-classify.sh"
+LIB_ROOT="$(cd "$QG_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+EXPLAIN="$LIB_ROOT/explain.sh"
+SIG_CLASSIFY="$LIB_ROOT/classify/significance-classify.sh"
 GATE_LEDGER="$QG_DIR/gate-ledger.sh"
 
 # _primary_file <ref> -- the first non-doc, non-test changed file in READING order (reuses
@@ -154,7 +155,7 @@ cmd_tap() {
   echo "    engage  -- pull the 5-question quiz now (deep-understand mastery gate)"
   echo "    defer   -- send it to the weekend batch (SG-05)"
   echo "    wave    -- accept the debt knowingly (the change still merges)"
-  echo "  Respond: bash lib/quiz-gate.sh respond ${rid} <engage|defer|wave> [--ref <ref>]"
+  echo "  Respond: bash lib/gate/quiz-gate.sh respond ${rid} <engage|defer|wave> [--ref <ref>]"
 }
 
 # respond: log the human's choice; for engage, also emit the deep-understand routing directive.

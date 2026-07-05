@@ -3,7 +3,7 @@
 Status: VALIDATED
 Lane: full
 Type: spec-feature
-Relates-to: ADR-0031 §2 + §3 + the Refinement (the understanding gate; the AFTER gate's quiz half, the ★-tap nudge, the debt-budget model), SPEC-123 (`lib/significance-classify.sh` , the WHEN, verdict `tap|wave|not-significant`), SPEC-124 (`lib/explain.sh` , the diff-grounded MATERIAL the quiz is built from), ADR-0024 (`lib/gate-ledger.sh` , the `| DEBT |` marker), the ops-toolkit `deep-understand` skill (the AskUserQuestion mastery-gate engine the quiz routes through), the `understanding-gate` mega-goal (SG-04)
+Relates-to: ADR-0031 §2 + §3 + the Refinement (the understanding gate; the AFTER gate's quiz half, the ★-tap nudge, the debt-budget model), SPEC-123 (`lib/classify/significance-classify.sh` , the WHEN, verdict `tap|wave|not-significant`), SPEC-124 (`lib/explain.sh` , the diff-grounded MATERIAL the quiz is built from), ADR-0024 (`lib/gate/gate-ledger.sh` , the `| DEBT |` marker), the ops-toolkit `deep-understand` skill (the AskUserQuestion mastery-gate engine the quiz routes through), the `understanding-gate` mega-goal (SG-04)
 
 ## Problem
 
@@ -30,14 +30,14 @@ Three constraints make this non-trivial:
 Two planes, split so the grounding + wiring are testable and cannot drift into narrative or into a hard
 block:
 
-1. **`lib/quiz-gate.sh`** , the mechanical half (four verbs):
+1. **`lib/gate/quiz-gate.sh`** , the mechanical half (four verbs):
    - `questions <ref>` , emits exactly **5 quiz questions** built from the ACTUAL diff + recorded test
      results. Its only input is a git `<ref>` (never a narrative arg), reusing `lib/explain.sh order`
      (reading-order files) + `lib/explain.sh tests` (the recorded verdict) + the raw `git diff` `+` lines.
      Because there is no narrative channel, a false story physically cannot leak in , the SPEC-124
      architectural guarantee, reused.
    - `tap <rid> [--files F] [--impl-notes P] [--pr-kind K] "<desc>"` , the WIRING decision. It asks
-     `lib/significance-classify.sh classify` for the verdict; it prints the one-line nudge + the three
+     `lib/classify/significance-classify.sh classify` for the verdict; it prints the one-line nudge + the three
      responses ONLY when the verdict is `tap` AND the PR is a `gate`/gated-final. On `wave` or
      `not-significant` (or a non-gate PR) it prints nothing and exits 0 (the anti-fatigue guard, keyed on
      the classifier , SPEC-123's SG-02 verdict).
@@ -80,7 +80,7 @@ boundary) + a new lib + a new command + an additive lib verb + composes an exter
   plausible-but-wrong failure. The questions must trace to the diff + recorded tests, the SPEC-124
   guarantee (git-ref-only input, no narrative channel).
 - **D. (chosen) A grounded question-builder + a wiring decision keyed on the SG-02 verdict + a
-  three-way logged nudge, routing engage to `deep-understand`.** `lib/quiz-gate.sh` builds questions from
+  three-way logged nudge, routing engage to `deep-understand`.** `lib/gate/quiz-gate.sh` builds questions from
   the ref only (D-style guarantee), decides to fire ONLY on `tap` (anti-fatigue, keyed on the classifier),
   and records all three responses; the command layer composes `deep-understand`. Testable + faithful to
   every ADR-0031 constraint.
@@ -96,9 +96,9 @@ lands a `| DEBT |` line; (5) no-reinvention = engage dispatches `deep-understand
 
 ```mermaid
 flowchart TD
-  merge["gate / gated-final PR\n(human about to merge)"] --> classify["lib/significance-classify.sh classify\n(SPEC-123 SG-02): tap | wave | not-significant"]
+  merge["gate / gated-final PR\n(human about to merge)"] --> classify["lib/classify/significance-classify.sh classify\n(SPEC-123 SG-02): tap | wave | not-significant"]
   classify -->|"wave / not-significant\n(or non-gate PR)"| silent["no tap (anti-fatigue).\nSG-02 already logged the verdict.\nmerge proceeds"]
-  classify -->|tap| nudge["lib/quiz-gate.sh tap:\none-line nudge + 3 responses"]
+  classify -->|tap| nudge["lib/gate/quiz-gate.sh tap:\none-line nudge + 3 responses"]
   nudge --> engage["engage now"]
   nudge --> defer["defer (weekend, SG-05)"]
   nudge --> wave["wave (accept debt)"]
@@ -117,7 +117,7 @@ flowchart TD
 
 - `questions`/`route` input is a git ref ONLY , no narrative/intent argument (the grounding guarantee).
 - `tap` fires ONLY on verdict `tap` + a `gate`/gated-final PR; every other verdict prints nothing (absent).
-- Every verb exits 0 on the advisory path; nothing in `lib/quiz-gate.sh` or any hook blocks a merge on the
+- Every verb exits 0 on the advisory path; nothing in `lib/gate/quiz-gate.sh` or any hook blocks a merge on the
   quiz. A `wave` (or ignoring the nudge entirely) still merges.
 - `debt-response` is additive (`| DEBT |`); it can never be read as a `| GATE |` line (ADR-0024 discipline).
 - No recorded test result for the ref: the verification question says so honestly (reuses `explain.sh
@@ -133,7 +133,7 @@ bash tests/test-meta.sh         # green: new command frontmatter + architecture 
 head -1 commands/quiz-gate.md | grep -qF -- '---'
 grep -q 'description:' commands/quiz-gate.md
 grep -q 'deep-understand' commands/quiz-gate.md
-bash lib/quiz-gate.sh questions HEAD | grep -c '^Q[1-5]'   # == 5
+bash lib/gate/quiz-gate.sh questions HEAD | grep -c '^Q[1-5]'   # == 5
 ```
 
 ## Test plan
@@ -149,13 +149,13 @@ controls + the coverage-delta row.
 | AC4 | GROUNDED NC: narrative differs from the diff -> quiz from the DIFF | fixture whose diff adds `subtract` while the commit body / an untracked file claims `multiply`; run `questions <ref>` (narrative not passed); assert questions name `subtract`, never `multiply` | **negative control** |
 | AC5 | WIRING NC: tap fires on `tap`, ABSENT on `wave` AND on `not-significant` | drive `quiz-gate.sh tap` with descs/files that classify `tap` / `wave` / `not-significant`; assert nudge printed only for `tap`, empty for the other two | **negative control** |
 | AC6 | NEVER must-pass: a waved change still merges (no hard block) | `respond <rid> wave` exits 0; assert no hook blocks merge on the quiz + every quiz-gate verb exits 0 on the advisory path | never-block |
-| CD | coverage delta | before: no `lib/quiz-gate.sh`, no `gate-ledger.sh debt-response`, no `tests/test-quiz-gate.sh` (0 cases). after: 6 cases (AC1-AC6). delta = +6, from 0 quiz-gate checks to a diff-grounded, verdict-keyed, three-way-logged, never-must-pass nudge | coverage-delta |
+| CD | coverage delta | before: no `lib/gate/quiz-gate.sh`, no `gate-ledger.sh debt-response`, no `tests/test-quiz-gate.sh` (0 cases). after: 6 cases (AC1-AC6). delta = +6, from 0 quiz-gate checks to a diff-grounded, verdict-keyed, three-way-logged, never-must-pass nudge | coverage-delta |
 
 ## After state
 
-- `lib/quiz-gate.sh`: the mechanical half , `questions` (5 diff-grounded questions), `tap` (fire only on
+- `lib/gate/quiz-gate.sh`: the mechanical half , `questions` (5 diff-grounded questions), `tap` (fire only on
   the SG-02 `tap` verdict + gate PR), `respond` (log engage/defer/wave), `route` (deep-understand payload).
-- `lib/gate-ledger.sh`: a new additive `debt-response <rid> <engage|defer|wave> [reason]` verb (a `| DEBT |`
+- `lib/gate/gate-ledger.sh`: a new additive `debt-response <rid> <engage|defer|wave> [reason]` verb (a `| DEBT |`
   line for the human choice; the `debt()` header already anticipated it).
 - `commands/quiz-gate.md`: the `/kit:quiz-gate` command , the human-facing nudge at the merge boundary,
   routing engage to `deep-understand`; frontmatter `description:`; the never-must-pass + grounding rules.
@@ -170,7 +170,7 @@ controls + the coverage-delta row.
 
 ## Scope edges
 
-**In:** `lib/quiz-gate.sh`, the additive `gate-ledger.sh debt-response` verb, `commands/quiz-gate.md`,
+**In:** `lib/gate/quiz-gate.sh`, the additive `gate-ledger.sh debt-response` verb, `commands/quiz-gate.md`,
 `tests/test-quiz-gate.sh`, the minimal WHEN-it-fires wiring lines (WORKFLOW + ship), and the doc companions
 a new command requires for CI (architecture inventory row, README, MANUAL).
 **Out:** the explainer artifact (SG-03, SPEC-124, done); the weekend-batch flow (SG-05); the significance /

@@ -1,1 +1,0 @@
-goal/goal-registry.sh

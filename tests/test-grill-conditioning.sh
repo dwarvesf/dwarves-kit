@@ -3,7 +3,7 @@
 #
 # Two things are proven here, honestly kept separate:
 #
-#  A) The ONE real code change: `lib/gate-ledger.sh record()`'s new write-time guard that
+#  A) The ONE real code change: `lib/gate/gate-ledger.sh record()`'s new write-time guard that
 #     refuses a `grill`+`skipped` ledger line unless its reason starts with
 #     reason=<home-turf|density-low|operator-wave>. This is genuine shell logic, asserted
 #     directly (checks 1-7 in SPEC-138's Test plan).
@@ -26,7 +26,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-GL="$KIT_DIR/lib/gate-ledger.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'

@@ -1,1 +1,0 @@
-gate/proof-gate.sh

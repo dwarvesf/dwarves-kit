@@ -2,13 +2,13 @@
 
 Status: VALIDATED
 Date: 2026-07-02
-Lane: full (a merge-enforcement guard on lib/mega-merge.sh; security defense-in-depth)
+Lane: full (a merge-enforcement guard on lib/goal/mega-merge.sh; security defense-in-depth)
 Type: feature
 Relates-to: ADR-0028 (auto-merge enforcement), kit-hardening SG-08 (mega-merge), SPEC-097 (durable log)
 Board: dwarves-kit ID-083 (TIER-4 security LOW from the kit-hardening close); kit-telemetry mega-goal SG-05
 
 ## Problem
-`lib/mega-merge.sh` auto-merges an `auto`-tagged sub-goal PR once its gates pass. The rule
+`lib/goal/mega-merge.sh` auto-merges an `auto`-tagged sub-goal PR once its gates pass. The rule
 "never auto-merge a `gate`-tagged sub-goal PR or the held final PR under `gated-final`" was
 enforced ONLY in `commands/mega.md`'s prompt text (the routing that keeps those PRs away
 from `merge`). A prompt-rationalizing model that calls `mega-merge.sh merge <held-pr> ...
@@ -61,12 +61,12 @@ where the PR is OPENED. Two consequences, both honest:
 - AC8 [no regression]: `test-mega-reconcile.sh` (35), `test-meta.sh` (578), `test-hooks.sh` (438) stay green.
 
 ## Tasks
-- T0 [TIER-4 security]: `lib/gate-ledger.sh` `check()` -- fail CLOSED on an unknown lane
+- T0 [TIER-4 security]: `lib/gate/gate-ledger.sh` `check()` -- fail CLOSED on an unknown lane
   (`required` nonzero) instead of vacuously passing on its empty stream; `_log`/`normalize_phase`
   newline-guarded (defense-in-depth for the merge-log + phase sinks). This closes a cross-piece
   hole: `mega-merge merge <rid> mega --execute` (a plausible typo'd lane) used to auto-merge with
   zero gates enforced, and the same silent-pass weakened `ship-gate`.
-- T1: `lib/mega-merge.sh` -- `_pr_info` + `_merge_exclusion` + wire into `merge()` before the gate; header comment; `_log` newline guard.
+- T1: `lib/goal/mega-merge.sh` -- `_pr_info` + `_merge_exclusion` + wire into `merge()` before the gate; header comment; `_log` newline guard.
 - T2: `tests/test-mega-merge.sh` (new) -- AC1-AC7, fully offline (inject gate-ledger + PR-state).
 - T3: `tests/test-mega-reconcile.sh` -- inject a CLEAR PR-state stub so its fake-PR merge tests keep testing the gate/posture path (the exclusion would otherwise fail-close on a fake PR).
 - T4: `docs/verification/mega-merge-guard.md` -- table-first proof.

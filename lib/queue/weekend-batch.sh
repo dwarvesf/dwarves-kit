@@ -32,16 +32,17 @@
 #   weekend-batch.sh mark-paid <rid> [--note "<text>"]
 #     -> re-emits the rid's last significance/worthiness/verdict with response=engage (closes it).
 #
-# DWARVES_KIT_LOG_DIR overrides the durable log-dir resolver (see lib/kit-log-dir.sh); tests point
+# DWARVES_KIT_LOG_DIR overrides the durable log-dir resolver (see lib/telemetry/kit-log-dir.sh); tests point
 # it at a temp dir so the fixture ledger never touches the real machine corpus.
 
 set -euo pipefail
 
 WB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GATE_LEDGER="$WB_DIR/gate-ledger.sh"
+LIB_ROOT="$(cd "$WB_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
 
-# shellcheck source=lib/kit-log-dir.sh
-source "$WB_DIR/kit-log-dir.sh" || { echo "weekend-batch: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/telemetry/kit-log-dir.sh
+source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "weekend-batch: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"

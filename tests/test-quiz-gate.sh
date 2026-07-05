@@ -13,8 +13,8 @@
 # Run: bash tests/test-quiz-gate.sh   (exit 0 = all AC green)
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-QG="$KIT_DIR/lib/quiz-gate.sh"
-GL="$KIT_DIR/lib/gate-ledger.sh"
+QG="$KIT_DIR/lib/gate/quiz-gate.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -147,13 +147,13 @@ TAP_DESC="add a new data model migration that introduces a primitive future work
 WAVE_DESC="add a mechanical, reversible, fully test-covered guard clause with two viable approaches" # -> wave
 NS_DESC="fix a typo in the README"                                                                   # -> not-significant
 T_TAP="$( bash "$QG" tap wr-tap  --files "lib/x.sh" "$TAP_DESC" )"
-T_WAVE="$( bash "$QG" tap wr-wave --files "lib/orchestrate.sh lib/foo.sh" "$WAVE_DESC" )"
+T_WAVE="$( bash "$QG" tap wr-wave --files "lib/queue/orchestrate.sh lib/foo.sh" "$WAVE_DESC" )"
 T_NS="$(   bash "$QG" tap wr-ns   "$NS_DESC" )"
 T_NONGATE="$( bash "$QG" tap wr-ng --pr-kind normal --files "lib/x.sh" "$TAP_DESC" )"
 # sanity: the classifier actually produces the three verdicts we rely on
-V_TAP="$(  bash "$KIT_DIR/lib/significance-classify.sh" classify --files "lib/x.sh" "$TAP_DESC" )"
-V_WAVE="$( bash "$KIT_DIR/lib/significance-classify.sh" classify --files "lib/orchestrate.sh lib/foo.sh" "$WAVE_DESC" )"
-V_NS="$(   bash "$KIT_DIR/lib/significance-classify.sh" classify "$NS_DESC" )"
+V_TAP="$(  bash "$KIT_DIR/lib/classify/significance-classify.sh" classify --files "lib/x.sh" "$TAP_DESC" )"
+V_WAVE="$( bash "$KIT_DIR/lib/classify/significance-classify.sh" classify --files "lib/queue/orchestrate.sh lib/foo.sh" "$WAVE_DESC" )"
+V_NS="$(   bash "$KIT_DIR/lib/classify/significance-classify.sh" classify "$NS_DESC" )"
 assert "AC5 classifier sanity: tap/$V_TAP wave/$V_WAVE ns/$V_NS" \
   "$([ "$V_TAP" = tap ] && [ "$V_WAVE" = wave ] && [ "$V_NS" = not-significant ] && echo 0 || echo 1)"
 assert "AC5 tap FIRES on a tap-verdict gate PR (nudge printed)" \

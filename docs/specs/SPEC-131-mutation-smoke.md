@@ -2,8 +2,8 @@
 
 Generated: 2026-07-04
 Status: VALIDATED
-Lane: normal (adds one advisory lib `lib/mutation-smoke.sh` + a `mutation` additive marker on
-`lib/gate-ledger.sh` + a focused test suite + CI wiring. Advisory-only, off the push blocker;
+Lane: normal (adds one advisory lib `lib/gate/mutation-smoke.sh` + a `mutation` additive marker on
+`lib/gate/gate-ledger.sh` + a focused test suite + CI wiring. Advisory-only, off the push blocker;
 no existing reader/contract changes, so not full lane, but design-bearing because the mutation
 strategy + restoration safety + the runtime bound must be pinned before code.)
 
@@ -45,7 +45,7 @@ HONESTLY-PROVEN pillar of the triad: a green suite that passes on mutated code i
 
 ### Chosen shape
 
-`lib/mutation-smoke.sh run` (a) computes the changed hunks vs a base ref, (b) collects mutation
+`lib/gate/mutation-smoke.sh run` (a) computes the changed hunks vs a base ref, (b) collects mutation
 CANDIDATES from added code lines that a small fixed operator set can mutate, (c) runs the suite
 once pre-mutation and requires GREEN (else it SKIPs -- a red baseline cannot distinguish bite from
 pre-existing red), then (d) for each candidate up to a cap: apply ONE mutation, re-run the suite,

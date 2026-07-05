@@ -41,7 +41,7 @@ ops-toolkit's two competing convention docs to pointers. Runs as a /goal loop.
 
 ## 2026-06-08 findings from the verification pass
 - **Test negative-control must not key off HEAD once committed.** `test-proof-dir-layout.sh`
-  read `HEAD:lib/proof-ledger.sh` as the "pre-change" lib; after the change was committed,
+  read `HEAD:lib/gate/proof-ledger.sh` as the "pre-change" lib; after the change was committed,
   HEAD *has* the set-wise code, so the negative control flipped to a false FAIL. Fixed to read
   from the merge-base with master (the fork point), which is stable across later commits.
 - **The ship-gate hook fires on any Bash command containing `git push`.** Running a demo

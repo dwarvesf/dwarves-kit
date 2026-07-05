@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lane-telemetry.sh -- the read side of lane effectiveness (SPEC-061).
 #
-# The kit records run facts in append-only ledgers (lib/gate-ledger.sh -> logs/runs/<rid>.log,
+# The kit records run facts in append-only ledgers (lib/gate/gate-ledger.sh -> logs/runs/<rid>.log,
 # lane downgrades -> logs/completeness.log) but until SPEC-061 nothing AGGREGATED them, so
 # lane misfires died in chat instead of becoming classifier fixes + pins. This is the
 # aggregator: pure bash/awk over the existing pipe-delimited logs, no new store, no daemon.
@@ -25,9 +25,10 @@
 set -euo pipefail
 
 KIT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_ROOT="$(cd "$KIT_LIB/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
-# shellcheck source=lib/kit-log-dir.sh
-source "$KIT_LIB/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/telemetry/kit-log-dir.sh
+source "$KIT_LIB/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
@@ -83,7 +84,7 @@ _shipped_incomplete() {
     rid="$(basename "$f" .log)"
     lane="$( { grep '| START-AMEND |' "$f" 2>/dev/null | tail -1; grep -m1 '| START |' "$f" 2>/dev/null; } | head -1 | grep -oE 'lane=[^ ]+' | head -1 | cut -d= -f2 || true)"
     [ -n "$lane" ] || continue
-    bash "$KIT_LIB/gate-ledger.sh" check "$lane" "$rid" >/dev/null 2>&1 \
+    bash "$LIB_ROOT/gate/gate-ledger.sh" check "$lane" "$rid" >/dev/null 2>&1 \
       || printf '%s (%s)\n' "$rid" "$lane"
   done
 }

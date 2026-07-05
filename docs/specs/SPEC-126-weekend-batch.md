@@ -37,7 +37,7 @@ path is absent in CI).
 
 ## Solution
 
-### 1. `lib/weekend-batch.sh` (dwarves-kit, new)
+### 1. `lib/queue/weekend-batch.sh` (dwarves-kit, new)
 
 A pure-bash reader/closer over the debt ledger (`$LOG_DIR/runs/*.log`, the same corpus SPEC-123's
 `gate-ledger.sh debt` writes to). No new ledger, no new dedup engine, no new storage: it reads the
@@ -106,7 +106,7 @@ A Han-invoked Claude Code skill at `home/dot_claude/skills/weekend-debt-paydown/
 (chezmoi source; symlinked to `~/.local/share/chezmoi` as `~/.local/share/chezmoi/dot_claude/
 skills/weekend-debt-paydown/SKILL.md`). It ORCHESTRATES, it does not reimplement:
 
-1. For each repo Han names (default: the one he is sitting in): `bash lib/weekend-batch.sh
+1. For each repo Han names (default: the one he is sitting in): `bash lib/queue/weekend-batch.sh
    collect --days 7` -- the digest from part 1.
 2. Route the digest's material through `learning-day-process` (the existing "batch a period's
    material into the track structure" skill) to materialize workbook/companion/practice/anki
@@ -119,7 +119,7 @@ skills/weekend-debt-paydown/SKILL.md`). It ORCHESTRATES, it does not reimplement
    pull the gated walkthrough via `deep-understand` before considering it paid.
 5. Evergreen (cross-project, non-NDA) concepts flush to `til` via `knowledge-capture`'s privacy
    strip -- never raw client/NDA/financial content.
-6. Close each processed item: `bash lib/weekend-batch.sh mark-paid <rid> --note "paid via weekend
+6. Close each processed item: `bash lib/queue/weekend-batch.sh mark-paid <rid> --note "paid via weekend
    batch YYYY-MM-DD"` in the item's repo, so next weekend's `collect` does not resurface it.
 
 It never forks a second batching, dedup, or quiz engine; the proof (`tests/test-weekend-batch.sh`
@@ -127,7 +127,7 @@ It never forks a second batching, dedup, or quiz engine; the proof (`tests/test-
 
 ## Design
 
-Design-bearing (ADR-0031 §1): a new component (`lib/weekend-batch.sh`), an external integration
+Design-bearing (ADR-0031 §1): a new component (`lib/queue/weekend-batch.sh`), an external integration
 (the dotfiles skill + the operator's ops-toolkit learning skills), and 2+ viable approaches for the
 cadence fork.
 
@@ -161,7 +161,7 @@ cadence fork.
 
 ```mermaid
 flowchart TD
-  ledger["debt ledger\n(SPEC-123's `| DEBT |` markers,\nSPEC-097 durable RUNS_DIR)"] --> collect["lib/weekend-batch.sh collect\n(disposition filter: waved/deferred only,\nnot-significant + paid + pending excluded)"]
+  ledger["debt ledger\n(SPEC-123's `| DEBT |` markers,\nSPEC-097 durable RUNS_DIR)"] --> collect["lib/queue/weekend-batch.sh collect\n(disposition filter: waved/deferred only,\nnot-significant + paid + pending excluded)"]
   notes["docs/implementation-notes/<slug>.md\n(the spec-\\>reality delta)"] --> collect
   explainers["docs/verification/explain-command/\n<rid>-explainer.md (SG-03)"] --> collect
   collect --> digest["weekly digest\n(dwarves-kit lib output)"]
@@ -170,7 +170,7 @@ flowchart TD
   skill --> ledgerskill["learning-ledger\n(multi-store dedup + routing)"]
   skill --> deepu["deep-understand\n(gated walkthrough, worthy items)"]
   ledgerskill --> til["til (privacy-stripped,\nevergreen concepts only)"]
-  skill --> markpaid["lib/weekend-batch.sh mark-paid <rid>\n(response=engage; closes the loop)"]
+  skill --> markpaid["lib/queue/weekend-batch.sh mark-paid <rid>\n(response=engage; closes the loop)"]
   markpaid --> ledger
 ```
 
@@ -212,13 +212,13 @@ controls + the coverage-delta row.
 | AC3c | window scoping: an item older than the `--days` cutoff is excluded | seed a `verdict=wave` line with a recorded timestamp outside the default 7-day window; assert `list --days 7` excludes it, `list --days 400` includes it | scoping |
 | AC3d | repo scoping: a different-repo item is excluded by default, included with `--all-repos` | seed a `verdict=wave` line under `repo=other-repo`; assert default (`--repo fixture-repo`) excludes it, `--all-repos` includes it | scoping |
 | AC4 | SKILL-REUSE grep: the skill invokes, does not fork | grep the same SKILL.md for the ABSENCE of a second dedup/ledger/quiz-engine tell (e.g. no "custom dedup" / "new ledger" language) alongside the presence checks in AC2; best-effort (same skip rule) | **negative control** (reuse) |
-| CD | coverage delta | before: no `lib/weekend-batch.sh`, no `tests/test-weekend-batch.sh` (0 cases). after: 6 cases (AC1, AC2, AC3a-d, AC4). delta = +6, from 0 debt-ledger-consumer checks to a disposition-correct, scope-correct, reuse-proven weekend batch flow | coverage-delta |
+| CD | coverage delta | before: no `lib/queue/weekend-batch.sh`, no `tests/test-weekend-batch.sh` (0 cases). after: 6 cases (AC1, AC2, AC3a-d, AC4). delta = +6, from 0 debt-ledger-consumer checks to a disposition-correct, scope-correct, reuse-proven weekend batch flow | coverage-delta |
 
 ## After state
 
-- `lib/weekend-batch.sh`: `list` / `collect` / `mark-paid`, reads `$LOG_DIR/runs/*.log` (SPEC-097's
+- `lib/queue/weekend-batch.sh`: `list` / `collect` / `mark-paid`, reads `$LOG_DIR/runs/*.log` (SPEC-097's
   resolver), writes only via the existing `gate-ledger.sh debt`.
-- `lib/gate-ledger.sh`: `debt()` gains the additive `response=<engage|defer|wave>` key (comment +
+- `lib/gate/gate-ledger.sh`: `debt()` gains the additive `response=<engage|defer|wave>` key (comment +
   usage line updated).
 - `tests/test-weekend-batch.sh`: AC1-AC4 incl. both negative controls + the coverage-delta row.
 - `docs/verification/weekend-batch/proof-of-done.md` + captured run output.
@@ -229,7 +229,7 @@ controls + the coverage-delta row.
 
 ## Scope edges
 
-**In:** the dwarves-kit collection step (`lib/weekend-batch.sh`, reading SG-02's `| DEBT |`
+**In:** the dwarves-kit collection step (`lib/queue/weekend-batch.sh`, reading SG-02's `| DEBT |`
 markers + SG-03's explainer artifacts + impl-notes), the additive `gate-ledger.sh debt` `response=`
 field, the dotfiles `weekend-debt-paydown` skill (orchestration only), tests.
 **Out:** the inline ★-tap nudge itself (SG-04, Flow A -- this sub-goal only reads what SG-04 will

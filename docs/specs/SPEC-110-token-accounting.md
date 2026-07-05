@@ -56,7 +56,7 @@ cd dwarves-kit
 # 1. gate-ledger tokens subcommand writes a TOKENS line; check() ignores it (not a gate):
 bash tests/test-ledger-durability.sh   # + the SPEC-110 tokens block (write + check-ignores-it NC)
 # 2. handoff_gen sum-usage sums the seed transcript's usage:
-python3 lib/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/seed.jsonl   # in=.. out=.. cache_read=.. cache_create=..
+python3 lib/goal/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/seed.jsonl   # in=.. out=.. cache_read=.. cache_create=..
 # 3. orchestrate CAPTURE path calls gate-ledger tokens (mock CLAUDE_CMD real run -> TOKENS line);
 #    NC: the default no-capture path writes NO TOKENS line (usage=?):
 bash tests/test-orchestrate.sh         # + the SPEC-110 capture-path token block + the no-capture NC
@@ -66,11 +66,11 @@ bash tests/test-lane-telemetry.sh      # + the SPEC-110 token-section + usage=? 
 
 ## After state
 
-- `lib/gate-ledger.sh`: `tokens` subcommand (TOKENS marker, sanitized, gate-invisible).
-- `lib/handoff/handoff_gen.py`: `sum-usage` CLI + a `sum_usage()` function.
-- `lib/orchestrate.sh`: capture-path post-session token extraction -> `gate-ledger tokens`; default
+- `lib/gate/gate-ledger.sh`: `tokens` subcommand (TOKENS marker, sanitized, gate-invisible).
+- `lib/goal/handoff/handoff_gen.py`: `sum-usage` CLI + a `sum_usage()` function.
+- `lib/queue/orchestrate.sh`: capture-path post-session token extraction -> `gate-ledger tokens`; default
   path unchanged (SPEC-087 pin intact); watchdog path a declared gap.
-- `lib/lane-telemetry.sh`: `report` token section (median tokens-to-done/lane, cache efficiency,
+- `lib/telemetry/lane-telemetry.sh`: `report` token section (median tokens-to-done/lane, cache efficiency,
   run-granularity rework share, `usage=?` honest nulls); `render --mermaid` per-lane annotation.
 - tests extended: ledger-durability (tokens subcommand + gate-invisible NC), orchestrate
   (capture-path TOKENS + no-capture `usage=?` NC), lane-telemetry (token section + `usage=?` NC +

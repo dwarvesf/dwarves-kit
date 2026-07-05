@@ -40,7 +40,7 @@ Cross-repo: sub-goal 04 of the ops-toolkit **cc-hygiene** mega-goal
 ## Scope
 
 **In:** `hooks/slop-cleaner.sh`, `hooks/session-state-save.sh`,
-`lib/proof-gate.sh` / `lib/proof-ledger.sh` override path, and their tests.
+`lib/gate/proof-gate.sh` / `lib/gate/proof-ledger.sh` override path, and their tests.
 **Out:** other Stop hooks (em-dash-fix, secret-guard-stop, citation-guard , measured
 cheap), gate-ledger durability (kit-telemetry SG-01 owns it), anti-rationalization.sh.
 **Not:** no hook-framework rewrite, no new config surface beyond what the fix needs,

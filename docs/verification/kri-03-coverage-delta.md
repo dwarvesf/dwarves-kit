@@ -1,6 +1,6 @@
 # Proof of done: advisory coverage-delta gate (SPEC-130)
 
-Advisory coverage-delta gate `lib/coverage-delta.sh`: flags an under-tested behavioral diff,
+Advisory coverage-delta gate `lib/gate/coverage-delta.sh`: flags an under-tested behavioral diff,
 quiet on a well-tested one, exempt on docs/test/generated-only, ALWAYS exits 0 (never blocks).
 
 ## Acceptance criteria -> confirmation
@@ -25,7 +25,7 @@ quiet on a well-tested one, exempt on docs/test/generated-only, ALWAYS exits 0 (
 | restore | `bash tests/test-coverage-delta.sh` | 0 | PASS (17/17, back to green) |
 | no-regression | `bash tests/test-meta.sh` | 0 | PASS (667/667) |
 | cross-platform | `/bin/bash tests/test-coverage-delta.sh` (bash 3.2.57) | 0 | PASS (17/17) |
-| dogfood | `bash lib/coverage-delta.sh check .` (this branch) | 0 | `ok: source + test moved together (src=203 test=100)` |
+| dogfood | `bash lib/gate/coverage-delta.sh check .` (this branch) | 0 | `ok: source + test moved together (src=203 test=100)` |
 
 ## Run detail
 
@@ -55,7 +55,7 @@ Verdict: RED-as-expected
   (T5 test-only-exempt and T7 classification also flipped, confirming the class is load-bearing)
 ```
 
-Restoring `lib/coverage-delta.sh` returned the suite to 17/17 green (Exit 0). The classification
+Restoring `lib/gate/coverage-delta.sh` returned the suite to 17/17 green (Exit 0). The classification
 is load-bearing: without it, a genuinely well-tested diff is wrongly flagged , exactly the
 false positive the gate exists to avoid.
 
@@ -66,5 +66,5 @@ cd <repo>
 bash tests/test-coverage-delta.sh        # 17/17 green
 /bin/bash tests/test-coverage-delta.sh   # cross-platform (macOS bash 3.2)
 bash tests/test-meta.sh                  # 667/667, no regression
-bash lib/coverage-delta.sh check .       # live: advisory line on this branch, exit 0
+bash lib/gate/coverage-delta.sh check .       # live: advisory line on this branch, exit 0
 ```

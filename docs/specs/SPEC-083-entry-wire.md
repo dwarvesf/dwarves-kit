@@ -33,7 +33,7 @@ Fix hop 1 only; pin the whole wire.
 
 1. **Board awareness in `context-readiness.sh`**: when `_meta/BACKLOG.md`
    exists, count rows whose LEADING status keyword is `queued`, using the same
-   `$(NF-1)` second-to-last-cell + leading-keyword parse as `lib/backlog.sh`
+   `$(NF-1)` second-to-last-cell + leading-keyword parse as `lib/board/backlog.sh`
    `_rows` (self-contained awk in the hook; ship-gate's direct-grep precedent,
    no lib/ dependency). Emit a `board:<N>q` state token whenever the file
    exists, including `0q` (absence ambiguity is worse than one token).
@@ -106,5 +106,5 @@ regex (`^[4-9]`) that false-fails at 10+ branches, the exact hardcoded-count
 trap this session's doctrine names; fixed to arithmetic `-ge 4`. LOW
 (accepted, recorded): a downstream repo whose BACKLOG rows do not match the
 `| ID-NNN |` shape parses to `board:0q`, an honest "no parseable queue" token,
-not a wrong count; the hook comment cross-references the lib/backlog.sh twin
+not a wrong count; the hook comment cross-references the lib/board/backlog.sh twin
 parser for the drift risk. Verdict: SHIP.

@@ -28,7 +28,7 @@ FILE (flushed at exit) instead of capturing script's stdout.
 |---|---|---|
 | reproduce | suite under socket-stdin harness, typescript-file build pre-stdin-fix | Failed: 1, same test, 5/5 deterministic |
 | green | `bash tests/test-hooks.sh` x6 consecutive post-fix | 426/426 every run |
-| negative control | `[ -t 1 ] && [ -z NO_COLOR ]` gate in lib/gate-ledger.sh forced false | exactly 1 RED (this test), restored, 426/426 |
+| negative control | `[ -t 1 ] && [ -z NO_COLOR ]` gate in lib/gate/gate-ledger.sh forced false | exactly 1 RED (this test), restored, 426/426 |
 
 Verdict: PASS.
 

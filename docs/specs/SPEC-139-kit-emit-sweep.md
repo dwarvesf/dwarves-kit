@@ -32,7 +32,7 @@ Two-part close-out, plus the forever-invariant test the mega-goal's over-test fr
 
 1. **Wire the 9 phase-owning dark commands.** Each gains ONE line, at its natural hand-off
    point, in the SAME single-line convention `test-plan.md` / `review.md` / `devs-team.md`
-   already use (`bash lib/gate-ledger.sh record <rid> <Phase> ran "<summary>"`):
+   already use (`bash lib/gate/gate-ledger.sh record <rid> <Phase> ran "<summary>"`):
    - `spec.md` -> `Spec` (a real `Lane x phase depth matrix` row)
    - `spec-validate.md` -> `Validate` (a real matrix row)
    - `think.md` -> `Think` (a real matrix row)
@@ -95,7 +95,7 @@ diagram would restate the file list above without adding information.
 
 1. Each of the 9 phase-owning dark commands (`spec.md`, `spec-validate.md`, `verify.md`,
    `think.md`, `design.md`, `ui-design.md`, `docs.md`, `retro.md`, `explain.md`) contains a
-   real `bash lib/gate-ledger.sh record <rid> <Phase> ran "..."` call at its natural hand-off
+   real `bash lib/gate/gate-ledger.sh record <rid> <Phase> ran "..."` call at its natural hand-off
    point, using the phase name given in the Solution section above.
 2. `WORKFLOW.md` carries a "## Command emit coverage (SPEC-139)" section naming exactly the 9
    utility commands (`absorb.md`, `adopt.md`, `next.md`, `start.md`, `kit-health.md`,
@@ -159,7 +159,7 @@ Source: this spec's Acceptance criteria
   the ledger" signal entirely).
 - DEC-002: `verify` and `explain` record bespoke, non-matrix phase names (lowercase, no Title
   Case) rather than being shoehorned into an existing matrix row, mirroring `grill`'s own
-  established precedent (`lib/gate-ledger.sh`'s `record()` accepts any phase string; only
+  established precedent (`lib/gate/gate-ledger.sh`'s `record()` accepts any phase string; only
   `required()`/`plan()`/`progress()` consult the matrix). Alternative rejected: inventing a
   `Verify (opt-in)` / `Explain (opt-in)` matrix row, which the sub-goal's explicit "no
   lane-matrix cell changes" constraint forbids.

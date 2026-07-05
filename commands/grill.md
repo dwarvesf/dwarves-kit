@@ -57,7 +57,7 @@ more section of this file, gated on S2 alone (an S1- or S3-only fire skips strai
 
 Read what already answers questions so you never ask one the repo answers:
 
-1. The task text + its type (`bash lib/task-type-classify.sh classify "<task>"`).
+1. The task text + its type (`bash lib/classify/task-type-classify.sh classify "<task>"`).
 2. `CONTEXT.md` / `docs/adr/` / `docs/decisions/` if present, the glossary and the decisions
    already made. A question whose answer sits in an ADR is a wasted turn; a claim that
    CONTRADICTS one is your first question.
@@ -194,10 +194,10 @@ Record exactly one of the two lines below, every run, so the ledger always shows
 decided:
 
 - **The interview ran** (Step 0 fired): record it for telemetry (SPEC-063):
-  `bash lib/gate-ledger.sh record <rid> grill ran "<N> questions, <M> contradictions, banks: <type>"`.
+  `bash lib/gate/gate-ledger.sh record <rid> grill ran "<N> questions, <M> contradictions, banks: <type>"`.
 - **The precheck auto-skipped** (Step 0, SPEC-138): record the reason, with the `reason=` token
   as the FIRST word of the free text:
-  `bash lib/gate-ledger.sh record <rid> grill skipped "reason=<home-turf|density-low|operator-wave>: <one-line why>"`.
+  `bash lib/gate/gate-ledger.sh record <rid> grill skipped "reason=<home-turf|density-low|operator-wave>: <one-line why>"`.
   `gate-ledger.sh` enforces this enum at write time: a grill skip with none of the three tokens,
   or none at all, is refused (exit 64) rather than silently landing on the ledger.
 

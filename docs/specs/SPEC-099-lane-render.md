@@ -2,7 +2,7 @@
 
 Status: VALIDATED
 Date: 2026-07-02
-Lane: full (adds a subcommand to lib/lane-telemetry.sh, a covered enforcement/telemetry lib)
+Lane: full (adds a subcommand to lib/telemetry/lane-telemetry.sh, a covered enforcement/telemetry lib)
 Type: feature
 Relates-to: SPEC-061 (lane-telemetry record+aggregate), SPEC-097 (durable corpus), SPEC-098 (lane-telemetry is now hard-gated)
 Board: ops-toolkit ID-150 (narrowed remainder); kit-telemetry mega-goal SG-04
@@ -14,7 +14,7 @@ counts. ID-150 (narrowed) asks for the render/dashboard over the existing data, 
 SG-01 made the corpus durable.
 
 ## Decision
-Add a `render` subcommand to `lib/lane-telemetry.sh` that draws, from the durable ledgers
+Add a `render` subcommand to `lib/telemetry/lane-telemetry.sh` that draws, from the durable ledgers
 (reusing `_rows()`, no second parser, no new dependency):
 1. a `task-type -> lane` table with run counts + gates(ran/skip/override) + ships,
 2. an ASCII routing flow grouping task-types by the lane they routed into,
@@ -33,7 +33,7 @@ snapshot lands at `docs/research/2026-07-02-lane-usage-snapshot.md`.
 - AC6 [no regression]: `test-meta.sh`, `test-hooks.sh` stay green; `report`/`misfires`/`trace` unchanged.
 
 ## Tasks
-- T1: `lib/lane-telemetry.sh` -- `render()` + dispatch `render) render "$@"` + usage/header.
+- T1: `lib/telemetry/lane-telemetry.sh` -- `render()` + dispatch `render) render "$@"` + usage/header.
 - T2: `tests/test-lane-telemetry.sh` (new) -- AC1-AC5 over a seeded corpus + the empty NC.
 - T3: `docs/research/2026-07-02-lane-usage-snapshot.md` -- dated capture (full + filtered).
 - T4: `docs/verification/lane-dashboard.md` -- table-first proof (2-3 captures).
@@ -42,8 +42,8 @@ snapshot lands at `docs/research/2026-07-02-lane-usage-snapshot.md`.
 ## Verification
 ```
 bash tests/test-lane-telemetry.sh   # AC1-AC5 + review pins, 18 pins
-bash lib/lane-telemetry.sh render          # real-corpus capture
-bash lib/lane-telemetry.sh render full     # filtered capture
+bash lib/telemetry/lane-telemetry.sh render          # real-corpus capture
+bash lib/telemetry/lane-telemetry.sh render full     # filtered capture
 bash tests/test-meta.sh ; bash tests/test-hooks.sh   # stay green
 ```
 

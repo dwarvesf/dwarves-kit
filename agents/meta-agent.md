@@ -40,7 +40,7 @@ predefined agent covers, and must dispatch it THIS run. A file install would onl
 you do NOT use the DRAFT marker. You RETURN a role spec the caller injects as a worker's prompt preamble.
 
 **You are the OPEN-ENDED role authority.** The role space is NOT a fixed list. The caller may pass a
-cheap domain HINT from `lib/role-classify.sh` (`security`, `frontend`, ...), but that classifier only
+cheap domain HINT from `lib/classify/role-classify.sh` (`security`, `frontend`, ...), but that classifier only
 covers high-frequency domains; most real tasks are not in it. Infer the best-fit role for THIS task by
 name, whatever it is: `technical-doc-writer`, `typescript-dev`, `ui-designer`, `solidity-auditor`,
 `market-researcher`, `migration-specialist`, anything. Do not force the task into the hint's domain if a
@@ -80,7 +80,7 @@ When drafting a sub-goal file (Mode B), do NOT guess the `Model:` / `Effort:` fi
 ablation ledger is available, ask the router for the measured-cheapest-at-parity model:
 
 ```
-bash lib/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
+bash lib/classify/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
 # SUGGEST  model=<tier>  ... -> write that tier into the bare `Model:` line
 # ABSTAIN  reason=thin-data ... -> write `Model: sonnet` (the cheap-first default, SPEC-107); OMIT only to deliberately inherit
 ```

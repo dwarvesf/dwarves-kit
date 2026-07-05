@@ -36,10 +36,11 @@ set -euo pipefail
 # pwd -P (physical): when invoked through a symlinked install dir (~/.claude/dwarves-kit/lib),
 # resolve to the real repo so ../docs/verification/task-types.md still loads (SPEC-045).
 PROOF_GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+LIB_ROOT="$(cd "$PROOF_GATE_DIR/.." && pwd -P)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 
 # Single source for the type derivation (review: proof_contract + proof_class each
 # forked their own classify; one helper, one fork per caller, zero divergence risk).
-_classify_type() { bash "$PROOF_GATE_DIR/task-type-classify.sh" classify "$@" 2>/dev/null || true; }
+_classify_type() { bash "$LIB_ROOT/classify/task-type-classify.sh" classify "$@" 2>/dev/null || true; }
 
 proof_class() {
   local desc lc lane
@@ -47,7 +48,7 @@ proof_class() {
   lc="$(printf '%s' "$desc" | tr '[:upper:]' '[:lower:]')"
 
   # 1. inert: defer to the lane classifier's cosmetic/doc detection.
-  lane="$(bash "$PROOF_GATE_DIR/lane-classify.sh" classify "$desc" 2>/dev/null || echo normal)"
+  lane="$(bash "$LIB_ROOT/classify/lane-classify.sh" classify "$desc" 2>/dev/null || echo normal)"
   if [ "$lane" = "tiny" ] || [ "$lane" = "backfill" ]; then
     echo inert; return 0
   fi
@@ -88,7 +89,7 @@ proof_requirement() {
 # SPEC-044: compose the proof CLASS (rigor) with the task TYPE (artifact shape +
 # owning skill). The type comes from task-type-classify.sh; the artifact + skill come
 # from the registry docs/verification/task-types.md. Class still wins on rigor.
-TASK_TYPE_REGISTRY="$PROOF_GATE_DIR/../docs/verification/task-types.md"
+TASK_TYPE_REGISTRY="$LIB_ROOT/../docs/verification/task-types.md"  # docs/ is at repo root (above lib/)
 
 _registry_field() {
   # $1 = task type, $2 = column index (3=artifact, 4=skill, 5=default class)

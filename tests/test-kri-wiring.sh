@@ -22,11 +22,11 @@ WORKFLOW="$KIT_DIR/WORKFLOW.md"
 ADR0024="$KIT_DIR/docs/decisions/0024-gate-ledger-and-ship-enforcement.md"
 VERIF_README="$KIT_DIR/docs/verification/README.md"
 SHIP_GATE="$KIT_DIR/hooks/ship-gate.sh"
-ORCH="$KIT_DIR/lib/orchestrate.sh"
-SPEC_NEXT="$KIT_DIR/lib/spec-next.sh"
+ORCH="$KIT_DIR/lib/queue/orchestrate.sh"
+SPEC_NEXT="$KIT_DIR/lib/spec/spec-next.sh"
 REVIEW_TEAM="$KIT_DIR/commands/review-team.md"
 VERIFY_CMD="$KIT_DIR/commands/verify.md"
-PROOF_GEN_PY="$KIT_DIR/lib/proof-table-gen.py"
+PROOF_GEN_PY="$KIT_DIR/lib/gate/proof-table-gen.py"
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
@@ -78,10 +78,10 @@ _wired "$ORCH" 'reserved_spec="$(_wave_reserve_spec)"'; assert "02: the reservat
 _wired "$SPEC_NEXT" 'reserve) reserve ;;'; assert "02: spec-next.sh implements the reserve subcommand _wave_reserve_spec calls into" $?
 
 # 03: coverage-delta -- review-team.md actually invokes it
-_wired "$REVIEW_TEAM" 'bash lib/coverage-delta.sh check'; assert "03: /kit:review-team invokes coverage-delta.sh (live call site, commands/review-team.md)" $?
+_wired "$REVIEW_TEAM" 'bash lib/gate/coverage-delta.sh check'; assert "03: /kit:review-team invokes coverage-delta.sh (live call site, commands/review-team.md)" $?
 
 # 04: mutation-smoke -- verify.md actually invokes it
-_wired "$VERIFY_CMD" 'bash lib/mutation-smoke.sh run'; assert "04: /kit:verify invokes mutation-smoke.sh (live call site, commands/verify.md)" $?
+_wired "$VERIFY_CMD" 'bash lib/gate/mutation-smoke.sh run'; assert "04: /kit:verify invokes mutation-smoke.sh (live call site, commands/verify.md)" $?
 
 # 133: proof-table-gen actually parses 01's REAL two-line OUTCOME marker (the reconciled shape),
 # not the original assumed single-line shape (would have been an orphan against real 01 data).

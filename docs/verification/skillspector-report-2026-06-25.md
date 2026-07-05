@@ -333,20 +333,20 @@
 | `hooks/statusline.sh` | shell | 57 | Yes |
 | `install.sh` | shell | 400 | Yes |
 | `lib/adopt.sh` | shell | 154 | Yes |
-| `lib/backlog.sh` | shell | 95 | Yes |
-| `lib/dispatch-gate.sh` | shell | 211 | Yes |
-| `lib/gate-ledger.sh` | shell | 288 | Yes |
-| `lib/goal-drafts.sh` | shell | 173 | Yes |
-| `lib/goal-registry.sh` | shell | 262 | Yes |
-| `lib/lane-classify.sh` | shell | 182 | Yes |
-| `lib/lane-telemetry.sh` | shell | 258 | Yes |
+| `lib/board/backlog.sh` | shell | 95 | Yes |
+| `lib/gate/dispatch-gate.sh` | shell | 211 | Yes |
+| `lib/gate/gate-ledger.sh` | shell | 288 | Yes |
+| `lib/goal/goal-drafts.sh` | shell | 173 | Yes |
+| `lib/goal/goal-registry.sh` | shell | 262 | Yes |
+| `lib/classify/lane-classify.sh` | shell | 182 | Yes |
+| `lib/telemetry/lane-telemetry.sh` | shell | 258 | Yes |
 | `lib/precedent.sh` | shell | 67 | Yes |
-| `lib/proof-gate.sh` | shell | 132 | Yes |
-| `lib/proof-ledger.sh` | shell | 201 | Yes |
-| `lib/spec-next.sh` | shell | 51 | Yes |
-| `lib/stack-merge.sh` | shell | 136 | Yes |
-| `lib/task-type-classify.sh` | shell | 137 | Yes |
-| `lib/verif-counts.sh` | shell | 56 | Yes |
+| `lib/gate/proof-gate.sh` | shell | 132 | Yes |
+| `lib/gate/proof-ledger.sh` | shell | 201 | Yes |
+| `lib/spec/spec-next.sh` | shell | 51 | Yes |
+| `lib/goal/stack-merge.sh` | shell | 136 | Yes |
+| `lib/classify/task-type-classify.sh` | shell | 137 | Yes |
+| `lib/gate/verif-counts.sh` | shell | 56 | Yes |
 | `rules/backend-go.md` | markdown | 34 | No |
 | `rules/frontend-ts.md` | markdown | 42 | No |
 | `settings.json` | json | 183 | No |
@@ -2116,7 +2116,7 @@
 
 ### 🔴 HIGH: TM1
 
-**Location:** `lib/goal-registry.sh:176`  
+**Location:** `lib/goal/goal-registry.sh:176`  
 **Confidence:** 95%  
 
 **Message:** Tool Parameter Abuse
@@ -2127,7 +2127,7 @@
 
 ### 🔴 HIGH: TM1
 
-**Location:** `lib/goal-registry.sh:241`  
+**Location:** `lib/goal/goal-registry.sh:241`  
 **Confidence:** 95%  
 
 **Message:** Tool Parameter Abuse

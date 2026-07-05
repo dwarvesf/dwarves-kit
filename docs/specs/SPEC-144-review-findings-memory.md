@@ -2,7 +2,7 @@
 
 Generated: 2026-07-04
 Status: VALIDATED
-Lane: normal (classified `normal` by `lib/lane-classify.sh`; touches `commands/review.md`,
+Lane: normal (classified `normal` by `lib/classify/lane-classify.sh`; touches `commands/review.md`,
 `commands/review-team.md`, `agents/advisor.md` -- prose/prompt surfaces, not `lib/`/`hooks/`,
 so the SPEC-069 review-escalation trigger does not fire).
 Depends on: SPEC-143 (stale-adr-inversion, merged to `master`; the `stale-adr:` finding-key
@@ -77,12 +77,12 @@ Verification).
 ### Emit grammar
 
 The review phase's existing gate-ledger record line (`commands/review.md` Step 4,
-`commands/review-team.md` Step 3 tail: `bash lib/gate-ledger.sh record <rid> review ran
+`commands/review-team.md` Step 3 tail: `bash lib/gate/gate-ledger.sh record <rid> review ran
 "<verdict> findings=<K> [suppressed=<S>]"`) gains two more space-separated `key=value` tokens,
 appended to the existing reason string, never replacing it:
 
 ```
-bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected=<M> actor=<name>"
+bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected=<M> actor=<name>"
 ```
 
 - `rejected=<M>` -- count of findings this run recognized as a finding-key match and surfaced
@@ -92,7 +92,7 @@ bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected
   DECISIONS.md convention, a green-field emit grammar carries identity from birth rather than
   bolting it on later once a query already assumes its absence.
 
-**Why this parses with the kit_gates reader unchanged.** `lib/gate-ledger.sh record` already
+**Why this parses with the kit_gates reader unchanged.** `lib/gate/gate-ledger.sh record` already
 writes the whole reason string as ONE field (`printf '%s | GATE | %s | %s | %s\n' "$(now)"
 "$phase" "$state" "$reason"`, line 177); `ledger-observatory`'s `adapters.read_kit_gates()`
 parses a `| GATE |` line into `(rid, gate, outcome, reason, ...)` where `reason` is
@@ -177,13 +177,13 @@ Delta-from-contract notes: `docs/implementation-notes/spec-144-review-findings-m
 | T7 | Cross-lens collision | the same finding-key rejected under one lens, re-encountered under a different lens | still surfaced as previously-rejected (the ledger key has no lens partition; the `lens` column is descriptive metadata, not part of the match key) |
 | T8 | Emit grammar | a live `gate-ledger.sh record ... review ran "... findings=N rejected=M actor=X"` line | parses via `ledger-observatory`'s `kit_gates` table, `reason` column carries the full string verbatim (AC6) |
 | T9 | Append path | operator rejects a finding in a review session | one new row appended to `docs/verification/rejected-findings.md`, existing rows untouched |
-| T10 | Coverage-delta advisory | `lib/coverage-delta.sh check` over this branch's diff | records, never blocks (informational; this is a prompt/doc-heavy change) |
+| T10 | Coverage-delta advisory | `lib/gate/coverage-delta.sh check` over this branch's diff | records, never blocks (informational; this is a prompt/doc-heavy change) |
 | T11 | Substring-collision (found live, fixed) | `grep -F "except:notify.py"` (bare) vs `grep -F "\| except:notify.py \|"` (pipe-anchored) against the `bare-except:notify.py` row | bare form WRONGLY matches (RED); pipe-anchored form correctly does not (GREEN) |
 
 ## Coverage-delta row
 
 ```
-$ bash lib/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid review-findings-memory
+$ bash lib/gate/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid review-findings-memory
 [coverage-delta] exempt: no source change (docs/test/generated only)
 ```
 Expected: this sub-goal is prose/prompt/doc surfaces, not application source; `exempt` is the

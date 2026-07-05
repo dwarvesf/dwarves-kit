@@ -81,8 +81,8 @@ claude_block() {
   printf '%s\n' "$START"
   printf '## Operating layer (dwarves-kit)\n\n'
   printf '@AGENTS.md\n\n'
-  printf 'Before touching code, classify the lane: `bash %s/lib/lane-classify.sh classify "<task>"`.\n' "$KIT_ROOT"
-  printf 'A full-lane change records its gates via `%s/lib/gate-ledger.sh` or the ship-gate blocks the push.\n' "$KIT_ROOT"
+  printf 'Before touching code, classify the lane: `bash %s/lib/classify/lane-classify.sh classify "<task>"`.\n' "$KIT_ROOT"
+  printf 'A full-lane change records its gates via `%s/lib/gate/gate-ledger.sh` or the ship-gate blocks the push.\n' "$KIT_ROOT"
   printf '%s\n' "$END"
 }
 
@@ -141,7 +141,7 @@ if [ ! -f "$marker" ]; then
 
 Presence of this file opts this repo into the dwarves-kit proof-of-done ship-gate. A
 behavioral/stateful change owes a recorded run here; the shape per loop type comes from the
-install: \`bash $KIT_ROOT/lib/proof-gate.sh contract "<task>"\`.
+install: \`bash $KIT_ROOT/lib/gate/proof-gate.sh contract "<task>"\`.
 EOF
   fi
   did=1

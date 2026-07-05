@@ -6,7 +6,7 @@ Verdict: PASS
 
 | AC | Criterion | How proven | Result |
 |----|-----------|------------|--------|
-| AC1 | `escalate <current-lane> <spec-file>` exists, dispatches, classifies the spec's own text | `lib/lane-classify.sh` `escalate()` + `main()` case; usage string | PASS |
+| AC1 | `escalate <current-lane> <spec-file>` exists, dispatches, classifies the spec's own text | `lib/classify/lane-classify.sh` `escalate()` + `main()` case; usage string | PASS |
 | AC2 [up-only] | a `tiny` current lane + a spec whose text carries auth/data-model/migration scope escalates to `full` | `escalate tiny tests/fixtures/lane-escalation/heavy-scope-spec.md` -> `ESCALATE tiny -> full` | PASS |
 | AC3 [downgrade guard, NEGATIVE CONTROL] | a `full` current lane + a trivial spec never downgrades | `escalate full tests/fixtures/lane-escalation/trivial-spec.md` -> `HOLD full`, never `ESCALATE`; same-rank case also HOLDs; the pre-existing `check` guard still fires unmodified | PASS |
 | AC4 [re-plan] | `start` then `start --amend` at a heavier lane re-plans the ledger up-only | `required full` (11 gates) > `required tiny` (0 gates); last `START-AMEND` line carries `lane=full`; both `START` and `START-AMEND` lines persist (append-only) | PASS |
@@ -15,7 +15,7 @@ Verdict: PASS
 
 ## Implementation
 
-- `lib/lane-classify.sh` -- new `escalate()` function (re-classifies the SPEC file's
+- `lib/classify/lane-classify.sh` -- new `escalate()` function (re-classifies the SPEC file's
   own text via the existing `classify_core`, compares `lane_rank` against the current
   lane, prints `ESCALATE <cur> -> <heavier>` or `HOLD <cur>`, exits 0 always); wired
   into `main()`'s case statement and the usage string. Pure, side-effect-free -- it

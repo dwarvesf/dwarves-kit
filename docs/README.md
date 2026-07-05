@@ -30,7 +30,7 @@ map, not per-dir READMEs , `specs/` and `verification/` keep their own, delibera
 **Design + decisions**
 - [`specs/`](specs/) , one spec per feature, the live spec store. Numbering is per-namespace and
   local (each `*/docs/specs/` owns its own `SPEC-001..` sequence). Enumerate them with
-  `bash lib/spec-index.sh` (the read-only registry view) rather than a per-file list here , a
+  `bash lib/spec/spec-index.sh` (the read-only registry view) rather than a per-file list here , a
   hand-kept list would rot. See [`specs/README.md`](specs/README.md) for the numbering convention.
 - [`decisions/`](decisions/) , ADRs (`NNNN-<slug>.md`), superseded in place.
 
@@ -49,4 +49,4 @@ map, not per-dir READMEs , `specs/` and `verification/` keep their own, delibera
 
 No counts live in this map on purpose (a count rots; the README's directory-layout counts are the
 ones under a test-meta parity pin). To count or list any class, read the directory or run
-`bash lib/spec-index.sh` for specs.
+`bash lib/spec/spec-index.sh` for specs.

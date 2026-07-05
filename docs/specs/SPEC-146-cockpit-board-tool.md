@@ -1,4 +1,4 @@
-# SPEC-146: the cockpit board command (`lib/board.sh` + `lib/parse-board.sh`)
+# SPEC-146: the cockpit board command (`lib/board/board.sh` + `lib/board/parse-board.sh`)
 
 Status: SHIPPED
 Lane: full
@@ -7,7 +7,7 @@ Branch: feat/board-tool
 Relates-to: SPEC-055 (backlog kanban, the base renderer this delegates to), the runner-fastpath
 mega-goal (ops-toolkit `research/2026-07-04-board-hermes-bridge-design.md`, 2026-07-05 amendment),
 sub-goal 03K (`feat/orchestrate-queue`, the queue's consumer), sub-goals 07/08 (board-bridge
-mirror/writeback, future consumers of `lib/parse-board.sh`)
+mirror/writeback, future consumers of `lib/board/parse-board.sh`)
 
 ## Problem
 
@@ -24,16 +24,16 @@ runner-fastpath mega-goal's overnight queue (sub-goal 03K).
 `dwarves-kit` gains the `board` command as the SOLE cockpit board tool. It is GENERIC and
 config-driven: the kit carries no personal data (no hardcoded registry, no hardcoded repo list);
 the consumer's `boards.txt` registry and repo root are read at runtime via `--repo-root <path>` /
-the `REPO_ROOT` env var, the kit's existing consumer-config pattern (`lib/weekend-batch.sh`'s
-`--repo-root`, `lib/mega-merge.sh`'s env-override precedent).
+the `REPO_ROOT` env var, the kit's existing consumer-config pattern (`lib/queue/weekend-batch.sh`'s
+`--repo-root`, `lib/goal/mega-merge.sh`'s env-override precedent).
 
-1. **`lib/board.sh`**: single-repo (`board|next|set|states|priority [mode]`, `--backlog-file`)
+1. **`lib/board/board.sh`**: single-repo (`board|next|set|states|priority [mode]`, `--backlog-file`)
    and cross-repo (`all <cmd>`, `--repo-root`/`--registry`) render, migrated VERBATIM from
    ops-toolkit's `_meta/board`/`_meta/board-all` (the `priority` quadrant awk + the
    `priority matrix` pivot are copied unchanged, parameterized only by file/registry path).
    Base kanban render (`board`/`next`/`set`/`states`) is UNCHANGED behavior: it always shells out
-   to the existing `lib/backlog.sh`, never reimplements it.
-2. **`lib/parse-board.sh`**: a new, reusable structured parser. `pb_rows` is a public superset of
+   to the existing `lib/board/backlog.sh`, never reimplements it.
+2. **`lib/board/parse-board.sh`**: a new, reusable structured parser. `pb_rows` is a public superset of
    `backlog.sh`'s private `_rows()` (adds the full row text so a caller can read inline tags).
    `pb_queue_rows` extracts and ALLOW-LISTS `#queue{repo=<name>,pointer=<path>}` tokens on
    `queued` rows (see `## Design` below for the full security model).
@@ -78,7 +78,7 @@ command (shim content delivered to the conductor; this repo does not touch ops-t
 
 ## Acceptance criteria
 
-- AC1: `lib/parse-board.sh` extracts a valid `#queue{repo=...,pointer=...}` token on a `queued`
+- AC1: `lib/board/parse-board.sh` extracts a valid `#queue{repo=...,pointer=...}` token on a `queued`
   row and resolves it to a real, existing, allow-listed absolute path.
 - AC2: A malformed token (missing a required key) is skipped, never emitted.
 - AC3: A token on a NON-`queued` row is silently out of scope (not an error).
@@ -93,7 +93,7 @@ command (shim content delivered to the conductor; this repo does not touch ops-t
   including via `../` traversal -- is skipped with a reason; a dangling (non-existent) pointer is
   also skipped (defense in depth).
 - AC8 (NC-d): a shell-metachar-laden field is charset-rejected before it can reach any exec
-  boundary; a static source audit confirms neither `lib/board.sh` nor `lib/parse-board.sh` ever
+  boundary; a static source audit confirms neither `lib/board/board.sh` nor `lib/board/parse-board.sh` ever
   `eval`s or `sh -c`'s a parsed value.
 - AC9 (NC-e): **RENDER NON-REGRESSION.** `board`/`next`/`priority [overview|matrix]`/`states`,
   invoked exactly as the ops-toolkit shims would invoke them, are byte-identical to the
@@ -119,7 +119,7 @@ command (shim content delivered to the conductor; this repo does not touch ops-t
 
 `git revert`. Two new `lib/` files + one new `tests/` file + doc mentions (README, architecture,
 a `tests/test-meta.sh` pin) + a CI step; no daemon, no external state, no change to
-`lib/backlog.sh`. The ops-toolkit shim swap is a SEPARATE change in a separate repo (delivered as
+`lib/board/backlog.sh`. The ops-toolkit shim swap is a SEPARATE change in a separate repo (delivered as
 content, not committed here), so reverting this PR alone leaves ops-toolkit's existing
 `_meta/board`/`_meta/board-all` scripts working exactly as they do today (they were never
 touched).

@@ -5,7 +5,7 @@ Delta from the spec.
 - **Front door kept verbatim; extension appended below** (not woven into the existing "What's here"
   table). git diff shows ZERO removed lines , the quick map stays as the getting-started subset;
   the new "## The full record, by theme" section is the complete map incl. the two omitted classes.
-- **No unpinned counts** , the map points at `bash lib/spec-index.sh` for spec enumeration and
+- **No unpinned counts** , the map points at `bash lib/spec/spec-index.sh` for spec enumeration and
   describes each dir without a rotting number. The only pinned counts are the README directory-layout
   ones (SPEC-113's parity pin); the map explicitly says so.
 - **verification/ LOAD-BEARING** , linked, never moved; the note names `hooks/ship-gate.sh` as the

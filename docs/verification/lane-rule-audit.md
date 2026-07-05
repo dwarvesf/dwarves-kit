@@ -6,12 +6,12 @@ Verdict: PASS
 
 | AC | Criterion | How proven | Result |
 |----|-----------|------------|--------|
-| AC1 | `lane-telemetry.sh` work -> full | `test-lane-classify.sh`: `classify "add a render subcommand to lib/lane-telemetry.sh"` = full | PASS |
-| AC2 | `mega-merge.sh` work -> full | test: `classify "...lib/mega-merge.sh"` = full | PASS |
-| AC3 | `proof-ledger.sh` work -> full | test: `classify "...lib/proof-ledger.sh"` = full | PASS |
-| AC4 | `kit-log-dir.sh` work -> full | test: `classify "...lib/kit-log-dir.sh"` = full | PASS |
+| AC1 | `lane-telemetry.sh` work -> full | `test-lane-classify.sh`: `classify "add a render subcommand to lib/telemetry/lane-telemetry.sh"` = full | PASS |
+| AC2 | `mega-merge.sh` work -> full | test: `classify "...lib/goal/mega-merge.sh"` = full | PASS |
+| AC3 | `proof-ledger.sh` work -> full | test: `classify "...lib/gate/proof-ledger.sh"` = full | PASS |
+| AC4 | `kit-log-dir.sh` work -> full | test: `classify "...lib/telemetry/kit-log-dir.sh"` = full | PASS |
 | AC1b-4b [completeness] | orchestrate.sh/stack-merge/role-classify/goal-drafts -> full | test: all four = full | PASS |
-| AC5 [precedence NC] | cosmetic edit to a covered lib stays tiny | test: `classify "fix a typo in lib/lane-telemetry.sh"` = tiny | PASS |
+| AC5 [precedence NC] | cosmetic edit to a covered lib stays tiny | test: `classify "fix a typo in lib/telemetry/lane-telemetry.sh"` = tiny | PASS |
 | AC5b [over-match NC] | bare 'orchestrate' + read-helper libs stay normal | test: "orchestrate the marketing launch" = normal; route-suggest = normal | PASS |
 | AC6 [no regression] | prior machinery still full; plain feature still normal; suites green | test: gate-ledger/lane-classify/auth = full, feature = normal, typo = tiny; `test-meta` 578, `test-hooks` 438, `test-lane-escalation` 22 | PASS |
 
@@ -26,7 +26,7 @@ Verdict: PASS
 
 ## Implementation
 
-- `lib/lane-classify.sh` line 54 , four basenames added to the `kit-machinery` regex.
+- `lib/classify/lane-classify.sh` line 54 , four basenames added to the `kit-machinery` regex.
 - `tests/test-lane-classify.sh` (new) , the classifier's first dedicated behavioral suite,
   10 pins (AC1-AC6 incl. the precedence negative control).
 
@@ -42,7 +42,7 @@ Verdict: PASS
 ## Reproduce
 
 ```
-bash lib/lane-classify.sh classify "add a code-level guard to lib/mega-merge.sh"  # full
-bash lib/lane-classify.sh classify "fix a typo in lib/mega-merge.sh"              # tiny
+bash lib/classify/lane-classify.sh classify "add a code-level guard to lib/goal/mega-merge.sh"  # full
+bash lib/classify/lane-classify.sh classify "fix a typo in lib/goal/mega-merge.sh"              # tiny
 bash tests/test-lane-classify.sh
 ```

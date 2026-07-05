@@ -1,7 +1,7 @@
 # Proof of done: hook-precision (SPEC-064)
 
 Behavioral change: hooks/safety-gate.sh rewritten parse-aware; hooks/ship-gate.sh
-cd-target resolution; lib/spec-next.sh added.
+cd-target resolution; lib/spec/spec-next.sh added.
 
 ## Green run
 

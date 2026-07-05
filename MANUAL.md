@@ -80,26 +80,26 @@ Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active sp
 **Reads:** `$ARGUMENTS` = either an `ID-NNN` (today's path) OR **freeform intent** (anything not matching `^ID-[0-9]+$`, e.g. "apply SDD to X"); `_meta/BACKLOG.md` Active queue, the item's Lane column, `AGENTS.md` zones (the projection source for the six-section goal) + the active spec's `## Verification` / `## After state`. Freeform delegates the crystallize interview to `/kit:think`.
 **Writes:** `.claude/goals/<slug>.md` (the SPEC-005 draft contract; never `.claude/last-goal.md`), a six-section operating directive (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if). On the **freeform path** it first writes a new sanitized `_meta/BACKLOG.md` row with a freshly allocated ID (row-before-draft, approve-before-allocate).
 **When to invoke:** you picked an `ID-NNN` from "what's left?", OR you have a freeform feature idea / vague brief with no ID yet, and want it scoped into a goal and routed into the right lane.
-**Floor check (advisory):** after the lane is chosen, it runs `bash lib/lane-classify.sh check <chosen> "<title>"`. A `LANE-DOWNGRADE` warning means the task text matches a heavier lane than you chose: size up, or narrow the scope and say why. It warns + logs to `completeness.log` (reviewed at `/kit:ship`); it never blocks ("Detect, don't dictate"). This is the guard for the classify-then-route gap (SPEC-053): the classifier suggested a lane, but nothing caught an under-sized choice until now.
+**Floor check (advisory):** after the lane is chosen, it runs `bash lib/classify/lane-classify.sh check <chosen> "<title>"`. A `LANE-DOWNGRADE` warning means the task text matches a heavier lane than you chose: size up, or narrow the scope and say why. It warns + logs to `completeness.log` (reviewed at `/kit:ship`); it never blocks ("Detect, don't dictate"). This is the guard for the classify-then-route gap (SPEC-053): the classifier suggested a lane, but nothing caught an under-sized choice until now.
 **Common gotcha:** it is a mutator-dispatcher: it sets up the goal and hands off, it does NOT execute. The freeform path **delegates** the interview to `/kit:think` (it does not embed one). It detects the goal-loop activator (built-in `/goal`, `ralph-loop`, or `goal-craft`) and degrades to a plain draft file if none is installed. Idempotent per id (and per slug for freeform). Source: SPEC-006 + ADR-0011; freeform front door SPEC-026; floor check SPEC-053.
 
 ### `/kit:dispatch`
 
 **Phase:** orchestrate / cross-phase (N specs -> N concurrent worktree workers -> converge)
-**Reads:** `$ARGUMENTS` = the specs to fire (or detects `Status: VALIDATED` specs with a `## Touches` section); each spec's `## Touches` directory-prefix globs; the lead-owned hands-off shared-surface list (from WORKFLOW.md, via `lib/dispatch-gate.sh`).
+**Reads:** `$ARGUMENTS` = the specs to fire (or detects `Status: VALIDATED` specs with a `## Touches` section); each spec's `## Touches` directory-prefix globs; the lead-owned hands-off shared-surface list (from WORKFLOW.md, via `lib/gate/dispatch-gate.sh`).
 **Writes:** nothing in the main checkout itself. Each dispatched worker writes its own `goal/<slug>` branch in an isolated worktree; the lead integrates the hands-off surfaces once via `/kit:ship`.
-**When to invoke:** you have 2+ INDEPENDENT validated specs and want to fire them, tab away, and collect finished branches. The disjointness gate (`lib/dispatch-gate.sh`) decides which run in parallel vs serialize; the drift guard checks each worker stayed in its globs.
+**When to invoke:** you have 2+ INDEPENDENT validated specs and want to fire them, tab away, and collect finished branches. The disjointness gate (`lib/gate/dispatch-gate.sh`) decides which run in parallel vs serialize; the drift guard checks each worker stayed in its globs.
 **Common gotcha:** cross-goal ONLY (it never parallelizes one spec's tasks; that is `/kit:execute`, still sequential). It NEVER auto-merges (the human merges at `/kit:ship`) and is NOT a DAG: dependent/sequenced sub-goals are `/kit:mega` territory, a real ordering graph is GSD v2. A spec without `## Touches` is rejected by the gate, not assumed-empty. Runs under bypassPermissions for tab-away. Source: SPEC-032; ADR-0019 (boundary), ADR-0020 (primitive), SPEC-031 (convergence).
 
 ### `/kit:mega`
 
 **Phase:** orchestrate / cross-phase (one destination -> 3-8 dependent sub-goals -> one bounded loop, one PR per sub-goal)
-**Reads:** the conversation's multi-objective intent; `CLAUDE.md` for a `megagoal_root:` / `mega_merge_posture:` hint; each sub-goal's `Done =` + ship-gate ledger via `lib/gate-ledger.sh`; `lib/proof-ledger.sh deployable` (SG-07's classifier) to decide the deploy/UAT terminus.
+**Reads:** the conversation's multi-objective intent; `CLAUDE.md` for a `megagoal_root:` / `mega_merge_posture:` hint; each sub-goal's `Done =` + ship-gate ledger via `lib/gate/gate-ledger.sh`; `lib/gate/proof-ledger.sh deployable` (SG-07's classifier) to decide the deploy/UAT terminus.
 **Writes:** the scaffold (`ROADMAP.md`, `goals/NN-*.md`, `POINTER_PROMPT.md`, `HANDOFF.md`, `DECISIONS.md`) at the resolved mega-goal directory (SPEC-034 DEC-002: `.claude/goals/<slug>/` for this repo, never `_meta/`, which is reserved for the BACKLOG cockpit). Nothing else until the loop runs; `/kit:mega` itself opens no PR.
 **When to invoke:** ONE destination reached through 3-8 genuinely DEPENDENT sub-goals (a single chain, no fan-in/fan-out) -- the sequenced complement to `/kit:dispatch`'s independent/parallel case.
-**Common gotcha:** it MIRRORS the ops-toolkit `plan-for-mega-goal` skill's decompose + front-load-checkpoint + per-run-merge-config beats; it does not fork or replace the skill (prefer the skill when installed for anything this command does not cover). Ship-layer auto-merge is real but narrow: only an `auto`-tagged sub-goal's PR can auto-merge, and only once `lib/mega-merge.sh gate` confirms its ship-gate passed (`lib/gate-ledger.sh check`, reused verbatim, never re-implemented); a failing/missing gate REFUSES unconditionally, and the action is dry-run unless `--execute` is passed. `gate`-tagged sub-goals and the final PR under the default `gated-final` posture always stop for a human; the command opens them via `lib/mega-merge.sh mark` (draft + `do-not-merge`) so the `_merge_exclusion` guard always has a mark to catch (SPEC-100 mark half, ID-089). `MEGA_MERGE_POSTURE=per-pr-review` (or `--posture=per-pr-review`) forces dry-run on every PR for a team run, overriding `--execute`. Source: ADR-0028 P2/P3; SPEC-034 (roadmap conventions, ID-037); SPEC-096 (this command + `lib/mega-merge.sh`, kit-hardening SG-08); SPEC-095 / SG-07 (the reused `deployable` classifier).
+**Common gotcha:** it MIRRORS the ops-toolkit `plan-for-mega-goal` skill's decompose + front-load-checkpoint + per-run-merge-config beats; it does not fork or replace the skill (prefer the skill when installed for anything this command does not cover). Ship-layer auto-merge is real but narrow: only an `auto`-tagged sub-goal's PR can auto-merge, and only once `lib/goal/mega-merge.sh gate` confirms its ship-gate passed (`lib/gate/gate-ledger.sh check`, reused verbatim, never re-implemented); a failing/missing gate REFUSES unconditionally, and the action is dry-run unless `--execute` is passed. `gate`-tagged sub-goals and the final PR under the default `gated-final` posture always stop for a human; the command opens them via `lib/goal/mega-merge.sh mark` (draft + `do-not-merge`) so the `_merge_exclusion` guard always has a mark to catch (SPEC-100 mark half, ID-089). `MEGA_MERGE_POSTURE=per-pr-review` (or `--posture=per-pr-review`) forces dry-run on every PR for a team run, overriding `--execute`. Source: ADR-0028 P2/P3; SPEC-034 (roadmap conventions, ID-037); SPEC-096 (this command + `lib/goal/mega-merge.sh`, kit-hardening SG-08); SPEC-095 / SG-07 (the reused `deployable` classifier).
 
-### Multi-session concurrency (the running-goal registry, `lib/goal-registry.sh`)
+### Multi-session concurrency (the running-goal registry, `lib/goal/goal-registry.sh`)
 
 `/kit:dispatch` is the single-session axis (one lead, N workers). The other axis is
 **multi-session**: one operator opens several Claude sessions on one machine (one goal
@@ -107,15 +107,15 @@ each) and walks away (ADR-0022, SPEC-036). A passive registry under
 `$(git rev-parse --git-common-dir)/kit-goals/` (shared by every worktree, never committed)
 keeps the sessions from colliding. It is a `lib/` helper, not a slash command.
 
-- `bash lib/goal-registry.sh claim <slug> <lane> <glob>...` -- register a goal. Admitted
-  only if its globs are disjoint from every active goal (the `lib/dispatch-gate.sh` rule,
+- `bash lib/goal/goal-registry.sh claim <slug> <lane> <glob>...` -- register a goal. Admitted
+  only if its globs are disjoint from every active goal (the `lib/gate/dispatch-gate.sh` rule,
   reused); an overlap is REFUSED with the colliding goal named. `/kit:assign` runs this.
-- `bash lib/goal-registry.sh list` -- the cross-session monitor: every running goal +
+- `bash lib/goal/goal-registry.sh list` -- the cross-session monitor: every running goal +
   lane + status. Surfaced by `/kit:start` (count always, full table in `--full`). It is
   the kit-level companion to the native agent view, which sees only one session's workers.
-- `bash lib/goal-registry.sh log <slug> "..."` -- append to the goal's attempt log
+- `bash lib/goal/goal-registry.sh log <slug> "..."` -- append to the goal's attempt log
   (`<slug>.attempts`), the running, human-legible "what it tried" trail.
-- `bash lib/goal-registry.sh status <slug> <state>` / `release <slug>` -- update status /
+- `bash lib/goal/goal-registry.sh status <slug> <state>` / `release <slug>` -- update status /
   drop the entry on completion. A stale `running` entry from a crashed session shows in
   `list` and is cleared with `release` (no GC daemon, by design).
 
@@ -168,7 +168,7 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 **When to invoke:** when a task needs a specialist role no existing agent covers and you want it as a reusable, named kit agent. For a one-off same-run specialist during `/kit:execute`, you do NOT invoke this , 2b-0 role synthesis handles it inline (see below).
 **Common gotcha:** a freshly installed agent is dispatchable only NEXT session (Claude Code loads the agent registry at session start); the command prints the granted tools + an `rm` undo. Sharing an installed agent with the team still goes through a reviewed PR. Design: SPEC-089.
 
-Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classified by `lib/role-classify.sh`; a specialist-worthy task gets a role synthesized by the `meta-agent` (Mode C, open-ended , any role) and injected into the worker THIS run, cached to `~/.claude/agents/` for reuse. Plain tasks fall through to the generic worker. This is automatic; `/kit:draft-agent` is the manual, install-a-named-agent path. Both share the `meta-agent` + `role-classify.sh` primitives (SPEC-089).
+Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classified by `lib/classify/role-classify.sh`; a specialist-worthy task gets a role synthesized by the `meta-agent` (Mode C, open-ended , any role) and injected into the worker THIS run, cached to `~/.claude/agents/` for reuse. Plain tasks fall through to the generic worker. This is automatic; `/kit:draft-agent` is the manual, install-a-named-agent path. Both share the `meta-agent` + `role-classify.sh` primitives (SPEC-089).
 
 ### `/kit:debug`
 
@@ -224,7 +224,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 ### `/kit:quiz-gate`
 
 **Phase:** understanding (the AFTER gate's speed regulator, ADR-0031 §2/§3)
-**Reads:** a git ref + `<rid>` (`$ARGUMENTS`), the ACTUAL diff + recorded tests via `lib/quiz-gate.sh` (which reuses `lib/explain.sh`), and `lib/significance-classify.sh`'s verdict for the change
+**Reads:** a git ref + `<rid>` (`$ARGUMENTS`), the ACTUAL diff + recorded tests via `lib/gate/quiz-gate.sh` (which reuses `lib/explain.sh`), and `lib/classify/significance-classify.sh`'s verdict for the change
 **Writes:** the human's engage/defer/wave choice to the debt ledger (`| DEBT | response=...` via `gate-ledger.sh debt-response`); on engage, dispatches the `deep-understand` mastery gate with 5 diff-grounded questions
 **When to invoke:** at the merge boundary of a `gate`/gated-final PR. It NUDGES only when the change is `tap` (significant AND understanding-worthy); a `wave` or `not-significant` change is never quizzed (anti-fatigue). Advisory, never must-pass , a waved change still merges.
 **Composes:** `deep-understand` (the AskUserQuestion mastery gate); the kit builds the questions and routes, it scores nothing.

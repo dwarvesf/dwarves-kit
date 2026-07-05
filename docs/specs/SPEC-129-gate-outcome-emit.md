@@ -2,7 +2,7 @@
 
 Generated: 2026-07-04
 Status: VALIDATED
-Lane: full (extends `lib/gate-ledger.sh` , the run-telemetry source of truth , plus a
+Lane: full (extends `lib/gate/gate-ledger.sh` , the run-telemetry source of truth , plus a
 live emit at `hooks/ship-gate.sh`'s gate boundary and a new additive-equivalence test;
 the ADDITIVE property is correctness-critical for every existing reader, so it earns the
 deep lane even though the diff is small).
@@ -96,7 +96,7 @@ never change the hook's fail-open contract, exit code, or operator output.
 
 ## Scope
 
-**In:** the `outcome` verb + `outcome-read` reader in `lib/gate-ledger.sh`; the live emit
+**In:** the `outcome` verb + `outcome-read` reader in `lib/gate/gate-ledger.sh`; the live emit
 at `hooks/ship-gate.sh`'s check boundary; the additive-equivalence test + round-trip test +
 `caught=true`/`caught=false` cases + a coverage-delta row.
 

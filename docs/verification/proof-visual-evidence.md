@@ -1,6 +1,6 @@
 # Verification , proof-of-done accepts screenshot/GIF evidence
 
-**Change:** `lib/proof-ledger.sh` now accepts a committed screenshot/GIF embed
+**Change:** `lib/gate/proof-ledger.sh` now accepts a committed screenshot/GIF embed
 (`![...](*.png|gif|jpe?g|svg|webp)`) as the "captured run" half of the proof, alongside the
 text run-table (`Command:`/`Exit:`/`Verdict: PASS`). The semantic marker (NEGATIVE CONTROL /
 rollback) is still required; this only widens "it ran" from text-only to {text OR picture}.
@@ -10,7 +10,7 @@ README documents it; the blocked-message names the option.
 
 | Check | Command | Exit | Result |
 |---|---|---|---|
-| syntax | `bash -n lib/proof-ledger.sh` | 0 | OK |
+| syntax | `bash -n lib/gate/proof-ledger.sh` | 0 | OK |
 | existing proof tests | `bash tests/test-proof-dir-layout.sh` | 0 | ALL PASS (3/3), set-wise still load-bearing |
 | accepts image | behavioral file with `NEGATIVE CONTROL` + `![demo](x.gif)` and NO Exit/PASS | - | PASS (image accepted) |
 

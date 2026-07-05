@@ -1,6 +1,6 @@
 # Proof of done: detect co-located proof-of-done.md
 
-Recorded 2026-06-09. Change: `_fresh_proof_files()` in `lib/proof-ledger.sh` now also accepts
+Recorded 2026-06-09. Change: `_fresh_proof_files()` in `lib/gate/proof-ledger.sh` now also accepts
 a proof file co-located with its subject (any path ending `/proof-of-done.md`, e.g. a
 monorepo's `tools/<name>/docs/proof-of-done.md`), in addition to the repo-root
 `docs/verification/<slug>.md` convention. The content check in `check()` is unchanged, so a

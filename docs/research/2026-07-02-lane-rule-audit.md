@@ -3,13 +3,13 @@
 Date: 2026-07-02
 Board: ops-toolkit ID-149 (narrowed remainder: the lane-classify RULE audit; the
 verifier-coverage + under-gating halves shipped in kit-hardening SG-04/05/06)
-Method: audit the task-shape -> lane rules in `lib/lane-classify.sh` against RECORDED
+Method: audit the task-shape -> lane rules in `lib/classify/lane-classify.sh` against RECORDED
 reality (the ledger misfire corpus) + a rule-correctness spot-check on the task shapes
 that actually occurred in the kit-hardening + kit-telemetry waves.
 
 ## Part 1: recorded-misfire disposition
 
-Capture (`bash lib/lane-telemetry.sh misfires`, floor-check section):
+Capture (`bash lib/telemetry/lane-telemetry.sh misfires`, floor-check section):
 
 | Misfire signature | Count | Distinct? | Disposition |
 |---|---|---|---|
@@ -35,15 +35,15 @@ are equally enforcement/telemetry machinery:
 
 | Machinery lib (occurred / class) | Before | After fix |
 |---|---|---|
-| `lib/lane-telemetry.sh` (SG-04; eval data source) | normal | **full** |
-| `lib/mega-merge.sh` (SG-05; auto-merge enforcement) | normal | **full** |
-| `lib/proof-ledger.sh` (SG-01; proof-of-done gate) | normal | **full** |
-| `lib/kit-log-dir.sh` (SG-01; durable-storage substrate) | normal | **full** |
-| `lib/orchestrate.sh` (review pass; the orchestration driver, 457 LOC, most-active) | normal | **full** |
-| `lib/stack-merge.sh` (review pass; mega-merge's PR-merge sibling) | normal | **full** |
-| `lib/role-classify.sh` (review pass; sibling of covered task-type-classify) | normal | **full** |
-| `lib/goal-drafts.sh` (review pass; sibling of covered goal-registry) | normal | **full** |
-| (control) `lib/gate-ledger.sh` | full | full |
+| `lib/telemetry/lane-telemetry.sh` (SG-04; eval data source) | normal | **full** |
+| `lib/goal/mega-merge.sh` (SG-05; auto-merge enforcement) | normal | **full** |
+| `lib/gate/proof-ledger.sh` (SG-01; proof-of-done gate) | normal | **full** |
+| `lib/telemetry/kit-log-dir.sh` (SG-01; durable-storage substrate) | normal | **full** |
+| `lib/queue/orchestrate.sh` (review pass; the orchestration driver, 457 LOC, most-active) | normal | **full** |
+| `lib/goal/stack-merge.sh` (review pass; mega-merge's PR-merge sibling) | normal | **full** |
+| `lib/classify/role-classify.sh` (review pass; sibling of covered task-type-classify) | normal | **full** |
+| `lib/goal/goal-drafts.sh` (review pass; sibling of covered goal-registry) | normal | **full** |
+| (control) `lib/gate/gate-ledger.sh` | full | full |
 
 Disposition: **rule-gap**. The first four surfaced from this wave's own occurred shapes;
 the next four from a review-driven completeness sweep of ALL 21 `lib/*.sh` (the first pass
@@ -95,7 +95,7 @@ row (ID-088) rather than fixed here.
   spot-check confirms it). No change.
 - tiny / backfill precedence: confirmed by the STRONGER method too , the occurred `rename
   the advisor agent` shape lands `tiny`, and the AC5 negative control (`fix a typo in
-  lib/mega-merge.sh` -> tiny) proves precedence beats the widened hard-gate. Held, evidenced.
+  lib/goal/mega-merge.sh` -> tiny) proves precedence beats the widened hard-gate. Held, evidenced.
 - soft-flag counting (2-3 -> normal, 4+ -> full): held, but on the WEAKER evidence , no
   recorded misfire AND no occurred shape tripped it, but the spot-check was hard-gate-focused,
   not a systematic soft-count audit across all 13 shapes. **Honest limit (advisory):** this

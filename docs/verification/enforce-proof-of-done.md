@@ -15,7 +15,7 @@ Shape: `docs/verification/README.md`.
 - Verdict: PASS
 
 ## 2026-06-07 00:11 NEGATIVE CONTROL -- enforce-proof-of-done
-- Command: `git worktree add --detach /tmp/eg HEAD && cd /tmp/eg && mv -f lib/proof-ledger.sh /tmp/ && git checkout master -- hooks/ship-gate.sh && bash tests/test-hooks.sh`  (throwaway worktree; removed after; shared checkout untouched)
+- Command: `git worktree add --detach /tmp/eg HEAD && cd /tmp/eg && mv -f lib/gate/proof-ledger.sh /tmp/ && git checkout master -- hooks/ship-gate.sh && bash tests/test-hooks.sh`  (throwaway worktree; removed after; shared checkout untouched)
 - Exit: 1
 - Output (excerpt):
   ```

@@ -10,7 +10,7 @@ a MEDIUM code/comment invariant mismatch, a LOW symlink-follow. Correctness-crit
 The security review of the merged kit-run-integrity run surfaced three grounded, PoC-confirmed
 findings:
 
-**HIGH , path traversal / arbitrary file write in `lib/proof-table-gen.py`.** The CLI's only
+**HIGH , path traversal / arbitrary file write in `lib/gate/proof-table-gen.py`.** The CLI's only
 required arg, `rid`, is used UNSANITIZED to build both the read path
 (`ledger_path = os.path.join(log_dir, "runs", f"{rid}.log")`) and the default write path
 (`out_path = os.path.join(kit_root, "docs", "runs", f"{rid}.md")`). The only guard checks the
@@ -21,20 +21,20 @@ drops the prefix on an absolute component); `rid="../../victim/pwned"` resolves 
 a provably false contract. Separately, the explicit-`out-path` branch bypasses even the basename
 check.
 
-**MEDIUM , comment/code mismatch in `mutation()` (`lib/gate-ledger.sh`).** The comment claims
+**MEDIUM , comment/code mismatch in `mutation()` (`lib/gate/gate-ledger.sh`).** The comment claims
 values are sanitized so "a value can never smuggle a second KV" by neutering embedded `=`, but
 the code only does `tr '\n\r' ' ' | tr ' ' '_'`; it never touches `=`. `debt()` already does
 `tr '=' ':'` for exactly this reason. A `file=`/`reason=` value containing `=` therefore smuggles
 a second `KEY=value` token into the emitted `| MUTATION |` line.
 
-**LOW , symlink follow in `lib/mutation-smoke.sh`.** The mutation loop guards with `[ -f "$file" ]`
+**LOW , symlink follow in `lib/gate/mutation-smoke.sh`.** The mutation loop guards with `[ -f "$file" ]`
 (which FOLLOWS symlinks) and then `cp`/rewrites the file, so a tracked symlink is written THROUGH.
 Not exploitable today (candidate files come from the repo's own source list), but belt-and-suspenders.
 
 ## Solution
 
-**HIGH , `lib/proof-table-gen.py`:**
-1. Normalize `rid` before it touches ANY path, matching `lib/gate-ledger.sh`'s `runid()` charset
+**HIGH , `lib/gate/proof-table-gen.py`:**
+1. Normalize `rid` before it touches ANY path, matching `lib/gate/gate-ledger.sh`'s `runid()` charset
    exactly: replace `/` and space with `-`, then drop every char outside `[A-Za-z0-9._-]`. Apply to
    both `ledger_path` (read) and the default `out_path` (write). (The `gate-ledger.sh rid` CLI verb
    derives from the git branch and ignores an arbitrary arg, so it cannot normalize a caller string;
@@ -48,10 +48,10 @@ Not exploitable today (candidate files come from the repo's own source list), bu
 **MEDIUM , `mutation()`:** add `tr '=' ':'` to the free-text value neutering pipeline, so every
 value (at least `file=`/`reason=`) matches the comment's stated invariant.
 
-**LOW , `lib/mutation-smoke.sh`:** add an explicit `[ -L "$file" ] && continue` so a symlinked
+**LOW , `lib/gate/mutation-smoke.sh`:** add an explicit `[ -L "$file" ] && continue` so a symlinked
 target is SKIPPED, not written through.
 
-**Test seam (`lib/proof-table-gen.sh`):** split `SCRIPT_ROOT` (where the script lives; sources libs
+**Test seam (`lib/gate/proof-table-gen.sh`):** split `SCRIPT_ROOT` (where the script lives; sources libs
 + locates the .py) from `KIT_ROOT` (the logical root for confinement + default out-path; defaults to
 `SCRIPT_ROOT`, honors a pre-set env override). Lets tests exercise confinement against a throwaway
 `docs/runs/` without polluting the repo.
@@ -100,9 +100,9 @@ Proof: `docs/verification/kri-security-hardening.md` (table-first).
 
 ## After state
 
-- `lib/proof-table-gen.py`: `_normalize_rid` + realpath confinement; docstring contract now true.
-- `lib/proof-table-gen.sh`: SCRIPT_ROOT/KIT_ROOT split.
-- `lib/gate-ledger.sh`: `mutation()` neuters `=`.
-- `lib/mutation-smoke.sh`: symlink skip.
+- `lib/gate/proof-table-gen.py`: `_normalize_rid` + realpath confinement; docstring contract now true.
+- `lib/gate/proof-table-gen.sh`: SCRIPT_ROOT/KIT_ROOT split.
+- `lib/gate/gate-ledger.sh`: `mutation()` neuters `=`.
+- `lib/gate/mutation-smoke.sh`: symlink skip.
 - `tests/test-security-hardening.sh`: new; wired into `.github/workflows/test.yml`.
 - `tests/test-proof-table-gen.sh`: out-paths moved under a temp KIT_ROOT/docs/runs.

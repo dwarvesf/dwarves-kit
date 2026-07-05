@@ -1,11 +1,11 @@
 # Implementation notes: orchestrator board-sync (SG-10)
 
 Delta from goal file `goals/10-board-sync.md` (token-optim-v2). Stacked on SG-01
-(`feat/orchestrator-run-modes`) because both edit `lib/orchestrate.sh`.
+(`feat/orchestrator-run-modes`) because both edit `lib/queue/orchestrate.sh`.
 
 ## 2026-06-29 state-vocabulary mapping (the one real deviation)
 - Spec wants the board to extend the kanban with `ready` / `blocked(reason)` / `stalled`.
-- `lib/backlog.sh` (the reuse target) has a FIXED, non-env-overridable `STATES` vocabulary
+- `lib/board/backlog.sh` (the reuse target) has a FIXED, non-env-overridable `STATES` vocabulary
   (`queued claimed speccing validated executing shipped parked dropped`). Editing backlog.sh is
   out of scope (scope = orchestrate.sh + its test + reuse backlog.sh).
 - Decision: map the orchestrator's derived lifecycle onto backlog.sh's standard keywords and
@@ -34,6 +34,6 @@ Delta from goal file `goals/10-board-sync.md` (token-optim-v2). Stacked on SG-01
   file's mtime + last-status as its progress signal (goal 11 "reuse SG-10's event log").
 
 ## 2026-06-29 --board default = detect
-- Default (no `--board`): `both` when `lib/backlog.sh` resolves next to orchestrate.sh, else
+- Default (no `--board`): `both` when `lib/board/backlog.sh` resolves next to orchestrate.sh, else
   `roadmap`. Fail-safe to `roadmap` so a kit without backlog.sh still runs. Never writes to the
   repo-wide BACKLOG.md; the per-mega-goal board is `<dir>/BOARD.md` only.

@@ -11,12 +11,12 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-GL="$KIT_DIR/lib/gate-ledger.sh"
-LT="$KIT_DIR/lib/lane-telemetry.sh"
-LC="$KIT_DIR/lib/lane-classify.sh"
-PL="$KIT_DIR/lib/proof-ledger.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
+LT="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
+LC="$KIT_DIR/lib/classify/lane-classify.sh"
+PL="$KIT_DIR/lib/gate/proof-ledger.sh"
 PREC="$KIT_DIR/lib/precedent.sh"
-MM="$KIT_DIR/lib/mega-merge.sh"
+MM="$KIT_DIR/lib/goal/mega-merge.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'

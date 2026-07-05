@@ -7,9 +7,9 @@ correctness-critical concurrency).
 
 ## Problem
 
-SPEC-132 (`lib/proof-table-gen.py`, sub-goal 05) shipped an OUTCOME parser against an
+SPEC-132 (`lib/gate/proof-table-gen.py`, sub-goal 05) shipped an OUTCOME parser against an
 **assumed** single-line marker shape (documented as "ASSUMED shape for sub-goal 01 ... may
-not be merged yet"). SPEC-129 (sub-goal 01, `lib/gate-ledger.sh`'s `outcome()`/`outcome_read()`)
+not be merged yet"). SPEC-129 (sub-goal 01, `lib/gate/gate-ledger.sh`'s `outcome()`/`outcome_read()`)
 has since merged with a **different, real** shape: TWO lines per gate bracketing start/end,
 using `dur_s=` (seconds), not the assumed single-line `dur_ms=`.
 
@@ -33,7 +33,7 @@ accidental for caught.
 
 ## Solution
 
-Rewrite the OUTCOME branch of `parse_ledger()` in `lib/proof-table-gen.py` to model 01's
+Rewrite the OUTCOME branch of `parse_ledger()` in `lib/gate/proof-table-gen.py` to model 01's
 real two-line shape directly:
 
 - Recognize `parts[3]` as the event (`start`|`end`).

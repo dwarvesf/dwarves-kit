@@ -9,7 +9,7 @@ Lane: normal
 `AGENTS.md` or `WORKFLOW.md`. So when run from the install (the normal case, not the repo):
 - `lib/adopt.sh` can't find a source `AGENTS.md` (it looks in `$KIT_ROOT` = the install) -> adopt
   fails with "no source AGENTS.md".
-- `lib/gate-ledger.sh` reads `$KIT_ROOT/WORKFLOW.md` for the lane x phase matrix -> "awk: can't
+- `lib/gate/gate-ledger.sh` reads `$KIT_ROOT/WORKFLOW.md` for the lane x phase matrix -> "awk: can't
   open WORKFLOW.md", so the lane-completeness check silently passes (empty required set).
 
 Surfaced dogfooding sub-goal 03 (adopting ops-toolkit): adopt + the lane gate only worked by
