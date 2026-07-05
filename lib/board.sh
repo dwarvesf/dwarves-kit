@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 # board.sh -- the kit's cockpit board command (SPEC-146, runner-fastpath sub-goal 04;
-# `mirror`/`status` added by SPEC-147, sub-goal 07).
+# `mirror`/`status` added by SPEC-147, sub-goal 07; `writeback` added by SPEC-149, sub-goal 08).
 #
 # The SOLE cockpit board command: it ABSORBS the render logic that used to live in ops-toolkit's
 # `_meta/board` (the `priority` quadrant awk, single-repo) and `_meta/board-all` (the `boards.txt`
 # registry walk + `priority matrix` cross-repo pivot), ADDS a `queue` subcommand that emits an
-# allow-listed overnight-runner queue, and ADDS `mirror`/`status` (SPEC-147): a one-way git ->
-# Hermes kanban bridge over opt-in repos + active mega-goals, native `hermes kanban` CLI only.
-# Base kanban render (board/next/set/states) is UNCHANGED and still delegates to
-# `lib/backlog.sh` -- this file never reimplements it. The substantial `mirror`/`status` logic
-# (extract/diff/plan/apply) lives in `lib/board-mirror.sh`, the same delegation shape `queue`
-# already has with `lib/parse-board.sh`.
+# allow-listed overnight-runner queue, ADDS `mirror`/`status` (SPEC-147): a one-way git ->
+# Hermes kanban bridge over opt-in repos + active mega-goals, native `hermes kanban` CLI only, and
+# ADDS `writeback` (SPEC-149): the reverse leg -- a Hermes-side card status move flows back into a
+# repo's BACKLOG.md as a reviewable, HELD `chore/board-sync` PR (never auto-merged), gated by the
+# mirror snapshot's row_hash conflict rule (git wins, always). Base kanban render
+# (board/next/set/states) is UNCHANGED and still delegates to `lib/backlog.sh` -- this file never
+# reimplements it. The substantial `mirror`/`status` logic (extract/diff/plan/apply) lives in
+# `lib/board-mirror.sh`; the substantial `writeback` logic (diff/apply/PR) lives in
+# `lib/board-writeback.sh` (which itself reuses `lib/board-mirror.sh`'s extract/hash machinery) --
+# the same delegation shape `queue` already has with `lib/parse-board.sh`.
 #
 # The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
 # describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
@@ -75,6 +79,38 @@
 #                                                               `seen_at` vs the BACKLOG.md's own
 #                                                               last git-log touch time.
 #
+#   board.sh writeback [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
+#                       [--board-prefix <prefix>] [--branch <name>] [--pr-base <branch>]
+#                                                               the reverse leg (SPEC-149): reads
+#                                                               each opted-in repo's live Hermes
+#                                                               board (`hermes kanban --board <b>
+#                                                               list --json`) + the SPEC-147 mirror
+#                                                               snapshot, builds a changeset of
+#                                                               rows whose Hermes status moved,
+#                                                               validates (opted-in repo, legal
+#                                                               backlog.sh state, row_hash still
+#                                                               matches the snapshot -- git wins on
+#                                                               any mismatch), and applies matched
+#                                                               rows' Status column via a fresh
+#                                                               `chore/board-sync` branch (built in
+#                                                               an isolated `git worktree`, never
+#                                                               this repo's own checkout) + one
+#                                                               attributed commit (`actor=hermes`)
+#                                                               + `gh pr create` -- HELD, never
+#                                                               auto-merged. `--dry-run` prints the
+#                                                               changeset and applies nothing (no
+#                                                               git branch/commit/push, no PR, no
+#                                                               snapshot refresh; it STILL reads
+#                                                               Hermes, since that read is exactly
+#                                                               what a dry-run previews). Missing
+#                                                               or corrupt `--snapshot` REFUSES ALL
+#                                                               edits (explicit error, nonzero
+#                                                               exit) rather than silently applying
+#                                                               everything. See `lib/board-writeback.sh`
+#                                                               for the full design (reverse state
+#                                                               mapping, conflict rule, snapshot
+#                                                               refresh semantics).
+#
 # Registry format (`boards.txt`): whitespace-delimited `<name> <path-to-BACKLOG.md> [bridge]`
 # rows, `#` comments, `~` expands to $HOME. A THIRD field, `bridge`, opts a repo into `mirror`:
 # exactly the literal token `on` opts in; absent, `off`, or any other value stays OUT (default
@@ -98,10 +134,12 @@ BOARD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKLOG_SH="$BOARD_DIR/backlog.sh"
 PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
+BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
 
-[ -f "$BACKLOG_SH" ]      || { echo "board: lib/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
-[ -f "$PARSE_BOARD_SH" ]  || { echo "board: lib/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
-[ -f "$BOARD_MIRROR_SH" ] || { echo "board: lib/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
+[ -f "$BACKLOG_SH" ]         || { echo "board: lib/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
+[ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
+[ -f "$BOARD_MIRROR_SH" ]    || { echo "board: lib/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
+[ -f "$BOARD_WRITEBACK_SH" ] || { echo "board: lib/board-writeback.sh not found at $BOARD_WRITEBACK_SH" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # Flag parsing (shared): extracts --backlog-file / --repo-root / --registry / --dry-run plus the
@@ -113,10 +151,12 @@ BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 # ---------------------------------------------------------------------------
 OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
 OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
+OPT_BRANCH=""; OPT_PR_BASE=""
 POSITIONAL=()
 _parse_flags() {
   OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
   OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
+  OPT_BRANCH=""; OPT_PR_BASE=""
   POSITIONAL=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -129,6 +169,8 @@ _parse_flags() {
       --board-prefix)    OPT_BOARD_PREFIX="${2:-}"; shift 2 ;;
       --remote)          OPT_REMOTE="${2:-}"; shift 2 ;;
       --remote-kit-path) OPT_REMOTE_KIT_PATH="${2:-}"; shift 2 ;;
+      --branch)          OPT_BRANCH="${2:-}"; shift 2 ;;
+      --pr-base)         OPT_PR_BASE="${2:-}"; shift 2 ;;
       *) POSITIONAL+=("$1"); shift ;;
     esac
   done
@@ -499,6 +541,67 @@ cmd_status() {
   echo "${changed} repos changed since last mirror, last synced ${newest:-never}"
 }
 
+# ---------------------------------------------------------------------------
+# writeback -- git<->Hermes bridge, the WRITEBACK leg (SPEC-149, runner-fastpath sub-goal 08).
+# Delegates ALL substantial logic (diff/validate/apply/PR) to lib/board-writeback.sh, the same
+# thin-wrapper shape `mirror` above has with lib/board-mirror.sh: resolve config, get a validated
+# changeset, apply it (branch+commit+push+PR per affected repo), refresh the snapshot per applied
+# origin, print a summary. `--dry-run` computes the changeset (which DOES read Hermes -- that read
+# is exactly what a preview needs) but applies nothing: no branch, no commit, no push, no PR, no
+# snapshot write.
+# ---------------------------------------------------------------------------
+cmd_writeback() {
+  _parse_flags "$@"
+  local repo_root; repo_root="$(_resolve_repo_root)"
+  local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
+  local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
+  local branch="${OPT_BRANCH:-chore/board-sync}"
+  [ -f "$registry" ] || { echo "writeback: no registry at $registry" >&2; return 1; }
+
+  local diff_args=(diff --registry "$registry" --snapshot "$snapshot")
+  [ -n "$OPT_BOARD_PREFIX" ] && diff_args+=(--board-prefix "$OPT_BOARD_PREFIX")
+
+  local changeset; changeset="$(mktemp "${TMPDIR:-/tmp}/board-writeback-plan.XXXXXX")"
+  # `if cmd; then rc=0; else rc=$?; fi` (NOT `if ! cmd; then rc=$?; fi`): bash sets `$?` to the
+  # NEGATED (`!`-inverted) status inside an `if ! cmd; then` block, not cmd's own exit code (a real
+  # bug this build's own smoke test caught -- `rc` always read back as 0). This is the same
+  # command-substitution/exit-code gotcha lib/board-mirror.sh's `cmd_apply_plan` already documents
+  # for its own `if out=$(...); then rc=0; else rc=$?; fi` pattern.
+  local rc
+  if bash "$BOARD_WRITEBACK_SH" "${diff_args[@]}" > "$changeset"; then rc=0; else rc=$?; fi
+  if [ "$rc" -ne 0 ]; then
+    rm -f "$changeset"
+    return "$rc"
+  fi
+
+  if [ ! -s "$changeset" ]; then
+    echo "writeback: 0 changes" >&2
+    rm -f "$changeset"
+    return 0
+  fi
+
+  if [ "$OPT_DRY_RUN" -eq 1 ]; then
+    cat "$changeset"
+    rm -f "$changeset"
+    return 0
+  fi
+
+  local apply_args=(apply --branch "$branch")
+  [ -n "$OPT_PR_BASE" ] && apply_args+=(--pr-base "$OPT_PR_BASE")
+
+  local results
+  results="$(bash "$BOARD_WRITEBACK_SH" "${apply_args[@]}" < "$changeset")"
+  rm -f "$changeset"
+
+  local rline
+  while IFS= read -r rline; do
+    [ -n "$rline" ] || continue
+    printf '%s' "$rline" | bash "$BOARD_MIRROR_SH" snapshot-upsert "$snapshot"
+  done <<< "$results"
+
+  return 0
+}
+
 usage() { sed -n '2,78p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
@@ -508,6 +611,7 @@ main() {
     queue)  shift; cmd_queue "$@" ;;
     mirror) shift; cmd_mirror "$@" ;;
     status) shift; cmd_status "$@" ;;
+    writeback) shift; cmd_writeback "$@" ;;
     -h|--help|help) usage ;;
     *) cmd_board_single "$@" ;;
   esac

@@ -1619,6 +1619,22 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-149: the board-bridge writeback (the reverse leg). board-writeback.sh exists and is
+# executable, board.sh wires the writeback dispatch case to it, and the doc-impact map
+# (README + architecture.md) mentions the new lib file. A drop on any leg means the writeback
+# leg is silently unwired.
+TOTAL=$((TOTAL + 1))
+if [ -x "$KIT_DIR/lib/board-writeback.sh" ] \
+   && grep -qF 'writeback) shift; cmd_writeback "$@" ;;' "$KIT_DIR/lib/board.sh" \
+   && grep -qF 'lib/board-writeback.sh' "$KIT_DIR/README.md" \
+   && grep -qF 'board-writeback.sh' "$KIT_DIR/docs/architecture.md"; then
+  echo -e "  ${GREEN}PASS${NC} board-bridge writeback wired: lib/board-writeback.sh executable, board.sh dispatches writeback, doc-impact map updated (SPEC-149)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} board-bridge writeback incomplete: need lib/board-writeback.sh executable, board.sh writeback dispatch, README + architecture.md mentions (SPEC-149)"
+  FAIL=$((FAIL + 1))
+fi
+
 # SPEC-056: per-type test dialects. Three legs: the 6-row dialect table, the type-aware
 # test-plan step, the default flip in the cycle table.
 TOTAL=$((TOTAL + 1))
