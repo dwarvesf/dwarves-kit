@@ -38,4 +38,29 @@ The sub-goal contract literally says `**PR base:** main`, but this repo's actual
 `master` (per the operator's dispatch instructions and this worktree's own base). Opened the PR
 against `master`; no functional impact, purely a target-branch correction.
 
+## 2026-07-06 11:30 macOS CI fix: RETURN trap on a local array is fatal under bash 3.2 set -u
+
+**Context:** first push passed ubuntu CI, failed macOS CI ("clean close" + "no-corpus e2e" rc=1). The
+denial snippet foregrounded `printf: write error: Broken pipe` at orchestrate.sh:269/289, but the CI
+log's actual fatal line was `line 1524: cleanup[@]: unbound variable`.
+
+**Decision:** removed the `trap 'rm -f "${cleanup[@]}"' RETURN` from `_dispatch_tier4_verifiers`;
+clean temp files inline (`rm -f "${tmps[@]}"`) after the fixed 3-iteration loop and `return "$arc"`
+with the aggregate rc captured explicitly.
+
+**Why:** macOS system bash is 3.2.57. A `trap ... RETURN` set inside a function is a *global* return
+trap there (no functrace), so it also fires on later returns where the `local cleanup` array is out of
+scope; `"${cleanup[@]}"` on an empty array under `set -u` is a FATAL unbound-variable in 3.2 (it is
+benign in bash 4.4+), which exited the whole run with rc 1. Reproduced locally under `/bin/bash`
+3.2.57; the inline-cleanup version passes 5/5 under 3.2 and under modern bash.
+
+**Alternatives:** (a) guard with the house `${arr[@]+"${arr[@]}"}` idiom -- works, but still leaves a
+global RETURN trap that fires on every subsequent function return (wasteful, surprising); (b) clear the
+trap before returning -- fragile against added early-returns. Inline cleanup is simplest and has no
+trap-scope hazard. The loop is fixed at 3 iterations so `tmps`/`outs` are never empty at expansion.
+
+**Impact:** the pre-existing SIGPIPE noise at :269/:289 (from `_next`/`_ready_set` awk-early-exit
+readers) is untouched -- it is benign stderr that sets no rc, and it is out of this sub-goal's scope
+(pre-existing serial-loop code, not the `TIER4_CLOSE` path).
+
 No other deviations from the sub-goal contract.

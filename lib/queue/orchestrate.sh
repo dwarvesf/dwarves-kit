@@ -1448,15 +1448,19 @@ _aggregate_tier4_verdicts() {  # out1 out2 out3
 # sessions (ID-093), each a separate `claude -p` process (never --stream to the conductor, ADR-0032
 # section 1), capture each session's stdout to its own temp file, then aggregate. Returns
 # `_aggregate_tier4_verdicts`'s rc; a nonzero session exit is folded in as a synthetic DISSENT line
-# (a crashed/erroring verifier must never be silently treated as an implicit PASS).
+# (a crashed/erroring verifier must never be silently treated as an implicit PASS). Temp files are
+# cleaned up inline after the loop (NOT via a RETURN trap): a `trap ... RETURN` referencing a `local`
+# array is a global return-trap under bash 3.2 (macOS system bash, no functrace) that fires with the
+# array out of scope, and `"${arr[@]}"` on an empty array is a FATAL `set -u` unbound-variable there
+# -- it flipped the whole run to rc 1 in macOS CI. The loop is fixed at 3 iterations, so `tmps`/`outs`
+# are always populated at the cleanup/aggregate points; no empty-array expansion occurs.
 _dispatch_tier4_verifiers() {  # dir roadmap
-  local dir="$1" roadmap="$2" n pfile ofile rc
+  local dir="$1" roadmap="$2" n pfile ofile rc arc
   local outs=()
-  local cleanup=()
-  trap 'rm -f "${cleanup[@]}"' RETURN
+  local tmps=()
   for n in 1 2 3; do
     pfile=$(mktemp); ofile=$(mktemp)
-    cleanup+=("$pfile" "$ofile")
+    tmps+=("$pfile" "$ofile")
     _build_verifier_prompt "$dir" "$roadmap" "$n" > "$pfile"
     _emit_event "$dir" close verifying "dispatching verifier $n/3"
     _say "[orchestrate] [close] dispatching verifier session $n/3 ($CLAUDE_CMD -p) ..."
@@ -1469,7 +1473,10 @@ _dispatch_tier4_verifiers() {  # dir roadmap
     cat "$ofile"
     outs+=("$ofile")
   done
-  _aggregate_tier4_verdicts "${outs[@]}"
+  arc=0
+  _aggregate_tier4_verdicts "${outs[@]}" || arc=$?
+  rm -f "${tmps[@]}"
+  return "$arc"
 }
 
 # _tier4_close <dir> <roadmap>: the close STEP. no-orphan sweep -> verifier session -> HOLD the gate.

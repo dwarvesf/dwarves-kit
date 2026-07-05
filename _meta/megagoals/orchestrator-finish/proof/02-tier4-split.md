@@ -21,13 +21,29 @@
   - Header comments (SPEC-118 block, `TIER4_CLOSE` var comment, `_tier4_close` section banner, dry-run preview line) updated to describe the 3-dispatch + aggregate shape; tagged `ID-093` alongside the existing `SPEC-118` reference.
 - `tests/test-tier4-close.sh`: mock (`mk_mock`) updated to recognize the per-verifier `TIER-4 MEGA-CLOSE VERIFIER n/3` banner, touch a per-index sentinel (`$CLOSE_SENTINEL.$n`), and emit a `TIER4-VERDICT: PASS` (or forced `DISSENT` via `$MOCK_DISSENT`) line. Existing sections A/D/F/G updated to assert on the 3 per-index sentinels instead of 1; new assertions for "exactly 3 dispatches" and "aggregate PASS" in section A. New section H: the dissent negative control (`MOCK_DISSENT=2`), asserting all 3 still dispatch, the close halts nonzero, the aggregator names the dissent, and the gate is not held.
 
+## macOS CI fix (bash 3.2 `set -u` empty-array trap)
+
+The first push passed ubuntu CI but failed macOS CI. Root cause was NOT the SIGPIPE noise the log
+also showed (`printf: write error: Broken pipe` at orchestrate.sh:269/289 come from the pre-existing
+`_next`/`_ready_set` awk-early-exit readers and do not affect any rc). The real fault was a fatal
+`line 1524: cleanup[@]: unbound variable`: `_dispatch_tier4_verifiers` used
+`trap 'rm -f "${cleanup[@]}"' RETURN` on a `local` array. Under macOS system bash 3.2 (no functrace)
+that RETURN trap is effectively global and fires with `cleanup` out of scope; `"${cleanup[@]}"` on an
+empty array under `set -u` is a FATAL unbound-variable there, which flipped the whole run to rc 1 (so
+"clean close" and "no-corpus e2e", which both assert the run's rc, failed). Fix: drop the RETURN trap;
+clean the temp files inline with `rm -f "${tmps[@]}"` after the fixed 3-iteration loop (arrays always
+populated at that point) and `return "$arc"` with the aggregate rc explicitly captured. Verified by
+re-running the full suite under `/bin/bash` 3.2.57 (see run-table).
+
 ## Confirmation run-table
 
 | Run | Command | Exit | Result |
 |---|---|---|---|
-| Full test suite | `bash tests/test-tier4-close.sh` | 0 | `ALL PASS` (25/25, incl. new three-verifier-split + dissent-NC assertions) |
-| Scenario 1 (clean) | `TIER4_CORPUS=<clean-corpus> CLAUDE_CMD=<mock> bash lib/queue/orchestrate.sh run <megagoal-dir>` | 0 | 3 verifier sessions dispatched, all `TIER4-VERDICT: PASS`, aggregate `PASS: all 3 independent verifiers agree.`, gate HELD, `NOT auto-merged` |
-| Scenario 2 (negative control: verifier 2 dissents) | same, with `MOCK_DISSENT=2` | 1 | all 3 verifiers still dispatched (2/2 named a dissent), aggregate `DISSENT: at least one of the 3 verifiers did not PASS -- failing closed.`, close reports `BLOCKING: the 3-verifier aggregate DISSENTED`, gate NOT held |
+| Full suite, macOS system bash 3.2 (CI-equivalent) | `PATH=/bin:/usr/bin /bin/bash tests/test-tier4-close.sh` | 0 | `ALL PASS` (25/25); no `unbound variable`, no broken-pipe FAIL; stable across 5 repeats |
+| Full suite, modern bash | `bash tests/test-tier4-close.sh` | 0 | `ALL PASS` (25/25, incl. three-verifier-split + dissent-NC assertions) |
+| Scenario 1 (clean), bash 3.2 | orchestrate `run` with clean corpus + PASS mock | 0 | 3 verifier sessions dispatched, all `TIER4-VERDICT: PASS`, aggregate `PASS: all 3 independent verifiers agree.`, gate HELD, `NOT auto-merged`; `clean close: run exits 0 (held clean)` PASS |
+| Scenario 1b (no-corpus skip), bash 3.2 | orchestrate `run`, `TIER4_CORPUS` with no `agents/` | 0 | no-orphan sweep skipped (WARN), all 3 sessions ran, aggregate PASS, gate HELD; `no-corpus e2e: rc 2 -> WARN+skip ... gate held` PASS |
+| Scenario 2 (negative control: verifier 2 dissents), bash 3.2 | same, with `MOCK_DISSENT=2` | 1 | all 3 verifiers still dispatched (verifier 2 named a dissent), aggregate `DISSENT: at least one of the 3 verifiers did not PASS -- failing closed.`, close reports `BLOCKING: the 3-verifier aggregate DISSENTED`, gate NOT held |
 | shellcheck | `shellcheck lib/queue/orchestrate.sh` | 0 | no warnings on the new functions or the touched file |
 | syntax | `bash -n lib/queue/orchestrate.sh` | 0 | parses clean |
 
