@@ -101,7 +101,7 @@ wins** over the file. Tests use the env path; you will normally edit the file.
 | `CC_SI_STATE_DIR` | `~/.claude/skill-curator` | ledger + lock + config + reports |
 | `CC_SI_PROPOSALS_DIR` | `~/.claude/skill-proposals` | the staging gate |
 | `CC_SI_SKILLS_DIR` | `~/.claude/skills` | the live library + `_archive/` |
-| `CC_SI_MEMORY_LEDGER` | ops-toolkit `_meta/learned-ledger.md` | cc-harvest ledger the surface line counts |
+| `CC_SI_MEMORY_LEDGER` | (unset; required) | the harvest ledger the surface line counts |
 | `CC_SI_SETTINGS` | `~/.claude/settings.json` | install/uninstall target (point elsewhere for a dry run) |
 | `CC_SI_REVIEWER_CMD` / `CC_SI_CURATOR_CMD` | (unset) | test seam: replace the `claude -p` call with a mock |
 
