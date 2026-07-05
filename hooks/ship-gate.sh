@@ -88,6 +88,15 @@ if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
       exit 2
     fi
   fi
+  # delivery-ratio advisory (ID-277 delivery-audit fix; NEVER blocks): surface a proof-heavy
+  # branch -- lots of proof-of-done/verification/spec lines wrapped around a near-zero real
+  # change -- so a reviewer can spot-check delivery vs the sub-goal's claim. Heuristic with real
+  # false positives (a docs sub-goal is proof-heavy by design; a 1-line fix can be load-bearing),
+  # so it is a NUDGE, never a gate: fires only on THIN-WARN/NOTICE, silent on OK.
+  if [ -n "${BASE:-}" ] && [ "${BASE:-}" != "${HEADSHA:-}" ]; then
+    DR=$(bash "$PROOF" delivery-ratio "$ROOT" "$BASE" 2>/dev/null || true)
+    case "$DR" in *THIN-WARN*|*NOTICE*) echo "[advisory] delivery-ratio: $DR" >&2 ;; esac
+  fi
 fi
 
 # SPEC-069 advisory (never blocks), relocated ABOVE the spec check (SPEC-071 / ID-063):

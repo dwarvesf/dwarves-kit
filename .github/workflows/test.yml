@@ -39,6 +39,9 @@ jobs:
       - name: Run docs-wiring no-orphan sweep
         run: bash tests/test-docs-wiring.sh
 
+      - name: Run delivery-ratio advisory tests
+        run: bash tests/test-delivery-ratio.sh
+
       - name: Run layered-install module tests (ID-277 SG-04)
         run: bash tests/test-install-modules.sh
       - name: Golden run (e2e)

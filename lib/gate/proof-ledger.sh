@@ -93,6 +93,51 @@ deployable() {
   [ "$(classify "$root" "$base")" = "stateful" ] && echo yes || echo no
 }
 
+# delivery-ratio <root> <base>: ADVISORY. Splits this branch's ADDED lines into
+# "real deliverable" (code + user-facing docs) vs "proof/ceremony" (proof-of-done,
+# verification, specs, impl-notes, ADRs, tests) and flags the hollow signature: a lot
+# of proof wrapped around a near-zero real change. NEVER blocks -- it is a heuristic
+# with real false positives (a legit docs/research sub-goal is proof-heavy by design;
+# a 1-line regex fix can be load-bearing), so it only PRINTS a NOTICE/THIN-WARN/OK line
+# for a reviewer or `mega status` to surface. Rationale: the proof-of-done gate checks
+# that proof EXISTS, not that delivery is PROPORTIONATE, so a thin docs/reconcile
+# sub-goal can pass by padding proof (2026-07-05 delivery audit; ADR "delivery ratio").
+KIT_DELIVERY_RATIO_WARN="${KIT_DELIVERY_RATIO_WARN:-3}"    # proof >= N*real ...
+KIT_DELIVERY_REAL_FLOOR="${KIT_DELIVERY_REAL_FLOOR:-40}"   # ... AND real < FLOOR => THIN-WARN
+delivery_ratio() {
+  local root="${1:-}" base="${2:-}"
+  [ -n "$root" ] && [ -n "$base" ] || { echo "usage: delivery-ratio <root> <base>" >&2; return 64; }
+  git -C "$root" rev-parse --verify -q "$base" >/dev/null 2>&1 \
+    || { echo "real=0 proof=0 | SKIP: base '$base' is not a commit"; return 0; }
+  local real=0 proof=0 add del path
+  while IFS=$'\t' read -r add del path; do
+    [ -n "$path" ] || continue
+    [ "$add" = "-" ] && continue                            # binary file: no line count
+    case "$path" in
+      */proof-of-done.md|docs/proof/*|*/docs/proof/*|docs/verification/*|*/docs/verification/*|docs/specs/*|*/docs/specs/*|docs/implementation-notes/*|*/docs/implementation-notes/*|docs/runs/*|*/docs/runs/*|docs/decisions/*|*/docs/decisions/*|tests/*|*/tests/*)
+        proof=$((proof+add)) ;;
+      *.lock|*/uv.lock|*/package-lock.json|*/pnpm-lock.yaml|*/Cargo.lock|*/go.sum)
+        : ;;                                                # generated lockfiles: ignore
+      *)
+        real=$((real+add)) ;;
+    esac
+  done < <(git -C "$root" diff --numstat "$base"..HEAD 2>/dev/null)
+
+  local verdict
+  if [ "$real" -eq 0 ]; then
+    if [ "$proof" -gt 0 ]; then
+      verdict="NOTICE: docs/proof-only branch -- expected for a docs/research sub-goal, SUSPECT for a build/rewrite/enforce claim"
+    else
+      verdict="OK: no added lines"
+    fi
+  elif [ "$proof" -ge $((KIT_DELIVERY_RATIO_WARN*real)) ] && [ "$real" -lt "$KIT_DELIVERY_REAL_FLOOR" ]; then
+    verdict="THIN-WARN: proof >= ${KIT_DELIVERY_RATIO_WARN}x real and real < ${KIT_DELIVERY_REAL_FLOOR} -- confirm delivery matches the sub-goal's claim (advisory heuristic; false positives exist)"
+  else
+    verdict="OK"
+  fi
+  echo "real=$real proof=$proof | $verdict"
+}
+
 # the verification-log files this branch added/modified (excludes the convention README).
 # Two accepted shapes: the repo-root convention (docs/verification/<slug>.md) AND a proof
 # co-located with its subject anywhere in the tree (any path ending /proof-of-done.md, e.g.
@@ -263,5 +308,6 @@ case "$cmd" in
   override)      override "$@" ;;
   is-overridden) is_overridden "$@" ;;
   deployable)    deployable "$@" ;;
-  *) echo "usage: proof-ledger.sh {classify|check|override|is-overridden|deployable} ..." >&2; exit 64 ;;
+  delivery-ratio) delivery_ratio "$@" ;;
+  *) echo "usage: proof-ledger.sh {classify|check|override|is-overridden|deployable|delivery-ratio} ..." >&2; exit 64 ;;
 esac
