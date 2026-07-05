@@ -673,13 +673,36 @@ _step_pause() {
 # polls liveness (`kill -0`, no daemon) + the log's mtime; after WATCHDOG_STALL_SECS of no new
 # output while the process is still alive, emits a `stalled` event + WARN ONCE (advisory: never
 # kills). Returns the session's exit code. The captured output is surfaced after completion.
-_run_session_watchdog() {  # dir id pfile route_flags
-  local dir="$1" id="$2" pfile="$3" rflags="$4"
+#
+# Token accounting (ID-097): before this fix, the watchdog branch NEVER exposed a slog to its
+# caller, so `_record_tokens` always no-op'd on a stalled/watchdog-run session -- a stall was an
+# accounting black hole, not just an event. Fix: when a capture was actually requested (`capture`
+# param = 1, mirroring `_run_one_session`'s own stream/DETERMINISTIC_HANDOFF/CAPTURE_TOKENS gate),
+# run claude with the SAME `--output-format stream-json` the non-watchdog capture path already
+# uses, into the SAME deterministic filename (`$dir/.orchestrate/${id}.stream.jsonl`) the wave
+# reap loop already recomputes -- no new format invented, no new file convention invented. The
+# stall-watchdog only needs a file whose mtime advances; jsonl satisfies that exactly like the
+# plain log did. Result exposed via the global `_WD_SLOG` (bash 3.2 has no other clean way to
+# return a string from a backgrounded function). The DEFAULT (capture=0) path is byte-identical
+# to before: plain `.session.log`, no slog surfaced, `_WD_SLOG` left empty.
+_run_session_watchdog() {  # dir id pfile route_flags capture
+  local dir="$1" id="$2" pfile="$3" rflags="$4" capture="${5:-0}"
   local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
-  local slog="$logdir/${id}.session.log"; : > "$slog"
+  local slog
+  if [ "$capture" = 1 ]; then
+    slog="$logdir/${id}.stream.jsonl"
+  else
+    slog="$logdir/${id}.session.log"
+  fi
+  : > "$slog"
   _say "[orchestrate] [watchdog] $id: output -> $slog (stall=${WATCHDOG_STALL_SECS}s, poll=${WATCHDOG_POLL_SECS}s; advisory, never kills)"
-  # shellcheck disable=SC2086 # rflags + CLAUDE_FLAGS are operator/goal config; word-splitting is intended.
-  { "$CLAUDE_CMD" -p $rflags $CLAUDE_FLAGS < "$pfile" > "$slog" 2>&1; } &
+  if [ "$capture" = 1 ]; then
+    # shellcheck disable=SC2086 # rflags + CLAUDE_FLAGS are operator/goal config; word-splitting is intended.
+    { "$CLAUDE_CMD" -p $rflags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" > "$slog" 2>&1; } &
+  else
+    # shellcheck disable=SC2086 # rflags + CLAUDE_FLAGS are operator/goal config; word-splitting is intended.
+    { "$CLAUDE_CMD" -p $rflags $CLAUDE_FLAGS < "$pfile" > "$slog" 2>&1; } &
+  fi
   local spid=$! warned=0 now last age
   while kill -0 "$spid" 2>/dev/null; do
     sleep "$WATCHDOG_POLL_SECS"
@@ -693,6 +716,8 @@ _run_session_watchdog() {  # dir id pfile route_flags
   done
   wait "$spid"; local rc=$?
   cat "$slog"
+  _WD_SLOG=""
+  [ "$capture" = 1 ] && _WD_SLOG="$slog"
   return "$rc"
 }
 
@@ -708,12 +733,17 @@ _run_one_session() {  # dir id pfile route_flags stream
   # --stream (opt-in observability): emit stream-json and tee it to a per-sub-goal capture so
   # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
   # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
-  local rc=0 slog=""
+  local rc=0 slog="" wd_capture=0
   if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
-    # SG-11 watchdog path (opt-in): backgrounds the session + polls for stalls/liveness.
-    # (Deterministic-handoff capture is not wired through the watchdog path; the two opt-in
-    # paths are independent. See docs/implementation-notes/v3-deterministic-handoff.md.)
-    _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" || rc=$?
+    # SG-11 watchdog path (opt-in). Token accounting (ID-097): mirror the same capture gate the
+    # non-watchdog elif below uses, so a stall no longer silently drops the sub-goal's tokens (the
+    # accounting-black-hole gap `_run_session_watchdog`'s own header comment used to describe).
+    # `_WD_SLOG` (set by `_run_session_watchdog`) feeds `_ROS_SLOG` below exactly like the elif's
+    # local `slog` does, so the CALLER (cmd_run's `_record_tokens "$dir" "$id" "$slog"`, and the
+    # wave reap loop's recomputed `${id}.stream.jsonl` path) needs zero further changes.
+    [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] && wd_capture=1
+    _run_session_watchdog "$dir" "$id" "$pfile" "$route_flags" "$wd_capture" || rc=$?
+    slog="$_WD_SLOG"
   elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ]; then
     # Capture stream-json when the operator wants a live tail (--stream) OR the deterministic
     # handoff needs the transcript (DETERMINISTIC_HANDOFF=1) OR lean token capture is on

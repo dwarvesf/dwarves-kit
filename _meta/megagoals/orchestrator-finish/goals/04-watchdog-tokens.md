@@ -47,3 +47,22 @@ The watchdog / stall branch in `lib/queue/orchestrate.sh` (`WATCHDOG_STALL_SECS`
 Captures tokens to `$slog` on the watchdog-stall branch (ID-097), closing the accounting hole where a stalled worker's tokens were dropped. Verify: the stall-simulation token run-table. Stacked on #<03 PR>; review after it. Part of `orchestrator-finish`, see ROADMAP.md.
 
 ## Notes
+
+- **PR base is `master`, not `fix/orchfin-03-wave-tokens`.** The dispatch brief said 03 was already
+  merged to `master` (stack collapsed) before this worktree was created; confirmed via
+  `git log --oneline -5` showing 03's commit already on `origin/master`. Following the dispatch
+  brief over this goal file's stale `**PR base:**` field.
+- **`$slog`'s format DOES change, but only in the capture-requested case, and only by reusing the
+  EXISTING stream-json convention.** Read "Not: reworking `$slog`'s format" as "don't invent a
+  THIRD extraction format/convention" rather than "the watchdog's own log must always stay plain
+  text": token extraction (`handoff_gen.py sum-usage`) hard-requires `--output-format stream-json`
+  JSONL input, so SOME format change was unavoidable to satisfy the Outcome/Done criteria at all.
+  The fix scopes that change tightly: it only fires when a capture was actually requested
+  (`stream=1 || DETERMINISTIC_HANDOFF=1 || CAPTURE_TOKENS=1`, the SAME gate the non-watchdog path
+  already uses), writes to the SAME deterministic filename (`${id}.stream.jsonl`) the wave reap
+  loop already recomputes, and in the same shape the non-watchdog capture path already produces.
+  The DEFAULT (no capture requested) watchdog path is untouched: plain `.session.log`, plain `-p`,
+  `cat` at the end, byte-identical to pre-fix. Precedent: the pre-existing `--stream` path already
+  tees raw stream-json straight to the operator's terminal for the analogous non-watchdog case, so
+  a human-facing raw-jsonl surface under capture is already an accepted shape in this codebase, not
+  a new one.
