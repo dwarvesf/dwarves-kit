@@ -1,4 +1,4 @@
-# cc-self-improve MANUAL
+# skill-curator MANUAL
 
 Daily-use guide. What it is + the design: [README.md](./README.md) and
 [docs/architecture.md](./docs/architecture.md). When something breaks: [RUNBOOK.md](./RUNBOOK.md).
@@ -18,7 +18,7 @@ Daily-use guide. What it is + the design: [README.md](./README.md) and
 PreCompact + SessionEnd, surfacing on SessionStart), backs the file up first, seeds the config.
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/cc-self-improve
+cd tools/skill-curator     # from your consumer repo's dwarves-kit checkout
 bash deploy/install.sh
 cc-improve status        # should print state dir, 0 drafts, 0 spend
 ```
@@ -36,7 +36,7 @@ cc-improve status        # staged-draft count + reviewer runs + loop spend (7d)
 skill-review list        # one line per draft: <slug>\t<description>
 ```
 
-`cc-improve status` reads `~/.claude/cc-self-improve/ledger.jsonl`; `skill-review list` reads
+`cc-improve status` reads `~/.claude/skill-curator/ledger.jsonl`; `skill-review list` reads
 `~/.claude/skill-proposals/`. SessionStart also surfaces a one-line summary at the top of each new
 session.
 
@@ -84,7 +84,7 @@ the reviewer, `curate` does not log a cost row to the ledger, so its spend is no
 
 ## 5. Tune cost and cadence
 
-**What this does:** config lives at `~/.claude/cc-self-improve/config.toml` (copy of
+**What this does:** config lives at `~/.claude/skill-curator/config.toml` (copy of
 `config/config.example.toml`). Every key is also overridable by a `CC_SI_<KEY>` env var, and **env
 wins** over the file. Tests use the env path; you will normally edit the file.
 
@@ -98,7 +98,7 @@ wins** over the file. Tests use the env path; you will normally edit the file.
 | `auto_promote` / `CC_SI_AUTO_PROMOTE` | `false` | enable `skill-review auto` (references-add to an existing umbrella only) |
 | `signal_gate` / `CC_SI_SIGNAL_GATE` | `false` | skip the model call for a summary with zero signal markers (opt-in cost gate; ADR-0010) |
 | `signal_markers` / `CC_SI_SIGNAL_MARKERS` | (built-in regex) | override the marker pattern the gate matches on |
-| `CC_SI_STATE_DIR` | `~/.claude/cc-self-improve` | ledger + lock + config + reports |
+| `CC_SI_STATE_DIR` | `~/.claude/skill-curator` | ledger + lock + config + reports |
 | `CC_SI_PROPOSALS_DIR` | `~/.claude/skill-proposals` | the staging gate |
 | `CC_SI_SKILLS_DIR` | `~/.claude/skills` | the live library + `_archive/` |
 | `CC_SI_MEMORY_LEDGER` | ops-toolkit `_meta/learned-ledger.md` | cc-harvest ledger the surface line counts |
@@ -119,11 +119,11 @@ configurable by design (SPEC-103 DEC-008 / ADR-0001).
 ```bash
 bash deploy/uninstall.sh          # removes ONLY this tool's hook entries from settings.json
 # or, leave it installed but inert:
-# set enabled = false in ~/.claude/cc-self-improve/config.toml
+# set enabled = false in ~/.claude/skill-curator/config.toml
 ```
 
 `uninstall.sh` backs up `settings.json` first and removes only entries whose command path matches
-`cc-self-improve` (your other hooks survive). It leaves the ledger and any staged drafts in place,
+`skill-curator` (your other hooks survive). It leaves the ledger and any staged drafts in place,
 those are yours, not the installer's, to delete.
 
 **Gotcha:** uninstall does not remove the weekly `mini.cc-curator` launchd (that is a separate

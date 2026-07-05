@@ -1,11 +1,14 @@
-name        = "cc-self-improve"
-description = "The skill half of the Hermes self-improvement loop for Claude Code: a PreCompact/SessionEnd hook spawns a detached no-write `claude -p` reviewer that drafts a reusable SKILL.md from the session; a trusted bash wrapper stages the draft under ~/.claude/skill-proposals/ (never ~/.claude/skills/) and logs cost. Promote via /skill-review; a curator consolidates + archives (never deletes). Propose-and-stage; the model has no filesystem write. cc-elevation-r4 (2026-06)."
+name        = "skill-curator"
+description = "The skill half of a Claude Code self-improvement loop: a PreCompact/SessionEnd hook spawns a detached no-write `claude -p` reviewer that drafts a reusable SKILL.md from the session; a trusted bash wrapper stages the draft under ~/.claude/skill-proposals/ (never ~/.claude/skills/) and logs cost. Promote via /skill-review; a curator consolidates + archives (never deletes). Propose-and-stage; the model has no filesystem write."
 language    = "bash"
 status      = "pilot"
 entry       = "bin/cc-improve"
 created     = 2026-06-19
 
-# Personal/standalone hooks. Wired into ~/.claude PreCompact + SessionEnd + SessionStart at deploy time.
+# Moved into dwarves-kit (kit-foldin goal 04, 2026-07-05) from ops-toolkit's tools/cc-self-improve/,
+# renamed off "self-improve" (read as recursive-on-itself). Consumer-generic: wires into whatever
+# repo's ~/.claude/settings.json at install time; a consumer's own memory-capture ledger is
+# required-explicit via CC_SI_MEMORY_LEDGER (no default), never assumed.
 consumers   = []
 
 systems     = ["claude-code"]

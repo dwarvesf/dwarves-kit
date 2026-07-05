@@ -1,12 +1,12 @@
 ---
 name: skill-review
-description: Review and promote skill drafts that cc-self-improve staged from past sessions. Use when the user runs /skill-review, says "review my skill drafts", "promote a staged skill", or asks what skills the self-improvement loop proposed. Lists drafts under ~/.claude/skill-proposals/, runs the writing-skills quality bar on each, then promotes the approved ones into ~/.claude/skills/ or rejects them.
+description: Review and promote skill drafts that skill-curator staged from past sessions. Use when the user runs /skill-review, says "review my skill drafts", "promote a staged skill", or asks what skills the self-improvement loop proposed. Lists drafts under ~/.claude/skill-proposals/, runs the writing-skills quality bar on each, then promotes the approved ones into ~/.claude/skills/ or rejects them.
 disable-model-invocation: false
 ---
 
 # skill-review (the promote gate)
 
-cc-self-improve's background reviewer stages skill drafts under `~/.claude/skill-proposals/`. It
+skill-curator's background reviewer stages skill drafts under `~/.claude/skill-proposals/`. It
 NEVER writes `~/.claude/skills/`. This skill is the human gate that promotes a vetted draft into the
 live library. `bin/skill-review` (next to this skill in the tool, or on PATH) is the only writer of
 `~/.claude/skills/`.

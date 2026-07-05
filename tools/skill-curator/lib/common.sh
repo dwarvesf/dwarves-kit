@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-self-improve shared helpers: paths, config, logging, lock, sentinel, secret scan, slug.
+# skill-curator shared helpers: paths, config, logging, lock, sentinel, secret scan, slug.
 # Sourced by hooks/, lib/reviewer-run.sh, bin/cc-improve. Stdlib bash + jq only. No secrets.
 #
 # Every path is env-overridable (CC_SI_* wins over config.toml wins over the default) so tests
@@ -18,12 +18,12 @@ CC_SI_ROOT="$(cd "$CC_SI_LIB/.." && pwd)"
 
 _expand() { case "$1" in "~"/*) printf '%s/%s' "$HOME" "${1#\~/}";; *) printf '%s' "$1";; esac; }
 
-CC_SI_STATE_DIR="$(_expand "${CC_SI_STATE_DIR:-$HOME/.claude/cc-self-improve}")"
+CC_SI_STATE_DIR="$(_expand "${CC_SI_STATE_DIR:-$HOME/.claude/skill-curator}")"
 CC_SI_PROPOSALS_DIR="$(_expand "${CC_SI_PROPOSALS_DIR:-$HOME/.claude/skill-proposals}")"
 CC_SI_SKILLS_DIR="$(_expand "${CC_SI_SKILLS_DIR:-$HOME/.claude/skills}")"
 CC_SI_LEDGER="$CC_SI_STATE_DIR/ledger.jsonl"
 CC_SI_LOCK="$CC_SI_STATE_DIR/state/reviewer.lock"
-CC_SI_LOG="$CC_SI_STATE_DIR/cc-self-improve.log"
+CC_SI_LOG="$CC_SI_STATE_DIR/skill-curator.log"
 CC_SI_CONFIG="$(_expand "${CC_SI_CONFIG:-$CC_SI_STATE_DIR/config.toml}")"
 
 # cfg KEY DEFAULT : env CC_SI_<KEY> wins, then a `key = value` line in config.toml, then DEFAULT.
@@ -42,7 +42,7 @@ cfg() {
 si_log() {  # timestamped line to the tool log; never fatal
   local ts; ts="$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo '?')"
   mkdir -p "$CC_SI_STATE_DIR" 2>/dev/null || true
-  printf '%s cc-self-improve: %s\n' "$ts" "$*" >> "$CC_SI_LOG" 2>/dev/null || true
+  printf '%s skill-curator: %s\n' "$ts" "$*" >> "$CC_SI_LOG" 2>/dev/null || true
 }
 
 ledger_append() {  # ledger_append <json-object-string>; one JSONL row, never fatal

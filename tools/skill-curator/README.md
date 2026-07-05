@@ -1,13 +1,13 @@
-# cc-self-improve
+# skill-curator
 
-The **skill half** of the Hermes self-improvement loop, for Claude Code. cc-harvest already ships
-the memory half (transcript -> learnings -> `learned-ledger.md`). cc-self-improve adds: a
-background reviewer that **drafts a reusable SKILL.md** from a session, a **promote gate**, and a
-**curator** that consolidates + archives (never deletes). Same posture as the rest of the suite:
+The **skill half** of a Claude Code self-improvement loop. A separate memory-capture tool (e.g.
+cc-harvest) ships the memory half (transcript -> learnings -> a learning ledger). skill-curator
+adds: a background reviewer that **drafts a reusable SKILL.md** from a session, a **promote gate**,
+and a **curator** that consolidates + archives (never deletes). Same posture throughout:
 read-only, propose-and-stage, background, non-blocking.
 
-Master spec: `docs/specs/SPEC-103-cc-self-improve.md` (VALIDATED). Suite parity is asserted at the
-cc-elevation-r4 mega-goal, not here.
+Master spec: `docs/specs/SPEC-103-cc-self-improve.md` (VALIDATED, historical , written under the
+tool's original name). Suite parity was asserted at the originating cc-elevation-r4 mega-goal.
 
 > Daily use: [MANUAL.md](./MANUAL.md). Diagrams + trust boundary: [docs/architecture.md](./docs/architecture.md).
 > Incident recovery: [RUNBOOK.md](./RUNBOOK.md). Doc index: [SPEC.md](./SPEC.md). Why it is built this
@@ -24,7 +24,7 @@ PreCompact/SessionEnd ─▶ skill-review hook (async) ─▶ nohup reviewer-spa
                               │ returns JSON {draft?, reason}  (model has NO filesystem write)
                               ▼
      wrapper writes draft ▶ ~/.claude/skill-proposals/<slug>/SKILL.md   (NEVER ~/.claude/skills/)
-     wrapper appends cost ▶ ~/.claude/cc-self-improve/ledger.jsonl
+     wrapper appends cost ▶ ~/.claude/skill-curator/ledger.jsonl
 
    /skill-review ─▶ writing-skills checklist ─▶ mv proposal ─▶ ~/.claude/skills/<name>/   (Phase B)
    cc-improve curate ─▶ claude -p plan ─▶ wrapper git-mv to skills/_archive/ (never rm)     (Phase C)
@@ -45,10 +45,11 @@ DEC-008). Promotion into the live library is a separate, human-run step.
   and the full staging-gate / async / reentrancy test suite.
 - **Phase C (shipped): the curator.** `cc-improve curate` consolidates the library into umbrellas and
   archives stale/superseded skills via `git mv` , **never deletes** (`cc-improve restore` brings one
-  back). Propose-only by default; an optional weekly `mini.cc-curator` launchd runs report-only.
+  back). Propose-only by default; wire it to a scheduler (cron/launchd/systemd) yourself for a
+  report-only cadence , see deploy/install.sh's hook wiring for the pattern.
 
-This completes the suite: **cc-harvest (memory) + cc-self-improve (skill draft + promote + curator)
-+ unified surfacing = Hermes self-improvement-loop parity** (memory + skill, automatic, background,
+This completes the suite: **a memory-capture tool + skill-curator (skill draft + promote + curator)
++ unified surfacing = memory + skill self-improvement-loop parity** (automatic, background,
 non-blocking, propose-and-stage).
 
 ## Install
@@ -58,7 +59,7 @@ bash deploy/install.sh        # idempotent: wires the hooks (async) into ~/.clau
 ```
 
 This adds the skill-review reviewer on PreCompact + SessionEnd and the surfacing hook on
-SessionStart (all `"async": true`), seeds `~/.claude/cc-self-improve/config.toml`, and is safe to
+SessionStart (all `"async": true`), seeds `~/.claude/skill-curator/config.toml`, and is safe to
 re-run (no duplicate entries). `deploy/uninstall.sh` removes only this tool's entries (state and
 staged drafts are kept). Tune via the config; `CC_SI_SETTINGS` lets you target a non-default
 settings.json.
@@ -85,11 +86,11 @@ A weekly `mini.cc-curator` launchd (report-only) is available , see `deploy/maco
 
 ## Knobs
 
-Config: `~/.claude/cc-self-improve/config.toml` (copy `config/config.example.toml`). Every key is
+Config: `~/.claude/skill-curator/config.toml` (copy `config/config.example.toml`). Every key is
 also overridable by `CC_SI_<KEY>` (env wins; tests use this).
 
 - `enabled` (default on), `model` (default `haiku`), `max_turns` (2), `transcript_k` (40).
-- Paths: `CC_SI_STATE_DIR` (`~/.claude/cc-self-improve`), `CC_SI_PROPOSALS_DIR`
+- Paths: `CC_SI_STATE_DIR` (`~/.claude/skill-curator`), `CC_SI_PROPOSALS_DIR`
   (`~/.claude/skill-proposals`), `CC_SI_SKILLS_DIR` (`~/.claude/skills`).
 - Cost: every reviewer run appends `total_cost_usd` to `ledger.jsonl`; `cc-improve status` shows
   7-day loop spend and the staged-draft count. Dial back by raising `transcript_k` cost via a bigger

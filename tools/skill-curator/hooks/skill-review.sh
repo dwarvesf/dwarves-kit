@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# skill-review.sh: cc-self-improve's PreCompact/SessionEnd hook entry (its OWN entry, same events
+# skill-review.sh: skill-curator's PreCompact/SessionEnd hook entry (its OWN entry, same events
 # as cc-harvest, separate concern). It does the cheap part inline and hands the expensive reviewer
 # to a DETACHED child, so it returns in well under 200 ms and never blocks the session. Exit 0
 # always. The reviewer MODEL has no filesystem write (DEC-008); this hook only spawns it.

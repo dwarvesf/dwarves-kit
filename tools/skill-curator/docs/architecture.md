@@ -1,6 +1,7 @@
-# Architecture: cc-self-improve
+# Architecture: skill-curator
 
-The skill half of the Hermes self-improvement loop, adapted onto Claude Code. cc-harvest is the
+The skill half of a Claude Code self-improvement loop (originally adapted from a Hermes-side
+design). cc-harvest is the
 memory half (a separate, shipped tool); this tool drafts, gates, and curates SKILLs. Everything here
 rests on one decision: **the model can write nothing.** Read `docs/decisions/0001-model-has-no-write.md`
 for the why; this doc shows the shape.
@@ -12,7 +13,7 @@ for the why; this doc shows the shape.
                                        │ transcript JSONL
                   ┌────────────────────┴─────────────────────┐
                   ▼                                           ▼
-        cc-harvest  (separate tool)              cc-self-improve  (this tool)
+        cc-harvest  (separate tool)              skill-curator  (this tool)
         MEMORY half                              SKILL half
         transcript -> Haiku -> learnings         transcript -> reviewer -> SKILL draft
         -> _meta/learned-ledger.md (queued)      -> ~/.claude/skill-proposals/<slug>/SKILL.md
@@ -33,7 +34,7 @@ The only cross-tool tie is read-only: the SessionStart line counts cc-harvest's 
   │   --model haiku --output-format json  │ stdout │                                          │
   │                                       │        │ write ONLY to fixed paths:               │
   │ reads transcript or skill inventory   │        │   ~/.claude/skill-proposals/<slug>/      │
-  │ returns {draft|null} or a curate plan │        │   ~/.claude/cc-self-improve/ledger.jsonl │
+  │ returns {draft|null} or a curate plan │        │   ~/.claude/skill-curator/ledger.jsonl │
   │ HAS NO FILESYSTEM TOOL AT ALL         │        │   ~/.claude/skills/_archive/  (git mv)   │
   └───────────────────────────────────────┘        │   (promote, human-run) ~/.claude/skills/ │
                                                     └──────────────────────────────────────────┘
@@ -69,7 +70,7 @@ proves a path-traversal slug is contained by `safe_slug` (`common.sh`).
                                envelope.result is itself the model's JSON {draft|null, reason}
           5. secret-drop: contains_secret(body)? log + ledger note, NO write
           6. WRITE draft  ─▶ ~/.claude/skill-proposals/<slug>/SKILL.md   (the ONLY draft target)
-          7. WRITE cost   ─▶ ~/.claude/cc-self-improve/ledger.jsonl      (one row per run)
+          7. WRITE cost   ─▶ ~/.claude/skill-curator/ledger.jsonl      (one row per run)
           (any failure at any step: log + exit 0; a reviewer must never break a session)
 ```
 
@@ -106,7 +107,7 @@ normal path in. The `auto_promote` knob is a deliberate, default-off, references
      inventory: skills/*/SKILL.md → {name, description, first-para, mtime, pinned}  (NOT bodies)
         │  CLAUDE_REVIEWING=1 claude -p --allowedTools ""  ─▶ JSON plan {clusters, archive, report}
         ▼
-     report (always)  ─▶ ~/.claude/cc-self-improve/curator-report-<ts>.md  +  curator.heartbeat
+     report (always)  ─▶ ~/.claude/skill-curator/curator-report-<ts>.md  +  curator.heartbeat
         │
         ├── default        propose-only. Nothing in skills/ changes.
         └── --apply        for each archive item: git mv skills/<name> → skills/_archive/<name>
@@ -128,14 +129,16 @@ line reflects reviewer cost only.
    every reviewer run ─▶ ledger.jsonl  {ts, session_id, kind:"skill-review", staged, slug,
                                          note, total_cost_usd, input_tokens, output_tokens}
    SessionStart ─▶ hooks/sessionstart-surface.sh ─▶ additionalContext:
-     "cc-self-improve loop: N staged memory (cc-harvest) · M skill drafts · $X spend (7d).
+     "skill-curator loop: N staged memory (cc-harvest) · M skill drafts · $X spend (7d).
       /learned to flush · /skill-review to promote."
 ```
 
 **Reader takeaway:** cost is observable per run and surfaced weekly. The memory count comes from
-parsing cc-harvest's `_meta/learned-ledger.md` (queued rows) by regex; if that repo moves or changes
-format the count silently reads 0 (set `CC_SI_MEMORY_LEDGER` to fix). This is the one brittle
-cross-tool coupling, called out in the RUNBOOK.
+parsing a consumer's own memory-capture ledger (e.g. cc-harvest's queued-row table) by regex.
+`CC_SI_MEMORY_LEDGER` is tenant config with NO default: unset means the count is skipped with a
+clear logged reason (never a silently-wrong path); if it IS set but the ledger's table format
+changed, the count can still silently read 0. This is the one brittle cross-tool coupling, called
+out in the RUNBOOK.
 
 ## 7. Component map
 
@@ -160,11 +163,11 @@ cross-tool coupling, called out in the RUNBOOK.
 ## 8. Runtime state (NOT in the repo; `.gitignore` enforces)
 
 ```
-~/.claude/cc-self-improve/            (CC_SI_STATE_DIR)
+~/.claude/skill-curator/            (CC_SI_STATE_DIR)
    config.toml                        rendered on install (copy of config/config.example.toml)
    ledger.jsonl                       suite cost ledger (reviewer rows; cc-harvest-tagged rows accepted)
    state/reviewer.lock.d/             the atomic-mkdir single-flight lock (a DIRECTORY, with a pid file)
-   cc-self-improve.log                tool log
+   skill-curator.log                tool log
    curator.heartbeat                  mtime = last curate run (vps-mon liveness signal)
    curator-report-<ts>.md             the propose-only curate reports
 
