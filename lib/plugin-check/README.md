@@ -30,7 +30,7 @@ go look`, never a false all-clear:
 ## Install
 
 ```bash
-ln -s "$(pwd)/tools/plugin-check/bin/plugin-check" ~/.local/bin/plugin-check   # ~/.local/bin is on PATH
+ln -s "$(pwd)/lib/plugin-check/bin/plugin-check" ~/.local/bin/plugin-check   # ~/.local/bin is on PATH
 ```
 
 Needs `claude` (the CLI it delegates to) and `jq`.
@@ -141,7 +141,7 @@ non-default location (e.g. a test fixture, per `tests/smoke.sh`).
 ## Verify
 
 ```bash
-cd tools/plugin-check
+cd lib/plugin-check
 bash tests/smoke.sh             # hermetic: stubbed `claude`, never shells the real updater
 bin/plugin-check status         # live, over your real installed plugins
 ```

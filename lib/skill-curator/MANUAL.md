@@ -18,7 +18,7 @@ Daily-use guide. What it is + the design: [README.md](./README.md) and
 PreCompact + SessionEnd, surfacing on SessionStart), backs the file up first, seeds the config.
 
 ```bash
-cd tools/skill-curator     # from your consumer repo's dwarves-kit checkout
+cd lib/skill-curator     # from your consumer repo's dwarves-kit checkout
 bash deploy/install.sh
 cc-improve status        # should print state dir, 0 drafts, 0 spend
 ```
