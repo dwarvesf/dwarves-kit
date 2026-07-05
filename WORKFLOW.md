@@ -14,6 +14,19 @@
 Read `AGENTS.md` zone 1 ("Read in this order") for the full ordered list, then
 return here. This file does not restate the list, so the two cannot drift.
 
+## Subsystem modules and install layering
+The kit is composed of self-contained subsystem modules under `lib/<subsystem>/` (board,
+classify, gate, goal, queue, session, spec, stats, telemetry, plus the ledger substrate and
+single-purpose orphans). Each multi-verb subsystem is also callable as a standalone
+`<subsystem> <verb>` command (`board next`, `gate ledger ...`, `spec ...`); the internal
+`bash lib/<subsystem>/<file>.sh` form used throughout this file still works unchanged. There
+is no `tools/` tree and no `kit` uber-dispatcher. Read-side reporting is `stats`, a stateless
+projection recomputed from the append-only ledger (never a persisted second source). Adoption
+is layered: `install.sh` wires the essential spine unconditionally and optional modules opt in
+via `install.sh --with <modules>`, recording the enabled set in the consumer's
+`kit.toml [modules]` manifest. Full composition + adoption model: `AGENTS.md`
+"How the kit composes" and `docs/PHILOSOPHY.md`.
+
 ## Where work comes from (the board)
 
 `_meta/BACKLOG.md` is the kanban board (SPEC-055): one row per work item, the Status column is
