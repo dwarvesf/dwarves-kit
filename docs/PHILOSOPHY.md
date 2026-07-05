@@ -10,6 +10,24 @@
 
 Each principle resolves a real tradeoff. If it can't be violated, it's not a real principle.
 
+### "Toolbox, not appliance"
+
+We believe the kit is a set of independently useful modules a consumer installs a-la-carte, not a single feature-flagged product they switch on wholesale. "Bash over binaries" and "shallow and wide beats deep and narrow" are not just craft preferences here, they are STATED CHOICES in service of this composability: a small, legible surface that installs piece by piece is only possible if each piece stays simple (bash, readable in 30 seconds) and no piece tries to do everything (breadth over depth per phase). The essential SPINE, safety-gate, ship-gate, spec-drift-guard, secrets-guard, commit-format, anti-rationalization, is always wired, because it guards irreversible boundaries (push, merge, secrets, commit hygiene) no consumer should be able to accidentally skip. Everything else is opt-in: board/session/advisor/cosmetic (hook-bearing modules) and queue/stats/quiz_gate/weekend_batch/bridge (hookless modules, commands/skills/lib entries with no hook to gate) install only when named via `install.sh --with <a,b,c>`, recorded in the consumer's own `kit.toml [modules]`, a per-consumer install RECORD, never a runtime feature-registry a hook reads back (a standing CI lint keeps it that way). Git is the only shared medium: a module writes to the append-only ledger, the spec store, or the backlog file on disk, never to private in-memory or database state another module depends on.
+
+**Decision this already made:** the spine/optional split (Decision B, kit-modularity SG-04); the `kit.toml`-is-not-a-registry CI lint; the standalone `<subsystem> <verb>` entries (`board`, `stats`, `gate`, `classify`, `spec`, `goal`, `session`, kit-modularity SG-03) each self-documenting via their own `--help`, with the `kit` uber-dispatcher evaluated and SKIPPED for the same reason, a central binary or registry is exactly the coupling seam the toolbox model exists to avoid.
+
+**Decision this would reject:** "add a `kit init` wizard that turns modules on interactively," or "a central `kit list` registry the hooks consult to decide what's active." Both re-create the single point of coupling that turns a-la-carte pieces back into one appliance.
+
+**The anti-goal, stated plainly: the kit must never feel like one big product.** If installing it ever requires understanding the whole system before using any one part of it, the modularity has failed regardless of what the code looks like underneath.
+
+### Multi-agent future (a stated boundary)
+
+The standalone `<subsystem> <verb>` SHELL surface (`board`, `stats`, `gate`, `classify`, `spec`, `goal`, `session`) is runtime-agnostic: any shell-capable agent, pi, opencode, Claude Code, or a human at a terminal, can run `bash lib/gate/gate.sh ledger rid` directly, because it is bash reading and writing files git already tracks, nothing Claude-Code-specific. The agent-AUTHORING surface (`agents/`, `commands/`, `skills/`) is not: it is Claude Code's loader format specifically, frontmatter YAML, `/kit:<name>` namespacing, the Task-tool dispatch contract, and porting the kit to another runtime would mean that runtime growing its own loader for the same underlying scripts, not a rewrite of the scripts. This is a boundary the kit states honestly rather than papers over: the shell layer already is multi-agent-ready; the authoring layer is not, by construction, until a second loader exists to read it.
+
+### Team mode: parked, not absent
+
+`[modules] team_mode` exists as a named, reserved slot in `install.sh` (requesting it errors "reserved, not-yet-installable module", it does not silently accept the value), a deliberate act of naming a known future need without building it prematurely (Decision C). The tripwire for building it is concrete, not aspirational: a second named human user actively operating against the same kit install. Until that fires, the single-operator assumptions already baked into the goal registry (ADR-0022, the cross-session disjointness gate) and the board/mirror conflict rule (git wins, always, per SPEC-147/149) would need real design work, not a flag flip. Parked and honestly labeled beats quietly absent.
+
 ### "Guardrails over guidance"
 
 We believe enforcement beats advice. A rule in CLAUDE.md is followed ~70% of the time. A hook with exit code 2 is followed 100% of the time. Therefore we build hooks for anything safety-critical, and use commands/CLAUDE.md only for things where human judgment matters.
