@@ -142,7 +142,11 @@ so the existing driver can walk it unmodified):
   lines, value only, no trailing comment -- the driver greps `^Model:` and takes
   the whole rest of the line as the tier. **`Model:` defaults to `sonnet`**
   (SPEC-107 cheap-first); route `opus` for planning/design-dominant hard
-  reasoning, `haiku` for trivial mechanical work, DELETE the line to deliberately
+  reasoning AND for a docs/design sub-goal that REWRITES for cohesion or
+  persuasion (not a light append) -- write those with the `/kit:pitch`
+  discipline (outcome-first, evidence-grounded; delete the stale narrative,
+  do not just append) so the presentation convinces; a small docs update
+  stays `sonnet`. `haiku` for trivial mechanical work, DELETE the line to deliberately
   inherit the parent tier. Each sub-goal also names a **`Design:` field**
   (`bearing | obvious`, ADR-0031 §1: `bearing` means the executor's spec MUST
   carry a non-empty `## Design` block and `/kit:spec-validate` refuses VALIDATED
