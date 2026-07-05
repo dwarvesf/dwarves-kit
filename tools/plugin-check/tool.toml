@@ -1,0 +1,26 @@
+name        = "plugin-check"
+description = "Which adopted Claude Code plugins are outdated, in one glance. Read-only freshness lens over every adopted CC plugin (single-plugin marketplaces, the local directory marketplace, and the big claude-plugins-official); compares installed commit sha against upstream and prints the exact bump command for each stale one. Resolution is delegated to the official `claude plugin` CLI + the state files it owns (no gh)."
+language    = "bash"
+status      = "active"
+entry       = "bin/plugin-check"
+created     = 2026-06-20
+
+# Migrated into dwarves-kit (kit-foldin SG-05, 2026-07-05): this tool moved here verbatim
+# from ops-toolkit/tools/cc-plugin-check/ (kit-foldin design note, per-tool disposition
+# table). Renamed cc-plugin-check -> plugin-check per the kit naming rule (drop the
+# host-agent prefix on entry; the object here is CC's own plugin state, not a session).
+# No functional change: same verdict logic, same CLI surface, same test suite (27/27
+# pass unmodified in the new location). The ops-toolkit copy retires in the paired
+# batched retire sweep (SG-07).
+#
+# No plugin-check-specific tenant config exists to make opt-in: CC_PLUGINS_DIR already
+# defaulted to $HOME/.claude/plugins (the standard per-user Claude Code plugin dir, not an
+# ops-toolkit path), so there was no hardcoded ops-toolkit path to replace.
+consumers   = []
+
+systems     = ["claude-code"]
+
+# Read-only over CC's own plugin state; no credentials of any kind.
+secrets     = []
+
+depends_on  = []
