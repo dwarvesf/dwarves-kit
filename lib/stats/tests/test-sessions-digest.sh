@@ -66,18 +66,18 @@ gate_row() {
 #      per SG-03's cross-suite-regression lesson: an unisolated shared source silently pollutes
 #      an unrelated suite's assertions) --------------------------------------------------------
 export DWARVES_KIT_LOG_DIR="$KITLOG"
-export LEDGER_OBS_GIT_REPO_DIR="$GITREPO"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"
-export LEDGER_OBS_LEARNED_MD="$FIX/learned.md"
-export LEDGER_OBS_SESSIONS_DIR="$SESSIONS_DIR"
-export LEDGER_OBS_SECRET_GUARD_LOG="$SAFETY_LOG"
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
+export STATS_GIT_REPO_DIR="$GITREPO"
+export STATS_TIDE_DB="$FIX/state.sqlite"
+export STATS_TGCLEANUP_DIR="$FIX/tg"
+export STATS_LEARNED_MD="$FIX/learned.md"
+export STATS_SESSIONS_DIR="$SESSIONS_DIR"
+export STATS_SECRET_GUARD_LOG="$SAFETY_LOG"
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
 export CC_BACKLOG_STAGING="$FIX/backlog-staging.md"
 export CC_BACKLOG_BACKLOG="$FIX/BACKLOG.md"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"
+mkdir -p "$STATS_TGCLEANUP_DIR"
 
 cat > "$CC_BACKLOG_BACKLOG" <<'EOF'
 # Backlog
@@ -86,12 +86,12 @@ cat > "$CC_BACKLOG_BACKLOG" <<'EOF'
 | ID-001 | pre-existing unrelated row | notes | queued |
 EOF
 
-R()  { uv run ledger "$@" 2>&1; }
-REBUILD() { uv run ledger rebuild >/dev/null 2>&1; }
+R()  { uv run stats "$@" 2>&1; }
+REBUILD() { uv run stats rebuild >/dev/null 2>&1; }
 reset_sessions() { rm -rf "$SESSIONS_DIR"; mkdir -p "$SESSIONS_DIR"; }
 reset_kit()      { rm -rf "$KITLOG/runs"; mkdir -p "$KITLOG/runs"; }
 reset_safety()   { rm -f "$SAFETY_LOG"; }
-reset_db()       { rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"; }
+reset_db()       { rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"; }
 reset_staging()  { rm -f "$CC_BACKLOG_STAGING"; }
 reset_all()      { reset_sessions; reset_kit; reset_safety; reset_db; }
 staged_n() { [ -f "$CC_BACKLOG_STAGING" ] && grep -c '^## \[staged\]' "$CC_BACKLOG_STAGING" || echo 0; }
@@ -101,7 +101,7 @@ QROW() {
   # materialize.query() path the CLI uses (no second read path).
   uv run python3 - "$1" <<'PY'
 import sys
-from ledger_observatory import materialize
+from stats import materialize
 cols, rows = materialize.query(sys.argv[1])
 print(rows[0][0] if rows and rows[0] else "")
 PY
@@ -184,7 +184,7 @@ eq "PRIV-nc error_count still correctly counted despite is_error's leaky content
    "$(QROW "SELECT error_count FROM sessions WHERE session_id='privacy-session'")" "1"
 
 HITS="$(uv run python3 - <<'PY'
-from ledger_observatory import materialize
+from stats import materialize
 needle = "FAKE-SECRET-a1b2c3"
 hits = []
 for name in materialize.table_names():
@@ -250,7 +250,7 @@ cat > "$SESSIONS_DIR/proj-badtype/badtype-session.jsonl" <<'EOF'
 {"type":"assistant","timestamp":"2026-07-05T00:00:05.000Z","message":{"role":"assistant","stop_reason":"tool_use","usage":{"input_tokens":"FAKE-SECRET-badtype-x9","output_tokens":50,"cache_read_input_tokens":10,"cache_creation_input_tokens":5},"content":[{"type":"tool_use","id":"c1","name":"Bash","input":{}}]}}
 {"type":"assistant","timestamp":"2026-07-05T00:00:07.000Z","message":{"role":"assistant","stop_reason":"end_turn","usage":{"input_tokens":30,"output_tokens":15,"cache_read_input_tokens":3,"cache_creation_input_tokens":1},"content":[{"type":"text","text":"🐱 Neko-san"}]}}
 EOF
-REBUILD_OUT="$(uv run ledger rebuild 2>&1)"
+REBUILD_OUT="$(uv run stats rebuild 2>&1)"
 REBUILD_EXIT=$?
 eq "O-badtype rebuild exits 0 (no uncaught exception)" "$REBUILD_EXIT" "0"
 hasnt "O-badtype planted string never appears in the rebuild output/traceback" \
@@ -260,7 +260,7 @@ eq "O-badtype row still exists (bad field coerced to 0, row not dropped)" \
 eq "O-badtype input_tokens=30 (bad string field counted as 0, only the valid line contributed)" \
    "$(QROW "SELECT input_tokens FROM sessions WHERE session_id='badtype-session'")" "30"
 BADTYPE_HITS="$(uv run python3 - <<'PY'
-from ledger_observatory import materialize
+from stats import materialize
 needle = "FAKE-SECRET-badtype-x9"
 hits = 0
 for name in materialize.table_names():
@@ -291,7 +291,7 @@ eq "O-badts the junk timestamp string is nowhere in first_ts/last_ts" \
 echo "== over-test: read_sessions/read_safety are skip-safe on a missing source =="
 MISSING_CHECK="$(uv run python3 - <<'PY'
 from pathlib import Path
-from ledger_observatory import adapters
+from stats import adapters
 results = []
 cols, rows = adapters.read_sessions(Path("/nonexistent-sessions-dir-xyz"))
 results.append(("sessions-missing", cols == adapters.SESSIONS_COLUMNS and rows == []))
@@ -327,7 +327,7 @@ has   "T-low-threshold names the right session"       "golden-session" "$(R anom
 reset_sessions
 REBUILD
 hasnt "T-empty no fire when sessions table is empty" "$TRK" "$(R anomalies --threshold token_budget_max=1 --json)"
-HELP="$(uv run ledger anomalies --help 2>&1)"
+HELP="$(uv run stats anomalies --help 2>&1)"
 has "H-help lists token_budget_max" "token_budget_max" "$HELP"
 
 # =============================================================================================

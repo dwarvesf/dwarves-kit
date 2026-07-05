@@ -48,14 +48,14 @@ echo "== R-queries-via-02: mocked --json input in, formatted surface out, no re-
 # render.py imports nothing from materialize/adapters/duckdb -- assert that structurally
 # (a re-read would show up as one of these imports), then exercise it with a MOCKED
 # ledger-query-shaped JSON blob (this is literally the `--json` output shape).
-RENDER_PY="src/ledger_observatory/render.py"
+RENDER_PY="src/stats/render.py"
 hasnt "R-queries-via-02 no materialize import" 'import materialize' "$(cat "$RENDER_PY")"
 hasnt "R-queries-via-02 no adapters import"    'import adapters'    "$(cat "$RENDER_PY")"
 hasnt "R-queries-via-02 no duckdb import"      'import duckdb'      "$(cat "$RENDER_PY")"
 
 MOCK_OUT="$(uv run python3 - <<'PY'
 import json
-from ledger_observatory import render
+from stats import render
 
 # A mocked `ledger query --json` output: exactly the shape the real CLI emits.
 mocked_json = '[{"rid": "fixture-rid-001", "lane": "normal", "gates_ran": 4}]'
@@ -72,7 +72,7 @@ has "R-queries-via-02 artifact formatted from mocked json" 'ART_OK'  "$MOCK_OUT"
 
 echo "== R-terminal: bot-reply-formatting-shaped code-block table/bar surface =="
 TERM_OUT="$(uv run python3 - <<'PY'
-from ledger_observatory import render
+from stats import render
 rows = [
     {"lane": "normal", "success_pct": 85},
     {"lane": "full", "success_pct": 12},
@@ -90,7 +90,7 @@ has "R-terminal empty-rows placeholder" '(0 rows)' "$TERM_OUT"
 
 echo "== R-artifact: valid self-contained Artifact HTML =="
 ART_OUT="$(uv run python3 - <<'PY'
-from ledger_observatory import render
+from stats import render
 rows = [{"item": "a <script>alert(1)</script> value", "status": "queued"}]
 print(render.render_artifact(rows, "XSS check"))
 PY
@@ -106,7 +106,7 @@ hasnt "R-artifact does not leak raw script tag" '<script>alert(1)</script>' "$AR
 
 echo "== R-nc: single-data-path negative control (SAME rows object, both surfaces) =="
 NC_OUT="$(uv run python3 - <<'PY'
-from ledger_observatory import render
+from stats import render
 
 # ONE row set (as if freshly fetched from `ledger query --json`).
 rows = [{"rid": "nc-fixture-777", "cost_usd": 4.2}]
@@ -133,7 +133,7 @@ has "R-nc a mutation reflects in both surfaces"    'MUTATION_REFLECTED_BOTH_OK' 
 has "R-nc no stale value survives the mutation"    'NO_STALE_VALUE_OK'        "$NC_OUT"
 
 echo "== R-cli: the ledger render subcommand wires to the SAME materialize read path =="
-CLI_PY="src/ledger_observatory/cli.py"
+CLI_PY="src/stats/cli.py"
 has "R-cli render command present"        'def render(' "$(cat "$CLI_PY")"
 has "R-cli reuses materialize.show"       'materialize.show' "$(cat "$CLI_PY")"
 has "R-cli reuses materialize.query"      'materialize.query' "$(cat "$CLI_PY")"

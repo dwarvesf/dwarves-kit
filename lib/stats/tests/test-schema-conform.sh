@@ -8,7 +8,12 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFORM="$HERE/lib/conform.sh"
-GATE_LEDGER="$HOME/.claude/dwarves-kit/lib/gate-ledger.sh"
+# stats now lives inside the kit (lib/stats/); resolve gate-ledger from the repo's own lib
+# (post-SG-01 subsystem path). Fall back to an installed copy for an out-of-tree run.
+REPO_ROOT="$(cd "$HERE/../../.." && pwd)"
+GATE_LEDGER="$REPO_ROOT/lib/gate/gate-ledger.sh"
+[ -f "$GATE_LEDGER" ] || GATE_LEDGER="$HOME/.claude/dwarves-kit/lib/gate/gate-ledger.sh"
+[ -f "$GATE_LEDGER" ] || GATE_LEDGER="$HOME/.claude/dwarves-kit/lib/gate-ledger.sh"
 DOCS="$(cd "$HERE/.." && pwd)/docs"
 
 pass=0
@@ -82,7 +87,7 @@ fi
 # tide state.sqlite: every column the contract claims for `moves` must be a real column
 # in tools/tide/src/tide/state.py's CREATE TABLE (parses the adapter's own field-map).
 # tide is an ops-toolkit-only sibling tool (never migrates into this kit repo, per the
-# 05K goal's Quality bar: LEDGER_OBS_TIDE_DB is an ops-toolkit-specific source now
+# 05K goal's Quality bar: STATS_TIDE_DB is an ops-toolkit-specific source now
 # required-explicit, not a kit-generic one) -- this cross-repo check is skip-safe, not
 # fail-safe, when that sibling simply is not present in THIS repo.
 TIDE_SCHEMA="$(cd "$HERE/../../.." && pwd)/tools/tide/src/tide/state.py"

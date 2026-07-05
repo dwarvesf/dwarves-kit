@@ -23,18 +23,18 @@ eq()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; 
 # ---- env: point every source + the staging/board at fixtures --------------------------------
 FIX="$(mktemp -d)"
 export DWARVES_KIT_LOG_DIR="$FIX/kitlogs"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"        # empty (skip-safe)
-export LEDGER_OBS_LEARNED_MD="$FIX/learned.md"   # absent (skip-safe)
-export LEDGER_OBS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"  # absent -> skip-safe empty git_fixes/impl_notes
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
+export STATS_TIDE_DB="$FIX/state.sqlite"
+export STATS_TGCLEANUP_DIR="$FIX/tg"        # empty (skip-safe)
+export STATS_LEARNED_MD="$FIX/learned.md"   # absent (skip-safe)
+export STATS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"  # absent -> skip-safe empty git_fixes/impl_notes
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
 export CC_BACKLOG_STAGING="$FIX/backlog-staging.md"
 export CC_BACKLOG_BACKLOG="$FIX/BACKLOG.md"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"
+mkdir -p "$STATS_TGCLEANUP_DIR"
 
 # a realistic board fixture (dedup source + the byte-identity victim for propose-not-autofile)
 cat > "$CC_BACKLOG_BACKLOG" <<'EOF'
@@ -46,7 +46,7 @@ EOF
 
 # ---- fixture builders -----------------------------------------------------------------------
 reset()         { rm -rf "$DWARVES_KIT_LOG_DIR"; mkdir -p "$DWARVES_KIT_LOG_DIR/runs";
-                  rm -f "$LEDGER_OBS_TIDE_DB" "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"; }
+                  rm -f "$STATS_TIDE_DB" "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"; }
 reset_staging() { rm -f "$CC_BACKLOG_STAGING"; }
 
 # kitrun <name> "<lane> <classified> <type> <ctype>" <n_override>
@@ -69,7 +69,7 @@ kitrun() {
 
 # tide_costs <c1> <c2> ...  -> tide sqlite tier_b_calls, id ascending in the given cost order
 tide_costs() {
-  python3 - "$LEDGER_OBS_TIDE_DB" "$@" <<'PY'
+  python3 - "$STATS_TIDE_DB" "$@" <<'PY'
 import sqlite3, sys
 db, costs = sys.argv[1], sys.argv[2:]
 c = sqlite3.connect(db)
@@ -83,8 +83,8 @@ c.commit(); c.close()
 PY
 }
 
-R()  { uv run ledger "$@" 2>&1; }
-REBUILD() { uv run ledger rebuild >/dev/null 2>&1; }
+R()  { uv run stats "$@" 2>&1; }
+REBUILD() { uv run stats rebuild >/dev/null 2>&1; }
 staged_n() { [ -f "$CC_BACKLOG_STAGING" ] && grep -c '^## \[staged\]' "$CC_BACKLOG_STAGING" || echo 0; }
 
 DEBT='"key": "debt"'
@@ -202,7 +202,7 @@ nontransient_tree() { find "$ROOT" -type f -not -path '*/.venv/*' -not -path '*_
 TREE_BEFORE="$(nontransient_tree)"
 NS_RC=0
 NS_OUT="$(env -u CC_BACKLOG_STAGING -u CC_BACKLOG_BACKLOG -u OPS_TOOLKIT \
-  LEDGER_OBSERVATORY_DB="$LEDGER_OBSERVATORY_DB" uv run ledger anomalies --propose --json 2>&1)" || NS_RC=$?
+  STATS_DB_REMOVED="$STATS_DB_REMOVED" uv run stats anomalies --propose --json 2>&1)" || NS_RC=$?
 eq  "F-no-staging-config exits 2 (clean refusal, not a Python traceback)" "$NS_RC" "2"
 has "F-no-staging-config names the missing destination" "no destination is configured" "$NS_OUT"
 hasnt "F-no-staging-config never touched the real staging buffer" '"action": "staged"' "$NS_OUT"
@@ -222,14 +222,14 @@ R anomalies --threshold debt_max=abc >/dev/null 2>&1; eq "F-threshold non-numeri
 echo "== F-readonly-nc: detect+propose mutates NO source ledger (byte-identical) =="
 reset; kitrun r1 "full full data data" 6; tide_costs 0.10 0.10 0.10 0.10 0.10 0.90; REBUILD
 reset_staging
-sumsrc() { find "$DWARVES_KIT_LOG_DIR" -type f -exec shasum -a 256 {} \; | sort; shasum -a 256 "$LEDGER_OBS_TIDE_DB"; }
+sumsrc() { find "$DWARVES_KIT_LOG_DIR" -type f -exec shasum -a 256 {} \; | sort; shasum -a 256 "$STATS_TIDE_DB"; }
 SRC_BEFORE="$(sumsrc)"
 R anomalies --propose >/dev/null 2>&1
 SRC_AFTER="$(sumsrc)"
 eq "F-readonly-nc every source ledger byte-identical" "$SRC_AFTER" "$SRC_BEFORE"
 
 echo "== F-one-path: detection reads via SG-02 materialize only (static) =="
-SRC="src/ledger_observatory/anomalies.py"
+SRC="src/stats/anomalies.py"
 has   "F-one-path imports materialize"        "from . import materialize" "$(cat "$SRC")"
 hasnt "F-one-path no direct duckdb import"    "import duckdb"              "$(cat "$SRC")"
 hasnt "F-one-path no adapters bypass"         "adapters"                  "$(cat "$SRC")"

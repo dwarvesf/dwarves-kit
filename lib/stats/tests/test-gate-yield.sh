@@ -27,18 +27,18 @@ hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 # ---- env: kit source points at the COMMITTED fixture; everything else is empty/absent ------
 FIX="$(mktemp -d)"
 export DWARVES_KIT_LOG_DIR="$ROOT/tests/fixtures/kit-gates"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
-export LEDGER_OBS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
-export LEDGER_OBS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"  # absent -> skip-safe empty git_fixes/impl_notes
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"
+export STATS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
+export STATS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
+export STATS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
+export STATS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"  # absent -> skip-safe empty git_fixes/impl_notes
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
+mkdir -p "$STATS_TGCLEANUP_DIR"
 
-R() { uv run ledger "$@" 2>&1; }
+R() { uv run stats "$@" 2>&1; }
 
 FIXTURE_BEFORE="$(find "$DWARVES_KIT_LOG_DIR" -type f -exec shasum -a 256 {} \; | sort)"
 
@@ -144,7 +144,7 @@ echo "== F-nc-deliberate-break: prove the FP-NC is falsifiable, not vacuous =="
 # Simulate the bug this NC guards against: a query that GROUP BYs only rows with outcome='ran'
 # would silently drop ui-design (0 ran rows) from the result entirely.
 BROKEN="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import materialize
+from stats import materialize
 cols, rows = materialize.query(
     "SELECT gate, count(*) AS n FROM kit_gates WHERE outcome = 'ran' GROUP BY gate ORDER BY gate"
 )
@@ -161,7 +161,7 @@ echo "== O-plan: /kit:test-plan-shaped over-test pass (parser edge cases beyond 
 OVER="$(uv run python3 - <<'PY' 2>&1
 import tempfile
 from pathlib import Path
-from ledger_observatory import adapters
+from stats import adapters
 
 results = []
 
@@ -203,7 +203,7 @@ has "O3-unclosed-bracket OK (no matching end -> caught/start_ts/end_ts stay NULL
 
 echo "== G-remat: delete-and-rematerialize is byte-identical (fixture files canonical) =="
 BEFORE="$(R show kit_gates --json)"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 AFTER="$(R show kit_gates --json)"
 if [ "$BEFORE" = "$AFTER" ] && [ -n "$BEFORE" ]; then ok "G-remat identical output"; else bad "G-remat output differs after delete+rebuild"; fi
 

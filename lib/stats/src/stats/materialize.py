@@ -1,14 +1,15 @@
-"""Build the DuckDB lens from the canonical files, and query it read-only.
+"""Materialize an IN-MEMORY DuckDB lens from the canonical files, per invocation.
 
-The db is derivable + disposable: `rebuild()` deletes + recreates it; deleting the file
-loses nothing. Materialization is the ONLY write, and it writes only the derivable db,
-never a source ledger. Queries open the db `read_only=True`.
+SPEC-182: `stats` is a stateless projection. There is no persistent db and no cache; every
+query builds a fresh `:memory:` catalog from the log, runs, and discards it. Materialization
+writes only that ephemeral in-memory catalog, never a source ledger and never a disk file.
+The read guards (statement guard + a post-materialize `enable_external_access` latch) keep
+user-supplied `query()` SQL from touching the filesystem.
 """
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import duckdb
 
@@ -90,7 +91,7 @@ def _load_tide(con):
     INDEPENDENTLY (MED-3): a missing/older-schema table falls back to an empty table on
     its own, never discarding a sibling that copied fine.
 
-    `config.tide_db_path()` is None when `LEDGER_OBS_TIDE_DB` is unset (ops-toolkit-
+    `config.tide_db_path()` is None when `STATS_TIDE_DB` is unset (ops-toolkit-
     specific source, no default post-05K-move): treated identically to "path does not
     exist", never a crash.
     """
@@ -121,68 +122,72 @@ def _load_tide(con):
             pass
 
 
+_MATERIALIZED_TABLES = (
+    "kit_runs", "kit_gates", "git_fixes", "impl_notes", "tide_moves",
+    "tide_tier_b_calls", "tg_dialogs", "learned", "sessions", "safety",
+    "memories", "rejected_findings",
+)
+
+
+def _materialize(con) -> None:
+    """Load every table into the given (in-memory) connection from the canonical files.
+    The ONLY write is into this ephemeral catalog; no source ledger and no disk file is
+    ever touched. This is the whole projection (SPEC-182: stats is a stateless read plane)."""
+    cols, rows = adapters.read_kit()
+    _load_python_table(con, "kit_runs", _KIT_DDL, cols, rows)
+    cols, rows = adapters.read_kit_gates()
+    _load_python_table(con, "kit_gates", _KIT_GATES_DDL, cols, rows)
+    cols, rows = adapters.read_git_fixes()
+    _load_python_table(con, "git_fixes", _GIT_FIXES_DDL, cols, rows)
+    cols, rows = adapters.read_impl_notes()
+    _load_python_table(con, "impl_notes", _IMPL_NOTES_DDL, cols, rows)
+    cols, rows = adapters.read_tgcleanup()
+    _load_python_table(con, "tg_dialogs", _TG_DDL, cols, rows)
+    cols, rows = adapters.read_learned()
+    _load_python_table(con, "learned", _LEARNED_DDL, cols, rows)
+    cols, rows = adapters.read_sessions()
+    _load_python_table(con, "sessions", _SESSIONS_DDL, cols, rows)
+    cols, rows = adapters.read_safety()
+    _load_python_table(con, "safety", _SAFETY_DDL, cols, rows)
+    cols, rows = adapters.read_memories()
+    _load_python_table(con, "memories", _MEMORY_DDL, cols, rows)
+    cols, rows = adapters.read_rejected_findings()
+    _load_python_table(con, "rejected_findings", _REJECTED_FINDINGS_DDL, cols, rows)
+    _load_tide(con)
+
+
 def rebuild() -> dict[str, int]:
-    """Delete the db + re-materialize every table from the canonical files.
-    Returns a {table: row_count} map.
-    """
-    path = config.db_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    for p in (path, Path(str(path) + ".wal")):
-        if p.exists():
-            p.unlink()
-    con = duckdb.connect(str(path))
+    """Diagnostic probe: materialize in-memory + report a {table: row_count} map.
+    Writes NOTHING (SPEC-182: stats persists no derived view). This used to delete +
+    rewrite a persistent DuckDB cache; that cache is gone. Kept as a 'what would I see over
+    the current log' surface for `stats rebuild`."""
+    con = duckdb.connect(":memory:")
     try:
-        cols, rows = adapters.read_kit()
-        _load_python_table(con, "kit_runs", _KIT_DDL, cols, rows)
-        cols, rows = adapters.read_kit_gates()
-        _load_python_table(con, "kit_gates", _KIT_GATES_DDL, cols, rows)
-        cols, rows = adapters.read_git_fixes()
-        _load_python_table(con, "git_fixes", _GIT_FIXES_DDL, cols, rows)
-        cols, rows = adapters.read_impl_notes()
-        _load_python_table(con, "impl_notes", _IMPL_NOTES_DDL, cols, rows)
-        cols, rows = adapters.read_tgcleanup()
-        _load_python_table(con, "tg_dialogs", _TG_DDL, cols, rows)
-        cols, rows = adapters.read_learned()
-        _load_python_table(con, "learned", _LEARNED_DDL, cols, rows)
-        cols, rows = adapters.read_sessions()
-        _load_python_table(con, "sessions", _SESSIONS_DDL, cols, rows)
-        cols, rows = adapters.read_safety()
-        _load_python_table(con, "safety", _SAFETY_DDL, cols, rows)
-        cols, rows = adapters.read_memories()
-        _load_python_table(con, "memories", _MEMORY_DDL, cols, rows)
-        cols, rows = adapters.read_rejected_findings()
-        _load_python_table(con, "rejected_findings", _REJECTED_FINDINGS_DDL, cols, rows)
-        _load_tide(con)
-        counts = {}
-        for t in ("kit_runs", "kit_gates", "git_fixes", "impl_notes", "tide_moves",
-                  "tide_tier_b_calls", "tg_dialogs", "learned", "sessions", "safety",
-                  "memories", "rejected_findings"):
-            counts[t] = con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
-        return counts
+        _materialize(con)
+        return {t: con.execute(f"SELECT count(*) FROM {t}").fetchone()[0]
+                for t in _MATERIALIZED_TABLES}
     finally:
         con.close()
 
 
-def _ensure_db():
-    """Lazy rebuild-on-missing: on-demand refresh (fork 2)."""
-    if not config.db_path().exists():
-        rebuild()
-
-
 def _read_conn():
-    """A read-only query connection with THREE guarantees stacked:
-    - `read_only=True`   : cannot mutate the lens db's catalog/rows.
-    - `enable_external_access=False` : cannot touch the FILESYSTEM (no COPY TO, no
-      `PRAGMA profiling_output` file write, no `read_csv`/ATTACH of another db). This is
-      the real backstop against a write-shaped statement escaping the guard.
-    The statement guard (`is_read_only`) is the early, explicit refusal on top.
-    """
-    _ensure_db()
-    return duckdb.connect(
-        str(config.db_path()),
-        read_only=True,
-        config={"enable_external_access": False},
-    )
+    """A FRESH in-memory connection with every table materialized from the log. There is
+    no disk db and no cache: the projection is recomputed on every call, so deleting stats'
+    output (there is none) and re-running yields the same answer from the log (SPEC-182
+    no-persist invariant, the board-mirror drift bug avoided by construction).
+
+    Security: materialization needs external filesystem access (the tide sqlite ATTACH), so
+    the connection starts with it ON. Once materialization is done we LATCH it OFF
+    (`SET enable_external_access=false`, a one-way DuckDB latch) BEFORE any user-supplied
+    `query()` SQL runs, so a query can never COPY TO / read_csv / ATTACH a file. The
+    statement guard (`is_read_only`) is the early, explicit refusal on top."""
+    con = duckdb.connect(":memory:")
+    _materialize(con)
+    try:
+        con.execute("SET enable_external_access=false")
+    except duckdb.Error:
+        pass
+    return con
 
 
 def table_names() -> list[str]:

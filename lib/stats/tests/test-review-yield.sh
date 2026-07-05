@@ -26,20 +26,20 @@ FIXTURE_ROOT="$ROOT/tests/fixtures/review-yield"
 
 # ---- env: rejected_findings sources point at the COMMITTED fixture repos; kit source points
 # at the COMMITTED review-gate fixture ledger; everything else is empty/absent -------------
-export LEDGER_OBS_REPOS="$FIXTURE_ROOT/repo-a,$FIXTURE_ROOT/repo-b,$FIXTURE_ROOT/repo-empty,$FIXTURE_ROOT/repo-missing-entirely"
+export STATS_REPOS="$FIXTURE_ROOT/repo-a,$FIXTURE_ROOT/repo-b,$FIXTURE_ROOT/repo-empty,$FIXTURE_ROOT/repo-missing-entirely"
 export DWARVES_KIT_LOG_DIR="$FIXTURE_ROOT"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"
-export LEDGER_OBS_LEARNED_MD="$FIX/learned.md"
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"
-export LEDGER_OBS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"
+export STATS_TIDE_DB="$FIX/state.sqlite"
+export STATS_TGCLEANUP_DIR="$FIX/tg"
+export STATS_LEARNED_MD="$FIX/learned.md"
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"
+export STATS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
+mkdir -p "$STATS_TGCLEANUP_DIR"
 
-R() { uv run ledger "$@" 2>&1; }
+R() { uv run stats "$@" 2>&1; }
 
 FIXTURE_BEFORE="$(find "$FIXTURE_ROOT" -type f -exec shasum -a 256 {} \; | sort)"
 
@@ -150,18 +150,18 @@ echo "== Z-div-by-zero: raised=0 (no review kit_gates activity at all) -> fp_rat
 ZFIX="$(mktemp -d)"
 mkdir -p "$ZFIX/tg"
 ZERO_YIELD="$(env \
-  LEDGER_OBS_REPOS="$LEDGER_OBS_REPOS" \
+  STATS_REPOS="$STATS_REPOS" \
   DWARVES_KIT_LOG_DIR="$ZFIX/nonexistent-kit-log-dir" \
-  LEDGER_OBS_TIDE_DB="$ZFIX/state.sqlite" \
-  LEDGER_OBS_TGCLEANUP_DIR="$ZFIX/tg" \
-  LEDGER_OBS_LEARNED_MD="$ZFIX/learned.md" \
-  LEDGER_OBS_SESSIONS_DIR="$ZFIX/nonexistent-sessions-dir" \
-  LEDGER_OBS_SECRET_GUARD_LOG="$ZFIX/nonexistent-safety.log" \
-  LEDGER_OBS_MEMORY_REPO_DIR="$ZFIX/nonexistent-memory-repo" \
-  LEDGER_OBS_MEMORY_PROJECTS_ROOT="$ZFIX/nonexistent-memory-projects" \
-  LEDGER_OBS_GIT_REPO_DIR="$ZFIX/nonexistent-git-repo" \
-  LEDGER_OBSERVATORY_DB="$ZFIX/lens.duckdb" \
-  bash -c 'uv run ledger rebuild >/dev/null 2>&1 && uv run ledger review-yield --json 2>&1')"
+  STATS_TIDE_DB="$ZFIX/state.sqlite" \
+  STATS_TGCLEANUP_DIR="$ZFIX/tg" \
+  STATS_LEARNED_MD="$ZFIX/learned.md" \
+  STATS_SESSIONS_DIR="$ZFIX/nonexistent-sessions-dir" \
+  STATS_SECRET_GUARD_LOG="$ZFIX/nonexistent-safety.log" \
+  STATS_MEMORY_REPO_DIR="$ZFIX/nonexistent-memory-repo" \
+  STATS_MEMORY_PROJECTS_ROOT="$ZFIX/nonexistent-memory-projects" \
+  STATS_GIT_REPO_DIR="$ZFIX/nonexistent-git-repo" \
+  STATS_DB_REMOVED="$ZFIX/lens.duckdb" \
+  bash -c 'uv run stats rebuild >/dev/null 2>&1 && uv run stats review-yield --json 2>&1')"
 hasnt "Z-div-by-zero no row fabricates fp_rate_approx=0.0" '"fp_rate_approx": 0.0' "$ZERO_YIELD"
 has "Z-div-by-zero every row shows raised=0" '"raised": 0' "$ZERO_YIELD"
 has "Z-div-by-zero fp_rate_approx is null" '"fp_rate_approx": null' "$ZERO_YIELD"
@@ -172,18 +172,18 @@ echo "== H-nc: HONEST-ZERO negative control (load-bearing) =="
 # rows, clean exit, never a crash, never a fabricated row.
 HFIX="$(mktemp -d)"
 HZERO="$(env \
-  LEDGER_OBS_REPOS="$HFIX/repo-none-at-all" \
+  STATS_REPOS="$HFIX/repo-none-at-all" \
   DWARVES_KIT_LOG_DIR="$HFIX/nonexistent-kit-log-dir" \
-  LEDGER_OBS_TIDE_DB="$HFIX/state.sqlite" \
-  LEDGER_OBS_TGCLEANUP_DIR="$HFIX/tg" \
-  LEDGER_OBS_LEARNED_MD="$HFIX/learned.md" \
-  LEDGER_OBS_SESSIONS_DIR="$HFIX/nonexistent-sessions-dir" \
-  LEDGER_OBS_SECRET_GUARD_LOG="$HFIX/nonexistent-safety.log" \
-  LEDGER_OBS_MEMORY_REPO_DIR="$HFIX/nonexistent-memory-repo" \
-  LEDGER_OBS_MEMORY_PROJECTS_ROOT="$HFIX/nonexistent-memory-projects" \
-  LEDGER_OBS_GIT_REPO_DIR="$HFIX/nonexistent-git-repo" \
-  LEDGER_OBSERVATORY_DB="$HFIX/lens.duckdb" \
-  bash -c 'mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"; uv run ledger rebuild >/dev/null 2>&1 && uv run ledger review-yield --json' 2>&1)"
+  STATS_TIDE_DB="$HFIX/state.sqlite" \
+  STATS_TGCLEANUP_DIR="$HFIX/tg" \
+  STATS_LEARNED_MD="$HFIX/learned.md" \
+  STATS_SESSIONS_DIR="$HFIX/nonexistent-sessions-dir" \
+  STATS_SECRET_GUARD_LOG="$HFIX/nonexistent-safety.log" \
+  STATS_MEMORY_REPO_DIR="$HFIX/nonexistent-memory-repo" \
+  STATS_MEMORY_PROJECTS_ROOT="$HFIX/nonexistent-memory-projects" \
+  STATS_GIT_REPO_DIR="$HFIX/nonexistent-git-repo" \
+  STATS_DB_REMOVED="$HFIX/lens.duckdb" \
+  bash -c 'mkdir -p "$STATS_TGCLEANUP_DIR"; uv run stats rebuild >/dev/null 2>&1 && uv run stats review-yield --json' 2>&1)"
 RC_H=$?
 if [ "$HZERO" = "[]" ] && [ "$RC_H" -eq 0 ]; then
   ok "H-nc zero ledger files + zero review activity -> zero rows, exit 0, no crash, no fabricated rate"
@@ -196,7 +196,7 @@ echo "== H-nc-deliberate-break: prove H-nc is falsifiable, not vacuous (literal 
 # always-1-row review_agg, LEFT JOIN rejected_findings) and change the empty-denominator
 # branch from NULL to 0.0. On the SAME zero-ledger-files zero-review-activity state above,
 # this fabricates exactly one bogus all-NULL/0.0 row instead of returning zero rows.
-CLI_FILE="$ROOT/src/ledger_observatory/cli.py"
+CLI_FILE="$ROOT/src/stats/cli.py"
 CLI_BACKUP="$(mktemp)"
 cp "$CLI_FILE" "$CLI_BACKUP"
 
@@ -237,18 +237,18 @@ open(path, "w", encoding="utf-8").write(text)
 PY
 
 BROKEN_OUT="$(env \
-  LEDGER_OBS_REPOS="$HFIX/repo-none-at-all" \
+  STATS_REPOS="$HFIX/repo-none-at-all" \
   DWARVES_KIT_LOG_DIR="$HFIX/nonexistent-kit-log-dir" \
-  LEDGER_OBS_TIDE_DB="$HFIX/state.sqlite" \
-  LEDGER_OBS_TGCLEANUP_DIR="$HFIX/tg" \
-  LEDGER_OBS_LEARNED_MD="$HFIX/learned.md" \
-  LEDGER_OBS_SESSIONS_DIR="$HFIX/nonexistent-sessions-dir" \
-  LEDGER_OBS_SECRET_GUARD_LOG="$HFIX/nonexistent-safety.log" \
-  LEDGER_OBS_MEMORY_REPO_DIR="$HFIX/nonexistent-memory-repo" \
-  LEDGER_OBS_MEMORY_PROJECTS_ROOT="$HFIX/nonexistent-memory-projects" \
-  LEDGER_OBS_GIT_REPO_DIR="$HFIX/nonexistent-git-repo" \
-  LEDGER_OBSERVATORY_DB="$HFIX/lens.duckdb" \
-  uv run ledger review-yield --json 2>&1)"
+  STATS_TIDE_DB="$HFIX/state.sqlite" \
+  STATS_TGCLEANUP_DIR="$HFIX/tg" \
+  STATS_LEARNED_MD="$HFIX/learned.md" \
+  STATS_SESSIONS_DIR="$HFIX/nonexistent-sessions-dir" \
+  STATS_SECRET_GUARD_LOG="$HFIX/nonexistent-safety.log" \
+  STATS_MEMORY_REPO_DIR="$HFIX/nonexistent-memory-repo" \
+  STATS_MEMORY_PROJECTS_ROOT="$HFIX/nonexistent-memory-projects" \
+  STATS_GIT_REPO_DIR="$HFIX/nonexistent-git-repo" \
+  STATS_DB_REMOVED="$HFIX/lens.duckdb" \
+  uv run stats review-yield --json 2>&1)"
 echo "-- RED (broken) run output: $BROKEN_OUT --"
 if printf '%s' "$BROKEN_OUT" | grep -q '"fp_rate_approx": 0.0'; then
   ok "H-nc-deliberate-break RED: the broken query fabricates a 0.0-rate row from zero real data"
@@ -258,18 +258,18 @@ fi
 
 cp "$CLI_BACKUP" "$CLI_FILE"
 RESTORED_OUT="$(env \
-  LEDGER_OBS_REPOS="$HFIX/repo-none-at-all" \
+  STATS_REPOS="$HFIX/repo-none-at-all" \
   DWARVES_KIT_LOG_DIR="$HFIX/nonexistent-kit-log-dir" \
-  LEDGER_OBS_TIDE_DB="$HFIX/state.sqlite" \
-  LEDGER_OBS_TGCLEANUP_DIR="$HFIX/tg" \
-  LEDGER_OBS_LEARNED_MD="$HFIX/learned.md" \
-  LEDGER_OBS_SESSIONS_DIR="$HFIX/nonexistent-sessions-dir" \
-  LEDGER_OBS_SECRET_GUARD_LOG="$HFIX/nonexistent-safety.log" \
-  LEDGER_OBS_MEMORY_REPO_DIR="$HFIX/nonexistent-memory-repo" \
-  LEDGER_OBS_MEMORY_PROJECTS_ROOT="$HFIX/nonexistent-memory-projects" \
-  LEDGER_OBS_GIT_REPO_DIR="$HFIX/nonexistent-git-repo" \
-  LEDGER_OBSERVATORY_DB="$HFIX/lens.duckdb" \
-  uv run ledger review-yield --json 2>&1)"
+  STATS_TIDE_DB="$HFIX/state.sqlite" \
+  STATS_TGCLEANUP_DIR="$HFIX/tg" \
+  STATS_LEARNED_MD="$HFIX/learned.md" \
+  STATS_SESSIONS_DIR="$HFIX/nonexistent-sessions-dir" \
+  STATS_SECRET_GUARD_LOG="$HFIX/nonexistent-safety.log" \
+  STATS_MEMORY_REPO_DIR="$HFIX/nonexistent-memory-repo" \
+  STATS_MEMORY_PROJECTS_ROOT="$HFIX/nonexistent-memory-projects" \
+  STATS_GIT_REPO_DIR="$HFIX/nonexistent-git-repo" \
+  STATS_DB_REMOVED="$HFIX/lens.duckdb" \
+  uv run stats review-yield --json 2>&1)"
 echo "-- GREEN (restored) run output: $RESTORED_OUT --"
 if [ "$RESTORED_OUT" = "[]" ]; then
   ok "H-nc-deliberate-break GREEN: restored source returns zero rows again"
@@ -308,7 +308,13 @@ NAN_OUT="$(R anomalies --threshold review_fp_min_n=nan 2>&1)"
 has "T-nonfinite nan rejected with a clean CLI error, never spliced into SQL" 'must be finite' "$NAN_OUT"
 INF_OUT="$(R anomalies --threshold review_fp_min_n=inf 2>&1)"
 has "T-nonfinite inf rejected with a clean CLI error" 'must be finite' "$INF_OUT"
-FINITE_OUT="$(R anomalies --threshold review_fp_min_n=3 --json 2>&1)"
+# Read STDOUT only: stats now materializes in-memory per invocation (SPEC-182 no-persist),
+# so legitimate source-quality warnings (e.g. "skipped N malformed rows") emit to STDERR on
+# every call, not once-at-cache-build. The JSON payload is on stdout; a well-behaved consumer
+# reads stdout, so the parse check must not conflate the streams.
+# bypass R (which folds stderr into stdout) so the per-invocation materialization warning
+# does not corrupt the JSON payload; the parse check wants stdout only.
+FINITE_OUT="$(uv run stats anomalies --threshold review_fp_min_n=3 --json 2>/dev/null)"
 if printf '%s' "$FINITE_OUT" | python3 -c "import json,sys; json.load(sys.stdin)" >/dev/null 2>&1; then
   ok "T-nonfinite a real finite override still parses fine (the guard is non-finite-only)"
 else
@@ -318,7 +324,7 @@ fi
 echo "== O-plan: over-test pass targeting read_rejected_findings() directly =="
 OVER="$(uv run python3 - <<'PY' 2>&1
 from pathlib import Path
-from ledger_observatory import adapters
+from stats import adapters
 
 results = []
 
@@ -365,7 +371,7 @@ echo "== G-remat: delete-and-rematerialize is byte-identical (fixture files cano
 # neither capture has the rejected_findings skip-warning line merged into it unevenly.
 R rebuild >/dev/null
 BEFORE="$(R show rejected_findings --json)"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 R rebuild >/dev/null
 AFTER="$(R show rejected_findings --json)"
 if [ "$BEFORE" = "$AFTER" ] && [ -n "$BEFORE" ]; then ok "G-remat identical output"; else bad "G-remat output differs after delete+rebuild"; fi

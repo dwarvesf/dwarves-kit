@@ -104,18 +104,18 @@ mkship renamer        "2026-04-01T00:00:00Z"
 mkship mergetest       "2026-06-01T00:00:00Z"
 
 export DWARVES_KIT_LOG_DIR="$KITLOG"
-export LEDGER_OBS_GIT_REPO_DIR="$GITREPO"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
-export LEDGER_OBS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"
+export STATS_GIT_REPO_DIR="$GITREPO"
+export STATS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
+export STATS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
+export STATS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
+mkdir -p "$STATS_TGCLEANUP_DIR"
 
-R() { uv run ledger "$@" 2>&1; }
+R() { uv run stats "$@" 2>&1; }
 
 echo "== D-rebuild: git_fixes + kit_gates materialize from the generated fixtures =="
 OUT="$(R rebuild)"
@@ -190,7 +190,7 @@ echo "== F-nc-deliberate-break: prove the file-overlap join is load-bearing, not
 # including clean-feature (which has none of its OWN files fixed, but co-exists in a history
 # that has plenty of unrelated fix() commits after it).
 BROKEN="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import materialize
+from stats import materialize
 cols, rows = materialize.query("""
     WITH shipped AS (
         SELECT DISTINCT rid FROM kit_gates WHERE gate = 'ship' AND outcome IN ('ran', 'override')
@@ -215,7 +215,7 @@ has "F-nc-deliberate-break a file-blind (rid+time only) join WOULD flag clean-fe
 echo "== O-plan: over-test pass on read_git_fixes() directly (edge cases beyond the fixture) =="
 OVER="$(uv run python3 - <<PY 2>&1
 from pathlib import Path
-from ledger_observatory import adapters
+from stats import adapters
 
 results = []
 
@@ -246,7 +246,7 @@ has "O3-linear-commits-present OK (real commits still read)" "O3-linear-commits-
 
 echo "== D-remat: delete-and-rematerialize is byte-identical (git fixture is canonical) =="
 BEFORE="$(R show git_fixes --json)"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 AFTER="$(R show git_fixes --json)"
 if [ "$BEFORE" = "$AFTER" ] && [ -n "$BEFORE" ]; then ok "D-remat identical output"; else bad "D-remat output differs after delete+rebuild"; fi
 

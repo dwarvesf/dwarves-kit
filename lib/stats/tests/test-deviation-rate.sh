@@ -143,18 +143,18 @@ commit windowed.py  "v2" "fix(windowed-out-notes): patch late"          "2026-06
 commit unrelated.py "v1" "fix(something-else): unrelated patch"         "2026-02-15T00:00:00+00:00"
 
 export DWARVES_KIT_LOG_DIR="$FIX/kit-runs"             # absent -> skip-safe empty kit_gates
-export LEDGER_OBS_GIT_REPO_DIR="$GITREPO"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
-export LEDGER_OBS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"
+export STATS_GIT_REPO_DIR="$GITREPO"
+export STATS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
+export STATS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
+export STATS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
+mkdir -p "$STATS_TGCLEANUP_DIR"
 
-R() { uv run ledger "$@" 2>&1; }
+R() { uv run stats "$@" 2>&1; }
 
 echo "== I-rebuild: impl_notes + git_fixes materialize from the generated fixtures =="
 OUT="$(R rebuild)"
@@ -239,7 +239,7 @@ echo "== F-nc-deliberate-break: prove the file-overlap bridge is load-bearing, n
 # all -- including clean-notes, whose anchor (2026-02-01) is followed by the UNRELATED fix
 # commit (2026-02-15, within any reasonable window) that never touches clean.py.
 BROKEN="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import materialize
+from stats import materialize
 cols, rows = materialize.query("""
     WITH bridge AS (
         SELECT i.slug, min(g.ts) AS anchor_ts
@@ -264,7 +264,7 @@ echo "== O-plan: over-test pass on read_impl_notes() directly (edge cases beyond
 OVER="$(uv run python3 - <<PY 2>&1
 import tempfile
 from pathlib import Path
-from ledger_observatory import adapters
+from stats import adapters
 
 results = []
 
@@ -310,7 +310,7 @@ has "O4-nested-worktree-not-double-counted OK (hidden-dir pruning works)" "O4-ne
 echo "== O-malformed: the malformed-file stderr warning is actually logged (not silently eaten) =="
 WARN="$(uv run python3 -c "
 from pathlib import Path
-from ledger_observatory import adapters
+from stats import adapters
 adapters.read_impl_notes(Path('$GITREPO'))
 " 2>&1 >/dev/null)"
 has "O-malformed stderr warning names the malformed file" "malformed impl-notes file" "$WARN"
@@ -319,9 +319,9 @@ has "O-malformed stderr warning names malformed-notes.md specifically" "malforme
 echo "== I-remat: delete-and-rematerialize is byte-identical (fixture files canonical) =="
 # stdout only (not 2>&1): a lazy rebuild re-parses malformed-notes.md and logs its stderr
 # warning again, which would spuriously differ from the BEFORE capture if merged in.
-BEFORE="$(uv run ledger show impl_notes --json 2>/dev/null)"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
-AFTER="$(uv run ledger show impl_notes --json 2>/dev/null)"
+BEFORE="$(uv run stats show impl_notes --json 2>/dev/null)"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
+AFTER="$(uv run stats show impl_notes --json 2>/dev/null)"
 if [ "$BEFORE" = "$AFTER" ] && [ -n "$BEFORE" ]; then ok "I-remat identical output"; else bad "I-remat output differs after delete+rebuild"; fi
 
 echo "== I-nc: read-only negative control (fixture files never mutated) =="
@@ -366,10 +366,10 @@ for i in 1 2 3 4 5; do mkentries "$ADENSE" "dense-$i" 4; done
 for i in 1 2 3 4 5; do mkzero "$ASPARSE" "sparse-$i"; done
 
 export DWARVES_KIT_LOG_DIR="$FIX/kit-runs-empty"
-export LEDGER_OBS_TIDE_DB="$FIX/state-empty.sqlite"
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg-empty"
-export LEDGER_OBS_LEARNED_MD="$FIX/learned-empty.md"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR"
+export STATS_TIDE_DB="$FIX/state-empty.sqlite"
+export STATS_TGCLEANUP_DIR="$FIX/tg-empty"
+export STATS_LEARNED_MD="$FIX/learned-empty.md"
+mkdir -p "$STATS_TGCLEANUP_DIR"
 
 CC_BACKLOG_BACKLOG_FIX="$FIX/BACKLOG.md"
 {
@@ -382,8 +382,8 @@ export CC_BACKLOG_BACKLOG="$CC_BACKLOG_BACKLOG_FIX"
 staged_n() { [ -f "$CC_BACKLOG_STAGING" ] && grep -c '^## \[staged\]' "$CC_BACKLOG_STAGING" || echo 0; }
 
 echo "== A-dense: rolling median n_deviations over threshold stages ONE unknown-density proposal =="
-export LEDGER_OBS_GIT_REPO_DIR="$ADENSE"
-export LEDGER_OBSERVATORY_DB="$FIX/lens-adense.duckdb"
+export STATS_GIT_REPO_DIR="$ADENSE"
+export STATS_DB_REMOVED="$FIX/lens-adense.duckdb"
 export CC_BACKLOG_STAGING="$FIX/staging-adense.md"
 R rebuild >/dev/null
 PROPOSE_OUT="$(R anomalies --propose --json)"
@@ -394,8 +394,8 @@ N_STAGED="$(staged_n)"
 if [ "$N_STAGED" -eq 1 ]; then ok "A-dense exactly ONE proposal staged"; else bad "A-dense want 1 staged, got $N_STAGED"; fi
 
 echo "== A-sparse: below-threshold density stages NOTHING =="
-export LEDGER_OBS_GIT_REPO_DIR="$ASPARSE"
-export LEDGER_OBSERVATORY_DB="$FIX/lens-asparse.duckdb"
+export STATS_GIT_REPO_DIR="$ASPARSE"
+export STATS_DB_REMOVED="$FIX/lens-asparse.duckdb"
 export CC_BACKLOG_STAGING="$FIX/staging-asparse.md"
 R rebuild >/dev/null
 PROPOSE_OUT2="$(R anomalies --propose --json)"
@@ -404,8 +404,8 @@ N_STAGED2="$(staged_n)"
 if [ "$N_STAGED2" -eq 0 ]; then ok "A-sparse nothing staged"; else bad "A-sparse want 0 staged, got $N_STAGED2"; fi
 
 echo "== A-dedup: --propose twice on the same dense state stages ONCE (idempotent) =="
-export LEDGER_OBS_GIT_REPO_DIR="$ADENSE"
-export LEDGER_OBSERVATORY_DB="$FIX/lens-adense.duckdb"
+export STATS_GIT_REPO_DIR="$ADENSE"
+export STATS_DB_REMOVED="$FIX/lens-adense.duckdb"
 export CC_BACKLOG_STAGING="$FIX/staging-adense.md"
 PROPOSE_OUT3="$(R anomalies --propose --json)"
 N_STAGED3="$(staged_n)"

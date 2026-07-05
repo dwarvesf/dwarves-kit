@@ -3,11 +3,11 @@
 # memory-sweep`/`_detect_memory_hygiene` (SPEC-136 test plan).
 #
 # Two fixture stores, generated at test-time in $(mktemp -d):
-#   - a REAL git repo (the 'repo' store, `LEDGER_OBS_MEMORY_REPO_DIR`) with controlled commit
+#   - a REAL git repo (the 'repo' store, `STATS_MEMORY_REPO_DIR`) with controlled commit
 #     dates, same precedent as test-defect-correlation.sh/test-sessions-digest.sh's own
 #     generated-git-repo fixtures.
 #   - a plain (non-git) directory tree (the 'builtin' store,
-#     `LEDGER_OBS_MEMORY_PROJECTS_ROOT`), one `<project-slug>/memory/` subdir, mtime-backdated
+#     `STATS_MEMORY_PROJECTS_ROOT`), one `<project-slug>/memory/` subdir, mtime-backdated
 #     for the staleness-via-mtime-fallback case.
 #
 # The NEVER-DELETE NC (N-nc) is load-bearing and ABSOLUTE (Han's own never-delete rule): every
@@ -187,19 +187,19 @@ EOF
 # ---- env: point the tool at these fixtures; isolate every OTHER source, per the HANDOFF
 #      cross-suite-pollution lesson (a real host source must never leak into this suite) -----
 export DWARVES_KIT_LOG_DIR="$FIX/nonexistent-kit-logs"
-export LEDGER_OBS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"
-export LEDGER_OBS_TIDE_DB="$FIX/nonexistent-tide.sqlite"
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/nonexistent-tg"
-export LEDGER_OBS_LEARNED_MD="$FIX/nonexistent-learned.md"
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"
-export LEDGER_OBS_MEMORY_REPO_DIR="$GITREPO"
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$PROJROOT"
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
+export STATS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"
+export STATS_TIDE_DB="$FIX/nonexistent-tide.sqlite"
+export STATS_TGCLEANUP_DIR="$FIX/nonexistent-tg"
+export STATS_LEARNED_MD="$FIX/nonexistent-learned.md"
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"
+export STATS_MEMORY_REPO_DIR="$GITREPO"
+export STATS_MEMORY_PROJECTS_ROOT="$PROJROOT"
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
 export CC_BACKLOG_STAGING="$FIX/backlog-staging.md"
 export CC_BACKLOG_BACKLOG="$FIX/BACKLOG.md"
 
-R() { uv run ledger "$@" 2>&1; }
+R() { uv run stats "$@" 2>&1; }
 
 ALL_MEM_FILES() { find "$GITREPO/.claude/memory" "$PROJROOT" -type f | sort; }
 
@@ -207,7 +207,7 @@ echo "== M-fixtures: exact dead_ref_count/stale per unit, via memory_lens.scan()
 GITREPO="$GITREPO" PROJROOT="$PROJROOT" uv run python3 - > "$FIX/scan.out" 2>&1 <<'PY'
 import os
 from pathlib import Path
-from ledger_observatory import memory_lens as ml
+from stats import memory_lens as ml
 
 units = ml.scan(Path(os.environ["GITREPO"]), Path(os.environ["PROJROOT"]))
 by_key = {(u.store, u.slug): u for u in units}
@@ -308,7 +308,7 @@ echo
 echo "== O-plan: over-test edge cases beyond the golden fixture =="
 OVER="$(uv run python3 - <<'PY' 2>&1
 from pathlib import Path
-from ledger_observatory import memory_lens as ml
+from stats import memory_lens as ml
 
 results = []
 

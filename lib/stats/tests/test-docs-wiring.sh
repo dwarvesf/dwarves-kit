@@ -9,7 +9,7 @@
 #                   `ledger <verb>` invocation the skill body/README show has a REAL matching
 #                   `@app.command()` in cli.py (CLI invoked); `ledger anomalies --propose`
 #                   actually stages a row into the cc-backlog buffer (work-intake fed).
-#   (c) NC        : a fabricated `uv run ledger zzz-nonexistent` claim, injected into a TEMP
+#   (c) NC        : a fabricated `uv run stats zzz-nonexistent` claim, injected into a TEMP
 #                   copy of README.md (the real file is never touched), is a CAUGHT finding
 #                   under the exact same claim-check logic used on the real docs.
 set -uo pipefail
@@ -31,18 +31,18 @@ has() { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 # mega-durations against ANY doc claim -- a latent gap only surfaced once a doc first claimed
 # one of them) contributes its OWN overridden name instead.
 real_commands() {
-  grep -A1 '@app\.command()' src/ledger_observatory/cli.py \
+  grep -A1 '@app\.command()' src/stats/cli.py \
     | grep -oE '^def [a-zA-Z_]+\(' | sed -E 's/^def //; s/\(//'
-  grep -oE '@app\.command\(name="[a-zA-Z0-9_-]+"\)' src/ledger_observatory/cli.py \
+  grep -oE '@app\.command\(name="[a-zA-Z0-9_-]+"\)' src/stats/cli.py \
     | sed -E 's/^@app\.command\(name="//; s/"\)$//'
 }
 REAL_CMDS="$(real_commands)"
 has "no-orphan ground truth: real CLI commands extracted" "rebuild" "$REAL_CMDS"
 
-# Extract every "ledger <verb>" claim from a `uv run ledger <verb>` invocation example in a
+# Extract every "ledger <verb>" claim from a `uv run stats <verb>` invocation example in a
 # given file. This is the doc's OWN claim of "this command exists and works this way".
 claimed_commands() {
-  grep -oE 'uv run ledger [a-zA-Z][a-zA-Z0-9_-]*' "$1" | awk '{print $NF}' | sort -u
+  grep -oE 'uv run stats [a-zA-Z][a-zA-Z0-9_-]*' "$1" | awk '{print $NF}' | sort -u
 }
 
 # Given a file, print any claimed command NOT in the real command set (the "orphan" claims).
@@ -91,7 +91,7 @@ README_ORPHANS="$(unwired_claims README.md)"
   || bad "README.md claims unwired command(s): $README_ORPHANS"
 # and the skill actually contains at least one real invocation (not just prose about it).
 SKILL_CLAIMED="$(claimed_commands skill/SKILL.md)"
-[ -n "$SKILL_CLAIMED" ] && ok "skill/SKILL.md contains live 'uv run ledger <verb>' invocations" \
+[ -n "$SKILL_CLAIMED" ] && ok "skill/SKILL.md contains live 'uv run stats <verb>' invocations" \
   || bad "skill/SKILL.md has no live CLI invocation example"
 echo "$SKILL_CLAIMED" | grep -qx "anomalies" && ok "skill/SKILL.md invokes the anomalies (feedback-loop) command" \
   || bad "skill/SKILL.md never invokes 'ledger anomalies'"
@@ -102,7 +102,7 @@ FIX="$(mktemp -d)"
 WI_OUT="$(cd "$ROOT" && uv run python3 - "$FIX" <<'PY'
 import sys
 sys.path.insert(0, "src")
-from ledger_observatory.anomalies import Anomaly, stage_proposals
+from stats.anomalies import Anomaly, stage_proposals
 
 fix = sys.argv[1]
 staging = f"{fix}/backlog-staging.md"
@@ -123,7 +123,7 @@ echo "$WI_OUT" | grep -q "HAS-BLOCK" && ok "staged proposal lands in the cc-back
 # ---- (c) OVER-CLAIM negative control (must be CAUGHT, load-bearing) -----------------------
 NC_DIR="$(mktemp -d)"
 cp README.md "$NC_DIR/README.md"
-printf '\n# NC injection (temp only, never touches the real README)\n`uv run ledger zzz-nonexistent --foo`\n' \
+printf '\n# NC injection (temp only, never touches the real README)\n`uv run stats zzz-nonexistent --foo`\n' \
   >> "$NC_DIR/README.md"
 
 NC_ORPHANS="$(unwired_claims "$NC_DIR/README.md")"

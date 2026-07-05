@@ -23,7 +23,7 @@ bad() { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 
 echo "== P-parity: adapters.*_COLUMNS matches materialize.*_DDL column names/order today =="
 OUT="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import adapters, materialize, schemas
+from stats import adapters, materialize, schemas
 
 def ddl_names(ddl):
     return [part.strip().split()[0] for part in ddl.split(",") if part.strip()]
@@ -61,7 +61,7 @@ echo "== N-drift (load-bearing negative control): assert_parity RAISES on a reor
 # column ORDER no longer matches the adapter's column-name order (a "same-length
 # reordering" -- the failure mode named in the bug report).
 NC_OUT="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import schemas
+from stats import schemas
 
 cols = ["rid", "repo", "lane"]
 reordered_ddl = "repo VARCHAR, rid VARCHAR, lane VARCHAR"  # rid/repo swapped
@@ -82,7 +82,7 @@ fi
 echo
 echo "== N-drift-missing (negative control): assert_parity RAISES on a dropped column =="
 NC2_OUT="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import schemas
+from stats import schemas
 
 cols = ["date", "item", "kind", "home", "status"]
 short_ddl = "date VARCHAR, item VARCHAR, kind VARCHAR, home VARCHAR"  # 'status' missing
@@ -108,16 +108,16 @@ echo "== R-load: rebuild() actually calls the guard (not just importable) =="
 FIX="$(mktemp -d)"
 GUARD_OUT="$(env \
   DWARVES_KIT_LOG_DIR="$FIX/kitlogs" \
-  LEDGER_OBS_TIDE_DB="$FIX/state.sqlite" \
-  LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg" \
-  LEDGER_OBS_LEARNED_MD="$FIX/learned-ledger.md" \
-  LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir" \
-  LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log" \
-  LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo" \
-  LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects" \
-  LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb" \
+  STATS_TIDE_DB="$FIX/state.sqlite" \
+  STATS_TGCLEANUP_DIR="$FIX/tg" \
+  STATS_LEARNED_MD="$FIX/learned-ledger.md" \
+  STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir" \
+  STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log" \
+  STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo" \
+  STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects" \
+  STATS_DB_REMOVED="$FIX/lens.duckdb" \
   uv run python3 - <<'PY' 2>&1
-from ledger_observatory import materialize, schemas
+from stats import materialize, schemas
 
 def always_raise(cols, ddl):
     raise AssertionError("forced: parity guard was invoked")

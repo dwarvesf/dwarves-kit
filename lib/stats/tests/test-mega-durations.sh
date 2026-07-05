@@ -35,21 +35,21 @@ eq()   { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3', got '$2')"; 
 
 FIX="$(mktemp -d)"
 # every non-kit source isolated to an absent path -- only kit_gates matters here.
-export LEDGER_OBS_TIDE_DB="$FIX/nonexistent.sqlite"
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/nonexistent-tg"
-export LEDGER_OBS_LEARNED_MD="$FIX/nonexistent-learned.md"
-export LEDGER_OBS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
+export STATS_TIDE_DB="$FIX/nonexistent.sqlite"
+export STATS_TGCLEANUP_DIR="$FIX/nonexistent-tg"
+export STATS_LEARNED_MD="$FIX/nonexistent-learned.md"
+export STATS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
 
-R() { uv run ledger "$@" 2>&1; }
+R() { uv run stats "$@" 2>&1; }
 
 echo "== M-golden: the happy-path fixture (known, hand-verified durations) =="
 export DWARVES_KIT_LOG_DIR="$ROOT/tests/fixtures/mega-durations"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 R rebuild >/dev/null
 
 OUT="$(R mega-durations --json)"
@@ -74,14 +74,14 @@ has "M-table summary line" "2 rid(s) with complete timestamps (5 row(s) excluded
 
 echo "== M-remat: delete-and-rematerialize is byte-identical (fixture files canonical) =="
 BEFORE="$(R mega-durations --json)"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 AFTER="$(R mega-durations --json)"
 eq "M-remat identical output" "$AFTER" "$BEFORE"
 
 echo "== M-nc-stripped (LOAD-BEARING): fixture with every end_ts stripped -> 0 rids with
            complete timestamps, all 8 rows excluded, exit 0 (never a crash on missing data) =="
 export DWARVES_KIT_LOG_DIR="$ROOT/tests/fixtures/mega-durations-stripped"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 NC_RC=0
 R rebuild >/dev/null 2>&1 || NC_RC=$?
 eq "M-nc-stripped rebuild exits 0" "$NC_RC" "0"
@@ -102,7 +102,7 @@ echo "== M-nc-deliberate-break: prove the exclusion count is falsifiable, not va
 # every row is NULL -> min/max over an all-NULL group is NULL, not a crash, but ALSO not
 # the honest "8 excluded" count -- it would silently report 0 excluded instead of 8.
 BROKEN="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import materialize
+from stats import materialize
 cols, rows = materialize.query(
     "SELECT count(*) AS n FROM kit_gates WHERE start_ts IS NULL OR end_ts IS NULL"
 )
@@ -114,7 +114,7 @@ eq "M-nc-deliberate-break the real exclusion count on the stripped fixture is 8 
 echo "== M-nc: read-only negative control (fixture files are never mutated) =="
 export DWARVES_KIT_LOG_DIR="$ROOT/tests/fixtures/mega-durations"
 FIXTURE_BEFORE="$(find "$DWARVES_KIT_LOG_DIR" -type f -exec shasum -a 256 {} \; | sort)"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 R rebuild >/dev/null
 R mega-durations --json >/dev/null
 FIXTURE_AFTER="$(find "$DWARVES_KIT_LOG_DIR" -type f -exec shasum -a 256 {} \; | sort)"

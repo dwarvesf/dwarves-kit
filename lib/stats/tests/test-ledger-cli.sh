@@ -18,18 +18,18 @@ hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 # ---- fixtures ---------------------------------------------------------------
 FIX="$(mktemp -d)"
 export DWARVES_KIT_LOG_DIR="$FIX/kitlogs"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"
-export LEDGER_OBS_LEARNED_MD="$FIX/learned-ledger.md"
-export LEDGER_OBS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"  # absent -> skip-safe empty git_fixes/impl_notes
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
+export STATS_TIDE_DB="$FIX/state.sqlite"
+export STATS_TGCLEANUP_DIR="$FIX/tg"
+export STATS_LEARNED_MD="$FIX/learned-ledger.md"
+export STATS_GIT_REPO_DIR="$FIX/nonexistent-git-repo"  # absent -> skip-safe empty git_fixes/impl_notes
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
 # DWARVES_KIT_LIB defaults to ~/.claude/dwarves-kit/lib (lane-telemetry.sh lives there).
 
-mkdir -p "$DWARVES_KIT_LOG_DIR/runs" "$LEDGER_OBS_TGCLEANUP_DIR"
+mkdir -p "$DWARVES_KIT_LOG_DIR/runs" "$STATS_TGCLEANUP_DIR"
 
 # 1) kit pipe-log corpus (two runs; known lanes) -- read via lane-telemetry _rows reuse
 cat > "$DWARVES_KIT_LOG_DIR/runs/fixrun-full.log" <<'EOF'
@@ -43,7 +43,7 @@ cat > "$DWARVES_KIT_LOG_DIR/runs/fixrun-normal.log" <<'EOF'
 EOF
 
 # 2) tide state.sqlite (sqlite shape). route='full' plants a JOIN key onto kit_runs.lane.
-python3 - "$LEDGER_OBS_TIDE_DB" <<'PY'
+python3 - "$STATS_TIDE_DB" <<'PY'
 import sqlite3, sys
 c = sqlite3.connect(sys.argv[1])
 c.execute("CREATE TABLE moves (id INTEGER, ts TEXT, source_path TEXT, target_path TEXT, content_sha TEXT, size_bytes INTEGER, route TEXT, confidence REAL, ai_response_json TEXT, undone_at TEXT)")
@@ -55,15 +55,15 @@ c.commit()
 PY
 
 # 3) tg-cleanup json -- BOTH shapes (synthetic; no real data)
-cat > "$LEDGER_OBS_TGCLEANUP_DIR/review.json" <<'EOF'
+cat > "$STATS_TGCLEANUP_DIR/review.json" <<'EOF'
 [{"id":-1001,"title":"Example Alpha","kind":"basic_group","username":null,"member_count":3,"last_message_date":"2026-01-01T00:00:00+00:00","unread_count":0,"muted":false,"access_hash":null,"verified":false,"scam":false,"fake":false}]
 EOF
-cat > "$LEDGER_OBS_TGCLEANUP_DIR/keep-auto.json" <<'EOF'
+cat > "$STATS_TGCLEANUP_DIR/keep-auto.json" <<'EOF'
 {"keep_personal":[{"id":-1002,"title":"Kept Bravo","kind":"supergroup","username":"kb","member_count":9,"last_message_date":"2026-02-02T00:00:00+00:00","unread_count":1,"muted":true,"access_hash":123,"verified":false,"scam":false,"fake":false}]}
 EOF
 
 # 4) learned-ledger.md (markdown table shape)
-cat > "$LEDGER_OBS_LEARNED_MD" <<'EOF'
+cat > "$STATS_LEARNED_MD" <<'EOF'
 # learned-ledger
 
 ## Schema
@@ -77,7 +77,7 @@ cat > "$LEDGER_OBS_LEARNED_MD" <<'EOF'
 | 2026-07-03 | second-fixture | insight | research | flushed:x.md |
 EOF
 
-R() { uv run ledger "$@" 2>&1; }
+R() { uv run stats "$@" 2>&1; }
 
 echo "== R-rebuild: materialize the db from the files =="
 OUT="$(R rebuild)"
@@ -102,7 +102,7 @@ has "R-join count = 2" '"n": 2' "$NJOIN"
 
 echo "== R-remat: delete-and-rematerialize is byte-identical (files canonical) =="
 BEFORE="$(R show kit_runs --json)"
-rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"
+rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"
 AFTER="$(R show kit_runs --json)"   # lazy-rebuilds from the files first
 if [ "$BEFORE" = "$AFTER" ] && [ -n "$BEFORE" ]; then ok "R-remat identical output"; else bad "R-remat output differs after delete+rebuild"; fi
 
@@ -117,8 +117,8 @@ has "R-formats-json array-shape" '"title": "Example Alpha"'    "$TG"   # the fla
 has "R-formats-md (markdown)"    '"home": "til"'        "$(R show learned --json)"
 
 echo "== R-nc: read-only negative control (a query mutates NO source) =="
-sumall() { find "$DWARVES_KIT_LOG_DIR" "$LEDGER_OBS_TGCLEANUP_DIR" -type f -exec shasum -a 256 {} \; | sort; \
-           shasum -a 256 "$LEDGER_OBS_TIDE_DB" "$LEDGER_OBS_LEARNED_MD"; }
+sumall() { find "$DWARVES_KIT_LOG_DIR" "$STATS_TGCLEANUP_DIR" -type f -exec shasum -a 256 {} \; | sort; \
+           shasum -a 256 "$STATS_TIDE_DB" "$STATS_LEARNED_MD"; }
 NC_BEFORE="$(sumall)"
 R query "SELECT count(*) FROM kit_runs" >/dev/null
 R query "SELECT * FROM tide_moves JOIN tg_dialogs ON 1=1 LIMIT 1" >/dev/null
@@ -135,7 +135,7 @@ has "R-guard db intact after refusal" '"n": 2' "$(R query "SELECT count(*) AS n 
 echo "== R-guard-pragma: the PRAGMA/multi-statement filesystem-write bypass is closed (HIGH-1) =="
 # A read-verb-FIRST multi-statement chain that (pre-fix) wrote a source file via
 # PRAGMA profiling_output. Must be REFUSED and the source .json left byte-identical.
-VICTIM="$LEDGER_OBS_TGCLEANUP_DIR/keep-auto.json"
+VICTIM="$STATS_TGCLEANUP_DIR/keep-auto.json"
 V_BEFORE="$(shasum -a 256 "$VICTIM")"
 R query "PRAGMA enable_profiling='json'; PRAGMA profiling_output='$VICTIM'; SELECT 1" >/dev/null 2>&1; GP=$?
 if [ "$GP" -ne 0 ]; then ok "R-guard-pragma multi-statement PRAGMA refused (exit $GP)"; else bad "R-guard-pragma NOT refused"; fi

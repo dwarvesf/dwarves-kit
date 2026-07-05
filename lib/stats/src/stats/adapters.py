@@ -55,7 +55,11 @@ def read_kit(lib_dir: Path | None = None):
     `_rows` is callable. See impl-notes.
     """
     lib = lib_dir or config.kit_lib_dir()
-    script = lib / "lane-telemetry.sh"
+    # Post-restructure (SPEC-182/SG-01): lane-telemetry.sh lives in the telemetry subsystem,
+    # not flat at lib/ root. Fall back to the flat path for a pre-restructure kit copy.
+    script = lib / "telemetry" / "lane-telemetry.sh"
+    if not script.exists():
+        script = lib / "lane-telemetry.sh"
     if not script.exists():
         return KIT_COLUMNS, []
     # The script path is passed as an ARGV param ($1), never string-interpolated into the
@@ -204,7 +208,7 @@ def read_tgcleanup(directory: Path | None = None):
     """Normalize both documented shapes (array vs object-of-arrays). The category key
     of the object-of-arrays form is carried onto each dialog row (adapter-contracts §3).
 
-    `config.tgcleanup_dir()` is None when `LEDGER_OBS_TGCLEANUP_DIR` is unset
+    `config.tgcleanup_dir()` is None when `STATS_TGCLEANUP_DIR` is unset
     (ops-toolkit-specific source, no default post-05K-move): treated identically to a
     directory that does not exist, never a crash.
     """
@@ -417,7 +421,7 @@ def read_learned(md_path: Path | None = None):
     """Parse the markdown table under the `## Ledger` heading (adapter-contracts §1).
     Rows are removed on flush, so this is a snapshot (possibly 0 rows), never an error.
 
-    `config.learned_md_path()` is None when `LEDGER_OBS_LEARNED_MD` is unset
+    `config.learned_md_path()` is None when `STATS_LEARNED_MD` is unset
     (ops-toolkit-specific source, no default post-05K-move): treated identically to a
     file that does not exist, never a crash.
     """

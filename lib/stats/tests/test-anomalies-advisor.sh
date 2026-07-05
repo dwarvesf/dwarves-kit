@@ -71,18 +71,18 @@ commit_multi() {
 
 # ---- env: point every source at the fixtures -----------------------------------------------
 export DWARVES_KIT_LOG_DIR="$KITLOG"
-export LEDGER_OBS_GIT_REPO_DIR="$GITREPO"
-export LEDGER_OBS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
-export LEDGER_OBS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
-export LEDGER_OBS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
-export LEDGER_OBS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
-export LEDGER_OBS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
-export LEDGER_OBS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
-export LEDGER_OBS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
-export LEDGER_OBSERVATORY_DB="$FIX/lens.duckdb"
+export STATS_GIT_REPO_DIR="$GITREPO"
+export STATS_TIDE_DB="$FIX/state.sqlite"          # absent -> skip-safe empty table
+export STATS_TGCLEANUP_DIR="$FIX/tg"              # empty -> skip-safe
+export STATS_LEARNED_MD="$FIX/learned.md"         # absent -> skip-safe
+export STATS_SESSIONS_DIR="$FIX/nonexistent-sessions-dir"     # absent -> skip-safe empty sessions
+export STATS_SECRET_GUARD_LOG="$FIX/nonexistent-safety.log"   # absent -> skip-safe empty safety
+export STATS_MEMORY_REPO_DIR="$FIX/nonexistent-memory-repo"      # absent -> skip-safe empty memories (repo store)
+export STATS_MEMORY_PROJECTS_ROOT="$FIX/nonexistent-memory-projects"  # absent -> skip-safe empty memories (builtin store)
+export STATS_DB_REMOVED="$FIX/lens.duckdb"
 export CC_BACKLOG_STAGING="$FIX/backlog-staging.md"
 export CC_BACKLOG_BACKLOG="$FIX/BACKLOG.md"
-mkdir -p "$LEDGER_OBS_TGCLEANUP_DIR" "$KITLOG/runs"
+mkdir -p "$STATS_TGCLEANUP_DIR" "$KITLOG/runs"
 
 cat > "$CC_BACKLOG_BACKLOG" <<'EOF'
 # Backlog
@@ -91,10 +91,10 @@ cat > "$CC_BACKLOG_BACKLOG" <<'EOF'
 | ID-001 | pre-existing unrelated row | notes | queued |
 EOF
 
-R()  { uv run ledger "$@" 2>&1; }
-REBUILD() { uv run ledger rebuild >/dev/null 2>&1; }
+R()  { uv run stats "$@" 2>&1; }
+REBUILD() { uv run stats rebuild >/dev/null 2>&1; }
 reset()         { rm -rf "$KITLOG/runs"; mkdir -p "$KITLOG/runs";
-                  rm -f "$LEDGER_OBSERVATORY_DB" "$LEDGER_OBSERVATORY_DB.wal"; }
+                  rm -f "$STATS_DB_REMOVED" "$STATS_DB_REMOVED.wal"; }
 reset_staging() { rm -f "$CC_BACKLOG_STAGING"; }
 staged_n() { [ -f "$CC_BACKLOG_STAGING" ] && grep -c '^## \[staged\]' "$CC_BACKLOG_STAGING" || echo 0; }
 
@@ -240,7 +240,7 @@ echo "== C-fp-nc-deliberate-break: prove a bare skip-rate query WOULD flag ui-de
 # Simulate the bug this design guards against: a naive detector that fires on skip fraction
 # alone, with NO reference to caught/fix-correlation at all.
 BROKEN="$(uv run python3 - <<'PY' 2>&1
-from ledger_observatory import materialize
+from stats import materialize
 cols, rows = materialize.query("""
     SELECT gate,
            count(*) FILTER (WHERE outcome = 'skipped') * 1.0 / count(*) AS skip_rate
@@ -289,7 +289,7 @@ hasnt "S-nofire-zero-evidence no serial_when_parallel (no bridge evidence for ei
       "$SWP" "$(R anomalies --json)"
 
 echo "== T-armed (SPEC-135 update): token_runaway is now ARMED against the sessions table;"
-echo "           this suite isolates LEDGER_OBS_SESSIONS_DIR to a nonexistent dir, so it"
+echo "           this suite isolates STATS_SESSIONS_DIR to a nonexistent dir, so it"
 echo "           still correctly does NOT fire here (an empty sessions table is a zero-"
 echo "           evidence lens, the same honest-empty contract every detector in this module"
 echo "           follows) -- this is no longer testing a permanent NOT-ARMED stub (SG-04's"
@@ -297,7 +297,7 @@ echo "           original assertion), it is testing the ARMED detector's OWN emp
 echo "           abstention, see tests/test-sessions-digest.sh for the real armed fire/no-fire"
 echo "           coverage against a real sessions fixture =="
 hasnt "T-armed absent on this suite's isolated zero-sessions lens" "$TRK" "$(R anomalies --json)"
-SRC="src/ledger_observatory/anomalies.py"
+SRC="src/stats/anomalies.py"
 has  "T-armed detector present in DETECTORS" "_detect_token_runaway" "$(cat "$SRC")"
 has  "T-armed docstring states ARMED (SPEC-135)" "ARMED" "$(cat "$SRC")"
 
@@ -344,7 +344,7 @@ has "S-propose stages serial_when_parallel" \
 eq  "S-propose one staged block" "$(staged_n)" "1"
 
 echo "== H-help: both new thresholds are listed in --help =="
-HELP="$(uv run ledger anomalies --help 2>&1)"
+HELP="$(uv run stats anomalies --help 2>&1)"
 has "H-help lists ceremony_min_ran"          "ceremony_min_ran"          "$HELP"
 has "H-help lists serial_min_minutes_saved"  "serial_min_minutes_saved" "$HELP"
 

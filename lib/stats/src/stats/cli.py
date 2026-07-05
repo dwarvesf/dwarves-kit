@@ -51,7 +51,9 @@ _FMT = typer.Option(True, "--json/--table", help="output format (json is the def
 
 @app.command()
 def rebuild():
-    """Delete + re-materialize the DuckDB lens from the canonical files."""
+    """Diagnostic: materialize the lens in-memory and print each table's row count.
+    Persists NOTHING (SPEC-182: stats is a stateless projection; there is no cache to
+    rebuild). A 'what would I see over the current log' probe."""
     counts = materialize.rebuild()
     typer.echo(json.dumps(counts, indent=2))
 
