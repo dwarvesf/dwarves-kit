@@ -11,7 +11,7 @@ on-disk marketplace clone is stale until manually refreshed.
 
 Han runs 6 marketplaces hosting **12 installed plugins**: single-plugin marketplaces
 (`ponytail`, `ouroboros`, `zedra`, `claude-code-warp`), a local `directory` marketplace
-(`kit@dwarves-marketplace`, source path the local dwarves-kit checkout), and the big
+(`kit@dwarves-marketplace`, whose source path is the local dwarves-kit checkout), and the big
 multi-plugin `claude-plugins-official` (234 plugins; hosts 8 of Han's: playwright,
 frontend-design, superpowers, swift-lsp, security-guidance, code-simplifier, telegram,
 agent-sdk-dev). Keeping them current means noticing staleness yourself and hand-running

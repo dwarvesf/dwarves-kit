@@ -1,5 +1,5 @@
 name        = "plugin-check"
-description = "Which adopted Claude Code plugins are outdated, in one glance. Read-only freshness lens over every adopted CC plugin (single-plugin marketplaces, the local directory marketplace, and the big claude-plugins-official); compares installed commit sha against upstream and prints the exact bump command for each stale one. Resolution is delegated to the official `claude plugin` CLI + the state files it owns (no gh)."
+summary     = "Which adopted Claude Code plugins are outdated, in one glance. Read-only freshness lens over every adopted CC plugin (single-plugin marketplaces, the local directory marketplace, and the big claude-plugins-official); compares installed commit sha against upstream and prints the exact bump command for each stale one. Resolution is delegated to the official `claude plugin` CLI + the state files it owns (no gh)."
 language    = "bash"
 status      = "active"
 entry       = "bin/plugin-check"
