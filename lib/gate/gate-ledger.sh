@@ -42,8 +42,12 @@ WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
 # ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# The ONE append substrate (SPEC-182): row-append + root-location live here, not re-implemented
+# below. gate-ledger's writes route through ledger_append; reads still use ledger_file()'s path.
+# shellcheck source=lib/ledger/ledger.sh
+source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
-LOG_DIR="$(kit_resolve_log_dir)"
+LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 RUNS_DIR="$LOG_DIR/runs"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -75,6 +79,15 @@ ledger_file() {
   local safe; safe="$(runid "$1")"
   [ -n "$safe" ] || { echo "ledger_file: rid '$1' normalizes to an empty filename" >&2; return 1; }
   printf '%s/%s.log' "$RUNS_DIR" "$safe"
+}
+
+# Append ONE line to this rid's run ledger, ROUTED through the substrate (SPEC-182): the
+# substrate owns "compute root + mkdir + append", so gate-ledger no longer re-implements it.
+# The stream is always `runs/<safe>.log`, the same file ledger_file() names for reads.
+append_run_line() {
+  local safe; safe="$(runid "$1")"
+  [ -n "$safe" ] || { echo "append_run_line: rid '$1' normalizes to an empty filename" >&2; return 1; }
+  ledger_append "runs/$safe.log" "$2"
 }
 
 # Stable key for a phase name: drop "(...)", lowercase, spaces -> dashes.
@@ -143,7 +156,7 @@ start() {
   local line
   line="$(printf '%s | %s | lane=%s classified=%s type=%s' "$(now)" "$marker" "$lane" "$classified" "$type")"
   [ -n "$ctype" ] && line="$line ctype=$ctype"
-  printf '%s repo=%s\n' "$line" "$repo" >> "$(ledger_file "$rid")"
+  append_run_line "$rid" "$(printf '%s repo=%s' "$line" "$repo")"
 }
 
 record() {
@@ -175,13 +188,13 @@ record() {
     esac
   fi
   mkdir -p "$RUNS_DIR"
-  printf '%s | GATE | %s | %s | %s\n' "$(now)" "$phase" "$state" "$reason" >> "$(ledger_file "$rid")"
+  append_run_line "$rid" "$(printf '%s | GATE | %s | %s | %s' "$(now)" "$phase" "$state" "$reason")"
 }
 
 action() {
   local rid="${1:-}"; shift 2>/dev/null || { echo "usage: action <rid> <text>" >&2; return 64; }
   mkdir -p "$RUNS_DIR"
-  printf '%s | ACTION | %s\n' "$(now)" "$(oneline "$@")" >> "$(ledger_file "$rid")"
+  append_run_line "$rid" "$(printf '%s | ACTION | %s' "$(now)" "$(oneline "$@")")"
 }
 
 # tokens: record a run's token usage as an ADDITIVE marker (SPEC-110). Emits a `| TOKENS |` line
@@ -205,7 +218,7 @@ tokens() {
   mkdir -p "$RUNS_DIR"
   local line; line="$(printf 'in=%s out=%s cache_read=%s cache_create=%s' "$intok" "$outtok" "$cread" "$ccreate")"
   [ -n "$cost" ] && line="$line cost=$cost"
-  printf '%s | TOKENS | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
+  append_run_line "$rid" "$(printf '%s | TOKENS | %s' "$(now)" "$line")"
 }
 
 # debt: record an understanding-debt verdict as an ADDITIVE marker (ADR-0031, SPEC-123),
@@ -253,7 +266,7 @@ debt() {
   local line; line="$(printf 'significance=%s worthiness=%s verdict=%s' "$sig" "$wor" "$verdict")"
   [ -n "$response" ] && line="$line response=$response"
   [ -n "$reason" ] && line="$line reason=$reason"
-  printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$(ledger_file "$rid")"
+  append_run_line "$rid" "$(printf '%s | DEBT | %s' "$(now)" "$line")"
 }
 
 # debt-response: record the HUMAN's ★-tap choice as the SEPARATE `| DEBT |` line the debt() header
@@ -303,7 +316,7 @@ debt_response() {
   fi
   [ -n "$reason" ] && line="$line reason=$reason"
   mkdir -p "$RUNS_DIR"
-  printf '%s | DEBT | %s\n' "$(now)" "$line" >> "$f"
+  append_run_line "$rid" "$(printf '%s | DEBT | %s' "$(now)" "$line")"
 }
 
 # outcome: record a gate's OUTCOME as an ADDITIVE marker (SPEC-129) beside TOKENS + DEBT.
@@ -326,7 +339,7 @@ outcome() {
   local f; f="$(ledger_file "$rid")" || return 1
   local epoch; epoch="$(now_epoch)"
   if [ "$event" = "start" ]; then
-    printf '%s | OUTCOME | %s | start | at=%s\n' "$(now)" "$phase" "$epoch" >> "$f"
+    append_run_line "$rid" "$(printf '%s | OUTCOME | %s | start | at=%s' "$(now)" "$phase" "$epoch")"
     return 0
   fi
   # event=end: caught defaults to false (a clean pass is the safe default); duration is
@@ -348,7 +361,7 @@ outcome() {
       dur=$((epoch - start_epoch)); [ "$dur" -ge 0 ] || dur=0
     fi
   fi
-  printf '%s | OUTCOME | %s | end | at=%s caught=%s dur_s=%s\n' "$(now)" "$phase" "$epoch" "$caught" "$dur" >> "$f"
+  append_run_line "$rid" "$(printf '%s | OUTCOME | %s | end | at=%s caught=%s dur_s=%s' "$(now)" "$phase" "$epoch" "$caught" "$dur")"
 }
 
 # outcome-read: read a gate's OUTCOME back (SPEC-129 round-trip). For each completed
@@ -398,7 +411,7 @@ override() {
     return 65
   fi
   mkdir -p "$RUNS_DIR"
-  printf '%s | GATE | %s | override | %s\n' "$(now)" "$phase" "$reason" >> "$f"
+  append_run_line "$rid" "$(printf '%s | GATE | %s | override | %s' "$(now)" "$phase" "$reason")"
 }
 
 show() { local f; f="$(ledger_file "${1:-}")"; if [ -f "$f" ]; then cat "$f"; else echo "(no ledger for '${1:-}')" >&2; return 1; fi; }
@@ -576,7 +589,7 @@ mutation() {
   done
   case "$verdict" in flag|clean|skip) ;; *) echo "mutation: verdict must be flag|clean|skip (got '$verdict')" >&2; return 64;; esac
   mkdir -p "$RUNS_DIR"
-  printf '%s | MUTATION | verdict=%s%s\n' "$(now)" "$verdict" "$rest" >> "$(ledger_file "$rid")"
+  append_run_line "$rid" "$(printf '%s | MUTATION | verdict=%s%s' "$(now)" "$verdict" "$rest")"
 }
 
 cmd="${1:-}"; shift 2>/dev/null || true

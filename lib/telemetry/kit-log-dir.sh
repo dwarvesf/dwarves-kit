@@ -17,11 +17,26 @@
 [ -n "${_KIT_LOG_DIR_SOURCED:-}" ] && return 0
 _KIT_LOG_DIR_SOURCED=1
 
-# The durable default. $DWARVES_KIT_LOG_DIR always wins (tests, operators). Otherwise
-# ${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs -- outside ~/.claude entirely,
-# so no ~/.claude/dwarves-kit* reinstall can touch it.
+# The durable default and precedence (SPEC-182, kit-modularity SG-02): the ledger root is
+# ONE root shared by both planes (the write-side append substrate and the read-side `stats`
+# projection). Precedence:
+#   1. $KIT_LEDGER_DIR   -- the canonical knob (essential-tier config, per-consumer root).
+#   2. $DWARVES_KIT_LOG_DIR -- back-compat alias (the pre-SPEC-182 name; every existing
+#      test pin + the live corpus still resolve through it unchanged).
+#   3. ${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs -- host-generic default,
+#      outside ~/.claude entirely, so no ~/.claude/dwarves-kit* reinstall can touch it.
+# A set-but-EMPTY $KIT_LEDGER_DIR is a FATAL clean error, never a silent fall-through: an
+# empty root would make every writer append to a relative `runs/...` path in the caller's cwd
+# (the "silent-wrong-path" footgun SG-02's NC guards). Returns 1 so a caller using
+# `LOG_DIR="$(kit_resolve_log_dir)" || exit 1` aborts cleanly.
 kit_resolve_log_dir() {
-  if [ -n "${DWARVES_KIT_LOG_DIR:-}" ]; then
+  if [ "${KIT_LEDGER_DIR+set}" = "set" ]; then
+    if [ -z "$KIT_LEDGER_DIR" ]; then
+      echo "kit-log-dir: KIT_LEDGER_DIR is set but empty; refusing to resolve a ledger root (would write to a relative path)" >&2
+      return 1
+    fi
+    printf '%s' "$KIT_LEDGER_DIR"
+  elif [ -n "${DWARVES_KIT_LOG_DIR:-}" ]; then
     printf '%s' "$DWARVES_KIT_LOG_DIR"
   else
     printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs"
@@ -38,6 +53,9 @@ kit_legacy_log_dir() { printf '%s' "$HOME/.claude/dwarves-kit/logs"; }
 # Otherwise cp -Rn legacy/. durable/ (no-clobber, never deletes legacy) and drops the
 # sentinel. All failures are swallowed: a migration hiccup must never break a tool call.
 kit_migrate_log_dir() {
+  # An explicit root (either knob) means the caller owns the path -- do not migrate the
+  # machine corpus into a test's mktemp dir (SPEC-182: KIT_LEDGER_DIR joins the guard).
+  [ "${KIT_LEDGER_DIR+set}" = "set" ] && return 0
   [ -n "${DWARVES_KIT_LOG_DIR:-}" ] && return 0
   local durable legacy
   durable="$(kit_resolve_log_dir)"

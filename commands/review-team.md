@@ -137,7 +137,7 @@ default lens never silently burns opus on every run.
 **Record the advisor dispatch itself (SPEC-145, fail-open, never blocks).** The instant the
 advisor's critique pass returns, emit a first-class ledger row BEFORE folding its findings
 into the Step 3 merge, so the advisor's own contribution is machine-visible even when
-`kit_gates` (ledger-observatory) is asked "did the advisor run on this rid" independent of the
+`kit_gates` (the stats read plane) is asked "did the advisor run on this rid" independent of the
 merged report's combined `findings=<K>` count (Step 3's `review ran` line counts all 3
 specialists + advisor together, so it cannot answer that question alone):
 
@@ -158,7 +158,7 @@ current run's own rid (`bash lib/gate/gate-ledger.sh rid`). In a mega/convergenc
 (`commands/mega.md`'s convergence-gate step, below), the SAME advisor grammar records under
 the FINAL sub-goal's rid instead -- the de-facto convention the older TIER-4 free-text
 `| ACTION |` lines already used (e.g. `kit-telem-05-mergeguard.log`,
-`kit-clean-05-editmention.log`), now made structured -- so an observatory query finds every
+`kit-clean-05-editmention.log`), now made structured -- so a stats query finds every
 convergence-gate advisor row under one deterministic close-time key rather than scattered
 across every sub-goal's own rid.
 

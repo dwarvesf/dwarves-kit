@@ -89,6 +89,12 @@ jobs:
       - name: Run ledger-durability tests (SPEC-097)
         run: bash tests/test-ledger-durability.sh
 
+      - name: Run ledger append-substrate tests (SPEC-182, kit-modularity SG-02)
+        run: bash tests/test-ledger-substrate.sh
+
+      - name: Run stats no-persist lint + snapshot (SPEC-182, kit-modularity SG-02)
+        run: bash tests/test-stats-no-persist.sh
+
       - name: Run gate-outcome emit tests (SPEC-129)
         run: bash tests/test-gate-outcome.sh
 
