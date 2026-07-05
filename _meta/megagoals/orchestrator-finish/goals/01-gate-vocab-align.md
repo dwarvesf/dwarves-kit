@@ -31,11 +31,11 @@ One list of gate names, referenced by both the enforcer and the recorders. A new
 
 **Done =** a command-driven full-lane run reaches ship with zero hand-recorded gates (the recording-gap test passes), AND the negative control (removing one phase owner's `record` call) re-blocks the gate, both in a captured run-table.
 
-**Kit-adopted repo? Record the gates.** Run from dwarves-kit cwd. `bash lib/lane-classify.sh classify "align ship-gate required-gate vocabulary"` → likely `normal`; build+verify, then:
+**Kit-adopted repo? Record the gates.** Run from dwarves-kit cwd. `bash lib/classify/lane-classify.sh classify "align ship-gate required-gate vocabulary"` → likely `normal`; build+verify, then:
 ```bash
-rid=$(bash lib/gate-ledger.sh rid)
-bash lib/gate-ledger.sh record "$rid" build  ran "<test run-table>"
-bash lib/gate-ledger.sh record "$rid" review ran "<proof-of-done path>"
+rid=$(bash lib/gate/gate-ledger.sh rid)
+bash lib/gate/gate-ledger.sh record "$rid" build  ran "<test run-table>"
+bash lib/gate/gate-ledger.sh record "$rid" review ran "<proof-of-done path>"
 ```
 
 ## Handoff on completion

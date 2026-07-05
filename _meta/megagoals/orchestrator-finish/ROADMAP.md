@@ -26,6 +26,7 @@ All 8 backlog IDs were adversarially verified against the CURRENT `lib/queue/orc
 
 - 01 is independent (touches `hooks/ship-gate.sh` + `lib/gate/gate-ledger.sh`), base `main`.
 - 02 → 03 → 04 → 05 → 06 are stacked (each base = the prior branch) NOT because of a logical dependency but because they all edit `lib/queue/orchestrate.sh`; stacking serializes the edits so they never conflict. Any can be built in any order logically; the stack is a merge-hygiene device.
+- **Stack-order caveat (advisor P5, accepted):** 03 (wave TOKENS) lands before 05 (wave START). For the one stack-hop between 03-merge and 05-merge, wave TOKENS write to a rid log with no matching START (the symptom 05 closes). Accepted because auto-bottom-up lands 03→06 in the same loop (gap = minutes); if landing out of order, merge 05 before 03.
 
 ## Assumptions
 

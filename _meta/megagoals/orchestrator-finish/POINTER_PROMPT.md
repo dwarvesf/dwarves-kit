@@ -2,7 +2,7 @@ Objective: finish hardening the dwarves-kit orchestrator via the 6 orphaned orch
 
 REPO: dwarves-kit, kit-adopted. Run this loop FROM the dwarves-kit repo root (cwd) so sub-goals use the SDD lane + /kit:* natively and worktrees cut from the right repo.
 
-RUN MODE: subagent-delegate. You are the THIN CONDUCTOR: never build+verify a sub-goal inline. Compute the ready-set from each goal file's `Depends on:`; dispatch each ready sub-goal as ONE background subagent (Agent tool, isolation: worktree, model from its `Model:` line) whose prompt is the goal file's full contract. On completion: verify the ROADMAP box on disk, absorb only the terse report, auto-bottom-up merge, dispatch the next wave. Render a per-worker PROGRESS STRIP at each check-in (gates recorded vs the lane plan, from the run-ledger + `gate-ledger.sh plan <lane>`, never the transcript).
+RUN MODE: subagent-delegate. You are the THIN CONDUCTOR: never build+verify a sub-goal inline. Compute the ready-set from each goal file's `Depends on:`; dispatch each ready sub-goal as ONE background subagent (Agent tool, isolation: worktree, model from its `Model:` line) whose prompt is the goal file's full contract. On completion: verify the ROADMAP box on disk, absorb only the terse report, auto-bottom-up merge, dispatch the next wave. Render a per-worker PROGRESS STRIP at each check-in (gates recorded vs the lane plan, from the run-ledger + `bash lib/gate/gate-ledger.sh plan <lane>`, never the transcript).
 
 RUN CONTRACT: ~/.claude/skills/plan-for-mega-goal/references/OPERATE.md is BINDING (run-mode, progress strips, visible close + RUN_REPORT).
 
@@ -12,7 +12,7 @@ STACK: 01-gate-vocab is independent (edits hooks/ship-gate.sh + gate-ledger.sh),
 
 MERGE: auto-bottom-up + gated-final. Merge each `auto` sub-goal's PR once ALL five auto-merge gates hold (its Done= verified by its own close-the-loop; `gh pr checks` all-green on the OPEN PR; reviewDecision not CHANGES_REQUESTED; a proof-of-done committed WITH captured evidence, not the word "passes"; tagged `auto`), do the retarget-child-before-delete dance yourself. All 6 are `auto`; STOP only at the final PR for Han's single click. NEVER merge a red-CI or CHANGES_REQUESTED PR.
 
-KIT-ADOPTED lane: each sub-goal reads AGENTS.md + WORKFLOW.md first, classifies its lane with `bash lib/lane-classify.sh classify "<task>"`, builds+verifies to its Done=, and records each phase via `bash lib/gate-ledger.sh record <rid> <phase> ran "<evidence>"` so the ship-gate passes. Drive the lane via lib/ + gate-ledger (not /kit:* unless cwd is dwarves-kit).
+KIT-ADOPTED lane (USE THE SUBDIR PATHS , there are no flat lib/*.sh): each sub-goal reads AGENTS.md + WORKFLOW.md first, classifies its lane with `bash lib/classify/lane-classify.sh classify "<task>"`, builds+verifies to its Done=, and records each phase via `bash lib/gate/gate-ledger.sh record <rid> <phase> ran "<evidence>"` (rid from `bash lib/gate/gate-ledger.sh rid`) so the ship-gate passes. Drive the lane via lib/ + gate-ledger (not /kit:* unless cwd is dwarves-kit).
 
 HARD RULES: one PR per sub-goal; record PR # on the ROADMAP line the moment it opens; a checked box is `[x] — PR #N` or it is unchecked; "CI green" = the open PR's checks, not local tests; do not rewrite any Done= mid-loop; no new sub-goals mid-loop (discovered ones → NOTES ## Proposed additions); ROADMAP.md is the source of truth. Before claiming success, audit every `PR #N` in ROADMAP via `gh pr view`.
 

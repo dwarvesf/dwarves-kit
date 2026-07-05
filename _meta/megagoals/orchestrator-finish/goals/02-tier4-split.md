@@ -4,7 +4,7 @@
 **Time budget:** 2-4 hours of loop work
 **Proof:** run-table showing the TIER-4 close dispatching 3 verifier sessions + the aggregation, plus a negative control (one dissenting verifier is NOT silently dropped). Rung 2.
 **Design:** obvious
-**Depends on:** none (stacked on 01's branch only for orchestrate.sh merge hygiene? no, base main; 02 is the stack root for the orchestrate.sh chain)
+**Depends on:** none; base main; 02 is the stack root for the orchestrate.sh chain (merge-hygiene stacking, not a logical dependency)
 Model: sonnet
 **Branch:** fix/orchfin-02-tier4-split
 **PR base:** main

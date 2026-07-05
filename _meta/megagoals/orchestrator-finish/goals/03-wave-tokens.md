@@ -23,10 +23,13 @@ Every sub-goal's token spend lands in the ledger whether it ran solo or in a wav
 
 - Trace the wave reap loop in `orchestrate.sh` vs the serial token block; confirm where the serial path extracts TOKENS and that the wave path skips it.
 - Add the per-sub-goal TOKENS extraction to the wave reap path, writing to the same ledger stream the serial path uses.
-- Test: simulate a 2-sub-goal wave; assert both token lines land in the ledger.
+- Test (POSITIVE): simulate a 2-sub-goal wave; assert both token lines land in the ledger.
+- Test (NEGATIVE CONTROL, operationalizes the Proof): run the SAME wave scenario against the pre-fix code (or the fix stubbed out) and assert ZERO token lines land , so the causal effect is demonstrated, not just post-fix presence.
 - (Optional trivial cleanup: fix the stale "default 1" WAVE_CAP comments to "default 2".)
 
-**Done =** the wave path writes per-sub-goal TOKENS for every sub-goal in the wave, verified by a captured 2-sub-goal-wave run-table showing both token lines.
+**Done =** the wave path writes per-sub-goal TOKENS for every sub-goal in the wave (captured 2-sub-goal-wave run-table showing both token lines), AND the negative control shows the pre-fix code produced ZERO wave token lines (the fix's causal effect is demonstrated).
+
+**Stack-order note (advisor P5):** 03 (wave TOKENS) is stacked before 05 (wave START). Between 03 merging and 05 merging there is a transient window where wave TOKENS write to a rid log with no matching START , the exact symptom 05 closes, reintroduced for one stack-hop. ACCEPTED: the auto-bottom-up run lands 03→06 within the same loop, so the gap is minutes. If run out of order, land 05 before 03.
 
 **Kit-adopted repo? Record the gates** (from dwarves-kit cwd, `lane-classify` → `normal`).
 
