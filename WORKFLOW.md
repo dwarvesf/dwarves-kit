@@ -517,20 +517,24 @@ their record-side gap.
 | `start.md` | Pure read-only session entry-point detector, own text says "Do NOT execute anything."; same shape as `next.md`. |
 | `kit-health.md` | Self-assessment of the kit's OWN philosophy compliance (file count, hook perf, source citations); not a phase in any run's V-model lifecycle. |
 | `draft-agent.md` | Meta-agent generator (drafts a new subagent or mega-goal sub-goal file); a generator utility, not a V-model phase. |
-| `visual-team.md` | A critique lens invoked FROM `ui-design.md` Step 3, not an independent phase owner; the phase owner (`ui-design.md`) now emits `UI design` itself (SPEC-139), mirroring how `devs-team.md`'s own `review` emit already covers the design-critique lens it is invoked from. |
+| `visual-team.md` | A critique lens invoked FROM `ui-design.md` Step 3, not an independent phase owner; the phase owner (`ui-design.md`) now emits `UI design` itself (SPEC-139), mirroring how `devs-team.md`'s own `design-critique` emit (below) already covers the design-critique lens it is invoked from. |
 | `mega.md` | Already emits via the driver: "The driver emits a `gate-ledger start` per dispatched sub-goal ... (SPEC-101)" (`commands/mega.md`, "Close the run visibly" section) -- the emission is real but happens in the orchestration driver at dispatch time, not as a literal call inside `mega.md`'s own prose. |
 | `dispatch.md` | Each fanned-out worker runs the FULL `/kit:execute` lifecycle (its own `gate-ledger.sh` calls) inside its own isolated worktree (see `commands/dispatch.md`'s worker prompt, "extends the `/kit:execute` worker contract"); `dispatch.md` itself is the fan-out lead, never a phase owner, and never calls `gate-ledger.sh` directly. |
 
-**Known pre-existing gap, NOT closed by this pass (out of scope, flagged honestly):** neither
-`Build` nor `Design record` -- both REQUIRED matrix rows -- has any command that calls
-`gate-ledger.sh record` for them; `execute.md` narrates the escalation/action verbs around a
-build but never records `build ran`, and no command records `design-record ran` (the design-record
-row is enforced statically by `/kit:spec-validate` Reviewer 6, never separately recorded to the
-ledger). SPEC-139 does not touch `execute.md` or add a new record call for either phase (both
-commands were already counted "emitting" in the 2026-07-04 audit and are out of this sub-goal's
-named scope); a run that needs those two gates satisfied records them manually
-(`bash lib/gate/gate-ledger.sh record <rid> build ran "<note>"` / `... design-record ran "<note>"`),
-the same generic escape hatch AGENTS.md already names for any phase gate.
+**Gate-recording gap CLOSED (ID-091):** `Build` and `Design record` -- both REQUIRED matrix
+rows -- used to have no command that called `gate-ledger.sh record` for their literal name, so a
+command-driven full-lane run reached ship with those two gates never recorded (only a hand
+`record`/`override` could satisfy them). Fixed by giving each row its natural phase owner: `execute.md`
+(the Build phase owner) now records `build ran` right after the execution-summary block; `spec-validate.md`
+Reviewer 6 (the existing, sole enforcement point for design-bearing specs) now also records
+`design-record ran` alongside its `Validate ran` line. Separately, `devs-team.md` (the full lane's
+`design-critique` phase owner) now records `design-critique ran` by its own literal name, not just
+its own `review ran` line -- the enforcer (`gate-ledger.sh check`) matches phase names exactly, so
+recording `review` never satisfied the `design-critique` matrix row. `tests/test-gate-vocab-recording.sh`
+asserts every full-lane `measure-twice` row is recorded by some command, with a negative control
+(strip one owner's record call, the gate re-blocks). The vocabulary itself was already single-sourced
+(`normalize_phase()` + the live `WORKFLOW.md`-derived required-set); this closed a RECORDING gap, not
+a naming one.
 
 ## The understanding axis (ADR-0031)
 
