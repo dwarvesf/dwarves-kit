@@ -36,6 +36,25 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime
 
+
+def _repo_root():
+    """Walk up from this file to find the kit repo root (the dir holding
+    lib/session/). Repo-relative per DECISIONS.md's adapter-default invariant:
+    no hardcoded ops-toolkit/personal path, no CONSUMER_ROOT env."""
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("cc-observe: cannot locate the kit repo root (lib/session not found)")
+
+
+sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
+from parse_transcript import iter_entries as _iter_transcript_entries  # noqa: E402
+
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
 
 # A file edited this many+ times within one session is "thrash" (a rework/debug spiral).
@@ -116,20 +135,17 @@ def iter_files(args):
 
 
 def iter_entries(path):
-    """Yield parsed JSON objects from one transcript, skipping unparseable lines."""
+    """Yield parsed JSON objects from one transcript, skipping unparseable lines.
+
+    Delegates to the shared lib/session/parse_transcript.py (the ONE JSONL
+    turn-parser cc-observe and cc-recall both need); this wrapper only adds
+    the many-file-scan behavior cc-observe wants (a single missing/unreadable
+    file in a --root/--project sweep contributes zero entries rather than
+    aborting the whole scan -- honest-zero for that file, not a crash)."""
     try:
-        fh = open(path, encoding="utf-8")
+        yield from _iter_transcript_entries(path)
     except OSError:
         return
-    with fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                yield json.loads(line)
-            except json.JSONDecodeError:
-                continue
 
 
 def blocks(entry):

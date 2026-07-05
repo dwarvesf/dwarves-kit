@@ -28,6 +28,25 @@ import sys
 import time
 from collections import deque
 
+
+def _repo_root():
+    """Walk up from this file to find the kit repo root (the dir holding
+    lib/session/). Repo-relative per DECISIONS.md's adapter-default invariant:
+    no hardcoded ops-toolkit/personal path, no CONSUMER_ROOT env."""
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("cc-semantic: cannot locate the kit repo root (lib/session not found)")
+
+
+sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
+from parse_transcript import iter_entries as _iter_transcript_entries  # noqa: E402
+
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
 DEFAULT_CMD = "claude -p"          # overridable via CC_SEMANTIC_CMD (tests inject)
 MAX_PROMPTS = 200                  # cap the window fed to the model (cost bound)
@@ -53,27 +72,19 @@ def collect_prompts(root, days, cap):
     out = deque(maxlen=cap)
     for _mt, p in files:
         try:
-            fh = open(p, encoding="utf-8")
+            entries = list(_iter_transcript_entries(p))  # force now: OSError on open must be catchable per-file
         except OSError:
             continue
-        with fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    e = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if e.get("type") != "user" or e.get("isSidechain"):
-                    continue
-                c = (e.get("message") or {}).get("content")
-                txt = c if isinstance(c, str) else " ".join(
-                    b.get("text", "") for b in (c if isinstance(c, list) else [])
-                    if isinstance(b, dict) and b.get("type") == "text")
-                txt = txt.strip()
-                if txt:
-                    out.append(txt[:MAX_PROMPT_CHARS])
+        for e in entries:
+            if e.get("type") != "user" or e.get("isSidechain"):
+                continue
+            c = (e.get("message") or {}).get("content")
+            txt = c if isinstance(c, str) else " ".join(
+                b.get("text", "") for b in (c if isinstance(c, list) else [])
+                if isinstance(b, dict) and b.get("type") == "text")
+            txt = txt.strip()
+            if txt:
+                out.append(txt[:MAX_PROMPT_CHARS])
         if len(out) >= cap:
             break
     return list(out)

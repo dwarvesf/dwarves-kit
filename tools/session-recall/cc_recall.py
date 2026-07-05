@@ -18,21 +18,32 @@ import sys
 PROJECTS = os.path.expanduser("~/.claude/projects")
 
 
-# --- parsing (the JSONL parser shared with SG-01's compactor) -----------------
+def _repo_root():
+    """Walk up from this file to find the kit repo root (the dir holding
+    lib/session/). Repo-relative per DECISIONS.md's adapter-default invariant:
+    no hardcoded ops-toolkit/personal path, no CONSUMER_ROOT env."""
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("cc-recall: cannot locate the kit repo root (lib/session not found)")
 
-def load(path: str):
-    """Parse a JSONL transcript; unparseable lines skipped deterministically."""
-    out = []
-    with open(path, "r", encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                out.append(json.loads(line))
-            except (json.JSONDecodeError, ValueError):
-                continue
-    return out
+
+sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
+from parse_transcript import load  # noqa: E402  (re-exported: cc-recall's own public `load`)
+
+
+# --- parsing --------------------------------------------------------------
+# `load()` is the shared lib/session/parse_transcript.py routine (kit-foldin
+# SG-03): the JSONL-turn-parsing that used to be duplicated with cc-observe's
+# own `iter_entries` now lives in ONE place. `_role`/`_ts`/`searchable_text`
+# below stay cc-recall's own logic -- they are not duplicated in cc-observe,
+# which never needs a per-turn role/text accessor the way point-lookup search
+# does.
 
 
 def _role(entry):

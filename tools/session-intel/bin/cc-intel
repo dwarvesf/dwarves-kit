@@ -20,7 +20,6 @@ Stdlib only.
 import argparse
 import datetime
 import glob
-import json
 import os
 import re
 import shlex
@@ -28,11 +27,35 @@ import subprocess
 import sys
 from collections import Counter, defaultdict
 
+
+def _repo_root():
+    """Walk up from this file to find the kit repo root (the dir holding
+    lib/session/). Repo-relative per DECISIONS.md's adapter-default invariant:
+    no hardcoded ops-toolkit/personal path, no CONSUMER_ROOT env."""
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("cc-intel: cannot locate the kit repo root (lib/session not found)")
+
+
+sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
+from parse_transcript import iter_entries as _iter_transcript_entries  # noqa: E402
+
 HOME = os.path.expanduser("~")
-OT = os.environ.get("OPS_TOOLKIT", os.path.join(HOME, "workspace/tieubao/ops-toolkit"))  # override on non-Air machines
+# OPS_TOOLKIT is a TENANT-specific corpus root (someone's learned-ledger + GLOSSARY
+# tree), not kit-internal -- required-explicit per DECISIONS.md's adapter-default
+# split, no personal-path guess. Unset -> DEFAULT_LEDGER/DEFAULT_GLOSSARIES are None,
+# which `synthesis()` already treats as "source unavailable" (honest-zero: the
+# digest's merge-proposals section reads "_none_", never a crash or a wrong guess).
+OT = os.environ.get("OPS_TOOLKIT")
 DEFAULT_OUT = os.path.join(HOME, ".claude/intel")
-DEFAULT_LEDGER = os.path.join(OT, "_meta/learned-ledger.md")
-DEFAULT_GLOSSARIES = os.path.join(OT, "learning")
+DEFAULT_LEDGER = os.path.join(OT, "_meta/learned-ledger.md") if OT else None
+DEFAULT_GLOSSARIES = os.path.join(OT, "learning") if OT else None
 DEFAULT_TRANSCRIPTS = os.path.join(HOME, ".claude/projects")
 
 MERGE_TOP_N = 10  # ID-227: cap the ranked merge proposals so a busy digest stays readable
@@ -165,11 +188,7 @@ def repeat_detect(transcripts, min_count, max_files=40):
     for f in files:
         seq = []
         try:
-            for line in open(f, encoding="utf-8"):
-                try:
-                    ev = json.loads(line)
-                except ValueError:
-                    continue
+            for ev in _iter_transcript_entries(f):
                 seq.extend(_bash_cmds(ev))
         except OSError:
             continue
