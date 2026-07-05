@@ -156,6 +156,7 @@ Total: 25 commands + 15 agents = **40 entries** (10 build · 3 code · 9 test ·
 | `infra-reviewer` | agent | Code review | gate | Read-only infra-lens reviewer (deploy/rollback safety, CI/CD, container/IaC least-privilege, secrets, idempotent provisioning, blast radius); dispatched by `/kit:review-team` as the infra domain lens (SPEC-111) |
 | `db-migration-worker` | agent | Code (implement) | build | Write-capable schema-migration implementer (up + DOWN/rollback, batched backfill, index changes; guards long locks, no data drop without explicit ask); dispatched by `/kit:execute` 2b-0 as the db-migration domain implementer (SPEC-111) |
 | `data-etl-worker` | agent | Code (implement) | build | Write-capable data-pipeline implementer (ETL, DuckDB SQL transform, idempotent re-runs, schema validation, no silent row drops); dispatched by `/kit:execute` 2b-0 as the data-etl domain implementer (SPEC-111) |
+| `claim-verifier` | agent | Claim verification | cross-phase | Read-only adversarial panel over an ARBITRARY free-text claim: N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed), majority-vote structured verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons); the semantic half of the citation-guard hook; dispatched on a load-bearing assertion (kit-foldin SG-06) |
 
 **Classification notes:**
 - The right arm is *test execution*; the static gates are *review*. Both are "verification" loosely, but only the right arm runs tests. `/kit:spec-validate`, `/kit:review`, `/kit:docs` review; `task-verifier`, `integration-verifier`, `/kit:ship` test.
@@ -230,6 +231,10 @@ file count so this table cannot drift):
 | `spec-drift-guard` | PreToolUse Write | advisory | creating files the active spec never mentions |
 | `slop-cleaner` | Stop | advisory | long-session code bloat; suggests, never blocks |
 | `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step (SPEC-083) |
+| `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, sub-ms, never blocks) |
+| `citation-guard` | Stop | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
+| `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0) |
+| `backlog-stage` | SessionEnd | convenience | none (stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
 | `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |
 | `output-offload` | PostToolUse * | advisory | oversized tool output bloating context; offloads the full payload to a file + nudges, never blocks |
 | `statusline` | StatusLine | convenience | none (HUD) |

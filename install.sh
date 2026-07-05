@@ -30,11 +30,16 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   done
 
-  # Remove skills
-  if [ -d "$CLAUDE_DIR/skills/get-api-docs" ]; then
-    rm -rf "$CLAUDE_DIR/skills/get-api-docs"
-    echo "[ok] Removed skill: get-api-docs"
-  fi
+  # Remove skills (glob over every skills/*/SKILL.md the kit ships, not a hardcoded
+  # single name, so a newly-promoted skill uninstalls too without an install.sh edit).
+  for SKILL_FILE in "$KIT_DIR/skills/"*/SKILL.md; do
+    [ -f "$SKILL_FILE" ] || continue
+    SKILL_NAME="$(basename "$(dirname "$SKILL_FILE")")"
+    if [ -d "$CLAUDE_DIR/skills/$SKILL_NAME" ]; then
+      rm -rf "$CLAUDE_DIR/skills/$SKILL_NAME"
+      echo "[ok] Removed skill: $SKILL_NAME"
+    fi
+  done
 
   # Remove agents
   for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
@@ -57,6 +62,14 @@ if [ "${1:-}" = "--uninstall" ]; then
     for HOOK_FILE in "$KIT_DIR/hooks/"*.sh; do
       LINK="$HOOKS_DEST/$(basename "$HOOK_FILE")"
       # symlinks (pre-SPEC-066) and copied files (SPEC-066) both belong to the kit
+      { [ -L "$LINK" ] || [ -f "$LINK" ]; } && rm "$LINK"
+    done
+    # Companion *.py/*.json files installed alongside a hooks/*.sh shim (see install,
+    # step 1b); hooks.json (the plugin manifest) is excluded, matching install.
+    for AUX_FILE in "$KIT_DIR/hooks/"*.py "$KIT_DIR/hooks/"*.json; do
+      [ -f "$AUX_FILE" ] || continue
+      [ "$(basename "$AUX_FILE")" = "hooks.json" ] && continue
+      LINK="$HOOKS_DEST/$(basename "$AUX_FILE")"
       { [ -L "$LINK" ] || [ -f "$LINK" ]; } && rm "$LINK"
     done
     rmdir "$HOOKS_DEST" 2>/dev/null && echo "[ok] Removed hooks directory: $HOOKS_DEST"
@@ -197,6 +210,17 @@ else
     fi
     cp "$HOOK_FILE" "$LINK" && chmod +x "$LINK"
   done
+  # Companion files a hooks/*.sh shim `exec`s or reads by co-located path (e.g. the
+  # kit-foldin *.py ports + their JSON data files) must land alongside it in
+  # $HOOKS_DEST too, or the shim's realpath-relative lookup 404s post-install.
+  # hooks.json (the plugin manifest) is excluded: it is not consulted at this path.
+  for AUX_FILE in "$KIT_DIR/hooks/"*.py "$KIT_DIR/hooks/"*.json; do
+    [ -f "$AUX_FILE" ] || continue
+    [ "$(basename "$AUX_FILE")" = "hooks.json" ] && continue
+    LINK="$HOOKS_DEST/$(basename "$AUX_FILE")"
+    [ -L "$LINK" ] || [ -f "$LINK" ] && rm -f "$LINK"
+    cp "$AUX_FILE" "$LINK"
+  done
   echo "[ok] Copied hook scripts into $HOOKS_DEST/ (pinned; re-run install.sh to upgrade)"
 fi
 
@@ -333,12 +357,17 @@ for CMD_FILE in "$KIT_DIR/commands/"*.md; do
   echo "[ok] Linked command: /${CMD_NAME%.md}"
 done
 
-# 4. Copy skills (symlinks don't always work for skills)
-if [ -d "$KIT_DIR/skills/get-api-docs" ]; then
-  mkdir -p "$CLAUDE_DIR/skills/get-api-docs"
-  cp "$KIT_DIR/skills/get-api-docs/SKILL.md" "$CLAUDE_DIR/skills/get-api-docs/SKILL.md"
-  echo "[ok] Installed skill: get-api-docs"
-fi
+# 4. Copy skills (symlinks don't always work for skills). Loop over every
+# skills/*/SKILL.md the kit ships (glob, not a hardcoded single skill), so a newly
+# promoted top-level skill installs regardless of merge order with whatever branch
+# added it.
+for SKILL_FILE in "$KIT_DIR/skills/"*/SKILL.md; do
+  [ -f "$SKILL_FILE" ] || continue
+  SKILL_NAME="$(basename "$(dirname "$SKILL_FILE")")"
+  mkdir -p "$CLAUDE_DIR/skills/$SKILL_NAME"
+  cp "$SKILL_FILE" "$CLAUDE_DIR/skills/$SKILL_NAME/SKILL.md"
+  echo "[ok] Installed skill: $SKILL_NAME"
+done
 
 # 4b. Install subagent definitions
 if [ -d "$KIT_DIR/agents" ]; then

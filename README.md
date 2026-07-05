@@ -158,7 +158,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (17, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (21, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
@@ -167,13 +167,17 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | commit-format | PreToolUse(Bash) | Blocks non-conventional / >72-char / spec-ID commit subjects |
 | ship-gate | PreToolUse(Bash) | Blocks push/PR without a proof-of-done record + recorded lane gates (ADR-0024 boundary) |
 | context-readiness | SessionStart | Detects project + board state (`board:Nq`), suggests the next step intent-first |
+| context-hints | UserPromptSubmit | Injects session elapsed/idle time + keyword-matched skill hints (empty map by default; wire your own via CONTEXT_HINTS_SKILLMAP) |
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
 | session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
+| citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
 | output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
 | pre-compact-backup | PreCompact | Saves structured session snapshot before compaction |
+| harvest | PreCompact, SessionEnd | Stages durable session learnings to a repo-relative ledger (PreCompact); drafts a LAB_LOG entry (SessionEnd --lab-log). Never writes a durable home; a human flushes |
+| backlog-stage | SessionEnd | Stages forward-looking work-items from the session to a repo-relative staging file. Never writes the board directly |
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
 | notification | Notification | Desktop alert when Claude needs input |
 | permission-auto-approve | PermissionRequest | Auto-approves read-only operations (pipe-safe) |
@@ -273,9 +277,9 @@ dwarves-kit/
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
-  agents/                       (24 files) Subagents dispatched by commands
+  agents/                       (25 files) Subagents dispatched by commands
   commands/                     (27 markdown command prompts)
-  hooks/                        (17 scripts + hooks.json plugin manifest)
+  hooks/                        (21 scripts + hooks.json plugin manifest)
   lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
   lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
