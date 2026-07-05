@@ -495,22 +495,31 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku"
 # substitution's own exit code) catches it before dispatch. Absent `Model:` (empty) is untouched,
 # still the documented inherit fallback (SPEC-107), never rejected. Case-insensitive: `Opus`/`OPUS`
 # match same as `opus` (goal files are hand-authored prose headers, not a strict schema).
+#
+# Membership is EXACT-TOKEN enumeration (iterate the allowlist, compare `==`), NOT a
+# `case " $list " in *" $v "*` substring test. The substring idiom is the exact bug the
+# `PANE_VIEWER` pre-flight in `cmd_run` calls out as a security P2 and fixes the same way: two
+# adjacent allowed words joined by one space are a substring of the joined list, so a MULTI-WORD
+# value like `Model: opus sonnet` would slip through (`" opus sonnet "` is a substring of
+# `" opus sonnet haiku "`) and get passed verbatim to `--model "opus sonnet"`, dying deep in the
+# spawned `claude -p` , precisely the failure ID-096 exists to stop.
 _route() {
-  local gf="${1:-}" model="" effort="" model_lc
+  local gf="${1:-}" model="" effort="" model_lc tok ok
   if [ -f "$gf" ]; then
     model=$(grep -iE '^Model:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
     effort=$(grep -iE '^Effort:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
   fi
   if [ -n "$model" ]; then
     model_lc=$(printf '%s' "$model" | tr 'A-Z' 'a-z')
-    case " $_ROUTE_MODEL_ALLOWLIST " in
-      *" $model_lc "*) ;;
-      *)
+    ok=0
+    for tok in $_ROUTE_MODEL_ALLOWLIST; do
+      [ "$model_lc" = "$tok" ] && { ok=1; break; }
+    done
+    if [ "$ok" != 1 ]; then
         echo "orchestrate: invalid Model: tier '$model' in ${gf:-<no goal file>} (allowed: ${_ROUTE_MODEL_ALLOWLIST// /|}); rejecting pre-flight, not dispatching" >&2
         printf '%s\t%s\n' "$model" "$effort"
         return 64
-        ;;
-    esac
+    fi
   fi
   printf '%s\t%s\n' "$model" "$effort"
 }

@@ -6,7 +6,7 @@
 |---|---|---|---|---|
 | 1 | `.orchestrate/*.stream.jsonl`/`*.session.log` older than a retention cap are pruned; a fresh file survives (NEGATIVE CONTROL) | ID-095 | yes | Run-table: 2 backdated files (year 2000) pruned, 1 fresh file survives `_prune_streams` |
 | 2 | A secret-shaped line in a REAL captured stream is redacted before the file is handed back | ID-095 | yes | Real serial dispatch, mock claude prints `sk-TESTFAKE...`, stored `.stream.jsonl` shows `[REDACTED]`, raw token absent |
-| 3 | An off-allowlist `Model:` tier is rejected pre-flight; no dispatch happens | ID-096 | yes | Mock claude invocation log stays empty; clear stderr rejection; box stays unflipped |
+| 3 | An off-allowlist `Model:` tier is rejected pre-flight (single-token AND multi-word); no dispatch happens | ID-096 | yes | Mock claude invocation log stays empty; clear stderr rejection; box stays unflipped; multi-word `opus sonnet` also rejected (substring-membership bug fixed by TIER-4 dissent) |
 | 4 | A cleanly-landed wave sub-goal's tmux window is killed on the happy path | ID-098 | yes | `kill-window -t <session>:SG-01` recorded in the tmux-mock call log after a clean land |
 | 5 | Green under macOS bash 3.2 (CI) | all | yes | New + existing suites all run under `/bin/bash` (3.2.57) |
 | 6 | No regression to the existing serial/wave/mux/model-routing suites | all | yes | `test-orchestrate.sh`, `test-model-routing.sh`, `test-multiplexer.sh`, `test-orchestrate-wavefront.sh` all green |
@@ -14,8 +14,14 @@
 ## Implementation
 
 `lib/queue/orchestrate.sh`:
-- **ID-096** (`_route()`, :478-511): added `_ROUTE_MODEL_ALLOWLIST="opus sonnet haiku"` and a
-  case-insensitive membership check. An off-allowlist `Model:` value prints a clear rejection to
+- **ID-096** (`_route()`, :478-524): added `_ROUTE_MODEL_ALLOWLIST="opus sonnet haiku"` and a
+  case-insensitive **exact-token enumeration** membership check (iterate the allowlist, compare
+  `==`). NOT a `case " $list " in *" $v "*` substring test: that idiom is a membership bug (the
+  TIER-4 dissent on PR #209 caught it) because two adjacent allowed words joined by one space are a
+  substring of the joined list, so `Model: opus sonnet` slipped through and was passed verbatim to
+  `--model "opus sonnet"` , the exact failure ID-096 exists to stop. Same class the `PANE_VIEWER`
+  pre-flight already flags as a security P2 and fixes the same exact-token way. An off-allowlist
+  `Model:` value (single-token OR multi-word) prints a clear rejection to
   stderr and returns 64 (SPEC-106's own "bad input" exit code, matching the sibling
   `WAVE_CAP`/`PANE_VIEWER` pre-flight rejections in `cmd_run`). All three call sites (`_wave_run`
   spawn loop, `cmd_run` serial dispatch, the `--dry-run` preview) were changed from
@@ -36,9 +42,10 @@
   pre-clean-on-retry stance and `_wave_abort`'s existing in-flight-kill stance; closes the one
   remaining gap a spec-validate finding had already flagged in `_pane_spawn`'s own header comment
   ("nothing kills a completed pane's window on the normal path").
-- `tests/test-orchestrate-hardening.sh` (new, 9 assertions): reuses this repo's existing mock
+- `tests/test-orchestrate-hardening.sh` (new, 12 assertions): reuses this repo's existing mock
   patterns (`tests/test-model-routing.sh`'s route-log claude mock, `tests/test-multiplexer.sh`'s
-  tmux mock) rather than inventing new harness shapes.
+  tmux mock) rather than inventing new harness shapes. Includes the ID-096 multi-word substring-bug
+  negative control added by the TIER-4 dissent.
 
 ## Scope confirmation (per contract)
 
@@ -66,11 +73,14 @@ PASS ID-095 [NEGATIVE CONTROL]: a secret-shaped line is redacted in the stored s
 PASS ID-096 [NEGATIVE CONTROL]: an off-allowlist Model: tier never reaches dispatch (mock claude was NOT invoked)
 PASS ID-096: a clear pre-flight rejection message names the bad tier
 PASS ID-096: SG-01's box stays unchecked (no false-complete on a rejected tier)
+PASS ID-096 [NEGATIVE CONTROL, multi-word]: 'Model: opus sonnet' is REJECTED pre-flight (substring-membership bug fixed; mock claude NOT invoked)
+PASS ID-096 [multi-word]: clear pre-flight rejection message for the multi-word value
+PASS ID-096 [multi-word]: SG-01's box stays unchecked (no false-complete)
 PASS ID-098 setup: wave landed SG-01 (box flipped, rc 0)
 PASS ID-098 setup: tmux new-window spawned SG-01's pane
 PASS ID-098 [Done=]: a cleanly-landed (shipped) sub-goal's window is killed on the happy path (no orphaned pane)
 
-=== 9/9 passed, 0 failed ===
+=== 12/12 passed, 0 failed ===
 
 $ /bin/bash tests/test-orchestrate.sh   # unchanged suite
 ----

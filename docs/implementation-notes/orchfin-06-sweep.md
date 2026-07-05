@@ -77,3 +77,29 @@ merged and the stack has collapsed.
 **Why:** the dispatch prompt is the more current authority at execution time (a goal file written
 before the mega started cannot know the real merge order). Reversible: retargeting a PR's base on
 GitHub is a one-click op if this assumption is wrong.
+
+## 2026-07-06 05:20 TIER-4 dissent: ID-096 substring-membership bug -> exact-token enumeration
+
+**Context:** the convergence gate DISSENTED on PR #209. The first ID-096 cut used the substring
+idiom `case " $_ROUTE_MODEL_ALLOWLIST " in *" $model_lc "*)`. A fresh verifier reproduced that
+`Model: opus sonnet` was ACCEPTED (rc=0) because `" opus sonnet "` is a substring of
+`" opus sonnet haiku "`, so a multi-word off-allowlist value sailed through pre-flight and would be
+passed verbatim to `--model "opus sonnet"` , exactly the failure ID-096 exists to prevent.
+
+**Decision:** replaced the substring `case` with exact-token enumeration:
+`ok=0; for tok in $_ROUTE_MODEL_ALLOWLIST; do [ "$model_lc" = "$tok" ] && { ok=1; break; }; done`.
+
+**Why:** this is the SAME fix, and the same rationale, the `PANE_VIEWER` pre-flight in `cmd_run`
+already documents as a security P2 ("two adjacent allowed words joined by one space are a substring
+of the list"). Applying the proven in-file pattern keeps the fix surgical and consistent; the
+allowlist MEMBERSHIP (opus/sonnet/haiku) is unchanged.
+
+**Verification:** added a multi-word rejection assertion to `tests/test-orchestrate-hardening.sh`
+(now 12 assertions). Proved load-bearing via a substring-bug negative control: temporarily
+restoring the old `case` idiom turns the two multi-word assertions RED (10/12); the fix restores
+12/12. Green under `/bin/bash` 3.2.57 AND bash 5.3.15.
+
+**Note (out of scope, per coordinator):** a fresh verifier also flagged a pre-existing
+failure-exit token-accounting hole (sessions that exit nonzero skip `_record_tokens` on all paths).
+Present in baseline, owned by no sub-goal in this mega; routed to the mega's follow-up list, NOT
+touched here.

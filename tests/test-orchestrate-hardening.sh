@@ -143,6 +143,51 @@ case "$b1" in
   *) fail "ID-096: SG-01's box was unexpectedly flipped ($b1)" ;;
 esac
 
+# ID-096 MULTI-WORD guard (TIER-4 dissent fix): the substring-membership bug this fix originally
+# shipped ACCEPTED `Model: opus sonnet` because `" opus sonnet "` is a substring of the joined
+# allowlist `" opus sonnet haiku "`. The exact-token enumeration must REJECT it pre-flight, same as
+# any other off-allowlist value , mock claude never invoked, box unflipped, clear stderr message.
+D3b="$TMP/badmodel-multiword-mega"
+mkdir -p "$D3b/goals"
+cat > "$D3b/ROADMAP.md" <<'EOF'
+# Mega-goal: multi-word bad-model fixture
+## Sub-goals
+- [ ] SG-01 only auto , auto , PR #__
+EOF
+echo "POINTER: resume from ROADMAP" > "$D3b/POINTER_PROMPT.md"
+cat > "$D3b/goals/01-first.md" <<'EOF'
+# SG-01
+Model: opus sonnet
+
+GOALFILE-MARKER-01 contract for SG-01
+EOF
+
+MW_LOG="$TMP/badmodel-mw-calls.log"; : > "$MW_LOG"
+cat > "$TMP/claude-badmodel-mw" <<EOF
+#!/usr/bin/env bash
+echo "INVOKED: \$*" >> "$MW_LOG"
+EOF
+chmod +x "$TMP/claude-badmodel-mw"
+
+mwerr="$TMP/badmodel-mw.stderr"
+CLAUDE_CMD="$TMP/claude-badmodel-mw" TIER4_CLOSE=0 bash "$ORCH" run "$D3b" >/dev/null 2>"$mwerr"
+
+if [ ! -s "$MW_LOG" ]; then
+  pass "ID-096 [NEGATIVE CONTROL, multi-word]: 'Model: opus sonnet' is REJECTED pre-flight (substring-membership bug fixed; mock claude NOT invoked)"
+else
+  fail "ID-096: multi-word 'opus sonnet' slipped through pre-flight and dispatched (substring bug)"; cat "$MW_LOG"
+fi
+if grep -qi 'invalid Model:' "$mwerr"; then
+  pass "ID-096 [multi-word]: clear pre-flight rejection message for the multi-word value"
+else
+  fail "ID-096 [multi-word]: no clear rejection message on stderr"; cat "$mwerr"
+fi
+b1mw=$(_sg_line "$D3b/ROADMAP.md" SG-01)
+case "$b1mw" in
+  '- [ ] SG-01'*) pass "ID-096 [multi-word]: SG-01's box stays unchecked (no false-complete)" ;;
+  *) fail "ID-096 [multi-word]: SG-01's box was unexpectedly flipped ($b1mw)" ;;
+esac
+
 # ============================ SECTION 4: ID-098 -- happy-path tmux kill-window cleanup ============================
 mk_git_mega() {  # repo
   local repo="$1"

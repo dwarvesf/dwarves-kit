@@ -9,15 +9,22 @@ Three independent, individually-too-small-for-their-own-PR fixes to
 |---|---|---|---|
 | 1 | `.orchestrate/*.stream.jsonl`/`*.session.log` older than the retention cap are pruned; a fresh file is left alone (NEGATIVE CONTROL) | ID-095a | PASS |
 | 2 | A secret-shaped line in a real captured stream is redacted before the file is handed back to the caller | ID-095b | PASS |
-| 3 | An off-allowlist `Model:` tier is rejected pre-flight; the mock `claude` is never invoked, no false-complete | ID-096 | PASS |
+| 3 | An off-allowlist `Model:` tier is rejected pre-flight (single-token AND multi-word); the mock `claude` is never invoked, no false-complete | ID-096 | PASS |
 | 4 | A wave sub-goal that lands cleanly (shipped) has its tmux window killed; no orphaned pane | ID-098 | PASS |
 | 5 | No regression: `test-orchestrate.sh`, `test-model-routing.sh`, `test-multiplexer.sh`, `test-orchestrate-wavefront.sh` still green | all | PASS |
 
 ## Implementation
 
-- `lib/queue/orchestrate.sh` `_route()` (:478-511): `_ROUTE_MODEL_ALLOWLIST="opus sonnet haiku"`
-  constant + a case-insensitive allowlist check. An off-allowlist `Model:` value now prints a
-  clear rejection to stderr and returns 64 (ID-096). All three dispatch call sites (`_wave_run`
+- `lib/queue/orchestrate.sh` `_route()` (:478-524): `_ROUTE_MODEL_ALLOWLIST="opus sonnet haiku"`
+  constant + a case-insensitive **exact-token enumeration** membership check (iterate the
+  allowlist, compare `==`), NOT a `case " $list " in *" $v "*` substring test. The substring idiom
+  is a membership bug , the exact class the `PANE_VIEWER` pre-flight in `cmd_run` already calls out
+  as a security P2 , because two adjacent allowed words joined by one space are a substring of the
+  joined list, so a multi-word value like `Model: opus sonnet` would slip through and get passed
+  verbatim to `--model "opus sonnet"`, dying deep in the spawned `claude -p` (the exact failure
+  ID-096 exists to prevent). Fixed by the TIER-4 dissent on PR #209. An off-allowlist `Model:`
+  value (single-token OR multi-word) now prints a clear rejection to stderr and returns 64
+  (ID-096). All three dispatch call sites (`_wave_run`
   spawn loop, `cmd_run` serial dispatch, the `--dry-run` preview) read `_route`'s exit status via
   `out=$(_route "$gf"); rc=$?` (a simple command-substitution assignment reflects the command's
   own exit code, unlike the `< <(...)` process substitution the code used before, which would
@@ -37,10 +44,11 @@ Three independent, individually-too-small-for-their-own-PR fixes to
   sub-goal, `[ -n "$donefile" ] && "$TMUX_CMD" kill-window -t "$mux:$id"` (ID-098) , mirrors
   `_pane_spawn`'s existing pre-clean-on-retry stance, and `_wave_abort`'s existing in-flight-kill
   stance, closing the one remaining gap (a clean landed pane was never killed).
-- `tests/test-orchestrate-hardening.sh` (new): 9 assertions across the three items, including the
+- `tests/test-orchestrate-hardening.sh` (new): 12 assertions across the three items, including the
   ID-095 age-prune negative control, the ID-095 real-captured-stream redaction proof, the ID-096
-  no-dispatch negative control, and the ID-098 kill-window proof (reusing the
-  `tests/test-multiplexer.sh` tmux-mock pattern).
+  single-token no-dispatch negative control, the ID-096 **multi-word** no-dispatch negative control
+  (`Model: opus sonnet`, added by the TIER-4 dissent fix), and the ID-098 kill-window proof
+  (reusing the `tests/test-multiplexer.sh` tmux-mock pattern).
 
 ## Scope edges honored
 
@@ -57,9 +65,11 @@ Three independent, individually-too-small-for-their-own-PR fixes to
 |---|---|---|---|
 | ID-095a age-cap NC | `tests/test-orchestrate-hardening.sh` §1 | over-age files pruned, fresh file survives | PASS x2 |
 | ID-095b redaction NC | `tests/test-orchestrate-hardening.sh` §2 | `sk-TESTFAKE...` absent, `[REDACTED]` present in stored stream | PASS |
-| ID-096 pre-flight NC | `tests/test-orchestrate-hardening.sh` §3 | mock claude never invoked; clear stderr message; box unflipped | PASS x3 |
+| ID-096 pre-flight NC (single-token) | `tests/test-orchestrate-hardening.sh` §3 | `Model: sonet` rejected; mock claude never invoked; clear stderr; box unflipped | PASS x3 |
+| ID-096 pre-flight NC (multi-word) | `tests/test-orchestrate-hardening.sh` §3 | `Model: opus sonnet` rejected; mock claude never invoked; clear stderr; box unflipped | PASS x3 |
+| ID-096 substring-bug NC | restore the old `case " $list " in *" $v "*` idiom, re-run §3 | the two multi-word assertions go RED | 10/12 (multi-word FAILs) |
 | ID-098 kill-window | `tests/test-orchestrate-hardening.sh` §4 | `kill-window -t orch-id098:SG-01` recorded after a clean land | PASS x3 |
-| suite: hardening (new) | `bash tests/test-orchestrate-hardening.sh` | all green | 9/9 passed |
+| suite: hardening (new) | `bash tests/test-orchestrate-hardening.sh` | all green | 12/12 passed (bash 3.2 AND bash 5) |
 | suite: orchestrate | `bash tests/test-orchestrate.sh` | all green | ALL PASS |
 | suite: model-routing | `bash tests/test-model-routing.sh` | all green | 6/6 passed |
 | suite: multiplexer | `bash tests/test-multiplexer.sh` | all green | ALL PASS |
@@ -80,11 +90,22 @@ PASS ID-095 [NEGATIVE CONTROL]: a secret-shaped line is redacted in the stored s
 PASS ID-096 [NEGATIVE CONTROL]: an off-allowlist Model: tier never reaches dispatch (mock claude was NOT invoked)
 PASS ID-096: a clear pre-flight rejection message names the bad tier
 PASS ID-096: SG-01's box stays unchecked (no false-complete on a rejected tier)
+PASS ID-096 [NEGATIVE CONTROL, multi-word]: 'Model: opus sonnet' is REJECTED pre-flight (substring-membership bug fixed; mock claude NOT invoked)
+PASS ID-096 [multi-word]: clear pre-flight rejection message for the multi-word value
+PASS ID-096 [multi-word]: SG-01's box stays unchecked (no false-complete)
 PASS ID-098 setup: wave landed SG-01 (box flipped, rc 0)
 PASS ID-098 setup: tmux new-window spawned SG-01's pane
 PASS ID-098 [Done=]: a cleanly-landed (shipped) sub-goal's window is killed on the happy path (no orphaned pane)
 
-=== 9/9 passed, 0 failed ===
+=== 12/12 passed, 0 failed ===
+
+# Substring-bug negative control (proves the multi-word assertions are load-bearing):
+# temporarily restore the buggy `case " $_ROUTE_MODEL_ALLOWLIST " in *" $model_lc "*` idiom ->
+$ /bin/bash tests/test-orchestrate-hardening.sh   # with the old substring idiom
+FAIL ID-096: multi-word 'opus sonnet' slipped through pre-flight and dispatched (substring bug)
+FAIL ID-096 [multi-word]: no clear rejection message on stderr
+=== 10/12 passed, 2 failed ===
+# (fix restored -> back to 12/12; the two multi-word assertions are causally tied to the fix)
 
 $ /bin/bash tests/test-orchestrate.sh
 ----
