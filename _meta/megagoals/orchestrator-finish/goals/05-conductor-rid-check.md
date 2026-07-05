@@ -49,3 +49,15 @@ No dispatch is invisible. A wave of five sub-goals leaves five START records, no
 Emits a START/rid on the WAVE dispatch path (ID-099, rescoped): the wave spawn loop previously emitted only `executing` and no START, so wave dispatches were invisible to lane-telemetry (the serial path already warns-but-runs on a missing rid; that stays advisory). Verify: a 2-sub-goal-wave run-table showing two START records where there were zero. Stacked on #<04 PR>; review after it. Part of `orchestrator-finish`, see ROADMAP.md.
 
 ## Notes
+
+- 2026-07-06: Base branch confirmed as `master` (04 already merged, stack collapsed) at dispatch
+  time; PR opened against `master`, not the sub-goal contract's `04` PR reference (that reference
+  predates the stack collapsing).
+- 2026-07-06: Added a test-only `NC_SKIP_WAVE_START=1` escape hatch (mirroring ID-094's
+  `NC_SKIP_WAVE_TOKENS`) to prove the fix's causal effect via a real pre-fix-equivalent run rather
+  than only asserting post-fix presence. Not mentioned explicitly in the contract but consistent
+  with its "negative control" ask and the established ID-094 pattern in the same file.
+- 2026-07-06: Added a third assertion beyond the contract's two ("two START records" +
+  "no-derivable-rid is loudly flagged") -- confirmed the no-derivable-rid dispatch also still
+  *completes* (box flips, rc=0), proving the advisory-not-abort pin holds, not just that a warning
+  fires. Reversible, additive, no scope change.
