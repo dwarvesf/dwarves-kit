@@ -39,7 +39,7 @@ It feeds a windowed, capped sample of recent user prompts to Claude Haiku (`clau
 Scope to one project (note the **equals form**, slugs start with `-`):
 
 ```bash
-cc-observe hooks --project=-Users-tieubao-workspace-tieubao-ops-toolkit --days 7
+cc-observe hooks --project=<project-slug> --days 7
 ```
 
 ## What it reads
