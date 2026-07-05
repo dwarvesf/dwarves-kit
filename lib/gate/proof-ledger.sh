@@ -35,9 +35,13 @@ LIB_ROOT="$(cd "$PROOF_LEDGER_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem 
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# The ONE append substrate (SPEC-182): the override write routes through ledger_append.
+# shellcheck source=lib/ledger/ledger.sh
+source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
-LOG_DIR="$(kit_resolve_log_dir)"
+LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 OVERRIDE_LOG="$LOG_DIR/proof-overrides.log"
+OVERRIDE_STREAM="proof-overrides.log"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 slugify() { printf '%s' "$1" | tr '/ ' '--' | tr -cd '[:alnum:]._-'; }
@@ -114,8 +118,7 @@ override() {
   raw="${1:-}"; shift 2>/dev/null || { echo "usage: override <slug> <reason>" >&2; return 64; }
   reason="${*:-}"; slug="$(slugify "$raw")"
   [ -n "$slug" ] && [ -n "$reason" ] || { echo "usage: override <slug> <reason>" >&2; return 64; }
-  mkdir -p "$LOG_DIR" 2>/dev/null || true
-  printf '%s | %s | OVERRIDE | %s\n' "$(now)" "$slug" "$reason" >> "$OVERRIDE_LOG"
+  ledger_append "$OVERRIDE_STREAM" "$(printf '%s | %s | OVERRIDE | %s' "$(now)" "$slug" "$reason")" || return 1
   echo "proof-of-done override logged for '$slug' (trace: $OVERRIDE_LOG)"
 }
 
