@@ -1,4 +1,1 @@
-#!/usr/bin/env bash
-# Thin launcher for the deterministic two-tier handoff generator (SPEC-087 Mech B,
-# token-optim-v3 SG-02). Delegates to the sibling Python module (stdlib only).
-exec python3 "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/handoff/handoff_gen.py" "$@"
+goal/handoff-gen
