@@ -5,6 +5,12 @@
 #
 # v1.1: Fixed jq merge (concat arrays, don't deduplicate by matcher).
 # Added --uninstall flag. Backs up settings.json before modifying.
+#
+# v1.2 (ID-277 SG-04): layered install. The spine (safety-gate, ship-gate,
+# spec-drift-guard, secrets-guard, commit-format, anti-rationalization) is always
+# wired; everything else is an opt-in module via `--with <a,b,c>`, recorded in a
+# `kit.toml [modules]` manifest. A re-run is additive (never un-wires a previously
+# wired hook); `--prune --with <modules>` is the explicit trim path.
 
 set -euo pipefail
 
@@ -126,6 +132,12 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   fi
 
+  # Remove the module manifest (ID-277 SG-04); it is meaningless without an install.
+  if [ -f "$CLAUDE_DIR/dwarves-kit/kit.toml" ]; then
+    rm "$CLAUDE_DIR/dwarves-kit/kit.toml"
+    echo "[ok] Removed module manifest: kit.toml"
+  fi
+
   echo ""
   echo "=== Uninstall complete ==="
   echo "Kit directory ($KIT_DIR) was NOT removed. Delete it manually if desired:"
@@ -139,6 +151,73 @@ fi
 echo "=== dwarves-kit installer ==="
 echo "Kit location: $KIT_DIR"
 echo ""
+
+# --- Layered install: spine + opt-in modules (Decision B, ID-277 SG-04) --
+# The core spine (safety-gate, ship-gate, spec-drift-guard, secrets-guard,
+# commit-format, anti-rationalization) is ALWAYS wired. Everything else is an
+# optional module, wired only when named via `--with <a,b,c>`. A `kit.toml
+# [modules]` manifest RECORDS the enabled set (for `--with`-less re-installs
+# and future discovery) -- it is a shell-install RECORD, never a runtime
+# feature-registry: no hook reads it (see tests/test-no-runtime-manifest-read.sh).
+KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge"
+KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.sh commit-format.sh anti-rationalization.sh"
+
+# module -> its hook script basenames (space-separated; empty = hookless, e.g.
+# queue/stats/quiz_gate/weekend_batch/bridge are commands/skills with no hook to
+# gate -- still valid --with names, recorded in the manifest for discovery).
+kit_module_hooks() {
+  case "$1" in
+    board) echo "backlog-stage.sh" ;;
+    session) echo "context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh" ;;
+    advisor) echo "context-hints.sh" ;;
+    cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
+    *) echo "" ;;
+  esac
+}
+
+KIT_WITH_ARG=""
+KIT_PRUNE=0
+KIT_ARGS=("$@")
+_i=0
+while [ $_i -lt ${#KIT_ARGS[@]} ]; do
+  case "${KIT_ARGS[$_i]}" in
+    --with)
+      _i=$((_i + 1))
+      KIT_WITH_ARG="${KIT_ARGS[$_i]:-}"
+      ;;
+    --with=*)
+      KIT_WITH_ARG="${KIT_ARGS[$_i]#--with=}"
+      ;;
+    --prune)
+      KIT_PRUNE=1
+      ;;
+  esac
+  _i=$((_i + 1))
+done
+unset _i
+
+# Validate + normalize the requested module list (clean error on unknown/reserved).
+KIT_REQUESTED_MODULES=""
+if [ -n "$KIT_WITH_ARG" ]; then
+  IFS=',' read -ra _KIT_REQ <<< "$KIT_WITH_ARG"
+  for _m in "${_KIT_REQ[@]}"; do
+    _m="$(echo "$_m" | xargs)"
+    [ -z "$_m" ] && continue
+    if [ "$_m" = "team_mode" ]; then
+      echo "[error] 'team_mode' is a reserved, not-yet-installable module (parked; see DECISIONS.md Decision C)." >&2
+      exit 1
+    fi
+    case " $KIT_KNOWN_MODULES " in
+      *" $_m "*) KIT_REQUESTED_MODULES="$KIT_REQUESTED_MODULES $_m" ;;
+      *)
+        echo "[error] unknown module: '$_m'. Known modules: $KIT_KNOWN_MODULES" >&2
+        exit 1
+        ;;
+    esac
+  done
+  unset _m
+fi
+KIT_REQUESTED_MODULES="$(echo "$KIT_REQUESTED_MODULES" | xargs)"
 
 # --- Plugin-aware compat mode --------------------------------------------
 # If the kit is already installed as a Claude Code plugin, the plugin provides
@@ -289,10 +368,84 @@ if [ -z "$DEST_REAL" ] || [ "$KIT_REAL" != "$DEST_REAL" ]; then
   echo "[ok] Stamped install: $(tr '\n' ' ' < "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP")"
 fi
 
+# 1f. Resolve the enabled module set (spine always; optionals additive across
+# re-installs unless --prune). Three inputs feed the union so a re-run NEVER
+# retroactively un-wires a hook a prior run (or a hand-edited settings.json) wired:
+#   (a) kit.toml's prior [modules] (this consumer's own record)
+#   (b) hooks ALREADY present in settings.json that map to a known module (covers
+#       a consumer who ran the OLD all-hooks installer, e.g. ops-toolkit/
+#       console-labs/family-office, before this manifest existed)
+#   (c) this run's --with request
+# --prune drops (a)+(b) and trims to exactly --with (spine-only if --with is empty).
+KIT_TOML="$CLAUDE_DIR/dwarves-kit/kit.toml"
+
+KIT_PRIOR_MODULES=""
+if [ -f "$KIT_TOML" ]; then
+  KIT_PRIOR_MODULES="$( (grep -E '^[a-z_]+ = true$' "$KIT_TOML" 2>/dev/null | grep -v '^team_mode' | sed 's/ =.*//' | tr '\n' ' ') || true)"
+fi
+
+KIT_EXISTING_WIRED_MODULES=""
+if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+  KIT_EXISTING_CMDS="$(jq -r '(.hooks // {}) | to_entries[]? | .value[]? | .hooks[]? | .command // empty' "$SETTINGS_FILE" 2>/dev/null || true)"
+  for _mod in $KIT_KNOWN_MODULES; do
+    for _h in $(kit_module_hooks "$_mod"); do
+      if printf '%s\n' "$KIT_EXISTING_CMDS" | grep -q "dwarves-kit/hooks/${_h}"; then
+        KIT_EXISTING_WIRED_MODULES="$KIT_EXISTING_WIRED_MODULES $_mod"
+        break
+      fi
+    done
+  done
+  unset _mod _h
+fi
+
+if [ "$KIT_PRUNE" -eq 1 ]; then
+  KIT_ENABLED_MODULES="$KIT_REQUESTED_MODULES"
+  echo "[ok] --prune: trimming enabled modules to exactly: ${KIT_ENABLED_MODULES:-<spine-only>}"
+else
+  KIT_ENABLED_MODULES="$(printf '%s %s %s\n' "$KIT_PRIOR_MODULES" "$KIT_EXISTING_WIRED_MODULES" "$KIT_REQUESTED_MODULES" \
+    | tr ' ' '\n' | sed '/^$/d' | sort -u | tr '\n' ' ' | xargs)"
+fi
+
+KIT_ENABLED_HOOK_NAMES="$KIT_SPINE_HOOKS"
+for _mod in $KIT_ENABLED_MODULES; do
+  KIT_ENABLED_HOOK_NAMES="$KIT_ENABLED_HOOK_NAMES $(kit_module_hooks "$_mod")"
+done
+unset _mod
+
+KIT_HOOK_RE=""
+for _h in $KIT_ENABLED_HOOK_NAMES; do
+  _esc="$(printf '%s' "$_h" | sed 's/\./\\./g')"
+  if [ -z "$KIT_HOOK_RE" ]; then KIT_HOOK_RE="$_esc"; else KIT_HOOK_RE="$KIT_HOOK_RE|$_esc"; fi
+done
+unset _h _esc
+
+# The filtered kit settings.json: spine hooks + only the opted-in modules' hooks.
+# An un-installed module's hook is never present here, so it can never reach the
+# consumer's settings.json below.
+# statusLine ships with the `cosmetic` module (its command is statusline.sh); strip
+# it here too, not just in step 7's gate, so a fresh (no-prior-settings.json) install
+# doesn't smuggle it in via the blind first-time copy below.
+KIT_STATUSLINE_ON=0
+case " $KIT_ENABLED_HOOK_NAMES " in *" statusline.sh "*) KIT_STATUSLINE_ON=1 ;; esac
+
+KIT_SETTINGS_FILTERED="$(mktemp)"
+jq --arg re "$KIT_HOOK_RE" --argjson sl "$KIT_STATUSLINE_ON" '
+  .hooks |= (
+    to_entries | map(
+      .value |= (
+        map(
+          .hooks |= map(select(.command | test($re)))
+        ) | map(select(.hooks | length > 0))
+      )
+    ) | from_entries
+  )
+  | if ($sl == 1) then . else del(.statusLine) end
+' "$KIT_DIR/settings.json" > "$KIT_SETTINGS_FILTERED"
+
 # 2. Merge settings.json
 if [ ! -f "$SETTINGS_FILE" ]; then
-  # No existing settings, just copy ours
-  cp "$KIT_DIR/settings.json" "$SETTINGS_FILE"
+  # No existing settings, just copy the filtered (spine + opted-in) set
+  cp "$KIT_SETTINGS_FILTERED" "$SETTINGS_FILE"
   echo "[ok] Created $SETTINGS_FILE"
 else
   if command -v jq >/dev/null 2>&1; then
@@ -316,7 +469,7 @@ else
 
     # Then merge: CONCAT arrays (don't deduplicate by matcher)
     # This preserves the user's existing hooks alongside ours
-    MERGED=$(echo "$EXISTING_CLEAN" | jq --slurpfile kit "$KIT_DIR/settings.json" '
+    MERGED=$(echo "$EXISTING_CLEAN" | jq --slurpfile kit "$KIT_SETTINGS_FILTERED" '
       . as $existing |
       $kit[0] as $new |
       ($new.hooks // {}) as $kh |
@@ -345,6 +498,28 @@ else
     echo "       Then re-run this script, or manually merge $KIT_DIR/settings.json"
   fi
 fi
+rm -f "$KIT_SETTINGS_FILTERED"
+
+# 2b. Write the kit.toml [modules] manifest -- a RECORD driving the shell wiring
+# above, never a runtime registry (no hook reads this file; see the standing lint
+# in tests/test-no-runtime-manifest-read.sh).
+{
+  echo "# dwarves-kit module manifest. Generated by install.sh -- do not hand-edit;"
+  echo "# use \`install.sh --with <modules>\` (or \`--prune --with <modules>\` to trim) to change it."
+  echo "# This is a shell-install RECORD, not a runtime feature-registry: no hook reads it."
+  echo ""
+  echo "[modules]"
+  echo "team_mode = false"
+  for _mod in $KIT_KNOWN_MODULES; do
+    case " $KIT_ENABLED_MODULES " in
+      *" $_mod "*) echo "$_mod = true" ;;
+      *) echo "$_mod = false" ;;
+    esac
+  done
+  unset _mod
+} > "$KIT_TOML"
+echo "[ok] Wrote module manifest: $KIT_TOML"
+echo "[ok] Enabled modules: ${KIT_ENABLED_MODULES:-<spine-only>}"
 
 # 3. Symlink commands
 for CMD_FILE in "$KIT_DIR/commands/"*.md; do
@@ -406,24 +581,44 @@ if [ -d "$KIT_DIR/rules" ]; then
   echo "  They must live in project .claude/rules/, not ~/.claude/rules/."
 fi
 
-# 7. Merge statusLine config
-if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
-  HAS_STATUSLINE=$(jq '.statusLine // null' "$SETTINGS_FILE" 2>/dev/null)
-  if [ "$HAS_STATUSLINE" = "null" ]; then
-    STATUSLINE_CMD=$(jq -r '.statusLine.command' "$KIT_DIR/settings.json" 2>/dev/null)
-    if [ -n "$STATUSLINE_CMD" ] && [ "$STATUSLINE_CMD" != "null" ]; then
-      jq --arg cmd "$STATUSLINE_CMD" '.statusLine = {"command": $cmd}' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-      echo "[ok] Registered statusLine"
+# 7. Merge statusLine config (part of the `cosmetic` module; gated the same as its hook)
+case " $KIT_ENABLED_HOOK_NAMES " in
+  *" statusline.sh "*)
+    if [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+      HAS_STATUSLINE=$(jq '.statusLine // null' "$SETTINGS_FILE" 2>/dev/null)
+      if [ "$HAS_STATUSLINE" = "null" ]; then
+        STATUSLINE_CMD=$(jq -r '.statusLine.command' "$KIT_DIR/settings.json" 2>/dev/null)
+        if [ -n "$STATUSLINE_CMD" ] && [ "$STATUSLINE_CMD" != "null" ]; then
+          jq --arg cmd "$STATUSLINE_CMD" '.statusLine = {"command": $cmd}' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+          echo "[ok] Registered statusLine"
+        fi
+      else
+        echo "[ok] statusLine already configured (not overwriting)"
+      fi
     fi
-  else
-    echo "[ok] statusLine already configured (not overwriting)"
-  fi
-fi
+    ;;
+  *)
+    echo "[skip] statusLine not registered (cosmetic module not enabled; --with cosmetic to opt in)"
+    ;;
+esac
 
 # 6. Verify
 echo ""
 echo "=== Verification ==="
-echo "Hooks directory: $KIT_DIR/hooks/"
+echo "Modules: spine (always on) + ${KIT_ENABLED_MODULES:-<none opted in>}"
+KIT_NOT_ENABLED=""
+for _mod in $KIT_KNOWN_MODULES; do
+  case " $KIT_ENABLED_MODULES " in
+    *" $_mod "*) : ;;
+    *) KIT_NOT_ENABLED="$KIT_NOT_ENABLED $_mod" ;;
+  esac
+done
+unset _mod
+echo "  Not enabled:${KIT_NOT_ENABLED} team_mode(reserved)"
+echo "  --with <modules> to opt in, --prune --with <modules> to trim, kit.toml: $KIT_TOML"
+echo "Hooks wired into settings.json:"
+printf '%s\n' $KIT_ENABLED_HOOK_NAMES | sort -u | while read -r h; do [ -n "$h" ] && echo "  [hook] $h"; done
+echo "Hooks directory (all shipped, not all wired): $KIT_DIR/hooks/"
 ls -1 "$KIT_DIR/hooks/"*.sh 2>/dev/null | while read f; do echo "  [hook] $(basename "$f")"; done
 
 echo "Commands:"
@@ -455,5 +650,10 @@ echo ""
 echo "Tip: Adopt a repo into the kit (injects AGENTS.md + a CLAUDE.md pointer + the proof"
 echo "marker, idempotently, and wires the classifiers so the ship-gate engages):"
 echo "  bash $KIT_DIR/lib/adopt.sh <repo-dir>      # or run /kit:adopt from inside the repo"
+echo ""
+echo "Tip: opt into a module (board, session, advisor, cosmetic, queue, stats, quiz_gate,"
+echo "weekend_batch, bridge): bash $KIT_DIR/install.sh --with board,stats"
+echo "Tip: trim to exactly a set (drops anything previously wired, incl. an old all-hooks"
+echo "install): bash $KIT_DIR/install.sh --prune --with board"
 echo ""
 echo "To uninstall: bash $KIT_DIR/install.sh --uninstall"

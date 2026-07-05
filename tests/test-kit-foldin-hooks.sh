@@ -210,8 +210,12 @@ done
 echo ""
 echo "=== Installer materializes all 4 hooks + companions into a temp HOME ==="
 # ============================================================
+# ID-277 SG-04: these 4 hooks are optional modules now (backlog-stage -> board,
+# citation-guard/harvest -> session, context-hints -> advisor), so the settings.json
+# wiring check below needs an explicit --with; the physical-file materialization
+# (hooks/, lib/, etc.) is unconditional regardless of module selection.
 INSTALL_HOME="$TD/install-home"
-if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1; then
+if HOME="$INSTALL_HOME" bash "$KIT_DIR/install.sh" --with board,session,advisor >/dev/null 2>&1; then
   DEST="$INSTALL_HOME/.claude/dwarves-kit/hooks"
   for NAME in backlog-stage citation-guard context-hints harvest; do
     RC=0; [ -f "$DEST/${NAME}.sh" ] || RC=1
