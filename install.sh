@@ -606,7 +606,15 @@ esac
 echo ""
 echo "=== Verification ==="
 echo "Modules: spine (always on) + ${KIT_ENABLED_MODULES:-<none opted in>}"
-echo "  Not enabled: $(for m in $KIT_KNOWN_MODULES; do case " $KIT_ENABLED_MODULES " in *" $m "*) ;; *) printf '%s ' "$m" ;; esac; done) team_mode(reserved)"
+KIT_NOT_ENABLED=""
+for _mod in $KIT_KNOWN_MODULES; do
+  case " $KIT_ENABLED_MODULES " in
+    *" $_mod "*) : ;;
+    *) KIT_NOT_ENABLED="$KIT_NOT_ENABLED $_mod" ;;
+  esac
+done
+unset _mod
+echo "  Not enabled:${KIT_NOT_ENABLED} team_mode(reserved)"
 echo "  --with <modules> to opt in, --prune --with <modules> to trim, kit.toml: $KIT_TOML"
 echo "Hooks wired into settings.json:"
 printf '%s\n' $KIT_ENABLED_HOOK_NAMES | sort -u | while read -r h; do [ -n "$h" ] && echo "  [hook] $h"; done
