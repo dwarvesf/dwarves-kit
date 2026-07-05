@@ -47,3 +47,6 @@ The mega close / convergence path in `lib/queue/orchestrate.sh` (the `TIER4_CLOS
 Splits the TIER-4 close single-prompt verifier into 3 fresh sessions + a fail-closed aggregator (ID-093), so one verifier's blind spot can't pass the assembled run. Verify: the 3-dispatch + dissent-aggregation run-table. Part of `orchestrator-finish`, see ROADMAP.md.
 
 ## Notes
+
+- Deviation (small, reversible): the goal file's PR-base/Depends-on note says "main"; this repo's default branch is `master` (confirmed via `AGENTS.md`/repo state). PR opened against `master`.
+- Design choice not pinned by the goal: each verifier prompt ends with a structured `TIER4-VERDICT: PASS` / `TIER4-VERDICT: DISSENT: <reason>` line so `_aggregate_tier4_verdicts` can parse all 3 outputs uniformly regardless of which check (integration-verifier / review-team / advisor) a session ran. A nonzero session exit is folded in as a synthetic DISSENT line (never an implicit PASS). See `docs/implementation-notes/orchfin-02-tier4-split.md`.

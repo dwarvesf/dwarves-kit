@@ -30,12 +30,14 @@
 # orchestrator advances only then (no self-claim). It STOPS at the first `gate` sub-goal
 # (shared-repo review needs a human).
 #
-# TIER-4 mega-close (SPEC-118, env TIER4_CLOSE=1 default): when EVERY box is checked, the run does a
-# real mega-level close over the ASSEMBLED WAVE -- a mechanical no-orphan sweep (a dispatchable agent
-# defined-but-never-dispatched is BLOCKING, the c6fbd99 class) + a dispatched verifier session
-# (integration-verifier + review-team incl. security + advisor both modes) -- THEN it HOLDS the final
-# human gate (never auto-merges past it). TIER4_CLOSE=0 restores the bare "done"-and-return;
-# TIER4_CORPUS overrides the no-orphan sweep root (default: the megadir's git repo root).
+# TIER-4 mega-close (SPEC-118/ID-093, env TIER4_CLOSE=1 default): when EVERY box is checked, the run
+# does a real mega-level close over the ASSEMBLED WAVE -- a mechanical no-orphan sweep (a dispatchable
+# agent defined-but-never-dispatched is BLOCKING, the c6fbd99 class) + THREE independent fresh-context
+# verifier sessions (integration-verifier / review-team incl. security / advisor both modes, one
+# process each) whose verdicts are fail-closed AGGREGATED (any single dissent blocks the close) --
+# THEN it HOLDS the final human gate (never auto-merges past it). TIER4_CLOSE=0 restores the bare
+# "done"-and-return; TIER4_CORPUS overrides the no-orphan sweep root (default: the megadir's git
+# repo root).
 #
 # Multiplexer panes (SPEC-119, env MULTIPLEXER=0 default -- OPT-IN, ADR-0032 s4): when a wave
 # actually admits >=1 sub-goal concurrently (WAVE_CAP>1 + disjoint `## Touches`), MULTIPLEXER=1
@@ -162,12 +164,14 @@ PANE_VIEWER="${PANE_VIEWER:-auto}"
 VIEWER_CMD="${VIEWER_CMD:-}"
 PANE_VIEWER_ALLOWED="auto cmux kitty wezterm ghostty iterm terminal none"
 
-# TIER-4 mega-close (SPEC-118, executes ADR-0032 section 5). Default ON (1): when EVERY sub-goal box
-# is checked, `cmd_run` runs a real mega-level close over the ASSEMBLED WAVE instead of just printing
-# "done" -- a mechanical no-orphan sweep (a dispatchable AGENT defined-but-never-dispatched is a
-# BLOCKING finding, the kit-hardening c6fbd99 class) THEN a dispatched `claude -p` verifier session
-# (integration-verifier vs the mega OBJECTIVE + review-team incl. the security lens + the advisor in
-# both modes), THEN it HOLDS the final human gate (it NEVER auto-merges past it -- gated-final).
+# TIER-4 mega-close (SPEC-118/ID-093, executes ADR-0032 section 5). Default ON (1): when EVERY
+# sub-goal box is checked, `cmd_run` runs a real mega-level close over the ASSEMBLED WAVE instead of
+# just printing "done" -- a mechanical no-orphan sweep (a dispatchable AGENT defined-but-never-
+# dispatched is a BLOCKING finding, the kit-hardening c6fbd99 class) THEN THREE independent
+# fresh-context `claude -p` verifier sessions (integration-verifier vs the mega OBJECTIVE /
+# review-team incl. the security lens / the advisor in both modes, one process each) whose verdicts
+# are fail-closed aggregated, THEN it HOLDS the final human gate (it NEVER auto-merges past it --
+# gated-final).
 # TIER4_CLOSE=0 restores the bare "done"-and-return (the escape hatch an unrelated all-auto-completion
 # test uses so the close fires only in its own dedicated test). TIER4_CORPUS overrides the no-orphan
 # sweep root (default: the megadir's git repo root); unset AND unresolvable -> the sweep is SKIPPED
@@ -1328,10 +1332,11 @@ _wave_converge() {  # megadir [id...]
 }
 # -----------------------------------------------------------------------------------------------
 
-# ---- TIER-4 mega-close (SPEC-118, executes ADR-0032 section 5) ---------------------------------
+# ---- TIER-4 mega-close (SPEC-118/ID-093, executes ADR-0032 section 5) --------------------------
 # Runs AFTER every sub-goal box is checked, over the ASSEMBLED WAVE -- it does NOT re-run each
 # sub-goal's per-task V-model (that already fired). Three steps: (1) a mechanical no-orphan sweep,
-# (2) a dispatched `claude -p` verifier session (integration-verifier + review-team + advisor), then
+# (2) THREE independent fresh-context `claude -p` verifier sessions (integration-verifier /
+# review-team / advisor, one process each) fail-closed AGGREGATED (any dissent blocks), then
 # (3) HOLD the human gate (never auto-merge). Replaces the "done"-and-return in cmd_run.
 
 # _no_orphan_check <corpus>: mechanical sweep for the c6fbd99 orphan class. For each agents/<name>.md
@@ -1364,31 +1369,114 @@ _no_orphan_check() {  # corpus
   [ "$found" = 0 ] && return 0 || return 1
 }
 
-# _build_close_prompt <dir> <roadmap>: compose the verifier close-session prompt. The mega-goal
-# OBJECTIVE is the ROADMAP `**Destination:**` line if present, else the `# Mega-goal:` title line
-# (fixtures carry the title; the real orchestrate-hardening ROADMAP carries Destination).
-_build_close_prompt() {  # dir roadmap
-  local dir="$1" roadmap="$2" objective=""
+# _tier4_objective <roadmap>: the mega-goal OBJECTIVE line -- the ROADMAP `**Destination:**` line
+# if present, else the `# Mega-goal:` title line (fixtures carry the title; the real
+# orchestrate-hardening ROADMAP carries Destination). Shared by all 3 verifier prompts below.
+_tier4_objective() {  # roadmap
+  local roadmap="$1" objective=""
   objective=$(grep -m1 -iE '^\*\*Destination:\*\*' "$roadmap" 2>/dev/null | sed -E 's/^\*\*[^*]*\*\*[[:space:]]*//')
   [ -n "$objective" ] || objective=$(grep -m1 -E '^# Mega-goal:' "$roadmap" 2>/dev/null | sed -E 's/^# Mega-goal:[[:space:]]*//')
+  printf '%s' "$objective"
+}
+
+# _build_verifier_prompt <dir> <roadmap> <n>: compose the n-th (1..3) of THREE independent
+# fresh-context verifier prompts for the TIER-4 close (ID-093). Splitting one single-prompt
+# verifier (that ran all three checks itself, in one session) into three separate sessions means
+# no single session's blind spot can silently pass the whole assembled wave -- each of the three
+# reports its OWN verdict, and `_aggregate_tier4_verdicts` fails closed if any one dissents. Each
+# prompt carries the SAME mega-goal OBJECTIVE and ends with the same structured verdict contract
+# so the aggregator can parse all three uniformly regardless of which check a session ran.
+_build_verifier_prompt() {  # dir roadmap n
+  local dir="$1" roadmap="$2" n="$3" objective task
+  objective=$(_tier4_objective "$roadmap")
+  case "$n" in
+    1) task='integration-verifier against the OBJECTIVE below (cross-sub-goal wiring + global acceptance).' ;;
+    2) task='/kit:review-team INCLUDING the security-reviewer lens.' ;;
+    3) task='the advisor in BOTH modes: critique (an extra uniform lens on top of the per-phase reviewers) AND over-suggest (additional ideas/sub-goals to improve the work).' ;;
+  esac
   cat <<EOF
-TIER-4 MEGA-CLOSE for the mega-goal at: $dir
+TIER-4 MEGA-CLOSE VERIFIER $n/3 for the mega-goal at: $dir
 
 Every sub-goal box is checked. Verify the ASSEMBLED WAVE as a WHOLE. Do NOT re-run each sub-goal's
 per-task V-model (that already fired); verify that the sub-goals WIRE TOGETHER and meet the OBJECTIVE.
+This is ONE of three INDEPENDENT fresh-context verifier sessions; you do not see the other two
+sessions' output, and they do not see yours. Run your check honestly on its own merits.
 
 Mega-goal OBJECTIVE:
   $objective
 
 Run, over the assembled result:
-1. integration-verifier against the OBJECTIVE above (cross-sub-goal wiring + global acceptance).
-2. /kit:review-team INCLUDING the security-reviewer lens.
-3. the advisor in BOTH modes: critique (an extra uniform lens on top of the per-phase reviewers) AND
-   over-suggest (additional ideas/sub-goals to improve the work).
+$task
 
-Report a terse verdict (SHIP / HOLD-WITH-FINDINGS) and any blocking findings. Do NOT merge anything;
-the final human gate is HELD after you report.
+End your report with EXACTLY one line, the last line of your output, one of:
+  TIER4-VERDICT: PASS
+  TIER4-VERDICT: DISSENT: <one-line reason>
+Use DISSENT for any blocking finding severe enough that the mega-goal should not ship as-is. Do NOT
+merge anything; the final human gate is HELD regardless of your verdict.
 EOF
+}
+
+# _aggregate_tier4_verdicts <out1> <out2> <out3>: fail-closed aggregation over the three verifier
+# outputs (ID-093). PASS only when all three sessions exited 0 (checked by the caller, which passes
+# an already-nonzero session through as a synthetic DISSENT line) AND all three printed
+# `TIER4-VERDICT: PASS` as their last matching verdict line. A single dissent -- one session, one
+# blind spot averted -- is enough to fail closed; this is the whole point of the split (a single
+# combined verifier could not surface a lone dissenting read, only its own one verdict). Prints one
+# `[aggregate] verifier N: <verdict>` line per session, then the aggregate decision. Returns 0
+# (aggregate PASS) / 1 (aggregate DISSENT: at least one verifier did not pass clean).
+_aggregate_tier4_verdicts() {  # out1 out2 out3
+  local i=0 f verdict any_dissent=0
+  for f in "$@"; do
+    i=$((i + 1))
+    verdict=$(grep -oE 'TIER4-VERDICT:.*$' "$f" 2>/dev/null | tail -1)
+    [ -n "$verdict" ] || verdict='TIER4-VERDICT: DISSENT: no verdict line found in verifier output'
+    printf '[aggregate] verifier %s: %s\n' "$i" "$verdict"
+    case "$verdict" in
+      'TIER4-VERDICT: PASS') ;;
+      *) any_dissent=1 ;;
+    esac
+  done
+  if [ "$any_dissent" = 1 ]; then
+    printf '[aggregate] DISSENT: at least one of the 3 verifiers did not PASS -- failing closed.\n'
+    return 1
+  fi
+  printf '[aggregate] PASS: all 3 independent verifiers agree.\n'
+  return 0
+}
+
+# _dispatch_tier4_verifiers <dir> <roadmap>: dispatch the THREE independent fresh-context verifier
+# sessions (ID-093), each a separate `claude -p` process (never --stream to the conductor, ADR-0032
+# section 1), capture each session's stdout to its own temp file, then aggregate. Returns
+# `_aggregate_tier4_verdicts`'s rc; a nonzero session exit is folded in as a synthetic DISSENT line
+# (a crashed/erroring verifier must never be silently treated as an implicit PASS). Temp files are
+# cleaned up inline after the loop (NOT via a RETURN trap): a `trap ... RETURN` referencing a `local`
+# array is a global return-trap under bash 3.2 (macOS system bash, no functrace) that fires with the
+# array out of scope, and `"${arr[@]}"` on an empty array is a FATAL `set -u` unbound-variable there
+# -- it flipped the whole run to rc 1 in macOS CI. The loop is fixed at 3 iterations, so `tmps`/`outs`
+# are always populated at the cleanup/aggregate points; no empty-array expansion occurs.
+_dispatch_tier4_verifiers() {  # dir roadmap
+  local dir="$1" roadmap="$2" n pfile ofile rc arc
+  local outs=()
+  local tmps=()
+  for n in 1 2 3; do
+    pfile=$(mktemp); ofile=$(mktemp)
+    tmps+=("$pfile" "$ofile")
+    _build_verifier_prompt "$dir" "$roadmap" "$n" > "$pfile"
+    _emit_event "$dir" close verifying "dispatching verifier $n/3"
+    _say "[orchestrate] [close] dispatching verifier session $n/3 ($CLAUDE_CMD -p) ..."
+    rc=0
+    # shellcheck disable=SC2086 # CLAUDE_FLAGS is operator config; word-splitting is intended.
+    "$CLAUDE_CMD" -p $CLAUDE_FLAGS < "$pfile" > "$ofile" 2>&1 || rc=$?
+    if [ "$rc" != 0 ]; then
+      printf 'TIER4-VERDICT: DISSENT: verifier %s session exited nonzero (%s)\n' "$n" "$rc" >> "$ofile"
+    fi
+    cat "$ofile"
+    outs+=("$ofile")
+  done
+  arc=0
+  _aggregate_tier4_verdicts "${outs[@]}" || arc=$?
+  rm -f "${tmps[@]}"
+  return "$arc"
 }
 
 # _tier4_close <dir> <roadmap>: the close STEP. no-orphan sweep -> verifier session -> HOLD the gate.
@@ -1422,26 +1510,24 @@ _tier4_close() {  # dir roadmap
       _say "[orchestrate] [close] no-orphan sweep clean over $corpus (every agent has a live dispatch)." ;;
   esac
 
-  # 2. Dispatch ONE verifier close session (plain `claude -p`; NEVER --stream to the conductor,
-  #    ADR-0032 section 1). Prompt via a temp file on stdin, mirroring cmd_run's dispatch seam.
-  local pfile; pfile=$(mktemp)
-  trap 'rm -f "$pfile"' EXIT
-  _build_close_prompt "$dir" "$roadmap" > "$pfile"
-  _emit_event "$dir" close verifying "dispatching the integration-verifier + review-team + advisor session"
-  _say "[orchestrate] [close] dispatching the verifier session ($CLAUDE_CMD -p) ..."
+  # 2. Dispatch THREE independent fresh-context verifier sessions (ID-093: integration-verifier /
+  #    review-team+security / advisor-both-modes, one process each, NEVER --stream to the
+  #    conductor, ADR-0032 section 1) and fail-closed aggregate their verdicts. This replaces the
+  #    old single combined-prompt session: one session's blind spot could pass the whole assembled
+  #    wave silently; three independent reads mean a lone dissent surfaces instead of being averaged
+  #    away inside one session's own judgment.
+  _say "[orchestrate] [close] dispatching 3 independent verifier sessions ($CLAUDE_CMD -p x3) ..."
   local rc=0
-  # shellcheck disable=SC2086 # CLAUDE_FLAGS is operator config; word-splitting is intended.
-  "$CLAUDE_CMD" -p $CLAUDE_FLAGS < "$pfile" || rc=$?
-  rm -f "$pfile"; trap - EXIT
+  _dispatch_tier4_verifiers "$dir" "$roadmap" || rc=$?
   if [ "$rc" != 0 ]; then
-    _emit_event "$dir" close blocked "verifier session exited nonzero ($rc)"
-    echo "[orchestrate] [close] the verifier session exited nonzero ($rc); halting for human review (not held clean)." >&2
+    _emit_event "$dir" close blocked "verifier aggregate: at least one of 3 verifiers dissented"
+    echo "[orchestrate] [close] BLOCKING: the 3-verifier aggregate DISSENTED (at least one of the 3 independent verifiers did not pass clean); halting for human review (not held clean)." >&2
     return 1
   fi
 
-  # 3. HOLD the human gate -- verifiers ran; NEVER auto-merge past it (gated-final).
-  _emit_event "$dir" close held "verifiers ran (no-orphan + integration-verifier + review-team + advisor); HELD for the final human gate; NOT auto-merged"
-  _say "[orchestrate] [close] TIER-4 mega-close complete: the no-orphan sweep + integration-verifier + review-team (security lens) + advisor (both modes) ran over the assembled wave. HELD for the final human gate -- NOT auto-merged (gated-final). Review the held PR, then merge."
+  # 3. HOLD the human gate -- all 3 verifiers ran and agreed; NEVER auto-merge past it (gated-final).
+  _emit_event "$dir" close held "verifiers ran (no-orphan + 3 independent verifiers: integration-verifier + review-team + advisor, all PASS); HELD for the final human gate; NOT auto-merged"
+  _say "[orchestrate] [close] TIER-4 mega-close complete: the no-orphan sweep + 3 independent verifier sessions (integration-verifier + review-team [security lens] + advisor [both modes]) all PASS over the assembled wave. HELD for the final human gate -- NOT auto-merged (gated-final). Review the held PR, then merge."
   return 0
 }
 # -----------------------------------------------------------------------------------------------
@@ -1509,7 +1595,7 @@ cmd_run() {
     # "done" at the all-checked terminal -- it dispatches a live verifier session + a no-orphan sweep.
     # An operator previewing the plan must see that a `claude -p` session is about to fire.
     [ "$TIER4_CLOSE" = 1 ] \
-      && _say "  -> (when all boxes are checked) TIER-4 mega-close: no-orphan sweep + verifier session ($CLAUDE_CMD -p: integration-verifier + review-team + advisor), then HOLD the human gate [TIER4_CLOSE=1]"
+      && _say "  -> (when all boxes are checked) TIER-4 mega-close: no-orphan sweep + 3 independent verifier sessions ($CLAUDE_CMD -p x3: integration-verifier / review-team / advisor, fail-closed aggregated), then HOLD the human gate [TIER4_CLOSE=1]"
     if [ "$board_mode" != roadmap ]; then
       _say ""; _say "[board mode: $board_mode]"
       _render_board "$dir" "$roadmap" "$board_mode"

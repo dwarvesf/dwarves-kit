@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
-# test-tier4-close.sh (SPEC-118, executes ADR-0032 section 5)
-# Pins the TIER-4 mega-close that replaces `orchestrate.sh`'s "done"-and-return. Three load-bearing
+# test-tier4-close.sh (SPEC-118/ID-093, executes ADR-0032 section 5)
+# Pins the TIER-4 mega-close that replaces `orchestrate.sh`'s "done"-and-return. Load-bearing
 # properties, all via the CLAUDE_CMD mock seam (no live LLM):
-#   1. VERIFIERS-RUN-BEFORE-GATE: after every box is checked, the close DISPATCHES a verifier session
-#      AND emits `held` -- i.e. a verifier ran and the gate is held, NOT the bare done-and-return.
+#   1. VERIFIERS-RUN-BEFORE-GATE: after every box is checked, the close DISPATCHES all 3 independent
+#      verifier sessions AND emits `held` -- i.e. the verifiers ran and the gate is held, NOT the bare
+#      done-and-return.
 #   2. SEEDED-ORPHAN NEGATIVE CONTROL: a deliberately defined-but-never-dispatched AGENT (the c6fbd99
 #      class) is CAUGHT by the mechanical no-orphan sweep (unit AND end-to-end), not silently passed.
 #   3. GATE-HELD: the close HOLDS the human gate and NEVER auto-merges (no merge hook invoked).
+#   4. THREE-VERIFIER SPLIT (ID-093): the close dispatches exactly 3 fresh-context verifier sessions
+#      (not 1), each an independent `claude -p` process.
+#   5. DISSENT NEGATIVE CONTROL (ID-093): one dissenting verifier among the 3 is NOT silently dropped
+#      -- the fail-closed aggregator refuses to hold the gate on a single dissent, even when the other
+#      two PASS.
 # Plus: the opt-out (TIER4_CLOSE=0 restores done-and-return) and the whole-word dispatch match
 # (advisor must not be satisfied by the word `advisory`).
 #
 # Coverage-delta is recorded in the proof-of-done. Uncovered by design: a LIVE integration-verifier/
 # review-team/advisor VERDICT (the session content is the LLM's job, mocked here -- the driver only
-# proves the session is DISPATCHED before the gate); and the softer flag/step no-orphan lens (delegated
-# to the close session's integration-verifier).
+# proves the sessions are DISPATCHED and AGGREGATED before the gate); and the softer flag/step
+# no-orphan lens (delegated to the verifier sessions' integration-verifier check).
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ORCH="$KIT/lib/queue/orchestrate.sh"
@@ -49,15 +55,23 @@ mk_corpus_clean() {  # dir
   echo "Dispatch the good-agent via the Task tool." > "$c/commands/uses-good.md"
 }
 
-# The mock claude: flips the named SG box on a sub-goal turn; on the CLOSE turn (prompt carries the
-# 'TIER-4 MEGA-CLOSE' banner, no SG-NN to flip) it records that the verifier session was DISPATCHED by
-# touching $CLOSE_SENTINEL, then exits 0. Quoted heredoc so $MOCK_RM/$CLOSE_SENTINEL resolve at runtime.
+# The mock claude: flips the named SG box on a sub-goal turn; on a CLOSE VERIFIER turn (prompt
+# carries the 'TIER-4 MEGA-CLOSE VERIFIER n/3' banner, no SG-NN to flip) it records that verifier n
+# was DISPATCHED by touching $CLOSE_SENTINEL.<n>, then prints a TIER4-VERDICT line (PASS by default;
+# DISSENT for verifier $MOCK_DISSENT if that env var names this verifier's index) and exits 0. Quoted
+# heredoc so $MOCK_RM/$CLOSE_SENTINEL/$MOCK_DISSENT resolve at runtime.
 mk_mock() {  # path
   cat > "$1" <<'MOCK'
 #!/usr/bin/env bash
 prompt=$(cat)
-if printf '%s' "$prompt" | grep -q 'TIER-4 MEGA-CLOSE'; then
-  echo "close-session ran" > "$CLOSE_SENTINEL"
+if printf '%s' "$prompt" | grep -q 'TIER-4 MEGA-CLOSE VERIFIER'; then
+  n=$(printf '%s' "$prompt" | grep -oE 'VERIFIER [0-9]+/3' | head -1 | grep -oE '[0-9]+' | head -1)
+  touch "${CLOSE_SENTINEL}.${n}"
+  if [ -n "${MOCK_DISSENT:-}" ] && [ "$MOCK_DISSENT" = "$n" ]; then
+    echo "TIER4-VERDICT: DISSENT: forced test dissent from verifier $n"
+  else
+    echo "TIER4-VERDICT: PASS"
+  fi
   exit 0
 fi
 id=$(printf '%s' "$prompt" | grep -oE 'SG-[0-9]+' | head -1)
@@ -91,10 +105,17 @@ rcA=$?
 [ "$rcA" = 0 ] && pass "clean close: run exits 0 (held clean)" || { fail "clean close: rc=$rcA"; cat "$TMP/A.out"; }
 grep -q '^- \[x\] SG-01' "$DA/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$DA/ROADMAP.md" \
   && pass "clean close: both auto boxes flipped (reached the terminal)" || fail "clean close: boxes not both flipped"
-# verifiers-before-gate: the verifier session was DISPATCHED (sentinel) AND the gate was held.
-[ -f "$SENT_A" ] \
-  && pass "verifiers-before-gate: verifier close session was DISPATCHED (not done-and-return)" \
-  || { fail "verifiers-before-gate: verifier session never dispatched"; cat "$TMP/A.out"; }
+# verifiers-before-gate: the verifier sessions were DISPATCHED (sentinels) AND the gate was held.
+[ -f "$SENT_A.1" ] && [ -f "$SENT_A.2" ] && [ -f "$SENT_A.3" ] \
+  && pass "verifiers-before-gate: verifier close sessions were DISPATCHED (not done-and-return)" \
+  || { fail "verifiers-before-gate: verifier session(s) never dispatched"; cat "$TMP/A.out"; }
+# three-verifier split (ID-093): exactly 3 independent sessions dispatched, not 1.
+n_dispatched=$(ls "$SENT_A".* 2>/dev/null | wc -l | tr -d ' ')
+[ "$n_dispatched" = 3 ] \
+  && pass "three-verifier split: exactly 3 independent verifier sessions dispatched" \
+  || fail "three-verifier split: expected 3 dispatches, got $n_dispatched"
+grep -q '\[aggregate\] PASS: all 3 independent verifiers agree' "$TMP/A.out" \
+  && pass "aggregate: all-PASS aggregates to PASS" || { fail "aggregate: no all-PASS aggregate line"; cat "$TMP/A.out"; }
 grep -q 'HELD for the final human gate' "$TMP/A.out" \
   && pass "gate-held: the close HELD for the human gate" || { fail "gate-held: no held message"; cat "$TMP/A.out"; }
 grep -q 'NOT auto-merged' "$TMP/A.out" \
@@ -141,10 +162,10 @@ rcD=$?
   || { fail "seeded-orphan NC (e2e): close did not halt (rc=$rcD)"; cat "$TMP/D.out"; }
 grep -q 'seeded-orphan' "$TMP/D.out" && grep -q 'BLOCKING' "$TMP/D.out" \
   && pass "seeded-orphan NC (e2e): the orphan is named as BLOCKING" || { fail "seeded-orphan NC (e2e): orphan not named"; cat "$TMP/D.out"; }
-# fail-fast: the orphan halt happens BEFORE the verifier session is spent.
-[ ! -f "$SENT_D" ] \
-  && pass "seeded-orphan NC (e2e): fail-fast -- verifier session NOT dispatched after a blocking orphan" \
-  || fail "seeded-orphan NC (e2e): verifier session ran despite a blocking orphan"
+# fail-fast: the orphan halt happens BEFORE any verifier session is spent.
+{ [ ! -f "$SENT_D.1" ] && [ ! -f "$SENT_D.2" ] && [ ! -f "$SENT_D.3" ]; } \
+  && pass "seeded-orphan NC (e2e): fail-fast -- no verifier session dispatched after a blocking orphan" \
+  || fail "seeded-orphan NC (e2e): a verifier session ran despite a blocking orphan"
 grep -q 'HELD for the final human gate' "$TMP/D.out" \
   && fail "seeded-orphan NC (e2e): the gate was held despite a blocking orphan" \
   || pass "seeded-orphan NC (e2e): the gate is NOT held on a blocking orphan"
@@ -170,7 +191,7 @@ MOCK_RM="$DF/ROADMAP.md" CLOSE_SENTINEL="$SENT_F" CLAUDE_FLAGS="" TIER4_CLOSE=0 
 rcF=$?
 [ "$rcF" = 0 ] && grep -q 'all sub-goals checked; done' "$TMP/F.out" \
   && pass "opt-out: TIER4_CLOSE=0 restores the bare done-and-return" || { fail "opt-out: done message missing (rc=$rcF)"; cat "$TMP/F.out"; }
-[ ! -f "$SENT_F" ] \
+{ [ ! -f "$SENT_F.1" ] && [ ! -f "$SENT_F.2" ] && [ ! -f "$SENT_F.3" ]; } \
   && pass "opt-out: TIER4_CLOSE=0 dispatches NO close session" || fail "opt-out: a close session ran despite TIER4_CLOSE=0"
 
 # =========================== G. no-corpus: rc=2 skip (not a false halt) =============================
@@ -189,11 +210,34 @@ CORPUS_EMPTY="$TMP/corpusEmpty"; mkdir -p "$CORPUS_EMPTY"   # exists, but no age
 MOCK_RM="$DG/ROADMAP.md" CLOSE_SENTINEL="$SENT_G" CLAUDE_FLAGS="" \
   TIER4_CORPUS="$CORPUS_EMPTY" CLAUDE_CMD="$MOCK" bash "$ORCH" run "$DG" > "$TMP/G2.out" 2>&1
 rcG=$?
-{ [ "$rcG" = 0 ] && [ -f "$SENT_G" ] && grep -q 'HELD for the final human gate' "$TMP/G2.out" \
+{ [ "$rcG" = 0 ] && [ -f "$SENT_G.1" ] && [ -f "$SENT_G.2" ] && [ -f "$SENT_G.3" ] && grep -q 'HELD for the final human gate' "$TMP/G2.out" \
     && grep -q 'skipping the no-orphan sweep' "$TMP/G2.out" \
     && ! grep -q 'no-orphan sweep clean' "$TMP/G2.out"; } \
-  && pass "no-corpus e2e: rc 2 -> WARN+skip (not a halt, not mis-reported clean); session ran, gate held" \
+  && pass "no-corpus e2e: rc 2 -> WARN+skip (not a halt, not mis-reported clean); all 3 sessions ran, gate held" \
   || { fail "no-corpus e2e: rc=$rcG (expected skip+hold, not halt/clean)"; cat "$TMP/G2.out"; }
+
+# =========================== H. DISSENT negative control (ID-093) ==================================
+# One dissenting verifier among the 3 must NOT be silently dropped: the fail-closed aggregator must
+# refuse to hold the gate even though the other two verifiers PASS clean.
+DH="$TMP/mgH"; mk_megagoal "$DH"
+SENT_H="$TMP/close-H.sentinel"
+MOCK_RM="$DH/ROADMAP.md" CLOSE_SENTINEL="$SENT_H" CLAUDE_FLAGS="" \
+  TIER4_CORPUS="$CORPUS_A" MOCK_DISSENT=2 \
+  CLAUDE_CMD="$MOCK" bash "$ORCH" run "$DH" > "$TMP/H.out" 2>&1
+rcH=$?
+# all 3 verifiers are still dispatched (dissent from one does not skip dispatching the others).
+{ [ -f "$SENT_H.1" ] && [ -f "$SENT_H.2" ] && [ -f "$SENT_H.3" ]; } \
+  && pass "dissent NC: all 3 verifiers dispatched despite one dissenting" \
+  || { fail "dissent NC: not all 3 verifiers were dispatched"; cat "$TMP/H.out"; }
+[ "$rcH" != 0 ] \
+  && pass "dissent NC: the close HALTS nonzero on a single dissent (not held clean)" \
+  || { fail "dissent NC: close did not halt (rc=$rcH)"; cat "$TMP/H.out"; }
+grep -q '\[aggregate\] DISSENT' "$TMP/H.out" \
+  && pass "dissent NC: the aggregator names the DISSENT (not silently dropped)" \
+  || { fail "dissent NC: aggregator did not report the dissent"; cat "$TMP/H.out"; }
+grep -q 'HELD for the final human gate' "$TMP/H.out" \
+  && fail "dissent NC: the gate was held despite a dissenting verifier" \
+  || pass "dissent NC: the gate is NOT held on a dissenting verifier"
 
 # ---- summary --------------------------------------------------------------------------------------
 echo "----"
