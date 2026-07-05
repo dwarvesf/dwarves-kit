@@ -7,14 +7,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-dwarves-kit is a **toolbox, not an appliance**: install just the SDD spine and stop there, or opt into exactly the modules you want. Nothing is switched on you didn't ask for.
+Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, and agents iterate inside them until a read-only verifier passes, never grading their own homework.
 
-**Two ways in, pick either:**
+It ships as a **toolbox, not an appliance.** Every subsystem is a standalone shell command that already works on its own, `bash lib/board/board.sh --help`, and the same for `gate`/`stats`/`classify`/`spec`/`goal`/`session`, so there is no `kit` uber-binary and no install step to just poke at it (the same bash reads under pi, opencode, Claude Code, or a bare terminal). Wiring it into Claude Code (`bash install.sh`) adds an always-on safety spine and lets you `--with` exactly the modules you want and nothing else; [Install](#install) has the layers.
 
-- **Zero install, poke at it directly.** Every subsystem is also a standalone shell command over scripts that already work on their own: `bash lib/board/board.sh --help`, `bash lib/gate/gate.sh --help`, same for `stats`/`classify`/`spec`/`goal`/`session`. Each is a thin case-dispatcher with its own `--help`, no `kit` uber-binary, no install step. This surface is runtime-agnostic (pi, opencode, Claude Code, or a bare terminal all read the same bash).
-- **Wire it into Claude Code.** `bash install.sh` installs the SPINE, six always-on hooks guarding push/merge/secrets/commit-format, and stops there if that's all you want; opt into anything else, the board, session-state hooks, the `stats` CLI, the overnight queue, with `--with <a,b,c>`. (The Claude Code plugin path installs everything at once, spine + all modules, no `--with`; the layered install is the bash path only.) See [Install](#install).
-
-Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, agents iterate inside them. The loop is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
+The loop itself is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
 
 ```mermaid
 flowchart LR
