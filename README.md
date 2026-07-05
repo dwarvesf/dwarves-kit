@@ -273,7 +273,7 @@ dwarves-kit/
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
-  agents/                       (24 files) Subagents dispatched by commands
+  agents/                       (25 files) Subagents dispatched by commands
   commands/                     (27 markdown command prompts)
   hooks/                        (17 scripts + hooks.json plugin manifest)
   lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
