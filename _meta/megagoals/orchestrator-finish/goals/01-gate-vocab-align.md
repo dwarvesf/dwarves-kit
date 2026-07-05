@@ -60,3 +60,15 @@ The ship enforcement path (`hooks/ship-gate.sh`, `lib/gate/gate-ledger.sh`), the
 Closes the full-lane gate RECORDING gap (ID-091): `build`, `design-critique`, and `design-record` are in the required-set but no `/kit:*` command records them, so a command-driven full-lane run is blocked at ship. Each phase owner now records its gate (or the ownerless name is relaxed from the required-set). The vocabulary was already single-sourced; this is a recording fix, not a rename. Verify: a command-driven full-lane run reaches ship with no hand-recorded gate (run-table in the PR). Part of the `orchestrator-finish` mega, see `_meta/megagoals/orchestrator-finish/ROADMAP.md`.
 
 ## Notes
+
+- 2026-07-05: lane-classify returned `full` for this task's description, not the `normal`
+  expected above. Proceeded without a formal SDD spec cycle (no `Lane:`-headed spec file exists
+  for this delegate sub-goal, so `hooks/ship-gate.sh` has nothing to escalate against); recorded
+  the gates actually run (`grill skipped`, `build`, `review`, `docs`) against the branch rid for
+  the audit trail regardless. Detail: `docs/implementation-notes/orchfin-01-gate-vocab.md`.
+- `design-record`'s owner is `commands/spec-validate.md` Reviewer 6 (the Design Record Auditor),
+  not a newly-named command; it was already the sole enforcement point for that row per
+  `WORKFLOW.md` "## The understanding axis", it just never called `gate-ledger.sh record` under
+  its own matrix name until now.
+- `devs-team.md` keeps both its pre-existing `review ran` record and the new `design-critique ran`
+  record (additive, not a replacement).

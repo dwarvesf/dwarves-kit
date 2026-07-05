@@ -88,3 +88,9 @@ Mirrors the parallel multi-lens pattern in `commands/review-team.md` + `agents/c
 
 After the verdict, record it for lane telemetry (SPEC-061), one line:
 `bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K>"`.
+
+This lane is the full-lane's `design-critique` phase owner (the pre-spec design lens, distinct
+from `review.md`'s post-build code review), so also record the matrix row by its own literal
+name: `bash lib/gate/gate-ledger.sh record <rid> design-critique ran "<verdict> findings=<K>"`.
+Both lines are additive; a run's `review ran` observability is unchanged, and `design-critique`
+now has an owner that closes the required-set gap.

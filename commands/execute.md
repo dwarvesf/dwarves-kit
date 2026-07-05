@@ -409,6 +409,12 @@ After all phases complete:
    3. /kit:ship -- commit and PR (include the implementation-notes path in the PR body)
    ```
 
+   Record the build gate (closes the recording gap WORKFLOW.md "## Command emit coverage"
+   used to flag as pre-existing): `bash lib/gate/gate-ledger.sh record <rid> build ran
+   "tasks=<N>/<N> verified=<N> tests=<pass|fail>"`. This is Build's own phase-owner record
+   (execute.md IS the Build phase), the same one-line convention every other phase owner
+   (`think.md`, `design.md`, `spec.md`, ...) already uses.
+
 ## Error handling
 
 - **Worker fails to complete**: Run task-verifier anyway on whatever exists. The verifier determines if partial work is salvageable (FAIL:fixable) or needs human input (FAIL:escalate).

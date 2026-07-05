@@ -110,3 +110,9 @@ If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception (ADR-
 
 After the verdict, record it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.
+
+Reviewer 6 is also the `design-record` matrix row's phase owner (it is the one enforcement point
+for that row, per WORKFLOW.md "## The understanding axis"), so record it by its own name too:
+`bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> <pass|critical>"`.
+This closes the "no command records design-record ran" gap WORKFLOW.md's "## Command emit
+coverage" section used to flag as a known pre-existing gap.
