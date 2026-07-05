@@ -2,7 +2,7 @@
 
 **Merge policy:** auto
 **Time budget:** 1-3 hours of loop work
-**Proof:** run-table showing per-sub-goal TOKENS captured on the wave (parallel) path + WAVE_CAP default single-sourced. Rung 2 (a negative control: a wave sub-goal with no token line is caught).
+**Proof:** run-table showing per-sub-goal TOKENS captured on the wave (parallel) path. Rung 2 (negative control: a wave sub-goal whose token line is missing is caught).
 **Design:** obvious
 **Depends on:** 02 (stacked for orchestrate.sh merge hygiene, no logical dep)
 Model: sonnet
@@ -11,20 +11,22 @@ Model: sonnet
 
 ## Outcome
 
-The wave (parallel) execution path captures per-sub-goal TOKENS exactly like the sequential path, no accounting hole when sub-goals run in a wave. The `WAVE_CAP` default is reconciled: one source of truth, consistent between `orchestrate.sh` and `commands/mega.md` (no two different defaults).
+The wave (parallel) execution path captures per-sub-goal TOKENS exactly like the sequential path, closing the accounting hole when sub-goals run in a wave.
+
+Verified reality (2026-07-06): the serial path extracts TOKENS (`gate-ledger.sh tokens`), but the wave reap loop only emits a `shipped` event + `_WAVE_LANDED`, never the token extraction , the header comment itself declares this a deliberate gap. (The original item also asked to "reconcile the WAVE_CAP default"; that half is DROPPED , the live default already agrees, `orchestrate.sh` `WAVE_CAP=2` == `commands/mega.md` "default WAVE_CAP=2". Only some stale internal COMMENTS still say "default 1"; fixing those comments is an optional trivial cleanup, not the point.)
 
 ## Quality bar
 
-Every sub-goal's token spend lands in the ledger whether it ran solo or in a wave of five. The `WAVE_CAP` a reader sees in the docs is the one the code uses.
+Every sub-goal's token spend lands in the ledger whether it ran solo or in a wave of five.
 
 ## How to close the loop
 
-- Trace the wave path in `orchestrate.sh` and confirm where per-sub-goal TOKENS is (or isn't) extracted vs the sequential path.
-- Add the per-sub-goal TOKENS extraction to the wave path, writing to the same ledger stream.
-- Reconcile the `WAVE_CAP` default (grep both `orchestrate.sh` and `mega.md`; single-source it).
-- Test: run/simulate a 2-sub-goal wave; assert both token lines land; assert the WAVE_CAP default matches between code and doc.
+- Trace the wave reap loop in `orchestrate.sh` vs the serial token block; confirm where the serial path extracts TOKENS and that the wave path skips it.
+- Add the per-sub-goal TOKENS extraction to the wave reap path, writing to the same ledger stream the serial path uses.
+- Test: simulate a 2-sub-goal wave; assert both token lines land in the ledger.
+- (Optional trivial cleanup: fix the stale "default 1" WAVE_CAP comments to "default 2".)
 
-**Done =** the wave path writes per-sub-goal TOKENS for every sub-goal in the wave (verified by a captured run-table), AND `WAVE_CAP`'s default is single-sourced (code == doc).
+**Done =** the wave path writes per-sub-goal TOKENS for every sub-goal in the wave, verified by a captured 2-sub-goal-wave run-table showing both token lines.
 
 **Kit-adopted repo? Record the gates** (from dwarves-kit cwd, `lane-classify` → `normal`).
 
@@ -34,9 +36,9 @@ Every sub-goal's token spend lands in the ledger whether it ran solo or in a wav
 
 ## Scope edges
 
-**In:** the wave dispatch/collect path in `orchestrate.sh`, the `WAVE_CAP` default.
-**Out:** the sequential path's token capture (already works), the ledger format.
-**Not:** changing WAVE_CAP's value, adding new token metrics, reworking the ledger.
+**In:** the wave reap/collect path in `orchestrate.sh` and its (missing) token extraction.
+**Out:** the sequential path's token capture (already works), the ledger format, the WAVE_CAP default (already consistent).
+**Not:** changing WAVE_CAP's value, reconciling a default that already agrees, adding new token metrics, reworking the ledger.
 
 ## Where to look
 
@@ -44,6 +46,6 @@ The wave/parallel dispatch in `lib/queue/orchestrate.sh`, the token-extraction h
 
 ## PR body
 
-Captures per-sub-goal TOKENS on the wave path + reconciles the WAVE_CAP default (ID-094). Verify: the 2-sub-goal-wave token run-table. Stacked on #<02 PR>; review after it. Part of `orchestrator-finish`, see ROADMAP.md.
+Captures per-sub-goal TOKENS on the wave (parallel) path, closing the declared accounting gap where the wave reap loop skipped the serial path's token extraction (ID-094). WAVE_CAP-reconcile half dropped , the default already agrees (2==2). Verify: the 2-sub-goal-wave token run-table. Stacked on #<02 PR>; review after it. Part of `orchestrator-finish`, see ROADMAP.md.
 
 ## Notes

@@ -11,12 +11,16 @@ Single-repo (dwarves-kit, kit-adopted). Run the loop FROM dwarves-kit cwd so sub
 
 ## Sub-goals
 
-- [ ] 01-gate-vocab-align , ship-gate required-set names match what `/kit:*` actually records (ID-091), `auto`, PR #
+- [ ] 01-gate-vocab-align , close the full-lane gate RECORDING gap , `build`/`design-critique`/`design-record` are required but no command records them (ID-091), `auto`, PR #
 - [ ] 02-tier4-split , TIER-4 close = 3 fresh verifier sessions + aggregator (ID-093), `auto`, PR #
-- [ ] 03-wave-tokens , per-sub-goal TOKENS on the wave path + WAVE_CAP default reconciled (ID-094), `auto`, PR #
+- [ ] 03-wave-tokens , per-sub-goal TOKENS on the wave path (ID-094; WAVE_CAP half dropped , default already agrees), `auto`, PR #
 - [ ] 04-watchdog-tokens , WATCHDOG_STALL_SECS branch captures tokens to `$slog` (ID-097), `auto`, PR #
-- [ ] 05-conductor-rid-check , conductor rejects a missing rid so gate coverage is auditable (ID-099), `auto`, PR #
-- [ ] 06-orchestrate-sweep , tiny batch: stream.jsonl retention cap (ID-095) + `Model:` allowlist pre-flight (ID-096) + happy-path tmux kill-window cleanup (ID-098), `auto`, PR #
+- [ ] 05-conductor-rid-check , the WAVE dispatch path emits a START/rid (it currently emits none) so gate coverage is auditable (ID-099, rescoped), `auto`, PR #
+- [ ] 06-orchestrate-sweep , tiny batch: stream.jsonl rotation/redaction cap (ID-095) + `Model:` allowlist pre-flight (ID-096) + happy-path tmux kill-window cleanup (ID-098), `auto`, PR #
+
+## Validation (code-grounded, 2026-07-06)
+
+All 8 backlog IDs were adversarially verified against the CURRENT `lib/queue/orchestrate.sh` + `hooks/ship-gate.sh` + `lib/gate/gate-ledger.sh` before launch (some backlog rows were suspected stale). Verdict: every item is REAL (the gap exists in the live code), none dropped. Four had stale/imprecise framing, now corrected in the goal files: 01 (recording gap, not a vocab typo; + a 3rd unrecorded name `design-record`), 03 (WAVE_CAP half dropped , default already 2==2), 05 (rescoped , serial warns-not-blocks, the real gap is the wave path emitting no START), 06/ID-095 ("unbounded growth" is false , files are per-id truncated-per-run; the risk is no rotation/redaction cap).
 
 ## Dependencies (only if non-trivial)
 
