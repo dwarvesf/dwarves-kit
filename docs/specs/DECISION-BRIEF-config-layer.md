@@ -17,8 +17,8 @@ team-collaboration posture , with a kit-wide default that a project can override
 
 - A `kit.toml` ALREADY exists but is a **write-only install manifest** at
   `~/.claude/dwarves-kit/kit.toml` (`install.sh` writes `<module> = true|false`).
-  A lint (`tests/test-no-runtime-manifest-read.sh`) FAILS if any **hook** reads it
-  at runtime. It forbids hook reads, not command reads.
+  A lint (the "no hooks/*.sh reads kit.toml" assertion in `tests/test-install-modules.sh`)
+  FAILS if any **hook** reads it at runtime. It forbids hook reads, not command reads.
 - Every real runtime knob is an **env var**. The ONLY resolver precedent is
   `lib/telemetry/kit-log-dir.sh` (`kit_resolve_log_dir`, env-precedence, fatal-on-empty),
   plus `lib/mega.sh`'s `_resolve_*` helpers. There is **no** `lib/config/` and **no**
@@ -79,7 +79,7 @@ its performance rationale (no TOML parse on every Bash call).
    paths. Expose a stable entrypoint (a `kit <sub> <verb>` dispatcher or installed `board`
    command) so internal reorg never breaks a consumer again. In scope for this spec or a
    tight sibling; it is the durable fix for the board-shim class of bug.
-3. **Lint scope confirmation.** Confirm `test-no-runtime-manifest-read.sh` is hook-scoped;
+3. **Lint scope confirmation.** Confirm the kit.toml-read lint in `tests/test-install-modules.sh` is hook-scoped;
    if it forbids ALL runtime reads, either scope it to hooks or point the resolver at a
    separate runtime-config file.
 4. **Consumer-contract doc.** Produce `docs/consumer-contract.md` (the 4 adopt files +

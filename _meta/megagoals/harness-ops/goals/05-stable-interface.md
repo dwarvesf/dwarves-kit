@@ -21,6 +21,7 @@ Design-bearing (2 approaches: a thin `kit` dispatcher vs installed per-subsystem
 
 - Enumerate every consumer reach into `$DWARVES_KIT/lib/...` (grep across ops-toolkit + the adopt-injected CLAUDE.md block); confirm they'd break on a lib move.
 - Build the stable entrypoint (dispatcher or installed commands); repoint the adopt contract (`lib/adopt.sh`'s CLAUDE.md block + WORKFLOW/AGENTS pointers) to it.
+- **Cross-track overlap (advisor P5 #2):** `lib/adopt.sh:72-83` (the WORKFLOW pointer text) is ALSO edited by Track B's 12-root-slim (which repoints it to the new docs/ bulk). These two touch the SAME lines. This sub-goal (05) must land BEFORE 12, OR whichever merges second does a mandatory rebase + manual reconcile of that block (auto-bottom-up merge does NOT detect file-level cross-track overlap). Coordinate: 05 references the stable entrypoint; 12 references the docs/ bulk location; the final adopt.sh block must carry BOTH.
 - Repoint `_meta/board` / `board-all` (and any other consumer shim) to the stable form.
 - Test (negative control): rename an internal lib file, assert the consumer call still resolves via the stable entrypoint. Capture the run-table.
 

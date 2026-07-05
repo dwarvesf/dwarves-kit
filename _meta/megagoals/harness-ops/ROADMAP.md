@@ -34,8 +34,8 @@ Single-repo (dwarves-kit, kit-adopted). Run from dwarves-kit cwd via the SDD lan
 
 - 01 done (resolver). 02, 03, 08 depend on 01, independent of each other → parallel wave after 01.
 - 04 depends on 01 (resolver reads the reconciled manifest). 05 depends on 04 (stable interface + adopt repoint). 06 depends on 05 (project override + adopt). 07 depends on 05+06 (documents the final contract).
-- Track B is independent of Track A (different files). 09 (integrity, gate) is standalone. 10, 11, 13 are independent doc-moves-with-repoint. 12 (root-slim) is the biggest B item, standalone.
-- Cross-track: none. A and B can run as parallel streams.
+- Track B is mostly independent of Track A. 09 (integrity, gate) is standalone. 10, 11 are independent doc-moves-with-repoint. 12 (root-slim) is the biggest B item. 13 depends on 09 + 11 (its README refresh must reflect the final tree).
+- **Cross-track collision (advisor P5 #2): `lib/adopt.sh:72-83` is edited by BOTH 05 (Track A, stable-interface) and 12 (Track B, root-slim).** They are NOT fully parallel. Land 05 before 12, or the second-to-merge rebases and reconciles that block by hand (auto-bottom-up does not detect file-level overlap). Every other file is disjoint across tracks.
 
 ## Assumptions (front-loaded)
 
