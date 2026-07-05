@@ -60,7 +60,10 @@ A set-but-EMPTY `$KIT_LEDGER_DIR` is a clean fatal error (the silent-wrong-path 
 The full-HOME snapshot method: warm uv first (so the runner's own package cache is in the
 baseline), snapshot temp-HOME + `$KIT_LEDGER_DIR` + repo-local `*.duckdb`/`.stats-cache` as
 `path+sha`, run `stats gate-yield` twice, snapshot again; byte-identical => no projection
-persisted anywhere. Fresh-context recheck of this NC: pending conductor Rung-3.
+persisted anywhere. Fresh-context recheck of this NC (Rung 3): **HOLDS** -- an independent
+fresh-context verifier re-ran it venv-direct (uv bypassed), got a byte-identical snapshot
+diff, confirmed both `duckdb.connect()` calls are `:memory:`, and correctly excluded the
+uv-runner-cache confounder (the 6 `~/.cache/uv/*` files are the launcher's, not the projection's).
 
 ### NC tools/-empty
 ```
