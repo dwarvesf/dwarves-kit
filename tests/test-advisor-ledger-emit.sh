@@ -24,7 +24,7 @@
 #        proving the check catches the bug class, not just that the real repo happens to pass
 #   AC7  the two committed fixture ledger logs exist and parse as plain GATE-line text (rid,
 #        gate, outcome, reason all present) -- the offline half of the kit_gates proof
-#   AC8  the WRITE side is actually exercised: `bash lib/gate-ledger.sh record ... advisor ran
+#   AC8  the WRITE side is actually exercised: `bash lib/gate/gate-ledger.sh record ... advisor ran
 #        "mode=..."` (the real, unmodified verb, not just prose describing it) genuinely
 #        produces the exact `| GATE | advisor | ran | mode=... |` line shape the two dispatch
 #        sites depend on -- AC7 only proves hand-authored fixtures LOOK right; this proves the
@@ -106,7 +106,7 @@ grep -qiE 'FINAL sub-goal' "$ADV"; assert "AC5: advisor.md pins the final-sub-go
 BAD_FIXTURE="$(mktemp "${TMPDIR:-/tmp}/dwarves-kit-advisor-bad.XXXXXX.md")"
 trap 'rm -f "$BAD_FIXTURE"' EXIT
 cat > "$BAD_FIXTURE" <<'EOF'
-bash lib/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)"
+bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)"
 EOF
 if fail_open_call "$BAD_FIXTURE"; then
   assert "AC6 NEGATIVE CONTROL: a bare (non-fail-open) advisor emit IS flagged" 1
@@ -129,17 +129,17 @@ fi
 grep -qE '\| GATE \| (build|review) \| ran \|' "$FIX_DIR/no-advisor-fixture.log" 2>/dev/null
 assert "AC7: fixture-without-advisor log DID run other gates (it ran, just never dispatched advisor)" $?
 
-# AC8: the WRITE side -- actually invoke the real, unmodified lib/gate-ledger.sh record verb
+# AC8: the WRITE side -- actually invoke the real, unmodified lib/gate/gate-ledger.sh record verb
 # (not a hand-authored fixture) and confirm it produces the exact GATE-line shape the two
 # dispatch sites depend on. AC7 alone only proves the fixtures LOOK right; this proves the
 # live script agrees (test-coverage lens finding, SPEC-145 review).
 AC8_LOGDIR="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-advisor-ac8.XXXXXX")"
 trap 'rm -f "$BAD_FIXTURE"; rm -rf "$AC8_LOGDIR"' EXIT
 AC8_RID="ac8-live-write-fixture"
-if DWARVES_KIT_LOG_DIR="$AC8_LOGDIR" bash "$KIT_DIR/lib/gate-ledger.sh" record "$AC8_RID" advisor ran "mode=P5 findings=2 actor=Test Actor" >/dev/null 2>&1; then
-  assert "AC8: 'lib/gate-ledger.sh record ... advisor ran' exits 0 for real" 0
+if DWARVES_KIT_LOG_DIR="$AC8_LOGDIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" record "$AC8_RID" advisor ran "mode=P5 findings=2 actor=Test Actor" >/dev/null 2>&1; then
+  assert "AC8: 'lib/gate/gate-ledger.sh record ... advisor ran' exits 0 for real" 0
 else
-  assert "AC8: 'lib/gate-ledger.sh record ... advisor ran' exits 0 for real" 1
+  assert "AC8: 'lib/gate/gate-ledger.sh record ... advisor ran' exits 0 for real" 1
 fi
 AC8_LOG="$AC8_LOGDIR/runs/$AC8_RID.log"
 [ -f "$AC8_LOG" ]; assert "AC8: the live record() call actually wrote a run-ledger file" $?

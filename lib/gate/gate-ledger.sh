@@ -2,7 +2,7 @@
 # gate-ledger.sh -- lane-aware gate ledger + action log + ship-completeness check.
 #
 # The single source for "which gates a lane requires" is the WORKFLOW.md lane×phase
-# matrix; this parses it at runtime (no second copy), mirroring lib/dispatch-gate.sh's
+# matrix; this parses it at runtime (no second copy), mirroring lib/gate/dispatch-gate.sh's
 # hands-off extraction. A matrix cell of `measure-twice` => the gate is REQUIRED for
 # that lane. Records are append-only, operator-readable, and redacted (no command
 # bodies). See docs/decisions/0024-gate-ledger-and-ship-enforcement.md.
@@ -35,12 +35,13 @@
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KIT_ROOT="$(cd "$GATE_DIR/.." && pwd)"
+LIB_ROOT="$(cd "$GATE_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
 WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration out of the
 # ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
-# shellcheck source=lib/kit-log-dir.sh
-source "$GATE_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/telemetry/kit-log-dir.sh
+source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
@@ -121,7 +122,7 @@ required() {
 
 # START records the run's routing facts for lane telemetry (SPEC-061): the lane the
 # operator chose, the classifier's suggestion, the work type, and the repo. One line per
-# run, written at assign/start time; lib/lane-telemetry.sh aggregates these read-side.
+# run, written at assign/start time; lib/telemetry/lane-telemetry.sh aggregates these read-side.
 start() {
   # --amend (SPEC-077 / ID-072): a sanctioned correction. Writes START-AMEND; every
   # reader takes the LAST START-AMEND, else the FIRST plain START. Append-only stands.
@@ -210,7 +211,7 @@ tokens() {
 # debt: record an understanding-debt verdict as an ADDITIVE marker (ADR-0031, SPEC-123),
 # the exact `| TOKENS |` shape reused for a second concern: a `| DEBT |` line that check()/
 # override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a debt
-# line can never fake a gate or be mistaken for one. Written by `lib/significance-classify.sh
+# line can never fake a gate or be mistaken for one. Written by `lib/classify/significance-classify.sh
 # record` (the worker side, ADR-0032 section 3: "the worker session writes the significance/
 # worthiness marker"); the human-facing ★-tap nudge (engage/defer/wave) is a LATER, SEPARATE
 # `| DEBT |` line appended by the conductor-side nudge (SG-04) -- this command only ever
@@ -218,7 +219,7 @@ tokens() {
 #
 # response=<engage|defer|wave> (SPEC-126, understanding-gate SG-05): an OPTIONAL additive key,
 # the three-way human disposition ADR-0031's Refinement point 3 names. First written by
-# `lib/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
+# `lib/queue/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
 # re-collected); SG-04's future ★-tap nudge is a second, later caller of the SAME field --
 # there is exactly one place a human response is recorded, never two.
 # Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]

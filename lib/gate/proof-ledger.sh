@@ -6,7 +6,7 @@
 # Unlike the lane gate (gate-ledger.sh), this keys off the BRANCH DIFF, not a spec, so it
 # fires the same whether the work came through /kit:execute or a freeform /goal loop.
 #
-# A change's PROOF CLASS comes from its diff (consistent with lib/proof-gate.sh):
+# A change's PROOF CLASS comes from its diff (consistent with lib/gate/proof-gate.sh):
 #   stateful   -- deploy / migration / data / persistent-state paths or commit subjects.
 #                 Pass = a fresh verification entry with a recorded run AND a rollback
 #                 note (or [UNAVAILABLE: reason]).
@@ -31,9 +31,10 @@
 set -uo pipefail
 
 PROOF_LEDGER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_ROOT="$(cd "$PROOF_LEDGER_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
-# shellcheck source=lib/kit-log-dir.sh
-source "$PROOF_LEDGER_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/telemetry/kit-log-dir.sh
+source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 OVERRIDE_LOG="$LOG_DIR/proof-overrides.log"
@@ -154,7 +155,7 @@ check() {
     # are verified via deploy-proof/UAT per SPEC-095); source code elsewhere is not.
     # Build the source-code remainder. A file counts as source if it has a code
     # extension OR is an extensionless shebang script (e.g. the kit's own
-    # lib/handoff-gen); deploy scripts at a SANCTIONED location (repo-root deploy/
+    # lib/goal/handoff-gen); deploy scripts at a SANCTIONED location (repo-root deploy/
     # or a per-tool tools/<name>/deploy/) are exempt -- but a `deploy` dir nested
     # anywhere else (src/deploy/, lib/deploy/) is NOT, or it would reopen the hole.
     local src_remainder="" f
@@ -245,9 +246,9 @@ check() {
       echo "  Need: a docs/verification/<slug>.md added by this branch with a recorded run AND a rollback note, or [UNAVAILABLE: reason] if no such flow exists here."
       echo "        ('recorded run' = Command:/Exit: text OR a committed screenshot/GIF embed for visual/demo work.)"
     fi
-    echo "  Type-specific shape (SPEC-044): run 'bash lib/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
+    echo "  Type-specific shape (SPEC-044): run 'bash lib/gate/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"
-    echo "    bash lib/proof-ledger.sh override '${slug:-<branch-slug>}' \"<reason>\""
+    echo "    bash lib/gate/proof-ledger.sh override '${slug:-<branch-slug>}' \"<reason>\""
   } >&2
   return 1
 }

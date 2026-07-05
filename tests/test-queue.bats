@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# test-queue.bats -- pins lib/queue.sh (SPEC-146, runner-fastpath sub-goal 03K): the overnight
+# test-queue.bats -- pins lib/queue/queue.sh (SPEC-146, runner-fastpath sub-goal 03K): the overnight
 # queue LAUNCHER. Driven ENTIRELY by a STUB mux (tests/fixtures/queue/fake-mux via MUX_CMD) whose
 # capture-pane returns a canned transcript -- NO real UI, NO real `claude`. The five ORIGINALLY
 # named negative controls (NC1-NC5) plus two ADDED after a 2026-07-05 security review found real
@@ -8,7 +8,7 @@
 
 setup() {
   KIT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  QUEUE="$KIT/lib/queue.sh"
+  QUEUE="$KIT/lib/queue/queue.sh"
   FIX="$KIT/tests/fixtures/queue"
   WORK="$(mktemp -d)"
   QSTUB="$WORK/stub"; mkdir -p "$QSTUB"

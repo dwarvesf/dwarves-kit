@@ -1,9 +1,9 @@
 # Task-type registry (SPEC-044)
 
-The second axis of the verification gate. `lib/task-type-classify.sh` maps a task
+The second axis of the verification gate. `lib/classify/task-type-classify.sh` maps a task
 description to a **task type**; this table maps that type to the **proof artifact** it
 owes, the **skill** that owns the methodology, and a **default proof class** (the rigor,
-which `lib/proof-gate.sh` may override per the task's risk). `proof-gate.sh contract
+which `lib/gate/proof-gate.sh` may override per the task's risk). `proof-gate.sh contract
 "<desc>"` composes the two axes: the type's artifact, produced at the class's rigor.
 
 **This is the extension point.** A new kind of work = one new row here (plus, if its

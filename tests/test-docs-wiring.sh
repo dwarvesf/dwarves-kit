@@ -5,7 +5,7 @@
 # (tests/test-right-arm-parity.sh): (1) WORKFLOW.md + AGENTS.md actually describe the
 # delegate run model, the ledger-under-delegation guarantee, and the opt-in multiplexer
 # (AC1-5); (2) every one of those documented capabilities has a LIVE dispatch path in
-# lib/orchestrate.sh / lib/gate-ledger.sh -- a no-orphan sweep, one grep-verified call
+# lib/queue/orchestrate.sh / lib/gate/gate-ledger.sh -- a no-orphan sweep, one grep-verified call
 # site per capability, not just a flag/env-var definition (AC6-9). AC10 is the load-
 # bearing NEGATIVE CONTROL: a planted over-claim (multiplexer default-on) run through the
 # SAME sweep function must be CAUGHT, proving the sweep is not a rubber stamp.
@@ -16,8 +16,8 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 WORKFLOW="$KIT_DIR/WORKFLOW.md"
 AGENTS="$KIT_DIR/AGENTS.md"
-ORCH="$KIT_DIR/lib/orchestrate.sh"
-LEDGER="$KIT_DIR/lib/gate-ledger.sh"
+ORCH="$KIT_DIR/lib/queue/orchestrate.sh"
+LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }
@@ -70,18 +70,18 @@ grep -qi 'mega-goal delegate execution' "$AGENTS"; assert "AC1: AGENTS.md points
 echo "--- AC6-9: no-orphan sweep (each documented capability has a LIVE call site) ------"
 
 _wired "$ORCH" 'route_flags="$route_flags --model $rmodel"'
-assert "AC6: Model: -> --model routing fires (live call site in lib/orchestrate.sh)" $?
+assert "AC6: Model: -> --model routing fires (live call site in lib/queue/orchestrate.sh)" $?
 
-_wired "$ORCH" 'bash "$ORCH_DIR/gate-ledger.sh" tokens'
-assert "AC7: token capture records via gate-ledger.sh (live call site in lib/orchestrate.sh)" $?
+_wired "$ORCH" 'bash "$LIB_ROOT/gate/gate-ledger.sh" tokens'
+assert "AC7: token capture records via gate-ledger.sh (live call site in lib/queue/orchestrate.sh)" $?
 _wired "$LEDGER" "printf '%s | TOKENS | %s\n'"
-assert "AC7: the TOKENS ledger marker is emitted (live call site in lib/gate-ledger.sh)" $?
+assert "AC7: the TOKENS ledger marker is emitted (live call site in lib/gate/gate-ledger.sh)" $?
 
 _wired "$ORCH" '_tier4_close "$dir" "$roadmap"'
-assert "AC8: TIER-4 close is actually invoked from the run terminal (live call site in lib/orchestrate.sh)" $?
+assert "AC8: TIER-4 close is actually invoked from the run terminal (live call site in lib/queue/orchestrate.sh)" $?
 
 _wired "$ORCH" '_pane_spawn "$megadir" "$id" "$wt" "$pfile" "$route_flags" "$donefile"'
-assert "AC9: a pane spawns under MULTIPLEXER=1 (live call site in lib/orchestrate.sh)" $?
+assert "AC9: a pane spawns under MULTIPLEXER=1 (live call site in lib/queue/orchestrate.sh)" $?
 
 echo "--- AC10 [NEGATIVE CONTROL, load-bearing]: an over-claim is CAUGHT by the sweep ---"
 

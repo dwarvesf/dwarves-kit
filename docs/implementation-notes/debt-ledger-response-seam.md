@@ -38,7 +38,7 @@ already established by the TIER-4 close, not re-derived here):
    inherits this fix automatically (it calls `_kv`).
 5. Cosmetic: `.github/workflows/test.yml`'s `test-significance-classify.sh` step comment mislabeled
    `SPEC-122`; corrected to `SPEC-123` (the actual spec `tests/test-significance-classify.sh` and
-   `lib/significance-classify.sh` cite in their own headers).
+   `lib/classify/significance-classify.sh` cite in their own headers).
 
 Alternatives considered (all rejected per the assigning prompt's single-root recommendation):
 wiring `significance-classify record` to make every debt line fat from the start (explicitly out of

@@ -6,7 +6,7 @@ constraints that shaped the build. Not a mirror of the spec.
 ## 2026-07-03 12:00 Lane = normal (not full), by the classifier
 
 Context: the conductor's brief guessed "likely full , new command surface + composes skills".
-Decision: lane = **normal**. Why: `lib/lane-classify.sh classify` returns `normal` for every phrasing
+Decision: lane = **normal**. Why: `lib/classify/lane-classify.sh classify` returns `normal` for every phrasing
 of this task (command + lib + tests). `explain.sh` is a NEW feature lib, not one of the enforcement/
 telemetry libs (lane-telemetry / mega-merge / proof-ledger / gate-ledger) that escalate to full.
 Alternatives: force `full` "to be safe" , rejected as cargo-cult ceremony the classifier does not ask

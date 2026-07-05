@@ -61,8 +61,8 @@ $ bash tests/test-significance-classify.sh
   PASS coverage delta: DEBT-marker assertions went from 0 to 11 in this suite
 
 === significance-classify: wiring sanity ===
-  PASS lib/significance-classify.sh exists and is executable
-  PASS lib/gate-ledger.sh exposes a 'debt' subcommand
+  PASS lib/classify/significance-classify.sh exists and is executable
+  PASS lib/gate/gate-ledger.sh exposes a 'debt' subcommand
 
 === 25/25 passed, 0 failed ===
 Exit: 0

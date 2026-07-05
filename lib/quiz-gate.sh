@@ -1,1 +1,0 @@
-gate/quiz-gate.sh

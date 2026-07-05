@@ -2,12 +2,12 @@
 
 Generated: 2026-07-04
 Status: VALIDATED
-Lane: full (classified `full` by `lib/lane-classify.sh` for the phrasing "advisor P5/P6
+Lane: full (classified `full` by `lib/classify/lane-classify.sh` for the phrasing "advisor P5/P6
 gate-ledger emit + convergence-gate dispatch step"; touches `commands/mega.md`'s dispatch
 convention, so treated as full even though the literal diff is prose/prompt-only, matching
 the escalation posture the goal file already sets)
 Design: obvious (ADR-0031 sec 1 -- wiring an existing emit convention, `bash
-lib/gate-ledger.sh record <rid> <phase> ran "<reason>"`, at two already-existing dispatch
+lib/gate/gate-ledger.sh record <rid> <phase> ran "<reason>"`, at two already-existing dispatch
 sites; no new table, no new parser, no new architecture)
 Depends on: SPEC-143 (stale-adr-inversion) and SPEC-144 (review-findings-memory), both
 merged to `master`; this sub-goal is stacked on the same two files (`commands/review-team.md`,
@@ -50,7 +50,7 @@ kit-writes-first direction, see "Never-diverge checklist" below.
 
 1. **Add the emit to review-team.md Step 2b, add a new convergence-gate step to mega.md, add
    an emit-contract note to agents/advisor.md; reuse `gate-ledger.sh record` verbatim, no new
-   verb, no new lib file. CHOSEN.** The grammar (`bash lib/gate-ledger.sh record "$rid" advisor
+   verb, no new lib file. CHOSEN.** The grammar (`bash lib/gate/gate-ledger.sh record "$rid" advisor
    ran "mode=P5|P6 findings=N actor=<git user.name>"`) is the exact shape `record()` already
    accepts (phase=`advisor`, state=`ran`, free-text reason carrying the KV pairs) -- the same
    shape `commands/review.md`/`commands/review-team.md`'s own `review ran "... actor=$(git
@@ -115,7 +115,7 @@ or the mega run. Two absolute negative controls:
 
 ### Phase 1: Emit sites
 - [x] TASK-001: `commands/review-team.md` Step 2b -- after the advisor critique dispatch
-  prompt, add the emit `bash lib/gate-ledger.sh record "$rid" advisor ran "mode=P5
+  prompt, add the emit `bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5
   findings=<N> actor=$(git config user.name)" || echo "WARNING: ..." >&2`, where `<N>` is the
   advisor's own fresh-finding count (post rejected-findings-ledger, SPEC-144), not the merged
   report total. State the RID convention inline (standalone run: current rid; mega/convergence
@@ -211,7 +211,7 @@ bash tests/test-hooks.sh
 - Any new advisor capability or change to P5/P6 content.
 - Auto-dispatch of the advisor anywhere beyond `/kit:review-team` Step 2b and the new
   `mega.md` convergence-gate step.
-- Any `lib/gate-ledger.sh` or `ledger-observatory` code change (verified unnecessary, TASK-004).
+- Any `lib/gate/gate-ledger.sh` or `ledger-observatory` code change (verified unnecessary, TASK-004).
 - **Known pre-existing gap, NOT closed by this pass, flagged honestly (multi-lens review
   finding, 2026-07-04):** `commands/mega.md` still names no `/kit:verify` or
   `/kit:review-team` dispatch of its own at the assembled-stack close. The ops-toolkit
@@ -283,7 +283,7 @@ tests/test-advisor-ledger-emit.sh docs/specs/SPEC-145-advisor-visibility.md`:
   AC3 -- the earlier P5 match's `ok=1` masked it. Fixed: rewrote the check to test each match
   independently (grep -n each call site, slice its own +2 lines, no shared state); reproduced
   the original bug against the mutated file first, confirmed the rewrite catches it. (2)
-  MEDIUM: no test exercised the real `lib/gate-ledger.sh record` write path, only prose
+  MEDIUM: no test exercised the real `lib/gate/gate-ledger.sh record` write path, only prose
   describing it. Fixed: added AC8, which invokes the real script against a scratch log dir and
   asserts the exact written line. (3) LOW-MEDIUM: AC5 didn't pin the "FINAL sub-goal" rid
   convention text in `agents/advisor.md` itself, even though that file frames itself as the
@@ -305,9 +305,9 @@ tests/test-advisor-ledger-emit.sh docs/specs/SPEC-145-advisor-visibility.md`:
 `tests/test-advisor-ledger-emit.sh` 27/27, `tests/test-advisor.sh` 15/15,
 `tests/test-review-team-plants.sh` 8/8, `tests/test-command-emit-sweep.sh` 19/19,
 `tests/test-mega-reconcile.sh` 35/35, `tests/test-meta.sh` 669/669, `tests/test-hooks.sh`
-452/452). Ledger recorded: `bash lib/gate-ledger.sh record advisor-visibility review ran
+452/452). Ledger recorded: `bash lib/gate/gate-ledger.sh record advisor-visibility review ran
 "SHIP findings=6 suppressed=0 rejected=0 actor=Han Ngo"` and, dogfooding this very sub-goal's
-own convention, `bash lib/gate-ledger.sh record advisor-visibility advisor ran "mode=P5
+own convention, `bash lib/gate/gate-ledger.sh record advisor-visibility advisor ran "mode=P5
 findings=2 actor=Han Ngo"` -- this rid now itself carries a real `advisor` gate row.
 Full detail: `docs/verification/advisor-visibility.md`.
 

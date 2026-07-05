@@ -81,7 +81,7 @@ confirmed the dependent engine goes RED, restored, confirmed GREEN.
 ```
 Command: mv lib/goal/kit-log-dir.sh /tmp/x; KIT_LOG_DIR=$(mktemp -d) bash lib/goal/mega-merge.sh
 lib/goal/mega-merge.sh: line 53: .../lib/goal/kit-log-dir.sh: No such file or directory
-FATAL: lib/kit-log-dir.sh missing or unreadable
+FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable
 Exit: 1
 Verdict: RED (expected - resolver broken)
 

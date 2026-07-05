@@ -21,15 +21,15 @@ VERDICT: PASS
 
 ## Implementation
 
-- `lib/gate-ledger.sh` `debt_response()`: looks back at the ledger for the rid's last `| DEBT |`
+- `lib/gate/gate-ledger.sh` `debt_response()`: looks back at the ledger for the rid's last `| DEBT |`
   line containing `verdict=` (a "fat" line); if found, re-emits its
   `significance=`/`worthiness=`/`verdict=` alongside the new `response=`. Also neuters any `=`
   inside a `reason` value (writer-side smuggle guard), matching the same guard added to `debt()`.
-- `lib/weekend-batch.sh` `cmd_mark_paid()`: no longer calls the fat `debt` verb; closes via
+- `lib/queue/weekend-batch.sh` `cmd_mark_paid()`: no longer calls the fat `debt` verb; closes via
   `bash "$GATE_LEDGER" debt-response "$rid" engage "$reason"`.
-- `lib/weekend-batch.sh` `_last_fat_debt_line()` (new helper) + walk-back in `cmd_list`/`cmd_collect`:
+- `lib/queue/weekend-batch.sh` `_last_fat_debt_line()` (new helper) + walk-back in `cmd_list`/`cmd_collect`:
   falls back to the last fat line for sig/wor display when the last (possibly thin) line lacks them.
-- `lib/weekend-batch.sh` `_kv()`: cuts the line at the first ` reason=` (`struct="${line%% reason=*}"`)
+- `lib/queue/weekend-batch.sh` `_kv()`: cuts the line at the first ` reason=` (`struct="${line%% reason=*}"`)
   and parses control keys from that prefix only (reader-side smuggle guard, `_disposition()`
   inherits it automatically since it calls `_kv`).
 - `.github/workflows/test.yml`: cosmetic, `test-significance-classify.sh` step comment corrected
@@ -64,8 +64,8 @@ scratch directory (no working-tree mutation, no `git worktree add`), then:
 ```
 $ cd <scratch-pre-fix-checkout>
 $ export DWARVES_KIT_LOG_DIR=$(mktemp -d); rid="repro-negctrl-$$"
-$ bash lib/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
-$ bash lib/weekend-batch.sh mark-paid "$rid"
+$ bash lib/gate/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
+$ bash lib/queue/weekend-batch.sh mark-paid "$rid"
 debt: significance must be low|high (got '')
 Exit: 64
 ```
@@ -75,8 +75,8 @@ RED, confirming the bug is real and reproducible on the pre-fix code.
 ```
 $ cd <ug-fix worktree>
 $ export DWARVES_KIT_LOG_DIR=$(mktemp -d); rid="repro-$$"
-$ bash lib/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
-$ bash lib/weekend-batch.sh mark-paid "$rid"
+$ bash lib/gate/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
+$ bash lib/queue/weekend-batch.sh mark-paid "$rid"
 Exit: 0
 ```
 GREEN, confirming the fix closes the exact reported bug.
@@ -127,13 +127,13 @@ done
 
 # live repro
 export DWARVES_KIT_LOG_DIR=$(mktemp -d); rid="repro-$$"
-bash lib/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
-bash lib/weekend-batch.sh mark-paid "$rid"; echo "EXIT=$?"   # expect EXIT=0
+bash lib/gate/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
+bash lib/queue/weekend-batch.sh mark-paid "$rid"; echo "EXIT=$?"   # expect EXIT=0
 
 # negative control (pre-fix code, disposable)
 TMPD="$(mktemp -d)"; git archive 77815c2 | tar -x -C "$TMPD"
 cd "$TMPD"
 export DWARVES_KIT_LOG_DIR=$(mktemp -d); rid="repro-negctrl-$$"
-bash lib/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
-bash lib/weekend-batch.sh mark-paid "$rid"; echo "EXIT=$?"   # expect EXIT=64 (RED)
+bash lib/gate/gate-ledger.sh debt-response "$rid" defer "deferred to weekend"
+bash lib/queue/weekend-batch.sh mark-paid "$rid"; echo "EXIT=$?"   # expect EXIT=64 (RED)
 ```

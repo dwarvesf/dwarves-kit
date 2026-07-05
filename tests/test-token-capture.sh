@@ -11,8 +11,8 @@
 # declared, out-of-scope gap.
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ORCH="$KIT/lib/orchestrate.sh"
-HGEN="$KIT/lib/handoff/handoff_gen.py"
+ORCH="$KIT/lib/queue/orchestrate.sh"
+HGEN="$KIT/lib/goal/handoff/handoff_gen.py"
 fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }

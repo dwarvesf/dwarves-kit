@@ -51,7 +51,7 @@ the right arm is type-agnostic.
 |---|---|---|
 | 1 | truth table | 12 TTYPE assertions in tests/test-hooks.sh (5 new, 6 regression, 1 anchor edge) |
 | 2 | parity | SPEC-057 parity pin in tests/test-meta.sh counts registry=loops=dialects=11 |
-| 3 | contract composition | `bash lib/proof-gate.sh contract "triage the INC-008 alert"` -> type=incident + INC artifact + class=stateful |
+| 3 | contract composition | `bash lib/gate/proof-gate.sh contract "triage the INC-008 alert"` -> type=incident + INC artifact + class=stateful |
 | 4 | done-first wiring | `grep -c 'Done =' commands/assign.md` >= 1 AND `grep -c 'Phase 0 is universal' WORKFLOW.md` == 1 |
 | 5 | negative controls | comment the incident rule -> its test RED; delete the reconcile dialect row -> parity RED; restore both (recorded in the build gate) |
 

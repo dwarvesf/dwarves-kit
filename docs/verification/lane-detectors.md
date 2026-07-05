@@ -1,6 +1,6 @@
 # Proof of done: lane-detector-refinements (SPEC-102 / ID-086)
 
-Two `lib/lane-telemetry.sh` detectors stop false-flagging, without being blinded to the real
+Two `lib/telemetry/lane-telemetry.sh` detectors stop false-flagging, without being blinded to the real
 cases they exist to catch.
 
 ## Acceptance criteria
@@ -51,7 +51,7 @@ runs (9a); reverting `_shipped_incomplete` to the progress-complete delegation r
 ```bash
 cd dwarves-kit
 bash tests/test-hooks.sh        # detector pins 218-268 (incl. the 4 new + updated seam)
-bash lib/lane-telemetry.sh misfires   # live: boardless shrinks, shipped-incomplete empties
+bash lib/telemetry/lane-telemetry.sh misfires   # live: boardless shrinks, shipped-incomplete empties
 ```
 
 Note: the 3 residual boardless runs are legacy (their ledgers carry no board-linked ID/PR token

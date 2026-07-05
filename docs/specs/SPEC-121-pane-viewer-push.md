@@ -153,7 +153,7 @@ bash tests/test-orchestrate.sh
 bash tests/test-tier4-close.sh
 bash tests/test-token-capture.sh
 bash tests/test-meta.sh
-shellcheck -S error lib/orchestrate.sh
+shellcheck -S error lib/queue/orchestrate.sh
 ```
 
 ## Edge cases
@@ -180,7 +180,7 @@ shellcheck -S error lib/orchestrate.sh
 - Per-worker surfaces, viewer preference files, or any new daemon.
 
 ## Touches
-- lib/orchestrate.sh
+- lib/queue/orchestrate.sh
 - tests/test-pane-viewer.sh
 - .github/workflows/test.yml
 - docs/verification/pane-viewer-push.md

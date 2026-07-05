@@ -6,7 +6,7 @@ Type: spec-feature
 
 ## Problem
 
-The SPEC-100 merge guard (`lib/mega-merge.sh` `_merge_exclusion`, shipped, ID-083) refuses to
+The SPEC-100 merge guard (`lib/goal/mega-merge.sh` `_merge_exclusion`, shipped, ID-083) refuses to
 auto-merge a held PR that CARRIES a mark (draft / hold-label / bracketed-title marker), but it
 cannot synthesize a mark. So an UN-marked `gate`-tagged sub-goal PR or held `gated-final` PR
 slips through (security review B1, ID-089). The guard is the defense; nothing guarantees the
@@ -14,7 +14,7 @@ mark it defends against is present.
 
 ## Solution
 
-Add the complementary MARK half: a `mark <pr> [repo]` verb in `lib/mega-merge.sh` that puts a
+Add the complementary MARK half: a `mark <pr> [repo]` verb in `lib/goal/mega-merge.sh` that puts a
 held PR into exactly the state `_merge_exclusion` refuses:
 
 1. Ensures the `do-not-merge` label exists (idempotent `gh label create ... || true`), so a
@@ -37,7 +37,7 @@ the routing, and GitHub itself refuses to merge a draft (a second, intrinsic lay
 
 ```bash
 cd dwarves-kit
-grep -n 'mark)' lib/mega-merge.sh                    # the verb is wired
+grep -n 'mark)' lib/goal/mega-merge.sh                    # the verb is wired
 grep -n 'mega-merge.sh mark' commands/mega.md         # the held-PR step calls it
 bash tests/test-mega-merge.sh                         # mark pins + mark<->guard end-to-end + negative control
 ```
@@ -51,7 +51,7 @@ Pins added to `tests/test-mega-merge.sh` (offline, `MEGA_MERGE_GH` mock):
 
 ## After state
 
-- `lib/mega-merge.sh` has a `mark` verb; `commands/mega.md` calls it at the held-PR open step.
+- `lib/goal/mega-merge.sh` has a `mark` verb; `commands/mega.md` calls it at the held-PR open step.
 - `README.md` mega-merge entry + `MANUAL.md` held-PR note document the mark.
 - `docs/verification/merge-mark.md` carries the run-table + the mark<->guard end-to-end proof.
 - Closes the ID-083 / ID-089 guard pair FOR THE `commands/mega.md`-driven PR-open path: the guard

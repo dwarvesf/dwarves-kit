@@ -62,12 +62,12 @@ decisions the spec left to build time and one deliberate deviation.
   questions"); the default is a reasoned starting point, not an empirically-tuned one.
 
 ## 2026-07-03 No live caller wired (matches SPEC-105's precedent, deliberately out of scope)
-- Context: the contract's "In scope" list is `lib/significance-classify.sh`, its ledger marker,
+- Context: the contract's "In scope" list is `lib/classify/significance-classify.sh`, its ledger marker,
   the test file, and one WORKFLOW/AGENTS line -- not wiring a real call site.
 - Decision: no command (`/kit:ship`, `/kit:execute`, etc.) actually invokes
   `significance-classify.sh record` yet; the WORKFLOW.md line documents WHERE it fires (at Ship)
   without claiming it dispatches today.
-- Why: SPEC-105 (`lib/lane-classify.sh --files`) shipped its discriminator + interface first and
+- Why: SPEC-105 (`lib/classify/lane-classify.sh --files`) shipped its discriminator + interface first and
   left wiring to a follow-up once a caller had the touched-file list in hand; this sub-goal
   follows the same shape deliberately, since wiring the call site is SG-04's problem (it decides
   what a `tap` DOES) and premature wiring here would guess at that contract.

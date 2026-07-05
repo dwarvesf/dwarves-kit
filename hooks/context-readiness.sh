@@ -24,7 +24,7 @@ fi
 
 # Board awareness (SPEC-083 / ID-033): the SessionStart injection is the entry
 # surface, so it must see the board, or queued work is invisible at session
-# start. Twin of lib/backlog.sh _rows: status = second-to-last pipe cell,
+# start. Twin of lib/board/backlog.sh _rows: status = second-to-last pipe cell,
 # leading keyword before space/bracket/paren (keep the two parsers in sync).
 BOARD_Q=""
 if [ -f "_meta/BACKLOG.md" ]; then

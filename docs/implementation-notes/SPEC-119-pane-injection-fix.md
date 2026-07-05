@@ -5,7 +5,7 @@ security lens. Not a spec change; a security defect in the shipped implementatio
 
 ## What was wrong
 
-`_pane_spawn` (`lib/orchestrate.sh`) built the pane command as a SINGLE joined string passed to
+`_pane_spawn` (`lib/queue/orchestrate.sh`) built the pane command as a SINGLE joined string passed to
 `tmux new-window`. Real tmux hands a lone command string to `$SHELL -c` , a second shell parse,
 i.e. an `eval`. Each field was wrapped in escaped quotes (`\"$route_flags\"`), and `route_flags`
 derives from the goal file's UNSANITIZED `Model:`/`Effort:` header (`_route`, no validation). So a

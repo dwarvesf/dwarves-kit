@@ -2,8 +2,10 @@
 
 The kit's `lib/` scripts are call-by-path helpers (`bash "$DIR/x.sh"`, `$DIR`
 resolved from the caller's own `BASH_SOURCE`). Claude Code's loader does not
-depth-constrain `lib/`, so the files are grouped into subsystem subdirectories
-for navigation. Orphans with no cluster stay at the root.
+depth-constrain `lib/`, so the files are grouped into subsystem subdirectories.
+Each real file lives in exactly ONE place, its subsystem dir; there are **no
+alias symlinks** (`find lib -maxdepth 1 -type l` is empty). Single-purpose
+orphans with no cluster stay as bare scripts at the root.
 
 ## Subsystems
 
@@ -16,32 +18,32 @@ for navigation. Orphans with no cluster stay at the root.
 | `spec/` | `spec-index.sh` `spec-next.sh` |
 | `goal/` | `goal-drafts.sh` `goal-registry.sh` `mega-merge.sh` `stack-merge.sh` `handoff-gen` + `handoff/` (`handoff_gen.py`, `cc_compact.py`) |
 | `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |
-| `session/` | *(empty; reserved for the shared transcript parser)* |
+| `session/` | `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser + its tests) |
 | *(root)* | `adopt.sh` `explain.sh` `pitch.sh` `precedent.sh`, orphans, no cluster |
 
-## Resolution scheme (why the symlinks exist)
+## Resolution scheme (the `LIB_ROOT` anchor, no shims)
 
-Every `lib/` script resolves its own `$DIR` from `BASH_SOURCE` and calls its
-siblings as `$DIR/<callee>.sh`. Moving a file into a subsystem dir changes its
-`$DIR`, which would break two classes of caller. Both are covered by symlinks so
-that **no call-site was edited** (strategy (b): per-subsystem shims):
+Every `lib/` script resolves its own dir from `BASH_SOURCE` (`SELF_DIR`) and,
+when it needs a cross-subsystem sibling, computes ONE anchor:
 
-1. **Root compatibility shims**, `lib/<name>.sh -> <subsystem>/<name>.sh` for
-   every moved file. External callers (tests, hooks, commands, `install.sh`) that
-   reference the old flat path `lib/<name>.sh` keep working, and any call chain
-   whose entry runs at the root path resolves every sibling at the root shims.
+```sh
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"   # the lib/ dir
+```
 
-2. **Cross-subsystem shims**, `lib/<caller-subsys>/<callee>.sh -> ../<callee-subsys>/<callee>.sh`.
-   When a script is invoked at its real subsystem path (so `$DIR` is a subsystem
-   dir), its cross-subsystem sibling calls resolve through a shim placed *inside*
-   the caller's own subsystem dir. A shim at the old flat root would never be
-   consulted here (the moved caller looks only in its new dir), this is the
-   false-green the naive one-shim-at-root plan hits, and why these shims live in
-   the subsystem dirs. The set is the transitive closure of each subsystem's
-   cross-subsystem calls (e.g. `queue/gate-ledger.sh` also needs
-   `queue/kit-log-dir.sh`, because `gate-ledger.sh` sources `kit-log-dir.sh`).
+- **Same-subsystem** sibling  ->  `"$SELF_DIR/<callee>.sh"` (the real file sits
+  right beside the caller).
+- **Cross-subsystem** sibling  ->  `"$LIB_ROOT/<callee-subsystem>/<callee>.sh"`
+  (e.g. `queue/orchestrate.sh` calls `"$LIB_ROOT/gate/gate-ledger.sh"`).
+- **Repo-root** file (WORKFLOW.md, docs/, _meta/)  ->  `"$LIB_ROOT/.."` (two
+  levels above a `lib/<subsystem>/` script). A bare root orphan (`pitch.sh`,
+  `precedent.sh`) sets `LIB_ROOT="$SELF_DIR"` since its own dir already IS `lib/`.
 
-**Adding a file to a subsystem:** drop it in the subsystem dir, add a root
-compat shim `lib/<name>.sh -> <subsystem>/<name>.sh`, and if it makes a
-cross-subsystem sibling call, add the matching shim (and its transitive callees)
-inside its subsystem dir.
+There are NO alias symlinks and NO dispatcher; the anchor is the whole mechanism.
+External callers (hooks, commands, tests, `install.sh`) reference the real
+subsystem path `lib/<subsystem>/<name>.sh` directly.
+
+**Adding a file to a subsystem:** drop it in the subsystem dir. If it makes a
+cross-subsystem sibling call, reference it as `"$LIB_ROOT/<subsystem>/<name>.sh"`
+(add the `LIB_ROOT` line if the script does not have one yet). Nothing else, no
+shim to register.

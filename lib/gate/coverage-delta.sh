@@ -20,7 +20,7 @@
 #   coverage-delta.sh class <path>                         -> docs|generated|test|source
 #   coverage-delta.sh classes                              -> the four class names
 #
-# REUSE: the changed-files union mirrors lib/proof-ledger.sh:_changed (base..HEAD + working
+# REUSE: the changed-files union mirrors lib/gate/proof-ledger.sh:_changed (base..HEAD + working
 # tree + staged + untracked); the base resolver mirrors hooks/ship-gate.sh:_resolve_base; the
 # test globs mirror lib/explain.sh:_rank (anchored, so `latest-value.js` is not a test).
 set -uo pipefail

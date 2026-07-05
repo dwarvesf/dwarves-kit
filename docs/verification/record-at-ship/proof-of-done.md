@@ -6,7 +6,7 @@
 |---|---|---|---|
 | AC1 | `commands/ship.md` Step 8 runs `significance-classify.sh record` BEFORE `quiz-gate.sh tap`, guarded `\|\| true` | PASS | `commands/ship.md` diff; `tests/test-understanding-wiring.sh` AC3 line-order check |
 | AC2 | `tests/test-understanding-wiring.sh` AC3 flipped: `record` is WIRED (rc=0), not an honest gap (rc=3) | PASS (3/3) | AC3 block below |
-| AC3 | `WORKFLOW.md`, `commands/quiz-gate.md`, `lib/gate-ledger.sh` (~242), `lib/weekend-batch.sh` (~221, ~306) updated to state `record` is wired at Ship, no over-claim | PASS | diffs; no remaining "unwired"/"no live caller" claim for `record` in these 4 files |
+| AC3 | `WORKFLOW.md`, `commands/quiz-gate.md`, `lib/gate/gate-ledger.sh` (~242), `lib/queue/weekend-batch.sh` (~221, ~306) updated to state `record` is wired at Ship, no over-claim | PASS | diffs; no remaining "unwired"/"no live caller" claim for `record` in these 4 files |
 | AC4 | End-to-end: `record` (fat line) -> `weekend-batch collect` shows real sig/wor -> human `debt-response` forward-carries -> `mark-paid` exits 0, disposed paid | PASS (7/7) | `tests/test-weekend-batch.sh` AC5 block |
 | AC5 | Silent-wave: a `record` producing `verdict=wave` with NO human response is collected as `waved` | PASS (4/4) | `tests/test-weekend-batch.sh` AC6 block |
 | AC6 | Grounded NC: the recorded classification derives from the real `--files`/description, not a narrative | PASS | AC5a/AC6a below use `significance-classify.sh`'s own deterministic `explain`/`record` verdict, verified against the actual regex triggers (SPEC-123, unchanged) |
@@ -17,8 +17,8 @@
 ## Implementation
 
 - `commands/ship.md` Step 8: the "Understanding-gate nudge" bullet now runs
-  `bash lib/significance-classify.sh record <rid> --files "<files>" "<what changed>" || true`
-  immediately before the existing `bash lib/quiz-gate.sh tap ...` call, same files/description.
+  `bash lib/classify/significance-classify.sh record <rid> --files "<files>" "<what changed>" || true`
+  immediately before the existing `bash lib/gate/quiz-gate.sh tap ...` call, same files/description.
 - `tests/test-understanding-wiring.sh`: AC3 flipped from "record has no live caller" (rc=3, HONEST
   GAP) to "record IS wired via commands/ship.md" (rc=0, WIRED) for the `claim_wired` sweep against
   `WORKFLOW.md`; the old raw "no caller" grep replaced with three real assertions (a caller exists,
@@ -31,7 +31,7 @@
 - `commands/quiz-gate.md` (~line 31): "it was already logged silently ... at Ship" (previously an
   aspirational claim with no wiring behind it) now correctly cites SPEC-136 as the wiring that makes
   it true.
-- `lib/gate-ledger.sh` (~242) + `lib/weekend-batch.sh` (~221, ~306): comments describing the
+- `lib/gate/gate-ledger.sh` (~242) + `lib/queue/weekend-batch.sh` (~221, ~306): comments describing the
   forward-carry / walk-back fallback logic updated from "record is unwired today" (past-tense
   framing that was becoming stale) to "SPEC-136 wired record into /kit:ship; this fallback stays
   load-bearing for non-gate ships and pre-SPEC-136 rids" -- no behavior change, comments only.
@@ -95,7 +95,7 @@ never separately reached a human response was **not logged at all**.
 **After this SPEC** (this run, live smoke against a temp `DWARVES_KIT_LOG_DIR`, this branch's own
 real changed-files list and an honest description of this actual change):
 ```
-$ bash lib/significance-classify.sh record "$RID" --files "commands/ship.md lib/significance-classify.sh lib/weekend-batch.sh lib/gate-ledger.sh commands/quiz-gate.md tests/test-understanding-wiring.sh tests/test-weekend-batch.sh" \
+$ bash lib/classify/significance-classify.sh record "$RID" --files "commands/ship.md lib/classify/significance-classify.sh lib/queue/weekend-batch.sh lib/gate/gate-ledger.sh commands/quiz-gate.md tests/test-understanding-wiring.sh tests/test-weekend-batch.sh" \
     "wire significance-classify record into ship.md before the quiz-gate tap, closing the silent-wave-but-logged gap"
 wave
 
@@ -103,22 +103,22 @@ $ cat "$DWARVES_KIT_LOG_DIR/runs/$RID.log"
 ... | START | lane=full classified=full type=spec-feature ctype=spec-feature repo=dwarves-kit
 ... | DEBT  | significance=high worthiness=low verdict=wave reason=sig:full lane wor:none
 
-$ bash lib/weekend-batch.sh list --repo dwarves-kit --days 400
+$ bash lib/queue/weekend-batch.sh list --repo dwarves-kit --days 400
 live-smoke2-*   waved   high   low   ...   <- collected as waved, BEFORE any human response
 
-$ bash lib/gate-ledger.sh debt-response "$RID" defer "live smoke: deferring to weekend batch"
+$ bash lib/gate/gate-ledger.sh debt-response "$RID" defer "live smoke: deferring to weekend batch"
 $ tail -n1 "$DWARVES_KIT_LOG_DIR/runs/$RID.log"
 ... | DEBT | significance=high worthiness=low verdict=wave response=defer reason=live smoke: deferring to weekend batch
 
-$ bash lib/weekend-batch.sh collect --repo dwarves-kit --repo-root "$(pwd)"
+$ bash lib/queue/weekend-batch.sh collect --repo dwarves-kit --repo-root "$(pwd)"
 ## live-smoke2-*
 - disposition: deferred
 - significance: high / worthiness: low
 ...
 
-$ bash lib/weekend-batch.sh mark-paid "$RID" --note "live smoke close"
+$ bash lib/queue/weekend-batch.sh mark-paid "$RID" --note "live smoke close"
 rc=0
-$ bash lib/weekend-batch.sh list --repo dwarves-kit --days 400
+$ bash lib/queue/weekend-batch.sh list --repo dwarves-kit --days 400
 <empty -- disposed, never re-collected>
 ```
 This run's own real description ("wire significance-classify record into ship.md before the

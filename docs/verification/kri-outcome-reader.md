@@ -1,7 +1,7 @@
 # Proof of done: reconcile proof-table-gen's OUTCOME reader to the real 01 marker (SPEC-133)
 
-`lib/proof-table-gen.py` (SPEC-132, sub-goal 05) parsed an **assumed** single-line OUTCOME
-shape (`caught=<bool> [dur_ms=<N>]`). `lib/gate-ledger.sh`'s `outcome()`/`outcome_read()`
+`lib/gate/proof-table-gen.py` (SPEC-132, sub-goal 05) parsed an **assumed** single-line OUTCOME
+shape (`caught=<bool> [dur_ms=<N>]`). `lib/gate/gate-ledger.sh`'s `outcome()`/`outcome_read()`
 (SPEC-129, sub-goal 01) merged with a **different, real** shape: a `start`/`end` line pair
 per phase, duration in seconds as `dur_s=`. The DURATION column never populated from real
 01 data (`dur_ms=` never emitted); the CAUGHT column's match was an unmodeled regex
@@ -26,7 +26,7 @@ coincidence, not a designed pairing. This closes the gap: the parser now models 
 | Run | Command | Exit | Verdict |
 |---|---|---|---|
 | green | `bash tests/test-proof-table-gen.sh` | 0 | PASS (25/25 assertions) |
-| negative control | `lib/proof-table-gen.py` stashed back to the pre-fix parser, re-run | 1 | RED-as-expected (5 assertions failed, all real-01-format: T2 Caught/Duration header, T2 spec row, T2 build row, T2C fallback-duration row, plus the derived acceptance FAIL row printed on stderr/stdout) |
+| negative control | `lib/gate/proof-table-gen.py` stashed back to the pre-fix parser, re-run | 1 | RED-as-expected (5 assertions failed, all real-01-format: T2 Caught/Duration header, T2 spec row, T2 build row, T2C fallback-duration row, plus the derived acceptance FAIL row printed on stderr/stdout) |
 | restore | `git stash pop` then `bash tests/test-proof-table-gen.sh` | 0 | PASS (25/25, back to green) |
 | cross-platform | `/bin/bash tests/test-proof-table-gen.sh` (bash 3.2.57, macOS system bash) | 0 | PASS (25/25) |
 | no-regression | `bash tests/test-meta.sh` | 0 | PASS (667/667) |
@@ -50,7 +50,7 @@ tolerance and canonical-file-protection assertions.
 ### Negative control (revert -> RED -> restore)
 
 To prove the fix is load-bearing (not decorative), the parser fix in
-`lib/proof-table-gen.py` was stashed (`git stash push -- lib/proof-table-gen.py`),
+`lib/gate/proof-table-gen.py` was stashed (`git stash push -- lib/gate/proof-table-gen.py`),
 restoring the pre-fix regex-only OUTCOME reader, and the suite re-run against the
 now-updated (real-01-format) fixtures:
 
@@ -102,7 +102,7 @@ bash tests/test-proof-table-gen.sh                 # 25/25 green
 bash tests/test-meta.sh                            # 667/667, no regression
 
 # negative control
-git stash push -- lib/proof-table-gen.py
+git stash push -- lib/gate/proof-table-gen.py
 bash tests/test-proof-table-gen.sh                 # 20/25, 5 real-01-format assertions RED
 git stash pop
 bash tests/test-proof-table-gen.sh                 # 25/25 green again

@@ -71,7 +71,7 @@ If a report restates what a run already says, delete the restatement and link th
 ## 5b. Dialects: one spine, six bodies (per work type)
 
 The six rules above are the spine for EVERY profile. How a test is DESIGNED differs by the
-work's type (`lib/task-type-classify.sh`); design in the dialect that fits, not one-size BDD:
+work's type (`lib/classify/task-type-classify.sh`); design in the dialect that fits, not one-size BDD:
 
 | Type | Test-design dialect |
 |---|---|

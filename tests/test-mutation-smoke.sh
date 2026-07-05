@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-mutation-smoke.sh -- the ADVISORY mutation smoke (lib/mutation-smoke.sh, SPEC-131, SG-04).
+# test-mutation-smoke.sh -- the ADVISORY mutation smoke (lib/gate/mutation-smoke.sh, SPEC-131, SG-04).
 #
 # Over-test per the kit-run-integrity quality bar: bite/no-bite + the FALSE-POSITIVE negative
 # control (a biting suite is NOT flagged, the load-bearing one) + advisory-cannot-block + a
@@ -15,8 +15,8 @@
 set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SMOKE="$KIT_DIR/lib/mutation-smoke.sh"
-LEDGER="$KIT_DIR/lib/gate-ledger.sh"
+SMOKE="$KIT_DIR/lib/gate/mutation-smoke.sh"
+LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 PASS=0; FAIL=0; TOTAL=0
 ok()  { TOTAL=$((TOTAL+1)); PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} $1"; }

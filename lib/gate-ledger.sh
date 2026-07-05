@@ -1,1 +1,0 @@
-gate/gate-ledger.sh

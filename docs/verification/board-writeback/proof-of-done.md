@@ -22,15 +22,15 @@
 
 ## Implementation
 
-- `lib/board-writeback.sh` (new): the writeback engine. Subcommands: `reverse-native`, `diff`,
-  `apply`. SOURCES `lib/board-mirror.sh` (function-level reuse of `extract_rows`, `_row_hash`,
+- `lib/board/board-writeback.sh` (new): the writeback engine. Subcommands: `reverse-native`, `diff`,
+  `apply`. SOURCES `lib/board/board-mirror.sh` (function-level reuse of `extract_rows`, `_row_hash`,
   `_target_native`, `_repo_root_for`, `_sha256_hex`, `_now_iso`, and transitively
-  `lib/parse-board.sh`'s `pb_rows`) rather than re-forking any of that logic. `apply` builds every
+  `lib/board/parse-board.sh`'s `pb_rows`) rather than re-forking any of that logic. `apply` builds every
   sync branch in an isolated `git worktree` off the current HEAD; commits are attributed
   (`actor=hermes`); pushes go through the real `git` (no stub -- only `hermes`/`gh` are stubbed in
   tests); PR creation goes through `${GH_BIN:-gh} pr create` with every value as a discrete argv
   element (never a templated shell string).
-- `lib/board.sh`: one new dispatch case (`writeback`) + a `cmd_writeback` thin wrapper (resolve
+- `lib/board/board.sh`: one new dispatch case (`writeback`) + a `cmd_writeback` thin wrapper (resolve
   config, get a validated changeset from `board-writeback.sh diff`, apply it via `board-writeback.sh
   apply`, refresh the snapshot per applied origin via `board-mirror.sh snapshot-upsert` -- reused
   as-is, since its input shape already matches what `apply`'s result lines need); two new shared
@@ -172,7 +172,7 @@ $ git -C "$REPO" remote add origin "$REMOTE" && git -C "$REPO" push -q -u origin
 ### Build the golden mirror snapshot (stub hermes, matching SPEC-147's own contract)
 
 ```
-$ HERMES_BIN=<stub> bash lib/board.sh mirror --repo-root <T> --registry <boards.txt> --snapshot <snap.jsonl>
+$ HERMES_BIN=<stub> bash lib/board/board.sh mirror --repo-root <T> --registry <boards.txt> --snapshot <snap.jsonl>
 mirror: plan 3 ops (3 create, 0 change, 0 complete), 0 unchanged
 mirror: create fixR:ID-001 -> t_stub001 (triage)
 mirror: create fixR:ID-002 -> t_stub002 (ready)
@@ -184,7 +184,7 @@ mirror: applied 3 create, 0 change, 0 complete, 0 error(s)
 
 ```
 $ HERMES_BIN=<stub, list --json returns the above> GH_BIN=<stub, logs argv + returns a fake URL> \
-    bash lib/board.sh writeback --repo-root <T> --registry <boards.txt> --snapshot <snap.jsonl>
+    bash lib/board/board.sh writeback --repo-root <T> --registry <boards.txt> --snapshot <snap.jsonl>
 writeback: 1 change(s), 0 skipped
 writeback: <repo_root>: 1 row(s) synced on branch 'chore/board-sync' (base master), commit 010656e...: https://example.invalid/fake/fake/pull/1
 ```
@@ -221,7 +221,7 @@ $ git --git-dir="$REMOTE" show-ref --verify --quiet refs/heads/chore/board-sync 
 branch reached the remote
 ```
 
-**Note on the double space** (`claimed  |` in the diff): this is `lib/backlog.sh`'s own
+**Note on the double space** (`claimed  |` in the diff): this is `lib/board/backlog.sh`'s own
 pre-existing `set` behavior (its awk strips only the LEADING run of `[A-Za-z-]+` from the status
 cell, leaving the original trailing space intact before appending a new one) -- cosmetic only
 (status parsing trims whitespace before matching the leading keyword everywhere in this codebase),
@@ -232,7 +232,7 @@ to REUSE `backlog.sh`'s own state-flip verb, not fork a second one.
 
 ```bash
 cd ~/workspace/tieubao/ops-toolkit
-bash ~/.claude/dwarves-kit/lib/board.sh writeback --repo-root . --registry _meta/boards.txt \
+bash ~/.claude/dwarves-kit/lib/board/board.sh writeback --repo-root . --registry _meta/boards.txt \
   --snapshot _meta/.board-mirror-snapshot.jsonl --pr-base main
 ```
 
@@ -260,7 +260,7 @@ Crafted a snapshot whose `row_hash` differs from the row's real hash ONLY by cas
 `sha256sum`/`shasum`). Ran `board-writeback.sh diff` against it.
 
 ```
-$ bash lib/board-writeback.sh diff --registry <reg> --snapshot <attack1.jsonl>
+$ bash lib/board/board-writeback.sh diff --registry <reg> --snapshot <attack1.jsonl>
 writeback: skip fixR:ID-001: row_hash mismatch: git changed since the last mirror (git wins; refreshed on the next 'board mirror' run)
 writeback: 0 change(s), 1 skipped
 ```
@@ -310,7 +310,7 @@ row passes every other validation and reaches the actual commit/PR step):
 ```
 $ MARKER=$(mktemp -d)/PWNED_BY_WRITEBACK
 $ # snapshot .origin = 'fixR:ID-001`touch <MARKER>`'
-$ HERMES_BIN=<stub> GH_BIN=<stub> bash lib/board.sh writeback --repo-root <T> --registry <reg> --snapshot <attack4.jsonl>
+$ HERMES_BIN=<stub> GH_BIN=<stub> bash lib/board/board.sh writeback --repo-root <T> --registry <reg> --snapshot <attack4.jsonl>
 writeback: 1 change(s), 0 skipped
 writeback: <repo>: 1 row(s) synced on branch 'chore/board-sync' ...
 $ [ -f "$MARKER" ] && echo BYPASS || echo "no injection"
@@ -324,7 +324,7 @@ origin: fixR:ID-001`touch /tmp/.../PWNED_BY_WRITEBACK` -> claimed (was queued)
 
 **Blocked.** The marker file was never created -- the backtick payload landed as inert, literal
 text inside the commit body (written via `>>` to a plain file, committed via `git commit -F
-<file>`, never interpreted). This holds by CONSTRUCTION, not by escaping: `lib/board-writeback.sh`
+<file>`, never interpreted). This holds by CONSTRUCTION, not by escaping: `lib/board/board-writeback.sh`
 never passes card-derived text through `eval`, `sh -c`, or any command substitution; the only
 values that ever reach `git`/`gh` argv are (a) IDs that ALREADY matched `BACKLOG_ID_RE` against a
 real, currently-extracted BACKLOG.md row (so a malicious `.id` in a crafted snapshot that does NOT
@@ -370,7 +370,7 @@ All tests passed.
 ## `shellcheck` (clean)
 
 ```
-$ shellcheck lib/board-writeback.sh lib/board.sh tests/test-board-writeback.sh
+$ shellcheck lib/board/board-writeback.sh lib/board/board.sh tests/test-board-writeback.sh
 $ echo $?
 0
 ```
@@ -388,11 +388,11 @@ bash tests/test-board.sh
 bash tests/test-board-mirror.sh
 bash tests/test-meta.sh
 bash tests/test-hooks.sh
-shellcheck lib/board-writeback.sh lib/board.sh tests/test-board-writeback.sh
+shellcheck lib/board/board-writeback.sh lib/board/board.sh tests/test-board-writeback.sh
 
 # Round-trip demo + rung-4 red-team attempts: fixtures only, built and torn down under mktemp;
 # no real Hermes instance, no real gh call, no real PR anywhere in this reproduction. See the
 # "Round-trip demo" and "Rung-4 red-team pass" sections above for the exact scenarios; each is
 # independently reproducible by hand-crafting the described snapshot/registry fixture and running
-# `bash lib/board-writeback.sh diff|apply` or `bash lib/board.sh writeback` against it.
+# `bash lib/board/board-writeback.sh diff|apply` or `bash lib/board/board.sh writeback` against it.
 ```

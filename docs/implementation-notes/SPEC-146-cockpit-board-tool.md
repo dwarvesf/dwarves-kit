@@ -4,7 +4,7 @@ Delta from the spec only; decisions/tradeoffs the spec did not pin down, or foun
 
 ## 2026-07-05 09:00 No `bin/` entry point
 
-**Context:** the goal file offered "`lib/board.sh` + `bin/board`, or extend the existing dispatch
+**Context:** the goal file offered "`lib/board/board.sh` + `bin/board`, or extend the existing dispatch
 (match whatever pattern the kit already uses)."
 
 **Decision:** no `bin/` directory. The kit has ZERO `bin/` anywhere; every `lib/*.sh` (backlog.sh,
@@ -15,7 +15,7 @@ would deviate from an established, repo-wide convention with no local justificat
 **Why:** "match whatever pattern the kit already uses" is explicit in the goal text; the kit's
 pattern is direct invocation, not a `bin/` layer.
 
-**Impact:** `board.sh` is called as `bash lib/board.sh <cmd> ...` everywhere (README, the shim
+**Impact:** `board.sh` is called as `bash lib/board/board.sh <cmd> ...` everywhere (README, the shim
 design, tests), consistent with every sibling `lib/*.sh`.
 
 ## 2026-07-05 10:40 bash 3.2 compatibility: no negative array indices
@@ -24,14 +24,14 @@ design, tests), consistent with every sibling `lib/*.sh`.
 the last path component.
 
 **Found:** negative array indices (`arr[-1]`) are a bash 4.3+ feature. macOS ships bash 3.2 as
-`/bin/bash`, and `lib/mega-merge.sh`'s own comments already flag "bash 3.2 on the macos-latest CI
+`/bin/bash`, and `lib/goal/mega-merge.sh`'s own comments already flag "bash 3.2 on the macos-latest CI
 runner" as a real, previously-bitten hazard (its `_merge_exclusion`/`mark` functions carry
 `set -u`-safe empty-array guards for exactly this runner).
 
 **Fix:** replaced with a positive-index `unset "stack[$((${#stack[@]}-1))]"`, verified directly
 under `/bin/bash` (3.2.57) on this machine, not just the PATH-resolved (5.3) `bash`.
 
-**Impact:** `lib/parse-board.sh`'s `_canon_path` is bash-3.2-safe; confirmed by running
+**Impact:** `lib/board/parse-board.sh`'s `_canon_path` is bash-3.2-safe; confirmed by running
 `tests/test-board.sh`'s full 45-assertion suite under both `/bin/bash` and the PATH `bash`.
 
 ## 2026-07-05 11:15 repo_root canonicalization bug (found by the test suite itself)
@@ -68,4 +68,4 @@ that criterion, not in the criterion itself).
   literally end in `..`; removed the dead alternative, added a comment explaining why the single
   `*/../*` pattern already covers every position (leading/interior/trailing `..`).
 
-**Impact:** `shellcheck lib/board.sh lib/parse-board.sh tests/test-board.sh` exits 0 clean.
+**Impact:** `shellcheck lib/board/board.sh lib/board/parse-board.sh tests/test-board.sh` exits 0 clean.

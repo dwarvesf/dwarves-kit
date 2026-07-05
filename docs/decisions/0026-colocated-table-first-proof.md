@@ -2,7 +2,7 @@
 
 Date: 2026-06-09
 Status: Accepted
-Relates-to: ADR-0025 (proof-of-done ship gate, the gate this rides on), the proof-of-done convention (docs/verification/README.md), lib/proof-ledger.sh (the diff-keyed gate), ops-toolkit SPEC-016 (the consumer adoption that drove this)
+Relates-to: ADR-0025 (proof-of-done ship gate, the gate this rides on), the proof-of-done convention (docs/verification/README.md), lib/gate/proof-ledger.sh (the diff-keyed gate), ops-toolkit SPEC-016 (the consumer adoption that drove this)
 
 ## Decision (one line)
 
@@ -15,7 +15,7 @@ The canonical convention prescribes `docs/verification/<slug>/{test-design.md, r
 1. **Packaging.** For a tool in a `tools/<name>/` monorepo (ops-toolkit), a proof detached at the repo root drifts from the code it proves and is easy to miss in review. Teams want the proof to travel WITH the tool.
 2. **Review ergonomics.** The run-record shape (`runs/<ts>.md`: Command/Exit/Output/Verdict) is optimized for an immutable execution log, not for a reviewer scanning "what does done mean here, was it met, when, and how do I re-run." A reviewer wants acceptance criteria first, then implementation, then a timestamped confirmation table.
 
-The gate (`lib/proof-ledger.sh`, ADR-0025) already accepts a file named `proof-of-done.md` anywhere via the regex `(^|/)proof-of-done\.md$`. So co-location is already gate-legal; it was just labeled "back-compat." This ADR promotes it and adds the review layout, without changing the gate or breaking any consumer.
+The gate (`lib/gate/proof-ledger.sh`, ADR-0025) already accepts a file named `proof-of-done.md` anywhere via the regex `(^|/)proof-of-done\.md$`. So co-location is already gate-legal; it was just labeled "back-compat." This ADR promotes it and adds the review layout, without changing the gate or breaking any consumer.
 
 ## Decision
 

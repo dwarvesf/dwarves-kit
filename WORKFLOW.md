@@ -18,7 +18,7 @@ return here. This file does not restate the list, so the two cannot drift.
 
 `_meta/BACKLOG.md` is the kanban board (SPEC-055): one row per work item, the Status column is
 the state machine (`queued -> claimed -> speccing -> validated -> executing -> shipped`, plus
-`parked` / `dropped`). Render it with `bash lib/backlog.sh board`; flip states mechanically with
+`parked` / `dropped`). Render it with `bash lib/board/backlog.sh board`; flip states mechanically with
 `backlog.sh set <ID> <state>` (the leading keyword changes, the row's annotation prose
 survives). Work arrives two ways, and they coexist: an operator names an item
 (`/kit:assign ID-NNN`), or a session pulls the top queued item (`/kit:assign --next` =
@@ -39,7 +39,7 @@ Pick a lane before you start. Smaller work skips ceremony.
 When in doubt between two lanes, take the heavier one. Anything in the full-lane
 trigger list uses the full lane unless you explicitly narrow the scope and say why.
 
-`/kit:assign` backs this tree with an **advisory floor check** (`lib/lane-classify.sh
+`/kit:assign` backs this tree with an **advisory floor check** (`lib/classify/lane-classify.sh
 check`): once a lane is chosen, it re-classifies the task text and warns + logs (to
 `completeness.log`, reviewed at `/kit:ship`) when the choice is lighter than the
 deterministic floor, so an under-sized `full`/`bug` task does not slip through silently.
@@ -48,7 +48,7 @@ It warns; it never blocks (Detect, don't dictate). Over-sizing is always silent 
 ## Type loops (the non-code cycles)
 
 Lanes size the EVIDENCE contract for ALL work (see the composition rule below); the loop content is the type's. The classifier's other eleven types each get their own right-sized cycle
-(PHILOSOPHY §6 N1). Same intake either way: `lib/task-type-classify.sh` names the type; code work
+(PHILOSOPHY §6 N1). Same intake either way: `lib/classify/task-type-classify.sh` names the type; code work
 picks a lane above, everything else runs its type's loop below. Chat stays chat, a loop engages
 when a task is being executed, not on every message. The executor per type (preassigned or
 dynamic) lives in the registry (`docs/verification/task-types.md`, `agent` column); the proof
@@ -57,7 +57,7 @@ artifact and rigor live there too.
 **Phase 0 is universal (PHILOSOPHY §6 N3): every loop starts with the grill, then the done
 scenario.** First `/kit:grill`, the type-shaped intake interview (one question at a time,
 recommended answers, write-as-you-go; tiny exempt). Then define the done scenario,
-the proof contract (`bash lib/proof-gate.sh contract "<task>"`) plus the test design in the
+the proof contract (`bash lib/gate/proof-gate.sh contract "<task>"`) plus the test design in the
 type's dialect (test-design-standard §5b), BEFORE any phase below runs. What follows is what
 gets compared against that definition when the work claims done (the V-model right arm,
 type-agnostic).
@@ -284,7 +284,7 @@ that validates it):
 | Final boundary | `advisor` over-suggest (P6) before the human review |
 
 **Enforcement is at ship, never mid-flight (ADR-0024 + PHILOSOPHY).** Each phase's
-review RUNS and records (`bash lib/gate-ledger.sh record <rid> <phase> ran`);
+review RUNS and records (`bash lib/gate/gate-ledger.sh record <rid> <phase> ran`);
 mid-flight a failing review is advisory and does NOT halt the run. The only wall is at
 ship: `hooks/ship-gate.sh` refuses a push whose lane has a `measure-twice` phase with
 no `ran`/`override` entry (the lane's required set is parsed from the lane x phase
@@ -330,7 +330,7 @@ Every left-arm step passes its review lens BEFORE the work descends, on EVERY la
 the lane's plan order (derived from the matrix below) IS the descent order, and the
 review obligation now exists on all five lanes (tiny carries a run-lite Review: a
 recorded self-review line; weight scales, the obligation never waives). Descent is
-DETECTED, never blocked mid-flight (ADR-0024): `bash lib/gate-ledger.sh descent
+DETECTED, never blocked mid-flight (ADR-0024): `bash lib/gate/gate-ledger.sh descent
 <rid> <lane>` replays the ledger timeline and names every phase recorded while an
 earlier plan phase was still undisposed; ship-gate surfaces the count as an
 advisory. Promotion to a hard gate is a retro decision after SPEC-073 telemetry
@@ -408,7 +408,7 @@ delta) stayed under **`LANE_DEESCALATE_FLOOR`** changed (added+deleted) lines --
 default **20**, overridable per-run -- it prints one advisory nudge ("shipped as `<lane>` but
 the diff stayed tiny-sized ... consider `tiny` next time") and appends a `| ACTION |
 lane-deescalate chosen=<lane> lines=<N> floor=<F> verdict=misroute-tiny` ledger line, the data
-source for `lib/lane-telemetry.sh`'s future misroute aggregation. 20 is loose enough that a
+source for `lib/telemetry/lane-telemetry.sh`'s future misroute aggregation. 20 is loose enough that a
 real one-file bug tweak does not spuriously nudge, tight enough to catch a `normal`/`full`
 lane chosen for what turned out to be a copy-edit-sized diff; raise it to nudge less often,
 lower it to nudge more. `tiny`/`bug`/`backfill` never fire (nothing here ever calls a bug or
@@ -422,19 +422,19 @@ significance record and the SPEC-140 pitch offer.
 Every phase gate a run executes is recorded to a per-run ledger, so the run is
 auditable after the fact (ADR-0024). The lane×phase matrix above is the single
 source for which gates a lane *requires* (its `measure-twice` cells);
-`lib/gate-ledger.sh` parses it, with no second copy of the mapping.
+`lib/gate/gate-ledger.sh` parses it, with no second copy of the mapping.
 
-- **Record each gate as you run it:** `bash lib/gate-ledger.sh record <rid> <Phase> ran "<note>"`, where `<Phase>` is a matrix row name (Spec, Validate, Build, Review, Docs, Ship, ...). Record a deliberate skip as `... <Phase> skipped "<why>"` so the skip is visible, not silent. Log actions with `action <rid> "<what>"`.
+- **Record each gate as you run it:** `bash lib/gate/gate-ledger.sh record <rid> <Phase> ran "<note>"`, where `<Phase>` is a matrix row name (Spec, Validate, Build, Review, Docs, Ship, ...). Record a deliberate skip as `... <Phase> skipped "<why>"` so the skip is visible, not silent. Log actions with `action <rid> "<what>"`.
 - **The `advisor` emit is fail-open by explicit design (SPEC-145); every other emit site is bare.** `commands/review-team.md` Step 2b and `commands/mega.md`'s convergence-gate step both wrap their `advisor ran "mode=P5|P6 ..."` call in `|| echo "WARNING: ..." >&2` (NC2: a ledger-write failure must never fail the surrounding review/dispatch). The ~15 other call sites (`spec.md`, `design.md`, `review.md`, `docs.md`, `explain.md`, `grill.md`, `retro.md`, `test-plan.md`, `verify.md`, `think.md`, `ui-design.md`, `ship.md`, ...) stay bare -- not an oversight, but because `record()` behaves identically at every site (it prints an error and returns nonzero on a write failure, it never crashes the calling agent's turn), and none of those OTHER phases has advisor's specific NC2 contract requiring the failure be silently absorbed with a visible operator-facing warning. A future emit site that wants the same fail-open guarantee copies advisor's `||` idiom explicitly; it is not the ledger's default behavior.
 - **One append-only, redacted file per run** under `$DWARVES_KIT_LOG_DIR/runs/<slug>.log` (the existing hook-log convention; no command bodies or secret paths). It is an audit trail, never a source of state.
 - **Enforcement is at ship only.** `hooks/ship-gate.sh` refuses a feature-branch push or `gh pr create` when the active spec's lane has a `measure-twice` gate with no `ran`/`override` entry. Mid-flight phases are never blocked (Detect, don't dictate).
-- **Override, logged:** to ship past a missing gate, record a reason: `bash lib/gate-ledger.sh override <rid> <Phase> "<reason>"`. The override is part of the audit trail; in a fully autonomous run it is agent-writable, so the guarantee is block-by-default plus every skip and override recorded, not a hard stop (ADR-0024).
+- **Override, logged:** to ship past a missing gate, record a reason: `bash lib/gate/gate-ledger.sh override <rid> <Phase> "<reason>"`. The override is part of the audit trail; in a fully autonomous run it is agent-writable, so the guarantee is block-by-default plus every skip and override recorded, not a hard stop (ADR-0024).
 - **Understanding-axis markers (ADR-0031):** the same ledger also carries `| DEBT |` markers for
   a SEPARATE axis (advisory, never a ship block). See "## The understanding axis" below for the
   debt-budget model, where each beat fires, and a known wiring gap stated honestly rather than
   papered over.
 - **Gate-outcome markers (SPEC-129), a fourth additive verb:** beside `ran`/`skipped`, a gate
-  can also emit `bash lib/gate-ledger.sh outcome <rid> <phase> start|end [caught=<bool>]` -- a
+  can also emit `bash lib/gate/gate-ledger.sh outcome <rid> <phase> start|end [caught=<bool>]` -- a
   `start`/`end` pair bracketing the gate with a duration (`dur_s=`, the epoch delta of the two
   lines) plus whether the gate caught a defect. Same additive contract as `| GATE |` and the
   understanding-axis `| DEBT |` above: `check()` / `override()` / `descent()` / `_rows()` /
@@ -444,7 +444,7 @@ source for which gates a lane *requires* (its `measure-twice` cells);
   could extend `outcome()` calls to the spec/review boundaries; not done here). Read a phase's
   outcome back with `outcome-read`.
 - **The confirmation table is GENERATED, never hand-authored (SPEC-132):** `bash
-  lib/proof-table-gen.sh <rid>` renders the SPEC-016 table-first shape from a rid's gate/run
+  lib/gate/proof-table-gen.sh <rid>` renders the SPEC-016 table-first shape from a rid's gate/run
   ledger under `docs/runs/<rid>.md`, surfacing the OUTCOME marker above (Caught/Duration
   columns) when present and degrading gracefully when absent; it hard-refuses any out-path
   whose basename is `proof-of-done.md` (the canonical stays hand-authored) and confines its
@@ -463,8 +463,8 @@ those surfaces alone would not know either ran, or was skipped, this run).
 
 | Gate | What it checks | Live call site | Enforcement | Honesty note |
 |---|---|---|---|---|
-| `lib/coverage-delta.sh` (SPEC-130) | a behavioral diff moved source with no matching test change | `commands/review-team.md` Step 1, the Build->Review boundary | PROSE-INVOKED (inside `/kit:review-team`'s own markdown, off the push blocker); records `\| GATE \| coverage-delta \| ran \|`, ALWAYS exits 0 | a diff-LINE HEURISTIC (changed non-test lines vs changed test lines), NOT a real %-coverage delta; `COVERAGE_DELTA_RUNNER` hooks in a real runner but is unset by default |
-| `lib/mutation-smoke.sh` (SPEC-131) | a suite that stays green when a changed line is mutated (a false proof of correctness) | `commands/verify.md` Step 6b, inside `/kit:verify` | PROSE-INVOKED (inside `/kit:verify`'s own markdown, off the push blocker); records `\| MUTATION \|`, ALWAYS exits 0, `MUTATION_SMOKE_MAX` (default 5) bounds the run | a small FIXED mutation-operator set on the CHANGED HUNKS only, first-survivor-stops -- NOT a full mutation-testing sweep |
+| `lib/gate/coverage-delta.sh` (SPEC-130) | a behavioral diff moved source with no matching test change | `commands/review-team.md` Step 1, the Build->Review boundary | PROSE-INVOKED (inside `/kit:review-team`'s own markdown, off the push blocker); records `\| GATE \| coverage-delta \| ran \|`, ALWAYS exits 0 | a diff-LINE HEURISTIC (changed non-test lines vs changed test lines), NOT a real %-coverage delta; `COVERAGE_DELTA_RUNNER` hooks in a real runner but is unset by default |
+| `lib/gate/mutation-smoke.sh` (SPEC-131) | a suite that stays green when a changed line is mutated (a false proof of correctness) | `commands/verify.md` Step 6b, inside `/kit:verify` | PROSE-INVOKED (inside `/kit:verify`'s own markdown, off the push blocker); records `\| MUTATION \|`, ALWAYS exits 0, `MUTATION_SMOKE_MAX` (default 5) bounds the run | a small FIXED mutation-operator set on the CHANGED HUNKS only, first-survivor-stops -- NOT a full mutation-testing sweep |
 
 **Advisory-to-block promotion is Han's call, not taken here.** Once the ledger has accrued real
 `caught=` data from the OUTCOME marker above, a future retro can ask whether either gate has
@@ -478,7 +478,7 @@ they ship; it does not promote them.
 
 The gate-ledger's `RUN_REPORT.md` (`/kit:mega`'s per-sub-goal gate matrix) can only show a phase
 as covered if SOME command actually calls `gate-ledger.sh` for it. A 2026-07-04 audit of every
-file under `commands/` found 11 of 29 commands with a real `bash lib/gate-ledger.sh <verb>` call
+file under `commands/` found 11 of 29 commands with a real `bash lib/gate/gate-ledger.sh <verb>` call
 and 18 dark, with no distinction between "this phase genuinely has no ledger concern" and "nobody
 wired it yet" -- the RUN_REPORT under-counts silently either way. This section is the single
 source of truth for that distinction (parsed by `tests/test-command-emit-sweep.sh`, no second
@@ -516,7 +516,7 @@ row is enforced statically by `/kit:spec-validate` Reviewer 6, never separately 
 ledger). SPEC-139 does not touch `execute.md` or add a new record call for either phase (both
 commands were already counted "emitting" in the 2026-07-04 audit and are out of this sub-goal's
 named scope); a run that needs those two gates satisfied records them manually
-(`bash lib/gate-ledger.sh record <rid> build ran "<note>"` / `... design-record ran "<note>"`),
+(`bash lib/gate/gate-ledger.sh record <rid> build ran "<note>"` / `... design-record ran "<note>"`),
 the same generic escape hatch AGENTS.md already names for any phase gate.
 
 ## The understanding axis (ADR-0031)
@@ -538,8 +538,8 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   prose-ordered (not alphabetical) diff, a diagram -- composing `narrate-log` +
   `svg-knowledge-diagram`, grounded in the actual diff + recorded tests, never the agent's
   narrative. Human-invoked, on demand; no auto-fire. On a `gate`/gated-final PR, `/kit:ship`'s
-  Step 8 first runs `lib/significance-classify.sh record` (SPEC-136, below), persisting the
-  `significance=`/`worthiness=`/`verdict=` marker to the debt ledger; then Step 8 runs `lib/quiz-gate.sh tap`, which asks `lib/significance-classify.sh classify` for the
+  Step 8 first runs `lib/classify/significance-classify.sh record` (SPEC-136, below), persisting the
+  `significance=`/`worthiness=`/`verdict=` marker to the debt ledger; then Step 8 runs `lib/gate/quiz-gate.sh tap`, which asks `lib/classify/significance-classify.sh classify` for the
   same verdict (two signals: significance x understanding-worthiness) and, ONLY on a `tap` (high x
   high), prints the ★-tap nudge: a one-line "worth understanding: <why>" plus a 5-question quiz
   grounded in the diff+tests, routed through `deep-understand`'s mastery gate.
@@ -550,7 +550,7 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   one ledger (`gate-ledger.sh debt-response`, an additive `| DEBT |` line). Every response still
   merges the PR; the only real failure is UNTRACKED debt, not deferred or waved debt.
 - **Weekend batch (SG-05, ADR-0031 §3, SPEC-126).** Han-invoked only, no scheduled job:
-  `lib/weekend-batch.sh collect` (this repo) reads the `| DEBT |` ledger and surfaces the week's
+  `lib/queue/weekend-batch.sh collect` (this repo) reads the `| DEBT |` ledger and surfaces the week's
   WAVED/DEFERRED items; the ops-toolkit `weekend-debt-paydown` skill orchestrates the collected
   items into the operator's existing learning skills (`learning-day-process`, `learning-ledger`,
   `deep-understand`, `knowledge-capture`) rather than reinventing a second batching engine;
@@ -641,7 +641,7 @@ of that done-definition.
 
 Lanes are not assumed effective; they are measured. Every `/kit:assign` records a START line
 (chosen lane, classified lane, work type, repo) into the run's gate ledger, reviews record
-their verdicts, and `/kit:ship` records the PR outcome. `lib/lane-telemetry.sh report|misfires`
+their verdicts, and `/kit:ship` records the PR outcome. `lib/telemetry/lane-telemetry.sh report|misfires`
 aggregates read-side; `/kit:retro` Step 1d reviews it with a disposition contract (every
 misfire becomes a keyword fix + pin, a BACKLOG row, or a recorded accepted-noise line).
 
@@ -673,7 +673,7 @@ the cheap insurance.
 | S1 session open | `/kit:start`, whenever run ledgers exist | the `misfires` shortlist: every chosen!=classified pair (lane AND type) + floor-check downgrades, 2-10 lines |
 | S2 retro sweep | operator runs `/kit:retro` (recommended after 3-5 days of runs) | the full `report` below + the Step 1d disposition pass over every misfire |
 | S3 escaped defect | recorded at `/kit:debug` ledger-open when a defect indicts a shipped spec; SURFACES at the next S1/S2 | the `escaped defects` section naming which spec's test plan missed it |
-| ad hoc | `bash lib/lane-telemetry.sh report\|misfires` any time | same as S2's data, no disposition pass |
+| ad hoc | `bash lib/telemetry/lane-telemetry.sh report\|misfires` any time | same as S2's data, no disposition pass |
 
 Sample `report` (fixture-shaped; this is the artifact the retro reads):
 
@@ -801,11 +801,11 @@ reserved for the safety subset (safety-gate hook, push-to-main blocker).
 ## Mega-goal delegate execution (ADR-0032)
 
 `/kit:dispatch` above fans out N *disjoint* specs across worktrees in one session. A
-**mega-goal** (`_meta/megagoals/<slug>/`, `lib/orchestrate.sh`) is a different shape: N
+**mega-goal** (`_meta/megagoals/<slug>/`, `lib/queue/orchestrate.sh`) is a different shape: N
 *dependent*, ROADMAP-ordered sub-goals, each too large to share one session's context
 without hitting the ceiling (a 9-sub-goal run hit 873k tokens / 87% context before this
 ADR). This section is what actually dispatches; every claim below is proven by
-`tests/test-docs-wiring.sh`'s no-orphan sweep against `lib/orchestrate.sh`.
+`tests/test-docs-wiring.sh`'s no-orphan sweep against `lib/queue/orchestrate.sh`.
 
 ### Two run modes; `/goal` stays the official outer loop
 
@@ -835,8 +835,8 @@ execution-dominant ones, **haiku** for trivial ones.
 ### Wavefront SPEC-number reservation (SPEC-128)
 
 A concurrent wave (2+ admitted sub-goals dispatched at once) closes the SPEC-number race at
-DISPATCH, not at spec-time: `_wave_reserve_spec` (in `lib/orchestrate.sh`) atomically claims
-the next free number per sub-goal via `bash lib/spec-next.sh reserve` -- a portable
+DISPATCH, not at spec-time: `_wave_reserve_spec` (in `lib/queue/orchestrate.sh`) atomically claims
+the next free number per sub-goal via `bash lib/spec/spec-next.sh reserve` -- a portable
 `mkdir`-based mutex (no `flock` on stock macOS) over an append-only reservations ledger --
 and injects the reserved `SPEC-NNN` into that worker's dispatch prompt, before the worker (or
 a sibling) can race `spec-next.sh next` at spec-writing time. `spec-next.sh`'s scan (specs +
@@ -854,7 +854,7 @@ layer, not this mechanism.
 Splitting one mega-goal across many child sessions must not lose the kit's audit trail:
 
 - **Gate / proof / run ledgers survive by construction** -- each delegated session
-  records its own gates under its own `rid` (`bash lib/gate-ledger.sh rid`), exactly as
+  records its own gates under its own `rid` (`bash lib/gate/gate-ledger.sh rid`), exactly as
   it would running standalone. Delegation changes nothing here; there is no
   reconciliation step because there is nothing to reconcile.
 - **Token ledger: stream-to-FILE, never to the conductor.** Token capture needs
@@ -862,7 +862,7 @@ Splitting one mega-goal across many child sessions must not lose the kit's audit
   conductor. Reconciled via `--capture-tokens` (`CAPTURE_TOKENS=1`): the delegated child
   streams SILENTLY to a file (`.orchestrate/<id>.stream.jsonl`), the conductor extracts
   usage from that file after the child exits and records it as a `| TOKENS |` ledger line
-  (`lib/gate-ledger.sh tokens`) -- the conductor's own stdout never carries the child's
+  (`lib/gate/gate-ledger.sh tokens`) -- the conductor's own stdout never carries the child's
   transcript. `--stream` (a separate opt-in) additionally tees that same file live to the
   operator's terminal for a real-time tail; `--capture-tokens` alone stays silent.
 - **Debt ledger: split conductor/worker.** The worker session writes the
@@ -920,7 +920,7 @@ list/switch command (parked).
 
 **Lifecycle (drafted -> archived-on-ship).** A draft lives at the top level of
 `.claude/goals/` while its work is live; once its `target_spec` ships,
-`lib/goal-drafts.sh archive` (run by `/kit:ship`) moves it to
+`lib/goal/goal-drafts.sh archive` (run by `/kit:ship`) moves it to
 `.claude/goals/done/` (moved, never deleted; `status:` flipped to `shipped`).
 The render commands enumerate top-level `*.md` only, so an archived draft drops
 out of "what's active" with no filter code. This is the goal **draft** store
@@ -936,7 +936,7 @@ in `docs/specs/`, one is active per branch (branch-aware detection), and
 **`/kit:dispatch` spawns the N worktree workers and converges them lead-owned**
 (ADR-0019; one lead session, the in-session `Agent(run_in_background,
 isolation:worktree)` primitive locked by ADR-0020), behind the disjointness gate
-(`lib/dispatch-gate.sh`): two specs run concurrently only when their `## Touches`
+(`lib/gate/dispatch-gate.sh`): two specs run concurrently only when their `## Touches`
 globs are provably disjoint, and a post-task drift guard checks each worker stayed in
 its globs. What stays an **external runtime, NOT the kit's job**: a DAG / wave
 scheduler / topological ordering / crash-recovery durability (GSD v2), and auto-merge
@@ -978,18 +978,18 @@ goal per session, and walks away. There is no shared lead, so the coordination m
 disk, a **passive running-goal registry** under `$(git rev-parse --git-common-dir)/kit-goals/`
 (shared by every worktree of the repo, inherently untracked, never committed):
 
-- **Claim before building.** `/kit:assign` runs `bash lib/goal-registry.sh claim <slug>
+- **Claim before building.** `/kit:assign` runs `bash lib/goal/goal-registry.sh claim <slug>
   <lane> <glob>...`; the goal is admitted only if its declared globs are disjoint from
-  every active registered goal (the same `lib/dispatch-gate.sh` rule, reused). An overlap
+  every active registered goal (the same `lib/gate/dispatch-gate.sh` rule, reused). An overlap
   is REFUSED with the colliding goal named; the operator serializes or repicks.
 - **One single-writer file per goal.** A session writes only its own `<slug>.goal`, the
   same one-writer-per-surface model as the hands-off list; no shared write.
-- **Monitor from any session.** `bash lib/goal-registry.sh list` (surfaced in
+- **Monitor from any session.** `bash lib/goal/goal-registry.sh list` (surfaced in
   `/kit:start`) shows every running goal + lane + status across sessions, the kit-level
   companion to the native agent view (which sees only one session's subagents).
-- **Each goal leaves an attempt log.** `bash lib/goal-registry.sh log <slug> "..."`
+- **Each goal leaves an attempt log.** `bash lib/goal/goal-registry.sh log <slug> "..."`
   appends a human-legible line of what the goal tried (`<slug>.attempts`).
-- **Release on completion.** `bash lib/goal-registry.sh release <slug>` drops the entry.
+- **Release on completion.** `bash lib/goal/goal-registry.sh release <slug>` drops the entry.
   A stale `running` entry from a crashed session is visible in `list` and cleared the same
   way; there is no GC daemon (that would be a runtime).
 
@@ -1234,7 +1234,7 @@ mistake is irreversible:
 |---|---|---|---|
 | `/kit:start` | render queue + drafts | output rendered | none (detector) |
 | `/kit:assign <ID-NNN or freeform>` | goal draft + lane routing (freeform: delegate to `/kit:think`, then allocate ID + row) | draft written, status flipped, handed off | none (mutator; idempotent; approve-before-allocate) |
-| `/kit:dispatch <specs>` | disjointness gate -> N background worktree workers -> lead-owned convergence | all workers READY + drift-clean, converged via `/kit:ship` | disjointness gate + drift guard (`lib/dispatch-gate.sh`); no auto-merge; no DAG (ADR-0019) |
+| `/kit:dispatch <specs>` | disjointness gate -> N background worktree workers -> lead-owned convergence | all workers READY + drift-clean, converged via `/kit:ship` | disjointness gate + drift guard (`lib/gate/dispatch-gate.sh`); no auto-merge; no DAG (ADR-0019) |
 | `/kit:think` | decision brief | brief written (if BUILD) | advisory |
 | `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
 | `/kit:spec-validate` | 5-lens adversarial review | `Status: VALIDATED` | advisory (full lane) |

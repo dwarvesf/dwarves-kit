@@ -7,7 +7,7 @@ Delta from the spec. Reference SPEC-128 + the kit-run-integrity ROADMAP; do not 
 **Context:** ROADMAP open-fork 1 + the sub-goal contract both say the reservation is claimed
 "under `flock`".
 **Decision:** use a POSIX `mkdir`-based mutex, not `flock`.
-**Why:** `flock(1)` is absent on stock macOS (verified: not on PATH) and `lib/orchestrate.sh`
+**Why:** `flock(1)` is absent on stock macOS (verified: not on PATH) and `lib/queue/orchestrate.sh`
 is explicitly bash-3.2 / no-flock by contract (its own comment at the wavefront primitive).
 The binding property is "two concurrent claims serialize , a file + a lock, no daemon".
 `mkdir` is atomic on POSIX (exactly one racer creates the dir), so a lock DIR delivers the

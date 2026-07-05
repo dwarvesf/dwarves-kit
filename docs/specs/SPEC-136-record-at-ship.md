@@ -4,9 +4,9 @@ Status: VALIDATED
 Lane: full
 Type: spec-feature
 Relates-to: ADR-0031 Refinement §4 (conscious debt budget; impl-notes as the feed), SPEC-123
-(`lib/significance-classify.sh` , the classifier + its `record` verb), SPEC-125
-(`lib/quiz-gate.sh` , the ★-tap nudge that `tap` already calls `classify` for), SPEC-126
-(`lib/weekend-batch.sh` , the debt-ledger reader whose `collect`/`mark-paid` walk-back logic
+(`lib/classify/significance-classify.sh` , the classifier + its `record` verb), SPEC-125
+(`lib/gate/quiz-gate.sh` , the ★-tap nudge that `tap` already calls `classify` for), SPEC-126
+(`lib/queue/weekend-batch.sh` , the debt-ledger reader whose `collect`/`mark-paid` walk-back logic
 exists only because `record` was unwired), SPEC-127/SPEC-135 (`tests/test-understanding-wiring.sh`
 , the no-orphan sweep that AC3 currently asserts `record` has NO live caller), the
 `debt-ledger-response-seam` TIER-4 close (the forward-carry fix in `gate-ledger.sh debt_response`
@@ -52,7 +52,7 @@ This is the minimal seam: `record` already does everything needed (classify + wr
 already carries. No new lib code, no new verb, no new ledger shape.
 
 - **`commands/ship.md` Step 8** gains one line before the `quiz-gate.sh tap` call:
-  `bash lib/significance-classify.sh record <rid> --files "<files>" "<what changed>" || true`.
+  `bash lib/classify/significance-classify.sh record <rid> --files "<files>" "<what changed>" || true`.
   The `|| true` is the advisory exit-0 posture already used elsewhere on this axis (mirrors
   `weekend-batch.sh mark-paid`'s "advisory, never a hard failure" framing and SPEC-125's
   `quiz-gate.sh tap`'s own always-exit-0 contract): a `record` failure (e.g. a ledger-dir write
@@ -138,15 +138,15 @@ sequenceDiagram
 
 ## Acceptance criteria
 
-1. `commands/ship.md` Step 8 runs `lib/significance-classify.sh record <rid> --files "<files>"
-   "<what changed>"` BEFORE `lib/quiz-gate.sh tap`, guarded so a `record` failure never blocks the
+1. `commands/ship.md` Step 8 runs `lib/classify/significance-classify.sh record <rid> --files "<files>"
+   "<what changed>"` BEFORE `lib/gate/quiz-gate.sh tap`, guarded so a `record` failure never blocks the
    ship (advisory, `|| true` posture).
 2. `tests/test-understanding-wiring.sh` AC3 is flipped: it now asserts `record` IS wired, with a
    live dispatch path at `commands/ship.md` (a real grep-based assertion, not a tautology), and the
    `claim_wired` check for `significance-classify.sh record` against `WORKFLOW.md` returns WIRED
    (rc=0), not HONEST GAP (rc=3).
-3. `WORKFLOW.md`'s "Known wiring gap" bullet, `commands/quiz-gate.md` (~line 31), `lib/gate-ledger.sh`
-   (~242 comment), and `lib/weekend-batch.sh` (~221, ~306 comments) are updated to state `record` is
+3. `WORKFLOW.md`'s "Known wiring gap" bullet, `commands/quiz-gate.md` (~line 31), `lib/gate/gate-ledger.sh`
+   (~242 comment), and `lib/queue/weekend-batch.sh` (~221, ~306 comments) are updated to state `record` is
    wired at Ship (this SPEC), without over-claiming anything that does not actually dispatch.
 4. A new end-to-end test proves the full loop: `record` (fat line) -> `weekend-batch.sh collect`
    shows real sig/wor -> a human `debt-response` inherits the classification via forward-carry ->

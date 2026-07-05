@@ -46,8 +46,8 @@ one new read-only no-orphan check that proves each surface has a live call site 
   not a per-phase measurement (TIER-4 finding C2).
 - **tests/test-kri-wiring.sh** (new) -- a no-orphan sweep, same shape as
   `tests/test-docs-wiring.sh`: one fixed-string grep per surface against its live call site
-  (01: `hooks/ship-gate.sh`; 02: `lib/orchestrate.sh` + `lib/spec-next.sh`; 03:
-  `commands/review-team.md`; 04: `commands/verify.md`; 133: `lib/proof-table-gen.py`'s real
+  (01: `hooks/ship-gate.sh`; 02: `lib/queue/orchestrate.sh` + `lib/spec/spec-next.sh`; 03:
+  `commands/review-team.md`; 04: `commands/verify.md`; 133: `lib/gate/proof-table-gen.py`'s real
   marker parse; 134: the path-confinement guard), plus doc-presence assertions that
   AGENTS.md/WORKFLOW.md actually carry the enforcement-level vocabulary, plus a load-bearing
   negative control (a planted "03/04 are hook-enforced" over-claim must be CAUGHT by the same

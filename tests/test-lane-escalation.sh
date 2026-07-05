@@ -9,8 +9,8 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LC="$KIT_DIR/lib/lane-classify.sh"
-GL="$KIT_DIR/lib/gate-ledger.sh"
+LC="$KIT_DIR/lib/classify/lane-classify.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 EX="$KIT_DIR/commands/execute.md"
 FIX="$KIT_DIR/tests/fixtures/lane-escalation"
 
@@ -118,7 +118,7 @@ assert "AC5: escalate exits 0 on HOLD (advisory, never blocks)" $?
 
 grep -qiE 'advisory' "$EX"; assert "AC5: commands/execute.md wiring documents advisory" $?
 grep -qiE 'never a (mid-flight )?hard block|not a hard block' "$EX"; assert "AC5: commands/execute.md wiring documents 'not a hard block'" $?
-grep -qF 'lib/lane-classify.sh escalate' "$EX"; assert "AC5: commands/execute.md wires the escalate call" $?
+grep -qF 'lib/classify/lane-classify.sh escalate' "$EX"; assert "AC5: commands/execute.md wires the escalate call" $?
 grep -qF 'gate-ledger.sh start --amend' "$EX"; assert "AC5: commands/execute.md wires the up-only start --amend re-plan" $?
 grep -qE "Lane:.*header" "$EX"; assert "AC5: commands/execute.md documents bumping the spec Lane: header" $?
 grep -qiE 'never down' "$EX"; assert "AC5: commands/execute.md states the header bump is up-only (never down)" $?

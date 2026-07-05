@@ -20,7 +20,7 @@ một feedback loop để cải thiện.")
 
 Write side (one new verb, everything else reuses existing machinery):
 
-1. `lib/gate-ledger.sh start <rid> <chosen-lane> <classified-lane> <type> [repo]` (signature superseded by SPEC-062: `+[classified-type]` before `[repo]`) appends a
+1. `lib/gate/gate-ledger.sh start <rid> <chosen-lane> <classified-lane> <type> [repo]` (signature superseded by SPEC-062: `+[classified-type]` before `[repo]`) appends a
    `TS | START | lane=.. classified=.. type=.. repo=..` line to the run's existing ledger.
    Repo auto-detected from git. Called by `/kit:assign` right after the floor check.
 2. Review verdicts reuse the EXISTING `record` verb: `/kit:review`, `/kit:review-team`,
@@ -29,7 +29,7 @@ Write side (one new verb, everything else reuses existing machinery):
 
 Read side:
 
-4. New `lib/lane-telemetry.sh` (pure bash/awk over the pipe-delimited ledgers; no new store,
+4. New `lib/telemetry/lane-telemetry.sh` (pure bash/awk over the pipe-delimited ledgers; no new store,
    no daemon, no jq): `report` prints headline counts (runs, misrouted, shipped, untracked),
    a per-lane table (runs/mis/gates/skip/ovr/ships), a per-type table, and a per-run listing
    (rid, repo, lane<-classified, type, review verdict, first..last TS); `misfires` prints the

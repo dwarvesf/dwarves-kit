@@ -35,8 +35,8 @@ git -C "$T2" switch -qc feat/sgtwo
 printf '# Spec: x\nStatus: DRAFT\nLane: full\n' > "$T2/docs/specs/SPEC-001-sgtwo.md"
 git -C "$T2" add -A; git -C "$T2" commit -qm spec
 while read -r g; do
-  DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate-ledger.sh" record sgtwo "$g" ran "test" >/dev/null 2>&1
-done < <(DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate-ledger.sh" required full)
+  DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" record sgtwo "$g" ran "test" >/dev/null 2>&1
+done < <(DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$KIT/lib/gate/gate-ledger.sh" required full)
 [ "$(gate "$T2" 'git push -u origin HEAD')" = 0 ] && ok "spec + lane + gates recorded -> pass (exit 0)" || no "spec+lane+gates should pass"
 
 # 3. spec, no lane, NOT adopted (no marker) -> fail open (exit 0)

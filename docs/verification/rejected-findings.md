@@ -61,4 +61,4 @@ is a manual edit by a human, not something a review session does automatically.
 
 | date | lens | finding-key | verdict | reason |
 |---|---|---|---|---|
-| 2026-07-04 | architecture | single-file-ledger:lib/gate-ledger.sh | rejected | intentional single-file design (ADR-0024's one append-only audit trail per run); splitting it across files would fragment the trail the ledger exists to keep whole |
+| 2026-07-04 | architecture | single-file-ledger:lib/gate/gate-ledger.sh | rejected | intentional single-file design (ADR-0024's one append-only audit trail per run); splitting it across files would fragment the trail the ledger exists to keep whole |

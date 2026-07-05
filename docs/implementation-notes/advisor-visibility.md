@@ -38,9 +38,9 @@ Delta from the spec. Only off-spec calls live here.
   does not exist by the time the convergence gate runs at the very end of the whole chain.
 - Decision: reworded the convergence-gate paragraph to name the final sub-goal's rid as a
   STATIC, already-known value (its `**Branch:**` header from `goals/NN-<slug>.md`, `type/`
-  prefix stripped -- the exact transform `bash lib/gate-ledger.sh rid` applies when run on
+  prefix stripped -- the exact transform `bash lib/gate/gate-ledger.sh rid` applies when run on
   that branch), never a live variable re-derivation. This matches a hint already present in
-  Step 5's own existing bash comment (`RID=$(bash lib/gate-ledger.sh rid)  # or the sub-goal's
+  Step 5's own existing bash comment (`RID=$(bash lib/gate/gate-ledger.sh rid)  # or the sub-goal's
   own branch slug`), so the fix is consistent with, not a departure from, the file's existing
   convention.
 - Why: a convention that is inoperable under the DEFAULT run modes (only working by accident
@@ -52,8 +52,8 @@ Delta from the spec. Only off-spec calls live here.
   when the value is already known statically from the roadmap/goal file with no git state
   needed.
 - Impact: `commands/mega.md`'s convergence-gate paragraph now names `FINAL_RID` as a
-  roadmap-derived literal, not a reused shell variable. No change to `lib/gate-ledger.sh` or
-  `lib/mega-merge.sh` -- this is a documentation-precision fix, not a new mechanism.
+  roadmap-derived literal, not a reused shell variable. No change to `lib/gate/gate-ledger.sh` or
+  `lib/goal/mega-merge.sh` -- this is a documentation-precision fix, not a new mechanism.
 
 ## 2026-07-04 advisor critique also flagged an overclaim about convergence-gate parity
 

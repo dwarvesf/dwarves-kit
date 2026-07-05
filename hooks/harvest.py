@@ -26,7 +26,7 @@ reads, breaking auth; project setting-sources keeps the keychain OAuth.)
 Consumer seam (no hardcoded tenant path; per kit-foldin DECISIONS.md): the ledger,
 glossary glob, and LAB_LOG draft default REPO-RELATIVE under `_meta/`/`learning/`,
 resolved from REPO_ROOT (env) else `git rev-parse --show-toplevel` else $PWD,
-mirroring lib/board.sh's own repo-root precedent. There is no ops-toolkit-specific
+mirroring lib/board/board.sh's own repo-root precedent. There is no ops-toolkit-specific
 fallback.
 
 Env:
@@ -95,7 +95,7 @@ PROMPT_LABLOG = (
 
 
 def _repo_root():
-    """REPO_ROOT env wins; else git top-level; else cwd. Mirrors lib/board.sh's
+    """REPO_ROOT env wins; else git top-level; else cwd. Mirrors lib/board/board.sh's
     repo-root precedent -- no invented tenant var."""
     env = os.environ.get("REPO_ROOT")
     if env:

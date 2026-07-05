@@ -12,7 +12,7 @@ VERDICT: PASS
 Output excerpt:
 
 ```
-  PASS install.sh materializes lib/proof-ledger.sh (SPEC-045)
+  PASS install.sh materializes lib/gate/proof-ledger.sh (SPEC-045)
 Passed: 390 / 390
 All meta tests passed.
 ```
@@ -25,7 +25,7 @@ Setup: `install.sh` into a throwaway `HOME` (deploys `lib/` to `$HOME/.claude/dw
 A1  lib NOT reachable (empty HOME)   -> exit 0   FAIL OPEN   <- the bug (consumer unguarded)
 A2  lib reachable via install        -> exit 2   BLOCKED     <- the fix
       "BLOCKED: proof of done. This is a 'behavioral' change; ...
-       Type-specific shape (SPEC-044): run 'bash lib/proof-gate.sh contract ...'"
+       Type-specific shape (SPEC-044): run 'bash lib/gate/proof-gate.sh contract ...'"
 B   proof-of-done entry added        -> exit 0   PASS
 ```
 
@@ -37,7 +37,7 @@ artifact (SPEC-044 message live), and a valid proof lets it through (B).
 Two independent controls, both recorded:
 1. **A1 vs A2** above: with the lib unreachable the gate does NOT block (exit 0); with the
    fix's install-path lib it blocks (exit 2). The block is caused by the fix, not trivially.
-2. `tests/test-meta.sh` pin `install.sh materializes lib/proof-ledger.sh`: removing the
+2. `tests/test-meta.sh` pin `install.sh materializes lib/gate/proof-ledger.sh`: removing the
    install.sh lib-deploy block makes this assertion go RED.
 
 VERDICT: PASS. Exit: 0 on the suite; the gate blocks exactly when it should.

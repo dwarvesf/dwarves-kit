@@ -1,6 +1,6 @@
 # Mega-goal orchestrator architecture (for wavefront scheduling)
 
-Scope: lib/orchestrate.sh (serial loop, board/events) + lib/dispatch-gate.sh
+Scope: lib/queue/orchestrate.sh (serial loop, board/events) + lib/gate/dispatch-gate.sh
 (disjointness gate). For a spec author adding concurrent wavefront execution.
 
 ## 1. Serial run loop (`cmd_run`, orchestrate.sh:335-489)
@@ -54,7 +54,7 @@ this exact `& / spid=$! / kill -0 / wait` shape to an array of pids, one per
 parallel-eligible lane, polled per tick.
 
 ## 5. dispatch-gate.sh public interface
-Sourceable or `bash lib/dispatch-gate.sh <subcmd> ...` (L209-211 guard).
+Sourceable or `bash lib/gate/dispatch-gate.sh <subcmd> ...` (L209-211 guard).
 
 | Function | Signature | Returns |
 |---|---|---|

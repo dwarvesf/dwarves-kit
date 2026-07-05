@@ -10,16 +10,16 @@
 # ADDS `writeback` (SPEC-149): the reverse leg -- a Hermes-side card status move flows back into a
 # repo's BACKLOG.md as a reviewable, HELD `chore/board-sync` PR (never auto-merged), gated by the
 # mirror snapshot's row_hash conflict rule (git wins, always). Base kanban render
-# (board/next/set/states) is UNCHANGED and still delegates to `lib/backlog.sh` -- this file never
+# (board/next/set/states) is UNCHANGED and still delegates to `lib/board/backlog.sh` -- this file never
 # reimplements it. The substantial `mirror`/`status` logic (extract/diff/plan/apply) lives in
-# `lib/board-mirror.sh`; the substantial `writeback` logic (diff/apply/PR) lives in
-# `lib/board-writeback.sh` (which itself reuses `lib/board-mirror.sh`'s extract/hash machinery) --
-# the same delegation shape `queue` already has with `lib/parse-board.sh`.
+# `lib/board/board-mirror.sh`; the substantial `writeback` logic (diff/apply/PR) lives in
+# `lib/board/board-writeback.sh` (which itself reuses `lib/board/board-mirror.sh`'s extract/hash machinery) --
+# the same delegation shape `queue` already has with `lib/board/parse-board.sh`.
 #
 # The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
 # describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
 # `--repo-root <path>` / the `REPO_ROOT` env var (the kit's existing consumer pattern -- see
-# lib/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/mega-merge.sh's env-override
+# lib/queue/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
 # precedent). Never invents a `CONSUMER_ROOT` var.
 #
 # Usage:
@@ -40,7 +40,7 @@
 #   board.sh queue [--dry-run] [--repo-root <path>] [--registry <path>]
 #                                                               walk the registry, parse every
 #                                                               repo's BACKLOG.md via
-#                                                               lib/parse-board.sh, emit
+#                                                               lib/board/parse-board.sh, emit
 #                                                               slug<TAB>repo-path<TAB>pointer-path
 #                                                               for every allow-listed `#queue{}`
 #                                                               token on a `queued` row. `slug` is
@@ -71,7 +71,7 @@
 #                                                               templated shell string); default
 #                                                               is local (`$HERMES_BIN`/`hermes`
 #                                                               runs on this host). See
-#                                                               `lib/board-mirror.sh` for the full
+#                                                               `lib/board/board-mirror.sh` for the full
 #                                                               ETL design + state-mapping table.
 #   board.sh status [--repo-root <path>] [--registry <path>] [--snapshot <path>]
 #                                                               mirror staleness: per opted-in
@@ -106,7 +106,7 @@
 #                                                               or corrupt `--snapshot` REFUSES ALL
 #                                                               edits (explicit error, nonzero
 #                                                               exit) rather than silently applying
-#                                                               everything. See `lib/board-writeback.sh`
+#                                                               everything. See `lib/board/board-writeback.sh`
 #                                                               for the full design (reverse state
 #                                                               mapping, conflict rule, snapshot
 #                                                               refresh semantics).
@@ -124,7 +124,7 @@
 # CURRENT cwd, else cwd itself. The single-repo subcommands never need --repo-root; the shim that
 # calls them always passes an explicit --backlog-file instead.
 #
-# DWARVES_KIT overrides where lib/backlog.sh + lib/parse-board.sh + lib/board-mirror.sh are found
+# DWARVES_KIT overrides where lib/board/backlog.sh + lib/board/parse-board.sh + lib/board/board-mirror.sh are found
 # relative to this file (they are always siblings in lib/, so this only matters if board.sh is
 # copied standalone).
 
@@ -136,10 +136,10 @@ PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
 
-[ -f "$BACKLOG_SH" ]         || { echo "board: lib/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
-[ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
-[ -f "$BOARD_MIRROR_SH" ]    || { echo "board: lib/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
-[ -f "$BOARD_WRITEBACK_SH" ] || { echo "board: lib/board-writeback.sh not found at $BOARD_WRITEBACK_SH" >&2; exit 1; }
+[ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
+[ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
+[ -f "$BOARD_MIRROR_SH" ]    || { echo "board: lib/board/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
+[ -f "$BOARD_WRITEBACK_SH" ] || { echo "board: lib/board/board-writeback.sh not found at $BOARD_WRITEBACK_SH" >&2; exit 1; }
 
 # ---------------------------------------------------------------------------
 # Flag parsing (shared): extracts --backlog-file / --repo-root / --registry / --dry-run plus the
@@ -414,8 +414,8 @@ cmd_queue() {
 
 # ---------------------------------------------------------------------------
 # mirror -- git<->Hermes kanban bridge, read-mirror leg (SPEC-147, runner-fastpath sub-goal 07).
-# Delegates ALL substantial logic (extract/diff/plan/apply) to lib/board-mirror.sh, exactly the
-# way `queue` above delegates parsing to lib/parse-board.sh; this function is the thin,
+# Delegates ALL substantial logic (extract/diff/plan/apply) to lib/board/board-mirror.sh, exactly the
+# way `queue` above delegates parsing to lib/board/parse-board.sh; this function is the thin,
 # human-facing wrapper: resolve config, get a plan, apply it (locally or over one `ssh` call),
 # persist the snapshot incrementally as results stream back, print a summary. Never mutates any
 # BACKLOG.md (mirror is one-way: git -> Hermes; SG-08 owns the reverse leg).
@@ -456,7 +456,7 @@ cmd_mirror() {
     local remote_kit="${OPT_REMOTE_KIT_PATH:-\$HOME/.claude/dwarves-kit}"
     # shellcheck disable=SC2029  # intentional: ${remote_kit} expands client-side (it names the
     # remote path as a local variable); the remote command itself has no other variables to expand.
-    results="$(ssh "$OPT_REMOTE" "bash ${remote_kit}/lib/board-mirror.sh apply-plan" < "$plan")"
+    results="$(ssh "$OPT_REMOTE" "bash ${remote_kit}/lib/board/board-mirror.sh apply-plan" < "$plan")"
   else
     results="$(bash "$BOARD_MIRROR_SH" apply-plan < "$plan")"
   fi
@@ -543,8 +543,8 @@ cmd_status() {
 
 # ---------------------------------------------------------------------------
 # writeback -- git<->Hermes bridge, the WRITEBACK leg (SPEC-149, runner-fastpath sub-goal 08).
-# Delegates ALL substantial logic (diff/validate/apply/PR) to lib/board-writeback.sh, the same
-# thin-wrapper shape `mirror` above has with lib/board-mirror.sh: resolve config, get a validated
+# Delegates ALL substantial logic (diff/validate/apply/PR) to lib/board/board-writeback.sh, the same
+# thin-wrapper shape `mirror` above has with lib/board/board-mirror.sh: resolve config, get a validated
 # changeset, apply it (branch+commit+push+PR per affected repo), refresh the snapshot per applied
 # origin, print a summary. `--dry-run` computes the changeset (which DOES read Hermes -- that read
 # is exactly what a preview needs) but applies nothing: no branch, no commit, no push, no PR, no
@@ -565,7 +565,7 @@ cmd_writeback() {
   # `if cmd; then rc=0; else rc=$?; fi` (NOT `if ! cmd; then rc=$?; fi`): bash sets `$?` to the
   # NEGATED (`!`-inverted) status inside an `if ! cmd; then` block, not cmd's own exit code (a real
   # bug this build's own smoke test caught -- `rc` always read back as 0). This is the same
-  # command-substitution/exit-code gotcha lib/board-mirror.sh's `cmd_apply_plan` already documents
+  # command-substitution/exit-code gotcha lib/board/board-mirror.sh's `cmd_apply_plan` already documents
   # for its own `if out=$(...); then rc=0; else rc=$?; fi` pattern.
   local rc
   if bash "$BOARD_WRITEBACK_SH" "${diff_args[@]}" > "$changeset"; then rc=0; else rc=$?; fi

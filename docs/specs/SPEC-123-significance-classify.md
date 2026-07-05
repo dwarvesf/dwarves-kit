@@ -20,7 +20,7 @@ quizzed. Nothing in the kit computes either signal today.
 
 ## Solution
 
-`lib/significance-classify.sh`, a sibling to `lib/lane-classify.sh` (pure bash + grep, no LLM,
+`lib/classify/significance-classify.sh`, a sibling to `lib/classify/lane-classify.sh` (pure bash + grep, no LLM,
 deterministic, same-input-same-output). It composes `lane-classify.sh` for the "full lane" leg of
 significance rather than duplicating its risk-flag list (drift guard), and calls
 `gate-ledger.sh debt` to write the verdict as a new additive marker, the same shape as the
@@ -101,7 +101,7 @@ flowchart TB
 
 ### Chosen approach
 
-`lib/significance-classify.sh` with four subcommands, mirroring `lane-classify.sh`'s CLI shape:
+`lib/classify/significance-classify.sh` with four subcommands, mirroring `lane-classify.sh`'s CLI shape:
 
 - `classify [--files "<paths>"] [--impl-notes "<path>"] "<desc>"` -- prints the verdict only.
 - `explain [--files ...] [--impl-notes ...] "<desc>"` -- verdict + both signals + fired triggers,
@@ -162,9 +162,9 @@ bash tests/test-meta.sh                    # no regression in the corpus-wide su
 
 ## After state
 
-- `lib/significance-classify.sh` exists, is executable, and exposes `classify`/`explain`/
+- `lib/classify/significance-classify.sh` exists, is executable, and exposes `classify`/`explain`/
   `record`/`signals`.
-- `lib/gate-ledger.sh` exposes a `debt` subcommand that appends a `\| DEBT \|` marker line,
+- `lib/gate/gate-ledger.sh` exposes a `debt` subcommand that appends a `\| DEBT \|` marker line,
   invisible to `check()`/`override()`/`descent()`.
 - `tests/test-significance-classify.sh` passes with every negative control green.
 - `WORKFLOW.md` names the one point in the cycle where `significance-classify.sh record` fires

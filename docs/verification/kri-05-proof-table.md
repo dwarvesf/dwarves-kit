@@ -20,7 +20,7 @@ running the real check locally, and by performing the negative control in a thro
   coverage-delta known/unknown lane, and the fully-empty-ledger case).
 
 ## 2026-07-04 03:11 NEGATIVE CONTROL -- SPEC-132 [generator + tests]
-- Command: `git worktree add --detach /tmp/kri05-negctl HEAD && cd /tmp/kri05-negctl && git rm -q lib/proof-table-gen.sh lib/proof-table-gen.py && bash tests/test-proof-table-gen.sh` (throwaway worktree; removed after, shared checkout untouched)
+- Command: `git worktree add --detach /tmp/kri05-negctl HEAD && cd /tmp/kri05-negctl && git rm -q lib/gate/proof-table-gen.sh lib/gate/proof-table-gen.py && bash tests/test-proof-table-gen.sh` (throwaway worktree; removed after, shared checkout untouched)
 - Exit: 1
 - Output (excerpt):
   ```

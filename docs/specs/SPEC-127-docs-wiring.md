@@ -18,7 +18,7 @@ SG-01..05 shipped the understanding-gate machinery (design record, significance-
 docs are NOT silent on the axis -- but they are scattered (a depth-matrix row here, a
 gate-ledger bullet there, a README table row somewhere else) and, per a live repo sweep,
 **one of the five shipped artifacts over-claims its own wiring**: `WORKFLOW.md`'s
-"Understanding-debt marker" bullet reads "at Ship, run `bash lib/significance-classify.sh
+"Understanding-debt marker" bullet reads "at Ship, run `bash lib/classify/significance-classify.sh
 record <rid> ...`" as if this is a live step of `/kit:ship`, but `commands/ship.md` (the
 actual operative file `/kit:ship` executes) never calls `significance-classify.sh record` --
 confirmed by `docs/implementation-notes/significance-classify.md`'s own 2026-07-03 entry
@@ -111,11 +111,11 @@ asserts the flag was raised, not the absence of one).
 | Declaration | AGENTS.md mentions the understanding axis / ADR-0031 as advisory | present |
 | Declaration | README.md commands table/ASCII block lists `/kit:explain` | present (already shipped by SG-03) |
 | No-orphan (positive) | Design record: `commands/spec-validate.md` contains the Reviewer 6 blocking enforcement | live dispatch path found |
-| No-orphan (positive) | significance-classify: `lib/quiz-gate.sh` calls `significance-classify.sh classify` | live dispatch path found (classify verb) |
+| No-orphan (positive) | significance-classify: `lib/gate/quiz-gate.sh` calls `significance-classify.sh classify` | live dispatch path found (classify verb) |
 | No-orphan (honest gap) | significance-classify: no `commands/*.md` calls `significance-classify.sh record` | absence CONFIRMED and documented, not papered over |
 | No-orphan (positive) | `/kit:explain`: `commands/explain.md` exists (auto-registered plugin command) | live dispatch path found |
-| No-orphan (positive) | quiz-gate: `commands/ship.md` Step 8 calls `lib/quiz-gate.sh tap` | live dispatch path found |
-| No-orphan (positive) | weekend-batch: the ops-toolkit `weekend-debt-paydown` skill invokes `lib/weekend-batch.sh collect` | live dispatch path found (cross-repo, documented) |
+| No-orphan (positive) | quiz-gate: `commands/ship.md` Step 8 calls `lib/gate/quiz-gate.sh tap` | live dispatch path found |
+| No-orphan (positive) | weekend-batch: the ops-toolkit `weekend-debt-paydown` skill invokes `lib/queue/weekend-batch.sh collect` | live dispatch path found (cross-repo, documented) |
 | Negative control (over-claim) | fixture WORKFLOW.md line claims a fake lib call with no matching invocation anywhere in the repo | sweep FLAGS it (non-zero / explicit FAIL) |
 
 **Coverage delta:** 0 -> 1 test file (`tests/test-understanding-wiring.sh`), 0 -> ~10 assertions

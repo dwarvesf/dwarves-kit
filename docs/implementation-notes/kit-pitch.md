@@ -13,7 +13,7 @@ path is built from it.
 **Why:** the self spec-validate pass (Reviewer 1, Security Auditor) flagged that `lib/pitch.sh`
 builds filesystem paths directly from its `<rid>` argument (`docs/specs/SPEC-*-"$slug".md`,
 `docs/verification/$slug.md`, `docs/implementation-notes/$slug.md`) with no sanitization,
-unlike `lib/gate-ledger.sh`'s own `ledger_file()`, which already strips `/` via `runid()`
+unlike `lib/gate/gate-ledger.sh`'s own `ledger_file()`, which already strips `/` via `runid()`
 before ever touching disk. A crafted `<rid>` (e.g. containing `../`) could walk a lookup
 outside the intended `docs/` subtree. Real rids never contain `/` or `..` (they are branch
 slugs with the `type/` prefix already stripped, SPEC-070), so the guard costs nothing on the
@@ -56,7 +56,7 @@ fixture/scanner trap `kit-emit-sweep`'s own implementation-notes already named (
 no secrets" trips a scanner on the word "secrets"). The fix narrows the check to what an agent
 or the shell would actually EXECUTE: `lib/pitch.sh`'s lines minus `#`-comments, and only the
 fenced bash blocks in `commands/pitch.md` (the two `bash lib/pitch.sh render ...` / `bash
-lib/gate-ledger.sh record ...` calls) -- both come back clean (0 hits), and the prose mentions
+lib/gate/gate-ledger.sh record ...` calls) -- both come back clean (0 hits), and the prose mentions
 are asserted SEPARATELY as a "documents it never posts" check instead of being folded into the
 same forbidden-pattern grep.
 
@@ -73,7 +73,7 @@ helper) instead of that live output.
 
 **Why:** CI runs from a fresh checkout with no `~/.local/state/dwarves-kit/logs/runs/
 kit-emit-sweep.log` (that ledger only exists on a dev machine that already ran/shipped this rid,
-per `lib/kit-log-dir.sh`'s XDG-state default). The live render's spec/proof/implementation-notes
+per `lib/telemetry/kit-log-dir.sh`'s XDG-state default). The live render's spec/proof/implementation-notes
 lookups all resolve fine in CI (those ARE committed files), but `_ledger_pr`/`_ledger_grill`
 read from the machine-local ledger and come back empty, so the PR-link and grill-reason checks
 failed 27/29 in CI while passing 29/29 on a dev machine (confirmed by reproducing the exact 2

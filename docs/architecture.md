@@ -68,7 +68,7 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 
 **Concurrency boundary (ADR-0019 + ADR-0020 + ADR-0022)**: the kit permits concurrency along two axes and stops short of a DAG / wave scheduler / crash-recovery runtime (handed to GSD v2).
 - **In-session (ADR-0019 + ADR-0020):** **bounded cross-goal fan-out**, one lead session orchestrating N isolated worktree workers over disjoint `VALIDATED` specs, behind a disjointness gate, with lead-owned convergence. ADR-0019 supersedes the four standing "one session / sequential" boundaries (SPEC-032 C1); ADR-0020 locks the dispatch primitive to in-session `Agent(run_in_background, isolation:worktree)` workers (Path A, proven by the SPEC-033 spike), not the read-only `claude agents` view. The implementing surface is `/kit:dispatch` (SPEC-032); the convergence contract is SPEC-031.
-- **Cross-session (ADR-0022):** **one operator's N concurrent same-machine sessions over disjoint goals**, coordinated by a passive **running-goal registry** (`lib/goal-registry.sh`), one single-writer file per goal under `.git/kit-goals/`, reusing the same disjointness rule to refuse a goal that overlaps an active one, and serving as the cross-session monitor (`list`, surfaced in `/kit:start`) plus each goal's attempt log. ADR-0022 supersedes the "multi-session stays L5" boundary (SPEC-036 C4) for exactly this case. What stays L5 (Nimbalyst / GSD v2): coordination across machines, 3+ live human operators, and goal-ordering chains. The registry records and compares; it never schedules, sequences, or merges.
+- **Cross-session (ADR-0022):** **one operator's N concurrent same-machine sessions over disjoint goals**, coordinated by a passive **running-goal registry** (`lib/goal/goal-registry.sh`), one single-writer file per goal under `.git/kit-goals/`, reusing the same disjointness rule to refuse a goal that overlaps an active one, and serving as the cross-session monitor (`list`, surfaced in `/kit:start`) plus each goal's attempt log. ADR-0022 supersedes the "multi-session stays L5" boundary (SPEC-036 C4) for exactly this case. What stays L5 (Nimbalyst / GSD v2): coordination across machines, 3+ live human operators, and goal-ordering chains. The registry records and compares; it never schedules, sequences, or merges.
 
 Where they meet: the native `claude agents` view monitors the subagents inside *one* session; the running-goal registry is the kit-level roll-up that lists every concurrent goal *across* sessions, tagged with its goal + lane. `/kit:dispatch` also registers its in-session workers, so one `goal-registry list` shows both axes.
 
@@ -126,7 +126,7 @@ Total: 25 commands + 15 agents = **40 entries** (10 build · 3 code · 9 test ·
 | `/kit:visual-team` | command | Visual critique | gate | Opt-in; 5 design lenses critique UI output; mirrors review-team for visual work |
 | `/kit:docs` | command | Doc sync | gate | Diffs code vs docs and patches drift; dispatches doc-verifier before committing |
 | `/kit:explain` | command | Understanding (AFTER gate) | gate | ADR-0031 §2; emits a literate-diff explainer (background -> goal+intuition -> prose-ordered diff -> diagram) via `lib/explain.sh`, composing narrate-log + svg-knowledge-diagram; grounded in the diff + test results, advisory |
-| `/kit:quiz-gate` | command | Understanding (AFTER gate) | gate | ADR-0031 §2/§3; the ★-tap NUDGE before merging a significant+worthy gate PR: 5 diff-grounded quiz questions (`lib/quiz-gate.sh`) routed through deep-understand, keyed on `lib/significance-classify.sh`'s `tap` verdict; three logged responses (engage/defer/wave), advisory, never must-pass |
+| `/kit:quiz-gate` | command | Understanding (AFTER gate) | gate | ADR-0031 §2/§3; the ★-tap NUDGE before merging a significant+worthy gate PR: 5 diff-grounded quiz questions (`lib/gate/quiz-gate.sh`) routed through deep-understand, keyed on `lib/classify/significance-classify.sh`'s `tap` verdict; three logged responses (engage/defer/wave), advisory, never must-pass |
 | `/kit:pitch` | command | Understanding (AFTER gate, outward) | gate | SPEC-140; the OUTWARD twin of `/kit:explain` -- assembles a buy-in doc (outcome -> unknowns -> evidence -> cost -> ask) from the spec, proof-of-done, implementation-notes, and the ledger's grill/DEBT records via `lib/pitch.sh`; a missing source is an explicit line, never invented; `commands/ship.md` Step 8 offers it only when `significance=high` AND the repo is team-shared (`lib/pitch.sh team-shared`); never auto-posts |
 | `code-reviewer` | agent | Code review | gate | Focused single-lens reviewer; dispatched by /review-team with a lens (architecture / test-coverage; security now uses security-reviewer) |
 | `security-reviewer` | agent | Security review | gate | Deep security analysis; dispatched by `/kit:review-team` as the security reviewer (replacing the generic code-reviewer security lens); also invocable directly for an ad-hoc deep pass |
@@ -145,8 +145,8 @@ Total: 25 commands + 15 agents = **40 entries** (10 build · 3 code · 9 test ·
 | `/kit:kit-health` | command | Maintainer audit | cross-phase | Self-assessment against PHILOSOPHY.md; run before tagging; not part of the normal cycle |
 | `/kit:absorb` | command | Upstream maintenance | cross-phase | Audits Credits drift + seed-rescan; proposal-only; maintainer-only connective tissue |
 | `/kit:debug` | command | Bug lane (off-cycle) | cross-phase | Off-cycle loop: root cause before any fix; evidence ledger; 3-fix architecture wall |
-| `/kit:dispatch` | command | Concurrent fan-out | cross-phase | Fans out N disjoint VALIDATED specs into isolated worktree workers behind the disjointness gate (`lib/dispatch-gate.sh`); drift-guards each; lead-owned convergence; no DAG / no auto-merge (ADR-0019) |
-| `/kit:mega` | command | Sequenced fan-out | cross-phase | Mirrors the plan-for-mega-goal skill: decomposes 3-8 DEPENDENT sub-goals into one bounded-loop roadmap, front-loads every clarification once, sets the per-run merge config; ship-layer auto-merge for `auto`-tagged sub-goals rides `lib/mega-merge.sh` -> `lib/gate-ledger.sh check`, refusing unconditionally on a failing/missing gate (ADR-0028 P2/P3, SPEC-034, SPEC-096) |
+| `/kit:dispatch` | command | Concurrent fan-out | cross-phase | Fans out N disjoint VALIDATED specs into isolated worktree workers behind the disjointness gate (`lib/gate/dispatch-gate.sh`); drift-guards each; lead-owned convergence; no DAG / no auto-merge (ADR-0019) |
+| `/kit:mega` | command | Sequenced fan-out | cross-phase | Mirrors the plan-for-mega-goal skill: decomposes 3-8 DEPENDENT sub-goals into one bounded-loop roadmap, front-loads every clarification once, sets the per-run merge config; ship-layer auto-merge for `auto`-tagged sub-goals rides `lib/goal/mega-merge.sh` -> `lib/gate/gate-ledger.sh check`, refusing unconditionally on a failing/missing gate (ADR-0028 P2/P3, SPEC-034, SPEC-096) |
 | `responding-to-review` | agent | Review response | cross-phase | Responds to review feedback with technical rigor; proposes fixes, does not apply them |
 | `/kit:draft-agent` | command | Meta-tooling | cross-phase | Generates a subagent (or sub-goal file) via the `meta-agent`; installs the subagent by default (roster-sync + `cp` to `~/.claude/agents/`); `--draft` stops at a staged draft |
 | `meta-agent` | agent | Meta-tooling | cross-phase | Drafts a new subagent definition or mega-goal sub-goal file from a one-line description; determines minimal tools; the subagent writes to staging only, the command promotes/installs |
@@ -274,20 +274,20 @@ The kit keeps a small set of distinct state stores. Keeping them distinct preven
 | `.git/kit-goals/<slug>.goal` | no (under `.git`, untracked) | run-time | the cross-session running-goal **registry** claim ("what's executing now"); the lock that keeps N same-machine sessions disjoint (ADR-0022) |
 | `.claude/last-goal.md` | no (gitignored) | ephemeral | the built-in `/goal`'s single active slot; the kit never writes it |
 
-**Draft vs registry, the two "goal" stores side by side.** A goal **draft** (`.claude/goals/<slug>.md`) is design-time candidate work, "what's active." A registry **claim** (`.git/kit-goals/<slug>.goal`) is the run-time lock, "what's executing now" across concurrent same-machine sessions. They are not duplicates: the slug is the shared key tying a draft to its claim. A draft is filesystem-authoritative (no derived cache, ADR-0023) and is moved to `done/` once its `target_spec` ships (`lib/goal-drafts.sh archive`, run by `/kit:ship`); a claim is created by `lib/goal-registry.sh claim` and released when the goal completes.
+**Draft vs registry, the two "goal" stores side by side.** A goal **draft** (`.claude/goals/<slug>.md`) is design-time candidate work, "what's active." A registry **claim** (`.git/kit-goals/<slug>.goal`) is the run-time lock, "what's executing now" across concurrent same-machine sessions. They are not duplicates: the slug is the shared key tying a draft to its claim. A draft is filesystem-authoritative (no derived cache, ADR-0023) and is moved to `done/` once its `target_spec` ships (`lib/goal/goal-drafts.sh archive`, run by `/kit:ship`); a claim is created by `lib/goal/goal-registry.sh claim` and released when the goal completes.
 
 The active spec among these is resolved by the SPEC-005 rule (`docs/specs/`, branch-selected when several are live). The `/kit:start`/`/kit:next` rendering of the backlog queue + goal drafts is wired in SPEC-006; both enumerate top-level `.claude/goals/*.md` (a non-recursive glob), so archived drafts under `done/` are skipped.
 
-## Mega-goal orchestration: serial and wavefront (`lib/orchestrate.sh`)
+## Mega-goal orchestration: serial and wavefront (`lib/queue/orchestrate.sh`)
 
 `orchestrate.sh run <megagoal-dir>` drives a mega-goal ROADMAP as one fresh `claude -p` session per
 sub-goal (SPEC-087: no session accumulates more than one sub-goal's context). By default it runs
 **strictly serially**. Opt-in **wavefront** scheduling (SPEC-106, ADR-0030) lets dep-independent
 sub-goals run as concurrent waves. The whole wave subsystem is gated behind one env var.
 
-### The overnight queue launcher (`lib/queue.sh`, a sibling, SPEC-148)
+### The overnight queue launcher (`lib/queue/queue.sh`, a sibling, SPEC-148)
 
-`orchestrate.sh` drives ONE mega-goal's sub-goals as headless `claude -p` sessions. `lib/queue.sh`
+`orchestrate.sh` drives ONE mega-goal's sub-goals as headless `claude -p` sessions. `lib/queue/queue.sh`
 is the complementary layer ABOVE that: a dumb sequential scheduler that runs a QUEUE of drafted
 megas overnight, one after another. Crucially it uses a DIFFERENT mechanism , it drives the
 operator's **live interactive** Claude Code `/goal` session, not a headless `claude -p`. It opens a
@@ -306,7 +306,7 @@ tsv (`slug<TAB>repo<TAB>pointer`, allow-list-EXEMPT: operator authorship is the 
 `--from-boards` (runner-fastpath sub-goal 04's `board queue` emit; pointers additionally confined
 by a `realpath`-resolved allow-list, defense-in-depth on top of 04's own confinement). Exposed as
 `orchestrate.sh queue <src>` (a one-line alias; the logic lives in `queue.sh`, so orchestrate.sh's
-own suite is untouched). The mux/marker mechanism lives in `lib/queue.sh` `_launch_once` /
+own suite is untouched). The mux/marker mechanism lives in `lib/queue/queue.sh` `_launch_once` /
 `_scan_marker`; the allow-list in `_pointer_allowlist_reason`.
 
 ### The per-cycle dispatch decision (waves are the default; serial is the opt-out)
@@ -353,7 +353,7 @@ sub-goal ready at once; only sub-goals that survive admission run concurrently.
                                                         (SIGTERM kills the group)       clean-merge wrong)
 ```
 
-Disjointness reuses `lib/dispatch-gate.sh` (ONE disjointness authority, ADR-0019). The **self-Touches**
+Disjointness reuses `lib/gate/dispatch-gate.sh` (ONE disjointness authority, ADR-0019). The **self-Touches**
 requirement matters: `dispatch-gate` admits the first member of a set vacuously, so without requiring a
 candidate's own `## Touches`, a Touches-less sub-goal would be wrongly admitted. `commands/mega.md`
 now emits a `## Touches` section per generated sub-goal (ID-090), so newly-decomposed mega-goals are

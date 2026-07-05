@@ -87,7 +87,7 @@ gate the merge; the explainer is advisory (ADR-0031: engage / defer / wave, neve
 
 Record the run for lane telemetry (SPEC-139), one line (`explain` carries no matrix row of its
 own, same as `verify` -- RUN_REPORT observability, never a new required gate):
-`bash lib/gate-ledger.sh record <rid> explain ran "ref=<commit|PR|spec>"`.
+`bash lib/gate/gate-ledger.sh record <rid> explain ran "ref=<commit|PR|spec>"`.
 
 ## Rules
 

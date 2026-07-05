@@ -119,7 +119,7 @@ rejected-findings-memory counts (SPEC-144): `findings=<K>` counts FRESH findings
 `actor=<name>` is `git config user.name` read at record time:
 
 ```
-bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected=<M> actor=$(git config user.name)"
+bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected=<M> actor=$(git config user.name)"
 ```
 
 

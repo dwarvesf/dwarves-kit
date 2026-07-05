@@ -36,9 +36,10 @@
 set -euo pipefail
 
 REG_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_ROOT="$(cd "$REG_SELF_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 # Reuse the gate's normalize + overlap functions (single source for disjointness).
-# shellcheck source=lib/dispatch-gate.sh
-. "$REG_SELF_DIR/dispatch-gate.sh"
+# shellcheck source=lib/gate/dispatch-gate.sh
+. "$LIB_ROOT/gate/dispatch-gate.sh"
 
 # Empty globs expand to nothing instead of staying literal (safe iteration under set -e).
 shopt -s nullglob

@@ -5,7 +5,7 @@ Delta from the spec. Reference, do not restate.
 ## 2026-07-02 mark is an executable verb, not just mega.md prose
 
 **Context:** goal-file 04 says "the mark goes on at the ONE place PRs are opened (commands/mega.md)."
-**Decision:** the mark is an executable `mark` verb in `lib/mega-merge.sh`; `commands/mega.md`'s
+**Decision:** the mark is an executable `mark` verb in `lib/goal/mega-merge.sh`; `commands/mega.md`'s
 held-PR step calls it.
 **Why:** the "ensure the label exists idempotently" requirement + the end-to-end testability need
 executable code; prose alone can't be pinned. The verb is the single mark point; mega.md points at it.

@@ -7,11 +7,11 @@ Last run: 2026-06-10.
 ## GREEN: the 2026-06-10 misclassification is fixed
 
 ```
-$ bash lib/lane-classify.sh classify "rewrite lib/lane-classify.sh into a flag-scoring classifier"
+$ bash lib/classify/lane-classify.sh classify "rewrite lib/classify/lane-classify.sh into a flag-scoring classifier"
 full
-$ bash lib/lane-classify.sh classify "adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh"
+$ bash lib/classify/lane-classify.sh classify "adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh"
 full
-$ bash lib/lane-classify.sh classify "ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work"
+$ bash lib/classify/lane-classify.sh classify "ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work"
 full
 ```
 
@@ -20,7 +20,7 @@ All three were the descriptions that fell to `normal` this cycle and forced a ma
 ## GREEN: `explain` is auditable (the real absorption win)
 
 ```
-$ bash lib/lane-classify.sh explain "ship AGENTS.md into the install via install.sh so adopt works"
+$ bash lib/classify/lane-classify.sh explain "ship AGENTS.md into the install via install.sh so adopt works"
 full
 reason: hard-gate flag(s): kit-machinery
 flags: kit-machinery
@@ -31,14 +31,14 @@ The classifier now shows WHICH flag fired, so a lane (and any override) is defen
 ## NEGATIVE CONTROL: the OLD classifier on the same descriptions
 
 ```
-$ git show master:lib/lane-classify.sh > /tmp/lane-old.sh
-$ bash /tmp/lane-old.sh classify "rewrite lib/lane-classify.sh into a flag-scoring classifier"
+$ git show master:lib/classify/lane-classify.sh > /tmp/lane-old.sh
+$ bash /tmp/lane-old.sh classify "rewrite lib/classify/lane-classify.sh into a flag-scoring classifier"
 normal     # the bug: a gate-machinery change classified as a routine feature
 $ bash /tmp/lane-old.sh classify "adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh"
 normal
 ```
 
-The fix is load-bearing: revert `lib/lane-classify.sh` and these two go back to `normal`.
+The fix is load-bearing: revert `lib/classify/lane-classify.sh` and these two go back to `normal`.
 
 ## NO REGRESSION: the 5 pinned classifications still hold
 

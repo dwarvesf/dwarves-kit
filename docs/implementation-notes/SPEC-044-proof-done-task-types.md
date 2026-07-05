@@ -12,7 +12,7 @@ Running log of decisions/changes not pinned in the spec.
 
 ## 2026-06-08 11:05 Grounding on SPEC-042
 
-- SPEC-042 (SHIPPED) established proof-of-done = 3-part recorded artifact (green + negative control + reproducible), the `docs/verification/<slug>.md` log, and `docs/verification/README.md`. It explicitly deferred the blocking ship-gate; that enforcement (`lib/proof-ledger.sh` + `hooks/ship-gate.sh`, ADR-0025) landed afterward and is live.
+- SPEC-042 (SHIPPED) established proof-of-done = 3-part recorded artifact (green + negative control + reproducible), the `docs/verification/<slug>.md` log, and `docs/verification/README.md`. It explicitly deferred the blocking ship-gate; that enforcement (`lib/gate/proof-ledger.sh` + `hooks/ship-gate.sh`, ADR-0025) landed afterward and is live.
 - SPEC-044 adds the task-TYPE axis (artifact shape + owning skill) composed onto the existing proof-CLASS (rigor). It does not rewrite SPEC-042's semantics.
 
 ## 2026-06-08 11:05 Cross-repo session caveat

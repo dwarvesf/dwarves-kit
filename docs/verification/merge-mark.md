@@ -12,7 +12,7 @@ durable close for every PR-open site is a `mega-merge sweep` follow-up (mega-goa
 
 | # | Criterion | Result |
 |---|---|---|
-| 1 | `lib/mega-merge.sh mark` opens a held PR as draft + `do-not-merge` (label ensured idempotently) | PASS |
+| 1 | `lib/goal/mega-merge.sh mark` opens a held PR as draft + `do-not-merge` (label ensured idempotently) | PASS |
 | 2 | Fed the state `mark` produces, `_merge_exclusion` refuses even with a passing gate (the halves meet) | PASS |
 | 3 | A normal `auto` PR is un-marked and the guard clears it | PASS |
 | 4 | `commands/mega.md` calls `mega-merge.sh mark` at the held-PR open step | PASS |
@@ -21,7 +21,7 @@ durable close for every PR-open site is a `mega-merge sweep` follow-up (mega-goa
 
 ## Implementation
 
-- `lib/mega-merge.sh`: new `mark <pr> [repo]` verb -- ensure `do-not-merge` label (idempotent),
+- `lib/goal/mega-merge.sh`: new `mark <pr> [repo]` verb -- ensure `do-not-merge` label (idempotent),
   convert to draft (`gh pr ready --undo`), add the label; gh via `MEGA_MERGE_GH`.
 - `commands/mega.md`: held-PR step calls `mega-merge.sh mark <pr>`.
 - `README.md` + `MANUAL.md`: document the mark verb / behavior.
@@ -39,7 +39,7 @@ durable close for every PR-open site is a `mega-merge sweep` follow-up (mega-goa
 ## Run detail (captured 2026-07-02)
 
 ```
-$ MEGA_MERGE_GH=mock bash lib/mega-merge.sh mark 77
+$ MEGA_MERGE_GH=mock bash lib/goal/mega-merge.sh mark 77
 marked PR #77 held: draft + do-not-merge
 gh calls:
   gh label create do-not-merge --color B60205 --description held: do not auto-merge (mega gate/gated-final)

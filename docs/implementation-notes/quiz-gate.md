@@ -22,9 +22,9 @@ _rows()` already ignore every `| DEBT |` line, so the new line inherits the "nev
 
 ## 2026-07-04 12:05 Lane escalated normal -> full (touches lib/ + merge boundary)
 
-Context: `lib/lane-classify.sh classify` returned `normal` for the task description.
+Context: `lib/classify/lane-classify.sh classify` returned `normal` for the task description.
 Decision: ran the FULL lane instead, and used a multi-lens review (SPEC-069).
-Why: the change adds a new `lib/` file AND an additive verb to `lib/gate-ledger.sh` AND wires the merge
+Why: the change adds a new `lib/` file AND an additive verb to `lib/gate/gate-ledger.sh` AND wires the merge
 boundary; the sub-goal contract instructed full-if-lib/-or-merge-boundary, and SPEC-069 requires
 multi-lens review for any run touching `lib/`. Recorded the escalation in the gate ledger. Impact: extra
 design-phase gate records (think/design/design-critique/validate/design-record), all satisfied by the

@@ -14,7 +14,7 @@ proof / implementation-notes verbatim.
 ## The hard constraint (the whole point of this sub-goal, SPEC-140)
 
 **Never fabricate.** Every claim in the assembled doc traces to a file on disk (the spec, the
-proof-of-done, `docs/implementation-notes/<rid>.md`) or a line in `bash lib/gate-ledger.sh show
+proof-of-done, `docs/implementation-notes/<rid>.md`) or a line in `bash lib/gate/gate-ledger.sh show
 <rid>`. When a source is missing, the doc says so explicitly (e.g. "no grill record for this
 run") -- it never invents a plausible-sounding substitute. This is enforced mechanically:
 `lib/pitch.sh` is the ONLY thing that touches those files, and its only inputs are "does this
@@ -52,7 +52,7 @@ non-matrix convention `/kit:explain` and `/kit:verify` already use -- never a ne
 gate):
 
 ```bash
-bash lib/gate-ledger.sh record <rid> pitch ran "ref=<rid>"
+bash lib/gate/gate-ledger.sh record <rid> pitch ran "ref=<rid>"
 ```
 
 ## Rules

@@ -5,7 +5,7 @@ description: "Turn a multi-objective destination into a sequenced roadmap of dep
 You are a **mega-goal planning lead**. Your job is to turn ONE destination reached
 through 3-8 DEPENDENT sub-goals into a committed roadmap on disk, then hand off to
 whatever activator is present (`/goal`, `ralph-loop`, or the kit's own
-`lib/orchestrate.sh`). You do NOT implement anything yourself, and past the planning
+`lib/queue/orchestrate.sh`). You do NOT implement anything yourself, and past the planning
 step you never merge a PR whose ship-gate has not passed.
 
 This is the kit-side half of the mega lane (ADR-0028 P2/P3, kit-hardening SG-08). It
@@ -18,8 +18,8 @@ It does **NOT fork** the skill: the skill stays the deeper authoring reference
 (stacking-tool detection, scaffold-path resolution across arbitrary repos, the full
 pointer-prompt convention, `NOTES.md`/`FEEDBACK.md`); this command is the kit-native
 projection of the same three beats, scoped to the kit's own conventions
-(`lib/orchestrate.sh`'s scaffold shape, `lib/gate-ledger.sh`'s lanes,
-`lib/proof-ledger.sh`'s deployable classifier). Where the ops-toolkit skill is
+(`lib/queue/orchestrate.sh`'s scaffold shape, `lib/gate/gate-ledger.sh`'s lanes,
+`lib/gate/proof-ledger.sh`'s deployable classifier). Where the ops-toolkit skill is
 installed, prefer it for anything this command does not cover; the two must never
 diverge in checkpoint semantics -- a drift here is a bug in this file, not a feature.
 
@@ -74,12 +74,12 @@ one-liner-scale item (a config flip, a doc line, a one-line guard) does not earn
 dedicated slot in a chain otherwise sized 3-8 substantial items. Batch every tiny item
 into ONE sweep sub-goal, each item keeping its own check line inside that sub-goal's
 `Done =` so it stays individually auditable, or route it as a `/kit:assign` `tiny`-lane
-task outside the mega-goal entirely (`lib/lane-classify.sh classify` will size it
+task outside the mega-goal entirely (`lib/classify/lane-classify.sh classify` will size it
 `tiny` on its own merits). Reserve dedicated sub-goals for work substantial enough to
 need its own PR, proof, and merge gate.
 
 **Deployable terminus (mirrors the skill's "definition of done extends past
-built").** Once real diffs exist, check `lib/proof-ledger.sh deployable <root>
+built").** Once real diffs exist, check `lib/gate/proof-ledger.sh deployable <root>
 <base>` (SG-07's classifier, reused verbatim, never a second one). When it prints
 `yes`, the chain's LAST two sub-goals are terminal **gate** sub-goals -- a
 deploy/wire prep and a UAT prep -- per the skill's convention: PREPARE the deploy
@@ -89,7 +89,7 @@ internal refactor with no runtime surface), build + merge IS the terminus; say s
 explicitly in `ROADMAP.md` so the missing deploy/UAT is intentional, not forgotten.
 This is documented here and enforced by the SAME ship-time proof-gate every
 stateful diff already passes through (`hooks/ship-gate.sh` ->
-`lib/proof-ledger.sh check`) -- no new gate is invented for the terminus.
+`lib/gate/proof-ledger.sh check`) -- no new gate is invented for the terminus.
 
 ### Step 2: Front-load every clarification, ONCE (mirrors the skill's single checkpoint)
 
@@ -113,7 +113,7 @@ State the resolved posture in one line before scaffolding:
   target branch is unprotected; falls back to `gated-final` and says so otherwise).
 - **`MEGA_MERGE_POSTURE`** -- `auto-to-final` (DEFAULT: an `auto` sub-goal's PR
   merges the moment its gate passes) or `per-pr-review` (a team run:
-  `lib/mega-merge.sh merge` always prints the `gh pr merge` it would run and waits
+  `lib/goal/mega-merge.sh merge` always prints the `gh pr merge` it would run and waits
   for a human, even on a passing gate). Resolution order: an explicit flag to this
   command > a `mega_merge_posture:` line in `CLAUDE.md` > the default. This is the
   ONE team-facing flag ADR-0028 calls out: auto-merge-to-final on a SHARED repo
@@ -126,7 +126,7 @@ here re-derives that logic, it is the same three-knob shape at the kit layer.
 
 ### Step 4: Write the scaffold
 
-Once Steps 1-3 are approved, write (matching `lib/orchestrate.sh`'s expected shape,
+Once Steps 1-3 are approved, write (matching `lib/queue/orchestrate.sh`'s expected shape,
 so the existing driver can walk it unmodified):
 
 - `<dir>/ROADMAP.md` -- one line per sub-goal: `- [ ] SG-NN <title> , auto|gate|gate! ,
@@ -136,7 +136,7 @@ so the existing driver can walk it unmodified):
   keep running under a wave); `gate!` halts the WHOLE loop for a human (use `gate!`
   when you mean "quiesce everything so I can review the full state", SPEC-106).
 - `<dir>/goals/NN-<slug>.md` -- one `plan-for-goal`-shaped file per sub-goal
-  (`Model:` / `Effort:` header lines so `lib/orchestrate.sh`'s per-sub-goal routing
+  (`Model:` / `Effort:` header lines so `lib/queue/orchestrate.sh`'s per-sub-goal routing
   works; `Done =`; scope edges; the proof expectation from Step 1, plus a
   coverage-delta row for substantial sub-goals). `Model:` / `Effort:` are BARE
   lines, value only, no trailing comment -- the driver greps `^Model:` and takes
@@ -151,8 +151,8 @@ so the existing driver can walk it unmodified):
   a `/kit:ui-design` `$ARGUMENTS` flag; omit for non-UI work).
   **Include a `## Touches` section** listing the directory-prefix globs this sub-goal
   will write, one per line, form `dir/**` (or `dir/sub/**`) -- the SAME shape
-  `lib/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
-  **wave-eligible**: `lib/orchestrate.sh` runs dep-independent sub-goals whose
+  `lib/gate/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
+  **wave-eligible**: `lib/queue/orchestrate.sh` runs dep-independent sub-goals whose
   `## Touches` are provably disjoint CONCURRENTLY (default `WAVE_CAP=2`, SPEC-106).
   Derive the globs from the sub-goal's scope edges you already decided in Step 1 --
   each sub-goal should own a distinct slice of the tree so waves can form. A sub-goal
@@ -162,7 +162,7 @@ so the existing driver can walk it unmodified):
 - `<dir>/POINTER_PROMPT.md` -- the raw prompt for whatever activator is present;
   encodes the hard constraints in "Step 5" below.
 - `<dir>/HANDOFF.md` + `<dir>/DECISIONS.md` -- empty stubs
-  (`lib/orchestrate.sh`'s two-tier HOT/WARM feed-forward).
+  (`lib/queue/orchestrate.sh`'s two-tier HOT/WARM feed-forward).
 
 `<dir>` resolves the same way the skill resolves its scaffold root (an explicit
 override, a `megagoal_root:` CLAUDE.md hint, or auto-detect by repo shape); for the
@@ -172,7 +172,7 @@ reserved for the BACKLOG cockpit, never a working roadmap).
 ### Step 5: Hand off, then enforce at ship (never bypass)
 
 Hand the pointer to the activator (paste into `/goal`, or drive it
-non-interactively via `lib/orchestrate.sh run <dir>`).
+non-interactively via `lib/queue/orchestrate.sh run <dir>`).
 
 **Run mode (mirrors the skill's knob).** The conductor dispatches ready sub-goals
 as parallel background SUBAGENTS by default (workers keep the kit's internal
@@ -190,12 +190,12 @@ works sub-goals in chain order; for each one that finishes with `Done =` verifie
 its PR's CI green:
 
 ```bash
-RID=$(bash lib/gate-ledger.sh rid)                                # or the sub-goal's own branch slug
+RID=$(bash lib/gate/gate-ledger.sh rid)                                # or the sub-goal's own branch slug
 LANE=$(grep -m1 -iE '^Lane:' docs/specs/SPEC-NNN-<slug>.md \
          | sed -E 's/^[Ll]ane:[[:space:]]*//; s/[[:space:]].*$//')  # per sub-goal
-bash lib/mega-merge.sh gate  "$RID" "$LANE"                        # decision only, no side effects
-bash lib/mega-merge.sh merge <pr> "$RID" "$LANE" [--execute]       # action; refuses on a failing gate
-bash lib/lane-classify.sh deescalate "$LANE" --rid "$RID"          # advisory nudge, mirrors ship.md Step 8
+bash lib/goal/mega-merge.sh gate  "$RID" "$LANE"                        # decision only, no side effects
+bash lib/goal/mega-merge.sh merge <pr> "$RID" "$LANE" [--execute]       # action; refuses on a failing gate
+bash lib/classify/lane-classify.sh deescalate "$LANE" --rid "$RID"          # advisory nudge, mirrors ship.md Step 8
 ```
 
 **Ship-time de-escalation, mirrored here explicitly (SPEC-141).** `mega.md`'s per-sub-goal
@@ -210,8 +210,8 @@ and `RID` this Step already computes for the `mega-merge.sh gate` call above -- 
 computation, no new verb, just the existing SPEC-141 `deescalate` call made explicit at the
 one place a human watching the mega run actually sees output.
 
-`lib/mega-merge.sh` is the ship-layer auto-merge ENFORCEMENT: `gate` reuses
-`lib/gate-ledger.sh check` verbatim (the lane's `measure-twice` gates -- the same
+`lib/goal/mega-merge.sh` is the ship-layer auto-merge ENFORCEMENT: `gate` reuses
+`lib/gate/gate-ledger.sh check` verbatim (the lane's `measure-twice` gates -- the same
 set `hooks/ship-gate.sh` enforces at push) -- it never re-derives or loosens that
 logic. `merge` runs `gate` FIRST; on a failing or missing gate it **REFUSES
 unconditionally** (prints `BLOCKED: ship-gate not satisfied, refusing auto-merge`,
@@ -234,7 +234,7 @@ mark):
 
 ```bash
 gh pr create --draft ...                      # open held: draft is the GitHub-intrinsic block
-bash lib/mega-merge.sh mark <pr> [repo]        # ensure the do-not-merge label + draft + add label (idempotent)
+bash lib/goal/mega-merge.sh mark <pr> [repo]        # ensure the do-not-merge label + draft + add label (idempotent)
 ```
 
 `mega-merge.sh mark` ensures the `do-not-merge` label exists (so `--label` never fails),
@@ -273,13 +273,13 @@ loop iteration, in whatever process/subagent ran that sub-goal, and are not guar
 still be in scope once the loop finishes): it is already KNOWN and static, the same value
 Step 4's own comment names ("or the sub-goal's own branch slug") -- the final sub-goal's
 `**Branch:**` header value from its `goals/NN-<slug>.md` file, `type/` prefix stripped, the
-exact transform `bash lib/gate-ledger.sh rid` applies when run on that branch:
+exact transform `bash lib/gate/gate-ledger.sh rid` applies when run on that branch:
 
 ```
 FINAL_RID="<final sub-goal's Branch: value, type/ prefix stripped -- from its goals/NN-<slug>.md>"
-bash lib/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
+bash lib/gate/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
   || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
-bash lib/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P6 findings=<N> actor=$(git config user.name)" \
+bash lib/gate/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P6 findings=<N> actor=$(git config user.name)" \
   || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
 ```
 
@@ -293,7 +293,7 @@ both dispatch sites follow.
 **Close the run visibly (mirrors the skill's close).** When the loop finishes (or
 halts at a `gate!`), emit `<dir>/RUN_REPORT.md` -- ASCII gantt + per-sub-goal gate
 matrix + the callable stack, markdown-only -- and render the timeline + totals in
-chat. The report reads from the rid ledger (`lib/gate-ledger.sh`) and the roadmap
+chat. The report reads from the rid ledger (`lib/gate/gate-ledger.sh`) and the roadmap
 checkboxes, never from transcripts.
 
 ## Consolidate mode (remega, mirrors the skill's mode)
@@ -316,7 +316,7 @@ no new binary or `lib/` file. Full depth + a worked dry-run: the skill's
    re-run, it is history); an in-flight sub-goal finishes under its OLD mega first; a queued
    one is the raw material the re-decompose actually re-plans.
 2. **Overlap analysis**: pairwise `## Touches` intersection across the megas via
-   `lib/dispatch-gate.sh` -- the SAME disjointness checker Step 4's wave-eligibility already
+   `lib/gate/dispatch-gate.sh` -- the SAME disjointness checker Step 4's wave-eligibility already
    reuses, never a second checker -- plus a semantic pass for dedupe candidates (same outcome
    authored twice) and merge candidates (same-module sub-goals for related outcomes).
 3. **Re-decompose the union**: write ONE new `ROADMAP.md` applying the dedupe + merge
@@ -328,7 +328,7 @@ no new binary or `lib/` file. Full depth + a worked dry-run: the skill's
    VERBS map) into ONE owner sub-goal so the rest go parallel.
 4. **Front-load clarifications ONCE**, over the whole union -- Step 2's beat, reused
    verbatim, just framed against the union rather than one mega.
-5. **Spec-number block reserve + release.** Reserve via `bash lib/spec-next.sh reserve`
+5. **Spec-number block reserve + release.** Reserve via `bash lib/spec/spec-next.sh reserve`
    (SPEC-128's mkdir-mutex reservations ledger, the same mechanism the wavefront dispatch
    already uses at Step 4). This kit has no separate `release` verb: an unclaimed reservation
    self-expires on its own stale-reclaim TTL, so "release the old megas' unused numbers" is a
@@ -338,7 +338,7 @@ no new binary or `lib/` file. Full depth + a worked dry-run: the skill's
    single origin + PR.
 7. **Supersede, never delete.** Old mega `ROADMAP.md` headers gain `superseded_by:
    <new-slug>`. This kit's nearest archive analog is the goal-draft lifecycle already in
-   `WORKFLOW.md` ("Goal drafts (.claude/goals/)"): `lib/goal-drafts.sh archive` moves a
+   `WORKFLOW.md` ("Goal drafts (.claude/goals/)"): `lib/goal/goal-drafts.sh archive` moves a
    shipped single-goal draft to `.claude/goals/done/`. A superseded MEGA scaffold (a whole
    `<slug>/` dir, not one file) moves the same way in spirit, to `.claude/goals/done/<slug>/`
    -- mirroring that convention's intent rather than reusing the verb unchanged (it currently
@@ -355,11 +355,11 @@ removes).
 
 - **Merging a PR whose ship-gate has not passed.** `gate` is the only question
   `merge` asks before touching `gh`; there is no second override path inside
-  `mega-merge.sh` -- the existing `lib/gate-ledger.sh override <rid> <phase>
+  `mega-merge.sh` -- the existing `lib/gate/gate-ledger.sh override <rid> <phase>
   <reason>` audit trail is still how a human clears a gate.
 - **A DAG / wave scheduler.** Single chain only (SPEC-034 DEC-008); fan-in/fan-out
   is the GSD v2 handoff tripwire, rejected at Step 1.
-- **The activator loop itself.** `/goal` / `ralph-loop` / `lib/orchestrate.sh` own
+- **The activator loop itself.** `/goal` / `ralph-loop` / `lib/queue/orchestrate.sh` own
   the turn-by-turn execution (ADR-0017 activator-agnostic); this command is
   planning plus the merge-enforcement affordance it hands the loop, not a new
   runtime.
@@ -374,9 +374,9 @@ removes).
 
 Source: ADR-0028 P2/P3 (autonomous-loop hardening, "Where each layer lives" table);
 SPEC-034 (mega-goal lane, ID-037 -- the roadmap conventions + single-chain gate
-this command reuses); SPEC-095 / kit-hardening SG-07 (`lib/proof-ledger.sh
+this command reuses); SPEC-095 / kit-hardening SG-07 (`lib/gate/proof-ledger.sh
 deployable`, the terminus classifier reused here verbatim); SPEC-141 (ship-time lane
-de-escalation, the `lib/lane-classify.sh deescalate` verb mirrored explicitly at Step 5);
-`lib/gate-ledger.sh` (the required-gate set this rides on); ops-toolkit
+de-escalation, the `lib/classify/lane-classify.sh deescalate` verb mirrored explicitly at Step 5);
+`lib/gate/gate-ledger.sh` (the required-gate set this rides on); ops-toolkit
 `plan-for-mega-goal` SKILL.md (the authoring mirror source, incl. its tiny-item rule and
 its Consolidate mode).

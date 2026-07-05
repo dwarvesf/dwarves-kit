@@ -1,13 +1,13 @@
 # Decision Brief: DAG wavefront scheduling in the orchestrator
 
-Date: 2026-07-02 · Source: operator ask ("run independent sub-goals concurrently in the background"), verified against `lib/orchestrate.sh` + ADR-0019/0020/0027/0028. Status: DRAFT (proposal for Han; needs a mini-ADR before build , it re-opens ADR-0028's DAG deferral, narrowly).
+Date: 2026-07-02 · Source: operator ask ("run independent sub-goals concurrently in the background"), verified against `lib/queue/orchestrate.sh` + ADR-0019/0020/0027/0028. Status: DRAFT (proposal for Han; needs a mini-ADR before build , it re-opens ADR-0028's DAG deferral, narrowly).
 
 ## Verified current state
 
-- `lib/orchestrate.sh` runs a mega-goal STRICTLY SERIALLY: `_next()` picks the first unchecked sub-goal; the loop waits for its grounded box-flip before the next. `WATCHDOG_STALL_SECS>0` backgrounds each `claude -p` session, but only to poll for stalls , robustness, not parallelism.
+- `lib/queue/orchestrate.sh` runs a mega-goal STRICTLY SERIALLY: `_next()` picks the first unchecked sub-goal; the loop waits for its grounded box-flip before the next. `WATCHDOG_STALL_SECS>0` backgrounds each `claude -p` session, but only to poll for stalls , robustness, not parallelism.
 - **The DAG is already declared AND parsed, but unused for scheduling.** `_sg_deps_blocked()` (line ~133) extracts `depends SG-NN` tokens from ROADMAP lines; today it feeds only the board view (ready/blocked prose). The scheduler ignores it.
 - The SG-10 event log is append-only by design with the stated property "a crashed/CONCURRENT session cannot corrupt a checkbox" , the completion plumbing already anticipates concurrency.
-- Disjointness machinery exists at another layer: `lib/dispatch-gate.sh` (ADR-0019, DEC-008 prove-or-serialize over `## Touches` directory-prefix globs, + drift guard), used by `/kit:dispatch` for disjoint VALIDATED specs in worktrees.
+- Disjointness machinery exists at another layer: `lib/gate/dispatch-gate.sh` (ADR-0019, DEC-008 prove-or-serialize over `## Touches` directory-prefix globs, + drift guard), used by `/kit:dispatch` for disjoint VALIDATED specs in worktrees.
 - ADR-0028 explicitly deferred "an ORDERED dependency graph + scheduler + crash-recovery + parallel-writer locks" as the GSD-v2 successor. (It claims the deferral is "tracked in the kit-hardening mega-goal NOTES" , it never was; this brief closes that dangling reference.)
 
 ## Verdict: BUILD-SMALL , a wavefront extension, NOT the GSD-v2 engine

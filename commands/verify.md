@@ -53,7 +53,7 @@ re-runs the suite: a biting suite (the mutation is caught) is quiet; a non-bitin
 survives) is FLAGGED.
 
 ```
-bash lib/mutation-smoke.sh run                 # bounded: a small operator set on changed hunks only
+bash lib/gate/mutation-smoke.sh run                 # bounded: a small operator set on changed hunks only
 ```
 
 It is ADVISORY (gate-zero): it warns to stderr, records a `| MUTATION |` ledger marker, and **always
@@ -114,9 +114,9 @@ regression-check this verdict.
 
 Also record the verdict for lane telemetry (SPEC-139), one line (`verify` carries no matrix
 row of its own -- this is RUN_REPORT observability, never a new required gate):
-`bash lib/gate-ledger.sh record <rid> verify ran "<PASS|FAIL|INCONCLUSIVE>"`.
+`bash lib/gate/gate-ledger.sh record <rid> verify ran "<PASS|FAIL|INCONCLUSIVE>"`.
 
-Gate what the proof needs by the spec's **proof class** (`lib/proof-gate.sh class
+Gate what the proof needs by the spec's **proof class** (`lib/gate/proof-gate.sh class
 "<spec title or task>"`):
 - **inert** (docs / comments / cosmetic): record `[PROOF OF DONE: exempt -- <reason>]`
   and stop; no run can meaningfully fail.

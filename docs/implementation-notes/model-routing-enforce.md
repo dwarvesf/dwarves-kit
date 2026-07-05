@@ -4,7 +4,7 @@ Delta from `docs/specs/SPEC-116-model-routing-enforce.md` (orchestrate-hardening
 
 ## 2026-07-03 , the enforcement mechanism already existed (SPEC-087); this sub-goal is proof + pin
 
-Read `lib/orchestrate.sh` before writing anything: `_route()` (SPEC-087, :392-403) already reads a
+Read `lib/queue/orchestrate.sh` before writing anything: `_route()` (SPEC-087, :392-403) already reads a
 goal file's `Model:`/`Effort:` lines and both delegate dispatch sites (`cmd_run` serial :1159-1162,
 `_wave_run` concurrent :784-788) already build `route_flags` and thread it through the single shared
 `_run_one_session()` into the real `"$CLAUDE_CMD" -p $route_flags ...` call, across all three of its
@@ -15,9 +15,9 @@ threaded" , that assumption was wrong; the wiring is real and was already partia
 
 ## 2026-07-03 , route-suggest.sh cannot contradict Model: by construction, not by new code
 
-`lib/route-suggest.sh` is a decompose-time SUGGESTER invoked by a human/`agents/meta-agent.md` Mode B
-when DRAFTING a goal file, never by `lib/orchestrate.sh` at dispatch time (`grep -rn route-suggest
-lib/orchestrate.sh` , zero hits). The "alignment check" the sub-goal asked for is therefore a
+`lib/classify/route-suggest.sh` is a decompose-time SUGGESTER invoked by a human/`agents/meta-agent.md` Mode B
+when DRAFTING a goal file, never by `lib/queue/orchestrate.sh` at dispatch time (`grep -rn route-suggest
+lib/queue/orchestrate.sh` , zero hits). The "alignment check" the sub-goal asked for is therefore a
 STRUCTURAL grep negative control (no call site in the dispatch functions), not a runtime mock , there
 is no runtime interaction between the two scripts to mock.
 
@@ -44,7 +44,7 @@ diverges from `_route()`'s shared contract, this one case still catches it.
 ## 2026-07-03 , independent code-review pass (kit:code-reviewer, test-coverage lens)
 
 Mutation-tested the new suite before shipping: neutralized the `--model` flag build on the serial
-line and, separately, on the wave line in a scratch copy of `lib/orchestrate.sh`, and confirmed the
+line and, separately, on the wave line in a scratch copy of `lib/queue/orchestrate.sh`, and confirmed the
 matching test cases correctly flip to FAIL each time (rules out a rubber-stamp test that would pass
 even if the wiring broke). Two advisory, non-blocking gaps the reviewer flagged, filed here rather
 than fixed, since they are pre-existing or explicitly out of this spec's scope: (1) `_route()`'s own

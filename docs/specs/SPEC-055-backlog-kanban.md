@@ -18,12 +18,12 @@ illegal `P1` status , all found by this spec's own board on first run).
 
 The BACKLOG stays the one source of truth (no parallel database, per §6 N2's reject list).
 
-1. **`lib/backlog.sh`**: `board` (kanban columns from the file; unrecognized statuses surface
+1. **`lib/board/backlog.sh`**: `board` (kanban columns from the file; unrecognized statuses surface
    loudly), `next` (first `queued` row; file order = priority), `set <ID> <state> [note]`
    (mechanical flip of the LEADING status keyword, annotation prose preserved), `states`.
    `BACKLOG_FILE` env override for tests.
 2. **`claimed` state** added to the SPEC-005 vocabulary between `queued` and `speccing`: a
-   pulled item; the cross-session claim itself stays in `lib/goal-registry.sh`.
+   pulled item; the cross-session claim itself stays in `lib/goal/goal-registry.sh`.
 3. **Pull mode**: `/kit:assign --next` = `backlog.sh next` -> goal-registry claim -> `backlog.sh
    set <ID> claimed` -> the normal assign flow (SPEC-054 type routing included). One explicit
    invocation; no daemon, no auto-trigger. `/kit:start` mentions the board when items are queued.
@@ -44,7 +44,7 @@ The BACKLOG stays the one source of truth (no parallel database, per §6 N2's re
 | # | Case | Proof |
 |---|---|---|
 | 1 | board/next/set behavior | the 10 fixture tests in `tests/test-hooks.sh` (render, priority order, flip, prose preserved, unknown state/ID rejected) |
-| 2 | real-file render | `bash lib/backlog.sh board` exit 0 with zero UNRECOGNIZED rows |
+| 2 | real-file render | `bash lib/board/backlog.sh board` exit 0 with zero UNRECOGNIZED rows |
 | 3 | wiring pins | meta pins: backlog.sh exists+executable, assign documents `--next`, vocabulary contains `claimed` |
 | 4 | negative control | delete the `--next` bullet from assign.md -> pin RED (recorded during build) |
 

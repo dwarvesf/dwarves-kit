@@ -21,14 +21,14 @@ token efficiency; the default `claude -p` path is byte-unchanged and honestly re
 
 ## Implementation
 
-- `lib/gate-ledger.sh`: `tokens()` verb + dispatch case (sanitized, `| TOKENS |` marker,
+- `lib/gate/gate-ledger.sh`: `tokens()` verb + dispatch case (sanitized, `| TOKENS |` marker,
   gate-invisible by the `$2=="GATE"` reader filter).
-- `lib/handoff/handoff_gen.py`: `sum_usage()` + `sum-usage <transcript>` CLI (assistant-only via
+- `lib/goal/handoff/handoff_gen.py`: `sum_usage()` + `sum-usage <transcript>` CLI (assistant-only via
   `cc._is_assistant`; existing `handoff_gen.py <transcript> --dir ...` interface unchanged).
-- `lib/orchestrate.sh`: `_rid_for` shared helper (factored from `_emit_start`); capture-gated
+- `lib/queue/orchestrate.sh`: `_rid_for` shared helper (factored from `_emit_start`); capture-gated
   post-session token hook (`$slog` non-empty -> `sum-usage` -> `gate-ledger tokens`); default path
   untouched.
-- `lib/lane-telemetry.sh`: `_token_agg` (rid->lane join, portable insertion-sort median, cache eff,
+- `lib/telemetry/lane-telemetry.sh`: `_token_agg` (rid->lane join, portable insertion-sort median, cache eff,
   rework share); `report` token section; `render --mermaid` mode (single-line median map; sanitized
   mermaid IDs).
 - `tests/fixtures/handoff-det/usage-with-result.jsonl` (result-line NC).
@@ -52,9 +52,9 @@ token efficiency; the default `claude -p` path is byte-unchanged and honestly re
 ## Run detail (captured 2026-07-03)
 
 ```
-$ python3 lib/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/seed.jsonl
+$ python3 lib/goal/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/seed.jsonl
 in=7200 out=480 cache_read=24000 cache_create=0
-$ python3 lib/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/usage-with-result.jsonl
+$ python3 lib/goal/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/usage-with-result.jsonl
 in=100 out=10 cache_read=50 cache_create=0                     # result line's 999999 NOT summed
 
 # report token section (mixed corpus: full x2, normal x1, bug x1, normal-no-tokens x1):
@@ -89,6 +89,6 @@ follow-up (mega NOTES), not an impossibility.
 
 ```bash
 cd dwarves-kit
-python3 lib/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/seed.jsonl
+python3 lib/goal/handoff/handoff_gen.py sum-usage tests/fixtures/handoff-det/seed.jsonl
 bash tests/test-orchestrate.sh && bash tests/test-lane-telemetry.sh && bash tests/test-ledger-durability.sh
 ```

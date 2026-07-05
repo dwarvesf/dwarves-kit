@@ -43,7 +43,7 @@ that section of the 26).
 
 ## NEGATIVE CONTROL (regression class): the depth-matrix ripple
 
-Adding the WORKFLOW.md row is parsed at runtime by `lib/gate-ledger.sh` (the single source for
+Adding the WORKFLOW.md row is parsed at runtime by `lib/gate/gate-ledger.sh` (the single source for
 "which gates a lane requires"), which changed the normal-lane plan from 8 steps to 9 and made
 the phase a required ship-gate item for the full lane. This broke 7 hardcoded assertions in
 `tests/test-hooks.sh` and 3 in `tests/test-e2e.sh` on first full-suite run (real regression,
@@ -72,7 +72,7 @@ bullet in the "Deltas from `plan-for-goal`" section.
 ## Known pre-existing failure (out of scope, confirmed on master)
 
 `bash tests/test-classify-md-inert.sh` -- 1 failure (`stripped lib should reproduce the
-stateful bug`), a `/tmp`-relative-path sourcing fragility in a `lib/proof-ledger.sh` test,
+stateful bug`), a `/tmp`-relative-path sourcing fragility in a `lib/gate/proof-ledger.sh` test,
 unrelated to anything this spec touches. Reproduced identically on the unmodified master
 checkout before this branch existed; left alone.
 

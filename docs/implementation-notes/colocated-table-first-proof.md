@@ -26,6 +26,6 @@ verification convention, additively, so existing consumers (dfoundation, trading
 ## 2026-06-09 11:50 , the filename constraint is the load-bearing fact
 - Context: why co-location must use the name `proof-of-done.md`.
 - Decision: documented in the README that the gate's co-located path is ONLY a file named
-  `proof-of-done.md` (the regex `(^|/)proof-of-done\.md$` in `lib/proof-ledger.sh`); a co-located
+  `proof-of-done.md` (the regex `(^|/)proof-of-done\.md$` in `lib/gate/proof-ledger.sh`); a co-located
   `runs/` dir is invisible to the gate.
 - Impact: the table-first proof MUST keep the literal markers in its run-detail section.

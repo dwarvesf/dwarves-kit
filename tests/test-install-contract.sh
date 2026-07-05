@@ -24,7 +24,7 @@ else
 fi
 
 # 2. gate-ledger reads the lane matrix from the install's WORKFLOW.md
-N=$(CLAUDE_PLUGIN_ROOT="$INSTALL" bash "$INSTALL/lib/gate-ledger.sh" required full 2>/dev/null | wc -l | tr -d ' ')
+N=$(CLAUDE_PLUGIN_ROOT="$INSTALL" bash "$INSTALL/lib/gate/gate-ledger.sh" required full 2>/dev/null | wc -l | tr -d ' ')
 [ "${N:-0}" -ge 5 ] && ok "gate-ledger reads the lane matrix from the install ($N gates)" || no "gate-ledger could not read WORKFLOW.md from the install (got $N)"
 
 # 3. CONTROL: an install WITHOUT the contract symlinks -> adopt fails (proves the fix is load-bearing)

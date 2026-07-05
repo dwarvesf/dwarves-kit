@@ -178,7 +178,7 @@ bash tests/test-orchestrate.sh
 
 ## After state
 
-- `lib/orchestrate.sh`: `CAPTURE_TOKENS` global (default 0) as a third trigger for the silent
+- `lib/queue/orchestrate.sh`: `CAPTURE_TOKENS` global (default 0) as a third trigger for the silent
   `> "$slog"` stream-to-FILE branch inside `_run_one_session` (no signature change); `--capture-tokens`
   flag arm in `cmd_run` (before the `--*)` catchall) that sets that global; the usage header, `main()`
   usage string, and `--dry-run` advisory list `--capture-tokens`. Default path byte-identical; serial

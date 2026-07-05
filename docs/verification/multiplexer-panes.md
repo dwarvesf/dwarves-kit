@@ -19,7 +19,7 @@ off-path-unchanged property is the load-bearing one and carries an explicit nega
 | N1 | OFF-DEFAULT NC: with `MULTIPLEXER` unset, `$TMUX_CMD` is NEVER invoked (no window, no send-keys) | PASS |
 | N2 | OFF-EXPLICIT NC: `MULTIPLEXER=0` never invokes tmux | PASS |
 | N3 | Off-path-unchanged: with the multiplexer off, the headless wavefront path completes and flips boxes even with a poisoned `$TMUX_CMD` (proves no coupling) | PASS |
-| R | Regression: `test-orchestrate-wavefront.sh`, `test-tier4-close.sh`, `test-meta.sh`; `shellcheck -S error lib/orchestrate.sh` clean | PASS |
+| R | Regression: `test-orchestrate-wavefront.sh`, `test-tier4-close.sh`, `test-meta.sh`; `shellcheck -S error lib/queue/orchestrate.sh` clean | PASS |
 
 The off-path-unchanged NC is non-vacuous: the OFF cases run with a deliberately poisoned `$TMUX_CMD`,
 so any accidental tmux call on the headless path would fail the wave; boxes still flip via the
@@ -46,7 +46,7 @@ ALL PASS
 ```
 
 Regression (all rc 0): `test-orchestrate-wavefront.sh`, `test-tier4-close.sh`, `test-meta.sh`;
-`shellcheck -S error lib/orchestrate.sh` clean.
+`shellcheck -S error lib/queue/orchestrate.sh` clean.
 
 ## Reproduce
 

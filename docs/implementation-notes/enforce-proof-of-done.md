@@ -7,7 +7,7 @@ ship-gate machinery.
 ## 2026-06-06 The existing ship-gate is spec-keyed -> the bridge needs diff-keying
 - Context: `hooks/ship-gate.sh` (PreToolUse on `git push`/`gh pr create`) resolves branch slug -> SPEC file -> Lane -> `gate-ledger.sh check`. It FAILS OPEN when there is no spec (deliberately, "quality gate not safety gate").
 - Problem: a freeform /goal that committed without a SPEC has no spec -> the existing gate never fires. That is exactly the bridge gap Han named ("fires regardless of whether the kit or a freeform /goal produced the change").
-- Decision/Change: add `lib/proof-ledger.sh` that classifies the BRANCH's aggregate diff (via `proof-gate.sh`, not via a spec) and requires a matching proof-of-done entry; wire it into `ship-gate.sh` as a second, spec-independent check, and widen the matcher to also catch `gh pr merge` / `git merge`.
+- Decision/Change: add `lib/gate/proof-ledger.sh` that classifies the BRANCH's aggregate diff (via `proof-gate.sh`, not via a spec) and requires a matching proof-of-done entry; wire it into `ship-gate.sh` as a second, spec-independent check, and widen the matcher to also catch `gh pr merge` / `git merge`.
 - Why: the diff is the universal key every change has; a spec is optional. Keying on the diff makes the wall fire on kit and freeform work alike.
 - Alternatives considered: a brand-new hook framework (rejected by scope: reuse the PreToolUse + gate-ledger pattern); hooking /goal's Stop hook (rejected: lives outside the kit, and a goal can finish without merging; the merge boundary is the universal choke point).
 

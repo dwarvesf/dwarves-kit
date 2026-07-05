@@ -13,7 +13,7 @@
 set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SN="$KIT_DIR/lib/spec-next.sh"
+SN="$KIT_DIR/lib/spec/spec-next.sh"
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 PASS=0; FAIL=0; TOTAL=0
 ok()  { TOTAL=$((TOTAL+1)); PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} $1"; }
@@ -149,7 +149,7 @@ echo "=== T10: orchestrate _wave_reserve_spec wiring (mock spec-next) ==="
 # ============================================================
 # Source orchestrate.sh (its source-guard skips main) and drive the helper with a mock.
 # shellcheck disable=SC1090
-( source "$KIT_DIR/lib/orchestrate.sh" 2>/dev/null
+( source "$KIT_DIR/lib/queue/orchestrate.sh" 2>/dev/null
   MOCK="$(mktemp)"; printf '#!/usr/bin/env bash\necho 128\n' > "$MOCK"; chmod +x "$MOCK"
   got="$(SPEC_NEXT_CMD="$MOCK" _wave_reserve_spec)"
   [ "$got" = "128" ] && echo "T10A-OK" || echo "T10A-BAD:$got"

@@ -90,7 +90,7 @@ $ bash tests/test-ledger-durability.sh | tail -1
 $ bash tests/test-e2e.sh | tail -1
 Golden run green.
 
-$ shellcheck -S warning lib/mutation-smoke.sh   # clean, no output, exit 0
+$ shellcheck -S warning lib/gate/mutation-smoke.sh   # clean, no output, exit 0
 ```
 
 ## Run detail
@@ -126,6 +126,6 @@ $ shellcheck -S warning lib/mutation-smoke.sh   # clean, no output, exit 0
 cd dwarves-kit   # or the kri-04 clone
 bash tests/test-mutation-smoke.sh
 bash tests/test-meta.sh
-bash lib/mutation-smoke.sh detect-cmd     # inspect runner detection
-bash lib/mutation-smoke.sh candidates     # inspect changed-hunk mutation candidates
+bash lib/gate/mutation-smoke.sh detect-cmd     # inspect runner detection
+bash lib/gate/mutation-smoke.sh candidates     # inspect changed-hunk mutation candidates
 ```

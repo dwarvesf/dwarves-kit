@@ -20,7 +20,7 @@ Two-part close-out, plus the forever-invariant test the mega-goal's over-test fr
 
 1. **Wire the 9 phase-owning dark commands.** Each gains ONE line, at its natural hand-off
    point, in the SAME single-line convention `test-plan.md` / `review.md` / `devs-team.md`
-   already use (`bash lib/gate-ledger.sh record <rid> <Phase> ran "<summary>"`).
+   already use (`bash lib/gate/gate-ledger.sh record <rid> <Phase> ran "<summary>"`).
 
 ## Out of Scope
 

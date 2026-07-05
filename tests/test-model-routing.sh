@@ -3,7 +3,7 @@
 # dispatch path, not advisory. Companion to (not a replacement for):
 #   - tests/test-orchestrate.sh TEST 8, which proves the `sonnet` tier + the inherit fallback on
 #     the SERIAL path only.
-#   - tests/test-routing.sh, which proves lib/route-suggest.sh's SUGGESTION logic (decompose-time),
+#   - tests/test-routing.sh, which proves lib/classify/route-suggest.sh's SUGGESTION logic (decompose-time),
 #     not dispatch-time enforcement.
 #
 # This file proves:
@@ -22,7 +22,7 @@
 
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ORCH="$KIT/lib/orchestrate.sh"
+ORCH="$KIT/lib/queue/orchestrate.sh"
 fails=0; total=0
 pass() { total=$((total + 1)); echo "PASS $*"; }
 fail() { total=$((total + 1)); echo "FAIL $*"; fails=$((fails + 1)); }
@@ -32,14 +32,14 @@ trap 'rm -rf "$TMP"' EXIT
 
 # ============================ SECTION 1: route-suggest alignment (structural) ============================
 # route-suggest.sh is a decompose-time SUGGESTER (invoked by a human / agents/meta-agent.md Mode B
-# when DRAFTING a goal file's Model: line). It has NO call site in lib/orchestrate.sh's dispatch
+# when DRAFTING a goal file's Model: line). It has NO call site in lib/queue/orchestrate.sh's dispatch
 # functions, so it cannot contradict an already-written explicit Model: field at dispatch time --
 # the two surfaces operate in disjoint phases. This is a structural grep, not a runtime mock: there
 # is no runtime interaction between the two scripts to mock.
 if grep -n 'route-suggest' "$ORCH" >/dev/null 2>&1; then
-  fail "route-suggest alignment: lib/orchestrate.sh calls route-suggest.sh at dispatch time (would need a runtime alignment check, not just this structural one)"
+  fail "route-suggest alignment: lib/queue/orchestrate.sh calls route-suggest.sh at dispatch time (would need a runtime alignment check, not just this structural one)"
 else
-  pass "route-suggest alignment: lib/orchestrate.sh has no route-suggest.sh call site (cannot contradict an explicit Model: field)"
+  pass "route-suggest alignment: lib/queue/orchestrate.sh has no route-suggest.sh call site (cannot contradict an explicit Model: field)"
 fi
 
 # ============================ SECTION 2: serial delegate path, all three tiers + negative control ==========
@@ -103,7 +103,7 @@ run_serial_case none   ""
 # Source orchestrate.sh to call _wave_run directly (the tests/test-orchestrate-wavefront.sh pattern).
 # The guard in orchestrate.sh (`[ "${BASH_SOURCE[0]}" = "$0" ]`-style main gate) keeps `main "$@"`
 # from firing on source.
-# shellcheck source=../lib/orchestrate.sh
+# shellcheck source=../lib/queue/orchestrate.sh
 source "$ORCH"
 
 mk_git_mega() {  # repo-root

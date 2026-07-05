@@ -2,13 +2,13 @@
 
 Generated: 2026-07-04
 Status: VALIDATED
-Lane: full (touches `lib/spec-next.sh` , the number source , plus `lib/orchestrate.sh`'s
+Lane: full (touches `lib/spec/spec-next.sh` , the number source , plus `lib/queue/orchestrate.sh`'s
 wavefront dispatch path and a new concurrency test; the atomic-claim property is
 correctness-critical, so it earns the deep lane even though the diff is small).
 
 ## Problem
 
-`lib/spec-next.sh` (SPEC-064 / ID-052) already scans every VISIBLE surface for used SPEC
+`lib/spec/spec-next.sh` (SPEC-064 / ID-052) already scans every VISIBLE surface for used SPEC
 numbers , `docs/specs/` filenames, local + remote branch names, and `SPEC-NNN` mentions in
 the last 200 commit subjects , and prints `max + 1`. That scan is correct: SPEC-064 closed
 the STALE-branch case (SPEC-047 / SPEC-041 collided because a number aged inside an unmerged
@@ -64,7 +64,7 @@ admitted sub-goal and hands the number to the worker.
 ### (a) The reservation surface + its path
 
 A single append-only reservations ledger under the kit's durable log dir (the same root
-`gate-ledger.sh` writes to, resolved via `lib/kit-log-dir.sh`):
+`gate-ledger.sh` writes to, resolved via `lib/telemetry/kit-log-dir.sh`):
 
 ```
 $(kit_resolve_log_dir)/spec-reservations.log
@@ -85,7 +85,7 @@ directory `spec-reservations.log.lock/` (see (b)).
 ### (b) The atomic-claim protocol (portable mutex, NOT flock)
 
 **Deviation from the roadmap's literal "flock":** macOS ships no `flock(1)` (verified: absent
-on PATH) and `lib/orchestrate.sh` is explicitly bash-3.2 / no-flock by contract. The BINDING
+on PATH) and `lib/queue/orchestrate.sh` is explicitly bash-3.2 / no-flock by contract. The BINDING
 property the roadmap names is "two concurrent claims serialize" via "a file + a lock, no
 daemon". A `mkdir`-based mutex delivers exactly that and is strictly MORE portable than flock
 (POSIX `mkdir` is atomic , exactly one of N racers creates the dir; the rest get EEXIST).

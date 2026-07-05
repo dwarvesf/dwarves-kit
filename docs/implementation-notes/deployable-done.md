@@ -6,7 +6,7 @@ Delta from SPEC-095 / ADR-0028 "Conditional deployable-done" property.
 
 Context: the SG-07 goal file and SPEC-095 both call for deployability to be "explicit +
 testable" without reinventing the ADR-0025 proof machinery.
-Decision: `deployable` is a one-line relabel of `lib/proof-ledger.sh classify()`'s
+Decision: `deployable` is a one-line relabel of `lib/gate/proof-ledger.sh classify()`'s
 `stateful` output (`stateful -> yes`, everything else -> `no`), added as a brand-new
 function + case-arm; `classify()`'s and `check()`'s bodies are byte-unchanged.
 Why: the deploy/rollout/production/migration/schema/database/persistent-state keyword set
@@ -19,7 +19,7 @@ two can never disagree.
 ## 2026-07-02 UAT is a documented contract, not a new hard grep in `check()`
 
 Context: the goal contract explicitly warns against tightening the shared `check()` stateful
-branch, since other repos consume `lib/proof-ledger.sh` via `~/.claude/dwarves-kit` and
+branch, since other repos consume `lib/gate/proof-ledger.sh` via `~/.claude/dwarves-kit` and
 already have stateful proofs that predate any UAT convention.
 Decision: the UAT/acceptance requirement lives in AGENTS.md prose and the
 `well-formed-proof.md` fixture, not as a `grep -qi 'UAT'` added to `check()`'s stateful
@@ -60,5 +60,5 @@ Confirmed pre-existing: `git stash` (reverting every change in this branch) repr
 identical failure, so this is an environment precondition, not a regression introduced by
 SPEC-095. All other listed shared-path tests (`test-proof-dir-layout.sh`,
 `test-proof-visual-evidence.sh`, `test-ship-gate-fail-closed.sh`, `test-meta.sh`,
-`test-hooks.sh`) exercise `lib/proof-ledger.sh` and `hooks/ship-gate.sh` from the repo copy
+`test-hooks.sh`) exercise `lib/gate/proof-ledger.sh` and `hooks/ship-gate.sh` from the repo copy
 and stay green.

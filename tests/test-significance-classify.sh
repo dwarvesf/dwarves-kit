@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-significance-classify.sh -- SPEC-123, understanding-gate SG-02.
-# Behavioral suite for lib/significance-classify.sh: the two-signal (significance x
+# Behavioral suite for lib/classify/significance-classify.sh: the two-signal (significance x
 # understanding-worthiness) verdict, the impl-notes feed, the gate-ledger debt marker, and
 # determinism. Mirrors tests/test-lane-classify.sh's shape.
 #
@@ -8,8 +8,8 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SC="$KIT_DIR/lib/significance-classify.sh"
-GL="$KIT_DIR/lib/gate-ledger.sh"
+SC="$KIT_DIR/lib/classify/significance-classify.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -44,7 +44,7 @@ echo "=== significance-classify: anti-fatigue NEGATIVE CONTROL (AC2) ==="
 # Significant (full lane, touches lib/) but describes a purely mechanical, reversible,
 # test-covered change -- no worthiness trigger should fire. Anti-fatigue guard: this must
 # WAVE, not tap, even though it is significant.
-verdict_is --files "lib/orchestrate.sh lib/foo.sh" "add a mechanical, reversible, fully test-covered guard clause" -- \
+verdict_is --files "lib/queue/orchestrate.sh lib/foo.sh" "add a mechanical, reversible, fully test-covered guard clause" -- \
   "wave" "AC2 [NC] significant-but-low-worthiness is WAVED, not tapped"
 
 echo ""
@@ -60,9 +60,9 @@ printf '## 2026-07-03 12:00 a decision\n- Decision: chose X over Y, spec did not
 
 # Same mechanical description as AC2 (no worthiness trigger in the text itself): without an
 # impl-note it waves; with a non-empty impl-note the feed signal flips it to a tap.
-verdict_is --files "lib/orchestrate.sh" --impl-notes "$EMPTY_NOTE" "add a mechanical, reversible, fully test-covered guard clause" -- \
+verdict_is --files "lib/queue/orchestrate.sh" --impl-notes "$EMPTY_NOTE" "add a mechanical, reversible, fully test-covered guard clause" -- \
   "wave" "AC4a no impl-note entries -> still waved"
-verdict_is --files "lib/orchestrate.sh" --impl-notes "$NONEMPTY_NOTE" "add a mechanical, reversible, fully test-covered guard clause" -- \
+verdict_is --files "lib/queue/orchestrate.sh" --impl-notes "$NONEMPTY_NOTE" "add a mechanical, reversible, fully test-covered guard clause" -- \
   "tap" "AC4b non-empty impl-note flips worthiness low->high -> tap"
 
 echo ""
@@ -96,11 +96,11 @@ explain_fires "add a new public method to the library for callers" -- \
 
 # Worthiness triggers, each isolated (paired with a full-lane --files so significance is high
 # independent of the worthiness text, mirroring AC2's independence discipline).
-explain_fires --files "lib/orchestrate.sh" "this has a first-of-kind novel pattern, no precedent" -- \
+explain_fires --files "lib/queue/orchestrate.sh" "this has a first-of-kind novel pattern, no precedent" -- \
   "worthiness: high (novel)" "novel trigger fires worthiness (asserted by name, not incidental)"
-explain_fires --files "lib/orchestrate.sh" "the blast radius is high, used by every consumer" -- \
+explain_fires --files "lib/queue/orchestrate.sh" "the blast radius is high, used by every consumer" -- \
   "worthiness: high (blast-radius)" "blast-radius trigger fires worthiness"
-explain_fires --files "lib/orchestrate.sh" "the human will have to explain and defend this design decision" -- \
+explain_fires --files "lib/queue/orchestrate.sh" "the human will have to explain and defend this design decision" -- \
   "worthiness: high (must-explain)" "must-explain trigger fires worthiness"
 
 echo ""
@@ -109,7 +109,7 @@ echo "=== significance-classify: tunable knob SIGNIFICANCE_WORTHINESS_MIN (revie
 # raising the knob to 2 -> low/wave, proving the knob actually gates the count, not a no-op.
 ONE_TRIGGER_DESC="this has a first-of-kind novel pattern"
 TOTAL=$((TOTAL+1))
-got_default="$(bash "$SC" classify --files "lib/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
+got_default="$(bash "$SC" classify --files "lib/queue/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
 if [ "$got_default" = "tap" ]; then
   echo -e "  ${GREEN}PASS${NC} default SIGNIFICANCE_WORTHINESS_MIN=1: one trigger -> tap"
   PASS=$((PASS+1))
@@ -119,7 +119,7 @@ else
 fi
 
 TOTAL=$((TOTAL+1))
-got_raised="$(SIGNIFICANCE_WORTHINESS_MIN=2 bash "$SC" classify --files "lib/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
+got_raised="$(SIGNIFICANCE_WORTHINESS_MIN=2 bash "$SC" classify --files "lib/queue/orchestrate.sh" "$ONE_TRIGGER_DESC" 2>/dev/null)"
 if [ "$got_raised" = "wave" ]; then
   echo -e "  ${GREEN}PASS${NC} SIGNIFICANCE_WORTHINESS_MIN=2: one trigger no longer enough -> wave"
   PASS=$((PASS+1))
@@ -141,7 +141,7 @@ else
 fi
 
 TOTAL=$((TOTAL+1))
-nonexistent_note_verdict="$(bash "$SC" classify --files "lib/orchestrate.sh" --impl-notes "$TMPDIR_T/does-not-exist.md" "mechanical reversible test-covered guard" 2>/dev/null)"
+nonexistent_note_verdict="$(bash "$SC" classify --files "lib/queue/orchestrate.sh" --impl-notes "$TMPDIR_T/does-not-exist.md" "mechanical reversible test-covered guard" 2>/dev/null)"
 if [ "$nonexistent_note_verdict" = "wave" ]; then
   echo -e "  ${GREEN}PASS${NC} --impl-notes pointing at a nonexistent file degrades to no-signal (wave, not a crash)"
   PASS=$((PASS+1))
@@ -173,7 +173,7 @@ run_record() {
 }
 
 run_record --files "lib/x.sh" "add a new data model migration that introduces a primitive future work will build on"
-run_record --files "lib/orchestrate.sh lib/foo.sh" "add a mechanical, reversible, fully test-covered guard clause"
+run_record --files "lib/queue/orchestrate.sh lib/foo.sh" "add a mechanical, reversible, fully test-covered guard clause"
 run_record "fix a typo in the README"
 
 TOTAL=$((TOTAL+1))
@@ -251,19 +251,19 @@ echo ""
 echo "=== significance-classify: wiring sanity ==="
 TOTAL=$((TOTAL+1))
 if [ -x "$SC" ]; then
-  echo -e "  ${GREEN}PASS${NC} lib/significance-classify.sh exists and is executable"
+  echo -e "  ${GREEN}PASS${NC} lib/classify/significance-classify.sh exists and is executable"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}FAIL${NC} lib/significance-classify.sh missing or not executable"
+  echo -e "  ${RED}FAIL${NC} lib/classify/significance-classify.sh missing or not executable"
   FAIL=$((FAIL+1))
 fi
 
 TOTAL=$((TOTAL+1))
 if grep -qE '^[[:space:]]*debt\)' "$GL" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} lib/gate-ledger.sh exposes a 'debt' subcommand"
+  echo -e "  ${GREEN}PASS${NC} lib/gate/gate-ledger.sh exposes a 'debt' subcommand"
   PASS=$((PASS+1))
 else
-  echo -e "  ${RED}FAIL${NC} lib/gate-ledger.sh missing the 'debt' subcommand"
+  echo -e "  ${RED}FAIL${NC} lib/gate/gate-ledger.sh missing the 'debt' subcommand"
   FAIL=$((FAIL+1))
 fi
 

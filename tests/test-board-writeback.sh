@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-board-writeback.sh -- SPEC-149 (runner-fastpath sub-goal 08): lib/board-writeback.sh + the
+# test-board-writeback.sh -- SPEC-149 (runner-fastpath sub-goal 08): lib/board/board-writeback.sh + the
 # `board.sh writeback` subcommand it backs.
 #
 # Proves:
@@ -31,9 +31,9 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOARD="$KIT_DIR/lib/board.sh"
-BOARD_MIRROR="$KIT_DIR/lib/board-mirror.sh"
-BOARD_WRITEBACK="$KIT_DIR/lib/board-writeback.sh"
+BOARD="$KIT_DIR/lib/board/board.sh"
+BOARD_MIRROR="$KIT_DIR/lib/board/board-mirror.sh"
+BOARD_WRITEBACK="$KIT_DIR/lib/board/board-writeback.sh"
 
 PASS=0; FAIL=0; SKIP=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'

@@ -22,16 +22,16 @@ Verdict: PASS
 
 ## Implementation
 
-- `lib/kit-log-dir.sh` (new) -- the single resolver: `kit_resolve_log_dir`
+- `lib/telemetry/kit-log-dir.sh` (new) -- the single resolver: `kit_resolve_log_dir`
   (`$DWARVES_KIT_LOG_DIR` else `${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs`),
   `kit_legacy_log_dir`, `kit_migrate_log_dir` (sentinel-guarded, additive `cp -Rn`,
   no-ops when the env is set, provably return-0). Idempotent-source guard.
-- `lib/gate-ledger.sh` -- sources the resolver + migrate-on-load; `override()` gains
+- `lib/gate/gate-ledger.sh` -- sources the resolver + migrate-on-load; `override()` gains
   the blanket-reject guard (reason reused across gates in one run -> exit 65; reason
   reconstructed `$5..NF` so a `|`-bearing reason compares exactly; only `override`
   lines count).
-- `lib/proof-ledger.sh`, `lib/lane-telemetry.sh`, `lib/precedent.sh`,
-  `lib/mega-merge.sh`, `lib/lane-classify.sh` -- source the resolver, migrate-on-load
+- `lib/gate/proof-ledger.sh`, `lib/telemetry/lane-telemetry.sh`, `lib/precedent.sh`,
+  `lib/goal/mega-merge.sh`, `lib/classify/lane-classify.sh` -- source the resolver, migrate-on-load
   (`|| true`), path from resolver. lane-classify moved because it WRITES
   `completeness.log` the moved lane-telemetry READS (validate B1).
 - `tests/test-ledger-durability.sh` -- 18 assertions (AC1-AC8 + B1).

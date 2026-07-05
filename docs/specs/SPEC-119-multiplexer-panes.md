@@ -4,7 +4,7 @@ Status: DRAFT
 
 ## Problem
 
-`lib/orchestrate.sh`'s wavefront path (`_wave_run`, ADR-0030) backgrounds each admitted wave
+`lib/queue/orchestrate.sh`'s wavefront path (`_wave_run`, ADR-0030) backgrounds each admitted wave
 sub-goal's `claude -p` session as a plain bash job (`( cd "$wt" && _run_one_session ... ) &`).
 When `WAVE_CAP>1` runs two or more sessions concurrently, their combined stdout/stderr interleave
 on whatever fd the conductor inherited: the operator cannot watch one session in isolation, and
@@ -213,7 +213,7 @@ Pass = `test-multiplexer.sh` all green AND every regression suite above still gr
   wiring (SG-05) -- all separate sub-goals.
 
 ## Touches
-- lib/orchestrate.sh
+- lib/queue/orchestrate.sh
 - tests/test-multiplexer.sh
 - docs/proof-of-done/SPEC-119-multiplexer-panes.md
 

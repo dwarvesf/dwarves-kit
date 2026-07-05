@@ -22,7 +22,7 @@ Verdict: PASS
 
 ## Implementation
 
-- `lib/mega-merge.sh` -- `_pr_info` (PR state via `gh pr view --json`, US-delimited,
+- `lib/goal/mega-merge.sh` -- `_pr_info` (PR state via `gh pr view --json`, US-delimited,
   test-injectable via `MEGA_MERGE_PR_INFO_CMD`) + `_merge_exclusion` (draft / hold-label /
   title-marker -> refuse; unreadable -> fail-closed) wired into `merge()` BEFORE the gate.
   Header comment updated (the hole is now closed in code, defense-in-depth over mega.md).

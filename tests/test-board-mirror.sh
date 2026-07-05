@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-board-mirror.sh -- SPEC-147 (runner-fastpath sub-goal 07): lib/board-mirror.sh + the
+# test-board-mirror.sh -- SPEC-147 (runner-fastpath sub-goal 07): lib/board/board-mirror.sh + the
 # `board.sh mirror`/`board.sh status` subcommands it backs.
 #
 # Proves:
@@ -32,8 +32,8 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOARD="$KIT_DIR/lib/board.sh"
-BOARD_MIRROR="$KIT_DIR/lib/board-mirror.sh"
+BOARD="$KIT_DIR/lib/board/board.sh"
+BOARD_MIRROR="$KIT_DIR/lib/board/board-mirror.sh"
 
 PASS=0; FAIL=0; SKIP=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[0;33m'; NC='\033[0m'
@@ -141,7 +141,7 @@ ROWS="$(bash "$BOARD_MIRROR" extract-rows "$FIXR/_meta/BACKLOG.md" fixR "$FIXR" 
 ERRS="$(bash "$BOARD_MIRROR" extract-rows "$FIXR/_meta/BACKLOG.md" fixR "$FIXR" 2>&1 >/dev/null)"
 tnative() { printf '%s\n' "$ROWS" | awk -F'\t' -v id="$1" '$3==id{print $7}'; }
 assert "ID-001 (queued) -> target triage"    "$([ "$(tnative ID-001)" = "triage" ] && echo 0 || echo 1)"
-assert "ID-002 (claimed) -> target ready (todo has no durable synthetic path, see lib/board-mirror.sh)" \
+assert "ID-002 (claimed) -> target ready (todo has no durable synthetic path, see lib/board/board-mirror.sh)" \
   "$([ "$(tnative ID-002)" = "ready" ] && echo 0 || echo 1)"
 assert "ID-003 (speccing) -> target ready"   "$([ "$(tnative ID-003)" = "ready" ] && echo 0 || echo 1)"
 assert "ID-004 (validated) -> target ready"  "$([ "$(tnative ID-004)" = "ready" ] && echo 0 || echo 1)"
@@ -187,7 +187,7 @@ assert "ID-002 (claimed->ready) needs no followup (todo has no durable synthetic
   "$([ "$(printf '%s' "$CREATE_ID002" | jq -r '.followup')" = "none" ] && echo 0 || echo 1)"
 CREATE_ID006="$(printf '%s\n' "$DRYPLAN" | jq -c 'select(.origin=="fixR:ID-006")')"
 # NOT --initial-status blocked: a real dev-home E2E finding is that flag gets silently
-# auto-promoted back to `ready` within ~15-20s (see lib/board-mirror.sh's _create_flags_for
+# auto-promoted back to `ready` within ~15-20s (see lib/board/board-mirror.sh's _create_flags_for
 # header note). `parked` reaches `blocked` via a create + block --kind needs_input followup.
 assert "ID-006's create argv carries NO --initial-status flag (that path auto-promotes back to ready)" \
   "$(printf '%s' "$CREATE_ID006" | jq -e '.argv | index("--initial-status")' >/dev/null 2>&1 && echo 1 || echo 0)"
@@ -382,7 +382,7 @@ assert "NC7c: the CHANGE comment strips the #queue{} token" "$(printf '%s' "$CH_
 
 echo ""
 echo "=== Coverage delta ==="
-BEFORE_COUNT=0   # no lib/board-mirror.sh, no mirror/status subcommands, no tests/test-board-mirror.sh before SPEC-147
+BEFORE_COUNT=0   # no lib/board/board-mirror.sh, no mirror/status subcommands, no tests/test-board-mirror.sh before SPEC-147
 AFTER_COUNT="$TOTAL"
 assert "coverage delta: board-mirror checks went from $BEFORE_COUNT to $AFTER_COUNT in this suite" "$([ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ] && echo 0 || echo 1)"
 

@@ -41,7 +41,7 @@ Leave `## Root cause` blank until you have actually found it. While it is blank,
 
 **Escaped-defect marker (SPEC-062).** If this defect traces to a SHIPPED spec whose test plan
 should have caught it, record the indictment so lane telemetry can aggregate test-design
-quality per spec: `bash lib/gate-ledger.sh action <slug> "escaped-from=<spec-slug>"`. Skip
+quality per spec: `bash lib/gate/gate-ledger.sh action <slug> "escaped-from=<spec-slug>"`. Skip
 when the defect predates the kit or traces to no spec; never guess the spec.
 
 ## Phase 0: Build a feedback loop

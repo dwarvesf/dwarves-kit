@@ -21,13 +21,13 @@
 #   plan <spec...>            print "PARALLEL <spec>" / "WAIT <spec> after <spec>" lines
 #   drift <base> <branch> <spec>   exit 0 clean | 1 drift (out-of-glob or hands-off)
 #
-# Usage from a command: source it, or call as `bash lib/dispatch-gate.sh <subcmd> ...`.
+# Usage from a command: source it, or call as `bash lib/gate/dispatch-gate.sh <subcmd> ...`.
 
 set -euo pipefail
 
 # Resolve the kit root (this file lives in <root>/lib/).
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-KIT_ROOT="$(cd "$GATE_DIR/.." && pwd)"
+KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
 WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
 
 # --- prefix extraction ------------------------------------------------------
@@ -37,7 +37,7 @@ WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
 # `**/x`, `a/*.ext`, a brace glob) -> the glob verbatim with a leading "?" marker so
 # callers treat it as unprovable (forces conservative overlap). This is the single
 # source for the prefix rule, shared by gate_touches (spec `## Touches` lists) and
-# lib/goal-registry.sh (cross-session CLI globs). Keep them on one rule (ID-029).
+# lib/goal/goal-registry.sh (cross-session CLI globs). Keep them on one rule (ID-029).
 gate_normalize_glob() {
   local g="$1"
   if printf '%s' "$g" | grep -qE '^[A-Za-z0-9._/-]+/\*\*$'; then

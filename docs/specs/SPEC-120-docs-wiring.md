@@ -9,7 +9,7 @@ a DELEGATE run mode (thin conductor, one fresh headless `claude -p` per sub-goal
 per-sub-goal model routing, a ledger-under-delegation guarantee (gate/proof survive by
 construction, token capture via stream-to-file, debt split conductor/worker), a mega
 TIER-4 close (no-orphan sweep + verifier session + held human gate), and an opt-in tmux
-multiplexer for wave visibility. All five pieces landed in `lib/orchestrate.sh` across
+multiplexer for wave visibility. All five pieces landed in `lib/queue/orchestrate.sh` across
 sub-goals 01-04 of the `orchestrate-hardening` mega-goal (PRs #139-143, all merged to
 master) -- but `WORKFLOW.md` and `AGENTS.md` say nothing about any of it. An operator or
 a future goal-loop reading the operate-contract docs today has no way to learn the
@@ -74,7 +74,7 @@ AGENTS.md zone 1 item 4 -- one-sentence pointer to the section above
 
 tests/test-docs-wiring.sh
   |-- AC1-5: doc-presence (WORKFLOW.md/AGENTS.md carry each concept's required vocabulary)
-  |-- AC6-9: no-orphan sweep (4 real capabilities, each grep-verified live in lib/orchestrate.sh + lib/gate-ledger.sh)
+  |-- AC6-9: no-orphan sweep (4 real capabilities, each grep-verified live in lib/queue/orchestrate.sh + lib/gate/gate-ledger.sh)
   \-- AC10 [NEGATIVE CONTROL]: a planted over-claim ("multiplexer on by default") is CAUGHT
       by the same sweep function, proving it is not a rubber stamp
 ```
@@ -83,8 +83,8 @@ tests/test-docs-wiring.sh
 
 ### Interfaces (I/O contract)
 
-- Inputs / consumes: `WORKFLOW.md`, `AGENTS.md` (doc text), `lib/orchestrate.sh` +
-  `lib/gate-ledger.sh` (the corpus the no-orphan sweep greps against for "does this
+- Inputs / consumes: `WORKFLOW.md`, `AGENTS.md` (doc text), `lib/queue/orchestrate.sh` +
+  `lib/gate/gate-ledger.sh` (the corpus the no-orphan sweep greps against for "does this
   capability actually dispatch").
 - Outputs / produces: updated prose in both docs; `tests/test-docs-wiring.sh` (exit 0 on
   every AC, prints PASS/FAIL per assertion like the kit's other `test-*-parity.sh`
@@ -121,8 +121,8 @@ None.
 ### Phase 2: Wiring check
 - [ ] TASK-003: write `tests/test-docs-wiring.sh` with doc-presence assertions (AC1-5)
       and the no-orphan sweep over the 4 real capabilities (AC6-9), each keyed to an
-      exact grep pattern against a live call site in `lib/orchestrate.sh` /
-      `lib/gate-ledger.sh` -- AC: all pass against current master+this branch's docs.
+      exact grep pattern against a live call site in `lib/queue/orchestrate.sh` /
+      `lib/gate/gate-ledger.sh` -- AC: all pass against current master+this branch's docs.
 - [ ] TASK-004 (depends on TASK-003's sweep function): add the over-claim negative
       control (AC10): a planted fixture claim (multiplexer default-on) run through the
       same sweep function, asserted CAUGHT (sweep returns non-wired) -- AC: the fixture
@@ -164,7 +164,7 @@ None.
 
 ## Out of Scope
 
-- The machinery itself (`lib/orchestrate.sh` model routing / token capture / TIER-4
+- The machinery itself (`lib/queue/orchestrate.sh` model routing / token capture / TIER-4
   close / multiplexer panes) -- already shipped in sub-goals 01-04.
 - The mega-goal ROADMAP.md (already written, `ops-toolkit/_meta/megagoals/orchestrate-hardening/`).
 - A second pane driver (`PANE_DRIVER=cmux`) -- SPEC-119's own Out of Scope, unchanged here.

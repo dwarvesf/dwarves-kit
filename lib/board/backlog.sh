@@ -6,7 +6,7 @@
 # item, flip a row's state, so a pull (`/kit:assign --next`) is scriptable and testable
 # instead of a hand-edit. Status vocabulary is SPEC-005's, plus `claimed` (a pulled
 # item between `queued` and `speccing`; the cross-session claim itself lives in
-# lib/goal-registry.sh, this only records the board state).
+# lib/goal/goal-registry.sh, this only records the board state).
 #
 # Rows are `| <ID> | ... | <status...> |` in the Active queue table, where <ID> is a
 # prefixed id like ID-NNN (ops-toolkit), DS-NNN, DF-NNN, BK-NNN, FO-NNN. The status cell
@@ -26,7 +26,7 @@
 set -euo pipefail
 
 BACKLOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKLOG_FILE="${BACKLOG_FILE:-$BACKLOG_DIR/../_meta/BACKLOG.md}"
+BACKLOG_FILE="${BACKLOG_FILE:-$BACKLOG_DIR/../../_meta/BACKLOG.md}"  # _meta/ is at repo root (above lib/)
 
 STATES="queued claimed speccing validated executing shipped parked dropped"
 BACKLOG_ID_RE="${BACKLOG_ID_RE:-[A-Z]+-[0-9]+}"

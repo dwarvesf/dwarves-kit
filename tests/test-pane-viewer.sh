@@ -14,9 +14,9 @@ export TIER4_CLOSE=0
 # suite may itself run inside cmux/iTerm/kitty on an operator's machine).
 unset CMUX_WORKSPACE_ID KITTY_WINDOW_ID TERM_PROGRAM PANE_VIEWER VIEWER_CMD TMUX_SESSION 2>/dev/null || true
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../lib/orchestrate.sh
-source "$KIT/lib/orchestrate.sh"
-ORCH="$KIT/lib/orchestrate.sh"
+# shellcheck source=../lib/queue/orchestrate.sh
+source "$KIT/lib/queue/orchestrate.sh"
+ORCH="$KIT/lib/queue/orchestrate.sh"
 
 fails=0
 pass() { echo "PASS $*"; }

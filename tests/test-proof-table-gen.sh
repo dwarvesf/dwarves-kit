@@ -13,7 +13,7 @@
 set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GEN="$KIT_DIR/lib/proof-table-gen.sh"
+GEN="$KIT_DIR/lib/gate/proof-table-gen.sh"
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 PASS=0; FAIL=0; TOTAL=0
 

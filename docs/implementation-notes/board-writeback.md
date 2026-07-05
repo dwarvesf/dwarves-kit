@@ -62,7 +62,7 @@ running the tool end-to-end against a REAL `mktemp`-created macOS path is what s
 
 ## 2026-07-05 06:10 `if ! cmd; then rc=$?; fi` captures the WRONG exit code (bash gotcha, caught in `board.sh`'s wrapper)
 
-**Context**: `cmd_writeback` (in `lib/board.sh`) needs to propagate `board-writeback.sh diff`'s
+**Context**: `cmd_writeback` (in `lib/board/board.sh`) needs to propagate `board-writeback.sh diff`'s
 real exit code (0, or nonzero on a missing/corrupt snapshot) back to the caller.
 
 **Decision**: use `if cmd; then rc=0; else rc=$?; fi` (capturing `$?` only in the `else` branch,
@@ -70,7 +70,7 @@ after the negation-free condition), NOT `if ! cmd; then rc=$?; fi`.
 
 **Why**: bash's `$?` inside an `if ! cmd; then ...; fi` block reflects the NEGATED (`!`-inverted)
 truth value of the whole `if` test, not `cmd`'s own original exit code. Concretely: `if ! false;
-then echo $?; fi` prints `0`, not `1`. This is exactly the pattern `lib/board-mirror.sh`'s
+then echo $?; fi` prints `0`, not `1`. This is exactly the pattern `lib/board/board-mirror.sh`'s
 `cmd_apply_plan` already documents for its own `if out=$(...); then rc=0; else rc=$?; fi`
 construction (needed there so `set -e` does not abort the whole script on a nonzero command
 substitution); this build hit the SAME gotcha independently in `board.sh`'s wrapper, in the `!`

@@ -26,7 +26,7 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LIB="$KIT_DIR/lib/pitch.sh"
-LEDGER="$KIT_DIR/lib/gate-ledger.sh"
+LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"
 FIXTURES="$KIT_DIR/tests/fixtures/pitch"
 
 PASS=0; FAIL=0; TOTAL=0
@@ -78,7 +78,7 @@ assert "AC1 all 5 numbered sections present (got $SECTIONS)" "$([ "$SECTIONS" -e
 assert "AC1 outcome section names the real spec (SPEC-139-kit-emit-sweep)" \
   "$(grep -qi 'command emit sweep' "$PROOF_DIR/sample-pitch.md" && echo 0 || echo 1)"
 # The PR-link and grill-skip checks below need ledger content that only ever lives in
-# ~/.local/state/dwarves-kit/logs (machine-local, per lib/kit-log-dir.sh) -- absent on a fresh
+# ~/.local/state/dwarves-kit/logs (machine-local, per lib/telemetry/kit-log-dir.sh) -- absent on a fresh
 # CI checkout. Assert against a frozen, committed fixture (a snapshot of the same real
 # kit-emit-sweep content) rather than the live render, so the proof is CI-portable without
 # weakening what it proves.

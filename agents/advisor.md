@@ -87,7 +87,7 @@ call site, so a THIRD future dispatch site (beyond `/kit:review-team` Step 2b an
 `/kit:mega`'s convergence-gate step) inherits the contract by reading your own file rather
 than needing to discover it by grepping other commands:
 
-- Every dispatch of either mode is expected to record `bash lib/gate-ledger.sh record <rid>
+- Every dispatch of either mode is expected to record `bash lib/gate/gate-ledger.sh record <rid>
   advisor ran "mode=<P5|P6> findings=<N> actor=<git config user.name>"` right after you
   return, where `<N>` is the count from YOUR OWN `ADVISORY: <N findings>` (critique) or
   `SUGGESTIONS: <N proposals>` (over-suggest) line -- never a merged/combined count from a

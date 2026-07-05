@@ -24,7 +24,7 @@ slash commands, since the run's cwd is unstable across worktrees).
 
 - **`WORKFLOW.md`'s Lane×phase depth matrix gained a REAL row** ("Design record
   (design-bearing, ADR-0031 §1)"), not a documentation-only note beside the Validate row. This
-  had a load-bearing consequence I did not anticipate at spec time: `lib/gate-ledger.sh`
+  had a load-bearing consequence I did not anticipate at spec time: `lib/gate/gate-ledger.sh`
   dynamically PARSES that matrix at runtime to build `plan`/`progress`'s phase checklist and
   `required`'s ship-gate list. Adding a row with `run-lite` (normal) / `measure-twice` (full)
   cells changed the normal-lane plan from 8 steps to 9 (a new step lands between `spec` and
@@ -65,5 +65,5 @@ plan COVERAGE-DELTA row rather than hidden.
 `bash tests/test-hooks.sh` (452/452) + `bash tests/test-e2e.sh` (20/20), all green after the
 renumbering fix above. `bash tests/test-classify-md-inert.sh` has one pre-existing failure
 (`stripped lib should reproduce the stateful bug`, a `/tmp`-relative-sourcing fragility in a
-lib/proof-ledger.sh test unrelated to this change) confirmed present on master before this
+lib/gate/proof-ledger.sh test unrelated to this change) confirmed present on master before this
 branch touched anything; left alone as out of scope.

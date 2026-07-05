@@ -45,13 +45,13 @@ runner where one is configured.
 
 ### Chosen shape
 
-A new `lib/coverage-delta.sh` (the advisory gate) reuses the kit's existing diff plumbing
-(the 4-source changed-files union `lib/proof-ledger.sh` already uses: `base..HEAD` + working
+A new `lib/gate/coverage-delta.sh` (the advisory gate) reuses the kit's existing diff plumbing
+(the 4-source changed-files union `lib/gate/proof-ledger.sh` already uses: `base..HEAD` + working
 tree + `--cached` + untracked). It classifies each changed path, computes the source-vs-test
 line delta via `git diff --numstat`, prints a one-line advisory verdict prefixed
 `[coverage-delta]`, and ALWAYS exits 0. It is invoked at the **Review phase** (the cycle
 table's advisory enforcer, the Build->Review boundary) from `commands/review-team.md`, the
-same live-dispatch pattern `lib/role-classify.sh` already uses there. It is deliberately kept
+same live-dispatch pattern `lib/classify/role-classify.sh` already uses there. It is deliberately kept
 OFF `hooks/ship-gate.sh` (the push blocker).
 
 ## Design
@@ -117,15 +117,15 @@ existing `[advisory]` lines, which print and flow through without affecting exit
 
 The **Review phase** (WORKFLOW.md cycle table: enforcer = `advisory`, the Build->Review
 boundary). `commands/review-team.md` gains one advisory step that runs
-`bash lib/coverage-delta.sh check "<root>" "<base>"` and folds the `[coverage-delta]` line
+`bash lib/gate/coverage-delta.sh check "<root>" "<base>"` and folds the `[coverage-delta]` line
 into the review report's test-coverage section. This is the SAME live-dispatch pattern the
-file already uses for `lib/role-classify.sh classify`. The gate is deliberately NOT wired into
+file already uses for `lib/classify/role-classify.sh classify`. The gate is deliberately NOT wired into
 `hooks/ship-gate.sh`: it is off the push/block path entirely (studied ship-gate.sh only to
 learn the advisory-vs-block boundary, per the sub-goal's Where-to-look).
 
 The decision is recorded on the gate-ledger via the existing `record` verb (01's `caught=`
 outcome marker is not merged yet):
-`bash lib/coverage-delta.sh check <root> <base> --rid <rid>` appends
+`bash lib/gate/coverage-delta.sh check <root> <base> --rid <rid>` appends
 `... | GATE | coverage-delta | ran | <verdict> src=<N> test=<M>` (a `record` line readers
 that key on known phases ignore , additive, cannot fake a phase gate). Without `--rid` the
 gate is a pure read-only reporter (used by the tests).

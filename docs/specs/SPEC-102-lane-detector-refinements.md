@@ -6,7 +6,7 @@ Type: spec-feature
 
 ## Problem
 
-Two `lib/lane-telemetry.sh` detectors false-flag, so `misfires` is noisy (SPEC-073 eval
+Two `lib/telemetry/lane-telemetry.sh` detectors false-flag, so `misfires` is noisy (SPEC-073 eval
 metric 9, ID-086):
 
 - **boardless** (`_boardless`) matches a run to the board by the raw rid
@@ -49,7 +49,7 @@ unaffected.
 
 ```bash
 cd dwarves-kit
-bash lib/lane-telemetry.sh misfires   # the false flags are gone; real cases remain
+bash lib/telemetry/lane-telemetry.sh misfires   # the false flags are gone; real cases remain
 bash tests/test-hooks.sh              # detector pins (218-244) + the 4 new pins green
 bash tests/test-lane-telemetry.sh     # report/render green
 ```

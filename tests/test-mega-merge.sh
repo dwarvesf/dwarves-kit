@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-mega-merge.sh -- SPEC-100, kit-telemetry SG-05.
-# Pins the CODE-LEVEL gate/held-final exclusion in lib/mega-merge.sh: a gate-tagged /
+# Pins the CODE-LEVEL gate/held-final exclusion in lib/goal/mega-merge.sh: a gate-tagged /
 # held-final / draft PR is refused at the code level even when the prompt-level rule is
 # absent, unreadable state fails closed, and a normal `auto` PR still merges.
 #
@@ -11,7 +11,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-MM="$KIT_DIR/lib/mega-merge.sh"
+MM="$KIT_DIR/lib/goal/mega-merge.sh"
 US=$'\037'
 
 PASS=0; FAIL=0; TOTAL=0
@@ -101,7 +101,7 @@ has "ship-gate not satisfied" "$O7"; ok "AC7: clear PR + failing gate still bloc
 
 # AC7b [unknown-lane fail-closed, TIER-4 security]: a clear PR with an UNKNOWN lane (e.g. the
 # real gate-ledger, not a stub) must NOT vacuous-pass. Uses the real gate-ledger deliberately.
-GL_REAL="$KIT_DIR/lib/gate-ledger.sh"
+GL_REAL="$KIT_DIR/lib/gate/gate-ledger.sh"
 O7b="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/l" MEGA_MERGE_GATE_LEDGER="$GL_REAL" MEGA_MERGE_PR_INFO_CMD="$TMP/prinfo" bash "$MM" merge 1 someridZ mega --execute 2>&1)"
 has "BLOCKED" "$O7b"; ok "AC7b: unknown lane 'mega' is refused, not vacuous-passed (real gate-ledger)" $?
 if has "gh pr merge" "$O7b"; then ok "AC7b: unknown lane never reaches gh --execute" 1; else ok "AC7b: unknown lane never reaches gh --execute" 0; fi

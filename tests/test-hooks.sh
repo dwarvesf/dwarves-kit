@@ -124,9 +124,9 @@ CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin 
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
 
 # SPEC-064 / ID-052: spec-next collision guard sees specs dir + branches + commit subjects.
-assert_output_contains "spec-next: check flags a taken number" "TAKEN" "$(bash "$KIT_DIR/lib/spec-next.sh" check 13 2>&1 || true)"
-assert_exit "spec-next: taken number exits 1" 1 "$(bash "$KIT_DIR/lib/spec-next.sh" check 13 >/dev/null 2>&1; echo $?)"
-assert_output_contains "spec-next: next is numeric" "^[0-9][0-9][0-9]$" "$(bash "$KIT_DIR/lib/spec-next.sh" next)"
+assert_output_contains "spec-next: check flags a taken number" "TAKEN" "$(bash "$KIT_DIR/lib/spec/spec-next.sh" check 13 2>&1 || true)"
+assert_exit "spec-next: taken number exits 1" 1 "$(bash "$KIT_DIR/lib/spec/spec-next.sh" check 13 >/dev/null 2>&1; echo $?)"
+assert_output_contains "spec-next: next is numeric" "^[0-9][0-9][0-9]$" "$(bash "$KIT_DIR/lib/spec/spec-next.sh" next)"
 
 # ============================================================
 echo ""
@@ -144,7 +144,7 @@ case "$*" in
 esac
 GHEOF
 chmod +x "$SM_DIR/gh"
-SM_OUT=$(PATH="$SM_DIR:$PATH" bash "$KIT_DIR/lib/stack-merge.sh" next 10 --dry-run 2>&1)
+SM_OUT=$(PATH="$SM_DIR:$PATH" bash "$KIT_DIR/lib/goal/stack-merge.sh" next 10 --dry-run 2>&1)
 # the ordering that prevents the auto-close gotcha: retarget BEFORE merge BEFORE reconcile
 assert_output_contains "stack-merge: retargets the child first" "retarget #11 (feat/child) -> master" "$SM_OUT"
 assert_output_contains "stack-merge: dry-run executes nothing" "DRY: gh pr merge 10 --squash --delete-branch" "$SM_OUT"
@@ -153,9 +153,9 @@ R1=$(printf '%s\n' "$SM_OUT" | grep -n 'retarget #11' | cut -d: -f1)
 R2=$(printf '%s\n' "$SM_OUT" | grep -n 'squash-merge #10' | cut -d: -f1)
 R3=$(printf '%s\n' "$SM_OUT" | grep -n 'reconcile feat/child' | cut -d: -f1)
 assert_true "stack-merge: ordering retarget < merge < reconcile" "$([ "$R1" -lt "$R2" ] && [ "$R2" -lt "$R3" ]; echo $?)"
-RC=0; bash "$KIT_DIR/lib/stack-merge.sh" bogus 2>/dev/null || RC=$?
+RC=0; bash "$KIT_DIR/lib/goal/stack-merge.sh" bogus 2>/dev/null || RC=$?
 assert_exit "stack-merge: usage error exits 64" 64 $RC
-RC=0; bash "$KIT_DIR/lib/stack-merge.sh" chain --dry-run 2>/dev/null || RC=$?
+RC=0; bash "$KIT_DIR/lib/goal/stack-merge.sh" chain --dry-run 2>/dev/null || RC=$?
 assert_exit "stack-merge: zero-arg chain is loud, not a silent no-op" 64 $RC
 
 # ============================================================
@@ -223,7 +223,7 @@ git -C "$BD_DIR" init -q "$BD_DIR/repo"
 REPO_BASE="$(basename "$BD_DIR/repo")"
 printf '| ID-001 | something | queued |\n' > "$BD_DIR/repo/_meta/BACKLOG.md"
 printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=doc repo=%s\n' "$REPO_BASE" > "$BD_DIR/logs/runs/spec-ghost.log"
-BDT() ( cd "$BD_DIR/repo" && DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" )
+BDT() ( cd "$BD_DIR/repo" && DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" "$@" )
 assert_output_contains "detector: boardless run named" "spec-ghost" "$(BDT misfires)"
 assert_output_contains "detector: boardless count in report" "boardless runs (ledgered but never on the board): 1" "$(BDT report)"
 # shipped-incomplete: ship gate but un-disposed phases
@@ -242,7 +242,7 @@ assert_output_not_contains "detector: false-positive guard (complete run not fla
 # A4 seam-agreement pin (SPEC-102): shipped-incomplete now delegates to `gate-ledger.sh check`
 # (the ship-gate's required-gate contract), so run-lite phases never trip it. The seam is the
 # check call; a rename breaks the build, not the detector.
-assert_true "seam: lane-telemetry shipped-incomplete calls gate-ledger check" "$(grep -q 'gate-ledger.sh" check' "$KIT_DIR/lib/lane-telemetry.sh"; echo $?)"
+assert_true "seam: lane-telemetry shipped-incomplete calls gate-ledger check" "$(grep -q 'gate-ledger.sh" check' "$KIT_DIR/lib/telemetry/lane-telemetry.sh"; echo $?)"
 
 # --- SPEC-102 detector refinements (ID-086): boardless + shipped-incomplete false-flag fixes ---
 # 9a boardless-false-flag-now-clean: a run linked to its board row by ID (not raw rid) is on-board.
@@ -285,13 +285,13 @@ if command -v script >/dev/null 2>&1; then
   # escapes, the assertion still fails; only the environment trap is removed.
   PTY_TS="$BD_DIR/pty-typescript.txt"
   if script --version 2>/dev/null | grep -qi util-linux; then
-    script -qec "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" "$PTY_TS" >/dev/null 2>&1 </dev/null || true
+    script -qec "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate/gate-ledger.sh' progress spec-done normal" "$PTY_TS" >/dev/null 2>&1 </dev/null || true
   else
-    script -q "$PTY_TS" bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate-ledger.sh' progress spec-done normal" >/dev/null 2>&1 </dev/null || true
+    script -q "$PTY_TS" bash -c "DWARVES_KIT_LOG_DIR='$BD_DIR/logs' bash '$KIT_DIR/lib/gate/gate-ledger.sh' progress spec-done normal" >/dev/null 2>&1 </dev/null || true
   fi
   TTY_ESC=$(od -c "$PTY_TS" 2>/dev/null | grep -c '033' || true)
   assert_true "colors: PTY progress emits escape bytes (stdin-safe, ID-081)" "$([ "${TTY_ESC:-0}" -ge 1 ]; echo $?)"
-  PIPE_ESC=$(DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/gate-ledger.sh" progress spec-done normal 2>/dev/null | od -c | grep -c '033' || true)
+  PIPE_ESC=$(DWARVES_KIT_LOG_DIR="$BD_DIR/logs" bash "$KIT_DIR/lib/gate/gate-ledger.sh" progress spec-done normal 2>/dev/null | od -c | grep -c '033' || true)
   assert_true "colors: piped progress emits ZERO escape bytes" "$([ "${PIPE_ESC:-0}" -eq 0 ]; echo $?)"
 fi
 
@@ -834,7 +834,7 @@ fi
 echo ""
 echo "=== dispatch-gate: disjointness gate + drift guard (SPEC-032 / ADR-0019) ==="
 # ============================================================
-GATE="$KIT_DIR/lib/dispatch-gate.sh"
+GATE="$KIT_DIR/lib/gate/dispatch-gate.sh"
 GT=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-gate.XXXXXX")
 printf '# x\n## Touches\n- `a/**`\n\n## Task\n- do\n' > "$GT/spec-a.md"
 printf '# y\n## Touches\n- `b/**`\n' > "$GT/spec-b.md"
@@ -886,7 +886,7 @@ rm -rf "$GT" "$GD"
 echo ""
 echo "=== lane-classify: task-type -> risk lane (the 3 sample types + more) ==="
 # ============================================================
-LANE() { bash "$KIT_DIR/lib/lane-classify.sh" classify "$1" 2>/dev/null; }
+LANE() { bash "$KIT_DIR/lib/classify/lane-classify.sh" classify "$1" 2>/dev/null; }
 # The three sample types the goal requires, plus normal + backfill for full coverage.
 assert_output_contains "lane: a doc fix -> tiny" "^tiny$" "$(LANE 'fix a typo in the README heading')"
 assert_output_contains "lane: a bug -> bug" "^bug$" "$(LANE 'the CSV parser crashes on empty input, fix the regression')"
@@ -896,17 +896,17 @@ assert_output_contains "lane: brownfield docs -> backfill" "^backfill$" "$(LANE 
 
 # SPEC-050: flag-scoring -- the kit-machinery hard-gate catches the 2026-06-10 misses (a change
 # naming the gate machinery is always full, even with no auth/migration keyword).
-assert_output_contains "lane: kit-machinery (classifier) -> full" "^full$" "$(LANE 'rewrite lib/lane-classify.sh into a flag-scoring classifier')"
+assert_output_contains "lane: kit-machinery (classifier) -> full" "^full$" "$(LANE 'rewrite lib/classify/lane-classify.sh into a flag-scoring classifier')"
 # SPEC-057 review finding: the kit-machinery flag enumerated lib files by name and missed the
 # newer helpers, under-sizing their work to normal. Pin the additions.
-assert_output_contains "lane: task-type-classify work -> full" "^full$" "$(LANE 'expand lib/task-type-classify.sh to 11 types')"
+assert_output_contains "lane: task-type-classify work -> full" "^full$" "$(LANE 'expand lib/classify/task-type-classify.sh to 11 types')"
 assert_output_contains "lane: backlog.sh work -> full" "^full$" "$(LANE 'change backlog.sh board rendering')"
 assert_output_contains "lane: kit-machinery (adopt) -> full" "^full$" "$(LANE 'adopt @AGENTS.md import loader plus --dry-run and --refresh flags in lib/adopt.sh')"
 assert_output_contains "lane: kit-machinery (install+gate-ledger) -> full" "^full$" "$(LANE 'ship AGENTS.md + WORKFLOW.md into the install so adopt + gate-ledger work')"
 # SPEC-050: soft-flag count -- 4 weak signals with no hard-gate keyword still escalate to full.
 assert_output_contains "lane: 4 soft flags -> full" "^full$" "$(LANE 'a cross-platform change to existing behavior that is untested and spans two domains')"
 # SPEC-050: explain is auditable -- it names the flag that fired, not just the lane.
-EXPLAIN() { bash "$KIT_DIR/lib/lane-classify.sh" explain "$1" 2>/dev/null; }
+EXPLAIN() { bash "$KIT_DIR/lib/classify/lane-classify.sh" explain "$1" 2>/dev/null; }
 assert_output_contains "explain names the kit-machinery flag" "kit-machinery" "$(EXPLAIN 'ship AGENTS.md into the install via install.sh so adopt works')"
 assert_output_contains "explain prints a reason line" "^reason:" "$(EXPLAIN 'add a --version flag to the CLI')"
 # SPEC-050 precedence: tiny BEATS the hard-gate -- a typo about auth is still a typo (catches a
@@ -919,7 +919,7 @@ assert_output_contains "lane: 3 soft flags -> normal" "^normal$" "$(LANE 'a cros
 assert_output_contains "explain: 3 soft flags reason says soft" "soft flags" "$(EXPLAIN 'a cross-platform change to existing behavior that is untested')"
 # SPEC-050 contract edges: empty description -> normal; the `flags` subcommand lists the new flag.
 assert_output_contains "lane: empty description -> normal" "^normal$" "$(LANE '')"
-assert_output_contains "flags subcommand lists kit-machinery" "kit-machinery" "$(bash "$KIT_DIR/lib/lane-classify.sh" flags 2>/dev/null)"
+assert_output_contains "flags subcommand lists kit-machinery" "kit-machinery" "$(bash "$KIT_DIR/lib/classify/lane-classify.sh" flags 2>/dev/null)"
 # SPEC-050 DEC-003: security stays a hard-gate (was bare 'security' in the old full branch); the
 # narrowing was validation-only, so security-relevant work does not silently downgrade.
 assert_output_contains "lane: security middleware -> full" "^full$" "$(LANE 'add security middleware to the request pipeline')"
@@ -929,7 +929,7 @@ echo ""
 echo "=== lane-classify: floor check (SPEC-053, the under-size guard) ==="
 # ============================================================
 # CHK merges stderr (the warning is on stderr) so the assertions can read it.
-CHK() { bash "$KIT_DIR/lib/lane-classify.sh" check "$1" "$2" 2>&1; }
+CHK() { bash "$KIT_DIR/lib/classify/lane-classify.sh" check "$1" "$2" 2>&1; }
 # 1. chose a lighter lane than the text's full floor -> warns.
 assert_output_contains "floor: full text + normal chosen -> LANE-DOWNGRADE" "LANE-DOWNGRADE" "$(CHK normal 'add a hook that touches auth token validation')"
 # 2. chose at the floor -> silent.
@@ -941,7 +941,7 @@ assert_output_not_contains "floor: full chosen for a typo -> silent" "LANE-DOWNG
 # 5. an unrecognized chosen lane -> distinct warn, not a crash.
 assert_output_contains "floor: unknown lane -> LANE-UNKNOWN" "LANE-UNKNOWN" "$(CHK huge 'add user auth')"
 # 6. advisory: never blocks, even on a downgrade (exit 0).
-bash "$KIT_DIR/lib/lane-classify.sh" check normal 'add user authentication with a jwt migration' >/dev/null 2>&1
+bash "$KIT_DIR/lib/classify/lane-classify.sh" check normal 'add user authentication with a jwt migration' >/dev/null 2>&1
 assert_exit "floor: never blocks (exit 0 on a downgrade)" 0 "$?"
 # 7. a downgrade is logged to completeness.log (reviewed at /kit:ship); a match is not.
 assert_output_contains "floor: downgrade logged to completeness.log" "LANE-CHECK" "$(cat "$DWARVES_KIT_LOG_DIR/completeness.log" 2>/dev/null)"
@@ -950,7 +950,7 @@ assert_output_contains "floor: downgrade logged to completeness.log" "LANE-CHECK
 echo ""
 echo "=== task-type-classify: the 11-type truth table (SPEC-057) ==="
 # ============================================================
-TTYPE() { bash "$KIT_DIR/lib/task-type-classify.sh" classify "$1" 2>/dev/null; }
+TTYPE() { bash "$KIT_DIR/lib/classify/task-type-classify.sh" classify "$1" 2>/dev/null; }
 # the 5 new types
 assert_output_contains "type: alert triage -> incident" "^incident$" "$(TTYPE 'triage the INC-008 alert')"
 assert_output_contains "type: weekly priorities -> planning" "^planning$" "$(TTYPE 'plan next week priorities for the team')"
@@ -979,7 +979,7 @@ assert_output_contains "type: excel workbook is not learning" "^spec-feature$" "
 assert_output_contains "type: migrate stale records -> migration (F6 order)" "^migration$" "$(TTYPE 'migrate stale records to new schema')"
 assert_output_contains "type: estate cleanup IS reconcile" "^reconcile$" "$(TTYPE 'clean up the stale branches across the estate')"
 # SPEC-057 review F9: incident composes the stateful class in proof-gate
-assert_output_contains "proof class: incident -> stateful (F9)" "^stateful$" "$(bash "$KIT_DIR/lib/proof-gate.sh" class 'triage the INC-008 alert' 2>/dev/null)"
+assert_output_contains "proof class: incident -> stateful (F9)" "^stateful$" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" class 'triage the INC-008 alert' 2>/dev/null)"
 
 # ============================================================
 echo ""
@@ -1013,7 +1013,7 @@ printf '2026-06-10T07:00:00Z | START | lane=normal classified=full type=spec-fea
 printf '2026-06-10T09:00:00Z | START | lane=tiny classified=tiny type=doc repo=kitB\n2026-06-10T09:10:00Z | GATE | build | skipped | tiny lane\n' > "$LT_DIR/runs/spec-b.log"
 printf '2026-06-10T10:00:00Z | GATE | spec | ran | legacy run, no START\n' > "$LT_DIR/runs/spec-c.log"
 printf '2026-06-09T01:00:00Z | LANE-CHECK | downgrade | chosen=tiny suggested=full | risky thing\n' > "$LT_DIR/completeness.log"
-LT() { DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" 2>/dev/null; }
+LT() { DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" "$@" 2>/dev/null; }
 # headline aggregates: 3 runs, 1 misroute, 1 ship, 1 untracked
 assert_output_contains "telemetry: headline counts" "runs: 3   lane-misrouted: 1   type-misrouted: 0   shipped: 1   untracked (no START): 1" "$(LT report)"
 # the per-lane table carries the misrouted normal run with its ship
@@ -1022,7 +1022,7 @@ assert_output_contains "telemetry: normal lane row" "normal  *1  *1  *3  *0  *0 
 assert_output_contains "telemetry: misfire pair" "spec-a: chosen=normal classified=full" "$(LT misfires)"
 assert_output_contains "telemetry: floor-check passthrough" "LANE-CHECK" "$(LT misfires)"
 # start verb round-trip: gate-ledger writes what telemetry reads
-DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" start spec-d full full eval kitC
+DWARVES_KIT_LOG_DIR="$LT_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" start spec-d full full eval kitC
 assert_output_contains "telemetry: start verb round-trip" "runs: 4" "$(LT report)"
 # negative control: remove the START line -> the run goes untracked, misroute count drops
 grep -v 'START' "$LT_DIR/runs/spec-a.log" > "$LT_DIR/runs/spec-a.log.tmp" && mv -f "$LT_DIR/runs/spec-a.log.tmp" "$LT_DIR/runs/spec-a.log"
@@ -1036,16 +1036,16 @@ LT2_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-lt2.XXXXXX")
 mkdir -p "$LT2_DIR/runs"
 printf '2026-06-10T07:00:00Z | START | lane=normal classified=normal type=spec-feature ctype=eval repo=kitA\n2026-06-10T08:00:00Z | GATE | ship | ran | shipping pr=#41\n' > "$LT2_DIR/runs/spec-x.log"
 printf '2026-06-11T07:00:00Z | START | lane=bug classified=bug type=incident repo=kitA\n2026-06-11T07:01:00Z | ACTION | defect traced: escaped-from=spec-x cache stampede\n' > "$LT2_DIR/runs/bug-stampede.log"
-LT2() { DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" "$@" 2>/dev/null; }
+LT2() { DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" "$@" 2>/dev/null; }
 # type misroute counted in the headline and named in misfires
 assert_output_contains "telemetry: type-misroute headline" "type-misrouted: 1" "$(LT2 report)"
 assert_output_contains "telemetry: type misfire pair" "spec-x: type=spec-feature classified-type=eval" "$(LT2 misfires)"
 # escaped defect section indicts the source spec
 assert_output_contains "telemetry: escaped defect named" "spec-x <- bug-stampede" "$(LT2 report)"
 # 5-arg start writes ctype; 4-arg (no ctype) still well-formed (backward compat)
-DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" start spec-y tiny tiny doc doc kitB
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" start spec-y tiny tiny doc doc kitB
 assert_output_contains "telemetry: 5-arg start ctype round-trip" "ctype=doc" "$(cat "$LT2_DIR/runs/spec-y.log")"
-DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" start spec-z full full migration
+DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" start spec-z full full migration
 assert_output_contains "telemetry: 4-arg start still well-formed" "lane=full classified=full type=migration repo=" "$(cat "$LT2_DIR/runs/spec-z.log")"
 # negative control: strip the ctype KV -> type-misroute count drops to 0
 sed 's/ ctype=eval//' "$LT2_DIR/runs/spec-x.log" > "$LT2_DIR/runs/spec-x.log.tmp" && mv -f "$LT2_DIR/runs/spec-x.log.tmp" "$LT2_DIR/runs/spec-x.log"
@@ -1055,7 +1055,7 @@ assert_output_contains "telemetry: negative control (ctype stripped -> 0)" "type
 echo ""
 echo "=== run legibility: plan / progress / trace (SPEC-063) ==="
 # ============================================================
-GL() { DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate-ledger.sh" "$@" 2>/dev/null; }
+GL() { DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" "$@" 2>/dev/null; }
 # plan: matrix-derived checklist; grill prepended for non-tiny, absent for tiny
 assert_output_contains "plan: normal carries required spec" "3. spec               required" "$(GL plan normal)"
 assert_output_contains "plan: normal prepends grill intake" "1. grill" "$(GL plan normal)"
@@ -1075,9 +1075,9 @@ assert_output_contains "progress: checklist marks" "✓grill ✓think ✓spec �
 GL record spec-p test-plan skipped "lite lane, matrix in spec"
 assert_output_contains "progress: skipped-with-reason advances" "step 6/9 (build)" "$(GL progress spec-p normal)"
 # trace: header flags + humanized lines
-TRACE_OUT="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" trace bug-stampede 2>/dev/null)"
+TRACE_OUT="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" trace bug-stampede 2>/dev/null)"
 assert_output_contains "trace: escaped-from indictment flagged" "<< indicts a shipped spec test plan" "$TRACE_OUT"
-TRACE_MIS="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" trace spec-x 2>/dev/null)"
+TRACE_MIS="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" trace spec-x 2>/dev/null)"
 assert_output_contains "trace: type misfire flag survives ctype strip negative? no: clean run shows no flag" "type: spec-feature (classified: ?)" "$TRACE_MIS"
 # negative control: remove the spec record -> the pointer falls back to spec
 grep -v '| spec |' "$LT2_DIR/runs/spec-p.log" > "$LT2_DIR/runs/spec-p.log.tmp" && mv -f "$LT2_DIR/runs/spec-p.log.tmp" "$LT2_DIR/runs/spec-p.log"
@@ -1089,7 +1089,7 @@ GL record spec-p spec skipped "matrix in spec body"
 assert_output_contains "progress: reasoned skip disposes" "step 6/9 (build)" "$(GL progress spec-p normal)"
 # trace: first START wins + multi-start advisory (review F2)
 printf '2026-06-10T06:00:00Z | START | lane=normal classified=full type=doc repo=kitA\n2026-06-10T06:05:00Z | START | lane=tiny classified=tiny type=doc repo=kitA\n' > "$LT2_DIR/runs/spec-2s.log"
-TRACE_2S="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/lane-telemetry.sh" trace spec-2s 2>/dev/null)"
+TRACE_2S="$(DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" trace spec-2s 2>/dev/null)"
 assert_output_contains "trace: multi-START advisory" "MULTI-START (n=2; first wins)" "$TRACE_2S"
 assert_output_contains "trace: first START misfire preserved" "<< LANE MISFIRE" "$TRACE_2S"
 
@@ -1097,7 +1097,7 @@ assert_output_contains "trace: first START misfire preserved" "<< LANE MISFIRE" 
 echo ""
 echo "=== proof-gate: task -> proof-of-done class (stateful|behavioral|inert) ==="
 # ============================================================
-PGATE() { bash "$KIT_DIR/lib/proof-gate.sh" class "$1" 2>/dev/null; }
+PGATE() { bash "$KIT_DIR/lib/gate/proof-gate.sh" class "$1" 2>/dev/null; }
 # stateful: deploy / migration / data / persistent state.
 assert_output_contains "proof: a migration -> stateful" "^stateful$" "$(PGATE 'run the database migration to add a users table')"
 assert_output_contains "proof: a deploy -> stateful" "^stateful$" "$(PGATE 'deploy the worker to production')"
@@ -1107,15 +1107,15 @@ assert_output_contains "proof: a logic fix -> behavioral" "^behavioral$" "$(PGAT
 # inert: docs / cosmetic -> exempt.
 assert_output_contains "proof: a typo -> inert" "^inert$" "$(PGATE 'fix a typo in the README heading')"
 # requirement strings name the obligation per class.
-assert_output_contains "proof req: stateful names rollback" "rollback" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'deploy to production' 2>/dev/null)"
-assert_output_contains "proof req: behavioral names negative control" "negative control" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'add a flag' 2>/dev/null)"
-assert_output_contains "proof req: inert is exempt" "exempt" "$(bash "$KIT_DIR/lib/proof-gate.sh" requirement 'fix a typo' 2>/dev/null)"
+assert_output_contains "proof req: stateful names rollback" "rollback" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" requirement 'deploy to production' 2>/dev/null)"
+assert_output_contains "proof req: behavioral names negative control" "negative control" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" requirement 'add a flag' 2>/dev/null)"
+assert_output_contains "proof req: inert is exempt" "exempt" "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" requirement 'fix a typo' 2>/dev/null)"
 
 # ============================================================
 echo ""
 echo "=== proof-ledger: the proof-of-done ship gate (diff-keyed, spec-independent) ==="
 # ============================================================
-PL="$KIT_DIR/lib/proof-ledger.sh"
+PL="$KIT_DIR/lib/gate/proof-ledger.sh"
 export DWARVES_KIT_LOG_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-proof.XXXXXX")
 # Build a temp repo with a base commit; echo "<root> <base>".
 _pl_repo() {
@@ -1208,7 +1208,7 @@ assert_exit "ship-gate hook: repo not opted in -> PASS (fail open)" 0 "$?"
 echo ""
 echo "=== goal-registry: cross-session running-goal registry (SPEC-036 / ADR-0022) ==="
 # ============================================================
-REG="$KIT_DIR/lib/goal-registry.sh"
+REG="$KIT_DIR/lib/goal/goal-registry.sh"
 # Isolate the registry in a temp dir (the override the lib reads), not the real .git.
 export GOAL_REGISTRY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-reg.XXXXXX")
 
@@ -1251,7 +1251,7 @@ unset GOAL_REGISTRY_DIR
 echo ""
 echo "=== goal-drafts: archive-on-ship lifecycle (SPEC-037 / ADR-0023) ==="
 # ============================================================
-DRF="$KIT_DIR/lib/goal-drafts.sh"
+DRF="$KIT_DIR/lib/goal/goal-drafts.sh"
 # Isolate both roots (the overrides the lib reads), not the real .claude/docs.
 export GOAL_DRAFTS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-drf.XXXXXX")
 export GOAL_SPECS_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-spec.XXXXXX")
@@ -1309,7 +1309,7 @@ PASS=$((PASS + 1))
 # ============================================================
 echo ""
 echo "=== Gate ledger + ship-gate (ADR-0024) ==="
-GL="$KIT_DIR/lib/gate-ledger.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 SG="$KIT_DIR/hooks/ship-gate.sh"
 
 # required: normal lists the measure-twice gates; tiny has none (exits 0)
@@ -1362,7 +1362,7 @@ cat > "$BLF" <<'BLEOF'
 | ID-902 | Second queued thing | test | TBD | tiny | queued [note kept] |
 | ID-903 | Done thing | test | SPEC-001 | full | shipped (CHANGELOG) |
 BLEOF
-BL="$KIT_DIR/lib/backlog.sh"
+BL="$KIT_DIR/lib/board/backlog.sh"
 B_OUT=$(BACKLOG_FILE="$BLF" bash "$BL" board 2>&1)
 assert_output_contains "backlog board renders the queued column" "ID-901" "$B_OUT"
 assert_output_contains "backlog board renders shipped" "ID-903" "$B_OUT"
@@ -1389,7 +1389,7 @@ rm -f "$BLF"
 echo ""
 echo "=== SPEC-070: rid = branch slug (gate-ledger rid verb) ==="
 # ============================================================
-GL70="$KIT_DIR/lib/gate-ledger.sh"
+GL70="$KIT_DIR/lib/gate/gate-ledger.sh"
 RIDD=$(mktemp -d "${TMPDIR:-/tmp}/dk-rid.XXXXXX")
 ( cd "$RIDD" && git init -q -b master . && git config user.email t@e && git config user.name t \
   && git commit -qm base --allow-empty )
@@ -1450,8 +1450,8 @@ rm -rf "$RIDD"
 echo ""
 echo "=== SPEC-071: gate + ledger defect fixes (ID-061/063/062/050) ==="
 # ============================================================
-PG71="$KIT_DIR/lib/proof-gate.sh"
-GL71="$KIT_DIR/lib/gate-ledger.sh"
+PG71="$KIT_DIR/lib/gate/proof-gate.sh"
+GL71="$KIT_DIR/lib/gate/gate-ledger.sh"
 
 # --- ID-061: proof_class honors the registry default for the classified type ---
 OUT=$(bash "$PG71" contract "rewrite the README closed-loop framing; doc only, no behavior change" 2>/dev/null | head -1)
@@ -1531,8 +1531,8 @@ rm -rf "$LOG50"
 echo ""
 echo "=== SPEC-072: classifier anchor recall (ID-057 / ID-064) ==="
 # ============================================================
-TTC72="$KIT_DIR/lib/task-type-classify.sh"
-LC72="$KIT_DIR/lib/lane-classify.sh"
+TTC72="$KIT_DIR/lib/classify/task-type-classify.sh"
+LC72="$KIT_DIR/lib/classify/lane-classify.sh"
 
 # ID-057: feature work ON a CLI is spec-feature, not data-tool (live: SPEC-067 golden run)
 OUT=$(bash "$TTC72" classify "add a --version flag to the demo CLI")
@@ -1573,7 +1573,7 @@ assert_output_contains "ID-057: make-the-cli-faster is not data-tool" "spec-feat
 echo ""
 echo "=== SPEC-074: lane x type composition audit pins (ID-066) ==="
 # ============================================================
-LC74="$KIT_DIR/lib/lane-classify.sh"
+LC74="$KIT_DIR/lib/classify/lane-classify.sh"
 # the file's own header cites this phrase as the backfill example; the regex missed
 # the possessive (live audit finding, failing-first)
 OUT=$(bash "$LC74" classify "write its AGENTS.md")
@@ -1586,7 +1586,7 @@ OUT=$(bash "$LC74" classify "write its AGENTS.md and disable the safety hooks")
 assert_output_contains "backfill + hard-gate subject up-lanes to full" "full" "$OUT"
 OUT=$(bash "$LC74" classify "write your AGENTS.md")
 assert_output_contains "backfill catches pronoun variants (your)" "backfill" "$OUT"
-OUT=$(bash "$KIT_DIR/lib/proof-gate.sh" contract "fix a typo in the incident runbook" 2>/dev/null | head -1)
+OUT=$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract "fix a typo in the incident runbook" 2>/dev/null | head -1)
 assert_output_contains "composition: tiny lane inert-short-circuits a stateful type" "class=inert" "$OUT"
 
 
@@ -1594,7 +1594,7 @@ assert_output_contains "composition: tiny lane inert-short-circuits a stateful t
 echo ""
 echo "=== SPEC-075: use-case loop anchors (ID-065) ==="
 # ============================================================
-TTC75="$KIT_DIR/lib/task-type-classify.sh"
+TTC75="$KIT_DIR/lib/classify/task-type-classify.sh"
 # build-experiment phrasings classify eval (live trace misfires 5/6)
 OUT=$(bash "$TTC75" classify "spin up a quick experiment to test if X works")
 assert_output_contains "ID-065: spin-up-experiment classifies eval" "eval" "$OUT"
@@ -1620,7 +1620,7 @@ assert_output_contains "ID-065: trial-the-library (review F1: article-free) clas
 echo ""
 echo "=== SPEC-076: V-model descent contract (ID-068) ==="
 # ============================================================
-GL76="$KIT_DIR/lib/gate-ledger.sh"
+GL76="$KIT_DIR/lib/gate/gate-ledger.sh"
 # AC1: tiny now carries the review obligation (plan), enforcement set unchanged (required)
 OUT=$(bash "$GL76" plan tiny)
 assert_output_contains "tiny plan lists review (obligation everywhere)" "review" "$OUT"
@@ -1713,9 +1713,9 @@ rm -rf "$LOG76" "$SG76"
 echo ""
 echo "=== SPEC-077: START amend + stack-merge self-reconcile (ID-072/073) ==="
 # ============================================================
-GL77="$KIT_DIR/lib/gate-ledger.sh"
-LT77="$KIT_DIR/lib/lane-telemetry.sh"
-SM77="$KIT_DIR/lib/stack-merge.sh"
+GL77="$KIT_DIR/lib/gate/gate-ledger.sh"
+LT77="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
+SM77="$KIT_DIR/lib/goal/stack-merge.sh"
 LOG77=$(mktemp -d "${TMPDIR:-/tmp}/dk-log77.XXXXXX")
 mkdir -p "$LOG77/runs"
 
@@ -1776,7 +1776,7 @@ rm -rf "$SMW"
 echo ""
 echo "=== SPEC-079: the 12th task type: review (ID-074) ==="
 # ============================================================
-TTC79="$KIT_DIR/lib/task-type-classify.sh"
+TTC79="$KIT_DIR/lib/classify/task-type-classify.sh"
 OUT=$(bash "$TTC79" classify "review this PR adversarially")
 assert_output_contains "review type: adversarial PR review" "review" "$OUT"
 OUT=$(bash "$TTC79" classify "run a multi-lens review of the diff")
@@ -1796,7 +1796,7 @@ OUT=$(bash "$TTC79" classify "self-review before pushing the branch")
 assert_output_not_contains "negative: self-review is pre-push hygiene, not the review type" "^review$" "$OUT"
 N79=$(bash "$TTC79" types | wc -l | tr -d ' ')
 assert_exit "types subcommand enumerates 12" 0 $([ "$N79" = "12" ]; echo $?)
-OUT=$(bash "$KIT_DIR/lib/proof-gate.sh" contract "review this PR adversarially" 2>/dev/null | head -1)
+OUT=$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract "review this PR adversarially" 2>/dev/null | head -1)
 assert_output_contains "review type floors at registry inert" "class=inert" "$OUT"
 
 
@@ -1804,7 +1804,7 @@ assert_output_contains "review type floors at registry inert" "class=inert" "$OU
 echo ""
 echo "=== SPEC-080: INCONCLUSIVE never satisfies the proof gate ==="
 # ============================================================
-PL80="$KIT_DIR/lib/proof-ledger.sh"
+PL80="$KIT_DIR/lib/gate/proof-ledger.sh"
 PR80=$(mktemp -d "${TMPDIR:-/tmp}/dk-pr80.XXXXXX")
 ( cd "$PR80" && git init -q -b main . && git config user.email t@e && git config user.name t \
   && mkdir -p docs/verification && printf 'convention\n' > docs/verification/README.md \

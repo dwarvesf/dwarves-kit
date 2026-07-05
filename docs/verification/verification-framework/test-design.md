@@ -17,7 +17,7 @@ Proof class: behavioral
   `<slug>/` dir is ACCEPTED (exit 0) by the current lib.
 - AC2 (negative control A): the same fixture with the negative-control run removed is BLOCKED
   (exit 1) , the gate is not trivially green.
-- AC3 (negative control B): the pre-change lib (`HEAD:lib/proof-ledger.sh`) BLOCKS the split
+- AC3 (negative control B): the pre-change lib (`HEAD:lib/gate/proof-ledger.sh`) BLOCKS the split
   fixture (exit 1) , the set-wise code is load-bearing, not decorative.
 - Expected negative control: revert the set-wise block in `check()` -> AC1 flips to BLOCK
   and `tests/test-proof-dir-layout.sh` exits non-zero.

@@ -1,6 +1,6 @@
 # Proof of done: stack-merge (SPEC-065)
 
-Behavioral change: lib/stack-merge.sh added (squash-stack merge dance), ship.md wired.
+Behavioral change: lib/goal/stack-merge.sh added (squash-stack merge dance), ship.md wired.
 
 ## Green run
 
@@ -17,7 +17,7 @@ Output (tail): `Passed: 422 / 422`
 ## NEGATIVE CONTROL
 
 Run live during build: the retarget block was moved AFTER the parent merge in
-lib/stack-merge.sh (the exact auto-close gotcha the tool exists to prevent), suite re-run:
+lib/goal/stack-merge.sh (the exact auto-close gotcha the tool exists to prevent), suite re-run:
 
 - Broken ordering -> `FAIL stack-merge: ordering retarget < merge < reconcile` (RED)
 - Restored -> `All tests passed.` (GREEN)

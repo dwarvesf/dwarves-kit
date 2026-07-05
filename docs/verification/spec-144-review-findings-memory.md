@@ -164,7 +164,7 @@ reproducible verbatim via the "Reproduce" section below.
 ## T10: coverage-delta advisory (SPEC-130, informational only)
 
 ```
-$ bash lib/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid review-findings-memory
+$ bash lib/gate/coverage-delta.sh check "$(git rev-parse --show-toplevel)" --rid review-findings-memory
 [coverage-delta] exempt: no source change (docs/test/generated only)
 ```
 Expected and correct: this sub-goal changes `commands/*.md`, `agents/advisor.md`, and
@@ -179,7 +179,7 @@ A real `kit:code-reviewer` (architecture lens) dispatch reviewed this branch's a
 above. Its verdict was recorded to the real gate-ledger for this rid:
 
 ```
-$ bash lib/gate-ledger.sh record review-findings-memory review ran \
+$ bash lib/gate/gate-ledger.sh record review-findings-memory review ran \
     "FIX THEN SHIP findings=4 rejected=0 actor=$(git config user.name)"
 ```
 
@@ -234,7 +234,7 @@ recorded AFTER `build` and `review` in wall-clock time (a first attempt to recor
 blocked pre-execution by this repo's own `commit-format` PreToolUse hook, which inspects the
 whole shell command line for a disallowed commit-subject pattern before any part of the
 command runs, including an unrelated `record` call chained before it with `&&`; backfilled
-once noticed). `bash lib/gate-ledger.sh descent review-findings-memory normal` correctly
+once noticed). `bash lib/gate/gate-ledger.sh descent review-findings-memory normal` correctly
 flags this as an advisory out-of-order descent (`DESCENT: build recorded before spec disposed`,
 `DESCENT: review recorded before spec disposed`) -- exactly the ADVISORY-ONLY behavior
 WORKFLOW.md's V-model descent contract specifies (detected, never blocked). Left as-is rather
@@ -253,7 +253,7 @@ explained anomaly.
 #    output (sql-injection wrongly suppressed too).
 # 4. Over-test: run the grep -F commands in the table above against the small fixture ledger
 #    variants (empty / malformed / collision), described inline.
-# 5. Live emit: bash lib/gate-ledger.sh record <rid> review ran "<verdict> findings=<K>
+# 5. Live emit: bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K>
 #    rejected=<M> actor=$(git config user.name)"; then, from ops-toolkit's
 #    tools/ledger-observatory, `uv run ledger rebuild && uv run ledger query "select rid, gate,
 #    outcome, reason from kit_gates where rid='<rid>' and gate='review'"`.

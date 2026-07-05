@@ -6,7 +6,7 @@
 # fixtures (the test-proof-dir-layout.sh idiom).
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GATE="$KIT/lib/coverage-delta.sh"
+GATE="$KIT/lib/gate/coverage-delta.sh"
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }

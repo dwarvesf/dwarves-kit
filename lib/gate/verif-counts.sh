@@ -7,10 +7,10 @@
 # pass counts into the marked block of docs/verification/COUNTS.md. A verification log that
 # needs "the suite is at N" links to COUNTS.md instead of transcribing a number.
 #
-# Usage: bash lib/verif-counts.sh   (regenerates docs/verification/COUNTS.md)
+# Usage: bash lib/gate/verif-counts.sh   (regenerates docs/verification/COUNTS.md)
 set -uo pipefail
 
-KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"  # repo root = two levels above lib/gate/
 OUT="$KIT/docs/verification/COUNTS.md"
 
 # Run a suite, echo "passed/total" from its "Passed: N / N" summary line.
@@ -36,7 +36,7 @@ if [ ! -f "$OUT" ] || ! grep -q '<!-- BEGIN GEN:counts -->' "$OUT"; then
   cat > "$OUT" <<EOF
 # Verification suite counts (generated)
 
-> Numbers between the GEN markers are written by \`lib/verif-counts.sh\` from the live
+> Numbers between the GEN markers are written by \`lib/gate/verif-counts.sh\` from the live
 > suites. Do NOT hand-edit them. To change a number, change the tests then re-run the
 > generator. A verification log links here instead of transcribing a count. This is the
 > single-source-numbers pattern borrowed from the codebase-tool-benchmark (the sibling

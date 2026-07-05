@@ -6,7 +6,7 @@
 # effects, and the action is dry-run by default so a passing gate alone never touches `gh`:
 #
 #   gate  <rid> <lane>                     decision only, no side effects. Exit 0 iff
-#                                           lib/gate-ledger.sh check <lane> <rid> passes
+#                                           lib/gate/gate-ledger.sh check <lane> <rid> passes
 #                                           (every required measure-twice gate for <lane>
 #                                           has a ran|override entry in <rid>'s ledger).
 #                                           REUSES gate-ledger check verbatim -- never
@@ -47,10 +47,11 @@
 set -uo pipefail
 
 MM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-GATE_LEDGER="${MEGA_MERGE_GATE_LEDGER:-$MM_DIR/gate-ledger.sh}"
+LIB_ROOT="$(cd "$MM_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
+GATE_LEDGER="${MEGA_MERGE_GATE_LEDGER:-$LIB_ROOT/gate/gate-ledger.sh}"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
-# shellcheck source=lib/kit-log-dir.sh
-source "$MM_DIR/kit-log-dir.sh" || { echo "FATAL: lib/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
+# shellcheck source=lib/telemetry/kit-log-dir.sh
+source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
 

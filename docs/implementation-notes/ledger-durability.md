@@ -51,7 +51,7 @@ an operator is not surprised. `ship-gate` still READS the ledger through
   legacy dir. Fixed with an explicit `[ ! -L ]` refusal + warning (cp `-P` does not help
   the `/.`-suffixed form). Sentinel now drops only on cp success (partial copy retries).
 
-Correction (validate finding B1): the first draft left `lib/lane-classify.sh` out of
+Correction (validate finding B1): the first draft left `lib/classify/lane-classify.sh` out of
 the moved set. It WRITES the `completeness.log` LANE-CHECK downgrade lines; the moved
 `lane-telemetry.sh` READS them. Split writer/reader across old/new paths = downgrades
 invisible to the reader after migration. Fix: lane-classify joined the resolver set so

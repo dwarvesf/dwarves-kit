@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # board-writeback.sh -- git<->Hermes kanban bridge, the WRITEBACK leg (SPEC-149, runner-fastpath
 # sub-goal 08). Consumes SPEC-147's mirror snapshot as its bearing surface; reuses
-# lib/board-mirror.sh's extract/hash/native-state machinery by SOURCING it (not re-forking),
-# the same delegation discipline board-mirror.sh itself uses for lib/parse-board.sh.
+# lib/board/board-mirror.sh's extract/hash/native-state machinery by SOURCING it (not re-forking),
+# the same delegation discipline board-mirror.sh itself uses for lib/board/parse-board.sh.
 #
 # v1 scope (per the sub-goal contract): STATUS MOVES ONLY, BACKLOG.md rows only (no mega-goal
 # cards, no new-card writeback, no note edits). A Hermes-side card move applies to git ONLY if the
@@ -104,8 +104,8 @@ set -euo pipefail
 BW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BOARD_MIRROR_SH="$BW_DIR/board-mirror.sh"
 BACKLOG_SH="$BW_DIR/backlog.sh"
-[ -f "$BOARD_MIRROR_SH" ] || { echo "board-writeback: lib/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
-[ -f "$BACKLOG_SH" ]      || { echo "board-writeback: lib/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
+[ -f "$BOARD_MIRROR_SH" ] || { echo "board-writeback: lib/board/board-mirror.sh not found at $BOARD_MIRROR_SH" >&2; exit 1; }
+[ -f "$BACKLOG_SH" ]      || { echo "board-writeback: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
 # shellcheck source=/dev/null
 source "$BOARD_MIRROR_SH"
 
@@ -113,7 +113,7 @@ GH_BIN="${GH_BIN:-gh}"
 
 # Legal backlog.sh states, duplicated as a literal list (not shelled out to `backlog.sh states`
 # per validation call -- this runs per-row in a diff loop, and the vocabulary is static/small; see
-# lib/backlog.sh's own `STATES` for the source of truth this must be kept in sync with).
+# lib/board/backlog.sh's own `STATES` for the source of truth this must be kept in sync with).
 LEGAL_STATES="queued claimed speccing validated executing shipped parked dropped"
 _is_legal_state() {
   case " $LEGAL_STATES " in *" $1 "*) return 0 ;; *) return 1 ;; esac
@@ -307,7 +307,7 @@ _n_skip_repo() {
 # ---------------------------------------------------------------------------
 # apply -- reads the NDJSON changeset on stdin, groups by (repo_root, backlog_file), and for each
 # non-empty group: builds a fresh chore/board-sync branch in an isolated worktree off the CURRENT
-# HEAD, edits the Status column of ONLY the matched IDs (via lib/backlog.sh's own `set`, so the
+# HEAD, edits the Status column of ONLY the matched IDs (via lib/board/backlog.sh's own `set`, so the
 # same legal-state validation + annotation-preserving edit this codebase already trusts is reused,
 # not re-forked), commits (actor=hermes in the body), pushes, and opens a HELD PR via
 # `${GH_BIN:-gh} pr create` (never auto-merged; never a templated shell string -- every value is a

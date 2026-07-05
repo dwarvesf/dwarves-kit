@@ -1,6 +1,6 @@
 # Proof of done: rid-branch-slug (SPEC-070)
 
-Behavioral change: lib/gate-ledger.sh gains the `rid` verb (canonical run id =
+Behavioral change: lib/gate/gate-ledger.sh gains the `rid` verb (canonical run id =
 runid-normalized branch slug, converging with ship-gate's `${BRANCH#*/}` at the
 ledger file) + an empty-stem guard in `ledger_file`; every gate-ledger RID call site
 swept from `<spec-slug>`/`<slug>` to `<rid>`.
@@ -16,7 +16,7 @@ multi-slash, convergence canary, empty-slug guard pin).
 Command: `bash tests/test-meta.sh`
 Exit: 0
 Output (tail): `Passed: 432 / 432` , agreement pin (`#*/` in both
-hooks/ship-gate.sh and lib/gate-ledger.sh), widened sweep pin (catches `<slug>` rid
+hooks/ship-gate.sh and lib/gate/gate-ledger.sh), widened sweep pin (catches `<slug>` rid
 call sites too), entry-point wiring pins.
 
 Command: `bash tests/test-e2e.sh`

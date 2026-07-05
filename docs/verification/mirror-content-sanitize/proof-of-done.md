@@ -27,7 +27,7 @@ NC7b/NC7c pin the two paths the first cut missed.
 
 ## Implementation
 
-Changes in `lib/board-mirror.sh` (+ a `## Content trust` section in SPEC-147):
+Changes in `lib/board/board-mirror.sh` (+ a `## Content trust` section in SPEC-147):
 
 - `MIRROR_UNTRUSTED_PREFIX` + `MIRROR_UNTRUSTED_TITLE_TAG` constants + `_strip_routing_tags` helper
   (portable BSD/GNU sed: `s/#queue{[^}]*}//g` + whitespace squeeze/trim).
@@ -53,7 +53,7 @@ time and do NOT alter row_hash, so a card picks up the labels only on its next c
 | A5 | `bash tests/test-board.sh` | 45/45 | **45/45** |
 | A5 | `bash tests/test-meta.sh` | 671/671 | **671/671** |
 | A5 | `bats tests/test-queue.bats` | 14/14 | **14/14** |
-| A5 | `shellcheck lib/board-mirror.sh` | clean | **rc=0, no findings** |
+| A5 | `shellcheck lib/board/board-mirror.sh` | clean | **rc=0, no findings** |
 | A6 | revert body-prefix -> run NC7 | marker assert RED | **71/72, 1 FAIL (marker)** |
 
 ## Run detail (negative control = revert -> RED -> restore)
@@ -72,13 +72,13 @@ $ bash tests/test-board-mirror.sh | grep -E 'NC7|TOTAL'      # 13 security asser
   TOTAL: 72   PASS: 72   FAIL: 0   SKIP: 0
 
 # RED: neuter the CREATE body prefix (drop the "%s\n" + $MIRROR_UNTRUSTED_PREFIX from the body printf)
-$ sed -i.bak "s/'%s\\\\norigin: %s/'origin: %s/" lib/board-mirror.sh
+$ sed -i.bak "s/'%s\\\\norigin: %s/'origin: %s/" lib/board/board-mirror.sh
 $ bash tests/test-board-mirror.sh | grep -E 'BODY begins|TOTAL'
   FAIL NC7: the card BODY begins with the untrusted-content marker
   TOTAL: 72   PASS: 71   FAIL: 1   SKIP: 0
 
 # restore -> green again
-$ mv -f lib/board-mirror.sh.bak lib/board-mirror.sh
+$ mv -f lib/board/board-mirror.sh.bak lib/board/board-mirror.sh
 $ bash tests/test-board-mirror.sh | grep -E 'TOTAL'
   TOTAL: 72   PASS: 72   FAIL: 0   SKIP: 0
 ```
@@ -94,11 +94,11 @@ specifically tracks the prefix code, not a vacuous pass.
 ```
 cd dwarves-kit                       # on branch fix/mirror-content-sanitize
 bash tests/test-board-mirror.sh      # 72/72, 13 security asserts green
-shellcheck lib/board-mirror.sh       # clean
+shellcheck lib/board/board-mirror.sh       # clean
 # negative control:
-sed -i.bak "s/'%s\\\\norigin: %s/'origin: %s/" lib/board-mirror.sh
+sed -i.bak "s/'%s\\\\norigin: %s/'origin: %s/" lib/board/board-mirror.sh
 bash tests/test-board-mirror.sh      # body-marker assert RED (71/72)
-mv -f lib/board-mirror.sh.bak lib/board-mirror.sh
+mv -f lib/board/board-mirror.sh.bak lib/board/board-mirror.sh
 ```
 
 ## Scope / what this is NOT

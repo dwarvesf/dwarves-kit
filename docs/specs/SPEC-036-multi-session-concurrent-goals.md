@@ -7,7 +7,7 @@ Status: VALIDATED
 > session fanning out N background worktree workers, the lead holding disjointness in
 > its head. This spec covers what the goal calls "not just one lead fanning out workers
 > in a single chat": several independent Claude sessions, one goal each, with no shared
-> lead. It reuses the SPEC-032 disjointness moat (`lib/dispatch-gate.sh`) rather than
+> lead. It reuses the SPEC-032 disjointness moat (`lib/gate/dispatch-gate.sh`) rather than
 > reimplementing it, and confronts the remaining boundary the C1 ADR left standing: the
 > L5 / multi-session line PHILOSOPHY punted to Nimbalyst.
 
@@ -49,7 +49,7 @@ no wider.
    (chosen).** Each session that starts a goal writes ONE file describing its claim
    (slug, lane, declared globs, branch, worktree, status) to a directory under
    `$(git rev-parse --git-common-dir)`; before it starts, it gates its declared globs
-   against every active registered goal, reusing `lib/dispatch-gate.sh`. The same
+   against every active registered goal, reusing `lib/gate/dispatch-gate.sh`. The same
    directory is the monitor (one read lists every running goal) and the home of each
    goal's running attempt log. Pure bash + files; no daemon, no lock server, no
    scheduler. Tradeoff: coordination is advisory at claim time, not a kernel lock; two
@@ -76,7 +76,7 @@ fence (across-machines / 3+ live operators) standing for free, by construction.
 The registry is **one file per goal, single-writer** (only that goal's session writes
 its own file), the identical ownership model as the hands-off shared-surface list: no
 file has two writers, so there is no shared-state parallelism. The cross-session gate is
-not a second moat: it sources `lib/dispatch-gate.sh` and reuses `prefix_overlap` +
+not a second moat: it sources `lib/gate/dispatch-gate.sh` and reuses `prefix_overlap` +
 `is_handsoff`, so the disjointness rule has exactly one implementation. Monitoring is a
 `list` over the directory; it complements (does not replace) the native agent view,
 which can only show the subagents inside one session, not goals across sessions.
@@ -126,14 +126,14 @@ own branch via `/kit:ship`, the SPEC-031 lead-owned convergence applied within a
 ### Interfaces (I/O contract)
 
 - **Consumes:**
-  - A goal's `<slug>` + `lane` (from `/kit:assign` + `lib/lane-classify.sh`).
+  - A goal's `<slug>` + `lane` (from `/kit:assign` + `lib/classify/lane-classify.sh`).
   - The goal's declared write-set: either a spec's `## Touches` globs or globs passed on
     the command line (same prefix-glob form as SPEC-032).
   - The hands-off shared-surface list (from `WORKFLOW.md`, via `dispatch-gate.sh`; never
     re-enumerated).
   - `git rev-parse --git-common-dir` (the registry root).
 - **Produces:**
-  - `lib/goal-registry.sh` (claim / list / log / status / release).
+  - `lib/goal/goal-registry.sh` (claim / list / log / status / release).
   - Per-goal files under `$(git rev-parse --git-common-dir)/kit-goals/`: `<slug>.goal`
     (key=value claim record) and `<slug>.attempts` (append-only attempt log).
   - A claim step in `commands/assign.md` and a monitor section in `commands/start.md`.
@@ -161,7 +161,7 @@ No database, no runtime state store; the registry is a directory of small flat f
 
 ### API changes
 
-New `lib/goal-registry.sh` (a `lib/` helper, like `dispatch-gate.sh` /
+New `lib/goal/goal-registry.sh` (a `lib/` helper, like `dispatch-gate.sh` /
 `lane-classify.sh`, NOT a slash command, so it adds no V-phase-inventory row). `claim`
 step added to `/kit:assign`; `list` surfaced in `/kit:start`. `/kit:dispatch` is
 unchanged: the single-lead fan-out stays the in-session surface; this spec is the
@@ -195,7 +195,7 @@ network. The only filesystem lifecycle is per-goal claim files, removed on `rele
   meta-test guards the absence of the old "stays L5" multi-session strings in PHILOSOPHY.
 
 ### Phase 2: The registry store
-- [ ] TASK-003: Build `lib/goal-registry.sh`, sourcing `lib/dispatch-gate.sh` for the
+- [ ] TASK-003: Build `lib/goal/goal-registry.sh`, sourcing `lib/gate/dispatch-gate.sh` for the
   overlap + hands-off logic (no second copy of the moat). Subcommands: `claim <slug>
   <lane> <glob...>` (gate vs active goals; on clear, write `<slug>.goal`, exit 0; on
   overlap, name the colliding goal, exit 1); `list` (table of active goals); `log <slug>
@@ -223,14 +223,14 @@ network. The only filesystem lifecycle is per-goal claim files, removed on `rele
 ### Phase 4: Reconcile docs + guards
 - [ ] TASK-007: Reconcile the surrounding docs: `WORKFLOW.md` multi-session subsection
   (the cross-session complement to the existing worktree-per-spec / `/kit:dispatch`
-  section); `docs/architecture.md` concurrency boundary + the `lib/goal-registry.sh`
+  section); `docs/architecture.md` concurrency boundary + the `lib/goal/goal-registry.sh`
   note; `MANUAL.md` registry/monitor usage; `README.md` if it lists the concurrency
   surface; `CHANGELOG.md` `[Unreleased]`; `_meta/BACKLOG.md` ID-040 row. AC: no doc
   claims multi-session "stays L5" unconditionally; the architecture concurrency boundary
   names both the in-session (ADR-0019) and cross-session (ADR-0022) cases; inventory
   parity holds (no new command ⇒ no new inventory row).
 - [ ] TASK-008: Tests. `tests/test-meta.sh`: ADR-0022 exists; PHILOSOPHY multi-session
-  strings reworded; `lib/goal-registry.sh` exists + executable; assign/start wiring +
+  strings reworded; `lib/goal/goal-registry.sh` exists + executable; assign/start wiring +
   attempt-log convention present; kit-health carve-out present. `tests/test-hooks.sh`:
   the registry round-trips (claim disjoint → both admitted; claim overlapping → second
   refused; list shows entries; log appends; release cleans up). AC: `bash
@@ -263,7 +263,7 @@ network. The only filesystem lifecycle is per-goal claim files, removed on `rele
 ```bash
 bash tests/test-meta.sh && bash tests/test-hooks.sh \
   && test -f docs/decisions/0022-multi-session-boundary.md \
-  && test -x lib/goal-registry.sh \
+  && test -x lib/goal/goal-registry.sh \
   && grep -q 'goal-registry' commands/assign.md \
   && grep -q 'goal-registry' commands/start.md \
   && ! grep -q 'multi-session coordination across machines or live operators stays L5' docs/PHILOSOPHY.md

@@ -24,8 +24,8 @@
 
 | Aspect | Detail |
 |---|---|
-| What | `lib/handoff-gen` (+ `lib/handoff/handoff_gen.py`, `lib/handoff/cc_compact.py` ported verbatim from ops-toolkit SG-01) generates HANDOFF.md/DECISIONS.md deterministically; `lib/orchestrate.sh` regenerates them after grounded completion when `DETERMINISTIC_HANDOFF=1` |
-| Where | `lib/handoff/`, `lib/handoff-gen`, `lib/orchestrate.sh` (config var + capture branch + post-completion step), `tests/test-orchestrate.sh` (TEST 13) |
+| What | `lib/goal/handoff-gen` (+ `lib/goal/handoff/handoff_gen.py`, `lib/goal/handoff/cc_compact.py` ported verbatim from ops-toolkit SG-01) generates HANDOFF.md/DECISIONS.md deterministically; `lib/queue/orchestrate.sh` regenerates them after grounded completion when `DETERMINISTIC_HANDOFF=1` |
+| Where | `lib/goal/handoff/`, `lib/goal/handoff-gen`, `lib/queue/orchestrate.sh` (config var + capture branch + post-completion step), `tests/test-orchestrate.sh` (TEST 13) |
 | How it runs | `DETERMINISTIC_HANDOFF=1 orchestrate.sh run <dir>` captures the session to `.orchestrate/<id>.stream.jsonl`, then runs `handoff-gen` on it for the next sub-goal |
 | Reversibility | flag defaults off; removing the var disables the whole path with zero change to the default loop |
 
@@ -34,7 +34,7 @@
 | Run | When | Command | Exit | Verdict |
 |---|---|---|---|---|
 | R1 | 2026-06-30 | `bash tests/test-orchestrate.sh` | 0 | PASS (56/56; 8 new SG-02 cases 13a-13g) |
-| R2 | 2026-06-30 | `lib/handoff-gen <seed> --dir <tmp> --next-id SG-02 ...` | 0 | arm-B artifact captured (`runs/R2-arm-b-artifact.txt`) |
+| R2 | 2026-06-30 | `lib/goal/handoff-gen <seed> --dir <tmp> --next-id SG-02 ...` | 0 | arm-B artifact captured (`runs/R2-arm-b-artifact.txt`) |
 
 ## 4. Artifact-level A/B (captured, free)
 
@@ -74,6 +74,6 @@ are all captured above; the live turns-to-green number is the only remaining con
 
 ```
 cd <kit>; bash tests/test-orchestrate.sh                       # 56/56 incl. TEST 13a-13g
-DETERMINISTIC_HANDOFF=1 lib/handoff-gen tests/fixtures/handoff-det/seed.jsonl \
+DETERMINISTIC_HANDOFF=1 lib/goal/handoff-gen tests/fixtures/handoff-det/seed.jsonl \
   --dir /tmp/h --next-id SG-02 --next-title x --date 2026-06-30 # arm-B artifact
 ```

@@ -15,7 +15,7 @@ Verdict: PASS
 
 ## Implementation
 
-- `lib/lane-telemetry.sh` -- new `render()` (reuses `_rows()`); dispatch `render) render "$@"`;
+- `lib/telemetry/lane-telemetry.sh` -- new `render()` (reuses `_rows()`); dispatch `render) render "$@"`;
   usage + header comment updated. Optional positional filter narrows table + flow + coverage.
 - `tests/test-lane-telemetry.sh` (new) -- 13 pins incl. the graceful-empty + filter-exclusion
   negative controls.
@@ -29,9 +29,9 @@ Verdict: PASS
 | `bash tests/test-lane-telemetry.sh` | 0 | 18/18 passed (incl. metachar-literal, coverage-dedup, filter-over-inclusion pins) |
 | `bash tests/test-meta.sh` | 0 | 578/578 passed |
 | `bash tests/test-hooks.sh` | 0 | 438/438 passed |
-| `NO_COLOR=1 bash lib/lane-telemetry.sh render` | 0 | full routing diagram (captured in the snapshot doc) |
-| `NO_COLOR=1 bash lib/lane-telemetry.sh render full` | 0 | filtered to the 5 full-lane runs |
-| `DWARVES_KIT_LOG_DIR=<empty> bash lib/lane-telemetry.sh render` | 0 | "no runs recorded yet" (graceful) |
+| `NO_COLOR=1 bash lib/telemetry/lane-telemetry.sh render` | 0 | full routing diagram (captured in the snapshot doc) |
+| `NO_COLOR=1 bash lib/telemetry/lane-telemetry.sh render full` | 0 | filtered to the 5 full-lane runs |
+| `DWARVES_KIT_LOG_DIR=<empty> bash lib/telemetry/lane-telemetry.sh render` | 0 | "no runs recorded yet" (graceful) |
 
 ## Run detail (capture 1: full render, real corpus)
 
@@ -52,6 +52,6 @@ Lane routing  (N runs, window <first> .. <last>)
 
 ```
 bash tests/test-lane-telemetry.sh
-bash lib/lane-telemetry.sh render          # full
-bash lib/lane-telemetry.sh render full     # filtered
+bash lib/telemetry/lane-telemetry.sh render          # full
+bash lib/telemetry/lane-telemetry.sh render full     # filtered
 ```

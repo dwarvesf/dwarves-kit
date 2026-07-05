@@ -9,15 +9,15 @@ despite touching `lib/`, the same reasoning SPEC-130/coverage-delta and SPEC-140
 
 ## Problem
 
-Escalation in this kit is currently one-way. `lib/lane-classify.sh check` (SPEC-053) warns at
-INTAKE when the chosen lane is lighter than the text implies; `lib/lane-classify.sh escalate`
+Escalation in this kit is currently one-way. `lib/classify/lane-classify.sh check` (SPEC-053) warns at
+INTAKE when the chosen lane is lighter than the text implies; `lib/classify/lane-classify.sh escalate`
 (SPEC-094) warns at the SPEC->BUILD boundary when the spec's own text implies a heavier lane
 than the one recorded. Both only ever push UP ("size up or say why"); `lane_rank`'s own
 comment says it plainly: "Under-sizing is the only dangerous direction; over-sizing is always
 safe." That is true for correctness, but it leaves a blind spot for CALIBRATION: a run that
 took the `normal` or `full` lane (extra ceremony: `/spec`, `/review`, `/docs`, `/ship`'s
 gate-record) and then shipped a diff of a handful of lines never gets told so. The kit's own
-misroute telemetry (`lib/lane-telemetry.sh misfires`) only sees TEXT-vs-CHOSEN mismatches
+misroute telemetry (`lib/telemetry/lane-telemetry.sh misfires`) only sees TEXT-vs-CHOSEN mismatches
 recorded at intake; it has zero data on the DIFF-SIZE-vs-CHOSEN mismatch, because nothing
 measures the diff at ship time and nothing writes it to the ledger.
 
@@ -25,7 +25,7 @@ measures the diff at ship time and nothing writes it to the ledger.
 
 ### Approaches considered
 
-1. **A new `deescalate` verb on `lib/lane-classify.sh`, sized off `base..HEAD` diff lines,
+1. **A new `deescalate` verb on `lib/classify/lane-classify.sh`, sized off `base..HEAD` diff lines,
    fired from `commands/ship.md` Step 8. CHOSEN.** Mirrors `escalate()`'s shape exactly (same
    file, same "compare chosen lane against a computed suggestion" idea, just the opposite
    direction and a size signal instead of a text signal), so the two live side by side as the
@@ -38,7 +38,7 @@ measures the diff at ship time and nothing writes it to the ledger.
    is `escalate()`'s dual, not a new concept; a second file would duplicate the lane-rank logic
    `lane-classify.sh` already owns (tiny/bug/backfill never fire, normal/full can) and split the
    "which direction can this lane move" story across two files for no benefit.
-3. **A live diff-size classifier feeding `lib/lane-classify.sh check`'s existing warn+log
+3. **A live diff-size classifier feeding `lib/classify/lane-classify.sh check`'s existing warn+log
    path** (i.e., extend the INTAKE floor check to also consider diff size). Rejected: `check`
    runs at intake, before any diff exists; there is nothing to size yet. The signal this sub-
    goal needs is only available at ship time, after the diff is final.
@@ -52,7 +52,7 @@ measures the diff at ship time and nothing writes it to the ledger.
 
 ### Chosen shape
 
-`lib/lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>]
+`lib/classify/lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>]
 [--floor <N>]`, invoked from `commands/ship.md` Step 8 (after the SPEC-136 significance record
 + SPEC-140 pitch offer, both already there). It:
 
@@ -60,7 +60,7 @@ measures the diff at ship time and nothing writes it to the ledger.
    (`normal`/`full`) can ever be found "too heavy after all"; nothing here ever calls a bug or
    backfill run oversized, mirroring `lane_rank`'s "over-sizing is always safe" stance.
 2. Resolves the shipped diff's size: `base..HEAD` (mirrors `hooks/ship-gate.sh`'s
-   `_resolve_base` / `lib/coverage-delta.sh`'s `_resolve_base`: `origin/HEAD` symref, else
+   `_resolve_base` / `lib/gate/coverage-delta.sh`'s `_resolve_base`: `origin/HEAD` symref, else
    `origin/main`/`main`/`origin/master`/`master`) PLUS any uncommitted working-tree delta
    (`git diff HEAD`), summed via `git diff --numstat` added+deleted lines.
 3. Compares the total against `LANE_DEESCALATE_FLOOR` (env var, default **20**; see "Design" for
@@ -74,7 +74,7 @@ measures the diff at ship time and nothing writes it to the ledger.
 ### Why `base..HEAD` + working-tree, not the 3-way union `coverage-delta.sh`/`proof-ledger.sh`
 use
 
-`lib/coverage-delta.sh` and `lib/proof-ledger.sh` sum THREE diff sources per file
+`lib/gate/coverage-delta.sh` and `lib/gate/proof-ledger.sh` sum THREE diff sources per file
 (`base..HEAD`, `diff HEAD` (working tree), `diff --cached` (staged)) and add all three
 together. That triple sum silently double-counts: `git diff HEAD` (working tree vs `HEAD`)
 already folds in the staged delta (`--cached` is a SUBSET of it, not an additional one), so
@@ -115,7 +115,7 @@ existed for since ADR-0024's original ledger design.
 `deescalate()` uses `return 0` on every path (silent-no-fire, nudge-fires, and the two guard
 paths: unresolvable base, non-numeric diff count). The `gate-ledger.sh action` call inside is
 wrapped `|| true`, so even a ledger-write failure cannot fail the calling command. `commands/
-ship.md` invokes it as a bare `bash lib/lane-classify.sh deescalate ...` step with no `&&`/exit-
+ship.md` invokes it as a bare `bash lib/classify/lane-classify.sh deescalate ...` step with no `&&`/exit-
 code check gating the push that follows, the same wiring shape as the SPEC-125 ★-tap nudge and
 the SPEC-140 pitch offer immediately above it in Step 8.
 
@@ -187,5 +187,5 @@ bash tests/test-meta.sh 2>&1 | tail -5
 - The lane matrix cells themselves, and any escalation-UP logic (SPEC-053/SPEC-094 unchanged).
 - The skill-side decompose rule (that rode a separate sub-goal in `tieubao/dotfiles`).
 - Auto-reclassification of a shipped run, or any block/gate-cut based on diff size.
-- Promoting this from advisory to a hard signal (`lib/lane-telemetry.sh` consuming the new
+- Promoting this from advisory to a hard signal (`lib/telemetry/lane-telemetry.sh` consuming the new
   `ACTION` line into an aggregate report is a natural follow-up, not built here).

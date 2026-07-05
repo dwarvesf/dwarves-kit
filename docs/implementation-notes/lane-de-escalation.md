@@ -5,7 +5,7 @@ the floor default, and the ledger line format; this logs decisions the spec's pr
 implicit at build time and one deliberate deviation from an existing sibling pattern.
 
 ## 2026-07-04 Diff-size sum is a 2-source union, NOT the 3-source union coverage-delta.sh/proof-ledger.sh use
-- Context: `lib/coverage-delta.sh` and `lib/proof-ledger.sh` both sum THREE `git diff --numstat`
+- Context: `lib/gate/coverage-delta.sh` and `lib/gate/proof-ledger.sh` both sum THREE `git diff --numstat`
   sources per file (`base..HEAD`, `diff HEAD` (working tree), `diff --cached` (staged)) and add
   all three. Tracing it: `git diff HEAD` already reflects the FULL working tree vs `HEAD`
   (staged + unstaged combined), so `--cached` is a subset of it, not an additional delta --
@@ -28,16 +28,16 @@ implicit at build time and one deliberate deviation from an existing sibling pat
   `base..HEAD` alone; the working-tree term only matters for a `deescalate` invocation run
   before the final commit (e.g. manual testing).
 
-## 2026-07-04 `deescalate` lives in `lib/lane-classify.sh`, not a new `lib/lane-deescalate.sh`
+## 2026-07-04 `deescalate` lives in `lib/classify/lane-classify.sh`, not a new `lib/lane-deescalate.sh`
 - Context: the mega-goal framing suggested "a small `lib/` change"; a fresh file (mirroring
-  `lib/coverage-delta.sh`'s own standalone shape) was the alternative on the table.
-- Decision: added as a new verb on the EXISTING `lib/lane-classify.sh`, alongside `escalate()`.
+  `lib/gate/coverage-delta.sh`'s own standalone shape) was the alternative on the table.
+- Decision: added as a new verb on the EXISTING `lib/classify/lane-classify.sh`, alongside `escalate()`.
 - Why: `escalate()` (SPEC-094, text-based, up-only, spec->build boundary) and `deescalate()`
   (SPEC-141, size-based, down-only, ship boundary) are explicitly framed as the two halves of
   "escalation is not one-way" -- keeping them in the same file means `lane_rank`'s tiny/bug/
   backfill-never-fire guard is written and owned in exactly one place, not duplicated across
   two files that both need to know the lane hierarchy.
-- Impact: `lib/lane-classify.sh` gained a `GATE_LEDGER` path var (used only by `deescalate`'s
+- Impact: `lib/classify/lane-classify.sh` gained a `GATE_LEDGER` path var (used only by `deescalate`'s
   ledger write); every other verb in the file is unaffected and untested-for-regression (the
   existing `tests/test-lane-classify.sh` + `tests/test-lane-escalation.sh` both still pass
   unchanged, confirmed as part of this sub-goal's verification run).
@@ -53,7 +53,7 @@ implicit at build time and one deliberate deviation from an existing sibling pat
   (`check()`/`required()`/`descent()` have no reason to ever know about it) -- exactly what
   `action` has existed for since ADR-0024's original ledger design, and a new subcommand would
   duplicate that with no behavioral difference.
-- Impact: a future `lib/lane-telemetry.sh` misroute-aggregation reader can `grep '| ACTION |
+- Impact: a future `lib/telemetry/lane-telemetry.sh` misroute-aggregation reader can `grep '| ACTION |
   lane-deescalate'` and parse the four `key=value` tokens directly; not built in this sub-goal
   (out of scope, named in the spec).
 

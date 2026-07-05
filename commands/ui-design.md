@@ -127,7 +127,7 @@ the ACCEPTED fixes (the per-round approval Phase B already has) -> re-render -> 
 
 After the loop terminates (Phase A SOLID, or Phase B/quiescence's SOLID / RECONSIDER / cap), record
 it for lane telemetry (SPEC-139), one line:
-`bash lib/gate-ledger.sh record <rid> "UI design" ran "<verdict> rounds=<N>"`.
+`bash lib/gate/gate-ledger.sh record <rid> "UI design" ran "<verdict> rounds=<N>"`.
 
 ## Notes
 - Opt-in, report-only; never hard-gates `/kit:spec` or any build. The maintainer decides whether to proceed.

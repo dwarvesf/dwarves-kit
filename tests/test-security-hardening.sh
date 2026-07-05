@@ -2,12 +2,12 @@
 # test-security-hardening.sh -- SPEC-134 security remediation for the kit-run-integrity run.
 #
 # Pins three PoC-confirmed findings + their negative controls:
-#   HIGH  : lib/proof-table-gen.py path traversal / arbitrary file write. rid is normalized
+#   HIGH  : lib/gate/proof-table-gen.py path traversal / arbitrary file write. rid is normalized
 #           (runid() charset) before any path, and the FINAL resolved out-path is confined
 #           under realpath(KIT_ROOT/docs/runs) EVEN for an explicit out-path arg.
-#   MEDIUM: lib/gate-ledger.sh mutation() now neuters embedded "=" in free-text values, so a
+#   MEDIUM: lib/gate/gate-ledger.sh mutation() now neuters embedded "=" in free-text values, so a
 #           value can never smuggle a second KEY=value token into the | MUTATION | line.
-#   LOW   : lib/mutation-smoke.sh skips a symlinked candidate ([ -L ] guard) instead of writing
+#   LOW   : lib/gate/mutation-smoke.sh skips a symlinked candidate ([ -L ] guard) instead of writing
 #           through it.
 # Each finding carries a negative control that REVERTS the fix (in a throwaway copy) and shows the
 # original behavior leaks -- proving the assertion actually bites.
@@ -17,10 +17,10 @@
 set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-GEN="$KIT_DIR/lib/proof-table-gen.sh"
-PY="$KIT_DIR/lib/proof-table-gen.py"
-LEDGER="$KIT_DIR/lib/gate-ledger.sh"
-SMOKE="$KIT_DIR/lib/mutation-smoke.sh"
+GEN="$KIT_DIR/lib/gate/proof-table-gen.sh"
+PY="$KIT_DIR/lib/gate/proof-table-gen.py"
+LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"
+SMOKE="$KIT_DIR/lib/gate/mutation-smoke.sh"
 GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
 PASS=0; FAIL=0; TOTAL=0
 ok()  { TOTAL=$((TOTAL+1)); PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} $1"; }
@@ -142,7 +142,7 @@ case "$LINE_M1" in *"reason=smuggled:second:kv"*) ok "M1: '=' in the value rewri
 # M-NEG: revert the fix in a throwaway copy of gate-ledger.sh (sourced from the real lib so deps
 # resolve) and show the '=' leaks a second KV.
 echo "--- MEDIUM negative control (reverted mutation leaks) ---"
-NEG_GL="$KIT_DIR/lib/.neg-gate-ledger.sh"   # inside lib/ so its `source ...kit-log-dir.sh` resolves
+NEG_GL="$KIT_DIR/lib/gate/.neg-gate-ledger.sh"   # inside lib/gate/ (the real file's subsystem) so its LIB_ROOT/KIT_ROOT + `source ...kit-log-dir.sh` resolve
 sed "s#tr ' ' '_' | tr '=' ':'#tr ' ' '_'#" "$LEDGER" > "$NEG_GL"
 trap 'rm -rf "$WORK"; rm -f "$NEG_GL"' EXIT
 bash "$NEG_GL" mutation negmed-rid verdict=flag 'reason=smuggled=second=kv' >/dev/null 2>&1
@@ -164,7 +164,7 @@ if { [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; }; then ok "L1: a real regular file
 
 # L2: the guard is actually WIRED into the real mutation loop, immediately after the `-f` check
 # (not dead code elsewhere). Grep the source for the two adjacent guard lines.
-if grep -qF '[ -L "$file" ] && continue' "$SMOKE"; then ok "L2: symlink-skip guard present in lib/mutation-smoke.sh"; else bad "L2: symlink-skip guard missing from lib/mutation-smoke.sh"; fi
+if grep -qF '[ -L "$file" ] && continue' "$SMOKE"; then ok "L2: symlink-skip guard present in lib/gate/mutation-smoke.sh"; else bad "L2: symlink-skip guard missing from lib/gate/mutation-smoke.sh"; fi
 if awk '/\[ -f "\$file" \] \|\| continue/{f=1;next} f&&/\[ -L "\$file" \] && continue/{print "ok";exit}' "$SMOKE" | grep -q ok; then
   ok "L2: guard sits immediately after the [ -f ] check in the candidate loop"; else bad "L2: guard not adjacent to the [ -f ] check"; fi
 

@@ -10,7 +10,7 @@ distinct (confirmation vs comparison).
 - Why: honesty , claim only the new work, not the parts that already shipped.
 
 ## 2026-06-07 proof-of-done single-source = generate suite counts, link not transcribe
-- Decision/Change: `lib/verif-counts.sh` runs the suites and writes pass counts into the GEN block of `docs/verification/COUNTS.md`; verification logs link there. Demonstrated the regenerate by adding this feature's own 3 meta pins (365 -> 368) and re-running , the figure followed the source with no hand-edit.
+- Decision/Change: `lib/gate/verif-counts.sh` runs the suites and writes pass counts into the GEN block of `docs/verification/COUNTS.md`; verification logs link there. Demonstrated the regenerate by adding this feature's own 3 meta pins (365 -> 368) and re-running , the figure followed the source with no hand-edit.
 - Alternatives considered: a full gen_docs.py-style generator over all log numbers (rejected: over-engineering for a verification log, violates the quality bar "no build system for a log"). One small counts generator is the minimum that proves the borrow.
 - Note: kept the meta-pin NON-circular , it checks COUNTS.md HAS a GEN block, not that the number matches the live suite (that would be a fragile self-referential assertion).
 

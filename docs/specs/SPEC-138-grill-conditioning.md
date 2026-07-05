@@ -40,12 +40,12 @@ Three concrete gaps:
 3. **Condition grill's firing on a 3-signal precheck inside `grill.md`'s own preamble, with a
    closed-enum `reason=` token on the auto-skip line, no new command, no gate-requirement
    change.** Chosen. The precheck is prose (an agent runs `git log`/`rg` itself, in seconds); the
-   only code change is a narrow write-time validator in `lib/gate-ledger.sh` so a grill skip
+   only code change is a narrow write-time validator in `lib/gate/gate-ledger.sh` so a grill skip
    cannot land on the ledger without one of three closed reasons.
 
 ### Chosen approach + why
 Approach 3. Four parts, all inside `commands/grill.md` plus one small guard in
-`lib/gate-ledger.sh`:
+`lib/gate/gate-ledger.sh`:
 
 - **(a) 3-signal precheck** before Step 1: S1 territory novelty (`git log --oneline -5 --
   <target paths>`: empty, or newest commit >90 days old), S2 domain novelty (the task's key
@@ -53,7 +53,7 @@ Approach 3. Four parts, all inside `commands/grill.md` plus one small guard in
   (the operator's own words: "new to X" / "I don't know" / an explicit greenfield task). Fire the
   interview on **>= 2 signals, or S3 alone**; else AUTO-SKIP.
 - **(b) Auditable skip:** the auto-skip line MUST carry `reason=<home-turf|density-low|
-  operator-wave>` as the first token of its reason text. `lib/gate-ledger.sh record()` refuses a
+  operator-wave>` as the first token of its reason text. `lib/gate/gate-ledger.sh record()` refuses a
   `grill`+`skipped` line whose reason does not start with one of the three tokens (`ran` lines,
   and skips of any OTHER phase, are unaffected: the guard is scoped to exactly `phase==grill &&
   state==skipped`).
@@ -86,7 +86,7 @@ See `## Design` below.
 ## Design
 **Design-bearing:** yes (non-obvious control flow: a 3-signal decision tree gates whether an
 existing advisory phase fires at all, plus a write-time enum guard in the enforcement layer
-`lib/gate-ledger.sh`; 3 approaches were considered above).
+`lib/gate/gate-ledger.sh`; 3 approaches were considered above).
 
 ```mermaid
 flowchart TD
@@ -121,7 +121,7 @@ so `commands/grill.md`'s prose and this spec agree on the exact branch order.
     Step 0b blindspot table when S2 fired) ending in a `grill ran` ledger line, OR a silent
     auto-skip ending in a `grill skipped "reason=<token>: <why>"` ledger line. Exactly one of the
     two, every run.
-- `lib/gate-ledger.sh record()`:
+- `lib/gate/gate-ledger.sh record()`:
   - **Input (new branch only):** `rid`, `phase`, `state`, `reason...` (existing signature,
     unchanged arity).
   - **Invariant added:** IF `normalize_phase(raw) == "grill"` AND `state == "skipped"`, THEN the
@@ -147,7 +147,7 @@ so `commands/grill.md`'s prose and this spec agree on the exact branch order.
   auto-skipped with `reason=`), and the pre-existing literal string `record <rid> grill ran`
   is preserved byte-for-byte (test-meta.sh SPEC-063 assertion). (Today: only the `ran` line is
   documented.)
-- [ ] `lib/gate-ledger.sh record()` refuses a `grill`+`skipped` ledger line whose reason does not
+- [ ] `lib/gate/gate-ledger.sh record()` refuses a `grill`+`skipped` ledger line whose reason does not
   start with `reason=home-turf`, `reason=density-low`, or `reason=operator-wave`; every other
   phase/state combination (including `grill`+`ran`, and `skipped` on any OTHER phase) is
   unaffected. (Today: `record()` accepts any free-text reason for any phase.)
@@ -202,7 +202,7 @@ logic is instructions, not code, the same honestly-stated limitation `test-desig
 **Negative controls:** checks 4, 5, and 5b above (a missing, garbage, or look-alike-prefix
 `reason=` on a grill skip must be REJECTED, not silently accepted) are the load-bearing negative
 controls: without the `record()` guard, all three would silently succeed. Confirmed live by
-reverting `lib/gate-ledger.sh` to its pre-change state and re-running the suite: exactly checks
+reverting `lib/gate/gate-ledger.sh` to its pre-change state and re-running the suite: exactly checks
 4/4b/5/5b flip RED, nothing else does (see `docs/verification/grill-conditioning.md`).
 
 ## Verification
@@ -231,7 +231,7 @@ reverting `lib/gate-ledger.sh` to its pre-change state and re-running the suite:
 - The `kit_gates` reader itself (sibling harness-observatory mega-goal, already merged, PR #683,
   read-only).
 - Sub-goal 05 (emit-sweep): wiring the same `reason=` convention into OTHER commands' skip
-  emits. This sub-goal touches `commands/grill.md` and `lib/gate-ledger.sh` only.
+  emits. This sub-goal touches `commands/grill.md` and `lib/gate/gate-ledger.sh` only.
 - `commands/spec.md` / `commands/design.md` / `agents/meta-agent.md` template fields (sub-goal
   03, already merged into `master`).
 - Any change to which lanes REQUIRE grill, or to the lane×phase depth matrix (`WORKFLOW.md`
@@ -246,7 +246,7 @@ reverting `lib/gate-ledger.sh` to its pre-change state and re-running the suite:
   research doc pins this exact rule; a weighted score would need calibration data that does not
   exist yet, and a fixed threshold is itself "checkable in seconds," matching the design's own
   constraint.
-- DEC-002: the `reason=` enum is enforced in `lib/gate-ledger.sh record()`, at WRITE time, not
+- DEC-002: the `reason=` enum is enforced in `lib/gate/gate-ledger.sh record()`, at WRITE time, not
   left to the reader. Rationale: the sibling `kit_gates` reader treats the reason field as opaque
   text by design (DECISIONS.md, 01-kit-gates-lens); enforcing the enum downstream would mean a
   malformed skip silently passes through and is only caught later at analysis time, if at all. A
@@ -263,7 +263,7 @@ reverting `lib/gate-ledger.sh` to its pre-change state and re-running the suite:
   Rationale: `kit:code-reviewer` (test-coverage lens) found live that the original
   `reason=home-turf*` pattern accepted `reason=home-turfish-nonsense` (any string merely
   starting with the token's letters), contradicting the spec's own "closed enum" language. Fixed
-  in `lib/gate-ledger.sh` before ship; see `docs/implementation-notes/grill-conditioning.md` for
+  in `lib/gate/gate-ledger.sh` before ship; see `docs/implementation-notes/grill-conditioning.md` for
   the fix detail and check 5b for the regression test.
 - DEC-006: the threshold-edge fixture's date construction (`tests/test-grill-conditioning.sh`)
   computes an EXACT epoch offset (`now_epoch - n*86400`) rather than a calendar-day-relative

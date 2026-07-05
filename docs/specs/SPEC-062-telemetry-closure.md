@@ -34,7 +34,7 @@ adherence, (c) whether the test scenarios we design are any good." Three holes:
    (`<spec> <- <bug-rid>` per defect).
 3. **`/kit:debug`** ledger-open step asks: does this defect trace to a SHIPPED spec whose
    tests should have caught it? If yes:
-   `bash lib/gate-ledger.sh action <bug-slug> "escaped-from=<spec-slug>"`. One line; skip
+   `bash lib/gate/gate-ledger.sh action <bug-slug> "escaped-from=<spec-slug>"`. One line; skip
    when the defect predates the kit or traces nowhere.
 4. **`/kit:test-plan`** + **`/kit:test-plan-review-team`** record their outcome:
    `gate-ledger.sh record <rid> test-plan ran "<verdict/coverage> findings=<K>"`.

@@ -10,7 +10,7 @@ Relates-to: PHILOSOPHY §6 N1 (the criterion this realizes), SPEC-044 (task-type
 
 The kit routes CODE work superbly: five lanes, a deterministic classifier, a floor guard.
 Everything else, research, evals, tool comparisons, test-design passes, cleanup sweeps, doc
-work, is classified (`lib/task-type-classify.sh` knows six types) and owes a proof artifact
+work, is classified (`lib/classify/task-type-classify.sh` knows six types) and owes a proof artifact
 (`docs/verification/task-types.md`), but has NO defined cycle: no entry, no phases, no exit, no
 named executor. In practice non-code work runs as unstructured chat, which is exactly the
 "important work gets the full cycle, everything small runs shallow" gap PHILOSOPHY §6 N1 names.
@@ -46,7 +46,7 @@ One source per fact, three small surfaces:
 
 | # | Case | Proof |
 |---|---|---|
-| 1 | registry parser unchanged | `bash lib/proof-gate.sh contract "benchmark X vs Y"` prints the eval artifact + skill exactly as before the column add |
+| 1 | registry parser unchanged | `bash lib/gate/proof-gate.sh contract "benchmark X vs Y"` prints the eval artifact + skill exactly as before the column add |
 | 2 | agent column complete | `awk -F'\|' '/^\|/ && $2 !~ /task-type|^[- ]+$/ {n++; if ($6 ~ /preassigned|dynamic|per lane/) ok++} END {exit !(n==ok && n==6)}' docs/verification/task-types.md` exits 0 |
 | 3 | WORKFLOW table present | `grep -c '^## Type loops' WORKFLOW.md` == 1 AND >= 5 rows with `->` phases |
 | 4 | assign wired | `grep -c 'task-type' commands/assign.md` >= 1 |

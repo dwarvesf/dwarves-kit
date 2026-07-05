@@ -92,12 +92,12 @@ Sweep verdict on the false corollary: orphan (not found) -> the sweep correctly 
 |---|---|---|
 | 01 start | `hooks/ship-gate.sh` | `outcome "$SLUG" ship start` |
 | 01 end (caught) | `hooks/ship-gate.sh` | `outcome "$SLUG" ship end caught=true` / `caught=false` |
-| 02 dispatch call | `lib/orchestrate.sh` | `_wave_reserve_spec` + `reserved_spec="$(_wave_reserve_spec)"` |
-| 02 implementation | `lib/spec-next.sh` | `reserve) reserve ;;` |
-| 03 invocation | `commands/review-team.md` | `bash lib/coverage-delta.sh check` |
-| 04 invocation | `commands/verify.md` | `bash lib/mutation-smoke.sh run` |
-| 133 reconcile | `lib/proof-table-gen.py` | `elif marker == "OUTCOME" and len(parts) >= 4:` |
-| 134 confinement | `lib/proof-table-gen.py` | `runs_root = os.path.realpath(...)` + the `resolved_out != runs_root` guard |
+| 02 dispatch call | `lib/queue/orchestrate.sh` | `_wave_reserve_spec` + `reserved_spec="$(_wave_reserve_spec)"` |
+| 02 implementation | `lib/spec/spec-next.sh` | `reserve) reserve ;;` |
+| 03 invocation | `commands/review-team.md` | `bash lib/gate/coverage-delta.sh check` |
+| 04 invocation | `commands/verify.md` | `bash lib/gate/mutation-smoke.sh run` |
+| 133 reconcile | `lib/gate/proof-table-gen.py` | `elif marker == "OUTCOME" and len(parts) >= 4:` |
+| 134 confinement | `lib/gate/proof-table-gen.py` | `runs_root = os.path.realpath(...)` + the `resolved_out != runs_root` guard |
 
 ### Cross-platform
 
@@ -136,15 +136,15 @@ Claims checked: 22 (AGENTS.md/WORKFLOW.md/ADR-0024/docs/verification/README.md c
 assertions)
 Contradictions: 0
 ```
-Independently confirmed against live source: `lib/gate-ledger.sh`'s `outcome()` is an
+Independently confirmed against live source: `lib/gate/gate-ledger.sh`'s `outcome()` is an
 additive marker ignored by `check()`/`override()`/`descent()`, emitted only from
 `hooks/ship-gate.sh` with `caught=true` on block / `caught=false` on clean pass -- matches
-the "HOOK-ENFORCED, ship-boundary-only" claim exactly. `lib/coverage-delta.sh` and
-`lib/mutation-smoke.sh` both hard-comment "ADVISORY BY CONTRACT", always exit 0, with their
+the "HOOK-ENFORCED, ship-boundary-only" claim exactly. `lib/gate/coverage-delta.sh` and
+`lib/gate/mutation-smoke.sh` both hard-comment "ADVISORY BY CONTRACT", always exit 0, with their
 only call sites inside `commands/review-team.md` and `commands/verify.md` Step 6b --
-matches "PROSE-INVOKED-ONLY" exactly. `lib/orchestrate.sh`'s `_wave_reserve_spec` calls
+matches "PROSE-INVOKED-ONLY" exactly. `lib/queue/orchestrate.sh`'s `_wave_reserve_spec` calls
 `spec-next.sh reserve` and injects the reserved number into the dispatch prompt -- matches
-the SPEC-128 claim. `lib/proof-table-gen.sh`/`.py` have no automatic caller anywhere except
+the SPEC-128 claim. `lib/gate/proof-table-gen.sh`/`.py` have no automatic caller anywhere except
 tests/docs -- matches "operator/skill-invocable, no automatic caller". Independently ran
 `bash tests/test-kri-wiring.sh` (31/31) and spot-checked several fixed-string greps directly
 against source -- all matched.

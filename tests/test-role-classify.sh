@@ -4,7 +4,7 @@
 # fall-through is asserted (a plain task must NOT be over-specialized).
 set -u
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RC="$KIT_DIR/lib/role-classify.sh"
+RC="$KIT_DIR/lib/classify/role-classify.sh"
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 expect() {  # expect "<desc>" <domain>

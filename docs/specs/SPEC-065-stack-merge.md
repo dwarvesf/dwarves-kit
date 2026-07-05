@@ -17,7 +17,7 @@ first attempt stranded PR #33 in conflicts; the second still took three correcti
 
 ## Decision
 
-`lib/stack-merge.sh`:
+`lib/goal/stack-merge.sh`:
 - `next <parent-pr#>` runs one link: find the open child (base == parent's head), retarget
   it to the parent's base, squash-merge the parent (delete branch), then fetch + switch to
   the child branch + `merge -X ours <sha-of-new-tip>` + push.

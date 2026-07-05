@@ -4,11 +4,11 @@
 # SET-WISE: a green run in one runs/ file + a negative control in another runs/ file under
 # the same <slug>/ dir satisfies the gate. Two negative controls guard it:
 #   A. a fixture missing the negative-control run BLOCKS (the gate is not trivially green);
-#   B. the pre-change lib (HEAD:lib/proof-ledger.sh) BLOCKS the same split fixture (the
+#   B. the pre-change lib (HEAD:lib/gate/proof-ledger.sh) BLOCKS the same split fixture (the
 #      set-wise code is load-bearing, not decorative).
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB="$KIT/lib/proof-ledger.sh"
+LIB="$KIT/lib/gate/proof-ledger.sh"
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }

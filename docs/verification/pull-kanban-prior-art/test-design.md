@@ -18,7 +18,7 @@ source), `[UNVERIFIED]` (stated honestly, never load-bearing).
 | C2 | OpenClaw ships persona catalogs used to select an agent profile at dispatch | local-probe | locate the catalog files + the selection mechanism |
 | C3 | GSD v2 is a standalone runtime with its own task DAG/scheduling (the thing PHILOSOPHY hands depth to) | local-probe + web | PHILOSOPHY "GSD v2 disambiguation" + the gsd-build/gsd-2 repo surface |
 | C4 | Claude Code natively exposes task/queue surfaces an agent can poll (TaskCreate/TaskList; cron/schedule for recurrence) | local-probe | the harness tool registry visible in this session |
-| C5 | The kit's own goal-registry already implements cross-session claims (the pull's collision guard) | local-probe | lib/goal-registry.sh claim/list semantics (exercised live this run) |
+| C5 | The kit's own goal-registry already implements cross-session claims (the pull's collision guard) | local-probe | lib/goal/goal-registry.sh claim/list semantics (exercised live this run) |
 | C6 | At least one external multi-agent framework treats role/persona selection as a first-class dispatch concern | web | one citable source; else mark [UNVERIFIED] and exclude from conclusions |
 
 ## Coverage notes

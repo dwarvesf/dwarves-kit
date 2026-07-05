@@ -109,4 +109,4 @@ If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mar
 If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception (ADR-0031 §1):** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of Reviewers 1-5's outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
 
 After the verdict, record it for lane telemetry (SPEC-139), one line:
-`bash lib/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.
+`bash lib/gate/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.

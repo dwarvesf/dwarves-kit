@@ -8,7 +8,7 @@ This proof covers TWO passes: the initial build + live smoke, and a multi-lens r
 re-verified. Read both; the second pass is what earns the final `VERDICT: SECURE`.
 
 **Rollback:** this is a bash CLI tool with no deployed service and no persistent application
-state. `lib/queue.sh` writes only an operational log (`queue-journal.tsv`, not application data)
+state. `lib/queue/queue.sh` writes only an operational log (`queue-journal.tsv`, not application data)
 and opens/kills tmux windows; nothing it does outlives the process beyond that log. Rollback is a
 plain `git revert` of this branch's commits (no migration, no schema, no data to restore, no
 service to roll back). Command: `git log --oneline -3` / Exit: 0 (see the git log below this repo
@@ -18,7 +18,7 @@ carries as evidence of the reversible commit history).
 
 | # | Criterion | Met by | Status |
 |---|---|---|---|
-| A1 | `queue.sh run <src>` launches each queued mega in a fresh mux window via `/goal` send-keys | `lib/queue.sh` `_launch_once` (+ `orchestrate.sh queue` alias) | PASS |
+| A1 | `queue.sh run <src>` launches each queued mega in a fresh mux window via `/goal` send-keys | `lib/queue/queue.sh` `_launch_once` (+ `orchestrate.sh queue` alias) | PASS |
 | A2 | Completion detected by READING the session's marker, never a fixed sleep, and not false-triggered by the typed prompt's own echo | `_scan_marker` (blank-line-guarded; see review fix #2) | PASS |
 | A3 | Every launch + exit lands a journal row (`ts,slug,verdict,reason`), reason sanitized | `_journal_append`; `queue-journal.tsv` | PASS |
 | A4 | Preflight skips (repo missing / dirty / off-default-branch) BEFORE any window opens | `_repo_skip_reason`; NC1 | PASS |
@@ -26,18 +26,18 @@ carries as evidence of the reversible commit history).
 | A6 | Two consecutive `error`-or-`stalled` megas stop the whole night | `cmd_run` `consec_fail` counter; NC3/NC7 | PASS |
 | A7 | Queue-row parse is argv-safe (metachars never reach a shell) | `while IFS=$'\t' read`; `send-keys -l --`; NC5 + red-team RT-a | PASS |
 | A8 | `--dry-run` lists would-launch, no send-keys, no journal | `cmd_run` dry branch; T3 + dry-run sample | PASS |
-| A9 | mux + interactive claude are CONSUMER config, nothing personal hardcoded | env block in `lib/queue.sh` | PASS |
+| A9 | mux + interactive claude are CONSUMER config, nothing personal hardcoded | env block in `lib/queue/queue.sh` | PASS |
 | A10 | bearing `## Design` block (state machine + mechanism ladder) | SPEC-148 `## Design` | PASS |
 | A11 | `--from-boards` pointers are confined by an allow-list independent of the upstream board tool | `_pointer_allowlist_reason` (`realpath`-resolved); T5/T6/T7 | PASS |
 
 ## Implementation
 
-- `lib/queue.sh` (571 src lines): preflight (repo + allow-list) -> mux `new-window` (interactive
+- `lib/queue/queue.sh` (571 src lines): preflight (repo + allow-list) -> mux `new-window` (interactive
   `claude`) -> wait-ready -> `send-keys -l` `/goal <pointer>` -> verify-submit -> poll
   `capture-pane` for the blank-line-guarded marker -> journal -> next; single-retry
   launch-failure policy; error-or-stalled-twice stops the night; `--dry-run` / `--max-megas` /
   `--from-boards`.
-- `lib/orchestrate.sh`: one-line `queue) exec queue.sh run "$@"` alias (its own suite untouched).
+- `lib/queue/orchestrate.sh`: one-line `queue) exec queue.sh run "$@"` alias (its own suite untouched).
 - Mechanism: terminal-mux send-keys is PRIMARY (L0/L1); Computer-Use (L4) documented as the
   fallback. `TERMINAL_MUX=tmux` ONLY (cmux dropped, see review fix #1). `MUX_CMD` is the mock seam.
 - `tests/test-queue.bats` (340 lines, 14 cases) + `tests/fixtures/queue/{fake-mux,fake-board}`.
@@ -257,7 +257,7 @@ blank-line guard):
 
 ```bash
 python3 - <<'PY'
-p = "lib/queue.sh"
+p = "lib/queue/queue.sh"
 s = open(p).read()
 old = '''_scan_marker() {  # transcript-on-stdin
   awk \\'
@@ -296,7 +296,7 @@ blank-line guard and would have caught the CRITICAL finding had it existed befor
 **Restore:**
 
 ```bash
-git checkout -- lib/queue.sh   # (done here via a clean re-write from the pre-revert copy)
+git checkout -- lib/queue/queue.sh   # (done here via a clean re-write from the pre-revert copy)
 ```
 
 **Green again (restored):**
@@ -307,7 +307,7 @@ Exit: 0
 Verdict: PASS
 1..14
 ... (all 14 ok, identical to the first green run)
-git diff --stat lib/queue.sh   # empty -- byte-identical to the committed state
+git diff --stat lib/queue/queue.sh   # empty -- byte-identical to the committed state
 ```
 
 ## Reproduce
@@ -315,8 +315,8 @@ git diff --stat lib/queue.sh   # empty -- byte-identical to the committed state
 ```
 cd <this repo>
 bats tests/test-queue.bats
-shellcheck -x lib/queue.sh
-bash lib/coverage-delta.sh check . master --rid orchestrate-queue
+shellcheck -x lib/queue/queue.sh
+bash lib/gate/coverage-delta.sh check . master --rid orchestrate-queue
 bash tests/test-meta.sh; bash tests/test-orchestrate.sh   # kit regression
 # live smoke + red-team: see the blocks above (throwaway mktemp repos + pointers only)
 # negative control: see the revert -> RED -> restore block above

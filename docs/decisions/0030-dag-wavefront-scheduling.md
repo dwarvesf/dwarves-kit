@@ -18,10 +18,10 @@ That deferral bundled two very different scopes under one "no":
 
 DECISION-BRIEF-dag-wavefront (ID-084) verified this against the code. The relevant findings:
 
-- `lib/orchestrate.sh` runs a mega-goal strictly serially; `_next()` picks the first unchecked sub-goal and the loop waits for its grounded box-flip before the next.
+- `lib/queue/orchestrate.sh` runs a mega-goal strictly serially; `_next()` picks the first unchecked sub-goal and the loop waits for its grounded box-flip before the next.
 - **The dependency graph is already declared and parsed** , `_sg_deps_blocked()` extracts `depends SG-NN` tokens from ROADMAP lines, but today only the board view consumes them; the scheduler ignores them.
 - The SG-10 event log is append-only by design, explicitly so that "a crashed/CONCURRENT session cannot corrupt a checkbox" , the completion plumbing already anticipates concurrency.
-- `lib/dispatch-gate.sh` (ADR-0019, DEC-008) already does prove-or-serialize over `## Touches` directory-prefix globs plus a drift guard.
+- `lib/gate/dispatch-gate.sh` (ADR-0019, DEC-008) already does prove-or-serialize over `## Touches` directory-prefix globs plus a drift guard.
 - Worktree discipline (one worktree per concurrent writer) is already the repo norm.
 
 ## Motivation (measured, from the kit-telemetry run 2026-07-02)
@@ -38,7 +38,7 @@ Amend ADR-0028's DAG deferral **narrowly**: authorize the wavefront extension (I
 
 **In scope (this amendment authorizes):**
 
-- `lib/orchestrate.sh` computes a READY SET each cycle = unchecked sub-goals whose every `depends SG-NN` is checked, and runs the ready wave concurrently (cap default 2, configurable), one worktree per session.
+- `lib/queue/orchestrate.sh` computes a READY SET each cycle = unchecked sub-goals whose every `depends SG-NN` is checked, and runs the ready wave concurrently (cap default 2, configurable), one worktree per session.
 - `dispatch-gate.sh` reused across each wave's pairs: prove-disjoint-or-serialize; unprovable disjointness = serialize (conservative).
 - Per-edge `HANDOFF-<id>.md` injection , a child reads its dep-parents' handoffs; the linear chain is the degenerate single-parent case (byte-identical behavior).
 - A small `flock`-guarded box-flip helper (the event log is already append-only-safe).
