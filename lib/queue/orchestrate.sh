@@ -1168,6 +1168,18 @@ _wave_run() {  # megadir roadmap
       _say "[orchestrate] [wave] $id: SPEC reservation unavailable; worker will self-compute (degraded, still scan-safe)."
     fi
     _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
+    # ID-099: mirror the serial path's START/rid emission (cmd_run calls `_emit_start` right after
+    # its own `executing` event, see line ~1811). Before this fix, `_wave_run`'s spawn loop emitted
+    # ONLY `executing` and never `_emit_start`, so every wave dispatch was invisible to
+    # lane-telemetry (zero START/rid records, even though the serial path tracked every run). Same
+    # advisory behavior as serial: `_emit_start` itself WARNs-and-skips (does not abort the spawn)
+    # when the goal file has no `**Branch:**` header to derive a rid from -- pinned to stay
+    # advisory (a `?`-rid run is degraded-but-runnable, not corrupt), so no change needed here
+    # beyond adding the call. NC_SKIP_WAVE_START=1 is a TEST-ONLY escape hatch (ID-099 negative
+    # control, same pattern as NC_SKIP_WAVE_TOKENS above): it disables just this call so a test can
+    # prove the causal effect (same wave scenario, but the pre-fix-equivalent code path records
+    # ZERO START lines). Unset/0 in every real invocation; never documented as an operator flag.
+    [ "${NC_SKIP_WAVE_START:-0}" = 1 ] || _emit_start "$megadir" "$id"
 
     if [ "$MULTIPLEXER" = 1 ]; then
       # SPEC-119: host the REAL session inside a tmux pane instead of a plain background job (the
