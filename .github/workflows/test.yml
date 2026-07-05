@@ -154,3 +154,6 @@ jobs:
 
       - name: Run board-bridge writeback tests (SPEC-149, runner-fastpath sub-goal 08)
         run: bash tests/test-board-writeback.sh
+
+      - name: Run mega status reconciler tests (kit-modularity sub-goal 08)
+        run: bash tests/test-mega.sh
