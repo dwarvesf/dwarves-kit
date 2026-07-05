@@ -7,6 +7,13 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
+dwarves-kit is a **toolbox, not an appliance**: install just the SDD spine and stop there, or opt into exactly the modules you want. Nothing is switched on you didn't ask for.
+
+**Two ways in, pick either:**
+
+- **Zero install, poke at it directly.** Every subsystem is also a standalone shell command over scripts that already work on their own: `bash lib/board/board.sh --help`, `bash lib/gate/gate.sh --help`, same for `stats`/`classify`/`spec`/`goal`/`session`. Each is a thin case-dispatcher with its own `--help`, no `kit` uber-binary, no install step. This surface is runtime-agnostic (pi, opencode, Claude Code, or a bare terminal all read the same bash).
+- **Wire it into Claude Code.** `bash install.sh` installs the SPINE, six always-on hooks guarding push/merge/secrets/commit-format, and stops there if that's all you want; opt into anything else, the board, session-state hooks, the `stats` CLI, the overnight queue, with `--with <a,b,c>`. (The Claude Code plugin path installs everything at once, spine + all modules, no `--with`; the layered install is the bash path only.) See [Install](#install).
+
 Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, agents iterate inside them. The loop is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
 
 ```mermaid
@@ -50,6 +57,28 @@ An open loop (the agent roams free and judges its own output) is a fast slop mac
 | one loop size fits all | risk lanes: tiny work skips the ceremony entirely |
 
 ## Install
+
+Layered by design: the SPINE installs unconditionally (six hooks guarding push, merge, secrets, and commit format, ADR-0024's irreversible boundary); everything else is an opt-in MODULE via `--with <a,b,c>`, recorded in your own project's `kit.toml [modules]` (a per-consumer install record, re-runnable; never a runtime registry a hook reads back). Run the installer with no `--with` at all to get the spine and nothing else.
+
+| Module | What it wires | Kind |
+|---|---|---|
+| `board` | `backlog-stage` (SessionEnd: stage session work-items to the board) | 1 hook |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard` | 7 hooks |
+| `advisor` | `context-hints` (session-elapsed + keyword skill hints) | 1 hook |
+| `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
+| `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
+| `stats` | the `stats` CLI, a read-only projection over the run/gate ledgers | hookless (uv CLI) |
+| `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
+| `weekend_batch` | the debt-paydown reader/closer (`lib/queue/weekend-batch.sh`), invoked by a consumer's own skill or directly | hookless (lib) |
+| `bridge` | git↔Hermes kanban mirror/writeback (`board.sh mirror/status/writeback`), itself gated per-repo by a `bridge=on` row in `boards.txt` | hookless (lib) |
+
+`team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
+
+```bash
+bash install.sh                         # spine only
+bash install.sh --with board,stats      # spine + those two
+bash install.sh --prune --with board    # explicit trim: re-install down to spine + board
+```
 
 ### Option 1: Claude Code plugin (recommended)
 
