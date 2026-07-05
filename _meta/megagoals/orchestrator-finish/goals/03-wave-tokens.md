@@ -52,3 +52,22 @@ The wave/parallel dispatch in `lib/queue/orchestrate.sh`, the token-extraction h
 Captures per-sub-goal TOKENS on the wave (parallel) path, closing the declared accounting gap where the wave reap loop skipped the serial path's token extraction (ID-094). WAVE_CAP-reconcile half dropped , the default already agrees (2==2). Verify: the 2-sub-goal-wave token run-table. Stacked on #<02 PR>; review after it. Part of `orchestrator-finish`, see ROADMAP.md.
 
 ## Notes
+
+- 2026-07-06: PR opened directly against `master`, not stacked on the 02 PR branch (dispatch prompt
+  said "02 is already merged into master, so the stack has collapsed; base directly on master").
+  This goal file's "PR base: fix/orchfin-02-tier4-split" / "Stacked on #<02 PR>" lines predate that;
+  left them as-is (not owned by this sub-goal, and the conductor may want the history intact).
+- 2026-07-06: implemented via a shared `_record_tokens` helper (used by both the serial loop and the
+  wave reap loop) rather than duplicating the extraction block, so the two paths can never drift.
+  Wave path recomputes the deterministic `$megadir/.orchestrate/<id>.stream.jsonl` path in the reap
+  loop (the serial path's `_ROS_SLOG` global does not cross the wave's forked-subshell boundary).
+- 2026-07-06: did the optional trivial WAVE_CAP-comment cleanup only where the comment was directly
+  adjacent to code I touched (the `_wave_gate` docstring + the CAPTURE_TOKENS header block). Left
+  three deeper narrative comments (near `_wave_converge`, and two in `cmd_run`'s size-dispatch loop)
+  that also say "default WAVE_CAP=1" untouched: correcting them well would mean re-verifying older
+  claims about ID-090/reachability that are outside this sub-goal's scope, higher risk than reward
+  for an optional cleanup.
+- 2026-07-06: pre-existing test flake noted (not caused by this change): `tests/test-orchestrate-
+  wavefront.sh`'s FIFO-barrier concurrency cases ("wave_run g", "wave_run h2", BARRIER_T=4) time out
+  under host load and are flaky on unmodified `origin/master` too (reproduced identically with zero
+  diff applied). Out of scope for ID-094; flagged here for the conductor/06 (orchestrate-sweep).

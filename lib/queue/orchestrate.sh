@@ -87,8 +87,9 @@ DETERMINISTIC_HANDOFF="${DETERMINISTIC_HANDOFF:-0}"
 # bloat path) and NOT coupled to handoff regeneration. Read as a GLOBAL (like DETERMINISTIC_HANDOFF,
 # not a positional arg) so it inherits into the wave subshell on fork with no `_run_one_session`
 # signature change and no `_wave_run` call-site touch. The serial token hook is already `$slog`-gated,
-# so this needs no hook change; the wave-path per-sub-goal ledger extraction is a declared gap (the
-# child.jsonl is still written lean-to-file under waves, only the extraction is deferred).
+# so this needs no hook change; the wave-path per-sub-goal ledger extraction (ID-094) recomputes the
+# same deterministic stream path in the reap loop, since `_run_one_session`'s `_ROS_SLOG` global does
+# not cross the wave's forked-subshell boundary back to the caller.
 CAPTURE_TOKENS="${CAPTURE_TOKENS:-0}"
 
 # Kanban renderer reused by the board-view (SG-10). Resolved next to this script; override in
@@ -419,7 +420,8 @@ _goalfile() {
 # (that is TASK-004). Reads the ready set (`_ready_set`), then admits GREEDILY in ROADMAP order , a
 # candidate is admitted iff (a) its goal file declares its OWN `## Touches` section AND (b) it proves
 # disjoint (dispatch-gate.sh, the ONE disjointness authority per DEC-001) against EVERY already-
-# admitted member. Admission stops at WAVE_CAP (env, default 1 => at most one `run`, serial default).
+# admitted member. Admission stops at WAVE_CAP (env, default 2 => waves on by default; WAVE_CAP=1
+# forces the old always-serial admission of at most one `run`).
 #
 # Self-Touches is REQUIRED (DEC-012b): dispatch-gate admits the FIRST member vacuously (empty admitted
 # set => nothing to prove disjoint against), so without demanding the candidate's own `## Touches` a
@@ -507,6 +509,25 @@ _rid_for() {  # dir id
   branch=$(grep -iE '^\*\*Branch:\*\*' "$gf" | head -1 | sed -E 's/^\*\*[Bb]ranch:\*\*[[:space:]]*//; s/[[:space:]].*$//')
   [ -n "$branch" ] || return 0
   printf '%s\n' "${branch#*/}"   # strip the type/ prefix, matching gate-ledger.sh rid
+}
+
+# _record_tokens <dir> <id> <slog>: extract per-session token usage from a captured stream-json
+# file and record a TOKENS ledger line for the sub-goal's rid (SPEC-110). SHARED by the serial
+# per-sub-goal loop (cmd_run) AND the wave reap loop (_wave_run, ID-094) so both paths write to
+# the exact same ledger stream via the exact same extraction. CAPTURE-GATED but the gate lives in
+# the CALLER (an absent/empty $slog is also a harmless no-op here, so double-gating is safe, never
+# load-bearing). Non-fatal: a parse miss must not stop the loop.
+_record_tokens() {  # dir id slog
+  local dir="$1" id="$2" slog="$3"
+  [ -n "$slog" ] && [ -s "$slog" ] || return 0
+  local trid tusage
+  trid=$(_rid_for "$dir" "$id")
+  [ -n "$trid" ] || return 0
+  tusage=$(python3 "$LIB_ROOT/goal/handoff/handoff_gen.py" sum-usage "$slog" 2>/dev/null) || tusage=""
+  [ -n "$tusage" ] || return 0
+  # shellcheck disable=SC2086 # tusage is a controlled "in=N out=N cache_read=N cache_create=N" blob
+  bash "$LIB_ROOT/gate/gate-ledger.sh" tokens "$trid" $tusage \
+    && _say "[orchestrate] [telemetry] $id TOKENS recorded (rid=$trid: $tusage)."
 }
 
 _emit_start() {  # dir id
@@ -1208,6 +1229,23 @@ _wave_run() {  # megadir roadmap
       else
         _emit_event "$megadir" "$id" shipped "wave: box checked"
         _WAVE_LANDED+=("$id")
+        # Token accounting (ID-094): closes the SPEC-117 declared gap ("the wave-path per-sub-goal
+        # ledger extraction is a declared gap"). The serial path reads $slog off `_ROS_SLOG`, a
+        # global `_run_one_session` sets directly in the caller's shell; the wave path backgrounds
+        # `_run_one_session` in a FORKED SUBSHELL ("( cd "$wt" ... ) &" above), so that global never
+        # crosses back. But `_run_one_session`'s stream path is DETERMINISTIC (`$dir/.orchestrate/
+        # <id>.stream.jsonl`, $dir == $megadir here), so the reap loop can recompute the same path
+        # instead of needing it handed back. Only recompute when a capture was actually requested
+        # (mirrors _run_one_session's own capture gate at CAPTURE_TOKENS/DETERMINISTIC_HANDOFF);
+        # `_record_tokens` is itself a no-op on an absent/empty file, so this is belt-and-braces, not
+        # load-bearing, but avoids a pointless stat on the default (no-capture) path.
+        # NC_SKIP_WAVE_TOKENS=1 is a TEST-ONLY escape hatch (ID-094 negative control): it disables
+        # just this extraction call so a test can prove the causal effect (same wave scenario, same
+        # captured child.jsonl, but the pre-fix-equivalent code path records ZERO ledger lines).
+        # Unset/0 in every real invocation; never documented as an operator flag.
+        if { [ "$CAPTURE_TOKENS" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ]; } && [ "${NC_SKIP_WAVE_TOKENS:-0}" != 1 ]; then
+          _record_tokens "$megadir" "$id" "$megadir/.orchestrate/${id}.stream.jsonl"
+        fi
         _say "[orchestrate] [wave] $id complete (box checked)."
       fi
     done
@@ -1812,19 +1850,9 @@ cmd_run() {
     # line for this sub-goal's rid, so lane-telemetry can price the run. CAPTURE-GATED: the default
     # no-capture path leaves $slog empty and writes NO token line (honest usage=?, never a fake
     # zero). Additive marker; non-fatal (a parse miss must not stop the loop). SPEC-087 default
-    # invocation is untouched (this runs only when a capture exists).
-    if [ -n "$slog" ] && [ -s "$slog" ]; then
-      local trid tusage
-      trid=$(_rid_for "$dir" "$id")
-      if [ -n "$trid" ]; then
-        tusage=$(python3 "$LIB_ROOT/goal/handoff/handoff_gen.py" sum-usage "$slog" 2>/dev/null) || tusage=""
-        if [ -n "$tusage" ]; then
-          # shellcheck disable=SC2086 # tusage is a controlled "in=N out=N cache_read=N cache_create=N" blob
-          bash "$LIB_ROOT/gate/gate-ledger.sh" tokens "$trid" $tusage \
-            && _say "[orchestrate] [telemetry] $id TOKENS recorded (rid=$trid: $tusage)."
-        fi
-      fi
-    fi
+    # invocation is untouched (this runs only when a capture exists). Delegates to the shared
+    # `_record_tokens` helper (ID-094) so the wave reap loop below writes to the identical stream.
+    _record_tokens "$dir" "$id" "$slog"
     # --step: pause for the operator between sub-goals, but only when the NEXT one is auto (the
     # loop would actually run it). If next is a gate, the gate-stop below is the natural halt, so
     # don't double up with a pause first.
