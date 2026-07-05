@@ -1,12 +1,17 @@
-name        = "cc-observe"
-description = "Report my own Claude Code usage from session transcripts: which Skills and tools fire (with error rates) and per-hook execution latency (p50/p95/max) plus hook errors. Pure JSONL parsing of ~/.claude/projects, no instrumentation. Built for the cc-elevation self-observability axis (2026-06)."
+name        = "session-observe"
+description = "Report my own Claude Code usage from session transcripts: which Skills and tools fire (with error rates) and per-hook execution latency (p50/p95/max) plus hook errors. Pure JSONL parsing of ~/.claude/projects, no instrumentation. Shares its JSONL turn-parser with session-recall via lib/session/parse_transcript.py -- the two CLIs stay separate (aggregate stats vs. point-lookup search are different mental models)."
 language    = "python"
 status      = "pilot"
 entry       = "bin/cc-observe"
 created     = 2026-06-14
 
-# Personal/standalone tool. `bin/cc-vps-report` bridges the weekly digest to the live
-# vps-mon (HMAC-signed /v1/snapshot + cc-intel-weekly heartbeat -> public /status).
+# Moved into dwarves-kit (kit-foldin SG-03, 2026-07-05) from ops-toolkit's
+# tools/cc-observe/, renamed cc-observe -> session-observe per the kit naming
+# rule (drop the host-agent prefix; the object is the agent SESSION/transcript,
+# not "cc" itself). Keeps all 3 bins verbatim (bin/cc-observe, bin/cc-semantic,
+# bin/cc-vps-report -- surgical, renaming binary names churns tests for zero
+# navigation win, same call SG-04 made for skill-curator's bin/cc-improve).
+# The ops-toolkit copy retires in the paired batched retire sweep (SG-07).
 consumers   = []
 
 systems     = ["claude-code", "vps-mon"]
