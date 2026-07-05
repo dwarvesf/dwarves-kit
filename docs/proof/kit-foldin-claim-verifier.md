@@ -73,12 +73,71 @@ EXISTS, never whether the surrounding assertion is TRUE.
 |---|---|---|
 | AC1 | `agents/claim-verifier.md` has valid kit frontmatter (name, description, tools, model in `sonnet\|haiku\|opus`) and a MANUAL.md roster row | PASS -- `tests/test-meta.sh` 679/679 |
 | AC2 | A fixture claim (clearly-false) is committed under `tests/fixtures/` | PASS -- `tests/fixtures/claim-verifier/false-claim.json` |
-| AC3 | A REAL dispatch on the fixture claim returns a well-formed STRUCTURED majority-vote verdict | PASS -- see Confirmation run |
-| AC4 | `kit:agent-effectiveness` lens over the new def returns a non-FLAGGED verdict (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits) | see Confirmation run |
+| AC3 | A REAL dispatch on the fixture claim returns a well-formed STRUCTURED majority-vote verdict | PASS -- REFUTED 3/3, well-formed block (see Confirmation run) |
+| AC4 | `kit:agent-effectiveness` lens over the new def returns a non-FLAGGED verdict (tools minimal-yet-sufficient, description fires right, instructions unambiguous, tier fits) | PASS -- all four lenses OK (see Confirmation run) |
 
 ## Confirmation run
 
-<!-- filled after smoke + effectiveness dispatches -->
+### AC1 -- structural gate (test-meta.sh)
+
+```
+$ cd dwarves-kit && bash tests/test-meta.sh | tail -3
+=== Results ===
+Passed: 679 / 679
+All meta tests passed.
+```
+
+Includes the 6 claim-verifier rows: frontmatter present, `model` = sonnet (valid
+enum), MANUAL.md row present (both directions), name is not a retired suffix,
+architecture.md + README counts match live file count.
+
+### AC3 -- smoke: real dispatch returns a well-formed structured majority-vote verdict
+
+A fresh-context worker was dispatched with the agent's full instruction body as its
+prompt and the fixture claim (`tests/fixtures/claim-verifier/false-claim.json`:
+"Water boils at 10 degrees Celsius at standard sea-level atmospheric pressure.").
+Real model dispatch, 6.9s, returned EXACTLY the structured block the agent specifies:
+
+```
+VERDICT: REFUTED
+Panel: N=3, refuted=3/3, threshold=majority-refute (REFUTED iff refuted*2 > N)
+Claim: Water boils at 10 degrees Celsius at standard sea-level atmospheric pressure.
+Skeptics:
+  1. [Factual/empirical] refuted=true -- Pure water boils at 100 C at 1 atm (101.325 kPa), not 10.
+  2. [Logical/definitional/scope] refuted=true -- At 10 C water is a stable liquid far below its
+     boiling point, contradicting the definition of the normal boiling point.
+  3. [Steelman-then-break] refuted=true -- No steelman survives: 10 C boils only under near-vacuum
+     (~1.2 kPa), the opposite of the stated standard sea-level pressure.
+Basis: reasoned from established physical-chemistry knowledge; claim is decisively false.
+```
+
+Well-formed (matches the mandated block), three DISTINCT skeptic angles as designed,
+fail-closed majority tally correct (`refuted*2 > N` -> REFUTED), verdict = the fixture's
+expected `REFUTED`. This is a REAL dispatch, not a described intention. (Nondeterministic
+by nature; the proof is the well-formed structured block + correct majority mechanics,
+not an exact-value assertion.)
+
+### AC4 -- kit:agent-effectiveness lens
+
+Dispatched `kit:agent-effectiveness` (a real subagent dispatch, 2 tool uses, 44.7s)
+pointed at `agents/claim-verifier.md`, calibrated against `agents/recheck-verifier.md`.
+
+```
+VERDICT: PASS
+Lenses: tools OK, description OK, instructions OK, tier OK
+Agent: claim-verifier (sonnet)
+```
+
+Per-lens: (1) tools scoped read-only, no over-grant, no missing capability -- the
+"unverifiable -> fail-closed" fallback makes the absence of web/network tools a
+deliberate design choice, not an unbacked promise; (2) description scoped to
+load-bearing claims with concrete triggers AND explicit self-differentiation from
+citation-guard + recheck-verifier (forecloses the two nearest misfire cases); (3) the
+majority-vote formula is stated consistently 3x, fail-closed + infra-error handling
+unambiguous, a representative "X faster than Y" claim gets a determinate outcome; (4)
+sonnet fits genuine adversarial judgment, justified as a deliberate cross-tier choice.
+The "independent skeptics in one context" tension was judged HONEST scoping (disclosed
+in the Cross-model section), not a contradiction. No defect met the finding bar.
 
 ## Reproduce
 
