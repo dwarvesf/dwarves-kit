@@ -1,8 +1,16 @@
 # NOTES, harness-ops
 
+## Close-out (2026-07-06) , COMPLETE
+
+All 13 sub-goals shipped (12 merged bottom-up on green CI + the Han-approved 09 gate + the Han-clicked 13 final PR). Merge order #211→#213→#215→#216→#212→#217→#218→#219→#220→#221→#214→#222; archive #223; ROADMAP record-fix #224. Master 43bc363. Full close: `RUN_REPORT.md` (this folder).
+
+- **Merge-time seams below: all RESOLVED during the run.** 03↔11 docs/runs orphan → relocated into 13 (`docs/verification/generated/harness-ops-03-mega.md`); 10↔11 WORKFLOW.md + 09↔11 docs/verification/README.md → merged clean (no conflict). Nothing left to reconcile.
+- **Proposed additions below (advisor P6): FILED** to the ops-toolkit cockpit as follow-ups on **BACKLOG ID-280** (the harness-ops shipped row) , config-hook CI lint, two-way schema-reality test, cross-repo deep-path sweep (dfoundation/console-labs), root-slim revert path, cold-adopt CI test, proof/runs merge-guard.
+- **Consumer follow-up DONE:** ops-toolkit `_meta/board` + `board-all` repointed to the stable `bin/board` (ops-toolkit #727).
+
 ## Active blockers
 
-<none yet>
+<none , complete>
 
 ## Proposed additions
 
