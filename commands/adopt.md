@@ -8,13 +8,14 @@ coding, and the ship-gate engages on push.
 
 ## Run
 
-`$ARGUMENTS` may name a target dir (default: the repo root) and/or `--check` (status only).
+`$ARGUMENTS` may name a target dir (default: the repo root), `--check` (status only), or
+`--with <a,b,c>` (seed these modules `true` in a FRESH `.kit.toml`; ignored once one exists).
 
 1. Resolve the target: default `.` (`git rev-parse --show-toplevel`).
 2. Run the driver (idempotent, non-destructive):
 
    ```
-   bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/adopt.sh" [--check] <target>
+   bash "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/adopt.sh" [--check] [--with <a,b,c>] <target>
    ```
 
 3. Report what it created (or that the repo was already adopted). Tell the user the one next
@@ -26,11 +27,21 @@ coding, and the ship-gate engages on push.
 - a `CLAUDE.md` loader pointer (Claude Code auto-loads CLAUDE.md, not AGENTS.md).
 - `WORKFLOW.md` -- a pointer to the installed kit's lane x phase matrix (not a 49KB copy).
 - `docs/verification/README.md` -- the proof marker that makes the ship-gate engage.
+- `.kit.toml` -- an OPT-IN starter override of the kit-root defaults (SPEC-192). Created
+  only on a fresh adopt (never overwritten afterward); `--with` seeds the named modules
+  `true` instead of inheriting the kit-root default. Edit `[modules]` any time and re-run
+  `/kit:adopt` (or `--refresh`) to re-wire.
+- `.claude/settings.json` hook entries for this project's currently-enabled hook-bearing
+  modules (`board`, `session`, `advisor`, `cosmetic`) -- a targeted jq MERGE, re-wired on
+  every adopt run from the project's CURRENT `.kit.toml`, never a wholesale file rewrite.
+  Command/skill modules (`queue`, `stats`, `quiz_gate`, `weekend_batch`, `bridge`) need no
+  settings.json entry.
 
 The classifiers (`lane-classify`, `task-type-classify`, `proof-gate`) run from the installed kit;
 adoption wires the contract to reference them. It never copies the engine.
 
 ## Do NOT
 
-- Overwrite an existing AGENTS.md / CLAUDE.md (the driver guards this; never force it).
+- Overwrite an existing AGENTS.md / CLAUDE.md / `.kit.toml` (the driver guards this; never
+  force it; `--with` on an existing `.kit.toml` is a no-op with a note).
 - Copy `lib/` or the full `WORKFLOW.md` into the consumer.
