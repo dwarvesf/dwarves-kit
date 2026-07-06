@@ -83,6 +83,13 @@ acceptance stays a `gate` in EVERY mode , taste ships past the human eyeball onl
 
 - **proof** (default, if unspecified): the current bar , real-surface flows + 2-3 captures + a11y.
   Phase B below runs as the plain bounded REVISE loop (cap 2).
+  **Resolution when the field is absent** (SPEC-187 / SG-03): the goal-file `Done-mode:` field
+  still wins outright when present; only when it is absent does the config layer's
+  `[mega].over_test` supply the fallback -- `bash lib/config/kit-config.sh` then
+  `kit_config_get mega.over_test` (project `.kit.toml` > kit-root `kit.toml`); `true` promotes
+  the default from **proof** to **over-test**, anything else (absent config, `false`) leaves
+  **proof** as the default above. A different-harness adopter who wants over-test rigor
+  everywhere sets this once instead of tagging every UI sub-goal file.
 - **over-test**: proof, PLUS a `/kit:test-plan` matrix + `/kit:verify` execution, PLUS a
   COVERAGE-DELTA row appended to the proof-of-done run-table , `ACs-covered / tests-added`,
   before-vs-after (what the over-test pass added over the proof floor).

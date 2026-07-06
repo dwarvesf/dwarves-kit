@@ -111,14 +111,24 @@ State the resolved posture in one line before scaffolding:
   and every `gate` sub-goal, stop for the human) or `full-auto` (also merges the
   final PR -- only when NO `gate` sub-goal exists anywhere in the chain AND the
   target branch is unprotected; falls back to `gated-final` and says so otherwise).
+  Resolution order (SPEC-187 / SG-03): an explicit choice made in THIS step >
+  `bash lib/config/kit-config.sh` (source it, then `kit_config_get mega.merge_autonomy`;
+  project `.kit.toml` > kit-root `kit.toml`) > the `gated-final` default above. This
+  knob has no runtime env-var mirror (unlike the pair below): it is a per-run
+  decision made HERE, at scaffold time, so the config layer is the one place an
+  adopter can set a standing default without re-answering this step every mega-goal.
 - **`MEGA_MERGE_POSTURE`** -- `auto-to-final` (DEFAULT: an `auto` sub-goal's PR
   merges the moment its gate passes) or `per-pr-review` (a team run:
   `lib/goal/mega-merge.sh merge` always prints the `gh pr merge` it would run and waits
-  for a human, even on a passing gate). Resolution order: an explicit flag to this
-  command > a `mega_merge_posture:` line in `CLAUDE.md` > the default. This is the
-  ONE team-facing flag ADR-0028 calls out: auto-merge-to-final on a SHARED repo
-  defers per-PR team review to the final gate; a teammate who wants per-PR review
-  sets `per-pr-review` for their own runs.
+  for a human, even on a passing gate). Resolution order (SPEC-187 / SG-03): an
+  explicit `--posture=<value>` flag to `mega-merge.sh merge` > the `MEGA_MERGE_POSTURE`
+  env var > the config layer's `[mega].mega_merge_posture` (project `.kit.toml` >
+  kit-root `kit.toml`) > the `auto-to-final` default. A `mega_merge_posture:` line in
+  `CLAUDE.md` is the older, still-honored per-conversation override; the config
+  layer is the durable, cross-session equivalent. This is the ONE team-facing flag
+  ADR-0028 calls out: auto-merge-to-final on a SHARED repo defers per-PR team review
+  to the final gate; a teammate who wants per-PR review sets `per-pr-review` for
+  their own runs (env, or their own `.kit.toml`).
 
 Per-sub-goal `Merge policy: auto | gate` (Step 1) combines with these two run-level
 knobs exactly as the skill's "Merge policy & autonomy" section describes; nothing

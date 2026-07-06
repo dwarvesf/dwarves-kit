@@ -29,7 +29,10 @@
 #                       (still requires --execute to actually call gh; see above).
 #     per-pr-review  -- merge ALWAYS dry-runs, regardless of --execute or the gate
 #                       result, so a team run keeps a human on every PR.
-#   Resolution: --posture=<value> flag > MEGA_MERGE_POSTURE env > default auto-to-final.
+#   Resolution (SPEC-187 / SG-03): --posture=<value> flag > MEGA_MERGE_POSTURE env >
+#   the config layer's [mega].mega_merge_posture (project .kit.toml > kit-root kit.toml) >
+#   default auto-to-final. The env var still wins over config outright, same as every other
+#   `[mega]` knob orchestrate.sh resolves.
 #
 # commands/mega.md routes a `gate`-tagged sub-goal or the held final PR away from `merge`
 # at the PROMPT level (mirrors /kit:dispatch and the skill: a human always merges those).
@@ -49,6 +52,11 @@ set -uo pipefail
 MM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$MM_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 GATE_LEDGER="${MEGA_MERGE_GATE_LEDGER:-$LIB_ROOT/gate/gate-ledger.sh}"
+# Config layer (SPEC-187 / SG-03): see kit-config.sh header. Sourced once; idempotent if a
+# caller already sourced it.
+CONFIG_LIB="${CONFIG_LIB:-$LIB_ROOT/config/kit-config.sh}"
+# shellcheck source=lib/config/kit-config.sh
+[ -f "$CONFIG_LIB" ] && . "$CONFIG_LIB"
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
@@ -77,9 +85,11 @@ gate() {
 }
 
 _resolve_posture() {
-  local flag="${1:-}"
+  local flag="${1:-}" cfg
   if [ -n "$flag" ]; then printf '%s\n' "$flag"; return; fi
-  printf '%s\n' "${MEGA_MERGE_POSTURE:-auto-to-final}"
+  if [ -n "${MEGA_MERGE_POSTURE:-}" ]; then printf '%s\n' "$MEGA_MERGE_POSTURE"; return; fi
+  cfg="$(kit_config_get mega.mega_merge_posture)"
+  printf '%s\n' "${cfg:-auto-to-final}"
 }
 
 # _pr_info <pr> -- prints "<isDraft><US><comma-labels><US><title>" for the PR (US = the
