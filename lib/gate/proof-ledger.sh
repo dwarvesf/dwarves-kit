@@ -38,6 +38,11 @@ source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-
 # The ONE append substrate (SPEC-182): the override write routes through ledger_append.
 # shellcheck source=lib/ledger/ledger.sh
 source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missing or unreadable" >&2; exit 1; }
+# The config-layer resolver (SPEC-186 [ledger] wiring): the delivery-ratio thresholds below
+# read through it. kit-log-dir.sh already sources it, but source directly too so this file's
+# dependency on kit-config.sh is explicit, not incidental to another lib's internals.
+# shellcheck source=lib/config/kit-config.sh
+source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 OVERRIDE_LOG="$LOG_DIR/proof-overrides.log"
@@ -102,8 +107,11 @@ deployable() {
 # for a reviewer or `mega status` to surface. Rationale: the proof-of-done gate checks
 # that proof EXISTS, not that delivery is PROPORTIONATE, so a thin docs/reconcile
 # sub-goal can pass by padding proof (2026-07-05 delivery audit; ADR "delivery ratio").
-KIT_DELIVERY_RATIO_WARN="${KIT_DELIVERY_RATIO_WARN:-3}"    # proof >= N*real ...
-KIT_DELIVERY_REAL_FLOOR="${KIT_DELIVERY_REAL_FLOOR:-40}"   # ... AND real < FLOOR => THIN-WARN
+# Precedence (SPEC-186 [ledger] wiring): env var > project .kit.toml > kit-root kit.toml >
+# hardcoded default, via kit_config_get. An explicit env var still wins over config, same
+# back-compat contract as kit_resolve_log_dir.
+KIT_DELIVERY_RATIO_WARN="${KIT_DELIVERY_RATIO_WARN:-$(kit_config_get ledger.delivery_ratio_warn 3)}"    # proof >= N*real ...
+KIT_DELIVERY_REAL_FLOOR="${KIT_DELIVERY_REAL_FLOOR:-$(kit_config_get ledger.delivery_real_floor 40)}"   # ... AND real < FLOOR => THIN-WARN
 delivery_ratio() {
   local root="${1:-}" base="${2:-}"
   [ -n "$root" ] && [ -n "$base" ] || { echo "usage: delivery-ratio <root> <base>" >&2; return 64; }

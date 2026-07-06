@@ -17,13 +17,24 @@
 [ -n "${_KIT_LOG_DIR_SOURCED:-}" ] && return 0
 _KIT_LOG_DIR_SOURCED=1
 
-# The durable default and precedence (SPEC-182, kit-modularity SG-02): the ledger root is
-# ONE root shared by both planes (the write-side append substrate and the read-side `stats`
-# projection). Precedence:
-#   1. $KIT_LEDGER_DIR   -- the canonical knob (essential-tier config, per-consumer root).
+# The config-layer resolver (lib/config/kit-config.sh), sourced best-effort: it is a command-
+# time lib, never read by a hot hook, and this file is itself sourced by non-hook commands
+# only (gate-ledger.sh, proof-ledger.sh, lane-classify.sh, ...) -- see docs/proof-of-done.md
+# for the `hooks/*.sh` grep confirming no hook reaches this transitively.
+_KIT_LOG_DIR_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/config/kit-config.sh
+source "$_KIT_LOG_DIR_SELF/../config/kit-config.sh" || { echo "kit-log-dir: lib/config/kit-config.sh missing or unreadable" >&2; return 1; }
+
+# The durable default and precedence (SPEC-182, kit-modularity SG-02; [ledger] wiring SPEC-186):
+# the ledger root is ONE root shared by both planes (the write-side append substrate and the
+# read-side `stats` projection). Precedence:
+#   1. $KIT_LEDGER_DIR      -- the canonical knob (essential-tier config, per-consumer root).
 #   2. $DWARVES_KIT_LOG_DIR -- back-compat alias (the pre-SPEC-182 name; every existing
 #      test pin + the live corpus still resolve through it unchanged).
-#   3. ${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs -- host-generic default,
+#   3. [ledger].location in .kit.toml (project) / kit.toml (kit-root), via kit-config.sh:
+#      "isolated" -> $PWD/.kit/logs; "shared" (or unset/empty) -> the XDG default below;
+#      any other value is treated as an explicit path.
+#   4. ${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs -- the hardcoded default,
 #      outside ~/.claude entirely, so no ~/.claude/dwarves-kit* reinstall can touch it.
 # A set-but-EMPTY $KIT_LEDGER_DIR is a FATAL clean error, never a silent fall-through: an
 # empty root would make every writer append to a relative `runs/...` path in the caller's cwd
@@ -39,7 +50,12 @@ kit_resolve_log_dir() {
   elif [ -n "${DWARVES_KIT_LOG_DIR:-}" ]; then
     printf '%s' "$DWARVES_KIT_LOG_DIR"
   else
-    printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs"
+    local loc; loc="$(kit_config_get ledger.location "shared")"
+    case "$loc" in
+      isolated) printf '%s' "$PWD/.kit/logs" ;;
+      shared|"") printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs" ;;
+      *) printf '%s' "$loc" ;;
+    esac
   fi
 }
 
