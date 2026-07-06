@@ -6,6 +6,7 @@
 **Merge mode:** auto-bottom-up
 **Merge autonomy:** gated-final
 **Started:** 2026-07-06
+**COMPLETE:** 2026-07-06 , all 13 sub-goals shipped (12 merged bottom-up on green CI + the Han-approved 09 gate + the Han-clicked 13 final PR). Merge order #211→#213→#215→#216→#212→#217→#218→#219→#220→#221→#214→#222 (master 2d8a188). Full close in `RUN_REPORT.md`. Archived to `_meta/megagoals/_archive/harness-ops/` per the kit lifecycle.
 
 Single-repo (dwarves-kit, kit-adopted). Run from dwarves-kit cwd via the SDD lane; portable OPERATE.md run contract. TWO tracks share the destination "the harness is config-driven + tidy": Track A (config-layer) is the feature; Track B (docs/root restructure) is the hygiene. Design source: `docs/specs/DECISION-BRIEF-config-layer.md` (Track A), the 2026-07-06 docs+root audits (Track B).
 
@@ -28,7 +29,7 @@ Single-repo (dwarves-kit, kit-adopted). Run from dwarves-kit cwd via the SDD lan
 - [x] 10-briefs-out , move `docs/specs/DECISION-BRIEF*` + `CONTEXT.md` → `docs/briefs/`; repoint the 4 command files + goal-drafts `GOAL_SPECS_DIR` , `auto`, PR #213, merged cd63271 (CI green; proof docs/verification/briefs-out/proof-of-done.md)
 - [x] 11-runs-to-generated , move `docs/runs/` → `docs/verification/generated/`; repoint the realpath jail in `proof-table-gen.py`/`.sh` , `auto`, PR #212, merged b7374e3 (CI green after SPEC-135 assert-134 fix e4639fd; proof docs/verification/goal-11-runs-to-generated/run-table.txt; NOTE 03-orphan docs/runs/harness-ops-03-mega.md → fold relocation into 13)
 - [x] 12-root-slim , the 3 giant machine-parsed root files (WORKFLOW/MANUAL/CHANGELOG): thin stub at root + bulk into docs/, repoint every reader (gate-ledger, dispatch-gate, test-meta, ship, adopt) , the newcomer "welcoming root" win , `auto`, PR #221 , merged da4b49f (CI green; SPEC-185; roots now 19/11/11 lines; install.sh docs/WORKFLOW.md copy + ~13 readers repointed; integrated 15-test seam check green)
-- [ ] 13-doc-tidy , safe doc-moves: `docs/audits/` for one-off reports (skillspector), `kit.toml.example` home decision, `docs/README.md` map refresh , `auto`, PR #222 (open, CI running; FINAL PR, HELD for Han's click; skillspector→audits/, orphan docs/runs/harness-ops-03-mega.md→verification/generated/, docs/runs/ gone, README map refreshed, kit.toml.example pre-settled by 04; proof docs/verification/harness-ops-13-doc-tidy/proof-of-done.md)
+- [x] 13-doc-tidy , safe doc-moves: `docs/audits/` for one-off reports (skillspector), `kit.toml.example` home decision, `docs/README.md` map refresh , `auto`, PR #222 , merged 2d8a188 (FINAL PR, Han-clicked 2026-07-06; skillspector→audits/, orphan docs/runs/harness-ops-03-mega.md→verification/generated/, docs/runs/ gone, README map refreshed, kit.toml.example pre-settled by 04; carried the mega close-out record; proof docs/verification/harness-ops-13-doc-tidy/proof-of-done.md)
 
 ## Dependencies
 
