@@ -81,8 +81,8 @@ claude_block() {
   printf '%s\n' "$START"
   printf '## Operating layer (dwarves-kit)\n\n'
   printf '@AGENTS.md\n\n'
-  printf 'Before touching code, classify the lane: `bash %s/lib/classify/lane-classify.sh classify "<task>"`.\n' "$KIT_ROOT"
-  printf 'A full-lane change records its gates via `%s/lib/gate/gate-ledger.sh` or the ship-gate blocks the push.\n' "$KIT_ROOT"
+  printf 'Before touching code, classify the lane: `bash %s/bin/classify lane classify "<task>"`.\n' "$KIT_ROOT"
+  printf 'A full-lane change records its gates via `%s/bin/gate ledger` or the ship-gate blocks the push.\n' "$KIT_ROOT"
   printf '%s\n' "$END"
 }
 
