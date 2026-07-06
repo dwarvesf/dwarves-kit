@@ -180,7 +180,15 @@ kit_module_hooks() {
 # (repo-root default + its install-rendered copy) legitimately ships `= true`
 # defaults in OTHER sections too ([ledger] telemetry, [mega] tier4_close, [gate]
 # understanding_gate, [features] learning_ledger); a file-wide grep would
-# misidentify those as "modules".
+# misidentify those as "modules". INVARIANT: only ever call this on an
+# INSTALL-RENDERED kit.toml (i.e. $KIT_TOML below), never the repo-root default --
+# the match requires the line to end right after `true` with no trailing comment,
+# which `kit_render_install_toml` guarantees for [modules] lines (it always emits
+# a bare `key = true|false`), but the repo-root file's [modules] section has
+# inline `#` comments on several keys and would silently under-match.
+# `tests/test-install-modules.sh` keeps an identical `modules_section_true()`
+# (can't source this file directly -- it's a full script, not a library); keep
+# both in sync if this awk changes.
 kit_toml_modules_section_true() {
   awk '
     /^\[modules\]/ { insec = 1; next }

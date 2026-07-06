@@ -26,6 +26,11 @@ wired_hooks() { # $1 = settings.json path
 # rendered schema (repo-root default + recomputed [modules]), other sections
 # legitimately ship `= true` defaults too ([ledger] telemetry, [mega] tier4_close,
 # [gate] understanding_gate, [features] learning_ledger) -- none of them a module.
+# Keep this the SAME awk as install.sh's kit_toml_modules_section_true(); we can't
+# source install.sh directly here (it's a full script with side effects, not a
+# library), so this is a deliberate, sync-required duplicate -- always call it on
+# an install-RENDERED file (bare `key = true|false`, no inline comment), never the
+# comment-bearing repo-root default.
 modules_section_true() {
   awk '
     /^\[modules\]/ { insec = 1; next }
