@@ -43,9 +43,9 @@ Do NOT be a yes-man. Do NOT validate the idea by default. Push hard on weak poin
 ## If KILL: what would have to be true to reconsider
 ```
 
-4. Save the brief to `docs/specs/DECISION-BRIEF.md` if the verdict is BUILD.
+4. Save the brief to `docs/briefs/DECISION-BRIEF.md` if the verdict is BUILD.
 
-5. If BUILD (so the brief now exists on disk), dispatch the **brief-reviewer** subagent (read-only) against `docs/specs/DECISION-BRIEF.md` to independently judge it for clarity, completeness, and testability -- the writer of the brief is not the right judge of its own output. Report its verdict (PASS / FAIL:fixable / FAIL:escalate) to the user alongside the brief. This is advisory only: never block on it, and never edit the brief yourself to satisfy it. If it finds gaps, surface them so the user can decide whether to patch the brief before moving on. If the verdict is RETHINK or KILL, there is no saved brief to review -- skip this step.
+5. If BUILD (so the brief now exists on disk), dispatch the **brief-reviewer** subagent (read-only) against `docs/briefs/DECISION-BRIEF.md` to independently judge it for clarity, completeness, and testability -- the writer of the brief is not the right judge of its own output. Report its verdict (PASS / FAIL:fixable / FAIL:escalate) to the user alongside the brief. This is advisory only: never block on it, and never edit the brief yourself to satisfy it. If it finds gaps, surface them so the user can decide whether to patch the brief before moving on. If the verdict is RETHINK or KILL, there is no saved brief to review -- skip this step.
 
 6. If BUILD, suggest (optional) `/kit:design` to shape the solution interactively before `/kit:spec`. It is opt-in; the user may go straight to `/kit:spec`.
 

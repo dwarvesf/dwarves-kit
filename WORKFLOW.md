@@ -978,7 +978,7 @@ fallback because it alone can run with neither a spec nor a brief.
 | `## Test plan` | in the active spec | per-spec | build input `/kit:execute` reads from the spec it runs |
 | `## Design critique` (`/kit:devs-team`) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
 | `## UI design` + `## Visual critique` (`/kit:ui-design`; `/kit:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
-| `docs/specs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
+| `docs/briefs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
 | `## Review` (`/kit:review`, `/kit:review-team`) | in the active spec | per-spec | review verdict + findings + TODOs; replace-not-stack; inline in chat if no spec exists |
 | kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |
 
@@ -1198,7 +1198,7 @@ later reader and an earlier writer never split across two specs.
 
 | # | Flow | Trigger | Writes to | Stop |
 |---|---|---|---|---|
-| 1 | `/kit:design` | between `/think` and `/spec`, when the solution needs working out | `docs/specs/DECISION-BRIEF.md` (folded into the spec by `/spec`) | solution agreed per section |
+| 1 | `/kit:design` | between `/think` and `/spec`, when the solution needs working out | `docs/briefs/DECISION-BRIEF.md` (folded into the spec by `/spec`) | solution agreed per section |
 | 2 | `/kit:devs-team` | before the spec hardens; 5 engineering lenses | `## Design critique` in the active spec (else the brief) | verdict recorded |
 | 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
 | 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |

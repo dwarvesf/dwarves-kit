@@ -46,21 +46,21 @@ For the full playbook (every scenario, the autonomy dial, the freeform front doo
 
 **Phase:** challenge an idea before writing a spec
 **Reads:** the idea from chat
-**Writes:** `docs/specs/DECISION-BRIEF.md` only if the verdict is BUILD
+**Writes:** `docs/briefs/DECISION-BRIEF.md` only if the verdict is BUILD
 **When to invoke:** before any non-trivial feature. Costs ~5 minutes.
 **Common gotcha:** the 6 forcing questions are confrontational by design. If you accept them too easily, the brief is weak.
 
 ### `/kit:design`
 
 **Phase:** opt-in interactive solution-design beat (between Think and Spec)
-**Reads:** `docs/specs/DECISION-BRIEF.md` (if present), the codebase
-**Writes:** appends a `## Solution` section to `docs/specs/DECISION-BRIEF.md` (never clobbers the brief's product framing); when the design is design-bearing, also appends a `## Design` section (diagram + ADR link(s), ADR-0031 §1 / SPEC-122) that `/kit:spec` folds into the spec
+**Reads:** `docs/briefs/DECISION-BRIEF.md` (if present), the codebase
+**Writes:** appends a `## Solution` section to `docs/briefs/DECISION-BRIEF.md` (never clobbers the brief's product framing); when the design is design-bearing, also appends a `## Design` section (diagram + ADR link(s), ADR-0031 §1 / SPEC-122) that `/kit:spec` folds into the spec
 **When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/kit:spec`. Opt-in; skip it and `/kit:spec` works as before.
 **Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
 
 ### `/kit:devs-team`
 
-Opt-in design-critique lane between `/kit:design` and `/kit:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution`, read spec-first (the active spec if one exists, else the pre-spec `docs/specs/DECISION-BRIEF.md`), merges findings, and appends a report-only `## Design critique` (SOLID / REVISE / RECONSIDER) to that same doc. Never blocks `/kit:spec`. The design analogue of `/kit:review-team`. Placement is spec-first per SPEC-023.
+Opt-in design-critique lane between `/kit:design` and `/kit:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution`, read spec-first (the active spec if one exists, else the pre-spec `docs/briefs/DECISION-BRIEF.md`), merges findings, and appends a report-only `## Design critique` (SOLID / REVISE / RECONSIDER) to that same doc. Never blocks `/kit:spec`. The design analogue of `/kit:review-team`. Placement is spec-first per SPEC-023.
 
 ### `/kit:visual-team`
 
@@ -127,7 +127,7 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 ### `/kit:spec`
 
 **Phase:** generate the development spec
-**Reads:** `docs/specs/DECISION-BRIEF.md` (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
+**Reads:** `docs/briefs/DECISION-BRIEF.md` (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
 **Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
 **Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
@@ -366,7 +366,7 @@ Say "let's discuss the solution", "iterate on the design", or `/kit:design`. Cla
 the opt-in interactive design beat (and/or `/kit:devs-team`, or `superpowers:brainstorming`
 for open-ended exploration): it proposes 2-3 approaches, one question at a time, holds for
 your approval per section, and appends the agreed Solution to
-`docs/specs/DECISION-BRIEF.md`. It never auto-advances; leave with "the design is good,
+`docs/briefs/DECISION-BRIEF.md`. It never auto-advances; leave with "the design is good,
 write the spec."
 
 **Scenario 5 -- a vague / ambiguous goal.** Say "I have a rough idea about X", "here's a

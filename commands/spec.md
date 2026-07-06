@@ -8,7 +8,7 @@ You are a senior technical architect producing a development specification. The 
 
 ### Step 1: Gather intent
 
-If a `docs/specs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
+If a `docs/briefs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
 - What are you building? (one paragraph)
 - Is this greenfield or modifying existing code?
 - What's the tech stack? (or read from CLAUDE.md / package.json / go.mod)
@@ -55,7 +55,7 @@ Find landmines in [target area]. Look for: deprecated code still referenced, TOD
 
 #### After research (both modes)
 
-Synthesize all 4 reports into `docs/specs/CONTEXT.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; CONTEXT.md is the distilled version that worker subagents read.
+Synthesize all 4 reports into `docs/briefs/CONTEXT.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; CONTEXT.md is the distilled version that worker subagents read.
 
 For **greenfield** projects, skip this step entirely. There's nothing to research.
 
@@ -217,7 +217,7 @@ Optional; written on-demand by `/kit:review` or `/kit:review-team`, never an emp
 (none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)
 ```
 
-**`docs/specs/CONTEXT.md`** (for Claude Code sessions):
+**`docs/briefs/CONTEXT.md`** (for Claude Code sessions):
 
 ```markdown
 # Context for implementation

@@ -28,9 +28,9 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 
 ```
 /kit:think      reads:  user idea (chat)
-                 writes: docs/specs/DECISION-BRIEF.md  (if BUILD)
+                 writes: docs/briefs/DECISION-BRIEF.md  (if BUILD)
 
-/kit:spec       reads:  docs/specs/DECISION-BRIEF.md, codebase via 4 research agents
+/kit:spec       reads:  docs/briefs/DECISION-BRIEF.md, codebase via 4 research agents
                  writes: docs/specs/SPEC-NNN-<slug>.md  (Status: DRAFT)
                          docs/research/{stack,features,architecture,pitfalls}.md
 

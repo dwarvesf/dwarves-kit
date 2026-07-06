@@ -18,7 +18,7 @@ You are a brief-review agent. The brief phase (`/kit:think`, or an equivalent re
 ## Input
 
 You receive:
-- **The brief itself**: `docs/specs/DECISION-BRIEF.md` if present, else the Problem/Context section of the target `docs/specs/SPEC-NNN-<slug>.md`, or the brief text pasted inline.
+- **The brief itself**: `docs/briefs/DECISION-BRIEF.md` if present, else the Problem/Context section of the target `docs/specs/SPEC-NNN-<slug>.md`, or the brief text pasted inline.
 - **Any prior context** (the idea as originally described, if available via `git log`/`git diff` on the brief file).
 
 ## What you check
