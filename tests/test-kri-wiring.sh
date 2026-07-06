@@ -89,7 +89,7 @@ _wired "$PROOF_GEN_PY" 'elif marker == "OUTCOME" and len(parts) >= 4:'; assert "
 
 # 134: security hardening -- the path-confinement guard is actually present and load-bearing
 # (checked BOTH lines: the runs_root anchor and the confinement comparison that rejects escape)
-_wired "$PROOF_GEN_PY" 'runs_root = os.path.realpath(os.path.join(kit_root, "docs", "runs"))'; assert "134: proof-table-gen.py anchors the confinement root (live call site)" $?
+_wired "$PROOF_GEN_PY" 'runs_root = os.path.realpath(os.path.join(kit_root, "docs", "verification", "generated"))'; assert "134: proof-table-gen.py anchors the confinement root (live call site)" $?
 _wired "$PROOF_GEN_PY" 'if resolved_out != runs_root and not resolved_out.startswith(runs_root + os.sep):'; assert "134: proof-table-gen.py confines the resolved out-path (live call site)" $?
 
 echo "--- AC-NEG [NEGATIVE CONTROL, load-bearing]: a planted over-claim is CAUGHT ------------"
