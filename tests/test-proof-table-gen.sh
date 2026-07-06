@@ -27,11 +27,12 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit-proof-table-gen.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 export DWARVES_KIT_LOG_DIR="$WORK/logs"
 mkdir -p "$DWARVES_KIT_LOG_DIR/runs"
-# SPEC-134: the generator now confines its output under realpath(KIT_ROOT/docs/runs). Point
-# KIT_ROOT at a throwaway root so explicit out-paths land in a real docs/runs (exercising the
-# confinement) without polluting the actual repo. The wrapper honors this env override.
+# SPEC-134/goal-11: the generator now confines its output under
+# realpath(KIT_ROOT/docs/verification/generated). Point KIT_ROOT at a throwaway root so
+# explicit out-paths land in a real docs/verification/generated (exercising the confinement)
+# without polluting the actual repo. The wrapper honors this env override.
 export KIT_ROOT="$WORK/kitroot"
-RUNS="$KIT_ROOT/docs/runs"
+RUNS="$KIT_ROOT/docs/verification/generated"
 mkdir -p "$RUNS"
 
 # ============================================================
@@ -128,7 +129,7 @@ CANON_BODY="$(cat "$CANON")"
 assert_eq "T4: canonical file content is untouched after the refused call" "$CANON_BODY" "HAND-AUTHORED CANONICAL -- do not touch"
 
 DEFAULT_OUT_LINE="$(bash "$GEN" "$RID1" 2>&1 | grep -oE 'wrote [^ ]+' | cut -d' ' -f2)"
-expect "T5: default out-path lands under docs/runs/" "docs/runs/$RID1.md" "$DEFAULT_OUT_LINE"
+expect "T5: default out-path lands under docs/verification/generated/" "docs/verification/generated/$RID1.md" "$DEFAULT_OUT_LINE"
 rm -f "$RUNS/$RID1.md" 2>/dev/null || true   # generated artifact, not part of this test's fixture
 
 # ============================================================
