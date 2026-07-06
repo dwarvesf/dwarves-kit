@@ -16,7 +16,9 @@ Single-repo (dwarves-kit, kit-adopted). Run the loop FROM dwarves-kit cwd so sub
 - [x] 03-wave-tokens , per-sub-goal TOKENS on the wave path (ID-094; WAVE_CAP half dropped , default already agrees), `auto`, PR #206 , merged 9380c8a
 - [x] 04-watchdog-tokens , WATCHDOG_STALL_SECS branch captures tokens to `$slog` (ID-097), `auto`, PR #207 , merged f906fd4
 - [x] 05-conductor-rid-check , the WAVE dispatch path emits a START/rid (it currently emits none) so gate coverage is auditable (ID-099, rescoped), `auto`, PR #208 , merged 78037b5
-- [ ] 06-orchestrate-sweep , tiny batch: stream.jsonl rotation/redaction cap (ID-095) + `Model:` allowlist pre-flight (ID-096) + happy-path tmux kill-window cleanup (ID-098), `auto`, PR #209 (open, CI green, HELD for operator , gated-final)
+- [x] 06-orchestrate-sweep , tiny batch: stream.jsonl rotation/redaction cap (ID-095) + `Model:` allowlist pre-flight (ID-096) + happy-path tmux kill-window cleanup (ID-098), `auto`, PR #209 , merged b0e6112 (TIER-4 dissent fixed: `_route` exact-token allowlist)
+
+**Complete 2026-07-06.** 6/6 shipped, merged bottom-up. TIER-4 convergence PASS (1 in-scope dissent fixed + re-verified; 1 out-of-scope failure-exit token gap → successor `kit-closeout`). RUN_REPORT.md has the full record.
 
 ## Validation (code-grounded, 2026-07-06)
 
