@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# bin/classify -- STABLE consumer entrypoint for the classify subsystem (SPEC-184).
+#
+# Consumers (incl. the adopt-injected CLAUDE.md block) reference THIS stable path, never
+# a deep `$DWARVES_KIT/lib/classify/<file>.sh` path, so an internal lib reorg never breaks
+# them again. Forwards to the classify subsystem entry, which owns the verb grammar
+# (`classify lane <verb> ...` -> lane-classify.sh, etc.).
+#
+# Usage: classify <lane|role|task-type|significance|route-suggest> <args...>
+#   e.g. classify lane classify "<task>"   -> the risk-lane classifier
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/classify/classify.sh" "$@"

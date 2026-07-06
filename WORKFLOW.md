@@ -740,6 +740,7 @@ Per change-type, the companion docs that must move with it. This covers the enum
 | `install.sh` | README install steps, `tests/` |
 | `rules/*` | README path-scoped-rules note, `docs/architecture.md` |
 | `lib/*` | README "Project structure", `docs/architecture.md`, `tests/test-meta.sh` + `tests/test-hooks.sh` (helper unit tests) |
+| `bin/*` (stable consumer entrypoints, SPEC-184) | README "Project structure", `docs/architecture.md`, `lib/adopt.sh` (the injected CLAUDE.md block references `bin/`), `tests/test-stable-interface.sh` |
 | `skills/*` | README, `MANUAL.md` |
 | `examples/hello-spec/*` | `examples/hello-spec/README.md`, the downstream-template note |
 | a PHILOSOPHY principle | `docs/PHILOSOPHY.md`, `commands/kit-health.md` reject-list |

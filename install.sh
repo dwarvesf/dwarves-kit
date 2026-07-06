@@ -81,6 +81,14 @@ if [ "${1:-}" = "--uninstall" ]; then
     rmdir "$HOOKS_DEST" 2>/dev/null && echo "[ok] Removed hooks directory: $HOOKS_DEST"
   fi
 
+  # Remove the bin/ stable-entrypoint dir we deployed (SPEC-184).
+  BIN_DEST="$CLAUDE_DIR/dwarves-kit/bin"
+  if [ -L "$BIN_DEST" ]; then
+    rm "$BIN_DEST" && echo "[ok] Removed bin symlink: $BIN_DEST"
+  elif [ -d "$BIN_DEST" ] && [ -f "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" ]; then
+    rm -rf "$BIN_DEST" && echo "[ok] Removed copied bin dir: $BIN_DEST"
+  fi
+
   # Remove the lib we deployed (SPEC-045; symlink pre-066, real dir post-066).
   LIB_DEST="$CLAUDE_DIR/dwarves-kit/lib"
   if [ -L "$LIB_DEST" ]; then
@@ -291,7 +299,7 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
   echo "Doing a COMPAT-ONLY install (legacy path shims), not the full bash install,"
   echo "to avoid double-registering hooks."
   mkdir -p "$CLAUDE_DIR/dwarves-kit"
-  for f in lib WORKFLOW.md AGENTS.md; do
+  for f in bin lib WORKFLOW.md AGENTS.md; do
     ln -sfn "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
     echo "[ok] compat symlink ~/.claude/dwarves-kit/$f -> $KIT_DIR/$f"
   done
@@ -369,6 +377,21 @@ else
   [ -d "$LIB_DEST" ] && [ ! -L "$LIB_DEST" ] && rm -rf "$LIB_DEST"
   cp -R "$KIT_DIR/lib" "$LIB_DEST"
   echo "[ok] Copied lib into $LIB_DEST (pinned, SPEC-066)"
+fi
+
+# 1c-bis. Deploy bin/ -- the STABLE consumer entrypoint dir (SPEC-184). Consumers (an
+# adopted repo's board shims, the adopt-injected CLAUDE.md block) reference
+# $DWARVES_KIT/bin/<name>, never a deep lib path, so an internal lib reorg never breaks
+# them. Copied next to lib/ so each wrapper's `../lib/...` resolution holds in the install.
+if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
+  echo "[ok] Kit is installed in place; bin already at \$HOME/.claude/dwarves-kit/bin/"
+else
+  BIN_DEST="$CLAUDE_DIR/dwarves-kit/bin"
+  mkdir -p "$CLAUDE_DIR/dwarves-kit"
+  [ -L "$BIN_DEST" ] && rm "$BIN_DEST"
+  [ -d "$BIN_DEST" ] && [ ! -L "$BIN_DEST" ] && rm -rf "$BIN_DEST"
+  cp -R "$KIT_DIR/bin" "$BIN_DEST"
+  echo "[ok] Copied bin into $BIN_DEST (stable entrypoint, SPEC-184)"
 fi
 
 # 1d. Deploy the operate-contract files so they resolve from the stable install path. adopt.sh

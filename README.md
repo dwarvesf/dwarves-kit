@@ -303,6 +303,7 @@ dwarves-kit/
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
+  bin/                          STABLE consumer entrypoints (SPEC-184): `board`/`classify`/`gate` thin forwarders to `lib/<subsystem>/`. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       (25 files) Subagents dispatched by commands
   commands/                     (27 markdown command prompts)
   hooks/                        (21 scripts + hooks.json plugin manifest)
