@@ -1,7 +1,7 @@
 # Proof of done: ho-03-wire-mega (harness-ops SG-03)
 
 Sub-goal: `_meta/megagoals/harness-ops/goals/03-wire-mega.md` ("wire-mega").
-Canonical companion run-table: `docs/runs/harness-ops-03-mega.md` (generated,
+Canonical companion run-table: `docs/verification/generated/harness-ops-03-mega.md` (generated,
 `bash lib/gate/proof-table-gen.sh harness-ops-03-mega`).
 
 ## 1. Acceptance criteria (Done =)
@@ -109,7 +109,7 @@ bash tests/test-orchestrate.sh
 bash tests/test-orchestrate-hardening.sh
 bash tests/test-orchestrate-wavefront.sh
 bash tests/test-mega-merge.sh
-bash lib/gate/proof-table-gen.sh harness-ops-03-mega   # regenerates docs/runs/harness-ops-03-mega.md
+bash lib/gate/proof-table-gen.sh harness-ops-03-mega   # regenerates docs/verification/generated/harness-ops-03-mega.md
 ```
 
 The `/tmp/ho03proof` fixture used for §2 is not committed (scratch); recreate per the

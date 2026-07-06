@@ -52,7 +52,8 @@ its performance rationale (no TOML parse on every Bash call).
 5. **Comprehensive, status-tagged schema** (Han, 2026-07-06): the config is the SINGLE
    forward-looking control surface, so it carries reserved / designed / consumer-side keys
    too, each STATUS-TAGGED (`[impl] [design] [reserved] [consumer]`) so an inert key is
-   documented, never a silent surprise. Full template: `kit.toml.example` at repo root.
+   documented, never a silent surprise. Full template: `kit.toml` at repo root (promoted
+   from `kit.toml.example` by sub-goal 04).
 6. **default_model / over_test are GLOBAL fallbacks, kept deliberately.** The real controls
    are per-sub-goal goal-file fields (`Model:`, `Done-mode:`). Han keeps global keys so an
    adopter on a DIFFERENT harness/model (not Claude Code) has one default to set. Precedence:
@@ -98,7 +99,8 @@ its performance rationale (no TOML parse on every Bash call).
 ## Sequencing
 
 1. `lib/config/kit-config.sh` resolver + tests (the mechanics).
-2. Ship `kit.toml.example` -> resolved default; wire `[ledger]` + `[mega]` `[impl]` keys
+2. Ship `kit.toml.example` -> resolved default (shipped; now the repo-root `kit.toml`);
+   wire `[ledger]` + `[mega]` `[impl]` keys
    through the resolver (env-var back-compat preserved).
 3. Stable consumer interface (dispatcher / installed command) + repoint the adopt contract.
 4. `docs/consumer-contract.md`.
