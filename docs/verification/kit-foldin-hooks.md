@@ -1,54 +1,140 @@
-# Proof of done: kit-foldin hooks-batch (4 cc-* guards landed as kit hooks)
+# Proof of done: kit-foldin sub-goal 02 (hooks-batch)
 
 VERDICT: PASS
 
-Ports 4 deterministic `cc-*` guards from `ops-toolkit/tools/cc-{backlog,citation-guard,
-context-hooks,harvest}/` into `dwarves-kit/hooks/` as function-named hooks
-(`backlog-stage`, `citation-guard`, `context-hints`, `harvest`), wired into BOTH hook
-manifests (`settings.json` = the real registration file; `hooks/hooks.json` = the plugin
-manifest) in parity, plus a generalized `install.sh` skill-copy loop. Full design +
-per-tool detail: co-located canonical at `docs/proof/kit-foldin-hooks.md`; this file is the
-ship-gate run-table + negative control.
+Ports 4 deterministic `cc-*` guard tools from `ops-toolkit/tools/cc-{backlog,citation-guard,
+context-hooks,harvest}/` into `dwarves-kit/hooks/` under function names (per the BINDING
+design note `ops-toolkit/research/2026-07-05-cc-elevation-kit-foldin-design.md`), wires
+them into both hook manifests, and generalizes `install.sh`'s skill-copy step.
 
 ## Acceptance criteria
 
 1. Each of the 4 hooks lives at `hooks/<function-name>.sh` and behaves identically to its
-   ops-toolkit source (fail-open on empty/malformed stdin preserved; citation-guard strict
-   mode still exits 2 only on a genuine unresolved ref).
-2. `settings.json` AND `hooks/hooks.json` each register all 4 hooks, in parity.
-3. `install.sh` materializes all 4 `.sh` + their `.py`/`.json` companions into a temp HOME,
-   and its skill-copy step globs `skills/*/SKILL.md` (not a hardcoded single skill).
-4. No `workspace/tieubao` path in any of the 9 new files.
-5. The full kit test suite stays green.
+   ops-toolkit source (fail-open/fail-closed posture preserved exactly).
+2. Both `settings.json` (the real registration file) and `hooks/hooks.json` (the plugin
+   manifest) register all 4 hooks, in parity (`tests/test-meta.sh`'s own parity check).
+3. `install.sh`'s skill-copy step generalizes to a glob over `skills/*/SKILL.md`.
+4. No hardcoded ops-toolkit path (`workspace/tieubao`) in any new file.
+5. Full kit test suite stays green; a fresh-context recheck re-verifies the untrusted-input
+   hooks (citation-guard, context-hints, harvest).
 
 ## Implementation
 
-`.sh` shims `exec python3` on a co-located `.py` (the source tools are Python). Personal
-ops-toolkit paths become an opt-in `REPO_ROOT`/`_repo_root()` seam (mirrors `lib/board/board.sh`);
-the context-hints skill map ships empty (`{}`). `install.sh`'s `hooks/*.sh` copy loop
-extended to copy `*.py`/`*.json` companions (excluding `hooks.json`), and its skill copy
-(install + uninstall) generalized to a `skills/*/SKILL.md` glob. Env vars renamed
-`CC_BACKLOG_*`->`BACKLOG_STAGE_*`, `CC_CITATION_*`->`CITATION_GUARD_*`,
-`CC_CONTEXT_*`->`CONTEXT_HINTS_*`, `CC_HARVEST_*`->`HARVEST_*`; `OPS_TOOLKIT` removed.
+| Source (ops-toolkit) | Landed as | Event(s) |
+|---|---|---|
+| `tools/cc-backlog/bin/cc-backlog` | `hooks/backlog-stage.{sh,py}` | SessionEnd |
+| `tools/cc-citation-guard/bin/cc-citation-guard` | `hooks/citation-guard.{sh,py}` | Stop |
+| `tools/cc-context-hooks/bin/cc-context` (+ `skills-map.json`) | `hooks/context-hints.{sh,py}` (+ `hooks/context-hints-skills-map.json`, shipped `{}`) | UserPromptSubmit |
+| `tools/cc-harvest/bin/cc-harvest` | `hooks/harvest.{sh,py}` | PreCompact, SessionEnd (`--lab-log`) |
+
+Each `.sh` is a thin bash shim (`exec python3 "$HERE/<name>.py"`) since the source tools are
+Python (the design-note inventory's "Lang: bash" was a labeling artifact of the flat-script
+*shape*, not the interpreter). `install.sh`'s existing `hooks/*.sh` copy loop was extended
+with a companion-file loop for `*.py`/`*.json` (excluding `hooks.json`, the plugin manifest),
+so the .py logic + the skill-map data file land alongside their `.sh` shim at
+`$HOME/.claude/dwarves-kit/hooks/`.
+
+**Consumer seam (no ops-toolkit path).** `backlog-stage.py` and `harvest.py` no longer read
+`OPS_TOOLKIT`; both resolve `_repo_root()` = `REPO_ROOT` env, else `git rev-parse
+--show-toplevel`, else `$PWD` (mirroring `lib/board/board.sh`'s own `_default_repo_root`/
+`_resolve_repo_root` precedent for the identical `_meta/BACKLOG.md` convention), then default
+their ledger/staging/draft paths repo-relative under `_meta/`. `context-hints.py` ships an
+**empty** `{}` skill map by default (the source `skills-map.json` was entirely ops-toolkit
+personal-skill names; shipping it would be exactly the "no tenant assumption" violation the
+design note forbids) , a consumer wires their own via `CONTEXT_HINTS_SKILLMAP`.
+
+**Env var renames** (old cc- name -> new, function-named per Decision 1):
+
+| Old (ops-toolkit) | New (kit) |
+|---|---|
+| `CC_BACKLOG_*` | `BACKLOG_STAGE_*` |
+| `CC_CITATION_*` | `CITATION_GUARD_*` |
+| `CC_CONTEXT_*` | `CONTEXT_HINTS_*` |
+| `CC_HARVEST_*` | `HARVEST_*` |
+| `OPS_TOOLKIT` (backlog-stage, harvest defaults) | removed; replaced by `REPO_ROOT` + repo-relative `_meta/` defaults |
+
+**Registration.** `settings.json`: `backlog-stage.sh` added to a new `SessionEnd` array
+(alongside `harvest.sh --lab-log`); `citation-guard.sh` added to the existing `Stop` array;
+`context-hints.sh` registered under a new `UserPromptSubmit` array; `harvest.sh` (no args)
+added to the existing `PreCompact` array. `hooks/hooks.json` mirrors all 4 with
+`${CLAUDE_PLUGIN_ROOT}` paths. `install.sh`'s skill-copy step (install + uninstall) now loops
+`skills/*/SKILL.md` instead of a hardcoded `get-api-docs` check.
+
+**Not ported** (scope edges): `add-backlog` (the human-run promote CLI companion to
+cc-backlog) is out of scope, this sub-goal ports only the SessionEnd staging hook itself.
+`cc-harvest`'s `--stop-trigger`/`--cleanup` modes are kept in the ported file (same file as
+the source) but not wired to any new event, matching the source tool's own opt-in posture.
 
 Rollback: pure hook + installer + test + doc change, no state/data migration; rollback is
 `git revert` of the two feature commits (no restore procedure needed). [UNAVAILABLE: no
 stateful rollback flow , not a deploy/data change.]
 
-## Confirmation run-table (2026-07-05)
+## Confirmation run-table
+
+| # | Check | Command | Result |
+|---|---|---|---|
+| 1 | backlog-stage fixture (stage + repo-relative default) | `tests/test-kit-foldin-hooks.sh` "backlog-stage.sh" block | PASS |
+| 2 | citation-guard fixture (log-only + strict-mode exit 2) | same file, "citation-guard.sh" block | PASS |
+| 3 | context-hints fixture (keyword hint fires) | same file, "context-hints.sh" block | PASS |
+| 4 | harvest fixture (ledger stage + `--lab-log` draft) | same file, "harvest.sh" block | PASS |
+| 5 | NCs: empty stdin, malformed JSON (all 4 hooks) | same file, per-hook "NC:" rows | PASS (8/8) |
+| 6 | NC: harvest `--cleanup` on a missing ledger dir | same file, "NC: --cleanup on missing ledger dir" | PASS |
+| 7 | Manifest parity: both files name all 4 hooks | same file, "Registration parity" block | PASS (8/8) |
+| 8 | Temp-HOME install wires all 4 + companions | same file, "Installer materializes..." block | PASS (17/17) |
+| 9 | Skill-copy loop generalization (2nd fabricated skill) | same file, "Skill-copy loop generalization" block | PASS |
+| 10 | Done gate: no `workspace/tieubao` in new files | same file, "Done gate" block | PASS |
+| 11 | Full kit meta suite unaffected | `tests/test-meta.sh` | PASS 672/672 |
+| 12 | Full kit hooks suite unaffected (count pin bumped 17->22) | `tests/test-hooks.sh` | PASS 452/452 |
+| 13 | Rung-3 fresh-context recheck (citation-guard/context-hints/harvest) | `kit:recheck-verifier` dispatch, independent re-run + source re-read | see Run detail |
+
+**COVERAGE-DELTA.** New coverage added: `tests/test-kit-foldin-hooks.sh` (49 assertions: 4
+per-hook fixture rows, 8 NC rows incl. the harvest `--cleanup` missing-ledger case, 8
+manifest-parity rows, 17 temp-HOME install rows, 2 skill-copy-glob rows, 1 grep-clean row).
+Existing coverage touched: `tests/test-hooks.sh`'s hardcoded event-hook-count regression pin
+(17 -> 22, a legitimate bump since the 4 new hooks add 5 new manifest entries:
+backlog-stage, citation-guard, context-hints, harvest x2 for PreCompact+SessionEnd), and the
+README.md/`docs/architecture.md` hook-inventory parity checks (both already existing
+`test-meta.sh` assertions, now satisfied by the added rows/counts).
+
+## Run detail (2026-07-05)
+
+```
+$ bash tests/test-kit-foldin-hooks.sh
+Passed: 49 / 49
+All kit-foldin hooks tests passed.
+
+$ bash tests/test-meta.sh
+Passed: 672 / 672
+All meta tests passed.
+
+$ bash tests/test-hooks.sh
+Passed: 452 / 452
+All tests passed.
+```
+
+Rung-3 fresh-context recheck: dispatched `kit:recheck-verifier` against this worktree
+(branch `feat/kit-foldin-02-hooks`, post-commit) to independently re-run the 3 test suites
+above AND re-derive from source (not from this doc's claims) that citation-guard.py,
+context-hints.py, and harvest.py all fail open on empty/malformed stdin, that
+`CITATION_GUARD_STRICT=1` only exits 2 on a genuinely unresolved ref, that harvest's
+extractor subprocess call uses `shlex.split` (never `shell=True`), and that none of the 4
+hooks' files contain `workspace/tieubao`. Verdict: **PASS** , the verifier reproduced all 3 suites by fresh
+re-execution (49/49, 672/672, 452/452) and independently re-derived each safety property by
+live-executing each hook with crafted stdin: citation-guard/context-hints/harvest all exit 0
+on empty + malformed stdin (context-hints also on a non-dict `[1,2,3]` payload that would
+raise on `.get`), `CITATION_GUARD_STRICT=1` exits 2 only on a genuine unresolved ref,
+harvest's `run_extractor` uses `subprocess.run(shlex.split(cmd), ...)` with zero `shell=True`
+hits (transcript text cannot reach a shell), and `rg` found no `workspace/tieubao` across all
+9 files. Verifier note: the Rung-3 edge cases are covered by
+`tests/test-kit-foldin-hooks.sh` (which it re-ran) but not by the two pre-existing suites; a
+dedicated `test-hooks-security.sh` is a reasonable future hardening, filed as a follow-up
+thought, not a blocker for this ship.
+
+Additional live-exercised row (from the ship-gate back-compat pass):
 
 | # | Command | Exit | Output |
 |---|---------|------|--------|
-| 1 | `bash tests/test-kit-foldin-hooks.sh` | 0 | `Passed: 49 / 49` |
-| 2 | `bash tests/test-meta.sh` | 0 | `Passed: 672 / 672` (incl. the settings.json<->hooks.json parity check) |
-| 3 | `bash tests/test-hooks.sh` | 0 | `Passed: 452 / 452` (event-hook-count pin bumped 17->22) |
-| 4 | per-hook fixtures: backlog-stage / citation-guard / context-hints / harvest | 0 | 4 fixture rows PASS (row 1-4 of suite 1) |
-| 5 | NCs: empty stdin + malformed JSON (all 4) + harvest `--cleanup` missing ledger | 0 | 9 NC rows PASS, none crash |
-| 6 | citation-guard `CITATION_GUARD_STRICT=1` on a genuine unresolved ref | 2 | `citation-guard: unresolved citations: foo.txt:99 (file has 3 lines)` |
-| 7 | temp-HOME `install.sh`: 4 `.sh` + `.py` + skill-map wired at `~/.claude/dwarves-kit/hooks/` | 0 | 17 install rows PASS; `jq` confirms all 4 paths in the merged settings.json |
-| 8 | skill-copy glob installs a fabricated 2nd skill | 0 | `skill-copy loop installs a SECOND, non-hardcoded skill (glob proof)` PASS |
-| 9 | `grep -rn 'workspace/tieubao' hooks/<9 new files>` | 1 | (no match, done gate clean) |
-| 10 | `kit:recheck-verifier` fresh-context Rung-3 re-run | 0 | reproduced 49/49 + 672/672 + 452/452; re-derived fail-open + no-shell-injection + grep-clean. VERDICT PASS |
+| a | citation-guard `CITATION_GUARD_STRICT=1` on a genuine unresolved ref | 2 | `citation-guard: unresolved citations: foo.txt:99 (file has 3 lines)` |
 
 ## NEGATIVE CONTROL (revert -> RED -> restore)
 
@@ -74,7 +160,7 @@ suite goes RED on the exact hook that drifted.
 ## Reproduce
 
 ```
-cd <dwarves-kit>/.claude/worktrees/kf-02   # or merged master
+cd dwarves-kit   # or the kf-02 worktree, or merged master
 bash tests/test-kit-foldin-hooks.sh   # 49/49
 bash tests/test-meta.sh               # 672/672
 bash tests/test-hooks.sh              # 452/452
