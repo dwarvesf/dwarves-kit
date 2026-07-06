@@ -98,6 +98,29 @@ ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$ORCH_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 BACKLOG_LIB="${BACKLOG_LIB:-$LIB_ROOT/board/backlog.sh}"
 
+# Config layer (SPEC-187 / SG-03, executes ADR-0032 section 6): `[mega]` keys resolve
+# project .kit.toml > kit-root kit.toml > the hardcoded default baked into each `${VAR:-...}`
+# below, and the ENV VAR always wins over all three (an operator's `WAVE_CAP=5` in the
+# shell overrides even a project config). Sourced once, here, so every `${X:-$(kit_config_get
+# ...)}` below can call `kit_config_get` unconditionally; the guard in kit-config.sh makes a
+# double-source a no-op (idempotent), so a caller that already sourced it (e.g. a wrapper
+# script) pays no cost.
+CONFIG_LIB="${CONFIG_LIB:-$LIB_ROOT/config/kit-config.sh}"
+# shellcheck source=lib/config/kit-config.sh
+[ -f "$CONFIG_LIB" ] && . "$CONFIG_LIB"
+
+# _kit_bool01 <val> <default01> -- normalize a TOML `true`/`false` (or already-0/1) config
+# value to the `0`/`1` shape orchestrate.sh's env-var knobs use; anything else (unset, typo)
+# falls back to the caller's default01. Kept tiny and local to this file since kit-config.sh
+# itself is TOML-value-shape-agnostic (it just returns the raw string).
+_kit_bool01() {
+  case "$1" in
+    true|1) printf '1' ;;
+    false|0) printf '0' ;;
+    *) printf '%s' "$2" ;;
+  esac
+}
+
 # Loop robustness (SG-11, advisory). WATCHDOG_STALL_SECS=0 (default) keeps the synchronous run
 # path UNCHANGED. >0 backgrounds each session and polls every WATCHDOG_POLL_SECS: if the session
 # emits no output for WATCHDOG_STALL_SECS while its process is still alive, it is flagged
@@ -122,7 +145,9 @@ FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
 # WAVE_CAP=1 to force the old always-serial loop. A non-numeric or <1 value is REJECTED at cmd_run
 # entry (NOT silently coerced), per DEC-009 / Edge case 4. Defaulted here so the top-of-loop `-ge 2`
 # test is `set -u`-safe.
-WAVE_CAP="${WAVE_CAP:-2}"
+# SG-03: env wins outright; else the config layer's [mega].wave_cap (project > kit-root);
+# else the hardcoded 2 below (kit_config_get's own caller-default arg).
+WAVE_CAP="${WAVE_CAP:-$(kit_config_get mega.wave_cap 2)}"
 
 # Wave-convergence merge hook (SPEC-106 TASK-004c). After a wave lands its sub-goals on their worktree
 # branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
@@ -143,7 +168,9 @@ WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$LIB_ROOT/goal/mega-merge.sh merge}"
 # sub-goal's Proof is built on). TMUX_CMD mirrors CLAUDE_CMD's mock seam (tests point it at a fake
 # `tmux` so no real tmux server is needed in CI). TMUX_SESSION overrides the derived per-megagoal
 # tmux session name (default: sanitized from the megadir path, see _mux_session_name).
-MULTIPLEXER="${MULTIPLEXER:-0}"
+# SG-03: env wins; else [mega].multiplexer (project > kit-root, "true"/"false" normalized);
+# else off (0).
+MULTIPLEXER="${MULTIPLEXER:-$(_kit_bool01 "$(kit_config_get mega.multiplexer)" 0)}"
 TMUX_CMD="${TMUX_CMD:-tmux}"
 
 # Pane viewer push (SPEC-121). SPEC-119's panes are PULL-only (the operator must know the tmux
@@ -177,7 +204,9 @@ PANE_VIEWER_ALLOWED="auto cmux kitty wezterm ghostty iterm terminal none"
 # test uses so the close fires only in its own dedicated test). TIER4_CORPUS overrides the no-orphan
 # sweep root (default: the megadir's git repo root); unset AND unresolvable -> the sweep is SKIPPED
 # with a WARN (there is no corpus to sweep, so it must not manufacture a false halt).
-TIER4_CLOSE="${TIER4_CLOSE:-1}"
+# SG-03: env wins; else [mega].tier4_close (project > kit-root, "true"/"false" normalized);
+# else on (1).
+TIER4_CLOSE="${TIER4_CLOSE:-$(_kit_bool01 "$(kit_config_get mega.tier4_close)" 1)}"
 
 _say() { printf '%s\n' "$*"; }
 
@@ -508,6 +537,18 @@ _route() {
   if [ -f "$gf" ]; then
     model=$(grep -iE '^Model:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
     effort=$(grep -iE '^Effort:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
+  fi
+  # SG-03: the goal-file `Model:` field is UNCHANGED and still wins outright (Scope: "the
+  # goal-file Model: parse ... still wins"). Only when the field is ABSENT does the run fall
+  # back through the config layer's [mega].default_model (project .kit.toml > kit-root
+  # kit.toml). No hardcoded value is baked in HERE: with no config file either, `model` stays
+  # empty and the pre-existing "inherit the session's own tier" behavior is preserved byte-
+  # for-byte (SPEC-087). The documented "hardcoded" floor of the four-layer chain is
+  # kit.toml.example's own shipped `default_model = "sonnet"` line -- once an adopter installs
+  # that file as their kit-root kit.toml, THIS lookup picks it up as the kit-root layer, same
+  # as any other operator-set value.
+  if [ -z "$model" ]; then
+    model=$(kit_config_get mega.default_model)
   fi
   if [ -n "$model" ]; then
     model_lc=$(printf '%s' "$model" | tr 'A-Z' 'a-z')
