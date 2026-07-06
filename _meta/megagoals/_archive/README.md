@@ -22,3 +22,9 @@ Consolidated 2026-07-05..06 (24 folders): 4 completed (`gate-review-absorptions`
 `harness-observatory`, `kit-absorptions`, `orchestrate-hardening`) + 11 previously
 archived in ops-toolkit + the 8-folder CC-harness/token cluster + `runner-fastpath`
 (closed at 12/13, its last box rehomed to the shipped `kit-foldin`).
+
+`harness-ops` (config-layer + docs-restructure, 13 sub-goals) closed 2026-07-06:
+Track A put one `kit.toml` + per-project `.kit.toml` behind one resolver (ledger/mega/
+manifest, stable `bin/` entrypoints, inert reserved keys, consumer contract); Track B
+folded `docs/proof/` into `docs/verification/`, relocated briefs + generated run-tables,
+and slimmed the 3 giant root files to thin stubs. Merged #211-#222 to master 2d8a188.
