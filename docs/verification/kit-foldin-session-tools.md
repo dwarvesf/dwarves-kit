@@ -228,3 +228,29 @@ cat "$d"/intel-*.md
 grep -rn "JSONDecodeError" tools/session-observe tools/session-recall lib/session   # exactly 2 sites, one is parse_transcript.py, the other cc-semantic's unrelated parse_json()
 grep -rn "workspace/tieubao" tools/session-observe tools/session-recall tools/session-intel lib/session   # empty
 ```
+
+## What moved (folded from prior docs/proof/kit-foldin-session-tools.md)
+
+`ops-toolkit/tools/cc-observe` -> `tools/session-observe/` (3 bins: `cc-observe`,
+`cc-semantic`, `cc-vps-report`, unchanged names). `ops-toolkit/tools/cc-recall`
+-> `tools/session-recall/` (`bin/cc-recall`, `cc_recall.py`, unchanged names).
+`ops-toolkit/tools/cc-intel` -> `tools/session-intel/` (`bin/cc-intel`, unchanged
+name) MINUS its `deploy/` (a personal launchd cron with a hardcoded
+`/Users/tieubao/...` plist path and an ops-toolkit-assuming runbook -- it is not
+a generic install script the way skill-curator's was, so deploy-follows-source
+does not pull it into the kit; it stays in ops-toolkit for SG-07 to preserve).
+
+History carried over per-commit via `git format-patch --relative` +
+`git am --directory` (18 commits total: 12 for observe, 1 for recall, 5 for
+intel), the same technique SG-04 used for skill-curator -- `git log --follow`
+on the new kit path still walks back through the ops-toolkit-era commits.
+
+## Gate ledger
+
+`bash lib/gate/gate-ledger.sh show kit-foldin-03-session` records: START (lane
+normal), GATE design (ran -- Design: bearing, the interface decision above),
+GATE build (ran -- move + extraction + rewire, 40+6+7+8 = 61 pre-existing
+tests green unmodified + 7 new parser-unit tests), GATE review (dispatched
+`kit:code-reviewer`, security lens, over untrusted-input parsing), GATE
+recheck (dispatched `kit:recheck-verifier`, fresh-context re-run of the
+run-table + NCs), GATE ship (this PR).
