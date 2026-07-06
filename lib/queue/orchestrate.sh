@@ -1597,11 +1597,11 @@ _no_orphan_check() {  # corpus
     # Search the dispatch corpus (commands/ + lib/ + the two workflow docs), NOT agents/. Missing
     # paths (a fixture without lib/ or AGENTS.md) just error to the swallowed stderr and are skipped.
     hit=$(grep -rlwF -- "$name" \
-            "$corpus/commands" "$corpus/lib" "$corpus/AGENTS.md" "$corpus/WORKFLOW.md" 2>/dev/null \
+            "$corpus/commands" "$corpus/lib" "$corpus/AGENTS.md" "$corpus/WORKFLOW.md" "$corpus/docs/WORKFLOW.md" 2>/dev/null \
             | head -1)
     if [ -z "$hit" ]; then
       found=1
-      printf '[no-orphan] BLOCKING: agent %s defined (agents/%s.md) but never dispatched (no whole-word reference in commands/, lib/, AGENTS.md, WORKFLOW.md).\n' "$name" "$name"
+      printf '[no-orphan] BLOCKING: agent %s defined (agents/%s.md) but never dispatched (no whole-word reference in commands/, lib/, AGENTS.md, WORKFLOW.md, docs/WORKFLOW.md).\n' "$name" "$name"
     fi
   done
   [ "$found" = 0 ] && return 0 || return 1

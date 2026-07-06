@@ -37,7 +37,7 @@ assert() {
   fi
 }
 
-WORKFLOW="$KIT_DIR/WORKFLOW.md"
+WORKFLOW="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 AGENTS="$KIT_DIR/AGENTS.md"
 README="$KIT_DIR/README.md"
 

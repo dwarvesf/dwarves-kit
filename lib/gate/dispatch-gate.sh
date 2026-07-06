@@ -28,7 +28,7 @@ set -euo pipefail
 # Resolve the kit root (this file lives in <root>/lib/).
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
-WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
+WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 
 # --- prefix extraction ------------------------------------------------------
 

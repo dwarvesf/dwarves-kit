@@ -9,7 +9,7 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 A="$KIT_DIR/agents/advisor.md"
 RT="$KIT_DIR/commands/review-team.md"
-WF="$KIT_DIR/WORKFLOW.md"
+WF="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi; }

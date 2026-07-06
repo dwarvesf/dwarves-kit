@@ -37,7 +37,7 @@ set -euo pipefail
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$GATE_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
-WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/WORKFLOW.md}"
+WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 # Durable run-telemetry root (SPEC-097): resolve + one-time additive migration out of the
 # ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
 # shellcheck source=lib/telemetry/kit-log-dir.sh

@@ -71,7 +71,7 @@ echo "=== Invocation namespace guard (SPEC-029, SPEC-030) ==="
 # automatically. tests/ is NOT scanned: this file names /user: to describe the
 # guard. Enforces /user: ABSENCE only (DEC-005); bare-/cmd is not auto-checked.
 USER_NS_HITS=$(cd "$KIT_DIR" && { git ls-files '*.md' \
-      | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|_meta/|CHANGELOG\.md)'; \
+      | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|_meta/|CHANGELOG\.md|docs/CHANGELOG\.md)'; \
     git ls-files 'install.sh' 'hooks/*.sh'; } \
   | xargs grep -l '/user:' 2>/dev/null)
 if [ -n "$USER_NS_HITS" ]; then
@@ -168,10 +168,19 @@ if HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" >/dev/null 2>&1; then
   assert_true "install.sh materializes AGENTS.md (SPEC-049)" $?
   [ -e "$TMP_HOME/.claude/dwarves-kit/WORKFLOW.md" ]
   assert_true "install.sh materializes WORKFLOW.md (SPEC-049)" $?
+  # SPEC-185: WORKFLOW.md's bulk moved to docs/WORKFLOW.md (root is a thin stub); gate-ledger
+  # reads $KIT_ROOT/docs/WORKFLOW.md at runtime, so install.sh must ALSO materialize that file
+  # or every installed consumer's gate machinery 404s against an uncopied docs/ path.
+  [ -e "$TMP_HOME/.claude/dwarves-kit/docs/WORKFLOW.md" ]
+  assert_true "install.sh materializes docs/WORKFLOW.md bulk (SPEC-185)" $?
+  N_INSTALLED=$(CLAUDE_PLUGIN_ROOT="$TMP_HOME/.claude/dwarves-kit" bash "$TMP_HOME/.claude/dwarves-kit/lib/gate/gate-ledger.sh" required full 2>/dev/null | wc -l | tr -d ' ')
+  assert_true "installed stub's pointer resolves: gate-ledger reads the lane matrix from the install ($N_INSTALLED gates, SPEC-185)" "$([ "${N_INSTALLED:-0}" -ge 5 ]; echo $?)"
   # SPEC-049: uninstall removes the two contract symlinks (the new uninstall code path).
   HOME="$TMP_HOME" bash "$KIT_DIR/install.sh" --uninstall >/dev/null 2>&1
   { [ ! -L "$TMP_HOME/.claude/dwarves-kit/AGENTS.md" ] && [ ! -L "$TMP_HOME/.claude/dwarves-kit/WORKFLOW.md" ]; }
   assert_true "uninstall removes the AGENTS.md + WORKFLOW.md symlinks (SPEC-049)" $?
+  [ ! -L "$TMP_HOME/.claude/dwarves-kit/docs/WORKFLOW.md" ]
+  assert_true "uninstall removes the docs/WORKFLOW.md symlink (SPEC-185)" $?
 else
   assert_eq "install.sh runs cleanly into an isolated HOME" "ok" "failed"
 fi
@@ -311,7 +320,8 @@ fi
 # WORKFLOW.md and CLAUDE.md must point, not carry a numbered "1. AGENTS.md /
 # 2. CLAUDE.md ..." restatement. A reappearance is drift; fail loudly. Scoped to
 # these two CC-layer docs; AGENTS.md itself legitimately carries the list.
-for DOC in WORKFLOW.md CLAUDE.md; do
+# SPEC-185: WORKFLOW.md's bulk lives at docs/WORKFLOW.md; check both the root stub and the bulk.
+for DOC in WORKFLOW.md docs/WORKFLOW.md CLAUDE.md; do
   RESTATE=$(grep -cE '^[0-9]+\.[[:space:]]+(AGENTS|CLAUDE)\.md' "$KIT_DIR/$DOC" 2>/dev/null || true)
   assert_eq "$DOC does not restate the AGENTS.md read-order list (no drift)" "0" "$RESTATE"
 done
@@ -452,9 +462,11 @@ for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
 done
 
 # MANUAL.md agent table cross-refs match agents/ files.
-# Canonical agent inventory is in MANUAL.md "Agents" section (table rows).
+# Canonical agent inventory is in MANUAL.md "Agents" section (table rows), whose bulk now
+# lives at docs/MANUAL.md (root MANUAL.md is a thin stub, SPEC-185).
 # CLAUDE.md no longer mirrors the inventory; see docs/architecture.md for component fit.
-SUBAGENT_NAMES=$(grep '^| `' "$KIT_DIR/MANUAL.md" | sed 's/^| `\([^`]*\)`.*/\1/' | sort -u)
+MANUAL_BULK="$KIT_DIR/MANUAL.md"
+SUBAGENT_NAMES=$(grep '^| `' "$MANUAL_BULK" | sed 's/^| `\([^`]*\)`.*/\1/' | sort -u)
 for NAME in $SUBAGENT_NAMES; do
   if [ -f "$KIT_DIR/agents/$NAME.md" ]; then
     TOTAL=$((TOTAL + 1))
@@ -467,7 +479,7 @@ done
 for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
   AGENT=$(basename "$AGENT_FILE" .md)
   TOTAL=$((TOTAL + 1))
-  if grep -q "^| \`$AGENT\` " "$KIT_DIR/MANUAL.md"; then
+  if grep -q "^| \`$AGENT\` " "$MANUAL_BULK"; then
     echo -e "  ${GREEN}PASS${NC} agent $AGENT listed in MANUAL.md"
     PASS=$((PASS + 1))
   else
@@ -570,9 +582,10 @@ for FILE in "$DEBUG_CMD" "$RAT_HOOK"; do
   fi
 done
 
-# WORKFLOW.md must carry the bug lane that routes to /debug.
+# WORKFLOW.md must carry the bug lane that routes to /debug. Bulk lives at
+# docs/WORKFLOW.md (root is a thin stub, SPEC-185).
 TOTAL=$((TOTAL + 1))
-if grep -qE '^\| bug ' "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+if grep -qE '^\| bug ' "$KIT_DIR/docs/WORKFLOW.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has the bug lane"
   PASS=$((PASS + 1))
 else
@@ -863,7 +876,8 @@ STRAY_PLANNING_AGENTS=$(grep -rn '\.planning' "$KIT_DIR/agents/" 2>/dev/null | w
 assert_eq "no .planning/ refs in agents/ (fallback removed)" "0" "$STRAY_PLANNING_AGENTS"
 
 # SPEC-006: the orchestration spine is documented + /kit:assign exists.
-WF_SPINE="$KIT_DIR/WORKFLOW.md"
+# Bulk lives at docs/WORKFLOW.md (root WORKFLOW.md is a thin stub, SPEC-185).
+WF_SPINE="$KIT_DIR/docs/WORKFLOW.md"
 for HEADING in "## The spine" "#### Doc-impact map"; do
   TOTAL=$((TOTAL + 1))
   if grep -qF "$HEADING" "$WF_SPINE" 2>/dev/null; then
@@ -1116,7 +1130,8 @@ echo ""
 echo "=== WORKFLOW.md contract ==="
 # ============================================================
 
-WF_ROOT="$KIT_DIR/WORKFLOW.md"
+# Bulk lives at docs/WORKFLOW.md (root WORKFLOW.md is a thin stub, SPEC-185).
+WF_ROOT="$KIT_DIR/docs/WORKFLOW.md"
 WF_DEMO="$KIT_DIR/examples/hello-spec/WORKFLOW.md"
 
 # Kit-root WORKFLOW.md carries the four pinned sections (matched on ASCII prefixes
@@ -1174,7 +1189,7 @@ fi
 
 # (b) WORKFLOW.md is the canonical home: it must carry the "Mid-flight amend" rule.
 TOTAL=$((TOTAL + 1))
-if grep -qF 'Mid-flight amend' "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+if grep -qF 'Mid-flight amend' "$KIT_DIR/docs/WORKFLOW.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} WORKFLOW.md documents the Mid-flight amend rule (SPEC-027, canonical)"
   PASS=$((PASS + 1))
 else
@@ -1245,13 +1260,13 @@ echo "=== V-model lens, convergence, and inventory parity (SPEC-031) ==="
 
 # (a) No "8 (workflow|lifecycle )?phases" string in operating surfaces.
 # Scope: docs/, commands/, WORKFLOW.md, README.md, MANUAL.md, AGENTS.md --
-# EXCLUDING docs/specs/, docs/decisions/, docs/research/, docs/retro/, docs/handoff/
-# (AMEND-001: archive dirs are point-in-time and may reference old counts -- a retro
-# that documents the fix must be free to quote the forbidden string; only live
-# surfaces are checked).
+# EXCLUDING docs/specs/, docs/decisions/, docs/research/, docs/retro/, docs/handoff/,
+# docs/CHANGELOG.md (AMEND-001: archive dirs / the changelog are point-in-time and may
+# reference old counts -- a retro or a changelog entry that documents the fix must be
+# free to quote the forbidden string; only live surfaces are checked).
 PHASES_8_HITS=$(cd "$KIT_DIR" && grep -rIn \
   --exclude-dir=research --exclude-dir=specs --exclude-dir=decisions \
-  --exclude-dir=retro --exclude-dir=handoff \
+  --exclude-dir=retro --exclude-dir=handoff --exclude=CHANGELOG.md \
   -E "8 (workflow|lifecycle )?phases" \
   docs/ commands/ WORKFLOW.md README.md MANUAL.md AGENTS.md 2>/dev/null | head -1)
 TOTAL=$((TOTAL + 1))
@@ -1276,7 +1291,7 @@ fi
 # - We assert BOTH section headings PLUS each phase name within the lens block,
 #   not merely heading existence, so the test is not silently weakened.
 TOTAL=$((TOTAL + 1))
-if grep -q "^## The V-model lens" "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+if grep -q "^## The V-model lens" "$KIT_DIR/docs/WORKFLOW.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has '## The V-model lens' section (SPEC-031)"
   PASS=$((PASS + 1))
 else
@@ -1285,7 +1300,7 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if grep -q "^## Lead-owned convergence" "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+if grep -q "^## Lead-owned convergence" "$KIT_DIR/docs/WORKFLOW.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} WORKFLOW.md has '## Lead-owned convergence' section (SPEC-031)"
   PASS=$((PASS + 1))
 else
@@ -1295,8 +1310,8 @@ fi
 
 # Extract phase names from the cycle table (column 1, skipping header and separator).
 # Then check each (after stripping ", downstream" qualifier) appears in the lens section.
-LENS_SECTION=$(sed -n '/^## The V-model lens/,/^## /p' "$KIT_DIR/WORKFLOW.md")
-CYCLE_PHASES=$(sed -n '/^## The cycle/,/^## The V-model lens/p' "$KIT_DIR/WORKFLOW.md" \
+LENS_SECTION=$(sed -n '/^## The V-model lens/,/^## /p' "$KIT_DIR/docs/WORKFLOW.md")
+CYCLE_PHASES=$(sed -n '/^## The cycle/,/^## The V-model lens/p' "$KIT_DIR/docs/WORKFLOW.md" \
   | grep "^| " | grep -v "^| Phase\|^|---" \
   | sed 's/^| \([^|]*\)|.*/\1/' | sed 's/[[:space:]]*$//')
 TOTAL=$((TOTAL + 1))
@@ -1331,8 +1346,8 @@ done <<< "$CYCLE_PHASES"
 # DOC_IMPACT_BLOCK intentionally spans the map + version-surfaces note (the range
 # ends at the next ## heading, which includes both the map table and the note below
 # it); matching against the full block is correct per DEC-005 (looser match is deliberate).
-DOC_IMPACT_BLOCK=$(sed -n '/^#### Doc-impact map/,/^## Lead-owned convergence/p' "$KIT_DIR/WORKFLOW.md")
-HANDS_OFF_ENTRIES=$(sed -n '/^### Hands-off shared-surface list/,/^###/p' "$KIT_DIR/WORKFLOW.md" \
+DOC_IMPACT_BLOCK=$(sed -n '/^#### Doc-impact map/,/^## Lead-owned convergence/p' "$KIT_DIR/docs/WORKFLOW.md")
+HANDS_OFF_ENTRIES=$(sed -n '/^### Hands-off shared-surface list/,/^###/p' "$KIT_DIR/docs/WORKFLOW.md" \
   | grep "^-" \
   | sed "s/^- \`\([^\`]*\)\`.*/\1/" | sed "s/^- //")
 TOTAL=$((TOTAL + 1))
@@ -1459,7 +1474,7 @@ fi
 
 # (c) The new lib/ dir is registered in the WORKFLOW doc-impact map (new-top-level-dir rule).
 TOTAL=$((TOTAL + 1))
-if grep -q '`lib/\*`' "$KIT_DIR/WORKFLOW.md" 2>/dev/null; then
+if grep -q '`lib/\*`' "$KIT_DIR/docs/WORKFLOW.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} lib/* row present in the WORKFLOW doc-impact map (SPEC-032)"
   PASS=$((PASS + 1))
 else
@@ -1556,8 +1571,8 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-LOOP_ROWS=$(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/WORKFLOW.md" | grep -cE '^\| (incident|learning|planning|operate|eval|research|review|reconcile|doc|migration|data-tool|spec-feature) \|')
-if [ "$(grep -c '^## Type loops' "$KIT_DIR/WORKFLOW.md")" -eq 1 ] && [ "$LOOP_ROWS" -eq 12 ]; then
+LOOP_ROWS=$(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/docs/WORKFLOW.md" | grep -cE '^\| (incident|learning|planning|operate|eval|research|review|reconcile|doc|migration|data-tool|spec-feature) \|')
+if [ "$(grep -c '^## Type loops' "$KIT_DIR/docs/WORKFLOW.md")" -eq 1 ] && [ "$LOOP_ROWS" -eq 12 ]; then
   echo -e "  ${GREEN}PASS${NC} WORKFLOW.md Type-loops table covers all 11 types (SPEC-054/057)"
   PASS=$((PASS + 1))
 else
@@ -1640,7 +1655,7 @@ fi
 TOTAL=$((TOTAL + 1))
 DIALECT_ROWS=$(awk '/^## 5b/,/^## 6/' "$KIT_DIR/docs/verification/test-design-standard.md" | grep -cE '^\| (incident|learning|planning|operate|eval|research|review|reconcile|doc|migration|data-tool|spec-feature) \|')
 if [ "$DIALECT_ROWS" -eq 12 ] && grep -qF 'task-type-classify' "$KIT_DIR/commands/test-plan.md" \
-   && grep -qF 'Test plan (default' "$KIT_DIR/WORKFLOW.md"; then
+   && grep -qF 'Test plan (default' "$KIT_DIR/docs/WORKFLOW.md"; then
   echo -e "  ${GREEN}PASS${NC} test dialects wired: 11-type table + type-aware test-plan + default flip (SPEC-056/057)"
   PASS=$((PASS + 1))
 else
@@ -1654,7 +1669,7 @@ TOTAL=$((TOTAL + 1))
 REG_N=$(awk -F'|' '/^\|/ {f2=$2; gsub(/^[ \t]+|[ \t]+$/, "", f2); if (f2 == "task-type" || f2 ~ /^-+$/) next; print f2}' "$KIT_DIR/docs/verification/task-types.md" | sort)
 PARITY_OK=yes
 while IFS= read -r ty; do
-  grep -qE "^\| ${ty} \|" <(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/WORKFLOW.md") || PARITY_OK="no-loop:$ty"
+  grep -qE "^\| ${ty} \|" <(awk '/^## Type loops/,/^## [^T]/' "$KIT_DIR/docs/WORKFLOW.md") || PARITY_OK="no-loop:$ty"
   grep -qE "^\| ${ty} \|" <(awk '/^## 5b/,/^## 6/' "$KIT_DIR/docs/verification/test-design-standard.md") || PARITY_OK="no-dialect:$ty"
 done <<< "$REG_N"
 if [ "$PARITY_OK" = "yes" ] && [ "$(echo "$REG_N" | grep -c .)" -eq 12 ]; then
@@ -1670,7 +1685,7 @@ fi
 # strands consumer repos on the old code-only contract.
 TOTAL=$((TOTAL + 1))
 if grep -qF 'backlog.sh next' "$KIT_DIR/AGENTS.md" && grep -qF 'task-type-classify.sh classify' "$KIT_DIR/AGENTS.md" \
-   && grep -qF 'Done =' "$KIT_DIR/AGENTS.md" && grep -qF 'Where work comes from' "$KIT_DIR/WORKFLOW.md"; then
+   && grep -qF 'Done =' "$KIT_DIR/AGENTS.md" && grep -qF 'Where work comes from' "$KIT_DIR/docs/WORKFLOW.md"; then
   echo -e "  ${GREEN}PASS${NC} operating layer carries the intake story: board + type-first + done-first (SPEC-057)"
   PASS=$((PASS + 1))
 else
@@ -1683,7 +1698,7 @@ fi
 TOTAL=$((TOTAL + 1))
 GRILL_BANKS=$(grep -cE '^### (incident|reconcile|operate|planning|learning|eval|research|doc|migration|data-tool|spec-feature)$' "$KIT_DIR/commands/grill.md" 2>/dev/null || echo 0)
 if [ "$GRILL_BANKS" -eq 11 ] && grep -qF 'kit:grill' "$KIT_DIR/AGENTS.md" \
-   && grep -qF 'kit:grill' "$KIT_DIR/commands/assign.md" && grep -qF 'grill' "$KIT_DIR/WORKFLOW.md"; then
+   && grep -qF 'kit:grill' "$KIT_DIR/commands/assign.md" && grep -qF 'grill' "$KIT_DIR/docs/WORKFLOW.md"; then
   echo -e "  ${GREEN}PASS${NC} grill intake wired: 11 type banks + AGENTS/assign/WORKFLOW legs (SPEC-058)"
   PASS=$((PASS + 1))
 else
@@ -1750,7 +1765,7 @@ fi
 TOTAL=$((TOTAL + 1))
 if grep -qF 'Lane telemetry sweep (SPEC-061)' "$KIT_DIR/commands/retro.md" \
    && grep -qF 'Disposition contract' "$KIT_DIR/commands/retro.md" \
-   && grep -qF 'How lanes are judged' "$KIT_DIR/WORKFLOW.md" \
+   && grep -qF 'How lanes are judged' "$KIT_DIR/docs/WORKFLOW.md" \
    && grep -qF 'gate-ledger.sh start' "$KIT_DIR/commands/assign.md"; then
   echo -e "  ${GREEN}PASS${NC} telemetry wired: retro Step 1d + WORKFLOW criteria + assign START (SPEC-061)"
   PASS=$((PASS + 1))
@@ -1762,7 +1777,7 @@ fi
 # SPEC-062: telemetry closure. The operator scenarios live in WORKFLOW; debug carries the
 # escaped-from marker; test-plan commands record their outcome.
 TOTAL=$((TOTAL + 1))
-if grep -qF 'What the operator sees, and when (SPEC-062)' "$KIT_DIR/WORKFLOW.md" \
+if grep -qF 'What the operator sees, and when (SPEC-062)' "$KIT_DIR/docs/WORKFLOW.md" \
    && grep -qF 'escaped-from=' "$KIT_DIR/commands/debug.md" \
    && grep -qF 'gate-ledger.sh record <rid> test-plan ran' "$KIT_DIR/commands/test-plan.md" \
    && grep -qF 'gate-ledger.sh record <rid> test-plan ran' "$KIT_DIR/commands/test-plan-review-team.md" \
@@ -1840,7 +1855,7 @@ fi
 
 # SPEC-069: retro follow-ups wired (escalation rule, advisory, grill line, color gate).
 TOTAL=$((TOTAL + 1))
-if grep -qF 'Review escalation (SPEC-069)' "$KIT_DIR/WORKFLOW.md" \
+if grep -qF 'Review escalation (SPEC-069)' "$KIT_DIR/docs/WORKFLOW.md" \
    && grep -qF 'review-team' "$KIT_DIR/AGENTS.md" \
    && grep -qF 'codebase-memory' "$KIT_DIR/commands/grill.md" \
    && grep -qF 'appears nowhere in _meta/BACKLOG.md' "$KIT_DIR/hooks/ship-gate.sh" \
@@ -1951,7 +1966,7 @@ fi
 
 # (b) The LIVE goal-draft contract carries no INDEX.md (the phantom is gone; only the
 #     annotated historical record in ADR-0011/ADR-0023/SPEC-005 keeps the word).
-LIVE_INDEX=$(grep -l 'INDEX\.md' "$KIT_DIR/commands/assign.md" "$KIT_DIR/commands/start.md" "$KIT_DIR/commands/next.md" "$KIT_DIR/WORKFLOW.md" "$KIT_DIR/docs/architecture.md" 2>/dev/null | wc -l | tr -d ' ')
+LIVE_INDEX=$(grep -l 'INDEX\.md' "$KIT_DIR/commands/assign.md" "$KIT_DIR/commands/start.md" "$KIT_DIR/commands/next.md" "$KIT_DIR/docs/WORKFLOW.md" "$KIT_DIR/docs/architecture.md" 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "no INDEX.md in the live goal-draft contract (SPEC-037 / ADR-0023)" "0" "$LIVE_INDEX"
 
 # (c) ADR-0023 exists and ADR-0011 records the supersession (supersede, not rewrite).
@@ -2050,12 +2065,12 @@ GL_BADCELLS=$(awk '
       if (v!="" && v!="measure-twice" && v!="run-lite" && v!="skip") bad++ }
   }
   END{print bad+0}
-' "$KIT_DIR/WORKFLOW.md")
+' "$KIT_DIR/docs/WORKFLOW.md")
 assert_eq "lane×phase matrix cells are all measure-twice|run-lite|skip" "0" "$GL_BADCELLS"
 
 GL_REQ="$(bash "$KIT_DIR/lib/gate/gate-ledger.sh" required normal 2>/dev/null | tr '\n' ' ')"
 assert_true "gate-ledger required(normal) derives spec+build+ship from the matrix" "$(echo "$GL_REQ" | grep -q 'spec' && echo "$GL_REQ" | grep -q 'build' && echo "$GL_REQ" | grep -q 'ship' && echo 0 || echo 1)"
-assert_true "WORKFLOW documents the gate-ledger + ship-enforcement convention" "$(grep -q 'Gate ledger and ship enforcement' "$KIT_DIR/WORKFLOW.md" && echo 0 || echo 1)"
+assert_true "WORKFLOW documents the gate-ledger + ship-enforcement convention" "$(grep -q 'Gate ledger and ship enforcement' "$KIT_DIR/docs/WORKFLOW.md" && echo 0 || echo 1)"
 assert_true "ship.md records the Ship gate + names the override path" "$(grep -q 'gate-ledger.sh' "$KIT_DIR/commands/ship.md" && echo 0 || echo 1)"
 assert_true "AGENTS operate-contract points at the gate-ledger convention" "$(grep -q 'gate-ledger' "$KIT_DIR/AGENTS.md" && echo 0 || echo 1)"
 
@@ -2268,7 +2283,7 @@ assert_eq "gate-ledger dispatches the rid verb" 0 $RC
 
 # Sweep pin (AC5): no gate-ledger call site still uses <spec-slug> as a rid
 # (debug.md's escaped-from spec REFERENCE is exempt; doc-path uses are not calls).
-RESIDUAL=$(grep -rn 'spec-slug\|record <slug>' "$KIT_DIR/commands/" "$KIT_DIR/AGENTS.md" "$KIT_DIR/WORKFLOW.md" 2>/dev/null | grep 'gate-ledger' | grep -v 'escaped-from' | wc -l | tr -d ' ')
+RESIDUAL=$(grep -rn 'spec-slug\|record <slug>' "$KIT_DIR/commands/" "$KIT_DIR/AGENTS.md" "$KIT_DIR/docs/WORKFLOW.md" 2>/dev/null | grep 'gate-ledger' | grep -v 'escaped-from' | wc -l | tr -d ' ')
 assert_eq "sweep pin: zero gate-ledger rid call sites say spec-slug" "0" "$RESIDUAL"
 
 # Entry-point wiring: assign derives the rid; AGENTS documents the contract once.
@@ -2282,9 +2297,9 @@ assert_eq "AGENTS.md carries the one-rid-per-run contract" 0 $RC
 echo ""
 echo "=== SPEC-073 + ID-060: doc-loop second entry + eval design parked ==="
 # ============================================================
-RC=0; grep -qF 'standalone revision, content brief' "$KIT_DIR/WORKFLOW.md" || RC=1
+RC=0; grep -qF 'standalone revision, content brief' "$KIT_DIR/docs/WORKFLOW.md" || RC=1
 assert_eq "doc loop carries the standalone-revision entry path (ID-060)" 0 $RC
-RC=0; grep -qF 'doc-verifier confirming docs match code' "$KIT_DIR/WORKFLOW.md" || RC=1
+RC=0; grep -qF 'doc-verifier confirming docs match code' "$KIT_DIR/docs/WORKFLOW.md" || RC=1
 assert_eq "doc loop both entries share the doc-verifier exit" 0 $RC
 RC=0; grep -qF 'EXECUTION PARKED until 3-5 days' "$KIT_DIR/docs/specs/SPEC-073-telemetry-eval-design.md" || RC=1
 assert_eq "telemetry eval design exists and is parked-until-data (ID-067)" 0 $RC
@@ -2296,18 +2311,18 @@ assert_eq "eval design pins its data window honestly" 0 $RC
 echo ""
 echo "=== SPEC-074: composition section + 3-surface parity (ID-066) ==="
 # ============================================================
-RC=0; grep -qF 'Lane x type composition (SPEC-074 / ID-066)' "$KIT_DIR/WORKFLOW.md" || RC=1
+RC=0; grep -qF 'Lane x type composition (SPEC-074 / ID-066)' "$KIT_DIR/docs/WORKFLOW.md" || RC=1
 assert_eq "WORKFLOW carries the lane x type composition rule" 0 $RC
-RC=0; grep -qF 'recorded `skipped "<loop-step note>"`' "$KIT_DIR/WORKFLOW.md" || RC=1
+RC=0; grep -qF 'recorded `skipped "<loop-step note>"`' "$KIT_DIR/docs/WORKFLOW.md" || RC=1
 assert_eq "composition names the skip-with-loop-note mapping" 0 $RC
 # 3-surface parity: every type in the loops table has a registry row and vice versa
-LOOPT=$(awk '/## Type loops/,/### Lane x type composition/' "$KIT_DIR/WORKFLOW.md" | grep '^| ' | cut -d'|' -f2 | tr -d ' ' | grep -v '^Type$' | grep -v '^-*$' | sort)
+LOOPT=$(awk '/## Type loops/,/### Lane x type composition/' "$KIT_DIR/docs/WORKFLOW.md" | grep '^| ' | cut -d'|' -f2 | tr -d ' ' | grep -v '^Type$' | grep -v '^-*$' | sort)
 REGT=$(grep '^|' "$KIT_DIR/docs/verification/task-types.md" | cut -d'|' -f2 | tr -d ' ' | grep -v '^task-type$' | grep -v '^-*$' | sort)
 assert_eq "type loops table and registry agree on the 12 types" "$LOOPT" "$REGT"
 
 
 # SPEC-076: descent contract wired
-RC=0; grep -qF 'The V-model descent contract (SPEC-076 / ID-068)' "$KIT_DIR/WORKFLOW.md" || RC=1
+RC=0; grep -qF 'The V-model descent contract (SPEC-076 / ID-068)' "$KIT_DIR/docs/WORKFLOW.md" || RC=1
 assert_eq "WORKFLOW carries the descent contract" 0 $RC
 RC=0; grep -q '^  descent)' "$KIT_DIR/lib/gate/gate-ledger.sh" || RC=1
 assert_eq "gate-ledger dispatches the descent verb" 0 $RC
