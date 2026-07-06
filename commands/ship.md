@@ -65,10 +65,13 @@ Use this exact check shape (kit-health's check uses the same shape; they must no
 # Graceful degrade: no VERSION or not in a git repo => silent no-op, never error or block.
 if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)   # strip whitespace so a trailing newline cannot break the pattern
+  # CHANGELOG resolution (SPEC-185): docs/CHANGELOG.md wins if present (the thin-root-stub
+  # convention this kit's own repo uses); else the plain root CHANGELOG.md most repos use.
+  CL=CHANGELOG.md; [ -f docs/CHANGELOG.md ] && CL=docs/CHANGELOG.md
   if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
     echo "WARN release-hygiene: phantom cut. VERSION names v$VER but no matching git tag exists."
     # Accumulation context: [Unreleased] non-empty => work piling above an untagged cut.
-    if [ -f CHANGELOG.md ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' CHANGELOG.md | grep -q .; then
+    if [ -f "$CL" ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' "$CL" | grep -q .; then
       echo "         work is accumulating above an untagged cut v$VER."
     fi
   fi
@@ -79,7 +82,10 @@ If the phantom cut fires, surface it as a heads-up at the version step (remember
 
 ### Step 5: Generate changelog entry
 
-If `CHANGELOG.md` exists (or the project follows a changelog convention):
+The target file is `docs/CHANGELOG.md` if it exists (SPEC-185 thin-root-stub convention),
+else the plain root `CHANGELOG.md`.
+
+If a changelog file exists (or the project follows a changelog convention):
 - Generate an entry from the commits since last release/tag:
   ```
   ## [version] - YYYY-MM-DD
@@ -93,8 +99,8 @@ If `CHANGELOG.md` exists (or the project follows a changelog convention):
   ### Changed
   - [refactor/chore descriptions]
   ```
-- Prepend to CHANGELOG.md (newest first).
-- If no CHANGELOG.md exists: offer to create one. If user declines, skip.
+- Prepend to the resolved changelog file (newest first).
+- If no changelog file exists: offer to create one at `CHANGELOG.md`. If user declines, skip.
 
 Source: Keep a Changelog format (keepachangelog.com).
 
@@ -118,7 +124,7 @@ Show the proposed commit(s) and ask for confirmation before committing.
 Run the pinned diff (the merge-base of the integration branch) against the WORKFLOW doc-impact map and update every companion the map names for each change-type touched; log any companion that did not move. The map is the canonical list. The bullets below are the common cases:
 - `README.md` -- features, setup steps, env vars
 - `CLAUDE.md` -- tech stack, structure, commands
-- `CHANGELOG.md` -- already updated in Step 5
+- `CHANGELOG.md` (or `docs/CHANGELOG.md` if that's the repo's convention, SPEC-185) -- already updated in Step 5
 - `docs/specs/SPEC-NNN-<slug>.md` -- mark completed tasks
 - `ARCHITECTURE.md` -- structural changes
 - API docs (openapi.yaml, docs/api.md, etc.)
