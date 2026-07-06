@@ -11,8 +11,8 @@ Branch: `feat/kit-adopt-01-cmd` off `master`. Built through the kit's full lane 
   1. **Slash-command dogfood done via direct steps, not the `/kit:*` UI.** The `/kit:*` slash
      commands run against the session cwd (ops-toolkit) and I cannot move the session into
      dwarves-kit, so invoking `/kit:spec` here would write to the wrong repo. I dogfood the lane
-     by driving its real machinery directly: `lib/lane-classify.sh`, `lib/task-type-classify.sh`,
-     `lib/proof-gate.sh`, `lib/gate-ledger.sh`, and the reviewer agents. Same lane, same gates,
+     by driving its real machinery directly: `lib/classify/lane-classify.sh`, `lib/classify/task-type-classify.sh`,
+     `lib/gate/proof-gate.sh`, `lib/gate/gate-ledger.sh`, and the reviewer agents. Same lane, same gates,
      same ledger the fail-closed gate (sub-goal 02) consumes. (FEEDBACK filed upstream.)
   2. **Branch in the main checkout, no worktree.** The native worktree tool only targets the
      session repo (ops-toolkit); manual `git worktree add` is disallowed by policy. Single

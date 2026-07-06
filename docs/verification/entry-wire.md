@@ -14,7 +14,7 @@
 
 ## Implementation
 
-`hooks/context-readiness.sh` (board-count awk, twin of `lib/backlog.sh _rows`;
+`hooks/context-readiness.sh` (board-count awk, twin of `lib/board/backlog.sh _rows`;
 6 intent-first SUGGEST strings; live-spec precedence), `MANUAL.md` (2 lines),
 `tests/test-hooks.sh` (+14), `tests/test-meta.sh` (+6).
 

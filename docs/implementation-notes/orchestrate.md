@@ -1,4 +1,4 @@
-# Implementation notes: lib/orchestrate.sh (SPEC-087 phase 1, SG-04)
+# Implementation notes: lib/queue/orchestrate.sh (SPEC-087 phase 1, SG-04)
 
 Delta-only. Design is in SPEC-087 + ADR-0027; this records impl decisions not in the spec.
 

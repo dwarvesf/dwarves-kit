@@ -2,7 +2,7 @@
 
 Date: 2026-05-23
 Status: Accepted
-Relates-to: ID-036 (layering contract: enforced vs advisory), ID-012 P2 (loop QA gate), the lane×phase matrix (WORKFLOW.md), the hands-off-list runtime-extract pattern (lib/dispatch-gate.sh)
+Relates-to: ID-036 (layering contract: enforced vs advisory), ID-012 P2 (loop QA gate), the lane×phase matrix (WORKFLOW.md), the hands-off-list runtime-extract pattern (lib/gate/dispatch-gate.sh)
 
 ## Decision (one line)
 
@@ -16,7 +16,7 @@ The per-lane depth is already designed: WORKFLOW.md's **lane×phase depth matrix
 
 ## Decision
 
-1. **The lane×phase matrix is the single source, made machine-readable.** A new `lib/gate-ledger.sh` parses the matrix at runtime, exactly as `lib/dispatch-gate.sh` extracts the hands-off list from WORKFLOW.md (no second copy of the mapping). A cell of `measure-twice` means the gate is **required** for that lane; `run-lite` means recommended; `skip` means not applicable. A meta-test asserts every cell is one of the three tokens so the parser cannot silently misread.
+1. **The lane×phase matrix is the single source, made machine-readable.** A new `lib/gate/gate-ledger.sh` parses the matrix at runtime, exactly as `lib/gate/dispatch-gate.sh` extracts the hands-off list from WORKFLOW.md (no second copy of the mapping). A cell of `measure-twice` means the gate is **required** for that lane; `run-lite` means recommended; `skip` means not applicable. A meta-test asserts every cell is one of the three tokens so the parser cannot silently misread.
 
 2. **Every run writes a gate ledger and an action log**, extending the existing log infra (`$DWARVES_KIT_LOG_DIR`, the append-only `ts | STATUS | detail | pwd` format that already redacts command bodies). The **gate ledger** is per-run (keyed by spec/branch) and records each phase as `ran` / `skipped` with a reason. The **action log** is append-only and records the lead's and agents' actions. Reusing `$DWARVES_KIT_LOG_DIR` keeps one logging convention (no premature new in-repo store); the dir is configurable, so a project may point it in-repo if it wants the trail versioned.
 
@@ -33,9 +33,21 @@ The per-lane depth is already designed: WORKFLOW.md's **lane×phase depth matrix
 
 ## Consequences
 
-- New `lib/gate-ledger.sh` (parse matrix, read/write ledger + action log). Gate-running commands append a `ran` entry; the push/PR hook enforces.
+- New `lib/gate/gate-ledger.sh` (parse matrix, read/write ledger + action log). Gate-running commands append a `ran` entry; the push/PR hook enforces.
 - `docs/PHILOSOPHY.md` + `commands/kit-health.md` record the hooks-also-enforce-gate-completeness-at-ship bend (the ID-036 hooks-fallback layer, previously open).
 - `tests/test-meta.sh` + `tests/test-hooks.sh` pin: matrix cells are all valid tokens; the ledger + action log are written; a skipped required gate is recorded `skipped`; the push hook refuses on a missing required gate and proceeds with a logged override.
 - The lane×phase matrix gains a machine contract (the token guard), so future edits cannot break the parser silently.
 - **Override threat model (honest scope).** In a fully autonomous `bypassPermissions` run the agent can run any command, so it can also write the override entry. The guarantee is therefore **block-by-default + every skip and every override recorded and auditable**, not cryptographic prevention. True prevention still requires a human at the ship boundary. This matches the goal's wording ("cannot ship unless an override is logged") and is the realistic ceiling for an in-repo bash mechanism; we do not over-claim a hard stop the runtime cannot give.
 - Source: ID-036 + ID-012 P2. Reuses the WORKFLOW-extract pattern (ADR-0019/0020 lineage) and the existing hook log infra; no net-new logging convention.
+
+## Addendum (2026-07-04, kit-run-integrity)
+
+The additive-marker convention this ADR established for `| GATE |` (and later extended to
+`| DEBT |`, ADR-0031) gained two more additive verbs, same contract, no new convention:
+`| OUTCOME |` (SPEC-129 -- a `start`/`end` pair bracketing a gate with `caught=`/duration,
+emitted today only by `hooks/ship-gate.sh` at the ship boundary) and `| MUTATION |` (SPEC-131
+-- an advisory mutation-smoke flag, emitted from `commands/verify.md`'s Step 6b, off the push
+blocker). Both are ignored by every existing reader keyed on field 2 (`check()` /
+`override()` / `descent()` / `_rows()` / `_token_agg()`), preserving the additive-equivalence
+property this ADR's Decision 1 relies on. Full detail: WORKFLOW.md "## Gate ledger and ship
+enforcement" and "## Advisory measurement gates".

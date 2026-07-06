@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-routing.sh -- data-driven model routing suggester (token-optim-v3 SG-06).
-# Verifies lib/route-suggest.sh against v2 SG-09's ledger schema:
+# Verifies lib/classify/route-suggest.sh against v2 SG-09's ledger schema:
 #   - rich data: suggests the measured-cheapest model that PASSED at parity
 #   - failing-but-cheaper arm is NOT suggested (infinite-cost / anti-cherry-pick guard)
 #   - thin data (one model measured): ABSTAINS instead of overfitting
@@ -8,7 +8,7 @@
 # Run: bash tests/test-routing.sh   (exit 0 = pass, 1 = fail)
 
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RS="$KIT_DIR/lib/route-suggest.sh"
+RS="$KIT_DIR/lib/classify/route-suggest.sh"
 FIX="$KIT_DIR/tests/fixtures/routing"
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -17,7 +17,7 @@ bad() { TOTAL=$((TOTAL+1)); FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} $1"; }
 chk() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 
 echo "=== route-suggest exists + executable ==="
-[ -f "$RS" ]; chk "lib/route-suggest.sh exists" $?
+[ -f "$RS" ]; chk "lib/classify/route-suggest.sh exists" $?
 
 echo ""
 echo "=== rich data: suggest measured-cheapest-at-parity ==="

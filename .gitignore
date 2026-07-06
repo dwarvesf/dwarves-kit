@@ -36,3 +36,8 @@ HANDOFF*.md
 # Python bytecode caches (e.g. lib/handoff/__pycache__) , regenerated, never tracked.
 __pycache__/
 *.pyc
+
+# install.sh's per-consumer module manifest (ID-277 SG-04). Only meaningful at an
+# INSTALLED destination; an in-place install (KIT_DIR == ~/.claude/dwarves-kit) writes
+# it at the repo root, so it must never be committed from a maintainer's own machine.
+/kit.toml

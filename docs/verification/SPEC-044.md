@@ -12,7 +12,7 @@ Output excerpt:
 
 ```
 === Task-type contracts (SPEC-044) ===
-  PASS lib/task-type-classify.sh exists and is executable
+  PASS lib/classify/task-type-classify.sh exists and is executable
   PASS classify -> eval
   PASS classify -> research
   PASS classify -> doc
@@ -31,10 +31,10 @@ All meta tests passed.
 
 Primary flow (the feature itself), captured:
 
-Command: `bash lib/task-type-classify.sh classify "build a CLI to pull Growatt solar data from the API"`
+Command: `bash lib/classify/task-type-classify.sh classify "build a CLI to pull Growatt solar data from the API"`
 Output: `data-tool`
 
-Command: `bash lib/proof-gate.sh contract "build a CLI to pull Growatt solar data from the API"`
+Command: `bash lib/gate/proof-gate.sh contract "build a CLI to pull Growatt solar data from the API"`
 Output:
 
 ```
@@ -44,18 +44,18 @@ owner: ops-tool-shape Done gate
 rigor: behavioral: run the REAL primary flow end-to-end ... include a negative control (revert -> RED -> restore).
 ```
 
-Command: `bash lib/proof-gate.sh contract "migrate the database schema to add a column"`
+Command: `bash lib/gate/proof-gate.sh contract "migrate the database schema to add a column"`
 Output: `type=migration class=stateful` (the class still wins on rigor: a migration upgrades to stateful even though it is a distinct type).
 
 ## NEGATIVE CONTROL (revert -> RED -> restore)
 
-Command: `mv lib/task-type-classify.sh /tmp/ttc.bak && bash tests/test-meta.sh; mv /tmp/ttc.bak lib/task-type-classify.sh`
+Command: `mv lib/classify/task-type-classify.sh /tmp/ttc.bak && bash tests/test-meta.sh; mv /tmp/ttc.bak lib/classify/task-type-classify.sh`
 Exit while reverted: 1
 
 ```
 Passed: 379 / 389
 Failed: 10
-  FAIL lib/task-type-classify.sh exists and is executable
+  FAIL lib/classify/task-type-classify.sh exists and is executable
   FAIL classify -> eval (expected 'eval', got '')
   ... every SPEC-044 pin failed (classify -> '', types -> 0, contract pins)
 ```

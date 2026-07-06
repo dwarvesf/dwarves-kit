@@ -6,7 +6,7 @@ Delta from SPEC-093 / ADR-0028 P4.
 
 Context: the goal says "set the lane default (no phase skip)". Inspection of the
 WORKFLOW lane x phase matrix showed the full lane already has no `skip` for any
-review-bearing phase (`bash lib/gate-ledger.sh plan full` lists all 13 phases as
+review-bearing phase (`bash lib/gate/gate-ledger.sh plan full` lists all 13 phases as
 required/lite; only Debug (off-cycle, not in the linear V) and UI-design (run-lite,
 downstream) are non-measure-twice, both legitimately). So SG-05 is WIRING + a
 documented mapping + a test, NOT a matrix edit. Touching the matrix would have been

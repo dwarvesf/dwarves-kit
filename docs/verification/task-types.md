@@ -1,9 +1,9 @@
 # Task-type registry (SPEC-044)
 
-The second axis of the verification gate. `lib/task-type-classify.sh` maps a task
+The second axis of the verification gate. `lib/classify/task-type-classify.sh` maps a task
 description to a **task type**; this table maps that type to the **proof artifact** it
 owes, the **skill** that owns the methodology, and a **default proof class** (the rigor,
-which `lib/proof-gate.sh` may override per the task's risk). `proof-gate.sh contract
+which `lib/gate/proof-gate.sh` may override per the task's risk). `proof-gate.sh contract
 "<desc>"` composes the two axes: the type's artifact, produced at the class's rigor.
 
 **This is the extension point.** A new kind of work = one new row here (plus, if its
@@ -25,7 +25,7 @@ way it owns lane paths; this registry owns artifact/owner/rigor/agent).
 | review | review report / spec `## Review`: verdict + findings (severity + Route per SPEC-078), each citing file:line | /kit:review (single) or /kit:review-team (multi-lens) | inert | preassigned: reviewer; review-team dispatch per the SPEC-069 escalation rule |
 | doc | doc-verifier confirms docs match code | /docs (doc-verifier) | inert | preassigned: doc-verifier agent |
 | migration | dry-run on a copy + recorded run + rollback path | (kit native, stateful) | stateful | preassigned: main session + task-verifier |
-| data-tool | recorded live run of the real commands (generated run ledgers under docs/runs/; the hand-authored proof-of-done.md indexes them) | ops-tool-shape Done gate | behavioral | preassigned: ops-tool-shape owner (main session) |
+| data-tool | recorded live run of the real commands (generated run ledgers under docs/verification/generated/; the hand-authored proof-of-done.md indexes them) | ops-tool-shape Done gate | behavioral | preassigned: ops-tool-shape owner (main session) |
 | spec-feature | the real primary flow run end to end + tests/acceptance met | /execute task-verifier | behavioral | per lane: /execute workers + task-verifier |
 | incident | INC-NNN incident record + verified recovery (the fired signal now silent) | incident-workflow (consumer) + /kit:debug | stateful | preassigned: main session + debug evidence ledger |
 | reconcile | inventory with a verdict per item + reference-fix diff; a seeded drifted item is caught | doc-compaction / migrate-convention family | behavioral | preassigned: main; dynamic: parallel inventory subagents for estate-wide sweeps |

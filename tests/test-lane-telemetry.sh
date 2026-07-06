@@ -8,8 +8,8 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LT="$KIT_DIR/lib/lane-telemetry.sh"
-GL="$KIT_DIR/lib/gate-ledger.sh"
+LT="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -71,6 +71,22 @@ DWARVES_KIT_LOG_DIR="$DT" bash "$GL" start t1 normal normal full-stack full-stac
 DWARVES_KIT_LOG_DIR="$DT" bash "$GL" record t1 think ran x >/dev/null 2>&1
 OUTT="$(DWARVES_KIT_LOG_DIR="$DT" NO_COLOR=1 bash "$LT" render full 2>&1)"
 has "full-stack" "$OUTT"; ok "filter matches a TYPE substring too (DEC-002 lane-OR-type), not only lane" $?
+
+# --- SPEC-110: token efficiency section + usage=? honest null + render --mermaid annotation ---
+TT="$(mktemp -d)/logs"
+DWARVES_KIT_LOG_DIR="$TT" bash "$GL" start ta full full spec-feature spec-feature rp >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$TT" bash "$GL" tokens ta in=1000 out=200 cache_read=5000 cache_create=0 >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$TT" bash "$GL" start tb normal normal spec-feature spec-feature rp >/dev/null 2>&1   # NO tokens -> usage=?
+OUTT="$(DWARVES_KIT_LOG_DIR="$TT" NO_COLOR=1 bash "$LT" report 2>&1)"
+has "token efficiency" "$OUTT"; ok "SPEC-110: report has a token efficiency section" $?
+printf '%s' "$OUTT" | grep -qF "usage=?"; ok "SPEC-110: report shows usage=? for the uncaptured run (honest null, not zero)" $?
+printf '%s' "$OUTT" | grep -qE 'full[[:space:]]+1200'; ok "SPEC-110: report shows the captured lane's median tokens-to-done" $?
+OUTM="$(DWARVES_KIT_LOG_DIR="$TT" NO_COLOR=1 bash "$LT" render --mermaid 2>&1)"
+printf '%s' "$OUTM" | grep -qF '```mermaid'; ok "SPEC-110: render --mermaid emits a mermaid block" $?
+printf '%s' "$OUTM" | grep -qE 'lane_full.*1200 tok'; ok "SPEC-110: mermaid annotates the lane node with median tokens" $?
+printf '%s' "$OUTM" | grep -qF 'usage=?'; ok "SPEC-110: mermaid shows usage=? for the uncaptured lane" $?
+OUTA="$(DWARVES_KIT_LOG_DIR="$TT" NO_COLOR=1 bash "$LT" render 2>&1)"
+{ printf '%s' "$OUTA" | grep -q "Lane routing" && ! printf '%s' "$OUTA" | grep -qF '```mermaid'; }; ok "SPEC-110 NC: ASCII render unchanged (no mermaid block without the flag)" $?
 
 # --- graceful-empty NEGATIVE CONTROL: empty/fresh LOG_DIR ---
 OUTE="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/empty" NO_COLOR=1 bash "$LT" render 2>&1)"

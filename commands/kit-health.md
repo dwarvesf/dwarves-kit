@@ -14,7 +14,7 @@ means the pinned install predates the checkout: report "stale install; re-run in
 (advisory). No stamp + symlinked hooks = a pre-SPEC-066 install; recommend re-running
 install.sh to pin.
 
-Include the lane-telemetry probe (SPEC-061): `bash lib/lane-telemetry.sh report` must exit 0
+Include the lane-telemetry probe (SPEC-061): `bash lib/telemetry/lane-telemetry.sh report` must exit 0
 and print either aggregates or `(no run ledgers)`; a parse failure means the ledger format and
 the reader have drifted apart.
 
@@ -95,10 +95,12 @@ echo "TODOs/FIXMEs in hooks: $TODOS"
 # guard degrades to a no-op outside a git repo / without VERSION, never errors.
 if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)
+  # CHANGELOG resolution (SPEC-185): docs/CHANGELOG.md wins if present, else root CHANGELOG.md.
+  CL=CHANGELOG.md; [ -f docs/CHANGELOG.md ] && CL=docs/CHANGELOG.md
   if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
     echo "  [WARN] release hygiene: VERSION is $VER but tag v$VER does not exist (phantom cut)"
     # Accumulation context: [Unreleased] NON-empty => work piling above an untagged cut (same awk as ship.md, DEC-006).
-    if [ -f CHANGELOG.md ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' CHANGELOG.md | grep -q .; then
+    if [ -f "$CL" ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' "$CL" | grep -q .; then
       echo "         and CHANGELOG [Unreleased] is accumulating above it"
     fi
   else
@@ -165,7 +167,7 @@ Borrowed in spirit from superpowers' AGENTS.md "What We Will Not Accept". The ki
    - *Exception (recorded):* `/kit:visual-team` and `/kit:ui-design` are downstream-facing (they serve UI-bearing consumer projects, not the kit's own phases) per `PHILOSOPHY.md` "Downstream-facing lanes". Do NOT flag them under this criterion. Any other single-purpose feature without a named downstream consumer still gets rejected here.
 5. **Duplicates an external tool.** If chub, GSD, gstack, Trail of Bits, or a Claude Code plugin already does it, depend on it. Do not rebuild. (PHILOSOPHY.md `External tools are dependencies, not features`)
    - *Exception (recorded):* **bounded cross-goal fan-out** (`/kit:dispatch`, SPEC-032: one lead session fans out N disjoint VALIDATED specs into isolated worktree workers behind a disjointness gate, lead-owned convergence) is in-scope per ADR-0019. Do NOT flag it as "duplicates GSD v2" or "competes with agent runtimes." Only a DAG / wave scheduler / crash-recovery durability runtime is the REJECT here; the kit deliberately stops at flat fan-out + a pairwise gate + a wait-queue and hands real ordering chains to GSD v2.
-   - *Exception (recorded):* **the cross-session running-goal registry** (`lib/goal-registry.sh`, SPEC-036: one operator's N concurrent same-machine sessions over disjoint goals, coordinated by a passive per-goal file registry under `.git` that records, compares, and monitors) is in-scope per ADR-0022. Do NOT flag it as "duplicates Nimbalyst" or "competes with agent runtimes." It is a passive ledger, not a runtime; the REJECT here is a coordinating daemon / lock server / scheduler. Coordination across machines, by 3+ live human operators, or with goal-ordering chains stays L5 (Nimbalyst / GSD v2).
+   - *Exception (recorded):* **the cross-session running-goal registry** (`lib/goal/goal-registry.sh`, SPEC-036: one operator's N concurrent same-machine sessions over disjoint goals, coordinated by a passive per-goal file registry under `.git` that records, compares, and monitors) is in-scope per ADR-0022. Do NOT flag it as "duplicates Nimbalyst" or "competes with agent runtimes." It is a passive ledger, not a runtime; the REJECT here is a coordinating daemon / lock server / scheduler. Coordination across machines, by 3+ live human operators, or with goal-ordering chains stays L5 (Nimbalyst / GSD v2).
 6. **Cannot be explained in one sentence.** If the README table can't fit it on one line, the component is too complex. (PHILOSOPHY.md feature rejection criterion 4)
 7. **Non-bash hooks** (except the documented statusline carve-out). Adds runtime dependencies, slows startup, makes debugging harder. Per PHILOSOPHY.md: if a second exception is proposed, the `Bash over binaries` principle should be revisited entirely, not bent again. A second non-bash hook triggers REJECT until the principle is formally re-evaluated.
 8. **Phantom features.** Documented but not implemented, or validated but not used. (CLAUDE.md template `No phantom features`)

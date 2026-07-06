@@ -21,7 +21,7 @@ but no START), making the headline dishonest.
 
 One canonical rid: the branch slug, derived once, used by both ends.
 
-1. **New verb `lib/gate-ledger.sh rid`**: prints the canonical rid for the cwd repo,
+1. **New verb `lib/gate/gate-ledger.sh rid`**: prints the canonical rid for the cwd repo,
    defined as the current branch name with its leading `type/` segment stripped,
    exactly the ship-gate transform `${BRANCH#*/}`. A branch with no `/` prints
    unchanged. On `master`, `main`, or detached `HEAD` it exits 1 with "create the work
@@ -36,7 +36,7 @@ One canonical rid: the branch slug, derived once, used by both ends.
    SPEC-069 INTENTIONAL SEAM precedent.
 3. **Placeholder sweep**: every `<spec-slug>` placeholder used as a gate-ledger RID
    argument becomes `<rid>`, with the derivation documented at the two entry points
-   (`/kit:assign` Step, AGENTS.md gates section): `RID=$(bash lib/gate-ledger.sh rid)`,
+   (`/kit:assign` Step, AGENTS.md gates section): `RID=$(bash lib/gate/gate-ledger.sh rid)`,
    run AFTER the branch exists. Swept surfaces: commands/{assign,start,ship,review,
    review-team,devs-team,test-plan,test-plan-review-team,execute}.md, AGENTS.md,
    WORKFLOW.md. Explicitly EXCLUDED: `commands/debug.md`'s `escaped-from=<spec-slug>`
@@ -76,7 +76,7 @@ separator change.
 | 2 | AC2 master guard | temp repo on master, run `rid` | exit 1, empty stdout |
 | 3 | AC2 detached guard | temp repo, `git switch --detach`, run `rid` | exit 1, empty stdout |
 | 4 | AC3 no-prefix | branch `hotfix-z`, run `rid` | stdout `hotfix-z` |
-| 5 | AC4 agreement pin | grep both `hooks/ship-gate.sh` and `lib/gate-ledger.sh` for the `#*/` strip transform | both present |
+| 5 | AC4 agreement pin | grep both `hooks/ship-gate.sh` and `lib/gate/gate-ledger.sh` for the `#*/` strip transform | both present |
 | 6 | AC5 sweep pin | grep `spec-slug` near gate-ledger calls across operating surfaces (escaped-from exempt) | zero hits |
 | 7 | multi-slash branch | branch `feat/a/b`, run `rid` | stdout `a-b` (normalized filename stem; ship-gate's raw `a/b` maps to the same ledger file) |
 | 8 | AC6 empty slug | branch `feat/` is unmakeable in git (trailing slash invalid), so simulate: the guard rejects an empty post-strip slug; unit-call the transform with `feat/` input if reachable, else pin the guard line exists | exit 1 |

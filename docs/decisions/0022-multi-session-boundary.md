@@ -19,7 +19,7 @@ other real workflow, open several Claude sessions (one terminal/tab per goal), s
 These were written for the *team* case (3+ contractors on their own machines). They also,
 as written, sweep up the *single-operator multi-window* case, one person running several
 sessions on one machine over disjoint goals, which is lightweight and needs no runtime.
-The in-session moat (`lib/dispatch-gate.sh`) does not reach across sessions because it
+The in-session moat (`lib/gate/dispatch-gate.sh`) does not reach across sessions because it
 lives in one lead's context, not on disk. PHILOSOPHY line 11 is explicit: a principle that
 cannot bend when the tradeoff shifts is not a real principle. The tradeoff shifted (the
 multi-window workflow is now real); the boundary must be bent **deliberately, by ADR**, for
@@ -42,7 +42,7 @@ The permitted model:
   **single-writer**: a session writes only its own goal's record. No file has two
   writers, so there is no shared-state parallelism.
 - **A cross-session disjointness gate is the moat**: before a goal starts, its declared
-  globs are checked against every active registered goal, **reusing `lib/dispatch-gate.sh`**
+  globs are checked against every active registered goal, **reusing `lib/gate/dispatch-gate.sh`**
   (not a second implementation). Any pair the gate cannot PROVE disjoint is refused, the
   colliding goal named; the operator serializes or repicks. Conservative by construction,
   the same prove-or-serialize rule as SPEC-032 (DEC-008).
@@ -121,7 +121,7 @@ sessions*. They are different artifacts with different lifecycles; do not confla
 - `_meta/BACKLOG.md` re-scopes the parked "L5 orchestration ... not needed until 3+
   concurrent sessions" entry to this ADR's boundary (the trigger is teams / machines /
   ordering, not session count).
-- The implementing surface is **SPEC-036** (`lib/goal-registry.sh` + the `/kit:assign`
+- The implementing surface is **SPEC-036** (`lib/goal/goal-registry.sh` + the `/kit:assign`
   claim step + the `/kit:start` monitor + the attempt-log convention). This ADR carries
   only the policy decision.
 - `docs/architecture.md` cross-references this ADR (the concurrency boundary now names

@@ -2,7 +2,7 @@
 # test-mega-reconcile.sh -- SPEC-096, kit-hardening SG-08.
 # Validates the mega-lane reconcile: commands/mega.md mirrors the plan-for-mega-goal
 # skill's decompose + front-load-checkpoint + per-run-merge-config beats, and
-# lib/mega-merge.sh's ship-layer auto-merge enforcement rides the ship-gate and never
+# lib/goal/mega-merge.sh's ship-layer auto-merge enforcement rides the ship-gate and never
 # bypasses it (the load-bearing negative control), dry-run by default, with the
 # per-run posture knob honored.
 #
@@ -10,9 +10,9 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 MEGA_MD="$KIT_DIR/commands/mega.md"
-MM="$KIT_DIR/lib/mega-merge.sh"
-GL="$KIT_DIR/lib/gate-ledger.sh"
-PL="$KIT_DIR/lib/proof-ledger.sh"
+MM="$KIT_DIR/lib/goal/mega-merge.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
+PL="$KIT_DIR/lib/gate/proof-ledger.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -41,11 +41,11 @@ grep -qiE 'front-load|front-loaded' "$MEGA_MD"; assert "AC1: mega.md carries the
 grep -qiE 'merge config|merge_autonomy|MEGA_MERGE_POSTURE' "$MEGA_MD"; assert "AC1: mega.md carries the per-run-merge-config beat" $?
 grep -qiE 'plan-for-mega-goal' "$MEGA_MD"; assert "AC1: mega.md names the ops-toolkit plan-for-mega-goal skill as the mirror source" $?
 grep -qiE 'mirror|does NOT fork' "$MEGA_MD"; assert "AC1: mega.md states it mirrors, not forks, the skill" $?
-grep -qF 'lib/mega-merge.sh' "$MEGA_MD"; assert "AC1: mega.md wires lib/mega-merge.sh into the hand-off step" $?
+grep -qF 'lib/goal/mega-merge.sh' "$MEGA_MD"; assert "AC1: mega.md wires lib/goal/mega-merge.sh into the hand-off step" $?
 
 # ============================================================
 echo ""
-echo "=== lib/mega-merge.sh exists, is executable, dispatches gate + merge ==="
+echo "=== lib/goal/mega-merge.sh exists, is executable, dispatches gate + merge ==="
 # ============================================================
 [ -f "$MM" ] && [ -x "$MM" ]; assert "mega-merge.sh exists and is executable" $?
 grep -qE '^[[:space:]]*gate\)[[:space:]]*gate' "$MM"; assert "mega-merge.sh dispatches 'gate'" $?
@@ -146,7 +146,7 @@ assert "AC3 [NEGATIVE CONTROL]: --execute cannot force a merge past a failing ga
 
 # ============================================================
 echo ""
-echo "=== AC5: deploy/UAT terminus via lib/proof-ledger.sh deployable (SG-07 reuse) ==="
+echo "=== AC5: deploy/UAT terminus via lib/gate/proof-ledger.sh deployable (SG-07 reuse) ==="
 # ============================================================
 mkrepo() {
   local d="$1"
@@ -162,7 +162,7 @@ mkdir -p "$D_DEPLOY/deploy"
 echo 'echo rollout' > "$D_DEPLOY/deploy/rollout.sh"
 git -C "$D_DEPLOY" add -A; git -C "$D_DEPLOY" commit -qm "deploy: add rollout script"
 DEPLOYABLE_OUT="$(bash "$PL" deployable "$D_DEPLOY" "$B_DEPLOY")"
-assert "AC5: a deployable diff -> lib/proof-ledger.sh deployable prints 'yes' (terminus engages)" \
+assert "AC5: a deployable diff -> lib/gate/proof-ledger.sh deployable prints 'yes' (terminus engages)" \
   $([ "$DEPLOYABLE_OUT" = "yes" ] && echo 0 || echo 1)
 
 D_INERT="$(mktemp -d)"; mkrepo "$D_INERT"
@@ -170,11 +170,11 @@ B_INERT="$(git -C "$D_INERT" rev-parse HEAD)"
 echo '# just docs' > "$D_INERT/NOTES.md"
 git -C "$D_INERT" add -A; git -C "$D_INERT" commit -qm "docs: add notes"
 INERT_OUT="$(bash "$PL" deployable "$D_INERT" "$B_INERT")"
-assert "AC5: an inert diff -> lib/proof-ledger.sh deployable prints 'no' (terminus skipped)" \
+assert "AC5: an inert diff -> lib/gate/proof-ledger.sh deployable prints 'no' (terminus skipped)" \
   $([ "$INERT_OUT" = "no" ] && echo 0 || echo 1)
 
 grep -qiE 'deployable|deploy/UAT terminus' "$MEGA_MD"; assert "AC5: mega.md documents the deploy/UAT terminus" $?
-grep -qF 'lib/proof-ledger.sh deployable' "$MEGA_MD"; assert "AC5: mega.md wires the SG-07 deployable verb verbatim" $?
+grep -qF 'lib/gate/proof-ledger.sh deployable' "$MEGA_MD"; assert "AC5: mega.md wires the SG-07 deployable verb verbatim" $?
 
 # ============================================================
 echo ""

@@ -29,7 +29,7 @@ Check each of these files (if they exist) against the diff:
 - Are the build/test/run commands still correct?
 - Are there new conventions established by recent code that should be documented?
 
-**CHANGELOG.md** (if exists)
+**CHANGELOG.md** (or `docs/CHANGELOG.md` if that's the repo's convention, SPEC-185; if exists)
 - Is there an entry for the current changes?
 - Does it follow the existing format (Keep a Changelog, conventional, custom)?
 - Add an entry if missing, following the project's existing format.
@@ -92,6 +92,9 @@ This is the docs-phase analogue of `/execute`'s task-verifier: the context that 
 Create a single commit: `docs: update [list of files] to match current codebase`
 
 This is a docs-only commit. Do NOT mix code changes with doc updates.
+
+After the commit, record it for lane telemetry (SPEC-139), one line:
+`bash lib/gate/gate-ledger.sh record <rid> Docs ran "files=<list>"`.
 
 ## Rules
 

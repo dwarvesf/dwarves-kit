@@ -25,7 +25,7 @@ trail the ledger exists to provide.
 Two changes, both additive and fail-safe.
 
 1. **Durable storage + additive migration.** New shared resolver
-   `lib/kit-log-dir.sh` exposing:
+   `lib/telemetry/kit-log-dir.sh` exposing:
    - `kit_resolve_log_dir` -> `$DWARVES_KIT_LOG_DIR` if set, else
      `${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs` (outside the
      `~/.claude/dwarves-kit` reinstall blast zone).
@@ -84,11 +84,11 @@ Two changes, both additive and fail-safe.
   copy through it (no arbitrary-file exfiltration into the corpus) and still works.
 
 ## Tasks
-- T1: `lib/kit-log-dir.sh` -- new resolver + legacy + migration functions.
-- T2: `lib/gate-ledger.sh` -- source resolver, migrate-on-load, `LOG_DIR` from
+- T1: `lib/telemetry/kit-log-dir.sh` -- new resolver + legacy + migration functions.
+- T2: `lib/gate/gate-ledger.sh` -- source resolver, migrate-on-load, `LOG_DIR` from
   resolver; add blanket-override rejection to `override()`.
-- T3: `lib/proof-ledger.sh`, `lib/lane-telemetry.sh`, `lib/precedent.sh`,
-  `lib/mega-merge.sh`, `lib/lane-classify.sh` (its `completeness.log` LANE-CHECK
+- T3: `lib/gate/proof-ledger.sh`, `lib/telemetry/lane-telemetry.sh`, `lib/precedent.sh`,
+  `lib/goal/mega-merge.sh`, `lib/classify/lane-classify.sh` (its `completeness.log` LANE-CHECK
   writer) -- source resolver, migrate-on-load, path from resolver. lane-classify
   is in the set because it WRITES `completeness.log` that the moved lane-telemetry
   READS; leaving it behind would split-brain downgrades (validate finding B1).
@@ -130,7 +130,7 @@ loses records. `override` refuses a reason reused across gates in one run.
   batch form. The reason is reconstructed `$5..NF` (split on ' | ') so a reason
   containing ' | ' compares exactly, and only `$4=="override"` lines count (a
   `skipped <reason>` never triggers a false reject).
-- DEC-005 (validate B1): `lib/lane-classify.sh` joins the resolver set even though
+- DEC-005 (validate B1): `lib/classify/lane-classify.sh` joins the resolver set even though
   it is not a "ledger" -- it writes `completeness.log`, and the reader
   (`lane-telemetry.sh`) moved, so the writer must move too or downgrades split-brain.
 - DEC-006 (validate B2): `kit_migrate_log_dir` always returns 0 (guards + `|| true`

@@ -94,6 +94,110 @@ fi
 bash lib/adopt.sh --dry-run "$T1" >/dev/null
 if git -C "$T1" diff --quiet; then ok "--dry-run on an adopted repo writes nothing"; else no "--dry-run dirtied an adopted repo"; fi
 
+# ------------------------------------------------------------------------------------------
+# SPEC-192 (goal 06, harness-ops): per-project .kit.toml override + adopt-time module wiring.
+# The resolver (lib/config/kit-config.sh, goal 01) already merges <project>/.kit.toml over the
+# kit-root default; these tests close the loop through adopt: a starter .kit.toml is seeded,
+# and the currently-enabled hook-modules (board/session/advisor/cosmetic) are wired into
+# <project>/.claude/settings.json at adopt time.
+# ------------------------------------------------------------------------------------------
+wired_hooks() { jq -r '[.hooks // {} | to_entries[]? | .value[]? | .hooks[]? | .command] | .[]' "$1" 2>/dev/null | grep -oE 'dwarves-kit/hooks/[A-Za-z0-9._-]+\.sh' | sed 's#dwarves-kit/hooks/##' | sort -u; }
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "skip - SPEC-192 module-wiring tests need jq; not found on PATH"
+else
+
+# 12. Fresh adopt seeds a starter .kit.toml with a [modules] section naming every known module.
+T8="$(newrepo)"
+bash lib/adopt.sh "$T8" >/dev/null
+if [ -f "$T8/.kit.toml" ] && grep -q '^\[modules\]' "$T8/.kit.toml" \
+  && grep -qE '^board[[:space:]]*=' "$T8/.kit.toml" && grep -qE '^cosmetic[[:space:]]*=' "$T8/.kit.toml"; then
+  ok "fresh adopt seeds a starter .kit.toml with a [modules] section"
+else
+  no "fresh adopt did not seed .kit.toml with the expected [modules] section"
+fi
+
+# 13. That same fresh adopt wires the kit-root-default-enabled modules' hooks into the
+# project's settings.json (board/session/advisor default true; cosmetic defaults false).
+W13="$(wired_hooks "$T8/.claude/settings.json")"
+if printf '%s\n' "$W13" | grep -qx backlog-stage.sh && printf '%s\n' "$W13" | grep -qx context-hints.sh \
+  && ! printf '%s\n' "$W13" | grep -qx auto-format.sh; then
+  ok "fresh adopt wires kit-root-default-enabled modules' hooks (board/advisor in, cosmetic out)"
+else
+  no "fresh adopt wired the wrong hook set: [$W13]"
+fi
+
+# 14. --with on a FRESH repo seeds the named modules true and wires their hooks even when the
+# kit-root default is false (cosmetic defaults false; --with cosmetic turns it on for THIS repo).
+T9="$(newrepo)"
+bash lib/adopt.sh --with cosmetic "$T9" >/dev/null
+if grep -qx 'cosmetic = true' "$T9/.kit.toml" \
+  && printf '%s\n' "$(wired_hooks "$T9/.claude/settings.json")" | grep -qx auto-format.sh; then
+  ok "--with cosmetic on a fresh repo seeds cosmetic=true and wires its hook"
+else
+  no "--with cosmetic did not seed/wire cosmetic for a fresh repo"
+fi
+
+# 15. THE Done= proof: a project .kit.toml [modules] board=false results in that project NOT
+# wiring the board hook (backlog-stage.sh), verified via its settings.json.
+T10="$(newrepo)"
+bash lib/adopt.sh "$T10" >/dev/null
+W15_BEFORE="$(wired_hooks "$T10/.claude/settings.json")"
+printf '%s\n' "$W15_BEFORE" | grep -qx backlog-stage.sh \
+  && ok "precondition: board's hook is wired before the override (kit-root default board=true)" \
+  || no "precondition failed: board's hook was never wired to begin with"
+sed -i.bak 's/^board = true$/board = false/' "$T10/.kit.toml" && rm -f "$T10/.kit.toml.bak"
+grep -qx 'board = false' "$T10/.kit.toml" || no "test setup: could not flip board=false in $T10/.kit.toml"
+bash lib/adopt.sh --refresh "$T10" >/dev/null
+W15_AFTER="$(wired_hooks "$T10/.claude/settings.json")"
+if ! printf '%s\n' "$W15_AFTER" | grep -qx backlog-stage.sh; then
+  ok "DONE=: project .kit.toml [modules] board=false -> board's hook is NOT wired (settings.json)"
+else
+  no "DONE=: board=false in .kit.toml did not stop board's hook from being wired"
+fi
+# session's hook must be untouched by the board-only edit (surgical re-wiring, not a full reset).
+if printf '%s\n' "$W15_AFTER" | grep -qx context-readiness.sh; then
+  ok "re-wiring after a board=false edit leaves the still-enabled session module's hooks wired"
+else
+  no "re-wiring after a board=false edit dropped an unrelated still-enabled module's hooks"
+fi
+
+# 16. THE Done= proof, second clause: a [ledger] override in the project .kit.toml is honored
+# by a command reading it (the resolver from goal 01, exercised end-to-end through a real
+# adopted project directory rather than a synthetic fixture).
+T11="$(newrepo)"
+bash lib/adopt.sh "$T11" >/dev/null
+printf '\n[ledger]\nlocation = "isolated"\n' >> "$T11/.kit.toml"
+KIT_REPO_ROOT="$(pwd)"
+LEDGER_VAL="$(KIT_CONFIG_ROOT="$KIT_REPO_ROOT" KIT_PROJECT_ROOT="$T11" bash -c "source '$KIT_REPO_ROOT/lib/config/kit-config.sh'; kit_config_get ledger.location")"
+if [ "$LEDGER_VAL" = "isolated" ]; then
+  ok "DONE=: a [ledger] override in the project .kit.toml is honored by the resolver"
+else
+  no "DONE=: [ledger] override was not honored (got [$LEDGER_VAL], want isolated)"
+fi
+
+# 17. --with is ignored (never clobbers) once <project>/.kit.toml already exists.
+bash lib/adopt.sh --with cosmetic "$T11" >/dev/null 2>&1
+if ! grep -qx 'cosmetic = true' "$T11/.kit.toml"; then
+  ok "--with is ignored once .kit.toml already exists (never overwritten)"
+else
+  no "--with clobbered an existing .kit.toml"
+fi
+
+# 18. Idempotent re-run after a config edit: re-running adopt again with NO further edits is a
+# clean no-op on the module wiring (settled state is stable, not re-churned every run).
+git -C "$T10" init -q >/dev/null 2>&1 || true
+git -C "$T10" add -A && git -C "$T10" -c user.email=t@t -c user.name=t commit -qm settle >/dev/null
+bash lib/adopt.sh --refresh "$T10" >/dev/null
+if git -C "$T10" diff --quiet; then
+  ok "re-running adopt --refresh with an unchanged .kit.toml is a clean no-op on module wiring"
+else
+  no "re-running adopt --refresh churned settings.json with no .kit.toml change"
+fi
+
+rm -rf "$T8" "$T9" "$T10" "$T11"
+fi
+
 rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7"
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"

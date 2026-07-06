@@ -8,7 +8,7 @@ This lane does NOT implement a renderer and does NOT store generated artifacts (
 
 ## Step 1: Write the `## UI design` brief (spec-first)
 
-Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005). Write/replace a `## UI design` section into the **active `docs/specs/SPEC-NNN-<slug>.md` if one exists, else `docs/specs/DECISION-BRIEF.md`** (else create the brief). If several specs match, ask the user which one; do not auto-pick. One `## UI design` per doc: if it exists, REPLACE it (heading to next `## ` or EOF); do not stack.
+Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005). Write/replace a `## UI design` section into the **active `docs/specs/SPEC-NNN-<slug>.md` if one exists, else `docs/briefs/DECISION-BRIEF.md`** (else create the brief). If several specs match, ask the user which one; do not auto-pick. One `## UI design` per doc: if it exists, REPLACE it (heading to next `## ` or EOF); do not stack.
 
 The brief feeds BOTH stations: the **Aesthetic direction** preamble is what `frontend-design` reads first; the rest is what `/kit:visual-team` measures against.
 
@@ -74,6 +74,27 @@ Present the verdict + findings:
 - **REVISE**: enter Phase B (Step 5).
 - **RECONSIDER**: surface that the direction is fundamentally wrong; stop, do not regenerate.
 
+## Done-mode (SPEC-112): how much verification this UI sub-goal owes
+
+`$ARGUMENTS` may carry a `Done-mode:` flag , one of **proof** (default) | **over-test** |
+**quiescence** , chosen per UI sub-goal at decompose time (the subgoal-template `Done-mode:`
+field). **proof is the mandatory floor; over-test and quiescence are opt-in escalations.** Final
+acceptance stays a `gate` in EVERY mode , taste ships past the human eyeball only.
+
+- **proof** (default, if unspecified): the current bar , real-surface flows + 2-3 captures + a11y.
+  Phase B below runs as the plain bounded REVISE loop (cap 2).
+  **Resolution when the field is absent** (SPEC-187 / SG-03): the goal-file `Done-mode:` field
+  still wins outright when present; only when it is absent does the config layer's
+  `[mega].over_test` supply the fallback -- `bash lib/config/kit-config.sh` then
+  `kit_config_get mega.over_test` (project `.kit.toml` > kit-root `kit.toml`); `true` promotes
+  the default from **proof** to **over-test**, anything else (absent config, `false`) leaves
+  **proof** as the default above. A different-harness adopter who wants over-test rigor
+  everywhere sets this once instead of tagging every UI sub-goal file.
+- **over-test**: proof, PLUS a `/kit:test-plan` matrix + `/kit:verify` execution, PLUS a
+  COVERAGE-DELTA row appended to the proof-of-done run-table , `ACs-covered / tests-added`,
+  before-vs-after (what the over-test pass added over the proof floor).
+- **quiescence**: Phase B is EXTENDED into a converging loop (Step 5 "quiescence branch" below).
+
 ## Step 5: Phase B, bounded auto-revise loop
 
 On a `REVISE` verdict, loop (max **2** regenerations, matching the fix-agent cap):
@@ -84,6 +105,36 @@ On a `REVISE` verdict, loop (max **2** regenerations, matching the fix-agent cap
 4. **Terminate** on `SOLID` (done), `RECONSIDER` (stop immediately, do not regenerate), or the max-iterations cap (stop, surface the last critique). A `frontend-design` error mid-loop also terminates the loop with the last successful critique.
 
 There is no numeric score threshold: `/kit:visual-team` returns a categorical verdict (plus per-lens scores), and `SOLID` is its "it holds" signal. Do not invent a combined score.
+
+### Step 5 quiescence branch (Done-mode: quiescence, SPEC-112)
+
+When `Done-mode: quiescence`, Phase B EXTENDS into a converging loop (it does NOT replace the plain
+REVISE loop above; `visual-team` stays single-pass stateless). Each round: critique (Step 3) -> apply
+the ACCEPTED fixes (the per-round approval Phase B already has) -> re-render -> re-critique.
+
+- **Stop condition (two-sided, load-bearing):** stop when a round yields **zero NEW findings >=HIGH AND no OPEN finding >=HIGH remains** (both halves, on purpose). "zero NEW" ALONE is not enough , a round that re-finds an
+  unresolved CRITICAL has zero NEW but an OPEN >=HIGH, so it does NOT quiesce (the falsely-calm
+  trap). Severity floor is `>=HIGH` (the kit has no MAJOR); MEDIUM/LOW findings DEFER, they do not
+  block.
+- **Round cap: 3** (test-plan-review-team parity). The plain REVISE loop above keeps its cap of 2
+  (fix-agent parity); the divergence is deliberate (DEC-018).
+- **Audit markers:** each round emits `[[QL-VERDICT round=N clean=BOOL findings=K]]` (clean = zero
+  NEW >=HIGH and no OPEN >=HIGH); the loop lead carries a cross-round dedup ledger IN-SESSION and
+  tags each finding `[resolved in round N | OPEN]`.
+- **Deferred findings:** sub-floor (<HIGH) findings + anything still OPEN at the cap land in a
+  `### Deferred findings` subsection. **The ui-design loop lead APPENDS `### Deferred findings` to
+  the FINAL `## Visual critique` AFTER the loop terminates** , an explicit carve-out to Step 3's
+  "do not write `## Visual critique` yourself" rule, because `visual-team` REWRITES that section
+  every round and is stateless (it cannot hold the cross-round deferred ledger). Appending
+  post-termination is why round N+1's rewrite does not eat it.
+- **Persona (06 dependency):** each round re-runs Step 3, which already threads the brief's
+  `Persona:` line into `visual-team`, so a supplied persona's 6th lens fires every quiescence round.
+- Terminate exactly as Phase B otherwise does on `SOLID` / `RECONSIDER` / a `frontend-design` error;
+  the quiescence stop + cap 3 are the additional terminations. Final acceptance stays a `gate`.
+
+After the loop terminates (Phase A SOLID, or Phase B/quiescence's SOLID / RECONSIDER / cap), record
+it for lane telemetry (SPEC-139), one line:
+`bash lib/gate/gate-ledger.sh record <rid> "UI design" ran "<verdict> rounds=<N>"`.
 
 ## Notes
 - Opt-in, report-only; never hard-gates `/kit:spec` or any build. The maintainer decides whether to proceed.

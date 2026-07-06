@@ -1,0 +1,19 @@
+Objective: the ~14 cc-* / cc-elevation tools become first-class dwarves-kit artifacts, named by FUNCTION (drop cc-; session- for transcript tools) placed by the decided taxonomy (guards -> hooks/, transcript tools -> tools/session-*, skill loop -> tools/skill-curator, claim panel -> agents/claim-verifier.md, lib/ regroups into subsystem subdirs). install.sh wires the new hooks so redeploy.sh's snapshot dance drops for them. cc-money-gate + prose-rag STAY ops (personal, not harness); NO tenant data enters the kit. Scaffold: _meta/megagoals/kit-foldin/ (ROADMAP.md = source of truth + ## Assumptions; goals/01..07 = contracts; research/2026-07-05-cc-elevation-kit-foldin-design.md = BINDING). You own ONLY this scaffold.
+
+RUN CONTRACT: ops-toolkit _meta/megagoals/OPERATE.md BINDING.
+
+RESUME STATE: drafted, NOT launched. First action: confirm runner-fastpath SG-09 reads [REHOMED -> kit-foldin SG-01], then dispatch Wave 1. Conductor owns ALL mega-dir bookkeeping (workers report, you transcribe). WORKER HYGIENE (hard): fixtures in mktemp/tests only, NO real personal transcripts; a worker NEVER git add/commit/init in a real checkout; no ops path enters any kit file (grep-gated).
+
+RUN MODE: subagent-delegate; THIN CONDUCTOR, never run a sub-goal inline. HOMES: dwarves-kit = 01-06; ops-toolkit = 07. CROSS-REPO: kit sub-goals use HAND-MADE worktrees (git -C <kit> worktree add), NEVER Agent isolation:worktree. Wave 1 (parallel, disjoint dirs): 01+02+04+05+06. Then 03 (waits 01, needs lib/session/). Then 07 retire-sweep (ops, waits 01-06 merged; HELD final PR). Only 02 touches install.sh; no two kit sub-goals write the same file. CONSUMER seam: --repo-root/_repo_root() (NOT CONSUMER_ROOT, a wrong earlier assumption).
+
+TIER 0: both repos kit-adopted: read AGENTS.md+WORKFLOW.md, lane-classify per sub-goal, record gate-ledger phases before push (drive lanes via lib/ + gate-ledger, NOT /kit:* which binds to cwd).
+
+TIER 1: SKIP grill/think/design re-asks; framing done (design note + DECISIONS). Naming/structure/disposition DECIDED.
+
+TIER 3: build to the NAMED Proof per goal file. OVER-TEST 02/03/04/06 (test-plan, named NCs, COVERAGE-DELTA). Absolutes: 01 keeps EVERY cross-subsystem sibling call resolving (kit self-resolves via BASH_SOURCE; pick a lib-root resolver OR per-subsystem shims, NOT root-only=false-green; gate=full suite + RUN orchestrate.sh+mega-merge.sh post-move; bearing/opus); 02 registers each hook in ROOT settings.json + hooks.json parity (install.sh only copies+merges) + fixture-test + temp-HOME install + NO ops path (grep); 03 keeps observe+recall SEPARATE (shared parser -> lib/session/parse-transcript.sh; honest-zero; bearing); 04 move MINUS deploy/ (stays ops) + rewrite RUNBOOK/MANUAL paths, 11 tests green + unset-ledger NC=clean error + promote skills/skill-review; 05 fresh+stale verdict; 06 REAL in-harness fan-out (NOT bash claude -p), agent-effectiveness + smoke, bearing/opus; 07 HARD-REMOVE (git rm each moved dir -> MOVED.md + MANIFEST; + already-moved observatory/mega-runner; git history stays; strip redeploy.sh of the 4 hooks).
+
+MERGE: gh-sequential, auto-bottom-up, gated-final. 07 = HELD final PR (open, do NOT merge). 06 auto but Han may flip to gate. Never merge red CI or CHANGES_REQUESTED; audit/merge each PR from its own repo.
+
+CONVERGENCE GATE (terminus = build+merge, non-deployable): integration-check (temp-HOME install.sh wires the 4 hooks; every moved tool's suite green on merged master; grep BOTH repos for dangling cc-*/old-path) + /kit:verify + review lenses + advisor P5/P6 + recheck. Write RUN_REPORT.md + render. Before complete: SPEC-005 LAB_LOG entry on 07's branch + flip ID-276.
+
+STOPS: the held final PR 07 (STOP /goal MANUALLY), all-blocked-unchanged, token budget. Fingerprints in NOTES ## Active blockers; Event log gets the final summary once. One PR per sub-goal; a checked box carries PR #N.

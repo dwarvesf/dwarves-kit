@@ -12,9 +12,14 @@
 #     then {SG-02,SG-03}, then SG-04, cycle by cycle.
 #   - partially-checked -> checked boxes drop out; a dep on an unchecked box still blocks.
 set -uo pipefail
+# TIER4_CLOSE=0 (SPEC-118): several cases here run a Touches-less/linear mega-goal to the _next-empty
+# terminal, where the TIER-4 mega-close now fires by default and would dispatch a verifier session the
+# wave mocks don't model. This suite tests wave/serial SCHEDULING, not the close (which has its own
+# tests/test-tier4-close.sh), so opt the whole suite out of the close.
+export TIER4_CLOSE=0
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../lib/orchestrate.sh
-source "$KIT/lib/orchestrate.sh"   # guard in orchestrate.sh keeps main from running when sourced
+# shellcheck source=../lib/queue/orchestrate.sh
+source "$KIT/lib/queue/orchestrate.sh"   # guard in orchestrate.sh keeps main from running when sourced
 
 fails=0
 pass() { echo "PASS $*"; }
@@ -125,7 +130,7 @@ assert_next_invariant "all-checked: head-1 == _next (both empty)" "$Z"
 # ============================ TASK-002: mkdir-lock + cmd_flip ============================
 # The CLI is exercised out-of-process (real distinct PIDs) for the concurrency + stale tests;
 # `_lock` is called directly (sourced) for the reclaim probe. ORCH = the script under test.
-ORCH="$KIT/lib/orchestrate.sh"
+ORCH="$KIT/lib/queue/orchestrate.sh"
 
 # ---- (a) cmd_flip flips the correct box, is idempotent, rejects an unknown id ----
 MG="$TMP/mg-flip"; mkdir -p "$MG"
@@ -744,7 +749,7 @@ mrc=0
 # ============================ TASK-004c: _wave_converge convergence sequencer ============================
 # _wave_converge <megadir> [<id>...] merges the LANDED wave sub-goals back to the mega-goal base ONE AT
 # A TIME (never concurrently), in ROADMAP order, each under the flip lock, through the MOCKABLE
-# WAVE_MERGE_CMD hook (real gh-backed merge via lib/mega-merge.sh is deferred to ID-085-followup). It is
+# WAVE_MERGE_CMD hook (real gh-backed merge via lib/goal/mega-merge.sh is deferred to ID-085-followup). It is
 # a THIN sequencer: it does not reimplement merging, only orders the calls. Before merging it runs a
 # same-file cross-wave guard (belt-and-suspenders over dispatch-gate's pre-admission disjointness): if
 # two landed branches changed the SAME file it FLAGS (nonzero + message/event) rather than land a

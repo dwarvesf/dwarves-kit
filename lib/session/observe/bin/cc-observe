@@ -1,0 +1,619 @@
+#!/usr/bin/env python3
+"""cc-observe: read Claude Code session transcripts and report my own usage.
+
+Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
+  skills    - which Skills fired, how often, with what error rate
+              (--latency adds a per-skill total wall-time table, ranked by summed ms)
+  tools     - which tools (Bash/Read/Edit/Agent/...) fired, with error rate
+  hooks     - per-hook execution latency (count/p50/p95/max) + hook errors
+  subagents - subagent (Agent/Task) spawns per day + by type, normalized per prompt
+  friction  - deterministic friction: thrash (rework), permission-prompts, context
+              pressure (compactions), skill mis-fires
+  sessions  - session shape: archetype mix, circadian (by hour), interruption rate
+  cost      - tokens by model + cache economics + $ estimate (attribution, not a bill)
+  report    - all of the above, the weekly self-observability digest
+
+The subagents view answers "is my subagent mix drifting?" that a raw tool count
+hides: it splits spawns by subagent_type (Explore vs general-purpose vs reviewer
+...) and normalizes by user-prompt turns (per100 = spawns per 100 prompts), so a
+busy day and a quiet day are comparable. Sidechain entries (the subagents' own
+transcripts) are excluded, so each spawn is counted once from the main session.
+
+Why JSONL and not a hook wrapper: the transcript already records, per entry,
+`hookInfos: [{command, durationMs}]` and `hookErrors`, plus every `tool_use`
+and `tool_result` block. So hook latency AND tool/skill usage come from one
+source with zero instrumentation, no dotfiles change, no always-on daemon.
+
+Stdlib only (no external deps) so it can run anywhere, including from a hook.
+"""
+import argparse
+import hashlib
+import json
+import os
+import re
+import sys
+import time
+from collections import Counter, defaultdict
+from datetime import datetime
+
+
+def _repo_root():
+    """Walk up from this file to find the kit repo root (the dir holding
+    lib/session/). Repo-relative per DECISIONS.md's adapter-default invariant:
+    no hardcoded ops-toolkit/personal path, no CONSUMER_ROOT env."""
+    d = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("cc-observe: cannot locate the kit repo root (lib/session not found)")
+
+
+sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
+from parse_transcript import iter_entries as _iter_transcript_entries  # noqa: E402
+
+DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
+
+# A file edited this many+ times within one session is "thrash" (a rework/debug spiral).
+THRASH_MIN = 3
+# Real permission-friction markers in tool_result content. NOTE: the lowercase
+# substring "permission to use" is a FALSE positive (it appears in skill-description
+# text); the genuine prompt is capital-P "Permission to use <Tool> ...". Denials and
+# config-fences are the other two.
+PERM_MARKERS = ("Permission to use ", "doesn't want to proceed", "denied by your permission")
+# Session archetype thresholds (minutes of wall-clock, count of tool_use). Order of
+# tests matters: automation, marathon, deep, quick, else standard. Tunable here.
+ARCH = {"marathon": (120, 300), "deep": (30, 80), "quick": (5, 15)}
+# The user-message text a turn carries when interrupted mid-flight.
+INTERRUPT_MARK = "[Request interrupted"
+# $/million tokens, approximate list price as of 2026-06-15, keyed by model-family
+# substring: (input, output, cache_read, cache_write). Max-plan billing is flat-rate,
+# so these are ATTRIBUTION estimates, not a bill. Unknown families (e.g. fable) count
+# tokens but contribute no $ (shown as "?"). Update the date if you refresh prices.
+PRICING = {
+    "opus": (15.0, 75.0, 1.5, 18.75),
+    "sonnet": (3.0, 15.0, 0.30, 3.75),
+    "haiku": (0.80, 4.0, 0.08, 1.0),
+}
+
+
+def model_cost(model, t):
+    """Estimated USD for one model's [input, output, cache_read, cache_write] tokens, or None if family unknown."""
+    fam = next((f for f in PRICING if f in model), None)
+    if not fam:
+        return None
+    inp, out, cr, cw = PRICING[fam]
+    return (t[0] * inp + t[1] * out + t[2] * cr + t[3] * cw) / 1_000_000
+
+
+def parse_ts(ts):
+    """ISO timestamp -> datetime, or None. Handles the trailing Z."""
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def classify_session(dur_min, tools, turns):
+    """Bucket a session by wall-clock + tool volume + whether a human prompted."""
+    if turns == 0:
+        return "automation"  # no human prompt = scheduled / subagent / non-interactive
+    if dur_min > ARCH["marathon"][0] or tools > ARCH["marathon"][1]:
+        return "marathon"
+    if dur_min > ARCH["deep"][0] or tools > ARCH["deep"][1]:
+        return "deep"
+    if dur_min < ARCH["quick"][0] and tools < ARCH["quick"][1]:
+        return "quick"
+    return "standard"
+
+
+def iter_files(args):
+    """Resolve the set of transcript files to read from the CLI args."""
+    if args.file:
+        yield args.file
+        return
+    root = args.root or DEFAULT_ROOT
+    if args.project:
+        root = os.path.join(root, args.project)
+    cutoff = time.time() - args.days * 86400 if args.days else None
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in files:
+            if not fn.endswith(".jsonl"):
+                continue
+            path = os.path.join(dirpath, fn)
+            # Coarse window: skip files whose last write predates the cutoff.
+            if cutoff is not None:
+                try:
+                    if os.path.getmtime(path) < cutoff:
+                        continue
+                except OSError:
+                    continue
+            yield path
+
+
+def iter_entries(path):
+    """Yield parsed JSON objects from one transcript, skipping unparseable lines.
+
+    Delegates to the shared lib/session/parse_transcript.py (the ONE JSONL
+    turn-parser cc-observe and cc-recall both need); this wrapper only adds
+    the many-file-scan behavior cc-observe wants (a single missing/unreadable
+    file in a --root/--project sweep contributes zero entries rather than
+    aborting the whole scan -- honest-zero for that file, not a crash)."""
+    try:
+        yield from _iter_transcript_entries(path)
+    except OSError:
+        return
+
+
+def blocks(entry):
+    """Content blocks of a user/assistant entry, or empty."""
+    msg = entry.get("message") or {}
+    c = msg.get("content")
+    return c if isinstance(c, list) else []
+
+
+def hook_label(command):
+    """Normalize a hook command string to a stable, mostly-readable label.
+
+    Script hooks collapse to their basename (foo.sh), but only when the script is
+    NAMED EARLY (within the first two whitespace tokens, i.e. it is the executable
+    being run, optionally after a runner like `bash`/`node`). A long re-injected
+    prompt such as a `/goal` Stop hook often MENTIONS a *.sh / *.py deep in its
+    prose; matching that would mislabel the goal as that file (and merge unrelated
+    goals onto one row), so the early-token guard keeps prose out of the script
+    branch.
+
+    Inline hooks have no stable first word: the `echo` guard hooks AND the long
+    re-injected `/goal`-style prompts would otherwise each scatter into many rows,
+    keyed by an arbitrary first word (Drive/Outcome:/Execute/...) or an incidentally
+    mentioned filename. Both key on a short hash of the WHOLE command instead, so
+    each UNIQUE inline hook collapses to a single stable `inline-echo:<hash>` row.
+    Everything else uses its first token's basename.
+    """
+    c = command.strip()
+    toks = c.split()
+    m = re.search(r"([\w.-]+\.(?:sh|py|js|ts|rb|bash))\b", " ".join(toks[:2]))
+    if m:
+        return m.group(1)
+    if c.startswith("echo") or len(c) > 120:
+        return "inline-echo:" + hashlib.sha1(c.encode()).hexdigest()[:8]
+    if not toks:
+        return "?"
+    return toks[0].rsplit("/", 1)[-1][:40] or "?"
+
+
+def pctl(vals, p):
+    """Nearest-rank percentile (integer ms). Empty -> 0."""
+    if not vals:
+        return 0
+    s = sorted(vals)
+    i = min(len(s) - 1, int(round((p / 100) * (len(s) - 1))))
+    return int(s[i])
+
+
+def collect(args):
+    """Single pass over all selected transcripts -> usage + latency tallies."""
+    tool_n, tool_err = Counter(), Counter()
+    skill_n, skill_err = Counter(), Counter()
+    id_tool, id_skill = {}, {}  # tool_use_id -> name (a tool_result references it)
+    id_skill_ts = {}            # tool_use_id -> Skill tool_use timestamp (for wall-time)
+    skill_durs = defaultdict(list)  # skill -> [wall-time ms], one per fire (ts(result)-ts(use))
+    hook_durs = defaultdict(list)
+    hook_sample = {}
+    hook_errors = 0
+    files = 0
+    sub_day = Counter()      # day -> subagent spawns (main sessions only)
+    sub_type = Counter()     # subagent_type -> spawns
+    turns_day = Counter()    # day -> user-prompt turns (the per100 denominator)
+    thrash = Counter()       # file_path -> # sessions where it was edited >= THRASH_MIN times
+    thrash_max = {}          # file_path -> worst single-session edit count
+    perm = Counter()         # tool/cmd label -> permission-friction events
+    id_cmd = {}              # tool_use_id -> short Bash command (for perm labeling)
+    compact_day = Counter()  # day -> compaction events (context pressure)
+    arch = Counter()         # session archetype -> # sessions
+    circ = defaultdict(lambda: [0, 0])  # hour-of-day (UTC) -> [prompt turns, tool_uses]
+    interruptions = 0        # total interrupted turns
+    interrupt_sessions = 0   # sessions with >= 1 interruption
+    tok = defaultdict(lambda: [0, 0, 0, 0])  # model -> [input, output, cache_read, cache_create]
+
+    for path in iter_files(args):
+        files += 1
+        file_edits = Counter()   # per-session edit counts, reset each transcript
+        f_first = f_last = None  # session wall-clock bounds
+        f_tools = f_turns = 0    # session tool + prompt volume (for archetype)
+        f_interrupted = False
+        f_sidechain = False      # a subagent's own transcript, not a session Han ran
+        for entry in iter_entries(path):
+            # day + sidechain are needed by both the prompt-turn count and the
+            # subagent-spawn count; a spawn in a sidechain file is the subagent's
+            # OWN run, not a spawn, so it must not be double-counted.
+            ts = entry.get("timestamp")
+            day = ts[:10] if isinstance(ts, str) and len(ts) >= 10 else None
+            side = bool(entry.get("isSidechain"))
+            if side:
+                f_sidechain = True
+            hour = ts[11:13] if isinstance(ts, str) and len(ts) >= 13 else None
+            if isinstance(ts, str):
+                if f_first is None:
+                    f_first = ts
+                f_last = ts
+            # token economy: the usage block rides on assistant messages.
+            msg = entry.get("message") or {}
+            u = msg.get("usage")
+            if isinstance(u, dict):
+                t = tok[msg.get("model") or "?"]
+                t[0] += u.get("input_tokens") or 0
+                t[1] += u.get("output_tokens") or 0
+                t[2] += u.get("cache_read_input_tokens") or 0
+                t[3] += u.get("cache_creation_input_tokens") or 0
+            # A prompt turn is a real user message (text), not a tool_result carrier.
+            if entry.get("type") == "user" and not side and day:
+                c = (entry.get("message") or {}).get("content")
+                has_text = isinstance(c, str) or any(
+                    isinstance(b, dict) and b.get("type") == "text"
+                    for b in (c if isinstance(c, list) else [])
+                )
+                if has_text:
+                    turns_day[day] += 1
+                    f_turns += 1
+                    if hour:
+                        circ[hour][0] += 1
+                    txt = c if isinstance(c, str) else " ".join(
+                        b.get("text", "") for b in c if isinstance(b, dict) and b.get("type") == "text")
+                    if INTERRUPT_MARK in txt:
+                        interruptions += 1
+                        f_interrupted = True
+
+            # context pressure: a compaction collapses the window mid-session.
+            if entry.get("isCompactSummary") and day:
+                compact_day[day] += 1
+
+            # hookInfos/hookErrors ride on (mostly) system entries.
+            hi = entry.get("hookInfos")
+            if isinstance(hi, list):
+                for h in hi:
+                    if not isinstance(h, dict):
+                        continue
+                    lab = hook_label(str(h.get("command", "?")))
+                    hook_durs[lab].append(h.get("durationMs") or 0)
+                    hook_sample.setdefault(lab, str(h.get("command", ""))[:60])
+            he = entry.get("hookErrors")
+            if isinstance(he, list):
+                hook_errors += len(he)
+
+            for b in blocks(entry):
+                if not isinstance(b, dict):
+                    continue
+                bt = b.get("type")
+                if bt == "tool_use":
+                    name = b.get("name") or "?"
+                    tool_n[name] += 1
+                    f_tools += 1
+                    if hour:
+                        circ[hour][1] += 1
+                    tid = b.get("id")
+                    if tid:
+                        id_tool[tid] = name
+                    if name == "Skill":
+                        sk = (b.get("input") or {}).get("skill") or "?"
+                        skill_n[sk] += 1
+                        if tid:
+                            id_skill[tid] = sk
+                            if ts:
+                                id_skill_ts[tid] = ts
+                    if name in ("Agent", "Task") and not side and day:
+                        st = (b.get("input") or {}).get("subagent_type") or "(default)"
+                        sub_day[day] += 1
+                        sub_type[st] += 1
+                    if name in ("Edit", "Write", "MultiEdit"):
+                        fp = (b.get("input") or {}).get("file_path")
+                        if fp:
+                            file_edits[fp] += 1
+                    if name == "Bash" and tid:
+                        cmd = (b.get("input") or {}).get("command") or ""
+                        id_cmd[tid] = cmd.split()[0][:24] if cmd.split() else ""
+                elif bt == "tool_result":
+                    tid = b.get("tool_use_id")
+                    if b.get("is_error"):
+                        if tid in id_tool:
+                            tool_err[id_tool[tid]] += 1
+                        if tid in id_skill:
+                            skill_err[id_skill[tid]] += 1
+                    # per-skill wall-time: ts(tool_result) - ts(tool_use). The transcript
+                    # carries no durationMs for a Skill, so the timestamp delta is the only
+                    # honest source. Summed across fires, this surfaces death-by-a-thousand-
+                    # cuts overhead a raw count hides (a 50ms skill firing 100x = 5s hidden).
+                    if tid in id_skill and tid in id_skill_ts and ts:
+                        a, b2 = parse_ts(id_skill_ts[tid]), parse_ts(ts)
+                        if a and b2:
+                            d = (b2 - a).total_seconds() * 1000.0
+                            if d >= 0:
+                                skill_durs[id_skill[tid]].append(d)
+                    # permission friction: the prompt/denial rides in the result content.
+                    content = b.get("content")
+                    ctext = content if isinstance(content, str) else (json.dumps(content) if content is not None else "")
+                    if any(m in ctext for m in PERM_MARKERS):
+                        label = id_tool.get(tid, "?")
+                        if label == "Bash" and tid in id_cmd and id_cmd[tid]:
+                            label = "Bash:" + id_cmd[tid]
+                        perm[label] += 1
+
+        # end of transcript (= one session): fold per-session edit counts into thrash
+        for fp, n in file_edits.items():
+            if n >= THRASH_MIN:
+                thrash[fp] += 1
+                thrash_max[fp] = max(thrash_max.get(fp, 0), n)
+        # classify the session by wall-clock + tool/prompt volume (skip subagent
+        # transcripts, which are not sessions Han ran and would inflate "automation")
+        if not f_sidechain:
+            a, b2 = parse_ts(f_first), parse_ts(f_last)
+            dur_min = (b2 - a).total_seconds() / 60.0 if a and b2 else 0.0
+            arch[classify_session(dur_min, f_tools, f_turns)] += 1
+            if f_interrupted:
+                interrupt_sessions += 1
+
+    return {
+        "files": files,
+        "tools": tool_n,
+        "tool_err": tool_err,
+        "skills": skill_n,
+        "skill_err": skill_err,
+        "skill_durs": skill_durs,
+        "hook_durs": hook_durs,
+        "hook_sample": hook_sample,
+        "hook_errors": hook_errors,
+        "sub_day": sub_day,
+        "sub_type": sub_type,
+        "turns_day": turns_day,
+        "thrash": thrash,
+        "thrash_max": thrash_max,
+        "perm": perm,
+        "compact_day": compact_day,
+        "arch": arch,
+        "circ": circ,
+        "interruptions": interruptions,
+        "interrupt_sessions": interrupt_sessions,
+        "tok": tok,
+    }
+
+
+def print_table(headers, rows):
+    """Left/right-aligned fixed-width table. First column left, rest right."""
+    if not rows:
+        print("  (none)")
+        return
+    cols = list(zip(*([headers] + rows)))
+    widths = [max(len(str(x)) for x in col) for col in cols]
+    def fmt(row):
+        out = [str(row[0]).ljust(widths[0])]
+        out += [str(v).rjust(widths[i]) for i, v in enumerate(row[1:], 1)]
+        return "  ".join(out)
+    print("  " + fmt(headers))
+    print("  " + "  ".join("-" * w for w in widths))
+    for r in rows:
+        print("  " + fmt(r))
+
+
+def usage_rows(counts, errs, top):
+    rows = []
+    for name, n in counts.most_common(top or None):
+        e = errs.get(name, 0)
+        rate = f"{100 * e / n:.0f}%" if n else "0%"
+        rows.append([name, n, e, rate])
+    return rows
+
+
+def hook_rows(durs, sample, top):
+    rows = []
+    ranked = sorted(durs.items(), key=lambda kv: max(kv[1]) if kv[1] else 0, reverse=True)
+    if top:
+        ranked = ranked[:top]
+    for lab, vals in ranked:
+        rows.append([lab, len(vals), pctl(vals, 50), pctl(vals, 95), max(vals) if vals else 0, sample.get(lab, "")])
+    return rows
+
+
+def skill_latency_rows(skill_durs, top):
+    """Per-skill total wall-time (ms), summed across every fire, sorted by total desc.
+
+    Mirrors hook_rows (count/p50/p95/max) but ranks by TOTAL not max: a fast skill
+    firing many times can out-cost a one-off slow skill. That total is the column
+    the raw `skills` view (sorted by count) and the hooks view (sorted by max) both
+    hide. Duration per fire = ts(tool_result) - ts(tool_use)."""
+    ranked = sorted(skill_durs, key=lambda s: sum(skill_durs[s]), reverse=True)
+    if top:
+        ranked = ranked[:top]
+    rows = []
+    for s in ranked:
+        v = skill_durs[s]
+        rows.append([s, len(v), int(round(sum(v))), pctl(v, 50), pctl(v, 95), int(round(max(v))) if v else 0])
+    return rows
+
+
+def subagent_day_rows(sub_day, turns_day, top):
+    """Per-day spawns with the per-100-prompts normalization (newest day first)."""
+    rows = []
+    for day in sorted(sub_day, reverse=True):
+        n = sub_day[day]
+        t = turns_day.get(day, 0)
+        per100 = f"{100 * n / t:.1f}" if t else "-"
+        rows.append([day, n, t, per100])
+    return rows[:top] if top else rows
+
+
+def subagent_type_rows(sub_type, top):
+    total = sum(sub_type.values())
+    return [
+        [st, n, f"{100 * n / total:.0f}%" if total else "0%"]
+        for st, n in sub_type.most_common(top or None)
+    ]
+
+
+def shorten_path(fp, n=48):
+    parts = fp.split("/")
+    s = "/".join(parts[-3:]) if len(parts) > 3 else fp
+    return ("..." + s[-(n - 3):]) if len(s) > n else s
+
+
+def thrash_rows(thrash, thrash_max, top):
+    ranked = sorted(thrash, key=lambda fp: thrash_max.get(fp, 0), reverse=True)
+    rows = [[shorten_path(fp), thrash[fp], thrash_max.get(fp, 0)] for fp in ranked]
+    return rows[:top] if top else rows
+
+
+def perm_rows(perm, top):
+    return [[lab, n] for lab, n in perm.most_common(top or None)]
+
+
+def compact_rows(compact_day, top):
+    rows = [[d, compact_day[d]] for d in sorted(compact_day, reverse=True)]
+    return rows[:top] if top else rows
+
+
+def skill_precision_rows(skill_n, skill_err, top):
+    """Only skills that ever mis-fired (errored), ranked by inert-rate. The raw
+    `skills` view sorts by count and buries these; precision surfaces them."""
+    ranked = sorted((s for s in skill_n if skill_err.get(s, 0)),
+                    key=lambda s: skill_err[s] / skill_n[s], reverse=True)
+    rows = [[s, skill_n[s], skill_err[s], f"{100 * skill_err[s] / skill_n[s]:.0f}%"] for s in ranked]
+    return rows[:top] if top else rows
+
+
+def cost_rows(tok, top):
+    rows = []
+    for model, t in tok.items():
+        c = model_cost(model, t)
+        rows.append([model, t[0], t[1], t[2], t[3], f"${c:.2f}" if c is not None else "?"])
+    rows.sort(key=lambda r: float(r[5][1:]) if r[5] != "?" else -1, reverse=True)
+    return rows[:top] if top else rows
+
+
+def arch_rows(arch):
+    order = ["quick", "standard", "deep", "marathon", "automation"]
+    total = sum(arch.values())
+    return [[a, arch[a], f"{100 * arch[a] / total:.0f}%" if total else "0%"] for a in order if arch.get(a)]
+
+
+def circ_rows(circ, top):
+    rows = [[h, circ[h][0], circ[h][1]] for h in sorted(circ)]
+    return rows[:top] if top else rows
+
+
+def emit(args, data):
+    if args.json:
+        out = {
+            "files": data["files"],
+            "skills": [{"skill": k, "count": v, "errors": data["skill_err"].get(k, 0)} for k, v in data["skills"].most_common()],
+            "skill_latency": [{"skill": r[0], "fires": r[1], "total_ms": r[2], "p50_ms": r[3], "p95_ms": r[4], "max_ms": r[5]} for r in skill_latency_rows(data["skill_durs"], 0)],
+            "tools": [{"tool": k, "count": v, "errors": data["tool_err"].get(k, 0)} for k, v in data["tools"].most_common()],
+            "hooks": [{"hook": lab, "count": len(v), "p50_ms": pctl(v, 50), "p95_ms": pctl(v, 95), "max_ms": max(v) if v else 0} for lab, v in data["hook_durs"].items()],
+            "hook_errors": data["hook_errors"],
+            "subagents": {
+                "by_day": [{"day": d, "spawns": data["sub_day"][d], "prompts": data["turns_day"].get(d, 0)} for d in sorted(data["sub_day"], reverse=True)],
+                "by_type": [{"subagent_type": k, "count": v} for k, v in data["sub_type"].most_common()],
+            },
+            "friction": {
+                "thrash": [{"file": fp, "sessions": data["thrash"][fp], "max_edits": data["thrash_max"].get(fp, 0)} for fp in data["thrash"]],
+                "permission": [{"label": k, "events": v} for k, v in data["perm"].most_common()],
+                "context_pressure": [{"day": d, "compactions": data["compact_day"][d]} for d in sorted(data["compact_day"], reverse=True)],
+                "skill_precision": [{"skill": s, "fires": data["skills"][s], "inert": data["skill_err"][s]} for s in data["skills"] if data["skill_err"].get(s, 0)],
+            },
+            "sessions": {
+                "archetypes": [{"archetype": a, "sessions": data["arch"][a]} for a in data["arch"]],
+                "circadian": [{"hour": h, "turns": data["circ"][h][0], "tools": data["circ"][h][1]} for h in sorted(data["circ"])],
+                "interruptions": data["interruptions"],
+                "interrupt_sessions": data["interrupt_sessions"],
+            },
+            "cost": {
+                "by_model": [{"model": m, "input": t[0], "output": t[1], "cache_read": t[2], "cache_create": t[3], "est_usd": model_cost(m, t)} for m, t in data["tok"].items()],
+                "total_est_usd": sum((model_cost(m, t) or 0) for m, t in data["tok"].items()),
+                "cache_read": sum(t[2] for t in data["tok"].values()),
+                "cache_create": sum(t[3] for t in data["tok"].values()),
+            },
+        }
+        print(json.dumps(out, indent=2))
+        return
+
+    want = args.cmd
+    if want in ("skills", "report"):
+        print(f"# skills  ({data['files']} transcripts)")
+        print_table(["skill", "count", "errors", "rate"], usage_rows(data["skills"], data["skill_err"], args.top))
+        print()
+        if args.latency:
+            print(f"# skill wall-time  (total ms summed per skill, ranked by total; {data['files']} transcripts)")
+            print_table(["skill", "fires", "total_ms", "p50ms", "p95ms", "maxms"], skill_latency_rows(data["skill_durs"], args.top))
+            print()
+    if want in ("tools", "report"):
+        print(f"# tools  ({data['files']} transcripts)")
+        print_table(["tool", "count", "errors", "rate"], usage_rows(data["tools"], data["tool_err"], args.top))
+        print()
+    if want in ("hooks", "report"):
+        print(f"# hooks  ({data['hook_errors']} hook errors across {data['files']} transcripts)")
+        print_table(["hook", "runs", "p50ms", "p95ms", "maxms", "sample"], hook_rows(data["hook_durs"], data["hook_sample"], args.top))
+        print()
+    if want in ("subagents", "report"):
+        total_sub = sum(data["sub_type"].values())
+        total_prompts = sum(data["turns_day"].values())
+        print(f"# subagents  ({total_sub} spawns, {total_prompts} prompts, {data['files']} transcripts)")
+        print_table(["day", "spawns", "prompts", "per100"], subagent_day_rows(data["sub_day"], data["turns_day"], args.top))
+        print()
+        print_table(["subagent_type", "count", "share"], subagent_type_rows(data["sub_type"], args.top))
+        print()
+    if want in ("friction", "report"):
+        print(f"# friction  ({data['files']} transcripts)")
+        print(f"  thrash (file edited >= {THRASH_MIN}x in one session):")
+        print_table(["file", "sessions", "max-edits"], thrash_rows(data["thrash"], data["thrash_max"], args.top))
+        print("  permission-friction (prompts/denials by tool):")
+        print_table(["tool/cmd", "events"], perm_rows(data["perm"], args.top))
+        print("  context-pressure (compactions per day):")
+        print_table(["day", "compactions"], compact_rows(data["compact_day"], args.top))
+        print("  skill-precision (skills that mis-fired):")
+        print_table(["skill", "fires", "inert", "inert%"], skill_precision_rows(data["skills"], data["skill_err"], args.top))
+        print()
+    if want in ("sessions", "report"):
+        total_turns = sum(data["turns_day"].values())
+        ir = f"{100 * data['interruptions'] / total_turns:.1f}" if total_turns else "-"
+        print(f"# sessions  ({data['files']} sessions, {data['interrupt_sessions']} interrupted, {data['interruptions']} interrupts = {ir}/100 turns)")
+        print("  archetype mix:")
+        print_table(["archetype", "sessions", "share"], arch_rows(data["arch"]))
+        print("  circadian (UTC hour):")
+        print_table(["hour", "turns", "tools"], circ_rows(data["circ"], args.top))
+        print()
+    if want in ("cost", "report"):
+        tok = data["tok"]
+        total = sum((model_cost(m, t) or 0) for m, t in tok.items())
+        cr = sum(t[2] for t in tok.values())
+        cw = sum(t[3] for t in tok.values())
+        hit = f"{100 * cr / (cr + cw):.0f}%" if (cr + cw) else "-"
+        print(f"# cost  (est ${total:,.2f}, cache-hit {hit}, {data['files']} transcripts; Max-plan flat-rate, this is attribution not a bill)")
+        print_table(["model", "input", "output", "cache-rd", "cache-wr", "est$"], cost_rows(tok, args.top))
+        print()
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="cc-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "report"], help="which view")
+    src = p.add_mutually_exclusive_group()
+    src.add_argument("--file", help="parse a single transcript file (used by tests)")
+    src.add_argument("--project", help="project slug under ~/.claude/projects/")
+    p.add_argument("--root", help=f"transcripts root (default {DEFAULT_ROOT})")
+    p.add_argument("--days", type=int, default=0, help="only files modified within N days (0 = all)")
+    p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all)")
+    p.add_argument("--latency", action="store_true", help="(skills) add a per-skill total wall-time table, ranked by summed ms")
+    p.add_argument("--json", action="store_true", help="machine-readable output (for vps-mon ingest)")
+    args = p.parse_args(argv)
+
+    if args.file and not os.path.exists(args.file):
+        print(f"cc-observe: file not found: {args.file}", file=sys.stderr)
+        return 1
+
+    data = collect(args)
+    emit(args, data)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

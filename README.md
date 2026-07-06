@@ -7,18 +7,24 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
-Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, agents iterate inside them. The loop is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
+Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, and agents iterate inside them until a read-only verifier passes, never grading their own homework.
 
+It ships as a **toolbox, not an appliance.** Every subsystem is a standalone shell command that already works on its own, `bash lib/board/board.sh --help`, and the same for `gate`/`stats`/`classify`/`spec`/`goal`/`session`, so there is no `kit` uber-binary and no install step to just poke at it (the same bash reads under pi, opencode, Claude Code, or a bare terminal). Wiring it into Claude Code (`bash install.sh`) adds an always-on safety spine and lets you `--with` exactly the modules you want and nothing else; [Install](#install) has the layers.
+
+The loop itself is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
+
+```mermaid
+flowchart LR
+  goal([goal + gates<br/>set up front]) --> T
+  T[think<br/>forcing questions] -->|advisory| S[spec<br/>the contract]
+  S -->|spec-drift guard| X[execute<br/>worker → verifier → fix-agent]
+  X -->|BLOCKING: verification pipeline| R[review<br/>verdict recorded]
+  R -->|advisory| SH[ship<br/>version + PR]
+  SH -->|BLOCKING: ship-gate + push-to-main| RE[retro]
+  RE -.->|feeds the next cycle| T
 ```
-  goal --> think --> spec --> execute --> review --> ship --> retro --+
-            |          |         |           |          |             |
-        6 forcing   the spec   worker ->   verdict   ship gate +      |
-        questions   is the     verifier -> recorded  push-to-main     |
-        (advisory)  contract   fix-agent   (advisory) blocker         |
-                               (max 2)                                |
-   ^                                                                  |
-   +------------------ retro feeds the next cycle --------------------+
-```
+
+Two gate classes sit on those boundaries: **blocking** (the verification pipeline, the ship-gate, the push-to-main blocker , mechanical, they stop a bad outcome) and **advisory** (think, review , they surface findings, never block). The autonomous-loop hardening adds a fresh-context re-audit of every done-claim, a kit-default cross-cutting advisor lens on top of the specialized reviewers, and a deployable-done proof gate, so a closed loop can run long without drifting into self-graded slop.
 
 Every build task runs a verification pipeline (worker → verifier → fix-agent retry), and hooks enforce safety automatically (`rm -rf`, push-to-main, force-push, and secret-file reads are blocked). The worker is also **specialized per task**: when a task needs a role no built-in agent covers (security, migration, a doc writer, ...), the kit synthesizes one on the fly and dispatches it, or `/kit:draft-agent` installs a reusable named agent ([SPEC-089](docs/specs/SPEC-089-dynamic-agent-synthesis.md)).
 
@@ -48,6 +54,28 @@ An open loop (the agent roams free and judges its own output) is a fast slop mac
 | one loop size fits all | risk lanes: tiny work skips the ceremony entirely |
 
 ## Install
+
+Layered by design: the SPINE installs unconditionally (six hooks guarding push, merge, secrets, and commit format, ADR-0024's irreversible boundary); everything else is an opt-in MODULE via `--with <a,b,c>`, recorded in your own project's `kit.toml [modules]` (a per-consumer install record, re-runnable; never a runtime registry a hook reads back). Run the installer with no `--with` at all to get the spine and nothing else.
+
+| Module | What it wires | Kind |
+|---|---|---|
+| `board` | `backlog-stage` (SessionEnd: stage session work-items to the board) | 1 hook |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard` | 7 hooks |
+| `advisor` | `context-hints` (session-elapsed + keyword skill hints) | 1 hook |
+| `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
+| `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
+| `stats` | the `stats` CLI, a read-only projection over the run/gate ledgers | hookless (uv CLI) |
+| `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
+| `weekend_batch` | the debt-paydown reader/closer (`lib/queue/weekend-batch.sh`), invoked by a consumer's own skill or directly | hookless (lib) |
+| `bridge` | git↔Hermes kanban mirror/writeback (`board.sh mirror/status/writeback`), itself gated per-repo by a `bridge=on` row in `boards.txt` | hookless (lib) |
+
+`team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
+
+```bash
+bash install.sh                         # spine only
+bash install.sh --with board,stats      # spine + those two
+bash install.sh --prune --with board    # explicit trim: re-install down to spine + board
+```
 
 ### Option 1: Claude Code plugin (recommended)
 
@@ -111,6 +139,9 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 /kit:review-team    Parallel 3-lens review, confidence-gated + validated findings
 /kit:verify         Re-run tests read-only; PASS / FAIL / INCONCLUSIVE
 /kit:docs           Update all docs to match code (5 min)
+/kit:explain        Literate-diff explainer: understand a change, not click-to-merge it (ADR-0031)
+/kit:quiz-gate      ★-tap nudge: a 5-question quiz from the diff before merging a significant PR (ADR-0031)
+/kit:pitch          Outward buy-in doc from the spec + proof + impl-notes + grill record; ends in an ask, never fabricates (SPEC-140)
 /kit:ship           Review gate, version bump, changelog, commit, PR
 /kit:retro          Retrospective (10 min, after shipping)
 ```
@@ -148,12 +179,12 @@ Every task goes through: worker > task-verifier > fix-agent (if needed). The wor
                                  (max 2 retries, then escalate)
 ```
 
-Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out disjoint `VALIDATED` specs into parallel git worktrees behind a disjointness gate; across sessions, a passive goal registry (`lib/goal-registry.sh`) keeps concurrent same-machine sessions from colliding. The kit deliberately stops short of a DAG scheduler, a coordinating daemon, or cross-machine orchestration. For those, run GSD v2 or Nimbalyst alongside it.
+Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out disjoint `VALIDATED` specs into parallel git worktrees behind a disjointness gate; across sessions, a passive goal registry (`lib/goal/goal-registry.sh`) keeps concurrent same-machine sessions from colliding. The kit deliberately stops short of a DAG scheduler, a coordinating daemon, or cross-machine orchestration. For those, run GSD v2 or Nimbalyst alongside it.
 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (17, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (21, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
@@ -162,13 +193,17 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | commit-format | PreToolUse(Bash) | Blocks non-conventional / >72-char / spec-ID commit subjects |
 | ship-gate | PreToolUse(Bash) | Blocks push/PR without a proof-of-done record + recorded lane gates (ADR-0024 boundary) |
 | context-readiness | SessionStart | Detects project + board state (`board:Nq`), suggests the next step intent-first |
+| context-hints | UserPromptSubmit | Injects session elapsed/idle time + keyword-matched skill hints (empty map by default; wire your own via CONTEXT_HINTS_SKILLMAP) |
 | anti-rationalization | Stop | Catches Claude declaring work done prematurely |
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
 | session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
+| citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
 | output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
 | pre-compact-backup | PreCompact | Saves structured session snapshot before compaction |
+| harvest | PreCompact, SessionEnd | Stages durable session learnings to a repo-relative ledger (PreCompact); drafts a LAB_LOG entry (SessionEnd --lab-log). Never writes a durable home; a human flushes |
+| backlog-stage | SessionEnd | Stages forward-looking work-items from the session to a repo-relative staging file. Never writes the board directly |
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
 | notification | Notification | Desktop alert when Claude needs input |
 | permission-auto-approve | PermissionRequest | Auto-approves read-only operations (pipe-safe) |
@@ -180,7 +215,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (27, manual, human-triggered)</summary>
+<summary><b>Commands</b> (30, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -193,7 +228,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
 | /kit:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
 | /kit:dispatch | Orchestrate | Fire N disjoint VALIDATED specs concurrently, each in its own worktree, behind a disjointness gate; lead-owned merge |
-| /kit:mega | Orchestrate | Mirrors the plan-for-mega-goal skill: decompose 3-8 dependent sub-goals, front-load every clarification once, set the per-run merge config, hand off to the bounded loop; ship-layer auto-merge rides the ship-gate via `lib/mega-merge.sh`, never bypasses it |
+| /kit:mega | Orchestrate | Mirrors the plan-for-mega-goal skill: decompose 3-8 dependent sub-goals, front-load every clarification once, set the per-run merge config, hand off to the bounded loop; ship-layer auto-merge rides the ship-gate via `lib/goal/mega-merge.sh`, never bypasses it |
 | /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /kit:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
@@ -206,6 +241,9 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:test-plan-review-team | Verify | 5-lens adversarial critique of the spec's `## Test plan`, bounded revise loop, report-only |
 | /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
+| /kit:explain | Understand | Literate-diff explainer (background -> intuition -> prose-ordered diff -> diagram); composes narrate-log + svg-knowledge-diagram, grounded in the diff not the agent's narrative (ADR-0031) |
+| /kit:quiz-gate | Understand | ★-tap nudge before merging a significant+worthy gate PR: 5 diff-grounded quiz questions routed through deep-understand, three logged responses (engage/defer/wave), advisory never must-pass (ADR-0031) |
+| /kit:pitch | Understand (outward) | Assembles an outward buy-in doc from the spec, proof-of-done, implementation-notes, and grill/DEBT ledger records; the outward twin of /kit:explain, ends in an ask not a quiz; never fabricates a missing source (SPEC-140) |
 | /kit:ship | Ship | Review gate, version bump, changelog, commit, PR |
 | /kit:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
@@ -265,16 +303,22 @@ dwarves-kit/
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
-  agents/                       (11 files) Subagents dispatched by commands
+  bin/                          STABLE consumer entrypoints (SPEC-184): `board`/`classify`/`gate` thin forwarders to `lib/<subsystem>/`. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
+  agents/                       (25 files) Subagents dispatched by commands
   commands/                     (27 markdown command prompts)
-  hooks/                        (14 scripts + hooks.json plugin manifest)
-  lib/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
-  lib/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
-  lib/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
-  lib/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/
-  lib/lane-telemetry.sh         Read-side lane-effectiveness aggregator over the run ledgers: report + misfires (reviewed at /kit:retro)
-  lib/orchestrate.sh            Non-LLM mega-goal driver: one fresh `claude -p` session per sub-goal so no session marathons (SPEC-087); session-per-sub-goal, NOT the GSD-v2 engine (no priority/cross-machine/state-store). `run <dir>` flags: `--dry-run` (plan only), `--step` (pause for the operator between sub-goals), `--stream` (live stream-json tee'd to `.orchestrate/<id>.stream.jsonl`), `--board=roadmap|kanban|both` (event-sourced per-mega-goal kanban derived to `<dir>/BOARD.md` via `lib/backlog.sh`; default detects, ROADMAP stays canonical). `flip <dir> <id>` box-flip subcommand (mkdir-lock guarded, atomic). DAG-wavefront ON by default (SPEC-106, ADR-0030, ID-090): at the default `WAVE_CAP=2` it runs dep-independent, `## Touches`-disjoint sub-goals concurrently (one worktree per session); a mega-goal whose sub-goals declare no `## Touches` still serializes (no-op), and `WAVE_CAP=1` forces the always-serial loop. `commands/mega.md` emits a `## Touches` per generated sub-goal so new mega-goals are wave-eligible. A `gate` sub-goal holds only its dependent chain; `gate!` halts the whole loop for a human. Robustness env (advisory): `WATCHDOG_STALL_SECS>0` backgrounds each session + flags it `stalled` after that long with no output (never kills); a dead/incomplete session never advances its box. Emits a `gate-ledger start` per dispatched sub-goal (rid from the goal file's `**Branch:**`) so mega-dispatched runs are tracked in `lane-telemetry`, not `?` (SPEC-101). Gitignore `.orchestrate/` + `BOARD.md` + `HANDOFF*.md` (derived/runtime)
-  lib/mega-merge.sh             Ship-layer auto-merge ENFORCEMENT for /kit:mega (ADR-0028 P2/P3): `gate <rid> <lane>` (decision, reuses `lib/gate-ledger.sh check`) + `merge <pr> <rid> <lane> [--execute] [--posture=<val>]` (action; refuses unconditionally on a failing/missing gate, dry-run by default, `MEGA_MERGE_POSTURE` team-review opt-out) + `mark <pr> [repo]` (the SPEC-100 mark half, ID-089: opens a gate/gated-final PR as draft + `do-not-merge` so the `_merge_exclusion` guard always has a mark to catch; idempotent, gh via `MEGA_MERGE_GH`)
+  hooks/                        (21 scripts + hooks.json plugin manifest)
+  lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
+  lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
+  lib/goal/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
+  lib/goal/goal-drafts.sh            Goal-draft lifecycle: archive shipped drafts to .claude/goals/done/
+  lib/telemetry/lane-telemetry.sh         Read-side lane-effectiveness aggregator over the run ledgers: report + misfires (reviewed at /kit:retro)
+  lib/queue/orchestrate.sh            Non-LLM mega-goal driver: one fresh `claude -p` session per sub-goal so no session marathons (SPEC-087); session-per-sub-goal, NOT the GSD-v2 engine (no priority/cross-machine/state-store). `run <dir>` flags: `--dry-run` (plan only), `--step` (pause for the operator between sub-goals), `--stream` (live stream-json tee'd to `.orchestrate/<id>.stream.jsonl`), `--board=roadmap|kanban|both` (event-sourced per-mega-goal kanban derived to `<dir>/BOARD.md` via `lib/board/backlog.sh`; default detects, ROADMAP stays canonical). `flip <dir> <id>` box-flip subcommand (mkdir-lock guarded, atomic). DAG-wavefront ON by default (SPEC-106, ADR-0030, ID-090): at the default `WAVE_CAP=2` it runs dep-independent, `## Touches`-disjoint sub-goals concurrently (one worktree per session); a mega-goal whose sub-goals declare no `## Touches` still serializes (no-op), and `WAVE_CAP=1` forces the always-serial loop. `commands/mega.md` emits a `## Touches` per generated sub-goal so new mega-goals are wave-eligible. A `gate` sub-goal holds only its dependent chain; `gate!` halts the whole loop for a human. Robustness env (advisory): `WATCHDOG_STALL_SECS>0` backgrounds each session + flags it `stalled` after that long with no output (never kills); a dead/incomplete session never advances its box. Emits a `gate-ledger start` per dispatched sub-goal (rid from the goal file's `**Branch:**`) so mega-dispatched runs are tracked in `lane-telemetry`, not `?` (SPEC-101). Multiplexer panes (SPEC-119, opt-in `MULTIPLEXER=1`): each wave session runs in its own tmux window (`TMUX_CMD`/`TMUX_SESSION` seams) for capture-pane/send-keys watch + intervene. Viewer push (SPEC-120, `PANE_VIEWER=auto` DEFAULT): on wave spawn one viewer tab auto-opens attached to the wave's tmux session (cmux/kitty/wezterm/ghostty/iterm/terminal auto-detected); `none` = pull only; headless degrades silently; unknown values rejected at pre-flight. Gitignore `.orchestrate/` + `BOARD.md` + `HANDOFF*.md` (derived/runtime)
+  lib/queue/queue.sh                  Overnight queue LAUNCHER (SPEC-148): drives REAL interactive Claude Code `/goal` sessions via `tmux` send-keys (NOT headless `claude -p`, to sidestep the AUTH/KILL-CLASS risk; cmux was tried and dropped, no CLI-verified argv-safe launch primitive per SPEC-119/121). `run <src.tsv>` (rows `slug<TAB>repo<TAB>pointer`) opens a fresh window per queued mega, types `/goal <pointer>` + Enter, polls `capture-pane` for the completion marker (`RUNNER_DONE`/`RUNNER_GATED`, line-anchored AND blank-line-guarded so a soft-wrapped echo of the typed prompt cannot false-trigger), journals each verdict to `queue-journal.tsv`, and stops the night after two consecutive `error`-or-`stalled` megas. `--from-boards` rows get a `realpath`-resolved allow-list confinement (`QUEUE_ALLOWED_POINTER_GLOB`, defense-in-depth on top of sub-goal 04's own; a hand-authored tsv is exempt). Flags: `--dry-run`, `--max-megas N`, `--from-boards`. CONSUMER config: `TERMINAL_MUX`(tmux only)/`MUX_CMD`/`QUEUE_CLAUDE_*`/`QUEUE_JOURNAL`/`QUEUE_*_SECS`/`QUEUE_ALLOWED_POINTER_GLOB`. Aliased as `orchestrate.sh queue <src>`. Idempotent (a `done` slug is skipped on re-run)
+  lib/goal/mega-merge.sh             Ship-layer auto-merge ENFORCEMENT for /kit:mega (ADR-0028 P2/P3): `gate <rid> <lane>` (decision, reuses `lib/gate/gate-ledger.sh check`) + `merge <pr> <rid> <lane> [--execute] [--posture=<val>]` (action; refuses unconditionally on a failing/missing gate, dry-run by default, `MEGA_MERGE_POSTURE` team-review opt-out) + `mark <pr> [repo]` (the SPEC-100 mark half, ID-089: opens a gate/gated-final PR as draft + `do-not-merge` so the `_merge_exclusion` guard always has a mark to catch; idempotent, gh via `MEGA_MERGE_GH`)
+  lib/board/board.sh                  The cockpit board command (SPEC-146; `mirror`/`status` added by SPEC-147; `writeback` added by SPEC-149): `board|next|set|states|priority [mode]` on one repo's BACKLOG.md (`--backlog-file`), `all <cmd>` for a cross-repo registry render (`--repo-root`/`REPO_ROOT`, `boards.txt`), `queue [--dry-run]` -- walks the registry, parses every repo's board via `lib/board/parse-board.sh`, and emits an allow-listed `slug<TAB>repo-path<TAB>pointer-path` feed for an overnight runner -- `mirror`/`status` (SPEC-147): a one-way git -> Hermes kanban bridge over opt-in (`bridge=on` in `boards.txt`) repos + active mega-goals, `hermes kanban` CLI only (ADR-0001 native-first, no SQLite ATTACH), idempotent (a second run on an unchanged board is a zero-op no-op), incremental snapshot persistence -- and `writeback [--dry-run]` (SPEC-149): the reverse leg, a Hermes-side card status move flows back into a repo's BACKLOG.md as a reviewable, HELD `chore/board-sync` PR (never auto-merged), gated by the mirror snapshot's `row_hash` conflict rule (git wins, always; a missing/corrupt snapshot refuses ALL edits rather than silently applying everything). Substantial mirror logic lives in `lib/board/board-mirror.sh`; substantial writeback logic lives in `lib/board/board-writeback.sh`; `board.sh` stays the thin dispatcher. Base kanban render still delegates to `lib/board/backlog.sh`; the `priority` quadrant awk + cross-repo `priority matrix` pivot are migrated in verbatim (byte-identical output is a pinned non-regression, see `docs/verification/board-tool/`). No personal data in the kit: the registry + repo paths + Hermes target are consumer config read at runtime.
+  lib/board/parse-board.sh            The one structured BACKLOG.md parser other tools reuse (SPEC-146): `rows <file>` (id/status/full-line) and `queue-rows <file> <repo-name> <repo-root>` (allow-listed `#queue{repo=...,pointer=...}` token extraction -- charset gate, repo self-consistency, `../` traversal hardening, existence check; every failure is a skip with a stderr reason, never a hard error)
+  lib/board/board-mirror.sh           The git<->Hermes kanban bridge engine (SPEC-147), backing `board.sh mirror`/`status`: extracts opted-in BACKLOG.md rows (reusing `lib/board/parse-board.sh`) + active mega-goal roadmaps into normalized rows, diffs them (bash + `jq`/awk keyed comparison, no DuckDB) against an incremental NDJSON snapshot, and loads via `hermes kanban` CLI verbs only. Reachable native states are `{triage, ready, blocked, done}` only -- `todo`/`running` were probed live and found to have no durable CLI-only path (auto-promote back to `ready` within seconds); `_target_native`/`_create_flags_for`/`_followup_for` document the full state-mapping + Hermes-CLI-reality findings. `apply-plan` decodes each op's argv over NUL-delimited jq output (never a templated shell string), so a multi-line card body is preserved as one opaque argv element end to end -- the fix for a real bug this build's own live dev-home E2E caught (a newline-delimited decode silently split a multi-line body into extra positional args, rejected by the real CLI, masked by a naive stub). `HERMES_BIN` overrides the binary for tests (a stub logs argv; no real Hermes calls in the automated suite).
+  lib/board/board-writeback.sh        The git<->Hermes kanban bridge WRITEBACK leg (SPEC-149), backing `board.sh writeback`: sources `lib/board/board-mirror.sh` (not re-forked) for extract/hash/native-state machinery. `diff` reads each opted-in repo's live board (`hermes kanban --board <b> list --json`, one batched call per board) + the SPEC-147 mirror snapshot, and builds a validated changeset of rows whose Hermes status moved -- validating opted-in repo (defense in depth on top of the mirror's own filter), a legal `backlog.sh` reverse-mapped target status, and the row_hash CONFLICT RULE (a Hermes-side edit applies only if the row's current git-side hash still equals the snapshot's recorded value; git wins, always). A missing or corrupt snapshot REFUSES ALL edits (explicit error, nonzero exit) rather than degrading to "no conflicts, apply everything". `apply` builds the `chore/board-sync` branch in an ISOLATED `git worktree` off the CURRENT HEAD (never the caller's own checkout, never a stale ref -- this is what keeps a concurrent append-only writer's row safe), edits ONLY the Status column of matched rows (reusing `lib/board/backlog.sh`'s own `set`), commits with `actor=hermes` in the body, pushes, and opens a HELD PR via `gh pr create` (argv-only, never a templated shell string; never auto-merged). Snapshot refresh updates ONLY `hermes_status` (to stop re-diffing the same not-yet-merged move); `row_hash` passes through UNCHANGED (the git SoT hasn't actually changed until the PR merges) -- `mirror`'s own idempotence self-heals the row once it does. `GH_BIN` (mirrors `HERMES_BIN`) overrides the `gh` binary for tests; no real Hermes write call or `gh` API call happens in the automated suite.
   skills/get-api-docs/          Context Hub integration
   rules/                        Path-scoped coding-standard templates
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
@@ -330,7 +374,7 @@ configure and nothing breaks. Enable: put the binary on `PATH`, run
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). It's the source of truth; the README does not duplicate it.
+See [docs/CHANGELOG.md](docs/CHANGELOG.md) (root `CHANGELOG.md` is a thin pointer stub, SPEC-185). It's the source of truth; the README does not duplicate it.
 
 ## Credits
 

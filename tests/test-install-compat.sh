@@ -15,9 +15,10 @@ out="$(CLAUDE_DIR="$TMP" bash "$KIT_DIR/install.sh" 2>&1)"
 printf '%s' "$out" | grep -q 'COMPAT-ONLY'; chk "took the compat branch" $?
 [ -L "$TMP/dwarves-kit/lib" ];         chk "lib symlink created" $?
 [ -L "$TMP/dwarves-kit/WORKFLOW.md" ]; chk "WORKFLOW.md symlink created" $?
+[ -L "$TMP/dwarves-kit/docs/WORKFLOW.md" ]; chk "docs/WORKFLOW.md symlink created (SPEC-185 bulk)" $?
 [ -L "$TMP/dwarves-kit/AGENTS.md" ];   chk "AGENTS.md symlink created" $?
 [ ! -e "$TMP/settings.json" ];         chk "settings.json NOT written (no double hooks)" $?
-[ -e "$TMP/dwarves-kit/lib/lane-classify.sh" ]; chk "compat lib resolves to a real script" $?
+[ -e "$TMP/dwarves-kit/lib/classify/lane-classify.sh" ]; chk "compat lib resolves to a real script" $?
 
 # --- KIT_FORCE_FULL bypasses compat even with the plugin present ---
 TMP2="$(mktemp -d)"

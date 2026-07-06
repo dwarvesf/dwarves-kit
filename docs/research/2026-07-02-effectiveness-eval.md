@@ -42,8 +42,8 @@ Every figure traces to a command (SPEC-073 AC2); commands listed under the table
 
 ### Commands (SPEC-073 AC2, zero hand-counted numbers)
 ```
-bash lib/lane-telemetry.sh report        # metrics 1,2,3,4(headline),5(count),9,10-denominator
-bash lib/lane-telemetry.sh misfires      # metric 9 (boardless + shipped-incomplete + downgrades)
+bash lib/telemetry/lane-telemetry.sh report        # metrics 1,2,3,4(headline),5(count),9,10-denominator
+bash lib/telemetry/lane-telemetry.sh misfires      # metric 9 (boardless + shipped-incomplete + downgrades)
 awk -F' [|] ' '$2=="GATE"{print $3" "$4}' runs/*.log | sort | uniq -c   # metric 4 per-phase
 awk -F' [|] ' '$2=="GATE"&&$4=="override"{print FILENAME" "$5}' runs/*.log | uniq -c  # metric 5
 ```

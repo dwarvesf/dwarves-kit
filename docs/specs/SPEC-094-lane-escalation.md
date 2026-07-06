@@ -21,7 +21,7 @@ gate-ledger (up-only; the downgrade guard stays; advisory + recorded)."
 ## Decision
 Add a spec->build-boundary re-classification, up-only, advisory, recorded:
 
-1. **`lib/lane-classify.sh escalate <current-lane> <spec-file>`** -- reads the spec
+1. **`lib/classify/lane-classify.sh escalate <current-lane> <spec-file>`** -- reads the spec
    file's own text, runs it through the existing `classify_core` (the same
    deterministic flag-scoring logic `classify`/`explain`/`check` already use), and
    compares the spec-implied lane's `lane_rank` against `<current-lane>`'s:
@@ -35,13 +35,13 @@ Add a spec->build-boundary re-classification, up-only, advisory, recorded:
    `commands/execute.md` Prerequisites (right after the spec-status check, before Step
    1 dispatches any task -- the point the spec is VALIDATED/APPROVED and build is about
    to start). On `ESCALATE`:
-   - `bash lib/gate-ledger.sh start --amend <rid> <heavier> ...` -- readers take the
+   - `bash lib/gate/gate-ledger.sh start --amend <rid> <heavier> ...` -- readers take the
      LAST START-AMEND (SPEC-077), so the ledger's effective lane becomes `<heavier>`
      and `required <heavier>`'s extra measure-twice gates are now required.
    - Bump the spec's `Lane:` header UP to `<heavier>` (never down) -- `hooks/ship-gate.sh`
      reads that header (`hooks/ship-gate.sh:140`) to pick the required gate set, so the
      heavier set is enforced at ship.
-   - `bash lib/gate-ledger.sh action <rid> "lane escalated ..."` -- one durable line.
+   - `bash lib/gate/gate-ledger.sh action <rid> "lane escalated ..."` -- one durable line.
    On `HOLD`: no action.
 
 This reuses the kit's existing heavy destination (the `full` lane) and the existing
@@ -49,7 +49,7 @@ downgrade-guard mechanism (`lane_rank`); it adds only the missing TRIGGER (a
 re-classify at the spec boundary, not classify-time text).
 
 ## Acceptance criteria
-- AC1: `lib/lane-classify.sh escalate <current-lane> <spec-file>` exists; classifies
+- AC1: `lib/classify/lane-classify.sh escalate <current-lane> <spec-file>` exists; classifies
   the spec file's own text via `classify_core`; prints `ESCALATE <cur> -> <heavier>` or
   `HOLD <cur>`; exits 0 in both cases.
 - AC2 [up-only]: a `tiny` current lane against a spec whose text carries
@@ -68,7 +68,7 @@ re-classify at the spec boundary, not classify-time text).
   re-classification for its existing callers.
 
 ## Tasks
-- T1: `lib/lane-classify.sh` -- add the `escalate` verb + `main()` dispatch + usage
+- T1: `lib/classify/lane-classify.sh` -- add the `escalate` verb + `main()` dispatch + usage
   string.
 - T2: `commands/execute.md` -- wire the spec->build boundary re-check into
   Prerequisites (before Step 1 dispatch).

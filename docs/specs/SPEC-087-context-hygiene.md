@@ -163,7 +163,7 @@ is additive to A+B.
 
 ### Where it lives
 
-- Orchestrator (A) + handoff (B): a new `lib/orchestrate.sh` (bash, matching the other lib
+- Orchestrator (A) + handoff (B): a new `lib/queue/orchestrate.sh` (bash, matching the other lib
   drivers) plus the handoff convention documented in `WORKFLOW.md` / `plan-for-mega-goal`.
 - Distilled returns (C): the dispatched-role agent definitions (`agents/*.md`) + the dispatch
   prose in `/kit:execute`.
@@ -171,7 +171,7 @@ is additive to A+B.
 ## Acceptance criteria
 
 Phase 1 (SG-04, this cycle):
-- AC1: `lib/orchestrate.sh` parses a mega-goal ROADMAP, finds the next unchecked sub-goal +
+- AC1: `lib/queue/orchestrate.sh` parses a mega-goal ROADMAP, finds the next unchecked sub-goal +
   its policy, and (real mode) runs it via a fresh `claude -p` session; the loop driver holds
   no LLM context.
 - AC2: `--dry-run` prints the ordered plan (each sub-goal, its policy, the injected handoff,
@@ -195,7 +195,7 @@ and lower total, the mega-goal success metric).
 ```
 # in the dwarves-kit checkout
 bash tests/test-orchestrate.sh            # phase-1 control flow + negative control
-bash lib/orchestrate.sh run <megagoal-dir> --dry-run   # ordered plan, no claude spawned
+bash lib/queue/orchestrate.sh run <megagoal-dir> --dry-run   # ordered plan, no claude spawned
 ```
 
 ## Out of scope

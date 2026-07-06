@@ -47,7 +47,7 @@ grep -q "Mode A" "$MA" && grep -q "Mode B" "$MA" && grep -q "Mode C" "$MA"; chk 
 grep -qi 'inline role spec' "$MA" && grep -qi 'PREAMBLE' "$MA"; chk "meta-agent Mode C returns an inline PREAMBLE (no file)" $?
 # Mode C is the OPEN-ENDED authority: infers any role, or returns NO_SPECIALIST for a plain task.
 grep -qi 'open-ended' "$MA" && grep -q 'NO_SPECIALIST' "$MA"; chk "meta-agent Mode C is open-ended (any role) + can return NO_SPECIALIST" $?
-grep -qi 'fast-path\|fast path' "$KIT_DIR/lib/role-classify.sh"; chk "role-classify is framed as a fast-path hint, not the role universe" $?
+grep -qi 'fast-path\|fast path' "$KIT_DIR/lib/classify/role-classify.sh"; chk "role-classify is framed as a fast-path hint, not the role universe" $?
 # the execute workflow auto-classifies each task and injects a synthesized specialist preamble.
 EX="$KIT_DIR/commands/execute.md"
 grep -q '2b-0' "$EX" && grep -qi 'classif' "$EX"; chk "execute.md has the 2b-0 role-classification step" $?
@@ -55,7 +55,7 @@ grep -qi 'Mode C' "$EX" && grep -qi 'preamble' "$EX"; chk "execute.md dispatches
 grep -qi 'generic' "$EX"; chk "execute.md falls through to the generic worker on no-domain-match" $?
 # the SUBAGENT itself never installs (it drafts to staging); promotion is the command's job.
 grep -qi 'never install\|only draft to staging' "$MA"; chk "meta-agent (subagent) itself never installs , drafts to staging" $?
-grep -q '^| `meta-agent` ' "$KIT_DIR/MANUAL.md"; chk "meta-agent listed in MANUAL.md (test-meta.sh cross-ref)" $?
+grep -q '^| `meta-agent` ' "$KIT_DIR/docs/MANUAL.md"; chk "meta-agent listed in MANUAL.md (test-meta.sh cross-ref, bulk at docs/MANUAL.md per SPEC-185)" $?
 DA_CMD="$KIT_DIR/commands/draft-agent.md"
 [ -f "$DA_CMD" ] && head -1 "$DA_CMD" | grep -q '^---$'; chk "commands/draft-agent.md exists with frontmatter" $?
 # pin the NEW contract: default-install + a --draft opt-out + the roster/test-meta guard + runtime activation.

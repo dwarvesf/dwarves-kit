@@ -7,10 +7,10 @@ Type: spec-feature
 ## Problem
 
 `commands/assign.md` (the hand-run intake) records each run's routing facts with
-`lib/gate-ledger.sh start <rid> <lane> <classified> <type> <ctype>`, so hand-run
-work is measurable by `lib/lane-telemetry.sh report`. The **automated** mega-goal
-dispatch does NOT: `lib/orchestrate.sh cmd_run` (the non-LLM driver that
-`commands/mega.md` Step 5 hands off to via `lib/orchestrate.sh run <dir>`) spawns one
+`lib/gate/gate-ledger.sh start <rid> <lane> <classified> <type> <ctype>`, so hand-run
+work is measurable by `lib/telemetry/lane-telemetry.sh report`. The **automated** mega-goal
+dispatch does NOT: `lib/queue/orchestrate.sh cmd_run` (the non-LLM driver that
+`commands/mega.md` Step 5 hands off to via `lib/queue/orchestrate.sh run <dir>`) spawns one
 `claude -p` session per sub-goal and emits only its own `_emit_event ... executing`
 event, never a `gate-ledger start`. The spawned session runs the goal loop, not
 `assign.md`, so no START is emitted anywhere.
@@ -22,7 +22,7 @@ rates NULL (~60-90% of runs had no START). ID-085, `#kit-telem-followup`.
 ## Root cause (spec delta)
 
 The sub-goal brief names `commands/mega.md` as the fix site. `commands/mega.md` is
-PROSE; the executable automated dispatch it delegates to is `lib/orchestrate.sh
+PROSE; the executable automated dispatch it delegates to is `lib/queue/orchestrate.sh
 cmd_run`. The START must be emitted by the driver, because:
 
 - The spawned `claude -p` session does not run `assign.md`'s "record routing facts"
@@ -30,13 +30,13 @@ cmd_run`. The START must be emitted by the driver, because:
 - The START is deterministic and testable in the driver (the driver has the goal
   file + ROADMAP title in hand); in prose it would be an un-pinnable instruction.
 
-So the fix lands in `lib/orchestrate.sh`; `commands/mega.md` gets a one-line pointer
+So the fix lands in `lib/queue/orchestrate.sh`; `commands/mega.md` gets a one-line pointer
 noting the driver now emits the START.
 
 ## rid at dispatch time (the key mechanism)
 
 The canonical rid is the work branch with its `type/` prefix stripped, `runid`-normalized
-(`lib/gate-ledger.sh rid`). At dispatch the branch does not exist yet (the session creates
+(`lib/gate/gate-ledger.sh rid`). At dispatch the branch does not exist yet (the session creates
 it). But every goal file declares its branch in a `**Branch:** <type>/<slug>` header, and
 `gate-ledger.sh start` does not require the branch to exist (it writes to
 `RUNS_DIR/<runid(rid)>.log`, keyed by the rid string). So the driver derives the rid from
@@ -47,7 +47,7 @@ so the raw slug and the normalized form converge on one filename.
 
 ## Solution
 
-Add `_emit_start <dir> <id>` to `lib/orchestrate.sh`, called once per sub-goal inside
+Add `_emit_start <dir> <id>` to `lib/queue/orchestrate.sh`, called once per sub-goal inside
 `cmd_run`'s run loop (after `_emit_event ... executing`, before the session spawns). It:
 
 1. Resolves the goal file (`_goalfile`); if none, WARN + return 0 (advisory, non-fatal,
@@ -71,7 +71,7 @@ driver's START is the only one. A future session that needs to correct it uses t
 
 ```bash
 cd dwarves-kit
-grep -n 'gate-ledger.sh start\|_emit_start' lib/orchestrate.sh   # AFTER: present
+grep -n 'gate-ledger.sh start\|_emit_start' lib/queue/orchestrate.sh   # AFTER: present
 bash tests/test-orchestrate.sh                                    # START pins + negative control green
 bash tests/test-meta.sh                                           # doc-impact + integrity green
 ```
@@ -86,7 +86,7 @@ Pinned in `tests/test-orchestrate.sh`:
 
 ## After state
 
-- `lib/orchestrate.sh` emits a `gate-ledger start` per dispatched sub-goal; mega-dispatched
+- `lib/queue/orchestrate.sh` emits a `gate-ledger start` per dispatched sub-goal; mega-dispatched
   runs carry a START line and count under their real lane in `lane-telemetry.sh report`, not `?`.
 - `commands/mega.md` notes the driver emits the START.
 - `README.md` orchestrate.sh entry notes the START emission.

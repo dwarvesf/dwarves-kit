@@ -1,0 +1,6 @@
+2026-07-05T02:00:00Z | START | lane=normal classified=normal type=docs ctype=docs repo=fixrepo
+2026-07-05T02:00:01Z | GATE | grill | skipped | docs only
+2026-07-05T02:00:02Z | GATE | spec | ran | small spec, no timing bracket at all
+2026-07-05T02:00:03Z | OUTCOME | ship | start | at=5000
+2026-07-05T02:01:40Z | GATE | ship | override | shipped directly
+2026-07-05T02:01:40Z | OUTCOME | ship | end | at=5100 caught=false dur_s=100

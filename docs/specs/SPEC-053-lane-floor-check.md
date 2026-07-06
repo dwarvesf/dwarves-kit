@@ -9,7 +9,7 @@ Branch: feat/lane-floor-check
 
 The classify-then-route audit (this session) confirmed the kit can take a task,
 classify it onto a lane, and route it. But it flagged one residual gap: the
-classification is **advisory with no floor**. `lib/lane-classify.sh classify`
+classification is **advisory with no floor**. `lib/classify/lane-classify.sh classify`
 turns task text into a suggested lane deterministically, yet nothing compares the
 lane a human or the LLM actually **chooses** in `/kit:assign` against that
 suggestion. So an under-sized lane slips through silently: a task whose text hits
@@ -98,7 +98,7 @@ WORKFLOW "when in doubt, heavier").
 None.
 
 ### API changes
-One new subcommand on `lib/lane-classify.sh` (`check`); `classify` and `lanes`
+One new subcommand on `lib/classify/lane-classify.sh` (`check`); `classify` and `lanes`
 unchanged. The usage string and the dispatch `case` gain one arm.
 
 ### UI changes
@@ -110,8 +110,8 @@ None.
 ## Task Breakdown
 
 ### Phase 1: Core
-- [ ] TASK-001: Add `lane_rank` + `lane_check` to `lib/lane-classify.sh` and a `check` arm to `main`., `check` warns on a downgrade (stderr `LANE-DOWNGRADE`), is silent otherwise, always exits 0, and appends a `LANE-CHECK` line to `$DWARVES_KIT_LOG_DIR/completeness.log` only on a downgrade.
-- [ ] TASK-002: Wire the floor-check into `commands/assign.md` Step 5, after the lane is chosen (column or override or suggestion)., Step 5 instructs running `bash lib/lane-classify.sh check <chosen> "<title>"` and surfacing any `LANE-DOWNGRADE` to the operator before hand-off; framed as advisory.
+- [ ] TASK-001: Add `lane_rank` + `lane_check` to `lib/classify/lane-classify.sh` and a `check` arm to `main`., `check` warns on a downgrade (stderr `LANE-DOWNGRADE`), is silent otherwise, always exits 0, and appends a `LANE-CHECK` line to `$DWARVES_KIT_LOG_DIR/completeness.log` only on a downgrade.
+- [ ] TASK-002: Wire the floor-check into `commands/assign.md` Step 5, after the lane is chosen (column or override or suggestion)., Step 5 instructs running `bash lib/classify/lane-classify.sh check <chosen> "<title>"` and surfacing any `LANE-DOWNGRADE` to the operator before hand-off; framed as advisory.
 
 ### Phase 2: Verify + document
 - [ ] TASK-003: Add a `lane-classify: floor check` block to `tests/test-hooks.sh`., Covers: `full` suggested + `normal` chosen → warns; `full` chosen + `full` suggested → silent; `tiny` chosen + `normal`-suggested text → warns; heavier-than-floor (`full` chosen, `normal` text) → silent; exit code always 0.
@@ -120,8 +120,8 @@ None.
 
 ## After state
 
-- [ ] `bash lib/lane-classify.sh check normal "add a hook that touches auth token validation"` prints a `LANE-DOWNGRADE` warning to stderr and exits 0. (Today: no such subcommand; the mismatch is invisible.)
-- [ ] `bash lib/lane-classify.sh check full "add a hook that touches auth token validation"` prints nothing and exits 0.
+- [ ] `bash lib/classify/lane-classify.sh check normal "add a hook that touches auth token validation"` prints a `LANE-DOWNGRADE` warning to stderr and exits 0. (Today: no such subcommand; the mismatch is invisible.)
+- [ ] `bash lib/classify/lane-classify.sh check full "add a hook that touches auth token validation"` prints nothing and exits 0.
 - [ ] On a downgrade, a `| LANE-CHECK |` line is appended to `completeness.log`; on a match, nothing is appended.
 - [ ] `commands/assign.md` Step 5 instructs running the floor-check after choosing the lane.
 - [ ] WORKFLOW.md and MANUAL.md mention the advisory floor-check.

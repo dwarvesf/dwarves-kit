@@ -71,7 +71,7 @@ _resolve_base() {
 # in bash-install mode CLAUDE_PLUGIN_ROOT is unset, and a consumer repo has no lib/, so a
 # $ROOT fallback fails open in every consumer. The stable install path fixes that; plugin
 # mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
-PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/proof-ledger.sh"
+PROOF="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-ledger.sh"
 # OPT-IN: engage only in a repo that adopted the proof-of-done convention. A repo with
 # no docs/verification/README.md never gets gated (the gate is for kit-adopting repos,
 # not every repo the user touches).
@@ -87,6 +87,15 @@ if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
       printf '%s\n' "$PMSG" >&2
       exit 2
     fi
+  fi
+  # delivery-ratio advisory (ID-277 delivery-audit fix; NEVER blocks): surface a proof-heavy
+  # branch -- lots of proof-of-done/verification/spec lines wrapped around a near-zero real
+  # change -- so a reviewer can spot-check delivery vs the sub-goal's claim. Heuristic with real
+  # false positives (a docs sub-goal is proof-heavy by design; a 1-line fix can be load-bearing),
+  # so it is a NUDGE, never a gate: fires only on THIN-WARN/NOTICE, silent on OK.
+  if [ -n "${BASE:-}" ] && [ "${BASE:-}" != "${HEADSHA:-}" ]; then
+    DR=$(bash "$PROOF" delivery-ratio "$ROOT" "$BASE" 2>/dev/null || true)
+    case "$DR" in *THIN-WARN*|*NOTICE*) echo "[advisory] delivery-ratio: $DR" >&2 ;; esac
   fi
 fi
 
@@ -104,7 +113,7 @@ fi
 # comes from the ledger's own START line, never the spec; base is computed locally.
 # Placed deliberately AFTER the proof block: in adopted repos a behavioral diff already
 # hard-BLOCKS above; this covers only the proof-gate's fail-open seams.
-LEDGER62="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate-ledger.sh"
+LEDGER62="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
 if [ -f "$LEDGER62" ]; then
   RLED=$(bash "$LEDGER62" show "$SLUG" 2>/dev/null || true)
   # RLANE derived from START unconditionally (review: descent must not depend on the
@@ -130,7 +139,7 @@ if [ -f "$LEDGER62" ] && [ -n "${RLANE:-}" ]; then
   DOUT=$(bash "$LEDGER62" descent "$SLUG" "$RLANE" 2>/dev/null || true)
   DN=$(printf '%s' "$DOUT" | grep -c '^DESCENT:' || true)
   if [ "${DN:-0}" -gt 0 ] 2>/dev/null; then
-    echo "[advisory] run '$SLUG': $DN descent violation(s), phases recorded before an earlier plan phase disposed; see: bash <kit>/lib/gate-ledger.sh descent $SLUG $RLANE (SPEC-076)" >&2
+    echo "[advisory] run '$SLUG': $DN descent violation(s), phases recorded before an earlier plan phase disposed; see: bash <kit>/lib/gate/gate-ledger.sh descent $SLUG $RLANE (SPEC-076)" >&2
   fi
 fi
 
@@ -149,17 +158,26 @@ if [ -z "$LANE" ]; then
     {
       echo "BLOCKED: ship-gate. Spec '$SLUG' has no 'Lane:' header, so its required gates cannot be checked."
       echo "Add a lane to $SPEC (e.g. 'Lane: full'). Classify with:"
-      echo "  bash \"${CLAUDE_PLUGIN_ROOT:-\$HOME/.claude/dwarves-kit}/lib/lane-classify.sh\" classify \"<task>\""
+      echo "  bash \"${CLAUDE_PLUGIN_ROOT:-\$HOME/.claude/dwarves-kit}/lib/classify/lane-classify.sh\" classify \"<task>\""
     } >&2
     exit 2
   fi
   exit 0
 fi
 
-LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate-ledger.sh"
+LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
 [ -f "$LEDGER" ] || exit 0
 
+# SPEC-129: bracket the ship gate with an OUTCOME emit (caught= + START/END timing). This is
+# the live invocation path for the additive OUTCOME marker. It is BEST-EFFORT and writes ONLY
+# to the rid ledger, so it can never change this hook's fail-open contract, exit code, or
+# operator output. caught=true when the check BLOCKS (it caught a missing-gate defect),
+# caught=false on a clean pass. The `outcome` marker keys on $2=="OUTCOME"; check()/_rows()/
+# the ship-gate's own read all ignore it (they key on $2=="GATE").
+bash "$LEDGER" outcome "$SLUG" ship start >/dev/null 2>&1 || true
+
 if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
+  bash "$LEDGER" outcome "$SLUG" ship end caught=true >/dev/null 2>&1 || true
   LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null || true
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | ship-gate | $SLUG ($LANE)" >> "$LOG_DIR/ship-gate.log" 2>/dev/null || true
@@ -171,4 +189,5 @@ if ! GAPS=$(bash "$LEDGER" check "$LANE" "$SLUG" 2>&1); then
   } >&2
   exit 2
 fi
+bash "$LEDGER" outcome "$SLUG" ship end caught=false >/dev/null 2>&1 || true
 exit 0

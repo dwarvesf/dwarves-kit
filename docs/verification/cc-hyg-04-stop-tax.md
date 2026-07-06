@@ -13,7 +13,7 @@ Both new behaviors covered by green tests AND the full kit suite passes:
 
 - `hooks/slop-cleaner.sh`: per-session seen-state (`slop-seen-<session_id>.tsv`, `path<TAB>hash`), skip already-reported-at-same-hash files, prune >7d.
 - `hooks/session-state-save.sh`: change-gated debounce on `branch|dirty|HEAD` fingerprint (dirty via `--untracked-files=all` minus the hook's own `.claude/session-state/`).
-- `lib/proof-ledger.sh` `check()`: an override on a source-code file outside `deploy/` is rejected (exit 1); deploy scripts + non-code stay override-able.
+- `lib/gate/proof-ledger.sh` `check()`: an override on a source-code file outside `deploy/` is rejected (exit 1); deploy scripts + non-code stay override-able.
 
 ## Confirmation run-table (2026-07-02, Air, cc-hyg-04 worktree)
 

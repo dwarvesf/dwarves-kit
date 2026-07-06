@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""cc-vps-report: bridge the weekly cc-observe digest into the live vps-mon.
+
+Default action is HEARTBEAT-ONLY: it pings the cc-intel-weekly heartbeat so a
+missed weekly run shows stale on the public /status page (not silently green).
+The metrics-snapshot POST is OPT-IN behind --snapshot (default OFF).
+
+WHY heartbeat-only by default (incident 2026-06-15, agent-silent false-alarm):
+  POST /v1/snapshot UPSERTS a row in vps-mon's `hosts` table, and the prober's
+  hardcoded `agent-silent` rule (AGENT_SILENT_THRESHOLD_SEC = 600s in
+  tools/vps-mon/worker/src/prober.ts) fires CRIT for ANY host whose last_seen
+  is older than 600s. cc-vps-report runs WEEKLY (via cc-intel-weekly), so a
+  snapshot-registered `cc-air` host looks "silent" 6 days out of 7 -> a
+  guaranteed weekly false CRIT. It fired once (2026-06-15 19:50); the cc-air
+  host row was deleted + the alert acked as immediate mitigation, and the
+  snapshot POST was moved behind --snapshot so the default weekly run never
+  registers a hosts row again.
+
+  The heartbeat (interval_sec=604800 / 7d + grace_sec=86400 / 1d) is the
+  CORRECT weekly liveness signal: it does not touch the `hosts` table, so the
+  600s agent-silent rule cannot see it; it only flips `silent` after >8 days
+  of no ping. The snapshot code + HMAC signer are kept (valid + tested), usable
+  with --snapshot once/if vps-mon grows a per-host exempt for low-frequency
+  pushers.
+
+Read-only producer: cc-observe / cc-intel never store state; only vps-mon does.
+
+Why this mirrors vps_mon_agent.py rather than importing it: the agent is a
+root-owned Linux/macOS host agent with its own state dir and key file; this is
+a one-shot client that reads its key + token from the environment (op:// refs
+at runtime) and signs one body. The signing scheme is identical and is unit-
+tested deterministically against a hand-computed expected value in
+tests/test-vps-report.sh BEFORE any live POST (a wrong signature is a silent
+401, so the signer is proven offline first).
+
+Signing contract (confirmed by reading tools/vps-mon/worker/src/hmac.ts +
+ingest.ts on this branch, NOT from the stale wrangler.toml comment):
+  - key bytes  = the secret string's UTF-8 bytes, trailing whitespace stripped
+                 (worker: keyFromSecret = encoder.encode(secret.trim());
+                  agent:  load_key = read_bytes().rstrip(b"\\n\\r ")).
+                 NO base64 decode, NO hex decode. The CC_VPS_HMAC_KEY env value
+                 IS the key material verbatim (we happen to store a base64
+                 string there, but both sides just UTF-8 it).
+  - msg        = f"{ts}\\n{host_id}\\n{sha256_hex(body)}"  (body = the bytes sent;
+                 gzipped here, matching post_snapshot's gzip path).
+  - X-Signature = "sha256=" + hex(HMAC_SHA256(key, msg)).
+  - skew limit 120s; success = 202 on /v1/snapshot, 204 on the heartbeat GET.
+
+Stdlib only (no external deps) so it runs from a launchd job with no venv.
+"""
+from __future__ import annotations
+
+import argparse
+import gzip
+import hashlib
+import hmac
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+SCHEMA_VERSION = 1
+DEFAULT_URL = "https://mon-ingest.han-ws.workers.dev"
+HOST_ID = "cc-air"
+ROLE = "ai-substrate"
+USER_AGENT = "cc-vps-report/1"
+HB_ID = "cc-intel-weekly"  # informational; the token is what the GET uses
+
+
+# ----------------------------------------------------------------- distill
+
+def _top(items: list, key: str) -> str | None:
+    """First (already most_common-ordered) entry's name, or None."""
+    if items and isinstance(items[0], dict):
+        return items[0].get(key)
+    return None
+
+
+def _sum(items: list, field: str) -> int:
+    return sum(int(i.get(field, 0) or 0) for i in items if isinstance(i, dict))
+
+
+def distill(report: dict) -> dict:
+    """Reduce a full `cc-observe report --json` to headline metrics.
+
+    Defensive on every field: this branch emits skills/tools/hooks/subagents
+    only, but PRs #333/#335/#337 add friction/sessions/cost views with richer
+    keys; we read those via .get() so the same distiller keeps working once
+    they land, without a code change here.
+    """
+    subs = report.get("subagents") or {}
+    by_day = subs.get("by_day") or []
+    by_type = subs.get("by_type") or []
+
+    # Subagent rate: per100 over the most recent day with prompts, plus the
+    # dominant subagent type. by_day is newest-first per cc-observe.
+    sub_per100 = None
+    for d in by_day:
+        prompts = int(d.get("prompts", 0) or 0)
+        if prompts:
+            sub_per100 = round(100 * int(d.get("spawns", 0) or 0) / prompts, 1)
+            break
+    sub_total = _sum(by_type, "count")
+    sub_top_type = _top(by_type, "subagent_type")
+
+    tools = report.get("tools") or []
+    skills = report.get("skills") or []
+    tool_errs = _sum(tools, "errors")
+    skill_errs = _sum(skills, "errors")
+
+    metrics: dict = {
+        "transcripts": int(report.get("files", 0) or 0),
+        "subagent_per100": sub_per100,
+        "subagent_total": sub_total,
+        "subagent_top_type": sub_top_type,
+        "tool_total": _sum(tools, "count"),
+        "tool_errors": tool_errs,
+        "skill_total": _sum(skills, "count"),
+        "skill_errors": skill_errs,
+        "hook_errors": int(report.get("hook_errors", 0) or 0),
+        # friction_count: 0 today, real once SG-01 (PR #333) lands a `friction`
+        # block in the report json. Defensive .get() so this never KeyErrors.
+        "friction_count": int(
+            (report.get("friction") or {}).get("total", 0) or 0
+        ),
+    }
+
+    # cost block (PR #337): cache-hit ratio + total. Absent on this branch.
+    cost = report.get("cost") or {}
+    if cost:
+        metrics["cost_total_usd"] = cost.get("total_usd")
+        metrics["cost_cache_hit"] = cost.get("cache_hit_ratio")
+
+    # drop None values so the stored snapshot stays tidy
+    return {k: v for k, v in metrics.items() if v is not None}
+
+
+# ----------------------------------------------------------------- envelope + sign
+
+def build_envelope(metrics: dict, ts: int) -> dict:
+    """schema_version-1 snapshot envelope per vps-mon's validateEnvelope."""
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "ts": ts,
+        "host_id": HOST_ID,
+        "role": ROLE,
+        "metrics": metrics,
+        "hashes": {},
+        "state": {"cc_intel_digest": "fresh"},
+        "changes": [],
+    }
+
+
+def key_bytes(secret: str) -> bytes:
+    """Mirror worker keyFromSecret / agent load_key: UTF-8 bytes, trimmed."""
+    return secret.strip().encode()
+
+
+def sign_request(key: bytes, ts: int, host_id: str, body: bytes) -> str:
+    body_hash = hashlib.sha256(body).hexdigest()
+    msg = f"{ts}\n{host_id}\n{body_hash}".encode()
+    return "sha256=" + hmac.new(key, msg, hashlib.sha256).hexdigest()
+
+
+# ----------------------------------------------------------------- transport
+
+def post_snapshot(url: str, key: bytes, payload: dict, ts: int,
+                  timeout: int = 10) -> tuple[int | None, str]:
+    """Gzip, sign, POST. Returns (status_code_or_None, response_body)."""
+    body = gzip.compress(json.dumps(payload, separators=(",", ":")).encode())
+    headers = {
+        "Content-Type": "application/json",
+        "Content-Encoding": "gzip",
+        "User-Agent": USER_AGENT,
+        "X-Host-Id": HOST_ID,
+        "X-Timestamp": str(ts),
+        "X-Signature": sign_request(key, ts, HOST_ID, body),
+    }
+    req = urllib.request.Request(
+        url.rstrip("/") + "/v1/snapshot", data=body, headers=headers, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")[:500]
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")[:500]
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        return None, str(e)
+
+
+def ping_heartbeat(url: str, token: str, timeout: int = 10) -> int | None:
+    """GET /v1/heartbeat/<token>. 204 on success; token IS the credential."""
+    req = urllib.request.Request(
+        url.rstrip("/") + "/v1/heartbeat/" + token,
+        headers={"User-Agent": USER_AGENT},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return None
+
+
+# ----------------------------------------------------------------- input
+
+def load_report(args) -> dict:
+    """Read the report json: from --report-json file, stdin, or by running
+    `cc-observe report --json` from the same bin dir."""
+    if args.report_json:
+        return json.loads(Path(args.report_json).read_text())
+    if not sys.stdin.isatty():
+        data = sys.stdin.read().strip()
+        if data:
+            return json.loads(data)
+    cc = Path(__file__).resolve().parent / "cc-observe"
+    days = ["--days", str(args.days)] if args.days else []
+    out = subprocess.run(
+        [str(cc), "report", "--json", *days],
+        check=True, capture_output=True, text=True,
+    ).stdout
+    return json.loads(out)
+
+
+def main(argv=None) -> int:
+    p = argparse.ArgumentParser(
+        prog="cc-vps-report",
+        description="Ping the cc-intel-weekly heartbeat (default). With "
+                    "--snapshot, ALSO POST a distilled cc-observe metrics "
+                    "snapshot to vps-mon (opt-in; see --snapshot help).",
+    )
+    p.add_argument("--url", default=os.environ.get("CC_VPS_URL", DEFAULT_URL),
+                   help="vps-mon base URL (default mon-ingest)")
+    p.add_argument("--report-json", help="read report json from this file "
+                                         "instead of running cc-observe")
+    p.add_argument("--days", type=int, default=7,
+                   help="cc-observe window in days when self-running (default 7)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="print the signed envelope + headers; do NOT POST. "
+                        "Exercises the snapshot signer path offline.")
+    p.add_argument("--snapshot", action="store_true",
+                   help="ALSO POST the metrics snapshot to /v1/snapshot "
+                        "(default OFF). The default run is heartbeat-only: the "
+                        "snapshot UPSERTS a `hosts` row subject to vps-mon's "
+                        "hardcoded 600s agent-silent rule, which false-fires "
+                        "for a weekly pusher (incident 2026-06-15). Only opt "
+                        "in once vps-mon exempts low-frequency hosts.")
+    args = p.parse_args(argv)
+
+    # --dry-run exercises the snapshot signer path offline regardless of
+    # --snapshot, so the offline signer test (test-vps-report.sh) keeps a clean
+    # way to prove the exact bytes before any live POST.
+    if args.dry_run:
+        report = load_report(args)
+        metrics = distill(report)
+        ts = int(time.time())
+        envelope = build_envelope(metrics, ts)
+        body = gzip.compress(json.dumps(envelope, separators=(",", ":")).encode())
+        key = key_bytes(os.environ.get("CC_VPS_HMAC_KEY", "DRYRUN_KEY"))
+        print(json.dumps({
+            "envelope": envelope,
+            "X-Signature": sign_request(key, ts, HOST_ID, body),
+            "X-Host-Id": HOST_ID,
+            "X-Timestamp": str(ts),
+            "gzip_bytes": len(body),
+        }, indent=2))
+        return 0
+
+    # Opt-in snapshot POST. OFF by default to avoid the agent-silent false-alarm
+    # (see module docstring). Runs BEFORE the heartbeat so a snapshot failure
+    # still surfaces but does not suppress the liveness ping below.
+    if args.snapshot:
+        report = load_report(args)
+        metrics = distill(report)
+        ts = int(time.time())
+        envelope = build_envelope(metrics, ts)
+        secret = os.environ.get("CC_VPS_HMAC_KEY")
+        if not secret:
+            print("cc-vps-report: CC_VPS_HMAC_KEY not set (op:// ref at runtime)",
+                  file=sys.stderr)
+            return 2
+        key = key_bytes(secret)
+        code, resp = post_snapshot(args.url, key, envelope, ts)
+        print(f"snapshot: {code}")
+        if code != 202:
+            print(f"  body: {resp}", file=sys.stderr)
+            return 1
+
+    # Default + always-run: the heartbeat is the correct weekly liveness signal.
+    # It does not touch the `hosts` table, so the 600s agent-silent rule cannot
+    # see it; it flips silent only after >8 days (interval 604800 + grace 86400).
+    token = os.environ.get("CC_VPS_HB_TOKEN")
+    if not token:
+        print("cc-vps-report: CC_VPS_HB_TOKEN not set (op:// ref at runtime)",
+              file=sys.stderr)
+        return 2
+    hb = ping_heartbeat(args.url, token)
+    print(f"heartbeat: {hb}")
+    return 0 if hb == 204 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

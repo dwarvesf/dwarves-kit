@@ -44,6 +44,24 @@ Dispatch the **acceptance-verifier** subagent (read-only) against the spec's own
 
 Dispatch the **system-verifier** subagent (read-only) to run the whole project's test/build suite, UNSCOPED -- not filtered to this spec's files -- as the dynamic mirror of the design phase. If the project defines no suite runnable in this environment, note "no executable project suite" and continue; do not invent a substitute check.
 
+### Step 6b: Advisory mutation smoke (warn-only, never a verdict downgrade)
+
+Run the ADVISORY mutation smoke (SPEC-131) as the HONESTLY-PROVEN check the verifier stack
+structurally cannot be: `task-verifier` / `system-verifier` trust a green suite, but a green suite
+that stays green on mutated code is a FALSE proof. The smoke mutates a line in the CHANGED code and
+re-runs the suite: a biting suite (the mutation is caught) is quiet; a non-biting suite (the mutation
+survives) is FLAGGED.
+
+```
+bash lib/gate/mutation-smoke.sh run                 # bounded: a small operator set on changed hunks only
+```
+
+It is ADVISORY (gate-zero): it warns to stderr, records a `| MUTATION |` ledger marker, and **always
+exits 0**. A `[MUTATION-SMOKE] WARN:` line is surfaced as an advisory note in the report; it NEVER
+downgrades the PASS/FAIL verdict and NEVER blocks. A `SKIP` (no runner, no mutable changed code, or a
+red baseline) is normal and not a finding. It restores the working tree byte-for-byte after the run.
+This is off the push blocker; treat a flag as a prompt to strengthen the suite, not a gate.
+
 ### Step 7: Report (do NOT fix)
 
 **Restate the claim first (SPEC-080 / ID-077, cursor verify-this pattern):** before
@@ -72,6 +90,9 @@ Base ref: <sha> (<how it was resolved>)
 ## System level (system-verifier)
 - PASS | FAIL -- [suite/regression, or NO EXECUTABLE CHECK]
 
+## Mutation smoke (advisory, SPEC-131)
+- QUIET | FLAG | SKIP -- [file:line the mutation survived, or the skip reason] (never changes the verdict)
+
 ## Verdict: PASS / FAIL / INCONCLUSIVE
 ```
 
@@ -86,11 +107,16 @@ means design a better measurement, not ship.
 Append one entry to `docs/verification/<spec-slug>.md` (create the file if missing),
 shape per `docs/verification/README.md`: the captured `Command:` the verifiers ran, its
 `Exit:` code, an `Output (excerpt):`, and the `Verdict:`. If nothing runnable existed,
-record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append is the only
-thing `/kit:verify` writes; it never touches the code under test. The recorded
-`Command:` line is what a later reader re-runs to regression-check this verdict.
+record `[NO EXECUTABLE CHECK: <reason>]` rather than a fake pass. This append (plus the
+lane-telemetry ledger line below) is the only thing `/kit:verify` writes; it never touches
+the code under test. The recorded `Command:` line is what a later reader re-runs to
+regression-check this verdict.
 
-Gate what the proof needs by the spec's **proof class** (`lib/proof-gate.sh class
+Also record the verdict for lane telemetry (SPEC-139), one line (`verify` carries no matrix
+row of its own -- this is RUN_REPORT observability, never a new required gate):
+`bash lib/gate/gate-ledger.sh record <rid> verify ran "<PASS|FAIL|INCONCLUSIVE>"`.
+
+Gate what the proof needs by the spec's **proof class** (`lib/gate/proof-gate.sh class
 "<spec title or task>"`):
 - **inert** (docs / comments / cosmetic): record `[PROOF OF DONE: exempt -- <reason>]`
   and stop; no run can meaningfully fail.

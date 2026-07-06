@@ -14,7 +14,7 @@ Two further gaps made the store incoherent:
 ## Decision
 
 - **The filesystem is the sole source of truth.** `ls .claude/goals/*.md` is authoritative; there is no derived cache. The `INDEX.md` from ADR-0011 is dropped (it was never implemented). This ADR supersedes that part of ADR-0011; the rest of ADR-0011 (the draft-store-not-a-shadow decision, the never-write-`last-goal.md` rule) stands.
-- **Drafts have a lifecycle: drafted -> archived-on-ship.** A draft lives at the top level of `.claude/goals/` while its work is live. Once its `target_spec` resolves to a SHIPPED spec, it is **moved** (never deleted) to `.claude/goals/done/`, with `status:` flipped to `shipped`. The move is performed by `lib/goal-drafts.sh archive`, wired into `/kit:ship`. Because the render commands enumerate top-level `*.md` only (a non-recursive glob), an archived draft drops out of "what's active" with no filter code.
+- **Drafts have a lifecycle: drafted -> archived-on-ship.** A draft lives at the top level of `.claude/goals/` while its work is live. Once its `target_spec` resolves to a SHIPPED spec, it is **moved** (never deleted) to `.claude/goals/done/`, with `status:` flipped to `shipped`. The move is performed by `lib/goal/goal-drafts.sh archive`, wired into `/kit:ship`. Because the render commands enumerate top-level `*.md` only (a non-recursive glob), an archived draft drops out of "what's active" with no filter code.
 - **Move, never delete.** Archiving relocates a draft; it never removes content. A pre-existing `done/<slug>.md` is not overwritten.
 - **Two stores, documented side by side.** `docs/architecture.md` "## State model" carries both the draft store and the registry in one table, with the contrast (draft = candidate work / "what's active"; registry = the cross-session lock / "what's executing now"; the slug is the shared key).
 
@@ -28,4 +28,4 @@ Two further gaps made the store incoherent:
 
 - The phantom `INDEX.md` is gone from the live contract; the only mentions that remain are the annotated historical records in ADR-0011 and SPEC-005.
 - `.claude/goals/` reflects only live candidate work; finished drafts live under `done/` for reference.
-- A new helper (`lib/goal-drafts.sh`) joins `lib/goal-registry.sh` and `lib/dispatch-gate.sh` as testable command-helper bash. Its archive trigger depends on `/kit:ship` running; if a ship is skipped, drafts simply linger until the next `archive` (idempotent), which is acceptable.
+- A new helper (`lib/goal/goal-drafts.sh`) joins `lib/goal/goal-registry.sh` and `lib/gate/dispatch-gate.sh` as testable command-helper bash. Its archive trigger depends on `/kit:ship` running; if a ship is skipped, drafts simply linger until the next `archive` (idempotent), which is acceptable.

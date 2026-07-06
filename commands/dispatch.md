@@ -23,7 +23,7 @@ Take the specs named in the command argument, or if none given, list `docs/specs
 ### Step 2: Run the disjointness gate (the moat)
 
 ```bash
-bash lib/dispatch-gate.sh plan <spec1> <spec2> ...
+bash lib/gate/dispatch-gate.sh plan <spec1> <spec2> ...
 ```
 
 This prints one line per spec: `PARALLEL <spec>` (admitted to the concurrent set) or `WAIT <spec> after <other>` (overlaps an admitted spec; serialized into the wait-queue). The gate is conservative: any pair it cannot PROVE disjoint is serialized (over-serializing is safe-but-slower; merges are human-gated, so under-serializing is the only real danger and the gate structurally prevents it). A spec with no `## Touches` makes the gate exit non-zero with a REJECT message; fix the spec, do not bypass the gate.
@@ -37,7 +37,7 @@ For each parallel-safe spec, dispatch a worker with the **Agent tool**, `run_in_
 Register each launched worker in the cross-session registry so `goal-registry list` (and `/kit:start`'s monitor) shows it alongside any multi-session goals, the single roll-up of every running concurrent agent tagged with goal + lane (ADR-0022):
 
 ```bash
-bash lib/goal-registry.sh claim <slug> <lane> <touches-glob>...
+bash lib/goal/goal-registry.sh claim <slug> <lane> <touches-glob>...
 ```
 
 The disjointness gate already passed in Step 2, so this records the worker (and harmlessly double-checks). `<slug>` is the bare spec slug (the `goal/<slug>` branch's `<slug>`, no slash); `<lane>` is the spec's lane; the globs are the spec's `## Touches`.
@@ -58,7 +58,7 @@ where <slug> = the spec filename minus the SPEC-NNN- prefix and .md
 
 ## Run the kit lifecycle for this spec
 Work the spec through its risk lane. The lane is in the spec / goal draft; if absent,
-classify it from the spec title with `bash lib/lane-classify.sh classify "<title>"`
+classify it from the spec title with `bash lib/classify/lane-classify.sh classify "<title>"`
 (tiny | normal | full | bug | backfill). For normal/full:
 /kit:execute the tasks (worker -> task-verifier -> fix-agent, max 2), then
 /kit:review. Commit each task with a Conventional Commits subject (type(scope): summary
@@ -69,7 +69,7 @@ Stay inside your spec's ## Touches globs.
 ## Leave an attempt trail
 After each task/attempt, append one line so a human (or the lead) sees what you tried
 without spelunking your transcript:
-  bash lib/goal-registry.sh log <slug> "<one line of what you tried>"   # bare slug, no goal/ prefix
+  bash lib/goal/goal-registry.sh log <slug> "<one line of what you tried>"   # bare slug, no goal/ prefix
 This is the cross-session registry's per-goal attempt log (ADR-0022); it writes to the
 shared .git, so the lead reads every worker's trail in one place.
 
@@ -95,7 +95,7 @@ When a worker finishes, verify its real diff stayed inside its declared globs an
 
 ```bash
 BASE=$(git merge-base <integration-branch> goal/<slug>)   # the worktree's fork point
-bash lib/dispatch-gate.sh drift "$BASE" goal/<slug> <spec>
+bash lib/gate/dispatch-gate.sh drift "$BASE" goal/<slug> <spec>
 ```
 
 Exit 0 = clean (eligible to converge). Exit 1 = drift (out-of-glob or hands-off write): **exclude that goal from convergence and escalate** to the user; do not merge it.
@@ -114,7 +114,7 @@ Exit 0 = clean (eligible to converge). Exit 1 = drift (out-of-glob or hands-off 
 git worktree unlock <path> 2>/dev/null || true
 git worktree remove --force <path>
 git branch -D goal/<slug>
-bash lib/goal-registry.sh release <slug>   # bare slug; drop the worker's registry entry + attempt log
+bash lib/goal/goal-registry.sh release <slug>   # bare slug; drop the worker's registry entry + attempt log
 ```
 
 On lead restart, pick up existing `goal/*` branches (no durability state was persisted, by design); resume convergence from there.
@@ -130,4 +130,4 @@ Workers run **autonomous** (bypassPermissions); the task-verifier inside each wo
 - **Intra-spec task parallelism.** That is `/kit:execute`, and it stays sequential.
 - **Running a spec without `## Touches`.** The gate rejects it; an undeclared file-set is the "gate lies" failure by default.
 
-Source: SPEC-032 (concurrent goal dispatch), ADR-0019 (parallel-execution boundary), ADR-0020 (dispatch primitive lock: in-session `Agent(run_in_background, isolation:worktree)`, proven by the SPEC-033 spike), SPEC-031 (lead-owned convergence). The gate + drift guard are `lib/dispatch-gate.sh`.
+Source: SPEC-032 (concurrent goal dispatch), ADR-0019 (parallel-execution boundary), ADR-0020 (dispatch primitive lock: in-session `Agent(run_in_background, isolation:worktree)`, proven by the SPEC-033 spike), SPEC-031 (lead-owned convergence). The gate + drift guard are `lib/gate/dispatch-gate.sh`.

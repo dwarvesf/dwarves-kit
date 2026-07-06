@@ -2,7 +2,7 @@
 
 Date: 2026-06-07
 Status: Accepted
-Relates-to: ADR-0024 (lane gate + ship enforcement, extended here), the proof-of-done convention (docs/verification/README.md), lib/proof-gate.sh (risk classes), SPEC-042 (proof of done)
+Relates-to: ADR-0024 (lane gate + ship enforcement, extended here), the proof-of-done convention (docs/verification/README.md), lib/gate/proof-gate.sh (risk classes), SPEC-042 (proof of done)
 
 ## Decision (one line)
 
@@ -14,7 +14,7 @@ The proof-of-done discipline (execution-backed verify + negative control + risk-
 
 ## Decision
 
-1. **A diff-keyed proof gate, spec-independent.** `lib/proof-ledger.sh` classifies the branch's aggregate diff into a proof class (`stateful` / `behavioral` / `inert`, consistent with `lib/proof-gate.sh`) and requires a matching, FRESH proof-of-done entry (one the branch itself added/modified under `docs/verification/`): behavioral needs a green run + a `NEGATIVE CONTROL`; stateful needs a recorded run + a rollback note or `[UNAVAILABLE: reason]`; inert passes with no ritual. Keying on the diff (which every change has) instead of a spec (which is optional) is what bridges freeform `/goal` work into the same wall.
+1. **A diff-keyed proof gate, spec-independent.** `lib/gate/proof-ledger.sh` classifies the branch's aggregate diff into a proof class (`stateful` / `behavioral` / `inert`, consistent with `lib/gate/proof-gate.sh`) and requires a matching, FRESH proof-of-done entry (one the branch itself added/modified under `docs/verification/`): behavioral needs a green run + a `NEGATIVE CONTROL`; stateful needs a recorded run + a rollback note or `[UNAVAILABLE: reason]`; inert passes with no ritual. Keying on the diff (which every change has) instead of a spec (which is optional) is what bridges freeform `/goal` work into the same wall.
 
 2. **Enforced at the ship boundary, inside the existing hook.** `hooks/ship-gate.sh` runs the proof check BEFORE its spec-based lane check, so the proof wall fires even when there is no spec. Exit 2 blocks; the message names the change's class and exactly what proof is missing.
 

@@ -2,7 +2,7 @@
 description: "Detect project state and suggest the right next command. The entry point for any session."
 ---
 
-You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/backlog.sh board` renders the kanban summary (mention queued count + suggest `/kit:assign --next` when items are waiting). If any run ledgers exist, `bash lib/lane-telemetry.sh misfires` surfaces routing misfires worth a retro (SPEC-061). Read the current project and suggest what the user should do next. Do NOT execute anything. Just detect and recommend.
+You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/board/backlog.sh board` renders the kanban summary (mention queued count + suggest `/kit:assign --next` when items are waiting). If any run ledgers exist, `bash lib/telemetry/lane-telemetry.sh misfires` surfaces routing misfires worth a retro (SPEC-061). Read the current project and suggest what the user should do next. Do NOT execute anything. Just detect and recommend.
 
 ## Output mode (read `$ARGUMENTS`)
 
@@ -34,7 +34,7 @@ If no `docs/specs/` directory exists:
 ```
 No spec found.
 Suggested: /kit:think to challenge the idea, then /kit:spec to generate a development spec.
-(If the described work is not code, run `bash lib/task-type-classify.sh classify "<it>"` first: a non-spec-feature type follows its type loop, WORKFLOW.md `## Type loops`, instead of the spec cycle.)
+(If the described work is not code, run `bash lib/classify/task-type-classify.sh classify "<it>"` first: a non-spec-feature type follows its type loop, WORKFLOW.md `## Type loops`, instead of the spec cycle.)
 ```
 
 ### 3. Spec is DRAFT
@@ -102,7 +102,7 @@ Append to every recommendation:
 - Number of uncommitted changes (if any)
 - Whether `docs/specs/SPEC-NNN-<slug>.md` exists and its status
 - Active goal drafts in `.claude/goals/` (count, and `slug -> status`), if any
-- Running goals across sessions (the cross-session registry): the count from `bash lib/goal-registry.sh list`, so an operator opening a new session sees what other sessions already have in flight before starting a colliding goal. This is the kit-level companion to the native agent view (which sees only the current session's subagents, not goals across sessions).
+- Running goals across sessions (the cross-session registry): the count from `bash lib/goal/goal-registry.sh list`, so an operator opening a new session sees what other sessions already have in flight before starting a colliding goal. This is the kit-level companion to the native agent view (which sees only the current session's subagents, not goals across sessions).
 
 ## Output format
 
@@ -120,8 +120,8 @@ Branch: [branch] | Dirty: [N] files | Spec: [status or "none"]
 When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 
 1. **Backlog queue (what's left?)** -- render the `_meta/BACKLOG.md` Active queue (the Schema there defines the columns) as `ID | Title | Lane | Status`, skipping shipped/parked rows. Read-only. If the queue is malformed, render what parses, note unparseable rows, and never error out of session start.
-2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)` (or run `bash lib/goal-drafts.sh list`). If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (no derived cache, ADR-0023). Archived drafts under `.claude/goals/done/` are skipped: the `*.md` glob is non-recursive, so a draft moved to `done/` on ship drops out automatically.
-2b. **Running goals (cross-session)** -- render `bash lib/goal-registry.sh list`: every goal currently claimed across sessions, with its lane / status / branch / start time (ADR-0022). If none, it prints "(no running goals)". This is the cross-session monitor: it shows goals other Claude sessions are running on this machine, which the native agent view cannot. A `running` entry with no live work is a stale claim from a crashed session; clear it with `bash lib/goal-registry.sh release <slug>`.
+2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)` (or run `bash lib/goal/goal-drafts.sh list`). If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (no derived cache, ADR-0023). Archived drafts under `.claude/goals/done/` are skipped: the `*.md` glob is non-recursive, so a draft moved to `done/` on ship drops out automatically.
+2b. **Running goals (cross-session)** -- render `bash lib/goal/goal-registry.sh list`: every goal currently claimed across sessions, with its lane / status / branch / start time (ADR-0022). If none, it prints "(no running goals)". This is the cross-session monitor: it shows goals other Claude sessions are running on this machine, which the native agent view cannot. A `running` entry with no live work is a stale claim from a crashed session; clear it with `bash lib/goal/goal-registry.sh release <slug>`.
 3. **SPEC task checklist** -- parse the active spec (resolved per the dual-mode rule above) for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
 4. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
 5. **Recent commits** -- the output of `git log -5 --oneline`.

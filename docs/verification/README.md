@@ -59,6 +59,14 @@ docs/verification/<slug>/
 `docs/implementation-notes/<slug>.md`). The older flat shape `docs/verification/<slug>.md`
 (append-entry, one file) is still accepted by the gate.
 
+**One deliberate exception: `docs/verification/rejected-findings.md` (SPEC-144).** Every other
+file directly under `docs/verification/` is a proof-of-done record scoped to one work item's
+slug. `rejected-findings.md` is not: it is a cross-cutting, ever-growing, consulted-at-runtime
+memory (the review surfaces' rejected-findings ledger), with no owning slug and no immutable
+"one record per run" shape. It lives here rather than under `docs/decisions/` because the
+sub-goal contract that created it names this exact path; treat it as the one named exception
+to the per-slug convention above, not a precedent for a second one.
+
 ## Two homes: repo-root layout or co-located with the tool (ADR-0026)
 
 A proof has two equally-valid homes. Pick per context:
@@ -70,7 +78,7 @@ A proof has two equally-valid homes. Pick per context:
   (immutable history) and `tools/<name>/docs/test-design.md` sit beside it.
 
 **The filename is load-bearing.** The gate's only co-located match is a file literally named
-`proof-of-done.md` (regex `(^|/)proof-of-done\.md$` in `lib/proof-ledger.sh`); a co-located `runs/`
+`proof-of-done.md` (regex `(^|/)proof-of-done\.md$` in `lib/gate/proof-ledger.sh`); a co-located `runs/`
 directory is invisible to the gate. So a co-located canonical proof MUST be the `proof-of-done.md`
 file itself and MUST carry the literal gate markers (`Command:`, `Exit:`, `NEGATIVE CONTROL`,
 `rollback` / `[UNAVAILABLE`) in its body.
@@ -83,6 +91,16 @@ ledger. A generator that targets `proof-of-done.md` itself clobbers the review l
 one-line output-path change). Corollary for multi-feature tools: ONE `proof-of-done.md` per tool,
 structured as a feature index, because per-feature names like `proof-of-done-<feature>.md` do not
 match the gate regex and are invisible to it.
+
+For the kit's OWN runs (a `rid`'s gate/run ledger, `lib/gate/gate-ledger.sh`), the generator is
+`lib/gate/proof-table-gen.sh <rid>` (SPEC-132): it renders the confirmation table from
+`logs/runs/<rid>.log` under `docs/verification/generated/<rid>.md`, hard-refuses any out-path whose basename is
+`proof-of-done.md`, and surfaces sub-goal 01's `caught=`/timing marker when present, degrading
+gracefully when absent. **Honesty note:** today the only call site that emits the OUTCOME
+marker (SPEC-129) is `hooks/ship-gate.sh` at the ship boundary, so the generated Caught/Duration
+columns reflect the Ship phase only, not a per-phase measurement across the whole run, no
+matter how many phases the ledger otherwise records. WORKFLOW.md "## Gate ledger and ship
+enforcement" states this scope alongside the marker's own convention.
 
 ### Optional table-first review layout
 
@@ -137,7 +155,7 @@ benchmark for a verification log.
 
 ## Risk classes: where the discipline lands
 
-A task's **proof class** decides what "done" needs. Classify with `lib/proof-gate.sh class
+A task's **proof class** decides what "done" needs. Classify with `lib/gate/proof-gate.sh class
 "<task>"`; it suggests, a human can override.
 
 | Proof class | What it is | Proof of done required |
@@ -169,7 +187,7 @@ existing reviewer dispatch (`/kit:verify`, `/kit:review-team`) , not a new orche
 
 ## Enforcement: the ship/merge gate (advice becomes a wall)
 
-`lib/proof-ledger.sh` (wired into `hooks/ship-gate.sh`, ADR-0025) is a **gate at the
+`lib/gate/proof-ledger.sh` (wired into `hooks/ship-gate.sh`, ADR-0025) is a **gate at the
 ship/push boundary**: a behavioral or stateful change cannot ship without a matching, fresh
 proof of done. It keys off the **branch diff**, not a spec, so it fires the same whether the
 work came through `/kit:execute` or a freeform `/goal` loop. Properties:
@@ -181,7 +199,7 @@ work came through `/kit:execute` or a freeform `/goal` loop. Properties:
   `runs/` files. A flat `<slug>.md` or `proof-of-done.md` is still validated per-file.
 - **Honest passes.** Inert passes with no ritual; stateful passes with a rollback note or
   `[UNAVAILABLE: reason]`.
-- **Logged override, never silent.** `bash lib/proof-ledger.sh override <slug> "<reason>"`
+- **Logged override, never silent.** `bash lib/gate/proof-ledger.sh override <slug> "<reason>"`
   leaves an audit trace. There is no silent bypass.
 - **Fails open on ambiguity** (no repo, empty diff, missing tooling) so a gate bug never
   blocks unrelated work.

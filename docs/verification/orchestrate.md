@@ -1,10 +1,10 @@
-# Proof of done: lib/orchestrate.sh (SPEC-087 phase 1)
+# Proof of done: lib/queue/orchestrate.sh (SPEC-087 phase 1)
 
 ## Acceptance criteria (SPEC-087 phase 1)
 
 | # | Criterion | Met |
 |---|---|---|
-| AC1 | Parses a mega-goal ROADMAP, finds next unchecked sub-goal + policy; real mode runs it via a fresh `claude -p`; driver holds no LLM context | yes (`lib/orchestrate.sh`; driver is bash, never an LLM) |
+| AC1 | Parses a mega-goal ROADMAP, finds next unchecked sub-goal + policy; real mode runs it via a fresh `claude -p`; driver holds no LLM context | yes (`lib/queue/orchestrate.sh`; driver is bash, never an LLM) |
 | AC2 | `--dry-run` prints the ordered plan + stop point without invoking `claude` | yes (test 2; no side effects) |
 | AC3 | Stops at the first `gate` sub-goal; advances past `auto` only when the box flipped to `[x]` | yes (tests 3, 4) |
 | AC4 | Previous `HANDOFF.md` injected into the next session's prompt; fresh run with no handoff works | yes (test 3b) |
@@ -12,7 +12,7 @@
 
 ## Implementation
 
-`lib/orchestrate.sh` (bash, matching the other `lib/` drivers): subcommands `next` and
+`lib/queue/orchestrate.sh` (bash, matching the other `lib/` drivers): subcommands `next` and
 `run <megagoal-dir> [--dry-run]`. It reads `ROADMAP.md` sub-goal lines
 (`- [ ] SG-NN ... , auto|gate , ...`), runs each `auto` sub-goal in a fresh
 `$CLAUDE_CMD -p` session (the `/clear` is free), injects the prior `HANDOFF.md`, and stops at
@@ -24,8 +24,8 @@ ROADMAP checkbox. `CLAUDE_CMD` is injected so the test mocks `claude` (no real s
 | Command | Exit | Result |
 |---|---|---|
 | `bash tests/test-orchestrate.sh` | 0 | 12/12 PASS (`ALL PASS`) |
-| `bash lib/orchestrate.sh next <real-megagoal>` | 0 | `SG-04	gate` (the real token-hygiene state) |
-| `bash lib/orchestrate.sh run <real-megagoal> --dry-run` | 0 | plan: `SG-04 (gate)` then `STOP at SG-04` |
+| `bash lib/queue/orchestrate.sh next <real-megagoal>` | 0 | `SG-04	gate` (the real token-hygiene state) |
+| `bash lib/queue/orchestrate.sh run <real-megagoal> --dry-run` | 0 | plan: `SG-04 (gate)` then `STOP at SG-04` |
 | `bash tests/test-meta.sh` | 0 | 500/500 (README lib row did not break parity) |
 | (negative control) mock session that does NOT check its box | 1 | loop halts: "did not check its ROADMAP box" |
 
@@ -64,7 +64,7 @@ session that silently no-ops cannot make the loop march on.
 ```
 cd <dwarves-kit>
 bash tests/test-orchestrate.sh
-bash lib/orchestrate.sh run ~/workspace/tieubao/ops-toolkit/_meta/megagoals/token-hygiene --dry-run
+bash lib/queue/orchestrate.sh run ~/workspace/tieubao/ops-toolkit/_meta/megagoals/token-hygiene --dry-run
 ```
 
 ## Review-fix addendum (2026-06-29, PR #81 review)
@@ -74,7 +74,7 @@ Applied the review findings; the suite grew from 12 to 15 assertions, all green;
 | Command | Exit | Result |
 |---|---|---|
 | `bash tests/test-orchestrate.sh` | 0 | 15/15 PASS (`ALL PASS`) |
-| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+| `shellcheck lib/queue/orchestrate.sh` | 0 | CLEAN |
 
 New coverage: permission posture default + override (2 assertions); goal-file CONTENT injection
 into the prompt (1 assertion, closes the path-vs-content gap); policy parser hardened to
@@ -102,9 +102,9 @@ Both off by default => the default invocation is byte-identical.
 | Command | Exit | Result |
 |---|---|---|
 | `bash tests/test-orchestrate.sh` | 0 | 34/34 PASS (`ALL PASS`; was 15, +19 for run-modes) |
-| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+| `shellcheck lib/queue/orchestrate.sh` | 0 | CLEAN |
 | `bash tests/test-meta.sh` | 0 | 500/500 (README lib row parity held) |
-| `bash lib/orchestrate.sh run <megagoal> --step --dry-run` | 0 | plan annotated with `(--step: pause ...)` |
+| `bash lib/queue/orchestrate.sh run <megagoal> --step --dry-run` | 0 | plan annotated with `(--step: pause ...)` |
 | (negative control) default run, stdin closed | 0 | no pause prompt; auto chain runs unchanged |
 
 ### Run detail: captured `--step` + `--stream` terminal slice (2026-06-29)
@@ -144,7 +144,7 @@ Adds `--board=roadmap|kanban|both` (default detects: `backlog.sh` present -> `bo
 `roadmap`). In kanban/both the loop emits append-only status EVENTS to
 `<dir>/.orchestrate/events.log` and DERIVES a per-mega-goal `<dir>/BOARD.md` by replay (last
 event per sub-goal wins, never mutated in place). `BOARD.md` is a `backlog.sh`-format kanban
-table, rendered via `lib/backlog.sh`. ROADMAP.md + the goal files stay canonical; the repo-wide
+table, rendered via `lib/board/backlog.sh`. ROADMAP.md + the goal files stay canonical; the repo-wide
 BACKLOG cockpit is never touched. Stacked on SG-01 (`feat/orchestrator-run-modes`).
 
 ### Acceptance criteria (SG-10)
@@ -163,9 +163,9 @@ BACKLOG cockpit is never touched. Stacked on SG-01 (`feat/orchestrator-run-modes
 | Command | Exit | Result |
 |---|---|---|
 | `bash tests/test-orchestrate.sh` | 0 | 43/43 PASS (+9 for board-view) |
-| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+| `shellcheck lib/queue/orchestrate.sh` | 0 | CLEAN |
 | `bash tests/test-meta.sh` | 0 | 500/500 |
-| `bash lib/orchestrate.sh run <fixture> --board=both --dry-run` | 0 | both surfaces; no repo BACKLOG / events written |
+| `bash lib/queue/orchestrate.sh run <fixture> --board=both --dry-run` | 0 | both surfaces; no repo BACKLOG / events written |
 
 ### Run detail: `--board=both --dry-run` (deps fixture, captured 2026-06-29)
 
@@ -224,7 +224,7 @@ Verdict: PASS (Exit: 0 on the suite; tooling-gating + ROADMAP-canonical proven b
 
 ## SG-11 addendum: loop robustness (2026-06-29, token-optim-v2)
 
-Adds an advisory stall-watchdog + PID-liveness + a tool-baked guardrail to `lib/orchestrate.sh`.
+Adds an advisory stall-watchdog + PID-liveness + a tool-baked guardrail to `lib/queue/orchestrate.sh`.
 `WATCHDOG_STALL_SECS=0` (default) keeps the synchronous run path UNCHANGED; `>0` backgrounds each
 session and polls liveness (`kill -0`, no daemon) + the session-log mtime. A session with no
 output for `WATCHDOG_STALL_SECS` while its process is alive is flagged `stalled` (event + WARN)
@@ -245,7 +245,7 @@ after SG-01 (#86) + SG-10 (#87) merged; reuses SG-10's event log.
 | Command | Exit | Result |
 |---|---|---|
 | `bash tests/test-orchestrate.sh` | 0 | 48/48 PASS (+5 for robustness) |
-| `shellcheck lib/orchestrate.sh` | 0 | CLEAN |
+| `shellcheck lib/queue/orchestrate.sh` | 0 | CLEAN |
 | `bash tests/test-meta.sh` | 0 | 500/500 |
 
 ### Run detail: watchdog flags a stall but does not kill (captured 2026-06-29)

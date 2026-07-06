@@ -1,7 +1,7 @@
 # Spec: Goal-file coherence (filesystem-authoritative drafts + archive-on-ship lifecycle)
 Generated: 2026-05-23
 Status: VALIDATED
-Source: maintainer session 2026-05-23 ("make sure goal files are managed properly; there is also a kit-goals folder"); approved via the `/plan` gate (plan `harmonic-hopping-spindle`). Reuses the `lib/goal-registry.sh` helper shape (SPEC-036) and the SPEC-005 state model.
+Source: maintainer session 2026-05-23 ("make sure goal files are managed properly; there is also a kit-goals folder"); approved via the `/plan` gate (plan `harmonic-hopping-spindle`). Reuses the `lib/goal/goal-registry.sh` helper shape (SPEC-036) and the SPEC-005 state model.
 
 > The kit has two on-disk "goal" stores that read as duplicates because they share the
 > word *goal*: the goal **draft** store (`.claude/goals/<slug>.md`, ADR-0011) and the
@@ -22,14 +22,14 @@ Three concrete defects, all in the goal-file model:
 
 ### Approaches considered
 
-1. **Filesystem-authoritative + archive-on-ship helper (chosen).** Drop the `INDEX.md` cache (the filesystem is the source of truth). Add `lib/goal-drafts.sh archive`, a sibling to `lib/goal-registry.sh`, that moves a draft to `.claude/goals/done/` once its `target_spec` ships; wire it into `/kit:ship`. Document the two stores side by side in the architecture state model.
+1. **Filesystem-authoritative + archive-on-ship helper (chosen).** Drop the `INDEX.md` cache (the filesystem is the source of truth). Add `lib/goal/goal-drafts.sh archive`, a sibling to `lib/goal/goal-registry.sh`, that moves a draft to `.claude/goals/done/` once its `target_spec` ships; wire it into `/kit:ship`. Document the two stores side by side in the architecture state model.
 2. **Build `INDEX.md` for real.** Honors ADR-0011 literally, adds a cache the filesystem already provides for free. Rejected: against kit minimalism.
 3. **Status-field-only retirement (no move).** Flip `status:` in place and filter by it in the render commands. Rejected: the directory keeps growing and the render commands gain filter code, where a move drops the draft out of the non-recursive `*.md` glob for free.
 
 ### Chosen approach and why
 
 - **The filesystem is the sole source of truth.** No derived cache (ADR-0023, supersedes ADR-0011's `INDEX.md`).
-- **Lifecycle: drafted -> archived-on-ship.** `lib/goal-drafts.sh archive` scans `.claude/goals/*.md`; for each, it reads `target_spec`, resolves `docs/specs/SPEC-NNN-*.md`, and if that spec's `Status:` is SHIPPED it flips the draft's `status: shipped` and **moves** it (never deletes) to `.claude/goals/done/`. Scanning all drafts each run makes it idempotent and order-independent. `/kit:ship` runs it after the docs step.
+- **Lifecycle: drafted -> archived-on-ship.** `lib/goal/goal-drafts.sh archive` scans `.claude/goals/*.md`; for each, it reads `target_spec`, resolves `docs/specs/SPEC-NNN-*.md`, and if that spec's `Status:` is SHIPPED it flips the draft's `status: shipped` and **moves** it (never deletes) to `.claude/goals/done/`. Scanning all drafts each run makes it idempotent and order-independent. `/kit:ship` runs it after the docs step.
 - **Move, never delete**, and never clobber an existing `done/<slug>.md`.
 - **Two stores side by side** in `docs/architecture.md` "## State model": draft = candidate work / "what's active"; registry = the cross-session lock / "what's executing now"; the slug is the shared key.
 
@@ -37,7 +37,7 @@ Three concrete defects, all in the goal-file model:
 
 - The archive trigger is `/kit:ship`. No daemon, no scheduler, no watch. A skipped ship just leaves drafts until the next idempotent `archive`.
 - Specless drafts (`target_spec: (none)` / `(none yet; ...)`) and drafts whose spec is unresolvable or not yet SHIPPED stay in place.
-- `lib/goal-drafts.sh` honors `GOAL_DRAFTS_DIR` / `GOAL_SPECS_DIR` overrides for hermetic tests, mirroring the registry's `GOAL_REGISTRY_DIR`.
+- `lib/goal/goal-drafts.sh` honors `GOAL_DRAFTS_DIR` / `GOAL_SPECS_DIR` overrides for hermetic tests, mirroring the registry's `GOAL_REGISTRY_DIR`.
 
 ### Architecture
 
@@ -46,14 +46,14 @@ Three concrete defects, all in the goal-file model:
         | slug (shared key)
 .git/kit-goals/<slug>.goal     registry CLAIM (what's executing now)            (released on completion)
 
-lib/goal-drafts.sh   archive [--dry-run] | list | dir      <- run by /kit:ship
-lib/goal-registry.sh claim | list | log | status | release <- run by /kit:assign, /kit:start
+lib/goal/goal-drafts.sh   archive [--dry-run] | list | dir      <- run by /kit:ship
+lib/goal/goal-registry.sh claim | list | log | status | release <- run by /kit:assign, /kit:start
 ```
 
 ## Tasks
 
-- [ ] TASK-1: `lib/goal-drafts.sh` (archive [--dry-run] / list / dir), shellcheck-clean, executable, mirrors `lib/goal-registry.sh` conventions. AC: archive moves only SHIPPED-target drafts to `done/`, flips their status, leaves specless/live drafts; `--dry-run` moves nothing; re-run is a no-op.
-- [ ] TASK-2: Wire `bash lib/goal-drafts.sh archive` into `commands/ship.md` (Step 7b + Step 9 summary line).
+- [ ] TASK-1: `lib/goal/goal-drafts.sh` (archive [--dry-run] / list / dir), shellcheck-clean, executable, mirrors `lib/goal/goal-registry.sh` conventions. AC: archive moves only SHIPPED-target drafts to `done/`, flips their status, leaves specless/live drafts; `--dry-run` moves nothing; re-run is a no-op.
+- [ ] TASK-2: Wire `bash lib/goal/goal-drafts.sh archive` into `commands/ship.md` (Step 7b + Step 9 summary line).
 - [ ] TASK-3: Remove `INDEX.md` from the LIVE contract (`commands/assign.md`, `WORKFLOW.md`); declare the filesystem the sole source of truth.
 - [ ] TASK-4: `docs/decisions/0023-goal-draft-lifecycle.md`; annotate ADR-0011's Status line + SPEC-005's reconcile note (supersede, not rewrite).
 - [ ] TASK-5: Side-by-side model in `docs/architecture.md` "## State model" (registry row + draft-vs-registry contrast); lifecycle in `WORKFLOW.md`; `done/`-skip note in `commands/start.md` + `commands/next.md`.

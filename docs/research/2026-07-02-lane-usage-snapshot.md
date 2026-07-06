@@ -1,7 +1,7 @@
 # Lane-usage snapshot, 2026-07-02 (SPEC-099 / ID-150)
 
 Dated capture of `lane-telemetry.sh render` over the durable run corpus (SG-01). Regenerate
-with `bash lib/lane-telemetry.sh render` (add a lane/type filter as an optional arg). This is
+with `bash lib/telemetry/lane-telemetry.sh render` (add a lane/type filter as an optional arg). This is
 a point-in-time snapshot; the live command is the source of truth.
 
 ## Full render

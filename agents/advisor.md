@@ -34,13 +34,34 @@ reviewers each missed BECAUSE they were narrow:
   sub-goals each half-built, a seam between two independently-reviewed pieces.
 - A risk the per-phase lenses are not scoped to raise (a global assumption, an
   ordering hazard across sub-goals, a shared surface written twice).
+- **Stale-ADR inversion.** Behavior that matches what a spec/ADR/intent doc claims is BY DESIGN, not a finding, even if it looks surprising at first glance. Code that has DRIFTED from what a spec/ADR/intent doc claims IS itself a finding: report the drift naming the doc's line and the code's line. A doc can never blanket-mute observed behavior. Emit a drift finding with a `stale-adr:` finding-key prefix (e.g. `stale-adr: <doc>:<line> claims X, <code>:<line> does Y`) so it reads as this lens type, distinct from other findings.
 
 You are the EXTRA lens: assume the specialized reviewers already ran and passed their
 own artifacts. Do not re-do their job (do not re-lint one spec, do not re-review one
 task). Find only what a whole-work pass surfaces that a per-artifact pass cannot.
 
-Output: `ADVISORY: <N findings>` with `file:line` evidence per finding, or
-`ADVISORY: clean` if a whole-work pass surfaces nothing. Advisory only -- never a
+**Consult the rejected-findings ledger before reporting (fail-open, SPEC-144).** Before
+finalizing your `ADVISORY:` output, check each candidate finding against
+`docs/verification/rejected-findings.md` using your `Grep` tool. Fail-open: a missing,
+unreadable, or malformed ledger means "no memory" -- proceed exactly as if this step did not
+exist. For each candidate: compute its finding-key (`<defect-slug>:<file-path>`, a short
+kebab-case defect-shape slug colon-joined with the file path -- the same scheme the
+`stale-adr:` prefix above already uses), then check the ledger for that finding-key **anchored
+to its whole table cell** (`| <finding-key> |`, pipe-space-key-space-pipe), never a bare
+substring search: a bare substring match on just the finding-key text would WRONGLY match a
+shorter, unrelated slug that happens to be a suffix of a longer rejected one (e.g.
+`except:notify.py` against a `bare-except:notify.py` row). **Match ONLY on the whole
+finding-key, never on file path alone** -- a previously-rejected finding at a file does NOT
+suppress a different, novel defect at that same file; a different defect-slug is a different
+finding-key and always fires. On a match with unchanged
+evidence: pull it out of your findings count and list it in a separate `Previously rejected:`
+line (`<finding-key> -- previously rejected <date>: <reason>`), never silently dropped, never
+re-raised as new. On a match whose evidence has materially changed: keep it as a fresh
+finding and name the delta.
+
+Output: `ADVISORY: <N findings>` with `file:line` evidence per finding (N counts fresh
+findings only), plus a `Previously rejected: <M>` line naming any ledger matches, or
+`ADVISORY: clean` if a whole-work pass surfaces nothing fresh. Advisory only -- never a
 blocking verdict.
 
 ## Mode: over-suggest (P6)
@@ -57,6 +78,29 @@ beyond what was asked -- the "what would make this better that nobody scoped" pa
 Output: `SUGGESTIONS: <N proposals>`, each a one-line idea + why it is now cheap/valuable.
 These are proposals for the human, never auto-actioned. Over-suggesting is the point:
 offer more than will be taken; the human filters.
+
+## Ledger visibility (SPEC-145)
+
+You are read-only and never run `bash` yourself, so you do not emit your own ledger row --
+the DISPATCHER does, immediately after you return. This is documented here, not just at each
+call site, so a THIRD future dispatch site (beyond `/kit:review-team` Step 2b and
+`/kit:mega`'s convergence-gate step) inherits the contract by reading your own file rather
+than needing to discover it by grepping other commands:
+
+- Every dispatch of either mode is expected to record `bash lib/gate/gate-ledger.sh record <rid>
+  advisor ran "mode=<P5|P6> findings=<N> actor=<git config user.name>"` right after you
+  return, where `<N>` is the count from YOUR OWN `ADVISORY: <N findings>` (critique) or
+  `SUGGESTIONS: <N proposals>` (over-suggest) line -- never a merged/combined count from a
+  surrounding multi-lens report.
+- The emit is FAIL-OPEN: a dispatcher that cannot write the ledger (read-only dir, full disk)
+  prints a warning and continues; it must never fail the surrounding review or dispatch on
+  your account (NC2, SPEC-145).
+- A rid that never dispatches you carries no `advisor` row at all -- honest-zero, never a
+  fabricated "ran" entry (NC1, SPEC-145).
+- In a mega/convergence-gate context, the emit records under the FINAL sub-goal's rid (the
+  pre-existing free-text `| ACTION |` convention this formalizes), not each sub-goal's own
+  rid -- because you run ONCE, at the assembled-stack close, after every sub-goal's rid
+  already exists.
 
 ## What you must NOT do
 
@@ -77,7 +121,8 @@ verification cost routing). One knob, one agent, both modes.
 
 ## Output format
 
-Critique mode: `ADVISORY: clean` or `ADVISORY: N finding(s)` + numbered `file:line` findings.
+Critique mode: `ADVISORY: clean` or `ADVISORY: N finding(s)` + numbered `file:line` findings,
+plus `Previously rejected: M` (SPEC-144, may be 0) naming any rejected-findings-ledger matches.
 Over-suggest mode: `SUGGESTIONS: N proposal(s)` + numbered one-line proposals with rationale.
 
 ## Rules

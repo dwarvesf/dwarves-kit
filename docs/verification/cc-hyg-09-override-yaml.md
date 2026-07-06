@@ -17,7 +17,7 @@ merged sub-goal 04, df2315e).
 
 ## Implementation
 
-- `lib/proof-ledger.sh` `check()` override block: added `tf|tfvars` to the source-ext
+- `lib/gate/proof-ledger.sh` `check()` override block: added `tf|tfvars` to the source-ext
   regex; a `case` for `.github/workflows|actions/*.y{,a}ml`; and Makefile/Dockerfile/
   Containerfile/Justfile to the extensionless-source case.
 - `tests/test-hooks.sh`: debounce test now uses an archive-count oracle (skip → 0

@@ -8,7 +8,7 @@
 # Run: bash tests/test-deployable-done.sh   (exit 0 = all AC green)
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LIB="$KIT_DIR/lib/proof-ledger.sh"
+LIB="$KIT_DIR/lib/gate/proof-ledger.sh"
 AGENTS_MD="$KIT_DIR/AGENTS.md"
 FIX="$KIT_DIR/tests/fixtures/deployable-done"
 

@@ -5,7 +5,7 @@ Lane: full
 
 ## Problem
 
-`lib/lane-classify.sh` is a first-match keyword grep: the first regex group that hits wins, and a
+`lib/classify/lane-classify.sh` is a first-match keyword grep: the first regex group that hits wins, and a
 description with no high-risk keyword falls straight to `normal`. This under-classified BOTH
 kit-machinery PRs on 2026-06-10 (`adopt @AGENTS.md loader`, `ship AGENTS.md into the install`) as
 `normal` when they were `full`; the operator had to override by hand. The model is also opaque: it
@@ -62,7 +62,7 @@ Hard-gate (any one -> `full`): `auth`, `data-model`, `audit-security`, `external
 ## Task Breakdown
 
 ### Phase 1
-- [ ] TASK-001: Refactor `lib/lane-classify.sh` to the flag-scoring model with a single
+- [ ] TASK-001: Refactor `lib/classify/lane-classify.sh` to the flag-scoring model with a single
   `classify_core` that sets LANE/REASON/FIRED; `classify` prints LANE, `explain` prints all three.
   Acceptance: the 5 pinned classifications hold; the kit-machinery descriptions now return `full`;
   `set -euo pipefail` clean.
@@ -70,7 +70,7 @@ Hard-gate (any one -> `full`): `auth`, `data-model`, `audit-security`, `external
   2026-06-10 descriptions) + `explain` prints fired flags + a 4-soft-flag description -> full.
 
 ## After state
-- [ ] `lane-classify.sh classify "rewrite lib/lane-classify.sh ..."` returns `full` (Today: `normal`).
+- [ ] `lane-classify.sh classify "rewrite lib/classify/lane-classify.sh ..."` returns `full` (Today: `normal`).
 - [ ] `lane-classify.sh explain "ship AGENTS.md into the install"` shows `flags: ... kit-machinery`.
 - [ ] The 5 pre-existing `test-hooks.sh` lane assertions still pass.
 

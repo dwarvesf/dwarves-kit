@@ -6,7 +6,7 @@ Delta from SPEC-096 / ADR-0028 P2/P3.
 
 Context: the SG-08 goal file calls the negative control "load-bearing" -- a
 failing/missing gate must never merge, under any flag combination.
-Decision: `lib/mega-merge.sh` exposes `gate <rid> <lane>` (pure decision, zero side
+Decision: `lib/goal/mega-merge.sh` exposes `gate <rid> <lane>` (pure decision, zero side
 effects, exit code only) and `merge <pr> <rid> <lane>` (the action, which calls
 `gate` internally as its first step). `gate` is independently testable with no `gh`
 in the picture at all.
@@ -43,11 +43,11 @@ Why: the run-level posture is meant to be the team's safety configuration, not a
 per-call convenience; if `--execute` could override it, the posture knob would not
 actually guarantee "a human reviews every PR" the way ADR-0028 describes it.
 
-## 2026-07-02 `gate` reuses `lib/gate-ledger.sh check` verbatim; no second required-gate list
+## 2026-07-02 `gate` reuses `lib/gate/gate-ledger.sh check` verbatim; no second required-gate list
 
 Context: `hooks/ship-gate.sh` already computes "does this lane's ledger satisfy its
-required gates" via `lib/gate-ledger.sh check <lane> <rid>` at push time.
-Decision: `lib/mega-merge.sh gate` is a one-line call to that same function, not a
+required gates" via `lib/gate/gate-ledger.sh check <lane> <rid>` at push time.
+Decision: `lib/goal/mega-merge.sh gate` is a one-line call to that same function, not a
 re-derivation of the lane x phase matrix or a second copy of the required-gate
 list.
 Why: two copies of "what gates does lane X require" drift over time (a WORKFLOW.md
@@ -64,7 +64,7 @@ roadmap conventions (home, line shape, single-chain gate) but was never built (n
 "Auto-merge. Merge stays human, at `/kit:ship`" -- written before ADR-0028 existed.
 Decision: `commands/mega.md` is written against SPEC-034's DEC-002/DEC-007/DEC-008
 (roadmap home, branch-chain naming, single-chain gate) unchanged, and against
-`lib/orchestrate.sh`'s already-shipped directory contract (`ROADMAP.md`,
+`lib/queue/orchestrate.sh`'s already-shipped directory contract (`ROADMAP.md`,
 `goals/NN-*.md`, `POINTER_PROMPT.md`, `HANDOFF.md`, `DECISIONS.md` -- which itself
 already diverged from SPEC-034's "no NOTES.md/FEEDBACK.md" stance by adding the
 HOT/WARM `HANDOFF.md`/`DECISIONS.md` pair under SPEC-087). Only SPEC-034 DEC-009 is
@@ -72,7 +72,7 @@ explicitly superseded, and only for `auto`-tagged sub-goals -- `gate`-tagged
 sub-goals and the held final PR still merge by human hand exactly as SPEC-034
 intended.
 Why: SPEC-034's non-merge conventions are still correct and already have a live
-consumer (`lib/orchestrate.sh`); re-deriving them would risk drifting from what the
+consumer (`lib/queue/orchestrate.sh`); re-deriving them would risk drifting from what the
 driver actually expects. Only the specific decision ADR-0028 changed (auto-merge
 policy) needed to change; everything else SPEC-034 got right stays as-is.
 
@@ -82,7 +82,7 @@ Context: SPEC-034 TASK-004 proposed a small skill that re-surfaces the next
 unchecked sub-goal every turn, because the built-in `/goal`/`ralph-loop` activators
 were verified (via claude-code-guide, SPEC-034's own research) to re-inject only
 literal prompt text, never auto-re-reading referenced files.
-Decision: not built as part of this spec. `lib/orchestrate.sh` (SPEC-087,
+Decision: not built as part of this spec. `lib/queue/orchestrate.sh` (SPEC-087,
 already shipped) is a non-LLM bash driver that reads `ROADMAP.md` fresh on every
 `cmd_next` call by construction -- it has no "stale re-injected text" failure mode
 to begin with, so the injection skill's reason for existing does not apply to that
@@ -96,6 +96,6 @@ behavior as part of its pointer convention.
 ## Deviations from the SG-08 goal file
 
 None. The goal file's contract (mirror the skill's three beats in `commands/mega.md`;
-`gate`/`merge` split in `lib/mega-merge.sh` with dry-run default and the
+`gate`/`merge` split in `lib/goal/mega-merge.sh` with dry-run default and the
 load-bearing negative control; deploy/UAT terminus via SG-07's `deployable`
 verb) is implemented as specified.

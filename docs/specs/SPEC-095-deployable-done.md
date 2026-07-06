@@ -2,7 +2,7 @@
 
 Status: VALIDATED
 Date: 2026-07-02
-Lane: full (touches AGENTS.md operate-contract + the shared `lib/proof-ledger.sh` surface
+Lane: full (touches AGENTS.md operate-contract + the shared `lib/gate/proof-ledger.sh` surface
 consumed by `hooks/ship-gate.sh`)
 Type: feature
 Relates-to: ADR-0028 (autonomous-loop hardening, "Conditional deployable-done" property),
@@ -18,13 +18,13 @@ a flag, anything that runs somewhere), `done` should mean a deploy-proof + UAT, 
 ship, reusing the ADR-0025 stateful proof shape. Today that intent exists only in the ADR
 prose -- there is no explicit AGENTS.md contract naming what "deployable" means or what it
 owes, so an autonomous run has no operate-contract line to point at, and the
-already-shipped enforcement mechanism (the `stateful` branch of `lib/proof-ledger.sh
+already-shipped enforcement mechanism (the `stateful` branch of `lib/gate/proof-ledger.sh
 check()`, wired into `hooks/ship-gate.sh` per ADR-0025) is not documented as answering this
 specific ADR-0028 property.
 
 ## Decision (reuse, do not reinvent)
 
-The `stateful` proof class `lib/proof-ledger.sh classify()` already computes (deploy /
+The `stateful` proof class `lib/gate/proof-ledger.sh classify()` already computes (deploy /
 rollout / production / migration / schema / database / persistent-state / backup / restore
 signals in the diff or commit subjects) **IS** the deployable signal. This spec does not
 build a second classifier or tighten the shared `classify()`/`check()` logic (both stay
@@ -32,13 +32,13 @@ byte-identical in behavior; other repos consuming this lib via `~/.claude/dwarve
 unaffected). It makes the existing mapping explicit and contract-level:
 
 1. **AGENTS.md zone-3 clause ("Deployable-done").** `## 3. Done means` gains a clause
-   defining DEPLOYABLE work as `lib/proof-ledger.sh classify`'s `stateful` class, and
+   defining DEPLOYABLE work as `lib/gate/proof-ledger.sh classify`'s `stateful` class, and
    stating `done` = a deploy-proof (the existing ADR-0025 stateful shape: a recorded run
    with `Command:`/`Exit:` AND a `rollback` note or `[UNAVAILABLE: reason]`) PLUS a
    UAT/acceptance line, enforced at ship via the same `hooks/ship-gate.sh` ->
    `proof-ledger.sh check` wall every stateful change already passes through. INERT /
    library / refactor / docs work (`inert`/`behavioral` classes) is explicitly unchanged.
-2. **A purely-additive `deployable` verb in `lib/proof-ledger.sh`.** `deployable <root>
+2. **A purely-additive `deployable` verb in `lib/gate/proof-ledger.sh`.** `deployable <root>
    <base>` prints `yes`/`no` by calling the existing `classify()` and mapping
    `stateful -> yes`, everything else `-> no`. It does not read or modify `classify()`'s or
    `check()`'s logic -- a thin relabel for call-site readability, not a second classifier.
@@ -64,7 +64,7 @@ unaffected). It makes the existing mapping explicit and contract-level:
 - AC5 [contract]: `AGENTS.md` `## 3. Done means` carries a "Deployable-done" clause that
   (a) defines deployable via the `stateful` class, (b) states done = deploy-proof + UAT,
   (c) states inert/library/refactor work is unchanged.
-- AC6 [shared-path safety]: `lib/proof-ledger.sh classify()` and `check()` are
+- AC6 [shared-path safety]: `lib/gate/proof-ledger.sh classify()` and `check()` are
   byte-unchanged in logic (only a new, separately-dispatched `deployable` function and
   case-arm are added); every previously-green test in `tests/test-proof-*.sh`,
   `tests/test-ship-gate-*.sh`, `tests/test-meta.sh`, and `tests/test-hooks.sh` stays green.
@@ -72,7 +72,7 @@ unaffected). It makes the existing mapping explicit and contract-level:
 ## Tasks
 
 - T1: `AGENTS.md` -- add the "Deployable-done" clause to `## 3. Done means`.
-- T2: `lib/proof-ledger.sh` -- add the additive `deployable <root> <base>` verb + dispatch
+- T2: `lib/gate/proof-ledger.sh` -- add the additive `deployable <root> <base>` verb + dispatch
   case; `classify()`/`check()` untouched.
 - T3: `tests/fixtures/deployable-done/` -- a deployable-change fixture (a `deploy/`-path
   script + a "deploy:" commit subject), an inert-change fixture (docs-only), and a
@@ -105,7 +105,7 @@ bash tests/test-hooks.sh                 # shared-path safety
 - Actually deploying or UAT-ing any real service -- this spec BUILDS the contract + gate
   affordance; it does not deploy anything (per the SG-07 goal file's Scope edges).
 - Per-repo deployability definitions -- the classifier stays the general one
-  `lib/proof-ledger.sh classify()` already uses.
+  `lib/gate/proof-ledger.sh classify()` already uses.
 
 ## Decision Log
 

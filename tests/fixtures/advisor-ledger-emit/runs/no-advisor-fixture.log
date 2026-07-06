@@ -1,0 +1,3 @@
+2026-07-04T09:00:00Z | START | lane=tiny classified=tiny type=spec-feature ctype=spec-feature repo=dwarves-kit
+2026-07-04T09:00:01Z | GATE | build | ran | one-line fix, no advisor dispatch on this rid
+2026-07-04T09:00:02Z | GATE | review | ran | SHIP findings=0 suppressed=0 rejected=0 actor=Test Actor

@@ -35,6 +35,15 @@ jobs:
 
       - name: Run meta integrity tests
         run: bash tests/test-meta.sh
+
+      - name: Run docs-wiring no-orphan sweep
+        run: bash tests/test-docs-wiring.sh
+
+      - name: Run delivery-ratio advisory tests
+        run: bash tests/test-delivery-ratio.sh
+
+      - name: Run layered-install module tests (ID-277 SG-04)
+        run: bash tests/test-install-modules.sh
       - name: Golden run (e2e)
         run: bash tests/test-e2e.sh
 
@@ -44,11 +53,41 @@ jobs:
       - name: Run orchestrator tests
         run: bash tests/test-orchestrate.sh
 
+      - name: Run wavefront scheduling tests (SPEC-106)
+        run: bash tests/test-orchestrate-wavefront.sh
+
+      - name: Run multiplexer pane tests (SPEC-119)
+        run: bash tests/test-multiplexer.sh
+
+      - name: Run TIER-4 mega-close tests (SPEC-118)
+        run: bash tests/test-tier4-close.sh
+
+      - name: Run pane-viewer push tests (SPEC-120)
+        run: bash tests/test-pane-viewer.sh
+
+      - name: Run token-capture tests (SPEC-117)
+        run: bash tests/test-token-capture.sh
+
+      - name: Run model-routing tests (SPEC-116)
+        run: bash tests/test-model-routing.sh
+
+      - name: Run spec-index tests
+        run: bash tests/test-spec-index.sh
+
+      - name: Run spec-reservation race tests (SPEC-128)
+        run: bash tests/test-spec-reserve.sh
+
+      - name: Run mutation-smoke tests (SPEC-131)
+        run: bash tests/test-mutation-smoke.sh
+
       - name: Run role-classify tests (SPEC-089)
         run: bash tests/test-role-classify.sh
 
       - name: Run lane-classify rule tests (SPEC-098)
         run: bash tests/test-lane-classify.sh
+
+      - name: Run significance-classify tests (SPEC-123)
+        run: bash tests/test-significance-classify.sh
 
       - name: Run lane-telemetry render tests (SPEC-099)
         run: bash tests/test-lane-telemetry.sh
@@ -59,8 +98,71 @@ jobs:
       - name: Run ledger-durability tests (SPEC-097)
         run: bash tests/test-ledger-durability.sh
 
+      - name: Run ledger append-substrate tests (SPEC-182, kit-modularity SG-02)
+        run: bash tests/test-ledger-substrate.sh
+
+      - name: Run stats no-persist lint + snapshot (SPEC-182, kit-modularity SG-02)
+        run: bash tests/test-stats-no-persist.sh
+
+      - name: Run gate-outcome emit tests (SPEC-129)
+        run: bash tests/test-gate-outcome.sh
+
       - name: Run meta-agent tests (SPEC-089 / dynamic agent synthesis)
         run: bash tests/test-meta-agent.sh
 
       - name: Run proof visual-evidence tests
         run: bash tests/test-proof-visual-evidence.sh
+
+      - name: Run design-record tests (SPEC-122, understanding-gate SG-01)
+        run: bash tests/test-design-record.sh
+
+      - name: Run explain-command tests (SPEC-124, understanding-gate SG-03)
+        run: bash tests/test-explain.sh
+
+      - name: Run quiz-gate tests (SPEC-125, understanding-gate SG-04)
+        run: bash tests/test-quiz-gate.sh
+
+      - name: Run weekend-batch tests (SPEC-126, understanding-gate SG-05)
+        run: bash tests/test-weekend-batch.sh
+
+      - name: Run understanding-axis no-orphan wiring tests (SPEC-127, understanding-gate SG-06)
+        run: bash tests/test-understanding-wiring.sh
+
+      - name: Run generated proof-table tests (SPEC-132, kit-run-integrity SG-05)
+        run: bash tests/test-proof-table-gen.sh
+
+      - name: Run security-hardening tests (SPEC-134, kit-run-integrity TIER-4)
+        run: bash tests/test-security-hardening.sh
+
+      - name: Run coverage-delta gate tests (SPEC-130, advisory)
+        run: bash tests/test-coverage-delta.sh
+
+      - name: Run kit-run-integrity docs-wiring no-orphan check (SPEC-135)
+        run: bash tests/test-kri-wiring.sh
+
+      - name: Run grill-conditioning tests (SPEC-138, kit-absorptions sub-goal 04)
+        run: bash tests/test-grill-conditioning.sh
+
+      - name: Run command emit-sweep no-orphan check (SPEC-139, kit-run-integrity sub-goal 05)
+        run: bash tests/test-command-emit-sweep.sh
+
+      - name: Run pitch buy-in assembler tests (SPEC-140, kit-run-integrity sub-goal 06)
+        run: bash tests/test-pitch.sh
+
+      - name: Run lane de-escalation tests (SPEC-141, kit-run-integrity sub-goal 07)
+        run: bash tests/test-lane-deescalate.sh
+
+      - name: Run advisor ledger-emit tests (SPEC-145, gate-review-absorptions sub-goal 06)
+        run: bash tests/test-advisor-ledger-emit.sh
+
+      - name: Run cockpit board tests (SPEC-146, runner-fastpath sub-goal 04)
+        run: bash tests/test-board.sh
+
+      - name: Run board-bridge mirror tests (SPEC-147, runner-fastpath sub-goal 07)
+        run: bash tests/test-board-mirror.sh
+
+      - name: Run board-bridge writeback tests (SPEC-149, runner-fastpath sub-goal 08)
+        run: bash tests/test-board-writeback.sh
+
+      - name: Run mega status reconciler tests (kit-modularity sub-goal 08)
+        run: bash tests/test-mega.sh

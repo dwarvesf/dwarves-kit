@@ -11,12 +11,12 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-GL="$KIT_DIR/lib/gate-ledger.sh"
-LT="$KIT_DIR/lib/lane-telemetry.sh"
-LC="$KIT_DIR/lib/lane-classify.sh"
-PL="$KIT_DIR/lib/proof-ledger.sh"
+GL="$KIT_DIR/lib/gate/gate-ledger.sh"
+LT="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
+LC="$KIT_DIR/lib/classify/lane-classify.sh"
+PL="$KIT_DIR/lib/gate/proof-ledger.sh"
 PREC="$KIT_DIR/lib/precedent.sh"
-MM="$KIT_DIR/lib/mega-merge.sh"
+MM="$KIT_DIR/lib/goal/mega-merge.sh"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -159,6 +159,16 @@ bash "$GL" override inj design "$INJ" >/dev/null 2>&1 || true
 CHK="$(bash "$GL" check full inj 2>&1 || true)"
 printf '%s' "$CHK" | grep -q "MISSING-GATE: build"; assert "SEC-1: forged 'build | ran' does NOT satisfy check() (still reported missing)" $?
 unset DWARVES_KIT_LOG_DIR
+
+# --- SPEC-110: the tokens verb writes an ADDITIVE marker that check() IGNORES ---
+TOKD="$(mktemp -d)/logs"
+DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" start trun normal normal spec-feature spec-feature rp >/dev/null 2>&1
+for ph in spec build ship; do DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" record trun "$ph" ran x >/dev/null 2>&1; done
+DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" tokens trun in=1200 out=80 cache_read=4000 cache_create=0 cost=0.05 >/dev/null 2>&1
+grep -q '| TOKENS | in=1200 out=80 cache_read=4000 cache_create=0 cost=0.05' "$TOKD/runs/trun.log"; assert "SPEC-110: tokens verb appends a TOKENS line (cost keeps its decimal)" $?
+DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" check normal trun >/dev/null 2>&1; assert "SPEC-110: check() PASSES with a TOKENS line present (marker is gate-invisible)" $?
+DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" tokens trun in=1,2ab out=-5 cache_read=x cache_create=9 >/dev/null 2>&1
+grep -qE '\| TOKENS \| in=12 out=5 cache_read=0 cache_create=9$' "$TOKD/runs/trun.log"; assert "SPEC-110: tokens sanitizes integer values to digits (junk stripped)" $?
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

@@ -38,7 +38,7 @@ reviewers or a new mid-flight block.
 ## Verification
 ```
 bash tests/test-every-step-review.sh   # AC1-AC3; real gate-ledger block/pass negative control
-bash lib/gate-ledger.sh required full   # the required phase set (every review-bearing phase)
+bash lib/gate/gate-ledger.sh required full   # the required phase set (every review-bearing phase)
 bash tests/test-meta.sh                 # WORKFLOW/roster stays green
 ```
 Proof-of-done: table-first run-table with the mapping-coverage rows + the block/pass negative control.

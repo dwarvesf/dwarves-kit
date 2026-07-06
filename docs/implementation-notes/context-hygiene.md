@@ -13,7 +13,7 @@ SPEC-087 + ADR-0027; this records off-spec authoring decisions.
   signal, and distilled returns demoted to phase-2 Mechanism C. The load-bearing call
   (DEC-004): the loop driver must be dumb code, not an LLM session, or it re-accumulates and
   becomes the new marathon.
-- Impl choice: phase-1 implementation is bash `lib/orchestrate.sh` driving `claude -p`
+- Impl choice: phase-1 implementation is bash `lib/queue/orchestrate.sh` driving `claude -p`
   (matches the existing lib/ drivers; Agent SDK is the upgrade path). The `claude` binary is
   injected via `CLAUDE_CMD` so the test mocks it and the operator tunes the permission flags.
 - PR split: the spec/ADR revision rides the SG-03 design PR (#80); the orchestrator code is a

@@ -8,7 +8,7 @@ You are a senior technical architect producing a development specification. The 
 
 ### Step 1: Gather intent
 
-If a `docs/specs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`). Otherwise, ask the user:
+If a `docs/briefs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
 - What are you building? (one paragraph)
 - Is this greenfield or modifying existing code?
 - What's the tech stack? (or read from CLAUDE.md / package.json / go.mod)
@@ -55,7 +55,7 @@ Find landmines in [target area]. Look for: deprecated code still referenced, TOD
 
 #### After research (both modes)
 
-Synthesize all 4 reports into `docs/specs/CONTEXT.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; CONTEXT.md is the distilled version that worker subagents read.
+Synthesize all 4 reports into `docs/briefs/CONTEXT.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; CONTEXT.md is the distilled version that worker subagents read.
 
 For **greenfield** projects, skip this step entirely. There's nothing to research.
 
@@ -66,14 +66,23 @@ Source: GSD v1's 4 parallel researchers. Mode A uses formal `.claude/agents/` fi
 Create `docs/specs/` directory if it doesn't exist. Generate these files:
 
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
-`bash lib/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
+`bash lib/spec/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
 names and recent commit subjects, the two surfaces where a number ages invisibly inside
-an unmerged PR (two collisions in one week before this guard, SPEC-064 / ID-052):
+an unmerged PR (two collisions in one week before this guard, SPEC-064 / ID-052). If a
+wavefront dispatch already RESERVED a number for you (a `RESERVED SPEC NUMBER` block in
+your prompt, SPEC-128), use THAT number instead of re-deriving one: it was claimed
+atomically at dispatch so no sibling wave worker can take it.
 
 ```markdown
 # Spec: [feature name]
 Generated: [date]
 Status: DRAFT | APPROVED
+References: [optional , one or more pointers to source code or docs that already implement the
+wanted semantics, each with one line on what to imitate (the specific behavior, interface
+shape, or algorithm , not "do it like this project" in general). Source beats a from-scratch
+description: point at the real thing before describing it in prose. Cross-language references
+are fine; the semantics transfer even where the syntax doesn't. Omit the whole line when there
+is no reference to point at.]
 
 ## Problem
 [What user pain does this solve? Copy from decision brief if available.]
@@ -92,8 +101,47 @@ Which one, and what the rejected alternatives traded away.
 - What changes when the load-bearing dimension grows (more data, more scale, a new variant)? Name the dimension; don't hand-wave "it scales".
 - Unit boundaries: each piece has one purpose, a defined interface, testable independently. A unit needing more than 3 sentences to describe is a split candidate.
 
-### Architecture (diagram if it helps)
-[High-level shape / data flow.]
+### Architecture
+See `## Design` below , ADR-0031 §1 promotes the diagram out of this sub-section into its
+own gated block, so a design-bearing spec cannot ship an empty architecture hint.
+
+## Design
+<!-- ADR-0031 §1 (the understanding gate, BEFORE half). Required (non-empty) for any spec
+     above the tiny lane that is DESIGN-BEARING: new component/module, non-obvious control
+     flow, schema/data-model change, external integration, an irreversible choice, or 2+
+     viable approaches. Otherwise collapse this WHOLE block to one line: `obvious: <why>` --
+     do not force a diagram or the sub-headings below on obvious work.
+     Enforced by /kit:spec-validate Reviewer 6: a design-bearing spec with an empty/missing
+     Design block is refused VALIDATED (blocking, unlike the other 5 advisory reviewers). -->
+
+**Ordering:** when this design covers more than one decision, write about them in order of
+likelihood-to-tweak , the parts most expensive to change once other code depends on them get
+the most attention first. Data models and public interfaces first (they harden fastest and are
+costliest to revise later), UX flows next, mechanical refactors last (cheapest to revisit,
+lowest design-review priority).
+
+### Approaches considered + chosen
+Point at `## Solution`'s `### Approaches considered` / `### Chosen approach + why` above (the
+same SPEC-008 depth); do not re-litigate it here unless the design view surfaces a new tradeoff.
+
+### Diagram (pick by fit, mermaid-first)
+One diagram, the kind that actually clarifies , not all five:
+- **sequence** -- control flow / protocol between actors
+- **state** -- an entity's lifecycle
+- **ER** -- schema / data-model shape
+- **flowchart** -- an algorithm / decision path
+- **C4 container-or-component (LITE)** -- where a new component sits; ONE level only, never
+  four cargo-culted levels
+
+Prefer Mermaid (GitHub-native, diffable, hand-editable) over a binary image.
+
+### ADR link(s)
+Link the ADR(s) that record any lasting or irreversible decision this design makes. If the
+decision is irreversible and no ADR exists yet, say so and note the follow-up.
+
+### Boundaries & failure modes
+Required when this design touches data, an external integration, or a migration. What is out
+of bounds for this design; point at `## Failure modes` below rather than duplicating its table.
 
 ## Technical Design
 <!-- Interfaces + Failure modes forked from ops-toolkit SDD (agency-lead-radar / tide). See docs/specs/SPEC-009. -->
@@ -150,7 +198,7 @@ Optional; expected for full-lane specs that touch an external provider, data los
 - [thing explicitly excluded and why]
 
 ## Touches
-Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concurrent cross-goal fan-out). The directory-prefix globs this spec will write, one per line. Form is constrained to `dir/**` or `dir/sub/**`: no `*.md`, `**/x`, `a/*.ext`, or brace globs (the disjointness gate serializes any pair it cannot PROVE disjoint, so a non-prefix glob forces conservative serialization). Do NOT list the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, etc.); they are excluded automatically and the convergence step writes them once. The gate (`lib/dispatch-gate.sh`) reads this section; a dispatch-eligible spec lacking it is rejected, not assumed-empty.
+Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concurrent cross-goal fan-out). The directory-prefix globs this spec will write, one per line. Form is constrained to `dir/**` or `dir/sub/**`: no `*.md`, `**/x`, `a/*.ext`, or brace globs (the disjointness gate serializes any pair it cannot PROVE disjoint, so a non-prefix glob forces conservative serialization). Do NOT list the lead-owned hands-off shared surfaces (CHANGELOG, VERSION, plugin.json, etc.); they are excluded automatically and the convergence step writes them once. The gate (`lib/gate/dispatch-gate.sh`) reads this section; a dispatch-eligible spec lacking it is rejected, not assumed-empty.
 - path/to/area/**
 - another/area/**
 
@@ -169,7 +217,7 @@ Optional; written on-demand by `/kit:review` or `/kit:review-team`, never an emp
 (none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)
 ```
 
-**`docs/specs/CONTEXT.md`** (for Claude Code sessions):
+**`docs/briefs/CONTEXT.md`** (for Claude Code sessions):
 
 ```markdown
 # Context for implementation
@@ -199,3 +247,6 @@ Ask: "Approve this spec, or do you want to adjust anything?"
 When approved, update the Status line in SPEC.md to `APPROVED`.
 
 Remind the user they can run `/kit:spec-validate` for adversarial review before implementation.
+
+After approval, record it for lane telemetry (SPEC-139), one line:
+`bash lib/gate/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.

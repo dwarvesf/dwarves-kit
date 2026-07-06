@@ -18,7 +18,7 @@ Source: docs/absorption/2026-06-11-pinned-kits.md #3 (cursor verify-this, MIT,
    honest answer is neither pass nor fail (today such runs get forced into a
    fake binary); (c) `docs/verification/README.md` run-record shape gains an
    OPTIONAL `Baseline:/Treatment:/Delta:/Threshold:` evidence line for
-   comparative claims (perf/memory/UX). `lib/proof-ledger.sh` DEVIATION (review HIGH): the
+   comparative claims (perf/memory/UX). `lib/gate/proof-ledger.sh` DEVIATION (review HIGH): the
    absorption sketch said untouched, but a record with `Verdict: INCONCLUSIVE`
    plus `Exit: 0` satisfied the gate via the Exit alternative , the gate now
    carries an explicit INCONCLUSIVE rejection guard on both check paths, pinned

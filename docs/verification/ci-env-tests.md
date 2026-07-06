@@ -24,12 +24,12 @@ count-guarded or static; only stack-merge.sh was exposed.
 
 ## Fix
 
-- `lib/stack-merge.sh` main() dispatch: `${args[@]+"${args[@]}"}` guard on `next` and `chain` (4425f4d).
+- `lib/goal/stack-merge.sh` main() dispatch: `${args[@]+"${args[@]}"}` guard on `next` and `chain` (4425f4d).
 - `tests/test-hooks.sh` colors test: detect script(1) flavor via `script --version | grep util-linux`, use `script -qec "<cmd>" /dev/null` on util-linux, BSD positional form otherwise (568cb58).
 
 ## Green run
 
-Command: `/bin/bash lib/stack-merge.sh chain --dry-run` (bash 3.2.57, the failing interpreter)
+Command: `/bin/bash lib/goal/stack-merge.sh chain --dry-run` (bash 3.2.57, the failing interpreter)
 Exit: 64, output `usage: chain <pr#> [<pr#>...] [--dry-run]`
 
 Command: `/bin/bash tests/test-hooks.sh` (full suite under 3.2, macOS CI parity)
@@ -48,8 +48,8 @@ test (macos-latest) pass 30s; test (ubuntu-latest) pass 25s.
 
 Run 2026-06-10 after the green run, on the fix branch:
 
-1. `git checkout HEAD~2 -- lib/stack-merge.sh tests/test-hooks.sh` then
-   `/bin/bash lib/stack-merge.sh chain --dry-run` -> `line 85: args[@]: unbound variable`, exit 1 (RED).
+1. `git checkout HEAD~2 -- lib/goal/stack-merge.sh tests/test-hooks.sh` then
+   `/bin/bash lib/goal/stack-merge.sh chain --dry-run` -> `line 85: args[@]: unbound variable`, exit 1 (RED).
    Restore (`git checkout HEAD -- ...`) -> exit 64 with usage (GREEN).
 2. `git checkout HEAD~1 -- tests/test-hooks.sh` then suite in ubuntu:24.04 container ->
    `FAIL colors: PTY progress emits escape bytes (condition false)` (RED).
@@ -57,7 +57,7 @@ Run 2026-06-10 after the green run, on the fix branch:
 
 ## Reproduce
 
-- RED side, bug 1: check out 0469c65 (or revert 4425f4d) and run `/bin/bash lib/stack-merge.sh chain --dry-run` on any macOS box; expect exit 1.
+- RED side, bug 1: check out 0469c65 (or revert 4425f4d) and run `/bin/bash lib/goal/stack-merge.sh chain --dry-run` on any macOS box; expect exit 1.
 - RED side, bug 2: revert 568cb58 and run `bash tests/test-hooks.sh` on any util-linux distro; expect the PTY colors FAIL.
 - GREEN side: this branch; CI run 27286820530.
 

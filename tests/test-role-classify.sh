@@ -4,7 +4,7 @@
 # fall-through is asserted (a plain task must NOT be over-specialized).
 set -u
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-RC="$KIT_DIR/lib/role-classify.sh"
+RC="$KIT_DIR/lib/classify/role-classify.sh"
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
 expect() {  # expect "<desc>" <domain>
@@ -38,6 +38,16 @@ TOTAL=$((TOTAL+1))
 if bash "$RC" explain "harden auth" | grep -q 'matched:'; then PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} explain shows the matched phrase"; else FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} explain"; fi
 TOTAL=$((TOTAL+1))
 if bash "$RC" classify >/dev/null 2>&1; then FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} classify with no arg should error"; else PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} classify with no arg errors (exit!=0)"; fi
+
+echo ""
+echo "=== agent-for lookup (SPEC-111: worker domains -> workers; reviewers/generic -> empty) ==="
+TOTAL=$((TOTAL+1)); [ "$(bash "$RC" agent-for db-migration)" = "db-migration-worker" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} agent-for db-migration -> db-migration-worker"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} agent-for db-migration"; }
+TOTAL=$((TOTAL+1)); [ "$(bash "$RC" agent-for data-etl)" = "data-etl-worker" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} agent-for data-etl -> data-etl-worker"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} agent-for data-etl"; }
+for d in performance api frontend infra security generic; do
+  TOTAL=$((TOTAL+1)); [ -z "$(bash "$RC" agent-for "$d")" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} agent-for $d -> empty (reviewer via review-team / Mode-C, not a 2b-0 worker)"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} agent-for $d should be empty"; }
+done
+# reuse-HIT chain: a worker-domain task classifies then resolves to its worker (the 2b-0 reuse source)
+TOTAL=$((TOTAL+1)); D=$(bash "$RC" classify "write a migration to add a column and backfill the table"); [ "$(bash "$RC" agent-for "$D")" = "db-migration-worker" ] && { PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} reuse-hit chain: migration task -> db-migration-worker"; } || { FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} reuse-hit chain (got domain='$D')"; }
 
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="

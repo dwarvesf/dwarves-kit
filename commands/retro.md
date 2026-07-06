@@ -50,7 +50,7 @@ This is **advisory, never a block** (PHILOSOPHY "Detect, don't dictate": the kit
 
 ### Step 1d: Lane telemetry sweep (SPEC-061)
 
-Run `bash lib/lane-telemetry.sh report` and `bash lib/lane-telemetry.sh misfires`. Surface
+Run `bash lib/telemetry/lane-telemetry.sh report` and `bash lib/telemetry/lane-telemetry.sh misfires`. Surface
 the aggregates (per-lane runs, misroute count, gate skip/override counts, ship rate, untracked
 runs) as retro signal. **Disposition contract:** every misfire line MUST leave the retro as one
 of (a) a classifier keyword fix + truth-table pin (the SPEC-057/SPEC-060 pattern: a real
@@ -123,3 +123,7 @@ Check if any action items should become:
 - Adjustments to hook configuration
 
 Ask: "Any of these action items worth adding to the project CLAUDE.md or kit config?"
+
+After the retro document is written, record it for lane telemetry (SPEC-139), one line
+(the matrix row this command owns is `Reflect`, not `retro`):
+`bash lib/gate/gate-ledger.sh record <rid> Reflect ran "action-items=<N>"`.

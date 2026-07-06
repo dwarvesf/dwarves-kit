@@ -5,7 +5,7 @@ stateful class is honestly marked unavailable (dwarves-kit has no deploy/migrati
 the inert class shows the exempt marker. Shape: `docs/verification/README.md`.
 
 ## 2026-06-06 23:50 PASS -- behavioral class (the proof-gate classifier's real flow)
-- Command: `bash lib/proof-gate.sh class "run the database migration to add a users table"` (and `deploy to production`, `add a --version flag`, `fix a typo`)
+- Command: `bash lib/gate/proof-gate.sh class "run the database migration to add a users table"` (and `deploy to production`, `add a --version flag`, `fix a typo`)
 - Exit: 0
 - Output (excerpt):
   ```
@@ -19,11 +19,11 @@ the inert class shows the exempt marker. Shape: `docs/verification/README.md`.
   proxy test. The tool does its actual job: map a task to its proof class.
 
 ## 2026-06-06 23:50 NEGATIVE CONTROL -- behavioral class
-- Command: `git worktree add --detach /tmp/rg2 HEAD && cd /tmp/rg2 && mv -f lib/proof-gate.sh /tmp/ && bash lib/proof-gate.sh class "deploy to production"; bash tests/test-hooks.sh`  (throwaway worktree; removed after; shared checkout untouched)
+- Command: `git worktree add --detach /tmp/rg2 HEAD && cd /tmp/rg2 && mv -f lib/gate/proof-gate.sh /tmp/ && bash lib/gate/proof-gate.sh class "deploy to production"; bash tests/test-hooks.sh`  (throwaway worktree; removed after; shared checkout untouched)
 - Exit: 127 (classify), then 1 (test-hooks)
 - Output (excerpt):
   ```
-  bash: lib/proof-gate.sh: No such file or directory      # classify_exit=127
+  bash: lib/gate/proof-gate.sh: No such file or directory      # classify_exit=127
   FAIL proof: a migration -> stateful (output missing '^stateful$')
   FAIL proof: a deploy -> stateful (output missing '^stateful$')
   FAIL proof: a feature -> behavioral (output missing '^behavioral$')
@@ -52,7 +52,7 @@ the inert class shows the exempt marker. Shape: `docs/verification/README.md`.
   stateful path live, target a repo that actually deploys or migrates.
 
 ## Provenance
-- behavioral: real CLI runs of `lib/proof-gate.sh` (deterministic), captured verbatim;
+- behavioral: real CLI runs of `lib/gate/proof-gate.sh` (deterministic), captured verbatim;
   negative control reverted the real file in an isolated worktree.
-- Reproduce: `bash lib/proof-gate.sh class "<task>"`; for the negative control, replay the
+- Reproduce: `bash lib/gate/proof-gate.sh class "<task>"`; for the negative control, replay the
   `Command:` line above in a throwaway worktree.

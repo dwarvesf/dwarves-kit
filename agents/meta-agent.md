@@ -29,7 +29,7 @@ If you can pull the current Claude Code subagent/tool docs with WebFetch to conf
 ### Mode B: mega-goal sub-goal file (`goals/NN-<slug>.md`)
 
 Draft a `plan-for-mega-goal` sub-goal file. Match the template at
-`~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md`
+`~/.claude/skills/plan-for-mega-goal/references/subgoal-template.md`
 (read it if reachable). Required shape: `# Sub-goal NN: <name>`; then `**Merge policy:**` (`auto|gate`, default `gate`), `**Time budget:**`, `**Proof:**` (evidence form scaled to complexity), `**Depends on:**`, bare `Model:` / `Effort:` lines (omit to inherit), `**Branch:**`, `**PR base:**`; then `## Outcome`, `## Quality bar`, `## How to close the loop` ending in a bold `**Done =**` boolean, `## Handoff on completion`, `## Scope edges` (In/Out/Not), `## Where to look`, `## PR body`, `## Notes`. `Done =` MUST be specific to this sub-goal, mappable to captured evidence, never "I ran it and it worked".
 
 ### Mode C: inline role spec (for immediate same-run dispatch)
@@ -40,7 +40,7 @@ predefined agent covers, and must dispatch it THIS run. A file install would onl
 you do NOT use the DRAFT marker. You RETURN a role spec the caller injects as a worker's prompt preamble.
 
 **You are the OPEN-ENDED role authority.** The role space is NOT a fixed list. The caller may pass a
-cheap domain HINT from `lib/role-classify.sh` (`security`, `frontend`, ...), but that classifier only
+cheap domain HINT from `lib/classify/role-classify.sh` (`security`, `frontend`, ...), but that classifier only
 covers high-frequency domains; most real tasks are not in it. Infer the best-fit role for THIS task by
 name, whatever it is: `technical-doc-writer`, `typescript-dev`, `ui-designer`, `solidity-auditor`,
 `market-researcher`, `migration-specialist`, anything. Do not force the task into the hint's domain if a
@@ -54,6 +54,8 @@ TOOLS (advisory): <minimal list, e.g. Read, Grep, Glob, Edit, Bash(npm test *)>
 PREAMBLE:
 You are a <role> specialist. <one-line focus>. <the 2-4 rules/gotchas that matter for THIS task>.
 Stay within the task's scope; do not <the one thing this specialist over-reaches on>.
+Post-condition: <one line: how the caller verifies this worker's output before treating the task
+done , a command to run, a file/state to check, a diff shape to expect. Not "it looks right".>
 ```
 
 2. The task is genuinely plain (a typo, a rename, a one-line doc tweak) , return exactly:
@@ -66,8 +68,11 @@ Rules for Mode C: the PREAMBLE is what makes the generic worker behave like the 
 be concrete to the task (name the real pitfalls of THAT role), not generic boilerplate. Judge honestly
 whether a role adds value , returning `NO_SPECIALIST` for a trivial task is correct, not a failure.
 TOOLS is advisory only: an inline-dispatched worker cannot be tool-restricted (only a registered agent
-file's frontmatter can), so name the minimal set for the human's eyes and for the caller to cache. Keep
-the whole return under ~200 words: it is prepended to a worker prompt, not stored.
+file's frontmatter can), so name the minimal set for the human's eyes and for the caller to cache.
+Post-condition is mandatory whenever a specialist is returned: name a concrete check (a command, a
+file, an expected diff shape) the caller runs to confirm the worker's output before trusting it done ,
+not a restatement of the task. Keep the whole return under ~200 words: it is prepended to a worker
+prompt, not stored.
 
 ## Data-driven routing (Mode B `Model:` / `Effort:`)
 
@@ -75,7 +80,7 @@ When drafting a sub-goal file (Mode B), do NOT guess the `Model:` / `Effort:` fi
 ablation ledger is available, ask the router for the measured-cheapest-at-parity model:
 
 ```
-bash lib/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
+bash lib/classify/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
 # SUGGEST  model=<tier>  ... -> write that tier into the bare `Model:` line
 # ABSTAIN  reason=thin-data ... -> write `Model: sonnet` (the cheap-first default, SPEC-107); OMIT only to deliberately inherit
 ```

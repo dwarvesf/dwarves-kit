@@ -20,7 +20,7 @@ If multiple tasks are available (independent, no ordering constraint), present t
 
 For the selected task, gather:
 - The task description and acceptance criteria from the spec
-- Relevant files mentioned in the task or in `docs/specs/CONTEXT.md`
+- Relevant files mentioned in the task or in `docs/briefs/CONTEXT.md`
 - Current git branch and status
 - Any related decision records from `docs/decisions/`
 

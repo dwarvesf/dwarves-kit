@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+
+# The materialized DuckDB lens is derivable + disposable; never commit it.
+*.duckdb
+*.duckdb.wal
+ledger.duckdb*
+
+# Test scratch / fixtures generated at runtime
+tests/.tmp/

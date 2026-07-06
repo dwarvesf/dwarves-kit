@@ -6,7 +6,7 @@ Type: spec-feature
 
 ## Problem
 
-`lib/lane-classify.sh`'s `kit-machinery` hard-gate matches any textual MENTION of a machinery
+`lib/classify/lane-classify.sh`'s `kit-machinery` hard-gate matches any textual MENTION of a machinery
 basename (`gate-ledger`, `mega-merge`, `lane-classify`, ...), so a doc / research / audit task
 ABOUT the machinery over-classifies to `full` (SPEC-073 lane-rule audit, ID-088). It fails SAFE
 (over-gates, never under-gates), so it is low urgency, but it adds friction on the wave's own
@@ -36,9 +36,9 @@ parsed in the dispatch and stripped before the description reaches `classify_cor
 
 ```bash
 cd dwarves-kit
-bash lib/lane-classify.sh classify --files "" "explain mega-merge.sh in the architecture doc"   # normal
-bash lib/lane-classify.sh classify --files "lib/mega-merge.sh" "add a guard clause"              # full
-bash lib/lane-classify.sh classify "explain mega-merge.sh in the architecture doc"              # full (legacy, no --files)
+bash lib/classify/lane-classify.sh classify --files "" "explain mega-merge.sh in the architecture doc"   # normal
+bash lib/classify/lane-classify.sh classify --files "lib/goal/mega-merge.sh" "add a guard clause"              # full
+bash lib/classify/lane-classify.sh classify "explain mega-merge.sh in the architecture doc"              # full (legacy, no --files)
 bash tests/test-lane-classify.sh   # 23/23; the new edit-vs-mention block + regression guard
 ```
 
@@ -49,7 +49,7 @@ current text behavior unchanged** (the regression guard). All green on bash 5.x 
 macos CI runner).
 
 **Not yet wired into callers (in scope: the discriminator + interface only).** No command passes
-`--files` yet (`commands/assign.md`, `commands/dispatch.md`, `lib/orchestrate.sh:_emit_start` all
+`--files` yet (`commands/assign.md`, `commands/dispatch.md`, `lib/queue/orchestrate.sh:_emit_start` all
 still classify text-only), so the over-gate this fixes still occurs in practice until a follow-up
 wires `--files` at a site that has the touched-file list (the `git diff` at spec->build). That
 wiring is deliberately out of this sub-goal (it owed the signal, not the plumbing); tracked as a
@@ -58,7 +58,7 @@ proof, not a live behavior change on existing callers.
 
 ## After state
 
-- `lib/lane-classify.sh` accepts `--files` on `classify`/`explain`/`check` and escalates the
+- `lib/classify/lane-classify.sh` accepts `--files` on `classify`/`explain`/`check` and escalates the
   `kit-machinery` gate on a machinery-file edit, not a mention; text-only behavior unchanged
   without `--files`.
 - `docs/verification/edit-vs-mention.md` carries the run-table + negative controls.

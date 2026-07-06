@@ -8,7 +8,7 @@ Relates-to: SPEC-050 (flag-scoring classifier), SPEC-053 (floor guard), SPEC-094
 Board: ops-toolkit ID-149 (narrowed remainder); kit-telemetry mega-goal SG-03
 
 ## Problem
-The `kit-machinery` hard-gate flag in `lib/lane-classify.sh` (line 54) escalates
+The `kit-machinery` hard-gate flag in `lib/classify/lane-classify.sh` (line 54) escalates
 kit-internal work to the `full` lane by matching machinery tokens. Audited against the
 task shapes that ACTUALLY occurred in the kit-hardening + kit-telemetry waves, its regex
 covers `gate-ledger`, `ship-gate`, `lane-classify`, `proof-gate`, `task-type-classify`,
@@ -21,12 +21,12 @@ libs (`precedent`, `route-suggest`, `spec-index`, `spec-next`, `verif-counts`) a
 DELIBERATELY held at `normal` , they are read-back / navigation / counting helpers, not
 enforcement surfaces.
 
-Evidence (occurred shapes, `lib/lane-classify.sh classify`):
-- `add a render subcommand to lib/lane-telemetry.sh` -> **normal** (should be full)
-- `add a code-level guard to lib/mega-merge.sh` -> **normal**
-- `log overrides in lib/proof-ledger.sh` -> **normal**
-- `durable resolver in lib/kit-log-dir.sh` -> **normal**
-- (control) `fix the parser in lib/gate-ledger.sh` -> full ✓
+Evidence (occurred shapes, `lib/classify/lane-classify.sh classify`):
+- `add a render subcommand to lib/telemetry/lane-telemetry.sh` -> **normal** (should be full)
+- `add a code-level guard to lib/goal/mega-merge.sh` -> **normal**
+- `log overrides in lib/gate/proof-ledger.sh` -> **normal**
+- `durable resolver in lib/telemetry/kit-log-dir.sh` -> **normal**
+- (control) `fix the parser in lib/gate/gate-ledger.sh` -> full ✓
 
 These are not speculative shapes: SG-01 (this wave) touched all four; SG-04/05 (dashboard,
 merge-guard) touch `lane-telemetry`/`mega-merge`.
@@ -47,17 +47,17 @@ signal the classifier does not have (a rewrite, explicitly out of scope). Wideni
 set widens this surface; filed as a follow-up board row, not fixed here.
 
 ## Acceptance criteria
-- AC1: `classify "add a render subcommand to lib/lane-telemetry.sh"` -> `full`.
-- AC2: `classify "add a code-level guard to lib/mega-merge.sh"` -> `full`.
-- AC3: `classify "log overrides in lib/proof-ledger.sh"` -> `full`.
-- AC4: `classify "durable resolver in lib/kit-log-dir.sh"` -> `full`.
+- AC1: `classify "add a render subcommand to lib/telemetry/lane-telemetry.sh"` -> `full`.
+- AC2: `classify "add a code-level guard to lib/goal/mega-merge.sh"` -> `full`.
+- AC3: `classify "log overrides in lib/gate/proof-ledger.sh"` -> `full`.
+- AC4: `classify "durable resolver in lib/telemetry/kit-log-dir.sh"` -> `full`.
 - AC1b-AC4b [completeness]: `orchestrate.sh`, `stack-merge`, `role-classify`, `goal-drafts` work -> `full`.
-- AC5 [precedence preserved, negative control]: `classify "fix a typo in lib/lane-telemetry.sh"` -> `tiny` (tiny beats the hard-gate).
+- AC5 [precedence preserved, negative control]: `classify "fix a typo in lib/telemetry/lane-telemetry.sh"` -> `tiny` (tiny beats the hard-gate).
 - AC5b [over-match negative control]: a bare-word `orchestrate` non-kit task -> `normal` (anchoring works); a read-helper lib (`route-suggest`) -> `normal` (held).
 - AC6 [no regression]: previously-covered machinery (`gate-ledger`, `lane-classify`) still `full`; a plain feature (`add a date picker`) still `normal`; `test-meta.sh`, `test-hooks.sh`, `test-lane-escalation.sh` stay green.
 
 ## Tasks
-- T1: `lib/lane-classify.sh` line 54 -- extend the `kit-machinery` regex.
+- T1: `lib/classify/lane-classify.sh` line 54 -- extend the `kit-machinery` regex.
 - T2: `tests/test-lane-classify.sh` (new) -- pin AC1-AC6 (the classifier's first dedicated behavioral suite).
 - T3: `docs/research/2026-07-02-lane-rule-audit.md` -- the audit findings + misfire dispositions.
 - T4: `docs/verification/lane-rule-audit.md` -- table-first proof.

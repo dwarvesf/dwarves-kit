@@ -10,7 +10,7 @@ Authorizes: ADR-0030 (Accepted) · Source brief: docs/specs/DECISION-BRIEF-dag-w
 
 ## Problem
 
-`lib/orchestrate.sh` runs a mega-goal strictly serially: `_next()` picks the first unchecked
+`lib/queue/orchestrate.sh` runs a mega-goal strictly serially: `_next()` picks the first unchecked
 sub-goal and the loop waits for its grounded box-flip before starting the next. But the dependency
 graph is already declared (`depends SG-NN` on ROADMAP lines) and already parsed
 (`_sg_deps_blocked()`) , it just isn't used for scheduling. Sub-goals that are dep-independent and
@@ -70,7 +70,7 @@ sub-goal per cycle, so behavior is byte-identical to today's serial loop.
 
 ## Technical Design
 
-Grounded in `lib/orchestrate.sh` (500 lines) as it stands on `master`. Anchors:
+Grounded in `lib/queue/orchestrate.sh` (500 lines) as it stands on `master`. Anchors:
 
 - `_subgoals()` L86 , parses `- [ ] SG-NN ... , auto|gate` ROADMAP lines to `id<TAB>policy<TAB>checked`.
 - `_next()` L101 , the serial pick (first unchecked); wavefront REPLACES this with a ready-set.
@@ -90,8 +90,8 @@ Grounded in `lib/orchestrate.sh` (500 lines) as it stands on `master`. Anchors:
 ### Portability constraints (hard , macOS bash 3.2 is CI, `.github/workflows/test.yml`)
 
 - `orchestrate.sh:33` runs `set -uo pipefail`. Every new array (ready ids, wave pids) MUST expand
-  with the empty-guard `${arr[@]+"${arr[@]}"}` , the in-repo pattern at `lib/mega-merge.sh:224`
-  and `lib/stack-merge.sh:127`. Copy it; do not `declare -A` (bash 4+).
+  with the empty-guard `${arr[@]+"${arr[@]}"}` , the in-repo pattern at `lib/goal/mega-merge.sh:224`
+  and `lib/goal/stack-merge.sh:127`. Copy it; do not `declare -A` (bash 4+).
 - **No `flock`.** It is not on macOS by default and has zero repo usage. The lock primitive is
   `mkdir <lockdir>` (atomic on POSIX) with a stale-lock timeout , a new shared helper, since none
   exists today. All "flock-guarded" language in the brief means this mkdir-lock.
@@ -133,7 +133,7 @@ golden test alone:
   `cmd_flip` helper exists + is unit-tested and the mock-barrier tests script it, but real wave
   sessions are not yet wired (waves are `WAVE_CAP`-opt-in and Touches-gated, so none run by default).
 - **Wave convergence:** after a wave's sessions land on their worktree branches, the lead merges them
-  **one-at-a-time under the flip lock** (reusing `lib/mega-merge.sh` one-at-a-time; its SEMANTICS are
+  **one-at-a-time under the flip lock** (reusing `lib/goal/mega-merge.sh` one-at-a-time; its SEMANTICS are
   untouched per scope , this only sequences existing merges). Concurrent same-base merges never race.
 
 ### Locking (from spec-validate)
@@ -233,7 +233,7 @@ wavefront spec; it eats its own dogfood).
   barrier test; test-orchestrate 59/59, wavefront 53/53 x3 no flake).
 - [x] TASK-004c: Wave convergence SEQUENCER , `_wave_converge` merges landed wave sub-goals
   one-at-a-time in ROADMAP order under the flip lock via a MOCKABLE merge hook (real `gh pr merge`
-  through `lib/mega-merge.sh` rides with ID-090, same deferral as the flip-contract , waves
+  through `lib/goal/mega-merge.sh` rides with ID-090, same deferral as the flip-contract , waves
   are off at default WAVE_CAP=1, and real merge needs `gh`/real PRs). `mega-merge.sh` semantics
   untouched (only sequenced). Acceptance: a mock-merge test asserts two landed sub-goals merge
   strictly one-at-a-time (never concurrently) in ROADMAP order under the lock; a same-file cross-wave
@@ -349,7 +349,7 @@ wavefront spec; it eats its own dogfood).
 - Priority scheduling · cross-machine execution · new retry policies · a separate crash-recovery
   state store · speculative execution · DAG visualization beyond the existing board. (ADR-0030's
   GSD-v2 boundary; any of these in the diff = scope failure.)
-- `/kit:dispatch` (untouched), `lib/mega-merge.sh` semantics (convergence only SEQUENCES its
+- `/kit:dispatch` (untouched), `lib/goal/mega-merge.sh` semantics (convergence only SEQUENCES its
   existing merges under the lock; it does not change how a merge works), the ops-toolkit skill.
 - **The `## Touches` schema for sub-goals + the sub-goal generator (`commands/mega.md`) change**
   , deferred to follow-up **ID-090** per Q1/Option-B. Without it, wave-eligibility is
@@ -379,7 +379,7 @@ wavefront spec; it eats its own dogfood).
   the note. (Surfaced by architecture research; flagged to Han in the loop report.)
 - DEC-005: Lock primitive is `mkdir <lockdir>` + stale-timeout, NOT `flock` (absent on macOS CI).
   New shared helper; wave-completion wait is a `kill -0` poll (as `_run_session_watchdog`), not
-  `wait -n` (bash 4.3+). Arrays empty-guarded `${arr[@]+"${arr[@]}"}` per `lib/mega-merge.sh:224`.
+  `wait -n` (bash 4.3+). Arrays empty-guarded `${arr[@]+"${arr[@]}"}` per `lib/goal/mega-merge.sh:224`.
 - DEC-006 (spec-validate): the byte-identical serial invariant is STRUCTURAL, not test-only ,
   extract `_run_one_session` first (TASK-000), then size-dispatch on ADMITTED count (admitted<=1 or
   CAP=1 -> untouched serial body). A golden test alone was rejected as insufficient.

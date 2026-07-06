@@ -27,7 +27,7 @@ cover the semantics. Real session phrasing is the better truth table.
 
 ## Decision
 
-`lib/task-type-classify.sh`, four narrow extensions (SPEC-057 review lesson: anchors, not
+`lib/classify/task-type-classify.sh`, four narrow extensions (SPEC-057 review lesson: anchors, not
 broad words):
 
 1. **planning** gains `mega-?goal | scaffold .{0,25}roadmap | (draft|write) (the )?roadmap`.

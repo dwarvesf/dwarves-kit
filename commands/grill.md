@@ -12,11 +12,52 @@ Grill applies to EVERY work type; the tiny lane is exempt (one obvious edit need
 
 ## Process
 
+### Step 0: Unknown-density precheck (SPEC-138)
+
+Grill is the kit's own read of the highest-leverage pre-implementation move (Thariq, "A Field
+Guide to Fable: Finding Your Unknowns", 2026-07-03) and its own telemetry says it is the
+least-used gate: 82% skipped over a 63-run ledger probe. Most of those skips are honest: unknowns
+concentrate in UNFAMILIAR territory, and most runs are home turf. So condition the FIRING, not
+the frequency. Before Step 1, check three signals, each checkable in seconds (never a research
+project):
+
+| Signal | Check | Fires when |
+|---|---|---|
+| S1 territory novelty | `git log --oneline -5 -- <target paths>` | empty output, OR the newest commit is more than 90 days old |
+| S2 domain novelty | `rg` the task's key nouns against the repo's code, `CONTEXT.md`/ADRs, and existing specs | the task names tech/domain absent from all three |
+| S3 declared novelty | the operator's own words | "new to X" / "I don't know" / an explicit greenfield task |
+
+If a signal genuinely cannot be checked (no git history at all, `rg` unavailable), treat it as
+FIRED: fail toward asking, never toward a silent skip.
+
+**Decision: fire the interview when >= 2 signals fire, or S3 alone. Otherwise AUTO-SKIP.** An
+auto-skip asks nothing, but is never silent to the ledger (Step 4 always records one line):
+
+- **0 signals fired** -> `reason=home-turf` (fully familiar ground, code and domain both known).
+- **1 signal fired** (not enough density to warrant an interview) -> `reason=density-low`.
+- **the operator explicitly waves off an interview the signals would have fired** ->
+  `reason=operator-wave` (their call, logged rather than silently dropped; this also absorbs the
+  pre-existing "conversation already resolved the banks" carve-out from SPEC-058).
+
+### Step 0b: Blindspot pass (only when S2 fires)
+
+When S2 (domain novelty, not mere codebase novelty) fired, run this BEFORE asking anything: a
+**blindspot pass** for the operator's own unknown unknowns (the article's literal framing;
+reported to work verbatim, and this repo's experience agrees). Produce a compact table:
+
+| What | Why it matters | The question to ask |
+|---|---|---|
+| (5-8 rows: something the operator likely hasn't thought to ask about this unfamiliar domain) | (why it would bite later if left unasked) | (the exact question that surfaces it) |
+
+The operator picks which rows to drill. Step 2's interview then covers the picked rows plus any
+contradictions from Step 1, not the full generic bank. No new command, no new agent: this is one
+more section of this file, gated on S2 alone (an S1- or S3-only fire skips straight to Step 1).
+
 ### Step 1: Orient before asking
 
 Read what already answers questions so you never ask one the repo answers:
 
-1. The task text + its type (`bash lib/task-type-classify.sh classify "<task>"`).
+1. The task text + its type (`bash lib/classify/task-type-classify.sh classify "<task>"`).
 2. `CONTEXT.md` / `docs/adr/` / `docs/decisions/` if present, the glossary and the decisions
    already made. A question whose answer sits in an ADR is a wasted turn; a claim that
    CONTRADICTS one is your first question.
@@ -29,6 +70,20 @@ Read what already answers questions so you never ask one the repo answers:
    is your first question.
 
 ### Step 2: Interview, one question at a time
+
+**Order by blast radius (SPEC-138).** When more than one branch is open, ask in this order, most
+expensive to get wrong first:
+
+1. **Contradictions** against the repo/spec/ADR (Step 1's own trigger): a load-bearing error, so
+   it outranks everything else.
+2. **Questions whose answer would CHANGE THE ARCHITECTURE**: the article's own sort key, adopted
+   verbatim; if the answer flips the shape of the solution, it comes right after contradictions.
+3. **Assumptions the agent would otherwise take silently**: state them AS a default ("unless you
+   say otherwise I will assume X"), so a non-answer is still a recorded decision, not a silent
+   guess.
+4. **Taste questions (unknown-knowns)**: do NOT ask these as questions. Offer a throwaway
+   prototype instead ("this one is react-to-it; want a quick mock with 2-3 directions?"); a taste
+   call is faster to react to than to describe.
 
 Rules (absorbed from grill-with-docs, see Source):
 
@@ -135,8 +190,16 @@ The moment an answer resolves something, write it where it lives:
 
 ### Step 4: Hand off to phase 0
 
-Record the interview for telemetry (SPEC-063):
-`bash lib/gate-ledger.sh record <rid> grill ran "<N> questions, <M> contradictions, banks: <type>"`.
+Record exactly one of the two lines below, every run, so the ledger always shows what Step 0
+decided:
+
+- **The interview ran** (Step 0 fired): record it for telemetry (SPEC-063):
+  `bash lib/gate/gate-ledger.sh record <rid> grill ran "<N> questions, <M> contradictions, banks: <type>"`.
+- **The precheck auto-skipped** (Step 0, SPEC-138): record the reason, with the `reason=` token
+  as the FIRST word of the free text:
+  `bash lib/gate/gate-ledger.sh record <rid> grill skipped "reason=<home-turf|density-low|operator-wave>: <one-line why>"`.
+  `gate-ledger.sh` enforces this enum at write time: a grill skip with none of the three tokens,
+  or none at all, is refused (exit 64) rather than silently landing on the ledger.
 
 End by proposing the `Done =` line the answers imply (the phase-0 definition the task loop
 requires before any work runs), plus the re-classification check: if the answers changed the
@@ -154,3 +217,9 @@ the one-question-at-a-time loop with recommended answers, the glossary/ADR write
 discipline, the 3-criteria ADR bar, and the contradiction-first posture. Adapted: question
 banks are shaped per the kit's 11 work types (SPEC-057), and the exit hands off to the kit's
 phase-0 `Done =` definition (PHILOSOPHY §6 N3) instead of free-floating planning.
+
+Step 0/0b's unknown-density precheck, blindspot pass, and blast-radius ordering (SPEC-138)
+absorb Thariq's "A Field Guide to Fable: Finding Your Unknowns" (Claude Code team, 2026-07-03):
+the blind-spot-pass framing, the architecture-changing-first sort key, and the
+prototype-not-question move for taste calls, conditioned on this repo's own 82%-skip telemetry
+rather than applied uniformly.

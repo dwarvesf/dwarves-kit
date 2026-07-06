@@ -22,7 +22,7 @@ un-isolated writer; every other test `check` was verified isolated.
 |---|---|---|---|
 | shasum unchanged | shasum real log, run `tests/test-*.sh`, shasum again | equal | `d63f704…` == `d63f704…` -> CLEAN |
 | escalation suite green | `bash tests/test-lane-escalation.sh` | 22/22 | 22/22 passed |
-| negative control | `DWARVES_KIT_LOG_DIR=$tmp bash lib/lane-classify.sh check tiny "add user authentication with jwt sessions"` | writes a LANE-CHECK line to $tmp | `… | LANE-CHECK | downgrade | chosen=tiny suggested=full | add user authentication with jwt sessions` |
+| negative control | `DWARVES_KIT_LOG_DIR=$tmp bash lib/classify/lane-classify.sh check tiny "add user authentication with jwt sessions"` | writes a LANE-CHECK line to $tmp | `… | LANE-CHECK | downgrade | chosen=tiny suggested=full | add user authentication with jwt sessions` |
 
 ## Run detail (captured 2026-07-02)
 

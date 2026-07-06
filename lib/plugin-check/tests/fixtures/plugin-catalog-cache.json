@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "fetchedAt": "2026-06-20T11:00:00.000Z",
+  "catalog": {
+    "generated_at": "2026-06-20T11:00:00.000Z",
+    "marketplace_sha": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+    "plugins": {
+      "superpowers@claude-plugins-official": {
+        "version": "6.1.0",
+        "sha": "2222222222222222222222222222222222222222",
+        "source_sha": "2222222222222222222222222222222222222222",
+        "source": "superpowers@claude-plugins-official",
+        "marketplace_entry": {
+          "name": "superpowers",
+          "source": {
+            "source": "url",
+            "url": "https://github.com/obra/superpowers.git",
+            "sha": "2222222222222222222222222222222222222222"
+          }
+        }
+      },
+      "playwright@claude-plugins-official": {
+        "version": "1.0.0",
+        "sha": null,
+        "source_sha": "5555555555555555555555555555555555555555",
+        "source": "playwright@claude-plugins-official",
+        "marketplace_entry": {
+          "name": "playwright",
+          "source": "./plugins/playwright"
+        }
+      },
+      "swift-lsp@claude-plugins-official": {
+        "version": "1.0.0",
+        "sha": null,
+        "source_sha": "7777777777777777777777777777777777777777",
+        "source": "swift-lsp@claude-plugins-official",
+        "marketplace_entry": {
+          "name": "swift-lsp",
+          "source": "./plugins/swift-lsp"
+        }
+      },
+      "evil; touch /tmp/SHOULD_NOT_EXIST $(touch /tmp/SHOULD_NOT_EXIST) `touch /tmp/SHOULD_NOT_EXIST`@claude-plugins-official": {
+        "version": "0.0.2",
+        "sha": null,
+        "source_sha": "8888888888888888888888888888888888888888",
+        "source": "evil@claude-plugins-official",
+        "marketplace_entry": {
+          "name": "evil",
+          "source": "./plugins/evil"
+        }
+      }
+    }
+  }
+}

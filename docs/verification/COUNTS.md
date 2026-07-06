@@ -1,6 +1,6 @@
 # Verification suite counts (generated)
 
-> Numbers between the GEN markers are written by `lib/verif-counts.sh` from the live
+> Numbers between the GEN markers are written by `lib/gate/verif-counts.sh` from the live
 > suites. Do NOT hand-edit them. To change a number, change the tests then re-run the
 > generator. A verification log links here instead of transcribing a count. This is the
 > single-source-numbers pattern borrowed from the codebase-tool-benchmark (the sibling

@@ -4,7 +4,7 @@ Generated: 2026-06-08
 Status: SHIPPED
 Source: maintainer session 2026-06-08 (Han). Grew out of building a data-pull CLI in ops-toolkit and discovering the "what counts as done" standard was being reinvented ad-hoc instead of routed through the kit. Brainstormed + design approved 2026-06-08.
 Prior spec: SPEC-042 (proof of done , the 3-part recorded artifact + negative control) and its later ship-gate enforcement (ADR-0025). This spec adds the task-TYPE axis on top of that foundation.
-Depends on: the existing verification framework, which this EXTENDS, not replaces: `lib/proof-gate.sh` (proof-class classifier), `lib/lane-classify.sh` (risk-lane classifier), `lib/proof-ledger.sh` + `hooks/ship-gate.sh` (the ship/merge gate, ADR-0025), `docs/verification/README.md` + `docs/verification/proof-of-done.md` (the discipline).
+Depends on: the existing verification framework, which this EXTENDS, not replaces: `lib/gate/proof-gate.sh` (proof-class classifier), `lib/classify/lane-classify.sh` (risk-lane classifier), `lib/gate/proof-ledger.sh` + `hooks/ship-gate.sh` (the ship/merge gate, ADR-0025), `docs/verification/README.md` + `docs/verification/proof-of-done.md` (the discipline).
 Lane: full (touches hooks + the enforcement gate).
 This spec's own proof class: behavioral (changes the gate's output + adds a classifier); its proof of done is a recorded run of the gate on sample tasks + a negative control (a task that should fail the gate does).
 
@@ -38,7 +38,7 @@ Worked examples:
 
 ### New pieces (in dwarves-kit)
 
-1. **`lib/task-type-classify.sh`** , deterministic `desc -> task-type`, keyword-based, mirrors `lane-classify.sh` (suggests, never blocks; human override). Precedence-ordered, first match wins. Pure bash + grep.
+1. **`lib/classify/task-type-classify.sh`** , deterministic `desc -> task-type`, keyword-based, mirrors `lane-classify.sh` (suggests, never blocks; human override). Precedence-ordered, first match wins. Pure bash + grep.
 2. **A declarative registry** `docs/verification/task-types.md` , one row per type: `task-type | artifact shape | owning skill | default proof class`. **This is the extension point**: a new work-type later = add one row (+ optionally one classifier rule). No code change to add a type's contract.
 3. **`proof-gate.sh` gains a `contract` subcommand** (or extends `requirement`) that composes CLASS + TYPE: reads the registry, returns the type-specific requirement string + the owning skill pointer, at the class's rigor.
 4. **The ship-gate message becomes type-aware (first cut, messaging only)**: the diff-based gate derives the proof CLASS from a diff but cannot derive the TYPE (which needs task intent), so the `proof-ledger.sh` BLOCKED message now points to `proof-gate.sh contract "<task>"` for the type-specific artifact + skill. The fresh-proof + branch-diff enforcement mechanism is **unchanged** (opt-in per repo, logged-override, fails-open); `hooks/ship-gate.sh` is untouched. **Phase 2 (deferred, see Scope):** auto-deriving the expected artifact for a type from the diff so the gate hard-enforces the exact shape.
@@ -58,7 +58,7 @@ Human override always wins; the registry suggests. More types get appended as ne
 
 ## Adoption / rollout
 
-1. **Opt ops-toolkit into the kit verification framework**: add `docs/verification/README.md` (the opt-in marker) + make `lib/proof-gate.sh` / `lib/proof-ledger.sh` reachable + wire the ship-gate. Then ops-toolkit's tool work is gated by the kit, not a bespoke hook.
+1. **Opt ops-toolkit into the kit verification framework**: add `docs/verification/README.md` (the opt-in marker) + make `lib/gate/proof-gate.sh` / `lib/gate/proof-ledger.sh` reachable + wire the ship-gate. Then ops-toolkit's tool work is gated by the kit, not a bespoke hook.
 2. **Retire the ops-toolkit bespoke gate** built 2026-06-08 (`_meta/infra/scripts/done-gate-hook.sh` + its `settings.json` wiring) and **trim the ops-toolkit `CLAUDE.md` "Done gate"** to a thin pointer to the kit standard (remove the duplicated rule). Keep `tools/growatt-pull/` (`prove.py`, `docs/proof-of-done.md`) as the worked example of the `data-tool` contract. **Sequencing: retire only AFTER the kit framework is adopted in ops-toolkit**, so there is no enforcement gap; until then the bespoke hook stays as interim cover.
 3. **Roll out to other repos** opt-in, as each needs it.
 
@@ -73,7 +73,7 @@ Human override always wins; the registry suggests. More types get appended as ne
 
 ## Acceptance criteria
 
-1. `lib/task-type-classify.sh classify "<desc>"` returns a type for each of the 6 seed types on representative descriptions; `... types` lists them.
+1. `lib/classify/task-type-classify.sh classify "<desc>"` returns a type for each of the 6 seed types on representative descriptions; `... types` lists them.
 2. `docs/verification/task-types.md` exists with one row per seed type (type, artifact, skill, default class).
 3. `proof-gate.sh contract "<desc>"` composes CLASS + TYPE and returns the type-specific requirement + skill pointer (e.g. a CLI-build desc returns the recorded-run requirement pointing at `ops-tool-shape`).
 4. Proof of done for THIS spec: a recorded run showing the new classifier + contract on sample tasks, plus a negative control (a description that should NOT match a type falls through to a sane default), captured in `docs/verification/SPEC-044.md`.
@@ -82,7 +82,7 @@ Human override always wins; the registry suggests. More types get appended as ne
 ## Resolved decisions (during build)
 
 - Registry format: **markdown table** (`docs/verification/task-types.md`), parsed by `proof-gate.sh` via awk; matches the `MANIFEST.md`/`CONSUMERS.md` precedent and stays human-greppable. Cells use no `|` or `->` so the parse stays trivial.
-- Classifier home: **own file** `lib/task-type-classify.sh`, mirroring `lane-classify.sh` (single-purpose), not folded into `proof-gate.sh`.
+- Classifier home: **own file** `lib/classify/task-type-classify.sh`, mirroring `lane-classify.sh` (single-purpose), not folded into `proof-gate.sh`.
 - Gate type-awareness (first cut): the diff-based ship-gate can derive the proof CLASS from a diff but not the TYPE (which needs task intent). So the BLOCKED message now **points to `proof-gate.sh contract "<task>"`** for the type-specific artifact, rather than auto-typing a diff. Auto-typing from a diff is the deferred follow-up.
 
 ## Implementation status (2026-06-08)

@@ -1,12 +1,12 @@
 ---
-description: "Adversarial review of a spec before implementation. 5 specialist lenses attack the spec from different angles."
+description: "Adversarial review of a spec before implementation. 6 specialist lenses attack the spec from different angles (5 advisory, 1 blocking on the design record)."
 ---
 
 You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-NNN-<slug>.md` (the most recent non-shipped spec if several exist). If no spec exists, tell the user to run `/kit:spec` first.
 
-## The 5 reviewers
+## The 6 reviewers
 
-Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer.
+Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer. Reviewers 1-5 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
 
 ### Reviewer 1: Security Auditor
 Look for:
@@ -59,9 +59,33 @@ Look for:
 
 Source: forked from superpowers:brainstorming ("design for isolation and clarity") + its spec-document-reviewer calibration. See docs/specs/SPEC-008.
 
+### Reviewer 6: Design Record Auditor (ADR-0031 §1, BLOCKING)
+Unlike Reviewers 1-5 above (all advisory), this check can REFUSE the `VALIDATED` flip.
+
+1. **Decide design-bearing.** Is the spec above the tiny lane AND does it do any of: introduce
+   a new component/module, non-obvious control flow, a schema/data-model change, an external
+   integration, an irreversible choice, or offer 2+ viable approaches?
+2. **If design-bearing:** the spec's `## Design` section must be non-empty and contain a
+   diagram (mermaid preferred) picked by fit (sequence / state / ER / flowchart / C4-lite) plus
+   a chosen approach. A missing `## Design` section, an empty one, or a bare `obvious: <why>`
+   collapse on a spec that genuinely IS design-bearing is a **CRITICAL, BLOCKING** finding: do
+   NOT flip Status to `VALIDATED`. List it under Critical Issues and stop; the author fills the
+   block and re-runs this reviewer.
+3. **If NOT design-bearing** (an obvious/tiny-shaped change): the `## Design` section
+   correctly collapsing to `obvious: <why>` is a PASS , do not require a diagram. If the spec
+   still carries a heavy Design block for genuinely obvious work, flag it as a PROPORTIONALITY
+   warning (compliance theater), non-blocking.
+4. **Legacy grace.** A spec written before this template existed (no `## Design` heading at
+   all) and judged NOT design-bearing is not penalized for the section's absence, mirroring
+   Reviewer 5's legacy-grace clause.
+
+**Calibration (critical):** this is the ONE reviewer whose finding can withhold `VALIDATED`.
+Keep the design-bearing test honest in both directions , neither rubber-stamping a real
+architecture change as `obvious`, nor demanding a diagram for a one-line config tweak.
+
 ## Output format
 
-After all 5 reviewers complete, produce a summary:
+After all 6 reviewers complete, produce a summary:
 
 ```markdown
 # Spec Validation Report
@@ -82,4 +106,13 @@ Spec: [spec name]
 
 If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made.
 
-If APPROVED, update the Status line in SPEC.md to `VALIDATED`.
+If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception (ADR-0031 §1):** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of Reviewers 1-5's outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
+
+After the verdict, record it for lane telemetry (SPEC-139), one line:
+`bash lib/gate/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.
+
+Reviewer 6 is also the `design-record` matrix row's phase owner (it is the one enforcement point
+for that row, per WORKFLOW.md "## The understanding axis"), so record it by its own name too:
+`bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> <pass|critical>"`.
+This closes the "no command records design-record ran" gap WORKFLOW.md's "## Command emit
+coverage" section used to flag as a known pre-existing gap.

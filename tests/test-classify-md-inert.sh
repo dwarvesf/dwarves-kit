@@ -6,7 +6,7 @@
 # md-only "migrate" diff as stateful.
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LIB="$KIT/lib/proof-ledger.sh"
+LIB="$KIT/lib/gate/proof-ledger.sh"
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }

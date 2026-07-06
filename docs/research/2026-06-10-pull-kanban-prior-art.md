@@ -64,7 +64,7 @@ deterministic override hook (AutoGen-style).
 
 Claude Code's harness exposes TaskCreate/TaskList/TaskUpdate/TaskStop + Monitor and
 CronCreate/CronList/RemoteTrigger natively (verified in-session); the kit's
-`lib/goal-registry.sh` already implements the cross-session claim guard (exercised live in this
+`lib/goal/goal-registry.sh` already implements the cross-session claim guard (exercised live in this
 run's pull). An autonomous-pull design therefore needs NO new daemon primitive: a scheduled
 invocation (cron/RemoteTrigger) of the existing `--next` flow + the existing claim guard covers
 the trigger and collision halves, leaving only the policy question (when MAY a pull happen).

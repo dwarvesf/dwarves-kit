@@ -20,7 +20,7 @@ After symlinking the two files into `~/.claude/dwarves-kit/` (what the new insta
 ```
 $ bash ~/.claude/dwarves-kit/lib/adopt.sh <tmp>
 adopt: <tmp> (updated)          # was: "no source AGENTS.md" before this fix
-$ bash ~/.claude/dwarves-kit/lib/gate-ledger.sh required full | wc -l
+$ bash ~/.claude/dwarves-kit/lib/gate/gate-ledger.sh required full | wc -l
 11                              # was: "awk: can't open WORKFLOW.md" before this fix
 ```
 
