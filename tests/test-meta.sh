@@ -465,7 +465,7 @@ done
 # Canonical agent inventory is in MANUAL.md "Agents" section (table rows), whose bulk now
 # lives at docs/MANUAL.md (root MANUAL.md is a thin stub, SPEC-185).
 # CLAUDE.md no longer mirrors the inventory; see docs/architecture.md for component fit.
-MANUAL_BULK="$KIT_DIR/MANUAL.md"
+MANUAL_BULK="$KIT_DIR/docs/MANUAL.md"
 SUBAGENT_NAMES=$(grep '^| `' "$MANUAL_BULK" | sed 's/^| `\([^`]*\)`.*/\1/' | sort -u)
 for NAME in $SUBAGENT_NAMES; do
   if [ -f "$KIT_DIR/agents/$NAME.md" ]; then
@@ -1507,7 +1507,7 @@ fi
 # (f) dispatch.md is registered in the human-facing inventories (README + MANUAL).
 TOTAL=$((TOTAL + 1))
 if grep -q 'kit:dispatch' "$KIT_DIR/README.md" 2>/dev/null \
-   && grep -q 'kit:dispatch' "$KIT_DIR/MANUAL.md" 2>/dev/null; then
+   && grep -q 'kit:dispatch' "$KIT_DIR/docs/MANUAL.md" 2>/dev/null; then
   echo -e "  ${GREEN}PASS${NC} /kit:dispatch registered in README + MANUAL command inventories (SPEC-032)"
   PASS=$((PASS + 1))
 else
@@ -2445,9 +2445,9 @@ RC=0; grep -qF 'state the task, or /kit:assign --next' "$CR83" || RC=1
 assert_eq "queue suggestion is intent-first + assign --next" 0 $RC
 RC=0; [ "$(grep -cF "say '" "$CR83")" -ge 4 ] || RC=1
 assert_eq "cycle suggestions speak intent-first (4+ say-branches)" 0 $RC
-RC=0; grep -qF '`_meta/BACKLOG.md` queue)' "$KIT_DIR/MANUAL.md" || RC=1
+RC=0; grep -qF '`_meta/BACKLOG.md` queue)' "$KIT_DIR/docs/MANUAL.md" || RC=1
 assert_eq "MANUAL /kit:start Reads mentions the board" 0 $RC
-RC=0; grep -qF 'board:Nq' "$KIT_DIR/MANUAL.md" || RC=1
+RC=0; grep -qF 'board:Nq' "$KIT_DIR/docs/MANUAL.md" || RC=1
 assert_eq "MANUAL hook row carries the board token" 0 $RC
 
 
