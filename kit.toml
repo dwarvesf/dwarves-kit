@@ -1,9 +1,16 @@
-# kit.toml , dwarves-kit configuration (TEMPLATE / reference)
+# kit.toml , dwarves-kit configuration (SHIPPED DEFAULT, SPEC-183)
 #
-# This is the FORWARD-LOOKING config surface for the harness. Two levels:
-#   1. kit-root  kit.toml         , the default that ships with the kit.
-#   2. <project>/.kit.toml        , per-project override (project keys WIN; write
-#                                    only the keys you change, the rest inherit).
+# This is the repo-root default of the FORWARD-LOOKING config surface for the
+# harness. Two levels:
+#   1. kit-root  kit.toml (this file)  , the default that ships with the kit.
+#   2. <project>/.kit.toml             , per-project override (project keys WIN;
+#                                         write only the keys you change, the rest inherit).
+#
+# `install.sh` renders `~/.claude/dwarves-kit/kit.toml` (the live install copy)
+# FROM this file at install time, recomputing only the `[modules]` section from
+# the run's `--with` flags; every other section copies through verbatim. In a
+# kit-repo-local dev session (KIT_CONFIG_ROOT / DWARVES_KIT pointed at this
+# checkout), the resolver reads THIS file directly, no install step needed.
 #
 # READ MODEL (locked, ADR pending): a single resolver `lib/config/kit-config.sh`
 # owns load + merge + precedence (mirrors lib/telemetry/kit-log-dir.sh , "one

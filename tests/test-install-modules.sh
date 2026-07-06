@@ -21,6 +21,26 @@ wired_hooks() { # $1 = settings.json path
     | grep -oE 'hooks/[A-Za-z0-9._-]+\.sh' | sed 's#hooks/##' | sort -u
 }
 
+# modules_section_true <toml-file> -- bare keys set `= true` WITHIN [modules] only
+# (SPEC-183). Scoped on purpose: since the install kit.toml is now the FULL
+# rendered schema (repo-root default + recomputed [modules]), other sections
+# legitimately ship `= true` defaults too ([ledger] telemetry, [mega] tier4_close,
+# [gate] understanding_gate, [features] learning_ledger) -- none of them a module.
+# Keep this the SAME awk as install.sh's kit_toml_modules_section_true(); we can't
+# source install.sh directly here (it's a full script with side effects, not a
+# library), so this is a deliberate, sync-required duplicate -- always call it on
+# an install-RENDERED file (bare `key = true|false`, no inline comment), never the
+# comment-bearing repo-root default.
+modules_section_true() {
+  awk '
+    /^\[modules\]/ { insec = 1; next }
+    /^\[/          { insec = 0 }
+    insec && /^[a-z_]+[[:space:]]*=[[:space:]]*true[[:space:]]*$/ {
+      key = $0; sub(/[[:space:]]*=.*/, "", key); print key
+    }
+  ' "$1" 2>/dev/null
+}
+
 # ============================================================
 echo "== NC spine-only: a plain temp-HOME install wires ONLY the spine =="
 # ============================================================
@@ -37,8 +57,8 @@ assert_true "spine-only install wires exactly the 6 spine hooks" "$([ "$WIRED1" 
 NON_SPINE="$(printf '%s\n' "$WIRED1" | grep -vFxf <(printf '%s\n' "$EXPECT_SPINE") || true)"
 assert_true "spine-only install: no optional-module hook present (extra: ${NON_SPINE:-none})" "$([ -z "$NON_SPINE" ]; echo $?)"
 assert_true "spine-only install: kit.toml has team_mode = false" "$(grep -qx 'team_mode = false' "$H1/.claude/dwarves-kit/kit.toml"; echo $?)"
-OPT_TRUE="$(grep -E '^[a-z_]+ = true$' "$H1/.claude/dwarves-kit/kit.toml" 2>/dev/null || true)"
-assert_true "spine-only install: no module recorded true in kit.toml" "$([ -z "$OPT_TRUE" ]; echo $?)"
+OPT_TRUE="$(modules_section_true "$H1/.claude/dwarves-kit/kit.toml")"
+assert_true "spine-only install: no module recorded true in kit.toml [modules] (extra: ${OPT_TRUE:-none})" "$([ -z "$OPT_TRUE" ]; echo $?)"
 
 # ============================================================
 echo "== NC --with board,stats: wires exactly those + records in kit.toml; re-run reproduces =="
@@ -135,6 +155,54 @@ echo "== STANDING ANTI-DRIFT LINT: no hook reads kit.toml at runtime (record, no
 # ============================================================
 LEAK="$(grep -rl 'kit\.toml' "$KIT_DIR/hooks" 2>/dev/null || true)"
 assert_true "no hooks/*.sh reads kit.toml (leaked: ${LEAK:-none})" "$([ -z "$LEAK" ]; echo $?)"
+
+# ============================================================
+echo "== NC lint-load-bearing: a hook that DOES read kit.toml is caught, not a vacuous green =="
+# ============================================================
+# SPEC-183: proves the standing lint above actually catches a violation, not just
+# that the repo happens to be clean today. A synthetic hooks/ dir with one real
+# hook (copied) plus one planted offender is checked with the SAME assertion the
+# standing lint uses; the offender must be named, and the real hook must not be.
+NC_HOOKS_DIR="$(mktemp -d)"
+cp "$KIT_DIR/hooks/safety-gate.sh" "$NC_HOOKS_DIR/safety-gate.sh"
+cat > "$NC_HOOKS_DIR/fake-config-reader.sh" <<'FAKEHOOK'
+#!/usr/bin/env bash
+# Planted NC offender: a hook that reads kit.toml at runtime.
+source "$(dirname "$0")/../lib/config/kit-config.sh" 2>/dev/null || true
+grep -q board "$HOME/.claude/dwarves-kit/kit.toml" 2>/dev/null
+FAKEHOOK
+NC_LEAK="$(grep -rl 'kit\.toml' "$NC_HOOKS_DIR" 2>/dev/null || true)"
+assert_true "NC: lint catches a planted hook reading kit.toml (caught: ${NC_LEAK:-NONE-BUG})" "$(printf '%s' "$NC_LEAK" | grep -q 'fake-config-reader.sh'; echo $?)"
+if printf '%s' "$NC_LEAK" | grep -qx "$NC_HOOKS_DIR/safety-gate.sh"; then FP_RC=1; else FP_RC=0; fi
+assert_true "NC: lint does not false-positive the untouched real hook" "$FP_RC"
+rm -rf "$NC_HOOKS_DIR"
+
+# ============================================================
+echo "== NC chain-coherent: repo-root kit.toml -> install render -> resolver read =="
+# ============================================================
+# SPEC-183: the 3-artifact chain is ONE coherent thing, not three independent
+# claims. Reuses H2 (--with board,stats, already installed above) as the PROD
+# regime; a fresh checkout copy stands in for the DEV regime.
+REPO_ROOT_TOML="$KIT_DIR/kit.toml"
+INSTALL_TOML="$H2/.claude/dwarves-kit/kit.toml"
+assert_true "repo-root kit.toml exists (promoted from kit.toml.example)" "$([ -f "$REPO_ROOT_TOML" ]; echo $?)"
+assert_true "kit.toml.example no longer exists (fully promoted)" "$([ ! -f "$KIT_DIR/kit.toml.example" ]; echo $?)"
+for SEC in '\[ledger\]' '\[mega\]' '\[gate\]' '\[features\]' '\[team\]'; do
+  assert_true "repo-root default carries section $SEC" "$(grep -qE "^$SEC" "$REPO_ROOT_TOML"; echo $?)"
+  assert_true "install-rendered kit.toml carries section $SEC (full schema, not modules-only)" "$(grep -qE "^$SEC" "$INSTALL_TOML"; echo $?)"
+done
+# Prod regime: resolver (KIT_CONFIG_ROOT pointed at the install dir) reads the
+# INSTALL file's [modules] (board=true, this run's --with).
+RESOLVER="$KIT_DIR/lib/config/kit-config.sh"
+PROD_VAL="$(KIT_CONFIG_ROOT="$H2/.claude/dwarves-kit" KIT_PROJECT_ROOT="$(mktemp -d)" bash -c "source '$RESOLVER'; kit_config_get modules.board")"
+assert_true "prod regime: resolver reads the INSTALL kit.toml (modules.board=true from --with board,stats)" "$([ "$PROD_VAL" = "true" ]; echo $?)"
+# Dev regime: resolver (KIT_CONFIG_ROOT pointed at the repo checkout) reads the
+# REPO-ROOT default directly -- proven distinct from the install copy by reading
+# a [mega] key whose repo-root default differs from nothing-installed (mega is
+# never in [modules], so it is untouched by install's per-run recompute; reading
+# it from the repo-root root at all is the proof this regime bypasses install).
+DEV_VAL="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_PROJECT_ROOT="$(mktemp -d)" bash -c "source '$RESOLVER'; kit_config_get mega.wave_cap")"
+assert_true "dev regime: resolver reads the REPO-ROOT kit.toml directly (mega.wave_cap=2, no install needed)" "$([ "$DEV_VAL" = "2" ]; echo $?)"
 
 # ============================================================
 echo "== COVERAGE-DELTA: every module in the manifest maps to a real installable unit =="
