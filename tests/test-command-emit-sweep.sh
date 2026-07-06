@@ -34,7 +34,7 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 COMMANDS_DIR="$KIT_DIR/commands"
-WORKFLOW="$KIT_DIR/WORKFLOW.md"
+WORKFLOW="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'

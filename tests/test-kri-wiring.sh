@@ -18,7 +18,7 @@
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENTS="$KIT_DIR/AGENTS.md"
-WORKFLOW="$KIT_DIR/WORKFLOW.md"
+WORKFLOW="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 ADR0024="$KIT_DIR/docs/decisions/0024-gate-ledger-and-ship-enforcement.md"
 VERIF_README="$KIT_DIR/docs/verification/README.md"
 SHIP_GATE="$KIT_DIR/hooks/ship-gate.sh"

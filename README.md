@@ -374,7 +374,7 @@ configure and nothing breaks. Enable: put the binary on `PATH`, run
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md). It's the source of truth; the README does not duplicate it.
+See [docs/CHANGELOG.md](docs/CHANGELOG.md) (root `CHANGELOG.md` is a thin pointer stub, SPEC-185). It's the source of truth; the README does not duplicate it.
 
 ## Credits
 

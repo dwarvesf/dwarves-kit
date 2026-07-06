@@ -95,10 +95,12 @@ echo "TODOs/FIXMEs in hooks: $TODOS"
 # guard degrades to a no-op outside a git repo / without VERSION, never errors.
 if [ -f VERSION ] && git rev-parse --git-dir >/dev/null 2>&1; then
   VER=$(tr -d '[:space:]' < VERSION)
+  # CHANGELOG resolution (SPEC-185): docs/CHANGELOG.md wins if present, else root CHANGELOG.md.
+  CL=CHANGELOG.md; [ -f docs/CHANGELOG.md ] && CL=docs/CHANGELOG.md
   if [ -n "$VER" ] && [ -z "$(git tag -l "v$VER")" ]; then
     echo "  [WARN] release hygiene: VERSION is $VER but tag v$VER does not exist (phantom cut)"
     # Accumulation context: [Unreleased] NON-empty => work piling above an untagged cut (same awk as ship.md, DEC-006).
-    if [ -f CHANGELOG.md ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' CHANGELOG.md | grep -q .; then
+    if [ -f "$CL" ] && awk '/## \[Unreleased\]/{f=1;next} /^## /{f=0} f && NF{print}' "$CL" | grep -q .; then
       echo "         and CHANGELOG [Unreleased] is accumulating above it"
     fi
   else

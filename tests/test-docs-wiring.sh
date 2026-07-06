@@ -14,7 +14,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WORKFLOW="$KIT_DIR/WORKFLOW.md"
+WORKFLOW="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 AGENTS="$KIT_DIR/AGENTS.md"
 ORCH="$KIT_DIR/lib/queue/orchestrate.sh"
 LEDGER="$KIT_DIR/lib/gate/gate-ledger.sh"

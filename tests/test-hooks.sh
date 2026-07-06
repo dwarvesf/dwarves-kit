@@ -185,11 +185,12 @@ echo "# MY OWN AGENTS" > "$IC2_DIR/dwarves-kit/AGENTS.md"
 CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
 CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" >/dev/null 2>&1
 assert_output_contains "install: user AGENTS.md survives two runs" "# MY OWN AGENTS" "$(head -1 "$IC2_DIR/dwarves-kit/AGENTS.md")"
-assert_output_contains "install: stamp manages only the copied contract" "^managed=WORKFLOW.md$" "$(grep '^managed=' "$IC2_DIR/dwarves-kit/INSTALL-STAMP")"
+assert_output_contains "install: stamp manages only the copied contracts" "^managed=WORKFLOW.md docs/WORKFLOW.md$" "$(grep '^managed=' "$IC2_DIR/dwarves-kit/INSTALL-STAMP")"
 # uninstall removes copies (review F2) but never the user file
 CLAUDE_DIR="$IC2_DIR" bash "$KIT_DIR/install.sh" --uninstall >/dev/null 2>&1
 assert_true "uninstall: copied lib dir removed" "$([ ! -e "$IC2_DIR/dwarves-kit/lib" ]; echo $?)"
 assert_true "uninstall: managed WORKFLOW.md removed" "$([ ! -e "$IC2_DIR/dwarves-kit/WORKFLOW.md" ]; echo $?)"
+assert_true "uninstall: managed docs/WORKFLOW.md removed" "$([ ! -e "$IC2_DIR/dwarves-kit/docs/WORKFLOW.md" ]; echo $?)"
 assert_true "uninstall: stamp removed" "$([ ! -e "$IC2_DIR/dwarves-kit/INSTALL-STAMP" ]; echo $?)"
 assert_output_contains "uninstall: user AGENTS.md untouched" "# MY OWN AGENTS" "$(head -1 "$IC2_DIR/dwarves-kit/AGENTS.md")"
 

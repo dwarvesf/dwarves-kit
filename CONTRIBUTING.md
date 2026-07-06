@@ -54,7 +54,7 @@ Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explic
 2. Branch from `master`. The kit uses `master`, not `main`. The `safety-gate` hook blocks accidental pushes to `master`; use a feature branch.
 3. Run `bash tests/test-hooks.sh` locally. CI runs it on push. If your change touches hook behavior, add an assertion.
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); that context belongs in the body or PR description.
-5. Update `CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial. The maintainer moves it to a versioned section at release time.
+5. Update `docs/CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial (the root `CHANGELOG.md` is a thin pointer stub, SPEC-185). The maintainer moves it to a versioned section at release time.
 
 ## Source
 

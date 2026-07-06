@@ -100,7 +100,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   # Remove the operate-contract files (SPEC-049 symlinks, or SPEC-066 copies recorded in
   # the stamp's managed= list; a user's own file is never in the list and never removed).
   UNMANAGED="$(grep '^managed=' "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" 2>/dev/null | cut -d= -f2- || true)"
-  for CONTRACT in AGENTS.md WORKFLOW.md; do
+  for CONTRACT in AGENTS.md WORKFLOW.md docs/WORKFLOW.md; do
     LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
     if [ -L "$LINK" ]; then rm "$LINK" && echo "[ok] Removed $CONTRACT symlink: $LINK"
     elif [ -f "$LINK" ] && printf '%s' " $UNMANAGED " | grep -q " $CONTRACT "; then
@@ -108,7 +108,7 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   done
   [ -f "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" ] && rm "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" && echo "[ok] Removed install stamp"
-  for CONTRACT in AGENTS.md WORKFLOW.md; do
+  for CONTRACT in AGENTS.md WORKFLOW.md docs/WORKFLOW.md; do
     LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
     if [ -L "$LINK" ]; then rm "$LINK" && echo "[ok] Removed $CONTRACT symlink: $LINK"; fi
   done
@@ -298,8 +298,8 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
   echo "[plugin detected] kit@dwarves-marketplace is installed; runtime comes from the plugin."
   echo "Doing a COMPAT-ONLY install (legacy path shims), not the full bash install,"
   echo "to avoid double-registering hooks."
-  mkdir -p "$CLAUDE_DIR/dwarves-kit"
-  for f in bin lib WORKFLOW.md AGENTS.md; do
+  mkdir -p "$CLAUDE_DIR/dwarves-kit/docs"
+  for f in bin lib WORKFLOW.md AGENTS.md docs/WORKFLOW.md; do
     ln -sfn "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
     echo "[ok] compat symlink ~/.claude/dwarves-kit/$f -> $KIT_DIR/$f"
   done
@@ -396,12 +396,15 @@ fi
 
 # 1d. Deploy the operate-contract files so they resolve from the stable install path. adopt.sh
 # needs a source AGENTS.md at $KIT_ROOT; gate-ledger reads the lane x phase matrix from
-# $KIT_ROOT/WORKFLOW.md. Without these, adopt + the lane gate are broken from the install
-# (SPEC-049). Copied and version-pinned, mirroring hooks + lib (SPEC-066).
+# $KIT_ROOT/docs/WORKFLOW.md (the bulk moved out of the root stub, SPEC-185). Without these,
+# adopt + the lane gate are broken from the install (SPEC-049). Copied and version-pinned,
+# mirroring hooks + lib (SPEC-066). docs/WORKFLOW.md is the CRITICAL one here: root WORKFLOW.md
+# is now just a thin pointer stub, so skipping the docs/ copy would leave every installed
+# consumer's gate machinery reading an empty/pointer-only file (404 in effect).
 if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
-  echo "[ok] Kit is installed in place; AGENTS.md + WORKFLOW.md already at \$HOME/.claude/dwarves-kit/"
+  echo "[ok] Kit is installed in place; AGENTS.md + WORKFLOW.md + docs/WORKFLOW.md already at \$HOME/.claude/dwarves-kit/"
 else
-  mkdir -p "$CLAUDE_DIR/dwarves-kit"
+  mkdir -p "$CLAUDE_DIR/dwarves-kit/docs"
   # A real file is kit-managed ONLY if a prior run recorded it in the stamp's managed=
   # list; presence of the stamp alone is not enough (review HIGH: the stamp is written by
   # the same run that first sees the user's file, so stamp-presence destroys it on run 2).
@@ -410,7 +413,7 @@ else
     && PRIOR_MANAGED="$(grep '^managed=' "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" 2>/dev/null | cut -d= -f2- || true)"
   MANAGED_CONTRACTS=""
   COPIED_CONTRACTS=""
-  for CONTRACT in AGENTS.md WORKFLOW.md; do
+  for CONTRACT in AGENTS.md WORKFLOW.md docs/WORKFLOW.md; do
     LINK="$CLAUDE_DIR/dwarves-kit/$CONTRACT"
     if [ -L "$LINK" ]; then
       rm "$LINK"                              # refresh a stale symlink

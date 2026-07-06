@@ -142,7 +142,7 @@ echo "=== Structural wiring: the 4 surfaces SPEC-122 touches ==="
 SPEC_MD="$KIT_DIR/commands/spec.md"
 VALIDATE_MD="$KIT_DIR/commands/spec-validate.md"
 DESIGN_MD="$KIT_DIR/commands/design.md"
-WORKFLOW_MD="$KIT_DIR/WORKFLOW.md"
+WORKFLOW_MD="$KIT_DIR/docs/WORKFLOW.md"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
 
 RC=0; grep -qE '^## Design$' "$SPEC_MD" || RC=1
 assert_eq "commands/spec.md template has a top-level ## Design heading" 0 $RC

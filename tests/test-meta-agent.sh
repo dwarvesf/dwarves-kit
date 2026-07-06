@@ -55,7 +55,7 @@ grep -qi 'Mode C' "$EX" && grep -qi 'preamble' "$EX"; chk "execute.md dispatches
 grep -qi 'generic' "$EX"; chk "execute.md falls through to the generic worker on no-domain-match" $?
 # the SUBAGENT itself never installs (it drafts to staging); promotion is the command's job.
 grep -qi 'never install\|only draft to staging' "$MA"; chk "meta-agent (subagent) itself never installs , drafts to staging" $?
-grep -q '^| `meta-agent` ' "$KIT_DIR/MANUAL.md"; chk "meta-agent listed in MANUAL.md (test-meta.sh cross-ref)" $?
+grep -q '^| `meta-agent` ' "$KIT_DIR/docs/MANUAL.md"; chk "meta-agent listed in MANUAL.md (test-meta.sh cross-ref, bulk at docs/MANUAL.md per SPEC-185)" $?
 DA_CMD="$KIT_DIR/commands/draft-agent.md"
 [ -f "$DA_CMD" ] && head -1 "$DA_CMD" | grep -q '^---$'; chk "commands/draft-agent.md exists with frontmatter" $?
 # pin the NEW contract: default-install + a --draft opt-out + the roster/test-meta guard + runtime activation.

@@ -29,7 +29,7 @@ Check each of these files (if they exist) against the diff:
 - Are the build/test/run commands still correct?
 - Are there new conventions established by recent code that should be documented?
 
-**CHANGELOG.md** (if exists)
+**CHANGELOG.md** (or `docs/CHANGELOG.md` if that's the repo's convention, SPEC-185; if exists)
 - Is there an entry for the current changes?
 - Does it follow the existing format (Keep a Changelog, conventional, custom)?
 - Add an entry if missing, following the project's existing format.

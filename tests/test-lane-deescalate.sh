@@ -157,8 +157,8 @@ assert_contains "T8: a loose floor (50) fires on the same 10-line diff" "LANE-DE
 echo ""
 echo "=== T9: doc wiring -- WORKFLOW.md + commands/ship.md name the floor ==="
 # ============================================================
-grep -qF 'LANE_DEESCALATE_FLOOR' "$KIT_DIR/WORKFLOW.md"; assert "T9: WORKFLOW.md names the LANE_DEESCALATE_FLOOR tunable" $?
-grep -qE 'default \*\*20\*\*|default 20' "$KIT_DIR/WORKFLOW.md"; assert "T9: WORKFLOW.md states the default (20)" $?
+grep -qF 'LANE_DEESCALATE_FLOOR' "$KIT_DIR/docs/WORKFLOW.md"; assert "T9: WORKFLOW.md names the LANE_DEESCALATE_FLOOR tunable" $?
+grep -qE 'default \*\*20\*\*|default 20' "$KIT_DIR/docs/WORKFLOW.md"; assert "T9: WORKFLOW.md states the default (20)" $?
 grep -qF 'lib/classify/lane-classify.sh deescalate' "$KIT_DIR/commands/ship.md"; assert "T9: commands/ship.md wires the deescalate call" $?
 grep -qiE 'never blocks|advisory only' "$KIT_DIR/commands/ship.md" | head -1 >/dev/null
 grep -A2 'Lane de-escalation nudge' "$KIT_DIR/commands/ship.md" | grep -qiE 'exit-0 always|never blocks'
