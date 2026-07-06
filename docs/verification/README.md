@@ -94,7 +94,7 @@ match the gate regex and are invisible to it.
 
 For the kit's OWN runs (a `rid`'s gate/run ledger, `lib/gate/gate-ledger.sh`), the generator is
 `lib/gate/proof-table-gen.sh <rid>` (SPEC-132): it renders the confirmation table from
-`logs/runs/<rid>.log` under `docs/runs/<rid>.md`, hard-refuses any out-path whose basename is
+`logs/runs/<rid>.log` under `docs/verification/generated/<rid>.md`, hard-refuses any out-path whose basename is
 `proof-of-done.md`, and surfaces sub-goal 01's `caught=`/timing marker when present, degrading
 gracefully when absent. **Honesty note:** today the only call site that emits the OUTCOME
 marker (SPEC-129) is `hooks/ship-gate.sh` at the ship boundary, so the generated Caught/Duration

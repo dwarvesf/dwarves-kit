@@ -4,7 +4,7 @@
 # Pins three PoC-confirmed findings + their negative controls:
 #   HIGH  : lib/gate/proof-table-gen.py path traversal / arbitrary file write. rid is normalized
 #           (runid() charset) before any path, and the FINAL resolved out-path is confined
-#           under realpath(KIT_ROOT/docs/runs) EVEN for an explicit out-path arg.
+#           under realpath(KIT_ROOT/docs/verification/generated) EVEN for an explicit out-path arg.
 #   MEDIUM: lib/gate/gate-ledger.sh mutation() now neuters embedded "=" in free-text values, so a
 #           value can never smuggle a second KEY=value token into the | MUTATION | line.
 #   LOW   : lib/gate/mutation-smoke.sh skips a symlinked candidate ([ -L ] guard) instead of writing
@@ -26,22 +26,22 @@ PASS=0; FAIL=0; TOTAL=0
 ok()  { TOTAL=$((TOTAL+1)); PASS=$((PASS+1)); echo -e "  ${GREEN}PASS${NC} $1"; }
 bad() { TOTAL=$((TOTAL+1)); FAIL=$((FAIL+1)); echo -e "  ${RED}FAIL${NC} $1"; }
 eq()      { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want '$3' got '$2')"; fi; }
-present() { if [ -e "$2" ]; then bad "$1 (LEAK: '$2' exists outside docs/runs)"; else ok "$1"; fi; }
+present() { if [ -e "$2" ]; then bad "$1 (LEAK: '$2' exists outside docs/verification/generated)"; else ok "$1"; fi; }
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/kit-sec-harden.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 export DWARVES_KIT_LOG_DIR="$WORK/logs"; mkdir -p "$DWARVES_KIT_LOG_DIR/runs"
 
-# Throwaway confinement anchor (the wrapper honors a pre-set KIT_ROOT); a real docs/runs so the
+# Throwaway confinement anchor (the wrapper honors a pre-set KIT_ROOT); a real docs/verification/generated so the
 # confinement targets it, never the real repo.
-export KIT_ROOT="$WORK/kitroot"; RUNS="$KIT_ROOT/docs/runs"; mkdir -p "$RUNS"
-# A world-outside-docs/runs zone the PoC tries (and must fail) to write into.
+export KIT_ROOT="$WORK/kitroot"; RUNS="$KIT_ROOT/docs/verification/generated"; mkdir -p "$RUNS"
+# A world-outside-docs/verification/generated zone the PoC tries (and must fail) to write into.
 LEAKZONE="$WORK/leakzone"; mkdir -p "$LEAKZONE"
 
 # ============================================================
 echo "=== HIGH: proof-table-gen path confinement ==="
 # ============================================================
-# H1: a traversal rid, default out-path -> normalized + confined under docs/runs, nothing escapes.
+# H1: a traversal rid, default out-path -> normalized + confined under docs/verification/generated, nothing escapes.
 # Compare via realpath (python3) so a symlinked /var -> /private/var prefix does not fool the check.
 OUT_H1="$(bash "$GEN" "../../victim-escapee" 2>&1 | grep -oE 'wrote [^ ]+' | cut -d' ' -f2)"
 under_runs() { python3 - "$1" "$2" <<'PY'
@@ -50,7 +50,7 @@ child = os.path.realpath(sys.argv[1]); root = os.path.realpath(sys.argv[2])
 sys.exit(0 if child == root or child.startswith(root + os.sep) else 1)
 PY
 }
-if under_runs "$OUT_H1" "$RUNS"; then ok "H1: traversal rid lands inside docs/runs ($OUT_H1)"; else bad "H1: traversal rid escaped docs/runs (wrote '$OUT_H1')"; fi
+if under_runs "$OUT_H1" "$RUNS"; then ok "H1: traversal rid lands inside docs/verification/generated ($OUT_H1)"; else bad "H1: traversal rid escaped docs/verification/generated (wrote '$OUT_H1')"; fi
 present "H1: no file written at the clone-root escape target" "$KIT_ROOT/victim-escapee.md"
 
 # H2: an absolute rid -> normalized (leading '/' becomes '-'), confined; no arbitrary abs write.
@@ -58,15 +58,15 @@ ABS_TARGET="$LEAKZONE/abs-pwned"
 bash "$GEN" "$ABS_TARGET" >/dev/null 2>&1
 present "H2: absolute rid does NOT write the arbitrary absolute path" "$ABS_TARGET.md"
 
-# H3: an explicit out-path OUTSIDE docs/runs -> rejected (non-zero exit, stderr), no write.
+# H3: an explicit out-path OUTSIDE docs/verification/generated -> rejected (non-zero exit, stderr), no write.
 ERR_H3="$(bash "$GEN" somerid "$LEAKZONE/explicit.md" 2>&1)"; RC_H3=$?
 eq "H3: explicit out-of-tree out-path is rejected (non-zero exit)" "$RC_H3" "1"
 present "H3: explicit out-of-tree path is not written" "$LEAKZONE/explicit.md"
-case "$ERR_H3" in *"outside"*|*"docs/runs"*) ok "H3: rejection names the confinement reason";; *) bad "H3: rejection message unclear: $ERR_H3";; esac
+case "$ERR_H3" in *"outside"*|*"docs/verification/generated"*) ok "H3: rejection names the confinement reason";; *) bad "H3: rejection message unclear: $ERR_H3";; esac
 
-# H4: a normal rid still writes docs/runs/<rid>.md (no over-blocking).
+# H4: a normal rid still writes docs/verification/generated/<rid>.md (no over-blocking).
 bash "$GEN" "normal-rid" >/dev/null 2>&1
-if [ -f "$RUNS/normal-rid.md" ]; then ok "H4: a normal rid still writes docs/runs/normal-rid.md"; else bad "H4: normal rid did not write its run-table"; fi
+if [ -f "$RUNS/normal-rid.md" ]; then ok "H4: a normal rid still writes docs/verification/generated/normal-rid.md"; else bad "H4: normal rid did not write its run-table"; fi
 
 # H5: the canonical proof-of-done.md basename is still refused (basename guard preserved).
 CANON="$RUNS/proof-of-done.md"
@@ -74,11 +74,11 @@ bash "$GEN" "normal-rid" "$CANON" >/dev/null 2>&1; RC_H5=$?
 eq "H5: proof-of-done.md basename still refused" "$RC_H5" "1"
 if [ ! -f "$CANON" ]; then ok "H5: canonical file not created by the refused call"; else bad "H5: canonical file was written"; fi
 
-# H6: a symlink sitting AT the (confined) output location, pointing OUTSIDE docs/runs, must not be
+# H6: a symlink sitting AT the (confined) output location, pointing OUTSIDE docs/verification/generated, must not be
 # written through -- realpath follows it, the confinement sees the outside target, and rejects. The
 # generator writes the RESOLVED path + opens with O_NOFOLLOW, so no data lands on the symlink target.
 SENTINEL="$LEAKZONE/toctou-target.md"; printf 'ORIGINAL\n' > "$SENTINEL"
-ln -s "$SENTINEL" "$RUNS/evil-symlink.md"     # a symlink inside docs/runs -> outside
+ln -s "$SENTINEL" "$RUNS/evil-symlink.md"     # a symlink inside docs/verification/generated -> outside
 bash "$GEN" evil-symlink >/dev/null 2>&1; RC_H6=$?   # default out-path resolves to the symlink
 eq "H6: write through an out->outside symlink is refused (non-zero exit)" "$RC_H6" "1"
 eq "H6: the symlink's outside target is untouched (no write-through)" "$(cat "$SENTINEL")" "ORIGINAL"
@@ -117,7 +117,7 @@ run_rev "$REV_CONF" somerid "$LEAKZONE/neg1-explicit"
 if [ -f "$LEAKZONE/neg1-explicit" ] || [ -f "$LEAKZONE/neg1-explicit.md" ]; then ok "NEG-1 (confinement load-bearing): confinement-off -> explicit out-of-tree path LEAKS"; else bad "NEG-1: expected a leak with confinement removed, none occurred"; fi
 
 # NEG-2: with confinement OFF, sanitization ALONE still confines the rid vector (an absolute rid via
-# the DEFAULT out-path normalizes to a filename inside docs/runs). Proves sanitization is load-bearing
+# the DEFAULT out-path normalizes to a filename inside docs/verification/generated). Proves sanitization is load-bearing
 # on the rid vector independently -- NO leak expected here.
 run_rev "$REV_CONF" "$LEAKZONE/neg2-absrid"
 present "NEG-2 (sanitization load-bearing): confinement-off but sanitization still confines the rid vector" "$LEAKZONE/neg2-absrid.md"
@@ -126,7 +126,7 @@ present "NEG-2 (sanitization load-bearing): confinement-off but sanitization sti
 # confinement -> an absolute rid via the default out-path MUST leak (RED-on-revert).
 REV_BOTH="$WORK/rev-both-off.py"; mk_reverted 1 1 "$REV_BOTH" || bad "NEG setup: mk_reverted (both-off) failed"
 run_rev "$REV_BOTH" "$LEAKZONE/neg3-absrid"
-if [ -f "$LEAKZONE/neg3-absrid.md" ]; then ok "NEG-3 (rid-vector guard load-bearing): both-off -> absolute rid LEAKS outside docs/runs"; else bad "NEG-3: expected a leak with both guards removed, none occurred"; fi
+if [ -f "$LEAKZONE/neg3-absrid.md" ]; then ok "NEG-3 (rid-vector guard load-bearing): both-off -> absolute rid LEAKS outside docs/verification/generated"; else bad "NEG-3: expected a leak with both guards removed, none occurred"; fi
 
 # ============================================================
 echo ""

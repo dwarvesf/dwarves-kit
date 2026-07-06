@@ -458,11 +458,12 @@ source for which gates a lane *requires* (its `measure-twice` cells);
   outcome back with `outcome-read`.
 - **The confirmation table is GENERATED, never hand-authored (SPEC-132):** `bash
   lib/gate/proof-table-gen.sh <rid>` renders the SPEC-016 table-first shape from a rid's gate/run
-  ledger under `docs/runs/<rid>.md`, surfacing the OUTCOME marker above (Caught/Duration
-  columns) when present and degrading gracefully when absent; it hard-refuses any out-path
-  whose basename is `proof-of-done.md` (the canonical stays hand-authored) and confines its
-  resolved path under `docs/runs/` (path-traversal hardening, SPEC-134). Full convention:
-  `docs/verification/README.md` "Generators write run ledgers, never the canonical."
+  ledger under `docs/verification/generated/<rid>.md`, surfacing the OUTCOME marker above
+  (Caught/Duration columns) when present and degrading gracefully when absent; it hard-refuses
+  any out-path whose basename is `proof-of-done.md` (the canonical stays hand-authored) and
+  confines its resolved path under `docs/verification/generated/` (path-traversal hardening,
+  SPEC-134). Full convention: `docs/verification/README.md` "Generators write run ledgers,
+  never the canonical."
 
 ## Advisory measurement gates (coverage-delta, mutation-smoke)
 
