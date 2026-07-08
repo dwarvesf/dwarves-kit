@@ -271,6 +271,11 @@ def _archive_path(ledger):
     return base + ".archive" + ext
 
 
+def _ledger_lock_path(ledger):
+    """Sibling lock file next to the active ledger: learned-ledger.md -> learned-ledger.md.lock."""
+    return ledger + ".lock"
+
+
 def cmd_cleanup():
     """--cleanup: move every `flushed:*` row (a learning already routed to its durable home) out
     of the active ledger into a sibling append-only archive. Queued / any non-flushed rows stay.
@@ -355,26 +360,44 @@ def _harvest_payload(payload):
     ledger = os.environ.get("HARVEST_LEDGER", _default_ledger())
     gl_env = os.environ.get("HARVEST_GLOSSARIES")
     glossaries = gl_env.split(":") if gl_env else glob.glob(_default_glossary_glob())
-    known = existing_slugs(ledger, glossaries)
     fuzzy = _fuzzy_threshold()
-
     today = datetime.date.today().isoformat()
-    fresh, seen = [], set()
-    for c in candidates:
-        if not isinstance(c, dict):
-            continue
-        slug = slugify(c.get("item", ""))
-        kind = c.get("kind") if c.get("kind") in KINDS else "insight"
-        home = c.get("home") if c.get("home") in HOMES else "drop"
-        if not slug or slug in known or slug in seen:
-            continue
-        if _is_fuzzy_dup(slug, known, fuzzy) or _is_fuzzy_dup(slug, seen, fuzzy):
-            continue
-        seen.add(slug)
-        fresh.append({"date": today, "item": slug, "kind": kind, "home": home})
 
-    if fresh:
-        append_rows(ledger, fresh)
+    # Dedup-on-append race (ID-202): harvest.sh fires on PreCompact, and a single
+    # long session (or several parallel subagent sessions sharing one repo) can
+    # trigger concurrent harvest.py processes against the SAME ledger. Reading
+    # existing_slugs() and appending were two separate unlocked steps, so two
+    # processes could both read the ledger before either had appended, both decide
+    # the same slug was new, and both append it -- observed as up to 6x duplicates.
+    # Fix: hold a blocking exclusive flock across read-known + append, so concurrent
+    # invocations serialize instead of racing (mirrors _run_harvest_locked's fcntl
+    # pattern, but blocking -- a harvest here has real work to do, unlike the
+    # stop-trigger single-flight which just skips).
+    os.makedirs(os.path.dirname(ledger), exist_ok=True)
+    fresh = []
+    with open(_ledger_lock_path(ledger), "a") as lockf:
+        fcntl.flock(lockf, fcntl.LOCK_EX)
+        try:
+            known = existing_slugs(ledger, glossaries)
+            seen = set()
+            for c in candidates:
+                if not isinstance(c, dict):
+                    continue
+                slug = slugify(c.get("item", ""))
+                kind = c.get("kind") if c.get("kind") in KINDS else "insight"
+                home = c.get("home") if c.get("home") in HOMES else "drop"
+                if not slug or slug in known or slug in seen:
+                    continue
+                if _is_fuzzy_dup(slug, known, fuzzy) or _is_fuzzy_dup(slug, seen, fuzzy):
+                    continue
+                seen.add(slug)
+                fresh.append({"date": today, "item": slug, "kind": kind, "home": home})
+
+            if fresh:
+                append_rows(ledger, fresh)
+        finally:
+            fcntl.flock(lockf, fcntl.LOCK_UN)
+
     print(f"harvest: staged {len(fresh)} new (of {len(candidates)} extracted) -> {ledger}", file=sys.stderr)
     return 0
 

@@ -183,6 +183,86 @@ assert_exit "row 4b: --lab-log drafts an entry, exits 0" 0 $RC
 DRAFT=$(cat "$TD/hv-repo/_meta/.lab-log-draft.md" 2>/dev/null)
 assert_contains "row 4b: draft never writes the real LAB_LOG.md" "repo-root-seam" "$DRAFT"
 
+# ID-202: dedup-on-append must survive CONCURRENT invocations sharing one ledger
+# (e.g. parallel subagent sessions each firing PreCompact). Pre-fix, existing_slugs()
+# (read) and append_rows() (write) were two unlocked steps: several concurrent
+# harvest.py processes could each read the ledger before any had appended and all
+# decide the same slug was new, observed as up to 6x duplicates in production.
+#
+# A real subprocess-timing race (N processes + a sleeping fake extractor) is what
+# actually happens in production, but proved too flaky to assert on in THIS test
+# under a loaded dev/CI box: pre-fix failure rate ranged 30-90% run-to-run because
+# process-spawn jitter alone was often enough to scatter arrivals outside the
+# window. So this drives the SAME code path (_harvest_payload) in-process via
+# Python threads with a threading.Barrier forcing simultaneous arrival at the
+# critical section, plus a deterministic sleep inside existing_slugs() standing in
+# for "the write hasn't landed yet" -- this reproduces the exact race 8/8 times
+# pre-fix (dup_count=8) and 8/8 times post-fix (dup_count=1) in manual verification.
+cat >"$TD/hv-race-transcript.jsonl" <<'EOF'
+{"type":"assistant","message":{"content":[{"type":"text","text":"harvest append needs a lock"}]}}
+EOF
+RACE_LEDGER="$TD/hv-race-repo/_meta/learned-ledger.md"
+mkdir -p "$TD/hv-race-repo"
+cat >"$TD/hv-race-test.py" <<PYEOF
+import importlib.util, threading, os, sys, time
+
+KIT_DIR = "$KIT_DIR"
+LEDGER = "$RACE_LEDGER"
+TRANSCRIPT = "$TD/hv-race-transcript.jsonl"
+N = 8
+
+os.environ["HARVEST_LEDGER"] = LEDGER
+os.environ["HARVEST_GLOSSARIES"] = ""
+os.environ["HARVEST_MIN_INTERVAL"] = "0"
+
+spec = importlib.util.spec_from_file_location("harvest_under_test", os.path.join(KIT_DIR, "hooks", "harvest.py"))
+harvest = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harvest)
+
+barrier = threading.Barrier(N)
+real_extract = harvest.extract_json_array
+real_existing_slugs = harvest.existing_slugs
+
+def patched_extract(text):
+    barrier.wait()  # force all N threads into the vulnerable section at the same instant
+    return real_extract(text)
+
+def patched_existing_slugs(ledger, glossaries):
+    # Stand-in for "no other process has appended yet": widen the read-then-decide
+    # window past any GIL scheduling quantum, so an unlocked caller reliably lets
+    # ALL N threads read a pre-append ledger state.
+    result = real_existing_slugs(ledger, glossaries)
+    time.sleep(0.05)
+    return result
+
+def fake_run_extractor(prompt):
+    return '[{"item":"harvest-dedup-race","kind":"insight","home":"drop","why":"append has no lock"}]'
+
+harvest.extract_json_array = patched_extract
+harvest.existing_slugs = patched_existing_slugs
+harvest.run_extractor = fake_run_extractor
+
+payload = {"transcript_path": TRANSCRIPT}
+
+def worker():
+    harvest._harvest_payload(payload)
+
+threads = [threading.Thread(target=worker) for _ in range(N)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()
+
+content = open(LEDGER, encoding="utf-8").read() if os.path.exists(LEDGER) else ""
+print(content.count("harvest-dedup-race"))
+print(content.count("| date | item"))
+PYEOF
+RACE_OUT=$(python3 "$TD/hv-race-test.py" 2>/dev/null)
+DUP_COUNT=$(echo "$RACE_OUT" | sed -n '1p')
+HEADER_COUNT=$(echo "$RACE_OUT" | sed -n '2p')
+assert_eq "row 4c: 8 concurrent harvests of the same insight stage exactly once (ID-202)" "1" "$DUP_COUNT"
+assert_eq "row 4c: concurrent harvests never duplicate the ledger header" "1" "$HEADER_COUNT"
+
 # NC: empty stdin never blocks a compaction/session-end.
 RC=0; echo '' | bash "$KIT_DIR/hooks/harvest.sh" >/dev/null 2>&1 || RC=$?
 assert_exit "NC: empty stdin exits 0" 0 $RC
