@@ -59,6 +59,23 @@ Cadence wiring is a spec decision: candidates are repo-sweep integration (audit 
 sweep lens) vs a SessionStart nudge on Nth-session-since-audit. Prefer piggybacking the
 existing sweep over a new daemon (minimum-infra).
 
+## Documentation contract (ship requirement, not optional)
+
+The subsystem ships with the full doc suite or it is not done, per the kit's module
+completeness bar (doc + firing point):
+
+- **Design record**: the /kit:spec output plus ADRs for the decisions the spec leaves
+  open (cadence wiring, consumer-template mechanism).
+- **Architecture note**: how the three verbs share detection logic, where consumer
+  config enters (CONSUMER_ROOT), what each layer's freshness signal is.
+- **Operator manual**: per-verb usage (onboard a new repo end-to-end, read an audit
+  scorecard, what refresh does and does NOT touch), calibrated to a first-time adopter.
+- **Module usage doc** wired into the kit's per-module doc audit so drift is caught.
+
+Calibration reference for depth and voice: ops-toolkit's per-tool doc suite
+(`tools/tide/` shape: README front door, MANUAL, architecture, decisions). The kit's
+own doc layout governs where each lands.
+
 ## Not in scope
 
 - Rewriting memory notes automatically (audit flags, human fixes).
