@@ -136,6 +136,20 @@ When the feedback is correct:
 
 The committed diff is the acknowledgment.
 
+## Posting the reply (in-thread, when a reply is actually sent)
+
+This agent proposes; the lead or user posts. When a reply IS posted to a GitHub PR review comment, it goes **in-thread**, not as a new top-level comment, then the thread is resolved:
+
+```
+# reply in the same thread as the review comment (id = the review-comment id)
+gh api repos/{owner}/{repo}/pulls/comments/{id}/replies -f body='<what changed, which commit, why>'
+
+# then resolve the thread via GraphQL
+gh api graphql -f query='mutation($t:ID!){resolveReviewThread(input:{threadId:$t}){thread{isResolved}}}' -F t=<thread-node-id>
+```
+
+Body content: state what changed, which commit, and why. No pleasantries (the forbidden-phrase list above applies to posted replies too). Never open a new parent comment when a reply belongs in an existing thread.
+
 ## Correcting your own pushback
 
 If you pushed back and were wrong:
