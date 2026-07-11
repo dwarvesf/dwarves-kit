@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""worktree-provision: a WorktreeCreate hook that makes a fresh worktree usable.
+
+When EnterWorktree creates a worktree, the gitignored env (.envrc/.env) and installed
+deps (.venv/node_modules) do NOT come along (they are not tracked). This hook, fired on
+WorktreeCreate, symlinks the env from the main checkout into the new worktree and runs
+the project install when a manifest is present, so the worktree is workable immediately.
+
+Reads the WorktreeCreate JSON payload from stdin (key: base_path = the new worktree).
+The source repo root is found via git (the main worktree). Always exits 0: provisioning
+is best-effort and must never block worktree creation.
+
+Flags / env (mostly for tests + control):
+  --base DIR                    new worktree path (default: payload base_path)
+  --source DIR                  source repo root to symlink env FROM (default: git-derived)
+  --dry-run                     print the plan, change nothing
+  WORKTREE_PROVISION_NO_INSTALL=1  symlink env but skip the (possibly slow) install
+  WORKTREE_PROVISION_ENV="a,b"     env filenames to symlink (default ".envrc,.env")
+  WORKTREE_PROVISION_VERBOSE=1     echo the install command and stream its output
+                                (default: silent except errors)
+
+Manifest -> install command (first match wins):
+  pyproject.toml -> uv sync · package.json -> pnpm install · go.mod -> go mod download
+  Cargo.toml -> cargo fetch · Gemfile -> bundle install
+Stdlib only.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+DEFAULT_ENV_FILES = (".envrc", ".env")
+
+
+def git_main_root(path):
+    """Main checkout root for a worktree path, via git-common-dir. None on failure."""
+    try:
+        cd = subprocess.run(
+            ["git", "-C", path, "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if cd.returncode != 0:
+        return None
+    common = cd.stdout.strip()  # <main>/.git for a normal/linked worktree
+    # only strip a real "/.git" suffix; a bare repo (e.g. project.git) has no working tree
+    # to symlink env from, so return None there rather than wrongly returning its parent.
+    return os.path.dirname(common) if common.endswith("/.git") else None
+
+
+# Manifest filename -> install command. Ordered: first present manifest wins, so a
+# polyglot worktree provisions its primary toolchain (py/node kept first for back-compat).
+MANIFEST_INSTALL = (
+    ("pyproject.toml", ["uv", "sync"]),
+    ("package.json", ["pnpm", "install"]),
+    ("go.mod", ["go", "mod", "download"]),
+    ("Cargo.toml", ["cargo", "fetch"]),
+    ("Gemfile", ["bundle", "install"]),
+)
+
+
+def install_cmd(wt):
+    for fname, cmd in MANIFEST_INSTALL:
+        if os.path.exists(os.path.join(wt, fname)):
+            return cmd
+    return None
+
+
+def plan(wt, source, env_files):
+    """Return (symlinks, install_cmd). symlinks = list of (target_in_wt, src)."""
+    symlinks = []
+    if source and os.path.isdir(source):
+        for name in env_files:
+            src = os.path.join(source, name)
+            dst = os.path.join(wt, name)
+            if os.path.exists(src) and not os.path.lexists(dst):
+                symlinks.append((dst, src))  # lexists: a broken symlink at dst still counts as present
+    return symlinks, install_cmd(wt)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="worktree-provision")
+    p.add_argument("--base", help="new worktree path (default: payload base_path)")
+    p.add_argument("--source", help="source repo root (default: git-derived)")
+    p.add_argument("--dry-run", action="store_true")
+    args = p.parse_args(argv)
+
+    wt = args.base
+    if not wt:
+        try:
+            payload = json.load(sys.stdin)
+        except (json.JSONDecodeError, ValueError):
+            return 0
+        wt = payload.get("base_path") or payload.get("worktree_path") or payload.get("cwd") or ""
+    if not wt or not os.path.isdir(wt):
+        return 0
+
+    source = args.source or git_main_root(wt)
+    # basenames only: an env filename must never contain a path separator (no traversal)
+    env_files = [s for s in os.environ.get("WORKTREE_PROVISION_ENV", ",".join(DEFAULT_ENV_FILES)).split(",")
+                 if s and re.match(r"^[A-Za-z0-9._-]+$", s)]
+    symlinks, inst = plan(wt, source, env_files)
+    no_install = os.environ.get("WORKTREE_PROVISION_NO_INSTALL") == "1"
+    verbose = os.environ.get("WORKTREE_PROVISION_VERBOSE") == "1"
+
+    if args.dry_run:
+        for dst, src in symlinks:
+            print(f"symlink {dst} -> {src}")
+        if inst:
+            label = "skip-install: " if no_install else ("install (verbose): " if verbose else "install: ")
+            print(label + " ".join(inst) + f" (cwd {wt})")
+        if not symlinks and not inst:
+            print("no-op: nothing to provision")
+        return 0
+
+    for dst, src in symlinks:
+        try:
+            os.symlink(src, dst)
+            print(f"worktree-provision: linked {os.path.basename(dst)}", file=sys.stderr)
+        except OSError as e:
+            print(f"worktree-provision: symlink {os.path.basename(dst)} failed: {e}", file=sys.stderr)
+    if inst and not no_install:
+        joined = " ".join(inst)
+        if verbose:
+            print(f"worktree-provision: running {joined} (cwd {wt})", file=sys.stderr)
+        try:
+            if verbose:
+                # stream stdout+stderr live so a long install is not opaque
+                r = subprocess.run(inst, cwd=wt, timeout=600)
+            else:
+                # silent except errors: drop chatty stdout, keep stderr to surface failures
+                r = subprocess.run(inst, cwd=wt, timeout=600,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if r.returncode != 0:
+                print(f"worktree-provision: install ({inst[0]}) exited {r.returncode}", file=sys.stderr)
+                for line in (r.stderr or "").strip().splitlines()[-5:]:
+                    print(f"  {line}", file=sys.stderr)
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"worktree-provision: install ({inst[0]}) failed: {e}", file=sys.stderr)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

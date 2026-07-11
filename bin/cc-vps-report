@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# bin/cc-vps-report -- STABLE consumer entrypoint (SPEC-184). Consumers and the install.sh
+# CLI shims reference THIS path, never the deep lib/ path, so an internal lib
+# reorg only ever moves the one line below.
+# Resolution is relative to this file, so it works in the kit repo (dev) and in
+# the copied install ($DWARVES_KIT/bin next to $DWARVES_KIT/lib).
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$SELF_DIR/../lib/session/observe/bin/cc-vps-report" "$@"

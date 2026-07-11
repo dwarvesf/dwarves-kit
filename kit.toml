@@ -28,7 +28,7 @@
 
 # ======================= HARNESS OPS (ships today) =======================
 
-[modules]                       # [impl] install.sh KIT_KNOWN_MODULES; gates HOOKS only
+[modules]                       # [impl] install.sh KIT_KNOWN_MODULES; gates HOOKS + PATH CLI shims
 board          = true           #        commands/skills always install regardless
 session        = true
 advisor        = true
@@ -38,6 +38,7 @@ stats          = true           # hookless
 quiz_gate      = false          # hookless; backs commands/quiz-gate.md
 weekend_batch  = false          # hookless; backs lib/queue/weekend-batch.sh
 bridge         = false          # hookless; Hermes cockpit mirror
+worktree       = false          # hookless; exposes the worktree-provision CLI
 team_mode      = false          # reserved , install.sh hard-rejects it today
 
 [ledger]                        # where the harness stores its operation record
