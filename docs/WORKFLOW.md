@@ -508,12 +508,13 @@ pure RUN_REPORT observability, never a new required gate; `think` / `design` / `
 `validate` / `reflect` (the phase `retro.md` records) already ARE matrix rows and this closes
 their record-side gap.
 
-**9 utility commands, exempted (no direct emit by design):**
+**10 utility commands, exempted (no direct emit by design):**
 
 | Command | Why no direct emit |
 |---|---|
 | `absorb.md` | Maintainer-only external-source absorption audit (SPEC-004); propose-only, approves/merges nothing itself, and runs outside any spec's rid/lane lifecycle. |
 | `adopt.md` | One-time repo-bootstrap into a NEW consumer repo (injects AGENTS.md/CLAUDE.md/WORKFLOW pointer); runs BEFORE any rid or lane exists in that repo. |
+| `onboard.md` | Interactive first-run orchestrator (SPEC-199); CALLS start/adopt/config (each of which emits or is itself exempt) but owns no V-model phase and runs before any rid or lane exists in a fresh consumer, exactly like `adopt.md`. |
 | `next.md` | Pure read-only task dispatcher, own text says "Do NOT execute anything. Just detect and recommend."; hands off to `/kit:execute`, which is the one that emits. |
 | `start.md` | Pure read-only session entry-point detector, own text says "Do NOT execute anything."; same shape as `next.md`. |
 | `kit-health.md` | Self-assessment of the kit's OWN philosophy compliance (file count, hook perf, source citations); not a phase in any run's V-model lifecycle. |

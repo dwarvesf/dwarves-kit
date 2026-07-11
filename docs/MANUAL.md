@@ -42,6 +42,16 @@ For the full playbook (every scenario, the autonomy dial, the freeform front doo
 - `/kit:start` -- the default 3-4 line orientation (unchanged from prior versions).
 - `/kit:start --full` -- the default block, then: SPEC task checklist, hook-log line counts (last 7 days, counts only, never raw lines), `git log -5 --oneline`, and the command map grouped by phase. For a new user or a deep status check.
 
+### `/kit:onboard`
+
+**Phase:** guided first-run (interactive orchestrator; SPEC-199)
+**Reads:** install mode via `lib/onboard-detect.sh` (plugin / bash / both / none); adoption state via `lib/adopt.sh --check`; the module roster + consumer knobs via `bin/config list|explain` (the SPEC-198 registry, never a hardcoded list)
+**Writes:** nothing of its own -- it only ever drives `lib/adopt.sh` (to inject the contract and/or seed `<repo>/.kit.toml` with your module choices), and every such write is previewed (`--dry-run` or a shown plan) and confirmed first; a decline is a strict no-op
+**When to invoke:** the first ten minutes on a new machine or a repo you have not adopted yet. It ties together the four things that have to line up before the loop works: which install mode is live, whether this repo is adopted, which modules are on, and which env knobs make them non-inert.
+**What it does, in order:** (A) detect the install mode and explain it in one line each -- for `both` it discloses the double-hooks hazard and points at the one-path fix but never mutates settings; for `none` it prints the two install paths and stops. (B) offer `/kit:adopt` for the current repo (preview then confirm; an already-adopted repo is reported healthy and nothing is written). (C) pick modules -- the list is generated from the registry, and the choice is written by driving `lib/adopt.sh --with` (this is how the plugin path, which has no `install.sh --with`, still gets per-repo module selection). (D) for the chosen modules only, surface the consumer knobs that make them non-inert -- a `.kit.toml`-keyed knob is offered as a previewed write, an env-only knob (e.g. `PROSE_RAG_INJECT`, `MONEY_GATE_REPOS`) yields printed `export` guidance. (E) on the plugin path, disclose the gaps honestly (no statusLine HUD, a frozen SHA vs `git pull`, the `KIT_FORCE_FULL` escape and its hazard). (F) on the bash path, INSTALL-STAMP staleness is ONE printed line + a `/kit:kit-health` pointer, never an upgrade flow. (G) end with the five-leg loop in five sentences + `/kit:start` as the next step.
+**Fence (ADR-0034 decision 4):** onboard ORCHESTRATES; it calls start + adopt + config and reimplements none of them. It never changes `install.sh`, `adopt.sh`, or `bin/config`.
+**Common gotcha:** it is not an upgrade wizard. If the kit is already installed and this repo is already adopted, onboard is a read-only health tour that writes nothing; to change modules later you hand-edit `<repo>/.kit.toml [modules]` and re-run `/kit:adopt --refresh`.
+
 ### `/kit:think`
 
 **Phase:** challenge an idea before writing a spec

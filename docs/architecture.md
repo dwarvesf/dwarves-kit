@@ -143,6 +143,7 @@ Total: 25 commands + 15 agents = **40 entries** (10 build · 3 code · 9 test ·
 |---|---|---|---|---|
 | `/kit:retro` | command | Reflect | cross-phase | Post-ship narrative mirror of the entire V; captures learnings, not a gate |
 | `/kit:start` | command | Session entry | cross-phase | Detects project state and recommends the right next command; never executes |
+| `/kit:onboard` | command | First-run onboarding | cross-phase | Interactive first-run orchestrator (SPEC-199): detects install mode via `lib/onboard-detect.sh`, offers `/kit:adopt`, picks modules (bridging the plugin path's missing `--with`), captures consumer knobs from the SPEC-198 registry, discloses plugin-path gaps, ends with the five-leg tour; CALLS start/adopt/config, reimplements none (ADR-0034 fence); previews + confirms every write |
 | `/kit:adopt` | command | Repo onboarding | cross-phase | Injects the operate-contract + proof marker + a CLAUDE.md pointer into a target repo (idempotent, via `lib/adopt.sh`); wires the classifiers so the ship-gate engages there |
 | `/kit:kit-health` | command | Maintainer audit | cross-phase | Self-assessment against PHILOSOPHY.md; run before tagging; not part of the normal cycle |
 | `/kit:absorb` | command | Upstream maintenance | cross-phase | Audits Credits drift + seed-rescan; proposal-only; maintainer-only connective tissue |
