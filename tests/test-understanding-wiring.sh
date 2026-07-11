@@ -153,9 +153,9 @@ assert "quiz-gate: /kit:ship Step 8 invokes 'lib/gate/quiz-gate.sh tap' (WIRED)"
 #    that skill to call, and WORKFLOW.md must document the cross-repo invoker honestly (not claim
 #    an in-repo auto-fire that doesn't exist).
 RC=0
-grep -qE '^\s*collect\)' "$KIT_DIR/lib/queue/weekend-batch.sh" || RC=1
-grep -qE '^\s*mark-paid\)' "$KIT_DIR/lib/queue/weekend-batch.sh" || RC=1
-assert "weekend-batch: lib/queue/weekend-batch.sh exposes 'collect' + 'mark-paid' verbs" $RC
+grep -qE '^\s*collect\)' "$KIT_DIR/lib/learn/weekend-batch.sh" || RC=1
+grep -qE '^\s*mark-paid\)' "$KIT_DIR/lib/learn/weekend-batch.sh" || RC=1
+assert "weekend-batch: lib/learn/weekend-batch.sh exposes 'collect' + 'mark-paid' verbs" $RC
 
 RC=0
 grep -A60 -E '^## The understanding axis' "$WORKFLOW" | grep -qiE 'Han-invoked|Han invoked' || RC=1

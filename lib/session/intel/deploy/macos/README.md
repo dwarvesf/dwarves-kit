@@ -11,7 +11,7 @@ launchctl kickstart -k gui/$(id -u)/session-intel-weekly   # run now
 
 Service graph: plist -> `session-intel-weekly` launcher (exports a launchd-safe
 PATH; the bare launchd PATH silently hollowed every digest for three weeks once) ->
-`~/.local/bin/session-intel` (the installer's CLI shim) -> shells out to `session-observe`
+`~/.local/bin/session intel` (the installer's CLI shim, `session <verb>` grammar per ADR-0034) -> shells out to the observe tool
 (+ `repo-sweep` when the consumer has one; degrades to `_unavailable_` without).
 
 **Consumer bridge (optional).** The kit ships no monitoring endpoint or secret.

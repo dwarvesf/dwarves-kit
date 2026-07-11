@@ -76,25 +76,25 @@ fi
 # ---- (b) no-orphan sweep -------------------------------------------------------------------
 
 # b1. skill frontmatter carries its trigger phrases (fires on the documented asks).
-FRONTMATTER="$(sed -n '/^---$/,/^---$/p' skill/SKILL.md)"
+FRONTMATTER="$(sed -n '/^---$/,/^---$/p' ../../skills/stats/SKILL.md)"
 for phrase in "show me the ledger state" "understanding debt" "token cost" "kit runs" \
               "render the ledger" "any ledger anomalies"; do
   has "skill frontmatter carries trigger: '$phrase'" "$phrase" "$FRONTMATTER"
 done
 
 # b2. skill body + README invoke REAL `ledger` CLI verbs (no fabricated command claimed).
-SKILL_ORPHANS="$(unwired_claims skill/SKILL.md)"
+SKILL_ORPHANS="$(unwired_claims ../../skills/stats/SKILL.md)"
 README_ORPHANS="$(unwired_claims README.md)"
-[ -z "$SKILL_ORPHANS" ] && ok "skill/SKILL.md: every claimed 'ledger <verb>' is a real CLI command" \
-  || bad "skill/SKILL.md claims unwired command(s): $SKILL_ORPHANS"
+[ -z "$SKILL_ORPHANS" ] && ok "../../skills/stats/SKILL.md: every claimed 'ledger <verb>' is a real CLI command" \
+  || bad "../../skills/stats/SKILL.md claims unwired command(s): $SKILL_ORPHANS"
 [ -z "$README_ORPHANS" ] && ok "README.md: every claimed 'ledger <verb>' is a real CLI command" \
   || bad "README.md claims unwired command(s): $README_ORPHANS"
 # and the skill actually contains at least one real invocation (not just prose about it).
-SKILL_CLAIMED="$(claimed_commands skill/SKILL.md)"
-[ -n "$SKILL_CLAIMED" ] && ok "skill/SKILL.md contains live 'uv run stats <verb>' invocations" \
-  || bad "skill/SKILL.md has no live CLI invocation example"
-echo "$SKILL_CLAIMED" | grep -qx "anomalies" && ok "skill/SKILL.md invokes the anomalies (feedback-loop) command" \
-  || bad "skill/SKILL.md never invokes 'ledger anomalies'"
+SKILL_CLAIMED="$(claimed_commands ../../skills/stats/SKILL.md)"
+[ -n "$SKILL_CLAIMED" ] && ok "../../skills/stats/SKILL.md contains live 'uv run stats <verb>' invocations" \
+  || bad "../../skills/stats/SKILL.md has no live CLI invocation example"
+echo "$SKILL_CLAIMED" | grep -qx "anomalies" && ok "../../skills/stats/SKILL.md invokes the anomalies (feedback-loop) command" \
+  || bad "../../skills/stats/SKILL.md never invokes 'ledger anomalies'"
 
 # b3. `ledger anomalies --propose` actually feeds the cc-backlog staging buffer (work-intake
 # fed): call the real stager against a fixture anomaly, end to end, no mock of the write path.
