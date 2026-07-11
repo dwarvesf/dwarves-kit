@@ -3,7 +3,7 @@
 **Destination:** the Specify → Execute → Observe → Govern → Learn loop CLOSES: run ledgers get distilled on a weekly cadence into evidence-cited backlog proposals behind the unchanged human gate, a per-mega HTML dashboard becomes the sign-off surface, Learn machinery gets ONE named subsystem home (`lib/learn/` + `bin/learn`), and the front door (README, `/kit:onboard`, `bin/config`) finally tells the five-leg story with a config surface that shows provenance.
 **Quality bar:** Propose, never dispose: every automated leg ends at a staging file or a rendered surface, and `add-backlog` + mega sign-off stay Han's. Every proposal cites lens + figure + rids, or it does not stage. No new diaries: each artifact this mega adds has a named reader or is a forcing function (process-audit R4/R6 rule). One word, one meaning: `retro` = per-run, `propose` = cross-run.
 **Design source:** `docs/briefs/DECISION-BRIEF-harness-loop.md` (v2, decisions §5 resolved 2026-07-12)
-**Stacking tool:** gh-sequential (one branch per sub-goal off master, merged one at a time; disjoint-Touches sub-goals may open in parallel)
+**Stacking tool:** gh (STACKED PRs, switched from gh-sequential by Han 2026-07-12: a dependent sub-goal branches off its parent sub-goal branch, PR base = parent branch; independents off master; fan-in sub-goals base master after parents merge; each goal file PR-base field is authoritative)
 **Merge mode:** auto-bottom-up
 **Merge autonomy:** gated-final
 **Started:** 2026-07-12 (drafted; launch pending Han's go on SG-01's taxonomy ADR gate)
@@ -23,7 +23,7 @@
 
 ## Dependencies
 
-- 01 first and GATED: nothing that builds on the taxonomy (04, 05, 06, 08, 09, and transitively 10) starts before Han approves the ADR.
+- 01 first and GATED, gate = MERGE gate under stacked mode (Han 2026-07-12): 04/08 MAY build + open PRs stacked on `docs/loop-01-taxonomy` while Han reviews; NOTHING in that stack merges before #236 merges; an ADR redline rebases the stack (accepted tradeoff). Same rule for 09 stacking on 08.
 - 02, 03 depend on nothing (run parallel to 01; disjoint Touches).
 - 04 depends on 01 (subsystem name + move plan come from the ADR).
 - 05 depends on 01 + 02 + 04 (vocabulary; timing data worth citing; the lib/learn home).
