@@ -49,9 +49,13 @@ out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/learn" debt mark-paid no-such
 assert_true "learn debt mark-paid reaches the engine (engine's own no-ledger error, nonzero)" "$([ $rc -ne 0 ] && grep -q 'mark-paid: no ledger file' <<<"$out"; echo $?)"
 
 echo "== learn NC: propose/drain REFUSE, never a silent no-op =="
-out="$("$KIT_DIR/bin/learn" propose 2>&1)"; rc=$?
-assert_true "learn propose exits 1" "$([ $rc -eq 1 ]; echo $?)"
-assert_true "learn propose names SPEC-195" "$(grep -q 'ships in SPEC-195' <<<"$out"; echo $?)"
+# propose is IMPLEMENTED (SPEC-195): the stub-refusal NC is replaced by an engine-reach
+# check, same class as the `learn debt mark-paid reaches the engine` row above. --help is
+# the deterministic no-env probe (a bare run would invoke the live stats/LLM pipeline,
+# which CI must never do): exit 0 + the engine's own argparse usage naming the proposer.
+out="$("$KIT_DIR/bin/learn" propose --help 2>&1)"; rc=$?
+assert_true "learn propose reaches the implemented engine (--help exits 0)" "$rc"
+assert_true "learn propose usage names the cross-run proposer (SPEC-195)" "$(grep -q 'cross-run backlog proposer (SPEC-195)' <<<"$out"; echo $?)"
 out="$("$KIT_DIR/bin/learn" drain 2>&1)"; rc=$?
 assert_true "learn drain exits 1" "$([ $rc -eq 1 ]; echo $?)"
 assert_true "learn drain names SPEC-196" "$(grep -q 'ships in SPEC-196' <<<"$out"; echo $?)"

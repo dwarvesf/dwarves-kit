@@ -86,3 +86,26 @@ in propose.py `_window_rids`.
   verb's wiring -- within the fence's spirit.
 - The goal's `tests/test-config-reserved-keys*` glob names the real file
   `tests/test-reserved-config-guard.sh` (SPEC-188's actual test). Edited the real file.
+- `tests/test-bin-forwarders.sh` (SG-04's census): the two propose stub rows only, per the
+  coordinator's CI-fix directive (see next entry).
+
+## 2026-07-12 CI red: SG-04's stub NC in test-bin-forwarders.sh invalidated by the implementation
+
+Context: PR #243's first CI run failed on both OSes in `tests/test-bin-forwarders.sh`:
+"learn propose exits 1" and "learn propose names SPEC-195" -- SG-04's REFUSE-stub NC, which
+this SG's implementation of the verb correctly invalidates. Root cause of the local-vs-CI
+mismatch: the local verification ran only the four suites named in SPEC-195's Verification
+section; CI runs the full `tests/` step list, which includes SG-04's forwarder census.
+
+Decision: replaced ONLY the two propose rows with an engine-reach check, same class as the
+`learn debt mark-paid reaches the engine` row in the same file: `bin/learn propose --help`
+must exit 0 and print the engine's own argparse usage naming "cross-run backlog proposer
+(SPEC-195)". `--help` is the deterministic no-env probe -- a bare `learn propose` run would
+invoke the live stats/LLM pipeline, which CI must never do. The drain stub rows (SPEC-196)
+are untouched: the SG-06 sibling makes the same class of edit for `drain` on its branch, so
+this edit stays line-disjoint (the shared section-header comment is left stale for the same
+reason; whichever merges second reconciles it).
+
+Impact: `tests/test-bin-forwarders.sh` 30/30 locally; full CI list (48 suites) re-run green
+locally before push. Lesson for later SGs: "full suite" = the CI step list, not the spec's
+Verification block.
