@@ -187,7 +187,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (21, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (23, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
@@ -201,6 +201,8 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | slop-cleaner | Stop | Flags bloated code in recently modified files |
 | session-state-save | Stop, SubagentStop | Persists session state, rotates last 10 archives |
 | citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
+| money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Asks before a money-touching edit lands in a repo named in MONEY_GATE_REPOS (inert unset) |
+| prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
 | output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
@@ -309,7 +311,7 @@ dwarves-kit/
   bin/                          STABLE consumer entrypoints (SPEC-184): `board`/`classify`/`gate` thin forwarders to `lib/<subsystem>/`. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       (25 files) Subagents dispatched by commands
   commands/                     (27 markdown command prompts)
-  hooks/                        (21 scripts + hooks.json plugin manifest)
+  hooks/                        (23 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
   lib/goal/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
