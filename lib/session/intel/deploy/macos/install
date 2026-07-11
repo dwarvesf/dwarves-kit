@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Render + bootstrap the session-intel weekly LaunchAgent (macOS, gui domain).
+# Idempotent: re-running re-renders and restarts the agent. KIT root = this file's
+# repo/install root (works from the checkout or the copied install).
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KIT="$(cd "$HERE/../../../../.." && pwd)"
+PLIST="$HOME/Library/LaunchAgents/session-intel-weekly.plist"
+mkdir -p "$HOME/.claude/intel" "$HOME/Library/LaunchAgents"
+sed -e "s#__HOME__#$HOME#g" -e "s#__KIT__#$KIT#g" \
+  "$HERE/session-intel-weekly.plist.tmpl" > "$PLIST"
+launchctl bootout "gui/$(id -u)/session-intel-weekly" 2>/dev/null || true
+launchctl bootstrap "gui/$(id -u)" "$PLIST"
+launchctl print "gui/$(id -u)/session-intel-weekly" | grep -q "session-intel-weekly" \
+  && echo "[ok] session-intel-weekly installed (Mon 09:00; kickstart to run now)"

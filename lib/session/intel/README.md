@@ -23,9 +23,11 @@ cc-intel synthesis           # just the merge proposals (stdout)
 cc-intel repeat --min 3      # just the repeated-sequence proposals
 ```
 
-## Schedule (weekly, the Air)
+## Schedule (weekly)
 
-Deploy artifacts in `deploy/macos/` (BTM-friendly launcher + plist). See `deploy/macos/cc-intel-runbook.md`. Minimum-infra: a LaunchAgent calling the existing CLIs, no new daemon or listener.
+Deploy artifacts in `deploy/macos/` (BTM-friendly launcher + rendered plist +
+installer; optional consumer bridge hook). See `deploy/macos/README.md`.
+Minimum-infra: a LaunchAgent calling the existing CLIs, no new daemon or listener.
 
 ## Test
 
