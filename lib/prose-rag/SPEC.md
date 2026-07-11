@@ -1,3 +1,8 @@
+> Historical design record from the ops-toolkit origin (2026-06). Corpus paths
+> and host names below are the original author's; in the kit the corpus is
+> consumer config via `PROSE_RAG_CORPUS`, and the Python engine described here
+> was dropped at the fold (Rust engine only).
+
 # SPEC: prose-rag
 
 **Status**: superseded on the engine axis (2026-07-11). This spec describes the original

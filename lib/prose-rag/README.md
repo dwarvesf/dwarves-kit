@@ -11,28 +11,29 @@ dirs/files (e.g. `~/notes:~/research:~/ledger.md`); unset means an empty corpus.
 Enabled via the `prose_rag` module (`bash install.sh --with prose_rag`): wires the
 dormant UserPromptSubmit recall hook (`hooks/prose-rag.sh`, activates only with
 `PROSE_RAG_INJECT=1`) and the `prose-rag` CLI shim (stable entrypoint
-`bin/prose-rag`, Rust engine preferred, Python fallback via uv).
+`bin/prose-rag`).
 
-Two engines live here; **the Rust engine is the one to use**:
+**Rust engine only.** The original Python/fastembed engine was dropped at the fold
+(one engine, one truth): the Rust engine indexes a 4.6k-chunk corpus in 0.63s on
+one core vs 8+ minutes, refreshes incrementally in 0.04s, answers a warm hook in
+~29ms vs ~250ms, and ships as a 4.9MB static binary instead of a Python venv +
+ONNX runtime. Embeddings: model2vec static (potion-retrieval-32M, 512-d); index at
+`~/.claude/prose-rag/index.bin`; sim floors query 0.32 / hook 0.40. Port story +
+candle/Metal post-mortem: `docs/implementation-notes/rust-port.md`. Original design
+records: `SPEC.md`, `docs/implementation-notes/03-prose-rag.md` + `03-rag-autoinject.md`.
 
-| | `rust/` (current) | `bin/prose-rag` (Python, legacy) |
-|---|---|---|
-| Embeddings | model2vec static (potion-retrieval-32M, 512-d) | fastembed bge-small (ONNX, 384-d) |
-| Full index (4.6k chunks) | **0.63s, one core** | 8+ min at 3-4 cores |
-| Refresh, nothing changed | **0.04s** (incremental, per-file hash) | full re-embed every run |
-| Hook latency (warm) | **~29ms** | ~250ms |
-| Footprint | 4.9MB static binary | Python venv + ONNX runtime |
-| Sim floors | query 0.32, hook 0.40 | query 0.55, hook 0.62 |
-
-Same CLI contract (`index` / `query` / `hook`, same flags), separate index files (`~/.claude/prose-rag/index.bin` vs the legacy `index.db`). Port story + candle/Metal post-mortem: `docs/implementation-notes/rust-port.md`. Original design: `SPEC.md`, `docs/implementation-notes/03-prose-rag.md` + `03-rag-autoinject.md`.
-
-## Install (Rust engine)
+## Build (once per machine)
 
 ```bash
-cd tools/prose-rag/rust
-cargo build --release                      # binary at target/release/prose-rag
-./target/release/prose-rag index           # first run downloads potion-retrieval-32M (~124MB), then ~1s
+cd lib/prose-rag/rust
+cargo build --release                       # binary at target/release/prose-rag
+cp target/release/prose-rag ../bin/prose-rag-rs   # where the stable entrypoint looks first
+prose-rag index                             # first run downloads potion-retrieval-32M (~124MB), then ~1s
 ```
+
+The stable entrypoint (`bin/prose-rag`) execs `lib/prose-rag/bin/prose-rag-rs` (or
+the cargo target dir); until the binary is built, `hook` exits 0 (a recall hook
+must never break a prompt) and other commands print the build hint.
 
 ## Use
 
