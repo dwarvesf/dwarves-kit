@@ -17,7 +17,7 @@
 - [ ] 05-retro-cycle, `learn propose` (stats-window aggregate → sonnet interpret → adversarial check → cited, deduped staging) + the recurring `kit-retro-YYYY-WW` queue goal template + `[features] auto_improvement` flipped to [impl] with the SPEC-188 lint amended, `auto`, PR #
 - [ ] 06-staging-drain, `learn drain` renders staging grouped + age-sorted + evidence-first; 30d rows move to `[expired]` (never deleted); promote/reject flow unchanged, `auto`, PR #
 - [x] 07-mega-review-dashboard, `mega review --html <slug>` composes the shipped stats render formatters into one static sign-off page, wired at TIER-4 close, `auto`, PR #238, merged c2eb239 (2026-07-12; CI green both OS; proof docs/verification/loop-07-mega-dashboard.md + 3 screenshots docs/proof/loop-07-mega-dashboard/)
-- [ ] 08-config-surface, `bin/config list|get|explain` with provenance (env > project > kit-root > default) + status tags + the checked-in env↔key registry + drift lint, `auto`, PR #
+- [ ] 08-config-surface, `bin/config list|get|explain` with provenance (env > project > kit-root > default) + status tags + the checked-in env↔key registry + drift lint, `auto`, PR #240 (open, stacked on #236's branch; merges after #236)
 - [ ] 09-onboard-wizard, `/kit:onboard` interactive first-run orchestrator (detect install mode, offer adopt, module picker, consumer-knob capture, plugin-gap disclosure, welcome tour), `gate`, PR #
 - [ ] 10-front-door-truth, README reorganized around the five legs + tables truth-matched (agents 25, skills per ADR §8) + weekly digest folded into session-intel + the ONE kit scheduler (single weekly LaunchAgent + declarative jobs list; per-job plists retire), `auto` (held as final PR under gated-final), PR #
 

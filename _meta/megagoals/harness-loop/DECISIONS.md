@@ -36,3 +36,10 @@ Durable: `tests/lib/contract-lint.sh` is the shared grep-diff-against-manifest p
 ## SG-04 (2026-07-12, PR #239 open + stacked; merge after #236)
 
 bin/learn verb table (final): `debt list|collect|mark-paid` live -> lib/learn/weekend-batch.sh (git mv, byte-identical); `propose` REFUSES exit 1 "ships in SPEC-195"; `drain` REFUSES exit 1 "ships in SPEC-196". bin/ census AFTER: board classify gate goal learn mega queue session spec stats + prose-rag worktree-provision (12 entries, 2 classes; config lands in SG-08); enforced by a standing set-equality test. Recorded exceptions: guidance strings naming add-backlog repointed to `board promote` (byte-level-unchanged exception, impl-notes); lib/stats tests' dormant cc-backlog probe self-SKIPs, not repointed. Deploy note for merge time: re-run install.sh (PATH shims) + re-copy vps-mon bridge per its README.
+
+## SG-08 (2026-07-12, PR #240 open + stacked; merge after #236)
+
+- Registry home: lib/config/module-registry.md (ADR decision-3 pinned). 12 module->leg rows (completeness-linted vs KIT_KNOWN_MODULES) + 91 env<->key rows.
+- Drift-lint allowlist policy: 17 tokens excluded, each with a stated reason (script-local computed paths, test-fixture-only names, prefix false-positives); the allow-regex is derived from the registry's own Allowlist table (single-sourced). Lint scope = the goal's exact seed regex; ~18 real vars outside the prefix family documented as Known gaps for a future structural lint.
+- prose_rag leg = Learn, WORKER-ASSIGNED (absent from the ADR table); Han confirms or the ADR gets amended at gate review.
+- ledger.telemetry: [impl] in kit.toml but reader-less; retagged [design] in the registry only.

@@ -19,6 +19,7 @@ Applied: #1 CRITICAL (SG-10 deps += 08,09; net-chain marked illustrative), #2 (S
 
 ## Event log
 
+2026-07-12 · SG-08 built · stacked PR #240 (base docs/loop-01-taxonomy): bin/config list|get|explain + 103-row module-registry + CI drift lint, resolver byte-identical; deviation flagged for Han: prose_rag had no leg in the ADR decision-3 table, worker assigned Learn (registry row flags it; confirm or amend ADR); ledger.telemetry retagged [design] in registry only (kit.toml untouched); SG-05/06 dispatched stacked on SG-04's branch
 2026-07-12 · SG-04 built · stacked PR #239 (base docs/loop-01-taxonomy) + dotfiles#213 + ops-toolkit#796 (vps-mon bridge, a real grep hit; ADR-0034 decision 7 names it, recorded deviation from the two-repo scope edge); census 11/3-grammars -> 12/2-classes; merge waits on #236
 2026-07-12 · SG-07 done · PR #238 (mega review --html, full lane, 2-lens review, 3 real-data screenshots, wiring+honest-empty NCs) merged c2eb239; SG-04 resumed after an API-connection drop mid-build; SG-08 in flight
 2026-07-12 · SG-02 done · PR #237 (22 sites bracketed, 15 command files, standing lint 51/51, fixture+NC proof) merged 76fbafe; impl-notes added by lead 67a3e8d; SG-07 unblocked
