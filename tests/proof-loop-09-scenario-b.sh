@@ -56,7 +56,6 @@ assert_eq "dry-run wrote no .kit.toml" "$([ -f "$REPO/.kit.toml" ] && echo yes |
 echo ""
 echo "=== Decline-NC re-execution: after detect + check + dry-run (all a declining user sees), tree is byte-identical ==="
 PORC="$(cd "$REPO" && git status --porcelain | wc -l | tr -d ' ')"
-TREE_BEFORE="$(cd "$REPO" && git rev-parse 'HEAD^{tree}')"
 assert_eq "porcelain is 0 lines after the read-only steps (decline = no-op)" "$PORC" "0"
 
 echo ""

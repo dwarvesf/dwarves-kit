@@ -61,8 +61,10 @@ Adoption is what makes an agent classify + pick a lane here and what makes the s
   on an already-adopted repo, the honest path (since a project's own `.kit.toml` is never overwritten,
   SPEC-192) is: hand-edit the `[modules]` section of `<repo>/.kit.toml`, then re-run `/kit:adopt` (or
   `bash "$KIT/lib/adopt.sh" --refresh "$REPO"`) to re-wire `settings.json` to match. Offer to show the
-  current `[modules]` block; never edit it silently. Then move to G (you may walk D/E as read-only
-  guidance if the user asks, but the default is the tour).
+  current module state via the fenced read surface, `KIT_PROJECT_ROOT="$REPO" bash "$KIT/bin/config" list`
+  filtered to the `modules.*` rows (PROVENANCE shows which values this repo's `.kit.toml` overrides);
+  never edit anything silently. Then move to G (you may walk D/E as read-only guidance if the user
+  asks, but the default is the tour).
 - **Not adopted** -- Preview first: `bash "$KIT/lib/adopt.sh" --dry-run "$REPO"` and show exactly
   what it would create. Then ask, with **Y as the recommended default**:
   > Adopt this repo now? It creates AGENTS.md + a CLAUDE.md loader + a WORKFLOW pointer + the proof
@@ -77,11 +79,11 @@ Reached only from B's "not adopted -> Y". The module roster and its defaults are
 registry, never hardcoded here. Read them: `bash "$KIT/bin/config" list` and keep the rows whose
 DISPLAY KEY matches `modules.*` (the module rows; NOT the MODULE column, which also names non-module
 subsystems like `config`/`ledger`/`gate`). Each row gives the module name, its kit-root default
-(`true`/`false`), and its owning leg. For the one-line purpose of each,
+(`true`/`false`). For the one-line purpose of each,
 `bash "$KIT/bin/config" explain modules.<name>` prints it. A module added to the registry later
 appears here automatically; do not maintain a second list.
 
-Present the modules compactly (name -- leg -- one-line purpose -- default), grouped so the kit-root
+Present the modules compactly (name -- one-line purpose -- default), grouped so the kit-root
 `true` ones read as "the recommended baseline." Then let the user accept the baseline or toggle a
 few. **Recommended default: accept the kit-root defaults** (that is the sane baseline the kit ships).
 `Enter` takes them as-is.
@@ -127,18 +129,31 @@ and where that value comes from. Then:
   `MONEY_GATE_REPOS`, the `STATS_*` sources) -- there is no `.kit.toml` sink for it, so print the exact
   shell guidance instead, e.g. `export PROSE_RAG_INJECT=1` to activate prose-rag recall, and say which
   shell profile it belongs in. Do not try to edit the user's shell config.
+- **A `**no-default-consumer**` knob** (the VALUE column shows that marker, e.g. `stats`'s
+  `STATS_TIDE_DB` / `STATS_LEARNED_MD` / `STATS_REPOS` source vars) -- these are OPTIONAL data
+  sources, skip-safe by design: unset means "that source's table renders empty", never an error.
+  Present them honestly as "optional, safe to leave unset; set only if you have that data source",
+  with the `export` shape for each. Never call a module knob-free when it has such rows; "nothing you
+  MUST set" and "nothing to configure" are different sentences, use the first.
 
-If the chosen modules have no consumer knobs, say so in one line and move on. Recommended default at
-each knob: leave it at its current value (skip), since the kit-root defaults already give a working
-baseline.
+If the chosen modules genuinely have no `[impl]` knob rows at all, say so in one line and move on.
+Recommended default at each knob: leave it at its current value (skip), since the kit-root defaults
+already give a working baseline.
 
 ## E. Disclose the plugin-path gaps (only for mode `plugin` or `both`)
 
-Be honest about what the plugin path cannot do (ADR-0009), in three short bullets:
+Be honest about what the plugin path cannot do (ADR-0009), in four short bullets:
 - **statusLine HUD:** the v1 plugin schema has no `statusLine` field, so the status-line HUD is
   bash-install-only. If they want it, that is the one reason to run the bash install.
 - **Frozen SHA vs `git pull`:** a plugin install is pinned to the version you installed; it moves only
   on `/plugin update`. A bash checkout tracks whatever you `git pull`.
+- **Project hook wiring points at the bash path:** adopt's per-repo `settings.json` wiring copies hook
+  commands that reference `$HOME/.claude/dwarves-kit/hooks/...`, a path only the bash install creates
+  (the plugin compat shim symlinks lib/bin but NOT hooks/). On a plugin-only machine those wired
+  project-level hook entries will not fire until a bash install also runs. The PLUGIN's own hooks
+  (registered via `hooks/hooks.json` at `${CLAUDE_PLUGIN_ROOT}`) are unaffected and do fire; this gap
+  is specifically the adopt-wired per-repo module entries. Say this at adopt time too, not only here:
+  on a plugin machine, never claim the module hooks are live after adopt.
 - **`KIT_FORCE_FULL=1` escape:** `KIT_FORCE_FULL=1 bash install.sh` forces the full bash install even
   on a plugin machine, but that is exactly what creates the double-hooks hazard from step A -- only do
   it if you are deliberately switching paths, and remove the plugin first.

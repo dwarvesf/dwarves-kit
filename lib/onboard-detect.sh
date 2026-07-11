@@ -81,7 +81,7 @@ main() {
   case "$verb" in
     mode) printf '%s\n' "$mode" ;;
     explain) printf '%s\t%s\n' "$mode" "$(explain_mode "$mode")" ;;
-    -h|--help|help) sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//' ;;
+    -h|--help|help) sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//' ;;
     *) echo "onboard-detect: unknown verb '$verb' (use: mode | explain)" >&2; return 64 ;;
   esac
 }
