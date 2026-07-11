@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stdlib tests for cc-recall. Run: python3 -m unittest discover -s tests"""
+"""Stdlib tests for session-recall. Run: python3 -m unittest discover -s tests"""
 import hashlib
 import os
 import subprocess
@@ -10,10 +10,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
-import cc_recall as r  # noqa: E402
+import session_recall as r  # noqa: E402
 
 SEED = os.path.join(ROOT, "fixtures", "seed.jsonl")
-BIN = os.path.join(ROOT, "bin", "cc-recall")
+BIN = os.path.join(ROOT, "bin", "session-recall")
 
 
 class TestRecall(unittest.TestCase):

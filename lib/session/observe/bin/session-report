@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""cc-vps-report: bridge the weekly cc-observe digest into the live vps-mon.
+"""session-report: bridge the weekly session-observe digest into the live vps-mon.
 
-Default action is HEARTBEAT-ONLY: it pings the cc-intel-weekly heartbeat so a
+Default action is HEARTBEAT-ONLY: it pings the session-intel-weekly heartbeat so a
 missed weekly run shows stale on the public /status page (not silently green).
 The metrics-snapshot POST is OPT-IN behind --snapshot (default OFF).
 
@@ -9,7 +9,7 @@ WHY heartbeat-only by default (incident 2026-06-15, agent-silent false-alarm):
   POST /v1/snapshot UPSERTS a row in vps-mon's `hosts` table, and the prober's
   hardcoded `agent-silent` rule (AGENT_SILENT_THRESHOLD_SEC = 600s in
   tools/vps-mon/worker/src/prober.ts) fires CRIT for ANY host whose last_seen
-  is older than 600s. cc-vps-report runs WEEKLY (via cc-intel-weekly), so a
+  is older than 600s. session-report runs WEEKLY (via session-intel-weekly), so a
   snapshot-registered `cc-air` host looks "silent" 6 days out of 7 -> a
   guaranteed weekly false CRIT. It fired once (2026-06-15 19:50); the cc-air
   host row was deleted + the alert acked as immediate mitigation, and the
@@ -23,7 +23,7 @@ WHY heartbeat-only by default (incident 2026-06-15, agent-silent false-alarm):
   with --snapshot once/if vps-mon grows a per-host exempt for low-frequency
   pushers.
 
-Read-only producer: cc-observe / cc-intel never store state; only vps-mon does.
+Read-only producer: session-observe / session-intel never store state; only vps-mon does.
 
 Why this mirrors vps_mon_agent.py rather than importing it: the agent is a
 root-owned Linux/macOS host agent with its own state dir and key file; this is
@@ -38,7 +38,7 @@ ingest.ts on this branch, NOT from the stale wrangler.toml comment):
   - key bytes  = the secret string's UTF-8 bytes, trailing whitespace stripped
                  (worker: keyFromSecret = encoder.encode(secret.trim());
                   agent:  load_key = read_bytes().rstrip(b"\\n\\r ")).
-                 NO base64 decode, NO hex decode. The CC_VPS_HMAC_KEY env value
+                 NO base64 decode, NO hex decode. The SESSION_REPORT_HMAC_KEY env value
                  IS the key material verbatim (we happen to store a base64
                  string there, but both sides just UTF-8 it).
   - msg        = f"{ts}\\n{host_id}\\n{sha256_hex(body)}"  (body = the bytes sent;
@@ -67,8 +67,8 @@ SCHEMA_VERSION = 1
 DEFAULT_URL = "https://mon-ingest.han-ws.workers.dev"
 HOST_ID = "cc-air"
 ROLE = "ai-substrate"
-USER_AGENT = "cc-vps-report/1"
-HB_ID = "cc-intel-weekly"  # informational; the token is what the GET uses
+USER_AGENT = "session-report/1"
+HB_ID = "session-intel-weekly"  # informational; the token is what the GET uses
 
 
 # ----------------------------------------------------------------- distill
@@ -85,7 +85,7 @@ def _sum(items: list, field: str) -> int:
 
 
 def distill(report: dict) -> dict:
-    """Reduce a full `cc-observe report --json` to headline metrics.
+    """Reduce a full `session-observe report --json` to headline metrics.
 
     Defensive on every field: this branch emits skills/tools/hooks/subagents
     only, but PRs #333/#335/#337 add friction/sessions/cost views with richer
@@ -97,7 +97,7 @@ def distill(report: dict) -> dict:
     by_type = subs.get("by_type") or []
 
     # Subagent rate: per100 over the most recent day with prompts, plus the
-    # dominant subagent type. by_day is newest-first per cc-observe.
+    # dominant subagent type. by_day is newest-first per session-observe.
     sub_per100 = None
     for d in by_day:
         prompts = int(d.get("prompts", 0) or 0)
@@ -212,14 +212,14 @@ def ping_heartbeat(url: str, token: str, timeout: int = 10) -> int | None:
 
 def load_report(args) -> dict:
     """Read the report json: from --report-json file, stdin, or by running
-    `cc-observe report --json` from the same bin dir."""
+    `session-observe report --json` from the same bin dir."""
     if args.report_json:
         return json.loads(Path(args.report_json).read_text())
     if not sys.stdin.isatty():
         data = sys.stdin.read().strip()
         if data:
             return json.loads(data)
-    cc = Path(__file__).resolve().parent / "cc-observe"
+    cc = Path(__file__).resolve().parent / "session-observe"
     days = ["--days", str(args.days)] if args.days else []
     out = subprocess.run(
         [str(cc), "report", "--json", *days],
@@ -230,17 +230,17 @@ def load_report(args) -> dict:
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(
-        prog="cc-vps-report",
-        description="Ping the cc-intel-weekly heartbeat (default). With "
-                    "--snapshot, ALSO POST a distilled cc-observe metrics "
+        prog="session-report",
+        description="Ping the session-intel-weekly heartbeat (default). With "
+                    "--snapshot, ALSO POST a distilled session-observe metrics "
                     "snapshot to vps-mon (opt-in; see --snapshot help).",
     )
-    p.add_argument("--url", default=os.environ.get("CC_VPS_URL", DEFAULT_URL),
+    p.add_argument("--url", default=os.environ.get("SESSION_REPORT_URL", DEFAULT_URL),
                    help="vps-mon base URL (default mon-ingest)")
     p.add_argument("--report-json", help="read report json from this file "
-                                         "instead of running cc-observe")
+                                         "instead of running session-observe")
     p.add_argument("--days", type=int, default=7,
-                   help="cc-observe window in days when self-running (default 7)")
+                   help="session-observe window in days when self-running (default 7)")
     p.add_argument("--dry-run", action="store_true",
                    help="print the signed envelope + headers; do NOT POST. "
                         "Exercises the snapshot signer path offline.")
@@ -262,7 +262,7 @@ def main(argv=None) -> int:
         ts = int(time.time())
         envelope = build_envelope(metrics, ts)
         body = gzip.compress(json.dumps(envelope, separators=(",", ":")).encode())
-        key = key_bytes(os.environ.get("CC_VPS_HMAC_KEY", "DRYRUN_KEY"))
+        key = key_bytes(os.environ.get("SESSION_REPORT_HMAC_KEY", "DRYRUN_KEY"))
         print(json.dumps({
             "envelope": envelope,
             "X-Signature": sign_request(key, ts, HOST_ID, body),
@@ -280,9 +280,9 @@ def main(argv=None) -> int:
         metrics = distill(report)
         ts = int(time.time())
         envelope = build_envelope(metrics, ts)
-        secret = os.environ.get("CC_VPS_HMAC_KEY")
+        secret = os.environ.get("SESSION_REPORT_HMAC_KEY")
         if not secret:
-            print("cc-vps-report: CC_VPS_HMAC_KEY not set (op:// ref at runtime)",
+            print("session-report: SESSION_REPORT_HMAC_KEY not set (op:// ref at runtime)",
                   file=sys.stderr)
             return 2
         key = key_bytes(secret)
@@ -295,9 +295,9 @@ def main(argv=None) -> int:
     # Default + always-run: the heartbeat is the correct weekly liveness signal.
     # It does not touch the `hosts` table, so the 600s agent-silent rule cannot
     # see it; it flips silent only after >8 days (interval 604800 + grace 86400).
-    token = os.environ.get("CC_VPS_HB_TOKEN")
+    token = os.environ.get("SESSION_REPORT_HB_TOKEN")
     if not token:
-        print("cc-vps-report: CC_VPS_HB_TOKEN not set (op:// ref at runtime)",
+        print("session-report: SESSION_REPORT_HB_TOKEN not set (op:// ref at runtime)",
               file=sys.stderr)
         return 2
     hb = ping_heartbeat(args.url, token)

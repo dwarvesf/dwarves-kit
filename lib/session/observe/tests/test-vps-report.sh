@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-vps-report signer + distiller smoke test. NO network calls.
+# session-report signer + distiller smoke test. NO network calls.
 #
 # The signer test is load-bearing: a wrong HMAC signature is a SILENT 401 at
 # the live endpoint, so we prove the exact bytes offline before any POST.
@@ -7,7 +7,7 @@
 # Test [1] computes the expected signature with an INDEPENDENT reimplementation
 # of tools/vps-mon/worker/src/hmac.ts::computeSignature (msg =
 # `${ts}\n${host}\n${sha256hex(body)}`, key = secret string's UTF-8 bytes,
-# output "sha256="+hex) and asserts cc-vps-report's own sign_request produces
+# output "sha256="+hex) and asserts session-report's own sign_request produces
 # the identical value. Two independent code paths agreeing == the scheme is
 # right. (The same value also matches a node-crypto cross-check run during
 # development; see the impl notes.)
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="${DIR}/bin/cc-vps-report"
+BIN="${DIR}/bin/session-report"
 
 pass=0; fail=0
 ok() { echo "  ok: $*"; pass=$((pass+1)); }
@@ -32,7 +32,7 @@ m = SourceFileLoader("ccvr", sys.argv[1]).load_module()
 KEY_STR = "test-key-32-bytes-base64-abcdEFGH"
 TS, HOST, BODY = 1700000000, "cc-air", b"hello-body-bytes"
 
-# Independent reference (mirrors hmac.ts, does NOT call cc-vps-report):
+# Independent reference (mirrors hmac.ts, does NOT call session-report):
 ref_msg = f"{TS}\n{HOST}\n{hashlib.sha256(BODY).hexdigest()}".encode()
 ref_sig = "sha256=" + hmac.new(KEY_STR.encode(), ref_msg, hashlib.sha256).hexdigest()
 
@@ -112,7 +112,7 @@ PY
 
 echo "[6] --dry-run prints a valid envelope + signature, no network"
 got="$(printf '%s' '{"files":3,"subagents":{"by_day":[],"by_type":[]}}' \
-       | CC_VPS_HMAC_KEY=test-key "$BIN" --dry-run 2>/dev/null)"
+       | SESSION_REPORT_HMAC_KEY=test-key "$BIN" --dry-run 2>/dev/null)"
 if python3 -c "import sys,json; d=json.load(sys.stdin); assert d['envelope']['schema_version']==1; assert d['X-Signature'].startswith('sha256='); print('ok')" <<<"$got" >/dev/null 2>&1; then
   ok "dry-run envelope valid"
 else

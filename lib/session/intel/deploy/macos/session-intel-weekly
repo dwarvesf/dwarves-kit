@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Launcher for the session-intel weekly digest (kit-owned; folded from ops-toolkit's
-# cc-intel-weekly). Top-level no-extension executable per the BTM rule: launchd's
+# session-intel-weekly). Top-level no-extension executable per the BTM rule: launchd's
 # ProgramArguments[0] points HERE, so Login Items shows "session-intel-weekly" with
 # the exec icon.
 set -euo pipefail
 
-# launchd gives a bare PATH (/usr/bin:/bin:...); cc-intel shells out to cc-observe
+# launchd gives a bare PATH (/usr/bin:/bin:...); session-intel shells out to session-observe
 # (+ repo-sweep when the consumer has one), so widen it.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 INTEL_DIR="${INTEL_DIR:-$HOME/.claude/intel}"
 
 # 1) Write the weekly digest (the primary, must-not-regress behavior).
-"$HOME/.local/bin/cc-intel" run --out "$INTEL_DIR"
+"$HOME/.local/bin/session-intel" run --out "$INTEL_DIR"
 
 # 2) Optional consumer bridge (liveness ping, notifications, anything tenant-side).
 #    The kit ships NO bridge: secrets and monitoring endpoints are consumer config.

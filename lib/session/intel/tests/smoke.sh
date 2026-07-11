@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-intel smoke. Fixture ledger/glossary/transcripts + stubbed cc-observe/repo-sweep
+# session-intel smoke. Fixture ledger/glossary/transcripts + stubbed session-observe/repo-sweep
 # (via env) exercise the digest assembly, synthesis (dup proposals), and repeat-detect
 # (3-gram proposals), with negative controls. Stdlib only (python3).
 #
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$DIR/bin/cc-intel"
+BIN="$DIR/bin/session-intel"
 run(){ python3 "$BIN" "$@"; }
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 
@@ -61,14 +61,14 @@ if grep -q 'no repeated sequences' <<<"$out"; then ok "no false repeat"; else no
 
 echo "[5] run assembles a dated digest with all 4 sections + stub observe/sweep"
 OUT="$TMP/out"
-env CC_INTEL_DATE=2026-06-15 CC_INTEL_OBSERVE_CMD="echo OBSERVE_STUB" CC_INTEL_SWEEP_CMD="echo SWEEP_STUB" \
+env SESSION_INTEL_DATE=2026-06-15 SESSION_INTEL_OBSERVE_CMD="echo OBSERVE_STUB" SESSION_INTEL_SWEEP_CMD="echo SWEEP_STUB" \
   python3 "$BIN" run --out "$OUT" --ledger "$LED" --glossaries "$TMP/glossaries" --transcripts "$TMP/transcripts" --min 3 >/dev/null 2>&1
 F="$OUT/intel-2026-06-15.md"
-if [[ -f "$F" ]] && grep -q 'cc-observe' "$F" && grep -q 'OBSERVE_STUB' "$F" && grep -q 'SWEEP_STUB' "$F" && grep -qi 'merge proposals' "$F" && grep -q 'extract-workflow' "$F" && grep -q 'git fetch origin' "$F"; then ok "digest complete"; else no "digest: $(head -25 "$F" 2>&1)"; fi
+if [[ -f "$F" ]] && grep -q 'session-observe' "$F" && grep -q 'OBSERVE_STUB' "$F" && grep -q 'SWEEP_STUB' "$F" && grep -qi 'merge proposals' "$F" && grep -q 'extract-workflow' "$F" && grep -q 'git fetch origin' "$F"; then ok "digest complete"; else no "digest: $(head -25 "$F" 2>&1)"; fi
 
 echo "[6] run degrades gracefully when observe/sweep fail"
 OUT2="$TMP/out2"
-env CC_INTEL_DATE=2026-06-15 CC_INTEL_OBSERVE_CMD="false" CC_INTEL_SWEEP_CMD="false" \
+env SESSION_INTEL_DATE=2026-06-15 SESSION_INTEL_OBSERVE_CMD="false" SESSION_INTEL_SWEEP_CMD="false" \
   python3 "$BIN" run --out "$OUT2" --ledger "$LED_CLEAN" --glossaries "$TMP/none" --transcripts "$TMP/tclean" --min 3 >/dev/null 2>&1
 if [[ "$(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")" -eq 2 ]]; then ok "both observe+sweep sections degraded (count 2)"; else no "degrade count != 2: $(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")"; fi
 

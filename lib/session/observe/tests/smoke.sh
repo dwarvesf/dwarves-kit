@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-observe smoke test. Parses tests/fixtures/sample.jsonl (a synthetic transcript
+# session-observe smoke test. Parses tests/fixtures/sample.jsonl (a synthetic transcript
 # with a known Skill, two Bash calls (one errored), a Read, and a system entry whose
 # hookInfos carries a deliberately slow hook (500ms) next to a fast one (12ms)).
 #
@@ -8,8 +8,8 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-CC="${DIR}/bin/cc-observe"
-CS="${DIR}/bin/cc-semantic"                         # SG-04 LLM-derived signals
+CC="${DIR}/bin/session-observe"
+CS="${DIR}/bin/session-semantic"                         # SG-04 LLM-derived signals
 FIX="${DIR}/tests/fixtures/sample.jsonl"
 SEMOUT="${DIR}/tests/fixtures/semantic-llm-out.json"  # injected fake model response
 SFIX="${DIR}/tests/fixtures/session-sample.jsonl"  # clean session (no sidechain) for archetype/circadian
@@ -110,20 +110,20 @@ if grep -Eq 'claude-fable-5[[:space:]]+1000000.+[[:space:]]\?$' <<<"$out"; then 
 echo "[26] cost cache-hit ratio: 90% (900k read / 100k write) in header"
 if grep -q 'cache-hit 90%' <<<"$out"; then ok "cache-hit 90%"; else no "cache-hit wrong: $out"; fi
 
-echo "[27] cc-semantic: injected model output -> topics + self-corrections, propose-only banner"
-out="$(CC_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$DIR/tests/fixtures" --days 0)"
-if grep -q 'cc-observe tooling' <<<"$out" && grep -q 'self-corrections: 1' <<<"$out" && grep -q 'PROPOSAL ONLY' <<<"$out"; then ok "topics + corrections + propose-only banner"; else no "cc-semantic output wrong: $out"; fi
+echo "[27] session-semantic: injected model output -> topics + self-corrections, propose-only banner"
+out="$(SESSION_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$DIR/tests/fixtures" --days 0)"
+if grep -q 'session-observe tooling' <<<"$out" && grep -q 'self-corrections: 1' <<<"$out" && grep -q 'PROPOSAL ONLY' <<<"$out"; then ok "topics + corrections + propose-only banner"; else no "session-semantic output wrong: $out"; fi
 
-echo "[28] cc-semantic negative control: failing command -> _unavailable_ (never fabricates)"
-out="$(CC_SEMANTIC_CMD="false" "$CS" --root "$DIR/tests/fixtures" --days 0)"
+echo "[28] session-semantic negative control: failing command -> _unavailable_ (never fabricates)"
+out="$(SESSION_SEMANTIC_CMD="false" "$CS" --root "$DIR/tests/fixtures" --days 0)"
 if grep -q '_unavailable_' <<<"$out"; then ok "degrades to _unavailable_ on command failure"; else no "should be unavailable: $out"; fi
 
-echo "[29] cc-semantic: no prompts in window -> empty (no proposal)"
-out="$("$CS" --root /tmp/cc-semantic-none-$$ --days 0)"
+echo "[29] session-semantic: no prompts in window -> empty (no proposal)"
+out="$("$CS" --root /tmp/session-semantic-none-$$ --days 0)"
 if grep -q 'no prompts' <<<"$out"; then ok "empty window handled"; else no "empty path wrong: $out"; fi
 
-echo "[30] cc-semantic --json: valid JSON with status ok"
-if CC_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$DIR/tests/fixtures" --days 0 --json | python3 -m json.tool >/dev/null 2>&1; then ok "valid json"; else no "json invalid"; fi
+echo "[30] session-semantic --json: valid JSON with status ok"
+if SESSION_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$DIR/tests/fixtures" --days 0 --json | python3 -m json.tool >/dev/null 2>&1; then ok "valid json"; else no "json invalid"; fi
 
 echo "[31] skills --latency: tiny-frequent total 150ms over 3 fires (max 50)"
 out="$("$CC" skills --latency --file "$LFIX")"
