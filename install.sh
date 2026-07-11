@@ -190,6 +190,7 @@ kit_module_hooks() {
 # dance (ops-toolkit cc-elevation redeploy.sh) for kit-owned tools.
 kit_module_clis() {
   case "$1" in
+    board) echo "add-backlog" ;;
     session) echo "cc-intel cc-observe cc-semantic cc-recall cc-vps-report" ;;
     worktree) echo "worktree-provision" ;;
     prose_rag) echo "prose-rag" ;;

@@ -31,6 +31,24 @@ Also inherent: with no `~/.config/session-intel/bridge` the launcher skips the
 bridge block entirely (plain `-x` test), so a kit-only machine runs the digest
 with zero consumer wiring.
 
+## Addendum: add-backlog recovered into the board module
+
+Trashing the retired ops-toolkit cc-elevation snapshot revealed `add-backlog`
+(the human gate that promotes backlog-stage staged rows; referenced by the
+SessionStart surface and the stats anomaly flow) had no durable home: the
+kit-foldin moved the STAGING hook but never the reviewer. Recovered from ops
+git history into `lib/board/bin/add-backlog`, genericized to the
+`BACKLOG_STAGE_*` env names + repo-relative defaults (tenant `OPS_TOOLKIT`
+path dropped), exposed via the `board` module CLI shim + `bin/add-backlog`
+(SPEC-184).
+
+```
+Command: cd <a repo with _meta/backlog-staging.md> && add-backlog
+Output:  numbered staged-candidate list (live ops board: 63 candidates)
+Exit:    0
+Verdict: PASS
+```
+
 ## Recorded run
 
 ```
