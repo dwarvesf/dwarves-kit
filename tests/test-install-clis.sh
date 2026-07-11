@@ -34,6 +34,13 @@ assert_true "money-gate.sh wired on opt-in" "$(grep -q 'money-gate.sh' "$H5/.cla
 assert_true "prose-rag.sh wired on opt-in" "$(grep -q 'prose-rag.sh' "$H5/.claude/settings.json"; echo $?)"
 assert_true "prose-rag CLI shim present via prose_rag module" "$([ -x "$H5/.local/bin/prose-rag" ]; echo $?)"
 
+echo "== board module exposes the add-backlog human gate =="
+H6="$(mktemp -d)"
+HOME="$H6" bash "$KIT_DIR/install.sh" --with board >/tmp/kitcli-h6.log 2>&1
+assert_true "add-backlog shim present via board module" "$([ -x "$H6/.local/bin/add-backlog" ]; echo $?)"
+out="$(cd "$(mktemp -d)" && HOME="$H6" "$H6/.local/bin/add-backlog" 2>&1)"
+assert_true "add-backlog runs (empty repo -> no staged candidates)" "$(grep -qE 'no staged candidates|nothing staged' <<<"$out"; echo $?)"
+
 echo "== NC: spine-only install exposes no CLIs =="
 H2="$(mktemp -d)"
 HOME="$H2" bash "$KIT_DIR/install.sh" --prune >/tmp/kitcli-h2.log 2>&1
