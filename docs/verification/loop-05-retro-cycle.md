@@ -111,8 +111,30 @@ behavior surface ships WITH its test surface; prior coverage of every added path
 
 ## Recheck (Rung 3)
 
-A fresh-context `kit:recheck-verifier` was dispatched to RE-EXECUTE the LIVE-run command
+A fresh-context recheck agent was dispatched to RE-EXECUTE the LIVE-run command
 (`bin/learn propose --days 30`) against the real ledgers and re-judge the outcome (not a
-read-back of this table). Verdict recorded below.
+read-back of this table). (`kit:recheck-verifier`'s tool fence excludes `bin/learn`, so a
+general-purpose fresh-context agent ran the same re-execute-and-judge contract.)
 
-<!-- RECHECK-VERDICT -->
+**VERDICT: PASS.** Re-executed the pipeline in the foreground against the real XDG ledgers
+under rid `loop-05-recheck` and independently re-judged:
+
+| Check | Result |
+|---|---|
+| Exit code | `0` |
+| Console summary | `19 signals over 151 rids -> 10 hypotheses -> 4 candidates staged (dropped: 0 ungrounded, 6 refuted, 0 duplicate)` |
+| TOKENS markers | `17` (interpret + adversarial passes both fired) |
+| Propose-only | `git status` after run showed only `?? _meta/backlog-staging.md` (the runtime artifact); no board/ledger/source file mutated |
+| Deterministic suite | `33 run, 33 passed, 0 failed` |
+| Citation integrity | 4 staged blocks, 4 `- Source:` lines, EVERY block citing lens + figure + rids |
+
+One quoted survivor Source line from the recheck run (verbatim):
+```
+- Source: learn propose 2026-07-12 | lens=gate-yield figure="design override_pct=18.8"
+  rids=SPEC-105-hardening,SPEC-106-admin-moderation,SPEC-107-launch-pack,SPEC-108-account-settings,SPEC-109-onboarding,advisor-visibility,board-mirror,board-tool,+143 more
+```
+The other three survivors cited `anomalies:token_runaway`, `defect-correlation`, and
+`memory-sweep`, each with a non-empty `figure` and a bounded rids sample. The run staged a
+DIFFERENT survivor count than the capture run (4 vs 1) -- expected from real-model variance --
+but every staged candidate was grounded, cited, and non-refuted, and the 6 refuted were
+dropped honestly. The claim holds under fresh-context re-execution.
