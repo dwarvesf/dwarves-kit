@@ -32,3 +32,7 @@ Durable: `tests/lib/contract-lint.sh` is the shared grep-diff-against-manifest p
 
 - Dashboard output location convention: `<megagoals-root>/<slug>/REVIEW.html`, sibling of RUN_REPORT.md, overridable via `--out` (SPEC-197 Technical Design). A projection, never a stored source of truth.
 - `lib/mega.sh` -> `lib/mega/mega.sh` directory promotion DEFERRED to SG-04 (SPEC-197 DEC-001; the ADR census names it SG-04's target).
+
+## SG-04 (2026-07-12, PR #239 open + stacked; merge after #236)
+
+bin/learn verb table (final): `debt list|collect|mark-paid` live -> lib/learn/weekend-batch.sh (git mv, byte-identical); `propose` REFUSES exit 1 "ships in SPEC-195"; `drain` REFUSES exit 1 "ships in SPEC-196". bin/ census AFTER: board classify gate goal learn mega queue session spec stats + prose-rag worktree-provision (12 entries, 2 classes; config lands in SG-08); enforced by a standing set-equality test. Recorded exceptions: guidance strings naming add-backlog repointed to `board promote` (byte-level-unchanged exception, impl-notes); lib/stats tests' dormant cc-backlog probe self-SKIPs, not repointed. Deploy note for merge time: re-run install.sh (PATH shims) + re-copy vps-mon bridge per its README.

@@ -19,6 +19,7 @@ Applied: #1 CRITICAL (SG-10 deps += 08,09; net-chain marked illustrative), #2 (S
 
 ## Event log
 
+2026-07-12 · SG-04 built · stacked PR #239 (base docs/loop-01-taxonomy) + dotfiles#213 + ops-toolkit#796 (vps-mon bridge, a real grep hit; ADR-0034 decision 7 names it, recorded deviation from the two-repo scope edge); census 11/3-grammars -> 12/2-classes; merge waits on #236
 2026-07-12 · SG-07 done · PR #238 (mega review --html, full lane, 2-lens review, 3 real-data screenshots, wiring+honest-empty NCs) merged c2eb239; SG-04 resumed after an API-connection drop mid-build; SG-08 in flight
 2026-07-12 · SG-02 done · PR #237 (22 sites bracketed, 15 command files, standing lint 51/51, fixture+NC proof) merged 76fbafe; impl-notes added by lead 67a3e8d; SG-07 unblocked
 2026-07-12 · SG-03 done · PR #226 reviewed (flock fix + Barrier row 4c sound), squash-merged a6c5a9e; post-merge suite 51/51 on master; review gate recorded on rid harvest-dedup-append
