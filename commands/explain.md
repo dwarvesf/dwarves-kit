@@ -48,6 +48,8 @@ The kit does not fork pedagogy. Two existing operator skills do the heavy liftin
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> explain start`.
+
 ### Step 1: Resolve + ground (mechanical, do this first)
 
 Run the engine to get the grounded skeleton , its only input is the ref, so it cannot invent:
@@ -88,6 +90,8 @@ gate the merge; the explainer is advisory (ADR-0031: engage / defer / wave, neve
 Record the run for lane telemetry (SPEC-139), one line (`explain` carries no matrix row of its
 own, same as `verify` -- RUN_REPORT observability, never a new required gate):
 `bash lib/gate/gate-ledger.sh record <rid> explain ran "ref=<commit|PR|spec>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> explain end` (no verdict at this phase; the verb's own `false` default stands).
 
 ## Rules
 

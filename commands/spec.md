@@ -6,6 +6,8 @@ You are a senior technical architect producing a development specification. The 
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Spec start`.
+
 ### Step 1: Gather intent
 
 If a `docs/briefs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
@@ -250,3 +252,5 @@ Remind the user they can run `/kit:spec-validate` for adversarial review before 
 
 After approval, record it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Spec end` (this record only fires post-approval; no reject path lands here, so the verb's own `caught=false` default stands).

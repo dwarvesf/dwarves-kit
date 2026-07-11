@@ -12,6 +12,8 @@ Grill applies to EVERY work type; the tiny lane is exempt (one obvious edit need
 
 ## Process
 
+If Step 0 below fires (the interview runs), bracket the phase for timing (SPEC-129) before starting Step 1: `bash lib/gate/gate-ledger.sh outcome <rid> grill start`. A precheck auto-skip (no interview) is never bracketed -- no work ran, no duration to measure.
+
 ### Step 0: Unknown-density precheck (SPEC-138)
 
 Grill is the kit's own read of the highest-leverage pre-implementation move (Thariq, "A Field
@@ -195,6 +197,8 @@ decided:
 
 - **The interview ran** (Step 0 fired): record it for telemetry (SPEC-063):
   `bash lib/gate/gate-ledger.sh record <rid> grill ran "<N> questions, <M> contradictions, banks: <type>"`.
+  Close the timing bracket opened at the top of this Process section (SPEC-129):
+  `bash lib/gate/gate-ledger.sh outcome <rid> grill end caught=<true if M > 0, else false>`.
 - **The precheck auto-skipped** (Step 0, SPEC-138): record the reason, with the `reason=` token
   as the FIRST word of the free text:
   `bash lib/gate/gate-ledger.sh record <rid> grill skipped "reason=<home-turf|density-low|operator-wave>: <one-line why>"`.

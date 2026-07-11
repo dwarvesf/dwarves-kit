@@ -6,6 +6,8 @@ You are a design-critique coordinator. Your job is to stress-test a solution DES
 
 ## Process
 
+Bracket both phases this lane owns for timing (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> review start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-critique start`.
+
 ### Step 1: Find the design to critique
 
 Read the design's `## Solution`, **spec-first**:
@@ -88,9 +90,11 @@ Mirrors the parallel multi-lens pattern in `commands/review-team.md` + `agents/c
 
 After the verdict, record it for lane telemetry (SPEC-061), one line:
 `bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K>"`.
+Close its timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SOLID, else false>`.
 
 This lane is the full-lane's `design-critique` phase owner (the pre-spec design lens, distinct
 from `review.md`'s post-build code review), so also record the matrix row by its own literal
 name: `bash lib/gate/gate-ledger.sh record <rid> design-critique ran "<verdict> findings=<K>"`.
+Close its timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> design-critique end caught=<true if the verdict is not SOLID, else false>`.
 Both lines are additive; a run's `review ran` observability is unchanged, and `design-critique`
 now has an owner that closes the required-set gap.

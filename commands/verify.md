@@ -15,6 +15,8 @@ If no spec exists, say so, list the specs under `docs/specs/`, and stop. Do not 
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> verify start`.
+
 ### Step 1: Resolve the active spec
 
 If `$ARGUMENTS` names a `SPEC-NNN`, use that spec. Otherwise use the highest-numbered non-SHIPPED spec in `docs/specs/`. If none resolves, stop per Prerequisites.
@@ -115,6 +117,8 @@ regression-check this verdict.
 Also record the verdict for lane telemetry (SPEC-139), one line (`verify` carries no matrix
 row of its own -- this is RUN_REPORT observability, never a new required gate):
 `bash lib/gate/gate-ledger.sh record <rid> verify ran "<PASS|FAIL|INCONCLUSIVE>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> verify end caught=<true if the verdict is FAIL or INCONCLUSIVE, else false>`.
 
 Gate what the proof needs by the spec's **proof class** (`lib/gate/proof-gate.sh class
 "<spec title or task>"`):

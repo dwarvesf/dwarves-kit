@@ -6,6 +6,8 @@ You are a paranoid senior engineer reviewing code changes. You are not here to b
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> review start`.
+
 ### Step 1: Gather the diff
 
 Run `git diff HEAD~1` (or `git diff main` if on a feature branch) to see what changed. If no git history, ask the user which files to review.
@@ -121,6 +123,8 @@ rejected-findings-memory counts (SPEC-144): `findings=<K>` counts FRESH findings
 ```
 bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected=<M> actor=$(git config user.name)"
 ```
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SHIP, else false>`.
 
 
 Completeness scoring:
