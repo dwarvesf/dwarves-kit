@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# bin/prose-rag -- STABLE consumer entrypoint (SPEC-184).
+# Engine pick at runtime: the built Rust binary when present (fast, no venv),
+# else the Python engine via uv (project venv: fastembed + sqlite-vec).
+# `hook` with no engine exits 0: a recall hook must never break a prompt.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PR="$SELF_DIR/../lib/prose-rag"
+if [ -x "$PR/bin/prose-rag-rs" ]; then
+  exec "$PR/bin/prose-rag-rs" "$@"
+elif [ -x "$PR/rust/target/release/prose-rag" ]; then
+  exec "$PR/rust/target/release/prose-rag" "$@"
+elif command -v uv >/dev/null 2>&1 && [ -f "$PR/pyproject.toml" ]; then
+  exec uv run --project "$PR" python "$PR/bin/prose-rag" "$@"
+fi
+[ "${1:-}" = "hook" ] && exit 0
+echo "prose-rag: no engine available. Build one: (cd $PR/rust && cargo build --release && cp target/release/prose-rag ../bin/prose-rag-rs), or install uv." >&2
+exit 1
