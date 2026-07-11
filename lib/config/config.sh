@@ -69,15 +69,42 @@ _find_row() {
   return 1
 }
 
+# _default_value <cell> -- the MACHINE value of a registry Default cell. The cell is authored
+# for humans (a backtick-quoted literal plus an optional parenthetical annotation, e.g.
+# `1` (truthy)), but `config get`'s contract is "the resolved effective value only (for
+# scripting)" -- so extract the first backtick-quoted literal and strip one layer of
+# double-quotes (mirroring _kit_toml_get's own unquote). A cell with NO backtick literal
+# ((none), **no-default-consumer**, n/a) is a pure annotation: there IS no machine default,
+# and the annotation itself is the most honest output, so it passes through as-is.
+_default_value() {
+  local cell="$1" lit
+  case "$cell" in
+    \`*)
+      lit="${cell#\`}"; lit="${lit%%\`*}"
+      lit="${lit#\"}"; lit="${lit%\"}"
+      printf '%s' "$lit"
+      ;;
+    *) printf '%s' "$cell" ;;
+  esac
+}
+
 # _resolve <row> -- sets EFFECTIVE / PROVENANCE / ENV_VAL / ENV_SET / PROJ_VAL / PROJ_SET /
 # ROOT_VAL / ROOT_SET (globals; mirrors the small-bash-script house style of
 # lib/classify/lane-classify.sh's LANE/REASON/FIRED globals, not a subshell-return dance).
 _resolve() {
   local row="$1" envvar tomlkey defaultval section key
-  envvar="$(_row_get "$row" 1)"; tomlkey="$(_row_get "$row" 2)"; defaultval="$(_row_get "$row" 3)"
+  envvar="$(_row_get "$row" 1)"; tomlkey="$(_row_get "$row" 2)"
+  defaultval="$(_default_value "$(_row_get "$row" 3)")"
 
+  # Non-EMPTY test, not bare existence: every real consumer in this codebase reads its knob
+  # via ${VAR:-default} (e.g. orchestrate.sh's WAVE_CAP), which treats set-but-empty exactly
+  # like unset -- so this surface must match, or `WAVE_CAP="" config explain` would report an
+  # empty env win the real orchestrator never sees. (The one deliberate exception,
+  # KIT_LEDGER_DIR's set-but-empty FATAL in kit_resolve_log_dir, is documented on that row;
+  # the generic model does not replay it.) Also consistent with the TOML levels below, whose
+  # [ -n ... ] tests already treat empty as unset.
   ENV_VAL=""; ENV_SET=0
-  if [ "$envvar" != "-" ] && declare -p "$envvar" >/dev/null 2>&1; then
+  if [ "$envvar" != "-" ] && [ -n "${!envvar:-}" ]; then
     ENV_SET=1; ENV_VAL="${!envvar}"
   fi
 
@@ -114,6 +141,10 @@ cmd_list() {
     status="$(_row_get "$row" 4)"; module="$(_row_get "$row" 5)"
     display="$(_display_key "$row")"
     val="$EFFECTIVE"
+    # A machine-empty default ("" -- e.g. TIER4_CORPUS) renders as a visible marker, not a
+    # blank cell a reader would misread as a rendering bug. Display-only: `get` still emits
+    # the honest empty string for scripting.
+    [ -n "$val" ] || val="(empty)"
     # Non-[impl] keys are inert by contract (design/reserved/consumer): never render them as
     # a live toggle, so a reader cannot mistake a designed-not-built key for a working one.
     if [ "$status" != "[impl]" ]; then
@@ -177,6 +208,17 @@ EOF
 
 main() {
   local verb="${1:-}"
+  # Fail loudly up front for the read verbs: _registry_rows' own error would otherwise be
+  # swallowed by cmd_list's `< <(...)` process substitution (whose exit status is never
+  # checked), leaving a header-only render with exit 0 -- a silent-success a CI wrapper
+  # would misread. cmd_get/cmd_explain would fail anyway, but with a misleading "unknown
+  # key" message instead of the real cause. (A separate guard case, not `;;&` fall-through
+  # -- that is bash-4-only and macOS ships bash 3.2.)
+  case "$verb" in
+    list|get|explain)
+      [ -f "$REGISTRY_FILE" ] || { echo "config: registry file missing: $REGISTRY_FILE" >&2; return 1; }
+      ;;
+  esac
   case "$verb" in
     list) cmd_list ;;
     get) shift; cmd_get "$@" ;;

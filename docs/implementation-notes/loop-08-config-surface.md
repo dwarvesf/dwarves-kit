@@ -118,6 +118,40 @@ not introduced here, and out of this sub-goal's scope to fix). Added one new ste
 lint's "an unregistered var can no longer merge" claim (PR body) is actually true in CI, not
 just true when run locally.
 
+## 2026-07-12 Review round: 2 MAJOR + 2 MINOR, all fixed pre-push
+
+A fresh-context review pass (multi-lens, per the AGENTS.md enforcement-surface escalation rule
+for lib/-touching runs) verified all five hard fences hold and spot-checked 7 registry rows
+against their cited sources (all accurate), then found four real defects, all fixed:
+
+1. **MAJOR, machine-dirty `get` output.** `config get QUEUE_POLL_SECS` printed the registry
+   cell's human markdown verbatim (backticks + annotations: `` `15` ``, `` `1` (truthy)``),
+   breaking its own "for scripting" contract -- and the test suite had encoded the bug as the
+   expectation. Fix: `_default_value()` extracts the first backtick-quoted literal and strips
+   one double-quote layer (mirroring `_kit_toml_get`'s unquote); annotation-only cells
+   ((none), **no-default-consumer**) pass through as-is, honestly. Tests updated to assert the
+   clean scalar.
+2. **MAJOR, set-but-empty env treated as a win.** `_resolve()` used `declare -p` (existence),
+   so `WAVE_CAP="" config explain` reported an empty env win that the real consumer
+   (`${WAVE_CAP:-...}` in orchestrate.sh) would never see. Fix: non-empty test
+   (`[ -n "${!envvar:-}" ]`), consistent with the TOML levels' own `[ -n ... ]` checks; new
+   test asserts empty env falls through to the default.
+3. **MINOR, allowlist header leak.** The test's `_allow_regex` awk included the Allowlist
+   table's header word "Token" in the derived allow-regex (harmless today, a silent
+   over-allowlist if the prefix family widens toward T-). Fix: explicit header-row skip,
+   mirroring `_registry_rows`.
+4. **MINOR, silent success on a missing registry.** `cmd_list`'s `< <(_registry_rows)` process
+   substitution swallowed the missing-file error, rendering a header-only list with exit 0.
+   Fix: an up-front registry-file existence guard in `main()` for all three read verbs (a
+   separate guard `case`, not `;;&` fall-through, which is bash-4-only and macOS ships 3.2);
+   new test asserts the hard failure.
+
+Also added from the review's coverage-gap list: a test for the `ledger.location` multi-env-row
+registry-order tie-break (KIT_LEDGER_DIR's canonical row wins a bare-key lookup). Plus one
+display nicety the fix surfaced: a machine-EMPTY default (TIER4_CORPUS, CC_SI_MEMORY_LEDGER)
+renders `(empty)` in `list` (display only; `get` still emits the honest empty string). Suite
+after the round: 19/19 (was 14/14); full regression re-run green (meta 683, hooks 453).
+
 ## 2026-07-12 No deviations from the goal's scope fences
 
 `config set` was not built. `lib/config/kit-config.sh` has zero diff against the branch point.

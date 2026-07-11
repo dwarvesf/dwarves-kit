@@ -41,12 +41,18 @@ assert_eq() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PA
 SEED_RE='\$\{?(KIT|WAVE|QUEUE|MEGA|CC_SI|PROSE_RAG|MONEY_GATE|TIER4|MUX|TMUX|PANE|TERMINAL|STATS|CC_BACKLOG|HARVEST|BACKLOG|DWARVES)[A-Z_]*'
 
 # Allowlist regex: dynamically derived from the registry's own "## Allowlist" table (single-
-# sourced -- this test file does not hand-maintain a second copy of the token list).
+# sourced -- this test file does not hand-maintain a second copy of the token list). The
+# header row (| Token | ...) is skipped explicitly, mirroring _registry_rows in config.sh;
+# without the skip the word "Token" leaks into the allow-regex (harmless today only because
+# no seed prefix starts with To, but a widened prefix family could silently over-allowlist).
 _allow_regex() {
   awk '
     /^## Allowlist/ {inal=1; next}
     /^## Known gaps/ {inal=0}
-    inal && /^\| [A-Za-z]/ { gsub(/^\| /,""); split($0,a,"|"); gsub(/^[ \t]+|[ \t]+$/,"",a[1]); print a[1] }
+    inal && /^\| [A-Za-z]/ {
+      if ($0 ~ /^\| Token \|/) next
+      gsub(/^\| /,""); split($0,a,"|"); gsub(/^[ \t]+|[ \t]+$/,"",a[1]); print a[1]
+    }
   ' "$REGISTRY" | paste -sd'|' -
 }
 
@@ -91,10 +97,21 @@ assert "a fake module name is correctly NOT found in the registry (the check is 
 
 echo ""
 echo "=== AC5: bin/config functional smoke (list/get/explain + provenance fixture) ==="
-assert_eq "get WAVE_CAP (default, no overrides) == 2" "$(bash "$CONFIG_BIN" get WAVE_CAP)" '`2`'
-assert_eq "get mega.wave_cap (dotted-key lookup) == 2" "$(bash "$CONFIG_BIN" get mega.wave_cap)" '`2`'
+# `get` must emit the MACHINE value (a scalar a script can compare), never the registry
+# cell's human markdown (backticks / parenthetical annotations) -- review finding, 2026-07-12.
+assert_eq "get WAVE_CAP (default, no overrides) is the clean scalar 2" "$(env -u WAVE_CAP bash "$CONFIG_BIN" get WAVE_CAP)" '2'
+assert_eq "get mega.wave_cap (dotted-key lookup) is the clean scalar 2" "$(env -u WAVE_CAP bash "$CONFIG_BIN" get mega.wave_cap)" '2'
+assert_eq "get TIER4_CLOSE strips the annotation ((truthy)) from the default cell" "$(env -u TIER4_CLOSE bash "$CONFIG_BIN" get TIER4_CLOSE)" '1'
+assert_eq "get MEGA_MERGE_POSTURE unquotes the default (one \" layer, like _kit_toml_get)" "$(env -u MEGA_MERGE_POSTURE bash "$CONFIG_BIN" get MEGA_MERGE_POSTURE)" 'auto-to-final'
 if bash "$CONFIG_BIN" get NOT_A_REAL_KEY >/dev/null 2>&1; then RC=1; else RC=0; fi
 assert "get on an unknown key fails (exit != 0)" $RC
+# Set-but-EMPTY env == unset (matches every real consumer's ${VAR:-default} semantics;
+# review finding, 2026-07-12): an empty WAVE_CAP must not report an empty env win.
+assert_eq "get with set-but-empty env falls through to the default (\${VAR:-} semantics)" "$(WAVE_CAP='' bash "$CONFIG_BIN" get WAVE_CAP)" '2'
+# Missing registry file: every read verb fails loudly (exit != 0), never a header-only
+# exit-0 render (review finding, 2026-07-12).
+if CONFIG_REGISTRY_FILE=/nonexistent-registry.md bash "$CONFIG_BIN" list >/dev/null 2>&1; then RC=1; else RC=0; fi
+assert "list with a missing registry file fails (exit != 0), no silent header-only success" $RC
 
 FIXDIR="$(mktemp -d -t config-registry-fixture.XXXXXX)"
 mkdir -p "$FIXDIR/root" "$FIXDIR/proj"
@@ -122,6 +139,13 @@ if printf '%s\n' "$EXPLAIN_OUT" | grep -qE '2\. project \.kit\.toml \[mega\.wave
 assert "explain mega.wave_cap: level 2 (project) shows the winning value 5" $RC
 if printf '%s\n' "$EXPLAIN_OUT" | grep -qE '3\. kit-root kit\.toml \[mega\.wave_cap\][[:space:]]+= 2'; then RC=0; else RC=1; fi
 assert "explain mega.wave_cap: level 3 (kit-root) shows the shadowed value 2" $RC
+
+# Multi-env-var tie-break: ledger.location is shared by two env rows (KIT_LEDGER_DIR listed
+# before DWARVES_KIT_LOG_DIR); a bare-key lookup must resolve to the FIRST (canonical) row,
+# so setting KIT_LEDGER_DIR wins a `get ledger.location` (registry-order tie-break).
+assert_eq "get ledger.location resolves via the first (canonical KIT_LEDGER_DIR) row" \
+  "$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_LEDGER_DIR=/tie-break-proof bash "$CONFIG_BIN" get ledger.location)" \
+  '/tie-break-proof'
 
 echo ""
 echo "=== $PASS/$TOTAL passed ==="

@@ -102,13 +102,16 @@ bit-for-bit identically to `kit_resolve_log_dir`).
 
 ## Verification
 
-1. `bash tests/test-config-registry.sh` -- 14 assertions: AC1 drift lint (0 orphans on the
+1. `bash tests/test-config-registry.sh` -- 19 assertions: AC1 drift lint (0 orphans on the
    live tree), AC2 negative control (a planted `KIT_TOTALLY_UNREGISTERED_PLANT` IS flagged),
    AC3 module-leg completeness (12/12 `KIT_KNOWN_MODULES` entries have a row), AC4 negative
    control (a fake module name is correctly absent, proving AC3 is not vacuous), AC5 `bin/config`
-   functional smoke (`get`/`explain` by both env-var-name and dotted-key lookup, an unknown-key
-   error path, and the env-override + project-override fixture visibly winning distinct rows
-   in one `list` render).
+   functional smoke (`get`/`explain` by both env-var-name and dotted-key lookup; machine-clean
+   `get` output for scripting -- backtick literal extracted, annotation stripped, one quote
+   layer removed; set-but-empty env treated as unset, matching every consumer's `${VAR:-}`
+   semantics; an unknown-key error path; a missing-registry-file hard failure; the multi-env-row
+   registry-order tie-break for `ledger.location`; and the env-override + project-override
+   fixture visibly winning distinct rows in one `list` render).
 2. `bash lib/config/kit-config.sh selftest` (== `bash tests/test-config.sh`) -- unchanged
    resolver mechanics, still green (byte-identical selftest; the resolver file itself has zero
    diff against the branch point).
