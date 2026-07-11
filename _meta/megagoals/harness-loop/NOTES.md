@@ -13,10 +13,14 @@
 
 ## Advisor dispositions (P5 2026-07-12)
 
+P5 on ADR-0034 draft (SG-01, 2026-07-12): 1 CRITICAL + 2 MAJOR + 3 MINOR, all applied or dispositioned. Applied in-ADR: #1 CRITICAL (leg table gained bridge=Observe + cosmetic=no-leg rows + a KIT_KNOWN_MODULES completeness rule for the SG-08 lint), #2 MAJOR (gate list names 10 as transitively gated; mirrored in ROADMAP), #3 MAJOR (registry home pinned: lib/config/module-registry.md, markdown table like the WORKFLOW matrix so no second TOML reader), #4 MINOR (bin/config re-attributed to decision 4), #5 MINOR (decision 10 provenance cites NOTES scope-amendment-2, brief stops at 4.9). #6 MINOR dispositioned to goal-04 ## Notes (its Outcome text is never rewritten mid-loop; the ADR's no-alias text wins over the stale parenthetical). Facts verified clean by the advisor: install.sh:674 glob, plist path, ADR/SPEC number ranges, SPEC-184 no-uber-dispatcher stance.
+
 Applied: #1 CRITICAL (SG-10 deps += 08,09; net-chain marked illustrative), #2 (SG-04 handoff), #3 (SG-06 expiry pinned to lib/learn, never kit.toml), #4 (SG-08 source = fresh self-derived sweep), #5 (SG-09 rung 3 live re-execution), #6 (SG-01 handoff += 08), #7 (ROADMAP assumption 2 notes the stale SPEC-193/194 mentions), #8 (SG-10 parity scope names lib/stats/skill explicitly). #9 accepted noise: the missing 07-04+ retro stays a NOTES idea by design (needs Han live; deliberately ungated). P6: #1-#4, #6, #8 folded into SG-02/05/06/08/09; #5 folded into SG-07 (counter footer); #7 recorded above.
 
 ## Event log
 
+2026-07-12 · SG-03 done · PR #226 reviewed (flock fix + Barrier row 4c sound), squash-merged a6c5a9e; post-merge suite 51/51 on master; review gate recorded on rid harvest-dedup-append
+2026-07-12 · SG-01 drafted · ADR-0034 (census + 10 decisions + collision-audit appendix), advisor P5 applied, PR opened + HELD for Han; SG-02 worker dispatched in parallel
 2026-07-12 · scaffold created · 10 sub-goals, brief v2 (decisions resolved), pending advisor P5/P6 pass + Han's SG-01 gate
 2026-07-12 · advisor pass · P5: 1 CRITICAL + 4 MAJOR + 4 MINOR, all applied or dispositioned (facts verified clean: PR #226, paths, ADR-0034/SPEC-193..199 free); P6: 8 suggestions, 7 folded, 1 recorded as proposed addition. See ## Advisor dispositions.
 2026-07-12 · scope amendment 2 (Han review) · four-concern check: telemetry presentation already covered (SG-07/10); memory staleness = ID-100's job, SG-05 gains the weekly memory-sweep tripwire; ledger/db config = SG-08 registry now names [ledger] + STATS_* keys, ADR gains retention position (area 10); post-loop improvement circuit made explicit in brief §3.4 (promoted rows ride the normal board->lane path; process/harness/skill = three channels).
