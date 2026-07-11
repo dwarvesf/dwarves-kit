@@ -1,7 +1,7 @@
 # session-intel weekly deploy (macOS LaunchAgent)
 
-Folded from ops-toolkit's `cc-intel-weekly` (2026-07-11): the telemetry cadence that
-tracks-and-optimizes the kit belongs to the kit. The agent runs `cc-intel run` every
+Folded from ops-toolkit's `session-intel-weekly` (2026-07-11): the telemetry cadence that
+tracks-and-optimizes the kit belongs to the kit. The agent runs `session-intel run` every
 Monday 09:00 -> `~/.claude/intel/intel-YYYY-MM-DD.md`, read-only.
 
 ```
@@ -11,7 +11,7 @@ launchctl kickstart -k gui/$(id -u)/session-intel-weekly   # run now
 
 Service graph: plist -> `session-intel-weekly` launcher (exports a launchd-safe
 PATH; the bare launchd PATH silently hollowed every digest for three weeks once) ->
-`~/.local/bin/cc-intel` (the installer's CLI shim) -> shells out to `cc-observe`
+`~/.local/bin/session-intel` (the installer's CLI shim) -> shells out to `session-observe`
 (+ `repo-sweep` when the consumer has one; degrades to `_unavailable_` without).
 
 **Consumer bridge (optional).** The kit ships no monitoring endpoint or secret.

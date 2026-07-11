@@ -2,7 +2,7 @@
 """Lossless, turn-grouped recall over Claude Code transcripts.
 
 Read-only structure-preserving search over raw `~/.claude/projects/<slug>/*.jsonl`.
-Ports pi-vcc's `vcc_recall`: a session can retrieve a prior decision/fact straight from
+Ports pi-vcc's `vsession_recall`: a session can retrieve a prior decision/fact straight from
 the source transcript , even across compactions , without re-reading whole files. The
 raw JSONL is the source of truth, so nothing is ever lost; this never mutates a transcript.
 
@@ -30,18 +30,18 @@ def _repo_root():
         if parent == d:
             break
         d = parent
-    raise RuntimeError("cc-recall: cannot locate the kit repo root (lib/session not found)")
+    raise RuntimeError("session-recall: cannot locate the kit repo root (lib/session not found)")
 
 
 sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
-from parse_transcript import load  # noqa: E402  (re-exported: cc-recall's own public `load`)
+from parse_transcript import load  # noqa: E402  (re-exported: session-recall's own public `load`)
 
 
 # --- parsing --------------------------------------------------------------
 # `load()` is the shared lib/session/parse_transcript.py routine (kit-foldin
-# SG-03): the JSONL-turn-parsing that used to be duplicated with cc-observe's
+# SG-03): the JSONL-turn-parsing that used to be duplicated with session-observe's
 # own `iter_entries` now lives in ONE place. `_role`/`_ts`/`searchable_text`
-# below stay cc-recall's own logic -- they are not duplicated in cc-observe,
+# below stay session-recall's own logic -- they are not duplicated in session-observe,
 # which never needs a per-turn role/text accessor the way point-lookup search
 # does.
 
@@ -184,14 +184,14 @@ def main(argv=None) -> int:
         elif a == "--limit":
             limit = int(next(it, "50") or 50)
         elif a in ("-h", "--help"):
-            sys.stderr.write("usage: cc-recall <query> [--file F | --project SLUG | --all] "
+            sys.stderr.write("usage: session-recall <query> [--file F | --project SLUG | --all] "
                              "[--limit N] [--json]\n")
             return 0
         else:
             query_parts.append(a)
     query = " ".join(query_parts).strip()
     if not query:
-        sys.stderr.write("usage: cc-recall <query> [--file F | --project SLUG | --all] "
+        sys.stderr.write("usage: session-recall <query> [--file F | --project SLUG | --all] "
                          "[--limit N] [--json]\n")
         return 2
 

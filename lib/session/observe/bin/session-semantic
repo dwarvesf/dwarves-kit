@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-semantic: LLM-derived semantic signals over recent Claude Code prompts.
+"""session-semantic: LLM-derived semantic signals over recent Claude Code prompts.
 
 Two signals a deterministic parser cannot produce, emitted as PROPOSALS ONLY
 (this tool writes NOTHING durable , no ledger, no GLOSSARY, no board):
@@ -12,10 +12,10 @@ A cheap model (Claude Haiku via `claude -p`, NOT mini.ollama) is fed a windowed,
 capped sample of user-prompt texts and must return ONE JSON object:
   {"topics": [{"name": "...", "count": N}, ...], "self_corrections": N}
 
-The model command is overridable via `CC_SEMANTIC_CMD` (the prompt is piped to its
+The model command is overridable via `SESSION_SEMANTIC_CMD` (the prompt is piped to its
 stdin), so tests inject a fixed response and no live model is needed. If the
 command is missing or fails, the tool degrades to `_unavailable_` , it never
-fabricates. These are ESTIMATES (NLP, noisier than the deterministic cc-observe
+fabricates. These are ESTIMATES (NLP, noisier than the deterministic session-observe
 views); the output is labelled as such and is for a human to act on.
 
 Stdlib only. Read-only over the transcripts under ~/.claude/projects/.
@@ -41,14 +41,14 @@ def _repo_root():
         if parent == d:
             break
         d = parent
-    raise RuntimeError("cc-semantic: cannot locate the kit repo root (lib/session not found)")
+    raise RuntimeError("session-semantic: cannot locate the kit repo root (lib/session not found)")
 
 
 sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
 from parse_transcript import iter_entries as _iter_transcript_entries  # noqa: E402
 
 DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
-DEFAULT_CMD = "claude -p"          # overridable via CC_SEMANTIC_CMD (tests inject)
+DEFAULT_CMD = "claude -p"          # overridable via SESSION_SEMANTIC_CMD (tests inject)
 MAX_PROMPTS = 200                  # cap the window fed to the model (cost bound)
 MAX_PROMPT_CHARS = 300            # truncate each prompt (cost bound)
 
@@ -117,7 +117,7 @@ def parse_json(text):
 
 
 def run_llm(prompt):
-    cmd = os.environ.get("CC_SEMANTIC_CMD", DEFAULT_CMD)
+    cmd = os.environ.get("SESSION_SEMANTIC_CMD", DEFAULT_CMD)
     try:
         r = subprocess.run(shlex.split(cmd), input=prompt, capture_output=True, text=True, timeout=180)
     except (OSError, subprocess.SubprocessError):
@@ -129,7 +129,7 @@ def run_llm(prompt):
 
 def main(argv=None):
     import argparse
-    p = argparse.ArgumentParser(prog="cc-semantic", description="LLM-derived semantic signals (propose-only) over recent prompts.")
+    p = argparse.ArgumentParser(prog="session-semantic", description="LLM-derived semantic signals (propose-only) over recent prompts.")
     p.add_argument("--root", default=DEFAULT_ROOT)
     p.add_argument("--days", type=int, default=7)
     p.add_argument("--cap", type=int, default=MAX_PROMPTS)
@@ -138,12 +138,12 @@ def main(argv=None):
 
     prompts = collect_prompts(args.root, args.days, args.cap)
     if not prompts:
-        print("cc-semantic: no prompts in window (nothing to analyze)" if not args.json else json.dumps({"status": "empty"}))
+        print("session-semantic: no prompts in window (nothing to analyze)" if not args.json else json.dumps({"status": "empty"}))
         return 0
 
     result = run_llm(build_prompt(prompts))
     if result is None:
-        print("cc-semantic: _unavailable_ (no LLM / command failed / unparseable output)"
+        print("session-semantic: _unavailable_ (no LLM / command failed / unparseable output)"
               if not args.json else json.dumps({"status": "unavailable"}))
         return 0
 

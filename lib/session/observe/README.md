@@ -1,4 +1,4 @@
-# cc-observe
+# session-observe
 
 See my own Claude Code usage as data: which Skills and tools I actually use (with error rates), and which hooks are slow. Pure read-only parsing of the session transcripts under `~/.claude/projects/`, no instrumentation, no daemon.
 
@@ -7,7 +7,7 @@ Part of the `cc-elevation` self-observability axis. Full design: `SPEC.md`. Why 
 ## Install
 
 ```bash
-ln -s "$(pwd)/tools/cc-observe/bin/cc-observe" ~/.local/bin/cc-observe   # ~/.local/bin is on PATH
+ln -s "$(pwd)/tools/session-observe/bin/session-observe" ~/.local/bin/session-observe   # ~/.local/bin is on PATH
 ```
 
 Needs only `python3` (stdlib).
@@ -15,36 +15,36 @@ Needs only `python3` (stdlib).
 ## Use
 
 ```bash
-cc-observe report                   # all views, all projects, all time
-cc-observe report --days 7          # the weekly digest (recommended cadence)
-cc-observe skills --days 30         # which skills fired in the last 30 days
-cc-observe tools  --days 7          # tool usage + error rates
-cc-observe hooks  --days 7          # per-hook p50/p95/max latency + hook errors
-cc-observe subagents --days 7       # subagent spawns per day + by type, per100 prompts
-cc-observe friction --days 7        # thrash / permission-friction / context-pressure / skill mis-fires
-cc-observe sessions --days 7        # archetype mix / circadian (by hour) / interruption rate
-cc-observe cost --days 7            # tokens by model + cache economics + $ estimate
-cc-observe report --days 7 --json   # machine-readable, for vps-mon ingest
+session-observe report                   # all views, all projects, all time
+session-observe report --days 7          # the weekly digest (recommended cadence)
+session-observe skills --days 30         # which skills fired in the last 30 days
+session-observe tools  --days 7          # tool usage + error rates
+session-observe hooks  --days 7          # per-hook p50/p95/max latency + hook errors
+session-observe subagents --days 7       # subagent spawns per day + by type, per100 prompts
+session-observe friction --days 7        # thrash / permission-friction / context-pressure / skill mis-fires
+session-observe sessions --days 7        # archetype mix / circadian (by hour) / interruption rate
+session-observe cost --days 7            # tokens by model + cache economics + $ estimate
+session-observe report --days 7 --json   # machine-readable, for vps-mon ingest
 ```
 
-**`cc-semantic`** (sibling script) , LLM-derived signals that a deterministic parser cannot produce, as **proposals only** (writes nothing durable):
+**`session-semantic`** (sibling script) , LLM-derived signals that a deterministic parser cannot produce, as **proposals only** (writes nothing durable):
 
 ```bash
-cc-semantic --days 7                 # topic-drift + self-correction over recent prompts (uses claude -p)
-CC_SEMANTIC_CMD="cat resp.json" cc-semantic ...   # inject a fixed model response (tests)
+session-semantic --days 7                 # topic-drift + self-correction over recent prompts (uses claude -p)
+SESSION_SEMANTIC_CMD="cat resp.json" session-semantic ...   # inject a fixed model response (tests)
 ```
 
-It feeds a windowed, capped sample of recent user prompts to Claude Haiku (`claude -p`, overridable via `CC_SEMANTIC_CMD`), which returns `{topics, self_corrections}`. Degrades to `_unavailable_` if the model is missing , it never fabricates. These are NLP estimates (noisier than the deterministic views); a human acts on them. NOT mini.ollama.
+It feeds a windowed, capped sample of recent user prompts to Claude Haiku (`claude -p`, overridable via `SESSION_SEMANTIC_CMD`), which returns `{topics, self_corrections}`. Degrades to `_unavailable_` if the model is missing , it never fabricates. These are NLP estimates (noisier than the deterministic views); a human acts on them. NOT mini.ollama.
 
 Scope to one project (note the **equals form**, slugs start with `-`):
 
 ```bash
-cc-observe hooks --project=<project-slug> --days 7
+session-observe hooks --project=<project-slug> --days 7
 ```
 
 ## What it reads
 
-Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hookErrors`, and the `tool_use` / `tool_result` blocks. cc-observe tallies them:
+Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hookErrors`, and the `tool_use` / `tool_result` blocks. session-observe tallies them:
 
 - **skills / tools**: count `tool_use` by name (Skill by `input.skill`); attribute `is_error` results back via `tool_use_id`.
 - **hooks**: group `hookInfos[].durationMs` by a normalized hook label; count `hookErrors`.
@@ -71,16 +71,16 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
 
 - Script hooks (`*.sh`/`*.py`) label cleanly by basename. Long-text inline/condition hooks (e.g. the `/goal` Stop-hook) fragment by first word. The actionable latency is in the script hooks.
 - `--days` is a coarse file-mtime window.
-- Read-only by contract: cc-observe never writes anything.
+- Read-only by contract: session-observe never writes anything.
 
-## cc-vps-report: weekly bridge to vps-mon + `/status`
+## session-report: weekly bridge to vps-mon + `/status`
 
-`bin/cc-vps-report` pings the `cc-intel-weekly` heartbeat (the default action). The
+`bin/session-report` pings the `session-intel-weekly` heartbeat (the default action). The
 heartbeat surfaces digest liveness on the public `/status` page: if no digest lands for
 >8 days (interval 7d + grace 1d) the item flips to 🔴 and a `heartbeat-silent` alert
 fires, so a stopped digest is never silently green.
 
-It can ALSO distill `cc-observe report --json` into a handful of headline metrics
+It can ALSO distill `session-observe report --json` into a handful of headline metrics
 (subagent per100 + top type, tool/skill/hook error counts, friction/cost when present),
 HMAC-sign a schema-v1 snapshot the same way the vps-mon host agent does, and POST it to
 the `mon-ingest` Worker's `/v1/snapshot`, but only behind the opt-in `--snapshot` flag
@@ -91,18 +91,18 @@ table. Only opt in to `--snapshot` once vps-mon exempts low-frequency hosts.
 
 ```bash
 bash tests/test-vps-report.sh            # deterministic signer + distiller test (no network)
-bin/cc-vps-report --days 7 --dry-run     # see the signed envelope, no POST
+bin/session-report --days 7 --dry-run     # see the signed envelope, no POST
 # default = heartbeat-only (the weekly path; no hosts-row, no agent-silent risk):
-CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
-  bin/cc-vps-report                       # -> heartbeat: 204
+SESSION_REPORT_HB_TOKEN=$(op read op://Toolkit/session-report/hb_token) \
+  bin/session-report                       # -> heartbeat: 204
 # opt-in snapshot (only once vps-mon exempts low-frequency hosts):
-CC_VPS_HMAC_KEY=$(op read op://Toolkit/cc-vps-report/credential) \
-CC_VPS_HB_TOKEN=$(op read op://Toolkit/cc-vps-report/hb_token) \
-  bin/cc-vps-report --snapshot --days 7  # -> snapshot: 202 / heartbeat: 204
+SESSION_REPORT_HMAC_KEY=$(op read op://Toolkit/session-report/credential) \
+SESSION_REPORT_HB_TOKEN=$(op read op://Toolkit/session-report/hb_token) \
+  bin/session-report --snapshot --days 7  # -> snapshot: 202 / heartbeat: 204
 ```
 
-Read-only producer: cc-observe/cc-vps-report never store state; only vps-mon does. The
+Read-only producer: session-observe/session-report never store state; only vps-mon does. The
 signing scheme is the secret string's UTF-8 bytes (not base64-decode) per
 `vps-mon/worker/src/hmac.ts`; see `docs/implementation-notes/01-observability.md`. The
-`cc-intel-weekly` launcher calls this after writing the weekly digest (best-effort,
+`session-intel-weekly` launcher calls this after writing the weekly digest (best-effort,
 non-fatal).

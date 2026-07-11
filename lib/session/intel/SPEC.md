@@ -1,3 +1,8 @@
+> Renamed 2026-07-11 (kit naming invariant, function-named callables): the CLI
+> names below read `cc-*` historically; the shipped callables are now
+> `session-intel` / `session-observe` / `session-semantic` / `session-report` /
+> `session-recall`, env knobs `SESSION_INTEL_*` / `SESSION_SEMANTIC_*` / `SESSION_REPORT_*`.
+
 # SPEC: cc-intel
 
 ## Problem

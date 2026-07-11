@@ -60,7 +60,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | Module | What it wires | Kind |
 |---|---|---|
 | `board` | `backlog-stage` (SessionEnd: stage session work-items to the board) | 1 hook |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`; plus PATH shims for the session CLIs (`cc-intel`, `cc-observe`, `cc-semantic`, `cc-recall`, `cc-vps-report`) | 7 hooks + 5 CLIs |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`; plus PATH shims for the session CLIs (`session-intel`, `session-observe`, `session-semantic`, `session-recall`, `session-report`) | 7 hooks + 5 CLIs |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) | 1 hook |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |

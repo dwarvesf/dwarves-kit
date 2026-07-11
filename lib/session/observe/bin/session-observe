@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-observe: read Claude Code session transcripts and report my own usage.
+"""session-observe: read Claude Code session transcripts and report my own usage.
 
 Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
   skills    - which Skills fired, how often, with what error rate
@@ -49,7 +49,7 @@ def _repo_root():
         if parent == d:
             break
         d = parent
-    raise RuntimeError("cc-observe: cannot locate the kit repo root (lib/session not found)")
+    raise RuntimeError("session-observe: cannot locate the kit repo root (lib/session not found)")
 
 
 sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
@@ -138,8 +138,8 @@ def iter_entries(path):
     """Yield parsed JSON objects from one transcript, skipping unparseable lines.
 
     Delegates to the shared lib/session/parse_transcript.py (the ONE JSONL
-    turn-parser cc-observe and cc-recall both need); this wrapper only adds
-    the many-file-scan behavior cc-observe wants (a single missing/unreadable
+    turn-parser session-observe and session-recall both need); this wrapper only adds
+    the many-file-scan behavior session-observe wants (a single missing/unreadable
     file in a --root/--project sweep contributes zero entries rather than
     aborting the whole scan -- honest-zero for that file, not a crash)."""
     try:
@@ -594,7 +594,7 @@ def emit(args, data):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="cc-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
+    p = argparse.ArgumentParser(prog="session-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
     p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
@@ -607,7 +607,7 @@ def main(argv=None):
     args = p.parse_args(argv)
 
     if args.file and not os.path.exists(args.file):
-        print(f"cc-observe: file not found: {args.file}", file=sys.stderr)
+        print(f"session-observe: file not found: {args.file}", file=sys.stderr)
         return 1
 
     data = collect(args)

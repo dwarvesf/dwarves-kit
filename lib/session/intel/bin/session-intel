@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""cc-intel: a weekly read-only intelligence digest for my Claude Code + repos.
+"""session-intel: a weekly read-only intelligence digest for my Claude Code + repos.
 
 Assembles ONE dated digest from four sources:
-  observe    `cc-observe report` (usage + latency)        [shell-out, degrades if missing]
+  observe    `session-observe report` (usage + latency)        [shell-out, degrades if missing]
   sweep      `repo-sweep run` (cross-repo health)         [shell-out, degrades if missing]
   synthesis  near-duplicate concepts across the learned-ledger + GLOSSARYs (merge proposals)
   repeat     bash-command 3-grams repeated >= N across recent transcripts (extract-workflow proposals)
@@ -10,11 +10,11 @@ Assembles ONE dated digest from four sources:
 Propose-don't-dispose: writes ONE digest file and never edits the ledger, GLOSSARYs, til, or boards.
 No mini.ollama, no LLM: synthesis + repeat are deterministic heuristics (a human reviews the proposals).
 
-  cc-intel run [--out DIR]                         write the full digest (default ~/.claude/intel)
-  cc-intel synthesis [--ledger F --glossaries D]   just the merge proposals (stdout)
-  cc-intel repeat [--transcripts D --min N]        just the repeat proposals (stdout)
+  session-intel run [--out DIR]                         write the full digest (default ~/.claude/intel)
+  session-intel synthesis [--ledger F --glossaries D]   just the merge proposals (stdout)
+  session-intel repeat [--transcripts D --min N]        just the repeat proposals (stdout)
 
-Env for tests: CC_INTEL_OBSERVE_CMD, CC_INTEL_SWEEP_CMD (shell strings), CC_INTEL_DATE (YYYY-MM-DD).
+Env for tests: SESSION_INTEL_OBSERVE_CMD, SESSION_INTEL_SWEEP_CMD (shell strings), SESSION_INTEL_DATE (YYYY-MM-DD).
 Stdlib only.
 """
 import argparse
@@ -40,7 +40,7 @@ def _repo_root():
         if parent == d:
             break
         d = parent
-    raise RuntimeError("cc-intel: cannot locate the kit repo root (lib/session not found)")
+    raise RuntimeError("session-intel: cannot locate the kit repo root (lib/session not found)")
 
 
 sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
@@ -107,8 +107,8 @@ def _is_benign(gram):
 
 
 def _today():
-    """Reference date for ledger-row age scoring; honors CC_INTEL_DATE for tests."""
-    d = os.environ.get("CC_INTEL_DATE")
+    """Reference date for ledger-row age scoring; honors SESSION_INTEL_DATE for tests."""
+    d = os.environ.get("SESSION_INTEL_DATE")
     try:
         return datetime.date.fromisoformat(d) if d else datetime.date.today()
     except ValueError:
@@ -229,15 +229,15 @@ def cmd_repeat(args):
 
 def cmd_run(args):
     os.makedirs(args.out, exist_ok=True)
-    day = os.environ.get("CC_INTEL_DATE") or datetime.date.today().isoformat()
+    day = os.environ.get("SESSION_INTEL_DATE") or datetime.date.today().isoformat()
     path = os.path.join(args.out, f"intel-{day}.md")
-    ok_o, out_o = _run(os.environ.get("CC_INTEL_OBSERVE_CMD", "cc-observe report"))
-    ok_s, out_s = _run(os.environ.get("CC_INTEL_SWEEP_CMD", "repo-sweep run"))
+    ok_o, out_o = _run(os.environ.get("SESSION_INTEL_OBSERVE_CMD", "session-observe report"))
+    ok_s, out_s = _run(os.environ.get("SESSION_INTEL_SWEEP_CMD", "repo-sweep run"))
     merges = synthesis(args.ledger, args.glossaries)
     reps = repeat_detect(args.transcripts, args.min)
     parts = [
         f"# Intel digest {day}",
-        "## Claude Code usage (cc-observe)\n\n" + (out_o.strip() if ok_o else "_unavailable_"),
+        "## Claude Code usage (session-observe)\n\n" + (out_o.strip() if ok_o else "_unavailable_"),
         "## Repo health (repo-sweep)\n\n" + (out_s.strip() if ok_s else "_unavailable_"),
         "## Merge proposals (synthesis)\n\n" + (_fmt_merges(merges) if merges else "_none_"),
         "## Repeated sequences, extract-workflow candidates (repeat-detect)\n\n" + (_fmt_reps(reps) if reps else "_none_"),
@@ -250,7 +250,7 @@ def cmd_run(args):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="cc-intel", description="Weekly read-only intelligence digest.")
+    p = argparse.ArgumentParser(prog="session-intel", description="Weekly read-only intelligence digest.")
     sub = p.add_subparsers(dest="cmd", required=True)
     for name in ("run", "synthesis", "repeat"):
         sp = sub.add_parser(name)
