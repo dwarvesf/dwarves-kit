@@ -6,6 +6,7 @@
 
 ## Proposed additions
 
+- 2026-07-12 (SG-09 advisor/worker, adopt.sh defects flagged NOT fixed, goal forbade adopt.sh changes): (1) adopt.sh's KIT_KNOWN_MODULES is stale (9 vs install.sh's 12; `--with` cannot seed worktree/money_gate/prose_rag); (2) adopt-wired per-repo hooks hardcode the bash-only path and are dead on plugin machines (disclosed in the wizard copy; adopt.sh templating is the fix). Both are ordinary backlog candidates.
 - 2026-07-12: sub-goal idea, capture the missing retro for the kit-modularity/harness-ops cycles (docs/retro has nothing after 2026-07-04), discovered during brief drafting, /kit:retro is interactive human Q&A, so it needs Han live, not the loop; run it once alongside this mega's own close-out retro.
 - 2026-07-12: sub-goal idea, `learned-ledger` flush paydown (~140 queued rows, 1 flushed since 2026-06-14), discovered during the mechanism audit, the flush is the learning-ledger skill's job (operator-side, ADR-0031); SG-05 only SURFACES the count. A weekend session that drains it is Han-time, not loop work.
 - 2026-07-12: successor idea, Hermes cockpit cards for `learn propose` output (Decision H mirror, auto-improvement design doc), deferred; the staging file + board are the v1 surface.
@@ -19,6 +20,7 @@ Applied: #1 CRITICAL (SG-10 deps += 08,09; net-chain marked illustrative), #2 (S
 
 ## Event log
 
+2026-07-12 · SG-09 built · gated PR #242 (base feat/loop-08-config-surface) open + HELD for Han's UX review: /kit:onboard + tested detector, 3 transcripts + decline-NC, rung-3 recheck round-1 FAIL (real AC9 catch) -> fixed -> round-2 PASS, advisor 1 CRITICAL + 1 MAJOR applied; only SG-05 still building; SG-10 waits on the stack merging
 2026-07-12 · SG-06 built · stacked PR #241 (base feat/loop-04-surface-consol): learn drain render + 30d expiry-to-section, 23/23 new tests, 48 CI suites green; SG-06 landed the shared staging-format parser (first-to-land); fan-in note: SG-05 may land its own copy on its sibling branch, second-to-merge rebases per the shared-fixture rule; recorded deviation: learn.sh case arm + forwarder-test edits outside the drain* glob (stub replacement, line-disjoint from SG-05's arms)
 2026-07-12 · SG-08 built · stacked PR #240 (base docs/loop-01-taxonomy): bin/config list|get|explain + 103-row module-registry + CI drift lint, resolver byte-identical; deviation flagged for Han: prose_rag had no leg in the ADR decision-3 table, worker assigned Learn (registry row flags it; confirm or amend ADR); ledger.telemetry retagged [design] in registry only (kit.toml untouched); SG-05/06 dispatched stacked on SG-04's branch
 2026-07-12 · SG-04 built · stacked PR #239 (base docs/loop-01-taxonomy) + dotfiles#213 + ops-toolkit#796 (vps-mon bridge, a real grep hit; ADR-0034 decision 7 names it, recorded deviation from the two-repo scope edge); census 11/3-grammars -> 12/2-classes; merge waits on #236

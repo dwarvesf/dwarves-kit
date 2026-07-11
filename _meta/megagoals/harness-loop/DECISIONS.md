@@ -49,3 +49,7 @@ bin/learn verb table (final): `debt list|collect|mark-paid` live -> lib/learn/we
 - Expiry constant: DEFAULT_EXPIRE_DAYS=30 in lib/learn/drain.py with --days override; never a kit.toml key (pinned).
 - Shared staging-block grammar: lib/learn/staging-format.py landed by SG-06 (first to land); ONE definition of the [staged]/[expired] block edges; SG-05 consumes or rebases onto it at fan-in.
 - add-backlog needed zero changes: its existing state=="staged" filter already makes [expired] rows unselectable.
+
+## SG-09 (2026-07-12, PR #242 open + HELD; gate)
+
+Wizard question list + defaults (Enter-Enter-Enter = sane setup): install mode detected never asked (plugin/bash/both/none; both = disclosed double-hook hazard, never auto-fixed); "Adopt this repo? [Y/n]" default Y after a --dry-run preview; module baseline default = kit-root defaults, roster GENERATED from `bin/config list` modules.* rows; per consumer knob default = skip (env-only knobs get printed export guidance; no-default-consumer knobs presented as optional, never "knob-free"); already-adopted repo = report healthy, write nothing. Decline anywhere = strict no-op; adopt invoked exactly once with ONE --with call.
