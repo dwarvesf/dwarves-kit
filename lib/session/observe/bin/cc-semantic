@@ -33,7 +33,7 @@ def _repo_root():
     """Walk up from this file to find the kit repo root (the dir holding
     lib/session/). Repo-relative per DECISIONS.md's adapter-default invariant:
     no hardcoded ops-toolkit/personal path, no CONSUMER_ROOT env."""
-    d = os.path.dirname(os.path.abspath(__file__))
+    d = os.path.dirname(os.path.realpath(__file__))
     for _ in range(8):
         if os.path.isdir(os.path.join(d, "lib", "session")):
             return d
