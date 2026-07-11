@@ -167,12 +167,12 @@ echo ""
 # [modules]` manifest RECORDS the enabled set (for `--with`-less re-installs
 # and future discovery) -- it is a shell-install RECORD, never a runtime
 # feature-registry: no hook reads it (see tests/test-no-runtime-manifest-read.sh).
-KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge"
+KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge worktree"
 KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.sh commit-format.sh anti-rationalization.sh"
 
 # module -> its hook script basenames (space-separated; empty = hookless, e.g.
-# queue/stats/quiz_gate/weekend_batch/bridge are commands/skills with no hook to
-# gate -- still valid --with names, recorded in the manifest for discovery).
+# queue/stats/quiz_gate/weekend_batch/bridge/worktree are commands/skills/CLIs with
+# no hook to gate -- still valid --with names, recorded in the manifest for discovery).
 kit_module_hooks() {
   case "$1" in
     board) echo "backlog-stage.sh" ;;
@@ -181,6 +181,34 @@ kit_module_hooks() {
     cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
     *) echo "" ;;
   esac
+}
+
+# module -> the CLIs it exposes on PATH (~/.local/bin). Each name is a stable
+# bin/<name> entrypoint (SPEC-184). Replaces the consumer-side snapshot-symlink
+# dance (ops-toolkit cc-elevation redeploy.sh) for kit-owned tools.
+kit_module_clis() {
+  case "$1" in
+    session) echo "cc-intel cc-observe cc-semantic cc-recall cc-vps-report" ;;
+    worktree) echo "cc-worktree-provision" ;;
+    *) echo "" ;;
+  esac
+}
+
+# kit_write_cli_shim <name> <target> -- write ~/.local/bin/<name> as an exec-shim to
+# <target>. A wrapper FILE, not a symlink: bin/ entrypoints resolve ../lib relative
+# to BASH_SOURCE without realpath, so a symlink at ~/.local/bin would break them.
+# Never clobbers a user-owned file: writes only when the path is absent, a symlink
+# (e.g. a stale cc-elevation link, the exact thing this replaces), or a prior shim.
+kit_write_cli_shim() {
+  local name="$1" target="$2" dst="$HOME/.local/bin/$1"
+  if [ -e "$dst" ] && [ ! -L "$dst" ] && ! grep -q "dwarves-kit CLI shim" "$dst" 2>/dev/null; then
+    echo "[warn] $dst exists and is not kit-managed; left untouched"
+    return 0
+  fi
+  mkdir -p "$HOME/.local/bin"
+  printf '#!/usr/bin/env bash\n# dwarves-kit CLI shim (installed by install.sh; re-run install.sh to refresh)\nexec "%s" "$@"\n' "$target" > "$dst.tmp.$$"
+  chmod +x "$dst.tmp.$$"
+  mv -f "$dst.tmp.$$" "$dst"
 }
 
 # kit_toml_modules_section_true <file> -- print the bare keys set `= true` WITHIN
@@ -303,6 +331,16 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
     ln -sfn "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
     echo "[ok] compat symlink ~/.claude/dwarves-kit/$f -> $KIT_DIR/$f"
   done
+  # CLI shims too: a plugin/compat machine is a dev machine, so expose every
+  # module's CLIs (module gating only applies to the full bash install, which is
+  # the only path that resolves an enabled set).
+  for _mod in $KIT_KNOWN_MODULES; do
+    for _cli in $(kit_module_clis "$_mod"); do
+      kit_write_cli_shim "$_cli" "$CLAUDE_DIR/dwarves-kit/bin/$_cli"
+    done
+  done
+  unset _mod _cli
+  echo "[ok] CLI shims written to ~/.local/bin"
   echo ""
   echo "Legacy doc paths (bash ~/.claude/dwarves-kit/lib/*.sh) now resolve."
   echo "Full bash install anyway: KIT_FORCE_FULL=1 bash install.sh"
@@ -650,6 +688,23 @@ fi
 # 5. Create log directory
 mkdir -p "$CLAUDE_DIR/dwarves-kit/logs"
 echo "[ok] Log directory ready"
+
+# 5b. Expose the enabled modules' CLIs on PATH (~/.local/bin), each an exec-shim to
+# the stable bin/ entrypoint (SPEC-184). This is the kit-owned replacement for the
+# consumer-side snapshot symlinking (ops-toolkit cc-elevation redeploy.sh) that used
+# to wire cc-intel and friends.
+KIT_CLI_NAMES=""
+for _mod in $KIT_ENABLED_MODULES; do
+  KIT_CLI_NAMES="$KIT_CLI_NAMES $(kit_module_clis "$_mod")"
+done
+KIT_CLI_NAMES="$(echo "$KIT_CLI_NAMES" | xargs)"
+if [ -n "$KIT_CLI_NAMES" ]; then
+  for _cli in $KIT_CLI_NAMES; do
+    kit_write_cli_shim "$_cli" "$CLAUDE_DIR/dwarves-kit/bin/$_cli"
+  done
+  unset _cli
+  echo "[ok] CLI shims on ~/.local/bin: $KIT_CLI_NAMES"
+fi
 
 # 6. Install path-scoped rules templates
 if [ -d "$KIT_DIR/rules" ]; then

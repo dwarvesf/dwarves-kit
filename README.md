@@ -60,7 +60,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | Module | What it wires | Kind |
 |---|---|---|
 | `board` | `backlog-stage` (SessionEnd: stage session work-items to the board) | 1 hook |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard` | 7 hooks |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`; plus PATH shims for the session CLIs (`cc-intel`, `cc-observe`, `cc-semantic`, `cc-recall`, `cc-vps-report`) | 7 hooks + 5 CLIs |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) | 1 hook |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
@@ -68,6 +68,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
 | `weekend_batch` | the debt-paydown reader/closer (`lib/queue/weekend-batch.sh`), invoked by a consumer's own skill or directly | hookless (lib) |
 | `bridge` | git↔Hermes kanban mirror/writeback (`board.sh mirror/status/writeback`), itself gated per-repo by a `bridge=on` row in `boards.txt` | hookless (lib) |
+| `worktree` | `cc-worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
 
 `team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
 
