@@ -44,6 +44,9 @@ jobs:
 
       - name: Run layered-install module tests (ID-277 SG-04)
         run: bash tests/test-install-modules.sh
+
+      - name: Run bin forwarder census + dispatch tests (SPEC-194)
+        run: bash tests/test-bin-forwarders.sh
       - name: Golden run (e2e)
         run: bash tests/test-e2e.sh
 
