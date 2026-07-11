@@ -27,3 +27,8 @@ Call sites deliberately left unbracketed (per the handoff contract):
 - `caught=` omitted at 8 of 22 sites whose recorded text carries no verdict/count; the verb's documented `false` default stands (inventing verdicts would change gate-decision logic, forbidden by the quality bar).
 
 Durable: `tests/lib/contract-lint.sh` is the shared grep-diff-against-manifest primitive; SG-08's registry drift lint MUST reuse it (goal 02 scope edge).
+
+## SG-07 (2026-07-12, PR #238 merged c2eb239)
+
+- Dashboard output location convention: `<megagoals-root>/<slug>/REVIEW.html`, sibling of RUN_REPORT.md, overridable via `--out` (SPEC-197 Technical Design). A projection, never a stored source of truth.
+- `lib/mega.sh` -> `lib/mega/mega.sh` directory promotion DEFERRED to SG-04 (SPEC-197 DEC-001; the ADR census names it SG-04's target).
