@@ -1,0 +1,14 @@
+/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/deps/serde-139cca4c07be872e.d: /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/build/serde-a9cad8df8e066784/out/private.rs
+
+/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/deps/libserde-139cca4c07be872e.rlib: /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/build/serde-a9cad8df8e066784/out/private.rs
+
+/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/deps/libserde-139cca4c07be872e.rmeta: /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/build/serde-a9cad8df8e066784/out/private.rs
+
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/build/serde-a9cad8df8e066784/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/build/serde-a9cad8df8e066784/out

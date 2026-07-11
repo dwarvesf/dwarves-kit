@@ -1,0 +1,11 @@
+/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/deps/zeroize-c262181318b12e60.d: /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/deps/libzeroize-c262181318b12e60.rlib: /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/Users/tieubao/workspace/tieubao/dwarves-kit/lib/prose-rag/rust/target/release/deps/libzeroize-c262181318b12e60.rmeta: /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs /Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md
+
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/lib.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/aarch64.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/barrier.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/stack.rs:
+/Users/tieubao/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.9.0/src/../README.md:

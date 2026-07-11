@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cc-worktree-provision smoke. Builds fixture "main repo" + "worktree" dirs (no real
+# worktree-provision smoke. Builds fixture "main repo" + "worktree" dirs (no real
 # git needed: --source overrides the git-derived root) and checks the provision plan,
 # real symlink creation, idempotency, no-op, and payload safety. Stdlib only (python3).
 #
@@ -7,7 +7,7 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
-BIN="$DIR/bin/cc-worktree-provision"
+BIN="$DIR/bin/worktree-provision"
 run(){ python3 "$BIN" "$@"; }   # env-var cases use `env VAR=val python3` directly (unambiguous)
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -45,11 +45,11 @@ out="$(run --base "$WT2" --source "$SRC2" --dry-run 2>&1)"
 if grep -q 'no-op: nothing to provision' <<<"$out"; then ok "no-op clean"; else no "expected no-op: $out"; fi
 
 echo "[3] real symlink created (install skipped via env)"
-env CC_WT_PROVISION_NO_INSTALL=1 python3 "$BIN" --base "$WT" --source "$SRC" >/dev/null 2>&1
+env WORKTREE_PROVISION_NO_INSTALL=1 python3 "$BIN" --base "$WT" --source "$SRC" >/dev/null 2>&1
 if [[ -L "$WT/.envrc" && "$(readlink "$WT/.envrc")" == "$SRC/.envrc" ]]; then ok ".envrc symlinked to source"; else no "symlink wrong: $(ls -la "$WT/.envrc" 2>&1)"; fi
 
 echo "[4] idempotent: re-run does not error or double-link"
-set +e; env CC_WT_PROVISION_NO_INSTALL=1 python3 "$BIN" --base "$WT" --source "$SRC" >/dev/null 2>&1; rc=$?; set -e
+set +e; env WORKTREE_PROVISION_NO_INSTALL=1 python3 "$BIN" --base "$WT" --source "$SRC" >/dev/null 2>&1; rc=$?; set -e
 if [[ $rc -eq 0 && -L "$WT/.envrc" ]]; then ok "re-run safe"; else no "rc=$rc"; fi
 
 echo "[5] manifest detection: package.json -> pnpm install"
@@ -66,7 +66,7 @@ if [[ $rc -eq 0 ]]; then ok "missing base_path safe"; else no "rc=$rc"; fi
 
 echo "[8] payload base_path drives provisioning (real WorktreeCreate event shape)"
 WT4="$TMP/wt4"; mkdir -p "$WT4"
-out="$(printf '{"base_path":"%s"}' "$WT4" | env CC_WT_PROVISION_ENV=.envrc python3 "$BIN" --source "$SRC" --dry-run 2>&1)"
+out="$(printf '{"base_path":"%s"}' "$WT4" | env WORKTREE_PROVISION_ENV=.envrc python3 "$BIN" --source "$SRC" --dry-run 2>&1)"
 if grep -q "symlink $WT4/.envrc -> $SRC/.envrc" <<<"$out"; then ok "stdin base_path honored"; else no "payload path: $out"; fi
 
 echo "[9] manifest detection: go.mod -> go mod download"
@@ -82,11 +82,11 @@ out="$(run --base "$WT7" --source "$SRC2" --dry-run 2>&1)"
 if grep -q 'install: bundle install' <<<"$out"; then ok "ruby detected"; else no "ruby plan: $out"; fi
 
 echo "[12] verbose dry-run labels the install line"
-out="$(env CC_WT_PROVISION_VERBOSE=1 python3 "$BIN" --base "$WT5" --source "$SRC2" --dry-run 2>&1)"
+out="$(env WORKTREE_PROVISION_VERBOSE=1 python3 "$BIN" --base "$WT5" --source "$SRC2" --dry-run 2>&1)"
 if grep -q 'install (verbose): go mod download' <<<"$out"; then ok "verbose label shown"; else no "verbose label: $out"; fi
 
 echo "[13] verbose ON streams the install command + (stubbed) output"
-out="$(PATH="$STUB:$PATH" env CC_WT_PROVISION_VERBOSE=1 python3 "$BIN" --base "$WT8" --source "$SRC2" 2>&1)"
+out="$(PATH="$STUB:$PATH" env WORKTREE_PROVISION_VERBOSE=1 python3 "$BIN" --base "$WT8" --source "$SRC2" 2>&1)"
 if grep -q 'running go mod download' <<<"$out" && grep -q 'STUB-INSTALL-RAN' <<<"$out"; then ok "verbose streams cmd+output"; else no "verbose run: $out"; fi
 
 echo "[14] verbose OFF is silent (no command echo, no install stdout)"

@@ -13,7 +13,7 @@ assert_true(){ if [ "$2" = "0" ]; then echo "  ok: $1"; pass=$((pass+1)); else e
 echo "== --with session,worktree exposes the CLIs as kit-managed shim files =="
 H1="$(mktemp -d)"
 HOME="$H1" bash "$KIT_DIR/install.sh" --with session,worktree >/tmp/kitcli-h1.log 2>&1
-for cli in cc-intel cc-observe cc-semantic cc-recall cc-vps-report cc-worktree-provision; do
+for cli in cc-intel cc-observe cc-semantic cc-recall cc-vps-report worktree-provision; do
   assert_true "$cli shim exists + executable" "$([ -x "$H1/.local/bin/$cli" ]; echo $?)"
   assert_true "$cli is a shim file (not symlink), kit-marked" \
     "$([ ! -L "$H1/.local/bin/$cli" ] && grep -q 'dwarves-kit CLI shim' "$H1/.local/bin/$cli"; echo $?)"
@@ -24,14 +24,14 @@ assert_true "shim targets the stable bin/ entrypoint" \
 echo "== the shim chain actually runs (shim -> bin/ -> lib/) =="
 out="$(HOME="$H1" "$H1/.local/bin/cc-intel" --help 2>&1 || true)"
 assert_true "cc-intel --help runs through the chain" "$(grep -q 'usage: cc-intel' <<<"$out"; echo $?)"
-out="$(HOME="$H1" "$H1/.local/bin/cc-worktree-provision" --base /nonexistent --dry-run 2>&1; echo "rc=$?")"
-assert_true "cc-worktree-provision exits 0 through the chain" "$(grep -q 'rc=0' <<<"$out"; echo $?)"
+out="$(HOME="$H1" "$H1/.local/bin/worktree-provision" --base /nonexistent --dry-run 2>&1; echo "rc=$?")"
+assert_true "worktree-provision exits 0 through the chain" "$(grep -q 'rc=0' <<<"$out"; echo $?)"
 
 echo "== NC: spine-only install exposes no CLIs =="
 H2="$(mktemp -d)"
 HOME="$H2" bash "$KIT_DIR/install.sh" --prune >/tmp/kitcli-h2.log 2>&1
 assert_true "no cc-intel shim without the session module" "$([ ! -e "$H2/.local/bin/cc-intel" ]; echo $?)"
-assert_true "no cc-worktree-provision shim without the worktree module" "$([ ! -e "$H2/.local/bin/cc-worktree-provision" ]; echo $?)"
+assert_true "no worktree-provision shim without the worktree module" "$([ ! -e "$H2/.local/bin/worktree-provision" ]; echo $?)"
 
 echo "== NC: a user-owned file at the shim path is never clobbered =="
 H3="$(mktemp -d)"
