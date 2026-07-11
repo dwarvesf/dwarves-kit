@@ -191,7 +191,7 @@ kit_module_hooks() {
 kit_module_clis() {
   case "$1" in
     session) echo "cc-intel cc-observe cc-semantic cc-recall cc-vps-report" ;;
-    worktree) echo "cc-worktree-provision" ;;
+    worktree) echo "worktree-provision" ;;
     prose_rag) echo "prose-rag" ;;
     *) echo "" ;;
   esac

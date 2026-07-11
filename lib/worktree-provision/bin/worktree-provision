@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cc-worktree-provision: a WorktreeCreate hook that makes a fresh worktree usable.
+"""worktree-provision: a WorktreeCreate hook that makes a fresh worktree usable.
 
 When EnterWorktree creates a worktree, the gitignored env (.envrc/.env) and installed
 deps (.venv/node_modules) do NOT come along (they are not tracked). This hook, fired on
@@ -14,9 +14,9 @@ Flags / env (mostly for tests + control):
   --base DIR                    new worktree path (default: payload base_path)
   --source DIR                  source repo root to symlink env FROM (default: git-derived)
   --dry-run                     print the plan, change nothing
-  CC_WT_PROVISION_NO_INSTALL=1  symlink env but skip the (possibly slow) install
-  CC_WT_PROVISION_ENV="a,b"     env filenames to symlink (default ".envrc,.env")
-  CC_WT_PROVISION_VERBOSE=1     echo the install command and stream its output
+  WORKTREE_PROVISION_NO_INSTALL=1  symlink env but skip the (possibly slow) install
+  WORKTREE_PROVISION_ENV="a,b"     env filenames to symlink (default ".envrc,.env")
+  WORKTREE_PROVISION_VERBOSE=1     echo the install command and stream its output
                                 (default: silent except errors)
 
 Manifest -> install command (first match wins):
@@ -82,7 +82,7 @@ def plan(wt, source, env_files):
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(prog="cc-worktree-provision")
+    p = argparse.ArgumentParser(prog="worktree-provision")
     p.add_argument("--base", help="new worktree path (default: payload base_path)")
     p.add_argument("--source", help="source repo root (default: git-derived)")
     p.add_argument("--dry-run", action="store_true")
@@ -100,11 +100,11 @@ def main(argv=None):
 
     source = args.source or git_main_root(wt)
     # basenames only: an env filename must never contain a path separator (no traversal)
-    env_files = [s for s in os.environ.get("CC_WT_PROVISION_ENV", ",".join(DEFAULT_ENV_FILES)).split(",")
+    env_files = [s for s in os.environ.get("WORKTREE_PROVISION_ENV", ",".join(DEFAULT_ENV_FILES)).split(",")
                  if s and re.match(r"^[A-Za-z0-9._-]+$", s)]
     symlinks, inst = plan(wt, source, env_files)
-    no_install = os.environ.get("CC_WT_PROVISION_NO_INSTALL") == "1"
-    verbose = os.environ.get("CC_WT_PROVISION_VERBOSE") == "1"
+    no_install = os.environ.get("WORKTREE_PROVISION_NO_INSTALL") == "1"
+    verbose = os.environ.get("WORKTREE_PROVISION_VERBOSE") == "1"
 
     if args.dry_run:
         for dst, src in symlinks:
@@ -119,13 +119,13 @@ def main(argv=None):
     for dst, src in symlinks:
         try:
             os.symlink(src, dst)
-            print(f"cc-worktree-provision: linked {os.path.basename(dst)}", file=sys.stderr)
+            print(f"worktree-provision: linked {os.path.basename(dst)}", file=sys.stderr)
         except OSError as e:
-            print(f"cc-worktree-provision: symlink {os.path.basename(dst)} failed: {e}", file=sys.stderr)
+            print(f"worktree-provision: symlink {os.path.basename(dst)} failed: {e}", file=sys.stderr)
     if inst and not no_install:
         joined = " ".join(inst)
         if verbose:
-            print(f"cc-worktree-provision: running {joined} (cwd {wt})", file=sys.stderr)
+            print(f"worktree-provision: running {joined} (cwd {wt})", file=sys.stderr)
         try:
             if verbose:
                 # stream stdout+stderr live so a long install is not opaque
@@ -135,11 +135,11 @@ def main(argv=None):
                 r = subprocess.run(inst, cwd=wt, timeout=600,
                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if r.returncode != 0:
-                print(f"cc-worktree-provision: install ({inst[0]}) exited {r.returncode}", file=sys.stderr)
+                print(f"worktree-provision: install ({inst[0]}) exited {r.returncode}", file=sys.stderr)
                 for line in (r.stderr or "").strip().splitlines()[-5:]:
                     print(f"  {line}", file=sys.stderr)
         except (OSError, subprocess.SubprocessError) as e:
-            print(f"cc-worktree-provision: install ({inst[0]}) failed: {e}", file=sys.stderr)
+            print(f"worktree-provision: install ({inst[0]}) failed: {e}", file=sys.stderr)
     return 0
 
 

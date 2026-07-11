@@ -68,8 +68,8 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
 | `weekend_batch` | the debt-paydown reader/closer (`lib/queue/weekend-batch.sh`), invoked by a consumer's own skill or directly | hookless (lib) |
 | `bridge` | git↔Hermes kanban mirror/writeback (`board.sh mirror/status/writeback`), itself gated per-repo by a `bridge=on` row in `boards.txt` | hookless (lib) |
-| `worktree` | `cc-worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
-| `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `CC_MONEY_REPOS`) | 1 hook |
+| `worktree` | `worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
+| `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | 1 hook |
 | `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI on PATH (`lib/prose-rag/`, Rust engine) | 1 hook + 1 CLI |
 
 `team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.

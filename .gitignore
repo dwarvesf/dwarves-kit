@@ -41,3 +41,8 @@ __pycache__/
 # INSTALLED destination; an in-place install (KIT_DIR == ~/.claude/dwarves-kit) writes
 # it at the repo root, so it must never be committed from a maintainer's own machine.
 /kit.toml
+
+# Rust build output anywhere in lib/ (a branch without a module's own .gitignore
+# must still never sweep another branch's build artifacts into git add -A)
+lib/**/rust/target/
+lib/**/bin/*-rs
