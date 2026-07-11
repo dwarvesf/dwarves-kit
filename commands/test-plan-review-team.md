@@ -8,6 +8,8 @@ Why this lane exists: the spec gets adversarial review (`/kit:spec-validate`) an
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.
+
 ### Step 1: Find the test plan to critique
 
 Read the `## Test plan`, **spec-first**: resolve the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware, SPEC-005); if several specs match, ask the user which one, do not auto-pick. `/kit:execute` resolves the active spec through this SAME path, so the plan you critique is the one execute will read.
@@ -98,3 +100,5 @@ Mirrors the parallel multi-lens pattern in `commands/devs-team.md` + `commands/r
 
 After the verdict, record it for lane telemetry (SPEC-062), one line:
 `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "<SOLID|REVISE|RECONSIDER> rounds=<N> findings=<K>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> test-plan end caught=<true if the verdict is not SOLID, else false>`.

@@ -8,6 +8,8 @@ Do NOT be a yes-man. Do NOT validate the idea by default. Push hard on weak poin
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Think start`.
+
 1. Ask the user to describe their idea in 2-3 sentences. If they already described it in the conversation, use that.
 
 2. Work through these 6 forcing questions, one at a time. Present each as an AskUserQuestion with concrete options where possible:
@@ -51,3 +53,5 @@ Do NOT be a yes-man. Do NOT validate the idea by default. Push hard on weak poin
 
 After the verdict, record it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> Think ran "<verdict> <one-line thesis>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Think end caught=<true if verdict is RETHINK or KILL, else false>`.

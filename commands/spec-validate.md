@@ -6,6 +6,10 @@ You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-
 
 ## The 6 reviewers
 
+Bracket both phases this lane owns for timing (SPEC-129), before running Reviewer 1:
+`bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and
+`bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
+
 Run each reviewer sequentially. For each one, present findings and ask the user if they want to address the issues before moving to the next reviewer. Reviewers 1-5 are advisory; Reviewer 6 (below) is the one exception that can block the `VALIDATED` flip.
 
 ### Reviewer 1: Security Auditor
@@ -110,9 +114,11 @@ If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception (ADR-
 
 After the verdict, record it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.
+Close its timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if the verdict is NEEDS REVISION, else false>`.
 
 Reviewer 6 is also the `design-record` matrix row's phase owner (it is the one enforcement point
 for that row, per WORKFLOW.md "## The understanding axis"), so record it by its own name too:
 `bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> <pass|critical>"`.
 This closes the "no command records design-record ran" gap WORKFLOW.md's "## Command emit
-coverage" section used to flag as a known pre-existing gap.
+coverage" section used to flag as a known pre-existing gap. Close its timing bracket (SPEC-129):
+`bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true if the row is critical, else false>`.

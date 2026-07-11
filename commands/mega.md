@@ -291,11 +291,21 @@ exact transform `bash lib/gate/gate-ledger.sh rid` applies when run on that bran
 
 ```
 FINAL_RID="<final sub-goal's Branch: value, type/ prefix stripped -- from its goals/NN-<slug>.md>"
+bash lib/gate/gate-ledger.sh outcome "$FINAL_RID" advisor start
 bash lib/gate/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
   || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
+bash lib/gate/gate-ledger.sh outcome "$FINAL_RID" advisor end caught=<true if P5's finding count N > 0, else false>
+bash lib/gate/gate-ledger.sh outcome "$FINAL_RID" advisor start
 bash lib/gate/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P6 findings=<N> actor=$(git config user.name)" \
   || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); convergence gate unaffected" >&2
+bash lib/gate/gate-ledger.sh outcome "$FINAL_RID" advisor end caught=<true if P6's proposal count N > 0, else false>
 ```
+
+Each mode is its own SPEC-129 timing bracket (a `start` immediately before its `record`, an
+`end` immediately after): `read_kit_gates` pairs GATE rows to OUTCOME brackets FIFO per phase
+in file-append order, so two sequential `advisor` brackets pair correctly with the two
+sequential `advisor ran` GATE rows above, P5 with the first, P6 with the second, with no new
+pairing logic needed.
 
 Observability only: a missing `advisor` row never blocks the merge or the close (no lane's
 required-gate set gains an `advisor` entry; `mega-merge.sh gate`/`hooks/ship-gate.sh` are

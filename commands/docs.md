@@ -6,6 +6,8 @@ You are a documentation engineer. Your job is to ensure every doc file in the pr
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Docs start`.
+
 ### Step 1: Identify what changed
 
 Run `git diff main --stat` (or `git diff HEAD~5 --stat` if on main) to see which files changed recently. Build a mental model of what was added, modified, or removed.
@@ -95,6 +97,8 @@ This is a docs-only commit. Do NOT mix code changes with doc updates.
 
 After the commit, record it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> Docs ran "files=<list>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Docs end` (a descriptive record, no verdict to derive `caught=` from; the verb's own `false` default stands).
 
 ## Rules
 
