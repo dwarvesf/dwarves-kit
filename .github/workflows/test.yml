@@ -169,3 +169,6 @@ jobs:
 
       - name: Run mega status reconciler tests (kit-modularity sub-goal 08)
         run: bash tests/test-mega.sh
+
+      - name: Run config-registry drift + bin/config tests (SPEC-198, harness-loop sub-goal 08)
+        run: bash tests/test-config-registry.sh
