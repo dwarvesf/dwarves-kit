@@ -17,3 +17,13 @@ Names locked by ADR-0034 (`docs/decisions/0034-harness-loop-taxonomy.md`); a lat
 - Kit-skill rule: agent-auto-fired workflows driving kit machinery earn `skills/`; stats skill relocates to `skills/stats/` (today it never installs: install.sh globs `skills/*/SKILL.md` only).
 - ONE weekly scheduler: single LaunchAgent template + dispatcher + declarative jobs list; per-job plists retire (session-intel-weekly.plist.tmpl folds in at SG-10).
 - Ledger retention: append-only stands; revisit only at a measured threshold (shared ledger root > 100 MB or `stats digest` > 10 s), via a new ADR, never silent rotation.
+
+## SG-02 (2026-07-12, PR #237 merged 76fbafe)
+
+Call sites deliberately left unbracketed (per the handoff contract):
+
+- `commands/grill.md` skipped branch: a skip runs no work, so there is no duration to bracket honestly.
+- `commands/ship.md` `record <rid> Ship ran`: excluded from the goal's literal inventory by its own prose (the line contains the word "outcome" in an unrelated clause, so `rg -v outcome` dropped it). Needs no bracket: `hooks/ship-gate.sh` already emits the `ship` OUTCOME pair (SPEC-129's original live emit) and `normalize_phase()` folds Ship/ship to one key. The standing lint carries an explicit `ship` exemption with a load-bearing NC.
+- `caught=` omitted at 8 of 22 sites whose recorded text carries no verdict/count; the verb's documented `false` default stands (inventing verdicts would change gate-decision logic, forbidden by the quality bar).
+
+Durable: `tests/lib/contract-lint.sh` is the shared grep-diff-against-manifest primitive; SG-08's registry drift lint MUST reuse it (goal 02 scope edge).

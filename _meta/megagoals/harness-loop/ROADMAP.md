@@ -11,7 +11,7 @@
 ## Sub-goals
 
 - [x] 01-loop-taxonomy, ADR-0034 opens with a full surface CENSUS (bin/, skills/, daemons) + target-state tables, then locks naming/scope/modularity (learn subsystem, retro-vs-propose vocabulary, legs-as-metadata registry, front-door verb fences, `-propose` suffix, bin/ one-grammar consolidation, the kit-skill rule, the one-scheduler decision), `gate`, PR #236 (open + HELD for Han, per gate policy; Done = PR open, the gate click is Han's)
-- [ ] 02-outcome-emit-sweep, OUTCOME timing brackets wired at the missing gate call sites so `stats mega-durations` + digest time-to-done stop reading honest-zero, `auto`, PR #
+- [x] 02-outcome-emit-sweep, OUTCOME timing brackets wired at the missing gate call sites so `stats mega-durations` + digest time-to-done stop reading honest-zero, `auto`, PR #237, merged 76fbafe (2026-07-12; CI green both OS on PR head; proof docs/verification/loop-02-outcome-emit.md)
 - [x] 03-harvest-dedup-land, PR #226 (harvest flock dedup) reviewed + merged, regression row 4c green on master, `auto`, PR #226, merged a6c5a9e (2026-07-12; post-merge suite 51/51 on master)
 - [ ] 04-surface-consolidation, the ADR-0034 target surface becomes reality in one wave: `lib/learn/` + `bin/learn`; bin/ regrouped to one `<subsystem> <verb>` grammar (session-* 5->1, add-backlog -> `board promote`, missing spec/goal/stats/mega/queue entries created); stats skill relocated; all call-sites repointed (dotfiles companion PR), zero alias shims, `auto`, PR #
 - [ ] 05-retro-cycle, `learn propose` (stats-window aggregate → sonnet interpret → adversarial check → cited, deduped staging) + the recurring `kit-retro-YYYY-WW` queue goal template + `[features] auto_improvement` flipped to [impl] with the SPEC-188 lint amended, `auto`, PR #
