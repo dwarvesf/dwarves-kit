@@ -85,7 +85,7 @@ Screenshots (`docs/proof/loop-07-mega-dashboard/`, taken headless via Playwright
   unlinked proof-of-done (its real proof lives in `RUN_REPORT.md` prose with no separate file
   -- the best-effort search correctly does not fabricate a link).
 
-## TIER-4 wiring (goal step 3): NC captured in `tests/test-tier4-close.sh`
+## TIER-4 wiring (goal step 3): NEGATIVE CONTROL captured in `tests/test-tier4-close.sh`
 
 ```
 Command: bash tests/test-tier4-close.sh
@@ -105,7 +105,7 @@ line `mega-review dashboard rendered: ...`; scenario F (TIER4_CLOSE=0) produces 
 proving the render is fully gated on the SAME knob every other close step already uses, no
 new env var.
 
-## Honest-empty NC (goal step 4): captured in `tests/test-mega-review.sh`
+## Honest-empty NEGATIVE CONTROL (goal step 4): captured in `tests/test-mega-review.sh`
 
 ```
 Command: bash tests/test-mega-review.sh (section 5)
