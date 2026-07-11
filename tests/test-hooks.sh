@@ -813,11 +813,11 @@ assert_exit "settings.json is valid JSON" 0 $?
 
 HOOK_COUNT=$(jq '[.hooks | to_entries[] | .value[] | .hooks[]] | length' "$KIT_DIR/settings.json" 2>/dev/null)
 TOTAL=$((TOTAL + 1))
-if [ "$HOOK_COUNT" -eq 22 ]; then
+if [ "$HOOK_COUNT" -eq 24 ]; then
   echo -e "  ${GREEN}PASS${NC} settings.json has 22 event hooks registered"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 22)"
+  echo -e "  ${RED}FAIL${NC} settings.json has $HOOK_COUNT event hooks (expected 24)"
   FAIL=$((FAIL + 1))
 fi
 

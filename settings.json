@@ -66,6 +66,16 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/money-gate.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "PostToolUse": [
@@ -165,6 +175,15 @@
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/context-hints.sh",
             "timeout": 5
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/prose-rag.sh",
+            "timeout": 10
           }
         ]
       }

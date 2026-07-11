@@ -167,7 +167,7 @@ echo ""
 # [modules]` manifest RECORDS the enabled set (for `--with`-less re-installs
 # and future discovery) -- it is a shell-install RECORD, never a runtime
 # feature-registry: no hook reads it (see tests/test-no-runtime-manifest-read.sh).
-KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge worktree"
+KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge worktree money_gate prose_rag"
 KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.sh commit-format.sh anti-rationalization.sh"
 
 # module -> its hook script basenames (space-separated; empty = hookless, e.g.
@@ -179,6 +179,8 @@ kit_module_hooks() {
     session) echo "context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh" ;;
     advisor) echo "context-hints.sh" ;;
     cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
+    money_gate) echo "money-gate.sh" ;;
+    prose_rag) echo "prose-rag.sh" ;;
     *) echo "" ;;
   esac
 }
@@ -190,6 +192,7 @@ kit_module_clis() {
   case "$1" in
     session) echo "cc-intel cc-observe cc-semantic cc-recall cc-vps-report" ;;
     worktree) echo "worktree-provision" ;;
+    prose_rag) echo "prose-rag" ;;
     *) echo "" ;;
   esac
 }
