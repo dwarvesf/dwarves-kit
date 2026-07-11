@@ -31,6 +31,26 @@ Also inherent: with no `~/.config/session-intel/bridge` the launcher skips the
 bridge block entirely (plain `-x` test), so a kit-only machine runs the digest
 with zero consumer wiring.
 
+## Recorded run
+
+```
+Command: bash lib/session/intel/deploy/macos/install
+Output:  [ok] session-intel-weekly installed (Mon 09:00; kickstart to run now)
+Exit:    0
+
+Command: launchctl kickstart -k gui/$(id -u)/session-intel-weekly
+Output:  digest 185296 bytes, grep -c _unavailable_ -> 0; log tail: heartbeat: 204
+Exit:    0
+Verdict: PASS
+```
+
+## Rollback
+
+`launchctl bootout gui/$(id -u)/session-intel-weekly && rm ~/Library/LaunchAgents/session-intel-weekly.plist`
+removes the agent cleanly (exercised live as the negative control above);
+`git revert` of this commit removes the bundle from the kit. The digest output
+dir `~/.claude/intel/` is plain files, never deleted by install or uninstall.
+
 ## Reproduce
 
 ```
