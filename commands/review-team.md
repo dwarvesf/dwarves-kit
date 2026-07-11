@@ -13,6 +13,8 @@ If no changes exist, tell the user and stop.
 
 ## Process
 
+Bracket the `review` phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome "$rid" review start`.
+
 ### Step 1: Gather the diff
 
 Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the list of changed files.
@@ -134,6 +136,9 @@ whole-work pass surfaces. Return ADVISORY: clean | N finding(s) with file:line.
 The advisor's `model:` (default `sonnet`) is the cheap-first tier knob, so this
 default lens never silently burns opus on every run.
 
+Bracket the `advisor` phase for timing (SPEC-129) right before dispatching it:
+`bash lib/gate/gate-ledger.sh outcome "$rid" advisor start`.
+
 **Record the advisor dispatch itself (SPEC-145, fail-open, never blocks).** The instant the
 advisor's critique pass returns, emit a first-class ledger row BEFORE folding its findings
 into the Step 3 merge, so the advisor's own contribution is machine-visible even when
@@ -144,6 +149,7 @@ specialists + advisor together, so it cannot answer that question alone):
 ```
 bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
   || echo "WARNING: advisor gate-ledger emit failed (ledger dir unwritable?); review output unaffected" >&2
+bash lib/gate/gate-ledger.sh outcome "$rid" advisor end caught=<true if N > 0, else false>
 ```
 
 `<N>` is the advisor's OWN fresh-finding count read off its `ADVISORY: <N findings>` output
@@ -298,6 +304,9 @@ only (unchanged meaning), `rejected=<M>` counts the Step 3a previously-rejected 
 ```
 bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> suppressed=<S> rejected=<M> actor=$(git config user.name)"
 ```
+
+Close the `review` timing bracket opened at the top of this Process section (SPEC-129):
+`bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SHIP, else false>`.
 
 ### Step 5: Decision gate
 

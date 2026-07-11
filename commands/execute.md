@@ -90,7 +90,7 @@ Sequential tasks: TASK-003 > TASK-004 > TASK-005
 
 Ask: "Execute this plan? (A) Start Phase 1 / (B) Adjust task order / (C) Skip to specific task"
 
-Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-verifier at Step 4 diffs the whole build from it.
+Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-verifier at Step 4 diffs the whole build from it. Also bracket the Build phase for timing (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> build start`.
 
 ### Step 2: Execute phase by phase
 
@@ -414,6 +414,8 @@ After all phases complete:
    "tasks=<N>/<N> verified=<N> tests=<pass|fail>"`. This is Build's own phase-owner record
    (execute.md IS the Build phase), the same one-line convention every other phase owner
    (`think.md`, `design.md`, `spec.md`, ...) already uses.
+
+   Close the timing bracket opened at Step 1 (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> build end caught=<true if any escalation occurred or tests=fail, else false>`.
 
 ## Error handling
 

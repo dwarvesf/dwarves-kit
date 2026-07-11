@@ -15,6 +15,8 @@ This is NOT a celebration. This is NOT a blame session. This is a structured ext
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Reflect start`.
+
 ### Step 1: Gather data
 
 Collect facts before opinions:
@@ -127,3 +129,5 @@ Ask: "Any of these action items worth adding to the project CLAUDE.md or kit con
 After the retro document is written, record it for lane telemetry (SPEC-139), one line
 (the matrix row this command owns is `Reflect`, not `retro`):
 `bash lib/gate/gate-ledger.sh record <rid> Reflect ran "action-items=<N>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Reflect end caught=<true if action-items > 0, else false>`.

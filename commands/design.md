@@ -12,6 +12,8 @@ Do NOT settle the design unilaterally. Ask ONE question at a time, present the d
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Design start`.
+
 ### Step 1: Orient
 Read `docs/briefs/DECISION-BRIEF.md` if it exists (the `/kit:think` output) and the relevant code. Restate the problem in one sentence and confirm it with the user before designing anything.
 
@@ -38,6 +40,8 @@ Tell the user the design is captured and the next step is `/kit:spec`, which rea
 
 After Step 6, record it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> Design ran "approaches=<N> design-bearing=<yes|no>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Design end` (no verdict to derive `caught=` from at this phase; the verb's own default of `false` stands).
 
 ## Source
 Forked from `superpowers:brainstorming` (one-question-at-a-time, present-in-sections, per-section approval). Realizes SPEC-008 Part C; see `docs/specs/SPEC-011-design-lane.md`.

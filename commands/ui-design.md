@@ -6,6 +6,8 @@ You are a UI-design loop coordinator. Your job is to write a structured UI brief
 
 This lane does NOT implement a renderer and does NOT store generated artifacts (they live downstream). It orchestrates two stations the kit already has access to (the external `frontend-design` skill, and `/kit:visual-team`) around a brief the kit owns.
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> "UI design" start`.
+
 ## Step 1: Write the `## UI design` brief (spec-first)
 
 Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005). Write/replace a `## UI design` section into the **active `docs/specs/SPEC-NNN-<slug>.md` if one exists, else `docs/briefs/DECISION-BRIEF.md`** (else create the brief). If several specs match, ask the user which one; do not auto-pick. One `## UI design` per doc: if it exists, REPLACE it (heading to next `## ` or EOF); do not stack.
@@ -135,6 +137,8 @@ the ACCEPTED fixes (the per-round approval Phase B already has) -> re-render -> 
 After the loop terminates (Phase A SOLID, or Phase B/quiescence's SOLID / RECONSIDER / cap), record
 it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> "UI design" ran "<verdict> rounds=<N>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> "UI design" end caught=<true if the verdict is not SOLID, else false>`.
 
 ## Notes
 - Opt-in, report-only; never hard-gates `/kit:spec` or any build. The maintainer decides whether to proceed.

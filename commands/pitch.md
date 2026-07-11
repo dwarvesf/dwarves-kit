@@ -23,6 +23,8 @@ narrative could leak in (the same discipline `lib/explain.sh` uses for the diff,
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> pitch start`.
+
 ### Step 1: Run the engine
 
 ```bash
@@ -54,6 +56,8 @@ gate):
 ```bash
 bash lib/gate/gate-ledger.sh record <rid> pitch ran "ref=<rid>"
 ```
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> pitch end` (assembly only, no verdict; the verb's own `false` default stands).
 
 ## Rules
 

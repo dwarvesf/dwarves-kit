@@ -8,6 +8,8 @@ This is NOT a roundtable and has NO personas. Test planning derives from FIXED a
 
 ## Process
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.
+
 ### Step 1: Find the active spec
 
 Detect the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware). If several specs match, ask the user which one. `/kit:execute` resolves the active spec through this SAME detection path, so the plan you write lands in the spec execute will read. Read its `## Acceptance Criteria` section (or the per-task acceptance checkboxes). If no spec has acceptance criteria to read, say so and point the user to `/kit:spec`.
@@ -69,3 +71,5 @@ The kit's own coverage-matrix shape. There is no external roundtable source; thi
 
 After writing the plan, record it for lane telemetry (SPEC-062), one line:
 `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "matrix rows=<N> categories=<list>"`.
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> test-plan end` (authoring, no verdict; the verb's own `false` default stands).
