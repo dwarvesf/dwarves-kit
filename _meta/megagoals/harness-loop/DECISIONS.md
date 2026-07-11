@@ -43,3 +43,9 @@ bin/learn verb table (final): `debt list|collect|mark-paid` live -> lib/learn/we
 - Drift-lint allowlist policy: 17 tokens excluded, each with a stated reason (script-local computed paths, test-fixture-only names, prefix false-positives); the allow-regex is derived from the registry's own Allowlist table (single-sourced). Lint scope = the goal's exact seed regex; ~18 real vars outside the prefix family documented as Known gaps for a future structural lint.
 - prose_rag leg = Learn, WORKER-ASSIGNED (absent from the ADR table); Han confirms or the ADR gets amended at gate review.
 - ledger.telemetry: [impl] in kit.toml but reader-less; retagged [design] in the registry only.
+
+## SG-06 (2026-07-12, PR #241 open + stacked; merge after #239)
+
+- Expiry constant: DEFAULT_EXPIRE_DAYS=30 in lib/learn/drain.py with --days override; never a kit.toml key (pinned).
+- Shared staging-block grammar: lib/learn/staging-format.py landed by SG-06 (first to land); ONE definition of the [staged]/[expired] block edges; SG-05 consumes or rebases onto it at fan-in.
+- add-backlog needed zero changes: its existing state=="staged" filter already makes [expired] rows unselectable.
