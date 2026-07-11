@@ -5,10 +5,16 @@
 # analytics; DuckDB stays the `stats` exception per the kit-modularity event-sourcing invariant).
 #
 # ORPHAN, not a subsystem dir (SG-03's "2+-verb subsystems get a grouped `lib/<x>/<x>.sh`
-# case-dispatcher" rule): today `mega` has exactly ONE verb (`status`), so it stays a bare
-# orphan file at `lib/` root, same shape as `lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh` /
-# `lib/precedent.sh`. If a second `mega` verb lands later, promote to `lib/mega/mega.sh` +
-# siblings then (per the same rule those files document).
+# case-dispatcher" rule): `mega` gained a second verb (`review`, SPEC-197 / harness-loop SG-07)
+# but STAYS a bare orphan file here deliberately -- the directory-promotion (`lib/mega/mega.sh` +
+# siblings, `bin/mega`) is explicitly ADR-0034's census target for SG-04 (the taxonomy's own
+# consolidation wave), not this sub-goal's scope. `review`'s substantial composition logic lives
+# in the sibling `lib/mega-review.py` (bash-launcher-to-python, the exact delegation shape
+# `lib/gate/proof-table-gen.sh` -> `lib/gate/proof-table-gen.py` already established: bash 3.2
+# has no associative arrays, which the phase/token/PR joins need). Same shape as
+# `lib/board/board.sh` delegating to `lib/board/board-mirror.sh` for its own heavier verbs.
+# `lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh` / `lib/precedent.sh` remain the single-verb
+# orphan precedent this file no longer strictly matches; that gap is SG-04's to close.
 #
 # WHY THIS EXISTS (provenance): a live session hit the SG-02 HANDOFF-vs-reality lie by hand --
 # HANDOFF.md claimed "running" while the `kitmod-02` worktree sat at 0 commits, empty. A dumb
@@ -77,6 +83,19 @@
 #     --rollup-only       print ONLY the final rollup line (`N/M ok  M-N drift: ...`), no
 #                         per-sub-goal detail -- the form `board`'s render wires in as a column.
 #
+#   mega.sh review <slug> --html [--megagoals-root <path>] [--code-root <path>] [--base <branch>]
+#                          [--out <path>]
+#     Composes ONE self-contained static HTML sign-off page (SPEC-197, harness-loop SG-07) from
+#     THREE read-only sources: this `status` verb's own git-truth reconciliation, the gate/run
+#     ledger (GATE/OUTCOME/TOKENS lines), and `gh pr view` (PR/CI/merge state) -- plus a
+#     best-effort harness-wide footer (staged candidates, learned-ledger queued, unpaid debt).
+#     `--html` is currently the ONLY surface and is required (no live/served variant; scope
+#     fence, see the goal file). Default `--out`: `<megagoals-root>/<slug>/REVIEW.html` (next to
+#     RUN_REPORT.md). A projection, never a stored source of truth (SPEC-182 discipline): safe
+#     to re-run any time, nothing cached. The substantial logic lives in the sibling
+#     `lib/mega-review.py`; this verb is a thin bash launcher that resolves KIT_LOG_DIR the exact
+#     way `lib/gate/proof-table-gen.sh` already does, then execs it.
+#
 # GH_BIN / GIT_BIN override the `gh`/`git` binaries (tests point them at PATH-injected stubs
 # that log argv and return canned JSON, per the suite's existing convention -- see
 # `lib/board/board-writeback.sh`'s `GH_BIN`). No real network call is ever made by the test
@@ -90,9 +109,11 @@ GIT_BIN="${GIT_BIN:-git}"
 _default_repo_root() { "$GIT_BIN" rev-parse --show-toplevel 2>/dev/null || pwd; }
 
 OPT_MEGAGOALS_ROOT=""; OPT_CODE_ROOT=""; OPT_BASE=""; OPT_ROLLUP_ONLY=0
+OPT_HTML=0; OPT_OUT=""
 POSITIONAL=()
 _parse_flags() {
   OPT_MEGAGOALS_ROOT=""; OPT_CODE_ROOT=""; OPT_BASE=""; OPT_ROLLUP_ONLY=0
+  OPT_HTML=0; OPT_OUT=""
   POSITIONAL=()
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -100,6 +121,8 @@ _parse_flags() {
       --code-root)      OPT_CODE_ROOT="${2:-}"; shift 2 ;;
       --base)           OPT_BASE="${2:-}"; shift 2 ;;
       --rollup-only)    OPT_ROLLUP_ONLY=1; shift ;;
+      --html)           OPT_HTML=1; shift ;;
+      --out)            OPT_OUT="${2:-}"; shift 2 ;;
       *) POSITIONAL+=("$1"); shift ;;
     esac
   done
@@ -185,6 +208,12 @@ _classify() {
 }
 
 _label() {
+  # DOWNSTREAM COUPLING (review finding, SPEC-197): `lib/mega-review.py`'s `_STATUS_LINE_RE`
+  # regex parses `cmd_status`'s stdout by matching this exact label set literally (shelled out
+  # to, not reimplemented -- SPEC-197 DEC-003). A cosmetic rename here degrades `mega review`
+  # to a silent, non-fatal honest-empty read for the affected rows (never a crash, per the
+  # composer's own "never fatal" contract) rather than a loud break -- worth a grep for
+  # `_STATUS_LINE_RE` in `lib/mega-review.py` before renaming any of these strings.
   case "$1" in
     ok)                echo "OK" ;;
     claim-unverified)  echo "CLAIM-UNVERIFIED" ;;
@@ -281,12 +310,40 @@ cmd_status() {
   [ "$drift_count" -eq 0 ]
 }
 
-usage() { sed -n '2,84p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# cmd_review: the bash launcher half of `mega review --html <slug>` (SPEC-197). Resolves
+# KIT_LOG_DIR the exact way `lib/gate/proof-table-gen.sh` already does (source
+# lib/telemetry/kit-log-dir.sh, export the result) so there is ONE resolver, not a second copy,
+# then execs the sibling `lib/mega-review.py` (bash 3.2 has no associative arrays, the same
+# reason proof-table-gen.sh delegates to its own .py). `--html` is required: it is currently the
+# ONLY surface (scope fence -- no live/served variant).
+cmd_review() {
+  _parse_flags "$@"
+  local slug="${POSITIONAL[0]:-}"
+  [ -n "$slug" ] || { echo "mega review: a <slug> is required" >&2; return 64; }
+  [ "$OPT_HTML" -eq 1 ] || { echo "mega review: --html is required (the only surface today)" >&2; return 64; }
+
+  local mroot croot base
+  mroot="$(_resolve_megagoals_root)"
+  croot="$(_resolve_code_root)"
+  base="${OPT_BASE:-master}"
+
+  local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=lib/telemetry/kit-log-dir.sh
+  source "$self_dir/telemetry/kit-log-dir.sh" || { echo "mega review: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; return 1; }
+  export KIT_LOG_DIR; KIT_LOG_DIR="$(kit_resolve_log_dir)" || return 1
+
+  local -a py_args=("$slug" --megagoals-root "$mroot" --code-root "$croot" --base "$base")
+  [ -n "$OPT_OUT" ] && py_args+=(--out "$OPT_OUT")
+  python3 "$self_dir/mega-review.py" "${py_args[@]}"
+}
+
+usage() { sed -n '2,102p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"
   case "$first" in
     status) shift; cmd_status "$@" ;;
+    review) shift; cmd_review "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "mega.sh: unknown subcommand '$first'" >&2; usage >&2; return 64 ;;
   esac

@@ -1732,6 +1732,22 @@ _tier4_close() {  # dir roadmap
   #    would-be rc=2 as "clean"; the callee owns the "no corpus to sweep" decision).
   local corpus="${TIER4_CORPUS:-}"
   [ -n "$corpus" ] || corpus=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)
+
+  # Render the mega-review dashboard (SPEC-197, harness-loop SG-07): ONE self-contained static
+  # HTML sign-off page, composed from ledger + gh + proof data, generated next to RUN_REPORT.md
+  # -- "the one surface with a guaranteed reader" the goal file names. Runs FIRST (before the
+  # no-orphan sweep / verifier dispatch) so it reflects a snapshot as of close-time regardless of
+  # how the rest of the close resolves; best-effort and NEVER fatal to the close (a render
+  # failure is a WARN, the dashboard is a projection for the human gate, not a gate itself).
+  local mega_slug mega_root
+  mega_slug="$(basename "$dir")"
+  mega_root="$(dirname "$dir")"
+  if bash "$LIB_ROOT/mega.sh" review "$mega_slug" --html --megagoals-root "$mega_root" --code-root "$corpus" >/dev/null 2>&1; then
+    _say "[orchestrate] [close] mega-review dashboard rendered: $dir/REVIEW.html"
+  else
+    echo "[orchestrate] [close] WARN: mega-review dashboard render failed (non-fatal; re-run 'bash lib/mega.sh review $mega_slug --html --megagoals-root $mega_root --code-root $corpus' to see the error)" >&2
+  fi
+
   local orphans rc_no=0
   orphans=$(_no_orphan_check "$corpus") || rc_no=$?
   case "$rc_no" in
