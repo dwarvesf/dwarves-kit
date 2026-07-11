@@ -53,3 +53,11 @@ bin/learn verb table (final): `debt list|collect|mark-paid` live -> lib/learn/we
 ## SG-09 (2026-07-12, PR #242 open + HELD; gate)
 
 Wizard question list + defaults (Enter-Enter-Enter = sane setup): install mode detected never asked (plugin/bash/both/none; both = disclosed double-hook hazard, never auto-fixed); "Adopt this repo? [Y/n]" default Y after a --dry-run preview; module baseline default = kit-root defaults, roster GENERATED from `bin/config list` modules.* rows; per consumer knob default = skip (env-only knobs get printed export guidance; no-default-consumer knobs presented as optional, never "knob-free"); already-adopted repo = report healthy, write nothing. Decline anywhere = strict no-op; adopt invoked exactly once with ONE --with call.
+
+## SG-05 (2026-07-12, PR #243 open + stacked; merge after #239)
+
+- Window default: --days 30 (plus --megas N); best-effort windowing (kit_gates.start_ts sparse on the real corpus), cited rids = the window's covered runs.
+- Dedup key: exact normalized-title set membership (lowercase alphanumeric words), never substring; SPEC-144 Run-3 mirror NC committed.
+- Interpret + adversarial passes: `claude -p --model sonnet --output-format json`, default effort, behind LEARN_PROPOSE_INTERPRETER / LEARN_PROPOSE_VERIFIER env seams.
+- Stage-3 order: grounding -> dedup -> adversarial (duplicates never burn an LLM call).
+- Shared staging grammar: SG-05 landed lib/learn/staging_format.py; see NOTES fan-in checklist for the SG-06 duplicate reconciliation at merge time.
