@@ -8,8 +8,9 @@
 #   2. DISPATCH: each new/changed forwarder routes a real invocation end to end:
 #      learn debt (the relocated weekend-batch), every session <verb>, board promote,
 #      spec/goal/mega/queue/stats.
-#   3. NC: `learn propose` / `learn drain` REFUSE (exit 1 + a ships-in-SPEC-19x message),
-#      never a silent no-op.
+#   3. NC: `learn propose` REFUSES (exit 1 + a ships-in-SPEC-195 message), never a silent
+#      no-op. `learn drain` is LIVE (SPEC-196); its dispatch is smoke-tested here (deep
+#      behavior: tests/test-learn-drain.sh).
 #
 # Hermetic: learn-debt reads point DWARVES_KIT_LOG_DIR at a temp dir; board promote runs
 # in an empty temp repo. `stats` needs uv (the module's own dependency) -- SKIPs cleanly
@@ -24,7 +25,7 @@ skip() { echo "  SKIP: $1"; SKIP=$((SKIP+1)); }
 assert_true() { if [ "$2" = "0" ]; then ok "$1"; else bad "$1"; fi; }
 
 echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
-EXPECTED="board classify gate goal learn mega prose-rag queue session spec stats worktree-provision"
+EXPECTED="board classify config gate goal learn mega prose-rag queue session spec stats worktree-provision"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
@@ -48,13 +49,16 @@ assert_true "learn debt collect emits the digest header" "$(grep -q 'Weekend bat
 out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/learn" debt mark-paid no-such-rid 2>&1)"; rc=$?
 assert_true "learn debt mark-paid reaches the engine (engine's own no-ledger error, nonzero)" "$([ $rc -ne 0 ] && grep -q 'mark-paid: no ledger file' <<<"$out"; echo $?)"
 
-echo "== learn NC: propose/drain REFUSE, never a silent no-op =="
+echo "== learn NC: propose REFUSES, never a silent no-op =="
 out="$("$KIT_DIR/bin/learn" propose 2>&1)"; rc=$?
 assert_true "learn propose exits 1" "$([ $rc -eq 1 ]; echo $?)"
 assert_true "learn propose names SPEC-195" "$(grep -q 'ships in SPEC-195' <<<"$out"; echo $?)"
-out="$("$KIT_DIR/bin/learn" drain 2>&1)"; rc=$?
-assert_true "learn drain exits 1" "$([ $rc -eq 1 ]; echo $?)"
-assert_true "learn drain names SPEC-196" "$(grep -q 'ships in SPEC-196' <<<"$out"; echo $?)"
+
+echo "== learn: drain dispatches to the SPEC-196 render (deep behavior: test-learn-drain.sh) =="
+TMPSTAGE="$(mktemp -d)/backlog-staging.md"
+out="$(BACKLOG_STAGE_STAGING="$TMPSTAGE" "$KIT_DIR/bin/learn" drain 2>&1)"; rc=$?
+assert_true "learn drain exits 0 through bin/learn (no staging file)" "$rc"
+assert_true "learn drain reports nothing staged (honest-empty)" "$(grep -q 'nothing staged' <<<"$out"; echo $?)"
 out="$("$KIT_DIR/bin/learn" bogus-verb 2>&1)"; rc=$?
 assert_true "learn rejects an unknown verb (exit 1)" "$([ $rc -eq 1 ]; echo $?)"
 
