@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # test-weekend-batch.sh -- SPEC-126, understanding-gate SG-05.
-# Proves lib/queue/weekend-batch.sh (Flow B, the debt-paydown reader/closer):
+# Proves lib/learn/weekend-batch.sh (Flow B, the debt-paydown reader/closer; relocated
+# from lib/queue/ per ADR-0034 decision 1, behavior unchanged):
 #   AC1  collects the week's deferred+waved debt-ledger items + impl-notes + explainers
 #   AC2  the dotfiles weekend-debt-paydown skill ROUTES through learning-day-process +
 #        learning-ledger + a privacy-stripped til flush (grep, best-effort cross-repo)
@@ -24,7 +25,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WB="$KIT_DIR/lib/queue/weekend-batch.sh"
+WB="$KIT_DIR/lib/learn/weekend-batch.sh"
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 SC="$KIT_DIR/lib/classify/significance-classify.sh"
 
@@ -114,7 +115,7 @@ if [ -f "$SKILL_MD" ]; then
   assert "AC2c skill invokes deep-understand for worthy items" "$(grep -q 'deep-understand' "$SKILL_MD" && echo 0 || echo 1)"
   assert "AC2d skill flushes evergreen concepts to til, privacy-stripped" \
     "$(grep -qi 'til' "$SKILL_MD" && grep -qi 'privacy' "$SKILL_MD" && echo 0 || echo 1)"
-  assert "AC2e skill closes the loop via lib/queue/weekend-batch.sh mark-paid" \
+  assert "AC2e skill closes the loop via learn debt mark-paid" \
     "$(grep -q 'mark-paid' "$SKILL_MD" && echo 0 || echo 1)"
 else
   skip "AC2 (dotfiles path absent -- $SKILL_MD; not present in CI, run locally to exercise, see docs/verification/weekend-batch/)"
@@ -325,7 +326,7 @@ printf '%s\n' "$COLLECT_OUT" > "$PROOF_DIR/sample-digest.md"
 
 echo ""
 echo "=== Coverage delta ==="
-BEFORE_COUNT=0   # no lib/queue/weekend-batch.sh, no tests/test-weekend-batch.sh before this spec
+BEFORE_COUNT=0   # no weekend-batch.sh, no tests/test-weekend-batch.sh before this spec
 AFTER_COUNT="$TOTAL"
 assert "coverage delta: weekend-batch checks went from $BEFORE_COUNT to $AFTER_COUNT in this suite" "$([ "$AFTER_COUNT" -gt "$BEFORE_COUNT" ] && echo 0 || echo 1)"
 

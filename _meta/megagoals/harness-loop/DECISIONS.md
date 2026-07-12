@@ -27,3 +27,37 @@ Call sites deliberately left unbracketed (per the handoff contract):
 - `caught=` omitted at 8 of 22 sites whose recorded text carries no verdict/count; the verb's documented `false` default stands (inventing verdicts would change gate-decision logic, forbidden by the quality bar).
 
 Durable: `tests/lib/contract-lint.sh` is the shared grep-diff-against-manifest primitive; SG-08's registry drift lint MUST reuse it (goal 02 scope edge).
+
+## SG-07 (2026-07-12, PR #238 merged c2eb239)
+
+- Dashboard output location convention: `<megagoals-root>/<slug>/REVIEW.html`, sibling of RUN_REPORT.md, overridable via `--out` (SPEC-197 Technical Design). A projection, never a stored source of truth.
+- `lib/mega.sh` -> `lib/mega/mega.sh` directory promotion DEFERRED to SG-04 (SPEC-197 DEC-001; the ADR census names it SG-04's target).
+
+## SG-04 (2026-07-12, PR #239 open + stacked; merge after #236)
+
+bin/learn verb table (final): `debt list|collect|mark-paid` live -> lib/learn/weekend-batch.sh (git mv, byte-identical); `propose` REFUSES exit 1 "ships in SPEC-195"; `drain` REFUSES exit 1 "ships in SPEC-196". bin/ census AFTER: board classify gate goal learn mega queue session spec stats + prose-rag worktree-provision (12 entries, 2 classes; config lands in SG-08); enforced by a standing set-equality test. Recorded exceptions: guidance strings naming add-backlog repointed to `board promote` (byte-level-unchanged exception, impl-notes); lib/stats tests' dormant cc-backlog probe self-SKIPs, not repointed. Deploy note for merge time: re-run install.sh (PATH shims) + re-copy vps-mon bridge per its README.
+
+## SG-08 (2026-07-12, PR #240 open + stacked; merge after #236)
+
+- Registry home: lib/config/module-registry.md (ADR decision-3 pinned). 12 module->leg rows (completeness-linted vs KIT_KNOWN_MODULES) + 91 env<->key rows.
+- Drift-lint allowlist policy: 17 tokens excluded, each with a stated reason (script-local computed paths, test-fixture-only names, prefix false-positives); the allow-regex is derived from the registry's own Allowlist table (single-sourced). Lint scope = the goal's exact seed regex; ~18 real vars outside the prefix family documented as Known gaps for a future structural lint.
+- prose_rag leg = Learn, WORKER-ASSIGNED (absent from the ADR table); Han confirms or the ADR gets amended at gate review.
+- ledger.telemetry: [impl] in kit.toml but reader-less; retagged [design] in the registry only.
+
+## SG-06 (2026-07-12, PR #241 open + stacked; merge after #239)
+
+- Expiry constant: DEFAULT_EXPIRE_DAYS=30 in lib/learn/drain.py with --days override; never a kit.toml key (pinned).
+- Shared staging-block grammar: lib/learn/staging-format.py landed by SG-06 (first to land); ONE definition of the [staged]/[expired] block edges; SG-05 consumes or rebases onto it at fan-in.
+- add-backlog needed zero changes: its existing state=="staged" filter already makes [expired] rows unselectable.
+
+## SG-09 (2026-07-12, PR #242 open + HELD; gate)
+
+Wizard question list + defaults (Enter-Enter-Enter = sane setup): install mode detected never asked (plugin/bash/both/none; both = disclosed double-hook hazard, never auto-fixed); "Adopt this repo? [Y/n]" default Y after a --dry-run preview; module baseline default = kit-root defaults, roster GENERATED from `bin/config list` modules.* rows; per consumer knob default = skip (env-only knobs get printed export guidance; no-default-consumer knobs presented as optional, never "knob-free"); already-adopted repo = report healthy, write nothing. Decline anywhere = strict no-op; adopt invoked exactly once with ONE --with call.
+
+## SG-05 (2026-07-12, PR #243 open + stacked; merge after #239)
+
+- Window default: --days 30 (plus --megas N); best-effort windowing (kit_gates.start_ts sparse on the real corpus), cited rids = the window's covered runs.
+- Dedup key: exact normalized-title set membership (lowercase alphanumeric words), never substring; SPEC-144 Run-3 mirror NC committed.
+- Interpret + adversarial passes: `claude -p --model sonnet --output-format json`, default effort, behind LEARN_PROPOSE_INTERPRETER / LEARN_PROPOSE_VERIFIER env seams.
+- Stage-3 order: grounding -> dedup -> adversarial (duplicates never burn an LLM call).
+- Shared staging grammar: SG-05 landed lib/learn/staging_format.py; see NOTES fan-in checklist for the SG-06 duplicate reconciliation at merge time.

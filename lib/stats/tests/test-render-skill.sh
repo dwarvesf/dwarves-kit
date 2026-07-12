@@ -15,7 +15,7 @@ bad()  { printf 'FAIL  %s\n' "$1"; FAIL=$((FAIL+1)); }
 has()  { case "$3" in *"$2"*) ok "$1";; *) bad "$1 (missing: $2)";; esac; }
 hasnt(){ case "$3" in *"$2"*) bad "$1 (unexpected: $2)";; *) ok "$1";; esac; }
 
-SKILL="skill/SKILL.md"
+SKILL="../../skills/stats/SKILL.md"  # relocated per ADR-0034 decision 8 (SG-04)
 
 echo "== R-trigger: the frontmatter description carries the required trigger phrases =="
 DESC="$(awk '/^description:/{f=1} f{print} /^---$/ && f && NR>2{exit}' "$SKILL" | head -1)"

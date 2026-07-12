@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# bin/add-backlog -- STABLE consumer entrypoint (SPEC-184).
-# The human gate that promotes backlog-stage staged candidates onto the board.
-set -euo pipefail
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec "$SELF_DIR/../lib/board/bin/add-backlog" "$@"

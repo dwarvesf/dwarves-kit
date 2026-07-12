@@ -458,7 +458,7 @@ def anomalies(
     propose: bool = typer.Option(
         False, "--propose",
         help="STAGE a proposed backlog row (append to the cc-backlog staging buffer) per "
-        "fired anomaly; the operator reviews via `add-backlog`. Never writes a board.",
+        "fired anomaly; the operator reviews via `board promote`. Never writes a board.",
     ),
     as_json: bool = _FMT,
 ):
@@ -467,7 +467,7 @@ def anomalies(
     gate ceremony via caught/fix-correlation, dep-independent serial-when-parallel runs, and
     (SPEC-135, ARMED) a per-session token-runaway check over the `sessions` table). With
     --propose, STAGE a proposal per fired anomaly into the cc-backlog staging buffer
-    (`add-backlog` is the human gate). This tool NEVER auto-files a board row and never mutates
+    (`board promote` is the human gate). This tool NEVER auto-files a board row and never mutates
     a ledger."""
     try:
         th = anomalies_mod.parse_thresholds(threshold or [])
@@ -573,7 +573,7 @@ def digest(
     propose: bool = typer.Option(
         False, "--propose",
         help="STAGE fired anomalies into the cc-backlog staging buffer (SAME path "
-        "`anomalies --propose` uses; the operator reviews via `add-backlog`).",
+        "`anomalies --propose` uses; the operator reviews via `board promote`).",
     ),
     as_json: bool = _FMT,
 ):

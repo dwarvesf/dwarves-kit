@@ -190,8 +190,8 @@ kit_module_hooks() {
 # dance (ops-toolkit cc-elevation redeploy.sh) for kit-owned tools.
 kit_module_clis() {
   case "$1" in
-    board) echo "add-backlog" ;;
-    session) echo "session-intel session-observe session-semantic session-recall session-report" ;;
+    board) echo "board" ;;
+    session) echo "session" ;;
     worktree) echo "worktree-provision" ;;
     prose_rag) echo "prose-rag" ;;
     *) echo "" ;;
@@ -696,7 +696,7 @@ echo "[ok] Log directory ready"
 # 5b. Expose the enabled modules' CLIs on PATH (~/.local/bin), each an exec-shim to
 # the stable bin/ entrypoint (SPEC-184). This is the kit-owned replacement for the
 # consumer-side snapshot symlinking (ops-toolkit cc-elevation redeploy.sh) that used
-# to wire session-intel and friends.
+# to wire the session CLI and friends.
 KIT_CLI_NAMES=""
 for _mod in $KIT_ENABLED_MODULES; do
   KIT_CLI_NAMES="$KIT_CLI_NAMES $(kit_module_clis "$_mod")"

@@ -131,8 +131,8 @@ uv run stats render --query "SELECT repo, count(*) AS n FROM kit_runs GROUP BY 1
   --surface terminal
 ```
 
-See `skill/SKILL.md` for the full trigger set + surface-selection rule (quick look ->
-terminal; share/review -> Artifact).
+See `skills/stats/SKILL.md` (repo root; relocated per ADR-0034 decision 8) for the full
+trigger set + surface-selection rule (quick look -> terminal; share/review -> Artifact).
 
 ### The feedback loop: `stats anomalies` (SG-04)
 
@@ -151,7 +151,7 @@ uv run stats anomalies --propose                     # STAGE a row per fired ano
 `--propose` appends a `## [staged]` block, byte-format-identical to what `tools/cc-backlog`
 itself writes, to the cc-backlog **staging buffer** (`_meta/backlog-staging.md`). It never
 writes `_meta/BACKLOG.md` (opened read-only, for dedup only) and never writes a source
-ledger. The operator promotes a staged row via the existing `add-backlog` human gate, same
+ledger. The operator promotes a staged row via the existing `board promote` human gate (ex `add-backlog`, ADR-0034), same
 as any other cc-backlog candidate; this tool has no path to a board row. Re-running
 `--propose` on unchanged state is idempotent (dedup by normalized title against both the
 board and the staging file), so it is safe to call repeatedly, e.g. every time the agent
@@ -159,19 +159,13 @@ checks in.
 
 ### Install the render skill
 
-The skill's canonical source lives in-repo at `skill/SKILL.md` (ops-toolkit ships zero
-skills directly into `~/.claude/skills/` from a tool PR). To make it fire in a Claude
-Code session, symlink it in:
-
-```bash
-ln -sf "$(pwd)/skill/SKILL.md" ~/.claude/skills/stats/SKILL.md
-```
-
-Edit the in-repo file, not the symlinked copy; the symlink keeps them identical. This
-step is NOT run by any PR in this repo (out of ops-toolkit scope to touch
-`~/.claude/skills/`); `tests/test-docs-wiring.sh` verifies the skill source is wired
-correctly (frontmatter carries its triggers, the body calls the `ledger` CLI) but cannot
-verify the symlink itself exists on any given host.
+The skill's canonical source lives at the repo root, `skills/stats/SKILL.md`
+(relocated from `skill/` here per ADR-0034 decision 8: at the subsystem-internal
+path it never installed, because `install.sh` globs `skills/*/SKILL.md` only).
+It now installs automatically on both install paths (bash installer + plugin);
+no symlink step. Edit the in-repo file. `tests/test-docs-wiring.sh` verifies the
+skill source is wired correctly (frontmatter carries its triggers, the body calls
+the `ledger` CLI).
 
 ### Known tradeoffs (stated plainly, not swept under "future work")
 
@@ -211,7 +205,7 @@ suites listed below; these four are not, and the docs should not pretend otherwi
 | `src/stats/{config,adapters,materialize,cli}.py` | the package: env config, the 4 readers, the DuckDB build/query, the CLI |
 | `src/stats/render.py` | pure formatters (`render_terminal`/`render_artifact`), zero I/O, the SG-03 render layer |
 | `src/stats/anomalies.py` | the SG-04 detectors + the propose-not-autofile stager |
-| `skill/SKILL.md` | the render skill source (versioned in-repo; see Install above) |
+| `../../skills/stats/SKILL.md` | the render skill source (repo-root skills/, relocated per ADR-0034 decision 8; see Install above) |
 | `docs/ledger-event-schema.md` · `docs/adapter-contracts.md` | the SG-01 contract the views read against |
 | `docs/specs/SPEC-127-etl-cli.md` · `SPEC-128-render-skill.md` · `SPEC-129-feedback-loop.md` · `SPEC-130-docs-wiring.md` | the per-sub-goal specs |
 | `docs/proof-of-done.md` | the multi-feature proof index (schema, etl-cli, render-skill, feedback-loop) |

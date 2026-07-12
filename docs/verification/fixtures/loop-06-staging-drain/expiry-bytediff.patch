@@ -1,0 +1,11 @@
+--- docs/verification/fixtures/loop-06-staging-drain/expiry-before.md	2026-07-12 05:16:13
++++ docs/verification/fixtures/loop-06-staging-drain/expiry-after.md	2026-07-12 05:16:13
+@@ -2,7 +2,7 @@
+ 
+ Candidates auto-extracted from sessions. Review + promote by hand.
+ 
+-## [staged] Old candidate past the window
++## [expired] Old candidate past the window
+ - Intent: do the old thing
+ - Approach: just do it
+ - Tags: #u-hi #f-mid

@@ -44,6 +44,9 @@ jobs:
 
       - name: Run layered-install module tests (ID-277 SG-04)
         run: bash tests/test-install-modules.sh
+
+      - name: Run bin forwarder census + dispatch tests (SPEC-194)
+        run: bash tests/test-bin-forwarders.sh
       - name: Golden run (e2e)
         run: bash tests/test-e2e.sh
 
@@ -169,6 +172,9 @@ jobs:
 
       - name: Run mega status reconciler tests (kit-modularity sub-goal 08)
         run: bash tests/test-mega.sh
+
+      - name: Run mega review dashboard tests (SPEC-197, harness-loop sub-goal 07)
+        run: bash tests/test-mega-review.sh
 
       - name: Run config-registry drift + bin/config tests (SPEC-198, harness-loop sub-goal 08)
         run: bash tests/test-config-registry.sh

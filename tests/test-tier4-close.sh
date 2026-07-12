@@ -89,7 +89,24 @@ MERGE
   chmod +x "$1"
 }
 
+# A `gh` stub (SPEC-197 wiring: `_tier4_close` now calls `lib/mega.sh review` -> `mega.sh
+# status` -> `_open_pr_for`, which shells to `gh pr list` unconditionally for any sub-goal with a
+# resolved branch). No real network call is ever made: `pr list` returns `[]` (no open PRs),
+# matching this fixture's reality, mirroring tests/test-mega.sh's own STUBGH convention.
+mk_gh_stub() {  # path
+  cat > "$1" <<'GHSTUB'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "pr list") echo "[]" ;;
+  "pr view") echo "{}" ;;
+  *) echo "{}" ;;
+esac
+GHSTUB
+  chmod +x "$1"
+}
+
 MOCK="$TMP/claude-mock"; mk_mock "$MOCK"
+STUBGH="$TMP/gh-stub"; mk_gh_stub "$STUBGH"
 
 # =========================== A. clean close: verifiers-before-gate + gate-held ======================
 DA="$TMP/mgA"; mk_megagoal "$DA"
@@ -99,6 +116,7 @@ MERGE="$TMP/merge-recorder"; mk_merge_recorder "$MERGE" "$MREC"
 
 MOCK_RM="$DA/ROADMAP.md" CLOSE_SENTINEL="$SENT_A" CLAUDE_FLAGS="" \
   TIER4_CORPUS="$CORPUS_A" WAVE_MERGE_CMD="$MERGE" \
+  GH_BIN="$STUBGH" DWARVES_KIT_LOG_DIR="$TMP/kitlogs" \
   CLAUDE_CMD="$MOCK" bash "$ORCH" run "$DA" > "$TMP/A.out" 2>&1
 rcA=$?
 
@@ -126,6 +144,14 @@ grep -q 'NOT auto-merged' "$TMP/A.out" \
 grep -q 'all sub-goals checked; done' "$TMP/A.out" \
   && fail "replaces-done-and-return: the bare done message still printed (close did not replace it)" \
   || pass "replaces-done-and-return: bare 'done' is gone; the close ran instead"
+# mega-review wiring (SPEC-197): a clean TIER-4 close (TIER4_CLOSE=1, the default) renders the
+# dashboard next to where RUN_REPORT.md lives -- best-effort, but on this hermetic fixture (no
+# ledger, no real gh) it must still produce a page, never crash the close.
+[ -f "$DA/REVIEW.html" ] \
+  && pass "mega-review wiring: TIER4_CLOSE=1 renders \$dir/REVIEW.html at close" \
+  || { fail "mega-review wiring: REVIEW.html missing after a clean close"; cat "$TMP/A.out"; }
+grep -q 'mega-review dashboard rendered' "$TMP/A.out" \
+  && pass "mega-review wiring: the close narrates the render" || fail "mega-review wiring: no render narration line"
 
 # =========================== B. no-orphan unit: clean corpus passes ================================
 # Source orchestrate.sh to call the internal helper directly (the guard keeps main from firing).
@@ -193,6 +219,14 @@ rcF=$?
   && pass "opt-out: TIER4_CLOSE=0 restores the bare done-and-return" || { fail "opt-out: done message missing (rc=$rcF)"; cat "$TMP/F.out"; }
 { [ ! -f "$SENT_F.1" ] && [ ! -f "$SENT_F.2" ] && [ ! -f "$SENT_F.3" ]; } \
   && pass "opt-out: TIER4_CLOSE=0 dispatches NO close session" || fail "opt-out: a close session ran despite TIER4_CLOSE=0"
+# mega-review wiring NC (SPEC-197): TIER4_CLOSE=0 never enters _tier4_close at all, so the
+# dashboard render is NEVER attempted -- no REVIEW.html, no render-narration line.
+[ ! -f "$DF/REVIEW.html" ] \
+  && pass "mega-review wiring NC: TIER4_CLOSE=0 -> no REVIEW.html (render never attempted)" \
+  || fail "mega-review wiring NC: REVIEW.html exists despite TIER4_CLOSE=0"
+grep -q 'mega-review dashboard' "$TMP/F.out" \
+  && fail "mega-review wiring NC: a render narration line appeared despite TIER4_CLOSE=0" \
+  || pass "mega-review wiring NC: no render narration line (close never ran)"
 
 # =========================== G. no-corpus: rc=2 skip (not a false halt) =============================
 # _no_orphan_check on a path with no agents/ dir returns 2 (skip signal, not 0-clean, not 1-orphan).

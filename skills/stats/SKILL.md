@@ -78,22 +78,12 @@ step needed.
 
 ## Install
 
-This skill's canonical source is this file
-(`lib/stats/skill/SKILL.md`), versioned with the tool , dwarves-kit
-ships zero skills directly into `~/.claude/skills/` from a tool PR (same convention
-this tool's docs used in ops-toolkit before the 05K move; dwarves-kit itself has no
-existing precedent for a skill living under `tools/<x>/skill/` rather than a top-level
-`skills/` dir -- see the tool's own implementation notes). To make it fire in
-a Claude Code session, symlink it in (see the tool README's "Install the render
-skill" section):
-
-```bash
-ln -sf "$(pwd)/lib/stats/skill/SKILL.md" \
-  ~/.claude/skills/stats/SKILL.md
-```
-
-Edit the in-repo file, not the symlinked copy; the symlink keeps them identical by
-construction.
+This skill's canonical source is this file (`skills/stats/SKILL.md`; relocated
+from `lib/stats/skill/` per ADR-0034 decision 8 -- at the old subsystem-internal
+path it never installed, because `install.sh` globs `skills/*/SKILL.md` only).
+It now installs automatically on both install paths (bash installer + plugin),
+same as `get-api-docs` and `skill-review`. No symlink step needed; edit the
+in-repo file.
 
 ## When NOT to use this skill
 
@@ -103,8 +93,8 @@ construction.
 - Ad-hoc SQL you're going to iterate on yourself , just run `stats query`/`ledger
   show` directly; this skill is the rendered-answer path, not a SQL console.
 - Filing a board row directly , `stats anomalies --propose` only STAGES a candidate;
-  promoting it to `_meta/BACKLOG.md` still goes through the existing `add-backlog`
-  human gate, same as any other cc-backlog candidate.
+  promoting it to `_meta/BACKLOG.md` still goes through the existing `board promote`
+  human gate (ex `add-backlog`, ADR-0034), same as any other cc-backlog candidate.
 - A persistent dashboard or TUI , there isn't one; every render (or anomaly check) is
   one on-demand query, driven by the agent, per the ROADMAP's binding "consumer is the
   agent on-demand, not a human TUI" decision.

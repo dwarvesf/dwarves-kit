@@ -232,7 +232,7 @@ tokens() {
 #
 # response=<engage|defer|wave> (SPEC-126, understanding-gate SG-05): an OPTIONAL additive key,
 # the three-way human disposition ADR-0031's Refinement point 3 names. First written by
-# `lib/queue/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
+# `lib/learn/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
 # re-collected); SG-04's future ★-tap nudge is a second, later caller of the SAME field --
 # there is exactly one place a human response is recorded, never two.
 # Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
