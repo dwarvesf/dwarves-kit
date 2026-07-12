@@ -7,7 +7,7 @@
 **Depends on:** 01, 04
 Model: sonnet
 **Branch:** `feat/loop-06-staging-drain`
-**PR base:** master
+**PR base:** `feat/loop-04-surface-consol` (stacked sibling of SG-05; review after SG-04)
 
 ## Touches
 

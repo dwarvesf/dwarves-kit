@@ -100,12 +100,12 @@ gaps honestly as out of scope, with a candidate backlog note in
 `docs/retro/RETRO-2026-07-04-kit-emit-sweep.md`.
 
 ### Negative controls (from the proof)
-- === AC4: NEGATIVE CONTROL -- a fixture command with neither emit nor exemption IS caught ===
-- | AC4 | NEGATIVE CONTROL: a fixture command with neither an emit nor an exemption entry IS flagged an orphan | PASS | Confirmation run below; also proven at the WHOLE-DIFF level via a real revert (see "Grounded negative control") |
 - 2026-07-04T08:05:56Z | GATE | verify | ran | PASS 19/19 test-command-emit-sweep.sh + negative control ...
-- double-counted), plus a load-bearing negative control and a `dispatch.md`-specific
+- === AC4: NEGATIVE CONTROL -- a fixture command with neither emit nor exemption IS caught ===
 - Grounded negative control (whole-diff level, load-bearing)
+- double-counted), plus a load-bearing negative control and a `dispatch.md`-specific
 - test-command-emit-sweep.sh` run (19/19) plus the actual `git stash`/`pop` negative control
+- | AC4 | NEGATIVE CONTROL: a fixture command with neither an emit nor an exemption entry IS flagged an orphan | PASS | Confirmation run below; also proven at the WHOLE-DIFF level via a real revert (see "Grounded negative control") |
 
 ## 3. Evidence
 

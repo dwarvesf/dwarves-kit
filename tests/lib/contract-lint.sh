@@ -78,3 +78,37 @@ manifest_diff_by_phase() {
   done
   return "$orphans"
 }
+
+# manifest_diff_flat <sweep_dirs> <extract_regex> <manifest_file> <allow_regex>
+#   <sweep_dirs>      space-separated list of paths, e.g. "lib hooks bin" (word-split
+#                     deliberately, so multiple roots pass through one `grep -r`)
+#   <extract_regex>   a `grep -ohE` pattern swept recursively over <sweep_dirs>
+#   <manifest_file>   the checked-in file each hit must appear in (word-bounded, not a bare
+#                     substring match, so a short hit like "KIT" cannot be spuriously "covered"
+#                     by a longer registered token like "KIT_LEDGER_DIR")
+#   <allow_regex>     a `grep -E` pattern (matched against the normalized token alone); a hit
+#                     matching this is treated as covered without needing a manifest row
+#                     (SG-08's internal/test-fixture allowlist)
+#
+# The flat-SET sibling of manifest_diff_by_phase: that function pairs a site with its coverage
+# IN THE SAME FILE (per-file phase pairing, e.g. commands/*.md's record/outcome brackets); this
+# one diffs a SET of tokens swept from MANY files against ONE external manifest (SG-08: an env
+# var can be read from any of lib/hooks/bin, but is registered exactly once in
+# lib/config/module-registry.md, a different file entirely, so no per-file pairing applies).
+# Prints one "ORPHAN: <token>" per uncovered hit. Returns the orphan count (0 = clean).
+manifest_diff_flat() {
+  local dirs="$1" extract_re="$2" manifest="$3" allow_re="$4"
+  local hits token orphans=0 cov_re
+  # shellcheck disable=SC2086  # deliberate word-split: dirs is a space-separated path list
+  hits="$(grep -rohE "$extract_re" $dirs 2>/dev/null | sed -E 's/^\$\{?//' | sort -u)"
+  [ -n "$hits" ] || return 0
+  while IFS= read -r token; do
+    [ -n "$token" ] || continue
+    if [ -n "$allow_re" ] && printf '%s' "$token" | grep -qE "$allow_re"; then continue; fi
+    cov_re="(^|[^A-Za-z0-9_])$(_regex_escape "$token")([^A-Za-z0-9_]|\$)"
+    if grep -qE "$cov_re" "$manifest" 2>/dev/null; then continue; fi
+    echo "ORPHAN: $token"
+    orphans=$((orphans + 1))
+  done <<< "$hits"
+  return "$orphans"
+}

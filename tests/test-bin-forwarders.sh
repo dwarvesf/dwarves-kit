@@ -25,7 +25,7 @@ skip() { echo "  SKIP: $1"; SKIP=$((SKIP+1)); }
 assert_true() { if [ "$2" = "0" ]; then ok "$1"; else bad "$1"; fi; }
 
 echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
-EXPECTED="board classify gate goal learn mega prose-rag queue session spec stats worktree-provision"
+EXPECTED="board classify config gate goal learn mega prose-rag queue session spec stats worktree-provision"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then

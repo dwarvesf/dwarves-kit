@@ -7,7 +7,7 @@
 **Depends on:** 05, 07, 08, 09
 Model: opus
 **Branch:** `docs/loop-10-front-door`
-**PR base:** master
+**PR base:** master (fan-in: opens after its four parents merge)
 
 ## Touches
 
