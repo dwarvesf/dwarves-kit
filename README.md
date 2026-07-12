@@ -220,7 +220,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (30, manual, human-triggered)</summary>
+<summary><b>Commands</b> (31, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -244,6 +244,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
 | /kit:test-plan-review-team | Verify | 5-lens adversarial critique of the spec's `## Test plan`, bounded revise loop, report-only |
+| /kit:onboard | Entry | Guided first-run: detect install mode (plugin/bash/both/none), offer /kit:adopt, pick modules, capture consumer knobs, disclose plugin-path gaps, five-leg tour; previews + confirms every write, decline = no-op |
 | /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
 | /kit:explain | Understand | Literate-diff explainer (background -> intuition -> prose-ordered diff -> diagram); composes narrate-log + svg-knowledge-diagram, grounded in the diff not the agent's narrative (ADR-0031) |
