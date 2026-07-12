@@ -7,6 +7,64 @@ ledgers on its first run), the Observe leg is legible (`mega review --html` sign
 weekly scorecard), the surface consolidated to one grammar (ADR-0034), and the front door tells
 the loop's story with parity-pinned counts that cannot drift again.
 
+## Telemetry
+
+`RUN_REPORT , harness-loop (10/10 built · 9 merged · #244 final green + held)`
+
+### Worker minutes by model
+
+```
+fable  |██████████████      | ~420m (~75%)  2 conductor sessions: #1 built 01 + dispatched
+       |                    |               every wave (23 subagents, 15.9M child tokens);
+       |                    |               #2 built SG-10's five tasks, then hit its usage limit
+opus   |█████               | ~140m (~25%)  operator: stacked-merge reconcile of waves 2-3
+       |                    |               (3 seam fixes), SG-10 close-out, this report
+worker tiers: not ledgered , the run predates per-dispatch TOKENS emit, so per-worker
+model minutes are honest-dash; $ from the conductor status line: session-1 $267 + $439
+across its subagents, session-2 $26. Durations are wall-clock and include idle CI-watch.
+```
+
+### Gate coverage (● recorded-ran · ○ skipped/override-with-reason · — n/a), from each rid's gate-ledger rows
+
+```
+                    gr th de dc sp sv dr tp bu re do sh rf   lane    SPEC
+01 taxonomy         ○  ●  —  —  ●  —  ●  ○  ●  ●  ●  ●  —   full    ,     (GATE, Han-approved)
+02 outcome-emit     ○  ○  —  —  ●  —  ●  ○  ●  ●  ●  ●  —   normal  193
+03 harvest-land     —  —  —  —  —  —  —  —  —  —  —  —  —   tiny    ,     (merge-only; evidence rode PR #226's own record)
+04 surface-consol   ○  ○  ○  ○  ●  ●  ●  ●  ●  ●  ●  ●  ○   normal  194
+05 retro-cycle      —  —  —  —  ●  —  —  —  ●  ●  —  ●  —   full    195   (thin rid: operator finished the reconcile by hand)
+06 staging-drain    ○  ○  ○  ○  ●  ●  ○  ●  ●  ○  ●  —  —   normal  196
+07 mega-dashboard   ○  ○  ●  ○  ●  ●  ●  ●  ●  ●  ●  ●  ●   normal  197
+08 config-surface   ○  ●  ●  ○  ●  ●  ●  ●  ●  ●  ●  ●  ●   normal  198
+09 onboard-wizard   ○  ○  ●  ●  ●  ●  ●  ●  ●  ●  ●  ●  ●   full    199   (GATE, Han-approved)
+10 front-door       —  —  —  —  ●  —  —  —  ●  ●  ●  ●  —   normal  ,     (docs; operator-recorded)
+```
+gr grill · th think · de design · dc design-critique · sp spec · sv spec-validate · dr design-record · tp test-plan · bu build · re review · do docs · sh ship · rf reflect.
+SPEC block 193-199 was reserved at scaffold time; no worker self-picked a number. **No gate REQUIREMENT was changed anywhere**; the immutable `Done =` held for all 10.
+
+### Callable stack
+
+```
+/goal conductor #1 (tmux dk-queue · Fable high · queue.sh-launched; paste needed a manual C-m , runner defect, twice)
+├─ 01 taxonomy      in-conductor worktree   #236  merged 8c09e0d  (GATE: held, Han approved)
+├─ WAVE 1  parallel subagents + one merge
+│  ├─ 02 outcome-emit        Agent          #237  merged 76fbafe  (auto-merged per policy)
+│  ├─ 03 harvest-land        gh merge       #226  merged a6c5a9e  (existing PR reviewed + landed)
+│  └─ 07 mega-dashboard      Agent          #238  merged c2eb239
+├─ WAVE 2 (stacked on #236 after Han's mid-run switch to stacked PRs)
+│  ├─ 04 surface-consol      Agent          #239  merged 04fbdaf  (+ dotfiles companion #213)
+│  └─ 08 config-surface      Agent          #240  merged ad81d46
+└─ WAVE 3 (stacked)
+   ├─ 05 retro-cycle         Agent          #243  merged b2131dc  (first live run staged 3 cited proposals)
+   ├─ 06 staging-drain       Agent          #241  merged d688306
+   └─ 09 onboard-wizard      Agent          #242  merged 2ba70b6  (GATE: held, Han approved)
+operator (Opus) , stacked-merge reconcile of waves 2-3 on the integrated tree:
+   3 cross-sub-goal seams caught + fixed (see Incidents), suites re-run per merge
+/goal conductor #2 (tmux loop10 · Fable high) , SG-10: five build tasks done, then usage-limit stall
+operator (Opus) , SG-10 close-out: RUN_REPORT, proof-of-done, gate rows, held PR #244
+```
+Per merge: `gh pr checks` + the affected suites re-run on the integrated tree (full local suite where feasible).
+
 ## Outcome table
 
 | SG | What shipped | PR | Merge SHA |
