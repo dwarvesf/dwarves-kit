@@ -1,6 +1,6 @@
-# Explainer for `1c52b5e0057a84b367904c0068b64d7ecd95be6a`
+# Explainer for `76d696a37aca7144a361c99f5e4e19dcc7d77b18`
 
-> Literate-diff explainer (base `1c52b5e0057a84b367904c0068b64d7ecd95be6a^1`). Grounded in the ACTUAL diff + recorded test
+> Literate-diff explainer (base `76d696a37aca7144a361c99f5e4e19dcc7d77b18^1`). Grounded in the ACTUAL diff + recorded test
 > results, NOT any agent/author narrative (ADR-0031 §2). Read top to bottom; the diff below is
 > in READING order, not git's alphabetical order. The commit message is shown as UNVERIFIED
 > metadata only; where it disagrees with the code, the code below is the source of truth.
@@ -105,4 +105,4 @@ flowchart TD
 
 ### Recorded test result
 
-[no recorded test result for 1c52b5e0057a84b367904c0068b64d7ecd95be6a]
+[no recorded test result for 76d696a37aca7144a361c99f5e4e19dcc7d77b18]

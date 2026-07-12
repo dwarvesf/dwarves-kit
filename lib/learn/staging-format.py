@@ -16,6 +16,8 @@ sub-goal files use); a plain `import staging_format` cannot see it, so importers
 
 Stdlib only.
 """
+import json
+import sys
 import re
 from datetime import date, datetime
 
@@ -75,3 +77,87 @@ def age_days(fields, today=None):
         return None
     today = today or date.today()
     return (today - d).days
+
+# --- write side (from SG-05 `learn propose`; unified here per ADR-0034 decision 1:
+# ONE staging-block definition, shared by drain + propose) ---
+
+_NORM_RE = re.compile(r"[a-z0-9]+")
+
+def norm(title):
+    """Normalize a title into a dedup key: lowercase alphanumeric words."""
+    return " ".join(_NORM_RE.findall(str(title).lower()))
+
+def render_block(candidate):
+    """Render one candidate dict as a `## [staged]` block string (trailing blank line).
+
+    Byte-identical to hooks/backlog-stage.py:render_candidate / anomalies.py:render_block.
+    Required: title. Optional: intent, approach, u, f, home, source. Returns None if the
+    title is empty (a titleless block is unparseable and never emitted).
+    """
+    title = str(candidate.get("title", "")).strip()
+    if not title:
+        return None
+    intent = str(candidate.get("intent", "")).strip() or "(no intent extracted)"
+    approach = str(candidate.get("approach", "")).strip() or "(no approach extracted)"
+    u = candidate.get("u") if candidate.get("u") in ("hi", "mid", "lo") else "lo"
+    f = candidate.get("f") if candidate.get("f") in ("hi", "mid", "lo") else "mid"
+    home = str(candidate.get("home", "")).strip()
+    # Source carries the origin + date; propose folds the lens/figure/rids citation onto
+    # this ONE line so it rides into the board Notes column on promote.
+    source = str(candidate.get("source", "")).strip() or "unknown"
+    home_line = f"- Home: {home}\n" if home else ""
+    return (
+        f"## [staged] {title}\n"
+        f"- Intent: {intent}\n"
+        f"- Approach: {approach}\n"
+        f"- Tags: #u-{u} #f-{f}\n"
+        f"{home_line}"
+        f"- Source: {source}\n\n"
+    )
+
+def existing_keys(*sources):
+    """Build the dedup key SET from any number of (kind, path) sources.
+
+    kind == "staging" -> parse `## [<state>] <title>` blocks (ALL states: staged,
+    rejected, expired, promoted -- a rejected/expired proposal must never be re-proposed).
+    kind == "board"   -> parse board rows `| ID-NNN | Item | ... |` (the Item cell).
+    A missing file contributes nothing. Keys are norm()'d titles; membership is EXACT
+    (the anchored dedup form).
+    """
+    import os
+    keys = set()
+    board_row = re.compile(r"\s*\|\s*[A-Z]+-\d+\s*\|\s*([^|]+)\|")
+    for kind, path in sources:
+        if not path or not os.path.isfile(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        if kind == "staging":
+            for b in parse_blocks(text):
+                if b["title"]:
+                    keys.add(norm(b["title"]))
+        elif kind == "board":
+            for line in text.splitlines():
+                m = board_row.match(line)
+                if m:
+                    keys.add(norm(m.group(1)))
+    return keys
+
+
+def _main(argv):
+    if len(argv) >= 2 and argv[1] == "parse":
+        with open(argv[2], encoding="utf-8") as fh:
+            print(json.dumps(parse_blocks(fh.read()), ensure_ascii=False, indent=2))
+        return 0
+    if len(argv) >= 2 and argv[1] == "render":
+        block = render_block(json.load(sys.stdin))
+        if block is None:
+            return 1
+        sys.stdout.write(block)
+        return 0
+    sys.stderr.write("usage: staging_format.py {parse <file>|render <stdin-json>}\n")
+    return 64
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv))

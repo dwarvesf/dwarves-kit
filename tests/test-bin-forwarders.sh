@@ -8,9 +8,9 @@
 #   2. DISPATCH: each new/changed forwarder routes a real invocation end to end:
 #      learn debt (the relocated weekend-batch), every session <verb>, board promote,
 #      spec/goal/mega/queue/stats.
-#   3. NC: `learn propose` REFUSES (exit 1 + a ships-in-SPEC-195 message), never a silent
-#      no-op. `learn drain` is LIVE (SPEC-196); its dispatch is smoke-tested here (deep
-#      behavior: tests/test-learn-drain.sh).
+#   3. `learn propose` (SPEC-195) and `learn drain` (SPEC-196) are both LIVE; their dispatch
+#      is smoke-tested here (deep behavior: tests/test-learn-propose.sh, test-learn-drain.sh).
+#      The unknown-verb NC below still proves the router refuses what it does not own.
 #
 # Hermetic: learn-debt reads point DWARVES_KIT_LOG_DIR at a temp dir; board promote runs
 # in an empty temp repo. `stats` needs uv (the module's own dependency) -- SKIPs cleanly
@@ -49,10 +49,10 @@ assert_true "learn debt collect emits the digest header" "$(grep -q 'Weekend bat
 out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/learn" debt mark-paid no-such-rid 2>&1)"; rc=$?
 assert_true "learn debt mark-paid reaches the engine (engine's own no-ledger error, nonzero)" "$([ $rc -ne 0 ] && grep -q 'mark-paid: no ledger file' <<<"$out"; echo $?)"
 
-echo "== learn NC: propose REFUSES, never a silent no-op =="
-out="$("$KIT_DIR/bin/learn" propose 2>&1)"; rc=$?
-assert_true "learn propose exits 1" "$([ $rc -eq 1 ]; echo $?)"
-assert_true "learn propose names SPEC-195" "$(grep -q 'ships in SPEC-195' <<<"$out"; echo $?)"
+echo "== learn: propose dispatches to the SPEC-195 distiller (deep behavior: test-learn-propose.sh) =="
+out="$("$KIT_DIR/bin/learn" propose --help 2>&1)"; rc=$?
+assert_true "learn propose exits 0 through bin/learn (--help)" "$rc"
+assert_true "learn propose reaches the distiller (its own usage, not a refusal)" "$(grep -q 'usage: learn propose' <<<"$out"; echo $?)"
 
 echo "== learn: drain dispatches to the SPEC-196 render (deep behavior: test-learn-drain.sh) =="
 TMPSTAGE="$(mktemp -d)/backlog-staging.md"

@@ -72,8 +72,11 @@ understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031
                                 #        today; exposing an on/off toggle is NEW work.
 
 [features]                      # harness-adjacent toggles (kept as one control surface)
-auto_improvement = false        # [design] read-plane loop over the ledger -> backlog
-                                #        proposals. docs/research/2026-07-05-auto-improvement-loop-design.md
+auto_improvement = false        # [impl] `learn propose` (SPEC-195): read-plane loop over the
+                                #        ledger -> cited, deduped, adversarially-checked backlog
+                                #        proposals. The command is always available; this flag
+                                #        gates only the WEEKLY unattended cadence, consumer-side
+                                #        (SG-10 LaunchAgent), never kit-side. Default off (opt-in).
 learning_ledger  = true         # [consumer] the orchestration is an external skill
                                 #        (ops-toolkit/dotfiles, SPEC-126); the kit only
                                 #        collects (weekend-batch.sh) + routes. Toggle kept

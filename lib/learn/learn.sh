@@ -10,7 +10,7 @@
 #
 # Usage:
 #   learn.sh debt <list|collect|mark-paid> <args...>  -> weekend-batch.sh (own usage)
-#   learn.sh propose <args...>                         -> refuses: ships in SPEC-195
+#   learn.sh propose <args...>                         -> propose.py (own usage)
 #   learn.sh drain [--days N]                          -> drain.sh (own usage)
 #   learn.sh -h|--help|help                             -> this usage
 set -euo pipefail
@@ -22,7 +22,7 @@ main() {
   local verb="${1:-}"; [ $# -gt 0 ] && shift || true
   case "$verb" in
     debt)    exec bash "$LEARN_DIR/weekend-batch.sh" "$@" ;;
-    propose) echo "learn propose: not yet implemented -- ships in SPEC-195" >&2; exit 1 ;;
+    propose) exec python3 "$LEARN_DIR/propose.py" "$@" ;;
     drain)   exec bash "$LEARN_DIR/drain.sh" "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "learn: unknown verb '$verb' (try: learn --help)" >&2; exit 1 ;;

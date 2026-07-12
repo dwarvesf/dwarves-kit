@@ -19,6 +19,11 @@ ok()  { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; }
 assert_true() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 
+# auto_improvement graduated [design] -> [impl] in SPEC-195 (`learn propose` is now built),
+# but its FLAG must STILL never be read kit-side: the command is always available, and the
+# weekly cadence gates on the flag CONSUMER-side (SG-10), never kit-side. So it stays in the
+# no-live-path guard below -- that assertion now protects a live invariant (no kit-side read
+# of an [impl] flag), not just a not-built one. learning_ledger stays [consumer]; [team].* inert.
 RESERVED_FEATURES_KEYS="auto_improvement learning_ledger"
 RESERVED_TEAM_KEYS="actor_identity attestation ci_recheck spec_reservation policy onboarding pilot"
 
@@ -93,7 +98,7 @@ assert_true "lane-classify output identical baseline vs inert-key-flipped" "$([ 
 echo "== status tags: kit.toml documents the reserved keys as [design]/[consumer], not live =="
 # ============================================================
 KIT_TOML="$KIT_DIR/kit.toml"
-assert_true "kit.toml: auto_improvement tagged [design]" "$(grep -qE 'auto_improvement[[:space:]]*=.*#[[:space:]]*\[design\]' "$KIT_TOML"; echo $?)"
+assert_true "kit.toml: auto_improvement tagged [impl] (graduated in SPEC-195)" "$(grep -qE 'auto_improvement[[:space:]]*=.*#[[:space:]]*\[impl\]' "$KIT_TOML"; echo $?)"
 assert_true "kit.toml: learning_ledger tagged [consumer]" "$(grep -qE 'learning_ledger[[:space:]]*=.*#[[:space:]]*\[consumer\]' "$KIT_TOML"; echo $?)"
 TEAM_UNTAGGED=""
 for k in $RESERVED_TEAM_KEYS; do

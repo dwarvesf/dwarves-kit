@@ -1,6 +1,6 @@
-# Sample quiz (fixture A, ref 10fd1081cb7b4d740b404889a3ea218ab6cd3ddd)
+# Sample quiz (fixture A, ref 1419a12ae8c03c21c39b27de495ccdac704c8e5b)
 
-# 5-question understanding quiz for `10fd1081cb7b4d740b404889a3ea218ab6cd3ddd`
+# 5-question understanding quiz for `1419a12ae8c03c21c39b27de495ccdac704c8e5b`
 # Grounded in the ACTUAL diff + recorded test results (SPEC-125), NOT any agent narrative.
 # These questions are the payload for the deep-understand mastery gate, they are not scored here.
 
