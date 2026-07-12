@@ -315,10 +315,17 @@ already reads it -- see `agents/advisor.md` "Ledger visibility" for the one shar
 both dispatch sites follow.
 
 **Close the run visibly (mirrors the skill's close).** When the loop finishes (or
-halts at a `gate!`), emit `<dir>/RUN_REPORT.md` -- ASCII gantt + per-sub-goal gate
-matrix + the callable stack, markdown-only -- and render the timeline + totals in
-chat. The report reads from the rid ledger (`lib/gate/gate-ledger.sh`) and the roadmap
-checkboxes, never from transcripts.
+halts at a `gate!`), emit `<dir>/RUN_REPORT.md` with the three REQUIRED telemetry
+blocks -- worker-minutes-by-model, the per-sub-goal gate-coverage matrix
+(`●` recorded-ran · `○` skipped/override-with-reason · `-` n/a), and the callable
+stack -- then the prose (Outcome table, Incidents & lessons, Evidence, Close-out),
+and render the totals in chat. **Generate the mechanical blocks, never hand-build
+them**: `bin/mega report <slug>` renders the header, the gate matrix, any ledgered
+token totals, and the callable-stack skeleton straight from the rid ledgers +
+ROADMAP (read-only; `--out` to write; `--rid-map` when a branch slug defies the
+token match). The conductor fills only the [FILL] stubs (run mode, wave grouping,
+worker models, incidents) -- the parts only it knows. The report reads from the rid
+ledger and the roadmap checkboxes, never from transcripts.
 
 ## Consolidate mode (remega, mirrors the skill's mode)
 

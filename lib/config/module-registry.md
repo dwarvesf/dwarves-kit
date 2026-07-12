@@ -209,6 +209,7 @@ prefix match. The drift lint (`tests/test-config-registry.sh`) treats a hit
 against any of these bare tokens as covered without a registry row.
 
 | Token | Why excluded |
+| KIT_LOG_DIR | the RESOLVED ledger root, exported by `lib/telemetry/kit-log-dir.sh` for child tools (`mega review`/`mega report` read it); operators configure `KIT_LEDGER_DIR` / `[ledger].location`, never this |
 |---|---|
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
