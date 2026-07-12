@@ -59,18 +59,18 @@ echo "[4] repeat-detect clean: no repeats (negative control)"
 out="$(run repeat --transcripts "$TMP/tclean" --min 3 2>&1)"
 if grep -q 'no repeated sequences' <<<"$out"; then ok "no false repeat"; else no "false repeat: $out"; fi
 
-echo "[5] run assembles a dated digest with all 4 sections + stub observe/sweep"
+echo "[5] run assembles a dated digest with all 5 sections + stub observe/sweep/digest"
 OUT="$TMP/out"
-env SESSION_INTEL_DATE=2026-06-15 SESSION_INTEL_OBSERVE_CMD="echo OBSERVE_STUB" SESSION_INTEL_SWEEP_CMD="echo SWEEP_STUB" \
+env SESSION_INTEL_DATE=2026-06-15 SESSION_INTEL_OBSERVE_CMD="echo OBSERVE_STUB" SESSION_INTEL_SWEEP_CMD="echo SWEEP_STUB" SESSION_INTEL_DIGEST_CMD="echo DIGEST_STUB" \
   python3 "$BIN" run --out "$OUT" --ledger "$LED" --glossaries "$TMP/glossaries" --transcripts "$TMP/transcripts" --min 3 >/dev/null 2>&1
 F="$OUT/intel-2026-06-15.md"
-if [[ -f "$F" ]] && grep -q 'session-observe' "$F" && grep -q 'OBSERVE_STUB' "$F" && grep -q 'SWEEP_STUB' "$F" && grep -qi 'merge proposals' "$F" && grep -q 'extract-workflow' "$F" && grep -q 'git fetch origin' "$F"; then ok "digest complete"; else no "digest: $(head -25 "$F" 2>&1)"; fi
+if [[ -f "$F" ]] && grep -q 'Harness scorecard' "$F" && grep -q 'DIGEST_STUB' "$F" && grep -q 'session-observe' "$F" && grep -q 'OBSERVE_STUB' "$F" && grep -q 'SWEEP_STUB' "$F" && grep -qi 'merge proposals' "$F" && grep -q 'extract-workflow' "$F" && grep -q 'git fetch origin' "$F"; then ok "digest complete"; else no "digest: $(head -25 "$F" 2>&1)"; fi
 
-echo "[6] run degrades gracefully when observe/sweep fail"
+echo "[6] run degrades gracefully when observe/sweep/digest fail"
 OUT2="$TMP/out2"
-env SESSION_INTEL_DATE=2026-06-15 SESSION_INTEL_OBSERVE_CMD="false" SESSION_INTEL_SWEEP_CMD="false" \
+env SESSION_INTEL_DATE=2026-06-15 SESSION_INTEL_OBSERVE_CMD="false" SESSION_INTEL_SWEEP_CMD="false" SESSION_INTEL_DIGEST_CMD="false" \
   python3 "$BIN" run --out "$OUT2" --ledger "$LED_CLEAN" --glossaries "$TMP/none" --transcripts "$TMP/tclean" --min 3 >/dev/null 2>&1
-if [[ "$(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")" -eq 2 ]]; then ok "both observe+sweep sections degraded (count 2)"; else no "degrade count != 2: $(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")"; fi
+if [[ "$(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")" -eq 3 ]]; then ok "observe+sweep+digest sections degraded (count 3)"; else no "degrade count != 3: $(grep -c '_unavailable_' "$OUT2/intel-2026-06-15.md")"; fi
 
 # ID-226: benign idiom chain dropped, genuine non-benign chain kept
 TDB="$TMP/tbenign/p1"; mkdir -p "$TDB"

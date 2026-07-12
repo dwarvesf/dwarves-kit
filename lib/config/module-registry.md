@@ -249,5 +249,7 @@ allowlist, would close this), but are named here so they are not lost:
 (`lib/goal/goal-drafts.sh`), `SPEC_RESERVE_FILE` / `SPEC_RESERVE_TTL` /
 `SPEC_RESERVE_MAX_TRIES` (`lib/spec/spec-next.sh`), `SIGNIFICANCE_WORTHINESS_MIN`
 (`lib/classify/significance-classify.sh`), `HERMES_BIN` (`lib/board/board-mirror.sh`),
-`REPO_FILTER` (`lib/queue/weekend-batch.sh`), `OFFLOAD_MAX_TOKENS`
-(`hooks/output-offload.sh`), `INTEL_DIR` (`lib/session/intel/deploy/...`).
+`REPO_FILTER` (`lib/learn/weekend-batch.sh`), `OFFLOAD_MAX_TOKENS`
+(`hooks/output-offload.sh`), `KIT_WEEKLY_JOBS` (`deploy/macos/kit-weekly`; its
+predecessor `INTEL_DIR` retired with the per-job session-intel launcher,
+ADR-0034 decision 9).

@@ -53,6 +53,32 @@ An open loop (the agent roams free and judges its own output) is a fast slop mac
 | loops until the budget dies | bounded: fix-agent retries max 2, then escalates to a human |
 | one loop size fits all | risk lanes: tiny work skips the ceremony entirely |
 
+## The five legs
+
+The lifecycle above is what one run looks like. Across runs, the kit is organized as five legs (ADR-0034): **Specify** shapes work into contracts, **Execute** builds inside them, **Observe** records what happened, **Govern** gates every boundary, and **Learn** distills the record into proposals for the next cycle.
+
+```mermaid
+flowchart LR
+  SP([Specify]) --> EX([Execute]) --> OB([Observe]) --> LN([Learn])
+  LN -->|cited proposals,<br/>human promotes| SP
+  GV([Govern]) -. gates every<br/>phase boundary .- EX
+```
+
+Legs are metadata, not directories: each module keeps its name and install unit, and declares a primary leg. The authoritative assignment (machine copy in [`lib/config/module-registry.md`](lib/config/module-registry.md), rendered by `config list`):
+
+| Leg | Modules / subsystems |
+|---|---|
+| Specify | `spec`, `classify`, `goal`, `board` (input side) |
+| Execute | `queue`, `mega`, `worktree`, `quiz_gate` |
+| Observe | `stats`, `session` (capture side), `telemetry`, `bridge` (cockpit mirror) |
+| Govern | `gate`, `money_gate`, `advisor` |
+| Learn | `learn`, `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending ADR-0034 amendment) |
+| (no leg) | `cosmetic` (statusline; orthogonal to the loop) |
+
+Two modules honestly span legs: **board** (Specify's intake on one side, Learn's staging/promote on the other) and **session** (Observe's capture, Learn's harvest).
+
+**What happens to a run's data after it ships:** every gate decision and run outcome appends to the ledgers (append-only, never rewritten). `stats` projects them read-only; `session intel` writes the weekly digest, harness scorecard included; `learn propose` distills cross-run evidence into cited proposals in a staging file; `learn drain` renders that staging for review; `board promote` is the human gate that turns a proposal into a backlog row feeding the next Specify. Every automated leg ends at a staging file or a rendered surface, never a direct write to a board or ledger: propose, never dispose.
+
 ## Install
 
 Layered by design: the SPINE installs unconditionally (six hooks guarding push, merge, secrets, and commit format, ADR-0024's irreversible boundary); everything else is an opt-in MODULE via `--with <a,b,c>`, recorded in your own project's `kit.toml [modules]` (a per-consumer install record, re-runnable; never a runtime registry a hook reads back). Run the installer with no `--with` at all to get the spine and nothing else.
@@ -126,6 +152,7 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 
 ```
 /kit:start          Detect state, suggest next command (entry point)
+/kit:onboard        Guided first-run: install mode, adopt, module picker, five-leg tour
 /kit:think          Challenge the idea (5 min)
 /kit:design         Opt-in: shape the solution with you before /spec
 /kit:spec           Generate the spec + 4 parallel researchers (15-30 min)
@@ -259,21 +286,35 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (11, dispatched by commands) and <b>Skills</b> (3, Claude-triggered)</summary>
+<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (3, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
 | task-verifier | /execute | Read-only verification against spec + tests |
 | integration-verifier | /execute, /verify | Read-only cross-task wiring + global acceptance check (multi-task specs) |
+| acceptance-verifier | /execute, /verify | Executes the spec's `## Verification` section against the build (read-only) |
+| system-verifier | /verify | Runs the whole project's test suite end to end (read-only) |
+| recheck-verifier | /execute, /verify | Fresh-context re-audit of a verifier PASS: re-executes the recorded command |
+| claim-verifier | any command | Adversarial N-skeptic panel over a load-bearing free-text claim |
 | fix-agent | /execute | Targeted fixes on FAIL:fixable (max 2 retries) |
+| data-etl-worker | /execute | Domain implementer: pipelines/transforms (DuckDB SQL first) |
+| db-migration-worker | /execute | Domain implementer: schema migrations + rollback + backfill |
 | code-reviewer | /review-team | Focused review with configurable lens |
 | security-reviewer | /review-team | Deep OWASP-style security audit |
+| api-reviewer | /review-team | API-contract lens (breaking changes, versioning, idempotency) |
+| frontend-reviewer | /review-team | Frontend lens (a11y, semantic HTML, focus, responsive) |
+| infra-reviewer | /review-team | Infra lens (deploy/rollback safety, CI/CD, least-privilege) |
+| performance-reviewer | /review-team | Performance lens (hot paths, N+1, allocations, caching) |
+| advisor | final boundary | Cross-cutting kit-default lens: critique + over-suggest modes |
+| brief-reviewer | /think, /spec | Static review of a brief/requirement before it hardens into a spec |
 | responding-to-review | /review-team | Verifies review findings, pushes back when wrong, proposes fixes (no performative agreement) |
+| agent-effectiveness | agent authoring | Validates a new/changed agent definition's effectiveness (4 lenses) |
 | doc-verifier | /docs | Read-only check that docs match the live codebase |
 | research-stack | /spec | Maps technology stack (brownfield) |
 | research-features | /spec | Maps existing features in target area |
 | research-architecture | /spec | Maps architecture patterns and conventions |
 | research-pitfalls | /spec | Finds landmines before implementation |
+| meta-agent | /draft-agent | Drafts a new subagent (or sub-goal file) from a one-line description |
 
 | Skill | What it does |
 |-------|-------------|
@@ -313,7 +354,7 @@ dwarves-kit/
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`queue`/`session`/`spec`/`stats` thin forwarders to `lib/<subsystem>/`, plus the two module CLIs (`prose-rag`, `worktree-provision`) that keep their module names. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       (25 files) Subagents dispatched by commands
-  commands/                     (27 markdown command prompts)
+  commands/                     (31 markdown command prompts)
   hooks/                        (23 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
@@ -354,6 +395,8 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Hook logs.** Hooks that make enforcement decisions append to `~/.claude/dwarves-kit/logs/` (`anti-rationalization.log`, `safety-gate.log`, `spec-drift-guard.log`, `slop-cleaner.log`). These build the eval corpus for future optimization.
 
+**Weekly scheduler.** The kit ships ONE weekly LaunchAgent (ADR-0034): a dispatcher over a declarative jobs list (session-intel digest, `learn propose` staging; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
+
 **Testing.** `bash tests/test-hooks.sh` covers hook behavior (safety-gate blocking, anti-rationalization patterns, permission-auto-approve pipe-injection protection); `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links).
 
 **External dependencies** (install alongside, not bundled):
@@ -377,7 +420,6 @@ configure and nothing breaks. Enable: put the binary on `PATH`, run
 - Prompt-type anti-rationalization hook (Haiku evaluation instead of grep patterns)
 - /qa command with headless browser testing (requires Playwright)
 - Intra-spec parallel task dispatch in /execute (cross-goal fan-out across specs already ships as /kit:dispatch; this is the deferred intra-spec case)
-- SessionEnd hook for automatic knowledge capture
 - Multi-harness packaging (Codex / Cursor / Gemini / OpenCode), deferred until real demand
 
 ## Changelog

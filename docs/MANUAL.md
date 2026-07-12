@@ -28,6 +28,18 @@ For the full playbook (every scenario, the autonomy dial, the freeform front doo
 
 ## Command reference (the kit invokes these from your intent; you rarely type them)
 
+Index by loop leg (ADR-0034; the README's "The five legs" section tells the full story). Front-door and meta commands sit outside the legs on purpose:
+
+| Leg | Commands |
+|---|---|
+| (front door) | `/kit:start`, `/kit:onboard`, `/kit:adopt` |
+| Specify | `/kit:grill`, `/kit:think`, `/kit:design`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`, `/kit:assign`, `/kit:spec`, `/kit:spec-validate`, `/kit:test-plan` |
+| Execute | `/kit:execute`, `/kit:next`, `/kit:dispatch`, `/kit:mega`, `/kit:debug` |
+| Observe | `/kit:explain`, `/kit:pitch` (render the record outward; the read plane itself is the `stats` skill + `session` CLI, not a command) |
+| Govern | `/kit:review`, `/kit:review-team`, `/kit:test-plan-review-team`, `/kit:verify`, `/kit:quiz-gate`, `/kit:ship` |
+| Learn | `/kit:retro`, `/kit:docs`, `/kit:absorb` |
+| (meta) | `/kit:kit-health`, `/kit:draft-agent` |
+
 ### `/kit:start`
 
 **Phase:** entry router

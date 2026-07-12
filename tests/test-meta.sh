@@ -1394,6 +1394,64 @@ HOOK_COUNT=$(ls "$KIT_DIR/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "README agents/ layout count == live agents ($README_AGT == $AGT_COUNT)" "$AGT_COUNT" "$README_AGT"
 assert_eq "README hooks/ layout count == live hooks ($README_HOOK == $HOOK_COUNT)" "$HOOK_COUNT" "$README_HOOK"
 
+# SG-10 (harness-loop): the README inventory TABLES (not just the layout comment) stay
+# pinned to live counts , the agents table sat at 11 rows against 25 files because only
+# the layout number was pinned. Both the <summary> header number and the table row count
+# are computed and compared; a new agent/command/skill without a README row fails here.
+README_CMD_LAYOUT=$(grep -oE 'commands/ *\([0-9]+ ' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+assert_eq "README commands/ layout count == live commands ($README_CMD_LAYOUT == $CMD_COUNT)" "$CMD_COUNT" "$README_CMD_LAYOUT"
+
+AGT_HDR=$(grep -oE '<b>Agents</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+CMD_HDR=$(grep -oE '<b>Commands</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+SKILL_HDR=$(grep -oE 'Skills</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+HOOK_HDR=$(grep -oE '<b>Hooks</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+SKILL_COUNT=$(ls "$KIT_DIR/skills/"*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
+assert_eq "README Agents header count == live agents ($AGT_HDR == $AGT_COUNT)" "$AGT_COUNT" "$AGT_HDR"
+assert_eq "README Commands header count == live commands ($CMD_HDR == $CMD_COUNT)" "$CMD_COUNT" "$CMD_HDR"
+assert_eq "README Skills header count == live skills/*/SKILL.md ($SKILL_HDR == $SKILL_COUNT)" "$SKILL_COUNT" "$SKILL_HDR"
+assert_eq "README Hooks header count == live hooks ($HOOK_HDR == $HOOK_COUNT)" "$HOOK_COUNT" "$HOOK_HDR"
+
+# Table row counts (data rows only: exclude the header row and |--- separator).
+AGT_DETAILS=$(sed -n '/<summary><b>Agents<\/b>/,/<\/details>/p' "$KIT_DIR/README.md")
+README_AGT_ROWS=$(echo "$AGT_DETAILS" | sed -n '/^| Agent |/,/^$/p' | grep '^|' | grep -cv '^| Agent\|^|---' | tr -d ' ')
+README_SKILL_ROWS=$(echo "$AGT_DETAILS" | sed -n '/^| Skill |/,/^$/p' | grep '^|' | grep -cv '^| Skill\|^|---' | tr -d ' ')
+README_CMD_ROWS=$(sed -n '/<summary><b>Commands<\/b>/,/<\/details>/p' "$KIT_DIR/README.md" \
+  | grep '^|' | grep -cv '^| Command\|^|---' | tr -d ' ')
+README_HOOK_ROWS=$(sed -n '/<summary><b>Hooks<\/b>/,/<\/details>/p' "$KIT_DIR/README.md" \
+  | grep '^|' | grep -cv '^| Hook\|^|---' | tr -d ' ')
+assert_eq "README agents table rows == live agents ($README_AGT_ROWS == $AGT_COUNT)" "$AGT_COUNT" "$README_AGT_ROWS"
+assert_eq "README skills table rows == live skills ($README_SKILL_ROWS == $SKILL_COUNT)" "$SKILL_COUNT" "$README_SKILL_ROWS"
+assert_eq "README commands table rows == live commands ($README_CMD_ROWS == $CMD_COUNT)" "$CMD_COUNT" "$README_CMD_ROWS"
+assert_eq "README hooks table rows == live hooks ($README_HOOK_ROWS == $HOOK_COUNT)" "$HOOK_COUNT" "$README_HOOK_ROWS"
+
+# architecture.md headline numbers (the "25 commands + 15 agents = 40" drift class):
+# all three computed from the live tree, never hand-trusted.
+ARCH_HEAD_CMD=$(grep -oE 'Total: [0-9]+ commands' "$KIT_DIR/docs/architecture.md" | grep -oE '[0-9]+' | head -1)
+ARCH_HEAD_AGT=$(grep -oE '\+ [0-9]+ agents' "$KIT_DIR/docs/architecture.md" | grep -oE '[0-9]+' | head -1)
+ARCH_HEAD_TOT=$(grep -oE '= \*\*[0-9]+ entries\*\*' "$KIT_DIR/docs/architecture.md" | grep -oE '[0-9]+' | head -1)
+assert_eq "architecture.md headline commands == live ($ARCH_HEAD_CMD == $CMD_COUNT)" "$CMD_COUNT" "$ARCH_HEAD_CMD"
+assert_eq "architecture.md headline agents == live ($ARCH_HEAD_AGT == $AGT_COUNT)" "$AGT_COUNT" "$ARCH_HEAD_AGT"
+assert_eq "architecture.md headline total == live ($ARCH_HEAD_TOT == $LIVE_COUNT)" "$LIVE_COUNT" "$ARCH_HEAD_TOT"
+
+# The README five-leg table covers every module the registry assigns a leg (ADR-0034
+# decision 3 rendered without omissions; the two tables share one truth).
+FIVE_LEG_BLOCK=$(sed -n '/^## The five legs/,/^## /p' "$KIT_DIR/README.md")
+REGISTRY_MODULES=$(sed -n '/^## Module legs/,/^## /p' "$KIT_DIR/lib/config/module-registry.md" \
+  | grep '^| ' | grep -v '^| Module\|^|---' | awk -F'|' '{gsub(/ /,"",$2); print $2}')
+TOTAL=$((TOTAL + 1))
+MISSING_LEG_MODULES=""
+while IFS= read -r m; do
+  [ -n "$m" ] || continue
+  echo "$FIVE_LEG_BLOCK" | grep -q "\`$m\`" || MISSING_LEG_MODULES="$MISSING_LEG_MODULES $m"
+done <<< "$REGISTRY_MODULES"
+if [ -z "$MISSING_LEG_MODULES" ]; then
+  echo -e "  ${GREEN}PASS${NC} README five-leg table covers every module-registry leg row"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} README five-leg table missing module(s):$MISSING_LEG_MODULES"
+  FAIL=$((FAIL + 1))
+fi
+
 # ============================================================
 echo ""
 echo "=== Parallel-execution boundary un-nerf (SPEC-032 C1 / ADR-0019) ==="

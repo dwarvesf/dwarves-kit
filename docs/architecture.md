@@ -1,6 +1,6 @@
 # Architecture
 
-How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW.
+How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five legs: Specify → Execute → Observe → Govern → Learn, and which module serves which) lives in the README's "The five legs" section, backed by ADR-0034 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
 
 ## Component layout
 
@@ -78,7 +78,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 25 commands + 15 agents = **40 entries** (10 build · 3 code · 9 test · 10 gate · 8 cross-phase).
+Total: 31 commands + 25 agents = **56 entries** (10 build · 3 code · 9 test · 15 gate · 19 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 

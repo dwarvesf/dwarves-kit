@@ -100,7 +100,9 @@ manifest_diff_flat() {
   local dirs="$1" extract_re="$2" manifest="$3" allow_re="$4"
   local hits token orphans=0 cov_re
   # shellcheck disable=SC2086  # deliberate word-split: dirs is a space-separated path list
-  hits="$(grep -rohE "$extract_re" $dirs 2>/dev/null | sed -E 's/^\$\{?//' | sort -u)"
+  # -I skips binary files: without it grep emits "Binary file <x> matches" INTO the token
+  # stream and a stray .pyc becomes a phantom ORPHAN (bit twice locally, 2026-07-12).
+  hits="$(grep -rohEI --exclude-dir=__pycache__ --exclude='*.pyc' "$extract_re" $dirs 2>/dev/null | sed -E 's/^\$\{?//' | sort -u)"
   [ -n "$hits" ] || return 0
   while IFS= read -r token; do
     [ -n "$token" ] || continue

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """session-report: bridge the weekly session-observe digest into the live vps-mon.
 
-Default action is HEARTBEAT-ONLY: it pings the session-intel-weekly heartbeat so a
+Default action is HEARTBEAT-ONLY: it pings the weekly-digest heartbeat (token identity
+"session-intel-weekly" in vps-mon, kept across the ADR-0034 kit-weekly scheduler fold) so a
 missed weekly run shows stale on the public /status page (not silently green).
 The metrics-snapshot POST is OPT-IN behind --snapshot (default OFF).
 
@@ -9,7 +10,7 @@ WHY heartbeat-only by default (incident 2026-06-15, agent-silent false-alarm):
   POST /v1/snapshot UPSERTS a row in vps-mon's `hosts` table, and the prober's
   hardcoded `agent-silent` rule (AGENT_SILENT_THRESHOLD_SEC = 600s in
   tools/vps-mon/worker/src/prober.ts) fires CRIT for ANY host whose last_seen
-  is older than 600s. session-report runs WEEKLY (via session-intel-weekly), so a
+  is older than 600s. session-report runs WEEKLY (via the kit-weekly scheduler), so a
   snapshot-registered `cc-air` host looks "silent" 6 days out of 7 -> a
   guaranteed weekly false CRIT. It fired once (2026-06-15 19:50); the cc-air
   host row was deleted + the alert acked as immediate mitigation, and the
