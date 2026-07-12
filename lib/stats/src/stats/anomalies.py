@@ -11,9 +11,9 @@ Two hard contracts:
 
 2. PROPOSE, NEVER AUTO-FILE. When an anomaly fires, `stage_proposals` appends a `## [staged]`
    block to the cc-backlog STAGING BUFFER (`_meta/backlog-staging.md`, env `CC_BACKLOG_STAGING`)
-   in the exact format `tools/cc-backlog` writes and `add-backlog` consumes. It opens the board
+   in the exact format `tools/cc-backlog` writes and `board promote` consumes. It opens the board
    `BACKLOG.md` READ-ONLY (for dedup) and NEVER writes it. The operator promotes via the existing
-   `add-backlog` human gate. This tool has no path to a board row.
+   `board promote` human gate (ex `add-backlog`, ADR-0034). This tool has no path to a board row.
 
 Thresholds (open-fork 3) are defensible-default scaffolds + one `--threshold KEY=VALUE` flag to
 tune. The two min-sample floors (`cost_window`, `misfire_min_runs`) are the load-bearing
@@ -613,7 +613,7 @@ def parse_thresholds(pairs: list[str]) -> dict:
 
 _STAGING_HEADER = (
     "# Backlog staging (auto, via cc-backlog)\n\n"
-    "Candidates auto-extracted from sessions. Review + promote with `add-backlog`.\n"
+    "Candidates auto-extracted from sessions. Review + promote with `board promote`.\n"
     "Gitignored: may name unfiled work. NEVER the source of truth.\n"
 )
 
@@ -678,7 +678,7 @@ def _existing_titles(backlog: str | None, staging: str | None) -> set[str]:
 
 def render_block(a: Anomaly, date: str) -> str:
     """A `## [staged]` block, byte-format-identical to cc-backlog's `render_candidate`, so the
-    existing `add-backlog` command consumes it with no second convention."""
+    existing `board promote` human gate consumes it with no second convention."""
     home = f"- Home: {a.home}\n" if a.home else ""
     return (
         f"## [staged] {a.title}\n"

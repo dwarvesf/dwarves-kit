@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """add-backlog: review + flush backlog-stage's staged candidates onto the board.
 
+Operator entry is `board promote` (bin/board -> lib/board/board.sh promote -> this
+file) since ADR-0034 decision 7 retired the standalone `add-backlog` bin entry, no
+alias. This engine file keeps its name (a deep lib path, not an operator surface).
+
 The human gate (kit-foldin port of ops-toolkit cc-backlog's reviewer; recovered
 2026-07-11 when the retired snapshot copy was the last one alive). backlog-stage
 auto-stages candidates to `_meta/backlog-staging.md`;
@@ -8,10 +12,10 @@ this promotes the chosen ones into `_meta/BACKLOG.md` with the next free ID-NNN,
 carrying the work-intake fields. Promoted candidates are marked in the staging file.
 
 Usage:
-  add-backlog                 list staged candidates (numbered)
-  add-backlog <n> [<n>...]    promote those candidates onto the board
-  add-backlog all             promote every staged candidate
-  add-backlog reject <n>...   mark candidates rejected (not promoted)
+  board promote                 list staged candidates (numbered)
+  board promote <n> [<n>...]    promote those candidates onto the board
+  board promote all             promote every staged candidate
+  board promote reject <n>...   mark candidates rejected (not promoted)
 
 Env: BACKLOG_STAGE_BACKLOG, BACKLOG_STAGE_STAGING (same names + repo-relative
 defaults as hooks/backlog-stage.py: `git rev-parse --show-toplevel` else $PWD).
@@ -122,7 +126,7 @@ def main(argv):
             return 0
         for n, b in enumerate(staged, 1):
             print(f"{n}. {b['title']}  [{b['fields'].get('Tags', '')}]")
-        print(f"\npromote with: add-backlog <n>...  |  add-backlog all  |  add-backlog reject <n>")
+        print(f"\npromote with: board promote <n>...  |  board promote all  |  board promote reject <n>")
         return 0
 
     reject = argv[0] == "reject"
@@ -133,7 +137,7 @@ def main(argv):
         try:
             picks = sorted(set(int(x) for x in sel))
         except ValueError:
-            print("usage: add-backlog [list | <n>... | all | reject <n>...]", file=sys.stderr)
+            print("usage: board promote [list | <n>... | all | reject <n>...]", file=sys.stderr)
             return 2
     chosen = [staged[p - 1] for p in picks if 1 <= p <= len(staged)]
     if not chosen:

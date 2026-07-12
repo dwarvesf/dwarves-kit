@@ -6,9 +6,10 @@ Part of the `cc-elevation` self-observability axis. Full design: `SPEC.md`. Why 
 
 ## Install
 
-```bash
-ln -s "$(pwd)/tools/session-observe/bin/session-observe" ~/.local/bin/session-observe   # ~/.local/bin is on PATH
-```
+Installed by the kit's `--with session` module: `install.sh` puts a single `session`
+shim on `~/.local/bin` (ADR-0034 one-grammar entry); this tool is `session observe`
+(and its siblings `session report` / `session semantic`). Direct deep path for dev:
+`lib/session/observe/bin/session-observe`.
 
 Needs only `python3` (stdlib).
 

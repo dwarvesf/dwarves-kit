@@ -29,7 +29,7 @@ goal file requires surfaced HERE because the dashboard is "the one surface with 
 reader"): staged-candidate count + oldest age (`_meta/backlog-staging.md`, the existing
 BACKLOG_STAGE_STAGING seam), learned-ledger queued count (the existing STATS_LEARNED_MD seam,
 no kit-side default -- ops-toolkit-specific per lib/stats/src/stats/config.py), unpaid-debt
-count (`lib/queue/weekend-batch.sh list`, its own default 7-day window, labeled honestly).
+count (`bin/learn debt list`, its own default 7-day window, labeled honestly).
 Every one of the three reads via its OWN pre-existing consumer-config seam; an absent/unset
 source renders "-" (honest-dash), NEVER a fabricated zero -- SPEC-197 Design.
 
@@ -300,7 +300,7 @@ def _learned_queued():
 
 
 def _unpaid_debt_count(code_root):
-    wb = os.path.join(_SELF_DIR, "queue", "weekend-batch.sh")
+    wb = os.path.join(_SELF_DIR, "learn", "weekend-batch.sh")
     if not os.path.isfile(wb):
         return None
     res = _run(["bash", wb, "list", "--all-repos"], cwd=code_root)

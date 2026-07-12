@@ -56,9 +56,19 @@ The adopt-injected `CLAUDE.md` block already does this for you:
 
 | Stable entrypoint | Forwards to |
 |---|---|
-| `bin/board` | `lib/board/board.sh` |
+| `bin/board` | `lib/board/board.sh` (incl. `board promote`, the staged-candidate human gate, ex `add-backlog`) |
 | `bin/classify` | `lib/classify/classify.sh` |
 | `bin/gate` | `lib/gate/gate.sh` |
+| `bin/goal` | `lib/goal/goal.sh` |
+| `bin/learn` | `lib/learn/learn.sh` (`learn debt <list\|collect\|mark-paid>`; `propose`/`drain` refuse until SPEC-195/196) |
+| `bin/mega` | `lib/mega.sh` |
+| `bin/queue` | `lib/queue/queue.sh` |
+| `bin/session` | `lib/session/session.sh` (`session <intel\|observe\|recall\|report\|semantic>`, ex the five `bin/session-*`) |
+| `bin/spec` | `lib/spec/spec.sh` |
+| `bin/stats` | `lib/stats/` (via `uv run --project`) |
+
+Module CLIs keep their module names (ADR-0034 two-class rule): `bin/prose-rag`,
+`bin/worktree-provision`.
 
 A consumer that points at `bin/<name>` survives an internal `lib/` reorg unchanged; a consumer
 that reaches a deep lib path does not.

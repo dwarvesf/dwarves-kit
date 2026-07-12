@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# bin/learn -- STABLE consumer entrypoint for the learn subsystem (SPEC-184,
+# ADR-0034 decision 1).
+#
+# Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/learn/<file>.sh`
+# path. Forwards to the learn subsystem entry, which owns the verb grammar
+# (`learn debt <list|collect|mark-paid>` -> weekend-batch.sh, relocated from
+# lib/queue/; `learn propose`/`learn drain` REFUSE -- ship in SPEC-195/196).
+#
+# Usage: learn debt <list|collect|mark-paid> <args...>
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/learn/learn.sh" "$@"

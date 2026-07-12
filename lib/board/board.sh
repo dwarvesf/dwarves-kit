@@ -19,7 +19,7 @@
 # The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
 # describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
 # `--repo-root <path>` / the `REPO_ROOT` env var (the kit's existing consumer pattern -- see
-# lib/queue/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
+# lib/learn/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
 # precedent). Never invents a `CONSUMER_ROOT` var.
 #
 # Usage:
@@ -29,6 +29,13 @@
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh priority [counts|brief|overview|full] [--backlog-file <path>]
 #                                                               single-repo urgency x fit quadrant
+#   board.sh promote [<n>... | all | reject <n>...]             review + flush backlog-stage's
+#                                                               staged candidates onto the board
+#                                                               (the human gate; absorbed the
+#                                                               retired `add-backlog` entry per
+#                                                               ADR-0034 decision 7, no alias).
+#                                                               Forwards to lib/board/bin/add-backlog
+#                                                               verbatim, behavior unchanged.
 #
 #   board.sh all board|next|states [--repo-root <path>] [--registry <path>]
 #                                                               cross-repo render, grouped by repo
@@ -686,7 +693,7 @@ cmd_writeback() {
   return 0
 }
 
-usage() { sed -n '2,159p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,166p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"
@@ -696,6 +703,7 @@ main() {
     mirror) shift; cmd_mirror "$@" ;;
     status) shift; cmd_status "$@" ;;
     writeback) shift; cmd_writeback "$@" ;;
+    promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
     -h|--help|help) usage ;;
     *) cmd_board_single "$@" ;;
   esac

@@ -568,11 +568,11 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   one ledger (`gate-ledger.sh debt-response`, an additive `| DEBT |` line). Every response still
   merges the PR; the only real failure is UNTRACKED debt, not deferred or waved debt.
 - **Weekend batch (SG-05, ADR-0031 §3, SPEC-126).** Han-invoked only, no scheduled job:
-  `lib/queue/weekend-batch.sh collect` (this repo) reads the `| DEBT |` ledger and surfaces the week's
+  `bin/learn debt collect` (this repo; engine `lib/learn/weekend-batch.sh`) reads the `| DEBT |` ledger and surfaces the week's
   WAVED/DEFERRED items; the ops-toolkit `weekend-debt-paydown` skill orchestrates the collected
   items into the operator's existing learning skills (`learning-day-process`, `learning-ledger`,
   `deep-understand`, `knowledge-capture`) rather than reinventing a second batching engine;
-  `weekend-batch.sh mark-paid <rid>` closes an item so it is never re-collected.
+  `bin/learn debt mark-paid <rid>` closes an item so it is never re-collected.
 - **`significance-classify.sh record` wired at Ship (SPEC-136).** The verb that PERSISTS a raw
   `significance=`/`worthiness=`/`verdict=` `| DEBT |` marker independent of the quiz nudge --
   previously an honestly-documented gap with no invoking command -- is now called by
