@@ -4,6 +4,10 @@
 # own prose. Bash + `gh` only -- no DuckDB (a keyed diff over a handful of sub-goals, not
 # analytics; DuckDB stays the `stats` exception per the kit-modularity event-sourcing invariant).
 #
+# Verbs: `status` (roadmap-vs-git reconcile) · `review --html` (the sign-off dashboard) ·
+# `report` (the RUN_REPORT telemetry generator: header + gate matrix + callable-stack
+# skeleton from the rid ledgers; --out, --rid-map).
+#
 # ORPHAN, not a subsystem dir (SG-03's "2+-verb subsystems get a grouped `lib/<x>/<x>.sh`
 # case-dispatcher" rule): `mega` gained a second verb (`review`, SPEC-197 / harness-loop SG-07)
 # but STAYS a bare orphan file here deliberately -- the directory-promotion (`lib/mega/mega.sh` +
@@ -109,15 +113,16 @@ GIT_BIN="${GIT_BIN:-git}"
 _default_repo_root() { "$GIT_BIN" rev-parse --show-toplevel 2>/dev/null || pwd; }
 
 OPT_MEGAGOALS_ROOT=""; OPT_CODE_ROOT=""; OPT_BASE=""; OPT_ROLLUP_ONLY=0
-OPT_HTML=0; OPT_OUT=""
+OPT_HTML=0; OPT_OUT=""; OPT_RID_MAP=""
 POSITIONAL=()
 _parse_flags() {
   OPT_MEGAGOALS_ROOT=""; OPT_CODE_ROOT=""; OPT_BASE=""; OPT_ROLLUP_ONLY=0
-  OPT_HTML=0; OPT_OUT=""
+  OPT_HTML=0; OPT_OUT=""; OPT_RID_MAP=""
   POSITIONAL=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --megagoals-root) OPT_MEGAGOALS_ROOT="${2:-}"; shift 2 ;;
+      --rid-map)        OPT_RID_MAP="${2:-}"; shift 2 ;;
       --code-root)      OPT_CODE_ROOT="${2:-}"; shift 2 ;;
       --base)           OPT_BASE="${2:-}"; shift 2 ;;
       --rollup-only)    OPT_ROLLUP_ONLY=1; shift ;;
@@ -337,6 +342,29 @@ cmd_review() {
   python3 "$self_dir/mega-review.py" "${py_args[@]}"
 }
 
+# cmd_report: the bash launcher half of `mega report <slug>` -- the RUN_REPORT telemetry
+# generator. Fold-in gap fix (Han 2026-07-12): the close contract required a gate matrix +
+# callable stack "read from the rid ledger", but no code could render them; the presentation
+# lived as conductor habit from the pre-fold era and died in the migration (harness-loop's
+# matrix got rebuilt by hand). Same delegation shape as cmd_review: resolve KIT_LOG_DIR via
+# the ONE resolver, exec the sibling .py. Read-only; --out is the only write, when passed.
+cmd_report() {
+  _parse_flags "$@"
+  local slug="${POSITIONAL[0]:-}"
+  [ -n "$slug" ] || { echo "mega report: a <slug> is required" >&2; return 64; }
+
+  local mroot; mroot="$(_resolve_megagoals_root)"
+  local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=lib/telemetry/kit-log-dir.sh
+  source "$self_dir/telemetry/kit-log-dir.sh" || { echo "mega report: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; return 1; }
+  local log_dir; log_dir="$(kit_resolve_log_dir)" || return 1
+
+  local -a py_args=("$slug" --megagoals-root "$mroot" --log-dir "$log_dir")
+  [ -n "$OPT_OUT" ] && py_args+=(--out "$OPT_OUT")
+  [ -n "$OPT_RID_MAP" ] && py_args+=(--rid-map "$OPT_RID_MAP")
+  python3 "$self_dir/mega-report.py" "${py_args[@]}"
+}
+
 usage() { sed -n '2,102p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
@@ -344,6 +372,7 @@ main() {
   case "$first" in
     status) shift; cmd_status "$@" ;;
     review) shift; cmd_review "$@" ;;
+    report) shift; cmd_report "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "mega.sh: unknown subcommand '$first'" >&2; usage >&2; return 64 ;;
   esac
