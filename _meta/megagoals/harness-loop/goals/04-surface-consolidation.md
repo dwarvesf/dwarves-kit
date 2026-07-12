@@ -7,7 +7,7 @@
 **Depends on:** 01
 Model: sonnet
 **Branch:** `feat/loop-04-surface-consol` (+ dotfiles branch `fix/kit-bin-repoint`)
-**PR base:** master
+**PR base:** `docs/loop-01-taxonomy` (stacked on #236; review after it)
 
 ## Touches
 

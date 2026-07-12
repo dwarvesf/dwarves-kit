@@ -12,7 +12,7 @@ set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROPOSE="$KIT_DIR/lib/learn/propose.py"
-SF="$KIT_DIR/lib/learn/staging_format.py"
+SF="$KIT_DIR/lib/learn/staging-format.py"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }

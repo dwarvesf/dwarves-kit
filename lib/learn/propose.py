@@ -58,7 +58,15 @@ import sys
 SELF_DIR = os.path.dirname(os.path.abspath(__file__))
 KIT_ROOT = os.path.dirname(os.path.dirname(SELF_DIR))  # lib/learn -> lib -> repo root
 sys.path.insert(0, SELF_DIR)
-import staging_format as sf  # noqa: E402
+# staging-format.py is the ONE staging-block definition (ADR-0034 decision 1), shared with
+# `learn drain`. Its hyphenated name is not directly importable, so load it by path, the
+# same shim drain.py uses.
+import importlib.util  # noqa: E402
+_sf_spec = importlib.util.spec_from_file_location(
+    "staging_format", os.path.join(SELF_DIR, "staging-format.py")
+)
+sf = importlib.util.module_from_spec(_sf_spec)
+_sf_spec.loader.exec_module(sf)
 
 DEFAULT_INTERPRETER = "claude -p --model sonnet --setting-sources project --output-format json"
 DEFAULT_VERIFIER = "claude -p --model sonnet --setting-sources project --output-format json"
