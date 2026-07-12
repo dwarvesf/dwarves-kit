@@ -3,27 +3,27 @@
 **Destination:** the Specify → Execute → Observe → Govern → Learn loop CLOSES: run ledgers get distilled on a weekly cadence into evidence-cited backlog proposals behind the unchanged human gate, a per-mega HTML dashboard becomes the sign-off surface, Learn machinery gets ONE named subsystem home (`lib/learn/` + `bin/learn`), and the front door (README, `/kit:onboard`, `bin/config`) finally tells the five-leg story with a config surface that shows provenance.
 **Quality bar:** Propose, never dispose: every automated leg ends at a staging file or a rendered surface, and `add-backlog` + mega sign-off stay Han's. Every proposal cites lens + figure + rids, or it does not stage. No new diaries: each artifact this mega adds has a named reader or is a forcing function (process-audit R4/R6 rule). One word, one meaning: `retro` = per-run, `propose` = cross-run.
 **Design source:** `docs/briefs/DECISION-BRIEF-harness-loop.md` (v2, decisions §5 resolved 2026-07-12)
-**Stacking tool:** gh-sequential (one branch per sub-goal off master, merged one at a time; disjoint-Touches sub-goals may open in parallel)
+**Stacking tool:** gh (STACKED PRs, switched from gh-sequential by Han 2026-07-12: a dependent sub-goal branches off its parent sub-goal branch, PR base = parent branch; independents off master; fan-in sub-goals base master after parents merge; each goal file PR-base field is authoritative)
 **Merge mode:** auto-bottom-up
 **Merge autonomy:** gated-final
 **Started:** 2026-07-12 (drafted; launch pending Han's go on SG-01's taxonomy ADR gate)
 
 ## Sub-goals
 
-- [ ] 01-loop-taxonomy, ADR-0034 opens with a full surface CENSUS (bin/, skills/, daemons) + target-state tables, then locks naming/scope/modularity (learn subsystem, retro-vs-propose vocabulary, legs-as-metadata registry, front-door verb fences, `-propose` suffix, bin/ one-grammar consolidation, the kit-skill rule, the one-scheduler decision), `gate`, PR #
-- [ ] 02-outcome-emit-sweep, OUTCOME timing brackets wired at the missing gate call sites so `stats mega-durations` + digest time-to-done stop reading honest-zero, `auto`, PR #
-- [ ] 03-harvest-dedup-land, PR #226 (harvest flock dedup) reviewed + merged, regression row 4c green on master, `auto`, PR #226
-- [ ] 04-surface-consolidation, the ADR-0034 target surface becomes reality in one wave: `lib/learn/` + `bin/learn`; bin/ regrouped to one `<subsystem> <verb>` grammar (session-* 5->1, add-backlog -> `board promote`, missing spec/goal/stats/mega/queue entries created); stats skill relocated; all call-sites repointed (dotfiles companion PR), zero alias shims, `auto`, PR #
-- [ ] 05-retro-cycle, `learn propose` (stats-window aggregate → sonnet interpret → adversarial check → cited, deduped staging) + the recurring `kit-retro-YYYY-WW` queue goal template + `[features] auto_improvement` flipped to [impl] with the SPEC-188 lint amended, `auto`, PR #
-- [ ] 06-staging-drain, `learn drain` renders staging grouped + age-sorted + evidence-first; 30d rows move to `[expired]` (never deleted); promote/reject flow unchanged, `auto`, PR #
-- [ ] 07-mega-review-dashboard, `mega review --html <slug>` composes the shipped stats render formatters into one static sign-off page, wired at TIER-4 close, `auto`, PR #
-- [ ] 08-config-surface, `bin/config list|get|explain` with provenance (env > project > kit-root > default) + status tags + the checked-in env↔key registry + drift lint, `auto`, PR #
-- [ ] 09-onboard-wizard, `/kit:onboard` interactive first-run orchestrator (detect install mode, offer adopt, module picker, consumer-knob capture, plugin-gap disclosure, welcome tour), `gate`, PR #
+- [x] 01-loop-taxonomy, ADR-0034 opens with a full surface CENSUS (bin/, skills/, daemons) + target-state tables, then locks naming/scope/modularity (learn subsystem, retro-vs-propose vocabulary, legs-as-metadata registry, front-door verb fences, `-propose` suffix, bin/ one-grammar consolidation, the kit-skill rule, the one-scheduler decision), `gate`, PR #236 (open + HELD for Han, per gate policy; Done = PR open, the gate click is Han's)
+- [x] 02-outcome-emit-sweep, OUTCOME timing brackets wired at the missing gate call sites so `stats mega-durations` + digest time-to-done stop reading honest-zero, `auto`, PR #237, merged 76fbafe (2026-07-12; CI green both OS on PR head; proof docs/verification/loop-02-outcome-emit.md)
+- [x] 03-harvest-dedup-land, PR #226 (harvest flock dedup) reviewed + merged, regression row 4c green on master, `auto`, PR #226, merged a6c5a9e (2026-07-12; post-merge suite 51/51 on master)
+- [ ] 04-surface-consolidation, the ADR-0034 target surface becomes reality in one wave: `lib/learn/` + `bin/learn`; bin/ regrouped to one `<subsystem> <verb>` grammar (session-* 5->1, add-backlog -> `board promote`, missing spec/goal/stats/mega/queue entries created); stats skill relocated; all call-sites repointed (dotfiles companion PR), zero alias shims, `auto`, PR #239 (open, stacked on #236's branch; merges after #236; companions dotfiles#213 + ops-toolkit#796)
+- [ ] 05-retro-cycle, `learn propose` (stats-window aggregate → sonnet interpret → adversarial check → cited, deduped staging) + the recurring `kit-retro-YYYY-WW` queue goal template + `[features] auto_improvement` flipped to [impl] with the SPEC-188 lint amended, `auto`, PR #243 (open, stacked on SG-04's branch; merges after #239)
+- [ ] 06-staging-drain, `learn drain` renders staging grouped + age-sorted + evidence-first; 30d rows move to `[expired]` (never deleted); promote/reject flow unchanged, `auto`, PR #241 (open, stacked on SG-04's branch; merges after #239)
+- [x] 07-mega-review-dashboard, `mega review --html <slug>` composes the shipped stats render formatters into one static sign-off page, wired at TIER-4 close, `auto`, PR #238, merged c2eb239 (2026-07-12; CI green both OS; proof docs/verification/loop-07-mega-dashboard.md + 3 screenshots docs/proof/loop-07-mega-dashboard/)
+- [ ] 08-config-surface, `bin/config list|get|explain` with provenance (env > project > kit-root > default) + status tags + the checked-in env↔key registry + drift lint, `auto`, PR #240 (open, stacked on #236's branch; merges after #236)
+- [x] 09-onboard-wizard, `/kit:onboard` interactive first-run orchestrator (detect install mode, offer adopt, module picker, consumer-knob capture, plugin-gap disclosure, welcome tour), `gate`, PR #242 (open + HELD for Han, stacked on SG-08's branch; gate Done = PR open, the gate click is Han's)
 - [ ] 10-front-door-truth, README reorganized around the five legs + tables truth-matched (agents 25, skills per ADR §8) + weekly digest folded into session-intel + the ONE kit scheduler (single weekly LaunchAgent + declarative jobs list; per-job plists retire), `auto` (held as final PR under gated-final), PR #
 
 ## Dependencies
 
-- 01 first and GATED: nothing that builds on the taxonomy (04, 05, 06, 08, 09) starts before Han approves the ADR.
+- 01 first and GATED, gate = MERGE gate under stacked mode (Han 2026-07-12): 04/08 MAY build + open PRs stacked on `docs/loop-01-taxonomy` while Han reviews; NOTHING in that stack merges before #236 merges; an ADR redline rebases the stack (accepted tradeoff). Same rule for 09 stacking on 08.
 - 02, 03 depend on nothing (run parallel to 01; disjoint Touches).
 - 04 depends on 01 (subsystem name + move plan come from the ADR).
 - 05 depends on 01 + 02 + 04 (vocabulary; timing data worth citing; the lib/learn home).

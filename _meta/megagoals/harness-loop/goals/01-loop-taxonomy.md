@@ -51,3 +51,6 @@ The brief §4; `docs/research/2026-07-05-harness-ops-loop-and-naming.md` (the co
 ADR-0034: harness-loop taxonomy (learn subsystem, retro/propose vocabulary, legs-as-metadata, front-door fences, -propose suffix). Decision record only, zero code. Verification: collision-audit appendix inside the ADR. Roadmap: `_meta/megagoals/harness-loop/ROADMAP.md` SG-01. GATED: needs Han's approval before SG-04/05/06/08/09 start.
 
 ## Notes
+
+- 2026-07-12: `bin/classify lane classify` returned `normal` (the PR-body note guessed docs/full); gates recorded per the normal lane plan (spec/build/ship required).
+- 2026-07-12: advisor P5 ran on the draft: 1 CRITICAL + 2 MAJOR + 3 MINOR, all applied or dispositioned (see NOTES.md ## Advisor dispositions). The goal file's "all six decision areas" undercount vs the Outcome's ten areas is treated as the superset: all ten are in the ADR.

@@ -7,7 +7,7 @@
 **Depends on:** 01
 Model: sonnet
 **Branch:** `feat/loop-04-surface-consol` (+ dotfiles branch `fix/kit-bin-repoint`)
-**PR base:** master
+**PR base:** `docs/loop-01-taxonomy` (stacked on #236; review after it)
 
 ## Touches
 
@@ -52,3 +52,5 @@ ADR-0034 §1 (approved text wins over this file on any conflict); `lib/queue/wee
 Surface consolidation per ADR-0034: bin/ regrouped to one `<subsystem> <verb>` grammar (session-* 5->1, add-backlog -> board promote, missing entries created), lib/learn subsystem with weekend-batch relocated, stats skill relocated, all call-sites repointed (companion dotfiles PR #<n>), zero aliases. Verify: before/after census table + grep-audit + per-surface run-tables in the proof-of-done. Roadmap: `_meta/megagoals/harness-loop/ROADMAP.md` SG-04.
 
 ## Notes
+
+- 2026-07-12 (from SG-01 advisor P5 #6): the Outcome's parenthetical "plus whatever single human-typed alias the ADR kept" resolved to NO alias; ADR-0034 decision 7 rejects keeping one. The approved ADR text wins over this file on any conflict (this file already says so).

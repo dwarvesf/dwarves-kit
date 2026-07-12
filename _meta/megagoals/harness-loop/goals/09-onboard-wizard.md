@@ -8,7 +8,7 @@
 **Depends on:** 08
 Model: opus
 **Branch:** `feat/loop-09-onboard-wizard`
-**PR base:** master
+**PR base:** `feat/loop-08-config-surface` (stacked; review after SG-08)
 
 ## Touches
 

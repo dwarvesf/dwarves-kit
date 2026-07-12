@@ -7,7 +7,7 @@
 **Depends on:** 01
 Model: sonnet
 **Branch:** `feat/loop-08-config-surface`
-**PR base:** master
+**PR base:** `docs/loop-01-taxonomy` (stacked on #236; review after it)
 
 ## Touches
 
