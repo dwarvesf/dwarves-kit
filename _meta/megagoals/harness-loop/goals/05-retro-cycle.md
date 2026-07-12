@@ -7,7 +7,7 @@
 **Depends on:** 01, 02, 04
 Model: opus
 **Branch:** `feat/loop-05-retro-cycle`
-**PR base:** master
+**PR base:** `feat/loop-04-surface-consol` (stacked; review after SG-04)
 
 ## Touches
 

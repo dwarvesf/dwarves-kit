@@ -172,3 +172,6 @@ jobs:
 
       - name: Run mega status reconciler tests (kit-modularity sub-goal 08)
         run: bash tests/test-mega.sh
+
+      - name: Run mega review dashboard tests (SPEC-197, harness-loop sub-goal 07)
+        run: bash tests/test-mega-review.sh
