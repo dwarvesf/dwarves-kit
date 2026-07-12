@@ -178,3 +178,15 @@ jobs:
 
       - name: Run config-registry drift + bin/config tests (SPEC-198, harness-loop sub-goal 08)
         run: bash tests/test-config-registry.sh
+
+      - name: Run learn-propose tests (SPEC-195, harness-loop sub-goal 05)
+        run: bash tests/test-learn-propose.sh
+
+      - name: Run learn-drain tests (SPEC-196, harness-loop sub-goal 06)
+        run: bash tests/test-learn-drain.sh
+
+      - name: Run session-intel smoke incl. harness-scorecard fold (harness-loop sub-goal 10)
+        run: bash lib/session/intel/tests/smoke.sh
+
+      - name: Run kit-weekly scheduler tests (ADR-0034 decision 9, harness-loop sub-goal 10)
+        run: bash tests/test-kit-weekly.sh

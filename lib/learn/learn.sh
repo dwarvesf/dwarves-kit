@@ -3,10 +3,9 @@
 # SG-04, board.sh/goal.sh shape). Forwards `learn <verb> <args...>` to the sibling
 # script that owns that verb. Adds NO new logic.
 #
-# `debt` and `drain` are LIVE (debt: weekend-batch, relocated from lib/queue/, byte-identical
-# behavior; drain: SPEC-196, the staging-review render). `propose` (cross-run distiller) is
-# still a RESERVED name -- it REFUSES rather than silently no-ops, so a caller learns the
-# real state instead of getting an empty success.
+# All three verbs are LIVE: `debt` (weekend-batch, relocated from lib/queue/,
+# byte-identical behavior), `propose` (SPEC-195, the cross-run distiller),
+# `drain` (SPEC-196, the staging-review render).
 #
 # Usage:
 #   learn.sh debt <list|collect|mark-paid> <args...>  -> weekend-batch.sh (own usage)
@@ -16,7 +15,7 @@
 set -euo pipefail
 
 LEARN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage() { sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local verb="${1:-}"; [ $# -gt 0 ] && shift || true

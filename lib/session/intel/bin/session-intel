@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """session-intel: a weekly read-only intelligence digest for my Claude Code + repos.
 
-Assembles ONE dated digest from four sources:
+Assembles ONE dated digest from five sources:
+  scorecard  `stats digest` (the SPEC-135 harness scorecard)   [shell-out, degrades if missing]
   observe    `session-observe report` (usage + latency)        [shell-out, degrades if missing]
   sweep      `repo-sweep run` (cross-repo health)         [shell-out, degrades if missing]
   synthesis  near-duplicate concepts across the learned-ledger + GLOSSARYs (merge proposals)
@@ -14,7 +15,8 @@ No mini.ollama, no LLM: synthesis + repeat are deterministic heuristics (a human
   session-intel synthesis [--ledger F --glossaries D]   just the merge proposals (stdout)
   session-intel repeat [--transcripts D --min N]        just the repeat proposals (stdout)
 
-Env for tests: SESSION_INTEL_OBSERVE_CMD, SESSION_INTEL_SWEEP_CMD (shell strings), SESSION_INTEL_DATE (YYYY-MM-DD).
+Env for tests: SESSION_INTEL_OBSERVE_CMD, SESSION_INTEL_SWEEP_CMD, SESSION_INTEL_DIGEST_CMD
+(shell strings), SESSION_INTEL_DATE (YYYY-MM-DD).
 Stdlib only.
 """
 import argparse
@@ -233,10 +235,16 @@ def cmd_run(args):
     path = os.path.join(args.out, f"intel-{day}.md")
     ok_o, out_o = _run(os.environ.get("SESSION_INTEL_OBSERVE_CMD", "session-observe report"))
     ok_s, out_s = _run(os.environ.get("SESSION_INTEL_SWEEP_CMD", "repo-sweep run"))
+    # ADR-0034 SG-10: the weekly `stats digest` scorecard folds INTO this file, one
+    # weekly artifact instead of a second daemon. Same shell-out + honest-degrade
+    # shape as observe/sweep (a consumer without the stats module still gets a digest).
+    digest_default = shlex.join([os.path.join(_repo_root(), "bin", "stats"), "digest"])
+    ok_d, out_d = _run(os.environ.get("SESSION_INTEL_DIGEST_CMD", digest_default))
     merges = synthesis(args.ledger, args.glossaries)
     reps = repeat_detect(args.transcripts, args.min)
     parts = [
         f"# Intel digest {day}",
+        "## Harness scorecard (stats digest)\n\n" + (out_d.strip() if ok_d else "_unavailable_"),
         "## Claude Code usage (session-observe)\n\n" + (out_o.strip() if ok_o else "_unavailable_"),
         "## Repo health (repo-sweep)\n\n" + (out_s.strip() if ok_s else "_unavailable_"),
         "## Merge proposals (synthesis)\n\n" + (_fmt_merges(merges) if merges else "_none_"),

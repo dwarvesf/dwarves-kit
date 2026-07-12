@@ -76,7 +76,7 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
 
 ## session-report: weekly bridge to vps-mon + `/status`
 
-`bin/session-report` pings the `session-intel-weekly` heartbeat (the default action). The
+`bin/session-report` pings the weekly-digest heartbeat (the default action; the heartbeat token keeps its historical `session-intel-weekly` identity in vps-mon). The
 heartbeat surfaces digest liveness on the public `/status` page: if no digest lands for
 >8 days (interval 7d + grace 1d) the item flips to 🔴 and a `heartbeat-silent` alert
 fires, so a stopped digest is never silently green.
@@ -105,5 +105,6 @@ SESSION_REPORT_HB_TOKEN=$(op read op://Toolkit/session-report/hb_token) \
 Read-only producer: session-observe/session-report never store state; only vps-mon does. The
 signing scheme is the secret string's UTF-8 bytes (not base64-decode) per
 `vps-mon/worker/src/hmac.ts`; see `docs/implementation-notes/01-observability.md`. The
-`session-intel-weekly` launcher calls this after writing the weekly digest (best-effort,
+weekly scheduler (`deploy/macos/kit-weekly`, ADR-0034 decision 9; consumer bridge at
+`~/.config/kit-weekly/bridge`) calls this after writing the weekly digest (best-effort,
 non-fatal).

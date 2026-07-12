@@ -1,5 +1,10 @@
 # Proof of done: session-intel weekly deploy folds into the kit
 
+> **Superseded (2026-07-12, ADR-0034 decision 9 / harness-loop SG-10):** the per-job
+> `session-intel-weekly` bundle proven here retired into the ONE kit scheduler at
+> `deploy/macos/` (`kit-weekly` dispatcher + declarative `jobs.txt`). This file stays
+> as the dated record of the original fold. Current proof: `docs/verification/loop-10-front-door.md`.
+
 Change under proof: the telemetry cadence that tracks-and-optimizes the kit (the
 weekly cc-intel digest LaunchAgent, formerly ops-toolkit `cc-intel-weekly`) now
 ships IN the kit as `lib/session/intel/deploy/macos/`: a generic BTM-friendly

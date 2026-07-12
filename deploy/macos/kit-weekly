@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# kit-weekly: THE one weekly scheduler dispatcher (ADR-0034 decision 9). launchd
+# runs this once a week; it walks the declarative jobs list and runs each job in
+# order. Adding a weekly job = one jobs.txt line, never a new plist. Top-level
+# no-extension executable per the BTM rule: the plist's ProgramArguments[0]
+# points HERE, so Login Items shows "kit-weekly" with the exec icon.
+#
+# Deliberately NOT `set -e`: one failing (or unknown) job logs and skips; a bad
+# jobs-list line never crashes the week.
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KIT="$(cd "$HERE/../.." && pwd)"
+JOBS="${KIT_WEEKLY_JOBS:-$HERE/jobs.txt}"
+
+# launchd gives a bare PATH (/usr/bin:/bin:...); jobs shell out to consumer CLIs
+# (repo-sweep, uv, gh), so widen it the same way the retired per-job launcher did.
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+if [ ! -f "$JOBS" ]; then
+  echo "kit-weekly: jobs list not found: $JOBS" >&2
+  exit 1
+fi
+
+ran=0 skipped=0 failed=0
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in ''|\#*) continue ;; esac
+  name="${line%%[[:space:]]*}"
+  cmd="${line#"$name"}"
+  cmd="${cmd#"${cmd%%[![:space:]]*}"}"
+  if [ -z "$cmd" ]; then
+    echo "kit-weekly: malformed jobs line (name with no command), skipped: '$line'" >&2
+    skipped=$((skipped + 1)); continue
+  fi
+  # ponytail: whitespace word-split on purpose; jobs.txt is kit-owned, args never need quoting
+  # shellcheck disable=SC2086
+  set -- $cmd
+  exe="$1"; shift
+  [ "${exe#/}" = "$exe" ] && exe="$KIT/$exe"
+  if [ ! -x "$exe" ]; then
+    echo "kit-weekly: unknown job '$name' ($exe not executable), skipped" >&2
+    skipped=$((skipped + 1)); continue
+  fi
+  echo "kit-weekly: running '$name' ($exe $*)"
+  if "$exe" "$@"; then
+    echo "kit-weekly: '$name' ok"; ran=$((ran + 1))
+  else
+    echo "kit-weekly: '$name' FAILED (exit $?), continuing" >&2; failed=$((failed + 1))
+  fi
+done < "$JOBS"
+
+# Optional consumer bridge (liveness ping, notification, anything tenant-side).
+# The kit ships NO bridge: secrets and monitoring endpoints are consumer config.
+BRIDGE="$HOME/.config/kit-weekly/bridge"
+if [ -x "$BRIDGE" ]; then
+  "$BRIDGE" || echo "kit-weekly: bridge failed (non-fatal)" >&2
+fi
+
+echo "kit-weekly: done (ran=$ran skipped=$skipped failed=$failed)"

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  kit-weekly: THE one weekly kit scheduler (ADR-0034 decision 9). Runs the
+  kit-weekly dispatcher, which walks deploy/macos/jobs.txt (session-intel digest,
+  kit-retro staging, future entries = one line each). One plist, one runbook,
+  one place to see what runs and when. Replaces the retired per-job
+  session-intel-weekly plist.
+
+  TEMPLATE: __HOME__ and __KIT__ are rendered by deploy/macos/install (launchd
+  does not expand env vars in ProgramArguments). BTM rule: ProgramArguments[0]
+  is the bare-name dispatcher itself (no .sh, no /bin/bash wrapper).
+
+  Install:  bash deploy/macos/install
+  Status:   launchctl print gui/$(id -u)/kit-weekly
+  Run now:  launchctl kickstart -k gui/$(id -u)/kit-weekly
+  Unload:   launchctl bootout gui/$(id -u)/kit-weekly
+  Anti-drift: edit this template in the kit then re-run install; never hand-edit
+  the installed copy.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>kit-weekly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__KIT__/deploy/macos/kit-weekly</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>9</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>__HOME__/.claude/intel/kit-weekly.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/.claude/intel/kit-weekly.log</string>
+</dict>
+</plist>
