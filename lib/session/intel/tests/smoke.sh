@@ -105,6 +105,46 @@ if [[ "$shown" -eq 10 ]] \
    && grep -q '3 more merge candidate' <<<"$out"; then
   ok "ranked top-10 + truncation note"; else no "rank/top-N: shown=$shown first=$first :: $out"; fi
 
+# ---- SPEC-200 I1: the digest's proposals reach the Learn gate as staged blocks ---------------
+# Before this, synthesis/repeat printed prose INSIDE the digest, so a human had to retype a
+# finding to act on it. A lead nobody can promote is a lead nobody actions.
+STAGING="$TMP/backlog-staging.md"; BOARD="$TMP/BACKLOG.md"
+printf '# Board\n\n| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$BOARD"
+
+echo "[9] propose: synthesis + repeat land as ## [staged] blocks"
+out="$(SESSION_INTEL_DATE=2026-01-01 run propose --ledger "$LED" --glossaries "$GLO" \
+        --transcripts "$TMP/transcripts" --min 3 --staging "$STAGING" --backlog "$BOARD" 2>&1)"
+if grep -q '^## \[staged\] Merge duplicate concept:' "$STAGING" \
+   && grep -q '^- Source: session intel 2026-01-01 | synthesis' "$STAGING"; then
+  ok "merge candidate staged with a citation"; else no "merge not staged: $(cat "$STAGING" 2>&1)"; fi
+if grep -q '^## \[staged\] Extract a workflow for the repeated sequence:' "$STAGING" \
+   && grep -q '^- Source: session intel 2026-01-01 | repeat-detect' "$STAGING"; then
+  ok "repeat sequence staged with a citation"; else no "repeat not staged: $(cat "$STAGING")"; fi
+grep -q 'board promote' <<<"$out" && ok "propose points at the human gate" || no "no gate hint: $out"
+
+echo "[10] propose is idempotent (dedup vs staging + board)"
+before="$(grep -c '^## \[staged\]' "$STAGING")"
+SESSION_INTEL_DATE=2026-01-01 run propose --ledger "$LED" --glossaries "$GLO" \
+  --transcripts "$TMP/transcripts" --min 3 --staging "$STAGING" --backlog "$BOARD" >/dev/null 2>&1
+after="$(grep -c '^## \[staged\]' "$STAGING")"
+[[ "$before" -eq "$after" ]] && ok "re-run stages nothing new ($after blocks)" \
+  || no "re-run duplicated blocks ($before -> $after)"
+
+echo "[11] NEGATIVE CONTROL: --dry-run writes nothing"
+DRY="$TMP/dry-staging.md"
+SESSION_INTEL_DATE=2026-01-01 run propose --ledger "$LED" --glossaries "$GLO" \
+  --transcripts "$TMP/transcripts" --min 3 --staging "$DRY" --backlog "$BOARD" --dry-run \
+  | grep -q '^## \[staged\]' && ok "dry-run prints blocks" || no "dry-run printed nothing"
+[[ ! -f "$DRY" ]] && ok "dry-run wrote NO file (NEGATIVE CONTROL)" || no "dry-run created $DRY"
+
+echo "[12] NEGATIVE CONTROL: propose NEVER writes the board (propose-don't-dispose)"
+board_sha_before="$(shasum -a 256 "$BOARD" | cut -d' ' -f1)"
+SESSION_INTEL_DATE=2026-01-02 run propose --ledger "$LED_MANY" --glossaries "$GLO" \
+  --transcripts "$TMP/transcripts" --min 3 --staging "$STAGING" --backlog "$BOARD" >/dev/null 2>&1
+board_sha_after="$(shasum -a 256 "$BOARD" | cut -d' ' -f1)"
+[[ "$board_sha_before" == "$board_sha_after" ]] && ok "board byte-identical after propose" \
+  || no "propose MUTATED the board"
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"
