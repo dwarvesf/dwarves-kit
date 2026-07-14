@@ -79,6 +79,12 @@ plus care, not design.
 If you catch yourself thinking "they are touching different files so it is fine": they are not
 touching different HEADs.
 
+**It also poisons your test results.** During that same fan-out an agent recorded one contract
+run at `23 passed, 1 failed` and could not reproduce it in 15 subsequent runs; nor could I in 10
+more. The most plausible cause is not a flaky lint: it is that the run read the tree while
+another writer was mid-edit. A shared checkout does not just risk your commits, it makes your
+green and your red both untrustworthy, which is the one thing a contract cannot afford.
+
 ## Adding a new module, tool, or skill
 
 Work the list, in this order. Every step has a check you can run.

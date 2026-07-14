@@ -10,7 +10,9 @@
 #                tool is a tool nobody runs (session-audit shipped unwired, 2026-07-14).
 # C3  DOCS       every module dir carries README.md + SPEC.md + docs/proof-of-done.md.
 # C4  TESTS      every module dir carries at least one tests/*.sh.
-# C5  CURRENCY   every proposer writes `## [staged]` blocks through lib/learn/staging-format.py
+# C5  CURRENCY   every proposer LOADS lib/learn/staging-format.py to render its `## [staged]`
+#                blocks (naming a renderer is not enough: two files kept private copies, one
+#                drifted into a forgery hole, and the old grep matched their own definitions)
 #                and NEVER writes a board directly (ADR-0034 decision 1 / SPEC-200 I1).
 # C6  ROOT       every module that persists state resolves it through lib/telemetry/kit-log-dir.sh
 #                (SPEC-097), never a hardcoded ~/.claude/dwarves-kit/logs.
