@@ -238,6 +238,19 @@ offenders="$(grep -rhoE --exclude='test-kit-contract.sh' \
              | grep -oE "($NONPORTABLE)[[:space:]]" | grep -oE "^($NONPORTABLE)" | sort -u || true)"
 chk "no test invokes a non-CI tool (rg/fd/sd/...)" "$offenders"
 
+# ---------------------------------------------------------------- C8 CI workflow parses
+echo "== C8 CI: the workflow file is valid YAML =="
+# A broken workflow file does not fail the tests: it fails the RUN, so every lint in this file
+# silently stops guarding anything. It shipped exactly once, on the push that added the C-rules
+# step: an unquoted step name containing ": " parses as a mapping. The cheapest possible guard.
+# Deliberately NOT a yaml-parser check: pyyaml is not installed here or on CI, so importing it
+# would make this rule SKIP, i.e. pass vacuously, i.e. exactly the C7 bug. Grep for the one
+# shape that actually broke: an UNQUOTED `- name:` / `run:` scalar carrying ": " (YAML then
+# reads it as a nested mapping and the whole file is invalid).
+wf_bad="$(grep -rnE '^[[:space:]]*-?[[:space:]]*(name|run|if):[[:space:]]+[^"'"'"'|>&*][^"'"'"']*:[[:space:]]' \
+          .github/workflows/ 2>/dev/null | grep -vE ':[[:space:]]*#' || true)"
+chk "no unquoted workflow scalar carries a colon-space (breaks the whole file)" "$wf_bad"
+
 # ---------------------------------------------------------------- negative controls
 # Each rule above asserts an ABSENCE. An absence-assertion that cannot fail is worse than no
 # test at all (see the C7 header: that is exactly how the first cut of C1 shipped green on CI
@@ -282,6 +295,14 @@ printf '#!/usr/bin/env bash\nLOG=$HOME/.claude/dwarves-kit/logs/x.log\n' > "$TMP
 printf 'out=$(rg "pattern" file)\n' > "$TMP/nc/tests/nonportable.sh"
 nc7="$(grep -rhoE "(^|\\\$\(|\||&&|;|!)[[:space:]]*($NONPORTABLE)[[:space:]]" "$TMP/nc/tests" 2>/dev/null || true)"
 [ -n "$nc7" ] && ok "C7 catches a flagless rg in a test" || bad "C7 vacuous on the flagless form"
+
+# C8: the EXACT workflow line that shipped red (an unquoted step name carrying ": ")
+mkdir -p "$TMP/nc/.github/workflows"
+printf 'jobs:\n  test:\n    steps:\n      - name: Run the kit contract (SPEC-200: naming, wiring)\n        run: bash x.sh\n' \
+  > "$TMP/nc/.github/workflows/bad.yml"
+nc8="$(grep -rnE '^[[:space:]]*-?[[:space:]]*(name|run|if):[[:space:]]+[^"'"'"'|>&*][^"'"'"']*:[[:space:]]' \
+       "$TMP/nc/.github/workflows/" 2>/dev/null || true)"
+[ -n "$nc8" ] && ok "C8 catches the unquoted colon-space step name (the real incident)" || bad "C8 vacuous"
 
 echo ""
 echo "=== kit-contract: $PASS passed, $FAIL failed ==="
