@@ -11,8 +11,13 @@
 set -euo pipefail
 INPUT=$(cat)
 
-# Guard: prevent infinite Stop hook loop
-STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
+# Guard: prevent infinite Stop hook loop.
+# The jq read is fail-safe: under `set -euo pipefail` an unparseable payload makes jq
+# exit 5, pipefail propagates it, and set -e killed the hook right here (exit 5) before
+# any of its own logic ran -- breaking the "Exit 0 always" contract three lines above.
+# A cosmetic hook must degrade to a no-op, never to a nonzero exit. Default to "false"
+# (the normal, not-already-looping case) so a malformed payload cannot wedge the hook.
+STOP_ACTIVE=$(printf '%s' "$INPUT" | jq -r '.stop_hook_active // false' 2>/dev/null || echo false)
 [ "$STOP_ACTIVE" = "true" ] && exit 0
 
 # Debug logging

@@ -24,6 +24,13 @@ lib/queue/docs/proof-of-done.md
 lib/prose-rag/docs/proof-of-done.md
 lib/prose-rag/tests
 
+# cosmetic: NOT missing tests. The module IS six hooks, so its 13 assertions live in the shared
+# hook suite (tests/test-hooks.sh, section "cosmetic module: the non-blocking contract"), which is
+# where every other hook test in the kit lives and which CI already runs. C4 only looks for
+# lib/<m>/tests/*.sh or tests/test-<m>.*, so it cannot see them. A heuristic blind spot, not debt:
+# `bash tests/test-hooks.sh` covers all six hooks. Its README/SPEC/proof gaps ARE closed (SPEC-201).
+lib/cosmetic/tests
+
 # ---------------------------------------------------------------------------------------------
 # Design-doc gaps the contract does NOT lint for (2026-07-14 doc sweep). Recorded here so they
 # are visible; C3 checks that README/SPEC/proof EXIST, it cannot check that a design is
@@ -42,6 +49,9 @@ lib/prose-rag/tests
 # records had been hiding: lib/stats' Python copy of the resolver never learned the kit.toml
 # [ledger] layer, so a non-default `location` splits the write plane from the read plane. It is in
 # the ADR's Consequences with a repro, unfixed (a behavior change needs its own spec).
+#   money_gate  no SPEC was ever written: it entered at kit-foldin and has only a joint
+#               proof-of-done shared with prose_rag.
+#   telemetry   has an origin SPEC but zero ADR / proof / implementation notes of its own.
 #
 # CLOSED 2026-07-15: money_gate. It had no SPEC (the only module without one) and only a joint
 # proof-of-done shared with prose_rag. Now: lib/money-gate/{README.md,SPEC.md,docs/proof-of-done.md}
