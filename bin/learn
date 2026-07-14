@@ -3,11 +3,20 @@
 # ADR-0034 decision 1).
 #
 # Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/learn/<file>.sh`
-# path. Forwards to the learn subsystem entry, which owns the verb grammar
-# (`learn debt <list|collect|mark-paid>` -> weekend-batch.sh, relocated from
-# lib/queue/; `learn propose`/`learn drain` REFUSE -- ship in SPEC-195/196).
+# path. Forwards to the learn subsystem entry, which owns the verb grammar.
 #
-# Usage: learn debt <list|collect|mark-paid> <args...>
+# The header used to say `propose`/`drain` REFUSE ("ship in SPEC-195/196"). They shipped;
+# the header never caught up, so the module's own front door told you its two main verbs
+# did not work (found 2026-07-15).
+#
+# Usage:
+#   learn propose [--days N | --megas N]        cross-run proposals from the ledger (SPEC-195)
+#   learn propose --retro <RETRO.md>            a retro's action items (SPEC-200 T7)
+#   learn drain [--days N]                      render the staging pile for review (SPEC-196)
+#   learn debt <list|collect|mark-paid>         understanding-debt paydown (weekend-batch)
+#
+# Every proposal path above ends at the staging buffer as a `## [staged]` block; a human
+# promotes with `board promote`. Nothing here writes a board.
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec bash "$SELF_DIR/../lib/learn/learn.sh" "$@"

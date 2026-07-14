@@ -100,8 +100,8 @@ Sprint: [date range]
 - [item with specific impact]
 
 ## Action items
-- [ ] [concrete change] -- owner: [person] -- deadline: [date]
-- [ ] [concrete change] -- owner: [person] -- deadline: [date]
+- [ ] [concrete change] -- owner: @[github-handle] -- deadline: [date]
+- [ ] [concrete change] -- owner: @[github-handle] -- deadline: [date]
 
 ## Kit feedback
 [note any dwarves-kit friction: hooks that false-positived, commands that were awkward, missing workflows]

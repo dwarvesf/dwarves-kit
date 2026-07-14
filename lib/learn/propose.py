@@ -411,14 +411,22 @@ _RETRO_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 
 def _split_retro_item(body):
-    """`change -- owner: han -- deadline: X` -> (change, owner)."""
+    """`change -- owner: @tieubao -- deadline: X` -> (change, owner).
+
+    The owner is a GITHUB HANDLE, normalized to `@handle`: a proposal that reaches the board
+    should name someone GitHub can @-mention, not a nickname only the author decodes. A bare
+    `tieubao` gets the `@`; a template placeholder (`[person]`, `@[github-handle]`) is dropped.
+    """
     parts = re.split(r"\s+--\s+|\s*,\s*(?=owner:|deadline:)", body)
     change = parts[0].strip(" .")
     owner = ""
     for p in parts[1:]:
         m = re.match(r"owner:\s*(.+)", p.strip(), re.I)
         if m:
-            owner = m.group(1).strip()
+            raw = m.group(1).strip()
+            if raw.startswith("[") or raw.startswith("@["):   # unfilled template
+                continue
+            owner = raw if raw.startswith("@") else f"@{raw}"
     return change, owner
 
 

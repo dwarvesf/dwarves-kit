@@ -268,8 +268,8 @@ cat > "$RT/RETRO-2026-07-15.md" <<'EOF'
 ## What worked
 - the negative controls.
 ## Action items
-- [ ] Route Explore subagents to Haiku instead of the inherited Opus -- owner: han -- deadline: 2026-07-22
-- [ ] Compose commit subjects under 72 chars -- owner: han
+- [ ] Route Explore subagents to Haiku instead of the inherited Opus -- owner: @tieubao -- deadline: 2026-07-22
+- [ ] Compose commit subjects under 72 chars -- owner: tieubao
 - [x] Close the money-gate snake_case hole
 - [ ] [concrete change] -- owner: [person] -- deadline: [date]
 ## Kit feedback
@@ -283,8 +283,11 @@ OUT="$(python3 "$PROPOSE" --retro "$RT/RETRO-2026-07-15.md" --staging "$RSTG" --
 assert_true "T7a: the two OPEN action items are staged" $?
 grep -q '^## \[staged\] Route Explore subagents to Haiku instead of the inherited Opus$' "$RSTG"
 assert_true "T7b: the title is the change alone (owner/deadline stripped, not swallowed)" $?
-grep -q '^- Source: retro 2026-07-15 | RETRO-2026-07-15.md owner=han' "$RSTG"
-assert_true "T7c: owner + retro file ride on the citation" $?
+grep -q '^- Source: retro 2026-07-15 | RETRO-2026-07-15.md owner=@tieubao' "$RSTG"
+assert_true "T7c: owner rides on the citation as a GitHub handle (@tieubao)" $?
+# The second item writes a BARE handle; it must be normalized to @handle, not passed through.
+grep -c 'owner=@tieubao' "$RSTG" | grep -q '^2$'
+assert_true "T7c2: a bare handle is normalized to @tieubao (both items)" $?
 
 # NEGATIVE CONTROL: a CHECKED item is already done; staging it would propose finished work.
 grep -q 'snake_case' "$RSTG" && bad "T7d NC: a [x] item was staged" || ok "T7d NC: a checked [x] item is NOT staged"
