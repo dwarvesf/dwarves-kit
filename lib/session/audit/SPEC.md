@@ -32,6 +32,12 @@ each run opens with a metric diff: the collector-to-enhancement feedback loop.
   cost. Accepts both object-form and array-form runtime JSON.
 - `{PREV}` = newest existing `audit-*.md` in `--out`, else "none provided for
   this run".
+- `triage [--out DIR] [--report F] [--json]`: extracts the newest (or given)
+  report's machine-triage json footer (the LAST fenced json block that parses
+  as a list of {change, owner, ...}) and prints kanban proposal rows
+  (`| ?? | change | audit ref · owner · metric | queued |`). Propose-only:
+  stdout, never writes a board. Degrades: no report -> "no audit report found";
+  no valid footer -> `_none_`.
 - Degrades to `_unavailable_` (exit 0, no report) when the runtime is missing,
   fails, or returns unparseable output; never fabricates.
 - Propose-only: writes nothing but the report. Read-only over transcripts (the

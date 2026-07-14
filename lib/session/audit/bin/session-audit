@@ -92,6 +92,59 @@ def run_agent(prompt, model):
     return parse_runtime_json(r.stdout)
 
 
+def extract_recommendations(report_text):
+    """Pull the LAST fenced ```json block (the machine-triage footer the prompt
+    demands) and validate it as a list of recommendation objects."""
+    blocks, in_block, cur = [], False, []
+    for line in report_text.splitlines():
+        s = line.strip()
+        if not in_block and s.startswith("```json"):
+            in_block, cur = True, []
+        elif in_block and s.startswith("```"):
+            in_block = False
+            blocks.append("\n".join(cur))
+        elif in_block:
+            cur.append(line)
+    for raw in reversed(blocks):
+        try:
+            d = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(d, list) and all(isinstance(r, dict) and r.get("change") and r.get("owner") for r in d):
+            return d
+    return None
+
+
+def cmd_triage(args):
+    report = args.report or latest_report(args.out)
+    if not report or not os.path.exists(report):
+        print(json.dumps({"status": "empty"}) if args.json
+              else "session-audit triage: no audit report found (run `session-audit run` first)")
+        return 0
+    with open(report) as f:
+        recs = extract_recommendations(f.read())
+    name = os.path.basename(report)
+    if recs is None:
+        print(json.dumps({"status": "no_block", "report": name}) if args.json
+              else f"session-audit triage: _none_ (no machine-triage json block in {name}; "
+                   "older report format, or the run dropped the footer)")
+        return 0
+    if args.json:
+        print(json.dumps({"status": "ok", "report": name, "proposals": recs}, indent=2))
+        return 0
+    print(f"# session-audit triage: {len(recs)} proposals from {name} (PROPOSALS ONLY,")
+    print("# review, then paste accepted rows into your board's BACKLOG.md with real IDs)")
+    for r in recs:
+        m = r.get("metric") or {}
+        notes = f"audit {name} · owner:{r.get('owner')}"
+        if m.get("name"):
+            notes += f" · metric {m['name']}={m.get('current', '?')}"
+        if r.get("confidence"):
+            notes += f" · confidence:{r['confidence']}"
+        print(f"| ?? | {r['change']} | {notes} | queued |")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="session-audit",
                                 description="LLM deep-audit (propose-only) over CC session transcripts.")
@@ -104,7 +157,14 @@ def main(argv=None):
     r.add_argument("--out", default=DEFAULT_OUT)
     r.add_argument("--pricing-file")
     r.add_argument("--json", action="store_true")
+    t = sub.add_parser("triage", help="extract the latest report's recommendations as kanban proposal rows")
+    t.add_argument("--out", default=DEFAULT_OUT)
+    t.add_argument("--report", help="a specific report file (default: newest audit-*.md in --out)")
+    t.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
+
+    if args.verb == "triage":
+        return cmd_triage(args)
 
     pricing = DEFAULT_PRICING
     if args.pricing_file:

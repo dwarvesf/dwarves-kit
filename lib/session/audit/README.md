@@ -23,13 +23,24 @@ Division of labor in `lib/session/`: `session-observe` = deterministic parsing,
 agentic evidence for change decisions** (weekly / on demand). Measured on a
 3-day window: ~$3.5 and ~10 min on Sonnet.
 
+This is the COLLECT/REPORT/TRIAGE engine of the kit's usage feedback loop
+(COLLECT -> REPORT -> TRIAGE -> ENHANCE -> MEASURE); the full stage contract is
+`docs/feedback-loop.md`. ENHANCE is the kit's normal lanes; MEASURE is the next
+run's {PREV} diff.
+
 ## Use
 
 ```bash
 session-audit run                          # 7-day window, sonnet, ~/.claude/intel/audit-YYYY-MM-DD.md
 session-audit run --days 3 --model opus    # heavier judgment pass
 session-audit run --out ./reports --json   # machine-readable status
+session-audit triage                       # newest report's recommendations -> kanban proposal rows (stdout)
 ```
+
+`triage` is propose-only: it prints `| ?? | change | audit ref · owner · metric | queued |`
+rows; a human assigns real IDs and pastes accepted rows into the consumer's
+`BACKLOG.md`. It reads the report's machine-triage json footer (the prompt
+requires one; reports from older prompt versions degrade to `_none_`).
 
 `--pricing-file` overrides the built-in per-model price table when list prices
 drift.

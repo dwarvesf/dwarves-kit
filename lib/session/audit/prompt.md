@@ -110,3 +110,11 @@ proxy rate, name the assumption everywhere it is load-bearing).
    causal chain to be visible in the logs, otherwise write "consistent with".
    Findings with zero occurrences are reported as zeros, not omitted: a clean
    corpus is a result.
+
+   Close the report with the Table B rows repeated once as a fenced ```json
+   code block (machine triage reads it; keep it the LAST fenced json block in
+   the report). A list of objects, same content as the table, no new rows:
+     [{"change": "...", "owner": "kit|user-habit|harness|instrumentation",
+       "finding": "...", "effect": "...", "confidence": "high|medium|low",
+       "falsifier": "...",
+       "metric": {"name": "...", "current": "...", "rerun": "<command>"}}]

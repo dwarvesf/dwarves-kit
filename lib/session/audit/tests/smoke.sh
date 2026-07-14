@@ -54,5 +54,42 @@ out="$(SESSION_AUDIT_CMD="false" SESSION_AUDIT_DATE=2026-02-01 "$SA" run --out "
 out="$(SESSION_AUDIT_CMD="echo not-json" SESSION_AUDIT_DATE=2026-02-02 "$SA" run --out "$TMP/intel")"
 echo "$out" | grep -q "_unavailable_" && ok "degrades on garbage" || no "garbage not degraded: $out"
 
+# 7. triage: report with a machine-triage json footer -> kanban proposal rows
+mkdir -p "$TMP/triage"
+cat > "$TMP/triage/audit-2026-03-01.md" <<'EOF'
+## Report body
+Some findings prose with an unrelated fenced block:
+```json
+{"not": "the footer"}
+```
+More prose.
+```json
+[{"change":"route Explore subagents to haiku","owner":"kit","finding":"237/982 on opus",
+  "effect":"cuts subagent opus spend","confidence":"medium","falsifier":"still lands on opus",
+  "metric":{"name":"subagent_opus_share","current":"24.1%","rerun":"jq cross-tab"}},
+ {"change":"clear mega-sessions at boundaries","owner":"user-habit","finding":"694:1 ratio",
+  "effect":"cuts cache-read","confidence":"medium","falsifier":"share does not drop",
+  "metric":{"name":"top10_cache_read_share","current":"76.3%","rerun":"jq group-sum"}}]
+```
+EOF
+out="$("$SA" triage --out "$TMP/triage")"
+echo "$out" | grep -c "^| ?? |" | grep -q "^2$" && ok "triage: 2 proposal rows" || no "triage rows wrong: $out"
+echo "$out" | grep -q "owner:kit · metric subagent_opus_share=24.1%" && ok "triage: notes carry owner+metric" || no "triage notes wrong"
+echo "$out" | grep -q "PROPOSALS ONLY" && ok "triage: propose-only banner" || no "triage banner missing"
+
+# 8. triage: last-json-block wins (the decoy above is ignored)
+echo "$out" | grep -q "not.*the footer" && no "triage: decoy block leaked" || ok "triage: decoy block ignored"
+
+# 9. triage degrade: report without the footer -> _none_
+cat > "$TMP/triage/audit-2026-03-08.md" <<'EOF'
+## Older-format report, no machine block
+EOF
+out="$("$SA" triage --out "$TMP/triage")"
+echo "$out" | grep -q "_none_" && ok "triage: no-block degrades" || no "triage no-block wrong: $out"
+
+# 10. triage degrade: no reports at all -> empty
+out="$("$SA" triage --out "$TMP/empty-dir")"
+echo "$out" | grep -q "no audit report found" && ok "triage: empty degrades" || no "triage empty wrong: $out"
+
 echo "smoke: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
