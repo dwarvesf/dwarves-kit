@@ -10,8 +10,13 @@
 set -euo pipefail
 INPUT=$(cat)
 
-TOOL=$(echo "$INPUT" | jq -r '.tool_name // empty')
-CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
+# Fail-safe jq reads. Under `set -euo pipefail` an unparseable payload makes jq exit 5,
+# pipefail propagates it, and set -e killed the hook right here (exit 5) before it could
+# decide anything. Degrading to an EMPTY tool/cmd is the fail-CLOSED default: neither
+# branch below matches, so the hook falls through to the normal permission dialog and
+# exits 0. Unparseable input must never auto-approve, and must never wedge the hook.
+TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null || true)
+CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 
 # Debug logging
 if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
