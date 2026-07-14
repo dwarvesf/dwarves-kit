@@ -1,0 +1,142 @@
+#!/usr/bin/env python3
+"""session-audit: LLM deep-audit over Claude Code session transcripts.
+
+The agentic sibling of session-intel's deterministic digest: renders the
+co-located prompt.md (schema-first exploration, evidence tiers, owner-tagged
+recommendations with metric contracts) and hands it to an agent runtime
+(`claude -p` by default) that explores the transcripts itself with jq. Writes
+ONE dated report; the previous report is auto-passed as {PREV} so each run
+opens with a metric diff against the last (the improve-measure-improve loop).
+
+Propose-don't-dispose: writes only the report file, never edits transcripts,
+boards, or ledgers. Expensive by design (measured ~$3.5/run on Sonnet over a
+3-day window); run weekly or on demand, not per-session -- session-semantic
+stays the cheap cron signal.
+
+  session-audit run [--root D] [--days N] [--deep-read K] [--model M]
+                    [--out DIR] [--pricing-file F] [--json]
+
+Env for tests: SESSION_AUDIT_CMD (shell string; the rendered prompt is piped to
+its stdin, and it must print the runtime's --output-format json), and
+SESSION_AUDIT_DATE (YYYY-MM-DD). If the command is missing or fails, degrades
+to `_unavailable_`; it never fabricates a report. Stdlib only.
+"""
+import argparse
+import datetime
+import glob
+import json
+import os
+import shlex
+import subprocess
+import sys
+
+DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
+DEFAULT_OUT = os.path.expanduser("~/.claude/intel")
+DEFAULT_MODEL = "sonnet"
+DEFAULT_CMD = ("claude -p --model {model} "
+               "--allowedTools Bash,Read,Grep,Glob --output-format json")
+# Per-million-token list prices; override with --pricing-file when they drift.
+DEFAULT_PRICING = """\
+  sonnet: input $3.00, output $15.00, cache-read $0.30, cache-write $3.75
+  haiku:  input $1.00, output $5.00,  cache-read $0.10, cache-write $1.25
+  opus:   input $15.00, output $75.00, cache-read $1.50, cache-write $18.75"""
+
+
+def _today():
+    d = os.environ.get("SESSION_AUDIT_DATE")
+    return d if d else datetime.date.today().isoformat()
+
+
+def render_prompt(root, days, deep_read, pricing, prev):
+    tpl_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "prompt.md")
+    with open(tpl_path) as f:
+        t = f.read()
+    subs = {"{ROOT}": root, "{DAYS}": str(days), "{K}": str(deep_read),
+            "{PRICING}": pricing, "{PREV}": prev}
+    for k, v in subs.items():
+        t = t.replace(k, v)
+    return t
+
+
+def latest_report(out_dir):
+    reports = sorted(glob.glob(os.path.join(out_dir, "audit-*.md")))
+    return reports[-1] if reports else None
+
+
+def parse_runtime_json(text):
+    """Extract the result payload from `--output-format json`: a single object,
+    or (some CLI versions) an array whose last element is the result object."""
+    try:
+        d = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(d, list):
+        d = d[-1] if d and isinstance(d[-1], dict) else None
+    if not isinstance(d, dict) or not isinstance(d.get("result"), str):
+        return None
+    return d
+
+
+def run_agent(prompt, model):
+    cmd = os.environ.get("SESSION_AUDIT_CMD", DEFAULT_CMD.format(model=model))
+    try:
+        r = subprocess.run(shlex.split(cmd), input=prompt, capture_output=True,
+                           text=True, timeout=3600)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return parse_runtime_json(r.stdout)
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="session-audit",
+                                description="LLM deep-audit (propose-only) over CC session transcripts.")
+    sub = p.add_subparsers(dest="verb", required=True)
+    r = sub.add_parser("run", help="run the audit and write a dated report")
+    r.add_argument("--root", default=DEFAULT_ROOT)
+    r.add_argument("--days", type=int, default=7)
+    r.add_argument("--deep-read", type=int, default=5)
+    r.add_argument("--model", default=DEFAULT_MODEL)
+    r.add_argument("--out", default=DEFAULT_OUT)
+    r.add_argument("--pricing-file")
+    r.add_argument("--json", action="store_true")
+    args = p.parse_args(argv)
+
+    pricing = DEFAULT_PRICING
+    if args.pricing_file:
+        with open(args.pricing_file) as f:
+            pricing = f.read().rstrip()
+
+    os.makedirs(args.out, exist_ok=True)
+    prev = latest_report(args.out)
+    prompt = render_prompt(args.root, args.days, args.deep_read, pricing,
+                           prev if prev else "none provided for this run")
+
+    res = run_agent(prompt, args.model)
+    if res is None:
+        print(json.dumps({"status": "unavailable"}) if args.json
+              else "session-audit: _unavailable_ (no runtime / command failed / unparseable output)")
+        return 0
+
+    date = _today()
+    path = os.path.join(args.out, f"audit-{date}.md")
+    cost = res.get("total_cost_usd")
+    dur = res.get("duration_ms")
+    header = (f"<!-- session-audit {date} · root {args.root} · days {args.days} "
+              f"· model {args.model} · cost ${cost if cost is not None else '?'} "
+              f"· prev {prev if prev else 'none'} -->\n\n")
+    with open(path, "w") as f:
+        f.write(header + res["result"].rstrip() + "\n")
+
+    if args.json:
+        print(json.dumps({"status": "ok", "report": path, "prev": prev,
+                          "total_cost_usd": cost, "duration_ms": dur}, indent=2))
+    else:
+        print(f"session-audit: wrote {path}"
+              + (f"  (${cost:.2f}, {dur / 1000:.0f}s)" if cost is not None and dur else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
