@@ -18,6 +18,9 @@ Pricing (for dollar attribution; per million tokens):
 {PRICING}
 The model name is in the logs; convert token findings to $ ranges per model. When
 a session mixes models, attribute by the per-message model field, never a blend.
+A model with no rate in the table: never price it silently; report its token
+share as its own finding and mark every $ total as a floor (or, if you assume a
+proxy rate, name the assumption everywhere it is load-bearing).
 
 1. LEARN THE SCHEMA FIRST. Do not grep for guessed event or field names, the
    schema drifts between client versions and a miss reads as a false negative.
@@ -29,6 +32,14 @@ a session mixes models, attribute by the per-message model field, never a blend.
    cache read, cache creation), the model field, timestamps, and the session/parent
    join keys. Note every schema variant you encounter; if a field is absent in
    some files, say which and treat those files as a separate stratum, not as zero.
+   Two known transcript traps you must rule out by observation before summing:
+   (a) one API response may span several JSONL lines (one per content block),
+   each repeating an identical usage block, pick a dedup key (response/message
+   id) and state it, or every token total inflates 2-3x; (b) not every
+   user-type event is a human prompt, harness injections (hook feedback, task
+   notifications, skill-dispatch templates, resume summaries) land as user
+   events too; separate them and report the injection share before any
+   prompt/rework analysis.
 
 2. CORPUS BASELINE. Before any judgment: session count, event count, date range,
    per-session size distribution (median / p90 / max), sidechain share. Every rate

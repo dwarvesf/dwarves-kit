@@ -42,6 +42,12 @@ bash tests/smoke.sh    # -> smoke: all passed
 
 ## Notes
 
+- **Model floor is Sonnet.** A 3-way tier run (2026-07-14, same prompt/corpus)
+  showed Haiku fails the schema-discovery step outright: it reported token
+  usage, tool errors, and sidechain markers as absent from the transcripts (all
+  three exist) and then recommended instrumentation for data already there. The
+  discipline in the prompt does not compensate below Sonnet. Opus buys sharper
+  judgment and self-corrected measurements at similar cost.
 - Runtime overridable via `SESSION_AUDIT_CMD` (prompt piped to stdin; must emit
   `--output-format json`); tests inject fixtures, no live model needed.
 - Degrades to `_unavailable_` on any runtime failure; never fabricates a report.

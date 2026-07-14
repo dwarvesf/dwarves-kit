@@ -36,6 +36,9 @@ DEFAULT_MODEL = "sonnet"
 DEFAULT_CMD = ("claude -p --model {model} "
                "--allowedTools Bash,Read,Grep,Glob --output-format json")
 # Per-million-token list prices; override with --pricing-file when they drift.
+# Models absent here (e.g. fable-5, no public list rate) are deliberately NOT
+# guessed: the prompt makes the audit report their share and mark $ totals as
+# a floor. Supply a rate via --pricing-file once one is authoritative.
 DEFAULT_PRICING = """\
   sonnet: input $3.00, output $15.00, cache-read $0.30, cache-write $3.75
   haiku:  input $1.00, output $5.00,  cache-read $0.10, cache-write $1.25
