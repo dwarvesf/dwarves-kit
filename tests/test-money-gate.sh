@@ -65,24 +65,48 @@ echo "[9] recursive scan reaches old_string (DELETING money content trips the ga
 out="$(printf '%s' "$del_money" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=1 MONEY_GATE_LOG="$TMP/l6" bash "$SHIM")"
 if grep -q '"permissionDecision": "ask"' <<<"$out" && grep -q 'balance' <<<"$out"; then ok "old_string scanned"; else no "got: $out"; fi
 
-echo "[10] NC: MONEY_GATE_STRICT must be the literal '1' -- 'true' logs but does NOT ask"
+echo "[10] MONEY_GATE_STRICT accepts any truthy spelling ('true' now ARMS the gate)"
+# Was: only the literal "1" armed it, so `MONEY_GATE_STRICT=true` left the operator in
+# log-only mode believing they were being prompted. A safety knob that silently does
+# nothing is worse than no knob (fixed 2026-07-15).
 out="$(printf '%s' "$fin_money" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=true MONEY_GATE_LOG="$TMP/l7" bash "$SHIM")"
-if [[ -z "$out" ]] && grep -q 'transactions.csv' "$TMP/l7"; then ok "non-'1' strict is log-only"; else no "false ask: $out"; fi
+if grep -q '"permissionDecision": "ask"' <<<"$out"; then ok "STRICT=true arms the gate"; else no "true did not arm: $out"; fi
+out="$(printf '%s' "$fin_money" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=on MONEY_GATE_LOG="$TMP/l7b" bash "$SHIM")"
+if grep -q '"permissionDecision": "ask"' <<<"$out"; then ok "STRICT=on arms the gate"; else no "on did not arm: $out"; fi
+
+echo "[10b] NEGATIVE CONTROL: a FALSY strict value stays log-only (no false ask)"
+for v in 0 false no off ""; do
+  out="$(printf '%s' "$fin_money" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT="$v" MONEY_GATE_LOG="$TMP/l7c" bash "$SHIM")"
+  [[ -n "$out" ]] && { no "STRICT='$v' wrongly armed the gate: $out"; break; }
+done
+[[ -z "$out" ]] && ok "0/false/no/off/empty all stay log-only"
 
 echo "[11] exit 0 ALWAYS, even when emitting an ask (decision travels in JSON, not rc)"
 set +e; out="$(printf '%s' "$fin_money" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=1 MONEY_GATE_LOG="$TMP/l8" bash "$SHIM")"; rc=$?; set -e
 if [[ $rc -eq 0 ]] && grep -q '"permissionDecision": "ask"' <<<"$out"; then ok "asked and still exit 0"; else no "rc=$rc out=$out"; fi
 
-# CHARACTERIZATION, not a desired property. MONEY_RE is \b-anchored and `_` is a word
-# char, so a snake_case identifier never matches its own money token: `payroll_total`,
-# `invoice_id`, `net_worth_usd` and the bare plural `amounts` all sail through. A .py
-# file whose ONLY money signal is `payroll_total = 5000` does not trip the gate. This
-# pins the blind spot so it cannot be forgotten (SPEC.md "Known divergences" 3); if a
-# later change widens the regex, this test fails loudly and the SPEC gets updated with it.
-echo "[12] CHARACTERIZATION (known gap): snake_case + plurals do NOT match -> no fire"
+# The gate's largest hole, closed. It WAS \b-anchored, and `_` is a word character, so a
+# snake_case identifier never matched its own money token: `payroll_total = 5000` sailed
+# through while `payroll = 5000` fired. Identifier-shaped money code is exactly what an agent
+# edits. The characterization test that pinned the gap is now the assertion that proves it shut.
+echo "[12] snake_case identifiers and plurals DO trip the gate (the hole is closed)"
 snake='{"tool_input":{"file_path":"/home/u/work/acme-books/pay.py","new_string":"payroll_total = 5000; invoice_id = 7; amounts = []"},"cwd":"/home/u/work/acme-books"}'
 out="$(printf '%s' "$snake" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=1 MONEY_GATE_LOG="$TMP/l9" bash "$SHIM")"
-if [[ -z "$out" && ! -s "$TMP/l9" ]]; then ok "gap confirmed: \\b-anchored regex misses snake_case/plurals"; else no "regex widened? update SPEC.md: $out"; fi
+if grep -q '"permissionDecision": "ask"' <<<"$out" && grep -q 'payroll' <<<"$out"; then
+  ok "payroll_total / invoice_id / amounts now fire"; else no "still blind to snake_case: $out"; fi
+
+echo "[12b] the leading-underscore and trailing-underscore forms fire too"
+under='{"tool_input":{"file_path":"/home/u/work/acme-books/pay.py","new_string":"total_payroll = 1; _balance_ = 2"},"cwd":"/home/u/work/acme-books"}'
+out="$(printf '%s' "$under" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=1 MONEY_GATE_LOG="$TMP/l9b" bash "$SHIM")"
+grep -q '"permissionDecision": "ask"' <<<"$out" && ok "total_payroll / _balance_ fire" || no "missed: $out"
+
+echo "[12c] NEGATIVE CONTROL: widening did NOT make the gate match inside a longer word"
+# `mypayroll`, `payrolling`, `tokenizer` must NOT fire: the boundary treats `_` as a
+# separator but still refuses an alphanumeric neighbour. A gate that fires on everything
+# is a gate people disable.
+nofire='{"tool_input":{"file_path":"/home/u/work/acme-books/x.py","new_string":"mypayroll = 1; payrolling = 2; tokenizer = 3; balanced = 4"},"cwd":"/home/u/work/acme-books"}'
+out="$(printf '%s' "$nofire" | MONEY_GATE_REPOS=acme-books MONEY_GATE_STRICT=1 MONEY_GATE_LOG="$TMP/l9c" bash "$SHIM")"
+if [[ -z "$out" && ! -s "$TMP/l9c" ]]; then ok "no false fire inside longer words"; else no "FALSE POSITIVE: $out"; fi
 
 echo
 if [[ $fail -gt 0 ]]; then echo "test-money-gate: $pass passed, $fail FAILED" >&2; exit 1; fi
