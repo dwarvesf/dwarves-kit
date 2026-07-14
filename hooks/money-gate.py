@@ -21,8 +21,9 @@ Env:
   MONEY_GATE_REPOS=a:b      sensitive repo names. CONSUMER CONFIG, no default: unset
                           means the gate is inert (adapter-default invariant; the
                           kit ships no tenant repo names)
-  MONEY_GATE_STRICT=1       ask-to-confirm instead of log-only (the LITERAL "1"; any
-                          other value, including "true", stays log-only)
+  MONEY_GATE_STRICT=1       ask-to-confirm instead of log-only. Any truthy spelling arms
+                          it (1/true/yes/on, case-insensitive); 0/false/no/off/empty
+                          stay log-only.
   MONEY_GATE_LOG=FILE       log destination (default ~/.claude/logs/money-gate.log)
 Stdlib only. Exit 0 always (decision is carried in the JSON, not the exit code).
 """
@@ -33,10 +34,20 @@ import sys
 import time
 
 DEFAULT_LOG = os.path.expanduser("~/.claude/logs/money-gate.log")
+# Boundaries are underscore-AWARE, not \b. `_` is a word character, so a \b-anchored pattern
+# never matches inside a snake_case identifier: `payroll_total = 5000` did NOT trip this gate
+# while `payroll = 5000` did. Identifier-shaped money code is exactly what an agent edits, so
+# that was the gate's largest hole (found writing its first SPEC, 2026-07-15). These lookarounds
+# treat `_` as a separator: payroll_total, total_payroll and invoice_id all match; mypayroll and
+# payrolling still do not. `s?` catches the bare plural (`amounts`) the old pattern also missed.
+_LB = r"(?<![A-Za-z0-9])"   # left boundary: not preceded by an alphanumeric (so `_` is fine)
+_RB = r"s?(?![A-Za-z0-9])"  # right boundary: optional plural, not followed by an alphanumeric
 MONEY_RE = re.compile(
-    r"\b(amount|balance|transfer|payout|payment|payroll|invoice|wallet|private[_-]?key|"
+    _LB +
+    r"(amount|balance|transfer|payout|payment|payroll|invoice|wallet|private[_-]?key|"
     r"secret|password|api[_-]?key|token|iban|account[_-]?number|routing|"
-    r"ledger|cashflow|pnl|net[_-]?worth|deposit|withdraw|usd|vnd)\b",
+    r"ledger|cashflow|pnl|net[_-]?worth|deposit|withdraw|usd|vnd)" +
+    _RB,
     re.IGNORECASE,
 )
 
@@ -83,7 +94,10 @@ def main():
     except OSError:
         pass
 
-    if os.environ.get("MONEY_GATE_STRICT") == "1":
+    # Any truthy spelling arms it. The old check compared to the LITERAL "1", so an operator who
+    # armed the gate with `MONEY_GATE_STRICT=true` got log-only mode and believed they were being
+    # prompted: a safety knob that silently does nothing is worse than no knob (found 2026-07-15).
+    if os.environ.get("MONEY_GATE_STRICT", "").strip().lower() in ("1", "true", "yes", "on"):
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "ask",

@@ -154,21 +154,29 @@ this SPEC documents reality; neither is changed by it.
    Whether that breadth is the point (auth edits in a money repo *are* worth a prompt) or
    an accepted false-positive tax was never stated. It overlaps the `secrets-guard` spine
    hook, which owns credential-leak detection proper.
-3. **The `\b` anchors make the gate blind to snake_case identifiers and plurals.** `_` is
-   a word character, so `\bpayroll\b` does not match `payroll_total`, and `\bamount\b`
-   does not match `amounts`. Verified against the live regex:
+3. **FIXED 2026-07-15: the `\b` anchors made the gate blind to snake_case and plurals.**
+   `_` is a word character, so `\bpayroll\b` did not match `payroll_total`, and `\bamount\b`
+   did not match `amounts`. A Python file whose only money signal was `payroll_total = 5000`
+   **did not trip the gate**, while the same line written `payroll = 5000` did. That was the
+   gate's largest real hole: identifier-shaped money code is exactly what an agent edits.
 
-   | Input | Hits |
+   The boundaries are now underscore-aware lookarounds (`(?<![A-Za-z0-9])` / `s?(?![A-Za-z0-9])`),
+   so `_` reads as a separator and the bare plural is caught:
+
+   | Input | Fires? |
    |---|---|
-   | `payroll_total`, `invoice_id`, `total_payroll`, `amounts` | *(none)* |
-   | `payroll`, `amount`, `payroll-total` (hyphen is not a word char) | matched |
+   | `payroll_total`, `total_payroll`, `invoice_id`, `_balance_`, `amounts` | yes (was: no) |
+   | `payroll`, `amount`, `payroll-total` | yes (unchanged) |
+   | `mypayroll`, `payrolling`, `tokenizer`, `balanced` | no (an alphanumeric neighbour still blocks the match) |
 
-   So a Python file whose only money signal is `payroll_total = 5000` **does not trip the
-   gate**, while the same line written `payroll = 5000` does. This is the gate's largest
-   real hole: identifier-shaped money code is exactly what an agent edits. It is pinned by
-   test `[12]` as a characterization test, so widening the regex will fail that test
-   loudly rather than drift silently. Not fixed here: this SPEC records the code, and
-   changing the match set is a behavior change that deserves its own diff.
+   Test `[12]` was a characterization test pinning the hole; it is now the assertion proving
+   it shut, with `[12c]` as the negative control against over-matching.
+
+4. **FIXED 2026-07-15: `MONEY_GATE_STRICT` compared against the literal `"1"`.** An operator
+   who armed the gate with `MONEY_GATE_STRICT=true` silently got log-only mode while believing
+   they were being prompted. A safety knob that silently does nothing is worse than no knob.
+   Any truthy spelling (`1`/`true`/`yes`/`on`, case-insensitive) now arms it; `0`/`false`/`no`/
+   `off`/empty stay log-only (test `[10]`, negative control `[10b]`).
 
 ## Non-goals
 
