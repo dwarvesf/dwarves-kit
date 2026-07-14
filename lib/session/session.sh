@@ -14,6 +14,7 @@
 #   session.sh intel <args...>     -> lib/session/intel/bin/session-intel (own usage)
 #   session.sh report <args...>    -> lib/session/observe/bin/session-report (own usage)
 #   session.sh semantic <args...>  -> lib/session/observe/bin/session-semantic (own usage)
+#   session.sh audit <args...>     -> lib/session/audit/bin/session-audit (own usage)
 #   session.sh -h|--help|help      -> this usage
 set -euo pipefail
 
@@ -28,6 +29,7 @@ main() {
     intel)    exec "$SESSION_DIR/intel/bin/session-intel" "$@" ;;
     report)   exec "$SESSION_DIR/observe/bin/session-report" "$@" ;;
     semantic) exec "$SESSION_DIR/observe/bin/session-semantic" "$@" ;;
+    audit)    exec "$SESSION_DIR/audit/bin/session-audit" "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "session: unknown verb '$verb' (try: session --help)" >&2; exit 1 ;;
   esac

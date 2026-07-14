@@ -29,7 +29,7 @@ it is not a row here either , the completeness rule is scoped to
 | Module | Primary leg | Notes |
 |---|---|---|
 | board | Specify | spanner: input side (Specify) + staging/promote (Learn) |
-| session | Observe | spanner: capture side (Observe) + harvest (Learn) |
+| session | Observe | spanner: capture side (Observe) + harvest (Learn); `session audit` is the deep Observe pass (LLM audit, `run`) + a Learn-leg proposer (`triage`) |
 | advisor | Govern | |
 | cosmetic | (none) | orthogonal to the loop; statusline |
 | queue | Execute | |
@@ -148,6 +148,8 @@ real reader consumes it today (all rows below are, except where noted).
 | CC_SI_CURATOR_CMD | env-only | (real `claude -p`) | [impl] | session | Override the curator's model-invocation command (test injection point). |
 | CC_SI_REVIEWER_CMD | env-only | (real `claude -p`) | [impl] | session | Override the async reviewer's model-invocation command. |
 | DWARVES_KIT_SESSION_MARKER | env-only | `/tmp/.dwarves-kit-session-start` | [impl] | session | Path of the session-start marker file. |
+| SESSION_AUDIT_CMD | env-only | `claude -p --model <M> --allowedTools Bash,Read,Grep,Glob --output-format json` | [impl] | session | Agent runtime `session audit run` pipes its rendered prompt to; tests inject fixtures here. |
+| SESSION_AUDIT_DATE | env-only | (today) | [impl] | session | Report-date override (YYYY-MM-DD) for deterministic tests. |
 
 ### gate
 

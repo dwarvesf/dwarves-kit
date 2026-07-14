@@ -1,44 +1,63 @@
-# The usage feedback loop
+# The usage-telemetry path around the five legs
 
-The kit improves itself from evidence, not vibes. This page is the contract for
-how usage telemetry becomes a shipped enhancement, and how the next audit proves
-the enhancement worked. Five stages; the first two and the last are this tool's
-job, the middle two are the kit's normal operating lanes.
+The kit's improvement cycle is the five legs (ADR-0034): **Specify -> Execute ->
+Observe -> Govern -> Learn**, feedback closing Learn back into Specify. This
+page does NOT define a new cycle; it names how session-audit rides that loop
+for one signal class: usage telemetry from CC session transcripts. One engine,
+one truth: where an existing leg verb already owns a step, this tool defers
+to it.
 
 ```
-COLLECT ──> REPORT ──> TRIAGE ──> ENHANCE ──> MEASURE
-   │           │          │           │           │
- session-    audit-     session-    normal      next run's
- observe /   YYYY-MM-   audit       kit lanes   {PREV} metric
- semantic /  DD.md      triage      (board row  diff: did the
- audit       (owner     (kanban     -> spec ->  metric move?)
- (this       tags +     proposal    execute ->
- tool)       metric     rows,       ship)
-             contracts) human
-                        accepts)
+              (existing legs)                     (this tool's contribution)
+
+ Specify ──► Execute ──► Observe ────────────────  session-audit run
+    ▲                      │                       = the deep Observe pass:
+    │                      ▼                         dated report, owner tags,
+    │                    Govern                      metric contracts
+    │                      │
+    └────── Learn ◄────────┘                       session-audit triage
+            (propose gate)                         = a Learn-leg proposer:
+                                                     report footer -> kanban
+                                                     proposal rows, human accepts
 ```
 
-## Stage contracts
+## The steps, in leg terms
 
-1. **COLLECT.** `session-observe` (deterministic parsing, free), `session-semantic`
-   (cheap LLM topic signal, cron), `session-audit run` (expensive agentic deep
-   audit, weekly / on demand). Read-only over transcripts, always.
-2. **REPORT.** One dated file per audit run. Every recommendation carries an
+1. **Observe (collect + report).** Three depths, same leg: `session observe`
+   (deterministic parsing, free), `session semantic` (cheap LLM topic signal,
+   cron), `session audit run` (expensive agentic deep audit, weekly / on
+   demand). The audit writes one dated report; every recommendation carries an
    OWNER (`kit` | `user-habit` | `harness` | `instrumentation`) and a METRIC
-   CONTRACT (name, current value, exact re-run command). The report closes with
-   a machine-readable json footer of the same rows. Only HIGH-tier findings are
-   stable currency across runs; MEDIUM/LOW are leads, labeled as such.
-3. **TRIAGE.** `session-audit triage` extracts the footer into kanban proposal
-   rows (`| ?? | change | audit ref · owner · metric | queued |`). PROPOSALS
-   ONLY: a human reviews, assigns real IDs, and pastes accepted rows into the
-   consumer repo's `BACKLOG.md`. Rejected rows die here; nothing auto-files.
-4. **ENHANCE.** An accepted row is ordinary kit work: it flows queued -> speccing
-   -> executing -> shipped through the normal lanes and gates. Nothing special;
-   the audit only supplied the evidence and the metric.
-5. **MEASURE.** The next `session-audit run` receives the previous report as
-   `{PREV}` automatically and MUST open with a metric-by-metric diff: for each
-   earlier recommendation, did its metric move? A fix whose metric did not move
-   goes back to TRIAGE as a new finding, with the failed attempt as context.
+   CONTRACT (name, current value, exact re-run command), and the report closes
+   with a machine-readable json footer of the same rows. Only HIGH-tier
+   findings are stable currency across runs; MEDIUM/LOW are leads.
+2. **Learn (propose).** `session audit triage` extracts the footer into kanban
+   proposal rows (`| ?? | change | audit ref · owner · metric | queued |`).
+   Same propose-don't-dispose gate as `learn propose` and `stats anomalies
+   --propose` (ADR-0034 decision 2/5): a human reviews, assigns real IDs, and
+   pastes accepted rows into the consumer repo's `BACKLOG.md`. Rejected rows
+   die here; nothing auto-files.
+3. **Specify -> Execute -> Govern (enhance).** An accepted row is ordinary kit
+   work through the normal lanes and gates. Nothing special; the audit only
+   supplied the evidence and the metric.
+4. **Observe again (measure).** The next `session audit run` receives the
+   previous report as `{PREV}` automatically and MUST open with a
+   metric-by-metric diff: for each earlier recommendation, did its metric
+   move? A fix whose metric did not move returns to the Learn gate as a new
+   finding, with the failed attempt as context.
+
+## Division of labor inside Observe (why three tools + stats coexist)
+
+| Surface | Reads | Depth | Cadence |
+|---|---|---|---|
+| `stats` `sessions` table + `stats digest` | transcripts, numeric allowlist ONLY (SPEC-135 privacy wall) | scorecard numbers | weekly |
+| `session observe` / `session intel` | transcripts, content-adjacent detail | deterministic usage/friction views + digest | weekly cron |
+| `session audit run` | transcripts, agentic exploration | evidence-tiered findings + owner-tagged recommendations | weekly / on demand |
+
+The audit is the only layer that produces *change decisions with metric
+contracts*; the other two stay cheap and deterministic. Known debt: three
+weekly artifacts overlap at the raw-count layer; if that hurts, fold the audit
+report in as a `session intel` source rather than minting a fourth digest.
 
 ## Cadence
 
@@ -49,7 +68,8 @@ the diff meaningful regardless of spacing.
 ## Invariants
 
 - Propose-don't-dispose at every joint: the audit writes reports, triage writes
-  stdout, only a human writes the board.
+  stdout, only a human writes the board (ADR-0034 decision 2/5, same rule
+  SPEC-195 enforces for `learn propose`).
 - Claims never exceed evidence; a recommendation without a metric contract is
   not triage-able and should be treated as prose, not a proposal.
 - The loop measures itself: hook-block counts, error decomposition, and
