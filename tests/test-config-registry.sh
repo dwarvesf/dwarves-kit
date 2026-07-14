@@ -160,11 +160,12 @@ echo "== SPEC-200 I2: no new CC_*-prefixed env vars =="
 # the host's spelling. The ban is on kit-OWNED names, not on names we do not control.
 CC_ALLOWED='SKILL_CURATOR_|CC_BACKLOG_STAGING|CC_BACKLOG_BACKLOG|CC_BACKLOG_BACKLOG_FIX|CC_PLUGINS_DIR'
 cc_orphans() {  # cc_orphans <dir...> -- CC_* env reads in CODE that are not grandfathered
-  # -I (not -h: in rg, -h is --help, and a help dump piped onward is a VACUOUS pass).
-  # Docs/manifests are excluded: a prose mention is not a reader.
-  rg -o -I -N -g '!*.md' -g '!*.toml' \
+  # POSIX grep only: CI runners have no ripgrep (the first cut used `rg` and, when it was
+  # absent, produced NO output -> a VACUOUS PASS that only the negative control caught).
+  # Docs/manifests excluded: a prose mention is not a reader.
+  grep -rhoE --exclude='*.md' --exclude='*.toml' \
     '\$\{?CC_[A-Z_]+|os\.environ\.get\("CC_[A-Z_]+"|getenv\("CC_[A-Z_]+"' "$@" 2>/dev/null \
-    | rg -o 'CC_[A-Z_]+' | sort -u | rg -v "^($CC_ALLOWED)" || true
+    | grep -oE 'CC_[A-Z_]+' | sort -u | grep -vE "^($CC_ALLOWED)" || true
 }
 ORPHANS="$(cc_orphans lib hooks bin)"
 if [ -z "$ORPHANS" ]; then RC=0; else RC=1; fi
