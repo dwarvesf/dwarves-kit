@@ -166,6 +166,63 @@ Who calls whom. An arrow is a real invocation (shell-out, source, or import).
 
 ---
 
+---
+
+## 4. The classify path: one task in, four routing decisions out
+
+`classify` is the kit's router. It is four independent classifiers, not one: each answers a
+different question and each has a different consumer. Nothing here decides anything by itself;
+every output feeds a gate, a lens, or a worker slot.
+
+```
+                                       ┌────────────────────────────────────────────────┐
+  a task description  ─────────────►   │            lib/classify/                       │
+  a changed-file set  ─────────────►   │                                                │
+                                       └───┬──────────┬──────────┬──────────┬───────────┘
+                                           │          │          │          │
+                     ┌─────────────────────┘          │          │          └──────────────┐
+                     │                                │          │                         │
+                     ▼                                ▼          ▼                         ▼
+              lane-classify                    role-classify   task-type-classify   significance-classify
+              (risk)                           (domain)        (work type)          (understanding debt)
+                     │                                │          │                         │
+       tiny|normal|full|bug|backfill      security|db-migration| incident|learning|       tap|wave|
+                     │                    frontend|performance| planning|operate|eval|    not-significant
+                     │                    data-etl|infra|api|   research|doc|migration|            │
+                     │                    generic              reconcile|data-tool|                │
+                     │                                │          spec-feature                      │
+                     ▼                                │              │                             ▼
+        ┌────────────────────────┐                    │              │                    quiz-gate ★ tap
+        │  gate-ledger required  │       ┌────────────┴───┐          ▼                    (engage/defer/wave)
+        │  <lane>                │       │                │   proof-gate contract         + learn debt row
+        │  reads the lane x      │       ▼                ▼   (docs/verification/               │
+        │  phase matrix straight │  review-team      execute        task-types.md:              ▼
+        │  out of WORKFLOW.md    │  domain LENS      WORKER slot     which artifact this    weekend-batch
+        │  (one source, no copy) │  (api/frontend/   (agent-for:     work-type owes)        paydown
+        └───────────┬────────────┘   infra/perf-     data-etl-worker,
+                    │                 reviewer)       db-migration-worker;
+                    ▼                                 reviewer domains
+        the gates the ship-gate hook                  deliberately return
+        will REFUSE to push without                   EMPTY: a read-only lens
+                                                      never becomes a worker)
+```
+
+**Why the reviewer/worker split matters** (SPEC-111): `role-classify agent-for` returns a name
+only for the two WRITE domains. Ask it for `security` and it returns nothing, on purpose: a
+security lens is read-only and must never be handed a build slot. The same classifier feeds
+both sides; the asymmetry is enforced in `agent_for()`, not in the caller's discipline.
+
+**A fifth verb, `route-suggest`, is advisory-only by design.** It reads the ablation ledger and
+names the cheapest model tier that passed at parity, and it ABSTAINS when the data is too thin
+(which is its current state: the committed proof run is haiku-only, n=1). No command or hook
+calls it, and that is correct: it suggests to a human, it never routes. Reach it with
+`classify route-suggest <ledger.tsv> <task>`.
+
+**The lens map itself** (which lens fills which V-model row, and which command dispatches it)
+lives in `docs/WORKFLOW.md` "The V-model lens", not here. Two homes for one table is how the
+README's dispatch column drifted; C9 of the kit contract now lints every "dispatched by /X"
+claim against the command that supposedly does it.
+
 ## Reading order
 
 - New to the kit: `README.md` (the five legs) -> `docs/WORKFLOW.md` (how a run moves) -> this
