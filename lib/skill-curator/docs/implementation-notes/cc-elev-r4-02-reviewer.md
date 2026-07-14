@@ -1,4 +1,4 @@
-# Implementation notes: cc-self-improve Phase A reviewer (cc-elevation-r4 sub-goal 02)
+# Implementation notes: skill-curator Phase A reviewer (cc-elevation-r4 sub-goal 02)
 
 Delta from SPEC-103 (TASK-001..005) + goal `02-skill-reviewer.md`. Only what the spec does NOT pin.
 

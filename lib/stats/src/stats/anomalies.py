@@ -10,7 +10,7 @@ Two hard contracts:
    ledger file. Detection is pure read: `detect()` writes nothing.
 
 2. PROPOSE, NEVER AUTO-FILE. When an anomaly fires, `stage_proposals` appends a `## [staged]`
-   block to the cc-backlog STAGING BUFFER (`_meta/backlog-staging.md`, env `CC_BACKLOG_STAGING`)
+   block to the STAGING BUFFER (`_meta/backlog-staging.md`, env `BACKLOG_STAGE_STAGING`)
    in the exact format `tools/cc-backlog` writes and `board promote` consumes. It opens the board
    `BACKLOG.md` READ-ONLY (for dedup) and NEVER writes it. The operator promotes via the existing
    `board promote` human gate (ex `add-backlog`, ADR-0034). This tool has no path to a board row.
@@ -630,7 +630,7 @@ def _ops_toolkit_root() -> str | None:
 def _staging_env(canonical: str, legacy: str) -> str | None:
     """Read the canonical env name, falling back to the pre-SPEC-200 `CC_*` name with
     a one-line deprecation on stderr. The kit's naming invariant bans host-agent
-    prefixes (docs/verification/kit-foldin-hooks.md renamed CC_BACKLOG_* ->
+    prefixes (docs/verification/kit-foldin-hooks.md renamed the legacy backlog vars to
     BACKLOG_STAGE_* once already); stats entered the kit after that sweep and kept the
     banned name, so board/learn/hooks/session-audit and stats addressed the SAME two
     files under different env names. Canonical wins; the alias keeps existing setups

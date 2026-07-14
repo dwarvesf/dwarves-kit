@@ -73,9 +73,20 @@ QUEUE_BOARD_CMD="${QUEUE_BOARD_CMD:-board}"
 # Before this, it defaulted straight into ~/.claude/dwarves-kit/logs, the exact path a plugin
 # reinstall wipes and that SPEC-097 exists to escape: the queue's history was the one telemetry
 # corpus not protected by it.
+# The resolver soft-`return 1`s when lib/config/kit-config.sh is missing (a degraded or partial
+# checkout), leaving kit_resolve_log_dir UNDEFINED. queue.sh has no `set -e`, so an unguarded
+# call would substitute empty and put the journal at `/queue-journal.tsv`: a silent footgun in
+# the one launcher that runs unattended overnight. Fail loudly instead (review finding, advisor).
 # shellcheck source=lib/telemetry/kit-log-dir.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../telemetry" && pwd)/kit-log-dir.sh"
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../telemetry" && pwd)/kit-log-dir.sh" || true
+if ! declare -f kit_resolve_log_dir >/dev/null 2>&1; then
+  echo "queue: kit-log-dir.sh did not load (lib/config/kit-config.sh missing?); refusing to guess a journal path" >&2
+  exit 1
+fi
 QUEUE_JOURNAL="${QUEUE_JOURNAL:-$(kit_resolve_log_dir)/queue-journal.tsv}"
+case "$QUEUE_JOURNAL" in /queue-journal.tsv|queue-journal.tsv)
+  echo "queue: refusing a filesystem-root journal path ($QUEUE_JOURNAL)" >&2; exit 1 ;;
+esac
 # Defense-in-depth path confinement (review finding, CRITICAL #1): sub-goal 04's board emit is
 # SUPPOSED to confine board-sourced pointers to these globs before ever emitting a row, but this
 # launcher does not get to assume an upstream tool has no bugs when the destination is an

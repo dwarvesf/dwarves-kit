@@ -6,7 +6,7 @@ adds: a background reviewer that **drafts a reusable SKILL.md** from a session, 
 and a **curator** that consolidates + archives (never deletes). Same posture throughout:
 read-only, propose-and-stage, background, non-blocking.
 
-Master spec: `docs/specs/SPEC-103-cc-self-improve.md` (VALIDATED, historical , written under the
+Master spec: `docs/specs/SPEC-103-skill-curator.md` (VALIDATED, historical , written under the
 tool's original name). Suite parity was asserted at the originating cc-elevation-r4 mega-goal.
 
 > Daily use: [MANUAL.md](./MANUAL.md). Diagrams + trust boundary: [docs/architecture.md](./docs/architecture.md).

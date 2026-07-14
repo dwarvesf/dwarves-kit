@@ -147,37 +147,10 @@ assert_eq "get ledger.location resolves via the first (canonical KIT_LEDGER_DIR)
   "$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_LEDGER_DIR=/tie-break-proof bash "$CONFIG_BIN" get ledger.location)" \
   '/tie-break-proof'
 
-# ---- SPEC-200 I2: the host-agent env-prefix ban, enforced mechanically ------------------------
-# The kit's naming invariant (function-named, never host-agent-prefixed) was enforced ONCE by
-# hand (docs/verification/kit-foldin-hooks.md renamed CC_BACKLOG_* -> BACKLOG_STAGE_*), then a
-# later migration reintroduced the banned prefix in lib/stats and SKILL_CURATOR_* survived untouched.
-# Renamed-once-not-everywhere is a lint's job, not a reviewer's. Legacy names stay readable as
-# deprecated aliases; what this forbids is a NEW one.
-echo ""
-echo "== SPEC-200 I2: no new CC_*-prefixed env vars =="
-# Grandfathered: SKILL_CURATOR_* + CC_BACKLOG_* are pre-SPEC-200 kit names kept as deprecated aliases.
-# CC_PLUGINS_DIR is HOST-provided (Claude Code sets it); the kit only reads it, so it must keep
-# the host's spelling. The ban is on kit-OWNED names, not on names we do not control.
-CC_ALLOWED='SKILL_CURATOR_|CC_BACKLOG_STAGING|CC_BACKLOG_BACKLOG|CC_BACKLOG_BACKLOG_FIX|CC_PLUGINS_DIR'
-cc_orphans() {  # cc_orphans <dir...> -- CC_* env reads in CODE that are not grandfathered
-  # POSIX grep only: CI runners have no ripgrep (the first cut used `rg` and, when it was
-  # absent, produced NO output -> a VACUOUS PASS that only the negative control caught).
-  # Docs/manifests excluded: a prose mention is not a reader.
-  grep -rhoE --exclude='*.md' --exclude='*.toml' \
-    '\$\{?CC_[A-Z_]+|os\.environ\.get\("CC_[A-Z_]+"|getenv\("CC_[A-Z_]+"' "$@" 2>/dev/null \
-    | grep -oE 'CC_[A-Z_]+' | sort -u | grep -vE "^($CC_ALLOWED)" || true
-}
-ORPHANS="$(cc_orphans lib hooks bin)"
-if [ -z "$ORPHANS" ]; then RC=0; else RC=1; fi
-assert "no un-grandfathered CC_* env var in lib/hooks/bin" $RC "(found: $(echo "$ORPHANS" | tr '\n' ' '))"
-
-# NEGATIVE CONTROL: plant one and prove the sweep catches it (an always-green lint is worse
-# than none).
-PLANT="$FIXDIR/plant"; mkdir -p "$PLANT"
-printf 'x = os.environ.get("CC_NEWLY_BANNED")\n' > "$PLANT/planted.py"
-if [ -n "$(cc_orphans "$PLANT")" ]; then RC=0; else RC=1; fi
-assert "NEGATIVE CONTROL: a planted CC_NEWLY_BANNED IS flagged" $RC
-rm -rf "$PLANT"
+# SPEC-200 I2 (the CC_* prefix ban) is enforced ONCE, in tests/test-kit-contract.sh (rule C1).
+# A second copy lived here briefly and its allowlist immediately diverged from C1's: two
+# lints doing one job, silently disagreeing, is the fragmentation SPEC-200 exists to stop
+# (advisor finding 4). One rule, one enforcer.
 
 echo ""
 echo "=== $PASS/$TOTAL passed ==="

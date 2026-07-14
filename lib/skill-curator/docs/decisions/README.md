@@ -1,4 +1,4 @@
-# ADRs , cc-self-improve
+# ADRs , skill-curator
 
 Why the load-bearing choices were made. Each ADR is a past decision where alternatives were weighed
 and one was picked for a reason. The behaviour contract lives in `../specs/SPEC-103-...`; these are

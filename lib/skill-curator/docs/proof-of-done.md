@@ -1,6 +1,6 @@
-# Proof of Done: cc-self-improve (multi-feature index)
+# Proof of Done: skill-curator (multi-feature index)
 
-Per SPEC-016 this is the canonical proof for the tool, indexing per-phase features. cc-self-improve
+Per SPEC-016 this is the canonical proof for the tool, indexing per-phase features. skill-curator
 is built in three phases (cc-elevation-r4 sub-goals 02/03/04); each phase appends its feature block.
 
 | Phase / feature | Sub-goal | Status |
@@ -102,7 +102,7 @@ $ cc-improve status            # against a seeded ledger
 ### Reproduce
 
 ```bash
-cd tools/cc-self-improve
+cd tools/skill-curator
 bash tests/test-transcript-parse.sh && bash tests/test-reviewer.sh && bash tests/test-hook-async.sh
 # dry-run the wrapper with a mock envelope (no live model):
 TMP=$(mktemp -d); export SKILL_CURATOR_STATE_DIR=$TMP/s SKILL_CURATOR_PROPOSALS_DIR=$TMP/p
@@ -189,12 +189,12 @@ $ bash tests/test-async.sh | sed -n '1,2p'
 - **No reviewer recursion (B8)**: a reviewer mock that re-invokes the hook increments its counter
   exactly once , the nested hook no-ops because `CLAUDE_REVIEWING` is set for the model call.
 - **Install surgical (B9/B10)**: a pre-existing unrelated hook survives install + uninstall; a second
-  install adds zero duplicate entries; uninstall removes only `cc-self-improve` commands.
+  install adds zero duplicate entries; uninstall removes only `skill-curator` commands.
 
 ### Reproduce (Feature B)
 
 ```bash
-cd tools/cc-self-improve
+cd tools/skill-curator
 for t in test-promote test-staging-gate test-surface test-async test-reentrancy test-install; do bash tests/$t.sh; done
 # install dry-run against a throwaway settings.json (never the real one):
 TMP=$(mktemp -d); SKILL_CURATOR_SETTINGS=$TMP/settings.json SKILL_CURATOR_STATE_DIR=$TMP/state bash deploy/install.sh
@@ -217,7 +217,7 @@ reversible and tested:
 Recorded rollback run (against a throwaway settings.json, never the real one):
 
 ```
-Command: SKILL_CURATOR_SETTINGS=$T bash deploy/install.sh   # 3 cc-self-improve entries added
+Command: SKILL_CURATOR_SETTINGS=$T bash deploy/install.sh   # 3 skill-curator entries added
 Command: SKILL_CURATOR_SETTINGS=$T bash deploy/uninstall.sh # entries removed, unrelated kept
 Exit: 0   (verified by tests/test-install.sh -> "test-install: all 6 passed")
 ```
@@ -318,14 +318,14 @@ Rollback: launchctl bootout gui/$(id -u)/mini.cc-curator ; rm the plist copy (th
 
 - **vps-mon `monitored` confirmation: [UNAVAILABLE: requires live Mini deploy].** The job is
   auto-discovered by the Mini launchd collector once installed; the curator emits
-  `~/.claude/cc-self-improve/curator.heartbeat` each run for the scheduled-job liveness signal. The
+  `~/.claude/skill-curator/curator.heartbeat` each run for the scheduled-job liveness signal. The
   live `monitored` check is in `deploy/macos/cc-curator-runbook.md` for Han to run at deploy. Held
   for his click (this is the `gate` sub-goal).
 
 ### Reproduce (Feature C)
 
 ```bash
-cd tools/cc-self-improve
+cd tools/skill-curator
 bash tests/test-curate.sh
 plutil -lint deploy/macos/mini.cc-curator.plist
 ```
@@ -388,7 +388,7 @@ proves the gate ran first. D7: `has_signal_markers("")` is also false, so the ab
 ### Reproduce (Feature D)
 
 ```bash
-cd tools/cc-self-improve
+cd tools/skill-curator
 bash tests/test-signal-gate.sh
 shellcheck -x lib/reviewer-run.sh tests/test-signal-gate.sh
 ```

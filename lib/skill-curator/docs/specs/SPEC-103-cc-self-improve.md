@@ -1,4 +1,4 @@
-# Spec: cc-self-improve (skill half of the Hermes self-improvement loop)
+# Spec: skill-curator (skill half of the Hermes self-improvement loop)
 Generated: 2026-06-19
 Status: VALIDATED
 
@@ -16,7 +16,7 @@ half** and the **curator**:
   (the "one genuinely missing piece" in `research/2026-06-19-hermes-self-improvement-loop.md`).
 - No unified surfacing of "what the loop staged this week" or its cost.
 
-cc-self-improve is the skill half. **Suite goal: cc-harvest (memory) + cc-self-improve
+skill-curator is the skill half. **Suite goal: cc-harvest (memory) + skill-curator
 (skill + curator) + unified surfacing = Hermes self-improvement-loop parity.**
 
 ## Relationship to the cc-elevation suite (read first)
@@ -27,11 +27,11 @@ cc-self-improve is the skill half. **Suite goal: cc-harvest (memory) + cc-self-i
 | Memory cadence parity (per-turn, like Hermes memory nudge) | **cc-harvest enhancement** (optional Stop-counter trigger) | sibling goal in the mega-goal, NOT this spec |
 | Sequence/digest proposals | cc-intel | shipped |
 | Hook latency / tool-usage metering | cc-observe | shipped |
-| **Skill drafting + promote gate** | **cc-self-improve** (this spec) | new |
-| **Skill-library curator** | **cc-self-improve** (this spec) | new |
-| **Suite-wide cost ledger + SessionStart surfacing** | **cc-self-improve** (this spec) | new |
+| **Skill drafting + promote gate** | **skill-curator** (this spec) | new |
+| **Skill-library curator** | **skill-curator** (this spec) | new |
+| **Suite-wide cost ledger + SessionStart surfacing** | **skill-curator** (this spec) | new |
 
-cc-self-improve does NOT re-implement memory capture. It registers its own PreCompact/SessionEnd
+skill-curator does NOT re-implement memory capture. It registers its own PreCompact/SessionEnd
 hook entries (same events as cc-harvest, separate entry) and reads the same transcript.
 
 ## Solution
@@ -46,7 +46,7 @@ hook entries (same events as cc-harvest, separate entry) and reads the same tran
    merged; skill authoring + curation is a different concern and would risk regressing it.
 
 ### Chosen approach + why
-cc-self-improve = skill-draft reviewer + promote gate + skill-library curator + suite-wide
+skill-curator = skill-draft reviewer + promote gate + skill-library curator + suite-wide
 cost/surfacing. Trigger = PreCompact/SessionEnd (per-session), which maps faithfully to Hermes's
 skill nudge (per substantial-work, not per literal turn). Autonomy = **propose-and-stage**.
 
@@ -67,7 +67,7 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
 
 ### Architecture
 ```
- PreCompact / SessionEnd  ──▶  cc-self-improve skill-review hook (async)
+ PreCompact / SessionEnd  ──▶  skill-curator skill-review hook (async)
    (own hook entry, same events as cc-harvest)  │ setsid/nohup bash lib/reviewer-spawn.sh <payload> & ; hook returns now
                                                 ▼
    reviewer-run.sh (TRUSTED bash):
@@ -109,7 +109,7 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
 
 ### Data model (runtime state, NOT in repo)
 ```
-~/.claude/cc-self-improve/
+~/.claude/skill-curator/
   config.toml                  # rendered on install
   state/reviewer.lock.d/       # single-flight (atomic mkdir lock; macOS has no flock(1), see ADR-0004)
   ledger.jsonl                 # suite cost ledger
@@ -188,7 +188,7 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
 - [ ] `cc-improve curate` prints a consolidation report and changes nothing without `--apply`.
       (Today: no curator exists.)
 - [ ] SessionStart shows "N memory, M skill drafts, $X/wk". (Today: nothing surfaced.)
-- [ ] `cat ~/.claude/cc-self-improve/ledger.jsonl` shows a `total_cost_usd` line per run.
+- [ ] `cat ~/.claude/skill-curator/ledger.jsonl` shows a `total_cost_usd` line per run.
 - [ ] The skill-review hook returns < 200 ms with a `sleep 30` reviewer (negative control green).
 
 ## Acceptance Criteria (global)
@@ -209,10 +209,10 @@ all. This is the deliberate divergence from Hermes `guard_agent_created:false`, 
 
 ## Verification
 ```
-bash tools/cc-self-improve/tests/test-transcript-parse.sh \
-  && bash tools/cc-self-improve/tests/test-async.sh \
-  && bash tools/cc-self-improve/tests/test-reentrancy.sh \
-  && bash tools/cc-self-improve/tests/test-staging-gate.sh
+bash tools/skill-curator/tests/test-transcript-parse.sh \
+  && bash tools/skill-curator/tests/test-async.sh \
+  && bash tools/skill-curator/tests/test-reentrancy.sh \
+  && bash tools/skill-curator/tests/test-staging-gate.sh
 ```
 Plus a recorded live run in `docs/proof-of-done.md`: a real session producing a skill draft +
 a ledger line, and `cc-improve curate` producing a report.
@@ -242,7 +242,7 @@ a ledger line, and `cc-improve curate` producing a report.
 | Secret in transcript copied into a draft | a token-shaped string in a proposal file | reviewer prompt ban + promote secret-scan; proposals gitignored/unsynced |
 | settings.json corrupted by install | Claude Code fails to start | install backs up first; uninstall/restore from backup |
 | Curator data loss | a skill file missing after curate | `git mv` only, never `rm`; `cc-improve restore`; `_archive/` |
-| Duplicate memory staging vs cc-harvest | two ledger/buffer entries for one learning | cc-self-improve does NOT stage memory; review-time check + AC |
+| Duplicate memory staging vs cc-harvest | two ledger/buffer entries for one learning | skill-curator does NOT stage memory; review-time check + AC |
 
 ## Out of Scope
 - **Memory capture** (owned by cc-harvest). A per-turn *memory* cadence is a cc-harvest enhancement,
@@ -252,7 +252,7 @@ a ledger line, and `cc-improve curate` producing a report.
 - Reimplementing `writing-skills`, promote delegates to it.
 
 ## Touches
-- tools/cc-self-improve/**
+- tools/skill-curator/**
 
 ## Decision Log
 - DEC-001: **Bash for everything**, not Go (hooks are shell; reviewer/curator are thin `claude -p`
@@ -262,11 +262,11 @@ a ledger line, and `cc-improve curate` producing a report.
 - DEC-004: **Repo-wide spec numbering (SPEC-103)** via dwarves-kit `spec-next.sh`.
 - DEC-005: **Single-flight lock** bounds cost + rate-limit exposure.
 - DEC-006: **Reframed 2026-06-19 after discovering cc-harvest.** Dropped the per-turn memory
-  reviewer (duplicate of shipped cc-harvest); cc-self-improve is now the SKILL half + curator.
+  reviewer (duplicate of shipped cc-harvest); skill-curator is now the SKILL half + curator.
   Trigger reuses cc-harvest's PreCompact/SessionEnd. Maps Hermes's dual cadence faithfully and is
   *more* faithful than the original "per-turn for everything."
 - DEC-007: **Hermes parity is a suite property** (mega-goal-level AC), satisfied by cc-harvest +
-  cc-self-improve + the cc-harvest per-turn sibling goal together; this spec's own AC is the
+  skill-curator + the cc-harvest per-turn sibling goal together; this spec's own AC is the
   self-checkable skill-loop.
 - DEC-008: **Model runs `--allowedTools ""` (no filesystem write); the trusted bash wrapper does all
   writes** (spec-validate CRITICAL). Closes prompt-injection-to-arbitrary-write and makes the

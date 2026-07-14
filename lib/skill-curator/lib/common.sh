@@ -41,10 +41,22 @@ SKILL_CURATOR_LOG="$SKILL_CURATOR_STATE_DIR/skill-curator.log"
 SKILL_CURATOR_CONFIG="$(_expand "${SKILL_CURATOR_CONFIG:-$SKILL_CURATOR_STATE_DIR/config.toml}")"
 
 # cfg KEY DEFAULT : env SKILL_CURATOR_<KEY> wins, then a `key = value` line in config.toml, then DEFAULT.
+#
+# The deprecation alias lives HERE, in the resolver, not in a hand-list beside it. The first cut
+# aliased only the 9 direct-path vars; cfg() DERIVES its name from the key, so the 8 cfg-only
+# keys (enabled, model, curator_model, max_turns, transcript_k, auto_promote, signal_gate,
+# signal_markers) silently lost their alias. `CC_SI_ENABLED=false` -- an operator who had turned
+# the curator OFF -- resolved back to `true` and quietly re-enabled it, with no warning. A
+# hand-list next to a deriving resolver is a bug waiting for the next key (review finding).
 cfg() {
-  local key="$1" def="${2:-}" envvar val
+  local key="$1" def="${2:-}" envvar legacy val
   envvar="SKILL_CURATOR_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
+  legacy="CC_SI_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
   if [ -n "${!envvar:-}" ]; then printf '%s' "${!envvar}"; return; fi
+  if [ -n "${!legacy:-}" ]; then
+    printf 'skill-curator: %s is deprecated, use %s (SPEC-200)\n' "$legacy" "$envvar" >&2
+    printf '%s' "${!legacy}"; return
+  fi
   if [ -f "$SKILL_CURATOR_CONFIG" ]; then
     val="$(sed -n "s/^[[:space:]]*${key}[[:space:]]*=[[:space:]]*//p" "$SKILL_CURATOR_CONFIG" | head -1 \
             | sed 's/[[:space:]]*#.*$//; s/^"//; s/"$//; s/^'\''//; s/'\''$//')"

@@ -1,4 +1,4 @@
-# cc-self-improve , spec index
+# skill-curator , spec index
 
 The skill half of the Hermes self-improvement loop for Claude Code. This file is the navigator; the
 behaviour contract lives in `docs/specs/`, the why in `docs/decisions/`.
@@ -11,7 +11,7 @@ behaviour contract lives in `docs/specs/`, the why in `docs/decisions/`.
 | [MANUAL.md](./MANUAL.md) | Daily-use guide (CLI surfaces, config knobs, operator flow) |
 | [RUNBOOK.md](./RUNBOOK.md) | Incident triage (cost, runaway, stuck lock, settings.json, promote refusals, curator) |
 | [docs/architecture.md](./docs/architecture.md) | Topology, trust boundary, data flow, component + state map |
-| [docs/specs/SPEC-103-cc-self-improve.md](./docs/specs/SPEC-103-cc-self-improve.md) | The umbrella behaviour contract (Phases A/B/C, DEC-001..008) |
+| [docs/specs/SPEC-103-skill-curator.md](./docs/specs/SPEC-103-skill-curator.md) | The umbrella behaviour contract (Phases A/B/C, DEC-001..008) |
 | [docs/specs/CONTEXT.md](./docs/specs/CONTEXT.md) | Implementation context (stack, conventions, key files) |
 | [docs/hermes-prompt-patterns.md](./docs/hermes-prompt-patterns.md) | The Hermes prompts the reviewer/curator prompts were built from |
 | [docs/proof-of-done.md](./docs/proof-of-done.md) | The proof-of-done index (Features A/B/C, run-tables + negative controls) |

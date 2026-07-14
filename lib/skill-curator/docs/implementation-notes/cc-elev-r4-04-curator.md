@@ -1,4 +1,4 @@
-# Implementation notes: cc-self-improve Phase C curator (cc-elevation-r4 sub-goal 04)
+# Implementation notes: skill-curator Phase C curator (cc-elevation-r4 sub-goal 04)
 
 Delta from SPEC-103 (TASK-011..014) + goal `04-skill-curator.md`. Only what the spec/goal does NOT pin.
 

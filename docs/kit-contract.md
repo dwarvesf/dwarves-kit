@@ -20,6 +20,24 @@ lint and this page ever disagree, the lint wins and this page is the bug.
 | **C6 Durable root** | Anything that persists resolves its path through `lib/telemetry/kit-log-dir.sh` (SPEC-097). Never hardcode `~/.claude/dwarves-kit/logs`. | `queue.sh` defaulted its journal into the exact path a plugin reinstall wipes: the one telemetry corpus SPEC-097 did not protect. |
 | **C7 Portable tests** | No test invokes a tool CI lacks (`rg`, `fd`, `sd`, `bat`...). Use POSIX `grep`/`find`. | The C1 lint's first cut used `rg`. On CI, `rg` is absent, the sweep produced no output, and the emptiness-assert **passed vacuously**. Only its negative control caught it. |
 
+## What the lint does NOT check (do not mistake green for safe)
+
+Stated plainly, because a contract that over-claims is worse than one that admits its edges:
+
+- **C1** checks env-var *references* and *executable names*. It does not check TOML keys,
+  function names, directory names, or a name inside a string that is later `eval`'d.
+- **C2** checks that a tool's basename is *mentioned* in an operator surface. A comment
+  mentioning it satisfies the grep as well as a real dispatch does.
+- **C3/C4** check that artifacts *exist*. They cannot tell a real README from a stub, and
+  known pre-existing gaps live in `tests/kit-contract-known-gaps.txt` (visible IOUs, and the
+  lint fails on any gap NOT listed there, so no new debt can land).
+- **C5** catches the renderer bypass and three board-append shapes; a `sed -i` insertion or a
+  path assembled at runtime evades the grep. The real guarantee is the shared renderer.
+- **C6** is a literal-path match; string concatenation evades it.
+
+This is why the lint is only half the gate. The other half is the review lenses (below), and
+they are not optional for a new module.
+
 ## The rule behind the rules: every absence-assertion needs a planted violation
 
 Five of the seven rules assert that something is *absent* (no `CC_*`, no bespoke block, no
@@ -27,8 +45,18 @@ hardcoded path, no non-portable tool). An absence-assertion that cannot fail is 
 no test: it reports safety it never checked. So `tests/test-kit-contract.sh` plants a
 violation for each and asserts it is caught.
 
-This is not theory. In one afternoon it caught two vacuous passes (the `rg`-on-CI bug, and
-a lint that flagged its own fixture). Both would have shipped as green.
+And the planted violation must arrive in a shape the rule's author did NOT have in mind. A
+negative control that plants the violation in the exact syntactic form the regex was written
+against proves only that the regex matches itself.
+
+This is not theory. In one afternoon the discipline caught, in this order: the `rg`-on-CI
+vacuous pass; a lint that flagged its own fixture; C1 blind to `os.environ.get('X')` in single
+quotes, to `os.environ["X"]`, and to a bare `export X=`; C6 blind to every extensionless
+executable (which is the kit's own house style, so it was blind to most of the kit); C7 blind
+to `rg "pat" file` with no flag; C5 fooled by a bespoke writer that name-dropped the renderer
+in a comment; and a module-scope definition under which C3/C4 examined 3 of the kit's 12
+modules while reporting green. Every one of those was found by a review lens re-planting the
+violation differently, not by the suite itself.
 
 ## Adding a new module, tool, or skill
 

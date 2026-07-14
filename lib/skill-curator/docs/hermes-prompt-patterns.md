@@ -1,4 +1,4 @@
-# Hermes prompt patterns to absorb (cc-self-improve)
+# Hermes prompt patterns to absorb (skill-curator)
 
 Distilled from the live Hermes engine (`~/dev/hermes-agent`, 2026-06-19):
 `agent/background_review.py` (`_MEMORY_REVIEW_PROMPT`, `_SKILL_REVIEW_PROMPT`,

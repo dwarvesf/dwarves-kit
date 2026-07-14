@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# skill-improve: cc-self-improve CLI. BTM-friendly (this file is ProgramArguments[0], no .sh).
+# skill-improve: skill-curator CLI. BTM-friendly (this file is ProgramArguments[0], no .sh).
 #   skill-improve status            show staged drafts + 7-day loop spend from the ledger
 #   skill-improve curate [--apply]  consolidate the skill library; propose-only unless --apply
 #   skill-improve restore <name>    restore a skill archived by the curator (git mv back)
@@ -11,7 +11,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/../lib/curate.sh"
 
 cmd_status() {
-  echo "cc-self-improve status"
+  echo "skill-curator status"
   echo "  state dir:     $SKILL_CURATOR_STATE_DIR"
   echo "  proposals dir: $SKILL_CURATOR_PROPOSALS_DIR"
 

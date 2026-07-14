@@ -94,17 +94,27 @@ def render_block(candidate):
     Required: title. Optional: intent, approach, u, f, home, source. Returns None if the
     title is empty (a titleless block is unparseable and never emitted).
     """
-    title = str(candidate.get("title", "")).strip()
+    # Collapse ALL whitespace (newlines included) in every rendered field. A block is a
+    # line-oriented grammar: an embedded "\n\n## [staged] ..." in a field forges a SECOND
+    # proposal that parse_blocks() reads as real. The fields now carry LLM-authored text
+    # derived from transcripts (session-audit), i.e. attacker-influenceable content, and
+    # SPEC-200 I1 routes ever more of it through this one renderer. Sanitize at the ONE
+    # place every writer shares (review finding).
+    def _flat(v, fallback=""):
+        s = re.sub(r"\s+", " ", str(v)).strip()
+        return s or fallback
+
+    title = _flat(candidate.get("title", ""))
     if not title:
         return None
-    intent = str(candidate.get("intent", "")).strip() or "(no intent extracted)"
-    approach = str(candidate.get("approach", "")).strip() or "(no approach extracted)"
+    intent = _flat(candidate.get("intent", ""), "(no intent extracted)")
+    approach = _flat(candidate.get("approach", ""), "(no approach extracted)")
     u = candidate.get("u") if candidate.get("u") in ("hi", "mid", "lo") else "lo"
     f = candidate.get("f") if candidate.get("f") in ("hi", "mid", "lo") else "mid"
-    home = str(candidate.get("home", "")).strip()
+    home = _flat(candidate.get("home", ""))
     # Source carries the origin + date; propose folds the lens/figure/rids citation onto
     # this ONE line so it rides into the board Notes column on promote.
-    source = str(candidate.get("source", "")).strip() or "unknown"
+    source = _flat(candidate.get("source", ""), "unknown")
     home_line = f"- Home: {home}\n" if home else ""
     return (
         f"## [staged] {title}\n"

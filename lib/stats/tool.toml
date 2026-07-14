@@ -14,7 +14,7 @@ created = 2026-07-03
 # Consumer repos that use this tool's output. ops-toolkit is now a CONSUMER of the kit's
 # copy (its own former copy retires in a paired sub-goal, 05R): the render skill and the
 # `ledger anomalies --propose` feedback loop are agent-driven, on-demand, and point at
-# ops-toolkit-specific sources (CC_BACKLOG_STAGING/CC_BACKLOG_BACKLOG/OPS_TOOLKIT) only when
+# ops-toolkit-specific sources (BACKLOG_STAGE_STAGING/BACKLOG_STAGE_BACKLOG/OPS_TOOLKIT) only when
 # an operator sets them explicitly -- no default post-move (05K adapter-default split).
 consumers = ["ops-toolkit"]
 

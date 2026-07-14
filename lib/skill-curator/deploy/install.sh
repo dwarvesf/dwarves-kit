@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh: idempotent wiring of cc-self-improve into Claude Code settings.json.
+# install.sh: idempotent wiring of skill-curator into Claude Code settings.json.
 #   - skill-review hook on PreCompact + SessionEnd (async)
 #   - sessionstart-surface hook on SessionStart (async)
 # Backs up settings.json first; writes atomically; running twice adds NO duplicate entries.
