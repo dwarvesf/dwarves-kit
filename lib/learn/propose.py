@@ -401,6 +401,107 @@ def _citation_source(signal, date):
     return f'learn propose {date} | lens={signal["lens"]} figure="{figure}" rids={rids}'
 
 
+# `- [ ] change -- owner: x -- deadline: y`. Only UNCHECKED boxes: a `[x]` item is already done,
+# and staging it would propose work the retro says is finished. Split on ` -- ` rather than one
+# clever regex: a non-greedy group with optional trailing fields backtracks into swallowing the
+# whole line (it did, on the first cut), and a parser that silently keeps the metadata in the
+# title is worse than one that fails.
+_RETRO_ITEM = re.compile(r"^\s*[-*]\s*\[\s\]\s*(?P<body>.+?)\s*$")
+_RETRO_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def _split_retro_item(body):
+    """`change -- owner: han -- deadline: X` -> (change, owner)."""
+    parts = re.split(r"\s+--\s+|\s*,\s*(?=owner:|deadline:)", body)
+    change = parts[0].strip(" .")
+    owner = ""
+    for p in parts[1:]:
+        m = re.match(r"owner:\s*(.+)", p.strip(), re.I)
+        if m:
+            owner = m.group(1).strip()
+    return change, owner
+
+
+def parse_retro_actions(path):
+    """Action items out of a RETRO doc's `## Action items` section.
+
+    /kit:retro writes its outcomes as a checkbox list inside docs/retro/RETRO-<date>.md.
+    `board promote` reads ONLY the staging buffer, so those items could never be promoted:
+    a human had to retype one to act on it, and so nobody did. Same disease session-intel had
+    (SPEC-200 I1/T6). This is the deterministic reader; the retro doc keeps its checkboxes as
+    the READING surface, staging becomes the ACTING surface.
+
+    Deliberately NOT done in the /kit:retro prompt: that file is markdown an LLM reads, so
+    asking the model to also emit staging blocks is a promise it keeps only sometimes. A parser
+    either works or fails a test.
+    """
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    m = re.search(r"^##\s*Action items\s*$(.*?)(?=^##\s|\Z)", text, re.M | re.S)
+    if not m:
+        return []
+    d = _RETRO_DATE.search(os.path.basename(path)) or _RETRO_DATE.search(text)
+    date = d.group(1) if d else datetime.date.today().isoformat()
+    out = []
+    for line in m.group(1).splitlines():
+        hit = _RETRO_ITEM.match(line)
+        if not hit:
+            continue
+        change, owner = _split_retro_item(hit.group("body"))
+        # Template placeholders (`[concrete change]`, `owner: [person]`) are not action items.
+        if not change or change.startswith("[") or "concrete change" in change.lower():
+            continue
+        src = f"retro {date} | {os.path.basename(path)}"
+        if owner and not owner.startswith("["):
+            src += f" owner={owner}"
+        out.append({
+            "title": change,
+            "intent": "Action item a retro committed to; it lived only as a checkbox nobody could promote.",
+            "approach": change,
+            "u": "mid", "f": "mid",
+            "source": src,
+        })
+    return out
+
+
+def run_retro(retro_path, staging, backlog, dry_run):
+    """Stage a retro's action items. Deterministic: no LLM, no grounding pass, no refute.
+    The items were written by a human in a retro; the evidence IS the retro."""
+    cands = parse_retro_actions(retro_path)
+    dedup = sf.existing_keys(("staging", staging), ("board", backlog))
+    blocks, staged, skipped = [], [], []
+    for c in cands:
+        key = sf.norm(c["title"])
+        if not key or key in dedup:
+            skipped.append(c["title"])
+            continue
+        block = sf.render_block(c)
+        if not block:
+            continue
+        dedup.add(key)
+        blocks.append(block)
+        staged.append(c["title"])
+
+    if blocks and not dry_run:
+        header = "" if os.path.isfile(staging) else (
+            "# Backlog staging (auto, via learn propose)\n\n"
+            "Candidates auto-extracted from the ledger. Review + promote by hand "
+            "(`board promote`).\nGitignored: may name unfiled work. NEVER the source of truth.\n\n"
+        )
+        os.makedirs(os.path.dirname(staging) or ".", exist_ok=True)
+        with open(staging, "a", encoding="utf-8") as fh:
+            fh.write(header + "".join(blocks))
+
+    if dry_run:
+        sys.stdout.write("".join(blocks) or "learn propose --retro: nothing new to stage\n")
+        return 0
+    print(f"learn propose --retro: {len(cands)} action item{'s' if len(cands) != 1 else ''} read, "
+          f"{len(staged)} staged, {len(skipped)} duplicate -> "
+          f"{staging if blocks else '(nothing new)'}\n"
+          f"  review with: learn drain   promote with: board promote <n>")
+    return 0
+
+
 def run(days, megas, staging, backlog, dry_run, aggregate_file):
     date = datetime.date.today().isoformat()
     rid = _rid()
@@ -476,11 +577,18 @@ def main(argv):
     p.add_argument("--backlog", help="board file (default <repo>/_meta/BACKLOG.md)")
     p.add_argument("--dry-run", action="store_true", help="compute + print, write nothing")
     p.add_argument("--aggregate-file", help="load a precomputed aggregate JSON (test seam)")
+    p.add_argument("--retro", metavar="FILE",
+                   help="stage a RETRO doc's `## Action items` instead of the ledger window "
+                        "(deterministic: no LLM pass, the retro IS the evidence)")
     args = p.parse_args(argv)
+    staging = args.staging or _default_staging()
+    backlog = args.backlog or _default_backlog()
+    if args.retro:
+        # Same verb (SPEC-200 I4: `propose` = stage proposals); the flag names the SOURCE.
+        return run_retro(args.retro, staging, backlog, args.dry_run)
     return run(
         days=args.days, megas=args.megas,
-        staging=args.staging or _default_staging(),
-        backlog=args.backlog or _default_backlog(),
+        staging=staging, backlog=backlog,
         dry_run=args.dry_run, aggregate_file=args.aggregate_file,
     )
 
