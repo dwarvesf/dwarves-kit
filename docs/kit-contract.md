@@ -58,6 +58,27 @@ in a comment; and a module-scope definition under which C3/C4 examined 3 of the 
 modules while reporting green. Every one of those was found by a review lens re-planting the
 violation differently, not by the suite itself.
 
+## Fanning work out to parallel agents
+
+**One worktree per writer. No exceptions, and this one is not theoretical.**
+
+On 2026-07-15 three agents were dispatched into the SAME checkout to close three doc gaps in
+parallel. Git branches share a working tree, so within minutes: HEAD had been switched out from
+under two of them, one agent's commit landed on another's branch, the contract test flapped red
+from a half-built scaffold that was not its own, and `git .../index.lock` collisions appeared in
+the session's own telemetry. Both agents detected the collision and untangled it with plumbing
+(`commit-tree`, an atomic ref update) without destroying anything, but that recovery was luck
+plus care, not design.
+
+- Dispatch with `Agent(isolation: "worktree")`, or hand each agent an explicit `cwd` in a
+  worktree the lead created first. A subagent must never create its own.
+- Read-only fan-out (Explore, reviewers, research) needs no worktree: it writes nothing.
+- The lead merges, one branch at a time. Two writers, one index, is a corruption waiting for a
+  timing coincidence.
+
+If you catch yourself thinking "they are touching different files so it is fine": they are not
+touching different HEADs.
+
 ## Adding a new module, tool, or skill
 
 Work the list, in this order. Every step has a check you can run.

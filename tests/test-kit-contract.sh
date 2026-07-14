@@ -16,9 +16,18 @@
 #                (SPEC-097), never a hardcoded ~/.claude/dwarves-kit/logs.
 # C7  PORTABLE   no test reaches for a tool CI does not have (rg/fd/sd/jq...): a missing binary
 #                turns a lint into a VACUOUS PASS (this exact bug shipped, 2026-07-14).
+# C8  CI         every .github/workflows/*.yml is valid: an unquoted step name carrying ": "
+#                parses as a mapping and invalidates the WHOLE file, so every lint in it
+#                silently stops guarding anything (shipped red at 0s, 2026-07-14).
+# C9  DISPATCH   every "dispatched by /X" claim (agent frontmatter, README roster) is backed by
+#                a command that really dispatches it (4 were wrong, 2026-07-14).
+# C10 EXEC       every text executable declares its interpreter (shebang + exec bit): a wrong
+#                guess fails ugly (`bash <python-script>` died on a docstring, 2026-07-15).
 #
-# Every rule has a NEGATIVE CONTROL: a planted violation must be caught. A lint nobody can
-# see fail is a lint nobody should trust.
+# Every rule has a NEGATIVE CONTROL, and the planted violation must arrive in a shape the
+# rule's author did NOT have in mind: an NC that plants the exact form the regex was written
+# against proves only that the regex matches itself. Four rules were vacuous until re-planted
+# differently. A lint nobody can see fail is a lint nobody should trust.
 #
 # Run: bash tests/test-kit-contract.sh
 set -uo pipefail
