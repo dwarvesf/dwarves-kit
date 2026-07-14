@@ -64,6 +64,8 @@ flowchart LR
   GV([Govern]) -. gates every<br/>phase boundary .- EX
 ```
 
+This diagram is the legs. For how DATA actually moves through them (telemetry -> proposal -> board -> ship, the ledger write/read paths, and the module map of who calls whom), see [`docs/data-flow.md`](docs/data-flow.md).
+
 Legs are metadata, not directories: each module keeps its name and install unit, and declares a primary leg. The authoritative assignment (machine copy in [`lib/config/module-registry.md`](lib/config/module-registry.md), rendered by `config list`):
 
 | Leg | Modules / subsystems |

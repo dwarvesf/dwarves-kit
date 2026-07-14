@@ -23,3 +23,17 @@ lib/queue/docs/proof-of-done.md
 # not a tests/*.sh the contract can see. Both are real gaps, not lint artifacts.
 lib/prose-rag/docs/proof-of-done.md
 lib/prose-rag/tests
+
+# ---------------------------------------------------------------------------------------------
+# Design-doc gaps the contract does NOT lint for (2026-07-14 doc sweep). Recorded here so they
+# are visible; C3 checks that README/SPEC/proof EXIST, it cannot check that a design is
+# documented at all. Fixing these is real work, not a file-touch:
+#
+#   cosmetic    5 of its 6 hooks have no SPEC, no proof, no implementation notes (the thinnest
+#               module in the kit; only codebase-index is specced).
+#   money_gate  no SPEC was ever written: it entered at kit-foldin and has only a joint
+#               proof-of-done shared with prose_rag.
+#   telemetry   has an origin SPEC but zero ADR / proof / implementation notes of its own.
+#
+# Also: architecture docs are almost never per-module (only skill-curator has one), and ADRs
+# exist for only 4 of 21 subsystems. Both are acceptable for now; neither is invisible anymore.

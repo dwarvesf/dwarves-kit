@@ -180,13 +180,22 @@ echo "== C5 currency: proposers stage blocks, never write a board =="
 # Anything that writes a `## [staged]` block must get it from the ONE renderer.
 bespoke=""
 while IFS= read -r f; do
-  case "$f" in */tests/*) continue ;; esac   # a test ASSERTS on the block; it does not render one
+  case "$f" in
+    */tests/*) continue ;;              # a test ASSERTS on the block; it does not render one
+    */board/bin/add-backlog)            # the PROMOTER: it PARSES staged blocks and writes the
+      continue ;;                       # board. That is the human gate, the one edge into the
+  esac                                  # board, not a proposer. Reading the grammar != minting it.
   # A CODE reference to the renderer, not a comment mentioning it: a file that writes its own
   # block and name-drops staging-format.py in a comment used to pass (review finding).
   grep -vE '^[[:space:]]*#' "$f" \
     | grep -q 'staging.format\|staging_format\|render_block\|render_candidate' \
     || bespoke="$bespoke$f\n"
-done < <(grep -rl '## \[staged\]' lib hooks --include='*.py' --include='*.sh' 2>/dev/null \
+# No --include: the kit's executables are EXTENSIONLESS by house rule, so filtering to
+# *.py/*.sh skipped session-audit, one of the very writers this rule governs. C6 had the same
+# blindness; the same fix. (Found by drawing the data-flow diagram and noticing a writer the
+# lint had never seen.)
+done < <(grep -rlI '## \[staged\]' lib hooks --exclude='*.md' --exclude-dir=.venv \
+           --exclude-dir=target --exclude-dir=__pycache__ 2>/dev/null \
          | grep -v 'staging-format.py' | sort)
 chk "every staged-block writer goes through the one renderer" "$(printf "%b" "$bespoke")"
 
