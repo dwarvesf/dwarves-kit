@@ -8,13 +8,22 @@ recommendations with metric contracts) and hands it to an agent runtime
 ONE dated report; the previous report is auto-passed as {PREV} so each run
 opens with a metric diff against the last (the improve-measure-improve loop).
 
-Propose-don't-dispose: writes only the report file, never edits transcripts,
-boards, or ledgers. Expensive by design (measured ~$3.5/run on Sonnet over a
-3-day window); run weekly or on demand, not per-session -- session-semantic
-stays the cheap cron signal.
+Propose-don't-dispose: `run` writes only the report file; `triage` writes only
+the staging buffer (a human promotes with `board promote`). Neither touches a
+board, a ledger, or a transcript. Expensive by design (measured ~$3.5/run on
+Sonnet over a 3-day window); run weekly or on demand, not per-session --
+session-semantic stays the cheap cron signal.
+
+`triage` emits the kit's ONE proposal currency: `## [staged]` blocks via
+lib/learn/staging-format.py (ADR-0034 decision 1), deduped against every
+staging state + the board, exactly like `learn propose` and `stats
+anomalies --propose`. The metric contract rides on Approach, the report +
+owner ride on Source.
 
   session-audit run [--root D] [--days N] [--deep-read K] [--model M]
                     [--out DIR] [--pricing-file F] [--json]
+  session-audit triage [--out DIR] [--report F] [--staging F] [--backlog F]
+                       [--dry-run] [--json]
 
 Env for tests: SESSION_AUDIT_CMD (shell string; the rendered prompt is piped to
 its stdin, and it must print the runtime's --output-format json), and
@@ -43,6 +52,20 @@ DEFAULT_PRICING = """\
   sonnet: input $3.00, output $15.00, cache-read $0.30, cache-write $3.75
   haiku:  input $1.00, output $5.00,  cache-read $0.10, cache-write $1.25
   opus:   input $15.00, output $75.00, cache-read $1.50, cache-write $18.75"""
+
+
+def _repo_root():
+    """Walk up to the kit repo root (the dir holding lib/session/), same
+    repo-relative rule the other session tools use: no hardcoded personal path."""
+    d = os.path.dirname(os.path.realpath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("session-audit: cannot locate the kit repo root (lib/session not found)")
 
 
 def _today():
@@ -115,6 +138,47 @@ def extract_recommendations(report_text):
     return None
 
 
+def _staging_format():
+    """Load the kit's ONE staging-block grammar (ADR-0034 decision 1). Hyphenated
+    filename, so it needs the importlib dance drain.py/propose.py already use."""
+    import importlib.util
+    p = os.path.join(_repo_root(), "lib", "learn", "staging-format.py")
+    spec = importlib.util.spec_from_file_location("staging_format", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _default_staging():
+    return os.environ.get("BACKLOG_STAGE_STAGING") or os.path.join(
+        _repo_root(), "_meta", "backlog-staging.md")
+
+
+def _default_backlog():
+    return os.environ.get("BACKLOG_STAGE_BACKLOG") or os.path.join(
+        _repo_root(), "_meta", "BACKLOG.md")
+
+
+def to_candidate(rec, report_name, date):
+    """One audit recommendation -> the kit's staging-candidate dict. The metric
+    contract rides on Approach (it is what a later audit re-runs) and the report
+    + owner ride on Source (they are the citation)."""
+    m = rec.get("metric") or {}
+    approach = rec.get("change", "")
+    if m.get("name"):
+        approach += (f" · metric {m['name']} now {m.get('current', '?')}"
+                     f"; re-run: {m.get('rerun', '?')}")
+    return {
+        "title": rec.get("change", "").strip(),
+        "intent": rec.get("effect") or rec.get("finding") or "(no effect stated)",
+        "approach": approach,
+        "u": {"high": "hi", "medium": "mid", "low": "lo"}.get(str(rec.get("confidence", "")).lower(), "lo"),
+        "f": "mid",
+        "source": (f"session audit {date} | report={report_name} "
+                   f"owner={rec.get('owner', '?')} finding=\"{rec.get('finding', '')}\""),
+    }
+
+
 def cmd_triage(args):
     report = args.report or latest_report(args.out)
     if not report or not os.path.exists(report):
@@ -129,19 +193,49 @@ def cmd_triage(args):
               else f"session-audit triage: _none_ (no machine-triage json block in {name}; "
                    "older report format, or the run dropped the footer)")
         return 0
+
+    sf = _staging_format()
+    staging, backlog = args.staging or _default_staging(), args.backlog or _default_backlog()
+    # Dedup against EVERY staging state (staged/expired/rejected/promoted) + the board,
+    # so a rejected proposal never comes back on the next weekly audit.
+    existing = sf.existing_keys(("staging", staging), ("board", backlog))
+    date = _today()
+    blocks, staged, skipped = [], [], []
+    for rec in recs:
+        cand = to_candidate(rec, name, date)
+        key = sf.norm(cand["title"])
+        if not cand["title"] or key in existing:
+            skipped.append(cand["title"])
+            continue
+        block = sf.render_block(cand)
+        if block is None:
+            continue
+        existing.add(key)
+        blocks.append(block)
+        staged.append(cand["title"])
+
+    if blocks and not args.dry_run:
+        exists = os.path.isfile(staging)
+        parent = os.path.dirname(staging)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(staging, "a", encoding="utf-8") as fh:
+            if not exists:
+                fh.write("# Backlog staging\n\n")
+            fh.writelines(blocks)
+
     if args.json:
-        print(json.dumps({"status": "ok", "report": name, "proposals": recs}, indent=2))
+        print(json.dumps({"status": "ok", "report": name, "staged": staged,
+                          "skipped_duplicate": skipped,
+                          "staging": None if args.dry_run else staging,
+                          "dry_run": bool(args.dry_run)}, indent=2))
         return 0
-    print(f"# session-audit triage: {len(recs)} proposals from {name} (PROPOSALS ONLY,")
-    print("# review, then paste accepted rows into your board's BACKLOG.md with real IDs)")
-    for r in recs:
-        m = r.get("metric") or {}
-        notes = f"audit {name} · owner:{r.get('owner')}"
-        if m.get("name"):
-            notes += f" · metric {m['name']}={m.get('current', '?')}"
-        if r.get("confidence"):
-            notes += f" · confidence:{r['confidence']}"
-        print(f"| ?? | {r['change']} | {notes} | queued |")
+    if args.dry_run:
+        sys.stdout.write("".join(blocks) or "session-audit triage: nothing new to stage\n")
+        return 0
+    where = staging if blocks else "(nothing new)"
+    print(f"session-audit triage: staged {len(staged)}, skipped {len(skipped)} duplicate "
+          f"-> {where}\n  promote with: board promote <n>   (review first: learn drain)")
     return 0
 
 
@@ -157,9 +251,12 @@ def main(argv=None):
     r.add_argument("--out", default=DEFAULT_OUT)
     r.add_argument("--pricing-file")
     r.add_argument("--json", action="store_true")
-    t = sub.add_parser("triage", help="extract the latest report's recommendations as kanban proposal rows")
+    t = sub.add_parser("triage", help="stage the latest report's recommendations as backlog proposals")
     t.add_argument("--out", default=DEFAULT_OUT)
     t.add_argument("--report", help="a specific report file (default: newest audit-*.md in --out)")
+    t.add_argument("--staging", help="staging file (default <repo>/_meta/backlog-staging.md)")
+    t.add_argument("--backlog", help="board file, read-only, for dedup (default <repo>/_meta/BACKLOG.md)")
+    t.add_argument("--dry-run", action="store_true", help="print the blocks, write nothing")
     t.add_argument("--json", action="store_true")
     args = p.parse_args(argv)
 

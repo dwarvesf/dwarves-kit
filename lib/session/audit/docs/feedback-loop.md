@@ -31,12 +31,15 @@ to it.
    CONTRACT (name, current value, exact re-run command), and the report closes
    with a machine-readable json footer of the same rows. Only HIGH-tier
    findings are stable currency across runs; MEDIUM/LOW are leads.
-2. **Learn (propose).** `session audit triage` extracts the footer into kanban
-   proposal rows (`| ?? | change | audit ref · owner · metric | queued |`).
-   Same propose-don't-dispose gate as `learn propose` and `stats anomalies
-   --propose` (ADR-0034 decision 2/5): a human reviews, assigns real IDs, and
-   pastes accepted rows into the consumer repo's `BACKLOG.md`. Rejected rows
-   die here; nothing auto-files.
+2. **Learn (propose).** `session audit triage` turns the footer into the kit's
+   ONE proposal currency: `## [staged]` blocks appended to
+   `_meta/backlog-staging.md` via `lib/learn/staging-format.py` (ADR-0034
+   decision 1), byte-compatible with `learn propose` and `stats anomalies
+   --propose`. The metric contract rides on `Approach`, the report + owner on
+   `Source`. Dedup runs against every staging state (staged/expired/rejected/
+   promoted) + the board, so a rejected proposal never returns. Human gate
+   unchanged (ADR-0034 decision 2/5): review with `learn drain`, accept with
+   `board promote`. Nothing auto-files.
 3. **Specify -> Execute -> Govern (enhance).** An accepted row is ordinary kit
    work through the normal lanes and gates. Nothing special; the audit only
    supplied the evidence and the metric.

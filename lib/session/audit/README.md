@@ -32,16 +32,23 @@ Full path contract: `docs/feedback-loop.md`.
 ## Use
 
 ```bash
-session-audit run                          # 7-day window, sonnet, ~/.claude/intel/audit-YYYY-MM-DD.md
-session-audit run --days 3 --model opus    # heavier judgment pass
-session-audit run --out ./reports --json   # machine-readable status
-session-audit triage                       # newest report's recommendations -> kanban proposal rows (stdout)
+session audit run                          # 7-day window, sonnet, ~/.claude/intel/audit-YYYY-MM-DD.md
+session audit run --days 3 --model opus    # heavier judgment pass
+session audit triage                       # stage the newest report's recommendations as proposals
+session audit triage --dry-run             # print the blocks, write nothing
 ```
 
-`triage` is propose-only: it prints `| ?? | change | audit ref · owner · metric | queued |`
-rows; a human assigns real IDs and pastes accepted rows into the consumer's
-`BACKLOG.md`. It reads the report's machine-triage json footer (the prompt
-requires one; reports from older prompt versions degrade to `_none_`).
+`triage` is propose-only and speaks the kit's ONE proposal currency: it appends
+`## [staged]` blocks to `_meta/backlog-staging.md` through
+`lib/learn/staging-format.py` (ADR-0034 decision 1), exactly like `learn
+propose` and `stats anomalies --propose`. The metric contract rides on
+`Approach` (it is what the next audit re-runs), the report + owner ride on
+`Source` (the citation). Dedup is against every staging state + the board, so a
+rejected proposal never returns on the next weekly audit. The human gate is
+unchanged: review with `learn drain`, accept with `board promote`.
+
+It reads the report's machine-triage json footer (the prompt requires one;
+reports from older prompt versions degrade to `_none_`).
 
 `--pricing-file` overrides the built-in per-model price table when list prices
 drift.

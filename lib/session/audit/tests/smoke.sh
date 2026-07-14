@@ -72,13 +72,26 @@ More prose.
   "metric":{"name":"top10_cache_read_share","current":"76.3%","rerun":"jq group-sum"}}]
 ```
 EOF
-out="$("$SA" triage --out "$TMP/triage")"
-echo "$out" | grep -c "^| ?? |" | grep -q "^2$" && ok "triage: 2 proposal rows" || no "triage rows wrong: $out"
-echo "$out" | grep -q "owner:kit · metric subagent_opus_share=24.1%" && ok "triage: notes carry owner+metric" || no "triage notes wrong"
-echo "$out" | grep -q "PROPOSALS ONLY" && ok "triage: propose-only banner" || no "triage banner missing"
+# triage stages `## [staged]` blocks (the kit's ONE proposal currency), never a bespoke row
+STAGING="$TMP/staging.md"; BOARD="$TMP/BACKLOG.md"
+printf '# Board\n\n| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-1 | clear mega-sessions at boundaries | already on the board | queued |\n' > "$BOARD"
+out="$("$SA" triage --out "$TMP/triage" --staging "$STAGING" --backlog "$BOARD")"
+[ "$(grep -c '^## \[staged\]' "$STAGING")" = "1" ] && ok "triage: stages 1 new block (dedup dropped the board dup)" || no "triage staging wrong: $(cat "$STAGING")"
+grep -q '^## \[staged\] route Explore subagents to haiku' "$STAGING" && ok "triage: title from the change" || no "triage title wrong"
+grep -q 'metric subagent_opus_share now 24.1%; re-run: jq cross-tab' "$STAGING" && ok "triage: metric contract on Approach" || no "triage metric line missing"
+grep -q '^- Source: session audit .* owner=kit' "$STAGING" && ok "triage: owner + report cited on Source" || no "triage source wrong"
+echo "$out" | grep -q "skipped 1 duplicate" && ok "triage: reports the dedup" || no "triage dedup not reported: $out"
+echo "$out" | grep -q "board promote" && ok "triage: points at the human gate" || no "triage gate hint missing"
 
-# 8. triage: last-json-block wins (the decoy above is ignored)
-echo "$out" | grep -q "not.*the footer" && no "triage: decoy block leaked" || ok "triage: decoy block ignored"
+# 8. triage: idempotent (a second run re-stages nothing) + last-json-block wins
+"$SA" triage --out "$TMP/triage" --staging "$STAGING" --backlog "$BOARD" >/dev/null
+[ "$(grep -c '^## \[staged\]' "$STAGING")" = "1" ] && ok "triage: idempotent on re-run" || no "triage re-staged a duplicate"
+grep -q "the footer" "$STAGING" && no "triage: decoy block leaked" || ok "triage: decoy block ignored"
+
+# 8b. triage --dry-run writes nothing
+DRY="$TMP/dry.md"
+"$SA" triage --out "$TMP/triage" --staging "$DRY" --backlog "$BOARD" --dry-run | grep -q '^## \[staged\]' && ok "triage: dry-run prints blocks" || no "dry-run printed nothing"
+[ ! -f "$DRY" ] && ok "triage: dry-run writes nothing (NEGATIVE CONTROL)" || no "dry-run wrote a file"
 
 # 9. triage degrade: report without the footer -> _none_
 cat > "$TMP/triage/audit-2026-03-08.md" <<'EOF'

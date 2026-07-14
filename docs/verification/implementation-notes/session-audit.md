@@ -2,6 +2,28 @@
 
 Delta from `lib/session/audit/SPEC.md`; decisions the spec did not pin down.
 
+## 2026-07-14 17:10 Triage speaks the staging currency, not a bespoke row
+
+Context: the first triage cut printed its own kanban row shape
+(`| ?? | change | ... | queued |`) to stdout. A full-repo ETL inventory (19
+pipelines) showed the kit already has ONE proposal currency: `## [staged]`
+blocks in `_meta/backlog-staging.md`, rendered by `lib/learn/staging-format.py`
+and used by BOTH `learn propose` and `stats anomalies --propose`, with
+`board promote` as the human gate (ADR-0034 decision 1).
+Decision: triage now renders through `staging-format.render_block` and dedups
+via `existing_keys` (staging + board), appending to the same buffer. The audit
+fields map: change -> title, effect/finding -> Intent, change + metric contract
+-> Approach, confidence -> `#u-*` tag, report+owner+finding -> Source citation.
+`--dry-run` prints and writes nothing.
+Why: a third proposal currency for the same Learn gate is exactly the
+fragmentation this work set out to kill; dedup against rejected/expired states
+comes free with the shared grammar (a weekly audit MUST NOT re-propose what a
+human already rejected).
+Alternatives: keep the kanban rows and teach `board` to ingest them (rejected:
+two grammars, one gate).
+Impact: triage's contract changed before anyone consumed it (verb is unreleased
+in this PR); smoke grows 18 -> 24 with idempotence + dry-run negative controls.
+
 ## 2026-07-14 14:30 Vocabulary reconciliation (five legs, not a new taxonomy)
 
 Context: the first cut of `docs/feedback-loop.md` named its own five stages
