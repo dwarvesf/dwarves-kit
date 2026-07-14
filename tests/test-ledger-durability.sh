@@ -170,6 +170,26 @@ DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" check normal trun >/dev/null 2>&1; assert
 DWARVES_KIT_LOG_DIR="$TOKD" bash "$GL" tokens trun in=1,2ab out=-5 cache_read=x cache_create=9 >/dev/null 2>&1
 grep -qE '\| TOKENS \| in=12 out=5 cache_read=0 cache_create=9$' "$TOKD/runs/trun.log"; assert "SPEC-110: tokens sanitizes integer values to digits (junk stripped)" $?
 
+# --- C: the READ plane (stats, python) resolves the SAME root as the WRITE plane -----------
+# stats/config.py used to be a SECOND implementation of the precedence chain. Its docstring
+# claimed it "mirrors the shell resolver exactly"; it skipped level 3 (kit.toml [ledger].
+# location). Under `location = "isolated"` the write plane wrote to the toml location while
+# stats read the XDG default, and it failed SILENTLY: stats just reported no runs. It now asks
+# the ONE resolver instead of reimplementing it (2026-07-15).
+CPROJ="$(mktemp -d)"; printf '[ledger]\nlocation = "isolated"\n' > "$CPROJ/.kit.toml"
+c_write="$(cd "$CPROJ" && bash -c ". \"$KIT_DIR/lib/telemetry/kit-log-dir.sh\" && kit_resolve_log_dir" 2>/dev/null)"
+c_read="$(cd "$CPROJ" && PYTHONPATH="$KIT_DIR/lib/stats/src" python3 -c 'from stats.config import kit_log_dir; print(kit_log_dir())' 2>/dev/null | tail -1)"
+[ -n "$c_read" ] && [ "$c_write" = "$c_read" ]
+assert "C1: under [ledger].location=isolated, the stats READ plane agrees with the WRITE plane (no split-brain)" $?
+
+# NEGATIVE CONTROL: the read plane must not silently invent a root when the resolver refuses.
+# KIT_LEDGER_DIR set-but-empty is the resolver's fatal case; stats must fail, not guess.
+c_empty_rc=0
+(cd "$CPROJ" && KIT_LEDGER_DIR="" PYTHONPATH="$KIT_DIR/lib/stats/src" python3 -c 'from stats.config import kit_log_dir; print(kit_log_dir())' >/dev/null 2>&1) || c_empty_rc=$?
+[ "$c_empty_rc" -ne 0 ]
+assert "C2 NEGATIVE CONTROL: an empty KIT_LEDGER_DIR makes the READ plane fail loudly, never guess a root" $?
+rm -rf "$CPROJ"
+
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

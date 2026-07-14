@@ -9,6 +9,28 @@
 # while never looking at board, queue, session, gate, learn... including the module that same
 # PR was editing.
 
+# Exposed 2026-07-15 when the scope was fixed a SECOND time: a module whose code is only hooks
+# (money_gate, cosmetic) had no lib/<name>/ dir, so it was invisible to C3/C4 entirely. That is
+# how money_gate went its whole lifetime with no SPEC while the lint stayed green. The module->
+# home map now resolves the modules that live INSIDE another lib (quiz_gate -> lib/gate,
+# weekend_batch -> lib/learn, bridge -> lib/board) instead of inventing a phantom path for them.
+#
+# gate + learn: core libs, richly specced at repo docs/specs/ (SPEC-024/025/195/196...) and
+# tested at repo tests/ (test-gate-*.sh, test-learn-*.sh), but no module-level front door or
+# proof of their own. Real debt, sized: two READMEs and two proofs.
+lib/gate/README.md
+lib/gate/SPEC
+lib/gate/docs/proof-of-done.md
+lib/learn/README.md
+lib/learn/SPEC
+lib/learn/docs/proof-of-done.md
+
+# worktree-provision: has README + SPEC; its proof lives at repo docs/verification/ (the fold PR).
+lib/worktree-provision/docs/proof-of-done.md
+
+# cosmetic: its assertions live inside the shared tests/test-hooks.sh, which C4 cannot see.
+lib/cosmetic/tests
+
 # board: SPEC-147/149 live at repo docs/specs/; the module has no front door or proof of its own.
 lib/board/README.md
 lib/board/SPEC
