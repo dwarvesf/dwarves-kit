@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # curate.sh: the skill-library curator. A no-write `claude -p` pure function returns a consolidation
 # PLAN; the trusted wrapper writes a human-readable report and (only with --apply) archives skills
-# via `git mv` to skills/_archive/ , NEVER `rm`. Propose-only by default. Sourced by bin/cc-improve.
+# via `git mv` to skills/_archive/ , NEVER `rm`. Propose-only by default. Sourced by bin/skill-improve.
 #
-# Test seam: CC_SI_CURATOR_CMD overrides the claude call (emits a claude -p envelope whose .result
+# Test seam: SKILL_CURATOR_CURATOR_CMD overrides the claude call (emits a claude -p envelope whose .result
 # is the plan JSON), so the inventory/plan/report/archive/restore logic tests with no live model.
 
 HERE_CURATE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,8 +15,8 @@ _curate_reserved() { case "$1" in _archive|_rejected|_replaced) return 0;; *) re
 # curate_inventory: JSON array [{name, description, first_para, mtime, pinned}] over skills/.
 curate_inventory() {
   local arr="[]" d name desc para pinned mt
-  [ -d "$CC_SI_SKILLS_DIR" ] || { printf '[]'; return 0; }
-  for d in "$CC_SI_SKILLS_DIR"/*/; do
+  [ -d "$SKILL_CURATOR_SKILLS_DIR" ] || { printf '[]'; return 0; }
+  for d in "$SKILL_CURATOR_SKILLS_DIR"/*/; do
     [ -d "$d" ] || continue; name="$(basename "$d")"; _curate_reserved "$name" && continue
     [ -f "$d/SKILL.md" ] || continue
     desc="$(sed -n 's/^description:[[:space:]]*//p' "$d/SKILL.md" | head -1)"
@@ -32,14 +32,14 @@ curate_inventory() {
 }
 
 run_curator() {  # stdin = prompt+inventory; stdout = claude -p envelope
-  if [ -n "${CC_SI_CURATOR_CMD:-}" ]; then CLAUDE_REVIEWING=1 bash -c "$CC_SI_CURATOR_CMD"
+  if [ -n "${SKILL_CURATOR_CURATOR_CMD:-}" ]; then CLAUDE_REVIEWING=1 bash -c "$SKILL_CURATOR_CURATOR_CMD"
   else CLAUDE_REVIEWING=1 claude -p --bare --no-session-persistence --allowedTools "" \
-    --model "$(cfg curator_model "$(cfg model haiku)")" --max-turns "$(cfg max_turns 2)" --output-format json 2>>"$CC_SI_LOG"; fi
+    --model "$(cfg curator_model "$(cfg model haiku)")" --max-turns "$(cfg max_turns 2)" --output-format json 2>>"$SKILL_CURATOR_LOG"; fi
 }
 
 # _archive_one <name> <absorbed_into>: git mv to _archive/ (never rm); non-git -> mv + manifest + warn.
 _archive_one() {
-  local name="$1" absorbed="${2:-null}" src="$CC_SI_SKILLS_DIR/$1" arc="$CC_SI_SKILLS_DIR/_archive"
+  local name="$1" absorbed="${2:-null}" src="$SKILL_CURATOR_SKILLS_DIR/$1" arc="$SKILL_CURATOR_SKILLS_DIR/_archive"
   [ -d "$src" ] || { si_log "curate: archive skip, no skill '$name'"; return 1; }
   # Wrapper guard: never archive a pinned/protected skill even if a (mis)plan names it.
   if grep -qiE '^(pinned|cc-si-protected):[[:space:]]*true' "$src/SKILL.md" 2>/dev/null; then
@@ -47,8 +47,8 @@ _archive_one() {
   fi
   mkdir -p "$arc" 2>/dev/null || return 1
   local ts; ts="$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo '?')"
-  if git -C "$CC_SI_SKILLS_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$CC_SI_SKILLS_DIR" mv "$name" "_archive/$name" 2>/dev/null \
+  if git -C "$SKILL_CURATOR_SKILLS_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$SKILL_CURATOR_SKILLS_DIR" mv "$name" "_archive/$name" 2>/dev/null \
       || mv "$src" "$arc/$name" 2>/dev/null || return 1
   else
     mv "$src" "$arc/$name" 2>/dev/null || return 1
@@ -62,10 +62,10 @@ _archive_one() {
 curate_run() {
   local apply=0; [ "${1:-}" = "--apply" ] && apply=1
   local inv; inv="$(curate_inventory)"
-  mkdir -p "$CC_SI_STATE_DIR" 2>/dev/null || true
+  mkdir -p "$SKILL_CURATOR_STATE_DIR" 2>/dev/null || true
   # Heartbeat for vps-mon liveness (scheduled job). Must come AFTER the state dir exists.
-  printf '%s' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo now)" > "$CC_SI_STATE_DIR/curator.heartbeat" 2>/dev/null || true
-  if [ "$inv" = "[]" ]; then echo "curate: no skills under $CC_SI_SKILLS_DIR , nothing to consolidate"; return 0; fi
+  printf '%s' "$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo now)" > "$SKILL_CURATOR_STATE_DIR/curator.heartbeat" 2>/dev/null || true
+  if [ "$inv" = "[]" ]; then echo "curate: no skills under $SKILL_CURATOR_SKILLS_DIR , nothing to consolidate"; return 0; fi
 
   local input envelope result plan
   input="$(cat "$HERE_CURATE/../prompts/curator.md"; printf '\n\n=== SKILL INVENTORY ===\n%s\n' "$inv")"
@@ -77,8 +77,8 @@ curate_run() {
   fi
 
   local report
-  report="$CC_SI_STATE_DIR/curator-report-$(date +%Y%m%d-%H%M%S).md"
-  { echo "# cc-improve curate report"
+  report="$SKILL_CURATOR_STATE_DIR/curator-report-$(date +%Y%m%d-%H%M%S).md"
+  { echo "# skill-improve curate report"
     if [ "$apply" = 1 ]; then echo "## APPLY MODE , archives were executed (git mv, never rm)."
     else echo "## REPORT ONLY , nothing was changed. Re-run with --apply to execute the archives below."; fi
     echo; jq -r '.report // "(no narrative)"' <<<"$plan"
@@ -105,12 +105,12 @@ curate_run() {
 # curate_restore <name>: reverse an archive (git mv back, or mv on a non-git host).
 curate_restore() {
   local name="${1:-}"; [ -n "$name" ] || { echo "restore: need a skill name" >&2; return 2; }
-  local arc="$CC_SI_SKILLS_DIR/_archive/$name"
+  local arc="$SKILL_CURATOR_SKILLS_DIR/_archive/$name"
   [ -d "$arc" ] || { echo "restore: '$name' is not in _archive/" >&2; return 2; }
-  if git -C "$CC_SI_SKILLS_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$CC_SI_SKILLS_DIR" mv "_archive/$name" "$name" 2>/dev/null || mv "$arc" "$CC_SI_SKILLS_DIR/$name" 2>/dev/null || { echo "restore: move failed" >&2; return 5; }
+  if git -C "$SKILL_CURATOR_SKILLS_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$SKILL_CURATOR_SKILLS_DIR" mv "_archive/$name" "$name" 2>/dev/null || mv "$arc" "$SKILL_CURATOR_SKILLS_DIR/$name" 2>/dev/null || { echo "restore: move failed" >&2; return 5; }
   else
-    mv "$arc" "$CC_SI_SKILLS_DIR/$name" 2>/dev/null || { echo "restore: move failed" >&2; return 5; }
+    mv "$arc" "$SKILL_CURATOR_SKILLS_DIR/$name" 2>/dev/null || { echo "restore: move failed" >&2; return 5; }
   fi
   echo "restore: '$name' <- _archive/"; si_log "curate: restored '$name' from _archive/"
 }

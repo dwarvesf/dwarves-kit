@@ -1,4 +1,4 @@
-# ADR 0006: a test seam for the `claude -p` call (`CC_SI_REVIEWER_CMD` / `CC_SI_CURATOR_CMD`)
+# ADR 0006: a test seam for the `claude -p` call (`SKILL_CURATOR_REVIEWER_CMD` / `SKILL_CURATOR_CURATOR_CMD`)
 
 **Date:** 2026-06-19
 **Status:** accepted
@@ -12,7 +12,7 @@ guarantees (no-write, secret-drop, path-safety, never-delete) must be proven.
 
 ## Decision
 
-Isolate the model call behind an env override: `CC_SI_REVIEWER_CMD` (and `CC_SI_CURATOR_CMD`). When
+Isolate the model call behind an env override: `SKILL_CURATOR_REVIEWER_CMD` (and `SKILL_CURATOR_CURATOR_CMD`). When
 set, the wrapper runs that command instead of `claude -p`; it must read the prompt on stdin and emit
 a `claude -p --output-format json` ENVELOPE on stdout. Tests build envelopes with `jq -n` (no hand
 escaping) and point the seam at `cat <fixture>`. The default (unset) is the real `claude` invocation.

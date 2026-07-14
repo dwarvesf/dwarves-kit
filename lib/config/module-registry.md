@@ -137,18 +137,18 @@ real reader consumes it today (all rows below are, except where noted).
 | BACKLOG_FILE | env-only | `$BACKLOG_DIR/../../_meta/BACKLOG.md` | [impl] | board | Override which `BACKLOG.md` the CLI reads/writes. |
 | BACKLOG_ID_RE | env-only | `[A-Z]+-[0-9]+` | [impl] | board | Regex for what counts as a backlog item ID. |
 
-### session (incl. session-intel / skill-curator, prefix `CC_SI_*`)
+### session (incl. session-intel / skill-curator, prefix `SKILL_CURATOR_*`)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| CC_SI_STATE_DIR | env-only | `$HOME/.claude/skill-curator` | [impl] | session | Root of the skill-curator tool's state (ledger, lock, log, config). |
-| CC_SI_PROPOSALS_DIR | env-only | `$HOME/.claude/skill-proposals` | [impl] | session | Where drafted skill proposals land. |
-| CC_SI_SKILLS_DIR | env-only | `$HOME/.claude/skills` | [impl] | session | Where curated/promoted skills are written. |
-| CC_SI_CONFIG | env-only | `$CC_SI_STATE_DIR/config.toml` | [impl] | session | skill-curator's own config file (a separate file, not `kit.toml`). |
-| CC_SI_SETTINGS | env-only | `$HOME/.claude/settings.json` | [impl] | session | Which `settings.json` the skill-curator installer patches. |
-| CC_SI_MEMORY_LEDGER | env-only | `""` | [impl] | session | Path to the learning ledger surface.sh cross-references; feature is off if unset. |
-| CC_SI_CURATOR_CMD | env-only | (real `claude -p`) | [impl] | session | Override the curator's model-invocation command (test injection point). |
-| CC_SI_REVIEWER_CMD | env-only | (real `claude -p`) | [impl] | session | Override the async reviewer's model-invocation command. |
+| SKILL_CURATOR_STATE_DIR | env-only | `$HOME/.claude/skill-curator` | [impl] | session | Root of the skill-curator tool's state (ledger, lock, log, config). |
+| SKILL_CURATOR_PROPOSALS_DIR | env-only | `$HOME/.claude/skill-proposals` | [impl] | session | Where drafted skill proposals land. |
+| SKILL_CURATOR_SKILLS_DIR | env-only | `$HOME/.claude/skills` | [impl] | session | Where curated/promoted skills are written. |
+| SKILL_CURATOR_CONFIG | env-only | `$SKILL_CURATOR_STATE_DIR/config.toml` | [impl] | session | skill-curator's own config file (a separate file, not `kit.toml`). |
+| SKILL_CURATOR_SETTINGS | env-only | `$HOME/.claude/settings.json` | [impl] | session | Which `settings.json` the skill-curator installer patches. |
+| SKILL_CURATOR_MEMORY_LEDGER | env-only | `""` | [impl] | session | Path to the learning ledger surface.sh cross-references; feature is off if unset. |
+| SKILL_CURATOR_CURATOR_CMD | env-only | (real `claude -p`) | [impl] | session | Override the curator's model-invocation command (test injection point). |
+| SKILL_CURATOR_REVIEWER_CMD | env-only | (real `claude -p`) | [impl] | session | Override the async reviewer's model-invocation command. |
 | DWARVES_KIT_SESSION_MARKER | env-only | `/tmp/.dwarves-kit-session-start` | [impl] | session | Path of the session-start marker file. |
 | SESSION_AUDIT_CMD | env-only | `claude -p --model <M> --allowedTools Bash,Read,Grep,Glob --output-format json` | [impl] | session | Agent runtime `session audit run` pipes its rendered prompt to; tests inject fixtures here. |
 | SESSION_AUDIT_DATE | env-only | (today) | [impl] | session | Report-date override (YYYY-MM-DD) for deterministic tests. |
@@ -218,11 +218,11 @@ against any of these bare tokens as covered without a registry row.
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
 | CC_BACKLOG_BACKLOG_FIX | `lib/stats/tests/test-deviation-rate.sh`: test-fixture-local, assigned then used in the same file, never read as inherited env. |
-| CC_SI_LEDGER | `lib/skill-curator/lib/common.sh`: derived from `CC_SI_STATE_DIR`, not independently env-read. |
-| CC_SI_LIB | `lib/skill-curator/lib/common.sh`: computed via `BASH_SOURCE`. |
-| CC_SI_LOCK | `lib/skill-curator/lib/common.sh`: derived path. |
-| CC_SI_LOG | `lib/skill-curator/lib/common.sh`: derived path. |
-| CC_SI_ROOT | `lib/skill-curator/lib/common.sh`: computed `$CC_SI_LIB/..`. |
+| SKILL_CURATOR_LEDGER | `lib/skill-curator/lib/common.sh`: derived from `SKILL_CURATOR_STATE_DIR`, not independently env-read. |
+| SKILL_CURATOR_LIB | `lib/skill-curator/lib/common.sh`: computed via `BASH_SOURCE`. |
+| SKILL_CURATOR_LOCK | `lib/skill-curator/lib/common.sh`: derived path. |
+| SKILL_CURATOR_LOG | `lib/skill-curator/lib/common.sh`: derived path. |
+| SKILL_CURATOR_ROOT | `lib/skill-curator/lib/common.sh`: computed `$SKILL_CURATOR_LIB/..`. |
 | KIT | `lib/gate/verif-counts.sh`: computed repo-root var, script-local. |
 | KITLOG | `lib/stats/tests/test-defect-correlation.sh`: test-fixture-local. |
 | KITTY_WINDOW_ID | The Kitty terminal emulator's own env var; an unrelated false positive of the `KIT` prefix match, not a kit config surface at all. |

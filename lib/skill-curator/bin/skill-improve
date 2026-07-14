@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# skill-improve: cc-self-improve CLI. BTM-friendly (this file is ProgramArguments[0], no .sh).
+#   skill-improve status            show staged drafts + 7-day loop spend from the ledger
+#   skill-improve curate [--apply]  consolidate the skill library; propose-only unless --apply
+#   skill-improve restore <name>    restore a skill archived by the curator (git mv back)
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+. "$HERE/../lib/common.sh"
+# shellcheck source=lib/curate.sh
+. "$HERE/../lib/curate.sh"
+
+cmd_status() {
+  echo "cc-self-improve status"
+  echo "  state dir:     $SKILL_CURATOR_STATE_DIR"
+  echo "  proposals dir: $SKILL_CURATOR_PROPOSALS_DIR"
+
+  local drafts=0
+  if [ -d "$SKILL_CURATOR_PROPOSALS_DIR" ]; then
+    drafts="$(find "$SKILL_CURATOR_PROPOSALS_DIR" -mindepth 2 -maxdepth 2 -name SKILL.md 2>/dev/null | wc -l | tr -d ' ')"
+  fi
+  echo "  staged skill drafts: $drafts"
+
+  if [ -f "$SKILL_CURATOR_LEDGER" ]; then
+    # 7-day window without GNU date: compare ISO timestamps lexically to a cutoff string.
+    local cutoff; cutoff="$(date -v-7d '+%Y-%m-%d' 2>/dev/null || date -d '7 days ago' '+%Y-%m-%d' 2>/dev/null || echo '0000-00-00')"
+    jq -rs --arg cut "$cutoff" '
+      [ .[] | select((.ts // "") >= $cut) ] as $w
+      | ([ $w[] | select(.note=="skip-no-signal") ] | length) as $skips
+      | "  reviewer runs (7d): \(($w | length) - $skips)"
+      + "   staged: \([ $w[] | select(.staged==true) ] | length)"
+      + (if $skips > 0 then "   gate-skips: \($skips)" else "" end)
+      + "\n  loop spend (7d): $\(( [ $w[].total_cost_usd // 0 ] | add ) // 0 )"
+    ' "$SKILL_CURATOR_LEDGER" 2>/dev/null || echo "  ledger: (unreadable)"
+  else
+    echo "  ledger: (none yet)"
+  fi
+}
+
+case "${1:-status}" in
+  status)  cmd_status ;;
+  curate)  curate_run "${2:-}" ;;          # propose-only unless $2 == --apply
+  restore) curate_restore "${2:-}" ;;
+  *) echo "usage: skill-improve {status|curate [--apply]|restore <name>}" >&2; exit 2 ;;
+esac

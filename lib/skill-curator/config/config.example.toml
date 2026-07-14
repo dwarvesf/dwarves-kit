@@ -1,5 +1,5 @@
 # skill-curator config. Copy to ~/.claude/skill-curator/config.toml (install.sh does this).
-# Every value here is also overridable by the matching CC_SI_* env var (env wins), which is how
+# Every value here is also overridable by the matching SKILL_CURATOR_* env var (env wins), which is how
 # the tests inject fixtures. None of these are secrets.
 
 # --- reviewer (Phase A) ---
@@ -27,7 +27,7 @@ signal_gate    = false
 # wrong; you only skip the human read for the safest class. Default OFF.
 auto_promote   = false
 
-# --- paths (defaults; override via CC_SI_* env for tests) ---
+# --- paths (defaults; override via SKILL_CURATOR_* env for tests) ---
 # state_dir     = "~/.claude/skill-curator"     # ledger.jsonl + state/reviewer.lock + config.toml
 # proposals_dir = "~/.claude/skill-proposals"     # staging gate (NOT ~/.claude/skills/)
 # skills_dir    = "~/.claude/skills"              # curator input (Phase C)

@@ -18,7 +18,7 @@ Add a deterministic pre-gate in `reviewer-run.sh`, between the empty-transcript 
 if `signal_gate` is on AND the compacted summary contains none of a broad set of signal markers
 (user correction / frustration, a fix / technique / debug path, a skill-was-wrong note , mirroring
 the prompt's signal list), skip the model call and ledger `skip-no-signal`. The marker regex is one
-`grep -qiE` in `has_signal_markers()`, overridable via `signal_markers` / `CC_SI_SIGNAL_MARKERS`.
+`grep -qiE` in `has_signal_markers()`, overridable via `signal_markers` / `SKILL_CURATOR_SIGNAL_MARKERS`.
 
 The gate is **default OFF** and the pattern is deliberately **broad** (biases toward keeping a
 session). A false positive only wastes one null-draft call; a false negative drops a real signal (a

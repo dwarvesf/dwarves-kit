@@ -8,7 +8,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
-export CC_SI_STATE_DIR="$TMP/state" CC_SI_PROPOSALS_DIR="$TMP/proposals"
+export SKILL_CURATOR_STATE_DIR="$TMP/state" SKILL_CURATOR_PROPOSALS_DIR="$TMP/proposals"
 PAY="$TMP/pay.json"; jq -n --arg tp "$DIR/tests/fixtures/sample-transcript.jsonl" '{session_id:"a",transcript_path:$tp}' > "$PAY"
 
 echo "[1] a slow (sleep 30) reviewer does not delay the hook return (<1.5s)"
@@ -16,7 +16,7 @@ echo "[1] a slow (sleep 30) reviewer does not delay the hook return (<1.5s)"
 # concurrent loop's sleep 30.
 TAG="ccsi-async-$$"
 t0="$(python3 -c 'import time;print(time.time())')"
-CC_SI_REVIEWER_CMD="echo go > $TMP/LAUNCHED; exec -a $TAG sleep 30" bash "$HOOK" < "$PAY"; rc=$?
+SKILL_CURATOR_REVIEWER_CMD="echo go > $TMP/LAUNCHED; exec -a $TAG sleep 30" bash "$HOOK" < "$PAY"; rc=$?
 t1="$(python3 -c 'import time;print(time.time())')"
 el="$(python3 -c "print(round($t1-$t0,2))")"
 fast="$(python3 -c "print(1 if ($t1-$t0)<1.5 else 0)")"

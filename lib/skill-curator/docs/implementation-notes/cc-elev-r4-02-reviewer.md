@@ -17,8 +17,8 @@ Delta from SPEC-103 (TASK-001..005) + goal `02-skill-reviewer.md`. Only what the
   hard wrapper guarantee + testable with a mock.
 - Alternatives: redact-in-place (risks shipping a half-secret); prompt-only (untestable). Rejected.
 
-## 2026-06-19, test seam `CC_SI_REVIEWER_CMD` mirrors cc-harvest's `CC_HARVEST_EXTRACTOR`
-- The `claude -p` call is isolated behind `CC_SI_REVIEWER_CMD` (reads prompt on stdin, emits a
+## 2026-06-19, test seam `SKILL_CURATOR_REVIEWER_CMD` mirrors cc-harvest's `CC_HARVEST_EXTRACTOR`
+- The `claude -p` call is isolated behind `SKILL_CURATOR_REVIEWER_CMD` (reads prompt on stdin, emits a
   `claude -p --output-format json` ENVELOPE on stdout). Tests build envelopes with `jq -n` (no hand
   escaping) and point the seam at `cat <fixture>`. The default is the real claude invocation.
 

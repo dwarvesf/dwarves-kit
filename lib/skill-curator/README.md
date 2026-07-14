@@ -61,7 +61,7 @@ bash deploy/install.sh        # idempotent: wires the hooks (async) into ~/.clau
 This adds the skill-review reviewer on PreCompact + SessionEnd and the surfacing hook on
 SessionStart (all `"async": true`), seeds `~/.claude/skill-curator/config.toml`, and is safe to
 re-run (no duplicate entries). `deploy/uninstall.sh` removes only this tool's entries (state and
-staged drafts are kept). Tune via the config; `CC_SI_SETTINGS` lets you target a non-default
+staged drafts are kept). Tune via the config; `SKILL_CURATOR_SETTINGS` lets you target a non-default
 settings.json.
 
 After a session stages drafts, review them:
@@ -87,11 +87,11 @@ A weekly `mini.cc-curator` launchd (report-only) is available , see `deploy/maco
 ## Knobs
 
 Config: `~/.claude/skill-curator/config.toml` (copy `config/config.example.toml`). Every key is
-also overridable by `CC_SI_<KEY>` (env wins; tests use this).
+also overridable by `SKILL_CURATOR_<KEY>` (env wins; tests use this).
 
 - `enabled` (default on), `model` (default `haiku`), `max_turns` (2), `transcript_k` (40).
-- Paths: `CC_SI_STATE_DIR` (`~/.claude/skill-curator`), `CC_SI_PROPOSALS_DIR`
-  (`~/.claude/skill-proposals`), `CC_SI_SKILLS_DIR` (`~/.claude/skills`).
+- Paths: `SKILL_CURATOR_STATE_DIR` (`~/.claude/skill-curator`), `SKILL_CURATOR_PROPOSALS_DIR`
+  (`~/.claude/skill-proposals`), `SKILL_CURATOR_SKILLS_DIR` (`~/.claude/skills`).
 - Cost: every reviewer run appends `total_cost_usd` to `ledger.jsonl`; `cc-improve status` shows
   7-day loop spend and the staged-draft count. Dial back by raising `transcript_k` cost via a bigger
   `model` only if needed, or disable via `enabled = false`.
@@ -119,6 +119,6 @@ bash tests/test-curate.sh             # Phase C: curate propose-only / git-mv ar
 bash tests/test-install.sh            # idempotent install + surgical uninstall, temp settings.json (6)
 ```
 
-All use a mock reviewer (`CC_SI_REVIEWER_CMD`) / temp dirs; no live model, never the real
+All use a mock reviewer (`SKILL_CURATOR_REVIEWER_CMD`) / temp dirs; no live model, never the real
 settings.json. Proof + a recorded run:
 `docs/proof-of-done.md`.

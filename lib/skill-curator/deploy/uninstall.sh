@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # uninstall.sh: remove ONLY skill-curator's hook entries from settings.json (any hook group whose
 # command path contains "skill-curator"). Backs up first; writes atomically. Leaves runtime state
-# (ledger, proposals) in place , drafts are the user's, not ours to delete. CC_SI_SETTINGS overrides.
+# (ledger, proposals) in place , drafts are the user's, not ours to delete. SKILL_CURATOR_SETTINGS overrides.
 set -o pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "$ROOT/lib/common.sh"
 
-SETTINGS="$(_expand "${CC_SI_SETTINGS:-$HOME/.claude/settings.json}")"
+SETTINGS="$(_expand "${SKILL_CURATOR_SETTINGS:-$HOME/.claude/settings.json}")"
 [ -f "$SETTINGS" ] || { echo "uninstall: no $SETTINGS, nothing to do"; exit 0; }
 if ! jq -e . "$SETTINGS" >/dev/null 2>&1; then echo "uninstall: $SETTINGS not valid JSON, aborting" >&2; exit 1; fi
 

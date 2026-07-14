@@ -22,17 +22,17 @@ does NOT already pin.
   is sanitized by `safe_slug` so it cannot escape proposals/; plus the source pins `--allowedTools
   ""` (the model has no write at all).
 
-## 2026-06-19, install/uninstall operate on CC_SI_SETTINGS (tests), default ~/.claude/settings.json
+## 2026-06-19, install/uninstall operate on SKILL_CURATOR_SETTINGS (tests), default ~/.claude/settings.json
 - `deploy/install.sh` / `uninstall.sh` read-merge-write a settings.json via jq, keyed on the
   command path containing `cc-self-improve` (idempotent: twice = no dup entries), backup first.
-  `CC_SI_SETTINGS` overrides the target so tests run against a temp file. **Not run against the live
+  `SKILL_CURATOR_SETTINGS` overrides the target so tests run against a temp file. **Not run against the live
   ~/.claude/settings.json in this loop** (host change + a concurrent loop is using this machine);
   delivered + tested, the operator runs it.
 
 ## 2026-06-19, SessionStart surfacing reads cc-harvest's ledger for the memory count
 - The surfacing line = staged-memory count (cc-harvest `_meta/learned-ledger.md` queued rows) +
   skill-draft count (proposals dir) + 7-day loop spend (cc-self-improve ledger). The memory source
-  path is `CC_SI_MEMORY_LEDGER` (default the ops-toolkit learned-ledger). Emits the SessionStart
+  path is `SKILL_CURATOR_MEMORY_LEDGER` (default the ops-toolkit learned-ledger). Emits the SessionStart
   `hookSpecificOutput.additionalContext` JSON shape.
 
 ## 2026-06-19, auto_promote knob: minimal + SAFE (references-add only), default OFF

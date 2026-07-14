@@ -88,6 +88,22 @@ heartbeat" today, finding 2): `session report` becomes `session heartbeat`,
 `session observe report` becomes `session observe show`. `triage` becomes
 `propose` (one word per meaning, ADR-0034 decision 2).
 
+**I5. One language: the kit speaks the five legs.** The README's taxonomy
+(Specify / Execute / Observe / Govern / Learn) is the kit's vocabulary, and
+nothing in the kit carries the name of the host agent that happens to run it.
+The `cc-` / `CC_*` prefix is a fossil of when this was a Claude-Code-only pile
+of scripts: it is banned in kit-owned names (a name the HOST provides, like
+`CC_PLUGINS_DIR`, keeps the host's spelling, because we do not own it). The
+operator surface (`bin/`, `commands/`) is already clean; the residue was
+`CC_SI_*` (skill-curator, ~220 occurrences), `CC_BACKLOG_*` (stats), and the
+`cc-improve` binary. All three are renamed with warning aliases in this spec's
+first PR, and the I2 lint keeps new ones out mechanically.
+
+Naming rule for a new pipeline, in order: the module owns a prefix
+(`SKILL_CURATOR_*`, `STATS_*`, `SESSION_*`, `QUEUE_*`); the verb comes from the
+closed vocabulary in I4; the artifact from the pattern in I3; the proposal from
+the currency in I1. Nothing in that list mentions the host agent.
+
 ### Migration (back-compat, no flag day)
 
 Every rename ships as: new name canonical, old name an alias that works and
@@ -100,6 +116,7 @@ breaks on upgrade; the deprecation line is what drives the cleanup.
 |---|---|---|---|
 | T1 | `stats` reads `BACKLOG_STAGE_*` first; `CC_BACKLOG_*` deprecated alias + stderr warn. Registry rows updated. | stats | test: both names resolve; alias warns |
 | T2 | Env-name lint: a test that fails on any new `CC_*`-prefixed env in `lib/` (catches finding 1 and the `CC_SI_*` holdout mechanically) | gate | negative control: adding `CC_FOO` fails the suite |
+| T2b | I5 sweep: `CC_SI_*` -> `SKILL_CURATOR_*`, `bin/cc-improve` -> `bin/skill-improve`, both with warning aliases; registry rows + lint seed regex follow | skill-curator | test: 11/11 curate incl. alias + canonical-wins assertions |
 | T3 | `queue.sh` sources `kit-log-dir.sh`; journal lands under the durable root | queue | test: `KIT_LEDGER_DIR` moves the journal |
 | T4 | `session report` -> `session heartbeat`; `session observe report` -> `session observe show`; aliases warn | session | test: both spellings work, alias warns |
 | T5 | `session audit triage` -> `session audit propose` (alias warns) | session | smoke |

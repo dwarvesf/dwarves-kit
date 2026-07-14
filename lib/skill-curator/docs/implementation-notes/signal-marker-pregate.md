@@ -16,7 +16,7 @@ reviewer's control flow should still reference ADR 0010, not hunt for a SPEC.
 **Context:** `has_signal_markers()` could go in `lib/common.sh` next to `contains_secret`.
 **Decision:** kept it in `reviewer-run.sh` beside its only caller. **Why:** the gate has exactly one
 consumer and the pattern is domain-specific to the reviewer's signal list; co-location beats a
-shared-lib indirection. Overridable via `signal_markers` / `CC_SI_SIGNAL_MARKERS` for tuning without
+shared-lib indirection. Overridable via `signal_markers` / `SKILL_CURATOR_SIGNAL_MARKERS` for tuning without
 an edit. **Trade-off:** if a second caller ever needs it, promote to `common.sh` then.
 
 ## 2026-07-02 10:30 Doc backfill during the SDD review pass

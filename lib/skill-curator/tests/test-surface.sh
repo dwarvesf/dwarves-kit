@@ -8,17 +8,17 @@ pass=0; fail=0
 ok(){ echo "  ok: $*"; pass=$((pass+1)); }
 no(){ echo "  FAIL: $*" >&2; fail=$((fail+1)); }
 
-export CC_SI_STATE_DIR="$TMP/state" CC_SI_PROPOSALS_DIR="$TMP/proposals"
-export CC_SI_MEMORY_LEDGER="$TMP/learned-ledger.md"
-mkdir -p "$CC_SI_STATE_DIR" "$CC_SI_PROPOSALS_DIR/draft-one"
-: > "$CC_SI_PROPOSALS_DIR/draft-one/SKILL.md"
+export SKILL_CURATOR_STATE_DIR="$TMP/state" SKILL_CURATOR_PROPOSALS_DIR="$TMP/proposals"
+export SKILL_CURATOR_MEMORY_LEDGER="$TMP/learned-ledger.md"
+mkdir -p "$SKILL_CURATOR_STATE_DIR" "$SKILL_CURATOR_PROPOSALS_DIR/draft-one"
+: > "$SKILL_CURATOR_PROPOSALS_DIR/draft-one/SKILL.md"
 # memory ledger: 2 queued rows + 1 flushed (not counted) + header/sep
 { printf '| date | item | kind | home | status |\n|---|---|---|---|---|\n'
   printf '| 2026-06-18 | a | concept | til | queued |\n'
   printf '| 2026-06-18 | b | insight | research | queued |\n'
-  printf '| 2026-06-10 | c | decision | til | flushed |\n'; } > "$CC_SI_MEMORY_LEDGER"
+  printf '| 2026-06-10 | c | decision | til | flushed |\n'; } > "$SKILL_CURATOR_MEMORY_LEDGER"
 # cost ledger: one in-window row
-jq -nc --arg ts "$(date +%Y-%m-%d)" '{ts:$ts,kind:"skill-review",staged:true,total_cost_usd:0.0034}' > "$CC_SI_STATE_DIR/ledger.jsonl"
+jq -nc --arg ts "$(date +%Y-%m-%d)" '{ts:$ts,kind:"skill-review",staged:true,total_cost_usd:0.0034}' > "$SKILL_CURATOR_STATE_DIR/ledger.jsonl"
 
 # shellcheck source=lib/surface.sh
 . "$DIR/lib/surface.sh"
@@ -37,8 +37,8 @@ out="$(bash "$DIR/hooks/sessionstart-surface.sh" < /dev/null)"
 ctx="$(jq -r '.hookSpecificOutput.additionalContext // empty' <<<"$out" 2>/dev/null)"
 if [[ -n "$ctx" ]] && grep -q 'staged memory' <<<"$ctx"; then ok "valid JSON additionalContext"; else no "bad hook output: $out"; fi
 
-echo "[4] disabled (CC_SI_ENABLED=false) -> hook emits nothing (negative control)"
-out_off="$(CC_SI_ENABLED=false bash "$DIR/hooks/sessionstart-surface.sh" < /dev/null)"
+echo "[4] disabled (SKILL_CURATOR_ENABLED=false) -> hook emits nothing (negative control)"
+out_off="$(SKILL_CURATOR_ENABLED=false bash "$DIR/hooks/sessionstart-surface.sh" < /dev/null)"
 if [[ -z "$out_off" ]]; then ok "disabled -> no surfacing"; else no "surfaced while disabled: $out_off"; fi
 
 echo

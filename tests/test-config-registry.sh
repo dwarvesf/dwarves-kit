@@ -38,7 +38,7 @@ assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${
 assert_eq() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (expected '$3', got '$2')"; FAIL=$((FAIL+1)); fi; }
 
 # The exact seed regex named in _meta/megagoals/harness-loop/goals/08-config-surface.md step 2.
-SEED_RE='\$\{?(KIT|WAVE|QUEUE|MEGA|CC_SI|PROSE_RAG|MONEY_GATE|TIER4|MUX|TMUX|PANE|TERMINAL|STATS|CC_BACKLOG|HARVEST|BACKLOG|DWARVES)[A-Z_]*'
+SEED_RE='\$\{?(KIT|WAVE|QUEUE|MEGA|CC_SI|SKILL_CURATOR|PROSE_RAG|MONEY_GATE|TIER4|MUX|TMUX|PANE|TERMINAL|STATS|CC_BACKLOG|HARVEST|BACKLOG|DWARVES)[A-Z_]*'
 
 # Allowlist regex: dynamically derived from the registry's own "## Allowlist" table (single-
 # sourced -- this test file does not hand-maintain a second copy of the token list). The
@@ -150,15 +150,15 @@ assert_eq "get ledger.location resolves via the first (canonical KIT_LEDGER_DIR)
 # ---- SPEC-200 I2: the host-agent env-prefix ban, enforced mechanically ------------------------
 # The kit's naming invariant (function-named, never host-agent-prefixed) was enforced ONCE by
 # hand (docs/verification/kit-foldin-hooks.md renamed CC_BACKLOG_* -> BACKLOG_STAGE_*), then a
-# later migration reintroduced the banned prefix in lib/stats and CC_SI_* survived untouched.
+# later migration reintroduced the banned prefix in lib/stats and SKILL_CURATOR_* survived untouched.
 # Renamed-once-not-everywhere is a lint's job, not a reviewer's. Legacy names stay readable as
 # deprecated aliases; what this forbids is a NEW one.
 echo ""
 echo "== SPEC-200 I2: no new CC_*-prefixed env vars =="
-# Grandfathered: CC_SI_* + CC_BACKLOG_* are pre-SPEC-200 kit names kept as deprecated aliases.
+# Grandfathered: SKILL_CURATOR_* + CC_BACKLOG_* are pre-SPEC-200 kit names kept as deprecated aliases.
 # CC_PLUGINS_DIR is HOST-provided (Claude Code sets it); the kit only reads it, so it must keep
 # the host's spelling. The ban is on kit-OWNED names, not on names we do not control.
-CC_ALLOWED='CC_SI_|CC_BACKLOG_STAGING|CC_BACKLOG_BACKLOG|CC_BACKLOG_BACKLOG_FIX|CC_PLUGINS_DIR'
+CC_ALLOWED='SKILL_CURATOR_|CC_BACKLOG_STAGING|CC_BACKLOG_BACKLOG|CC_BACKLOG_BACKLOG_FIX|CC_PLUGINS_DIR'
 cc_orphans() {  # cc_orphans <dir...> -- CC_* env reads in CODE that are not grandfathered
   # -I (not -h: in rg, -h is --help, and a help dump piped onward is a VACUOUS pass).
   # Docs/manifests are excluded: a prose mention is not a reader.

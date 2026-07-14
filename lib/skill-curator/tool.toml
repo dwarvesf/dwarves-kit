@@ -8,7 +8,7 @@ created     = 2026-06-19
 # Moved into dwarves-kit (kit-foldin goal 04, 2026-07-05) from ops-toolkit's tools/cc-self-improve/,
 # renamed off "self-improve" (read as recursive-on-itself). Consumer-generic: wires into whatever
 # repo's ~/.claude/settings.json at install time; a consumer's own memory-capture ledger is
-# required-explicit via CC_SI_MEMORY_LEDGER (no default), never assumed.
+# required-explicit via SKILL_CURATOR_MEMORY_LEDGER (no default), never assumed.
 consumers   = []
 
 systems     = ["claude-code"]

@@ -85,7 +85,7 @@ $ cc-improve status            # against a seeded ledger
 
 ### Negative controls
 
-- **Model-no-write is structural (A2)**: with `CC_SI_SKILLS_DIR` pointed at a temp dir, a staged
+- **Model-no-write is structural (A2)**: with `SKILL_CURATOR_SKILLS_DIR` pointed at a temp dir, a staged
   run leaves `skills/` empty (test-reviewer 2) , the wrapper writes only to `skill-proposals/`. The
   source pins `--allowedTools ""` (test-reviewer 10). The full adversarial staging-gate test (a
   reviewer with no Write cannot write under `skills/` even on an injected transcript) is sub-goal 03.
@@ -105,11 +105,11 @@ $ cc-improve status            # against a seeded ledger
 cd tools/cc-self-improve
 bash tests/test-transcript-parse.sh && bash tests/test-reviewer.sh && bash tests/test-hook-async.sh
 # dry-run the wrapper with a mock envelope (no live model):
-TMP=$(mktemp -d); export CC_SI_STATE_DIR=$TMP/s CC_SI_PROPOSALS_DIR=$TMP/p
+TMP=$(mktemp -d); export SKILL_CURATOR_STATE_DIR=$TMP/s SKILL_CURATOR_PROPOSALS_DIR=$TMP/p
 jq -n --arg tp tests/fixtures/sample-transcript.jsonl '{session_id:"x",transcript_path:$tp}' > $TMP/pay.json
 jq -nc '{type:"result",total_cost_usd:0.001,result:({draft:{slug:"demo",name:"demo",description:"d",body:"---\nname: demo\n---\n# demo\n"},reason:"r"}|tojson)}' > $TMP/env.json
-CC_SI_REVIEWER_CMD="cat $TMP/env.json" bash lib/reviewer-run.sh $TMP/pay.json
-cat $TMP/p/demo/SKILL.md; cat $CC_SI_STATE_DIR/ledger.jsonl
+SKILL_CURATOR_REVIEWER_CMD="cat $TMP/env.json" bash lib/reviewer-run.sh $TMP/pay.json
+cat $TMP/p/demo/SKILL.md; cat $SKILL_CURATOR_STATE_DIR/ledger.jsonl
 ```
 
 ---
@@ -197,9 +197,9 @@ $ bash tests/test-async.sh | sed -n '1,2p'
 cd tools/cc-self-improve
 for t in test-promote test-staging-gate test-surface test-async test-reentrancy test-install; do bash tests/$t.sh; done
 # install dry-run against a throwaway settings.json (never the real one):
-TMP=$(mktemp -d); CC_SI_SETTINGS=$TMP/settings.json CC_SI_STATE_DIR=$TMP/state bash deploy/install.sh
+TMP=$(mktemp -d); SKILL_CURATOR_SETTINGS=$TMP/settings.json SKILL_CURATOR_STATE_DIR=$TMP/state bash deploy/install.sh
 jq '.hooks | {PreCompact,SessionEnd,SessionStart}' $TMP/settings.json
-CC_SI_SETTINGS=$TMP/settings.json CC_SI_STATE_DIR=$TMP/state bash deploy/uninstall.sh
+SKILL_CURATOR_SETTINGS=$TMP/settings.json SKILL_CURATOR_STATE_DIR=$TMP/state bash deploy/uninstall.sh
 ```
 
 ### Rollback (Feature B install touches a persistent file: ~/.claude/settings.json)
@@ -217,8 +217,8 @@ reversible and tested:
 Recorded rollback run (against a throwaway settings.json, never the real one):
 
 ```
-Command: CC_SI_SETTINGS=$T bash deploy/install.sh   # 3 cc-self-improve entries added
-Command: CC_SI_SETTINGS=$T bash deploy/uninstall.sh # entries removed, unrelated kept
+Command: SKILL_CURATOR_SETTINGS=$T bash deploy/install.sh   # 3 cc-self-improve entries added
+Command: SKILL_CURATOR_SETTINGS=$T bash deploy/uninstall.sh # entries removed, unrelated kept
 Exit: 0   (verified by tests/test-install.sh -> "test-install: all 6 passed")
 ```
 
@@ -251,7 +251,7 @@ report-only; the human runs `--apply`.
 | Piece | What | Where |
 |---|---|---|
 | Inventory | name + description + first paragraph + mtime + pinned, over skills/ | `lib/curate.sh:curate_inventory` |
-| Curator (no write) | `claude -p --allowedTools ""` returns a JSON plan; seam `CC_SI_CURATOR_CMD` | `lib/curate.sh:run_curator` |
+| Curator (no write) | `claude -p --allowedTools ""` returns a JSON plan; seam `SKILL_CURATOR_CURATOR_CMD` | `lib/curate.sh:run_curator` |
 | Report | propose-only banner + the model's narrative + proposed archives/clusters | `lib/curate.sh:curate_run` |
 | Archive | `git mv` to `_archive/` (non-git -> `mv`+manifest+warn); pinned-guard; never rm | `lib/curate.sh:_archive_one` |
 | Restore | `git mv` back (or `mv`) | `lib/curate.sh:curate_restore` |
@@ -280,13 +280,13 @@ report-only; the human runs `--apply`.
 $ bash tests/test-curate.sh | tail -1
 test-curate: all 9 passed
 
-$ CC_SI_CURATOR_CMD="cat env.json" cc-improve curate          # propose-only, fresh state dir
+$ SKILL_CURATOR_CURATOR_CMD="cat env.json" cc-improve curate          # propose-only, fresh state dir
 curate: report -> .../curator-report-20260619-172755.md
 curate: propose-only , 1 archive candidate(s); nothing changed. Review ..., then --apply.
 $ cat .../curator.heartbeat
 2026-06-19T17:27:55+0700
 
-$ CC_SI_CURATOR_CMD="cat env.json" cc-improve curate --apply
+$ SKILL_CURATOR_CURATOR_CMD="cat env.json" cc-improve curate --apply
 curate --apply: archived 1 skill(s) via git mv to _archive/ (none deleted)
 $ ls skills skills/_archive
 skills:        deploy-aws
@@ -344,7 +344,7 @@ plutil -lint deploy/macos/mini.cc-curator.plist
 | D2 | Gate ON + marker-free summary: model call skipped BEFORE the lock, ledgered `skip-no-signal`, exit 0 | ADR 0010 (the gate) |
 | D3 | Recall guard PER marker category (correction, frustration, technique, fix, debug, skill-patch): each keeps the session | ADR 0010 (keep bias) + review HIGH |
 | D4 | A gated session stages nothing under `proposals/` | negative control |
-| D5 | `signal_markers` / `CC_SI_SIGNAL_MARKERS` overrides the marker regex | ADR 0010 (override seam) |
+| D5 | `signal_markers` / `SKILL_CURATOR_SIGNAL_MARKERS` overrides the marker regex | ADR 0010 (override seam) |
 | D6 | Gate short-circuits BEFORE the lock: a marker-free run skips even while a lock is held | review MED (placement) |
 | D7 | Empty transcript short-circuits BEFORE the gate: no `skip-no-signal` row for an empty session | review LOW (ordering) |
 | D8 | `cc-improve status` breaks out `gate-skips (7d)` from real `reviewer runs (7d)` | review MED (honesty) |

@@ -85,25 +85,25 @@ the reviewer, `curate` does not log a cost row to the ledger, so its spend is no
 ## 5. Tune cost and cadence
 
 **What this does:** config lives at `~/.claude/skill-curator/config.toml` (copy of
-`config/config.example.toml`). Every key is also overridable by a `CC_SI_<KEY>` env var, and **env
+`config/config.example.toml`). Every key is also overridable by a `SKILL_CURATOR_<KEY>` env var, and **env
 wins** over the file. Tests use the env path; you will normally edit the file.
 
 | Key / env | Default | Effect |
 |---|---|---|
-| `enabled` / `CC_SI_ENABLED` | `true` | master switch for the skill-review hook + surfacing |
-| `model` / `CC_SI_MODEL` | `haiku` | reviewer model (`claude -p --model`) |
-| `curator_model` / `CC_SI_CURATOR_MODEL` | (= `model`) | curator model |
-| `max_turns` / `CC_SI_MAX_TURNS` | `2` | `claude -p --max-turns` for both calls |
-| `transcript_k` / `CC_SI_TRANSCRIPT_K` | `40` | last-K turns fed to the reviewer (smaller = cheaper) |
-| `auto_promote` / `CC_SI_AUTO_PROMOTE` | `false` | enable `skill-review auto` (references-add to an existing umbrella only) |
-| `signal_gate` / `CC_SI_SIGNAL_GATE` | `false` | skip the model call for a summary with zero signal markers (opt-in cost gate; ADR-0010) |
-| `signal_markers` / `CC_SI_SIGNAL_MARKERS` | (built-in regex) | override the marker pattern the gate matches on |
-| `CC_SI_STATE_DIR` | `~/.claude/skill-curator` | ledger + lock + config + reports |
-| `CC_SI_PROPOSALS_DIR` | `~/.claude/skill-proposals` | the staging gate |
-| `CC_SI_SKILLS_DIR` | `~/.claude/skills` | the live library + `_archive/` |
-| `CC_SI_MEMORY_LEDGER` | (unset; required) | the harvest ledger the surface line counts |
-| `CC_SI_SETTINGS` | `~/.claude/settings.json` | install/uninstall target (point elsewhere for a dry run) |
-| `CC_SI_REVIEWER_CMD` / `CC_SI_CURATOR_CMD` | (unset) | test seam: replace the `claude -p` call with a mock |
+| `enabled` / `SKILL_CURATOR_ENABLED` | `true` | master switch for the skill-review hook + surfacing |
+| `model` / `SKILL_CURATOR_MODEL` | `haiku` | reviewer model (`claude -p --model`) |
+| `curator_model` / `SKILL_CURATOR_CURATOR_MODEL` | (= `model`) | curator model |
+| `max_turns` / `SKILL_CURATOR_MAX_TURNS` | `2` | `claude -p --max-turns` for both calls |
+| `transcript_k` / `SKILL_CURATOR_TRANSCRIPT_K` | `40` | last-K turns fed to the reviewer (smaller = cheaper) |
+| `auto_promote` / `SKILL_CURATOR_AUTO_PROMOTE` | `false` | enable `skill-review auto` (references-add to an existing umbrella only) |
+| `signal_gate` / `SKILL_CURATOR_SIGNAL_GATE` | `false` | skip the model call for a summary with zero signal markers (opt-in cost gate; ADR-0010) |
+| `signal_markers` / `SKILL_CURATOR_SIGNAL_MARKERS` | (built-in regex) | override the marker pattern the gate matches on |
+| `SKILL_CURATOR_STATE_DIR` | `~/.claude/skill-curator` | ledger + lock + config + reports |
+| `SKILL_CURATOR_PROPOSALS_DIR` | `~/.claude/skill-proposals` | the staging gate |
+| `SKILL_CURATOR_SKILLS_DIR` | `~/.claude/skills` | the live library + `_archive/` |
+| `SKILL_CURATOR_MEMORY_LEDGER` | (unset; required) | the harvest ledger the surface line counts |
+| `SKILL_CURATOR_SETTINGS` | `~/.claude/settings.json` | install/uninstall target (point elsewhere for a dry run) |
+| `SKILL_CURATOR_REVIEWER_CMD` / `SKILL_CURATOR_CURATOR_CMD` | (unset) | test seam: replace the `claude -p` call with a mock |
 
 To spend less: raise `transcript_k` only if drafts are missing context (smaller is cheaper), keep
 `model = haiku`, or set `enabled = false`. The per-session trigger + single-flight lock already bound

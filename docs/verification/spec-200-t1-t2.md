@@ -14,6 +14,8 @@
 | A5 | The 42 pre-existing feedback-loop assertions (which all run on the DEPRECATED names) stay green | NEGATIVE CONTROL for back-compat |
 | A6 | A lint fails on any new un-grandfathered `CC_*` env var in kit code | T2 |
 | A7 | A planted `CC_NEWLY_BANNED` IS flagged by that lint | NEGATIVE CONTROL |
+| A8 | skill-curator speaks `SKILL_CURATOR_*` / `skill-improve`; the retired `CC_SI_*` env and `cc-improve` binary still work and warn; canonical wins when both are set | SPEC-200 I5 |
+| A9 | The rename regresses nothing: all 11 skill-curator suites stay green | NEGATIVE CONTROL for the sweep |
 
 ## Implementation
 
@@ -30,6 +32,8 @@
 |---|---|---|---|
 | Feedback loop + env family (A1-A5) | `bash lib/stats/tests/test-feedback.sh` | `47 passed, 0 failed` (42 pre-existing on the alias + 5 new) | PASS |
 | Registry lints + prefix ban (A6-A7) | `bash tests/test-config-registry.sh` | `21/21 passed` | PASS |
+| I5 sweep: skill-curator renamed (A8) | `bash lib/skill-curator/tests/test-curate.sh` | `all 11 passed` (9 pre-existing + alias + canonical-wins) | PASS |
+| I5 sweep: no regression (A9) | all 11 skill-curator suites | 11/11 suites green | PASS |
 
 ## Run detail
 
