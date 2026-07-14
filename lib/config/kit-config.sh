@@ -62,7 +62,11 @@ kit_config_get() {
 }
 
 # --- self-test: `bash lib/config/kit-config.sh selftest` (ponytail: one runnable check) ---
-if [ "${1:-}" = "selftest" ]; then
+# EXECUTED-directly guard: a sourced file inherits the CALLER's "$@". Without this, any
+# verb-taking CLI that sources this lib and is invoked with `selftest` (e.g. `queue.sh
+# selftest`) silently ran this suite AND inherited its `set -euo pipefail` + EXIT trap, into
+# a launcher that deliberately runs without -e. Reproduced and fixed (review finding).
+if [ "${BASH_SOURCE[0]}" = "$0" ] && [ "${1:-}" = "selftest" ]; then
   set -euo pipefail
   d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
   mkdir -p "$d/root" "$d/proj"

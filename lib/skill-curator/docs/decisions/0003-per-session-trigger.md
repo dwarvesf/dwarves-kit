@@ -12,7 +12,7 @@ most expensive, already-built piece.
 
 ## Decision
 
-cc-self-improve is the SKILL half only. Its reviewer fires on **PreCompact / SessionEnd** (its own
+skill-curator is the SKILL half only. Its reviewer fires on **PreCompact / SessionEnd** (its own
 hook entry, the same events cc-harvest already uses), which maps faithfully to Hermes's *skill nudge*
 (per substantial chunk of work, not per literal turn). The per-turn MEMORY cadence is added to
 cc-harvest instead (its `--stop-trigger`), not here.

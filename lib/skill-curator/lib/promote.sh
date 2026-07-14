@@ -23,9 +23,9 @@ _desc_of() {  # read `description:` from a SKILL.md frontmatter, else ""
 }
 
 promote_list() {
-  [ -d "$CC_SI_PROPOSALS_DIR" ] || { echo "(no staged drafts)"; return 0; }
+  [ -d "$SKILL_CURATOR_PROPOSALS_DIR" ] || { echo "(no staged drafts)"; return 0; }
   local found=0 d slug
-  for d in "$CC_SI_PROPOSALS_DIR"/*/; do
+  for d in "$SKILL_CURATOR_PROPOSALS_DIR"/*/; do
     [ -d "$d" ] || continue
     slug="$(basename "$d")"; _is_reserved "$slug" && continue
     [ -f "$d/SKILL.md" ] || continue
@@ -38,7 +38,7 @@ promote_list() {
 promote_one() {
   local slug="${1:-}" force=0; [ "${2:-}" = "--force" ] && force=1
   [ -n "$slug" ] || { echo "promote: need a slug" >&2; return 2; }
-  local src="$CC_SI_PROPOSALS_DIR/$slug" dest="$CC_SI_SKILLS_DIR/$slug"
+  local src="$SKILL_CURATOR_PROPOSALS_DIR/$slug" dest="$SKILL_CURATOR_SKILLS_DIR/$slug"
   [ -d "$src" ] && [ -f "$src/SKILL.md" ] || { echo "promote: no draft '$slug'" >&2; return 2; }
 
   if contains_secret "$(cat "$src/SKILL.md" 2>/dev/null)"; then
@@ -49,10 +49,10 @@ promote_one() {
     echo "promote: REFUSED , '$slug' already exists under skills/; re-run with --force to replace" >&2
     return 4
   fi
-  mkdir -p "$CC_SI_SKILLS_DIR" 2>/dev/null || { echo "promote: cannot create $CC_SI_SKILLS_DIR" >&2; return 5; }
+  mkdir -p "$SKILL_CURATOR_SKILLS_DIR" 2>/dev/null || { echo "promote: cannot create $SKILL_CURATOR_SKILLS_DIR" >&2; return 5; }
   if [ -e "$dest" ] && [ "$force" = 1 ]; then   # back up the live skill before replacing (never rm)
     local bak
-    bak="$CC_SI_PROPOSALS_DIR/_replaced/${slug}-$(date +%Y%m%d-%H%M%S)"
+    bak="$SKILL_CURATOR_PROPOSALS_DIR/_replaced/${slug}-$(date +%Y%m%d-%H%M%S)"
     mkdir -p "$(dirname "$bak")" 2>/dev/null || true
     mv "$dest" "$bak" 2>/dev/null && si_log "promote --force: backed up live skill -> $bak"
   fi
@@ -63,9 +63,9 @@ promote_one() {
 
 promote_reject() {
   local slug="${1:-}"; [ -n "$slug" ] || { echo "reject: need a slug" >&2; return 2; }
-  local src="$CC_SI_PROPOSALS_DIR/$slug"
+  local src="$SKILL_CURATOR_PROPOSALS_DIR/$slug"
   [ -d "$src" ] || { echo "reject: no draft '$slug'" >&2; return 2; }
-  local dest="$CC_SI_PROPOSALS_DIR/_rejected/$slug"
+  local dest="$SKILL_CURATOR_PROPOSALS_DIR/_rejected/$slug"
   mkdir -p "$(dirname "$dest")" 2>/dev/null || true
   [ -e "$dest" ] && dest="${dest}-$(date +%Y%m%d-%H%M%S)"
   mv "$src" "$dest" 2>/dev/null || { echo "reject: move failed" >&2; return 5; }
@@ -79,14 +79,14 @@ promote_reject() {
 # SKILL.md-body edit. 02's reviewer does not emit this yet; the predicate is the safe gate for when
 # it does.
 auto_promote_eligible() {
-  local slug="${1:-}" f="$CC_SI_PROPOSALS_DIR/${1:-}/SKILL.md"
+  local slug="${1:-}" f="$SKILL_CURATOR_PROPOSALS_DIR/${1:-}/SKILL.md"
   [ -f "$f" ] || return 1
   local kind umb path
   kind="$(sed -n 's/^cc-si-kind:[[:space:]]*//p' "$f" | head -1)"
   umb="$(sed -n 's/^cc-si-umbrella:[[:space:]]*//p' "$f" | head -1)"
   path="$(sed -n 's/^cc-si-path:[[:space:]]*//p' "$f" | head -1)"
   [ "$kind" = "references-add" ] || return 1
-  [ -n "$umb" ] && [ -d "$CC_SI_SKILLS_DIR/$umb" ] || return 1     # umbrella must already exist
+  [ -n "$umb" ] && [ -d "$SKILL_CURATOR_SKILLS_DIR/$umb" ] || return 1     # umbrella must already exist
   case "$path" in references/*.md) : ;; *) return 1;; esac        # references-only, no traversal
   case "$path" in *..*) return 1;; esac
   contains_secret "$(cat "$f" 2>/dev/null)" && return 1
@@ -96,13 +96,13 @@ auto_promote_eligible() {
 promote_auto() {
   [ "$(cfg auto_promote false)" = "true" ] || { echo "auto-promote: disabled (auto_promote=false)"; return 0; }
   local d slug umb path n=0
-  for d in "$CC_SI_PROPOSALS_DIR"/*/; do
+  for d in "$SKILL_CURATOR_PROPOSALS_DIR"/*/; do
     [ -d "$d" ] || continue; slug="$(basename "$d")"; _is_reserved "$slug" && continue
     auto_promote_eligible "$slug" || continue
     umb="$(sed -n 's/^cc-si-umbrella:[[:space:]]*//p' "$d/SKILL.md" | head -1)"
     path="$(sed -n 's/^cc-si-path:[[:space:]]*//p' "$d/SKILL.md" | head -1)"
-    mkdir -p "$CC_SI_SKILLS_DIR/$umb/$(dirname "$path")" 2>/dev/null || continue
-    cp "$d/SKILL.md" "$CC_SI_SKILLS_DIR/$umb/$path" 2>/dev/null && {
+    mkdir -p "$SKILL_CURATOR_SKILLS_DIR/$umb/$(dirname "$path")" 2>/dev/null || continue
+    cp "$d/SKILL.md" "$SKILL_CURATOR_SKILLS_DIR/$umb/$path" 2>/dev/null && {
       promote_reject "$slug" >/dev/null    # clear the draft once absorbed
       echo "auto-promote: $slug -> skills/$umb/$path"; si_log "auto-promote: $slug -> $umb/$path"; n=$((n+1)); }
   done

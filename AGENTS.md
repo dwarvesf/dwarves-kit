@@ -32,7 +32,7 @@ Orient before you touch anything. Read top to bottom; stop when you have enough.
 1. **AGENTS.md** (this file) - how work is done here; the operate-contract.
 2. **CLAUDE.md** - the Claude-Code layer: stack, structure, rules, hooks, commands, plugin.
 3. **docs/specs/SPEC-NNN-<slug>.md** - the active spec; the shared contract for the cycle. Read its `## Verification` and `## After state` before implementing.
-4. **docs/architecture.md** / **WORKFLOW.md** - reference, not required per task. Read `docs/architecture.md` for how the pieces fit; read `WORKFLOW.md` for the lanes and the gate at each phase boundary, and its "Mega-goal delegate execution" section for how a multi-sub-goal mega-goal run dispatches (delegate mode: one fresh headless session per sub-goal; `/goal` stays the official outer loop either way).
+4. **docs/architecture.md** / **WORKFLOW.md** / **docs/data-flow.md** - reference, not required per task. Read `docs/architecture.md` for how the pieces fit; `docs/data-flow.md` for how DATA moves (the signal path telemetry -> proposal -> board, the ledger write/read paths, the module map); read `WORKFLOW.md` for the lanes and the gate at each phase boundary, and its "Mega-goal delegate execution" section for how a multi-sub-goal mega-goal run dispatches (delegate mode: one fresh headless session per sub-goal; `/goal` stays the official outer loop either way).
 
 ## 2. Task loop
 

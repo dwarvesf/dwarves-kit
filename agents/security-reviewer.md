@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Deep security review of code changes. Read-only. Dispatched by /review or /review-team for focused security analysis. More thorough than /review's built-in security checks.
+description: Deep security review of code changes. Read-only. Dispatched by /review-team for focused security analysis. More thorough than /review's built-in security checks.
 tools:
   - Read
   - Grep

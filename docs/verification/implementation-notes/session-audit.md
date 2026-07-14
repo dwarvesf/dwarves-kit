@@ -74,3 +74,25 @@ of building it.
 Why: session-intel is deterministic-by-design (its README forbids LLM inside);
 folding an LLM artifact in deserves its own decision, not a rider.
 Impact: revisit when the third digest demonstrably annoys.
+
+## 2026-07-14 19:30 Review-lens findings (the ones worth remembering)
+
+Two lenses (advisor + correctness/security) on the SPEC-200 PR found seven defects the green
+suite could not see. Recording the two that generalize:
+
+1. **A hand-list beside a deriving resolver is a bug waiting for the next key.** The
+   skill-curator alias shipped as a 9-name list next to `cfg()`, which DERIVES
+   `SKILL_CURATOR_<KEY>` from its argument. The 8 cfg-only keys silently lost their alias, so
+   `CC_SI_ENABLED=false` (an operator who had turned the curator OFF) resolved back to `true`
+   and re-enabled it, with no warning. `stats` had already done it right by putting the alias
+   INSIDE the resolver. Same problem, two designs, in one PR. Fix: alias in `cfg()`.
+2. **A negative control must plant the violation in a shape the author did NOT imagine.**
+   Every NC in the first contract suite planted the violation in the exact form its own regex
+   matched, so four rules were vacuous (blind to single-quoted `environ.get`, extensionless
+   executables, flagless `rg`, and a comment name-dropping the renderer). The NCs proved the
+   regexes matched themselves.
+
+Also: `render_block` did not collapse newlines, so LLM-authored text (which now reaches it via
+session-audit, i.e. transcript content, i.e. attacker-influenceable) could forge a second
+`## [staged]` block into the proposal buffer. Sanitized at the ONE renderer, which is exactly
+the leverage SPEC-200 I1 exists to give.

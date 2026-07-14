@@ -1,7 +1,7 @@
 # 0034. Harness-loop taxonomy: names, scopes, and surface consolidation
 
 Date: 2026-07-12
-Status: Proposed (GATE: sub-goals 04/05/06/08/09 of the harness-loop mega, and transitively 10, do not start until Han accepts this record)
+Status: Accepted 2026-07-14 (Han). The GATE it carried is discharged: sub-goals 04/05/06/08/09/10 shipped, the `bin/` layout and `lib/config/module-registry.md` are live, and the five legs are the kit's working vocabulary. The Status field simply never got bumped after the merge (PR #236, 2026-07-12); a doc sweep on 2026-07-14 caught it.
 Relates-to: `docs/briefs/DECISION-BRIEF-harness-loop.md` §4 (working positions attacked here), `docs/research/2026-07-05-harness-ops-loop-and-naming.md` (the naming convention this amends), ADR-0031 (no new learning engine), SPEC-126 (weekend-batch kit/skill split), SPEC-182/183/184 (stats plane, config resolver, stable bin entrypoints), SPEC-129 (OUTCOME emitter), ADR-0009 (plugin dual-ship), PHILOSOPHY §3 (no unbounded outer loops)
 
 ## Decision (one line)

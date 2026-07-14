@@ -64,6 +64,8 @@ flowchart LR
   GV([Govern]) -. gates every<br/>phase boundary .- EX
 ```
 
+This diagram is the legs. For how DATA actually moves through them (telemetry -> proposal -> board -> ship, the ledger write/read paths, and the module map of who calls whom), see [`docs/data-flow.md`](docs/data-flow.md).
+
 Legs are metadata, not directories: each module keeps its name and install unit, and declares a primary leg. The authoritative assignment (machine copy in [`lib/config/module-registry.md`](lib/config/module-registry.md), rendered by `config list`):
 
 | Leg | Modules / subsystems |
@@ -290,11 +292,11 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
-| task-verifier | /execute | Read-only verification against spec + tests |
+| task-verifier | /execute, /verify | Read-only verification against spec + tests |
 | integration-verifier | /execute, /verify | Read-only cross-task wiring + global acceptance check (multi-task specs) |
-| acceptance-verifier | /execute, /verify | Executes the spec's `## Verification` section against the build (read-only) |
+| acceptance-verifier | /verify | Executes the spec's `## Verification` section against the build (read-only) |
 | system-verifier | /verify | Runs the whole project's test suite end to end (read-only) |
-| recheck-verifier | /execute, /verify | Fresh-context re-audit of a verifier PASS: re-executes the recorded command |
+| recheck-verifier | /execute | Fresh-context re-audit of a verifier PASS: re-executes the recorded command |
 | claim-verifier | any command | Adversarial N-skeptic panel over a load-bearing free-text claim |
 | fix-agent | /execute | Targeted fixes on FAIL:fixable (max 2 retries) |
 | data-etl-worker | /execute | Domain implementer: pipelines/transforms (DuckDB SQL first) |
@@ -306,7 +308,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | infra-reviewer | /review-team | Infra lens (deploy/rollback safety, CI/CD, least-privilege) |
 | performance-reviewer | /review-team | Performance lens (hot paths, N+1, allocations, caching) |
 | advisor | final boundary | Cross-cutting kit-default lens: critique + over-suggest modes |
-| brief-reviewer | /think, /spec | Static review of a brief/requirement before it hardens into a spec |
+| brief-reviewer | /think | Static review of a brief/requirement before it hardens into a spec |
 | responding-to-review | /review-team | Verifies review findings, pushes back when wrong, proposes fixes (no performative agreement) |
 | agent-effectiveness | agent authoring | Validates a new/changed agent definition's effectiveness (4 lenses) |
 | doc-verifier | /docs | Read-only check that docs match the live codebase |

@@ -1,0 +1,39 @@
+# Known C3/C4 gaps: modules that predate the kit contract (SPEC-200) and do not yet meet it.
+#
+# The lint FAILS on any gap not listed here, so no NEW debt can land. Each line is a visible
+# IOU with a reason; deleting a line is the work, adding one is a decision a human makes in a
+# diff (and a reviewer sees). This file only shrinks.
+#
+# Exposed 2026-07-14 when the contract's module scope was widened from "dirs with a tool.toml"
+# (3 modules) to the declared KIT_KNOWN_MODULES list (12). The narrow scope was passing green
+# while never looking at board, queue, session, gate, learn... including the module that same
+# PR was editing.
+
+# board: SPEC-147/149 live at repo docs/specs/; the module has no front door or proof of its own.
+lib/board/README.md
+lib/board/SPEC
+lib/board/docs/proof-of-done.md
+
+# queue: SPEC-148 lives at repo docs/specs/; its tests are repo-root tests/test-queue.bats (C4 ok).
+lib/queue/README.md
+lib/queue/SPEC
+lib/queue/docs/proof-of-done.md
+
+# prose-rag: a Rust binary with a SPEC + README; no proof-of-done, and its tests are cargo-side,
+# not a tests/*.sh the contract can see. Both are real gaps, not lint artifacts.
+lib/prose-rag/docs/proof-of-done.md
+lib/prose-rag/tests
+
+# ---------------------------------------------------------------------------------------------
+# Design-doc gaps the contract does NOT lint for (2026-07-14 doc sweep). Recorded here so they
+# are visible; C3 checks that README/SPEC/proof EXIST, it cannot check that a design is
+# documented at all. Fixing these is real work, not a file-touch:
+#
+#   cosmetic    5 of its 6 hooks have no SPEC, no proof, no implementation notes (the thinnest
+#               module in the kit; only codebase-index is specced).
+#   money_gate  no SPEC was ever written: it entered at kit-foldin and has only a joint
+#               proof-of-done shared with prose_rag.
+#   telemetry   has an origin SPEC but zero ADR / proof / implementation notes of its own.
+#
+# Also: architecture docs are almost never per-module (only skill-curator has one), and ADRs
+# exist for only 4 of 21 subsystems. Both are acceptable for now; neither is invisible anymore.

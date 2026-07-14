@@ -1,10 +1,10 @@
-# Implementation notes: cc-self-improve Phase C curator (cc-elevation-r4 sub-goal 04)
+# Implementation notes: skill-curator Phase C curator (cc-elevation-r4 sub-goal 04)
 
 Delta from SPEC-103 (TASK-011..014) + goal `04-skill-curator.md`. Only what the spec/goal does NOT pin.
 
-## 2026-06-19, curator pure-function seam `CC_SI_CURATOR_CMD`
-- Mirrors the reviewer's `CC_SI_REVIEWER_CMD`: the `claude -p --allowedTools ""` curator call is
-  isolated behind `CC_SI_CURATOR_CMD` (emits a claude -p envelope whose `.result` is the plan JSON),
+## 2026-06-19, curator pure-function seam `SKILL_CURATOR_CURATOR_CMD`
+- Mirrors the reviewer's `SKILL_CURATOR_REVIEWER_CMD`: the `claude -p --allowedTools ""` curator call is
+  isolated behind `SKILL_CURATOR_CURATOR_CMD` (emits a claude -p envelope whose `.result` is the plan JSON),
   so the plan-parse / report / archive / restore logic tests with no live model.
 
 ## 2026-06-19, archive uses `git mv`, non-git falls back to `mv` + manifest (never rm)
@@ -50,4 +50,4 @@ Delta from SPEC-103 (TASK-011..014) + goal `04-skill-curator.md`. Only what the 
   `MANUAL.md`, `RUNBOOK.md`, `SPEC.md` (index), and 9 ADRs under `docs/decisions/`. INVENTORY shape
   corrected to `daemon-service`, tier stays `done`. Other architect findings folded into the docs:
   the `reviewer-spawn.sh` indirection, the `auto_promote` references-add exception, the brittle
-  `CC_SI_MEMORY_LEDGER` cc-harvest coupling (RUNBOOK incident 9), the `reviewer.lock` vs `.d` naming wart.
+  `SKILL_CURATOR_MEMORY_LEDGER` cc-harvest coupling (RUNBOOK incident 9), the `reviewer.lock` vs `.d` naming wart.

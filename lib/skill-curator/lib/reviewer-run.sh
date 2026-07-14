@@ -7,7 +7,7 @@
 # appends cost to the ledger. The model never touches the filesystem; staging-by-path is a hard
 # gate (SPEC-103 DEC-008). Always exits 0 (a reviewer must never break a session).
 #
-# Test seam: CC_SI_REVIEWER_CMD overrides the claude call (reads the prompt on stdin, emits a
+# Test seam: SKILL_CURATOR_REVIEWER_CMD overrides the claude call (reads the prompt on stdin, emits a
 # `claude -p --output-format json` envelope on stdout), so tests run without a live model.
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +41,7 @@ main() {
   trap 'si_release_lock' EXIT
 
   # Build reviewer input = prompt + summary.
-  local prompt_file="$CC_SI_ROOT/prompts/review-skill.md" input envelope
+  local prompt_file="$SKILL_CURATOR_ROOT/prompts/review-skill.md" input envelope
   [ -f "$prompt_file" ] || { si_log "reviewer: missing prompt $prompt_file"; return 0; }
   input="$(cat "$prompt_file"; printf '\n\n=== SESSION SUMMARY ===\n%s\n' "$summary")"
 
@@ -88,7 +88,7 @@ main() {
   fi
 
   # The only place the wrapper ever writes a draft: skill-proposals/<slug>/SKILL.md (NOT skills/).
-  local dir="$CC_SI_PROPOSALS_DIR/$slug"
+  local dir="$SKILL_CURATOR_PROPOSALS_DIR/$slug"
   if ! mkdir -p "$dir" 2>/dev/null; then
     si_log "reviewer: could not create $dir; no write"; _ledger false "$slug" "$cost" "$itok" "$otok" "mkdir-fail"; return 0
   fi
@@ -99,14 +99,14 @@ main() {
 }
 
 # run_reviewer: stdin = prompt; stdout = claude -p envelope JSON. CLAUDE_REVIEWING set for the
-# reentrancy guard. CC_SI_REVIEWER_CMD overrides the model call (tests). Model = no write.
+# reentrancy guard. SKILL_CURATOR_REVIEWER_CMD overrides the model call (tests). Model = no write.
 run_reviewer() {
-  if [ -n "${CC_SI_REVIEWER_CMD:-}" ]; then
-    CLAUDE_REVIEWING=1 bash -c "$CC_SI_REVIEWER_CMD"
+  if [ -n "${SKILL_CURATOR_REVIEWER_CMD:-}" ]; then
+    CLAUDE_REVIEWING=1 bash -c "$SKILL_CURATOR_REVIEWER_CMD"
   else
     CLAUDE_REVIEWING=1 claude -p --bare --no-session-persistence \
       --allowedTools "" --model "$(cfg model haiku)" --max-turns "$(cfg max_turns 2)" \
-      --output-format json 2>>"$CC_SI_LOG"
+      --output-format json 2>>"$SKILL_CURATOR_LOG"
   fi
 }
 
@@ -115,7 +115,7 @@ run_reviewer() {
 # skill-was-wrong note , mirroring prompts/review-skill.md's signal list), 1 if none are present.
 # The pattern is intentionally broad: a false positive only wastes one null-draft call, whereas a
 # false negative drops a real signal, so the gate keeps by default. Override via `signal_markers`
-# (config) / CC_SI_SIGNAL_MARKERS (env).
+# (config) / SKILL_CURATOR_SIGNAL_MARKERS (env).
 has_signal_markers() {
   local text="$1" pat
   pat="$(cfg signal_markers '')"

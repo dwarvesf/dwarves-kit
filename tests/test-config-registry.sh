@@ -38,7 +38,7 @@ assert() { TOTAL=$((TOTAL+1)); if [ "$2" -eq 0 ]; then echo -e "  ${GREEN}PASS${
 assert_eq() { TOTAL=$((TOTAL+1)); if [ "$2" = "$3" ]; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1)); else echo -e "  ${RED}FAIL${NC} $1 (expected '$3', got '$2')"; FAIL=$((FAIL+1)); fi; }
 
 # The exact seed regex named in _meta/megagoals/harness-loop/goals/08-config-surface.md step 2.
-SEED_RE='\$\{?(KIT|WAVE|QUEUE|MEGA|CC_SI|PROSE_RAG|MONEY_GATE|TIER4|MUX|TMUX|PANE|TERMINAL|STATS|CC_BACKLOG|HARVEST|BACKLOG|DWARVES)[A-Z_]*'
+SEED_RE='\$\{?(KIT|WAVE|QUEUE|MEGA|CC_SI|SKILL_CURATOR|PROSE_RAG|MONEY_GATE|TIER4|MUX|TMUX|PANE|TERMINAL|STATS|CC_BACKLOG|HARVEST|BACKLOG|DWARVES)[A-Z_]*'
 
 # Allowlist regex: dynamically derived from the registry's own "## Allowlist" table (single-
 # sourced -- this test file does not hand-maintain a second copy of the token list). The
@@ -146,6 +146,11 @@ assert "explain mega.wave_cap: level 3 (kit-root) shows the shadowed value 2" $R
 assert_eq "get ledger.location resolves via the first (canonical KIT_LEDGER_DIR) row" \
   "$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_LEDGER_DIR=/tie-break-proof bash "$CONFIG_BIN" get ledger.location)" \
   '/tie-break-proof'
+
+# SPEC-200 I2 (the CC_* prefix ban) is enforced ONCE, in tests/test-kit-contract.sh (rule C1).
+# A second copy lived here briefly and its allowlist immediately diverged from C1's: two
+# lints doing one job, silently disagreeing, is the fragmentation SPEC-200 exists to stop
+# (advisor finding 4). One rule, one enforcer.
 
 echo ""
 echo "=== $PASS/$TOTAL passed ==="

@@ -100,12 +100,12 @@ self-improvement run must never break your session), and nothing here ever delet
 ## 9. Memory count reads 0, or the SessionStart line omits it
 
 - **Symptom:** the SessionStart line says `0 staged memory`, or `skill-curator.log` has a
-  `CC_SI_MEMORY_LEDGER is not set` line.
-- **Why:** `CC_SI_MEMORY_LEDGER` has no default; it points at whatever knowledge/learning ledger
+  `SKILL_CURATOR_MEMORY_LEDGER is not set` line.
+- **Why:** `SKILL_CURATOR_MEMORY_LEDGER` has no default; it points at whatever knowledge/learning ledger
   YOUR OWN capture flow writes queued rows to (this is tenant config, not something the tool can
   guess). Unset is a clean, logged no-count, not a silent wrong path. If it IS set but still reads
   0, the ledger's table format may not match the `| ... | queued |` regex `lib/surface.sh` counts.
-- **Fix:** export `CC_SI_MEMORY_LEDGER` to your ledger's real path (in the hook env or your shell).
+- **Fix:** export `SKILL_CURATOR_MEMORY_LEDGER` to your ledger's real path (in the hook env or your shell).
   This affects only the surfaced count, not capture.
 
 ## Where things live

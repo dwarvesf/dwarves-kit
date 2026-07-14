@@ -182,6 +182,11 @@ jobs:
       - name: Run config-registry drift + bin/config tests (SPEC-198, harness-loop sub-goal 08)
         run: bash tests/test-config-registry.sh
 
+      # Quoted: an unquoted YAML scalar containing ": " parses as a mapping and breaks the
+      # whole workflow file (which is how this step shipped red on its first push).
+      - name: "Run the kit contract (SPEC-200: naming, wiring, docs, currency, root, portability)"
+        run: bash tests/test-kit-contract.sh
+
       - name: Run learn-propose tests (SPEC-195, harness-loop sub-goal 05)
         run: bash tests/test-learn-propose.sh
 

@@ -20,8 +20,8 @@ tp="$(printf '%s' "$payload" | jq -r '.transcript_path // empty' 2>/dev/null)"
 [ -n "$tp" ] || exit 0
 
 # Hand the payload to the detached child via a temp file (stdin does not survive a detached spawn).
-mkdir -p "$CC_SI_STATE_DIR/state" 2>/dev/null || exit 0
-pf="$CC_SI_STATE_DIR/state/payload-$$.json"
+mkdir -p "$SKILL_CURATOR_STATE_DIR/state" 2>/dev/null || exit 0
+pf="$SKILL_CURATOR_STATE_DIR/state/payload-$$.json"
 printf '%s' "$payload" > "$pf" 2>/dev/null || exit 0
 
 # Detached: new session so it survives the hook returning; the child self-guards with the

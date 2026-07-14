@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# install.sh: idempotent wiring of cc-self-improve into Claude Code settings.json.
+# install.sh: idempotent wiring of skill-curator into Claude Code settings.json.
 #   - skill-review hook on PreCompact + SessionEnd (async)
 #   - sessionstart-surface hook on SessionStart (async)
 # Backs up settings.json first; writes atomically; running twice adds NO duplicate entries.
-# CC_SI_SETTINGS overrides the target (tests). Never wires anything live by itself beyond the merge.
+# SKILL_CURATOR_SETTINGS overrides the target (tests). Never wires anything live by itself beyond the merge.
 set -o pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "$ROOT/lib/common.sh"
 
-SETTINGS="$(_expand "${CC_SI_SETTINGS:-$HOME/.claude/settings.json}")"
+SETTINGS="$(_expand "${SKILL_CURATOR_SETTINGS:-$HOME/.claude/settings.json}")"
 HOOK_SKILL="$ROOT/hooks/skill-review.sh"
 HOOK_SURFACE="$ROOT/hooks/sessionstart-surface.sh"
 
@@ -40,9 +40,9 @@ else
 fi
 
 # Runtime state + config (idempotent).
-mkdir -p "$CC_SI_STATE_DIR/state" 2>/dev/null || true
-if [ ! -f "$CC_SI_STATE_DIR/config.toml" ]; then
-  cp "$ROOT/config/config.example.toml" "$CC_SI_STATE_DIR/config.toml" 2>/dev/null \
-    && echo "install: seeded $CC_SI_STATE_DIR/config.toml"
+mkdir -p "$SKILL_CURATOR_STATE_DIR/state" 2>/dev/null || true
+if [ ! -f "$SKILL_CURATOR_STATE_DIR/config.toml" ]; then
+  cp "$ROOT/config/config.example.toml" "$SKILL_CURATOR_STATE_DIR/config.toml" 2>/dev/null \
+    && echo "install: seeded $SKILL_CURATOR_STATE_DIR/config.toml"
 fi
-echo "install: done. Opt-in/tune via $CC_SI_STATE_DIR/config.toml. Uninstall: deploy/uninstall.sh"
+echo "install: done. Opt-in/tune via $SKILL_CURATOR_STATE_DIR/config.toml. Uninstall: deploy/uninstall.sh"
