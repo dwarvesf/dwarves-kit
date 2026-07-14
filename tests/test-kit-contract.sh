@@ -251,6 +251,41 @@ wf_bad="$(grep -rnE '^[[:space:]]*-?[[:space:]]*(name|run|if):[[:space:]]+[^"'"'
           .github/workflows/ 2>/dev/null | grep -vE ':[[:space:]]*#' || true)"
 chk "no unquoted workflow scalar carries a colon-space (breaks the whole file)" "$wf_bad"
 
+# ---------------------------------------------------------------- C9 dispatch claims are true
+echo "== C9 lens wiring: every 'dispatched by /X' claim is real =="
+# README's agent roster and each agent's own frontmatter both name the command that dispatches
+# them. Three README cells and one frontmatter were WRONG on 2026-07-14 (acceptance-verifier
+# claimed /execute, brief-reviewer claimed /spec, security-reviewer claimed /review; none of
+# those commands mentions the agent). A prose claim about wiring is a claim a grep can check.
+badclaim=""
+# A command dispatches an agent either BY NAME, or INDIRECTLY through the role classifier
+# (`role-classify.sh agent-for <domain>` returns a *-worker name at runtime, so the literal
+# never appears in the command body). Treat the latter as dispatching the worker agents.
+dispatches() {  # dispatches <command-file> <agent>
+  grep -qF "$2" "$1" && return 0
+  case "$2" in *-worker) grep -q 'role-classify.*agent-for' "$1" && return 0 ;; esac
+  return 1
+}
+for agent_md in agents/*.md; do
+  a="$(basename "$agent_md" .md)"
+  # ONLY the explicit "Dispatched by ..." clause is a wiring claim. A command named elsewhere in
+  # the prose ("more thorough than /review's built-in checks") is a comparison, not a claim; the
+  # first cut flagged it and would have taught people to delete accurate sentences.
+  claim="$(grep -m1 '^description:' "$agent_md" | grep -oiE 'dispatched by [^.]*' || true)"
+  for cmd in $(printf '%s' "$claim" | grep -oE '/(kit:)?[a-z-]+' | sed 's|^/||; s|^kit:||' | sort -u); do
+    [ -f "commands/$cmd.md" ] || continue                       # not a command name, skip
+    dispatches "commands/$cmd.md" "$a" || badclaim="$badclaim $a:frontmatter-claims-/$cmd"
+  done
+  # commands named in README's roster row for this agent (that column IS a wiring claim)
+  row="$(grep -m1 "^| $a |" README.md || true)"
+  [ -n "$row" ] || continue
+  for cmd in $(printf '%s' "$row" | cut -d'|' -f3 | grep -oE '/(kit:)?[a-z-]+' | sed 's|^/||; s|^kit:||' | sort -u); do
+    [ -f "commands/$cmd.md" ] || continue
+    dispatches "commands/$cmd.md" "$a" || badclaim="$badclaim $a:README-claims-/$cmd"
+  done
+done
+chk "no agent claims a dispatcher that does not dispatch it" "$badclaim"
+
 # ---------------------------------------------------------------- negative controls
 # Each rule above asserts an ABSENCE. An absence-assertion that cannot fail is worse than no
 # test at all (see the C7 header: that is exactly how the first cut of C1 shipped green on CI
@@ -303,6 +338,15 @@ printf 'jobs:\n  test:\n    steps:\n      - name: Run the kit contract (SPEC-200
 nc8="$(grep -rnE '^[[:space:]]*-?[[:space:]]*(name|run|if):[[:space:]]+[^"'"'"'|>&*][^"'"'"']*:[[:space:]]' \
        "$TMP/nc/.github/workflows/" 2>/dev/null || true)"
 [ -n "$nc8" ] && ok "C8 catches the unquoted colon-space step name (the real incident)" || bad "C8 vacuous"
+
+# C9: an agent whose frontmatter claims a command that does not mention it
+printf -- '---\nname: nc-phantom-agent\ndescription: A fixture. Dispatched by /kit:ship for nothing.\n---\n' \
+  > "$TMP/nc/phantom.md"
+claim="$(grep -m1 '^description:' "$TMP/nc/phantom.md" | grep -oiE 'dispatched by [^.]*')"
+cmd="$(printf '%s' "$claim" | grep -oE '/(kit:)?[a-z-]+' | sed 's|^/||; s|^kit:||' | head -1)"
+if [ -f "commands/$cmd.md" ] && ! grep -qF "nc-phantom-agent" "commands/$cmd.md"; then
+  ok "C9 catches an agent claiming a dispatcher that ignores it"
+else bad "C9 vacuous"; fi
 
 echo ""
 echo "=== kit-contract: $PASS passed, $FAIL failed ==="

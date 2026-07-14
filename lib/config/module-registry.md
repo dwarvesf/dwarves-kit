@@ -39,6 +39,14 @@ it is not a row here either , the completeness rule is scoped to
 | bridge | Observe | presentation side; board mirror to the Hermes cockpit |
 | worktree | Execute | |
 | money_gate | Govern | |
+| classify | Specify | not a `KIT_KNOWN_MODULES` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a leg and pins THIS file as the machine home for that table. Added 2026-07-14: the leg was answerable only from ADR prose. |
+| gate | Govern | spine machinery, same as above (ADR-0034 decision 3). |
+| spec | Specify | spine machinery (ADR-0034 decision 3). |
+| goal | Specify | spine machinery (ADR-0034 decision 3). |
+| mega | Execute | spine machinery (ADR-0034 decision 3). |
+| learn | Learn | spine machinery; created BY ADR-0034 decision 1 (the Learn leg's home). |
+| telemetry | Observe | spine machinery; the durable-root resolver + lane telemetry. |
+| skill-curator | Learn | ADR-0034 decision 3 lists it under Learn; installs via hooks, not a `--with` module. |
 | prose_rag | Learn | **deviation, not in ADR-0034's decision-3 table** (checked: `grep -n prose_rag docs/decisions/0034-harness-loop-taxonomy.md` has zero hits in the leg table). Assigned Learn by this sub-goal's own judgment: prose-rag is a recall/retrieval read over the user's own accumulated corpus (til/research/learned-ledger), the same read-side shape as the Learn leg's other members, not an Observe-class run-telemetry capture. Flagged for Han; a later ADR-0034 amendment may reassign it. |
 
 ## Env <-> key registry

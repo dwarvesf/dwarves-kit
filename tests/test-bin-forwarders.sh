@@ -25,7 +25,10 @@ skip() { echo "  SKIP: $1"; SKIP=$((SKIP+1)); }
 assert_true() { if [ "$2" = "0" ]; then ok "$1"; else bad "$1"; fi; }
 
 echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
-EXPECTED="board classify config gate goal learn mega prose-rag queue session spec stats worktree-provision"
+# +plugin-check, +skill-improve, +skill-review (SPEC-200 C2, 2026-07-14): each was a module
+# executable reachable from NO operator surface. The contract lint (C2) now fails on that, and
+# this census is the other half of the same guarantee: bin/ may not grow silently either.
+EXPECTED="board classify config gate goal learn mega plugin-check prose-rag queue session skill-improve skill-review spec stats worktree-provision"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
