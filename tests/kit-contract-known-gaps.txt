@@ -31,9 +31,14 @@ lib/prose-rag/tests
 #
 #   cosmetic    5 of its 6 hooks have no SPEC, no proof, no implementation notes (the thinnest
 #               module in the kit; only codebase-index is specced).
-#   money_gate  no SPEC was ever written: it entered at kit-foldin and has only a joint
-#               proof-of-done shared with prose_rag.
 #   telemetry   has an origin SPEC but zero ADR / proof / implementation notes of its own.
+#
+# CLOSED 2026-07-15: money_gate. It had no SPEC (the only module without one) and only a joint
+# proof-of-done shared with prose_rag. Now: lib/money-gate/{README.md,SPEC.md,docs/proof-of-done.md}
+# + tests/test-money-gate.sh grown 7 -> 12 assertions. Note WHY the contract never saw it: it is a
+# hook-only module (hooks/money-gate.{sh,py}), and modules() resolves a module to lib/<name>/, which
+# did not exist. Creating the doc dir is what pulled it into C3/C4 scope, so it is now linted like
+# every other module rather than living in this file's blind spot.
 #
 # Also: architecture docs are almost never per-module (only skill-curator has one), and ADRs
 # exist for only 4 of 21 subsystems. Both are acceptable for now; neither is invisible anymore.

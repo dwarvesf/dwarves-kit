@@ -3,9 +3,13 @@
 (kit-foldin port of ops-toolkit cc-money-gate, function-named).
 
 When an edit lands in a repo you named financial (MONEY_GATE_REPOS) and the path or
-the new content touches money/auth (amounts, balances, transfers, wallets, keys,
-payroll, ...), this asks for confirmation before the edit lands. The point: a
-careless edit to cashflow / PnL / a wallet address should never be silent.
+ANY string in the tool payload touches money/auth (amounts, balances, transfers,
+wallets, keys, payroll, ...), this asks for confirmation before the edit lands. The
+point: a careless edit to cashflow / PnL / a wallet address should never be silent.
+
+The payload scan is recursive (collect_strings), so old_string and the MultiEdit
+edits[] array are scanned too, not just new content: DELETING a money line trips the
+gate as readily as adding one. Contract + known divergences: lib/money-gate/SPEC.md.
 
 pixelmojo's "LLM semantic review on PreToolUse" idea, but deterministic (regex on
 path + content) so it is fast enough to run on every edit and testable in-repo.
@@ -17,8 +21,9 @@ Env:
   MONEY_GATE_REPOS=a:b      sensitive repo names. CONSUMER CONFIG, no default: unset
                           means the gate is inert (adapter-default invariant; the
                           kit ships no tenant repo names)
-  MONEY_GATE_STRICT=1       ask-to-confirm instead of log-only
-  MONEY_GATE_LOG=FILE       log destination (default ~/.claude/logs/cc-money-gate.log)
+  MONEY_GATE_STRICT=1       ask-to-confirm instead of log-only (the LITERAL "1"; any
+                          other value, including "true", stays log-only)
+  MONEY_GATE_LOG=FILE       log destination (default ~/.claude/logs/money-gate.log)
 Stdlib only. Exit 0 always (decision is carried in the JSON, not the exit code).
 """
 import json
