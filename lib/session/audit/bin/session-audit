@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""session-audit: LLM deep-audit over Claude Code session transcripts.
+
+The agentic sibling of session-intel's deterministic digest: renders the
+co-located prompt.md (schema-first exploration, evidence tiers, owner-tagged
+recommendations with metric contracts) and hands it to an agent runtime
+(`claude -p` by default) that explores the transcripts itself with jq. Writes
+ONE dated report; the previous report is auto-passed as {PREV} so each run
+opens with a metric diff against the last (the improve-measure-improve loop).
+
+Propose-don't-dispose: `run` writes only the report file; `triage` writes only
+the staging buffer (a human promotes with `board promote`). Neither touches a
+board, a ledger, or a transcript. Expensive by design (measured ~$3.5/run on
+Sonnet over a 3-day window); run weekly or on demand, not per-session --
+session-semantic stays the cheap cron signal.
+
+`triage` emits the kit's ONE proposal currency: `## [staged]` blocks via
+lib/learn/staging-format.py (ADR-0034 decision 1), deduped against every
+staging state + the board, exactly like `learn propose` and `stats
+anomalies --propose`. The metric contract rides on Approach, the report +
+owner ride on Source.
+
+  session-audit run [--root D] [--days N] [--deep-read K] [--model M]
+                    [--out DIR] [--pricing-file F] [--json]
+  session-audit triage [--out DIR] [--report F] [--staging F] [--backlog F]
+                       [--dry-run] [--json]
+
+Env for tests: SESSION_AUDIT_CMD (shell string; the rendered prompt is piped to
+its stdin, and it must print the runtime's --output-format json), and
+SESSION_AUDIT_DATE (YYYY-MM-DD). If the command is missing or fails, degrades
+to `_unavailable_`; it never fabricates a report. Stdlib only.
+"""
+import argparse
+import datetime
+import glob
+import json
+import os
+import shlex
+import subprocess
+import sys
+
+DEFAULT_ROOT = os.path.expanduser("~/.claude/projects")
+DEFAULT_OUT = os.path.expanduser("~/.claude/intel")
+DEFAULT_MODEL = "sonnet"
+DEFAULT_CMD = ("claude -p --model {model} "
+               "--allowedTools Bash,Read,Grep,Glob --output-format json")
+# Per-million-token list prices; override with --pricing-file when they drift.
+# Models absent here (e.g. fable-5, no public list rate) are deliberately NOT
+# guessed: the prompt makes the audit report their share and mark $ totals as
+# a floor. Supply a rate via --pricing-file once one is authoritative.
+DEFAULT_PRICING = """\
+  sonnet: input $3.00, output $15.00, cache-read $0.30, cache-write $3.75
+  haiku:  input $1.00, output $5.00,  cache-read $0.10, cache-write $1.25
+  opus:   input $15.00, output $75.00, cache-read $1.50, cache-write $18.75"""
+
+
+def _repo_root():
+    """Walk up to the kit repo root (the dir holding lib/session/), same
+    repo-relative rule the other session tools use: no hardcoded personal path."""
+    d = os.path.dirname(os.path.realpath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("session-audit: cannot locate the kit repo root (lib/session not found)")
+
+
+def _today():
+    d = os.environ.get("SESSION_AUDIT_DATE")
+    return d if d else datetime.date.today().isoformat()
+
+
+def render_prompt(root, days, deep_read, pricing, prev):
+    tpl_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "prompt.md")
+    with open(tpl_path) as f:
+        t = f.read()
+    subs = {"{ROOT}": root, "{DAYS}": str(days), "{K}": str(deep_read),
+            "{PRICING}": pricing, "{PREV}": prev}
+    for k, v in subs.items():
+        t = t.replace(k, v)
+    return t
+
+
+def latest_report(out_dir):
+    reports = sorted(glob.glob(os.path.join(out_dir, "audit-*.md")))
+    return reports[-1] if reports else None
+
+
+def parse_runtime_json(text):
+    """Extract the result payload from `--output-format json`: a single object,
+    or (some CLI versions) an array whose last element is the result object."""
+    try:
+        d = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(d, list):
+        d = d[-1] if d and isinstance(d[-1], dict) else None
+    if not isinstance(d, dict) or not isinstance(d.get("result"), str):
+        return None
+    return d
+
+
+def run_agent(prompt, model):
+    cmd = os.environ.get("SESSION_AUDIT_CMD", DEFAULT_CMD.format(model=model))
+    try:
+        r = subprocess.run(shlex.split(cmd), input=prompt, capture_output=True,
+                           text=True, timeout=3600)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode != 0:
+        return None
+    return parse_runtime_json(r.stdout)
+
+
+def extract_recommendations(report_text):
+    """Pull the LAST fenced ```json block (the machine-triage footer the prompt
+    demands) and validate it as a list of recommendation objects."""
+    blocks, in_block, cur = [], False, []
+    for line in report_text.splitlines():
+        s = line.strip()
+        if not in_block and s.startswith("```json"):
+            in_block, cur = True, []
+        elif in_block and s.startswith("```"):
+            in_block = False
+            blocks.append("\n".join(cur))
+        elif in_block:
+            cur.append(line)
+    for raw in reversed(blocks):
+        try:
+            d = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(d, list) and all(isinstance(r, dict) and r.get("change") and r.get("owner") for r in d):
+            return d
+    return None
+
+
+def _staging_format():
+    """Load the kit's ONE staging-block grammar (ADR-0034 decision 1). Hyphenated
+    filename, so it needs the importlib dance drain.py/propose.py already use."""
+    import importlib.util
+    p = os.path.join(_repo_root(), "lib", "learn", "staging-format.py")
+    spec = importlib.util.spec_from_file_location("staging_format", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _default_staging():
+    return os.environ.get("BACKLOG_STAGE_STAGING") or os.path.join(
+        _repo_root(), "_meta", "backlog-staging.md")
+
+
+def _default_backlog():
+    return os.environ.get("BACKLOG_STAGE_BACKLOG") or os.path.join(
+        _repo_root(), "_meta", "BACKLOG.md")
+
+
+def to_candidate(rec, report_name, date):
+    """One audit recommendation -> the kit's staging-candidate dict. The metric
+    contract rides on Approach (it is what a later audit re-runs) and the report
+    + owner ride on Source (they are the citation)."""
+    m = rec.get("metric") or {}
+    approach = rec.get("change", "")
+    if m.get("name"):
+        approach += (f" · metric {m['name']} now {m.get('current', '?')}"
+                     f"; re-run: {m.get('rerun', '?')}")
+    return {
+        "title": rec.get("change", "").strip(),
+        "intent": rec.get("effect") or rec.get("finding") or "(no effect stated)",
+        "approach": approach,
+        "u": {"high": "hi", "medium": "mid", "low": "lo"}.get(str(rec.get("confidence", "")).lower(), "lo"),
+        "f": "mid",
+        "source": (f"session audit {date} | report={report_name} "
+                   f"owner={rec.get('owner', '?')} finding=\"{rec.get('finding', '')}\""),
+    }
+
+
+def cmd_triage(args):
+    report = args.report or latest_report(args.out)
+    if not report or not os.path.exists(report):
+        print(json.dumps({"status": "empty"}) if args.json
+              else "session-audit triage: no audit report found (run `session-audit run` first)")
+        return 0
+    with open(report) as f:
+        recs = extract_recommendations(f.read())
+    name = os.path.basename(report)
+    if recs is None:
+        print(json.dumps({"status": "no_block", "report": name}) if args.json
+              else f"session-audit triage: _none_ (no machine-triage json block in {name}; "
+                   "older report format, or the run dropped the footer)")
+        return 0
+
+    sf = _staging_format()
+    staging, backlog = args.staging or _default_staging(), args.backlog or _default_backlog()
+    # Dedup against EVERY staging state (staged/expired/rejected/promoted) + the board,
+    # so a rejected proposal never comes back on the next weekly audit.
+    existing = sf.existing_keys(("staging", staging), ("board", backlog))
+    date = _today()
+    blocks, staged, skipped = [], [], []
+    for rec in recs:
+        cand = to_candidate(rec, name, date)
+        key = sf.norm(cand["title"])
+        if not cand["title"] or key in existing:
+            skipped.append(cand["title"])
+            continue
+        block = sf.render_block(cand)
+        if block is None:
+            continue
+        existing.add(key)
+        blocks.append(block)
+        staged.append(cand["title"])
+
+    if blocks and not args.dry_run:
+        exists = os.path.isfile(staging)
+        parent = os.path.dirname(staging)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(staging, "a", encoding="utf-8") as fh:
+            if not exists:
+                fh.write("# Backlog staging\n\n")
+            fh.writelines(blocks)
+
+    if args.json:
+        print(json.dumps({"status": "ok", "report": name, "staged": staged,
+                          "skipped_duplicate": skipped,
+                          "staging": None if args.dry_run else staging,
+                          "dry_run": bool(args.dry_run)}, indent=2))
+        return 0
+    if args.dry_run:
+        sys.stdout.write("".join(blocks) or "session-audit triage: nothing new to stage\n")
+        return 0
+    where = staging if blocks else "(nothing new)"
+    print(f"session-audit triage: staged {len(staged)}, skipped {len(skipped)} duplicate "
+          f"-> {where}\n  promote with: board promote <n>   (review first: learn drain)")
+    return 0
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="session-audit",
+                                description="LLM deep-audit (propose-only) over CC session transcripts.")
+    sub = p.add_subparsers(dest="verb", required=True)
+    r = sub.add_parser("run", help="run the audit and write a dated report")
+    r.add_argument("--root", default=DEFAULT_ROOT)
+    r.add_argument("--days", type=int, default=7)
+    r.add_argument("--deep-read", type=int, default=5)
+    r.add_argument("--model", default=DEFAULT_MODEL)
+    r.add_argument("--out", default=DEFAULT_OUT)
+    r.add_argument("--pricing-file")
+    r.add_argument("--json", action="store_true")
+    t = sub.add_parser("triage", help="stage the latest report's recommendations as backlog proposals")
+    t.add_argument("--out", default=DEFAULT_OUT)
+    t.add_argument("--report", help="a specific report file (default: newest audit-*.md in --out)")
+    t.add_argument("--staging", help="staging file (default <repo>/_meta/backlog-staging.md)")
+    t.add_argument("--backlog", help="board file, read-only, for dedup (default <repo>/_meta/BACKLOG.md)")
+    t.add_argument("--dry-run", action="store_true", help="print the blocks, write nothing")
+    t.add_argument("--json", action="store_true")
+    args = p.parse_args(argv)
+
+    if args.verb == "triage":
+        return cmd_triage(args)
+
+    pricing = DEFAULT_PRICING
+    if args.pricing_file:
+        with open(args.pricing_file) as f:
+            pricing = f.read().rstrip()
+
+    os.makedirs(args.out, exist_ok=True)
+    prev = latest_report(args.out)
+    prompt = render_prompt(args.root, args.days, args.deep_read, pricing,
+                           prev if prev else "none provided for this run")
+
+    res = run_agent(prompt, args.model)
+    if res is None:
+        print(json.dumps({"status": "unavailable"}) if args.json
+              else "session-audit: _unavailable_ (no runtime / command failed / unparseable output)")
+        return 0
+
+    date = _today()
+    path = os.path.join(args.out, f"audit-{date}.md")
+    cost = res.get("total_cost_usd")
+    dur = res.get("duration_ms")
+    header = (f"<!-- session-audit {date} · root {args.root} · days {args.days} "
+              f"· model {args.model} · cost ${cost if cost is not None else '?'} "
+              f"· prev {prev if prev else 'none'} -->\n\n")
+    with open(path, "w") as f:
+        f.write(header + res["result"].rstrip() + "\n")
+
+    if args.json:
+        print(json.dumps({"status": "ok", "report": path, "prev": prev,
+                          "total_cost_usd": cost, "duration_ms": dur}, indent=2))
+    else:
+        print(f"session-audit: wrote {path}"
+              + (f"  (${cost:.2f}, {dur / 1000:.0f}s)" if cost is not None and dur else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
