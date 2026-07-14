@@ -27,6 +27,7 @@ import math
 import os
 import re
 import statistics
+import sys
 from dataclasses import dataclass
 
 from . import materialize
@@ -626,13 +627,32 @@ def _ops_toolkit_root() -> str | None:
     return os.environ.get("OPS_TOOLKIT")
 
 
+def _staging_env(canonical: str, legacy: str) -> str | None:
+    """Read the canonical env name, falling back to the pre-SPEC-200 `CC_*` name with
+    a one-line deprecation on stderr. The kit's naming invariant bans host-agent
+    prefixes (docs/verification/kit-foldin-hooks.md renamed CC_BACKLOG_* ->
+    BACKLOG_STAGE_* once already); stats entered the kit after that sweep and kept the
+    banned name, so board/learn/hooks/session-audit and stats addressed the SAME two
+    files under different env names. Canonical wins; the alias keeps existing setups
+    working for one release."""
+    v = os.environ.get(canonical)
+    if v:
+        return v
+    v = os.environ.get(legacy)
+    if v:
+        print(f"stats: {legacy} is deprecated, use {canonical} (SPEC-200)", file=sys.stderr)
+        return v
+    return None
+
+
 def staging_path() -> str | None:
-    """The cc-backlog staging buffer (the PROPOSAL surface, the ONLY write target of
-    `--propose`). Same env var cc-backlog uses. None when neither `CC_BACKLOG_STAGING`
-    nor `OPS_TOOLKIT` is set (05K: ops-toolkit-specific, required-explicit post-move);
+    """The staging buffer (the PROPOSAL surface, the ONLY write target of `--propose`).
+    Canonical env `BACKLOG_STAGE_STAGING` (deprecated alias `CC_BACKLOG_STAGING`), the
+    same name board/learn/hooks/session-audit read. None when neither it nor
+    `OPS_TOOLKIT` is set (05K: ops-toolkit-specific, required-explicit post-move);
     `stage_proposals` refuses to write rather than silently resolving a bogus relative
     path off an empty root."""
-    explicit = os.environ.get("CC_BACKLOG_STAGING")
+    explicit = _staging_env("BACKLOG_STAGE_STAGING", "CC_BACKLOG_STAGING")
     if explicit:
         return explicit
     root = _ops_toolkit_root()
@@ -640,11 +660,11 @@ def staging_path() -> str | None:
 
 
 def backlog_path() -> str | None:
-    """The board (read ONLY, for dedup; never written by this tool). Same env var
-    cc-backlog uses. None under the same conditions as `staging_path()`; `_existing_
-    titles` is already None-safe (a missing dedup source just means nothing to dedup
-    against)."""
-    explicit = os.environ.get("CC_BACKLOG_BACKLOG")
+    """The board (read ONLY, for dedup; never written by this tool). Canonical env
+    `BACKLOG_STAGE_BACKLOG` (deprecated alias `CC_BACKLOG_BACKLOG`). None under the same
+    conditions as `staging_path()`; `_existing_titles` is already None-safe (a missing
+    dedup source just means nothing to dedup against)."""
+    explicit = _staging_env("BACKLOG_STAGE_BACKLOG", "CC_BACKLOG_BACKLOG")
     if explicit:
         return explicit
     root = _ops_toolkit_root()
@@ -728,7 +748,7 @@ def stage_proposals(anomalies: list[Anomaly], staging: str | None, backlog: str 
         if staging is None:
             raise RuntimeError(
                 "ledger anomalies --propose has a proposal to stage but no destination is "
-                "configured: set CC_BACKLOG_STAGING (or OPS_TOOLKIT) to an explicit "
+                "configured: set BACKLOG_STAGE_STAGING (or OPS_TOOLKIT) to an explicit "
                 "absolute path (ops-toolkit-specific source, no default post-05K move)"
             )
         _append_blocks(staging, new_blocks)

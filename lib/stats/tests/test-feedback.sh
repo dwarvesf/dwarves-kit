@@ -235,6 +235,27 @@ hasnt "F-one-path no direct duckdb import"    "import duckdb"              "$(ca
 hasnt "F-one-path no adapters bypass"         "adapters"                  "$(cat "$SRC")"
 hasnt "F-one-path no raw-ledger reader bypass" "read_kit"                 "$(cat "$SRC")"
 
+# ---- SPEC-200 I2: one env family per resource -------------------------------------------------
+# Everything above ran on the DEPRECATED CC_BACKLOG_* names, so their still-working state is
+# already proven. These four check the canonical names win, and that the alias warns.
+envprobe() {  # envprobe <VAR=value ...> -- prints the resolved staging path; stderr -> $FIX/env.err
+  env -u CC_BACKLOG_STAGING -u BACKLOG_STAGE_STAGING -u OPS_TOOLKIT "$@" \
+    uv run python -c 'from stats import anomalies as a; print(a.staging_path())' 2>"$FIX/env.err"
+}
+CANON="$(envprobe BACKLOG_STAGE_STAGING=/tmp/canon.md)"
+[ "$CANON" = "/tmp/canon.md" ] && ok "F-env canonical BACKLOG_STAGE_STAGING resolves" \
+  || bad "F-env canonical name ignored (got '$CANON')"
+[ ! -s "$FIX/env.err" ] && ok "F-env canonical name is silent (no deprecation)" \
+  || bad "F-env canonical name warned: $(cat "$FIX/env.err")"
+LEGACY="$(envprobe CC_BACKLOG_STAGING=/tmp/legacy.md)"
+[ "$LEGACY" = "/tmp/legacy.md" ] && ok "F-env deprecated CC_BACKLOG_STAGING still works" \
+  || bad "F-env alias broke back-compat (got '$LEGACY')"
+grep -q "deprecated" "$FIX/env.err" && ok "F-env deprecated alias warns on stderr" \
+  || bad "F-env alias did not warn"
+BOTH="$(envprobe BACKLOG_STAGE_STAGING=/tmp/canon.md CC_BACKLOG_STAGING=/tmp/legacy.md)"
+[ "$BOTH" = "/tmp/canon.md" ] && ok "F-env canonical wins over the alias" \
+  || bad "F-env alias beat the canonical name (got '$BOTH')"
+
 echo ""
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

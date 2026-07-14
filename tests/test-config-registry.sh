@@ -147,6 +147,37 @@ assert_eq "get ledger.location resolves via the first (canonical KIT_LEDGER_DIR)
   "$(KIT_CONFIG_ROOT="$FIXDIR/root" KIT_PROJECT_ROOT="$FIXDIR/proj" KIT_LEDGER_DIR=/tie-break-proof bash "$CONFIG_BIN" get ledger.location)" \
   '/tie-break-proof'
 
+# ---- SPEC-200 I2: the host-agent env-prefix ban, enforced mechanically ------------------------
+# The kit's naming invariant (function-named, never host-agent-prefixed) was enforced ONCE by
+# hand (docs/verification/kit-foldin-hooks.md renamed CC_BACKLOG_* -> BACKLOG_STAGE_*), then a
+# later migration reintroduced the banned prefix in lib/stats and CC_SI_* survived untouched.
+# Renamed-once-not-everywhere is a lint's job, not a reviewer's. Legacy names stay readable as
+# deprecated aliases; what this forbids is a NEW one.
+echo ""
+echo "== SPEC-200 I2: no new CC_*-prefixed env vars =="
+# Grandfathered: CC_SI_* + CC_BACKLOG_* are pre-SPEC-200 kit names kept as deprecated aliases.
+# CC_PLUGINS_DIR is HOST-provided (Claude Code sets it); the kit only reads it, so it must keep
+# the host's spelling. The ban is on kit-OWNED names, not on names we do not control.
+CC_ALLOWED='CC_SI_|CC_BACKLOG_STAGING|CC_BACKLOG_BACKLOG|CC_BACKLOG_BACKLOG_FIX|CC_PLUGINS_DIR'
+cc_orphans() {  # cc_orphans <dir...> -- CC_* env reads in CODE that are not grandfathered
+  # -I (not -h: in rg, -h is --help, and a help dump piped onward is a VACUOUS pass).
+  # Docs/manifests are excluded: a prose mention is not a reader.
+  rg -o -I -N -g '!*.md' -g '!*.toml' \
+    '\$\{?CC_[A-Z_]+|os\.environ\.get\("CC_[A-Z_]+"|getenv\("CC_[A-Z_]+"' "$@" 2>/dev/null \
+    | rg -o 'CC_[A-Z_]+' | sort -u | rg -v "^($CC_ALLOWED)" || true
+}
+ORPHANS="$(cc_orphans lib hooks bin)"
+if [ -z "$ORPHANS" ]; then RC=0; else RC=1; fi
+assert "no un-grandfathered CC_* env var in lib/hooks/bin" $RC "(found: $(echo "$ORPHANS" | tr '\n' ' '))"
+
+# NEGATIVE CONTROL: plant one and prove the sweep catches it (an always-green lint is worse
+# than none).
+PLANT="$FIXDIR/plant"; mkdir -p "$PLANT"
+printf 'x = os.environ.get("CC_NEWLY_BANNED")\n' > "$PLANT/planted.py"
+if [ -n "$(cc_orphans "$PLANT")" ]; then RC=0; else RC=1; fi
+assert "NEGATIVE CONTROL: a planted CC_NEWLY_BANNED IS flagged" $RC
+rm -rf "$PLANT"
+
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]
