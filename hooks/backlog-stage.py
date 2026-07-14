@@ -196,24 +196,38 @@ def throttled(state_dir):
     return False
 
 
+def _staging_format():
+    """The kit's ONE staging-block grammar (ADR-0034 decision 1 / SPEC-200 I1)."""
+    import importlib.util
+    here = os.path.dirname(os.path.realpath(__file__))
+    path = os.path.join(here, "..", "lib", "learn", "staging-format.py")
+    spec = importlib.util.spec_from_file_location("staging_format", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def render_candidate(c, date):
-    title = str(c.get("title", "")).strip()
-    if not title:
-        return None
-    intent = str(c.get("intent", "")).strip() or "(no intent extracted)"
-    approach = str(c.get("approach", "")).strip() or "(no approach extracted)"
-    u = c.get("u", "lo") if c.get("u") in ("hi", "mid", "lo") else "lo"
-    f = c.get("f", "mid") if c.get("f") in ("hi", "mid", "lo") else "mid"
-    home = str(c.get("home", "")).strip()
-    home_line = f"- Home: {home}\n" if home else ""
-    return (
-        f"## [staged] {title}\n"
-        f"- Intent: {intent}\n"
-        f"- Approach: {approach}\n"
-        f"- Tags: #u-{u} #f-{f}\n"
-        f"{home_line}"
-        f"- Source: session {date}\n\n"
-    )
+    """Delegates to the ONE renderer. This function KEPT ITS OWN COPY of the block grammar
+    until 2026-07-15, and the copy had already drifted into a live hole: the shared renderer
+    collapses whitespace per field (added when these fields started carrying LLM-extracted
+    transcript text), this copy did a bare .strip(), so an embedded newline survived into a
+    line-oriented grammar and FORGED A SECOND STAGED BLOCK. One candidate in, two proposals
+    out, and the forged one was indistinguishable from a real one to `board promote`.
+
+    A copy of a shared grammar is not a copy for long. Same bug class as the hand-list beside
+    a deriving resolver, and as the second Python implementation of the ledger-root chain.
+    """
+    sf = _staging_format()
+    return sf.render_block({
+        "title": c.get("title", ""),
+        "intent": c.get("intent", ""),
+        "approach": c.get("approach", ""),
+        "u": c.get("u", "lo"),
+        "f": c.get("f", "mid"),
+        "home": c.get("home", ""),
+        "source": f"session {date}",
+    })
 
 
 # Deterministic pre-filter: forward-intent markers. If a transcript has NONE of these, it has no

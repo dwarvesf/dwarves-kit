@@ -222,11 +222,19 @@ while IFS= read -r f; do
     */board/bin/add-backlog)            # the PROMOTER: it PARSES staged blocks and writes the
       continue ;;                       # board. That is the human gate, the one edge into the
   esac                                  # board, not a proposer. Reading the grammar != minting it.
-  # A CODE reference to the renderer, not a comment mentioning it: a file that writes its own
-  # block and name-drops staging-format.py in a comment used to pass (review finding).
-  grep -vE '^[[:space:]]*#' "$f" \
-    | grep -q 'staging.format\|staging_format\|render_block\|render_candidate' \
-    || bespoke="$bespoke$f\n"
+  # It must LOAD the shared module, not merely NAME a renderer. The first cut grepped for
+  # `render_block|render_candidate`, and a file that DEFINES that function matches its own
+  # grep: the rule passed vacuously for the two files it most needed to catch. Both kept a
+  # private copy of the block grammar, and one had already drifted into a live forgery hole
+  # (a bare .strip() let an embedded newline mint a SECOND staged block: one candidate in,
+  # two proposals out, the forged one indistinguishable to `board promote`). A copy of a
+  # shared grammar is not a copy for long (found 2026-07-15).
+  body="$(grep -vE '^[[:space:]]*#' "$f")"
+  echo "$body" | grep -q 'staging-format\.py\|staging_format' || { bespoke="$bespoke$f\n"; continue; }
+  # ... and it must not ALSO define its own renderer next to that import.
+  echo "$body" | grep -qE '^[[:space:]]*def (render_block|render_candidate)\(' \
+    && ! echo "$body" | grep -qE 'sf\.render_block|\.render_block\(\{' \
+    && bespoke="$bespoke$f(defines-its-own)\n"
 # No --include: the kit's executables are EXTENSIONLESS by house rule, so filtering to
 # *.py/*.sh skipped session-audit, one of the very writers this rule governs. C6 had the same
 # blindness; the same fix. (Found by drawing the data-flow diagram and noticing a writer the
@@ -368,6 +376,16 @@ printf '# uses staging-format.py conventions\nprint("## [staged] forged")\n' > "
 if ! grep -vE '^[[:space:]]*#' "$TMP/nc/lib/bespoke.py" | grep -q 'staging_format\|render_block'; then
   ok "C5 catches a writer that only MENTIONS the renderer in a comment"
 else bad "C5 vacuous on the comment-mention evasion"; fi
+
+# C5: the evasion that actually shipped, twice: a writer that DEFINES its own render_block.
+# The old grep matched the definition itself, so the rule passed for the exact files it existed
+# to catch. This NC plants a private renderer, not a mention.
+printf 'def render_block(c):\n    return "## [staged] " + c["title"] + "\\n"\n' \
+  > "$TMP/nc/lib/private-renderer.py"
+nc5b="$(grep -vE '^[[:space:]]*#' "$TMP/nc/lib/private-renderer.py")"
+if ! echo "$nc5b" | grep -q 'staging-format\.py\|staging_format'; then
+  ok "C5 catches a writer that DEFINES its own renderer (the copy that drifted)"
+else bad "C5 vacuous on the private-renderer evasion"; fi
 
 # C5b: a direct board append via tee -a (not the >> shape the rule was written for)
 printf 'echo row | tee -a "$BACKLOG_FILE"\n' > "$TMP/nc/lib/autofile.sh"

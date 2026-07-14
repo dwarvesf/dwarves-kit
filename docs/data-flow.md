@@ -80,11 +80,23 @@ dispose: a machine may fill the staging buffer forever and never move the board.
 synthesis/repeat proposals and `/kit:retro`'s action items emit prose inside their own report,
 so a human must retype them to act. A lead nobody can promote is a lead nobody actions.
 
-**One writer keeps a private copy of the grammar** (open debt): `hooks/backlog-stage.py` has its
-own `render_candidate` instead of importing `lib/learn/staging-format.py`. It is byte-identical
-today, which is exactly how it will drift tomorrow. Same for `lib/board/bin/add-backlog`'s
-private `parse_staging`. Both are named in staging-format.py's own docstring as known
-duplication; I1 is only half-enforced until they import the one module.
+**The private copies drifted, exactly as predicted, and one became a hole** (fixed 2026-07-15).
+`hooks/backlog-stage.py` and `lib/stats/.../anomalies.py` each kept their own `render_block` /
+`render_candidate`. This page previously called them "byte-identical today, which is exactly how
+they will drift tomorrow." Tomorrow arrived in one day: the shared renderer learned to collapse
+whitespace per field (a guard added when these fields started carrying LLM-extracted transcript
+text), the copies did not, and the hook's bare `.strip()` let an embedded newline **forge a
+second `## [staged]` block**. One candidate in, two proposals out, and the forged one was
+indistinguishable from a real one to `board promote`.
+
+Both now import the one module. C5 was tightened at the same time: it used to grep for
+`render_block|render_candidate`, which a file DEFINING that function matches with its own
+source, so the rule passed vacuously for the exact two files it existed to catch. It now
+requires the shared module to be LOADED, and its negative control plants a private renderer.
+
+Still reading its own copy of the grammar: `lib/board/bin/add-backlog`'s `parse_staging`. That
+one is a READER (the promoter), so a drift there fails loudly rather than forging a row; it is
+listed in staging-format.py's docstring as known duplication.
 
 ---
 

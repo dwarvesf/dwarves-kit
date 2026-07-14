@@ -696,18 +696,30 @@ def _existing_titles(backlog: str | None, staging: str | None) -> set[str]:
     return titles
 
 
+def _staging_format():
+    """The kit's ONE staging-block grammar (ADR-0034 decision 1 / SPEC-200 I1)."""
+    import importlib.util
+    from . import config as _cfg
+    path = _cfg._kit_repo_root() / "lib" / "learn" / "staging-format.py"
+    spec = importlib.util.spec_from_file_location("staging_format", str(path))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def render_block(a: Anomaly, date: str) -> str:
-    """A `## [staged]` block, byte-format-identical to cc-backlog's `render_candidate`, so the
-    existing `board promote` human gate consumes it with no second convention."""
-    home = f"- Home: {a.home}\n" if a.home else ""
-    return (
-        f"## [staged] {a.title}\n"
-        f"- Intent: {a.intent}\n"
-        f"- Approach: {a.approach}\n"
-        f"- Tags: {a.tags}\n"
-        f"{home}"
-        f"- Source: stats anomalies {date}\n\n"
-    )
+    """Delegates to the ONE renderer. This function kept its OWN COPY of the block grammar until
+    2026-07-15, and the copy had drifted: the shared renderer collapses whitespace per field (so
+    an embedded newline cannot forge a second `## [staged]` block in a line-oriented grammar),
+    this copy did not even `.strip()`. A copy of a shared grammar is not a copy for long."""
+    sf = _staging_format()
+    u = "hi" if "#u-hi" in a.tags else ("mid" if "#u-mid" in a.tags else "lo")
+    f = "hi" if "#f-hi" in a.tags else ("lo" if "#f-lo" in a.tags else "mid")
+    return sf.render_block({
+        "title": a.title, "intent": a.intent, "approach": a.approach,
+        "u": u, "f": f, "home": a.home,
+        "source": f"stats anomalies {date}",
+    })
 
 
 def _today() -> str:
