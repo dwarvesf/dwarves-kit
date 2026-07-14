@@ -257,21 +257,109 @@ def cmd_run(args):
     return 0
 
 
+def _staging_format():
+    """The kit's ONE staging-block grammar (ADR-0034 decision 1). Hyphenated filename, so it
+    needs the importlib dance drain.py / propose.py / session-audit already use."""
+    import importlib.util
+    path = os.path.join(_repo_root(), "lib", "learn", "staging-format.py")
+    spec = importlib.util.spec_from_file_location("staging_format", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _default_staging():
+    return os.environ.get("BACKLOG_STAGE_STAGING") or os.path.join(
+        _repo_root(), "_meta", "backlog-staging.md")
+
+
+def _default_backlog():
+    return os.environ.get("BACKLOG_STAGE_BACKLOG") or os.path.join(
+        _repo_root(), "_meta", "BACKLOG.md")
+
+
+def cmd_propose(args):
+    """SPEC-200 I1: the digest's two proposal classes reach the Learn gate as `## [staged]`
+    blocks, not as prose a human must retype. `run` keeps printing them in the digest (that is
+    the reading surface); this is the ACTING surface, and both come from the same detectors."""
+    sf = _staging_format()
+    staging = args.staging or _default_staging()
+    backlog = args.backlog or _default_backlog()
+    day = os.environ.get("SESSION_INTEL_DATE") or datetime.date.today().isoformat()
+
+    cands = []
+    for _n, v in synthesis(args.ledger, args.glossaries)[:MERGE_TOP_N]:
+        names = "; ".join(f"{raw} ({src})" for raw, src in v)
+        first = v[0][0]
+        cands.append({
+            "title": f"Merge duplicate concept: {first}",
+            "intent": "One concept, two names, drifting apart in the ledger/GLOSSARY.",
+            "approach": f"Reconcile these into one entry: {names}",
+            "u": "lo", "f": "lo",
+            "source": f"session intel {day} | synthesis (near-duplicate concept names)",
+        })
+    for gram, n in repeat_detect(args.transcripts, args.min):
+        cands.append({
+            "title": f"Extract a workflow for the repeated sequence: {gram}",
+            "intent": f"This exact 3-command sequence was retyped {n} times across recent sessions.",
+            "approach": f"Wrap `{gram}` in a skill or a script so it is typed once, not {n} times.",
+            "u": "lo", "f": "mid",
+            "source": f"session intel {day} | repeat-detect (x{n})",
+        })
+
+    existing = sf.existing_keys(("staging", staging), ("board", backlog))
+    blocks, staged, skipped = [], [], []
+    for c in cands:
+        key = sf.norm(c["title"])
+        if not c["title"] or key in existing:
+            skipped.append(c["title"])
+            continue
+        block = sf.render_block(c)
+        if block is None:
+            continue
+        existing.add(key)
+        blocks.append(block)
+        staged.append(c["title"])
+
+    if blocks and not args.dry_run:
+        parent = os.path.dirname(staging)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        exists = os.path.isfile(staging)
+        with open(staging, "a", encoding="utf-8") as fh:
+            if not exists:
+                fh.write("# Backlog staging\n\n")
+            fh.writelines(blocks)
+
+    if args.dry_run:
+        sys.stdout.write("".join(blocks) or "session-intel propose: nothing new to stage\n")
+        return 0
+    where = staging if blocks else "(nothing new)"
+    print(f"session-intel propose: staged {len(staged)}, skipped {len(skipped)} duplicate -> {where}\n"
+          f"  review with: learn drain   promote with: board promote <n>")
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="session-intel", description="Weekly read-only intelligence digest.")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("run", "synthesis", "repeat"):
+    for name in ("run", "synthesis", "repeat", "propose"):
         sp = sub.add_parser(name)
-        if name in ("run", "synthesis"):   # ledger + glossaries feed synthesis (and run)
+        if name in ("run", "synthesis", "propose"):   # ledger + glossaries feed synthesis
             sp.add_argument("--ledger", default=DEFAULT_LEDGER)
             sp.add_argument("--glossaries", default=DEFAULT_GLOSSARIES)
-        if name in ("run", "repeat"):       # transcripts + min feed repeat-detect (and run)
+        if name in ("run", "repeat", "propose"):      # transcripts + min feed repeat-detect
             sp.add_argument("--transcripts", default=DEFAULT_TRANSCRIPTS)
             sp.add_argument("--min", type=int, default=3)
         if name == "run":
             sp.add_argument("--out", default=DEFAULT_OUT)
+        if name == "propose":
+            sp.add_argument("--staging", help="staging file (default <repo>/_meta/backlog-staging.md)")
+            sp.add_argument("--backlog", help="board file, read-only, for dedup")
+            sp.add_argument("--dry-run", action="store_true", help="print the blocks, write nothing")
     args = p.parse_args(argv)
-    return {"run": cmd_run, "synthesis": cmd_synthesis, "repeat": cmd_repeat}[args.cmd](args)
+    return {"run": cmd_run, "synthesis": cmd_synthesis, "repeat": cmd_repeat,
+            "propose": cmd_propose}[args.cmd](args)
 
 
 if __name__ == "__main__":
