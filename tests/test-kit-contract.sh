@@ -42,12 +42,35 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # board, queue, session, gate, learn... including the module this very PR edits. A lint whose
 # scope silently excludes 3/4 of its subject is the vacuous-pass failure mode wearing a
 # different hat (advisor finding 1).
+#
+# Second scope bug, same shape: a module whose code is ONLY hooks (money_gate, cosmetic) has no
+# lib/<name>/ dir, so `[ -d "lib/$m" ]` yielded NOTHING and the module was invisible to C3/C4.
+# That is exactly how money_gate went its whole lifetime with no SPEC while the lint stayed
+# green (found 2026-07-15). A declared module now MUST have a lib/<name>/ home, even if that
+# home holds only its docs: the missing home is itself the finding, not an excuse to skip it.
+# A module's home is not always lib/<its-own-name>: several are FEATURES of another lib
+# (quiz_gate lives in lib/gate/, weekend_batch in lib/learn/, bridge in lib/board/), and one
+# is an agent, not a lib at all. This map is the honest resolution; without it the lint either
+# skipped them (the old blind spot: money_gate went its whole lifetime unspecced while C3 stayed
+# green) or reported a phantom lib/<name> that was never supposed to exist.
+module_home() {  # module_home <module> -> its dir, or "" for "documented elsewhere by design"
+  case "$1" in
+    quiz-gate)      echo "lib/gate" ;;        # lib/gate/quiz-gate.sh
+    weekend-batch)  echo "lib/learn" ;;       # lib/learn/weekend-batch.sh
+    bridge)         echo "lib/board" ;;       # lib/board/board-mirror.sh + board-writeback.sh
+    worktree)       echo "lib/worktree-provision" ;;
+    advisor)        echo "" ;;                # an AGENT (agents/advisor.md), not a lib module
+    *)              for d in "lib/$1" "lib/${1//-/_}"; do [ -d "$d" ] && { echo "$d"; return; }; done
+                    echo "lib/$1" ;;          # no home: emit the expected path so C3/C4 REPORT it
+  esac
+}
 modules() {
   {
     grep -o '^KIT_KNOWN_MODULES="[^"]*"' install.sh | sed 's/.*"\(.*\)"/\1/' | tr ' ' '\n' \
       | sed 's/_/-/g' | while read -r m; do
           [ -n "$m" ] || continue
-          for d in "lib/$m" "lib/${m//-/_}"; do [ -d "$d" ] && echo "$d"; done
+          h="$(module_home "$m")"
+          [ -n "$h" ] && echo "$h"
         done
     find lib -maxdepth 2 -name tool.toml -exec dirname {} \;
   } | sort -u
@@ -167,9 +190,14 @@ for m in $(modules); do
   mod="$(basename "$m")"
   # Tests live either in the module (lib/<m>/tests/) or at the repo root (tests/test-<m>.*),
   # both are real homes in this kit; a lint that only knew one would report a false gap.
+  # Root-level tests are named test-<mod>.sh OR test-<mod>-<topic>.sh (test-gate-outcome.sh,
+  # test-learn-propose.sh). Matching only the exact name reported a false gap for two core libs.
+  # `ls a b` returns NONZERO if ANY arg is missing, so a two-glob `ls` silently reported a gap
+  # for modules that DO have tests. find is the honest test here.
   ls "$m"/tests/*.sh >/dev/null 2>&1 && continue
-  ls tests/test-"$mod".* >/dev/null 2>&1 && continue
-  ls tests/test-"${mod//-/_}".* >/dev/null 2>&1 && continue
+  alt="${mod//-/_}"
+  [ -n "$(find tests -maxdepth 1 \( -name "test-$mod.*" -o -name "test-$mod-*" \
+                                  -o -name "test-$alt.*" -o -name "test-$alt-*" \) 2>/dev/null)" ] && continue
   if known_gap "$m/tests"; then t_gapped=$((t_gapped+1)); else untested="$untested$m\n"; fi
 done
 chk "every module has a test (module-local or repo-root)" "$(printf "%b" "$untested")"
@@ -237,6 +265,21 @@ offenders="$(grep -rhoE --exclude='test-kit-contract.sh' \
              "(^|\\\$\(|\||&&|;|!)[[:space:]]*($NONPORTABLE)[[:space:]]" tests lib/*/tests 2>/dev/null \
              | grep -oE "($NONPORTABLE)[[:space:]]" | grep -oE "^($NONPORTABLE)" | sort -u || true)"
 chk "no test invokes a non-CI tool (rg/fd/sd/...)" "$offenders"
+
+# ---------------------------------------------------------------- C10 executables self-declare
+echo "== C10 exec: every module executable declares its interpreter =="
+# An executable with no shebang (or no +x) forces the caller to GUESS the interpreter, and a
+# wrong guess fails ugly: `bash session-audit` (a python script) died with a shell syntax error
+# on a docstring line, 2026-07-15. The script must say what runs it; the caller must not have to.
+# Compiled binaries (prose-rag-rs) legitimately have neither: skip anything not a text file.
+noshebang=""
+while IFS= read -r f; do
+  file "$f" 2>/dev/null | grep -qiE 'text|script' || continue     # skip compiled binaries
+  head -c2 "$f" 2>/dev/null | grep -q '#!' || noshebang="$noshebang$f(no-shebang)\n"
+  [ -x "$f" ] || noshebang="$noshebang$f(not-executable)\n"
+done < <(find bin lib -path '*/bin/*' -type f -not -path '*/.venv/*' -not -path '*/target/*' \
+           -not -path '*/__pycache__/*' 2>/dev/null | sort)
+chk "every text executable has a shebang and the exec bit" "$(printf "%b" "$noshebang")"
 
 # ---------------------------------------------------------------- C8 CI workflow parses
 echo "== C8 CI: the workflow file is valid YAML =="
@@ -347,6 +390,11 @@ cmd="$(printf '%s' "$claim" | grep -oE '/(kit:)?[a-z-]+' | sed 's|^/||; s|^kit:|
 if [ -f "commands/$cmd.md" ] && ! grep -qF "nc-phantom-agent" "commands/$cmd.md"; then
   ok "C9 catches an agent claiming a dispatcher that ignores it"
 else bad "C9 vacuous"; fi
+
+# C10: an executable with no shebang (the shape that made `bash <python-script>` explode)
+printf 'print("no shebang here")\n' > "$TMP/nc/bin/interpreterless"; chmod +x "$TMP/nc/bin/interpreterless"
+if head -c2 "$TMP/nc/bin/interpreterless" | grep -q '#!'; then bad "C10 vacuous"; else
+  ok "C10 catches an executable that does not declare its interpreter"; fi
 
 echo ""
 echo "=== kit-contract: $PASS passed, $FAIL failed ==="

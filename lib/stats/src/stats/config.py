@@ -81,12 +81,34 @@ def kit_lib_dir() -> Path:
 
 
 def kit_log_dir() -> Path:
-    """The kit LEDGER root -- the SAME single root the write-side append substrate
-    (lib/ledger/ledger.sh via lib/telemetry/kit-log-dir.sh) writes to. `stats` is the
-    read plane, so it MUST resolve the identical root. Precedence mirrors the shell
-    resolver exactly (SPEC-182): $KIT_LEDGER_DIR (canonical) -> $DWARVES_KIT_LOG_DIR
-    (back-compat alias) -> XDG state default. lane-telemetry.sh reads
-    <root>/runs/*.log under it."""
+    """The kit LEDGER root: the SAME single root the write side writes to.
+
+    ASKS THE ONE RESOLVER (lib/telemetry/kit-log-dir.sh), it does not reimplement it.
+    The previous version was a second Python copy of the precedence chain whose docstring
+    claimed it "mirrors the shell resolver exactly" while skipping level 3, the
+    `kit.toml [ledger].location` key. Under `location = "isolated"` the write plane wrote
+    to the toml location and this read plane read the XDG default, and it failed SILENTLY:
+    `stats` simply reported no runs. Latent only because the shipped default (`shared`)
+    makes both agree by accident (found 2026-07-15 while writing ADR-0035).
+
+    Two implementations of one resolver is the same bug class as a hand-list beside a
+    deriving resolver: the copy drifts, and the drift is invisible until it costs you.
+    """
+    resolver = _kit_repo_root() / "lib" / "telemetry" / "kit-log-dir.sh"
+    if resolver.is_file():
+        r = subprocess.run(
+            ["bash", "-c", f'. "{resolver}" && kit_resolve_log_dir'],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            # The resolver's own fatal (e.g. KIT_LEDGER_DIR set but empty). Do not paper
+            # over it with a guess: a wrong ledger root reads someone else's history.
+            raise SystemExit((r.stderr or "stats: kit-log-dir.sh refused to resolve a ledger root").strip())
+        root = r.stdout.strip()
+        if root:
+            return Path(root).expanduser()
+    # Resolver absent (a partial checkout): fall back to the env chain WITHOUT the toml
+    # level, and say so, rather than silently reading a plausible-but-wrong root.
     ledger_dir = os.environ.get("KIT_LEDGER_DIR")
     if ledger_dir is not None:
         if ledger_dir == "":
