@@ -256,6 +256,57 @@ OUT="$(python3 "$PROPOSE" --aggregate-file "$AGG" 2>&1)"; RC=$?
 assert_true "subprocess-fail: exit 0 (never blocks)" "$([ $RC -eq 0 ]; echo $?)"
 assert_true "subprocess-fail: 0 candidates, staging untouched" "$([ ! -f "$STAGING" ]; echo $?)"
 
+# ---- SPEC-200 T7: a retro's action items reach the Learn gate ------------------------------
+# /kit:retro wrote its outcomes as a checkbox list inside docs/retro/RETRO-<date>.md. `board
+# promote` reads ONLY the staging buffer, so those items could never be promoted: a human had to
+# retype one to act on it, and so nobody did. Same disease session-intel had (T6).
+echo ""
+echo "== T7: learn propose --retro stages a retro's action items =="
+RT="$(mktemp -d)"
+cat > "$RT/RETRO-2026-07-15.md" <<'EOF'
+# Retro: a cycle
+## What worked
+- the negative controls.
+## Action items
+- [ ] Route Explore subagents to Haiku instead of the inherited Opus -- owner: @tieubao -- deadline: 2026-07-22
+- [ ] Compose commit subjects under 72 chars -- owner: tieubao
+- [x] Close the money-gate snake_case hole
+- [ ] [concrete change] -- owner: [person] -- deadline: [date]
+## Kit feedback
+- ship-gate fired late.
+EOF
+printf '# Board\n\n| ID | Item | Notes | Status |\n|---|---|---|---|\n' > "$RT/BACKLOG.md"
+RSTG="$RT/staging.md"
+
+OUT="$(python3 "$PROPOSE" --retro "$RT/RETRO-2026-07-15.md" --staging "$RSTG" --backlog "$RT/BACKLOG.md" 2>&1)"
+[ "$(grep -c '^## \[staged\]' "$RSTG" 2>/dev/null || echo 0)" = "2" ]
+assert_true "T7a: the two OPEN action items are staged" $?
+grep -q '^## \[staged\] Route Explore subagents to Haiku instead of the inherited Opus$' "$RSTG"
+assert_true "T7b: the title is the change alone (owner/deadline stripped, not swallowed)" $?
+grep -q '^- Source: retro 2026-07-15 | RETRO-2026-07-15.md owner=@tieubao' "$RSTG"
+assert_true "T7c: owner rides on the citation as a GitHub handle (@tieubao)" $?
+# The second item writes a BARE handle; it must be normalized to @handle, not passed through.
+grep -c 'owner=@tieubao' "$RSTG" | grep -q '^2$'
+assert_true "T7c2: a bare handle is normalized to @tieubao (both items)" $?
+
+# NEGATIVE CONTROL: a CHECKED item is already done; staging it would propose finished work.
+grep -q 'snake_case' "$RSTG" && bad "T7d NC: a [x] item was staged" || ok "T7d NC: a checked [x] item is NOT staged"
+# NEGATIVE CONTROL: the template placeholder is not an action item.
+grep -q 'concrete change' "$RSTG" && bad "T7e NC: the template placeholder was staged" || ok "T7e NC: the template placeholder is NOT staged"
+# NEGATIVE CONTROL: the board is never written (propose-don't-dispose).
+B1="$(shasum -a 256 "$RT/BACKLOG.md" | cut -d' ' -f1)"
+python3 "$PROPOSE" --retro "$RT/RETRO-2026-07-15.md" --staging "$RSTG" --backlog "$RT/BACKLOG.md" >/dev/null 2>&1
+B2="$(shasum -a 256 "$RT/BACKLOG.md" | cut -d' ' -f1)"
+[ "$B1" = "$B2" ]; assert_true "T7f NC: the board is byte-identical after propose --retro" $?
+# idempotent: the re-run above must stage nothing new
+[ "$(grep -c '^## \[staged\]' "$RSTG")" = "2" ]
+assert_true "T7g: re-running stages nothing new (deduped)" $?
+# NEGATIVE CONTROL: --dry-run writes no file at all
+DRY="$RT/dry.md"
+python3 "$PROPOSE" --retro "$RT/RETRO-2026-07-15.md" --staging "$DRY" --backlog "$RT/BACKLOG.md" --dry-run >/dev/null 2>&1
+[ ! -f "$DRY" ]; assert_true "T7h NC: --dry-run writes NO staging file" $?
+rm -rf "$RT"
+
 echo ""
 echo "== $((PASS+FAIL)) run, $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

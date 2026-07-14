@@ -100,12 +100,31 @@ Sprint: [date range]
 - [item with specific impact]
 
 ## Action items
-- [ ] [concrete change] -- owner: [person] -- deadline: [date]
-- [ ] [concrete change] -- owner: [person] -- deadline: [date]
+- [ ] [concrete change] -- owner: @[github-handle] -- deadline: [date]
+- [ ] [concrete change] -- owner: @[github-handle] -- deadline: [date]
 
 ## Kit feedback
 [note any dwarves-kit friction: hooks that false-positived, commands that were awkward, missing workflows]
 ```
+
+### Step 3b: Stage the action items (SPEC-200 I1 / T7)
+
+The checkbox list above is the READING surface. `board promote` reads ONLY the staging buffer,
+so an action item that lives just as a checkbox can never be promoted: a human has to retype it
+to act on it, and so nobody does. Every retro before 2026-07-15 leaked its action items exactly
+this way.
+
+Run the deterministic proposer (no LLM, no grounding pass: the retro IS the evidence):
+
+```bash
+bash lib/learn/learn.sh propose --retro docs/retro/RETRO-[date].md
+```
+
+It stages every UNCHECKED item as a `## [staged]` block through the one renderer, deduped
+against staging + the board, with `Source: retro <date> | <file> owner=<x>` as the citation.
+A `[x]` item is already done and is deliberately skipped. Then tell the operator: review with
+`learn drain`, accept with `board promote <n>`. The retro doc keeps its checkboxes untouched;
+it is a historical record, not a tracker.
 
 ### Step 4: Update kit if needed
 

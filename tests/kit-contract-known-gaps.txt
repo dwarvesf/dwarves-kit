@@ -15,15 +15,24 @@
 # home map now resolves the modules that live INSIDE another lib (quiz_gate -> lib/gate,
 # weekend_batch -> lib/learn, bridge -> lib/board) instead of inventing a phantom path for them.
 #
-# gate + learn: core libs, richly specced at repo docs/specs/ (SPEC-024/025/195/196...) and
-# tested at repo tests/ (test-gate-*.sh, test-learn-*.sh), but no module-level front door or
-# proof of their own. Real debt, sized: two READMEs and two proofs.
-lib/gate/README.md
+# CLOSED 2026-07-15: gate + learn front doors + proofs. Both core libs now carry a module-level
+# README (lib/{gate,learn}/README.md) and their own acceptance record
+# (lib/{gate,learn}/docs/proof-of-done.md), recorded against the existing repo suites (gate: 119
+# assertions over 6 suites; learn: 64 over 2). Writing the learn proof surfaced a real divergence
+# the records had been hiding: C5 asserts every proposer renders `## [staged]` blocks through
+# lib/learn/staging-format.py, but lib/stats' anomalies.py and hooks/backlog-stage.py still carry
+# their OWN render_block()/render_candidate() copies, and both predate that renderer's
+# whitespace-collapse guard. So an LLM-authored field carrying an embedded newline forges a SECOND
+# staged block through the hook (repro in lib/learn/docs/proof-of-done.md). C5 cannot see it: it
+# greps for a code reference to render_block, and a file that DEFINES render_block matches its own
+# grep. Left unfixed on purpose (a behavior change in two other modules needs its own spec).
+#
+# STILL OPEN, gate + learn: neither has a module-local SPEC.md. Both are richly specced at the repo
+# root (gate: SPEC-032/042/044/048/071/076/077/097/125/129/130/131/132/133 + ADR-0024/0025/0026/
+# 0031/0035; learn: SPEC-126/195/196 + ADR-0034), but C3 accepts a spec only INSIDE the module dir,
+# so the IOU stands until someone decides whether to write one or teach C3 about repo-root specs.
 lib/gate/SPEC
-lib/gate/docs/proof-of-done.md
-lib/learn/README.md
 lib/learn/SPEC
-lib/learn/docs/proof-of-done.md
 
 # worktree-provision: has README + SPEC; its proof lives at repo docs/verification/ (the fold PR).
 lib/worktree-provision/docs/proof-of-done.md

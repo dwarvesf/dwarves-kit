@@ -16,7 +16,7 @@ lint and this page ever disagree, the lint wins and this page is the bug.
 | **C2 Wiring** | Every module executable is reachable from an operator surface: a `bin/` entry or a `lib/<mod>/<mod>.sh` dispatcher case. A tool nobody can invoke is a tool nobody runs. | `session-audit` shipped with tests, docs and a proof, and no dispatcher case: the advertised `session audit run` did not resolve. `plugin-check` lived only at its deep lib path for 9 days. |
 | **C3 Docs** | Every module has `README.md`, a spec (`SPEC.md` or `docs/specs/SPEC-NNN-*.md`), and `docs/proof-of-done.md`. | `plugin-check` had a 27-assertion suite and no proof-of-done, so the kit's own done-gate had nothing to read. The evidence existed; the artifact did not. |
 | **C4 Tests** | Every module has at least one `tests/*.sh`. | Baseline. A module with no test is a claim with no evidence. |
-| **C5 Currency** | Every proposer emits `## [staged]` blocks through `lib/learn/staging-format.py` and never writes a board directly. The human gate (`board promote`) owns that write. | Three proposal shapes for one gate. `session-audit triage` invented a fourth before review caught it; `session intel` and `/kit:retro` still emit prose nobody can promote. |
+| **C5 Currency** | Every proposer emits `## [staged]` blocks through `lib/learn/staging-format.py` and never writes a board directly. The human gate (`board promote`) owns that write. | Three proposal shapes for one gate. `session-audit triage` invented a fourth before review caught it. `session intel` (T6) and `/kit:retro` (T7) emitted prose nobody could promote until 2026-07-15; every proposer now speaks the one currency. |
 | **C6 Durable root** | Anything that persists resolves its path through `lib/telemetry/kit-log-dir.sh` (SPEC-097). Never hardcode `~/.claude/dwarves-kit/logs`. | `queue.sh` defaulted its journal into the exact path a plugin reinstall wipes: the one telemetry corpus SPEC-097 did not protect. |
 | **C7 Portable tests** | No test invokes a tool CI lacks (`rg`, `fd`, `sd`, `bat`...). Use POSIX `grep`/`find`. | The C1 lint's first cut used `rg`. On CI, `rg` is absent, the sweep produced no output, and the emptiness-assert **passed vacuously**. Only its negative control caught it. |
 
@@ -78,6 +78,12 @@ plus care, not design.
 
 If you catch yourself thinking "they are touching different files so it is fine": they are not
 touching different HEADs.
+
+**It also poisons your test results.** During that same fan-out an agent recorded one contract
+run at `23 passed, 1 failed` and could not reproduce it in 15 subsequent runs; nor could I in 10
+more. The most plausible cause is not a flaky lint: it is that the run read the tree while
+another writer was mid-edit. A shared checkout does not just risk your commits, it makes your
+green and your red both untrustworthy, which is the one thing a contract cannot afford.
 
 ## Adding a new module, tool, or skill
 
