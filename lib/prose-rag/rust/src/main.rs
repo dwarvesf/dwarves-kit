@@ -391,6 +391,12 @@ fn cmd_index(corpus: Vec<PathBuf>, db: &Path, full: bool) -> Result<i32> {
     } else {
         corpus
     };
+    if corpus.is_empty() {
+        // No --corpus and PROSE_RAG_CORPUS unset: an unconfigured consumer (the
+        // shipped kit-weekly job hits this) -> clean opt-in skip, db untouched.
+        println!("prose-rag: no corpus configured (set PROSE_RAG_CORPUS or pass --corpus); nothing indexed");
+        return Ok(0);
+    }
     let files = gather_files(&corpus);
     if files.is_empty() {
         eprintln!("prose-rag: no markdown files found in corpus");

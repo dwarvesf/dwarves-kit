@@ -107,4 +107,18 @@ out="$("$BIN" query "xylophone amortization anomaly" --db "$DB" --floor 0 --k 2)
 echo "$out" | grep -q "long.md" || fail "windowed tail not retrievable: $out"
 ok "windowed tail content retrievable end-to-end"
 
+# 14. unconfigured corpus (no --corpus, no PROSE_RAG_CORPUS) skips clean: exit 0, db untouched
+cp "$DB" "$T/before.bin"
+out="$(env -u PROSE_RAG_CORPUS "$BIN" index --db "$DB" 2>&1)" || fail "unconfigured index exited nonzero: $out"
+echo "$out" | grep -q "no corpus configured" || fail "unconfigured skip message missing: $out"
+cmp -s "$DB" "$T/before.bin" || fail "unconfigured index touched the db"
+ok "unconfigured corpus skips clean (exit 0, db untouched)"
+
+# 15. configured corpus with no markdown files is a real error (exit 1)
+mkdir -p "$T/empty"
+if env PROSE_RAG_CORPUS="$T/empty" "$BIN" index --db "$DB" 2>/dev/null; then
+  fail "empty configured corpus exited 0"
+fi
+ok "configured-but-empty corpus errors (exit 1)"
+
 echo "smoke: all $pass passed"

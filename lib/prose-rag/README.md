@@ -66,7 +66,7 @@ The index is bincode with a per-file FNV-1a content hash, so `index` re-embeds o
 ```bash
 cd tools/prose-rag/rust
 cargo test --release        # 9 unit tests: chunker (+boundaries/windowing), fnv, gate, search, index roundtrip/corruption guard, gather parity/symlink guard, f16+f32 row decode
-bash tests/smoke.sh         # 13 CLI checks: index/query/hook end-to-end, incremental rerun, deletion prune, clobber guard, windowed-tail retrieval
+bash tests/smoke.sh         # CLI checks: index/query/hook end-to-end, incremental rerun, deletion prune, clobber guard, corpus-config guard, windowed-tail retrieval
 ```
 
 The legacy Python suite is `tests/smoke.sh` at the tool root (11 checks, Python engine only).

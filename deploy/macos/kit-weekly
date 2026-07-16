@@ -17,6 +17,13 @@ JOBS="${KIT_WEEKLY_JOBS:-$HERE/jobs.txt}"
 # (repo-sweep, uv, gh), so widen it the same way the retired per-job launcher did.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
+# Optional consumer env (launchd gives a bare env; settings.json env only exists
+# inside Claude Code sessions). Corpus paths and similar per-machine config live
+# here, never in the kit repo: e.g. PROSE_RAG_CORPUS for the prose-rag-index job.
+CONSUMER_ENV="$HOME/.config/kit-weekly/env"
+# shellcheck disable=SC1090
+[ -f "$CONSUMER_ENV" ] && . "$CONSUMER_ENV"
+
 if [ ! -f "$JOBS" ]; then
   echo "kit-weekly: jobs list not found: $JOBS" >&2
   exit 1
