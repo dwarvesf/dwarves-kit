@@ -95,7 +95,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | `stats` | the `stats` CLI, a read-only projection over the run/gate ledgers | hookless (uv CLI) |
 | `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
 | `weekend_batch` | the debt-paydown reader/closer (`bin/learn debt`; engine `lib/learn/weekend-batch.sh`, relocated per ADR-0034), invoked by a consumer's own skill or directly | hookless (lib) |
-| `bridge` | FOLDED INTO `sync` 2026-07-16. The git↔Hermes cockpit mirror/writeback verbs (`board.sh mirror/status/writeback`, `bridge=on` rows in `boards.txt`) remain runnable as the legacy engine until the SPEC-002 P2 port (kit ID-277) re-lands them as a sync edge | absorbed |
+| `bridge` | FOLDED INTO `sync` 2026-07-16. The git↔Hermes cockpit mirror/writeback verbs (`board.sh mirror/status/writeback`, `bridge=on` rows in `boards.txt`) remain runnable as the legacy engine until the SPEC-002 P2 port (kit ID-290) re-lands them as a sync edge | absorbed |
 | `worktree` | `worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
 | `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | 1 hook |
 | `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI on PATH (`lib/prose-rag/`, Rust engine) | 1 hook + 1 CLI |

@@ -168,7 +168,7 @@ echo ""
 # and future discovery) -- it is a shell-install RECORD, never a runtime
 # feature-registry: no hook reads it (see tests/test-no-runtime-manifest-read.sh).
 # bridge folded into sync 2026-07-16 (same engine surface; legacy verbs live
-# until the SPEC-002 P2 port, kit board ID-277)
+# until the SPEC-002 P2 port, kit board ID-290)
 KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch worktree money_gate prose_rag sync"
 KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.sh commit-format.sh anti-rationalization.sh"
 

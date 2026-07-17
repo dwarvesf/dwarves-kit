@@ -2,7 +2,7 @@
 
 Status: DRAFT 2026-07-16, thinking model for review. Successor/generalization
 of SPEC-001 (hub-and-app todo sync) and SPEC-147 (bridge cockpit mirror);
-implements kit board row ID-277 and extends it with audience filtering.
+implements kit board row ID-290 and extends it with audience filtering.
 
 ## The model: everything is a PROFILE
 
@@ -116,7 +116,7 @@ notion_exclude_tags = "family"      # per-app down-filter
 reminders_intake = "all"
 hermes_intake = "all"
 
-[sync.profile.cockpit]                 # bridge, ported (ID-277)
+[sync.profile.cockpit]                 # bridge, ported (ID-290)
 registry = "_meta/boards.txt"
 objects = "todo,megagoal"
 direction = "status-writeback"
@@ -160,7 +160,7 @@ or flatten to `profile_personal_*` keys if we refuse to touch the resolver.)
    intake up-filter + scope-exit rule + cap): small, pure-planner change +
    config keys; immediately fixes "personal rows visible in the Dwarves
    Notion workspace".
-2. **P2, named profiles + multi-source extract + cockpit port** (ID-277):
+2. **P2, named profiles + multi-source extract + cockpit port** (ID-290):
    bridge retires to thin aliases; snapshot migration.
 3. **P3, megagoal + goal object types** (progress-card mapper, mirror-out).
 4. **P4, assignee predicate** (blocked on a board assignee convention).

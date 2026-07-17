@@ -758,10 +758,10 @@ cmd_sync() {
 }
 
 # bridge was folded into the sync module 2026-07-16; these verbs are the
-# legacy cockpit engine until the SPEC-002 P2 port (kit board ID-277).
+# legacy cockpit engine until the SPEC-002 P2 port (kit board ID-290).
 _legacy_bridge_note() {
   echo "note: mirror/status/writeback are the legacy cockpit engine (bridge)," >&2
-  echo "      folded into the sync module; port tracked as kit ID-277." >&2
+  echo "      folded into the sync module; port tracked as kit ID-290." >&2
 }
 
 usage() { sed -n '2,166p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }

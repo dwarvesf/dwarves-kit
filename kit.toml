@@ -38,7 +38,7 @@ stats          = true           # hookless
 quiz_gate      = false          # hookless; backs commands/quiz-gate.md
 weekend_batch  = false          # hookless; backs lib/queue/weekend-batch.sh
 # bridge: folded into `sync` 2026-07-16 (one engine surface; legacy
-#         mirror/status/writeback verbs remain until the SPEC-002 P2 port, ID-277)
+#         mirror/status/writeback verbs remain until the SPEC-002 P2 port, ID-290)
 worktree       = false          # hookless; exposes the worktree-provision CLI
 money_gate     = false          # money-gate.sh PreToolUse guard; inert without MONEY_GATE_REPOS
 prose_rag      = false          # prose-rag.sh recall inject + CLI; dormant without PROSE_RAG_INJECT=1

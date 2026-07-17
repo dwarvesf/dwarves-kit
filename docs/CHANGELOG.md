@@ -7,10 +7,10 @@ All notable changes to dwarves-kit are documented here.
 ### Changed
 - **`bridge` module folded into `sync`** (zero live consumers at fold time: no
   `bridge=on` rows, no snapshot, module off). Legacy `mirror`/`status`/`writeback`
-  verbs stay runnable with a deprecation note until the SPEC-002 P2 port (ID-277),
+  verbs stay runnable with a deprecation note until the SPEC-002 P2 port (ID-290),
   which must carry the `row_hash` git-wins conflict rule and the live-probed Hermes
   reachable-state map.
-- **`board promote` write path hardened** (kit ID-275): flock single-writer lock
+- **`board promote` write path hardened** (kit ID-288): flock single-writer lock
   (stable-inode lockfile in tmpdir), read-after-lock, 4-cell row validation, atomic
   replace. Closes the parallel-session duplicate-ID and malformed-row minting that hit
   the ops-toolkit board on 2026-07-16.
@@ -30,9 +30,9 @@ All notable changes to dwarves-kit are documented here.
   `tests/test-sync-dispatch.sh` (both board conventions, legacy alias, error
   paths). Proof: `lib/sync/docs/proof-of-done.md`.
 - **Plain words rule (CONTRIBUTING.md) + ranked jargon inventory**
-  (`docs/research/2026-07-16-plain-words-inventory.md`); rename backlog: ID-278 (cheap
-  cluster), ID-279 (legs → Shape/Build/Watch/Check/Learn, needs an ADR-0034
-  amendment), ID-280 (big cluster, parked).
+  (`docs/research/2026-07-16-plain-words-inventory.md`); rename backlog: ID-291 (cheap
+  cluster), ID-292 (legs → Shape/Build/Watch/Check/Learn, needs an ADR-0034
+  amendment), ID-293 (big cluster, parked).
 - **Model-routing enforcement pinned + proven (SPEC-116).** Resolves `orchestrate-hardening`
   open-fork 3: the enforcement site is `lib/queue/orchestrate.sh` (`_route()` + the serial/wave delegate
   dispatch sites, which already existed under SPEC-087), not `lib/classify/route-suggest.sh` (a decompose-time

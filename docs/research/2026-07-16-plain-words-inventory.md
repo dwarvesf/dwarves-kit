@@ -88,7 +88,7 @@ semantic-everywhere (40+ files). Counts = files containing the term.
 | advisor | 229 | suggest-only review agent |, | sem | keep |
 | spec-drift | 41 | code diverging from spec | spec mismatch | cfg+docs | glossary |
 | quiz-gate | 57 | understanding-check nudge | understanding check | cmd+docs | glossary |
-| writeback | 38 · legacy bridge | sync back to the source | sync back | cfg | rename during ID-277 port |
+| writeback | 38 · legacy bridge | sync back to the source | sync back | cfg | rename during ID-290 port |
 | surface | 431 · pervasive | operator-facing entry point | context-dependent | sem | glossary (sync-target sense already → app) |
 
 Minor/glossary-only: spanner, wavefront, fan-out, V-model, descent, DEBT

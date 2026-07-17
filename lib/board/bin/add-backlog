@@ -159,7 +159,7 @@ def main(argv):
         return 2
     # single-writer lock (stable inode OUTSIDE the repo, so the atomic replace
     # below can't strand a waiter on a stale fd): parallel sessions promoting
-    # concurrently is how duplicate IDs got minted (2026-07-16, kit ID-275)
+    # concurrently is how duplicate IDs got minted (2026-07-16, kit ID-288)
     lock_path = os.path.join(
         tempfile.gettempdir(),
         "board-%s.lock" % hashlib.md5(
