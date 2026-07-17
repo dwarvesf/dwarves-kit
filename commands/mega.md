@@ -257,6 +257,25 @@ refuses. Draft plus label is belt-and-suspenders: GitHub itself refuses to merge
 and the code guard reads the label. Do this for every `gate`-tagged sub-goal PR and the
 `gated-final` PR; a normal `auto` PR is left un-marked so the guard clears it.
 
+**Run-time advisor on load-bearing sub-goals (default, mirrors `plan-for-mega-goal`
+"RUN-TIME ADVISOR" -- never-diverge).** Before MERGING any sub-goal marked `Design: bearing`
+or touching a shared/serializer surface (a registry, a contract other sub-goals plug into),
+dispatch the `advisor` agent (critique) on that sub-goal's FROZEN diff
+(`git diff <base>...HEAD` in its worktree). CRITICAL/MAJOR findings go back to the SAME
+worker via resume (its context survives; never re-dispatch fresh); MINOR + suggestions to
+NOTES. This is the per-sub-goal sibling of the convergence-gate P5 below: the convergence
+pass sees the assembled chain, this pass catches the defect BEFORE downstream sub-goals
+build on it (field case: a registry that documented two render modes but wired neither
+would have deadlocked two dependents whose scope edges forbade the fix).
+
+**Display contract (mirrors `plan-for-mega-goal` invocation-template -- never-diverge).**
+At each wave dispatch render the wave BOARD (row per sub-goal: name · model · state ·
+SPEC # · base · `next:`) + a `Setup done:` line; while a wave runs render per-worker
+PROGRESS STRIPS from the run-ledger (never the transcript); at close render the FULL
+RUN_REPORT in chat (header, timeline gantt, worker-minutes bars, gate matrix or honest-dash,
+`Hardening properties` P1..P6 line, callable stack, incidents). Summarizing instead of
+rendering is a contract miss.
+
 **The convergence gate dispatches advisor P5+P6, explicitly, with an emit (SPEC-145).** Once
 every sub-goal in the chain is merged (or the run halts at the final `gate!`/`gated-final`
 boundary), dispatch the `advisor` agent TWICE, in-harness, over the assembled stack diff
