@@ -14,5 +14,12 @@ elif [ -x "$PR/rust/target/release/prose-rag" ]; then
   exec "$PR/rust/target/release/prose-rag" "$@"
 fi
 [ "${1:-}" = "hook" ] && exit 0
+# `index` with no corpus configured = an unconfigured consumer (the shipped
+# kit-weekly job): skip clean, same contract as the engine's own guard. An
+# explicit --corpus means someone is driving interactively -> honest error.
+if [ "${1:-}" = "index" ] && [ -z "${PROSE_RAG_CORPUS:-}" ] && [[ "$*" != *"--corpus"* ]]; then
+  echo "prose-rag: no corpus configured (set PROSE_RAG_CORPUS or pass --corpus); nothing indexed"
+  exit 0
+fi
 echo "prose-rag: engine not built. Run: (cd $PR/rust && cargo build --release && cp target/release/prose-rag ../bin/prose-rag-rs)" >&2
 exit 1

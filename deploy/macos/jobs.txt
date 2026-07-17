@@ -5,3 +5,4 @@
 # here, never a new plist.
 session-intel bin/session intel run
 kit-retro bin/learn propose
+prose-rag-index bin/prose-rag index
