@@ -493,6 +493,7 @@ cmd_queue() {
 # BACKLOG.md (mirror is one-way: git -> Hermes; SG-08 owns the reverse leg).
 # ---------------------------------------------------------------------------
 cmd_mirror() {
+  _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
@@ -569,6 +570,7 @@ cmd_mirror() {
 # Hermes or the snapshot file (read-only).
 # ---------------------------------------------------------------------------
 cmd_status() {
+  _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
@@ -642,6 +644,7 @@ cmd_status() {
 # snapshot write.
 # ---------------------------------------------------------------------------
 cmd_writeback() {
+  _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
@@ -768,9 +771,9 @@ main() {
   case "$first" in
     all)    shift; cmd_all "$@" ;;
     queue)  shift; cmd_queue "$@" ;;
-    mirror) shift; _legacy_bridge_note; cmd_mirror "$@" ;;
-    status) shift; _legacy_bridge_note; cmd_status "$@" ;;
-    writeback) shift; _legacy_bridge_note; cmd_writeback "$@" ;;
+    mirror) shift; cmd_mirror "$@" ;;
+    status) shift; cmd_status "$@" ;;
+    writeback) shift; cmd_writeback "$@" ;;
     sync) shift; cmd_sync "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
     -h|--help|help) usage ;;
