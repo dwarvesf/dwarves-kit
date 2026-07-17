@@ -85,6 +85,16 @@ more. The most plausible cause is not a flaky lint: it is that the run read the 
 another writer was mid-edit. A shared checkout does not just risk your commits, it makes your
 green and your red both untrustworthy, which is the one thing a contract cannot afford.
 
+**Verify the commit's contents before you discard the worktree.** A worktree teardown that
+discards uncommitted changes is a delete; the commit is the only survivor, so look at it first:
+`git show --stat HEAD` must list every file you meant to ship. On 2026-07-17 a conductor's
+staging ran inside an `&&` chain where an innocent `grep -c` (zero matches, exit 1) broke the
+chain BEFORE `git add`; the commit sailed through with only the auto-staged `git mv` rename, the
+PR merged looking healthy, and the exit-discard silently destroyed the three files that were the
+actual point of the change. Two corollaries: never put `git add`/`git commit` downstream of a
+command whose nonzero exit is informational (`grep -c`, `diff`, a probe), and treat "the PR
+merged" as no evidence the PR contained the work.
+
 ## Adding a new module, tool, or skill
 
 Work the list, in this order. Every step has a check you can run.
