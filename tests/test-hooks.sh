@@ -119,6 +119,20 @@ RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"eval \"rm -rf src\""}}')
 assert_exit "F3b: eval smuggle blocks" 2 $RC
 RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"xargs rm -rf < list.txt"}}')
 assert_exit "F3c: xargs rm blocks" 2 $RC
+
+# find is a delete verb the rm rule never sees. Permanent pin for the 2026-07-08
+# incident: `find ~/.cache/.bun -mindepth 1 -delete` passed the gate and wiped a
+# bun global install (the omp cockpit), because the case dispatched on rm only.
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find ~/.cache/.bun -mindepth 1 -delete"}}')
+assert_exit "D1: find -delete on a home path blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find /tmp/x -name \"*.log\" -exec rm -rf {} +"}}')
+assert_exit "D2: find -exec rm blocks" 2 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find node_modules -mindepth 1 -delete"}}')
+assert_exit "D3: find -delete on an allowlisted artifact is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find . -name \"*.go\" -exec gofmt -w {} +"}}')
+assert_exit "D4: find -exec without rm is allowed" 0 $RC
+RC=$(run_hook safety-gate.sh '{"tool_input":{"command":"find ~/workspace -name \"*.md\" -type f"}}')
+assert_exit "D5: read-only find is allowed" 0 $RC
 # F4: cd-prefix repo resolution parses portably (probe affordance prints the target)
 CDOUT=$(echo '{"tool_input":{"command":"cd /tmp/some-repo && git push -q origin feat/x"}}' | DWARVES_KIT_PRINT_CDDIR=1 bash "$KIT_DIR/hooks/ship-gate.sh" 2>/dev/null)
 assert_output_contains "F4: ship-gate resolves the cd target" "^/tmp/some-repo$" "$CDOUT"
