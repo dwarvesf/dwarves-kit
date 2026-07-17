@@ -493,6 +493,7 @@ cmd_queue() {
 # BACKLOG.md (mirror is one-way: git -> Hermes; SG-08 owns the reverse leg).
 # ---------------------------------------------------------------------------
 cmd_mirror() {
+  _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
@@ -569,6 +570,7 @@ cmd_mirror() {
 # Hermes or the snapshot file (read-only).
 # ---------------------------------------------------------------------------
 cmd_status() {
+  _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
@@ -642,6 +644,7 @@ cmd_status() {
 # snapshot write.
 # ---------------------------------------------------------------------------
 cmd_writeback() {
+  _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
@@ -693,6 +696,74 @@ cmd_writeback() {
   return 0
 }
 
+# board sync [--dry-run] [--sources a,b] ... -- two-way spoke sync (the `sync`
+# module, lib/sync/). Consumer shims append --backlog-file; translate it to the
+# engine's --backlog. Config resolution happens HERE per ADR-0034: a command
+# reads [sync] keys via the ONE resolver at invocation and hands the python
+# engine plain flags (the engine never reads TOML). User-passed flags land
+# after the config-derived ones, so argparse lets them win.
+cmd_sync() {
+  local backlog="" fwd=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --backlog-file) backlog="${2:-}"; shift 2 ;;
+      *) fwd+=("$1"); shift ;;
+    esac
+  done
+  backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
+  [ -f "$backlog" ] || { echo "board sync: no backlog at $backlog" >&2; exit 2; }
+  . "$BOARD_DIR/../config/kit-config.sh"
+  # git-aware repo root: BACKLOG.md lives at _meta/ in some repos and at repo
+  # root in others; _repo_root_for handles both
+  KIT_PROJECT_ROOT="$(_repo_root_for "$backlog")"
+  export KIT_PROJECT_ROOT
+  local args=(--backlog "$backlog") v
+  v="$(kit_config_get sync.apps "")"
+  [ -n "$v" ] || v="$(kit_config_get sync.surfaces "")"  # legacy alias
+  [ -n "$v" ] || v="$(kit_config_get sync.sources "")"   # older legacy alias
+  if [ -z "$v" ]; then
+    echo "board sync: no [sync] apps configured in $KIT_PROJECT_ROOT/.kit.toml" >&2
+    printf '  add e.g.:\n  [sync]\n  apps = "reminders"\n' >&2
+    exit 2
+  fi
+  args+=(--apps "$v")
+  local app fk
+  for app in reminders notion hermes multica; do
+    for fk in only_tags skip_tags intake; do
+      v="$(kit_config_get "sync.${app}_${fk}" "")"
+      [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
+    done
+  done
+  v="$(kit_config_get sync.scope_exit_cap "")"; [ -n "$v" ] && args+=(--scope-exit-cap "$v")
+  v="$(kit_config_get sync.reminders_list "")";  [ -n "$v" ] && args+=(--list "$v")
+  v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
+  v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
+  v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
+  v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")
+  v="$(kit_config_get sync.multica_url "")";       [ -n "$v" ] && args+=(--multica-url "$v")
+  v="$(kit_config_get sync.multica_workspace "")"; [ -n "$v" ] && args+=(--multica-workspace "$v")
+  v="$(kit_config_get sync.multica_project "")";   [ -n "$v" ] && args+=(--multica-project "$v")
+  # token goes through the env, never argv (ps leaks argv); Keychain-cached
+  # 1P read per the runtime-secret rule, raw `op read` as the fallback.
+  v="$(kit_config_get sync.multica_token_ref "")"
+  if [ -n "$v" ] && [ -z "${MULTICA_TOKEN:-}" ]; then
+    if command -v secret-cache-read >/dev/null 2>&1; then
+      MULTICA_TOKEN="$(secret-cache-read --ttl 21600 MULTICA_TOKEN "$v")"
+    else
+      MULTICA_TOKEN="$(op read "$v")"
+    fi
+    export MULTICA_TOKEN
+  fi
+  exec python3 "$BOARD_DIR/../sync/backlog_sync.py" "${args[@]}" ${fwd[@]+"${fwd[@]}"}
+}
+
+# bridge was folded into the sync module 2026-07-16; these verbs are the
+# legacy cockpit engine until the SPEC-002 P2 port (kit board ID-290).
+_legacy_bridge_note() {
+  echo "note: mirror/status/writeback are the legacy cockpit engine (bridge)," >&2
+  echo "      folded into the sync module; port tracked as kit ID-290." >&2
+}
+
 usage() { sed -n '2,166p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
@@ -703,6 +774,7 @@ main() {
     mirror) shift; cmd_mirror "$@" ;;
     status) shift; cmd_status "$@" ;;
     writeback) shift; cmd_writeback "$@" ;;
+    sync) shift; cmd_sync "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
     -h|--help|help) usage ;;
     *) cmd_board_single "$@" ;;

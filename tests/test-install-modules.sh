@@ -134,7 +134,7 @@ assert_true "--prune --with board trims to exactly spine + board (drops the old 
 echo "== POST-INSTALL SMOKE: every wired hook script runs cleanly (exit 0) on a no-op event =="
 # ============================================================
 H7="$(mktemp -d)"
-HOME="$H7" bash "$KIT_DIR/install.sh" --with board,session,advisor,cosmetic,queue,stats,quiz_gate,weekend_batch,bridge >/tmp/kitmod-h7.log 2>&1
+HOME="$H7" bash "$KIT_DIR/install.sh" --with board,session,advisor,cosmetic,queue,stats,quiz_gate,weekend_batch,sync >/tmp/kitmod-h7.log 2>&1
 # Invoke each installed hook from a real (throwaway) git repo, not the kit checkout
 # itself, so a hook's project-root-relative reads (e.g. .claude/backups, docs/specs)
 # see a clean, self-consistent tree instead of the kit's own live dev state.
@@ -210,7 +210,7 @@ echo "== COVERAGE-DELTA: every module in the manifest maps to a real installable
 # Each optional module either has >=1 hook that exists on disk, or is a documented
 # hookless module backed by a real command/skill/lib subsystem.
 declare -a HOOKED_MODULES=(board session advisor cosmetic)
-declare -a HOOKLESS_MODULES=(queue stats quiz_gate weekend_batch bridge)
+declare -a HOOKLESS_MODULES=(queue stats quiz_gate weekend_batch sync)
 COV_FAIL=""
 for m in "${HOOKED_MODULES[@]}"; do
   case "$m" in
@@ -227,7 +227,7 @@ done
 [ -d "$KIT_DIR/lib/stats" ] || COV_FAIL="$COV_FAIL stats:lib/stats"
 [ -f "$KIT_DIR/commands/quiz-gate.md" ] || COV_FAIL="$COV_FAIL quiz_gate:commands/quiz-gate.md"
 grep -rq "weekend" "$KIT_DIR/commands" 2>/dev/null || COV_FAIL="$COV_FAIL weekend_batch:commands"
-grep -rq "bridge" "$KIT_DIR/lib/board" 2>/dev/null || COV_FAIL="$COV_FAIL bridge:lib/board"
+[ -d "$KIT_DIR/lib/sync" ] || COV_FAIL="$COV_FAIL sync:lib/sync"
 assert_true "every manifest module maps to a real installable unit (missing:${COV_FAIL:-none})" "$([ -z "$COV_FAIL" ]; echo $?)"
 
 echo
