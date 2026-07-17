@@ -26,8 +26,8 @@ All notable changes to dwarves-kit are documented here.
   reader; the python engine takes flags only. Filtered rows freeze two-way and close on
   the app (scope-exit) with a cap + `--allow-scope-exit` override. Plain-words
   vocabulary: profile/app/board (was edge/surface+spoke/hub); legacy config aliases
-  kept. Tests: `tests/test-board-sync.sh` (engine, fake transports) +
-  `tests/test-board-sync-dispatch.sh` (both board conventions, legacy alias, error
+  kept. Tests: `tests/test-sync.sh` (engine, fake transports) +
+  `tests/test-sync-dispatch.sh` (both board conventions, legacy alias, error
   paths). Proof: `lib/sync/docs/proof-of-done.md`.
 - **Plain words rule (CONTRIBUTING.md) + ranked jargon inventory**
   (`docs/research/2026-07-16-plain-words-inventory.md`); rename backlog: ID-278 (cheap

@@ -103,7 +103,7 @@ connected). Hermes: `mini-tieubao`, `~/hermes-personal/home` (restic-covered).
 ## Tests
 
 ```
-tests/test-board-sync.sh    # kit wrapper: pytest over lib/board/sync/tests
+tests/test-sync.sh    # kit wrapper: pytest over lib/board/sync/tests
 ```
 
 No network in pytest; the live proofs (bootstrap, reverse flips, inbox,
