@@ -56,6 +56,26 @@ Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explic
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); that context belongs in the body or PR description.
 5. Update `docs/CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial (the root `CHANGELOG.md` is a thin pointer stub, SPEC-185). The maintainer moves it to a versioned section at release time.
 
+
+## Plain words rule (2026-07-16)
+
+Everything operator-facing speaks the simplest everyday word that fits, so a
+new user never has to learn a coined concept. Standing tests before you name
+anything (a command, a config key, a doc heading, a term in help text):
+
+1. Would a non-engineer PM understand it with zero explanation? If not, find
+   the everyday word ("app", not "spoke"; "profile", not "edge"; "stage",
+   not "leg").
+2. Is it an industry word the user already knows (git, PR, kanban, backlog,
+   retro, triage, cron, worktree)? Those earn their keep, use them.
+3. Renaming an existing term: keep the old name as a working legacy alias
+   for one release, sweep docs + config keys, and add the row to
+   docs/research/2026-07-16-plain-words-inventory.md (the ranked inventory
+   this rule was born from).
+
+Precedent renames: edge -> profile, surface/spoke/sources -> app,
+hub -> board (2026-07-16, sync module).
+
 ## Source
 
 The "rejection-first" framing of this document is adapted from [obra/superpowers v5.0.7 `AGENTS.md`](https://github.com/obra/superpowers/blob/main/AGENTS.md). Same source we adopted in v1.3 for `commands/kit-health.md` (see ADR-008). Specific rejection criteria here are the kit's own from `docs/PHILOSOPHY.md`, not lifted verbatim.

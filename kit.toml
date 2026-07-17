@@ -37,10 +37,12 @@ queue          = true           # hookless (orchestrate/dispatch are commands)
 stats          = true           # hookless
 quiz_gate      = false          # hookless; backs commands/quiz-gate.md
 weekend_batch  = false          # hookless; backs lib/queue/weekend-batch.sh
-bridge         = false          # hookless; Hermes cockpit mirror
+# bridge: folded into `sync` 2026-07-16 (one engine surface; legacy
+#         mirror/status/writeback verbs remain until the SPEC-002 P2 port, ID-277)
 worktree       = false          # hookless; exposes the worktree-provision CLI
 money_gate     = false          # money-gate.sh PreToolUse guard; inert without MONEY_GATE_REPOS
 prose_rag      = false          # prose-rag.sh recall inject + CLI; dormant without PROSE_RAG_INJECT=1
+sync           = false          # hookless; `board sync` two-way spoke mirror, inert without [sync] sources
 team_mode      = false          # reserved , install.sh hard-rejects it today
 
 [ledger]                        # where the harness stores its operation record
@@ -95,3 +97,34 @@ spec_reservation = false        # [design] pushed spec-stub branch = SPEC-number
 policy           = false        # [design] git-tracked [policy]: path fences, guarded verbs
 onboarding       = false        # [design] adopt --with team -> TEAM.md
 pilot            = false        # [design] end-to-end UAT (held)
+
+# --- sync: two-way spoke mirror for the kanban board (`board sync`) ----------
+# Per-repo values live in the project's .kit.toml; this block declares the keys
+# and kit-wide defaults. Sources plug in by listing them in `sources` and
+# filling that spoke's keys (the plugin mechanism: no section entry, no spoke).
+# Engine: lib/sync/ (python, stdlib); resolution happens in board.sh cmd_sync
+# via kit-config.sh -- the engine itself never reads TOML.
+
+[sync]
+apps           = ""             # [impl] comma list of apps to sync to: reminders,notion,hermes,multica; empty = sync off. Legacy aliases: `surfaces`, `sources`
+mode           = "manual"       # [reserved] manual | cron (scheduled runs not built yet)
+reminders_list = "Backlog"      # [impl] Reminders list name
+notion_db      = ""             # [impl] bind an existing Notion database id
+notion_parent  = ""             # [impl] Notion page id to create the board under (bootstrap)
+hermes_target  = "mini-tieubao" # [impl] ssh host for the hermes spoke
+scope_exit_cap = 20             # [impl] max rows one run may close on an app when a filter changes; --allow-scope-exit overrides
+# Per-app audience filters (SPEC-002 P1). only_tags: row must carry one;
+# skip_tags: row must carry none; intake: all | tagged:<tag> | none.
+reminders_only_tags = ""        # [impl]
+reminders_skip_tags = ""        # [impl]
+reminders_intake    = ""        # [impl] default all
+notion_only_tags    = ""        # [impl]
+notion_skip_tags    = ""        # [impl]
+notion_intake       = ""        # [impl] default all
+hermes_only_tags    = ""        # [impl]
+hermes_skip_tags    = ""        # [impl]
+hermes_intake       = ""        # [impl] default all
+multica_only_tags   = ""        # [impl]
+multica_skip_tags   = ""        # [impl]
+multica_intake      = ""        # [impl] default all
+hermes_home    = ""             # [impl] HERMES_HOME of the kanban store to sync

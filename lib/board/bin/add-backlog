@@ -22,10 +22,13 @@ defaults as hooks/backlog-stage.py: `git rev-parse --show-toplevel` else $PWD).
 Promoted rows land in a `### Conversation intake` section (created if missing);
 re-file into the right section by hand later. Stdlib only.
 """
+import fcntl
+import hashlib
 import os
 import re
 import subprocess
 import sys
+import tempfile
 
 
 def _repo_root():
@@ -154,15 +157,30 @@ def main(argv):
     if not os.path.isfile(BACKLOG):
         print(f"board not found: {BACKLOG}", file=sys.stderr)
         return 2
-    btext = open(BACKLOG, encoding="utf-8").read()
+    # single-writer lock (stable inode OUTSIDE the repo, so the atomic replace
+    # below can't strand a waiter on a stale fd): parallel sessions promoting
+    # concurrently is how duplicate IDs got minted (2026-07-16, kit ID-275)
+    lock_path = os.path.join(
+        tempfile.gettempdir(),
+        "board-%s.lock" % hashlib.md5(
+            os.path.realpath(BACKLOG).encode()).hexdigest())
+    lock = open(lock_path, "w")
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    btext = open(BACKLOG, encoding="utf-8").read()  # read AFTER the lock
     promoted = []
     for b in chosen:
         cid = next_id(btext)
         row = make_row(cid, b)
+        if len(re.split(r"(?<!\\)\|", row.rstrip("\n"))) != 6:
+            print(f"refusing malformed row for {cid}: {row!r}", file=sys.stderr)
+            return 2
         btext = insert_row(btext, row)
         text = text.replace(b["raw"], b["raw"].replace("## [staged]", f"## [promoted {cid}]", 1), 1)
         promoted.append((cid, b["title"]))
-    open(BACKLOG, "w", encoding="utf-8").write(btext)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(BACKLOG) or ".")
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(btext)
+    os.replace(tmp, BACKLOG)
     open(STAGING, "w", encoding="utf-8").write(text)
     for cid, title in promoted:
         print(f"promoted {cid}: {title}")

@@ -4,7 +4,35 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Changed
+- **`bridge` module folded into `sync`** (zero live consumers at fold time: no
+  `bridge=on` rows, no snapshot, module off). Legacy `mirror`/`status`/`writeback`
+  verbs stay runnable with a deprecation note until the SPEC-002 P2 port (ID-277),
+  which must carry the `row_hash` git-wins conflict rule and the live-probed Hermes
+  reachable-state map.
+- **`board promote` write path hardened** (kit ID-275): flock single-writer lock
+  (stable-inode lockfile in tmpdir), read-after-lock, 4-cell row validation, atomic
+  replace. Closes the parallel-session duplicate-ID and malformed-row minting that hit
+  the ops-toolkit board on 2026-07-16.
+
 ### Added
+- **`sync` module: two-way board↔apps sync (SPEC-001/SPEC-002 P1).** The ops-toolkit
+  backlog-sync engine graduates into the kit as registered module `sync` (leg Specify)
+  at `lib/sync/`: `board sync` mirrors an adopted repo's BACKLOG.md to Apple Reminders /
+  Notion / Hermes kanban / Multica with per-app three-way merge (board wins; app
+  deletions tombstone; inbox intake with `#inbox` quarantine). Config on the ADR-0034
+  layer: `.kit.toml [sync]` (`apps`, per-app keys, audience filters `only_tags` /
+  `skip_tags` / `intake`, `scope_exit_cap`), resolved in `cmd_sync` via the one TOML
+  reader; the python engine takes flags only. Filtered rows freeze two-way and close on
+  the app (scope-exit) with a cap + `--allow-scope-exit` override. Plain-words
+  vocabulary: profile/app/board (was edge/surface+spoke/hub); legacy config aliases
+  kept. Tests: `tests/test-board-sync.sh` (engine, fake transports) +
+  `tests/test-board-sync-dispatch.sh` (both board conventions, legacy alias, error
+  paths). Proof: `lib/sync/docs/proof-of-done.md`.
+- **Plain words rule (CONTRIBUTING.md) + ranked jargon inventory**
+  (`docs/research/2026-07-16-plain-words-inventory.md`); rename backlog: ID-278 (cheap
+  cluster), ID-279 (legs → Shape/Build/Watch/Check/Learn, needs an ADR-0034
+  amendment), ID-280 (big cluster, parked).
 - **Model-routing enforcement pinned + proven (SPEC-116).** Resolves `orchestrate-hardening`
   open-fork 3: the enforcement site is `lib/queue/orchestrate.sh` (`_route()` + the serial/wave delegate
   dispatch sites, which already existed under SPEC-087), not `lib/classify/route-suggest.sh` (a decompose-time

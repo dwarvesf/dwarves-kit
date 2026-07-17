@@ -36,7 +36,7 @@ it is not a row here either , the completeness rule is scoped to
 | stats | Observe | |
 | quiz_gate | Execute | |
 | weekend_batch | Learn | |
-| bridge | Observe | presentation side; board mirror to the Hermes cockpit |
+| sync | Specify | spanner: spoke intake -> board rows (Specify input side) + outward mirror to Reminders/Notion/Hermes (Observe, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port (ID-277); the legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay runnable until then and carry two assets the port must keep: the `row_hash` git-wins conflict rule and the live-probed Hermes reachable-state map {triage, ready, blocked, done}. |
 | worktree | Execute | |
 | money_gate | Govern | |
 | classify | Specify | not a `KIT_KNOWN_MODULES` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a leg and pins THIS file as the machine home for that table. Added 2026-07-14: the leg was answerable only from ADR prose. |
@@ -145,6 +145,35 @@ real reader consumes it today (all rows below are, except where noted).
 | BACKLOG_FILE | env-only | `$BACKLOG_DIR/../../_meta/BACKLOG.md` | [impl] | board | Override which `BACKLOG.md` the CLI reads/writes. |
 | BACKLOG_ID_RE | env-only | `[A-Z]+-[0-9]+` | [impl] | board | Regex for what counts as a backlog item ID. |
 
+### sync (two-way spoke mirror, `board sync` -> `lib/sync/backlog_sync.py`)
+
+All resolved in `board.sh cmd_sync` via `kit_config_get` at invocation and
+passed to the python engine as flags (the engine reads no TOML; ADR-0034
+single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). |
+| - | sync.mode | `"manual"` | [reserved] | sync | `manual` today; `cron` reserved for scheduled runs. |
+| - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
+| - | sync.notion_db | `""` | [impl] | sync | Bind an existing Notion database id. |
+| - | sync.notion_parent | `""` | [impl] | sync | Notion page id to create the board under (bootstrap). |
+| - | sync.hermes_target | `"mini-tieubao"` | [impl] | sync | ssh host for the hermes spoke. |
+| - | sync.hermes_home | `""` | [impl] | sync | HERMES_HOME of the kanban store to sync against. |
+| - | sync.scope_exit_cap | `20` | [impl] | sync | Max rows one run may close on an app when a filter changes; `--allow-scope-exit N` is the one-run override. |
+| - | sync.reminders_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on reminders. |
+| - | sync.reminders_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on reminders. |
+| - | sync.reminders_intake | `""` (all) | [impl] | sync | Up-filter for foreign reminders items: `all`, `tagged:<tag>`, or `none`. |
+| - | sync.notion_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on notion. |
+| - | sync.notion_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on notion. |
+| - | sync.notion_intake | `""` (all) | [impl] | sync | Up-filter for foreign notion items: `all`, `tagged:<tag>`, or `none`. |
+| - | sync.hermes_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on hermes. |
+| - | sync.hermes_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on hermes. |
+| - | sync.hermes_intake | `""` (all) | [impl] | sync | Up-filter for foreign hermes items: `all`, `tagged:<tag>`, or `none`. |
+| - | sync.multica_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on multica. |
+| - | sync.multica_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on multica. |
+| - | sync.multica_intake | `""` (all) | [impl] | sync | Up-filter for foreign multica items: `all`, `tagged:<tag>`, or `none`. |
+
 ### session (incl. session-intel / skill-curator, prefix `SKILL_CURATOR_*`)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
@@ -176,7 +205,7 @@ real reader consumes it today (all rows below are, except where noted).
 | PROSE_RAG_INJECT | env-only | unset (hook inert) | [impl] | prose_rag | The engine's own opt-in master switch for the recall-inject hook , deliberately NOT `modules.prose_rag` (that toggle only gates hook *install*, this gates whether the installed hook actually fires). |
 | MONEY_GATE_REPOS | env-only | (unset) | [impl] | money_gate | Colon-separated list of repo names the guard treats as financial; hook is inert (exits 0) without it. |
 
-### modules (install-time manifest, `install.sh:170` `KIT_KNOWN_MODULES`, 12 of 12)
+### modules (install-time manifest, `install.sh` `KIT_KNOWN_MODULES`, one row per entry)
 
 No env var exists for any of these , they are install-time flags recorded in the
 consumer's own `kit.toml [modules]` section (an install RECORD, never read at
@@ -193,10 +222,10 @@ COMMAND invocation via `kit_config_get modules.<name>`.
 | - | modules.stats | `true` | [impl] | stats | Hookless read-plane projection. |
 | - | modules.quiz_gate | `false` | [impl] | quiz_gate | Hookless; backs `commands/quiz-gate.md`. |
 | - | modules.weekend_batch | `false` | [impl] | weekend_batch | Hookless; backs `lib/queue/weekend-batch.sh`. |
-| - | modules.bridge | `false` | [impl] | bridge | Hookless; Hermes cockpit mirror. |
 | - | modules.worktree | `false` | [impl] | worktree | Hookless; exposes the `worktree-provision` CLI. |
 | - | modules.money_gate | `false` | [impl] | money_gate | `money-gate.sh` PreToolUse guard; inert without `MONEY_GATE_REPOS`. |
 | - | modules.prose_rag | `false` | [impl] | prose_rag | `prose-rag.sh` recall inject + CLI; dormant without `PROSE_RAG_INJECT=1`. |
+| - | modules.sync | `false` | [impl] | sync | hookless; `board sync` two-way spoke mirror, inert without `[sync] sources`. |
 
 ### features / team (reserved / design, all inert by contract)
 

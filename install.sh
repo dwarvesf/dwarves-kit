@@ -167,11 +167,13 @@ echo ""
 # [modules]` manifest RECORDS the enabled set (for `--with`-less re-installs
 # and future discovery) -- it is a shell-install RECORD, never a runtime
 # feature-registry: no hook reads it (see tests/test-no-runtime-manifest-read.sh).
-KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge worktree money_gate prose_rag"
+# bridge folded into sync 2026-07-16 (same engine surface; legacy verbs live
+# until the SPEC-002 P2 port, kit board ID-277)
+KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch worktree money_gate prose_rag sync"
 KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.sh commit-format.sh anti-rationalization.sh"
 
 # module -> its hook script basenames (space-separated; empty = hookless, e.g.
-# queue/stats/quiz_gate/weekend_batch/bridge/worktree are commands/skills/CLIs with
+# queue/stats/quiz_gate/weekend_batch/worktree/sync are commands/skills/CLIs with
 # no hook to gate -- still valid --with names, recorded in the manifest for discovery).
 kit_module_hooks() {
   case "$1" in
@@ -804,7 +806,7 @@ echo "marker, idempotently, and wires the classifiers so the ship-gate engages):
 echo "  bash $KIT_DIR/lib/adopt.sh <repo-dir>      # or run /kit:adopt from inside the repo"
 echo ""
 echo "Tip: opt into a module (board, session, advisor, cosmetic, queue, stats, quiz_gate,"
-echo "weekend_batch, bridge): bash $KIT_DIR/install.sh --with board,stats"
+echo "weekend_batch): bash $KIT_DIR/install.sh --with board,stats"
 echo "Tip: trim to exactly a set (drops anything previously wired, incl. an old all-hooks"
 echo "install): bash $KIT_DIR/install.sh --prune --with board"
 echo ""
