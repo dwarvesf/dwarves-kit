@@ -592,12 +592,13 @@ assert_exit "handles nonexistent file" 0 $RC
 # is captured up front because the controlled PATH excludes bash's own dir.
 BASH_BIN="$(command -v bash)"
 CAT_BIN="$(command -v cat)"; JQ_BIN="$(command -v jq)"
-# af_run <tmpbin> <rs-file> <log>: run auto-format.sh with PATH restricted to <tmpbin>
-# (which holds the mocked tools + symlinked cat/jq), capture exit code.
+# af_run <tmpbin> <rs-file> <log> [toolchain]: run auto-format.sh with PATH restricted
+# to <tmpbin> (which holds the mocked tools + symlinked cat/jq), capture exit code.
+# [toolchain], when set, is passed as RUSTFMT_TOOLCHAIN to exercise the override.
 af_run() {
-  local bin="$1" rs="$2" log="$3" rc=0
+  local bin="$1" rs="$2" log="$3" tc="${4:-}" rc=0
   printf '{"tool_input":{"file_path":"%s"}}' "$rs" \
-    | PATH="$bin" LOG="$log" "$BASH_BIN" "$KIT_DIR/hooks/auto-format.sh" >/dev/null 2>&1 || rc=$?
+    | PATH="$bin" LOG="$log" RUSTFMT_TOOLCHAIN="$tc" "$BASH_BIN" "$KIT_DIR/hooks/auto-format.sh" >/dev/null 2>&1 || rc=$?
   echo "$rc"
 }
 # af_bin <dir> [want_rustup] [rustup_rc] [want_rustfmt]: build a mock PATH dir.
@@ -626,13 +627,24 @@ assert_exit ".rs: rustup-stable path exits 0" 0 $RC
 assert_output_contains ".rs: rustup present -> 'rustup run stable rustfmt <file>'" "rustup run stable rustfmt $RS" "$(cat "$LOG")"
 assert_output_not_contains ".rs: rustup success does NOT also call plain rustfmt" "^rustfmt " "$(cat "$LOG")"
 
-# B1b: rustup present but stable invocation FAILS -> inner fallback to plain rustfmt.
+# B1b: rustup present but the stable invocation FAILS -> SKIP formatting; must NOT
+# silently fall through to a PATH rustfmt (that would re-introduce the divergence
+# this fix closes). rustup is attempted, plain rustfmt is never called, exit 0.
 af_bin "$AF_TMP/b1b" yes 1 yes
 LOG="$AF_TMP/b1b.log"; : > "$LOG"
 RC=$(af_run "$AF_TMP/b1b" "$RS" "$LOG")
-assert_exit ".rs: rustup-fail fallback exits 0" 0 $RC
-assert_output_contains ".rs: rustup attempted before fallback" "rustup run stable rustfmt $RS" "$(cat "$LOG")"
-assert_output_contains ".rs: rustup failure falls back to plain rustfmt" "rustfmt $RS" "$(cat "$LOG")"
+assert_exit ".rs: rustup-fail path exits 0" 0 $RC
+assert_output_contains ".rs: rustup-stable attempted" "rustup run stable rustfmt $RS" "$(cat "$LOG")"
+assert_output_not_contains ".rs: rustup failure does NOT fall through to PATH rustfmt" "^rustfmt " "$(cat "$LOG")"
+
+# B1c: RUSTFMT_TOOLCHAIN override -> a consumer repo's pinned channel is honored,
+# not the hardcoded stable (so the hook respects per-project toolchain pins).
+af_bin "$AF_TMP/b1c" yes 0 yes
+LOG="$AF_TMP/b1c.log"; : > "$LOG"
+RC=$(af_run "$AF_TMP/b1c" "$RS" "$LOG" nightly)
+assert_exit ".rs: toolchain-override path exits 0" 0 $RC
+assert_output_contains ".rs: RUSTFMT_TOOLCHAIN honored -> 'rustup run nightly rustfmt'" "rustup run nightly rustfmt $RS" "$(cat "$LOG")"
+assert_output_not_contains ".rs: override does not fall back to stable" "run stable" "$(cat "$LOG")"
 
 # B2: rustup ABSENT, rustfmt present -> plain rustfmt, never rustup.
 af_bin "$AF_TMP/b2" no 0 yes
