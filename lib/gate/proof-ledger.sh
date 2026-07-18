@@ -163,35 +163,63 @@ _fresh_proof_files() {
 # Repo identity for override scoping (ID-299). The override log is machine-local and now
 # keys each entry by repo+slug, so a `backlog-reconcile` override logged in one repo cannot
 # short-circuit the ship-gate for the SAME slug in an unrelated repo (the family-office ->
-# console-labs collision that hid a real proof). Repo id = the git toplevel path (always
-# available, collision-proof between distinct checkouts), slugified for delimiter safety; a
-# non-git dir falls back to the dir path so an override is still SCOPED, never a global key.
+# console-labs collision that hid a real proof). Repo id = the git COMMON dir's parent (the
+# shared repo root), absolute, so ALL worktrees of one repo share a key -- keying on
+# --show-toplevel would give every `.claude/worktrees/<name>` checkout a different id under
+# the kit's own always-worktree policy, silently blocking a push from a sibling worktree.
+# The raw absolute path is the key (not a lossy slug: `tr '/ ' '--'` collapsed `foo/bar`
+# and `foo-bar` onto the same id, review-flagged); only `|` is stripped for delimiter safety.
+# A non-git dir falls back to the ABSOLUTE cwd so two relative "." calls in different dirs
+# never collide onto the same key.
 _repo_id() {
-  local d="${1:-.}" top
-  top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" || top="$d"
-  slugify "$top"
+  local d="${1:-.}" common
+  common="$(git -C "$d" rev-parse --git-common-dir 2>/dev/null)" || {
+    printf '%s' "$( (cd "$d" 2>/dev/null && pwd -P) || printf '%s' "$d")" | tr -d '|'; return
+  }
+  case "$common" in
+    /*) : ;;
+    *) common="$( (cd "$d" 2>/dev/null && cd "$(dirname "$common")" 2>/dev/null && pwd -P) )/$(basename "$common")" ;;
+  esac
+  common="${common%/.git}"          # the shared repo root, identical across all worktrees
+  printf '%s' "$common" | tr -d '|'
 }
 
 is_overridden() {
   local slug repo
   slug="$(slugify "${1:-}")"; repo="$(_repo_id "${2:-.}")"
   [ -n "$slug" ] || return 1
-  # Repo-scoped match ONLY (ID-299). Legacy entries written before scoping carry no repo
-  # field ("<ts> | <slug> | OVERRIDE | ..."); they no longer match any repo's lookup, so a
-  # stale global override now fails CLOSED. Worst case is re-logging an override in the repo
-  # that needs it; a wrongful PASS (the bug this fixes) can no longer happen across repos.
-  [ -f "$OVERRIDE_LOG" ] && grep -qF "| $repo | $slug |" "$OVERRIDE_LOG"
+  [ -f "$OVERRIDE_LOG" ] || return 1
+  # FIELD-anchored match (ID-299 + review security lens): compare the repo/slug FIELDS by
+  # position, never a substring of the whole line. A free substring (`grep -F "| $repo | $slug |"`)
+  # let a crafted `reason` embedding "| <victim-repo> | <victim-slug> |" forge a match for a
+  # repo/slug the operator never touched -- the very cross-repo bypass this change closes.
+  # FS is a single "|" (portable across awk variants; a multi-char " | " FS is a regex BSD awk
+  # mishandled); fields are trimmed. repo has "|" stripped and slug is charset-restricted, so
+  # the reason (field 5+) can never shift or forge fields 2/3/4. Legacy entries carry no repo
+  # field ($4 != OVERRIDE) so they match no repo -> fail CLOSED.
+  awk -F'|' -v r="$repo" -v s="$slug" '
+    function trim(x){ gsub(/^[ \t]+|[ \t]+$/,"",x); return x }
+    trim($2)==r && trim($3)==s && trim($4)=="OVERRIDE" { found=1; exit }
+    END { exit(found?0:1) }' "$OVERRIDE_LOG"
 }
 
 override() {
   local slug raw reason repo
   raw="${1:-}"; shift 2>/dev/null || { echo "usage: override <slug> <reason>" >&2; return 64; }
-  reason="${*:-}"; slug="$(slugify "$raw")"; repo="$(_repo_id ".")"
+  reason="${*:-}"; slug="$(slugify "$raw")"
   [ -n "$slug" ] && [ -n "$reason" ] || { echo "usage: override <slug> <reason>" >&2; return 64; }
-  # repo is derived from the cwd, which is the repo the operator is overriding for (the same
-  # toplevel the ship-gate resolves at push time), so the write and the lookup agree.
+  # CONTRACT (ID-299): the override is scoped to the repo it is logged FROM, so run it from
+  # inside that repo's tree. Refuse when cwd is not a git repo, rather than log a cwd-keyed
+  # entry that will never match a push (review: the write side must not silently no-op). This
+  # is the write twin of check()'s explicit-$root read; it also closes the cwd-ambiguity class
+  # noted in _meta/megagoals/_archive/kit-north-star/FEEDBACK.md.
+  if ! git -C . rev-parse --git-common-dir >/dev/null 2>&1; then
+    echo "override: cwd is not a git repo. Run this from inside the repo you are overriding for; nothing logged." >&2
+    return 66
+  fi
+  repo="$(_repo_id ".")"
   ledger_append "$OVERRIDE_STREAM" "$(printf '%s | %s | %s | OVERRIDE | %s' "$(now)" "$repo" "$slug" "$reason")" || return 1
-  echo "proof-of-done override logged for '$slug' in repo '$repo' (trace: $OVERRIDE_LOG)"
+  echo "proof-of-done override logged for slug '$slug' in repo '$repo' (trace: $OVERRIDE_LOG)"
 }
 
 # _has_committed_image <proof-file> <root>: 0 iff the file embeds an image whose target
@@ -324,6 +352,13 @@ check() {
     echo "  Type-specific shape (SPEC-044): run 'bash lib/gate/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"
     echo "    bash lib/gate/proof-ledger.sh override '${slug:-<branch-slug>}' \"<reason>\""
+    # ID-299 operator hint: an override for THIS slug exists in the log but is scoped to a
+    # different repo (legacy unqualified, a sibling repo, or a non-root/wrong-worktree cwd),
+    # so it does not apply here. Say so, or the operator re-logs and it still "does nothing".
+    if [ -n "$slug" ] && [ -f "$OVERRIDE_LOG" ] \
+       && awk -F'|' -v s="$slug" 'function trim(x){gsub(/^[ \t]+|[ \t]+$/,"",x);return x} trim($3)==s && trim($4)=="OVERRIDE"{f=1;exit} END{exit(f?0:1)}' "$OVERRIDE_LOG"; then
+      echo "  Note: an override for '$slug' exists in the log but is scoped to a different repo; re-log it from THIS repo's root (ID-299)."
+    fi
   } >&2
   return 1
 }

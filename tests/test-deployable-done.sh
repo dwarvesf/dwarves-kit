@@ -100,14 +100,14 @@ fi
 echo ""
 echo "=== AC4 [override logs]: a logged override on the AC1 no-proof repo passes + is audited ==="
 # ============================================================
-OUT4="$(DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LIB" override deploy-noproof-override "emergency hotfix, deploy verified manually" 2>&1)"
-assert "AC4: override command reports the trace log path" $(printf '%s' "$OUT4" | grep -qi "trace" && echo 0 || echo 1)
-
 D4="$(mktemp -d)"; mkrepo "$D4"
 B4="$(base "$D4")"
 mkdir -p "$D4/deploy"
 cp "$FIX/deploy-rollout.sh" "$D4/deploy/rollout.sh"
 git -C "$D4" add -A; git -C "$D4" commit -qm "deploy: add rollout script"
+# ID-299: overrides are repo-scoped, so log the override FROM the repo it applies to.
+OUT4="$( cd "$D4" && DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LIB" override deploy-noproof-override "emergency hotfix, deploy verified manually" 2>&1)"
+assert "AC4: override command reports the trace log path" $(printf '%s' "$OUT4" | grep -qi "trace" && echo 0 || echo 1)
 if run_check "$D4" "$B4" "deploy-noproof-override" >/dev/null 2>&1; then
   assert "AC4: deployable diff with a LOGGED override PASSES (no proof file needed)" 0
 else
@@ -122,7 +122,7 @@ D4B="$(mktemp -d)"; mkrepo "$D4B"
 B4B="$(base "$D4B")"
 mkdir -p "$D4B/lib"; printf 'echo broken\n' > "$D4B/lib/handler.sh"
 git -C "$D4B" add -A; git -C "$D4B" commit -qm "feat(handler): urgent source change"
-DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LIB" override src-noproof-override "urgent, trust me" >/dev/null 2>&1
+( cd "$D4B" && DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$LIB" override src-noproof-override "urgent, trust me" >/dev/null 2>&1 )
 if run_check "$D4B" "$B4B" "src-noproof-override" >/dev/null 2>&1; then
   assert "AC4b: override on NON-deploy source is still REJECTED (rtk-611 hole closed)" 1
 else

@@ -105,7 +105,7 @@ logs on this machine):
 | `commit-format.log` | `... \| BLOCKED \| subject is 475 chars (max 72). \| $(cat <<'EOF' ...` | verb-like (`BLOCKED`), but the trailing field can embed a raw multi-line heredoc, **not guaranteed single-line** (see Edge Cases) |
 | `completeness.log` | `... \| LANE-CHECK \| downgrade \| chosen=tiny suggested=full \| add user authentication...` | verb-like (`LANE-CHECK`), 4 total fields |
 | `mega-merge.log` | `... \| somerid \| DRY-RUN merge pr=1 lane=full posture=auto-to-final` | **not** a verb, 2nd field is a run-id; 3rd field is freeform |
-| `proof-overrides.log` | `... \| drop-projects-dir \| OVERRIDE \| docs/layout-only: fold homelab-net-research...` | 2nd field is a slug (like mega-merge), 3rd field is the verb-like word |
+| `proof-overrides.log` | `... \| /Users/me/ws/repo \| drop-projects-dir \| OVERRIDE \| docs/layout-only: fold homelab-net-research...` | repo-scoped (ID-299): 2nd field is the repo root path, 3rd the slug, 4th the verb-like `OVERRIDE`; pre-ID-299 entries omit the repo field |
 | `safety-gate.log` | `... \| BLOCKED \| rm-rf \| /Users/.../ops-toolkit \| cd /tmp && export ...` | verb-like (`BLOCKED`), trailing field can embed a raw shell command (may itself contain `\|`) |
 | `ship-gate.log` | `... \| BLOCKED \| proof-gate \| rtk-611-update` | verb-like (`BLOCKED`), 3 total fields |
 | `slop-cleaner.log` | `... \| SLOP \| 7 files \| /Users/.../ops-toolkit` | verb-like (`SLOP`), 3 total fields |
