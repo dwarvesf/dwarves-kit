@@ -46,3 +46,4 @@ __pycache__/
 # must still never sweep another branch's build artifacts into git add -A)
 lib/**/rust/target/
 lib/**/bin/*-rs
+.coverage

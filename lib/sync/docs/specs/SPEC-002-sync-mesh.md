@@ -162,5 +162,19 @@ or flatten to `profile_personal_*` keys if we refuse to touch the resolver.)
    Notion workspace".
 2. **P2, named profiles + multi-source extract + cockpit port** (ID-290):
    bridge retires to thin aliases; snapshot migration.
+   - FIRST SLICE LANDED (`lib/sync/cockpit.py`): the two deterministic legs,
+     multi-source EXTRACT (registry rows + active mega-goals, origin-prefixed
+     identity) and the keyed `row_hash` git-wins TRANSFORM/diff (CREATE /
+     UNCHANGED / CHANGE / COMPLETE). Carries over the reachable-state map
+     `{triage, ready, blocked, done}` and the git-wins rule. Reachable via
+     `board mirror --engine sync --dry-run`; legacy stays the default.
+   - STILL DEFERRED: the live Hermes LOAD leg, two-way writeback (SPEC-149),
+     snapshot state-shape migration, named-profile config (`[sync.profile.*]`),
+     and retiring `mirror`/`status`/`writeback` to thin aliases. The legacy
+     engine (board-mirror.sh + board-writeback.sh) stays runnable until then.
+     SECURITY CARRY-OVER for the LOAD leg: it MUST wrap every card title/body/
+     comment built from board content through `cockpit.mark_untrusted_title` /
+     `mark_untrusted_body` (the ported `MIRROR_UNTRUSTED_*` markers), so the
+     prompt-injection boundary the legacy engine set is not dropped.
 3. **P3, megagoal + goal object types** (progress-card mapper, mirror-out).
 4. **P4, assignee predicate** (blocked on a board assignee convention).

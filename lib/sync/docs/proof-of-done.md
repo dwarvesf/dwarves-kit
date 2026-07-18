@@ -39,6 +39,62 @@ with fake transports (no network in pytest).
 
 | 2026-07-16 | SPEC-002 P1 audience filters: suites (60 engine + 5 dispatcher + 19 registry) + live rollout | 0 | only_tags/skip_tags down-filter, intake all/tagged/none up-filter, frozen scope-exit/re-enter with scoped_out state, #inbox quarantine on intake rows, scope_exit_cap + --allow-scope-exit; live: notion_skip_tags=family,inbox previewed 3 exits (ID-216/322/323), applied, steady state notion 184 / reminders 187 / hermes 187, triple `(nothing to do)` |
 
+## Cockpit channel, first slice (SPEC-002 P2, ID-290)
+
+### Acceptance criteria
+
+ID-290 re-lands the legacy `board mirror` bridge as a sync channel. This slice
+ports the two DETERMINISTIC legs into `lib/sync/cockpit.py`: multi-source
+EXTRACT (registry rows + active mega-goals, origin-prefixed identity
+`<repo>:ID` / `megagoals:<repo>/<slug>`) and the keyed row_hash TRANSFORM/diff
+(CREATE / UNCHANGED / CHANGE / COMPLETE, board always wins). It CARRIES OVER
+the two assets ID-290 required: the `row_hash` git-wins conflict rule and the
+live-probed Hermes reachable-state map `{triage, ready, blocked, done}`.
+DEFERRED (documented, still on the legacy engine which stays runnable): the
+live Hermes LOAD leg, two-way status writeback (SPEC-149), snapshot state-shape
+migration, and retiring `mirror`/`status`/`writeback` to thin aliases.
+
+### Implementation
+
+`lib/sync/cockpit.py` (pure stdlib; its own `parse_cockpit_board` honoring the
+legacy `[A-Z]+-[0-9]+` id pattern + column-agnostic layout, NOT the bare-`ID-`
+`sync_core.parse_board`, so prefixed multi-repo ids pool correctly) + the
+`board mirror --engine sync --dry-run` opt-in route in `lib/board/board.sh`
+(legacy stays the default; a bare `--engine sync` without `--dry-run` refuses
+with exit 64 rather than silently no-op'ing). Tests:
+`lib/sync/tests/test_cockpit.py` (52 cases, 98% line coverage of the module).
+
+### Confirmation run-table
+
+| When | Command | Exit | Verdict |
+|---|---|---|---|
+| 2026-07-18 | `pytest lib/sync/tests/test_cockpit.py -q --cov=cockpit` | 0 | 69 passed, 97% coverage (only argparse-dispatch/`__main__` lines uncovered) |
+| 2026-07-18 | PARITY: `board-mirror.sh row-hash ...` vs `cockpit.row_hash(...)` | 0 | byte-identical digest (a future snapshot cutover adopts the legacy NDJSON without re-hashing) |
+| 2026-07-18 | PARITY: `board-mirror.sh extract-rows`/`extract-megas` vs `cockpit.py extract`, `cmp` on a fixture carrying PREFIXED ids (`BK-101`, `DS-7`), a bare `ID-`, a shipped row, and an active mega | 0 | `cmp` rc=0, byte-identical TSV incl. every hash, both origin formats, prefixed-id support, and the shipped-row exclusion |
+| 2026-07-18 | review round (architecture + security + advisor-Fable critique), findings applied | 0 | HIGH prefixed-id gap fixed (own `parse_cockpit_board` replacing bare-`ID-` `parse_board`); git-toplevel repo-root resolver; `--engine` value validation (bogus -> exit 64); registry trailing-token folding; untrusted-content markers ported for the deferred LOAD leg; per-row skip diagnostics |
+| 2026-07-18 | security round (2 Medium), findings applied | 0 | `read_snapshot` no longer crashes on a valid-JSON-but-non-object line (isinstance-dict guard, `null`/`42`/`[..]` skipped); `extract`/`plan --json` emit an out-of-band untrusted-content stderr banner (markers deliberately NOT applied to plan fields, which would corrupt the LOAD-leg input); no Critical/High, ReDoS/argv-injection/secrets checks clean |
+| 2026-07-18 | `board mirror --engine sync --dry-run --registry <fix>` | 0 | plan: `2 ops (2 create...)`, one row card + one mega card, correct native targets (`triage`/`ready`) |
+| 2026-07-18 | `board mirror --engine sync --registry <fix>` (no `--dry-run`) | 64 | NEGATIVE CONTROL: refuses (apply not yet ported), never silently no-ops |
+| 2026-07-18 | `bash tests/test-board-mirror.sh` (legacy engine) | 0 | NEGATIVE CONTROL: 72/72, the legacy bridge is untouched by the fold-in |
+| 2026-07-18 | `bash tests/test-sync.sh` (whole sync suite) | 0 | 112 passed (60 SPEC-001 + 52 new cockpit) |
+| 2026-07-18 | `bash tests/test-meta.sh` | 0 | 698/698 structural |
+
+Negative controls inside the pytest suite:
+`test_plan_idempotent_second_run_is_empty` (same hash -> zero ops, the
+idempotence guarantee), `test_plan_does_not_recomplete_a_done_row` (a card
+already `done` is never re-completed), `test_extract_rows_excludes_shipped_and_dropped`,
+`test_extract_from_registry_opted_out_repo_absent` (a `bridge=off` repo never
+enters the extract), `test_read_snapshot_skips_malformed_lines`,
+`test_target_native_unbridged_is_empty`.
+
+### Reproduce
+
+```
+bash tests/test-sync.sh
+python3 lib/sync/cockpit.py plan --registry _meta/boards.txt   # dry-run plan
+bash lib/board/board.sh mirror --engine sync --dry-run         # same via the verb
+```
+
 ## Run detail
 
 Notion e2e (sandbox, recorded 2026-07-16; sandbox DB trashed after):
