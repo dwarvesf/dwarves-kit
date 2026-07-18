@@ -738,6 +738,30 @@ cmd_sync() {
   v="$(kit_config_get sync.reminders_list "")";  [ -n "$v" ] && args+=(--list "$v")
   v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
   v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
+  # notion-taskboard: one-way, insert-only push to a foreign team board
+  # (SPEC-003). Down-filter only (a write-only sink has no intake path); the
+  # keys are TOML-friendly underscores but the engine's --filter app token
+  # keeps the hyphenated adapter name.
+  for fk in only_tags skip_tags; do
+    v="$(kit_config_get "sync.notion_taskboard_${fk}" "")"
+    [ -n "$v" ] && args+=(--filter "notion-taskboard:${fk}=${v}")
+  done
+  v="$(kit_config_get sync.notion_taskboard_db "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-db "$v")
+  v="$(kit_config_get sync.notion_taskboard_status_map "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-status-map "$v")
+  v="$(kit_config_get sync.notion_taskboard_status_default "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-status-default "$v")
+  v="$(kit_config_get sync.notion_taskboard_priority_map "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-priority-map "$v")
+  v="$(kit_config_get sync.notion_taskboard_weight_map "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-weight-map "$v")
+  v="$(kit_config_get sync.notion_taskboard_owner "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-owner "$v")
+  v="$(kit_config_get sync.notion_taskboard_props "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-props "$v")
+  v="$(kit_config_get sync.notion_taskboard_types "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-types "$v")
   v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
   v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")
   v="$(kit_config_get sync.multica_url "")";       [ -n "$v" ] && args+=(--multica-url "$v")

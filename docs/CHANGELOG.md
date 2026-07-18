@@ -4,6 +4,22 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`sync` one-way insert-only push to a foreign team board** (`notion-taskboard`
+  app, SPEC-003, implements ops-toolkit ID-138). Pushes a repo's board rows out
+  to a team-OWNED Notion board (create page, never update, never read for merge,
+  board file never written); fields are set only on page-create so team edits are
+  never overwritten, and the local sync-state map is the identity index. Status/
+  Priority/Weight map to the team board's own option names via `.kit.toml [sync]`
+  config, so the team schema is never mutated. The two-way mesh and its four live
+  adapters are untouched (`create_only` is a separate path, and the two-way
+  board parser stays `ID-`-only; only the one-way READ path accepts any
+  `[A-Z]+-\d+` prefix, e.g. dfoundation `DF-NN`, and it never mints or writes
+  board ids). The sink validates every mapped option against the target's
+  schema before any create, so it never auto-creates an option on the team
+  board; state is checkpointed after each create so a mid-batch failure never
+  re-pushes a page.
+
 ### Changed
 - **`bridge` module folded into `sync`** (zero live consumers at fold time: no
   `bridge=on` rows, no snapshot, module off). Legacy `mirror`/`status`/`writeback`

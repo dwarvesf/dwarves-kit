@@ -93,6 +93,41 @@ rollback: per spoke, delete the Reminders list / trash the Notion DB /
 `~/.cache/backlog-sync/<source>.state.json`. The board file is only modified
 by reverse-flow events.
 
+## SPEC-003, one-way insert-only Task Board push (2026-07-18, ID-138)
+
+New posture alongside the two-way mesh: `notion-taskboard` app, create-only,
+write-only sink. Contract proven by fixtures only, NO live team-board writes
+during build (a live smoke against the real Task Board is a deliberate operator
+step, per the DAG task's no-live-writes rule).
+
+| When | Command | Exit | Verdict |
+|---|---|---|---|
+| 2026-07-18 | `bash tests/test-sync.sh` | 0 | 89 passed (76 pre-change + 13 new taskboard cases; two-way suites unchanged, so the create-only path has zero blast radius on Reminders/Notion/Hermes/Multica) |
+| 2026-07-18 | `pytest --cov` on changed modules | 0 | `sources/notion_taskboard.py` ~90% (uncovered = real-subprocess `_run_ntn` + resolve list-fallback); every changed line in `sync_core`/`backlog_sync` covered |
+| 2026-07-18 | CLI e2e via `main()` (fake ntn, temp board) | 0 | `--apps notion-taskboard ...`: DF-1 (queued,#u-hi) → one page Status=Backlog Priority=P0; DF-2 (dropped) skipped; board file byte-identical |
+| 2026-07-18 | kit:code-reviewer (architecture) + kit:advisor (critique, fable) then re-run | 0 | 6 findings applied: preflight validation + per-create checkpoint (no partial-batch duplicates), schema-option validation (no silent select auto-create), `strict_id` parser split (two-way stays ID-only), stale-binding db check, dead intake/skip_statuses removed; suite 89 green |
+
+Negative controls (all in `tests/test_notion_taskboard.py`):
+`test_dropped_row_is_never_pushed` (dropped → no create),
+`test_already_pushed_row_is_frozen` + the idempotent-rerun assertion in
+`test_create_only_path_never_writes_board_and_is_idempotent` (a row in the
+state map is never re-pushed, so team edits are never overwritten; board file
+byte-identical),
+`test_partial_batch_failure_checkpoints_and_never_duplicates` (2nd create fails
+after the 1st succeeds → 1st is persisted, recovery run pushes only the 2nd,
+never a duplicate),
+`test_preflight_rejects_unknown_select_option` (a typo'd option is a hard error,
+never an auto-created team option),
+`test_preflight_surfaces_unmapped_status_on_dry_run` (dry-run fails closed with
+zero writes), `test_unmapped_status_without_default_errors`,
+`test_skip_tag_down_filter`, `test_stale_binding_for_a_different_db_is_rediscarded`,
+`test_build_source_requires_db` / `_requires_status_map_or_default` (missing
+config fails closed before any network call).
+
+rollback: create-only never touches the board file; to undo a live push, trash
+the created pages in Notion and delete
+`~/.cache/backlog-sync/<board-slug>/notion-taskboard.state.json`.
+
 ## Reproduce
 
 ```

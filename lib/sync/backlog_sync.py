@@ -26,10 +26,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from sync_core import apply_board, build_state, describe, parse_board, plan_sync  # noqa: E402
+from sync_core import (ID_TOKEN, apply_board, build_state, describe,  # noqa: E402
+                       parse_board, plan_create_only, plan_sync)
+
+# apps that push one-way and read boards with any repo prefix (not just ID-)
+CREATE_ONLY_APPS = {"notion-taskboard"}
 from sources.hermes import HermesSource  # noqa: E402
 from sources.multica import MulticaSource  # noqa: E402
 from sources.notion import NotionSource  # noqa: E402
+from sources.notion_taskboard import (NotionTaskBoardSource,  # noqa: E402
+                                      parse_map)
 from sources.reminders import RemindersSource  # noqa: E402
 
 LEGACY_REMINDERS_STATE = (Path.home() / ".cache" / "backlog-reminders-sync"
@@ -47,22 +53,64 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def warn_duplicate_ids(text: str) -> None:
-    ids = re.findall(r"^\| (ID-\d+) \|", text, flags=re.M)
+def warn_duplicate_ids(text: str, strict_id: bool = True) -> None:
+    token = r"ID-\d+" if strict_id else ID_TOKEN
+    ids = re.findall(r"^\| (" + token + r") \|", text, flags=re.M)
     dups = sorted({i for i in ids if ids.count(i) > 1})
     if dups:
         print(f"WARNING: duplicate board rows for {', '.join(dups)}; "
               "first occurrence wins, fix the board")
-    parsed = set(parse_board(text))
+    parsed = set(parse_board(text, strict_id=strict_id))
     broken = sorted(set(ids) - parsed - set(dups))
     if broken:
         print(f"WARNING: malformed board rows (not 4 cells, invisible to "
               f"sync) for {', '.join(broken)}; fix the board")
 
 
+def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
+                     filt: dict | None = None) -> None:
+    """One-way, insert-only push to a write-only sink (SPEC-003). The board
+    file is never written; the local state map is the identity index. State is
+    checkpointed after EACH create, so a mid-batch failure never re-pushes an
+    already-created page (no duplicate cards on a team-owned board)."""
+    text = backlog.read_text()
+    rows = parse_board(text, strict_id=False)
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    if hasattr(src, "binding") and state.get("binding"):
+        src.binding = state["binding"]
+    plan = plan_create_only(rows, state, skip_kw=getattr(src, "skip_kw", None),
+                            filt=filt)
+    # Validate the whole batch (maps resolve, options exist) BEFORE any write,
+    # so `--dry-run` surfaces config errors and a live run never dies part-way.
+    if hasattr(src, "preflight"):
+        src.preflight(plan)
+    header = (f"{src.name}: {len(rows)} board rows, "
+              f"{len(plan.src_create)} to create")
+    if dry_run:
+        print(f"dry-run {header}")
+        print(describe(plan))
+        return
+
+    new_map = dict(state.get("map", {}))
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+
+    def checkpoint(bid: str, rid: str) -> None:
+        new_map[bid] = {"rid": rid}
+        new_state = {"map": new_map}
+        if getattr(src, "binding", None):
+            new_state["binding"] = src.binding
+        atomic_write(state_path, json.dumps(new_state, indent=1))
+
+    created = src.apply(plan, {}, rows, on_created=checkpoint)
+    print(f"synced {header}")
+    print(describe(plan, created))
+
+
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
                 filt: dict | None = None, cap: int = 20,
                 allow: int = 0) -> None:
+    if getattr(src, "create_only", False):
+        return sync_create_only(src, backlog, state_path, dry_run, filt)
     text = backlog.read_text()
     rows = parse_board(text)
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
@@ -116,6 +164,24 @@ def build_source(name: str, args):
         return RemindersSource(args.list_name or "Backlog")
     if name == "notion":
         return NotionSource(db=args.notion_db, parent=args.notion_parent)
+    if name == "notion-taskboard":
+        if not args.notion_taskboard_db:
+            sys.exit("notion-taskboard: set notion_taskboard_db in [sync] "
+                     "(.kit.toml) or pass --notion-taskboard-db")
+        status_map = parse_map(args.notion_taskboard_status_map)
+        if not status_map and not args.notion_taskboard_status_default:
+            sys.exit("notion-taskboard: set notion_taskboard_status_map "
+                     "(and/or notion_taskboard_status_default) in [sync]")
+        props = json.loads(args.notion_taskboard_props) \
+            if args.notion_taskboard_props else None
+        types = json.loads(args.notion_taskboard_types) \
+            if args.notion_taskboard_types else None
+        return NotionTaskBoardSource(
+            db=args.notion_taskboard_db, status_map=status_map,
+            status_default=args.notion_taskboard_status_default,
+            priority_map=parse_map(args.notion_taskboard_priority_map),
+            weight_map=parse_map(args.notion_taskboard_weight_map),
+            owner=args.notion_taskboard_owner, props=props, types=types)
     if name == "hermes":
         if not args.hermes_home:
             sys.exit("hermes: set hermes_home in [sync] (.kit.toml) or pass "
@@ -153,6 +219,26 @@ def main(argv=None):
                     help="Notion page id to create the board under (bootstrap)")
     ap.add_argument("--hermes-target")
     ap.add_argument("--hermes-home")
+    ap.add_argument("--notion-taskboard-db",
+                    help="target Notion database id for the one-way "
+                         "insert-only Task Board push")
+    ap.add_argument("--notion-taskboard-status-map",
+                    help="board-state->option map, e.g. "
+                         "'queued=Backlog,executing=In progress'")
+    ap.add_argument("--notion-taskboard-status-default",
+                    help="Status option for board states not in the map")
+    ap.add_argument("--notion-taskboard-priority-map",
+                    help="tag->Priority map, e.g. 'u-hi=P0,u-mid=P1,u-lo=P2'")
+    ap.add_argument("--notion-taskboard-weight-map",
+                    help="tag->Weight map, e.g. 'f-hi=2,f-mid=5,f-lo=13'")
+    ap.add_argument("--notion-taskboard-owner",
+                    help="Owner value (people-prop user id by default)")
+    ap.add_argument("--notion-taskboard-props",
+                    help="JSON overriding prop names "
+                         "{title,status,priority,weight,owner,notes}")
+    ap.add_argument("--notion-taskboard-types",
+                    help="JSON overriding prop types "
+                         "{status,priority,weight,owner}")
     ap.add_argument("--multica-url", help="Multica server base URL")
     ap.add_argument("--multica-workspace", help="Multica workspace UUID")
     ap.add_argument("--multica-project", help="Multica project UUID")
@@ -190,7 +276,8 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         sys.exit("another backlog-sync run holds the lock; try again")
-    warn_duplicate_ids(args.backlog.read_text())
+    strict_id = not (set(names) & CREATE_ONLY_APPS)
+    warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id)
 
     # one-time migration from the pre-kit single-source tool's state path
     rem_state = state_dir / "reminders.state.json"

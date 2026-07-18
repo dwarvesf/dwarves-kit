@@ -21,6 +21,16 @@ TABLE_RULE = "|---|---|---|---|"
 TITLE_RE = re.compile(r"^(ID-\d+)\s*(?:[·:, -]\s*)?(.*)$")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
+# Board-id row recognizers. The two-way mesh is `ID-`-only (STRICT), exactly as
+# before, so its ID-minting siblings (next_id, apply_board, warn_duplicate_ids)
+# stay consistent. The one-way create-only push (SPEC-003 / ID-138) reads
+# boards with any repo prefix (the documented kit convention `[A-Z]+-[0-9]+`,
+# e.g. dfoundation DF-NN); it never mints or writes board ids, so widening its
+# READ view has no interaction with the strict minters.
+ID_TOKEN = r"[A-Z][A-Z0-9]*-\d+"
+STRICT_ROW_RE = re.compile(r"^\| (ID-\d+) \|")
+GEN_ROW_RE = re.compile(r"^\| (" + ID_TOKEN + r") \|")
+
 # --- board parsing -----------------------------------------------------------
 
 
@@ -41,16 +51,23 @@ def split_row(line: str):
     return [p.strip() for p in parts[1:5]]
 
 
-def parse_board(text: str) -> dict[str, Row]:
+def parse_board(text: str, strict_id: bool = True) -> dict[str, Row]:
+    """Parse `| id | item | notes | status |` rows. `strict_id=True` (default,
+    the two-way mesh) recognizes ONLY `ID-NNN`, keeping the ID-minting path
+    (next_id/apply_board) consistent. `strict_id=False` (the one-way create
+    push) accepts any repo prefix `[A-Z]+-NNN` but never mints or writes ids.
+    """
+    row_re = STRICT_ROW_RE if strict_id else GEN_ROW_RE
+    id_full = r"ID-\d+" if strict_id else ID_TOKEN
     rows: dict[str, Row] = {}
     for i, line in enumerate(text.splitlines()):
-        if not line.startswith("| ID-"):
+        if not row_re.match(line):
             continue
         cells = split_row(line)
         if not cells:
             continue
         rid, item, notes, status = cells
-        if not re.fullmatch(r"ID-\d+", rid):
+        if not re.fullmatch(id_full, rid):
             continue
         kw = status.split()[0].lower() if status.split() else ""
         if rid in rows:
@@ -280,6 +297,31 @@ def plan_sync(rows: dict, items: list, state: dict,
         kw = it.get("status") if it.get("status") in ACTIVE_STATUSES else "queued"
         p.board_add.append((it["rid"], it["title"].strip(),
                             (it.get("body") or "").strip(), kw))
+    return p
+
+
+def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
+                     filt: dict | None = None) -> Plan:
+    """One-way, insert-only plan for a write-only sink (SPEC-003).
+
+    Emits a `src_create` for every in-scope board row NOT already recorded in
+    the local sync-state map, skipping rows whose status is in `skip_kw`
+    (default `{"dropped"}`). Never updates, tombstones, or touches the board:
+    the map is the identity index and a row is pushed exactly once, so a team
+    member's later edits on the sink are never overwritten.
+    """
+    p = Plan()
+    skip = skip_kw if skip_kw is not None else {"dropped"}
+    known = set(state.get("map", {}))
+    for bid, row in rows.items():
+        if bid in known:
+            continue
+        if row.status_kw in skip:
+            continue
+        if not in_scope(row, filt):
+            continue
+        p.src_create.append((bid, title_for(bid, row.item), row.notes,
+                             row.status_kw))
     return p
 
 
