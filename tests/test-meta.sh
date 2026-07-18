@@ -2441,6 +2441,20 @@ assert_true "PHILOSOPHY records the deferred enforcement hook is now built" \
 assert_true "lib/gate/verify-counts.sh exists and is executable" \
   "$([ -x "$KIT_DIR/lib/gate/verify-counts.sh" ] && echo 0 || echo 1)"
 
+# ID-291: the gate dispatcher routes BOTH `verify-counts` and its legacy `verif-counts`
+# alias to verify-counts.sh. The real target regenerates COUNTS.md by running every
+# suite, so stub it and prove routing cheaply -- a future edit that drops the alias arm
+# (or misroutes the verb) is then caught in CI, not by eyeballing the case statement.
+_gate_route_tmp="$(mktemp -d "${TMPDIR:-/tmp}/dk-gate-route.XXXXXX")"
+cp "$KIT_DIR/lib/gate/gate.sh" "$_gate_route_tmp/gate.sh"
+printf '#!/usr/bin/env bash\necho "ROUTED $*"\n' > "$_gate_route_tmp/verify-counts.sh"
+chmod +x "$_gate_route_tmp/verify-counts.sh"
+assert_true "gate dispatch routes 'verify-counts' to verify-counts.sh" \
+  "$(bash "$_gate_route_tmp/gate.sh" verify-counts probe 2>/dev/null | grep -q '^ROUTED probe' && echo 0 || echo 1)"
+assert_true "gate dispatch routes legacy 'verif-counts' alias to verify-counts.sh" \
+  "$(bash "$_gate_route_tmp/gate.sh" verif-counts probe 2>/dev/null | grep -q '^ROUTED probe' && echo 0 || echo 1)"
+rm -rf "$_gate_route_tmp"
+
 assert_true "COUNTS.md carries the generated single-source block" \
   "$(grep -q 'BEGIN GEN:counts' "$KIT_DIR/docs/verification/COUNTS.md" 2>/dev/null && echo 0 || echo 1)"
 

@@ -9,6 +9,6 @@
 <!-- BEGIN GEN:counts -->
 | Suite | Passing |
 |---|---|
-| meta (tests/test-meta.sh) | 715/715 |
+| meta (tests/test-meta.sh) | 717/717 |
 | hooks (tests/test-hooks.sh) | 487/487 |
 <!-- END GEN:counts -->

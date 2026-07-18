@@ -25,6 +25,16 @@ report): `spoke` (semantic in `lib/sync/*.py`), `grill` (a command + 6 test file
 `brownfield` (a `lane-classify` anchor), `wave`/`tier`/`posture` (config keys with no
 generic alias resolver), `RID` (the `rid` identifier in 8 test suites).
 
+## Review disposition (review-team + fable advisor)
+
+| Finding | Lens | Applied? |
+|---|---|---|
+| The `gate.sh` dispatcher routing (both `verify-counts` and legacy `verif-counts`) had no automated coverage; the alias claim rested on a manual grep | test-coverage (MEDIUM/LOW) | Applied, added a stubbed dispatch-routing test in `test-meta.sh` (both verbs), CI-enforced |
+| Deferring the code-entangled remainder is correct; the honest-slice warning should also reach the ID-291 backlog row | fable | Reported to the board scribe (I do not edit the board) |
+| COUNTS.md freshness is unenforced (it sat stale at 368/164) | fable | Pre-existing gap; regenerated here to the true count, and reported as a follow-up (a live-count assertion would slow every meta run, so it is its own item) |
+| The `(one release)` alias has no removal tracking (no kit release cadence) | fable | Matches the standing CONTRIBUTING.md "Plain words rule" §3 convention (architecture lens confirmed); alias-removal reported to the scribe as a follow-up row |
+| Security / architecture | both | 10/10 clean, no change requested |
+
 ## Acceptance criteria
 
 | # | Criterion | Result |
@@ -33,7 +43,7 @@ generic alias resolver), `RID` (the `rid` identifier in 8 test suites).
 | 2 | Both `gate verify-counts` and legacy `gate verif-counts` route to the new file | PASS |
 | 3 | No live (non-doc) reference to the old filename remains (only the intentional alias) | PASS |
 | 4 | `SDD` defined on first use in AGENTS.md + PHILOSOPHY.md | PASS |
-| 5 | Full meta suite green | PASS (715/715) |
+| 5 | Full meta suite green | PASS (717/717) |
 
 ## Confirmation run
 
@@ -45,7 +55,7 @@ Exit: 0        # both verbs wired to the new file
 Command: rg -n 'verif-counts' lib/ tests/ --glob '!*.md' | grep -v 'legacy alias'
 Exit: 1        # no live non-doc refs to the old name remain
 Command: bash tests/test-meta.sh
-Exit: 0        # Passed: 715 / 715
+Exit: 0        # Passed: 717 / 717
 Verdict: PASS
 ```
 
@@ -63,7 +73,7 @@ mv lib/gate/verify-counts.sh lib/gate/verif-counts.sh
 bash tests/test-meta.sh   -> FAIL "lib/gate/verify-counts.sh exists and is executable"  (RED)
 # restore:
 mv lib/gate/verif-counts.sh lib/gate/verify-counts.sh
-bash tests/test-meta.sh   -> 715/715  (GREEN)
+bash tests/test-meta.sh   -> 717/717  (GREEN)
 ```
 
 **Verdict: PASS.**
@@ -71,7 +81,7 @@ bash tests/test-meta.sh   -> 715/715  (GREEN)
 ## Reproduce
 
 ```
-bash tests/test-meta.sh                 # 715/715
+bash tests/test-meta.sh                 # 717/717
 bash lib/gate/gate.sh verify-counts     # regenerates docs/verification/COUNTS.md (runs the suites)
 bash lib/gate/gate.sh verif-counts      # legacy alias, same target
 ```
