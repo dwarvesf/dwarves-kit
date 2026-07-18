@@ -13,13 +13,20 @@
 # separate calls kept in sync (a GATE row, a TOKENS row, an OUTCOME bracket) and the redteam
 # procedure never made them. This script is that ONE call per round.
 #
-# Design: every round writes all three lines together, so a `redteam` phase never has a GATE row
-# without a matching OUTCOME bracket or TOKENS(phase=redteam) row -- the FIFO pairing
-# `lib/stats` `read_kit_gates` already uses for GATE<->OUTCOME (SPEC-129 DEC-002) extends
-# unchanged to GATE<->TOKENS(phase=) here (kit_gates gains a `cost` column, additive, NULL for
-# every pre-existing gate). `cost=` is REQUIRED on `round` precisely because a round with no cost
-# captured would desync that FIFO pairing for every round after it in the same rid; fail closed
-# (reject, write nothing) rather than emit a silently-wrong zero-cost row.
+# Design: one `round` call writes all three lines in sequence (argument-validation failures,
+# the case every test here covers, write NOTHING -- see `cost=` below; a crash or kill BETWEEN
+# the three subprocess calls, after validation passes, is a narrower residual window this script
+# does not protect against). The FIFO pairing `lib/stats` `read_kit_gates` already uses for
+# GATE<->OUTCOME (SPEC-129 DEC-002) extends unchanged to GATE<->TOKENS(phase=) here (kit_gates
+# gains a `cost` column, additive, NULL for every pre-existing gate). `read_kit_gates` itself
+# tolerates a phase-scoped TOKENS line with no cost= (or a malformed one): it lands `cost=NULL`
+# in that queue slot, FIFO position preserved, no desync -- so the FIFO pairing is not actually
+# why `cost=` is REQUIRED here. The real reason: this tool exists solely to make rung-4 cost
+# measurable (ID-372), so a round allowed to record itself WITHOUT a cost would reproduce the
+# checkpoint's original failure in a new shape (rounds ledgered, average still uncomputable, or
+# worse, silently understated by treating unmeasured rounds as free). Fail closed -- reject,
+# write nothing -- so a missing cost is loud (rc 64) at the call site instead of a quiet gap in
+# the average months later.
 #
 # Verbs:
 #   redteam-gate.sh start <rid>
@@ -32,9 +39,21 @@
 #          itself. verdict: secure (clean pass this round, caught=false), findings (this round
 #          found issues, another round follows, caught=true), capped (the 3-round cap was hit
 #          without ever reaching SECURE -- the fail-closed stop, caught=true).
+#          NOTE: `in=`/`out=`/`cache_read=`/`cache_create=` are optional and, unlike `cost=`,
+#          are NOT honest-NULL when omitted -- gate-ledger.sh's own `tokens()` zero-defaults
+#          them, so a round recorded without token counts reads as `in=0 out=0` (a real value,
+#          not "unknown"). Only `cost` gets the required+NULL-on-failure treatment this file
+#          is built around; a future per-round token-count average would need the same
+#          treatment token counts don't have yet.
 #
-# Usage the calling procedure follows (unchanged elsewhere; this script only adds the ledger
-# calls around the existing round loop):
+# SCOPE: the redteam PROCEDURE itself (the SKILL.md blocks named above, cap-3 loop,
+# VERDICT: SECURE judgment) lives in a sibling dotfiles repo, out of scope here. This script
+# only gives that procedure a call worth making; it does not call itself. N stays 0 in
+# `mega-durations`/`kit_gates` until the dotfiles-side procedure is edited to call `start`/
+# `round` at its own round boundaries -- that wiring is a separate, tracked follow-up, not
+# implied by this PR landing.
+#
+# Usage the calling procedure is expected to adopt (not yet wired anywhere as of this PR):
 #   redteam-gate.sh start "$RID"
 #   ... run the adversarial pass ...
 #   redteam-gate.sh round "$RID" findings cost=0.42 round=1 reason="2 findings, fixed"
@@ -76,7 +95,11 @@ cmd_round() {
   for kv in "$@"; do
     k="${kv%%=*}"; v="${kv#*=}"
     case "$k" in
-      cost)          cost="$(printf '%s' "$v" | tr -cd '0-9.')" ;;
+      cost)          cost="$v" ;;   # kept raw here; strictly validated below (this is a new
+                                     # tool with no legacy callers, unlike gate-ledger.sh's own
+                                     # lax `tr -cd '0-9.'` tokens() sanitizer, so a shape like
+                                     # "1.2.3" or "abc" is rejected here instead of silently
+                                     # landing malformed-but-accepted and NULL downstream)
       round)         round_n="$(printf '%s' "$v" | tr -cd '0-9')" ;;
       in)            intok="$v" ;;
       out)           outtok="$v" ;;
@@ -87,15 +110,17 @@ cmd_round() {
     esac
   done
 
-  # cost is REQUIRED (see file header): a round with no captured cost would desync the
-  # GATE<->TOKENS(phase=redteam) FIFO pairing for every later round in this rid. Fail closed --
-  # reject the call, write NOTHING (no GATE row, no OUTCOME end, no TOKENS row) -- rather than
-  # emit a silently-wrong zero-cost row that would look like a real (and misleadingly cheap)
-  # data point in the cost checkpoint.
-  [ -n "$cost" ] || {
-    echo "redteam-gate.sh round: cost=<dollars> is required (a round with no captured cost cannot be ledgered; see file header)" >&2
+  # cost is REQUIRED (see file header for the full rationale): this tool exists to make rung-4
+  # cost measurable, so a round allowed to record itself without a cost would just relocate the
+  # checkpoint's original gap rather than close it. Fail closed -- reject the call, write
+  # NOTHING (no GATE row, no OUTCOME end, no TOKENS row) -- so the gap is loud (rc 64) at the
+  # call site, not a silent hole in the average discovered later. One regex covers BOTH
+  # "missing" and "malformed" (it requires >=1 digit, so an empty/unset $cost fails it too) --
+  # no separate presence check needed.
+  if ! [[ "$cost" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "redteam-gate.sh round: cost='$cost' is not a plain decimal (digits, optionally one '.', e.g. 0.42)" >&2
     return 64
-  }
+  fi
 
   # caught derivation (mirrors gate-ledger.sh outcome()'s own convention: non-pass -> true,
   # clean pass -> false): a round that found issues, or the fail-closed cap, both COUNT as the

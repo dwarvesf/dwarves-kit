@@ -63,8 +63,8 @@ LEARNED_SCHEMA: list[tuple[str, str]] = [
 
 # One row per `| GATE |` kit run-ledger line (SPEC-131). `caught`/`start_ts`/`end_ts` come
 # from a SEPARATE, additive `| OUTCOME |` start/end bracket (kit's own SPEC-129), paired by
-# phase name; NULL when no bracket exists (true for 100% of the real corpus as of writing --
-# see adapters.py `read_kit_gates` docstring). `cost` is the same pairing extended to a
+# phase name; NULL when no bracket exists for that gate (see adapters.py `read_kit_gates`
+# docstring for the pairing mechanics). `cost` is the same pairing extended to a
 # phase-scoped `| TOKENS |` line (`phase=<gate>`, the rung-4 cost-checkpoint gap-close):
 # NULL for every gate whose caller never passed `phase=` to `gate-ledger.sh tokens`, which
 # today is every gate except `redteam` (lib/gate/redteam-gate.sh). DOUBLE (not VARCHAR, unlike

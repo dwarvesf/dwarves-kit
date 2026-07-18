@@ -107,6 +107,25 @@ has "C-unscoped rt-d cost=null (the rid-wide TOKENS line is not phase-tagged)" '
     "end_ts": "4010",
     "cost": null' "$ROWS"
 
+echo "== C-zero: rt-e's cost=0 is a real zero, never confused with the NULL cases above =="
+has "C-zero rt-e cost=0.0 (not null, not dropped)" '"rid": "rt-e",
+    "gate": "redteam",
+    "outcome": "ran",
+    "caught": false,
+    "reason": "round=1 verdict=secure a real zero-cost round, must not be treated as null",
+    "start_ts": "5000",
+    "end_ts": "5005",
+    "cost": 0.0' "$ROWS"
+ZERO_INCLUDED="$(uv run python3 - <<'PY' 2>&1
+from stats import materialize
+cols, rows = materialize.query(
+    "SELECT count(*) AS n FROM kit_gates WHERE rid = 'rt-e' AND gate = 'redteam' AND cost IS NOT NULL"
+)
+print(rows[0][0])
+PY
+)"
+if [ "$ZERO_INCLUDED" = "1" ]; then ok "C-zero rt-e's cost=0 is NOT NULL (counted, not silently excluded from an average)"; else bad "C-zero want 1, got '$ZERO_INCLUDED'"; fi
+
 echo "== C-sum: cost is genuine arithmetic (DOUBLE), not display-only text -- SUM over rt-a's 2 rounds =="
 SUM="$(uv run python3 - <<'PY' 2>&1
 from stats import materialize

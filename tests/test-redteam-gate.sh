@@ -200,6 +200,39 @@ rtg bogus-subcommand >/dev/null 2>&1; RC=$?
 [ "$RC" -ne 0 ] && assert "AC11 unknown subcommand rejected (nonzero)" 0 || assert "AC11 unknown subcommand rejected (rc=$RC)" 1
 
 # ---------------------------------------------------------------------------
+# AC11b: the bare-usage main() arm (no subcommand, -h, --help, help) all print usage and
+# exit 0 -- the one case-arm in main() otherwise uncovered by every other AC above.
+# ---------------------------------------------------------------------------
+for arg in "" "-h" "--help" "help"; do
+  OUT="$(rtg $arg 2>&1)"; RC=$?
+  [ "$RC" -eq 0 ] && [ -n "$OUT" ] && assert "AC11b '${arg:-<no args>}' prints usage and exits 0" 0 \
+    || assert "AC11b '${arg:-<no args>}' prints usage and exits 0 (rc=$RC, out empty=$([ -z "$OUT" ] && echo yes || echo no))" 1
+done
+
+# ---------------------------------------------------------------------------
+# AC13: cost format validation -- cost=0 is a real, valid, non-falsy value; a malformed shape
+# (cost=1.2.3, kept accepted-but-NULL by gate-ledger.sh's own lax tokens() sanitizer) is
+# rejected HERE instead, so a redteam round never ledgers a cost that silently degrades to
+# NULL downstream.
+# ---------------------------------------------------------------------------
+new_log
+rtg start rt13 >/dev/null 2>&1
+rtg round rt13 secure cost=0 round=1 >/dev/null 2>&1; RC=$?
+[ "$RC" -eq 0 ] && assert "AC13 cost=0 is accepted (rc 0), a real zero-cost round" 0 || assert "AC13 cost=0 is accepted (rc=$RC)" 1
+grep -q '| TOKENS | .*cost=0 .*phase=redteam' "$(ledger_file rt13)" \
+  && assert "AC13 cost=0 lands in the TOKENS line verbatim" 0 || assert "AC13 cost=0 lands in the TOKENS line verbatim" 1
+
+new_log
+rtg start rt14 >/dev/null 2>&1
+BEFORE14="$(cat "$(ledger_file rt14)")"
+rtg round rt14 secure cost=1.2.3 round=1 >/dev/null 2>&1; RC=$?
+[ "$RC" -eq 64 ] && assert "AC13 malformed cost=1.2.3 rejected (rc 64)" 0 || assert "AC13 malformed cost=1.2.3 rejected (rc=$RC)" 1
+AFTER14="$(cat "$(ledger_file rt14)")"
+[ "$BEFORE14" = "$AFTER14" ] && assert "AC13 malformed cost=1.2.3 wrote nothing" 0 || assert "AC13 malformed cost=1.2.3 wrote nothing" 1
+rtg round rt14 secure cost=abc round=1 >/dev/null 2>&1; RC=$?
+[ "$RC" -eq 64 ] && assert "AC13 non-numeric cost=abc rejected (rc 64)" 0 || assert "AC13 non-numeric cost=abc rejected (rc=$RC)" 1
+
+# ---------------------------------------------------------------------------
 # AC12: PORTABILITY -- no BSD-only date/stat constructs in the new script.
 # ---------------------------------------------------------------------------
 if grep -vE '^[[:space:]]*#' "$RG" | grep -nE 'date -d|date -r|stat -f|sed -i '"''" >/dev/null 2>&1; then
