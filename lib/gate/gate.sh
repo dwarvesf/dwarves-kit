@@ -14,7 +14,7 @@
 #   gate.sh coverage-delta <args...>  -> coverage-delta.sh (check|class|classes)
 #   gate.sh mutation-smoke <args...>  -> mutation-smoke.sh (run|candidates|...)
 #   gate.sh redteam <args...>         -> redteam-gate.sh (start|round) -- rung-4 cost checkpoint
-#   gate.sh verif-counts               -> verif-counts.sh
+#   gate.sh verify-counts              -> verify-counts.sh (verif-counts = legacy alias)
 #   gate.sh -h|--help|help             -> this usage
 set -euo pipefail
 
@@ -33,7 +33,7 @@ main() {
     coverage-delta)  exec bash "$GATE_DIR/coverage-delta.sh" "$@" ;;
     mutation-smoke)  exec bash "$GATE_DIR/mutation-smoke.sh" "$@" ;;
     redteam)         exec bash "$GATE_DIR/redteam-gate.sh" "$@" ;;
-    verif-counts)    exec bash "$GATE_DIR/verif-counts.sh" "$@" ;;
+    verify-counts|verif-counts) exec bash "$GATE_DIR/verify-counts.sh" "$@" ;;   # verif-counts: legacy alias (one release)
     -h|--help|help|"") usage ;;
     *) echo "gate: unknown verb '$verb' (try: gate --help)" >&2; exit 1 ;;
   esac

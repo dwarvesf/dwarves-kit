@@ -2438,8 +2438,8 @@ assert_true "PHILOSOPHY records the deferred enforcement hook is now built" \
 
 # ---- single-source numbers: borrowed from the experiment sibling (no hand-typed drift) ----
 
-assert_true "lib/gate/verif-counts.sh exists and is executable" \
-  "$([ -x "$KIT_DIR/lib/gate/verif-counts.sh" ] && echo 0 || echo 1)"
+assert_true "lib/gate/verify-counts.sh exists and is executable" \
+  "$([ -x "$KIT_DIR/lib/gate/verify-counts.sh" ] && echo 0 || echo 1)"
 
 assert_true "COUNTS.md carries the generated single-source block" \
   "$(grep -q 'BEGIN GEN:counts' "$KIT_DIR/docs/verification/COUNTS.md" 2>/dev/null && echo 0 || echo 1)"

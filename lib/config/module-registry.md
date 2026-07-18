@@ -275,7 +275,7 @@ against any of these bare tokens as covered without a registry row.
 | SKILL_CURATOR_LOCK | `lib/skill-curator/lib/common.sh`: derived path. |
 | SKILL_CURATOR_LOG | `lib/skill-curator/lib/common.sh`: derived path. |
 | SKILL_CURATOR_ROOT | `lib/skill-curator/lib/common.sh`: computed `$SKILL_CURATOR_LIB/..`. |
-| KIT | `lib/gate/verif-counts.sh`: computed repo-root var, script-local. |
+| KIT | `lib/gate/verify-counts.sh`: computed repo-root var, script-local. |
 | KITLOG | `lib/stats/tests/test-defect-correlation.sh`: test-fixture-local. |
 | KITTY_WINDOW_ID | The Kitty terminal emulator's own env var; an unrelated false positive of the `KIT` prefix match, not a kit config surface at all. |
 | KIT_DIR | `lib/plugin-check/tests/smoke.sh`: test-fixture scratch dir. |

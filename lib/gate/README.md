@@ -36,7 +36,7 @@ verb grammar and adds no logic. Call any script directly by path too; both work.
 | `gate coverage-delta` | `coverage-delta.sh` | Advisory. Source lines moved but test lines did not? Warn. | no (always exit 0) |
 | `gate mutation-smoke` | `mutation-smoke.sh` | Advisory. Mutates a changed line, re-runs the suite. A surviving mutation means the suite does not bite. | no (always exit 0) |
 | `gate proof-table` | `proof-table-gen.{sh,py}` | Generates a run-table from a rid's ledger. Refuses to write `proof-of-done.md`. | no |
-| `gate verif-counts` | `verif-counts.sh` | Regenerates `docs/verification/COUNTS.md` from live suite runs. | no |
+| `gate verify-counts` | `verify-counts.sh` | Regenerates `docs/verification/COUNTS.md` from live suite runs. (`verif-counts`: legacy alias) | no |
 
 ### The lane gate (`gate-ledger.sh`)
 

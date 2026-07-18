@@ -155,7 +155,7 @@ read plane is **`stats`**: a stateless projection recomputed on demand from the 
 ledger, never a persisted second source of truth.
 
 Adoption is **layered, not all-or-nothing**. `install.sh` wires the essential spine
-unconditionally (the SDD ship discipline: safety-gate, ship-gate, spec-drift-guard,
+unconditionally (the spec-driven development (SDD) ship discipline: safety-gate, ship-gate, spec-drift-guard,
 secrets-guard, commit-format, anti-rationalization) and opt-in modules only when asked
 (`install.sh --with board,session,stats,...`), recording the enabled set in the consumer's
 `kit.toml [modules]` manifest, an install artifact that records the choice, never read at
