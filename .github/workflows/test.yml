@@ -101,6 +101,9 @@ jobs:
       - name: Run ledger-durability tests (SPEC-097)
         run: bash tests/test-ledger-durability.sh
 
+      - name: Run deployable-done tests (SPEC-095, exercises proof-ledger override)
+        run: bash tests/test-deployable-done.sh
+
       - name: Run ledger append-substrate tests (SPEC-182, kit-modularity SG-02)
         run: bash tests/test-ledger-substrate.sh
 
