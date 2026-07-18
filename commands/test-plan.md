@@ -27,6 +27,39 @@ inventory + rollback rehearsal; data-tool -> recorded live run + negative contro
 doc-verifier match). The section written into the spec is still `## Test plan`; the dialect
 changes the matrix's shape, not the heading, the AC-traceability, or the proof-per-case rule.
 
+### Step 1c: AI-in-the-loop tiering (when applicable)
+
+This step is ADDITIVE to Step 1b's dialect, independent of which of the 12 registry types the
+spec falls under. **The operative test:** Step 1c applies iff at least one acceptance criterion
+can only be verified by observing a live model's output (a natural-language response, a
+generated artifact judged for correctness, a conversational turn). Common shapes this takes:
+the spec is about an agent, a bot, an LLM feature, a prompt, or any claim shaped like "the model
+does X" -- but these are examples of the test, not the test itself; do not pattern-match on the
+nouns alone (a spec that merely mentions "prompt" or "agent" in passing, with every AC checkable
+without a live model, does NOT trigger Step 1c). If no AC needs a live-model observation, skip
+this step and enumerate Step 2 as usual, no `Tier` column, no doctrine block.
+
+When it applies, every case in Step 2's matrix gets a **cost tier** plus a one-line honesty
+reason (why this tier, not a higher one):
+
+1. **`mechanical`** -- no model call. Dep baked, file/config exists, parser or engine returns
+   the deterministic value, a config assert. Cheapest, and the default home for any claim that
+   does not need a live model to check.
+2. **`smoke`** -- a cheap proxy model (ranking: kimi-k2.6 -> glm-5.2), used ONLY to iterate on
+   grading rules. A `smoke` case is never a ship gate; a proxy model is not the system under
+   test.
+3. **`behavioral`** -- the real model, asked in natural language, judged against the claim.
+   This is the floor: the tier that must never be deleted or downgraded to save cost.
+
+**The floor rule (state verbatim in the written plan):** "config asserts lie; a behavior claim
+keeps a real-model probe."
+
+**Two hard don'ts (state both verbatim in the written plan):**
+- Never delete or downgrade a behavior/security claim below the `behavioral` tier to cut cost.
+- Never let a `smoke`-tier run gate a ship.
+
+**Smoke/retry doctrine:** a case is `smoke-eligible` only when it exists to iterate on grading rules, never as a substitute for the `behavioral` proof. A security or side-effect case is NEVER smoke-eligible, only ever `behavioral`. A case is `retry-eligible` only for a benign-phrasing miss on an explicit allowlist; the default is NOT eligible, and a security or side-effect verdict is never retry-eligible regardless of allowlist. On failure, name the failed case IDs (a summary that survives a piped run), not just a pass/fail count.
+
 ### Step 2: Enumerate the coverage matrix
 
 Enumerate test cases across these categories. Map each case to the acceptance criterion (or criteria) it covers.
@@ -38,6 +71,13 @@ Enumerate test cases across these categories. Map each case to the acceptance cr
 5. **Regression** -- behavior the change must not break (existing contracts, prior fixes).
 
 For each case also name its **proof**: the concrete command or artifact that demonstrates the case passed (e.g. `bash tests/test-meta.sh`, `pytest tests/x::test_y`, a `grep` assertion, a named log line or screenshot). When the proof is not knowable at plan time, write `TBD`; do NOT invent a command. A `TBD` is an honest hole, surfaced like an uncovered category, not a fabrication.
+
+When Step 1c applies, also tag each case with its **tier** (`mechanical` / `smoke` / `behavioral`)
+plus the one-line honesty reason, and mark `smoke-eligible` / `retry-eligible` per the doctrine.
+A boundary/edge or security/abuse case that is actually a live-model NL claim belongs at
+`behavioral`, never `mechanical`, even though "boundary" and "security" are Step 2 categories,
+not tiers -- category and tier are independent axes (a behavioral-floor case can be any
+category).
 
 Skip a category only when it genuinely does not apply to this spec, and say why in the coverage notes. Do not pad with cases that do not map to an acceptance criterion.
 
@@ -62,12 +102,31 @@ Source: this spec's ## Acceptance Criteria
 - This is a coverage TARGET across the enumerated categories, NOT an exhaustive test list. A missing acceptance criterion or an unenumerated category is a gap, surfaced here, not a guarantee.
 ```
 
+When Step 1c applied, extend the matrix with three columns and append the doctrine block below
+the coverage notes, inside the same `## Test plan` section:
+
+```markdown
+| # | Case | Category | Covers (AC) | Expected | Proof | Tier | Smoke-eligible | Retry-eligible |
+|---|------|----------|-------------|----------|-------|------|----------------|-----------------|
+| 1 | [case] | happy-path | AC-1 | [expected result] | [command/artifact, or TBD] | mechanical -- [why honest, one line] | no | no |
+| 2 | [case] | boundary/edge | AC-1 | [expected result] | [command/artifact, or TBD] | behavioral -- [why honest, one line] | no | no |
+| ... | | | | | | [tier] -- [why honest, one line] | | |
+
+### AI-in-the-loop doctrine
+- Floor rule: config asserts lie; a behavior claim keeps a real-model probe.
+- Never delete or downgrade a behavior/security claim below the `behavioral` tier to cut cost.
+- Never let a `smoke`-tier run gate a ship.
+- A security or side-effect case is never smoke-eligible, only ever `behavioral`.
+- Smoke tier iterates grading rules only, never a gate. Retry is allowlisted benign-phrasing
+  misses only; security/side-effect verdicts are never retry-eligible.
+```
+
 ### Step 4: Hand off
 
 Tell the user the plan is written into the spec's `## Test plan` and `/kit:execute` will build against it as the coverage target (each case's `proof` becomes that step's verify command where named). Do NOT run `/kit:execute` yourself; this lane only plans the test cases.
 
 ## Source
-The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/kit:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018.
+The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/kit:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018. Step 1c's tier taxonomy, floor rule, and smoke/retry doctrine realize `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md` SG-1 (SPEC-201): the proven-on-permtest pattern (PR #145), generalized as guidance the generator emits, not a new runner (SG-3 stays deferred until a second consumer).
 
 After writing the plan, record it for lane telemetry (SPEC-062), one line:
 `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "matrix rows=<N> categories=<list>"`.
