@@ -170,17 +170,17 @@ nothing.
 
 ## G. The welcome tour: the loop in five sentences
 
-Close with the five-leg loop, one sentence per leg, then the next step. Keep it to five sentences:
+Close with the five-stage loop, one sentence per stage, then the next step. Keep it to five sentences:
 
-1. **Specify** -- you turn an intent into a spec (`/kit:spec`) and a lane, so the work has a written,
+1. **Shape** -- you turn an intent into a spec (`/kit:spec`) and a lane, so the work has a written,
    testable contract before any code.
-2. **Execute** -- the build runs against that spec (`/kit:execute`), worker then verifier then a
+2. **Build** -- the build runs against that spec (`/kit:execute`), worker then verifier then a
    bounded fix retry, the smallest verifiable increment at a time.
-3. **Observe** -- every run leaves an append-only trail that `stats` projects on demand, so you can
+3. **Watch** -- every run leaves an append-only trail that `stats` projects on demand, so you can
    see what actually happened without a second source of truth.
-4. **Govern** -- the ship-gate blocks a push whose lane skipped a required gate or a stateful change
+4. **Check** -- the ship-gate blocks a push whose lane skipped a required gate or a stateful change
    with no recorded proof, so "done" means proven, not claimed.
-5. **Learn** -- retros and the Learn leg distill each run's lessons back into the backlog, closing the
+5. **Learn** -- retros and the Learn stage distill each run's lessons back into the backlog, closing the
    loop so the next cycle starts smarter.
 
 Then: **"Next: run `/kit:start` -- it detects where this repo stands and hands you the single right

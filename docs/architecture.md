@@ -1,6 +1,6 @@
 # Architecture
 
-How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five legs: Specify → Execute → Observe → Govern → Learn, and which module serves which) lives in the README's "The five legs" section, backed by ADR-0034 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
+How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five stages, formerly "legs": Shape → Build → Watch → Check → Learn, and which module serves which) lives in the README's "The five stages" section, backed by ADR-0034 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
 
 ## Component layout
 
@@ -143,7 +143,7 @@ Total: 31 commands + 25 agents = **56 entries** (10 build · 3 code · 9 test ·
 |---|---|---|---|---|
 | `/kit:retro` | command | Reflect | cross-phase | Post-ship narrative mirror of the entire V; captures learnings, not a gate |
 | `/kit:start` | command | Session entry | cross-phase | Detects project state and recommends the right next command; never executes |
-| `/kit:onboard` | command | First-run onboarding | cross-phase | Interactive first-run orchestrator (SPEC-199): detects install mode via `lib/onboard-detect.sh`, offers `/kit:adopt`, picks modules (bridging the plugin path's missing `--with`), captures consumer knobs from the SPEC-198 registry, discloses plugin-path gaps, ends with the five-leg tour; CALLS start/adopt/config, reimplements none (ADR-0034 fence); previews + confirms every write |
+| `/kit:onboard` | command | First-run onboarding | cross-phase | Interactive first-run orchestrator (SPEC-199): detects install mode via `lib/onboard-detect.sh`, offers `/kit:adopt`, picks modules (bridging the plugin path's missing `--with`), captures consumer knobs from the SPEC-198 registry, discloses plugin-path gaps, ends with the five-stage tour; CALLS start/adopt/config, reimplements none (ADR-0034 fence); previews + confirms every write |
 | `/kit:adopt` | command | Repo onboarding | cross-phase | Injects the operate-contract + proof marker + a CLAUDE.md pointer into a target repo (idempotent, via `lib/adopt.sh`); wires the classifiers so the ship-gate engages there |
 | `/kit:kit-health` | command | Maintainer audit | cross-phase | Self-assessment against PHILOSOPHY.md; run before tagging; not part of the normal cycle |
 | `/kit:absorb` | command | Upstream maintenance | cross-phase | Audits Credits drift + seed-rescan; proposal-only; maintainer-only connective tissue |

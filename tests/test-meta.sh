@@ -1607,10 +1607,11 @@ assert_eq "architecture.md headline commands == live ($ARCH_HEAD_CMD == $CMD_COU
 assert_eq "architecture.md headline agents == live ($ARCH_HEAD_AGT == $AGT_COUNT)" "$AGT_COUNT" "$ARCH_HEAD_AGT"
 assert_eq "architecture.md headline total == live ($ARCH_HEAD_TOT == $LIVE_COUNT)" "$LIVE_COUNT" "$ARCH_HEAD_TOT"
 
-# The README five-leg table covers every module the registry assigns a leg (ADR-0034
-# decision 3 rendered without omissions; the two tables share one truth).
-FIVE_LEG_BLOCK=$(sed -n '/^## The five legs/,/^## /p' "$KIT_DIR/README.md")
-REGISTRY_MODULES=$(sed -n '/^## Module legs/,/^## /p' "$KIT_DIR/lib/config/module-registry.md" \
+# The README five-stage table covers every module the registry assigns a stage (ADR-0034
+# decision 3 rendered without omissions; the two tables share one truth). "leg" renamed to
+# "stage" by the 2026-07-18 amendment (ID-292).
+FIVE_LEG_BLOCK=$(sed -n '/^## The five stages/,/^## /p' "$KIT_DIR/README.md")
+REGISTRY_MODULES=$(sed -n '/^## Module stages/,/^## /p' "$KIT_DIR/lib/config/module-registry.md" \
   | grep '^| ' | grep -v '^| Module\|^|---' | awk -F'|' '{gsub(/ /,"",$2); print $2}')
 TOTAL=$((TOTAL + 1))
 MISSING_LEG_MODULES=""
@@ -1619,10 +1620,10 @@ while IFS= read -r m; do
   echo "$FIVE_LEG_BLOCK" | grep -q "\`$m\`" || MISSING_LEG_MODULES="$MISSING_LEG_MODULES $m"
 done <<< "$REGISTRY_MODULES"
 if [ -z "$MISSING_LEG_MODULES" ]; then
-  echo -e "  ${GREEN}PASS${NC} README five-leg table covers every module-registry leg row"
+  echo -e "  ${GREEN}PASS${NC} README five-stage table covers every module-registry stage row"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} README five-leg table missing module(s):$MISSING_LEG_MODULES"
+  echo -e "  ${RED}FAIL${NC} README five-stage table missing module(s):$MISSING_LEG_MODULES"
   FAIL=$((FAIL + 1))
 fi
 

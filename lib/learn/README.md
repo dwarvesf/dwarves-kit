@@ -1,6 +1,6 @@
 # learn
 
-The **Learn leg's** home (ADR-0034 decision 1: Specify / Execute / Observe / Govern / Learn).
+The **Learn stage's** home (ADR-0034 decision 1, stage names per the 2026-07-18 amendment: Shape / Build / Watch / Check / Learn).
 The read-and-propose side of the loop. It reads what the harness recorded about itself, distills
 it, and proposes work. It never does the work, and it never files it.
 
@@ -104,7 +104,7 @@ human-gated edge into the board, and C5 exempts it by name.
 
 | Where | What |
 |---|---|
-| `docs/decisions/0034-harness-loop-taxonomy.md` | The five legs, `lib/learn/` as the Learn leg's one home, the three-verb grammar |
+| `docs/decisions/0034-harness-loop-taxonomy.md` | The five stages, `lib/learn/` as the Learn stage's one home, the three-verb grammar |
 | `docs/decisions/0031-understanding-gate.md` | Understanding debt, and why waving is a first-class recorded choice |
 | `docs/specs/SPEC-195-learn-propose.md` | The cross-run distiller |
 | `docs/specs/SPEC-196-staging-drain.md` | The staging review + expiry |

@@ -100,7 +100,7 @@ merged" as no evidence the PR contained the work.
 Work the list, in this order. Every step has a check you can run.
 
 1. **Name it by function, not by host.** Module dir `lib/<name>/`, env family `<NAME>_*`, executable named for what it does. Check: `bash tests/test-kit-contract.sh` (C1).
-2. **Place it on the loop.** Which of the five legs (Specify / Execute / Observe / Govern / Learn, ADR-0034) does it serve? Add the row to `lib/config/module-registry.md`. A tool that fits no leg is a tool with no reason to be in the kit.
+2. **Place it on the loop.** Which of the five stages (Shape / Build / Watch / Check / Learn, ADR-0034) does it serve? Add the row to `lib/config/module-registry.md`. A tool that fits no stage is a tool with no reason to be in the kit.
 3. **Wire it before you polish it.** A `bin/` shim or a dispatcher case, in the SAME commit as the first working version. Check: C2.
 4. **Pick the verbs from the closed vocabulary** (SPEC-200 I4): `run` (do the job, write the artifact), `show` (print, write nothing), `propose` (stage proposals), `promote` (the human gate), `trace` (one run's story). Do not invent a synonym.
 5. **If it proposes anything, use the currency.** `## [staged]` blocks via `staging-format.py`, deduped against staging + board, promoted by a human. Never write a board. Check: C5.
@@ -110,10 +110,10 @@ Work the list, in this order. Every step has a check you can run.
 
 ## Where this sits in the harness loop
 
-The contract is a **Govern**-leg gate, and it fires at two boundaries:
+The contract is a **Check**-stage gate, and it fires at two boundaries:
 
-- **Execute -> Govern**: `tests/test-kit-contract.sh` runs in CI on every PR. Mechanical rules only (naming, wiring, docs presence, currency, root, portability). It cannot judge whether the docs are any *good*.
-- **Govern (judgment)**: for that, dispatch the review lenses. `kit:advisor` (the cross-cutting lens) plus a domain reviewer, and for a new module `kit:agent-effectiveness` if it ships an agent. A lint proves the shape; a reviewer proves the substance. Run both; the lint is cheap and the reviewer is not fooled by a technically-compliant README.
+- **Build -> Check**: `tests/test-kit-contract.sh` runs in CI on every PR. Mechanical rules only (naming, wiring, docs presence, currency, root, portability). It cannot judge whether the docs are any *good*.
+- **Check (judgment)**: for that, dispatch the review lenses. `kit:advisor` (the cross-cutting lens) plus a domain reviewer, and for a new module `kit:agent-effectiveness` if it ships an agent. A lint proves the shape; a reviewer proves the substance. Run both; the lint is cheap and the reviewer is not fooled by a technically-compliant README.
 
 Neither replaces the other. The 2026-07-14 sweep found 19 pipelines that all passed CI and
 still fragmented the kit into five vocabularies, because nothing mechanical was watching the

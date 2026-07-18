@@ -3,7 +3,7 @@
 Two-way sync between an adopted repo's kanban `BACKLOG.md` (the hub, source
 of truth) and its spokes: **Apple Reminders**, a **Notion board**, the
 **Hermes kanban**, and a **Multica board** (the self-hosted team pilot, see
-ops-toolkit `tools/multica-deploy/`). Registered kit module `sync` (leg: Specify) at `lib/sync/`;
+ops-toolkit `tools/multica-deploy/`). Registered kit module `sync` (stage: Shape, formerly Specify) at `lib/sync/`;
 front door is the `board sync` verb, so every adopted repo's `_meta/board`
 shim already reaches it. Design: `docs/specs/SPEC-001-multi-source-sync.md`
 (subsystem-local). Spokes plug in per repo via the `[sync]` section of

@@ -53,33 +53,33 @@ An open loop (the agent roams free and judges its own output) is a fast slop mac
 | loops until the budget dies | bounded: fix-agent retries max 2, then escalates to a human |
 | one loop size fits all | risk lanes: tiny work skips the ceremony entirely |
 
-## The five legs
+## The five stages
 
-The lifecycle above is what one run looks like. Across runs, the kit is organized as five legs (ADR-0034): **Specify** shapes work into contracts, **Execute** builds inside them, **Observe** records what happened, **Govern** gates every boundary, and **Learn** distills the record into proposals for the next cycle.
+The lifecycle above is what one run looks like. Across runs, the kit is organized as five stages (formerly called "legs", ADR-0034): **Shape** turns work into contracts, **Build** builds inside them, **Watch** records what happened, **Check** gates every boundary, and **Learn** distills the record into proposals for the next cycle.
 
 ```mermaid
 flowchart LR
-  SP([Specify]) --> EX([Execute]) --> OB([Observe]) --> LN([Learn])
-  LN -->|cited proposals,<br/>human promotes| SP
-  GV([Govern]) -. gates every<br/>phase boundary .- EX
+  SH([Shape]) --> BD([Build]) --> WA([Watch]) --> LN([Learn])
+  LN -->|cited proposals,<br/>human promotes| SH
+  CH([Check]) -. gates every<br/>phase boundary .- BD
 ```
 
-This diagram is the legs. For how DATA actually moves through them (telemetry -> proposal -> board -> ship, the ledger write/read paths, and the module map of who calls whom), see [`docs/data-flow.md`](docs/data-flow.md).
+This diagram is the stages. For how DATA actually moves through them (telemetry -> proposal -> board -> ship, the ledger write/read paths, and the module map of who calls whom), see [`docs/data-flow.md`](docs/data-flow.md).
 
-Legs are metadata, not directories: each module keeps its name and install unit, and declares a primary leg. The authoritative assignment (machine copy in [`lib/config/module-registry.md`](lib/config/module-registry.md), rendered by `config list`):
+Stages are metadata, not directories: each module keeps its name and install unit, and declares a primary stage. The authoritative assignment (machine copy in [`lib/config/module-registry.md`](lib/config/module-registry.md), rendered by `config list`):
 
-| Leg | Modules / subsystems |
+| Stage | Modules / subsystems |
 |---|---|
-| Specify | `spec`, `classify`, `goal`, `board` (input side), `sync` (spoke intake; outward mirror is its Observe side) |
-| Execute | `queue`, `mega`, `worktree`, `quiz_gate` |
-| Observe | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror 2026-07-16) |
-| Govern | `gate`, `money_gate`, `advisor` |
+| Shape (Specify) | `spec`, `classify`, `goal`, `board` (input side), `sync` (spoke intake; outward mirror is its Watch side) |
+| Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate` |
+| Watch (Observe) | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror 2026-07-16) |
+| Check (Govern) | `gate`, `money_gate`, `advisor` |
 | Learn | `learn`, `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending ADR-0034 amendment) |
-| (no leg) | `cosmetic` (statusline; orthogonal to the loop) |
+| (no stage) | `cosmetic` (statusline; orthogonal to the loop) |
 
-Two modules honestly span legs: **board** (Specify's intake on one side, Learn's staging/promote on the other) and **session** (Observe's capture, Learn's harvest).
+Two modules honestly span stages: **board** (Shape's intake on one side, Learn's staging/promote on the other) and **session** (Watch's capture, Learn's harvest).
 
-**What happens to a run's data after it ships:** every gate decision and run outcome appends to the ledgers (append-only, never rewritten). `stats` projects them read-only; `session intel` writes the weekly digest, harness scorecard included; `learn propose` distills cross-run evidence into cited proposals in a staging file; `learn drain` renders that staging for review; `board promote` is the human gate that turns a proposal into a backlog row feeding the next Specify. Every automated leg ends at a staging file or a rendered surface, never a direct write to a board or ledger: propose, never dispose.
+**What happens to a run's data after it ships:** every gate decision and run outcome appends to the ledgers (append-only, never rewritten). `stats` projects them read-only; `session intel` writes the weekly digest, harness scorecard included; `learn propose` distills cross-run evidence into cited proposals in a staging file; `learn drain` renders that staging for review; `board promote` is the human gate that turns a proposal into a backlog row feeding the next Shape stage. Every automated stage ends at a staging file or a rendered surface, never a direct write to a board or ledger: propose, never dispose.
 
 ## Install
 
@@ -155,7 +155,7 @@ That is the whole loop. The spec is the unit of handoff: a contractor running `/
 
 ```
 /kit:start          Detect state, suggest next command (entry point)
-/kit:onboard        Guided first-run: install mode, adopt, module picker, five-leg tour
+/kit:onboard        Guided first-run: install mode, adopt, module picker, five-stage tour
 /kit:think          Challenge the idea (5 min)
 /kit:design         Opt-in: shape the solution with you before /spec
 /kit:spec           Generate the spec + 4 parallel researchers (15-30 min)
@@ -274,7 +274,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
 | /kit:test-plan-review-team | Verify | 5-lens adversarial critique of the spec's `## Test plan`, bounded revise loop, report-only |
-| /kit:onboard | Entry | Guided first-run: detect install mode (plugin/bash/both/none), offer /kit:adopt, pick modules, capture consumer knobs, disclose plugin-path gaps, five-leg tour; previews + confirms every write, decline = no-op |
+| /kit:onboard | Entry | Guided first-run: detect install mode (plugin/bash/both/none), offer /kit:adopt, pick modules, capture consumer knobs, disclose plugin-path gaps, five-stage tour; previews + confirms every write, decline = no-op |
 | /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
 | /kit:explain | Understand | Literate-diff explainer (background -> intuition -> prose-ordered diff -> diagram); composes narrate-log + svg-knowledge-diagram, grounded in the diff not the agent's narrative (ADR-0031) |
