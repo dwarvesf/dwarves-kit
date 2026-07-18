@@ -173,7 +173,7 @@ merge (a shared transcript-parsing helper, resolved below , NOT one CLI).
    grep sweep of `lib/`, `config/`, `hooks/`, `bin/` found exactly one
    hardcoded personal default: `lib/surface.sh:9`
    (`CC_SI_MEMORY_LEDGER` falls back to
-   `$HOME/workspace/tieubao/ops-toolkit/_meta/learned-ledger.md`), already
+   `$HOME/workspace/<owner>/ops-toolkit/_meta/learned-ledger.md`), already
    env-overridable, just needs the default flipped to empty/opt-in (identical
    fix shape to SG-05K's ledger-observatory adapter-default work). No hardcoded
    Hermes hostname/URL found anywhere despite the tool's name , the mechanism

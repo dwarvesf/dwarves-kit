@@ -168,7 +168,7 @@ cardinality: `rejected_findings` is this tool's FIRST genuinely multi-repo-in-on
 adapter (every other repo-scoped adapter is single-repo-per-run, overridden per invocation), a
 deliberate exception because a cross-repo FP-rate comparison is the whole point of this sub-goal
 -- named explicitly as a "stated sub-decision, not an on-the-fly call" in the goal file. Default:
-`~/workspace/tieubao/ops-toolkit,~/workspace/tieubao/dwarves-kit` (the two repos gate-review-
+`~/workspace/<owner>/ops-toolkit,~/workspace/<owner>/dwarves-kit` (the two repos gate-review-
 absorptions actually produced ledger files in as of this writing).
 
 ### Infrastructure changes

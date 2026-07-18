@@ -121,7 +121,7 @@ Captured directly (not just via the test harness) against the real ops-toolkit c
 machine -- a known gotcha):
 
 ```
-$ OPS=~/workspace/tieubao/ops-toolkit
+$ OPS=~/workspace/<owner>/ops-toolkit
 $ KIT=<this worktree>
 $ # BEFORE: the real, unmodified ops-toolkit scripts
 $ $OPS/_meta/board                                    > before.board.out
@@ -178,16 +178,16 @@ never touched.
 ## Live run: `board queue --dry-run` against the real ops-toolkit cockpit (read-only)
 
 ```
-$ bash lib/board/board.sh queue --dry-run --repo-root ~/workspace/tieubao/ops-toolkit
+$ bash lib/board/board.sh queue --dry-run --repo-root ~/workspace/<owner>/ops-toolkit
 queue: --dry-run has no additional effect (queue never mutates any BACKLOG.md)
 queue: 0 rows
 $ echo "exit=$?"
 exit=0
 
-$ git -C ~/workspace/tieubao/ops-toolkit status --porcelain -- _meta/boards.txt _meta/BACKLOG.md
+$ git -C ~/workspace/<owner>/ops-toolkit status --porcelain -- _meta/boards.txt _meta/BACKLOG.md
 (empty -- confirms read-only, zero writes)
 
-$ grep -c '#queue{' ~/workspace/tieubao/ops-toolkit/_meta/BACKLOG.md
+$ grep -c '#queue{' ~/workspace/<owner>/ops-toolkit/_meta/BACKLOG.md
 0
 ```
 
@@ -282,7 +282,7 @@ bash tests/test-hooks.sh
 shellcheck lib/board/board.sh lib/board/parse-board.sh tests/test-board.sh
 
 # live, read-only:
-bash lib/board/board.sh queue --dry-run --repo-root ~/workspace/tieubao/ops-toolkit
+bash lib/board/board.sh queue --dry-run --repo-root ~/workspace/<owner>/ops-toolkit
 ```
 
 For the negative controls: in `lib/board/parse-board.sh`, change

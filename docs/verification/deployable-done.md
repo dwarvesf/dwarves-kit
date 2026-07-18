@@ -113,7 +113,7 @@ Profile: feature   Proof class: behavioral
 ## 5. Reproduce
 
 ```
-cd /Users/tieubao/workspace/tieubao/dwarves-kit
+cd /Users/tieubao/workspace/<owner>/dwarves-kit
 bash tests/test-deployable-done.sh
 bash tests/test-proof-dir-layout.sh
 bash tests/test-proof-visual-evidence.sh

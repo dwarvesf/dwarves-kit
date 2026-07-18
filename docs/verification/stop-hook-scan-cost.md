@@ -61,7 +61,7 @@ zero active dwarves-kit `find` scans.
 ## Reproduce
 
 ```sh
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 bash -n hooks/slop-cleaner.sh hooks/session-state-save.sh   # syntax
 bash tests/test-hooks.sh                                    # 432/432
 # negative control: run the OLD pipeline vs the NEW prune over a temp fixture

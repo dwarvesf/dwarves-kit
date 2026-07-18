@@ -3,7 +3,7 @@
 Generated: 2026-05-21
 Status: SHIPPED
 Shipped: 2026-05-21 (PR #5, squash-merged to master)
-Source: live defect, 2026-05-21. A fresh session on a dev checkout (`~/workspace/tieubao/dwarves-kit`) opened with `SessionStart:startup hook error ... bash: /Users/<user>/.claude/dwarves-kit/hooks/context-readiness.sh: No such file or directory`. Retroactive spec: the fix shipped first (PR #5) under the bug lane; this records the contract and the in-place regression the SDD pass then caught.
+Source: live defect, 2026-05-21. A fresh session on a dev checkout (`~/workspace/<owner>/dwarves-kit`) opened with `SessionStart:startup hook error ... bash: /Users/<user>/.claude/dwarves-kit/hooks/context-readiness.sh: No such file or directory`. Retroactive spec: the fix shipped first (PR #5) under the bug lane; this records the contract and the in-place regression the SDD pass then caught.
 Depends on: `install.sh` (the bash install path), `settings.json` (hook command paths), `tests/test-meta.sh` (the structural guard). No new ADR: the chosen mechanism (per-file symlink from `KIT_DIR` into `~/.claude/...`) is the same pattern `install.sh` already uses for `commands/`, not a new architectural axis.
 Lane: bug (a defect: the installer never placed the scripts the settings reference). Root cause recorded before the fix, per the bug lane's iron law.
 

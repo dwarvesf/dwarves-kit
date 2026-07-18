@@ -140,7 +140,7 @@ not decorative.
 ## Real-corpus materialization (2026-07-04)
 
 Rebuilt against the live corpus (no env override): `LEDGER_OBS_REPOS` defaults to
-`~/workspace/tieubao/ops-toolkit,~/workspace/tieubao/dwarves-kit`.
+`~/workspace/<owner>/ops-toolkit,~/workspace/<owner>/dwarves-kit`.
 
 ```
 $ uv run ledger rebuild
@@ -232,7 +232,7 @@ verified against their docstrings with no off-by-one found.
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 bash tests/test-review-yield.sh           # golden fixture + honest-zero NC + over-test (39/39)
 bash tests/test-schema-parity.sh          # regression: unaffected (4/4)

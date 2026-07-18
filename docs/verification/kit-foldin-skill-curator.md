@@ -30,12 +30,12 @@ Moves `ops-toolkit/tools/cc-self-improve/` to `dwarves-kit/tools/skill-curator/`
   stayed in ops-toolkit untouched; `deploy/install.sh` + `deploy/uninstall.sh` (generic, tested,
   no personal hardcode) moved with the tool. This is the only way to satisfy both the literal
   exclusion's own justification and the "identical pass count" gate simultaneously.
-- **`RUNBOOK.md` / `MANUAL.md`:** the 2 hardcoded `~/workspace/tieubao/ops-toolkit/...` lines
+- **`RUNBOOK.md` / `MANUAL.md`:** the 2 hardcoded `~/workspace/<owner>/ops-toolkit/...` lines
   rewritten generic (RUNBOOK incident 9 path example; MANUAL's install `cd` example). RUNBOOK's
   personal-Mini incident 6 (referencing `mini.cc-curator` launchd + its log path, both artifacts
   that stayed behind in ops-toolkit) genericized to scheduler-agnostic language.
 - **`lib/surface.sh:9` env-default flip:** `CC_SI_MEMORY_LEDGER` default changed from
-  `$HOME/workspace/tieubao/ops-toolkit/_meta/learned-ledger.md` to empty (required-explicit, per
+  `$HOME/workspace/<owner>/ops-toolkit/_meta/learned-ledger.md` to empty (required-explicit, per
   the kit's adapter-default two-class split -- this path is tenant config, not kit-internal). Added
   `memory_ledger_count()` as the explicit call site: unset -> one clear stderr line + `return 1`,
   never a guessed path read. The passive SessionStart-safe wrapper (`surface_counts`/`surface_line`)

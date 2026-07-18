@@ -64,7 +64,7 @@ bash tests/test-e2e.sh     # 20/20  (17/20 with the row removed)
 
 ## Dotfiles half
 
-`~/workspace/tieubao/dotfiles` branch `feat/ug-01-design-record` (commit `27a21e1`, off
+`~/workspace/<owner>/dotfiles` branch `feat/ug-01-design-record` (commit `27a21e1`, off
 `main`, NOT merged/pushed): `home/dot_claude/skills/plan-for-mega-goal/references/
 subgoal-template.md` gains a `**Design:** <bearing | obvious>` top-level field plus a matching
 bullet in the "Deltas from `plan-for-goal`" section.

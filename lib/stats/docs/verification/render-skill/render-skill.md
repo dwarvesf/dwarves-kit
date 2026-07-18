@@ -128,7 +128,7 @@ scope edge; SG-05's no-orphan check is the real installed-and-firing gate.
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 bash tests/test-render-skill.sh    # 30 passed, 0 failed; exit 0
 # regression check

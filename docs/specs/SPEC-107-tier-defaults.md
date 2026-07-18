@@ -72,7 +72,7 @@ bash tests/test-meta.sh          # green incl. the new tier-defaults surface blo
 bash tests/test-meta-agent.sh    # Mode B stance rewrite does not break the meta-agent suite
 
 # Surface 2 (dotfiles half, LOCAL proof only , path absent in kit CI):
-grep -qE '^Model: sonnet' ~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
+grep -qE '^Model: sonnet' ~/workspace/<owner>/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
 ```
 
 ## After state

@@ -64,7 +64,7 @@ session that silently no-ops cannot make the loop march on.
 ```
 cd <dwarves-kit>
 bash tests/test-orchestrate.sh
-bash lib/queue/orchestrate.sh run ~/workspace/tieubao/ops-toolkit/_meta/megagoals/token-hygiene --dry-run
+bash lib/queue/orchestrate.sh run ~/workspace/<owner>/ops-toolkit/_meta/megagoals/token-hygiene --dry-run
 ```
 
 ## Review-fix addendum (2026-06-29, PR #81 review)

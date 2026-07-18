@@ -182,7 +182,7 @@ or the mega run. Two absolute negative controls:
 ## Verification
 
 ```bash
-cd /Users/tieubao/workspace/tieubao/dwarves-kit/.claude/worktrees/advisor-visibility
+cd /Users/tieubao/workspace/<owner>/dwarves-kit/.claude/worktrees/advisor-visibility
 bash tests/test-advisor.sh
 bash tests/test-review-team-plants.sh
 bash tests/test-command-emit-sweep.sh

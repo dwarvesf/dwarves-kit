@@ -82,7 +82,7 @@ directly" requirement.
 
 `cc-intel`'s `deploy/macos/{cc-intel-weekly.plist, cc-intel-weekly, cc-intel-runbook.md}`
 did NOT move. The plist hardcodes `ProgramArguments[0]` to an absolute
-`/Users/tieubao/workspace/tieubao/ops-toolkit/...` path and the runbook assumes
+`/Users/tieubao/workspace/<owner>/ops-toolkit/...` path and the runbook assumes
 an ops-toolkit checkout; unlike `skill-curator`'s `deploy/install.sh`
 (SG-04), there is no generic install script inside `cc-intel`'s `deploy/` to
 separate out -- the WHOLE directory is the personal launchd cron. Per the

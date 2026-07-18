@@ -110,7 +110,7 @@ $ uv run ledger deviation-rate --json | <class distribution>
 ```
 
 ```
-$ LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger rebuild
+$ LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger rebuild
 { "kit_runs": 0, "kit_gates": 654, "git_fixes": 1889, "impl_notes": 77, "tide_moves": 0,
   "tide_tier_b_calls": 0, "tg_dialogs": 625, "learned": 58 }
 $ uv run ledger deviation-rate --json | <class distribution>
@@ -206,7 +206,7 @@ file list used for correlation always comes from `git_fixes`).
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 bash tests/test-deviation-rate.sh                              # golden fixture + honest-zero NC + over-test (25/25)
 bash tests/test-schema-parity.sh                                # regression: unaffected (4/4)
@@ -215,6 +215,6 @@ bash tests/test-defect-correlation.sh                            # regression: u
 bash tests/test-ledger-cli.sh                                    # regression: pre-existing 19/26 (7 fail), unaffected
 bash tests/test-feedback.sh                                      # regression: pre-existing 30/39 (9 fail), unaffected
 uv run ledger rebuild && uv run ledger deviation-rate --table                                    # real run: ops-toolkit (233 rows)
-LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger rebuild \
-  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger deviation-rate --table  # real run: dwarves-kit (77 rows)
+LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger rebuild \
+  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger deviation-rate --table  # real run: dwarves-kit (77 rows)
 ```

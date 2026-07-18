@@ -71,7 +71,7 @@ negative controls:
 ## Reproduce
 
 ```
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 git switch feat/kri-02-spec-race
 bash tests/test-spec-reserve.sh        # 23/23, incl. T2 concurrency + T4 negative control
 bash tests/test-hooks.sh               # 452/452 (SPEC-064 contract intact)

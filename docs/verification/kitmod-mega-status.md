@@ -104,7 +104,7 @@ existing `GH_BIN` convention).
 
 Command:
 ```
-REPO_ROOT=~/workspace/tieubao/ops-toolkit CODE_ROOT=~/workspace/tieubao/dwarves-kit \
+REPO_ROOT=~/workspace/<owner>/ops-toolkit CODE_ROOT=~/workspace/<owner>/dwarves-kit \
   bash lib/mega.sh status kit-modularity
 ```
 Output (run from the kitmod-08 worktree, before this branch's own commits landed --
@@ -178,7 +178,7 @@ PATH-injected stub `gh`, no real network call anywhere in the suite)
 
 Command:
 ```
-REPO_ROOT=~/workspace/tieubao/ops-toolkit CODE_ROOT=~/workspace/tieubao/dwarves-kit \
+REPO_ROOT=~/workspace/<owner>/ops-toolkit CODE_ROOT=~/workspace/<owner>/dwarves-kit \
   bash lib/mega.sh status kit-modularity
 ```
 Exit: 1 (drift present, correctly nonzero)
@@ -194,7 +194,7 @@ Verdict: PASS
 Reverted the change by moving the new entry file aside, re-ran, restored it:
 
 ```
-$ bash lib/mega.sh status kit-modularity --megagoals-root ~/workspace/tieubao/ops-toolkit/_meta/megagoals --code-root ~/workspace/tieubao/dwarves-kit --rollup-only
+$ bash lib/mega.sh status kit-modularity --megagoals-root ~/workspace/<owner>/ops-toolkit/_meta/megagoals --code-root ~/workspace/<owner>/dwarves-kit --rollup-only
 kit-modularity: 3/8 ok  ⚠ 2 drift
 Exit: 1
 

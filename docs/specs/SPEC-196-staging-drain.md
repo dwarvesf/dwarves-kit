@@ -71,7 +71,7 @@ kind. `lib/learn/propose*` (SPEC-195, SG-05) is untouched.
 ## Test plan
 
 1. **Render on real-shaped data**: run `learn drain` against a COPY of the real 69-candidate
-   `~/workspace/tieubao/ops-toolkit/_meta/backlog-staging.md` (never the live file); capture raw
+   `~/workspace/<owner>/ops-toolkit/_meta/backlog-staging.md` (never the live file); capture raw
    text output + a freeze-PNG.
 2. **Expiry NC**: a fixture with a 31-day-old `[staged]` row and a 5-day-old `[staged]` row;
    after one drain run the 31d row is `[expired]`, the 5d row is still `[staged]`; a byte-diff of

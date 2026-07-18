@@ -144,7 +144,7 @@ failure shape a truncated line would produce, but was not exercised via an actua
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 bash tests/test-gate-yield.sh                    # golden fixture + FP-NC + over-test (25/25)
 bash tests/test-schema-parity.sh                 # regression: unaffected (4/4)

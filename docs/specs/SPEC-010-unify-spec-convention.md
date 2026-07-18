@@ -149,7 +149,7 @@ Hook + command path references; example/demo paths; a deprecation-warning code p
 
 ## Source citations
 - The split being superseded: `docs/decisions/0002-planning-dir-convention.md`.
-- The research that obsoletes the interop rationale (GSD now `.planning/phases/`; field is multi-spec; concurrency needs isolation; OpenSpec/gsd-2 the only true-parallel models): this session's framework survey + `~/workspace/tieubao/ops-toolkit/research/2026-05-20-agent-workflow-enforcement-patterns.md`.
+- The research that obsoletes the interop rationale (GSD now `.planning/phases/`; field is multi-spec; concurrency needs isolation; OpenSpec/gsd-2 the only true-parallel models): this session's framework survey + `~/workspace/<owner>/ops-toolkit/research/2026-05-20-agent-workflow-enforcement-patterns.md`.
 - Active-spec-by-branch primitive this builds on: `docs/specs/SPEC-005-backlog-and-goal-state.md` (dual-detect).
 - Worktree-isolation concurrency lineage: gsd-2 (`git.isolation = worktree`, `/gsd parallel start`).
 - The spec format this dogfoods: SPEC-008 (Solution depth) + SPEC-009 (I/O contract + Failure modes).

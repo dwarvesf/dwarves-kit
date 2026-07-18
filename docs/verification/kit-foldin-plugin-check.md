@@ -18,7 +18,7 @@ surface (`status`, `update [name] [--apply]`) are byte-identical to the source t
 The plugin-state directory was already opt-in before the move: `PLUGINS_DIR="${CC_PLUGINS_DIR:-$HOME/.claude/plugins}"`
 (`bin/plugin-check:24`) defaults to the standard per-user Claude Code plugin directory, not
 an ops-toolkit path, so there was no hardcoded ops-toolkit path in the executable to
-replace. The two doc-only mentions of `~/workspace/tieubao/dwarves-kit` (in the ported
+replace. The two doc-only mentions of `~/workspace/<owner>/dwarves-kit` (in the ported
 `docs/specs/SPEC-105-cc-plugin-check.md` and `docs/implementation-notes/cc-plugin-check.md`,
 describing Han's own `directory`-marketplace dev checkout as a worked example) were
 generalized to "the local dwarves-kit checkout" so the grep-clean gate holds across the

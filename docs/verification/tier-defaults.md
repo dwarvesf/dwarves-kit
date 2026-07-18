@@ -65,7 +65,7 @@ exit=1                          # negative control: old abstain phrasing removed
 # dotfiles half (surface 2), applied + committed atomically:
 $ grep -n '^Model: sonnet' ~/.claude/skills/plan-for-mega-goal/references/subgoal-template.md
 14:Model: sonnet
-$ git -C ~/workspace/tieubao/dotfiles log -1 --oneline
+$ git -C ~/workspace/<owner>/dotfiles log -1 --oneline
 9dd5c48 feat(plan-for-mega-goal): default subgoal-template Model to sonnet
 
 # dispatch proof (the default applied at dispatch by _route):
@@ -87,5 +87,5 @@ bash tests/test-meta.sh && bash tests/test-meta-agent.sh && bash tests/test-orch
 grep -niE 'workers dispatch at .?sonnet.? by default' commands/execute.md
 grep -niE 'write .?Model: sonnet' agents/meta-agent.md
 ! grep -qF "human's call, not a silent auto-write" agents/meta-agent.md
-grep -n '^Model: sonnet' ~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
+grep -n '^Model: sonnet' ~/workspace/<owner>/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
 ```

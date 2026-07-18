@@ -73,7 +73,7 @@ SPEC-129 Open questions).
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory && uv sync
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory && uv sync
 bash tests/test-feedback.sh
 ```
 
