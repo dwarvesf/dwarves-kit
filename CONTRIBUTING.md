@@ -77,6 +77,11 @@ Precedent renames: edge -> profile, surface/spoke/sources -> app,
 hub -> board (2026-07-16, sync module), leg -> stage / Specify-Execute-Observe-Govern -> Shape-Build-Watch-Check
 (2026-07-18, ADR-0034 amendment; Learn kept).
 
+The still-coined terms that are too semantic-everywhere to rename yet (gate,
+lane, ledger, mega, harness) have their plain-word equivalents in
+[docs/glossary.md](docs/glossary.md), so a reader always has the everyday word
+even before the rename migration (ID-293) runs.
+
 ## Source
 
 The "rejection-first" framing of this document is adapted from [obra/superpowers v5.0.7 `AGENTS.md`](https://github.com/obra/superpowers/blob/main/AGENTS.md). Same source we adopted in v1.3 for `commands/kit-health.md` (see ADR-008). Specific rejection criteria here are the kit's own from `docs/PHILOSOPHY.md`, not lifted verbatim.
