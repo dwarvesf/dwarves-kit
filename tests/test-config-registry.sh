@@ -9,8 +9,9 @@
 #        no second bespoke grep, per the goal file's explicit instruction.
 #   AC2  NEGATIVE CONTROL: a planted, unregistered env var matching the seed prefix family IS
 #        flagged an orphan by the same sweep -- proves AC1 is not a vacuous pass.
-#   AC3  module-leg completeness: every install.sh KIT_KNOWN_MODULES entry has a row in the
-#        registry's "## Module legs" table.
+#   AC3  module-stage completeness (formerly "module-leg", renamed by the 2026-07-18
+#        amendment): every install.sh KIT_KNOWN_MODULES entry has a row in the
+#        registry's "## Module stages" table.
 #   AC4  NEGATIVE CONTROL: a planted extra module name (not in KIT_KNOWN_MODULES) does NOT
 #        spuriously satisfy AC3 -- proves the completeness check is keyed off the real list.
 #   AC5  bin/config functional smoke: list/get/explain resolve correctly, and an env override
@@ -79,16 +80,16 @@ if printf '%s\n' "$PLANT_OUT" | grep -qF "ORPHAN: KIT_TOTALLY_UNREGISTERED_PLANT
 assert "the flagged orphan is specifically KIT_TOTALLY_UNREGISTERED_PLANT" $RC
 
 echo ""
-echo "=== AC3: module-leg completeness -- every KIT_KNOWN_MODULES entry has a registry row ==="
+echo "=== AC3: module-stage completeness -- every KIT_KNOWN_MODULES entry has a registry row ==="
 KNOWN_MODULES="$(grep -o '^KIT_KNOWN_MODULES="[^"]*"' "$KIT_DIR/install.sh" | sed -E 's/^KIT_KNOWN_MODULES="//; s/"$//')"
 MISSING=0
 for m in $KNOWN_MODULES; do
   if ! grep -qE "^\| $m \|" "$REGISTRY"; then
-    echo "  MISSING module-leg row: $m" >&2
+    echo "  MISSING module-stage row: $m" >&2
     MISSING=$((MISSING+1))
   fi
 done
-assert "every KIT_KNOWN_MODULES entry ($(printf '%s' "$KNOWN_MODULES" | wc -w | tr -d ' ') modules) has a Module-legs row" "$MISSING"
+assert "every KIT_KNOWN_MODULES entry ($(printf '%s' "$KNOWN_MODULES" | wc -w | tr -d ' ') modules) has a Module-stages row" "$MISSING"
 
 echo ""
 echo "=== AC4: NEGATIVE CONTROL -- a module NOT in KIT_KNOWN_MODULES is correctly absent ==="

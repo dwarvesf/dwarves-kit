@@ -1,6 +1,6 @@
 # gate
 
-The **Govern leg's** engine (ADR-0034: Specify / Execute / Observe / Govern / Learn). Every
+The **Check stage's** engine (ADR-0034, stage names per the 2026-07-18 amendment: Shape / Build / Watch / Check / Learn; formerly "Govern leg"). Every
 phase boundary in the kit routes through this module. It is what makes a lane a *contract*
 instead of a suggestion.
 

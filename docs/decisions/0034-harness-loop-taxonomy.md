@@ -153,6 +153,34 @@ Rejected: rotation now (no measured pain, speculative work); TTL deletion (destr
 
 Provenance: this area came from Han's 2026-07-12 scope-amendment-2 review (`_meta/megagoals/harness-loop/NOTES.md` event log), not brief §4, which stops at 4.9.
 
+## Amendment (2026-07-18, operator): plain-words rename (leg -> stage; the five leg names)
+
+No decision change: decision 3 stands (legs, now called stages, remain metadata, never module
+renames; the authoritative module-to-leg assignment above is the as-decided historical record and
+is not rewritten). Only the vocabulary renames, per CONTRIBUTING.md's Plain Words rule and the
+ranked inventory (`docs/research/2026-07-16-plain-words-inventory.md`, "The five legs" section),
+which found the blast radius here is docs + one table + one lint, not semantic-everywhere -- so a
+same-release sweep is the correct size, not a phased migration.
+
+**The rename map:**
+
+| Current | Renamed | Note |
+|---|---|---|
+| Specify | **Shape** | not "Plan": collides with the planning loop-type + the writing-plans skill |
+| Execute | **Build** | the plain PM word |
+| Observe | **Watch** | |
+| Govern | **Check** | the most corporate of the five; "Guard" is the documented fallback if Check reads too close to verify |
+| Learn | **Learn** | kept, already plain, and more accurate than "Improve" (the leg distills, it does not itself improve the product) |
+| leg (container word) | **stage** | the everyday word every PM already uses for one step of a workflow |
+
+Per the Plain Words rule's renaming clause, the old names live as a parenthetical alias for one
+release: `lib/config/module-registry.md`'s stage column, README's "The five stages" section,
+`docs/data-flow.md` (prose + the module-map diagram), `docs/MANUAL.md`'s command index,
+`docs/kit-contract.md`, `commands/onboard.md`'s welcome tour, and the registry-lint assertions in
+`tests/test-meta.sh` all sweep to the new names in the same change (`_meta/BACKLOG.md` ID-292).
+`prose_rag`'s leg assignment (flagged as a documented deviation in `lib/config/module-registry.md`)
+is unaffected by this amendment; it is a separate open question.
+
 ## Consequences
 
 - SG-04 executes the census target state in one wave (moves, collapses, new bin entries, skill relocation, call-site repoints incl. the dotfiles companion PR); SG-05/06 build `learn propose`/`drain` in the decision-1 home; SG-08 builds `bin/config` (decision 4) + the one module-metadata registry at `lib/config/module-registry.md` (decision 3); SG-09 builds `/kit:onboard` inside the decision-4 fences; SG-10 retires the per-job plist per decision 9.

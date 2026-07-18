@@ -1996,7 +1996,7 @@ assert_output_not_contains "pointer does not re-paste the payload" "yyyyyyyyyy" 
 echo ""
 echo "=== cosmetic module: the non-blocking contract (SPEC-201) ==="
 # ============================================================
-# The cosmetic module is the ONE module ADR-0034 assigns no loop leg: "orthogonal to the
+# The cosmetic module is the ONE module ADR-0034 assigns no loop stage: "orthogonal to the
 # loop" (lib/config/module-registry.md). Its whole contract is a NEGATIVE one, so it is the
 # one that rots silently. Nothing asserted it until now, and the audit that wrote SPEC-201
 # found two hooks already in breach (slop-cleaner + permission-auto-approve exited 5 on a

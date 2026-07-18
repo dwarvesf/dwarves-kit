@@ -23,10 +23,10 @@ Division of labor in `lib/session/`: `session-observe` = deterministic parsing,
 agentic evidence for change decisions** (weekly / on demand). Measured on a
 3-day window: ~$3.5 and ~10 min on Sonnet.
 
-In five-leg terms (ADR-0034): `run` is the deep **Observe** pass for usage
-telemetry, `triage` is a **Learn**-leg proposer (same propose-don't-dispose
-gate as `learn propose`); the enhance work is the ordinary Specify -> Execute
--> Govern lanes, and the measure step is the next run's {PREV} metric diff.
+In five-stage terms (ADR-0034): `run` is the deep **Watch** pass for usage
+telemetry, `triage` is a **Learn**-stage proposer (same propose-don't-dispose
+gate as `learn propose`); the enhance work is the ordinary Shape -> Build
+-> Check lanes, and the measure step is the next run's {PREV} metric diff.
 Full path contract: `docs/feedback-loop.md`.
 
 ## Use

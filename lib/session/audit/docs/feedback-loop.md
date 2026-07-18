@@ -1,29 +1,30 @@
-# The usage-telemetry path around the five legs
+# The usage-telemetry path around the five stages
 
-The kit's improvement cycle is the five legs (ADR-0034): **Specify -> Execute ->
-Observe -> Govern -> Learn**, feedback closing Learn back into Specify. This
+The kit's improvement cycle is the five stages (ADR-0034, renamed by the 2026-07-18
+amendment): **Shape -> Build -> Watch -> Check -> Learn**, feedback closing Learn
+back into Shape. This
 page does NOT define a new cycle; it names how session-audit rides that loop
 for one signal class: usage telemetry from CC session transcripts. One engine,
-one truth: where an existing leg verb already owns a step, this tool defers
+one truth: where an existing stage verb already owns a step, this tool defers
 to it.
 
 ```
-              (existing legs)                     (this tool's contribution)
+              (existing stages)                    (this tool's contribution)
 
- Specify ──► Execute ──► Observe ────────────────  session-audit run
-    ▲                      │                       = the deep Observe pass:
-    │                      ▼                         dated report, owner tags,
-    │                    Govern                      metric contracts
-    │                      │
-    └────── Learn ◄────────┘                       session-audit triage
-            (propose gate)                         = a Learn-leg proposer:
+ Shape ──► Build ──► Watch                         session-audit run
+ ▲                   │                             = the deep Watch pass:
+                    ▼                                dated report, owner tags,
+                    Check                            metric contracts
+                    │
+ └────── Learn ◄────┘                              session-audit triage
+         (propose gate)                              = a Learn-stage proposer:
                                                      report footer -> kanban
                                                      proposal rows, human accepts
 ```
 
-## The steps, in leg terms
+## The steps, in stage terms
 
-1. **Observe (collect + report).** Three depths, same leg: `session observe`
+1. **Watch (collect + report).** Three depths, same stage: `session observe`
    (deterministic parsing, free), `session semantic` (cheap LLM topic signal,
    cron), `session audit run` (expensive agentic deep audit, weekly / on
    demand). The audit writes one dated report; every recommendation carries an
@@ -40,16 +41,16 @@ to it.
    promoted) + the board, so a rejected proposal never returns. Human gate
    unchanged (ADR-0034 decision 2/5): review with `learn drain`, accept with
    `board promote`. Nothing auto-files.
-3. **Specify -> Execute -> Govern (enhance).** An accepted row is ordinary kit
+3. **Shape -> Build -> Check (enhance).** An accepted row is ordinary kit
    work through the normal lanes and gates. Nothing special; the audit only
    supplied the evidence and the metric.
-4. **Observe again (measure).** The next `session audit run` receives the
+4. **Watch again (measure).** The next `session audit run` receives the
    previous report as `{PREV}` automatically and MUST open with a
    metric-by-metric diff: for each earlier recommendation, did its metric
    move? A fix whose metric did not move returns to the Learn gate as a new
    finding, with the failed attempt as context.
 
-## Division of labor inside Observe (why three tools + stats coexist)
+## Division of labor inside Watch (why three tools + stats coexist)
 
 | Surface | Reads | Depth | Cadence |
 |---|---|---|---|

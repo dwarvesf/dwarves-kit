@@ -1,7 +1,8 @@
-# lib/config/module-registry.md , module<->leg + env<->key registry (SPEC-198)
+# lib/config/module-registry.md , module<->stage + env<->key registry (SPEC-198)
 
-Machine home pinned by ADR-0034 decision 3: ONE checked-in file carrying both the
-module -> primary-leg table (decision 3's authoritative assignment) and the
+Machine home pinned by ADR-0034 decision 3 (stage names renamed by the 2026-07-18 amendment,
+leg -> stage): ONE checked-in file carrying both the
+module -> primary-stage table (decision 3's authoritative assignment) and the
 env<->key rows (decision 4's `bin/config` read surface). Parsed by
 `lib/config/config.sh` (the `bin/config` engine) and by
 `tests/test-config-registry.sh` (the drift + completeness lints). Both readers are
@@ -18,36 +19,38 @@ source by hand (no pre-existing table existed before this file), plus every
 `kit.toml`-declared key (whether or not it has an env override), so `bin/config
 list` can render "every declared key," not just the env-shaped subset.
 
-## Module legs
+## Module stages
 
-Authoritative assignment per ADR-0034 decision 3. Every `KIT_KNOWN_MODULES` entry
+Authoritative assignment per ADR-0034 decision 3, renamed by the 2026-07-18 amendment (leg ->
+stage; Specify/Execute/Observe/Govern -> Shape/Build/Watch/Check, Learn kept). Old names shown
+parenthetically for one release. Every `KIT_KNOWN_MODULES` entry
 (`install.sh:170`, 12 modules) has exactly one row. `team_mode` is excluded from
 `KIT_KNOWN_MODULES` itself (install.sh hard-rejects it until team-mode ships), so
 it is not a row here either , the completeness rule is scoped to
 `KIT_KNOWN_MODULES`, not to every `[modules]` line in `kit.toml`.
 
-| Module | Primary leg | Notes |
+| Module | Primary stage | Notes |
 |---|---|---|
-| board | Specify | spanner: input side (Specify) + staging/promote (Learn) |
-| session | Observe | spanner: capture side (Observe) + harvest (Learn); `session audit` is the deep Observe pass (LLM audit, `run`) + a Learn-leg proposer (`triage`) |
-| advisor | Govern | |
+| board | Shape (Specify) | spanner: input side (Shape) + staging/promote (Learn) |
+| session | Watch (Observe) | spanner: capture side (Watch) + harvest (Learn); `session audit` is the deep Watch pass (LLM audit, `run`) + a Learn-stage proposer (`triage`) |
+| advisor | Check (Govern) | |
 | cosmetic | (none) | orthogonal to the loop; statusline |
-| queue | Execute | |
-| stats | Observe | |
-| quiz_gate | Execute | |
+| queue | Build (Execute) | |
+| stats | Watch (Observe) | |
+| quiz_gate | Build (Execute) | |
 | weekend_batch | Learn | |
-| sync | Specify | spanner: spoke intake -> board rows (Specify input side) + outward mirror to Reminders/Notion/Hermes (Observe, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port (ID-290); the legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay runnable until then and carry two assets the port must keep: the `row_hash` git-wins conflict rule and the live-probed Hermes reachable-state map {triage, ready, blocked, done}. |
-| worktree | Execute | |
-| money_gate | Govern | |
-| classify | Specify | not a `KIT_KNOWN_MODULES` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a leg and pins THIS file as the machine home for that table. Added 2026-07-14: the leg was answerable only from ADR prose. |
-| gate | Govern | spine machinery, same as above (ADR-0034 decision 3). |
-| spec | Specify | spine machinery (ADR-0034 decision 3). |
-| goal | Specify | spine machinery (ADR-0034 decision 3). |
-| mega | Execute | spine machinery (ADR-0034 decision 3). |
-| learn | Learn | spine machinery; created BY ADR-0034 decision 1 (the Learn leg's home). |
-| telemetry | Observe | spine machinery; the durable-root resolver + lane telemetry. |
+| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port (ID-290); the legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay runnable until then and carry two assets the port must keep: the `row_hash` git-wins conflict rule and the live-probed Hermes reachable-state map {triage, ready, blocked, done}. |
+| worktree | Build (Execute) | |
+| money_gate | Check (Govern) | |
+| classify | Shape (Specify) | not a `KIT_KNOWN_MODULES` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a stage and pins THIS file as the machine home for that table. Added 2026-07-14: the stage was answerable only from ADR prose. |
+| gate | Check (Govern) | spine machinery, same as above (ADR-0034 decision 3). |
+| spec | Shape (Specify) | spine machinery (ADR-0034 decision 3). |
+| goal | Shape (Specify) | spine machinery (ADR-0034 decision 3). |
+| mega | Build (Execute) | spine machinery (ADR-0034 decision 3). |
+| learn | Learn | spine machinery; created BY ADR-0034 decision 1 (the Learn stage's home). |
+| telemetry | Watch (Observe) | spine machinery; the durable-root resolver + lane telemetry. |
 | skill-curator | Learn | ADR-0034 decision 3 lists it under Learn; installs via hooks, not a `--with` module. |
-| prose_rag | Learn | **deviation, not in ADR-0034's decision-3 table** (checked: `grep -n prose_rag docs/decisions/0034-harness-loop-taxonomy.md` has zero hits in the leg table). Assigned Learn by this sub-goal's own judgment: prose-rag is a recall/retrieval read over the user's own accumulated corpus (til/research/learned-ledger), the same read-side shape as the Learn leg's other members, not an Observe-class run-telemetry capture. Flagged for Han; a later ADR-0034 amendment may reassign it. |
+| prose_rag | Learn | **deviation, not in ADR-0034's decision-3 table** (checked: `grep -n prose_rag docs/decisions/0034-harness-loop-taxonomy.md` has zero hits in the leg table). Assigned Learn by this sub-goal's own judgment: prose-rag is a recall/retrieval read over the user's own accumulated corpus (til/research/learned-ledger), the same read-side shape as the Learn stage's other members, not a Watch-class run-telemetry capture. Flagged for Han; a later ADR-0034 amendment may reassign it. |
 
 ## Env <-> key registry
 

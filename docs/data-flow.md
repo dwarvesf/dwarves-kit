@@ -7,16 +7,16 @@ found 14 lifecycle diagrams and zero data-flow ones).
 
 Three flows, one per substrate:
 
-1. **The signal path** (Observe -> Learn -> Specify): telemetry becomes a proposal becomes work.
-2. **The ledger path** (Execute -> Govern -> Observe): a run writes evidence; the gates and the
+1. **The signal path** (Watch -> Learn -> Shape): telemetry becomes a proposal becomes work.
+2. **The ledger path** (Build -> Check -> Watch): a run writes evidence; the gates and the
    lenses read it.
-3. **The module map**: who calls whom, grouped by leg.
+3. **The module map**: who calls whom, grouped by stage.
 
 ---
 
 ## 1. The signal path: telemetry -> proposal -> board -> ship
 
-The Learn leg's whole job. Every arrow is code, not intent; the names are the callables.
+The Learn stage's whole job. Every arrow is code, not intent; the names are the callables.
 
 ```
   SOURCES                COLLECT + ANALYZE            PROPOSE              HUMAN         WORK
@@ -107,7 +107,7 @@ One append-only corpus, one resolver. Every path below is derived, never hardcod
 ```
                         ┌────────────────────────────────────────────┐
    WRITERS              │   kit_resolve_log_dir()                    │      READERS
-   (Execute + Govern)   │   lib/telemetry/kit-log-dir.sh             │      (Observe + Govern)
+   (Build + Check)      │   lib/telemetry/kit-log-dir.sh             │      (Watch + Check)
                         │                                            │
   gate-ledger.sh  ────► │   KIT_LEDGER_DIR                    (1)    │ ◄──── lane-telemetry
    START / GATE /       │   DWARVES_KIT_LOG_DIR   (alias)     (2)    │        report | misfires
@@ -123,10 +123,10 @@ One append-only corpus, one resolver. Every path below is derived, never hardcod
                                           ▲                                ◄──── mega report /
                                           │                                       mega review
    hooks (ship-gate, safety-gate, ...) ───┘  ── read the SAME ledger to decide
-                                              whether a push may proceed (Govern)
+                                              whether a push may proceed (Check)
 
    NOT in the ledger, by design:
-     ~/.claude/intel/{intel,audit}-YYYY-MM-DD.md   the Observe reports (dated artifacts)
+     ~/.claude/intel/{intel,audit}-YYYY-MM-DD.md   the Watch reports (dated artifacts)
      _meta/backlog-staging.md                      the proposal buffer (flow 1)
      ~/.claude/dwarves-kit/logs/*.log              hook diagnostics (ephemeral, not corpus)
 ```
@@ -138,13 +138,13 @@ SPEC-097 exists and why C6 of the kit contract lints for it.
 
 ---
 
-## 3. The module map, by leg
+## 3. The module map, by stage
 
 Who calls whom. An arrow is a real invocation (shell-out, source, or import).
 
 ```
-   SPECIFY                    EXECUTE                    GOVERN
-   ───────                    ───────                    ──────
+   SHAPE                      BUILD                      CHECK
+   ─────                      ─────                      ─────
    spec  ──► classify         queue ──► orchestrate      gate ──┬─► gate-ledger
      │         │                │         │                     ├─► proof-ledger
      ▼         ▼                ▼         ▼                     └─► ship-gate hook
@@ -152,10 +152,10 @@ Who calls whom. An arrow is a real invocation (shell-out, source, or import).
               │                                          advisor (agents/)
               │                            ▲                   ▲
               │                            │                   │
-              │                    every phase boundary asks Govern
+              │                    every phase boundary asks Check
               │
-              │                  OBSERVE                     LEARN
-              │                  ───────                     ─────
+              │                  WATCH                       LEARN
+              │                  ─────                       ─────
               │                  stats ◄── ledger            learn ─┬─► propose ──┐
               │                  telemetry ◄── ledger               ├─► drain     │
               │                  session ─┬─► observe                └─► debt      │
@@ -168,11 +168,11 @@ Who calls whom. An arrow is a real invocation (shell-out, source, or import).
               └──────────────────────────────────────────────────── board (staging/promote)
                                           the loop closes here
 
-   Spanners (one module, two legs), honest and named in ADR-0034:
-     board   = Specify (intake)  + Learn (staging/promote)
-     session = Observe (capture) + Learn (harvest, via audit triage)
+   Spanners (one module, two stages), honest and named in ADR-0034:
+     board   = Shape (intake)  + Learn (staging/promote)
+     session = Watch (capture) + Learn (harvest, via audit triage)
 
-   Off the loop:  cosmetic (statusline)   prose_rag (recall over the corpus; leg assignment
+   Off the loop:  cosmetic (statusline)   prose_rag (recall over the corpus; stage assignment
                                           is a documented deviation, see module-registry)
 ```
 
@@ -237,7 +237,7 @@ claim against the command that supposedly does it.
 
 ## Reading order
 
-- New to the kit: `README.md` (the five legs) -> `docs/WORKFLOW.md` (how a run moves) -> this
+- New to the kit: `README.md` (the five stages) -> `docs/WORKFLOW.md` (how a run moves) -> this
   page (how data moves).
 - Adding a signal pipeline: `docs/kit-contract.md` (the rules) -> flow 1 above (where your
   output has to land) -> `docs/specs/SPEC-200-signal-pipelines.md` (why).

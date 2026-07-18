@@ -1,8 +1,8 @@
 # cosmetic
 
 Six hooks that make a session nicer to sit in front of. **None of them is part of the
-loop.** ADR-0034 assigns every kit module a primary leg (Specify / Execute / Observe /
-Govern / Learn); `cosmetic` is the one module with **`(none)`**, and
+loop.** ADR-0034 assigns every kit module a primary stage (Shape / Build / Watch /
+Check / Learn, formerly Specify / Execute / Observe / Govern / Learn); `cosmetic` is the one module with **`(none)`**, and
 `lib/config/module-registry.md` records it as "orthogonal to the loop". That is not a
 filing accident, it is the module's whole contract.
 

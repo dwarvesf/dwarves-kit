@@ -74,7 +74,8 @@ anything (a command, a config key, a doc heading, a term in help text):
    this rule was born from).
 
 Precedent renames: edge -> profile, surface/spoke/sources -> app,
-hub -> board (2026-07-16, sync module).
+hub -> board (2026-07-16, sync module), leg -> stage / Specify-Execute-Observe-Govern -> Shape-Build-Watch-Check
+(2026-07-18, ADR-0034 amendment; Learn kept).
 
 ## Source
 
