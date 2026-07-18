@@ -160,19 +160,38 @@ _fresh_proof_files() {
   } | sort -u | grep -E '^docs/verification/.+\.md$|(^|/)proof-of-done\.md$' | grep -v '/README\.md$' || true
 }
 
+# Repo identity for override scoping (ID-299). The override log is machine-local and now
+# keys each entry by repo+slug, so a `backlog-reconcile` override logged in one repo cannot
+# short-circuit the ship-gate for the SAME slug in an unrelated repo (the family-office ->
+# console-labs collision that hid a real proof). Repo id = the git toplevel path (always
+# available, collision-proof between distinct checkouts), slugified for delimiter safety; a
+# non-git dir falls back to the dir path so an override is still SCOPED, never a global key.
+_repo_id() {
+  local d="${1:-.}" top
+  top="$(git -C "$d" rev-parse --show-toplevel 2>/dev/null)" || top="$d"
+  slugify "$top"
+}
+
 is_overridden() {
-  local slug; slug="$(slugify "${1:-}")"
+  local slug repo
+  slug="$(slugify "${1:-}")"; repo="$(_repo_id "${2:-.}")"
   [ -n "$slug" ] || return 1
-  [ -f "$OVERRIDE_LOG" ] && grep -qF "| $slug |" "$OVERRIDE_LOG"
+  # Repo-scoped match ONLY (ID-299). Legacy entries written before scoping carry no repo
+  # field ("<ts> | <slug> | OVERRIDE | ..."); they no longer match any repo's lookup, so a
+  # stale global override now fails CLOSED. Worst case is re-logging an override in the repo
+  # that needs it; a wrongful PASS (the bug this fixes) can no longer happen across repos.
+  [ -f "$OVERRIDE_LOG" ] && grep -qF "| $repo | $slug |" "$OVERRIDE_LOG"
 }
 
 override() {
-  local slug raw reason
+  local slug raw reason repo
   raw="${1:-}"; shift 2>/dev/null || { echo "usage: override <slug> <reason>" >&2; return 64; }
-  reason="${*:-}"; slug="$(slugify "$raw")"
+  reason="${*:-}"; slug="$(slugify "$raw")"; repo="$(_repo_id ".")"
   [ -n "$slug" ] && [ -n "$reason" ] || { echo "usage: override <slug> <reason>" >&2; return 64; }
-  ledger_append "$OVERRIDE_STREAM" "$(printf '%s | %s | OVERRIDE | %s' "$(now)" "$slug" "$reason")" || return 1
-  echo "proof-of-done override logged for '$slug' (trace: $OVERRIDE_LOG)"
+  # repo is derived from the cwd, which is the repo the operator is overriding for (the same
+  # toplevel the ship-gate resolves at push time), so the write and the lookup agree.
+  ledger_append "$OVERRIDE_STREAM" "$(printf '%s | %s | %s | OVERRIDE | %s' "$(now)" "$repo" "$slug" "$reason")" || return 1
+  echo "proof-of-done override logged for '$slug' in repo '$repo' (trace: $OVERRIDE_LOG)"
 }
 
 # _has_committed_image <proof-file> <root>: 0 iff the file embeds an image whose target
@@ -203,7 +222,7 @@ check() {
   local class last_v; class="$(classify "$root" "$base")"
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
 
-  if [ -n "$slug" ] && is_overridden "$slug"; then
+  if [ -n "$slug" ] && is_overridden "$slug" "$root"; then
     # cc-hyg-04: an override excuses docs / deploy-inert work, NOT application source
     # code. A blanket override that silently passes an unproven SOURCE change is the
     # rtk-611 hole (2026-07-01: an overridden branch shipped a broken source change,

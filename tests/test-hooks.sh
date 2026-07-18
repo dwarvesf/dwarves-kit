@@ -654,7 +654,9 @@ assert_exit ".rs: rustup-absent path exits 0" 0 $RC
 assert_output_contains ".rs: rustup absent -> plain rustfmt" "rustfmt $RS" "$(cat "$LOG")"
 assert_output_not_contains ".rs: rustup absent -> no rustup call" "rustup" "$(cat "$LOG")"
 
-# B3 (negative control): neither rustup nor rustfmt -> no formatter runs, still exit 0.
+# B3 (no-op / never-block control): neither rustup nor rustfmt -> no formatter runs,
+# still exit 0 (B1b is the change's load-bearing negative control; this guards the
+# empty-tooling path and the never-block contract).
 af_bin "$AF_TMP/b3" no 0 no
 LOG="$AF_TMP/b3.log"; : > "$LOG"
 RC=$(af_run "$AF_TMP/b3" "$RS" "$LOG")
@@ -1233,7 +1235,7 @@ R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
 git -C "$ROOT" switch -q -c feat/hot; mkdir -p "$ROOT/lib"; echo z > "$ROOT/lib/z.sh"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat(z): urgent source change"
 bash "$PL" check "$ROOT" "$BASE" hot >/dev/null 2>&1; assert_exit "ledger: pre-override -> BLOCK" 1 "$?"
-bash "$PL" override hot "emergency, proof to follow" >/dev/null 2>&1
+( cd "$ROOT" && bash "$PL" override hot "emergency, proof to follow" >/dev/null 2>&1 )
 bash "$PL" check "$ROOT" "$BASE" hot >/dev/null 2>&1; assert_exit "ledger: override on SOURCE -> still REJECTED (cc-hyg-04)" 1 "$?"
 assert_true "ledger: override leaves a trace" "$([ -f "$DWARVES_KIT_LOG_DIR/proof-overrides.log" ] && grep -q hot "$DWARVES_KIT_LOG_DIR/proof-overrides.log" && echo 0 || echo 1)"
 # (b) override on a docs/deploy-inert (non-source) change -> PASS.
@@ -1241,26 +1243,54 @@ R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
 git -C "$ROOT" switch -q -c feat/cfg; mkdir -p "$ROOT/deploy"; printf 'port: 8080\n' > "$ROOT/deploy/app.yaml"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "chore(deploy): bump port"
 bash "$PL" check "$ROOT" "$BASE" cfg >/dev/null 2>&1; assert_exit "ledger: config-only pre-override -> BLOCK" 1 "$?"
-bash "$PL" override cfg "config-only, no behavioral claim" >/dev/null 2>&1
+( cd "$ROOT" && bash "$PL" override cfg "config-only, no behavioral claim" >/dev/null 2>&1 )
 bash "$PL" check "$ROOT" "$BASE" cfg >/dev/null 2>&1; assert_exit "ledger: override on deploy-inert -> PASS (cc-hyg-04)" 0 "$?"
 # (c) a `deploy` dir NESTED under source (src/deploy/) is NOT the sanctioned location -> REJECTED.
 R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
 git -C "$ROOT" switch -q -c feat/nest; mkdir -p "$ROOT/src/deploy"; echo 'print(1)' > "$ROOT/src/deploy/core.py"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat: nested deploy source"
-bash "$PL" override nest "trust me" >/dev/null 2>&1
+( cd "$ROOT" && bash "$PL" override nest "trust me" >/dev/null 2>&1 )
 bash "$PL" check "$ROOT" "$BASE" nest >/dev/null 2>&1; assert_exit "ledger: override on src/deploy source -> REJECTED (nested deploy not sanctioned)" 1 "$?"
 # (c2) a per-tool tools/<name>/deploy/ script IS sanctioned -> override PASSES.
 R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
 git -C "$ROOT" switch -q -c feat/tooldep; mkdir -p "$ROOT/tools/foo/deploy"; echo 'echo go' > "$ROOT/tools/foo/deploy/roll.sh"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "chore: tool deploy script"
-bash "$PL" override tooldep "manual deploy verified" >/dev/null 2>&1
+( cd "$ROOT" && bash "$PL" override tooldep "manual deploy verified" >/dev/null 2>&1 )
 bash "$PL" check "$ROOT" "$BASE" tooldep >/dev/null 2>&1; assert_exit "ledger: override on tools/*/deploy script -> PASS (sanctioned)" 0 "$?"
 # (d) an extensionless shebang script counts as source -> override REJECTED.
 R=$(_pl_repo); ROOT=${R% *}; BASE=${R#* }
 git -C "$ROOT" switch -q -c feat/shebang; printf '#!/usr/bin/env bash\necho hi\n' > "$ROOT/mytool"; chmod +x "$ROOT/mytool"
 git -C "$ROOT" add -A; git -C "$ROOT" commit -q -m "feat: extensionless tool"
-bash "$PL" override shebang "trust me" >/dev/null 2>&1
+( cd "$ROOT" && bash "$PL" override shebang "trust me" >/dev/null 2>&1 )
 bash "$PL" check "$ROOT" "$BASE" shebang >/dev/null 2>&1; assert_exit "ledger: override on extensionless shebang script -> REJECTED" 1 "$?"
+
+# --- ID-299: the override log is REPO-SCOPED. An override logged in repo A must not
+# --- short-circuit the ship-gate for the same slug in an unrelated repo B (the
+# --- family-office backlog-reconcile -> console-labs collision that hid a real proof).
+# Repo A: deploy-inert change + own override -> PASS in A.
+RA=$(_pl_repo); ROOTA=${RA% *}; BASEA=${RA#* }
+git -C "$ROOTA" switch -q -c chore/recon; mkdir -p "$ROOTA/deploy"; printf 'x: 1\n' > "$ROOTA/deploy/a.yaml"
+git -C "$ROOTA" add -A; git -C "$ROOTA" commit -q -m "chore(deploy): repo A"
+( cd "$ROOTA" && bash "$PL" override recon "A reconciled" >/dev/null 2>&1 )
+bash "$PL" check "$ROOTA" "$BASEA" recon >/dev/null 2>&1; assert_exit "ID-299: an override applies in the repo it was logged (A)" 0 "$?"
+# Repo B: SAME slug, a source change with NO proof -> must still BLOCK (A's override must not leak).
+RB=$(_pl_repo); ROOTB=${RB% *}; BASEB=${RB#* }
+git -C "$ROOTB" switch -q -c chore/recon; mkdir -p "$ROOTB/lib"; echo 'code' > "$ROOTB/lib/b.sh"
+git -C "$ROOTB" add -A; git -C "$ROOTB" commit -q -m "feat(b): repo B source change"
+bash "$PL" check "$ROOTB" "$BASEB" recon >/dev/null 2>&1; assert_exit "ID-299: repo A's override does NOT excuse the same slug in repo B" 1 "$?"
+# Repo B2: same slug again, deploy-inert, with its OWN override -> PASS (scoping is per-repo, not a global block).
+RB2=$(_pl_repo); ROOTB2=${RB2% *}; BASEB2=${RB2#* }
+git -C "$ROOTB2" switch -q -c chore/recon; mkdir -p "$ROOTB2/deploy"; printf 'y: 2\n' > "$ROOTB2/deploy/b.yaml"
+git -C "$ROOTB2" add -A; git -C "$ROOTB2" commit -q -m "chore(deploy): repo B2"
+bash "$PL" check "$ROOTB2" "$BASEB2" recon >/dev/null 2>&1; assert_exit "ID-299: a fresh repo with the same slug still BLOCKs pre-override" 1 "$?"
+( cd "$ROOTB2" && bash "$PL" override recon "B2 own override" >/dev/null 2>&1 )
+bash "$PL" check "$ROOTB2" "$BASEB2" recon >/dev/null 2>&1; assert_exit "ID-299: a repo's OWN override applies to it" 0 "$?"
+# Legacy migration: an unqualified (pre-scoping) entry must NOT satisfy any repo's lookup (fail closed).
+RL=$(_pl_repo); ROOTL=${RL% *}; BASEL=${RL#* }
+git -C "$ROOTL" switch -q -c chore/legacy; mkdir -p "$ROOTL/deploy"; printf 'z: 3\n' > "$ROOTL/deploy/l.yaml"
+git -C "$ROOTL" add -A; git -C "$ROOTL" commit -q -m "chore(deploy): repo L"
+printf '%s | legacy | OVERRIDE | pre-scoping unqualified entry\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$DWARVES_KIT_LOG_DIR/proof-overrides.log"
+bash "$PL" check "$ROOTL" "$BASEL" legacy >/dev/null 2>&1; assert_exit "ID-299: a legacy unqualified override fails CLOSED (matches no repo)" 1 "$?"
 
 # the ship-gate HOOK itself blocks (exit 2) a behavioral change with no proof in an
 # opted-in, SPEC-LESS repo (proves the wall + the bridge), and passes when proof exists.
