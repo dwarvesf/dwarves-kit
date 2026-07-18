@@ -295,7 +295,7 @@ If a component has been unused for 30 days (no contractor reports using it, no s
 
 ### AutoResearch optimization
 
-From the SDD handoff: the Karpathy loop can optimize kit components with a measurable metric. This applies to:
+From the spec-driven development (SDD) handoff: the Karpathy loop can optimize kit components with a measurable metric. This applies to:
 
 - **Command prompts**: The three-file contract (program.md = kit philosophy frozen, skill.md = command prompt modifiable, eval.py = LLM-as-judge scoring). Run 50 iterations overnight, keep the highest-scoring prompt variant. Applicable to /review, /spec-validate, /think.
 - **Hook patterns**: Anti-rationalization patterns can be optimized by running against a corpus of Claude outputs and measuring false positive / false negative rates.
