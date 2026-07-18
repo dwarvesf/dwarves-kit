@@ -125,6 +125,45 @@ Live wiring (2026-07-16): Notion DB `612f123c-7476-4a78-90e2-e1465c0a0df6`
 workspace `ntn` is logged into; move it if a personal workspace gets
 connected). Hermes: `mini-tieubao`, `~/hermes-personal/home` (restic-covered).
 
+## One-way push to a foreign team board (`notion-taskboard`, SPEC-003)
+
+A fifth app, `notion-taskboard`, is NOT part of the two-way mesh: it is a
+one-way, **insert-only** push of a repo's board rows to a foreign, team-OWNED
+Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). The
+board is the source of truth; the sink is never read for merge and the board
+file is never written. Fields are set ONLY on page-create, so a team member's
+later edits on the card are never overwritten. The local sync-state map is the
+identity index (a `bid` already pushed is never re-pushed), because the team
+board's own ID column is a read-only auto-increment that cannot hold `DF-NN`.
+
+Status / Priority / Weight are mapped to the team board's OWN option names via
+config, so the sink never mutates the team schema (it does one benign read to
+resolve the data source, never a PATCH). `dropped` rows are skipped; a state
+absent from the map uses `status_default` or, if unset, is a hard guided error.
+
+```toml
+[sync]
+apps                             = "notion-taskboard"
+notion_taskboard_db              = "<database_id>"      # tenant id: consumer repo only
+notion_taskboard_status_map      = "queued=Backlog,executing=In progress,parked=Waiting,shipped=Done"
+notion_taskboard_status_default  = "Backlog"            # claimed/speccing/validated land here
+notion_taskboard_priority_map    = "u-hi=P0,u-mid=P1,u-lo=P2"
+notion_taskboard_weight_map      = "f-hi=2,f-mid=5,f-lo=13"   # optional
+notion_taskboard_owner           = "<notion_person_id>"      # optional (people prop)
+```
+
+Manual full-reconcile (the v1 trigger; a `board set` hook and Discord-on-shipped
+are deferred, the latter needs update-detection insert-only v1 does not do):
+
+```
+_meta/board sync --apps notion-taskboard --dry-run    # preview, no writes
+_meta/board sync --apps notion-taskboard              # push new rows
+```
+
+Prop NAMES/TYPES are overridable via `notion_taskboard_props` /
+`notion_taskboard_types` (JSON); defaults are Task/Status/Priority/Weight/
+Owner/Notes and status/select/number/people.
+
 ## Tests
 
 ```

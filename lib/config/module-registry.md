@@ -153,7 +153,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). |
+| - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica,notion-taskboard`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). `notion-taskboard` is a one-way, insert-only push (SPEC-003), not part of the two-way mesh. |
 | - | sync.mode | `"manual"` | [impl] | sync | `manual` (default) or `cron`. Read by `lib/sync/deploy/macos/install` (kit ID-289): a repo must set `mode = "cron"` before that installer will render or load a per-repo scheduled-sync LaunchAgent; any other value is a clean refusal, not a silent fallthrough. Not read by `board.sh cmd_sync` itself -- manual `board sync` runs are unaffected by this key. ALSO re-read live by the installed `board-sync-cron` launcher on every scheduled run: flipping `mode` back to `"manual"` after install makes the next scheduled run skip cleanly (exit 0, logged) rather than silently keep syncing against a config that says it shouldn't. |
 | - | sync.interval_secs | `3600` | [impl] | sync | Cron LaunchAgent `StartInterval` seconds, read by `lib/sync/deploy/macos/install` as the default cadence for `mode = "cron"`; `--interval-secs N` overrides it for one install run. |
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
@@ -174,6 +174,16 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.multica_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on multica. |
 | - | sync.multica_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on multica. |
 | - | sync.multica_intake | `""` (all) | [impl] | sync | Up-filter for foreign multica items: `all`, `tagged:<tag>`, or `none`. |
+| - | sync.notion_taskboard_db | `""` | [impl] | sync | Target Notion database id for the one-way insert-only Task Board push (SPEC-003). Tenant id: lives in the consumer repo's `.kit.toml`, never here. Required when `notion-taskboard` is in `apps`. |
+| - | sync.notion_taskboard_status_map | `""` | [impl] | sync | `board-state=OptionName` comma map to the team board's OWN Status options, e.g. `queued=Backlog,executing=In progress,parked=Waiting,shipped=Done`. `dropped` is skipped by default (never pushed). |
+| - | sync.notion_taskboard_status_default | `""` | [impl] | sync | Status option for board states absent from the map (e.g. claimed/speccing/validated); without it, an unmapped state is a hard, guided error rather than a guess. |
+| - | sync.notion_taskboard_priority_map | `""` | [impl] | sync | `tag=Option` map for Priority, e.g. `u-hi=P0,u-mid=P1,u-lo=P2` (derived from a row's `#u-*` tag). |
+| - | sync.notion_taskboard_weight_map | `""` | [impl] | sync | `tag=Value` map for Weight, e.g. `f-hi=2,f-mid=5,f-lo=13` (from a row's `#f-*` tag). Optional. |
+| - | sync.notion_taskboard_owner | `""` | [impl] | sync | Owner value set on create (a people-prop user id by default). Tenant id: consumer repo only. |
+| - | sync.notion_taskboard_props | `""` | [impl] | sync | JSON overriding the target prop NAMES `{title,status,priority,weight,owner,notes}` (defaults Task/Status/Priority/Weight/Owner/Notes). |
+| - | sync.notion_taskboard_types | `""` | [impl] | sync | JSON overriding the target prop TYPES `{status,priority,weight,owner}` (defaults status/select/number/people). |
+| - | sync.notion_taskboard_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to be pushed to the Task Board. |
+| - | sync.notion_taskboard_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags is never pushed to the Task Board. |
 
 ### session (incl. session-intel / skill-curator, prefix `SKILL_CURATOR_*`)
 

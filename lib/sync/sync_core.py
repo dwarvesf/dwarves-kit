@@ -18,7 +18,13 @@ INBOX_HEADING = "### Reminders inbox"
 CLOSED_HEADING = "## Recently closed"
 TABLE_HEADER = "| ID | Item | Notes & source | Status |"
 TABLE_RULE = "|---|---|---|---|"
-TITLE_RE = re.compile(r"^(ID-\d+)\s*(?:[·:, -]\s*)?(.*)$")
+# Any repo-prefixed board id (ID-, DF-, BK-, ...); the documented kit
+# convention is `[A-Z]+-[0-9]+`. Generalized from the ID-only original so the
+# engine parses every adopted repo's board (SPEC-003 / ID-138: dfoundation
+# DF-NN rows). ID- boards still match, so existing behavior is unchanged.
+ID_TOKEN = r"[A-Z][A-Z0-9]*-\d+"
+ROW_ID_RE = re.compile(r"^\| (" + ID_TOKEN + r") \|")
+TITLE_RE = re.compile(r"^(" + ID_TOKEN + r")\s*(?:[·:, -]\s*)?(.*)$")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
 # --- board parsing -----------------------------------------------------------
@@ -44,13 +50,13 @@ def split_row(line: str):
 def parse_board(text: str) -> dict[str, Row]:
     rows: dict[str, Row] = {}
     for i, line in enumerate(text.splitlines()):
-        if not line.startswith("| ID-"):
+        if not ROW_ID_RE.match(line):
             continue
         cells = split_row(line)
         if not cells:
             continue
         rid, item, notes, status = cells
-        if not re.fullmatch(r"ID-\d+", rid):
+        if not re.fullmatch(ID_TOKEN, rid):
             continue
         kw = status.split()[0].lower() if status.split() else ""
         if rid in rows:
@@ -280,6 +286,31 @@ def plan_sync(rows: dict, items: list, state: dict,
         kw = it.get("status") if it.get("status") in ACTIVE_STATUSES else "queued"
         p.board_add.append((it["rid"], it["title"].strip(),
                             (it.get("body") or "").strip(), kw))
+    return p
+
+
+def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
+                     filt: dict | None = None) -> Plan:
+    """One-way, insert-only plan for a write-only sink (SPEC-003).
+
+    Emits a `src_create` for every in-scope board row NOT already recorded in
+    the local sync-state map, skipping rows whose status is in `skip_kw`
+    (default `{"dropped"}`). Never updates, tombstones, or touches the board:
+    the map is the identity index and a row is pushed exactly once, so a team
+    member's later edits on the sink are never overwritten.
+    """
+    p = Plan()
+    skip = skip_kw if skip_kw is not None else {"dropped"}
+    known = set(state.get("map", {}))
+    for bid, row in rows.items():
+        if bid in known:
+            continue
+        if row.status_kw in skip:
+            continue
+        if not in_scope(row, filt):
+            continue
+        p.src_create.append((bid, title_for(bid, row.item), row.notes,
+                             row.status_kw))
     return p
 
 
