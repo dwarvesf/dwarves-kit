@@ -41,6 +41,16 @@ report.
 `lib/README.md`. Comment references in the moved files + `board.sh` + `test-tier4-close.sh`
 updated for accuracy. Historical records left untouched.
 
+## Review disposition (review-team + fable advisor)
+
+| Finding | Lens | Applied? |
+|---|---|---|
+| `cmd_report`'s re-anchored telemetry `source` had zero red-on-wrong coverage (the mega-report tests call python directly; the one `bin/mega report` call passed no slug) | test-coverage (HIGH) | Applied, added an end-to-end `bin/mega report demo` launcher assertion in `test-mega-report.sh`; verified load-bearing (broken anchor -> 15/17, restored -> 17/17) |
+| `docs/consumer-contract.md:64` `bin/mega -> lib/mega.sh` stale post-move (a live onboarding ref, not historical) | architecture (LOW) | Applied -> `lib/mega/mega.sh` |
+| `mega.sh` header still framed the file as a deliberate orphan awaiting promotion; `mega-review.py:53` `_SELF_DIR` comment said "lib/ ... orphan file" | architecture (MEDIUM/LOW) + fable + security | Applied, both rewritten to describe the `lib/mega/` module |
+| Re-anchoring complete/correct; taxonomy right (mega is a distinct `mega` module, not `goal`); orphan deferral correct (not over-reading ADR-0034) | architecture 8/10, fable, security 10/10 | Confirmed, no change |
+| `onboard-detect.sh` absent from `lib/README.md` root-orphans row | fable/architecture | Pre-existing gap, reported for the orphan follow-up (not this branch's regression) |
+
 ## Acceptance criteria
 
 | # | Criterion | Result |
