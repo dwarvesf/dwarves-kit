@@ -93,6 +93,15 @@ traceability of §1, the falsifiability of §3, and the recorded immutable runs 
 `/kit:test-plan` picks the dialect from the task's type; the registry
 (`docs/verification/task-types.md`) maps type -> artifact -> owning skill.
 
+**AI-in-the-loop tiering is orthogonal to the type-keyed dialect above.** When the work under
+test is AI-in-the-loop (an agent, a bot, an LLM feature), `/kit:test-plan` Step 1c adds a cost
+`Tier` (`mechanical` / `smoke` / `behavioral`) to the matrix regardless of which dialect row
+above applies, most commonly `spec-feature`'s BDD matrix. It never replaces the dialect's
+category matrix or artifact shape; it augments it with a column plus the floor rule ("config
+asserts lie; a behavior claim keeps a real-model probe") and the two hard don'ts (never
+downgrade a behavior/security claim below `behavioral`; never let a `smoke` run gate a ship).
+See `commands/test-plan.md` Step 1c and `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md`.
+
 ## 6. Sign-off checklist (the gate before you call it done)
 
 A work-item's tests are done only when every line is true:

@@ -711,6 +711,126 @@ else
   FAIL=$((FAIL + 1))
 fi
 
+# SPEC-201: AI-in-the-loop cost-tier taxonomy in /kit:test-plan (Step 1c) + the
+# test-plan-review-team's 6th lens (Tiering & floor). DECISION-BRIEF-behavioral-test-tiering.md
+# SG-1/SG-2. Pin the 5 doctrine facts test-plan.md must carry (positive), the 6th-lens wiring
+# in test-plan-review-team.md, and a negative control: the exact old "5 lenses" framing that
+# would silently drop lens 6 must not linger anywhere the lens count is stated.
+TP_TIER_CMD="$KIT_DIR/commands/test-plan.md"
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Step 1c' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF '`mechanical`' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF '`smoke`' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF '`behavioral`' "$TP_TIER_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md Step 1c names all three cost tiers (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md missing Step 1c or one of the three tier names"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'config asserts lie; a behavior claim keeps a real-model probe' "$TP_TIER_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md states the floor rule verbatim (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md lost the verbatim floor rule"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Never delete or downgrade a behavior/security claim below the `behavioral` tier to cut cost' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF 'Never let a `smoke`-tier run gate a ship' "$TP_TIER_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md states both hard don'ts verbatim (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md lost one or both verbatim hard don'ts"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'smoke-eligible' "$TP_TIER_CMD" 2>/dev/null && grep -qF 'retry-eligible' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF 'allowlist' "$TP_TIER_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md states the smoke/retry doctrine (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md lost the smoke/retry doctrine"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Tier | Smoke-eligible | Retry-eligible' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF 'AI-in-the-loop doctrine' "$TP_TIER_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md Step 3 template carries the tier columns + doctrine block (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md Step 3 template dropped the tier columns or doctrine block"
+  FAIL=$((FAIL + 1))
+fi
+
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Tiering & floor' "$TPRT_CMD" 2>/dev/null \
+   && grep -qF 'not an AI-in-the-loop plan' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md carries the Tiering & floor lens, N/A-safe (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan-review-team.md missing the Tiering & floor lens"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF '6 lenses' "$TPRT_CMD" 2>/dev/null && grep -qF 'Dispatch 6 lenses' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md lens count is 6 in the title and Step 2 heading (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan-review-team.md lens count not updated to 6 everywhere"
+  FAIL=$((FAIL + 1))
+fi
+# Negative control: the stale "5 subagents"/"5 angles" framing (pre-SPEC-201) would silently
+# cap the dispatch at 5 and drop lens 6. This must NOT appear anymore.
+TOTAL=$((TOTAL + 1))
+if grep -qE '5 (subagents|angles)' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${RED}FAIL${NC} [NC] test-plan-review-team.md still says '5 subagents'/'5 angles' (lens 6 would be silently dropped)"
+  FAIL=$((FAIL + 1))
+else
+  echo -e "  ${GREEN}PASS${NC} [NC] test-plan-review-team.md dropped the stale 5-lens framing (SPEC-201)"
+  PASS=$((PASS + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if grep -qF 'Tiering & floor: [X]/10, or N/A' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md scores template includes the 6th (N/A-able) score line (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan-review-team.md scores template missing the 6th score line"
+  FAIL=$((FAIL + 1))
+fi
+# The pre-registered negative control from the brief: a plan that puts a boundary claim in
+# the config (mechanical) tier must be a pattern the lens explicitly names as CRITICAL.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'config tier' "$TPRT_CMD" 2>/dev/null && grep -qE 'boundary.{0,40}mechanical|mechanical.{0,40}boundary' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} [NC] test-plan-review-team.md lens 6 names the boundary-claim-in-config-tier negative control (SPEC-201, brief exit criterion)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} [NC] test-plan-review-team.md lens 6 does not name the boundary-in-config-tier negative control"
+  FAIL=$((FAIL + 1))
+fi
+
+# SPEC-201 AC4: the §5b dialect table (SPEC-056/057) stays byte-identical -- same 12 types,
+# same row count -- and gains a cross-reference paragraph AFTER the table, not inside it.
+TDS_CMD="$KIT_DIR/docs/verification/test-design-standard.md"
+TOTAL=$((TOTAL + 1))
+DIALECT_ROWS_201=$(awk '/^## 5b/,/^## 6/' "$TDS_CMD" | grep -cE '^\| (incident|learning|planning|operate|eval|research|review|reconcile|doc|migration|data-tool|spec-feature) \|')
+if [ "$DIALECT_ROWS_201" = "12" ]; then
+  echo -e "  ${GREEN}PASS${NC} test-design-standard.md §5b dialect table still has all 12 rows, untouched (SPEC-201 AC4)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-design-standard.md §5b dialect table row count changed (got $DIALECT_ROWS_201, want 12)"
+  FAIL=$((FAIL + 1))
+fi
+TOTAL=$((TOTAL + 1))
+if awk '/^## 5b/,/^## 6/' "$TDS_CMD" | grep -qF 'Step 1c'; then
+  echo -e "  ${GREEN}PASS${NC} test-design-standard.md §5b cross-references Step 1c (SPEC-201 AC4)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-design-standard.md §5b missing the Step 1c cross-reference"
+  FAIL=$((FAIL + 1))
+fi
+
 # SPEC-020: the ui-design loop. Assert the command exists, delegates generation
 # to frontend-design (the kit ships no renderer), critiques via visual-team, and
 # carries the `## UI design` brief heading. Downstream-facing; no behavior harness.
