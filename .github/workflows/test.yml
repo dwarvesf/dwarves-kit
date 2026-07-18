@@ -113,6 +113,9 @@ jobs:
       - name: Run gate-outcome emit tests (SPEC-129)
         run: bash tests/test-gate-outcome.sh
 
+      - name: Run redteam-gate tests (rung-4 cost checkpoint)
+        run: bash tests/test-redteam-gate.sh
+
       - name: Run outcome-emit-sweep no-orphan check (SPEC-193, harness-loop sub-goal 02)
         run: bash tests/test-outcome-emit-sweep.sh
 

@@ -44,7 +44,7 @@ them are `k=v`; this table states plainly which are and which aren't:
 | `START-AMEND` | same as `START` | yes | `gate-ledger.sh start --amend` |
 | `GATE` | `<phase> \| <ran\|skipped\|override> \| <reason>` | **no**, 3 more pipe-delimited positional fields, not k=v | `gate-ledger.sh record` / `override` |
 | `ACTION` | freeform oneline text | **no**, opaque text | `gate-ledger.sh action` |
-| `TOKENS` | `in=<N> out=<N> cache_read=<N> cache_create=<N> [cost=<N>]` | yes, space-separated | `gate-ledger.sh tokens` |
+| `TOKENS` | `in=<N> out=<N> cache_read=<N> cache_create=<N> [cost=<N>] [phase=<P>]` | yes, space-separated | `gate-ledger.sh tokens` |
 | `DEBT` | `significance=<low\|high> worthiness=<low\|high> verdict=<tap\|wave\|not-significant> [response=<engage\|defer\|wave>] [reason=<text>]` | yes, space-separated (see Edge Cases) | `gate-ledger.sh debt` / `debt-response` |
 
 **Parse rule:** split each line on ` | ` for the first two delimiters
@@ -142,4 +142,10 @@ real `find`/`grep` sweep produced.
 4. **`TOKENS`' `cost=` value is not strictly validated** (`gate-ledger.sh` sanitizes to
    `[0-9.]` only, so `1.2.3.4` is accepted, per the `advrun.log` sample above), display-only per the producer's own comment, never summed; a strict numeric parse of
    `cost=` will fail on malformed-but-accepted values and must degrade gracefully
-   (treat as opaque string), not throw.
+   (treat as opaque string), not throw. **Exception:** a `TOKENS` line carrying `phase=<P>`
+   (rung-4 cost checkpoint, `lib/gate/redteam-gate.sh`) IS summed, by `kit_gates`' own
+   `cost` column (`lib/stats/src/stats/adapters.py::read_kit_gates`), which FIFO-pairs it
+   onto the matching `GATE` row the same way an `OUTCOME` bracket pairs onto `caught`/
+   `start_ts`/`end_ts`; a malformed `cost=` on a phase-scoped line parses to `NULL` there
+   (never a fabricated `0.0`), so it degrades gracefully in the SAME direction this edge
+   case already documents, just structurally rather than as an opaque string.
