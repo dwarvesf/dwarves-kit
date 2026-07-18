@@ -73,6 +73,45 @@ Result (verbatim, from a live run):
 ```bash
 bash tests/test-redteam-gate.sh
 ```
+Command: `bash tests/test-redteam-gate.sh`
+Exit: 0
+Result: `=== 31/31 passed, 0 failed ===`
+
+## Rollback (negative control: revert -> RED -> restore)
+
+Removed the "cost is required" guard in `lib/gate/redteam-gate.sh` `cmd_round` (the exact
+lines NC1 below protects), re-ran the suite, confirmed RED, then restored via
+`git checkout -- lib/gate/redteam-gate.sh` and confirmed GREEN again, byte-identical to the
+committed file (`git diff lib/gate/redteam-gate.sh` empty).
+
+```bash
+# remove the cost=<dollars> || { ...; return 64; } block from cmd_round
+bash tests/test-redteam-gate.sh
+```
+Command: `bash tests/test-redteam-gate.sh` (with the guard removed)
+Exit: 1
+Result (verbatim, RED):
+```
+FAIL AC6 missing cost= rejected (rc=0)
+FAIL AC6 no GATE row written on a failed round
+FAIL AC6 no TOKENS row written on a failed round
+FAIL AC6 no OUTCOME end written on a failed round
+FAIL AC6 exactly the one start line remains (got 4 lines)
+
+=== 26/31 passed, 5 failed ===
+```
+This is the exact regression NC1 exists to catch: with the guard gone, a cost-less round no
+longer errors, and instead silently writes a real `GATE`/`TOKENS`(`cost=` empty)/`OUTCOME`
+triple -- precisely the "misleadingly cheap zero-cost row" scenario the design note warns
+against.
+
+```bash
+git checkout -- lib/gate/redteam-gate.sh
+git diff --stat lib/gate/redteam-gate.sh   # empty: byte-identical restore
+bash tests/test-redteam-gate.sh
+```
+Command: `bash tests/test-redteam-gate.sh` (restored)
+Exit: 0
 Result: `=== 31/31 passed, 0 failed ===`
 
 ## Run 2 (NC1, load-bearing): a round with no cost= writes nothing
@@ -104,6 +143,8 @@ uv run stats mega-durations --json
 bash tests/test-kit-gates-cost.sh
 ```
 
+Command: `bash tests/test-kit-gates-cost.sh`
+Exit: 0
 Result: `== 12 passed, 0 failed ==`. Key rows confirmed (verbatim from `show kit_gates --json`):
 ```json
 { "rid": "rt-a", "gate": "redteam", "reason": "round=1 verdict=findings 2 findings, fixed",
@@ -134,6 +175,8 @@ and those rounds would join the checkpoint's average as fabricated free rounds.
 ```bash
 bash tests/test-meta.sh
 ```
+Command: `bash tests/test-meta.sh`
+Exit: 0
 Result: `Passed: 698 / 698` (pre-existing suite, run after every change above; every
 pre-existing `lib/stats/tests/*.sh` and root `tests/test-gate-outcome.sh`,
 `tests/test-quiz-gate.sh`, `tests/test-gate-vocab-recording.sh`,
