@@ -61,7 +61,7 @@ The adopt-injected `CLAUDE.md` block already does this for you:
 | `bin/gate` | `lib/gate/gate.sh` |
 | `bin/goal` | `lib/goal/goal.sh` |
 | `bin/learn` | `lib/learn/learn.sh` (`learn debt <list\|collect\|mark-paid>`; `propose`/`drain` refuse until SPEC-195/196) |
-| `bin/mega` | `lib/mega.sh` |
+| `bin/mega` | `lib/mega/mega.sh` |
 | `bin/queue` | `lib/queue/queue.sh` |
 | `bin/session` | `lib/session/session.sh` (`session <intel\|observe\|recall\|report\|semantic>`, ex the five `bin/session-*`) |
 | `bin/spec` | `lib/spec/spec.sh` |
