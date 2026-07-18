@@ -78,24 +78,27 @@ should catch a plan that mis-tiers a claim.
   byte-identical (the SPEC-056/057 meta-test parity check still passes) and gains a
   cross-reference paragraph pointing at the new Step 1c, placed after the table.
 - AC5: `tests/test-meta.sh` pins the new content added under AC1-AC4 with a positive assertion
-  per fact and at least two negative controls: the stale "5 subagents"/"5 angles" framing must
-  not linger (would silently drop lens 6), and the brief's pre-registered negative control (a
-  plan that puts a boundary claim in the config tier must match the lens's CRITICAL trigger
-  language) is named explicitly in the lens text.
+  per fact and at least three negative controls: the stale "5 subagents"/"5 angles"/"5
+  test-design lenses" framing must not linger anywhere the lens count is stated (would silently
+  drop lens 6); the brief's pre-registered negative control (a plan that puts a boundary claim
+  in the config tier must match the lens's CRITICAL trigger language) is named explicitly in the
+  lens text; and the pre-existing "each lens returns 2-5 findings" contract must not survive
+  unchanged (it would force a hallucinated finding on lens 6's N/A/clean path).
 
 ## Test plan
 
 | # | Case | Category | Covers (AC) | Expected | Proof |
 |---|------|----------|--------------|----------|-------|
-| 1 | Step 1c present with all 5 doctrine facts | happy-path | AC1 | grep finds tier names, floor rule, both don'ts, smoke/retry doctrine in test-plan.md | `tests/test-meta.sh` SPEC-201 block, assertions 1-4 |
-| 2 | Step 3 template carries the new columns + doctrine block | happy-path | AC2 | grep finds `Tier \| Smoke-eligible \| Retry-eligible` + `AI-in-the-loop doctrine` in the written-template block | `tests/test-meta.sh` SPEC-201 block, assertion 5 |
-| 3 | test-plan-review-team lens count is 6 everywhere it's stated | happy-path | AC3 | title description, Step 2 heading, and scores template all say 6 | `tests/test-meta.sh` SPEC-201 block, assertions 6-7, 9 |
-| 4 | 6th lens present, N/A-gated when no Tier column | happy-path | AC3 | grep finds "Tiering & floor" + "not an AI-in-the-loop plan" | `tests/test-meta.sh` SPEC-201 block, assertion 6 |
-| 5 | §5b dialect table untouched (12-row parity) | regression | AC4 | row count over the awk `## 5b`..`## 6` range is exactly 12 | `tests/test-meta.sh` SPEC-201 block, assertion 11 |
-| 6 | §5b gains the cross-reference paragraph | happy-path | AC4 | grep finds "Step 1c" inside the same awk range | `tests/test-meta.sh` SPEC-201 block, assertion 12 |
-| 7 | negative control: stale 5-lens framing does not linger | failure-injection | AC5 | `grep -qE '5 (subagents\|angles)'` on test-plan-review-team.md is FALSE | `tests/test-meta.sh` SPEC-201 block, assertion 8 (NC) |
-| 8 | negative control: brief's pre-registered boundary-in-config-tier case is named | failure-injection | AC5 | lens 6 text co-locates "config tier" with a boundary/mechanical pairing | `tests/test-meta.sh` SPEC-201 block, assertion 10 (NC) |
-| 9 | full suite still green after the change | regression | AC1-AC5 | no unrelated FAIL introduced | `bash tests/test-meta.sh` (710/710 confirmed) |
+| 1 | Step 1c present with all 5 doctrine facts, incl. never-smoke-eligible for security | happy-path | AC1 | grep finds tier names, floor rule, both don'ts, smoke/retry doctrine, never-smoke-eligible rule, detection signal + operative test, in test-plan.md | `tests/test-meta.sh` SPEC-201 block |
+| 2 | Step 3 template carries the new columns + doctrine block | happy-path | AC2 | grep finds `Tier \| Smoke-eligible \| Retry-eligible` + `AI-in-the-loop doctrine` in the written-template block | `tests/test-meta.sh` SPEC-201 block |
+| 3 | test-plan-review-team lens count is 6 everywhere it's stated, independently at each location | happy-path | AC3 | frontmatter description, Step 2 heading, and scores template each independently say 6 (not one vacuous check standing in for all three) | `tests/test-meta.sh` SPEC-201 block |
+| 4 | 6th lens present, N/A-gated when no Tier column, disambiguated from lens 4's ladder-smoke stage | happy-path | AC3 | grep finds "Tiering & floor" + "not an AI-in-the-loop plan" + "ladder smoke stage" | `tests/test-meta.sh` SPEC-201 block |
+| 5 | §5b dialect table untouched (12-row parity) | regression | AC4 | row count over the awk `## 5b`..`## 6` range is exactly 12 | `tests/test-meta.sh` SPEC-201 block |
+| 6 | §5b gains the cross-reference paragraph | happy-path | AC4 | grep finds "Step 1c" inside the same awk range | `tests/test-meta.sh` SPEC-201 block |
+| 7 | negative control: stale 5-lens framing does not linger anywhere (title, heading, or list) | failure-injection | AC5 | `grep -qE '5 (subagents\|angles\|test-design lenses)'` on test-plan-review-team.md is FALSE | `tests/test-meta.sh` SPEC-201 block (NC) |
+| 8 | negative control: brief's pre-registered boundary-in-config-tier case is named | failure-injection | AC5 | lens 6 text co-locates "config tier" with a boundary/mechanical pairing | `tests/test-meta.sh` SPEC-201 block (NC) |
+| 9 | negative control: forced 2-5 finding floor does not survive (would contradict lens 6 N/A) | failure-injection | AC5 | "0-5 findings" present, "2-5 findings" absent | `tests/test-meta.sh` SPEC-201 block (NC) |
+| 10 | full suite still green after the change | regression | AC1-AC5 | no unrelated FAIL introduced | `bash tests/test-meta.sh` (715/715 confirmed, 698 baseline + 17 SPEC-201 assertions) |
 
 ### Coverage notes
 - Categories skipped: none. Boundary/edge is realized as negative control 8 (case 8 above)
@@ -104,8 +107,12 @@ should catch a plan that mis-tiers a claim.
 
 ## Verification
 
-`bash tests/test-meta.sh` green, run from the repo root (698/698 before this change, 710/710
-after: 12 new SPEC-201 assertions, no regressions).
+`bash tests/test-meta.sh` green, run from the repo root (698/698 before this change, 715/715
+after: 17 new SPEC-201 assertions including 3 negative controls, no regressions). Verified by
+an independent kit:code-reviewer (test-coverage lens) and kit:advisor (critique mode, Fable)
+pass; both surfaced findings that are folded into this count (never-smoke-eligible for
+security/side-effect cases, a tighter AI-in-the-loop detection test, the 2-5-vs-0-5 findings
+contradiction, and the lens-4/lens-6 "smoke" term collision).
 
 ## Rollback
 

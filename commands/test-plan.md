@@ -30,11 +30,14 @@ changes the matrix's shape, not the heading, the AC-traceability, or the proof-p
 ### Step 1c: AI-in-the-loop tiering (when applicable)
 
 This step is ADDITIVE to Step 1b's dialect, independent of which of the 12 registry types the
-spec falls under. It applies whenever the spec's objective or acceptance criteria describe
-**AI-in-the-loop software**: an agent, a bot, an LLM feature, a prompt, a conversational or
-natural-language response, or any claim shaped like "the model does X". If none of the spec's
-claims are about live-model behavior, skip this step and enumerate Step 2 as usual, no `Tier`
-column, no doctrine block.
+spec falls under. **The operative test:** Step 1c applies iff at least one acceptance criterion
+can only be verified by observing a live model's output (a natural-language response, a
+generated artifact judged for correctness, a conversational turn). Common shapes this takes:
+the spec is about an agent, a bot, an LLM feature, a prompt, or any claim shaped like "the model
+does X" -- but these are examples of the test, not the test itself; do not pattern-match on the
+nouns alone (a spec that merely mentions "prompt" or "agent" in passing, with every AC checkable
+without a live model, does NOT trigger Step 1c). If no AC needs a live-model observation, skip
+this step and enumerate Step 2 as usual, no `Tier` column, no doctrine block.
 
 When it applies, every case in Step 2's matrix gets a **cost tier** plus a one-line honesty
 reason (why this tier, not a higher one):
@@ -55,11 +58,7 @@ keeps a real-model probe."
 - Never delete or downgrade a behavior/security claim below the `behavioral` tier to cut cost.
 - Never let a `smoke`-tier run gate a ship.
 
-**Smoke/retry doctrine:** a case is `smoke-eligible` only when it exists to iterate on grading
-rules, never as a substitute for the `behavioral` proof. A case is `retry-eligible` only for a
-benign-phrasing miss on an explicit allowlist; the default is NOT eligible, and a security or
-side-effect verdict is never retry-eligible regardless of allowlist. On failure, name the
-failed case IDs (a summary that survives a piped run), not just a pass/fail count.
+**Smoke/retry doctrine:** a case is `smoke-eligible` only when it exists to iterate on grading rules, never as a substitute for the `behavioral` proof. A security or side-effect case is NEVER smoke-eligible, only ever `behavioral`. A case is `retry-eligible` only for a benign-phrasing miss on an explicit allowlist; the default is NOT eligible, and a security or side-effect verdict is never retry-eligible regardless of allowlist. On failure, name the failed case IDs (a summary that survives a piped run), not just a pass/fail count.
 
 ### Step 2: Enumerate the coverage matrix
 
@@ -109,14 +108,15 @@ the coverage notes, inside the same `## Test plan` section:
 ```markdown
 | # | Case | Category | Covers (AC) | Expected | Proof | Tier | Smoke-eligible | Retry-eligible |
 |---|------|----------|-------------|----------|-------|------|----------------|-----------------|
-| 1 | [case] | happy-path | AC-1 | [expected result] | [command/artifact, or TBD] | mechanical | no | no |
-| 2 | [case] | boundary/edge | AC-1 | [expected result] | [command/artifact, or TBD] | behavioral | no | no |
-| ... | | | | | | [why this tier, one line] | | |
+| 1 | [case] | happy-path | AC-1 | [expected result] | [command/artifact, or TBD] | mechanical -- [why honest, one line] | no | no |
+| 2 | [case] | boundary/edge | AC-1 | [expected result] | [command/artifact, or TBD] | behavioral -- [why honest, one line] | no | no |
+| ... | | | | | | [tier] -- [why honest, one line] | | |
 
 ### AI-in-the-loop doctrine
 - Floor rule: config asserts lie; a behavior claim keeps a real-model probe.
 - Never delete or downgrade a behavior/security claim below the `behavioral` tier to cut cost.
 - Never let a `smoke`-tier run gate a ship.
+- A security or side-effect case is never smoke-eligible, only ever `behavioral`.
 - Smoke tier iterates grading rules only, never a gate. Retry is allowlisted benign-phrasing
   misses only; security/side-effect verdicts are never retry-eligible.
 ```

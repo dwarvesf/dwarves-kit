@@ -763,6 +763,28 @@ else
   echo -e "  ${RED}FAIL${NC} test-plan.md Step 3 template dropped the tier columns or doctrine block"
   FAIL=$((FAIL + 1))
 fi
+# AC1(a) (review finding): the detection-signal sentence itself, not just the tier names it
+# leads into, must survive a regression.
+TOTAL=$((TOTAL + 1))
+if grep -qF '### Step 1c: AI-in-the-loop tiering' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF 'operative test' "$TP_TIER_CMD" 2>/dev/null \
+   && grep -qF 'observing a live model' "$TP_TIER_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md Step 1c states the AI-in-the-loop detection signal + operative test (SPEC-201 AC1a)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md lost the AI-in-the-loop detection-signal wording"
+  FAIL=$((FAIL + 1))
+fi
+# Review finding: a security/side-effect case must never be smoke-eligible (the brief's exit
+# criterion says "never-retry, never-smoke", not just never-retry).
+TOTAL=$((TOTAL + 1))
+if grep -qF 'security or side-effect case is NEVER smoke-eligible' "$TP_TIER_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan.md states security/side-effect cases are never smoke-eligible (SPEC-201, brief exit criterion c)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan.md lost the never-smoke-eligible rule for security/side-effect cases"
+  FAIL=$((FAIL + 1))
+fi
 
 TOTAL=$((TOTAL + 1))
 if grep -qF 'Tiering & floor' "$TPRT_CMD" 2>/dev/null \
@@ -781,11 +803,23 @@ else
   echo -e "  ${RED}FAIL${NC} test-plan-review-team.md lens count not updated to 6 everywhere"
   FAIL=$((FAIL + 1))
 fi
-# Negative control: the stale "5 subagents"/"5 angles" framing (pre-SPEC-201) would silently
-# cap the dispatch at 5 and drop lens 6. This must NOT appear anymore.
+# AC3 (review finding): the frontmatter `description:` line is a distinct location from the
+# Step 2 heading checked above (a regression could flip one and miss the other). Scope the
+# check to the description line itself so it is not vacuously satisfied by Step 2's own text.
 TOTAL=$((TOTAL + 1))
-if grep -qE '5 (subagents|angles)' "$TPRT_CMD" 2>/dev/null; then
-  echo -e "  ${RED}FAIL${NC} [NC] test-plan-review-team.md still says '5 subagents'/'5 angles' (lens 6 would be silently dropped)"
+TPRT_DESC_LINE=$(grep -m1 '^description:' "$TPRT_CMD" 2>/dev/null || true)
+if printf '%s' "$TPRT_DESC_LINE" | grep -qF '6 test-design lenses'; then
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md frontmatter description says '6 test-design lenses' (SPEC-201 AC3)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan-review-team.md frontmatter description lost '6 test-design lenses'"
+  FAIL=$((FAIL + 1))
+fi
+# Negative control: the stale "5 subagents"/"5 angles"/"5 test-design lenses" framing
+# (pre-SPEC-201) would silently cap the dispatch at 5 and drop lens 6. Must NOT appear anymore.
+TOTAL=$((TOTAL + 1))
+if grep -qE '5 (subagents|angles|test-design lenses)' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${RED}FAIL${NC} [NC] test-plan-review-team.md still says '5 subagents'/'5 angles'/'5 test-design lenses' (lens 6 would be silently dropped)"
   FAIL=$((FAIL + 1))
 else
   echo -e "  ${GREEN}PASS${NC} [NC] test-plan-review-team.md dropped the stale 5-lens framing (SPEC-201)"
@@ -807,6 +841,26 @@ if grep -qF 'config tier' "$TPRT_CMD" 2>/dev/null && grep -qE 'boundary.{0,40}me
   PASS=$((PASS + 1))
 else
   echo -e "  ${RED}FAIL${NC} [NC] test-plan-review-team.md lens 6 does not name the boundary-in-config-tier negative control"
+  FAIL=$((FAIL + 1))
+fi
+# Review finding: "each lens returns 2-5 findings" contradicted lens 6's N/A (0 findings,
+# no score) path -- a subagent told a hard floor of 2 would hallucinate on a clean/N/A plan.
+TOTAL=$((TOTAL + 1))
+if grep -qF '0-5 findings' "$TPRT_CMD" 2>/dev/null && ! grep -qF '2-5 findings' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} [NC] test-plan-review-team.md findings range allows 0, stale '2-5' gone (no forced-finding hallucination risk on N/A/clean, SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} [NC] test-plan-review-team.md still forces a 2-5 finding floor, contradicting lens 6's N/A path"
+  FAIL=$((FAIL + 1))
+fi
+# Review finding: lens 4's ladder "smoke" stage and lens 6's `smoke` cost tier are different
+# concepts sharing a word in the same dispatch prompt; the disambiguation must be present.
+TOTAL=$((TOTAL + 1))
+if grep -qF 'ladder-smoke stage' "$TPRT_CMD" 2>/dev/null || grep -qF 'ladder smoke stage' "$TPRT_CMD" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} test-plan-review-team.md disambiguates lens 6's smoke tier from lens 4's ladder smoke stage (SPEC-201)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} test-plan-review-team.md missing the smoke-tier vs ladder-smoke-stage disambiguation"
   FAIL=$((FAIL + 1))
 fi
 
