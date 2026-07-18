@@ -277,6 +277,15 @@ def test_read_snapshot_skips_malformed_lines():
     assert set(snap) == {"repo:ID-9"}
 
 
+@pytest.mark.parametrize("bad", ["null", "42", "[1,2]", '"a string"', "true"])
+def test_read_snapshot_skips_valid_json_non_objects(bad):
+    # NC (crash guard): a valid-JSON scalar/array line must be skipped, not
+    # crash on `.get()` (the docstring's "not fatal" contract).
+    text = bad + "\n" + json.dumps({"origin": "repo:ID-9", "row_hash": "z"}) + "\n"
+    snap = read_snapshot(text)
+    assert set(snap) == {"repo:ID-9"}
+
+
 def test_read_snapshot_empty_is_empty():
     assert read_snapshot("") == {}
 
@@ -502,3 +511,16 @@ def test_cli_missing_registry_errors(tmp_path, capsys):
     rc = main(["plan", "--registry", str(tmp_path / "nope.txt")])
     assert rc == 1
     assert "no registry" in capsys.readouterr().err
+
+
+def test_cli_extract_emits_untrusted_banner(tmp_path, capsys):
+    # M2: raw board content on stdout carries an out-of-band untrusted warning.
+    reg = _fixture_repo(tmp_path)
+    main(["extract", "--registry", str(reg)])
+    assert "untrusted git board content" in capsys.readouterr().err
+
+
+def test_cli_plan_json_emits_untrusted_banner(tmp_path, capsys):
+    reg = _fixture_repo(tmp_path)
+    main(["plan", "--registry", str(reg), "--json"])
+    assert "untrusted git board content" in capsys.readouterr().err
