@@ -174,10 +174,13 @@ same-release sweep is the correct size, not a phased migration.
 | leg (container word) | **stage** | the everyday word every PM already uses for one step of a workflow |
 
 Per the Plain Words rule's renaming clause, the old names live as a parenthetical alias for one
-release: `lib/config/module-registry.md`'s stage column, README's "The five stages" section,
-`docs/data-flow.md` (prose + the module-map diagram), `docs/MANUAL.md`'s command index,
-`docs/kit-contract.md`, `commands/onboard.md`'s welcome tour, and the registry-lint assertions in
-`tests/test-meta.sh` all sweep to the new names in the same change (`_meta/BACKLOG.md` ID-292).
+release where a reader would otherwise be confused by a hard cutover: `lib/config/module-registry.md`'s
+stage column, README's "The five stages" section, and the touched per-module READMEs
+(`lib/sync`, `lib/learn`, `lib/gate`, `lib/cosmetic`, `lib/session/audit`). Everywhere else the
+rename is a clean sweep with no old-name residue -- `docs/data-flow.md`, `docs/MANUAL.md`'s
+command index, `docs/kit-contract.md`, `commands/onboard.md`'s welcome tour, and the
+registry-lint assertions in `tests/test-meta.sh` -- all move straight to the new names in the
+same change (`_meta/BACKLOG.md` ID-292).
 `prose_rag`'s leg assignment (flagged as a documented deviation in `lib/config/module-registry.md`)
 is unaffected by this amendment; it is a separate open question.
 

@@ -43,7 +43,8 @@ All notable changes to dwarves-kit are documented here.
   nature). Tests: `tests/test-sync-cron-install.sh` +
   `tests/test-sync-cron-launcher.sh`.
 - **`sync` module: two-way board↔apps sync (SPEC-001/SPEC-002 P1).** The ops-toolkit
-  backlog-sync engine graduates into the kit as registered module `sync` (leg Specify)
+  backlog-sync engine graduates into the kit as registered module `sync` (stage: Shape,
+  formerly leg Specify -- renamed by ID-292, see below)
   at `lib/sync/`: `board sync` mirrors an adopted repo's BACKLOG.md to Apple Reminders /
   Notion / Hermes kanban / Multica with per-app three-way merge (board wins; app
   deletions tombstone; inbox intake with `#inbox` quarantine). Config on the ADR-0034
@@ -57,8 +58,15 @@ All notable changes to dwarves-kit are documented here.
   paths). Proof: `lib/sync/docs/proof-of-done.md`.
 - **Plain words rule (CONTRIBUTING.md) + ranked jargon inventory**
   (`docs/research/2026-07-16-plain-words-inventory.md`); rename backlog: ID-291 (cheap
-  cluster), ID-292 (legs → Shape/Build/Watch/Check/Learn, needs an ADR-0034
-  amendment), ID-293 (big cluster, parked).
+  cluster), ID-292 (shipped below), ID-293 (big cluster, parked).
+- **The five legs renamed to Shape/Build/Watch/Check/Learn (ID-292).** `Specify`,
+  `Execute`, `Observe`, `Govern` become `Shape`, `Build`, `Watch`, `Check` (`Learn`
+  kept); the container word `leg` becomes `stage`. ADR-0034 amended per its own lock
+  (decision 3's as-decided table left unrewritten); `lib/config/module-registry.md`
+  carries the old names as a one-release parenthetical alias, README/architecture/
+  data-flow/MANUAL/kit-contract/onboard docs and the registry-lint assertions in
+  `tests/test-meta.sh` swept to the new vocabulary. Docs-first: no module or
+  code-identifier renames.
 - **Model-routing enforcement pinned + proven (SPEC-116).** Resolves `orchestrate-hardening`
   open-fork 3: the enforcement site is `lib/queue/orchestrate.sh` (`_route()` + the serial/wave delegate
   dispatch sites, which already existed under SPEC-087), not `lib/classify/route-suggest.sh` (a decompose-time

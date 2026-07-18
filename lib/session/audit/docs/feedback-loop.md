@@ -13,10 +13,10 @@ to it.
 
  Shape ──► Build ──► Watch                         session-audit run
  ▲                   │                             = the deep Watch pass:
-                    ▼                                dated report, owner tags,
-                    Check                            metric contracts
-                    │
- └────── Learn ◄────┘                              session-audit triage
+ │                   ▼                               dated report, owner tags,
+ │                   Check                           metric contracts
+ │                   │
+ └────── Learn ◄─────┘                              session-audit triage
          (propose gate)                              = a Learn-stage proposer:
                                                      report footer -> kanban
                                                      proposal rows, human accepts
