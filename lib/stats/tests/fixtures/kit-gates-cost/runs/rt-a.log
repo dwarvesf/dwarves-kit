@@ -1,0 +1,10 @@
+2026-07-18T09:00:00Z | START | lane=full classified=full type=spec-feature ctype=spec-feature repo=fixrepo
+2026-07-18T09:00:01Z | GATE | spec | ran | drafted the spec
+2026-07-18T09:00:02Z | OUTCOME | redteam | start | at=1000
+2026-07-18T09:00:03Z | TOKENS | in=1000 out=200 cache_read=0 cache_create=0 cost=0.42 phase=redteam
+2026-07-18T09:00:03Z | GATE | redteam | ran | round=1 verdict=findings 2 findings, fixed
+2026-07-18T09:00:03Z | OUTCOME | redteam | end | at=1030 caught=true dur_s=30
+2026-07-18T09:00:04Z | OUTCOME | redteam | start | at=1030
+2026-07-18T09:00:05Z | TOKENS | in=800 out=150 cache_read=0 cache_create=0 cost=0.31 phase=redteam
+2026-07-18T09:00:05Z | GATE | redteam | ran | round=2 verdict=secure
+2026-07-18T09:00:05Z | OUTCOME | redteam | end | at=1050 caught=false dur_s=20

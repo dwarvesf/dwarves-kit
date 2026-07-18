@@ -63,8 +63,15 @@ LEARNED_SCHEMA: list[tuple[str, str]] = [
 
 # One row per `| GATE |` kit run-ledger line (SPEC-131). `caught`/`start_ts`/`end_ts` come
 # from a SEPARATE, additive `| OUTCOME |` start/end bracket (kit's own SPEC-129), paired by
-# phase name; NULL when no bracket exists (true for 100% of the real corpus as of writing --
-# see adapters.py `read_kit_gates` docstring).
+# phase name; NULL when no bracket exists for that gate (see adapters.py `read_kit_gates`
+# docstring for the pairing mechanics). `cost` is the same pairing extended to a
+# phase-scoped `| TOKENS |` line (`phase=<gate>`, the rung-4 cost-checkpoint gap-close):
+# NULL for every gate whose caller never passed `phase=` to `gate-ledger.sh tokens`, which
+# today is every gate except `redteam` (lib/gate/redteam-gate.sh). DOUBLE (not VARCHAR, unlike
+# the timestamp columns) because the rung-4 cost checkpoint's whole point is arithmetic over
+# it (sum/avg per rid, as a share of the mega's total cost) -- an unparseable TOKENS cost=
+# value lands as NULL, never a fabricated 0, so a malformed round is excluded from the
+# average rather than silently deflating it.
 KIT_GATES_SCHEMA: list[tuple[str, str]] = [
     ("rid", "VARCHAR"),
     ("gate", "VARCHAR"),
@@ -73,6 +80,7 @@ KIT_GATES_SCHEMA: list[tuple[str, str]] = [
     ("reason", "VARCHAR"),
     ("start_ts", "VARCHAR"),
     ("end_ts", "VARCHAR"),
+    ("cost", "DOUBLE"),
 ]
 
 # The tool's FIRST git-sourced table (SPEC-132). One row per (commit, file-touched) pair

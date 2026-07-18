@@ -200,11 +200,19 @@ action() {
 # tokens: record a run's token usage as an ADDITIVE marker (SPEC-110). Emits a `| TOKENS |` line
 # that check()/override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a
 # token line can never fake a gate. Values are sanitized to non-negative integers.
-# Usage: tokens <rid> in=N out=N cache_read=N cache_create=N [cost=N]
+#
+# `phase=` (rung-4 redteam cost checkpoint) is an OPTIONAL, purely additive key: when given, the
+# TOKENS line is scoped to one gate phase (e.g. `phase=redteam`) instead of the whole rid. The
+# `kit_gates` reader (lib/stats read_kit_gates, dwarves-kit lib/stats) pairs a phase-scoped TOKENS
+# line to its GATE row the SAME way it already pairs an `| OUTCOME |` bracket: FIFO per (rid,
+# phase), so a `cost=` value lands on the matching gate row instead of only the rid-wide total
+# lane-telemetry's `_token_agg` already reads. Omitting `phase=` reproduces the exact pre-existing
+# line shape (no behavior change for any existing caller).
+# Usage: tokens <rid> in=N out=N cache_read=N cache_create=N [cost=N] [phase=P]
 tokens() {
-  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: tokens <rid> in=N out=N cache_read=N cache_create=N [cost=N]" >&2; return 64; }
+  local rid="${1:-}"; shift 2>/dev/null || { echo "usage: tokens <rid> in=N out=N cache_read=N cache_create=N [cost=N] [phase=P]" >&2; return 64; }
   [ -n "$rid" ] || { echo "tokens requires a rid" >&2; return 64; }
-  local intok=0 outtok=0 cread=0 ccreate=0 cost="" kv k v
+  local intok=0 outtok=0 cread=0 ccreate=0 cost="" phase="" kv k v
   for kv in "$@"; do
     k="${kv%%=*}"; v="${kv#*=}"
     case "$k" in
@@ -213,11 +221,13 @@ tokens() {
       cache_read)   cread="$(printf '%s' "$v" | tr -cd '0-9')"; cread="${cread:-0}" ;;
       cache_create) ccreate="$(printf '%s' "$v" | tr -cd '0-9')"; ccreate="${ccreate:-0}" ;;
       cost)         cost="$(printf '%s' "$v" | tr -cd '0-9.')" ;;   # decimal dollars: digits + dot(s); display-only, never summed
+      phase)        phase="$(normalize_phase "$v")" ;;             # same normalizer the GATE/OUTCOME phase key uses
     esac
   done
   mkdir -p "$RUNS_DIR"
   local line; line="$(printf 'in=%s out=%s cache_read=%s cache_create=%s' "$intok" "$outtok" "$cread" "$ccreate")"
   [ -n "$cost" ] && line="$line cost=$cost"
+  [ -n "$phase" ] && line="$line phase=$phase"
   append_run_line "$rid" "$(printf '%s | TOKENS | %s' "$(now)" "$line")"
 }
 

@@ -1,0 +1,5 @@
+2026-07-18T12:00:00Z | START | lane=full classified=full type=spec-feature ctype=spec-feature repo=fixrepo
+2026-07-18T12:00:01Z | TOKENS | in=5000 out=1000 cache_read=200 cache_create=50 cost=1.23
+2026-07-18T12:00:02Z | OUTCOME | redteam | start | at=4000
+2026-07-18T12:00:03Z | GATE | redteam | ran | round=1 verdict=secure an unscoped rid-wide TOKENS line must never pair here
+2026-07-18T12:00:03Z | OUTCOME | redteam | end | at=4010 caught=false dur_s=10

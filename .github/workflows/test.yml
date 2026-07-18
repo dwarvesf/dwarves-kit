@@ -23,6 +23,12 @@ jobs:
       # Update via Dependabot or manually when checkout cuts a new release.
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11  # v4.1.1
 
+      # uv, scoped to lib/stats (the kit-gates-cost test needs `uv run stats`). Pinned to
+      # release SHA per the same supply-chain policy as checkout above. This does not adopt
+      # the rest of lib/stats/tests/*.sh into CI (a pre-existing, wider gap out of scope
+      # here); it only wires the one new test this PR added.
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+
       - name: Install jq (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y jq
@@ -112,6 +118,15 @@ jobs:
 
       - name: Run gate-outcome emit tests (SPEC-129)
         run: bash tests/test-gate-outcome.sh
+
+      - name: Run redteam-gate tests (rung-4 cost checkpoint)
+        run: bash tests/test-redteam-gate.sh
+
+      - name: Run kit_gates cost-column tests (rung-4 cost checkpoint, lib/stats side)
+        run: |
+          cd lib/stats
+          uv sync
+          bash tests/test-kit-gates-cost.sh
 
       - name: Run outcome-emit-sweep no-orphan check (SPEC-193, harness-loop sub-goal 02)
         run: bash tests/test-outcome-emit-sweep.sh

@@ -113,7 +113,7 @@ def _outcome_kv(field: str) -> dict[str, str]:
 
 def read_kit_gates(runs_dir: Path | None = None):
     """One row per `| GATE |` ledger line: `(rid, gate, outcome, caught, reason, start_ts,
-    end_ts)`. A direct line-level parse of the SAME run-ledger files lane-telemetry.sh's
+    end_ts, cost)`. A direct line-level parse of the SAME run-ledger files lane-telemetry.sh's
     `_rows()` aggregates (kit grammar: `TS | GATE | <phase> | ran|skipped|override |
     <reason>`); `_rows()` has no per-line output mode, so this is a NEW small parser, not a
     second copy of an existing one (see impl-notes / SPEC-131 DEC-001).
@@ -121,10 +121,15 @@ def read_kit_gates(runs_dir: Path | None = None):
     `caught` / `start_ts` / `end_ts` come from a SEPARATE, additive `| OUTCOME |` start/end
     bracket (kit's own SPEC-129: `TS | OUTCOME | <phase> | start | at=<epoch>` then `... | end
     | at=<epoch> caught=<bool> dur_s=<N>`), paired to a `GATE` row by matching phase name,
-    FIFO per (rid, gate) in file order (SPEC-131 DEC-002). As of this writing NO real run
-    ledger emits an OUTCOME bracket yet (the emitter lands via the kit-absorptions mega), so on
-    the real corpus every row's caught/start_ts/end_ts is NULL, by design, never dropped and
-    never mislabeled -- the FP negative control this table exists to pass.
+    FIFO per (rid, gate) in file order (SPEC-131 DEC-002).
+
+    `cost` is the SAME FIFO-by-phase pairing extended to a phase-scoped `| TOKENS |` line
+    (`TS | TOKENS | in=N out=N cache_read=N cache_create=N cost=<dollars> phase=<gate>`, the
+    rung-4 cost checkpoint's gap-close: `lib/gate/redteam-gate.sh` is the one caller that emits
+    a `phase=` token today). A bare `| TOKENS |` line with no `phase=` key (every pre-existing
+    caller) is invisible to this pairing -- it still feeds lane-telemetry's own rid-wide
+    `_token_agg`, untouched by this change. An unparseable `cost=` value (or a phase-tagged
+    TOKENS line with none at all) lands as `cost=None`, never a fabricated 0.0.
 
     Tolerant of: a GATE line with fewer than 4 pipe-fields (skipped, never raises); a GATE line
     missing its reason field (4 cols, not 5; reason -> None); a malformed `at=`/`caught=` token
@@ -144,6 +149,8 @@ def read_kit_gates(runs_dir: Path | None = None):
         pending_start: dict[str, str] = {}
         # phase -> FIFO queue of completed (start_ts, end_ts, caught) brackets.
         brackets: dict[str, list[tuple[str | None, str | None, bool | None]]] = {}
+        # phase -> FIFO queue of cost values, from `| TOKENS | ... phase=<phase>` lines only.
+        costs: dict[str, list[float | None]] = {}
         gate_lines: list[tuple[str, str, str | None]] = []  # (gate, outcome, reason)
         for line in text.splitlines():
             parts = line.split(" | ")
@@ -170,12 +177,28 @@ def read_kit_gates(runs_dir: Path | None = None):
                     end_ts = kv.get("at")
                     caught = {"true": True, "false": False}.get((kv.get("caught") or "").lower())
                     brackets.setdefault(phase, []).append((start_ts, end_ts, caught))
+            elif marker == "TOKENS":
+                if len(parts) < 3:
+                    continue
+                kv = _outcome_kv(parts[2])
+                phase = kv.get("phase")
+                if not phase:
+                    continue  # unscoped TOKENS line: not this table's concern (see docstring)
+                raw_cost = kv.get("cost")
+                cost: float | None
+                try:
+                    cost = float(raw_cost) if raw_cost else None
+                except ValueError:
+                    cost = None  # malformed cost=: excluded from averages, never a fake 0.0
+                costs.setdefault(phase, []).append(cost)
         for gate, outcome, reason in gate_lines:
             queue = brackets.get(gate)
             start_ts = end_ts = caught = None
             if queue:
                 start_ts, end_ts, caught = queue.pop(0)
-            rows.append([rid, gate, outcome, caught, reason, start_ts, end_ts])
+            cost_queue = costs.get(gate)
+            cost = cost_queue.pop(0) if cost_queue else None
+            rows.append([rid, gate, outcome, caught, reason, start_ts, end_ts, cost])
     return KIT_GATES_COLUMNS, rows
 
 

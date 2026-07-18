@@ -13,12 +13,13 @@
 #   gate.sh quiz <args...>            -> quiz-gate.sh (questions|tap|respond|route)
 #   gate.sh coverage-delta <args...>  -> coverage-delta.sh (check|class|classes)
 #   gate.sh mutation-smoke <args...>  -> mutation-smoke.sh (run|candidates|...)
+#   gate.sh redteam <args...>         -> redteam-gate.sh (start|round) -- rung-4 cost checkpoint
 #   gate.sh verif-counts               -> verif-counts.sh
 #   gate.sh -h|--help|help             -> this usage
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-usage() { sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local verb="${1:-}"; [ $# -gt 0 ] && shift || true
@@ -31,6 +32,7 @@ main() {
     quiz)            exec bash "$GATE_DIR/quiz-gate.sh" "$@" ;;
     coverage-delta)  exec bash "$GATE_DIR/coverage-delta.sh" "$@" ;;
     mutation-smoke)  exec bash "$GATE_DIR/mutation-smoke.sh" "$@" ;;
+    redteam)         exec bash "$GATE_DIR/redteam-gate.sh" "$@" ;;
     verif-counts)    exec bash "$GATE_DIR/verif-counts.sh" "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "gate: unknown verb '$verb' (try: gate --help)" >&2; exit 1 ;;
