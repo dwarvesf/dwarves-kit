@@ -586,6 +586,83 @@ assert_exit "handles empty file path" 0 $RC
 RC=$(run_hook auto-format.sh '{"tool_input":{"file_path":"/tmp/nonexistent-abc123.ts"}}')
 assert_exit "handles nonexistent file" 0 $RC
 
+# --- .rs formatter selection (ID-297): rustup-stable first, plain-rustfmt fallback.
+# Every branch of the hook's *.rs case is exercised by mocking rustup/rustfmt on a
+# controlled PATH and logging which formatter the hook invoked. bash absolute path
+# is captured up front because the controlled PATH excludes bash's own dir.
+BASH_BIN="$(command -v bash)"
+CAT_BIN="$(command -v cat)"; JQ_BIN="$(command -v jq)"
+# af_run <tmpbin> <rs-file> <log> [toolchain]: run auto-format.sh with PATH restricted
+# to <tmpbin> (which holds the mocked tools + symlinked cat/jq), capture exit code.
+# [toolchain], when set, is passed as RUSTFMT_TOOLCHAIN to exercise the override.
+af_run() {
+  local bin="$1" rs="$2" log="$3" tc="${4:-}" rc=0
+  printf '{"tool_input":{"file_path":"%s"}}' "$rs" \
+    | PATH="$bin" LOG="$log" RUSTFMT_TOOLCHAIN="$tc" "$BASH_BIN" "$KIT_DIR/hooks/auto-format.sh" >/dev/null 2>&1 || rc=$?
+  echo "$rc"
+}
+# af_bin <dir> [want_rustup] [rustup_rc] [want_rustfmt]: build a mock PATH dir.
+af_bin() {
+  local dir="$1" want_rustup="$2" rustup_rc="${3:-0}" want_rustfmt="$4"
+  mkdir -p "$dir"
+  ln -sf "$CAT_BIN" "$dir/cat"; ln -sf "$JQ_BIN" "$dir/jq"
+  if [ "$want_rustup" = "yes" ]; then
+    printf '#!/bin/sh\nprintf "rustup %%s\\n" "$*" >> "$LOG"\nexit %s\n' "$rustup_rc" > "$dir/rustup"
+    chmod +x "$dir/rustup"
+  fi
+  if [ "$want_rustfmt" = "yes" ]; then
+    printf '#!/bin/sh\nprintf "rustfmt %%s\\n" "$*" >> "$LOG"\nexit 0\n' > "$dir/rustfmt"
+    chmod +x "$dir/rustfmt"
+  fi
+}
+
+AF_TMP=$(mktemp -d "${TMPDIR:-/tmp}/dk-autofmt.XXXXXX")
+RS="$AF_TMP/lib.rs"; printf 'fn main(){}\n' > "$RS"
+
+# B1a: rustup present and its stable rustfmt succeeds -> hook uses rustup, not plain rustfmt.
+af_bin "$AF_TMP/b1a" yes 0 yes
+LOG="$AF_TMP/b1a.log"; : > "$LOG"
+RC=$(af_run "$AF_TMP/b1a" "$RS" "$LOG")
+assert_exit ".rs: rustup-stable path exits 0" 0 $RC
+assert_output_contains ".rs: rustup present -> 'rustup run stable rustfmt <file>'" "rustup run stable rustfmt $RS" "$(cat "$LOG")"
+assert_output_not_contains ".rs: rustup success does NOT also call plain rustfmt" "^rustfmt " "$(cat "$LOG")"
+
+# B1b: rustup present but the stable invocation FAILS -> SKIP formatting; must NOT
+# silently fall through to a PATH rustfmt (that would re-introduce the divergence
+# this fix closes). rustup is attempted, plain rustfmt is never called, exit 0.
+af_bin "$AF_TMP/b1b" yes 1 yes
+LOG="$AF_TMP/b1b.log"; : > "$LOG"
+RC=$(af_run "$AF_TMP/b1b" "$RS" "$LOG")
+assert_exit ".rs: rustup-fail path exits 0" 0 $RC
+assert_output_contains ".rs: rustup-stable attempted" "rustup run stable rustfmt $RS" "$(cat "$LOG")"
+assert_output_not_contains ".rs: rustup failure does NOT fall through to PATH rustfmt" "^rustfmt " "$(cat "$LOG")"
+
+# B1c: RUSTFMT_TOOLCHAIN override -> a consumer repo's pinned channel is honored,
+# not the hardcoded stable (so the hook respects per-project toolchain pins).
+af_bin "$AF_TMP/b1c" yes 0 yes
+LOG="$AF_TMP/b1c.log"; : > "$LOG"
+RC=$(af_run "$AF_TMP/b1c" "$RS" "$LOG" nightly)
+assert_exit ".rs: toolchain-override path exits 0" 0 $RC
+assert_output_contains ".rs: RUSTFMT_TOOLCHAIN honored -> 'rustup run nightly rustfmt'" "rustup run nightly rustfmt $RS" "$(cat "$LOG")"
+assert_output_not_contains ".rs: override does not fall back to stable" "run stable" "$(cat "$LOG")"
+
+# B2: rustup ABSENT, rustfmt present -> plain rustfmt, never rustup.
+af_bin "$AF_TMP/b2" no 0 yes
+LOG="$AF_TMP/b2.log"; : > "$LOG"
+RC=$(af_run "$AF_TMP/b2" "$RS" "$LOG")
+assert_exit ".rs: rustup-absent path exits 0" 0 $RC
+assert_output_contains ".rs: rustup absent -> plain rustfmt" "rustfmt $RS" "$(cat "$LOG")"
+assert_output_not_contains ".rs: rustup absent -> no rustup call" "rustup" "$(cat "$LOG")"
+
+# B3 (negative control): neither rustup nor rustfmt -> no formatter runs, still exit 0.
+af_bin "$AF_TMP/b3" no 0 no
+LOG="$AF_TMP/b3.log"; : > "$LOG"
+RC=$(af_run "$AF_TMP/b3" "$RS" "$LOG")
+assert_exit ".rs: neither tool present exits 0 (negative control)" 0 $RC
+assert_output_not_contains ".rs: negative control invokes no formatter" "." "$(cat "$LOG")"
+
+rm -rf "$AF_TMP"
+
 # ============================================================
 echo ""
 echo "=== context-readiness.sh ==="

@@ -62,7 +62,17 @@ case "$FILE" in
     fi
     ;;
   *.rs)
-    if command -v rustfmt >/dev/null 2>&1; then
+    # Format via the rustup toolchain, not whatever rustfmt is first on PATH: a
+    # brew rustfmt can shadow the rustup proxy and format to a different toolchain
+    # VERSION than CI, causing import-order / style churn. Default to `stable`
+    # (matches CI); a consumer repo that pins a different channel overrides with
+    # RUSTFMT_TOOLCHAIN. If the pinned toolchain is missing we SKIP formatting
+    # rather than silently fall through to a PATH rustfmt (that would re-introduce
+    # the very divergence this fixes). Plain rustfmt is used only when rustup is
+    # absent entirely. Never blocks (|| true), consistent with the hook contract.
+    if command -v rustup >/dev/null 2>&1; then
+      rustup run "${RUSTFMT_TOOLCHAIN:-stable}" rustfmt "$FILE" 2>/dev/null || true
+    elif command -v rustfmt >/dev/null 2>&1; then
       rustfmt "$FILE" 2>/dev/null || true
     fi
     ;;
