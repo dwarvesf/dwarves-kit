@@ -107,7 +107,8 @@ pilot            = false        # [design] end-to-end UAT (held)
 
 [sync]
 apps           = ""             # [impl] comma list of apps to sync to: reminders,notion,hermes,multica; empty = sync off. Legacy aliases: `surfaces`, `sources`
-mode           = "manual"       # [reserved] manual | cron (scheduled runs not built yet)
+mode           = "manual"       # [impl] manual | cron; cron gates lib/sync/deploy/macos/install (kit ID-289)
+interval_secs  = 3600           # [impl] cron LaunchAgent StartInterval seconds; --interval-secs overrides at install
 reminders_list = "Backlog"      # [impl] Reminders list name
 notion_db      = ""             # [impl] bind an existing Notion database id
 notion_parent  = ""             # [impl] Notion page id to create the board under (bootstrap)

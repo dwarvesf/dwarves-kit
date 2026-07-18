@@ -154,7 +154,8 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). |
-| - | sync.mode | `"manual"` | [reserved] | sync | `manual` today; `cron` reserved for scheduled runs. |
+| - | sync.mode | `"manual"` | [impl] | sync | `manual` (default) or `cron`. Read by `lib/sync/deploy/macos/install` (kit ID-289): a repo must set `mode = "cron"` before that installer will render or load a per-repo scheduled-sync LaunchAgent; any other value is a clean refusal, not a silent fallthrough. Not read by `board.sh cmd_sync` itself -- manual `board sync` runs are unaffected by this key. ALSO re-read live by the installed `board-sync-cron` launcher on every scheduled run: flipping `mode` back to `"manual"` after install makes the next scheduled run skip cleanly (exit 0, logged) rather than silently keep syncing against a config that says it shouldn't. |
+| - | sync.interval_secs | `3600` | [impl] | sync | Cron LaunchAgent `StartInterval` seconds, read by `lib/sync/deploy/macos/install` as the default cadence for `mode = "cron"`; `--interval-secs N` overrides it for one install run. |
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
 | - | sync.notion_db | `""` | [impl] | sync | Bind an existing Notion database id. |
 | - | sync.notion_parent | `""` | [impl] | sync | Notion page id to create the board under (bootstrap). |

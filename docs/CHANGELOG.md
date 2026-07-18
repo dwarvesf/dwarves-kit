@@ -16,6 +16,16 @@ All notable changes to dwarves-kit are documented here.
   the ops-toolkit board on 2026-07-16.
 
 ### Added
+- **`sync.mode = cron`: scheduled `board sync` (kit ID-289).** Wires the
+  `[sync] mode` key (previously `[reserved]`) to a real per-repo macOS
+  LaunchAgent: `lib/sync/deploy/macos/install` refuses to render or load
+  anything unless the target repo's own `.kit.toml` sets `mode = "cron"`
+  (any other value is a clean, named refusal); the installed launcher also
+  re-checks `mode` live on every scheduled run and skips cleanly once a repo
+  un-opts-in. New `sync.interval_secs` key (default 3600) sets cadence. One
+  LaunchAgent per adopted repo (not a kit-weekly job -- sync is per-repo by
+  nature). Tests: `tests/test-sync-cron-install.sh` +
+  `tests/test-sync-cron-launcher.sh`.
 - **`sync` module: two-way board↔apps sync (SPEC-001/SPEC-002 P1).** The ops-toolkit
   backlog-sync engine graduates into the kit as registered module `sync` (leg Specify)
   at `lib/sync/`: `board sync` mirrors an adopted repo's BACKLOG.md to Apple Reminders /

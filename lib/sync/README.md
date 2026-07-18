@@ -76,6 +76,31 @@ reader); the python engine takes flags only and reads no config file. Flags:
 `--hermes-home`. State snapshots live per board at
 `~/.cache/backlog-sync/<board-slug>/<source>.state.json`.
 
+### Scheduled runs (cron)
+
+`board sync` is manual by default. Set `mode = "cron"` in a repo's own
+`.kit.toml [sync]` section and install a per-repo LaunchAgent via
+`lib/sync/deploy/macos/install` (macOS; kit board ID-289) so it runs
+unattended:
+
+```toml
+[sync]
+apps = "reminders,notion"
+mode = "cron"
+interval_secs = 3600   # optional; default 3600 (hourly)
+```
+
+```
+bash lib/sync/deploy/macos/install --repo <this repo>            # dry-run
+bash lib/sync/deploy/macos/install --repo <this repo> --apply     # loads it
+```
+
+The installed job re-checks `mode` on every scheduled run, so flipping it
+back to `"manual"` makes the next run skip cleanly rather than keep syncing.
+See `lib/sync/deploy/macos/README.md` for the gate (`mode` must be exactly
+`cron`, refused otherwise), the service graph, log shape, and BTM/TCC
+details.
+
 ### Bootstrap per app
 
 - **Reminders**: list auto-created on first run.
