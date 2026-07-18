@@ -64,7 +64,14 @@
 #
 #   board.sh mirror [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
 #                    [--mega-board <name>] [--board-prefix <prefix>]
-#                    [--remote <user@host>] [--remote-kit-path <path>]
+#                    [--remote <user@host>] [--remote-kit-path <path>] [--engine legacy|sync]
+#                                                               `--engine sync` (ID-290, the
+#                                                               SPEC-002 P2 cockpit channel) routes
+#                                                               the deterministic extract+diff
+#                                                               through lib/sync/cockpit.py; today
+#                                                               it is dry-run-only (the plan), the
+#                                                               live LOAD + writeback stay on the
+#                                                               legacy engine (the default).
 #                                                               project opt-in (`bridge=on`)
 #                                                               cockpit boards + one card per
 #                                                               ACTIVE mega-goal onto a Hermes
@@ -172,6 +179,7 @@ BACKLOG_SH="$BOARD_DIR/backlog.sh"
 PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
+COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port (ID-290)
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega.sh"  # lib/mega.sh, one level up from lib/board/
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
@@ -195,10 +203,12 @@ _parse_flags() {
   OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
   OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
   OPT_BRANCH=""; OPT_PR_BASE=""; OPT_WITH_MEGA=0; OPT_MEGA_CODE_ROOT=""
+  OPT_ENGINE="legacy"
   POSITIONAL=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --backlog-file)    OPT_BACKLOG_FILE="${2:-}"; shift 2 ;;
+      --engine)          OPT_ENGINE="${2:-}"; shift 2 ;;
       --repo-root)       OPT_REPO_ROOT="${2:-}"; shift 2 ;;
       --registry)        OPT_REGISTRY="${2:-}"; shift 2 ;;
       --dry-run)         OPT_DRY_RUN=1; shift ;;
@@ -493,11 +503,32 @@ cmd_queue() {
 # BACKLOG.md (mirror is one-way: git -> Hermes; SG-08 owns the reverse leg).
 # ---------------------------------------------------------------------------
 cmd_mirror() {
-  _legacy_bridge_note
   _parse_flags "$@"
   local repo_root; repo_root="$(_resolve_repo_root)"
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
   local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
+
+  # SPEC-002 P2 port (ID-290): the sync-engine cockpit channel. Opt-in via
+  # `--engine sync`; today it re-lands the DETERMINISTIC legs (multi-source
+  # extract + the keyed row_hash-git-wins diff) as a dry-run plan. The live
+  # LOAD leg (applying to a Hermes kanban) and two-way writeback stay on the
+  # legacy engine below until the next slice, so a bare `--engine sync` without
+  # --dry-run is refused rather than silently doing nothing.
+  if [ "$OPT_ENGINE" = "sync" ]; then
+    [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
+    if [ "$OPT_DRY_RUN" -ne 1 ]; then
+      echo "mirror --engine sync: apply not yet ported; run with --dry-run for" \
+           "the plan, or use the legacy engine (default) to apply." >&2
+      return 64
+    fi
+    local plan_args=(plan --registry "$registry")
+    [ -f "$snapshot" ] && plan_args+=(--snapshot "$snapshot")
+    [ -n "$OPT_MEGA_BOARD" ]   && plan_args+=(--mega-board "$OPT_MEGA_BOARD")
+    [ -n "$OPT_BOARD_PREFIX" ] && plan_args+=(--board-prefix "$OPT_BOARD_PREFIX")
+    exec python3 "$COCKPIT_PY" "${plan_args[@]}"
+  fi
+
+  _legacy_bridge_note
   [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
 
   local plan_args=(plan --registry "$registry" --snapshot "$snapshot")

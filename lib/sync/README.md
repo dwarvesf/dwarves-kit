@@ -168,10 +168,37 @@ Prop NAMES/TYPES are overridable via `notion_taskboard_props` /
 `notion_taskboard_types` (JSON); defaults are Task/Status/Priority/Weight/
 Owner/Notes and status/select/number/people.
 
+## Cockpit channel (SPEC-002 P2, ID-290)
+
+`cockpit.py` is the sync-engine re-landing of the legacy `board mirror` bridge:
+a MANY-source -> ONE-cockpit channel, distinct from the per-repo two-way spoke
+sync above. It reads a `boards.txt` registry (every opted-in repo's BACKLOG.md
+plus its active `_meta/megagoals/*/ROADMAP.md`) and keys every item by ORIGIN
+(`<repo>:ID-NNN`, `megagoals:<repo>/<slug>`) so many repos pool onto one board
+without ID collisions. The diff is `row_hash`-keyed and the board always wins
+(the git-wins conflict rule); the git board keyword maps to the Hermes
+reachable-state set `{triage, ready, blocked, done}`.
+
+This slice ports the two DETERMINISTIC legs (multi-source extract + the keyed
+diff/plan) and is reachable in dry-run:
+
+```
+python3 cockpit.py extract --registry _meta/boards.txt          # origin-keyed TSV
+python3 cockpit.py plan    --registry _meta/boards.txt [--snapshot F] [--json]
+board mirror --engine sync --dry-run                            # same, via the verb
+```
+
+The `row_hash` is byte-identical to the legacy `board-mirror.sh` engine, so the
+existing bridge snapshot is a format-compatible bearing interface. DEFERRED to
+a later slice (still served by the legacy `mirror`/`status`/`writeback` verbs,
+which keep working and print a legacy banner): the live Hermes LOAD leg, two-way
+status writeback (SPEC-149), snapshot state-shape migration, and retiring those
+verbs to thin aliases. Design: `docs/specs/SPEC-002-sync-mesh.md` "P2".
+
 ## Tests
 
 ```
-tests/test-sync.sh    # kit wrapper: pytest over lib/board/sync/tests
+tests/test-sync.sh    # kit wrapper: pytest over lib/sync/tests (incl. test_cockpit.py)
 ```
 
 No network in pytest; the live proofs (bootstrap, reverse flips, inbox,
