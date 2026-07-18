@@ -8,17 +8,16 @@
 # `report` (the RUN_REPORT telemetry generator: header + gate matrix + callable-stack
 # skeleton from the rid ledgers; --out, --rid-map).
 #
-# ORPHAN, not a subsystem dir (SG-03's "2+-verb subsystems get a grouped `lib/<x>/<x>.sh`
-# case-dispatcher" rule): `mega` gained a second verb (`review`, SPEC-197 / harness-loop SG-07)
-# but STAYS a bare orphan file here deliberately -- the directory-promotion (`lib/mega/mega.sh` +
-# siblings, `bin/mega`) is explicitly ADR-0034's census target for SG-04 (the taxonomy's own
-# consolidation wave), not this sub-goal's scope. `review`'s substantial composition logic lives
-# in the sibling `lib/mega-review.py` (bash-launcher-to-python, the exact delegation shape
-# `lib/gate/proof-table-gen.sh` -> `lib/gate/proof-table-gen.py` already established: bash 3.2
-# has no associative arrays, which the phase/token/PR joins need). Same shape as
-# `lib/board/board.sh` delegating to `lib/board/board-mirror.sh` for its own heavier verbs.
-# `lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh` / `lib/precedent.sh` remain the single-verb
-# orphan precedent this file no longer strictly matches; that gap is SG-04's to close.
+# A subsystem dir (SG-03's "2+-verb modules get a grouped `lib/<x>/<x>.sh`" rule): `mega` has
+# two verbs (`status`, `review` -- SPEC-197 / harness-loop SG-07) and was promoted into
+# `lib/mega/` (`lib/mega/mega.sh` + siblings, stable entry `bin/mega`) per ADR-0034 / ID-287.
+# `review`'s substantial composition logic lives in the sibling `lib/mega/mega-review.py`
+# (bash-launcher-to-python, the exact delegation shape `lib/gate/proof-table-gen.sh` ->
+# `lib/gate/proof-table-gen.py` already established: bash 3.2 has no associative arrays, which
+# the phase/token/PR joins need). Same shape as `lib/board/board.sh` delegating to
+# `lib/board/board-mirror.sh` for its own heavier verbs. The single-verb orphans
+# (`lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh` / `lib/precedent.sh`) stay at root as
+# ADR-0034 "deliberate orphans" pending their own ruling.
 #
 # WHY THIS EXISTS (provenance): a live session hit the SG-02 HANDOFF-vs-reality lie by hand --
 # HANDOFF.md claimed "running" while the `kitmod-02` worktree sat at 0 commits, empty. A dumb
@@ -97,7 +96,7 @@
 #     fence, see the goal file). Default `--out`: `<megagoals-root>/<slug>/REVIEW.html` (next to
 #     RUN_REPORT.md). A projection, never a stored source of truth (SPEC-182 discipline): safe
 #     to re-run any time, nothing cached. The substantial logic lives in the sibling
-#     `lib/mega-review.py`; this verb is a thin bash launcher that resolves KIT_LOG_DIR the exact
+#     `lib/mega/mega-review.py`; this verb is a thin bash launcher that resolves KIT_LOG_DIR the exact
 #     way `lib/gate/proof-table-gen.sh` already does, then execs it.
 #
 # GH_BIN / GIT_BIN override the `gh`/`git` binaries (tests point them at PATH-injected stubs
@@ -213,12 +212,12 @@ _classify() {
 }
 
 _label() {
-  # DOWNSTREAM COUPLING (review finding, SPEC-197): `lib/mega-review.py`'s `_STATUS_LINE_RE`
+  # DOWNSTREAM COUPLING (review finding, SPEC-197): `lib/mega/mega-review.py`'s `_STATUS_LINE_RE`
   # regex parses `cmd_status`'s stdout by matching this exact label set literally (shelled out
   # to, not reimplemented -- SPEC-197 DEC-003). A cosmetic rename here degrades `mega review`
   # to a silent, non-fatal honest-empty read for the affected rows (never a crash, per the
   # composer's own "never fatal" contract) rather than a loud break -- worth a grep for
-  # `_STATUS_LINE_RE` in `lib/mega-review.py` before renaming any of these strings.
+  # `_STATUS_LINE_RE` in `lib/mega/mega-review.py` before renaming any of these strings.
   case "$1" in
     ok)                echo "OK" ;;
     claim-unverified)  echo "CLAIM-UNVERIFIED" ;;
@@ -318,7 +317,7 @@ cmd_status() {
 # cmd_review: the bash launcher half of `mega review --html <slug>` (SPEC-197). Resolves
 # KIT_LOG_DIR the exact way `lib/gate/proof-table-gen.sh` already does (source
 # lib/telemetry/kit-log-dir.sh, export the result) so there is ONE resolver, not a second copy,
-# then execs the sibling `lib/mega-review.py` (bash 3.2 has no associative arrays, the same
+# then execs the sibling `lib/mega/mega-review.py` (bash 3.2 has no associative arrays, the same
 # reason proof-table-gen.sh delegates to its own .py). `--html` is required: it is currently the
 # ONLY surface (scope fence -- no live/served variant).
 cmd_review() {
@@ -334,7 +333,7 @@ cmd_review() {
 
   local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   # shellcheck source=lib/telemetry/kit-log-dir.sh
-  source "$self_dir/telemetry/kit-log-dir.sh" || { echo "mega review: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; return 1; }
+  source "$self_dir/../telemetry/kit-log-dir.sh" || { echo "mega review: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; return 1; }
   export KIT_LOG_DIR; KIT_LOG_DIR="$(kit_resolve_log_dir)" || return 1
 
   local -a py_args=("$slug" --megagoals-root "$mroot" --code-root "$croot" --base "$base")
@@ -356,7 +355,7 @@ cmd_report() {
   local mroot; mroot="$(_resolve_megagoals_root)"
   local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   # shellcheck source=lib/telemetry/kit-log-dir.sh
-  source "$self_dir/telemetry/kit-log-dir.sh" || { echo "mega report: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; return 1; }
+  source "$self_dir/../telemetry/kit-log-dir.sh" || { echo "mega report: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; return 1; }
   local log_dir; log_dir="$(kit_resolve_log_dir)" || return 1
 
   local -a py_args=("$slug" --megagoals-root "$mroot" --log-dir "$log_dir")

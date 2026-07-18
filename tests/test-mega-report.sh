@@ -40,7 +40,7 @@ cat > "$LOGS/runs/feat-01-alpha-widget.log" <<'EOF'
 EOF
 LEDGER_BEFORE="$(shasum "$LOGS/runs/feat-01-alpha-widget.log")"
 
-OUT="$(python3 "$KIT_DIR/lib/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" 2>&1)"; RC=$?
+OUT="$(python3 "$KIT_DIR/lib/mega/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" 2>&1)"; RC=$?
 
 echo "== header + matrix from a real fixture ledger =="
 [ $RC -eq 0 ] && ok "exit 0" || bad "exit $RC"
@@ -60,7 +60,7 @@ assert_grep "rid-less row is flagged" "(no rid ledger matched)" "$ROW02"
 assert_nogrep "rid-less row has zero ● cells" "●" "$ROW02"
 
 echo "== --out + read-only contract =="
-python3 "$KIT_DIR/lib/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" --out "$TD/r.md" >/dev/null 2>&1
+python3 "$KIT_DIR/lib/mega/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" --out "$TD/r.md" >/dev/null 2>&1
 [ -s "$TD/r.md" ] && ok "--out writes the report file" || bad "--out produced nothing"
 [ "$(shasum "$LOGS/runs/feat-01-alpha-widget.log")" = "$LEDGER_BEFORE" ] \
   && ok "source ledger byte-identical after both runs (read-only)" \
@@ -70,6 +70,16 @@ echo "== launcher: bin/mega report dispatches =="
 USAGE_OUT="$(bash "$KIT_DIR/bin/mega" report 2>&1)"; URC=$?
 [ $URC -ne 0 ] && ok "report without a slug refuses (exit $URC)" || bad "slug-less report exited 0"
 assert_grep "refusal names the requirement" "a <slug> is required" "$USAGE_OUT"
+
+# ID-287 coverage: run cmd_report END-TO-END through the bash launcher (not the direct
+# python entry the tests above use), so the re-anchored `source "$self_dir/../telemetry/
+# kit-log-dir.sh"` in cmd_report is exercised. A wrong `..` after the lib/mega/ move fails
+# the source and never renders the report -- this assertion goes RED, closing the blind spot
+# the direct-python tests left (they bypass the launcher entirely).
+echo "== launcher: bin/mega report <slug> runs cmd_report end-to-end (covers the telemetry anchor) =="
+LAUNCH_OUT="$(DWARVES_KIT_LOG_DIR="$LOGS" bash "$KIT_DIR/bin/mega" report demo --megagoals-root "$MROOT" 2>&1)"; LRC=$?
+[ $LRC -eq 0 ] && ok "bin/mega report demo exits 0 (cmd_report telemetry source resolved)" || bad "bin/mega report demo exit $LRC: $LAUNCH_OUT"
+assert_grep "launcher path renders the same header as the direct python path" "(1/2 built · 1 merged)" "$LAUNCH_OUT"
 
 echo
 echo "TOTAL: $((PASS+FAIL))   PASS: $PASS   FAIL: $FAIL"

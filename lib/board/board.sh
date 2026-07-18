@@ -101,7 +101,7 @@
 #                                                               every ACTIVE mega under
 #                                                               <repo-root>/_meta/megagoals/*/
 #                                                               (>=1 unchecked sub-goal box), the
-#                                                               `lib/mega.sh status <slug>
+#                                                               `lib/mega/mega.sh status <slug>
 #                                                               --rollup-only` line (roadmap-vs-git
 #                                                               reconciliation, drift-flagged --
 #                                                               never a re-render of the roadmap's
@@ -180,7 +180,7 @@ PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
 COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port (ID-290)
-MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega.sh"  # lib/mega.sh, one level up from lib/board/
+MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
 [ -f "$PARSE_BOARD_SH" ]     || { echo "board: lib/board/parse-board.sh not found at $PARSE_BOARD_SH" >&2; exit 1; }
