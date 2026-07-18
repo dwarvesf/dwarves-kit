@@ -62,7 +62,15 @@ case "$FILE" in
     fi
     ;;
   *.rs)
-    if command -v rustfmt >/dev/null 2>&1; then
+    # Prefer the rustup-pinned stable toolchain so formatting matches CI (which
+    # runs stable), not whatever rustfmt happens to be first on PATH (e.g. a brew
+    # rustfmt on a different edition), the PATH rustfmt caused import-order churn.
+    # Inner fallback to plain rustfmt if the stable invocation fails (e.g. the
+    # stable toolchain is not installed); outer branch falls back when rustup is
+    # absent entirely. Never blocks (|| true), consistent with the hook contract.
+    if command -v rustup >/dev/null 2>&1; then
+      rustup run stable rustfmt "$FILE" 2>/dev/null || rustfmt "$FILE" 2>/dev/null || true
+    elif command -v rustfmt >/dev/null 2>&1; then
       rustfmt "$FILE" 2>/dev/null || true
     fi
     ;;
