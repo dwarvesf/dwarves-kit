@@ -19,7 +19,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MEGA="$KIT_DIR/lib/mega.sh"
+MEGA="$KIT_DIR/lib/mega/mega.sh"
 
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
@@ -30,9 +30,9 @@ TMP="$(cd "$TMP" && pwd)"
 trap 'rm -rf "$TMP"' EXIT
 
 # ---- gh stub: no real network call is ever made (mirrors tests/test-mega.sh's STUBGH) ----------
-# Two DIFFERENT `gh pr view` shapes hit this one stub: `lib/mega.sh status`'s own `_pr_state`
+# Two DIFFERENT `gh pr view` shapes hit this one stub: `lib/mega/mega.sh status`'s own `_pr_state`
 # calls `gh pr view <N> --json state -q '.state'` (bare-string output, real gh's `-q` behavior),
-# while `lib/mega-review.py`'s `pr_state()` calls `gh pr view <N> --json state,url,mergedAt,
+# while `lib/mega/mega-review.py`'s `pr_state()` calls `gh pr view <N> --json state,url,mergedAt,
 # statusCheckRollup,title` with NO `-q` (full JSON). Detect `-q` in argv and branch, matching
 # real `gh`'s own contract instead of picking one shape and breaking the other caller.
 STUBGH="$TMP/gh-stub"

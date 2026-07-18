@@ -110,7 +110,7 @@ real reader consumes it today (all rows below are, except where noted).
 | - | mega.merge_autonomy | `"gated-final"` | [design] | mega | `"gated-final"` or `"full-auto"`; no env override found. |
 | - | mega.default_model | `"sonnet"` | [design] | mega | GLOBAL model fallback; real control is the per-sub-goal goal-file `Model:` field. Precedence: goal-file `Model:` > project cfg > this default. |
 | - | mega.over_test | `false` | [design] | mega | GLOBAL scaffold-rigor default; real control is per-sub-goal `Done-mode: over-test` (SPEC-112). |
-| MEGAGOALS_ROOT | env-only | (none) | [impl] | mega | Root dir where mega-goal folders live; unset falls through to further path resolution in `lib/mega.sh`. |
+| MEGAGOALS_ROOT | env-only | (none) | [impl] | mega | Root dir where mega-goal folders live; unset falls through to further path resolution in `lib/mega/mega.sh`. |
 | MEGA_MERGE_PR_INFO_CMD | env-only | (none) | [impl] | mega | Override the command used to fetch PR info at merge time; called directly when set. |
 | MEGA_MERGE_GATE_LEDGER | env-only | `$LIB_ROOT/gate/gate-ledger.sh` | [impl] | mega | Which `gate-ledger.sh` `mega-merge.sh` shells out to. |
 | MEGA_MERGE_GH | env-only | `gh` | [impl] | mega | Override the `gh` binary/wrapper used for PR ops at merge. |
@@ -281,7 +281,7 @@ against any of these bare tokens as covered without a registry row.
 | KIT_DIR | `lib/plugin-check/tests/smoke.sh`: test-fixture scratch dir. |
 | KIT_KNOWN_MODULES | `install.sh`: a hardcoded bash array literal, never read from the environment. |
 | KIT_LIB | Script-local computed dir in most readers (e.g. `lib/telemetry/lane-telemetry.sh`); the real env-overridable cousin is `DWARVES_KIT_LIB` (Python, `lib/stats/src/stats/config.py`), which the bash-oriented seed regex cannot see (no `$` sigil in Python source) , documented here rather than silently dropped: see `lib/stats/README.md`'s own env table for `DWARVES_KIT_LIB`'s default (this repo's own `lib/`, kit-internal). |
-| MEGA_SH | `lib/board/board.sh`: computed `$BOARD_DIR/../mega.sh`. |
+| MEGA_SH | `lib/board/board.sh`: computed `$BOARD_DIR/../mega/mega.sh`. |
 | PANE_VIEWER_ALLOWED | `lib/queue/orchestrate.sh`: a hardcoded allowlist string, not itself env-read; it validates `PANE_VIEWER`. |
 | STATS_DB_REMOVED | Dead/vestigial test-fixture token, see its row above , no product reader exists. Kept OUT of the drift-fail set (registered above instead of silently dropped, per the scope fence) but also allowlisted so the lint does not double-count it as a live undocumented knob. |
 

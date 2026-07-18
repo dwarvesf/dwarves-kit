@@ -89,7 +89,7 @@ MERGE
   chmod +x "$1"
 }
 
-# A `gh` stub (SPEC-197 wiring: `_tier4_close` now calls `lib/mega.sh review` -> `mega.sh
+# A `gh` stub (SPEC-197 wiring: `_tier4_close` now calls `lib/mega/mega.sh review` -> `mega.sh
 # status` -> `_open_pr_for`, which shells to `gh pr list` unconditionally for any sub-goal with a
 # resolved branch). No real network call is ever made: `pr list` returns `[]` (no open PRs),
 # matching this fixture's reality, mirroring tests/test-mega.sh's own STUBGH convention.

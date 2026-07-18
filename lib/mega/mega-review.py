@@ -5,7 +5,7 @@ sources, never a fourth persisted store (SPEC-182 "stats persists nothing" disci
 to this surface -- a projection, always safe to re-run, never cached):
 
   1. ROADMAP.md truth       -- this mega's sub-goal lines + each sub-goal's own goal file
-                                (**Branch:** line). Reuses `lib/mega.sh status`'s OWN git-truth
+                                (**Branch:** line). Reuses `lib/mega/mega.sh status`'s OWN git-truth
                                 reconciliation (OK/CLAIM-UNVERIFIED/MERGED-UNCHECKED/STALLED/
                                 WIP/PENDING/INFO) by shelling out to it and parsing its stable,
                                 documented per-line format -- ONE classifier, not a second one
@@ -34,7 +34,7 @@ Every one of the three reads via its OWN pre-existing consumer-config seam; an a
 source renders "-" (honest-dash), NEVER a fabricated zero -- SPEC-197 Design.
 
 Usage: mega-review.py <slug> --megagoals-root DIR --code-root DIR [--base BRANCH] [--out PATH]
-Env: KIT_LOG_DIR  the resolved durable ledger root (set by the lib/mega.sh `review` launcher,
+Env: KIT_LOG_DIR  the resolved durable ledger root (set by the lib/mega/mega.sh `review` launcher,
      mirroring lib/gate/proof-table-gen.sh's own KIT_ROOT/KIT_LOG_DIR export convention -- this
      script never re-resolves it itself, so there is one resolver, not two).
 """
@@ -57,7 +57,7 @@ def _load_proof_table_gen():
     """Import lib/gate/proof-table-gen.py's `parse_ledger` + `_normalize_rid` directly (same
     cross-subsystem sourcing convention gate-ledger.sh itself uses for lib/telemetry + lib/ledger
     siblings) instead of re-implementing GATE/OUTCOME line parsing a second time."""
-    path = os.path.join(_SELF_DIR, "gate", "proof-table-gen.py")
+    path = os.path.join(_SELF_DIR, "..", "gate", "proof-table-gen.py")
     spec = importlib.util.spec_from_file_location("proof_table_gen", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # type: ignore[union-attr]
@@ -80,7 +80,7 @@ def _run(argv, cwd=None):
         return None
 
 
-# ---- 1. ROADMAP truth + git-truth classification (delegates to lib/mega.sh status) -----------
+# ---- 1. ROADMAP truth + git-truth classification (delegates to lib/mega/mega.sh status) -----------
 
 def parse_roadmap(roadmap_path):
     """[(box, sub_slug, prose)] in file order. Honest-empty: no matching lines -> []."""
@@ -96,7 +96,7 @@ def parse_roadmap(roadmap_path):
 
 
 def git_truth_status(mega_slug, megagoals_root, code_root, base):
-    """Shells out to the ALREADY-SHIPPED `lib/mega.sh status` (one classifier, not a second one)
+    """Shells out to the ALREADY-SHIPPED `lib/mega/mega.sh status` (one classifier, not a second one)
     and parses its stable per-line format into {sub_slug: {label, pr, prstate, branch, commits,
     openpr}}. Never fatal: a `mega.sh status` failure (e.g. no ROADMAP.md) degrades to an empty
     map -- every sub-goal then renders with git-truth fields honest-dash, not a crash."""
@@ -300,7 +300,7 @@ def _learned_queued():
 
 
 def _unpaid_debt_count(code_root):
-    wb = os.path.join(_SELF_DIR, "learn", "weekend-batch.sh")
+    wb = os.path.join(_SELF_DIR, "..", "learn", "weekend-batch.sh")
     if not os.path.isfile(wb):
         return None
     res = _run(["bash", wb, "list", "--all-repos"], cwd=code_root)
@@ -523,7 +523,7 @@ def main(argv=None):
     # lib/queue/orchestrate.sh's own locally-derived basename and a trusted local CLI
     # invocation, never a webhook/network trigger -- but cheap and worth closing): a slug
     # carrying a path separator could otherwise write REVIEW.html outside megagoals-root via
-    # os.path.join's own "absolute/.. wins" semantics. Same charset lib/mega.sh's ROADMAP
+    # os.path.join's own "absolute/.. wins" semantics. Same charset lib/mega/mega.sh's ROADMAP
     # sub-goal regex already requires (`[0-9]+-[A-Za-z0-9_-]+`), loosened only to allow the
     # mega SLUG shape (letters/digits/dot/underscore/dash, no leading number requirement).
     if not re.match(r"^[A-Za-z0-9._-]+$", args.slug):

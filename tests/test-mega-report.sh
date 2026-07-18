@@ -40,7 +40,7 @@ cat > "$LOGS/runs/feat-01-alpha-widget.log" <<'EOF'
 EOF
 LEDGER_BEFORE="$(shasum "$LOGS/runs/feat-01-alpha-widget.log")"
 
-OUT="$(python3 "$KIT_DIR/lib/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" 2>&1)"; RC=$?
+OUT="$(python3 "$KIT_DIR/lib/mega/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" 2>&1)"; RC=$?
 
 echo "== header + matrix from a real fixture ledger =="
 [ $RC -eq 0 ] && ok "exit 0" || bad "exit $RC"
@@ -60,7 +60,7 @@ assert_grep "rid-less row is flagged" "(no rid ledger matched)" "$ROW02"
 assert_nogrep "rid-less row has zero ● cells" "●" "$ROW02"
 
 echo "== --out + read-only contract =="
-python3 "$KIT_DIR/lib/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" --out "$TD/r.md" >/dev/null 2>&1
+python3 "$KIT_DIR/lib/mega/mega-report.py" demo --megagoals-root "$MROOT" --log-dir "$LOGS" --out "$TD/r.md" >/dev/null 2>&1
 [ -s "$TD/r.md" ] && ok "--out writes the report file" || bad "--out produced nothing"
 [ "$(shasum "$LOGS/runs/feat-01-alpha-widget.log")" = "$LEDGER_BEFORE" ] \
   && ok "source ledger byte-identical after both runs (read-only)" \

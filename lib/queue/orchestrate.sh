@@ -1742,10 +1742,10 @@ _tier4_close() {  # dir roadmap
   local mega_slug mega_root
   mega_slug="$(basename "$dir")"
   mega_root="$(dirname "$dir")"
-  if bash "$LIB_ROOT/mega.sh" review "$mega_slug" --html --megagoals-root "$mega_root" --code-root "$corpus" >/dev/null 2>&1; then
+  if bash "$LIB_ROOT/mega/mega.sh" review "$mega_slug" --html --megagoals-root "$mega_root" --code-root "$corpus" >/dev/null 2>&1; then
     _say "[orchestrate] [close] mega-review dashboard rendered: $dir/REVIEW.html"
   else
-    echo "[orchestrate] [close] WARN: mega-review dashboard render failed (non-fatal; re-run 'bash lib/mega.sh review $mega_slug --html --megagoals-root $mega_root --code-root $corpus' to see the error)" >&2
+    echo "[orchestrate] [close] WARN: mega-review dashboard render failed (non-fatal; re-run 'bash lib/mega/mega.sh review $mega_slug --html --megagoals-root $mega_root --code-root $corpus' to see the error)" >&2
   fi
 
   local orphans rc_no=0

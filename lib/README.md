@@ -17,6 +17,7 @@ orphans with no cluster stay as bare scripts at the root.
 | `classify/` | `lane-classify.sh` `role-classify.sh` `significance-classify.sh` `task-type-classify.sh` `route-suggest.sh` |
 | `spec/` | `spec-index.sh` `spec-next.sh` |
 | `goal/` | `goal-drafts.sh` `goal-registry.sh` `mega-merge.sh` `stack-merge.sh` `handoff-gen` + `handoff/` (`handoff_gen.py`, `cc_compact.py`) |
+| `mega/` | `mega.sh` `mega-report.py` `mega-review.py` (the mega-goal engine + its two python halves; stable entry via `bin/mega`) |
 | `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |
 | `session/` | `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser + its tests) |
 | *(root)* | `adopt.sh` `explain.sh` `pitch.sh` `precedent.sh`, orphans, no cluster |

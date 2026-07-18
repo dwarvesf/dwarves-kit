@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-mega.sh -- lib/mega.sh (kit-modularity sub-goal 08): `mega status <slug>` reconciles a
+# test-mega.sh -- lib/mega/mega.sh (kit-modularity sub-goal 08): `mega status <slug>` reconciles a
 # mega-goal's ROADMAP.md sub-goal claims against GIT TRUTH.
 #
 # Proves the full drift-class taxonomy on a fixture mega ("testmega") with 8 sub-goals, one per
@@ -23,7 +23,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MEGA="$KIT_DIR/lib/mega.sh"
+MEGA="$KIT_DIR/lib/mega/mega.sh"
 
 PASS=0; FAIL=0
 ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
