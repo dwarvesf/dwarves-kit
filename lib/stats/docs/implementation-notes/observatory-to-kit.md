@@ -22,7 +22,7 @@ fixed parent-count walk from `config.py`'s own file location if git is unavailab
 
 Impact: `DWARVES_KIT_LIB`, `LEDGER_OBS_GIT_REPO_DIR`, `LEDGER_OBS_MEMORY_REPO_DIR` all
 default to `_kit_repo_root()` (or a subpath of it), never a hardcoded `~/.claude/...` or
-`~/workspace/tieubao/ops-toolkit` path.
+`~/workspace/<owner>/ops-toolkit` path.
 
 ## 2026-07-05 09:20 git_repo_dir/memory_repo_dir classified kit-internal, not in the goal's example list
 
@@ -33,7 +33,7 @@ REPOS/CC_BACKLOG x2). `LEDGER_OBS_GIT_REPO_DIR`/`LEDGER_OBS_MEMORY_REPO_DIR` are
 neither list.
 
 Decision: classified them kit-internal anyway (default -> `_kit_repo_root()`, was
-`~/workspace/tieubao/ops-toolkit`).
+`~/workspace/<owner>/ops-toolkit`).
 
 Why: their OWN docstrings, unchanged since before this migration, already say "defaults
 to this tool's own repo" -- a self-referential design intent that is inherently

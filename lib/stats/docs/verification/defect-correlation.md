@@ -103,7 +103,7 @@ $ uv run ledger defect-correlation --table
 ```
 
 ```
-$ LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger rebuild
+$ LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger rebuild
 { "kit_runs": 0, "kit_gates": 630, "git_fixes": 1869, "tide_moves": 0,
   "tide_tier_b_calls": 0, "tg_dialogs": 625, "learned": 58 }
 $ uv run ledger defect-correlation --table
@@ -168,12 +168,12 @@ SPEC-132 DEC-003).
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 bash tests/test-defect-correlation.sh                          # golden fixture + FP-NC + over-test (20/20)
 bash tests/test-schema-parity.sh                                # regression: unaffected (4/4)
 bash tests/test-gate-yield.sh                                   # regression: unaffected (25/25)
 uv run ledger rebuild && uv run ledger defect-correlation --table                                    # real run: ops-toolkit (0 rows)
-LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger rebuild \
-  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger defect-correlation --table  # real run: dwarves-kit (3 rows)
+LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger rebuild \
+  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger defect-correlation --table  # real run: dwarves-kit (3 rows)
 ```

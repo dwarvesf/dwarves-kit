@@ -36,7 +36,7 @@ HELD for Han , the loop NEVER tags, merges, or publishes (gate + final).
 | 3 surfaces at 2.0.0 | `cat VERSION; jq -r .version plugin.json; grep ^version tool.toml` | all 2.0.0 | all 2.0.0 |
 | 3-surface pin | `bash tests/test-meta.sh` (tool.toml == VERSION) | PASS | PASS |
 | BREAKING map | `grep -c 'integration-verifier\|code-reviewer\|security-reviewer' CHANGELOG.md` (in BREAKING) | 3 renames | present |
-| consumer grep | `grep -rl integration-checker\|security-auditor ~/workspace/tieubao/* (excl kit)` | historical only | notes/templates, no live dispatch |
+| consumer grep | `grep -rl integration-checker\|security-auditor ~/workspace/<owner>/* (excl kit)` | historical only | notes/templates, no live dispatch |
 | tag/release files | `ls docs/releases/v2.0.0/` | 3 files | tag-message.txt, release-body.md, held-review.md |
 | suite | `bash tests/test-meta.sh` | green | 662/662 |
 | all CI | 12 suites | green | all pass |

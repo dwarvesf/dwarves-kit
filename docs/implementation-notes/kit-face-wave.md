@@ -7,7 +7,7 @@ their own `docs/implementation-notes/SPEC-NNN-*.md`.
 ## 2026-07-03 execution architecture (lead session anchored in ops-toolkit)
 
 - **Context:** the `/goal` loop driving this wave runs in a session whose cwd is
-  `~/workspace/tieubao/ops-toolkit` (where the mega-goal ROADMAP lives), NOT
+  `~/workspace/<owner>/ops-toolkit` (where the mega-goal ROADMAP lives), NOT
   `dwarves-kit`. ops-toolkit is ALSO kit-adopted.
 - **Decision:** the lead authors the kit artifacts (specs, command/agent edits, tests,
   proofs) directly in `dwarves-kit` via absolute paths, runs `dwarves-kit`'s own test

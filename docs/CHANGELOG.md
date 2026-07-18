@@ -59,7 +59,7 @@ name) and by tool.toml joining VERSION + plugin.json as a pinned version surface
   | `reviewer` | `code-reviewer` |
   | `security-auditor` | `security-reviewer` |
 
-  A grep across the sibling consumer repos (`~/workspace/tieubao/*`) found the old names ONLY in
+  A grep across the sibling consumer repos (`~/workspace/<owner>/*`) found the old names ONLY in
   historical research notes, `LAB_LOG`/`BACKLOG` entries, and the `plan-for-mega-goal`
   invocation-template , NO live `subagent_type:` dispatch wiring , but the template and any consumer
   that dispatches by these names should update.

@@ -30,7 +30,7 @@ learning engine in the kit" is rejected; SG-05 REUSES `learning-day-process` / `
 impl-notes/explainers, close the loop) are kit-generic and belong in `dwarves-kit` (this repo,
 `lib/`). The ORCHESTRATION into the operator's personal learning tracks (`learning-day-process`,
 `learning-ledger`, `deep-understand`, `til`) is operator-specific tooling that lives in
-`~/workspace/tieubao/dotfiles` as a Claude Code skill, per the same split SG-01 used for its
+`~/workspace/<owner>/dotfiles` as a Claude Code skill, per the same split SG-01 used for its
 `plan-for-mega-goal` subgoal-template half (SPEC-107's precedent: `tests/test-meta.sh` proves the
 dwarves-kit-local surfaces; the dotfiles-side surface is proven by a captured local run because its
 path is absent in CI).

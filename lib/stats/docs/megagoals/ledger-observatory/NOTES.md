@@ -17,7 +17,7 @@
   - Pipe `ledger anomalies` output through the SG-03 `render.py` formatters (reuse, one render story, instead of `anomalies`' own ad-hoc table print).
   - Real end-to-end `uv run ledger render` CLI tests (currently grep/unit-level only) + a `tests/test-all.sh` wrapper that rebuilds and runs all 5 suites in one call.
   - A staleness-aware re-fire for an already-staged-but-worsening anomaly (today's title-dedup is deliberately count-free, so a worsening debt count never re-proposes).
-  - Consolidate the duplicated ops-toolkit root path (`anomalies.py` resolves `~/workspace/tieubao/ops-toolkit` itself; move to `config.py`); wire or drop the dead `TERMINAL_CELL_BUDGET` if it exists unused in `render.py`.
+  - Consolidate the duplicated ops-toolkit root path (`anomalies.py` resolves `~/workspace/<owner>/ops-toolkit` itself; move to `config.py`); wire or drop the dead `TERMINAL_CELL_BUDGET` if it exists unused in `render.py`.
   - Privacy-surface tightening (security lens): drop `tide_moves.ai_response_json` (raw AI response bodies) + `tg_dialogs.access_hash` (Telegram peer hashes) from the materialized lens columns unless a detector needs them (as of 2026-07-04, neither does); narrows what any local agent can read via `ledger query` from the gitignored cache db.
 
 ## Event log

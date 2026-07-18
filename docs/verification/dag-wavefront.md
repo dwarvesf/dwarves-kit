@@ -6,7 +6,7 @@ Re-run any `Command:` line to regression-check.
 ## Phase 0 checkpoint , TASK-000 (_run_one_session extraction)
 
 - Task: TASK-000 (zero-behavior-change refactor, unblocks size-dispatch).
-- Command: `cd ~/workspace/tieubao/dwarves-kit && bash tests/test-orchestrate.sh`
+- Command: `cd ~/workspace/<owner>/dwarves-kit && bash tests/test-orchestrate.sh`
 - Exit: 0
 - Output (excerpt): 59 `PASS` lines, ends `---- ALL PASS`. `bash -n lib/queue/orchestrate.sh` exit 0.
 - Verdict: PASS (task-verifier 4/4). Commit b5d4d17.
@@ -16,7 +16,7 @@ Re-run any `Command:` line to regression-check.
 ## Phase 1 checkpoint , TASK-001 (_ready_set) + TASK-002 (mkdir-lock + cmd_flip)
 
 - Tasks: TASK-001 (commit 01544a0), TASK-002 (commit 21cceb0 + stderr fix 73e342c).
-- Command: `cd ~/workspace/tieubao/dwarves-kit && bash tests/test-orchestrate-wavefront.sh && bash tests/test-orchestrate.sh`
+- Command: `cd ~/workspace/<owner>/dwarves-kit && bash tests/test-orchestrate-wavefront.sh && bash tests/test-orchestrate.sh`
 - Exit: 0
 - Output (excerpt): wavefront 29/29 `ALL PASS` (16 ready-set + 13 lock/flip); orchestrate 59/59 `ALL PASS`. `shellcheck -s bash lib/queue/orchestrate.sh` exit 0.
 - Verdict: PASS (both task-verifiers 4/4; TASK-002 with adversarial live-holder + 6-way parallel hammer + no-`rm -rf` audit).
@@ -27,7 +27,7 @@ Re-run any `Command:` line to regression-check.
 ## Phase 2 checkpoint , the wave loop (TASK-003, 004a, 004b, 004c, 005)
 
 - Tasks + commits: TASK-003 `_wave_gate` (b3793bd), TASK-004a `_wave_run` (d028331), TASK-004b size-dispatch wiring (5ebdcfa), TASK-004c convergence sequencer (44f36d8), TASK-005 per-edge HANDOFF (089ea23).
-- Command: `cd ~/workspace/tieubao/dwarves-kit && bash tests/test-orchestrate-wavefront.sh && bash tests/test-orchestrate.sh`
+- Command: `cd ~/workspace/<owner>/dwarves-kit && bash tests/test-orchestrate-wavefront.sh && bash tests/test-orchestrate.sh`
 - Exit: 0
 - Output (excerpt): wavefront 67/67 `ALL PASS`; orchestrate 59/59 `ALL PASS`. `shellcheck -S error lib/queue/orchestrate.sh` clean. **CORRECTION (integration-verifier):** the original entry claimed `shellcheck -s bash` exit 0, which was inaccurate , `_wave_converge` (44f36d8) carried 3 warnings (SC2155 + 2x SC2034); fixed post-integration in commit 2274ad3, after which `-s bash` is genuinely exit 0.
 - Verdict: PASS (5 task-verifiers, all 4-6/N). Highlights: the mock-barrier concurrency proof EMPIRICALLY fails serially (verified); byte-identity diff for the wiring is +39/-0 (serial body untouched); the concurrency test caught+fixed a live awk+mv flip race (now flips via the locked CLI); convergence serialization proven by a reversed-id interleave assertion; per-edge HANDOFF keyed on DEPENDENTS (V-CRIT-6 root case passes).
@@ -37,7 +37,7 @@ Re-run any `Command:` line to regression-check.
 ## Phase 3 checkpoint , resilience + gate semantics + test consolidation (TASK-006, 007, 008, 009)
 
 - Tasks + commits: TASK-006 resume + termination guard (c3bebaa), TASK-007 `gate!` global-stop + `gate` chain-hold (4521d39), TASK-008 gitignore (9e55427), TASK-009 five-control consolidation (4854ba9).
-- Command: `cd ~/workspace/tieubao/dwarves-kit && bash tests/test-orchestrate-wavefront.sh && bash tests/test-orchestrate.sh`
+- Command: `cd ~/workspace/<owner>/dwarves-kit && bash tests/test-orchestrate-wavefront.sh && bash tests/test-orchestrate.sh`
 - Exit: 0
 - Output (excerpt): wavefront 89/89 `ALL PASS` (five `EXIT-CRITERION` markers + Option-B honesty control), orchestrate 59/59 `ALL PASS`. `shellcheck -s bash lib/queue/orchestrate.sh` exit 0 (after 2274ad3).
 - Verdict: PASS (4 task-verifiers). TASK-006 found+fixed a REAL wave-path false-complete bug (dep-blocked fallthrough to `_next`); TASK-007 proved exit-criterion 4 end-to-end (gate chain-hold while independents complete) + preserved serial `gate` byte-identical.

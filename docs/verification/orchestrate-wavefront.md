@@ -79,7 +79,7 @@ for un-migrated mega-goals). `WAVE_CAP=1` forces the always-serial loop.
 ## Reproduce
 
 ```
-cd ~/workspace/tieubao/dwarves-kit && git switch feat/dag-wavefront
+cd ~/workspace/<owner>/dwarves-kit && git switch feat/dag-wavefront
 bash tests/test-orchestrate-wavefront.sh   # 89/89, the five EXIT-CRITERION controls
 bash tests/test-orchestrate.sh             # 59/59 serial regression (byte-identity)
 ```

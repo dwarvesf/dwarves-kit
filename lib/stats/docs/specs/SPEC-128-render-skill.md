@@ -231,7 +231,7 @@ real once installed.
 ## Verification
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv run ledger rebuild
 uv run ledger render kit_runs --surface terminal
 uv run ledger render kit_runs --surface artifact --out /tmp/ledger-sample.html

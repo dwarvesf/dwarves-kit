@@ -30,5 +30,5 @@ Delta from the spec. References, does not restate.
   was added; and the spec adds no re-encoded `^Model:` grep (the `_route` reader is the single
   source, no divergent duplicate).
 - **Surface-2 (dotfiles) is a LOCAL proof, not kit CI:** the template lives in the dotfiles
-  repo (absolute `~/workspace/tieubao/dotfiles/...`), unreadable by kit CI, so its grep is a
+  repo (absolute `~/workspace/<owner>/dotfiles/...`), unreadable by kit CI, so its grep is a
   proof-table row run locally, never a `tests/` assertion.

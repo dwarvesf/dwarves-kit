@@ -160,7 +160,7 @@ All 5 suites green after the fix, same run: `test-schema-conform.sh` 11/11,
 ### Reproduce (fix)
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 bash tests/test-schema-parity.sh   # 4 passed, 0 failed; exit 0
 ```
@@ -178,7 +178,7 @@ change (grep confirmed no other module imports these symbols).
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 bash tests/test-ledger-cli.sh    # 22 passed, 0 failed; exit 0
 bash tests/test-schema-parity.sh # 4 passed, 0 failed; exit 0 (schema-drift guard)

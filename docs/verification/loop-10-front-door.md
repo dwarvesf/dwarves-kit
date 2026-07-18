@@ -55,7 +55,7 @@
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 bash tests/test-meta.sh            # 698/698, the parity pins
 bash tests/test-kit-weekly.sh      # 14/14, the one scheduler
 bash tests/test-config-registry.sh # 19/19, lint + its negative control

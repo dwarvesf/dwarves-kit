@@ -173,7 +173,7 @@ One-sentence description (gate 4): *"The internal absorption lane scores Han's o
 - The candidate inventory: 2026-05-20 ops-toolkit + `~/.claude/skills` sweep (ops-toolkit yields `wrap-session` + `session-closer-hook`; the broader dev-workflow pool lives in `~/.claude/skills` + `dwarvesf/claude-skills`).
 - `session-closer-hook` <-> SPEC-006 doc-update clause: `docs/specs/SPEC-006-orchestration-spine.md` DEC-002 (warn+log, promote-to-hook on signal).
 - `goal-craft` <-> the spine: `docs/specs/SPEC-006-orchestration-spine.md` (`/user:assign` goal-crafting).
-- ops-toolkit lifecycle (experiment -> harden -> distill): `~/workspace/tieubao/ops-toolkit/CLAUDE.md`.
+- ops-toolkit lifecycle (experiment -> harden -> distill): `~/workspace/<owner>/ops-toolkit/CLAUDE.md`.
 
 ## Validation
 To be filled by `/user:spec-validate`. Expected challenges: (a) is the scored inventory's REJECT reasoning sound, or does it under-value a candidate (esp. the "review/testing already covered" claim); (b) is `--internal` justified or should the one-time inventory suffice without a recurring command mode; (c) is the first-commit-date a sufficient soak proxy; (d) does ADAPTing `goal-craft` into `/user:assign` belong here or in SPEC-006.

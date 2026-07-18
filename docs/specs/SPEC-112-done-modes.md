@@ -81,7 +81,7 @@ grep -qiE 'cap|round 3' docs/verification/done-modes.md              # fixture 2
 grep -qiE 're-found|does NOT quiesce|falsely' docs/verification/done-modes.md   # NC: re-found CRITICAL does not quiesce
 grep -qiE 'plain REVISE|cap 2' docs/verification/done-modes.md       # regression: plain REVISE still 2
 # dotfiles half (local): Done-mode field in the subgoal-template
-grep -qiE '^\*?\*?Done-mode' ~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
+grep -qiE '^\*?\*?Done-mode' ~/workspace/<owner>/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
 ```
 
 ## After state

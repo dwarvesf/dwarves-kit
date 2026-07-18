@@ -73,7 +73,7 @@ The traces demonstrate the stop logic; the contract text is pinned in `test-meta
 cd dwarves-kit
 bash tests/test-meta.sh
 grep -qiE 'zero NEW findings >=HIGH AND no OPEN finding >=HIGH' commands/ui-design.md
-grep -q '^\*\*Done-mode:\*\*' ~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
+grep -q '^\*\*Done-mode:\*\*' ~/workspace/<owner>/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/subgoal-template.md
 ```
 
 ## Notes

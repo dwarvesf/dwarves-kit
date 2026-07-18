@@ -231,7 +231,7 @@ to REUSE `backlog.sh`'s own state-flip verb, not fork a second one.
 ### The one-command sequence for the operator's FIRST real round-trip (documented, not run by this sub-goal)
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit
+cd ~/workspace/<owner>/ops-toolkit
 bash ~/.claude/dwarves-kit/lib/board/board.sh writeback --repo-root . --registry _meta/boards.txt \
   --snapshot _meta/.board-mirror-snapshot.jsonl --pr-base main
 ```
@@ -243,7 +243,7 @@ per SPEC-147's deployment) and a real `HERMES_HOME`/`hermes` binary reachable as
 `tieubao/ops-toolkit` (real API call -- this is the ONE moment in the whole lifecycle where a real
 `gh pr create` happens, and it happens only when Han runs this himself); (4) `--pr-base main`
 matches ops-toolkit's actual default branch name (NOT `master` -- verify with `git -C
-~/workspace/tieubao/ops-toolkit symbolic-ref --short HEAD` first). The command opens a HELD PR;
+~/workspace/<owner>/ops-toolkit symbolic-ref --short HEAD` first). The command opens a HELD PR;
 Han reviews the diff (should be pure Status-column flips) and merges it himself. Nothing here
 auto-merges, ever.
 

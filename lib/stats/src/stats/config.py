@@ -160,7 +160,7 @@ def git_repo_dir() -> Path:
     defaults to this tool's OWN repo root (`_kit_repo_root()`, now dwarves-kit) rather
     than a hardcoded ops-toolkit path; override per-invocation to run
     `defect-correlation` against a different repo's history (e.g.
-    `STATS_GIT_REPO_DIR=~/workspace/tieubao/ops-toolkit`). v1 is
+    `STATS_GIT_REPO_DIR=~/workspace/<owner>/ops-toolkit`). v1 is
     single-repo-per-materialization, a documented tradeoff (see README)."""
     return _env_path("STATS_GIT_REPO_DIR", str(_kit_repo_root()))
 

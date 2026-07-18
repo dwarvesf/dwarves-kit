@@ -86,7 +86,7 @@ Delta from the spec. Only off-spec calls live here.
   skill-catches-up.
 - Decision: grepped the skill source before writing anything. Found the beat ALREADY present,
   verbatim grammar and all:
-  - `~/workspace/tieubao/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/GUIDE.md`
+  - `~/workspace/<owner>/dotfiles/home/dot_claude/skills/plan-for-mega-goal/references/GUIDE.md`
     line 207-217, step 6a "Advisor pre-launch pass (standing beat)": "dispatch `kit:advisor`
     twice on the finished scaffold, in-harness: P5 critique... and P6 over-suggest... In a
     kit-adopted repo, record the advisor rows (`mode=P5|P6 findings=N actor=`)."

@@ -734,7 +734,7 @@ Full run detail + the COVERAGE-DELTA live in the per-feature docs under `verific
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit
+cd ~/workspace/<owner>/ops-toolkit
 bash tools/ledger-observatory/tests/test-schema-conform.sh   # schema (SG-01)
 cd tools/ledger-observatory && uv sync
 bash tests/test-ledger-cli.sh                                 # etl-cli (SG-02) -- pre-existing kit_runs env issue here, see above
@@ -746,12 +746,12 @@ uv run ledger rebuild && uv run ledger gate-yield --table      # real-corpus mat
 bash tests/test-schema-parity.sh                               # schema-drift guard (SG-02 fix, 2026-07-04)
 bash tests/test-defect-correlation.sh                          # defect-correlation (harness-observatory SG-02)
 uv run ledger rebuild && uv run ledger defect-correlation --table   # real-history run: ops-toolkit
-LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger rebuild \
-  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger defect-correlation --table  # real-history run: dwarves-kit
+LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger rebuild \
+  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger defect-correlation --table  # real-history run: dwarves-kit
 bash tests/test-deviation-rate.sh                              # deviation-rate (harness-observatory SG-03)
 uv run ledger rebuild && uv run ledger deviation-rate --table       # real run: ops-toolkit (233 rows)
-LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger rebuild \
-  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/tieubao/dwarves-kit uv run ledger deviation-rate --table  # real run: dwarves-kit (77 rows)
+LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger rebuild \
+  && LEDGER_OBS_GIT_REPO_DIR=~/workspace/<owner>/dwarves-kit uv run ledger deviation-rate --table  # real run: dwarves-kit (77 rows)
 bash tests/test-anomalies-advisor.sh                           # anomalies-advisor (harness-observatory SG-04)
 uv run ledger rebuild && uv run ledger anomalies --table       # real-corpus capture (honest: only unknown_density fires today)
 bash tests/test-sessions-digest.sh                             # sessions-digest (harness-observatory SG-05, GATE)
@@ -760,11 +760,11 @@ bash tests/test-memory-lens.sh                                 # memory-lens (ha
 uv run ledger rebuild && uv run ledger memory-sweep --table    # real paydown (248 memories, 33 carrying dead-ref)
 ```
 
-Everything above ran from `~/workspace/tieubao/ops-toolkit`. As of goal 05K (2026-07-05) the
+Everything above ran from `~/workspace/<owner>/ops-toolkit`. As of goal 05K (2026-07-05) the
 tool lives in dwarves-kit instead; reproduce from the new location:
 
 ```bash
-cd ~/workspace/tieubao/dwarves-kit/tools/ledger-observatory
+cd ~/workspace/<owner>/dwarves-kit/tools/ledger-observatory
 uv sync
 for f in tests/test-*.sh; do bash "$f" || echo "FAILED: $f"; done   # all 14 files, exit 0
 bash tests/test-mega-durations.sh                              # mega-durations (05K, new)

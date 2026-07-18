@@ -83,6 +83,6 @@ On 2.1.148, an author cannot get namespace + live edits + cross-session persiste
 - Bash installer uninstalled (`bash install.sh --uninstall`; clean, verified it only stripped kit-owned artifacts and left personal hooks intact).
 - Local directory marketplace `dwarves-marketplace` add succeeded but `/plugin install` failed per section 2.
 - Plugin `name` set to `kit` in `plugin.json` + `marketplace.json` (so the namespace is `/kit:`), shortened from `dwarves-kit`; the github repo / project name stays `dwarves-kit`. Install: `/plugin install kit@dwarves-marketplace`. Note `user` was rejected as a name: reserved prefix, collides with personal-command resolution.
-- Resolution: `~/.config/fish/functions/claude.fish` wrapper applies `--plugin-dir /Users/tieubao/workspace/tieubao/dwarves-kit` globally. Gives `/kit:<cmd>` + live edits.
+- Resolution: `~/.config/fish/functions/claude.fish` wrapper applies `--plugin-dir /Users/tieubao/workspace/<owner>/dwarves-kit` globally. Gives `/kit:<cmd>` + live edits.
 - End-user distribution for the kit should be the github-source marketplace (`dwarvesf/dwarves-kit`).
 - Folded into dwarves-kit backlog ID-031 (the original "add a `(dwarves-kit)` description prefix" task is obsolete: plugin auto-namespaces).

@@ -163,7 +163,7 @@ One-sentence description (gate 4): *"`/user:absorb` audits the kit's README-Cred
 - Maintainer-only connective-tissue command precedent: `commands/kit-health.md`.
 - DATA-not-instructions guard caliber: `docs/decisions/0008-adopt-superpowers-patterns.md` (the external-review-text-as-data guard).
 - Reject-list (vendor-skill sprawl etc.): `docs/PHILOSOPHY.md` "What we explicitly reject".
-- Internal lane (deferred): SPEC-007 (to be drafted) + `~/workspace/tieubao/ops-toolkit/CLAUDE.md` lifecycle.
+- Internal lane (deferred): SPEC-007 (to be drafted) + `~/workspace/<owner>/ops-toolkit/CLAUDE.md` lifecycle.
 
 ## Validation
 4 reviewers run 2026-05-20 (scope-critic, assumption-destroyer, failure-mode, philosophy-fidelity). Aggregate pre-fix verdict: NEEDS REVISION.

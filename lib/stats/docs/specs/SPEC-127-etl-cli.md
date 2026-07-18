@@ -191,7 +191,7 @@ not gate filesystem writes. The multi-statement rejection + PRAGMA de-allowlisti
 ## Verification
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit/tools/ledger-observatory
+cd ~/workspace/<owner>/ops-toolkit/tools/ledger-observatory
 uv sync
 uv run ledger rebuild
 uv run ledger show kit_runs --json | head

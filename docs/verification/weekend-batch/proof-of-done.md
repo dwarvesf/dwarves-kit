@@ -5,7 +5,7 @@
 | # | Criterion | Result | Evidence |
 |---|---|---|---|
 | AC1 | Collects the week's deferred+waved debt-ledger items + resolves impl-notes/explainers (both naming conventions) | PASS (5/5 sub-checks) | `bash tests/test-weekend-batch.sh` AC1a-e |
-| AC2 | The dotfiles skill routes through `learning-day-process` + `learning-ledger` + `deep-understand` + a privacy-stripped `til` flush | PASS (5/5) | AC2a-e, grepped against `~/workspace/tieubao/dotfiles/home/dot_claude/skills/weekend-debt-paydown/SKILL.md` (present on this machine; SKIPS gracefully in CI where that path is absent, same precedent as SPEC-107) |
+| AC2 | The dotfiles skill routes through `learning-day-process` + `learning-ledger` + `deep-understand` + a privacy-stripped `til` flush | PASS (5/5) | AC2a-e, grepped against `~/workspace/<owner>/dotfiles/home/dot_claude/skills/weekend-debt-paydown/SKILL.md` (present on this machine; SKIPS gracefully in CI where that path is absent, same precedent as SPEC-107) |
 | AC3a | **NEGATIVE CONTROL:** an already-engaged (paid) item is not re-collected | PASS (2/2) | seeded a `tap`, ran the REAL `mark-paid` codepath, re-ran `list`, confirmed absence |
 | AC3b | **NEGATIVE CONTROL:** a non-significant change (present in the raw ledger) never enters the collectible view; the still-open pending tap is also excluded | PASS (3/3) | AC3b + bonus |
 | AC3c | Window scoping (`--days`) | PASS (2/2) | 30-day-old item excluded by default, included at `--days 400` |

@@ -13,13 +13,13 @@ state migration, no write path touched besides the new expiry relabel.
 ## (a) render, real-shaped data (rung 2 proof)
 
 Captured against a **copy** of the real 69-candidate
-`~/workspace/tieubao/ops-toolkit/_meta/backlog-staging.md` -- the live file was never
+`~/workspace/<owner>/ops-toolkit/_meta/backlog-staging.md` -- the live file was never
 opened for writing (confirmed: `diff` against the live file both before and after this
 run is empty; every Source date on the live corpus today is < 30d old, so no expiry
 fires on it and none is expected).
 
 ```
-Command: cp ~/workspace/tieubao/ops-toolkit/_meta/backlog-staging.md <copy>
+Command: cp ~/workspace/<owner>/ops-toolkit/_meta/backlog-staging.md <copy>
          BACKLOG_STAGE_STAGING=<copy> bash bin/learn drain
 Exit: 0
 Output: 20 Home groups, 69 candidates, oldest-first within each group, numbered 1-69

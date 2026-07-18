@@ -117,7 +117,7 @@ None.
 - The two ported sections: ops-toolkit `tools/agency-lead-radar/docs/SPEC.md` (Input/Output contract, Failure modes) and `tools/tide/docs/specs/` shape.
 - The template + reviewers this extends: `commands/spec.md` and `commands/spec-validate.md` (Reviewers 2 + 5), both as shipped by SPEC-008.
 - Philosophy bars this respects: `docs/PHILOSOPHY.md` ("Shallow and wide beats deep and narrow", "Detect, don't dictate", "every file justifies its existence").
-- Field context on heavier SDD templates and their cost: `~/workspace/tieubao/ops-toolkit/research/2026-05-20-agent-workflow-enforcement-patterns.md`.
+- Field context on heavier SDD templates and their cost: `~/workspace/<owner>/ops-toolkit/research/2026-05-20-agent-workflow-enforcement-patterns.md`.
 
 ## Validation
 5 reviewers run 2026-05-20 (security, failure-mode, assumption-destroyer, scope-critic, solution-design & extensibility; the post-SPEC-008 set). Pre-fix verdict: NEEDS REVISION (one design-overlap warning).

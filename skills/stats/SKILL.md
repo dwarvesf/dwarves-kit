@@ -7,7 +7,7 @@ description: Query or render the state of the scattered kit/tide/tg-cleanup/lear
 
 Read-only, agent-callable observability over the ledgers dwarves-kit and its
 neighbors (tide, tg-cleanup, learned-ledger) already write. The tool dir is
-`~/workspace/tieubao/dwarves-kit/lib/stats` (run `uv run stats <cmd>`
+`~/workspace/<owner>/dwarves-kit/lib/stats` (run `uv run stats <cmd>`
 there). **Everything is read-only: the CLI never writes back to a source ledger; there
 is no path through this skill that mutates anything.**
 
@@ -53,7 +53,7 @@ lists what's materialized right now.
 ## Examples
 
 ```bash
-cd ~/workspace/tieubao/dwarves-kit/lib/stats
+cd ~/workspace/<owner>/dwarves-kit/lib/stats
 
 # Quick look: "show me the ledger state"
 uv run stats render kit_runs --surface terminal --limit 10

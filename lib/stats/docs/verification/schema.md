@@ -75,7 +75,7 @@ Verdict: PASS
 ## 5. Reproduce
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit
+cd ~/workspace/<owner>/ops-toolkit
 bash tools/ledger-observatory/tests/test-schema-conform.sh
 ```
 
