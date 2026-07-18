@@ -141,6 +141,7 @@ Lane = the WORKFLOW.md risk tier (`tiny` / `normal` / `full`).
 | ID-296 | Strip personal ~/workspace/tieubao example paths from lib/stats docs | 15+ hits in lib/stats/docs/{specs,verification,proof-of-done} in a public repo. #u-mid #f-hi | queued |
 | ID-297 | Point auto-format hook at rustup stable cargo fmt | hooks/auto-format.sh:65-66 uses PATH rustfmt (brew), diverges from CI stable toolchain, caused import-order churn in zedra. #u-mid #f-hi | queued |
 | ID-298 | Calibrate prose-rag relevance floor for table-shaped chunks | floor hardcoded 0.32 in lib/prose-rag rust/src/main.rs:671. #u-lo #f-mid | queued |
+| ID-299 | Scope proof-ledger override log per-repo | The ship-gate override log (~/.local/state/dwarves-kit/logs/proof-overrides.log, checked by lib/proof-ledger.sh / the ship-gate) keys by branch slug GLOBALLY: a family-office session's `backlog-reconcile` override entry short-circuited the gate for an unrelated console-labs push on the same slug, hiding a legitimate proof already in that diff. The console-labs session had to rename its branch to dodge the collision. Fix: key override entries by repo+slug (or repo path). #u-mid #f-hi | queued |
 Dependency notes:
 - ID-012 P1 (spec stop-criteria) shipped (SPEC-012, normal lane; see CHANGELOG); P2 (loop QA gate) is held until the pointer-`/goal` pattern has real runs; it will build on the now-shipped SPEC-006 completeness clauses + the existing verification pipeline.
 - ID-002 (internal absorption lane, SPEC-007) is parked; independent of the orchestration chain.
