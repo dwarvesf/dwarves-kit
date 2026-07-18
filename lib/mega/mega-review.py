@@ -50,7 +50,7 @@ import re
 import subprocess
 import sys
 
-_SELF_DIR = os.path.dirname(os.path.abspath(__file__))  # lib/ (mega.sh's own dir; orphan file)
+_SELF_DIR = os.path.dirname(os.path.abspath(__file__))  # lib/mega/ (this file's own dir; siblings resolve one level up)
 
 
 def _load_proof_table_gen():

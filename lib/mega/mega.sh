@@ -8,17 +8,16 @@
 # `report` (the RUN_REPORT telemetry generator: header + gate matrix + callable-stack
 # skeleton from the rid ledgers; --out, --rid-map).
 #
-# ORPHAN, not a subsystem dir (SG-03's "2+-verb subsystems get a grouped `lib/<x>/<x>.sh`
-# case-dispatcher" rule): `mega` gained a second verb (`review`, SPEC-197 / harness-loop SG-07)
-# but STAYS a bare orphan file here deliberately -- the directory-promotion (`lib/mega/mega.sh` +
-# siblings, `bin/mega`) is explicitly ADR-0034's census target for SG-04 (the taxonomy's own
-# consolidation wave), not this sub-goal's scope. `review`'s substantial composition logic lives
-# in the sibling `lib/mega/mega-review.py` (bash-launcher-to-python, the exact delegation shape
-# `lib/gate/proof-table-gen.sh` -> `lib/gate/proof-table-gen.py` already established: bash 3.2
-# has no associative arrays, which the phase/token/PR joins need). Same shape as
-# `lib/board/board.sh` delegating to `lib/board/board-mirror.sh` for its own heavier verbs.
-# `lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh` / `lib/precedent.sh` remain the single-verb
-# orphan precedent this file no longer strictly matches; that gap is SG-04's to close.
+# A subsystem dir (SG-03's "2+-verb modules get a grouped `lib/<x>/<x>.sh`" rule): `mega` has
+# two verbs (`status`, `review` -- SPEC-197 / harness-loop SG-07) and was promoted into
+# `lib/mega/` (`lib/mega/mega.sh` + siblings, stable entry `bin/mega`) per ADR-0034 / ID-287.
+# `review`'s substantial composition logic lives in the sibling `lib/mega/mega-review.py`
+# (bash-launcher-to-python, the exact delegation shape `lib/gate/proof-table-gen.sh` ->
+# `lib/gate/proof-table-gen.py` already established: bash 3.2 has no associative arrays, which
+# the phase/token/PR joins need). Same shape as `lib/board/board.sh` delegating to
+# `lib/board/board-mirror.sh` for its own heavier verbs. The single-verb orphans
+# (`lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh` / `lib/precedent.sh`) stay at root as
+# ADR-0034 "deliberate orphans" pending their own ruling.
 #
 # WHY THIS EXISTS (provenance): a live session hit the SG-02 HANDOFF-vs-reality lie by hand --
 # HANDOFF.md claimed "running" while the `kitmod-02` worktree sat at 0 commits, empty. A dumb
