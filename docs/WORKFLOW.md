@@ -1027,7 +1027,8 @@ contract states the rules; it does not cite the spec IDs that decided them.
 The visual companion to the contract above: the same machine drawn as flows and
 loops. The tables above are the rules; this section is the picture. For per-command
 operator detail read `MANUAL.md`; for component fit and the SDLC state machine read
-`docs/architecture.md`.
+`docs/architecture.md`. A standalone one-page rendering of every flow below (plus
+the cycle, V-model, and type loops) lives at [`docs/workflow-map.md`](workflow-map.md).
 
 At a glance: **1** backbone (the spine, above), **5** primary intake lanes (the lane
 table, above), **3** bounded loops (the engines, below), **8** opt-in side-flows,
