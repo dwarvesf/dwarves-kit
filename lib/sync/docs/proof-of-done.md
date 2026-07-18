@@ -68,10 +68,11 @@ with exit 64 rather than silently no-op'ing). Tests:
 
 | When | Command | Exit | Verdict |
 |---|---|---|---|
-| 2026-07-18 | `pytest lib/sync/tests/test_cockpit.py -q --cov=cockpit` | 0 | 62 passed, 97% coverage (only argparse-dispatch/`__main__` lines uncovered) |
+| 2026-07-18 | `pytest lib/sync/tests/test_cockpit.py -q --cov=cockpit` | 0 | 69 passed, 97% coverage (only argparse-dispatch/`__main__` lines uncovered) |
 | 2026-07-18 | PARITY: `board-mirror.sh row-hash ...` vs `cockpit.row_hash(...)` | 0 | byte-identical digest (a future snapshot cutover adopts the legacy NDJSON without re-hashing) |
 | 2026-07-18 | PARITY: `board-mirror.sh extract-rows`/`extract-megas` vs `cockpit.py extract`, `cmp` on a fixture carrying PREFIXED ids (`BK-101`, `DS-7`), a bare `ID-`, a shipped row, and an active mega | 0 | `cmp` rc=0, byte-identical TSV incl. every hash, both origin formats, prefixed-id support, and the shipped-row exclusion |
-| 2026-07-18 | review round (architecture 8/10 + security + advisor-Fable critique), findings applied | 0 | HIGH prefixed-id gap fixed (own `parse_cockpit_board` replacing bare-`ID-` `parse_board`); git-toplevel repo-root resolver; `--engine` value validation (bogus -> exit 64); registry trailing-token folding; untrusted-content markers ported for the deferred LOAD leg; per-row skip diagnostics |
+| 2026-07-18 | review round (architecture + security + advisor-Fable critique), findings applied | 0 | HIGH prefixed-id gap fixed (own `parse_cockpit_board` replacing bare-`ID-` `parse_board`); git-toplevel repo-root resolver; `--engine` value validation (bogus -> exit 64); registry trailing-token folding; untrusted-content markers ported for the deferred LOAD leg; per-row skip diagnostics |
+| 2026-07-18 | security round (2 Medium), findings applied | 0 | `read_snapshot` no longer crashes on a valid-JSON-but-non-object line (isinstance-dict guard, `null`/`42`/`[..]` skipped); `extract`/`plan --json` emit an out-of-band untrusted-content stderr banner (markers deliberately NOT applied to plan fields, which would corrupt the LOAD-leg input); no Critical/High, ReDoS/argv-injection/secrets checks clean |
 | 2026-07-18 | `board mirror --engine sync --dry-run --registry <fix>` | 0 | plan: `2 ops (2 create...)`, one row card + one mega card, correct native targets (`triage`/`ready`) |
 | 2026-07-18 | `board mirror --engine sync --registry <fix>` (no `--dry-run`) | 64 | NEGATIVE CONTROL: refuses (apply not yet ported), never silently no-ops |
 | 2026-07-18 | `bash tests/test-board-mirror.sh` (legacy engine) | 0 | NEGATIVE CONTROL: 72/72, the legacy bridge is untouched by the fold-in |
