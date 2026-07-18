@@ -56,7 +56,9 @@ migration, and retiring `mirror`/`status`/`writeback` to thin aliases.
 
 ### Implementation
 
-`lib/sync/cockpit.py` (pure stdlib; reuses `sync_core.parse_board`) + the
+`lib/sync/cockpit.py` (pure stdlib; its own `parse_cockpit_board` honoring the
+legacy `[A-Z]+-[0-9]+` id pattern + column-agnostic layout, NOT the bare-`ID-`
+`sync_core.parse_board`, so prefixed multi-repo ids pool correctly) + the
 `board mirror --engine sync --dry-run` opt-in route in `lib/board/board.sh`
 (legacy stays the default; a bare `--engine sync` without `--dry-run` refuses
 with exit 64 rather than silently no-op'ing). Tests:
@@ -66,9 +68,10 @@ with exit 64 rather than silently no-op'ing). Tests:
 
 | When | Command | Exit | Verdict |
 |---|---|---|---|
-| 2026-07-18 | `pytest lib/sync/tests/test_cockpit.py -q --cov=cockpit` | 0 | 52 passed, 98% coverage (only argparse-dispatch/`__main__` lines uncovered) |
+| 2026-07-18 | `pytest lib/sync/tests/test_cockpit.py -q --cov=cockpit` | 0 | 62 passed, 97% coverage (only argparse-dispatch/`__main__` lines uncovered) |
 | 2026-07-18 | PARITY: `board-mirror.sh row-hash ...` vs `cockpit.row_hash(...)` | 0 | byte-identical digest (a future snapshot cutover adopts the legacy NDJSON without re-hashing) |
-| 2026-07-18 | PARITY: `board-mirror.sh extract-rows`/`extract-megas` vs `cockpit.py extract` on the same fixture | 0 | byte-identical TSV incl. every hash, origin format, and the shipped/dropped exclusion |
+| 2026-07-18 | PARITY: `board-mirror.sh extract-rows`/`extract-megas` vs `cockpit.py extract`, `cmp` on a fixture carrying PREFIXED ids (`BK-101`, `DS-7`), a bare `ID-`, a shipped row, and an active mega | 0 | `cmp` rc=0, byte-identical TSV incl. every hash, both origin formats, prefixed-id support, and the shipped-row exclusion |
+| 2026-07-18 | review round (architecture 8/10 + security + advisor-Fable critique), findings applied | 0 | HIGH prefixed-id gap fixed (own `parse_cockpit_board` replacing bare-`ID-` `parse_board`); git-toplevel repo-root resolver; `--engine` value validation (bogus -> exit 64); registry trailing-token folding; untrusted-content markers ported for the deferred LOAD leg; per-row skip diagnostics |
 | 2026-07-18 | `board mirror --engine sync --dry-run --registry <fix>` | 0 | plan: `2 ops (2 create...)`, one row card + one mega card, correct native targets (`triage`/`ready`) |
 | 2026-07-18 | `board mirror --engine sync --registry <fix>` (no `--dry-run`) | 64 | NEGATIVE CONTROL: refuses (apply not yet ported), never silently no-ops |
 | 2026-07-18 | `bash tests/test-board-mirror.sh` (legacy engine) | 0 | NEGATIVE CONTROL: 72/72, the legacy bridge is untouched by the fold-in |

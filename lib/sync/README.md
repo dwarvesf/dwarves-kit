@@ -174,10 +174,12 @@ Owner/Notes and status/select/number/people.
 a MANY-source -> ONE-cockpit channel, distinct from the per-repo two-way spoke
 sync above. It reads a `boards.txt` registry (every opted-in repo's BACKLOG.md
 plus its active `_meta/megagoals/*/ROADMAP.md`) and keys every item by ORIGIN
-(`<repo>:ID-NNN`, `megagoals:<repo>/<slug>`) so many repos pool onto one board
-without ID collisions. The diff is `row_hash`-keyed and the board always wins
-(the git-wins conflict rule); the git board keyword maps to the Hermes
-reachable-state set `{triage, ready, blocked, done}`.
+(`<repo>:<id>`, `megagoals:<repo>/<slug>`) so many repos pool onto one board
+without ID collisions. It honors the legacy `[A-Z]+-[0-9]+` id pattern
+(`BACKLOG_ID_RE` override), so prefixed boards (`BK-`, `DS-`, `DF-`, ...) pool
+correctly, NOT just bare `ID-`. The diff is `row_hash`-keyed and the board
+always wins (the git-wins conflict rule); the git board keyword maps to the
+Hermes reachable-state set `{triage, ready, blocked, done}`.
 
 This slice ports the two DETERMINISTIC legs (multi-source extract + the keyed
 diff/plan) and is reachable in dry-run:
@@ -188,8 +190,10 @@ python3 cockpit.py plan    --registry _meta/boards.txt [--snapshot F] [--json]
 board mirror --engine sync --dry-run                            # same, via the verb
 ```
 
-The `row_hash` is byte-identical to the legacy `board-mirror.sh` engine, so the
-existing bridge snapshot is a format-compatible bearing interface. DEFERRED to
+The extract (and thus the `row_hash`) is byte-identical to the legacy
+`board-mirror.sh` engine, verified with `cmp` on a fixture carrying prefixed
+ids, so the existing bridge snapshot is a format-compatible bearing interface
+for a later cutover. DEFERRED to
 a later slice (still served by the legacy `mirror`/`status`/`writeback` verbs,
 which keep working and print a legacy banner): the live Hermes LOAD leg, two-way
 status writeback (SPEC-149), snapshot state-shape migration, and retiring those

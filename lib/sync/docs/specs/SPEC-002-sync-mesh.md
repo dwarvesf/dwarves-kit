@@ -172,5 +172,9 @@ or flatten to `profile_personal_*` keys if we refuse to touch the resolver.)
      snapshot state-shape migration, named-profile config (`[sync.profile.*]`),
      and retiring `mirror`/`status`/`writeback` to thin aliases. The legacy
      engine (board-mirror.sh + board-writeback.sh) stays runnable until then.
+     SECURITY CARRY-OVER for the LOAD leg: it MUST wrap every card title/body/
+     comment built from board content through `cockpit.mark_untrusted_title` /
+     `mark_untrusted_body` (the ported `MIRROR_UNTRUSTED_*` markers), so the
+     prompt-injection boundary the legacy engine set is not dropped.
 3. **P3, megagoal + goal object types** (progress-card mapper, mirror-out).
 4. **P4, assignee predicate** (blocked on a board assignee convention).

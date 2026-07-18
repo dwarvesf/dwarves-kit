@@ -514,6 +514,10 @@ cmd_mirror() {
   # LOAD leg (applying to a Hermes kanban) and two-way writeback stay on the
   # legacy engine below until the next slice, so a bare `--engine sync` without
   # --dry-run is refused rather than silently doing nothing.
+  case "$OPT_ENGINE" in
+    legacy|sync) : ;;
+    *) echo "mirror: unknown --engine '$OPT_ENGINE' (expected legacy|sync)" >&2; return 64 ;;
+  esac
   if [ "$OPT_ENGINE" = "sync" ]; then
     [ -f "$registry" ] || { echo "mirror: no registry at $registry" >&2; return 1; }
     if [ "$OPT_DRY_RUN" -ne 1 ]; then
@@ -521,8 +525,9 @@ cmd_mirror() {
            "the plan, or use the legacy engine (default) to apply." >&2
       return 64
     fi
-    local plan_args=(plan --registry "$registry")
-    [ -f "$snapshot" ] && plan_args+=(--snapshot "$snapshot")
+    # --snapshot always passed (cockpit.py treats a missing file as empty prior
+    # state), mirroring the legacy branch below for a symmetric read.
+    local plan_args=(plan --registry "$registry" --snapshot "$snapshot")
     [ -n "$OPT_MEGA_BOARD" ]   && plan_args+=(--mega-board "$OPT_MEGA_BOARD")
     [ -n "$OPT_BOARD_PREFIX" ] && plan_args+=(--board-prefix "$OPT_BOARD_PREFIX")
     exec python3 "$COCKPIT_PY" "${plan_args[@]}"
