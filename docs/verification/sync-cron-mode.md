@@ -69,6 +69,15 @@ and absent).
 
 ## Confirmation run
 
+Command: `bash tests/test-sync-cron-install.sh`
+Exit: 0
+
+Command: `bash tests/test-sync-cron-launcher.sh`
+Exit: 0
+
+Command: `bash tests/test-meta.sh`
+Exit: 0
+
 | Check | Command | Exit | Verdict |
 |---|---|---|---|
 | Install-script suite (29 assertions) | `bash tests/test-sync-cron-install.sh` | 0 | PASS (29/29) |
