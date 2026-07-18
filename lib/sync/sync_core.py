@@ -18,14 +18,18 @@ INBOX_HEADING = "### Reminders inbox"
 CLOSED_HEADING = "## Recently closed"
 TABLE_HEADER = "| ID | Item | Notes & source | Status |"
 TABLE_RULE = "|---|---|---|---|"
-# Any repo-prefixed board id (ID-, DF-, BK-, ...); the documented kit
-# convention is `[A-Z]+-[0-9]+`. Generalized from the ID-only original so the
-# engine parses every adopted repo's board (SPEC-003 / ID-138: dfoundation
-# DF-NN rows). ID- boards still match, so existing behavior is unchanged.
-ID_TOKEN = r"[A-Z][A-Z0-9]*-\d+"
-ROW_ID_RE = re.compile(r"^\| (" + ID_TOKEN + r") \|")
-TITLE_RE = re.compile(r"^(" + ID_TOKEN + r")\s*(?:[·:, -]\s*)?(.*)$")
+TITLE_RE = re.compile(r"^(ID-\d+)\s*(?:[·:, -]\s*)?(.*)$")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
+
+# Board-id row recognizers. The two-way mesh is `ID-`-only (STRICT), exactly as
+# before, so its ID-minting siblings (next_id, apply_board, warn_duplicate_ids)
+# stay consistent. The one-way create-only push (SPEC-003 / ID-138) reads
+# boards with any repo prefix (the documented kit convention `[A-Z]+-[0-9]+`,
+# e.g. dfoundation DF-NN); it never mints or writes board ids, so widening its
+# READ view has no interaction with the strict minters.
+ID_TOKEN = r"[A-Z][A-Z0-9]*-\d+"
+STRICT_ROW_RE = re.compile(r"^\| (ID-\d+) \|")
+GEN_ROW_RE = re.compile(r"^\| (" + ID_TOKEN + r") \|")
 
 # --- board parsing -----------------------------------------------------------
 
@@ -47,16 +51,23 @@ def split_row(line: str):
     return [p.strip() for p in parts[1:5]]
 
 
-def parse_board(text: str) -> dict[str, Row]:
+def parse_board(text: str, strict_id: bool = True) -> dict[str, Row]:
+    """Parse `| id | item | notes | status |` rows. `strict_id=True` (default,
+    the two-way mesh) recognizes ONLY `ID-NNN`, keeping the ID-minting path
+    (next_id/apply_board) consistent. `strict_id=False` (the one-way create
+    push) accepts any repo prefix `[A-Z]+-NNN` but never mints or writes ids.
+    """
+    row_re = STRICT_ROW_RE if strict_id else GEN_ROW_RE
+    id_full = r"ID-\d+" if strict_id else ID_TOKEN
     rows: dict[str, Row] = {}
     for i, line in enumerate(text.splitlines()):
-        if not ROW_ID_RE.match(line):
+        if not row_re.match(line):
             continue
         cells = split_row(line)
         if not cells:
             continue
         rid, item, notes, status = cells
-        if not re.fullmatch(ID_TOKEN, rid):
+        if not re.fullmatch(id_full, rid):
             continue
         kw = status.split()[0].lower() if status.split() else ""
         if rid in rows:

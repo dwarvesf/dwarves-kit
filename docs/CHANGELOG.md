@@ -12,9 +12,13 @@ All notable changes to dwarves-kit are documented here.
   never overwritten, and the local sync-state map is the identity index. Status/
   Priority/Weight map to the team board's own option names via `.kit.toml [sync]`
   config, so the team schema is never mutated. The two-way mesh and its four live
-  adapters are untouched (`create_only` is a separate path). The engine's board
-  parser was generalized from `ID-` to any `[A-Z]+-\d+` prefix so it reads every
-  adopted repo's board (e.g. dfoundation `DF-NN`).
+  adapters are untouched (`create_only` is a separate path, and the two-way
+  board parser stays `ID-`-only; only the one-way READ path accepts any
+  `[A-Z]+-\d+` prefix, e.g. dfoundation `DF-NN`, and it never mints or writes
+  board ids). The sink validates every mapped option against the target's
+  schema before any create, so it never auto-creates an option on the team
+  board; state is checkpointed after each create so a mid-batch failure never
+  re-pushes a page.
 
 ### Changed
 - **`bridge` module folded into `sync`** (zero live consumers at fold time: no

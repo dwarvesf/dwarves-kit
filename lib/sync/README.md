@@ -137,9 +137,13 @@ identity index (a `bid` already pushed is never re-pushed), because the team
 board's own ID column is a read-only auto-increment that cannot hold `DF-NN`.
 
 Status / Priority / Weight are mapped to the team board's OWN option names via
-config, so the sink never mutates the team schema (it does one benign read to
-resolve the data source, never a PATCH). `dropped` rows are skipped; a state
-absent from the map uses `status_default` or, if unset, is a hard guided error.
+config, so the sink never mutates the team schema: it reads the schema (never
+PATCHes it) and validates every mapped option name exists BEFORE any create, so
+a typo'd map value is a hard error instead of a silently auto-created select
+option. `dropped` rows are skipped; a state absent from the map uses
+`status_default` or, if unset, is a hard guided error. Validation runs at
+preflight, so `--dry-run` surfaces config errors with zero writes, and state is
+checkpointed after each create so a mid-batch failure never re-pushes a page.
 
 ```toml
 [sync]

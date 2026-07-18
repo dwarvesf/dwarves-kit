@@ -26,8 +26,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from sync_core import (apply_board, build_state, describe, parse_board,  # noqa: E402
-                       plan_create_only, plan_sync)
+from sync_core import (ID_TOKEN, apply_board, build_state, describe,  # noqa: E402
+                       parse_board, plan_create_only, plan_sync)
+
+# apps that push one-way and read boards with any repo prefix (not just ID-)
+CREATE_ONLY_APPS = {"notion-taskboard"}
 from sources.hermes import HermesSource  # noqa: E402
 from sources.multica import MulticaSource  # noqa: E402
 from sources.notion import NotionSource  # noqa: E402
@@ -50,13 +53,14 @@ def atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def warn_duplicate_ids(text: str) -> None:
-    ids = re.findall(r"^\| (ID-\d+) \|", text, flags=re.M)
+def warn_duplicate_ids(text: str, strict_id: bool = True) -> None:
+    token = r"ID-\d+" if strict_id else ID_TOKEN
+    ids = re.findall(r"^\| (" + token + r") \|", text, flags=re.M)
     dups = sorted({i for i in ids if ids.count(i) > 1})
     if dups:
         print(f"WARNING: duplicate board rows for {', '.join(dups)}; "
               "first occurrence wins, fix the board")
-    parsed = set(parse_board(text))
+    parsed = set(parse_board(text, strict_id=strict_id))
     broken = sorted(set(ids) - parsed - set(dups))
     if broken:
         print(f"WARNING: malformed board rows (not 4 cells, invisible to "
@@ -66,30 +70,38 @@ def warn_duplicate_ids(text: str) -> None:
 def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
                      filt: dict | None = None) -> None:
     """One-way, insert-only push to a write-only sink (SPEC-003). The board
-    file is never written; the local state map is the identity index."""
+    file is never written; the local state map is the identity index. State is
+    checkpointed after EACH create, so a mid-batch failure never re-pushes an
+    already-created page (no duplicate cards on a team-owned board)."""
     text = backlog.read_text()
-    rows = parse_board(text)
+    rows = parse_board(text, strict_id=False)
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     if hasattr(src, "binding") and state.get("binding"):
         src.binding = state["binding"]
     plan = plan_create_only(rows, state, skip_kw=getattr(src, "skip_kw", None),
                             filt=filt)
+    # Validate the whole batch (maps resolve, options exist) BEFORE any write,
+    # so `--dry-run` surfaces config errors and a live run never dies part-way.
+    if hasattr(src, "preflight"):
+        src.preflight(plan)
     header = (f"{src.name}: {len(rows)} board rows, "
               f"{len(plan.src_create)} to create")
     if dry_run:
         print(f"dry-run {header}")
         print(describe(plan))
         return
-    created = src.apply(plan, {}, rows)
+
     new_map = dict(state.get("map", {}))
-    for bid, _t, _b, _kw in plan.src_create:
-        if bid in created:
-            new_map[bid] = {"rid": created[bid]}
-    new_state = {"map": new_map}
-    if getattr(src, "binding", None):
-        new_state["binding"] = src.binding
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write(state_path, json.dumps(new_state, indent=1))
+
+    def checkpoint(bid: str, rid: str) -> None:
+        new_map[bid] = {"rid": rid}
+        new_state = {"map": new_map}
+        if getattr(src, "binding", None):
+            new_state["binding"] = src.binding
+        atomic_write(state_path, json.dumps(new_state, indent=1))
+
+    created = src.apply(plan, {}, rows, on_created=checkpoint)
     print(f"synced {header}")
     print(describe(plan, created))
 
@@ -264,7 +276,8 @@ def main(argv=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         sys.exit("another backlog-sync run holds the lock; try again")
-    warn_duplicate_ids(args.backlog.read_text())
+    strict_id = not (set(names) & CREATE_ONLY_APPS)
+    warn_duplicate_ids(args.backlog.read_text(), strict_id=strict_id)
 
     # one-time migration from the pre-kit single-source tool's state path
     rem_state = state_dir / "reminders.state.json"

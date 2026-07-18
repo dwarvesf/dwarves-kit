@@ -5,12 +5,13 @@ Notion rule). See docs/specs/SPEC-003-oneway-create-push.md (ID-138).
 Insert-only by contract: the team owns each card after it lands, so the sink
 sets fields on page-create and never touches them again (the local sync-state
 map is the identity index; a bid already in the map is never re-pushed). Status
-/ Priority / Weight are mapped to the team board's OWN option names via config,
-so the sink never mutates the team schema.
+/ Priority / Weight are mapped to the team board's OWN option names via config.
 
-Unlike the two-way NotionSource, this adapter never reads the board for merge
-(`read()` returns []) and never PATCHes the target schema. `ensure_binding`
-does ONE benign read to resolve the data_source_id (the page-create parent).
+Never mutates the team schema: `ensure_binding` resolves the data source
+(a benign read), `preflight` reads the schema once to (a) learn each prop's
+type and (b) validate that every configured option name already exists on the
+board, so a typo'd map value is a hard error instead of a silently
+auto-created select option. `read()` returns [] (the sink is write-only).
 """
 
 import json
@@ -58,8 +59,11 @@ def parse_map(spec: str | None) -> dict:
 
 DEFAULT_PROPS = {"title": "Task", "status": "Status", "priority": "Priority",
                  "weight": "Weight", "owner": "Owner", "notes": "Notes"}
+# Fallback types used only when the schema has not been read (e.g. unit tests
+# that inject a binding directly); a real run derives types from the schema.
 DEFAULT_TYPES = {"status": "status", "priority": "select", "weight": "number",
                  "owner": "people"}
+OPTION_TYPES = ("select", "status")
 
 
 class NotionTaskBoardSource:
@@ -69,8 +73,7 @@ class NotionTaskBoardSource:
 
     def __init__(self, db=None, status_map=None, *, status_default=None,
                  priority_map=None, weight_map=None, owner=None,
-                 props=None, types=None, skip_statuses=None,
-                 binding=None, runner=_run_ntn):
+                 props=None, types=None, binding=None, runner=_run_ntn):
         self.db = db
         self.status_map = status_map or {}
         self.status_default = status_default
@@ -78,20 +81,24 @@ class NotionTaskBoardSource:
         self.weight_map = weight_map or {}
         self.owner = owner
         self.props = {**DEFAULT_PROPS, **(props or {})}
-        self.types = {**DEFAULT_TYPES, **(types or {})}
-        self.skip_kw = set(skip_statuses) if skip_statuses else {"dropped"}
+        self.types = {**(types or {})}          # explicit overrides only
+        self.skip_kw = {"dropped"}
         self.binding = binding or {}
         self.runner = runner
+        self._schema_types: dict = {}
+        self._prop_opts: dict = {}
+        self._schema_loaded = False
 
-    # --- binding (resolve the data source; no schema mutation) --------------
+    # --- binding + schema (reads only; never a schema PATCH) ----------------
 
     def ensure_binding(self) -> dict:
-        if self.binding.get("ds_id"):
-            return self.binding
+        if self.binding.get("ds_id") and self.binding.get("db_id") == self.db:
+            return self.binding   # cached (possibly restored from state)
         if not self.db:
             raise SystemExit(
                 "notion-taskboard: no target. Set notion_taskboard_db in "
                 "[sync] (.kit.toml) or pass --notion-taskboard-db.")
+        # a stale cached binding for a different db is discarded
         self.binding = {"db_id": self.db, "ds_id": self._resolve_ds(self.db)}
         return self.binding
 
@@ -105,10 +112,60 @@ class NotionTaskBoardSource:
                 return first["id"] if isinstance(first, dict) else first
         return resp["id"]
 
+    def _load_schema(self) -> None:
+        if self._schema_loaded:
+            return
+        b = self.ensure_binding()
+        schema = self.runner(["api", f"v1/data_sources/{b['ds_id']}"])
+        props = schema.get("properties", {})
+        for kind, pname in self.props.items():
+            p = props.get(pname)
+            if p is None:
+                continue   # optional props (owner/priority/weight) may be absent
+            ptype = p.get("type")
+            self._schema_types[kind] = ptype
+            if ptype in OPTION_TYPES:
+                self._prop_opts[pname] = {
+                    o["name"] for o in p.get(ptype, {}).get("options", [])}
+        self._schema_loaded = True
+
+    def _eff_type(self, kind: str) -> str:
+        return (self.types.get(kind) or self._schema_types.get(kind)
+                or DEFAULT_TYPES.get(kind))
+
     # --- read (write-only sink: nothing to read) ---------------------------
 
     def read(self) -> list:
         return []
+
+    # --- validation (preflight, before any write) --------------------------
+
+    def preflight(self, plan) -> None:
+        self._load_schema()
+        for bid, _title, body, kw in plan.src_create:
+            self._validate_row(bid, body, kw)
+
+    def _validate_row(self, bid: str, body: str, kw: str) -> None:
+        self._check_option(bid, "status", self._status_option(kw))
+        tags = extract_tags(body)
+        prio = self._tag_value(tags, self.priority_map)
+        if prio is not None:
+            self._check_option(bid, "priority", prio)
+        weight = self._tag_value(tags, self.weight_map)
+        if weight is not None:
+            if self._eff_type("weight") == "number":
+                self._number(weight, "weight")
+            else:
+                self._check_option(bid, "weight", weight)
+
+    def _check_option(self, bid: str, kind: str, name: str) -> None:
+        opts = self._prop_opts.get(self.props[kind])
+        if opts is not None and name not in opts:
+            raise SystemExit(
+                f"notion-taskboard: {bid}: {kind} value {name!r} is not an "
+                f"option of the {self.props[kind]!r} prop {sorted(opts)}; fix "
+                "the map or add the option on the board (a create must never "
+                "auto-create an option on a team board).")
 
     # --- property mapping --------------------------------------------------
 
@@ -121,19 +178,23 @@ class NotionTaskBoardSource:
                 "notion_taskboard_status_default.")
         return name
 
+    @staticmethod
+    def _number(value: str, kind: str):
+        try:
+            num = float(value)
+        except ValueError:
+            raise SystemExit(f"notion-taskboard: {kind} value {value!r} is not "
+                             "a number (types set number).")
+        return int(num) if num.is_integer() else num
+
     def _typed_value(self, kind: str, name: str) -> dict:
-        t = self.types.get(kind)
+        t = self._eff_type(kind)
         if t == "status":
             return {"status": {"name": name}}
         if t == "select":
             return {"select": {"name": name}}
         if t == "number":
-            try:
-                num = float(name)
-            except ValueError:
-                raise SystemExit(f"notion-taskboard: {kind} value {name!r} is "
-                                 "not a number (types set number).")
-            return {"number": int(num) if num.is_integer() else num}
+            return {"number": self._number(name, kind)}
         if t == "people":
             return {"people": [{"id": name}]}
         if t == "rich_text":
@@ -162,9 +223,10 @@ class NotionTaskBoardSource:
             out[self.props["owner"]] = self._typed_value("owner", self.owner)
         return out
 
-    # --- apply (insert-only) -----------------------------------------------
+    # --- apply (insert-only; checkpoints each create via on_created) --------
 
-    def apply(self, plan, assigned: dict, rows_after: dict) -> dict:
+    def apply(self, plan, assigned: dict, rows_after: dict,
+              on_created=None) -> dict:
         b = self.ensure_binding()
         created = {}
         for bid, title, body, kw in plan.src_create:
@@ -172,5 +234,8 @@ class NotionTaskBoardSource:
                 "parent": {"type": "data_source_id",
                            "data_source_id": b["ds_id"]},
                 "properties": self._page_props(title, body, kw)})
-            created[bid] = resp["id"]
+            rid = resp["id"]
+            created[bid] = rid
+            if on_created is not None:
+                on_created(bid, rid)   # persist state before the next POST
         return created

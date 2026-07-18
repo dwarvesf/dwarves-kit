@@ -335,3 +335,126 @@ def test_cli_end_to_end_pushes_through_main(tmp_path, monkeypatch):
     assert props["Status"] == {"status": {"name": "Backlog"}}
     assert props["Priority"] == {"select": {"name": "P0"}}
     assert board.read_text() == BOARD
+
+
+# --- schema-aware validation (never auto-create a team option) ------------
+
+SCHEMA = {"properties": {
+    "Task": {"type": "title", "title": {}},
+    "Status": {"type": "status", "status": {"options": [
+        {"name": "Backlog"}, {"name": "In progress"}, {"name": "Waiting"},
+        {"name": "Done"}]}},
+    "Priority": {"type": "select", "select": {"options": [
+        {"name": "P0"}, {"name": "P1"}, {"name": "P2"}]}},
+    "Notes": {"type": "rich_text", "rich_text": {}},
+}}
+
+
+def schema_src(**kw):
+    fake = FakeNtn({"api v1/data_sources/ds1": SCHEMA})
+    defaults = dict(db="db1", status_map=dict(DF_STATUS), binding=binding(),
+                    runner=fake)
+    defaults.update(kw)
+    return NotionTaskBoardSource(**defaults), fake
+
+
+def test_preflight_rejects_unknown_select_option():
+    # a typo'd Priority value would otherwise auto-create a team option
+    src, _ = schema_src(priority_map={"u-hi": "P-zero"})
+    plan = Plan(src_create=[("DF-1", "t", "x #u-hi", "queued")])
+    with pytest.raises(SystemExit, match="not an option of the 'Priority'"):
+        src.preflight(plan)
+
+
+def test_preflight_passes_known_options_and_learns_types():
+    src, _ = schema_src(priority_map={"u-hi": "P0"})
+    plan = Plan(src_create=[("DF-1", "t", "x #u-hi", "queued")])
+    src.preflight(plan)  # no raise
+    # types discovered from the schema (not the fallback guesses)
+    assert src._eff_type("status") == "status"
+    assert src._eff_type("priority") == "select"
+
+
+def test_preflight_surfaces_unmapped_status_on_dry_run(tmp_path):
+    import backlog_sync
+
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(
+        "| ID | Item | Notes & source | Status |\n|---|---|---|---|\n"
+        "| DF-1 | mid-flight | x | speccing |\n")   # speccing not mapped
+    src, _ = schema_src()  # no status_default
+    with pytest.raises(SystemExit, match="no Status mapping"):
+        backlog_sync.sync_create_only(src, board, tmp_path / "s.json",
+                                      dry_run=True)
+
+
+def test_stale_binding_for_a_different_db_is_rediscarded():
+    fake = FakeNtn({"datasources resolve db-new": {"data_sources": [{"id": "ds-new"}]}})
+    src = NotionTaskBoardSource(db="db-new", status_map=dict(DF_STATUS),
+                                binding={"db_id": "db-old", "ds_id": "ds-old"},
+                                runner=fake)
+    b = src.ensure_binding()
+    assert b["db_id"] == "db-new" and b["ds_id"] == "ds-new"
+
+
+# --- partial-batch failure never re-pushes (checkpoint per create) --------
+
+
+class FailOnNth(FakeNtn):
+    def __init__(self, nth, responses=None):
+        super().__init__(responses)
+        self.nth = nth
+
+    def __call__(self, args, data=None):
+        if args[0] == "api" and args[1] == "v1/pages" and "-X" in args:
+            if self.page_seq + 1 == self.nth:
+                raise SystemExit("ntn api v1/pages failed: 429 rate limited")
+        return super().__call__(args, data)
+
+
+TWO_ROW_BOARD = (
+    "| ID | Item | Notes & source | Status |\n|---|---|---|---|\n"
+    "| DF-1 | first | x | queued |\n"
+    "| DF-2 | second | y | queued |\n"
+)
+
+
+def test_partial_batch_failure_checkpoints_and_never_duplicates(tmp_path):
+    import backlog_sync
+
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(TWO_ROW_BOARD)
+    state = tmp_path / "s.json"
+
+    # run 1: second create fails after the first succeeded
+    fake = FailOnNth(2, {"api v1/data_sources/ds1": {"properties": {}}})
+    src = NotionTaskBoardSource(db="db1", status_map=dict(DF_STATUS),
+                                binding=binding(), runner=fake)
+    with pytest.raises(SystemExit, match="429"):
+        backlog_sync.sync_create_only(src, board, state, dry_run=False)
+    # DF-1's page was persisted even though the batch aborted
+    saved = json.loads(state.read_text())
+    assert list(saved["map"]) == ["DF-1"]
+
+    # run 2 (recovery): only DF-2 is created; DF-1 is NOT re-pushed
+    fake2 = FakeNtn({"api v1/data_sources/ds1": {"properties": {}}})
+    src2 = NotionTaskBoardSource(db="db1", status_map=dict(DF_STATUS),
+                                 binding=binding(), runner=fake2)
+    backlog_sync.sync_create_only(src2, board, state, dry_run=False)
+    assert len(fake2.page_bodies()) == 1
+    assert sorted(json.loads(state.read_text())["map"]) == ["DF-1", "DF-2"]
+
+
+def test_warn_duplicate_ids_general_prefix():
+    import backlog_sync
+
+    text = ("| DF-1 | a | x | queued |\n"
+            "| DF-1 | dup | y | queued |\n")
+    # strict (ID-only) sees no DF dup; general prefix catches it
+    backlog_sync.warn_duplicate_ids(text, strict_id=True)   # silent
+    import io
+    import contextlib
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        backlog_sync.warn_duplicate_ids(text, strict_id=False)
+    assert "duplicate board rows for DF-1" in buf.getvalue()

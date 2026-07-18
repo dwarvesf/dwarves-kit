@@ -63,13 +63,31 @@ fails the audience filter (`in_scope`). Everything else becomes one
 - `create_only = True`, `sync_fields = False`, `name = "notion-taskboard"`.
 - `read()` returns `[]`: the sink is write-only, we never read the team board.
 - `ensure_binding()` resolves the target database's `data_source_id` (a benign
-  read, needed as the page-create parent); it NEVER PATCHes the schema.
-- `apply()` handles only `plan.src_create`: it POSTs one page per row with
-  properties built from the config-driven field map (status/priority/weight
-  values are the team board's OWN option names, so no schema mutation occurs).
-- `skip_kw` defaults to `{"dropped"}`; a `status_default` (config) catches any
-  board state not in the status map, else a create for an unmapped state is a
-  hard, guided error (never a silent guess).
+  read, needed as the page-create parent); it NEVER PATCHes the schema. A
+  cached binding for a different `db_id` is discarded (a repointed target never
+  keeps pushing to the old board).
+- `preflight(plan)` reads the schema ONCE (read, never PATCH) to learn each
+  prop's type and to validate that every mapped option name (status, priority,
+  and select-type weight) already EXISTS on the board. An unknown option is a
+  hard error, not a silent auto-create, so the "never mutate the team schema"
+  invariant holds even for select-type props (which Notion would otherwise
+  auto-extend). Preflight runs before the dry-run return too, so `--dry-run`
+  surfaces every config error with zero writes.
+- `apply()` handles only `plan.src_create`: it POSTs one page per row and calls
+  an `on_created(bid, rid)` callback after each success. The engine checkpoints
+  state on that callback, so a mid-batch failure (rate limit, network) never
+  leaves a created page unrecorded, i.e. never re-pushes a duplicate next run.
+- `skip_kw` = `{"dropped"}`; a `status_default` (config) catches any board
+  state not in the status map, else it is a hard, guided error (never a guess).
+
+### Parser scope (`strict_id`)
+
+`parse_board(strict_id=True)` (the two-way mesh) recognizes ONLY `ID-NNN`, so
+its id-minting siblings (`next_id`, `apply_board`, `warn_duplicate_ids`) stay
+consistent and the two-way path is byte-for-byte unchanged. The one-way push
+reads with `strict_id=False` (any `[A-Z]+-NNN`, e.g. `DF-NN`) but never mints
+or writes ids; `warn_duplicate_ids` is called with the matching prefix so a
+`DF-` board still gets its duplicate/malformed-row warnings.
 
 ### Config (`.kit.toml [sync]`, resolved in `board.sh cmd_sync`)
 
@@ -95,6 +113,11 @@ Fake-`ntn` transport, no network, no live writes.
 | 7 | status_default catches unmapped | maps to the default option |
 | 8 | board file never written | create-only path performs no board write |
 | 9 | missing required config | build_source SystemExit naming the missing key |
+| 10 | unknown mapped option | preflight raises (no auto-created team option) |
+| 11 | dry-run validates | unmapped status fails on `--dry-run` before any write |
+| 12 | partial-batch failure | first create checkpointed; re-run pushes only the rest, never duplicates |
+| 13 | repointed target db | cached binding for a stale db_id is rediscarded |
+| 14 | `DF-` duplicate row | `warn_duplicate_ids(strict_id=False)` catches it |
 
 ## Verification
 

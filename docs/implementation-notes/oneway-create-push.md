@@ -41,6 +41,33 @@ Why: the kit ships no tenant policy; the consumer (dfoundation) decides where
 claimed/speccing/validated land by setting `status_default` (or extending the
 map). Honors "don't re-design" while never silently dropping active work.
 
+## 2026-07-18 review findings applied (kit:code-reviewer + kit:advisor)
+
+Two reviewers independently flagged the same landmines; fixes:
+- **Partial-batch duplicates**: `apply()` now takes an `on_created(bid, rid)`
+  callback; `sync_create_only` checkpoints state after EACH create. A mid-batch
+  `ntn` failure no longer leaves created pages unrecorded (which would re-push
+  duplicates on a team board). Plus a `preflight(plan)` validates the whole
+  batch (status/priority/weight map + option existence) BEFORE any POST, so a
+  config error can't fail a run part-way. Preflight also runs before the
+  dry-run return, so `--dry-run` surfaces config errors with zero writes.
+- **Select auto-create = silent schema mutation**: the "never mutate the team
+  schema" claim was false for select-type props (Notion auto-creates unknown
+  select options). Fixed by reading the schema in preflight and rejecting any
+  mapped option name not already on the board. This also auto-detects prop
+  TYPES from the schema (dropping the earlier "verify types manually" caveat).
+- **Parser generalization was half-applied**: reverted `TITLE_RE` to `ID-`-only
+  and gave `parse_board` a `strict_id` flag (default True = two-way, ID-only).
+  The one-way path passes `strict_id=False`; `warn_duplicate_ids` gained the
+  same flag so a `DF-` board still gets dup warnings. Net: the two-way mesh is
+  byte-for-byte `ID-`-only again (its id-minting siblings stay consistent), and
+  only the create-only READ view widened.
+- **Stale binding**: `ensure_binding` discards a cached binding whose `db_id`
+  differs from the configured target (a repointed `notion_taskboard_db` no
+  longer keeps pushing to the old board).
+- Minor: dropped the unused `skip_statuses` ctor param and the dead
+  `notion_taskboard_intake` config key (a write-only sink has no intake path).
+
 ## 2026-07-18 tenant IDs stay in the consumer repo
 
 Context: this repo (dwarves-kit) is public; the Task Board UUID and Han's

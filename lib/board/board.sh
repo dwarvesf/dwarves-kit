@@ -739,9 +739,10 @@ cmd_sync() {
   v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
   v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
   # notion-taskboard: one-way, insert-only push to a foreign team board
-  # (SPEC-003). Its down-filter uses TOML-friendly underscore keys but the
-  # engine's --filter app token keeps the hyphenated adapter name.
-  for fk in only_tags skip_tags intake; do
+  # (SPEC-003). Down-filter only (a write-only sink has no intake path); the
+  # keys are TOML-friendly underscores but the engine's --filter app token
+  # keeps the hyphenated adapter name.
+  for fk in only_tags skip_tags; do
     v="$(kit_config_get "sync.notion_taskboard_${fk}" "")"
     [ -n "$v" ] && args+=(--filter "notion-taskboard:${fk}=${v}")
   done
