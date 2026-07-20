@@ -71,6 +71,29 @@ strip_quotes() {
   printf '%s' "$1" | sed -E "s/\"([^\"]*)\"/\\1/g; s/'([^']*)'/\\1/g"
 }
 
+# Build-artifact allowlist: regenerable dirs only; any other target blocks. Shared
+# by every delete verb (rm, find), so the set of "safe to wipe" paths is defined
+# once. Fail-closed: no path operand at all is not safe.
+targets_all_safe() {
+  local t have=0
+  for t in "$@"; do
+    case "$t" in
+      -*) ;;
+      *..*) return 1 ;;   # parent traversal is never safe (C-1)
+      node_modules|node_modules/|node_modules/*|./node_modules|./node_modules/|./node_modules/*|\
+      dist|dist/|dist/*|./dist|./dist/|./dist/*|\
+      build|build/|build/*|./build|./build/|./build/*|\
+      .next|.next/|.next/*|./.next|./.next/|./.next/*|\
+      .nuxt|.nuxt/|.nuxt/*|.turbo|.turbo/|.turbo/*|.cache|.cache/|.cache/*|\
+      target|target/|target/*|./target|./target/|./target/*|\
+      coverage|coverage/|coverage/*|out|out/|out/*)
+        have=1 ;;
+      *) return 1 ;;
+    esac
+  done
+  [ "$have" = 1 ]
+}
+
 while IFS= read -r SEG; do
   [ -n "${SEG// /}" ] || continue
   # shellcheck disable=SC2086
@@ -101,27 +124,31 @@ while IFS= read -r SEG; do
         esac
       done
       if [ "$HAS_R" = 1 ] && [ "$HAS_F" = 1 ]; then
-        # Build-artifact allowlist: regenerable dirs only; any other target blocks.
-        for t in "$@"; do
-          case "$t" in
-            -*) ;;
-            *..*) ALL_SAFE=0; break ;;   # parent traversal is never safe (C-1)
-            node_modules|node_modules/|node_modules/*|./node_modules|./node_modules/|./node_modules/*|\
-            dist|dist/|dist/*|./dist|./dist/|./dist/*|\
-            build|build/|build/*|./build|./build/|./build/*|\
-            .next|.next/|.next/*|./.next|./.next/|./.next/*|\
-            .nuxt|.nuxt/|.nuxt/*|.turbo|.turbo/|.turbo/*|.cache|.cache/|.cache/*|\
-            target|target/|target/*|./target|./target/|./target/*|\
-            coverage|coverage/|coverage/*|out|out/|out/*)
-              HAVE_TARGET=1 ;;
-            *) ALL_SAFE=0; break ;;
-          esac
-        done
-        if [ "$ALL_SAFE" = 1 ] && [ "$HAVE_TARGET" = 1 ]; then
-          :  # safe regenerable delete
-        else
+        targets_all_safe "$@" || \
           block "rm-rf" "Destructive delete detected. Use 'trash' or 'mv' to a temp directory instead of rm -rf (build artifacts like node_modules/dist are allowlisted)."
-        fi
+      fi
+      ;;
+    find)
+      # find carries its own delete verbs. The rm rule never sees them: this
+      # segment's binary is find, not rm. 2026-07-08: an unguarded
+      # `find ~/.cache/.bun -mindepth 1 -delete` wiped a bun global install.
+      HAS_DEL=0; HAS_EXEC=0
+      for t in "$@"; do
+        case "$t" in
+          -delete) HAS_DEL=1 ;;
+          -exec|-execdir|-ok|-okdir) HAS_EXEC=1 ;;
+          rm|/bin/rm|/usr/bin/rm) if [ "$HAS_EXEC" = 1 ]; then HAS_DEL=1; fi ;;
+        esac
+      done
+      if [ "$HAS_DEL" = 1 ]; then
+        # find's path operands are the leading tokens, before the first primary.
+        PATHS=""
+        for t in "$@"; do
+          case "$t" in -*) break ;; *) PATHS="$PATHS $t" ;; esac
+        done
+        # shellcheck disable=SC2086
+        targets_all_safe $PATHS || \
+          block "find-delete" "Destructive delete detected (find -delete / -exec rm). Use 'trash' or 'mv' to a temp directory instead (build artifacts like node_modules/dist are allowlisted)."
       fi
       ;;
     git)
