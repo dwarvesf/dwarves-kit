@@ -105,6 +105,35 @@ S3="$R3/_meta/backlog-staging.md"
 assert_true "first run staged inside the interval" "$(grep -q 'First item' "$S3"; echo $?)"
 assert_true "NC: second unforced run throttled" "$(! grep -q 'Second item' "$S3"; echo $?)"
 
+echo "== config bugs are loud, not quiet: unknown kind warns; --check reports raw yield =="
+R5="$(mkrepo)"
+printf '{"url": "https://example.com/a", "title": "Item A", "verdict": "keep"}\n' > "$R5/ledger.jsonl"
+cat > "$R5/_meta/intake-sources.json" <<'EOF'
+{"sources": [
+  {"name": "good", "kind": "jsonl", "path": "ledger.jsonl",
+   "include": {"field": "verdict", "equals": "keep"},
+   "map": {"title": "title", "url": "url"}},
+  {"name": "typo-kind", "kind": "jsonlines", "path": "ledger.jsonl",
+   "map": {"title": "title", "url": "url"}},
+  {"name": "dead-path", "kind": "jsonl", "path": "no-such-file.jsonl",
+   "map": {"title": "title", "url": "url"}}
+]}
+EOF
+err="$(REPO_ROOT="$R5" INTAKE_SWEEP_STATE_DIR="$R5/state" python3 "$SWEEP" --force 2>&1 >/dev/null)"
+assert_true "unknown kind warns on stderr" "$(echo "$err" | grep -q "typo-kind.*unknown kind 'jsonlines'"; echo $?)"
+assert_true "the good source still stages despite a broken sibling" \
+  "$(grep -q 'Item A' "$R5/_meta/backlog-staging.md"; echo $?)"
+out="$(REPO_ROOT="$R5" INTAKE_SWEEP_STATE_DIR="$R5/state" python3 "$SWEEP" --check 2>&1)"; rc=$?
+assert_true "--check exits 0" "$rc"
+assert_true "--check reports the good source's raw yield" "$(echo "$out" | grep -qE 'ok +good \(jsonl\): 1 item'; echo $?)"
+assert_true "--check FAILs the unknown kind" "$(echo "$out" | grep -q 'FAIL typo-kind'; echo $?)"
+assert_true "--check WARNs the dead path (0 items)" "$(echo "$out" | grep -q 'WARN dead-path'; echo $?)"
+assert_true "--check counts what needs attention" "$(echo "$out" | grep -q '3 source(s), 2 needing attention'; echo $?)"
+assert_true "NC: --check stages nothing (report-only)" \
+  "$(! grep -q 'dead-path\|typo-kind' "$R5/_meta/backlog-staging.md"; echo $?)"
+out="$(REPO_ROOT="$R2" INTAKE_SWEEP_STATE_DIR="$R2/state" python3 "$SWEEP" --check 2>&1)"
+assert_true "--check says so when no sources are configured" "$(echo "$out" | grep -q 'no sources configured'; echo $?)"
+
 echo "== surface wiring: backlog-stage.sh --surface runs the sweep then surfaces =="
 R4="$(mkrepo)"
 printf '{"url": "https://example.com/via-surface", "title": "Via surface", "verdict": "keep"}\n' > "$R4/ledger.jsonl"

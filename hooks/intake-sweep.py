@@ -37,7 +37,9 @@ Env:
   INTAKE_SWEEP_STATE_DIR=DIR                      throttle stamp + swept-keys file
   INTAKE_SWEEP_CMD_TIMEOUT=S                      per-command adapter timeout, default 15
 
-Flags: --force (skip throttle; manual runs + tests).
+Flags: --force (skip throttle; manual runs + tests), --check (report what each source
+yields raw, before dedup; run it after editing the config, a typo'd field map or a dead
+path shows up as 0 items instead of failing quiet).
 Stdlib only. Always exits 0 (a sweep never blocks a session).
 """
 import importlib.util
@@ -206,6 +208,14 @@ def sweep(root, sources, sf, state_dir):
         reader = READERS.get(source.get("kind", ""))
         name = source.get("name", "?")
         if reader is None:
+            # An unrecognized `kind` is always a config bug, never a valid state: the
+            # source would be skipped in total silence. Warn on stderr (the hook's stdout
+            # is the surfaced candidate line; stderr never pollutes it).
+            print(
+                f"intake-sweep: source '{name}' has unknown kind "
+                f"'{source.get('kind', '')}' (expected: {'/'.join(sorted(READERS))}), skipped",
+                file=sys.stderr,
+            )
             continue
         n = 0
         for c in reader(source, root):
@@ -258,10 +268,43 @@ def record_swept(state_dir, keys):
         pass
 
 
+def check(root, sources):
+    """Report what each configured source actually yields RAW (before any dedup), so a
+    typo'd field map or a dead path is visible when you add a source. Not wired into any
+    hook: a sweep that finds nothing is a legitimate daily state, so this stays a
+    run-it-yourself verb rather than a warning that would fire every session."""
+    if not sources:
+        print(f"intake-sweep: no sources configured (looked in {root}/_meta/intake-sources.json)")
+        return 0
+    bad = 0
+    for source in sources:
+        if not isinstance(source, dict):
+            print("  ?  (malformed source entry, not an object)")
+            bad += 1
+            continue
+        name, kind = source.get("name", "?"), source.get("kind", "")
+        reader = READERS.get(kind)
+        if reader is None:
+            print(f"  FAIL {name}: unknown kind '{kind}' (expected: {'/'.join(sorted(READERS))})")
+            bad += 1
+            continue
+        items = reader(source, root)
+        titled = sum(1 for i in items if i["title"].strip())
+        urled = sum(1 for i in items if i["url"].strip())
+        status = "ok  " if items else "WARN"
+        if not items:
+            bad += 1
+        print(f"  {status} {name} ({kind}): {len(items)} item(s), {titled} titled, {urled} with url")
+    print(f"intake-sweep check: {len(sources)} source(s), {bad} needing attention")
+    return 0
+
+
 def main():
     force = "--force" in sys.argv[1:]
     root = _repo_root()
     sources = load_config(root)
+    if "--check" in sys.argv[1:]:
+        return check(root, sources)
     if not sources:
         return 0  # no consumer config -> silent no-op
 
