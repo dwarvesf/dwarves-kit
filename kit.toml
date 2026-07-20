@@ -83,6 +83,12 @@ learning_ledger  = true         # [consumer] the orchestration is an external sk
                                 #        (ops-toolkit/dotfiles, SPEC-126); the kit only
                                 #        collects (weekend-batch.sh) + routes. Toggle kept
                                 #        here so the harness config is the single surface.
+memory_tidy      = false        # [consumer] the unattended biweekly memory-audit cadence.
+                                #        The judgment skill itself ships with the kit
+                                #        (skills/memory-tidy, pairing with `stats memory-sweep`)
+                                #        and is always available; this flag gates only the
+                                #        scheduled consumer-side runner (e.g. ops-toolkit
+                                #        tools/memory-tidy LaunchAgent). Default off (opt-in).
 
 # =============== TEAM COLLABORATION (designed, not built , all off) ===============
 # Source: ops-toolkit/_meta/megagoals/team-mode/ (ROADMAP + DESIGN-01..07),
