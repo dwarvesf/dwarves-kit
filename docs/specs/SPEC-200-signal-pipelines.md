@@ -4,7 +4,7 @@ Status: Draft · 2026-07-14 · Owner: Han
 
 ## Problem
 
-The kit has **19 pipelines shaped like collect -> analyze -> report -> propose**
+The kit has **21 pipelines shaped like collect -> analyze -> report -> propose**
 (full inventory in the Appendix). They read different sources (run ledger, CC
 transcripts, boards, git, the filesystem) at different depths (awk, DuckDB,
 heuristics, LLM), and that variety is legitimate. What is not legitimate is that
@@ -147,11 +147,16 @@ env-prefix lint (T2), a verb-vocabulary lint over `lib/*/bin/*` help text (T4),
 and a proposal-currency test asserting every proposer writes staging blocks and
 nothing else (I1).
 
-## Appendix: the 19 pipelines
+## Appendix: the pipelines
 
 lane-telemetry · learn propose · learn drain · learn debt · stats · mega report
 · mega review · skill-curator reviewer · cc-improve curate · board mirror /
 writeback · session observe · session report · session semantic · session intel
 · session audit · proof-table-gen · verif-counts · /kit:retro · /kit:kit-health
+· backlog-stage · intake-sweep
+
+The last two are hook-entry pipelines feeding the same staging file as `learn
+propose`; both were added by the 2026-07-20 re-sweep (see the inventory's header
+note on why the original CLI-oriented sweep missed them).
 
 Full source/transform/output/proposal/cadence table: `docs/verification/signal-pipeline-inventory.md`.

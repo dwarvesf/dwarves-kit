@@ -1,8 +1,13 @@
 # Signal-pipeline inventory (evidence for SPEC-200)
 
-Swept 2026-07-14 over the whole repo. 19 pipelines match the shape
-collect -> analyze -> report -> propose. This is the evidence base for SPEC-200's
-claim that the kit has one ETL class with five vocabularies.
+Swept 2026-07-14 over the whole repo; re-swept 2026-07-20. The pipelines below match
+the shape collect -> analyze -> report -> propose. This is the evidence base for
+SPEC-200's claim that the kit has one ETL class with five vocabularies.
+
+The 2026-07-20 re-sweep added rows 20-21: the two hook-entry pipelines that feed the
+same staging file the `learn` verbs do. Row 20 (`backlog-stage`) was a pre-existing
+omission from the original sweep, found while registering row 21; the original sweep
+enumerated CLI entries and missed the hook-entry ones.
 
 | # | Pipeline | Entry | Source | Transform | Output | Proposal shape | Cadence | Chains? |
 |---|---|---|---|---|---|---|---|---|
@@ -25,10 +30,12 @@ claim that the kit has one ETL class with five vocabularies.
 | 17 | verif-counts | `lib/gate/verif-counts.sh` | test output | grep/sed | `COUNTS.md` block | none | on-demand | overwrite |
 | 18 | /kit:retro | `commands/retro.md` | git + specs + completeness.log + lane-telemetry | LLM-facilitated Q&A | `RETRO-[date].md` | **checkbox action items** | on-demand | loose |
 | 19 | /kit:kit-health | `commands/kit-health.md` | kit's own fs/hooks/logs | bash checklist | stdout report | advisory prose | on-demand | no |
+| 20 | backlog-stage | `hooks/backlog-stage.sh` | CC session transcript | prefilter + LLM (haiku) extract | `## [staged]` blocks | **staging block** | hook (SessionEnd), 1h throttle | yes (dedup vs board + staging) |
+| 21 | intake-sweep | `hooks/intake-sweep.py` (via `backlog-stage.sh --surface`) | consumer-declared sources (`_meta/intake-sources.json`: jsonl / command adapters) | filter + field-map, no LLM | `## [staged]` blocks | **staging block** | hook (SessionStart), daily throttle | yes (board + staging + durable swept-keys) |
 
 ## What the sweep proves
 
-- **Three proposal shapes, one gate.** Staging blocks (2, 5, 15) are the currency
+- **Three proposal shapes, one gate.** Staging blocks (2, 5, 15, 20, 21) are the currency
   `board promote` reads. Bullet prose (14) and checkbox items (18) never reach it:
   they are leads a human must retype, which is why nobody does. SPEC-200 I1.
 - **One resource, three env families.** `_meta/BACKLOG.md` is addressed by
