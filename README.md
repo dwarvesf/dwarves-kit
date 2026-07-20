@@ -290,7 +290,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (3, Claude-triggered)</summary>
+<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (4, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -323,6 +323,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | Skill | What it does |
 |-------|-------------|
 | get-api-docs | Fetches curated API docs via Context Hub before coding |
+| memory-tidy | Audits a repo's `.claude/memory` store: evidence-gated verdicts, PR-gated merges/deletions, index rebuild (judgment half of `stats memory-sweep`) |
 | skill-review | Reviews + promotes skill drafts staged by skill-curator |
 | stats | Queries/renders the ledger read plane (relocated from `lib/stats/skill/` per ADR-0034 so it actually installs) |
 
@@ -372,7 +373,7 @@ dwarves-kit/
   lib/board/parse-board.sh            The one structured BACKLOG.md parser other tools reuse (SPEC-146): `rows <file>` (id/status/full-line) and `queue-rows <file> <repo-name> <repo-root>` (allow-listed `#queue{repo=...,pointer=...}` token extraction -- charset gate, repo self-consistency, `../` traversal hardening, existence check; every failure is a skip with a stderr reason, never a hard error)
   lib/board/board-mirror.sh           The git<->Hermes kanban bridge engine (SPEC-147), backing `board.sh mirror`/`status`: extracts opted-in BACKLOG.md rows (reusing `lib/board/parse-board.sh`) + active mega-goal roadmaps into normalized rows, diffs them (bash + `jq`/awk keyed comparison, no DuckDB) against an incremental NDJSON snapshot, and loads via `hermes kanban` CLI verbs only. Reachable native states are `{triage, ready, blocked, done}` only -- `todo`/`running` were probed live and found to have no durable CLI-only path (auto-promote back to `ready` within seconds); `_target_native`/`_create_flags_for`/`_followup_for` document the full state-mapping + Hermes-CLI-reality findings. `apply-plan` decodes each op's argv over NUL-delimited jq output (never a templated shell string), so a multi-line card body is preserved as one opaque argv element end to end -- the fix for a real bug this build's own live dev-home E2E caught (a newline-delimited decode silently split a multi-line body into extra positional args, rejected by the real CLI, masked by a naive stub). `HERMES_BIN` overrides the binary for tests (a stub logs argv; no real Hermes calls in the automated suite).
   lib/board/board-writeback.sh        The git<->Hermes kanban bridge WRITEBACK leg (SPEC-149), backing `board.sh writeback`: sources `lib/board/board-mirror.sh` (not re-forked) for extract/hash/native-state machinery. `diff` reads each opted-in repo's live board (`hermes kanban --board <b> list --json`, one batched call per board) + the SPEC-147 mirror snapshot, and builds a validated changeset of rows whose Hermes status moved -- validating opted-in repo (defense in depth on top of the mirror's own filter), a legal `backlog.sh` reverse-mapped target status, and the row_hash CONFLICT RULE (a Hermes-side edit applies only if the row's current git-side hash still equals the snapshot's recorded value; git wins, always). A missing or corrupt snapshot REFUSES ALL edits (explicit error, nonzero exit) rather than degrading to "no conflicts, apply everything". `apply` builds the `chore/board-sync` branch in an ISOLATED `git worktree` off the CURRENT HEAD (never the caller's own checkout, never a stale ref -- this is what keeps a concurrent append-only writer's row safe), edits ONLY the Status column of matched rows (reusing `lib/board/backlog.sh`'s own `set`), commits with `actor=hermes` in the body, pushes, and opens a HELD PR via `gh pr create` (argv-only, never a templated shell string; never auto-merged). Snapshot refresh updates ONLY `hermes_status` (to stop re-diffing the same not-yet-merged move); `row_hash` passes through UNCHANGED (the git SoT hasn't actually changed until the PR merges) -- `mirror`'s own idempotence self-heals the row once it does. `GH_BIN` (mirrors `HERMES_BIN`) overrides the `gh` binary for tests; no real Hermes write call or `gh` API call happens in the automated suite.
-  skills/                       Claude-triggered skills (get-api-docs, skill-review, stats)
+  skills/                       Claude-triggered skills (one folder per skill; roster in the Skill table above)
   rules/                        Path-scoped coding-standard templates
   examples/hello-spec/          Demo: small CLAUDE.md + SPEC.md walkthrough
   tests/test-hooks.sh           Hook behavior assertions

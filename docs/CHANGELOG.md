@@ -5,6 +5,17 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **`skills/memory-tidy`, the judgment half of the memory plane.** Pairs with the
+  read-only `stats memory-sweep` scanner (SPEC-136): evidence-required per-note
+  verdicts (KEEP / MERGE / STALE / UNSURE) via agent fan-out, danger check for
+  notes whose advice contradicts current policy, index rebuild with parity
+  checks, all confined to a worktree branch and shipped as a PR (the operator's
+  approval gate). Consumer cadence toggle `[features].memory_tidy` in `kit.toml`
+  (`[consumer]`, default off); the scheduled runner lives consumer-side
+  (ops-toolkit `tools/memory-tidy/`). CONTRIBUTING gains an "Introducing a
+  component" convention (naming, description discipline, registration,
+  evidence) so new skills/commands/agents never land as unregistered file
+  drops. First production run: tieubao/ops-toolkit#972.
 - **`sync` one-way insert-only push to a foreign team board** (`notion-taskboard`
   app, SPEC-003, implements ops-toolkit ID-138). Pushes a repo's board rows out
   to a team-OWNED Notion board (create page, never update, never read for merge,

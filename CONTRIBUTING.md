@@ -56,6 +56,27 @@ Beyond the table, see [`docs/PHILOSOPHY.md`](docs/PHILOSOPHY.md) "What we explic
 4. Use conventional commits: `feat(scope): ...`, `fix(scope): ...`, `docs: ...`. One logical change per commit. Keep spec/task IDs OUT of the subject line (no `TASK-3`, no trailing `(SPEC-002 ...)` tags); that context belongs in the body or PR description.
 5. Update `docs/CHANGELOG.md` under an `[Unreleased]` section if your PR is non-trivial (the root `CHANGELOG.md` is a thin pointer stub, SPEC-185). The maintainer moves it to a versioned section at release time.
 
+## Introducing a component (skill, command, agent)
+
+A new component never lands as a bare file drop; it registers everywhere the kit
+already tracks its kind, in the same PR:
+
+1. **Name**: kebab-case, and the plain-words rule below applies to the name
+   itself (`memory-tidy`, `skill-review`, `get-api-docs`, a non-engineer PM
+   should parse it cold). Config keys derived from it use snake_case
+   (`memory_tidy`).
+2. **Description discipline (skills)**: frontmatter `description` starts with
+   "Use when ..." and lists ONLY triggering conditions, never a summary of the
+   workflow (an agent will follow a summarized description instead of reading
+   the body).
+3. **Register it**: add the README roster row for its kind (Skill / Command /
+   Agent table). If it has a consumer-side toggle or an unattended cadence, add
+   a `[consumer]`-tagged key to `kit.toml` `[features]`, the harness config is
+   the single control surface; skills and commands themselves always install
+   (no `[modules]` gate).
+4. **Evidence (skills)**: the PR body carries writing-skills RED/GREEN
+   evidence (baseline failure without the skill, compliance with it).
+5. **Changelog**: step 5 above applies, a new component is always non-trivial.
 
 ## Plain words rule (2026-07-16)
 
