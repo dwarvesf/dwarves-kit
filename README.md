@@ -290,7 +290,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (3, Claude-triggered)</summary>
+<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (4, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
