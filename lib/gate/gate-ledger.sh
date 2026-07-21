@@ -97,8 +97,15 @@ normalize_phase() {
   # collapse newlines first (security review, defense-in-depth): a phase arg with an embedded
   # newline would otherwise emit a second physical ledger line. Unreachable today (all callers
   # pass a hardcoded phase literal), but the guard is one tr and matches oneline()'s intent.
-  printf '%s' "$1" | tr '\n\r' '  ' | sed -E 's/\([^)]*\)//g' | tr 'A-Z' 'a-z' \
-    | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/-/g'
+  local p
+  p="$(printf '%s' "$1" | tr '\n\r' '  ' | sed -E 's/\([^)]*\)//g' | tr 'A-Z' 'a-z' \
+    | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/-/g')"
+  # Alias command-name drift: agents recording ad-hoc sometimes use the command name
+  # ("execute") instead of the matrix gate it owns ("build"), leaving check() blind to a
+  # build that ran (seen 2026-07-21, finance-warehouse run). "verify" is NOT aliased to
+  # "review": /kit:verify (right-arm re-run) and /kit:review (code review) are distinct gates.
+  case "$p" in execute) p=build ;; esac
+  printf '%s' "$p"
 }
 
 # print "<rawphase>\t<cell>" for each matrix row under the given lane column.
