@@ -155,5 +155,20 @@ case "$CHECK_OUT2" in *"MISSING-GATE: build"*) mg_ok=0 ;; *) mg_ok=1 ;; esac
 assert "the check names 'build' as the missing gate" "$mg_ok" "-- $CHECK_OUT2"
 
 echo ""
+echo "=== AC6: command-name drift alias -- recording 'execute' satisfies 'build'; 'verify' never satisfies 'review' ==="
+new_log
+RID3=demo-execute-alias
+gl record "$RID3" execute ran "6/6 tasks landed" >/dev/null
+grep -q "| GATE | build | ran |" "$LOGD/runs/$RID3.log"
+assert "record 'execute' lands in the ledger as phase 'build'" $?
+CHECK_OUT3="$(gl check full "$RID3" 2>&1)"
+case "$CHECK_OUT3" in *"MISSING-GATE: build"*) alias_ok=1 ;; *) alias_ok=0 ;; esac
+assert "check no longer reports build missing after an 'execute' record" "$alias_ok" "-- $CHECK_OUT3"
+gl record "$RID3" verify ran "task-verifiers PASS" >/dev/null
+CHECK_OUT4="$(gl check full "$RID3" 2>&1)"
+case "$CHECK_OUT4" in *"MISSING-GATE: review"*) noalias_ok=0 ;; *) noalias_ok=1 ;; esac
+assert "NEGATIVE CONTROL: 'verify' does NOT satisfy the 'review' gate" "$noalias_ok" "-- $CHECK_OUT4"
+
+echo ""
 echo "=== Summary: $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]
