@@ -5,17 +5,21 @@
 #   - proof present (test-design + green run + negative-control run) -> the hook ALLOWS (exit 0)
 #   - the negative-control run removed                               -> the hook BLOCKS (exit 2)
 # Proves Done(b): the gate recognizes the slug-dir layout for all three profiles, blocked-then-
-# allowed, via the actual hook (not just the lib). The hook resolves its lib from the install
-# symlink, so this is the same code path a real `git push` hits.
+# allowed, via the actual hook (not just the lib). The hook runs with CLAUDE_PLUGIN_ROOT set
+# to this repo, exactly how the plugin harness invokes it, so this is the same code path a
+# real `git push` hits (the marketplace's source directory IS this repo).
 set -uo pipefail
-HOOK="$HOME/.claude/dwarves-kit/hooks/ship-gate.sh"
+KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+HOOK="$KIT_DIR/hooks/ship-gate.sh"
+LOGDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR"' EXIT
 fails=0
 pass(){ echo "PASS $*"; }
 fail(){ echo "FAIL $*"; fails=$((fails+1)); }
-[ -f "$HOOK" ] || { echo "[NO EXECUTABLE CHECK: ship-gate hook not installed at $HOOK]"; exit 1; }
+[ -f "$HOOK" ] || { echo "[NO EXECUTABLE CHECK: ship-gate hook not found at $HOOK]"; exit 1; }
 
 run_hook() { # $1 = fixture dir ; prints nothing, returns the hook's exit code
-  ( cd "$1" && printf '{"tool_input":{"command":"git push origin feat/x"}}' | bash "$HOOK" >/dev/null 2>&1 )
+  ( cd "$1" && printf '{"tool_input":{"command":"git push origin feat/x"}}' \
+    | CLAUDE_PLUGIN_ROOT="$KIT_DIR" DWARVES_KIT_LOG_DIR="$LOGDIR" bash "$HOOK" >/dev/null 2>&1 )
 }
 
 build() { # $1 dir ; $2 profile ; $3 include-negctl (1/0)
