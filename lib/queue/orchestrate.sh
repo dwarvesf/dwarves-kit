@@ -505,9 +505,14 @@ _wave_gate() {  # megadir roadmap
 }
 
 # ID-096: the allowlisted `Model:` tier names -- the same short names the decompose-time model
-# suggester's `tier_of()` normalizes to (haiku/sonnet/opus). Kept as one constant so the allowlist
-# and its error message never drift apart.
-_ROUTE_MODEL_ALLOWLIST="opus sonnet haiku"
+# suggester's `tier_of()` normalizes to (haiku/sonnet/opus/fable). Kept as one constant so the
+# allowlist and its error message never drift apart.
+#
+# `fable` added 2026-07-22: it shipped as a `claude --model` alias (the CLI's own --help lists
+# "'fable', 'opus', or 'sonnet'") and is the operator's default daily driver, but this allowlist
+# still predated it -- so a goal file saying `Model: fable` was REJECTED pre-flight and never
+# dispatched. The allowlist is a typo guard, not a policy, and it has to track the CLI's aliases.
+_ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 
 # Emit "model<TAB>effort" read from a goal file's `Model:`/`Effort:` lines (empty when absent).
 # Bare `Key: value` header lines, not YAML; first match each, value trimmed. Absent field or

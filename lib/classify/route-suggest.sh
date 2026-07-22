@@ -36,9 +36,13 @@ if [ ! -f "$LEDGER" ]; then
   exit 2
 fi
 
-# tier <- short model name (haiku-4-5 -> haiku, sonnet-4-6 -> sonnet, opus-4-8 -> opus).
-# The orchestrator routes `--model <tier>`, so we emit the bare tier.
-tier_of() { case "$1" in haiku*) echo haiku;; sonnet*) echo sonnet;; opus*) echo opus;; *) echo "$1";; esac; }
+# tier <- short model name (haiku-4-5 -> haiku, sonnet-4-6 -> sonnet, opus-4-8 -> opus,
+# fable-5 -> fable). The orchestrator routes `--model <tier>`, so we emit the bare tier.
+# `fable` added 2026-07-22 alongside orchestrate.sh's _ROUTE_MODEL_ALLOWLIST: without an arm here a
+# fable row falls to the `*)` passthrough and becomes its OWN "tier" under its raw model string,
+# which both inflates the >=2-tiers check and can emit a suggestion the orchestrator's allowlist
+# then rejects. The two lists have to move together.
+tier_of() { case "$1" in haiku*) echo haiku;; sonnet*) echo sonnet;; opus*) echo opus;; fable*) echo fable;; *) echo "$1";; esac; }
 
 # For each PASSING row of this task, emit "tier<TAB>total_tokens" (cheapest arm per tier
 # is the min). A failed run is never a candidate (infinite-cost guard, SG-09's anti-cherry-pick rule).
