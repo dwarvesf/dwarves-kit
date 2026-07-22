@@ -98,6 +98,13 @@ ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$ORCH_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 BACKLOG_LIB="${BACKLOG_LIB:-$LIB_ROOT/board/backlog.sh}"
 
+# Multi-vendor dispatch adapter (ID-390): vendor -> headless argv + prompt-delivery mode.
+# SOURCED, unlike dispatch-gate.sh which must be a subprocess because its `set -euo` would leak `-e`
+# into this driver's deliberate `set -uo` posture. harness.sh is `set -uo` too, so it composes
+# cleanly and the functions stay callable without a fork per dispatch.
+# shellcheck source=./harness.sh
+. "$ORCH_DIR/harness.sh"
+
 # Config layer (SPEC-187 / SG-03, executes ADR-0032 section 6): `[mega]` keys resolve
 # project .kit.toml > kit-root kit.toml > the hardcoded default baked into each `${VAR:-...}`
 # below, and the ENV VAR always wins over all three (an operator's `WAVE_CAP=5` in the
@@ -537,12 +544,38 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # value like `Model: opus sonnet` would slip through (`" opus sonnet "` is a substring of
 # `" opus sonnet haiku "`) and get passed verbatim to `--model "opus sonnet"`, dying deep in the
 # spawned `claude -p` , precisely the failure ID-096 exists to stop.
+# The goal file's `Harness:` header, lowercased, defaulting to `claude` (ID-390). This is the ONE
+# place the vendor is decided; everything downstream branches on its result. Absent header ->
+# `claude` -> every existing code path runs BYTE-IDENTICALLY (the backward-compat invariant this
+# whole feature is built around: a mega-goal that never says `Harness:` cannot behave differently
+# than it did before, and the 178 pre-existing orchestrate assertions are what prove it).
+#
+# An UNKNOWN vendor returns 64 rather than falling back to claude. Falling back would silently run a
+# sub-goal on the wrong (and wrong-priced) vendor, which is exactly the kind of quiet substitution
+# that makes a quota-routing feature untrustworthy -- if the goal file names a harness we cannot
+# drive, that is a pre-flight stop, same posture as the `Model:` allowlist above.
+_harness_of() {  # goalfile
+  local gf="${1:-}" h=""
+  [ -f "$gf" ] && h=$(grep -iE '^Harness:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//' | tr 'A-Z' 'a-z')
+  [ -n "$h" ] || { printf 'claude\n'; return 0; }
+  harness_known "$h" || {
+    echo "orchestrate: unknown Harness: '$h' in $gf (known: $(harness_list | tr '\n' ' ')); rejecting pre-flight, not dispatching" >&2
+    return 64; }
+  printf '%s\n' "$h"
+}
+
 _route() {
-  local gf="${1:-}" model="" effort="" model_lc tok ok
+  local gf="${1:-}" model="" effort="" model_lc tok ok harness
   if [ -f "$gf" ]; then
     model=$(grep -iE '^Model:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
     effort=$(grep -iE '^Effort:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
   fi
+  # ID-390: the tier allowlist below is CLAUDE-ONLY. `opus`/`sonnet`/`haiku`/`fable` are Claude
+  # alias names, so validating a codex sub-goal's `Model: gpt-5` against them would reject every
+  # legitimate non-claude model. There is no honest cross-vendor tier mapping (gpt-5 is not "opus"),
+  # so a non-claude harness passes its model through VERBATIM and that vendor's own CLI is what
+  # rejects a typo. A bad harness name still hard-stops here (see _harness_of).
+  harness=$(_harness_of "$gf") || return 64
   # SG-03: the goal-file `Model:` field is UNCHANGED and still wins outright (Scope: "the
   # goal-file Model: parse ... still wins"). Only when the field is ABSENT does the run fall
   # back through the config layer's [mega].default_model (project .kit.toml > kit-root
@@ -555,7 +588,7 @@ _route() {
   if [ -z "$model" ]; then
     model=$(kit_config_get mega.default_model)
   fi
-  if [ -n "$model" ]; then
+  if [ -n "$model" ] && [ "$harness" = claude ]; then
     model_lc=$(printf '%s' "$model" | tr 'A-Z' 'a-z')
     ok=0
     for tok in $_ROUTE_MODEL_ALLOWLIST; do
@@ -856,6 +889,52 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
   return "$rc"
 }
 
+# Run ONE sub-goal on a NON-CLAUDE harness (ID-390). Split out of `_run_one_session` rather than
+# folded into its if/elif chain so the claude path keeps exactly the shape 178 existing assertions
+# already pin; this function is only ever reached when a goal file explicitly says `Harness:`.
+#
+# Plain path ONLY, deliberately. The other two run-paths both require `--output-format stream-json
+# --verbose`, which is a Claude-CLI spelling with no portable equivalent, so --stream / the
+# deterministic handoff / lean token capture cannot work here. Those are OBSERVABILITY features, not
+# correctness ones, so per the house convention (advisory failures WARN+continue; only
+# grounded-completion / gate / nonzero-session failures halt) this WARNs once and degrades instead of
+# refusing to dispatch -- a globally-set CAPTURE_TOKENS=1 must not become a wall that blocks every
+# non-claude sub-goal. The WARN is what keeps it from being the silent accounting black hole ID-097
+# closed on the watchdog path.
+#
+# Grounded completion is UNAFFECTED and still the real done-signal: the caller re-reads ROADMAP.md
+# for the flipped checkbox regardless of vendor, so a non-claude session cannot self-claim done
+# either. That property is vendor-independent by construction, which is precisely why it is the
+# signal worth trusting.
+_run_one_session_vendor() {  # dir id pfile harness stream
+  local dir="$1" id="$2" pfile="$3" harness="$4" stream="$5"
+  local rc=0 gf model effort pmode t
+  local argv=()
+
+  gf=$(_goalfile "$dir" "$id")
+  IFS=$'\t' read -r model effort < <(_route "$gf") || true
+
+  if [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ]; then
+    echo "[orchestrate] WARN $id: harness '$harness' has no stream-json equivalent; running the plain path (no live tail, no deterministic handoff, no token capture for this sub-goal)." >&2
+  fi
+
+  while IFS= read -r t; do argv+=("$t"); done < <(harness_argv "$harness" "$model" "$effort")
+  [ "${#argv[@]}" -gt 0 ] || { echo "[orchestrate] $id: harness '$harness' resolved to an empty argv; not dispatching" >&2; return 64; }
+  pmode=$(harness_prompt_mode "$harness") || return 64
+
+  _say "[orchestrate] $id -> harness '$harness' (${model:-default model}${effort:+, $effort}), prompt via $pmode"
+  # The prompt is delivered per the adapter's declared mode. Getting this wrong does not error, it
+  # runs the agent with an EMPTY prompt and exits 0 -- a clean-looking run that did nothing -- which
+  # is why the mode is data the adapter owns rather than a guess made here.
+  case "$pmode" in
+    stdin) "${argv[@]}" < "$pfile" || rc=$? ;;
+    argv)  "${argv[@]}" "$(cat "$pfile")" || rc=$? ;;
+    *)     echo "[orchestrate] $id: unknown prompt mode '$pmode'" >&2; return 64 ;;
+  esac
+  _ROS_SLOG=""   # no transcript capture on this path; the caller's token/handoff hooks are slog-gated
+  return "$rc"
+}
+
 # _run_one_session: run ONE sub-goal session via the correct mutually-exclusive run-path
 # (SG-11 watchdog / --stream|DETERMINISTIC_HANDOFF stream-json / plain claude -p). Keyed on
 # `dir id pfile route_flags stream` (stream is a cmd_run local, so it is passed explicitly).
@@ -869,6 +948,18 @@ _run_one_session() {  # dir id pfile route_flags stream
   # the operator sees a live tail AND the run is recorded. Off -> the default invocation is
   # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
   local rc=0 slog="" wd_capture=0
+
+  # ID-390 multi-vendor branch. The harness is re-read from the goal file here rather than threaded
+  # in as a 6th positional, because `route_flags` reaches this function through FOUR call sites
+  # (serial cmd_run, the wave subshell, _pane_spawn, cmd_pane_exec) and widening all of them for one
+  # string would be a far larger diff than one grep. A non-claude sub-goal takes the plain path only.
+  local _h; _h=$(_harness_of "$(_goalfile "$dir" "$id")") || return 64
+  if [ "$_h" != claude ]; then
+    _run_one_session_vendor "$dir" "$id" "$pfile" "$_h" "$stream"
+    return $?
+  fi
+  # Everything below is the ORIGINAL claude path, untouched: `$CLAUDE_CMD` stays the mock seam every
+  # pre-existing test drives, so an absent `Harness:` header is byte-for-byte the old behavior.
   if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
     # SG-11 watchdog path (opt-in). Token accounting (ID-097): mirror the same capture gate the
     # non-watchdog elif below uses, so a stall no longer silently drops the sub-goal's tokens (the
@@ -2014,7 +2105,11 @@ cmd_run() {
     # so a run that dies mid-session is still tracked, not '?'.
     _emit_start "$dir" "$id"
     [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
-    _say "[orchestrate] running $id in a fresh session ($CLAUDE_CMD -p, model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
+    # ID-390: name the ACTUAL harness. This line hardcoded "$CLAUDE_CMD -p", which read as a plain
+    # lie once a sub-goal could dispatch to codex ("running SG-01 ... (claude -p, model: gpt-5)").
+    # An operator scanning a run log has to be able to see which vendor a sub-goal went to.
+    local _rh; _rh=$(_harness_of "$(_goalfile "$dir" "$id")") || _rh="claude"
+    _say "[orchestrate] running $id in a fresh session ($([ "$_rh" = claude ] && printf '%s -p' "$CLAUDE_CMD" || printf 'harness: %s' "$_rh"), model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
     # Inject the prompt via a TEMP FILE on stdin, not a shell-interpolated argv arg (pi-swarm
     # borrow). Removes the backtick/${}/secret-guard bug class when the handoff body carries shell
     # metachars, and dodges ARG_MAX on a large injected handoff. `claude -p` reads the prompt from

@@ -9,9 +9,8 @@ mega-goal sub-goal can be dispatched to codex / pi / opencode and pay that vendo
 the Claude one. Plus the `fable` tier fix, which is an unrelated live regression found while reading
 the routing code.
 
-**Scope boundary (read this before trusting the title):** the adapter RESOLVES argv. It is not yet
-wired into `_run_one_session`, so no dispatch path calls it today. Wiring is the follow-up and needs
-its own proof.
+**Status:** wired. A goal file declares `Harness: <vendor>` and orchestrate.sh dispatches that
+sub-goal to that vendor. Absent header -> `claude` -> every pre-existing path runs byte-identically.
 
 ## Why not the prior art's approach
 
@@ -43,14 +42,46 @@ sub-goal cannot self-claim done). Only the per-vendor argv table was missing.
 | A8 | An off-allowlist tier is still rejected (negative control: the fix widened the list, it did not remove the gate) | `_route` |
 | A9 | `tier_of` normalizes fable, so a fable ledger row does not become its own bogus tier | `route-suggest.sh` |
 
+Wiring criteria (phase 2):
+
+| # | Criterion | Where |
+|---|---|---|
+| B1 | Absent `Harness:` -> claude -> the original `$CLAUDE_CMD` path, byte-identical | `_harness_of` default |
+| B2 | `Harness:` parse is case-insensitive and trimmed | `_harness_of` |
+| B3 | An unknown harness hard-stops (64); it NEVER falls back to claude | `_harness_of` |
+| B4 | The claude tier allowlist applies to claude only, so `Model: gpt-5` under `Harness: codex` is admitted verbatim | `_route` |
+| B5 | The same `Model: gpt-5` with NO harness is still rejected (negative control) | `_route` |
+| B6 | A vendor sub-goal actually EXECS that vendor, with the prompt on the declared channel | `_run_one_session_vendor` |
+| B7 | Requesting stream / det-handoff / token capture on a vendor WARNs and degrades, never blocks dispatch | `_run_one_session_vendor` |
+| B8 | Grounded completion still governs: a vendor session advances only on the flipped ROADMAP box | `cmd_run` (unchanged) |
+
 ## Implementation
 
 | File | Change |
 |---|---|
 | `lib/queue/harness.sh` | new. `harness_list` / `harness_known` / `harness_prompt_mode` / `harness_argv`, plus a CLI for eyeballing a resolved argv. `case`-based vendor table, bash-3.2 safe. |
-| `lib/queue/orchestrate.sh` | `_ROUTE_MODEL_ALLOWLIST`: `"opus sonnet haiku"` -> `"opus sonnet haiku fable"`. |
+| `lib/queue/orchestrate.sh` | sources harness.sh; new `_harness_of` (the one place the vendor is decided) + `_run_one_session_vendor`; `_route` scopes the tier allowlist to claude; `_run_one_session` branches on harness; the dispatch log line names the real harness; `_ROUTE_MODEL_ALLOWLIST` gains `fable`. |
 | `lib/classify/route-suggest.sh` | `tier_of`: added the `fable*` arm alongside its siblings. |
 | `tests/test-harness-adapter.sh` | new. 21 assertions covering A1-A9. |
+| `tests/test-harness-dispatch.sh` | new. 18 assertions covering B1-B8, using mock vendor binaries that record argv + stdin. |
+
+### Two structural choices worth naming
+
+**The harness is re-read inside `_run_one_session`, not threaded in as a parameter.** `route_flags`
+reaches that function through four call sites (serial `cmd_run`, the wave subshell, `_pane_spawn`,
+`cmd_pane_exec`). Widening all four signatures for one string is a much larger diff than one grep of
+the goal file, and every extra parameter is another place the wave path and the serial path can
+drift apart.
+
+**The vendor path is a separate function, not another arm of the existing if/elif chain.** The claude
+path keeps exactly the shape 178 pre-existing assertions already pin, so `Harness:`-less behavior is
+unchanged by construction rather than by careful reading.
+
+**Vendor path is plain-only, by necessity.** The other two run-paths need `--output-format
+stream-json --verbose`, a Claude-CLI spelling with no portable equivalent. Those are observability
+features, not correctness ones, so this WARNs and degrades (house convention: advisory failures
+WARN+continue). Blocking would let a globally-set `CAPTURE_TOKENS=1` wall off every non-claude
+sub-goal. The WARN is what keeps it from being the silent accounting black hole ID-097 closed.
 
 Vendor facts were read off the installed binaries' own `--help` on 2026-07-22, not from the prior
 art's table:
@@ -72,12 +103,15 @@ still runs unattended. Taking the bypass flag would discard isolation already pa
 | Check | Command | Result |
 |---|---|---|
 | Adapter suite | `bash tests/test-harness-adapter.sh` | **21 PASS, 0 FAIL**, rc=0 |
+| Dispatch-wiring suite | `bash tests/test-harness-dispatch.sh` | **18 PASS, 0 FAIL**, rc=0 |
 | Regression: orchestrate | `bash tests/test-orchestrate.sh` | 63 pass, 0 fail, rc=0 |
 | Regression: wavefront | `bash tests/test-orchestrate-wavefront.sh` | 103 pass, 0 fail, rc=0 |
 | Regression: hardening | `bash tests/test-orchestrate-hardening.sh` | 12 pass, 0 fail, rc=0 |
-| shellcheck | `shellcheck lib/queue/harness.sh` | clean (0 findings) |
-| **Live: claude leg** | resolved argv, prompt on stdin | `claude -p --model haiku --dangerously-skip-permissions` -> **rc=0, output `ADAPTER_OK`** |
-| **Live: codex leg** | resolved argv, prompt on stdin | argv ACCEPTED, `Reading prompt from stdin...` confirms A1; **rc=1 at HTTP 401** (codex not authenticated on this host) |
+| shellcheck (`-S warning`) | `orchestrate.sh` + `harness.sh` + dispatch test | clean (0 findings) |
+| **Live: claude leg (adapter)** | resolved argv, prompt on stdin | `claude -p --model haiku --dangerously-skip-permissions` -> **rc=0, output `ADAPTER_OK`** |
+| **Live: codex leg (adapter)** | resolved argv, prompt on stdin | argv ACCEPTED, `Reading prompt from stdin...` confirms A1; **rc=1 at HTTP 401** (codex not authenticated on this host) |
+| **Live: full orchestrator, real claude** | `orchestrate.sh run <megadir>` on a 1-sub-goal mega-goal | dispatched a REAL claude session -> agent flipped the box -> `SG-01 complete (box checked); advancing` -> `all sub-goals checked; done` |
+| **Live: full orchestrator, vendor harness** | same, `Harness: codex` + a mock codex on PATH | `running SG-01 ... (harness: codex, model: gpt-5, effort: high)`, `prompt via stdin`, argv `exec --model gpt-5 -c model_reasoning_effort="high" -s workspace-write`, box flipped, grounded completion advanced |
 
 ### Live-run detail (the part a green unit test would have missed)
 
@@ -130,11 +164,27 @@ argv=(); while IFS= read -r t; do argv+=("$t"); done < <(harness_argv claude hai
 "${argv[@]}" < /tmp/p
 ```
 
+### What the mock-vendor run does and does not prove
+
+The full-orchestrator vendor run used a mock `codex` on PATH that records its argv and stdin, then
+flips the ROADMAP box the way a real agent would. That proves the ENTIRE wired pipeline: harness
+resolution, allowlist scoping, argv construction, prompt delivery on the right channel, the dispatch
+log, grounded completion, and advance.
+
+It does **not** prove a real codex model can complete a real sub-goal. It cannot, on this host: no
+OpenAI credential (see the 401 row). What is proven is that everything the kit controls is correct up
+to the vendor's own front door.
+
 ## Known gaps
 
-- **Not wired.** No dispatch path calls this yet. `_run_one_session` still hardcodes the claude shape.
-- **codex leg unproven end to end** on this host (no OpenAI credential). pi and opencode legs are
-  resolved-and-shellchecked but were not run live at all.
+- **No live non-claude model run.** codex reached the API and got 401; pi and opencode were never run
+  against a real model at all, only mocked. The first thing to do with a real credential is re-run
+  the vendor e2e without the mock.
+- **Vendor sub-goals get no token accounting**, by construction (no stream-json equivalent). A run
+  that mixes claude and codex sub-goals will have a partial token ledger. WARNed, not silent.
+- **Wave path untested with mixed vendors.** The wiring sits in `_run_one_session`, which both the
+  serial and wave paths call, so it should hold; but no test dispatches a WAVE with two different
+  harnesses concurrently.
 - **No cross-vendor model tiering.** `Model:` passes through verbatim for non-claude vendors, and
   orchestrate.sh's tier allowlist stays claude-only. Deliberate: there is no honest mapping from
   `opus` to a competitor's model id.
