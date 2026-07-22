@@ -544,22 +544,45 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # value like `Model: opus sonnet` would slip through (`" opus sonnet "` is a substring of
 # `" opus sonnet haiku "`) and get passed verbatim to `--model "opus sonnet"`, dying deep in the
 # spawned `claude -p` , precisely the failure ID-096 exists to stop.
-# The goal file's `Harness:` header, lowercased, defaulting to `claude` (ID-390). This is the ONE
-# place the vendor is decided; everything downstream branches on its result. Absent header ->
-# `claude` -> every existing code path runs BYTE-IDENTICALLY (the backward-compat invariant this
-# whole feature is built around: a mega-goal that never says `Harness:` cannot behave differently
-# than it did before, and the 178 pre-existing orchestrate assertions are what prove it).
+# The set of NON-claude harnesses this kit installation permits, from `mega.harnesses` (ID-390).
+# DEFAULT EMPTY = claude-only: out of the box, multi-vendor dispatch is OFF, so a stray `Harness:
+# codex` header errors clearly instead of surprise-spending on another vendor's account. An operator
+# who has, say, codex installed and authenticated opts in by setting `mega.harnesses = "codex"` in
+# kit.toml (or a project .kit.toml). Space-separated; the config resolver returns a bare string, not
+# a TOML array, so this is a string list, not `["codex"]`.
 #
-# An UNKNOWN vendor returns 64 rather than falling back to claude. Falling back would silently run a
-# sub-goal on the wrong (and wrong-priced) vendor, which is exactly the kind of quiet substitution
-# that makes a quota-routing feature untrustworthy -- if the goal file names a harness we cannot
-# drive, that is a pre-flight stop, same posture as the `Model:` allowlist above.
+# claude is NOT gated and is intentionally absent from the default: it is the substrate, always
+# available regardless of this key, so disabling it is impossible by construction (a kit with no
+# claude is not a kit). The key gates ONLY the opt-in vendor harnesses.
+_harness_allowed() { kit_config_get mega.harnesses; }
+
+# The goal file's `Harness:` header, lowercased, defaulting to `claude` (ID-390). This is the ONE
+# place the vendor is decided; everything downstream branches on its result. Three outcomes:
+#
+#   absent header      -> `claude` -> every existing code path runs BYTE-IDENTICALLY (the backward-
+#                         compat invariant this whole feature is built on; a mega-goal that never
+#                         says `Harness:` cannot behave differently than before, and the 178
+#                         pre-existing orchestrate assertions prove it).
+#   unknown vendor      -> 64. Falling back to claude would silently run the sub-goal on the wrong
+#                         (and wrong-priced) vendor -- the quiet substitution that makes a
+#                         quota-routing feature untrustworthy. A typo is a pre-flight stop.
+#   known but not enabled -> 64, DISTINCT message. The vendor is real but this kit has not opted
+#                         into it via `mega.harnesses`. This is the gate Han asked for: the feature
+#                         ships to every kit user but stays OFF until they deliberately enable a
+#                         vendor they have actually set up. Same fail-closed posture as an unknown
+#                         vendor -- never a silent claude fallback.
 _harness_of() {  # goalfile
-  local gf="${1:-}" h=""
+  local gf="${1:-}" h="" allowed tok ok
   [ -f "$gf" ] && h=$(grep -iE '^Harness:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//' | tr 'A-Z' 'a-z')
   [ -n "$h" ] || { printf 'claude\n'; return 0; }
+  [ "$h" = claude ] && { printf 'claude\n'; return 0; }   # claude always allowed, never gated
   harness_known "$h" || {
     echo "orchestrate: unknown Harness: '$h' in $gf (known: $(harness_list | tr '\n' ' ')); rejecting pre-flight, not dispatching" >&2
+    return 64; }
+  allowed=$(_harness_allowed); ok=0
+  for tok in $allowed; do [ "$tok" = "$h" ] && { ok=1; break; }; done
+  [ "$ok" = 1 ] || {
+    echo "orchestrate: Harness: '$h' in $gf is not enabled in this kit. Multi-vendor dispatch is opt-in: add it to mega.harnesses in kit.toml (currently: ${allowed:-<none; claude-only>}). Not dispatching." >&2
     return 64; }
   printf '%s\n' "$h"
 }
@@ -1367,7 +1390,9 @@ _wave_run() {  # megadir roadmap
     route_out=$(_route "$gf"); route_rc=$?
     IFS=$'\t' read -r rmodel reffort <<<"$route_out"
     if [ "$route_rc" != 0 ]; then
-      _emit_event "$megadir" "$id" blocked "wave: invalid Model: tier '$rmodel'"
+      # ID-390: generic like the serial path -- _route rejects both an off-allowlist model tier and
+      # an unknown/not-enabled harness, each already reasoned to stderr.
+      _emit_event "$megadir" "$id" blocked "wave: rejected pre-flight by routing (model tier or harness gate)"
       wave_failed=1
       continue
     fi
@@ -2087,9 +2112,13 @@ cmd_run() {
     route_out=$(_route "$(_goalfile "$dir" "$id")"); route_rc=$?
     IFS=$'\t' read -r rmodel reffort <<<"$route_out"
     if [ "$route_rc" != 0 ]; then
-      _emit_event "$dir" "$id" blocked "invalid Model: tier '$rmodel'"
+      # ID-390: _route now has TWO pre-flight rejections -- an off-allowlist claude `Model:` tier
+      # AND a `Harness:` that is unknown or not enabled. Both already printed the precise reason to
+      # stderr (the `orchestrate: ...` line), so this STOP stays GENERIC rather than hardcoding
+      # "invalid Model: tier", which was a plain lie for a harness-gate rejection.
+      _emit_event "$dir" "$id" blocked "rejected pre-flight by routing (model tier or harness gate)"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
-      _say "[orchestrate] STOP: $id has an invalid Model: tier '$rmodel' (allowed: ${_ROUTE_MODEL_ALLOWLIST// /|}); fix the goal file, then re-run."
+      _say "[orchestrate] STOP: $id rejected pre-flight by routing; see the 'orchestrate:' reason above. Fix the goal file, then re-run."
       return 0
     fi
     [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"

@@ -52,6 +52,14 @@ EOF
 done
 export PATH="$MOCKBIN:$PATH"
 
+# Hermetic config: point the resolver at temp dirs so it never reads the real installed kit.toml.
+# set_harnesses writes the kit-root kit.toml's `mega.harnesses` value; "" = claude-only (feature
+# OFF). Default the suite to all three enabled; the gate section flips it to "" to prove OFF.
+mkdir -p "$TMP/cfgroot" "$TMP/cfgproj"
+export KIT_CONFIG_ROOT="$TMP/cfgroot" KIT_PROJECT_ROOT="$TMP/cfgproj"
+set_harnesses() { printf '[mega]\nharnesses = "%s"\n' "$1" > "$TMP/cfgroot/kit.toml"; }
+set_harnesses "codex pi opencode"
+
 echo "== _harness_of: header parse + default =="
 d=$(mk_goal "Model: opus");                 got=$(_harness_of "$d/goals/01-thing.md")
 [ "$got" = claude ] && pass "absent Harness: defaults to claude" || { fail "default harness"; echo "got: $got"; }
@@ -71,6 +79,30 @@ else
   [ "$rc" = 64 ] && pass "unknown harness returns 64" || { fail "unknown harness rc"; echo "rc=$rc"; }
   case "$out" in *claude*) pass "error names the known vendors" ;; *) fail "error should list known vendors"; echo "$out" ;; esac
 fi
+
+echo "== config gate: multi-vendor is opt-in, default OFF =="
+# With the feature DISABLED (empty mega.harnesses), a known vendor must hard-stop, NOT fall back to
+# claude. This is the whole point of the kit-config gate Han asked for: the code ships to everyone,
+# the capability stays off until a user enables a vendor they actually set up.
+set_harnesses ""
+d=$(mk_goal "Harness: codex")
+if out=$(_harness_of "$d/goals/01-thing.md" 2>&1); then
+  fail "disabled vendor should hard-stop, got: $out"
+else
+  rc=$?
+  [ "$rc" = 64 ] && pass "disabled vendor returns 64 (no silent claude fallback)" || { fail "disabled rc"; echo "rc=$rc"; }
+  case "$out" in *not\ enabled*) pass "error says 'not enabled' + names the config key" ;; *) fail "disabled error message"; echo "$out" ;; esac
+fi
+# claude MUST still work with the feature off -- it is the substrate, never gated.
+d=$(mk_goal "Model: opus")
+got=$(_harness_of "$d/goals/01-thing.md"); [ "$got" = claude ] && pass "claude works with feature OFF" || { fail "claude gated?!"; echo "got: $got"; }
+# Enabling one vendor must NOT enable a sibling: a partial allowlist is honored exactly.
+set_harnesses "codex"
+d=$(mk_goal "Harness: pi")
+_harness_of "$d/goals/01-thing.md" >/dev/null 2>&1 && fail "pi should be blocked when only codex is enabled" || pass "partial allowlist: pi blocked while codex allowed"
+d=$(mk_goal "Harness: codex")
+[ "$(_harness_of "$d/goals/01-thing.md")" = codex ] && pass "partial allowlist: codex admitted" || fail "codex should be admitted"
+set_harnesses "codex pi opencode"   # restore the suite default
 
 echo "== tier allowlist is claude-only =="
 d=$(mk_goal "Harness: codex" "Model: gpt-5" "Effort: high")

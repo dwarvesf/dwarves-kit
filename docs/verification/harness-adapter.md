@@ -9,8 +9,24 @@ mega-goal sub-goal can be dispatched to codex / pi / opencode and pay that vendo
 the Claude one. Plus the `fable` tier fix, which is an unrelated live regression found while reading
 the routing code.
 
-**Status:** wired. A goal file declares `Harness: <vendor>` and orchestrate.sh dispatches that
-sub-goal to that vendor. Absent header -> `claude` -> every pre-existing path runs byte-identically.
+**Status:** wired and config-gated. A goal file declares `Harness: <vendor>` and orchestrate.sh
+dispatches that sub-goal to that vendor, but ONLY if the kit has opted into that vendor via
+`mega.harnesses` in kit.toml. Default is empty = claude-only = feature OFF. Absent header -> `claude`
+-> every pre-existing path runs byte-identically.
+
+**The config gate (`mega.harnesses`).** Multi-vendor dispatch ships to every kit user but stays OFF
+until they enable a vendor they have actually installed and authenticated:
+
+```toml
+[mega]
+harnesses = "codex"     # space-separated; "" (default) = claude-only. claude is never listed (always on).
+```
+
+With the feature OFF, a `Harness: codex` header is a pre-flight STOP (`not enabled in this kit`), the
+same fail-closed posture as a typo'd vendor, never a silent claude fallback. This is the requested
+"off for me, opt-in for other users" behavior: the code is present everywhere, the capability is a
+deliberate config choice. A partial allowlist is honored exactly: `harnesses = "codex"` enables codex
+and still blocks `pi`.
 
 ## Why not the prior art's approach
 
@@ -54,6 +70,16 @@ Wiring criteria (phase 2):
 | B6 | A vendor sub-goal actually EXECS that vendor, with the prompt on the declared channel | `_run_one_session_vendor` |
 | B7 | Requesting stream / det-handoff / token capture on a vendor WARNs and degrades, never blocks dispatch | `_run_one_session_vendor` |
 | B8 | Grounded completion still governs: a vendor session advances only on the flipped ROADMAP box | `cmd_run` (unchanged) |
+
+Config-gate criteria (phase 3):
+
+| # | Criterion | Where |
+|---|---|---|
+| C1 | Feature OFF by default (`mega.harnesses` empty) -> a known vendor is a pre-flight STOP, not a claude fallback | `_harness_of` |
+| C2 | The OFF error names the config key (`mega.harnesses`) and says "not enabled" | `_harness_of` |
+| C3 | claude works with the feature OFF (the substrate is never gated) | `_harness_of` |
+| C4 | A partial allowlist is honored exactly: `harnesses = "codex"` admits codex, still blocks pi | `_harness_of` |
+| C5 | The pre-flight STOP message is generic ("rejected by routing; see reason above"), not the old hardcoded "invalid Model: tier" lie | `cmd_run` serial + wave |
 
 ## Implementation
 
@@ -111,7 +137,8 @@ still runs unattended. Taking the bypass flag would discard isolation already pa
 | **Live: claude leg (adapter)** | resolved argv, prompt on stdin | `claude -p --model haiku --dangerously-skip-permissions` -> **rc=0, output `ADAPTER_OK`** |
 | **Live: codex leg (adapter)** | resolved argv, prompt on stdin | argv ACCEPTED, `Reading prompt from stdin...` confirms A1; **rc=1 at HTTP 401** (codex not authenticated on this host) |
 | **Live: full orchestrator, real claude** | `orchestrate.sh run <megadir>` on a 1-sub-goal mega-goal | dispatched a REAL claude session -> agent flipped the box -> `SG-01 complete (box checked); advancing` -> `all sub-goals checked; done` |
-| **Live: full orchestrator, vendor harness** | same, `Harness: codex` + a mock codex on PATH | `running SG-01 ... (harness: codex, model: gpt-5, effort: high)`, `prompt via stdin`, argv `exec --model gpt-5 -c model_reasoning_effort="high" -s workspace-write`, box flipped, grounded completion advanced |
+| **Live: full orchestrator, vendor harness (feature ON)** | `harnesses = "codex"` + a mock codex on PATH | `running SG-01 ... (harness: codex, model: gpt-5, effort: high)`, `prompt via stdin`, argv `exec --model gpt-5 -c model_reasoning_effort="high" -s workspace-write`, box flipped, grounded completion advanced |
+| **Live: config gate, feature OFF** | same mega-goal, `harnesses = ""` | `orchestrate: Harness: 'codex' ... is not enabled in this kit ... Not dispatching`, then a generic `STOP: SG-01 rejected pre-flight by routing; see the 'orchestrate:' reason above`; ROADMAP box stayed unchecked (no dispatch, no fallback) |
 
 ### Live-run detail (the part a green unit test would have missed)
 

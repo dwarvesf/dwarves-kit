@@ -68,6 +68,14 @@ default_model      = "sonnet"   # [design] GLOBAL fallback. Real control today i
 over_test          = false      # [design] GLOBAL default for scaffold rigor. Real control
                                 #        today is per-sub-goal `Done-mode: over-test`
                                 #        (SPEC-112). Global default for other-harness adopters.
+harnesses          = ""         # [impl] opt-in NON-claude dispatch. Space-separated vendor
+                                #        list a sub-goal's `Harness:` header may name
+                                #        (codex | pi | opencode). EMPTY = claude-only (default;
+                                #        multi-vendor OFF). claude is always available and never
+                                #        listed here. e.g. harnesses = "codex" bills those
+                                #        sub-goals to codex's quota. Enable only vendors you have
+                                #        installed AND authenticated. See commands/mega.md
+                                #        "Harness routing (multi-vendor dispatch)".
 
 [gate]
 understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031). Always-on
