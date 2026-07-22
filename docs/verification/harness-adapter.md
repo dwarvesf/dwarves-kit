@@ -28,6 +28,12 @@ same fail-closed posture as a typo'd vendor, never a silent claude fallback. Thi
 deliberate config choice. A partial allowlist is honored exactly: `enabled_agent_clis = "codex"` enables codex
 and still blocks `pi`.
 
+**The gate reads the KIT-ROOT install config only (review CRITICAL fix).** A project `.kit.toml` is
+git-tracked and rides inside the mega-goal branch being executed, so if it could enable a vendor a
+hostile PR could self-authorize the vendor it requests in the same PR. `_harness_allowed` therefore
+reads `~/.claude/dwarves-kit/kit.toml` (the operator's machine install) only, never the project
+layer, deliberately inverting the normal project-wins precedence for this one key.
+
 ## Why not the prior art's approach
 
 Read from AI-Builder-Club `skills/open-agent-teams` (`tdel`, 145 lines of bash). It solves the same
@@ -81,6 +87,21 @@ Config-gate criteria (phase 3):
 | C4 | A partial allowlist is honored exactly: `enabled_agent_clis = "codex"` admits codex, still blocks pi | `_harness_of` |
 | C5 | The pre-flight STOP message is generic ("rejected by routing; see reason above"), not the old hardcoded "invalid Model: tier" lie | `cmd_run` serial + wave |
 
+Security-hardening criteria (phase 4, review round 2026-07-22):
+
+| # | Criterion | Where |
+|---|---|---|
+| S1 | The gate reads the KIT-ROOT install config ONLY; a project `.kit.toml` (which rides inside the untrusted PR) CANNOT self-enable a vendor | `_harness_allowed` |
+| S2 | The kit-root config DOES enable (proves S1 gates the layer, not all config) | `_harness_allowed` |
+| S3 | `Effort:` is charset-validated: a codex TOML-breakout value is rejected | `_route` |
+| S4 | `Effort:` charset-validated: a claude flag-injection value (`x --mcp-config ...`) is rejected | `_route` |
+| S5 | A clean effort still passes (the gate did not over-reject) | `_route` |
+| S6 | An argv-mode prompt starting with `-` is delivered guarded (first byte newline), not parsed as a flag | `_run_one_session_vendor` |
+| S7 | `_run_one_session_vendor` hard-stops on a `_route` failure (no fail-open dispatch with empty model/effort) | `_run_one_session_vendor` |
+| S8 | The degrade WARN fires for all four lost features incl. the stall watchdog | `_run_one_session_vendor` |
+| E1 | End-to-end: a vendor sub-goal driven by real `orchestrate.sh run` reaches grounded completion (box-flip advance) with the gate ON | `cmd_run` (mock codex) |
+| E2 | End-to-end with the gate OFF: box stays unchecked, generic routing STOP | `cmd_run` |
+
 ## Implementation
 
 | File | Change |
@@ -129,7 +150,7 @@ still runs unattended. Taking the bypass flag would discard isolation already pa
 | Check | Command | Result |
 |---|---|---|
 | Adapter suite | `bash tests/test-harness-adapter.sh` | **21 PASS, 0 FAIL**, rc=0 |
-| Dispatch-wiring suite | `bash tests/test-harness-dispatch.sh` | **18 PASS, 0 FAIL**, rc=0 |
+| Dispatch-wiring + security + e2e suite | `bash tests/test-harness-dispatch.sh` | **38 PASS, 0 FAIL**, rc=0 |
 | Regression: orchestrate | `bash tests/test-orchestrate.sh` | 63 pass, 0 fail, rc=0 |
 | Regression: wavefront | `bash tests/test-orchestrate-wavefront.sh` | 103 pass, 0 fail, rc=0 |
 | Regression: hardening | `bash tests/test-orchestrate-hardening.sh` | 12 pass, 0 fail, rc=0 |
@@ -201,6 +222,23 @@ log, grounded completion, and advance.
 It does **not** prove a real codex model can complete a real sub-goal. It cannot, on this host: no
 OpenAI credential (see the 401 row). What is proven is that everything the kit controls is correct up
 to the vendor's own front door.
+
+## Review round (2026-07-22)
+
+Three fresh-context reviewers (security, architecture, test-coverage) ran against the full diff. Net:
+1 CRITICAL, 4 HIGH, plus mediums, all fixed. Detail + the WRONG/RIGHT reasoning is in
+`docs/implementation-notes/multi-vendor-dispatch.md`. Summary:
+
+| Sev | Finding | Fix | Pinned by |
+|---|---|---|---|
+| CRITICAL | opt-in gate self-authorizable from a project `.kit.toml` inside the untrusted PR | `_harness_allowed` reads kit-root only | S1, S2 |
+| HIGH | codex `Effort:` splices unescaped into a TOML string | charset-validate `Effort:` in `_route` | S3, S5 |
+| HIGH | claude `Effort:` word-split injects argv flags (pre-existing, adjacent) | same charset gate | S4 |
+| HIGH | argv-mode prompt starting with `-` parsed as a flag | leading-newline guard (pi rejects `--`) | S6 |
+| HIGH | `_run_one_session_vendor` swallowed `_route`'s exit (fail-open) | check rc, `return 64` | S7 |
+| HIGH | no scripted `cmd_run` e2e (grounded completion unproven in CI) | full-orchestrator test w/ mock codex | E1, E2 |
+| MED | vendor path silently skipped the stall watchdog | added to the degrade WARN + doc | S8 |
+| MED | `tier_of` test checked a hand-duplicated copy | extract + eval the shipped function | adapter suite |
 
 ## Known gaps
 

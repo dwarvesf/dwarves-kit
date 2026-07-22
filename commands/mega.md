@@ -359,10 +359,10 @@ decision). If you only use Claude, ignore this section; nothing changes.
 
 ### The two things a user sets
 
-**1. Enable the vendor once, in config** (per kit install or per project):
+**1. Enable the vendor once, in your KIT-ROOT install config:**
 
 ```toml
-# kit.toml  (or a project .kit.toml, which wins)
+# ~/.claude/dwarves-kit/kit.toml   (the OPERATOR's install, NOT a project .kit.toml)
 [mega]
 enabled_agent_clis = "codex"          # space-separated; "" (default) = claude-only, feature OFF
 ```
@@ -370,6 +370,15 @@ enabled_agent_clis = "codex"          # space-separated; "" (default) = claude-o
 Enable only vendors you have installed AND authenticated. `claude` is always
 available and is never listed here. This key is the whole on/off switch: empty means
 a `Harness:` header errors clearly rather than surprise-spending on another account.
+
+**Security: this ONE key is read from the kit-root install config only, never a project
+`.kit.toml`.** Every other `[mega]` key follows the normal "project overrides kit-root"
+precedence; this one deliberately does not. A project `.kit.toml` is a git-tracked file that
+rides inside the mega-goal branch being executed, so if it could enable a vendor, a hostile PR
+could add `Harness: codex` to a goal file AND enable codex in the same PR, self-authorizing the
+very vendor the operator never opted into. Reading the operator's machine install only closes
+that. Consequence: you cannot enable a vendor per-project via a committed file; it is an operator
+decision made once per install.
 
 **2. Route a sub-goal, in its goal file** (`goals/NN-<slug>.md`), with three bare
 header lines:
@@ -403,14 +412,20 @@ allowlist (`opus|sonnet|haiku|fable`) applies to claude ONLY.
 - **A typo'd vendor** (`Harness: codmex`) -> pre-flight stop (`unknown Harness`).
 - **A claude `Model:` typo** (`sonet`) is still rejected by the tier allowlist. A non-claude
   `Model:` is passed through verbatim and that vendor's own CLI rejects a bad name.
+- **`Effort:` is character-validated** (`A-Za-z0-9_-` only) on every harness, so it cannot smuggle
+  extra flags into the exec (`Effort: x --mcp-config ...`) or break out of codex's TOML config.
+- **An argv-delivered prompt is guarded** so a prompt starting with `-` (a `---` rule) is never
+  parsed as a CLI flag.
 - **Grounded completion is unchanged**: a vendor sub-goal advances only when it flips its ROADMAP
   box, exactly like a claude sub-goal. It cannot self-claim done.
 
 ### The one caveat
 
-A non-claude sub-goal gets **no token accounting** (the vendor CLIs have no `stream-json`
-equivalent). The driver WARNs and runs it anyway; a mega-goal mixing claude and vendor sub-goals
-will have a partial token ledger. That is the price of routing off-vendor, surfaced, not hidden.
+A non-claude sub-goal runs on the plain path only, so it gets **no token accounting, no live
+`--stream` tail, no deterministic-handoff regeneration, and no SG-11 stall watchdog** (all four
+need the `stream-json` capture the vendor CLIs lack). The driver WARNs and runs it anyway; a
+mega-goal mixing claude and vendor sub-goals will have a partial token ledger and its vendor
+sub-goals are not stall-monitored. That is the price of routing off-vendor, surfaced, not hidden.
 
 ## Consolidate mode (remega, mirrors the skill's mode)
 

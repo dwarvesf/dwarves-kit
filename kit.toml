@@ -75,8 +75,11 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
                                 #        available and never listed here. e.g.
                                 #        enabled_agent_clis = "codex" bills those sub-goals
                                 #        to codex's quota. Enable only CLIs you have installed
-                                #        AND authenticated. See commands/mega.md "Harness
-                                #        routing (multi-vendor dispatch)".
+                                #        AND authenticated. SECURITY: read from the KIT-ROOT
+                                #        install kit.toml ONLY, never a project .kit.toml (a
+                                #        committed .kit.toml rides inside an untrusted PR and
+                                #        could self-enable a vendor). See commands/mega.md
+                                #        "Harness routing (multi-vendor dispatch)".
 
 [gate]
 understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031). Always-on

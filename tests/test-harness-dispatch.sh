@@ -45,6 +45,7 @@ for v in codex pi opencode; do
   cat > "$MOCKBIN/$v" <<EOF
 #!/usr/bin/env bash
 printf '%s\n' "\$@" > "$TMP/$v.argv"
+printf '%s' "\${!#}" > "$TMP/$v.lastarg"   # the RAW last positional (the prompt, for argv-mode)
 cat > "$TMP/$v.stdin"
 exit 0
 EOF
@@ -91,7 +92,7 @@ if out=$(_harness_of "$d/goals/01-thing.md" 2>&1); then
 else
   rc=$?
   [ "$rc" = 64 ] && pass "disabled vendor returns 64 (no silent claude fallback)" || { fail "disabled rc"; echo "rc=$rc"; }
-  case "$out" in *not\ enabled*) pass "error says 'not enabled' + names the config key" ;; *) fail "disabled error message"; echo "$out" ;; esac
+  case "$out" in *not\ enabled*mega.enabled_agent_clis*) pass "error says 'not enabled' AND names the config key" ;; *) fail "disabled error should name the key mega.enabled_agent_clis"; echo "$out" ;; esac
 fi
 # claude MUST still work with the feature off -- it is the substrate, never gated.
 d=$(mk_goal "Model: opus")
@@ -103,6 +104,35 @@ _harness_of "$d/goals/01-thing.md" >/dev/null 2>&1 && fail "pi should be blocked
 d=$(mk_goal "Harness: codex")
 [ "$(_harness_of "$d/goals/01-thing.md")" = codex ] && pass "partial allowlist: codex admitted" || fail "codex should be admitted"
 set_harnesses "codex pi opencode"   # restore the suite default
+
+echo "== SECURITY: the gate is not self-authorizable from a project .kit.toml (review CRITICAL) =="
+# A hostile mega-goal PR could ship a project .kit.toml that enables the vendor it also requests in a
+# goal file. The gate must read the KIT-ROOT install config ONLY, never the PR-writable project layer.
+# Reproduce the attack: kit-root empty, project .kit.toml enables codex -> must STILL be blocked.
+set_harnesses ""                                                    # kit-root: feature OFF
+printf '[mega]\nenabled_agent_clis = "codex"\n' > "$TMP/cfgproj/.kit.toml"   # attacker's project override
+d=$(mk_goal "Harness: codex")
+if _harness_of "$d/goals/01-thing.md" >/dev/null 2>&1; then
+  fail "SECURITY: a project .kit.toml self-enabled the vendor (gate bypassed)"
+else
+  pass "project .kit.toml CANNOT self-enable the vendor (kit-root-only gate)"
+fi
+# Control: the SAME enablement in the KIT-ROOT config DOES enable it (proves the gate reads kit-root,
+# not that it ignores config entirely).
+set_harnesses "codex"                                              # kit-root: ON
+[ "$(_harness_of "$d/goals/01-thing.md")" = codex ] && pass "kit-root config DOES enable (control)" || fail "kit-root enablement should work"
+rm -f "$TMP/cfgproj/.kit.toml"
+set_harnesses "codex pi opencode"   # restore
+
+echo "== SECURITY: Effort is charset-validated (no argv / TOML injection, review HIGH) =="
+# Effort has no allowlist by design, but reaches an exec as syntax on two paths: codex splices it into
+# a TOML string, and the claude path word-splits it into the real argv. Both need a charset gate.
+d=$(mk_goal "Harness: codex" 'Effort: high", sandbox_mode="danger-full-access')
+_route "$d/goals/01-thing.md" >/dev/null 2>&1 && fail "codex TOML-breakout effort was accepted" || pass "codex TOML-breakout effort rejected"
+d=$(mk_goal 'Effort: x --mcp-config /tmp/evil.json')   # claude path, word-split injection
+_route "$d/goals/01-thing.md" >/dev/null 2>&1 && fail "claude flag-injection effort was accepted" || pass "claude flag-injection effort rejected"
+d=$(mk_goal "Harness: codex" "Model: gpt-5" "Effort: high")   # clean value still passes
+[ "$(_route "$d/goals/01-thing.md")" = "$(printf 'gpt-5\thigh')" ] && pass "clean effort still admitted (gate didn't over-reject)" || fail "clean effort should pass"
 
 echo "== tier allowlist is claude-only =="
 d=$(mk_goal "Harness: codex" "Model: gpt-5" "Effort: high")
@@ -153,6 +183,23 @@ d=$(mk_goal "Harness: pi" "Model: google/gemini-3-pro" "Effort: high"); run_vend
 grep -q -- '--thinking' "$TMP/pi.argv" 2>/dev/null \
   && pass "pi effort maps to --thinking, not --effort" || { fail "pi effort flag"; cat "$TMP/pi.argv" 2>/dev/null; }
 
+echo "== SECURITY: argv-mode prompt starting with '-' is delivered, not parsed as a flag (review HIGH) =="
+# A prompt whose first char is '-' (e.g. a '---' markdown rule atop POINTER_PROMPT.md) would be read
+# as an option by pi/opencode. The delivery must guarantee the positional never starts with '-'. The
+# mock records its argv one-token-per-line: line 1 is `run`, then the prompt token. With the leading-
+# newline guard the prompt token's first line is EMPTY (the guard newline); without it, it is `---`.
+rm -f "$TMP/opencode.argv" "$TMP/opencode.lastarg"
+pf="$TMP/dashprompt.txt"; printf -- '---\nreal body PROMPT_BODY_MARKER\n' > "$pf"
+d=$(mk_goal "Harness: opencode")
+_run_one_session "$d" SG-01 "$pf" "" 0 >/dev/null 2>&1
+grep -q PROMPT_BODY_MARKER "$TMP/opencode.lastarg" 2>/dev/null \
+  && pass "opencode still received the dash-prefixed body (as the last positional)" || { fail "dash-prefixed prompt lost"; cat "$TMP/opencode.argv"; }
+# The raw last positional must NOT start with '-'. With the newline guard its first byte is '\n'.
+first=$(head -c1 "$TMP/opencode.lastarg" | od -An -c | tr -d ' ')
+[ "$first" = '\n' ] \
+  && pass "prompt arg is guarded (first byte is newline; never starts with '-')" \
+  || { fail "prompt arg first byte is '$first' not newline -> vendor would parse a leading '-' as a flag"; }
+
 echo "== claude path is untouched (backward compat) =="
 # $CLAUDE_CMD is the mock seam every pre-existing test drives. With no Harness: header the vendor
 # branch must not be taken at all, so a $CLAUDE_CMD mock still receives the dispatch.
@@ -180,6 +227,60 @@ case "$warn" in
 esac
 [ -f "$TMP/codex.argv" ] && pass "and still dispatches (advisory, not a wall)" \
   || fail "observability degrade blocked the dispatch"
+# All FOUR observability triggers WARN (review LOW: only CAPTURE_TOKENS was covered before). stream is
+# the 5th positional; the other three are env globals.
+warn=$(_run_one_session "$d" SG-01 "$pf" "" 1 2>&1 >/dev/null)                 # stream=1
+case "$warn" in *WARN*stream-json*) pass "stream=1 WARNs" ;; *) fail "stream=1 should WARN"; echo "$warn" ;; esac
+warn=$(DETERMINISTIC_HANDOFF=1 _run_one_session "$d" SG-01 "$pf" "" 0 2>&1 >/dev/null)
+case "$warn" in *WARN*stream-json*) pass "DETERMINISTIC_HANDOFF=1 WARNs" ;; *) fail "DETERMINISTIC_HANDOFF should WARN"; echo "$warn" ;; esac
+warn=$(WATCHDOG_STALL_SECS=30 _run_one_session "$d" SG-01 "$pf" "" 0 2>&1 >/dev/null)
+case "$warn" in *WARN*watchdog*|*WARN*stream-json*) pass "WATCHDOG_STALL_SECS>0 WARNs (vendor path is watchdog-exempt)" ;; *) fail "WATCHDOG_STALL_SECS should WARN"; echo "$warn" ;; esac
+
+echo "== END-TO-END: cmd_run drives a vendor sub-goal to grounded completion (review HIGH) =="
+# The strongest test: run the REAL orchestrator (`orchestrate.sh run`), not a sourced helper, with a
+# mock codex that flips its ROADMAP box the way a real agent would. Proves the whole wired path:
+# harness gate -> vendor dispatch -> grounded completion (box-flip advance). Mirrors the fixture
+# pattern in test-orchestrate-hardening.sh. Serial run (WAVE_CAP unset -> 1), so no git/worktree.
+ORCH="$KIT/lib/queue/orchestrate.sh"
+mk_mega() {  # roadmap-checkbox-char -> echoes megadir
+  local dir; dir=$(mktemp -d "$TMP/e2e.XXXXXX"); mkdir -p "$dir/goals"
+  printf '# e2e\n\n- [%s] SG-01 vendor probe , auto\n' "$1" > "$dir/ROADMAP.md"
+  printf 'run one sub-goal.\n' > "$dir/POINTER_PROMPT.md"
+  printf 'Harness: codex\nModel: gpt-5\nEffort: high\n\n**Branch:** chore/e2e\n\n## Task\nflip the box.\n' > "$dir/goals/01-probe.md"
+  printf '%s\n' "$dir"
+}
+# A codex mock that does the agent's job: flip SG-01's box in the megadir ROADMAP it is told about.
+codex_flip="$TMP/bin-e2e"; mkdir -p "$codex_flip"
+cat > "$codex_flip/codex" <<EOF
+#!/usr/bin/env bash
+cat >/dev/null   # drain the stdin prompt
+sed -i.bak 's/- \[ \] SG-01/- [x] SG-01/' "\$MOCK_ROADMAP" 2>/dev/null || \
+  { tmp=\$(mktemp); sed 's/- \[ \] SG-01/- [x] SG-01/' "\$MOCK_ROADMAP" > "\$tmp"; mv "\$tmp" "\$MOCK_ROADMAP"; }
+exit 0
+EOF
+chmod +x "$codex_flip/codex"
+
+# ON: feature enabled at kit-root -> dispatches to codex -> box flips -> advance.
+set_harnesses "codex"
+meg=$(mk_mega " ")
+out=$(cd "$meg" && MOCK_ROADMAP="$meg/ROADMAP.md" TIER4_CLOSE=0 PATH="$codex_flip:$PATH" \
+      KIT_CONFIG_ROOT="$TMP/cfgroot" KIT_PROJECT_ROOT="$TMP/cfgproj" \
+      timeout 60 bash "$ORCH" run "$meg" 2>&1)
+grep -q '\[x\] SG-01' "$meg/ROADMAP.md" && pass "e2e ON: vendor sub-goal reached grounded completion (box flipped)" \
+  || { fail "e2e ON: box not flipped"; printf '%s\n' "$out" | tail -4; }
+case "$out" in *"harness: codex"*) pass "e2e ON: dispatch log names the codex harness" ;; *) fail "e2e ON: log should name codex"; printf '%s\n' "$out" | tail -4 ;; esac
+case "$out" in *complete*|*"all sub-goals"*) pass "e2e ON: run advanced/completed" ;; *) fail "e2e ON: no advance"; printf '%s\n' "$out" | tail -4 ;; esac
+
+# OFF: feature disabled at kit-root -> pre-flight STOP -> box stays unchecked, generic routing STOP.
+set_harnesses ""
+meg=$(mk_mega " ")
+out=$(cd "$meg" && MOCK_ROADMAP="$meg/ROADMAP.md" TIER4_CLOSE=0 PATH="$codex_flip:$PATH" \
+      KIT_CONFIG_ROOT="$TMP/cfgroot" KIT_PROJECT_ROOT="$TMP/cfgproj" \
+      timeout 60 bash "$ORCH" run "$meg" 2>&1)
+grep -q '\[ \] SG-01' "$meg/ROADMAP.md" && pass "e2e OFF: box stays unchecked (blocked, no dispatch)" \
+  || { fail "e2e OFF: box was flipped despite disabled gate!"; printf '%s\n' "$out" | tail -4; }
+case "$out" in *"rejected pre-flight by routing"*) pass "e2e OFF: generic routing STOP (not the old 'invalid Model tier' lie)" ;; *) fail "e2e OFF: missing routing STOP"; printf '%s\n' "$out" | tail -4 ;; esac
+set_harnesses "codex pi opencode"
 
 echo
 [ "$fails" = 0 ] && { echo "all green"; exit 0; } || { echo "$fails FAILED"; exit 1; }

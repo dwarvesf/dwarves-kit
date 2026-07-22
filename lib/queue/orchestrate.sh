@@ -547,14 +547,20 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # The set of NON-claude harnesses this kit installation permits, from `mega.enabled_agent_clis` (ID-390).
 # DEFAULT EMPTY = claude-only: out of the box, multi-vendor dispatch is OFF, so a stray `Harness:
 # codex` header errors clearly instead of surprise-spending on another vendor's account. An operator
-# who has, say, codex installed and authenticated opts in by setting `mega.enabled_agent_clis = "codex"` in
-# kit.toml (or a project .kit.toml). Space-separated; the config resolver returns a bare string, not
-# a TOML array, so this is a string list, not `["codex"]`.
+# who has, say, codex installed and authenticated opts in by setting `enabled_agent_clis = "codex"`
+# under `[mega]` in the KIT-ROOT kit.toml. Space-separated; the config resolver returns a bare
+# string, not a TOML array, so this is a string list, not `["codex"]`.
 #
-# claude is NOT gated and is intentionally absent from the default: it is the substrate, always
-# available regardless of this key, so disabling it is impossible by construction (a kit with no
-# claude is not a kit). The key gates ONLY the opt-in vendor harnesses.
-_harness_allowed() { kit_config_get mega.enabled_agent_clis; }
+# SECURITY (review CRITICAL, 2026-07-22): this reads the KIT-ROOT layer ONLY, deliberately NOT the
+# normal `kit_config_get` (project `.kit.toml` > kit-root). The project `.kit.toml` is a git-tracked
+# file that rides INSIDE the mega-goal branch being executed, so a hostile PR that adds `Harness:
+# codex` to a goal file could, in the SAME PR, add `enabled_agent_clis = "codex"` to `.kit.toml` and
+# self-authorize the vendor the operator never opted into. Reading kit-root only
+# (`~/.claude/dwarves-kit/kit.toml`, the operator's machine install, never in any repo) closes that:
+# enablement is an operator decision the PR cannot forge. Tradeoff: per-project enablement via a
+# committed `.kit.toml` is intentionally UNSUPPORTED for this one knob (a committed file is
+# PR-writable); this is the single place the normal project-wins precedence is inverted, on purpose.
+_harness_allowed() { _kit_toml_get "$(kit_config_root)" mega enabled_agent_clis; }
 
 # The goal file's `Harness:` header, lowercased, defaulting to `claude` (ID-390). This is the ONE
 # place the vendor is decided; everything downstream branches on its result. Three outcomes:
@@ -566,8 +572,8 @@ _harness_allowed() { kit_config_get mega.enabled_agent_clis; }
 #   unknown vendor      -> 64. Falling back to claude would silently run the sub-goal on the wrong
 #                         (and wrong-priced) vendor -- the quiet substitution that makes a
 #                         quota-routing feature untrustworthy. A typo is a pre-flight stop.
-#   known but not enabled -> 64, DISTINCT message. The vendor is real but this kit has not opted
-#                         into it via `mega.enabled_agent_clis`. This is the gate Han asked for: the feature
+#   known but not enabled -> 64, DISTINCT message. The vendor is real but the OPERATOR'S kit install
+#                         has not opted into it via `mega.enabled_agent_clis`. This is the gate Han asked for: the feature
 #                         ships to every kit user but stays OFF until they deliberately enable a
 #                         vendor they have actually set up. Same fail-closed posture as an unknown
 #                         vendor -- never a silent claude fallback.
@@ -598,7 +604,27 @@ _route() {
   # legitimate non-claude model. There is no honest cross-vendor tier mapping (gpt-5 is not "opus"),
   # so a non-claude harness passes its model through VERBATIM and that vendor's own CLI is what
   # rejects a typo. A bad harness name still hard-stops here (see _harness_of).
-  harness=$(_harness_of "$gf") || return 64
+  harness=$(_harness_of "$gf") || {
+    # Uniform stdout on EVERY failure branch (review, 2026-07-22): the model-tier reject below prints
+    # the `model\teffort` line before its `return 64`, so a caller that does `read model effort <
+    # <(_route ...)` sees a consistent tab line whichever gate fired. Emit the same here so a
+    # harness-gate failure is not the one branch that returns nothing.
+    printf '%s\t%s\n' "$model" "$effort"; return 64; }
+  # SECURITY (review HIGH, 2026-07-22): `Effort:` has no allowlist by design (no honest cross-vendor
+  # effort mapping), but it MUST be character-validated. It is the one field that reaches an exec as
+  # attacker-influenceable syntax on TWO paths: (a) codex splices it into `-c
+  # model_reasoning_effort="<effort>"`, a TOML string an embedded `"` can break out of; (b) the
+  # claude path word-splits `route_flags` (`--effort $reffort`) into the real `claude -p` argv, so a
+  # value like `x --mcp-config /tmp/e.json` injects extra flags (the same argument-injection class
+  # SPEC-119 closed for the tmux path). A charset gate at this ONE chokepoint closes both. `Model:`
+  # needs no equivalent: claude models pass the exact-token tier allowlist below, and a non-claude
+  # model becomes a single `harness_argv` array token (never word-split), so it has no injection
+  # surface. Effort words for every vendor fit `[A-Za-z0-9_-]` (low/medium/high/xhigh/max/minimal/off).
+  if [ -n "$effort" ] && ! printf '%s' "$effort" | grep -qE '^[A-Za-z0-9_-]+$'; then
+    echo "orchestrate: invalid Effort: '$effort' in ${gf:-<no goal file>} (allowed chars: A-Za-z0-9_-); rejecting pre-flight, not dispatching" >&2
+    printf '%s\t%s\n' "$model" "$effort"
+    return 64
+  fi
   # SG-03: the goal-file `Model:` field is UNCHANGED and still wins outright (Scope: "the
   # goal-file Model: parse ... still wins"). Only when the field is ABSENT does the run fall
   # back through the config layer's [mega].default_model (project .kit.toml > kit-root
@@ -931,14 +957,25 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
 # signal worth trusting.
 _run_one_session_vendor() {  # dir id pfile harness stream
   local dir="$1" id="$2" pfile="$3" harness="$4" stream="$5"
-  local rc=0 gf model effort pmode t
+  local rc=0 gf model effort pmode t route_out route_rc prompt
   local argv=()
 
   gf=$(_goalfile "$dir" "$id")
-  IFS=$'\t' read -r model effort < <(_route "$gf") || true
+  # Check `_route`'s exit code (review, 2026-07-22): the old `... < <(_route) || true` swallowed a
+  # routing failure and dispatched with empty model/effort -- a fail-open in a fail-closed feature.
+  # `_route` rejects an unknown/not-enabled harness AND an off-charset Effort; any of those must
+  # hard-stop here too, not degrade silently. (The wired path also gates via _harness_of upstream,
+  # but this function must defend itself for any direct caller.)
+  route_out=$(_route "$gf"); route_rc=$?
+  [ "$route_rc" = 0 ] || { echo "[orchestrate] $id: routing rejected (see the 'orchestrate:' reason above); not dispatching to '$harness'." >&2; return 64; }
+  IFS=$'\t' read -r model effort <<<"$route_out"
 
-  if [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ]; then
-    echo "[orchestrate] WARN $id: harness '$harness' has no stream-json equivalent; running the plain path (no live tail, no deterministic handoff, no token capture for this sub-goal)." >&2
+  # Degrade WARN. `WATCHDOG_STALL_SECS` is included (review): the vendor path cannot run the SG-11
+  # stall watchdog either (it needs the same stream-json capture the vendor CLIs lack), so an
+  # operator running with the watchdog on must be told this sub-goal is exempt -- not left to assume
+  # every session is monitored. Same advisory-WARN posture as the other lost observability features.
+  if [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ] || [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
+    echo "[orchestrate] WARN $id: harness '$harness' has no stream-json equivalent; running the plain path (no live tail, no deterministic handoff, no token capture, no stall watchdog for this sub-goal)." >&2
   fi
 
   while IFS= read -r t; do argv+=("$t"); done < <(harness_argv "$harness" "$model" "$effort")
@@ -951,7 +988,17 @@ _run_one_session_vendor() {  # dir id pfile harness stream
   # is why the mode is data the adapter owns rather than a guess made here.
   case "$pmode" in
     stdin) "${argv[@]}" < "$pfile" || rc=$? ;;
-    argv)  "${argv[@]}" "$(cat "$pfile")" || rc=$? ;;
+    argv)
+      # Leading-newline guard (review HIGH, 2026-07-22): the prompt is a trailing positional here, so
+      # if its first char is `-` (a benign `---` markdown rule atop POINTER_PROMPT.md, or a hostile
+      # line) the vendor's arg parser reads it as an OPTION -- the silent "empty prompt, exit 0"
+      # class, or worse an injected flag. Prepending a newline makes the arg never start with `-`; a
+      # leading blank line is inert to an LLM. Verified on the installed pi + opencode. NOT `--`: pi
+      # rejects the end-of-options sentinel (`Unknown option: --`), so the newline guard is the
+      # portable equivalent. Ceiling: relies on the CLI treating `arg[0]=='-'` as an option marker
+      # (both do); a future vendor that differs needs a per-vendor delivery branch.
+      prompt=$'\n'"$(cat "$pfile")"
+      "${argv[@]}" "$prompt" || rc=$? ;;
     *)     echo "[orchestrate] $id: unknown prompt mode '$pmode'" >&2; return 64 ;;
   esac
   _ROS_SLOG=""   # no transcript capture on this path; the caller's token/handoff hooks are slog-gated

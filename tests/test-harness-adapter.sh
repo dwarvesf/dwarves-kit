@@ -164,11 +164,16 @@ else
   pass "negative control: typo tier still rejected (gate intact)"
 fi
 
-# tier_of must normalize fable, or a fable ledger row becomes its own bogus "tier".
-t=$(bash -c 'tier_of() { case "$1" in haiku*) echo haiku;; sonnet*) echo sonnet;; opus*) echo opus;; fable*) echo fable;; *) echo "$1";; esac; }; tier_of fable-5')
-[ "$t" = fable ] && pass "tier_of normalizes fable-5 -> fable" || { fail "tier_of fable"; echo "got: $t"; }
-grep -q 'fable\*) echo fable' "$KIT/lib/classify/route-suggest.sh" \
-  && pass "route-suggest.sh carries the fable arm" || fail "route-suggest.sh missing fable arm"
+# tier_of must normalize fable, or a fable ledger row becomes its own bogus "tier". Test the SHIPPED
+# function (review MED: the old test reimplemented tier_of inline, so it passed even if the real
+# case drifted). Extract the real one-line definition and eval it -- this catches a real regression.
+real_tier_of=$(grep '^tier_of()' "$KIT/lib/classify/route-suggest.sh")
+[ -n "$real_tier_of" ] || fail "could not find tier_of() in route-suggest.sh (renamed / no longer one line?)"
+t=$(bash -c "$real_tier_of"'; tier_of fable-5')
+[ "$t" = fable ] && pass "shipped tier_of normalizes fable-5 -> fable" || { fail "tier_of fable"; echo "got: $t"; }
+# And the pre-existing tiers still normalize, so the extracted function is really the multi-arm one.
+o=$(bash -c "$real_tier_of"'; tier_of opus-4-8')
+[ "$o" = opus ] && pass "shipped tier_of still normalizes opus-4-8 -> opus" || { fail "tier_of opus"; echo "got: $o"; }
 
 echo
 [ "$fails" = 0 ] && { echo "all green"; exit 0; } || { echo "$fails FAILED"; exit 1; }
