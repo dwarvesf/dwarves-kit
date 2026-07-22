@@ -1,0 +1,140 @@
+# Proof of done: multi-vendor headless dispatch adapter + `fable` tier fix
+
+ID-390. Branch `feat/multi-vendor-dispatch`. Lane `normal` (`lane-classify.sh classify` -> `normal`).
+
+## What this is
+
+`lib/queue/harness.sh` resolves a CLI-agent vendor to the argv that runs it **headlessly**, so a
+mega-goal sub-goal can be dispatched to codex / pi / opencode and pay that vendor's quota instead of
+the Claude one. Plus the `fable` tier fix, which is an unrelated live regression found while reading
+the routing code.
+
+**Scope boundary (read this before trusting the title):** the adapter RESOLVES argv. It is not yet
+wired into `_run_one_session`, so no dispatch path calls it today. Wiring is the follow-up and needs
+its own proof.
+
+## Why not the prior art's approach
+
+Read from AI-Builder-Club `skills/open-agent-teams` (`tdel`, 145 lines of bash). It solves the same
+problem by puppeting each vendor's **interactive TUI** through `tmux send-keys`, which forces it to
+carry: busy-pane string scraping (`esc to interrupt` vs `esc interrupt`, per vendor), trust-dialog
+detection, a double-Enter workaround for prompts that open a slash-autocomplete popup, and an
+agent-authored `touch <file>.done` completion signal.
+
+Every vendor installed here has a real non-interactive mode, so this adapter drives that instead.
+None of the above has an analogue in a headless run: the exit code is a real exit code.
+
+The kit already had the parts that are actually hard and that `tdel` has no answer for: a dependency
+graph (`depends SG-NN`), a disjointness gate, one git worktree per concurrent worker, drift
+detection, dep-aware size-capped handoff, and **grounded completion** (a re-read of ROADMAP.md, so a
+sub-goal cannot self-claim done). Only the per-vendor argv table was missing.
+
+## Acceptance criteria
+
+| # | Criterion | Where |
+|---|---|---|
+| A1 | Prompt-delivery mode is correct per vendor (stdin vs trailing positional) | `harness_prompt_mode` |
+| A2 | Model + effort resolve to each vendor's own flag spelling | `harness_argv` |
+| A3 | Absent model/effort emit NO flag, so the vendor default wins (matches orchestrate.sh's "absent field -> session inherits its tier") | `harness_argv` |
+| A4 | codex effort survives as ONE argv token with its embedded TOML quotes | `harness_argv` |
+| A5 | Unknown vendor is rejected (exit 64), never silently defaulted to claude | `harness_known` |
+| A6 | An unset flags var degrades to a clean flagless argv, never a truncated one | `${VAR:-}` reads |
+| A7 | `Model: fable` passes orchestrate.sh's allowlist | `_ROUTE_MODEL_ALLOWLIST` |
+| A8 | An off-allowlist tier is still rejected (negative control: the fix widened the list, it did not remove the gate) | `_route` |
+| A9 | `tier_of` normalizes fable, so a fable ledger row does not become its own bogus tier | `route-suggest.sh` |
+
+## Implementation
+
+| File | Change |
+|---|---|
+| `lib/queue/harness.sh` | new. `harness_list` / `harness_known` / `harness_prompt_mode` / `harness_argv`, plus a CLI for eyeballing a resolved argv. `case`-based vendor table, bash-3.2 safe. |
+| `lib/queue/orchestrate.sh` | `_ROUTE_MODEL_ALLOWLIST`: `"opus sonnet haiku"` -> `"opus sonnet haiku fable"`. |
+| `lib/classify/route-suggest.sh` | `tier_of`: added the `fable*` arm alongside its siblings. |
+| `tests/test-harness-adapter.sh` | new. 21 assertions covering A1-A9. |
+
+Vendor facts were read off the installed binaries' own `--help` on 2026-07-22, not from the prior
+art's table:
+
+| Vendor | Headless | Prompt | Model | Effort | Permission |
+|---|---|---|---|---|---|
+| claude | `-p` | stdin | `--model` | `--effort` | `--dangerously-skip-permissions` |
+| codex | `exec` | stdin (`--help`: "if not provided as an argument ... read from stdin") | `--model` | `-c model_reasoning_effort="…"` | `-s workspace-write` |
+| pi | `--print` | positional | `--model` | `--thinking` | none (always autonomous) |
+| opencode | `run` | positional | `--model` | `--variant` | `--auto` |
+
+**Permission-posture decision.** `CODEX_FLAGS` defaults to `-s workspace-write`, NOT the
+`--dangerously-bypass-approvals-and-sandbox` the prior art uses. Each wave sub-goal already runs in
+its own git worktree, so `workspace-write` confines the agent to exactly the tree it should edit and
+still runs unattended. Taking the bypass flag would discard isolation already paid for.
+
+## Confirmation run-table
+
+| Check | Command | Result |
+|---|---|---|
+| Adapter suite | `bash tests/test-harness-adapter.sh` | **21 PASS, 0 FAIL**, rc=0 |
+| Regression: orchestrate | `bash tests/test-orchestrate.sh` | 63 pass, 0 fail, rc=0 |
+| Regression: wavefront | `bash tests/test-orchestrate-wavefront.sh` | 103 pass, 0 fail, rc=0 |
+| Regression: hardening | `bash tests/test-orchestrate-hardening.sh` | 12 pass, 0 fail, rc=0 |
+| shellcheck | `shellcheck lib/queue/harness.sh` | clean (0 findings) |
+| **Live: claude leg** | resolved argv, prompt on stdin | `claude -p --model haiku --dangerously-skip-permissions` -> **rc=0, output `ADAPTER_OK`** |
+| **Live: codex leg** | resolved argv, prompt on stdin | argv ACCEPTED, `Reading prompt from stdin...` confirms A1; **rc=1 at HTTP 401** (codex not authenticated on this host) |
+
+### Live-run detail (the part a green unit test would have missed)
+
+The claude leg is proven end to end: the adapter's argv ran a real agent and got the expected reply.
+
+The codex leg is proven **as far as credentials allow, and no further**. Two real facts came out of
+it, both invisible to the unit tests:
+
+1. `codex exec` refuses to start outside a trusted git repo ("Not inside a trusted directory and
+   `--skip-git-repo-check` was not specified"). The real dispatch path always runs inside a git
+   worktree, so this is satisfied naturally, but it would have broken a naive scratch-dir run.
+2. Re-run inside a git repo, codex accepted the argv, printed `Reading prompt from stdin...`
+   (independently confirming the stdin delivery mode this adapter declares for it), and reached the
+   OpenAI API before failing `401 Unauthorized`. **The blocker is a missing credential, not the
+   adapter.** Do not read this row as "codex works end to end"; it does not, on this host, yet.
+
+### The bug the live run caught
+
+The first live run returned a **truncated argv**: `claude -p --model haiku` with the permission flag
+missing. Cause: the flag defaults (`CLAUDE_HARNESS_FLAGS="${CLAUDE_HARNESS_FLAGS:-…}"`) only execute
+at SOURCE time, so a caller sourcing with a temporary assignment prefix leaves the variable unset by
+the time the function is CALLED; a bare `$VAR` read then aborted `harness_argv` mid-emit under the
+consumer's `set -u`.
+
+This is the dangerous shape, not a cosmetic one: a truncated argv does not fail loudly, it dispatches
+an unattended session with no permission flag, which then **hangs on a permission wall**. Fixed by
+reading every flags var as `${VAR:-}`, and pinned by A6 so it cannot regress.
+
+A second false-green was caught in the same pass: the fable cases first called `_route_flags`, which
+does not exist (the function is `_route`), and the negative control happily read
+"command not found" as "the gate rejected it". An existence guard now runs before those cases and
+hard-exits if `_route` is not sourceable.
+
+## Reproduce
+
+```bash
+cd ~/workspace/tieubao/dwarves-kit
+git switch feat/multi-vendor-dispatch
+bash tests/test-harness-adapter.sh          # expect: all green
+bash lib/queue/harness.sh argv codex gpt-5 high   # eyeball a resolved argv
+bash lib/queue/harness.sh mode pi                 # -> argv
+```
+
+Live leg (needs a git repo as cwd; `<vendor>` authenticated):
+
+```bash
+printf 'Reply with exactly the single word ADAPTER_OK and nothing else.\n' > /tmp/p
+source lib/queue/harness.sh
+argv=(); while IFS= read -r t; do argv+=("$t"); done < <(harness_argv claude haiku)
+"${argv[@]}" < /tmp/p
+```
+
+## Known gaps
+
+- **Not wired.** No dispatch path calls this yet. `_run_one_session` still hardcodes the claude shape.
+- **codex leg unproven end to end** on this host (no OpenAI credential). pi and opencode legs are
+  resolved-and-shellchecked but were not run live at all.
+- **No cross-vendor model tiering.** `Model:` passes through verbatim for non-claude vendors, and
+  orchestrate.sh's tier allowlist stays claude-only. Deliberate: there is no honest mapping from
+  `opus` to a competitor's model id.
