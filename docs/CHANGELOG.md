@@ -5,6 +5,27 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Multi-vendor sub-goal dispatch (ID-390).** A mega-goal sub-goal can declare
+  `Harness: codex` (or `pi` / `opencode`) in its goal file to run on a non-Claude
+  CLI, billing that vendor's quota instead of the Claude one while Claude stays the
+  coordinator. New `lib/queue/harness.sh` resolves a vendor to its headless argv +
+  prompt-delivery mode (facts read off each installed CLI, not a copied table);
+  `orchestrate.sh` wires it via `_harness_of` / `_run_one_session_vendor`. Drives
+  each vendor's real non-interactive mode (`codex exec`, `pi --print`,
+  `opencode run`), so the exit code is real, unlike the prior-art TUI-puppeting
+  approach (AI-Builder-Club `open-agent-teams`) it was evaluated against. **Opt-in,
+  OFF by default:** gated by `[mega].enabled_agent_clis`, read from the KIT-ROOT
+  install kit.toml ONLY (never a project `.kit.toml`, which rides inside an untrusted
+  PR and could self-enable a vendor). Grounded completion is unchanged and
+  vendor-independent: a vendor sub-goal advances only when it flips its ROADMAP box.
+  Fail-closed: an unknown or not-enabled harness is a pre-flight STOP, never a silent
+  claude fallback; `Effort:` is charset-validated so it cannot inject argv flags or
+  break out of codex's TOML config; an argv-mode prompt is newline-guarded so a
+  leading `-` is never parsed as a flag. Non-claude sub-goals run the plain path only
+  (no token accounting / stream tail / stall watchdog; WARNed, not silent). Also
+  admits the `fable` tier, which a stale allowlist had been rejecting pre-flight.
+  Design + proof: `docs/verification/harness-adapter.md`; review-round hardening
+  (1 CRITICAL + 4 HIGH) in `docs/implementation-notes/multi-vendor-dispatch.md`.
 - **`skills/memory-tidy`, the judgment half of the memory plane.** Pairs with the
   read-only `stats memory-sweep` scanner (SPEC-136): evidence-required per-note
   verdicts (KEEP / MERGE / STALE / UNSURE) via agent fan-out, danger check for
