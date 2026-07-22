@@ -150,7 +150,10 @@ so the existing driver can walk it unmodified):
   works; `Done =`; scope edges; the proof expectation from Step 1, plus a
   coverage-delta row for substantial sub-goals). `Model:` / `Effort:` are BARE
   lines, value only, no trailing comment -- the driver greps `^Model:` and takes
-  the whole rest of the line as the tier. **`Model:` defaults to `sonnet`**
+  the whole rest of the line as the tier. A sub-goal may ALSO carry an optional
+  **`Harness:` line** to dispatch it to a non-Claude CLI (codex / pi / opencode) so
+  the work bills to that vendor's quota; it is opt-in and OFF by default. See
+  "Harness routing (multi-vendor dispatch)" below. **`Model:` defaults to `sonnet`**
   (SPEC-107 cheap-first); route `opus` for planning/design-dominant hard
   reasoning AND for a docs/design sub-goal that REWRITES for cohesion or
   persuasion (not a light append) -- write those with the `/kit:pitch`
@@ -345,6 +348,84 @@ ROADMAP (read-only; `--out` to write; `--rid-map` when a branch slug defies the
 token match). The conductor fills only the [FILL] stubs (run mode, wave grouping,
 worker models, incidents) -- the parts only it knows. The report reads from the rid
 ledger and the roadmap checkboxes, never from transcripts.
+
+## Harness routing (multi-vendor dispatch)
+
+By default every sub-goal runs on Claude Code, and everything below is inert. This
+section only applies if you deliberately turn on multi-vendor dispatch. It exists so
+a sub-goal's grunt work can bill to a DIFFERENT AI vendor's subscription instead of
+your Claude quota, while Claude stays the coordinator (design, review, the land
+decision). If you only use Claude, ignore this section; nothing changes.
+
+### The two things a user sets
+
+**1. Enable the vendor once, in your KIT-ROOT install config:**
+
+```toml
+# ~/.claude/dwarves-kit/kit.toml   (the OPERATOR's install, NOT a project .kit.toml)
+[mega]
+enabled_agent_clis = "codex"          # space-separated; "" (default) = claude-only, feature OFF
+```
+
+Enable only vendors you have installed AND authenticated. `claude` is always
+available and is never listed here. This key is the whole on/off switch: empty means
+a `Harness:` header errors clearly rather than surprise-spending on another account.
+
+**Security: this ONE key is read from the kit-root install config only, never a project
+`.kit.toml`.** Every other `[mega]` key follows the normal "project overrides kit-root"
+precedence; this one deliberately does not. A project `.kit.toml` is a git-tracked file that
+rides inside the mega-goal branch being executed, so if it could enable a vendor, a hostile PR
+could add `Harness: codex` to a goal file AND enable codex in the same PR, self-authorizing the
+very vendor the operator never opted into. Reading the operator's machine install only closes
+that. Consequence: you cannot enable a vendor per-project via a committed file; it is an operator
+decision made once per install.
+
+**2. Route a sub-goal, in its goal file** (`goals/NN-<slug>.md`), with three bare
+header lines:
+
+```
+Harness: codex        # WHICH vendor. absent = claude (unchanged behavior).
+Model:   gpt-5        # WHICH model. absent = that vendor's default.
+Effort:  high         # how hard it thinks. absent = inherit.
+```
+
+Per sub-goal, independently: one mega-goal can put SG-01 on claude and SG-02 on codex.
+
+### Per-vendor vocabulary
+
+There is no honest cross-vendor tier mapping (`gpt-5` is not "opus"), so once you
+leave claude you name THAT vendor's own model id and effort words. The claude-tier
+allowlist (`opus|sonnet|haiku|fable`) applies to claude ONLY.
+
+| `Harness:` | `Model:` example | `Effort:` words | billed to |
+|---|---|---|---|
+| `claude` (default) | `haiku` `sonnet` `opus` `fable` | `low`..`max` | your Claude plan |
+| `codex` | `gpt-5` | `low`..`xhigh` | your OpenAI account |
+| `pi` | `google/gemini-3-pro` | `off`..`xhigh` | pi's configured provider |
+| `opencode` | `anthropic/claude-sonnet-5` | `minimal`\|`high`\|`max` | opencode's provider |
+
+### What the driver enforces (fail-closed, never a silent substitution)
+
+- **No `Harness:` line -> claude**, byte-identical to a kit that never heard of this feature.
+- **A vendor not in `mega.enabled_agent_clis` -> pre-flight stop** (`not enabled in this kit`). It never
+  falls back to claude, because that would quietly bill the wrong subscription.
+- **A typo'd vendor** (`Harness: codmex`) -> pre-flight stop (`unknown Harness`).
+- **A claude `Model:` typo** (`sonet`) is still rejected by the tier allowlist. A non-claude
+  `Model:` is passed through verbatim and that vendor's own CLI rejects a bad name.
+- **`Effort:` is character-validated** (`A-Za-z0-9_-` only) on every harness, so it cannot smuggle
+  extra flags into the exec (`Effort: x --mcp-config ...`) or break out of codex's TOML config.
+- **An argv-delivered prompt is guarded** so a prompt starting with `-` (a `---` rule) is never
+  parsed as a CLI flag.
+- **Grounded completion is unchanged**: a vendor sub-goal advances only when it flips its ROADMAP
+  box, exactly like a claude sub-goal. It cannot self-claim done.
+
+### The one caveat
+
+A non-claude sub-goal runs on the plain path only, so it gets **no token accounting, no live
+`--stream` tail, no deterministic-handoff regeneration, and no SG-11 stall watchdog** (all four
+need the `stream-json` capture the vendor CLIs lack). The driver WARNs and runs it anyway; a
+mega-goal mixing claude and vendor sub-goals will have a partial token ledger and its vendor
+sub-goals are not stall-monitored. That is the price of routing off-vendor, surfaced, not hidden.
 
 ## Consolidate mode (remega, mirrors the skill's mode)
 
