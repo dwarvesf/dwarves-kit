@@ -364,7 +364,7 @@ decision). If you only use Claude, ignore this section; nothing changes.
 ```toml
 # kit.toml  (or a project .kit.toml, which wins)
 [mega]
-harnesses = "codex"          # space-separated; "" (default) = claude-only, feature OFF
+enabled_agent_clis = "codex"          # space-separated; "" (default) = claude-only, feature OFF
 ```
 
 Enable only vendors you have installed AND authenticated. `claude` is always
@@ -398,7 +398,7 @@ allowlist (`opus|sonnet|haiku|fable`) applies to claude ONLY.
 ### What the driver enforces (fail-closed, never a silent substitution)
 
 - **No `Harness:` line -> claude**, byte-identical to a kit that never heard of this feature.
-- **A vendor not in `mega.harnesses` -> pre-flight stop** (`not enabled in this kit`). It never
+- **A vendor not in `mega.enabled_agent_clis` -> pre-flight stop** (`not enabled in this kit`). It never
   falls back to claude, because that would quietly bill the wrong subscription.
 - **A typo'd vendor** (`Harness: codmex`) -> pre-flight stop (`unknown Harness`).
 - **A claude `Model:` typo** (`sonet`) is still rejected by the tier allowlist. A non-claude

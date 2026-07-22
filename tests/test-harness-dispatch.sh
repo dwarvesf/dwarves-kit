@@ -53,11 +53,11 @@ done
 export PATH="$MOCKBIN:$PATH"
 
 # Hermetic config: point the resolver at temp dirs so it never reads the real installed kit.toml.
-# set_harnesses writes the kit-root kit.toml's `mega.harnesses` value; "" = claude-only (feature
+# set_harnesses writes the kit-root kit.toml's `mega.enabled_agent_clis` value; "" = claude-only (feature
 # OFF). Default the suite to all three enabled; the gate section flips it to "" to prove OFF.
 mkdir -p "$TMP/cfgroot" "$TMP/cfgproj"
 export KIT_CONFIG_ROOT="$TMP/cfgroot" KIT_PROJECT_ROOT="$TMP/cfgproj"
-set_harnesses() { printf '[mega]\nharnesses = "%s"\n' "$1" > "$TMP/cfgroot/kit.toml"; }
+set_harnesses() { printf '[mega]\nenabled_agent_clis = "%s"\n' "$1" > "$TMP/cfgroot/kit.toml"; }
 set_harnesses "codex pi opencode"
 
 echo "== _harness_of: header parse + default =="
@@ -81,7 +81,7 @@ else
 fi
 
 echo "== config gate: multi-vendor is opt-in, default OFF =="
-# With the feature DISABLED (empty mega.harnesses), a known vendor must hard-stop, NOT fall back to
+# With the feature DISABLED (empty mega.enabled_agent_clis), a known vendor must hard-stop, NOT fall back to
 # claude. This is the whole point of the kit-config gate Han asked for: the code ships to everyone,
 # the capability stays off until a user enables a vendor they actually set up.
 set_harnesses ""

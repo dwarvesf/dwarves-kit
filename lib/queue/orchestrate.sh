@@ -544,17 +544,17 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # value like `Model: opus sonnet` would slip through (`" opus sonnet "` is a substring of
 # `" opus sonnet haiku "`) and get passed verbatim to `--model "opus sonnet"`, dying deep in the
 # spawned `claude -p` , precisely the failure ID-096 exists to stop.
-# The set of NON-claude harnesses this kit installation permits, from `mega.harnesses` (ID-390).
+# The set of NON-claude harnesses this kit installation permits, from `mega.enabled_agent_clis` (ID-390).
 # DEFAULT EMPTY = claude-only: out of the box, multi-vendor dispatch is OFF, so a stray `Harness:
 # codex` header errors clearly instead of surprise-spending on another vendor's account. An operator
-# who has, say, codex installed and authenticated opts in by setting `mega.harnesses = "codex"` in
+# who has, say, codex installed and authenticated opts in by setting `mega.enabled_agent_clis = "codex"` in
 # kit.toml (or a project .kit.toml). Space-separated; the config resolver returns a bare string, not
 # a TOML array, so this is a string list, not `["codex"]`.
 #
 # claude is NOT gated and is intentionally absent from the default: it is the substrate, always
 # available regardless of this key, so disabling it is impossible by construction (a kit with no
 # claude is not a kit). The key gates ONLY the opt-in vendor harnesses.
-_harness_allowed() { kit_config_get mega.harnesses; }
+_harness_allowed() { kit_config_get mega.enabled_agent_clis; }
 
 # The goal file's `Harness:` header, lowercased, defaulting to `claude` (ID-390). This is the ONE
 # place the vendor is decided; everything downstream branches on its result. Three outcomes:
@@ -567,7 +567,7 @@ _harness_allowed() { kit_config_get mega.harnesses; }
 #                         (and wrong-priced) vendor -- the quiet substitution that makes a
 #                         quota-routing feature untrustworthy. A typo is a pre-flight stop.
 #   known but not enabled -> 64, DISTINCT message. The vendor is real but this kit has not opted
-#                         into it via `mega.harnesses`. This is the gate Han asked for: the feature
+#                         into it via `mega.enabled_agent_clis`. This is the gate Han asked for: the feature
 #                         ships to every kit user but stays OFF until they deliberately enable a
 #                         vendor they have actually set up. Same fail-closed posture as an unknown
 #                         vendor -- never a silent claude fallback.
@@ -582,7 +582,7 @@ _harness_of() {  # goalfile
   allowed=$(_harness_allowed); ok=0
   for tok in $allowed; do [ "$tok" = "$h" ] && { ok=1; break; }; done
   [ "$ok" = 1 ] || {
-    echo "orchestrate: Harness: '$h' in $gf is not enabled in this kit. Multi-vendor dispatch is opt-in: add it to mega.harnesses in kit.toml (currently: ${allowed:-<none; claude-only>}). Not dispatching." >&2
+    echo "orchestrate: Harness: '$h' in $gf is not enabled in this kit. Multi-vendor dispatch is opt-in: add it to mega.enabled_agent_clis in kit.toml (currently: ${allowed:-<none; claude-only>}). Not dispatching." >&2
     return 64; }
   printf '%s\n' "$h"
 }
