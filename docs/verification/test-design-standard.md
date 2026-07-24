@@ -116,6 +116,31 @@ A work-item's tests are done only when every line is true:
 - [ ] Completeness sweep done: no AC without a test, no path unexercised, no claim unfalsified,
       no environment silently uncovered.
 
+## 7. Surface classes (which test type fits which part of a harness)
+
+When the work under test is the harness itself (this kit, or anything shaped
+like it: bash tooling + hooks + prompt files + model-in-the-loop flows), pick
+the test type by the surface's nature, not by habit. Most of a harness's value
+is text a model consumes, and prose cannot be unit-tested; test what each
+class can actually prove:
+
+| Surface class | Nature | Right test type | Example |
+|---|---|---|---|
+| Bash libs + CLIs (`lib/`, `bin/`) | Deterministic, exit codes | Classic unit + integration: fixture in, assert output/exit | `tests/test-lane-classify.sh` |
+| Hooks (`hooks/`) | Deterministic; semantics are block/allow | Per rule, one blocked shape + one allowed shape | `tests/test-hooks.sh` |
+| Prompt surfaces (`commands/*.md`, `agents/*.md`) | Text, not executable | Contract/meta-tests: structure, frontmatter, cross-refs, required strings, emission sweeps | `tests/test-kit-contract.sh`, `tests/test-command-emit-sweep.sh` |
+| Model-in-the-loop flows | Stochastic, costly | Behavioral tests in cost tiers (§5's tiering) + negative controls | `tests/test-grill-conditioning.sh` |
+
+Decision rule for any new change: bash logic gets a unit test + negative
+control; a hook gets a blocked/allowed pair; a `.md` surface gets a
+structural meta-test plus, when it claims new model behavior, one behavioral
+probe; a multi-step flow gets an integration run on a fixture repo plus one
+recorded live run; a "the model can do X" claim keeps a real-model probe
+(the §5 floor rule). The highest tier is dogfood: the harness runs its own
+gates on its own repo, and the proof they work is that they block an
+evidence-free change (the release-hygiene guard self-firing on its own
+release is the canonical example).
+
 ## Failure modes this prevents
 
 - **The stale under-covering plan:** a `test-design` written for task one, never grown, while
