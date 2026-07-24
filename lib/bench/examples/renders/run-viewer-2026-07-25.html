@@ -1,0 +1,217 @@
+<title>bench · workflow run viewer</title>
+<style>
+:root{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;--accent:#4f46e5;
+--card:#ffffff;--pass:#16a34a;--fail:#dc2626;--warn:#d97706;--passbg:#dcfce7;
+--failbg:#fee2e2;--skipbg:#f3f4f6}
+@media(prefers-color-scheme:dark){:root{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;
+--muted:#9ca3af;--accent:#818cf8;--card:#1f2937;--pass:#4ade80;--fail:#f87171;
+--warn:#fbbf24;--passbg:#14532d;--failbg:#7f1d1d;--skipbg:#1f2937}}
+:root[data-theme=dark]{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;--muted:#9ca3af;
+--accent:#818cf8;--card:#1f2937;--pass:#4ade80;--fail:#f87171;--warn:#fbbf24;
+--passbg:#14532d;--failbg:#7f1d1d;--skipbg:#1f2937}
+:root[data-theme=light]{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;
+--accent:#4f46e5;--card:#ffffff;--pass:#16a34a;--fail:#dc2626;--warn:#d97706;
+--passbg:#dcfce7;--failbg:#fee2e2;--skipbg:#f3f4f6}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);
+max-width:1080px;margin:1.5rem auto;padding:0 1rem;line-height:1.5}
+h1{font-size:1.2rem}
+.bar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin:1rem 0;
+font-size:.9rem}
+.bar select,.bar button{font:inherit;background:var(--card);color:var(--fg);
+border:1px solid var(--line);border-radius:6px;padding:.3rem .6rem;cursor:pointer}
+.bar button.primary{border-color:var(--accent);color:var(--accent);font-weight:600}
+.bar input[type=range]{flex:1;min-width:140px;accent-color:var(--accent)}
+.readout{color:var(--muted);font-variant-numeric:tabular-nums;font-size:.85rem}
+.meta{color:var(--muted);font-size:.85rem;margin:.2rem 0 .8rem}
+.flow{display:flex;flex-wrap:wrap;gap:0;align-items:stretch;margin:1rem 0}
+.node{position:relative;background:var(--card);border:2px solid var(--line);
+border-radius:8px;padding:.5rem .8rem;min-width:8.5rem;cursor:pointer;
+font-size:.85rem;margin:.4rem 0}
+.node b{display:block;font-weight:600}
+.node small{color:var(--muted);font-variant-numeric:tabular-nums}
+.node .glyph{position:absolute;top:-.65rem;left:.6rem;background:var(--card);
+padding:0 .25rem;font-size:.9rem;line-height:1}
+.node.pending{opacity:.55}
+.node.running{border-color:var(--accent)}
+@media(prefers-reduced-motion:no-preference){
+.node.running{animation:pulse 1.2s ease-in-out infinite}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 transparent}
+50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 30%,transparent)}}
+.node.pass{border-color:var(--pass);background:
+color-mix(in srgb,var(--passbg) 55%,var(--card))}
+.node.fail,.node.error{border-color:var(--fail);background:
+color-mix(in srgb,var(--failbg) 55%,var(--card))}
+.node.retry,.node.override{border-color:var(--warn)}
+.node.skip{border-style:dashed;opacity:.6}
+.node.missed{border-style:dashed;border-color:var(--fail);opacity:.75}
+.node.pinned{outline:2px dashed var(--accent);outline-offset:3px}
+.edge{display:flex;align-items:center;padding:0 .35rem;color:var(--muted)}
+.badge{display:inline-block;border-radius:99px;border:1px solid var(--warn);
+color:var(--warn);padding:0 .45rem;font-size:.72rem;margin-left:.3rem}
+#tip{position:fixed;pointer-events:none;background:var(--card);color:var(--fg);
+border:1px solid var(--line);border-radius:8px;padding:.5rem .7rem;font-size:.8rem;
+max-width:24rem;box-shadow:0 4px 14px #0003;display:none;z-index:9}
+#tip .fp{font-family:ui-monospace,monospace;font-size:.72rem;display:block;
+white-space:pre-wrap;border-top:1px dashed var(--line);margin-top:.3rem;padding-top:.3rem}
+#panel{border:1px solid var(--line);border-radius:8px;background:var(--card);
+padding: .8rem 1rem;margin:1rem 0;font-size:.87rem;min-height:3rem}
+#panel h3{margin:.1rem 0 .4rem;font-size:.95rem}
+#panel table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+#panel td,#panel th{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;
+font-size:.82rem}
+#panel .fp{font-family:ui-monospace,monospace;font-size:.75rem;color:var(--fail);
+white-space:pre-wrap}
+.chip{display:inline-block;border-radius:99px;padding:.05rem .7rem;font-weight:600;
+font-size:.8rem}
+.chip.pass{background:var(--passbg)}.chip.fail{background:var(--failbg)}
+.note{color:var(--muted);font-size:.8rem}
+</style>
+<h1>bench · workflow run viewer</h1>
+<p class="meta">Plays a recorded run event stream as a flow diagram. Hover a step for
+its numbers; click to pin details; scrub freely. These runs are <b>scripted demo
+streams</b> (no model was called) showing the interaction across task types,
+workflow shapes, and a fault injection.</p>
+<div class="bar">
+<select id="scen"></select>
+<button id="play" class="primary">Pause</button>
+<select id="speed"><option>0.5</option><option selected>1</option><option>2</option>
+<option>4</option></select>
+<input type="range" id="scrub" min="0" max="1000" value="0">
+<span class="readout" id="readout"></span>
+</div>
+<div class="meta" id="runmeta"></div>
+<div class="flow" id="flow"></div>
+<div id="panel"><span class="note">Click a step to pin its detail here. The run
+summary appears when the run finishes.</span></div>
+<div id="tip"></div>
+<script>
+const SCENARIOS = {"feature · full lane": [{"dt": 0, "ev": "run_start", "run_id": "demo-001", "scenario": "full-lane (scripted)", "layer": "L1", "config": {"model": "scripted", "modules": "all"}, "stages": ["classify", "grill", "spec", "test-plan", "execute", "review-team", "verify", "ship-gate"]}, {"dt": 0.3, "ev": "stage_start", "stage": "classify"}, {"dt": 0.7, "ev": "stage_end", "stage": "classify", "status": "pass", "detail": "feature · normal lane", "duration_s": 0.7}, {"dt": 0.2, "ev": "stage_start", "stage": "grill"}, {"dt": 0.5, "ev": "item", "stage": "grill", "name": "scope question", "status": "pass", "detail": "answered from brief"}, {"dt": 0.6, "ev": "stage_end", "stage": "grill", "status": "pass", "detail": "2 questions resolved", "duration_s": 1.1}, {"dt": 0.2, "ev": "stage_start", "stage": "spec"}, {"dt": 1.6, "ev": "stage_end", "stage": "spec", "status": "pass", "detail": "spec + acceptance criteria", "duration_s": 1.6, "cost_usd": 0.04}, {"dt": 0.2, "ev": "stage_start", "stage": "test-plan"}, {"dt": 1.0, "ev": "stage_end", "stage": "test-plan", "status": "pass", "detail": "9-case matrix", "duration_s": 1.0, "cost_usd": 0.02}, {"dt": 0.2, "ev": "stage_start", "stage": "execute"}, {"dt": 0.4, "ev": "item", "stage": "execute", "name": "task-1 worker", "status": "running"}, {"dt": 0.9, "ev": "item", "stage": "execute", "name": "task-1 worker", "status": "pass", "detail": "diff 42 lines"}, {"dt": 0.3, "ev": "item", "stage": "execute", "name": "task-1 verifier", "status": "pass", "detail": "4/4 criteria"}, {"dt": 0.4, "ev": "item", "stage": "execute", "name": "task-2 worker", "status": "pass", "detail": "diff 18 lines"}, {"dt": 0.5, "ev": "item", "stage": "execute", "name": "task-2 verifier", "status": "fail", "fingerprint": "FAIL criterion 3: empty input returns 500, expected 400"}, {"dt": 0.3, "ev": "retry", "stage": "execute", "attempt": 2}, {"dt": 0.8, "ev": "item", "stage": "execute", "name": "task-2 fix-agent", "status": "pass", "detail": "guard added"}, {"dt": 0.5, "ev": "item", "stage": "execute", "name": "task-2 verifier", "status": "pass", "detail": "4/4 criteria"}, {"dt": 0.3, "ev": "stage_end", "stage": "execute", "status": "pass", "detail": "2 tasks · 1 retry", "duration_s": 4.4, "cost_usd": 0.31}, {"dt": 0.2, "ev": "stage_start", "stage": "review-team"}, {"dt": 0.6, "ev": "item", "stage": "review-team", "name": "security lens", "status": "pass", "detail": "0 findings"}, {"dt": 0.5, "ev": "item", "stage": "review-team", "name": "architecture lens", "status": "pass", "detail": "1 advisory"}, {"dt": 0.5, "ev": "item", "stage": "review-team", "name": "test-coverage lens", "status": "pass", "detail": "0 findings"}, {"dt": 0.3, "ev": "stage_end", "stage": "review-team", "status": "pass", "detail": "1 advisory, 0 blocking", "duration_s": 1.9, "cost_usd": 0.09}, {"dt": 0.2, "ev": "stage_start", "stage": "verify"}, {"dt": 0.5, "ev": "item", "stage": "verify", "name": "task-verifier", "status": "pass"}, {"dt": 0.5, "ev": "item", "stage": "verify", "name": "integration-verifier", "status": "pass"}, {"dt": 0.5, "ev": "item", "stage": "verify", "name": "acceptance-verifier", "status": "pass", "detail": "spec criteria met"}, {"dt": 0.4, "ev": "stage_end", "stage": "verify", "status": "pass", "detail": "right arm green", "duration_s": 1.9, "cost_usd": 0.11}, {"dt": 0.2, "ev": "stage_start", "stage": "ship-gate"}, {"dt": 0.8, "ev": "stage_end", "stage": "ship-gate", "status": "pass", "detail": "proof-of-done recorded", "duration_s": 0.8}, {"dt": 0.3, "ev": "run_end", "status": "pass", "totals": {"cost_usd": 0.57, "duration_s": 14, "retries": 1, "reproduce": "python3 tui.py demo"}}], "feature · tiny lane": [{"dt": 0, "ev": "run_start", "run_id": "tiny-lane", "scenario": "tiny lane", "layer": "L1", "config": {"model": "haiku", "lane": "tiny"}, "stages": ["classify", "execute", "ship-gate"]}, {"dt": 0.3, "ev": "stage_start", "stage": "classify"}, {"dt": 0.5, "ev": "stage_end", "stage": "classify", "status": "pass", "detail": "typo-class change · tiny lane", "duration_s": 0.5}, {"dt": 0.2, "ev": "stage_start", "stage": "execute"}, {"dt": 0.6, "ev": "item", "stage": "execute", "name": "worker", "status": "pass", "detail": "diff 4 lines"}, {"dt": 0.4, "ev": "item", "stage": "execute", "name": "self-check", "status": "pass", "detail": ""}, {"dt": 0.2, "ev": "stage_end", "stage": "execute", "status": "pass", "detail": "1 task, no ceremony", "duration_s": 1.2, "cost_usd": 0.01}, {"dt": 0.2, "ev": "stage_start", "stage": "ship-gate"}, {"dt": 0.5, "ev": "stage_end", "stage": "ship-gate", "status": "pass", "detail": "de-escalated: no proof owed", "duration_s": 0.5}, {"dt": 0.3, "ev": "run_end", "status": "pass", "totals": {"cost_usd": 0.01, "duration_s": 3, "reproduce": "risk buys ceremony: small diff, small loop"}}], "research · claim-verify loop": [{"dt": 0, "ev": "run_start", "run_id": "research-loop", "scenario": "research loop", "layer": "L2", "config": {"model": "sonnet", "type": "research"}, "stages": ["classify", "source-sweep", "claim-matrix", "skeptic-panel", "synthesis", "route"]}, {"dt": 0.3, "ev": "stage_start", "stage": "classify"}, {"dt": 0.5, "ev": "stage_end", "stage": "classify", "status": "pass", "detail": "research task · claim-verify loop", "duration_s": 0.5}, {"dt": 0.2, "ev": "stage_start", "stage": "source-sweep"}, {"dt": 0.5, "ev": "item", "stage": "source-sweep", "name": "primary sources", "status": "pass", "detail": "7 found"}, {"dt": 0.4, "ev": "item", "stage": "source-sweep", "name": "recency check", "status": "pass", "detail": "newest 2026-06"}, {"dt": 0.3, "ev": "stage_end", "stage": "source-sweep", "status": "pass", "detail": "7 sources, 2 primary", "duration_s": 1.2, "cost_usd": 0.06}, {"dt": 0.2, "ev": "stage_start", "stage": "claim-matrix"}, {"dt": 0.9, "ev": "stage_end", "stage": "claim-matrix", "status": "pass", "detail": "5 claims extracted", "duration_s": 0.9, "cost_usd": 0.03}, {"dt": 0.2, "ev": "stage_start", "stage": "skeptic-panel"}, {"dt": 0.5, "ev": "item", "stage": "skeptic-panel", "name": "skeptic 1", "status": "pass", "detail": "holds"}, {"dt": 0.5, "ev": "item", "stage": "skeptic-panel", "name": "skeptic 2", "status": "fail", "detail": "refutes claim 4", "fingerprint": "claim 4 'X is 3x faster' cites a 2023 benchmark; upstream rewrote in 2025"}, {"dt": 0.5, "ev": "item", "stage": "skeptic-panel", "name": "skeptic 3", "status": "pass", "detail": "holds"}, {"dt": 0.3, "ev": "stage_end", "stage": "skeptic-panel", "status": "pass", "detail": "4/5 claims hold · claim 4 refuted", "duration_s": 1.8, "cost_usd": 0.09}, {"dt": 0.2, "ev": "stage_start", "stage": "synthesis"}, {"dt": 1.0, "ev": "stage_end", "stage": "synthesis", "status": "pass", "detail": "note drafted, refuted claim dropped", "duration_s": 1.0, "cost_usd": 0.05}, {"dt": 0.2, "ev": "stage_start", "stage": "route"}, {"dt": 0.4, "ev": "stage_end", "stage": "route", "status": "pass", "detail": "ledger row + research/ snapshot", "duration_s": 0.4}, {"dt": 0.3, "ev": "run_end", "status": "pass", "totals": {"cost_usd": 0.23, "duration_s": 7, "reproduce": "claims are guilty until verified"}}], "eval · tool comparison": [{"dt": 0, "ev": "run_start", "run_id": "eval-loop", "scenario": "eval loop", "layer": "L2", "config": {"model": "haiku workers", "type": "eval"}, "stages": ["frame", "metrics-contract", "seed-data", "run-matrix", "lab-report"]}, {"dt": 0.3, "ev": "stage_start", "stage": "frame"}, {"dt": 0.6, "ev": "stage_end", "stage": "frame", "status": "pass", "detail": "A-vs-B, 3 criteria", "duration_s": 0.6}, {"dt": 0.2, "ev": "stage_start", "stage": "metrics-contract"}, {"dt": 0.6, "ev": "stage_end", "stage": "metrics-contract", "status": "pass", "detail": "yield + $/task + flake", "duration_s": 0.6}, {"dt": 0.2, "ev": "stage_start", "stage": "seed-data"}, {"dt": 0.6, "ev": "item", "stage": "seed-data", "name": "hand-verify 12 seeds", "status": "pass", "detail": "human-checked"}, {"dt": 0.2, "ev": "stage_end", "stage": "seed-data", "status": "pass", "detail": "12 seeds, hand-verified", "duration_s": 0.8}, {"dt": 0.2, "ev": "stage_start", "stage": "run-matrix"}, {"dt": 0.5, "ev": "item", "stage": "run-matrix", "name": "tool-A x 12", "status": "pass", "detail": "10/12"}, {"dt": 0.5, "ev": "item", "stage": "run-matrix", "name": "tool-B x 12", "status": "pass", "detail": "11/12"}, {"dt": 0.5, "ev": "item", "stage": "run-matrix", "name": "flake probe x3", "status": "pass", "detail": "stable"}, {"dt": 0.3, "ev": "stage_end", "stage": "run-matrix", "status": "pass", "detail": "36 cells", "duration_s": 1.8, "cost_usd": 0.19}, {"dt": 0.2, "ev": "stage_start", "stage": "lab-report"}, {"dt": 0.8, "ev": "stage_end", "stage": "lab-report", "status": "pass", "detail": "B wins on yield, A on cost", "duration_s": 0.8, "cost_usd": 0.02}, {"dt": 0.3, "ev": "run_end", "status": "pass", "totals": {"cost_usd": 0.21, "duration_s": 6, "reproduce": "numbers over vibes"}}], "fault injection · retry exhausted": [{"dt": 0, "ev": "run_start", "run_id": "retry-exhausted-(M-04)", "scenario": "retry exhausted (M-04)", "layer": "L1", "config": {"model": "scripted", "fault": "worker always broken"}, "stages": ["classify", "grill", "spec", "execute", "ship-gate"]}, {"dt": 0.3, "ev": "stage_start", "stage": "classify"}, {"dt": 0.5, "ev": "stage_end", "stage": "classify", "status": "pass", "detail": "feature · normal lane", "duration_s": 0.5}, {"dt": 0.2, "ev": "stage_start", "stage": "grill"}, {"dt": 0.6, "ev": "stage_end", "stage": "grill", "status": "pass", "detail": "1 question resolved", "duration_s": 0.6}, {"dt": 0.2, "ev": "stage_start", "stage": "spec"}, {"dt": 0.9, "ev": "stage_end", "stage": "spec", "status": "pass", "detail": "spec + criteria", "duration_s": 0.9, "cost_usd": 0.04}, {"dt": 0.2, "ev": "stage_start", "stage": "execute"}, {"dt": 0.6, "ev": "item", "stage": "execute", "name": "task-1 worker", "status": "pass", "detail": "diff 30 lines"}, {"dt": 0.5, "ev": "item", "stage": "execute", "name": "task-1 verifier", "status": "fail", "detail": "", "fingerprint": "FAIL criterion 2: migration has no rollback"}, {"dt": 0.3, "ev": "retry", "stage": "execute", "attempt": 2}, {"dt": 0.7, "ev": "item", "stage": "execute", "name": "task-1 fix-agent", "status": "pass", "detail": "rollback added"}, {"dt": 0.5, "ev": "item", "stage": "execute", "name": "task-1 verifier", "status": "fail", "detail": "", "fingerprint": "FAIL criterion 2: rollback drops the wrong table"}, {"dt": 0.3, "ev": "retry", "stage": "execute", "attempt": 3}, {"dt": 0.5, "ev": "item", "stage": "execute", "name": "retry budget", "status": "fail", "detail": "max retries reached"}, {"dt": 0.3, "ev": "stage_end", "stage": "execute", "status": "fail", "detail": "retries exhausted -> honest failure, no loop", "duration_s": 3.4, "cost_usd": 0.22}, {"dt": 0.2, "ev": "item", "stage": "ship-gate", "name": "skipped", "status": "skip", "detail": "never reached"}, {"dt": 0.1, "ev": "stage_end", "stage": "ship-gate", "status": "skip", "detail": "not reached"}, {"dt": 0.3, "ev": "run_end", "status": "fail", "totals": {"cost_usd": 0.26, "duration_s": 7, "retries": 2, "reproduce": "the designed failure: stop, report, never hang"}}], "real session · board-tool (replayed)": [{"dt": 0, "ev": "run_start", "run_id": "board-tool", "scenario": "real run · board-tool", "layer": "recorded session", "config": {"lane": "full", "classified": "full", "type": "spec-feature", "ctype": "spec-feature", "repo": "dwarves-kit"}, "stages": ["route", "grill", "think", "design", "design-critique", "ui-design", "spec", "validate", "design-record", "test-plan", "build", "review", "docs", "ship", "reflect"]}, {"dt": 0.3, "ev": "stage_start", "stage": "route"}, {"dt": 0.5, "ev": "stage_end", "stage": "route", "status": "pass", "detail": "lane=full (classifier agreed) · type=spec-feature"}, {"dt": 0, "ev": "stage_start", "stage": "think"}, {"dt": 0.4, "ev": "stage_end", "stage": "think", "status": "pass", "detail": "read AGENTS.md/WORKFLOW.md + ops-toolkit board/board-all/boards.txt + board-hermes-bridge-design.md (incl 2026-07-05 amendment) before designing"}, {"dt": 0.15, "ev": "stage_start", "stage": "design"}, {"dt": 0.4, "ev": "stage_end", "stage": "design", "status": "pass", "detail": "token grammar #queue{repo=...,pointer=...}, allow-list model (charset+self-consistency+containment+existence), CONSUMER config via --repo-root/REPO_ROOT -- recorded in SPEC-146 Design section"}, {"dt": 0.15, "ev": "stage_start", "stage": "design-critique"}, {"dt": 0.4, "ev": "stage_end", "stage": "design-critique", "status": "pass", "detail": "self-adversarial rung-4 red-team pass (7 attack attempts) recorded in docs/verification/board-tool/proof-of-done.md"}, {"dt": 0.15, "ev": "stage_start", "stage": "ui-design"}, {"dt": 0.4, "ev": "stage_end", "stage": "ui-design", "status": "skip", "detail": "no UI, CLI only"}, {"dt": 0.15, "ev": "stage_start", "stage": "spec"}, {"dt": 0.4, "ev": "stage_end", "stage": "spec", "status": "pass", "detail": "docs/specs/SPEC-146-cockpit-board-tool.md written"}, {"dt": 0.15, "ev": "stage_start", "stage": "validate"}, {"dt": 0.4, "ev": "stage_end", "stage": "validate", "status": "pass", "detail": "self-validated against goal quality bar + scope edges; AC/test-plan cross-checked against tests/test-board.sh"}, {"dt": 0.15, "ev": "stage_start", "stage": "design-record"}, {"dt": 0.4, "ev": "stage_end", "stage": "design-record", "status": "pass", "detail": "SPEC-146 Design section non-empty (new command surface + security model)"}, {"dt": 0.15, "ev": "stage_start", "stage": "test-plan"}, {"dt": 0.4, "ev": "stage_end", "stage": "test-plan", "status": "pass", "detail": "9-row test plan table in SPEC-146, mapped 1:1 to tests/test-board.sh sections"}, {"dt": 0.15, "ev": "stage_start", "stage": "build"}, {"dt": 0.4, "ev": "stage_end", "stage": "build", "status": "pass", "detail": "lib/board.sh + lib/parse-board.sh + tests/test-board.sh + doc-impact updates (README/architecture/test-meta pin/CI step)"}, {"dt": 0.15, "ev": "stage_start", "stage": "review"}, {"dt": 0.4, "ev": "stage_end", "stage": "review", "status": "pass", "detail": "self code-review: shellcheck clean, bash 3.2 compat verified, 2 deliberate-breakage negative controls confirmed RED then reverted"}, {"dt": 0.15, "ev": "stage_start", "stage": "docs"}, {"dt": 0.4, "ev": "stage_end", "stage": "docs", "status": "pass", "detail": "SPEC-146 + implementation-notes + proof-of-done.md + README/architecture doc-impact entries"}, {"dt": 0.6112605001534575, "ev": "stage_start", "stage": "grill"}, {"dt": 0.4, "ev": "stage_end", "stage": "grill", "status": "skip", "detail": "reason=operator-wave: goal file (runner-fastpath sub-goal 04) is a pre-resolved grill written by the conductor session"}, {"dt": 0.48061799739838873, "ev": "stage_start", "stage": "reflect"}, {"dt": 0.4, "ev": "stage_end", "stage": "reflect", "status": "override", "detail": "single sub-goal worker inside the runner-fastpath mega-goal; per WORKFLOW.md's spine the mega-goal's own /kit:retro (run by the conductor at mega-goal close) is the reflect gate for this cycle, not a per-sub-goal retro"}, {"dt": 0.6714664992862538, "ev": "stage_start", "stage": "ship"}, {"dt": 0.1, "ev": "item", "stage": "ship", "name": "ship outcome", "status": "pass", "detail": "caught=false dur=0s"}, {"dt": 0.1, "ev": "item", "stage": "ship", "name": "ship outcome", "status": "pass", "detail": "caught=false dur=0s"}, {"dt": 0.1, "ev": "item", "stage": "ship", "name": "ship outcome", "status": "pass", "detail": "caught=false dur=0s"}, {"dt": 0.1, "ev": "item", "stage": "ship", "name": "ship outcome", "status": "pass", "detail": "caught=false dur=0s"}, {"dt": 0.4, "ev": "stage_end", "stage": "ship", "status": "pass", "detail": "3 commits (feat/test/docs); pushing feat/board-tool, opening PR against master"}, {"dt": 0.3, "ev": "run_end", "status": "pass", "totals": {"duration_s": 2081, "reproduce": "bash lib/telemetry/lane-telemetry.sh trace board-tool", "gates": "11 ran · 2 skipped · 1 overridden", "conformance": "12/12 required gates present"}}]};
+const GLYPH = {pending:"○",running:"◉",pass:"✓",fail:"✗",error:"!",retry:"↻",skip:"⊘",override:"⚑",missed:"◌"};
+let events=[], cum=[], total=0, t=0, playing=true, pinned=null, timer=null;
+
+function loadScenario(name){
+  events = SCENARIOS[name];
+  cum = []; let acc=0;
+  for(const ev of events){ acc += (ev.dt||0); cum.push(acc); }
+  total = acc; t = 0; pinned = null; playing = true;
+  document.getElementById("play").textContent = "Pause";
+}
+function stateAt(time){
+  const st = {meta:{}, stages:[], by:{}, done:false, result:null, totals:{}};
+  const stage = n => { if(!st.by[n]){ st.by[n]={name:n,status:"pending",detail:"",
+    items:[],duration_s:null,cost_usd:null,attempt:1}; st.stages.push(st.by[n]); }
+    return st.by[n]; };
+  for(let i=0;i<events.length;i++){
+    if(cum[i] > time) break;
+    const ev = events[i];
+    if(ev.ev==="run_start"){ st.meta = ev; (ev.stages||[]).forEach(stage); }
+    else if(ev.ev==="stage_start") stage(ev.stage).status="running";
+    else if(ev.ev==="item") stage(ev.stage).items.push(ev);
+    else if(ev.ev==="retry"){ const s=stage(ev.stage); s.status="retry";
+      s.attempt=ev.attempt||s.attempt+1; }
+    else if(ev.ev==="stage_end"){ const s=stage(ev.stage);
+      s.status=ev.status||"pass"; s.detail=ev.detail||"";
+      s.duration_s=ev.duration_s??null; s.cost_usd=ev.cost_usd??null; }
+    else if(ev.ev==="run_end"){ st.done=true; st.result=ev.status;
+      st.totals=ev.totals||{}; }
+  }
+  return st;
+}
+function nodeHtml(s,i){
+  const att = s.attempt>1 ? `<span class="badge">attempt ${s.attempt}</span>` : "";
+  const nums = [s.duration_s!=null?`${s.duration_s}s`:"",
+    s.cost_usd?`$${s.cost_usd.toFixed(2)}`:""].filter(Boolean).join(" · ");
+  return `<div class="node ${s.status}${pinned===s.name?" pinned":""}" data-stage="${s.name}"
+    role="button" tabindex="0" aria-label="${s.name}: ${s.status}">
+    <span class="glyph">${GLYPH[s.status]||""}</span><b>${s.name}${att}</b>
+    <small>${s.detail || (s.status==="running" ? s.items.slice(-1).map(x=>x.name).join("") : "&nbsp;")}</small>
+    <small>${nums||"&nbsp;"}</small></div>`;
+}
+function render(){
+  const st = stateAt(t);
+  const flow = document.getElementById("flow");
+  flow.innerHTML = st.stages.map((s,i)=>
+    (i?'<div class="edge">→</div>':"") + nodeHtml(s,i)).join("");
+  const m = st.meta;
+  document.getElementById("runmeta").textContent =
+    `${m.scenario||""} · ${m.layer||""} · config ${JSON.stringify(m.config||{})}`;
+  const cost = st.stages.reduce((a,s)=>a+(s.cost_usd||0),0);
+  const nd = st.stages.filter(s=>["pass","fail","error","skip"].includes(s.status)).length;
+  document.getElementById("readout").textContent =
+    `${nd}/${st.stages.length} stages · $${cost.toFixed(2)} · ${t.toFixed(1)}s/${total.toFixed(1)}s`;
+  document.getElementById("scrub").value = total? Math.round(1000*t/total) : 0;
+  renderPanel(st);
+}
+function renderPanel(st){
+  const p = document.getElementById("panel");
+  if(pinned && st.by[pinned]){
+    const s = st.by[pinned];
+    const rows = s.items.map(it=>`<tr><td>${GLYPH[it.status]||""} ${it.name}</td>
+      <td>${it.detail||""}${it.fingerprint?`<div class="fp">${it.fingerprint}</div>`:""}</td></tr>`).join("");
+    p.innerHTML = `<h3>${s.name} · <span class="chip ${s.status==="fail"?"fail":"pass"}">${s.status}</span>
+      ${s.attempt>1?` · attempt ${s.attempt}`:""}</h3>
+      <div>${s.detail||""} ${s.duration_s!=null?` · ${s.duration_s}s`:""}${s.cost_usd?` · $${s.cost_usd.toFixed(2)}`:""}</div>
+      ${rows?`<table><tr><th>step</th><th>detail</th></tr>${rows}</table>`:'<span class="note">no sub-steps recorded</span>'}`;
+    return;
+  }
+  if(st.done){
+    const rows = st.stages.map(s=>`<tr><td>${GLYPH[s.status]} ${s.name}</td>
+      <td>${s.status}</td><td>${s.duration_s??"-"}s</td>
+      <td>${s.cost_usd?`$${s.cost_usd.toFixed(2)}`:""}</td><td>${s.detail||""}</td></tr>`).join("");
+    const tt = st.totals;
+    p.innerHTML = `<h3>Run summary · <span class="chip ${st.result==="fail"?"fail":"pass"}">${st.result}</span></h3>
+      <table><tr><th>stage</th><th>status</th><th>time</th><th>cost</th><th>detail</th></tr>${rows}</table>
+      <div class="note">total $${(tt.cost_usd||0).toFixed(2)} · ${tt.duration_s||0}s
+      ${tt.retries?` · ${tt.retries} retries`:""}${tt.gates?` · ${tt.gates}`:""}
+      ${tt.conformance?` · conformance ${tt.conformance}`:""}${tt.reproduce?` · ${tt.reproduce}`:""}</div>`;
+    return;
+  }
+  p.innerHTML = '<span class="note">Click a step to pin its detail here. The run summary appears when the run finishes.</span>';
+}
+const tip = document.getElementById("tip");
+document.addEventListener("mousemove", e=>{
+  const n = e.target.closest(".node");
+  if(!n){ tip.style.display="none"; return; }
+  const s = stateAt(t).by[n.dataset.stage]; if(!s) return;
+  const items = s.items.map(it=>`${GLYPH[it.status]||""} ${it.name} ${it.detail||""}`).join("<br>");
+  const fp = s.items.filter(it=>it.fingerprint).map(it=>`<span class="fp">${it.fingerprint}</span>`).join("");
+  tip.innerHTML = `<b>${s.name}</b> · ${s.status}${s.attempt>1?` · attempt ${s.attempt}`:""}
+    ${s.duration_s!=null?` · ${s.duration_s}s`:""}${s.cost_usd?` · $${s.cost_usd.toFixed(2)}`:""}
+    ${s.detail?`<br>${s.detail}`:""}${items?`<br>${items}`:""}${fp}`;
+  tip.style.display="block";
+  tip.style.left = Math.min(e.clientX+14, innerWidth-tip.offsetWidth-8)+"px";
+  tip.style.top = Math.min(e.clientY+14, innerHeight-tip.offsetHeight-8)+"px";
+});
+document.addEventListener("click", e=>{
+  const n = e.target.closest(".node");
+  if(n){ pinned = pinned===n.dataset.stage ? null : n.dataset.stage; render(); }
+});
+document.addEventListener("keydown", e=>{
+  const n = e.target.closest?.(".node");
+  if(n && (e.key==="Enter"||e.key===" ")){ e.preventDefault();
+    pinned = pinned===n.dataset.stage ? null : n.dataset.stage; render(); }
+});
+document.getElementById("play").onclick = ()=>{
+  if(!playing && t>=total) t=0;
+  playing = !playing;
+  document.getElementById("play").textContent = playing ? "Pause" : (t>=total?"Replay":"Play");
+};
+document.getElementById("scrub").oninput = e=>{
+  t = total * e.target.value/1000; playing=false;
+  document.getElementById("play").textContent = t>=total?"Replay":"Play"; render();
+};
+document.getElementById("scen").onchange = e=>{ loadScenario(e.target.value); render(); };
+const sel = document.getElementById("scen");
+for(const name of Object.keys(SCENARIOS)){
+  const o = document.createElement("option"); o.textContent = name; sel.appendChild(o);
+}
+loadScenario(Object.keys(SCENARIOS)[0]);
+setInterval(()=>{
+  if(playing && t < total){
+    t = Math.min(total, t + 0.1*parseFloat(document.getElementById("speed").value));
+    if(t>=total){ playing=false; document.getElementById("play").textContent="Replay"; }
+    render();
+  }
+}, 100);
+render();
+</script>
