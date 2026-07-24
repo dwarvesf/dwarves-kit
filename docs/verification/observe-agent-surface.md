@@ -58,3 +58,26 @@ python3 dashboard.py build --out /tmp/dash.html   # then open; sidebar has
 | Hook v1 legacy | v1 policy, deny match | 2 | still blocks (backward compatible) |
 | Runtimes detector | `dashboard.collect_runtimes()` | 0 | 6/6 runtimes detected on this host with real store stats (claude-code 1763 files, codex 11, pi 28, opencode, gemini, cursor) |
 | forge-tui standalone | `env -i PATH=... python3 cli/forge-tui demo` | 0 | runs with an empty environment, zero kit imports |
+
+
+## Addendum 2 (same day): parity, sharing, charts, efficiency
+
+| Check | Command | Exit | Verdict |
+|---|---|---:|---|
+| Efficiency ranking on real data | `dashboard.efficiency_rankings(collect_sessions(...))` | 0 | 8 members ranked, grades B..E; top B/67 layout ($41/M-out, 87% cache), worst E/32 ($152/M-out, 45% cache) |
+| Volume floor holds | ranking with `min_cost` default | 0 | members under $1 excluded; no single-session member on the board |
+| New charts | page probes | 0 | "Full-conformance runs per day" + "Runs by lane · weekly" present, legend + fixed category order |
+| Share deep-links | page probes | 0 | 210 share buttons; `#run/<rid>` handler + hashchange listener; `openRun` expands the row's log |
+| forge-tui parity verbs | `forge-tui runs \| debt \| stats` (text + json) | 0 | all three emit parseable JSON; conformance resolves 3/3 and 12/12 with `DWARVES_KIT_ROOT` |
+| forge-tui self-test | `python3 cli/test_forge_tui.py` | 0 | PASSED 4/4 (count now derived, not hardcoded) |
+| Kit suites after all edits | 5 suites | 0 | green |
+
+### Negative control (this addendum)
+
+**`expected_plan` unguarded `__file__`.** The new query-verb test exercised the
+module in an exec'd context and went RED with
+`NameError: name '__file__' is not defined` — a genuine bug affecting any
+embedded use, not a test artifact. After guarding (prefer `DWARVES_KIT_ROOT`,
+guess the filesystem root only when `__file__` exists), the same path was
+re-run in a module deliberately built with **no** `__file__` at all and returned
+rows normally. Restoring the unguarded line reproduces the failure.

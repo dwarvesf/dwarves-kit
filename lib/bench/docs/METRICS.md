@@ -106,3 +106,33 @@ only in selection and framing. Never maintain a second dataset for marketing.
   the run, so an agent can never read the verifier and overfit.
 - **Privacy gate on publish.** The trust page passes the til-style strip:
   no client/NDA task content in suites, no account ids, no personal paths.
+
+
+## 8. Token efficiency (who spends tokens well)
+
+Ranking metrics computed from transcript usage, exposed as the Cost section's
+efficiency table and via `dashboard.py stats`. "Member" is the project on a solo
+host; real per-member identity arrives with the team gateway (the token pool).
+
+| Metric | Definition | Rewards | Status |
+|---|---|---|---|
+| Unit cost of output | USD per million output tokens (lower better) | cheap routing + brevity: producing work per dollar | now |
+| Cache discipline | cache-read ÷ total prompt tokens | stable prefixes, `/clear` hygiene, not re-reading the world each turn | now |
+| Delegation leverage | share of output tokens from cheap models (haiku/sonnet) | cheap-first routing instead of premium-everything | now |
+| Fresh-input frugality | fresh input tokens per session | not re-pasting what the cache already holds | planned |
+| **Cost per shipped run** | spend ÷ conformant ships | the metric that actually matters: outcome efficiency, not token thrift | planned (needs the session↔rid join, ID-420) |
+
+**Composite score.** Each metric is min-max normalized across members, then
+weighted 40% unit cost / 30% cache discipline / 30% delegation leverage.
+Grades: A ≥ 80, B ≥ 65, C ≥ 50, D ≥ 35, else E.
+
+**Two honesty rules, both enforced in code.** A volume floor (default $1)
+excludes members whose sample is too small to rank, so one tiny session cannot
+top the board. And cost-per-shipped-run is *absent rather than approximated*:
+without the session↔rid join there is no defensible denominator, and a made-up
+one would rank people on fiction. When ID-420 lands, it becomes the headline
+metric and the three current ones become its explanations.
+
+**What the ranking is not.** It measures token economics, not value delivered.
+A member doing the hardest work can rank mid-table by spending premium tokens
+well. Read it as a routing-and-hygiene signal, never as a performance review.

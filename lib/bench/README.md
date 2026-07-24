@@ -78,20 +78,32 @@ One JSON object per line, append-only. Config dims first, outcomes second:
 | `cost_usd`, `turns`, `tokens_in`, `tokens_out` | efficiency dims |
 | `error` | harness failure, kept distinct from task failure |
 
+## Agent surfaces (JSON first)
+
+```sh
+python3 dashboard.py stats          # fleet + money + debt + alerts, one blob
+python3 dashboard.py debt           # cognitive-debt score (ADR-0031 read side)
+```
+
+The `observe` skill (kit `skills/observe`) makes these auto-firable from agent
+sessions. The run TUI is a forge product now (`forge/cli/forge-tui`, with
+`runs`/`debt`/`stats` mirroring the agent verbs); this repo keeps the data plane
+in `events.py` (protocol + adapters + conformance overlay).
+
 ## Live TUI (the run frontend)
 
-`tui.py` renders a workflow run as an animated step list: pending ○ → spinner →
+`forge/cli/forge-tui` renders a workflow run as an animated step list: pending ○ → spinner →
 ✓/✗, sub-items under the running stage, retry badges, accumulating cost, and an
 expressive final report (verdict banner, per-stage table, failure fingerprints,
 reproduce line). Falls back to plain per-event lines when not a TTY (CI logs).
 
 ```sh
-python3 tui.py demo                    # feel the interaction: synthesized full-lane
+forge-tui demo                    # feel the interaction: synthesized full-lane
                                        # run incl. verifier fail -> fix-agent -> retry
-python3 tui.py demo --record run.events.jsonl
-python3 tui.py replay run.events.jsonl --speed 2
-python3 tui.py watch  run.events.jsonl # follow a live runner appending events
-python3 tui.py run <rid>               # replay a REAL recorded kit session from
+forge-tui demo --record run.events.jsonl
+forge-tui replay run.events.jsonl --speed 2
+forge-tui watch  run.events.jsonl # follow a live runner appending events
+forge-tui run <rid>               # replay a REAL recorded kit session from
                                        # logs/runs/<rid>.log (gate-ledger history)
 ```
 

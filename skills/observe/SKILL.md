@@ -23,12 +23,20 @@ estimate, not an invoice; say so when reporting spend.
 
 ## Replay and inspect runs
 
+The run TUI is a forge product (`forge/cli/forge-tui`), standalone stdlib, and it
+mirrors the agent verbs so a terminal session needs nothing from this repo:
+
 ```sh
-python3 lib/bench/tui.py run <rid>          # terminal replay of a recorded run,
-                                            # expected-vs-actual conformance overlay
-python3 lib/bench/tui.py demo               # interaction demo, no model calls
+forge-tui runs --format json [--repo R] [--lane L] [--misfires] [--low-conformance]
+forge-tui debt --format json                # same ADR-0031 score as the web
+forge-tui stats --format json               # fleet numbers
+forge-tui run <rid>                         # replay with the conformance overlay
 bash lib/telemetry/lane-telemetry.sh trace <rid>   # the text run report
 ```
+
+Set `DWARVES_KIT_ROOT` so lane plans resolve (that turns on conformance numbers).
+Spend and the efficiency ranking are kit-side only, one price table: use
+`dashboard.py stats` for money.
 
 ## Render pages (human surface)
 
@@ -54,3 +62,7 @@ python3 lib/bench/bench.py diff --baseline old.jsonl --candidate new.jsonl  # ex
 - Costs are estimates from a price table; never present them as billing truth.
 - Transcript-derived data is counts-only (tool names, tokens, timing), never content.
 - The debt score pressures the weekend paydown; do not treat it as a blocker.
+- The efficiency ranking measures token economics, not value delivered; never
+  report it as a performance judgement, and respect its volume floor.
+- Share a specific run as `<dashboard-url>#run/<rid>`; the deep link opens the
+  explorer with that run's log expanded.

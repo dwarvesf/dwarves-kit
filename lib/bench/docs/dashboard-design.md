@@ -96,3 +96,36 @@ project... follow the design guide." Changes:
    (product code); the rendered page ships to `forge/site/dashboard/observability/`
    (forge owns the website), cross-linked with the Crew dashboard sidebar; the
    provenance banner carries the reproduce command.
+
+
+## v3 (2026-07-25): agent-first, provider registries, sharing
+
+1. **Frontend/data-plane split.** The TUI moved to the forge repo
+   (`forge/cli/forge-tui`, product); the kit keeps `lib/bench/events.py` as the
+   runtime-neutral data plane (protocol + adapters + conformance overlay). Every
+   frontend consumes it, so a new runtime is one adapter, not a new UI.
+2. **Agents are the primary user.** `dashboard.py stats` and `debt` emit JSON;
+   `skills/observe` makes the surfaces auto-firable; the forge TUI mirrors the
+   agent-facing verbs (`runs`/`debt`/`stats`, all `--format json`) with a parity
+   matrix in `forge/cli/README.md` recording what is deliberately not duplicated
+   (spend stays kit-side so one price table exists).
+3. **Tool policy as capability → provider registries.** A capability (browser
+   drive, computer use) lists interchangeable providers (harness / agent-browser
+   / lightpanda / playwright / browserbase; macOS ladder / computer-use MCP /
+   peekaboo / e2b), each with allow|ask|deny, a preferred-provider selector, and
+   in-page custom rules. `hooks/tool-policy-guard.sh` normalizes v2 and legacy
+   v1, so an old policy file keeps working.
+4. **Config keys are editable** and export a per-project `.kit.toml` containing
+   only changed keys (the inheritance model stays intact).
+5. **Runtimes panel** answers "where do other LLMs render": the protocol is
+   runtime-neutral, so each runtime needs one adapter. Detection is live
+   (claude-code adapted; codex/pi/opencode/gemini/cursor detected with store
+   stats and labeled detect-only).
+6. **Sharing (pi.dev-shaped).** `#run/<rid>` deep-links open the explorer with
+   that run's log expanded; every row has a Share button that copies the
+   permalink and updates the URL. The unit of sharing is a run, not a page.
+7. **Charts added:** full-conformance runs per day, runs-by-lane weekly stacked
+   bars (fixed categorical order, legend always present), alongside the existing
+   spend/runs/token/heat views.
+8. **Efficiency ranking** per METRICS.md §8, with the volume floor and the
+   absent-by-design cost-per-ship metric.

@@ -246,7 +246,7 @@ def collect_sessions(tdir, max_files=25):
             pass
         cost = sum(model_cost(m, c) for m, c in per_model.items())
         sessions.append({
-            "session": f.stem[:8], "project": f.parent.name.split("-")[-1],
+            "session": f.stem[:8], "project": "-".join(f.parent.name.split("-")[-2:]),
             "models": models, "tools": tools, "mins": round(mins),
             "day": (t1 or "")[:10], "tok": tok, "per_model": per_model, "cost": cost,
             "tiers": tiers, "versions": versions, "side": side, "branches": branches,
@@ -305,6 +305,17 @@ def fleet_metrics(runs, events, window_days=30):
         if r["meta"].get("lane") and r["t0"]:
             lane_min[r["meta"]["lane"]] += (r["t1"] - r["t0"]).total_seconds() / 60
     m["lane_minutes"] = [(k, round(v)) for k, v in lane_min.most_common(6)]
+    conf_day = Counter(r["t1"].date() for r in w
+                       if r["conformance"] and r["conformance"][0] == r["conformance"][1])
+    m["trend_conf"] = [conf_day.get(d, 0) for d in days]
+    weeks = {}
+    for r in w:
+        if not r["meta"].get("lane"):
+            continue
+        wk = r["t1"].date().isocalendar()
+        key = f"{wk[0]}-W{wk[1]:02d}"
+        weeks.setdefault(key, Counter())[r["meta"]["lane"]] += 1
+    m["lane_weeks"] = [(k, dict(v)) for k, v in sorted(weeks.items())][-8:]
     heat = [[0] * 24 for _ in range(7)]
     for e in ev_w:
         lt = e["ts"].astimezone()
@@ -384,6 +395,62 @@ def money_metrics(sessions, window_days=30, monthly_budget=None):
     m["budget_used"] = (m["projected_30d"] / monthly_budget
                         if monthly_budget and m["projected_30d"] else None)
     return m
+
+
+CHEAP_MODELS = ("claude-haiku", "claude-sonnet")
+
+
+def efficiency_rankings(sessions, min_cost=1.0):
+    """Token-efficiency ranking per member proxy (project on a solo host; the
+    team gateway supplies real member identity later). Three v1 metrics:
+    unit cost of output ($/M output tokens, lower better), cache discipline
+    (cache-read share of prompt, higher better), delegation leverage (output
+    share from cheap models, higher better). Composite = min-max normalized,
+    weighted 40/30/30, graded A>=80 B>=65 C>=50 D>=35 else E. Members below
+    min_cost USD are excluded (volume floor: one tiny session must not top
+    the board). Cost-per-shipped-run needs the session<->rid join (ID-420)
+    and is deliberately absent rather than faked."""
+    agg = {}
+    for s in sessions:
+        a = agg.setdefault(s["project"], {"cost": 0.0, "tok": Counter(), "cheap_out": 0,
+                                          "out": 0, "sessions": 0})
+        a["cost"] += s.get("cost", 0.0)
+        a["tok"].update(s.get("tok") or {})
+        a["sessions"] += 1
+        for m, c in (s.get("per_model") or {}).items():
+            o = c.get("output_tokens", 0)
+            a["out"] += o
+            if any(m.startswith(cm) for cm in CHEAP_MODELS):
+                a["cheap_out"] += o
+    rows = []
+    for proj, a in agg.items():
+        if a["cost"] < min_cost or not a["out"]:
+            continue
+        prompt = sum(a["tok"][k] for k in ("input_tokens", "cache_read_input_tokens",
+                                           "cache_creation_input_tokens"))
+        rows.append({
+            "member": proj, "sessions": a["sessions"], "cost": a["cost"],
+            "unit_cost": a["cost"] / (a["out"] / 1e6),
+            "cache_disc": (a["tok"]["cache_read_input_tokens"] / prompt) if prompt else 0.0,
+            "delegation": a["cheap_out"] / a["out"],
+        })
+    if not rows:
+        return []
+
+    def norm(vals, invert=False):
+        lo, hi = min(vals), max(vals)
+        if hi == lo:
+            return [100.0] * len(vals)
+        return [100 * ((hi - v) / (hi - lo) if invert else (v - lo) / (hi - lo)) for v in vals]
+
+    n_unit = norm([r["unit_cost"] for r in rows], invert=True)
+    n_cache = norm([r["cache_disc"] for r in rows])
+    n_del = norm([r["delegation"] for r in rows])
+    for r, u, ca, de in zip(rows, n_unit, n_cache, n_del):
+        r["score"] = round(0.4 * u + 0.3 * ca + 0.3 * de)
+        r["grade"] = ("A" if r["score"] >= 80 else "B" if r["score"] >= 65
+                      else "C" if r["score"] >= 50 else "D" if r["score"] >= 35 else "E")
+    return sorted(rows, key=lambda r: -r["score"])
 
 
 DEFAULT_ALERTS = [
@@ -490,6 +557,34 @@ def hbars(items, title, unit=""):
         f'<span class="val">{v}{unit}</span></div>'
         for k, v in items)
     return f'<figure class="chart"><figcaption>{H.escape(title)}</figcaption>{rows}</figure>'
+
+
+def stacked_weeks(weeks, title):
+    """Stacked bars per week by lane. Categorical fill order is fixed (never
+    cycled), legend always present, 2px gaps between segments."""
+    if not weeks:
+        return ""
+    lanes = []
+    for _, counts in weeks:
+        for k in counts:
+            if k not in lanes:
+                lanes.append(k)
+    cls = ["one", "ovr", "ok", "skip", "over"]
+    mx = max(sum(c.values()) for _, c in weeks) or 1
+    legend = ('<div class="legend">' + "".join(
+        f'<span><b class="sw {cls[i % len(cls)]}"></b>{H.escape(l)}</span>'
+        for i, l in enumerate(lanes)) + "</div>")
+    rows = ""
+    for label, counts in weeks:
+        segs = "".join(
+            f'<span class="seg {cls[lanes.index(l) % len(cls)]}" '
+            f'style="width:{100 * counts[l] / mx:.1f}%"><i>{H.escape(l)}: {counts[l]}</i></span>'
+            for l in lanes if counts.get(l))
+        rows += (f'<div class="mixrow"><span class="lbl">{H.escape(label)}</span>'
+                 f'<span class="mixtrack">{segs}</span>'
+                 f'<span class="val">{sum(counts.values())}</span></div>')
+    return (f'<figure class="chart"><figcaption>{H.escape(title)}</figcaption>'
+            f"{legend}{rows}</figure>")
 
 
 def heat_grid(heat):
@@ -777,7 +872,7 @@ def gauge(frac, label):
             f'<span class="val">{pct:.0f}%</span></div>')
 
 
-def money_sections(mm):
+def money_sections(mm, eff=None):
     """Cost & tokens + Runtime sections (the money plane)."""
     tok = mm["tok"]
     burn = f"${mm['daily_burn']:,.2f}" if mm["daily_burn"] is not None else "n/a"
@@ -855,6 +950,14 @@ def money_sections(mm):
         f'<span class="val">{100 * v / tot_side:.0f}%</span></div>'
         for k, v in side.most_common())
 
+    gcls = {"A": "ok", "B": "ok", "C": "dim", "D": "warn", "E": "bad"}
+    eff_rows = "".join(
+        f'<tr><td><span class="chip {gcls[r["grade"]]}">{r["grade"]}</span></td>'
+        f"<td>{H.escape(r['member'])}</td><td>{r['score']}</td>"
+        f"<td>${r['unit_cost']:,.0f}</td><td>{r['cache_disc']:.0%}</td>"
+        f"<td>{r['delegation']:.0%}</td><td>${r['cost']:,.2f}</td><td>{r['sessions']}</td></tr>"
+        for r in (eff or [])) or "<tr><td colspan=8 class=reason>not enough volume</td></tr>"
+
     unpriced = ""
     if mm["unpriced"]:
         unpriced = ('<p class="meta">Unpriced models (excluded from spend): '
@@ -869,6 +972,14 @@ Treat them as an estimate of list-price spend, not an invoice.</p>
 {scope}
 <div class="tiles">{tiles}</div>
 <div class="charts">{trend}{mix_fig}{budget}</div>
+<h2>Token-efficiency ranking</h2>
+<p class="meta">Who spends tokens well, ranked. Member = project on this solo host (the
+team gateway supplies real member identity); volume floor $1. Composite = 40% unit cost
+of output ($/M output tokens, lower is better) + 30% cache discipline (cache-read share
+of prompt) + 30% delegation leverage (output from cheap models). Cost-per-shipped-run
+joins in with ID-420 and is absent rather than faked.</p>
+<table><tr><th>grade</th><th>member</th><th>score</th><th>$/M output</th>
+<th>cache discipline</th><th>delegation</th><th>spend</th><th>sessions</th></tr>{eff_rows}</table>
 <h2>By model</h2>
 <table><tr><th>model</th><th>spend</th><th>sessions</th><th>cache read</th>
 <th>output</th><th>$/MTok in/out</th></tr>{model_rows}</table>
@@ -1065,6 +1176,8 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
         + verdict_mix(m["phase_mix"])
         + hbars(m["repo_counts"], "Runs by repo")
         + hbars(m["lane_minutes"], "Worker minutes by lane", "m")
+        + area_chart(m["trend_conf"], m["days"], "Full-conformance runs per day")
+        + stacked_weeks(m["lane_weeks"], "Runs by lane · weekly")
         + heat_grid(m["heat"]))
 
     ex_rows = ""
@@ -1099,7 +1212,9 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
                     f'<td><code>{H.escape(r["rid"])}</code>{mis}</td>'
                     f"<td>{r['t1'].date()}</td><td>{H.escape(r['meta'].get('repo', ''))}</td>"
                     f"<td>{H.escape(lane)}</td><td>{H.escape(r['meta'].get('type', ''))}</td>"
-                    f"<td>{counts}</td><td>{conf_html}</td><td>{mins:.0f}m</td></tr>") + detail
+                    f"<td>{counts}</td><td>{conf_html}</td><td>{mins:.0f}m "
+                    f'<button class="act share" data-share="{H.escape(r["rid"])}"'
+                    f' title="copy permalink">share</button></td></tr>') + detail
 
     seg_defs = [("all", ""), ("misfires", "misfire"), ("low conformance", "low-conf"),
                 ("full lane", "lane-full"), ("tiny lane", "lane-tiny"), ("last 7d", "recent")]
@@ -1154,7 +1269,7 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
     nav2 = "".join(
         f'<button class="navbtn" data-sec="{sid}">{label}</button>'
         for sid, label in [("bench", "Bench / RCA"), ("alerts", "Alerts")])
-    cost_sec, runtime_sec = money_sections(mm)
+    cost_sec, runtime_sec = money_sections(mm, efficiency_rankings(sessions))
     debt_sec = debt_section(dm)
     config_sec = config_section(config, policy, runtimes)
 
@@ -1266,7 +1381,32 @@ function show(id){{
 }}
 btns.forEach(b=>b.onclick=()=>{{show(b.dataset.sec);
   history.replaceState(null,"","#"+b.dataset.sec);}});
-if(location.hash&&document.getElementById(location.hash.slice(1)))show(location.hash.slice(1));
+function openRun(rid,scroll){{
+  show("explorer");
+  const row=document.querySelector(`tr.exrow[data-rid="${{rid.toLowerCase()}}"]`);
+  const det=document.querySelector(`tr.detail[data-detail="${{rid.toLowerCase()}}"]`);
+  if(det)det.hidden=false;
+  if(row){{row.style.outline="2px solid var(--ember)";
+    if(scroll)row.scrollIntoView({{block:"center"}});}}
+  return !!row;
+}}
+function applyHash(){{
+  const hs=location.hash.slice(1);
+  if(hs.startsWith("run/")){{openRun(decodeURIComponent(hs.slice(4)),true);return;}}
+  if(hs&&document.getElementById(hs))show(hs);
+}}
+applyHash();
+addEventListener("hashchange",applyHash);
+document.querySelectorAll("button.share").forEach(b=>b.onclick=e=>{{
+  e.stopPropagation();
+  const url=location.origin+location.pathname+"#run/"+encodeURIComponent(b.dataset.share);
+  const done=()=>{{const t=b.textContent;b.textContent="copied";
+    setTimeout(()=>b.textContent=t,1200);}};
+  if(navigator.clipboard)navigator.clipboard.writeText(url).then(done,done);
+  else{{const ta=document.createElement("textarea");ta.value=url;document.body.appendChild(ta);
+    ta.select();document.execCommand("copy");ta.remove();done();}}
+  history.replaceState(null,"","#run/"+encodeURIComponent(b.dataset.share));
+}});
 let seg="";
 const q=document.getElementById("q");
 function filt(){{
