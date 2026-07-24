@@ -46,3 +46,15 @@ python3 dashboard.py stats | python3 -m json.tool | head
 python3 dashboard.py build --out /tmp/dash.html   # then open; sidebar has
                                                   # Cognitive debt + Config & policy
 ```
+
+
+## Addendum (same day): TUI relocation + policy v2 + runtimes
+
+| Check | Command | Exit | Verdict |
+|---|---|---:|---|
+| Data-plane split | `python3 lib/bench/tests/test_events.py` | 0 | PASS 4/4 (protocol/adapter tests retargeted at events.py; render tests moved to forge cli/test_forge_tui.py, PASS 3/3 there) |
+| viewer/report/dashboard on events.py | all suites | 0 | 5 suites green after the tui.py -> events.py rewire (report.py's stale tui import caught by the suite and fixed) |
+| Hook v2 schema | v2 policy from DEFAULT_TOOL_POLICY: computer-use match | 0 | ask-warns naming preferred rung "macos-ladder" |
+| Hook v1 legacy | v1 policy, deny match | 2 | still blocks (backward compatible) |
+| Runtimes detector | `dashboard.collect_runtimes()` | 0 | 6/6 runtimes detected on this host with real store stats (claude-code 1763 files, codex 11, pi 28, opencode, gemini, cursor) |
+| forge-tui standalone | `env -i PATH=... python3 cli/forge-tui demo` | 0 | runs with an empty environment, zero kit imports |

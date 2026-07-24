@@ -34,13 +34,24 @@ except Exception:
 tool = payload.get("tool_name", "")
 if not tool:
     sys.exit(0)
-for domain, spec in policy.items():
+# v2 schema nests domains under "capabilities" and carries per-provider actions;
+# v1 keeps domains at the top level. Normalize both into (domain, prefer, rules).
+domains = policy.get("capabilities", policy)
+norm = {}
+for domain, spec in domains.items():
     if domain.startswith("_") or not isinstance(spec, dict):
         continue
-    for rule in spec.get("rules", []):
+    rules = list(spec.get("rules", []))
+    for pv in spec.get("providers", []):
+        if pv.get("match"):
+            rules.append({"match": pv["match"], "action": pv.get("action", "allow"),
+                          "note": pv.get("note", "")})
+    norm[domain] = {"prefer": spec.get("prefer") or spec.get("preferred", ""), "rules": rules}
+for domain, spec in norm.items():
+    for rule in spec["rules"]:
         if rule.get("match") and rule["match"] in tool:
             action = rule.get("action", "allow")
-            prefer = spec.get("prefer", "")
+            prefer = spec["prefer"]
             note = rule.get("note", "")
             if action == "deny":
                 print(f"tool-policy-guard: {tool} is DENIED by policy ({domain}). "

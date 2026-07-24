@@ -37,7 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from report import run_summary  # noqa: E402
-from tui import expected_plan  # noqa: E402
+from events import expected_plan  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 UTC = dtm.timezone.utc
@@ -687,24 +687,77 @@ def collect_config():
 
 
 DEFAULT_TOOL_POLICY = {
-    "_doc": "Tool-choice policy enforced by hooks/tool-policy-guard.sh (PreToolUse). "
-            "match = substring of the tool name; action = allow | ask | deny.",
-    "browser": {
-        "prefer": "browser-harness-js attached to the running Helium (CDP)",
-        "rules": [
-            {"match": "mcp__plugin_playwright_playwright__", "action": "ask",
-             "note": "scripted-replay tooling, not the interactive default"},
-            {"match": "mcp__browserbase", "action": "ask", "note": "cloud browser; never for logged-in accounts"},
-        ],
-    },
-    "computer_use": {
-        "prefer": "CLI/osascript first (L0-L2), AX tree (L3), vision loop last (L4)",
-        "rules": [
-            {"match": "mcp__computer-use__", "action": "ask",
-             "note": "GUI driving; confirm the lighter rung is exhausted"},
-        ],
+    "_doc": "v2 capability->provider policy enforced by hooks/tool-policy-guard.sh "
+            "(PreToolUse). Each capability lists interchangeable providers; 'preferred' "
+            "names the default rung; rules match tool-name substrings to allow|ask|deny. "
+            "The hook reads v2 (capabilities) and legacy v1 (top-level domains) alike.",
+    "capabilities": {
+        "browser": {
+            "label": "Browser drive",
+            "preferred": "browser-harness-js",
+            "providers": [
+                {"id": "browser-harness-js", "label": "browser-harness-js · CDP to running Helium", "match": None, "action": "allow"},
+                {"id": "agent-browser", "label": "agent-browser · real Edge profile", "match": None, "action": "allow"},
+                {"id": "lightpanda", "label": "Lightpanda · stateless public reads", "match": None, "action": "allow"},
+                {"id": "playwright-mcp", "label": "Playwright MCP · scripted replay", "match": "mcp__plugin_playwright_playwright__", "action": "ask",
+                 "note": "scripted-replay tooling, not the interactive default"},
+                {"id": "browserbase", "label": "Browserbase · cloud browser", "match": "mcp__browserbase", "action": "ask",
+                 "note": "never for logged-in accounts"},
+            ],
+            "rules": [],
+        },
+        "computer_use": {
+            "label": "Computer use",
+            "preferred": "macos-ladder",
+            "providers": [
+                {"id": "macos-ladder", "label": "macOS ladder · CLI/osascript (L0-L2)", "match": None, "action": "allow"},
+                {"id": "computer-use-mcp", "label": "computer-use MCP · vision loop (L4)", "match": "mcp__computer-use__", "action": "ask",
+                 "note": "confirm the lighter rung is exhausted"},
+                {"id": "peekaboo", "label": "Peekaboo · screenshot/AX", "match": "mcp__peekaboo", "action": "ask",
+                 "note": "per-project MCP; descoped from global"},
+                {"id": "e2b", "label": "e2b · cloud desktop sandbox", "match": "mcp__e2b", "action": "ask",
+                 "note": "cloud execution; no local secrets"},
+            ],
+            "rules": [],
+        },
     },
 }
+
+
+RUNTIME_PROBES = [
+    {"id": "claude-code", "label": "Claude Code", "path": "~/.claude/projects",
+     "glob": "*/*.jsonl", "adapter": "live"},
+    {"id": "codex", "label": "Codex CLI", "path": "~/.codex/sessions",
+     "glob": "**/rollout-*.json*", "adapter": "detect"},
+    {"id": "pi", "label": "pi / oh-my-pi", "path": "~/.pi/agent",
+     "glob": "**/*", "adapter": "detect"},
+    {"id": "opencode", "label": "OpenCode", "path": "~/.local/share/opencode",
+     "glob": "opencode.db", "adapter": "detect"},
+    {"id": "gemini", "label": "Gemini CLI", "path": "~/.gemini", "glob": "*", "adapter": "detect"},
+    {"id": "cursor", "label": "Cursor", "path": "~/.cursor", "glob": "*", "adapter": "detect"},
+]
+
+
+def collect_runtimes():
+    """Detect installed agent runtimes and their local session stores. 'live'
+    adapter = normalized into the event protocol today (claude-code);
+    'detect' = presence + store stats only, an adapter away from full render."""
+    out = []
+    for pr in RUNTIME_PROBES:
+        root = Path(pr["path"]).expanduser()
+        e = {"id": pr["id"], "label": pr["label"], "adapter": pr["adapter"],
+             "detected": root.exists(), "files": 0, "latest": None}
+        if root.exists():
+            try:
+                files = [f for f in root.glob(pr["glob"]) if f.is_file()]
+                e["files"] = len(files)
+                if files:
+                    latest = max(f.stat().st_mtime for f in files)
+                    e["latest"] = dtm.datetime.fromtimestamp(latest).date().isoformat()
+            except OSError:
+                pass
+        out.append(e)
+    return out
 
 
 def fmt_tok(n):
@@ -879,7 +932,7 @@ so the open list below is the audit surface; the number is the glance.</p>
 </section>"""
 
 
-def config_section(cfg, policy):
+def config_section(cfg, policy, runtimes=None):
     if cfg:
         mods = "".join(
             f'<span class="chip {"ok" if v else "dim"}">{H.escape(str(k))}'
@@ -890,52 +943,100 @@ def config_section(cfg, policy):
             for k, v in sorted(cfg["status_tags"].items()))
         keys = "".join(
             f"<tr><td class=mono>{H.escape(x['section'])}</td><td><code>{H.escape(x['key'])}</code></td>"
-            f"<td class=mono>{H.escape(str(x['value']))[:60]}</td></tr>" for x in cfg["keys"][:40])
+            f'<td><input class="cfg-key" data-section="{H.escape(x["section"])}" '
+            f'data-key="{H.escape(x["key"])}" data-orig="{H.escape(str(x["value"]))}" '
+            f'value="{H.escape(str(x["value"]))}"></td></tr>' for x in cfg["keys"][:40])
         cfg_html = (f"<h2>Modules (kit.toml)</h2><p>{mods}</p>"
                     f'<div class="tiles">{tags}</div>'
-                    f"<h2>Config keys</h2><div class='scroll'><table>"
+                    f"<h2>Config keys (editable)</h2><div class='scroll'><table>"
                     f"<tr><th>section</th><th>key</th><th>value</th></tr>{keys}</table></div>"
-                    f'<p class="meta">Source: <code>{H.escape(cfg["path"])}</code>. Status tags '
-                    f"([impl]/[design]/[reserved]/[consumer]) are counted from the file's own "
-                    f"annotations; an inert key does nothing until its tag says [impl].</p>")
+                    f'<div class="seg-bar"><button id="cfg-export">Export .kit.toml overrides</button></div>'
+                    f'<textarea id="cfg-out" readonly hidden style="width:100%;min-height:6rem;'
+                    f'font-family:var(--mono);font-size:11.5px;background:var(--sheet);'
+                    f'color:var(--ink);border:1px solid var(--rule);padding:8px"></textarea>'
+                    f'<p class="meta">Source: <code>{H.escape(cfg["path"])}</code>. Edited values export '
+                    f"as a per-project <code>.kit.toml</code> override (only changed keys; the rest "
+                    f"inherit). Status tags: an inert key does nothing until its tag says [impl].</p>")
     else:
         cfg_html = '<p class="meta">kit.toml not found from this checkout.</p>'
 
-    rules = ""
-    for domain, spec in policy.items():
-        if domain.startswith("_"):
-            continue
-        rows = "".join(
-            f"<tr><td><code>{H.escape(r['match'])}</code></td>"
-            f'<td><select data-domain="{H.escape(domain)}" data-match="{H.escape(r["match"])}">'
-            + "".join(f'<option {"selected" if r["action"] == a else ""}>{a}</option>'
-                      for a in ("allow", "ask", "deny"))
-            + f"</select></td><td class=reason>{H.escape(r.get('note', ''))}</td></tr>"
-            for r in spec.get("rules", []))
-        rules += (f"<h2>{H.escape(domain.replace('_', ' '))}</h2>"
-                  f'<p class="meta">Preferred rung: {H.escape(spec.get("prefer", ""))}</p>'
-                  f"<table><tr><th>tool match</th><th>action</th><th>note</th></tr>{rows}</table>")
+    caps = policy.get("capabilities", {})
+    cap_html = ""
+    for cid, cap in caps.items():
+        provs = cap.get("providers", [])
+        pref = cap.get("preferred", "")
+        pref_sel = "".join(
+            f'<option value="{H.escape(pv["id"])}" {"selected" if pv["id"] == pref else ""}>'
+            f'{H.escape(pv["label"])}</option>' for pv in provs)
+        rows = ""
+        for pv in provs:
+            act = pv.get("action", "allow")
+            match = pv.get("match") or ""
+            sel = "".join(f'<option {"selected" if act == a else ""}>{a}</option>'
+                          for a in ("allow", "ask", "deny"))
+            rows += (f'<tr data-cap="{H.escape(cid)}" data-provider="{H.escape(pv["id"])}">'
+                     f'<td>{H.escape(pv["label"])}</td>'
+                     f'<td><code>{H.escape(match) if match else "(built-in / no MCP match)"}</code></td>'
+                     f'<td><select class="prov-act">{sel}</select></td>'
+                     f'<td class="reason">{H.escape(pv.get("note", ""))}</td></tr>')
+        for i, r in enumerate(cap.get("rules", [])):
+            rows += (f'<tr data-cap="{H.escape(cid)}" data-rule="{i}">'
+                     f"<td>custom rule</td><td><code>{H.escape(r['match'])}</code></td>"
+                     f'<td><select class="prov-act">'
+                     + "".join(f'<option {"selected" if r["action"] == a else ""}>{a}</option>'
+                               for a in ("allow", "ask", "deny"))
+                     + f'</select></td><td><button class="act rule-rm">remove</button></td></tr>')
+        cap_html += f"""<h2>{H.escape(cap.get("label", cid))}</h2>
+<p class="meta">Preferred provider (the rung the hook names when it warns):</p>
+<p><select class="cap-pref" data-cap="{H.escape(cid)}">{pref_sel}</select></p>
+<table class="cap-table" data-cap="{H.escape(cid)}">
+<tr><th>provider / integration</th><th>tool match</th><th>action</th><th>note</th></tr>{rows}
+</table>
+<div class="seg-bar">
+<input class="rule-match" data-cap="{H.escape(cid)}" placeholder="add tool match, e.g. mcp__foo__" style="min-width:16rem">
+<button class="rule-add" data-cap="{H.escape(cid)}">Add rule</button>
+</div>"""
+
+    rt_html = ""
+    if runtimes:
+        rt_rows = "".join(
+            f"<tr><td>{H.escape(r['label'])}</td>"
+            f'<td><span class="chip {"ok" if r["detected"] else "dim"}">'
+            f'{"detected" if r["detected"] else "not found"}</span></td>'
+            f"<td>{r['files']}</td><td class=mono>{r['latest'] or '-'}</td>"
+            f'<td><span class="chip {"ok" if r["adapter"] == "live" else "warn"}">'
+            f'{"live adapter" if r["adapter"] == "live" else "detect-only"}</span></td></tr>'
+            for r in runtimes)
+        rt_html = f"""<h2>Agent runtimes on this host</h2>
+<p class="meta">Where other-LLM interactions render: the event protocol is runtime-neutral,
+so each runtime needs one adapter (lib/bench/events.py) to appear in the explorer, replay,
+and spend views. Claude Code's adapter is live; the rest are detected with store stats and
+are one adapter away (codex first: its rollout files are already JSONL on disk).</p>
+<table><tr><th>runtime</th><th>status</th><th>store files</th><th>last activity</th>
+<th>coverage</th></tr>{rt_rows}</table>"""
+
     return f"""<section id="config">
 <div class="eyebrow">Operate</div>
 <h1>Config &amp; tool policy</h1>
-<p class="meta">The kit's config surface rendered visually, and the tool-choice policy the
-<span class=mono>tool-policy-guard</span> PreToolUse hook enforces: when an agent reaches for
-a matched tool, <b>ask</b> warns with the preferred rung and <b>deny</b> blocks the call.
-Edit the actions below, then export; the page is static, so applying = saving the JSON where
-the hook reads it (<span class=mono>~/.claude/dwarves-kit/tool-policy.json</span>).</p>
-{rules}
+<p class="meta">Capabilities are served by interchangeable providers; pick the preferred
+rung, set allow / ask / deny per provider, add custom matches. The
+<span class=mono>tool-policy-guard</span> PreToolUse hook enforces it: <b>ask</b> warns
+with the preferred rung, <b>deny</b> blocks. Export and save where the hook reads it
+(<span class=mono>~/.claude/dwarves-kit/tool-policy.json</span>).</p>
+{cap_html}
 <div class="seg-bar">
 <button id="policy-export">Export policy JSON</button>
 </div>
 <textarea id="policy-out" readonly style="width:100%;min-height:8rem;font-family:var(--mono);
 font-size:11.5px;background:var(--sheet);color:var(--ink);border:1px solid var(--rule);
 padding:8px;display:none"></textarea>
+{rt_html}
 {cfg_html}
 </section>"""
 
 
 def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
-           debt=None, config=None, policy=None):
+           debt=None, config=None, policy=None, runtimes=None):
     m = metrics
     mm = money or money_metrics(sessions, m["window_days"])
     dm = debt or debt_metrics([])
@@ -990,7 +1091,7 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
         detail = (f'<tr class="detail" data-detail="{H.escape(r["rid"].lower())}" hidden>'
                   f'<td colspan="8"><div class="detail-log">'
                   f"<p class=meta>Full usage log · {len(rid_events)} events · replay: "
-                  f"<span class=mono>python3 tui.py run {H.escape(r['rid'])}</span></p>"
+                  f"<span class=mono>forge-tui run {H.escape(r['rid'])}</span></p>"
                   f"<table><tr><th>time</th><th>gate</th><th>verdict</th><th>reason</th></tr>"
                   f"{detail_rows}</table></div></td></tr>")
         ex_rows += (f'<tr class="exrow" data-k="{H.escape(r["rid"].lower())} {H.escape(tags)}" '
@@ -1055,7 +1156,7 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
         for sid, label in [("bench", "Bench / RCA"), ("alerts", "Alerts")])
     cost_sec, runtime_sec = money_sections(mm)
     debt_sec = debt_section(dm)
-    config_sec = config_section(config, policy)
+    config_sec = config_section(config, policy, runtimes)
 
     page = f"""<!DOCTYPE html>
 <html lang="en">
@@ -1099,7 +1200,7 @@ page is hand-entered; a correction is a new run, never an edit.</p>
 <h1>Run explorer</h1>
 <p class="meta">{len(runs)} recorded runs. Segments are saved filters; conformance =
 required gates present for the run's lane. Replay any row:
-<span class=mono>python3 tui.py run &lt;rid&gt;</span>.</p>
+<span class=mono>forge-tui run &lt;rid&gt;</span>.</p>
 <div class="seg-bar"><input id="q" placeholder="filter rid / repo / lane...">{segs}</div>
 <div class="scroll"><table id="ex"><tr><th>rid</th><th>last event</th><th>repo</th>
 <th>lane</th><th>type</th><th>gates</th><th>conformance</th><th>span</th></tr>
@@ -1205,23 +1306,72 @@ if(csvBtn)csvBtn.onclick=()=>{{
   a.href=URL.createObjectURL(blob);a.download="forge-audit.csv";a.click();
   URL.revokeObjectURL(a.href);
 }};
+document.querySelectorAll(".rule-add").forEach(b=>b.onclick=()=>{{
+  const cap=b.dataset.cap;
+  const inp=document.querySelector(`.rule-match[data-cap="${{cap}}"]`);
+  const m=(inp.value||"").trim();
+  if(!m)return;
+  const tbl=document.querySelector(`.cap-table[data-cap="${{cap}}"]`);
+  const tr=document.createElement("tr");
+  tr.dataset.cap=cap;tr.dataset.custom="1";
+  tr.innerHTML=`<td>custom rule</td><td><code>${{m}}</code></td>`+
+    `<td><select class="prov-act"><option>allow</option><option selected>ask</option>`+
+    `<option>deny</option></select></td><td><button class="act rule-rm">remove</button></td>`;
+  tbl.appendChild(tr);
+  inp.value="";
+  tr.querySelector(".rule-rm").onclick=()=>tr.remove();
+}});
+document.querySelectorAll(".rule-rm").forEach(b=>b.onclick=()=>b.closest("tr").remove());
 const pex=document.getElementById("policy-export");
 if(pex)pex.onclick=()=>{{
-  const pol=JSON.parse(document.getElementById("policy-data").textContent);
-  document.querySelectorAll("#config select").forEach(s=>{{
-    const d=pol[s.dataset.domain];
-    if(!d)return;
-    const r=(d.rules||[]).find(x=>x.match===s.dataset.match);
-    if(r)r.action=s.value;
-  }});
+  const base=JSON.parse(document.getElementById("policy-data").textContent);
+  const caps=base.capabilities||{{}};
+  for(const cid of Object.keys(caps)){{
+    const cap=caps[cid];
+    const pref=document.querySelector(`.cap-pref[data-cap="${{cid}}"]`);
+    if(pref)cap.preferred=pref.value;
+    document.querySelectorAll(`.cap-table[data-cap="${{cid}}"] tr[data-provider]`).forEach(tr=>{{
+      const pv=(cap.providers||[]).find(x=>x.id===tr.dataset.provider);
+      const s=tr.querySelector("select.prov-act");
+      if(pv&&s)pv.action=s.value;
+    }});
+    cap.rules=[];
+    document.querySelectorAll(`.cap-table[data-cap="${{cid}}"] tr[data-custom],`+
+      `.cap-table[data-cap="${{cid}}"] tr[data-rule]`).forEach(tr=>{{
+      const m=tr.querySelector("code");
+      const s=tr.querySelector("select.prov-act");
+      if(m&&s)cap.rules.push({{match:m.textContent,action:s.value}});
+    }});
+  }}
   const out=document.getElementById("policy-out");
   out.style.display="block";
-  out.value=JSON.stringify(pol,null,2);
+  out.value=JSON.stringify(base,null,2);
   out.select();
   const blob=new Blob([out.value],{{type:"application/json"}});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);a.download="tool-policy.json";a.click();
   URL.revokeObjectURL(a.href);
+}};
+const cex=document.getElementById("cfg-export");
+if(cex)cex.onclick=()=>{{
+  const changed={{}};
+  document.querySelectorAll("input.cfg-key").forEach(i=>{{
+    if(i.value!==i.dataset.orig){{
+      (changed[i.dataset.section]=changed[i.dataset.section]||{{}})[i.dataset.key]=i.value;
+    }}
+  }});
+  let toml="# .kit.toml , per-project overrides (changed keys only; the rest inherit)\\n";
+  for(const sec of Object.keys(changed)){{
+    toml+=`\\n[${{sec}}]\\n`;
+    for(const k of Object.keys(changed[sec])){{
+      const v=changed[sec][k];
+      toml+=`${{k}} = ${{/^(true|false|-?\\d+(\\.\\d+)?)$/.test(v)?v:JSON.stringify(v)}}\\n`;
+    }}
+  }}
+  const out=document.getElementById("cfg-out");
+  out.hidden=false;
+  out.value=Object.keys(changed).length?toml:"# no keys changed";
+  out.select();
 }};
 </script>
 </body>
@@ -1306,7 +1456,7 @@ def main():
     policy = (json.loads(policy_path.read_text()) if policy_path.exists()
               else DEFAULT_TOOL_POLICY)
     render(runs, events, sessions, bench_rows, metrics, alerts, a.out, money,
-           debt=dm, config=collect_config(), policy=policy)
+           debt=dm, config=collect_config(), policy=policy, runtimes=collect_runtimes())
 
 
 if __name__ == "__main__":
