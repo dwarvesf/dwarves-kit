@@ -74,6 +74,42 @@ def test_fail_run_reports_fingerprint():
     assert "FAIL" in out and "FAIL case 7" in out
 
 
+LEDGER_FIXTURE = """\
+2026-07-04T20:25:04Z | START | lane=full classified=tiny type=spec-feature repo=demo
+2026-07-04T20:42:17Z | GATE | think | ran | read the context docs
+2026-07-04T20:42:17Z | GATE | ui-design | skipped | no UI, CLI only
+2026-07-04T20:42:17Z | GATE | build | ran | code + tests written
+2026-07-04T20:42:28Z | GATE | build | ran | re-recorded batch
+2026-07-04T20:43:23Z | GATE | reflect | override | retro owned by the conductor
+2026-07-04T20:44:10Z | GATE | ship | ran | PR opened
+2026-07-04T20:44:14Z | OUTCOME | ship | start | at=1
+2026-07-04T20:44:14Z | OUTCOME | ship | end | at=1 caught=false dur_s=0
+"""
+
+
+def test_ledger_adapter():
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d, "demo-run.log")
+        p.write_text(LEDGER_FIXTURE)
+        evs = tui.ledger_to_events(p)
+        st = tui.RunState()
+        for ev in evs:
+            st.apply(ev)
+        assert st.done and st.result == "pass"
+        # routing decision is the root node; lane != classified flags a misfire
+        route = st.stages[0]
+        assert route["name"] == "route" and route["status"] == "override"
+        assert "MISFIRE" in route["detail"]
+        # gate order preserved, batches collapsed, decisions kept with reasons
+        assert [s["name"] for s in st.stages] == ["route", "think", "ui-design", "build", "reflect", "ship"]
+        assert st.by_name["ui-design"]["status"] == "skip"
+        assert "no UI" in st.by_name["ui-design"]["detail"]
+        assert st.by_name["reflect"]["status"] == "override"
+        assert st.by_name["ship"]["items"][0]["status"] == "pass"
+        assert "1 skipped" in st.totals["gates"] and "1 overridden" in st.totals["gates"]
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

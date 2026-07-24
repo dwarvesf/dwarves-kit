@@ -39,6 +39,7 @@ GLYPH = {
     "error": lambda t: c("33", "!"),
     "retry": lambda t: c("33", "↻"),
     "skip": lambda t: c("2", "⊘"),
+    "override": lambda t: c("33", "⚑"),
 }
 
 
@@ -255,6 +256,107 @@ def read_jsonl(path):
     return [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
 
 
+def _ledger_dt(prev_ts, ts):
+    """Compress real wall-clock gaps (hours) into watchable pacing (seconds)."""
+    import math
+    if prev_ts is None:
+        return 0
+    d = max(0, (ts - prev_ts).total_seconds())
+    return 0.15 if d < 1 else min(1.5, 0.3 + 0.2 * math.log10(1 + d))
+
+
+def ledger_to_events(path, rid=None):
+    """Adapt a real kit run ledger (logs/runs/<rid>.log, pipe-delimited lines
+    written by gate-ledger.sh) into the event protocol, so recorded sessions
+    replay in the TUI and the web viewer.
+
+    Mapping: START -> the routing decision (root node; lane vs classified);
+    GATE ran -> pass, skipped -> skip (the not-taken branch, reason kept),
+    override -> override (flagged, reason kept). Re-recorded gate batches
+    collapse to last-status-wins. OUTCOME ship start/end -> items under ship.
+    """
+    import datetime as dtm
+
+    rid = rid or Path(path).stem
+    start_meta, order, last = {}, [], {}
+    reasons, outcome_items = {}, []
+    first_ts = last_ts = None
+    prev = None
+    timeline = []  # (dt, kind, payload) in file order, for stage_start pacing
+
+    for line in Path(path).read_text().splitlines():
+        parts = [p.strip() for p in line.split(" | ", 3)]
+        if len(parts) < 3:
+            continue
+        try:
+            ts = dtm.datetime.fromisoformat(parts[0].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        first_ts = first_ts or ts
+        last_ts = ts
+        kind = parts[1]
+        if kind == "START":
+            for tok in parts[2].split():
+                k, _, v = tok.partition("=")
+                start_meta.setdefault(k, v)
+        elif kind == "GATE" and len(parts) == 4:
+            phase, rest = parts[2], parts[3]
+            status, _, reason = rest.partition(" | ")
+            status = {"ran": "pass", "skipped": "skip", "override": "override"}.get(status.strip(), "pass")
+            if phase not in last:
+                order.append(phase)
+                timeline.append((_ledger_dt(prev, ts), phase))
+                prev = ts
+            last[phase] = status
+            reasons[phase] = reason.strip()
+        elif kind == "OUTCOME" and len(parts) == 4 and parts[3].startswith("end"):
+            toks = dict(t.partition("=")[::2] for t in parts[3].split() if "=" in t)
+            caught = toks.get("caught") == "true"
+            outcome_items.append({"status": "fail" if caught else "pass",
+                                  "detail": f"caught={toks.get('caught', '?')} dur={toks.get('dur_s', '?')}s"})
+
+    lane, classified = start_meta.get("lane"), start_meta.get("classified")
+    stages = (["route"] if start_meta else []) + order
+    evs = [{"dt": 0, "ev": "run_start", "run_id": rid, "scenario": f"real run · {rid}",
+            "layer": "recorded session", "config": start_meta or {"source": "gate ledger"},
+            "stages": stages}]
+    if start_meta:
+        misfire = lane and classified and lane != classified
+        evs.append({"dt": .3, "ev": "stage_start", "stage": "route"})
+        evs.append({"dt": .5, "ev": "stage_end", "stage": "route",
+                    "status": "override" if misfire else "pass",
+                    "detail": (f"MISFIRE: chose lane={lane}, classifier said {classified}"
+                               if misfire else f"lane={lane} (classifier agreed) · type={start_meta.get('type', '?')}")})
+    for dt_, phase in timeline:
+        evs.append({"dt": dt_, "ev": "stage_start", "stage": phase})
+        if phase == "ship":
+            for it in outcome_items[-4:]:
+                evs.append({"dt": .1, "ev": "item", "stage": "ship", "name": "ship outcome", **it})
+        evs.append({"dt": .4, "ev": "stage_end", "stage": phase,
+                    "status": last[phase], "detail": reasons.get(phase, "")})
+    counts = {s: sum(1 for p in order if last[p] == s) for s in ("pass", "skip", "override")}
+    wall = int((last_ts - first_ts).total_seconds()) if first_ts and last_ts else 0
+    evs.append({"dt": .3, "ev": "run_end", "status": "pass",
+                "totals": {"duration_s": wall,
+                           "reproduce": f"bash lib/telemetry/lane-telemetry.sh trace {rid}",
+                           "gates": f"{counts['pass']} ran · {counts['skip']} skipped · {counts['override']} overridden"}})
+    return evs
+
+
+def resolve_run(arg):
+    """Accept a path or a bare rid (resolved in the kit's durable log dir)."""
+    import os
+    p = Path(arg)
+    if p.exists():
+        return p
+    root = Path(os.environ.get("DWARVES_KIT_LOG_DIR",
+                               Path.home() / ".local/state/dwarves-kit/logs"))
+    cand = root / "runs" / f"{arg}.log"
+    if cand.exists():
+        return cand
+    raise SystemExit(f"no run ledger at {arg} or {cand}")
+
+
 def follow(path, poll=0.2):
     """Tail an events file a real runner is appending to; ends on run_end."""
     pos = 0
@@ -284,6 +386,10 @@ def main():
     r.add_argument("--speed", type=float, default=1.0)
     w = sub.add_parser("watch", help="follow a live events file")
     w.add_argument("file")
+    u = sub.add_parser("run", help="replay a REAL kit run ledger (rid or path)")
+    u.add_argument("rid")
+    u.add_argument("--speed", type=float, default=1.0)
+    u.add_argument("--record", help="also write the adapted event stream to this file")
     a = ap.parse_args()
 
     if a.cmd == "demo":
@@ -295,6 +401,12 @@ def main():
         sys.exit(run_ui(paced(read_jsonl(a.file), a.speed)))
     if a.cmd == "watch":
         sys.exit(run_ui(follow(a.file)))
+    if a.cmd == "run":
+        p = resolve_run(a.rid)
+        evs = ledger_to_events(p)
+        if a.record:
+            Path(a.record).write_text("".join(json.dumps(e) + "\n" for e in evs))
+        sys.exit(run_ui(paced(evs, a.speed)))
 
 
 if __name__ == "__main__":

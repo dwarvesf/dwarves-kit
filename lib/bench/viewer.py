@@ -167,7 +167,7 @@ padding:0 .25rem;font-size:.9rem;line-height:1}
 color-mix(in srgb,var(--passbg) 55%,var(--card))}
 .node.fail,.node.error{border-color:var(--fail);background:
 color-mix(in srgb,var(--failbg) 55%,var(--card))}
-.node.retry{border-color:var(--warn)}
+.node.retry,.node.override{border-color:var(--warn)}
 .node.skip{border-style:dashed;opacity:.6}
 .node.pinned{outline:2px dashed var(--accent);outline-offset:3px}
 .edge{display:flex;align-items:center;padding:0 .35rem;color:var(--muted)}
@@ -211,7 +211,7 @@ summary appears when the run finishes.</span></div>
 <div id="tip"></div>
 <script>
 const SCENARIOS = __DATA__;
-const GLYPH = {pending:"○",running:"◉",pass:"✓",fail:"✗",error:"!",retry:"↻",skip:"⊘"};
+const GLYPH = {pending:"○",running:"◉",pass:"✓",fail:"✗",error:"!",retry:"↻",skip:"⊘",override:"⚑"};
 let events=[], cum=[], total=0, t=0, playing=true, pinned=null, timer=null;
 
 function loadScenario(name){
@@ -341,13 +341,17 @@ render();
 </script>"""
 
 
-def build(pairs, out):
-    if pairs:
-        scen = {}
-        for p in pairs:
-            name, _, path = p.partition("=")
-            scen[name] = [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
-    else:
+def build(pairs, out, ledgers=()):
+    scen = {}
+    for p in pairs:
+        name, _, path = p.partition("=")
+        scen[name] = [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
+    if ledgers:
+        from tui import ledger_to_events, resolve_run
+        for p in ledgers:
+            name, _, ref = p.partition("=")
+            scen[name] = ledger_to_events(resolve_run(ref))
+    if not scen:
         scen = demo_scenarios()
     for name, evs in scen.items():  # every stream must terminate or the player never ends
         assert any(e.get("ev") == "run_end" for e in evs), f"{name}: no run_end event"
@@ -362,8 +366,10 @@ def main():
     b = sub.add_parser("build", help="emit the self-contained viewer HTML")
     b.add_argument("--events", nargs="*", default=[], metavar="NAME=PATH",
                    help="embed recorded event files; default: built-in demo scenarios")
+    b.add_argument("--ledger", nargs="*", default=[], metavar="NAME=RID_OR_PATH",
+                   help="embed REAL kit run ledgers (adapted via tui.ledger_to_events)")
     b.add_argument("--out", default="viewer.html")
-    b.set_defaults(fn=lambda a: build(a.events, a.out))
+    b.set_defaults(fn=lambda a: build(a.events, a.out, a.ledger))
     a = ap.parse_args()
     a.fn(a)
 

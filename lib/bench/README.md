@@ -91,7 +91,22 @@ python3 tui.py demo                    # feel the interaction: synthesized full-
 python3 tui.py demo --record run.events.jsonl
 python3 tui.py replay run.events.jsonl --speed 2
 python3 tui.py watch  run.events.jsonl # follow a live runner appending events
+python3 tui.py run <rid>               # replay a REAL recorded kit session from
+                                       # logs/runs/<rid>.log (gate-ledger history)
 ```
+
+### Replaying real sessions (the condition tree)
+
+Every kit run already locks its history: gate-ledger writes `logs/runs/<rid>.log`
+(`START` = the routing decision, `GATE <phase> ran|skipped|override <reason>`,
+`OUTCOME` = ship timings). `ledger_to_events` adapts that record into the event
+protocol, so a recorded session replays in the TUI (`tui.py run <rid>`) or the
+web viewer (`viewer.py build --ledger name=<rid>`). The decision tree is shown
+as the path taken: the `route` root node carries lane-chosen vs lane-classified
+(misfires flagged ⚑), skipped gates render dashed ⊘ with the skip reason (the
+branch NOT taken and why), overrides render ⚑ with the override reason. Hour
+gaps compress to watchable pacing; real wall-clock stays in the summary.
+Terminal twin: `bash lib/telemetry/lane-telemetry.sh trace <rid>` (SPEC-063).
 
 ### Web diagram player
 
