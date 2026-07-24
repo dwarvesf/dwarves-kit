@@ -314,13 +314,36 @@ No timeline commitment. Version bumps happen when real usage exposes the limits 
 
 ---
 
-## 6. North-star criteria (2026-06)
+## 6. North-star criteria (2026-06, amended 2026-07-25)
 
-Direction, not an implementation commitment. Set by the maintainer 2026-06-10 after the SPEC-016 /
-proof-colocation arc exposed the pattern: the kit is excellent at routing CODE work and silent about
-everything else. Every proposal that touches intake, loops, the backlog, or quality MUST state which
-criterion it serves; a proposal that serves none of them and none of §1's principles is a NO-list
-candidate by default.
+Direction, not an implementation commitment. N1-N3 set by the maintainer 2026-06-10 after the
+SPEC-016 / proof-colocation arc exposed the pattern: the kit is excellent at routing CODE work and
+silent about everything else. N4-N7 set by the maintainer 2026-07-25 (the workflow-assessment arc):
+the standing DIRECTIONS every future feature, absorb, or solution must align with. Every proposal
+that touches intake, loops, the backlog, quality, packaging, orchestration, or team surfaces MUST
+state which criterion it serves; a proposal that serves none of them and none of §1's principles is
+a NO-list candidate by default. When a proposal CONFLICTS with a criterion, that conflict is
+surfaced to the maintainer, never silently absorbed.
+
+**Maintainer meta-principles** (observed across the 2026-06/07 arcs; the recurring judgments behind
+the criteria, use them to break ties):
+
+- **Attention at two points.** The human spends attention defining "done" and judging the artifact;
+  never watching the middle. (Feeds N5; the slop economics: shrink cost-of-discard, not mid-flight
+  supervision.)
+- **Evidence before claims.** Nothing is done on assertion; a check ran or it did not. (§1 "Verify
+  before proceeding"; the verifier chain; proof-of-done.)
+- **Plain files, plain words.** State lives in git-trackable files anyone can `cat`; names use
+  vocabulary a new teammate already knows (glossary, ID-307/ID-391). A capability locked inside a
+  runtime or a jargon term is a coupling seam.
+- **Risk buys ceremony.** Process depth tracks blast radius, never uniformity; a heavy process on a
+  small diff is a defect (lanes, ship-time de-escalation).
+- **Propose, never dispose.** Machines propose with citations; a human promotes. No automated leg
+  writes directly to a board or rewrites the framework.
+- **Defer, don't own.** When the host runtime or an external tool does something well, the kit
+  integrates rather than re-implements (agent-os v3 lesson; "Synthesize, don't originate").
+- **Queue-and-route with receipts.** Nothing is handled inline into oblivion: every input lands in a
+  queue with a routing rule, drains to a named durable home, and leaves a receipt.
 
 ### N1 — Every work type earns a right-sized loop
 
@@ -387,10 +410,96 @@ default-suggested where a behavioral/stateful proof is owed, advisory, never a h
 don't dictate"). **It would reject:** a second test standard; a blocking test-first gate (the
 ship-gate already owns blocking).
 
-### How the three compound
+### N4, Modularity: every part stands alone, composes, and is swappable
 
-They are one system, not three features: the board rows (N2) carry the work's type, the type picks
-the loop and its agent (N1), and the loop's first phase designs the type-shaped tests whose runs
-become the proofs (N3). A proposal advancing one criterion should say what it assumes about the
-other two; a proposal that advances one by breaking another (e.g. a pull mechanism (N2) that
-dispatches work with no test design (N3)) is not conforming.
+We believe each capability is a standalone tool a developer or contributor can adopt, improve, and
+replace with ZERO kit present, and that co-installed tools compose INTO the framework through the
+manifest. Because the technologies and techniques keep evolving, every module must be individually
+contributable and individually replaceable without surgery on the rest; the framework is what the
+modules become together, not a container they live inside.
+
+**What exists today:** the kit-modularity arc (ID-277): standalone `<subsystem> <verb>` commands,
+layered install, `kit.toml [modules]` as an install record, plain-file artifacts (ledger, board,
+specs); §1 "Toolbox, not appliance" states the internal half of this belief.
+
+**The gap:** modules are separable INSIDE the kit but not yet extractable OUTSIDE it, the
+delete-the-kit test fails; no generated per-host adapters; visual proof and test-design live as
+external or embedded capability rather than standalone tools (ID-395/ID-396).
+
+**A conforming proposal looks like:** plain-files-first core + one script that works with the kit
+deleted + ONE generated per-host adapter + a manifest entry declaring what it EXPOSES
+(`docs/research/2026-07-25-packaging-prior-art-refresh.md`). Acceptance test: delete the kit, every
+tool still works; delete a tool, the kit is missing one capability, never broken. **It would
+reject:** a capability that only exists inside the plugin; a module whose file format only makes
+sense with the orchestrator running (the BMAD-pack shape); hand-maintained per-harness copies.
+
+### N5, Autonomy: long-running multi-agent orchestration, hands-off in the middle
+
+We believe the kit's first operating mode is the maintainer running multiple agents and subagents
+over long horizons, mostly hands-off: attention spent defining "done" up front and judging artifacts
+at the end, with the middle unattended. Human involvement mid-run is an exception triggered by
+decision TYPE (architecture, risk, privacy), never a per-stage checkpoint.
+
+**What exists today:** the /goal loop, the mega wavefront (ADR-0030), the overnight queue launcher,
+worker -> verifier -> fix-agent with bounded retries, grounded completion, the watchdog, ship-only
+enforcement (ADR-0024).
+
+**The gap:** no fan-in/fan-out ordering graph yet (ID-394); failure semantics for mid-graph nodes
+unnamed (prune-descendants is undocumented industry-wide, the kit can be first); runs still
+occasionally end on questions the loop could have answered.
+
+**A conforming proposal looks like:** it extends the ready-queue/verifier machinery, keeps every
+mid-run gate advisory-and-recorded, and names its failure policy explicitly. **It would reject:** a
+feature that requires the operator mid-run (per-stage approval gates); an unbounded loop with no
+telemetry or termination contract.
+
+### N6, Self-improvement: the kit learns from its own runs
+
+We believe the kit improves itself through its own stage loop (Shape -> Build -> Watch -> Check ->
+Learn): every run emits measurable signals across its surfaces and artifacts, the Learn stage turns
+them into cited proposals, and "propose, never dispose" keeps a human at the promote step. The
+mid-term goal: the framework gets better because it ran, not because someone remembered to improve
+it.
+
+**What exists today:** gate-ledger + lane-telemetry + stats projections; `learn propose` -> staging
+-> `board promote`; `caught=bool` + override-rate per gate; delivery-ratio; kit-health;
+learn-propose precision tracking (ID-294/ID-305).
+
+**The gap:** the learning loop has one precision data point (calibrating, not yet trusted);
+review-economics unmeasured (ID-392); context freshness is pull-based with no owner (ID-100).
+
+**A conforming proposal looks like:** it adds or consumes a measurable signal, feeds the Learn
+stage's staging file, and is itself measured (the meta-loop). **It would reject:** self-rewriting
+automation that bypasses staging; an unmeasured "smart" feature (the ruflo trap: capability claims
+with no observable signal).
+
+### N7, Serve the team: carry the cognitive load for humans + agents together
+
+We believe the kit's end purpose is cognitive off-load for a TEAM: the maintainer plus multiple
+humans plus agents coordinating on shared surfaces, nobody needing to hold the process, the state,
+or the judgment scaffolding in their head. A solo power tool is the starting point, not the goal;
+every feature should be weighed for how it lands when a second and fifth person arrive.
+
+**What exists today:** team-mode as a named parked slot (§1) with a concrete tripwire; the board
+sync spokes + the Multica pilot (board delegation to agent teammates); the plain-words glossary
+(ID-293) and rename queue (ID-307); the human onboarding + card-template work (dfoundation
+DF-151/152).
+
+**The gap:** single-operator assumptions in the goal registry and conflict rules (ADR-0022,
+git-wins); pickup cost rated the weakest team dimension (2/5, 2026-07-24 assessment); no
+review-economics data to know whether delegation actually holds at team scale.
+
+**A conforming proposal looks like:** it lowers pickup cost (plain words, a 2-page front door),
+works unchanged for a second named user, and keeps human judgment as the last gate. **It would
+reject:** a surface only the maintainer can operate; jargon-first naming; a feature that scales
+agent output without scaling review capacity (the unbudgeted-reviewer trap).
+
+### How the criteria compound
+
+N1-N3 are one system: board rows (N2) carry the type, the type picks the loop (N1), the loop's
+first phase designs the tests whose runs become proofs (N3). N4-N7 are the direction that system
+grows toward: N4 makes every part contributable and swappable, N5 runs the parts unattended at
+scale, N6 makes the running improve the parts, and N7 is why any of it exists, a team thinking
+together with less cognitive load. A proposal advancing one criterion should say what it assumes
+about the others; a proposal that advances one by breaking another (e.g. a pull mechanism (N2)
+that dispatches work with no test design (N3)) is not conforming.

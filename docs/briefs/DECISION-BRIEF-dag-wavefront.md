@@ -52,3 +52,16 @@ Priority scheduling · cross-machine execution · new retry policies · a separa
 ## Sequencing
 
 After kit-telemetry ships (no new sub-goals mid-mega-goal). Order: (1) mini-ADR amending ADR-0028's deferral scope (wavefront in, GSD-v2 still out), (2) `/spec` + `/spec-validate`, (3) build in the full lane. Board row: ID-084.
+
+## 2026-07-25 addendum (operator direction, row ID-394)
+
+The wavefront half of this brief SHIPPED as ADR-0030. Han's direction 2026-07-25 supersedes the
+"GSD-v2 still out" boundary: the kit owns its ordering graph outright; the handoff tripwire
+language (5 mentions in commands/dispatch.md + commands/mega.md) is retired. Scope now: explicit
+`depends_on` + a DYNAMIC ready-queue with auto-unblock (not static waves), sequential merge in
+deterministic ID order under parallel execution, file-footprint as a concurrency constraint,
+task-state-transition hooks, and bisect-on-red as the follow-up failure semantics. Prior-art
+grounding + ranked pickups/avoids: `docs/research/2026-07-25-dag-orchestration-prior-art-refresh.md`.
+The "Explicitly NOT built" list above stands MINUS the graph itself (still no priority scheduling,
+no cross-machine, no speculative execution, no CP-SAT before the ready-queue ships). The mini-ADR
+in Sequencing step (1) now amends ADR-0028 to retire the boundary entirely rather than narrow it.
