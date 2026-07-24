@@ -124,6 +124,23 @@ The built-in scenarios cover the variant axes: task types (feature, research,
 eval), workflow shapes (full lane, tiny lane, loops), and a fault-injection
 failure run (retry exhausted), so the red path is designed, not hoped.
 
+### Control-plane report (many runs, one surface)
+
+`report.py build` renders the RUN_REPORT as a page: fleet timeline (swimlanes,
+per-worker bars colored by model), worker minutes by model, the gate-coverage
+matrix (● recorded / ○ skipped-with-reason / ⚑ override / − not recorded,
+reasons on hover), an optional wave dispatch board, and incidents.
+
+```sh
+python3 report.py build --rids rid1,rid2,rid3 \
+  --overlay examples/kit-absorptions.overlay.json --out report.html
+```
+
+Honest data split: spans, gates, statuses, and reasons come ONLY from the run
+ledgers; model / PR / lane / incidents ride a declared overlay JSON until the
+trace spine (ID-423) records those dims natively, at which point the overlay
+shrinks to nothing. Zero-JS output; tooltips are title attributes.
+
 ### Event protocol
 
 Runner and frontend are decoupled by JSONL events, one object per line; any
