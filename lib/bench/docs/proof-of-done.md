@@ -17,6 +17,7 @@ Rows: ID-420..424.
 | 6 | Real kit sessions replay from gate-ledger history, decisions (skip/override reasons) preserved | `test_ledger_adapter` + live `tui.py run board-tool` |
 | 7 | Expected-vs-actual overlay: missed required gates become ghost nodes; required-gate conformance scored | `test_ledger_conformance_overlay` |
 | 8 | Control-plane report renders fleet timeline, model minutes, gate matrix, waves, incidents from real ledgers + declared overlay | `tests/test_report.py` + live build from 6 real kit-absorptions rids |
+| 9 | Control-plane dashboard renders fleet/explorer/stream/tools/RCA/alerts over ALL ledgers + transcripts, counts-only privacy enforced | `tests/test_dashboard.py` (incl. planted-string negative control) + live build (206 runs, 18 sessions, 0.5s) |
 
 ## Confirmation run-table (2026-07-25, this branch)
 
@@ -31,6 +32,8 @@ Rows: ID-420..424.
 | Live diff | `bench.py diff --baseline runs/...smoke-code.jsonl --candidate ...-r2.jsonl` | `FIXED dedup-urls/sonnet/model`, `REGRESSED parse-semver/sonnet/model`, exit 1 |
 | Real-session replay | `python3 tui.py run board-tool --speed 100` | 15 stages incl. 2 skips + 1 override with reasons; conformance 12/12 required gates present |
 | Control-plane report | `report.py build --rids kit-template-fields,grill-conditioning,kit-emit-sweep,kit-pitch,lane-de-escalation,mega-mirror-sync --overlay examples/kit-absorptions.overlay.json` | 6 runs rendered from real ledgers |
+| Dashboard suite | `python3 tests/test_dashboard.py` | PASSED 4/4 |
+| Live dashboard build | `python3 dashboard.py build` | 206 runs, 150 events, 18 sessions, 12 bench cells, 0 alerts firing, 0.5s |
 
 ## Negative controls
 
