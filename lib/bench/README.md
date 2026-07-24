@@ -78,11 +78,46 @@ One JSON object per line, append-only. Config dims first, outcomes second:
 | `cost_usd`, `turns`, `tokens_in`, `tokens_out` | efficiency dims |
 | `error` | harness failure, kept distinct from task failure |
 
+## Live TUI (the run frontend)
+
+`tui.py` renders a workflow run as an animated step list: pending ○ → spinner →
+✓/✗, sub-items under the running stage, retry badges, accumulating cost, and an
+expressive final report (verdict banner, per-stage table, failure fingerprints,
+reproduce line). Falls back to plain per-event lines when not a TTY (CI logs).
+
+```sh
+python3 tui.py demo                    # feel the interaction: synthesized full-lane
+                                       # run incl. verifier fail -> fix-agent -> retry
+python3 tui.py demo --record run.events.jsonl
+python3 tui.py replay run.events.jsonl --speed 2
+python3 tui.py watch  run.events.jsonl # follow a live runner appending events
+```
+
+### Event protocol
+
+Runner and frontend are decoupled by JSONL events, one object per line; any
+runner that emits these gets the TUI (and any future frontend) for free. The
+real L1/L2/L3 runners plug in by emitting the same stream (`watch` mode).
+
+| Event | Fields | Meaning |
+|---|---|---|
+| `run_start` | `run_id, scenario, layer, config, stages[]` | announce the plan; TUI shows all stages as pending |
+| `stage_start` | `stage` | stage begins (spinner) |
+| `item` | `stage, name, status, detail?, fingerprint?` | a sub-step inside a stage (worker, verifier, lens, check) |
+| `retry` | `stage, attempt` | bounded retry; badge on the stage |
+| `stage_end` | `stage, status, detail?, duration_s?, cost_usd?` | stage verdict |
+| `run_end` | `status, totals{cost_usd,duration_s,retries,reproduce}` | final verdict + summary |
+
+`dt` (seconds since previous event) is optional pacing metadata for `replay`.
+Failure `item`s carry `fingerprint`: the verbatim failing case, so a red run
+always answers "failed on what, exactly". The case inventory these runs will
+cover lives in `docs/test-catalog.md` (L1 mechanism / L2 stage / L3 E2E).
+
 ## Tests
 
 ```sh
-python3 tests/test_bench.py
+python3 tests/test_bench.py   # runner: hashing, scoring, summarize/diff, HTML render
+python3 tests/test_tui.py     # frontend: state machine, mid-run frame, reports, roundtrip
 ```
 
-Offline self-check: hashing stability, fence-stripping, check-output parsing,
-summarize/diff logic, HTML render. No model calls.
+Offline self-checks, no model calls.
