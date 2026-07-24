@@ -124,6 +124,21 @@ The built-in scenarios cover the variant axes: task types (feature, research,
 eval), workflow shapes (full lane, tiny lane, loops), and a fault-injection
 failure run (retry exhausted), so the red path is designed, not hoped.
 
+### Control-plane dashboard (the whole estate, one page)
+
+`dashboard.py build` renders the full control-plane dashboard: a sidebar page over
+ALL recorded data. Fleet (KPI tiles + 30-day sparkline trends over every run
+ledger), Run explorer (filter + segment chips, conformance per run), Event stream
+(gate verdicts with reasons), Tool activity (Claude Code transcript COUNTS ONLY:
+tools, MCP servers, models; content never read), Bench/RCA (failure fingerprints),
+Alerts (plain-JSON template rules evaluated at build). Design record:
+`docs/dashboard-design.md`.
+
+```sh
+python3 dashboard.py build --out dashboard.html          # ~0.5s over 200+ ledgers
+python3 dashboard.py build --alerts examples/alerts.json --window-days 14
+```
+
 ### Control-plane report (many runs, one surface)
 
 `report.py build` renders the RUN_REPORT as a page: fleet timeline (swimlanes,
