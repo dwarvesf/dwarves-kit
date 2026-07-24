@@ -41,7 +41,7 @@ def test_collect_and_metrics():
         runs = dashboard.collect_runs(d)
         assert len(runs) == 3
         assert sum(1 for r in runs if r["misfire"]) == 1
-        m = dashboard.fleet_metrics(runs, 30)
+        m = dashboard.fleet_metrics(runs, dashboard.collect_events(d), 30)
         assert m["runs"] == 3 and m["misfires"] == 1
         assert m["overridden"] == 1
         assert len(m["trend_runs"]) == 30 and sum(m["trend_runs"]) == 3
@@ -81,7 +81,7 @@ def test_render_end_to_end_with_fixtures():
     with tempfile.TemporaryDirectory() as d:
         _fixture_logs(d)
         runs = dashboard.collect_runs(d)
-        m = dashboard.fleet_metrics(runs, 30)
+        m = dashboard.fleet_metrics(runs, dashboard.collect_events(d), 30)
         out = Path(d, "dash.html")
         dashboard.render(runs, dashboard.collect_events(d),
                          [{"session": "abc", "project": "demo",

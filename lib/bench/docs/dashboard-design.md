@@ -70,3 +70,29 @@ propose-never-dispose; a live alerting daemon is a separately-argued step).
   enforcement made visible).
 - `watch` mode (rebuild-on-change or SSE) turns the page from post-mortem into a
   live control plane; deliberately out of scope for the static prototype.
+
+## v2 (same day): forge skin + the chart layer
+
+Operator: "still far from full features with charts... this belongs to the forge
+project... follow the design guide." Changes:
+
+1. **Design system**: the render now implements `forge/docs/design/forge-design-
+   guidelines.md` verbatim: coal/sheet/card grounds, ember accent, mono-led display,
+   square corners, 1px-gap hairline grids, the 6px heat-spine ONCE per page, focus
+   outlines, reduced-motion-safe. The generic indigo skin is retired.
+2. **Charts (dataviz method)**: two single-hue area time-series with axes + native
+   per-day tooltips (runs/day, gate records/day; one axis each, never dual); verdict
+   mix per gate as stacked status bars (ok green / skip ash / override amber) with
+   2px segment gaps and glyph secondary-encoding so identity is never color alone;
+   single-hue breakdown bars (runs by repo, worker minutes by lane, top tools);
+   day x hour activity heat grid as a sequential ember alpha ramp (the 4-stop heat
+   ramp stays reserved for the spine per the guide).
+3. **Palette validation**: `validate_palette.js` run on the status trio, both
+   surfaces. Verdict: green/amber CVD delta sits in the 6-8 band, legal ONLY with
+   secondary encoding, which every surface carries (glyphs + gaps + labels); the
+   skip-gray chroma FAIL is intentional, skip is a non-event and the check scopes
+   to categorical identity hues. Recorded here as the conscious exception.
+4. **Ownership (forge boundary)**: generator + collectors stay in dwarves-kit
+   (product code); the rendered page ships to `forge/site/dashboard/observability/`
+   (forge owns the website), cross-linked with the Crew dashboard sidebar; the
+   provenance banner carries the reproduce command.
