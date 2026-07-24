@@ -142,6 +142,35 @@ def test_session_without_usage_is_tolerated():
     assert m["total_cost"] == 0.0 and m["sessions"] == 1
 
 
+def test_debt_score_formula():
+    """v1 formula per the brief: 100 - 10*hi - 4*lo - min(20, staleness)."""
+    import datetime as dtm
+    import tempfile
+    lines = """\
+2026-07-01T00:00:00Z | DEBT | significance=high worthiness=high verdict=tap response=defer reason=old-item
+2026-07-10T00:00:00Z | DEBT | significance=high worthiness=high verdict=tap response=engage reason=paid via weekend batch
+2026-07-20T00:00:00Z | DEBT | significance=high worthiness=high verdict=tap response=defer reason=new-high
+2026-07-21T00:00:00Z | DEBT | significance=low worthiness=high verdict=tap response=defer reason=new-low
+2026-07-22T00:00:00Z | DEBT | significance=low worthiness=low verdict=not-significant reason=noise
+"""
+    with tempfile.TemporaryDirectory() as d:
+        Path(d, "runs").mkdir()
+        Path(d, "runs", "x.log").write_text(lines)
+        debt = dashboard.collect_debt(d)
+        assert len(debt) == 5
+        dm = dashboard.debt_metrics(debt)
+        # open = the two defers after the 07-10 paydown; the 07-01 defer is cleared
+        assert dm["open_high"] == 1 and dm["open_low"] == 1
+        assert dm["last_paydown"] == "2026-07-10"
+        stale = min(20, (dashboard.now() - dtm.datetime(2026, 7, 10, tzinfo=dtm.timezone.utc)).days)
+        assert dm["score"] == max(0, 100 - 10 - 4 - stale)
+
+
+def test_debt_never_paid():
+    dm = dashboard.debt_metrics([])
+    assert dm["score"] == 80 and dm["last_paydown"] is None  # 100 - 20 staleness cap
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:

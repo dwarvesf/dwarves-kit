@@ -138,6 +138,48 @@ def collect_events(log_dir):
     return evs
 
 
+def collect_debt(log_dir):
+    """Every | DEBT | line across every rid (ADR-0031 understanding-gate markers)."""
+    out = []
+    for f in Path(log_dir, "runs").glob("*.log"):
+        for line in f.read_text().splitlines():
+            parts = [p.strip() for p in line.split(" | ", 2)]
+            if len(parts) == 3 and parts[1] == "DEBT":
+                try:
+                    ts = dtm.datetime.fromisoformat(parts[0].replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                kv = dict(t.partition("=")[::2] for t in parts[2].split() if "=" in t)
+                reason = parts[2].partition("reason=")[2].replace("-", " ").strip()
+                out.append({"ts": ts, "rid": f.stem, "significance": kv.get("significance", "?"),
+                            "verdict": kv.get("verdict", "?"), "response": kv.get("response", ""),
+                            "reason": reason[:400]})
+    return sorted(out, key=lambda d: d["ts"])
+
+
+def debt_metrics(debt):
+    """The cognitive-debt score, v1 formula per DECISION-BRIEF-cognitive-debt-score.md:
+    100 - 10*high-sig open defers - 4*low-sig open defers - min(20, days since last
+    paydown), floored at 0. A paydown = any response=engage line; only defers newer
+    than it count as open (engage lines don't name which items they clear, so the
+    open-item list ships alongside the number for human judgment)."""
+    paydowns = [d for d in debt if d["response"] == "engage"]
+    last_pay = paydowns[-1]["ts"] if paydowns else None
+    open_defers = [d for d in debt
+                   if d["verdict"] == "tap" and d["response"] == "defer"
+                   and (last_pay is None or d["ts"] > last_pay)]
+    hi = sum(1 for d in open_defers if d["significance"] == "high")
+    lo = len(open_defers) - hi
+    stale = min(20, (now() - last_pay).days) if last_pay else 20
+    score = max(0, 100 - 10 * hi - 4 * lo - stale)
+    return {"score": score, "open": open_defers, "open_high": hi, "open_low": lo,
+            "staleness_days": (now() - last_pay).days if last_pay else None,
+            "last_paydown": last_pay.date().isoformat() if last_pay else None,
+            "total_lines": len(debt),
+            "verdicts": dict(Counter(d["verdict"] for d in debt)),
+            "paydowns": len(paydowns)}
+
+
 def collect_sessions(tdir, max_files=25):
     """COUNTS ONLY from Claude Code transcripts: tool names, models, timing.
     Message content is never read into the output (privacy rule in the design
@@ -598,6 +640,13 @@ border:1px solid var(--rule-strong);padding:5px 12px;cursor:pointer}
 text-overflow:ellipsis;white-space:nowrap}
 .fp{font-family:var(--mono);font-size:11px;color:var(--bad);white-space:pre-wrap}
 .footer{margin-top:28px;font-family:var(--mono);font-size:11px;color:var(--ash)}
+tr.exrow{cursor:pointer}
+tr.detail>td{background:var(--sheet);padding:10px 14px}
+.detail-log table{margin:6px 0 0}
+body.redacted code,body.redacted .reason,body.redacted td.mono,
+body.redacted .detail-log{filter:blur(5px);user-select:none}
+select{font-family:var(--mono);font-size:11.5px;background:var(--card);color:var(--ink);
+border:1px solid var(--rule-strong);padding:2px 6px}
 @media (prefers-reduced-motion:no-preference){.navbtn,.chip{transition:color .15s,border-color .15s}}
 </style>"""
 
@@ -606,6 +655,56 @@ def _chip(status):
     cls = {"ran": "ok", "skipped": "dim", "override": "warn"}.get(status, "dim")
     label = {"ran": "● OK", "skipped": "○ SKIP", "override": "⚑ OVERRIDE"}.get(status, status.upper())
     return f'<span class="chip {cls}">{label}</span>'
+
+
+def collect_config():
+    """kit.toml module + status surface for the visual config view. Uses stdlib
+    tomllib; degrades to raw-line scan when the file has no parseable sections."""
+    root = Path(__file__).resolve().parents[2]
+    cfg = root / "kit.toml"
+    if not cfg.exists():
+        return None
+    out = {"path": str(cfg), "modules": {}, "keys": []}
+    try:
+        import tomllib
+        data = tomllib.loads(cfg.read_text())
+        out["modules"] = data.get("modules", {})
+        for section, body in data.items():
+            if section == "modules" or not isinstance(body, dict):
+                continue
+            for k, v in body.items():
+                out["keys"].append({"section": section, "key": k, "value": v})
+    except Exception:
+        pass
+    # status tags live in comments ([impl]/[design]/[reserved]/[consumer])
+    tags = Counter()
+    for line in cfg.read_text().splitlines():
+        for t in ("impl", "design", "reserved", "consumer"):
+            if f"[{t}]" in line:
+                tags[t] += 1
+    out["status_tags"] = dict(tags)
+    return out
+
+
+DEFAULT_TOOL_POLICY = {
+    "_doc": "Tool-choice policy enforced by hooks/tool-policy-guard.sh (PreToolUse). "
+            "match = substring of the tool name; action = allow | ask | deny.",
+    "browser": {
+        "prefer": "browser-harness-js attached to the running Helium (CDP)",
+        "rules": [
+            {"match": "mcp__plugin_playwright_playwright__", "action": "ask",
+             "note": "scripted-replay tooling, not the interactive default"},
+            {"match": "mcp__browserbase", "action": "ask", "note": "cloud browser; never for logged-in accounts"},
+        ],
+    },
+    "computer_use": {
+        "prefer": "CLI/osascript first (L0-L2), AX tree (L3), vision loop last (L4)",
+        "rules": [
+            {"match": "mcp__computer-use__", "action": "ask",
+             "note": "GUI driving; confirm the lighter rung is exhausted"},
+        ],
+    },
+}
 
 
 def fmt_tok(n):
@@ -748,11 +847,104 @@ means most spend is delegated work, which is the cheap-first routing target.</p>
     return cost_sec, runtime_sec
 
 
-def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None):
+def debt_section(dm):
+    cls = "ok" if dm["score"] >= 80 else ("warn" if dm["score"] >= 50 else "bad")
+    items = "".join(
+        f"<tr><td class=mono>{d['ts'].date()}</td><td><code>{H.escape(d['rid'])}</code></td>"
+        f'<td><span class="chip {"warn" if d["significance"] == "high" else "dim"}">'
+        f"{d['significance']}</span></td>"
+        f'<td class="reason" title="{H.escape(d["reason"])}">{H.escape(d["reason"])}</td></tr>'
+        for d in reversed(dm["open"])) or '<tr><td colspan=4 class=reason>no open defers</td></tr>'
+    verdicts = " · ".join(f"{k} {v}" for k, v in dm["verdicts"].items()) or "none recorded"
+    return f"""<section id="debt">
+<div class="eyebrow">Verify</div>
+<h1>Cognitive debt</h1>
+<p class="meta">The understanding gate's read side (ADR-0031): verification proves the work
+is correct; this score tracks whether the HUMAN still understands it. Computed only from
+recorded <span class=mono>DEBT</span> ledger lines; formula in
+DECISION-BRIEF-cognitive-debt-score.md. It pressures the weekend paydown; it never blocks.</p>
+<div class="tiles">
+<div class="tile"><b><span class="chip {cls}" style="font-size:18px">{dm['score']}</span></b>
+<span>debt score (100 = absorbed)</span></div>
+<div class="tile"><b>{dm['open_high']} / {dm['open_low']}</b><span>open defers · high / low</span></div>
+<div class="tile"><b>{dm['last_paydown'] or 'never'}</b><span>last paydown</span></div>
+<div class="tile"><b>{dm['staleness_days'] if dm['staleness_days'] is not None else '-'}</b><span>days since paydown</span></div>
+<div class="tile"><b>{dm['total_lines']}</b><span>debt lines recorded</span></div>
+</div>
+<p class="meta">Verdict mix: {verdicts}. Engage lines do not name which defers they clear,
+so the open list below is the audit surface; the number is the glance.</p>
+<h2>Open defers (owed to the human)</h2>
+<div class="scroll"><table><tr><th>date</th><th>run</th><th>sig</th><th>what is owed</th></tr>
+{items}</table></div>
+</section>"""
+
+
+def config_section(cfg, policy):
+    if cfg:
+        mods = "".join(
+            f'<span class="chip {"ok" if v else "dim"}">{H.escape(str(k))}'
+            f'{"" if v else " off"}</span> '
+            for k, v in sorted(cfg["modules"].items())) or '<span class=reason>none declared</span>'
+        tags = "".join(
+            f'<div class="tile"><b>{v}</b><span>[{k}] keys</span></div>'
+            for k, v in sorted(cfg["status_tags"].items()))
+        keys = "".join(
+            f"<tr><td class=mono>{H.escape(x['section'])}</td><td><code>{H.escape(x['key'])}</code></td>"
+            f"<td class=mono>{H.escape(str(x['value']))[:60]}</td></tr>" for x in cfg["keys"][:40])
+        cfg_html = (f"<h2>Modules (kit.toml)</h2><p>{mods}</p>"
+                    f'<div class="tiles">{tags}</div>'
+                    f"<h2>Config keys</h2><div class='scroll'><table>"
+                    f"<tr><th>section</th><th>key</th><th>value</th></tr>{keys}</table></div>"
+                    f'<p class="meta">Source: <code>{H.escape(cfg["path"])}</code>. Status tags '
+                    f"([impl]/[design]/[reserved]/[consumer]) are counted from the file's own "
+                    f"annotations; an inert key does nothing until its tag says [impl].</p>")
+    else:
+        cfg_html = '<p class="meta">kit.toml not found from this checkout.</p>'
+
+    rules = ""
+    for domain, spec in policy.items():
+        if domain.startswith("_"):
+            continue
+        rows = "".join(
+            f"<tr><td><code>{H.escape(r['match'])}</code></td>"
+            f'<td><select data-domain="{H.escape(domain)}" data-match="{H.escape(r["match"])}">'
+            + "".join(f'<option {"selected" if r["action"] == a else ""}>{a}</option>'
+                      for a in ("allow", "ask", "deny"))
+            + f"</select></td><td class=reason>{H.escape(r.get('note', ''))}</td></tr>"
+            for r in spec.get("rules", []))
+        rules += (f"<h2>{H.escape(domain.replace('_', ' '))}</h2>"
+                  f'<p class="meta">Preferred rung: {H.escape(spec.get("prefer", ""))}</p>'
+                  f"<table><tr><th>tool match</th><th>action</th><th>note</th></tr>{rows}</table>")
+    return f"""<section id="config">
+<div class="eyebrow">Operate</div>
+<h1>Config &amp; tool policy</h1>
+<p class="meta">The kit's config surface rendered visually, and the tool-choice policy the
+<span class=mono>tool-policy-guard</span> PreToolUse hook enforces: when an agent reaches for
+a matched tool, <b>ask</b> warns with the preferred rung and <b>deny</b> blocks the call.
+Edit the actions below, then export; the page is static, so applying = saving the JSON where
+the hook reads it (<span class=mono>~/.claude/dwarves-kit/tool-policy.json</span>).</p>
+{rules}
+<div class="seg-bar">
+<button id="policy-export">Export policy JSON</button>
+</div>
+<textarea id="policy-out" readonly style="width:100%;min-height:8rem;font-family:var(--mono);
+font-size:11.5px;background:var(--sheet);color:var(--ink);border:1px solid var(--rule);
+padding:8px;display:none"></textarea>
+{cfg_html}
+</section>"""
+
+
+def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
+           debt=None, config=None, policy=None):
     m = metrics
     mm = money or money_metrics(sessions, m["window_days"])
+    dm = debt or debt_metrics([])
+    policy = policy or DEFAULT_TOOL_POLICY
     firing = [a for a in alerts if a["firing"]]
     stream = events[:150]
+    by_rid = {}
+    for e in events:
+        by_rid.setdefault(e["rid"], []).append(e)
 
     tiles = "".join(
         f'<div class="tile"><b>{v}</b><span>{k}</span></div>' for k, v in [
@@ -789,11 +981,24 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None)
             "low-conf" if conf and conf[0] < conf[1] else "",
             "recent" if (now() - r["t1"]).days <= 7 else "",
             r["meta"].get("repo", "")]))
-        ex_rows += (f'<tr data-k="{H.escape(r["rid"].lower())} {H.escape(tags)}">'
+        rid_events = by_rid.get(r["rid"], [])
+        detail_rows = "".join(
+            f"<tr><td class=mono>{e['ts'].strftime('%m-%d %H:%M')}</td>"
+            f"<td class=mono>{H.escape(e['phase'])}</td><td>{_chip(e['status'])}</td>"
+            f"<td class=reason title=\"{H.escape(e['reason'])}\">{H.escape(e['reason'])}</td></tr>"
+            for e in sorted(rid_events, key=lambda e: e["ts"])[:60])
+        detail = (f'<tr class="detail" data-detail="{H.escape(r["rid"].lower())}" hidden>'
+                  f'<td colspan="8"><div class="detail-log">'
+                  f"<p class=meta>Full usage log · {len(rid_events)} events · replay: "
+                  f"<span class=mono>python3 tui.py run {H.escape(r['rid'])}</span></p>"
+                  f"<table><tr><th>time</th><th>gate</th><th>verdict</th><th>reason</th></tr>"
+                  f"{detail_rows}</table></div></td></tr>")
+        ex_rows += (f'<tr class="exrow" data-k="{H.escape(r["rid"].lower())} {H.escape(tags)}" '
+                    f'data-rid="{H.escape(r["rid"].lower())}" tabindex="0">'
                     f'<td><code>{H.escape(r["rid"])}</code>{mis}</td>'
                     f"<td>{r['t1'].date()}</td><td>{H.escape(r['meta'].get('repo', ''))}</td>"
                     f"<td>{H.escape(lane)}</td><td>{H.escape(r['meta'].get('type', ''))}</td>"
-                    f"<td>{counts}</td><td>{conf_html}</td><td>{mins:.0f}m</td></tr>")
+                    f"<td>{counts}</td><td>{conf_html}</td><td>{mins:.0f}m</td></tr>") + detail
 
     seg_defs = [("all", ""), ("misfires", "misfire"), ("low conformance", "low-conf"),
                 ("full lane", "lane-full"), ("tiny lane", "lane-tiny"), ("last 7d", "recent")]
@@ -836,6 +1041,7 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None)
         f'<td><span class="chip {"bad" if a["firing"] else "ok"}">{"FIRING" if a["firing"] else "ok"}</span></td>'
         f"<td class=reason>{H.escape(a['note'])}</td></tr>" for a in alerts)
 
+    policy_json = json.dumps({k: v for k, v in policy.items() if not k.startswith('_')}, indent=1).replace('</', '<\\/')
     gen = now().isoformat(timespec="seconds")
     nav = "".join(
         f'<button class="navbtn" data-sec="{sid}" {"aria-current=page" if sid == "fleet" else ""}>{label}</button>'
@@ -848,6 +1054,8 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None)
         f'<button class="navbtn" data-sec="{sid}">{label}</button>'
         for sid, label in [("bench", "Bench / RCA"), ("alerts", "Alerts")])
     cost_sec, runtime_sec = money_sections(mm)
+    debt_sec = debt_section(dm)
+    config_sec = config_section(config, policy)
 
     page = f"""<!DOCTYPE html>
 <html lang="en">
@@ -870,8 +1078,12 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None)
 {nav_money}
 <div class="grp">Verify</div>
 {nav2}
+<button class="navbtn" data-sec="debt">Cognitive debt</button>
+<div class="grp">Operate</div>
+<button class="navbtn" data-sec="config">Config &amp; policy</button>
 <div class="grp">Console</div>
 <a class="navbtn" href="/dashboard/">Crew dashboard</a>
+<button class="navbtn" id="redact-toggle" aria-pressed="false">Redact mode</button>
 </aside>
 <main>
 <section id="fleet" class="on">
@@ -898,6 +1110,9 @@ required gates present for the run's lane. Replay any row:
 <h1>Event stream</h1>
 <p class="meta">Latest {len(stream)} gate verdicts across every run; the reason is the
 audit trail.</p>
+<div class="seg-bar">
+<button id="audit-csv">Download audit CSV</button>
+</div>
 <div class="scroll"><table><tr><th>time</th><th>rid</th><th>gate</th><th>verdict</th>
 <th>reason</th></tr>{ev_rows}</table></div>
 </section>
@@ -913,6 +1128,8 @@ MCP servers seen: {mcp_html}.</p>
 </section>
 {cost_sec}
 {runtime_sec}
+{debt_sec}
+{config_sec}
 <section id="bench">
 <div class="eyebrow">Verify</div>
 <h1>Bench / RCA</h1>
@@ -938,6 +1155,7 @@ MCP servers seen: {mcp_html}.</p>
 design per forge-design-guidelines.md</div>
 </main>
 </div>
+<script type="application/json" id="policy-data">{policy_json}</script>
 <script>
 const secs=document.querySelectorAll("section"),btns=document.querySelectorAll(".navbtn");
 function show(id){{
@@ -958,11 +1176,53 @@ function filt(){{
   }});
 }}
 q.oninput=filt;
-document.querySelectorAll(".seg-bar button").forEach(b=>b.onclick=()=>{{
+document.querySelectorAll(".seg-bar button[data-seg]").forEach(b=>b.onclick=()=>{{
   seg=b.dataset.seg;
-  document.querySelectorAll(".seg-bar button").forEach(x=>x.classList.toggle("on",x===b));
+  document.querySelectorAll(".seg-bar button[data-seg]").forEach(x=>x.classList.toggle("on",x===b));
   filt();
 }});
+document.querySelectorAll("tr.exrow").forEach(r=>{{
+  const open=()=>{{const d=document.querySelector(`tr.detail[data-detail="${{r.dataset.rid}}"]`);
+    if(d)d.hidden=!d.hidden;}};
+  r.onclick=e=>{{if(!e.target.closest("a"))open();}};
+  r.onkeydown=e=>{{if(e.key==="Enter"||e.key===" "){{e.preventDefault();open();}}}};
+}});
+const red=document.getElementById("redact-toggle");
+if(red)red.onclick=()=>{{
+  const on=document.body.classList.toggle("redacted");
+  red.setAttribute("aria-pressed",String(on));
+  red.textContent=on?"Redacted (click to show)":"Redact mode";
+}};
+const csvBtn=document.getElementById("audit-csv");
+if(csvBtn)csvBtn.onclick=()=>{{
+  const rows=[["time","rid","gate","verdict","reason"]];
+  document.querySelectorAll("#stream table tr").forEach(tr=>{{
+    const c=tr.querySelectorAll("td");
+    if(c.length===5)rows.push([...c].map(td=>'"'+td.textContent.trim().replace(/"/g,'""')+'"'));
+  }});
+  const blob=new Blob([rows.map(r=>r.join(",")).join("\\n")],{{type:"text/csv"}});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="forge-audit.csv";a.click();
+  URL.revokeObjectURL(a.href);
+}};
+const pex=document.getElementById("policy-export");
+if(pex)pex.onclick=()=>{{
+  const pol=JSON.parse(document.getElementById("policy-data").textContent);
+  document.querySelectorAll("#config select").forEach(s=>{{
+    const d=pol[s.dataset.domain];
+    if(!d)return;
+    const r=(d.rules||[]).find(x=>x.match===s.dataset.match);
+    if(r)r.action=s.value;
+  }});
+  const out=document.getElementById("policy-out");
+  out.style.display="block";
+  out.value=JSON.stringify(pol,null,2);
+  out.select();
+  const blob=new Blob([out.value],{{type:"application/json"}});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="tool-policy.json";a.click();
+  URL.revokeObjectURL(a.href);
+}};
 </script>
 </body>
 </html>"""
@@ -984,21 +1244,69 @@ def main():
     b.add_argument("--window-days", type=int, default=30)
     b.add_argument("--monthly-budget", type=float, default=None,
                    help="USD budget for the pool-headroom gauge (operator input)")
+    b.add_argument("--tool-policy", default=None,
+                   help="tool-policy JSON to render (default: ~/.claude/dwarves-kit/tool-policy.json)")
     b.add_argument("--out", default="dashboard.html")
+    s = sub.add_parser("stats", help="all dashboard numbers as JSON (agent surface)")
+    d = sub.add_parser("debt", help="cognitive-debt score (ADR-0031 read side)")
+    for x in (s, d):
+        x.add_argument("--log-dir", default=os.environ.get(
+            "DWARVES_KIT_LOG_DIR", str(Path.home() / ".local/state/dwarves-kit/logs")))
+        x.add_argument("--format", choices=("text", "json"), default="text")
+    s.add_argument("--transcripts-dir", default=str(Path.home() / ".claude/projects"))
+    s.add_argument("--max-transcripts", type=int, default=25)
+    s.add_argument("--window-days", type=int, default=30)
+    s.set_defaults(format="json")
     a = ap.parse_args()
+
+    if a.cmd == "debt":
+        dm = debt_metrics(collect_debt(a.log_dir))
+        if a.format == "json":
+            print(json.dumps(dm, default=str, indent=1))
+        else:
+            print(f"cognitive debt score: {dm['score']}/100  "
+                  f"(open defers {dm['open_high']} high / {dm['open_low']} low, "
+                  f"last paydown {dm['last_paydown'] or 'never'})")
+            for d in dm["open"]:
+                print(f"  {d['ts'].date()} [{d['significance']}] {d['reason'][:120]}")
+        return
 
     runs = collect_runs(a.log_dir)
     events = collect_events(a.log_dir)
     sessions = collect_sessions(a.transcripts_dir, a.max_transcripts)
     bench_rows = collect_bench()
     metrics = fleet_metrics(runs, events, a.window_days)
-    money = money_metrics(sessions, a.window_days, a.monthly_budget)
-    rules = json.loads(Path(a.alerts).read_text()) if a.alerts else DEFAULT_ALERTS
+    money = money_metrics(sessions, a.window_days, getattr(a, "monthly_budget", None))
+    dm = debt_metrics(collect_debt(a.log_dir))
+    rules = (json.loads(Path(a.alerts).read_text())
+             if getattr(a, "alerts", None) else DEFAULT_ALERTS)
     alerts = eval_alerts({**metrics, **{f"cost_{k}": v for k, v in
                                         (("total", money["total_cost"]),
                                          ("per_session", money["cost_per_session"]),
                                          ("cache_hit", money["cache_hit"]))}}, rules)
-    render(runs, events, sessions, bench_rows, metrics, alerts, a.out, money)
+
+    if a.cmd == "stats":
+        # Agent-first surface: every number on the page, one JSON blob, no HTML.
+        drop = {"days", "heat", "phase_mix", "trend_runs", "trend_gates"}
+        slim = {k: v for k, v in metrics.items() if k not in drop}
+        mslim = {k: v for k, v in money.items()
+                 if k not in {"by_model", "by_project", "trend_days", "trend_cost", "tok"}}
+        mslim["tok"] = dict(money["tok"])
+        mslim["by_model"] = [
+            {"model": mo, "cost": round(e["cost"], 2), "sessions": e["sessions"]}
+            for mo, e in money["by_model"]]
+        print(json.dumps({"fleet": slim, "money": mslim, "debt": dm,
+                          "alerts": [{"id": x["id"], "firing": x["firing"], "value": x["value"]}
+                                     for x in alerts]},
+                         default=str, indent=1))
+        return
+
+    policy_path = Path(getattr(a, "tool_policy", "") or
+                       Path.home() / ".claude/dwarves-kit/tool-policy.json")
+    policy = (json.loads(policy_path.read_text()) if policy_path.exists()
+              else DEFAULT_TOOL_POLICY)
+    render(runs, events, sessions, bench_rows, metrics, alerts, a.out, money,
+           debt=dm, config=collect_config(), policy=policy)
 
 
 if __name__ == "__main__":
