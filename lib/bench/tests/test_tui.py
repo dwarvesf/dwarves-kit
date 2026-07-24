@@ -92,7 +92,7 @@ def test_ledger_adapter():
     with tempfile.TemporaryDirectory() as d:
         p = Path(d, "demo-run.log")
         p.write_text(LEDGER_FIXTURE)
-        evs = tui.ledger_to_events(p)
+        evs = tui.ledger_to_events(p, expected=[])  # overlay off: raw adapter behavior
         st = tui.RunState()
         for ev in evs:
             st.apply(ev)
@@ -108,6 +108,28 @@ def test_ledger_adapter():
         assert st.by_name["reflect"]["status"] == "override"
         assert st.by_name["ship"]["items"][0]["status"] == "pass"
         assert "1 skipped" in st.totals["gates"] and "1 overridden" in st.totals["gates"]
+
+
+def test_ledger_conformance_overlay():
+    """Expected-vs-actual: gates the lane owed but the run never recorded become
+    red ghost nodes, and required-gate conformance is scored."""
+    import tempfile
+    expected = [("think", "required"), ("spec", "required"), ("build", "required"),
+                ("review", "required"), ("ship", "required"), ("ui-design", "lite")]
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d, "demo-run.log")
+        p.write_text(LEDGER_FIXTURE)  # records think/ui-design/build/reflect/ship, no spec, no review
+        st = tui.RunState()
+        for ev in tui.ledger_to_events(p, expected=expected):
+            st.apply(ev)
+        assert st.by_name["spec"]["status"] == "missed"
+        assert st.by_name["review"]["status"] == "missed"
+        assert "expected by the full lane" in st.by_name["spec"]["detail"]
+        # spine follows plan order: spec slots before build, review before ship
+        names = [s["name"] for s in st.stages]
+        assert names.index("spec") < names.index("build")
+        assert names.index("review") < names.index("ship")
+        assert st.totals["conformance"] == "3/5 required gates present"
 
 
 if __name__ == "__main__":

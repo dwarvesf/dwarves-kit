@@ -40,6 +40,7 @@ GLYPH = {
     "retry": lambda t: c("33", "↻"),
     "skip": lambda t: c("2", "⊘"),
     "override": lambda t: c("33", "⚑"),
+    "missed": lambda t: c("31", "◌"),
 }
 
 
@@ -135,6 +136,13 @@ def final_report(st):
     print(f"  stages {sum(1 for s in st.stages if s['status'] == 'pass')}/{len(st.stages)} passed"
           f" · ${t.get('cost_usd', 0):.3f} · {t.get('duration_s', 0)}s"
           + (f" · {t.get('retries', 0)} retr{'y' if t.get('retries', 0) == 1 else 'ies'}" if t.get("retries") else ""))
+    if t.get("gates"):
+        print(c("2", f"  gates: {t['gates']}"))
+    conf = t.get("conformance", "")
+    if conf:
+        seen, _, rest = conf.partition("/")
+        full = seen == rest.split()[0]
+        print(c("32" if full else "31", f"  conformance: {conf}"))
     if t.get("reproduce"):
         print(c("2", f"  reproduce: {t['reproduce']}"))
     print("─" * w)
@@ -265,7 +273,54 @@ def _ledger_dt(prev_ts, ts):
     return 0.15 if d < 1 else min(1.5, 0.3 + 0.2 * math.log10(1 + d))
 
 
-def ledger_to_events(path, rid=None):
+def expected_plan(lane, kit_root=None):
+    """The lane's ordered expected phases [(phase, level)] from the kit's own
+    WORKFLOW matrix via `gate-ledger.sh plan <lane>` (SPEC-063). Returns [] when
+    no kit is reachable, so standalone use degrades to no-ghost replay."""
+    import os
+    import re
+    import subprocess
+    roots = [r for r in (kit_root, os.environ.get("DWARVES_KIT_ROOT"),
+                         Path(__file__).resolve().parents[2]) if r]
+    for r in roots:
+        gs = Path(r) / "lib" / "gate" / "gate-ledger.sh"
+        if not gs.exists():
+            continue
+        try:
+            out = subprocess.run(["bash", str(gs), "plan", lane],
+                                 capture_output=True, text=True, timeout=10)
+        except Exception:
+            return []
+        if out.returncode != 0:
+            return []
+        plan = []
+        for line in out.stdout.splitlines():
+            m = re.match(r"\s*\d+\.\s+(\S+)\s+(.*)", line)
+            if m:
+                plan.append((m.group(1), m.group(2).strip()))
+        return plan
+    return []
+
+
+def _merge_order(observed, expected_names):
+    """Expected plan order as the spine; observed extras keep their position."""
+    merged, ei = [], 0
+    for ph in observed:
+        if ph in expected_names:
+            idx = expected_names.index(ph)
+            while ei <= idx:
+                if expected_names[ei] not in merged:
+                    merged.append(expected_names[ei])
+                ei += 1
+        elif ph not in merged:
+            merged.append(ph)
+    for name in expected_names[ei:]:
+        if name not in merged:
+            merged.append(name)
+    return merged
+
+
+def ledger_to_events(path, rid=None, expected=None):
     """Adapt a real kit run ledger (logs/runs/<rid>.log, pipe-delimited lines
     written by gate-ledger.sh) into the event protocol, so recorded sessions
     replay in the TUI and the web viewer.
@@ -316,7 +371,12 @@ def ledger_to_events(path, rid=None):
                                   "detail": f"caught={toks.get('caught', '?')} dur={toks.get('dur_s', '?')}s"})
 
     lane, classified = start_meta.get("lane"), start_meta.get("classified")
-    stages = (["route"] if start_meta else []) + order
+    if expected is None:
+        expected = expected_plan(lane) if lane else []
+    exp_names = [p for p, _ in expected]
+    exp_level = dict(expected)
+    merged = _merge_order(order, exp_names)
+    stages = (["route"] if start_meta else []) + merged
     evs = [{"dt": 0, "ev": "run_start", "run_id": rid, "scenario": f"real run · {rid}",
             "layer": "recorded session", "config": start_meta or {"source": "gate ledger"},
             "stages": stages}]
@@ -334,12 +394,20 @@ def ledger_to_events(path, rid=None):
                 evs.append({"dt": .1, "ev": "item", "stage": "ship", "name": "ship outcome", **it})
         evs.append({"dt": .4, "ev": "stage_end", "stage": phase,
                     "status": last[phase], "detail": reasons.get(phase, "")})
+    for name in merged:  # ghost nodes: gates the lane expected that never got recorded
+        if name not in last:
+            evs.append({"dt": .15, "ev": "stage_end", "stage": name, "status": "missed",
+                        "detail": f"expected by the {lane or '?'} lane ({exp_level.get(name, '?')}), never recorded"})
     counts = {s: sum(1 for p in order if last[p] == s) for s in ("pass", "skip", "override")}
     wall = int((last_ts - first_ts).total_seconds()) if first_ts and last_ts else 0
-    evs.append({"dt": .3, "ev": "run_end", "status": "pass",
-                "totals": {"duration_s": wall,
-                           "reproduce": f"bash lib/telemetry/lane-telemetry.sh trace {rid}",
-                           "gates": f"{counts['pass']} ran · {counts['skip']} skipped · {counts['override']} overridden"}})
+    totals = {"duration_s": wall,
+              "reproduce": f"bash lib/telemetry/lane-telemetry.sh trace {rid}",
+              "gates": f"{counts['pass']} ran · {counts['skip']} skipped · {counts['override']} overridden"}
+    req = [n for n in exp_names if "required" in exp_level.get(n, "")]
+    if req:  # conformance: required gates only; lite/intake advisory levels don't count
+        seen = sum(1 for n in req if last.get(n) in ("pass", "override"))
+        totals["conformance"] = f"{seen}/{len(req)} required gates present"
+    evs.append({"dt": .3, "ev": "run_end", "status": "pass", "totals": totals})
     return evs
 
 

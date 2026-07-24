@@ -169,6 +169,7 @@ color-mix(in srgb,var(--passbg) 55%,var(--card))}
 color-mix(in srgb,var(--failbg) 55%,var(--card))}
 .node.retry,.node.override{border-color:var(--warn)}
 .node.skip{border-style:dashed;opacity:.6}
+.node.missed{border-style:dashed;border-color:var(--fail);opacity:.75}
 .node.pinned{outline:2px dashed var(--accent);outline-offset:3px}
 .edge{display:flex;align-items:center;padding:0 .35rem;color:var(--muted)}
 .badge{display:inline-block;border-radius:99px;border:1px solid var(--warn);
@@ -211,7 +212,7 @@ summary appears when the run finishes.</span></div>
 <div id="tip"></div>
 <script>
 const SCENARIOS = __DATA__;
-const GLYPH = {pending:"○",running:"◉",pass:"✓",fail:"✗",error:"!",retry:"↻",skip:"⊘",override:"⚑"};
+const GLYPH = {pending:"○",running:"◉",pass:"✓",fail:"✗",error:"!",retry:"↻",skip:"⊘",override:"⚑",missed:"◌"};
 let events=[], cum=[], total=0, t=0, playing=true, pinned=null, timer=null;
 
 function loadScenario(name){
@@ -287,7 +288,8 @@ function renderPanel(st){
     p.innerHTML = `<h3>Run summary · <span class="chip ${st.result==="fail"?"fail":"pass"}">${st.result}</span></h3>
       <table><tr><th>stage</th><th>status</th><th>time</th><th>cost</th><th>detail</th></tr>${rows}</table>
       <div class="note">total $${(tt.cost_usd||0).toFixed(2)} · ${tt.duration_s||0}s
-      ${tt.retries?` · ${tt.retries} retries`:""}${tt.reproduce?` · ${tt.reproduce}`:""}</div>`;
+      ${tt.retries?` · ${tt.retries} retries`:""}${tt.gates?` · ${tt.gates}`:""}
+      ${tt.conformance?` · conformance ${tt.conformance}`:""}${tt.reproduce?` · ${tt.reproduce}`:""}</div>`;
     return;
   }
   p.innerHTML = '<span class="note">Click a step to pin its detail here. The run summary appears when the run finishes.</span>';
