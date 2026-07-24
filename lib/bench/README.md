@@ -93,6 +93,22 @@ python3 tui.py replay run.events.jsonl --speed 2
 python3 tui.py watch  run.events.jsonl # follow a live runner appending events
 ```
 
+### Web diagram player
+
+`viewer.py build` emits a self-contained HTML player for the same event streams:
+stages as flow-diagram nodes, the pointer advancing with the run, hover tooltip
+with the step's numbers and fingerprints, click to pin a detail panel, run
+summary on finish, plus scenario picker / play / pause / speed / scrub.
+
+```sh
+python3 viewer.py build --out viewer.html                 # built-in demo scenarios
+python3 viewer.py build --events "my run"=run.events.jsonl --out viewer.html
+```
+
+The built-in scenarios cover the variant axes: task types (feature, research,
+eval), workflow shapes (full lane, tiny lane, loops), and a fault-injection
+failure run (retry exhausted), so the red path is designed, not hoped.
+
 ### Event protocol
 
 Runner and frontend are decoupled by JSONL events, one object per line; any
