@@ -91,6 +91,39 @@ the config dimension, same scoreboard.
 3. `bench` module: suite freeze + matrix runner + profile/diff verbs + live scoreboard render.
 4. First tool suite: browser-use probes (fixtures + live set), dogfooding the probe shape.
 
+## 6. Testing the long workflow itself (added 2026-07-25, operator question)
+
+A full kit lane is long, expensive, stochastic, and stateful; benchmarked as one black box
+it yields too few runs to learn anything. Decision: cut it at stage seams and test each
+question at the cheapest layer that can answer it, threaded by a workflow trace.
+
+- **L1 scripted-model replay (free, every kit commit).** The engine (commands, hooks,
+  gates, ledgers, board transitions) is deterministic; only the model is stochastic. A
+  `scripted` executor replays canned stage outputs (recorded good runs + handcrafted fault
+  injections) so a whole lane runs end-to-end in seconds. Asserts mechanism correctness:
+  gate blocks, retry caps, verifier-fail -> fix-agent, board transitions; each mid-graph
+  failure POLICY gets a fault-injection test (pins N5's unnamed failure semantics).
+  Extends the kit's existing tests/, whole-lane replay rather than per-script units.
+- **L2 stage benchmarks on golden inputs (cents, per stage change / model drop).** The
+  workflow is a chain of artifact->artifact functions (brief->spec, spec->test plan,
+  spec->diff, diff->verdict); freeze real past artifacts as per-stage suites and bench
+  each stage per model. Highest info per dollar: the verifier stage with PLANTED defects,
+  catch rate vs false-alarm rate on the clean twin = review-economics (ID-392). This
+  layer, not E2E, is where per-part model capability profiles come from.
+- **L3 few real E2E scenarios (dollars, nightly/release/new-model).** 3-5 fixture
+  scenarios: brief -> shipped PR in a purpose-built sandbox repo with a real test suite
+  ("shipped" is objective). Dims: routing profile, modules on/off (the kit-on vs kit-off
+  headline lives here). Seeded variants test the workflow FRONT: an ambiguous brief
+  (grill), a planted landmine (research-pitfalls). 3x repeats; composition only, because
+  L1/L2 de-risk everything else.
+- **The trace spine.** One run_id threads every stage into span rows (stage, agent,
+  model, tokens, duration, verdict, artifact). Gate ledger + lane telemetry already hold
+  pieces; threading them makes an E2E run a queryable tree: per-stage waterfall render,
+  stage-resolved blame, and the feedback->metric loop lands on the L2 suite to extend.
+  `layer` becomes one more dimension on the same fact table.
+
+Consuming row: ID-423.
+
 ## Placement note
 
 The harness and suites are product (this board). The published numbers, once real, are GTM
