@@ -138,6 +138,8 @@ def run_cell(cell, claude_bin):
         fails = [l for l in chk.stdout.splitlines() if l.startswith("FAIL")]
         if fails:  # failure fingerprint: same detail across configs points at the suite, not the model
             row["fail_detail"] = " | ".join(fails[:3])[:400]
+        elif row["tests_total"] == 0:  # check crashed before scoring (bad import/syntax): keep the crash
+            row["fail_detail"] = (chk.stderr.strip().splitlines() or ["check produced no output"])[-1][:400]
     except Exception as e:  # a failed cell is a row, never a crashed matrix
         row["error"] = f"{type(e).__name__}: {e}"[:300]
     finally:
@@ -207,63 +209,217 @@ def cmd_render(a):
               f"{s['cost_per_task'] if s['cost_per_task'] is not None else '-':>8} "
               f"{s['wall_s_per_task'] if s['wall_s_per_task'] is not None else '-':>7} {s['errors']:>4}")
     if a.html:
-        Path(a.html).write_text(render_html(rows, summary))
+        tasks_md = {}
+        if a.suite:
+            _, tasks = load_suite(Path(a.suite))
+            tasks_md = {tid: t["prompt"] for tid, t in tasks.items()}
+        Path(a.html).write_text(render_html(rows, summary, tasks_md))
         print(f"scoreboard written to {a.html}", file=sys.stderr)
 
 
-def render_html(rows, summary):
+STYLE = """<style>
+:root{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;--accent:#4f46e5;
+--card:#ffffff;--pass:#dcfce7;--fail:#fee2e2;--mixed:#fef9c3}
+@media(prefers-color-scheme:dark){:root{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;
+--muted:#9ca3af;--accent:#818cf8;--card:#1f2937;--pass:#14532d;--fail:#7f1d1d;--mixed:#713f12}}
+:root[data-theme=dark]{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;--muted:#9ca3af;
+--accent:#818cf8;--card:#1f2937;--pass:#14532d;--fail:#7f1d1d;--mixed:#713f12}
+:root[data-theme=light]{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;
+--accent:#4f46e5;--card:#ffffff;--pass:#dcfce7;--fail:#fee2e2;--mixed:#fef9c3}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);
+max-width:960px;margin:2rem auto;padding:0 1rem;line-height:1.55}
+h1{font-size:1.3rem;text-wrap:balance}h2{font-size:1.05rem;margin-top:2.2rem}
+code{font-family:ui-monospace,monospace;font-size:.9em}
+p.lede{font-size:1rem;max-width:65ch}
+p.note,figcaption{color:var(--muted);font-size:.85rem;max-width:70ch}
+table{border-collapse:collapse;margin:.75rem 0;width:100%;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:.45rem .6rem;text-align:left;font-size:.9rem}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+td.pass{background:var(--pass)}td.fail{background:var(--fail)}td.mixed{background:var(--mixed)}
+td a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}
+small{color:var(--muted)}
+.pipe{display:flex;flex-wrap:wrap;gap:.6rem;align-items:stretch;margin:1rem 0}
+.pipe .box{flex:1 1 12rem;border:1px solid var(--line);border-radius:6px;
+padding:.6rem .8rem;font-size:.85rem;background:var(--card)}
+.pipe .box b{display:block;font-size:.72rem;text-transform:uppercase;
+letter-spacing:.05em;margin-bottom:.25rem;color:var(--muted)}
+.pipe .sut{border:2px solid var(--accent)}
+.pipe .sut b{color:var(--accent)}
+.arrow{align-self:center;color:var(--muted)}
+details{border:1px solid var(--line);border-radius:6px;padding:.5rem .8rem;margin:.5rem 0;
+background:var(--card)}
+details summary{cursor:pointer;font-size:.9rem}
+details pre{overflow-x:auto;font-size:.8rem;line-height:1.45;padding:.5rem;margin:.5rem 0 0}
+dl.legend{font-size:.85rem;display:grid;grid-template-columns:max-content 1fr;
+gap:.15rem 1rem;margin:.5rem 0}
+dl.legend dt{font-weight:600}dl.legend dd{margin:0;color:var(--muted)}
+.callout{border-left:3px solid var(--accent);padding:.5rem .9rem;margin:1rem 0;
+background:var(--card);font-size:.9rem;max-width:75ch}
+.cell-card{border:1px solid var(--line);border-radius:6px;background:var(--card);
+padding:.6rem .9rem;margin:.6rem 0;font-size:.88rem}
+.cell-card h3{font-size:.9rem;margin:.1rem 0 .4rem}
+.cell-card .fd{font-family:ui-monospace,monospace;font-size:.78rem;overflow-x:auto;
+display:block;white-space:pre;padding:.4rem;border:1px dashed var(--line);margin-top:.4rem}
+.badge{display:inline-block;border-radius:99px;padding:.05rem .6rem;font-size:.75rem;
+font-weight:600}
+.badge.ok{background:var(--pass)}.badge.bad{background:var(--fail)}
+pre.repro{overflow-x:auto;border:1px solid var(--line);border-radius:6px;
+padding:.6rem .8rem;font-size:.8rem;background:var(--card)}
+</style>"""
+
+
+def _sig(md):
+    """First signature-looking line of a task.md, as its one-line summary."""
+    for line in md.splitlines():
+        s = line.strip()
+        if "(" in s and ")" in s and "->" in s:
+            return s
+    lines = [l.strip() for l in md.strip().splitlines() if l.strip()]
+    return lines[0] if lines else ""
+
+
+def render_html(rows, summary, tasks_md=None):
+    import html as H
+
+    tasks_md = tasks_md or {}
     suite = rows[0]["suite"] if rows else "?"
     shash = rows[0]["suite_hash"] if rows else "?"
     tasks = sorted({r["task"] for r in rows})
+    models = sorted({r["model"] for r in rows})
     configs = sorted({(r["model"], r["executor"]) for r in rows})
     cell = {}
     for r in rows:
         cell.setdefault((r["task"], r["model"], r["executor"]), []).append(r)
 
-    def td(task, model, executor):
-        rs = cell.get((task, model, executor))
+    def cid(t, m, e):
+        return f"d-{t}-{m}-{e}"
+
+    # -- section: what was tested (pipeline figure) --
+    ntests = {t: max((r["tests_total"] for r in rows if r["task"] == t), default=0) for t in tasks}
+    pipe = f"""<figure>
+<div class="pipe">
+<div class="box"><b>Pinned: frozen task suite</b>{len(tasks)} tasks, content-hash
+<code>{shash}</code>. Same bytes for every contender, forever comparable.</div>
+<div class="arrow">→</div>
+<div class="box sut"><b>Varied: system under test</b>Model ({", ".join(models)}) ×
+workflow ({", ".join(sorted({e for _, e in configs}))}). The ONLY thing that changes
+between columns.</div>
+<div class="arrow">→</div>
+<div class="box"><b>Pinned: hidden checks</b>Hand-written expected answers
+({sum(ntests.values())} cases total), kept out of the sandbox until the attempt is
+done, so nothing can study for the test.</div>
+<div class="arrow">→</div>
+<div class="box"><b>Output: immutable rows</b>One JSON row per attempt: passed?,
+cases passed, cost, time. Never edited; a correction is a new run.</div>
+</div>
+<figcaption>Everything except the highlighted box is pinned, so any difference in
+the numbers below is attributable to the model or workflow, not to luck or a moving
+target.</figcaption></figure>"""
+
+    # -- section: the tasks themselves --
+    task_details = ""
+    for t in tasks:
+        md = tasks_md.get(t, "")
+        sig = H.escape(_sig(md)) if md else ""
+        body = f"<pre>{H.escape(md)}</pre>" if md else "<p class=note>Task text not bundled; re-render with --suite to include it.</p>"
+        task_details += (f"<details><summary><code>{t}</code>"
+                         f"{' · <code>' + sig + '</code>' if sig else ''}"
+                         f" · {ntests[t]} hidden checks</summary>{body}</details>")
+
+    # -- section: configs legend --
+    exec_legend = {
+        "model": "one bare completion, no tools: measures the raw model",
+        "agent": "a full tool-using Claude Code run in a sandbox dir: measures the model inside a workflow",
+    }
+    cfg_rows = "".join(
+        f"<tr><td><code>{m}</code></td><td><code>{e}</code></td>"
+        f"<td>{exec_legend.get(e, '')}</td></tr>" for m, e in configs)
+
+    # -- results tables --
+    sm = "".join(
+        f"<tr><td><code>{s['model']}</code></td><td><code>{s['executor']}</code></td><td>{s['cells']}</td>"
+        f"<td>{s['first_pass_yield']}</td><td>{s['cost_per_task']}</td>"
+        f"<td>{s['wall_s_per_task']}</td><td>{s['errors']}</td></tr>" for s in summary)
+
+    def td(t, m, e):
+        rs = cell.get((t, m, e))
         if not rs:
             return "<td>-</td>"
         p = sum(r["pass"] for r in rs)
         cls = "pass" if p == len(rs) else ("mixed" if p else "fail")
         detail = ", ".join(f"{r['tests_passed']}/{r['tests_total']}" for r in rs)
-        cost = sum(r["cost_usd"] or 0 for r in rs)
-        return f'<td class="{cls}">{p}/{len(rs)} <small>{detail} · ${cost:.3f}</small></td>'
+        return (f'<td class="{cls}"><a href="#{cid(t, m, e)}">{p}/{len(rs)}</a> '
+                f"<small>{detail} cases</small></td>")
 
     matrix = "".join(
-        f"<tr><th>{t}</th>" + "".join(td(t, m, e) for m, e in configs) + "</tr>" for t in tasks)
-    sm = "".join(
-        f"<tr><td>{s['model']}</td><td>{s['executor']}</td><td>{s['cells']}</td>"
-        f"<td>{s['first_pass_yield']}</td><td>{s['cost_per_task']}</td>"
-        f"<td>{s['wall_s_per_task']}</td><td>{s['errors']}</td></tr>" for s in summary)
+        f"<tr><th><code>{t}</code></th>" + "".join(td(t, m, e) for m, e in configs) + "</tr>"
+        for t in tasks)
+
+    # -- shared-failure callout: identical fingerprint across all configs of a task --
+    callouts = ""
+    for t in tasks:
+        fds = [r.get("fail_detail") for (tt, _, _), rs in cell.items() if tt == t for r in rs]
+        if len(fds) >= 2 and all(fds) and len(set(fds)) == 1:
+            callouts += (f'<div class="callout"><b>Every config missed the same case on '
+                         f"<code>{t}</code>.</b> Zero variance across contenders means either a "
+                         f"shared blind spot or a suite problem; read the case and judge:"
+                         f'<span class="fd">{H.escape(fds[0])}</span></div>')
+
+    # -- drill-down cards --
+    cards = ""
+    for t in tasks:
+        for m, e in configs:
+            for r in cell.get((t, m, e), []):
+                badge = '<span class="badge ok">passed</span>' if r["pass"] else '<span class="badge bad">failed</span>'
+                fd = r.get("fail_detail")
+                fd_html = f'<span class="fd">{H.escape(fd)}</span>' if fd else ""
+                tok = (f" · {r['tokens_in']}/{r['tokens_out']} tok"
+                       if r.get("tokens_in") is not None else "")
+                cards += (f'<div class="cell-card" id="{cid(t, m, e)}"><h3><code>{t}</code> · '
+                          f"<code>{m}/{e}</code> {badge}</h3>"
+                          f"{r['tests_passed']}/{r['tests_total']} cases · "
+                          f"${r['cost_usd']} · {r['duration_s']}s wall{tok}{fd_html}</div>")
+
+    ts = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     return f"""<title>bench · {suite}@{shash}</title>
-<style>
-:root{{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;
---pass:#dcfce7;--fail:#fee2e2;--mixed:#fef9c3}}
-@media(prefers-color-scheme:dark){{:root{{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;
---muted:#9ca3af;--pass:#14532d;--fail:#7f1d1d;--mixed:#713f12}}}}
-:root[data-theme=dark]{{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;--muted:#9ca3af;
---pass:#14532d;--fail:#7f1d1d;--mixed:#713f12}}
-:root[data-theme=light]{{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;
---pass:#dcfce7;--fail:#fee2e2;--mixed:#fef9c3}}
-body{{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);
-max-width:960px;margin:2rem auto;padding:0 1rem;line-height:1.5}}
-h1{{font-size:1.25rem;text-wrap:balance}}h2{{font-size:1rem;margin-top:2rem}}
-code{{font-family:ui-monospace,monospace}}
-table{{border-collapse:collapse;margin:.75rem 0;width:100%;font-variant-numeric:tabular-nums}}
-th,td{{border:1px solid var(--line);padding:.4rem .6rem;text-align:left;font-size:.9rem}}
-th{{font-size:.75rem;text-transform:uppercase;letter-spacing:.04em}}
-td.pass{{background:var(--pass)}}td.fail{{background:var(--fail)}}td.mixed{{background:var(--mixed)}}
-small{{color:var(--muted)}}p{{color:var(--muted);font-size:.85rem}}
-</style>
+{STYLE}
 <h1>bench scoreboard · suite <code>{suite}</code> @ <code>{shash}</code></h1>
-<p>{len(rows)} cells. Generated {datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}.</p>
-<h2>Summary per config</h2>
-<table><tr><th>model</th><th>executor</th><th>cells</th><th>first-pass yield</th>
-<th>$/task</th><th>s/task</th><th>errors</th></tr>{sm}</table>
-<h2>Task matrix (pass / runs · tests · cost)</h2>
-<table><tr><th>task</th>{"".join(f"<th>{m}<br><small>{e}</small></th>" for m, e in configs)}</tr>
-{matrix}</table>"""
+<p class="lede">Every number here answers one question: <em>given the exact same frozen
+tasks and the exact same hidden checks, how do different models and workflows compare?</em>
+{len(rows)} attempts recorded {ts}.</p>
+
+<h2>1 · What was tested</h2>
+{pipe}
+
+<h2>2 · The tasks (click to read the actual prompt)</h2>
+{task_details}
+
+<h2>3 · The contenders</h2>
+<table><tr><th>model</th><th>workflow</th><th>meaning</th></tr>{cfg_rows}</table>
+
+<h2>4 · Results per contender</h2>
+<table><tr><th>model</th><th>workflow</th><th>attempts</th><th>first-pass yield</th>
+<th>$/task</th><th>s/task</th><th>harness errors</th></tr>{sm}</table>
+<dl class="legend">
+<dt>first-pass yield</dt><dd>share of tasks fully passed on the first attempt, no retries, no human help; the headline quality number</dd>
+<dt>$/task</dt><dd>average API cost per attempt; quality per dollar is the routing decision</dd>
+<dt>s/task</dt><dd>average wall-clock seconds per attempt</dd>
+<dt>harness errors</dt><dd>attempts that broke in the harness itself (not counted as task failures)</dd>
+</dl>
+
+<h2>5 · Task × contender matrix (click a cell for its detail)</h2>
+<table><tr><th>task</th>{"".join(f"<th><code>{m}</code><br><small>{e}</small></th>" for m, e in configs)}</tr>
+{matrix}</table>
+{callouts}
+
+<h2>6 · Attempt details</h2>
+{cards}
+
+<h2>7 · Reproduce this page</h2>
+<pre class="repro">python3 bench.py run --suite suites/{suite} --models {",".join(models)} --out runs.jsonl
+python3 bench.py render runs.jsonl --suite suites/{suite} --html scoreboard.html</pre>
+<p class="note">Rows are append-only evidence: the same suite hash re-run later lands new
+rows next to these, and <code>bench diff</code> reports exactly what got better or worse.</p>"""
 
 
 def cmd_diff(a):
@@ -308,6 +464,7 @@ def main():
     d = sub.add_parser("render", help="scoreboard from a runs file")
     d.add_argument("runs")
     d.add_argument("--html")
+    d.add_argument("--suite", help="suite dir; bundles task prompts into the HTML")
     d.set_defaults(fn=cmd_render)
     f = sub.add_parser("diff", help="baseline vs candidate, exit 1 on regression")
     f.add_argument("--baseline", required=True)
