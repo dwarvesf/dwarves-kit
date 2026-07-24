@@ -45,6 +45,49 @@ PHASE_ORDER = ["grill", "think", "design", "design-critique", "ui-design", "spec
                "validate", "design-record", "test-plan", "build", "review", "docs",
                "ship", "reflect"]
 
+TOKEN_KINDS = ["input_tokens", "output_tokens",
+               "cache_creation_input_tokens", "cache_read_input_tokens"]
+
+# USD per million tokens, list price. Transcripts carry no cost field, so spend is
+# COMPUTED from these rates; a stale table means wrong money, hence the visible
+# provenance note on the page. Cache read = 0.1x input, 5-minute cache write = 1.25x.
+PRICES = {
+    "claude-fable-5": (10.0, 50.0),
+    "claude-mythos-5": (10.0, 50.0),
+    "claude-opus-5": (5.0, 25.0),
+    "claude-opus-4-8": (5.0, 25.0),
+    "claude-opus-4-7": (5.0, 25.0),
+    "claude-opus-4-6": (5.0, 25.0),
+    "claude-sonnet-5": (3.0, 15.0),
+    "claude-sonnet-4-6": (3.0, 15.0),
+    "claude-haiku-4-5": (1.0, 5.0),
+}
+CACHE_READ_MULT = 0.1
+CACHE_WRITE_MULT = 1.25
+
+
+def price_for(model):
+    """Longest-prefix match so dated snapshots (claude-opus-5-2026xx) still price."""
+    if model in PRICES:
+        return PRICES[model]
+    hits = [k for k in PRICES if model.startswith(k)]
+    if hits:
+        return PRICES[max(hits, key=len)]
+    return None
+
+
+def model_cost(model, tok):
+    """USD for one model's token counter. Unknown model -> 0.0, surfaced as
+    'unpriced' on the page rather than silently guessed."""
+    p = price_for(model)
+    if not p:
+        return 0.0
+    inp, out = p
+    return (tok.get("input_tokens", 0) * inp
+            + tok.get("cache_read_input_tokens", 0) * inp * CACHE_READ_MULT
+            + tok.get("cache_creation_input_tokens", 0) * inp * CACHE_WRITE_MULT
+            + tok.get("output_tokens", 0) * out) / 1_000_000
+
 
 def now():
     return dtm.datetime.now(UTC)
@@ -105,7 +148,11 @@ def collect_sessions(tdir, max_files=25):
     files = sorted(root.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
     sessions = []
     for f in files[:max_files]:
-        tools, models = Counter(), Counter()
+        tools, models, tiers, versions = Counter(), Counter(), Counter(), Counter()
+        tok = Counter()          # token totals by kind, whole session
+        per_model = {}           # model -> token Counter, for per-model costing
+        side = Counter()         # main-thread vs subagent (isSidechain) message split
+        branches = Counter()
         t0 = t1 = None
         try:
             with f.open() as fh:
@@ -119,16 +166,34 @@ def collect_sessions(tdir, max_files=25):
                     ts = d.get("timestamp")
                     if isinstance(ts, str):
                         t0, t1 = t0 or ts, ts
+                    if d.get("gitBranch"):
+                        branches[d["gitBranch"]] += 1
                     msg = d.get("message") or {}
-                    if isinstance(msg, dict):
-                        if msg.get("model"):
-                            models[msg["model"]] += 1
-                        for blk in msg.get("content") or []:
-                            if isinstance(blk, dict) and blk.get("type") == "tool_use":
-                                tools[blk.get("name", "?")] += 1
+                    if not isinstance(msg, dict):
+                        continue
+                    if msg.get("model"):
+                        models[msg["model"]] += 1
+                    for blk in msg.get("content") or []:
+                        if isinstance(blk, dict) and blk.get("type") == "tool_use":
+                            tools[blk.get("name", "?")] += 1
+                    u = msg.get("usage") or {}
+                    if not u:
+                        continue
+                    side["subagent" if d.get("isSidechain") else "main"] += 1
+                    if u.get("service_tier"):
+                        tiers[u["service_tier"]] += 1
+                    if d.get("version"):
+                        versions[d["version"]] += 1
+                    m = msg.get("model") or "unknown"
+                    pm = per_model.setdefault(m, Counter())
+                    for k in TOKEN_KINDS:
+                        v = u.get(k)
+                        if isinstance(v, int):
+                            tok[k] += v
+                            pm[k] += v
         except OSError:
             continue
-        if not tools:
+        if not tools and not tok:
             continue
         mins = 0
         try:
@@ -137,8 +202,13 @@ def collect_sessions(tdir, max_files=25):
                         - dtm.datetime.fromisoformat(t0.replace("Z", "+00:00"))).total_seconds() / 60
         except ValueError:
             pass
-        sessions.append({"session": f.stem[:8], "project": f.parent.name.split("-")[-1],
-                         "models": models, "tools": tools, "mins": round(mins)})
+        cost = sum(model_cost(m, c) for m, c in per_model.items())
+        sessions.append({
+            "session": f.stem[:8], "project": f.parent.name.split("-")[-1],
+            "models": models, "tools": tools, "mins": round(mins),
+            "day": (t1 or "")[:10], "tok": tok, "per_model": per_model, "cost": cost,
+            "tiers": tiers, "versions": versions, "side": side, "branches": branches,
+        })
     return sessions
 
 
@@ -198,6 +268,79 @@ def fleet_metrics(runs, events, window_days=30):
         lt = e["ts"].astimezone()
         heat[lt.weekday()][lt.hour] += 1
     m["heat"] = heat
+    return m
+
+
+def money_metrics(sessions, window_days=30, monthly_budget=None):
+    """Spend + token plane from transcript usage. Costs are computed from PRICES,
+    never read from a cost field (transcripts carry none)."""
+    tok = Counter()
+    by_model = {}
+    by_project = {}
+    by_day = {}
+    side = Counter()
+    tiers, versions = Counter(), Counter()
+    unpriced = set()
+    for s in sessions:
+        # A session with no billed messages (tool-only, or a transcript predating
+        # usage records) still belongs in the counts; treat its money fields as empty
+        # rather than dropping the session or crashing on a missing key.
+        tok.update(s.get("tok") or {})
+        side.update(s.get("side") or {})
+        tiers.update(s.get("tiers") or {})
+        versions.update(s.get("versions") or {})
+        for m, c in (s.get("per_model") or {}).items():
+            e = by_model.setdefault(m, {"tok": Counter(), "cost": 0.0, "sessions": 0})
+            e["tok"].update(c)
+            e["cost"] += model_cost(m, c)
+            e["sessions"] += 1
+            if not price_for(m):
+                unpriced.add(m)
+        p = by_project.setdefault(s["project"], {"cost": 0.0, "sessions": 0, "tok": Counter()})
+        p["cost"] += s.get("cost", 0.0)
+        p["sessions"] += 1
+        p["tok"].update(s.get("tok") or {})
+        if s.get("day"):
+            by_day[s["day"]] = by_day.get(s["day"], 0.0) + s.get("cost", 0.0)
+    total = sum(s.get("cost", 0.0) for s in sessions)
+    reads = tok["cache_read_input_tokens"]
+    writes = tok["cache_creation_input_tokens"]
+    fresh = tok["input_tokens"]
+    prompt_total = reads + writes + fresh
+    days = sorted(by_day)
+    m = {
+        "total_cost": total,
+        "tok": tok,
+        "prompt_total": prompt_total,
+        "cache_hit": (reads / prompt_total) if prompt_total else 0.0,
+        "read_ratio": (reads / fresh) if fresh else 0.0,
+        "cost_per_session": (total / len(sessions)) if sessions else 0.0,
+        "by_model": sorted(by_model.items(), key=lambda kv: -kv[1]["cost"]),
+        "by_project": sorted(by_project.items(), key=lambda kv: -kv[1]["cost"])[:10],
+        "trend_days": days,
+        "trend_cost": [by_day[d] for d in days],
+        "side": side,
+        "tiers": tiers,
+        "versions": versions,
+        "unpriced": sorted(unpriced),
+        "sessions": len(sessions),
+        "window_days": window_days,
+    }
+    # Burn rate + projection. Only meaningful with at least two distinct days of
+    # data: extrapolating a single (possibly partial, possibly atypical) day x30
+    # produces a confident-looking fiction, so below that the projection is None
+    # and the page says so instead of printing a number.
+    m["span_days"] = len(days)
+    m["date_range"] = (days[0], days[-1]) if days else None
+    if len(days) >= 2:
+        m["daily_burn"] = total / len(days)
+        m["projected_30d"] = m["daily_burn"] * 30
+    else:
+        m["daily_burn"] = None
+        m["projected_30d"] = None
+    m["budget"] = monthly_budget
+    m["budget_used"] = (m["projected_30d"] / monthly_budget
+                        if monthly_budget and m["projected_30d"] else None)
     return m
 
 
@@ -409,6 +552,7 @@ margin-bottom:8px}
 .sw.skip,.seg.skip{background:var(--ash);opacity:.55}
 .sw.ovr,.seg.ovr{background:var(--warn)}
 .seg.one{background:var(--ember)}
+.seg.over{background:var(--bad)}
 .mixrow{display:grid;grid-template-columns:7.5rem 1fr 3.2rem;align-items:center;gap:8px;
 padding:2.5px 0;font-family:var(--mono);font-size:11.5px}
 .mixrow .lbl{color:var(--iron);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -464,8 +608,149 @@ def _chip(status):
     return f'<span class="chip {cls}">{label}</span>'
 
 
-def render(runs, events, sessions, bench_rows, metrics, alerts, out):
+def fmt_tok(n):
+    for unit, div in (("B", 1e9), ("M", 1e6), ("K", 1e3)):
+        if n >= div:
+            return f"{n / div:.1f}{unit}"
+    return str(n)
+
+
+def gauge(frac, label):
+    """Single-measure horizontal fill for budget/pool headroom."""
+    pct = min(100.0, max(0.0, frac * 100))
+    cls = "one" if pct < 75 else ("ovr" if pct < 100 else "over")
+    return (f'<div class="mixrow"><span class="lbl">{H.escape(label)}</span>'
+            f'<span class="mixtrack"><span class="seg {cls}" style="width:{pct:.1f}%">'
+            f"<i>{label}: {pct:.0f}%</i></span></span>"
+            f'<span class="val">{pct:.0f}%</span></div>')
+
+
+def money_sections(mm):
+    """Cost & tokens + Runtime sections (the money plane)."""
+    tok = mm["tok"]
+    burn = f"${mm['daily_burn']:,.2f}" if mm["daily_burn"] is not None else "n/a"
+    proj = f"${mm['projected_30d']:,.0f}" if mm["projected_30d"] is not None else "n/a"
+    tiles = "".join(
+        f'<div class="tile"><b>{v}</b><span>{k}</span></div>' for k, v in [
+            (f"spend · {mm['sessions']} sampled sessions", f"${mm['total_cost']:,.2f}"),
+            ("$ / session", f"${mm['cost_per_session']:,.2f}"),
+            ("$ / day (observed)", burn),
+            ("30d run-rate", proj),
+            ("prompt tokens", fmt_tok(mm["prompt_total"])),
+            ("output tokens", fmt_tok(tok["output_tokens"])),
+            ("cache-hit rate", f"{mm['cache_hit']:.0%}"),
+            ("read:fresh ratio", f"{mm['read_ratio']:,.0f}:1"),
+        ])
+    rng = (f"{mm['date_range'][0]} to {mm['date_range'][1]}"
+           if mm["date_range"] else "no dated sessions")
+    scope = (f'<p class="meta">Sample: the {mm["sessions"]} most recent transcripts on this '
+             f"host ({rng}, {mm['span_days']} distinct day"
+             f"{'s' if mm['span_days'] != 1 else ''}). This is a SAMPLE, not the full "
+             f"{mm['window_days']}-day history: raise <code>--max-transcripts</code> to widen it."
+             + ("" if mm["projected_30d"] is not None else
+                " Daily burn and the 30-day run-rate read <b>n/a</b> because the sample spans "
+                "under two days; extrapolating one partial day would invent a number."))
+
+    mix = ""
+    kinds = [("cache_read_input_tokens", "cache read", "one"),
+             ("cache_creation_input_tokens", "cache write", "ovr"),
+             ("input_tokens", "fresh input", "skip"),
+             ("output_tokens", "output", "ok")]
+    mx = max((tok[k] for k, _, _ in kinds), default=1) or 1
+    for k, label, cls in kinds:
+        v = tok[k]
+        mix += (f'<div class="mixrow"><span class="lbl">{label}</span>'
+                f'<span class="mixtrack"><span class="seg {cls}" '
+                f'style="width:{100 * v / mx:.1f}%"><i>{label}: {v:,}</i></span></span>'
+                f'<span class="val">{fmt_tok(v)}</span></div>')
+    mix_fig = (f'<figure class="chart"><figcaption>Token mix · where the tokens go</figcaption>'
+               f'{mix}<p class="meta" style="margin:.5rem 0 0">Cache reads bill at '
+               f'{CACHE_READ_MULT:g}x input and dominate volume; a high read:fresh ratio means a '
+               f'large context re-read every turn.</p></figure>')
+
+    model_rows = "".join(
+        f'<tr><td><code>{H.escape(mo)}</code>'
+        f'{"" if price_for(mo) else " <span class=chip warn>unpriced</span>"}</td>'
+        f"<td>${e['cost']:,.2f}</td><td>{e['sessions']}</td>"
+        f"<td>{fmt_tok(e['tok']['cache_read_input_tokens'])}</td>"
+        f"<td>{fmt_tok(e['tok']['output_tokens'])}</td>"
+        f"<td class=mono>{'/'.join(f'${x:g}' for x in price_for(mo)) if price_for(mo) else '-'}</td>"
+        f"</tr>" for mo, e in mm["by_model"])
+
+    proj_rows = "".join(
+        f"<tr><td>{H.escape(p)}</td><td>${e['cost']:,.2f}</td><td>{e['sessions']}</td>"
+        f"<td>{fmt_tok(sum(e['tok'][k] for k in TOKEN_KINDS))}</td></tr>"
+        for p, e in mm["by_project"])
+
+    days = [dtm.date.fromisoformat(d) for d in mm["trend_days"]] if mm["trend_days"] else []
+    trend = (area_chart([round(c, 2) for c in mm["trend_cost"]], days,
+                        "Spend per day (USD, computed)") if days else "")
+
+    budget = ""
+    if mm["budget"]:
+        label = f"30d run-rate vs ${mm['budget']:,.0f} budget"
+        budget = ('<figure class="chart"><figcaption>Pool headroom</figcaption>'
+                  + gauge(mm["budget_used"], label)
+                  + '<p class="meta" style="margin:.5rem 0 0">Budget is an operator input '
+                    "(<code>--monthly-budget</code>), not a provider-reported quota.</p></figure>")
+
+    side = mm["side"]
+    tot_side = sum(side.values()) or 1
+    side_rows = "".join(
+        f'<div class="mixrow"><span class="lbl">{k}</span>'
+        f'<span class="mixtrack"><span class="seg {"one" if k == "main" else "ovr"}" '
+        f'style="width:{100 * v / tot_side:.1f}%"><i>{k}: {v}</i></span></span>'
+        f'<span class="val">{100 * v / tot_side:.0f}%</span></div>'
+        for k, v in side.most_common())
+
+    unpriced = ""
+    if mm["unpriced"]:
+        unpriced = ('<p class="meta">Unpriced models (excluded from spend): '
+                    + ", ".join(f"<code>{H.escape(u)}</code>" for u in mm["unpriced"]) + "</p>")
+
+    cost_sec = f"""<section id="cost">
+<div class="eyebrow">Spend</div>
+<h1>Cost &amp; tokens</h1>
+<p class="meta">Token counts are read from transcript usage; <b>dollar amounts are
+computed</b> from a list-price table in the generator (transcripts carry no cost field).
+Treat them as an estimate of list-price spend, not an invoice.</p>
+{scope}
+<div class="tiles">{tiles}</div>
+<div class="charts">{trend}{mix_fig}{budget}</div>
+<h2>By model</h2>
+<table><tr><th>model</th><th>spend</th><th>sessions</th><th>cache read</th>
+<th>output</th><th>$/MTok in/out</th></tr>{model_rows}</table>
+{unpriced}
+<h2>By project</h2>
+<table><tr><th>project</th><th>spend</th><th>sessions</th><th>tokens</th></tr>{proj_rows}</table>
+</section>"""
+
+    runtime_sec = f"""<section id="runtime">
+<div class="eyebrow">Spend</div>
+<h1>Runtime</h1>
+<p class="meta">What served the work: model tier, service tier, CLI build, and the
+main-thread vs subagent split. Provider account identity is <b>not</b> in the
+transcripts, so per-account attribution needs an operator-supplied mapping; everything
+below is derived from observed runs.</p>
+<div class="tiles">
+<div class="tile"><b>{len(mm['by_model'])}</b><span>models in play</span></div>
+<div class="tile"><b>{', '.join(mm['tiers']) or '-'}</b><span>service tier</span></div>
+<div class="tile"><b>{len(mm['versions'])}</b><span>CLI builds seen</span></div>
+<div class="tile"><b>{sum(mm['side'].values()):,}</b><span>billed messages</span></div>
+</div>
+<div class="charts">
+<figure class="chart"><figcaption>Main thread vs subagents</figcaption>{side_rows}
+<p class="meta" style="margin:.5rem 0 0">Subagent share is the fan-out cost: high share
+means most spend is delegated work, which is the cheap-first routing target.</p></figure>
+{hbars([(v, c) for v, c in mm['versions'].most_common(6)], "CLI builds seen (messages)")}
+</div>
+</section>"""
+    return cost_sec, runtime_sec
+
+
+def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None):
     m = metrics
+    mm = money or money_metrics(sessions, m["window_days"])
     firing = [a for a in alerts if a["firing"]]
     stream = events[:150]
 
@@ -556,9 +841,13 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out):
         f'<button class="navbtn" data-sec="{sid}" {"aria-current=page" if sid == "fleet" else ""}>{label}</button>'
         for sid, label in [("fleet", "Fleet"), ("explorer", "Run explorer"),
                            ("stream", "Event stream"), ("tools", "Tool activity")])
+    nav_money = "".join(
+        f'<button class="navbtn" data-sec="{sid}">{label}</button>'
+        for sid, label in [("cost", "Cost &amp; tokens"), ("runtime", "Runtime")])
     nav2 = "".join(
         f'<button class="navbtn" data-sec="{sid}">{label}</button>'
         for sid, label in [("bench", "Bench / RCA"), ("alerts", "Alerts")])
+    cost_sec, runtime_sec = money_sections(mm)
 
     page = f"""<!DOCTYPE html>
 <html lang="en">
@@ -577,6 +866,8 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out):
 <a class="wordmark" href="#fleet"><b>FORGE</b></a>
 <div class="grp">Observe</div>
 {nav}
+<div class="grp">Spend</div>
+{nav_money}
 <div class="grp">Verify</div>
 {nav2}
 <div class="grp">Console</div>
@@ -620,6 +911,8 @@ MCP servers seen: {mcp_html}.</p>
 <div class="scroll"><table><tr><th>session</th><th>project</th><th>model</th><th>span</th>
 <th>tool calls</th><th>top tools</th></tr>{sess_rows}</table></div>
 </section>
+{cost_sec}
+{runtime_sec}
 <section id="bench">
 <div class="eyebrow">Verify</div>
 <h1>Bench / RCA</h1>
@@ -689,6 +982,8 @@ def main():
     b.add_argument("--max-transcripts", type=int, default=25)
     b.add_argument("--alerts", default=None, help="JSON rules file; default built-ins")
     b.add_argument("--window-days", type=int, default=30)
+    b.add_argument("--monthly-budget", type=float, default=None,
+                   help="USD budget for the pool-headroom gauge (operator input)")
     b.add_argument("--out", default="dashboard.html")
     a = ap.parse_args()
 
@@ -697,9 +992,13 @@ def main():
     sessions = collect_sessions(a.transcripts_dir, a.max_transcripts)
     bench_rows = collect_bench()
     metrics = fleet_metrics(runs, events, a.window_days)
+    money = money_metrics(sessions, a.window_days, a.monthly_budget)
     rules = json.loads(Path(a.alerts).read_text()) if a.alerts else DEFAULT_ALERTS
-    alerts = eval_alerts(metrics, rules)
-    render(runs, events, sessions, bench_rows, metrics, alerts, a.out)
+    alerts = eval_alerts({**metrics, **{f"cost_{k}": v for k, v in
+                                        (("total", money["total_cost"]),
+                                         ("per_session", money["cost_per_session"]),
+                                         ("cache_hit", money["cache_hit"]))}}, rules)
+    render(runs, events, sessions, bench_rows, metrics, alerts, a.out, money)
 
 
 if __name__ == "__main__":

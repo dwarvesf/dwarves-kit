@@ -86,7 +86,13 @@ def test_render_end_to_end_with_fixtures():
         dashboard.render(runs, dashboard.collect_events(d),
                          [{"session": "abc", "project": "demo",
                            "models": Counter({"claude-sonnet-5": 1}),
-                           "tools": Counter({"Bash": 3, "mcp__figma__get": 1}), "mins": 10}],
+                           "tools": Counter({"Bash": 3, "mcp__figma__get": 1}), "mins": 10,
+                           "day": "2026-07-25", "cost": 1.5,
+                           "tok": Counter({"input_tokens": 100, "output_tokens": 200}),
+                           "per_model": {"claude-sonnet-5": Counter({"input_tokens": 100,
+                                                                     "output_tokens": 200})},
+                           "tiers": Counter({"standard": 1}), "versions": Counter({"2.1": 1}),
+                           "side": Counter({"main": 1}), "branches": Counter()}],
                          [{"ts": "2026-07-25T00:00:00", "task": "t", "model": "haiku",
                            "executor": "model", "pass": False, "cost_usd": 0.1,
                            "fail_detail": "FAIL case 1"}],
@@ -101,6 +107,39 @@ def test_render_end_to_end_with_fixtures():
             p.write_text(js)
             assert subprocess.run([node, "--check", str(p)],
                                   capture_output=True).returncode == 0
+
+
+def test_cost_math_and_cache_multipliers():
+    """Money is computed, so the arithmetic gets a check: sonnet-5 at $3/$15 per MTok,
+    with cache read at 0.1x input and cache write at 1.25x input."""
+    tok = Counter({"input_tokens": 1_000_000, "output_tokens": 1_000_000,
+                   "cache_read_input_tokens": 1_000_000,
+                   "cache_creation_input_tokens": 1_000_000})
+    # 3 (fresh) + 15 (output) + 0.30 (read) + 3.75 (write) = 22.05
+    assert abs(dashboard.model_cost("claude-sonnet-5", tok) - 22.05) < 1e-9
+    # dated snapshots price via longest-prefix match
+    assert dashboard.price_for("claude-haiku-4-5-20251001") == (1.0, 5.0)
+    # an unknown model is not silently guessed
+    assert dashboard.price_for("claude-unreleased-9") is None
+    assert dashboard.model_cost("claude-unreleased-9", tok) == 0.0
+
+
+def test_runrate_refuses_single_day_extrapolation():
+    """One day of data must not become a 30x projection."""
+    one = [{"project": "p", "day": "2026-07-25", "cost": 100.0, "tok": Counter(),
+            "per_model": {}, "tiers": Counter(), "versions": Counter(),
+            "side": Counter(), "models": Counter(), "tools": Counter()}]
+    m1 = dashboard.money_metrics(one, 30)
+    assert m1["projected_30d"] is None and m1["daily_burn"] is None
+    two = one + [{**one[0], "day": "2026-07-26"}]
+    m2 = dashboard.money_metrics(two, 30)
+    assert m2["daily_burn"] == 100.0 and m2["projected_30d"] == 3000.0
+
+
+def test_session_without_usage_is_tolerated():
+    """A tool-only session (no billed messages) must not crash the money plane."""
+    m = dashboard.money_metrics([{"project": "p", "models": Counter(), "tools": Counter({"Bash": 1})}], 30)
+    assert m["total_cost"] == 0.0 and m["sessions"] == 1
 
 
 if __name__ == "__main__":
