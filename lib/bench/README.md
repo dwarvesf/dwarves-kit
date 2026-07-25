@@ -88,7 +88,7 @@ for humans. Nothing here needs a server.
 | `stats` | fleet + money + debt + alerts as one JSON blob | agent |
 | `debt` | cognitive-debt score, open defers, last paydown (ADR-0031) | agent |
 | `allocation` | pool → member → feature, period comparison, proposed allowances | lead / agent |
-| `build` | the full control-plane dashboard page | human |
+| `export` | the fleet data payload (`sections.json`) the forge dashboard SPA loads; `--push` PUTs it to the gateway | machine (the SPA / CI) |
 | `session <rid>` | ONE standalone session-log page (gate timeline, conformance, outcomes) | human, shareable |
 | `sessions` | a session page per run, plus an index | human |
 | `transcript <id>` | ONE full-transcript page (prompts, tool calls, results, commentary) | human, shareable |
@@ -104,7 +104,8 @@ python3 dashboard.py allocation --period week --budget 1500 --format json
 python3 dashboard.py allocation --period month --budget 6000 --format md
 
 # pages
-python3 dashboard.py build --monthly-budget 1500 --period week --out dashboard.html
+python3 dashboard.py export --monthly-budget 1500 --period week \
+  --out <forge>/site/dashboard/data/sections.json
 python3 dashboard.py session <rid> --out session.html
 python3 dashboard.py sessions --out-dir sessions/
 python3 dashboard.py transcript <session-id> --out transcript.html   # opt-in: reads content
@@ -173,19 +174,22 @@ The built-in scenarios cover the variant axes: task types (feature, research,
 eval), workflow shapes (full lane, tiny lane, loops), and a fault-injection
 failure run (retry exhausted), so the red path is designed, not hoped.
 
-### Control-plane dashboard (the whole estate, one page)
+### Control-plane data plane (one page lives in forge)
 
-`dashboard.py build` renders the full control-plane dashboard: a sidebar page over
-ALL recorded data. Fleet (KPI tiles + 30-day sparkline trends over every run
-ledger), Run explorer (filter + segment chips, conformance per run), Event stream
-(gate verdicts with reasons), Tool activity (Claude Code transcript COUNTS ONLY:
-tools, MCP servers, models; content never read), Bench/RCA (failure fingerprints),
-Alerts (plain-JSON template rules evaluated at build). Design record:
-`docs/dashboard-design.md`.
+`dashboard.py export` emits the fleet payload the forge dashboard SPA injects:
+12 section fragments (Fleet, Run explorer, Event stream, Tool activity, Cost &
+tokens, Efficiency, Allocation, Runtime, Cognitive debt, Config & policy,
+Bench/RCA, Alerts) plus their behavior JS, as one `sections.json`
+(`schema: 1`). The PAGE itself is a forge product (`site/dashboard/index.html`);
+the old `build` verb that emitted a second standalone page is retired (one-page
+rule, 2026-07-25). `--push <url>` PUTs the payload to the gateway's
+`/admin/observe` (Bearer from `FORGE_ADMIN_TOKEN`) for the dashboard's connected
+mode. Design record: `docs/dashboard-design.md` v6.
 
 ```sh
-python3 dashboard.py build --out dashboard.html          # ~0.5s over 200+ ledgers
-python3 dashboard.py build --alerts examples/alerts.json --window-days 14
+python3 dashboard.py export --out sections.json          # ~0.5s over 200+ ledgers
+python3 dashboard.py export --alerts examples/alerts.json --window-days 14
+python3 dashboard.py export --push https://forge-api.infras.workers.dev
 ```
 
 ### Control-plane report (many runs, one surface)

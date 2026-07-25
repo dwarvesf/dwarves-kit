@@ -46,7 +46,8 @@ Spend and the efficiency ranking are kit-side only, one price table: use
 ## Render pages (human surface)
 
 ```sh
-python3 lib/bench/dashboard.py build --out dashboard.html   # full control plane
+python3 lib/bench/dashboard.py export --out sections.json  # fleet payload for the forge SPA
+#   (the dashboard PAGE is forge site/dashboard/; add --push <api> for connected mode)
 python3 lib/bench/dashboard.py session <rid> --out s.html    # one session log, shareable
 python3 lib/bench/dashboard.py sessions --out-dir sessions/  # all of them + index
 python3 lib/bench/dashboard.py transcript <id> --out t.html  # FULL transcript (opt-in)

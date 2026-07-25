@@ -2053,8 +2053,145 @@ def session_index(rids, out_dir):
 </main></body></html>"""
 
 
-def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
-           debt=None, config=None, policy=None, runtimes=None, alloc=None):
+# Behavior for the exported fleet sections. Runs inside the forge SPA after the
+# fragments are injected; the SPA supplies routing via window.forgeShow and calls
+# window.forgeFleetInit() exactly once per data load.
+FLEET_JS = r"""
+window.forgeFleetInit=function(){
+function show(id){if(window.forgeShow)window.forgeShow(id);}
+function openRun(rid,scroll){
+  show("explorer");
+  const row=document.querySelector(`tr.exrow[data-rid="${rid.toLowerCase()}"]`);
+  const det=document.querySelector(`tr.detail[data-detail="${rid.toLowerCase()}"]`);
+  if(det)det.hidden=false;
+  if(row){row.style.outline="2px solid var(--ember)";
+    if(scroll)row.scrollIntoView({block:"center"});}
+  return !!row;
+}
+window.forgeOpenRun=openRun;
+document.querySelectorAll("button.share").forEach(b=>b.onclick=e=>{
+  e.stopPropagation();
+  const url=location.origin+location.pathname+"#run/"+encodeURIComponent(b.dataset.share);
+  const done=()=>{const t=b.textContent;b.textContent="copied";
+    setTimeout(()=>b.textContent=t,1200);};
+  if(navigator.clipboard)navigator.clipboard.writeText(url).then(done,done);
+  else{const ta=document.createElement("textarea");ta.value=url;document.body.appendChild(ta);
+    ta.select();document.execCommand("copy");ta.remove();done();}
+  history.replaceState(null,"","#run/"+encodeURIComponent(b.dataset.share));
+});
+let seg="";
+const q=document.getElementById("q");
+function filt(){
+  if(!q)return;
+  const t=q.value.toLowerCase();
+  document.querySelectorAll("#ex tr[data-k]").forEach(r=>{
+    const k=r.dataset.k;
+    r.style.display=(k.includes(t)&&(seg===""||k.includes(seg)))?"":"none";
+  });
+}
+if(q)q.oninput=filt;
+document.querySelectorAll(".seg-bar button[data-seg]").forEach(b=>b.onclick=()=>{
+  seg=b.dataset.seg;
+  document.querySelectorAll(".seg-bar button[data-seg]").forEach(x=>x.classList.toggle("on",x===b));
+  filt();
+});
+document.querySelectorAll("tr.exrow").forEach(r=>{
+  const open=()=>{const d=document.querySelector(`tr.detail[data-detail="${r.dataset.rid}"]`);
+    if(d)d.hidden=!d.hidden;};
+  r.onclick=e=>{if(!e.target.closest("a"))open();};
+  r.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();open();}};
+});
+const red=document.getElementById("redact-toggle");
+if(red)red.onclick=()=>{
+  const on=document.body.classList.toggle("redacted");
+  red.setAttribute("aria-pressed",String(on));
+  red.textContent=on?"Redacted (click to show)":"Redact mode";
+};
+const csvBtn=document.getElementById("audit-csv");
+if(csvBtn)csvBtn.onclick=()=>{
+  const rows=[["time","rid","gate","verdict","reason"]];
+  document.querySelectorAll("#stream table tr").forEach(tr=>{
+    const c=tr.querySelectorAll("td");
+    if(c.length===5)rows.push([...c].map(td=>'"'+td.textContent.trim().replace(/"/g,'""')+'"'));
+  });
+  const blob=new Blob([rows.map(r=>r.join(",")).join("\n")],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="forge-audit.csv";a.click();
+  URL.revokeObjectURL(a.href);
+};
+document.querySelectorAll(".rule-add").forEach(b=>b.onclick=()=>{
+  const cap=b.dataset.cap;
+  const inp=document.querySelector(`.rule-match[data-cap="${cap}"]`);
+  const m=(inp.value||"").trim();
+  if(!m)return;
+  const tbl=document.querySelector(`.cap-table[data-cap="${cap}"]`);
+  const tr=document.createElement("tr");
+  tr.dataset.cap=cap;tr.dataset.custom="1";
+  tr.innerHTML=`<td>custom rule</td><td><code>${m}</code></td>`+
+    `<td><select class="prov-act"><option>allow</option><option selected>ask</option>`+
+    `<option>deny</option></select></td><td><button class="act rule-rm">remove</button></td>`;
+  tbl.appendChild(tr);
+  inp.value="";
+  tr.querySelector(".rule-rm").onclick=()=>tr.remove();
+});
+document.querySelectorAll(".rule-rm").forEach(b=>b.onclick=()=>b.closest("tr").remove());
+const pex=document.getElementById("policy-export");
+if(pex)pex.onclick=()=>{
+  const base=JSON.parse(document.getElementById("policy-data").textContent);
+  const caps=base.capabilities||{};
+  for(const cid of Object.keys(caps)){
+    const cap=caps[cid];
+    const pref=document.querySelector(`.cap-pref[data-cap="${cid}"]`);
+    if(pref)cap.preferred=pref.value;
+    document.querySelectorAll(`.cap-table[data-cap="${cid}"] tr[data-provider]`).forEach(tr=>{
+      const pv=(cap.providers||[]).find(x=>x.id===tr.dataset.provider);
+      const s=tr.querySelector("select.prov-act");
+      if(pv&&s)pv.action=s.value;
+    });
+    cap.rules=[];
+    document.querySelectorAll(`.cap-table[data-cap="${cid}"] tr[data-custom],`+
+      `.cap-table[data-cap="${cid}"] tr[data-rule]`).forEach(tr=>{
+      const m=tr.querySelector("code");
+      const s=tr.querySelector("select.prov-act");
+      if(m&&s)cap.rules.push({match:m.textContent,action:s.value});
+    });
+  }
+  const out=document.getElementById("policy-out");
+  out.style.display="block";
+  out.value=JSON.stringify(base,null,2);
+  out.select();
+  const blob=new Blob([out.value],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download="tool-policy.json";a.click();
+  URL.revokeObjectURL(a.href);
+};
+const cex=document.getElementById("cfg-export");
+if(cex)cex.onclick=()=>{
+  const changed={};
+  document.querySelectorAll("input.cfg-key").forEach(i=>{
+    if(i.value!==i.dataset.orig){
+      (changed[i.dataset.section]=changed[i.dataset.section]||{})[i.dataset.key]=i.value;
+    }
+  });
+  let toml="# .kit.toml , per-project overrides (changed keys only; the rest inherit)\n";
+  for(const sec of Object.keys(changed)){
+    toml+=`\n[${sec}]\n`;
+    for(const k of Object.keys(changed[sec])){
+      const v=changed[sec][k];
+      toml+=`${k} = ${/^(true|false|-?\d+(\.\d+)?)$/.test(v)?v:JSON.stringify(v)}\n`;
+    }
+  }
+  const out=document.getElementById("cfg-out");
+  out.hidden=false;
+  out.value=Object.keys(changed).length?toml:"# no keys changed";
+  out.select();
+};
+};
+"""
+
+
+def render_sections(runs, events, sessions, bench_rows, metrics, alerts, money=None,
+                    debt=None, config=None, policy=None, runtimes=None, alloc=None):
     m = metrics
     mm = money or money_metrics(sessions, m["window_days"])
     dm = debt or debt_metrics([])
@@ -2167,18 +2304,6 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
 
     policy_json = json.dumps({k: v for k, v in policy.items() if not k.startswith('_')}, indent=1).replace('</', '<\\/')
     gen = now().isoformat(timespec="seconds")
-    nav = "".join(
-        f'<button class="navbtn" data-sec="{sid}" {"aria-current=page" if sid == "fleet" else ""}>{label}</button>'
-        for sid, label in [("fleet", "Fleet"), ("explorer", "Run explorer"),
-                           ("stream", "Event stream"), ("tools", "Tool activity")])
-    nav_money = "".join(
-        f'<button class="navbtn" data-sec="{sid}">{label}</button>'
-        for sid, label in [("cost", "Cost &amp; tokens"), ("efficiency", "Efficiency board"),
-                           ("allocation", "Pool allocation"),
-                           ("runtime", "Runtime")])
-    nav2 = "".join(
-        f'<button class="navbtn" data-sec="{sid}">{label}</button>'
-        for sid, label in [("bench", "Bench / RCA"), ("alerts", "Alerts")])
     cost_sec, runtime_sec = money_sections(mm)
     eff_rank = efficiency_rankings(sessions)
     eff_sec = efficiency_section(eff_rank)
@@ -2186,51 +2311,16 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
     debt_sec = debt_section(dm)
     config_sec = config_section(config, policy, runtimes)
 
-    page = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Forge · Observability</title>
-{STYLE}
-</head>
-<body>
-<div class="banner">LIVE DATA · generated from the run ledgers {gen} ·
-<b>reproduce: python3 dashboard.py build</b></div>
-<div class="spine"></div>
-<div class="shell">
-<aside>
-<a class="wordmark" href="#fleet"><b>FORGE</b></a>
-<div class="grp">Org</div>
-<a class="navbtn" href="/dashboard/#overview">Overview</a>
-<a class="navbtn" href="/dashboard/#team">Team</a>
-<a class="navbtn" href="/dashboard/#analytics">Analytics</a>
-<a class="navbtn" href="/dashboard/#licenses">Licenses</a>
-<a class="navbtn" href="/dashboard/#billing">Billing</a>
-<a class="navbtn" href="/dashboard/#policies">Policies</a>
-<div class="grp">Observe</div>
-{nav}
-<a class="navbtn" href="sessions/">Session pages</a>
-<a class="navbtn" href="transcripts/">Transcripts</a>
-<div class="grp">Spend</div>
-{nav_money}
-<div class="grp">Verify</div>
-{nav2}
-<button class="navbtn" data-sec="debt">Cognitive debt</button>
-<div class="grp">Operate</div>
-<button class="navbtn" data-sec="config">Config &amp; policy</button>
-<button class="navbtn" id="redact-toggle" aria-pressed="false">Redact mode</button>
-</aside>
-<main>
-<section id="fleet" class="on">
+    sections = {
+        "fleet": f"""<section id="fleet">
 <div class="eyebrow">Control plane</div>
 <h1>Fleet</h1>
 <p class="meta">Every number reads from the append-only run ledgers. Nothing on this
 page is hand-entered; a correction is a new run, never an edit.</p>
 <div class="tiles">{tiles}</div>
 <div class="charts">{charts}</div>
-</section>
-<section id="explorer">
+</section>""",
+        "explorer": f"""<section id="explorer">
 <div class="eyebrow">Observe</div>
 <h1>Run explorer</h1>
 <p class="meta">{len(runs)} recorded runs. Click a run id for its standalone session-log page (shareable on its own); click the row to expand the log inline. Segments are saved filters; conformance =
@@ -2240,8 +2330,8 @@ required gates present for the run's lane. Replay any row:
 <div class="scroll"><table id="ex"><tr><th>rid</th><th>last event</th><th>repo</th>
 <th>lane</th><th>type</th><th>gates</th><th>conformance</th><th>span</th></tr>
 {ex_rows}</table></div>
-</section>
-<section id="stream">
+</section>""",
+        "stream": f"""<section id="stream">
 <div class="eyebrow">Observe</div>
 <h1>Event stream</h1>
 <p class="meta">Latest {len(stream)} gate verdicts across every run; the reason is the
@@ -2251,8 +2341,8 @@ audit trail.</p>
 </div>
 <div class="scroll"><table><tr><th>time</th><th>rid</th><th>gate</th><th>verdict</th>
 <th>reason</th></tr>{ev_rows}</table></div>
-</section>
-<section id="tools">
+</section>""",
+        "tools": f"""<section id="tools">
 <div class="eyebrow">Observe</div>
 <h1>Tool activity</h1>
 <p class="meta">{len(sessions)} recent sessions from this host's Claude Code transcripts,
@@ -2261,14 +2351,15 @@ MCP servers seen: {mcp_html}.</p>
 <div class="charts">{top_tools}</div>
 <div class="scroll"><table><tr><th>session</th><th>project</th><th>model</th><th>span</th>
 <th>tool calls</th><th>top tools</th></tr>{sess_rows}</table></div>
-</section>
-{cost_sec}
-{eff_sec}
-{alloc_sec}
-{runtime_sec}
-{debt_sec}
-{config_sec}
-<section id="bench">
+</section>""",
+        "cost": cost_sec,
+        "efficiency": eff_sec,
+        "allocation": alloc_sec,
+        "runtime": runtime_sec,
+        "debt": debt_sec,
+        "config": (f'<script type="application/json" id="policy-data">{policy_json}</script>'
+                   + config_sec),
+        "bench": f"""<section id="bench">
 <div class="eyebrow">Verify</div>
 <h1>Bench / RCA</h1>
 <div class="tiles">
@@ -2280,175 +2371,27 @@ MCP servers seen: {mcp_html}.</p>
 <p class="meta">Fingerprints answer "failed on what, exactly": the verbatim failing case.</p>
 <div class="scroll"><table><tr><th>task</th><th>config</th><th>date</th>
 <th>fingerprint</th></tr>{fp_rows}</table></div>
-</section>
-<section id="alerts">
+</section>""",
+        "alerts": f"""<section id="alerts">
 <div class="eyebrow">Verify</div>
 <h1>Alerts</h1>
-<p class="meta">Template rules from a plain JSON file, evaluated at build over the
+<p class="meta">Template rules from a plain JSON file, evaluated at export over the
 {m['window_days']}-day window. Propose-first: no daemon, no auto-fix. {len(firing)} firing.</p>
 <table><tr><th>rule</th><th>condition</th><th>value</th><th>state</th><th>note</th></tr>
 {al_rows}</table>
-</section>
-<div class="footer">Forge control plane · facts from run ledgers · counts-only transcripts ·
-design per forge-design-guidelines.md</div>
-</main>
-</div>
-<script type="application/json" id="policy-data">{policy_json}</script>
-<script>
-const secs=document.querySelectorAll("section"),btns=document.querySelectorAll(".navbtn");
-function show(id){{
-  secs.forEach(s=>s.classList.toggle("on",s.id===id));
-  btns.forEach(b=>{{if(b.dataset.sec===id)b.setAttribute("aria-current","page");
-    else b.removeAttribute("aria-current");}});
-}}
-btns.forEach(b=>{{if(!b.dataset.sec)return;
-  b.onclick=()=>{{show(b.dataset.sec);
-    history.replaceState(null,"","#"+b.dataset.sec);}};}});
-function openRun(rid,scroll){{
-  show("explorer");
-  const row=document.querySelector(`tr.exrow[data-rid="${{rid.toLowerCase()}}"]`);
-  const det=document.querySelector(`tr.detail[data-detail="${{rid.toLowerCase()}}"]`);
-  if(det)det.hidden=false;
-  if(row){{row.style.outline="2px solid var(--ember)";
-    if(scroll)row.scrollIntoView({{block:"center"}});}}
-  return !!row;
-}}
-function applyHash(){{
-  const hs=location.hash.slice(1);
-  if(hs.startsWith("run/")){{openRun(decodeURIComponent(hs.slice(4)),true);return;}}
-  if(hs&&document.getElementById(hs))show(hs);
-}}
-applyHash();
-addEventListener("hashchange",applyHash);
-document.querySelectorAll("button.share").forEach(b=>b.onclick=e=>{{
-  e.stopPropagation();
-  const url=location.origin+location.pathname+"#run/"+encodeURIComponent(b.dataset.share);
-  const done=()=>{{const t=b.textContent;b.textContent="copied";
-    setTimeout(()=>b.textContent=t,1200);}};
-  if(navigator.clipboard)navigator.clipboard.writeText(url).then(done,done);
-  else{{const ta=document.createElement("textarea");ta.value=url;document.body.appendChild(ta);
-    ta.select();document.execCommand("copy");ta.remove();done();}}
-  history.replaceState(null,"","#run/"+encodeURIComponent(b.dataset.share));
-}});
-let seg="";
-const q=document.getElementById("q");
-function filt(){{
-  const t=q.value.toLowerCase();
-  document.querySelectorAll("#ex tr[data-k]").forEach(r=>{{
-    const k=r.dataset.k;
-    r.style.display=(k.includes(t)&&(seg===""||k.includes(seg)))?"":"none";
-  }});
-}}
-q.oninput=filt;
-document.querySelectorAll(".seg-bar button[data-seg]").forEach(b=>b.onclick=()=>{{
-  seg=b.dataset.seg;
-  document.querySelectorAll(".seg-bar button[data-seg]").forEach(x=>x.classList.toggle("on",x===b));
-  filt();
-}});
-document.querySelectorAll("tr.exrow").forEach(r=>{{
-  const open=()=>{{const d=document.querySelector(`tr.detail[data-detail="${{r.dataset.rid}}"]`);
-    if(d)d.hidden=!d.hidden;}};
-  r.onclick=e=>{{if(!e.target.closest("a"))open();}};
-  r.onkeydown=e=>{{if(e.key==="Enter"||e.key===" "){{e.preventDefault();open();}}}};
-}});
-const red=document.getElementById("redact-toggle");
-if(red)red.onclick=()=>{{
-  const on=document.body.classList.toggle("redacted");
-  red.setAttribute("aria-pressed",String(on));
-  red.textContent=on?"Redacted (click to show)":"Redact mode";
-}};
-const csvBtn=document.getElementById("audit-csv");
-if(csvBtn)csvBtn.onclick=()=>{{
-  const rows=[["time","rid","gate","verdict","reason"]];
-  document.querySelectorAll("#stream table tr").forEach(tr=>{{
-    const c=tr.querySelectorAll("td");
-    if(c.length===5)rows.push([...c].map(td=>'"'+td.textContent.trim().replace(/"/g,'""')+'"'));
-  }});
-  const blob=new Blob([rows.map(r=>r.join(",")).join("\\n")],{{type:"text/csv"}});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);a.download="forge-audit.csv";a.click();
-  URL.revokeObjectURL(a.href);
-}};
-document.querySelectorAll(".rule-add").forEach(b=>b.onclick=()=>{{
-  const cap=b.dataset.cap;
-  const inp=document.querySelector(`.rule-match[data-cap="${{cap}}"]`);
-  const m=(inp.value||"").trim();
-  if(!m)return;
-  const tbl=document.querySelector(`.cap-table[data-cap="${{cap}}"]`);
-  const tr=document.createElement("tr");
-  tr.dataset.cap=cap;tr.dataset.custom="1";
-  tr.innerHTML=`<td>custom rule</td><td><code>${{m}}</code></td>`+
-    `<td><select class="prov-act"><option>allow</option><option selected>ask</option>`+
-    `<option>deny</option></select></td><td><button class="act rule-rm">remove</button></td>`;
-  tbl.appendChild(tr);
-  inp.value="";
-  tr.querySelector(".rule-rm").onclick=()=>tr.remove();
-}});
-document.querySelectorAll(".rule-rm").forEach(b=>b.onclick=()=>b.closest("tr").remove());
-const pex=document.getElementById("policy-export");
-if(pex)pex.onclick=()=>{{
-  const base=JSON.parse(document.getElementById("policy-data").textContent);
-  const caps=base.capabilities||{{}};
-  for(const cid of Object.keys(caps)){{
-    const cap=caps[cid];
-    const pref=document.querySelector(`.cap-pref[data-cap="${{cid}}"]`);
-    if(pref)cap.preferred=pref.value;
-    document.querySelectorAll(`.cap-table[data-cap="${{cid}}"] tr[data-provider]`).forEach(tr=>{{
-      const pv=(cap.providers||[]).find(x=>x.id===tr.dataset.provider);
-      const s=tr.querySelector("select.prov-act");
-      if(pv&&s)pv.action=s.value;
-    }});
-    cap.rules=[];
-    document.querySelectorAll(`.cap-table[data-cap="${{cid}}"] tr[data-custom],`+
-      `.cap-table[data-cap="${{cid}}"] tr[data-rule]`).forEach(tr=>{{
-      const m=tr.querySelector("code");
-      const s=tr.querySelector("select.prov-act");
-      if(m&&s)cap.rules.push({{match:m.textContent,action:s.value}});
-    }});
-  }}
-  const out=document.getElementById("policy-out");
-  out.style.display="block";
-  out.value=JSON.stringify(base,null,2);
-  out.select();
-  const blob=new Blob([out.value],{{type:"application/json"}});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);a.download="tool-policy.json";a.click();
-  URL.revokeObjectURL(a.href);
-}};
-const cex=document.getElementById("cfg-export");
-if(cex)cex.onclick=()=>{{
-  const changed={{}};
-  document.querySelectorAll("input.cfg-key").forEach(i=>{{
-    if(i.value!==i.dataset.orig){{
-      (changed[i.dataset.section]=changed[i.dataset.section]||{{}})[i.dataset.key]=i.value;
-    }}
-  }});
-  let toml="# .kit.toml , per-project overrides (changed keys only; the rest inherit)\\n";
-  for(const sec of Object.keys(changed)){{
-    toml+=`\\n[${{sec}}]\\n`;
-    for(const k of Object.keys(changed[sec])){{
-      const v=changed[sec][k];
-      toml+=`${{k}} = ${{/^(true|false|-?\\d+(\\.\\d+)?)$/.test(v)?v:JSON.stringify(v)}}\\n`;
-    }}
-  }}
-  const out=document.getElementById("cfg-out");
-  out.hidden=false;
-  out.value=Object.keys(changed).length?toml:"# no keys changed";
-  out.select();
-}};
-</script>
-</body>
-</html>"""
-    Path(out).write_text(page)
-    print(f"dashboard written to {out}: {len(runs)} runs, {len(events)} events, "
-          f"{len(sessions)} sessions, {len(bench_rows)} bench cells, "
-          f"{len(firing)} alerts firing", file=sys.stderr)
+</section>""",
+    }
+    counts = {"runs": len(runs), "events": len(events), "sessions": len(sessions),
+              "bench_cells": len(bench_rows), "alerts_firing": len(firing)}
+    return {"schema": 1, "generated_at": gen, "window_days": m["window_days"],
+            "counts": counts, "sections": sections, "js": FLEET_JS}
 
 
 def main():
     ap = argparse.ArgumentParser(prog="bench-dashboard", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    b = sub.add_parser("build", help="build the control-plane dashboard page")
+    b = sub.add_parser("export", help="emit the fleet data payload (sections.json) "
+                                      "consumed by the forge dashboard SPA")
     b.add_argument("--log-dir", default=os.environ.get(
         "DWARVES_KIT_LOG_DIR", str(Path.home() / ".local/state/dwarves-kit/logs")))
     b.add_argument("--transcripts-dir", default=str(Path.home() / ".claude/projects"))
@@ -2461,7 +2404,12 @@ def main():
                    help="USD budget for the pool-headroom gauge (operator input)")
     b.add_argument("--tool-policy", default=None,
                    help="tool-policy JSON to render (default: ~/.claude/dwarves-kit/tool-policy.json)")
-    b.add_argument("--out", default="dashboard.html")
+    b.add_argument("--out", default="sections.json")
+    b.add_argument("--push", default=None, metavar="API_URL",
+                   help="also PUT the payload to <API_URL>/admin/observe "
+                        "(Bearer token from FORGE_ADMIN_TOKEN)")
+    old = sub.add_parser("build", help="RETIRED: the page is the forge SPA; use export")
+    old.add_argument("--out", default=None, help=argparse.SUPPRESS)
     s = sub.add_parser("stats", help="all dashboard numbers as JSON (agent surface)")
     d = sub.add_parser("debt", help="cognitive-debt score (ADR-0031 read side)")
     for x in (s, d):
@@ -2501,6 +2449,14 @@ def main():
         x.add_argument("--dashboard", default="../index.html",
                        help="href back to the control plane")
     a = ap.parse_args()
+
+    if a.cmd == "build":
+        print("build is retired (one-page rule, 2026-07-25): the dashboard page is the\n"
+              "forge SPA at forge/site/dashboard/. Emit its data with:\n"
+              "  python3 dashboard.py export --out <site>/dashboard/data/sections.json\n"
+              "Single-file bundle for sharing: forge site/dashboard/bundle.py",
+              file=sys.stderr)
+        sys.exit(2)
 
     if a.cmd == "allocation":
         sess = collect_sessions(a.transcripts_dir, a.max_transcripts)
@@ -2634,10 +2590,30 @@ def main():
                        Path.home() / ".claude/dwarves-kit/tool-policy.json")
     policy = (json.loads(policy_path.read_text()) if policy_path.exists()
               else DEFAULT_TOOL_POLICY)
-    render(runs, events, sessions, bench_rows, metrics, alerts, a.out, money,
-           debt=dm, config=collect_config(), policy=policy,
-           runtimes=collect_runtimes(),
-           alloc=allocation_metrics(sessions, a.period, a.monthly_budget))
+    payload = render_sections(runs, events, sessions, bench_rows, metrics, alerts, money,
+                              debt=dm, config=collect_config(), policy=policy,
+                              runtimes=collect_runtimes(),
+                              alloc=allocation_metrics(sessions, a.period, a.monthly_budget))
+    body = json.dumps(payload)
+    Path(a.out).write_text(body)
+    c = payload["counts"]
+    print(f"fleet payload written to {a.out}: {c['runs']} runs, {c['events']} events, "
+          f"{c['sessions']} sessions, {c['bench_cells']} bench cells, "
+          f"{c['alerts_firing']} alerts firing", file=sys.stderr)
+    if a.push:
+        token = os.environ.get("FORGE_ADMIN_TOKEN")
+        if not token:
+            print("--push needs FORGE_ADMIN_TOKEN in the environment", file=sys.stderr)
+            sys.exit(1)
+        import urllib.request
+        req = urllib.request.Request(
+            a.push.rstrip("/") + "/admin/observe", data=body.encode(),
+            # UA matters: Cloudflare's bot filter 403s the default Python-urllib UA
+            headers={"Authorization": f"Bearer {token}",
+                     "Content-Type": "application/json",
+                     "User-Agent": "dwarves-kit-observe/1"}, method="PUT")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            print(f"pushed to {a.push}/admin/observe: HTTP {resp.status}", file=sys.stderr)
 
 
 if __name__ == "__main__":

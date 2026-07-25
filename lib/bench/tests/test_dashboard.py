@@ -82,8 +82,7 @@ def test_render_end_to_end_with_fixtures():
         _fixture_logs(d)
         runs = dashboard.collect_runs(d)
         m = dashboard.fleet_metrics(runs, dashboard.collect_events(d), 30)
-        out = Path(d, "dash.html")
-        dashboard.render(runs, dashboard.collect_events(d),
+        payload = dashboard.render_sections(runs, dashboard.collect_events(d),
                          [{"session": "abc", "project": "demo",
                            "models": Counter({"claude-sonnet-5": 1}),
                            "tools": Counter({"Bash": 3, "mcp__figma__get": 1}), "mins": 10,
@@ -96,15 +95,20 @@ def test_render_end_to_end_with_fixtures():
                          [{"ts": "2026-07-25T00:00:00", "task": "t", "model": "haiku",
                            "executor": "model", "pass": False, "cost_usd": 0.1,
                            "fail_detail": "FAIL case 1"}],
-                         m, dashboard.eval_alerts(m, dashboard.DEFAULT_ALERTS), out)
-        html = out.read_text()
+                         m, dashboard.eval_alerts(m, dashboard.DEFAULT_ALERTS))
+        assert payload["schema"] == 1 and payload["counts"]["runs"] == len(runs)
+        # every SPA view id must have a fragment; the id list is the frontend contract
+        assert set(payload["sections"]) == {
+            "fleet", "explorer", "stream", "tools", "cost", "efficiency",
+            "allocation", "runtime", "debt", "config", "bench", "alerts"}
+        html = "".join(payload["sections"].values())
         for probe in ["Run explorer", "misfired", "FAIL case 1", "figma", "FIRING", "ok"]:
             assert probe in html, probe
+        assert json.loads(json.dumps(payload))  # round-trips as plain JSON
         node = shutil.which("node")
         if node:
-            js = re.search(r"<script>(.*)</script>", html, re.DOTALL).group(1)
             p = Path(d, "d.js")
-            p.write_text(js)
+            p.write_text(payload["js"])
             assert subprocess.run([node, "--check", str(p)],
                                   capture_output=True).returncode == 0
 

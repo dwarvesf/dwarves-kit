@@ -163,3 +163,28 @@ Period-over-period comparison is **suppressed** when either bucket is partial. O
 host the raw number would have read **+4963% week over week**, which is entirely an
 artifact of the sample starting mid-week; the report now prints the raw change plus
 "not comparable" and the reason.
+
+## Addendum 6 (2026-07-25): one-page merge, export data plane, observe backend
+
+Operator direction: "don't maintain 2 pages, merge them into one page, fully
+functioning with design document, backend, frontend, deployment; handle onboarding
+with no data."
+
+| # | Check | Command | Result |
+|---|---|---|---|
+| 1 | export emits the schema-1 payload | `dashboard.py export --max-transcripts 120 --out sections.json` | 215 runs, 1533 events, 12 sections, js 5642 bytes |
+| 2 | build is retired with a pointer | `dashboard.py build` | pointer text on stderr, exit 2 |
+| 3 | all suites green after the refactor | `for t in tests/test_*.py; do python3 $t; done` | 5/5 PASS (render test now asserts the 12-id section contract + node-checks FLEET_JS) |
+| 4 | SPA integrity | tag-balance scan + `node --check` on extracted scripts | imbalance none; JS OK |
+| 5 | single-file bundle | `bundle.py` then parse the inline payload | schema 1, 12 sections, 215 runs |
+| 6 | backend round-trip | `export --push https://forge-api...` then authed GET | PUT 200 (932 KB), GET returns same generated_at/counts |
+| 7 | negative: junk payload | PUT `{"nope":true}` with auth | 422 |
+| 8 | negative: no auth | PUT valid shape, no bearer | 401 (GET no-auth also 401) |
+
+Found live: Cloudflare's bot filter 403s Python-urllib's default User-Agent; the
+push now sends `dwarves-kit-observe/1` (worker code was never at fault; a curl
+probe isolated it).
+
+Reproduce: kit `lib/bench` (this branch) + forge `site/dashboard/`; the worker is
+`forge/api/worker.js` deployed to staging (version 1e56da29). Token via
+`op://Toolkit/forge-api-staging-admin/credential` as `FORGE_ADMIN_TOKEN`.

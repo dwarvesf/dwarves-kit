@@ -217,3 +217,55 @@ org state vs ledgers/transcripts); the merge is purely a nav contract. The `/das
 URL prefix is the one piece of forge coupling in this file; it predates this change
 (the old "Crew dashboard" link) and is accepted as the cost of the generator being the
 forge renderer. Full IA: forge `docs/design/crew-dashboard-recommendation.md` addendum.
+
+## v6 (2026-07-25): one page, and the kit becomes the backend
+
+Han: "don't maintain 2 pages, merge/make them into one page... fully functioning
+with design document, backend, frontend, deployment. think about the onboarding
+phases and where a new team starts with no data."
+
+### The split that ends the two-page era
+
+The standalone generated page (`build`) is retired. The kit no longer emits ANY
+page; it emits DATA. The forge SPA is the only page.
+
+| Layer | Owner | Artifact |
+|---|---|---|
+| Frontend | forge `site/dashboard/index.html` | one SPA: 7 org views + 12 fleet views + 2 artifact links, one hash router, one sidebar |
+| Data plane | kit `dashboard.py export` | `sections.json` (schema 1): 12 HTML fragments + `FLEET_JS` behavior + counts |
+| Backend | forge-api worker | `GET/PUT /admin/observe`, one KV doc, Bearer-auth both ways |
+| Deployment | static + push | commit `data/sections.json` for the static/demo path; `export --push <api>` for connected mode; `bundle.py` inlines the payload for single-file shares |
+
+### The data contract (schema 1)
+
+`{schema, generated_at, window_days, counts{runs,events,sessions,bench_cells,
+alerts_firing}, sections{fleet,explorer,stream,tools,cost,efficiency,allocation,
+runtime,debt,config,bench,alerts}, js}`. The section-id set IS the frontend
+contract; `test_dashboard.py` asserts it, and the SPA's view shells mirror it.
+Fragments carry kit class vocabulary; the SPA scopes the kit component styles
+under `.fv` so the two stylesheets cannot fight. The behavior JS exposes exactly
+three globals (`forgeFleetInit`, `forgeOpenRun`, and it consumes `forgeShow`),
+which is the whole runtime interface between the planes.
+
+### Onboarding: the honesty thresholds ARE the phase gates
+
+A new team's day-0 dashboard is not blank, it is instructive. Every fleet view
+renders a designed empty state (what the view shows, the exact feeder command,
+and when it lights up). The Overview carries a getting-started strip whose phase
+is computed, not configured:
+
+| Phase | Trigger | What the user sees |
+|---|---|---|
+| 0 · no data | no payload loads | all fleet views show feed-it states; strip lists the first two steps |
+| 1 · thin data | payload with < 25 runs or < 5 sessions | views render, but run-rate reads n/a (< 2 distinct days), period comparison stays suppressed (partial buckets), efficiency rows wait for the volume floor; the strip SAYS these are deliberate |
+| 2 · steady | past the thresholds | strip removes itself |
+
+No new thresholds were invented for onboarding: phase 1's "some numbers are n/a
+on purpose" is literally the v5 honesty rules doing their job on a small sample.
+
+### Deployment note
+
+The worker rejects non-export payloads (422), caps at 5MB (413), and both verbs
+require the admin bearer because the payload embeds run ids, repo names and
+project paths. Cloudflare's bot filter 403s Python-urllib's default UA; export
+sends `dwarves-kit-observe/1` (found live, not in review).
