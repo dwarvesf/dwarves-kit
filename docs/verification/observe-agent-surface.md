@@ -81,3 +81,24 @@ embedded use, not a test artifact. After guarding (prefer `DWARVES_KIT_ROOT`,
 guess the filesystem root only when `__file__` exists), the same path was
 re-run in a module deliberately built with **no** `__file__` at all and returned
 rows normally. Restoring the unguarded line reproduces the failure.
+
+
+## Addendum 3: the session detail page (correction)
+
+Addendum 2 claimed "session detail + share" was delivered. It was not: what shipped
+was an inline expandable row plus a `#run/<rid>` deep link inside the dashboard
+bundle, which is not a detail page. Corrected here.
+
+| Check | Command | Exit | Verdict |
+|---|---|---:|---|
+| One session page | `dashboard.py session board-tool --out s.html` | 0 | 16 KB standalone page: routing decision, 37-row gate timeline with reasons, conformance tiles, ship outcomes, reproduce block, share button |
+| Standalone (no bundle dependency) | grep for dashboard-only ids in the output | 0 | no `policy-data` / `navbtn` references; page carries its own `<style>` and script |
+| Batch render | `dashboard.py sessions --out-dir sessions` | 0 | 211 pages + index written |
+| Explorer wiring | page probes | 0 | 213 `rid-link` anchors to `sessions/<rid>.html` |
+| Suites after the change | 5 suites | 0 | green |
+
+**Negative control.** Rendering a nonexistent rid returns `None` and the CLI exits
+with `no run ledger for <rid>` on stderr rather than writing an empty page; with a
+real rid the page contains the timeline rows. The missed-gate path is exercised by
+any run whose lane expects a gate it never recorded (rows render with the
+`◌ MISSED` chip and the `s-missed` row style).

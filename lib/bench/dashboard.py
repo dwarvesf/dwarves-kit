@@ -736,6 +736,8 @@ text-overflow:ellipsis;white-space:nowrap}
 .fp{font-family:var(--mono);font-size:11px;color:var(--bad);white-space:pre-wrap}
 .footer{margin-top:28px;font-family:var(--mono);font-size:11px;color:var(--ash)}
 tr.exrow{cursor:pointer}
+a.rid-link{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}
+a.rid-link:hover{color:var(--ember)}
 tr.detail>td{background:var(--sheet);padding:10px 14px}
 .detail-log table{margin:6px 0 0}
 body.redacted code,body.redacted .reason,body.redacted td.mono,
@@ -743,6 +745,72 @@ body.redacted .detail-log{filter:blur(5px);user-select:none}
 select{font-family:var(--mono);font-size:11.5px;background:var(--card);color:var(--ink);
 border:1px solid var(--rule-strong);padding:2px 6px}
 @media (prefers-reduced-motion:no-preference){.navbtn,.chip{transition:color .15s,border-color .15s}}
+</style>"""
+
+
+SESSION_STYLE = """<style>
+:root{--coal:#F2F0EC;--sheet:#FAF9F6;--card:#FFF;--ink:#1C1E24;--iron:#3A3F49;
+--ash:#6E7480;--rule:#D8D4CC;--rule-strong:#B9B4AA;--ember:#C84A16;--heat2:#C84A16;
+--heat3:#F08C1B;--heat4:#FFD75E;--ok:#2E7D4F;--warn:#B07B10;--bad:#B3261E;
+--glow:rgba(200,74,22,.12);
+--mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,monospace;
+--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root{--coal:#15171C;--sheet:#1B1E24;--card:#1F232B;
+--ink:#ECEAE4;--iron:#B8BDC7;--ash:#8A8F99;--rule:#2B2F37;--rule-strong:#3C414B;
+--ok:#5DBB84;--warn:#D9A441;--bad:#E5726B;--glow:rgba(240,140,27,.10)}}
+:root[data-theme=dark]{--coal:#15171C;--sheet:#1B1E24;--card:#1F232B;--ink:#ECEAE4;
+--iron:#B8BDC7;--ash:#8A8F99;--rule:#2B2F37;--rule-strong:#3C414B;--ok:#5DBB84;
+--warn:#D9A441;--bad:#E5726B;--glow:rgba(240,140,27,.10)}
+:root[data-theme=light]{--coal:#F2F0EC;--sheet:#FAF9F6;--card:#FFF;--ink:#1C1E24;
+--iron:#3A3F49;--ash:#6E7480;--rule:#D8D4CC;--rule-strong:#B9B4AA;--ok:#2E7D4F;
+--warn:#B07B10;--bad:#B3261E;--glow:rgba(200,74,22,.12)}
+*{box-sizing:border-box}
+body{background:var(--coal);color:var(--ink);font-family:var(--sans);margin:0;
+line-height:1.55;-webkit-font-smoothing:antialiased}
+.spine{height:6px;background:linear-gradient(90deg,#8A8E96,var(--heat2),var(--heat3),var(--heat4))}
+main{max-width:960px;margin:0 auto;padding:22px 20px 60px}
+.crumb{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;
+font-family:var(--mono);font-size:12px}
+.crumb a{color:var(--ash);text-decoration:none}
+.crumb a:hover{color:var(--ember)}
+.crumb button{font:inherit;font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
+text-transform:uppercase;background:var(--card);color:var(--ember);
+border:1px solid var(--ember);padding:5px 12px;cursor:pointer}
+:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;
+text-transform:uppercase;color:var(--ember)}
+h1{font-family:var(--mono);font-weight:700;text-transform:uppercase;
+font-size:clamp(20px,3.4vw,30px);line-height:1.06;margin:2px 0 6px;word-break:break-all}
+h2{font-family:var(--mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;
+margin:30px 0 8px;color:var(--iron)}
+.meta{color:var(--ash);font-size:13.5px;max-width:70ch}
+.dim{color:var(--ash)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+background:var(--rule);border:1px solid var(--rule);margin:18px 0}
+.tile{background:var(--card);padding:12px 14px}
+.tile b{display:block;font-family:var(--mono);font-size:17px}
+.tile span{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+text-transform:uppercase;color:var(--ash)}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--rule);padding:6px 9px;font-size:12.5px;text-align:left;
+background:var(--card);vertical-align:top}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+color:var(--ash);position:sticky;top:0}
+td.mono,.mono{font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+tr.s-missed td{background:color-mix(in srgb,var(--bad) 8%,var(--card))}
+tr.s-override td{background:color-mix(in srgb,var(--warn) 8%,var(--card))}
+tr:hover td{background:var(--glow)}
+.chip{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+padding:1px 8px;border:1px solid var(--rule-strong);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:var(--ok)}
+.chip.bad{color:var(--bad);border-color:var(--bad)}
+.chip.warn{color:var(--warn);border-color:var(--warn)}
+.chip.dim{color:var(--ash)}
+.scroll{max-height:none;overflow-x:auto;border:1px solid var(--rule)}
+.scroll table{margin:0;border:none}
+pre{background:var(--sheet);border:1px solid var(--rule);padding:10px 12px;overflow-x:auto;
+font-family:var(--mono);font-size:12px}
+.foot{margin-top:32px;font-family:var(--mono);font-size:11px;color:var(--ash)}
 </style>"""
 
 
@@ -1146,6 +1214,154 @@ padding:8px;display:none"></textarea>
 </section>"""
 
 
+def session_detail(rid, log_dir, dashboard_href="../index.html"):
+    """One standalone session page (the pi.dev-shaped unit of sharing).
+
+    Self-contained: its own <style>, no dependency on the dashboard bundle, so a
+    shared link opens fast and works on its own. Renders the routing decision,
+    the full gate timeline with reasons, expected-vs-actual ghost rows, ship
+    outcomes, debt markers, and the replay command."""
+    path = Path(log_dir) / "runs" / f"{rid}.log"
+    if not path.exists():
+        return None
+    meta, timeline, outcomes, debts = {}, [], [], []
+    t0 = t1 = None
+    for line in path.read_text().splitlines():
+        parts = [x.strip() for x in line.split(" | ", 3)]
+        if len(parts) < 3:
+            continue
+        try:
+            ts = dtm.datetime.fromisoformat(parts[0].replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        t0, t1 = t0 or ts, ts
+        kind = parts[1]
+        if kind == "START":
+            for tok in parts[2].split():
+                k, _, v = tok.partition("=")
+                meta.setdefault(k, v)
+        elif kind == "GATE" and len(parts) == 4:
+            status, _, reason = parts[3].partition(" | ")
+            timeline.append({"ts": ts, "phase": parts[2], "status": status.strip(),
+                             "reason": reason.strip()})
+        elif kind == "OUTCOME" and len(parts) == 4:
+            outcomes.append({"ts": ts, "phase": parts[2], "detail": parts[3]})
+        elif kind == "DEBT":
+            debts.append({"ts": ts, "detail": parts[2].replace("-", " ")})
+
+    lane = meta.get("lane", "")
+    plan = expected_plan(lane) if lane else []
+    recorded = {e["phase"] for e in timeline}
+    req = [ph for ph, lvl in plan if "required" in lvl]
+    seen_last = {}
+    for e in timeline:
+        seen_last[e["phase"]] = e["status"]
+    present = sum(1 for ph in req if seen_last.get(ph) in ("ran", "override"))
+    missed = [ph for ph, lvl in plan if ph not in recorded]
+    misfire = bool(lane and meta.get("classified") and lane != meta["classified"])
+    mins = round((t1 - t0).total_seconds() / 60) if t0 and t1 else 0
+    conf_ok = req and present == len(req)
+
+    rows = ""
+    for e in timeline:
+        rows += (f'<tr class="s-{e["status"]}"><td class=mono>{e["ts"].strftime("%m-%d %H:%M:%S")}</td>'
+                 f'<td class=mono>{H.escape(e["phase"])}</td><td>{_chip(e["status"])}</td>'
+                 f'<td>{H.escape(e["reason"]) or "<span class=dim>no reason recorded</span>"}</td></tr>')
+    for ph in missed:
+        lvl = dict(plan).get(ph, "")
+        rows += (f'<tr class="s-missed"><td class=mono>&mdash;</td><td class=mono>{H.escape(ph)}</td>'
+                 f'<td><span class="chip bad">◌ MISSED</span></td>'
+                 f'<td class=dim>expected by the {H.escape(lane)} lane ({H.escape(lvl)}), '
+                 f"never recorded</td></tr>")
+    out_rows = "".join(
+        f'<tr><td class=mono>{o["ts"].strftime("%m-%d %H:%M:%S")}</td>'
+        f'<td class=mono>{H.escape(o["phase"])}</td><td class=mono>{H.escape(o["detail"])}</td></tr>'
+        for o in outcomes) or '<tr><td colspan=3 class=dim>no ship outcomes recorded</td></tr>'
+    debt_rows = "".join(
+        f'<tr><td class=mono>{d["ts"].date()}</td><td>{H.escape(d["detail"][:400])}</td></tr>'
+        for d in debts)
+    debt_block = (f"<h2>Understanding debt</h2><table>{debt_rows}</table>" if debts else "")
+
+    conf_chip = (f'<span class="chip {"ok" if conf_ok else "bad"}">{present}/{len(req)}</span>'
+                 if req else '<span class="chip dim">n/a</span>')
+    ran = sum(1 for e in timeline if e["status"] == "ran")
+    skipped = sum(1 for e in timeline if e["status"] == "skipped")
+    over = sum(1 for e in timeline if e["status"] == "override")
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{H.escape(rid)} · Forge session</title>
+<meta name="description" content="Forge session log for run {H.escape(rid)}: gate timeline, conformance, outcomes.">
+{SESSION_STYLE}
+</head>
+<body>
+<div class="spine"></div>
+<main>
+<div class="crumb"><a href="{dashboard_href}">&larr; control plane</a>
+<button id="share">Share this session</button></div>
+<div class="eyebrow">Session log</div>
+<h1>{H.escape(rid)}</h1>
+<p class="meta">{H.escape(meta.get("repo", "unknown repo"))} ·
+{H.escape(meta.get("type", "unknown type"))} ·
+{t0.date() if t0 else "?"} · {mins} min
+{' · <span class="chip warn">lane misfire</span>' if misfire else ''}</p>
+
+<div class="tiles">
+<div class="tile"><b>{H.escape(lane) or "?"}</b><span>lane
+{"(classifier said " + H.escape(meta.get("classified", "")) + ")" if misfire else "(classifier agreed)"}</span></div>
+<div class="tile"><b>{conf_chip}</b><span>required gates present</span></div>
+<div class="tile"><b>{ran} ● {skipped} ○ {over} ⚑</b><span>ran / skipped / overridden</span></div>
+<div class="tile"><b>{len(timeline)}</b><span>gate events</span></div>
+</div>
+
+<h2>Gate timeline</h2>
+<p class="meta">Every recorded decision, in order, with the reason it carried. Rows marked
+<span class="chip bad">◌ MISSED</span> are gates the lane expected that this run never recorded.</p>
+<div class="scroll"><table><tr><th>time</th><th>gate</th><th>verdict</th><th>reason</th></tr>
+{rows}</table></div>
+
+<h2>Ship outcomes</h2>
+<table><tr><th>time</th><th>phase</th><th>detail</th></tr>{out_rows}</table>
+{debt_block}
+
+<h2>Reproduce</h2>
+<pre>forge-tui run {H.escape(rid)}
+bash lib/telemetry/lane-telemetry.sh trace {H.escape(rid)}</pre>
+<p class="foot">FORGE · session log rendered from the append-only gate ledger ·
+{now().isoformat(timespec="seconds")}</p>
+</main>
+<script>
+document.getElementById("share").onclick=()=>{{
+  const u=location.href;
+  const b=document.getElementById("share");
+  const done=()=>{{b.textContent="Link copied";setTimeout(()=>b.textContent="Share this session",1400);}};
+  if(navigator.clipboard)navigator.clipboard.writeText(u).then(done,done);
+  else{{const t=document.createElement("textarea");t.value=u;document.body.appendChild(t);
+    t.select();document.execCommand("copy");t.remove();done();}}
+}};
+</script>
+</body>
+</html>"""
+
+
+def session_index(rids, out_dir):
+    rows = "".join(f'<tr><td><a href="{H.escape(r)}.html"><code>{H.escape(r)}</code></a></td></tr>'
+                   for r in sorted(rids))
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Forge session logs</title>{SESSION_STYLE}</head><body>
+<div class="spine"></div><main>
+<div class="crumb"><a href="../index.html">&larr; control plane</a></div>
+<div class="eyebrow">Session logs</div><h1>All sessions</h1>
+<p class="meta">{len(rids)} recorded runs. Each page is standalone and shareable.</p>
+<div class="scroll"><table><tr><th>run</th></tr>{rows}</table></div>
+</main></body></html>"""
+
+
 def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
            debt=None, config=None, policy=None, runtimes=None):
     m = metrics
@@ -1209,7 +1425,8 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
                   f"{detail_rows}</table></div></td></tr>")
         ex_rows += (f'<tr class="exrow" data-k="{H.escape(r["rid"].lower())} {H.escape(tags)}" '
                     f'data-rid="{H.escape(r["rid"].lower())}" tabindex="0">'
-                    f'<td><code>{H.escape(r["rid"])}</code>{mis}</td>'
+                    f'<td><a class="rid-link" href="sessions/{H.escape(r["rid"])}.html">'
+                    f'<code>{H.escape(r["rid"])}</code></a>{mis}</td>'
                     f"<td>{r['t1'].date()}</td><td>{H.escape(r['meta'].get('repo', ''))}</td>"
                     f"<td>{H.escape(lane)}</td><td>{H.escape(r['meta'].get('type', ''))}</td>"
                     f"<td>{counts}</td><td>{conf_html}</td><td>{mins:.0f}m "
@@ -1313,7 +1530,7 @@ page is hand-entered; a correction is a new run, never an edit.</p>
 <section id="explorer">
 <div class="eyebrow">Observe</div>
 <h1>Run explorer</h1>
-<p class="meta">{len(runs)} recorded runs. Segments are saved filters; conformance =
+<p class="meta">{len(runs)} recorded runs. Click a run id for its standalone session-log page (shareable on its own); click the row to expand the log inline. Segments are saved filters; conformance =
 required gates present for the run's lane. Replay any row:
 <span class=mono>forge-tui run &lt;rid&gt;</span>.</p>
 <div class="seg-bar"><input id="q" placeholder="filter rid / repo / lane...">{segs}</div>
@@ -1547,7 +1764,40 @@ def main():
     s.add_argument("--max-transcripts", type=int, default=25)
     s.add_argument("--window-days", type=int, default=30)
     s.set_defaults(format="json")
+    sess = sub.add_parser("session", help="render ONE standalone session detail page")
+    sess.add_argument("rid")
+    sess.add_argument("--out", default="session.html")
+    sessa = sub.add_parser("sessions", help="render a session page per run + an index")
+    sessa.add_argument("--out-dir", default="sessions")
+    for x in (sess, sessa):
+        x.add_argument("--log-dir", default=os.environ.get(
+            "DWARVES_KIT_LOG_DIR", str(Path.home() / ".local/state/dwarves-kit/logs")))
+        x.add_argument("--dashboard", default="../index.html",
+                       help="href back to the control plane")
     a = ap.parse_args()
+
+    if a.cmd == "session":
+        page = session_detail(a.rid, a.log_dir, a.dashboard)
+        if page is None:
+            print(f"no run ledger for {a.rid}", file=sys.stderr)
+            return
+        Path(a.out).write_text(page)
+        print(f"session page written to {a.out}", file=sys.stderr)
+        return
+
+    if a.cmd == "sessions":
+        outdir = Path(a.out_dir)
+        outdir.mkdir(parents=True, exist_ok=True)
+        rids = [f.stem for f in (Path(a.log_dir) / "runs").glob("*.log")]
+        made = 0
+        for rid in rids:
+            page = session_detail(rid, a.log_dir, a.dashboard)
+            if page:
+                (outdir / f"{rid}.html").write_text(page)
+                made += 1
+        (outdir / "index.html").write_text(session_index(rids, outdir))
+        print(f"{made} session pages + index written to {outdir}", file=sys.stderr)
+        return
 
     if a.cmd == "debt":
         dm = debt_metrics(collect_debt(a.log_dir))
