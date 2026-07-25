@@ -12,9 +12,14 @@ human will look at it.
 ## Query numbers (agent surface, JSON)
 
 ```sh
-python3 lib/bench/dashboard.py stats            # fleet + money + debt + alerts, one blob
-python3 lib/bench/dashboard.py debt --format json   # cognitive-debt score alone (ADR-0031)
+python3 lib/bench/dashboard.py stats                 # fleet + money + debt + alerts, one blob
+python3 lib/bench/dashboard.py debt --format json    # cognitive-debt score alone (ADR-0031)
+python3 lib/bench/dashboard.py allocation --period week --budget N --format json
 ```
+
+`allocation` answers the lead's question: where the pool went (member → feature, feature =
+git branch), period over period, plus a proposed next-period allowance plan.
+`--format md` emits the weekly/monthly report as paste-ready markdown.
 
 `stats` keys: `fleet` (runs, gate counts, override/misfire rates, conformance),
 `money` (computed spend, token mix, cache-hit, per-model), `debt` (score, open defers,
@@ -42,6 +47,9 @@ Spend and the efficiency ranking are kit-side only, one price table: use
 
 ```sh
 python3 lib/bench/dashboard.py build --out dashboard.html   # full control plane
+python3 lib/bench/dashboard.py session <rid> --out s.html    # one session log, shareable
+python3 lib/bench/dashboard.py sessions --out-dir sessions/  # all of them + index
+python3 lib/bench/dashboard.py transcript <id> --out t.html  # FULL transcript (opt-in)
 python3 lib/bench/report.py build --rids r1,r2 --out report.html   # one mega-run
 python3 lib/bench/viewer.py build --ledger name=<rid> --out viewer.html  # diagram player
 ```
@@ -64,5 +72,9 @@ python3 lib/bench/bench.py diff --baseline old.jsonl --candidate new.jsonl  # ex
 - The debt score pressures the weekend paydown; do not treat it as a blocker.
 - The efficiency ranking measures token economics, not value delivered; never
   report it as a performance judgement, and respect its volume floor.
-- Share a specific run as `<dashboard-url>#run/<rid>`; the deep link opens the
-  explorer with that run's log expanded.
+- Share a specific run as `<dashboard-url>#run/<rid>` (deep link) or link its standalone
+  page at `sessions/<rid>.html`.
+- `transcript` reads message CONTENT and is opt-in per invocation; every string passes a
+  redaction mask that can miss. Never commit a real transcript to a public tree, and never
+  paste one outside the team without reading it first.
+- Allocation plans are proposals. Export them; do not describe them as applied.

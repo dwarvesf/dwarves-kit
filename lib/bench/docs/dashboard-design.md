@@ -162,3 +162,45 @@ back to the turn, and "Export notes" downloads them for the learning ledger.
 **Efficiency board promoted** out of the Cost section into its own sidebar surface
 (podium, grade distribution, weighting explainer, leaderboard, metric legend), because a
 ranking buried in a spend table is not a board.
+
+
+## v5 (2026-07-25): the closing shape
+
+Where this landed after the day's arc, recorded so the next session starts from reality
+rather than from the commit log.
+
+**Three planes, one protocol.**
+
+| Plane | Owns | Lives in |
+|---|---|---|
+| Data | the event protocol, ledger + transcript adapters, the conformance overlay | kit `lib/bench/events.py` |
+| Compute | fleet / money / debt / efficiency / allocation metrics, page renderers | kit `lib/bench/dashboard.py` |
+| Frontends | the TUI (product) and the rendered site pages | forge `cli/forge-tui`, `site/dashboard/` |
+
+Adding an agent runtime is one adapter in the data plane; nothing downstream changes.
+Adding a metric is one function plus a section; the CLI gets it for free through `stats`.
+
+**Surface inventory (8 verbs).** `stats`, `debt`, `allocation` (agent/JSON-first);
+`build`, `session`, `sessions`, `transcript`, `transcripts` (rendered pages). The forge
+TUI mirrors the three query verbs; spend and allocation stay kit-side deliberately so one
+price table exists.
+
+**The honesty rules, collected.** Each exists because a specific wrong number or leak was
+possible, and each is enforced in code with a test:
+
+1. Money is computed from list prices, never invoiced , said on every money surface.
+2. Run-rate is `n/a` under two distinct days rather than extrapolating one partial day.
+3. Period-over-period is suppressed when either bucket is partial.
+4. Allocation proposals are bounded by demonstrated demand, and the remainder is reported
+   as unallocated headroom rather than force-fed.
+5. Cost-per-shipped-run is absent, not approximated, until the session↔run join lands.
+6. Efficiency is token economics, not value delivered, and carries a volume floor.
+7. Transcript content is opt-in, redacted best-effort, and the mask is described as
+   fail-open; real transcripts never enter a publicly-shipping tree.
+8. Feature attribution names `main`/`HEAD` as unattributed rather than inventing features.
+
+**Known gaps, in priority order.** (a) The session↔run join (ID-420) unlocks cost per
+shipped change, the metric that should dominate the efficiency board. (b) Per-member
+identity needs the team gateway; everything member-shaped is project-shaped until then.
+(c) Codex is the natural second runtime adapter , its rollout files are already JSONL.
+(d) `watch` mode would make the dashboard live rather than a post-mortem.
