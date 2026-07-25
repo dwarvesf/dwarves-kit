@@ -1045,6 +1045,23 @@ padding:1px 8px;border:1px solid var(--rule-strong);white-space:nowrap}
 pre{background:var(--sheet);border:1px solid var(--rule);padding:10px 12px;overflow-x:auto;
 font-family:var(--mono);font-size:12px}
 .foot{margin-top:32px;font-family:var(--mono);font-size:11px;color:var(--ash)}
+.stepper{display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--rule-strong);
+background:var(--card);margin:10px 0}
+.step{display:flex;align-items:center;gap:8px;padding:10px 16px;position:relative;
+font-family:var(--mono);flex:1 1 auto;min-width:110px;border-right:1px solid var(--rule)}
+.step:last-child{border-right:none}
+.step::after{content:"›";position:absolute;right:-6px;top:50%;transform:translateY(-50%);
+color:var(--rule-strong);z-index:1;background:var(--card);line-height:1}
+.step:last-child::after{content:none}
+.step .g{font-size:15px;line-height:1}
+.step .l{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--iron)}
+.step.ok .g{color:var(--ok)}
+.step.ovr .g{color:var(--warn)}
+.step.skip .g{color:var(--ash)}
+.step.miss{background:color-mix(in srgb,var(--bad) 7%,var(--card))}
+.step.miss .g{color:var(--bad)}
+.step.miss .l{color:var(--bad)}
+.step.opt .g,.step.opt .l{color:var(--rule-strong)}
 </style>"""
 
 
@@ -1631,6 +1648,41 @@ textarea.note{width:100%;min-height:3.4rem;margin-top:6px;background:var(--sheet
 color:var(--ink);border:1px solid var(--rule-strong);padding:6px 8px;
 font-family:var(--sans);font-size:13px}
 .crumb span{display:flex;gap:6px}
+/* rich blocks: markdown prose, code, diff, terminal */
+.btext.md{white-space:normal}
+.btext.md p{margin:6px 0}
+.btext.md h3,.btext.md h4,.btext.md h5{font-family:var(--mono);text-transform:uppercase;
+letter-spacing:.06em;font-size:13px;margin:12px 0 4px;color:var(--iron)}
+.btext.md ul,.btext.md ol{margin:6px 0;padding-left:22px;display:flex;
+flex-direction:column;gap:3px}
+.btext.md blockquote{border-left:3px solid var(--rule-strong);margin:6px 0;
+padding:2px 12px;color:var(--iron)}
+.btext.md code{font-family:var(--mono);font-size:.9em;background:var(--sheet);
+border:1px solid var(--rule);padding:0 4px}
+.btext.md pre.code code{border:none;background:none;padding:0}
+.btext.md a{color:var(--ember)}
+.btext.md hr{border:none;border-top:1px solid var(--rule);margin:10px 0}
+pre.code,pre.term,pre.diff{margin:6px 0;padding:9px 11px;background:var(--ledgerbg,#1B1E24);
+color:var(--ledgerink,#D7DCE4);font-family:var(--mono);font-size:11.5px;line-height:1.6;
+overflow-x:auto;border:1px solid var(--rule-strong)}
+details pre.code,details pre.term,details pre.diff{border:none;
+border-top:1px solid var(--rule-strong);margin:0}
+.hs{color:#8FBE6E}.hc{color:#6E7480;font-style:italic}.hk{color:#F08C1B}.hn{color:#FFD75E}
+pre.term .ps1{color:#F08C1B;font-weight:700;margin-right:6px}
+pre.diff .dl{display:block;white-space:pre-wrap;word-break:break-word}
+pre.diff .del{background:rgba(179,38,30,.22);color:#F0A9A4}
+pre.diff .add{background:rgba(46,125,79,.24);color:#9AD8B2}
+.btool.oneline{font-family:var(--mono);font-size:11.5px;color:var(--iron);
+border:1px solid var(--rule);background:var(--sheet);padding:4px 8px;margin:5px 0}
+/* inferred workflow stage strip */
+.stagebar{display:flex;gap:1px;height:18px;border:1px solid var(--rule-strong);
+background:var(--rule);margin:8px 0 4px}
+.stagebar a{flex:1 1 0;min-width:3px;display:block}
+.st-explore{background:#3B6FC2}.st-build{background:#C84A16}
+.st-verify{background:#2E7D4F}.st-ship{background:#B07B10}.st-talk{background:#8A8E96}
+.stagekey{display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;
+color:var(--iron);margin-bottom:4px}
+.stagekey i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
 </style>"""
 
 
@@ -1729,8 +1781,18 @@ def load_transcript(path, max_chars=4000):
                         meta["truncated"] += 1
                     txt, n = redact(raw)
                     redactions += n
+                    inp = blk.get("input") if isinstance(blk.get("input"), dict) else {}
+                    obj = {}
+                    for k2, v2 in list(inp.items())[:12]:
+                        s2 = v2 if isinstance(v2, str) else json.dumps(v2)
+                        if len(s2) > max_chars:
+                            s2 = s2[:max_chars] + "\n... [truncated]"
+                            meta["truncated"] += 1
+                        s2, n2 = redact(s2)
+                        redactions += n2
+                        obj[str(k2)] = s2
                     blocks.append({"kind": "tool_use", "name": blk.get("name", "?"),
-                                   "input": txt, "id": blk.get("id", "")})
+                                   "input": txt, "obj": obj, "id": blk.get("id", "")})
                 elif bt == "tool_result":
                     body = blk.get("content")
                     if isinstance(body, list):
@@ -1752,6 +1814,185 @@ def load_transcript(path, max_chars=4000):
     meta["cost"] = sum(model_cost(m, c) for m, c in per_model.items())
     meta["redactions"] = redactions
     return turns, meta
+
+
+# Rich rendering helpers: server-side, stdlib-only, escape-first (injection-safe).
+
+_HL_LANGS = {
+    "python": ("py", r"#[^\n]*", r"\b(def|class|return|if|elif|else|for|while|import|from|as|with|try|except|finally|raise|lambda|yield|pass|break|continue|and|or|not|in|is|None|True|False|self|async|await)\b"),
+    "py": None, "javascript": ("js", r"//[^\n]*", r"\b(function|const|let|var|return|if|else|for|while|class|new|this|typeof|instanceof|null|undefined|true|false|async|await|import|export|from|default|try|catch|throw)\b"),
+    "js": None, "typescript": None, "ts": None,
+    "bash": ("sh", r"#[^\n]*", r"\b(if|then|else|elif|fi|for|do|done|while|case|esac|function|local|export|return|echo|cd|source)\b"),
+    "sh": None, "shell": None, "fish": None,
+    "json": ("json", None, r"\b(true|false|null)\b"),
+    "html": ("html", r"<!--.*?-->", r"\b(div|span|section|main|body|head|html|script|style|a|p|table|tr|td|th|button)\b"),
+    "go": ("go", r"//[^\n]*", r"\b(func|package|import|return|if|else|for|range|type|struct|interface|map|chan|go|defer|var|const|nil|true|false)\b"),
+    "sql": ("sql", r"--[^\n]*", r"\b(?i:select|from|where|join|left|right|inner|group by|order by|insert|update|delete|create|table|as|on|and|or|not|null)\b"),
+}
+_HL_ALIAS = {"py": "python", "js": "javascript", "typescript": "javascript",
+             "ts": "javascript", "sh": "bash", "shell": "bash", "fish": "bash"}
+
+
+def hl(code, lang=""):
+    """Lightweight syntax highlight: comments, strings, keywords, numbers.
+    Tokenizes the RAW text and escapes each piece, so markup cannot leak in."""
+    spec = _HL_LANGS.get(_HL_ALIAS.get((lang or "").lower(), (lang or "").lower()))
+    if not spec:
+        return H.escape(code)
+    _, comment, kw = spec
+    parts = [r'(?P<s>"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\')']
+    if comment:
+        parts.append(f"(?P<c>{comment})")
+    parts += [f"(?P<k>{kw})", r"\b(?P<n>\d+(?:\.\d+)?)\b"]
+    pat = re.compile("|".join(parts), re.S)
+    cls_map = {"s": "hs", "c": "hc", "k": "hk", "n": "hn"}
+    out, pos = [], 0
+    for m in pat.finditer(code):
+        out.append(H.escape(code[pos:m.start()]))
+        name = next(g for g, v in m.groupdict().items() if v is not None)
+        out.append(f'<span class="{cls_map[name]}">{H.escape(m.group(0))}</span>')
+        pos = m.end()
+    out.append(H.escape(code[pos:]))
+    return "".join(out)
+
+
+def _md_inline(s):
+    s = H.escape(s)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    s = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"(?<![\w*])\*([^*\n]+)\*(?![\w*])", r"<i>\1</i>", s)
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)",
+               r'<a href="\2" rel="noopener noreferrer nofollow">\1</a>', s)
+    return s
+
+
+def md_html(text):
+    """Small markdown renderer for assistant prose: headings, lists, fences with
+    highlighting, tables, blockquotes. Falls back to escaped paragraphs."""
+    lines, out, i = text.split("\n"), [], 0
+    while i < len(lines):
+        ln = lines[i]
+        f = re.match(r"^```(\w*)\s*$", ln)
+        if f:
+            j = i + 1
+            while j < len(lines) and not lines[j].startswith("```"):
+                j += 1
+            code = "\n".join(lines[i + 1:j])
+            out.append(f'<pre class="code"><code>{hl(code, f.group(1))}</code></pre>')
+            i = j + 1
+            continue
+        if ln.startswith("|") and i + 1 < len(lines) and re.match(r"^\|[\s:|-]+\|?\s*$", lines[i + 1]):
+            hdr = [c.strip() for c in ln.strip("|").split("|")]
+            j = i + 2
+            body = []
+            while j < len(lines) and lines[j].startswith("|"):
+                body.append([c.strip() for c in lines[j].strip("|").split("|")])
+                j += 1
+            th = "".join(f"<th>{_md_inline(c)}</th>" for c in hdr)
+            tb = "".join("<tr>" + "".join(f"<td>{_md_inline(c)}</td>" for c in r) + "</tr>" for r in body)
+            out.append(f'<div class="scroll"><table><tr>{th}</tr>{tb}</table></div>')
+            i = j
+            continue
+        h = re.match(r"^(#{1,4})\s+(.*)$", ln)
+        if h:
+            lvl = min(len(h.group(1)) + 2, 5)
+            out.append(f"<h{lvl}>{_md_inline(h.group(2))}</h{lvl}>")
+            i += 1
+            continue
+        if re.match(r"^\s*([-*]|\d+\.)\s+", ln):
+            items, j = [], i
+            while j < len(lines) and re.match(r"^\s*([-*]|\d+\.)\s+", lines[j]):
+                items.append(re.sub(r"^\s*([-*]|\d+\.)\s+", "", lines[j]))
+                j += 1
+            tag = "ol" if re.match(r"^\s*\d+\.", ln) else "ul"
+            out.append(f"<{tag}>" + "".join(f"<li>{_md_inline(x)}</li>" for x in items) + f"</{tag}>")
+            i = j
+            continue
+        if ln.startswith(">"):
+            quote, j = [], i
+            while j < len(lines) and lines[j].startswith(">"):
+                quote.append(lines[j].lstrip("> "))
+                j += 1
+            out.append(f'<blockquote>{_md_inline(" ".join(quote))}</blockquote>')
+            i = j
+            continue
+        if re.match(r"^\s*(---+|\*\*\*+)\s*$", ln):
+            out.append("<hr>")
+            i += 1
+            continue
+        if ln.strip():
+            para, j = [], i
+            while j < len(lines) and lines[j].strip() and not re.match(r"^(#|```|\||>|\s*[-*]\s|\s*\d+\.\s)", lines[j]):
+                para.append(lines[j])
+                j += 1
+            out.append(f"<p>{_md_inline(' '.join(para))}</p>")
+            i = j
+            continue
+        i += 1
+    return "".join(out)
+
+
+_EXT_LANG = {".py": "python", ".js": "javascript", ".ts": "javascript", ".mjs": "javascript",
+             ".sh": "bash", ".fish": "bash", ".json": "json", ".html": "html",
+             ".go": "go", ".sql": "sql"}
+
+
+def tool_block(name, obj, raw_json):
+    """Render a tool call by TYPE: Edit as a diff, Write as highlighted code,
+    Bash as a terminal line, read-tools as a one-line summary; JSON otherwise."""
+    def det(summary, body, open_=False):
+        return (f'<details class="btool"{" open" if open_ else ""}>'
+                f"<summary>▸ {summary}</summary>{body}</details>")
+    if name == "Edit" and "old_string" in obj:
+        old = "".join(f'<span class="dl del">- {H.escape(l)}</span>'
+                      for l in obj["old_string"].splitlines() or [""])
+        new = "".join(f'<span class="dl add">+ {H.escape(l)}</span>'
+                      for l in obj.get("new_string", "").splitlines() or [""])
+        fp = H.escape(obj.get("file_path", ""))
+        return det(f"Edit <code>{fp}</code>", f'<pre class="diff">{old}{new}</pre>', True)
+    if name in ("Write", "NotebookEdit") and "content" in obj:
+        fp = obj.get("file_path", "")
+        lang = _EXT_LANG.get(Path(fp).suffix.lower(), "")
+        return det(f"Write <code>{H.escape(fp)}</code>",
+                   f'<pre class="code"><code>{hl(obj["content"], lang)}</code></pre>')
+    if name == "Bash" and "command" in obj:
+        desc = f'<span class="dim"> · {H.escape(obj["description"])}</span>' if obj.get("description") else ""
+        return det(f"Bash{desc}",
+                   f'<pre class="term"><span class="ps1">$</span> {hl(obj["command"], "bash")}</pre>', True)
+    if name in ("Read", "Grep", "Glob") and obj:
+        arg = obj.get("file_path") or obj.get("pattern") or next(iter(obj.values()), "")
+        return (f'<div class="btool oneline">▸ {H.escape(name)} '
+                f"<code>{H.escape(str(arg)[:120])}</code></div>")
+    return det(H.escape(name), f"<pre>{H.escape(raw_json)}</pre>")
+
+
+STAGE_ORDER = ["explore", "build", "verify", "ship", "talk"]
+STAGE_TOOLS = {"Edit": "build", "Write": "build", "NotebookEdit": "build",
+               "Read": "explore", "Grep": "explore", "Glob": "explore",
+               "WebFetch": "explore", "WebSearch": "explore", "Agent": "explore",
+               "ToolSearch": "explore", "Task": "explore"}
+
+
+def turn_stage(t):
+    """Classify a turn into an INFERRED workflow stage from its tool usage.
+    Heuristic on purpose: this is the analysis lane for sessions that did NOT
+    run through the kit's gates (foreign agents); kit runs get real gate records."""
+    for b in t["blocks"]:
+        if b["kind"] != "tool_use":
+            continue
+        n = b["name"]
+        if n == "Bash":
+            cmd = (b.get("obj") or {}).get("command", "")
+            if re.search(r"\bgit (commit|push|merge)\b|\bgh pr\b", cmd):
+                return "ship"
+            if re.search(r"\b(test|pytest|go test|npm test|node --check|shellcheck|lint|tsc)\b", cmd):
+                return "verify"
+            return "build"
+        if n in STAGE_TOOLS:
+            return STAGE_TOOLS[n]
+        if n.startswith("mcp__"):
+            return "explore"
+    return "talk"
 
 
 def find_transcript(session_or_path, tdir):
@@ -1782,17 +2023,23 @@ def transcript_page(path, dashboard_href="../index.html", max_chars=4000):
         body = ""
         for b in t["blocks"]:
             if b["kind"] == "text":
-                body += f'<div class="btext">{H.escape(b["text"])}</div>'
+                # Assistant prose is markdown-rendered; user prompts stay literal
+                # (prompts often contain markup-shaped text that must not render).
+                if who == "agent":
+                    body += f'<div class="btext md">{md_html(b["text"])}</div>'
+                else:
+                    body += f'<div class="btext">{H.escape(b["text"])}</div>'
             elif b["kind"] == "thinking":
                 body += (f'<div class="bthink">thinking · {b["chars"]:,} chars '
                          f"(content not recorded in the transcript)</div>")
             elif b["kind"] == "tool_use":
-                body += (f'<details class="btool"><summary>▸ {H.escape(b["name"])}</summary>'
-                         f'<pre>{H.escape(b["input"])}</pre></details>')
+                body += tool_block(b["name"], b.get("obj") or {}, b["input"])
             elif b["kind"] == "tool_result":
                 cls = "bres err" if b["error"] else "bres"
+                img = ('<span class="chip dim">image content not stored</span>'
+                       if re.match(r"^\s*\[Image", b["text"]) else "")
                 body += (f'<details class="{cls}"><summary>'
-                         f'{"✗ result (error)" if b["error"] else "◂ result"}</summary>'
+                         f'{"✗ result (error)" if b["error"] else "◂ result"}{img}</summary>'
                          f'<pre>{H.escape(b["text"])}</pre></details>')
         stamp = (t["ts"] or "")[11:19]
         rows += f"""<div class="turn {who}" id="t{i}">
@@ -1803,6 +2050,23 @@ def transcript_page(path, dashboard_href="../index.html", max_chars=4000):
 {body}
 <textarea class="note" data-note="{i}" hidden placeholder="commentary on this turn (saved in this browser)"></textarea>
 </div>"""
+
+    stages = [turn_stage(t) for t in turns]
+    stage_counts = Counter(stages)
+    strip = "".join(
+        f'<a class="st-{s}" href="#t{i}" title="turn {i}: {s}"></a>'
+        for i, s in enumerate(stages))
+    key = "".join(
+        f'<span><i class="st-{s}"></i>{s} ×{stage_counts[s]}</span>'
+        for s in STAGE_ORDER if stage_counts[s])
+    stage_html = f"""<h2>Workflow shape <span class="chip warn">inferred</span></h2>
+<p class="meta">Stages inferred from tool usage per turn (read/search = explore,
+edit/write = build, tests = verify, git commit/push = ship). This is the analysis
+lane for sessions that did not run through the kit's gates; a kit run gets real
+gate records on its session page instead of a guess. Click a segment to jump to
+the turn.</p>
+<div class="stagebar">{strip}</div>
+<div class="stagekey">{key}</div>"""
 
     models = ", ".join(f"{m.split('-')[1] if '-' in m else m} ×{n}"
                        for m, n in meta["models"].most_common(4)) or "-"
@@ -1843,6 +2107,8 @@ Redaction is a best-effort mask over free-form text, not a guarantee: review bef
 sharing a transcript outside the team. Tool inputs/results over {max_chars:,} chars are
 truncated ({meta['truncated']} truncations here); thinking content is not stored in the
 transcript, only its size.</p>
+
+{stage_html}
 
 <h2>Transcript</h2>
 <p class="meta">Every turn as it happened. Use <b>note</b> to comment on a turn and
@@ -1953,6 +2219,26 @@ def session_detail(rid, log_dir, dashboard_href="../index.html"):
     mins = round((t1 - t0).total_seconds() / 60) if t0 and t1 else 0
     conf_ok = req and present == len(req)
 
+    # The lane's expected plan as a visual stepper: what the kit promised this
+    # run would walk through, decorated with what actually happened.
+    stepper = ""
+    if plan:
+        glyph = {"ran": ("ok", "●"), "override": ("ovr", "⚑"), "skipped": ("skip", "○")}
+        nodes = ""
+        for ph, lvl in plan:
+            st = seen_last.get(ph)
+            required = "required" in lvl
+            cls, g = glyph.get(st, ("miss", "◌") if required else ("opt", "·"))
+            tag = "" if st or not required else " never recorded"
+            nodes += (f'<div class="step {cls}" title="{H.escape(ph)}: '
+                      f'{H.escape(st or ("expected" + tag) if required else (st or "optional"))}">'
+                      f'<span class="g">{g}</span><span class="l">{H.escape(ph)}</span></div>')
+        stepper = f"""<h2>Lane plan · {H.escape(lane)}</h2>
+<p class="meta">The workflow this run was classified into, decorated with the record:
+● ran · ○ skipped with reason · ⚑ overridden with reason · ◌ expected but never
+recorded · <span class=dim>· optional, not exercised</span>.</p>
+<div class="stepper">{nodes}</div>"""
+
     rows = ""
     for e in timeline:
         rows += (f'<tr class="s-{e["status"]}"><td class=mono>{e["ts"].strftime("%m-%d %H:%M:%S")}</td>'
@@ -2007,6 +2293,8 @@ def session_detail(rid, log_dir, dashboard_href="../index.html"):
 <div class="tile"><b>{ran} ● {skipped} ○ {over} ⚑</b><span>ran / skipped / overridden</span></div>
 <div class="tile"><b>{len(timeline)}</b><span>gate events</span></div>
 </div>
+
+{stepper}
 
 <h2>Gate timeline</h2>
 <p class="meta">Every recorded decision, in order, with the reason it carried. Rows marked

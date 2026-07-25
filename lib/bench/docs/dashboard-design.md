@@ -269,3 +269,16 @@ The worker rejects non-export payloads (422), caps at 5MB (413), and both verbs
 require the admin bearer because the payload embeds run ids, repo names and
 project paths. Cloudflare's bot filter 403s Python-urllib's default UA; export
 sends `dwarves-kit-observe/1` (found live, not in review).
+
+## v6.1 (2026-07-25): rich transcripts, the lane stepper, inferred stages
+
+Three renderer upgrades, all server-side stdlib (escape-first, injection-probed in
+tests): (1) transcript pages render assistant prose as markdown with fenced-code
+syntax highlighting, Edit calls as red/green diffs, Write as highlighted file
+content, Bash as a terminal line; user prompts stay literal on purpose (prompts
+often contain markup-shaped text that must not render). (2) Kit session pages get
+a lane-plan STEPPER: the expected workflow decorated with the record (● ○ ⚑ ◌ ·).
+(3) Foreign-agent sessions (no gate ledger) get an INFERRED workflow strip,
+classified per turn from tool usage (explore/build/verify/ship/talk), labeled as
+a heuristic; the honest framing is the adoption pitch: kit runs replace the guess
+with real gate records. Flow analysis: forge docs/design/dashboard-flows.md.
