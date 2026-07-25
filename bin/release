@@ -33,6 +33,15 @@ CUR="$(cat VERSION)"
   || { echo "version must move forward: current $CUR, asked $VER" >&2; exit 1; }
 [ "$DRY" = 1 ] || [ -z "$(git status --porcelain)" ] || { echo "tree not clean" >&2; exit 1; }
 
+# Paid sources NEVER live in this repo (it is public; the private
+# dwarves-kit-stream repo is created when the first paid module ships).
+# An in-repo stream/ dir is a foot-gun: refuse it, point at --stream-src.
+if [ -d stream ]; then
+  echo "REFUSED: stream/ exists inside this (public) repo. Paid sources live in the" >&2
+  echo "private dwarves-kit-stream checkout; pass it via STREAM_SRC=<path>." >&2
+  exit 1
+fi
+
 echo "== channel 1 · public (free core) =="
 python3 - "$VER" <<'PY'
 import json, sys
@@ -67,7 +76,11 @@ STAGE="$(mktemp -d)"
 mkdir -p "$STAGE/forge-stream"
 cp CHANGELOG.md "$STAGE/forge-stream/"
 [ -f docs/tiers.md ] && cp docs/tiers.md "$STAGE/forge-stream/"
-[ -d stream ] && cp -R stream "$STAGE/forge-stream/stream"
+if [ -n "${STREAM_SRC:-}" ]; then
+  [ -d "$STREAM_SRC" ] || { echo "STREAM_SRC=$STREAM_SRC not found" >&2; exit 1; }
+  cp -R "$STREAM_SRC" "$STAGE/forge-stream/stream"
+  echo "  paid sources from $STREAM_SRC"
+fi
 printf '{"version":"%s","channel":"paid-stream"}\n' "$VER" > "$STAGE/forge-stream/manifest.json"
 TAR="$STAGE/forge-stream-$VER.tar.gz"
 tar -czf "$TAR" -C "$STAGE" forge-stream

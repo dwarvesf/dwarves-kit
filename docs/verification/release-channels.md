@@ -38,3 +38,21 @@ Verdict: PASS
 `bin/release <ver> --dry-run`; the staging proof script shape lives in the session
 scratchpad (stream-proof.py: token via env, prints statuses only). Human release
 steps (git push --tags, gh release) intentionally excluded per ID-295.
+
+## Addendum (2026-07-25): public-repo guard + STREAM_SRC
+
+The repo is PUBLIC; paid sources must never enter it (private dwarves-kit-stream repo
+is created when the first paid module ships).
+
+Command: `mkdir stream && bin/release 9.9.9 --dry-run`
+Exit: 1, BEFORE any file mutation (guard moved above channel 1; tree stays clean)
+Output: "REFUSED: stream/ exists inside this (public) repo..."
+Verdict: PASS
+
+NEGATIVE CONTROL is the guard itself (revert = create stream/ -> RED refuse -> restore
+= remove it); the accept path:
+
+Command: `STREAM_SRC=<private checkout> bin/release 2.0.2 --dry-run`
+Exit: 0
+Output: "paid sources from <path>", 4361-byte bundle with sha256.
+Verdict: PASS
