@@ -129,3 +129,36 @@ project... follow the design guide." Changes:
    spend/runs/token/heat views.
 8. **Efficiency ranking** per METRICS.md §8, with the volume floor and the
    absent-by-design cost-per-ship metric.
+
+
+## v4 (2026-07-25): transcripts on the control plane
+
+**The counts-only rule is now scoped, not absolute, and this is the record of that
+change.** The original rule said transcript content is never read into any output. The
+operator's control-plane requirement ("people should see clearly thru... from that they
+can extract lessons or make commentary") needs the opposite for one surface. The rule
+becomes:
+
+- **Aggregates (default, everywhere):** the dashboard's Tool activity and Cost sections
+  still read counts only, never content. Unchanged.
+- **Transcript pages (opt-in, per invocation):** `dashboard.py transcript <session>`
+  renders full content: prompts, assistant text, tool inputs and results. It is never
+  produced by `build`, so no content appears unless someone asks for it by name.
+- **Every rendered string passes a redaction mask** (`redact()`): provider keys, GitHub
+  and Slack tokens, AWS access keys, bearer tokens, key=value secret shapes, PEM blocks.
+  The page states the hit count and, crucially, states that a mask over free-form text
+  **fails open** and is a safety net, not a guarantee.
+- **Thinking content is never rendered** (only its size), tool payloads truncate at
+  `--max-chars`, and the pages carry `noindex`.
+- **Real transcripts are never committed to the site tree.** The site ships a synthetic
+  fixture (`examples/fixtures/make_demo_session.py`) that plants a fake credential so the
+  redaction is demonstrable; real ones render locally on demand. The forge site goes
+  public at the P2 gate, so committed client work would be a leak with a timer on it.
+
+Commentary and lesson extraction live on the page: per-turn notes persist in
+localStorage (nothing is uploaded), "lesson" copies a markdown block with a deep link
+back to the turn, and "Export notes" downloads them for the learning ledger.
+
+**Efficiency board promoted** out of the Cost section into its own sidebar surface
+(podium, grade distribution, weighting explainer, leaderboard, metric legend), because a
+ranking buried in a spend table is not a board.

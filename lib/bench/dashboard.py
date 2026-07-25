@@ -31,6 +31,7 @@ import datetime as dtm
 import html as H
 import json
 import os
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -940,7 +941,7 @@ def gauge(frac, label):
             f'<span class="val">{pct:.0f}%</span></div>')
 
 
-def money_sections(mm, eff=None):
+def money_sections(mm):
     """Cost & tokens + Runtime sections (the money plane)."""
     tok = mm["tok"]
     burn = f"${mm['daily_burn']:,.2f}" if mm["daily_burn"] is not None else "n/a"
@@ -1019,14 +1020,6 @@ def money_sections(mm, eff=None):
         f'<span class="val">{100 * v / tot_side:.0f}%</span></div>'
         for k, v in side.most_common())
 
-    gcls = {"A": "ok", "B": "ok", "C": "dim", "D": "warn", "E": "bad"}
-    eff_rows = "".join(
-        f'<tr><td><span class="chip {gcls[r["grade"]]}">{r["grade"]}</span></td>'
-        f"<td>{H.escape(r['member'])}</td><td>{r['score']}</td>"
-        f"<td>${r['unit_cost']:,.0f}</td><td>{r['cache_disc']:.0%}</td>"
-        f"<td>{r['delegation']:.0%}</td><td>${r['cost']:,.2f}</td><td>{r['sessions']}</td></tr>"
-        for r in (eff or [])) or "<tr><td colspan=8 class=reason>not enough volume</td></tr>"
-
     unpriced = ""
     if mm["unpriced"]:
         unpriced = ('<p class="meta">Unpriced models (excluded from spend): '
@@ -1041,14 +1034,6 @@ Treat them as an estimate of list-price spend, not an invoice.</p>
 {scope}
 <div class="tiles">{tiles}</div>
 <div class="charts">{trend}{mix_fig}{budget}</div>
-<h2>Token-efficiency ranking</h2>
-<p class="meta">Who spends tokens well, ranked. Member = project on this solo host (the
-team gateway supplies real member identity); volume floor $1. Composite = 40% unit cost
-of output ($/M output tokens, lower is better) + 30% cache discipline (cache-read share
-of prompt) + 30% delegation leverage (output from cheap models). Cost-per-shipped-run
-joins in with ID-420 and is absent rather than faked.</p>
-<table><tr><th>grade</th><th>member</th><th>score</th><th>$/M output</th>
-<th>cache discipline</th><th>delegation</th><th>spend</th><th>sessions</th></tr>{eff_rows}</table>
 <h2>By model</h2>
 <table><tr><th>model</th><th>spend</th><th>sessions</th><th>cache read</th>
 <th>output</th><th>$/MTok in/out</th></tr>{model_rows}</table>
@@ -1078,6 +1063,71 @@ means most spend is delegated work, which is the cheap-first routing target.</p>
 </div>
 </section>"""
     return cost_sec, runtime_sec
+
+
+def efficiency_section(eff):
+    """The ranking as its own board: leaderboard, grade bands, metric legend."""
+    gcls = {"A": "ok", "B": "ok", "C": "dim", "D": "warn", "E": "bad"}
+    if not eff:
+        rows = '<tr><td colspan=8 class=reason>not enough volume to rank</td></tr>'
+        podium = ""
+    else:
+        rows = "".join(
+            f'<tr><td>{i + 1}</td>'
+            f'<td><span class="chip {gcls[r["grade"]]}">{r["grade"]}</span></td>'
+            f"<td>{H.escape(r['member'])}</td><td><b>{r['score']}</b></td>"
+            f"<td>${r['unit_cost']:,.0f}</td><td>{r['cache_disc']:.0%}</td>"
+            f"<td>{r['delegation']:.0%}</td><td>${r['cost']:,.2f}</td>"
+            f"<td>{r['sessions']}</td></tr>"
+            for i, r in enumerate(eff))
+        top = eff[:3]
+        podium = '<div class="tiles">' + "".join(
+            f'<div class="tile"><b><span class="chip {gcls[r["grade"]]}">{r["grade"]}</span> '
+            f'{H.escape(r["member"])}</b><span>#{i + 1} · score {r["score"]} · '
+            f'${r["unit_cost"]:,.0f}/M out</span></div>'
+            for i, r in enumerate(top)) + "</div>"
+    dist = Counter(r["grade"] for r in eff)
+    bands = "".join(
+        f'<div class="mixrow"><span class="lbl">{g} · {lbl}</span>'
+        f'<span class="mixtrack"><span class="seg {gcls[g]}" '
+        f'style="width:{100 * dist.get(g, 0) / max(1, len(eff)):.0f}%">'
+        f"<i>{g}: {dist.get(g, 0)}</i></span></span>"
+        f'<span class="val">{dist.get(g, 0)}</span></div>'
+        for g, lbl in (("A", "80+"), ("B", "65-79"), ("C", "50-64"),
+                       ("D", "35-49"), ("E", "<35")))
+    return f"""<section id="efficiency">
+<div class="eyebrow">Spend</div>
+<h1>Efficiency board</h1>
+<p class="meta">Who spends tokens well, ranked. On this solo host a "member" is a project;
+the team gateway supplies real member identity. Volume floor $1 so a single small session
+cannot top the board.</p>
+{podium}
+<div class="charts">
+<figure class="chart"><figcaption>Grade distribution</figcaption>{bands}</figure>
+<figure class="chart"><figcaption>How the score is built</figcaption>
+<div class="mixrow"><span class="lbl">unit cost</span><span class="mixtrack">
+<span class="seg one" style="width:40%"><i>40%</i></span></span><span class="val">40%</span></div>
+<div class="mixrow"><span class="lbl">cache discipline</span><span class="mixtrack">
+<span class="seg ovr" style="width:30%"><i>30%</i></span></span><span class="val">30%</span></div>
+<div class="mixrow"><span class="lbl">delegation</span><span class="mixtrack">
+<span class="seg ok" style="width:30%"><i>30%</i></span></span><span class="val">30%</span></div>
+<p class="meta" style="margin:.5rem 0 0">Each metric is min-max normalized across members,
+then weighted. Cost-per-shipped-run is the metric that should dominate this board and is
+deliberately absent until the session-to-run join lands (ID-420): without it there is no
+defensible denominator.</p></figure>
+</div>
+<h2>Leaderboard</h2>
+<table><tr><th>#</th><th>grade</th><th>member</th><th>score</th><th>$/M output</th>
+<th>cache discipline</th><th>delegation</th><th>spend</th><th>sessions</th></tr>{rows}</table>
+<dl class="legend">
+<dt>unit cost</dt><dd>USD per million output tokens. Lower is better: work produced per dollar.</dd>
+<dt>cache discipline</dt><dd>cache-read share of prompt tokens. Higher means stable prefixes and less re-reading the world each turn.</dd>
+<dt>delegation</dt><dd>share of output tokens produced by cheap models. Higher means cheap-first routing rather than premium-everything.</dd>
+</dl>
+<p class="meta">This measures token economics, not value delivered. Someone doing the hardest
+work can rank mid-table by spending premium tokens well; read it as a routing-and-hygiene
+signal, never as a performance review.</p>
+</section>"""
 
 
 def debt_section(dm):
@@ -1213,6 +1263,309 @@ padding:8px;display:none"></textarea>
 {rt_html}
 {cfg_html}
 </section>"""
+
+
+TRANSCRIPT_STYLE = """<style>
+.turn{border:1px solid var(--rule);border-left-width:3px;background:var(--card);
+margin:10px 0;padding:10px 12px}
+.turn.user{border-left-color:var(--ember);background:var(--sheet)}
+.turn.agent{border-left-color:var(--rule-strong)}
+.thead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:var(--mono);
+font-size:11px;color:var(--ash);margin-bottom:6px}
+.thead .who{font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--iron)}
+.turn.user .thead .who{color:var(--ember)}
+.tstamp{color:var(--ash)}
+.ttok,.tcost{margin-left:auto;font-variant-numeric:tabular-nums}
+.tcost{color:var(--iron);margin-left:0}
+.note-btn,.lesson-btn{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+text-transform:uppercase;background:transparent;color:var(--ash);
+border:1px solid var(--rule-strong);padding:1px 7px;cursor:pointer}
+.note-btn:hover,.lesson-btn:hover{color:var(--ember);border-color:var(--ember)}
+.btext{white-space:pre-wrap;font-size:13.5px;line-height:1.55;max-width:78ch}
+.bthink{font-family:var(--mono);font-size:11.5px;color:var(--ash);font-style:italic;
+margin:4px 0}
+details.btool,details.bres{margin:5px 0;border:1px solid var(--rule);background:var(--sheet)}
+details.btool summary,details.bres summary{cursor:pointer;padding:4px 8px;
+font-family:var(--mono);font-size:11.5px;color:var(--iron)}
+details.bres.err summary{color:var(--bad)}
+details pre{margin:0;padding:8px 10px;border-top:1px solid var(--rule);max-height:22rem;
+overflow:auto;white-space:pre-wrap;word-break:break-word;font-size:11.5px}
+textarea.note{width:100%;min-height:3.4rem;margin-top:6px;background:var(--sheet);
+color:var(--ink);border:1px solid var(--rule-strong);padding:6px 8px;
+font-family:var(--sans);font-size:13px}
+.crumb span{display:flex;gap:6px}
+</style>"""
+
+
+SECRET_PATTERNS = [
+    (re.compile(r"sk-ant-[A-Za-z0-9_\-]{10,}"), "sk-ant-REDACTED"),
+    (re.compile(r"\bsk-[A-Za-z0-9]{20,}"), "sk-REDACTED"),
+    (re.compile(r"\b(?:ghp|gho|ghs|ghu)_[A-Za-z0-9]{20,}"), "gh-token-REDACTED"),
+    (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), "AKIA-REDACTED"),
+    (re.compile(r"\bxox[baprs]-[A-Za-z0-9\-]{10,}"), "slack-token-REDACTED"),
+    (re.compile(r"\bwhsec_[A-Za-z0-9]{16,}"), "whsec-REDACTED"),
+    (re.compile(r"(?i)\b(bearer)\s+[A-Za-z0-9._\-]{20,}"), r"\1 REDACTED"),
+    (re.compile(r"(?i)\b(password|passwd|secret|api[_-]?key|access[_-]?token|"
+                r"refresh[_-]?token|client[_-]?secret)\s*[=:]\s*\S{6,}"),
+     r"\1=REDACTED"),
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
+     "-----PRIVATE KEY REDACTED-----"),
+]
+
+
+def redact(text):
+    """Best-effort secret scrub before any transcript content is rendered.
+    Returns (text, hits). This is a SELECTOR-poor context (free-form text, no
+    named fields), so it is a mask and masks fail open: it is a safety net for
+    accidental exposure, never a guarantee. The page says so."""
+    if not text:
+        return text, 0
+    hits = 0
+    for rx, repl in SECRET_PATTERNS:
+        text, n = rx.subn(repl, text)
+        hits += n
+    return text, hits
+
+
+def load_transcript(path, max_chars=4000):
+    """Parse one Claude Code transcript into render-ready turns. Content IS read
+    here (opt-in --with-transcript only); every string passes through redact()."""
+    turns, redactions = [], 0
+    meta = {"models": Counter(), "tools": Counter(), "tok": Counter(), "cost": 0.0,
+            "project": path.parent.name, "session": path.stem, "t0": None, "t1": None,
+            "cwd": None, "branch": None, "truncated": 0}
+    per_model = {}
+    for line in path.read_text(errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        ts = d.get("timestamp")
+        if isinstance(ts, str):
+            meta["t0"] = meta["t0"] or ts
+            meta["t1"] = ts
+        meta["cwd"] = meta["cwd"] or d.get("cwd")
+        meta["branch"] = meta["branch"] or d.get("gitBranch")
+        msg = d.get("message") or {}
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        model = msg.get("model")
+        if model:
+            meta["models"][model] += 1
+        u = msg.get("usage") or {}
+        c = Counter()
+        for k in TOKEN_KINDS:
+            v = u.get(k)
+            if isinstance(v, int):
+                c[k] += v
+                meta["tok"][k] += v
+        if c and model:
+            pm = per_model.setdefault(model, Counter())
+            pm.update(c)
+        blocks = []
+        content = msg.get("content")
+        if isinstance(content, str):
+            txt, n = redact(content)
+            redactions += n
+            blocks.append({"kind": "text", "text": txt})
+        elif isinstance(content, list):
+            for blk in content:
+                if not isinstance(blk, dict):
+                    continue
+                bt = blk.get("type")
+                if bt == "text":
+                    txt, n = redact(blk.get("text", ""))
+                    redactions += n
+                    blocks.append({"kind": "text", "text": txt})
+                elif bt == "thinking":
+                    blocks.append({"kind": "thinking",
+                                   "chars": len(blk.get("thinking") or "")})
+                elif bt == "tool_use":
+                    meta["tools"][blk.get("name", "?")] += 1
+                    raw = json.dumps(blk.get("input", {}), indent=1)[:max_chars]
+                    if len(json.dumps(blk.get("input", {}))) > max_chars:
+                        meta["truncated"] += 1
+                    txt, n = redact(raw)
+                    redactions += n
+                    blocks.append({"kind": "tool_use", "name": blk.get("name", "?"),
+                                   "input": txt, "id": blk.get("id", "")})
+                elif bt == "tool_result":
+                    body = blk.get("content")
+                    if isinstance(body, list):
+                        body = "\n".join(b.get("text", "") for b in body
+                                          if isinstance(b, dict) and b.get("type") == "text")
+                    body = str(body or "")
+                    if len(body) > max_chars:
+                        meta["truncated"] += 1
+                        body = body[:max_chars] + f"\n... [{len(body) - max_chars} more chars]"
+                    txt, n = redact(body)
+                    redactions += n
+                    blocks.append({"kind": "tool_result", "text": txt,
+                                   "id": blk.get("tool_use_id", ""),
+                                   "error": bool(blk.get("is_error"))})
+        if blocks:
+            turns.append({"role": role, "ts": ts, "model": model, "tok": c,
+                          "cost": model_cost(model, c) if model else 0.0,
+                          "sidechain": bool(d.get("isSidechain")), "blocks": blocks})
+    meta["cost"] = sum(model_cost(m, c) for m, c in per_model.items())
+    meta["redactions"] = redactions
+    return turns, meta
+
+
+def find_transcript(session_or_path, tdir):
+    p = Path(session_or_path)
+    if p.exists():
+        return p
+    root = Path(tdir).expanduser()
+    hits = sorted(root.glob(f"*/{session_or_path}*.jsonl"))
+    return hits[0] if hits else None
+
+
+def transcript_page(path, dashboard_href="../index.html", max_chars=4000):
+    """Full-transcript page: the actual work (prompts, tool calls, results) with
+    per-turn cost, plus commentary + lesson extraction. The pi.dev-shaped view,
+    with our gate/conformance framing kept on the run pages it links to."""
+    turns, meta = load_transcript(path, max_chars)
+    if not turns:
+        return None
+    rows = ""
+    for i, t in enumerate(turns):
+        who = "user" if t["role"] == "user" else "agent"
+        side = ' <span class="chip dim">subagent</span>' if t["sidechain"] else ""
+        cost = f'<span class="tcost">${t["cost"]:.3f}</span>' if t["cost"] else ""
+        toks = ""
+        if t["tok"]:
+            toks = (f'<span class="ttok">{fmt_tok(t["tok"]["output_tokens"])} out · '
+                    f'{fmt_tok(t["tok"]["cache_read_input_tokens"])} cache</span>')
+        body = ""
+        for b in t["blocks"]:
+            if b["kind"] == "text":
+                body += f'<div class="btext">{H.escape(b["text"])}</div>'
+            elif b["kind"] == "thinking":
+                body += (f'<div class="bthink">thinking · {b["chars"]:,} chars '
+                         f"(content not recorded in the transcript)</div>")
+            elif b["kind"] == "tool_use":
+                body += (f'<details class="btool"><summary>▸ {H.escape(b["name"])}</summary>'
+                         f'<pre>{H.escape(b["input"])}</pre></details>')
+            elif b["kind"] == "tool_result":
+                cls = "bres err" if b["error"] else "bres"
+                body += (f'<details class="{cls}"><summary>'
+                         f'{"✗ result (error)" if b["error"] else "◂ result"}</summary>'
+                         f'<pre>{H.escape(b["text"])}</pre></details>')
+        stamp = (t["ts"] or "")[11:19]
+        rows += f"""<div class="turn {who}" id="t{i}">
+<div class="thead"><span class="who">{who}</span>{side}
+<span class="tstamp">{stamp}</span>{toks}{cost}
+<button class="note-btn" data-turn="{i}">note</button>
+<button class="lesson-btn" data-turn="{i}">lesson</button></div>
+{body}
+<textarea class="note" data-note="{i}" hidden placeholder="commentary on this turn (saved in this browser)"></textarea>
+</div>"""
+
+    models = ", ".join(f"{m.split('-')[1] if '-' in m else m} ×{n}"
+                       for m, n in meta["models"].most_common(4)) or "-"
+    tools = ", ".join(f"{t} ×{n}" for t, n in meta["tools"].most_common(6)) or "none"
+    red = meta["redactions"]
+    red_note = (f'<span class="chip warn">{red} secret-shaped strings redacted</span>'
+                if red else '<span class="chip ok">no secret shapes matched</span>')
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{H.escape(meta['session'][:12])} · Forge transcript</title>
+<meta name="robots" content="noindex">
+{SESSION_STYLE}
+{TRANSCRIPT_STYLE}
+</head>
+<body>
+<div class="spine"></div>
+<main>
+<div class="crumb"><a href="{dashboard_href}">&larr; control plane</a>
+<span><button id="collapse">Collapse all tools</button>
+<button id="export">Export notes</button>
+<button id="share">Share</button></span></div>
+<div class="eyebrow">Session transcript</div>
+<h1>{H.escape(meta['session'][:24])}</h1>
+<p class="meta">{H.escape(meta['project'])} · {(meta['t0'] or '')[:10]} ·
+{len(turns)} turns · {models}{' · branch ' + H.escape(meta['branch']) if meta['branch'] else ''}</p>
+
+<div class="tiles">
+<div class="tile"><b>${meta['cost']:.2f}</b><span>computed cost</span></div>
+<div class="tile"><b>{fmt_tok(meta['tok']['output_tokens'])}</b><span>output tokens</span></div>
+<div class="tile"><b>{fmt_tok(meta['tok']['cache_read_input_tokens'])}</b><span>cache read</span></div>
+<div class="tile"><b>{sum(meta['tools'].values())}</b><span>tool calls</span></div>
+</div>
+<p class="meta">Tools: {H.escape(tools)}. {red_note}
+Redaction is a best-effort mask over free-form text, not a guarantee: review before
+sharing a transcript outside the team. Tool inputs/results over {max_chars:,} chars are
+truncated ({meta['truncated']} truncations here); thinking content is not stored in the
+transcript, only its size.</p>
+
+<h2>Transcript</h2>
+<p class="meta">Every turn as it happened. Use <b>note</b> to comment on a turn and
+<b>lesson</b> to copy it as a markdown lesson for the learning ledger. Notes live in this
+browser only (nothing is uploaded).</p>
+{rows}
+<p class="foot">FORGE · transcript rendered from the local session log ·
+{now().isoformat(timespec="seconds")}</p>
+</main>
+<script>
+const LS="forge-notes-"+location.pathname;
+const notes=JSON.parse(localStorage.getItem(LS)||"{{}}");
+document.querySelectorAll("textarea.note").forEach(ta=>{{
+  const k=ta.dataset.note;
+  if(notes[k]){{ta.value=notes[k];ta.hidden=false;}}
+  ta.addEventListener("input",()=>{{notes[k]=ta.value;
+    localStorage.setItem(LS,JSON.stringify(notes));}});
+}});
+document.querySelectorAll(".note-btn").forEach(b=>b.onclick=()=>{{
+  const ta=document.querySelector(`textarea[data-note="${{b.dataset.turn}}"]`);
+  ta.hidden=!ta.hidden; if(!ta.hidden)ta.focus();
+}});
+document.querySelectorAll(".lesson-btn").forEach(b=>b.onclick=()=>{{
+  const turn=document.getElementById("t"+b.dataset.turn);
+  const txt=turn.querySelector(".btext")?.textContent||"";
+  const tool=turn.querySelector(".btool summary")?.textContent||"";
+  const note=turn.querySelector("textarea.note")?.value||"";
+  const md=["## Lesson from "+document.title,
+            "",
+            "**Turn:** "+b.dataset.turn+(tool?" ("+tool.trim()+")":""),
+            "**Source:** "+location.href+"#t"+b.dataset.turn,
+            "",
+            note?"**Commentary:** "+note:"**Commentary:** (add yours)",
+            "",
+            "> "+txt.trim().slice(0,600).replace(/\\n/g,"\\n> ")].join("\\n");
+  const done=()=>{{const o=b.textContent;b.textContent="copied";
+    setTimeout(()=>b.textContent=o,1200);}};
+  if(navigator.clipboard)navigator.clipboard.writeText(md).then(done,done);
+}});
+document.getElementById("collapse").onclick=e=>{{
+  const any=[...document.querySelectorAll("details")].some(d=>d.open);
+  document.querySelectorAll("details").forEach(d=>d.open=!any);
+  e.target.textContent=any?"Expand all tools":"Collapse all tools";
+}};
+document.getElementById("export").onclick=()=>{{
+  const out=Object.entries(notes).filter(([,v])=>v.trim())
+    .map(([k,v])=>`- **turn ${{k}}** (${{location.href}}#t${{k}}): ${{v}}`).join("\\n");
+  const md="# Notes on "+document.title+"\\n\\n"+(out||"_no notes yet_");
+  const blob=new Blob([md],{{type:"text/markdown"}});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="session-notes.md";a.click();URL.revokeObjectURL(a.href);
+}};
+document.getElementById("share").onclick=()=>{{
+  const b=document.getElementById("share");
+  navigator.clipboard?.writeText(location.href).then(()=>{{
+    b.textContent="Link copied";setTimeout(()=>b.textContent="Share",1400);}});
+}};
+</script>
+</body>
+</html>"""
 
 
 def session_detail(rid, log_dir, dashboard_href="../index.html"):
@@ -1483,11 +1836,14 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
                            ("stream", "Event stream"), ("tools", "Tool activity")])
     nav_money = "".join(
         f'<button class="navbtn" data-sec="{sid}">{label}</button>'
-        for sid, label in [("cost", "Cost &amp; tokens"), ("runtime", "Runtime")])
+        for sid, label in [("cost", "Cost &amp; tokens"), ("efficiency", "Efficiency board"),
+                           ("runtime", "Runtime")])
     nav2 = "".join(
         f'<button class="navbtn" data-sec="{sid}">{label}</button>'
         for sid, label in [("bench", "Bench / RCA"), ("alerts", "Alerts")])
-    cost_sec, runtime_sec = money_sections(mm, efficiency_rankings(sessions))
+    cost_sec, runtime_sec = money_sections(mm)
+    eff_rank = efficiency_rankings(sessions)
+    eff_sec = efficiency_section(eff_rank)
     debt_sec = debt_section(dm)
     config_sec = config_section(config, policy, runtimes)
 
@@ -1561,6 +1917,7 @@ MCP servers seen: {mcp_html}.</p>
 <th>tool calls</th><th>top tools</th></tr>{sess_rows}</table></div>
 </section>
 {cost_sec}
+{eff_sec}
 {runtime_sec}
 {debt_sec}
 {config_sec}
@@ -1765,6 +2122,17 @@ def main():
     s.add_argument("--max-transcripts", type=int, default=25)
     s.add_argument("--window-days", type=int, default=30)
     s.set_defaults(format="json")
+    tr = sub.add_parser("transcript", help="render ONE full-transcript page (opt-in: reads content)")
+    tr.add_argument("session", help="session id (or a path to the .jsonl)")
+    tr.add_argument("--out", default="transcript.html")
+    tra = sub.add_parser("transcripts", help="render the most recent N transcript pages + index")
+    tra.add_argument("--out-dir", default="transcripts")
+    tra.add_argument("--limit", type=int, default=20)
+    for x in (tr, tra):
+        x.add_argument("--transcripts-dir", default=str(Path.home() / ".claude/projects"))
+        x.add_argument("--max-chars", type=int, default=4000,
+                       help="truncate tool inputs/results past this many chars")
+        x.add_argument("--dashboard", default="../index.html")
     sess = sub.add_parser("session", help="render ONE standalone session detail page")
     sess.add_argument("rid")
     sess.add_argument("--out", default="session.html")
@@ -1776,6 +2144,45 @@ def main():
         x.add_argument("--dashboard", default="../index.html",
                        help="href back to the control plane")
     a = ap.parse_args()
+
+    if a.cmd == "transcript":
+        path = find_transcript(a.session, a.transcripts_dir)
+        if not path:
+            print(f"no transcript found for {a.session}", file=sys.stderr)
+            return
+        page = transcript_page(path, a.dashboard, a.max_chars)
+        if not page:
+            print(f"transcript {path} has no renderable turns", file=sys.stderr)
+            return
+        Path(a.out).write_text(page)
+        print(f"transcript page written to {a.out} (from {path.name})", file=sys.stderr)
+        return
+
+    if a.cmd == "transcripts":
+        root = Path(a.transcripts_dir).expanduser()
+        outdir = Path(a.out_dir)
+        outdir.mkdir(parents=True, exist_ok=True)
+        files = sorted(root.glob("*/*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+        made, rows = 0, []
+        for f in files[:a.limit]:
+            page = transcript_page(f, a.dashboard, a.max_chars)
+            if not page:
+                continue
+            (outdir / f"{f.stem}.html").write_text(page)
+            made += 1
+            rows.append(f.stem)
+        idx = "".join(f'<tr><td><a href="{r}.html"><code>{r[:24]}</code></a></td></tr>'
+                      for r in rows)
+        (outdir / "index.html").write_text(f"""<!DOCTYPE html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Forge transcripts</title>{SESSION_STYLE}</head>
+<body><div class="spine"></div><main>
+<div class="crumb"><a href="{a.dashboard}">&larr; control plane</a></div>
+<div class="eyebrow">Transcripts</div><h1>Session transcripts</h1>
+<p class="meta">{made} rendered. Content is redacted best-effort; treat as internal.</p>
+<div class="scroll"><table><tr><th>session</th></tr>{idx}</table></div></main></body></html>""")
+        print(f"{made} transcript pages + index written to {outdir}", file=sys.stderr)
+        return
 
     if a.cmd == "session":
         page = session_detail(a.rid, a.log_dir, a.dashboard)
