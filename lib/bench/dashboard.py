@@ -2281,7 +2281,8 @@ def render_sections(runs, events, sessions, bench_rows, metrics, alerts, money=N
     top_tools = hbars(tool_tot.most_common(14), "Top tools · recent sessions")
     mcp_html = ", ".join(f"<code>{H.escape(k)}</code> ({v})" for k, v in mcp_tot.most_common(8)) or "none seen"
     sess_rows = "".join(
-        f'<tr><td><code>{H.escape(s["session"])}</code></td><td>{H.escape(s["project"])}</td>'
+        f'<tr><td><a class="rid-link" href="transcripts/{H.escape(s["session"])}.html">'
+        f'<code>{H.escape(s["session"])}</code></a></td><td>{H.escape(s["project"])}</td>'
         f"<td class=mono>{H.escape(', '.join(mm.split('-')[1] if '-' in mm else mm for mm in list(s['models'])[:2]))}</td>"
         f"<td>{s['mins']}m</td><td>{sum(s['tools'].values())}</td>"
         f"<td class=reason>{H.escape(', '.join(f'{t} x{c}' for t, c in s['tools'].most_common(4)))}</td></tr>"
@@ -2347,6 +2348,8 @@ audit trail.</p>
 <h1>Tool activity</h1>
 <p class="meta">{len(sessions)} recent sessions from this host's Claude Code transcripts,
 counts only: tool names, models, timing. Message content is never read into this page.
+A session id opens its full-transcript page when rendered
+(<span class=mono>dashboard.py transcripts</span> alongside the export).
 MCP servers seen: {mcp_html}.</p>
 <div class="charts">{top_tools}</div>
 <div class="scroll"><table><tr><th>session</th><th>project</th><th>model</th><th>span</th>
