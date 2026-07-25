@@ -1995,6 +1995,26 @@ def turn_stage(t):
     return "talk"
 
 
+def observe_config(key, cli_value=None):
+    """Config resolution for [observe] keys: CLI flag > ./.kit.toml (project
+    override) > the kit repo's kit.toml. Returns None when unset everywhere."""
+    if cli_value:
+        return cli_value
+    try:
+        import tomllib
+    except ImportError:
+        return None
+    for p in (Path.cwd() / ".kit.toml",
+              Path(__file__).resolve().parents[2] / "kit.toml"):
+        try:
+            v = tomllib.loads(p.read_text()).get("observe", {}).get(key)
+            if v:
+                return v
+        except (OSError, ValueError):
+            continue
+    return None
+
+
 def scope_filter(runs, events, sessions, repos_csv):
     """TEAM scope: keep only the named repos' runs (ledger repo=) and sessions
     (transcript project dir contains the name). Personal mode = no filter, the
@@ -2711,9 +2731,10 @@ def main():
     b.add_argument("--tool-policy", default=None,
                    help="tool-policy JSON to render (default: ~/.claude/dwarves-kit/tool-policy.json)")
     b.add_argument("--out", default="sections.json")
-    b.add_argument("--push", default=None, metavar="API_URL",
+    b.add_argument("--push", nargs="?", const="", default=None, metavar="API_URL",
                    help="also PUT the payload to <API_URL>/admin/observe "
-                        "(Bearer token from FORGE_ADMIN_TOKEN)")
+                        "(Bearer token from FORGE_ADMIN_TOKEN); bare --push uses "
+                        "kit.toml [observe] push_url")
     b.add_argument("--repos", default=None, metavar="A,B",
                    help="TEAM scope: only these repos' runs + sessions enter the "
                         "payload (default: personal scope, the whole host)")
@@ -2869,7 +2890,7 @@ def main():
     events = collect_events(a.log_dir)
     sessions = collect_sessions(a.transcripts_dir, a.max_transcripts)
     runs, events, sessions, scope = scope_filter(
-        runs, events, sessions, getattr(a, "repos", None))
+        runs, events, sessions, observe_config("repos", getattr(a, "repos", None)))
     bench_rows = collect_bench()
     metrics = fleet_metrics(runs, events, a.window_days)
     money = money_metrics(sessions, a.window_days, getattr(a, "monthly_budget", None))
@@ -2912,20 +2933,25 @@ def main():
     print(f"fleet payload written to {a.out}: {c['runs']} runs, {c['events']} events, "
           f"{c['sessions']} sessions, {c['bench_cells']} bench cells, "
           f"{c['alerts_firing']} alerts firing", file=sys.stderr)
-    if a.push:
+    if a.push is not None:
+        push_url = a.push or observe_config("push_url")
+        if not push_url:
+            print("bare --push needs kit.toml [observe] push_url (or pass the URL)",
+                  file=sys.stderr)
+            sys.exit(1)
         token = os.environ.get("FORGE_ADMIN_TOKEN")
         if not token:
             print("--push needs FORGE_ADMIN_TOKEN in the environment", file=sys.stderr)
             sys.exit(1)
         import urllib.request
         req = urllib.request.Request(
-            a.push.rstrip("/") + "/admin/observe", data=body.encode(),
+            push_url.rstrip("/") + "/admin/observe", data=body.encode(),
             # UA matters: Cloudflare's bot filter 403s the default Python-urllib UA
             headers={"Authorization": f"Bearer {token}",
                      "Content-Type": "application/json",
                      "User-Agent": "dwarves-kit-observe/1"}, method="PUT")
         with urllib.request.urlopen(req, timeout=30) as resp:
-            print(f"pushed to {a.push}/admin/observe: HTTP {resp.status}", file=sys.stderr)
+            print(f"pushed to {push_url}/admin/observe: HTTP {resp.status}", file=sys.stderr)
 
 
 if __name__ == "__main__":
