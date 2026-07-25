@@ -2201,6 +2201,13 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
 <div class="shell">
 <aside>
 <a class="wordmark" href="#fleet"><b>FORGE</b></a>
+<div class="grp">Org</div>
+<a class="navbtn" href="/dashboard/#overview">Overview</a>
+<a class="navbtn" href="/dashboard/#team">Team</a>
+<a class="navbtn" href="/dashboard/#analytics">Analytics</a>
+<a class="navbtn" href="/dashboard/#licenses">Licenses</a>
+<a class="navbtn" href="/dashboard/#billing">Billing</a>
+<a class="navbtn" href="/dashboard/#policies">Policies</a>
 <div class="grp">Observe</div>
 {nav}
 <a class="navbtn" href="sessions/">Session pages</a>
@@ -2212,13 +2219,6 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
 <button class="navbtn" data-sec="debt">Cognitive debt</button>
 <div class="grp">Operate</div>
 <button class="navbtn" data-sec="config">Config &amp; policy</button>
-<div class="grp">Org</div>
-<a class="navbtn" href="/dashboard/#overview">Overview</a>
-<a class="navbtn" href="/dashboard/#team">Team</a>
-<a class="navbtn" href="/dashboard/#analytics">Analytics</a>
-<a class="navbtn" href="/dashboard/#licenses">Licenses</a>
-<a class="navbtn" href="/dashboard/#billing">Billing</a>
-<a class="navbtn" href="/dashboard/#policies">Policies</a>
 <button class="navbtn" id="redact-toggle" aria-pressed="false">Redact mode</button>
 </aside>
 <main>
@@ -2301,8 +2301,9 @@ function show(id){{
   btns.forEach(b=>{{if(b.dataset.sec===id)b.setAttribute("aria-current","page");
     else b.removeAttribute("aria-current");}});
 }}
-btns.forEach(b=>b.onclick=()=>{{show(b.dataset.sec);
-  history.replaceState(null,"","#"+b.dataset.sec);}});
+btns.forEach(b=>{{if(!b.dataset.sec)return;
+  b.onclick=()=>{{show(b.dataset.sec);
+    history.replaceState(null,"","#"+b.dataset.sec);}};}});
 function openRun(rid,scroll){{
   show("explorer");
   const row=document.querySelector(`tr.exrow[data-rid="${{rid.toLowerCase()}}"]`);
