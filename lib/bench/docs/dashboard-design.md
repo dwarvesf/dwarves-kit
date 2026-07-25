@@ -204,3 +204,16 @@ shipped change, the metric that should dominate the efficiency board. (b) Per-me
 identity needs the team gateway; everything member-shaped is project-shaped until then.
 (c) Codex is the natural second runtime adapter , its rollout files are already JSONL.
 (d) `watch` mode would make the dashboard live rather than a post-mortem.
+
+## v5.1 (2026-07-25): one dashboard, one sidebar
+
+Han: "we should merge the Crew dashboard altogether, shouldn't have them separate."
+The generated page's sidebar now carries an **Org** group (links to the forge Crew
+views at `/dashboard/#<view>`, which is hash-routed on the forge side) and the Observe
+group gained links to the generated session pages and transcripts. The forge Crew SPA
+mirrors this with a **Fleet** group. The two render sources stay split, hand-authored
+org views vs generated fleet pages, because they read different data (gateway-shaped
+org state vs ledgers/transcripts); the merge is purely a nav contract. The `/dashboard/`
+URL prefix is the one piece of forge coupling in this file; it predates this change
+(the old "Crew dashboard" link) and is accepted as the cost of the generator being the
+forge renderer. Full IA: forge `docs/design/crew-dashboard-recommendation.md` addendum.

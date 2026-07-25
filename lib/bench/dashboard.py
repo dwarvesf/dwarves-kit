@@ -2203,6 +2203,8 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
 <a class="wordmark" href="#fleet"><b>FORGE</b></a>
 <div class="grp">Observe</div>
 {nav}
+<a class="navbtn" href="sessions/">Session pages</a>
+<a class="navbtn" href="transcripts/">Transcripts</a>
 <div class="grp">Spend</div>
 {nav_money}
 <div class="grp">Verify</div>
@@ -2210,8 +2212,13 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
 <button class="navbtn" data-sec="debt">Cognitive debt</button>
 <div class="grp">Operate</div>
 <button class="navbtn" data-sec="config">Config &amp; policy</button>
-<div class="grp">Console</div>
-<a class="navbtn" href="/dashboard/">Crew dashboard</a>
+<div class="grp">Org</div>
+<a class="navbtn" href="/dashboard/#overview">Overview</a>
+<a class="navbtn" href="/dashboard/#team">Team</a>
+<a class="navbtn" href="/dashboard/#analytics">Analytics</a>
+<a class="navbtn" href="/dashboard/#licenses">Licenses</a>
+<a class="navbtn" href="/dashboard/#billing">Billing</a>
+<a class="navbtn" href="/dashboard/#policies">Policies</a>
 <button class="navbtn" id="redact-toggle" aria-pressed="false">Redact mode</button>
 </aside>
 <main>
