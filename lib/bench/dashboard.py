@@ -964,7 +964,8 @@ def money_sections(mm, eff=None):
              f"{mm['window_days']}-day history: raise <code>--max-transcripts</code> to widen it."
              + ("" if mm["projected_30d"] is not None else
                 " Daily burn and the 30-day run-rate read <b>n/a</b> because the sample spans "
-                "under two days; extrapolating one partial day would invent a number."))
+                "under two days; extrapolating one partial day would invent a number.")
+             + "</p>")
 
     mix = ""
     kinds = [("cache_read_input_tokens", "cache read", "one"),
