@@ -184,7 +184,7 @@ Bench/RCA, Alerts) plus their behavior JS, as one `sections.json`
 the old `build` verb that emitted a second standalone page is retired (one-page
 rule, 2026-07-25). `--push <url>` PUTs the payload to the gateway's
 `/admin/observe` (Bearer from `FORGE_ADMIN_TOKEN`) for the dashboard's connected
-mode. Design record: `docs/dashboard-design.md` v6.
+mode. Design record: `docs/dashboard-design.md` Rev 6 (internal revisions, not releases).
 
 ```sh
 python3 dashboard.py export --out sections.json          # ~0.5s over 200+ ledgers

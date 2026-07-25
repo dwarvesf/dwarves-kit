@@ -1,5 +1,9 @@
 # Control-plane dashboard: design
 
+> **Rev N = internal design revisions of this document, not releases.** The kit
+> releases on plugin.json semver (currently 2.x) per forge `docs/design/kit-versioning.md`;
+> nothing here implies a shipped version.
+
 Backfilled design record for `dashboard.py` (operator direction 2026-07-25: "clone them
 all, every feature and render, using our session data... apply the kit... backfill
 design docs"). Feature source: `docs/research/2026-07-25-fiddler-control-plane-features.md`
@@ -71,7 +75,7 @@ propose-never-dispose; a live alerting daemon is a separately-argued step).
 - `watch` mode (rebuild-on-change or SSE) turns the page from post-mortem into a
   live control plane; deliberately out of scope for the static prototype.
 
-## v2 (same day): forge skin + the chart layer
+## Rev 2 (same day): forge skin + the chart layer
 
 Operator: "still far from full features with charts... this belongs to the forge
 project... follow the design guide." Changes:
@@ -98,7 +102,7 @@ project... follow the design guide." Changes:
    provenance banner carries the reproduce command.
 
 
-## v3 (2026-07-25): agent-first, provider registries, sharing
+## Rev 3 (2026-07-25): agent-first, provider registries, sharing
 
 1. **Frontend/data-plane split.** The TUI moved to the forge repo
    (`forge/cli/forge-tui`, product); the kit keeps `lib/bench/events.py` as the
@@ -131,7 +135,7 @@ project... follow the design guide." Changes:
    absent-by-design cost-per-ship metric.
 
 
-## v4 (2026-07-25): transcripts on the control plane
+## Rev 4 (2026-07-25): transcripts on the control plane
 
 **The counts-only rule is now scoped, not absolute, and this is the record of that
 change.** The original rule said transcript content is never read into any output. The
@@ -164,7 +168,7 @@ back to the turn, and "Export notes" downloads them for the learning ledger.
 ranking buried in a spend table is not a board.
 
 
-## v5 (2026-07-25): the closing shape
+## Rev 5 (2026-07-25): the closing shape
 
 Where this landed after the day's arc, recorded so the next session starts from reality
 rather than from the commit log.
@@ -205,7 +209,7 @@ identity needs the team gateway; everything member-shaped is project-shaped unti
 (c) Codex is the natural second runtime adapter , its rollout files are already JSONL.
 (d) `watch` mode would make the dashboard live rather than a post-mortem.
 
-## v5.1 (2026-07-25): one dashboard, one sidebar
+## Rev 5.1 (2026-07-25): one dashboard, one sidebar
 
 Han: "we should merge the Crew dashboard altogether, shouldn't have them separate."
 The generated page's sidebar now carries an **Org** group (links to the forge Crew
@@ -218,7 +222,7 @@ URL prefix is the one piece of forge coupling in this file; it predates this cha
 (the old "Crew dashboard" link) and is accepted as the cost of the generator being the
 forge renderer. Full IA: forge `docs/design/crew-dashboard-recommendation.md` addendum.
 
-## v6 (2026-07-25): one page, and the kit becomes the backend
+## Rev 6 (2026-07-25): one page, and the kit becomes the backend
 
 Han: "don't maintain 2 pages, merge/make them into one page... fully functioning
 with design document, backend, frontend, deployment. think about the onboarding
@@ -261,7 +265,7 @@ is computed, not configured:
 | 2 · steady | past the thresholds | strip removes itself |
 
 No new thresholds were invented for onboarding: phase 1's "some numbers are n/a
-on purpose" is literally the v5 honesty rules doing their job on a small sample.
+on purpose" is literally the Rev 5 honesty rules doing their job on a small sample.
 
 ### Deployment note
 
@@ -270,7 +274,7 @@ require the admin bearer because the payload embeds run ids, repo names and
 project paths. Cloudflare's bot filter 403s Python-urllib's default UA; export
 sends `dwarves-kit-observe/1` (found live, not in review).
 
-## v6.1 (2026-07-25): rich transcripts, the lane stepper, inferred stages
+## Rev 6.1 (2026-07-25): rich transcripts, the lane stepper, inferred stages
 
 Three renderer upgrades, all server-side stdlib (escape-first, injection-probed in
 tests): (1) transcript pages render assistant prose as markdown with fenced-code
