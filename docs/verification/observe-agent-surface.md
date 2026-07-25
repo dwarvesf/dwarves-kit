@@ -102,3 +102,35 @@ with `no run ledger for <rid>` on stderr rather than writing an empty page; with
 real rid the page contains the timeline rows. The missed-gate path is exercised by
 any run whose lane expects a gate it never recorded (rows render with the
 `◌ MISSED` chip and the `s-missed` row style).
+
+
+## Addendum 4: transcripts, redaction, efficiency board
+
+| Check | Command | Exit | Verdict |
+|---|---|---:|---|
+| Transcript render (real session) | `dashboard.py transcript <session>.jsonl` | 0 | 111 turns, 37 tool calls with results, per-turn tokens/cost, 136 KB standalone page |
+| Redaction unit | `redact("api_key=... sk-ant-... ghp_...")` | 0 | 3 hits, all three shapes masked |
+| Redaction end-to-end | render the fixture carrying a planted key | 0 | page contains `REDACTED`; asserted NOT to contain the planted key |
+| Synthetic fixture | `python3 examples/fixtures/make_demo_session.py` | 0 | 10 records covering text / thinking / tool_use / tool_result / error |
+| Efficiency board | page probes | 0 | own section + nav entry: podium, grade distribution, weighting chart, leaderboard, legend |
+| Markup balance | `<p>` open/close count on the built page | 0 | 238/238 |
+| Suites | 5 kit suites | 0 | green |
+
+### Negative control
+
+The redaction check is a real control: it asserts the planted credential is **absent**
+from the rendered page, so deleting any entry from `SECRET_PATTERNS` turns the fixture
+render RED. The fixture plants the key specifically so that check can fail.
+
+### Honest limitations recorded on the page itself
+
+`redact()` is a MASK over free-form text, and masks fail open: an unrecognised secret
+shape passes through. That is why real transcripts stay out of any tree that ships
+publicly, why the pages carry `noindex`, and why the hit count is printed in place.
+
+### Process note
+
+The commit that introduced this work (2ce461c) referenced "Proof addendum 4" before this
+file existed: the writing script used a path relative to `lib/bench` while this file
+lives at the repo root, so the append silently targeted a nonexistent path. Recorded here
+rather than quietly backfilled.
