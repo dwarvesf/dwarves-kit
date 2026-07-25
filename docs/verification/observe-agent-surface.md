@@ -134,3 +134,32 @@ The commit that introduced this work (2ce461c) referenced "Proof addendum 4" bef
 file existed: the writing script used a path relative to `lib/bench` while this file
 lives at the repo root, so the append silently targeted a nonexistent path. Recorded here
 rather than quietly backfilled.
+
+
+## Addendum 5: pool allocation + periodic report
+
+| Check | Command | Exit | Verdict |
+|---|---|---:|---|
+| Feature attribution coverage | branch scan over the sample | 0 | 92/92 sessions carry a git branch; `main` dominates and is labeled unattributed |
+| CLI text / json / md | `dashboard.py allocation --budget 1500 --format …` | 0 | all three render; md is a paste-ready weekly report |
+| Web section | page probes | 0 | share bars, member x feature matrix, period comparison, proposed plan, `data-sec="allocation"` |
+| Markup + JS | `<p>` balance, `node --check` | 0 | 243/243, JS clean |
+| Suites | `tests/test_dashboard.py` + 4 others | 0 | PASSED 12/12 and green |
+
+### Negative controls (both are real bugs caught by running on live data)
+
+1. **Residual force-feeding.** The first water-fill dumped leftover budget on whoever was
+   under the cap: with a $1,500 pool, a member who spent $44 was proposed **$549** while
+   the $3.9k member sat at the $600 cap. Fixed with demand ceilings; guarded by
+   `test_allocation_plan_respects_demand_ceiling_and_reports_headroom`, which asserts every
+   proposal stays within 3x actual spend and that the remainder appears as unallocated.
+2. **Floor outrunning demand.** The starvation floor lifted a $50 spender to a $1,250
+   proposal on a large budget. Fixed by capping the floor at 3x demonstrated demand
+   (a zero-history member still gets the plain floor); the same test asserts it.
+
+### Sampling honesty
+
+Period-over-period comparison is **suppressed** when either bucket is partial. On this
+host the raw number would have read **+4963% week over week**, which is entirely an
+artifact of the sample starting mid-week; the report now prints the raw change plus
+"not comparable" and the reason.

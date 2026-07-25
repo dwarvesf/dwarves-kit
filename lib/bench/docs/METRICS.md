@@ -136,3 +136,43 @@ metric and the three current ones become its explanations.
 **What the ranking is not.** It measures token economics, not value delivered.
 A member doing the hardest work can rank mid-table by spending premium tokens
 well. Read it as a routing-and-hygiene signal, never as a performance review.
+
+
+## 9. Pool allocation (lead-facing)
+
+The lead's question is not "how many tokens" but "where did my pool go, and what should
+next period's allowances be". Three dimensions, one proposal.
+
+| Dimension | Source | Honesty note |
+|---|---|---|
+| Member | project directory on a solo host; gateway identity when the team layer ships | stated on every surface |
+| **Feature** | the **git branch** each session worked on, cost split across branches by message share | `main` / `HEAD` / no-branch are reported as **unattributed**, never dressed up as features |
+| Period | ISO week or calendar month | partial buckets are flagged and period-over-period comparison is suppressed when either side is partial |
+
+### The allowance proposal
+
+`weight = spend x grade multiplier` (A 1.15 · B 1.05 · C 1.00 · D 0.90 · E 0.80), then
+water-filled into the budget under three guards:
+
+- **Demand ceiling** , no proposal above 1.5x what a member actually spent. Nobody absorbs
+  a 12x jump in one period.
+- **Concentration cap** , no proposal above 40% of the pool; a member whose *current* spend
+  already exceeds it is flagged as needing a decision, not a slider.
+- **Starvation floor** , a minimum allowance, itself capped at 3x demonstrated demand so
+  the floor cannot inflate a small spender. A member with no history gets the plain floor
+  so they can start.
+
+Budget that fits nobody's ceiling is reported as **unallocated headroom**. Two bugs were
+caught by running this on real data and are now regression-tested: force-feeding the
+residual to tiny members (a $44 spender proposed $549 because a $3.9k member hit the cap),
+and the floor lifting a $50 spender to $1,250.
+
+**The plan is a proposal.** It is exported, never applied. Efficiency grades measure token
+economics, not value delivered, so a trim is a conversation opener, not a verdict.
+
+### Surfaces
+
+- Web: **Pool allocation** section (share bars, member x feature matrix, period comparison,
+  proposed plan with reasons).
+- CLI: `dashboard.py allocation --period week|month [--budget N] [--format text|json|md]`.
+  `--format md` is the weekly/monthly report a lead can paste into a channel.

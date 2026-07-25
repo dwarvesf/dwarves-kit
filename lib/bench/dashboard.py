@@ -466,6 +466,239 @@ DEFAULT_ALERTS = [
 ]
 
 
+# Allowance policy: efficient members earn headroom, inefficient ones get trimmed
+# WITH a stated reason. Deliberately gentle (±15%) because the efficiency grade is a
+# hygiene signal, not a measure of value; a hard reallocation on a soft signal would
+# punish whoever draws the hardest work.
+GRADE_MULT = {"A": 1.15, "B": 1.05, "C": 1.0, "D": 0.90, "E": 0.80}
+CONCENTRATION_CAP = 0.40   # no single member proposed more than 40% of the pool
+STARVATION_FLOOR = 0.25    # ...nor less than 25% of an equal split
+DEMAND_HEADROOM = 1.5      # ...nor more than 1.5x what they actually spent
+FLOOR_DEMAND_CAP = 3.0     # the floor may lift a member to at most 3x their spend
+
+
+def period_key(day, period):
+    d = dtm.date.fromisoformat(day)
+    if period == "month":
+        return f"{d.year}-{d.month:02d}"
+    iso = d.isocalendar()
+    return f"{iso[0]}-W{iso[1]:02d}"
+
+
+def allocation_metrics(sessions, period="week", budget=None, feature_top=6):
+    """Where the pool went: member x feature x period, with a period-over-period
+    delta and a proposed next-period allowance plan.
+
+    'Member' is the project on a solo host (the gateway supplies real identity).
+    'Feature' is the git branch the work happened on, which is the only feature-
+    shaped signal the transcripts actually carry; `main` is reported as
+    unattributed rather than dressed up as a feature."""
+    buckets = {}
+    for s in sessions:
+        if not s.get("day"):
+            continue
+        pk = period_key(s["day"], period)
+        b = buckets.setdefault(pk, {"cost": 0.0, "members": {}})
+        b["cost"] += s.get("cost", 0.0)
+        m = b["members"].setdefault(s["project"], {"cost": 0.0, "sessions": 0,
+                                                   "features": Counter(),
+                                                   "tok": Counter()})
+        m["cost"] += s.get("cost", 0.0)
+        m["sessions"] += 1
+        m["tok"].update(s.get("tok") or {})
+        # split a session's cost across the branches it touched, by message share
+        br = s.get("branches") or Counter()
+        tot = sum(br.values())
+        if tot:
+            for name, n in br.items():
+                m["features"][name] += s.get("cost", 0.0) * n / tot
+        else:
+            m["features"]["(no branch)"] += s.get("cost", 0.0)
+
+    keys = sorted(buckets)
+    if not keys:
+        return None
+    # A sample that starts mid-period makes the earliest bucket partial, and the
+    # current bucket is still accruing. Comparing either without saying so produces
+    # headlines like "+4963% week over week" that are pure sampling artifact.
+    days_seen = sorted({s["day"] for s in sessions if s.get("day")})
+    first_day, last_day = days_seen[0], days_seen[-1]
+    partial = set()
+    if period_key(first_day, period) == keys[0]:
+        d = dtm.date.fromisoformat(first_day)
+        starts_clean = (d.day == 1) if period == "month" else (d.isoweekday() == 1)
+        if not starts_clean:
+            partial.add(keys[0])
+    d_last = dtm.date.fromisoformat(last_day)
+    ends_clean = (d_last.isoweekday() == 7) if period == "week" else False
+    if not ends_clean:
+        partial.add(keys[-1])
+    cur_k = keys[-1]
+    prev_k = keys[-2] if len(keys) > 1 else None
+    cur, prev = buckets[cur_k], (buckets[prev_k] if prev_k else None)
+
+    eff = {r["member"]: r for r in efficiency_rankings(sessions)}
+    members = []
+    for name, m in sorted(cur["members"].items(), key=lambda kv: -kv[1]["cost"]):
+        pcost = (prev["members"].get(name, {}).get("cost", 0.0) if prev else None)
+        e = eff.get(name)
+        feats = m["features"].most_common(feature_top)
+        members.append({
+            "member": name, "cost": m["cost"], "sessions": m["sessions"],
+            "share": m["cost"] / cur["cost"] if cur["cost"] else 0.0,
+            "prev_cost": pcost,
+            "delta": (m["cost"] - pcost) if pcost is not None else None,
+            "delta_pct": ((m["cost"] - pcost) / pcost) if pcost else None,
+            "grade": e["grade"] if e else None,
+            "score": e["score"] if e else None,
+            "unit_cost": e["unit_cost"] if e else None,
+            "features": [{"name": f, "cost": c,
+                          "share": c / m["cost"] if m["cost"] else 0.0,
+                          "attributed": f not in ("main", "HEAD", "(no branch)")}
+                         for f, c in feats],
+        })
+
+    plan, unallocated, over_cap = [], 0.0, []
+    if budget and members:
+        equal = budget / len(members)
+        floor = equal * STARVATION_FLOOR
+        cap = budget * CONCENTRATION_CAP
+        # A member cannot plausibly absorb an unbounded jump in one period, so each
+        # proposal is bounded by DEMAND_HEADROOM x what they actually spent. Budget
+        # that fits nobody's ceiling is reported as unallocated headroom rather than
+        # force-fed to whoever happens to be under the cap (which produced absurd
+        # proposals: a $44 spender offered $549 because a $3.9k member hit the cap).
+        weights, ceilings = {}, {}
+        for m in members:
+            g = m["grade"] or "C"
+            weights[m["member"]] = max(m["cost"], 0.01) * GRADE_MULT.get(g, 1.0)
+            # The floor exists so nobody is starved, but it must not outrun demonstrated
+            # demand: lifting a $50 spender to a $1,250 allowance because the pool is
+            # large is the same force-feeding bug in a milder form. A member with no
+            # history is the exception, they get the floor so they can start.
+            demand = m["cost"] * DEMAND_HEADROOM
+            lift = floor if m["cost"] <= 0.01 else min(floor, m["cost"] * FLOOR_DEMAND_CAP)
+            ceilings[m["member"]] = max(demand, lift)
+            if m["cost"] > cap:
+                over_cap.append(m["member"])
+        alloc = {k: 0.0 for k in weights}
+        remaining = budget
+        movable = set(weights)
+        for _ in range(12):  # water-filling: settle, clamp, redistribute the rest
+            if not movable or remaining <= 0.005:
+                break
+            wsum = sum(weights[k] for k in movable) or 1.0
+            fixed = []
+            for k in list(movable):
+                want = alloc[k] + remaining * weights[k] / wsum
+                limit = min(ceilings[k], cap)
+                if want >= limit:
+                    remaining -= (limit - alloc[k])
+                    alloc[k] = limit
+                    fixed.append(k)
+            if not fixed:
+                for k in movable:
+                    alloc[k] += remaining * weights[k] / wsum
+                remaining = 0.0
+                break
+            movable -= set(fixed)
+        for k in movable:  # anyone still below floor gets lifted to it
+            if alloc[k] < floor:
+                remaining -= (floor - alloc[k])
+                alloc[k] = floor
+        unallocated = max(0.0, remaining)
+        for m in members:
+            k = m["member"]
+            a_ = alloc[k]
+            g = m["grade"]
+            why = []
+            if g in ("A", "B"):
+                why.append(f"grade {g}: +{int((GRADE_MULT[g] - 1) * 100)}% headroom")
+            elif g in ("D", "E"):
+                why.append(f"grade {g}: {int((GRADE_MULT[g] - 1) * 100)}% weighting, "
+                           f"unit cost ${m['unit_cost']:,.0f}/M out")
+            else:
+                why.append("grade C or unranked: baseline weighting")
+            if abs(a_ - min(ceilings[k], cap)) < 0.01:
+                why.append("at ceiling"
+                           if ceilings[k] <= cap else "at the concentration cap")
+            if k in over_cap:
+                why.append(f"CURRENT spend already exceeds the {CONCENTRATION_CAP:.0%} "
+                           f"concentration cap , this needs a decision, not a slider")
+            plan.append({"member": k, "current": m["cost"], "proposed": a_,
+                         "delta": a_ - m["cost"], "grade": g, "reason": "; ".join(why)})
+
+    return {"partial": sorted(partial), "sample_days": len(days_seen),
+            "sample_range": (first_day, last_day),
+            "period": period, "current_key": cur_k, "prev_key": prev_k,
+            "current_total": cur["cost"],
+            "prev_total": prev["cost"] if prev else None,
+            "members": members, "plan": plan, "budget": budget,
+            "unallocated": unallocated if budget else None,
+            "over_cap": over_cap,
+            "periods": [{"key": k, "cost": buckets[k]["cost"]} for k in keys]}
+
+
+def allocation_markdown(a):
+    """The weekly/monthly report, as markdown a lead can paste into a channel."""
+    if not a:
+        return "_no dated sessions to report on_\n"
+    L = [f"# Pool allocation report · {a['current_key']} ({a['period']}ly)", ""]
+    tot = a["current_total"]
+    flags = []
+    if a["current_key"] in a["partial"]:
+        flags.append(f"{a['current_key']} is still in progress")
+    if a["prev_key"] and a["prev_key"] in a["partial"]:
+        flags.append(f"{a['prev_key']} is partial in this sample")
+    if a["prev_total"] and not flags:
+        d = tot - a["prev_total"]
+        L.append(f"**Pool drawn:** ${tot:,.2f} "
+                 f"({'+' if d >= 0 else ''}{d:,.2f} vs {a['prev_key']}, "
+                 f"{d / a['prev_total']:+.0%})")
+    elif a["prev_total"]:
+        d = tot - a["prev_total"]
+        L.append(f"**Pool drawn:** ${tot:,.2f} (raw change {d:+,.2f} vs {a['prev_key']}, "
+                 f"**not comparable**: {'; '.join(flags)})")
+    else:
+        L.append(f"**Pool drawn:** ${tot:,.2f} (no prior period to compare)")
+    L += ["", "## By member", "",
+          "| member | spend | share | vs prior | grade | $/M out | sessions |",
+          "|---|---:|---:|---:|:--:|---:|---:|"]
+    for m in a["members"]:
+        dl = (f"{m['delta_pct']:+.0%}" if m["delta_pct"] is not None else "new")
+        uc = f"${m['unit_cost']:,.0f}" if m["unit_cost"] else "-"
+        L.append(f"| {m['member']} | ${m['cost']:,.2f} | {m['share']:.0%} | {dl} | "
+                 f"{m['grade'] or '-'} | {uc} | {m['sessions']} |")
+    L += ["", "## Where it went (top features per member)", ""]
+    for m in a["members"]:
+        feats = ", ".join(
+            f"`{f['name']}` ${f['cost']:,.2f} ({f['share']:.0%})"
+            + ("" if f["attributed"] else " _unattributed_")
+            for f in m["features"])
+        L.append(f"- **{m['member']}** , {feats}")
+    if a["plan"]:
+        L += ["", f"## Proposed allowances for next {a['period']} "
+                  f"(pool ${a['budget']:,.0f})", "",
+              "| member | current | proposed | change | why |",
+              "|---|---:|---:|---:|---|"]
+        for p in a["plan"]:
+            L.append(f"| {p['member']} | ${p['current']:,.2f} | ${p['proposed']:,.2f} | "
+                     f"{p['delta']:+,.2f} | {p['reason']} |")
+        L += ["", "_Proposal only._ Efficiency grades measure token economics (unit cost, "
+                  "cache discipline, cheap-model routing), not value delivered: a member "
+                  "doing the hardest work can grade low while spending correctly. Review "
+                  "before applying, and treat a trim as a conversation, not a verdict."]
+    L += ["", "---", "",
+          f"Sample: {a['sample_days']} days ({a['sample_range'][0]} to "
+          f"{a['sample_range'][1]}). "
+          + (f"Partial periods: {', '.join(a['partial'])}. " if a["partial"] else "")
+          + "Costs are computed from list prices, not invoiced amounts. Feature attribution "
+          "uses the git branch each session worked on; `main` and `HEAD` are reported as "
+          "unattributed rather than presented as features. Per-member identity on a solo "
+          "host is the project directory; the team gateway supplies real identity."]
+    return "\n".join(L) + "\n"
+
+
 def eval_alerts(metrics, rules):
     ops = {">": lambda a, b: a > b, "<": lambda a, b: a < b, ">=": lambda a, b: a >= b}
     out = []
@@ -1130,6 +1363,110 @@ signal, never as a performance review.</p>
 </section>"""
 
 
+def allocation_section(a):
+    """Pool -> member -> feature, period over period, plus the proposed plan."""
+    if not a:
+        return """<section id="allocation"><div class="eyebrow">Spend</div>
+<h1>Pool allocation</h1><p class="meta">No dated sessions to allocate.</p></section>"""
+    tot = a["current_total"]
+    dtxt = "no prior period"
+    if a["prev_total"]:
+        d = tot - a["prev_total"]
+        if a["current_key"] in a["partial"] or a["prev_key"] in a["partial"]:
+            dtxt = "not comparable (partial period)"
+        else:
+            dtxt = f"{d:+,.2f} vs {a['prev_key']} ({d / a['prev_total']:+.0%})"
+    tiles = "".join(f'<div class="tile"><b>{v}</b><span>{k}</span></div>' for k, v in [
+        (f"pool drawn · {a['current_key']}", f"${tot:,.2f}"),
+        ("change", dtxt),
+        ("members drawing", len(a["members"])),
+        ("unallocated headroom",
+         f"${a['unallocated']:,.2f}" if a.get("unallocated") is not None else "set a budget"),
+    ])
+    partial_note = (f", partial periods: {', '.join(a['partial'])}"
+                    if a["partial"] else "")
+    mx = max((m["cost"] for m in a["members"]), default=1) or 1
+    shares = "".join(
+        f'<div class="mixrow"><span class="lbl">{H.escape(m["member"])}</span>'
+        f'<span class="mixtrack"><span class="seg one" style="width:{100 * m["cost"] / mx:.1f}%">'
+        f'<i>{H.escape(m["member"])}: ${m["cost"]:,.2f}</i></span></span>'
+        f'<span class="val">{m["share"]:.0%}</span></div>' for m in a["members"][:12])
+    trend = "".join(
+        f'<div class="mixrow"><span class="lbl">{H.escape(p_["key"])}</span>'
+        f'<span class="mixtrack"><span class="seg ovr" '
+        f'style="width:{100 * p_["cost"] / max(x["cost"] for x in a["periods"]):.1f}%">'
+        f'<i>${p_["cost"]:,.2f}</i></span></span>'
+        f'<span class="val">${p_["cost"]:,.0f}</span></div>' for p_ in a["periods"][-8:])
+
+    feat_rows = ""
+    for m in a["members"][:12]:
+        cells = " ".join(
+            f'<span class="chip {"dim" if not f["attributed"] else "ok"}">'
+            f'{H.escape(f["name"][:26])} ${f["cost"]:,.2f}</span>' for f in m["features"])
+        feat_rows += (f'<tr><td>{H.escape(m["member"])}</td>'
+                      f'<td>${m["cost"]:,.2f}</td><td>{cells}</td></tr>')
+
+    gmap = {"A": "ok", "B": "ok", "C": "dim", "D": "warn", "E": "bad"}
+    delta_rows = ""
+    for m in a["members"]:
+        prev = f"${m['prev_cost']:,.2f}" if m["prev_cost"] is not None else "&mdash;"
+        chg = f"{m['delta_pct']:+.0%}" if m["delta_pct"] is not None else "new"
+        grade = (f'<span class="chip {gmap[m["grade"]]}">{m["grade"]}</span>'
+                 if m["grade"] else "-")
+        delta_rows += (f'<tr><td>{H.escape(m["member"])}</td><td>${m["cost"]:,.2f}</td>'
+                       f"<td>{prev}</td><td>{chg}</td><td>{grade}</td>"
+                       f'<td>{m["sessions"]}</td></tr>')
+
+    plan_html = ""
+    if a["plan"]:
+        prows = "".join(
+            f'<tr><td>{H.escape(p_["member"])}</td><td>${p_["current"]:,.2f}</td>'
+            f'<td><b>${p_["proposed"]:,.2f}</b></td>'
+            f'<td class="{"up" if p_["delta"] >= 0 else "down"}">{p_["delta"]:+,.2f}</td>'
+            f'<td class="reason">{H.escape(p_["reason"])}</td></tr>' for p_ in a["plan"])
+        warn = ""
+        if a["over_cap"]:
+            warn = (f'<p class="meta"><span class="chip bad">decision needed</span> '
+                    f'{H.escape(", ".join(a["over_cap"]))} already draws more than the '
+                    f'{CONCENTRATION_CAP:.0%} concentration cap. No allowance slider fixes that; '
+                    f'either the cap is wrong for your team or the work needs splitting.</p>')
+        plan_html = f"""<h2>Proposed allowances · next {a['period']}</h2>
+<p class="meta">Pool ${a['budget']:,.0f}. Proposals are bounded by demand
+({DEMAND_HEADROOM:g}x what a member actually spent), by the {CONCENTRATION_CAP:.0%}
+concentration cap, and by a starvation floor. Budget that fits nobody's ceiling shows as
+<b>unallocated headroom</b> rather than being force-fed to whoever is under the cap.</p>
+{warn}
+<table><tr><th>member</th><th>current</th><th>proposed</th><th>change</th><th>why</th></tr>
+{prows}</table>
+<div class="seg-bar"><button id="plan-export">Export plan JSON</button></div>
+<p class="meta">Proposal only, never applied automatically. Efficiency grades measure token
+economics, not value delivered: a member doing the hardest work can grade low while
+spending correctly. Treat a trim as a conversation.</p>"""
+
+    return f"""<section id="allocation">
+<div class="eyebrow">Spend</div>
+<h1>Pool allocation</h1>
+<p class="meta">Where the pool went: member, then feature, for {a['current_key']}
+({a['period']}ly). Sample: {a['sample_days']} days ({a['sample_range'][0]} to
+{a['sample_range'][1]}){partial_note}. Feature attribution uses the git branch each session worked on;
+<code>main</code> and <code>HEAD</code> are shown greyed as unattributed rather than
+dressed up as features. Member is the project directory on this host; the team gateway
+supplies real member identity.</p>
+<div class="tiles">{tiles}</div>
+<div class="charts">
+<figure class="chart"><figcaption>Share of pool · this {a['period']}</figcaption>{shares}</figure>
+<figure class="chart"><figcaption>Pool drawn per {a['period']}</figcaption>{trend}</figure>
+</div>
+<h2>Member × feature</h2>
+<div class="scroll"><table><tr><th>member</th><th>spend</th>
+<th>features (branch attribution)</th></tr>{feat_rows}</table></div>
+<h2>Period comparison</h2>
+<table><tr><th>member</th><th>this {a['period']}</th><th>prior</th><th>change</th>
+<th>grade</th><th>sessions</th></tr>{delta_rows}</table>
+{plan_html}
+</section>"""
+
+
 def debt_section(dm):
     cls = "ok" if dm["score"] >= 80 else ("warn" if dm["score"] >= 50 else "bad")
     items = "".join(
@@ -1717,7 +2054,7 @@ def session_index(rids, out_dir):
 
 
 def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
-           debt=None, config=None, policy=None, runtimes=None):
+           debt=None, config=None, policy=None, runtimes=None, alloc=None):
     m = metrics
     mm = money or money_metrics(sessions, m["window_days"])
     dm = debt or debt_metrics([])
@@ -1837,6 +2174,7 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
     nav_money = "".join(
         f'<button class="navbtn" data-sec="{sid}">{label}</button>'
         for sid, label in [("cost", "Cost &amp; tokens"), ("efficiency", "Efficiency board"),
+                           ("allocation", "Pool allocation"),
                            ("runtime", "Runtime")])
     nav2 = "".join(
         f'<button class="navbtn" data-sec="{sid}">{label}</button>'
@@ -1844,6 +2182,7 @@ def render(runs, events, sessions, bench_rows, metrics, alerts, out, money=None,
     cost_sec, runtime_sec = money_sections(mm)
     eff_rank = efficiency_rankings(sessions)
     eff_sec = efficiency_section(eff_rank)
+    alloc_sec = allocation_section(alloc)
     debt_sec = debt_section(dm)
     config_sec = config_section(config, policy, runtimes)
 
@@ -1918,6 +2257,7 @@ MCP servers seen: {mcp_html}.</p>
 </section>
 {cost_sec}
 {eff_sec}
+{alloc_sec}
 {runtime_sec}
 {debt_sec}
 {config_sec}
@@ -2107,6 +2447,8 @@ def main():
     b.add_argument("--max-transcripts", type=int, default=25)
     b.add_argument("--alerts", default=None, help="JSON rules file; default built-ins")
     b.add_argument("--window-days", type=int, default=30)
+    b.add_argument("--period", choices=("week", "month"), default="week",
+                   help="bucket size for the allocation view")
     b.add_argument("--monthly-budget", type=float, default=None,
                    help="USD budget for the pool-headroom gauge (operator input)")
     b.add_argument("--tool-policy", default=None,
@@ -2122,6 +2464,13 @@ def main():
     s.add_argument("--max-transcripts", type=int, default=25)
     s.add_argument("--window-days", type=int, default=30)
     s.set_defaults(format="json")
+    al = sub.add_parser("allocation", help="pool -> member -> feature report + plan")
+    al.add_argument("--period", choices=("week", "month"), default="week")
+    al.add_argument("--budget", type=float, default=None,
+                    help="next-period pool; enables the proposed allowance plan")
+    al.add_argument("--format", choices=("text", "json", "md"), default="text")
+    al.add_argument("--transcripts-dir", default=str(Path.home() / ".claude/projects"))
+    al.add_argument("--max-transcripts", type=int, default=120)
     tr = sub.add_parser("transcript", help="render ONE full-transcript page (opt-in: reads content)")
     tr.add_argument("session", help="session id (or a path to the .jsonl)")
     tr.add_argument("--out", default="transcript.html")
@@ -2144,6 +2493,30 @@ def main():
         x.add_argument("--dashboard", default="../index.html",
                        help="href back to the control plane")
     a = ap.parse_args()
+
+    if a.cmd == "allocation":
+        sess = collect_sessions(a.transcripts_dir, a.max_transcripts)
+        al = allocation_metrics(sess, a.period, a.budget)
+        if a.format == "json":
+            print(json.dumps(al, indent=1, default=str))
+        elif a.format == "md":
+            print(allocation_markdown(al))
+        elif not al:
+            print("no dated sessions to allocate", file=sys.stderr)
+        else:
+            print(f"pool {al['current_key']} ({al['period']}ly): ${al['current_total']:,.2f}"
+                  + (f"  ({al['current_total'] - al['prev_total']:+,.2f} vs {al['prev_key']})"
+                     if al["prev_total"] else ""))
+            for m in al["members"]:
+                top = ", ".join(f"{f['name']}:${f['cost']:,.0f}" for f in m["features"][:3])
+                print(f"  {m['member'][:22]:22} ${m['cost']:>9,.2f} {m['share']:>4.0%} "
+                      f"[{m['grade'] or '-'}]  {top}")
+            for p_ in al["plan"]:
+                print(f"  plan {p_['member'][:20]:20} ${p_['current']:>9,.2f} -> "
+                      f"${p_['proposed']:>9,.2f}  {p_['reason'][:70]}")
+            if al.get("unallocated"):
+                print(f"  unallocated headroom: ${al['unallocated']:,.2f}")
+        return
 
     if a.cmd == "transcript":
         path = find_transcript(a.session, a.transcripts_dir)
@@ -2254,7 +2627,9 @@ def main():
     policy = (json.loads(policy_path.read_text()) if policy_path.exists()
               else DEFAULT_TOOL_POLICY)
     render(runs, events, sessions, bench_rows, metrics, alerts, a.out, money,
-           debt=dm, config=collect_config(), policy=policy, runtimes=collect_runtimes())
+           debt=dm, config=collect_config(), policy=policy,
+           runtimes=collect_runtimes(),
+           alloc=allocation_metrics(sessions, a.period, a.monthly_budget))
 
 
 if __name__ == "__main__":

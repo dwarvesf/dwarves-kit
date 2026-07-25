@@ -171,6 +171,64 @@ def test_debt_never_paid():
     assert dm["score"] == 80 and dm["last_paydown"] is None  # 100 - 20 staleness cap
 
 
+def _alloc_sessions():
+    """Two members, two periods, distinct branches, known costs."""
+    def s(proj, day, cost, branch, out=200_000):
+        return {"project": proj, "day": day, "cost": cost,
+                "tok": Counter({"output_tokens": out, "cache_read_input_tokens": 900_000,
+                                "input_tokens": 100}),
+                "per_model": {"claude-sonnet-5": Counter({"output_tokens": out,
+                                                          "input_tokens": 100})},
+                "branches": Counter({branch: 8, "main": 2}),
+                "models": Counter(), "tools": Counter(), "tiers": Counter(),
+                "versions": Counter(), "side": Counter(), "sessions": 1}
+    return [
+        s("alpha", "2026-07-13", 40.0, "feat/a1"),   # W28
+        s("alpha", "2026-07-20", 100.0, "feat/a2"),  # W29
+        s("beta", "2026-07-20", 50.0, "fix/b1"),
+    ]
+
+
+def test_allocation_splits_by_member_and_feature():
+    a = dashboard.allocation_metrics(_alloc_sessions(), "week")
+    assert a["current_key"] == "2026-W30" or a["current_key"].startswith("2026-W")
+    names = [m["member"] for m in a["members"]]
+    assert names[0] == "alpha" and "beta" in names
+    alpha = a["members"][0]
+    # a session's cost splits across the branches it touched, by message share (8:2)
+    feats = {f["name"]: f["cost"] for f in alpha["features"]}
+    assert abs(feats["feat/a2"] - 80.0) < 0.01, feats
+    assert abs(feats["main"] - 20.0) < 0.01, feats
+    # main is reported, but flagged as unattributed rather than sold as a feature
+    assert {f["name"]: f["attributed"] for f in alpha["features"]}["main"] is False
+    assert abs(alpha["share"] - 100 / 150) < 0.01
+
+
+def test_allocation_plan_respects_demand_ceiling_and_reports_headroom():
+    """The bug this guards: a large member hitting the concentration cap used to
+    dump the residual on tiny members (a $44 spender proposed $549)."""
+    a = dashboard.allocation_metrics(_alloc_sessions(), "week", budget=10_000)
+    by = {p["member"]: p for p in a["plan"]}
+    for m in a["members"]:
+        ceiling = max(m["cost"] * dashboard.DEMAND_HEADROOM,
+                      m["cost"] * dashboard.FLOOR_DEMAND_CAP)
+        assert by[m["member"]]["proposed"] <= ceiling + 0.01, by[m["member"]]
+    # every proposal stays demand-anchored: at most 3x what the member actually spent
+    for m in a["members"]:
+        assert by[m["member"]]["proposed"] <= m["cost"] * dashboard.FLOOR_DEMAND_CAP + 0.01
+    assert a["unallocated"] > 9_000, a["unallocated"]  # budget far exceeds demand
+    assert sum(p["proposed"] for p in a["plan"]) + a["unallocated"] <= 10_000 + 0.01
+
+
+def test_allocation_flags_partial_periods():
+    a = dashboard.allocation_metrics(_alloc_sessions(), "week")
+    # the sample starts mid-week and the last period is in progress
+    assert a["partial"], "partial periods must be flagged"
+    md = dashboard.allocation_markdown(a)
+    assert "not comparable" in md or "no prior period" in md
+    assert "Sample:" in md
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     for fn in fns:
