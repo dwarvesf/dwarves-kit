@@ -1995,6 +1995,21 @@ def turn_stage(t):
     return "talk"
 
 
+def scope_filter(runs, events, sessions, repos_csv):
+    """TEAM scope: keep only the named repos' runs (ledger repo=) and sessions
+    (transcript project dir contains the name). Personal mode = no filter, the
+    whole host. The filter runs BEFORE any metric, so a team push can never
+    leak another project's numbers, not even in an aggregate."""
+    repos = [r.strip() for r in (repos_csv or "").split(",") if r.strip()]
+    if not repos:
+        return runs, events, sessions, {"mode": "personal"}
+    runs = [r for r in runs if r["meta"].get("repo") in repos]
+    keep = {r["rid"] for r in runs}
+    events = [e for e in events if e["rid"] in keep]
+    sessions = [s for s in sessions if any(t in s["project"] for t in repos)]
+    return runs, events, sessions, {"mode": "team", "repos": repos}
+
+
 def find_transcript(session_or_path, tdir):
     p = Path(session_or_path)
     if p.exists():
@@ -2699,6 +2714,9 @@ def main():
     b.add_argument("--push", default=None, metavar="API_URL",
                    help="also PUT the payload to <API_URL>/admin/observe "
                         "(Bearer token from FORGE_ADMIN_TOKEN)")
+    b.add_argument("--repos", default=None, metavar="A,B",
+                   help="TEAM scope: only these repos' runs + sessions enter the "
+                        "payload (default: personal scope, the whole host)")
     old = sub.add_parser("build", help="RETIRED: the page is the forge SPA; use export")
     old.add_argument("--out", default=None, help=argparse.SUPPRESS)
     s = sub.add_parser("stats", help="all dashboard numbers as JSON (agent surface)")
@@ -2850,6 +2868,8 @@ def main():
     runs = collect_runs(a.log_dir)
     events = collect_events(a.log_dir)
     sessions = collect_sessions(a.transcripts_dir, a.max_transcripts)
+    runs, events, sessions, scope = scope_filter(
+        runs, events, sessions, getattr(a, "repos", None))
     bench_rows = collect_bench()
     metrics = fleet_metrics(runs, events, a.window_days)
     money = money_metrics(sessions, a.window_days, getattr(a, "monthly_budget", None))
@@ -2885,6 +2905,7 @@ def main():
                               debt=dm, config=collect_config(), policy=policy,
                               runtimes=collect_runtimes(),
                               alloc=allocation_metrics(sessions, a.period, a.monthly_budget))
+    payload["scope"] = scope
     body = json.dumps(payload)
     Path(a.out).write_text(body)
     c = payload["counts"]

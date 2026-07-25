@@ -239,3 +239,18 @@ if __name__ == "__main__":
         fn()
         print(f"ok {fn.__name__}")
     print(f"PASSED {len(fns)}/{len(fns)}")
+
+
+def test_scope_filter_team_mode_is_a_hard_wall():
+    runs = [{"rid": "a", "meta": {"repo": "kit"}}, {"rid": "b", "meta": {"repo": "other"}}]
+    events = [{"rid": "a"}, {"rid": "b"}, {"rid": "b"}]
+    sessions = [{"project": "-ws-kit"}, {"project": "-ws-other"}, {"project": "-ws-third"}]
+    r, e, s, scope = dashboard.scope_filter(runs, events, sessions, "kit")
+    assert [x["rid"] for x in r] == ["a"]
+    assert all(x["rid"] == "a" for x in e)
+    assert [x["project"] for x in s] == ["-ws-kit"]
+    assert scope == {"mode": "team", "repos": ["kit"]}
+    # personal mode: no filter, everything passes
+    r2, e2, s2, scope2 = dashboard.scope_filter(runs, events, sessions, None)
+    assert len(r2) == 2 and len(e2) == 3 and len(s2) == 3
+    assert scope2 == {"mode": "personal"}

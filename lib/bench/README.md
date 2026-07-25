@@ -88,7 +88,7 @@ for humans. Nothing here needs a server.
 | `stats` | fleet + money + debt + alerts as one JSON blob | agent |
 | `debt` | cognitive-debt score, open defers, last paydown (ADR-0031) | agent |
 | `allocation` | pool → member → feature, period comparison, proposed allowances | lead / agent |
-| `export` | the fleet data payload (`sections.json`) the forge dashboard SPA loads; `--push` PUTs it to the gateway | machine (the SPA / CI) |
+| `export` | the fleet data payload (`sections.json`) the forge dashboard SPA loads; `--push` PUTs it to the gateway; `--repos a,b` = TEAM scope (allowlist filtered before any metric; default is personal scope, the whole host) | machine (the SPA / CI) |
 | `session <rid>` | ONE standalone session-log page (gate timeline, conformance, outcomes) | human, shareable |
 | `sessions` | a session page per run, plus an index | human |
 | `transcript <id>` | ONE full-transcript page (prompts, tool calls, results, commentary) | human, shareable |

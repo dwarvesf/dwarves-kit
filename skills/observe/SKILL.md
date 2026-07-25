@@ -47,6 +47,8 @@ Spend and the efficiency ranking are kit-side only, one price table: use
 
 ```sh
 python3 lib/bench/dashboard.py export --out sections.json  # fleet payload for the forge SPA
+#   --repos a,b = TEAM scope (hard allowlist, filtered before any metric);
+#   default is personal scope (everything on this host)
 #   (the dashboard PAGE is forge site/dashboard/; add --push <api> for connected mode)
 python3 lib/bench/dashboard.py session <rid> --out s.html    # one session log, shareable
 python3 lib/bench/dashboard.py sessions --out-dir sessions/  # all of them + index
