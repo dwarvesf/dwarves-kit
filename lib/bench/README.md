@@ -78,20 +78,70 @@ One JSON object per line, append-only. Config dims first, outcomes second:
 | `cost_usd`, `turns`, `tokens_in`, `tokens_out` | efficiency dims |
 | `error` | harness failure, kept distinct from task failure |
 
+## The verb surface (complete)
+
+Eight verbs. Query verbs print JSON for agents; render verbs write self-contained HTML
+for humans. Nothing here needs a server.
+
+| Verb | What it produces | Primary caller |
+|---|---|---|
+| `stats` | fleet + money + debt + alerts as one JSON blob | agent |
+| `debt` | cognitive-debt score, open defers, last paydown (ADR-0031) | agent |
+| `allocation` | pool → member → feature, period comparison, proposed allowances | lead / agent |
+| `export` | the fleet data payload (`sections.json`) the forge dashboard SPA loads; `--push` PUTs it to the gateway; `--repos a,b` = TEAM scope (allowlist filtered before any metric; default is personal scope, the whole host) | machine (the SPA / CI) |
+| `session <rid>` | ONE standalone session-log page (gate timeline, conformance, outcomes) | human, shareable |
+| `sessions` | a session page per run, plus an index | human |
+| `transcript <id>` | ONE full-transcript page (prompts, tool calls, results, commentary) | human, shareable |
+| `transcripts` | the most recent N transcript pages, plus an index | human |
+
+```sh
+# agent surfaces
+python3 dashboard.py stats
+python3 dashboard.py debt --format json
+python3 dashboard.py allocation --period week --budget 1500 --format json
+
+# the lead's weekly/monthly report (paste-ready markdown)
+python3 dashboard.py allocation --period month --budget 6000 --format md
+
+# pages
+python3 dashboard.py export --monthly-budget 1500 --period week \
+  --out <forge>/site/dashboard/data/sections.json
+python3 dashboard.py session <rid> --out session.html
+python3 dashboard.py sessions --out-dir sessions/
+python3 dashboard.py transcript <session-id> --out transcript.html   # opt-in: reads content
+python3 dashboard.py transcripts --limit 20 --out-dir transcripts/
+```
+
+### What each surface is honest about
+
+- **Money is computed**, never invoiced: a list-price table in this file, stated on the page.
+- **Transcripts are opt-in.** Aggregates elsewhere stay counts-only. Content passes a
+  redaction mask whose hit count is printed and whose fail-open nature is stated. Real
+  transcripts are never committed to a tree that ships publicly.
+- **Allocation proposals export, never apply.** Feature attribution is the git branch;
+  `main`/`HEAD` are labeled unattributed. Period-over-period is suppressed when a bucket
+  is partial.
+- **Efficiency measures token economics, not value delivered**, and carries a volume floor.
+
+The `observe` skill (kit `skills/observe`) makes these auto-firable from agent
+sessions. The run TUI is a forge product now (`forge/cli/forge-tui`, with
+`runs`/`debt`/`stats` mirroring the agent verbs); this repo keeps the data plane
+in `events.py` (protocol + adapters + conformance overlay).
+
 ## Live TUI (the run frontend)
 
-`tui.py` renders a workflow run as an animated step list: pending ○ → spinner →
+`forge/cli/forge-tui` renders a workflow run as an animated step list: pending ○ → spinner →
 ✓/✗, sub-items under the running stage, retry badges, accumulating cost, and an
 expressive final report (verdict banner, per-stage table, failure fingerprints,
 reproduce line). Falls back to plain per-event lines when not a TTY (CI logs).
 
 ```sh
-python3 tui.py demo                    # feel the interaction: synthesized full-lane
+forge-tui demo                    # feel the interaction: synthesized full-lane
                                        # run incl. verifier fail -> fix-agent -> retry
-python3 tui.py demo --record run.events.jsonl
-python3 tui.py replay run.events.jsonl --speed 2
-python3 tui.py watch  run.events.jsonl # follow a live runner appending events
-python3 tui.py run <rid>               # replay a REAL recorded kit session from
+forge-tui demo --record run.events.jsonl
+forge-tui replay run.events.jsonl --speed 2
+forge-tui watch  run.events.jsonl # follow a live runner appending events
+forge-tui run <rid>               # replay a REAL recorded kit session from
                                        # logs/runs/<rid>.log (gate-ledger history)
 ```
 
@@ -124,19 +174,22 @@ The built-in scenarios cover the variant axes: task types (feature, research,
 eval), workflow shapes (full lane, tiny lane, loops), and a fault-injection
 failure run (retry exhausted), so the red path is designed, not hoped.
 
-### Control-plane dashboard (the whole estate, one page)
+### Control-plane data plane (one page lives in forge)
 
-`dashboard.py build` renders the full control-plane dashboard: a sidebar page over
-ALL recorded data. Fleet (KPI tiles + 30-day sparkline trends over every run
-ledger), Run explorer (filter + segment chips, conformance per run), Event stream
-(gate verdicts with reasons), Tool activity (Claude Code transcript COUNTS ONLY:
-tools, MCP servers, models; content never read), Bench/RCA (failure fingerprints),
-Alerts (plain-JSON template rules evaluated at build). Design record:
-`docs/dashboard-design.md`.
+`dashboard.py export` emits the fleet payload the forge dashboard SPA injects:
+12 section fragments (Fleet, Run explorer, Event stream, Tool activity, Cost &
+tokens, Efficiency, Allocation, Runtime, Cognitive debt, Config & policy,
+Bench/RCA, Alerts) plus their behavior JS, as one `sections.json`
+(`schema: 1`). The PAGE itself is a forge product (`site/dashboard/index.html`);
+the old `build` verb that emitted a second standalone page is retired (one-page
+rule, 2026-07-25). `--push <url>` PUTs the payload to the gateway's
+`/admin/observe` (Bearer from `FORGE_ADMIN_TOKEN`) for the dashboard's connected
+mode. Design record: `docs/dashboard-design.md` v6.
 
 ```sh
-python3 dashboard.py build --out dashboard.html          # ~0.5s over 200+ ledgers
-python3 dashboard.py build --alerts examples/alerts.json --window-days 14
+python3 dashboard.py export --out sections.json          # ~0.5s over 200+ ledgers
+python3 dashboard.py export --alerts examples/alerts.json --window-days 14
+python3 dashboard.py export --push https://forge-api.infras.workers.dev
 ```
 
 ### Control-plane report (many runs, one surface)

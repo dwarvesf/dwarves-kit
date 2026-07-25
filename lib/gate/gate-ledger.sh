@@ -465,8 +465,18 @@ check() {
 # lane is committed, so the operator sees the road before the run starts (SPEC-063).
 plan() {
   local lane="${1:-}"; [ -n "$lane" ] || { echo "usage: plan <lane>" >&2; return 64; }
+  # Overlay lanes: a vertical kit (learning-kit etc.) drops <lane>.plan into
+  # ~/.config/dwarves-kit/lanes.d/ ("N. phase level" lines, same shape as this
+  # verb's output). Drop-in wins over "unknown lane", never over a matrix lane.
   local rows; rows="$(matrix_for_lane "$lane")"
-  [ -n "$rows" ] || { echo "unknown lane '$lane' (not a column in the WORKFLOW matrix)" >&2; return 1; }
+  if [ -z "$rows" ]; then
+    local dropin="${DWARVES_KIT_LANES_D:-$HOME/.config/dwarves-kit/lanes.d}/$lane.plan"
+    if [ -f "$dropin" ]; then
+      grep -E '^[[:space:]]*[0-9]+\.[[:space:]]' "$dropin"
+      return 0
+    fi
+  fi
+  [ -n "$rows" ] || { echo "unknown lane '$lane' (not a column in the WORKFLOW matrix; no lanes.d drop-in)" >&2; return 1; }
   local i=0 ph cell mark
   if [ "$lane" != "tiny" ]; then
     i=1; printf '%2d. %-18s %s\n' 1 "grill" "intake (universal, SPEC-058)"

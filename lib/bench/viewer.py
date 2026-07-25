@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tui import demo_events  # noqa: E402
+from events import demo_events  # noqa: E402
 
 
 def _run(scenario, layer, config, stages, script, status="pass", totals=None):
@@ -349,7 +349,7 @@ def build(pairs, out, ledgers=()):
         name, _, path = p.partition("=")
         scen[name] = [json.loads(l) for l in Path(path).read_text().splitlines() if l.strip()]
     if ledgers:
-        from tui import ledger_to_events, resolve_run
+        from events import ledger_to_events, resolve_run
         for p in ledgers:
             name, _, ref = p.partition("=")
             scen[name] = ledger_to_events(resolve_run(ref))

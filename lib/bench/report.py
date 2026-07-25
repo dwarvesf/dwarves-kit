@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from tui import resolve_run  # noqa: E402
+from events import resolve_run  # noqa: E402
 
 PHASE_ORDER = ["grill", "think", "design", "design-critique", "ui-design", "spec",
                "validate", "design-record", "test-plan", "build", "review", "docs",

@@ -106,3 +106,73 @@ only in selection and framing. Never maintain a second dataset for marketing.
   the run, so an agent can never read the verifier and overfit.
 - **Privacy gate on publish.** The trust page passes the til-style strip:
   no client/NDA task content in suites, no account ids, no personal paths.
+
+
+## 8. Token efficiency (who spends tokens well)
+
+Ranking metrics computed from transcript usage, exposed as the Cost section's
+efficiency table and via `dashboard.py stats`. "Member" is the project on a solo
+host; real per-member identity arrives with the team gateway (the token pool).
+
+| Metric | Definition | Rewards | Status |
+|---|---|---|---|
+| Unit cost of output | USD per million output tokens (lower better) | cheap routing + brevity: producing work per dollar | now |
+| Cache discipline | cache-read ÷ total prompt tokens | stable prefixes, `/clear` hygiene, not re-reading the world each turn | now |
+| Delegation leverage | share of output tokens from cheap models (haiku/sonnet) | cheap-first routing instead of premium-everything | now |
+| Fresh-input frugality | fresh input tokens per session | not re-pasting what the cache already holds | planned |
+| **Cost per shipped run** | spend ÷ conformant ships | the metric that actually matters: outcome efficiency, not token thrift | planned (needs the session↔rid join, ID-420) |
+
+**Composite score.** Each metric is min-max normalized across members, then
+weighted 40% unit cost / 30% cache discipline / 30% delegation leverage.
+Grades: A ≥ 80, B ≥ 65, C ≥ 50, D ≥ 35, else E.
+
+**Two honesty rules, both enforced in code.** A volume floor (default $1)
+excludes members whose sample is too small to rank, so one tiny session cannot
+top the board. And cost-per-shipped-run is *absent rather than approximated*:
+without the session↔rid join there is no defensible denominator, and a made-up
+one would rank people on fiction. When ID-420 lands, it becomes the headline
+metric and the three current ones become its explanations.
+
+**What the ranking is not.** It measures token economics, not value delivered.
+A member doing the hardest work can rank mid-table by spending premium tokens
+well. Read it as a routing-and-hygiene signal, never as a performance review.
+
+
+## 9. Pool allocation (lead-facing)
+
+The lead's question is not "how many tokens" but "where did my pool go, and what should
+next period's allowances be". Three dimensions, one proposal.
+
+| Dimension | Source | Honesty note |
+|---|---|---|
+| Member | project directory on a solo host; gateway identity when the team layer ships | stated on every surface |
+| **Feature** | the **git branch** each session worked on, cost split across branches by message share | `main` / `HEAD` / no-branch are reported as **unattributed**, never dressed up as features |
+| Period | ISO week or calendar month | partial buckets are flagged and period-over-period comparison is suppressed when either side is partial |
+
+### The allowance proposal
+
+`weight = spend x grade multiplier` (A 1.15 · B 1.05 · C 1.00 · D 0.90 · E 0.80), then
+water-filled into the budget under three guards:
+
+- **Demand ceiling** , no proposal above 1.5x what a member actually spent. Nobody absorbs
+  a 12x jump in one period.
+- **Concentration cap** , no proposal above 40% of the pool; a member whose *current* spend
+  already exceeds it is flagged as needing a decision, not a slider.
+- **Starvation floor** , a minimum allowance, itself capped at 3x demonstrated demand so
+  the floor cannot inflate a small spender. A member with no history gets the plain floor
+  so they can start.
+
+Budget that fits nobody's ceiling is reported as **unallocated headroom**. Two bugs were
+caught by running this on real data and are now regression-tested: force-feeding the
+residual to tiny members (a $44 spender proposed $549 because a $3.9k member hit the cap),
+and the floor lifting a $50 spender to $1,250.
+
+**The plan is a proposal.** It is exported, never applied. Efficiency grades measure token
+economics, not value delivered, so a trim is a conversation opener, not a verdict.
+
+### Surfaces
+
+- Web: **Pool allocation** section (share bars, member x feature matrix, period comparison,
+  proposed plan with reasons).
+- CLI: `dashboard.py allocation --period week|month [--budget N] [--format text|json|md]`.
+  `--format md` is the weekly/monthly report a lead can paste into a channel.
