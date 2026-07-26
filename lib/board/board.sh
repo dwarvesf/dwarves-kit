@@ -764,7 +764,7 @@ cmd_sync() {
   fi
   args+=(--apps "$v")
   local app fk
-  for app in reminders notion hermes multica; do
+  for app in reminders notion hermes multica github; do
     for fk in only_tags skip_tags intake; do
       v="$(kit_config_get "sync.${app}_${fk}" "")"
       [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
@@ -798,6 +798,7 @@ cmd_sync() {
   [ -n "$v" ] && args+=(--notion-taskboard-props "$v")
   v="$(kit_config_get sync.notion_taskboard_types "")"
   [ -n "$v" ] && args+=(--notion-taskboard-types "$v")
+  v="$(kit_config_get sync.github_repo "")";     [ -n "$v" ] && args+=(--github-repo "$v")
   v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
   v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")
   v="$(kit_config_get sync.multica_url "")";       [ -n "$v" ] && args+=(--multica-url "$v")
