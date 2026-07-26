@@ -46,3 +46,16 @@ board sync --dry-run # inspect, then run without --dry-run
 
 Adapter capability envelope is documented in `lib/sync/sources/github.py`'s
 header (open/closed only; reopen supported; `sync_fields=False`).
+
+## Second pass: `board init` + `board capture` (2026-07-27)
+
+| Check | Command | Verdict |
+|---|---|---|
+| init idempotent | `board init` on whetstone (files exist) | PASS: "kept existing" both files, nothing touched |
+| init scaffold | `board init` in a fresh scratch repo | PASS: BACKLOG.md header + executable shim created, [sync] hint printed |
+| capture e2e | `board capture "<title>" -b "<notes>"` on whetstone | PASS: row WS-6 minted (prefix-aware, via sync_core), sync created issue #14, URL printed AND verified on the clipboard via pbpaste |
+| capture без github | (code path) state snapshot missing rid | prints "row is on the board", never fails the filing |
+
+`capture` composes what exists: sync_core mints the row, `cmd_sync` (in a
+subshell, since it ends in exec) does the push, the state snapshot yields the
+issue number. No second sync implementation.
