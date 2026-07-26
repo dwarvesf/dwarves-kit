@@ -75,3 +75,13 @@ def test_apply_create_without_url_fails_closed():
         assert "WS-9" in str(e)
     else:
         raise AssertionError("apply accepted a create with no issue url")
+
+
+def test_default_runner_binds_backlog_repo_cwd():
+    # Under launchd the process cwd is nowhere near the checkout; gh must run
+    # in the backlog's own repo (first scheduled run failed exit 1 on this).
+    src = GitHubSource(cwd="/some/repo")
+    assert src.cwd == "/some/repo"
+    # injected runners (tests, future transports) are never wrapped
+    fake = FakeGh(["[]"])
+    assert GitHubSource(runner=fake, cwd="/x").runner is fake

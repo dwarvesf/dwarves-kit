@@ -27,9 +27,9 @@ COMPLETE_KWS = {"shipped", "done", "resolved"}
 MARKER = "bls: "
 
 
-def _gh_runner(argv: list) -> str:
+def _gh_runner(argv: list, cwd: str | None = None) -> str:
     r = subprocess.run(["gh"] + argv, capture_output=True, text=True,
-                       timeout=120)
+                       timeout=120, cwd=cwd or None)
     if r.returncode != 0:
         raise SystemExit(f"gh {' '.join(argv[:3])}... failed: "
                          f"{r.stderr.strip()[:500]}")
@@ -40,10 +40,16 @@ class GitHubSource:
     name = "github"
     sync_fields = False
 
-    def __init__(self, repo: str = "", runner=None):
-        # repo empty = whatever `gh` resolves from the cwd's origin remote.
+    def __init__(self, repo: str = "", runner=None, cwd: str | None = None):
+        # repo empty = whatever `gh` resolves from the origin remote of `cwd`
+        # (the repo that owns the backlog, threaded in as KIT_PROJECT_ROOT by
+        # cmd_sync). Relying on the PROCESS cwd broke the first launchd run:
+        # the cron launcher starts nowhere near the checkout, gh saw "not a
+        # git repository", and every scheduled sync exited 1. Interactive runs
+        # never caught it because a shell is always inside the repo.
         self.repo = repo
-        self.runner = runner or _gh_runner
+        self.cwd = cwd
+        self.runner = runner or (lambda argv: _gh_runner(argv, self.cwd))
 
     def _flags(self) -> list:
         return ["-R", self.repo] if self.repo else []
