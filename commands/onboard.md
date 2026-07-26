@@ -140,6 +140,27 @@ If the chosen modules genuinely have no `[impl]` knob rows at all, say so in one
 Recommended default at each knob: leave it at its current value (skip), since the kit-root defaults
 already give a working baseline.
 
+## D2. Register the board (offer, never assume)
+
+Adoption wires modules; it does not create the board. If `<repo>/_meta/BACKLOG.md` is missing, offer
+this sequence, calling the real surfaces (`bin/board`, the sync installer), never reimplementing them:
+
+1. `board init` -- scaffolds `_meta/BACKLOG.md` + the `_meta/board` shim, idempotently.
+2. **Team surface, one question**: does this repo's team work in GitHub Issues (or Notion / Hermes /
+   Reminders)? If yes, preview the `.kit.toml` addition (`[sync]` + `apps = "github"`, plus
+   `github_repo` only when origin is not the right target) and confirm before writing, same contract
+   as the knob writes in D.
+3. First `board sync --dry-run`, then live: on a repo that already lived in its tracker, intake
+   creates a queued `#inbox` row per open item -- history arrives on the board with no manual
+   backfill. Tell the user the `#inbox` tag marks rows awaiting first human triage.
+4. **Cadence**: manual `board sync` is the default. If they want it ambient, set
+   `[sync] mode = "cron"` and run `bash "$KIT/lib/sync/deploy/macos/install" <backlog-path>`
+   (the per-repo LaunchAgent; the launcher re-checks `mode` every run, so flipping back to
+   "manual" in `.kit.toml` stops it without an uninstall). Mention `board capture "<title>"`
+   as the from-a-session filing verb while you are here.
+
+A repo that declines any step stays fully functional; the board is additive.
+
 ## E. Disclose the plugin-path gaps (only for mode `plugin` or `both`)
 
 Be honest about what the plugin path cannot do (ADR-0009), in four short bullets:

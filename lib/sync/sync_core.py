@@ -18,7 +18,6 @@ INBOX_HEADING = "### Reminders inbox"
 CLOSED_HEADING = "## Recently closed"
 TABLE_HEADER = "| ID | Item | Notes & source | Status |"
 TABLE_RULE = "|---|---|---|---|"
-TITLE_RE = re.compile(r"^(ID-\d+)\s*(?:[·:, -]\s*)?(.*)$")
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
 # Board-id row recognizers. The two-way mesh is `ID-`-only (STRICT), exactly as
@@ -28,6 +27,10 @@ CELL_SPLIT = re.compile(r"(?<!\\)\|")
 # e.g. dfoundation DF-NN); it never mints or writes board ids, so widening its
 # READ view has no interaction with the strict minters.
 ID_TOKEN = r"[A-Z][A-Z0-9]*-\d+"
+# Any board prefix, not just ID-: spoke titles carry the row id of whichever
+# board minted them (WS-4 on whetstone), and a bid only links when it exists
+# in that board's rows, so the generic token cannot cross-link boards.
+TITLE_RE = re.compile(r"^(" + ID_TOKEN + r")\s*(?:[·:, -]\s*)?(.*)$")
 STRICT_ROW_RE = re.compile(r"^\| (ID-\d+) \|")
 GEN_ROW_RE = re.compile(r"^\| (" + ID_TOKEN + r") \|")
 
@@ -51,14 +54,29 @@ def split_row(line: str):
     return [p.strip() for p in parts[1:5]]
 
 
-def parse_board(text: str, strict_id: bool = True) -> dict[str, Row]:
+def detect_prefix(text: str) -> str:
+    """A board's own row prefix (`WS` for whetstone, `BK` for books, ...),
+    from its most common row token; `ID` when the board is empty. Every
+    cockpit repo has a unique prefix by design, so the two-way mesh must not
+    assume `ID-` or those boards silently parse as zero rows (the bug this
+    fixed: `board sync` on whetstone read 4 spoke items, 0 board rows, and
+    planned duplicate intake for every already-rowed issue)."""
+    counts: dict[str, int] = {}
+    for m in re.finditer(r"^\| ([A-Z][A-Z0-9]*)-\d+ \|", text, flags=re.M):
+        counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    return max(counts, key=counts.get) if counts else "ID"
+
+
+def parse_board(text: str, strict_id: bool = True,
+                prefix: str = "ID") -> dict[str, Row]:
     """Parse `| id | item | notes | status |` rows. `strict_id=True` (default,
-    the two-way mesh) recognizes ONLY `ID-NNN`, keeping the ID-minting path
-    (next_id/apply_board) consistent. `strict_id=False` (the one-way create
-    push) accepts any repo prefix `[A-Z]+-NNN` but never mints or writes ids.
+    the two-way mesh) recognizes ONLY `<prefix>-NNN` (one prefix per board,
+    keeping the ID-minting path consistent). `strict_id=False` (the one-way
+    create push) accepts any repo prefix `[A-Z]+-NNN` but never mints ids.
     """
-    row_re = STRICT_ROW_RE if strict_id else GEN_ROW_RE
-    id_full = r"ID-\d+" if strict_id else ID_TOKEN
+    row_re = (re.compile(r"^\| (" + re.escape(prefix) + r"-\d+) \|")
+              if strict_id else GEN_ROW_RE)
+    id_full = re.escape(prefix) + r"-\d+" if strict_id else ID_TOKEN
     rows: dict[str, Row] = {}
     for i, line in enumerate(text.splitlines()):
         if not row_re.match(line):
@@ -76,8 +94,9 @@ def parse_board(text: str, strict_id: bool = True) -> dict[str, Row]:
     return rows
 
 
-def next_id(text: str) -> int:
-    nums = [int(m) for m in re.findall(r"\bID-(\d+)\b", text)]
+def next_id(text: str, prefix: str = "ID") -> int:
+    nums = [int(m) for m in
+            re.findall(r"\b" + re.escape(prefix) + r"-(\d+)\b", text)]
     return max(nums, default=0) + 1
 
 
@@ -240,7 +259,17 @@ def plan_sync(rows: dict, items: list, state: dict,
         else:
             snap_kw = snap.get("status", board_kw)
             board_changed = board_kw != snap_kw
-            src_changed = src_kw is not None and src_kw != snap_kw
+            if it.get("status") is None:
+                # Binary spoke (GitHub, Reminders): open/done is the whole
+                # signal, so compare DONENESS, not the derived keyword.
+                # Comparing keywords oscillates: a dropped row's closed issue
+                # re-derives "shipped" != snapshot "dropped" on every sync and
+                # flips the board back (measured live on whetstone WS-5).
+                src_changed = it["done"] != (snap_kw not in ACTIVE_STATUSES)
+                if src_changed and not it["done"]:
+                    src_kw = "queued"  # reopened on the spoke
+            else:
+                src_changed = src_kw is not None and src_kw != snap_kw
             if board_changed and src_changed and board_kw != src_kw:
                 p.conflicts.append(f"{bid}: status changed on both sides; "
                                    f"board wins (board={board_kw} "
@@ -328,10 +357,11 @@ def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
 # --- board apply -------------------------------------------------------------
 
 
-def apply_board(text: str, plan: Plan) -> tuple[str, dict[str, str]]:
+def apply_board(text: str, plan: Plan,
+                prefix: str = "ID") -> tuple[str, dict[str, str]]:
     """Apply board-side actions. Returns (new_text, {rid: assigned_board_id})."""
     lines = text.splitlines(keepends=True)
-    rows = parse_board(text)
+    rows = parse_board(text, prefix=prefix)
 
     def rewrite(bid: str, item: str | None = None, status_kw: str | None = None):
         row = rows[bid]
@@ -353,10 +383,10 @@ def apply_board(text: str, plan: Plan) -> tuple[str, dict[str, str]]:
 
     assigned: dict[str, str] = {}
     if plan.board_add:
-        nid = next_id(text)
+        nid = next_id(text, prefix)
         new_rows = []
         for rid, title, body, kw in plan.board_add:
-            bid = f"ID-{nid}"
+            bid = f"{prefix}-{nid}"
             nid += 1
             assigned[rid] = bid
             title = " ".join(title.split())  # newlines would break the table row

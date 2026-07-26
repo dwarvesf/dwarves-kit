@@ -27,10 +27,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sync_core import (ID_TOKEN, apply_board, build_state, describe,  # noqa: E402
-                       parse_board, plan_create_only, plan_sync)
+                       detect_prefix, parse_board, plan_create_only, plan_sync)
 
 # apps that push one-way and read boards with any repo prefix (not just ID-)
 CREATE_ONLY_APPS = {"notion-taskboard"}
+from sources.github import GitHubSource  # noqa: E402
 from sources.hermes import HermesSource  # noqa: E402
 from sources.multica import MulticaSource  # noqa: E402
 from sources.notion import NotionSource  # noqa: E402
@@ -54,13 +55,15 @@ def atomic_write(path: Path, text: str) -> None:
 
 
 def warn_duplicate_ids(text: str, strict_id: bool = True) -> None:
-    token = r"ID-\d+" if strict_id else ID_TOKEN
+    token = (re.escape(detect_prefix(text)) + r"-\d+") if strict_id \
+        else ID_TOKEN
     ids = re.findall(r"^\| (" + token + r") \|", text, flags=re.M)
     dups = sorted({i for i in ids if ids.count(i) > 1})
     if dups:
         print(f"WARNING: duplicate board rows for {', '.join(dups)}; "
               "first occurrence wins, fix the board")
-    parsed = set(parse_board(text, strict_id=strict_id))
+    parsed = set(parse_board(text, strict_id=strict_id,
+                             prefix=detect_prefix(text)))
     broken = sorted(set(ids) - parsed - set(dups))
     if broken:
         print(f"WARNING: malformed board rows (not 4 cells, invisible to "
@@ -112,7 +115,8 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
     if getattr(src, "create_only", False):
         return sync_create_only(src, backlog, state_path, dry_run, filt)
     text = backlog.read_text()
-    rows = parse_board(text)
+    prefix = detect_prefix(text)
+    rows = parse_board(text, prefix=prefix)
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     if hasattr(src, "binding") and state.get("binding"):
         src.binding = state["binding"]
@@ -133,10 +137,10 @@ def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
               f"scope (cap {max(cap, allow)}). Review with --dry-run, then "
               f"re-run with --allow-scope-exit {exits}.")
         return
-    new_text, assigned = apply_board(text, plan)
+    new_text, assigned = apply_board(text, plan, prefix=prefix)
     if new_text != text:
         atomic_write(backlog, new_text)
-    rows_after = parse_board(new_text)
+    rows_after = parse_board(new_text, prefix=prefix)
     created = src.apply(plan, assigned, rows_after)
     new_state = build_state(rows_after, items, plan, created, assigned, state)
     if getattr(src, "binding", None):
@@ -182,6 +186,9 @@ def build_source(name: str, args):
             priority_map=parse_map(args.notion_taskboard_priority_map),
             weight_map=parse_map(args.notion_taskboard_weight_map),
             owner=args.notion_taskboard_owner, props=props, types=types)
+    if name == "github":
+        # repo empty is fine: gh resolves the cwd's origin remote.
+        return GitHubSource(args.github_repo or "")
     if name == "hermes":
         if not args.hermes_home:
             sys.exit("hermes: set hermes_home in [sync] (.kit.toml) or pass "
@@ -217,6 +224,9 @@ def main(argv=None):
     ap.add_argument("--notion-db", help="bind an existing Notion database id")
     ap.add_argument("--notion-parent",
                     help="Notion page id to create the board under (bootstrap)")
+    ap.add_argument("--github-repo",
+                    help="owner/repo for the github app (default: the cwd's "
+                         "origin remote, as gh resolves it)")
     ap.add_argument("--hermes-target")
     ap.add_argument("--hermes-home")
     ap.add_argument("--notion-taskboard-db",

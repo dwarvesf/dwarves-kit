@@ -736,6 +736,113 @@ cmd_writeback() {
 # module, lib/sync/). Consumer shims append --backlog-file; translate it to the
 # engine's --backlog. Config resolution happens HERE per ADR-0034: a command
 # reads [sync] keys via the ONE resolver at invocation and hands the python
+# init: scaffold the board files adopt does not cover. `kit adopt` seeds
+# .kit.toml and wires modules; the board itself (_meta/BACKLOG.md + the _meta/
+# board shim) was a copy-by-hand step, which is exactly how a new repo ends up
+# half-registered. Idempotent: existing files are never touched.
+cmd_init() {
+  local root; root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+  local meta="$root/_meta"
+  mkdir -p "$meta"
+  if [ ! -f "$meta/BACKLOG.md" ]; then
+    printf '# BACKLOG\n\n| ID | Item | Notes & source | Status |\n|---|---|---|---|\n' \
+      > "$meta/BACKLOG.md"
+    echo "created _meta/BACKLOG.md (empty board; \`board sync\` intakes open issues as rows)"
+  else
+    echo "kept existing _meta/BACKLOG.md"
+  fi
+  if [ ! -f "$meta/board" ]; then
+    cat > "$meta/board" <<'SHIM'
+#!/usr/bin/env bash
+# _meta/board -- one-line shim exec'ing the dwarves-kit `board` command against
+# THIS repo's own BACKLOG.md. Scaffolded by `board init`; logic lives in the kit.
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+exec bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/bin/board" "${@:-board}" --backlog-file "$here/BACKLOG.md"
+SHIM
+    chmod +x "$meta/board"
+    echo "created _meta/board shim"
+  else
+    echo "kept existing _meta/board"
+  fi
+  [ -f "$root/.kit.toml" ] && grep -q '^\[sync\]' "$root/.kit.toml" 2>/dev/null || {
+    echo "next: add a [sync] section to .kit.toml, e.g."
+    printf '  [sync]\n  apps = "github"\n'
+  }
+}
+
+# capture: file ONE item from a working session -- a queued row on the board,
+# pushed to the configured spokes immediately, and (when the github app is on)
+# the new issue's URL printed and put on the clipboard. This is the
+# harness-agnostic "file this" verb: Claude Code, Codex, pi and Hermes all just
+# run `board capture "<title>" [-b <notes>]`.
+cmd_capture() {
+  local backlog="" title="" notes="" a
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --backlog-file) backlog="${2:-}"; shift 2 ;;
+      -b|--notes) notes="${2:-}"; shift 2 ;;
+      *) if [ -z "$title" ]; then title="$1"; else title="$title $1"; fi; shift ;;
+    esac
+  done
+  [ -n "$title" ] || { echo "usage: board capture \"<title>\" [-b <notes>]" >&2; exit 2; }
+  backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
+  [ -f "$backlog" ] || { echo "board capture: no board at $backlog (run \`board init\`)" >&2; exit 2; }
+  local bid
+  bid="$(BOARD_SYNC_LIB="$BOARD_DIR/../sync" python3 - "$backlog" "$title" "$notes" <<'PY'
+import os, sys
+from pathlib import Path
+sys.path.insert(0, os.environ["BOARD_SYNC_LIB"])
+from sync_core import detect_prefix, next_id, escape
+path = Path(sys.argv[1])
+text = path.read_text()
+prefix = detect_prefix(text)
+bid = f"{prefix}-{next_id(text, prefix)}"
+title, notes = sys.argv[2], sys.argv[3] or "filed via board capture"
+row = f"| {bid} | {escape(' '.join(title.split()))} | {escape(notes)} | queued |\n"
+lines = text.splitlines(keepends=True)
+for i, ln in enumerate(lines):
+    if ln.startswith("|---"):
+        lines.insert(i + 1, row)
+        break
+else:
+    sys.exit(f"no table header found in {path}")
+path.write_text("".join(lines))
+print(bid)
+PY
+)"
+  # sync in a subshell: cmd_sync ends in exec and must not replace this shell.
+  ( cmd_sync --backlog-file "$backlog" ) || true
+  local rid=""
+  rid="$(python3 - "$backlog" "$bid" <<'PY'
+import json, re, sys
+from pathlib import Path
+slug = re.sub(r"[^a-zA-Z0-9]+", "-", str(Path(sys.argv[1]).resolve())).strip("-")
+p = Path.home() / ".cache" / "backlog-sync" / slug / "github.state.json"
+try:
+    print(json.loads(p.read_text())["map"][sys.argv[2]]["rid"])
+except Exception:
+    pass
+PY
+)"
+  echo "filed: $bid"
+  if [ -n "$rid" ]; then
+    local url
+    url="$(cd "$(dirname "$backlog")/.." && gh issue view "$rid" --json url --jq .url 2>/dev/null || true)"
+    if [ -n "$url" ]; then
+      printf '%s' "$url" | pbcopy 2>/dev/null || true
+      echo "issue: $url  (link on clipboard)"
+      # enrich: what already exists nearby, so duplicates get merged early
+      (cd "$(dirname "$backlog")/.." && gh issue list --state all --search "$title" \
+        --limit 4 --json number,title \
+        --jq '.[] | "  #\(.number) \(.title)"' 2>/dev/null | grep -v "^  #$rid " || true) \
+        | sed '1s/^/related existing issues:\n/' | head -5
+    fi
+  else
+    echo "note: no github spoke configured (or sync skipped); row is on the board"
+  fi
+}
+
 # engine plain flags (the engine never reads TOML). User-passed flags land
 # after the config-derived ones, so argparse lets them win.
 cmd_sync() {
@@ -764,7 +871,7 @@ cmd_sync() {
   fi
   args+=(--apps "$v")
   local app fk
-  for app in reminders notion hermes multica; do
+  for app in reminders notion hermes multica github; do
     for fk in only_tags skip_tags intake; do
       v="$(kit_config_get "sync.${app}_${fk}" "")"
       [ -n "$v" ] && args+=(--filter "${app}:${fk}=${v}")
@@ -798,6 +905,7 @@ cmd_sync() {
   [ -n "$v" ] && args+=(--notion-taskboard-props "$v")
   v="$(kit_config_get sync.notion_taskboard_types "")"
   [ -n "$v" ] && args+=(--notion-taskboard-types "$v")
+  v="$(kit_config_get sync.github_repo "")";     [ -n "$v" ] && args+=(--github-repo "$v")
   v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
   v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")
   v="$(kit_config_get sync.multica_url "")";       [ -n "$v" ] && args+=(--multica-url "$v")
@@ -835,6 +943,8 @@ main() {
     status) shift; cmd_status "$@" ;;
     writeback) shift; cmd_writeback "$@" ;;
     sync) shift; cmd_sync "$@" ;;
+    init) shift; cmd_init "$@" ;;
+    capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
     -h|--help|help) usage ;;
     *) cmd_board_single "$@" ;;
