@@ -187,8 +187,11 @@ def build_source(name: str, args):
             weight_map=parse_map(args.notion_taskboard_weight_map),
             owner=args.notion_taskboard_owner, props=props, types=types)
     if name == "github":
-        # repo empty is fine: gh resolves the cwd's origin remote.
-        return GitHubSource(args.github_repo or "")
+        # repo empty is fine: gh resolves origin from the backlog's own repo
+        # (KIT_PROJECT_ROOT), never the process cwd, which under launchd is
+        # nowhere near the checkout.
+        return GitHubSource(args.github_repo or "",
+                            cwd=os.environ.get("KIT_PROJECT_ROOT"))
     if name == "hermes":
         if not args.hermes_home:
             sys.exit("hermes: set hermes_home in [sync] (.kit.toml) or pass "
