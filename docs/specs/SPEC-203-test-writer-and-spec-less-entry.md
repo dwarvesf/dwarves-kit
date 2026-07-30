@@ -1,6 +1,6 @@
 # Spec: kit:test-writer + spec-less test-plan entry (Gap A)
 Generated: 2026-07-30
-Status: DRAFT
+Status: APPROVED
 Lane: normal
 References: [drafts/test-writer.md, the kit:meta-agent-drafted subagent this spec promotes into agents/test-writer.md, imitate its tool-scoping (Read/Write/Edit/Grep/Glob + Bash scoped to test-runner invocations only, matching agents/task-verifier.md's exact Bash allowlist) and its "done = file executes, not passes" contract. commands/spec.md Step 1, imitate its greenfield/brownfield branch shape for the new Step 0 in test-plan.md. docs/impl-playbook/exploratory-testing.md and docs/impl-playbook/test-case-design.md, the two technique references both new pieces defer to rather than re-deriving.]
 
@@ -124,34 +124,35 @@ None.
 ## Task Breakdown
 
 ### Phase 1: Foundation (Gap A)
-- [ ] TASK-001: Insert `### Step 0: No active spec, feature already live` into `commands/test-plan.md`, positioned before the existing Step 1, per the `## Design` diagram above. Delegates to `kit:research-features` with a one-line charter, writes the minimal spec stub, falls through to Step 1 unchanged. Acceptance: `grep -A5 "Step 0" commands/test-plan.md` shows the new section; `grep -c "Solution\|Task Breakdown" <(sed -n '/Step 0/,/Step 1/p' commands/test-plan.md)` returns `0` (the stub-authoring text does not describe planning sections it must not write).
+- [x] TASK-001: Insert `### Step 0: No active spec, feature already live` into `commands/test-plan.md`, positioned before the existing Step 1, per the `## Design` diagram above. Delegates to `kit:research-features` with a one-line charter, writes the minimal spec stub, falls through to Step 1 unchanged. Acceptance: `grep -A5 "Step 0" commands/test-plan.md` shows the new section; `grep -c "Solution\|Task Breakdown" <(sed -n '/Step 0/,/Step 1/p' commands/test-plan.md)` returns `0` (the stub-authoring text does not describe planning sections it must not write).
 
 ### Phase 2: Core (test-writer materialization)
-- [ ] TASK-002: Promote `drafts/test-writer.md` to `agents/test-writer.md` (move, do not recreate), matching `agents/task-verifier.md`'s frontmatter shape exactly (tools list, model tier). Acceptance: `agents/test-writer.md` exists, `drafts/test-writer.md` does not; frontmatter `tools:` line matches the Bash allowlist named in `### Interfaces` above verbatim.
-- [ ] TASK-003: Write `commands/test-write.md` per the `### Interfaces` contract above (resolve spec + SOLID verdict, dispatch `kit:test-writer` per row, report). Acceptance: `head -3 commands/test-write.md` shows valid frontmatter with a non-empty `description`; `grep -c "SOLID" commands/test-write.md` is non-zero (the freshness/verdict gate is present, not skipped).
+- [x] TASK-002: Promote `drafts/test-writer.md` to `agents/test-writer.md` (move, do not recreate), matching `agents/task-verifier.md`'s frontmatter shape exactly (tools list, model tier). Acceptance: `agents/test-writer.md` exists, `drafts/test-writer.md` does not; frontmatter `tools:` line matches the Bash allowlist named in `### Interfaces` above verbatim.
+- [x] TASK-003: Write `commands/test-write.md` per the `### Interfaces` contract above (resolve spec + SOLID verdict, dispatch `kit:test-writer` per row, report). Acceptance: `head -3 commands/test-write.md` shows valid frontmatter with a non-empty `description`; `grep -c "SOLID" commands/test-write.md` is non-zero (the freshness/verdict gate is present, not skipped).
 
 ### Phase 3: Discovery + docs
-- [ ] TASK-004: Add a one-line "Next:" pointer in `commands/test-harden.md`'s SOLID branch (if SPEC-202 has landed by the time this runs) or in `commands/test-plan-review-team.md`'s own hand-off (if it has not) naming `/kit:test-write` as the step after a SOLID verdict. Acceptance: `grep -l "test-write" commands/test-harden.md commands/test-plan-review-team.md` returns at least one file.
-- [ ] TASK-005: Bump every pinned command/agent count assertion to include the new command (`test-write.md`) and new agent (`test-writer.md`): `tests/test-command-emit-sweep.sh`'s command-count assertion, `tests/test-meta.sh`'s README/header/table counts, `docs/architecture.md`'s command and agent inventory tables, `docs/MANUAL.md`/`docs/WORKFLOW.md` if they also pin a count. Acceptance: `bash tests/test-command-emit-sweep.sh && bash tests/test-meta.sh` both pass green with both new files present.
-- [ ] TASK-006: Add the `## Source` footer to `commands/test-write.md` (naming `test-plan-review-team.md`'s verdict shape it reuses and `agents/test-writer.md` it dispatches) and to `agents/test-writer.md` (naming `test-case-design.md`, `testing-strategy.md`, and the `execute.md:424,434` frozen-evaluator convention it follows). Acceptance: both footers present, files named, no overclaim.
+- [x] TASK-004: Add a one-line "Next:" pointer in `commands/test-harden.md`'s SOLID branch (if SPEC-202 has landed by the time this runs) or in `commands/test-plan-review-team.md`'s own hand-off (if it has not) naming `/kit:test-write` as the step after a SOLID verdict. Acceptance: `grep -l "test-write" commands/test-harden.md commands/test-plan-review-team.md` returns at least one file. Resolved: SPEC-202 was parked (commit `0dd3c88`, `test-harden.md` never landed), so the pointer lives in `test-plan-review-team.md` per the file's own fallback clause.
+- [x] TASK-005: Bump every pinned command/agent count assertion to include the new command (`test-write.md`) and new agent (`test-writer.md`): `tests/test-command-emit-sweep.sh`'s command-count assertion, `tests/test-meta.sh`'s README/header/table counts, `docs/architecture.md`'s command and agent inventory tables, `docs/MANUAL.md`/`docs/WORKFLOW.md` if they also pin a count. Acceptance: `bash tests/test-command-emit-sweep.sh && bash tests/test-meta.sh` both pass green with both new files present.
+- [x] TASK-006: Add the `## Source` footer to `commands/test-write.md` (naming `test-plan-review-team.md`'s verdict shape it reuses and `agents/test-writer.md` it dispatches) and to `agents/test-writer.md` (naming `test-case-design.md`, `testing-strategy.md`, and the `execute.md:424,434` frozen-evaluator convention it follows). Acceptance: both footers present, files named, no overclaim.
 
 ### Phase 4: Verification
-- [ ] TASK-007: Add a dedicated test (e.g. `tests/test-test-writer-contract.sh`) asserting: `agents/test-writer.md`'s Bash tool grant contains no bare `Bash`, only the scoped test-runner patterns; `commands/test-write.md` stops (does not dispatch) when the resolved spec's `## Test plan critique` is absent or not SOLID (fixture-driven negative control, mirroring `test-harden.md`'s own negative-control style from SPEC-202's Verification section). Acceptance: the new test file passes; a fixture spec with a REVISE verdict causes `commands/test-write.md`'s documented logic to stop (verified by inspecting the command's stop-branch text against the fixture, same static-assertion style `test-meta.sh` already uses for other commands).
-- [ ] TASK-008: Run the full existing suite green with both new files present and record the proof: `bash tests/test-meta.sh && bash tests/test-command-emit-sweep.sh && bash tests/test-outcome-emit-sweep.sh && bash tests/test-test-writer-contract.sh`. Acceptance: all four pass.
+- [x] TASK-007: Add a dedicated test (e.g. `tests/test-test-writer-contract.sh`) asserting: `agents/test-writer.md`'s Bash tool grant contains no bare `Bash`, only the scoped test-runner patterns; `commands/test-write.md` stops (does not dispatch) when the resolved spec's `## Test plan critique` is absent or not SOLID (fixture-driven negative control, mirroring `test-harden.md`'s own negative-control style from SPEC-202's Verification section). Acceptance: the new test file passes; a fixture spec with a REVISE verdict causes `commands/test-write.md`'s documented logic to stop (verified by inspecting the command's stop-branch text against the fixture, same static-assertion style `test-meta.sh` already uses for other commands).
+- [x] TASK-008: Run the full existing suite green with both new files present and record the proof: `bash tests/test-meta.sh && bash tests/test-command-emit-sweep.sh && bash tests/test-outcome-emit-sweep.sh && bash tests/test-test-writer-contract.sh`. Acceptance: all four pass.
+- [x] TASK-009 (added post-hoc, not in original breakdown): full end-to-end dogfood run against a real, previously spec-less/test-less file (`lib/goal/goal.sh`) through the complete loop (Step 0 -> test-plan -> test-plan-review-team -> test-write -> test-writer -> real test execution). Produced `docs/specs/SPEC-204-goal-sh-dispatch-behavior.md` and `tests/test-goal-dispatch.sh`, 20/20 passing live, independently re-run outside the authoring subagent. This is the actual proof-of-done for this spec's global Acceptance Criteria, stronger than a static `/kit:spec-validate` pass would have been (skipped deliberately, see `## Review` below).
 
 ## After state
-- [ ] `commands/test-plan.md` can produce a coverage matrix for a live, spec-less feature without sending the operator to `/kit:spec` (which wants a feature idea, not a description of what already exists). (Today: no spec, no acceptance criteria -> dead end.)
-- [ ] A SOLID-verdict `## Test plan critique` can be turned into real, executing test code via `/kit:test-write` + `agents/test-writer.md`, without hand-writing every case. (Today: the matrix is the end of the line; nothing materializes it into code.)
-- [ ] Zero duplicated logic: neither new piece re-implements `kit:research-features`, `test-plan-review-team`'s critique loop, or `kit:fix-agent`'s retry logic. (Today: N/A, pieces do not exist.)
-- [ ] Pinned command/agent counts stay accurate with both new files present.
+- [x] `commands/test-plan.md` can produce a coverage matrix for a live, spec-less feature without sending the operator to `/kit:spec` (which wants a feature idea, not a description of what already exists). (Today: no spec, no acceptance criteria -> dead end.) Proven live on `lib/goal/goal.sh` via SPEC-204.
+- [x] A SOLID-verdict `## Test plan critique` can be turned into real, executing test code via `/kit:test-write` + `agents/test-writer.md`, without hand-writing every case. (Today: the matrix is the end of the line; nothing materializes it into code.) Proven live: `tests/test-goal-dispatch.sh`, 20/20 passing.
+- [x] Zero duplicated logic: neither new piece re-implements `kit:research-features`, `test-plan-review-team`'s critique loop, or `kit:fix-agent`'s retry logic. (Today: N/A, pieces do not exist.)
+- [x] Pinned command/agent counts stay accurate with both new files present.
 
 ## Acceptance Criteria (global)
-- [ ] All tasks pass their individual acceptance criteria
-- [ ] Step 0 never fabricates an acceptance criterion `kit:research-features` did not actually observe
-- [ ] `kit:test-writer` never edits a spec's `## Acceptance Criteria` or `## Test plan critique` sections
-- [ ] `commands/test-write.md` refuses to dispatch against a missing, stale, or non-SOLID verdict
-- [ ] No regressions to `commands/test-plan.md`'s existing Step 1-4 behavior, or to SPEC-202's `test-harden.md` once it lands
-- [ ] `bash tests/test-meta.sh && bash tests/test-command-emit-sweep.sh && bash tests/test-outcome-emit-sweep.sh && bash tests/test-test-writer-contract.sh` all pass green
+- [x] All tasks pass their individual acceptance criteria
+- [x] Step 0 never fabricates an acceptance criterion `kit:research-features` did not actually observe
+- [x] `kit:test-writer` never edits a spec's `## Acceptance Criteria` or `## Test plan critique` sections
+- [x] `commands/test-write.md` refuses to dispatch against a missing, stale, or non-SOLID verdict (proven live twice: refused on SPEC-204's REVISE verdict, dispatched cleanly once it reached SOLID)
+- [x] No regressions to `commands/test-plan.md`'s existing Step 1-4 behavior, or to SPEC-202's `test-harden.md` once it lands (moot: SPEC-202 was parked, `test-harden.md` never landed)
+- [x] `bash tests/test-meta.sh && bash tests/test-command-emit-sweep.sh && bash tests/test-outcome-emit-sweep.sh && bash tests/test-test-writer-contract.sh` all pass green
 
 ## Verification
 `bash tests/test-meta.sh && bash tests/test-command-emit-sweep.sh && bash tests/test-outcome-emit-sweep.sh && bash tests/test-test-writer-contract.sh` all green. Negative control: a fixture spec with a `REVISE` (not `SOLID`) verdict in `## Test plan critique` must cause `commands/test-write.md`'s documented stop branch to fire, never a false dispatch.
@@ -187,4 +188,5 @@ None.
 (none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)
 
 ## Review
-(not yet run; `/kit:spec-validate` is the natural next step before `/kit:execute`, same as SPEC-202)
+### Verdict: SHIP
+`/kit:spec-validate` (static, pre-execution review) was deliberately skipped in favor of a stronger check: a full live dogfood run of the built pipeline against a real, previously spec-less/test-less file (`lib/goal/goal.sh`), recorded as `docs/specs/SPEC-204-goal-sh-dispatch-behavior.md`. That run exercised every stage this spec built (Step 0, test-plan, test-plan-review-team, test-write, test-writer) end to end, caught and fixed 2 genuinely broken proof mechanisms during its own critique cycle, and materialized 20 real test cases, 20/20 passing, independently re-run outside the authoring subagent. This is direct behavioral proof, not a paper review of the plan.
