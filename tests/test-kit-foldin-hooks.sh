@@ -56,6 +56,24 @@ assert_contains() {
   fi
 }
 
+# Detached work lands asynchronously: poll a file for a needle instead of asserting
+# right after the hook returns (the hook is expected to return before the write happens).
+wait_for_file_contains() {
+  local NAME="$1" NEEDLE="$2" FILE="$3" TRIES=50
+  TOTAL=$((TOTAL + 1))
+  while [ "$TRIES" -gt 0 ]; do
+    if [ -f "$FILE" ] && grep -qF "$NEEDLE" "$FILE" 2>/dev/null; then
+      echo -e "  ${GREEN}PASS${NC} $NAME"
+      PASS=$((PASS + 1))
+      return
+    fi
+    sleep 0.1
+    TRIES=$((TRIES - 1))
+  done
+  echo -e "  ${RED}FAIL${NC} $NAME (missing '$NEEDLE' in $FILE after 5s)"
+  FAIL=$((FAIL + 1))
+}
+
 # ============================================================
 echo "=== context-hints.sh (UserPromptSubmit) ==="
 # ============================================================
@@ -129,10 +147,33 @@ chmod +x "$TD/bs-extractor.sh"
 
 RC=0
 REPO_ROOT="$TD/bs-repo" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state" \
+  BACKLOG_STAGE_SYNC=1 \
   bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
 assert_exit "row 3: stages a candidate, exits 0" 0 $RC
 STAGED=$(cat "$TD/bs-repo/_meta/backlog-staging.md" 2>/dev/null)
 assert_contains "row 3: staged file has the candidate (repo-relative default)" "fix flaky deploy script" "$STAGED"
+
+# row 3b (detach fix): the DEFAULT path (no BACKLOG_STAGE_SYNC) must return fast and
+# stage the candidate in a detached child -- this is what SessionEnd actually invokes.
+mkdir -p "$TD/bs-repo-async/_meta"
+git -C "$TD/bs-repo-async" init -q
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/bs-repo-async" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state-async" \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+assert_exit "row 3b: detached mode still exits 0 immediately" 0 $RC
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 2000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3b: hook returns in <2s even though the extractor call is not run yet (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3b: hook took ${ELAPSED_MS}ms (expected <2000ms, detach not firing)"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 3b: candidate lands in staging after the hook already returned" \
+  "fix flaky deploy script" "$TD/bs-repo-async/_meta/backlog-staging.md"
 
 # NC: empty stdin never blocks a session end.
 RC=0; echo '' | bash "$KIT_DIR/hooks/backlog-stage.sh" >/dev/null 2>&1 || RC=$?
@@ -161,7 +202,7 @@ EOF
 chmod +x "$TD/hv-extractor.sh"
 
 RC=0
-REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-extractor.sh" HARVEST_MIN_INTERVAL=0 \
+REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-extractor.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
   bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
 assert_exit "row 4: PreCompact-mode harvest stages a learning, exits 0" 0 $RC
 LEDGER=$(cat "$TD/hv-repo/_meta/learned-ledger.md" 2>/dev/null)
@@ -177,11 +218,43 @@ OUT
 EOF
 chmod +x "$TD/hv-lablog.sh"
 RC=0
-REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 \
+REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
   bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
 assert_exit "row 4b: --lab-log drafts an entry, exits 0" 0 $RC
 DRAFT=$(cat "$TD/hv-repo/_meta/.lab-log-draft.md" 2>/dev/null)
 assert_contains "row 4b: draft never writes the real LAB_LOG.md" "repo-root-seam" "$DRAFT"
+
+# row 4c (detach fix): the DEFAULT path (no HARVEST_SYNC) for BOTH no-arg and --lab-log
+# must return fast and do the real work in a detached child -- this is what
+# PreCompact/SessionEnd actually invoke, and is the fix for the SessionEnd-cancellation
+# bug (the `claude -p` extractor call can take up to 120s, the invoking hook only gets
+# ~30s, and SessionEnd fires while the CLI process is already exiting).
+mkdir -p "$TD/hv-repo-async"
+git -C "$TD/hv-repo-async" init -q
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-async" HARVEST_EXTRACTOR="$TD/hv-extractor.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+assert_exit "row 4c: detached no-arg mode still exits 0 immediately" 0 $RC
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 2000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4c: no-arg hook returns in <2s (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4c: no-arg hook took ${ELAPSED_MS}ms (expected <2000ms, detach not firing)"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 4c: ledger entry lands after the hook already returned" \
+  "repo-root-seam" "$TD/hv-repo-async/_meta/learned-ledger.md"
+
+RC=0
+REPO_ROOT="$TD/hv-repo-async" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
+assert_exit "row 4d: detached --lab-log mode still exits 0 immediately" 0 $RC
+wait_for_file_contains "row 4d: LAB_LOG draft lands after the hook already returned" \
+  "repo-root-seam" "$TD/hv-repo-async/_meta/.lab-log-draft.md"
 
 # ID-202: dedup-on-append must survive CONCURRENT invocations sharing one ledger
 # (e.g. parallel subagent sessions each firing PreCompact). Pre-fix, existing_slugs()

@@ -43,6 +43,8 @@ Env:
   HARVEST_STATE_DIR=DIR      --stop-trigger counter + lock dir (default ~/.claude/dwarves-kit/state/harvest)
   HARVEST_MIN_INTERVAL=SECS  rate-limit the no-arg + --lab-log harvests to at most once per
                              SECS (default 3600 = 1h). 0 disables.
+  HARVEST_SYNC=1             run the no-arg and --lab-log harvests INLINE instead of
+                             detached (test seam, deterministic; default OFF = detached)
   REPO_ROOT=DIR              consumer seam for the repo-relative defaults above
 
 Modes: no args = stage ledger learnings (PreCompact/SessionEnd). `--lab-log` = draft a
@@ -55,6 +57,17 @@ fire). `--cleanup` = a human-run mode (NOT auto-fired) that archives every
 `flushed:*` row (a learning already routed to its durable home) out of the active
 ledger into a sibling append-only `<ledger-basename>.archive.md`, keeping the ledger
 lean; queued rows stay, content is never deleted.
+
+Both the no-arg and `--lab-log` modes call `claude -p` (up to a 120s budget), but the
+PreCompact/SessionEnd/Stop hook slots that invoke this script are only ever given a
+much shorter timeout (30s in this kit's hooks.json) -- and SessionEnd additionally
+fires while the CLI process is already tearing down. Either one can get the whole
+invocation killed mid-call before it writes anything. So, like `--stop-trigger`
+already did, both modes spawn a detached child (`--harvest-run` / `--lab-log-run`,
+same `_spawn_detached` used by stop-trigger) and return almost immediately; the actual
+`claude -p` call and file write happen in that child, which outlives the invoking
+hook's timeout and the parent process's exit. HARVEST_SYNC=1 opts back into the old
+inline behavior (used by the test fixtures for determinism).
 
 Stdlib only. Always exits 0 (a harvest never blocks a compaction/stop).
 """
@@ -320,9 +333,10 @@ def _clean_lablog(raw):
     return block
 
 
-def cmd_lab_log():
-    """--lab-log: draft a session-close LAB_LOG entry to a staging file (never the real LAB_LOG.md)."""
-    payload = read_payload()
+def cmd_lab_log(payload):
+    """--lab-log(-run): draft a session-close LAB_LOG entry to a staging file (never the
+    real LAB_LOG.md). Takes an already-parsed payload; the caller reads it from stdin
+    (sync path) or a handoff file (detached child), see _dispatch."""
     tp = payload.get("transcript_path")
     if not tp:
         return 0
@@ -400,10 +414,6 @@ def _harvest_payload(payload):
 
     print(f"harvest: staged {len(fresh)} new (of {len(candidates)} extracted) -> {ledger}", file=sys.stderr)
     return 0
-
-
-def main():
-    return _harvest_payload(read_payload())
 
 
 # ---- --stop-trigger: per-N-turns memory-nudge cadence ----
@@ -484,31 +494,40 @@ def _run_harvest_locked(payload, lockpath):
         lf.close()
 
 
-def _fire_harvest(payload, sdir):
-    """Run the harvest off the turn's critical path. Default: spawn a detached child
-    (start_new_session) and return immediately, so a slow harvest never blocks the turn.
-    HARVEST_STOP_SYNC=1 runs it inline (test seam, deterministic)."""
-    lockpath = os.path.join(sdir, "harvest.lock")
-    if _truthy(os.environ.get("HARVEST_STOP_SYNC")):
-        _run_harvest_locked(payload, lockpath)
-        return
-    pf = os.path.join(sdir, f"payload-{os.getpid()}.json")
+def _spawn_detached(mode_flag, payload, sdir):
+    """Write payload to a state-dir file and spawn a detached child (start_new_session)
+    that re-invokes this script as `mode_flag <payload-file>`, then return immediately.
+    The child is reparented into its own process session, so it outlives both the
+    invoking hook's own timeout AND (for SessionEnd) the CLI process's exit teardown --
+    a `claude -p` extractor call can take up to its own 120s budget, well past any
+    SessionEnd/PreCompact/Stop hook timeout, and SessionEnd fires while the process is
+    already tearing down. Returns True if the spawn succeeded."""
     try:
+        os.makedirs(sdir, exist_ok=True)
+        pf = os.path.join(sdir, f"payload-{mode_flag.lstrip('-')}-{os.getpid()}.json")
         with open(pf, "w") as fh:
             json.dump(payload, fh)
-    except OSError:
-        return
-    try:
         subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__), "--stop-harvest", pf],
+            [sys.executable, os.path.abspath(__file__), mode_flag, pf],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,  # detach from the hook's process group; survives the turn
         )
-    except (OSError, ValueError):
+    except OSError:
+        return False
+    return True
+
+
+def _fire_harvest(payload, sdir):
+    """Run the harvest off the turn's critical path. Default: spawn a detached child
+    and return immediately, so a slow harvest never blocks the turn.
+    HARVEST_STOP_SYNC=1 runs it inline (test seam, deterministic)."""
+    if _truthy(os.environ.get("HARVEST_STOP_SYNC")):
+        _run_harvest_locked(payload, os.path.join(sdir, "harvest.lock"))
         return
-    print("harvest: stop-trigger fire (detached harvest)", file=sys.stderr)
+    if _spawn_detached("--stop-harvest", payload, sdir):
+        print("harvest: stop-trigger fire (detached harvest)", file=sys.stderr)
 
 
 def cmd_stop_trigger():
@@ -543,29 +562,87 @@ def cmd_stop_harvest(pf):
         payload = json.load(open(pf))
     except (OSError, ValueError):
         return 0
-    _run_harvest_locked(payload, os.path.join(_state_dir(), "harvest.lock"))
     try:
-        os.remove(pf)
-    except OSError:
-        pass
+        _run_harvest_locked(payload, os.path.join(_state_dir(), "harvest.lock"))
+    finally:
+        try:
+            os.remove(pf)
+        except OSError:
+            pass
+    return 0
+
+
+def cmd_lab_log_run(pf):
+    """Internal: the detached child spawned for --lab-log. Reads the handed-off payload
+    file, runs cmd_lab_log, removes the payload file."""
+    try:
+        payload = json.load(open(pf))
+    except (OSError, ValueError):
+        return 0
+    try:
+        cmd_lab_log(payload)
+    finally:
+        try:
+            os.remove(pf)
+        except OSError:
+            pass
+    return 0
+
+
+def cmd_harvest_run(pf):
+    """Internal: the detached child spawned for the plain PreCompact/SessionEnd harvest.
+    Mirrors cmd_stop_harvest (same lock, same payload-file handoff/cleanup) so a
+    --stop-trigger fire and a PreCompact/SessionEnd fire against the same ledger never
+    race each other either."""
+    try:
+        payload = json.load(open(pf))
+    except (OSError, ValueError):
+        return 0
+    try:
+        _run_harvest_locked(payload, os.path.join(_state_dir(), "harvest.lock"))
+    finally:
+        try:
+            os.remove(pf)
+        except OSError:
+            pass
     return 0
 
 
 def _dispatch(argv):
     if "--cleanup" in argv:
         return cmd_cleanup()
+    if "--lab-log-run" in argv:
+        i = argv.index("--lab-log-run")
+        return cmd_lab_log_run(argv[i + 1] if i + 1 < len(argv) else "")
     if "--lab-log" in argv:
         if _debounced("lablog"):
             return 0
-        return cmd_lab_log()
+        payload = read_payload()
+        if not payload.get("transcript_path"):
+            return 0
+        if _truthy(os.environ.get("HARVEST_SYNC")):
+            return cmd_lab_log(payload)
+        if _spawn_detached("--lab-log-run", payload, _state_dir()):
+            print("harvest: --lab-log fired detached (draft lands after this hook returns)", file=sys.stderr)
+        return 0
     if "--stop-trigger" in argv:
         return cmd_stop_trigger()
     if "--stop-harvest" in argv:
         i = argv.index("--stop-harvest")
         return cmd_stop_harvest(argv[i + 1] if i + 1 < len(argv) else "")
+    if "--harvest-run" in argv:
+        i = argv.index("--harvest-run")
+        return cmd_harvest_run(argv[i + 1] if i + 1 < len(argv) else "")
     if _debounced("ledger"):
         return 0
-    return main()
+    payload = read_payload()
+    if not payload.get("transcript_path"):
+        return 0
+    if _truthy(os.environ.get("HARVEST_SYNC")):
+        return _harvest_payload(payload)
+    if _spawn_detached("--harvest-run", payload, _state_dir()):
+        print("harvest: fired detached (ledger lands after this hook returns)", file=sys.stderr)
+    return 0
 
 
 if __name__ == "__main__":
