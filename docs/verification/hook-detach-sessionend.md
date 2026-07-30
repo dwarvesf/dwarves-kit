@@ -187,6 +187,12 @@ Elapsed: 3.788657000s (no cancellation; debug log shows both hooks "completed wi
 
 Full transcript, all 4 scenes: `hook-detach-sessionend-transcript.txt` (this dir).
 
+**Watchable version**: `hook-detach-sessionend-demo/hook-cancelled-fix.gif` -- the same
+pre-fix-vs-fixed comparison as a real terminal recording (`vhs`), timeout/extractor
+values scaled down (5s/6s instead of 30s/33s) so it stays under 40s; see that folder's
+`README.md` for the full SPEC-126 packaging (viewable artifact + reproduce script +
+verified-content note).
+
 Rollback: pure hook + test + doc change, no state/data migration; the only "state" this
 PR touches is the payload-handoff files under `~/.claude/dwarves-kit/state/{harvest,
 backlog-stage}/`, which are transient (written and removed within one hook invocation,
