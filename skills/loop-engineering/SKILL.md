@@ -81,6 +81,28 @@ Two different existing shapes, don't conflate them:
   logged there for feature-list reconciliation, doc-drift, agent-effectiveness, dependency
   patch, and the test-plan backfill campaign, they're worked examples of Step 1+2 output).
 
+## Lineage (satisfies Step 1's source-citation gate)
+
+The engine's coarse shape is not original: it's Anthropic's own **Evaluator-Optimizer /
+Reflection-loop** workflow (["Building Effective Agents"](https://www.anthropic.com/research/building-effective-agents)),
+the same lineage as Self-Refine (Madaan et al. 2023), Reflexion (Shinn et al. 2023), and CRITIC
+(Gou et al. 2023). What none of those, nor any Claude Code skill/plugin found on a 2026-07-30
+web sweep, package together is the specific bundle used here:
+
+- **Artifact-agnostic parameterization**, matches Evaluator-Optimizer's own framing; not a
+  kit invention.
+- **Severity-aware convergence** (a flat finding-count still counts as progress if the worst
+  severity dropped), not found in any literature or tool surveyed; this IS the kit's addition.
+- **Distinct reviser, never a scorer**, seen incidentally in practice (e.g. one model reviews,
+  a different one fixes) but never stated as an enforced rule; this IS the kit's addition.
+- **Hard cap with an honest-halt reporting path** (report "not converging" as a real outcome,
+  not a silent stop), pieces exist (max-round caps, keep-best fallbacks) but never packaged as
+  an explicit contract; this IS the kit's addition.
+
+So: cite Evaluator-Optimizer for the shape, don't claim the shape is novel. The three deltas
+above are what's actually new, and are the parts worth defending if this pattern gets
+challenged later.
+
 ## Reference
 
 Worked instantiation: `commands/test-plan-review-team.md` (the engine) +
