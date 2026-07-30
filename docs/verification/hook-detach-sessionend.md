@@ -99,9 +99,46 @@ attacker at the local user's own trust level to matter); small intra-file duplic
 | 4 | SYNC-seam genuinely blocks (finding #6) | rows `3d`/`4g`/`4h` PASS: elapsed >=1.8s under the 2s-slow extractor with SYNC=1 set |
 | 5 | `stage_from_text` unit test (finding #7) | row `3g` PASS: dedup-skip and empty-candidates branches both covered |
 
+## Round 3: real `claude -p` CLI runs (not just the bash test harness)
+
+Everything above drives the hook scripts directly (hand-built payloads via
+`bash -c "echo '{...}' | bash hooks/harvest.sh"`). That proves the code is correct, but
+never exercised the actual mechanism this whole fix depends on: Claude Code's own
+`SessionEnd` hook runner, its declared timeout, and real process teardown at real CLI
+exit. Ran the real thing: two scratch clones (`origin/master` = pre-fix,
+`origin/fix/hook-detach-sessionend` = fixed), a real git-init'd project dir, and
+`claude -p "<prompt>" --model haiku --setting-sources project --settings <SessionEnd
+wiring to the clone's hooks/*.sh>` -- an actual `claude` process, actually exiting,
+actually firing `SessionEnd`, with `HARVEST_EXTRACTOR`/`BACKLOG_STAGE_EXTRACTOR`
+swapped for a fake slow script (a real `claude -p --model haiku` extractor call was
+correctly out of scope to fake around; the timing claim under test is about the HOOK
+RUNNER, not the extractor itself).
+
+| # | Scenario | Result |
+|---|---|---|
+| 1 | FIXED hooks, 2s-slow extractor, tool-free prompt | `claude -p` elapsed **3.79s**; both hooks logged `completed with status 0`; detached child's ledger/draft/staging output landed correctly afterward |
+| 2 | PRE-FIX hooks, SAME 2s-slow extractor, same prompt | `claude -p` elapsed **5.87s** -- +2.08s, matching the extractor's sleep exactly; output landed too (pre-fix was never wrong, only blocking) |
+| 3 | PRE-FIX hooks, extractor slowed to 33s (exceeds the hook's declared 30s timeout) | `claude -p` elapsed **34.1s**; printed, verbatim, the ORIGINAL reported bug: `SessionEnd hook [...harvest.sh --lab-log] failed: Hook cancelled` -- reproduced from a real CLI session, not inferred |
+| 4 | FIXED hooks, the SAME 33s-slow extractor | `claude -p` elapsed **3.79s** (identical to the 2s case -- completely decoupled from extractor duration now); both hooks `completed with status 0`, no cancellation; the detached child's output landed correctly ~33s later, well after the CLI process had already exited |
+
+Row 3 is the whole investigation's origin, reproduced on demand: the exact "Hook
+cancelled" banner Han saw at real session exit, now understood precisely (the
+synchronous extractor call exceeding the hook's own declared timeout) and triggerable
+at will. Row 4 confirms the fix eliminates it -- not by getting faster, but by
+structurally removing the coupling between extractor duration and hook-runner timeout.
+No lingering processes were left behind by either scenario (`pgrep` confirmed clean
+after each run).
+
 ## Reproduce
 
 ```
 cd dwarves-kit   # this branch (fix/hook-detach-sessionend), or merged master
 bash tests/test-kit-foldin-hooks.sh   # 91/91
 ```
+
+Real-CLI reproduction (round 3): clone both `origin/master` and this branch, `git init`
+a scratch project dir, write a `--settings` JSON wiring `SessionEnd` to
+`hooks/backlog-stage.sh` + `hooks/harvest.sh --lab-log` at the clone's absolute path,
+then run `HARVEST_EXTRACTOR=<a sleep-N-then-answer script> HARVEST_MIN_INTERVAL=0
+claude -p "<tool-free prompt>" --model haiku --setting-sources project --settings
+<file>` from inside the scratch project dir, timing the whole invocation.
