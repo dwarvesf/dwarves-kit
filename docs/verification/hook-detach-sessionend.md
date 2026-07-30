@@ -114,6 +114,18 @@ swapped for a fake slow script (a real `claude -p --model haiku` extractor call 
 correctly out of scope to fake around; the timing claim under test is about the HOOK
 RUNNER, not the extractor itself).
 
+### The four SPEC-126 components (per the `proof-capture` skill)
+
+This change has no visual surface a human watches (a background hook, not a TUI/UI),
+so per the skill's own decision ladder it owes a captured transcript, not a GIF/video.
+
+| Component | Where |
+|---|---|
+| Viewable artifact | `hook-detach-sessionend-transcript.txt` (this dir) -- the exact, verbatim stdout/stderr from 4 real `claude -p` sessions, nothing paraphrased |
+| Committed reproduce script | the shell commands embedded in that same transcript file, plus the condensed form below |
+| Verified-content note | below |
+| Negative control | scenes 2 and 3 in the transcript (pre-fix hooks, same extractors) -- the bug-present state, side by side with the fix |
+
 | # | Scenario | Result |
 |---|---|---|
 | 1 | FIXED hooks, 2s-slow extractor, tool-free prompt | `claude -p` elapsed **3.79s**; both hooks logged `completed with status 0`; detached child's ledger/draft/staging output landed correctly afterward |
@@ -128,6 +140,60 @@ at will. Row 4 confirms the fix eliminates it -- not by getting faster, but by
 structurally removing the coupling between extractor duration and hook-runner timeout.
 No lingering processes were left behind by either scenario (`pgrep` confirmed clean
 after each run).
+
+## Verified-content note
+
+- **Content**: every command and every output line in `hook-detach-sessionend-transcript.txt`
+  is a direct copy of the real terminal output captured during this session -- no line was
+  reconstructed, summarized, or retyped from memory.
+- **Authenticity**: both the pre-fix and fixed sides ran the SAME fake slow extractor
+  scripts and the SAME prompt, so the only variable between scenes 1-vs-2 and 3-vs-4 is
+  which branch's `hooks/*.py` was checked out in the cloned repo the `--settings` JSON
+  pointed at.
+- **Privacy**: recorded from scratch clones + a scratch project dir under
+  `/private/tmp/.../scratchpad/real-run/` (session-local, gitignored scratch, not
+  committed); no leaked credentials, client data, or unrelated repo paths -- the only
+  paths visible are this scratch directory's own name and the two clones' hook file
+  paths, both already public in the PR itself.
+- **Negative control**: scenes 2 and 3 ARE the negative control (bug-present state) --
+  same inputs as scenes 1 and 4, only the code reverted to pre-fix `master`.
+
+## Run detail
+
+The load-bearing scene (round 3, scene 3 of `hook-detach-sessionend-transcript.txt`):
+
+```
+Command: HARVEST_EXTRACTOR=very-slow-lablog.sh HARVEST_MIN_INTERVAL=0 \
+  claude -p "Just reply with exactly the word OK. Do not use any tools." \
+  --model haiku --setting-sources project --settings settings-prefix.json \
+  --debug-file timeout-debug.log
+Exit: 0 (the claude process itself exits cleanly; the HOOK inside it is what gets cancelled)
+Output: OK
+         SessionEnd hook [bash .../kit-prefix/hooks/harvest.sh --lab-log] failed: Hook cancelled
+Elapsed: 34.136220000s
+```
+
+And the fixed side, same extractor, same prompt (scene 4):
+
+```
+Command: HARVEST_EXTRACTOR=very-slow-lablog.sh HARVEST_MIN_INTERVAL=0 \
+  claude -p "Just reply with exactly the word OK. Do not use any tools." \
+  --model haiku --setting-sources project --settings settings-fixed.json \
+  --debug-file fixtimeout-debug.log
+Exit: 0
+Output: OK
+Elapsed: 3.788657000s (no cancellation; debug log shows both hooks "completed with status 0")
+```
+
+Full transcript, all 4 scenes: `hook-detach-sessionend-transcript.txt` (this dir).
+
+Rollback: pure hook + test + doc change, no state/data migration; the only "state" this
+PR touches is the payload-handoff files under `~/.claude/dwarves-kit/state/{harvest,
+backlog-stage}/`, which are transient (written and removed within one hook invocation,
+never a durable store). Rollback is `git revert` of the three feature commits (no
+restore procedure needed, no migration to undo). [UNAVAILABLE: no stateful
+rollback/migration flow exists here -- this is a behavior change to a hook script, not
+a deploy or data change.]
 
 ## Reproduce
 
