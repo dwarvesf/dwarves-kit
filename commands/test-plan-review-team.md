@@ -47,7 +47,7 @@ If round N found K > 0 findings AND N < 3:
 
 1. Dispatch a **distinct reviser** subagent (NOT one of the lens reviewers , producer must not be reviewer) with the merged findings and the current `## Test plan`. Its job: revise the spec's `## Test plan` to address the findings (add the missing AC's test row, name the missing negative control, replace a vague proof with a concrete command, etc.), writing the revised matrix back via the replace-not-stack rule below. It changes the `## Test plan`, nothing else.
 2. Re-run Step 2 + Step 3 on the revised plan (round N+1).
-3. **Findings must strictly fall**: if round N+1's K is not less than round N's K, stop , a loop where findings do not decrease is itself a finding, not a pass. Record it.
+3. **Findings must strictly fall, by severity, not raw count**: if round N+1's K is not less than round N's K, check whether every round N+1 finding's severity is BELOW round N's max severity (e.g. round N had a CRITICAL, round N+1 has only MEDIUM/LOW) , if so, treat it as falling and continue under the cap, since raw K can hold flat while the plan is genuinely tightening (a resolved finding replaced by a new one at a lower severity is progress, not a stall). Only stop when K is flat or rising AND no severity improvement occurred , that combination is itself a finding, not a pass. Record either outcome (severity-adjusted continue, or genuine halt) in the round marker.
 4. Stop early the moment K reaches 0 (clean).
 
 Hard cap: 3 rounds. The loop tightens the artifact; it does not gate. After the loop, `/kit:execute` is free to run regardless of the verdict.
@@ -89,7 +89,7 @@ Rounds: [the [[QL-VERDICT round=N clean=BOOL findings=K]] line per round, in ord
 Present the merged critique to the user. The verdict is report-only:
 
 - SOLID: the test plan holds (findings converged to 0, or only LOW remain); suggest proceeding to `/kit:execute`.
-- REVISE: list the specific OPEN findings to address; the maintainer revises the `## Test plan` (or re-runs this lane), or proceeds anyway.
+- REVISE: list the specific OPEN findings to address; the maintainer revises the `## Test plan` (or re-runs this lane), or proceeds anyway. When every OPEN finding is single-line-scale (a missing assertion, a scoping note, a documented trade-off , not a structural rework), the maintainer may hand-apply the fixes directly and confirm with ONE distinct-reviewer pass scoped to just those findings, rather than relaunching the full N-lens round; record this as the confirmation path used (narrow re-check vs full round) alongside the resulting verdict, same as a full round's own record.
 - RECONSIDER: explain what is fundamentally untestable about the change as specified (e.g. an AC with no possible oracle) , this usually means the SPEC, not just the plan, needs work.
 
 Next: on a SOLID verdict, `/kit:test-write` turns the hardened matrix into real, executing test code.
