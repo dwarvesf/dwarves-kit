@@ -63,6 +63,17 @@ Two different existing shapes, don't conflate them:
   (a flat K with lower max severity still counts as progress; see `test-plan-review-team.md`
   Step 4.3 for the exact wording).
 
+  **Scan step is two-tier, not "always dispatch all N lenses."** Per `docs/WORKFLOW.md`'s own
+  cheap-first verification-cost-routing principle, applied here: Tier 1 is a deterministic
+  check (grep/bash, zero model cost) for any criterion reducible to a mechanical yes/no (a row
+  exists, a command is present, a field is populated) , run every round, decisive on its own.
+  Tier 2 is the N-lens model critique, dispatched ONLY for the residual criteria Tier 1 can't
+  reduce to a script (oracle quality, ambiguity, determinism risk); skip any lens whose entire
+  finding-space Tier 1 already cleared. Stop condition becomes: Tier 1 all clean AND (Tier 2
+  K=0 OR severity fell OR cap hit). This is the fix for the engine's real cost problem, N
+  parallel model dispatches every round is expensive when most findings are actually mechanical;
+  see `docs/research/2026-07-30-loop-engine-prior-art.md` for the worked cost comparison.
+
 - **Campaign / worklist iteration** (driving an existing loop across many items): not a new
   engine, an outer wrapper. Shape: a worklist of untreated items -> run the existing
   loop/command on each in turn -> track progress -> stop when the worklist is exhausted or a

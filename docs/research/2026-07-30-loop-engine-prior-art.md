@@ -180,6 +180,61 @@ or FAIL, full stop. A naive raw-count bounded loop (what we ourselves ran before
 have halted at round 2 here, wrongly, and reported a working test plan as "stuck." That is not
 hypothetical, it is what SPEC-204 actually did.
 
+## Cost problem, and the hybrid fix (2026-07-30, same-day follow-up)
+
+The engine's real cost weakness: it dispatches N model-judged lenses every round regardless of
+whether a given finding was ever mechanical. A binary stop condition (Reflexion/CRITIC-style) is
+cheaper and just as correct whenever a criterion genuinely reduces to a measurable yes/no, the
+severity-graded machinery only earns its cost for the residual judgment calls a script can't
+make. The fix is not a new idea, it is `docs/WORKFLOW.md`'s own cheap-first
+verification-cost-routing principle (line 210), applied *inside* the engine's own scan step
+instead of only across whole verifier tiers:
+
+```
+TWO-TIER STOP CONDITION (best of both)
+
+  round N: scan <ARTIFACT>
+       │
+       ▼
+  ┌───────────────────────────────┐
+  │ TIER 1: deterministic checks   │  grep/bash, zero model cost,
+  │ (only criteria reducible to a  │  runs EVERY round, decisive
+  │  mechanical yes/no: row exists,│
+  │  command present, field set)   │
+  └───────────────┬─────────────────┘
+                  │
+         any FAIL? ──yes──▶ finding, CRITICAL by default, cheap to detect
+                  │ no (all Tier-1 pass)
+                  ▼
+  ┌───────────────────────────────┐
+  │ TIER 2: N-lens model critique  │  only dispatched for the RESIDUAL
+  │ (only genuinely non-mechanical │  judgment surface Tier 1 can't
+  │  judgment: oracle quality,     │  reduce to a script; skip any lens
+  │  ambiguity, determinism risk)  │  whose whole finding-space Tier 1
+  └───────────────┬─────────────────┘  already cleared
+                  │
+       merge findings, severity-graded (same convergence rule as before)
+                  │
+                  ▼
+   STOP = Tier-1 all clean AND (Tier-2 K=0 OR severity fell OR cap hit)
+```
+
+Reworking the leap-year test-plan example (round 1) under this rule:
+
+| Round 1 finding | Tier | Why |
+|---|---|---|
+| No test row for year=1900/2000 | Tier 1 | `grep` the test plan for the literal boundary years, either the row exists or it doesn't |
+| Expected output for year=2000 not a concrete assertion | Tier 1 | mechanical presence check: does the row contain a runnable assertion string, or a placeholder |
+| No test for year=0/negative years | Tier 2 | genuine judgment call, is this edge case in scope for the spec, a script can't decide that |
+
+Two of the three round-1 findings never needed a model dispatch at all. Round 2 only re-runs
+the Tier-2 lens whose finding-space Tier 1 couldn't clear, not all 6, since Tier 1 already
+confirmed the century rows exist. Cost drops from "6 parallel model calls x 3 rounds" toward
+"2 grep checks + 1 model call x fewer rounds," while the severity-aware convergence rule still
+protects the genuinely judgment-heavy residual from the false-stall problem. This is folded
+into `skills/loop-engineering/SKILL.md` Step 2 as the engine's default scan shape, not an
+optional optimization.
+
 ## Recommendation carried into `skills/loop-engineering/SKILL.md`
 
 Don't rename the pattern, no single literature term covers the full bundle. Cite
