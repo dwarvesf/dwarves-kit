@@ -8,36 +8,62 @@ disable-model-invocation: false
 
 ## Overview
 
-The kit already runs 3 first-party bounded loops (Goal, Debug, Execute) plus a bounded-revise
-side-flow (`test-plan-review-team`, SPEC-203/204). This skill is the reusable *shape* extracted
-from that fourth one, so a new loop idea gets designed against a known pattern instead of
-re-derived from scratch each time.
+The kit runs 3 first-party bounded loops: Goal, Debug, Execute. It also runs a bounded-revise
+side-flow, `test-plan-review-team` (SPEC-203/204). This skill extracts the reusable shape from
+that fourth loop. Use it to design a new loop against a known pattern, instead of starting from
+scratch.
+
+## How to use this skill
+
+You do not need to design the stop condition or the output shape before you start. Describe the
+artifact and the itch. This skill runs the rest.
+
+**Step 1 needs**: the artifact, and why now. Example: "the README's feature list keeps drifting
+from the code." This skill checks it against the four gate criteria below and reports pass or
+fail.
+
+**Step 2 needs**: what good and bad look like, in plain words. You do not need to sort checks
+into Tier 1 or Tier 2 yourself. Describe what wrong looks like, for each check you want. This
+skill sorts them and shows you the split, so you can correct it.
+
+**Step 3 needs**: what the artifact should look like when done. Say whether it is a
+written-back section, a standalone report, or an applied edit. Say what verdict shape you want.
+If you do not say, this skill defaults to the kit's own shape: a written-back section, a
+three-way verdict (SOLID / REVISE / RECONSIDER), and an honest halt on non-convergence.
+
+**How it fires**: name it directly ("use the loop-engineering skill"), or describe the problem
+close to the trigger phrases in this file's frontmatter. No slash command is required.
+
+**A caveat on reuse across sessions**: a plugin skill fires in other sessions only after its
+change merges to `master`, and the installed plugin copy refreshes (`claude plugin marketplace
+update`). Until then, it runs only in a session that reads this file directly off its branch.
 
 ## Step 1: Gate, before designing anything
 
-`docs/PHILOSOPHY.md` "Loop boundaries" + "Feature rejection criteria" are the kit's own bar, not
-a new one invented here:
+`docs/PHILOSOPHY.md`'s "Loop boundaries" and "Feature rejection criteria" set the bar. This
+skill invents no new one:
 
-- **Bounded-in-session only.** A continuation that keeps working *inside* the current session
-  under a verifiable stop condition. An unbounded outer loop (external `while` re-spawning
-  sessions) is explicitly declined territory (GSD v2 / autonomous-runtime, not this kit).
-- **Serves 2+ lifecycle phases**, or is a named downstream-facing exception (like
-  `visual-team`/`ui-design`) with a real external consumer, not "might be useful someday."
-- **Explainable in one sentence.** If the README-table line for it would run long, it's too
-  complex as scoped.
-- **Has a source citation.** Trace it to a proven implementation or an existing kit pattern
-  (per "synthesize, don't originate"), not an invented mechanic.
+- **Bounded-in-session only.** The loop keeps working inside the current session, under a
+  verifiable stop condition. An unbounded outer loop (an external `while` that re-spawns
+  sessions) belongs to autonomous-runtime tools like GSD v2, not this kit.
+- **Serves 2+ lifecycle phases.** Or names a real external consumer, like `visual-team` /
+  `ui-design` does, as a downstream-facing exception. "Might be useful someday" does not count.
+- **Explainable in one sentence.** If the README-table line for it runs long, the scope is too
+  complex.
+- **Has a source citation.** Trace it to a proven implementation, or to an existing kit pattern
+  (per "synthesize, do not originate"). Do not invent a mechanic from nothing.
 
-Any of these failing kills the idea as a *loop*; it may still be worth a one-shot side-flow
-(like `kit-health` / `absorb`), which is simpler and doesn't need this skill.
+If any of these fail, the idea is not a loop. It may still work as a one-shot side-flow, like
+`kit-health` or `absorb`. A side-flow is simpler and does not need this skill.
 
 ## Step 2: Pick the shape, engine, or campaign?
 
-Two different existing shapes, don't conflate them:
+Two shapes already exist. Do not conflate them:
 
-- **Bounded-revise engine** (converging on one artifact): dispatch N scanners against an
-  artifact -> merge findings by severity -> revise the artifact -> re-check -> repeat until
-  clean or capped. This is `test-plan-review-team.md` Step 2-4, generalized:
+- **Bounded-revise engine.** Use this when the loop converges on one artifact. Dispatch N
+  scanners against the artifact. Merge findings by severity. Revise the artifact. Re-check.
+  Repeat until clean, or until the round cap hits. This generalizes `test-plan-review-team.md`
+  Step 2-4:
 
   ```
   dispatch N scanners against <ARTIFACT>
@@ -58,64 +84,74 @@ Two different existing shapes, don't conflate them:
       verdict: SOLID / REVISE / RECONSIDER
   ```
 
-  Parameterize: what's the artifact, who scans it (N lenses), who revises it (a distinct
-  reviser, never one of the scanners). Convergence rule is severity-aware, not raw-count
-  (a flat K with lower max severity still counts as progress; see `test-plan-review-team.md`
-  Step 4.3 for the exact wording).
+  Parameterize three things: the artifact, who scans it (N lenses), and who revises it. The
+  reviser must be distinct from every scanner. The convergence rule tracks severity, not raw
+  count. A flat K still counts as progress if the worst severity dropped. See
+  `test-plan-review-team.md` Step 4.3 for the exact wording.
 
-  **Scan step is two-tier, not "always dispatch all N lenses."** Per `docs/WORKFLOW.md`'s own
-  cheap-first verification-cost-routing principle, applied here: Tier 1 is a deterministic
-  check (grep/bash, zero model cost) for any criterion reducible to a mechanical yes/no (a row
-  exists, a command is present, a field is populated) , run every round, decisive on its own.
-  Tier 2 is the N-lens model critique, dispatched ONLY for the residual criteria Tier 1 can't
-  reduce to a script (oracle quality, ambiguity, determinism risk); skip any lens whose entire
-  finding-space Tier 1 already cleared. Stop condition becomes: Tier 1 all clean AND (Tier 2
-  K=0 OR severity fell OR cap hit). This is the fix for the engine's real cost problem, N
-  parallel model dispatches every round is expensive when most findings are actually mechanical;
-  see `docs/research/2026-07-30-loop-engine-prior-art.md` for the worked cost comparison.
+  **The scan step runs in two tiers. It does not dispatch all N lenses every round.**
+  `docs/WORKFLOW.md` already states a cheap-first verification-cost-routing principle. This
+  section applies that principle inside the engine's own scan step.
 
-- **Campaign / worklist iteration** (driving an existing loop across many items): not a new
-  engine, an outer wrapper. Shape: a worklist of untreated items -> run the existing
-  loop/command on each in turn -> track progress -> stop when the worklist is exhausted or a
-  budget/blocker hits. This is the Goal loop's own "keep working one objective until a
-  verifiable stop holds" shape, pointed at a list instead of a single objective. Don't build a
-  second convergence mechanic for this; reuse the Goal loop.
+  Tier 1 runs a deterministic check: grep or bash, zero model cost. Use it for any criterion
+  that reduces to a mechanical yes-or-no, like a row that exists, a command that is present, or
+  a field that is set. Tier 1 runs every round and decides on its own.
+
+  Tier 2 runs the N-lens model critique. Dispatch it only for the criteria Tier 1 cannot reduce
+  to a script, like oracle quality, ambiguity, or determinism risk. Skip any lens whose whole
+  finding-space Tier 1 already cleared.
+
+  The stop condition becomes: Tier 1 is all clean, and Tier 2 hits K=0, or its severity drops,
+  or the round cap hits.
+
+  This fixes the engine's real cost problem. N parallel model dispatches every round cost too
+  much when most findings are mechanical. See `docs/research/2026-07-30-loop-engine-prior-art.md`
+  for the worked cost comparison.
+
+- **Campaign / worklist iteration.** Use this when you drive an existing loop across many
+  items. It is not a new engine. It wraps an existing one.
+
+  Shape: build a worklist of untreated items. Run the existing loop or command on each item in
+  turn. Track progress. Stop when the worklist runs out, or a budget or blocker hits.
+
+  This reuses the Goal loop's own shape: "keep working one objective until a verifiable stop
+  holds." Here it points at a list instead of one objective. Do not build a second convergence
+  mechanic. Reuse the Goal loop.
 
 ## Step 3: Where it lands once shaped
 
-- New bounded-revise engine instantiation -> a new `/kit:<name>` side-flow, registered in
-  `docs/WORKFLOW.md`'s "Opt-in side-flows" table + `docs/workflow-map.md`'s mirror (both, same
-  commit, per that section's own companion-drift note).
-- New campaign wrapper -> likely a `/kit:<name>` command that itself invokes the Goal loop
-  machinery, not a new engine.
-- Not yet committed, just an idea -> `_meta/BACKLOG.md` "v2 candidates" tier (see the entries
-  logged there for feature-list reconciliation, doc-drift, agent-effectiveness, dependency
-  patch, and the test-plan backfill campaign, they're worked examples of Step 1+2 output).
+- A new bounded-revise engine becomes a new `/kit:<name>` side-flow. Register it in
+  `docs/WORKFLOW.md`'s "Opt-in side-flows" table, and in `docs/workflow-map.md`'s mirror.
+  Update both in the same commit, per that section's own companion-drift note.
+- A new campaign wrapper usually becomes a `/kit:<name>` command. That command invokes the Goal
+  loop machinery. It does not become a new engine.
+- An idea with no commitment yet goes into `_meta/BACKLOG.md`'s "v2 candidates" tier. The
+  entries already logged there, feature-list reconciliation, doc-drift, agent-effectiveness,
+  dependency patch, and the test-plan backfill campaign, show what Step 1 and Step 2 output
+  looks like.
 
 ## Lineage (satisfies Step 1's source-citation gate)
 
-The engine's coarse shape is not original: it's Anthropic's own **Evaluator-Optimizer /
-Reflection-loop** workflow (["Building Effective Agents"](https://www.anthropic.com/research/building-effective-agents)),
-the same lineage as Self-Refine (Madaan et al. 2023), Reflexion (Shinn et al. 2023), and CRITIC
-(Gou et al. 2023). What none of those, nor any Claude Code skill/plugin found on a 2026-07-30
-web sweep, package together is the specific bundle used here:
+The engine's coarse shape is not original. It comes from Anthropic's own **Evaluator-Optimizer
+/ Reflection-loop** workflow (["Building Effective Agents"](https://www.anthropic.com/research/building-effective-agents)).
+Self-Refine (Madaan et al. 2023), Reflexion (Shinn et al. 2023), and CRITIC (Gou et al. 2023)
+share the same lineage. A 2026-07-30 web sweep found no framework, paper, or Claude Code skill
+that packages the specific bundle used here:
 
-- **Artifact-agnostic parameterization**, matches Evaluator-Optimizer's own framing; not a
-  kit invention.
-- **Severity-aware convergence** (a flat finding-count still counts as progress if the worst
-  severity dropped), not found in any literature or tool surveyed; this IS the kit's addition.
-- **Distinct reviser, never a scorer**, seen incidentally in practice (e.g. one model reviews,
-  a different one fixes) but never stated as an enforced rule; this IS the kit's addition.
-- **Hard cap with an honest-halt reporting path** (report "not converging" as a real outcome,
-  not a silent stop), pieces exist (max-round caps, keep-best fallbacks) but never packaged as
-  an explicit contract; this IS the kit's addition.
+- **Artifact-agnostic parameterization.** This matches Evaluator-Optimizer's own framing. The
+  kit did not invent it.
+- **Severity-aware convergence.** A flat finding-count still counts as progress if the worst
+  severity dropped. No surveyed literature or tool does this. The kit added it.
+- **Distinct reviser, never a scorer.** Practice shows this incidentally, one model reviews, a
+  different model fixes, but no source states it as an enforced rule. The kit added it.
+- **Hard cap with an honest-halt reporting path.** The loop reports "not converging" as a real
+  outcome, not a silent stop. Pieces of this exist, max-round caps, keep-best fallbacks, but no
+  source packages them as an explicit contract. The kit added it.
 
-So: cite Evaluator-Optimizer for the shape, don't claim the shape is novel. The three deltas
-above are what's actually new, and are the parts worth defending if this pattern gets
-challenged later.
+Cite Evaluator-Optimizer for the shape. Do not claim the shape itself is new. The three deltas
+above are the real contribution. Defend those three if this pattern gets challenged later.
 
 ## Reference
 
-Worked instantiation: `commands/test-plan-review-team.md` (the engine) +
-`_meta/BACKLOG.md` v2 candidates (four more engine instantiations sketched, one campaign
-sketched, none built yet).
+`commands/test-plan-review-team.md` is the worked engine instantiation. `_meta/BACKLOG.md`'s v2
+candidates sketch four more engine instantiations and one campaign. None are built yet.
