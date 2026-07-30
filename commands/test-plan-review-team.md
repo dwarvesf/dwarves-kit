@@ -92,6 +92,8 @@ Present the merged critique to the user. The verdict is report-only:
 - REVISE: list the specific OPEN findings to address; the maintainer revises the `## Test plan` (or re-runs this lane), or proceeds anyway.
 - RECONSIDER: explain what is fundamentally untestable about the change as specified (e.g. an AC with no possible oracle) , this usually means the SPEC, not just the plan, needs work.
 
+Next: on a SOLID verdict, `/kit:test-write` turns the hardened matrix into real, executing test code.
+
 Never block `/kit:execute`. The maintainer decides whether to revise or proceed.
 
 Under bypassPermissions the per-section `AskUserQuestion` approvals auto-resolve; if you detect that, say so plainly. This lane delivers its full value in interactive (non-bypass) mode.
