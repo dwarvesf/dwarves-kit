@@ -175,6 +175,37 @@ fi
 wait_for_file_contains "row 3b: candidate lands in staging after the hook already returned" \
   "fix flaky deploy script" "$TD/bs-repo-async/_meta/backlog-staging.md"
 
+# row 3c (the actual bug this fix targets): a SLOW extractor (the real `claude -p` call
+# can take seconds) must NOT make the hook itself slow. Pre-fix, this would block for the
+# full extractor duration; post-fix, the hook returns immediately regardless.
+cat > "$TD/bs-slow-extractor.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'JSON'
+[{"title":"slow extractor proof","intent":"prove detach works under a real delay","approach":"sleep 2 then answer","u":"hi","f":"mid","home":""}]
+JSON
+EOF
+chmod +x "$TD/bs-slow-extractor.sh"
+mkdir -p "$TD/bs-repo-slow/_meta"
+git -C "$TD/bs-repo-slow" init -q
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/bs-repo-slow" BACKLOG_STAGE_EXTRACTOR="$TD/bs-slow-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state-slow" \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 3c: hook exits 0 even with a 2s-slow extractor" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 1000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3c: hook returns in <1s despite a 2s-slow extractor (${ELAPSED_MS}ms) -- this is the bug this fix targets"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3c: hook took ${ELAPSED_MS}ms (expected <1000ms) -- hook is blocking on the slow extractor again"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 3c: candidate lands ~2s later, after the slow extractor finishes" \
+  "slow extractor proof" "$TD/bs-repo-slow/_meta/backlog-staging.md"
+
 # NC: empty stdin never blocks a session end.
 RC=0; echo '' | bash "$KIT_DIR/hooks/backlog-stage.sh" >/dev/null 2>&1 || RC=$?
 assert_exit "NC: empty stdin exits 0" 0 $RC
@@ -255,6 +286,67 @@ REPO_ROOT="$TD/hv-repo-async" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_I
 assert_exit "row 4d: detached --lab-log mode still exits 0 immediately" 0 $RC
 wait_for_file_contains "row 4d: LAB_LOG draft lands after the hook already returned" \
   "repo-root-seam" "$TD/hv-repo-async/_meta/.lab-log-draft.md"
+
+# row 4e (the actual bug this fix targets): a SLOW extractor (the real `claude -p` call
+# can take seconds, up to its own 120s budget) must NOT make either mode's hook slow.
+# Pre-fix, the hook blocked for the full extractor duration -- past the hook's own
+# timeout (30s in this kit's hooks.json) and past SessionEnd's exit-teardown race.
+cat > "$TD/hv-slow-extractor.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'JSON'
+[{"item":"slow-extractor-proof","kind":"insight","home":"drop","why":"proves detach under a real delay"}]
+JSON
+EOF
+chmod +x "$TD/hv-slow-extractor.sh"
+mkdir -p "$TD/hv-repo-slow"
+git -C "$TD/hv-repo-slow" init -q
+
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-slow" HARVEST_EXTRACTOR="$TD/hv-slow-extractor.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 4e: no-arg hook exits 0 even with a 2s-slow extractor" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 1000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4e: no-arg hook returns in <1s despite a 2s-slow extractor (${ELAPSED_MS}ms) -- this is the bug this fix targets"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4e: no-arg hook took ${ELAPSED_MS}ms (expected <1000ms) -- hook is blocking on the slow extractor again"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 4e: ledger entry lands ~2s later, after the slow extractor finishes" \
+  "slow-extractor-proof" "$TD/hv-repo-slow/_meta/learned-ledger.md"
+
+cat > "$TD/hv-slow-lablog.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'OUT'
+## 2026-07-30 - slow-lablog-proof: proves --lab-log detach under a real delay
+- extractor slept 2s before answering
+OUT
+EOF
+chmod +x "$TD/hv-slow-lablog.sh"
+
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-slow" HARVEST_EXTRACTOR="$TD/hv-slow-lablog.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 4f: --lab-log hook exits 0 even with a 2s-slow extractor" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 1000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4f: --lab-log hook returns in <1s despite a 2s-slow extractor (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4f: --lab-log hook took ${ELAPSED_MS}ms (expected <1000ms) -- hook is blocking on the slow extractor again"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 4f: LAB_LOG draft lands ~2s later, after the slow extractor finishes" \
+  "slow-lablog-proof" "$TD/hv-repo-slow/_meta/.lab-log-draft.md"
 
 # ID-202: dedup-on-append must survive CONCURRENT invocations sharing one ledger
 # (e.g. parallel subagent sessions each firing PreCompact). Pre-fix, existing_slugs()
