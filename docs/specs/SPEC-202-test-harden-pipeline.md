@@ -1,7 +1,15 @@
 # Spec: /kit:test-harden, a spec-to-hardened-tests pipeline
 Generated: 2026-07-30
-Status: DRAFT
+Status: PARKED
 Lane: normal
+
+**Parked 2026-07-30, operator decision.** The command's entire value is not retyping two existing commands (`/kit:test-plan` then `/kit:test-plan-review-team`) as one; both already work standalone, `test-plan-review-team` already has the full bounded auto-revise loop. Two rounds of adversarial `/kit:spec-validate` (6 lenses each) turned up ~40 findings, and most of the recurring ones were about the MAINTENANCE COST of a new command (keeping 5 pinned command-count assertions in sync, a new telemetry phase, a WORKFLOW matrix row risking an accidental ship-gate block) rather than about the coordinator's actual logic. That cost was disproportionate to a convenience that saves two keystrokes.
+
+The part of the original Problem statement that WAS real, "and to know that order exists", shipped separately and cheaply instead: `commands/test-plan.md` Step 4 now names `/kit:test-plan-review-team` as the next step, and `commands/start.md` State 4 now checks for a missing `## Test plan` / `## Test plan critique` and suggests the right lane. See `docs/test-plan-playbook-ref` branch, commit `d618d54`.
+
+Left un-deleted as a reference: the two validation rounds surfaced real, reusable patterns (the verdict-read scoping/freshness-fingerprint approach, the generator-vs-critique lane contract split) that a future coordinator, or a different lane needing the same "read another lane's verdict safely" problem, can point at without re-deriving them.
+
+
 References: [commands/ui-design.md, imitate its exact shape: a thin coordinator that writes a brief, delegates generation to one existing lane, delegates critique to another existing lane, and reports a verdict, without reimplementing either lane's internals. Its Step 4 verdict vocabulary (SOLID/REVISE/RECONSIDER) is the one this spec reuses directly. commands/ship.md Step 1, imitate only its "the referenced section can be ABSENT, do not silently skip" half; this spec's own branches are hard stops rather than ship.md's WARN-with-override, because the alternative to a stop here is a false SOLID.]
 
 ## Problem
