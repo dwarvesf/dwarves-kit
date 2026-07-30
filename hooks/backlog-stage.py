@@ -33,7 +33,8 @@ Env:
   BACKLOG_STAGE_EXTRACTOR=CMD   override the LLM call (tests)
   BACKLOG_STAGE_MAXCHARS=N      transcript chars sent to the model (default 12000)
   BACKLOG_STAGE_MIN_INTERVAL=S  rate-limit to at most once per S seconds (default 3600). 0 off.
-  BACKLOG_STAGE_STATE_DIR=DIR   throttle lock dir (default ~/.claude/dwarves-kit/state/backlog-stage)
+  BACKLOG_STAGE_STATE_DIR=DIR   throttle lock dir, AND the detached-child payload
+                                handoff dir (default ~/.claude/dwarves-kit/state/backlog-stage)
   BACKLOG_STAGE_PREFILTER=0     disable the deterministic forward-intent pre-filter (default on)
   BACKLOG_STAGE_SYNC=1          run the extractor call + append INLINE instead of detached
                                 (test seam, deterministic; default OFF = detached)
@@ -44,8 +45,9 @@ own 120s budget, well past the SessionEnd hook's own declared timeout (30s in th
 kit's hooks.json). Either factor alone can get the invocation killed before it writes
 anything. So the fast synchronous part (throttle + prefilter, both cheap/local) runs
 inline, then the slow part (the extractor call + dedup + append) is handed to a
-detached child (`--staged-run`, same _spawn_detached pattern as harvest.py's
---stop-trigger) that outlives both the hook's timeout and the parent's exit.
+detached child (`--staged-run`, via `_spawn_staged_detached`, the same detach pattern
+harvest.py's `_spawn_detached` uses for `--stop-trigger`) that outlives both the hook's
+timeout and the parent's exit.
 BACKLOG_STAGE_SYNC=1 opts back into the old inline behavior (used by test fixtures).
 
 Stdlib only. Always exits 0 (a harvest never blocks a session end).
@@ -308,13 +310,20 @@ def stage_from_text(text, date, backlog, staging):
             fh.write(header + "".join(new_blocks))
 
 
-def _spawn_detached(data, sdir):
+def _spawn_staged_detached(data, sdir):
     """Write the (text, date, backlog, staging) handoff to a state-dir file and spawn a
     detached child (start_new_session) that re-invokes this script as
     `--staged-run <payload-file>`, then return immediately. A `claude -p` extractor call
     can take up to its own 120s budget, well past the SessionEnd hook's own timeout, and
     SessionEnd fires while the CLI process is already tearing down -- so the parent must
-    not wait on it. Mirrors harvest.py's _spawn_detached. Returns True on success."""
+    not wait on it. Same shape as harvest.py's _spawn_detached, but a distinct name +
+    2-arg signature (this file has only one detach mode, so no mode_flag parameter) --
+    named differently on purpose so the two are never mistaken for interchangeable
+    copies of the same interface. Returns True on success.
+
+    If Popen itself fails AFTER the payload file was already written, there is no child
+    left to clean it up -- remove it here so a spawn failure never leaks a payload file."""
+    pf = None
     try:
         os.makedirs(sdir, exist_ok=True)
         pf = os.path.join(sdir, f"payload-{os.getpid()}.json")
@@ -328,18 +337,26 @@ def _spawn_detached(data, sdir):
             start_new_session=True,  # detach from the hook's process group; survives session end
         )
     except OSError:
+        if pf:
+            try:
+                os.remove(pf)
+            except OSError:
+                pass
         return False
     return True
 
 
 def cmd_staged_run(pf):
     """Internal: the detached child spawned by main(). Reads the handed-off
-    (text, date, backlog, staging) payload, runs stage_from_text, removes the payload file."""
+    (text, date, backlog, staging) payload, runs stage_from_text, ALWAYS removes the
+    payload file afterward -- whether the read, stage_from_text, or nothing at all
+    failed (a corrupt/truncated payload previously leaked the file forever, since the
+    old finally only wrapped the second try)."""
     try:
-        data = json.load(open(pf))
-    except (OSError, ValueError):
-        return 0
-    try:
+        try:
+            data = json.load(open(pf))
+        except (OSError, ValueError):
+            return 0
         stage_from_text(data["text"], data["date"], data["backlog"], data["staging"])
     finally:
         try:
@@ -383,7 +400,7 @@ def main():
         return 0
 
     data = {"text": text, "date": date, "backlog": backlog, "staging": staging}
-    if _spawn_detached(data, state_dir):
+    if _spawn_staged_detached(data, state_dir):
         print(f"backlog-stage: fired detached (candidates land in {staging} after this hook returns)", file=sys.stderr)
     return 0
 

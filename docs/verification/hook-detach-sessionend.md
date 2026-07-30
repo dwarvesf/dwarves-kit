@@ -65,9 +65,43 @@ This falsifies the "the hook is fast regardless of extractor latency" claim on d
 put the synchronous code back and the suite goes RED on exactly the three rows that
 measure it, nothing else.
 
+## Round 2: /kit:review-team findings, fixed
+
+A 4-lens review (security, architecture, test-coverage, advisor) ran against this PR and
+returned 12 findings (0 CRITICAL, 3 HIGH, 4 MEDIUM, 5 LOW). Six were fixed here; the rest
+are advisory/low-priority and logged, not blocking:
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | Corroborated 3x (security, test-coverage, advisor): a corrupt/truncated payload handoff file, or a `Popen` failure right after the file was written, leaked the payload file forever -- the `finally` cleanup only ran on the SECOND of two nested `try`s. | `harvest.py`: extracted `_read_and_run(pf, work)` wrapping the read + work in ONE outer `finally`, used by `cmd_stop_harvest`/`cmd_lab_log_run`/`cmd_harvest_run`. `backlog-stage.py`'s `cmd_staged_run` gets the same shape inline (only one such caller there). Both `_spawn_detached` variants also now remove the just-written payload file if `Popen` itself fails. |
+| 2 | (advisor) The fix's actual SessionEnd-specific claim -- the detached child survives via `start_new_session=True` -- was never tested; every row only measured wall-clock elapsed + polled for eventual content. | New rows (`3e`, `4i`): verify via `ps -o pgid=` that the detached child's process group differs from the invoker's, proving real OS-level isolation (chosen over a kill/signal race, which would be flaky to time against process spawn). |
+| 5 | (architecture) `_spawn_detached` had the same name in both files with a different arity (3-arg in harvest.py vs 2-arg in backlog-stage.py), silently breaking the house convention that duplicated helpers share identical signatures. | Renamed backlog-stage.py's copy to `_spawn_staged_detached`; updated its docstring and every call site/comment. |
+| 6 | (test-coverage) `HARVEST_SYNC`/`BACKLOG_STAGE_SYNC` was proven to produce the same output, never proven to actually run INLINE -- a regression silently turning it into a no-op would still pass. | New rows (`3d`, `4g`, `4h`): SYNC + the slow extractor, assert elapsed >= ~1.8s (genuinely blocked). |
+| 7 | (test-coverage) `stage_from_text()`, a newly-extracted pure function built to be independently testable, was only exercised indirectly, happy-path only. | New row (`3g`): direct unit test via `importlib.util` (mirrors the ID-202 race harness's own pattern), covering the dedup-skip and empty-candidates branches. |
+| 9 | (advisor) Both `HARVEST_STATE_DIR`/`BACKLOG_STAGE_STATE_DIR` docstrings still described their old sole purpose (lock/throttle dir), not the new payload-handoff use this PR adds. | Updated both docstrings. |
+
+Not fixed here (advisory/low-priority, logged for follow-up): `--stop-trigger` has zero
+test coverage before or after this refactor (pre-existing gap, not introduced by this
+PR); `backlog-stage.py`'s dedup+append has no lock equivalent to harvest.py's
+`harvest.lock` (mitigated by the 1h `BACKLOG_STAGE_MIN_INTERVAL` throttle); detached
+children fully silence stderr (by design, unchanged from the pre-existing
+`--stop-trigger` posture); predictable payload filename + non-`O_EXCL` write (requires
+attacker at the local user's own trust level to matter); small intra-file duplication in
+`_dispatch`'s branches (below the rule-of-three).
+
+### Round 2 run-table
+
+| # | Check | Result |
+|---|---|---|
+| 1 | Full suite after all 6 fixes | **91/91 PASS** (was 68; +23 new rows: 3d/3e/3f/3g, 4g/4h/4i, 4j-4l x3) |
+| 2 | Targeted negative control: revert JUST the `_read_and_run`/`cmd_staged_run` outer-`finally` fix (finding #1), keep everything else | rows `3f`/`4j-l` (all 4 detached entry points) go RED -- `exits 0` still PASS, `corrupt payload file was removed` FAILs on every one; restored, back to 91/91 |
+| 3 | Process-group isolation (finding #2) | rows `3e`/`4i` PASS: detached child's pgid differs from the invoker's in both files |
+| 4 | SYNC-seam genuinely blocks (finding #6) | rows `3d`/`4g`/`4h` PASS: elapsed >=1.8s under the 2s-slow extractor with SYNC=1 set |
+| 5 | `stage_from_text` unit test (finding #7) | row `3g` PASS: dedup-skip and empty-candidates branches both covered |
+
 ## Reproduce
 
 ```
 cd dwarves-kit   # this branch (fix/hook-detach-sessionend), or merged master
-bash tests/test-kit-foldin-hooks.sh   # 68/68
+bash tests/test-kit-foldin-hooks.sh   # 91/91
 ```

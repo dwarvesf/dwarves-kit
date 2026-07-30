@@ -40,7 +40,9 @@ Env:
   HARVEST_LABLOG_DRAFT=FILE  --lab-log staging file (default <repo-root>/_meta/.lab-log-draft.md)
   HARVEST_STOP_TRIGGER=1     opt-in: enable the --stop-trigger per-N-turns harvest (default OFF)
   HARVEST_STOP_N=N           --stop-trigger fires the harvest every N turns (default 10)
-  HARVEST_STATE_DIR=DIR      --stop-trigger counter + lock dir (default ~/.claude/dwarves-kit/state/harvest)
+  HARVEST_STATE_DIR=DIR      --stop-trigger counter + lock dir, AND the detached-child
+                             payload handoff dir for --lab-log/no-arg/--stop-trigger
+                             (default ~/.claude/dwarves-kit/state/harvest)
   HARVEST_MIN_INTERVAL=SECS  rate-limit the no-arg + --lab-log harvests to at most once per
                              SECS (default 3600 = 1h). 0 disables.
   HARVEST_SYNC=1             run the no-arg and --lab-log harvests INLINE instead of
@@ -501,7 +503,13 @@ def _spawn_detached(mode_flag, payload, sdir):
     invoking hook's own timeout AND (for SessionEnd) the CLI process's exit teardown --
     a `claude -p` extractor call can take up to its own 120s budget, well past any
     SessionEnd/PreCompact/Stop hook timeout, and SessionEnd fires while the process is
-    already tearing down. Returns True if the spawn succeeded."""
+    already tearing down. Returns True if the spawn succeeded.
+
+    If Popen itself fails AFTER the payload file was already written, there is no child
+    left to clean it up -- remove it here so a spawn failure never leaks a payload file
+    (the file is otherwise reaped only by the detached child's own reader, e.g.
+    cmd_lab_log_run/cmd_harvest_run/cmd_stop_harvest)."""
+    pf = None
     try:
         os.makedirs(sdir, exist_ok=True)
         pf = os.path.join(sdir, f"payload-{mode_flag.lstrip('-')}-{os.getpid()}.json")
@@ -515,6 +523,11 @@ def _spawn_detached(mode_flag, payload, sdir):
             start_new_session=True,  # detach from the hook's process group; survives the turn
         )
     except OSError:
+        if pf:
+            try:
+                os.remove(pf)
+            except OSError:
+                pass
         return False
     return True
 
@@ -555,57 +568,43 @@ def cmd_stop_trigger():
     return 0
 
 
-def cmd_stop_harvest(pf):
-    """Internal: the detached child spawned by --stop-trigger. Reads the handed-off payload file,
-    runs the single-flight-guarded harvest, removes the payload file."""
+def _read_and_run(pf, work):
+    """Shared shape for every detached child's entry point: read the payload handoff
+    file, call work(payload), and ALWAYS remove pf afterward -- whether the read, the
+    work, or nothing at all failed. One `finally` wrapping both steps (not just the
+    second) so a corrupt/truncated payload file doesn't leak forever; the prior
+    per-caller versions only cleaned up if the read succeeded."""
     try:
-        payload = json.load(open(pf))
-    except (OSError, ValueError):
-        return 0
-    try:
-        _run_harvest_locked(payload, os.path.join(_state_dir(), "harvest.lock"))
+        try:
+            payload = json.load(open(pf))
+        except (OSError, ValueError):
+            return 0
+        work(payload)
     finally:
         try:
             os.remove(pf)
         except OSError:
             pass
     return 0
+
+
+def cmd_stop_harvest(pf):
+    """Internal: the detached child spawned by --stop-trigger. Runs the
+    single-flight-guarded harvest against the handed-off payload."""
+    return _read_and_run(pf, lambda payload: _run_harvest_locked(payload, os.path.join(_state_dir(), "harvest.lock")))
 
 
 def cmd_lab_log_run(pf):
-    """Internal: the detached child spawned for --lab-log. Reads the handed-off payload
-    file, runs cmd_lab_log, removes the payload file."""
-    try:
-        payload = json.load(open(pf))
-    except (OSError, ValueError):
-        return 0
-    try:
-        cmd_lab_log(payload)
-    finally:
-        try:
-            os.remove(pf)
-        except OSError:
-            pass
-    return 0
+    """Internal: the detached child spawned for --lab-log. Runs cmd_lab_log against the
+    handed-off payload."""
+    return _read_and_run(pf, cmd_lab_log)
 
 
 def cmd_harvest_run(pf):
     """Internal: the detached child spawned for the plain PreCompact/SessionEnd harvest.
-    Mirrors cmd_stop_harvest (same lock, same payload-file handoff/cleanup) so a
-    --stop-trigger fire and a PreCompact/SessionEnd fire against the same ledger never
-    race each other either."""
-    try:
-        payload = json.load(open(pf))
-    except (OSError, ValueError):
-        return 0
-    try:
-        _run_harvest_locked(payload, os.path.join(_state_dir(), "harvest.lock"))
-    finally:
-        try:
-            os.remove(pf)
-        except OSError:
-            pass
-    return 0
+    Mirrors cmd_stop_harvest (same lock) so a --stop-trigger fire and a
+    PreCompact/SessionEnd fire against the same ledger never race each other either."""
+    return _read_and_run(pf, lambda payload: _run_harvest_locked(payload, os.path.join(_state_dir(), "harvest.lock")))
 
 
 def _dispatch(argv):
