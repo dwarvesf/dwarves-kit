@@ -73,6 +73,113 @@ per `docs/PHILOSOPHY.md`'s own "When to recommend an external tool instead": a d
 consumer's own app-domain critique-revise loop fails the "serves 2+ kit lifecycle phases" gate
 and doesn't belong as a kit feature at all.
 
+## Worked example (illustrative traces, not verbatim reproductions of the papers)
+
+One shared task, checking leap years, lets all four patterns run on the same starting bug so
+the mechanical differences are visible instead of abstract. It has a well-known subtle defect:
+the century exception (1900 is NOT a leap year, 2000 IS).
+
+Draft v0, what any of them start from:
+
+```python
+def is_leap_year(year):
+    return year % 4 == 0
+```
+
+**Self-Refine** (same model critiques + revises):
+
+```
+Round 1: model writes draft v0
+Model self-critiques: "year % 4 == 0 for 2024 -> True. Looks correct."
+No century exception considered , the model's own blind spot in GENERATING
+the function is the same blind spot it uses to GRADE it.
+Reports PASS. Loop stops. Bug ships.
+```
+
+Documented failure mode: only helps when error-*detection* exceeds error-*avoidance*. Same
+context, same blind spot, both times.
+
+**Reflexion** (external evaluator, e.g. real test execution; actor reflects and retries):
+
+```
+Round 1: draft v0
+Evaluator runs: assert is_leap_year(1900) == False -> FAILS (returns True)
+Actor reflects: "Returned True for 1900, expected False. Need century rule."
+Actor revises: year % 4 == 0 and year % 100 != 0
+
+Round 2: Evaluator runs: assert is_leap_year(2000) == True -> FAILS (returns False)
+Actor reflects: "2000 is div by 100 but IS a leap year (div by 400 too)."
+Actor revises: year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+
+Round 3: all tests pass -> STOP
+```
+
+Real improvement (external test != the actor's own judgment, so it actually catches the bug),
+but the stop signal is still binary per round: FAIL just means "try again," no sense of
+"closer" vs "just as wrong."
+
+**CRITIC** (tool-verified critique, not self-judgment):
+
+```
+Round 1: draft v0
+CRITIC dispatches a tool call (code execution against known cases, or a
+lookup of the actual leap-year rule) instead of asking the model to judge
+itself: "Rule requires century exception; year=1900 check fails."
+Actor revises based on the TOOL's verified finding, not a guess.
+Repeat until tool-verification passes or a round cap.
+```
+
+Same shape as Reflexion, grounded in an external tool rather than the actor's own reflection
+text, harder to fool, still binary pass/fail per round.
+
+**Evaluator-Optimizer** (Anthropic's generic workflow, our closest ancestor):
+
+```
+Generator produces draft v0.
+A SEPARATE Evaluator call checks named criteria ("handles century
+exception," "handles div-by-400") -> PASS/FAIL + feedback text.
+Optimizer revises on FAIL. Repeat until PASS.
+Anthropic's own writeup: no prescribed cap, no prescribed behavior on
+repeated failure , left to whoever implements it.
+```
+
+Structurally closest to ours (a distinct evaluator role is *encouraged*), but still no severity
+gradient and no contract for what happens if it never converges.
+
+**Ours, on the actual delta: severity-aware convergence.** None of the above can express this
+state, so here it is on a kit-native artifact (a `## Test plan` covering this same function),
+engineered to hit the exact case that matters:
+
+```
+Round 1: 6 lenses scan the test plan
+  -> lens 1 (coverage):    CRITICAL  "no test for century-boundary years (1900, 2000)"
+  -> lens 2 (oracle):      HIGH      "expected output for year=2000 not a concrete assertion"
+  -> lens 4 (test-ladder): LOW       "no test for year=0 or negative years"
+  K = 3.  Distinct reviser (not one of the 6 lenses) revises the plan:
+  adds century-boundary rows, makes assertions concrete , but introduces
+  a duplicate row and leaves the year=0 case still vague.
+
+Round 2: re-scan
+  -> CRITICAL and HIGH from round 1: gone
+  -> 2 NEW findings appear: MEDIUM "duplicate test row", MEDIUM "year=0 still vague",
+     plus an unrelated LOW nit
+  K = 3 again. SAME raw count as round 1.
+
+  Under a plain Evaluator-Optimizer / raw-count rule: K flat (3 == 3) -> HALT,
+  "not converging." This is the exact false stall SPEC-204 actually hit.
+
+  Under our rule: worst severity dropped CRITICAL -> MEDIUM even though K
+  didn't. Continue.
+
+Round 3: reviser clears the two MEDIUMs and the LOW. K = 0. Verdict: SOLID.
+```
+
+The concrete payoff: none of Self-Refine, Reflexion, CRITIC, or Evaluator-Optimizer has a state
+that distinguishes "3 findings, one of them CRITICAL" from "3 findings, all MEDIUM", it's PASS
+or FAIL, full stop. A naive raw-count bounded loop (what we ourselves ran before the fix) would
+have halted at round 2 here, wrongly, and reported a working test plan as "stuck." That is not
+hypothetical, it is what SPEC-204 actually did.
+
 ## Recommendation carried into `skills/loop-engineering/SKILL.md`
 
 Don't rename the pattern, no single literature term covers the full bundle. Cite
