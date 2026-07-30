@@ -1,0 +1,143 @@
+Behavioral-capture proof: hook-detach-sessionend, Round 3 (real claude -p CLI runs)
+dwarvesf/dwarves-kit PR #298, branch fix/hook-detach-sessionend
+Captured 2026-07-30. Every line below is copied verbatim from the actual terminal
+output of the run; nothing is paraphrased or reconstructed.
+
+Setup (shared across all four scenes):
+  git clone --branch master                     dwarves-kit kit-prefix   # pre-fix
+  git clone --branch fix/hook-detach-sessionend  dwarves-kit kit-fixed    # this PR
+  git init project && mkdir project/_meta
+  settings-prefix.json / settings-fixed.json: --settings JSON wiring SessionEnd to
+    <clone>/hooks/backlog-stage.sh
+    <clone>/hooks/harvest.sh --lab-log
+  Fake slow extractors stand in for a real `claude -p --model haiku` call (the
+  timing claim under test is about the HOOK RUNNER, not the extractor itself).
+
+================================================================================
+SCENE 1 -- fixed hooks, 2s-slow extractor (baseline)
+================================================================================
+
+$ cd project-fixed2
+$ REPO_ROOT=$PWD \
+  HARVEST_EXTRACTOR=../slow-lablog-extractor.sh \
+  HARVEST_MIN_INTERVAL=0 \
+  HARVEST_STATE_DIR=../state-harvest2 \
+  BACKLOG_STAGE_EXTRACTOR=../slow-backlog-extractor.sh \
+  BACKLOG_STAGE_MIN_INTERVAL=0 \
+  BACKLOG_STAGE_STATE_DIR=../state-backlog2 \
+  claude -p "Just reply with exactly the word OK. Do not use any tools. (note to \
+  self: we should fix the flaky deploy script later)" \
+  --model haiku --setting-sources project --settings ../settings-fixed.json
+
+OK
+=== FIXED hooks: claude -p elapsed = 3.794220000s ===
+
+================================================================================
+SCENE 2 -- pre-fix hooks, the IDENTICAL 2s-slow extractor
+================================================================================
+
+$ cd project-prefix2
+$ REPO_ROOT=$PWD \
+  HARVEST_EXTRACTOR=../slow-lablog-extractor.sh \
+  HARVEST_MIN_INTERVAL=0 \
+  HARVEST_STATE_DIR=../state-harvest-pre2 \
+  BACKLOG_STAGE_EXTRACTOR=../slow-backlog-extractor.sh \
+  BACKLOG_STAGE_MIN_INTERVAL=0 \
+  BACKLOG_STAGE_STATE_DIR=../state-backlog-pre2 \
+  claude -p "Just reply with exactly the word OK. Do not use any tools. (note to \
+  self: we should fix the flaky deploy script later)" \
+  --model haiku --setting-sources project --settings ../settings-prefix.json
+
+OK
+=== PRE-FIX hooks: claude -p elapsed = 5.869338000s ===
+
+  -> +2.08s vs. scene 1, matching the extractor's sleep exactly. Confirmed the
+     draft/staging output still landed (pre-fix was never wrong, only blocking):
+
+$ grep . project-prefix2/_meta/.lab-log-draft.md
+<!-- staged 2026-07-30 by harvest --lab-log; review, then move into LAB_LOG.md -->
+## 2026-07-30 - real-run-proof: proves the real CLI SessionEnd path
+- extractor slept 2s before answering, invoked from an actual claude -p session exit
+
+================================================================================
+SCENE 3 -- pre-fix hooks, extractor slowed to 33s (past the hook's own 30s timeout)
+================================================================================
+
+$ cat very-slow-lablog.sh
+#!/usr/bin/env bash
+sleep 33
+cat <<'OUT'
+## 2026-07-30 - very-slow-proof: exceeds the hook's own 30s timeout
+- extractor slept 33s before answering
+OUT
+
+$ cd project-prefix-timeout
+$ REPO_ROOT=$PWD \
+  HARVEST_EXTRACTOR=../very-slow-lablog.sh \
+  HARVEST_MIN_INTERVAL=0 \
+  HARVEST_STATE_DIR=../state-harvest-timeout \
+  claude -p "Just reply with exactly the word OK. Do not use any tools." \
+  --model haiku --setting-sources project --settings ../settings-prefix.json \
+  --debug-file ../timeout-debug.log
+
+OK
+SessionEnd hook [bash .../kit-prefix/hooks/harvest.sh --lab-log] failed: Hook cancelled
+=== PRE-FIX hooks, 33s-slow extractor: claude -p elapsed = 34.136220000s ===
+
+$ grep -i "SessionEnd\|cancel" timeout-debug.log
+2026-07-30T09:10:45.302Z [DEBUG] Broken symlink or missing file encountered for settings.json ...
+2026-07-30T09:10:48.954Z [DEBUG] SessionEnd:other [bash .../backlog-stage.sh] completed with status 0
+2026-07-30T09:10:48.954Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-07-30T09:11:18.943Z [DEBUG] SessionEnd:other [bash .../harvest.sh --lab-log] cancelled
+
+  -> This is the ORIGINAL reported bug, reproduced verbatim from a real CLI
+     session: "SessionEnd hook [...harvest.sh --lab-log] failed: Hook cancelled".
+     Fired at t=~30s, exactly the hook's declared timeout in hooks.json.
+
+$ pgrep -fl "very-slow-lablog.sh|harvest.py --lab-log"
+(no output -- no lingering process left behind by the cancellation)
+
+================================================================================
+SCENE 4 -- fixed hooks, the IDENTICAL 33s-slow extractor that just triggered scene 3
+================================================================================
+
+$ cd project-fixed-timeout
+$ REPO_ROOT=$PWD \
+  HARVEST_EXTRACTOR=../very-slow-lablog.sh \
+  HARVEST_MIN_INTERVAL=0 \
+  HARVEST_STATE_DIR=../state-harvest-fixtimeout \
+  claude -p "Just reply with exactly the word OK. Do not use any tools." \
+  --model haiku --setting-sources project --settings ../settings-fixed.json \
+  --debug-file ../fixtimeout-debug.log
+
+OK
+=== FIXED hooks, SAME 33s-slow extractor: claude -p elapsed = 3.788657000s ===
+
+$ grep -i "SessionEnd\|cancel" fixtimeout-debug.log
+2026-07-30T09:11:35.936Z [DEBUG] SessionEnd:other [bash .../backlog-stage.sh] completed with status 0
+2026-07-30T09:11:35.938Z [DEBUG] SessionEnd:other [bash .../harvest.sh --lab-log] completed with status 0
+
+  -> Elapsed is IDENTICAL to scene 1 (2s extractor) -- completely decoupled from
+     extractor duration now. No cancellation anywhere in the debug log.
+
+$ sleep 33   # wait out the detached child's extractor call
+$ grep . project-fixed-timeout/_meta/.lab-log-draft.md
+<!-- staged 2026-07-30 by harvest --lab-log; review, then move into LAB_LOG.md -->
+## 2026-07-30 - very-slow-proof: exceeds the hook's own 30s timeout
+- extractor slept 33s before answering
+
+  -> The detached child finished and wrote its file ~33s after the CLI process
+     (which returned control in 3.79s) had ALREADY exited entirely. This is the
+     specific claim the whole fix rests on: the child survives the parent's exit,
+     not just "runs fast enough to usually avoid the race."
+
+================================================================================
+SUMMARY
+================================================================================
+
+                    2s-slow extractor       33s-slow extractor (exceeds timeout)
+  pre-fix (master)  5.87s (+2.08s)          34.14s, "Hook cancelled"
+  fixed (this PR)   3.79s                  3.79s (identical; no cancellation)
+
+No lingering processes were left behind by any scene (pgrep checked clean after
+scenes 3 and 4).
