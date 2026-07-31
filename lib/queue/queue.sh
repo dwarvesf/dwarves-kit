@@ -24,6 +24,11 @@
 #     --dry-run       list which megas WOULD launch (preflight only; NO send-keys, no journal run)
 #     --max-megas N   stop after N launch attempts this run
 #     --journal PATH  override the journal file
+#     --sanitize-prompt  treat the pointer body as UNTRUSTED (SPEC-223): run it through
+#                     `sanitize_cell`, prepend the XPIA preamble, and gate the row if the run
+#                     wrote a protected path. Implied by `--from-boards`; the watcher passes it
+#                     explicitly for its own generated plan. A hand-authored tsv without the flag
+#                     is unchanged, because the OPERATOR authored it (the SPEC-148 trust boundary).
 #
 # The mux + the interactive claude are CONSUMER config (nothing personal is hardcoded):
 #   TERMINAL_MUX=tmux       which mux to drive (default AND only supported value; see below)
@@ -106,6 +111,19 @@ esac
 # unattended, `--dangerously-skip-permissions` session. Applied ONLY to `--from-boards` rows (a
 # hand-authored tsv is exempt by design: the OPERATOR authored it, which IS the trust boundary).
 QUEUE_ALLOWED_POINTER_GLOB="${QUEUE_ALLOWED_POINTER_GLOB:-_meta/megagoals/* .claude/goals/*}"
+
+# The untrusted-input pass (SPEC-223). Sourced, not re-implemented, so `watch-board.sh` (which
+# sources this file) gets the same one. Fail loudly if it is missing: this launcher drives an
+# unattended `--dangerously-skip-permissions` session, and a silently absent sanitizer would look
+# exactly like a sanitized run.
+# shellcheck source=lib/queue/sanitize.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/sanitize.sh" || true
+if ! declare -f sanitize_cell >/dev/null 2>&1; then
+  echo "queue: lib/queue/sanitize.sh did not load; refusing to run without the untrusted-input pass" >&2
+  exit 1
+fi
+# 0 = the shipped operator-authored path (pointer body typed verbatim). 1 = board-sourced.
+QUEUE_SANITIZE_PROMPT="${QUEUE_SANITIZE_PROMPT:-0}"
 
 # ---- runaway-guard thresholds (SPEC-221) -------------------------------------------------------
 # Re-derived for THIS kit's clocks, not copied from the donor: the beat interval here is
@@ -390,9 +408,19 @@ _scan_marker() {  # transcript-on-stdin
 # write its explicit EXIT_SIGNAL: the typed prompt is the same channel the RUNNER_DONE contract
 # already travels on, so it needs no `tmux new-window -e` (tmux 3.0 floor) and no environment
 # inheritance assumption. A run that ignores the clause behaves exactly as before.
+#
+# SPEC-223: on the board-sourced path the pointer body is UNTRUSTED. It is run through
+# `sanitize_cell`, framed by the XPIA preamble, and fenced by explicit begin/end markers so the
+# model can see where the data starts and stops. Returns 1 (no output) when the sanitizer cannot
+# run, which the caller turns into a refusal to launch rather than an unsanitized prompt.
 _goal_line() {  # pointer-path slug
   local pointer="$1" slug="${2:-}" content status
-  content=$(tr '\n' ' ' < "$pointer" 2>/dev/null)
+  if [ "$QUEUE_SANITIZE_PROMPT" = 1 ]; then
+    content=$(sanitize_cell "$pointer") || return 1
+    content="$(xpia_preamble) An unattended run must NOT write any of these paths: ${QUEUE_PROTECTED_GLOBS}; writing one stops the row for a human instead of shipping it. BEGIN UNTRUSTED TASK TEXT >>> ${content} <<< END UNTRUSTED TASK TEXT."
+  else
+    content=$(tr '\n' ' ' < "$pointer" 2>/dev/null)
+  fi
   status=$(_run_file "$slug" status 2>/dev/null) || status=""
   if [ -n "$status" ]; then
     printf '/goal %s When you finish, write %s containing the line "EXIT_SIGNAL: true" (or "EXIT_SIGNAL: false" if you are not done), plus "REASON: <why>" if a human must review, "FILES_CHANGED: <n>", and "QUESTION: true" if you stopped to ask something.' \
@@ -412,7 +440,13 @@ _launch_once() {  # slug repo pointer
   _beat "$slug"
   _mux_open "$slug" "$repo" || return 2
   _mux_wait_ready "$slug"
-  _mux_type "$slug" "$(_goal_line "$pointer" "$slug")" || { _mux_kill "$slug"; return 2; }
+  # Captured before typing, so a sanitizer that cannot run refuses the launch instead of typing an
+  # empty prompt (a `$( )` failure is invisible to the command it feeds).
+  local goal
+  goal=$(_goal_line "$pointer" "$slug") || {
+    _warn "queue: $slug refusing to launch (the untrusted-input pass could not run)"
+    _mux_kill "$slug"; return 2; }
+  _mux_type "$slug" "$goal" || { _mux_kill "$slug"; return 2; }
   _mux_submit "$slug"
 
   local start now elapsed out verdict cap_rc sig malformed=0 reason
@@ -657,13 +691,39 @@ _schedule_retry() {  # slug stall-count
   _guard_set "$slug" retry_after $((now + mins * 60))
 }
 
+# ---- protected paths (SPEC-223) ----------------------------------------------------------------
+# Print a reason if the run touched a path an unattended run may not write, else nothing.
+#
+# DETECTION, NOT PREVENTION, and the distinction is the whole honest claim: the launched session
+# runs `--dangerously-skip-permissions`, so no bash wrapper can intercept a write. What this does is
+# make such a write TERMINAL and visible, `gated` rather than a silent ship. Both surfaces are read
+# because a run may commit (diff against the pre-launch HEAD) or leave the tree dirty (status).
+_protected_touched() {  # repo head-before
+  local repo="$1" before="$2" p r
+  { [ -n "$repo" ] && [ -d "$repo" ]; } || return 0
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    r=$(protected_path_reason "$p")
+    [ -n "$r" ] && { printf '%s' "$r"; return; }
+  done < <(
+    { [ -n "$before" ] && git -C "$repo" diff --name-only "$before" HEAD 2>/dev/null
+      # `status --porcelain` prefixes two status columns and a space; a rename prints
+      # `old -> new`, which simply fails to match a glob rather than matching the wrong one.
+      git -C "$repo" status --porcelain 2>/dev/null | cut -c4-
+    } | sort -u
+  )
+}
+
 # ---- run --------------------------------------------------------------------------------------
 cmd_run() {
   local src="" dry=0 max=0 from_boards=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run)    dry=1; shift ;;
-      --from-boards) from_boards=1; shift ;;
+      --sanitize-prompt) QUEUE_SANITIZE_PROMPT=1; shift ;;
+      # A board emit is untrusted by the same reasoning that gave it a pointer allow-list: it was
+      # not authored by the operator.
+      --from-boards) from_boards=1; QUEUE_SANITIZE_PROMPT=1; shift ;;
       --max-megas)  max="${2:-0}"; shift 2 ;;
       --journal)    QUEUE_JOURNAL="${2:-$QUEUE_JOURNAL}"; shift 2 ;;
       --*)          _warn "queue: unknown flag '$1'"; return 64 ;;
@@ -688,6 +748,10 @@ cmd_run() {
     reason=$(_repo_skip_reason "$repo")
     if [ -z "$reason" ] && [ "$from_boards" = 1 ]; then
       reason=$(_pointer_allowlist_reason "$repo" "$pointer")
+    fi
+    # Fail closed BEFORE a window opens: on the untrusted path, no sanitizer means no launch.
+    if [ -z "$reason" ] && [ "$QUEUE_SANITIZE_PROMPT" = 1 ] && ! command -v "$QUEUE_PERL_CMD" >/dev/null 2>&1; then
+      reason="the untrusted-input pass cannot run (perl not found)"
     fi
     if [ -n "$reason" ]; then
       if [ "$dry" = 1 ]; then
@@ -721,6 +785,12 @@ cmd_run() {
     IFS=$'\t' read -r brk_verdict brk_reason <<< "$(_breaker_apply "$slug" "$repo" "$head_before" "$verdict")"
     verdict="$brk_verdict"
     [ -n "$brk_reason" ] && reason="$brk_reason"
+    # SPEC-223: a protected path written by an untrusted-path run outranks every other verdict,
+    # including `done`. `gated` is terminal, so the row stops here and a human looks at it.
+    if [ "$QUEUE_SANITIZE_PROMPT" = 1 ]; then
+      local prot; prot=$(_protected_touched "$repo" "$head_before")
+      if [ -n "$prot" ]; then verdict=gated; reason="$prot"; fi
+    fi
     # The run is over: drop the in-flight claim so the watcher may consider this slug again.
     _beat_clear "$slug"
     _journal_append "$slug" "$verdict" "$reason"
