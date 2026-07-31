@@ -294,7 +294,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (26, dispatched by commands) and <b>Skills</b> (7, Claude-triggered)</summary>
+<summary><b>Agents</b> (26, dispatched by commands) and <b>Skills</b> (8, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -328,6 +328,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | Skill | What it does |
 |-------|-------------|
 | doc-drift | Whole-estate doc audit (audit-loop instance): enumerates every living doc, verdicts each claim against the live repo, fixes drift behind a PR gate |
+| feature-map | Feature-estate audit (audit-loop instance): cross-checks the generated `docs/FEATURES.md` registry against the `docs/workflow-paths.md` path index both directions, re-places only delta features on the topology, PR-gated |
 | get-api-docs | Fetches curated API docs via Context Hub before coding |
 | loop-engineering | Designs a new bounded loop for the kit's orchestration: the gate (should this be a loop), then the anatomy (artifact / scanner / reviser / stop condition) on the generic bounded-revise engine |
 | memory-tidy | Audits a repo's `.claude/memory` store: evidence-gated verdicts, PR-gated merges/deletions, index rebuild (judgment half of `stats memory-sweep`) |
