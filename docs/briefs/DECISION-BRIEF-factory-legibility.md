@@ -40,7 +40,7 @@ The factory ends by handing the OWNER a manual written like they are ten. The ki
 
 **Smallest deliverable:** GUIDE.md template + one ship-checklist line with the "has an end user" test.
 
-## 5. The manager loop: backlog in, shipped PRs out (ID-457, umbrella)
+## 5. The orchestrator loop: backlog in, shipped PRs out (ID-457, umbrella)
 
 Operator direction: when a row lands on the backlog, an orchestrator picks it up, runs the whole workflow, answers the interview itself with the best available model, builds, ships, and repeats until the queue drains. Retro suggestions feed the backlog, closing the loop.
 
@@ -65,7 +65,7 @@ Almost every organ exists:
 
 **The two real gaps:**
 
-- **Gap A, self-grill.** ID-450 (shipped today) pins "the agent never answers its own questions", and that principle holds for interactive lanes. The manager reconciles, not violates: self-grill runs ONLY on rows tagged `auto-eligible`, uses the strongest available model, and writes every self-answered question as a decision row in the debt ledger, so nothing is answered silently: answers are auditable at weekend paydown, and a wrong call is a ledgered decision, not a hidden one.
+- **Gap A, self-grill.** ID-450 (shipped today) pins "the agent never answers its own questions", and that principle holds for interactive lanes. The orchestrator reconciles, not violates: self-grill runs ONLY on rows tagged `auto-eligible`, uses the strongest available model, and writes every self-answered question as a decision row in the debt ledger, so nothing is answered silently: answers are auditable at weekend paydown, and a wrong call is a ledgered decision, not a hidden one.
 - **Gap B, the watcher.** A small trigger (cron or board hook) that enqueues newly-queued `auto-eligible` rows into the orchestrate queue. No daemon beyond the existing cron surface.
 
 **Guardrails (design decisions, flagged for the operator):** the loop drains the queue, it never invents its own work: retro suggestions still land in staging and only `board promote` (a human) makes them queued, which is the existing Learn-leg gate and the answer to "until there is nothing else to improve" being unbounded. Per-run budget cap and gated-final merge remain the defaults; full-auto merge is per-row opt-in. The kit's philosophy boundary is respected: the bounded lanes run in-session; the outer re-spawn lives in the queue runner, which ID-394 (Han direction, own the graph) already sanctions.
