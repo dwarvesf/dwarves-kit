@@ -5,6 +5,13 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **`/kit:prototype`: the throwaway-spike beat (SPEC-206 / ID-448).** Opt-in beat beside
+  `/kit:design`, ported from mattpocock/skills prototype (MIT). The question decides the
+  shape: logic branch (pure portable module driven by a full-frame TUI) or UI branch (3-5
+  structurally different variants on one route via `?variant=`, prod-gated floating
+  switcher). Validated decision folds into the owning brief/spec; the prototype survives
+  as a primary source on a `prototype/<name>` branch, never in master. HITL by contract.
+  Executor for wayfind prototype tickets (ID-450).
 - **Fowler smell baseline + review-team dispatch safeguards (SPEC-205 / ID-449).** The
   architecture lens (`agents/code-reviewer.md`) and solo `/kit:review` carry Fowler's
   12-smell baseline (Refactoring ch.3, via mattpocock/skills code-review, MIT) with
