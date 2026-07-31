@@ -24,6 +24,8 @@
 #     --dry-run       list which megas WOULD launch (preflight only; NO send-keys, no journal run)
 #     --max-megas N   stop after N launch attempts this run
 #     --journal PATH  override the journal file
+#     --ready         open a NORMAL PR instead of the unattended draft default (SPEC-224); the
+#                     escape hatch mirroring OpenHands' model-overridable draft=False.
 #     --sanitize-prompt  treat the pointer body as UNTRUSTED (SPEC-223): run it through
 #                     `sanitize_cell`, prepend the XPIA preamble, and gate the row if the run
 #                     wrote a protected path. Implied by `--from-boards`; the watcher passes it
@@ -57,6 +59,12 @@
 #   QUEUE_COOLDOWN_SECS      breaker cooldown before an `error` row re-picks   (default 1800)
 #   QUEUE_NOPROGRESS_TRIP    consecutive no-progress runs that trip the breaker (default 3)
 #   QUEUE_SAMEERROR_TRIP     consecutive `error` runs that trip the breaker     (default 5)
+#
+# CHEAP GUARDRAILS (SPEC-224, board row ID-461). Draft-PR-by-default on this unattended path, plus a
+# self-reported per-row spend ceiling composed OR-style with the wall-clock timeout above:
+#   QUEUE_PR_READY               1 = open a normal PR (--ready); 0 = draft default (default 0)
+#   QUEUE_MAX_TOOL_CALLS         per-row ceiling on the run's self-reported TOOL_CALLS (0 = off)
+#   QUEUE_MAX_TOTAL_TOOL_CALLS   queue-wide ceiling across rows this run           (0 = off)
 #
 # Mechanism ladder (macos-action-selection L0-L4): PRIMARY is terminal-mux send-keys (L0/L1,
 # deterministic, no GUI). Computer-Use (mcp__computer-use__*, L4) is the DOCUMENTED fallback for a
@@ -142,6 +150,26 @@ QUEUE_SAMEERROR_TRIP="${QUEUE_SAMEERROR_TRIP:-5}"
 # stalls several rows at once, and without it every one of them becomes re-pickable on the same tick.
 QUEUE_RETRY_JITTER_MIN="${QUEUE_RETRY_JITTER_MIN:-5}"
 QUEUE_RETRY_JITTER_SPAN="${QUEUE_RETRY_JITTER_SPAN:-11}"
+
+# ---- cheap guardrails (SPEC-224) ---------------------------------------------------------------
+# Two wins that ride channels SPEC-221 already built. Both default OFF-or-safe, so the shipped
+# overnight behavior is byte-identical until an operator opts in.
+#   QUEUE_PR_READY             0 = draft-PR-by-default on this unattended path (the queue is always
+#                              autonomous); 1 = the --ready escape hatch, open a normal PR (OpenHands
+#                              model-overridable draft=False).
+#   QUEUE_MAX_TOOL_CALLS       per-row soft ceiling on the run's SELF-REPORTED TOOL_CALLS count
+#                              (0 = unlimited, SWE-agent per_instance_call_limit default). Self-report
+#                              is a GUARDRAIL not a boundary; the wall-clock QUEUE_TIMEOUT_SECS is the
+#                              non-gameable backstop, composed OR-style (first-to-trip wins).
+#   QUEUE_MAX_TOTAL_TOOL_CALLS queue-wide ceiling across rows this run (0 = unlimited). The current
+#                              row finishes + ships first, then remaining rows are skipped.
+QUEUE_PR_READY="${QUEUE_PR_READY:-0}"
+QUEUE_MAX_TOOL_CALLS="${QUEUE_MAX_TOOL_CALLS:-0}"
+QUEUE_MAX_TOTAL_TOOL_CALLS="${QUEUE_MAX_TOTAL_TOOL_CALLS:-0}"
+# Coerce to a safe integer so a junk config value never errors a later `-gt`/`-ge` comparison in the
+# overnight run; junk means disabled, not a crash.
+case "$QUEUE_MAX_TOOL_CALLS" in ''|*[!0-9]*) QUEUE_MAX_TOOL_CALLS=0 ;; esac
+case "$QUEUE_MAX_TOTAL_TOOL_CALLS" in ''|*[!0-9]*) QUEUE_MAX_TOTAL_TOOL_CALLS=0 ;; esac
 
 _say()  { printf '%s\n' "$*"; }
 _warn() { printf '%s\n' "$*" >&2; }
@@ -232,6 +260,27 @@ _exit_signal() {  # slug
     false|FALSE|False) printf 'false' ;;
     *)                 printf 'bad' ;;
   esac
+}
+
+# SPEC-224: the largest numeric value of KEY across ALL its lines in <slug>.status (0 if none). A
+# self-reported monotonic counter like TOOL_CALLS may be rewritten or appended by the run; MAX is
+# its latest value either way, so this never reads a stale earlier number. Distinct from
+# `_status_get` (first-wins), whose first-occurrence rule is load-bearing for EXIT_SIGNAL only.
+_status_num() {  # slug key
+  local f; f=$(_run_file "$1" status) || { printf '0'; return 0; }
+  [ -f "$f" ] || { printf '0'; return 0; }
+  # CLAMP to 9 digits (<=999999999) before any compare (security review, MEDIUM). This value is
+  # SELF-REPORTED by an untrusted run: an oversized number (30 digits) would otherwise (a) error the
+  # `-ge` in the per-row ceiling with "integer expected" and silently DISABLE it, and (b) overflow
+  # the 64-bit queue-wide accumulator and spuriously abort the whole batch. A 9-digit cap keeps every
+  # comparison and the summed accumulator inside safe integer range while staying far above any sane
+  # ceiling. Clamping the STRING LENGTH (not the numeric value) is what avoids the overflow at parse.
+  awk -v k="$2" '
+    { key=$0; sub(/:.*$/,"",key); gsub(/^[ \t]+|[ \t]+$/,"",key) }
+    key==k { v=$0; sub(/^[^:]*:/,"",v); gsub(/[^0-9]/,"",v)
+             if (length(v) > 9) v="999999999"
+             if (v!="" && v+0>m) m=v+0 }
+    END { print m+0 }' "$f"
 }
 
 # ---- journal ----------------------------------------------------------------------------------
@@ -421,13 +470,27 @@ _goal_line() {  # pointer-path slug
   else
     content=$(tr '\n' ' ' < "$pointer" 2>/dev/null)
   fi
+  local line="/goal $content"
   status=$(_run_file "$slug" status 2>/dev/null) || status=""
   if [ -n "$status" ]; then
-    printf '/goal %s When you finish, write %s containing the line "EXIT_SIGNAL: true" (or "EXIT_SIGNAL: false" if you are not done), plus "REASON: <why>" if a human must review, "FILES_CHANGED: <n>", and "QUESTION: true" if you stopped to ask something.' \
-      "$content" "$status"
-  else
-    printf '/goal %s' "$content"
+    line="$line When you finish, write $status containing the line \"EXIT_SIGNAL: true\" (or \"EXIT_SIGNAL: false\" if you are not done), plus \"REASON: <why>\" if a human must review, \"FILES_CHANGED: <n>\", and \"QUESTION: true\" if you stopped to ask something."
+    # SPEC-224: when a spend ceiling is active, ask the run to self-report a cumulative tool-call
+    # count into the SAME status file, so the conductor can read it on the poll it already does.
+    if [ "$QUEUE_MAX_TOOL_CALLS" -gt 0 ] || [ "$QUEUE_MAX_TOTAL_TOOL_CALLS" -gt 0 ]; then
+      line="$line Also update $status every few tool calls with a line \"TOOL_CALLS: <your cumulative tool-call count>\"."
+    fi
   fi
+  # SPEC-224: draft-PR-by-default on this unattended path (OpenHands posture). This builder is only
+  # ever called by the autonomous queue, so appending here IS "autonomous path only"; interactive
+  # /kit:ship never reaches it. QUEUE_PR_READY=1 is the --ready escape hatch (their draft=False).
+  if [ "$QUEUE_PR_READY" != 1 ]; then
+    # Footer the journal BASENAME, not the resolved path (security review, LOW): the full path
+    # defaults under the operator's home and would leak a local path + username into a public PR
+    # body. The basename + slug still identify the run in the journal, which is all the footer is for.
+    local jbase; jbase=$(basename "$QUEUE_JOURNAL")
+    line="$line When you open a pull request, make it a DRAFT (gh pr create --draft) and append this provenance footer on its own line in the PR body: \"[unattended orchestrator run; journal ${jbase}; slug ${slug}]\"."
+  fi
+  printf '%s' "$line"
 }
 
 # Open + type + poll ONE window to a terminal state.
@@ -488,6 +551,17 @@ _launch_once() {  # slug repo pointer
           return 0
         fi ;;
     esac
+
+    # SPEC-224 per-row spend ceiling, composed OR-style with the wall-clock below (first-to-trip
+    # wins). Checked AFTER the exit gate so a finished run is never spend-capped, and BEFORE the
+    # timeout so the more specific reason wins when both cross on one poll. The run self-reports its
+    # count; the check reads only completed turns between polls, so "stop this row after the observed
+    # turn" is the graceful, autosubmit-equivalent stop, whatever draft PR it opened persists.
+    if [ "$QUEUE_MAX_TOOL_CALLS" -gt 0 ] && [ "$(_status_num "$slug" TOOL_CALLS)" -ge "$QUEUE_MAX_TOOL_CALLS" ]; then
+      _mux_kill "$slug"
+      printf 'stalled:spend_ceiling'
+      return 0
+    fi
 
     now=$(date +%s); elapsed=$((now - start))
     if [ "$elapsed" -ge "$QUEUE_TIMEOUT_SECS" ]; then
@@ -735,6 +809,8 @@ cmd_run() {
       --from-boards) from_boards=1; QUEUE_SANITIZE_PROMPT=1; shift ;;
       --max-megas)  max="${2:-0}"; shift 2 ;;
       --journal)    QUEUE_JOURNAL="${2:-$QUEUE_JOURNAL}"; shift 2 ;;
+      # SPEC-224: open a NORMAL PR instead of the unattended draft default (OpenHands draft=False).
+      --ready)      QUEUE_PR_READY=1; shift ;;
       --*)          _warn "queue: unknown flag '$1'"; return 64 ;;
       *)            src="$1"; shift ;;
     esac
@@ -743,7 +819,7 @@ cmd_run() {
     _warn "queue: no queue source (want a tsv path or --from-boards)"; return 64
   fi
 
-  local consec_fail=0 attempts=0 slug repo pointer reason verdict head_before brk_verdict brk_reason
+  local consec_fail=0 attempts=0 total_calls=0 slug repo pointer reason verdict head_before brk_verdict brk_reason
   while IFS=$'\t' read -r slug repo pointer _rest; do
     [ -n "$slug" ] || continue
 
@@ -804,6 +880,17 @@ cmd_run() {
     _beat_clear "$slug"
     _journal_append "$slug" "$verdict" "$reason"
     _say "[queue] $slug: $verdict${reason:+ ($reason)}."
+
+    # SPEC-224 queue-wide spend ceiling. Accumulate the run's self-reported tool-calls; once the
+    # BATCH total crosses the ceiling, the current row has already finished + shipped (SWE-agent:
+    # the instance autosubmits before the batch halts), so only the REMAINING rows are skipped.
+    if [ "$QUEUE_MAX_TOTAL_TOOL_CALLS" -gt 0 ]; then
+      total_calls=$((total_calls + $(_status_num "$slug" TOOL_CALLS)))
+      if [ "$total_calls" -ge "$QUEUE_MAX_TOTAL_TOOL_CALLS" ]; then
+        _warn "[queue] SPEND CEILING: queue-wide tool-call total $total_calls >= $QUEUE_MAX_TOTAL_TOOL_CALLS; aborting remaining rows."
+        return 0
+      fi
+    fi
 
     # error-twice-stops-night, EXTENDED to stalled (review finding, MEDIUM): `error` (launch
     # failed twice) and `stalled` (no progress for the full timeout) BOTH indicate the launch

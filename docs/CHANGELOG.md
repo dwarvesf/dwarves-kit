@@ -5,6 +5,23 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Two cheap guardrails on the autonomous run queue (SPEC-224 / ID-461).** Both ride channels
+  SPEC-221 already built, so the diff is small and adds no process. (1) DRAFT-PR-BY-DEFAULT on the
+  unattended path: the queue never runs `gh` itself, so `_goal_line` appends a clause to the typed
+  `/goal` line telling the launched run to open its PR as a draft (`gh pr create --draft`) and stamp
+  a provenance footer naming the run (`[unattended orchestrator run; journal <path>; slug <s>]`),
+  mirroring OpenHands' model-overridable `draft=True`. `queue run --ready` (or `QUEUE_PR_READY=1`)
+  is the escape hatch that opens a normal PR. Interactive `/kit:ship` never calls `_goal_line`, so
+  it is untouched. (2) A per-row and queue-wide SPEND CEILING on a self-reported tool-call count: the
+  run writes `TOOL_CALLS: <n>` into its SPEC-221 `<slug>.status` file, and the conductor reads it on
+  the poll it already does. `QUEUE_MAX_TOOL_CALLS` stops a row (verdict `stalled`, the shared journal
+  reason set to a new value `spend_ceiling`) after its observed turn; `QUEUE_MAX_TOTAL_TOOL_CALLS`
+  aborts the remaining rows after the current one ships (SWE-agent's two-tier split). Both default 0
+  (disabled, matching SWE-agent's `per_instance_call_limit=0`), so the shipped overnight behavior is
+  byte-identical until an operator opts in. The ceiling is composed OR-style with the wall-clock
+  `QUEUE_TIMEOUT_SECS` (first-to-trip wins); self-report is a guardrail, and the wall-clock is the
+  non-gameable backstop. Claim-leases (the row's third idea) were scoped out: SPEC-221's beat-file
+  presence already IS the in-flight claim (DEC-003) and its reaper is the lazy expiry.
 - **An untrusted-input pass on the autonomous run queue (SPEC-223 / ID-459).** The `#auto` path
   types a pointer file's body into a `--dangerously-skip-permissions` session, and the board row is
   what selects that file, so on the watcher-planned path that body is untrusted text rather than an
