@@ -20,6 +20,19 @@ Do not silently skip the review check. The user must explicitly choose to ship w
 
 Read `~/.claude/dwarves-kit/logs/completeness.log` (the warn+log sink from the WORKFLOW completeness clauses). Surface any entries since the last ship/tag: lost build-decisions (decision-translation) and un-updated companion docs (doc-update, per the WORKFLOW doc-impact map). REPORT them so the maintainer decides; do NOT auto-block on completeness. Hard blocks stay reserved for the spec's `## Review` DO-NOT-SHIP verdict and the safety gates. If the log is absent or empty, say "completeness: clean". Source: SPEC-006.
 
+### Step 1c: End-user guide check (warn, not block)
+
+Apply the test: does this change have an end user who is not the builder? A
+library, an internal tool, or infra with no such user is exempt.
+
+If yes: confirm `GUIDE.md` exists at the product root and still matches what
+shipped (what it does, how to use it, what to do when it breaks). Template:
+`docs/GUIDE.template.md`.
+
+If `GUIDE.md` is missing or stale, REPORT it to the maintainer; do NOT block
+the ship. Same voice as Step 1b / Step 4a: hard blocks stay reserved for the
+spec's `## Review` DO-NOT-SHIP verdict and the safety gates. Source: SPEC-216.
+
 ### Step 2: Run tests
 
 Detect the test runner and execute:

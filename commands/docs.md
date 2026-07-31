@@ -31,6 +31,13 @@ Check each of these files (if they exist) against the diff:
 - Are the build/test/run commands still correct?
 - Are there new conventions established by recent code that should be documented?
 
+**GUIDE.md** (only if this change has an end user who is not the builder;
+libraries and infra are exempt by that same test, per SPEC-216)
+- Does it still match what ships (what it does, how to use it, what to do
+  when it breaks)?
+- Missing entirely for a user-facing product? Flag it. Template:
+  `docs/GUIDE.template.md`.
+
 **CHANGELOG.md** (or `docs/CHANGELOG.md` if that's the repo's convention, SPEC-185; if exists)
 - Is there an entry for the current changes?
 - Does it follow the existing format (Keep a Changelog, conventional, custom)?
