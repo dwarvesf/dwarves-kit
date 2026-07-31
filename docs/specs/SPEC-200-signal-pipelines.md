@@ -34,8 +34,8 @@ Verified evidence (each re-checked by hand, not taken from a report):
 
 Name the class, then enforce four invariants on it. **Signal pipeline** = any
 tool that reads a signal source, analyzes it, and emits a report and/or a
-proposal. The five legs (ADR-0034) stay the loop; this spec is the shape of the
-things that ride the Observe and Learn legs.
+proposal. The five stages (ADR-0034) stay the loop; this spec is the shape of the
+things that ride the Watch and Learn stages.
 
 Taxonomy (source x depth), so a new pipeline knows where it belongs instead of
 inventing a name:
@@ -88,8 +88,8 @@ heartbeat" today, finding 2): `session report` becomes `session heartbeat`,
 `session observe report` becomes `session observe show`. `triage` becomes
 `propose` (one word per meaning, ADR-0034 decision 2).
 
-**I5. One language: the kit speaks the five legs.** The README's taxonomy
-(Specify / Execute / Observe / Govern / Learn) is the kit's vocabulary, and
+**I5. One language: the kit speaks the five stages.** The README's taxonomy
+(Shape / Build / Watch / Check / Learn, ADR-0034) is the kit's vocabulary, and
 nothing in the kit carries the name of the host agent that happens to run it.
 The `cc-` / `CC_*` prefix is a fossil of when this was a Claude-Code-only pile
 of scripts: it is banned in kit-owned names (a name the HOST provides, like

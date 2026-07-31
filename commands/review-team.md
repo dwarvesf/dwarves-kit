@@ -1,8 +1,8 @@
 ---
-description: "Parallel code review with 3 specialist lenses plus the kit-default advisor extra lens. Dispatches security, architecture, and test-coverage reviewers simultaneously, adds the cross-cutting advisor (critique mode), then merges findings."
+description: "Parallel code review with 3 specialist lenses plus the kit-default advisor extra lens. Dispatches the security, architecture, and test-coverage lenses simultaneously, adds the cross-cutting advisor (critique mode), then merges findings."
 ---
 
-You are a review coordinator. Your job is to dispatch 3 focused reviewers in parallel, collect their findings, deduplicate, and present a unified report.
+You are a review coordinator. Your job is to dispatch 3 focused lenses in parallel, collect their findings, deduplicate, and present a unified report.
 
 ## Prerequisites
 
@@ -37,7 +37,7 @@ change; it names the uncovered files), `ok` (source + test moved together), or `
 block. This is the live dispatch path for the SPEC-130 gate (the Review phase, off the push
 blocker). A `WARNING` is advisory input to the test-coverage lens, never a stop.
 
-### Step 2: Dispatch 3 reviewers in parallel
+### Step 2: Dispatch 3 lenses in parallel
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
@@ -67,7 +67,7 @@ self-test the reviewer must pass to claim it:
 A finding block is: title, file:line, severity, Route (SPEC-078), Confidence anchor,
 self-test sentence, suggested fix (when gated_auto).
 
-**Reviewer 1: Security (deep)**
+**Lens 1: Security (deep)**
 ```
 Review this code diff through the SECURITY lens only.
 Use the security-reviewer agent (the dedicated deep-security reviewer; more thorough than the code-reviewer's security lens).
@@ -79,7 +79,7 @@ Use the security-reviewer agent (the dedicated deep-security reviewer; more thor
 [security-relevant sections from SPEC.md]
 ```
 
-**Reviewer 2: Architecture lens**
+**Lens 2: Architecture**
 ```
 Review this code diff through the ARCHITECTURE lens only.
 Use the code-reviewer agent with lens: architecture.
@@ -107,7 +107,7 @@ problem (spaghetti growth), never a style nit , name the structural cause.
 [docs/research/architecture.md contents, or CLAUDE.md patterns]
 ```
 
-**Reviewer 3: Test-coverage lens**
+**Lens 3: Test-coverage**
 ```
 Review this code diff through the TEST-COVERAGE lens only.
 Use the code-reviewer agent with lens: test-coverage.
@@ -123,7 +123,7 @@ Use the code-reviewer agent with lens: test-coverage.
 
 In addition to the 3 specialist lenses, dispatch the `advisor` agent in **critique
 mode** (ADR-0028 P5). This is a KIT DEFAULT: it runs on every review-team pass, it
-does NOT replace the 3 specialists (they are the kit's tailored value), it ADDS one
+does NOT replace the 3 specialist lenses (they are the kit's tailored value), it ADDS one
 cross-cutting whole-of-work lens that catches what a per-artifact lens is not scoped
 to see (cross-artifact inconsistency, a seam between independently-reviewed pieces, a
 global assumption). Dispatch it read-only, advisory:
@@ -148,7 +148,7 @@ advisor's critique pass returns, emit a first-class ledger row BEFORE folding it
 into the Step 3 merge, so the advisor's own contribution is machine-visible even when
 `kit_gates` (the stats read plane) is asked "did the advisor run on this rid" independent of the
 merged report's combined `findings=<K>` count (Step 3's `review ran` line counts all 3
-specialists + advisor together, so it cannot answer that question alone):
+specialist lenses + advisor together, so it cannot answer that question alone):
 
 ```
 bash lib/gate/gate-ledger.sh record "$rid" advisor ran "mode=P5 findings=<N> actor=$(git config user.name)" \
@@ -181,7 +181,7 @@ mode** (P6) is a SEPARATE pass surfaced to the human just BEFORE the final revie
 
 After all 3 specialist lenses + the advisor complete:
 
-1. Collect all issues from all 3 reviewers (and the advisor's cross-cutting findings)
+1. Collect all issues from all 3 lenses (and the advisor's cross-cutting findings)
 2. Deduplicate by FINGERPRINT (SPEC-081): file + line-bucket (+-3 lines) + normalized title (lowercase, punctuation stripped). The same fingerprint across reviewers = ONE finding listing every lens that caught it.
 3. Sort by severity (CRITICAL > HIGH > MEDIUM > LOW)
 4. **Classify each finding's Route (SPEC-078 / ID-076, EveryInc action-class
