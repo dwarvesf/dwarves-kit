@@ -5,6 +5,13 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Fowler smell baseline + review-team dispatch safeguards (SPEC-205 / ID-449).** The
+  architecture lens (`agents/code-reviewer.md`) and solo `/kit:review` carry Fowler's
+  12-smell baseline (Refactoring ch.3, via mattpocock/skills code-review, MIT) with
+  three binding rules: repo standard overrides, every smell a labelled judgement call,
+  skip what tooling enforces. `/kit:review-team` fails fast (`git rev-parse` + non-empty
+  diff) BEFORE dispatching subagents, and its report summary states totals + worst issue
+  PER LENS, never a single cross-lens winner (the SPEC-081 merge machinery is unchanged).
 - **Multi-vendor sub-goal dispatch (ID-390).** A mega-goal sub-goal can declare
   `Harness: codex` (or `pi` / `opencode`) in its goal file to run on a non-Claude
   CLI, billing that vendor's quota instead of the Claude one while Claude stays the
