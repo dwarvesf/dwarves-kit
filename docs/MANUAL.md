@@ -13,6 +13,7 @@ name. Full tour: `/kit:onboard`. Story-name lookup: `docs/glossary.md`.
 - Bash install path: drop the prefix, commands invoked bare as `/<name>` (e.g. `/spec`).
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
+- Self-intro banner: every `/kit:` command opens its first reply with one line, `[kit:<name>] <one-line purpose>` (from its frontmatter description), and every dispatched agent's report opens the same way, so you always see what is running and why (AGENTS.md "Self-intro").
 
 ## Drive it by intent (start here)
 

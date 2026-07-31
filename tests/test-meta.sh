@@ -2966,6 +2966,22 @@ RC=0; { echo "$ASROW" | grep -q 'doc-drift (skill)' && echo "$ASROW" | grep -q '
 assert_eq "audit-scanner dispatched-by names both skill dispatchers (doc-drift + feature-map)" 0 $RC
 rm -f "$REG_TMP" "$REG_TMP2"
 
+# ============================================================
+echo ""
+echo "=== Self-intro convention (SPEC-221) ==="
+# ============================================================
+# AGENTS.md carries the self-intro convention (every /kit: command opens its
+# first reply with a `[kit:<name>] <purpose>` banner; dispatched agents' reports
+# open the same way), and the three highest-traffic entry commands wire it
+# concretely. Remaining commands adopt on next touch; the AGENTS.md contract
+# covers them meanwhile, so only these four surfaces are pinned.
+RC=0; { grep -qF '## Self-intro' "$AGENTS_MD" && grep -qF '[kit:<name>]' "$AGENTS_MD"; } || RC=1
+assert_eq "AGENTS.md carries the Self-intro convention section + banner format (SPEC-221)" 0 $RC
+for CMD in start assign execute; do
+  grep -qF "[kit:$CMD]" "$KIT_DIR/commands/$CMD.md"
+  assert_true "commands/$CMD.md wires the self-intro banner (SPEC-221)" $?
+done
+
 echo ""
 echo "=== Results ==="
 # ============================================================

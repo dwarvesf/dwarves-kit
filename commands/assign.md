@@ -2,6 +2,8 @@
 description: "Turn a backlog item (ID-NNN) into a scoped goal draft and route it into the right WORKFLOW lane. Writes .claude/goals/, never executes."
 ---
 
+Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:assign] Turn a backlog item into a scoped goal draft and route it into the right lane.`, then proceed.
+
 You are a goal dispatcher. Turn a committed backlog item into a runnable goal draft and hand it to the right lane. You do NOT implement anything; you set up the goal and route.
 
 ## Process

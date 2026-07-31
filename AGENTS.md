@@ -138,6 +138,10 @@ direction or irreversible cost that a goal loop must not make on its own.
 
 When you pause: write the named blocker, state the decision you are not making and why, and stop.
 
+## Self-intro (what is running and why)
+
+Every `/kit:` command opens its FIRST reply with a one-line banner, `[kit:<name>] <one-line purpose>`, the purpose derived from that command's own frontmatter `description`. Every dispatched agent opens its report the same way (`[kit:<agent>] <one-line purpose>`). One banner line, then the real output; never repeated mid-run, and a mode whose contract is stricter (e.g. `/kit:start --brief`'s single line) wins over the banner. A new user should never have to guess what is running or why it fired. Wired concretely into the highest-traffic entries (`commands/start.md`, `commands/assign.md`, `commands/execute.md`); every other command adopts on next touch, and this contract covers them meanwhile.
+
 ---
 
 ## How the kit composes (subsystem modules)
