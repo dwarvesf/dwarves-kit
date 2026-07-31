@@ -177,6 +177,47 @@ step left unanswered):
 - What is the riskiest assumption, and what is the cheapest probe of it?
 - Which lane did the classifier suggest, and does anything in the answers change that?
 
+### Step 2b: Self-answer mode (autonomous runs only, SPEC-217)
+
+The default everywhere else in this file is human-in-the-loop, and it stays that way. Self-answer
+mode is the ONE exception, and it is paid for, not free.
+
+**Activation, all three or the mode does not exist:**
+
+1. The run is AUTONOMOUS (an unattended queue-launched session, no human at the keyboard).
+2. The driving board row's Notes cell carries the marker **`#auto`**, as a whole tag
+   (`#automation` is not `#auto`). The operator writes that marker. The agent never writes it,
+   so the agent never grants itself the exception.
+3. The question is one this file's banks would ask. Self-answer never widens the interview.
+
+**What the mode does:** answer each question yourself with the recommended answer Step 2 already
+requires you to carry, then keep going. Do not stall waiting for a human who is not there.
+
+**What the mode costs, per question, no exceptions:**
+
+```
+bash lib/gate/gate-ledger.sh debt <rid> \
+  significance=high worthiness=high verdict=wave \
+  reason="self-answer: <the question> | chose: <the answer> | why: <one line>"
+```
+
+`verdict=wave` is the disposition `lib/learn/weekend-batch.sh` collects, so
+`bash bin/learn debt collect` surfaces the run at the weekend paydown like any other conscious
+debt. Write one row per self-answered question. A `reason` cannot carry `=` (the writer neuters
+it to `:`) and must stay on one line; use ` | ` as the separator. The collect digest reads the
+LAST debt line per run id, so it surfaces the run once and the full set of questions lives in
+that run's ledger file.
+
+Record the gate as Step 4 says, with the mode named in the free text so telemetry can separate
+these runs: `... record <rid> grill ran "self-answer: <N> questions, all ledgered"`.
+
+**How this reconciles with "the agent never answers its own questions" (SPEC-207 / ID-450):**
+that rule holds unchanged for every interactive lane, and this mode does not weaken it. It pays
+for the exception instead. Nothing is answered SILENTLY: the operator opted the row in by hand,
+every answer is on the debt ledger with its reasoning, and a wrong call becomes a ledgered
+decision the operator reviews at paydown rather than a hidden one. The rule the kit actually
+enforces is not "never decide", it is "never decide invisibly".
+
 ### Step 3: Write as you resolve (never batched)
 
 The moment an answer resolves something, write it where it lives:

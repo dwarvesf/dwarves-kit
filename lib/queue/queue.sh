@@ -445,8 +445,12 @@ cmd_run() {
 main() {
   local cmd="${1:-}"; shift 2>/dev/null || true
   case "$cmd" in
-    run) cmd_run "$@" ;;
-    *)   _warn "usage: queue.sh run <src.tsv> [--dry-run] [--max-megas N] [--from-boards] [--journal <path>]"; exit 64 ;;
+    run)   cmd_run "$@" ;;
+    # The backlog watcher (SPEC-217): a filter that turns `#auto`-marked queued board rows into
+    # the same TSV `run` above consumes. It owns its own flags, so this is a forward, not a wrapper.
+    watch) exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/watch-board.sh" "$@" ;;
+    *)     _warn "usage: queue.sh run <src.tsv> [--dry-run] [--max-megas N] [--from-boards] [--journal <path>]"
+           _warn "       queue.sh watch [--apply] [--max N] [--board <path>]"; exit 64 ;;
   esac
 }
 
