@@ -294,7 +294,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (26, dispatched by commands) and <b>Skills</b> (8, Claude-triggered)</summary>
+<summary><b>Agents</b> (27, dispatched by commands) and <b>Skills</b> (8, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -324,6 +324,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | research-pitfalls | /spec | Finds landmines before implementation |
 | meta-agent | /draft-agent | Drafts a new subagent (or sub-goal file) from a one-line description |
 | test-writer | /kit:test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row |
+| audit-scanner | doc-drift, feature-map skills | Shared read-only Tier-2 evidence scanner for audit-loop instances; roster physically cannot write |
 
 | Skill | What it does |
 |-------|-------------|
@@ -367,7 +368,7 @@ dwarves-kit/
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`queue`/`session`/`spec`/`stats` thin forwarders to `lib/<subsystem>/`, plus the two module CLIs (`prose-rag`, `worktree-provision`) that keep their module names. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
-  agents/                       (26 files) Subagents dispatched by commands
+  agents/                       (27 files) Subagents dispatched by commands
   commands/                     (34 markdown command prompts)
   hooks/                        (25 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
