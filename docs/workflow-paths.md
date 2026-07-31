@@ -22,9 +22,50 @@ Enforcement marks: `HARD` = blocking (exit 2 or pipeline gate); `adv` = advisory
 
 Stage grouping (Shape / Build / Watch / Check / Learn) follows the README's five stages. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
 
-## 2 · Master map
+## 2 · Topology
 
-### 2.1 · SHAPE: intake and contract-making
+Bird's-eye view: who connects to whom. The per-stage diagrams below show sequence; this shows the standing wiring between the four feature kinds and the stores that carry state between commands. Every edge class here is derived from the path index (section 4): `[H]`/`[I]`/`[E]` are the only ways in, `[D]` is the only command-to-agent edge, and every automated write lands in a store or staging file, never directly on the board.
+
+### 2.1 · Actors and clusters
+
+```
+ ┌──────────┐  [H] typed command    ┌──────────┐    [D] dispatch    ┌─────────────────────┐
+ │ operator │──────────────────────>│ COMMANDS │───────────────────>│       AGENTS        │
+ └──────────┘                       │  /kit:*  │<───────────────────│ read-only research/ │
+ ┌──────────┐  [I] inferred intent  │          │ verdicts, findings │ verify/review lenses│
+ │  Claude  │──────────────────────>└────┬─────┘                    │ + write-capable     │
+ │  intent  │                            │ tool calls               │ workers, fix-agent  │
+ └────┬─────┘                            │ (Bash, Edit, push, ...)  └──────────┬──────────┘
+      │ [I] auto-fire                    v                                     │ tool calls
+      │      ┌────────┐         ┌─────────────────┐<───────────────────────────┘
+      └─────>│ SKILLS │         │      HOOKS      │<──[E]── harness events
+             └───┬────┘         └────────┬────────┘   (SessionStart, UserPromptSubmit,
+                 │                       │             PreToolUse, Stop, SessionEnd, ...)
+                 v                       v
+     context injected, audit    HARD block (safety-gate, ship-gate, commit-format,
+     PRs, dashboards, renders   secrets-guard, anti-rationalization) or advise,
+                                then the tool call passes through
+```
+
+### 2.2 · Stores: how one command hands off to the next
+
+Commands never hand off in memory; the baton passes through stores on disk.
+
+```
+                  write                                       read
+ /kit:assign ──────────> .claude/goals/<draft> ──────────────────> /kit:grill, /kit:spec
+ /kit:think ───────────> DECISION-BRIEF.md ──────────────────────> /kit:design, /kit:spec
+ /kit:spec ────────────> docs/specs/SPEC-NNN ────────────────────> /kit:spec-validate, /kit:execute
+ verifiers + gates ──record──> gate/proof ledgers ───────────────> ship-gate [E, HARD] at push
+ hooks (harvest,
+  backlog-stage) ──stage──> staging files ──human promote──> _meta/BACKLOG.md (board)
+ _meta/BACKLOG.md (board) ───────────────────────────────────────> /kit:start, /kit:assign --next
+ /kit:retro ───────────> docs/retro/v<version>.md ───────────────> next /kit:think
+```
+
+## 3 · Master map
+
+### 3.1 · SHAPE: intake and contract-making
 
 ```
  [E] SessionStart ── context-readiness (spec/board state) + codebase-index (opt-in)
@@ -59,7 +100,7 @@ Stage grouping (Shape / Build / Watch / Check / Learn) follows the README's five
 
 Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchestrates `/kit:adopt` + `/kit:start` + config), `[H/I] /kit:adopt` (injects the operate-contract into a target repo so the ship-gate engages there).
 
-### 2.2 · BUILD: test design, execution engines, agent-making
+### 3.2 · BUILD: test design, execution engines, agent-making
 
 ```
  VALIDATED spec
@@ -93,7 +134,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Build-time hooks: auto-format [E, conv] on every edit; spec-drift-guard [E, adv] on Write.
 ```
 
-### 2.3 · CHECK: review, verification, gates
+### 3.3 · CHECK: review, verification, gates
 
 ```
  build complete
@@ -123,7 +164,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  but inert until tool-policy.json exists].
 ```
 
-### 2.4 · WATCH: recording what happened
+### 3.4 · WATCH: recording what happened
 
 ```
  [E] Stop ────────────> session-state-save (persist last-state.md)  [conv]
@@ -142,7 +183,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Every automated Watch path ends at a staging file or a render, never a direct board/ledger write.
 ```
 
-### 2.5 · LEARN: distill the record into the next cycle
+### 3.5 · LEARN: distill the record into the next cycle
 
 ```
  shipped
@@ -164,7 +205,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Staged harvest/backlog output re-enters Shape via board promote (the human gate).
 ```
 
-## 3 · Complete path index
+## 4 · Complete path index
 
 One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every feature in `commands/`, `agents/`, `skills/`, `hooks/` appears exactly once.
 
@@ -280,9 +321,10 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] PermissionRequest -> permission-auto-approve -> auto-approve read-only ops (conv, terminal)` |
 | `[E] StatusLine -> statusline -> HUD render (conv, terminal)` |
 
-## 4 · How to regenerate
+## 5 · How to regenerate
 
 1. Re-derive the backbone from `docs/research/2026-07-31-feature-trigger-map.md` (or regenerate that file first per its own Method section: enumerate `commands/`, `agents/`, `skills/*/SKILL.md`, `hooks/*.sh` by `ls`, never trust a doc's count).
 2. Take stage grouping from the README's "The five stages" section; take flow shapes from `docs/workflow-map.md`; take rules and precedence from `docs/WORKFLOW.md` (canonical; it wins on any disagreement).
 3. Take hook events from `hooks/hooks.json` and root `settings.json` (same wiring, two install paths; `statusline` rides the `statusLine` key, not a hook event). Live wiring wins over any doc claim: this pass found `tool-policy-guard` wired at PreToolUse `*` in both files although the trigger map called it unwired; it stays inert until a `tool-policy.json` exists.
-4. Every live feature gets exactly one line in section 3; verify with `ls commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh | wc -l` against the index line count (derive the number, never hardcode it here).
+4. Every live feature gets exactly one line in section 4; verify with `ls commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh | wc -l` against the index line count (derive the number, never hardcode it here).
+5. Re-derive the Topology (section 2) from the finished path index: the `[H]`/`[I]`/`[E]`/`[D]` marks give the actor and dispatch edges; the store hand-offs come from each path's write target and the command that reads it next. Invent no edge the index does not show.
