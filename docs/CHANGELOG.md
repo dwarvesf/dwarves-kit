@@ -5,7 +5,7 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
-- **Runaway guards on the autonomous run queue (SPEC-220 / ID-460).** Three mechanisms, all
+- **Runaway guards on the autonomous run queue (SPEC-221 / ID-460).** Three mechanisms, all
   hanging off per-slug sidecar files under `<log-dir>/queue-runs/`, and none of them a daemon:
   the reaper runs on the `queue watch` tick the operator already invokes. (1) A stale-window
   watchdog: the conductor touches a heartbeat every poll, a beat older than 10 minutes reports

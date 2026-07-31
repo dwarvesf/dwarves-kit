@@ -17,7 +17,7 @@
 #      charset, repo self-consistency, containment, and existence all check out)
 #   4. its slug's LAST queue-journal verdict is not terminal (`done` or `gated`)
 #
-#   5. no runaway guard is holding it back (SPEC-220: no live heartbeat, not quarantined,
+#   5. no runaway guard is holding it back (SPEC-221: no live heartbeat, not quarantined,
 #      past its stall backoff, past its breaker cooldown)
 #
 # Rule 4 is the idempotency rule and it deliberately differs from `queue run`'s own
@@ -25,7 +25,7 @@
 # terminal state, and a done-only rule would re-plan every gated row on every run forever
 # (SPEC-217 DEC-002). `error`/`stalled`/`skipped` stay re-planned: those are retryable.
 #
-# Rule 5 is what makes rule 4's "retryable" bounded (SPEC-220). Retryable used to mean
+# Rule 5 is what makes rule 4's "retryable" bounded (SPEC-221). Retryable used to mean
 # re-planned on EVERY tick with no backoff and no ceiling, so a row that fails identically
 # every time opened a fresh `--dangerously-skip-permissions` session every hour, forever.
 # This run also REAPS before it plans: a slug whose conductor process died left no journal
@@ -110,7 +110,7 @@ _journal_last_verdict() {
   awk -F'\t' -v s="$slug" '$2==s {v=$3} END{if(v!="") print v}' "$journal"
 }
 
-# ---- the stale-window reaper (SPEC-220) --------------------------------------------------------
+# ---- the stale-window reaper (SPEC-221) --------------------------------------------------------
 # The tick IS the reaper. No daemon: this runs inside the watcher run the operator already invokes,
 # BEFORE any planning, so a slug whose conductor died gets its verdict before it is reconsidered.
 #
@@ -119,7 +119,7 @@ _journal_last_verdict() {
 #   stale (STALE .. DEAD)  the conductor is presumed gone but not confirmed. WARN, write nothing.
 #                          The donor frees a claim here; this kit has no claim registry to free,
 #                          and killing the window at 10 minutes would destroy a run whose conductor
-#                          is merely paused (SPEC-220 DEC-002).
+#                          is merely paused (SPEC-221 DEC-002).
 #   dead  (>= DEAD)        confirmed gone. Write the verdict, schedule the retry, clear the beat.
 _reap_stale_runs() {  # journal
   local journal="$1" rundir beat slug age sig reason verdict stalls
@@ -168,7 +168,7 @@ _reap_stale_runs() {  # journal
 }
 
 # _guard_skip_reason <slug> -- why this slug must not be planned right now, or "" to allow it.
-# The single re-pick gate. Every runaway guard converges here, which is why SPEC-220 DEC-005
+# The single re-pick gate. Every runaway guard converges here, which is why SPEC-221 DEC-005
 # declined a separate transition table: a second copy of these rules could disagree with this one.
 _guard_skip_reason() {  # slug
   local slug="$1" beat retry cooldown now stalls
@@ -222,7 +222,7 @@ cmd_watch() {
   # it at the resolved journal once rather than threading it through every call site.
   QUEUE_JOURNAL="$journal"
 
-  # SPEC-220: reap dead runs BEFORE planning, so a slug whose conductor died gets its verdict in
+  # SPEC-221: reap dead runs BEFORE planning, so a slug whose conductor died gets its verdict in
   # the same tick that reconsiders it. Runs even when the board is missing: the runs that need
   # reaping are already launched, and a repo losing its board must not strand them.
   _reap_stale_runs "$journal"
@@ -275,7 +275,7 @@ cmd_watch() {
         skipped=$((skipped + 1))
         continue ;;
     esac
-    # SPEC-220's re-pick gate: in-flight claim, quarantine, stall backoff, breaker cooldown. Runs
+    # SPEC-221's re-pick gate: in-flight claim, quarantine, stall backoff, breaker cooldown. Runs
     # AFTER the terminal-verdict rule above, so a `done` row is still skipped for the shipped
     # reason rather than for a timer.
     local gr; gr="$(_guard_skip_reason "$slug")"

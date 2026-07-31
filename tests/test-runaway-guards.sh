@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-runaway-guards.sh -- SPEC-220 (board row ID-460), the three runaway guards on the
+# test-runaway-guards.sh -- SPEC-221 (board row ID-460), the three runaway guards on the
 # autonomous run queue.
 #
 # All three are real bash logic, so all three are asserted directly. Nothing here is a prose
@@ -121,7 +121,7 @@ watch() {  # extra args
     --repo-root "$BOARD_REPO" --repo-name fixboard --journal "$JOURNAL" "$@" 2>&1
 }
 
-echo "=== SPEC-220 runaway guards ==="
+echo "=== SPEC-221 runaway guards ==="
 echo
 echo "--- Section A: the stale-window watchdog ---"
 
