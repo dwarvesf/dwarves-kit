@@ -78,7 +78,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 34 commands + 26 agents = **60 entries** (12 build · 3 code · 11 test · 15 gate · 19 cross-phase).
+Total: 34 commands + 27 agents = **61 entries** (12 build · 3 code · 11 test · 15 gate · 20 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -163,6 +163,7 @@ Total: 34 commands + 26 agents = **60 entries** (12 build · 3 code · 11 test �
 | `infra-reviewer` | agent | Code review | gate | Read-only infra-lens reviewer (deploy/rollback safety, CI/CD, container/IaC least-privilege, secrets, idempotent provisioning, blast radius); dispatched by `/kit:review-team` as the infra domain lens (SPEC-111) |
 | `db-migration-worker` | agent | Code (implement) | build | Write-capable schema-migration implementer (up + DOWN/rollback, batched backfill, index changes; guards long locks, no data drop without explicit ask); dispatched by `/kit:execute` 2b-0 as the db-migration domain implementer (SPEC-111) |
 | `data-etl-worker` | agent | Code (implement) | build | Write-capable data-pipeline implementer (ETL, DuckDB SQL transform, idempotent re-runs, schema validation, no silent row drops); dispatched by `/kit:execute` 2b-0 as the data-etl domain implementer (SPEC-111) |
+| `audit-scanner` | agent | Estate audit (Tier 2) | cross-phase | Shared read-only evidence scanner for the audit-loop instances (doc-drift, feature-map skills): receives target set + contract + evidence class, returns per-item verdicts in the audit-loop grammar with quoted evidence; tools roster has no write path, so the propose/apply split holds mechanically in unattended cadence runs (SPEC-220) |
 | `claim-verifier` | agent | Claim verification | cross-phase | Read-only adversarial panel over an ARBITRARY free-text claim: N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed), majority-vote structured verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons); the semantic half of the citation-guard hook; dispatched on a load-bearing assertion (kit-foldin SG-06) |
 
 **Classification notes:**

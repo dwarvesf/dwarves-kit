@@ -156,6 +156,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
                              [H] /kit:kit-health (self-assessment vs PHILOSOPHY, report)
     estate cadence ......... [I] doc-drift (whole-estate doc audit -> fixes on a branch -> PR gate)
                              [I] feature-map (registry vs path-index cross-check -> delta re-place -> PR gate)
+                             both Tier 2 ==> [D] audit-scanner (shared read-only evidence pass)
 
   HARD-STOP RAIL  (the ONLY four blockers; everything else advises, warns, or routes):
   ⚡1 safety-gate ............ destructive Bash (rm -rf, DROP TABLE, git reset --hard); stands over
@@ -346,6 +347,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Learn-side skills (auto-fire [I] unless noted):
  doc-drift ──> whole-estate doc audit ──> fixes on a branch ──> PR gate
  feature-map ──> FEATURES.md vs path-index cross-check ──> delta re-placed ──> PR gate
+   (both dispatch [D] audit-scanner for Tier 2: read-only evidence, skill applies)
  memory-tidy ──> evidence-gated memory audit ──> PR-gated merges/deletions
  skill-review [H] ──> reviews staged skill drafts ──> promote or reject
  loop-engineering ──> gate + anatomy walkthrough for a proposed loop ──> design hand-off
@@ -412,6 +414,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] fix-agent <- execute, dispatch, debug, test-write, ui-design, verify -> scoped fix -> re-verify` |
 | `[D] integration-verifier <- /kit:execute (multi-task), /kit:verify -> wiring check -> review` |
 | `[D] recheck-verifier <- /kit:execute -> fresh-context re-audit of a PASS -> advisory record` |
+| `[D] audit-scanner <- doc-drift, feature-map skills (Tier 2) -> per-item verdicts with quoted evidence -> findings return (read-only)` |
 | `[D] claim-verifier <- any command, ad hoc -> N-skeptic panel -> HOLDS / REFUTED verdict` |
 | `[D] code-reviewer <- review-team, devs-team, visual-team -> focused lens -> findings merged` |
 | `[D] security-reviewer <- /kit:review-team -> OWASP-style audit -> findings merged` |

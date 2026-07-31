@@ -47,12 +47,17 @@ for describing 2026-05 reality is noise, not a finding.
    doc's referent is gone). `bash tests/test-meta.sh` overlaps part of this pass; run it first
    and treat its failures as pre-confirmed findings, do not re-derive them.
 
-4. **Tier 2, judgment pass, model-read, only where it earns its cost.** Dispatch read-only
-   reviewers only for: files Tier 1 flagged (the drift is confirmed, judge how deep it goes),
-   plus the high-traffic operator surfaces (README, QUICKSTART, AGENTS) whose prose describes
-   behavior no grep can check. Per file: does the described flow still match what the command
-   actually does? Quote both sides for any mismatch. Skip Tier 2 entirely for files Tier 1
-   cleared that only carry mechanical claims.
+4. **Tier 2, judgment pass, model-read, only where it earns its cost.** Dispatch the shared
+   read-only scanner `kit:audit-scanner` (preferred: its tools roster physically cannot write,
+   so an unattended cadence run keeps the propose/apply split mechanical; fall back to a
+   general-purpose subagent only where the kit agent roster is unavailable, e.g. a frozen
+   plugin snapshot). Dispatch only for: files Tier 1 flagged (the drift is confirmed, judge
+   how deep it goes), plus the high-traffic operator surfaces (README, QUICKSTART, AGENTS)
+   whose prose describes behavior no grep can check. Hand it the target files, this
+   instance's contract and evidence class (the four-slots table above): does the described
+   flow still match what the command actually does? It quotes both sides for any mismatch
+   and returns findings; every fix is applied HERE, on the branch, never by the scanner.
+   Skip Tier 2 entirely for files Tier 1 cleared that only carry mechanical claims.
 
 5. **Verdict each item** with the audit-loop grammar: OK / FIX / REMOVE / UNSURE / DANGER. A
    verdict with no checkable evidence downgrades to UNSURE. UNSURE items are never auto-fixed;
