@@ -5,6 +5,12 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **`GUIDE.md`, the end-user owner's manual (SPEC-216 / ID-456).** `docs/GUIDE.template.md`
+  is a fill-in skeleton (what this does / how to use it / what to do when it breaks, one
+  page, ELI10 register) for products with an end user who is not the builder. `/kit:ship`
+  gains a warn-not-block check applying that same "has an end user" test; `/kit:docs`'s
+  scan step keeps `GUIDE.md` in scope on doc-drift passes. No renderer, no new command;
+  libraries and infra are exempt by the same test.
 - **`/kit:wayfind`: the file-based decision map (SPEC-207 / ID-450).** User-invoked
   pre-cycle intake shape for efforts too foggy for one session, ported from
   mattpocock/skills wayfinder (MIT) onto files + the board: `_meta/megagoals/<slug>/map.md`
