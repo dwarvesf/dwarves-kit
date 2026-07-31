@@ -49,7 +49,7 @@ Look for:
 - Unclear acceptance criteria (not testable: "should be fast" is not testable, "response under 200ms at p95" is)
 - Missing dependency declarations (Task B clearly depends on Task A's output but doesn't say so)
 - **Autonomy gate (ID-036 / SPEC-084)**: if the spec's behavior runs inside an autonomous loop (`/kit:execute` pipeline, `/goal`), check it does not let the loop make a scope / architecture / risk decision without a human gate; flag any loop-reachable decision point with no stop.
-- **Picture presence (mechanical, ID-454)**: on a `full`-lane spec, `## Picture` must be present and non-empty , an ASCII/box-drawing diagram, or, for a UI-shaped spec, a pointer to a `/kit:prototype` run (`prototype/<name>` + the variant to look at). A missing or empty `## Picture` on a full-lane spec is a finding. Below full lane, presence is encouraged only; do not flag its absence.
+- **Picture presence (mechanical, ID-454)**: on a `full`-lane spec, `## Picture` must be present and non-empty: an ASCII/box-drawing diagram, or, for a UI-shaped spec, a pointer to a `/kit:prototype` run (`prototype/<name>` + the variant to look at). A missing or empty `## Picture` on a full-lane spec is a finding. Below full lane, presence is encouraged only; do not flag its absence.
 - **Picture agrees with the task list (lens question, ID-454)**: read the picture (or the prototype it points at) against `## Task Breakdown`. Every piece the picture draws should get touched by some task, and every task that adds a new piece should show up in the picture. Flag drift either direction.
 
 ### Reviewer 5: Solution-Design & Extensibility Critic

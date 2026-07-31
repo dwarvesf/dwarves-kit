@@ -2,7 +2,7 @@
 Generated: 2026-07-31
 Status: APPROVED
 Lane: normal (touches `commands/spec.md`, `commands/spec-validate.md`, `tests/fixtures`; no
-auth/data/hook/migration risk , same surface class SPEC-122 used for the sibling `## Design`
+auth/data/hook/migration risk; same surface class SPEC-122 used for the sibling `## Design`
 change; `bash lib/classify/lane-classify.sh classify` confirms `normal`).
 References: `tests/test-design-record.sh` + `docs/specs/SPEC-122-design-record.md` implement the
 same shape (a template scaffold + a spec-validate check + a fixture-based structural test) for
@@ -11,7 +11,7 @@ same shape (a template scaffold + a spec-validate check + a fixture-based struct
 ## Problem
 
 `docs/briefs/DECISION-BRIEF-factory-legibility.md` §2 (ID-454): a spec that carries a picture
-(a diagram or a prototype) builds better than one that carries prose alone , the factory's
+(a diagram or a prototype) builds better than one that carries prose alone: the factory's
 "draw the plan before it costs a night" instinct. The kit already has a post-build visual-proof
 MUST (ID-395, queued): a behavioral change owes a screenshot/GIF a reviewer can look at. It has
 no pre-build twin: nothing asks a spec to show the shape of the change before anyone builds it.
@@ -32,7 +32,7 @@ glance.
    blocking reviewer was not asked for by ID-454, and an advisory 7th reviewer would duplicate
    Reviewer 4's existing "does the spec's claims match its task list" territory for no benefit.
 3. **A `lib/` script that parses a spec file and flags a missing `## Picture`.** Rejected:
-   `/kit:spec-validate` has no mechanical scripts today , Reviewer 6's own comment names this
+   `/kit:spec-validate` has no mechanical scripts today; Reviewer 6's own comment names this
    plainly ("prompt text, not code"); its structural contract is instead proven by a bash test
    harness (`tests/test-design-record.sh`) that reproduces the check as a pure function over
    fixtures. Adding a live-running script for Picture but not for Design would be an
@@ -43,7 +43,7 @@ glance.
 Approach 1, with Reviewer 4 as the check's home and the test-harness pattern (not a new
 script) for its structural proof. Matches SPEC-122's precedent byte-for-byte in shape, differs
 only in where the content lives (Reviewer 4 vs a new Reviewer 6-style block) because Picture is
-advisory everywhere except the full-lane presence bar, never blocking , ID-454's row does not
+advisory everywhere except the full-lane presence bar, never blocking; ID-454's row does not
 ask for a second reviewer that can refuse `VALIDATED`.
 
 ### Extensibility & boundaries
@@ -87,7 +87,7 @@ Same as `## Solution` above (approach 1: scaffold + an existing reviewer, test-h
 Not re-litigated here.
 
 ### Diagram
-See `## Picture` above , the diagram there already shows this spec's own control flow (template
+See `## Picture` above: the diagram there already shows this spec's own control flow (template
 -> real spec -> reviewer -> test), so it is not repeated in a second form here.
 
 ### ADR link(s)
@@ -97,7 +97,7 @@ beyond what the decision brief already records.
 ### Boundaries & failure modes
 Same blast radius as SPEC-122 (the two command files + tests/fixtures), not data or an external
 integration, so a full failure-modes table is not owed. One boundary worth naming: Reviewer 4's
-Picture bullets are advisory, same as its other findings , they never block `VALIDATED`. Only
+Picture bullets are advisory, same as its other findings; they never block `VALIDATED`. Only
 Reviewer 6 (`## Design`) keeps that power (ADR-0031 §1, unchanged by this spec).
 
 ## Technical Design
@@ -127,7 +127,7 @@ None.
 
 ### Phase 1: Foundation
 - [ ] TASK-001: Add `## Picture` to the spec template in `commands/spec.md`, between
-  `## Solution` and `## Design` , mandatory non-empty for full-lane, encouraged for lighter
+  `## Solution` and `## Design`, mandatory non-empty for full-lane, encouraged for lighter
   lanes, ASCII/box-drawing only (never mermaid), with the `/kit:prototype` pointer alternative
   for UI-shaped specs., heading present at the right position; the comment states the
   full-lane bar, the ASCII-only rule, and the prototype-pointer alternative.
@@ -179,7 +179,7 @@ bash tests/test-picture-section.sh
 
 **COVERAGE-DELTA:** rows 1-4 exercise the actual presence-check decision (real spec text in,
 verdict out) via the same lightweight harness `tests/test-design-record.sh` uses, since
-`/kit:spec-validate` is a prompt, not executable code , the honest boundary is the STRUCTURAL
+`/kit:spec-validate` is a prompt, not executable code; the honest boundary is the STRUCTURAL
 contract (the section exists, is non-empty, or points at a prototype), not the reviewer's live
 LLM judgment on whether the picture actually agrees with the task list (same limitation
 SPEC-122 already accepted for Reviewer 6).
@@ -189,15 +189,15 @@ SPEC-122 already accepted for Reviewer 6).
    section the same as an empty one on a full-lane spec (a finding); a non-full-lane legacy
    spec is not penalized for its absence (mirrors Reviewer 5/6's legacy-grace clauses).
 2. A UI-shaped full-lane spec runs `/kit:prototype` but never folds the branch pointer back into
-   `## Picture`. Presence check still flags it , the pointer is what the mechanical check
+   `## Picture`. Presence check still flags it; the pointer is what the mechanical check
    accepts as "non-empty"; a `/kit:prototype` run that never gets recorded in the spec is
    indistinguishable from one that never happened.
 
 ## Out of Scope
-- A `WORKFLOW.md` Lane×phase depth-matrix row for Picture , ID-454's row asks for the template
+- A `WORKFLOW.md` Lane×phase depth-matrix row for Picture: ID-454's row asks for the template
   section, the presence check, and the lens question only; a matrix row is a separate, later
   call if Picture earns its own ceremony tier.
-- Auto-generating the ASCII diagram from the task list, or any other authoring aid , the
+- Auto-generating the ASCII diagram from the task list, or any other authoring aid: the
   section is authored by hand, same as `## Design`'s diagram.
 - Any change to `## Design` or Reviewer 6; they are read here only as the precedent this spec
   reuses.
