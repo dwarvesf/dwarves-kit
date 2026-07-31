@@ -141,7 +141,7 @@ The two paths no longer collide. If the plugin is already installed, `install.sh
 
 ## Your first cycle
 
-After install, open a Claude Code session in your project and run one full lap. A tiny change is the best first try:
+After install, open a Claude Code session in your project and run one full lap. A tiny change is the best first try. Told as a story: an interview turns your ask into a blueprint, a crew builds it, and an inspector won't let it leave without a stamp; the full workshop tour is one page, `/kit:onboard` or [`docs/glossary.md`](docs/glossary.md).
 
 1. `/kit:start` orients you and suggests the next step.
 2. `/kit:think` and describe the change (e.g. "add a `--version` flag to the CLI"). It throws 6 forcing questions at the idea; answer them.
