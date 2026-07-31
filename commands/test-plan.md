@@ -10,6 +10,14 @@ This is NOT a roundtable and has NO personas. Test planning derives from FIXED a
 
 Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.
 
+### Step 0: No active spec, feature already live
+
+If Step 1 finds no spec with acceptance criteria, and the feature under test already exists (no build planned), don't send the user to `/kit:spec` -- that command wants a feature idea to build, not a description of what already shipped. Instead:
+
+1. Dispatch `kit:research-features` on the target area with a one-line charter (what you're hunting for, per `docs/impl-playbook/exploratory-testing.md`'s SBTM discipline, personal-scale: 15-30 min, no formal report).
+2. From its findings, write a minimal `docs/specs/SPEC-NNN-<slug>.md`: `Status: DRAFT (reverse-engineered)`, and an `## Acceptance Criteria` section describing the feature's ACTUAL observed behavior, checkbox per behavior. No other spec sections -- nothing is being planned here. If `kit:research-features` finds nothing observable, say so and do not write a stub with fabricated criteria.
+3. Continue to Step 1 against this stub, unchanged.
+
 ### Step 1: Find the active spec
 
 Detect the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware). If several specs match, ask the user which one. `/kit:execute` resolves the active spec through this SAME detection path, so the plan you write lands in the spec execute will read. Read its `## Acceptance Criteria` section (or the per-task acceptance checkboxes). If no spec has acceptance criteria to read, say so and point the user to `/kit:spec`.

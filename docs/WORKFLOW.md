@@ -1042,7 +1042,7 @@ operator detail read `MANUAL.md`; for component fit and the SDLC state machine r
 the cycle, V-model, and type loops) lives at [`docs/workflow-map.md`](workflow-map.md).
 
 At a glance: **1** backbone (the spine, above), **5** primary intake lanes (the lane
-table, above), **3** bounded loops (the engines, below), **8** opt-in side-flows,
+table, above), **3** bounded loops (the engines, below), **10** opt-in side-flows,
 **7** alternate/branch flows, and **4** hard stops (the only blockers). Everything
 except the four hard stops **suggests and routes; it does not block**.
 
@@ -1205,7 +1205,7 @@ above; this only draws the loop.
    /kit:next  ──▶  BUILDING (resume; runs only the amended tasks)
 ```
 
-### Opt-in side-flows (8)
+### Opt-in side-flows (10)
 
 Advisory, never blocking. They enrich a lane but are not required by any. All write
 **into the active spec** when the output binds to a spec (replace-not-stack), so a
@@ -1218,9 +1218,11 @@ later reader and an earlier writer never split across two specs.
 | 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
 | 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |
 | 5 | `/kit:test-plan` | before `/execute`; derive a coverage matrix | `## Test plan` in the spec (consumed by `/execute`) | matrix written |
-| 6 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel; confidence anchors + fingerprint dedup + per-finding validators (SPEC-081/082) | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP, unsuppressed findings drive it |
-| 7 | `/kit:absorb` | maintainer-only external-absorption audit | dated report under `docs/absorption/` | proposal-only report (human merge gate) |
-| 8 | `/kit:kit-health` | maintainer self-assessment vs PHILOSOPHY, before tagging | report (stdout) | assessment rendered |
+| 6 | `/kit:test-plan-review-team` | after `/test-plan`; 6 test-design lenses + bounded revise loop (max 3 rounds; findings must strictly fall, by severity not just raw count, or halt honestly) | `## Test plan critique` in the spec (replace-not-stack) | SOLID / REVISE / RECONSIDER verdict recorded; loop exits early at 0 findings |
+| 7 | `/kit:test-write` | after a SOLID `## Test plan critique`; materialize the matrix into test code via `kit:test-writer` (refuses missing/stale/non-SOLID verdicts) | real test files in the repo's own convention | every row covered or reported skipped; written tests execute (assertions passing is `fix-agent`'s job) |
+| 8 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel; confidence anchors + fingerprint dedup + per-finding validators (SPEC-081/082) | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP, unsuppressed findings drive it |
+| 9 | `/kit:absorb` | maintainer-only external-absorption audit | dated report under `docs/absorption/` | proposal-only report (human merge gate) |
+| 10 | `/kit:kit-health` | maintainer self-assessment vs PHILOSOPHY, before tagging | report (stdout) | assessment rendered |
 
 ### Alternate / branch flows (7)
 

@@ -36,7 +36,7 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 | Shape | `/kit:grill`, `/kit:think`, `/kit:design`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`, `/kit:assign`, `/kit:spec`, `/kit:spec-validate`, `/kit:test-plan` |
 | Build | `/kit:execute`, `/kit:next`, `/kit:dispatch`, `/kit:mega`, `/kit:debug` |
 | Watch | `/kit:explain`, `/kit:pitch` (render the record outward; the read plane itself is the `stats` skill + `session` CLI, not a command) |
-| Check | `/kit:review`, `/kit:review-team`, `/kit:test-plan-review-team`, `/kit:verify`, `/kit:quiz-gate`, `/kit:ship` |
+| Check | `/kit:review`, `/kit:review-team`, `/kit:test-plan-review-team`, `/kit:test-write`, `/kit:verify`, `/kit:quiz-gate`, `/kit:ship` |
 | Learn | `/kit:retro`, `/kit:docs`, `/kit:absorb` |
 | (meta) | `/kit:kit-health`, `/kit:draft-agent` |
 
@@ -95,6 +95,10 @@ Opt-in downstream UI-design loop (downstream-facing; the kit has no UI, so it ca
 ### `/kit:test-plan`
 
 Opt-in lane between `/kit:spec-validate` and `/kit:execute`. Reads the active spec's acceptance criteria and writes a `## Test plan` coverage matrix (with a `proof` column naming the command/artifact per case) into the active spec, across happy-path / boundary / failure-injection / security / regression. `/kit:execute` reads that section as its coverage target and uses each case's `proof` as the per-step verify. A coverage target, not exhaustive; not a roundtable.
+
+### `/kit:test-write`
+
+Materializes a reviewed test plan into real test code, after `/kit:test-plan-review-team` records a SOLID `## Test plan critique`. Dispatches the `test-writer` agent per matrix row, in the repo's existing test framework and conventions. Refuses to run on a missing, stale, or non-SOLID critique. Done means every row is covered or reported skipped, and the written tests execute; making assertions pass is `fix-agent`'s job in the build, not this command's.
 
 ### `/kit:assign`
 
@@ -333,6 +337,7 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 | `db-migration-worker` | `/execute` 2b-0 | Write-capable schema-migration implementer; writes up + DOWN/rollback + batched backfill + index changes, guards long locks, never drops data without an explicit ask |
 | `data-etl-worker` | `/execute` 2b-0 | Write-capable data-pipeline implementer; extract/transform/load, DuckDB SQL for the transform, idempotent re-runs, schema validation, no silent row drops |
 | `claim-verifier` | dispatched on a load-bearing free-text claim | Read-only adversarial panel: runs N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed) over an ARBITRARY claim and returns a structured majority-vote verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons) |
+| `test-writer` | `/kit:test-write` | Write-capable: turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing test framework; scope-locked to test files, frozen-evaluator on the spec's AC/Verification |
 
 ## Path-scoped rules
 
