@@ -1,4 +1,4 @@
-# SPEC-217: self-answer mode + the backlog watcher (manager-loop pilot)
+# SPEC-217: self-answer mode + the backlog watcher (orchestrator-loop pilot)
 
 Status: Draft · 2026-07-31 · Owner: Han
 Lane: full (classifier said `normal`; taken heavier because the watcher feeds an

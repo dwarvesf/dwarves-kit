@@ -5,7 +5,7 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
-- **Self-answer mode + the backlog watcher, the manager-loop pilot (SPEC-217 / ID-457).**
+- **Self-answer mode + the backlog watcher, the orchestrator-loop pilot (SPEC-217 / ID-457).**
   `/kit:grill` gains an explicit self-answer mode for autonomous runs: it activates only when
   the driving row carries the operator-set `#auto` tag, and every self-answered question lands
   as a debt-ledger row (question, answer, why) that `learn debt collect` surfaces at paydown;
