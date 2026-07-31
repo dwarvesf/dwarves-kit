@@ -2952,7 +2952,14 @@ REG_TMP=$(mktemp)
 bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP" 2>/dev/null
 diff -q "$REG_TMP" "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
 assert_true "docs/FEATURES.md is fresh (regenerate == committed, SPEC-217)" $?
-rm -f "$REG_TMP"
+# AC-1 determinism pin (review finding): a second run must be byte-identical, so a
+# future edit that reintroduces nondeterminism (locale, glob order, a timestamp)
+# fails HERE even when the committed file was regenerated in the same PR.
+REG_TMP2=$(mktemp)
+bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP2" 2>/dev/null
+cmp -s "$REG_TMP" "$REG_TMP2"
+assert_true "feature-registry generator is deterministic (double run byte-identical, SPEC-217)" $?
+rm -f "$REG_TMP" "$REG_TMP2"
 
 echo ""
 echo "=== Results ==="

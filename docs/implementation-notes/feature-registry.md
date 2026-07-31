@@ -23,3 +23,7 @@ Context: token-grep refs for hub commands (`/kit:spec` hits 130+ specs) would pr
 Decision: show first 3 (sorted) + `+N`; `-` for none. Generation runs one grep per feature per corpus (~19s total); the test-meta pin pays this once per suite run.
 Why: registry is an index, not the record; determinism is preserved (sorted before capping).
 Alternatives: full lists (unreadable), counts only (loses the entry point). A single-pass indexer would cut the 19s but is not worth the complexity yet.
+
+## 2026-07-31 review round applied (reflect)
+
+Two lenses (security, architecture+coverage) per SPEC-069. Security: PASS, one LOW (predictable temp name) fixed with an EXIT trap. Architecture: 8/10, MEDIUM (determinism only proven manually) fixed with a second-run cmp pin in test-meta; two LOWs deliberately not taken: the architecture.md subsystems-table omission is pre-existing drift across ~11 lib dirs (a doc-drift finding, not this PR's debt), and nullglob hardening guards a directory state this repo cannot reach. Reflect: the kit's own machinery held up; main friction was the full lane's 12-gate checklist for a change whose design arrived pre-approved, resolved with honest ledger overrides rather than ceremony re-runs.
