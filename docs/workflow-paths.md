@@ -155,6 +155,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
     maintainer offshoot .... [H] /kit:absorb (Credits drift + seed rescan, proposal-only)
                              [H] /kit:kit-health (self-assessment vs PHILOSOPHY, report)
     estate cadence ......... [I] doc-drift (whole-estate doc audit -> fixes on a branch -> PR gate)
+                             [I] feature-map (registry vs path-index cross-check -> delta re-place -> PR gate)
 
   HARD-STOP RAIL  (the ONLY four blockers; everything else advises, warns, or routes):
   ⚡1 safety-gate ............ destructive Bash (rm -rf, DROP TABLE, git reset --hard); stands over
@@ -344,6 +345,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
 
  Learn-side skills (auto-fire [I] unless noted):
  doc-drift ──> whole-estate doc audit ──> fixes on a branch ──> PR gate
+ feature-map ──> FEATURES.md vs path-index cross-check ──> delta re-placed ──> PR gate
  memory-tidy ──> evidence-gated memory audit ──> PR-gated merges/deletions
  skill-review [H] ──> reviews staged skill drafts ──> promote or reject
  loop-engineering ──> gate + anatomy walkthrough for a proposed loop ──> design hand-off
@@ -429,6 +431,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | Path |
 |---|
 | `[I] doc-drift -> whole-estate doc audit -> fixes on a branch -> PR gate (terminal: merged PR)` |
+| `[I] feature-map -> registry freshness gate -> FEATURES.md vs path index both directions -> delta re-placed on topology -> PR gate` |
 | `[I] get-api-docs -> fetch curated API docs -> grounded coding (terminal: context injected)` |
 | `[I] loop-engineering -> gate + anatomy walkthrough -> design handed to the loop builder` |
 | `[I] memory-tidy -> evidence-gated memory audit -> PR-gated merges/deletions` |

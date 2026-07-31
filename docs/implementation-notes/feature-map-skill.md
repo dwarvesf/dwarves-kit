@@ -20,3 +20,7 @@ Why: exactly the drift class the pin exists for; the skill's refusal rule got it
 Context: the first cross-check draft used `|` as the sed delimiter with `\|` in the pattern; BSD sed cannot escape the delimiter, so extraction silently passed whole lines through. A second silent failure: zsh noclobber kept stale temp files across the retry.
 Decision: the skill's recipes use `/` delimiters with `\/` escapes, and the body carries a one-line warning.
 Why: the recipe is the skill's load-bearing artifact; shipping the trap that bit its own author would ship a broken loop.
+
+## 2026-07-31 review round + reflect
+
+Single architecture/consistency lens (7/10), one HIGH taken: the skill itself shipped registered in FEATURES.md but not in the path index, so its own Tier 1 flagged feature-map as the delta. Fixed by adding the three workflow-paths.md lines and re-running (8/8 skills parity); the proof records both states. Nothing else taken (renumber, trap fix, registrations all passed). Reflect: the audit loop caught its own author twice in one day (concurrent-merge staleness at branch start, self-registration gap at review), which is the strongest evidence the loop earns its place; the recurring friction is that hand-derived index files punish every feature addition until Tier 2 automation exists.
