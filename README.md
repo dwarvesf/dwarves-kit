@@ -217,7 +217,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (24, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (25, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
@@ -243,6 +243,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
 | notification | Notification | Desktop alert when Claude needs input |
 | permission-auto-approve | PermissionRequest | Auto-approves read-only operations (pipe-safe) |
+| tool-policy-guard | PreToolUse | Enforces the tool-choice policy file (allow/ask/deny per tool domain; the enforcement half of the dashboard's tool-policy page) |
 | statusline | StatusLine | Shows model, branch, context %, cost, thinking mode |
 | codebase-index | SessionStart (opt-in) | Background-indexes the repo into codebase-memory-mcp |
 
@@ -292,7 +293,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (4, Claude-triggered)</summary>
+<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (6, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -325,7 +326,9 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | Skill | What it does |
 |-------|-------------|
 | get-api-docs | Fetches curated API docs via Context Hub before coding |
+| loop-engineering | Designs a new bounded loop for the kit's orchestration: the gate (should this be a loop), then the anatomy (artifact / scanner / reviser / stop condition) on the generic bounded-revise engine |
 | memory-tidy | Audits a repo's `.claude/memory` store: evidence-gated verdicts, PR-gated merges/deletions, index rebuild (judgment half of `stats memory-sweep`) |
+| observe | Queries/renders the control plane (runs, gate verdicts, conformance, spend/cache economics, replay, dashboard) via the lib/bench CLIs |
 | skill-review | Reviews + promotes skill drafts staged by skill-curator |
 | stats | Queries/renders the ledger read plane (relocated from `lib/stats/skill/` per ADR-0034 so it actually installs) |
 
@@ -362,7 +365,7 @@ dwarves-kit/
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`queue`/`session`/`spec`/`stats` thin forwarders to `lib/<subsystem>/`, plus the two module CLIs (`prose-rag`, `worktree-provision`) that keep their module names. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       (25 files) Subagents dispatched by commands
   commands/                     (33 markdown command prompts)
-  hooks/                        (24 scripts + hooks.json plugin manifest)
+  hooks/                        (25 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
   lib/goal/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)
