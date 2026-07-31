@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# feature-registry.sh -- deterministic feature-inventory generator (SPEC-217).
+# feature-registry.sh -- deterministic feature-inventory generator (SPEC-219).
 #
 # Scans the four live feature kinds (commands/*.md, agents/*.md, skills/*/SKILL.md,
 # hooks/*.sh) and emits docs/FEATURES.md as a GENERATED projection: one table per

@@ -15,13 +15,13 @@ Lane: full
 | # | Phase | When (ISO8601) | State | Reason | Caught | Duration (s) |
 |---|---|---|---|---|---|---|
 | 1 | grill | 2026-07-31T15:58:35Z | skipped | reason=operator-wave: design fixed verbatim in the operator-approved dispatch prompt | n/a | n/a |
-| 2 | spec | 2026-07-31T15:59:06Z | ran | SPEC-217 written | n/a | n/a |
+| 2 | spec | 2026-07-31T15:59:06Z | ran | SPEC-219 written | n/a | n/a |
 | 3 | think | 2026-07-31T15:59:06Z | override | operator-approved design arrived fixed in the dispatch prompt; think/design happened in the operator conversation | n/a | n/a |
 | 4 | design | 2026-07-31T15:59:06Z | override | same: design fixed verbatim by operator pre-approval | n/a | n/a |
 | 5 | design-critique | 2026-07-31T15:59:06Z | override | operator pre-approved; no critique round budgeted for a read-only generator | n/a | n/a |
-| 6 | design-record | 2026-07-31T15:59:06Z | override | design decisions recorded in SPEC-217 header block instead of a separate record | n/a | n/a |
+| 6 | design-record | 2026-07-31T15:59:06Z | override | design decisions recorded in SPEC-219 header block instead of a separate record | n/a | n/a |
 | 7 | validate | 2026-07-31T15:59:06Z | override | spec transcribes an operator-fixed design; adversarial validate waived by operator pre-approval | n/a | n/a |
-| 8 | test-plan | 2026-07-31T15:59:06Z | ran | 7-row plan in SPEC-217 | n/a | n/a |
+| 8 | test-plan | 2026-07-31T15:59:06Z | ran | 7-row plan in SPEC-219 | n/a | n/a |
 | 9 | build | 2026-07-31T16:05:17Z | ran | generator + FEATURES.md + pin, 733/733 green | n/a | n/a |
 | 10 | review | 2026-07-31T16:11:55Z | ran | 2 lenses (security PASS 1 LOW fixed; architecture 8/10 MEDIUM fixed) | n/a | n/a |
 | 11 | docs | 2026-07-31T16:11:55Z | ran | FEATURES.md generated; delta log + proof shipped; no living-doc claims changed | n/a | n/a |
