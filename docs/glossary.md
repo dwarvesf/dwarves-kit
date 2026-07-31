@@ -69,6 +69,20 @@ one release where it was a config key or command):
 | verif-counts | verify-counts |
 | SDD (first use) | spec-driven development (SDD) |
 
+## The workshop story names (onboarding narrative)
+
+The README quickstart, `/kit:onboard`, and the MANUAL opening tell the loop as one story: an
+interview, a night shift, a logbook, an inspector, and a debrief. These are prose only, never
+command or file names; the code keeps calling the stages Shape/Build/Watch/Check/Learn.
+
+| Story name | Real name |
+|---|---|
+| The interview | Shape |
+| The night shift | Build |
+| The logbook | Watch |
+| The inspector | Check |
+| The debrief | Learn |
+
 ## Why the big five are not renamed here
 
 `gate` (~1016 files), `ledger` (~780), `lane` (~647), `mega` (~532), and

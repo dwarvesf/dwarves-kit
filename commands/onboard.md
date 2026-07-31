@@ -214,3 +214,22 @@ command to run first."** End the run there.
 - Write anything without a preview + an explicit yes. A decline changes nothing.
 - Auto-fix the `both` double-hooks hazard, or edit the user's shell profile. Disclose and point.
 - Turn INSTALL-STAMP staleness into a flow. It is one line and a `/kit:kit-health` pointer.
+
+## Optional: tell it as the workshop story
+
+If the user seems newer, or asks why the stage names are what they are, you may retell the
+closing five-sentence tour of the loop using the story below instead of the plain version. Same
+five stages, same one sentence each, just voiced as a role plus what it hands you. Never use
+these story names as command or file names; they are prose only, and the code still calls the
+stages Shape/Build/Watch/Check/Learn. Full mapping: `docs/glossary.md`.
+
+1. **The interview** (Shape) -- you describe what you want; the interview hands you back a
+   blueprint, the written spec.
+2. **The night shift** (Build) -- the crew builds against that blueprint while you are not
+   watching every line: worker, then verifier, then a bounded retry.
+3. **The logbook** (Watch) -- every run leaves an entry in the logbook, so what happened is
+   never just someone's memory of it.
+4. **The inspector** (Check) -- walks every doorway; a job with no stamp does not leave the
+   shop.
+5. **The debrief** (Learn) -- writes up what the run taught, and the lesson goes back on the
+   board as the next job.
