@@ -17,10 +17,19 @@
 #      charset, repo self-consistency, containment, and existence all check out)
 #   4. its slug's LAST queue-journal verdict is not terminal (`done` or `gated`)
 #
+#   5. no runaway guard is holding it back (SPEC-221: no live heartbeat, not quarantined,
+#      past its stall backoff, past its breaker cooldown)
+#
 # Rule 4 is the idempotency rule and it deliberately differs from `queue run`'s own
 # `done`-only skip: gated-final merge is the DEFAULT posture, so `gated` is the COMMON
 # terminal state, and a done-only rule would re-plan every gated row on every run forever
 # (SPEC-217 DEC-002). `error`/`stalled`/`skipped` stay re-planned: those are retryable.
+#
+# Rule 5 is what makes rule 4's "retryable" bounded (SPEC-221). Retryable used to mean
+# re-planned on EVERY tick with no backoff and no ceiling, so a row that fails identically
+# every time opened a fresh `--dangerously-skip-permissions` session every hour, forever.
+# This run also REAPS before it plans: a slug whose conductor process died left no journal
+# row at all, and `_reap_stale_runs` writes one so the row stops looking un-run.
 #
 # Usage:
 #   watch-board.sh [--apply] [--max N] [--board <path>] [--repo-root <path>]
@@ -101,6 +110,93 @@ _journal_last_verdict() {
   awk -F'\t' -v s="$slug" '$2==s {v=$3} END{if(v!="") print v}' "$journal"
 }
 
+# ---- the stale-window reaper (SPEC-221) --------------------------------------------------------
+# The tick IS the reaper. No daemon: this runs inside the watcher run the operator already invokes,
+# BEFORE any planning, so a slug whose conductor died gets its verdict before it is reconsidered.
+#
+# Three ages, one beat file:
+#   fresh (< STALE)        a conductor is alive and driving this slug. Leave it entirely alone.
+#   stale (STALE .. DEAD)  the conductor is presumed gone but not confirmed. WARN, write nothing.
+#                          The donor frees a claim here; this kit has no claim registry to free,
+#                          and killing the window at 10 minutes would destroy a run whose conductor
+#                          is merely paused (SPEC-221 DEC-002).
+#   dead  (>= DEAD)        confirmed gone. Write the verdict, schedule the retry, clear the beat.
+_reap_stale_runs() {  # journal
+  local journal="$1" rundir beat slug age sig reason verdict stalls
+  rundir="$(_run_dir)"
+  [ -d "$rundir" ] || return 0
+  for beat in "$rundir"/*.beat; do
+    [ -f "$beat" ] || continue
+    slug="$(basename "$beat" .beat)"
+    age="$(_age "$beat")" || continue
+
+    if [ "$age" -lt "$QUEUE_BEAT_STALE_SECS" ]; then
+      continue
+    fi
+    if [ "$age" -lt "$QUEUE_BEAT_DEAD_SECS" ]; then
+      _warn "[watch] orphan: $slug has no conductor heartbeat for ${age}s (not yet dead at ${QUEUE_BEAT_DEAD_SECS}s); not planning it."
+      continue
+    fi
+
+    # Honor a finished run. A run can write its explicit completion and THEN lose its conductor;
+    # relabelling that `stalled` would throw away real, finished work.
+    sig="$(_exit_signal "$slug")"
+    reason=""
+    if [ "$sig" = true ]; then
+      reason="$(_status_get "$slug" REASON)"
+      if [ -n "$reason" ]; then verdict="gated"; else verdict="done"; fi
+      _guard_clear "$slug"
+    else
+      verdict=stalled
+      reason="conductor heartbeat dead for ${age}s"
+      # The stall ladder ALWAYS climbs here. The reaper does not know which repo this slug ran
+      # against, so it can never obtain `verified` evidence, and a self-report is not allowed to
+      # clear the ladder (security review, HIGH): a run that writes `FILES_CHANGED: 1` on every
+      # attempt would otherwise be permanently exempt from quarantine, which is the one promise
+      # this guard exists to keep.
+      stalls=$(( $(_guard_num "$slug" stalls) + 1 ))
+      _guard_set "$slug" stalls "$stalls"
+      _schedule_retry "$slug" "$stalls"
+      [ "$stalls" -ge "$QUEUE_MAX_STALLS" ] && reason="$reason; quarantined after $stalls stalls"
+    fi
+
+    _journal_append "$slug" "$verdict" "$reason"
+    _mux_kill "$slug"          # the orphan window, if tmux still holds one
+    _beat_clear "$slug"
+    _say "[watch] reaped $slug: $verdict ($reason)"
+  done
+}
+
+# _guard_skip_reason <slug> -- why this slug must not be planned right now, or "" to allow it.
+# The single re-pick gate. Every runaway guard converges here, which is why SPEC-221 DEC-005
+# declined a separate transition table: a second copy of these rules could disagree with this one.
+_guard_skip_reason() {  # slug
+  local slug="$1" beat retry cooldown now stalls
+  now=$(date +%s)
+
+  # An in-flight claim. Presence, not age: the reaper above already converted every dead beat, so
+  # a beat still here means a conductor that is alive or only recently silent. Either way a second
+  # window for the same slug is the thing to prevent.
+  beat=$(_run_file "$slug" beat 2>/dev/null) || { printf 'slug is not a legal identifier'; return; }
+  if [ -f "$beat" ]; then printf 'a run is in flight (heartbeat present)'; return; fi
+
+  stalls=$(_guard_num "$slug" stalls)
+  retry=$(_guard_get "$slug" retry_after)
+  if [ "$stalls" -ge "$QUEUE_MAX_STALLS" ] && [ -z "$retry" ]; then
+    printf 'quarantined after %s stalls (clear %s to re-enable)' "$stalls" "$(_run_dir)/$slug.guard"
+    return
+  fi
+  case "$retry" in
+    ''|*[!0-9]*) ;;
+    *) [ "$now" -lt "$retry" ] && { printf 'backing off until %s' "$retry"; return; } ;;
+  esac
+  cooldown=$(_guard_get "$slug" cooldown_until)
+  case "$cooldown" in
+    ''|*[!0-9]*) ;;
+    *) [ "$now" -lt "$cooldown" ] && { printf 'breaker cooldown until %s' "$cooldown"; return; } ;;
+  esac
+}
+
 cmd_watch() {
   local apply=0 max=1 board="" repo_root="" repo_name="" journal=""
   while [ $# -gt 0 ]; do
@@ -122,6 +218,14 @@ cmd_watch() {
   # QUEUE_JOURNAL is queue.sh's own resolved value (sourced above), so an operator who moved the
   # journal moves this watcher's dedup with it instead of silently splitting the two.
   [ -n "$journal" ]   || journal="$QUEUE_JOURNAL"
+  # queue.sh's helpers (_journal_append, _reap_stale_runs) all write through the GLOBAL, so point
+  # it at the resolved journal once rather than threading it through every call site.
+  QUEUE_JOURNAL="$journal"
+
+  # SPEC-221: reap dead runs BEFORE planning, so a slug whose conductor died gets its verdict in
+  # the same tick that reconsiders it. Runs even when the board is missing: the runs that need
+  # reaping are already launched, and a repo losing its board must not strand them.
+  _reap_stale_runs "$journal"
 
   if [ ! -f "$board" ]; then
     _warn "watch-board: no board at $board (nothing to watch)"
@@ -171,6 +275,15 @@ cmd_watch() {
         skipped=$((skipped + 1))
         continue ;;
     esac
+    # SPEC-221's re-pick gate: in-flight claim, quarantine, stall backoff, breaker cooldown. Runs
+    # AFTER the terminal-verdict rule above, so a `done` row is still skipped for the shipped
+    # reason rather than for a timer.
+    local gr; gr="$(_guard_skip_reason "$slug")"
+    if [ -n "$gr" ]; then
+      _say "[watch] skip $id: $gr (slug $slug)"
+      skipped=$((skipped + 1))
+      continue
+    fi
     printf '%s\t%s\t%s\n' "$slug" "$repo" "$pointer" >> "$plan_file"
     _say "[watch] $id -> ${pointer#"$repo"/} (slug $slug)"
     planned=$((planned + 1))
