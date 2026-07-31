@@ -22,11 +22,156 @@ Enforcement marks: `HARD` = blocking (exit 2 or pipeline gate); `adv` = advisory
 
 Stage grouping (Shape / Build / Watch / Check / Learn) follows the README's five stages. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
 
-## 2 · Topology
+## 2 · Flow topology (the one big picture)
 
-Bird's-eye view: who connects to whom. The per-stage diagrams below show sequence; this shows the standing wiring between the four feature kinds and the stores that carry state between commands. Every edge class here is derived from the path index (section 4): `[H]`/`[I]`/`[E]` are the only ways in, `[D]` is the only command-to-agent edge, and every automated write lands in a store or staging file, never directly on the board.
+Every workflow, lane, loop, side-flow, and alternate path in one connected picture: the spine, the 5 intake lanes, the 3 bounded engines plus the amend micro-loop, the side-flows at their real attach points, the type-loop intake rail, the 7 alternate flows as `alt:` branch notes, and the 4 hard stops as the bottom rail. Where the picture simplifies, it names the section that carries the detail (the per-stage maps in section 4; the flow census in [`workflow-map.md`](workflow-map.md)); [`WORKFLOW.md`](WORKFLOW.md) stays canonical and wins on any disagreement.
 
-### 2.1 · Actors and clusters
+```
+ LEGEND   ->  forward flow      ==>  loop-back / re-entry      alt:  an alternate flow fires here
+ [H] human-typed  [I] intent-read  [E] event-fired  [D] dispatched   (trigger classes per section 1)
+ ⚡1..⚡4  a hard stop can fire at this point; the four stops are the HARD-STOP RAIL at the bottom
+
+                 [E] session start ........ hooks inject context (Watch, section 4.4)
+                          |
+                          v
+                 [H] /kit:start ........... read-only board render; recommends, never executes
+                          |
+                          v
+                 [H/I] /kit:assign ........ goal draft + scope fence + lane pick (the ONLY mutator)
+                          |    alt: idempotent re-run -> re-surface the draft, never duplicate
+                          |    alt: no activator present -> the draft stays a plain reusable file
+                          |    too foggy -> [H] /kit:wayfind: map + tickets -> spec / ROADMAP
+                          v
+                 type classification ---- non-code type? ---> TYPE-LOOP INTAKE RAIL
+                          |                                   one right-sized loop per type, names
+                          | code (spec-feature)               only (shapes: workflow-map.md sec 5):
+                          v                                     research | review | eval | doc
+                 pick a lane                                    migration | data-tool | incident
+                 (in doubt -> heavier)                          reconcile | operate | planning
+                          |                                     learning
+     +---------------+----+-----------+--------------------+----------------------+
+     |               |                |                    |                      |
+     v               v                v                    v                      v
+  tiny lane      backfill lane     bug lane           normal lane             full lane
+  one obvious    brownfield:          |               one bounded             risk-list match
+  edit ->        review code ->       |               change                  (auth, data model,
+  run-lite       write operate-       |                    |                  migration, ...)
+  review ->      layer docs ONLY      |                    +----------+-----------+
+  done           (no app-code         |                               |
+                 edits) -> done       v                               v
+                              DEBUG LOOP (just below)        GOAL LOOP wrapper (below)
+
+ +- DEBUG LOOP  /kit:debug (also the off-cycle entry from ANY point when a defect appears) ---+
+ |                                                                                            |
+ |  Phase 0 feedback loop -> 1 root cause -> 2 pattern -> 3 hypothesis -> 4 implement         |
+ |                                              ^                            |                |
+ |                                              +===== no == verified? ======+                |
+ |                                                             | yes                          |
+ |                                                             v                              |
+ |                                              human-confirm -> DONE -> /kit:review          |
+ |                                                             -> resume prior state          |
+ |  iron law: a fix or done claim is BLOCKED while ## Root cause is empty (guess-fix guard)   |
+ |  3 failed fixes in a row -> STOP: the architecture wall (rethink the design)               |
+ +--------------------------------------------------------------------------------------------+ <- ⚡3
+
+ +== GOAL LOOP (outer wrapper around the whole normal/full chain; activated at assign by an ======
+ |             activator: /goal | ralph-loop | goal-craft; kit never writes .claude/last-goal.md)
+ |  loop rule: do the next increment -> run ## Verification -> pass? -> all done? -> STOP
+ |             not done ==> keep working; premature "done" is blocked                       <- ⚡3
+ |             unresolvable blocker -> write spec ## Open questions -> STOP
+ |
+ |   [H/I] /kit:grill ........ typed interview, one question at a time -> phase-0 Done=
+ |        |
+ |        v                       side-flows attach here (opt-in, advisory):
+ |   [H/I] /kit:think -------+--> [H] /kit:design ..... solution, one decision at a time -> brief
+ |   -> DECISION-BRIEF.md    +--> [H] /kit:devs-team .. 5 engineering lenses, report-only
+ |        |                  +--> [H] /kit:prototype .. spike branch, decision folds back
+ |        v
+ |   [H/I] /kit:spec ......... [D] 4 research agents (brownfield) -> SPEC-NNN DRAFT
+ |        |   +--> downstream UI offshoot: [H] /kit:ui-design -> frontend-design skill ->
+ |        |        [H] /kit:visual-team (5 design lenses) -> fix-agent revise (max 2) -> SOLID
+ |        v
+ |   [H/I] /kit:spec-validate  6 lenses (1 HARD on the design record)
+ |        |     NEEDS REVISION ==> back to /kit:spec
+ |        v  Status: VALIDATED
+ |   [H] /kit:test-plan ...... coverage matrix -> ## Test plan (default on normal/full)
+ |        |
+ |        v
+ |   +- REVISE LOOP  /kit:test-plan-review-team -------------------------------+
+ |   |  6 test-design lenses -> findings -> revise ==> re-critique             |
+ |   |  bounded: max 3 rounds; findings must strictly FALL, by severity        |
+ |   |  not raw count, or halt honestly; exits early at 0 findings             |
+ |   |  verdict: SOLID / REVISE / RECONSIDER                                   |
+ |   +-------------------------------------------------------------------------+
+ |        | SOLID
+ |        v
+ |   [H] /kit:test-write ..... [D] test-writer, one test per matrix row
+ |        |                    (the V-model vertex: BUILD = code + test code;
+ |        |                     the full V shape: workflow-map.md section 6)
+ |        v
+ |   [H/I] /kit:execute  (or [H] /kit:next: human-paced, same pipeline)
+ |        |     alt: 2+ active specs and the slug is ambiguous -> ASK, never guess
+ |        v
+ |   +- EXECUTE PIPELINE  (the HARD verification pipeline) ----------------------------+
+ |   |                                                                                 |
+ |   |  per task: [D] worker (data-etl | db-migration | generic | meta-agent synth)    |
+ |   |       |                                                                         |
+ |   |       v                                                                         |
+ |   |  [D] task-verifier --PASS--> task done ([D] recheck-verifier may re-audit)      |
+ |   |       |                                                                         |
+ |   |       +- FAIL:fixable ==> [D] fix-agent -> re-verify       alt: retry (cap 2)   |
+ |   |       |       retries == 2 -------------------+                                 |
+ |   |       +- FAIL:escalate ---------------------->+--> ESCALATE  alt: escalate      |
+ |   |                                                    to human                     |
+ |   |  +- AMEND MICRO-LOOP  (mid-flight "also do Y") ------------------+              |
+ |   |  |  reach a task checkpoint -> append new - [ ] TASK rows ONLY   |              |
+ |   |  |  (add-only) -> ## Amendments entry -> re-validate the DELTA   |              |
+ |   |  |  (Status STAYS VALIDATED) -> /kit:next resumes amended tasks  |              |
+ |   |  +---------------------------------------------------------------+              |
+ |   |                                                                                 |
+ |   |  all tasks PASS -> phase checkpoint (human: continue / review / stop)           |
+ |   |       -> [D] integration-verifier (multi-task, whole-build diff)                |
+ |   |            FAIL:fixable ==> fix-agent -> re-check                               |
+ |   |            FAIL:escalate -> ESCALATE                                            |
+ |   +---------------------------------------------------------------------------------+ <- ⚡4
+ |        | build complete
+ |        v
+ |   [H/I] /kit:review (single-pass)  or  [H/I] /kit:review-team
+ |        |    ([D] reviewer roster + [D] advisor, in parallel) -> ## Review verdict
+ |        v
+ |   [H/I] /kit:docs ......... [D] doc-verifier -> docs match code
+ |        |
+ |        v
+ |   [H/I] /kit:ship ......... reads ## Review FIRST: alt: DO NOT SHIP = STOP;
+ |        |                    FIX THEN SHIP = fix, then ship
+ |        |                    version + changelog + commit + PR                <- ⚡1 ⚡2
+ |        |                    alt: completeness warn+log reviewed here (and at retro)
+ |        v
+ |   [H/I] /kit:retro ........ docs/retro/v<version>.md ==> feeds the next /kit:think
+ |
+ +== on ship: ID-NNN drops off the board; CHANGELOG is the canonical shipped record ==============
+
+  off-cycle side-flows (attach to the estate, not to one run):
+    maintainer offshoot .... [H] /kit:absorb (Credits drift + seed rescan, proposal-only)
+                             [H] /kit:kit-health (self-assessment vs PHILOSOPHY, report)
+    estate cadence ......... [I] doc-drift (whole-estate doc audit -> fixes on a branch -> PR gate)
+
+  HARD-STOP RAIL  (the ONLY four blockers; everything else advises, warns, or routes):
+  ⚡1 safety-gate ............ destructive Bash (rm -rf, DROP TABLE, git reset --hard); stands over
+                              EVERY Bash call at ANY point in this picture, not only at ship
+  ⚡2 push-to-main blocker ... push to main/protected branches; plus the ship-gate: no push
+                              without recorded proof/gate ledger entries
+  ⚡3 anti-rationalization ... premature "done", phantom-impl stub, guess-fix while ## Root cause
+                              is empty (Stop hook)
+  ⚡4 verification pipeline .. unmet acceptance criteria / tests that did not run (the EXECUTE
+                              PIPELINE box above IS this stop)
+```
+
+## 3 · System topology
+
+Bird's-eye view: who connects to whom. The per-stage diagrams below show sequence; this shows the standing wiring between the four feature kinds and the stores that carry state between commands. Every edge class here is derived from the path index (section 5): `[H]`/`[I]`/`[E]` are the only ways in, `[D]` is the only command-to-agent edge, and every automated write lands in a store or staging file, never directly on the board.
+
+### 3.1 · Actors and clusters
 
 ```
  ┌──────────┐  [H] typed command    ┌──────────┐    [D] dispatch    ┌─────────────────────┐
@@ -47,7 +192,7 @@ Bird's-eye view: who connects to whom. The per-stage diagrams below show sequenc
                                 then the tool call passes through
 ```
 
-### 2.2 · Stores: how one command hands off to the next
+### 3.2 · Stores: how one command hands off to the next
 
 Commands never hand off in memory; the baton passes through stores on disk.
 
@@ -63,9 +208,9 @@ Commands never hand off in memory; the baton passes through stores on disk.
  /kit:retro ───────────> docs/retro/v<version>.md ───────────────> next /kit:think
 ```
 
-## 3 · Master map
+## 4 · Master map
 
-### 3.1 · SHAPE: intake and contract-making
+### 4.1 · SHAPE: intake and contract-making
 
 ```
  [E] SessionStart ── context-readiness (spec/board state) + codebase-index (opt-in)
@@ -100,7 +245,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
 
 Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchestrates `/kit:adopt` + `/kit:start` + config), `[H/I] /kit:adopt` (injects the operate-contract into a target repo so the ship-gate engages there).
 
-### 3.2 · BUILD: test design, execution engines, agent-making
+### 4.2 · BUILD: test design, execution engines, agent-making
 
 ```
  VALIDATED spec
@@ -134,7 +279,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Build-time hooks: auto-format [E, conv] on every edit; spec-drift-guard [E, adv] on Write.
 ```
 
-### 3.3 · CHECK: review, verification, gates
+### 4.3 · CHECK: review, verification, gates
 
 ```
  build complete
@@ -164,7 +309,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  but inert until tool-policy.json exists].
 ```
 
-### 3.4 · WATCH: recording what happened
+### 4.4 · WATCH: recording what happened
 
 ```
  [E] Stop ────────────> session-state-save (persist last-state.md)  [conv]
@@ -183,7 +328,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Every automated Watch path ends at a staging file or a render, never a direct board/ledger write.
 ```
 
-### 3.5 · LEARN: distill the record into the next cycle
+### 4.5 · LEARN: distill the record into the next cycle
 
 ```
  shipped
@@ -205,7 +350,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Staged harvest/backlog output re-enters Shape via board promote (the human gate).
 ```
 
-## 4 · Complete path index
+## 5 · Complete path index
 
 One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every feature in `commands/`, `agents/`, `skills/`, `hooks/` appears exactly once.
 
@@ -321,10 +466,11 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[E] PermissionRequest -> permission-auto-approve -> auto-approve read-only ops (conv, terminal)` |
 | `[E] StatusLine -> statusline -> HUD render (conv, terminal)` |
 
-## 5 · How to regenerate
+## 6 · How to regenerate
 
 1. Re-derive the backbone from `docs/research/2026-07-31-feature-trigger-map.md` (or regenerate that file first per its own Method section: enumerate `commands/`, `agents/`, `skills/*/SKILL.md`, `hooks/*.sh` by `ls`, never trust a doc's count).
 2. Take stage grouping from the README's "The five stages" section; take flow shapes from `docs/workflow-map.md`; take rules and precedence from `docs/WORKFLOW.md` (canonical; it wins on any disagreement).
 3. Take hook events from `hooks/hooks.json` and root `settings.json` (same wiring, two install paths; `statusline` rides the `statusLine` key, not a hook event). Live wiring wins over any doc claim: this pass found `tool-policy-guard` wired at PreToolUse `*` in both files although the trigger map called it unwired; it stays inert until a `tool-policy.json` exists.
-4. Every live feature gets exactly one line in section 4; verify with `ls commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh | wc -l` against the index line count (derive the number, never hardcode it here).
-5. Re-derive the Topology (section 2) from the finished path index: the `[H]`/`[I]`/`[E]`/`[D]` marks give the actor and dispatch edges; the store hand-offs come from each path's write target and the command that reads it next. Invent no edge the index does not show.
+4. Every live feature gets exactly one line in section 5; verify with `ls commands/*.md agents/*.md skills/*/SKILL.md hooks/*.sh | wc -l` against the index line count (derive the number, never hardcode it here).
+5. Re-derive the System topology (section 3) from the finished path index: the `[H]`/`[I]`/`[E]`/`[D]` marks give the actor and dispatch edges; the store hand-offs come from each path's write target and the command that reads it next. Invent no edge the index does not show.
+6. Re-derive the Flow topology (section 2) from `docs/workflow-map.md`'s flow census (the backbone, the 5 lanes, the 3 bounded loops + amend micro-loop, the side-flows, the 7 alternate flows, the 4 hard stops) laid onto one connected picture, with `docs/WORKFLOW.md` winning on any disagreement. Where the picture must simplify, point at the section carrying the detail instead of distorting.
