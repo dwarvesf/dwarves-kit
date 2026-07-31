@@ -40,6 +40,19 @@
 #                            below); a hand-authored tsv is allow-list-exempt by design (operator
 #                            authorship IS the trust boundary for that path)
 #
+# RUNAWAY GUARDS (SPEC-220). Three per-slug sidecar files under <log-dir>/queue-runs/, each with
+# exactly ONE writer: `<slug>.beat` (this conductor touches it every poll; its mtime IS the
+# liveness signal and its PRESENCE is the in-flight claim), `<slug>.status` (the RUN writes it;
+# carries the explicit EXIT_SIGNAL line), `<slug>.guard` (counters + timers, key=value). The
+# REAPER that consumes a stale beat lives in watch-board.sh: it runs on the tick the operator
+# already runs, so these guards add no daemon. Their env knobs:
+#   QUEUE_BEAT_STALE_SECS    beat age past which the conductor is presumed gone (default 600)
+#   QUEUE_BEAT_DEAD_SECS     beat age past which the reaper writes a verdict   (default 3600)
+#   QUEUE_MAX_STALLS         stalls before quarantine (empty retry_after)      (default 3)
+#   QUEUE_COOLDOWN_SECS      breaker cooldown before an `error` row re-picks   (default 1800)
+#   QUEUE_NOPROGRESS_TRIP    consecutive no-progress runs that trip the breaker (default 3)
+#   QUEUE_SAMEERROR_TRIP     consecutive `error` runs that trip the breaker     (default 5)
+#
 # Mechanism ladder (macos-action-selection L0-L4): PRIMARY is terminal-mux send-keys (L0/L1,
 # deterministic, no GUI). Computer-Use (mcp__computer-use__*, L4) is the DOCUMENTED fallback for a
 # mux-uncontrollable interface; it is NOT built into this bash launcher (manual escape hatch).
@@ -94,9 +107,114 @@ esac
 # hand-authored tsv is exempt by design: the OPERATOR authored it, which IS the trust boundary).
 QUEUE_ALLOWED_POINTER_GLOB="${QUEUE_ALLOWED_POINTER_GLOB:-_meta/megagoals/* .claude/goals/*}"
 
+# ---- runaway-guard thresholds (SPEC-220) -------------------------------------------------------
+# Re-derived for THIS kit's clocks, not copied from the donor: the beat interval here is
+# QUEUE_POLL_SECS (15s, vs the donor's 30s) and the per-row ceiling is QUEUE_TIMEOUT_SECS (2h, vs
+# their hours-long stage budget). So the short threshold is tighter in beat-multiples and the long
+# one is SHORTER in absolute terms. Full derivation: docs/specs/SPEC-220-runaway-guards.md.
+QUEUE_BEAT_STALE_SECS="${QUEUE_BEAT_STALE_SECS:-600}"
+QUEUE_BEAT_DEAD_SECS="${QUEUE_BEAT_DEAD_SECS:-3600}"
+QUEUE_MAX_STALLS="${QUEUE_MAX_STALLS:-3}"
+# 30 min matches QUEUE_RETRY_SLEEP_SECS: this launcher's existing instinct for "back off and try
+# later" is half an hour, and a second different number would be arbitrary.
+QUEUE_COOLDOWN_SECS="${QUEUE_COOLDOWN_SECS:-1800}"
+QUEUE_NOPROGRESS_TRIP="${QUEUE_NOPROGRESS_TRIP:-3}"
+QUEUE_SAMEERROR_TRIP="${QUEUE_SAMEERROR_TRIP:-5}"
+# Jittered retry window after a stall, in minutes. The jitter is load-bearing: one sleeping host
+# stalls several rows at once, and without it every one of them becomes re-pickable on the same tick.
+QUEUE_RETRY_JITTER_MIN="${QUEUE_RETRY_JITTER_MIN:-5}"
+QUEUE_RETRY_JITTER_SPAN="${QUEUE_RETRY_JITTER_SPAN:-11}"
+
 _say()  { printf '%s\n' "$*"; }
 _warn() { printf '%s\n' "$*" >&2; }
 _now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# ---- per-slug sidecars (SPEC-220) --------------------------------------------------------------
+# Portable file mtime in epoch seconds. GNU `stat -c` is tried FIRST because it errors cleanly on
+# BSD/macOS so the `stat -f` fallback runs there; the reverse order is unsafe (GNU `stat -f`
+# SUCCEEDS with filesystem text, starving the fallback and poisoning the arithmetic). Same shape
+# lib/queue/orchestrate.sh already uses. Empty when the file is absent or stat prints non-digits.
+_mtime() {
+  local m
+  m=$(stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null)
+  case "$m" in ''|*[!0-9]*) return 0 ;; *) printf '%s' "$m" ;; esac
+}
+
+_run_dir() { printf '%s/queue-runs' "$(kit_resolve_log_dir)"; }
+
+# The sidecar path for <slug>.<ext>. Refuses a slug that is not `_slug_ok`, which now includes `/`:
+# the slug names a FILE here, so a separator would be a traversal out of the sidecar directory.
+_run_file() {  # slug ext
+  _slug_ok "$1" || return 1
+  printf '%s/%s.%s' "$(_run_dir)" "$1" "$2"
+}
+
+# Age of a file in seconds, clamped at 0. The clamp is the clock-skew guard: an NTP correction that
+# moves the clock BACKWARD must delay a reap, never fire one early.
+_age() {  # path
+  local m now
+  m=$(_mtime "$1"); [ -n "$m" ] || return 1
+  now=$(date +%s)
+  if [ "$now" -lt "$m" ]; then printf '0'; else printf '%s' $((now - m)); fi
+}
+
+# The heartbeat. Touching is the whole write: mtime carries the liveness, presence carries the
+# in-flight claim, so there is nothing to serialize and nothing to corrupt on a kill mid-write.
+_beat() {  # slug
+  local f; f=$(_run_file "$1" beat) || return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null || true
+  : > "$f"
+}
+_beat_clear() { local f; f=$(_run_file "$1" beat) || return 0; rm -f "$f" 2>/dev/null || true; }
+
+# `<slug>.guard` is `key=value` lines. Read prints the LAST value for the key (empty if unset);
+# write rewrites the file with that key replaced. Small enough that rewrite-whole beats an in-place
+# edit, and a torn write loses counters rather than corrupting a verdict.
+_guard_get() {  # slug key
+  local f; f=$(_run_file "$1" guard) || return 0
+  [ -f "$f" ] || return 0
+  awk -F= -v k="$2" '$1==k {v=substr($0, length(k)+2)} END{if(v!="") print v}' "$f"
+}
+_guard_set() {  # slug key value
+  local f tmp; f=$(_run_file "$1" guard) || return 0
+  mkdir -p "$(dirname "$f")" 2>/dev/null || true
+  tmp="$f.tmp.$$"
+  { [ -f "$f" ] && grep -v "^$2=" "$f"; printf '%s=%s\n' "$2" "$3"; } > "$tmp" 2>/dev/null
+  mv -f "$tmp" "$f" 2>/dev/null || true
+}
+_guard_clear() { local f; f=$(_run_file "$1" guard) || return 0; rm -f "$f" 2>/dev/null || true; }
+
+# A guard counter as an integer, defaulting to 0 so arithmetic is always safe.
+_guard_num() {  # slug key
+  local v; v=$(_guard_get "$1" "$2")
+  case "$v" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$v" ;; esac
+}
+
+# ---- the explicit exit signal (SPEC-220) -------------------------------------------------------
+# `<slug>.status` is written BY THE RUN. Read one key's value, first occurrence wins.
+_status_get() {  # slug key
+  local f; f=$(_run_file "$1" status) || return 0
+  [ -f "$f" ] || return 0
+  grep -m1 "^[[:space:]]*$2:" "$f" 2>/dev/null \
+    | sed -e "s/^[[:space:]]*$2:[[:space:]]*//" -e 's/[[:space:]]*$//'
+}
+
+# Prints exactly one of: "true" | "false" | "bad" | "" (no status file at all).
+#
+# "bad" is the load-bearing case and it is NOT the same as "": a status file that exists but
+# carries no parsable EXIT_SIGNAL is a run that TRIED to speak and failed, so it must never fall
+# back to reading prose off the pane. "" means the run never opted into the contract, and that path
+# stays byte-identical to the shipped pane scan.
+_exit_signal() {  # slug
+  local f v; f=$(_run_file "$1" status) || return 0
+  [ -f "$f" ] || return 0
+  v=$(_status_get "$1" EXIT_SIGNAL)
+  case "$v" in
+    true|TRUE|True)    printf 'true' ;;
+    false|FALSE|False) printf 'false' ;;
+    *)                 printf 'bad' ;;
+  esac
+}
 
 # ---- journal ----------------------------------------------------------------------------------
 # The journal IS the state: append-only TSV `ts<TAB>slug<TAB>verdict<TAB>reason`. A slug with a
@@ -116,6 +234,10 @@ _journal_append() {  # slug verdict reason
   # control chars so an embedded tab can never shift the row's field count (review finding,
   # MEDIUM: an unescaped reason could otherwise corrupt any tool parsing the journal by column).
   local reason; reason=$(printf '%s' "${3:-}" | tr -d '\t\r' | tr '\n' ' ')
+  # Length cap (security review, LOW): a `REASON:` value now reaches here from `<slug>.status`,
+  # which the RUN writes, so its length is agent-controlled. Unbounded, it bloats an append-only
+  # file that every dedup read scans linearly. Truncation cannot corrupt a column.
+  [ "${#reason}" -gt 500 ] && reason="${reason:0:500}..."
   printf '%s\t%s\t%s\t%s\n' "$(_now)" "$1" "$2" "$reason" >> "$QUEUE_JOURNAL"
 }
 
@@ -152,9 +274,13 @@ _repo_skip_reason() {  # repo
 # tmux itself uses `:` and `.` as target separators, so a slug containing either could resolve to
 # an UNINTENDED session/window (target confusion -> misdirected keystrokes or kill-window; review
 # finding, LOW). Reject before any mux verb runs; a slug is meant to be a simple identifier.
+#
+# `/` joined the reject set with SPEC-220: the slug now also names a FILE under the sidecar
+# directory (`<log-dir>/queue-runs/<slug>.beat`), so a separator would be a traversal out of it.
+# Sanitizing instead of refusing was rejected: two different slugs would collide on one sidecar.
 _slug_ok() {  # slug
   case "$1" in
-    *[:.]*|"") return 1 ;;
+    *[:./]*|"") return 1 ;;
     *) return 0 ;;
   esac
 }
@@ -259,10 +385,21 @@ _scan_marker() {  # transcript-on-stdin
 # Build the typed goal line: `/goal ` + the pointer file content, interior newlines collapsed to
 # spaces so the TUI receives exactly ONE submission (a multi-line paste would submit early). v0
 # behavior: prompts are treated as one logical paragraph. Metachars in the content stay literal.
-_goal_line() {  # pointer-path
-  local pointer="$1" content
+#
+# SPEC-220 appends ONE clause naming the run's status file. That is how the run learns where to
+# write its explicit EXIT_SIGNAL: the typed prompt is the same channel the RUNNER_DONE contract
+# already travels on, so it needs no `tmux new-window -e` (tmux 3.0 floor) and no environment
+# inheritance assumption. A run that ignores the clause behaves exactly as before.
+_goal_line() {  # pointer-path slug
+  local pointer="$1" slug="${2:-}" content status
   content=$(tr '\n' ' ' < "$pointer" 2>/dev/null)
-  printf '/goal %s' "$content"
+  status=$(_run_file "$slug" status 2>/dev/null) || status=""
+  if [ -n "$status" ]; then
+    printf '/goal %s When you finish, write %s containing the line "EXIT_SIGNAL: true" (or "EXIT_SIGNAL: false" if you are not done), plus "REASON: <why>" if a human must review, "FILES_CHANGED: <n>", and "QUESTION: true" if you stopped to ask something.' \
+      "$content" "$status"
+  else
+    printf '/goal %s' "$content"
+  fi
 }
 
 # Open + type + poll ONE window to a terminal state.
@@ -270,33 +407,73 @@ _goal_line() {  # pointer-path
 # Returns 0 for any of those; returns 2 for "window died" (launch failure -> caller retries).
 _launch_once() {  # slug repo pointer
   local slug="$1" repo="$2" pointer="$3"
+  # A stale status file from a PREVIOUS attempt would answer for this one. Clear before launching.
+  local sf; sf=$(_run_file "$slug" status 2>/dev/null) && [ -n "$sf" ] && rm -f "$sf" 2>/dev/null
+  _beat "$slug"
   _mux_open "$slug" "$repo" || return 2
   _mux_wait_ready "$slug"
-  _mux_type "$slug" "$(_goal_line "$pointer")" || { _mux_kill "$slug"; return 2; }
+  _mux_type "$slug" "$(_goal_line "$pointer" "$slug")" || { _mux_kill "$slug"; return 2; }
   _mux_submit "$slug"
 
-  local start now elapsed out verdict cap_rc
+  local start now elapsed out verdict cap_rc sig malformed=0 reason
   start=$(date +%s)
   while :; do
     sleep "$QUEUE_POLL_SECS"
+    _beat "$slug"
     out=$(_mux_capture "$slug"); cap_rc=$?
     if [ "$cap_rc" -ne 0 ]; then
       # window gone = launched claude exited without a marker -> launch failure
       return 2
     fi
-    verdict=$(printf '%s\n' "$out" | _scan_marker)
-    if [ -n "$verdict" ]; then
-      _mux_kill "$slug"
-      printf '%s' "$verdict"
-      return 0
-    fi
+
+    # SPEC-220 exit gate. Read the run's OWN explicit signal BEFORE the pane, every poll. The
+    # ordering is the anti-false-completion rule: an explicit `false` outranks whatever prose the
+    # pane happens to render, and an unparsable file is never a completion.
+    sig=$(_exit_signal "$slug")
+    case "$sig" in
+      true)
+        _mux_kill "$slug"
+        reason=$(_status_get "$slug" REASON)
+        # A REASON alongside an explicit completion means a human still has to look: that is the
+        # journal's existing `gated` verdict, not a second vocabulary.
+        if [ -n "$reason" ]; then printf 'gated:%s' "$reason"; else printf 'done'; fi
+        return 0 ;;
+      false)
+        # Explicit "keep working". Skip the pane scan entirely this poll.
+        ;;
+      bad)
+        # The run tried to speak and produced something unparsable. Never guess from prose;
+        # remember it so the eventual timeout names the real reason.
+        malformed=1 ;;
+      *)
+        # No status file: the shipped pane path, byte-identical.
+        verdict=$(printf '%s\n' "$out" | _scan_marker)
+        if [ -n "$verdict" ]; then
+          _mux_kill "$slug"
+          printf '%s' "$verdict"
+          return 0
+        fi ;;
+    esac
+
     now=$(date +%s); elapsed=$((now - start))
     if [ "$elapsed" -ge "$QUEUE_TIMEOUT_SECS" ]; then
       _mux_kill "$slug"
-      printf 'stalled'
+      if [ "$malformed" = 1 ]; then printf 'stalled:malformed_exit_signal'; else printf 'stalled'; fi
       return 0
     fi
   done
+}
+
+# Sleep in beat-sized chunks so the heartbeat keeps ticking through a LEGITIMATE pause. Without
+# this the 30-minute launch-retry sleep would look exactly like a dead conductor to the reaper.
+_beat_sleep() {  # slug secs
+  local slug="$1" left="$2" chunk
+  chunk="$QUEUE_POLL_SECS"; [ "$chunk" -gt 0 ] 2>/dev/null || chunk=15
+  while [ "$left" -gt 0 ]; do
+    _beat "$slug"
+    if [ "$left" -le "$chunk" ]; then sleep "$left"; left=0; else sleep "$chunk"; left=$((left - chunk)); fi
+  done
+  _beat "$slug"
 }
 
 # Launch a row with the single-retry launch-failure policy. Prints the FINAL verdict
@@ -306,7 +483,7 @@ _run_row() {  # slug repo pointer
   v=$(_launch_once "$slug" "$repo" "$pointer"); rc=$?
   if [ "$rc" -eq 2 ]; then
     _warn "queue: $slug launch failed; sleeping ${QUEUE_RETRY_SLEEP_SECS}s then retrying once."
-    sleep "$QUEUE_RETRY_SLEEP_SECS"
+    _beat_sleep "$slug" "$QUEUE_RETRY_SLEEP_SECS"
     v=$(_launch_once "$slug" "$repo" "$pointer"); rc=$?
     [ "$rc" -eq 2 ] && { printf 'error'; return; }
   fi
@@ -366,6 +543,120 @@ _pointer_allowlist_reason() {  # repo pointer
   printf 'pointer "%s" not allow-listed (want one of: %s)' "$rel" "$QUEUE_ALLOWED_POINTER_GLOB"
 }
 
+# ---- circuit breaker (SPEC-220) ----------------------------------------------------------------
+# The FOUR no-progress escape hatches, ported because git-diff-only stall detection produces false
+# stalls and that is precisely the failure this guard must not have.
+#
+# Prints one of:
+#   "verified" -- the REPO actually moved. Independently checked, so it may reset every counter.
+#   "reported" -- the RUN says it made progress. Self-attested and unverifiable.
+#   "freeze"   -- the run stopped to ask something: neither progress nor stagnation.
+#   ""         -- nothing.
+#
+# The verified/reported split is load-bearing (security + architecture review, HIGH). Hatches 2-4
+# read `<slug>.status`, which the RUN itself writes. If a self-report could reset the STALL
+# counter, any run that emits `FILES_CHANGED: 1` (or `QUESTION: true`) on every attempt would never
+# accrue a stall, never back off, and never quarantine: the guard's central promise, opted out of
+# by the exact population most likely to need it, whether through a hostile Notes cell (ID-459) or
+# an agent that merely over-reports itself. So self-report may calm the BREAKER, and only a real
+# repo delta may clear the STALL ladder.
+_progress_evidence() {  # slug repo head-before
+  local slug="$1" repo="$2" before="$3" after files
+
+  # Hatch 1 FIRST, because it is the only independently verifiable one. Guarded on a real
+  # directory because `git -C ""` silently falls back to the CURRENT directory: unguarded, the
+  # reaper (which does not know a slug's repo) would read the operator's cwd and call its dirty
+  # tree this row's progress. Caught by the A4 stall-counter assertion.
+  if [ -n "$repo" ] && [ -d "$repo" ]; then
+    after=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
+    { [ -n "$after" ] && [ -n "$before" ] && [ "$after" != "$before" ]; } && { printf 'verified'; return; }
+    [ -n "$(git -C "$repo" status --porcelain 2>/dev/null)" ] && { printf 'verified'; return; }
+  fi
+
+  # Hatch 4: a question freezes the counters. Counting it as stagnation would quarantine exactly
+  # the rows most worth a human's attention.
+  [ "$(_status_get "$slug" QUESTION)" = "true" ] && { printf 'freeze'; return; }
+
+  # Hatch 3: an explicit completion the run claims for itself.
+  [ "$(_exit_signal "$slug")" = "true" ] && { printf 'reported'; return; }
+
+  # Hatch 2: the run's own file count. Parallel evidence to the git view, never a replacement.
+  files=$(_status_get "$slug" FILES_CHANGED)
+  case "$files" in ''|*[!0-9]*) ;; *) [ "$files" -gt 0 ] && { printf 'reported'; return; } ;; esac
+}
+
+# Update the counters for one finished run and print the verdict to journal, which is the input
+# verdict UNLESS the breaker trips. Terminal verdicts (`done`/`gated`) are never rewritten: a
+# legitimate investigate-and-report row changes no files and must not be called stagnation for it.
+# The stall ladder. Only a `stalled` verdict climbs it, and every climb schedules the next alarm
+# from the SAME freshly-read count, so `stalls` and `retry_after` can never disagree.
+_stall_bump() {  # slug verdict
+  local st
+  [ "$2" = stalled ] || return 0
+  st=$(( $(_guard_num "$1" stalls) + 1 ))
+  _guard_set "$1" stalls "$st"
+  _schedule_retry "$1" "$st"
+}
+
+_breaker_apply() {  # slug repo head-before verdict -> "verdict<TAB>reason"
+  local slug="$1" repo="$2" before="$3" verdict="$4" ev np se now
+
+  case "$verdict" in
+    done|gated)
+      _guard_clear "$slug"
+      printf '%s\t' "$verdict"; return ;;
+  esac
+
+  ev=$(_progress_evidence "$slug" "$repo" "$before")
+
+  if [ "$ev" = verified ]; then
+    # A REAL repo delta zeroes every counter INCLUDING the stall ladder. This is what keeps a
+    # productive-but-slow row (real commits, then the 2h cap) out of quarantine.
+    _guard_set "$slug" noprogress 0
+    _guard_set "$slug" sameerror 0
+    _guard_set "$slug" stalls 0
+    _guard_set "$slug" retry_after ""
+    printf '%s\t' "$verdict"; return
+  fi
+
+  # `reported` (self-attested) calms the BREAKER only; `freeze` (a question) calms neither but
+  # accuses of nothing. NEITHER may clear the stall ladder, so a run that claims progress, or keeps
+  # stopping to ask, still climbs toward quarantine and eventually reaches a human.
+  if [ "$ev" = reported ]; then
+    _guard_set "$slug" noprogress 0
+    _guard_set "$slug" sameerror 0
+  fi
+  if [ "$ev" = reported ] || [ "$ev" = freeze ]; then
+    _stall_bump "$slug" "$verdict"
+    printf '%s\t' "$verdict"; return
+  fi
+
+  np=$(( $(_guard_num "$slug" noprogress) + 1 )); _guard_set "$slug" noprogress "$np"
+  se=$(_guard_num "$slug" sameerror)
+  if [ "$verdict" = error ]; then se=$((se + 1)); _guard_set "$slug" sameerror "$se"; fi
+  _stall_bump "$slug" "$verdict"
+
+  if [ "$np" -ge "$QUEUE_NOPROGRESS_TRIP" ] || [ "$se" -ge "$QUEUE_SAMEERROR_TRIP" ]; then
+    now=$(date +%s)
+    _guard_set "$slug" cooldown_until $((now + QUEUE_COOLDOWN_SECS))
+    printf 'error\tstagnation_detected'; return
+  fi
+  printf '%s\t' "$verdict"
+}
+
+# Write the jittered re-pick alarm after a stall. On the Nth stall the alarm is written EMPTY,
+# which no comparison can satisfy: that empty field IS the quarantine, not a new state.
+_schedule_retry() {  # slug stall-count
+  local slug="$1" stalls="$2" now mins
+  if [ "$stalls" -ge "$QUEUE_MAX_STALLS" ]; then
+    _guard_set "$slug" retry_after ""
+    return
+  fi
+  now=$(date +%s)
+  mins=$(( (RANDOM % QUEUE_RETRY_JITTER_SPAN) + QUEUE_RETRY_JITTER_MIN ))
+  _guard_set "$slug" retry_after $((now + mins * 60))
+}
+
 # ---- run --------------------------------------------------------------------------------------
 cmd_run() {
   local src="" dry=0 max=0 from_boards=0
@@ -383,7 +674,7 @@ cmd_run() {
     _warn "queue: no queue source (want a tsv path or --from-boards)"; return 64
   fi
 
-  local consec_fail=0 attempts=0 slug repo pointer reason verdict
+  local consec_fail=0 attempts=0 slug repo pointer reason verdict head_before brk_verdict brk_reason
   while IFS=$'\t' read -r slug repo pointer _rest; do
     [ -n "$slug" ] || continue
 
@@ -415,12 +706,23 @@ cmd_run() {
 
     attempts=$((attempts + 1))
     _say "[queue] $slug: launching /goal in a $TERMINAL_MUX window (repo=$repo)."
+    # Snapshot HEAD before the window opens: hatch 1 of the breaker's progress evidence.
+    head_before=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
     verdict=$(_run_row "$slug" "$repo" "$pointer")
 
     case "$verdict" in
-      gated:*) reason="${verdict#gated:}"; verdict=gated ;;
-      *)       reason="" ;;
+      gated:*)   reason="${verdict#gated:}"; verdict=gated ;;
+      stalled:*) reason="${verdict#stalled:}"; verdict=stalled ;;
+      *)         reason="" ;;
     esac
+    # SPEC-220: counters + the trip decision. May rewrite a NON-terminal verdict to `error`.
+    # _breaker_apply always prints exactly `verdict<TAB>reason`; an empty reason keeps the one
+    # the run itself produced (a `gated:` pane reason, or `malformed_exit_signal`).
+    IFS=$'\t' read -r brk_verdict brk_reason <<< "$(_breaker_apply "$slug" "$repo" "$head_before" "$verdict")"
+    verdict="$brk_verdict"
+    [ -n "$brk_reason" ] && reason="$brk_reason"
+    # The run is over: drop the in-flight claim so the watcher may consider this slug again.
+    _beat_clear "$slug"
     _journal_append "$slug" "$verdict" "$reason"
     _say "[queue] $slug: $verdict${reason:+ ($reason)}."
 

@@ -5,6 +5,23 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Runaway guards on the autonomous run queue (SPEC-220 / ID-460).** Three mechanisms, all
+  hanging off per-slug sidecar files under `<log-dir>/queue-runs/`, and none of them a daemon:
+  the reaper runs on the `queue watch` tick the operator already invokes. (1) A stale-window
+  watchdog: the conductor touches a heartbeat every poll, a beat older than 10 minutes reports
+  an orphan and refuses to plan the slug, and one older than 60 minutes writes a verdict
+  (honoring the run's own `EXIT_SIGNAL` if it finished), increments the stall counter, and
+  schedules a jittered 5-15 minute retry; the third stall writes an empty `retry_after`, which
+  is the quarantine. This closes the case where a dead conductor process left NO journal row and
+  the row was re-planned forever. (2) A circuit breaker: consecutive no-progress and repeated-error
+  counters trip to `error` reason `stagnation_detected` with a 30-minute cooldown, with four
+  escape hatches (repo moved, self-reported files changed, an explicit completion, and a run that
+  stopped to ASK freezes the counters rather than counting as stagnation). (3) A dual-condition
+  exit gate: a run may write an explicit `EXIT_SIGNAL: true|false`, which always outranks pane
+  prose; `false` keeps the run going even against a `RUNNER_DONE` pane, and a present-but-malformed
+  signal is never a completion. With no status file, completion detection is byte-identical to
+  before. Also: `_slug_ok` now rejects `/` (the slug names a sidecar file), and the progress check
+  no longer lets `git -C ""` silently read the operator's current directory.
 - **Self-answer mode + the backlog watcher, the orchestrator-loop pilot (SPEC-217 / ID-457).**
   `/kit:grill` gains an explicit self-answer mode for autonomous runs: it activates only when
   the driving row carries the operator-set `#auto` tag, and every self-answered question lands
