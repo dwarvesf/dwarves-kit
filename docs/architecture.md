@@ -78,7 +78,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 31 commands + 25 agents = **56 entries** (10 build · 3 code · 9 test · 15 gate · 19 cross-phase).
+Total: 33 commands + 25 agents = **58 entries** (12 build · 3 code · 9 test · 15 gate · 19 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -88,6 +88,8 @@ Total: 31 commands + 25 agents = **56 entries** (10 build · 3 code · 9 test ·
 | `/kit:assign` | command | Requirement | build | Turns a backlog item into a goal draft; routes it into the right lane |
 | `/kit:grill` | command | Requirement (intake) | build | Universal intake interview between type classification and the phase-0 Done=; type-shaped one-question-at-a-time, write-as-you-go (SPEC-058) |
 | `/kit:design` | command | Solution-design | build | Opt-in interactive beat between think and spec; shapes the solution one decision at a time |
+| `/kit:prototype` | command | Solution-design | build | Opt-in throwaway spike answering one design question (logic TUI or UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch (SPEC-206) |
+| `/kit:wayfind` | command | Requirement (intake) | build | User-invoked decision map for too-foggy-for-one-session efforts; typed tickets route to grill/prototype/research machinery; hands off to spec or a ROADMAP (SPEC-207) |
 | `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); dispatches 4 research agents for brownfield context |
 | `/kit:ui-design` | command | UI design | build | Opt-in; writes UI brief, delegates generation, routes through visual-team, auto-revises (bounded) |
 | `research-architecture` | agent | Spec (brownfield) | build | Maps architecture patterns; dispatched by /spec; read-only |
