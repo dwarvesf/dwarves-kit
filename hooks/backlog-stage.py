@@ -33,8 +33,22 @@ Env:
   BACKLOG_STAGE_EXTRACTOR=CMD   override the LLM call (tests)
   BACKLOG_STAGE_MAXCHARS=N      transcript chars sent to the model (default 12000)
   BACKLOG_STAGE_MIN_INTERVAL=S  rate-limit to at most once per S seconds (default 3600). 0 off.
-  BACKLOG_STAGE_STATE_DIR=DIR   throttle lock dir (default ~/.claude/dwarves-kit/state/backlog-stage)
+  BACKLOG_STAGE_STATE_DIR=DIR   throttle lock dir, AND the detached-child payload
+                                handoff dir (default ~/.claude/dwarves-kit/state/backlog-stage)
   BACKLOG_STAGE_PREFILTER=0     disable the deterministic forward-intent pre-filter (default on)
+  BACKLOG_STAGE_SYNC=1          run the extractor call + append INLINE instead of detached
+                                (test seam, deterministic; default OFF = detached)
+
+This hook is invoked ONLY from SessionEnd, which fires while the CLI process is
+already tearing down -- and the `claude -p` extractor call it makes can take up to its
+own 120s budget, well past the SessionEnd hook's own declared timeout (30s in this
+kit's hooks.json). Either factor alone can get the invocation killed before it writes
+anything. So the fast synchronous part (throttle + prefilter, both cheap/local) runs
+inline, then the slow part (the extractor call + dedup + append) is handed to a
+detached child (`--staged-run`, via `_spawn_staged_detached`, the same detach pattern
+harvest.py's `_spawn_detached` uses for `--stop-trigger`) that outlives both the hook's
+timeout and the parent's exit.
+BACKLOG_STAGE_SYNC=1 opts back into the old inline behavior (used by test fixtures).
 
 Stdlib only. Always exits 0 (a harvest never blocks a session end).
 """
@@ -260,9 +274,104 @@ def surface():
     return 0
 
 
+def _truthy(v):
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def stage_from_text(text, date, backlog, staging):
+    """The slow half: the `claude -p` extractor call, dedup against the live board +
+    staging buffer, and the append. Runs in a detached child by default (see main()) --
+    the fast synchronous half (throttle + prefilter) already decided a model call is
+    warranted before this is ever reached."""
+    candidates = extract_json_array(run_extractor(PROMPT_HEAD + text))
+    if not candidates:
+        return
+
+    known = existing_titles(backlog, staging)
+    new_blocks = []
+    for c in candidates:
+        if not isinstance(c, dict):
+            continue
+        if norm(c.get("title", "")) in known or not norm(c.get("title", "")):
+            continue
+        block = render_candidate(c, date)
+        if block:
+            new_blocks.append(block)
+            known.add(norm(c.get("title", "")))  # dedup within this batch too
+
+    if new_blocks:
+        header = "" if os.path.isfile(staging) else (
+            "# Backlog staging (auto, via backlog-stage)\n\n"
+            "Candidates auto-extracted from sessions. Review + promote by hand.\n"
+            "Gitignored: may name unfiled work. NEVER the source of truth.\n\n"
+        )
+        os.makedirs(os.path.dirname(staging), exist_ok=True)
+        with open(staging, "a", encoding="utf-8") as fh:
+            fh.write(header + "".join(new_blocks))
+
+
+def _spawn_staged_detached(data, sdir):
+    """Write the (text, date, backlog, staging) handoff to a state-dir file and spawn a
+    detached child (start_new_session) that re-invokes this script as
+    `--staged-run <payload-file>`, then return immediately. A `claude -p` extractor call
+    can take up to its own 120s budget, well past the SessionEnd hook's own timeout, and
+    SessionEnd fires while the CLI process is already tearing down -- so the parent must
+    not wait on it. Same shape as harvest.py's _spawn_detached, but a distinct name +
+    2-arg signature (this file has only one detach mode, so no mode_flag parameter) --
+    named differently on purpose so the two are never mistaken for interchangeable
+    copies of the same interface. Returns True on success.
+
+    If Popen itself fails AFTER the payload file was already written, there is no child
+    left to clean it up -- remove it here so a spawn failure never leaks a payload file."""
+    pf = None
+    try:
+        os.makedirs(sdir, exist_ok=True)
+        pf = os.path.join(sdir, f"payload-{os.getpid()}.json")
+        with open(pf, "w") as fh:
+            json.dump(data, fh)
+        subprocess.Popen(
+            [sys.executable, os.path.abspath(__file__), "--staged-run", pf],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,  # detach from the hook's process group; survives session end
+        )
+    except OSError:
+        if pf:
+            try:
+                os.remove(pf)
+            except OSError:
+                pass
+        return False
+    return True
+
+
+def cmd_staged_run(pf):
+    """Internal: the detached child spawned by main(). Reads the handed-off
+    (text, date, backlog, staging) payload, runs stage_from_text, ALWAYS removes the
+    payload file afterward -- whether the read, stage_from_text, or nothing at all
+    failed (a corrupt/truncated payload previously leaked the file forever, since the
+    old finally only wrapped the second try)."""
+    try:
+        try:
+            data = json.load(open(pf))
+        except (OSError, ValueError):
+            return 0
+        stage_from_text(data["text"], data["date"], data["backlog"], data["staging"])
+    finally:
+        try:
+            os.remove(pf)
+        except OSError:
+            pass
+    return 0
+
+
 def main():
     if "--surface" in sys.argv[1:]:
         return surface()
+    if "--staged-run" in sys.argv[1:]:
+        i = sys.argv.index("--staged-run")
+        return cmd_staged_run(sys.argv[i + 1] if i + 1 < len(sys.argv) else "")
 
     payload = read_payload()
     tp = payload.get("transcript_path")
@@ -284,32 +393,15 @@ def main():
     if os.environ.get("BACKLOG_STAGE_PREFILTER", "1") != "0" and not has_intent(text):
         return 0
 
-    candidates = extract_json_array(run_extractor(PROMPT_HEAD + text))
-    if not candidates:
+    date = payload.get("_today") or time.strftime("%Y-%m-%d")
+
+    if _truthy(os.environ.get("BACKLOG_STAGE_SYNC")):
+        stage_from_text(text, date, backlog, staging)
         return 0
 
-    known = existing_titles(backlog, staging)
-    date = payload.get("_today") or time.strftime("%Y-%m-%d")
-    new_blocks = []
-    for c in candidates:
-        if not isinstance(c, dict):
-            continue
-        if norm(c.get("title", "")) in known or not norm(c.get("title", "")):
-            continue
-        block = render_candidate(c, date)
-        if block:
-            new_blocks.append(block)
-            known.add(norm(c.get("title", "")))  # dedup within this batch too
-
-    if new_blocks:
-        header = "" if os.path.isfile(staging) else (
-            "# Backlog staging (auto, via backlog-stage)\n\n"
-            "Candidates auto-extracted from sessions. Review + promote by hand.\n"
-            "Gitignored: may name unfiled work. NEVER the source of truth.\n\n"
-        )
-        os.makedirs(os.path.dirname(staging), exist_ok=True)
-        with open(staging, "a", encoding="utf-8") as fh:
-            fh.write(header + "".join(new_blocks))
+    data = {"text": text, "date": date, "backlog": backlog, "staging": staging}
+    if _spawn_staged_detached(data, state_dir):
+        print(f"backlog-stage: fired detached (candidates land in {staging} after this hook returns)", file=sys.stderr)
     return 0
 
 

@@ -38,6 +38,24 @@ callers gain) and locality (where change, bugs, and knowledge concentrate).
 - Are units **decomposed** so they can be understood and **tested independently**? (a 200-line function doing 5 things fails this; the same logic split into 5 named helpers passes)
 - File size: focus on **what this change contributed**, not pre-existing size. Don't flag a 600-line file that was already 580 lines before the change. Do flag a new 400-line file or a +200-line growth.
 
+**Smell baseline (SPEC-205; Fowler, Refactoring ch.3, via mattpocock/skills code-review, MIT).**
+Match each against the diff, *what it is* -> *fix*. Three binding rules: a documented repo
+standard overrides the baseline (where it endorses something the baseline flags, suppress the
+smell); every smell is a labelled judgement call ("possible Feature Envy"), never a hard
+violation; skip anything tooling already enforces.
+- **Mysterious Name** , a name that doesn't reveal what it does or holds -> rename; if no honest name comes, the design's murky.
+- **Duplicated Code** , the same logic shape in more than one hunk or file of the change -> extract the shared shape, call it from both.
+- **Feature Envy** , a method reaching into another object's data more than its own -> move the method onto the data it envies.
+- **Data Clumps** , the same few fields/params keep travelling together -> bundle into one type, pass that.
+- **Primitive Obsession** , a primitive standing in for a domain concept -> give the concept its own small type.
+- **Repeated Switches** , the same switch/if-cascade on the same type recurs across the change -> polymorphism, or one shared map.
+- **Shotgun Surgery** , one logical change forces scattered edits across many files -> gather what changes together into one module.
+- **Divergent Change** , one module edited for several unrelated reasons -> split so each module changes for one reason.
+- **Speculative Generality** , abstraction/params/hooks for needs the spec doesn't have -> delete; inline back until a real need shows.
+- **Message Chains** , long `a.b().c().d()` navigation the caller shouldn't depend on -> hide the walk behind one method on the first object.
+- **Middle Man** , a unit that mostly just delegates onward -> cut it, call the real target direct.
+- **Refused Bequest** , a subclass/implementer ignoring most of what it inherits -> drop the inheritance, use composition.
+
 ### Lens: test-coverage
 Focus exclusively on test quality:
 - Is the new code covered by tests?

@@ -56,6 +56,24 @@ assert_contains() {
   fi
 }
 
+# Detached work lands asynchronously: poll a file for a needle instead of asserting
+# right after the hook returns (the hook is expected to return before the write happens).
+wait_for_file_contains() {
+  local NAME="$1" NEEDLE="$2" FILE="$3" TRIES=50
+  TOTAL=$((TOTAL + 1))
+  while [ "$TRIES" -gt 0 ]; do
+    if [ -f "$FILE" ] && grep -qF "$NEEDLE" "$FILE" 2>/dev/null; then
+      echo -e "  ${GREEN}PASS${NC} $NAME"
+      PASS=$((PASS + 1))
+      return
+    fi
+    sleep 0.1
+    TRIES=$((TRIES - 1))
+  done
+  echo -e "  ${RED}FAIL${NC} $NAME (missing '$NEEDLE' in $FILE after 5s)"
+  FAIL=$((FAIL + 1))
+}
+
 # ============================================================
 echo "=== context-hints.sh (UserPromptSubmit) ==="
 # ============================================================
@@ -129,10 +147,181 @@ chmod +x "$TD/bs-extractor.sh"
 
 RC=0
 REPO_ROOT="$TD/bs-repo" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state" \
+  BACKLOG_STAGE_SYNC=1 \
   bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
 assert_exit "row 3: stages a candidate, exits 0" 0 $RC
 STAGED=$(cat "$TD/bs-repo/_meta/backlog-staging.md" 2>/dev/null)
 assert_contains "row 3: staged file has the candidate (repo-relative default)" "fix flaky deploy script" "$STAGED"
+
+# row 3b (detach fix): the DEFAULT path (no BACKLOG_STAGE_SYNC) must return fast and
+# stage the candidate in a detached child -- this is what SessionEnd actually invokes.
+mkdir -p "$TD/bs-repo-async/_meta"
+git -C "$TD/bs-repo-async" init -q
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/bs-repo-async" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state-async" \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+assert_exit "row 3b: detached mode still exits 0 immediately" 0 $RC
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 2000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3b: hook returns in <2s even though the extractor call is not run yet (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3b: hook took ${ELAPSED_MS}ms (expected <2000ms, detach not firing)"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 3b: candidate lands in staging after the hook already returned" \
+  "fix flaky deploy script" "$TD/bs-repo-async/_meta/backlog-staging.md"
+
+# row 3c (the actual bug this fix targets): a SLOW extractor (the real `claude -p` call
+# can take seconds) must NOT make the hook itself slow. Pre-fix, this would block for the
+# full extractor duration; post-fix, the hook returns immediately regardless.
+cat > "$TD/bs-slow-extractor.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'JSON'
+[{"title":"slow extractor proof","intent":"prove detach works under a real delay","approach":"sleep 2 then answer","u":"hi","f":"mid","home":""}]
+JSON
+EOF
+chmod +x "$TD/bs-slow-extractor.sh"
+mkdir -p "$TD/bs-repo-slow/_meta"
+git -C "$TD/bs-repo-slow" init -q
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/bs-repo-slow" BACKLOG_STAGE_EXTRACTOR="$TD/bs-slow-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state-slow" \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 3c: hook exits 0 even with a 2s-slow extractor" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 1000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3c: hook returns in <1s despite a 2s-slow extractor (${ELAPSED_MS}ms) -- this is the bug this fix targets"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3c: hook took ${ELAPSED_MS}ms (expected <1000ms) -- hook is blocking on the slow extractor again"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 3c: candidate lands ~2s later, after the slow extractor finishes" \
+  "slow extractor proof" "$TD/bs-repo-slow/_meta/backlog-staging.md"
+
+# row 3d: BACKLOG_STAGE_SYNC=1 must actually run INLINE (blocking), not just produce the
+# same eventual content. Without this row, a regression that silently stopped honoring
+# the SYNC env var (typo, _truthy break) would still pass every other row, since a fast
+# extractor makes both the sync and detached paths finish quickly either way.
+mkdir -p "$TD/bs-repo-syncslow/_meta"
+git -C "$TD/bs-repo-syncslow" init -q
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/bs-repo-syncslow" BACKLOG_STAGE_EXTRACTOR="$TD/bs-slow-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state-syncslow" \
+  BACKLOG_STAGE_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 3d: BACKLOG_STAGE_SYNC=1 exits 0" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -ge 1800 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3d: BACKLOG_STAGE_SYNC=1 genuinely blocks for the extractor's 2s delay (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3d: BACKLOG_STAGE_SYNC=1 returned in ${ELAPSED_MS}ms (expected >=1800ms) -- the sync seam is silently detaching instead of blocking"
+  FAIL=$((FAIL + 1))
+fi
+STAGED_SYNC=$(cat "$TD/bs-repo-syncslow/_meta/backlog-staging.md" 2>/dev/null)
+assert_contains "row 3d: candidate already present immediately (proves it ran inline, not async)" "slow extractor proof" "$STAGED_SYNC"
+
+# row 3e: the detached child must be reparented into its OWN process group
+# (start_new_session=True) -- the literal OS-level mechanism the whole fix's
+# "survives SessionEnd's process teardown" claim rests on. Rows 3b/3c only prove the
+# hook returns fast and the work eventually lands; neither proves the child is actually
+# isolated from the invoking process group. Verified via `pgrep`/`ps`, not a kill/signal
+# race (avoids flakiness from timing a signal against process spawn).
+mkdir -p "$TD/bs-repo-pgid/_meta"
+git -C "$TD/bs-repo-pgid" init -q
+cat > "$TD/bs-pgid-extractor.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'JSON'
+[{"title":"pgid probe","intent":"stay alive long enough to inspect","approach":"sleep 2","u":"hi","f":"mid","home":""}]
+JSON
+EOF
+chmod +x "$TD/bs-pgid-extractor.sh"
+INVOKER_PGID=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+RC=0
+REPO_ROOT="$TD/bs-repo-pgid" BACKLOG_STAGE_EXTRACTOR="$TD/bs-pgid-extractor.sh" BACKLOG_STAGE_STATE_DIR="$TD/bs-state-pgid" \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+sleep 0.3
+CHILD_PID=$(pgrep -f "bs-pgid-extractor.sh" | head -1)
+TOTAL=$((TOTAL + 1))
+if [ -n "$CHILD_PID" ]; then
+  CHILD_PGID=$(ps -o pgid= -p "$CHILD_PID" 2>/dev/null | tr -d ' ')
+  if [ -n "$CHILD_PGID" ] && [ "$CHILD_PGID" != "$INVOKER_PGID" ]; then
+    echo -e "  ${GREEN}PASS${NC} row 3e: detached child (pgid=$CHILD_PGID) is in a DIFFERENT process group than the invoker (pgid=$INVOKER_PGID) -- would survive the invoker's group being torn down"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} row 3e: detached child shares the invoker's process group (pgid=$CHILD_PGID) -- would be killed alongside it"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo -e "  ${RED}FAIL${NC} row 3e: could not find the detached extractor process to inspect (already finished or never spawned)"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 3e: candidate still lands after the pgid check" \
+  "pgid probe" "$TD/bs-repo-pgid/_meta/backlog-staging.md"
+
+# row 3f: a CORRUPT payload handoff file must never leak on disk. cmd_staged_run's read
+# step (json.load) can fail on a truncated/malformed file; the fix wraps BOTH the read
+# and the work in one outer finally so the payload file is always removed, not just when
+# the read succeeds.
+mkdir -p "$TD/bs-state-corrupt"
+echo 'not valid json{{{' > "$TD/bs-state-corrupt/payload-corrupt.json"
+RC=0
+python3 "$KIT_DIR/hooks/backlog-stage.py" --staged-run "$TD/bs-state-corrupt/payload-corrupt.json" >/dev/null 2>&1 || RC=$?
+assert_exit "row 3f: --staged-run on a corrupt payload exits 0" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ ! -f "$TD/bs-state-corrupt/payload-corrupt.json" ]; then
+  echo -e "  ${GREEN}PASS${NC} row 3f: corrupt payload file was removed, not leaked"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 3f: corrupt payload file $TD/bs-state-corrupt/payload-corrupt.json was left behind"
+  FAIL=$((FAIL + 1))
+fi
+
+# row 3g: stage_from_text() unit-tested directly (no subprocess, no transcript file,
+# no detach plumbing) -- proving its dedup-skip and empty-candidates branches, which no
+# full-hook-invocation test exercises (every existing row uses one new, non-duplicate
+# candidate). Mirrors the ID-202 race harness's importlib.util pattern already used
+# later in this same file.
+cat > "$TD/bs-unit-test.py" <<PYEOF
+import importlib.util, os, sys
+
+KIT_DIR = "$KIT_DIR"
+TD = "$TD"
+
+spec = importlib.util.spec_from_file_location("backlog_stage_under_test", os.path.join(KIT_DIR, "hooks", "backlog-stage.py"))
+bs = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bs)
+
+backlog = os.path.join(TD, "bs-unit-backlog.md")
+staging = os.path.join(TD, "bs-unit-staging.md")
+
+with open(backlog, "w") as fh:
+    fh.write("| ID | Item | Notes | Status |\n|---|---|---|---|\n| ID-1 | Fix flaky deploy script | already tracked | queued |\n")
+
+bs.run_extractor = lambda prompt: '[{"title":"Fix flaky deploy script","intent":"dup","approach":"","u":"hi","f":"mid","home":""}]'
+bs.stage_from_text("dummy transcript text", "2026-07-30", backlog, staging)
+dedup_ok = not os.path.exists(staging)
+print("dedup_skip_ok=" + str(dedup_ok))
+
+bs.run_extractor = lambda prompt: '[]'
+bs.stage_from_text("dummy transcript text", "2026-07-30", backlog, staging)
+empty_ok = not os.path.exists(staging)
+print("empty_candidates_ok=" + str(empty_ok))
+PYEOF
+UNIT_OUT=$(python3 "$TD/bs-unit-test.py" 2>&1)
+assert_contains "row 3g: stage_from_text skips a candidate whose title already exists on the board" "dedup_skip_ok=True" "$UNIT_OUT"
+assert_contains "row 3g: stage_from_text writes nothing for an empty candidate list" "empty_candidates_ok=True" "$UNIT_OUT"
 
 # NC: empty stdin never blocks a session end.
 RC=0; echo '' | bash "$KIT_DIR/hooks/backlog-stage.sh" >/dev/null 2>&1 || RC=$?
@@ -161,7 +350,7 @@ EOF
 chmod +x "$TD/hv-extractor.sh"
 
 RC=0
-REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-extractor.sh" HARVEST_MIN_INTERVAL=0 \
+REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-extractor.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
   bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
 assert_exit "row 4: PreCompact-mode harvest stages a learning, exits 0" 0 $RC
 LEDGER=$(cat "$TD/hv-repo/_meta/learned-ledger.md" 2>/dev/null)
@@ -177,11 +366,205 @@ OUT
 EOF
 chmod +x "$TD/hv-lablog.sh"
 RC=0
-REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 \
+REPO_ROOT="$TD/hv-repo" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
   bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
 assert_exit "row 4b: --lab-log drafts an entry, exits 0" 0 $RC
 DRAFT=$(cat "$TD/hv-repo/_meta/.lab-log-draft.md" 2>/dev/null)
 assert_contains "row 4b: draft never writes the real LAB_LOG.md" "repo-root-seam" "$DRAFT"
+
+# row 4c (detach fix): the DEFAULT path (no HARVEST_SYNC) for BOTH no-arg and --lab-log
+# must return fast and do the real work in a detached child -- this is what
+# PreCompact/SessionEnd actually invoke, and is the fix for the SessionEnd-cancellation
+# bug (the `claude -p` extractor call can take up to 120s, the invoking hook only gets
+# ~30s, and SessionEnd fires while the CLI process is already exiting).
+mkdir -p "$TD/hv-repo-async"
+git -C "$TD/hv-repo-async" init -q
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-async" HARVEST_EXTRACTOR="$TD/hv-extractor.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+assert_exit "row 4c: detached no-arg mode still exits 0 immediately" 0 $RC
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 2000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4c: no-arg hook returns in <2s (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4c: no-arg hook took ${ELAPSED_MS}ms (expected <2000ms, detach not firing)"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 4c: ledger entry lands after the hook already returned" \
+  "repo-root-seam" "$TD/hv-repo-async/_meta/learned-ledger.md"
+
+RC=0
+REPO_ROOT="$TD/hv-repo-async" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
+assert_exit "row 4d: detached --lab-log mode still exits 0 immediately" 0 $RC
+wait_for_file_contains "row 4d: LAB_LOG draft lands after the hook already returned" \
+  "repo-root-seam" "$TD/hv-repo-async/_meta/.lab-log-draft.md"
+
+# row 4e (the actual bug this fix targets): a SLOW extractor (the real `claude -p` call
+# can take seconds, up to its own 120s budget) must NOT make either mode's hook slow.
+# Pre-fix, the hook blocked for the full extractor duration -- past the hook's own
+# timeout (30s in this kit's hooks.json) and past SessionEnd's exit-teardown race.
+cat > "$TD/hv-slow-extractor.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'JSON'
+[{"item":"slow-extractor-proof","kind":"insight","home":"drop","why":"proves detach under a real delay"}]
+JSON
+EOF
+chmod +x "$TD/hv-slow-extractor.sh"
+mkdir -p "$TD/hv-repo-slow"
+git -C "$TD/hv-repo-slow" init -q
+
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-slow" HARVEST_EXTRACTOR="$TD/hv-slow-extractor.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 4e: no-arg hook exits 0 even with a 2s-slow extractor" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 1000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4e: no-arg hook returns in <1s despite a 2s-slow extractor (${ELAPSED_MS}ms) -- this is the bug this fix targets"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4e: no-arg hook took ${ELAPSED_MS}ms (expected <1000ms) -- hook is blocking on the slow extractor again"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 4e: ledger entry lands ~2s later, after the slow extractor finishes" \
+  "slow-extractor-proof" "$TD/hv-repo-slow/_meta/learned-ledger.md"
+
+cat > "$TD/hv-slow-lablog.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'OUT'
+## 2026-07-30 - slow-lablog-proof: proves --lab-log detach under a real delay
+- extractor slept 2s before answering
+OUT
+EOF
+chmod +x "$TD/hv-slow-lablog.sh"
+
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-slow" HARVEST_EXTRACTOR="$TD/hv-slow-lablog.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 4f: --lab-log hook exits 0 even with a 2s-slow extractor" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -lt 1000 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4f: --lab-log hook returns in <1s despite a 2s-slow extractor (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4f: --lab-log hook took ${ELAPSED_MS}ms (expected <1000ms) -- hook is blocking on the slow extractor again"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 4f: LAB_LOG draft lands ~2s later, after the slow extractor finishes" \
+  "slow-lablog-proof" "$TD/hv-repo-slow/_meta/.lab-log-draft.md"
+
+# row 4g/4h: HARVEST_SYNC=1 must actually run INLINE (blocking) for both modes, not just
+# produce the same eventual content -- a regression that silently stopped honoring the
+# env var would still pass every other row, since a fast extractor finishes quickly
+# either way.
+mkdir -p "$TD/hv-repo-syncslow"
+git -C "$TD/hv-repo-syncslow" init -q
+
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-syncslow" HARVEST_EXTRACTOR="$TD/hv-slow-extractor.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 4g: HARVEST_SYNC=1 no-arg mode exits 0" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -ge 1800 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4g: HARVEST_SYNC=1 no-arg mode genuinely blocks for the extractor's 2s delay (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4g: HARVEST_SYNC=1 no-arg mode returned in ${ELAPSED_MS}ms (expected >=1800ms) -- the sync seam is silently detaching instead of blocking"
+  FAIL=$((FAIL + 1))
+fi
+LEDGER_SYNC=$(cat "$TD/hv-repo-syncslow/_meta/learned-ledger.md" 2>/dev/null)
+assert_contains "row 4g: ledger entry already present immediately (proves it ran inline)" "slow-extractor-proof" "$LEDGER_SYNC"
+
+START_NS=$(date +%s%N)
+RC=0
+REPO_ROOT="$TD/hv-repo-syncslow" HARVEST_EXTRACTOR="$TD/hv-slow-lablog.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
+END_NS=$(date +%s%N)
+ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
+assert_exit "row 4h: HARVEST_SYNC=1 --lab-log mode exits 0" 0 $RC
+TOTAL=$((TOTAL + 1))
+if [ "$ELAPSED_MS" -ge 1800 ]; then
+  echo -e "  ${GREEN}PASS${NC} row 4h: HARVEST_SYNC=1 --lab-log mode genuinely blocks for the extractor's 2s delay (${ELAPSED_MS}ms)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} row 4h: HARVEST_SYNC=1 --lab-log mode returned in ${ELAPSED_MS}ms (expected >=1800ms) -- the sync seam is silently detaching instead of blocking"
+  FAIL=$((FAIL + 1))
+fi
+DRAFT_SYNC=$(cat "$TD/hv-repo-syncslow/_meta/.lab-log-draft.md" 2>/dev/null)
+assert_contains "row 4h: LAB_LOG draft already present immediately (proves it ran inline)" "slow-lablog-proof" "$DRAFT_SYNC"
+
+# row 4i: the detached child must be reparented into its OWN process group
+# (start_new_session=True) -- the literal OS-level mechanism the fix's "survives
+# SessionEnd's process teardown" claim rests on. Verified via `pgrep`/`ps` (not a
+# kill/signal race, which would be flaky to time against process spawn).
+mkdir -p "$TD/hv-repo-pgid"
+git -C "$TD/hv-repo-pgid" init -q
+cat > "$TD/hv-pgid-extractor.sh" <<'EOF'
+#!/usr/bin/env bash
+sleep 2
+cat <<'JSON'
+[{"item":"pgid-probe","kind":"insight","home":"drop","why":"stay alive long enough to inspect"}]
+JSON
+EOF
+chmod +x "$TD/hv-pgid-extractor.sh"
+INVOKER_PGID=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+RC=0
+REPO_ROOT="$TD/hv-repo-pgid" HARVEST_EXTRACTOR="$TD/hv-pgid-extractor.sh" HARVEST_MIN_INTERVAL=0 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
+sleep 0.3
+CHILD_PID=$(pgrep -f "hv-pgid-extractor.sh" | head -1)
+TOTAL=$((TOTAL + 1))
+if [ -n "$CHILD_PID" ]; then
+  CHILD_PGID=$(ps -o pgid= -p "$CHILD_PID" 2>/dev/null | tr -d ' ')
+  if [ -n "$CHILD_PGID" ] && [ "$CHILD_PGID" != "$INVOKER_PGID" ]; then
+    echo -e "  ${GREEN}PASS${NC} row 4i: detached child (pgid=$CHILD_PGID) is in a DIFFERENT process group than the invoker (pgid=$INVOKER_PGID) -- would survive the invoker's group being torn down"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} row 4i: detached child shares the invoker's process group (pgid=$CHILD_PGID) -- would be killed alongside it"
+    FAIL=$((FAIL + 1))
+  fi
+else
+  echo -e "  ${RED}FAIL${NC} row 4i: could not find the detached extractor process to inspect (already finished or never spawned)"
+  FAIL=$((FAIL + 1))
+fi
+wait_for_file_contains "row 4i: ledger entry still lands after the pgid check" \
+  "pgid-probe" "$TD/hv-repo-pgid/_meta/learned-ledger.md"
+
+# row 4j/4k/4l: a CORRUPT payload handoff file must never leak on disk, for all three
+# detached-child entry points (--harvest-run, --lab-log-run, --stop-harvest). Each one's
+# read step (json.load) can fail on a truncated/malformed file; the shared
+# _read_and_run() wraps BOTH the read and the work in one outer finally.
+mkdir -p "$TD/hv-state-corrupt"
+for MODE in harvest-run lab-log-run stop-harvest; do
+  PF="$TD/hv-state-corrupt/payload-$MODE.json"
+  echo 'not valid json{{{' > "$PF"
+  RC=0
+  python3 "$KIT_DIR/hooks/harvest.py" "--$MODE" "$PF" >/dev/null 2>&1 || RC=$?
+  assert_exit "row 4j-l: --$MODE on a corrupt payload exits 0" 0 $RC
+  TOTAL=$((TOTAL + 1))
+  if [ ! -f "$PF" ]; then
+    echo -e "  ${GREEN}PASS${NC} row 4j-l: --$MODE's corrupt payload file was removed, not leaked"
+    PASS=$((PASS + 1))
+  else
+    echo -e "  ${RED}FAIL${NC} row 4j-l: --$MODE's corrupt payload file $PF was left behind"
+    FAIL=$((FAIL + 1))
+  fi
+done
 
 # ID-202: dedup-on-append must survive CONCURRENT invocations sharing one ledger
 # (e.g. parallel subagent sessions each firing PreCompact). Pre-fix, existing_slugs()

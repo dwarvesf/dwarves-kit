@@ -217,7 +217,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 ## What it does
 
 <details>
-<summary><b>Hooks</b> (24, automatic, event-triggered)</summary>
+<summary><b>Hooks</b> (25, automatic, event-triggered)</summary>
 
 | Hook | Event | What it does |
 |------|-------|-------------|
@@ -243,6 +243,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | post-compact-reinject | PostToolUse(compact) | Re-injects critical rules after compaction |
 | notification | Notification | Desktop alert when Claude needs input |
 | permission-auto-approve | PermissionRequest | Auto-approves read-only operations (pipe-safe) |
+| tool-policy-guard | PreToolUse | Enforces the tool-choice policy file (allow/ask/deny per tool domain; the enforcement half of the dashboard's tool-policy page) |
 | statusline | StatusLine | Shows model, branch, context %, cost, thinking mode |
 | codebase-index | SessionStart (opt-in) | Background-indexes the repo into codebase-memory-mcp |
 
@@ -251,17 +252,19 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (32, manual, human-triggered)</summary>
+<summary><b>Commands</b> (34, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
 | /kit:start | Entry | Detect project state, suggest next command |
 | /kit:grill | Intake | Universal intake interview: type-shaped questions, one at a time, answers written as they resolve |
+| /kit:wayfind | Intake | User-invoked: chart a too-foggy-for-one-session effort as a decision map (`_meta/megagoals/<slug>/map.md` + typed tickets), resolve one per session, hand off to /kit:spec or a ROADMAP |
 | /kit:think | Think | 6 forcing questions to stress-test an idea |
 | /kit:design | Design | Opt-in: interactive solution-design beat (one question at a time) before /spec |
 | /kit:devs-team | Design | Opt-in: 5-lens parallel critique of the solution (brief or spec), report-only |
 | /kit:visual-team | Design | Opt-in: 5-lens parallel critique of a visual/UI design (downstream-facing) |
 | /kit:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
+| /kit:prototype | Design | Opt-in: throwaway spike answering ONE design question (logic TUI or 3-5 UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch |
 | /kit:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
 | /kit:dispatch | Orchestrate | Fire N disjoint VALIDATED specs concurrently, each in its own worktree, behind a disjointness gate; lead-owned merge |
 | /kit:mega | Orchestrate | Mirrors the plan-for-mega-goal skill: decompose 3-8 dependent sub-goals, front-load every clarification once, set the per-run merge config, hand off to the bounded loop; ship-layer auto-merge rides the ship-gate via `lib/goal/mega-merge.sh`, never bypasses it |
@@ -291,7 +294,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (26, dispatched by commands) and <b>Skills</b> (4, Claude-triggered)</summary>
+<summary><b>Agents</b> (26, dispatched by commands) and <b>Skills</b> (7, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -324,8 +327,11 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 
 | Skill | What it does |
 |-------|-------------|
+| doc-drift | Whole-estate doc audit (audit-loop instance): enumerates every living doc, verdicts each claim against the live repo, fixes drift behind a PR gate |
 | get-api-docs | Fetches curated API docs via Context Hub before coding |
+| loop-engineering | Designs a new bounded loop for the kit's orchestration: the gate (should this be a loop), then the anatomy (artifact / scanner / reviser / stop condition) on the generic bounded-revise engine |
 | memory-tidy | Audits a repo's `.claude/memory` store: evidence-gated verdicts, PR-gated merges/deletions, index rebuild (judgment half of `stats memory-sweep`) |
+| observe | Queries/renders the control plane (runs, gate verdicts, conformance, spend/cache economics, replay, dashboard) via the lib/bench CLIs |
 | skill-review | Reviews + promotes skill drafts staged by skill-curator |
 | stats | Queries/renders the ledger read plane (relocated from `lib/stats/skill/` per ADR-0034 so it actually installs) |
 
@@ -361,8 +367,8 @@ dwarves-kit/
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`queue`/`session`/`spec`/`stats` thin forwarders to `lib/<subsystem>/`, plus the two module CLIs (`prose-rag`, `worktree-provision`) that keep their module names. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       (26 files) Subagents dispatched by commands
-  commands/                     (32 markdown command prompts)
-  hooks/                        (24 scripts + hooks.json plugin manifest)
+  commands/                     (34 markdown command prompts)
+  hooks/                        (25 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
   lib/goal/goal-registry.sh          Cross-session running-goal registry: claim/list/log/release (multi-session moat + monitor)

@@ -78,7 +78,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 32 commands + 26 agents = **58 entries** (10 build · 3 code · 11 test · 15 gate · 19 cross-phase).
+Total: 34 commands + 26 agents = **60 entries** (12 build · 3 code · 11 test · 15 gate · 19 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -88,6 +88,8 @@ Total: 32 commands + 26 agents = **58 entries** (10 build · 3 code · 11 test �
 | `/kit:assign` | command | Requirement | build | Turns a backlog item into a goal draft; routes it into the right lane |
 | `/kit:grill` | command | Requirement (intake) | build | Universal intake interview between type classification and the phase-0 Done=; type-shaped one-question-at-a-time, write-as-you-go (SPEC-058) |
 | `/kit:design` | command | Solution-design | build | Opt-in interactive beat between think and spec; shapes the solution one decision at a time |
+| `/kit:prototype` | command | Solution-design | build | Opt-in throwaway spike answering one design question (logic TUI or UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch (SPEC-206) |
+| `/kit:wayfind` | command | Requirement (intake) | build | User-invoked decision map for too-foggy-for-one-session efforts; typed tickets route to grill/prototype/research machinery; hands off to spec or a ROADMAP (SPEC-207) |
 | `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); dispatches 4 research agents for brownfield context |
 | `/kit:ui-design` | command | UI design | build | Opt-in; writes UI brief, delegates generation, routes through visual-team, auto-revises (bounded) |
 | `research-architecture` | agent | Spec (brownfield) | build | Maps architecture patterns; dispatched by /spec; read-only |
@@ -252,6 +254,7 @@ file count so this table cannot drift):
 | `codebase-index` | SessionStart (opt-in) | convenience | none (background indexing) |
 | `money-gate` | PreToolUse Edit/Write/MultiEdit | convenience | a silent careless edit to a ledger/payroll/wallet file in a repo the consumer named financial (inert until MONEY_GATE_REPOS is set) |
 | `prose-rag` | UserPromptSubmit | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
+| `tool-policy-guard` | PreToolUse | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
 
 **C3 reconciled.** PHILOSOPHY's "Guardrails over guidance" is bounded, not
 blanket: guardrail = the hard subset, where trust fails AND damage is

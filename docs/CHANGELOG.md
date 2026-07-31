@@ -5,6 +5,30 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **`/kit:wayfind`: the file-based decision map (SPEC-207 / ID-450).** User-invoked
+  pre-cycle intake shape for efforts too foggy for one session, ported from
+  mattpocock/skills wayfinder (MIT) onto files + the board: `_meta/megagoals/<slug>/map.md`
+  (Destination / Decisions-so-far gists / fog / out-of-scope) + typed decision tickets
+  (`research|prototype|grilling|task`) routing to the kit's own machinery; claim-by-header,
+  frontier = open unblocked unclaimed, one ticket per session (research fan-out excepted),
+  the agent never answers its own grill questions. Map clear hands off to `/kit:spec` or a
+  ROADMAP.md beside the map, never straight to execute. One umbrella board row per map.
+  Tracker-native storage stays parked (2026-07-25 tripwire unchanged). WORKFLOW.md gains
+  the wayfind intake paragraph + SPEC-206's Prototype phase-table row.
+- **`/kit:prototype`: the throwaway-spike beat (SPEC-206 / ID-448).** Opt-in beat beside
+  `/kit:design`, ported from mattpocock/skills prototype (MIT). The question decides the
+  shape: logic branch (pure portable module driven by a full-frame TUI) or UI branch (3-5
+  structurally different variants on one route via `?variant=`, prod-gated floating
+  switcher). Validated decision folds into the owning brief/spec; the prototype survives
+  as a primary source on a `prototype/<name>` branch, never in master. HITL by contract.
+  Executor for wayfind prototype tickets (ID-450).
+- **Fowler smell baseline + review-team dispatch safeguards (SPEC-205 / ID-449).** The
+  architecture lens (`agents/code-reviewer.md`) and solo `/kit:review` carry Fowler's
+  12-smell baseline (Refactoring ch.3, via mattpocock/skills code-review, MIT) with
+  three binding rules: repo standard overrides, every smell a labelled judgement call,
+  skip what tooling enforces. `/kit:review-team` fails fast (`git rev-parse` + non-empty
+  diff) BEFORE dispatching subagents, and its report summary states totals + worst issue
+  PER LENS, never a single cross-lens winner (the SPEC-081 merge machinery is unchanged).
 - **Multi-vendor sub-goal dispatch (ID-390).** A mega-goal sub-goal can declare
   `Harness: codex` (or `pi` / `opencode`) in its goal file to run on a non-Claude
   CLI, billing that vendor's quota instead of the Claude one while Claude stays the
