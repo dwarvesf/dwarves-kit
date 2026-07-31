@@ -38,6 +38,16 @@ survives). Work arrives two ways, and they coexist: an operator names an item
 `backlog.sh next` -> goal-registry claim -> flip to `claimed`). No daemon, no parallel task
 database: the markdown file is the one source of truth.
 
+**Too foggy to be a board item yet? Wayfind first (SPEC-207).** When an effort's open
+questions outnumber its stateable ones (a grill keeps hitting "can't phrase that question
+yet", or a brief carries 3+ unresolved decisions), `/kit:wayfind` charts it as a decision
+map at `_meta/megagoals/<slug>/map.md` + typed decision tickets, resolved one per session
+through the kit's own machinery (grilling -> `/kit:grill`, prototype -> `/kit:prototype`,
+research -> parallel subagents, task -> the lane ladder). The board keeps ONE umbrella row
+per map; tickets are never duplicated as rows. Map clear (nothing left to decide) hands off
+to `/kit:spec` or a ROADMAP.md beside the map (`/kit:mega`), never straight to execute. A
+well-scoped feature skips all this: `/kit:grill` + `/kit:spec` directly.
+
 ## Size the work first (risk-tiered intake)
 Pick a lane before you start. Smaller work skips ceremony.
 
@@ -128,6 +138,7 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 | Think    | /kit:think | decision brief written (if BUILD) | advisory |
 | Design (opt-in) | /kit:design | solution agreed + appended to the brief | advisory |
 | Design critique (opt-in) | /kit:devs-team, /kit:visual-team | critique appended to the active spec (else the brief) | advisory (normal/full) |
+| Prototype (opt-in) | /kit:prototype | validated decision folded into the brief/spec + `prototype/<name>` branch pointer on the owning row | advisory (HITL; SPEC-206) |
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /kit:spec-validate | Status: VALIDATED | advisory (full lane) |
@@ -237,7 +248,7 @@ the question actually needs judgment.
   output.
 
 **Cycle-table mapping.** The V-phase names above map onto the cycle-table rows:
-Think, Design (opt-in), Design critique (opt-in), UI design (opt-in), Spec,
+Think, Design (opt-in), Design critique (opt-in), Prototype (opt-in), UI design (opt-in), Spec,
 Validate, Test plan (default for normal/full), Build, Review, Docs, Ship, Reflect, and
 Debug (off-cycle).
 

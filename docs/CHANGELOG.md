@@ -5,6 +5,16 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **`/kit:wayfind`: the file-based decision map (SPEC-207 / ID-450).** User-invoked
+  pre-cycle intake shape for efforts too foggy for one session, ported from
+  mattpocock/skills wayfinder (MIT) onto files + the board: `_meta/megagoals/<slug>/map.md`
+  (Destination / Decisions-so-far gists / fog / out-of-scope) + typed decision tickets
+  (`research|prototype|grilling|task`) routing to the kit's own machinery; claim-by-header,
+  frontier = open unblocked unclaimed, one ticket per session (research fan-out excepted),
+  the agent never answers its own grill questions. Map clear hands off to `/kit:spec` or a
+  ROADMAP.md beside the map, never straight to execute. One umbrella board row per map.
+  Tracker-native storage stays parked (2026-07-25 tripwire unchanged). WORKFLOW.md gains
+  the wayfind intake paragraph + SPEC-206's Prototype phase-table row.
 - **`/kit:prototype`: the throwaway-spike beat (SPEC-206 / ID-448).** Opt-in beat beside
   `/kit:design`, ported from mattpocock/skills prototype (MIT). The question decides the
   shape: logic branch (pure portable module driven by a full-frame TUI) or UI branch (3-5
