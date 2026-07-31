@@ -1,6 +1,6 @@
 ---
 name: loop-engineering
-description: Use when the user wants to design or add a new bounded loop to the kit's own SDLC orchestration ("let's build a loop", "design a new loop for the orchestrator", "loop engineering", "make this a bounded loop", "is this worth a loop"). Walks the gate (should this even be a loop) then the anatomy (artifact / scanner / reviser / stop condition) reusing the kit's own generic bounded-revise engine. NOT for a one-off in-session Stop-hook goal (use goal-craft), NOT for the debug loop (already exists, use /kit:debug), NOT for building the loop's actual code once the shape is agreed (just build it).
+description: Use when the user wants to design or add a new bounded loop to the kit's own SDLC orchestration ("let's build a loop", "design a new loop for the orchestrator", "loop engineering", "make this a bounded loop", "is this worth a loop"), or mentions the Karpathy loop / autoresearch / hill-climb / search-and-select prompt or parameter tuning. Walks the gate (should this even be a loop) then the anatomy (artifact / scanner / reviser / stop condition), routing to one of three shapes: bounded-revise engine, campaign/worklist, or bounded search-select. NOT for a one-off in-session Stop-hook goal (use goal-craft), NOT for the debug loop (already exists, use /kit:debug), NOT for building the loop's actual code once the shape is agreed (just build it).
 disable-model-invocation: false
 ---
 
@@ -56,9 +56,11 @@ skill invents no new one:
 If any of these fail, the idea is not a loop. It may still work as a one-shot side-flow, like
 `kit-health` or `absorb`. A side-flow is simpler and does not need this skill.
 
-## Step 2: Pick the shape, engine, or campaign?
+## Step 2: Pick the shape
 
-Two shapes already exist. Do not conflate them:
+Three shapes exist. Do not conflate them. The routing question: does the loop make ONE thing
+good (engine), check MANY existing things (campaign, or the audit-loop pattern), or find the
+BEST VARIANT of one thing (search-select)?
 
 - **Bounded-revise engine.** Use this when the loop converges on one artifact. Dispatch N
   scanners against the artifact. Merge findings by severity. Revise the artifact. Re-check.
@@ -116,7 +118,32 @@ Two shapes already exist. Do not conflate them:
 
   This reuses the Goal loop's own shape: "keep working one objective until a verifiable stop
   holds." Here it points at a list instead of one objective. Do not build a second convergence
-  mechanic. Reuse the Goal loop.
+  mechanic. Reuse the Goal loop. For the audit flavor of this shape, enumerate a set, verdict
+  each item, gate through a PR, see `docs/patterns/audit-loop.md`.
+
+- **Bounded search-select.** Use this when the goal is the best VARIANT of one thing, not the
+  repair of one thing. Mutate a candidate, score it, keep it if the score improves, discard it
+  if not. Repeat under a fixed iteration budget. This is Karpathy's autoresearch loop
+  ([github.com/karpathy/autoresearch](https://github.com/karpathy/autoresearch)), bounded.
+
+  All three preconditions must hold, or this shape is wrong:
+
+  1. **A cheap, unambiguous numeric metric exists.** A training loss, a false-positive rate
+     against a corpus, a test pass count, a benchmark score. If a model must judge quality,
+     that judge becomes the metric, and the corpus bar below applies.
+  2. **Evaluation is fast enough to afford many shots.** Karpathy's budget math: about 5
+     minutes per experiment, about 100 overnight. One-hour evaluations make hill-climbing the
+     wrong economics.
+  3. **Losers carry no information the next attempt needs.** A discarded variant is thrown
+     away whole. If a failed attempt should teach the next one, use the bounded-revise engine
+     instead.
+
+  Two adaptations are mandatory, per `docs/PHILOSOPHY.md` "Loop boundaries": a fixed iteration
+  budget (never "loop forever until interrupted"), and an honest-halt report at the end, what
+  improved, what plateaued, which variant won. Kit targets already queued for this shape, and
+  their corpus bar (10-30+ real transcripts, not yet met): `docs/PHILOSOPHY.md` "AutoResearch
+  optimization". Full source verification and adoption verdict:
+  `docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
 
 ## Step 3: Where it lands once shaped
 
