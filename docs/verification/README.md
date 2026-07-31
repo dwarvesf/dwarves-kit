@@ -44,6 +44,43 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
 
 For a load-bearing change, all three are required. Green-only is a weak proof.
 
+### Visual-first: a change with a visible surface OWES a capture
+
+Part 1 above says the gate ACCEPTS a capture. This says when a capture is REQUIRED.
+
+A behavioral change with a visible surface owes a capture in its proof. A visible surface means
+a CLI's output, a TUI, a web or desktop UI, or a rendered document. The rule is one line: if a
+human could look at the change and tell whether it worked, the proof shows them.
+
+| Change shape | What the proof owes | Form |
+|---|---|---|
+| Visible surface (CLI output, TUI, web UI, rendered doc) | a capture, embedded INLINE in the RUN_REPORT or proof-of-done | GIF, MP4, or freeze PNG |
+| Headless or API (a library, a parser, a daemon, a schema) | the text run-table, unchanged | `Command:` / `Exit:` / output excerpt |
+| Both (a daemon that also gained a status view) | both, each labelled for the half it covers | capture + run-table |
+
+Three rules make the requirement honest rather than decorative:
+
+1. **Inline, not linked.** Embed the capture with `![...](path)` next to the run table. A link a
+   reviewer must click is a capture most reviewers never see, which is the whole problem the
+   requirement exists to fix.
+2. **Label what the capture does not cover.** A capture proves the surface rendered. It does not
+   prove the negative control or the reproducibility clause, so a visual proof still carries
+   parts 2 and 3 in text.
+3. **Say so when there is no capture.** A headless change writes "headless, no visible surface"
+   in place of a capture. Silence reads as an omission; the honest label reads as a decision.
+
+**The producer is the visual-proof module (kit board ID-395), not this document.** That module
+owns recording, framing, and the reproduce script. Until it lands, a hand-recorded capture that
+meets the three rules above satisfies the contract. This section states the contract; it is not
+enforced by a gate yet, so treat it as the standard a reviewer holds you to, not as a blocker
+that fires automatically.
+
+**Where the captures end up being read:** `mega runs` renders every RUN_REPORT, proof-of-done,
+and verification run across the registered estate into ONE static HTML page of run cards, with
+each report's own captures embedded inline (SPEC-215). A proof that carries a capture shows a
+picture there; a proof that carries none shows an honest text card. That page is the reason the
+inline rule matters.
+
 ## Layout: one design + a runs/ directory per work item
 
 ```

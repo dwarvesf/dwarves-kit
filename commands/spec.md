@@ -107,6 +107,20 @@ Which one, and what the rejected alternatives traded away.
 See `## Design` below , ADR-0031 §1 promotes the diagram out of this sub-section into its
 own gated block, so a design-bearing spec cannot ship an empty architecture hint.
 
+## Picture
+<!-- ID-454, the PRE-build twin of ID-395's post-build visual proof. A ticket that carries a
+     picture (a diagram or a prototype) builds better than prose alone. Required (non-empty)
+     for a `full`-lane spec; encouraged, not required, below full; do not force it on an
+     obvious normal-lane change. Checked by `/kit:spec-validate` Reviewer 4 (mechanical
+     presence on full-lane, plus a lens question: does the picture agree with `## Task
+     Breakdown`?). ASCII or box-drawing only, never mermaid; this section is for a human to
+     glance at, not to render. -->
+An ASCII diagram of the change: the pieces it touches, and the arrows between them.
+
+UI-shaped spec (a screen, a component, a layout choice)? Point here instead of drawing ASCII:
+run `/kit:prototype`, then name the branch and the variant to look at: `prototype/<name>`,
+variant <N>: <one line on what it shows>.
+
 ## Design
 <!-- ADR-0031 §1 (the understanding gate, BEFORE half). Required (non-empty) for any spec
      above the tiny lane that is DESIGN-BEARING: new component/module, non-obvious control

@@ -5,6 +5,33 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Self-answer mode + the backlog watcher, the manager-loop pilot (SPEC-217 / ID-457).**
+  `/kit:grill` gains an explicit self-answer mode for autonomous runs: it activates only when
+  the driving row carries the operator-set `#auto` tag, and every self-answered question lands
+  as a debt-ledger row (question, answer, why) that `learn debt collect` surfaces at paydown;
+  the rule is "never decide invisibly", interactive lanes untouched. `queue watch`
+  (`lib/queue/watch-board.sh`) is a filter in front of `queue run`: it plans `queued` rows
+  tagged `#auto` that pass the pointer allow-list plus a symlink-aware containment pass, dedups
+  against the queue journal (`done`/`gated` are terminal), dry-run by default, budget cap
+  forwarded to the queue. Side fix: `_pointer_allowlist_reason` no longer glob-expands its
+  pattern loop against the cwd, which had broken legitimate `--from-boards` pointers when run
+  from the repo root.
+- **Spec template gains `## Picture`, the pre-build twin of visual proof (SPEC-214 / ID-454).**
+  A spec's `## Picture` section (ASCII/box-drawing diagram of the pieces + arrows, never
+  mermaid) sits between `## Solution` and `## Design`, required non-empty on full-lane specs,
+  encouraged elsewhere. A UI-shaped spec points it at a `/kit:prototype` branch + variant
+  instead of drawing ASCII. `/kit:spec-validate` Reviewer 4 (Scope Critic) gains a mechanical
+  presence check (full-lane only) plus a lens question: does the picture agree with
+  `## Task Breakdown`. Both bullets are advisory; Reviewer 6 stays the only reviewer that can
+  refuse `VALIDATED`. Proven the same way SPEC-122's `## Design` check is proven, a
+  fixture-based structural test (`tests/test-picture-section.sh`) since the reviewer itself is
+  prompt text, not code.
+- **`GUIDE.md`, the end-user owner's manual (SPEC-216 / ID-456).** `docs/GUIDE.template.md`
+  is a fill-in skeleton (what this does / how to use it / what to do when it breaks, one
+  page, ELI10 register) for products with an end user who is not the builder. `/kit:ship`
+  gains a warn-not-block check applying that same "has an end user" test; `/kit:docs`'s
+  scan step keeps `GUIDE.md` in scope on doc-drift passes. No renderer, no new command;
+  libraries and infra are exempt by the same test.
 - **`/kit:wayfind`: the file-based decision map (SPEC-207 / ID-450).** User-invoked
   pre-cycle intake shape for efforts too foggy for one session, ported from
   mattpocock/skills wayfinder (MIT) onto files + the board: `_meta/megagoals/<slug>/map.md`

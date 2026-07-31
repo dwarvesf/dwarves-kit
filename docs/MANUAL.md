@@ -2,6 +2,11 @@
 
 Operator reference for dwarves-kit: every command, hook, and agent, plus how to drive the kit from natural language and how to recover when it misbehaves. For the WHY behind any choice, see `docs/PHILOSOPHY.md`. For component fit and the SDLC state machine, see `docs/architecture.md`. For the end-to-end workflow contract (phases, risk-tier lanes, gates, flow/loop diagrams), see `WORKFLOW.md`.
 
+Same loop, told as a story: an interview turns your ask into a blueprint, a crew builds it, a
+logbook records the run, an inspector stamps every doorway, and a debrief writes up the lesson
+for next time. The story names are prose only; every command and file below keeps its real
+name. Full tour: `/kit:onboard`. Story-name lookup: `docs/glossary.md`.
+
 ## Conventions
 
 - Plugin install path (recommended): commands invoked as `/kit:<name>` (e.g. `/kit:spec`).
