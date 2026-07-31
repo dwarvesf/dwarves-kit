@@ -5,6 +5,17 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Self-answer mode + the backlog watcher, the manager-loop pilot (SPEC-217 / ID-457).**
+  `/kit:grill` gains an explicit self-answer mode for autonomous runs: it activates only when
+  the driving row carries the operator-set `#auto` tag, and every self-answered question lands
+  as a debt-ledger row (question, answer, why) that `learn debt collect` surfaces at paydown;
+  the rule is "never decide invisibly", interactive lanes untouched. `queue watch`
+  (`lib/queue/watch-board.sh`) is a filter in front of `queue run`: it plans `queued` rows
+  tagged `#auto` that pass the pointer allow-list plus a symlink-aware containment pass, dedups
+  against the queue journal (`done`/`gated` are terminal), dry-run by default, budget cap
+  forwarded to the queue. Side fix: `_pointer_allowlist_reason` no longer glob-expands its
+  pattern loop against the cwd, which had broken legitimate `--from-boards` pointers when run
+  from the repo root.
 - **Spec template gains `## Picture`, the pre-build twin of visual proof (SPEC-214 / ID-454).**
   A spec's `## Picture` section (ASCII/box-drawing diagram of the pieces + arrows, never
   mermaid) sits between `## Solution` and `## Design`, required non-empty on full-lane specs,
