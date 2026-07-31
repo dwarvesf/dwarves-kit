@@ -1,6 +1,6 @@
 # Implementation notes: runaway guards
 
-The DELTA from `docs/specs/SPEC-220-runaway-guards.md`, not a mirror of it. Entries are appended
+The DELTA from `docs/specs/SPEC-221-runaway-guards.md`, not a mirror of it. Entries are appended
 as decisions land.
 
 ## 2026-08-01 09:10 The spec number moved from 218 to 220
@@ -9,7 +9,7 @@ Context: the task reserved SPEC-218. By the time the branch was cut, `SPEC-218-f
 and `SPEC-219-feature-registry` had both merged to master, and `lib/spec/spec-next.sh next`
 returned 220.
 
-Decision: renumber to SPEC-220. Every reference in the spec, the two libs, and the test moved
+Decision: renumber to SPEC-221. Every reference in the spec, the two libs, and the test moved
 with it.
 
 Why: `tests/test-meta.sh` carries a hard duplicate-SPEC-number guard, and it went RED on the

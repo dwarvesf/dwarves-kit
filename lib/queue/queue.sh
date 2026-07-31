@@ -40,7 +40,7 @@
 #                            below); a hand-authored tsv is allow-list-exempt by design (operator
 #                            authorship IS the trust boundary for that path)
 #
-# RUNAWAY GUARDS (SPEC-220). Three per-slug sidecar files under <log-dir>/queue-runs/, each with
+# RUNAWAY GUARDS (SPEC-221). Three per-slug sidecar files under <log-dir>/queue-runs/, each with
 # exactly ONE writer: `<slug>.beat` (this conductor touches it every poll; its mtime IS the
 # liveness signal and its PRESENCE is the in-flight claim), `<slug>.status` (the RUN writes it;
 # carries the explicit EXIT_SIGNAL line), `<slug>.guard` (counters + timers, key=value). The
@@ -107,11 +107,11 @@ esac
 # hand-authored tsv is exempt by design: the OPERATOR authored it, which IS the trust boundary).
 QUEUE_ALLOWED_POINTER_GLOB="${QUEUE_ALLOWED_POINTER_GLOB:-_meta/megagoals/* .claude/goals/*}"
 
-# ---- runaway-guard thresholds (SPEC-220) -------------------------------------------------------
+# ---- runaway-guard thresholds (SPEC-221) -------------------------------------------------------
 # Re-derived for THIS kit's clocks, not copied from the donor: the beat interval here is
 # QUEUE_POLL_SECS (15s, vs the donor's 30s) and the per-row ceiling is QUEUE_TIMEOUT_SECS (2h, vs
 # their hours-long stage budget). So the short threshold is tighter in beat-multiples and the long
-# one is SHORTER in absolute terms. Full derivation: docs/specs/SPEC-220-runaway-guards.md.
+# one is SHORTER in absolute terms. Full derivation: docs/specs/SPEC-221-runaway-guards.md.
 QUEUE_BEAT_STALE_SECS="${QUEUE_BEAT_STALE_SECS:-600}"
 QUEUE_BEAT_DEAD_SECS="${QUEUE_BEAT_DEAD_SECS:-3600}"
 QUEUE_MAX_STALLS="${QUEUE_MAX_STALLS:-3}"
@@ -129,7 +129,7 @@ _say()  { printf '%s\n' "$*"; }
 _warn() { printf '%s\n' "$*" >&2; }
 _now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# ---- per-slug sidecars (SPEC-220) --------------------------------------------------------------
+# ---- per-slug sidecars (SPEC-221) --------------------------------------------------------------
 # Portable file mtime in epoch seconds. GNU `stat -c` is tried FIRST because it errors cleanly on
 # BSD/macOS so the `stat -f` fallback runs there; the reverse order is unsafe (GNU `stat -f`
 # SUCCEEDS with filesystem text, starving the fallback and poisoning the arithmetic). Same shape
@@ -190,7 +190,7 @@ _guard_num() {  # slug key
   case "$v" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$v" ;; esac
 }
 
-# ---- the explicit exit signal (SPEC-220) -------------------------------------------------------
+# ---- the explicit exit signal (SPEC-221) -------------------------------------------------------
 # `<slug>.status` is written BY THE RUN. Read one key's value, first occurrence wins.
 _status_get() {  # slug key
   local f; f=$(_run_file "$1" status) || return 0
@@ -275,7 +275,7 @@ _repo_skip_reason() {  # repo
 # an UNINTENDED session/window (target confusion -> misdirected keystrokes or kill-window; review
 # finding, LOW). Reject before any mux verb runs; a slug is meant to be a simple identifier.
 #
-# `/` joined the reject set with SPEC-220: the slug now also names a FILE under the sidecar
+# `/` joined the reject set with SPEC-221: the slug now also names a FILE under the sidecar
 # directory (`<log-dir>/queue-runs/<slug>.beat`), so a separator would be a traversal out of it.
 # Sanitizing instead of refusing was rejected: two different slugs would collide on one sidecar.
 _slug_ok() {  # slug
@@ -386,7 +386,7 @@ _scan_marker() {  # transcript-on-stdin
 # spaces so the TUI receives exactly ONE submission (a multi-line paste would submit early). v0
 # behavior: prompts are treated as one logical paragraph. Metachars in the content stay literal.
 #
-# SPEC-220 appends ONE clause naming the run's status file. That is how the run learns where to
+# SPEC-221 appends ONE clause naming the run's status file. That is how the run learns where to
 # write its explicit EXIT_SIGNAL: the typed prompt is the same channel the RUNNER_DONE contract
 # already travels on, so it needs no `tmux new-window -e` (tmux 3.0 floor) and no environment
 # inheritance assumption. A run that ignores the clause behaves exactly as before.
@@ -426,7 +426,7 @@ _launch_once() {  # slug repo pointer
       return 2
     fi
 
-    # SPEC-220 exit gate. Read the run's OWN explicit signal BEFORE the pane, every poll. The
+    # SPEC-221 exit gate. Read the run's OWN explicit signal BEFORE the pane, every poll. The
     # ordering is the anti-false-completion rule: an explicit `false` outranks whatever prose the
     # pane happens to render, and an unparsable file is never a completion.
     sig=$(_exit_signal "$slug")
@@ -543,7 +543,7 @@ _pointer_allowlist_reason() {  # repo pointer
   printf 'pointer "%s" not allow-listed (want one of: %s)' "$rel" "$QUEUE_ALLOWED_POINTER_GLOB"
 }
 
-# ---- circuit breaker (SPEC-220) ----------------------------------------------------------------
+# ---- circuit breaker (SPEC-221) ----------------------------------------------------------------
 # The FOUR no-progress escape hatches, ported because git-diff-only stall detection produces false
 # stalls and that is precisely the failure this guard must not have.
 #
@@ -715,7 +715,7 @@ cmd_run() {
       stalled:*) reason="${verdict#stalled:}"; verdict=stalled ;;
       *)         reason="" ;;
     esac
-    # SPEC-220: counters + the trip decision. May rewrite a NON-terminal verdict to `error`.
+    # SPEC-221: counters + the trip decision. May rewrite a NON-terminal verdict to `error`.
     # _breaker_apply always prints exactly `verdict<TAB>reason`; an empty reason keeps the one
     # the run itself produced (a `gated:` pane reason, or `malformed_exit_signal`).
     IFS=$'\t' read -r brk_verdict brk_reason <<< "$(_breaker_apply "$slug" "$repo" "$head_before" "$verdict")"

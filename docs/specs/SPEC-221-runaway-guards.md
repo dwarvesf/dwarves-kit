@@ -1,4 +1,4 @@
-# SPEC-220: runaway guards for the autonomous run queue
+# SPEC-221: runaway guards for the autonomous run queue
 
 Status: Draft · 2026-07-31 · Owner: Han
 Lane: full (`lane-classify.sh classify` said `full`)

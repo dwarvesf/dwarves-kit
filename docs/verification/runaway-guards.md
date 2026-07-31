@@ -1,9 +1,9 @@
-# Proof of done: runaway guards on the autonomous run queue (ID-460, SPEC-220)
+# Proof of done: runaway guards on the autonomous run queue (ID-460, SPEC-221)
 
 2026-08-01. Acceptance: a run whose conductor dies gets a journal verdict on the next watcher
 tick; a stalled row backs off and quarantines on the third stall; an explicit `EXIT_SIGNAL` always
 outranks pane prose and a malformed one is never a completion. Lane: full. Spec:
-`docs/specs/SPEC-220-runaway-guards.md`.
+`docs/specs/SPEC-221-runaway-guards.md`.
 
 ## Green run
 
@@ -131,7 +131,7 @@ Restored output: `=== 38/38 passed, 0 failed ===`.
    by A4 (`the stall counter incremented` read 0 while the verdict itself was correct). Fixed by
    requiring a real directory before either git hatch runs.
 2. **SPEC-218 was already taken.** `tests/test-meta.sh`'s duplicate-number guard went RED;
-   renumbered to SPEC-220 per `lib/spec/spec-next.sh next`.
+   renumbered to SPEC-221 per `lib/spec/spec-next.sh next`.
 3. **`docs/FEATURES.md` went stale.** The generated projection needed a regenerate after the new
    spec landed; the freshness pin caught it.
 
