@@ -698,6 +698,12 @@ _schedule_retry() {  # slug stall-count
 # runs `--dangerously-skip-permissions`, so no bash wrapper can intercept a write. What this does is
 # make such a write TERMINAL and visible, `gated` rather than a silent ship. Both surfaces are read
 # because a run may commit (diff against the pre-launch HEAD) or leave the tree dirty (status).
+#
+# `_progress_evidence` above reads the SAME two git surfaces for a different question (did the repo
+# move at all). Kept separate on purpose: one asks "was there progress", this asks "was a protected
+# path touched", and merging them would couple the breaker's evidence rules to the deny-glob's.
+# If a third caller ever needs the changed-path set, snapshot it once and pass it to both
+# (architecture review, LOW: two derivations of one fact can drift).
 _protected_touched() {  # repo head-before
   local repo="$1" before="$2" p r
   { [ -n "$repo" ] && [ -d "$repo" ]; } || return 0
@@ -707,9 +713,12 @@ _protected_touched() {  # repo head-before
     [ -n "$r" ] && { printf '%s' "$r"; return; }
   done < <(
     { [ -n "$before" ] && git -C "$repo" diff --name-only "$before" HEAD 2>/dev/null
-      # `status --porcelain` prefixes two status columns and a space; a rename prints
-      # `old -> new`, which simply fails to match a glob rather than matching the wrong one.
-      git -C "$repo" status --porcelain 2>/dev/null | cut -c4-
+      # `status --porcelain` prefixes two status columns and a space. A rename prints `old -> new`,
+      # and a failed glob match on THAT string is a false negative in a deny-list, not a safe
+      # default: `git mv scratch.md CLAUDE.md`, left staged, would ship ungated (security review,
+      # HIGH). So emit both sides of a rename as separate paths.
+      git -C "$repo" status --porcelain 2>/dev/null | cut -c4- \
+        | sed -e 's/ -> /\'$'\n''/'
     } | sort -u
   )
 }

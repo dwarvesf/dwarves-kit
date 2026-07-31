@@ -79,10 +79,17 @@ sanitize_cell() {
       $s =~ s/&#x([0-9A-Fa-f]{1,6});/chr(hex($1))/ge;
     }
 
-    # 2. Invisible and direction-controlling codepoints, plus the Plane-14 tag block whose members
-    #    are invisible 1:1 twins of ASCII.
-    $s =~ s/[\x{00AD}\x{200B}-\x{200F}\x{2060}-\x{2064}\x{FEFF}\x{202A}-\x{202E}\x{2066}-\x{2069}]//g;
-    $s =~ s/[\x{E0000}-\x{E007F}]//g;
+    # 2. Invisible codepoints, stripped by PROPERTY, never by an enumerated list. An enumeration is
+    #    a blocklist, and this one shipped as a list first: a security review broke it in one line
+    #    with U+034F (combining grapheme joiner), which is not a format character and is not in any
+    #    obvious range, but renders at zero width in every terminal. `<!` + CGJ + `--` then read as
+    #    a real comment to a human and to a model while matching no comment pattern at all.
+    #    \p{Cf} covers the format class (soft hyphen, zero-width space, bidi controls, the Plane-14
+    #    tag block); \p{Default_Ignorable_Code_Point} covers the rest of the zero-width set that is
+    #    NOT Cf (CGJ, variation selectors, Mongolian free variation selectors, Hangul filler).
+    #    Accepted cost: an emoji zero-width-joiner sequence is split into its parts. A goal prompt
+    #    is not the place to carry one.
+    $s =~ s/[\p{Cf}\p{Default_Ignorable_Code_Point}\x{FFFC}]//g;
 
     # 3. ANSI: CSI sequences and OSC strings.
     $s =~ s/\x1b\[[0-9;?]*[\x20-\x2f]*[\x40-\x7e]//g;
@@ -90,7 +97,10 @@ sanitize_cell() {
 
     # 4. Control characters. The typed prompt is ONE submission, so a newline is not merely noise:
     #    it would submit early. Whitespace controls become a space; everything else is deleted.
-    $s =~ s/[\r\n\t\x0B\x0C]/ /g;
+    #    U+2028 and U+2029 are named explicitly rather than left to the whitespace collapse below:
+    #    a line separator that only disappears as a side effect of a later step is a property nobody
+    #    can rely on (security review).
+    $s =~ s/[\r\n\t\x0B\x0C\x{2028}\x{2029}]/ /g;
     $s =~ s/[\x00-\x1f\x7f\x{0080}-\x{009f}]//g;
 
     # 5. HTML comments, deleted (never escaped). Iterated so a nested pair unwinds; a dangling open
