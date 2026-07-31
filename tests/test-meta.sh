@@ -2940,6 +2940,20 @@ DMPROOF="$KIT_DIR/docs/verification/done-modes.md"
 RC=0; { grep -qiE 'converge' "$DMPROOF" && grep -qiE 'cap-out|round 3|round cap 3' "$DMPROOF" && grep -qiE 're-found|does NOT quiesce|falsely' "$DMPROOF" && grep -qiE 'plain REVISE|cap.*2' "$DMPROOF"; } || RC=1
 assert_eq "done-modes proof carries the 3 quiescence fixtures + plain-REVISE regression (SPEC-112)" 0 $RC
 
+# ============================================================
+echo ""
+echo "=== Feature-registry freshness pin (SPEC-217) ==="
+# ============================================================
+# docs/FEATURES.md is a generated projection (lib/registry/feature-registry.sh).
+# Same class as the derived-count pins above: regenerate to a temp file and diff
+# against the committed copy; ANY drift (a feature added/removed/renamed, a
+# description or wiring change) fails here until the registry is regenerated.
+REG_TMP=$(mktemp)
+bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP" 2>/dev/null
+diff -q "$REG_TMP" "$KIT_DIR/docs/FEATURES.md" >/dev/null 2>&1
+assert_true "docs/FEATURES.md is fresh (regenerate == committed, SPEC-217)" $?
+rm -f "$REG_TMP"
+
 echo ""
 echo "=== Results ==="
 # ============================================================
