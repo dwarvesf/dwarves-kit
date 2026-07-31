@@ -33,7 +33,7 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 | Stage | Commands |
 |---|---|
 | (front door) | `/kit:start`, `/kit:onboard`, `/kit:adopt` |
-| Shape | `/kit:grill`, `/kit:think`, `/kit:design`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`, `/kit:assign`, `/kit:spec`, `/kit:spec-validate`, `/kit:test-plan` |
+| Shape | `/kit:wayfind`, `/kit:grill`, `/kit:think`, `/kit:design`, `/kit:prototype`, `/kit:devs-team`, `/kit:visual-team`, `/kit:ui-design`, `/kit:assign`, `/kit:spec`, `/kit:spec-validate`, `/kit:test-plan` |
 | Build | `/kit:execute`, `/kit:next`, `/kit:dispatch`, `/kit:mega`, `/kit:debug` |
 | Watch | `/kit:explain`, `/kit:pitch` (render the record outward; the read plane itself is the `stats` skill + `session` CLI, not a command) |
 | Check | `/kit:review`, `/kit:review-team`, `/kit:test-plan-review-team`, `/kit:verify`, `/kit:quiz-gate`, `/kit:ship` |
@@ -79,6 +79,22 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 **Writes:** appends a `## Solution` section to `docs/briefs/DECISION-BRIEF.md` (never clobbers the brief's product framing); when the design is design-bearing, also appends a `## Design` section (diagram + ADR link(s), ADR-0031 §1 / SPEC-122) that `/kit:spec` folds into the spec
 **When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/kit:spec`. Opt-in; skip it and `/kit:spec` works as before.
 **Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
+
+### `/kit:prototype`
+
+**Phase:** opt-in throwaway-spike beat beside `/kit:design` (SPEC-206)
+**Reads:** the design question at hand, the brief/spec if present
+**Writes:** throwaway code on a `prototype/<name>` branch, never in master; the DECISION folds back into the brief/spec
+**When to invoke:** a design question resists prose, a state model that only feels wrong once pushed through real cases (logic TUI, driven by hand), or a layout argued in the abstract (3-5 structurally different UI variants on one route)
+**Common gotcha:** HITL by contract: the human drives the prototype and makes the call; the agent builds the instrument, it never answers the design question itself. The prototype is throwaway; only the decision survives.
+
+### `/kit:wayfind`
+
+**Phase:** pre-cycle intake shape for work too foggy for one session (SPEC-207)
+**Reads:** the loose idea; the board
+**Writes:** `_meta/megagoals/<slug>/map.md` (destination / decisions-so-far / fog / out-of-scope) + typed decision tickets (`research` / `prototype` / `grilling` / `task`), resolved one per session through the kit's own machinery
+**When to invoke:** the OPEN questions outnumber the stateable ones. A well-scoped feature belongs on `/kit:grill` + `/kit:spec`; a decomposable build with a clear route belongs on `/kit:mega`; wayfind is only for genuine fog
+**Common gotcha:** map-clear hands off to `/kit:spec` or a ROADMAP, never straight to execute. Grilling tickets are never delegated (the agent must not answer its own questions). User-invoked only (`disable-model-invocation: true`).
 
 ### `/kit:devs-team`
 
@@ -287,22 +303,24 @@ Related , **2b-0 role synthesis** (inside `/kit:execute`): each task is classifi
 
 ## Hooks (no invocation)
 
-| Hook | Event | What to remember |
+The full hook inventory (every hook, its event, and its behavior) lives in ONE place:
+`docs/architecture.md`, the hooks table. This section deliberately does not duplicate it: a
+second copy drifted to 14 of 25 rows before the 2026-07-31 doc-drift run caught it, missing
+`ship-gate` among others.
+
+One advisory worth knowing by name: `context-readiness` (SessionStart) reads the active spec's
+status plus the board's queued count (`board:Nq`, SPEC-083) and suggests the next step; silent
+when the project is healthy.
+
+What to remember here: the blocking hooks, everything else advises or warns.
+
+| Blocker | Event | What it stops |
 |---|---|---|
-| `safety-gate` | PreToolUse(Bash) | Blocks `rm -rf` (build-artifact allowlist), push to main, force push, `DROP TABLE`, `git reset --hard`, `kubectl delete`. Override needs explicit user OK. |
-| `secrets-guard` | PreToolUse(Read\|Edit\|Bash) | Blocks reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`); canonicalizes the path first so alternate spellings cannot bypass. Allows `.env.example`. Best-effort on the Bash surface. |
-| `commit-format` | PreToolUse(Bash) | Blocks a `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker. Subject only; bodies and editor commits pass. |
-| `context-readiness` | SessionStart | Reads `docs/specs/SPEC-NNN-<slug>.md` status + the board's queued count (`board:Nq`, SPEC-083), suggests the next step intent-first ("state the task", command in parentheses). Silent when project is healthy. |
-| `anti-rationalization` | Stop | Blocks premature "done": rationalization phrases, guess-fix during an open `/debug` session, and unimplemented-stub markers in the diff. |
-| `slop-cleaner` | Stop | Flags bloated code in recently modified files. Nudge only. |
-| `session-state-save` | Stop, SubagentStop | Persists state to `.claude/session-state/`. Rotates 10 archives. Fail-open. |
-| `auto-format` | PostToolUse(Write\|Edit) | Detects local formatter, never network downloads. |
-| `spec-drift-guard` | PreToolUse(Write) | Warns when creating files not in the spec. Skips `.claude/`. |
-| `pre-compact-backup` | PreCompact | Snapshots session state before context compaction. |
-| `post-compact-reinject` | PostToolUse(compact) | Re-injects critical rules after compaction. |
-| `notification` | Notification | Desktop alert when Claude needs input. |
-| `permission-auto-approve` | PermissionRequest | Auto-approves read-only ops; rejects pipes/chains/subshells. |
-| `statusline` | StatusLine | `[model] branch | ctx:XX%! | $cost | think:on/off`. Bash-only. Bash install only. |
+| `safety-gate` | PreToolUse(Bash) | `rm -rf` (build-artifact allowlist), push to main, force push, `DROP TABLE`, `git reset --hard`, `kubectl delete`. Override needs explicit user OK. |
+| `ship-gate` | PreToolUse(Bash, on push/PR-create) | Shipping without a recorded proof-of-done / gate-ledger record for the lane. The answer to "why did my push get blocked": run `/kit:verify`, or record the audited override. |
+| `secrets-guard` | PreToolUse(Read\|Edit\|Bash) | Reads of secret files (`.env`, `~/.ssh`, `~/.aws`, `.pem`); canonicalizes the path first. Allows `.env.example`. Best-effort on the Bash surface. |
+| `commit-format` | PreToolUse(Bash) | A `git commit -m` subject that is non-conventional, >72 chars, or carries a SPEC-/TASK-/phase marker. Subject only. |
+| `anti-rationalization` | Stop | Premature "done": rationalization phrases, guess-fix during an open `/debug` session, unimplemented-stub markers in the diff. |
 
 ## Agents (dispatched, not invoked)
 
