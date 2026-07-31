@@ -169,7 +169,8 @@ hooks_table() {
 generate() {
   local out="${1:-$KIT_DIR/docs/FEATURES.md}"
   local tmp="$out.tmp.$$"
-  trap 'rm -f "$tmp"' EXIT
+  # expand $tmp NOW: the trap fires at script exit, after the local is gone
+  trap "rm -f '$tmp'" EXIT
   {
     echo "---"
     echo "title: Feature registry"
