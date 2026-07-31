@@ -5,6 +5,16 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **Spec template gains `## Picture`, the pre-build twin of visual proof (SPEC-214 / ID-454).**
+  A spec's `## Picture` section (ASCII/box-drawing diagram of the pieces + arrows, never
+  mermaid) sits between `## Solution` and `## Design`, required non-empty on full-lane specs,
+  encouraged elsewhere. A UI-shaped spec points it at a `/kit:prototype` branch + variant
+  instead of drawing ASCII. `/kit:spec-validate` Reviewer 4 (Scope Critic) gains a mechanical
+  presence check (full-lane only) plus a lens question: does the picture agree with
+  `## Task Breakdown`. Both bullets are advisory; Reviewer 6 stays the only reviewer that can
+  refuse `VALIDATED`. Proven the same way SPEC-122's `## Design` check is proven, a
+  fixture-based structural test (`tests/test-picture-section.sh`) since the reviewer itself is
+  prompt text, not code.
 - **`/kit:wayfind`: the file-based decision map (SPEC-207 / ID-450).** User-invoked
   pre-cycle intake shape for efforts too foggy for one session, ported from
   mattpocock/skills wayfinder (MIT) onto files + the board: `_meta/megagoals/<slug>/map.md`
