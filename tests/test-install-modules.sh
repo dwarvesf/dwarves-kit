@@ -79,7 +79,7 @@ assert_true "re-run (no --with) reproduces the same wired set from the manifest"
 # ============================================================
 echo "== NC un-opted-hook-absent: a cosmetic/session/advisor hook never reaches settings.json =="
 # ============================================================
-UNWANTED="auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh context-hints.sh harvest.sh session-state-save.sh citation-guard.sh context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh money-gate.sh prose-rag.sh"
+UNWANTED="auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh context-hints.sh tool-policy-guard.sh harvest.sh session-state-save.sh citation-guard.sh context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh money-gate.sh prose-rag.sh"
 LEAKED=""
 for h in $UNWANTED; do
   printf '%s\n' "$WIRED2" | grep -qx "$h" && LEAKED="$LEAKED $h"
@@ -216,7 +216,7 @@ for m in "${HOOKED_MODULES[@]}"; do
   case "$m" in
     board) HOOKS="backlog-stage.sh" ;;
     session) HOOKS="context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh" ;;
-    advisor) HOOKS="context-hints.sh" ;;
+    advisor) HOOKS="context-hints.sh tool-policy-guard.sh" ;;
     cosmetic) HOOKS="auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
   esac
   for h in $HOOKS; do
