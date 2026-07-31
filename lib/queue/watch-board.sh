@@ -70,6 +70,9 @@ QUEUE_SH="$WATCH_DIR/queue.sh"
 # A watcher-planned row is NOT operator-authored: it came from a free-text Notes cell. So the
 # watcher applies the hardened pass to its OWN plan, before any window can open. parse-board's
 # containment is lexical and does not follow symlinks; this one does (architecture review).
+#
+# The same reasoning is why `--apply` forwards `--sanitize-prompt` (SPEC-223): the allow-list says
+# WHICH file may be read, and the sanitizer says what may reach the model out of it.
 # shellcheck source=lib/queue/queue.sh
 . "$QUEUE_SH" || { echo "watch-board: lib/queue/queue.sh did not load" >&2; exit 1; }
 if ! declare -f _pointer_allowlist_reason >/dev/null 2>&1 || ! declare -f kit_resolve_log_dir >/dev/null 2>&1; then
@@ -311,8 +314,11 @@ cmd_watch() {
   fi
 
   _say "[watch] applying: $planned row(s), cap $max."
+  # `--sanitize-prompt` (SPEC-223) rides on the same reasoning as the hardened containment pass
+  # above: a watcher-planned row is NOT operator-authored, so the pointer body it feeds into the
+  # typed `/goal` line is untrusted text, not a prompt the operator wrote.
   # shellcheck disable=SC2086 # WATCH_QUEUE_CMD is operator config (the mock seam); split intended.
-  $WATCH_QUEUE_CMD "$plan_file" --max-megas "$max"
+  $WATCH_QUEUE_CMD "$plan_file" --sanitize-prompt --max-megas "$max"
 }
 
 usage() { sed -n '2,45p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }

@@ -5,6 +5,31 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **An untrusted-input pass on the autonomous run queue (SPEC-223 / ID-459).** The `#auto` path
+  types a pointer file's body into a `--dangerously-skip-permissions` session, and the board row is
+  what selects that file, so on the watcher-planned path that body is untrusted text rather than an
+  operator-authored prompt. `lib/queue/sanitize.sh` adds `sanitize_cell`, an ORDERED pipeline where
+  each step closes a bypass the previous one leaves open: HTML-entity decode (single and double
+  encoded), an invisible-codepoint strip by Unicode PROPERTY (`\p{Cf}` plus
+  `\p{Default_Ignorable_Code_Point}`, never an enumerated list), ANSI strip, control strip (a
+  newline would submit the prompt early, so removing it is a security property here), HTML-comment
+  DELETION, code-fence stripping (gh-aw exempts fences to protect patches; a goal prompt has no
+  patch, so the exemption is inverted and nothing is exempt), pipe escaping (a board row is a
+  markdown table), an https-only URL allow-list with a percent-decode preamble, and a size cap that
+  truncates with a VISIBLE marker instead of rejecting. The typed prompt is then framed by an
+  untrusted-content preamble and fenced with explicit begin/end markers. `queue.sh run` gains
+  `--sanitize-prompt` (implied by `--from-boards`); `watch-board.sh --apply` forwards it. A
+  hand-authored tsv is unchanged, because operator authorship is the trust boundary the pointer
+  allow-list already uses. A run that writes a protected path (`.claude/*`, `CLAUDE.md`,
+  `AGENTS.md`, `.github/*`, `_meta/BACKLOG.md`, tunable via `QUEUE_PROTECTED_GLOBS`) ends `gated`
+  instead of shipping: DETECTION, not prevention, since nothing in bash sits between a
+  skip-permissions session and the filesystem. A host without the sanitizer skips the row with a
+  named reason and opens no window. Proof: `docs/verification/notes-sanitization.md` (52 assertions,
+  a negative control per section, three live revert-to-RED probes, and a security round whose
+  Critical finding, an enumerated invisible-character list broken by U+034F, is fixed and now
+  regression-tested). Deferred with a tripwire: gh-aw's read-only-agent plus safe-outputs plus
+  model-judge separation, which becomes real work the day a second person can edit a watched board
+  or the loop ingests text the operator did not author.
 - **Runaway guards on the autonomous run queue (SPEC-221 / ID-460).** Three mechanisms, all
   hanging off per-slug sidecar files under `<log-dir>/queue-runs/`, and none of them a daemon:
   the reaper runs on the `queue watch` tick the operator already invokes. (1) A stale-window
