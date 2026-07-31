@@ -252,6 +252,7 @@ file count so this table cannot drift):
 | `codebase-index` | SessionStart (opt-in) | convenience | none (background indexing) |
 | `money-gate` | PreToolUse Edit/Write/MultiEdit | convenience | a silent careless edit to a ledger/payroll/wallet file in a repo the consumer named financial (inert until MONEY_GATE_REPOS is set) |
 | `prose-rag` | UserPromptSubmit | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
+| `tool-policy-guard` | PreToolUse | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
 
 **C3 reconciled.** PHILOSOPHY's "Guardrails over guidance" is bounded, not
 blanket: guardrail = the hard subset, where trust fails AND damage is
