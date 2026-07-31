@@ -107,7 +107,7 @@ Invoked with a map (path or slug); a named ticket is optional.
 
 Nothing left to decide: hand off, never straight to execute.
 
-- Single bounded feature -> `/kit:spec`; the map's Decisions so far becomes the spec's Context.
+- Single bounded feature -> `/kit:spec`; the map's Decisions so far becomes the spec's Context, and the Context NAMES THE MAP PATH with the gists keeping their `[NN-<slug>]` pointers: the gists are summaries, so the spec must link back to the primary source (the ticket bodies), never carry only the summaries.
 - A build needing ordered sub-goals -> write `ROADMAP.md` beside map.md and run it as a mega-goal (`/kit:mega`, ADR-0032); the map stays as the decision record.
 - Flip the umbrella board row to reflect the handoff (`bash lib/board/backlog.sh set <ID> speccing` for the single-spec path, `executing` once a ROADMAP run starts); the map goes read-only.
 
