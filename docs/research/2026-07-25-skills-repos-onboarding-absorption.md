@@ -26,7 +26,7 @@ noah-zender-it queued separately (ID-134, untouched here).
 
 | Repo | Signal to watch | Last seen (2026-07-25) | Cadence |
 |---|---|---|---|
-| mattpocock/skills | CHANGELOG.md version; re-read on MINOR bump or `Add/graduate/promote/rename .* skill` commit | v1.2 (plugin shipped, ADR 0002) | monthly |
+| mattpocock/skills | CHANGELOG.md version; re-read on MINOR bump or `Add/graduate/promote/rename .* skill` commit | v1.1.0 released; plugin/Codex/prototype/wayfinder changes are 9 unreleased changesets, next release = 1.2.0 (corrected 2026-07-31, see 2026-07-31-mattpocock-trio-adoption.md) | monthly |
 | zvadaadam/az-skills | closed-PR titles (`Add * skill`) or PRs touching `scripts/install.sh`/`.githooks/` | PR #21 (Remove ai-journal) | quarterly |
 
 # 1. mattpocock/skills delta since 2026-07-08
