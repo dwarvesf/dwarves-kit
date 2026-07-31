@@ -12,27 +12,27 @@ Lane: full
 
 ## 2. Confirmation (gate runs)
 
-| # | Phase | When (ISO8601) | State | Reason |
-|---|---|---|---|---|
-| 1 | grill | 2026-07-31T17:23:49Z | skipped | reason=operator-wave: dispatch prompt pre-resolved scope, item set, verdict discipline, design |
-| 2 | think | 2026-07-31T17:23:49Z | skipped | operator pre-approved design in dispatch prompt (same precedent as SPEC-220) |
-| 3 | design | 2026-07-31T17:23:49Z | skipped | design fixed by operator: report-only renames, zero-break fixes, 3-command wiring |
-| 4 | design-critique | 2026-07-31T17:23:49Z | skipped | operator-fixed design; critique folded into naming-audit verdict discipline |
-| 5 | ui-design | 2026-07-31T17:23:49Z | skipped | no UI surface |
-| 6 | spec | 2026-07-31T17:27:24Z | ran | SPEC-221 written |
-| 7 | validate | 2026-07-31T17:27:24Z | skipped | operator pre-approved design in dispatch brief; SPEC-220 precedent |
-| 8 | design-record | 2026-07-31T17:27:25Z | skipped | design decisions recorded inline in SPEC-221 (operator-fixed) |
-| 9 | test-plan | 2026-07-31T17:27:25Z | ran | test plan table in SPEC-221 |
-| 10 | build | 2026-07-31T17:27:51Z | ran | self-intro convention wired + pinned, test-meta 746 green |
-| 11 | review | 2026-07-31T17:49:46Z | ran | FIX-THEN-SHIP -> both findings fixed; findings=2 (1 MEDIUM proof file, 1 LOW assert idiom) actor=Han Ngo |
-| 12 | docs | 2026-07-31T17:49:58Z | ran | MANUAL conventions line + FEATURES regen + glossary rows ride the branch; no other doc drift (change is doc-native) |
-| 13 | think | 2026-07-31T17:50:15Z | override | operator pre-approved design in the dispatch brief (SPEC-220 precedent); decisions recorded inline in SPEC-221 |
-| 14 | design | 2026-07-31T17:50:22Z | override | design fixed by operator brief: report-only renames, 3-command wiring, convention-in-AGENTS.md |
-| 15 | design-critique | 2026-07-31T17:50:22Z | override | critique folded into the audit's verdict discipline + independent code-reviewer pass on the diff |
-| 16 | validate | 2026-07-31T17:50:22Z | override | adversarial validate waived per operator pre-approval, matching SPEC-220's recorded precedent |
-| 17 | design-record | 2026-07-31T17:50:22Z | override | design decisions recorded inline in SPEC-221 'Design decisions' block, no separate record owed |
-| 18 | ship | 2026-07-31T17:50:54Z | ran | PR opened from feat/naming-and-self-intro; ship-gate preflight clean |
-| 19 | reflect | 2026-07-31T17:50:54Z | ran | mini-retro in PR body: frozen plugin snapshot forced the documented scanner fallback; grill-skip + override reasons need their exact token grammar; FEATURES freshness pin caught the spec-ref drift live |
+| # | Phase | When (ISO8601) | State | Reason | Caught | Duration (s) |
+|---|---|---|---|---|---|---|
+| 1 | grill | 2026-07-31T17:23:49Z | skipped | reason=operator-wave: dispatch prompt pre-resolved scope, item set, verdict discipline, design | n/a | n/a |
+| 2 | think | 2026-07-31T17:23:49Z | skipped | operator pre-approved design in dispatch prompt (same precedent as SPEC-220) | n/a | n/a |
+| 3 | design | 2026-07-31T17:23:49Z | skipped | design fixed by operator: report-only renames, zero-break fixes, 3-command wiring | n/a | n/a |
+| 4 | design-critique | 2026-07-31T17:23:49Z | skipped | operator-fixed design; critique folded into naming-audit verdict discipline | n/a | n/a |
+| 5 | ui-design | 2026-07-31T17:23:49Z | skipped | no UI surface | n/a | n/a |
+| 6 | spec | 2026-07-31T17:27:24Z | ran | SPEC-221 written | n/a | n/a |
+| 7 | validate | 2026-07-31T17:27:24Z | skipped | operator pre-approved design in dispatch brief; SPEC-220 precedent | n/a | n/a |
+| 8 | design-record | 2026-07-31T17:27:25Z | skipped | design decisions recorded inline in SPEC-221 (operator-fixed) | n/a | n/a |
+| 9 | test-plan | 2026-07-31T17:27:25Z | ran | test plan table in SPEC-221 | n/a | n/a |
+| 10 | build | 2026-07-31T17:27:51Z | ran | self-intro convention wired + pinned, test-meta 746 green | n/a | n/a |
+| 11 | review | 2026-07-31T17:49:46Z | ran | FIX-THEN-SHIP -> both findings fixed; findings=2 (1 MEDIUM proof file, 1 LOW assert idiom) actor=Han Ngo | n/a | n/a |
+| 12 | docs | 2026-07-31T17:49:58Z | ran | MANUAL conventions line + FEATURES regen + glossary rows ride the branch; no other doc drift (change is doc-native) | n/a | n/a |
+| 13 | think | 2026-07-31T17:50:15Z | override | operator pre-approved design in the dispatch brief (SPEC-220 precedent); decisions recorded inline in SPEC-221 | n/a | n/a |
+| 14 | design | 2026-07-31T17:50:22Z | override | design fixed by operator brief: report-only renames, 3-command wiring, convention-in-AGENTS.md | n/a | n/a |
+| 15 | design-critique | 2026-07-31T17:50:22Z | override | critique folded into the audit's verdict discipline + independent code-reviewer pass on the diff | n/a | n/a |
+| 16 | validate | 2026-07-31T17:50:22Z | override | adversarial validate waived per operator pre-approval, matching SPEC-220's recorded precedent | n/a | n/a |
+| 17 | design-record | 2026-07-31T17:50:22Z | override | design decisions recorded inline in SPEC-221 'Design decisions' block, no separate record owed | n/a | n/a |
+| 18 | ship | 2026-07-31T17:50:54Z | ran | PR opened from feat/naming-and-self-intro; ship-gate preflight clean | false | 0 |
+| 19 | reflect | 2026-07-31T17:50:54Z | ran | mini-retro in PR body: frozen plugin snapshot forced the documented scanner fallback; grill-skip + override reasons need their exact token grammar; FEATURES freshness pin caught the spec-ref drift live | n/a | n/a |
 
 ## 3. Coverage-delta
 

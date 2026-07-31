@@ -1,6 +1,6 @@
 # Naming reconciliation scan (2026-08-01)
 
-One-shot audit-loop run over the kit's naming estate (SPEC-221 half A). Item set: every feature name + taxonomy vocabulary across `docs/FEATURES.md`, `agents/`, `skills/`, `commands/`, `docs/architecture.md`, `docs/WORKFLOW.md`, `docs/glossary.md`, `docs/verification/task-types.md`. Contract: names follow consistent conventions, measured against ADR-0029 (review-function naming axis), ADR-0034 (loop taxonomy, leg->stage), and the plain-words inventory. Evidence gathered by two read-only Tier-2 scanner passes (the `kit:audit-scanner` roster was unavailable in the loaded plugin snapshot, so the SPEC-220 documented read-only fallback ran).
+One-shot audit-loop run over the kit's naming estate (SPEC-222 half A). Item set: every feature name + taxonomy vocabulary across `docs/FEATURES.md`, `agents/`, `skills/`, `commands/`, `docs/architecture.md`, `docs/WORKFLOW.md`, `docs/glossary.md`, `docs/verification/task-types.md`. Contract: names follow consistent conventions, measured against ADR-0029 (review-function naming axis), ADR-0034 (loop taxonomy, leg->stage), and the plain-words inventory. Evidence gathered by two read-only Tier-2 scanner passes (the `kit:audit-scanner` roster was unavailable in the loaded plugin snapshot, so the SPEC-220 documented read-only fallback ran).
 
 Verdict discipline (operator-fixed): renames are report-only PROPOSALS with grep blast-radius counts; only zero-break fixes were applied (doc prose, glossary rows, description wording). Blast radius = files/occurrences of the exact token across `*.md` + `*.sh`, `.git` excluded.
 
@@ -35,7 +35,7 @@ Verdict discipline (operator-fixed): renames are report-only PROPOSALS with grep
 | `docs/specs/SPEC-200-signal-pipelines.md` | five legs -> five stages; old five-name list -> Shape/Build/Watch/Check/Learn (Draft spec) |
 | `docs/briefs/DECISION-BRIEF-factory-legibility.md` | Learn-leg gate -> Learn-stage gate (brief dated post-rename) |
 | `docs/glossary.md` | 8 new reader-facing rows: phase, stage, wayfind, doc-drift, feature-map, loop-engineering, audit-scanner, -team |
-| `docs/FEATURES.md` | regenerated (description change above + SPEC-221 refs) |
+| `docs/FEATURES.md` | regenerated (description change above + SPEC-222 refs) |
 
 ## Proposals for the operator (never applied)
 
