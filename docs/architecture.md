@@ -78,7 +78,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 33 commands + 25 agents = **58 entries** (12 build · 3 code · 9 test · 15 gate · 19 cross-phase).
+Total: 34 commands + 26 agents = **60 entries** (12 build · 3 code · 11 test · 15 gate · 19 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -111,6 +111,8 @@ Total: 33 commands + 25 agents = **58 entries** (12 build · 3 code · 9 test ·
 |---|---|---|---|---|
 | `/kit:test-plan` | command | Test design (write tests) | test | Opt-in; derives the coverage matrix from AC before /execute so the build has a planned target; the kit's single test-design step |
 | `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 6 lenses adversarially critique the `## Test plan` (lens 6 tiering N/A-skips on non-AI plans, SPEC-201) + bounded revise loop, between /test-plan and /execute; report-only (SPEC-052) |
+| `/kit:test-write` | command | Test design (materialize) | test | Opt-in; resolves a SOLID-verdict `## Test plan critique` and dispatches `test-writer` per matrix row to turn it into real, executing test code; never dispatches against a missing/stale/non-SOLID verdict |
+| `test-writer` | agent | Test design (materialize) | test | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing framework; write-capable but scope-locked to test files; dispatched by `/kit:test-write` |
 | `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite after each worker; read-only; primary enforcer in the verification pipeline |
 | `integration-verifier` | agent | Integration test | test | Verifies cross-task wiring at /execute Step 4 for multi-task specs; read-only |
 | `/kit:ship` | command | Acceptance test (gate) | test | Executes the acceptance check; blocks on DO-NOT-SHIP; bumps version, writes changelog, cuts PR |

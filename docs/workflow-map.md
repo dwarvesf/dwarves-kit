@@ -9,7 +9,7 @@
 
 | # | Diagram | What it shows |
 |---|---------|---------------|
-| 0 | Inventory | the flow census: 1 backbone, 5 lanes, 3 loops (+1 micro-loop), 8 side-flows, 7 alternate flows, 4 hard stops |
+| 0 | Inventory | the flow census: 1 backbone, 5 lanes, 3 loops (+1 micro-loop), 10 side-flows, 7 alternate flows, 4 hard stops |
 | 1 | The spine (backbone) | session start -> /kit:start -> /kit:assign -> the normal/full command chain -> ship -> retro |
 | 2 | State stores | BACKLOG.md -> SPEC-NNN file <-> .claude/goals/ drafts; nothing re-entered between phases |
 | 3 | Pick a lane | the intake decision tree: bug / backfill / tiny / normal / full |
@@ -20,7 +20,7 @@
 | 8 | Debug loop | bounded engine: Phase 0..4 under the iron law (no fix without recorded root cause) |
 | 9 | Execute pipeline | bounded engine: worker -> task-verifier -> fix-agent (max 2) -> integration-verifier |
 | 10 | Mid-flight amend | the add-only spec amend excursion off the execute pipeline |
-| 11 | 8 opt-in side-flows | trigger -> writes-to -> stop for each advisory flow |
+| 11 | 10 opt-in side-flows | trigger -> writes-to -> stop for each advisory flow |
 | 12 | 7 alternate flows | the edges that fire when the happy path does not hold |
 | 13 | 4 hard stops | the only blockers; everything else advises or warns |
 
@@ -30,7 +30,7 @@
 +--------------------------------------------------------------------------+
 |  1 backbone (the spine)          5 primary intake lanes                  |
 |  3 bounded loops (engines)       +1 mid-flight amend micro-loop          |
-|  8 opt-in side-flows             7 alternate / branch flows              |
+|  10 opt-in side-flows            7 alternate / branch flows              |
 |  4 hard stops (the ONLY blockers)                                        |
 |                                                                          |
 |  everything except the 4 hard stops suggests and routes; it never blocks |
@@ -250,21 +250,23 @@ Phase 0 is universal: `/kit:grill`, then the done scenario, before any loop runs
    /kit:next --> BUILDING (resume; runs only the amended tasks)
 ```
 
-## 11 · The 8 opt-in side-flows
+## 11 · The 10 opt-in side-flows
 
 Advisory, never blocking. Output binds to the active spec (replace-not-stack).
 
 ```
-  flow                trigger                        writes to                 stop
-  ------------------  -----------------------------  ------------------------  -------------------
-  /kit:design         between /think and /spec       DECISION-BRIEF.md         solution agreed
-  /kit:devs-team      before the spec hardens        ## Design critique        verdict recorded
-  /kit:visual-team    a visual/UI design exists      ## Visual critique        verdict recorded
-  /kit:ui-design      downstream UI, after /design   ## UI design              SOLID / max-2 revise
-  /kit:test-plan      before /execute                ## Test plan              matrix written
-  /kit:review-team    PR-grade review, 3 lenses      ## Review                 SHIP / FIX / DO NOT
-  /kit:absorb         maintainer absorption audit    docs/absorption/ report   proposal-only
-  /kit:kit-health     self-assessment vs PHILOSOPHY  report (stdout)           assessment rendered
+  flow                     trigger                        writes to                 stop
+  -----------------------  -----------------------------  ------------------------  -------------------
+  /kit:design              between /think and /spec       DECISION-BRIEF.md         solution agreed
+  /kit:devs-team           before the spec hardens        ## Design critique        verdict recorded
+  /kit:visual-team         a visual/UI design exists      ## Visual critique        verdict recorded
+  /kit:ui-design           downstream UI, after /design   ## UI design              SOLID / max-2 revise
+  /kit:test-plan           before /execute                ## Test plan              matrix written
+  /kit:test-plan-review-team  after /test-plan, 6 lenses  ## Test plan critique     SOLID / REVISE / RECONSIDER
+  /kit:test-write          after a SOLID test-plan critique ## test files            rows covered, tests execute
+  /kit:review-team         PR-grade review, 3 lenses      ## Review                 SHIP / FIX / DO NOT
+  /kit:absorb              maintainer absorption audit    docs/absorption/ report   proposal-only
+  /kit:kit-health          self-assessment vs PHILOSOPHY  report (stdout)           assessment rendered
 ```
 
 ## 12 · The 7 alternate / branch flows

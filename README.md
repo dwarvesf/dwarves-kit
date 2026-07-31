@@ -252,7 +252,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (33, manual, human-triggered)</summary>
+<summary><b>Commands</b> (34, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -278,6 +278,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
 | /kit:test-plan-review-team | Verify | 5-lens adversarial critique of the spec's `## Test plan`, bounded revise loop, report-only |
+| /kit:test-write | Build | Turns a SOLID-verdict `## Test plan critique` into real, executing test code via test-writer, one case per matrix row |
 | /kit:onboard | Entry | Guided first-run: detect install mode (plugin/bash/both/none), offer /kit:adopt, pick modules, capture consumer knobs, disclose plugin-path gaps, five-stage tour; previews + confirms every write, decline = no-op |
 | /kit:adopt | Entry | Retrofit the operate-contract onto an existing repo (AGENTS.md, loader, proof marker, classifiers), idempotently |
 | /kit:docs | Docs | Cross-reference diff against all doc files, fix drift |
@@ -293,7 +294,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (25, dispatched by commands) and <b>Skills</b> (7, Claude-triggered)</summary>
+<summary><b>Agents</b> (26, dispatched by commands) and <b>Skills</b> (7, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -322,6 +323,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | research-architecture | /spec | Maps architecture patterns and conventions |
 | research-pitfalls | /spec | Finds landmines before implementation |
 | meta-agent | /draft-agent | Drafts a new subagent (or sub-goal file) from a one-line description |
+| test-writer | /kit:test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row |
 
 | Skill | What it does |
 |-------|-------------|
@@ -364,8 +366,8 @@ dwarves-kit/
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`queue`/`session`/`spec`/`stats` thin forwarders to `lib/<subsystem>/`, plus the two module CLIs (`prose-rag`, `worktree-provision`) that keep their module names. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
-  agents/                       (25 files) Subagents dispatched by commands
-  commands/                     (33 markdown command prompts)
+  agents/                       (26 files) Subagents dispatched by commands
+  commands/                     (34 markdown command prompts)
   hooks/                        (25 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
