@@ -495,9 +495,10 @@ those surfaces alone would not know either ran, or was skipped, this run).
 `caught=` data from the OUTCOME marker above, a future retro can ask whether either gate has
 earned a hard block; the mega-goal's own advisor pass recommends NOT YET (there is no per-gate
 `caught=` accrual today -- OUTCOME is ship-boundary-only, see above -- so there is nothing to
-measure a false-positive rate against yet). See ops-toolkit `_meta/megagoals/kit-run-integrity/NOTES.md`
-"Proposed additions (TIER-4)" for the full recommendation. This section documents the gates as
-they ship; it does not promote them.
+measure a false-positive rate against yet). The full recommendation lived in the
+kit-run-integrity mega-goal's NOTES.md ("Proposed additions (TIER-4)"); that folder has since
+been retired from ops-toolkit and the recommendation survives only here. This section documents
+the gates as they ship; it does not promote them.
 
 ## Command emit coverage (SPEC-139)
 

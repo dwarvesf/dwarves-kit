@@ -110,7 +110,7 @@ Total: 34 commands + 26 agents = **60 entries** (12 build · 3 code · 11 test �
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
 | `/kit:test-plan` | command | Test design (write tests) | test | Opt-in; derives the coverage matrix from AC before /execute so the build has a planned target; the kit's single test-design step |
-| `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 5 lenses adversarially critique the `## Test plan` + bounded revise loop, between /test-plan and /execute; report-only (SPEC-052) |
+| `/kit:test-plan-review-team` | command | Test design (review) | test | Opt-in; 6 lenses adversarially critique the `## Test plan` (lens 6 tiering N/A-skips on non-AI plans, SPEC-201) + bounded revise loop, between /test-plan and /execute; report-only (SPEC-052) |
 | `/kit:test-write` | command | Test design (materialize) | test | Opt-in; resolves a SOLID-verdict `## Test plan critique` and dispatches `test-writer` per matrix row to turn it into real, executing test code; never dispatches against a missing/stale/non-SOLID verdict |
 | `test-writer` | agent | Test design (materialize) | test | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing framework; write-capable but scope-locked to test files; dispatched by `/kit:test-write` |
 | `task-verifier` | agent | Unit / task test | test | Runs each task's AC + the project suite after each worker; read-only; primary enforcer in the verification pipeline |
@@ -125,7 +125,7 @@ Total: 34 commands + 26 agents = **60 entries** (12 build · 3 code · 11 test �
 
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
-| `/kit:spec-validate` | command | Spec review | gate | Adversarial pre-build gate; 5 lenses attack the spec; sets Status: VALIDATED |
+| `/kit:spec-validate` | command | Spec review | gate | Adversarial pre-build gate; 6 lenses attack the spec (5 advisory, 1 blocking on the design record); sets Status: VALIDATED |
 | `/kit:devs-team` | command | Design critique | gate | Opt-in; 5 engineering lenses stress-test the solution design before the spec hardens |
 | `/kit:review` | command | Code review | gate | Single-pass paranoid review; security, architecture, regressions, edge cases |
 | `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches the `code-reviewer` agent x3 (security / architecture / test-coverage lenses) |
@@ -182,7 +182,7 @@ Decision test, in order:
 3. Does it **sequence or gate** other steps? -> command.
 4. Is it a **repeatable single-job actor** invoked by a step? -> agent.
 
-The load-bearing reason agents exist is **isolation**, not "sub-functions" (PHILOSOPHY "verify with a fresh context, not self-report"). A job needing neither isolation nor parallelism is steps inside a command, not an agent (that is why `/kit:spec-validate`'s 5 lenses are inline: they share the spec's context).
+The load-bearing reason agents exist is **isolation**, not "sub-functions" (PHILOSOPHY "verify with a fresh context, not self-report"). A job needing neither isolation nor parallelism is steps inside a command, not an agent (that is why `/kit:spec-validate`'s 6 lenses are inline: they share the spec's context).
 
 Two failure modes this rule catches:
 

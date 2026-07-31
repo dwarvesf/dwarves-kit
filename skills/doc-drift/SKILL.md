@@ -19,13 +19,13 @@ stale counts. PR #306 (hand-fixing the README inventories) is the proven need.
 
 | Slot | This instance |
 |---|---|
-| Item set | living docs only: `git ls-files 'README.md' 'MANUAL.md' 'QUICKSTART.md' 'AGENTS.md' 'CLAUDE.md' 'CONTRIBUTING.md' 'docs/*.md' 'docs/patterns/*.md'` |
+| Item set | living docs only: `git ls-files README.md MANUAL.md AGENTS.md CLAUDE.md CONTRIBUTING.md ':(glob)docs/*.md' ':(glob)docs/patterns/*.md'` (the `:(glob)` magic is required: a bare `docs/*.md` pathspec matches recursively and pulls in every dated record) |
 | Contract | every checkable claim matches the live repo: referenced paths exist, inventory tables match the live dirs, counts match derived counts, named verbs and flags exist, cross-doc pointers resolve |
 | Evidence class | Tier 1: the repo itself via grep/ls/diff. Tier 2: a model reads the doc's described behavior against the actual command or script |
 | Apply mechanics | FIX in place on an isolated branch; REMOVE only with a named successor; PR body lists every verdict; UNSURE never auto-resolved |
 
 Dated records (docs/specs, docs/research, docs/retro, docs/handoff, docs/decisions,
-docs/absorption) are OUT of the item set. They describe their moment. Flagging a 2026-05 spec
+docs/absorption, and docs/CHANGELOG.md's per-release entries) are OUT of the item set. They describe their moment. Flagging a 2026-05 spec
 for describing 2026-05 reality is noise, not a finding.
 
 ## Process
