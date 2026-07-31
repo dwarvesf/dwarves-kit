@@ -99,6 +99,23 @@
 #     `lib/mega/mega-review.py`; this verb is a thin bash launcher that resolves KIT_LOG_DIR the exact
 #     way `lib/gate/proof-table-gen.sh` already does, then execs it.
 #
+#   mega.sh runs [--registry <path>] [--root <dir>]... [--out <path>]
+#                [--max-embed-bytes <n>] [--total-embed-bytes <n>]
+#     The ESTATE-WIDE sibling of `review` (SPEC-215): ONE self-contained static HTML page of run
+#     cards over EVERY registered repo, composed from run reports (`_meta/megagoals/**/
+#     RUN_REPORT.md`), proofs of done (`**/docs/proof-of-done.md`), and verification runs
+#     (`docs/verification/**/runs/*.md`), with each report's own capture images embedded inline.
+#     Same projection discipline as `review`: reads only, caches nothing, safe to re-run.
+#     --registry   a `boards.txt`-format registry of repos to scan. Precedence: this flag >
+#                  $KIT_BOARDS_REGISTRY > `<git-toplevel-of-cwd>/_meta/boards.txt`. Every row is
+#                  scanned, including rows without the `bridge` column -- `bridge` gates a
+#                  Hermes WRITE path, not reading a repo's own reports (SPEC-215 DEC-002).
+#     --root       scan this repo root directly; repeatable, and bypasses the registry entirely.
+#     --out        default `runs-dashboard.html` in the cwd.
+#     Empty estate is NOT an error: an empty or artifact-free root renders a valid page carrying
+#     an explicit empty-state banner and exits 0. Nothing is fabricated to fill it.
+#     Logic lives in the sibling `lib/mega/runs-dashboard.py`; this verb is a thin launcher.
+#
 # GH_BIN / GIT_BIN override the `gh`/`git` binaries (tests point them at PATH-injected stubs
 # that log argv and return canned JSON, per the suite's existing convention -- see
 # `lib/board/board-writeback.sh`'s `GH_BIN`). No real network call is ever made by the test
@@ -364,7 +381,14 @@ cmd_report() {
   python3 "$self_dir/mega-report.py" "${py_args[@]}"
 }
 
-usage() { sed -n '2,102p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# `runs` is estate-wide, so it takes NO <slug> and none of `_parse_flags`'s per-mega flags. Its
+# argv forwards straight through to the generator, which owns its own flag grammar.
+cmd_runs() {
+  local self_dir; self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  python3 "$self_dir/runs-dashboard.py" "$@"
+}
+
+usage() { sed -n '2,119p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"
@@ -372,6 +396,7 @@ main() {
     status) shift; cmd_status "$@" ;;
     review) shift; cmd_review "$@" ;;
     report) shift; cmd_report "$@" ;;
+    runs)   shift; cmd_runs "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "mega.sh: unknown subcommand '$first'" >&2; usage >&2; return 64 ;;
   esac
