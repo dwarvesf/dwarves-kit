@@ -49,6 +49,24 @@ For EVERY changed file, evaluate:
 - No TODO/FIXME without a linked issue
 - No commented-out code
 
+**Smell baseline (weight: low, always judgement calls; SPEC-205)**
+Fowler's structural smells (Refactoring ch.3, via mattpocock/skills code-review, MIT),
+matched against the diff. Three binding rules: a documented repo standard overrides the
+baseline; every smell is a labelled judgement call ("possible Feature Envy"), never a hard
+violation; skip anything tooling already enforces.
+- Mysterious Name -> rename; no honest name = murky design
+- Duplicated Code (same logic shape in 2+ hunks/files of the change) -> extract the shared shape
+- Feature Envy (method reaches into another object's data more than its own) -> move it onto the data
+- Data Clumps (same fields/params travel together) -> bundle into one type
+- Primitive Obsession (primitive standing in for a domain concept) -> small dedicated type
+- Repeated Switches (same cascade on the same type recurs) -> polymorphism or one shared map
+- Shotgun Surgery (one change scatters edits across many files) -> gather into one module
+- Divergent Change (one module edited for unrelated reasons) -> split per reason
+- Speculative Generality (abstraction for needs the spec doesn't have) -> delete, inline back
+- Message Chains (`a.b().c().d()` the caller shouldn't depend on) -> hide behind one method
+- Middle Man (unit that mostly delegates) -> cut it, call direct
+- Refused Bequest (implementer ignores most of what it inherits) -> composition over inheritance
+
 ### Step 2b: Consult the rejected-findings ledger (fail-open, SPEC-144)
 
 Before scoring and outputting findings, check every candidate finding from Step 2 against

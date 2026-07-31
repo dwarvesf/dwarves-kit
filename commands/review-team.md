@@ -19,6 +19,10 @@ Bracket the `review` phase for timing (SPEC-129) before starting: `bash lib/gate
 
 Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the list of changed files.
 
+**Fail fast BEFORE any dispatch (SPEC-205).** Confirm the fixed point resolves
+(`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or an empty diff
+fails here with one line , never inside four parallel subagents.
+
 **Advisory coverage-delta signal (SPEC-130, ADVISORY, never blocks).** Before dispatching the
 lenses, run the coverage-delta gate and fold its one line into the test-coverage lens's input:
 
@@ -284,6 +288,13 @@ Reviewers: security, architecture, test-coverage
 
 (All severity rows use the same finding-line format: lens(es), Confidence, Route, fix.
 The verdict is determined by UNSUPPRESSED findings only.)
+
+**Per-lens summary rule (SPEC-205, via mattpocock/skills code-review, MIT).** The
+summary states finding totals and the worst issue PER LENS; it never crowns a single
+worst finding across lenses , that cross-lens reranking lets one lens mask another.
+The SPEC-081 merge machinery above (fingerprint dedup, corroboration promotion,
+severity sort) is unchanged: cross-lens AGREEMENT on one finding is evidence; a
+cross-lens WINNER in the summary is masking.
 
 ## Scores
 - Security: [X]/10
