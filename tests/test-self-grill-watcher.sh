@@ -116,7 +116,7 @@ assert_eq "check7: dry-run invoked the queue 0 times" "$( [ -f "$MOCKLOG" ] && w
 OUT="$(watch --apply --max 1)"
 assert_eq "check8: --apply invoked the queue once" "$(wc -l < "$MOCKLOG" | tr -d ' ')" "1"
 INV="$(cat "$MOCKLOG")"
-assert "check8b: the queue got the plan tsv" "$(has 'watch-board-plan.tsv' "$INV" && echo 0 || echo 1)" "(got: $INV)"
+assert "check8b: the queue got the plan file" "$(has 'watch-board-plans/plan.' "$INV" && echo 0 || echo 1)" "(got: $INV)"
 assert "check8c: the budget cap is forwarded as --max-megas 1" "$(has -- '--max-megas 1' "$INV" && echo 0 || echo 1)" "(got: $INV)"
 
 # Check 9: the default cap is 1 even when --max is omitted.
@@ -167,6 +167,31 @@ new_repo
 OUT="$(watch --board "$REPO/_meta/NOPE.md")"; rc=$?
 assert_eq "check16: missing board exits 0" "$rc" "0"
 assert "check16b: missing board plans nothing" "$(has '0 rows to enqueue' "$OUT" && echo 0 || echo 1)" "(got: $OUT)"
+
+# Check 18 (NEGATIVE CONTROL, load-bearing): a symlink planted INSIDE the allow-listed dir but
+# pointing OUTSIDE the repo passes parse-board's lexical containment and must be caught by the
+# realpath-aware pass the watcher borrows from queue.sh. Without that borrow, this row launches.
+new_repo
+OUTSIDE="$(_mk)/secret.md"; printf 'not yours\n' > "$OUTSIDE"
+ln -s "$OUTSIDE" "$REPO/_meta/megagoals/pilot/SNEAK.md"
+cat > "$REPO/_meta/BACKLOG.md" <<'EOF'
+# Backlog
+
+| ID | Item | Notes & source | Status |
+|---|---|---|---|
+| ID-007 | symlink escape | #auto #queue{repo=fixboard,pointer=_meta/megagoals/pilot/SNEAK.md} | queued |
+EOF
+OUT="$(watch)"
+assert "check18: precondition, parse-board's own emit ACCEPTS the symlinked pointer" \
+  "$(bash "$KIT_DIR/lib/board/parse-board.sh" queue-rows "$REPO/_meta/BACKLOG.md" fixboard "$REPO" 2>/dev/null | grep -q 'SNEAK.md' && echo 0 || echo 1)"
+assert "check18b: the watcher REFUSES the symlink-escape pointer" "$(has 'skip ID-007' "$OUT" && echo 0 || echo 1)" "(got: $OUT)"
+assert "check18c: the symlink row never reaches the plan" "$(has 'ID-007 ->' "$OUT" && echo 1 || echo 0)"
+
+# Check 19: two runs never share a plan file (no fixed path to interleave on).
+new_repo; write_board
+P1="$(watch | grep 'plan written to' | awk '{print $NF}')"
+P2="$(watch | grep 'plan written to' | awk '{print $NF}')"
+assert "check19: each run gets its own plan file" "$([ -n "$P1" ] && [ "$P1" != "$P2" ] && echo 0 || echo 1)" "(got '$P1' and '$P2')"
 
 # Check 17: the watcher never mutates the board it read.
 new_repo; write_board

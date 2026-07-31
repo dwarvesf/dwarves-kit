@@ -57,8 +57,13 @@ holds unchanged for every interactive lane. Self-answer mode does not weaken
 it; it pays for the exception. Three conditions make the exception auditable
 rather than silent:
 
-1. It activates only on a row the OPERATOR tagged `#auto`. The agent never
-   tags a row, so it never grants itself the exception.
+1. It activates only on a row the OPERATOR tagged `#auto` (what the decision
+   brief calls an "auto-eligible" row; `#auto` is the literal marker that
+   implements it, per DEC-001). The agent never tags a row, so it never grants
+   itself the exception. Named honestly: this condition rests on the kit's
+   existing trust model, not on a new control. Board writes are human commands
+   today, and nothing here adds a path that would let an agent write `#auto`.
+   If such a path is ever added, this condition needs a real guard.
 2. Every self-answered question lands on the debt ledger as a waved item:
    question, chosen answer, and why. `learn debt collect` surfaces it at the
    weekend paydown like any other conscious debt.
@@ -141,9 +146,9 @@ promotes a staged suggestion, and never merges.
 
 - **Inputs**: `<repo-root>/_meta/BACKLOG.md`; the queue journal resolved by
   `lib/telemetry/kit-log-dir.sh` (same file `queue run` writes).
-- **Outputs**: a plan on stdout (human-readable) and, under `--apply`, a plan
-  TSV at `<log-dir>/watch-board-plan.tsv` handed to `queue run`. Exit is 0 for
-  an empty plan (honest-empty is a result, matching `board queue`).
+- **Outputs**: a plan on stdout (human-readable) plus a per-run plan TSV under
+  `<log-dir>/watch-board-plans/`, handed to `queue run` under `--apply`. Exit
+  is 0 for an empty plan (honest-empty is a result, matching `board queue`).
 - **Invariants**: the watcher never mutates a board; a row reaches the plan
   only if it is `queued` AND carries `#auto` AND passes parse-board's existing
   allow-list; dry-run never invokes the queue.
@@ -222,6 +227,8 @@ the two gaps have different testable substance.
 | `#automation` does not match `#auto` | script | word-boundary regex |
 | slug whose last journal verdict is `done` or `gated` is skipped | script | dedup logic |
 | slug whose last journal verdict is `error` is re-planned | script | dedup logic |
+| a symlink inside an allow-listed dir pointing outside the repo is refused | script | the borrowed realpath check, negative control |
+| two runs never share a plan file | script | the mktemp fix |
 | board with zero `#auto` rows yields an empty plan, exit 0 | script | negative control |
 | dry-run is the default: the queue is never invoked | script | mock seam |
 | `--apply` invokes the queue with the plan file and the cap | script | mock seam |
@@ -240,7 +247,10 @@ the two gaps have different testable substance.
 |---|---|---|
 | A self-answer is wrong and the build goes the wrong way | the weekend paydown reads a debt row the operator disagrees with | the row names question, answer, and why; the run is one row (cap 1) and its final merge is gated |
 | A gated row is re-launched forever | the same slug appears in the plan after every gated run | dedup treats `done` AND `gated` as terminal; only `error`/`stalled`/`skipped` are re-planned |
-| A hand-edited Notes cell smuggles a path into an unattended session | a pointer outside the allow-listed dirs | unchanged: parse-board's charset, repo self-consistency, containment, and existence gates all still apply, plus `queue run`'s own second allow-list pass |
+| A hand-edited Notes cell smuggles a path into an unattended session | a pointer outside the allow-listed dirs | parse-board's charset, repo self-consistency, lexical containment, and existence gates, PLUS the watcher's own call to `queue run`'s realpath-aware `_pointer_allowlist_reason` on every planned row |
+| A symlink inside an allow-listed dir points outside the repo | the resolved path leaves the repo root | parse-board's containment is lexical and does not follow symlinks; the watcher's second pass does, and refuses the row before any window opens (negative control in the test) |
+| Two watcher runs overlap | interleaved writes to one plan file | each run mktemps its own plan file; there is no shared path to race on |
+| The slug's repo identity changes between runs | an already-terminal row re-enters the plan | the default resolves through the git COMMON dir so worktrees agree; pin `--repo-name` explicitly in any cron wiring |
 | The watcher drains more than intended | more than one window opens | `--max` default 1, forwarded to `--max-megas` |
 
 ## Out of Scope
@@ -256,6 +266,8 @@ the two gaps have different testable substance.
 - DEC-001: the marker is `#auto` in the Notes cell, not a new column or a separate registry file. Rationale: the board already carries inline tags (`#queue{}`, `#u-hi`) and every reader parses them; a new column breaks every existing parser. Rejected: a `_meta/auto-rows.txt` registry (a second source of truth that drifts from the board).
 - DEC-002: dedup keys on the LAST journal verdict, not merely on the presence of a `done` row. Rationale: gated-final merge is the DEFAULT, so a `gated` row is the common terminal state; a `done`-only rule would re-launch every gated row on every watcher run. Rejected: skipping any slug with any journal row at all (an `error` row would then never be retried).
 - DEC-003: self-answer mode ships as prose in `commands/grill.md` with a mechanical ledger obligation, not as a flag on a new script. Rationale: the interview is a prompt; the only part a machine can enforce is the debt row, and `gate-ledger.sh debt` already exists. Rejected: a `--self-answer` CLI wrapper (a second surface that cannot make the model behave anyway).
+- DEC-005: the watcher applies `queue run`'s realpath-aware pointer check to its own plan, rather than relying on `queue run` to apply it downstream. Rationale: `queue run` exempts a plain TSV from that check because a hand-authored TSV is operator-authored, and that exemption is correct for its own case. A watcher plan is machine-generated from a free-text Notes cell, so it must not inherit an exemption written for operator authorship. Found by two independent review lenses. Rejected: teaching `queue run` a new trust flag (a wider change to shipped security code for one caller).
+- DEC-006: fixing `_pointer_allowlist_reason`'s pattern loop in `lib/queue/queue.sh` counts as in-scope, not scope creep. The loop expanded its allow-list patterns against the cwd, so the check failed every legitimate pointer whenever it ran from a directory containing `_meta/megagoals/`, which is the repo root, which is where the watcher runs. The watcher could not reuse the function without repairing it, and repairing it at the source fixes the `--from-boards` caller too.
 - DEC-004: `learn debt collect` reads the LAST debt line per rid, so a run that self-answers five questions surfaces once in the digest, with the full five in that rid's run ledger file. Accepted rather than changing the reader: the collect digest is an index into the ledger, and every row is `verdict=wave` so the last line is always collectible.
 
 ## Open questions

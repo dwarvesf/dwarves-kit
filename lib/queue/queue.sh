@@ -351,7 +351,15 @@ _pointer_allowlist_reason() {  # repo pointer
     "$repo_abs"/*) rel="${ptr_abs#"$repo_abs"/}" ;;
     *) printf 'pointer outside its repo (not allow-listed)'; return ;;
   esac
-  for glob in $QUEUE_ALLOWED_POINTER_GLOB; do
+  # `read -ra` splits on whitespace WITHOUT pathname expansion. A bare `for glob in
+  # $QUEUE_ALLOWED_POINTER_GLOB` globs the patterns against the CWD first, so running from a
+  # directory that happens to contain `_meta/megagoals/` replaced the literal pattern with real
+  # subdirectory paths and made every legitimate pointer fail the check (found while wiring the
+  # SPEC-217 watcher, which calls this function from the repo root). The `case` match below is the
+  # glob that was ever intended.
+  local globs=()
+  IFS=' ' read -ra globs <<< "$QUEUE_ALLOWED_POINTER_GLOB"
+  for glob in "${globs[@]}"; do
     # shellcheck disable=SC2254 # QUEUE_ALLOWED_POINTER_GLOB is operator config; glob match intended.
     case "$rel" in $glob) return ;; esac
   done

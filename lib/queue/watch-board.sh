@@ -25,14 +25,16 @@
 # Usage:
 #   watch-board.sh [--apply] [--max N] [--board <path>] [--repo-root <path>]
 #                  [--repo-name <name>] [--journal <path>]
-#     --apply            actually enqueue (default is dry-run: print the plan and write it to
-#                        <log-dir>/watch-board-plan.tsv for inspection, but open no window)
+#     --apply            actually enqueue (default is dry-run: print the plan and write it to a
+#                        fresh <log-dir>/watch-board-plans/plan.XXXXXX, but open no window)
 #     --max N            per-run budget cap, forwarded to `queue run --max-megas N` (default 1)
 #     --board PATH       board file (default <repo-root>/_meta/BACKLOG.md)
 #     --repo-root PATH   repo the pointers resolve against (default: the cwd's git toplevel)
 #     --repo-name NAME   the identity parse-board checks `repo=` against, and the slug prefix
 #                        (default: the git COMMON dir's basename, so a worktree run produces the
-#                        same slug as a main-checkout run and dedups against the same journal)
+#                        same slug as a main-checkout run and dedups against the same journal).
+#                        PIN THIS EXPLICITLY in any cron wiring: the slug is the dedup key, so a
+#                        name that changes between runs re-plans an already-terminal row.
 #     --journal PATH     queue journal to dedup against (default: the queue's own resolved path)
 #
 # Exit is 0 for an empty plan: honest-empty is a result, not a failure (same posture as
@@ -49,11 +51,20 @@ LIB_ROOT="$(cd "$WATCH_DIR/.." && pwd)"
 PARSE_BOARD_SH="$LIB_ROOT/board/parse-board.sh"
 QUEUE_SH="$WATCH_DIR/queue.sh"
 
-# The journal path resolver is the queue's, not a second copy (SPEC-097's ONE durable root).
-# shellcheck source=lib/telemetry/kit-log-dir.sh
-. "$LIB_ROOT/telemetry/kit-log-dir.sh" || true
-if ! declare -f kit_resolve_log_dir >/dev/null 2>&1; then
-  echo "watch-board: lib/telemetry/kit-log-dir.sh did not load; refusing to guess a journal path" >&2
+# Source the queue itself (its own header sanctions this: `main` runs only when EXECUTED). Two
+# things come from it, neither re-implemented here: the resolved `$QUEUE_JOURNAL` (so an operator
+# who moved the journal moves this watcher's dedup with it, SPEC-097's ONE durable root), and
+# `_pointer_allowlist_reason`, the realpath/symlink-aware containment check.
+#
+# That second one matters. `queue run` applies it only to `--from-boards` rows, and the watcher
+# hands it a generated TSV, which `queue run` treats as operator-authored and therefore exempt.
+# A watcher-planned row is NOT operator-authored: it came from a free-text Notes cell. So the
+# watcher applies the hardened pass to its OWN plan, before any window can open. parse-board's
+# containment is lexical and does not follow symlinks; this one does (architecture review).
+# shellcheck source=lib/queue/queue.sh
+. "$QUEUE_SH" || { echo "watch-board: lib/queue/queue.sh did not load" >&2; exit 1; }
+if ! declare -f _pointer_allowlist_reason >/dev/null 2>&1 || ! declare -f kit_resolve_log_dir >/dev/null 2>&1; then
+  echo "watch-board: lib/queue/queue.sh loaded without its helpers; refusing to run unhardened" >&2
   exit 1
 fi
 
@@ -108,7 +119,9 @@ cmd_watch() {
   [ -n "$repo_root" ] || repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
   [ -n "$board" ]     || board="$repo_root/_meta/BACKLOG.md"
   [ -n "$repo_name" ] || repo_name="$(_repo_name "$repo_root")"
-  [ -n "$journal" ]   || journal="$(kit_resolve_log_dir)/queue-journal.tsv"
+  # QUEUE_JOURNAL is queue.sh's own resolved value (sourced above), so an operator who moved the
+  # journal moves this watcher's dedup with it instead of silently splitting the two.
+  [ -n "$journal" ]   || journal="$QUEUE_JOURNAL"
 
   if [ ! -f "$board" ]; then
     _warn "watch-board: no board at $board (nothing to watch)"
@@ -128,14 +141,28 @@ cmd_watch() {
   done < <(bash "$PARSE_BOARD_SH" rows "$board" 2>/dev/null)
 
   local planned=0 skipped=0 id repo pointer slug verdict seen=""
-  local plan_file; plan_file="$(kit_resolve_log_dir)/watch-board-plan.tsv"
-  mkdir -p "$(dirname "$plan_file")" 2>/dev/null || true
-  : > "$plan_file"
+  # Per-run plan file, never a fixed path: two overlapping runs would otherwise interleave
+  # truncate-and-write on the same file (the queue waits up to QUEUE_TIMEOUT_SECS per row, so
+  # overlap is realistic). mktemp is the pattern the rest of this repo already uses for scratch
+  # (security review). The path is printed so the operator can inspect what would be enqueued.
+  local plan_dir; plan_dir="$(kit_resolve_log_dir)/watch-board-plans"
+  mkdir -p "$plan_dir" 2>/dev/null || true
+  local plan_file; plan_file="$(mktemp "$plan_dir/plan.XXXXXX")" || {
+    _warn "watch-board: could not create a plan file under $plan_dir"; return 1; }
 
   while IFS=$'\t' read -r id repo pointer; do
     [ -n "$id" ] || continue
     case " $auto_ids " in *" $id "*) ;; *) continue ;; esac  # not marked #auto
     seen="$seen $id"
+    # The hardened, symlink-aware containment pass (see the sourcing note at the top). A symlink
+    # planted INSIDE an allow-listed dir but pointing outside the repo passes parse-board's lexical
+    # check and fails here.
+    local hard; hard="$(_pointer_allowlist_reason "$repo" "$pointer")"
+    if [ -n "$hard" ]; then
+      _say "[watch] skip $id: $hard"
+      skipped=$((skipped + 1))
+      continue
+    fi
     slug="${repo_name}__${id}"
     verdict="$(_journal_last_verdict "$journal" "$slug")"
     case "$verdict" in
@@ -165,6 +192,7 @@ cmd_watch() {
   fi
 
   if [ "$apply" -eq 0 ]; then
+    _say "[watch] plan written to $plan_file"
     _say "[watch] $planned row(s) to enqueue, $skipped skipped. Dry-run: re-run with --apply (cap --max $max)."
     return 0
   fi
