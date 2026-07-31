@@ -29,14 +29,18 @@ import sys
 try:
     policy = json.load(open(sys.argv[1]))
     payload = json.loads(os.environ.get("HOOK_PAYLOAD", "") or "{}")
+    tool = payload.get("tool_name", "")
 except Exception:
     sys.exit(0)  # fail open: a broken policy must not block every tool
-tool = payload.get("tool_name", "")
-if not tool:
+# Valid-but-non-dict JSON (a bare list/string/number payload or policy) must
+# fail open too, not crash with a traceback: same contract as the except above.
+if not isinstance(policy, dict) or not tool:
     sys.exit(0)
 # v2 schema nests domains under "capabilities" and carries per-provider actions;
 # v1 keeps domains at the top level. Normalize both into (domain, prefer, rules).
 domains = policy.get("capabilities", policy)
+if not isinstance(domains, dict):
+    sys.exit(0)
 norm = {}
 for domain, spec in domains.items():
     if domain.startswith("_") or not isinstance(spec, dict):
