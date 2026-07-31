@@ -2959,6 +2959,11 @@ REG_TMP2=$(mktemp)
 bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP2" 2>/dev/null
 cmp -s "$REG_TMP" "$REG_TMP2"
 assert_true "feature-registry generator is deterministic (double run byte-identical, SPEC-219)" $?
+# Skill-dispatcher derivation pin: an agent dispatched only by skills must not
+# show `-`; audit-scanner is dispatched by the doc-drift + feature-map skills.
+ASROW=$(grep -E '^\| `audit-scanner` ' "$KIT_DIR/docs/FEATURES.md")
+RC=0; { echo "$ASROW" | grep -q 'doc-drift (skill)' && echo "$ASROW" | grep -q 'feature-map (skill)'; } || RC=1
+assert_eq "audit-scanner dispatched-by names both skill dispatchers (doc-drift + feature-map)" 0 $RC
 rm -f "$REG_TMP" "$REG_TMP2"
 
 echo ""

@@ -6,7 +6,7 @@ generator: lib/registry/feature-registry.sh
 
 # Feature registry
 
-GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh generate`. One row per live feature; freshness pinned by `tests/test-meta.sh` (regenerate-and-diff). Trigger classes per `docs/workflow-paths.md` section 1: `[H]` human-typed, `[H/I]` human-or-intent, `[I]` intent-read, `[E]` event-fired, `[D]` dispatched. Refs are exact-token greps: Specs over `docs/specs/`, Tests over `tests/*.sh`, Dispatched-by over `commands/*.md`; `-` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested).
+GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh generate`. One row per live feature; freshness pinned by `tests/test-meta.sh` (regenerate-and-diff). Trigger classes per `docs/workflow-paths.md` section 1: `[H]` human-typed, `[H/I]` human-or-intent, `[I]` intent-read, `[E]` event-fired, `[D]` dispatched. Refs are exact-token greps: Specs over `docs/specs/`, Tests over `tests/*.sh`, Dispatched-by over `commands/*.md` + `skills/*/SKILL.md` (skill dispatchers marked `(skill)`); `-` means no reference found (a coverage gap, not always a defect: read-only agents may be deliberately untested).
 
 ## Commands
 
@@ -53,9 +53,9 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 |---|---|---|---|---|---|
 | `acceptance-verifier` | `[D]` | verify | Dynamically executes the active spec's acceptance criteria via its `## Verification` section and reports whether the build actually satisfi… | SPEC-035, SPEC-090, SPEC-092 +2 | test-every-step-review.sh, test-kit-contract.sh, test-meta.sh +1 |
 | `advisor` | `[D]` | adopt, mega, review-team +1 | The single cross-cutting generic review lens (ADR-0028 SG-05/P5-P6). Runs in TWO modes at the final integration/UAT boundary -- critique (a… | SPEC-090, SPEC-091, SPEC-092 +15 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-advisor-ledger-emit.sh +12 |
-| `agent-effectiveness` | `[D]` | draft-agent | Validates an agent definition's EFFECTIVENESS (not just its structure) across four lenses -- tools minimal-yet-sufficient, description trig… | SPEC-088, SPEC-090, SPEC-091 +2 | test-advisor.sh, test-agent-effectiveness.sh, test-meta.sh +1 |
+| `agent-effectiveness` | `[D]` | draft-agent, loop-engineering (skill) | Validates an agent definition's EFFECTIVENESS (not just its structure) across four lenses -- tools minimal-yet-sufficient, description trig… | SPEC-088, SPEC-090, SPEC-091 +2 | test-advisor.sh, test-agent-effectiveness.sh, test-meta.sh +1 |
 | `api-reviewer` | `[D]` | review-team | Reviews a diff through the API-CONTRACT lens only (breaking changes, versioning, request/response schema, error codes, backward compat, ide… | SPEC-111 | test-meta.sh |
-| `audit-scanner` | `[D]` | - | Shared read-only Tier-2 evidence scanner for audit-loop instances (doc-drift, feature-map, future ones). Dispatched by an audit skill with … | SPEC-220 | test-audit-scanner-contract.sh |
+| `audit-scanner` | `[D]` | doc-drift (skill), feature-map (skill) | Shared read-only Tier-2 evidence scanner for audit-loop instances (doc-drift, feature-map, future ones). Dispatched by an audit skill with … | SPEC-220 | test-audit-scanner-contract.sh, test-meta.sh |
 | `brief-reviewer` | `[D]` | think | Statically reviews a design brief or requirement (DECISION-BRIEF.md, a spec's Problem/Context section, or an equivalent requirement doc) fo… | SPEC-092, SPEC-108 | test-every-step-review.sh, test-kit-contract.sh, test-meta.sh +1 |
 | `claim-verifier` | `[D]` | - | Adversarially verifies an ARBITRARY free-text claim before it is trusted. Runs an in-harness panel of N independent skeptics, each told to … | SPEC-195 | - |
 | `code-reviewer` | `[D]` | devs-team, review-team, visual-team | Focused code reviewer. Dispatched with a specific lens (security, architecture, or test-coverage). Read-only. Used by /review-team for para… | SPEC-090, SPEC-092, SPEC-109 +7 | test-meta.sh, test-review-team-plants.sh |
@@ -83,8 +83,8 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 
 | Skill | Trigger | Description | Specs | Tests |
 |---|---|---|---|---|
-| `doc-drift` | `[I]` | Use for the whole-estate doc audit, "run the doc-drift loop", "audit the docs against the code", "are the docs still true", "doc drift swee… | SPEC-029, SPEC-216, SPEC-218 +1 | test-audit-scanner-contract.sh |
-| `feature-map` | `[I]` | Use to audit the kit's feature estate against its path map, "run the feature-map loop", "is the workflow path map still complete", "does ev… | SPEC-218, SPEC-219, SPEC-220 | test-audit-scanner-contract.sh |
+| `doc-drift` | `[I]` | Use for the whole-estate doc audit, "run the doc-drift loop", "audit the docs against the code", "are the docs still true", "doc drift swee… | SPEC-029, SPEC-216, SPEC-218 +1 | test-audit-scanner-contract.sh, test-meta.sh |
+| `feature-map` | `[I]` | Use to audit the kit's feature estate against its path map, "run the feature-map loop", "is the workflow path map still complete", "does ev… | SPEC-218, SPEC-219, SPEC-220 | test-audit-scanner-contract.sh, test-meta.sh |
 | `get-api-docs` | `[I]` | Fetch curated API documentation using Context Hub (chub) before coding against any external API. Use when the task involves calling a third… | - | test-kit-foldin-hooks.sh |
 | `loop-engineering` | `[I]` | Use when the user wants to design or add a new bounded loop to the kit's own SDLC orchestration ("let's build a loop", "design a new loop f… | SPEC-209 | test-loop-engineering-contract.sh, test-research-arch-contract.sh |
 | `memory-tidy` | `[I]` | Use when auditing, consolidating, or cleaning a repo's .claude/memory store, "dọn memory", "memory tidy", the biweekly memory audit, dupl… | SPEC-208 | test-memory-tidy-contract.sh, test-research-arch-contract.sh |
