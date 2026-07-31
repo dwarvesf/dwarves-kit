@@ -110,6 +110,84 @@ dedicated repo, not in-repo design spikes).
 
 Row: ID-448.
 
+## 4. Wiring into the SDLC (added 2026-07-31, same pass)
+
+The three land at three altitudes of the existing workflow (docs/WORKFLOW.md).
+Prototype is a new opt-in phase instrument next to /kit:design. The
+code-review deltas are in-place edits to existing phase commands, zero
+workflow change. Wayfind is not a phase: it is a pre-cycle intake shape
+beside the board, feeding /kit:spec or /kit:mega.
+
+```
+                        WHERE WORK COMES FROM
+  board (_meta/BACKLOG.md) ──────────────┐
+                                         │
+  /kit:wayfind  ← NEW, pre-cycle         │   too foggy for one grill?
+  map.md + decision tickets              │   /kit:think or /kit:grill
+  (research|prototype|grilling|task)     │   escalates UP to wayfind
+        │  map clear = nothing           │
+        │  left to decide                ▼
+        └──────────────► THE CYCLE (per work item)
+                         Phase 0: /kit:grill → done scenario
+                              │
+                         /kit:think ──► /kit:design (opt-in)
+                              │              │ "can't settle this in prose"
+                              │              ▼
+                              │         /kit:prototype  ← NEW, opt-in beat
+                              │         answer on prototype/<name> branch,
+                              │         fold DECISION into the brief
+                              ▼
+                         /kit:spec → validate → test-plan
+                              │
+                         /kit:execute
+                              │
+                         /kit:review, /kit:review-team  ← ID-449 edits land
+                              │
+                         /kit:docs → /kit:ship → /kit:retro
+```
+
+Wiring contract, per piece:
+
+- **ID-449 (code-review deltas)**: edits inside /kit:review and
+  /kit:review-team only. Nothing enters the phase table. The upstream "Spec
+  axis" already exists as the architecture lens + stale-ADR inversion.
+- **ID-448 (/kit:prototype)**: new opt-in phase-table row, advisory
+  enforcement, same class as /kit:design. Exit = validated decision folded
+  into the brief/spec + `prototype/<name>` branch pointer. Entry from
+  /kit:design when an approach question resists prose, and from wayfind
+  prototype tickets. Proof class: inert on main (the branch is the artifact;
+  nothing behavioral merges), so the ship-gate never demands a proof-of-done
+  for a spike. HITL by contract.
+- **ID-450 (/kit:wayfind)**: intake shape at the board layer. One umbrella
+  board row per map; tickets live in the map folder and are never duplicated
+  as board rows (the markdown board stays the one source of truth).
+  Escalation trigger: /kit:think or a grill keeps producing questions that
+  cannot be stated precisely yet, or the brief carries 3+ unresolved
+  decisions. Exit: map clear hands to /kit:spec (single feature) or /kit:mega
+  (roadmap); Decisions-so-far becomes the brief's Context.
+
+Three composition decisions, so this composes instead of bolting on:
+
+1. **Co-locate the map with the mega-goal folder.** The map lives at
+   `_meta/megagoals/<slug>/map.md`, not a new `docs/wayfinder/` tree
+   (supersedes the §1 path). Wayfind is the decide-half of the shape the
+   mega-goal already owns as the do-half; graduation = write ROADMAP.md next
+   to map.md in the same folder.
+2. **Reuse the type loops as ticket executors.** A research ticket IS the
+   research type loop, runnable AFK via the same DELEGATE `claude -p`
+   machinery as the mega conductor, and it is the one multi-ticket-per-session
+   exception. Grilling and prototype tickets are HITL; the conductor must
+   never delegate a grilling ticket (an agent answering its own grill
+   questions is the upstream's documented failure mode). No new executor
+   machinery.
+3. **Phase 0 stays universal.** Wayfind does not replace the per-item grill;
+   each ticket that graduates into a work item still enters the cycle through
+   /kit:grill and the done-scenario definition. The map spares re-deriving
+   context; it never skips the gate.
+
+Build order: ID-449 (one-file edits) -> ID-448 (wayfind depends on it) ->
+ID-450.
+
 ## Routing
 
 - Board rows ID-448 (prototype), ID-449 (code-review deltas), ID-450
