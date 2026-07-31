@@ -257,13 +257,13 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 |---------|-------|-------------|
 | /kit:start | Entry | Detect project state, suggest next command |
 | /kit:grill | Intake | Universal intake interview: type-shaped questions, one at a time, answers written as they resolve |
+| /kit:wayfind | Intake | User-invoked: chart a too-foggy-for-one-session effort as a decision map (`_meta/megagoals/<slug>/map.md` + typed tickets), resolve one per session, hand off to /kit:spec or a ROADMAP |
 | /kit:think | Think | 6 forcing questions to stress-test an idea |
 | /kit:design | Design | Opt-in: interactive solution-design beat (one question at a time) before /spec |
 | /kit:devs-team | Design | Opt-in: 5-lens parallel critique of the solution (brief or spec), report-only |
 | /kit:visual-team | Design | Opt-in: 5-lens parallel critique of a visual/UI design (downstream-facing) |
 | /kit:ui-design | Design | Opt-in, downstream: UI brief -> generate (frontend-design) -> critique -> revise loop |
 | /kit:prototype | Design | Opt-in: throwaway spike answering ONE design question (logic TUI or 3-5 UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch |
-| /kit:wayfind | Intake | User-invoked: chart a too-foggy-for-one-session effort as a decision map (`_meta/megagoals/<slug>/map.md` + typed tickets), resolve one per session, hand off to /kit:spec or a ROADMAP |
 | /kit:assign | Orchestrate | Turn a backlog item (ID-NNN) into a scoped goal draft + route it into the lane |
 | /kit:dispatch | Orchestrate | Fire N disjoint VALIDATED specs concurrently, each in its own worktree, behind a disjointness gate; lead-owned merge |
 | /kit:mega | Orchestrate | Mirrors the plan-for-mega-goal skill: decompose 3-8 dependent sub-goals, front-load every clarification once, set the per-run merge config, hand off to the bounded loop; ship-layer auto-merge rides the ship-gate via `lib/goal/mega-merge.sh`, never bypasses it |

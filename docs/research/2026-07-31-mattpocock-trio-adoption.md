@@ -49,7 +49,7 @@ one file per ticket at `.scratch/<feature>/issues/<NN>-<slug>.md`.
 |---|---|---|
 | Decision-map beat (map-as-index, decide-vs-do split, fog section) | ABSORB | New `/kit:wayfind` command, file-based (upstream's own fallback shape, zero new infra): `docs/wayfinder/<slug>/map.md` + `tickets/NN-<slug>.md` |
 | Typed tickets routing to owned skills | ABSORB | grilling -> `/kit:grill`, prototype -> `/kit:prototype` (ID-448), research -> parallel research subagents, task -> normal lane |
-| Claim + frontier semantics | ABSORB (map, do not build) | claim = the existing kanban `claimed` state; frontier = queued rows with no open blocker. No new state machine |
+| Claim + frontier semantics | ABSORB (map, do not build) | SUPERSEDED during spec (SPEC-207): shipped as ticket-file headers (`Status: open\|claimed\|closed` + `Claimed-by`, commit-is-the-claim), deliberately separate from the board's state machine; this row's original "reuse the kanban claimed state" sketch pre-dated the ticket-file design |
 | One-ticket-per-session, research excepted; map-clear hands to `/kit:spec` | ABSORB (contract lines) | two lines in the wayfind command body |
 | Tracker-native storage, native blocking edges, fog rendered in tracker UI | PARK (unchanged) | tripwire unchanged from 07-25: the Multica pilot outgrows flat cards and needs dependency/frontier queries. ID-425 (board-github adapter work) is the natural unpark vehicle |
 

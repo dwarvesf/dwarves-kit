@@ -21,7 +21,10 @@ zero new infra).
 
 One new user-invoked command, `commands/wayfind.md` (ported from
 mattpocock/skills wayfinder, MIT, re-based onto files + the kit board), plus
-the WORKFLOW.md wiring for it and for SPEC-206's prototype beat.
+the WORKFLOW.md wiring for it and for SPEC-206's prototype beat. The command
+carries `disable-model-invocation: true`: wayfind is the heaviest intake
+shape and upstream's documented failure mode is over-reach, so the model must
+never self-chart a map; only the human opens one.
 
 1. **The map** lives at `_meta/megagoals/<slug>/map.md`: sections Destination
    / Notes / Decisions so far (one gist line + pointer per closed ticket) /
@@ -64,8 +67,15 @@ the WORKFLOW.md wiring for it and for SPEC-206's prototype beat.
 
 Tracker-native storage (GitHub Issues, native blocking edges) stays PARKED
 with its 2026-07-25 tripwire (Multica outgrows flat cards; unpark vehicle
-ID-425). No lib/ or hooks/ changes; no new state machine (claim semantics
-are ticket-file headers, not board machinery); no changes to /kit:mega.
+ID-425). No lib/ or hooks/ changes; no board-machinery changes (ticket
+claim/status is a deliberate lightweight file-header vocabulary,
+`open|claimed|closed`, SEPARATE from the board's state machine; this
+supersedes the research doc's earlier "reuse the kanban claimed state"
+sketch, which pre-dated the ticket-file design); no changes to /kit:mega.
+The cross-worktree claim race is mitigated by the commit-is-the-claim rule
+in the command body, not by a lock: a push rejection is the collision
+signal. Ceiling accepted for v1; the goal-registry stays the lock for the
+umbrella effort, not per ticket.
 
 ## Test plan
 

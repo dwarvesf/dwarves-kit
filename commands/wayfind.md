@@ -64,7 +64,7 @@ Blocked-by: [NN, NN]   # empty = unblocked
 <written at resolution; assets linked, never pasted in>
 ```
 
-A session **claims** a ticket by setting `Status: claimed` + `Claimed-by:` FIRST, before any work; concurrent sessions skip claimed tickets. A ticket is **unblocked** when every `Blocked-by` ticket is closed. The **frontier** = open, unblocked, unclaimed tickets: the edge of the known. **Refer to tickets by their title in everything the human reads**, never by a wall of bare numbers; the `NN` rides inside the name.
+`NN` is the zero-padded next integer in `tickets/` (01, 02, ...). A session **claims** a ticket by setting `Status: claimed` + `Claimed-by:` FIRST, and **committing (and pushing, when a remote exists) that claim edit before any work**: an unpushed claim does not exist to a session in another worktree, so the commit IS the claim. On a push rejection (someone claimed first), pull and pick the next frontier ticket. Concurrent sessions skip claimed tickets. A ticket is **unblocked** when every `Blocked-by` ticket is closed. The **frontier** = open, unblocked, unclaimed tickets: the edge of the known. **Refer to tickets by their title in everything the human reads**, never by a wall of bare numbers; the `NN` rides inside the name.
 
 ## Ticket types (each routes to machinery the kit already owns)
 
@@ -85,9 +85,9 @@ Chart only what you can see. **Fog or ticket? The test is whether you can state 
 
 Invoked with a loose idea. Charting is one session's work and hand-resolves nothing.
 
-1. **Name the destination** via `/kit:grill` (+ domain modeling where it helps). The destination fixes the scope, so it is settled first.
+1. **Name the destination** via `/kit:grill`. The destination fixes the scope, so it is settled first.
 2. **Map the frontier**: grill again, breadth-first, fanning across the whole space for the open decisions and first takeable steps. **No fog surfaced = no map needed**: the journey fits one session; stop and route to `/kit:grill` + `/kit:spec` instead.
-3. **Write map.md** (Destination + Notes filled, Decisions empty, fog sketched into Not yet specified) and **add the ONE umbrella board row** for the effort.
+3. **Write map.md** (Destination + Notes filled, Decisions empty, fog sketched into Not yet specified) and **add the ONE umbrella board row** for the effort: hand-edit `_meta/BACKLOG.md` per its Schema section (`backlog.sh` has no add verb), next free ID, status `claimed`, notes pointing at the map path.
 4. **Create the tickets you can state now**, then wire `Blocked-by` in a second pass (tickets need numbers before they can reference each other). Everything else stays fog.
 5. **Fire the research subagents** for every research ticket, in parallel, each capturing to its `research/<name>` branch.
 6. Stop. Report the map path, the frontier, and the running research.
@@ -97,7 +97,7 @@ Invoked with a loose idea. Charting is one session's work and hand-resolves noth
 Invoked with a map (path or slug); a named ticket is optional.
 
 1. Load **map.md only** (low-res). Do not read every ticket body.
-2. Pick the ticket: the named one, else the first frontier ticket. **Claim it before any work.**
+2. Pick the ticket: the named one, else the first frontier ticket. **Claim it before any work** (commit-and-push the claim; see Tickets). **Empty frontier?** No open tickets and no fog left = the map is clear: go to Exit. Fog remains but nothing is ticketable = grill the fog breadth-first (chart-mode step 2 discipline) to graduate what has sharpened; still nothing = report the map blocked and on what.
 3. Resolve it via its type's machinery above, zooming into related/closed ticket bodies on demand; consult the skills `## Notes` names.
 4. Record: write `## Answer`, set `Status: closed`, append the one-line gist to `## Decisions so far`.
 5. Tend the map: create newly-surfaced tickets (create-then-wire), graduate fog the answer sharpened, close mis-scoped tickets into Out of scope, update or drop tickets the decision invalidated.
@@ -109,6 +109,6 @@ Nothing left to decide: hand off, never straight to execute.
 
 - Single bounded feature -> `/kit:spec`; the map's Decisions so far becomes the spec's Context.
 - A build needing ordered sub-goals -> write `ROADMAP.md` beside map.md and run it as a mega-goal (`/kit:mega`, ADR-0032); the map stays as the decision record.
-- Flip the umbrella board row to reflect the handoff; the map goes read-only.
+- Flip the umbrella board row to reflect the handoff (`bash lib/board/backlog.sh set <ID> speccing` for the single-spec path, `executing` once a ROADMAP run starts); the map goes read-only.
 
 Record the beat when a wayfind session ends: `bash lib/gate/gate-ledger.sh record <rid> Wayfind ran "mode=<chart|work> ticket=<NN|-> frontier=<N-remaining>"` (rid = the umbrella effort's branch when one exists, else the session's own).
