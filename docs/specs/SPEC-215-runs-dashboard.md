@@ -18,7 +18,7 @@ The pieces exist and do not compose: the per-mega sign-off dashboard (SPEC-197, 
 ### Approaches considered
 
 1. **Estate scanner into one static HTML page.** A stdlib generator walks a registry of repos, parses every run artifact into a card, renders one self-contained file. Tradeoff: parsing prose markdown is heuristic, so a card's status is a best-effort read of the document, not a ledger fact.
-2. **Extend `stats` with a `runs` verb.** Semantically the Observe leg's home (ADR-0034). Tradeoff: `lib/stats/` is a uv-managed package with duckdb and typer dependencies, so a stdlib-only generator would inherit a uv requirement it does not need. Rejected on the dependency cost.
+2. **Extend `stats` with a `runs` verb.** Semantically the Watch stage's home (ADR-0034). Tradeoff: `lib/stats/` is a uv-managed package with duckdb and typer dependencies, so a stdlib-only generator would inherit a uv requirement it does not need. Rejected on the dependency cost.
 3. **Index the gate/run ledger instead of the docs.** The ledger already holds structured GATE and OUTCOME rows. Tradeoff: the ledger is machine-local and per-rid, it carries no titles, no captures, and nothing from repos that never ran a kit gate. It answers a different question. Rejected as a v1 source.
 
 ### Chosen approach + why
@@ -76,7 +76,7 @@ ASCII, per the repo's no-mermaid rule.
 
 ### ADR link(s)
 
-ADR-0034 (subsystem-verb grammar) is the decision this build touches. It assigns `mega` to the Execute leg and `stats` / `session` / `telemetry` / `bridge` to Observe. This spec lands an Observe-shaped verb on `mega`. That is a deliberate, recorded deviation, not an oversight: see DEC-001. No new ADR is written, because the decision is reversible (the verb can move to `stats` the day `stats` stops needing uv) and ADR-0034 decision 3 already establishes the "honest spanner" pattern for a subsystem whose verbs cross legs.
+ADR-0034 (subsystem-verb grammar) is the decision this build touches. It assigns `mega` to the Build stage and `stats` / `session` / `telemetry` / `bridge` to Watch. This spec lands a Watch-shaped verb on `mega`. That is a deliberate, recorded deviation, not an oversight: see DEC-001. No new ADR is written, because the decision is reversible (the verb can move to `stats` the day `stats` stops needing uv) and ADR-0034 decision 3 already establishes the "honest spanner" pattern for a subsystem whose verbs cross stages.
 
 ### Boundaries & failure modes
 
@@ -193,7 +193,7 @@ Script tests in `tests/test-runs-dashboard.sh`, following the existing suite's `
 
 ## Decision Log
 
-- DEC-001: The verb lands as `mega runs`, not `stats runs`. Rationale: the corpus is mega-goal archives plus the proof docs they point at, which is the exact corpus `lib/mega/` already parses; the generator imports the shipped sign-off dashboard's render helpers from a sibling file rather than reaching across subsystems; and it keeps the bare-`python3` property that `mega-review.py` has, which a `lib/stats/` home would trade for a uv requirement the generator does not need. Alternatives rejected: `stats runs` (drags uv, duckdb, typer onto a stdlib generator), `session runs` (the session subsystem means Claude Code sessions, not factory runs), a new top-level subsystem (a whole `bin/` entry for one verb). Honest cost: ADR-0034 files `mega` under the Execute leg, so `mega` becomes a third leg-spanner alongside `board` and `session`. Recorded here rather than papered over.
+- DEC-001: The verb lands as `mega runs`, not `stats runs`. Rationale: the corpus is mega-goal archives plus the proof docs they point at, which is the exact corpus `lib/mega/` already parses; the generator imports the shipped sign-off dashboard's render helpers from a sibling file rather than reaching across subsystems; and it keeps the bare-`python3` property that `mega-review.py` has, which a `lib/stats/` home would trade for a uv requirement the generator does not need. Alternatives rejected: `stats runs` (drags uv, duckdb, typer onto a stdlib generator), `session runs` (the session subsystem means Claude Code sessions, not factory runs), a new top-level subsystem (a whole `bin/` entry for one verb). Honest cost: ADR-0034 files `mega` under the Build stage, so `mega` becomes a third stage-spanner alongside `board` and `session`. Recorded here rather than papered over.
 - DEC-002: The dashboard reads EVERY registry row, not only `bridge == on` rows. The bridge flag opts a repo into a Hermes WRITE path; reading a repo's own reports carries none of that risk, and filtering on it would have hidden most of the estate behind an unrelated flag.
 - DEC-003: `mega-review.py` is extended by IMPORT, not by parameterization. Its render loop is built around one mega's ROADMAP sub-goal rows and the per-rid gate ledger, so it has no seam that accepts an estate of unrelated documents. What genuinely transfers is the presentation contract: `_CSS`, `_e`, `_run`, and the honest-dash discipline. Those are imported through the same `importlib` convention `mega-review.py` itself uses for `proof-table-gen.py`, so there is one stylesheet and one escaper across both surfaces, not two that drift.
 
