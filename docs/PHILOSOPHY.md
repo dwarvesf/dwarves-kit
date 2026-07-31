@@ -295,13 +295,15 @@ If a component has been unused for 30 days (no contractor reports using it, no s
 
 ### AutoResearch optimization
 
-From the spec-driven development (SDD) handoff: the Karpathy loop can optimize kit components with a measurable metric. This applies to:
+Corrected citation (2026-07-31): the real source is [github.com/karpathy/autoresearch](https://github.com/karpathy/autoresearch). It tunes ONE numeric metric (`val_bpb`, a training loss) with a serial hill-climb: mutate the current best, `git commit` on improvement, `git reset` on failure, loop forever until a human interrupts it. It has no LLM-as-judge step anywhere. The three-file contract and the LLM-judged scoring below are this kit's own extension, not something the Karpathy repo demonstrates. Full comparison and adoption verdict: `docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
 
-- **Command prompts**: The three-file contract (program.md = kit philosophy frozen, skill.md = command prompt modifiable, eval.py = LLM-as-judge scoring). Run 50 iterations overnight, keep the highest-scoring prompt variant. Applicable to /review, /spec-validate, /think.
-- **Hook patterns**: Anti-rationalization patterns can be optimized by running against a corpus of Claude outputs and measuring false positive / false negative rates.
-- **Verifier accuracy**: task-verifier's prompt can be optimized once a corpus of verified tasks exists. Score = % of real bugs caught (false negative rate) vs % of correct code wrongly flagged (false positive rate). Target: <5% false positive, <20% false negative. Requires 30+ real verified tasks to build the corpus.
+This kit's own extension applies the same "search variants, keep the best" idea to targets that have no cheap numeric metric, so it swaps in an LLM-as-judge score, and it never runs unbounded (see "Loop boundaries" above, an unbounded outer loop is declined territory here regardless of source):
 
-The bar for AutoResearch: only run it when manual iteration has plateaued AND you have 10+ real session transcripts to evaluate against. Before that, manual iteration is faster. For the task-verifier specifically: collect 30+ real verification transcripts before attempting optimization.
+- **Command prompts**: a three-file contract (program.md = kit philosophy frozen, skill.md = command prompt modifiable, eval.py = LLM-as-judge scoring). Run N bounded iterations, keep the highest-scoring prompt variant. Applies to /review, /spec-validate, /think.
+- **Hook patterns**: run anti-rationalization patterns against a corpus of Claude outputs and measure false positive and false negative rates.
+- **Verifier accuracy**: optimize task-verifier's prompt once a corpus of verified tasks exists. Score equals the percent of real bugs caught (false negative rate) against the percent of correct code wrongly flagged (false positive rate). Target: under 5% false positive, under 20% false negative. Needs 30+ real verified tasks to build the corpus.
+
+The bar for this: run it only when manual iteration has plateaued AND 10+ real session transcripts exist to evaluate against. Before that, manual iteration is faster. For the task-verifier specifically: collect 30+ real verification transcripts first. As of 2026-07-31, `docs/runs/` holds none, so this bar is not yet met.
 
 ### Version strategy
 
