@@ -1,10 +1,10 @@
-# Implementation notes: feature-registry (SPEC-217)
+# Implementation notes: feature-registry (SPEC-219)
 
 Delta log only; the spec carries the design.
 
 ## 2026-07-31 hook descriptions needed a fallback rule the spec did not pin
 
-Context: SPEC-217 AC-3 says hook descriptions come from "the header comment". About half the hooks use `# name.sh -- desc`; others use `# name.sh, <desc>` or an em-dash separator (`statusline.sh`).
+Context: SPEC-219 AC-3 says hook descriptions come from "the header comment". About half the hooks use `# name.sh -- desc`; others use `# name.sh, <desc>` or an em-dash separator (`statusline.sh`).
 Decision: primary rule stays the ` -- ` convention; fallback takes the first comment line with the `<name>.sh` prefix and its separator stripped.
 Why: deterministic, zero per-hook special cases; the fallback text is honest even when it reads like a role line ("PreToolUse hook, matcher: Bash").
 Alternatives: normalizing every hook header (out of scope, touches ~14 files); leaving blanks (worse registry).

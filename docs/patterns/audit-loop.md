@@ -63,3 +63,5 @@ Write the item enumeration as a discrete, reproducible list (a command or a scri
 `memory-tidy` and `stale-sweep` (personal skills, ops-toolkit/dotfiles) are the first two instances; the 2026-07-31 memory-store run (140 notes -> 127, three DANGER items caught) is the worked example. Derivation record: ops-toolkit `research/2026-07-31-claude-md-stack-architecture.md` §4.
 
 `skills/doc-drift/SKILL.md` (in-kit) is the built form of the Doc-drift row above: living docs only (dated records excluded), a two-tier evidence pass per the loop-engineering cheap-first split (mechanical grep/ls/diff on every file, model judgment only where flagged or high-traffic), PR-gated.
+
+`skills/feature-map/SKILL.md` (in-kit) is the Feature-liveness-adjacent inventory instance: the generated `docs/FEATURES.md` registry (SPEC-219) vs the `docs/workflow-paths.md` path index, both directions; Tier 1 pure shell, Tier 2 (topology re-placement) dispatched only for delta features, PR-gated.
