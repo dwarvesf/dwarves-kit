@@ -1,6 +1,6 @@
 ---
 name: research-features
-description: Deep, uncapped, source-cited feature inventory for one module of a target project -- every entry point gets a file:line citation and a behavior contract; adds a MIGRATE table + parity contract when the request names a port/migration target. The definitive deliverable, not throwaway context (see research-context for that). Dispatched by /kit:features.
+description: Deep, uncapped, source-cited feature inventory for one module of a target project -- every entry point gets a file:line citation and a behavior contract; adds a MIGRATE table + parity contract when the request names a port/migration target. The definitive deliverable, not throwaway context (see research-context for that). Dispatched by /kit:feature-map.
 tools:
   - Read
   - Grep
@@ -21,9 +21,9 @@ You receive: the module name, one or more tagged locations (short id -> repo pat
 e.g. `fortress-api: ~/repos/fortress-api`, `foundation-workers: ~/repos/foundation-workers`),
 zero or more named surfaces (an external system the module is exposed through but
 that has no readable source -- a Discord channel/bot, a Notion automation/database,
-a webhook a third party calls), the output path, and whether this is a plain census
-(no port target) or a migration/port (a named target system this module is being
-ported to).
+a webhook a third party calls), the output path, and whether this is a plain
+inventory run (no port target) or a migration/port (a named target system this
+module is being ported to).
 
 A module is not always contained in one repo. Read ALL given locations for this
 module; a behavior can start in one and finish in another (a Discord command in
@@ -126,7 +126,7 @@ invent one.
 ```
 
 No line cap (unlike `research-context`, which is shallow and
-80-line-capped for `/kit:spec`'s brownfield context): a census/port spec is a
+80-line-capped for `/kit:spec`'s brownfield context): an inventory/port spec is a
 source of truth, not a scratch note -- go as deep as the module needs. Do not pad;
 every line earns its place.
 
