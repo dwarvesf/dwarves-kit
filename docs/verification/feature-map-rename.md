@@ -15,8 +15,8 @@
 | # | Check | Command | Result |
 |---|---|---|---|
 | 1 | no stale token left anywhere live | `grep -rn "feature-map\|kit:features\b" . --exclude-dir=.git` (with historical files excluded) | every remaining `feature-map` hit is the correct NEW command name `/kit:feature-map`; every remaining `kit:features` hit is inside the dated naming-reconciliation research note (history, not code) |
-| 2 | full suite green post-rename | `bash tests/test-meta.sh` and `bash tests/test-audit-scanner-contract.sh` | 805/805 and 15/15, exit 0 both |
-| 3 | negative control | `git mv skills/topology-drift skills/feature-map`, re-run `test-audit-scanner-contract.sh`, restore via `git mv skills/feature-map skills/topology-drift` | drops to 13/15 (the two AC2 dispatched-by-wiring assertions FAIL against the reverted path); restore returns to 15/15 |
+| 2 | full suite green post-rename | `bash tests/test-meta.sh` and `bash tests/test-audit-scanner-contract.sh` | Command: `bash tests/test-meta.sh` -> 805/805 PASS, Exit: 0. Command: `bash tests/test-audit-scanner-contract.sh` -> 15/15 PASS, Exit: 0 |
+| 3 | NEGATIVE CONTROL | `git mv skills/topology-drift skills/feature-map`, re-run `test-audit-scanner-contract.sh`, restore via `git mv skills/feature-map skills/topology-drift` | reverted: 13/15, two AC2 dispatched-by-wiring assertions FAIL (RED). Restored: 15/15 PASS, Exit: 0 |
 
 ## Run detail
 
