@@ -31,3 +31,15 @@ Gitignored: may name unfiled work. NEVER the source of truth.
 - Home: dwarves-kit
 - Source: learn propose 2026-07-12 | lens=memory-sweep figure="21 memory notes reference dead paths, 0 stale (>180d)" rids=SPEC-105-hardening,SPEC-106-admin-moderation,SPEC-107-launch-pack,SPEC-108-account-settings,SPEC-109-onboarding,advisor-visibility,board-mirror,board-tool,+143 more
 
+## [staged] Add a self-answer detection check to `/kit:think` (and any other forcing-question command):
+- Intent: Action item a retro committed to; it lived only as a checkbox nobody could promote.
+- Approach: Add a self-answer detection check to `/kit:think` (and any other forcing-question command):
+- Tags: #u-mid #f-mid
+- Source: retro 2026-08-01 | RETRO-2026-08-01-backlog-reconcile.md
+
+## [staged] Make "fetch origin before cutting any new branch" a reflex step in the
+- Intent: Action item a retro committed to; it lived only as a checkbox nobody could promote.
+- Approach: Make "fetch origin before cutting any new branch" a reflex step in the
+- Tags: #u-mid #f-mid
+- Source: retro 2026-08-01 | RETRO-2026-08-01-backlog-reconcile.md
+
