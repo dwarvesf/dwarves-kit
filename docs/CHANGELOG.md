@@ -4,6 +4,18 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **`tests/test-install-compat.sh` now sandboxes `$HOME` (ID-463).** The suite ran `install.sh`
+  with only `CLAUDE_DIR` overridden; the compat branch it exercises writes a CLI shim straight
+  to `$HOME/.local/bin` for every known module, so on 2026-08-01 a real run clobbered 4 live
+  shims (`board`, `prose-rag`, `session`, `worktree-provision`), retargeting them at a `mktemp`
+  dir that vanished on test exit and broke a live hook. Both `install.sh` invocations in the
+  suite now get their own throwaway `HOME`, plus a tripwire assertion that fails if any
+  dwarves-kit-managed shim in the real `~/.local/bin` ever points back into the test's own
+  `$TMPDIR`. First unattended, end-to-end run of the SPEC-217 `#auto` queue watcher: self-grill,
+  sanitized prompt, runaway guards, and the draft-PR-by-default posture all fired for real,
+  producing draft PR #342.
+
 ### Added
 - **`backlog-reconcile` skill: the audit-loop pattern's 4th SDLC instance (SPEC-225).**
   General-purpose (every `/kit:adopt`ed repo, not maintainer-only): audits a repo's
