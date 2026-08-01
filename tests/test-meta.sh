@@ -2793,40 +2793,100 @@ is_on_review_axis() {
   esac
 }
 
-# (a) GLOBAL BAN: no agent file's frontmatter `name:` may use a retired suffix.
-# This is what makes a future off-axis review name FAIL CLOSED -- a new
-# `foo-checker.md` or `foo-auditor.md` (or a re-introduced bare `reviewer`)
-# breaks this loop the moment it is added, without anyone updating this test.
+# (a) GLOBAL BAN, roster-scanning: no agent, command, or skill name may use a
+# retired suffix. The roster is DERIVED from the live dirs (same derivation
+# style as the SPEC-219 registry-freshness pin), so a new commands/foo-checker.md
+# or skills/foo-validate/ fails here the moment it lands, without anyone
+# updating this test. Grandfathered names predate this widening and are pinned
+# pending the operator decisions recorded in
+# docs/research/2026-08-01-naming-reconciliation.md (visible debt, not license):
+#   spec-validate -- finding 3 / proposal "/kit:spec-validate -> /kit:spec-team"
+#                    (a dedicated migration PR with a legacy alias window).
+RETIRED_GRANDFATHERED="spec-validate"
+ALL_NAMES=""
 for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
-  AGENT_NAME=$(awk -F': ' '/^name:/{print $2; exit}' "$AGENT_FILE" | tr -d '[:space:]')
+  ALL_NAMES="$ALL_NAMES agents/$(awk -F': ' '/^name:/{print $2; exit}' "$AGENT_FILE" | tr -d '[:space:]')"
+done
+for CMD_FILE in "$KIT_DIR/commands/"*.md; do
+  ALL_NAMES="$ALL_NAMES commands/$(basename "$CMD_FILE" .md)"
+done
+for SKILL_DIR in "$KIT_DIR/skills/"*/; do
+  ALL_NAMES="$ALL_NAMES skills/$(basename "$SKILL_DIR")"
+done
+for ENTRY in $ALL_NAMES; do
+  NAME="${ENTRY#*/}"
   TOTAL=$((TOTAL + 1))
-  if is_retired_suffix "$AGENT_NAME"; then
-    echo -e "  ${RED}FAIL${NC} agents/$(basename "$AGENT_FILE") uses a retired suffix (name: $AGENT_NAME)"
-    FAIL=$((FAIL + 1))
-  else
-    echo -e "  ${GREEN}PASS${NC} agents/$(basename "$AGENT_FILE") name '$AGENT_NAME' is not a retired suffix"
+  if ! is_retired_suffix "$NAME"; then
+    echo -e "  ${GREEN}PASS${NC} $ENTRY is not a retired suffix"
     PASS=$((PASS + 1))
+  else
+    case " $RETIRED_GRANDFATHERED " in
+      *" $NAME "*)
+        echo -e "  ${GREEN}PASS${NC} $ENTRY uses a retired suffix but is GRANDFATHERED (naming-reconciliation report, pending operator decision)"
+        PASS=$((PASS + 1))
+        ;;
+      *)
+        echo -e "  ${RED}FAIL${NC} $ENTRY uses a retired suffix"
+        FAIL=$((FAIL + 1))
+        ;;
+    esac
   fi
 done
 
-# (b) POSITIVE AXIS: every current V-model review agent must be on-axis, i.e.
-# end in -reviewer/-verifier/-team, OR be one of the two allowed named-noun
-# validators. `advisor` is the ADR-0028 cross-cutting generic lens (not
-# per-artifact, so it earns its own noun). `agent-effectiveness` (SPEC-088,
-# SG-01) is intentionally on this list too: it reviews an AGENT DEFINITION,
-# not a V-model work artifact, so like `advisor` it is a named-noun validator,
-# NOT a naming violation -- do not "fix" its name to *-reviewer.
-REVIEW_AGENTS="task-verifier doc-verifier integration-verifier code-reviewer security-reviewer agent-effectiveness advisor brief-reviewer acceptance-verifier system-verifier recheck-verifier"
+# (b) POSITIVE AXIS, roster-scanning: every current V-model review agent must
+# be on-axis, i.e. end in -reviewer/-verifier/-team, OR be one of the two
+# allowed named-noun validators. `advisor` is the ADR-0028 cross-cutting
+# generic lens (not per-artifact, so it earns its own noun).
+# `agent-effectiveness` (SPEC-088, SG-01) is intentionally allowed too: it
+# reviews an AGENT DEFINITION, not a V-model work artifact, so like `advisor`
+# it is a named-noun validator, NOT a naming violation -- do not "fix" its
+# name to *-reviewer.
+# The review-agent roster is DERIVED from the live agents/ dir instead of a
+# frozen name list (the pre-widening hardcoded 11 names missed every agent
+# added after the list froze; naming-reconciliation finding 6): a review agent
+# is any agent whose tools roster is read-only (no Write/Edit), minus the
+# ADR-0029:89 out-of-scope names (the research-* prefix family and
+# responding-to-review; finding 7). Grandfathered off-axis names are pinned
+# pending the operator decisions in the same report:
+#   audit-scanner -- finding 4 / proposal: amend ADR-0029 to sanction -scanner
+#                    as the evidence-gathering class, or rename audit-reviewer.
+# (claim-verifier passes this suffix scan but wears the wrong CLASS of suffix,
+#  finding 2 / proposal claim-reviewer or a -team shape; a suffix scan cannot
+#  police semantics, so that stays a report proposal, not a test.)
+AXIS_GRANDFATHERED="audit-scanner"
+REVIEW_AGENTS=""
+for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
+  AGENT_NAME=$(awk -F': ' '/^name:/{print $2; exit}' "$AGENT_FILE" | tr -d '[:space:]')
+  case "$AGENT_NAME" in research-*|responding-to-review) continue ;; esac
+  WRITECAP=$(awk '/^---$/{c++; next} c==1' "$AGENT_FILE" | grep -cE '^[[:space:]]*-[[:space:]]*(Write|Edit|MultiEdit|NotebookEdit)$')
+  [ "$WRITECAP" -eq 0 ] || continue
+  REVIEW_AGENTS="$REVIEW_AGENTS $AGENT_NAME"
+done
 for NAME in $REVIEW_AGENTS; do
   TOTAL=$((TOTAL + 1))
   if is_on_review_axis "$NAME"; then
     echo -e "  ${GREEN}PASS${NC} review agent '$NAME' is on the naming axis (reviewer|verifier|team|named-noun)"
     PASS=$((PASS + 1))
   else
-    echo -e "  ${RED}FAIL${NC} review agent '$NAME' is OFF the ADR-0029 naming axis"
-    FAIL=$((FAIL + 1))
+    case " $AXIS_GRANDFATHERED " in
+      *" $NAME "*)
+        echo -e "  ${GREEN}PASS${NC} review agent '$NAME' is OFF-axis but GRANDFATHERED (naming-reconciliation report, pending operator decision)"
+        PASS=$((PASS + 1))
+        ;;
+      *)
+        echo -e "  ${RED}FAIL${NC} review agent '$NAME' is OFF the ADR-0029 naming axis"
+        FAIL=$((FAIL + 1))
+        ;;
+    esac
   fi
 done
+# Derivation floor: an awk/frontmatter format change must not silently derive
+# an empty (or gutted) roster and pass vacuously. Two anchors: one pre-freeze
+# name, one post-freeze addition the old hardcoded list missed.
+RC=0
+case " $REVIEW_AGENTS " in *" task-verifier "*) : ;; *) RC=1 ;; esac
+case " $REVIEW_AGENTS " in *" api-reviewer "*) : ;; *) RC=1 ;; esac
+assert_eq "derived review-agent roster contains task-verifier + api-reviewer (derivation not vacuous)" 0 $RC
 
 # (c) NEGATIVE CONTROL: prove the ban logic actually discriminates, not just
 # that it always passes. Feed it fake names only (never a real agents/ file).
@@ -2847,6 +2907,7 @@ assert_eq "negative control: is_retired_suffix does NOT flag conforming names (n
 RC=0
 is_on_review_axis "foo-checker" && RC=1
 is_on_review_axis "foo-auditor" && RC=1
+is_on_review_axis "foo-scanner" && RC=1
 assert_eq "negative control: is_on_review_axis REJECTS off-axis fake names" 0 $RC
 
 # ============================================================
