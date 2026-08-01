@@ -68,4 +68,13 @@ Write the item enumeration as a discrete, reproducible list (a command or a scri
 
 `/kit:feature-map` + `agents/research-features.md` (in-kit, **for any target project**, not just this repo) is the same shape pointed outward: the module's spec vs a fresh source re-read is the item; the FIRST run per module constructs the spec (nothing to audit yet), and every REFRESH run from there is the audit-loop proper (drift = `NEEDS REVIEW` on the checklist row, never a silent overwrite). Sibling to topology-drift, not a duplicate of it: topology-drift checks the kit ABOUT itself, `/kit:feature-map` checks whatever project you hand it. Improving either instance's evidence-gathering or apply mechanics is worth checking against the other.
 
-Both in-kit instances (and future ones) dispatch their Tier-2 evidence pass to the shared read-only `agents/audit-scanner.md` (SPEC-220): its tools roster has no write path, so the propose/apply split holds mechanically in unattended cadence runs.
+`skills/backlog-reconcile/SKILL.md` (SPEC-225) is the Backlog-reconcile row above, realized:
+item set = a repo's `_meta/BACKLOG.md` Active queue; contract = row `Status` matches the
+`Target artifact` spec's own `Status:` header (or a git-log match for `(tiny, no spec)` rows);
+Tier 1 is a batched mechanical pass (never one subprocess per row), Tier 2 chunks the delta to
+`agents/audit-scanner.md`. Unlike `topology-drift`, this instance is **general-purpose**, not
+maintainer-only: every repo adopted via `/kit:adopt` gets the same `_meta/BACKLOG.md` schema
+(SPEC-005), so the instance travels with the kit to every adopter rather than staying
+kit-internal.
+
+All three in-kit instances (and future ones) dispatch their Tier-2 evidence pass to the shared read-only `agents/audit-scanner.md` (SPEC-220): its tools roster has no write path, so the propose/apply split holds mechanically in unattended cadence runs.

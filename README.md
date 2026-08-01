@@ -295,7 +295,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (28, dispatched by commands) and <b>Skills</b> (8, Claude-triggered)</summary>
+<summary><b>Agents</b> (28, dispatched by commands) and <b>Skills</b> (9, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -330,6 +330,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 
 | Skill | What it does |
 |-------|-------------|
+| backlog-reconcile | Audits a repo's `_meta/BACKLOG.md` Active queue (audit-loop instance, general-purpose): row `Status` verdicted against its `Target artifact` spec's own `Status:` header or a git-log match, fixes behind a PR gate |
 | doc-drift | Whole-estate doc audit (audit-loop instance): enumerates every living doc, verdicts each claim against the live repo, fixes drift behind a PR gate |
 | topology-drift | **Maintainer-only** (dwarves-kit repo dev only): audits THIS KIT's own feature estate (audit-loop instance), cross-checks the generated `docs/FEATURES.md` registry against the `docs/workflow-paths.md` path index both directions, re-places only delta features on the topology, PR-gated. To inventory a project the kit is pointed at, use `/kit:feature-map` instead |
 | get-api-docs | Fetches curated API docs via Context Hub before coding |

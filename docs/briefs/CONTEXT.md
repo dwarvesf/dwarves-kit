@@ -1,27 +1,42 @@
-# Context for implementation , SPEC-106 DAG-wavefront scheduling
+# Context for implementation: backlog-reconcile
+
+Hand-assembled from direct reads (topology-drift/memory-tidy are the two closest precedents;
+both were read in full before this spec), not the 4-agent research fan-out: the target area is
+small (one new skill file + one pattern-doc registration + a mechanical registry regen) and
+already precisely known from prior in-session reads, so a generic stack/architecture/pitfall
+sweep would restate what's already verified.
 
 ## Stack
-- Pure bash (POSIX-leaning), jq for JSON. **CI is macOS `macos-latest` = bash 3.2** (`.github/workflows/test.yml`). No bash-4 features.
-- Tests are bash scripts under `tests/` (e.g. `tests/test-orchestrate.sh`). Run with `bash tests/<file>.sh`.
 
-## Conventions (match these)
-- `set -uo pipefail` at the top of `lib/queue/orchestrate.sh` (L33). Empty arrays MUST use the guard `${arr[@]+"${arr[@]}"}` , precedent `lib/goal/mega-merge.sh:224`, `lib/goal/stack-merge.sh:127`.
-- Background+wait is `{ cmd; } &` / `spid=$!` / `kill -0 "$spid"` poll / `wait` (see `_run_session_watchdog` L312-333). NOT `wait -n` (bash 4.3+).
-- No `flock` anywhere (absent on macOS). Locking = `mkdir <lockdir>` atomic + stale-timeout (new helper; none exists yet).
-- Helper functions are small + named `_verb`; the event log is append-only and replay-derived (never mutated in place).
-- Grounded completion: never trust session stdout; re-read the ROADMAP box (L448-455).
-- Specs: `Status:` header tracks DRAFT/VALIDATED/SHIPPED in place (ADR-0010). Replace, don't deprecate.
+Bash (skills are markdown + bash tool invocations), Python only in `lib/registry/` generator
+tooling. No new dependency needed; every tool this skill uses already exists in the kit.
+
+## Conventions
+
+- Skill file: `skills/<name>/SKILL.md`, frontmatter `name` + `description` + `disable-model-invocation: false`.
+- Audit-loop instances document their "four slots" as a table right after the Overview
+  (topology-drift lines 20-27), then a numbered `## Process`, then `## Cadence`, then `## Red flags`.
+- Mechanical (Tier 1) checks are inline bash in the SKILL.md body, not a separate script, unless
+  reused elsewhere (`backlog.sh` itself is the one reusable piece here, already exists).
+- Tier 2 always dispatches the SAME shared agent, `agents/audit-scanner.md`; instances never
+  fork their own scanner.
+- Verdict grammar is fixed kit-wide: OK / FIX / REMOVE / UNSURE / DANGER (`docs/patterns/audit-loop.md`).
+- Every instance branches first (isolated worktree), ships via PR, never edits its target on
+  the current branch.
 
 ## Key files
-- `lib/queue/orchestrate.sh` (500L) , the driver. `_subgoals` L86, `_next` L101 (serial pick, being generalized), `_sg_deps_blocked` L133 (ready-set primitive), event log L108-121, `_build_prompt`/HANDOFF L267-282, `_run_session_watchdog` L312, `cmd_run` main loop L376-489 (grounded check L448-455).
-- `lib/gate/dispatch-gate.sh` (211L) , prove-or-serialize disjointness over `## Touches` globs. `gate_disjoint` L84, `gate_plan` L115 (already a greedy wavefront-shaped admission loop). Reuse for wave pairs; verify it parses goal files, not only specs.
-- `tests/test-orchestrate.sh` , the regression baseline; asserts on plain `HANDOFF.md` at L42,80,93,157,179,408-485. Keep the no-deps/linear path byte-compatible.
-- `lib/goal/mega-merge.sh:224`, `lib/goal/stack-merge.sh:127` , copy the empty-array guard from here.
+
+| File | Role |
+|---|---|
+| `skills/topology-drift/SKILL.md` | Direct template: same shape, same Tier1/Tier2 split, same refusal-guard pattern (stale FEATURES.md) this spec adapts for a missing/unadopted board. |
+| `skills/memory-tidy/SKILL.md` | Second precedent; simpler (no Tier 1/Tier 2 split, single fan-out pass) but shows the worktree-branch-PR mechanics generically. |
+| `lib/board/backlog.sh` | The mechanical substrate: `board` (enumerate), `set <ID> <state> [note]` (mechanical status flip), `next`, `states`. `BACKLOG_FILE` env override already exists (tests point it at a fixture; this spec's own test can reuse that). |
+| `agents/audit-scanner.md` | Shared Tier-2 scanner, already generic (`doc-drift`, `topology-drift`), read-only tools roster is the write-path enforcement. Reused as-is, zero changes needed. |
+| `docs/patterns/audit-loop.md` | The pattern doc. "Known instances" section (lines 61-71) needs a new paragraph; "SDLC instances" table row 55 ("Backlog reconcile") is what this spec fulfills. |
+| `docs/FEATURES.md` / `docs/workflow-paths.md` | Generated registry + hand-maintained path index; `lib/registry/feature-registry.sh generate` regenerates the former; the latter needs one new line so `topology-drift`'s own freshness check (which this new skill sits alongside) stays green. |
+| `tests/test-hooks.sh` | Where `backlog.sh`'s own 10 fixture tests live (SPEC-055); this spec's tests can follow the same fixture-copy pattern (`BACKLOG_FILE` override). |
 
 ## External dependencies
-- None new. Reuses `dispatch-gate.sh`, the `depends` parser, the watchdog, worktree discipline (`.claude/worktrees/<id>`).
 
-## Decision anchors
-- ADR-0030 (Accepted) authorizes the scope; DECISION-BRIEF-dag-wavefront pins the design + 5 exit criteria.
-- ADR-0030 supersedes-in-part `docs/research/2026-05-22-concurrent-goal-dispatch.md` §5 (see its Reconciliation section).
-- Research: `docs/research/pitfalls.md`, `docs/research/architecture-orchestrator-wavefront.md`.
+`gh` CLI (already a hard dependency elsewhere in the kit, e.g. board sync) for PR-pointer state
+checks. No new credential, no new API, no new package.
