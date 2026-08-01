@@ -91,13 +91,13 @@ Total: 35 commands + 28 agents = **63 entries**.
 | `/kit:prototype` | command | Solution-design | build | Opt-in throwaway spike answering one design question (logic TUI or UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch (SPEC-206) |
 | `/kit:wayfind` | command | Requirement (intake) | build | User-invoked decision map for too-foggy-for-one-session efforts; typed tickets route to grill/prototype/research machinery; hands off to spec or a ROADMAP (SPEC-207) |
 | `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); dispatches 4 research agents for brownfield context |
-| `/kit:features` | command | Spec (brownfield) | build | Formalizes a feature inventory for any target project: dispatches `research-features` per module (parallel) into `docs/specs/<module>.md` + a top-level checklist; adds a MIGRATE table + parity contract when a port/migration target is named |
+| `/kit:feature-map` | command | Spec (brownfield) | build | Formalizes a feature inventory for any target project: dispatches `research-features` per module (parallel) into `docs/specs/<module>.md` + a top-level checklist; adds a MIGRATE table + parity contract when a port/migration target is named |
 | `/kit:ui-design` | command | UI design | build | Opt-in; writes UI brief, delegates generation, routes through visual-team, auto-revises (bounded) |
 | `research-architecture` | agent | Spec (brownfield) | build | Maps architecture patterns; dispatched by /spec; read-only |
 | `research-context` | agent | Spec (brownfield) | build | Quick brownfield orientation (endpoints, models, UI, tests, recent history), capped at 80 lines; dispatched by /spec, /kit:test-plan; read-only |
 | `research-pitfalls` | agent | Spec (brownfield) | build | Finds landmines and risks before new work; dispatched by /spec; read-only |
 | `research-stack` | agent | Spec (brownfield) | build | Maps technology stack; dispatched by /spec; read-only |
-| `research-features` | agent | Spec (brownfield) | build | Deep, uncapped, source-cited feature inventory for any project: MIGRATE table + parity contract when porting, else a behavior contract; dispatched by /kit:features; read-only |
+| `research-features` | agent | Spec (brownfield) | build | Deep, uncapped, source-cited feature inventory for any project: MIGRATE table + parity contract when porting, else a behavior contract; dispatched by /kit:feature-map; read-only |
 
 ### Vertex: BUILD (code)
 
@@ -165,7 +165,7 @@ Total: 35 commands + 28 agents = **63 entries**.
 | `infra-reviewer` | agent | Code review | gate | Read-only infra-lens reviewer (deploy/rollback safety, CI/CD, container/IaC least-privilege, secrets, idempotent provisioning, blast radius); dispatched by `/kit:review-team` as the infra domain lens (SPEC-111) |
 | `db-migration-worker` | agent | Code (implement) | build | Write-capable schema-migration implementer (up + DOWN/rollback, batched backfill, index changes; guards long locks, no data drop without explicit ask); dispatched by `/kit:execute` 2b-0 as the db-migration domain implementer (SPEC-111) |
 | `data-etl-worker` | agent | Code (implement) | build | Write-capable data-pipeline implementer (ETL, DuckDB SQL transform, idempotent re-runs, schema validation, no silent row drops); dispatched by `/kit:execute` 2b-0 as the data-etl domain implementer (SPEC-111) |
-| `audit-scanner` | agent | Estate audit (Tier 2) | cross-phase | Shared read-only evidence scanner for the audit-loop instances (doc-drift, feature-map skills): receives target set + contract + evidence class, returns per-item verdicts in the audit-loop grammar with quoted evidence; tools roster has no write path, so the propose/apply split holds mechanically in unattended cadence runs (SPEC-220) |
+| `audit-scanner` | agent | Estate audit (Tier 2) | cross-phase | Shared read-only evidence scanner for the audit-loop instances (doc-drift, topology-drift skills): receives target set + contract + evidence class, returns per-item verdicts in the audit-loop grammar with quoted evidence; tools roster has no write path, so the propose/apply split holds mechanically in unattended cadence runs (SPEC-220) |
 | `claim-verifier` | agent | Claim verification | cross-phase | Read-only adversarial panel over an ARBITRARY free-text claim: N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed), majority-vote structured verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons); the semantic half of the citation-guard hook; dispatched on a load-bearing assertion (kit-foldin SG-06) |
 
 **Classification notes:**

@@ -49,7 +49,7 @@ prose, prefer the plain word.
 | stage | one of the five loop stages: Shape / Build / Watch / Check / Learn |
 | wayfind | plan a big chunk of work as a shared decision map before splitting it |
 | doc-drift | the docs no longer match the code (sibling of spec-drift) |
-| feature-map | the audit of every kit feature against its path map |
+| topology-drift | the audit of every kit feature against its path map |
 | loop-engineering | designing a new bounded scan-fix loop |
 | audit-scanner | the shared read-only evidence gatherer (reports findings, never fixes) |
 | -team (suffix) | a command that runs a panel of review lenses in parallel |

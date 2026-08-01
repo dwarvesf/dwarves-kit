@@ -8,7 +8,7 @@
 #        read-only verb allowlist. The roster IS the enforcement (the agent physically
 #        cannot fix what it audits), so this shape is load-bearing, not stylistic.
 #   AC2  dispatched-by wiring pinned BOTH sides: skills/doc-drift/SKILL.md and
-#        skills/feature-map/SKILL.md each dispatch `kit:audit-scanner` as the preferred
+#        skills/topology-drift/SKILL.md each dispatch `kit:audit-scanner` as the preferred
 #        Tier-2 scanner (general-purpose named as the fallback), and the agent body names
 #        both dispatching instances.
 #   AC3  the audit-loop grammar rules are pinned in the agent body: the verdict grammar,
@@ -25,7 +25,7 @@ set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 AGENT="${AUDIT_SCANNER_AGENT_FILE:-$KIT_DIR/agents/audit-scanner.md}"
 DOC_DRIFT="$KIT_DIR/skills/doc-drift/SKILL.md"
-FEATURE_MAP="$KIT_DIR/skills/feature-map/SKILL.md"
+TOPOLOGY_DRIFT="$KIT_DIR/skills/topology-drift/SKILL.md"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -69,16 +69,16 @@ echo "=== AC2: dispatched-by wiring pinned both sides ==="
 
 grep -q 'kit:audit-scanner' "$DOC_DRIFT"
 assert "doc-drift SKILL.md dispatches kit:audit-scanner" $?
-grep -q 'kit:audit-scanner' "$FEATURE_MAP"
-assert "feature-map SKILL.md dispatches kit:audit-scanner" $?
+grep -q 'kit:audit-scanner' "$TOPOLOGY_DRIFT"
+assert "topology-drift SKILL.md dispatches kit:audit-scanner" $?
 grep -qi 'general-purpose' "$DOC_DRIFT"
 assert "doc-drift names the general-purpose fallback" $?
-grep -qi 'general-purpose' "$FEATURE_MAP"
-assert "feature-map names the general-purpose fallback" $?
+grep -qi 'general-purpose' "$TOPOLOGY_DRIFT"
+assert "topology-drift names the general-purpose fallback" $?
 grep -q 'doc-drift' "$AGENT"
 assert "agent body names doc-drift as a dispatching instance" $?
-grep -q 'feature-map' "$AGENT"
-assert "agent body names feature-map as a dispatching instance" $?
+grep -q 'topology-drift' "$AGENT"
+assert "agent body names topology-drift as a dispatching instance" $?
 
 echo ""
 echo "=== AC3: audit-loop grammar rules pinned in the agent body ==="

@@ -155,7 +155,7 @@ Every workflow, lane, loop, side-flow, and alternate path in one connected pictu
     maintainer offshoot .... [H] /kit:absorb (Credits drift + seed rescan, proposal-only)
                              [H] /kit:kit-health (self-assessment vs PHILOSOPHY, report)
     estate cadence ......... [I] doc-drift (whole-estate doc audit -> fixes on a branch -> PR gate)
-                             [I] feature-map (registry vs path-index cross-check -> delta re-place -> PR gate)
+                             [I] topology-drift (registry vs path-index cross-check -> delta re-place -> PR gate)
                              both Tier 2 ==> [D] audit-scanner (shared read-only evidence pass)
 
   HARD-STOP RAIL  (the ONLY four blockers; everything else advises, warns, or routes):
@@ -346,7 +346,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
 
  Learn-side skills (auto-fire [I] unless noted):
  doc-drift ──> whole-estate doc audit ──> fixes on a branch ──> PR gate
- feature-map ──> FEATURES.md vs path-index cross-check ──> delta re-placed ──> PR gate
+ topology-drift ──> FEATURES.md vs path-index cross-check ──> delta re-placed ──> PR gate
    (both dispatch [D] audit-scanner for Tier 2: read-only evidence, skill applies)
  memory-tidy ──> evidence-gated memory audit ──> PR-gated merges/deletions
  skill-review [H] ──> reviews staged skill drafts ──> promote or reject
@@ -374,7 +374,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H] /kit:devs-team -> 5 engineering lenses -> report-only -> feeds /kit:design` |
 | `[H/I] /kit:spec -> 4 research agents -> SPEC-NNN DRAFT -> spec-validate or ui-design` |
 | `[H/I] /kit:spec-validate -> 6 lenses (1 HARD) -> VALIDATED or back to /kit:spec` |
-| `[H/I] /kit:features -> research-features per module (parallel) -> docs/specs/<module>.md + top-level checklist` |
+| `[H/I] /kit:feature-map -> research-features per module (parallel) -> docs/specs/<module>.md + top-level checklist` |
 | `[H] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
 | `[H] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |
 | `[H] /kit:test-write -> test-writer per matrix row -> runnable tests -> /kit:execute` |
@@ -406,7 +406,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] research-context <- /kit:spec, /kit:test-plan -> quick brownfield orientation, 80-line cap -> findings return` |
 | `[D] research-pitfalls <- /kit:spec -> landmine/risk list -> findings return (read-only)` |
 | `[D] research-stack <- /kit:spec -> tech-stack map -> findings return (read-only)` |
-| `[D] research-features <- /kit:features -> per-module feature inventory (+ parity contract if porting) -> spec file written (read-only)` |
+| `[D] research-features <- /kit:feature-map -> per-module feature inventory (+ parity contract if porting) -> spec file written (read-only)` |
 | `[D] brief-reviewer <- /kit:think -> static brief review -> feedback into the brief` |
 | `[D] test-writer <- /kit:test-write -> one test case per matrix row -> runnable test code` |
 | `[D] data-etl-worker <- /kit:execute (domain=data-etl) -> pipeline build -> task-verifier` |
@@ -416,7 +416,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] fix-agent <- execute, dispatch, debug, test-write, ui-design, verify -> scoped fix -> re-verify` |
 | `[D] integration-verifier <- /kit:execute (multi-task), /kit:verify -> wiring check -> review` |
 | `[D] recheck-verifier <- /kit:execute -> fresh-context re-audit of a PASS -> advisory record` |
-| `[D] audit-scanner <- doc-drift, feature-map skills (Tier 2) -> per-item verdicts with quoted evidence -> findings return (read-only)` |
+| `[D] audit-scanner <- doc-drift, topology-drift skills (Tier 2) -> per-item verdicts with quoted evidence -> findings return (read-only)` |
 | `[D] claim-verifier <- any command, ad hoc -> N-skeptic panel -> HOLDS / REFUTED verdict` |
 | `[D] code-reviewer <- review-team, devs-team, visual-team -> focused lens -> findings merged` |
 | `[D] security-reviewer <- /kit:review-team -> OWASP-style audit -> findings merged` |
@@ -436,7 +436,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | Path |
 |---|
 | `[I] doc-drift -> whole-estate doc audit -> fixes on a branch -> PR gate (terminal: merged PR)` |
-| `[I] feature-map -> registry freshness gate -> FEATURES.md vs path index both directions -> delta re-placed on topology -> PR gate` |
+| `[I] topology-drift -> registry freshness gate -> FEATURES.md vs path index both directions -> delta re-placed on topology -> PR gate` |
 | `[I] get-api-docs -> fetch curated API docs -> grounded coding (terminal: context injected)` |
 | `[I] loop-engineering -> gate + anatomy walkthrough -> design handed to the loop builder` |
 | `[I] memory-tidy -> evidence-gated memory audit -> PR-gated merges/deletions` |

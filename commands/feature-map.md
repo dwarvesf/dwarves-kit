@@ -1,5 +1,5 @@
 ---
-description: "Build or refresh a source-cited, agent-checkable feature inventory for ANY target project you point it at: per-module spec + a top-level checklist. Works standalone (what does this codebase do) or as a migration source of truth (what needs porting). Refresh mode is an audit-loop instance, sibling to the maintainer-only kit:feature-map (which audits this kit's own registry, not a target project)."
+description: "Build or refresh a source-cited, agent-checkable feature inventory for ANY target project you point it at: per-module spec + a top-level checklist. Works standalone (what does this codebase do) or as a migration source of truth (what needs porting). Refresh mode is an audit-loop instance, sibling to the maintainer-only kit:topology-drift (which audits this kit's own registry, not a target project)."
 ---
 
 Formalizes a pattern already run by hand at least 4 times (dfoundation's
@@ -21,7 +21,7 @@ Step 6 (Refresh mode) below is an instance of `docs/patterns/audit-loop.md`:
 
 The FIRST run against a module isn't an audit (there's nothing to reconcile yet,
 just a spec to construct) -- the audit-loop shape only applies from Step 6 onward.
-Sibling instance: `skills/feature-map/SKILL.md` (maintainer-only, audits THIS repo's
+Sibling instance: `skills/topology-drift/SKILL.md` (maintainer-only, audits THIS repo's
 own command/agent/skill/hook registry against its path-index doc, not a target
 project). Different item set and contract, same four-slot shape; an improvement to
 one loop's evidence/apply mechanics is worth checking against the other.
@@ -44,11 +44,11 @@ If not already clear from the conversation, ask:
   Discord command in one repo triggering a handler in another -- see one module,
   multiple locations, not one module per repo.)
 - Is there a named port/migration target (a system this is moving to), or is this a
-  plain census (understand/document what the project does, no target)? This decides
-  whether `research-features` writes a Parity contract (port) or a Behavior contract
-  (census) -- see `agents/research-features.md` section 5.
+  plain inventory run (understand/document what the project does, no target)? This
+  decides whether `research-features` writes a Parity contract (port) or a Behavior
+  contract (inventory) -- see `agents/research-features.md` section 5.
 - Output location for specs (default `docs/specs/`) and for the top-level checklist
-  (default `docs/CENSUS.md`; a migration run may prefer a name like
+  (default `docs/CHECKLIST.md`; a migration run may prefer a name like
   `docs/PORT-CHECKLIST.md`, caller's call).
 
 ### Step 2: Derive or confirm the module list
@@ -103,10 +103,10 @@ Read every module spec's Scope + section-5 contract. Write/update the checklist 
 from Step 1:
 
 ```markdown
-# Feature census: <project>[ -> <target>, if porting]
+# Feature checklist: <project>[ -> <target>, if porting]
 
 Generated <date>. Source of truth for what this project does[ and what's ported];
-re-run `/kit:features` to refresh.
+re-run `/kit:feature-map` to refresh.
 
 | Module | Behavior | Status | Spec | STOP-gate |
 |---|---|---|---|---|
@@ -114,7 +114,7 @@ re-run `/kit:features` to refresh.
 ```
 
 `Status` only makes sense with a port target (NOT STARTED / IN PROGRESS / PORTED /
-VERIFIED); for a plain census, drop that column and use the row purely as a feature
+VERIFIED); for a plain inventory run, drop that column and use the row purely as a feature
 inventory (Module / Behavior / Spec / STOP-gate). On a refresh run, preserve existing
 status values for rows unchanged since the last spec; flag any row whose behavior
 text changed (source drifted) as `NEEDS REVIEW` rather than silently resetting it.
@@ -142,6 +142,6 @@ ran 4). For a module list too large to refresh in one session, escalate per the
 audit-loop driver ladder: `/loop` for a recurring cadence, or the loop-engineering
 runtime for a large set that needs to resume across sessions -- see
 `docs/patterns/audit-loop.md`'s "The loop bridge". No cadence is forced by default;
-this is pull, not a scheduled push, unlike `feature-map`'s merge-triggered cadence
+this is pull, not a scheduled push, unlike `topology-drift`'s merge-triggered cadence
 (which reacts to every kit-internal commit -- there's no equivalent "every commit to
 the target project" trigger here, since the target project isn't this repo).

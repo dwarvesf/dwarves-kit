@@ -1,16 +1,16 @@
 ---
-name: feature-map
-description: Maintainer-only (dwarves-kit repo dev only). Use to audit THIS KIT's OWN feature estate against its path map, "run the feature-map loop", "is the workflow path map still complete", "does every feature appear in workflow-paths", "feature inventory drift", or after a batch of merges that added/removed commands, agents, skills, or hooks. Cross-checks the generated docs/FEATURES.md registry against the docs/workflow-paths.md path index both directions, then re-places only the DELTA features on the topology diagrams. An audit-loop instance (docs/patterns/audit-loop.md), sibling to /kit:features. REFUSES to run while FEATURES.md is stale (regenerate first). NOT for a consumer/adopter repo (this schema is dwarves-kit-specific; it has nothing to check against there), NOT for auditing a target project you point the kit at (that is /kit:features), NOT for regenerating the registry itself (that is lib/registry/feature-registry.sh, pinned by test-meta), NOT for whole-doc prose drift (that is doc-drift), NOT for one known-missing feature (just add its line).
+name: topology-drift
+description: Maintainer-only (dwarves-kit repo dev only). Use to audit THIS KIT's OWN feature estate against its path map, "run the topology-drift loop", "is the workflow path map still complete", "does every feature appear in workflow-paths", "feature inventory drift", or after a batch of merges that added/removed commands, agents, skills, or hooks. Cross-checks the generated docs/FEATURES.md registry against the docs/workflow-paths.md path index both directions, then re-places only the DELTA features on the topology diagrams. An audit-loop instance (docs/patterns/audit-loop.md), sibling to /kit:feature-map. REFUSES to run while FEATURES.md is stale (regenerate first). NOT for a consumer/adopter repo (this schema is dwarves-kit-specific; it has nothing to check against there), NOT for auditing a target project you point the kit at (that is /kit:feature-map), NOT for regenerating the registry itself (that is lib/registry/feature-registry.sh, pinned by test-meta), NOT for whole-doc prose drift (that is doc-drift), NOT for one known-missing feature (just add its line).
 disable-model-invocation: false
 ---
 
-# Feature map
+# Topology drift
 
 Maintainer-only, dwarves-kit repo development only: this skill audits the KIT'S OWN
 `docs/FEATURES.md`/`docs/workflow-paths.md` pair, which only exists in this repo. It
 is not something a consumer/adopter repo would ever have a reason to invoke. To
 inventory the features of a project the kit is POINTED AT (a migration source, a
-codebase you want documented), use `/kit:features` instead -- see
+codebase you want documented), use `/kit:feature-map` instead -- see
 `docs/patterns/audit-loop.md` for how the two relate.
 
 ## Overview
