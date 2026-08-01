@@ -1,6 +1,6 @@
 ---
 name: research-features
-description: Deep, uncapped, source-cited feature inventory for one module of a target project -- every entry point gets a file:line citation and a behavior contract; adds a MIGRATE table + parity contract when the request names a port/migration target. The definitive deliverable, not throwaway context (see research-context for that). Dispatched by /kit:census.
+description: Deep, uncapped, source-cited feature inventory for one module of a target project -- every entry point gets a file:line citation and a behavior contract; adds a MIGRATE table + parity contract when the request names a port/migration target. The definitive deliverable, not throwaway context (see research-context for that). Dispatched by /kit:features.
 tools:
   - Read
   - Grep

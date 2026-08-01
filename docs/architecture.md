@@ -91,13 +91,13 @@ Total: 35 commands + 28 agents = **63 entries**.
 | `/kit:prototype` | command | Solution-design | build | Opt-in throwaway spike answering one design question (logic TUI or UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch (SPEC-206) |
 | `/kit:wayfind` | command | Requirement (intake) | build | User-invoked decision map for too-foggy-for-one-session efforts; typed tickets route to grill/prototype/research machinery; hands off to spec or a ROADMAP (SPEC-207) |
 | `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); dispatches 4 research agents for brownfield context |
-| `/kit:census` | command | Spec (brownfield) | build | Formalizes a feature inventory for any target project: dispatches `research-features` per module (parallel) into `docs/specs/<module>.md` + a top-level checklist; adds a MIGRATE table + parity contract when a port/migration target is named |
+| `/kit:features` | command | Spec (brownfield) | build | Formalizes a feature inventory for any target project: dispatches `research-features` per module (parallel) into `docs/specs/<module>.md` + a top-level checklist; adds a MIGRATE table + parity contract when a port/migration target is named |
 | `/kit:ui-design` | command | UI design | build | Opt-in; writes UI brief, delegates generation, routes through visual-team, auto-revises (bounded) |
 | `research-architecture` | agent | Spec (brownfield) | build | Maps architecture patterns; dispatched by /spec; read-only |
 | `research-context` | agent | Spec (brownfield) | build | Quick brownfield orientation (endpoints, models, UI, tests, recent history), capped at 80 lines; dispatched by /spec, /kit:test-plan; read-only |
 | `research-pitfalls` | agent | Spec (brownfield) | build | Finds landmines and risks before new work; dispatched by /spec; read-only |
 | `research-stack` | agent | Spec (brownfield) | build | Maps technology stack; dispatched by /spec; read-only |
-| `research-features` | agent | Spec (brownfield) | build | Deep, uncapped, source-cited feature inventory for any project: MIGRATE table + parity contract when porting, else a behavior contract; dispatched by /kit:census; read-only |
+| `research-features` | agent | Spec (brownfield) | build | Deep, uncapped, source-cited feature inventory for any project: MIGRATE table + parity contract when porting, else a behavior contract; dispatched by /kit:features; read-only |
 
 ### Vertex: BUILD (code)
 

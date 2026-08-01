@@ -1,5 +1,5 @@
 ---
-description: "Build or refresh a source-cited, agent-checkable feature inventory for a target project: per-module spec + a top-level checklist. Works standalone (what does this codebase do) or as a migration source of truth (what needs porting)."
+description: "Build or refresh a source-cited, agent-checkable feature inventory for ANY target project you point it at: per-module spec + a top-level checklist. Works standalone (what does this codebase do) or as a migration source of truth (what needs porting). Refresh mode is an audit-loop instance, sibling to the maintainer-only kit:feature-map (which audits this kit's own registry, not a target project)."
 ---
 
 Formalizes a pattern already run by hand at least 4 times (dfoundation's
@@ -7,6 +7,24 @@ Formalizes a pattern already run by hand at least 4 times (dfoundation's
 7-section template every time, plus `ENDGAME-CHECKLIST.md` as the rollup ledger).
 Same dispatch idiom as `/kit:spec`'s Step 2 research fan-out. Generic: point it at
 ANY project. A named port/migration target is one use case, not a requirement.
+
+## Relationship to the audit-loop pattern
+
+Step 6 (Refresh mode) below is an instance of `docs/patterns/audit-loop.md`:
+
+| Slot | This instance |
+|---|---|
+| Item set | every module row in the checklist (Step 4's output), enumerated at Step 2 |
+| Contract | the module's spec (`docs/specs/<module>.md`) still matches the live source across every given location |
+| Evidence class | a fresh `research-features` re-read of the source, `file:line` cited, diffed against the existing spec |
+| Apply mechanics | match = leave status untouched (OK); drift = `NEEDS REVIEW` on the checklist row (FIX proposed, never silent); the operator decides |
+
+The FIRST run against a module isn't an audit (there's nothing to reconcile yet,
+just a spec to construct) -- the audit-loop shape only applies from Step 6 onward.
+Sibling instance: `skills/feature-map/SKILL.md` (maintainer-only, audits THIS repo's
+own command/agent/skill/hook registry against its path-index doc, not a target
+project). Different item set and contract, same four-slot shape; an improvement to
+one loop's evidence/apply mechanics is worth checking against the other.
 
 ## Process
 
@@ -88,7 +106,7 @@ from Step 1:
 # Feature census: <project>[ -> <target>, if porting]
 
 Generated <date>. Source of truth for what this project does[ and what's ported];
-re-run `/kit:census` to refresh.
+re-run `/kit:features` to refresh.
 
 | Module | Behavior | Status | Spec | STOP-gate |
 |---|---|---|---|---|
