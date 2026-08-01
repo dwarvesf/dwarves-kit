@@ -374,6 +374,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H] /kit:devs-team -> 5 engineering lenses -> report-only -> feeds /kit:design` |
 | `[H/I] /kit:spec -> 4 research agents -> SPEC-NNN DRAFT -> spec-validate or ui-design` |
 | `[H/I] /kit:spec-validate -> 6 lenses (1 HARD) -> VALIDATED or back to /kit:spec` |
+| `[H/I] /kit:port-map -> research-migration per module (parallel) -> docs/specs/<module>.md + PORT-CHECKLIST.md` |
 | `[H] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
 | `[H] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |
 | `[H] /kit:test-write -> test-writer per matrix row -> runnable tests -> /kit:execute` |
@@ -405,6 +406,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[D] research-features <- /kit:spec, /kit:test-plan -> existing-feature map -> findings return` |
 | `[D] research-pitfalls <- /kit:spec -> landmine/risk list -> findings return (read-only)` |
 | `[D] research-stack <- /kit:spec -> tech-stack map -> findings return (read-only)` |
+| `[D] research-migration <- /kit:port-map -> per-module feature inventory + parity contract -> spec file written (read-only)` |
 | `[D] brief-reviewer <- /kit:think -> static brief review -> feedback into the brief` |
 | `[D] test-writer <- /kit:test-write -> one test case per matrix row -> runnable test code` |
 | `[D] data-etl-worker <- /kit:execute (domain=data-etl) -> pipeline build -> task-verifier` |

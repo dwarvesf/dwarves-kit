@@ -78,7 +78,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 34 commands + 27 agents = **61 entries** (12 build · 3 code · 11 test · 15 gate · 20 cross-phase).
+Total: 35 commands + 28 agents = **63 entries** (14 build · 3 code · 11 test · 15 gate · 20 cross-phase).
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -91,11 +91,13 @@ Total: 34 commands + 27 agents = **61 entries** (12 build · 3 code · 11 test �
 | `/kit:prototype` | command | Solution-design | build | Opt-in throwaway spike answering one design question (logic TUI or UI variants); decision folds into the brief/spec, code survives on a `prototype/<name>` branch (SPEC-206) |
 | `/kit:wayfind` | command | Requirement (intake) | build | User-invoked decision map for too-foggy-for-one-session efforts; typed tickets route to grill/prototype/research machinery; hands off to spec or a ROADMAP (SPEC-207) |
 | `/kit:spec` | command | Spec | build | Produces `SPEC-NNN-<slug>.md` (Status: DRAFT); dispatches 4 research agents for brownfield context |
+| `/kit:port-map` | command | Spec (brownfield) | build | Formalizes a migration/port feature inventory: dispatches `research-migration` per module (parallel) into `docs/specs/<module>.md` + a top-level `PORT-CHECKLIST.md` |
 | `/kit:ui-design` | command | UI design | build | Opt-in; writes UI brief, delegates generation, routes through visual-team, auto-revises (bounded) |
 | `research-architecture` | agent | Spec (brownfield) | build | Maps architecture patterns; dispatched by /spec; read-only |
 | `research-features` | agent | Spec (brownfield) | build | Maps existing features in target area; dispatched by /spec; read-only |
 | `research-pitfalls` | agent | Spec (brownfield) | build | Finds landmines and risks before new work; dispatched by /spec; read-only |
 | `research-stack` | agent | Spec (brownfield) | build | Maps technology stack; dispatched by /spec; read-only |
+| `research-migration` | agent | Spec (brownfield) | build | Deep per-module feature inventory for a system migration/port: source-cited MIGRATE table + parity contract, no line cap; dispatched by /kit:port-map; read-only |
 
 ### Vertex: BUILD (code)
 

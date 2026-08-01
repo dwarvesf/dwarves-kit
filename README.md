@@ -252,7 +252,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (34, manual, human-triggered)</summary>
+<summary><b>Commands</b> (35, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -271,6 +271,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /kit:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
+| /kit:port-map | Spec | Formalizes brownfield feature-inventory for a system migration/port: per-module spec (source-cited MIGRATE table + parity contract) + a top-level port checklist |
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
 | /kit:verify | Verify | Read-only re-run of task-verifier + integration-verifier, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
@@ -294,7 +295,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Agents</b> (27, dispatched by commands) and <b>Skills</b> (8, Claude-triggered)</summary>
+<summary><b>Agents</b> (28, dispatched by commands) and <b>Skills</b> (8, Claude-triggered)</summary>
 
 | Agent | Dispatched by | What it does |
 |-------|--------------|-------------|
@@ -322,6 +323,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | research-features | /spec | Maps existing features in target area |
 | research-architecture | /spec | Maps architecture patterns and conventions |
 | research-pitfalls | /spec | Finds landmines before implementation |
+| research-migration | /kit:port-map | Deep per-module feature inventory for a system migration/port: source-cited MIGRATE table + parity contract, no line cap |
 | meta-agent | /draft-agent | Drafts a new subagent (or sub-goal file) from a one-line description |
 | test-writer | /kit:test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row |
 | audit-scanner | doc-drift, feature-map skills | Shared read-only Tier-2 evidence scanner for audit-loop instances; roster physically cannot write |
@@ -368,8 +370,8 @@ dwarves-kit/
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`queue`/`session`/`spec`/`stats` thin forwarders to `lib/<subsystem>/`, plus the two module CLIs (`prose-rag`, `worktree-provision`) that keep their module names. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
-  agents/                       (27 files) Subagents dispatched by commands
-  commands/                     (34 markdown command prompts)
+  agents/                       (28 files) Subagents dispatched by commands
+  commands/                     (35 markdown command prompts)
   hooks/                        (25 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
