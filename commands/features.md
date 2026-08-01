@@ -131,3 +131,17 @@ again, diff the new Scope/section-5 output against the existing file. Match = le
 status untouched. Drift = flag it in the checklist (`NEEDS REVIEW`) and let the
 operator decide whether the spec (or, if porting, the port itself) needs updating --
 never silently overwrite a spec someone signed off on.
+
+## Cadence
+
+Run a module's refresh (Step 6) after its live source changes -- a merge into a
+module you already have a spec for, or before trusting the checklist as a migration
+gate. Default driver is one interactive pass (this command, run directly): fine for
+the module counts a real project actually has (dfoundation's Cloudflare migration
+ran 4). For a module list too large to refresh in one session, escalate per the
+audit-loop driver ladder: `/loop` for a recurring cadence, or the loop-engineering
+runtime for a large set that needs to resume across sessions -- see
+`docs/patterns/audit-loop.md`'s "The loop bridge". No cadence is forced by default;
+this is pull, not a scheduled push, unlike `feature-map`'s merge-triggered cadence
+(which reacts to every kit-internal commit -- there's no equivalent "every commit to
+the target project" trigger here, since the target project isn't this repo).
