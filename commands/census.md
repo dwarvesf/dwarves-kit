@@ -19,8 +19,8 @@ If not already clear from the conversation, ask:
   directory structure?)
 - Is there a named port/migration target (a system this is moving to), or is this a
   plain census (understand/document what the project does, no target)? This decides
-  whether `research-census` writes a Parity contract (port) or a Behavior contract
-  (census) -- see `agents/research-census.md` section 5.
+  whether `research-features` writes a Parity contract (port) or a Behavior contract
+  (census) -- see `agents/research-features.md` section 5.
 - Output location for specs (default `docs/specs/`) and for the top-level checklist
   (default `docs/CENSUS.md`; a migration run may prefer a name like
   `docs/PORT-CHECKLIST.md`, caller's call).
@@ -31,19 +31,19 @@ If not given, propose one from the project's structure (route groups, top-level
 packages, cron registrations). Show it, get confirmation -- don't guess silently on
 scope this consequential.
 
-### Step 3: Dispatch `research-census` per module, in parallel
+### Step 3: Dispatch `research-features` per module, in parallel
 
 #### Mode A (preferred)
 
-If `.claude/agents/research-census.md` exists, dispatch it via the Task/Agent tool
+If `.claude/agents/research-features.md` exists, dispatch it via the Task/Agent tool
 once per module, in parallel, each with: module name, source location, output path,
 and whether a port target was named (and if so, what).
 
 #### Mode B (inline fallback)
 
 If not installed, dispatch a general-purpose read-only subagent per module with the
-`research-census` prompt embedded (same 7-section template, same `file:line`
-citation rule -- see `agents/research-census.md` for the exact template if present,
+`research-features` prompt embedded (same 7-section template, same `file:line`
+citation rule -- see `agents/research-features.md` for the exact template if present,
 otherwise use the shape below):
 
 ```
@@ -88,7 +88,7 @@ questions rolled up. Ask: "Approve, or adjust scope?"
 
 ### Step 6: Refresh mode
 
-Re-running against a module that already has a spec: dispatch `research-census`
+Re-running against a module that already has a spec: dispatch `research-features`
 again, diff the new Scope/section-5 output against the existing file. Match = leave
 status untouched. Drift = flag it in the checklist (`NEEDS REVIEW`) and let the
 operator decide whether the spec (or, if porting, the port itself) needs updating --

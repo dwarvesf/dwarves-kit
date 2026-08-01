@@ -14,8 +14,8 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
 
 If Step 1 finds no spec with acceptance criteria, and the feature under test already exists (no build planned), don't send the user to `/kit:spec` -- that command wants a feature idea to build, not a description of what already shipped. Instead:
 
-1. Dispatch `kit:research-features` on the target area with a one-line charter (what you're hunting for, per `docs/impl-playbook/exploratory-testing.md`'s SBTM discipline, personal-scale: 15-30 min, no formal report).
-2. From its findings, write a minimal `docs/specs/SPEC-NNN-<slug>.md`: `Status: DRAFT (reverse-engineered)`, and an `## Acceptance Criteria` section describing the feature's ACTUAL observed behavior, checkbox per behavior. No other spec sections -- nothing is being planned here. If `kit:research-features` finds nothing observable, say so and do not write a stub with fabricated criteria.
+1. Dispatch `kit:research-context` on the target area with a one-line charter (what you're hunting for, per `docs/impl-playbook/exploratory-testing.md`'s SBTM discipline, personal-scale: 15-30 min, no formal report).
+2. From its findings, write a minimal `docs/specs/SPEC-NNN-<slug>.md`: `Status: DRAFT (reverse-engineered)`, and an `## Acceptance Criteria` section describing the feature's ACTUAL observed behavior, checkbox per behavior. No other spec sections -- nothing is being planned here. If `kit:research-context` finds nothing observable, say so and do not write a stub with fabricated criteria.
 3. Continue to Step 1 against this stub, unchanged.
 
 ### Step 1: Find the active spec

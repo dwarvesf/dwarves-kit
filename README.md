@@ -320,10 +320,10 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | agent-effectiveness | agent authoring | Validates a new/changed agent definition's effectiveness (4 lenses) |
 | doc-verifier | /docs | Read-only check that docs match the live codebase |
 | research-stack | /spec | Maps technology stack (brownfield) |
-| research-features | /spec | Maps existing features in target area |
+| research-context | /spec, /kit:test-plan | Quick brownfield orientation (endpoints, models, UI, tests, recent history), capped at 80 lines |
 | research-architecture | /spec | Maps architecture patterns and conventions |
 | research-pitfalls | /spec | Finds landmines before implementation |
-| research-census | /kit:census | Deep per-module feature inventory for any project: source-cited MIGRATE table + parity contract when porting, else a behavior contract; no line cap |
+| research-features | /kit:census | Deep, uncapped, source-cited feature inventory for any project: MIGRATE table + parity contract when porting, else a behavior contract |
 | meta-agent | /draft-agent | Drafts a new subagent (or sub-goal file) from a one-line description |
 | test-writer | /kit:test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row |
 | audit-scanner | doc-drift, feature-map skills | Shared read-only Tier-2 evidence scanner for audit-loop instances; roster physically cannot write |

@@ -350,10 +350,10 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | `recheck-verifier` | `/execute` (fresh-context re-audit over a right-arm PASS) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
 | `research-stack` | `/spec` | Brownfield stack mapping |
-| `research-features` | `/spec` | Brownfield feature inventory |
+| `research-context` | `/spec`, `/kit:test-plan` | Quick brownfield orientation, capped at 80 lines |
 | `research-architecture` | `/spec` | Brownfield architecture patterns |
 | `research-pitfalls` | `/spec` | Landmine surfacing pre-build |
-| `research-census` | `/kit:census` | Deep per-module feature inventory for any target project; source-cited MIGRATE table + parity contract when porting, else a behavior contract; no line cap |
+| `research-features` | `/kit:census` | Deep, uncapped, source-cited feature inventory for any project; MIGRATE table + parity contract when porting, else a behavior contract |
 | `meta-agent` | `/kit:draft-agent` | Generates a new subagent (or a sub-goal file) from a description; the command installs the agent by default (`--draft` to stop at a review draft) |
 | `performance-reviewer` | `/review-team` | Read-only PERFORMANCE-lens reviewer (hot paths, N+1, allocations, caching, p95/p99, complexity); returns severity findings + a 0-10 score |
 | `api-reviewer` | `/review-team` | Read-only API-CONTRACT-lens reviewer (breaking changes, versioning, schema, error codes, backward compat, idempotency); severity findings + score |
