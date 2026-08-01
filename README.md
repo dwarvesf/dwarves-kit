@@ -271,7 +271,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:spec | Spec | Generate docs/specs/SPEC-NNN-<slug>.md with 4 parallel research agents |
 | /kit:spec-validate | Spec | 5 adversarial reviewers attack the spec (incl. solution-design + extensibility) |
 | /kit:test-plan | Spec | Opt-in: coverage matrix from acceptance criteria into the spec's `## Test plan` section |
-| /kit:port-map | Spec | Formalizes brownfield feature-inventory for a system migration/port: per-module spec (source-cited MIGRATE table + parity contract) + a top-level port checklist |
+| /kit:census | Spec | Source-cited, agent-checkable feature inventory for ANY target project: per-module spec + a top-level checklist. Standalone (what does this codebase do) or migration source of truth (what needs porting) when a port target is named |
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
 | /kit:verify | Verify | Read-only re-run of task-verifier + integration-verifier, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
@@ -323,7 +323,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | research-features | /spec | Maps existing features in target area |
 | research-architecture | /spec | Maps architecture patterns and conventions |
 | research-pitfalls | /spec | Finds landmines before implementation |
-| research-migration | /kit:port-map | Deep per-module feature inventory for a system migration/port: source-cited MIGRATE table + parity contract, no line cap |
+| research-census | /kit:census | Deep per-module feature inventory for any project: source-cited MIGRATE table + parity contract when porting, else a behavior contract; no line cap |
 | meta-agent | /draft-agent | Drafts a new subagent (or sub-goal file) from a one-line description |
 | test-writer | /kit:test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row |
 | audit-scanner | doc-drift, feature-map skills | Shared read-only Tier-2 evidence scanner for audit-loop instances; roster physically cannot write |

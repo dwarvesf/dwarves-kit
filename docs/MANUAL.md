@@ -353,7 +353,7 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | `research-features` | `/spec` | Brownfield feature inventory |
 | `research-architecture` | `/spec` | Brownfield architecture patterns |
 | `research-pitfalls` | `/spec` | Landmine surfacing pre-build |
-| `research-migration` | `/kit:port-map` | Deep per-module feature inventory for a system migration/port; source-cited MIGRATE table + parity contract, no line cap |
+| `research-census` | `/kit:census` | Deep per-module feature inventory for any target project; source-cited MIGRATE table + parity contract when porting, else a behavior contract; no line cap |
 | `meta-agent` | `/kit:draft-agent` | Generates a new subagent (or a sub-goal file) from a description; the command installs the agent by default (`--draft` to stop at a review draft) |
 | `performance-reviewer` | `/review-team` | Read-only PERFORMANCE-lens reviewer (hot paths, N+1, allocations, caching, p95/p99, complexity); returns severity findings + a 0-10 score |
 | `api-reviewer` | `/review-team` | Read-only API-CONTRACT-lens reviewer (breaking changes, versioning, schema, error codes, backward compat, idempotency); severity findings + score |
