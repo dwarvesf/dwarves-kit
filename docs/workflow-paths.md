@@ -236,7 +236,7 @@ Commands never hand off in memory; the baton passes through stores on disk.
         |                                 |      +── [H] /kit:devs-team (5 lenses, report-only)
         |                                 +──> [H] /kit:prototype ──> spike branch, folds back
         v
- [H/I] /kit:spec ──> [D] research-architecture + research-features
+ [H/I] /kit:spec ──> [D] research-architecture + research-context
         |                + research-pitfalls + research-stack (brownfield, read-only)
         v
      SPEC-NNN DRAFT ──> [H/I] /kit:spec-validate (6 lenses, 1 HARD on the design record)
@@ -374,6 +374,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H] /kit:devs-team -> 5 engineering lenses -> report-only -> feeds /kit:design` |
 | `[H/I] /kit:spec -> 4 research agents -> SPEC-NNN DRAFT -> spec-validate or ui-design` |
 | `[H/I] /kit:spec-validate -> 6 lenses (1 HARD) -> VALIDATED or back to /kit:spec` |
+| `[H/I] /kit:features -> research-features per module (parallel) -> docs/specs/<module>.md + top-level checklist` |
 | `[H] /kit:test-plan -> coverage matrix -> ## Test plan -> review-team or execute` |
 | `[H] /kit:test-plan-review-team -> 6 lenses + revise loop -> SOLID verdict -> test-write or execute` |
 | `[H] /kit:test-write -> test-writer per matrix row -> runnable tests -> /kit:execute` |
@@ -402,9 +403,10 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | Path |
 |---|
 | `[D] research-architecture <- /kit:spec -> architecture patterns -> findings return (read-only)` |
-| `[D] research-features <- /kit:spec, /kit:test-plan -> existing-feature map -> findings return` |
+| `[D] research-context <- /kit:spec, /kit:test-plan -> quick brownfield orientation, 80-line cap -> findings return` |
 | `[D] research-pitfalls <- /kit:spec -> landmine/risk list -> findings return (read-only)` |
 | `[D] research-stack <- /kit:spec -> tech-stack map -> findings return (read-only)` |
+| `[D] research-features <- /kit:features -> per-module feature inventory (+ parity contract if porting) -> spec file written (read-only)` |
 | `[D] brief-reviewer <- /kit:think -> static brief review -> feedback into the brief` |
 | `[D] test-writer <- /kit:test-write -> one test case per matrix row -> runnable test code` |
 | `[D] data-etl-worker <- /kit:execute (domain=data-etl) -> pipeline build -> task-verifier` |

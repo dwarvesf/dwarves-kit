@@ -27,7 +27,7 @@ Create `docs/research/` directory first.
 If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel:
 
 1. **research-stack** agent: "Map the technology stack. Write to `docs/research/stack.md`."
-2. **research-features** agent: "Map existing features related to [user's feature area]. Write to `docs/research/features.md`."
+2. **research-context** agent: "Map existing features related to [user's feature area]. Write to `docs/research/features.md`."
 3. **research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/architecture.md`."
 4. **research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/pitfalls.md`."
 
