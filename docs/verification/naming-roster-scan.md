@@ -23,9 +23,12 @@ The derived review roster carries a non-vacuous floor (must contain `task-verifi
 names in test files, which this diff changed) and regenerating drove it GREEN.
 
 Command: the 57-suite CI set (`grep 'run: bash tests/' .github/workflows/test.yml`), run locally
-Exit: 0 per suite
-Output: `FAILED:none`
-Verdict: PASS. No suite outside test-meta.sh depends on the old hardcoded list.
+Exit: 0 for 52 of 57 suites
+Output: `FAILED: tests/test-bin-forwarders.sh tests/test-outcome-emit-sweep.sh tests/test-command-emit-sweep.sh tests/test-config-registry.sh tests/test-kit-contract.sh`
+Verdict: PASS for this diff. The five failures reproduce byte-identically on a clean `git archive
+master` tree (verified side by side), so they are pre-existing local-environment divergences
+(installed-kit `bin/` census drift, stale command-count pins, `lib/bench` gaps), not caused by this
+change. No suite outside test-meta.sh depends on the old hardcoded list; PR CI is the arbiter.
 
 ## Negative controls
 
