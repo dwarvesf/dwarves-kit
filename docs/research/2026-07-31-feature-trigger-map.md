@@ -95,7 +95,7 @@ Coverage-gap check: for each feature, `grep -rl <name> docs/specs/*.md` and `gre
 | `commit-format` | hook | PreToolUse Bash | blocks non-conventional commit subjects | logs to `commit-format.log` | hard |
 | `money-gate` | hook | PreToolUse Edit/Write/MultiEdit | warns on careless edit to a money-touching file (inert until `MONEY_GATE_REPOS` set) | none | convenience/inert-by-default |
 | `spec-drift-guard` | hook | PreToolUse Write | warns on files the active spec never mentions | logs to `spec-drift-guard.log` | advisory |
-| `tool-policy-guard` | hook | PreToolUse (declared in `docs/architecture.md`/README, **NOT wired in live `hooks.json`/`settings.json`**) | enforces allow/ask/deny per tool domain from a policy file | inert until `tool-policy.json` exists AND the hook is actually registered | advisory (currently dormant: no live event wiring found) |
+| `tool-policy-guard` | hook | PreToolUse (wired in live `hooks.json`/`settings.json` 2026-07-31 per SPEC-212; corrected 2026-08-01, was stale) | enforces allow/ask/deny per tool domain from a policy file | inert until a `tool-policy.json` exists | advisory (wired but inert without a policy file) |
 | `auto-format` | hook | PostToolUse Write/Edit | idempotent formatting (prettier/gofmt/ruff/black/rustfmt) | none | convenience |
 | `output-offload` | hook | PostToolUse `*` | offloads oversized tool output to a file, nudges | none | advisory |
 | `post-compact-reinject` | hook | PostToolUse compact | re-injects rules compaction stripped | none | convenience |
@@ -168,4 +168,4 @@ No reference on EITHER side (backfill first):
 - [ ] `research-architecture` (agent)
 - [ ] `research-pitfalls` (agent)
 - [ ] `research-stack` (agent)
-- [ ] `tool-policy-guard` (hook) -- also not wired into any live hook event (see master table note)
+- [ ] `tool-policy-guard` (hook) -- wired at PreToolUse since 2026-07-31 (SPEC-212), inert until a `tool-policy.json` exists (corrected 2026-08-01, was stale)
