@@ -14,9 +14,17 @@ ANY project. A named port/migration target is one use case, not a requirement.
 
 If not already clear from the conversation, ask:
 
-- Which project, and where does it live (repo path, or clone-read location)?
-- Which modules/areas? (or: derive the module list from the project's routing /
-  directory structure?)
+- Which project? A project can be ONE repo or SEVERAL -- list every repo/clone-read
+  location in scope, each with a short tag (`fortress-api: ~/repos/fortress-api`,
+  `foundation-workers: ~/repos/foundation-workers`). A single-repo project is just
+  the N=1 case, nothing special to configure.
+- Any named surfaces with no readable source (a Discord server/channel, a Notion
+  automation/database, a third-party webhook)? These get documented by reference
+  (a doc, a URL, an automation ID), never a fabricated citation. Skip if none.
+- Which modules/areas? (or: derive the module list from the given locations'
+  routing/directory structure? A module may span more than one location, e.g. a
+  Discord command in one repo triggering a handler in another -- see one module,
+  multiple locations, not one module per repo.)
 - Is there a named port/migration target (a system this is moving to), or is this a
   plain census (understand/document what the project does, no target)? This decides
   whether `research-features` writes a Parity contract (port) or a Behavior contract
@@ -27,36 +35,48 @@ If not already clear from the conversation, ask:
 
 ### Step 2: Derive or confirm the module list
 
-If not given, propose one from the project's structure (route groups, top-level
-packages, cron registrations). Show it, get confirmation -- don't guess silently on
-scope this consequential.
+If not given, propose one from the given locations' structure (route groups,
+top-level packages, cron registrations) -- across ALL locations, not just the first
+one named. Show it, get confirmation -- don't guess silently on scope this
+consequential, and don't silently assume a module lives in only one repo.
 
 ### Step 3: Dispatch `research-features` per module, in parallel
+
+Each dispatch gets the FULL location set (every tagged repo + named surface from
+Step 1), not just whichever one the module "mostly" lives in -- the agent decides
+per-module relevance and traces cross-repo calls itself; under-scoping the input is
+how a real cross-repo behavior gets silently cut in half.
 
 #### Mode A (preferred)
 
 If `.claude/agents/research-features.md` exists, dispatch it via the Task/Agent tool
-once per module, in parallel, each with: module name, source location, output path,
-and whether a port target was named (and if so, what).
+once per module, in parallel, each with: module name, the full tagged-location list,
+any named surfaces, output path, and whether a port target was named (and if so,
+what).
 
 #### Mode B (inline fallback)
 
 If not installed, dispatch a general-purpose read-only subagent per module with the
-`research-features` prompt embedded (same 7-section template, same `file:line`
+`research-features` prompt embedded (same 8-item findings list, same `file:line`
 citation rule -- see `agents/research-features.md` for the exact template if present,
 otherwise use the shape below):
 
 ```
-Produce a source-cited feature inventory for the <module> module of <project>,
-located at <source location>[, being ported to <target>, if one was named]. Find
-every entry point (routes/crons/webhooks/CLI/exported functions), cite file:line for
-each, note data touched, external calls, a <parity contract: golden-fixture
-input->output a port must reproduce / behavior contract: what must always hold>,
-flag money/irreversible actions as STOP-gates, a test plan, and open questions. No
-line cap; every claim needs a citation. Write to <output path> using the section
-order: Scope (with a MIGRATE table if porting, else a plain live-path table, and an
-Out-of-scope list with real owners), Pipeline, Data, External calls, <Parity/Behavior
-contract>, Test plan, Open questions.
+Produce a source-cited feature inventory for the <module> module of <project>.
+Locations (read ALL of them; a behavior can start in one and finish in another):
+<tag>: <path>, <tag>: <path>, ... Surfaces (no readable source, cite by reference
+only): <name>: <what/how referenced>, ... [being ported to <target>, if one was
+named]. Find every entry point (routes/crons/webhooks/CLI/exported functions) in
+every location, cite file:line for each (tag-prefixed if more than one location),
+note data touched, cross-repo calls (cited on both ends, not filed as "external"),
+external calls, a <parity contract: golden-fixture input->output a port must
+reproduce / behavior contract: what must always hold>, flag money/irreversible
+actions as STOP-gates, a test plan, and open questions. No line cap; every claim
+needs a citation, never a fabricated one for a surface. Write to <output path> using
+the section order: Scope (with a MIGRATE table if porting else a plain live-path
+table, a Location column if >1 location, a Surfaces subsection if any, and an
+Out-of-scope list with real owners), Pipeline (cross-repo legs cited on both sides),
+Data, External calls, <Parity/Behavior contract>, Test plan, Open questions.
 ```
 
 ### Step 4: Build/refresh the top-level checklist

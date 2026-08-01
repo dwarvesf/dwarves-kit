@@ -17,31 +17,52 @@ when a port/migration target is named, what a port of it must reproduce).
 
 ## Input
 
-You receive: the module name, its location (repo + path/package), the output path,
-and whether this is a plain census (no port target) or a migration/port (a named
-target system this module is being ported to).
+You receive: the module name, one or more tagged locations (short id -> repo path,
+e.g. `fortress-api: ~/repos/fortress-api`, `foundation-workers: ~/repos/foundation-workers`),
+zero or more named surfaces (an external system the module is exposed through but
+that has no readable source -- a Discord channel/bot, a Notion automation/database,
+a webhook a third party calls), the output path, and whether this is a plain census
+(no port target) or a migration/port (a named target system this module is being
+ported to).
+
+A module is not always contained in one repo. Read ALL given locations for this
+module; a behavior can start in one and finish in another (a Discord command in
+`fortress-discord` posting to a webhook in `fortress-api`, which now calls a Worker
+in `foundation-workers`). Trace the chain across every location you were given
+rather than stopping at the first repo's boundary.
 
 ## What to find
 
 1. Every entry point touching this module: HTTP routes, cron triggers, webhook
    handlers, Discord/Slack commands, CLI verbs, exported functions -- whatever the
-   source actually exposes. Cite `file:line` for each.
+   source actually exposes, in EVERY given location. Cite `file:line` for each; when
+   more than one location was given, prefix the citation with its tag
+   (`fortress-api:pkg/handler/payout.go:49`), never a bare `file:line` that leaves
+   the repo ambiguous.
 2. For each entry point: the exact behavior. Check `git log --oneline -20` for the
    file to tell actively-maintained code from dead code.
-3. Data touched: models/schemas/tables, key fields.
+3. Data touched: models/schemas/tables, key fields -- note which location owns the
+   schema when it differs from where the behavior runs.
 4. External calls: every third-party API/service this module talks to, and why.
-5. Behavior contract: for each entry point, the input->output contract that must
+   When a call target is one of the OTHER given locations (not a third party), name
+   it as a cross-repo call, not an external call, and cite the receiving side too
+   (the handler in the target location that answers it), not just the call site.
+5. Surfaces: for each named surface (Discord/Notion/etc with no readable source),
+   record what it is and how it's referenced (a channel name, an automation ID, a
+   doc pointer) -- never a fabricated `file:line`. If a repo location documents the
+   surface (a webhook URL, a bot command registration), cite THAT instead.
+6. Behavior contract: for each entry point, the input->output contract that must
    hold, including partial-failure and retry semantics if the source has them. This
    is the golden-fixture shape a test suite (or a future port) would need to
    reproduce.
-6. Money/irreversible-action flags: any behavior that moves funds, sends an external
+7. Money/irreversible-action flags: any behavior that moves funds, sends an external
    message, or otherwise can't be undone gets called out as a STOP-gate needing the
    operator present for its first live/changed run.
-7. Scope boundary: what looks related but is owned by a different module (cite
+8. Scope boundary: what looks related but is owned by a different module (cite
    where), so specs don't overlap or double-count a behavior.
 
 If codebase-memory-mcp is available, use `search_symbols()`/`trace_call_path()`
-instead of grepping cold.
+instead of grepping cold (per location, if it indexes more than one).
 
 ## Output format
 
@@ -55,13 +76,19 @@ in scope), companion docs>
 
 ## 1. Scope
 
-<source citations for the clone/location read>
+<source citations for every location read; list each tagged location if more than
+one>
 
 **Live path<if a port is in scope: (MIGRATE)>:**
 
-| Endpoint/Trigger | Source | Behavior |
-|---|---|---|
-| ... | file:line | ... |
+| Endpoint/Trigger | Location | Source | Behavior |
+|---|---|---|---|
+| ... | <tag, omit column if only one location> | file:line | ... |
+
+**Surfaces (no readable source):**
+
+- <surface name>: <what it is, how it's referenced -- channel/automation
+  ID/doc pointer>. Omit this subsection entirely if no surfaces were named.
 
 **Out of scope, owned elsewhere:**
 
@@ -69,15 +96,18 @@ in scope), companion docs>
 
 ## 2. Pipeline
 
-Step-by-step control/data flow per behavior.
+Step-by-step control/data flow per behavior. When a step crosses from one location
+into another, say so explicitly (`fortress-discord -> webhook -> fortress-api`), each
+leg cited.
 
 ## 3. Data
 
-Models/schemas/tables touched, key fields.
+Models/schemas/tables touched, key fields, and which location owns each.
 
 ## 4. External calls
 
-Third-party APIs/services, what for.
+Third-party APIs/services, what for. Cross-repo calls (to another GIVEN location)
+are NOT external calls -- they belong in Pipeline, cited on both ends.
 
 ## 5. <Parity contract, if a port target was named -- else: Behavior contract>
 
@@ -102,7 +132,12 @@ every line earns its place.
 
 ## Rules
 
-- Every behavior claim carries a `file:line` citation. No behavior without one.
+- Every behavior claim carries a `file:line` citation; when more than one location
+  was given, every citation carries its location tag too. An untagged citation in a
+  multi-location run is a defect, not a shortcut.
+- A surface never gets a fabricated `file:line`. If you cannot point at real
+  evidence for it (a doc, a webhook URL, an automation ID), say what's missing
+  instead of inventing a plausible-looking citation.
 - "Out of scope" needs a real owner and a cross-reference, not just "not this
   module."
 - If the module doesn't exist yet in the source, say so explicitly instead of
