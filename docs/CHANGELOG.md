@@ -5,6 +5,12 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Added
+- **`backlog-reconcile` skill: the audit-loop pattern's 4th SDLC instance (SPEC-225).**
+  General-purpose (every `/kit:adopt`ed repo, not maintainer-only): audits a repo's
+  `_meta/BACKLOG.md` Active queue against reality, a row's `Status` verdicted against its
+  `Target artifact` spec's own `Status:` header, or a git-log match for `(tiny, no spec)`
+  rows, and ships fixes via PR. Mirrors `topology-drift`'s Tier1-mechanical/Tier2-model-delta
+  shape, reuses `lib/board/backlog.sh` and `agents/audit-scanner.md` unchanged.
 - **Two cheap guardrails on the autonomous run queue (SPEC-224 / ID-461).** Both ride channels
   SPEC-221 already built, so the diff is small and adds no process. (1) DRAFT-PR-BY-DEFAULT on the
   unattended path: the queue never runs `gh` itself, so `_goal_line` appends a clause to the typed

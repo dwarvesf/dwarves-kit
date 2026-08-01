@@ -435,6 +435,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 
 | Path |
 |---|
+| `[I] backlog-reconcile -> refusal guard -> _meta/BACKLOG.md row audit (Target-artifact + Status vs the spec's own Status: header, or git-log for tiny rows) -> fixes on a branch -> PR gate (terminal: merged PR)` |
 | `[I] doc-drift -> whole-estate doc audit -> fixes on a branch -> PR gate (terminal: merged PR)` |
 | `[I] topology-drift -> registry freshness gate -> FEATURES.md vs path index both directions -> delta re-placed on topology -> PR gate` |
 | `[I] get-api-docs -> fetch curated API docs -> grounded coding (terminal: context injected)` |
