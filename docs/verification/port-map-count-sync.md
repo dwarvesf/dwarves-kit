@@ -29,8 +29,19 @@ human; only the arithmetic is automated.
 Verdict: PASS (claim: count strings in README.md/architecture.md are now
 generator-derived, not hand-maintained; metric: RED-to-PASS transition on the
 6 pure-count assertions after one `generate` run with zero manual edits;
-threshold: full 805/805 restored, and the negative control proves the
+threshold: full 805/805 restored, and the NEGATIVE CONTROL proves the
 assertions actually detect drift rather than trivially passing).
+
+Command: `bash tests/test-meta.sh`
+Exit: 0 (805/805, captured above post-restore)
+
+## Rollback
+
+No schema/deploy/data surface touched (a doc-generator function only). To
+revert: `git revert` this commit, or just re-run
+`git checkout HEAD~1 -- lib/registry/feature-registry.sh docs/architecture.md`
+, the count strings go back to whatever the last hand-edit left them at (no
+external state to unwind).
 
 ## Reproduce
 
