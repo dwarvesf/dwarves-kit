@@ -69,6 +69,15 @@ def test_parse_board_skips_malformed():
     assert parse_board("| ID-1 | too | many | cells | here | queued |\n") == {}
 
 
+def test_next_id_skips_id_in_malformed_row():
+    """A pipe-broken row is invisible to parse_board, but its literal ID
+    token must still block reuse: next_id scans raw text, not parsed rows,
+    so a malformed row can never let a later spoke-born item mint its id."""
+    broken = BOARD + "| ID-309 | Queue-watcher pilot widening | notes\n"
+    assert "ID-309" not in parse_board(broken)  # confirms invisibility
+    assert next_id(broken) == 310
+
+
 def test_next_id_and_title_and_tags():
     assert next_id(BOARD) == 14
     assert parse_title("ID-10 · Fix it") == ("ID-10", "Fix it")
@@ -177,6 +186,23 @@ def test_board_add_skips_duplicate_title():
     p = plan_sync(parse_board(BOARD), items, {})
     assert not p.board_add
     assert any("already on board" in n for n in p.notes)
+
+
+def test_link_skips_title_mismatched_id_collision():
+    """Repaired-row scenario: ID-309 now exists on the board, but a
+    spoke-born item that reused the id (minted while the row was broken and
+    invisible to parse_board) carries an unrelated title. The title-prefix
+    link must refuse to adopt it rather than let the spoke item silently
+    overwrite the real row's title/status."""
+    board = BOARD + ("\n| ID-309 | Queue-watcher pilot widening | real row "
+                     "| executing |\n")
+    rows = parse_board(board)
+    items = [item("spoke-1", "ID-309 · done", done=True)]
+    p = plan_sync(rows, items, {})
+    assert not p.board_edit_item
+    assert not any(bid == "ID-309" for bid, _ in p.board_set_status)
+    assert any("id collision" in n and "ID-309" in n and "done" in n
+              for n in p.notes)
 
 
 def test_title_sync_board_wins_and_spoke_edit_pulls():

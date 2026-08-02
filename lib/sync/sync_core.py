@@ -119,6 +119,14 @@ def parse_title(title: str):
     return None, title.strip()
 
 
+def titles_agree(spoke_title: str, board_title: str) -> bool:
+    """Same id, different item text (beyond whitespace/case) is a collision,
+    not a link: a bare/empty side has nothing to disagree about."""
+    a = " ".join(spoke_title.split()).casefold()
+    b = " ".join(board_title.split()).casefold()
+    return not a or not b or a == b
+
+
 def extract_tags(notes: str) -> list[str]:
     return sorted(set(re.findall(r"#([a-z0-9][a-z0-9-]*)", notes)))
 
@@ -204,13 +212,18 @@ def plan_sync(rows: dict, items: list, state: dict,
     for it in items:
         if it["rid"] in claimed_rids:
             continue
-        bid, _ = parse_title(it["title"])
+        bid, it_title = parse_title(it["title"])
         if bid is None:
             continue
         if bid in linked:
             p.notes.append(f"duplicate item for {bid}: {it['title']!r} ignored")
             continue
         if bid in rows:
+            if not titles_agree(it_title, rows[bid].item):
+                p.notes.append(
+                    f"id collision: {bid} title mismatch, not linked "
+                    f"(board={rows[bid].item!r} spoke={it_title!r})")
+                continue
             linked[bid] = it
             claimed_rids.add(it["rid"])
         else:
