@@ -97,6 +97,14 @@ if [ "${1:-}" = "--uninstall" ]; then
     rm -rf "$LIB_DEST" && echo "[ok] Removed copied lib dir: $LIB_DEST"
   fi
 
+  # Remove the docs/impl-playbook/ dir we deployed (review-team agent reference rules).
+  PLAYBOOK_DEST="$CLAUDE_DIR/dwarves-kit/docs/impl-playbook"
+  if [ -L "$PLAYBOOK_DEST" ]; then
+    rm "$PLAYBOOK_DEST" && echo "[ok] Removed docs/impl-playbook symlink: $PLAYBOOK_DEST"
+  elif [ -d "$PLAYBOOK_DEST" ] && [ -f "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" ]; then
+    rm -rf "$PLAYBOOK_DEST" && echo "[ok] Removed copied docs/impl-playbook dir: $PLAYBOOK_DEST"
+  fi
+
   # Remove the operate-contract files (SPEC-049 symlinks, or SPEC-066 copies recorded in
   # the stamp's managed= list; a user's own file is never in the list and never removed).
   UNMANAGED="$(grep '^managed=' "$CLAUDE_DIR/dwarves-kit/INSTALL-STAMP" 2>/dev/null | cut -d= -f2- || true)"
@@ -333,7 +341,7 @@ if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
   echo "Doing a COMPAT-ONLY install (legacy path shims), not the full bash install,"
   echo "to avoid double-registering hooks."
   mkdir -p "$CLAUDE_DIR/dwarves-kit/docs"
-  for f in bin lib WORKFLOW.md AGENTS.md docs/WORKFLOW.md; do
+  for f in bin lib WORKFLOW.md AGENTS.md docs/WORKFLOW.md docs/impl-playbook; do
     ln -sfn "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
     echo "[ok] compat symlink ~/.claude/dwarves-kit/$f -> $KIT_DIR/$f"
   done
@@ -476,6 +484,23 @@ else
   else
     echo "[ok] Contract files left as user files (none kit-managed)"
   fi
+fi
+
+# 1d-bis. Deploy docs/impl-playbook/ -- the STABLE reference path the review-team agents
+# (security-reviewer, code-reviewer, infra-reviewer, frontend-reviewer, test-writer) cite by
+# absolute path (~/.claude/dwarves-kit/docs/impl-playbook/<file>.md). A bare repo-relative
+# citation only resolves when the agent's cwd happens to be the kit's own checkout, never true
+# when reviewing a CONSUMER repo, the actual real-world dispatch. Copied like lib/bin (SPEC-066:
+# copy, never symlink, so a branch switch mid-session can't silently swap the rule content).
+if [ -n "$DEST_REAL" ] && [ "$KIT_REAL" = "$DEST_REAL" ]; then
+  echo "[ok] Kit is installed in place; docs/impl-playbook already at \$HOME/.claude/dwarves-kit/docs/impl-playbook/"
+else
+  PLAYBOOK_DEST="$CLAUDE_DIR/dwarves-kit/docs/impl-playbook"
+  mkdir -p "$CLAUDE_DIR/dwarves-kit/docs"
+  [ -L "$PLAYBOOK_DEST" ] && rm "$PLAYBOOK_DEST"
+  [ -d "$PLAYBOOK_DEST" ] && [ ! -L "$PLAYBOOK_DEST" ] && rm -rf "$PLAYBOOK_DEST"
+  cp -R "$KIT_DIR/docs/impl-playbook" "$PLAYBOOK_DEST"
+  echo "[ok] Copied docs/impl-playbook into $PLAYBOOK_DEST (pinned, SPEC-066)"
 fi
 
 # 1e. Version stamp (SPEC-066): records WHAT is installed so kit-health can flag a stale

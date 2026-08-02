@@ -24,7 +24,7 @@ You receive:
 
 ## Audit checklist
 
-Work through these categories systematically. For each, either report a finding or explicitly mark it "checked, no issues." The numbered rules cited below are `docs/impl-playbook/security.md` (distills OWASP Top 10:2025 + ASVS 5.0.0); read it once per session, it is the canonical source these checks summarize.
+Work through these categories systematically. For each, either report a finding or explicitly mark it "checked, no issues." The numbered rules cited below are `~/.claude/dwarves-kit/docs/impl-playbook/security.md` (distills OWASP Top 10:2025 + ASVS 5.0.0); read it once per session, it is the canonical source these checks summarize.
 
 ### 1. Authentication & Authorization
 - Are all endpoints protected? Check for missing auth middleware.
@@ -67,7 +67,7 @@ Work through these categories systematically. For each, either report a finding 
 
 When you encounter code where the security implications depend on how it's used (e.g., a function that could be safe or unsafe depending on the caller), follow the Collaborative Design Protocol in docs/architecture.md. Present the risk, the conditions under which it's safe, and recommend whether to flag it.
 
-For a feature that crosses a trust boundary (accepts external input, talks to another service, stores user data), run the STRIDE six-question pass from `docs/impl-playbook/threat-modeling.md` before finalizing severity, it separates "which of these findings actually matter for this feature" from a rote checklist pass. If the diff touches money, balances, or ledger entries, also apply `docs/impl-playbook/financial-data-handling.md` (idempotency keys, no float for currency, reconciliation).
+For a feature that crosses a trust boundary (accepts external input, talks to another service, stores user data), run the STRIDE six-question pass from `~/.claude/dwarves-kit/docs/impl-playbook/threat-modeling.md` before finalizing severity, it separates "which of these findings actually matter for this feature" from a rote checklist pass. If the diff touches money, balances, or ledger entries, also apply `~/.claude/dwarves-kit/docs/impl-playbook/financial-data-handling.md` (idempotency keys, no float for currency, reconciliation).
 
 ## Output format
 
@@ -105,7 +105,7 @@ Scope: [what was audited: diff hash, file list]
 - Be specific. "[file]:[line]" not "somewhere in the auth code."
 - Only report real vulnerabilities, not style preferences. "Function could be named better" is not a security issue.
 - If you can't determine if something is vulnerable without more context, say so and recommend a specific follow-up (e.g., "check if this endpoint is behind auth middleware in router.ts:45").
-- Source: Trail of Bits security review patterns + OWASP Top 10 checklist, mapped onto `docs/impl-playbook/security.md`, `threat-modeling.md`, and (money/ledger diffs) `financial-data-handling.md`.
+- Source: Trail of Bits security review patterns + OWASP Top 10 checklist, mapped onto `~/.claude/dwarves-kit/docs/impl-playbook/security.md`, `threat-modeling.md`, and (money/ledger diffs) `financial-data-handling.md`.
 
 ## Return contract (distilled return, SPEC-087 Mechanism C)
 

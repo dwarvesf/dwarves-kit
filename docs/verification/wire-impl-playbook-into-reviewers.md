@@ -142,3 +142,69 @@ that is expected and not a live reference. Re-run to confirm: search the repo (e
 `.git`) for the literal string, then check every hit is inside this file's Hypothesis or
 "What moved"/"Agent citation updates" sections, never in an agent definition or a playbook
 file.
+
+## 2026-08-03 second follow-up: bare relative citation was still dead for real adopters
+
+A pre-merge sweep (dispatched research, not a claim) caught that the previous follow-up's
+fix was incomplete: the 5 agent files cited `docs/impl-playbook/<file>.md` as a bare,
+repo-relative path. That only resolves when the dispatched agent's cwd happens to be the
+dwarves-kit checkout itself. The actual real-world dispatch is `/kit:review-team` running
+inside a CONSUMER repo that adopted the kit, a completely different cwd, where that relative
+path resolves to nothing.
+
+Investigated `install.sh` directly rather than guessing: `~/.claude/dwarves-kit/` is the
+kit's own established stable-install convention (SPEC-045, SPEC-066, SPEC-184, SPEC-049 all
+target it explicitly; SPEC-066's rule is "copy, never symlink," since a symlinked hook
+follows the checked-out branch and can silently swap live enforcement code mid-session).
+`bin/` and `lib/` already deploy there for exactly this reason (SPEC-184: "Consumers...
+reference $DWARVES_KIT/bin/<name>, never a deep lib path, so an internal lib reorg never
+breaks them").
+
+Fix:
+- All 5 agent files' citations rewritten from `` `docs/impl-playbook/<file>.md` `` to
+  `` `~/.claude/dwarves-kit/docs/impl-playbook/<file>.md` `` (absolute, resolves from any
+  cwd).
+- `install.sh`: added a step (mirroring the bin/lib `cp -R` pattern, SPEC-066) that deploys
+  `docs/impl-playbook/` to `$CLAUDE_DIR/dwarves-kit/docs/impl-playbook/` on both the full
+  install path and the plugin-detected compat-only path (`for f in bin lib WORKFLOW.md
+  AGENTS.md docs/WORKFLOW.md docs/impl-playbook`). Added the matching `--uninstall` removal
+  block.
+
+### Run 4: fixture install, full end-to-end, both directions
+
+Command: `CLAUDE_DIR=<scratch dir> bash install.sh`, then
+`CLAUDE_DIR=<scratch dir> bash install.sh --uninstall`, against a throwaway fixture
+`CLAUDE_DIR` (the script's own `CLAUDE_DIR` override, documented at `install.sh:18` as
+"overridable for fixture installs (SPEC-066)").
+
+Result (install): `$CLAUDE_DIR/dwarves-kit/docs/impl-playbook/` populated with 25 files
+(24 rule files + README.md), confirmed real content (`security.md` read back matches the
+source). Install completed with no errors, printed the normal "=== Done ===" summary.
+
+Result (uninstall, negative control): `[ok] Removed copied docs/impl-playbook dir: ...`
+printed; `os.path.isdir()` on the target confirmed the directory was gone afterward.
+
+This is the real primary flow, not a proxy: an actual install into a real (if scratch)
+`CLAUDE_DIR`, read back, then actually removed and confirmed gone.
+
+## Verdict (updated)
+
+The functional gap this follow-up closes was real and would have shipped broken for every
+non-Han adopter, exactly the failure mode the first move-to-the-kit follow-up was suppose to
+fix but didn't finish. Fixed and proven end-to-end via a real install/uninstall cycle, not
+just a code read. The original Run 1-3 finding (the OWASP A09 security-logging sub-item's
+uptake being unproven) still stands unchanged, unrelated to this fix.
+
+### Run 4 machine-checked summary
+
+Command: `CLAUDE_DIR=<scratch> bash install.sh`
+Exit: 0
+
+Command: `CLAUDE_DIR=<scratch> bash install.sh --uninstall`
+Exit: 0
+
+NEGATIVE CONTROL: the uninstall run is the rollback path, confirmed by `os.path.isdir()`
+returning false on `$CLAUDE_DIR/dwarves-kit/docs/impl-playbook` afterward (it existed with
+25 files right before the uninstall ran).
+
+Verdict: PASS
