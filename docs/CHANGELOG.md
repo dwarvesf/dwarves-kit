@@ -4,6 +4,17 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Added
+- **`docs/impl-playbook/` ships in the kit itself, review-team agents cite it by stable path.**
+  security-reviewer, code-reviewer (architecture + test-coverage lenses), infra-reviewer,
+  frontend-reviewer, and test-writer now cite `~/.claude/dwarves-kit/docs/impl-playbook/<file>.md`
+  at the checklist item each rule backs (OWASP/ASVS for security, Fowler's pyramid for test
+  layering, coding-hygiene for the architecture lens, Cloudflare specifics for infra). The
+  content used to be the maintainer's personal, machine-local reference; moved into the repo
+  and generalized so every adopter's citations resolve, not just the maintainer's own machine.
+  `install.sh` deploys the directory to the stable install path on both the full-install and
+  plugin-compat paths, with a matching `--uninstall` removal step.
+
 ### Fixed
 - **`tests/test-install-compat.sh` now sandboxes `$HOME` (ID-463).** The suite ran `install.sh`
   with only `CLAUDE_DIR` overridden; the compat branch it exercises writes a CLI shim straight
