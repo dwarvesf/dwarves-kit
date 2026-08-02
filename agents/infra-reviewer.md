@@ -26,6 +26,8 @@ Work through the diff against these. For each, report a finding or note "checked
 - **Idempotent provisioning:** re-applying the config/IaC converges to the same state (no duplicate resource, no fail-on-exists); scripts are safe to re-run.
 - **Blast radius:** how much breaks if this change is wrong, one service or the whole cluster? Is the change scoped to one environment, or does it hit prod directly? Flag a widened blast radius.
 
+If the diff touches Cloudflare (Workers, Durable Objects, D1, R2, KV, Queues, Workflows, wrangler config), also check it against `~/.claude/docs/impl-playbook/cloudflare.md`: `wrangler.jsonc` vs `.toml` config gating, `wrangler versions secret put` (not the plain form) once gradual deployments are in use, D1's lack of interactive transactions, and KV's eventual-consistency window.
+
 ## Rules
 
 - Stay in your lane. You do not comment on API contracts, query performance, or UI.
