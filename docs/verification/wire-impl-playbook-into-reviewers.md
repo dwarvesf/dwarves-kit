@@ -2,10 +2,12 @@
 
 ## Hypothesis
 
-Adding pointers to `~/.claude/docs/impl-playbook/*.md` inside the review-team agent
-definitions (`security-reviewer.md`, `code-reviewer.md`, `infra-reviewer.md`,
-`frontend-reviewer.md`) makes those agents actually consult and apply the referenced rules,
-not just carry inert prose nobody reads.
+Adding pointers to the impl-playbook reference files (at the time, the maintainer's
+personal machine-local directory; moved into this repo under `docs/impl-playbook/` on
+2026-08-03, see the follow-up section below) inside the review-team agent definitions
+(`security-reviewer.md`, `code-reviewer.md`, `infra-reviewer.md`, `frontend-reviewer.md`)
+makes those agents actually consult and apply the referenced rules, not just carry inert
+prose nobody reads.
 
 Files touched, one line each:
 - `agents/security-reviewer.md`: checklist items now cite `security.md` (numbered rules),
@@ -75,3 +77,68 @@ each run and removed after. No repo state changed by the test itself.
 
 `agents/security-reviewer.md`, `agents/code-reviewer.md`, `agents/infra-reviewer.md`,
 `agents/frontend-reviewer.md` are the actual shipped change. This file is the proof.
+
+## 2026-08-03 follow-up: move impl-playbook into the repo
+
+### Problem
+
+The wiring above pointed every citation at `~/.claude/docs/impl-playbook/*.md`, the
+maintainer's personal machine-local directory. dwarves-kit is a published, public repo
+adopted by other engineers; for anyone but the maintainer that path does not exist, so the
+citations were dead on install. Fix: move the actual playbook content into the kit repo
+itself, so every adopter gets a working reference, not just the maintainer.
+
+### What moved
+
+All 24 rule files + `README.md` from `~/.claude/docs/impl-playbook/` copied to
+`docs/impl-playbook/` in this repo. The source directory is untouched (a separate step
+turns it into a symlink); this commit is copy-and-generalize, not move-and-delete.
+
+### Generalization (personal references stripped per file)
+
+Each file was checked for wording that only makes sense with the maintainer's personal
+global CLAUDE.md or personal machine paths. No new content was added, only personal
+references removed or reworded to state the rule standalone.
+
+| File | What was removed/reworded |
+|---|---|
+| `README.md` | "routed from the root CLAUDE.md ... table" -> reworded to a standalone description of the folder's purpose |
+| `architecture-decision.md` | dropped "per the root CLAUDE.md Tech stack preferences"; reworded "Pairs with the root CLAUDE.md 'Minimum infra first' rule" to a standalone "minimum infra first" reference |
+| `bash.md` | dropped "(per the root CLAUDE.md Tech stack preferences)" |
+| `go.md` | dropped "(per the root CLAUDE.md Tech stack preferences)" |
+| `logging-observability.md` | dropped "and the root CLAUDE.md secret-handling rules" |
+| `notification-design.md` | dropped the sentence routing a new scheduled job through the maintainer's personal `vps-mon` tool and `job-monitoring-onboarding` skill, neither of which ships with the kit |
+| `python.md` | dropped "(per the root CLAUDE.md Tech stack preferences)" |
+| `security.md` | dropped "on top of the root CLAUDE.md Security Rules"; dropped "per the root CLAUDE.md" from the `op://` secrets line; dropped "per the root CLAUDE.md Tech stack preferences" from the `pnpm audit` mention |
+| `test-case-design.md` | reworded "past-Han when he reads it in a month" (a personal name) to "your future self reading it in a month" |
+| `testing-strategy.md` | dropped "(per the root CLAUDE.md Self-verification rules)" |
+| `tool-picks.md` | reworded "Extends the root CLAUDE.md 'Tech stack preferences' table" to a standalone description; reworded "already pinned there" to "already pinned in your own stack preferences" |
+| `typescript.md` | dropped "(per the root CLAUDE.md Tech stack preferences)" |
+| `frontend-design-engineering.md` | dropped the maintainer's personal skill-install path `~/.claude/skills/{...}` from both the intro paragraph and the Sources line; kept the skill names themselves as an "if installed" pointer |
+| `cloudflare.md`, `coding-hygiene.md`, `dapp-frontend.md`, `elixir.md`, `exploratory-testing.md`, `financial-data-handling.md`, `red-team-engagement.md`, `requirements-gathering.md`, `rust.md`, `solana.md`, `solidity.md`, `threat-modeling.md` | no changes needed, already generic |
+
+### Agent citation updates
+
+`agents/security-reviewer.md`, `agents/code-reviewer.md`, `agents/infra-reviewer.md`,
+`agents/frontend-reviewer.md`, `agents/test-writer.md`: every `~/.claude/docs/impl-playbook/<file>.md`
+citation rewritten to the kit-relative `docs/impl-playbook/<file>.md` (resolved relative to
+the kit's own repo root, so it works for any adopter, not just a checkout at the
+maintainer's exact home directory).
+
+### Docs inventory
+
+Added one row to `docs/README.md`'s "What's here" table pointing at `impl-playbook/` and
+naming the five agents that cite it, the existing analogous inventory table for this repo
+(no new section invented). `CLAUDE.md` and `AGENTS.md` were checked; neither carries a
+docs-inventory table of this shape, so neither was touched.
+
+### Verification
+
+`grep -r "claude/docs/impl-playbook" .` (excluding `.git`) after the change returns zero
+hits in every functional file: the 5 agent definitions, the 25 `docs/impl-playbook/` files,
+and every other doc in the repo. The only remaining matches are inside THIS file's own
+historical narrative above, quoting the old dead path in prose to describe what changed;
+that is expected and not a live reference. Re-run to confirm: search the repo (excluding
+`.git`) for the literal string, then check every hit is inside this file's Hypothesis or
+"What moved"/"Agent citation updates" sections, never in an agent definition or a playbook
+file.
