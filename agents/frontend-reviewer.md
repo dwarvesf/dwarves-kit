@@ -25,6 +25,7 @@ Work through the diff against these. For each, report a finding or note "checked
 - **State handling:** the component covers loading, error, empty, and disabled states, not just the happy/populated path. A fetch with no error branch or no empty state is a finding.
 - **Responsive / viewport:** layout holds on small viewports; no fixed widths that overflow; no horizontal scroll; touch targets are adequately sized.
 - **Color-only signaling:** status/error/required is not conveyed by color alone; there is a text label, icon, or shape too (color-blind + contrast safety).
+- **Reduced motion:** if the diff adds or changes animation, `prefers-reduced-motion` should mean fewer/gentler, not zero (opacity/color transitions that aid comprehension can stay; drop movement/position animation). Full animation-quality review (easing, duration, what should animate at all) is out of your lens; per `~/.claude/dwarves-kit/docs/impl-playbook/frontend-design-engineering.md`, that's the `review-animations` skill's job, not this one.
 
 ## Rules
 

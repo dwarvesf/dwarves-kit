@@ -23,6 +23,7 @@ This folder is large because the kit was built **through its own workflow**: eve
 | `absorption/` | Templates + index for the absorption workflow | work on `/kit:absorb` |
 | `audits/` | One-off dated audit reports (not tied to a single spec) | read a point-in-time cross-cutting audit |
 | `releases/` | Per-version release artifacts | see what a specific release contained |
+| [`impl-playbook/`](impl-playbook/) | Per-language/architecture implementation rules, distilled from named external style guides and standards | look up the rule set the review-team agents (`security-reviewer`, `code-reviewer`, `infra-reviewer`, `frontend-reviewer`, `test-writer`) cite for a given language or area |
 
 ## How to read it (for maintainers)
 
