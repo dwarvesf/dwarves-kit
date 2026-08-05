@@ -250,40 +250,6 @@ check() {
   local class last_v; class="$(classify "$root" "$base")"
   [ "$class" = "inert" ] && return 0          # docs/cosmetic: no ritual.
 
-  if [ -n "$slug" ] && is_overridden "$slug" "$root"; then
-    # cc-hyg-04: an override excuses docs / deploy-inert work, NOT application source
-    # code. A blanket override that silently passes an unproven SOURCE change is the
-    # rtk-611 hole (2026-07-01: an overridden branch shipped a broken source change,
-    # reverted 9h later). Deploy scripts under a deploy/ path stay override-able (they
-    # are verified via deploy-proof/UAT per SPEC-095); source code elsewhere is not.
-    # Build the source-code remainder. A file counts as source if it has a code
-    # extension OR is an extensionless shebang script (e.g. the kit's own
-    # lib/goal/handoff-gen); deploy scripts at a SANCTIONED location (repo-root deploy/
-    # or a per-tool tools/<name>/deploy/) are exempt -- but a `deploy` dir nested
-    # anywhere else (src/deploy/, lib/deploy/) is NOT, or it would reopen the hole.
-    local src_remainder="" f
-    while IFS= read -r f; do
-      [ -n "$f" ] || continue
-      case "$f" in deploy/*|tools/*/deploy/*) continue ;; esac   # sanctioned deploy: override-able
-      if printf '%s' "$f" | grep -qE '\.(sh|bash|zsh|py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|c|h|cc|cpp|hpp|java|php|swift|kt|kts|scala|clj|cljs|ex|exs|lua|pl|pm|r|m|mm|sql)$'; then
-        src_remainder="${src_remainder}${f}"$'\n'; continue
-      fi
-      # extensionless file (no dot in basename): treat as source if it is a shebang script.
-      case "$(basename "$f")" in
-        *.*) : ;;
-        *) [ -f "$root/$f" ] && [ "$(head -c2 "$root/$f" 2>/dev/null)" = '#!' ] && src_remainder="${src_remainder}${f}"$'\n' ;;
-      esac
-    done < <(_changed "$root" "$base")
-    if [ -n "$src_remainder" ]; then
-      echo "proof-of-done: override for '$slug' REJECTED -- the branch changes source files with no proof of done:" >&2
-      printf '%s' "$src_remainder" | sed 's/^/    - /' >&2
-      echo "  An override excuses docs / deploy-inert work only. Provide a proof of done for the source change (run /kit:verify), or split it out." >&2
-      return 1
-    fi
-    echo "proof-of-done: OVERRIDDEN for '$slug' (docs/deploy-inert remainder; logged, see $OVERRIDE_LOG)" >&2
-    return 0
-  fi
-
   local files f ok=1
   # A committed screenshot/GIF embed counts as captured run-evidence too (visual/demo work
   # proves "it actually ran" with a picture, not only a text run-table). The semantic marker
@@ -338,6 +304,49 @@ check() {
     done <<< "$groups"
   fi
   [ "$ok" -eq 0 ] && return 0
+
+  # A real proof (checked above) always wins outright. Only fall back to an override
+  # when no fresh proof file satisfies the requirement: the override log is append-only,
+  # so checking it FIRST (the old order) meant a mistaken or early override for a slug
+  # touching a source file blocked that slug FOREVER, even after a legitimate
+  # proof-of-done with a NEGATIVE CONTROL landed in the same branch later (found
+  # 2026-08-06: a docs+one-line-.sh-fix branch logged an override before writing its
+  # proof doc, then could never pass again once the proof doc existed, because this
+  # check short-circuited on the override every time). Checking the real proof first
+  # closes that trap without weakening the override's own docs-only restriction below.
+  if [ -n "$slug" ] && is_overridden "$slug" "$root"; then
+    # cc-hyg-04: an override excuses docs / deploy-inert work, NOT application source
+    # code. A blanket override that silently passes an unproven SOURCE change is the
+    # rtk-611 hole (2026-07-01: an overridden branch shipped a broken source change,
+    # reverted 9h later). Deploy scripts under a deploy/ path stay override-able (they
+    # are verified via deploy-proof/UAT per SPEC-095); source code elsewhere is not.
+    # Build the source-code remainder. A file counts as source if it has a code
+    # extension OR is an extensionless shebang script (e.g. the kit's own
+    # lib/goal/handoff-gen); deploy scripts at a SANCTIONED location (repo-root deploy/
+    # or a per-tool tools/<name>/deploy/) are exempt -- but a `deploy` dir nested
+    # anywhere else (src/deploy/, lib/deploy/) is NOT, or it would reopen the hole.
+    local src_remainder="" f
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      case "$f" in deploy/*|tools/*/deploy/*) continue ;; esac   # sanctioned deploy: override-able
+      if printf '%s' "$f" | grep -qE '\.(sh|bash|zsh|py|js|jsx|mjs|cjs|ts|tsx|go|rs|rb|c|h|cc|cpp|hpp|java|php|swift|kt|kts|scala|clj|cljs|ex|exs|lua|pl|pm|r|m|mm|sql)$'; then
+        src_remainder="${src_remainder}${f}"$'\n'; continue
+      fi
+      # extensionless file (no dot in basename): treat as source if it is a shebang script.
+      case "$(basename "$f")" in
+        *.*) : ;;
+        *) [ -f "$root/$f" ] && [ "$(head -c2 "$root/$f" 2>/dev/null)" = '#!' ] && src_remainder="${src_remainder}${f}"$'\n' ;;
+      esac
+    done < <(_changed "$root" "$base")
+    if [ -n "$src_remainder" ]; then
+      echo "proof-of-done: override for '$slug' REJECTED -- the branch changes source files with no proof of done:" >&2
+      printf '%s' "$src_remainder" | sed 's/^/    - /' >&2
+      echo "  An override excuses docs / deploy-inert work only. Provide a proof of done for the source change (run /kit:verify), or split it out." >&2
+      return 1
+    fi
+    echo "proof-of-done: OVERRIDDEN for '$slug' (docs/deploy-inert remainder; logged, see $OVERRIDE_LOG)" >&2
+    return 0
+  fi
 
   # blocked: name exactly what is missing.
   {
