@@ -1206,7 +1206,7 @@ above; this only draws the loop.
    /kit:next  ──▶  BUILDING (resume; runs only the amended tasks)
 ```
 
-### Opt-in side-flows (10)
+### Opt-in side-flows (11)
 
 Advisory, never blocking. They enrich a lane but are not required by any. All write
 **into the active spec** when the output binds to a spec (replace-not-stack), so a
@@ -1224,6 +1224,7 @@ later reader and an earlier writer never split across two specs.
 | 8 | `/kit:review-team` | PR-grade review; 3 lenses (security/architecture/test-coverage) in parallel; confidence anchors + fingerprint dedup + per-finding validators (SPEC-081/082) | `## Review` in the active spec (else inline) | SHIP / FIX THEN SHIP / DO NOT SHIP, unsuppressed findings drive it |
 | 9 | `/kit:absorb` | maintainer-only external-absorption audit | dated report under `docs/absorption/` | proposal-only report (human merge gate) |
 | 10 | `/kit:kit-health` | maintainer self-assessment vs PHILOSOPHY, before tagging | report (stdout) | assessment rendered |
+| 11 | `/kit:gauntlet` | before granting outside devs repo access, or after contributor-surface changes; a synthetic-dev probe onboards from the docs alone in a fresh clean room per round, builds one seed card, submits; the orchestrator revises the surface between rounds (bounded-revise engine, cap 3, severity-aware) | `docs/verification/gauntlet/<date>-<slug>/` (ROUNDS.md + per-round records, persisted pass or fail) | SOLID (unaided pass) / REVISE / RECONSIDER, honest halt |
 
 ### Alternate / branch flows (7)
 

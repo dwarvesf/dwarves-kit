@@ -14,6 +14,7 @@ name. Full tour: `/kit:onboard`. Story-name lookup: `docs/glossary.md`.
 - Hooks have no invocation, they fire on Claude Code events.
 - Agents have no invocation, they are dispatched by commands.
 - Self-intro banner: every `/kit:` command opens its first reply with one line, `[kit:<name>] <one-line purpose>` (from its frontmatter description), and every dispatched agent's report opens the same way, so you always see what is running and why (AGENTS.md "Self-intro").
+- Teach on bad input: a command handed a bad or missing input names it, teaches why it matters in one line, and offers the concrete fix, never a dry "invalid input", never proceeding silently. Overrides run but get recorded. Convention + per-command tables: `docs/patterns/teach-on-bad-input.md`.
 
 ## Drive it by intent (start here)
 
@@ -29,6 +30,7 @@ You do not memorize commands. Say what you want; the kit reads your intent, runs
 | "run the full lane, your call" | the lane, autonomously | anti-rationalization (in a /goal loop) | hard stops + push/PR |
 | "fix this bug / it regressed" | `/kit:debug` (bug lane) | guess-fix guard | root cause + human-confirm |
 | "review this" / "ship it" | `/kit:review[-team]` / `/kit:ship` | ship gate, push-to-main | DO-NOT-SHIP verdict; the push/PR |
+| "can a new dev work here from the docs alone" / "test our onboarding" | `/kit:gauntlet` | clean-room probe rounds, surface revisions between rounds | SOLID / REVISE / RECONSIDER (guide: `docs/guides/gauntlet.md`) |
 
 For the full playbook (every scenario, the autonomy dial, the freeform front door) see `## Operator scenarios`. For a per-command lookup see `## Command reference`. Hooks fire on their own; commands and skills are invoked, by you or by Claude reading your intent.
 
