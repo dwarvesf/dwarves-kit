@@ -13,6 +13,21 @@ clean.
 | Negative control, restore | restore the file, rerun | 0 | `TIER1: GREEN` | PASS |
 | Lint | `shellcheck tests/gauntlet/*.sh tests/gauntlet/cleanroom/run.sh` | 0 | clean | PASS |
 
+## Scenario pack additions (SPEC-227, same branch)
+
+| Check | Command | Exit | Result | Verdict |
+|---|---|---|---|---|
+| J3 checker rejects an untouched fixture (negative control) | `check-submission-user-J3.sh <plain fixture>` | 1 | `SUBMISSION: RED` (spec, feature, tests, PR.md all FAIL as they should) | PASS (checker can fail) |
+| J3 checker honors the honest-stop shape | same, with `BLOCKED.md` present | 3 | prints the block reason, exit 3 | PASS |
+| Tier 1 still green after the additions | `bash tests/gauntlet/tier1.sh` | 0 | `TIER1: GREEN` | PASS |
+| Lint | `shellcheck check-submission-user-J3.sh` | 0 | clean | PASS |
+
+Green-path run of the J3 checker (against a hand-built passing fixture) is
+SPEC-227 P3's own verification, deferred to the make-card task by design; the
+negative controls above prove the checker's failure behavior today. Rollback:
+the scenario pack is additive files only; reverting the commit restores the
+prior prep with no state to unwind.
+
 ## Not run here
 
 The clean-room build (`cleanroom/run.sh`) and the probe rounds themselves: those

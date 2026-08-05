@@ -29,6 +29,18 @@ gaps). Guide: `docs/guides/gauntlet.md` (worked example); engine:
 | Probe | same |
 | Round cap | 3 |
 
+## Scenario pack (SPEC-227): beyond the doorway
+
+The doorway card (J1/J2) proves install + adopt + tiny lane. Full-flow coverage
+comes from the scenario MATRIX (`scenarios.md`): one row per journey feature
+(full lane, bug/debug, gate collision, drift, resume, review response), cards
+materialized per row, generated/reconciled via the shipped SPEC-203
+test-generation loop rather than hand-authored. A multi-row run is a CAMPAIGN
+(worklist over the gauntlet engine, loop-engineering's campaign shape): run rows
+in order, doorway first; findings accumulate on the same surface; never pay for
+a full-lane probe while a doorway finding is open. J3 (full lane) is the first
+materialized full-flow card: `seed-card-user-J3.md` + its checker.
+
 ## Run day (orchestrator checklist)
 
 1. `bash tests/gauntlet/tier1.sh`, must be green before any probe round.
