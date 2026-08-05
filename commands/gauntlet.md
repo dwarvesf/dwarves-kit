@@ -34,6 +34,30 @@ Three kit shapes compose here; keep their roles straight:
 | Probe credentials | the ONLY secret the clean room gets | one spend-capped model API key; never CF / 1P / GitHub credentials |
 | Round cap | hard stop | 3 |
 
+## Bad input? Teach, then fix (never fail dry, never proceed silently)
+
+Validate every input against the table above BEFORE round 1. A bad input gets
+three beats, always in this order: name what is wrong, teach WHY it matters in
+one line, offer the concrete fix (build it, or recommend the value). Do not
+lecture past those three beats, and do not start a round on a known-bad input.
+
+| Bad input you may receive | Teach (the one line) | Then |
+|---|---|---|
+| No deterministic suite | without Tier 1, every doc typo costs a full paid probe round | offer to scaffold the suite first (red-first, gated env var); the gauntlet waits |
+| No clean-room recipe | a host machine's ambient state hides exactly the gaps the gauntlet hunts | offer a minimal Dockerfile + runner building from `git archive HEAD` |
+| No seed card, or a vague one ("improve the tests") | the card is the probe's goal contract; without acceptance criteria + a verification command, failure is unmeasurable | draft the card in the repo's template from a low-slop type and show it for approval |
+| Oversized card (> 1 agent-day, multi-feature) | a big card conflates "docs failed" with "task too hard", the findings become unreadable | re-cut to the smallest real slice; park the rest |
+| Frontier model requested as probe | a frontier probe passes DESPITE bad docs; the pass is a lie and humans do not get frontier intuition | recommend mid-tier; if the user insists, run it but record the choice in ROUNDS.md as a signal-validity caveat |
+| Prod/broad credentials offered to the clean room | the probe needs exactly one spend-capped model key; anything more is blast radius with zero signal gain | refuse the credential, name the one key needed |
+| No submission checker | "looks submitted" is not an oracle; the checker is what makes a pass falsifiable | derive one from the card's verification command (patch applies + that command passes + PR body present) |
+| Dirty working tree ("just test my uncommitted docs") | the clean room builds from committed state; uncommitted fixes do not exist for the probe | ask for a commit (or commit to a branch), then run |
+
+If three or more inputs are missing, say plainly that the repo is not
+gauntlet-ready yet, list the gaps in build order (suite -> clean room -> card ->
+checker), and offer to build them as ordinary tasks first. That is a good
+outcome, not a failed run: the checklist IS the first round's findings, obtained
+free. Point the user at `docs/guides/gauntlet.md` for the full checklist.
+
 ## Telemetry, logging, learning (SPEC-226; all on existing rails)
 
 - Bracket the run: `bash lib/gate/gate-ledger.sh outcome <rid> gauntlet start`
@@ -151,7 +175,7 @@ tools (use the eval experiment shape), or repos with no outside contributors.
 ## Companion docs
 
 - Operator/user how-to (checklist, invoking, reading the verdict):
-  `docs/gauntlet-user-guide.md`.
+  `docs/guides/gauntlet.md`.
 - Kit-dev positioning (execute-pipeline mapping, V-model placement, mega-goal
   relation, the floor-then-loop run design, ten known limits with mitigations):
   `docs/patterns/gauntlet.md`. Read it before your first run.

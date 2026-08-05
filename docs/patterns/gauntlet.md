@@ -7,6 +7,45 @@ gauntlet relates to the orchestration workflow, the V-model, and mega-goals, how
 run it right, and where its known limits are. Read this before your first run; read
 the command during one.
 
+## 0. The round, drawn once
+
+The three composed shapes, labeled where each lives:
+
+```
+ ┌────────────────────────────── round N ───────────────────────────────┐
+ │                                                                      │
+ │   TIER 1 · deterministic suite (cheap, every round)                  │
+ │      red? ──> findings recorded, probe never runs this round         │
+ │      green ▼                                                         │
+ │                                                                      │
+ │   TIER 2 · the probe                                 [GOAL shape]    │
+ │   ┌──────────────── fresh clean room ─────────────┐                  │
+ │   │ built from git archive HEAD, nothing reused   │                  │
+ │   │ synthetic dev (mid-tier model) + capped key   │                  │
+ │   │ receives: repo + ONE seed card (goal contract:│                  │
+ │   │   outcome + acceptance + verification cmd)    │                  │
+ │   │ must: set up -> implement -> verify -> submit │                  │
+ │   │ NEVER coached: an unanswerable question       │                  │
+ │   │ IS a finding                                  │                  │
+ │   └───────────────────┬───────────────────────────┘                  │
+ │                       ▼                                              │
+ │   SCORE: submission checker (deterministic) + transcript mining      │
+ │      BLOCKER stuck · MAJOR knowledge gap · MINOR friction            │
+ │                       ▼                                              │
+ │   PERSIST the round record, pass or FAIL          [EVAL shape]       │
+ │      ROUNDS.md ledger + round-N/{findings, transcript,               │
+ │      submission, surface-diff} + cost columns                        │
+ │                       ▼                                              │
+ │   CONVERGE?                                        [LOOP shape]      │
+ │      checker green + K=0 (replicated) ──> STOP: unaided pass (SOLID) │
+ │      severity fell, N < 3 ──> REVISE: reviser (never the probe)      │
+ │                               edits surface globs ONLY, commits,     │
+ │                               TEARS DOWN, respins ──> round N+1      │
+ │      else ──────────────────> STOP: honest halt (RECONSIDER,         │
+ │                               naming what the surface still lacks)   │
+ └──────────────────────────────────────────────────────────────────────┘
+```
+
 ## 1. Relation to the orchestration workflow
 
 The gauntlet is an opt-in side-flow (WORKFLOW.md, side-flow 11), never a lane phase.
