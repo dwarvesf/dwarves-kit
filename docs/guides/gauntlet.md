@@ -55,6 +55,29 @@ Everything lands in `docs/verification/gauntlet/<date>-<slug>/`:
 | REVISE | improving, but the round cap hit | read ROUNDS.md, apply the open findings yourself, rerun later (often one more round) |
 | RECONSIDER | not converging; the docs have a structural gap | the gap list names what is missing; this usually means a missing tool or doc, not a wording fix. It also lands on your weekend paydown ledger |
 
+## Worked example: gauntleting the kit itself
+
+The kit's own contributor surface can take the gauntlet, with one decision made
+first: **which persona?** The kit has two, and they need separate runs:
+
+- **The kit USER**: someone adopting the kit in their repo from the docs alone.
+- **The kit CONTRIBUTOR**: someone changing the kit's own code.
+
+The user-persona preparation, mapped to the checklist above:
+
+| Input | For the kit it means |
+|---|---|
+| Surface globs | README, MANUAL, `/kit:onboard` + `/kit:adopt` docs, this guides/ series |
+| Tier 1 suite | deterministic checks that already exist: `kit-health`, `adopt --check` against a fixture repo, install-mode detection; gather them under one runnable entry first |
+| Clean room | a container with git + node + the claude CLI + a capped API key; the kit arrives as a tarball, NOT pre-installed, installing it IS part of day one |
+| Seed card | "adopt the kit into this fixture repo and ship one tiny-lane change through the loop", exercises onboard, adopt, a lane, and the ship gate in one card |
+| Submission checker | assert the artifacts the loop must leave behind: AGENTS.md injected, a spec file exists, gate-ledger rows present, a PR-shaped branch with the change |
+| Probe | mid-tier model, as always |
+
+The contributor persona differs in surface (CONTRIBUTING-level docs, lib/
+conventions, the proof-gate rules) and seed card (a small kit fix through the
+kit's own gates). Run it second; the user persona finds the louder gaps first.
+
 ## Common questions
 
 - **"The probe failed on something obvious."** Obvious to you. That is the curse
