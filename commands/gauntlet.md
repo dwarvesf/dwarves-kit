@@ -108,6 +108,18 @@ what justifies each surface change (same rule as the debug loop's evidence ledge
    before the next round.
 6. **Honest halt is a real outcome.** RECONSIDER with a named gap list beats a
    fourth round. Report it; the human decides what changes.
+7. **No answer key in the room.** Exclude the gauntlet's own directory and
+   `docs/verification/gauntlet/` from the clean-room image, and scan the
+   transcript for answer-key reads before trusting a pass.
+8. **Scrub before persisting.** The probe's env holds the API key and
+   transcripts echo environments; scrub the key (and anything
+   credential-shaped) from every persisted transcript. The run record lives in
+   git forever.
+9. **A pass must replicate.** One probe run is one sample; require the final
+   green round to repeat once (two consecutive unaided passes) before SOLID.
+10. **Graduate findings into Tier 1.** Any finding reducible to a mechanical
+    check moves into the deterministic suite; future rounds get cheaper and the
+    probe is reserved for what only an agent can discover.
 
 ## When to reach for this
 
@@ -119,6 +131,12 @@ what justifies each surface change (same rule as the debug loop's evidence ledge
 
 Not for: evaluating the MODEL (fix the surface, not the probe), benchmarking
 tools (use the eval experiment shape), or repos with no outside contributors.
+
+## Positioning, V-model placement, mega-goal relation, known limits
+
+`docs/patterns/gauntlet.md`. Read it before your first run; it carries the
+floor-then-loop run design (build Tier 1 green deterministically, let the loop
+find everything above it) and the ten known limits with their mitigations.
 
 ## Lineage
 
