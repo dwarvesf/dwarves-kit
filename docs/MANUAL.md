@@ -29,6 +29,7 @@ You do not memorize commands. Say what you want; the kit reads your intent, runs
 | "run the full lane, your call" | the lane, autonomously | anti-rationalization (in a /goal loop) | hard stops + push/PR |
 | "fix this bug / it regressed" | `/kit:debug` (bug lane) | guess-fix guard | root cause + human-confirm |
 | "review this" / "ship it" | `/kit:review[-team]` / `/kit:ship` | ship gate, push-to-main | DO-NOT-SHIP verdict; the push/PR |
+| "can a new dev work here from the docs alone" / "test our onboarding" | `/kit:gauntlet` | clean-room probe rounds, surface revisions between rounds | SOLID / REVISE / RECONSIDER (guide: `docs/gauntlet-user-guide.md`) |
 
 For the full playbook (every scenario, the autonomy dial, the freeform front door) see `## Operator scenarios`. For a per-command lookup see `## Command reference`. Hooks fire on their own; commands and skills are invoked, by you or by Claude reading your intent.
 

@@ -34,6 +34,22 @@ Three kit shapes compose here; keep their roles straight:
 | Probe credentials | the ONLY secret the clean room gets | one spend-capped model API key; never CF / 1P / GitHub credentials |
 | Round cap | hard stop | 3 |
 
+## Telemetry, logging, learning (SPEC-226; all on existing rails)
+
+- Bracket the run: `bash lib/gate/gate-ledger.sh outcome <rid> gauntlet start`
+  before round 1, `... end caught=<true if any finding>` after the verdict, and
+  `... record <rid> gauntlet ran "rounds=N verdict=<V> unaided=<bool>"`.
+- After each round's scoring, emit the observe-parseable marker:
+  `[[QL-VERDICT round=N clean=<K==0> findings=K]]` (same grammar as
+  test-plan-review-team; observe needs no change).
+- ROUNDS.md's per-round row carries wall-clock and token cost; the run record IS
+  the economics telemetry.
+- On RECONSIDER, write one debt row so the weekend paydown surfaces it:
+  `bash lib/gate/gate-ledger.sh debt <rid> significance=high worthiness=high
+  verdict=wave reason="gauntlet: surface not converging | gaps: <list> | next: <one line>"`.
+  When a finding graduates into Tier 1 (rule 10), append one ROUNDS.md line
+  naming the finding and its new deterministic check.
+
 ## The loop
 
 ```
@@ -132,11 +148,14 @@ what justifies each surface change (same rule as the debug loop's evidence ledge
 Not for: evaluating the MODEL (fix the surface, not the probe), benchmarking
 tools (use the eval experiment shape), or repos with no outside contributors.
 
-## Positioning, V-model placement, mega-goal relation, known limits
+## Companion docs
 
-`docs/patterns/gauntlet.md`. Read it before your first run; it carries the
-floor-then-loop run design (build Tier 1 green deterministically, let the loop
-find everything above it) and the ten known limits with their mitigations.
+- Operator/user how-to (checklist, invoking, reading the verdict):
+  `docs/gauntlet-user-guide.md`.
+- Kit-dev positioning (execute-pipeline mapping, V-model placement, mega-goal
+  relation, the floor-then-loop run design, ten known limits with mitigations):
+  `docs/patterns/gauntlet.md`. Read it before your first run.
+- Telemetry / logging / learning contract: `docs/specs/SPEC-226-gauntlet-telemetry-learning.md`.
 
 ## Lineage
 
