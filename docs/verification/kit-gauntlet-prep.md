@@ -28,6 +28,28 @@ negative controls above prove the checker's failure behavior today. Rollback:
 the scenario pack is additive files only; reverting the commit restores the
 prior prep with no state to unwind.
 
+## Recorded runs (gate format)
+
+Command: bash tests/gauntlet/tier1.sh
+Exit: 0
+Verdict: PASS (TIER1: GREEN, 15 checks)
+
+Command: mv commands/gauntlet.md away && bash tests/gauntlet/tier1.sh
+Exit: 1
+Verdict: PASS as negative control (TIER1: RED, FAIL doc: commands/gauntlet.md); restored, rerun Exit: 0
+
+Command: bash tests/gauntlet/check-submission-user-J3.sh <untouched fixture>
+Exit: 1
+Verdict: PASS as negative control (SUBMISSION: RED)
+
+Command: bash tests/gauntlet/check-submission-user-J3.sh <fixture with BLOCKED.md>
+Exit: 3
+Verdict: PASS (honest-stop shape honored)
+
+Rollback note: all changes on this branch are additive files (tests/gauntlet/*,
+one spec, this proof); revert the commits and nothing remains to unwind, no
+state, no config, no deployment was touched.
+
 ## Not run here
 
 The clean-room build (`cleanroom/run.sh`) and the probe rounds themselves: those
