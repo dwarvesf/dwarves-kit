@@ -22,13 +22,26 @@ round (master state, `tests/gauntlet/tier1.sh`).
 |---|---|---|---|---|---|---|---|---|
 | 1 | Air (local) | 3 | MAJOR | RED in-room (harness F2); adoption independently green | 8m15s | $2.86 | 67 | Card COMPLETED unaided; 1 surface + 2 harness findings |
 | 2 | Mini (remote) | 1 | MINOR | **GREEN, 6/6** | 5m00s | $2.39 | 69 | Card COMPLETED unaided, checker fully green; F1 fix verified live; 1 minor surface finding (F4) |
+| 3 | Mini (remote) | 0 | none | **GREEN, 6/6** | 4m17s | $2.05 | 65 | Clean replication on the same surface; no new findings |
 
 [[QL-VERDICT round=1 clean=false findings=3]]
 [[QL-VERDICT round=2 clean=false findings=1]]
+[[QL-VERDICT round=3 clean=true findings=0]]
 
-Severity trajectory: MAJOR -> MINOR (falling). Round 2 is the first fully
-clean pass; rule 9 wants that repeated once on the SAME surface before SOLID,
-so the doorway sits at REVISE with one replication round outstanding.
+Severity trajectory: MAJOR -> MINOR -> none (converged). Rounds 2 and 3 are
+two consecutive unaided clean passes on the SAME surface, which is what rule 9
+requires.
+
+## VERDICT: SOLID
+
+A synthetic dev, given only what an outside contributor gets, installs the
+kit, adopts a repo, and ships a tiny-lane change through the loop, unaided,
+repeatably. The doorway row (J1/J2) is closed; the campaign may climb to J3
+(full lane).
+
+Open, non-blocking: F4 (the prereq message assumes a package manager; both
+probes fell back to a static binary in a rootless container). Standing caveat:
+rounds used the shared Toolkit key, not a dedicated spend-capped probe item.
 
 ## The remote runner's own shakedown (harness findings H1-H5)
 
@@ -63,6 +76,6 @@ doorway; F1 is the round's real catch.
 
 ## Next
 
-Round 3: replication of round 2's clean pass on the same surface (rule 9),
-runner host `mini-tieubao`. A second GREEN makes the doorway SOLID and clears
-the campaign to climb to J3 (full lane).
+J3 (full lane): the first genuinely full-flow row, its card and checker are
+already built (`seed-card-user-J3.md`). Campaign order and budget:
+`tests/gauntlet/README.md`.

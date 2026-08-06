@@ -1,0 +1,2 @@
+b601033 fix: correct README CLI flag to match cli.js (--upper)
+c4d4fcd chore: fixture seed
