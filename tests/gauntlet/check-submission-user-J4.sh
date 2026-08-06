@@ -23,9 +23,11 @@ echo "== the regression is fixed"
 check "the repo's test command passes" bash -c "cd '${REPO}' && npm test --silent"
 
 echo "== the fix traces to the diagnosis"
-check "fix commit or ledger references the root cause" bash -c "
-  git -C '${REPO}' log --all -1 --format=%B | grep -qi 'root cause\|debug' \
-    || ls '${REPO}'/.claude/debug/*.md >/dev/null 2>&1
+# Distinct from the ledger-exists check above: the COMMIT itself must carry
+# the traceability (card acceptance criterion 3), not merely coexist with a
+# ledger file.
+check "fix commit message references the root cause" bash -c "
+  git -C '${REPO}' log --all -1 --format=%B | grep -qi 'root cause\|because\|debug'
 "
 
 echo "== process leave-behinds"

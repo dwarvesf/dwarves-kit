@@ -105,3 +105,21 @@ rows, `check-lib.sh`, `make-card.sh`, 8 new `seed-card-user-J*.md` cards, 8 new
 row-scoped fixture plants). `git revert` of this branch's commit(s) restores
 the prior state exactly; nothing outside `tests/gauntlet/` and
 `docs/verification/gauntlet-scenario-build.md` is touched.
+
+## Recheck-verifier pass (fresh context, Opus) + advisory fixes
+
+Independent re-execution reproduced every recorded row (tier1 GREEN; make-card
+J1-J11 exit 0; bare-repo controls exit 1; BLOCKED controls exit 3; J4
+green/red fixture pair). Two advisory findings applied:
+
+Command: bash tests/gauntlet/tier1.sh  (after J9 branch-capture fix + J4 check-4 tightening)
+Exit: 0
+Verdict: PASS (TIER1: GREEN)
+
+Command: bash tests/gauntlet/check-submission-user-J4.sh <bare repo>
+Exit: 1
+Verdict: PASS as negative control (still RED after tightening)
+
+Fixes: run.sh J9 plant captures the seed branch instead of assuming master
+(host init.defaultBranch varies); J4 checker's traceability check now tests
+the commit message itself, no longer satisfied by the ledger's mere existence.

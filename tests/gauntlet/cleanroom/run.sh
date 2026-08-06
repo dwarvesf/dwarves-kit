@@ -140,12 +140,14 @@ EOF
     if [ "${ROW}" = "J9" ]; then
       # Concurrent-contributor plant: a second, already-in-flight branch
       # touching the same file, left checked out on its own branch so the
-      # probe starts on master and must notice it before diving in.
+      # probe starts on the default branch and must notice it first.
+      # Capture the seed branch; the host's init.defaultBranch varies.
+      SEED_BRANCH="$(git -C "${FIX}" rev-parse --abbrev-ref HEAD)"
       git -C "${FIX}" checkout -qb other/logging-tweak
       sed -i.bak 's/usage: cli.js --upper/usage: shout --upper/' "${FIX}/cli.js"
       rm -f "${FIX}/cli.js.bak"
       git -C "${FIX}" add -A && git -C "${FIX}" commit -qm "chore: tweak usage text (other contributor, in flight)"
-      git -C "${FIX}" checkout -q master
+      git -C "${FIX}" checkout -q "${SEED_BRANCH}"
     fi
 
     # make-card.sh knows matrix rows (J1..J11), not the "doorway" alias;
