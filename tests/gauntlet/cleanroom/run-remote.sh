@@ -21,8 +21,10 @@ source lib/config/kit-config.sh
 HOST="${GAUNTLET_RUNNER_HOST:-$(kit_config_get gauntlet.runner_host local)}"
 KEY_REF="$(kit_config_get gauntlet.probe_key_ref "op://Toolkit/anthropic-api-key/credential")"
 
-PROMPT="You are a new contributor. Read /work/CARD.md and follow the repo's own docs. Complete the card. Submit per the docs. Work autonomously; when done or blocked, stop."
-PROBE_DEFAULT="timeout 1800 bash -c 'echo \"${PROMPT}\" | claude -p --dangerously-skip-permissions --model claude-sonnet-5 --output-format stream-json --verbose > /work/transcript.jsonl 2>/work/probe-stderr.log'; echo probe-exit=\$?"
+# The prompt lives in /work/PROMPT.txt (written by run.sh); the command never
+# quotes it. Keeping data out of command strings is what ended the quoting-bug
+# class this runner hit three times.
+PROBE_DEFAULT="timeout 1800 claude -p --dangerously-skip-permissions --model claude-sonnet-5 --output-format stream-json --verbose < /work/PROMPT.txt > /work/transcript.jsonl 2>/work/probe-stderr.log; echo probe-exit=\$?"
 
 if [ "${HOST}" = "local" ]; then
   RUN_OUT="${OUT}" PROBE_CMD="${PROBE_CMD:-${PROBE_DEFAULT}}" \

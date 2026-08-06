@@ -195,6 +195,11 @@ if [ -n "${PROBE_CMD:-}" ]; then
   # The probe command goes into a FILE, never through `bash -c "...${VAR}"`:
   # it legitimately contains both quote species (round-2 finding, three
   # separate quoting failures), and a file has no quoting layer to shatter.
+  # The prompt is DATA: it lives in a file and is never quoted into a command
+  # (it contains an apostrophe, which shattered three different quoting layers
+  # before this). Override with GAUNTLET_PROMPT.
+  probe_prompt="${GAUNTLET_PROMPT:-You are a new contributor. Read /work/CARD.md and follow the documentation shipped in this repository. Complete the card. Submit per the docs. Work autonomously; when done or blocked, stop.}"
+  printf '%s\n' "${probe_prompt}" > "${STAGE}/work/PROMPT.txt"
   cat > "${STAGE}/work/.probe-cmd.sh" <<PROBE_EOF
 mkdir -p /tmp/probe-home
 git config --global init.defaultBranch main
