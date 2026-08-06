@@ -41,14 +41,25 @@ echo "== running round on ${HOST} (persona=${PERSONA} row=${ROW})"
 # host, run the round, leave the record in ${RDIR}/out.
 DRIVER="$(mktemp)"
 trap 'rm -f "${DRIVER}"' EXIT
+# The probe command crosses ssh base64-encoded: it nests quotes three deep
+# (round-2 finding: a single-quoted export shattered on the prompt's own
+# apostrophe and ran the redirect on the HOST instead of in the room).
+PROBE_B64="$(printf '%s' "${PROBE_CMD:-${PROBE_DEFAULT}}" | base64 | tr -d '\n')"
 cat > "${DRIVER}" <<EOF
 set -euo pipefail
 cd "${RDIR}"
 docker info >/dev/null 2>&1 || colima start --cpu 2 --memory 4
-ANTHROPIC_API_KEY="\$(secret-cache-read --ttl 3600 ANTHROPIC_API_KEY ${KEY_REF})"
+# Cache first (zero 1P calls on a hit). A non-interactive Keychain session
+# cannot cache and leaves a 6h suppression marker (round-2 finding), so fall
+# back to one direct read per ROUND, never per tick. On a host running 1P
+# Connect this costs no service-account quota.
+ANTHROPIC_API_KEY="\$(secret-cache-read --ttl 3600 ANTHROPIC_API_KEY ${KEY_REF} 2>/dev/null || true)"
+[ -n "\${ANTHROPIC_API_KEY}" ] || ANTHROPIC_API_KEY="\$(op read '${KEY_REF}' 2>/dev/null || true)"
+[ -n "\${ANTHROPIC_API_KEY}" ] || { echo "probe key resolved EMPTY on the runner host (cache suppressed AND op read failed; check the host's 1P session)" >&2; exit 65; }
 export ANTHROPIC_API_KEY
 export RUN_OUT="\$PWD/out"
-export PROBE_CMD='${PROBE_CMD:-${PROBE_DEFAULT}}'
+PROBE_CMD="\$(printf '%s' '${PROBE_B64}' | base64 -d)"
+export PROBE_CMD
 bash tests/gauntlet/cleanroom/run.sh "${PERSONA}" "${ROW}"
 EOF
 ssh "${HOST}" bash -s < "${DRIVER}"
