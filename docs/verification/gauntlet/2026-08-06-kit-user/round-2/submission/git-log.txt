@@ -1,0 +1,3 @@
+2583e24 fix: correct README example flag from --uppercase to --upper
+2b317dd chore: adopt dwarves-kit operate-contract
+e1f517f chore: fixture seed

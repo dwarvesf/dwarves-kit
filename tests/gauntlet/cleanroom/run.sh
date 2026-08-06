@@ -14,14 +14,30 @@ ROW="${2:-doorway}"
 KIT_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "${KIT_ROOT}"
 
-STAGE="$(mktemp -d)"
+# The stage dir is BIND-MOUNTED into the room, so it must live somewhere the
+# container runtime can actually see. Docker Desktop/OrbStack share the macOS
+# temp dir; colima's VM shares only $HOME and a couple of fixed paths, so a
+# /var/folders stage silently mounts EMPTY there (round-2 finding). Callers on
+# such a host set GAUNTLET_STAGE_DIR to a path under $HOME.
+if [ -n "${GAUNTLET_STAGE_DIR:-}" ]; then
+  mkdir -p "${GAUNTLET_STAGE_DIR}"
+  STAGE="$(mktemp -d "${GAUNTLET_STAGE_DIR%/}/room.XXXXXX")"
+else
+  STAGE="$(mktemp -d)"
+fi
 trap 'rm -rf "${STAGE}"' EXIT
 mkdir -p "${STAGE}/work/checks"
 
 # The kit as a tarball of COMMITTED state, minus the answer key (rule 7):
 # the gauntlet dir and any prior run records never enter the room.
 mkdir -p "${STAGE}/kit-src"
-git archive HEAD | tar -x -C "${STAGE}/kit-src"
+if [ -n "${GAUNTLET_SRC_TAR:-}" ] && [ -f "${GAUNTLET_SRC_TAR}" ]; then
+  # Remote round: the caller already exported committed state (this checkout
+  # is a tarball extraction, not a git repo, so git archive would fail here).
+  tar -x -f "${GAUNTLET_SRC_TAR}" -C "${STAGE}/kit-src"
+else
+  git archive HEAD | tar -x -C "${STAGE}/kit-src"
+fi
 # Rule 7, widened after round 1 (the kit-gauntlet-prep proof leaked in and
 # named the checker's home): strip EVERY gauntlet-named artifact, not just the
 # two known dirs.
@@ -176,6 +192,20 @@ docker build -q -f tests/gauntlet/cleanroom/Dockerfile -t kit-gauntlet-room test
 echo "Room ready. The probe's instruction is: read /work/CARD.md and follow the kit's own docs."
 
 if [ -n "${PROBE_CMD:-}" ]; then
+  # The probe command goes into a FILE, never through `bash -c "...${VAR}"`:
+  # it legitimately contains both quote species (round-2 finding, three
+  # separate quoting failures), and a file has no quoting layer to shatter.
+  # The prompt is DATA: it lives in a file and is never quoted into a command
+  # (it contains an apostrophe, which shattered three different quoting layers
+  # before this). Override with GAUNTLET_PROMPT.
+  probe_prompt="${GAUNTLET_PROMPT:-You are a new contributor. Read /work/CARD.md and follow the documentation shipped in this repository. Complete the card. Submit per the docs. Work autonomously; when done or blocked, stop.}"
+  printf '%s\n' "${probe_prompt}" > "${STAGE}/work/PROMPT.txt"
+  cat > "${STAGE}/work/.probe-cmd.sh" <<PROBE_EOF
+mkdir -p /tmp/probe-home
+git config --global init.defaultBranch main
+cd /work
+${PROBE_CMD}
+PROBE_EOF
   # Headless round: run the probe command instead of an interactive shell.
   # -u node because the claude CLI refuses permission-bypass as root; a fresh
   # HOME keeps the probe's config disposable with the room.
@@ -185,7 +215,7 @@ if [ -n "${PROBE_CMD:-}" ]; then
     -e GIT_COMMITTER_NAME="Gauntlet Probe" -e GIT_COMMITTER_EMAIL=probe@gauntlet.local \
     -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
     -v "${STAGE}/work:/work" \
-    kit-gauntlet-room bash -c "mkdir -p /tmp/probe-home && git config --global init.defaultBranch main && cd /work && ${PROBE_CMD}"
+    kit-gauntlet-room bash /work/.probe-cmd.sh
   rc=$?
   # Persist the room's contents before the stage trap wipes them: the round
   # record (transcript, submission, fixture state) must outlive the room.
