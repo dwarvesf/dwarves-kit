@@ -1,0 +1,4 @@
+ install.sh                              | 11 +++++++++++
+ tests/gauntlet/check-submission-user.sh | 11 ++++++++++-
+ tests/gauntlet/cleanroom/run.sh         | 29 ++++++++++++++++++++++++++++-
+ 3 files changed, 49 insertions(+), 2 deletions(-)

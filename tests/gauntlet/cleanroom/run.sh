@@ -22,7 +22,11 @@ mkdir -p "${STAGE}/work/checks"
 # the gauntlet dir and any prior run records never enter the room.
 mkdir -p "${STAGE}/kit-src"
 git archive HEAD | tar -x -C "${STAGE}/kit-src"
-rm -rf "${STAGE}/kit-src/tests/gauntlet" "${STAGE}/kit-src/docs/verification/gauntlet"
+# Rule 7, widened after round 1 (the kit-gauntlet-prep proof leaked in and
+# named the checker's home): strip EVERY gauntlet-named artifact, not just the
+# two known dirs.
+rm -rf "${STAGE}/kit-src/tests/gauntlet"
+find "${STAGE}/kit-src/docs/verification" -name '*gauntlet*' -exec rm -rf {} + 2>/dev/null || true
 tar -czf "${STAGE}/work/kit.tar.gz" -C "${STAGE}/kit-src" .
 
 # row_checker <row> -- the check-submission-user*.sh filename for a matrix row
@@ -170,6 +174,29 @@ esac
 
 docker build -q -f tests/gauntlet/cleanroom/Dockerfile -t kit-gauntlet-room tests/gauntlet/cleanroom
 echo "Room ready. The probe's instruction is: read /work/CARD.md and follow the kit's own docs."
+
+if [ -n "${PROBE_CMD:-}" ]; then
+  # Headless round: run the probe command instead of an interactive shell.
+  # -u node because the claude CLI refuses permission-bypass as root; a fresh
+  # HOME keeps the probe's config disposable with the room.
+  docker run --rm \
+    -u node -e HOME=/tmp/probe-home \
+    -e GIT_AUTHOR_NAME="Gauntlet Probe" -e GIT_AUTHOR_EMAIL=probe@gauntlet.local \
+    -e GIT_COMMITTER_NAME="Gauntlet Probe" -e GIT_COMMITTER_EMAIL=probe@gauntlet.local \
+    -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    -v "${STAGE}/work:/work" \
+    kit-gauntlet-room bash -c "mkdir -p /tmp/probe-home && git config --global init.defaultBranch main && cd /work && ${PROBE_CMD}"
+  rc=$?
+  # Persist the room's contents before the stage trap wipes them: the round
+  # record (transcript, submission, fixture state) must outlive the room.
+  if [ -n "${RUN_OUT:-}" ]; then
+    mkdir -p "${RUN_OUT}"
+    cp -R "${STAGE}/work/." "${RUN_OUT}/"
+    echo "room contents persisted to ${RUN_OUT}"
+  fi
+  exit "${rc}"
+fi
+
 docker run --rm -it \
   -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
   -v "${STAGE}/work:/work" \

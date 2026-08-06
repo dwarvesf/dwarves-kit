@@ -1,0 +1,4 @@
+220bd41 docs: add PR description for README CLI flag fix
+d1b8dbe fix: correct README CLI flag from --uppercase to --upper
+086ddb6 chore: adopt dwarves-kit operate-contract
+dc0464c chore: fixture seed

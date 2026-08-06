@@ -14,6 +14,17 @@
 
 set -euo pipefail
 
+# Fail fast on missing prerequisites (gauntlet round-1 finding: an unguarded
+# jq call at the settings-merge step crashed MID-install on a jq-less machine;
+# the front door must refuse before any write happens).
+for prereq in jq git; do
+  if ! command -v "${prereq}" >/dev/null 2>&1; then
+    echo "dwarves-kit install requires '${prereq}' (README: Requirements)." >&2
+    echo "Install it first (brew/apt, or a static binary on PATH), then re-run." >&2
+    exit 1
+  fi
+done
+
 KIT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAUDE_DIR="${CLAUDE_DIR:-$HOME/.claude}"   # overridable for fixture installs (SPEC-066)
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"

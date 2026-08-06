@@ -33,6 +33,7 @@ Three kit shapes compose here; keep their roles straight:
 | Probe model | the synthetic dev | Sonnet, DELIBERATELY not frontier: a smarter model succeeds despite bad docs and destroys the signal |
 | Probe credentials | the ONLY secret the clean room gets | one spend-capped model API key; never CF / 1P / GitHub credentials |
 | Round cap | hard stop | 3 |
+| Runner host | where rounds physically run | `kit.toml` `[gauntlet] runner_host`: "local", or an ssh alias (an always-on host suits long campaigns and the resume scenario); `run-remote.sh` ships committed state, runs there, pulls the record back. The probe key resolves ON the runner host from `gauntlet.probe_key_ref`, never traveling over ssh |
 
 ## Bad input? Teach, then fix (never fail dry, never proceed silently)
 
