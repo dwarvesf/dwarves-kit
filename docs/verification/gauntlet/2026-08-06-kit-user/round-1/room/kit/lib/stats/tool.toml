@@ -1,0 +1,25 @@
+name = "stats"
+status = "active"
+summary = "Read-only DuckDB lens + agent-callable CLI over the scattered kit/tide/tg-cleanup/learned ledgers, with a render skill and an anomaly-detection feedback loop"
+language = "python"
+created = 2026-07-03
+
+# Migrated into dwarves-kit (goal 05K, 2026-07-05): this tool now lives at
+# dwarves-kit/lib/stats/, since it reads gate-ledger data that already lives
+# in this repo (kit_gates/kit_runs). Note: dwarves-kit has no MANIFEST.md/CONSUMERS.md-style
+# registry as of this writing (unlike ops-toolkit's SPEC-044-lite flywheel this schema was
+# authored against), so this file is not read by any live tooling in this repo today; it is
+# kept for continuity with the tool's own history and in case a kit-side index lands later.
+#
+# Consumer repos that use this tool's output. ops-toolkit is now a CONSUMER of the kit's
+# copy (its own former copy retires in a paired sub-goal, 05R): the render skill and the
+# `ledger anomalies --propose` feedback loop are agent-driven, on-demand, and point at
+# ops-toolkit-specific sources (BACKLOG_STAGE_STAGING/BACKLOG_STAGE_BACKLOG/OPS_TOOLKIT) only when
+# an operator sets them explicitly -- no default post-move (05K adapter-default split).
+consumers = ["ops-toolkit"]
+
+# Sources it reads (all read-only, in place). Not external services; local ledger stores.
+systems = ["dwarves-kit-logs", "tide-state-sqlite", "tg-cleanup-json", "learned-ledger-md", "rejected-findings-md"]
+
+# No credentials: every source is a local file read read-only. No 1Password refs.
+secrets = []

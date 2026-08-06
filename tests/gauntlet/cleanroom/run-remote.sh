@@ -18,7 +18,7 @@ OUT="${3:-${KIT_ROOT}/docs/verification/gauntlet/$(date +%Y-%m-%d)-${PERSONA}-${
 
 # shellcheck source=lib/config/kit-config.sh
 source lib/config/kit-config.sh
-HOST="$(kit_config_get gauntlet.runner_host local)"
+HOST="${GAUNTLET_RUNNER_HOST:-$(kit_config_get gauntlet.runner_host local)}"
 KEY_REF="$(kit_config_get gauntlet.probe_key_ref "op://Toolkit/anthropic-api-key/credential")"
 
 PROMPT="You are a new contributor. Read /work/CARD.md and follow the repo's own docs. Complete the card. Submit per the docs. Work autonomously; when done or blocked, stop."

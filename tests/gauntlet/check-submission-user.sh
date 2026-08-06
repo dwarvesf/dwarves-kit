@@ -4,7 +4,16 @@
 set -uo pipefail
 
 REPO="${1:?usage: check-submission-user.sh <fixture-repo>}"
-KIT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+# Kit-root resolution, room-safe (gauntlet round-1 finding: ../.. from
+# /work/checks resolved to /): env override first, then the probe's own
+# installed kit, then the source-tree relative path.
+if [ -n "${KIT_ROOT:-}" ]; then
+  :
+elif [ -d "${HOME}/.claude/dwarves-kit/lib" ]; then
+  KIT_ROOT="${HOME}/.claude/dwarves-kit"
+else
+  KIT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+fi
 
 fail=0
 check() { local name="$1"; shift; if "$@" >/dev/null 2>&1; then echo "PASS  ${name}"; else echo "FAIL  ${name}"; fail=1; fi; }

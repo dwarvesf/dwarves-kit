@@ -1,0 +1,64 @@
+{
+  "version": 2,
+  "plugins": {
+    "ponytail@ponytail": [
+      {
+        "scope": "user",
+        "installPath": "/fixture/cache/ponytail/ponytail/4.7.0",
+        "version": "4.7.0",
+        "installedAt": "2026-06-20T03:58:29.566Z",
+        "lastUpdated": "2026-06-20T03:58:29.566Z",
+        "gitCommitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "superpowers@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/fixture/cache/claude-plugins-official/superpowers/6.0.3",
+        "version": "6.0.3",
+        "installedAt": "2026-04-20T09:09:03.875Z",
+        "lastUpdated": "2026-06-19T00:58:29.877Z",
+        "gitCommitSha": "1111111111111111111111111111111111111111"
+      }
+    ],
+    "playwright@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/fixture/cache/claude-plugins-official/playwright/unknown",
+        "version": "unknown",
+        "installedAt": "2026-04-20T09:08:44.303Z",
+        "lastUpdated": "2026-06-20T04:37:47.162Z",
+        "gitCommitSha": "5555555555555555555555555555555555555555"
+      }
+    ],
+    "swift-lsp@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/fixture/cache/claude-plugins-official/swift-lsp/1.0.0",
+        "version": "1.0.0",
+        "installedAt": "2026-05-15T17:12:07.998Z",
+        "lastUpdated": "2026-05-15T17:12:07.998Z"
+      }
+    ],
+    "kit@dwarves-marketplace": [
+      {
+        "scope": "user",
+        "installPath": "/fixture/cache/dwarves-marketplace/kit/1.6.0",
+        "version": "1.6.0",
+        "installedAt": "2026-06-01T12:00:35.241Z",
+        "lastUpdated": "2026-06-01T12:00:35.241Z",
+        "gitCommitSha": "3333333333333333333333333333333333333333"
+      }
+    ],
+    "evil; touch /tmp/SHOULD_NOT_EXIST $(touch /tmp/SHOULD_NOT_EXIST) `touch /tmp/SHOULD_NOT_EXIST`@claude-plugins-official": [
+      {
+        "scope": "user",
+        "installPath": "/fixture/cache/claude-plugins-official/evil/0.0.1",
+        "version": "0.0.1",
+        "installedAt": "2026-06-20T00:00:00.000Z",
+        "lastUpdated": "2026-06-20T00:00:00.000Z",
+        "gitCommitSha": "9999999999999999999999999999999999999999"
+      }
+    ]
+  }
+}

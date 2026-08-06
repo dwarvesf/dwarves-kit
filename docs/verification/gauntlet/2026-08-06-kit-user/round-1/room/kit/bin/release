@@ -1,0 +1,131 @@
+#!/bin/bash
+# release , one semver tag, two channels (ID-437).
+#
+#   bin/release <X.Y.Z> [--stream-push] [--dry-run]
+#
+# Channel 1 (public, free core): bumps VERSION + .claude-plugin/plugin.json,
+# rolls CHANGELOG's [Unreleased] into [X.Y.Z], commits and tags LOCALLY.
+# Pushing the tag and cutting the GitHub Release stay HUMAN steps (printed at
+# the end) , releases are outward-facing (ID-295 rule).
+#
+# Channel 2 (paid stream): tars the stream/ payload (packs, maintained ladders,
+# Insights when they exist; CHANGELOG + tiers doc always), computes sha256, and
+# with --stream-push PUTs it to forge-api /admin/release (FORGE_ADMIN_TOKEN).
+# Clients fetch via GET /stream/latest?key=<license> , the key gates the
+# STREAM, never the runtime.
+#
+# Semver IS the license boundary: a perpetual key entitles the current MAJOR;
+# minors/patches flow through the stream; majors are rare and pre-announced.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+VER="${1:-}"; shift || true
+PUSH=0; DRY=0
+for a in "$@"; do case "$a" in
+  --stream-push) PUSH=1 ;;
+  --dry-run) DRY=1 ;;
+  *) echo "usage: bin/release <X.Y.Z> [--stream-push] [--dry-run]" >&2; exit 64 ;;
+esac; done
+[[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "semver required, got '$VER'" >&2; exit 64; }
+
+CUR="$(cat VERSION)"
+[ "$(printf '%s\n%s\n' "$CUR" "$VER" | sort -V | tail -1)" = "$VER" ] && [ "$CUR" != "$VER" ] \
+  || { echo "version must move forward: current $CUR, asked $VER" >&2; exit 1; }
+[ "$DRY" = 1 ] || [ -z "$(git status --porcelain)" ] || { echo "tree not clean" >&2; exit 1; }
+
+# Paid sources NEVER live in this repo (it is public; the private
+# dwarves-kit-stream repo is created when the first paid module ships).
+# An in-repo stream/ dir is a foot-gun: refuse it, point at --stream-src.
+if [ -d stream ]; then
+  echo "REFUSED: stream/ exists inside this (public) repo. Paid sources live in the" >&2
+  echo "private dwarves-kit-stream checkout; pass it via STREAM_SRC=<path>." >&2
+  exit 1
+fi
+
+echo "== channel 1 · public (free core) =="
+python3 - "$VER" <<'PY'
+import json, sys
+v = sys.argv[1]
+p = ".claude-plugin/plugin.json"
+d = json.load(open(p)); d["version"] = v
+open(p, "w").write(json.dumps(d, indent=2) + "\n")
+open("VERSION", "w").write(v + "\n")
+print(f"  plugin.json + VERSION -> {v}")
+PY
+# roll [Unreleased] into the new section; skeleton from git log if it was empty
+python3 - "$VER" <<'PY'
+import re, subprocess, sys, datetime
+v, today = sys.argv[1], datetime.date.today().isoformat()
+s = open("CHANGELOG.md").read()
+last = subprocess.run(["git", "describe", "--tags", "--abbrev=0"],
+                      capture_output=True, text=True).stdout.strip()
+log = subprocess.run(["git", "log", "--oneline", f"{last}..HEAD"] if last else
+                     ["git", "log", "--oneline", "-20"],
+                     capture_output=True, text=True).stdout
+skeleton = "".join(f"- {l.split(' ', 1)[1]}\n" for l in log.splitlines()[:40] if " " in l)
+if "## [Unreleased]" in s:
+    s = s.replace("## [Unreleased]", f"## [Unreleased]\n\n## [{v}] , {today}", 1)
+else:
+    s = re.sub(r"(?m)^(## \[)", f"## [{v}] , {today}\n\n{skeleton}\n\\1", s, count=1)
+open("CHANGELOG.md", "w").write(s)
+print(f"  CHANGELOG: [{v}] section rolled ({last or 'no prior tag'} -> HEAD)")
+PY
+
+echo "== channel 2 · paid stream bundle =="
+STAGE="$(mktemp -d)"
+mkdir -p "$STAGE/forge-stream"
+cp CHANGELOG.md "$STAGE/forge-stream/"
+[ -f docs/tiers.md ] && cp docs/tiers.md "$STAGE/forge-stream/"
+if [ -n "${STREAM_SRC:-}" ]; then
+  [ -d "$STREAM_SRC" ] || { echo "STREAM_SRC=$STREAM_SRC not found" >&2; exit 1; }
+  cp -R "$STREAM_SRC" "$STAGE/forge-stream/stream"
+  echo "  paid sources from $STREAM_SRC"
+fi
+printf '{"version":"%s","channel":"paid-stream"}\n' "$VER" > "$STAGE/forge-stream/manifest.json"
+TAR="$STAGE/forge-stream-$VER.tar.gz"
+tar -czf "$TAR" -C "$STAGE" forge-stream
+SHA="$(shasum -a 256 "$TAR" | cut -d' ' -f1)"
+SIZE="$(wc -c < "$TAR" | tr -d ' ')"
+echo "  bundle: $SIZE bytes, sha256 $SHA"
+
+if [ "$DRY" = 1 ]; then
+  git checkout -q -- VERSION .claude-plugin/plugin.json CHANGELOG.md
+  echo "== dry run: files restored, nothing committed; bundle left at $TAR =="
+  exit 0
+fi
+
+git add VERSION .claude-plugin/plugin.json CHANGELOG.md
+git commit -q -m "release: v$VER"
+git tag "v$VER"
+echo "  committed + tagged v$VER (locally)"
+
+if [ "$PUSH" = 1 ]; then
+  : "${FORGE_ADMIN_TOKEN:?--stream-push needs FORGE_ADMIN_TOKEN}"
+  NOTES="$(python3 -c "
+import re,sys
+s=open('CHANGELOG.md').read()
+m=re.search(r'## \[$VER\][^\n]*\n(.*?)(?=\n## \[|\Z)', s, re.S)
+print((m.group(1).strip() if m else '')[:3800])" 2>/dev/null || true)"
+  export RELEASE_NOTES="$NOTES"
+  B64="$(base64 < "$TAR" | tr -d '\n')"
+  python3 - "$VER" "$SHA" "$B64" <<'PY'
+import json, os, sys, urllib.request
+ver, sha, b64 = sys.argv[1], sys.argv[2], sys.argv[3]
+body = json.dumps({"version": ver, "sha256": sha, "bundle_b64": b64,
+                   "notes": os.environ.get("RELEASE_NOTES", "")}).encode()
+req = urllib.request.Request(
+    "https://forge-api.infras.workers.dev/admin/release", data=body,
+    headers={"Authorization": "Bearer " + os.environ["FORGE_ADMIN_TOKEN"],
+             "Content-Type": "application/json",
+             "User-Agent": "dwarves-kit-release/1"}, method="PUT")
+with urllib.request.urlopen(req, timeout=60) as r:
+    print("  stream publish: HTTP", r.status)
+PY
+fi
+
+cat <<EOF
+== human steps (outward-facing, per ID-295) ==
+  git push origin master --tags
+  gh release create v$VER --title "v$VER" --notes-file <(changelog section)
+  claude plugin marketplace update      # propagates the free core
+EOF

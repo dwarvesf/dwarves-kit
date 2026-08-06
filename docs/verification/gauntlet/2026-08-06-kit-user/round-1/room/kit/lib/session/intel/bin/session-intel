@@ -1,0 +1,366 @@
+#!/usr/bin/env python3
+"""session-intel: a weekly read-only intelligence digest for my Claude Code + repos.
+
+Assembles ONE dated digest from five sources:
+  scorecard  `stats digest` (the SPEC-135 harness scorecard)   [shell-out, degrades if missing]
+  observe    `session-observe report` (usage + latency)        [shell-out, degrades if missing]
+  sweep      `repo-sweep run` (cross-repo health)         [shell-out, degrades if missing]
+  synthesis  near-duplicate concepts across the learned-ledger + GLOSSARYs (merge proposals)
+  repeat     bash-command 3-grams repeated >= N across recent transcripts (extract-workflow proposals)
+
+Propose-don't-dispose: writes ONE digest file and never edits the ledger, GLOSSARYs, til, or boards.
+No mini.ollama, no LLM: synthesis + repeat are deterministic heuristics (a human reviews the proposals).
+
+  session-intel run [--out DIR]                         write the full digest (default ~/.claude/intel)
+  session-intel synthesis [--ledger F --glossaries D]   just the merge proposals (stdout)
+  session-intel repeat [--transcripts D --min N]        just the repeat proposals (stdout)
+
+Env for tests: SESSION_INTEL_OBSERVE_CMD, SESSION_INTEL_SWEEP_CMD, SESSION_INTEL_DIGEST_CMD
+(shell strings), SESSION_INTEL_DATE (YYYY-MM-DD).
+Stdlib only.
+"""
+import argparse
+import datetime
+import glob
+import os
+import re
+import shlex
+import subprocess
+import sys
+from collections import Counter, defaultdict
+
+
+def _repo_root():
+    """Walk up from this file to find the kit repo root (the dir holding
+    lib/session/). Repo-relative per DECISIONS.md's adapter-default invariant:
+    no hardcoded ops-toolkit/personal path, no CONSUMER_ROOT env."""
+    d = os.path.dirname(os.path.realpath(__file__))
+    for _ in range(8):
+        if os.path.isdir(os.path.join(d, "lib", "session")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    raise RuntimeError("session-intel: cannot locate the kit repo root (lib/session not found)")
+
+
+sys.path.insert(0, os.path.join(_repo_root(), "lib", "session"))
+from parse_transcript import iter_entries as _iter_transcript_entries  # noqa: E402
+
+HOME = os.path.expanduser("~")
+# OPS_TOOLKIT is a TENANT-specific corpus root (someone's learned-ledger + GLOSSARY
+# tree), not kit-internal -- required-explicit per DECISIONS.md's adapter-default
+# split, no personal-path guess. Unset -> DEFAULT_LEDGER/DEFAULT_GLOSSARIES are None,
+# which `synthesis()` already treats as "source unavailable" (honest-zero: the
+# digest's merge-proposals section reads "_none_", never a crash or a wrong guess).
+OT = os.environ.get("OPS_TOOLKIT")
+DEFAULT_OUT = os.path.join(HOME, ".claude/intel")
+DEFAULT_LEDGER = os.path.join(OT, "_meta/learned-ledger.md") if OT else None
+DEFAULT_GLOSSARIES = os.path.join(OT, "learning") if OT else None
+DEFAULT_TRANSCRIPTS = os.path.join(HOME, ".claude/projects")
+
+MERGE_TOP_N = 10  # ID-227: cap the ranked merge proposals so a busy digest stays readable
+
+# --- benign-idiom filter (ID-226) -----------------------------------------
+# repeat-detect flags repeated bash 3-grams; most of those are normal plumbing,
+# not thrash worth an extract-workflow proposal. We drop a 3-gram when its
+# command "stems" form a known benign chain, or when all three are navigation
+# noise. Keep these lists simple and additive.
+#
+# Multiplexer commands whose first arg is the meaningful verb, so the stem is
+# two tokens (e.g. "git push"); every other command stems to its first token.
+_MULTIPLEXERS = {"git", "pnpm", "npm", "yarn", "cargo", "go", "docker",
+                 "kubectl", "gh", "brew", "op", "uv", "make"}
+# Whole 3-grams (by stem) that are routine workflow plumbing, not signal.
+BENIGN_IDIOMS = {
+    ("git fetch", "git rebase", "git push"),
+    ("git fetch", "git merge", "git push"),
+    ("git pull", "git add", "git commit"),
+    ("git add", "git commit", "git push"),
+    ("git add", "git commit", "git pull"),
+    ("git status", "git add", "git commit"),
+}
+# Single commands that are navigation noise; a 3-gram made entirely of these
+# (in any order) is dropped.
+BENIGN_SINGLES = {"ls", "cd", "cat", "pwd", "echo", "clear", "which",
+                  "head", "tail", "bat", "eza", "tree"}
+
+
+def _stem(cmd):
+    """Reduce a bash command to its verb stem ("git push origin" -> "git push")."""
+    toks = cmd.split()
+    if not toks:
+        return ""
+    if toks[0] in _MULTIPLEXERS and len(toks) > 1:
+        return f"{toks[0]} {toks[1]}"
+    return toks[0]
+
+
+def _is_benign(gram):
+    """True if a " => "-joined 3-gram is a benign idiom or all navigation noise."""
+    cmds = gram.split(" => ")
+    if len(cmds) != 3:
+        return False
+    stems = tuple(_stem(c) for c in cmds)
+    if stems in BENIGN_IDIOMS:
+        return True
+    return all(s in BENIGN_SINGLES for s in stems)
+
+
+def _today():
+    """Reference date for ledger-row age scoring; honors SESSION_INTEL_DATE for tests."""
+    d = os.environ.get("SESSION_INTEL_DATE")
+    try:
+        return datetime.date.fromisoformat(d) if d else datetime.date.today()
+    except ValueError:
+        return datetime.date.today()
+
+
+def _run(cmd, timeout=120):
+    try:
+        r = subprocess.run(shlex.split(cmd), capture_output=True, text=True, timeout=timeout)
+        return (r.returncode == 0, (r.stdout or "") + (r.stderr or ""))
+    except (OSError, subprocess.SubprocessError) as e:
+        return (False, str(e))
+
+
+def _norm(s):
+    return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
+
+
+def _score_merge(v, ref):
+    """Rank key for a merge group (higher first): match count, then exact
+    duplicate over fuzzy, then oldest ledger-row age. `v` is [(raw, src, date)]."""
+    raws = [raw for raw, _, _ in v]
+    has_exact = 1 if len(raws) != len(set(raws)) else 0   # exact > fuzzy
+    dates = [d for _, _, d in v if d]
+    age = max((ref - d).days for d in dates) if dates else 0
+    return (len(v), has_exact, age)
+
+
+def synthesis(ledger, glossaries):
+    """Concept names appearing >1x (normalized) across the ledger + GLOSSARYs ->
+    merge candidates, ranked by (match count, exact>fuzzy, oldest ledger-row age)."""
+    names = []  # (normalized, raw, source, date|None)
+    if ledger and os.path.isfile(ledger):
+        for line in open(ledger, encoding="utf-8"):
+            cells = [c.strip() for c in line.split("|")]
+            if len(cells) >= 6 and re.match(r"\d{4}-\d{2}-\d{2}$", cells[1]):
+                try:
+                    d = datetime.date.fromisoformat(cells[1])
+                except ValueError:
+                    d = None
+                names.append((_norm(cells[2]), cells[2], "ledger", d))
+    if glossaries and os.path.isdir(glossaries):
+        for f in glob.glob(os.path.join(glossaries, "**", "GLOSSARY.md"), recursive=True):
+            for line in open(f, encoding="utf-8"):
+                m = re.match(r"#{2,4}\s+(.+)", line)
+                if m:
+                    names.append((_norm(m.group(1)), m.group(1).strip(),
+                                  os.path.relpath(f, glossaries), None))
+    groups = defaultdict(list)
+    for n, raw, src, d in names:
+        if n:
+            groups[n].append((raw, src, d))
+    ref = _today()
+    cands = sorted(((n, v) for n, v in groups.items() if len(v) > 1), key=lambda nv: nv[0])
+    cands.sort(key=lambda nv: _score_merge(nv[1], ref), reverse=True)  # stable: name-asc within ties
+    return [(n, [(raw, src) for raw, src, _ in v]) for n, v in cands]
+
+
+def _bash_cmds(ev):
+    msg = ev.get("message") if isinstance(ev, dict) else None
+    content = (msg or {}).get("content") if isinstance(msg, dict) else None
+    if isinstance(content, list):
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "tool_use" and b.get("name") == "Bash":
+                c = (b.get("input") or {}).get("command", "")
+                c = c.strip().splitlines()[0] if c.strip() else ""
+                c = re.sub(r"\s+", " ", c)[:100]
+                if c:
+                    yield c
+
+
+def repeat_detect(transcripts, min_count, max_files=40):
+    """Consecutive bash-command 3-grams repeated >= min_count across recent transcripts."""
+    files = sorted(glob.glob(os.path.join(transcripts, "**", "*.jsonl"), recursive=True),
+                   key=lambda f: os.path.getmtime(f), reverse=True)[:max_files]
+    grams = Counter()
+    for f in files:
+        seq = []
+        try:
+            for ev in _iter_transcript_entries(f):
+                seq.extend(_bash_cmds(ev))
+        except OSError:
+            continue
+        for i in range(len(seq) - 2):
+            grams[" => ".join(seq[i:i + 3])] += 1
+    return [(g, n) for g, n in grams.most_common() if n >= min_count and not _is_benign(g)]
+
+
+def _fmt_merges(merges):
+    """Render the ranked merge proposals, capped at MERGE_TOP_N with a note."""
+    shown = merges[:MERGE_TOP_N]
+    out = []
+    for _n, v in shown:
+        raws = "; ".join(f"{raw} ({src})" for raw, src in v)
+        out.append(f"- merge candidate: {raws}")
+    extra = len(merges) - len(shown)
+    if extra > 0:
+        out.append(f"- _… {extra} more merge candidate(s) truncated "
+                   f"(showing top {MERGE_TOP_N} of {len(merges)})._")
+    return "\n".join(out)
+
+
+def _fmt_reps(reps):
+    return "\n".join(f"- x{n}: `{g}`" for g, n in reps)
+
+
+def cmd_synthesis(args):
+    merges = synthesis(args.ledger, args.glossaries)
+    print(_fmt_merges(merges) if merges else "(no merge candidates)")
+    return 0
+
+
+def cmd_repeat(args):
+    reps = repeat_detect(args.transcripts, args.min)
+    print(_fmt_reps(reps) if reps else "(no repeated sequences)")
+    return 0
+
+
+def cmd_run(args):
+    os.makedirs(args.out, exist_ok=True)
+    day = os.environ.get("SESSION_INTEL_DATE") or datetime.date.today().isoformat()
+    path = os.path.join(args.out, f"intel-{day}.md")
+    ok_o, out_o = _run(os.environ.get("SESSION_INTEL_OBSERVE_CMD", "session-observe report"))
+    ok_s, out_s = _run(os.environ.get("SESSION_INTEL_SWEEP_CMD", "repo-sweep run"))
+    # ADR-0034 SG-10: the weekly `stats digest` scorecard folds INTO this file, one
+    # weekly artifact instead of a second daemon. Same shell-out + honest-degrade
+    # shape as observe/sweep (a consumer without the stats module still gets a digest).
+    digest_default = shlex.join([os.path.join(_repo_root(), "bin", "stats"), "digest"])
+    ok_d, out_d = _run(os.environ.get("SESSION_INTEL_DIGEST_CMD", digest_default))
+    merges = synthesis(args.ledger, args.glossaries)
+    reps = repeat_detect(args.transcripts, args.min)
+    parts = [
+        f"# Intel digest {day}",
+        "## Harness scorecard (stats digest)\n\n" + (out_d.strip() if ok_d else "_unavailable_"),
+        "## Claude Code usage (session-observe)\n\n" + (out_o.strip() if ok_o else "_unavailable_"),
+        "## Repo health (repo-sweep)\n\n" + (out_s.strip() if ok_s else "_unavailable_"),
+        "## Merge proposals (synthesis)\n\n" + (_fmt_merges(merges) if merges else "_none_"),
+        "## Repeated sequences, extract-workflow candidates (repeat-detect)\n\n" + (_fmt_reps(reps) if reps else "_none_"),
+        "_Proposals only. Nothing was written to the ledger, GLOSSARYs, til, or boards._",
+    ]
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write("\n\n".join(parts) + "\n")
+    print(path)
+    return 0
+
+
+def _staging_format():
+    """The kit's ONE staging-block grammar (ADR-0034 decision 1). Hyphenated filename, so it
+    needs the importlib dance drain.py / propose.py / session-audit already use."""
+    import importlib.util
+    path = os.path.join(_repo_root(), "lib", "learn", "staging-format.py")
+    spec = importlib.util.spec_from_file_location("staging_format", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _default_staging():
+    return os.environ.get("BACKLOG_STAGE_STAGING") or os.path.join(
+        _repo_root(), "_meta", "backlog-staging.md")
+
+
+def _default_backlog():
+    return os.environ.get("BACKLOG_STAGE_BACKLOG") or os.path.join(
+        _repo_root(), "_meta", "BACKLOG.md")
+
+
+def cmd_propose(args):
+    """SPEC-200 I1: the digest's two proposal classes reach the Learn gate as `## [staged]`
+    blocks, not as prose a human must retype. `run` keeps printing them in the digest (that is
+    the reading surface); this is the ACTING surface, and both come from the same detectors."""
+    sf = _staging_format()
+    staging = args.staging or _default_staging()
+    backlog = args.backlog or _default_backlog()
+    day = os.environ.get("SESSION_INTEL_DATE") or datetime.date.today().isoformat()
+
+    cands = []
+    for _n, v in synthesis(args.ledger, args.glossaries)[:MERGE_TOP_N]:
+        names = "; ".join(f"{raw} ({src})" for raw, src in v)
+        first = v[0][0]
+        cands.append({
+            "title": f"Merge duplicate concept: {first}",
+            "intent": "One concept, two names, drifting apart in the ledger/GLOSSARY.",
+            "approach": f"Reconcile these into one entry: {names}",
+            "u": "lo", "f": "lo",
+            "source": f"session intel {day} | synthesis (near-duplicate concept names)",
+        })
+    for gram, n in repeat_detect(args.transcripts, args.min):
+        cands.append({
+            "title": f"Extract a workflow for the repeated sequence: {gram}",
+            "intent": f"This exact 3-command sequence was retyped {n} times across recent sessions.",
+            "approach": f"Wrap `{gram}` in a skill or a script so it is typed once, not {n} times.",
+            "u": "lo", "f": "mid",
+            "source": f"session intel {day} | repeat-detect (x{n})",
+        })
+
+    existing = sf.existing_keys(("staging", staging), ("board", backlog))
+    blocks, staged, skipped = [], [], []
+    for c in cands:
+        key = sf.norm(c["title"])
+        if not c["title"] or key in existing:
+            skipped.append(c["title"])
+            continue
+        block = sf.render_block(c)
+        if block is None:
+            continue
+        existing.add(key)
+        blocks.append(block)
+        staged.append(c["title"])
+
+    if blocks and not args.dry_run:
+        parent = os.path.dirname(staging)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        exists = os.path.isfile(staging)
+        with open(staging, "a", encoding="utf-8") as fh:
+            if not exists:
+                fh.write("# Backlog staging\n\n")
+            fh.writelines(blocks)
+
+    if args.dry_run:
+        sys.stdout.write("".join(blocks) or "session-intel propose: nothing new to stage\n")
+        return 0
+    where = staging if blocks else "(nothing new)"
+    print(f"session-intel propose: staged {len(staged)}, skipped {len(skipped)} duplicate -> {where}\n"
+          f"  review with: learn drain   promote with: board promote <n>")
+    return 0
+
+
+def main(argv=None):
+    p = argparse.ArgumentParser(prog="session-intel", description="Weekly read-only intelligence digest.")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    for name in ("run", "synthesis", "repeat", "propose"):
+        sp = sub.add_parser(name)
+        if name in ("run", "synthesis", "propose"):   # ledger + glossaries feed synthesis
+            sp.add_argument("--ledger", default=DEFAULT_LEDGER)
+            sp.add_argument("--glossaries", default=DEFAULT_GLOSSARIES)
+        if name in ("run", "repeat", "propose"):      # transcripts + min feed repeat-detect
+            sp.add_argument("--transcripts", default=DEFAULT_TRANSCRIPTS)
+            sp.add_argument("--min", type=int, default=3)
+        if name == "run":
+            sp.add_argument("--out", default=DEFAULT_OUT)
+        if name == "propose":
+            sp.add_argument("--staging", help="staging file (default <repo>/_meta/backlog-staging.md)")
+            sp.add_argument("--backlog", help="board file, read-only, for dedup")
+            sp.add_argument("--dry-run", action="store_true", help="print the blocks, write nothing")
+    args = p.parse_args(argv)
+    return {"run": cmd_run, "synthesis": cmd_synthesis, "repeat": cmd_repeat,
+            "propose": cmd_propose}[args.cmd](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

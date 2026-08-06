@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# bin/mega -- STABLE consumer entrypoint for the mega subsystem (SPEC-184,
+# ADR-0034 decision 7: every subsystem gets its bin entry).
+#
+# Consumers reference THIS stable path, never the deep `$DWARVES_KIT/lib/mega/mega.sh`
+# path, so an internal lib reorg (e.g. a future promotion to lib/mega/mega.sh
+# when a second verb lands) never breaks them again.
+#
+# Usage: mega status <slug> [args...]
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/mega/mega.sh" "$@"

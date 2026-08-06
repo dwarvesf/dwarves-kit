@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /private/tmp/demo/kit-prefix/hooks/harvest.sh --lab-log",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

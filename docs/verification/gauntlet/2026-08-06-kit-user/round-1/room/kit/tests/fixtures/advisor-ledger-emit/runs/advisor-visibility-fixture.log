@@ -1,0 +1,5 @@
+2026-07-04T10:00:00Z | START | lane=full classified=full type=spec-feature ctype=spec-feature repo=dwarves-kit
+2026-07-04T10:00:01Z | GATE | spec | ran | SPEC-145-advisor-visibility approved, tasks=8
+2026-07-04T10:00:02Z | GATE | review | ran | SHIP findings=1 suppressed=0 rejected=0 actor=Test Actor
+2026-07-04T10:00:03Z | GATE | advisor | ran | mode=P5 findings=2 actor=Test Actor
+2026-07-04T10:00:04Z | GATE | advisor | ran | mode=P6 findings=3 actor=Test Actor

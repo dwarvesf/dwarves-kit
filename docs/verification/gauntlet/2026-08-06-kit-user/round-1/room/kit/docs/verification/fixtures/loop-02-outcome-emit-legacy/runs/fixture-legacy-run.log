@@ -1,0 +1,7 @@
+2026-07-11T20:36:50Z | START | lane=normal classified=normal type=spec-feature ctype=spec-feature repo=fixrepo
+2026-07-11T20:36:51Z | GATE | think | ran | BUILD spec-feature well-scoped
+2026-07-11T20:36:52Z | GATE | spec | ran | SPEC-193-outcome-emit-sweep approved, tasks=3
+2026-07-11T20:36:53Z | GATE | build | ran | tasks=3/3 verified=3 tests=pass
+2026-07-11T20:36:54Z | GATE | review | ran | SHIP findings=0 rejected=0 actor=fixture
+2026-07-11T20:36:55Z | GATE | docs | ran | files=README.md,CLAUDE.md
+2026-07-11T20:36:56Z | GATE | ship | ran | shipping pr=#999

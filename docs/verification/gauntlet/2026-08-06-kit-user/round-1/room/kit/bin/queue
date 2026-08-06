@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# bin/queue -- STABLE consumer entrypoint for the queue subsystem (SPEC-184,
+# ADR-0034 decision 7: every subsystem gets its bin entry).
+#
+# Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/queue/<file>.sh`
+# path, so an internal lib reorg never breaks them again. Forwards to the overnight
+# queue launcher, which owns the verb grammar.
+#
+# Usage: queue run   <src.tsv> [--dry-run] [--max-megas N] [--from-boards] [--journal <path>]
+#        queue watch [--apply] [--max N] [--board <path>]   (the #auto backlog watcher, SPEC-217)
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/queue/queue.sh" "$@"
