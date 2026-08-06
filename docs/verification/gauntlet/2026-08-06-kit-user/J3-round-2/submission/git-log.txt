@@ -1,0 +1,9 @@
+244de68 chore: add PR description and retro for SPEC-001 repeat-flag
+ac4be60 docs(verification): proof-of-done for SPEC-001 --repeat flag (green + negative control)
+a742b77 docs: record SHIP review verdict; update README for --repeat
+8558fdb feat: add --repeat N flag to shout CLI
+37aa53b spec: add test plan coverage matrix to SPEC-001
+745f6a1 spec: validate SPEC-001, flip Status to VALIDATED
+dcd6b59 spec: SPEC-001 add --repeat N flag to shout CLI
+fa00b86 chore: adopt dwarves-kit operate-contract (spine)
+49d9ef6 chore: fixture seed
