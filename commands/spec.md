@@ -201,6 +201,10 @@ Rule: observable, not narrated. If a bullet cannot be verified by reading a file
 The exact command(s) that prove this spec done, so a pointer-/goal and the loop can check it. Name real commands, not "tests pass". Example: `bash tests/test-meta.sh && bash tests/test-hooks.sh`.
 
 ## Edge Cases
+<!-- scenario-gen: seed from the brief's Survival scenarios block, then extend
+with a full three-move pass (journey walk, guarantee inversion, category
+sweep) per docs/patterns/scenario-generation.md. Every implicit guarantee in
+this spec's own prose gets an inversion row or a stated skip. -->
 1. [specific edge case and expected behavior]
 2. [specific edge case and expected behavior]
 

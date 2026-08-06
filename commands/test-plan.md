@@ -22,6 +22,14 @@ If Step 1 finds no spec with acceptance criteria, and the feature under test alr
 
 Detect the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware). If several specs match, ask the user which one. `/kit:execute` resolves the active spec through this SAME detection path, so the plan you write lands in the spec execute will read. Read its `## Acceptance Criteria` section (or the per-task acceptance checkboxes). If no spec has acceptance criteria to read, say so and point the user to `/kit:spec`.
 
+<!-- scenario-gen --> Also read the spec's scenario set: `## Edge Cases` +
+`## Failure modes` (and any `Survival scenarios` the brief contributed). The
+matrix derives from SCENARIOS + ACs together, not ACs alone, that is what
+keeps the spec author's blind spots out of the coverage. If the spec carries no
+scenario set, run the three-move pass from
+`docs/patterns/scenario-generation.md` FIRST, write the rows back into the
+spec's `## Edge Cases` (add-only), and only then derive the matrix.
+
 ### Step 1b: Pick the dialect from the work's type
 
 ```bash
