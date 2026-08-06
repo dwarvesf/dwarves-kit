@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-# bin/skill-review -- STABLE operator entrypoint for the skill-curator human gate.
-#
-# Usage: skill-review {list|promote <name>|reject <name>}
-set -euo pipefail
-SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec bash "$SELF_DIR/../lib/skill-curator/bin/skill-review" "$@"

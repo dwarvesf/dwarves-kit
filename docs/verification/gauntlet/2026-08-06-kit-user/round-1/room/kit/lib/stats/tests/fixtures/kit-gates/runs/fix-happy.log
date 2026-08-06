@@ -1,5 +1,0 @@
-2026-07-04T01:00:00Z | START | lane=full classified=full type=data-tool ctype=data-tool repo=fixrepo
-2026-07-04T01:00:01Z | GATE | grill | skipped | single well-scoped sub-goal, no open branches
-2026-07-04T01:00:02Z | GATE | spec | ran | drafted the spec
-2026-07-04T01:00:03Z | GATE | build | ran | implemented
-2026-07-04T01:00:04Z | GATE | ship | override | shipping directly, no additional gate needed

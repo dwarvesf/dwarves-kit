@@ -1,3 +1,0 @@
-code-add-flag	baseline-sonnet	fail	90000	40	900	80000	9060	3	0.05	sonnet-4-6	sess-s1
-code-add-flag	baseline-haiku	pass	322602	42	1113	272720	49727	5	0.13	haiku-4-5	sess-h1
-code-add-flag	baseline-opus	pass	901000	60	2200	800000	98740	6	1.20	opus-4-8	sess-o1

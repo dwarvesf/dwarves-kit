@@ -1,6 +1,0 @@
-  FAIL colors: PTY progress emits escape bytes (condition false)
-  FAIL board token counts leading-queued only (output missing 'board:2q')
-  FAIL live spec: board token still present (output missing 'board:2q')
-  FAIL board with 0 queued emits 0q token (output missing 'board:0q')
-RED count: 4
-overwrite hooks/context-readiness.sh? (y/n [n]) 

@@ -1,4 +1,0 @@
-2026-07-04T09:00:00Z | START | lane=normal classified=normal type=spec-feature ctype=spec-feature repo=fixture
-2026-07-04T09:05:00Z | GATE | spec | ran | fixture spec written (no grill line at all this run)
-2026-07-04T09:10:00Z | DEBT | significance=high worthiness=high verdict=tap reason=sig:new-public-surface wor:novel
-2026-07-04T09:15:00Z | GATE | ship | ran | shipping pr=#998
