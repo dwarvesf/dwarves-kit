@@ -28,6 +28,7 @@ never overrides those, it translates them.
 | Guide | Read it when |
 |---|---|
 | [v-model.md](v-model.md) | you wonder why the kit tests at every altitude, or why all-green tasks still failed acceptance |
+| [scenarios.md](scenarios.md) | the kit starts surfacing "survival scenarios" and "must-NOT-happen" rows while you shape work |
 | [gates-and-proof.md](gates-and-proof.md) | something BLOCKED (ship gate, proof of done, iron law) and you want the way through |
 | [review.md](review.md) | you got a SHIP / FIX THEN SHIP / DO NOT SHIP verdict |
 | [gauntlet.md](gauntlet.md) | you are about to let outside devs into a repo, or just rewrote its contributor docs |
