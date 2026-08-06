@@ -182,6 +182,15 @@ docker build -q -f tests/gauntlet/cleanroom/Dockerfile -t kit-gauntlet-room test
 echo "Room ready. The probe's instruction is: read /work/CARD.md and follow the kit's own docs."
 
 if [ -n "${PROBE_CMD:-}" ]; then
+  # The probe command goes into a FILE, never through `bash -c "...${VAR}"`:
+  # it legitimately contains both quote species (round-2 finding, three
+  # separate quoting failures), and a file has no quoting layer to shatter.
+  cat > "${STAGE}/work/.probe-cmd.sh" <<PROBE_EOF
+mkdir -p /tmp/probe-home
+git config --global init.defaultBranch main
+cd /work
+${PROBE_CMD}
+PROBE_EOF
   # Headless round: run the probe command instead of an interactive shell.
   # -u node because the claude CLI refuses permission-bypass as root; a fresh
   # HOME keeps the probe's config disposable with the room.
@@ -191,7 +200,7 @@ if [ -n "${PROBE_CMD:-}" ]; then
     -e GIT_COMMITTER_NAME="Gauntlet Probe" -e GIT_COMMITTER_EMAIL=probe@gauntlet.local \
     -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
     -v "${STAGE}/work:/work" \
-    kit-gauntlet-room bash -c "mkdir -p /tmp/probe-home && git config --global init.defaultBranch main && cd /work && ${PROBE_CMD}"
+    kit-gauntlet-room bash /work/.probe-cmd.sh
   rc=$?
   # Persist the room's contents before the stage trap wipes them: the round
   # record (transcript, submission, fixture state) must outlive the room.
