@@ -15,6 +15,7 @@ name. Full tour: `/kit:onboard`. Story-name lookup: `docs/glossary.md`.
 - Agents have no invocation, they are dispatched by commands.
 - Self-intro banner: every `/kit:` command opens its first reply with one line, `[kit:<name>] <one-line purpose>` (from its frontmatter description), and every dispatched agent's report opens the same way, so you always see what is running and why (AGENTS.md "Self-intro").
 - Teach on bad input: a command handed a bad or missing input names it, teaches why it matters in one line, and offers the concrete fix, never a dry "invalid input", never proceeding silently. Overrides run but get recorded. Convention + per-command tables: `docs/patterns/teach-on-bad-input.md`.
+- Scenarios ride every shaping beat: think/design/grill/spec/test-plan surface survival and must-NOT-happen scenarios via one shared method, generated once at the cheapest altitude and refined downhill, never re-brainstormed from blank. Method: `docs/patterns/scenario-generation.md`; user guide: `docs/guides/scenarios.md`.
 
 ## Drive it by intent (start here)
 

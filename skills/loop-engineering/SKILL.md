@@ -145,6 +145,24 @@ BEST VARIANT of one thing (search-select)?
   optimization". Full source verification and adoption verdict:
   `docs/research/2026-07-31-karpathy-autoresearch-loop.md`.
 
+## Step 2b: The loop's survival set (mandatory before "designed")
+
+<!-- scenario-gen --> A loop is not designed until its own survival scenarios
+are named, per `docs/patterns/scenario-generation.md` (the actor of move 1 is
+the operator driving the loop). Minimum set, every new loop:
+
+- convergence (the happy path reaches the stop condition)
+- non-convergence (the cap hits; the honest-halt report is right)
+- bad input (the teach-on-bad-input path fires, never a dry failure)
+- interrupted run (killed mid-round; state on disk lets a fresh session resume
+  or cleanly restart, and says which)
+- gamed metric (the scanner/checker can be satisfied without the artifact
+  actually improving; name the cheapest gaming move and the counter)
+
+These rows ride into the loop's spec and become its first test plan. The
+gauntlet's rules 7-10 are this set's worked answers for one engine; a new loop
+answers the same five for itself.
+
 ## Step 3: Where it lands once shaped
 
 - A new bounded-revise engine becomes a new `/kit:<name>` side-flow. Register it in

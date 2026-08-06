@@ -29,6 +29,13 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
    **Q5: What breaks at scale?**
    If 1000 people used this tomorrow, what falls apart first? Data model? Auth? Performance? Cost? Don't hand-wave. Name the specific bottleneck.
 
+   <!-- scenario-gen --> While Q5 is open, run a quick scenario sketch per
+   `docs/patterns/scenario-generation.md`: 3-5 survival scenarios, mostly from
+   move 2 (guarantee inversion: what the idea implicitly promises, and what
+   makes each promise false). Situations only, no oracles. These ride into the
+   brief below and flow downhill (design -> spec -> test plan) instead of being
+   regenerated later at a more expensive altitude.
+
    **Q6: What's the exit criteria?**
    How will you know if this worked or failed? Name a specific metric and a specific number. "More users" is not a metric. "50 weekly active users by day 30" is.
 
@@ -43,6 +50,10 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
 ## If BUILD: recommended scope for v1
 ## If RETHINK: what needs to change before building
 ## If KILL: what would have to be true to reconsider
+## Survival scenarios
+<!-- scenario-gen: 3-5 rows from the Q5 sketch; situations, no oracles -->
+| # | Scenario | Category |
+|---|---|---|
 ```
 
 4. Save the brief to `docs/briefs/DECISION-BRIEF.md` if the verdict is BUILD.

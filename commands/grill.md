@@ -247,7 +247,11 @@ decided:
   or none at all, is refused (exit 64) rather than silently landing on the ledger.
 
 End by proposing the `Done =` line the answers imply (the phase-0 definition the task loop
-requires before any work runs), plus the re-classification check: if the answers changed the
+requires before any work runs). <!-- scenario-gen --> Pair it with 2-3
+must-NOT-happen scenarios, the negative space of Done, derived by inverting the
+guarantees the answers surfaced (`docs/patterns/scenario-generation.md`, move
+2); they ride the goal draft's Context next to the digest. Then the
+re-classification check: if the answers changed the
 work's type or weight, re-run `task-type-classify` / `lane-classify` and say so, the floor
 check (`lane-classify.sh check`) guards the downgrade direction.
 
