@@ -63,6 +63,8 @@ ANTHROPIC_API_KEY="\$(secret-cache-read --ttl 3600 ANTHROPIC_API_KEY ${KEY_REF} 
 export ANTHROPIC_API_KEY
 export RUN_OUT="\$PWD/out"
 export GAUNTLET_SRC_TAR="\$PWD/.gauntlet-src.tar"
+# Under \$HOME so a colima VM can see the bind mount (round-2 finding).
+export GAUNTLET_STAGE_DIR="\$PWD/stage"
 PROBE_CMD="\$(printf '%s' '${PROBE_B64}' | base64 -d)"
 export PROBE_CMD
 bash tests/gauntlet/cleanroom/run.sh "${PERSONA}" "${ROW}"

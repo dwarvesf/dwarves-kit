@@ -14,7 +14,17 @@ ROW="${2:-doorway}"
 KIT_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 cd "${KIT_ROOT}"
 
-STAGE="$(mktemp -d)"
+# The stage dir is BIND-MOUNTED into the room, so it must live somewhere the
+# container runtime can actually see. Docker Desktop/OrbStack share the macOS
+# temp dir; colima's VM shares only $HOME and a couple of fixed paths, so a
+# /var/folders stage silently mounts EMPTY there (round-2 finding). Callers on
+# such a host set GAUNTLET_STAGE_DIR to a path under $HOME.
+if [ -n "${GAUNTLET_STAGE_DIR:-}" ]; then
+  mkdir -p "${GAUNTLET_STAGE_DIR}"
+  STAGE="$(mktemp -d "${GAUNTLET_STAGE_DIR%/}/room.XXXXXX")"
+else
+  STAGE="$(mktemp -d)"
+fi
 trap 'rm -rf "${STAGE}"' EXIT
 mkdir -p "${STAGE}/work/checks"
 
