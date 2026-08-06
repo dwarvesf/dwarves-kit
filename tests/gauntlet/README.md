@@ -33,21 +33,56 @@ gaps). Guide: `docs/guides/gauntlet.md` (worked example); engine:
 
 The doorway card (J1/J2) proves install + adopt + tiny lane. Full-flow coverage
 comes from the scenario MATRIX (`scenarios.md`): one row per journey feature
-(full lane, bug/debug, gate collision, drift, resume, review response), cards
-materialized per row, generated/reconciled via the shipped SPEC-203
-test-generation loop rather than hand-authored. A multi-row run is a CAMPAIGN
-(worklist over the gauntlet engine, loop-engineering's campaign shape): run rows
-in order, doorway first; findings accumulate on the same surface; never pay for
-a full-lane probe while a doorway finding is open. J3 (full lane) is the first
-materialized full-flow card: `seed-card-user-J3.md` + its checker.
+(full lane, bug/debug, gate collision, drift, resume, review response,
+concurrent, adversarial), cards materialized per row via `make-card.sh <ROW>`,
+generated/reconciled via the shipped SPEC-203 test-generation loop
+(`docs/patterns/scenario-generation.md`'s three-move pass) rather than
+hand-authored. `journey.md` is the spec the loop consumes; `scenarios.md` is
+the reconciled matrix, currently J1-J11.
+
+### Campaign shape (SPEC-227 P5)
+
+A multi-row run is a CAMPAIGN, not a new engine: a worklist over the gauntlet
+engine, the campaign shape from `skills/loop-engineering`. One campaign =
+one pass over the whole matrix.
+
+- **Run order comes from `scenarios.md`**, top to bottom (row order IS blast
+  radius: doorway first, then the full-lane happy path, then the
+  failure-injection/boundary/recovery/adversarial/concurrent rows). Never
+  reorder ad hoc; if a row needs to jump the queue, move its row in the
+  matrix and say why.
+- **Budget: one probe round per row, per campaign pass.** A row that does not
+  converge within its own round cap (see the inputs table's `Round cap`) is a
+  finding for that row, not a license to burn a second round on it in the
+  same pass, that is the next campaign's job after the surface revision.
+- **Findings accumulate on the same surface across rows.** A campaign does
+  not reset the surface between rows; a fix landed for J4 stays landed when
+  J5 runs. One `ROUNDS.md` per campaign, at
+  `docs/verification/gauntlet/<date>-kit-user/ROUNDS.md`, records every row's
+  outcome (SOLID / REVISE / RECONSIDER / BLOCKED) in run order , this is the
+  campaign's run record, the per-row cards are frozen alongside it.
+- **A row's BLOCKER finding pauses the campaign.** If a round on row N ends
+  BLOCKED (the probe wrote a valid `BLOCKED.md`, or the checker cannot pass
+  for a surface reason, not a probe error), the campaign stops at row N until
+  the surface revision that unblocks it lands and is verified , do not skip
+  ahead to row N+1 on an open BLOCKER. Rows before N stay recorded as they
+  ran; resuming re-enters at row N, not row 1.
+
+J3 (full lane) was the first materialized full-flow card
+(`seed-card-user-J3.md`); J4-J11 materialize the same way, one card + checker
+pair per row (`make-card.sh J4` .. `make-card.sh J11`).
 
 ## Run day (orchestrator checklist)
 
 1. `bash tests/gauntlet/tier1.sh`, must be green before any probe round.
 2. Mint the probe key (spend-capped), the room's ONLY secret.
-3. Invoke `/kit:gauntlet` with persona A's table; the engine handles rounds,
-   run records land in `docs/verification/gauntlet/<date>-kit-user/`.
-4. Persona B after A converges (or its halt is understood).
+3. Invoke `/kit:gauntlet` with persona A's table, working `scenarios.md`'s
+   rows in order (campaign shape above); run records land in
+   `docs/verification/gauntlet/<date>-kit-user/`, one `ROUNDS.md` for the
+   whole campaign.
+4. On a row's BLOCKER finding, pause the campaign, land the surface revision,
+   re-verify, then resume at that row.
+5. Persona B after A's campaign converges (or its halt is understood).
 
 Rule 7 note (no answer key): the clean-room image excludes `tests/gauntlet/`
 and `docs/verification/gauntlet/`; the runner does this, do not undo it.
