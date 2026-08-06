@@ -1,6 +1,6 @@
 # The probe's fixture repo is itself a git repo; committing it nested would
 # create a phantom submodule. Its evidence is preserved as a tarball + patch
 # under round-N/submission/ instead.
-round-*/room/fixture-repo/
-round-*/room/kit/
-round-*/room/kit.tar.gz
+*round-*/room/fixture-repo/
+*round-*/room/kit/
+*round-*/room/kit.tar.gz
