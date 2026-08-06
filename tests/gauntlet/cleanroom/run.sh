@@ -21,7 +21,13 @@ mkdir -p "${STAGE}/work/checks"
 # The kit as a tarball of COMMITTED state, minus the answer key (rule 7):
 # the gauntlet dir and any prior run records never enter the room.
 mkdir -p "${STAGE}/kit-src"
-git archive HEAD | tar -x -C "${STAGE}/kit-src"
+if [ -n "${GAUNTLET_SRC_TAR:-}" ] && [ -f "${GAUNTLET_SRC_TAR}" ]; then
+  # Remote round: the caller already exported committed state (this checkout
+  # is a tarball extraction, not a git repo, so git archive would fail here).
+  tar -x -f "${GAUNTLET_SRC_TAR}" -C "${STAGE}/kit-src"
+else
+  git archive HEAD | tar -x -C "${STAGE}/kit-src"
+fi
 # Rule 7, widened after round 1 (the kit-gauntlet-prep proof leaked in and
 # named the checker's home): strip EVERY gauntlet-named artifact, not just the
 # two known dirs.

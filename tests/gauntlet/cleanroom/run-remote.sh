@@ -35,6 +35,10 @@ RDIR=".cache/kit-gauntlet/run-${TS}"
 echo "== shipping committed state to ${HOST}:${RDIR}"
 # shellcheck disable=SC2029  # client-side expansion of RDIR is intentional
 git archive HEAD | ssh "${HOST}" "mkdir -p '${RDIR}' && tar -x -C '${RDIR}'"
+# Ship the same committed state AS A TARBALL too: the remote copy is not a git
+# repo, so run.sh cannot build the room's kit archive there (round-2 finding).
+# shellcheck disable=SC2029
+git archive HEAD | ssh "${HOST}" "cat > '${RDIR}/.gauntlet-src.tar'"
 
 echo "== running round on ${HOST} (persona=${PERSONA} row=${ROW})"
 # The remote driver: bring docker up if needed, resolve the key locally on the
@@ -58,6 +62,7 @@ ANTHROPIC_API_KEY="\$(secret-cache-read --ttl 3600 ANTHROPIC_API_KEY ${KEY_REF} 
 [ -n "\${ANTHROPIC_API_KEY}" ] || { echo "probe key resolved EMPTY on the runner host (cache suppressed AND op read failed; check the host's 1P session)" >&2; exit 65; }
 export ANTHROPIC_API_KEY
 export RUN_OUT="\$PWD/out"
+export GAUNTLET_SRC_TAR="\$PWD/.gauntlet-src.tar"
 PROBE_CMD="\$(printf '%s' '${PROBE_B64}' | base64 -d)"
 export PROBE_CMD
 bash tests/gauntlet/cleanroom/run.sh "${PERSONA}" "${ROW}"
