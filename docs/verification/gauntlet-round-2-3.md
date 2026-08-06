@@ -42,3 +42,13 @@ stop` reverses it) and per-round workdirs under ~/.cache/kit-gauntlet.
 
 Rounds used the shared Toolkit Anthropic key, not a dedicated spend-capped
 probe item; mint that before any unattended scheduled campaign.
+
+## Negative controls (the GREEN can go RED)
+
+Command: KIT_ROOT=$PWD bash <round-3>/checks/check-submission-user.sh <bare git init dir>
+Exit: 1
+Verdict: PASS as negative control (SUBMISSION: RED; the checker is not vacuously green)
+
+Command: cp the ROUND-3 GREEN fixture, remove PR.md only, re-run the same checker
+Exit: 1
+Verdict: PASS as negative control (SUBMISSION: RED; removing one required artifact from a passing submission flips it, so the GREEN verdict tracks the probe's actual work)
