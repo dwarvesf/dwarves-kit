@@ -1,0 +1,31 @@
+#!/bin/bash
+# Phase-2 skeleton, NOT installed (see README.md). Scheduled campaign step:
+# run the next un-run scenario row on the configured runner host, one row per
+# invocation, so a nightly LaunchAgent walks the matrix a row at a time.
+set -euo pipefail
+
+KIT_ROOT="${KIT_ROOT:?set KIT_ROOT to the kit checkout this campaign runs from}"
+cd "${KIT_ROOT}"
+
+CAMPAIGN_DIR="docs/verification/gauntlet/campaign-current"
+mkdir -p "${CAMPAIGN_DIR}"
+
+# Worklist = matrix row order; done-markers are per-row record dirs.
+next_row=""
+for row in J1 J2 J3 J4 J5 J6 J7 J8 J9 J10 J11; do
+  if [ ! -d "${CAMPAIGN_DIR}/${row}" ]; then next_row="${row}"; break; fi
+done
+if [ -z "${next_row}" ]; then
+  echo "campaign complete: all rows have records"
+  exit 0
+fi
+
+# A BLOCKER pause-marker halts the walk until the surface revision lands.
+if [ -f "${CAMPAIGN_DIR}/PAUSED" ]; then
+  echo "campaign paused: $(cat "${CAMPAIGN_DIR}/PAUSED")"
+  exit 0
+fi
+
+echo "campaign step: row ${next_row}"
+bash tests/gauntlet/cleanroom/run-remote.sh user "${next_row}" "${CAMPAIGN_DIR}/${next_row}"
+echo "row ${next_row} record at ${CAMPAIGN_DIR}/${next_row}; score it before the next step runs"
