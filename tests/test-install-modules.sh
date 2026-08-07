@@ -205,6 +205,51 @@ DEV_VAL="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_PROJECT_ROOT="$(mktemp -d)" bash -c "s
 assert_true "dev regime: resolver reads the REPO-ROOT kit.toml directly (mega.wave_cap=2, no install needed)" "$([ "$DEV_VAL" = "2" ]; echo $?)"
 
 # ============================================================
+echo "== NC in-place layout: install.sh does not clobber its own kit.toml (src == dst) =="
+# ============================================================
+# README Option 2 clones the kit TO ~/.claude/dwarves-kit and installs from there,
+# so install.sh's KIT_DIR and CLAUDE_DIR/dwarves-kit are the SAME directory and
+# kit_render_install_toml is handed src == dst. Every OTHER case above installs
+# from this checkout into a temp HOME (src != dst), which is exactly why a direct
+# `> "$dst"` -- truncating before awk opens src -- passed CI while silently
+# reducing a real user's kit.toml to a 12-line header stub.
+H5="$(mktemp -d)"
+mkdir -p "$H5/.claude/dwarves-kit"
+(cd "$KIT_DIR" && tar --exclude=./.git -cf - .) | (cd "$H5/.claude/dwarves-kit" && tar -xf -)
+SRC_LINES="$(wc -l < "$H5/.claude/dwarves-kit/kit.toml" | tr -d ' ')"
+HOME="$H5" bash "$H5/.claude/dwarves-kit/install.sh" --with board >/tmp/kitmod-h5.log 2>&1
+INPLACE_TOML="$H5/.claude/dwarves-kit/kit.toml"
+
+# The whole schema survives: a stub keeps only the header, so every section is a probe.
+MISSING=""
+for sec in '[modules]' '[ledger]' '[mega]' '[gate]' '[features]' '[sync]'; do
+  grep -qF "$sec" "$INPLACE_TOML" || MISSING="$MISSING $sec"
+done
+assert_true "in-place install: rendered kit.toml keeps every section (missing:${MISSING:-none})" \
+  "$([ -z "$MISSING" ]; echo $?)"
+
+DST_LINES="$(wc -l < "$INPLACE_TOML" | tr -d ' ')"
+assert_true "in-place install: kit.toml did not shrink (${SRC_LINES} -> ${DST_LINES} lines)" \
+  "$([ "$DST_LINES" -ge "$SRC_LINES" ]; echo $?)"
+
+# The self-read signature: awk echoing back the header install.sh just wrote.
+HDRS="$(grep -c '^# --- Rendered by install.sh' "$INPLACE_TOML" || true)"
+assert_true "in-place install: render header appears exactly once (got $HDRS)" \
+  "$([ "$HDRS" -eq 1 ]; echo $?)"
+
+# A non-[modules] key still resolves -- the user-visible symptom of the clobber.
+INPLACE_VAL="$(KIT_CONFIG_ROOT="$H5/.claude/dwarves-kit" KIT_PROJECT_ROOT="$(mktemp -d)" \
+  bash -c "source '$RESOLVER'; kit_config_get mega.wave_cap '<unset>'")"
+assert_true "in-place install: resolver still reads a non-[modules] key (mega.wave_cap=$INPLACE_VAL)" \
+  "$([ "$INPLACE_VAL" = "2" ]; echo $?)"
+
+# [modules] is still recomputed from THIS run's --with, not just copied through.
+assert_true "in-place install: [modules] recomputed from --with board (board=true)" \
+  "$(grep -qx 'board = true' "$INPLACE_TOML"; echo $?)"
+assert_true "in-place install: [modules] recomputed from --with board (stats=false)" \
+  "$(grep -qx 'stats = false' "$INPLACE_TOML"; echo $?)"
+
+# ============================================================
 echo "== COVERAGE-DELTA: every module in the manifest maps to a real installable unit =="
 # ============================================================
 # Each optional module either has >=1 hook that exists on disk, or is a documented

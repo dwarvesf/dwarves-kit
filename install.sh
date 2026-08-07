@@ -266,8 +266,15 @@ kit_toml_modules_section_true() {
 # (uses the caller's $KIT_ENABLED_MODULES). Every other section (`[ledger]`, `[mega]`,
 # `[gate]`, `[features]`, `[team]`) rides through unchanged, so the install copy is
 # the full schema, not just the old minimal manifest.
+#
+# Renders to a temp file and mv's it into place. That indirection is LOAD-BEARING,
+# not tidiness: README Option 2 clones the kit to ~/.claude/dwarves-kit, which makes
+# `src` and `dst` THE SAME PATH. A direct `> "$dst"` truncates the file before awk
+# ever opens it, so the whole schema is lost and awk reads back only the header this
+# function just wrote -- a silent 160-line -> 12-line clobber. Covered by the
+# "in-place layout" case in tests/test-install-modules.sh.
 kit_render_install_toml() {
-  local src="$1" dst="$2"
+  local src="$1" dst="$2" tmp="$2.tmp.$$"
   {
     echo "# --- Rendered by install.sh from the repo-root kit.toml + --with (SPEC-183). ---"
     echo "# Do not hand-edit the [modules] section; re-run \`install.sh --with <modules>\`"
@@ -286,7 +293,8 @@ kit_render_install_toml() {
       }
       { print }
     ' "$src"
-  } > "$dst"
+  } > "$tmp"
+  mv "$tmp" "$dst"
 }
 
 KIT_WITH_ARG=""
