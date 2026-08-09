@@ -293,6 +293,31 @@ Rules:
 - **A run file is never overwritten.** A re-run is a NEW file (new timestamp). History is the
   point.
 
+## Test plan coverage map (owed when the spec has a `## Test plan`)
+
+When the active spec carries a `## Test plan` matrix (`/kit:test-plan`), the proof of done
+owes a **coverage map**: a `## Test plan coverage` section, in the flat `<slug>.md` or in any
+file of the `<slug>/` directory layout, mapping **each matrix row** to the run that exercised
+it, or an explicit skip reason:
+
+```markdown
+## Test plan coverage
+| Row | Run / skip reason |
+|---|---|
+| 1 | R1 (runs/2026-08-10-0912.md) |
+| 2 | R2, negative control |
+| 3 | skipped: environment-only case, covered by row 1's revert leg |
+```
+
+`Row` is the matrix row's `#` cell; when the matrix has no numeric `#` column (the older
+`| Category | Case | How |` dialect), it is the row's ordinal, counted top to bottom. A skip
+is honest, not a loophole: name the reason, the same rule as the exempt marker above.
+
+The ship-gate **WARNS, never blocks** (detect-not-dictate) when the spec has a test plan but
+no proof doc for the slug carries the map, or the map leaves matrix rows unmapped. Check by
+hand with `bash lib/gate/proof-gate.sh coverage <spec> <proof.md ...>` (`OK` / `NO-MAP` /
+`UNMAPPED: <rows>`). A spec with no `## Test plan` owes nothing new.
+
 ## Who writes it
 
 - `/kit:execute` , appends a run record at each phase checkpoint and at completion.

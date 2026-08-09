@@ -146,6 +146,25 @@ fi
 # Resolve the spec for this slug; fail open if there is no spec-driven run.
 SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
 [ -n "$SPEC" ] || exit 0
+
+# ID-466 advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
+# a ## Test plan coverage map -- each matrix row mapped to the run that exercised it, or an
+# explicit skip reason (shape: docs/verification/README.md "Test plan coverage map"). WARNS
+# on a missing map or unmapped rows; no test plan in the spec = no new requirement.
+PGATE="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/proof-gate.sh"
+if [ -f "$PGATE" ] && grep -qE '^## Test plan[[:space:]]*$' "$SPEC" 2>/dev/null; then
+  # repo-root proof homes for this slug (flat file, dir layout, runs/); co-located
+  # tools/*/docs/proof-of-done.md has no slug linkage, deliberately not scanned.
+  PFILES=$(ls "$ROOT/docs/verification/$SLUG.md" "$ROOT/docs/verification/$SLUG"/*.md \
+              "$ROOT/docs/verification/$SLUG"/runs/*.md 2>/dev/null || true)
+  # shellcheck disable=SC2086  # PFILES is a newline list of repo paths, splitting intended
+  COV=$(bash "$PGATE" coverage "$SPEC" $PFILES 2>/dev/null || true)
+  case "$COV" in
+    NO-MAP*)   echo "[advisory] test-plan coverage: spec '$SLUG' has a ## Test plan ($COV) but no proof doc for the slug carries a '## Test plan coverage' map; map each matrix row to its run or an explicit skip reason (docs/verification/README.md)" >&2 ;;
+    UNMAPPED*) echo "[advisory] test-plan coverage: proof map for '$SLUG' leaves test-plan matrix rows unmapped ($COV); map each row to a run or an explicit skip reason" >&2 ;;
+  esac
+fi
+
 LANE=$(grep -m1 -iE '^Lane:' "$SPEC" 2>/dev/null | sed -E 's/^[Ll]ane:[[:space:]]*//; s/[[:space:]].*$//' || true)
 if [ -z "$LANE" ]; then
   # Spec exists but declares no lane. In an ADOPTED repo (proof marker present) this is a gap,
