@@ -4,6 +4,16 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Board-sync id-collision guard (ID-309).** `plan_sync`'s title-prefix link step trusted a
+  matching id alone as proof of identity; a repaired board row whose id had been reused by a
+  spoke-born item (minted while the row was invisible to `parse_board`) could get silently
+  overwritten, retitled, and flipped to a wrong status by the unrelated spoke item. The link
+  step now refuses to adopt a spoke item whose title disagrees with the board row's, emitting
+  a collision note naming both titles instead. `next_id` already scanned raw board text (not
+  parsed rows) so it needed no change. Second live run of the SPEC-217 `#auto` queue watcher,
+  unattended end to end, PR #344.
+
 ### Added
 - **`docs/impl-playbook/` ships in the kit itself, review-team agents cite it by stable path.**
   security-reviewer, code-reviewer (architecture + test-coverage lenses), infra-reviewer,
