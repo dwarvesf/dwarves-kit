@@ -20,7 +20,7 @@ Advisory only; no blocking path added or changed.
 - Verdict: PASS
 - Note: covers all three required cases -- (a) plan + mapless proof warns without blocking, (b) fully mapped emits no warning, (c) no test plan emits no warning -- plus unit coverage of both matrix dialects and the `## Test plan critique` exclusion.
 
-## 2026-08-10 RED-as-expected -- coverage-map-warn [negative-control]
+## 2026-08-10 RED-as-expected -- coverage-map-warn [NEGATIVE CONTROL]
 - Command: `bash <copy>/tests/test-ship-gate-coverage-map.sh` where `<copy>` is a scratch copy of this branch with `hooks/ship-gate.sh` and `lib/gate/proof-gate.sh` restored from master (the change reverted; the shared checkout untouched)
 - Exit: 1
 - Output (excerpt):
