@@ -117,14 +117,68 @@ proof_contract() {
   echo "rigor: $(proof_requirement "$desc")"
 }
 
+# ID-466: test-plan -> proof-of-done coverage (ADVISORY; always exit 0). When the active
+# spec carries a `## Test plan` matrix, the proof doc owes a `## Test plan coverage` map
+# (docs/verification/README.md "Test plan coverage map") mapping each matrix row to the run
+# that exercised it, or an explicit skip reason. This subcommand only REPORTS; the warn
+# lives in hooks/ship-gate.sh and never blocks ("Detect, don't dictate").
+
+# _matrix_first_cells <file> <section-title> <ordinal-fallback:0|1>
+# Prints the first cell of each DATA row of the tables inside `## <section-title>` (exact
+# heading match, so "## Test plan critique" never counts as "## Test plan"). Structural
+# header detection, no keyword list: a `|` row is a separator when it holds only `| :-`
+# chars, and a row is a header when the NEXT row is a separator. With ordinal-fallback=1 a
+# non-integer first cell (the older `| Category | Case | How |` dialect) yields the row's
+# ordinal (1..N) instead, so both matrix dialects produce comparable row ids.
+_matrix_first_cells() {
+  awk -v sec="$2" -v ordfall="$3" '
+    substr($0, 1, 3) == "## " {
+      t = substr($0, 4); gsub(/[ \t]+$/, "", t)
+      insec = (t == sec); next
+    }
+    insec && /^\|/ { lines[++n] = $0 }
+    END {
+      for (i = 1; i <= n; i++) {
+        if (lines[i] ~ /^[| :\t-]+$/) continue                      # separator row
+        if (i < n && lines[i+1] ~ /^[| :\t-]+$/) continue           # header row
+        split(lines[i], a, "|"); c = a[2]; gsub(/^[ \t]+|[ \t]+$/, "", c)
+        if (c == "") continue
+        rows++
+        if (ordfall == 1 && c !~ /^[0-9]+$/) print rows; else print c
+      }
+    }' "$1" 2>/dev/null
+}
+
+proof_coverage() {
+  local spec="${1:-}"; shift 2>/dev/null || true
+  [ -n "$spec" ] && [ -f "$spec" ] || { echo "usage: proof-gate.sh coverage <spec-file> [proof.md ...]" >&2; return 64; }
+  local ids mapped="" f
+  ids="$(_matrix_first_cells "$spec" "Test plan" 1)"
+  [ -n "$ids" ] || { echo "no-test-plan"; return 0; }
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    mapped+="$(_matrix_first_cells "$f" "Test plan coverage" 0)"$'\n'
+  done
+  if [ -z "$(printf '%s' "$mapped" | tr -d '[:space:]')" ]; then
+    echo "NO-MAP rows=$(printf '%s\n' "$ids" | grep -c .)"; return 0
+  fi
+  local missing="" id
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    printf '%s\n' "$mapped" | grep -qxF "$id" || missing="$missing $id"
+  done <<< "$ids"
+  if [ -n "$missing" ]; then echo "UNMAPPED:$missing"; else echo "OK"; fi
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
     class)       proof_class "$@";;
     requirement) proof_requirement "$@";;
     contract)    proof_contract "$@";;
+    coverage)    proof_coverage "$@";;
     classes)     printf 'stateful\nbehavioral\ninert\n';;
-    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|classes}" >&2; return 64;;
+    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|coverage <spec> [proof.md ...]|classes}" >&2; return 64;;
   esac
 }
 
