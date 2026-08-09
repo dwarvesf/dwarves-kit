@@ -18,10 +18,11 @@ Distills the Twelve-Factor App's config principle (factor III) and standard clea
 
 ## Duplication
 - The same logic in two or more places is a bug waiting to happen, since only one copy gets fixed. Extract to one shared function once a third occurrence appears (the rule of three); extracting on the first duplication is premature abstraction.
+- A restated FACT is a worse duplication than restated logic, because it can drift on the SECOND occurrence, not just the third: two places independently deciding the same thing (which network a service belongs on, which role a caller holds) will disagree the moment only one of them is updated, and the resulting bug is often silent (a check that returns empty and skips, rather than one that errors). Prefer reading the fact back from wherever it was first decided over recomputing it a second way, even when that is not a shared function, just one arrow from decision to derived state instead of two independent boxes answering the same question.
 
 ## Sources
 - [The Twelve-Factor App, III. Config](https://12factor.net/config)
 - Clean Code (Robert C. Martin), chapters on naming and functions, the canonical source for the naming/magic-value/function-size rules above.
 - Refactoring (Martin Fowler), the rule of three on duplication, credited to Don Roberts.
 
-Verified: 2026-07-29.
+Verified: 2026-08-09.
