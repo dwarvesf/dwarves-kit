@@ -32,6 +32,13 @@ Why: keyword lists (`#`, `Case`, `Category`) break on every new dialect; the sep
 
 Decision: the spec section matches `^## Test plan[ \t]*$` only, so `## Test plan critique` (written by /kit:test-plan-review-team) never counts as a plan. The proof section is `^## Test plan coverage[ \t]*$`.
 
+## 2026-08-10 pre-existing drift left alone: README/architecture command counts
+
+Context: `tests/test-meta.sh` fails 10 checks on this branch AND on master identically (command-count tables say 35, the tree has 36 commands; `docs/FEATURES.md` staleness). During local test runs something self-healed the two count lines in `README.md` and `docs/architecture.md` in the working tree.
+Decision: reverted those two files; this branch ships only the ID-466 change.
+Why: surgical-diff rule; the count drift is its own row, and mixing a drive-by docs fix into a gate change muddies review.
+Open question: operator should file the 36th-command (gauntlet) doc-count drift as its own board item if not already tracked.
+
 ## 2026-08-10 new test file is not registered in CI
 
 Context: `.github/workflows/test.yml` lists tests explicitly, but this unattended run must not write `.github/*`.
