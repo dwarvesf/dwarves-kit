@@ -9,13 +9,17 @@ node_modules/
 # Tool caches (serena local index; the kit uses codebase-memory, not serena)
 .serena/
 
-# Local Claude Code user state and per-machine settings, except repo memory
-# (git-tracked by design so it rides the repo, per this repo's CLAUDE.md).
-# `.claude/*` (not `.claude/`) so git still descends into .claude/ to see
-# the negation below; a plain `.claude/` directory-match would exclude the
-# whole tree from traversal and no `!` pattern inside it could ever apply.
-.claude/*
-!.claude/memory/
+# Local Claude Code user state and per-machine settings, except the ROOT
+# repo memory (git-tracked by design so it rides the repo, per CLAUDE.md).
+# Four patterns because of two gitignore rules: a directory-match excludes
+# the whole subtree from traversal (so no nested negation can apply), and a
+# later pattern overrides an earlier one. Line 1 ignores every .claude/ dir
+# at any depth (megagoal archives etc.); line 2 re-includes the root one so
+# git traverses it; line 3 re-ignores its children; line 4 exempts memory.
+**/.claude/
+!/.claude/
+/.claude/*
+!/.claude/memory/
 
 # Legacy / retired artifacts the kit no longer writes: review output now lives in
 # the spec's `## Review` section, and the spec location unified onto docs/specs/
