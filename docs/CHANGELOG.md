@@ -4,6 +4,17 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Added
+- **Test-plan coverage advisory at the ship boundary (ID-466).** The test plan fed
+  `/kit:execute`'s verify steps but nothing at the gate traced the proof back to the matrix.
+  New `proof-gate.sh coverage <spec> [proof.md ...]` subcommand parses both matrix dialects
+  (numbered `#` column and the older category form, ordinal fallback) and reports
+  `OK` / `NO-MAP` / `UNMAPPED: <rows>`; the ship-gate emits a warn-only `[advisory]` when a
+  spec with a `## Test plan` has no `## Test plan coverage` map in its proof doc, or the map
+  leaves rows unmapped. Detect-not-dictate: never blocks, and a spec without a test plan owes
+  nothing new. Owed shape documented in `docs/verification/README.md`. Third live `#auto`
+  queue-watcher run, filed and shipped the same day (PR #366).
+
 ### Fixed
 - **Board-sync id-collision guard (ID-309).** `plan_sync`'s title-prefix link step trusted a
   matching id alone as proof of identity; a repaired board row whose id had been reused by a
