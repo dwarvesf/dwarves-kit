@@ -1,17 +1,7 @@
 name: test
 
 on:
-  push:
-    branches: [master]
-  pull_request:
-
-# Continuous pushes to one PR branch would otherwise start a full run per push and
-# let every one of them race to completion. Supersede instead: only the newest run
-# on a ref survives. Master pushes are exempt (cancel only on pull_request) because
-# a master run is the record of what actually shipped, not throwaway feedback.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  workflow_dispatch:
 
 # Least-privilege token: workflow only reads code and runs tests; no writes,
 # no PR comments, no release operations.
@@ -25,11 +15,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PRs run ubuntu only (~2m45s); master pushes additionally run macOS (~4m25s,
-        # the long pole). macOS is not redundant coverage: its /bin/bash is 3.2, so it
-        # is what catches `declare -A` / `mapfile` regressions in launcher scripts. This
-        # moves that signal from pre-merge to post-merge, it does not delete it.
-        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest","macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
+        # Manual dispatch only now, so every run pays the full ~4m25s and covers
+        # both: macOS is not redundant coverage, its /bin/bash is 3.2, so it is
+        # what catches `declare -A` / `mapfile` regressions in launcher scripts.
+        os: [ubuntu-latest, macos-latest]
     steps:
       # Pinned to release SHA to defend against tag-replay supply-chain attack.
       # Update via Dependabot or manually when checkout cuts a new release.
