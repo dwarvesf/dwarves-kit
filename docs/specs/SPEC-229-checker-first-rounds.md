@@ -48,17 +48,22 @@ shape inboard, so it becomes the middle loop for every `#auto` row.
 
 ### Chosen approach + why
 
-The row's done-line becomes an executable checker, committed next to the
-pointer, approved by the operator together with the `#auto` tag. The checker
-must run RED against HEAD at plan time: a row without a checker, or with a
-green checker, is not auto-eligible and is skipped with a reason. The run is
-then "make the checker green" in at most 3 fresh rounds. Test-first, lifted to
-the row level.
+The row's done-line becomes an executable checker, and the checker is not a new
+artifact: it is the goal draft's own verification section, made machine-run.
+The goal contract already mandates a named verification command in every
+`.claude/goals/<slug>.md` draft; today the model reads and interprets it inside
+the window. This spec has the machinery extract it (a labeled fenced block, see
+Technical Design) and execute it: at plan time as the red-first gate, at round
+scoring as the verdict. The operator approves it together with the `#auto` tag.
+
+A row whose draft has no extractable verify block, or whose block runs green at
+HEAD, is not auto-eligible and is skipped with a reason. The run is then "make
+the block green" in at most 3 fresh rounds. Test-first, lifted to the row
+level, with zero new files.
 
 This converts the operator's "we already know the output we want" moment from
 prose into a red test, captured once at tagging, at the cheapest possible human
-touchpoint. It also shrinks the pointer: context plus checker path, because the
-acceptance criteria now live in the checker.
+touchpoint.
 
 The checker-can-be-written test IS the auto-eligibility test. A doc-drift row
 gets a trivial grep checker. A judgment row gets no honest checker, so it is
@@ -86,8 +91,9 @@ See `## Design`.
   |   existing gates: marker, allow-list, |
   |   journal dedup, 4000-char pre-flight |
   |   NEW gate: checker-first             |
-  |     .claude/goals/<slug>.check exists |
-  |     AND exits non-zero against HEAD   |
+  |     the pointer's ```check block      |
+  |     extracts AND exits non-zero at    |
+  |     HEAD                              |
   |     missing -> skip "no checker"      |
   |     green   -> skip "checker already  |
   |                green (done or vacuous)"|
@@ -130,21 +136,34 @@ executes it.
 
 ### The checker contract
 
-- Path: `.claude/goals/<slug>.check`, next to the pointer file, found by
-  convention (no TSV column change).
-- Shape: a plain executable (bash or any shebang). Exit 0 means the row's
-  outcome holds; non-zero means it does not. Stdout/stderr are evidence, not
-  protocol.
-- Authored at intake: `/kit:assign` drafts it alongside the goal draft for a
-  row intended for `#auto`; `/kit:test-plan` + `/kit:test-write` are the organs
-  for a behavioral checker (the checker can simply run one new failing test).
-- Approved with the tag: the operator reviews the checker in the same moment
-  they write `#auto` on the row. An unapproved or missing checker means the tag
-  is inert, which fails safe.
-- Red-first is mandatory: the watcher runs the checker at plan time and refuses
+- Location: INSIDE the goal draft. The pointer file (`.claude/goals/<slug>.md`)
+  carries one fenced code block tagged `check` (```` ```check ````); its body
+  is the checker script, run under `bash -e` from the repo root. No sibling
+  file, no TSV change. This reuses the goal contract's existing mandate that
+  every draft names a verification command; the delta is that the machinery
+  now executes it instead of the model interpreting it.
+- Extraction is the same labeled-token pattern the board already uses for
+  `#queue{}`: first ```` ```check ```` fence wins; zero or two-plus fences
+  means no checker (ambiguity fails safe to skip).
+- Shape: exit 0 means the row's outcome holds; non-zero means it does not.
+  Stdout/stderr are evidence, not protocol. Multi-line is fine; the block can
+  simply run one new failing test.
+- Authored at intake: `/kit:assign` writes the block into the draft for a row
+  intended for `#auto`; `/kit:test-plan` + `/kit:test-write` are the organs for
+  a behavioral checker.
+- Approved with the tag: the operator reviews the block in the same moment
+  they write `#auto` on the row. A draft without the block means the tag is
+  inert, which fails safe.
+- Red-first is mandatory: the watcher runs the block at plan time and refuses
   a green one. Green at HEAD means the row is already done or the checker
   asserts nothing; both are operator problems, surfaced as a skip reason, never
   burned as a paid window.
+- Trust note: the block is executed unattended, but this adds no new trust
+  level. The pointer already had to pass parse-board's allow-list (charset,
+  repo containment, existence) to be fed verbatim into an unattended
+  `--dangerously-skip-permissions` session; an operator-authored, committed,
+  allow-listed file is already the trust root. The 4000-char pre-flight budget
+  now includes the block, which also keeps checkers small by construction.
 
 ### The round loop
 
@@ -166,24 +185,27 @@ executes it.
 
 ### Data model changes
 
-None. One new file convention (`<slug>.check`), one new log subtree
-(`rounds/`), zero schema changes to the board, the TSV, or the journal.
+None. One new fenced-block convention inside an existing file, one new log
+subtree (`rounds/`), zero schema changes to the board, the TSV, or the
+journal.
 
 ## Task Breakdown
 
 ### Phase 1: Foundation
-- [ ] TASK-001: checker gate in `lib/queue/watch-board.sh`: existence + red-first
-  execution, two new skip reasons. AC: fixture rows with missing / green / red
-  checkers plan only the red one.
+- [ ] TASK-001: checker gate in `lib/queue/watch-board.sh`: ```check block
+  extraction + red-first execution, three new skip reasons (missing, green,
+  ambiguous). AC: fixture rows with missing / green / red / double blocks plan
+  only the red one.
 - [ ] TASK-002: round loop in `lib/queue/queue.sh`: cap 3, fresh session per
   round, checker scoring, round-record persistence, `stalled` on cap. AC: a stub
   checker that goes green on round 2 yields `done` with 2 round records; one
   that never goes green yields `stalled` with 3.
 
 ### Phase 2: Core
-- [ ] TASK-003: `commands/assign.md`: draft the checker for auto-intended rows
-  (delegating behavioral checkers to test-plan/test-write); state the
-  approve-with-tag contract. AC: the greps in `## Verification` hit.
+- [ ] TASK-003: `commands/assign.md`: write the ```check block into the goal
+  draft for auto-intended rows (delegating behavioral checkers to
+  test-plan/test-write); state the approve-with-tag contract. AC: the greps in
+  `## Verification` hit.
 - [ ] TASK-004: `commands/grill.md` self-answer mode cross-reference: a
   self-answered question that would change the DONE-LINE is out of bounds; the
   checker is operator-approved content the run may not reinterpret. AC: grep
@@ -216,8 +238,8 @@ None. One new file convention (`<slug>.check`), one new log subtree
 ## Verification
 
 - `bash tests/test-checker-rounds.sh` exits 0.
-- Negative control 1: a fixture `#auto` row with NO checker file is skipped
-  with the no-checker reason and never reaches the plan.
+- Negative control 1: a fixture `#auto` row whose draft has NO ```check
+  block is skipped with the no-checker reason and never reaches the plan.
 - Negative control 2: a fixture checker that exits 0 at plan time is skipped
   with the already-green reason.
 - `grep -n 'checker' commands/assign.md commands/grill.md docs/patterns/gauntlet.md`
@@ -232,7 +254,7 @@ None. One new file convention (`<slug>.check`), one new log subtree
 | red checker + valid pointer is planned | script | the happy gate |
 | missing checker: row skipped, reason names the gate | script | negative control 1 |
 | green-at-HEAD checker: row skipped, reason names vacuity | script | negative control 2 |
-| checker not executable: row skipped, reason, exit 0 | script | operator error must not page |
+| two ```check blocks in one draft: row skipped, ambiguity reason | script | fail-safe extraction |
 | round loop: green on round 2 ends `done`, 2 records | script | convergence path |
 | round loop: red through cap ends `stalled`, 3 records | script | honest halt |
 | `RUNNER_DONE` marker + red checker scores RED, mismatch recorded | script | the Goodhart tripwire |
@@ -249,8 +271,9 @@ None. One new file convention (`<slug>.check`), one new log subtree
    drafting guidance, not defended in code.
 3. Checker is slow: plan-time execution happens once per watcher run per row.
    A checker slower than ~60s is a drafting smell; guidance, not enforcement.
-4. Two rows share one checker file: slugs differ so paths differ by
-   convention; a hand-shared checker is operator-authored and allowed.
+4. The block needs repo state to assert against (a fixture, seed data): it
+   sets that up and tears it down itself, or asserts on committed state only.
+   Drafting guidance in assign.md, not defended in code.
 
 ## Failure modes
 
@@ -297,10 +320,15 @@ None. One new file convention (`<slug>.check`), one new log subtree
   `RUNNER_DONE` is self-reported by an untrusted run (queue.sh already treats
   it as such); the checker is operator-approved. Disagreement is recorded, and
   the checker wins. Rejected: marker wins (re-opens the prose done-line hole).
-- DEC-006: the TSV contract is unchanged; the checker is found by path
-  convention next to the pointer. Rationale: every existing consumer keeps
-  working; SPEC-217 chose the same shape for the marker itself (convention in
-  an existing surface over a new column). Rejected: a fourth TSV column.
+- DEC-006: the checker lives INSIDE the goal draft as a ```check fenced
+  block, not as a sibling `.check` file. Rationale (operator call 2026-08-10):
+  the goal contract already mandates a verification command in every draft, so
+  a sibling file would duplicate that field and drift from it; one artifact
+  means one approval and the pointer stays the single unit the operator
+  reviews. Extraction by labeled token matches the board's own `#queue{}`
+  pattern, and the existing 4000-char pre-flight naturally bounds checker
+  size. Rejected: a sibling `.check` file (second artifact, drift); a fourth
+  TSV column (breaks every consumer).
 
 ## Open questions
 
