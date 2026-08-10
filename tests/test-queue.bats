@@ -292,3 +292,33 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   _mux_submit s8
   [ "$(grep -c 'enter slug=s8' "$QLOG")" -eq 1 ]
 }
+
+# =============================================================================================
+# T11 goal-over-budget: a pointer whose /goal line exceeds the interactive 4000-char cap fails
+# fast to `error`, with NO window ever opened -- pins the fix for the silent-strand bug (an
+# over-budget goal used to type into a real window and sit there forever, no journal entry,
+# nothing but an idle pane an operator had to notice by hand across 3 live runs).
+@test "T11 goal-over-budget: fails fast to error, no window opened" {
+  local repo="$WORK/r11"; mkrepo "$repo"
+  python3 -c "print('x' * 4200)" > "$WORK/p11.txt"
+  row big11 "$repo" "$WORK/p11.txt" > "$WORK/q.tsv"
+
+  QUEUE_RETRY_SLEEP_SECS=0 run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict big11)" = "error" ]
+  ! grep -q "new-window slug=big11" "$QLOG"
+}
+
+# T12 goal-under-budget: a normal-size pointer is unaffected by the new check (regression guard
+# alongside T1, run through the SAME real `queue run` path with the length check now present).
+@test "T12 goal-under-budget: unaffected, window opens and completes" {
+  local repo="$WORK/r12"; mkrepo "$repo"
+  echo "report HEAD then end" > "$WORK/p12.txt"
+  seed_transcript ok12 "  RUNNER_DONE"
+  row ok12 "$repo" "$WORK/p12.txt" > "$WORK/q.tsv"
+
+  run bash "$QUEUE" run "$WORK/q.tsv"
+  [ "$status" -eq 0 ]
+  [ "$(jverdict ok12)" = "done" ]
+  grep -q "new-window slug=ok12" "$QLOG"
+}
