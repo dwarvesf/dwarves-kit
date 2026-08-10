@@ -78,7 +78,7 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 35 commands + 28 agents = **63 entries**.
+Total: 36 commands + 28 agents = **64 entries**.
 
 ### Left arm: BUILD (decompose + implement)
 
@@ -136,6 +136,7 @@ Total: 35 commands + 28 agents = **63 entries**.
 | `/kit:explain` | command | Understanding (AFTER gate) | gate | ADR-0031 §2; emits a literate-diff explainer (background -> goal+intuition -> prose-ordered diff -> diagram) via `lib/explain.sh`, composing narrate-log + svg-knowledge-diagram; grounded in the diff + test results, advisory |
 | `/kit:quiz-gate` | command | Understanding (AFTER gate) | gate | ADR-0031 §2/§3; the ★-tap NUDGE before merging a significant+worthy gate PR: 5 diff-grounded quiz questions (`lib/gate/quiz-gate.sh`) routed through deep-understand, keyed on `lib/classify/significance-classify.sh`'s `tap` verdict; three logged responses (engage/defer/wave), advisory, never must-pass |
 | `/kit:pitch` | command | Understanding (AFTER gate, outward) | gate | SPEC-140; the OUTWARD twin of `/kit:explain` -- assembles a buy-in doc (outcome -> unknowns -> evidence -> cost -> ask) from the spec, proof-of-done, implementation-notes, and the ledger's grill/DEBT records via `lib/pitch.sh`; a missing source is an explicit line, never invented; `commands/ship.md` Step 8 offers it only when `significance=high` AND the repo is team-shared (`lib/pitch.sh team-shared`); never auto-posts |
+| `/kit:gauntlet` | command | Contributor-surface convergence | gate | Maintainer-only bounded-revise loop (Evaluator-Optimizer lineage) proving a median-skill dev can onboard from the docs alone, build one seed card, and submit unaided; each round persists a full run record (`docs/verification/gauntlet/<date>-<slug>/`), the orchestrator revises the surface, tears down, respins |
 | `code-reviewer` | agent | Code review | gate | Focused single-lens reviewer; dispatched by /review-team with a lens (architecture / test-coverage; security now uses security-reviewer) |
 | `security-reviewer` | agent | Security review | gate | Deep security analysis; dispatched by `/kit:review-team` as the security reviewer (replacing the generic code-reviewer security lens); also invocable directly for an ad-hoc deep pass |
 | `doc-verifier` | agent | Docs verification | gate | Verifies doc claims against live codebase after /docs updates; read-only; the doc-sync twin of task-verifier |

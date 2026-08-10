@@ -199,7 +199,15 @@ generate() {
     hooks_table
   } > "$tmp"
   mv -f "$tmp" "$out"
-  sync_counts
+  # Only auto-heal the hand-maintained README/architecture.md count strings when
+  # regenerating the REAL registry in place. A caller regenerating to a throwaway
+  # path (tests/test-meta.sh's SPEC-219 freshness check runs `generate` against a
+  # tempfile to diff, never to keep) is a read-only drift check and must never
+  # mutate other files as a side effect -- that silently masked drift instead of
+  # reporting it.
+  if [ "$out" = "$KIT_DIR/docs/FEATURES.md" ]; then
+    sync_counts
+  fi
 }
 
 # Patches the hand-maintained "N commands / N agents / ..." count strings in
