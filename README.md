@@ -73,7 +73,7 @@ Stages are metadata, not directories: each module keeps its name and install uni
 | Shape (Specify) | `spec`, `classify`, `goal`, `board` (input side), `sync` (spoke intake; outward mirror is its Watch side) |
 | Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate` |
 | Watch (Observe) | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror 2026-07-16) |
-| Check (Govern) | `gate`, `money_gate`, `advisor` |
+| Check (Govern) | `gate`, `money_gate`, `advisor`, `gauntlet` |
 | Learn | `learn`, `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending ADR-0034 amendment) |
 | (no stage) | `cosmetic` (statusline; orthogonal to the loop) |
 
@@ -252,7 +252,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 </details>
 
 <details>
-<summary><b>Commands</b> (35, manual, human-triggered)</summary>
+<summary><b>Commands</b> (36, manual, human-triggered)</summary>
 
 | Command | Phase | What it does |
 |---------|-------|-------------|
@@ -291,6 +291,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
 | /kit:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
 | /kit:draft-agent | Meta | Meta-agent agent-builder: generates a subagent (or sub-goal file) from a description and installs it by default (`--draft` to stop at a review draft) |
+| /kit:gauntlet | Meta | Maintainer-only bounded-revise loop that converges the contributor surface (onboarding docs, helper scripts, card template) by having a synthetic-dev agent onboard from the docs alone in a clean room, build one seed card, and submit unaided; each round persists a full run record and the orchestrator revises the surface |
 
 </details>
 
@@ -372,7 +373,7 @@ dwarves-kit/
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
   bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`queue`/`session`/`spec`/`stats` thin forwarders to `lib/<subsystem>/`, plus the two module CLIs (`prose-rag`, `worktree-provision`) that keep their module names. A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       (28 files) Subagents dispatched by commands
-  commands/                     (35 markdown command prompts)
+  commands/                     (36 markdown command prompts)
   hooks/                        (25 scripts + hooks.json plugin manifest)
   lib/gate/dispatch-gate.sh          Disjointness gate + drift guard for /kit:dispatch (pure-bash concurrency moat)
   lib/classify/lane-classify.sh          Deterministic task-type -> risk-lane classifier + advisory floor check (used by /kit:assign + /kit:dispatch); optional `--files "<paths>"` on classify/explain/check escalates the kit-machinery gate on an actual EDIT to lib/ or hooks/, not a mere textual mention (SPEC-105, edit-vs-mention)
