@@ -1,6 +1,6 @@
 ---
 name: auto-queue-watcher-pilot
-description: The #auto backlog-row + queue-watcher mechanism (SPEC-217) went 4-for-4, unattended, across ID-463/ID-309/ID-466/ID-467; the submit-glitch is fixed, the char-budget gap is not.
+description: The #auto backlog-row + queue-watcher mechanism (SPEC-217) went 4-for-4, unattended, across ID-463/ID-309/ID-466/ID-467; both mechanism bugs (submit glitch, char budget) are fixed.
 metadata:
   type: project
 ---
@@ -24,17 +24,23 @@ One mechanism bug is fixed, one remains:
   long single-line paste rendering with only its tail visible. Detection is
   now "any prompt line still carries content"; ID-467 ran with zero manual
   touches, confirming the fix live.
-- STILL OPEN: fixed prompt overhead (the XPIA preamble + the
+- FIXED (PR #371): fixed prompt overhead (the XPIA preamble + the
   EXIT_SIGNAL/draft-PR suffixes `_goal_line` appends) eats roughly 1500 of
-  `/goal`'s 4000-char budget, leaving well under 2500 chars for the actual
-  pointer content, with no pre-flight check or truncation. A slightly-too-long
-  pointer silently strands the row: no journal entry, no error, just an idle
-  session.
+  `/goal`'s 4000-char budget, and an over-budget pointer used to silently
+  strand the row. `QUEUE_GOAL_CHAR_LIMIT` (default 4000) is now pre-flighted
+  before any window opens; an oversized pointer journals `error` with the
+  reason named. Keep pointers under roughly 2400 chars anyway: the margin is
+  what the suffix overhead leaves.
 
 All four pilot rows ran directly against the operator's main checkout (the
 dirty-tree + on-default-branch guards make a side worktree structurally
 impossible to use here), so treat the main checkout as a shared, sometimes
-busy resource, not an isolated pilot sandbox. A separate, still-open finding:
-`tests/test-queue.bats` has 3 pre-existing failing negative controls on
-master (NC2, NC6, NC7), filed as ID-468, confirmed unrelated to any of the
-above (delta zero on every branch checked against pristine master).
+busy resource, not an isolated pilot sandbox. The "3 pre-existing failing
+negative controls" finding (ID-468) resolved as state pollution, not test
+rot: the suite sandboxed its journal but not its beat/status/guard files, so
+leaked counters in the real `~/.local/state` crossed the runaway-breaker trip
+and rewrote the expected `stalled` verdict, machine-local only. Fixed by
+sandboxing `KIT_LEDGER_DIR` in the suite (PR #372). Lesson worth keeping: a
+"pre-existing failure identical on master" can still be an environment
+artifact of THIS machine; check the state dirs a suite touches before filing
+it as code rot.

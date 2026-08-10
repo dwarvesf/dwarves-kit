@@ -5,6 +5,17 @@ All notable changes to dwarves-kit are documented here.
 ## [Unreleased]
 
 ### Fixed
+- **Queue launcher pre-flights the `/goal` 4000-char cap.** Interactive `/goal` refuses
+  anything over 4000 chars, but the launcher never checked before typing, so an over-budget
+  pointer opened a real window, typed a silently-rejected goal, and sat idle forever with no
+  journal entry. `QUEUE_GOAL_CHAR_LIMIT` (default 4000) is now checked before any window
+  opens; an over-budget pointer fails fast to journal `error` with the reason named.
+- **`test-queue.bats` sandboxes its ledger root; NC2/NC6/NC7 un-failed.** The suite sandboxed
+  the journal but not the run files, so guard counters leaked into the operator's real
+  `~/.local/state` and accumulated across local runs until the SPEC-221 breaker trip rewrote
+  the NCs' expected `stalled` into `error stagnation_detected`, machine-local, invisible on
+  fresh checkouts. `KIT_LEDGER_DIR` now points at the per-test sandbox, a T13 tripwire pins
+  the resolver, and the leaked files were cleaned. The ID-463 class, state-dir edition.
 - **Queue launcher no longer strands a row on a dropped Enter (SPEC-217).** `_mux_submit`'s
   still-pending check matched the literal `/goal` at the prompt, but a long typed goal
   renders tail-first in the input box, so the string never appears there. A dropped Enter
