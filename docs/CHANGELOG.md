@@ -4,6 +4,22 @@ All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Queue launcher no longer strands a row on a dropped Enter (SPEC-217).** `_mux_submit`'s
+  still-pending check matched the literal `/goal` at the prompt, but a long typed goal
+  renders tail-first in the input box, so the string never appears there. A dropped Enter
+  read as submitted and the row sat idle with no journal entry, reproduced on 3 consecutive
+  live `#auto` runs, each needing a manual Enter to unstick. Detection is now "any prompt
+  line still carries content", errs toward re-Entering rather than toward a false submit.
+- **`tests/test-meta.sh` no longer rewrites the tree it runs in.** `feature-registry.sh`'s
+  `generate()` unconditionally called `sync_counts()`, so the freshness check, which
+  regenerates to a throwaway temp path purely to diff, silently rewrote `README.md` and
+  `docs/architecture.md` on every run, masking the exact drift it had just flagged.
+  `sync_counts` now fires only when `generate` writes the real file in place. Also fixes the
+  drift itself: `/kit:gauntlet` was missing from README's command table and
+  `docs/architecture.md`'s V-phase inventory; a pristine run is now 809/809 and leaves the
+  tree byte-identical (checksummed before/after, plus an independent negative control).
+
 ### Added
 - **Test-plan coverage advisory at the ship boundary (ID-466).** The test plan fed
   `/kit:execute`'s verify steps but nothing at the gate traced the proof back to the matrix.
