@@ -268,3 +268,27 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ -z "$(jverdict s3n)" ]                       # row 3 never attempted -> no journal row
   echo "$output" | grep -q "STOP THE NIGHT"
 }
+
+# =============================================================================================
+# T9 submit-retry: a dropped Enter with the goal rendered TAIL-first (no `/goal` substring in
+# the pane) is detected as still-pending and re-Entered until the input clears. Pins the fix
+# for the 3-for-3 live stranding: the old `[>❯]\s*/goal` match saw the tail rendering, reported
+# submitted after one dropped Enter, and the row sat idle with no journal entry.
+@test "T9 submit-retry: tail-rendered pending input is re-Entered until clear" {
+  . "$QUEUE"
+  printf '2' > "$QSTUB/s7.pending"                # first 2 Enters drop; 3rd not needed
+  # premise guard: the stuck rendering must NOT contain `/goal` (what broke the old regex)
+  "$MUX_CMD" capture-pane -t "q:s7" | grep -vq '/goal'
+  _mux_submit s7
+  [ ! -f "$QSTUB/s7.pending" ]                    # input eventually cleared
+  [ "$(grep -c 'enter slug=s7' "$QLOG")" -eq 2 ]  # exactly the 2 Enters needed, then stopped
+}
+
+# T10 submit-bare-prompt: an already-clear (bare `❯`) prompt submits on the first Enter, no
+# retry storm -- the empty-input rendering must not read as pending.
+@test "T10 submit-bare-prompt: bare prompt exits after one Enter" {
+  . "$QUEUE"
+  printf '❯ \n' > "$QSTUB/s8.transcript"
+  _mux_submit s8
+  [ "$(grep -c 'enter slug=s8' "$QLOG")" -eq 1 ]
+}
