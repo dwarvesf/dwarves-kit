@@ -23,6 +23,14 @@
 # new skills only appear in the NEXT session.
 set -uo pipefail
 
+# Master switch, checked FIRST, same shape as money-gate.sh and prose-rag.sh.
+# `hooks.json` is the PLUGIN manifest and is NOT filtered by the enabled module
+# set (install.sh: "hooks.json (the plugin manifest) is excluded"), so on the
+# plugin-install path this file is registered for every consumer whether or not
+# they enabled the cloud module. CLAUDE_CODE_REMOTE answers "is this a cloud
+# session", never "did this project ask for provisioning". Without this switch
+# the module would install gh and clone repos on cloud VMs nobody opted in for.
+[ "${CLOUD_PROVISION:-}" = "1" ] || exit 0        # not opted in: do nothing
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0  # local CLI: nothing to rebuild
 [ "$(uname -s)" = "Linux" ] || exit 0             # macOS: nothing to do
 

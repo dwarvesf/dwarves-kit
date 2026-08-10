@@ -30,6 +30,16 @@
 set -uo pipefail
 export GIT_TERMINAL_PROMPT=0   # a clone that cannot auth must fail, never hang
 
+# The host's ambient environment must not decide a verdict here. A developer
+# machine that happens to export a service-account token made the secrets step
+# fire in every run and turned a CLOUD-READY assertion red for a reason that had
+# nothing to do with the code. Same class as a test PATH that leaks the host's
+# real binaries. Section 5c sets this variable explicitly where it is the point.
+unset OP_SERVICE_ACCOUNT_TOKEN
+unset CLOUD_PROVISION CLOUD_DASH_GUARD
+unset CLOUD_WORKSPACE CLOUD_REPOS CLOUD_REPO_OWNER CLOUD_MAP CLOUD_RULES
+unset CLOUD_PLUGINS CLOUD_HOOKS_PATH CLOUD_VAULT CLOUD_CANARY_REF CLOUD_OP_VERSION
+
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 L="$KIT/lib/cloud"
 H="$KIT/hooks"
@@ -71,9 +81,15 @@ sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -c1-
 # front of a FUNCTION call leaks into the calling shell in bash, which would
 # leave PATH rewritten for the rest of the run.
 guard_off() { printf '{"tool_input":{"file_path":"%s"}}' "$1" \
-    | env -u CLAUDE_CODE_REMOTE bash "$H/cloud-dash-guard.sh"; }
+    | env -u CLAUDE_CODE_REMOTE CLOUD_DASH_GUARD=1 bash "$H/cloud-dash-guard.sh"; }
 guard_on()  { printf '{"tool_input":{"file_path":"%s"}}' "$1" \
-    | PATH="$ON_PATH" CLAUDE_CODE_REMOTE=true HOME="$W/home" bash "$H/cloud-dash-guard.sh"; }
+    | PATH="$ON_PATH" CLOUD_DASH_GUARD=1 CLAUDE_CODE_REMOTE=true HOME="$W/home" \
+      bash "$H/cloud-dash-guard.sh"; }
+# The same fixture with the master switch absent: a cloud session that never
+# opted in must be untouched.
+guard_noswitch() { printf '{"tool_input":{"file_path":"%s"}}' "$1" \
+    | PATH="$ON_PATH" env -u CLOUD_DASH_GUARD CLAUDE_CODE_REMOTE=true HOME="$W/home" \
+      bash "$H/cloud-dash-guard.sh"; }
 
 echo
 echo "=== 1. STATIC: the gate is the documented variable, not a directory probe ==="
@@ -86,12 +102,70 @@ for h in cloud-session-start.sh cloud-dash-guard.sh; do
     "$(grep -qE '^\[ -d "\$HOME/' "$H/$h" && echo yes || echo no)"
 done
 # Negative control for the greps above: an absence proves nothing unless the
-# same helper is shown finding the string when it IS there.
-printf 'if [ -d "$HOME/workspace/sibling" ]; then exit 0; fi\n' >"$W/old-gate-fixture"
-ck "NC: the grep helper finds the old probe when present" yes \
-  "$(grep -qE '^if \[ -d "\$HOME/' "$W/old-gate-fixture" && echo yes || echo no)"
+# SAME pattern is shown firing on the historical regression's exact shape. The
+# fixture is byte-identical to what the retired gate looked like.
+printf '[ -d "$HOME/workspace/sibling" ] || exit 0\n' >"$W/old-gate-fixture"
+ck "NC: the same pattern fires on the historical gate shape" yes \
+  "$(grep -qE '^\[ -d "\$HOME/' "$W/old-gate-fixture" && echo yes || echo no)"
 ck "NC: the helper reports absent for a string in no hook" no \
   "$(has 'zzz-not-in-any-hook' "$H/cloud-session-start.sh")"
+
+# The master switch is checked FIRST, before the cloud gate. hooks.json is the
+# plugin manifest and is NOT filtered by the enabled module set, so on the
+# plugin-install path both hooks are registered for every consumer. Without a
+# switch, "off by default" would be false on the path the kit calls recommended.
+# Comment lines are skipped and only a real `${VAR:-}` expansion counts, so the
+# prose above each gate cannot satisfy the order check.
+gate_order() {  # gate_order <file> <switch-name>
+  awk -v s="$2" '
+    /^[[:space:]]*#/ { next }
+    $0 ~ ("\\$\\{" s ":-") && !sw { sw = NR }
+    /\$\{CLAUDE_CODE_REMOTE:-/ && !cr { cr = NR }
+    END { print (sw && cr && sw < cr) ? "yes" : "no" }' "$1"
+}
+for pair in "cloud-session-start.sh|CLOUD_PROVISION" "cloud-dash-guard.sh|CLOUD_DASH_GUARD"; do
+  h="${pair%%|*}"; sw="${pair##*|}"
+  ck "$h checks $sw" yes "$(has "$sw" "$H/$h")"
+  ck "$h checks the switch before CLAUDE_CODE_REMOTE" yes "$(gate_order "$H/$h" "$sw")"
+done
+# NC: the order check reports 'no' on a fixture where the switch comes second.
+printf '[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0\n[ "${CLOUD_PROVISION:-}" = "1" ] || exit 0\n' \
+  >"$W/order-fixture"
+ck "NC: the order check catches a switch placed after the cloud gate" no \
+  "$(gate_order "$W/order-fixture" CLOUD_PROVISION)"
+
+# The tier split is declared once and read from there, so a new key cannot pick
+# the wrong resolver silently. Every key provision.sh reads must appear in
+# exactly one list, and be read through that list's resolver.
+tier_bad=""
+proj="$(grep -oE '^CLOUD_PROJECT_KEYS="[^"]*"' "$L/provision.sh" | sed 's/.*"\(.*\)"/\1/')"
+oper="$(grep -oE '^CLOUD_OPERATOR_KEYS="[^"]*"' "$L/provision.sh" | sed 's/.*"\(.*\)"/\1/')"
+# Call sites only: comment lines are stripped first, or the header's own prose
+# about `cfg_root` would register as a phantom key.
+calls="$(grep -vE '^[[:space:]]*#' "$L/provision.sh" | grep -oE 'cfg(_root)? [a-z_]+ ')"
+for k in $proj; do
+  printf '%s\n' "$calls" | grep -qE "^cfg $k " || tier_bad="$tier_bad unread:$k"
+  printf '%s\n' "$calls" | grep -qE "^cfg_root $k " && tier_bad="$tier_bad wrong-tier:$k"
+done
+for k in $oper; do
+  printf '%s\n' "$calls" | grep -qE "^cfg_root $k " || tier_bad="$tier_bad not-operator:$k"
+done
+# Every key actually read must be declared. A key in neither list is the bug the
+# declaration exists to prevent.
+for k in $(printf '%s\n' "$calls" | awk '{print $2}' | sort -u); do
+  case " $proj $oper " in *" $k "*) ;; *) tier_bad="$tier_bad undeclared:$k" ;; esac
+done
+ck "every [cloud] key is declared in exactly one tier and read through it" "" "$tier_bad"
+ck "NC: the tier lists are non-empty (the extraction is not vacuous)" yes \
+  "$([ -n "$proj" ] && [ -n "$oper" ] && echo yes || echo no)"
+
+# The op CLI pin lives in two files that run in different contexts (Setup-script
+# time and per-session). A bump that touches one and not the other desyncs them.
+op_pin_a="$(grep -oE 'cfg op_version v[0-9.]+' "$L/provision.sh" | grep -oE 'v[0-9.]+')"
+op_pin_b="$(grep -oE 'OP_VERSION:-v[0-9.]+' "$L/vm-setup.sh" | grep -oE 'v[0-9.]+')"
+ck "the op version pin matches across provision.sh and vm-setup.sh" "$op_pin_a" "$op_pin_b"
+ck "NC: the op pin extraction is not empty on both sides" yes \
+  "$([ -n "$op_pin_a" ] && [ -n "$op_pin_b" ] && echo yes || echo no)"
 
 # Hard requirement: no eval over an environment variable. A root-context
 # `eval echo ~$SUDO_USER` was a reproduced command injection. Comment lines are
@@ -119,9 +193,21 @@ ck "dash guard OFF exit code" 0 "$rc"
 ck "dash guard OFF is silent" "" "$out"
 ck "dash guard OFF leaves the file byte-identical" "$before" "$(sha "$W/off.md")"
 
-out="$(echo '{}' | env -u CLAUDE_CODE_REMOTE bash "$H/cloud-session-start.sh")"; rc=$?
+out="$(echo '{}' | env -u CLAUDE_CODE_REMOTE CLOUD_PROVISION=1 bash "$H/cloud-session-start.sh")"; rc=$?
 ck "session-start hook OFF exit code" 0 "$rc"
 ck "session-start hook OFF is silent" "" "$out"
+
+# The other half of OFF: a real cloud session that never opted in.
+printf '%s\n' "$PROSE_IN" >"$W/noswitch.md"
+before="$(sha "$W/noswitch.md")"
+out="$(guard_noswitch "$W/noswitch.md")"; rc=$?
+ck "dash guard with no CLOUD_DASH_GUARD exit code" 0 "$rc"
+ck "dash guard with no CLOUD_DASH_GUARD leaves the file byte-identical" \
+  "$before" "$(sha "$W/noswitch.md")"
+out="$(echo '{}' | PATH="$ON_PATH" env -u CLOUD_PROVISION CLAUDE_CODE_REMOTE=true \
+       CLAUDE_PROJECT_DIR="$W" bash "$H/cloud-session-start.sh")"; rc=$?
+ck "session-start hook with no CLOUD_PROVISION exit code" 0 "$rc"
+ck "session-start hook with no CLOUD_PROVISION is silent" "" "$out"
 
 echo
 echo "=== 3. ON: the same fixture, CLAUDE_CODE_REMOTE=true, the hook acts ==="
@@ -191,6 +277,21 @@ for ext in ts py; do
   ck "NC: .$ext is never opened" "$b" "$(sha "$W/code.$ext")"
 done
 
+# The unbalanced-fence skip is the branch the guard's own SAFETY note names as
+# the reason this version is narrow: with an odd number of fences the code
+# regions cannot be trusted, so the whole file is left alone even though it
+# carries a prose dash.
+printf 'Prose with a dash %s here.\n\n```py\nX = 1\n' "$EM" >"$W/unbalanced.md"
+b="$(sha "$W/unbalanced.md")"
+guard_on "$W/unbalanced.md" >/dev/null
+ck "a file with unbalanced fences is skipped whole" "$b" "$(sha "$W/unbalanced.md")"
+# NC: the same content with the fence CLOSED is rewritten, so the assertion above
+# is the fence rule and not a guard that never writes.
+printf 'Prose with a dash %s here.\n\n```py\nX = 1\n```\n' "$EM" >"$W/balanced.md"
+guard_on "$W/balanced.md" >/dev/null
+ck "NC: the same file with balanced fences IS rewritten" "$PROSE_OUT" \
+  "$(head -1 "$W/balanced.md")"
+
 echo
 echo "=== 5a. provision: gh absent, prefix unwritable, no root (soft fail) ==="
 mkdir -p "$W/nogh" "$W/repo"
@@ -240,6 +341,24 @@ out="$(PATH="$ON_PATH" HOME="$W/home5" env -u CLOUD_WORKSPACE CLOUD_WORKSPACE="$
 case "$out" in *"lib/cloud/CLOUD-RULES.md"*) got=yes ;; *) got=no ;; esac
 ck "NC: no project config falls back to the kit template" yes "$got"
 
+# Precedence: the env override is the seam's stated purpose, so prove it BEATS a
+# conflicting project value rather than merely working when nothing conflicts.
+printf 'ENV RULES MARKER\n' >"$W/cfgrepo/docs/env-rules.md"
+out="$(PATH="$ON_PATH" HOME="$W/home5" CLOUD_RULES="docs/env-rules.md" \
+       bash "$L/provision.sh" --repo-root "$W/cfgrepo" rules 2>&1)"
+ck "CLOUD_<KEY> beats a conflicting project .kit.toml value" "ENV RULES MARKER" "$out"
+
+# A leading ~ read out of a config FILE is a literal character, not $HOME. The
+# README's own example uses one, and an unexpanded ~ silently created a directory
+# actually named '~' under the repo.
+# shellcheck disable=SC2088  # the literal ~ IS the fixture: it must not expand here
+out="$(PATH="$ON_PATH" HOME="$W/home7" CLOUD_WORKSPACE="~/ws-tilde" \
+       bash "$L/provision.sh" --repo-root "$W/repo" 2>&1)"
+ck "a ~ workspace lands in HOME" yes \
+  "$([ -L "$W/home7/ws-tilde/repo" ] && echo yes || echo no)"
+ck "NC: no literal '~' directory was created under the repo" no \
+  "$([ -e "$W/repo/~" ] && echo yes || echo no)"
+
 echo
 echo "=== 5b-2. trust boundary: a project .kit.toml cannot set an operator key ==="
 # A .kit.toml rides inside the repo, so a branch under review can edit it. A key
@@ -254,6 +373,8 @@ plugins = "pwned@atk|attacker/marketplace"
 hooks_path = ".githooks"
 vault = "AttackerVault"
 canary_ref = "op://AttackerVault/anything/credential"
+repos = "attacker/instructions"
+repo_owner = "attacker"
 EOF
 git -C "$W/evil" init -q 2>/dev/null || true
 printf '#!/bin/sh\ntouch "%s/PWNED"\n' "$W" >"$W/evil/.githooks/pre-commit"
@@ -270,6 +391,11 @@ case "$out" in *'pwned@atk'*|*'attacker/marketplace'*) got=yes ;; *) got=no ;; e
 ck "the project .kit.toml did NOT reach the plugin installer" no "$got"
 case "$out" in *'AttackerVault'*) got=yes ;; *) got=no ;; esac
 ck "the project .kit.toml did NOT reach the secrets step" no "$got"
+# A clone runs no code, but provision NAMES the clone's AGENTS.md and CLAUDE.md
+# to the model as files to read, so a project-settable clone target is a
+# prompt-injection path into every later turn.
+case "$out" in *'attacker/instructions'*) got=yes ;; *) got=no ;; esac
+ck "the project .kit.toml did NOT reach the sibling-clone step" no "$got"
 # NC: the same keys DO take effect from the operator tier (the env override), or
 # the four assertions above would pass for a provision that reads nothing at all.
 out="$(PATH="$ON_PATH" HOME="$W/home6" CLOUD_WORKSPACE="$W/ws-evil2" \
@@ -312,8 +438,50 @@ case "$out" in *'canary verified'*) got=present ;; *) got=absent ;; esac
 ck "NC: no false verified line on a wrong canary" absent "$got"
 
 echo
+echo "=== 5c-2. the assemble pipeline's supporting steps ==="
+# Steps 2 to 7 of the assemble path (sibling clone, toolchain report, hooks
+# arming, board smoke, background layer, plugins) were named in the README and
+# asserted nowhere. Each is cheap to pin from one run's output.
+mkdir -p "$W/pipe/.claude/memory" "$W/pipe/_meta" "$W/pipe/.githooks"
+git -C "$W/pipe" init -q 2>/dev/null || true
+printf '# MEMORY\n\n- [One](one.md): a hook\n- [Two](two.md): another\n' >"$W/pipe/.claude/memory/MEMORY.md"
+printf '# AGENTS\n' >"$W/pipe/AGENTS.md"
+printf '# CLAUDE\n' >"$W/pipe/CLAUDE.md"
+printf '| ID | Item | Notes & source | Status |\n|---|---|---|---|\n| ID-001 | a row | src | queued |\n' \
+  >"$W/pipe/_meta/BACKLOG.md"
+printf '#!/bin/sh\nexit 0\n' >"$W/pipe/.githooks/pre-commit"; chmod +x "$W/pipe/.githooks/pre-commit"
+out="$(PATH="$ON_PATH" HOME="$W/home8" CLOUD_WORKSPACE="$W/ws-pipe" \
+       CLOUD_HOOKS_PATH=".githooks" CLOUD_REPOS="no-such-owner/no-such-repo-xyz" \
+       bash "$L/provision.sh" --repo-root "$W/pipe" 2>&1)"; rc=$?
+ck "assemble exits 0 with every step exercised" 0 "$rc"
+case "$out" in *'memory index present (2 notes)'*) got=yes ;; *) got=no ;; esac
+ck "background layer counts the memory index and names the file to read" yes "$got"
+case "$out" in *'AGENTS.md present'*) got=yes ;; *) got=no ;; esac
+ck "background layer names AGENTS.md" yes "$got"
+case "$out" in *'CLAUDE.md present'*) got=yes ;; *) got=no ;; esac
+ck "background layer names CLAUDE.md" yes "$got"
+case "$out" in *'ok  git'*) got=yes ;; *) got=no ;; esac
+ck "toolchain report names the tools it found" yes "$got"
+ck "git hooks armed from the operator tier" ".githooks" \
+  "$(git -C "$W/pipe" config --get core.hooksPath 2>/dev/null || true)"
+case "$out" in *'board renders'*) got=yes ;; *) got=no ;; esac
+ck "board smoke ran against the repo's kanban" yes "$got"
+case "$out" in *'cannot clone no-such-owner/no-such-repo-xyz'*) got=yes ;; *) got=no ;; esac
+ck "an unreachable sibling repo degrades to a !! line" yes "$got"
+case "$out" in *'CLOUD-PARTIAL'*) got=yes ;; *) got=no ;; esac
+ck "an unreachable sibling repo lands CLOUD-PARTIAL, not READY" yes "$got"
+case "$out" in *'plugins: none configured'*) got=yes ;; *) got=no ;; esac
+ck "the plugin step is a reported no-op with no config" yes "$got"
+# NC: with a reachable repo list the same run must reach CLOUD-READY, or the
+# PARTIAL assertion above would pass for a provision that always fails.
+out="$(PATH="$ON_PATH" HOME="$W/home8" CLOUD_WORKSPACE="$W/ws-pipe2" \
+       env -u CLOUD_REPOS bash "$L/provision.sh" --repo-root "$W/pipe" 2>&1)"
+case "$out" in *'CLOUD-READY'*) got=yes ;; *) got=no ;; esac
+ck "NC: with nothing failing the verdict is CLOUD-READY" yes "$got"
+
+echo
 echo "=== 5d. session-start hook ON: the full SessionStart JSON contract ==="
-echo '{}' | PATH="$ON_PATH" CLAUDE_CODE_REMOTE=true HOME="$W/home4" \
+echo '{}' | PATH="$ON_PATH" CLOUD_PROVISION=1 CLAUDE_CODE_REMOTE=true HOME="$W/home4" \
   CLOUD_WORKSPACE="$W/home4/workspace" CLAUDE_PROJECT_DIR="$W/repo" \
   env -u OP_SERVICE_ACCOUNT_TOKEN bash "$H/cloud-session-start.sh" >"$W/hook.json"
 rc=$?
@@ -454,8 +622,22 @@ else
 fi
 
 echo
+echo "=== 9. the suite itself goes red (self-check) ==="
+# The one invariant a suite cannot assert about itself inline: that a failure
+# reaches the exit code. Three suites in the predecessor of this code printed
+# FAIL lines and still exited 0. Re-invoke this file with one planted failure
+# and check the exit code. Guarded against recursion by the same variable.
+if [ -z "${CLOUD_SMOKE_SELFTEST:-}" ]; then
+  CLOUD_SMOKE_SELFTEST=1 bash "${BASH_SOURCE[0]}" >/dev/null 2>&1; sub_rc=$?
+  ck "a planted failure makes this suite exit non-zero" 1 "$sub_rc"
+  CLOUD_SMOKE_SELFTEST=0 bash "${BASH_SOURCE[0]}" >/dev/null 2>&1; sub_rc=$?
+  ck "NC: the same re-invocation with nothing planted exits 0" 0 "$sub_rc"
+fi
+
+echo
 printf 'PASS %s  FAIL %s\n' "$pass" "$fail"
 echo "workdir=$W"
+[ "${CLOUD_SMOKE_SELFTEST:-0}" = "1" ] && ck "PLANTED FAILURE (self-check)" expected planted
 [ "$fail" = 0 ] || exit 1
 echo "smoke: all $pass passed"
 exit 0

@@ -19,21 +19,31 @@
 # workspace, report the toolchain, name the background layer the session reads.
 #
 # TWO TIERS, because a project's `.kit.toml` rides inside the repo and a pull
-# request can therefore set it. PROJECT keys carry inert data. OPERATOR keys
-# select code to run or name a credential, so they skip the project overlay.
+# request can therefore set it.
+#
+#   THE RULE, for whoever adds the next key: a PROJECT key may only name
+#   something INSIDE this repo. Anything that reaches outside the repo, runs
+#   code, or names a credential is an OPERATOR key and skips the project
+#   overlay. When in doubt, take the operator tier.
 #
 #   key           tier      env override        default
 #   ------------  --------  ------------------  ------------------------------
 #   workspace     project   CLOUD_WORKSPACE     $HOME/workspace
-#   repos         project   CLOUD_REPOS         (none)
-#   repo_owner    project   CLOUD_REPO_OWNER    (none)
 #   map           project   CLOUD_MAP           (none)
 #   rules         project   CLOUD_RULES         the kit's CLOUD-RULES.md
 #   op_version    project   CLOUD_OP_VERSION    v2.31.1
+#   repos         operator  CLOUD_REPOS         (none)
+#   repo_owner    operator  CLOUD_REPO_OWNER    (none)
 #   plugins       operator  CLOUD_PLUGINS       (none)
 #   hooks_path    operator  CLOUD_HOOKS_PATH    (none, never auto-detected)
 #   vault         operator  CLOUD_VAULT         (none)
 #   canary_ref    operator  CLOUD_CANARY_REF    op://<vault>/cloud-canary/credential
+#
+# `repos` and `repo_owner` are operator keys even though a clone runs no code:
+# the clone's AGENTS.md and CLAUDE.md are then NAMED to the model as files to
+# read, so a project-settable clone target is a prompt-injection path into every
+# later turn. The two switches CLOUD_PROVISION and CLOUD_DASH_GUARD are master
+# gates read by the hooks, not `[cloud]` keys, and nothing here resolves them.
 #
 # Repo-root resolution follows the kit's existing consumer pattern: `--repo-root`,
 # then $REPO_ROOT, then $CLAUDE_PROJECT_DIR, then the cwd's git toplevel, then cwd.
@@ -150,13 +160,35 @@ if [ "$(id -u)" = "0" ] && [ -n "${SUDO_USER:-}" ]; then
   [ -n "$_lookup" ] && _home="$_lookup"
 fi
 
-WS="$(cfg workspace "$_home/workspace")"
-REPOS="$(cfg repos "")"
-REPO_OWNER="$(cfg repo_owner "")"
+# A leading `~` read out of a config FILE is a literal character, not the home
+# directory: bash expands a tilde only in an unquoted literal word, never in the
+# contents of a variable. Without this, `workspace = "~/workspace/acme"` made
+# `mkdir -p` create a directory actually named `~` under the repo, silently, with
+# no `!!` line. Expanded here, once, where the value enters.
+expand_home() {  # expand_home <path>
+  # shellcheck disable=SC2088  # the literal ~ is the INPUT being stripped, not an expansion
+  case "$1" in
+    "~") printf '%s' "$_home" ;;
+    "~/"*) printf '%s%s' "$_home" "${1#\~}" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+# The tier split, declared ONCE. The suite reads these two lists out of this
+# source and fails if a key is read through the wrong resolver, or belongs to
+# neither list, so the next key cannot silently pick the wrong tier.
+# shellcheck disable=SC2034  # read by lib/cloud/tests/smoke.sh, not by this script
+CLOUD_PROJECT_KEYS="workspace map rules op_version"
+# shellcheck disable=SC2034  # same
+CLOUD_OPERATOR_KEYS="repos repo_owner plugins hooks_path vault canary_ref"
+
+WS="$(expand_home "$(cfg workspace "$_home/workspace")")"
 MAP="$(cfg map "")"
 RULES="$(cfg rules "")"
 OP_VERSION="$(cfg op_version v2.31.1)"
 # Operator-owned tier: a branch under review may not set any of these.
+REPOS="$(cfg_root repos "")"
+REPO_OWNER="$(cfg_root repo_owner "")"
 PLUGINS="$(cfg_root plugins "")"
 VAULT="$(cfg_root vault "")"
 CANARY_REF="$(cfg_root canary_ref "${VAULT:+op://$VAULT/cloud-canary/credential}")"
@@ -421,7 +453,7 @@ fi
 #    kit install is not reachable, which the session needs to know.
 for b in "$ROOT/_meta/BACKLOG.md" "$ROOT/BACKLOG.md"; do
   [ -f "$b" ] || continue
-  if cap 15 bash "$KIT_ROOT/bin/board" render "$b" >/dev/null 2>&1; then
+  if cap 15 bash "$KIT_ROOT/bin/board" board --backlog-file "$b" >/dev/null 2>&1; then
     say "ok  board renders (${b#"$ROOT"/})"
   else
     note "board render failed for ${b#"$ROOT"/} (is the kit install complete?)"

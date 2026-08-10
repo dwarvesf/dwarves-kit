@@ -43,7 +43,10 @@ worktree       = false          # hookless; exposes the worktree-provision CLI
 money_gate     = false          # money-gate.sh PreToolUse guard; inert without MONEY_GATE_REPOS
 prose_rag      = false          # prose-rag.sh recall inject + CLI; dormant without PROSE_RAG_INJECT=1
 sync           = false          # hookless; `board sync` two-way spoke mirror, inert without [sync] sources
-cloud          = false          # cloud-session support; hooks are inert unless CLAUDE_CODE_REMOTE=true
+cloud          = false          # cloud-session support. NOTE: this toggle gates the INSTALLER
+                                #   path only. hooks.json (the plugin manifest) is not
+                                #   filtered, so each cloud hook ALSO requires its own
+                                #   switch: CLOUD_PROVISION=1 / CLOUD_DASH_GUARD=1
 team_mode      = false          # reserved , install.sh hard-rejects it today
 
 [cloud]                         # read by lib/cloud/provision.sh in a Claude Code cloud VM.
@@ -57,14 +60,16 @@ team_mode      = false          # reserved , install.sh hard-rejects it today
                                 # Every key also takes a CLOUD_<KEY> env override. Unset keys
                                 # fall back to a neutral default, so provisioning still does the
                                 # generic work with no config at all.
-# --- PROJECT tier (inert data) ---
+# --- PROJECT tier (names something inside this repo) ---
 # workspace  = "~/workspace"    # where sibling repos are cloned. default $HOME/workspace
-# repos      = "a,b/c"          # sibling repos to clone: <name> or <owner>/<name>
-# repo_owner = ""               # default owner for a bare name in `repos`
 # map        = ""               # repo-relative routing map printed by `cloud map`
 # rules      = ""               # repo-relative cloud-rules file. default lib/cloud/CLOUD-RULES.md
 # op_version = "v2.31.1"        # pinned 1Password CLI release
-# --- OPERATOR tier (selects code to run, or names a credential) ---
+# --- OPERATOR tier (reaches outside the repo, runs code, or names a credential) ---
+# repos      = "a,b/c"          # sibling repos to clone: <name> or <owner>/<name>. A clone
+#                               # runs no code, but its AGENTS.md/CLAUDE.md are then NAMED
+#                               # to the model as files to read
+# repo_owner = ""               # default owner for a bare name in `repos`
 # plugins    = "x@mk|owner/mk"  # behavioral plugins to install: <id>|<marketplace-slug> pairs.
 #                               # An install runs unattended, with no human to approve it
 # hooks_path = ".githooks"      # repo-relative core.hooksPath to arm. Arming it turns scripts a

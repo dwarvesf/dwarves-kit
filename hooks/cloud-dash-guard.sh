@@ -25,6 +25,14 @@ set -uo pipefail
 # to "true" in remote web environments and is not set in the local CLI. An
 # earlier gate probed for a sibling checkout, which a cloud session is told to
 # clone, so cloning it disabled this guard mid-session.
+# Master switch, checked FIRST, same shape as money-gate.sh and prose-rag.sh.
+# This guard REWRITES a file, and the rule it enforces is a house style, not a
+# correctness property. `hooks.json` is the PLUGIN manifest and is NOT filtered
+# by the enabled module set, so without this switch every plugin consumer would
+# get one project's punctuation taste applied to their prose in every cloud
+# session. It is separate from CLOUD_PROVISION on purpose: a team can want the
+# provisioning without the style rule.
+[ "${CLOUD_DASH_GUARD:-}" = "1" ] || exit 0               # not opted in: do nothing
 [ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0          # local CLI: user hooks run
 [ "$(uname -s)" = "Linux" ] || exit 0                     # macOS: nothing to do
 command -v python3 >/dev/null 2>&1 || exit 0

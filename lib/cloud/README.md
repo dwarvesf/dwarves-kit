@@ -20,7 +20,7 @@ Environment "Setup script" field  (once per environment cache generation, ROOT)
 Consumer repo .claude/settings.json  (rides in the clone; written by /kit:adopt)
    |
    +-- SessionStart (startup|resume) --> hooks/cloud-session-start.sh
-   |        [gate: CLAUDE_CODE_REMOTE=true AND Linux]
+   |        [gate: CLOUD_PROVISION=1 AND CLAUDE_CODE_REMOTE=true AND Linux]
    |        +--> lib/cloud/provision.sh
    |               +-- workspace dir + a symlink for the session repo
    |               +-- sibling repos declared in [cloud] repos
@@ -33,17 +33,35 @@ Consumer repo .claude/settings.json  (rides in the clone; written by /kit:adopt)
    |        +--> additionalContext + reloadSkills back to the session
    |
    +-- PostToolUse (Write|Edit|MultiEdit) --> hooks/cloud-dash-guard.sh
-            [same gate] prose files only, fenced and inline code skipped
+            [gate: CLOUD_DASH_GUARD=1 AND CLAUDE_CODE_REMOTE=true AND Linux]
+            prose files only, fenced and inline code skipped
 ```
 
 ## Install and use
 
-Opt-in module, off by default. Enable it per project:
+Opt-in, off by default, in two independent steps.
 
 ```bash
 bash install.sh --with cloud                 # wire the hooks + the PATH CLI
 bash lib/adopt.sh --with cloud <repo>        # or via /kit:adopt for a consumer repo
 ```
+
+Then arm each hook on the repo's cloud environment, as an environment variable:
+
+| Switch | Arms |
+|---|---|
+| `CLOUD_PROVISION=1` | the SessionStart provisioner |
+| `CLOUD_DASH_GUARD=1` | the prose dash guard |
+
+Both switches are mandatory and both default to off. `hooks/hooks.json` is the
+PLUGIN manifest and is NOT filtered by the enabled module set, so on the
+plugin-install path both hooks are registered for every consumer of the kit.
+`CLAUDE_CODE_REMOTE` answers "is this a cloud session", never "did this project
+ask for provisioning". Without the switches, a consumer who never enabled this
+module would get binaries installed and prose rewritten in their cloud sessions.
+Same pattern as `money-gate` (`MONEY_GATE_REPOS`) and `prose-rag`
+(`PROSE_RAG_INJECT`). They are separate switches because a team can reasonably
+want the provisioning and not one project's punctuation rule.
 
 Stable entrypoint `bin/cloud`:
 
@@ -80,11 +98,11 @@ Config therefore resolves in two tiers.
 | Key | Tier | Default | What it drives |
 |---|---|---|---|
 | `workspace` | project | `$HOME/workspace` | where the session repo is linked and siblings are cloned |
-| `repos` | project | none | comma-separated sibling repos to clone: `<name>` or `<owner>/<name>` |
-| `repo_owner` | project | none | default owner for a bare name in `repos` |
 | `map` | project | none | repo-relative routing map printed by `cloud map` |
 | `rules` | project | `lib/cloud/CLOUD-RULES.md` | repo-relative cloud-rules file for this repo |
 | `op_version` | project | `v2.31.1` | pinned 1Password CLI release |
+| `repos` | operator | none | comma-separated sibling repos to clone: `<name>` or `<owner>/<name>` |
+| `repo_owner` | operator | none | default owner for a bare name in `repos` |
 | `plugins` | operator | none | behavioral plugins to install: comma-separated `<id>\|<marketplace-slug>` |
 | `hooks_path` | operator | none, never auto-detected | repo-relative `core.hooksPath` to arm |
 | `vault` | operator | none | vault name, reported in the canary verdict |
@@ -94,12 +112,13 @@ Example, in a consumer repo's `.kit.toml`:
 
 ```toml
 [cloud]
-workspace  = "~/workspace/acme"
-repos      = "billing,acme/infra"
-repo_owner = "acme"
-map        = "docs/REPO-MAP.md"
-rules      = "docs/CLOUD-RULES.md"
+workspace = "~/workspace/acme"
+map       = "docs/REPO-MAP.md"
+rules     = "docs/CLOUD-RULES.md"
 ```
+
+Operator-tier keys go in the kit-root `kit.toml`, or in the cloud environment as
+`CLOUD_REPOS`, `CLOUD_PLUGINS`, `CLOUD_HOOKS_PATH` and so on.
 
 Why the operator tier exists, plainly. Installing a plugin normally requires a
 human on the machine to approve a project-declared plugin from an external
@@ -110,6 +129,11 @@ clone leaves inert become code every later git command runs. Neither may be
 reachable from a file a pull request can edit, so both resolve from the
 operator-owned kit-root config or the environment, and `hooks_path` is never
 inferred from a `.githooks` directory found in the tree.
+
+`repos` and `repo_owner` are operator-tier for a quieter reason: a clone runs no
+code, but provisioning then NAMES the clone's `AGENTS.md` and `CLAUDE.md` to the
+model as files to read, so a project-settable clone target is a prompt-injection
+path into every later turn.
 
 ## Invariants (each one is a live failure, not a preference)
 
@@ -124,6 +148,9 @@ inferred from a `.githooks` directory found in the tree.
 | `CLAUDE_ENV_FILE` append-once | an in-process `export` dies with the hook, so an installed `op` was invisible to the next command |
 | the SessionStart matcher is `startup\|resume` | without it the whole assembly re-ran on every `clear` and every compaction |
 | plugins are installed imperatively | declaring them in a project's settings duplicates the record in the operator's shared per-user plugin registry |
+| each hook checks its own switch FIRST | the plugin manifest is not filtered by the enabled module set, so `modules.cloud = false` alone does not turn the hooks off for a plugin consumer |
+| operator-tier keys skip the project overlay | a project `.kit.toml` rides inside the repo, so a branch under review could otherwise arm `core.hooksPath`, install a plugin, redirect the secret probe, or clone a repo whose instruction files are then named to the model |
+| a `~` in a config value is expanded | a tilde read out of a file is a literal character, so `mkdir -p` silently created a directory named `~` under the repo |
 
 ## Test
 
@@ -132,6 +159,7 @@ bash lib/cloud/tests/smoke.sh    # "smoke: all N passed"
 ```
 
 The suite runs on macOS with a stubbed `uname`, which proves which BRANCH the
-code takes, never that the branch works. The CI matrix runs it on
-`ubuntu-latest` too; that leg is what proves the install paths. Neither proves
-the real cloud GitHub proxy or the real network allowlist.
+code takes, never that the branch works. The CI workflow includes an
+`ubuntu-latest` leg; that leg is what proves the install paths, and the workflow
+is `workflow_dispatch` only, so it proves nothing until someone dispatches it.
+Neither leg proves the real cloud GitHub proxy or the real network allowlist.

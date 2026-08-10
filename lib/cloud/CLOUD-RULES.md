@@ -96,7 +96,7 @@ The kit plugin does not install itself in a cloud VM. The kit is cloned to
 
 | Need | Command |
 |---|---|
-| this repo's board | `bash ~/.claude/dwarves-kit/bin/board render _meta/BACKLOG.md` |
+| this repo's board | `bash ~/.claude/dwarves-kit/bin/board board --backlog-file _meta/BACKLOG.md` |
 | classify the work lane | `bash ~/.claude/dwarves-kit/bin/classify lane classify "<task>"` |
 | what proof a change owes | `bash ~/.claude/dwarves-kit/lib/gate/proof-gate.sh contract "<task>"` |
 | log a proof-gate override | `bash ~/.claude/dwarves-kit/lib/gate/proof-ledger.sh override '<slug>' "<reason>"` |
