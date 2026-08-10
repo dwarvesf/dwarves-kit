@@ -93,6 +93,11 @@ QUEUE_RETRY_SLEEP_SECS="${QUEUE_RETRY_SLEEP_SECS:-1800}"
 # submits. Both configurable; tests set them to 0.
 QUEUE_STARTUP_SECS="${QUEUE_STARTUP_SECS:-20}"
 QUEUE_SUBMIT_SETTLE_SECS="${QUEUE_SUBMIT_SETTLE_SECS:-2}"
+# The interactive `/goal` command itself refuses anything over 4000 chars ("Goal condition is
+# limited to 4000 characters"). Checked before a window ever opens (_launch_once), not caught
+# after typing: a silent over-budget goal used to strand the row with no window, no journal
+# entry, nothing but an idle tmux pane an operator had to notice by hand.
+QUEUE_GOAL_CHAR_LIMIT="${QUEUE_GOAL_CHAR_LIMIT:-4000}"
 QUEUE_BOARD_CMD="${QUEUE_BOARD_CMD:-board}"
 # SPEC-200 I3 / SPEC-097: the journal lives under the ONE durable root, resolved by the ONE
 # resolver (KIT_LEDGER_DIR -> DWARVES_KIT_LOG_DIR -> kit.toml [ledger].location -> XDG state).
@@ -508,15 +513,19 @@ _launch_once() {  # slug repo pointer
   local slug="$1" repo="$2" pointer="$3"
   # A stale status file from a PREVIOUS attempt would answer for this one. Clear before launching.
   local sf; sf=$(_run_file "$slug" status 2>/dev/null) && [ -n "$sf" ] && rm -f "$sf" 2>/dev/null
-  _beat "$slug"
-  _mux_open "$slug" "$repo" || return 2
-  _mux_wait_ready "$slug"
-  # Captured before typing, so a sanitizer that cannot run refuses the launch instead of typing an
-  # empty prompt (a `$( )` failure is invisible to the command it feeds).
+  # Computed BEFORE any window opens: _goal_line depends on nothing window-related (pointer file
+  # + slug + env), so an over-budget or unsanitizable pointer fails fast here, no window wasted.
   local goal
   goal=$(_goal_line "$pointer" "$slug") || {
     _warn "queue: $slug refusing to launch (the untrusted-input pass could not run)"
-    _mux_kill "$slug"; return 2; }
+    return 2; }
+  if [ "${#goal}" -gt "$QUEUE_GOAL_CHAR_LIMIT" ]; then
+    _warn "queue: $slug refusing to launch; goal is ${#goal} chars, over the ${QUEUE_GOAL_CHAR_LIMIT}-char /goal limit. Shorten the pointer file (.claude/goals/<slug>.md)."
+    return 2
+  fi
+  _beat "$slug"
+  _mux_open "$slug" "$repo" || return 2
+  _mux_wait_ready "$slug"
   _mux_type "$slug" "$goal" || { _mux_kill "$slug"; return 2; }
   _mux_submit "$slug"
 
