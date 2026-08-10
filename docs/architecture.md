@@ -78,8 +78,6 @@ Where they meet: the native `claude agents` view monitors the subagents inside *
 
 Every command and agent mapped to its V-model arm, grouped so the left side (BUILD) and the right side (TEST) read at a glance. The **left arm** decomposes and implements; the **right arm** plans, executes, and reports the tests; **Code** is the vertex. **Static quality gates** verify each artifact by review (not test execution) at its phase; **cross-phase** entries sit outside it.
 
-Total: 36 commands + 28 agents = **64 entries**.
-
 ### Left arm: BUILD (decompose + implement)
 
 | Entry | Type | V-phase | Arm | Note |

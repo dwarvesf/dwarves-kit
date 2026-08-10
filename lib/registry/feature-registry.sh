@@ -199,55 +199,6 @@ generate() {
     hooks_table
   } > "$tmp"
   mv -f "$tmp" "$out"
-  # Only auto-heal the hand-maintained README/architecture.md count strings when
-  # regenerating the REAL registry in place. A caller regenerating to a throwaway
-  # path (tests/test-meta.sh's SPEC-219 freshness check runs `generate` against a
-  # tempfile to diff, never to keep) is a read-only drift check and must never
-  # mutate other files as a side effect -- that silently masked drift instead of
-  # reporting it.
-  if [ "$out" = "$KIT_DIR/docs/FEATURES.md" ]; then
-    sync_counts
-  fi
-}
-
-# Patches the hand-maintained "N commands / N agents / ..." count strings in
-# README.md and docs/architecture.md to the live file counts. Everything here
-# is arithmetic derived from `ls`; no judgment, no prose to write. Table ROWS
-# (one sentence per command/agent) still need a human , this only kills the
-# recompute-and-retype-the-numbers step.
-sync_counts() {
-  local cmd_count agt_count hook_count skill_count total
-  cmd_count=$(ls "$KIT_DIR"/commands/*.md 2>/dev/null | wc -l | tr -d ' ')
-  agt_count=$(ls "$KIT_DIR"/agents/*.md 2>/dev/null | wc -l | tr -d ' ')
-  hook_count=$(ls "$KIT_DIR"/hooks/*.sh 2>/dev/null | wc -l | tr -d ' ')
-  skill_count=$(ls "$KIT_DIR"/skills/*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-  total=$((cmd_count + agt_count))
-
-  local readme="$KIT_DIR/README.md"
-  local rtmp="$readme.tmp.$$"
-  trap "rm -f '$rtmp'" EXIT
-  sed -E \
-    -e "s/(agents\/ *\()[0-9]+( files)/\\1${agt_count}\\2/" \
-    -e "s/(commands\/ *\()[0-9]+( markdown)/\\1${cmd_count}\\2/" \
-    -e "s/(hooks\/ *\()[0-9]+( scripts)/\\1${hook_count}\\2/" \
-    -e "s/(<b>Agents<\/b> \()[0-9]+(,)/\\1${agt_count}\\2/" \
-    -e "s/(<b>Commands<\/b> \()[0-9]+(,)/\\1${cmd_count}\\2/" \
-    -e "s/(<b>Skills<\/b> \()[0-9]+(,)/\\1${skill_count}\\2/" \
-    -e "s/(<b>Hooks<\/b> \()[0-9]+(,)/\\1${hook_count}\\2/" \
-    "$readme" > "$rtmp"
-  mv -f "$rtmp" "$readme"
-
-  local arch="$KIT_DIR/docs/architecture.md"
-  local atmp="$arch.tmp.$$"
-  trap "rm -f '$rtmp' '$atmp'" EXIT
-  # drops the untested "(N build · N code · ...)" phase breakdown: it drifted
-  # silently (no test ever checked it) and the inventory table above already
-  # shows each entry's Arm; keeping a second, unverified tally of the same
-  # data was pure toil for zero signal.
-  sed -E \
-    -e "s/^Total: [0-9]+ commands \+ [0-9]+ agents = \*\*[0-9]+ entries\*\*.*/Total: ${cmd_count} commands + ${agt_count} agents = **${total} entries**./" \
-    "$arch" > "$atmp"
-  mv -f "$atmp" "$arch"
 }
 
 case "${1:-}" in

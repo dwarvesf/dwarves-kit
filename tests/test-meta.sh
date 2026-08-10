@@ -1560,30 +1560,21 @@ LIVE_COUNT=$((CMD_COUNT + AGT_COUNT))
 assert_eq "architecture.md inventory table rows == live file count ($ARCH_TABLE_ROWS == $LIVE_COUNT)" \
   "$LIVE_COUNT" "$ARCH_TABLE_ROWS"
 
-# SPEC-113: the README directory-layout counts stay pinned to the LIVE file counts (the 11-vs-live
-# agents drift class , "died untested once, never again" , dies like the architecture pin above).
-README_AGT=$(grep -oE 'agents/ *\([0-9]+ files\)' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
-README_HOOK=$(grep -oE 'hooks/ *\([0-9]+ ' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
+# No-counts policy (2026-08-10): the docs carry NO literal roster numbers (they churned on
+# every addition and cost more to maintain than they informed; the operator retired them).
+# Completeness is still pinned below by the ROW checks, live tree vs table rows, both sides
+# computed, no hand-maintained number anywhere.
 HOOK_COUNT=$(ls "$KIT_DIR/hooks/"*.sh 2>/dev/null | wc -l | tr -d ' ')
-assert_eq "README agents/ layout count == live agents ($README_AGT == $AGT_COUNT)" "$AGT_COUNT" "$README_AGT"
-assert_eq "README hooks/ layout count == live hooks ($README_HOOK == $HOOK_COUNT)" "$HOOK_COUNT" "$README_HOOK"
 
 # SG-10 (harness-loop): the README inventory TABLES (not just the layout comment) stay
 # pinned to live counts , the agents table sat at 11 rows against 25 files because only
 # the layout number was pinned. Both the <summary> header number and the table row count
 # are computed and compared; a new agent/command/skill without a README row fails here.
-README_CMD_LAYOUT=$(grep -oE 'commands/ *\([0-9]+ ' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
-assert_eq "README commands/ layout count == live commands ($README_CMD_LAYOUT == $CMD_COUNT)" "$CMD_COUNT" "$README_CMD_LAYOUT"
-
-AGT_HDR=$(grep -oE '<b>Agents</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
-CMD_HDR=$(grep -oE '<b>Commands</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
-SKILL_HDR=$(grep -oE 'Skills</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
-HOOK_HDR=$(grep -oE '<b>Hooks</b> \([0-9]+' "$KIT_DIR/README.md" | grep -oE '[0-9]+' | head -1)
 SKILL_COUNT=$(ls "$KIT_DIR/skills/"*/SKILL.md 2>/dev/null | wc -l | tr -d ' ')
-assert_eq "README Agents header count == live agents ($AGT_HDR == $AGT_COUNT)" "$AGT_COUNT" "$AGT_HDR"
-assert_eq "README Commands header count == live commands ($CMD_HDR == $CMD_COUNT)" "$CMD_COUNT" "$CMD_HDR"
-assert_eq "README Skills header count == live skills/*/SKILL.md ($SKILL_HDR == $SKILL_COUNT)" "$SKILL_COUNT" "$SKILL_HDR"
-assert_eq "README Hooks header count == live hooks ($HOOK_HDR == $HOOK_COUNT)" "$HOOK_COUNT" "$HOOK_HDR"
+# No-counts policy: header/layout numbers retired; a stray survivor fails here so one can
+# never quietly come back and start drifting again.
+assert_eq "README carries no literal roster counts (headers/layout)" "0" \
+  "$(grep -cE '<b>(Agents|Commands|Skills|Hooks)</b> \([0-9]+|(agents|commands|hooks)/ *\([0-9]+' "$KIT_DIR/README.md" | tr -d ' ')"
 
 # Table row counts (data rows only: exclude the header row and |--- separator).
 AGT_DETAILS=$(sed -n '/<summary><b>Agents<\/b>/,/<\/details>/p' "$KIT_DIR/README.md")
@@ -1598,14 +1589,9 @@ assert_eq "README skills table rows == live skills ($README_SKILL_ROWS == $SKILL
 assert_eq "README commands table rows == live commands ($README_CMD_ROWS == $CMD_COUNT)" "$CMD_COUNT" "$README_CMD_ROWS"
 assert_eq "README hooks table rows == live hooks ($README_HOOK_ROWS == $HOOK_COUNT)" "$HOOK_COUNT" "$README_HOOK_ROWS"
 
-# architecture.md headline numbers (the "25 commands + 15 agents = 40" drift class):
-# all three computed from the live tree, never hand-trusted.
-ARCH_HEAD_CMD=$(grep -oE 'Total: [0-9]+ commands' "$KIT_DIR/docs/architecture.md" | grep -oE '[0-9]+' | head -1)
-ARCH_HEAD_AGT=$(grep -oE '\+ [0-9]+ agents' "$KIT_DIR/docs/architecture.md" | grep -oE '[0-9]+' | head -1)
-ARCH_HEAD_TOT=$(grep -oE '= \*\*[0-9]+ entries\*\*' "$KIT_DIR/docs/architecture.md" | grep -oE '[0-9]+' | head -1)
-assert_eq "architecture.md headline commands == live ($ARCH_HEAD_CMD == $CMD_COUNT)" "$CMD_COUNT" "$ARCH_HEAD_CMD"
-assert_eq "architecture.md headline agents == live ($ARCH_HEAD_AGT == $AGT_COUNT)" "$AGT_COUNT" "$ARCH_HEAD_AGT"
-assert_eq "architecture.md headline total == live ($ARCH_HEAD_TOT == $LIVE_COUNT)" "$LIVE_COUNT" "$ARCH_HEAD_TOT"
+# No-counts policy: the architecture.md headline tally is retired the same way.
+assert_eq "architecture.md carries no headline roster tally" "0" \
+  "$(grep -cE '^Total: [0-9]+ commands' "$KIT_DIR/docs/architecture.md" | tr -d ' ')"
 
 # The README five-stage table covers every module the registry assigns a stage (ADR-0034
 # decision 3 rendered without omissions; the two tables share one truth). "leg" renamed to
@@ -2734,17 +2720,12 @@ echo ""
 echo "=== SPEC-085: operator doc sync (ID-070) ==="
 # ============================================================
 RM85="$KIT_DIR/README.md"
-# parity: hooks , summary number == file count == row count (all computed)
+# parity: ROW counts only (summary-header numbers retired by the no-counts policy 2026-08-10)
 HF=$(ls "$KIT_DIR"/hooks/*.sh | wc -l | tr -d ' ')
-HSUM=$(grep -oE '<summary><b>Hooks</b> \(([0-9]+)' "$RM85" | grep -oE '[0-9]+' || echo 0)
 HROWS=$(awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep -cE '^\| [a-z]' || true)
-assert_eq "README hooks summary == hook files ($HF)" "$HF" "$HSUM"
 assert_eq "README hooks rows == hook files ($HF)" "$HF" "$HROWS"
-# parity: commands
 CF=$(ls "$KIT_DIR"/commands/*.md | wc -l | tr -d ' ')
-CSUM=$(grep -oE '<summary><b>Commands</b> \(([0-9]+)' "$RM85" | grep -oE '[0-9]+' || echo 0)
 CROWS=$(awk '/<summary><b>Commands<\/b>/,/<\/details>/' "$RM85" | grep -cE '^\| /kit:' || true)
-assert_eq "README commands summary == command files ($CF)" "$CF" "$CSUM"
 assert_eq "README commands rows == command files ($CF)" "$CF" "$CROWS"
 # content: the hard hook is in the public table; the two missing commands exist
 RC=0; awk '/<summary><b>Hooks<\/b>/,/<\/details>/' "$RM85" | grep -q '^| ship-gate' || RC=1
