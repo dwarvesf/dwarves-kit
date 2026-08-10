@@ -19,6 +19,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/cloud-session-start.sh",
+            "timeout": 300
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -115,6 +125,16 @@
           {
             "type": "command",
             "command": "bash $HOME/.claude/dwarves-kit/hooks/post-compact-reinject.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/cloud-dash-guard.sh",
             "timeout": 10
           }
         ]

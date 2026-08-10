@@ -243,6 +243,8 @@ file count so this table cannot drift):
 | `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, sub-ms, never blocks) |
 | `citation-guard` | Stop | advisory | hallucinated `file:line` citations in the final message; log-only by default, opt-in strict mode (`CITATION_GUARD_STRICT=1`) blocks |
 | `harvest` | PreCompact, SessionEnd | convenience | none (stages durable learnings / a LAB_LOG draft to a staging file; never writes a durable home, always exits 0) |
+| `cloud-session-start` | SessionStart | convenience | none (rebuilds the working layout a cloud VM never receives; always exits 0, because a non-zero exit on the cloud startup path aborts the session) |
+| `cloud-dash-guard` | PostToolUse Write/Edit/MultiEdit | advisory | house dash rules going unenforced in a cloud VM, where the operator's own style config never arrives; prose files only, never blocks |
 | `backlog-stage` | SessionEnd | convenience | none (stages forward-looking work-items to a staging file; never writes the board, always exits 0) |
 | `intake-sweep` | SessionStart (invoked by backlog-stage --surface) | convenience | none (sweeps consumer-declared deferred-link sources into the same staging file; config-gated no-op, always exits 0) |
 | `auto-format` | PostToolUse Write/Edit | convenience | none (idempotent formatting) |

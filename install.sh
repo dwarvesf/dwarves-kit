@@ -188,7 +188,7 @@ echo ""
 # feature-registry: no hook reads it (see tests/test-no-runtime-manifest-read.sh).
 # bridge folded into sync 2026-07-16 (same engine surface; legacy verbs live
 # until the SPEC-002 P2 port, kit board ID-290)
-KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch worktree money_gate prose_rag sync"
+KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch worktree money_gate prose_rag sync cloud"
 KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.sh commit-format.sh anti-rationalization.sh"
 
 # module -> its hook script basenames (space-separated; empty = hookless, e.g.
@@ -202,6 +202,7 @@ kit_module_hooks() {
     cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
     money_gate) echo "money-gate.sh" ;;
     prose_rag) echo "prose-rag.sh" ;;
+    cloud) echo "cloud-session-start.sh cloud-dash-guard.sh" ;;
     *) echo "" ;;
   esac
 }
@@ -215,6 +216,7 @@ kit_module_clis() {
     session) echo "session" ;;
     worktree) echo "worktree-provision" ;;
     prose_rag) echo "prose-rag" ;;
+    cloud) echo "cloud" ;;
     *) echo "" ;;
   esac
 }

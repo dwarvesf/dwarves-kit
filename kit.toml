@@ -43,7 +43,25 @@ worktree       = false          # hookless; exposes the worktree-provision CLI
 money_gate     = false          # money-gate.sh PreToolUse guard; inert without MONEY_GATE_REPOS
 prose_rag      = false          # prose-rag.sh recall inject + CLI; dormant without PROSE_RAG_INJECT=1
 sync           = false          # hookless; `board sync` two-way spoke mirror, inert without [sync] sources
+cloud          = false          # cloud-session support; hooks are inert unless CLAUDE_CODE_REMOTE=true
 team_mode      = false          # reserved , install.sh hard-rejects it today
+
+[cloud]                         # read by lib/cloud/provision.sh in a Claude Code cloud VM.
+                                # Every key is CONSUMER config: set it in the PROJECT's
+                                # .kit.toml, not here. Each also takes a CLOUD_<KEY> env
+                                # override. Unset keys fall back to a neutral default, so
+                                # provisioning still does the generic work with no config.
+# workspace  = "~/workspace"    # where sibling repos are cloned. default $HOME/workspace
+# repos      = "a,b/c"          # sibling repos to clone: <name> or <owner>/<name>
+# repo_owner = ""               # default owner for a bare name in `repos`
+# plugins    = "x@mk|owner/mk"  # behavioral plugins to install: <id>|<marketplace-slug> pairs
+# vault      = ""               # secret vault name, reported in the canary verdict
+# canary_ref = ""               # op:// ref proving the vault is reachable. default
+#                               # op://<vault>/cloud-canary/credential when vault is set
+# hooks_path = ".githooks"      # repo-relative core.hooksPath to arm. default .githooks if present
+# map        = ""               # repo-relative routing map printed by `cloud map`
+# rules      = ""               # repo-relative cloud-rules file. default lib/cloud/CLOUD-RULES.md
+# op_version = "v2.31.1"        # pinned 1Password CLI release
 
 [ledger]                        # where the harness stores its operation record
 location            = "shared"  # [impl] "shared" (XDG, one root for all projects)
