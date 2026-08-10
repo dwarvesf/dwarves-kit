@@ -18,8 +18,13 @@ OUT="${3:-${KIT_ROOT}/docs/verification/gauntlet/$(date +%Y-%m-%d)-${PERSONA}-${
 
 # shellcheck source=lib/config/kit-config.sh
 source lib/config/kit-config.sh
-HOST="${GAUNTLET_RUNNER_HOST:-$(kit_config_get gauntlet.runner_host local)}"
-KEY_REF="$(kit_config_get gauntlet.probe_key_ref "op://Toolkit/anthropic-api-key/credential")"
+# Root-only reads: runner_host picks a machine we ship committed state to and run
+# a probe on, probe_key_ref resolves a 1P secret ON that machine. A committed
+# project .kit.toml rides inside an untrusted PR, so neither may be set there; both
+# resolve from the operator-owned kit-root kit.toml alone. GAUNTLET_RUNNER_HOST (an
+# operator-controlled env var) still overrides.
+HOST="${GAUNTLET_RUNNER_HOST:-$(kit_config_get_root gauntlet.runner_host local)}"
+KEY_REF="$(kit_config_get_root gauntlet.probe_key_ref "op://Toolkit/anthropic-api-key/credential")"
 
 # The prompt lives in /work/PROMPT.txt (written by run.sh); the command never
 # quotes it. Keeping data out of command strings is what ended the quoting-bug

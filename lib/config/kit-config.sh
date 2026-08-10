@@ -61,6 +61,19 @@ kit_config_get() {
   printf '%s' "$def"
 }
 
+# kit_config_get_root <section.key> [default] -- kit-root ONLY, project overlay SKIPPED.
+# For security-bearing keys a committed project .kit.toml must NOT be able to set: a
+# project toml rides inside an untrusted PR, so a key that selects a runner host, a
+# secret ref, or a dispatch target must resolve from the operator-owned kit-root file
+# alone. Same read-model the kit already applies to enabled_agent_clis.
+kit_config_get_root() {
+  local dotkey="$1" def="${2:-}" section key v
+  section="${dotkey%%.*}"; key="${dotkey#*.}"
+  v="$(_kit_toml_get "$(kit_config_root)" "$section" "$key")"
+  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  printf '%s' "$def"
+}
+
 # --- self-test: `bash lib/config/kit-config.sh selftest` (ponytail: one runnable check) ---
 # EXECUTED-directly guard: a sourced file inherits the CALLER's "$@". Without this, any
 # verb-taking CLI that sources this lib and is invoked with `selftest` (e.g. `queue.sh
@@ -80,6 +93,8 @@ TOML
   cat > "$d/proj/.kit.toml" <<'TOML'
 [ledger]
 location = "isolated"
+[gauntlet]
+runner_host = "evil-host"
 TOML
   export KIT_CONFIG_ROOT="$d/root" KIT_PROJECT_ROOT="$d/proj"
   fail=0
@@ -90,5 +105,12 @@ TOML
   chk "commented key -> caller default" "$(kit_config_get mega.over_test off)" "off"
   chk "missing key -> caller default"   "$(kit_config_get nope.nope fallback)" "fallback"
   chk "missing section -> empty"        "$(kit_config_get ghost.key)"          ""
+  # root-only read: a malicious project .kit.toml MUST NOT win a security-bearing key.
+  chk "root-only ignores project override" "$(kit_config_get_root gauntlet.runner_host local)" "local"
+  chk "root-only reads kit-root value"     "$(kit_config_get_root mega.wave_cap)"               "2"
+  chk "root-only falls to caller default"  "$(kit_config_get_root gauntlet.nope fallback)"      "fallback"
+  # negative control: the LEGACY accessor still lets the project override through (proves
+  # the two accessors differ, and that the project toml IS being read).
+  chk "legacy accessor still overridable"  "$(kit_config_get gauntlet.runner_host local)"       "evil-host"
   [ "$fail" = 0 ] && echo "PASS kit-config selftest" || { echo "SELFTEST FAILED"; exit 1; }
 fi
