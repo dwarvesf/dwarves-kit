@@ -396,18 +396,26 @@ _mux_wait_ready() {  # slug
 }
 
 # Submit the typed goal, then VERIFY it actually submitted and re-issue Enter if not. The live
-# smoke proved a single early Enter can be dropped while the text stays sitting on the `/goal`
-# input line; re-issuing until the prompt no longer shows the pending `/goal` command makes the
-# submit deterministic. Bounded (5 tries); an extra Enter on an empty prompt is a harmless no-op.
+# smoke proved a single early Enter can be dropped while the text stays sitting on the input
+# line; re-issuing until the input line is BARE makes the submit deterministic. Bounded (5
+# tries); an extra Enter on an empty prompt is a harmless no-op.
+#
+# Detection is "prompt char followed by ANY content", not the literal `/goal`: a long paste
+# renders TAIL-first in the input box (the pane shows `❯ (or "EXIT_SIGNAL...`, never `❯ /goal`),
+# so the old `/goal` match reported submitted after one dropped Enter and stranded the row with
+# no journal entry. Three consecutive live runs reproduced it; one manual Enter unstuck each.
+# False "still pending" only costs harmless extra Enters, false "submitted" strands the row,
+# so the check errs pending.
 _mux_submit() {  # slug
   local slug="$1" tries=0
   while [ "$tries" -lt 5 ]; do
     _mux_enter "$slug"
     sleep "$QUEUE_SUBMIT_SETTLE_SECS"
-    # unsent iff the input prompt line still carries the pending `/goal` command
-    _mux_capture "$slug" 2>/dev/null | grep -qE '[>❯][[:space:]]*/goal' || return 0
+    # submitted iff no line renders a prompt char with content still after it
+    _mux_capture "$slug" 2>/dev/null | grep -qE '^[[:space:]]*[>❯][[:space:]]*[^[:space:]]' || return 0
     tries=$((tries + 1))
   done
+  _warn "queue: $slug submit unconfirmed after $tries tries; the goal may still be sitting unsubmitted in the window."
   return 0
 }
 
