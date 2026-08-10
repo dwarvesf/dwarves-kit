@@ -19,6 +19,13 @@ setup() {
   export MUX_CMD="$FIX/fake-mux" TERMINAL_MUX=tmux
   export QSTUB QLOG
   export QUEUE_JOURNAL="$JOURNAL"
+  # Sandbox the WHOLE ledger root, not just the journal: run files (beat/status/guard) resolve
+  # through kit_resolve_log_dir, and without this they land in the operator's REAL
+  # ~/.local/state/dwarves-kit/logs/queue-runs/. The leaked guard counters accumulated across
+  # local suite runs until the SPEC-221 breaker tripped (noprogress >= 3) and rewrote NC2/NC6/
+  # NC7's expected `stalled` into `error stagnation_detected`, failing them forever on that
+  # machine while staying green on fresh checkouts. The ID-463 class, state-dir edition.
+  export KIT_LEDGER_DIR="$WORK/logs"; mkdir -p "$WORK/logs"
   export QUEUE_POLL_SECS=0 QUEUE_TIMEOUT_SECS=2 QUEUE_RETRY_SLEEP_SECS=0
   export QUEUE_STARTUP_SECS=0 QUEUE_SUBMIT_SETTLE_SECS=0
   chmod +x "$FIX/fake-mux" "$FIX/fake-board" 2>/dev/null || true
@@ -321,4 +328,15 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$status" -eq 0 ]
   [ "$(jverdict ok12)" = "done" ]
   grep -q "new-window slug=ok12" "$QLOG"
+}
+
+# =============================================================================================
+# T13 state-sandbox tripwire: with KIT_LEDGER_DIR exported (setup does), every run file the
+# launcher writes resolves INSIDE the sandbox, never the operator's real state dir. Pins the
+# ID-468 root cause: the suite sandboxed the journal but not beat/status/guard, leaking counter
+# files into ~/.local/state until the breaker's noprogress trip flipped NC2/NC6/NC7 forever.
+@test "T13 state-sandbox tripwire: run files resolve under KIT_LEDGER_DIR" {
+  . "$QUEUE"
+  [ "$(_run_dir)" = "$KIT_LEDGER_DIR/queue-runs" ]
+  case "$(_run_dir)" in "$WORK"/*) : ;; *) false ;; esac
 }
