@@ -29,9 +29,12 @@ cold reader start working within a minute.
 
 ## 3. Monitor
 
-Poll the journal, not the pane: a new row for the slug in `queue-journal.tsv` is the terminal
-signal; the window disappearing without one means the conductor died (check the beat file).
-Do not drive the window by hand while it runs.
+Use `bin/queue wait <slug> [--timeout S]` instead of a hand-rolled poll loop: it blocks until the
+slug gets a new terminal journal row (prints it, exit 0), its window dies without one (residue to
+stderr, exit 1), or the timeout hits (exit 2). It is read-only over the journal + mux + sidecars.
+The principle it encodes: poll the journal, not the pane, and treat the window disappearing
+without a terminal row as a dead conductor, not a completion. Do not drive the window by hand
+while it runs.
 
 ## 4. Review the draft PR (the bar every run must clear)
 
