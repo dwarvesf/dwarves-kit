@@ -47,21 +47,32 @@ cloud          = false          # cloud-session support; hooks are inert unless 
 team_mode      = false          # reserved , install.sh hard-rejects it today
 
 [cloud]                         # read by lib/cloud/provision.sh in a Claude Code cloud VM.
-                                # Every key is CONSUMER config: set it in the PROJECT's
-                                # .kit.toml, not here. Each also takes a CLOUD_<KEY> env
-                                # override. Unset keys fall back to a neutral default, so
-                                # provisioning still does the generic work with no config.
+                                # TWO TIERS, because a project's .kit.toml rides in the repo
+                                # and a pull request can set it:
+                                #   PROJECT tier -- set it in the PROJECT's .kit.toml.
+                                #   OPERATOR tier -- set it HERE or in the environment's own
+                                #     CLOUD_<KEY> variable; a project .kit.toml is IGNORED,
+                                #     because the value selects code to run or names a
+                                #     credential (lib/config/kit-config.sh kit_config_get_root).
+                                # Every key also takes a CLOUD_<KEY> env override. Unset keys
+                                # fall back to a neutral default, so provisioning still does the
+                                # generic work with no config at all.
+# --- PROJECT tier (inert data) ---
 # workspace  = "~/workspace"    # where sibling repos are cloned. default $HOME/workspace
 # repos      = "a,b/c"          # sibling repos to clone: <name> or <owner>/<name>
 # repo_owner = ""               # default owner for a bare name in `repos`
-# plugins    = "x@mk|owner/mk"  # behavioral plugins to install: <id>|<marketplace-slug> pairs
-# vault      = ""               # secret vault name, reported in the canary verdict
-# canary_ref = ""               # op:// ref proving the vault is reachable. default
-#                               # op://<vault>/cloud-canary/credential when vault is set
-# hooks_path = ".githooks"      # repo-relative core.hooksPath to arm. default .githooks if present
 # map        = ""               # repo-relative routing map printed by `cloud map`
 # rules      = ""               # repo-relative cloud-rules file. default lib/cloud/CLOUD-RULES.md
 # op_version = "v2.31.1"        # pinned 1Password CLI release
+# --- OPERATOR tier (selects code to run, or names a credential) ---
+# plugins    = "x@mk|owner/mk"  # behavioral plugins to install: <id>|<marketplace-slug> pairs.
+#                               # An install runs unattended, with no human to approve it
+# hooks_path = ".githooks"      # repo-relative core.hooksPath to arm. Arming it turns scripts a
+#                               # plain clone leaves inert into code every git command runs.
+#                               # Never auto-armed from a directory found in the tree
+# vault      = ""               # secret vault name, reported in the canary verdict
+# canary_ref = ""               # op:// ref proving the vault is reachable. default
+#                               # op://<vault>/cloud-canary/credential when vault is set
 
 [ledger]                        # where the harness stores its operation record
 location            = "shared"  # [impl] "shared" (XDG, one root for all projects)

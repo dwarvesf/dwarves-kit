@@ -69,22 +69,26 @@ bash "$HOME/.claude/dwarves-kit/bin/cloud" vm-setup || true
 
 ## Consumer config
 
-Every knob resolves env-first (`CLOUD_<KEY>`), then the PROJECT's `.kit.toml`
-`[cloud]` section, then a neutral default. With no config at all the module
-still does the generic work. Nothing operator-specific is baked into the kit.
+A project's `.kit.toml` rides inside the repo, so a pull request can change it.
+Config therefore resolves in two tiers.
 
-| Key | Default | What it drives |
+| Tier | Resolution | Why |
 |---|---|---|
-| `workspace` | `$HOME/workspace` | where the session repo is linked and siblings are cloned |
-| `repos` | none | comma-separated sibling repos to clone: `<name>` or `<owner>/<name>` |
-| `repo_owner` | none | default owner for a bare name in `repos` |
-| `plugins` | none | behavioral plugins to install: comma-separated `<id>\|<marketplace-slug>` |
-| `vault` | none | vault name, reported in the canary verdict |
-| `canary_ref` | `op://<vault>/cloud-canary/credential` | reference proving the vault is reachable |
-| `hooks_path` | `.githooks` when present | repo-relative `core.hooksPath` to arm |
-| `map` | none | repo-relative routing map printed by `cloud map` |
-| `rules` | `lib/cloud/CLOUD-RULES.md` | repo-relative cloud-rules file for this repo |
-| `op_version` | `v2.31.1` | pinned 1Password CLI release |
+| PROJECT | `CLOUD_<KEY>` env, then the project's `.kit.toml` `[cloud]`, then the kit-root default | the value is inert data: a path to print, a clone target, a directory name |
+| OPERATOR | `CLOUD_<KEY>` env, then the kit-root `kit.toml` only. A project `.kit.toml` is IGNORED | the value selects code to run or names a credential, so a branch under review must not be able to set it |
+
+| Key | Tier | Default | What it drives |
+|---|---|---|---|
+| `workspace` | project | `$HOME/workspace` | where the session repo is linked and siblings are cloned |
+| `repos` | project | none | comma-separated sibling repos to clone: `<name>` or `<owner>/<name>` |
+| `repo_owner` | project | none | default owner for a bare name in `repos` |
+| `map` | project | none | repo-relative routing map printed by `cloud map` |
+| `rules` | project | `lib/cloud/CLOUD-RULES.md` | repo-relative cloud-rules file for this repo |
+| `op_version` | project | `v2.31.1` | pinned 1Password CLI release |
+| `plugins` | operator | none | behavioral plugins to install: comma-separated `<id>\|<marketplace-slug>` |
+| `hooks_path` | operator | none, never auto-detected | repo-relative `core.hooksPath` to arm |
+| `vault` | operator | none | vault name, reported in the canary verdict |
+| `canary_ref` | operator | `op://<vault>/cloud-canary/credential` | reference proving the vault is reachable |
 
 Example, in a consumer repo's `.kit.toml`:
 
@@ -93,16 +97,19 @@ Example, in a consumer repo's `.kit.toml`:
 workspace  = "~/workspace/acme"
 repos      = "billing,acme/infra"
 repo_owner = "acme"
-plugins    = "superpowers@claude-plugins-official|anthropics/claude-plugins-official"
 map        = "docs/REPO-MAP.md"
 rules      = "docs/CLOUD-RULES.md"
 ```
 
-Trust note: `.kit.toml` rides inside the repo, so a pull request can change
-these values. That is the same trust level the repo's own
-`.claude/settings.json` hooks already carry, and it is why `plugins` is empty by
-default. Do not point `plugins` at a marketplace the repo's contributors are not
-trusted to control.
+Why the operator tier exists, plainly. Installing a plugin normally requires a
+human on the machine to approve a project-declared plugin from an external
+marketplace. A cloud VM has no human, so this module installs it non
+interactively, which means that one approval step does not happen. Arming
+`core.hooksPath` is the same shape from the other direction: scripts a plain
+clone leaves inert become code every later git command runs. Neither may be
+reachable from a file a pull request can edit, so both resolve from the
+operator-owned kit-root config or the environment, and `hooks_path` is never
+inferred from a `.githooks` directory found in the tree.
 
 ## Invariants (each one is a live failure, not a preference)
 

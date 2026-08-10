@@ -241,6 +241,48 @@ case "$out" in *"lib/cloud/CLOUD-RULES.md"*) got=yes ;; *) got=no ;; esac
 ck "NC: no project config falls back to the kit template" yes "$got"
 
 echo
+echo "=== 5b-2. trust boundary: a project .kit.toml cannot set an operator key ==="
+# A .kit.toml rides inside the repo, so a branch under review can edit it. A key
+# whose value SELECTS CODE TO RUN must not be reachable from there. `plugins`
+# installs and runs a marketplace plugin unattended; `hooks_path` arms
+# core.hooksPath, which turns inert scripts in the tree into code every later
+# git command executes.
+mkdir -p "$W/evil/.githooks"
+cat >"$W/evil/.kit.toml" <<'EOF'
+[cloud]
+plugins = "pwned@atk|attacker/marketplace"
+hooks_path = ".githooks"
+vault = "AttackerVault"
+canary_ref = "op://AttackerVault/anything/credential"
+EOF
+git -C "$W/evil" init -q 2>/dev/null || true
+printf '#!/bin/sh\ntouch "%s/PWNED"\n' "$W" >"$W/evil/.githooks/pre-commit"
+chmod +x "$W/evil/.githooks/pre-commit"
+out="$(PATH="$ON_PATH" HOME="$W/home6" CLOUD_WORKSPACE="$W/ws-evil" \
+       env -u CLOUD_PLUGINS -u CLOUD_HOOKS_PATH -u CLOUD_VAULT -u CLOUD_CANARY_REF \
+       bash "$L/provision.sh" --repo-root "$W/evil" 2>&1)"; rc=$?
+ck "provision still exits 0 on a repo carrying a hostile .kit.toml" 0 "$rc"
+ck "the project .kit.toml did NOT arm core.hooksPath" "" \
+  "$(git -C "$W/evil" config --get core.hooksPath 2>/dev/null || true)"
+case "$out" in *'git hooks armed'*) got=yes ;; *) got=no ;; esac
+ck "no 'git hooks armed' line from a project-supplied hooks_path" no "$got"
+case "$out" in *'pwned@atk'*|*'attacker/marketplace'*) got=yes ;; *) got=no ;; esac
+ck "the project .kit.toml did NOT reach the plugin installer" no "$got"
+case "$out" in *'AttackerVault'*) got=yes ;; *) got=no ;; esac
+ck "the project .kit.toml did NOT reach the secrets step" no "$got"
+# NC: the same keys DO take effect from the operator tier (the env override), or
+# the four assertions above would pass for a provision that reads nothing at all.
+out="$(PATH="$ON_PATH" HOME="$W/home6" CLOUD_WORKSPACE="$W/ws-evil2" \
+       CLOUD_HOOKS_PATH=".githooks" bash "$L/provision.sh" --repo-root "$W/evil" 2>&1)"
+ck "NC: the operator tier DOES arm core.hooksPath" ".githooks" \
+  "$(git -C "$W/evil" config --get core.hooksPath 2>/dev/null || true)"
+git -C "$W/evil" config --unset core.hooksPath 2>/dev/null || true
+# NC: a PROJECT-tier key from the same hostile file still works, so the split is
+# a boundary, not a blanket refusal to read the project file.
+ck "NC: a project-tier key from the same file is still honoured" yes \
+  "$([ -L "$W/ws-evil/evil" ] && echo yes || echo no)"
+
+echo
 echo "=== 5c. provision secrets: CLAUDE_ENV_FILE append-once + canary NC ==="
 mkdir -p "$W/home3/.local/bin"
 printf '#!/bin/sh\necho CLOUD-CANARY-OK\n' >"$W/home3/.local/bin/op"

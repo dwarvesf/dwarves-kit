@@ -14,24 +14,26 @@
 #   provision.sh secrets              # just the secrets step
 #   provision.sh plugins              # just the behavioral-plugin step
 #
-# Every knob is CONSUMER CONFIG, never a value baked into the kit. Each key
-# resolves env-first, then the repo's `.kit.toml` `[cloud]` section, then a
-# neutral default. With no config at all this still does the useful generic
-# work: symlink the repo into a workspace, report the toolchain, arm the repo's
-# git hooks, name the background layer the session must read.
+# Every knob is CONSUMER CONFIG, never a value baked into the kit. With no config
+# at all this still does the useful generic work: symlink the repo into a
+# workspace, report the toolchain, name the background layer the session reads.
 #
-#   key           env override        [cloud] key    default
-#   ------------  ------------------  -------------  ---------------------------
-#   workspace     CLOUD_WORKSPACE     workspace      $HOME/workspace
-#   repos         CLOUD_REPOS         repos          (none)
-#   repo_owner    CLOUD_REPO_OWNER    repo_owner     (none)
-#   plugins       CLOUD_PLUGINS       plugins        (none)
-#   vault         CLOUD_VAULT         vault          (none)
-#   canary_ref    CLOUD_CANARY_REF    canary_ref     op://<vault>/cloud-canary/credential
-#   hooks_path    CLOUD_HOOKS_PATH    hooks_path     .githooks when that dir exists
-#   map           CLOUD_MAP           map            (none)
-#   rules         CLOUD_RULES         rules          the kit's CLOUD-RULES.md
-#   op_version    CLOUD_OP_VERSION    op_version     v2.31.1
+# TWO TIERS, because a project's `.kit.toml` rides inside the repo and a pull
+# request can therefore set it. PROJECT keys carry inert data. OPERATOR keys
+# select code to run or name a credential, so they skip the project overlay.
+#
+#   key           tier      env override        default
+#   ------------  --------  ------------------  ------------------------------
+#   workspace     project   CLOUD_WORKSPACE     $HOME/workspace
+#   repos         project   CLOUD_REPOS         (none)
+#   repo_owner    project   CLOUD_REPO_OWNER    (none)
+#   map           project   CLOUD_MAP           (none)
+#   rules         project   CLOUD_RULES         the kit's CLOUD-RULES.md
+#   op_version    project   CLOUD_OP_VERSION    v2.31.1
+#   plugins       operator  CLOUD_PLUGINS       (none)
+#   hooks_path    operator  CLOUD_HOOKS_PATH    (none, never auto-detected)
+#   vault         operator  CLOUD_VAULT         (none)
+#   canary_ref    operator  CLOUD_CANARY_REF    op://<vault>/cloud-canary/credential
 #
 # Repo-root resolution follows the kit's existing consumer pattern: `--repo-root`,
 # then $REPO_ROOT, then $CLAUDE_PROJECT_DIR, then the cwd's git toplevel, then cwd.
@@ -47,17 +49,17 @@ fail=0
 note() { say "  !! $*"; fail=1; }
 
 # ---------------------------------------------------------------- repo root
+# Leading flags only, then `break`, so the verb and its arguments stay in "$@"
+# untouched. Collecting them into a string and re-splitting would lose a path
+# containing a space, which a configurable workspace can easily produce.
 ROOT_FLAG=""
-ARGS=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root) ROOT_FLAG="${2:-}"; shift 2 ;;
     --repo-root=*) ROOT_FLAG="${1#--repo-root=}"; shift ;;
-    *) ARGS="${ARGS:+$ARGS }$1"; shift ;;
+    *) break ;;
   esac
 done
-# shellcheck disable=SC2086
-set -- $ARGS
 
 ROOT="$ROOT_FLAG"
 [ -n "$ROOT" ] || ROOT="${REPO_ROOT:-}"
@@ -91,16 +93,46 @@ _load_config_resolver() {
 RESOLVER_OK=1
 _load_config_resolver 2>/dev/null || RESOLVER_OK=0
 
-# cfg <key> [default] -- env CLOUD_<KEY> wins, then [cloud].<key>, then the default.
+# Two resolution tiers, because a project's `.kit.toml` rides inside the repo and
+# a pull request can therefore set it.
+#
+#   cfg      env CLOUD_<KEY> > project .kit.toml > kit-root kit.toml > default
+#   cfg_root env CLOUD_<KEY> > kit-root kit.toml > default   (project overlay SKIPPED)
+#
+# A key whose value SELECTS CODE TO RUN or NAMES A CREDENTIAL uses cfg_root. The
+# resolver already ships `kit_config_get_root` for exactly this class. Concretely:
+# `plugins` installs and runs a marketplace plugin unattended, and `hooks_path`
+# arms `core.hooksPath`, which turns otherwise-inert scripts in the repo into
+# code that every later git command executes. Neither may be settable by a
+# branch under review. Everything else is inert data (a path to cat, a clone
+# target, a directory name) and stays project-overridable, which is the point of
+# the seam.
+#
 # Indirect expansion, never `eval`: a root-context `eval` over an environment
 # variable was a reproduced command injection in the predecessor of this script.
+_cfg_env() {
+  local envname
+  envname="CLOUD_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+  printf '%s' "${!envname:-}"
+}
+
 cfg() {
-  local key="$1" def="${2:-}" envname v
-  envname="CLOUD_$(printf '%s' "$key" | tr '[:lower:]' '[:upper:]')"
-  v="${!envname:-}"
+  local key="$1" def="${2:-}" v
+  v="$(_cfg_env "$key")"
   [ -n "$v" ] && { printf '%s' "$v"; return 0; }
   if [ "$RESOLVER_OK" -eq 1 ]; then
     v="$(KIT_PROJECT_ROOT="$ROOT" kit_config_get "cloud.$key" "" 2>/dev/null || true)"
+    [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  fi
+  printf '%s' "$def"
+}
+
+cfg_root() {
+  local key="$1" def="${2:-}" v
+  v="$(_cfg_env "$key")"
+  [ -n "$v" ] && { printf '%s' "$v"; return 0; }
+  if [ "$RESOLVER_OK" -eq 1 ]; then
+    v="$(kit_config_get_root "cloud.$key" "" 2>/dev/null || true)"
     [ -n "$v" ] && { printf '%s' "$v"; return 0; }
   fi
   printf '%s' "$def"
@@ -121,13 +153,14 @@ fi
 WS="$(cfg workspace "$_home/workspace")"
 REPOS="$(cfg repos "")"
 REPO_OWNER="$(cfg repo_owner "")"
-PLUGINS="$(cfg plugins "")"
-VAULT="$(cfg vault "")"
-CANARY_REF="$(cfg canary_ref "${VAULT:+op://$VAULT/cloud-canary/credential}")"
-HOOKS_PATH="$(cfg hooks_path "")"
 MAP="$(cfg map "")"
 RULES="$(cfg rules "")"
 OP_VERSION="$(cfg op_version v2.31.1)"
+# Operator-owned tier: a branch under review may not set any of these.
+PLUGINS="$(cfg_root plugins "")"
+VAULT="$(cfg_root vault "")"
+CANARY_REF="$(cfg_root canary_ref "${VAULT:+op://$VAULT/cloud-canary/credential}")"
+HOOKS_PATH="$(cfg_root hooks_path "")"
 CANARY_VALUE="${CLOUD_CANARY_VALUE:-CLOUD-CANARY-OK}"
 
 # The rules a cloud session follows: the consumer's own file when it names one,
@@ -145,12 +178,14 @@ mkdir -p "$WS" 2>/dev/null || true
 # ---------------------------------------------------------------- helpers
 # Clone helper: plain https first (the cloud proxy injects credentials there),
 # gh as the fallback (covers a local run where https auth is non-interactive).
+# Every external call is time-capped: the SessionStart hook has a bounded budget
+# and one stalled clone must not starve the steps after it.
 fetch() {  # owner/name dest
   local slug="$1" dest="$2"
   [ -e "$dest" ] && { say "ok  $slug present"; return 0; }
-  if git clone --depth 1 "https://github.com/$slug.git" "$dest" >/dev/null 2>&1; then
+  if cap 60 git clone --depth 1 "https://github.com/$slug.git" "$dest" >/dev/null 2>&1; then
     say "ok  cloned $slug"
-  elif command -v gh >/dev/null 2>&1 && gh repo clone "$slug" "$dest" -- --depth 1 >/dev/null 2>&1; then
+  elif command -v gh >/dev/null 2>&1 && cap 60 gh repo clone "$slug" "$dest" -- --depth 1 >/dev/null 2>&1; then
     say "ok  cloned $slug (gh)"
   else
     note "cannot clone $slug (the proxy may not cover sibling repos)"
@@ -363,11 +398,19 @@ install_gh
 
 # 4. Repo git hooks. core.hooksPath is LOCAL git config, so it is not part of a
 #    clone: without this the repo's commit-message and pre-commit checks never
-#    fire in a cloud session. Idempotent, and only when the dir exists.
+#    fire in a cloud session. Idempotent.
+#
+#    EXPLICIT ONLY, never a bare directory probe. Arming core.hooksPath turns
+#    scripts that a plain clone leaves inert into code every later git command
+#    runs. Auto-arming a `.githooks` directory found in the tree would hand that
+#    to whatever branch the session checked out. The value is operator-tier
+#    (kit-root config or the CLOUD_HOOKS_PATH env), so a branch under review
+#    cannot introduce it.
 hp="$HOOKS_PATH"
-[ -n "$hp" ] || { [ -d "$ROOT/.githooks" ] && hp=".githooks"; }
-if [ -n "$hp" ] && [ -d "$ROOT/$hp" ]; then
-  if git -C "$ROOT" config core.hooksPath "$hp" 2>/dev/null; then
+if [ -n "$hp" ]; then
+  if [ ! -d "$ROOT/$hp" ]; then
+    note "hooks_path '$hp' is configured but $ROOT/$hp does not exist; hooks left off"
+  elif git -C "$ROOT" config core.hooksPath "$hp" 2>/dev/null; then
     say "ok  git hooks armed (core.hooksPath=$hp)"
   else
     note "could not set core.hooksPath; the repo's commit checks are off"

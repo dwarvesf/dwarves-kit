@@ -7,14 +7,18 @@ The proof is the suite, its negative controls, and one observed RED.
 
 | Check | Command | Result |
 |---|---|---|
-| the cloud suite | `bash lib/cloud/tests/smoke.sh` | `smoke: all 74 passed`, exit 0 |
+| the cloud suite | `bash lib/cloud/tests/smoke.sh` | `smoke: all 79 passed`, exit 0 |
 | bin forwarders + census | `bash tests/test-bin-forwarders.sh` | all passed, exit 0 |
 | structural integrity | `bash tests/test-meta.sh` | all passed, exit 0 |
 | module install matrix | `bash tests/test-install-modules.sh` | 37 passed, 0 failed |
 | adopt wiring | `bash tests/test-adopt.sh` | PASS=21 FAIL=0 |
 | config registry | `bash tests/test-config-registry.sh` | 19/19 passed |
 | kit contract | `bash tests/test-kit-contract.sh` | 23 passed; the 2 remaining offenders are `lib/bench`, red on `origin/master` before this branch |
-| shellcheck | `shellcheck lib/cloud/*.sh hooks/cloud-*.sh bin/cloud` | clean |
+| shellcheck | `shellcheck -S warning lib/cloud/*.sh hooks/cloud-*.sh bin/cloud lib/cloud/tests/smoke.sh` | clean, exit 0 |
+| hook behavior | `bash tests/test-hooks.sh` | 492 / 492, exit 0 |
+
+The full run record, including the real install and adopt flows and both
+negative controls, is `docs/verification/cloud-session-support.md`.
 
 ## What each invariant is proved by
 
@@ -29,6 +33,7 @@ The proof is the suite, its negative controls, and one observed RED.
 | `CLAUDE_ENV_FILE` append-once | `CLAUDE_ENV_FILE holds the PATH export` then `append-once across two runs` | a wrong canary prints a `!!` line and no `canary verified` line |
 | the consumer-config seam | `rules verb reads [cloud] rules from the project .kit.toml`, `assemble honours [cloud] workspace` | with no project config the kit's own `lib/cloud/CLOUD-RULES.md` is named instead |
 | the SessionStart JSON contract | `hookSpecificOutput keys`, `hookEventName is SessionStart`, `reloadSkills is true` | a malformed payload prints `BADJSON` into every field, so the assertions fail rather than skip |
+| adopt reaches every tenant repo | `both cloud hooks wired into the tenant settings.json`, `the SessionStart entry keeps the startup\|resume matcher` | a repo adopted without `--with cloud` carries neither hook |
 
 ## Observed RED (the suite can go red for the right reason)
 
