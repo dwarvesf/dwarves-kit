@@ -69,6 +69,9 @@ real reader consumes it today (all rows below are, except where noted).
 | KIT_CONFIG_ROOT | env-only | `${DWARVES_KIT:-$HOME/.claude/dwarves-kit}` | [impl] | config | Override where the kit-root `kit.toml` itself is read from (this IS the resolver's own bootstrap knob; it cannot have a `kit.toml` key). |
 | KIT_PROJECT_ROOT | env-only | `$PWD` | [impl] | config | Override which project's `.kit.toml` is consulted. |
 | DWARVES_KIT_DEBUG | env-only | `0` | [impl] | (none) | Verbose hook/command debug logging; cross-cutting, not config-subsystem-specific. |
+| DWARVES_KIT_LICENSE | env-only | `$HOME/.config/dwarves-kit/license` | [impl] | config | `bin/activate`: path to the license keyfile the activation check reads. |
+| KIT_TOOL_POLICY | env-only | `$HOME/.claude/dwarves-kit/tool-policy.json` | [impl] | config | `hooks/tool-policy-guard.sh`: path to the tool-policy JSON the guard enforces. |
+| DWARVES_KIT_LANES_D | env-only | `$HOME/.config/dwarves-kit/lanes.d` | [impl] | config | `lib/gate/gate-ledger.sh`: dropin dir for per-lane `.plan` files. |
 
 ### Data-plane keys ([ledger] section + the durable telemetry root)
 
@@ -105,7 +108,7 @@ real reader consumes it today (all rows below are, except where noted).
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | WAVE_CAP | mega.wave_cap | `2` | [impl] | mega | Max concurrent sub-goals admitted per wave. |
-| TIER4_CLOSE | mega.tier4_close | `1` (truthy) | [impl] | mega | Enables the Tier-4 mega-close auto-verify+hold sequence (SPEC-118). |
+| TIER4_CLOSE | mega.tier4_close | `true` | [impl] | mega | Enables the Tier-4 mega-close auto-verify+hold sequence (SPEC-118). |
 | MULTIPLEXER | mega.multiplexer | `0` (off) | [impl] | mega | Opt-in wave pane multiplexing (SPEC-119); only engages when a wave actually admits >=1 sub-goal concurrently. |
 | MEGA_MERGE_POSTURE | mega.mega_merge_posture | `"auto-to-final"` | [impl] | mega | `"auto-to-final"` or `"per-pr-review"` merge posture. |
 | - | mega.merge_autonomy | `"gated-final"` | [design] | mega | `"gated-final"` or `"full-auto"`; no env override found. |
@@ -141,6 +144,23 @@ real reader consumes it today (all rows below are, except where noted).
 | QUEUE_BOARD_CMD | env-only | `board` | [impl] | queue | Override the board CLI command name. |
 | QUEUE_JOURNAL | env-only | `${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/queue-journal.tsv` | [impl] | queue | Path to the queue's TSV journal. |
 | QUEUE_ALLOWED_POINTER_GLOB | env-only | `_meta/megagoals/* .claude/goals/*` | [impl] | queue | Glob allowlist for pointer files the queue may submit. |
+| QUEUE_GOAL_CHAR_LIMIT | env-only | `4000` | [impl] | queue | `/goal` char ceiling; an over-budget pointer fails fast before a window opens. |
+| QUEUE_WAIT_POLL_SECS | env-only | `5` | [impl] | queue | Poll interval (seconds) for the `queue wait` verb. |
+| QUEUE_BEAT_STALE_SECS | env-only | `600` | [impl] | queue | Beat age past which the conductor is presumed gone (SPEC-221). |
+| QUEUE_BEAT_DEAD_SECS | env-only | `3600` | [impl] | queue | Beat age past which the reaper writes a verdict (SPEC-221). |
+| QUEUE_MAX_STALLS | env-only | `3` | [impl] | queue | Stalls before a slug is quarantined (empty retry_after). |
+| QUEUE_COOLDOWN_SECS | env-only | `1800` | [impl] | queue | Breaker cooldown before an `error` row is re-picked. |
+| QUEUE_NOPROGRESS_TRIP | env-only | `3` | [impl] | queue | Consecutive no-progress runs that trip the breaker. |
+| QUEUE_SAMEERROR_TRIP | env-only | `5` | [impl] | queue | Consecutive `error` runs that trip the breaker. |
+| QUEUE_RETRY_JITTER_MIN | env-only | `5` | [impl] | queue | Floor (minutes) of the jittered retry window after a stall. |
+| QUEUE_RETRY_JITTER_SPAN | env-only | `11` | [impl] | queue | Span (minutes) of the jittered retry window after a stall. |
+| QUEUE_PR_READY | env-only | `0` | [impl] | queue | `1` opens a normal PR; `0` keeps the unattended draft-PR default (SPEC-224). |
+| QUEUE_MAX_TOOL_CALLS | env-only | `0` | [impl] | queue | Per-row ceiling on the run's self-reported TOOL_CALLS (`0` = off). |
+| QUEUE_MAX_TOTAL_TOOL_CALLS | env-only | `0` | [impl] | queue | Queue-wide TOOL_CALLS ceiling across rows this run (`0` = off). |
+| QUEUE_SANITIZE_PROMPT | env-only | `0` | [impl] | queue | `1` treats the pointer body as untrusted (SPEC-223 XPIA pass); implied by `--from-boards`. |
+| QUEUE_MAX_PROMPT_CHARS | env-only | `20000` | [impl] | queue | `lib/queue/sanitize.sh`: max prompt chars accepted before the pointer is rejected. |
+| QUEUE_PROTECTED_GLOBS | env-only | `.claude/* CLAUDE.md AGENTS.md .github/* _meta/BACKLOG.md` | [impl] | queue | `lib/queue/sanitize.sh`: protected-path globs a gated run may not write. |
+| QUEUE_PERL_CMD | env-only | `perl` | [impl] | queue | `lib/queue/sanitize.sh`: perl binary override for the sanitize pass. |
 
 ### board
 
@@ -148,6 +168,7 @@ real reader consumes it today (all rows below are, except where noted).
 |---|---|---|---|---|---|
 | BACKLOG_FILE | env-only | `$BACKLOG_DIR/../../_meta/BACKLOG.md` | [impl] | board | Override which `BACKLOG.md` the CLI reads/writes. |
 | BACKLOG_ID_RE | env-only | `[A-Z]+-[0-9]+` | [impl] | board | Regex for what counts as a backlog item ID. |
+| KIT_BOARDS_REGISTRY | env-only | `<repo-root>/_meta/boards.txt` | [impl] | board | `lib/mega/runs-dashboard.py`: override the boards registry the cross-repo cockpit reads (beats the repo-root default, loses to `--registry`). |
 
 ### sync (two-way spoke mirror, `board sync` -> `lib/sync/backlog_sync.py`)
 
@@ -283,6 +304,7 @@ against any of these bare tokens as covered without a registry row.
 | KIT_KNOWN_MODULES | `install.sh`: a hardcoded bash array literal, never read from the environment. |
 | KIT_LIB | Script-local computed dir in most readers (e.g. `lib/telemetry/lane-telemetry.sh`); the real env-overridable cousin is `DWARVES_KIT_LIB` (Python, `lib/stats/src/stats/config.py`), which the bash-oriented seed regex cannot see (no `$` sigil in Python source) , documented here rather than silently dropped: see `lib/stats/README.md`'s own env table for `DWARVES_KIT_LIB`'s default (this repo's own `lib/`, kit-internal). |
 | MEGA_SH | `lib/board/board.sh`: computed `$BOARD_DIR/../mega/mega.sh`. |
+| QUEUE_SH | `lib/queue/watch-board.sh`: computed `$WATCH_DIR/queue.sh`, script-local sibling path, never env-read (same shape as `MEGA_SH`). |
 | PANE_VIEWER_ALLOWED | `lib/queue/orchestrate.sh`: a hardcoded allowlist string, not itself env-read; it validates `PANE_VIEWER`. |
 | STATS_DB_REMOVED | Dead/vestigial test-fixture token, see its row above , no product reader exists. Kept OUT of the drift-fail set (registered above instead of silently dropped, per the scope fence) but also allowlisted so the lint does not double-count it as a live undocumented knob. |
 
