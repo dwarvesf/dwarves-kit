@@ -8,6 +8,7 @@
 #
 # Usage: queue run   <src.tsv> [--dry-run] [--max-megas N] [--from-boards] [--journal <path>]
 #        queue watch [--apply] [--max N] [--board <path>]   (the #auto backlog watcher, SPEC-217)
+#        queue wait  <slug> [--timeout S]   (block until a run reaches a terminal state, ID-470)
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 exec bash "$SELF_DIR/../lib/queue/queue.sh" "$@"

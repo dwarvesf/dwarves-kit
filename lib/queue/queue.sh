@@ -313,6 +313,78 @@ _journal_append() {  # slug verdict reason
   printf '%s\t%s\t%s\t%s\n' "$(_now)" "$1" "$2" "$reason" >> "$QUEUE_JOURNAL"
 }
 
+# ---- wait: block until a slug reaches a terminal state (ID-470) -------------------------------
+# Field-exact count of TERMINAL journal rows for <slug> (col2==slug). awk, not `grep -c`: a
+# grep count mis-handles a final line without a trailing newline and can false-match the slug in
+# another row's reason text. 0 when the journal is absent.
+_journal_count() {  # slug
+  [ -f "$QUEUE_JOURNAL" ] || { printf '0'; return 0; }
+  awk -F'\t' -v s="$1" '$2==s{n++} END{print n+0}' "$QUEUE_JOURNAL"
+}
+
+# The LAST journal row for <slug>, verbatim (empty if none).
+_journal_last_row() {  # slug
+  [ -f "$QUEUE_JOURNAL" ] || return 0
+  awk -F'\t' -v s="$1" '$2==s{r=$0} END{if(r!="")print r}' "$QUEUE_JOURNAL"
+}
+
+# The residue a dead-without-verdict run leaves: last beat age + the status sidecar. To stderr,
+# so a caller capturing stdout gets only the journal row on success.
+_wait_residue() {  # slug
+  local beat status age
+  printf 'queue wait: window for %s gone with no terminal journal row\n' "$1" >&2
+  beat=$(_run_file "$1" beat 2>/dev/null) || beat=""
+  if [ -n "$beat" ] && [ -f "$beat" ]; then age=$(_age "$beat"); printf '  last beat: %ss ago\n' "${age:-?}" >&2
+  else printf '  no beat file\n' >&2; fi
+  status=$(_run_file "$1" status 2>/dev/null) || status=""
+  if [ -n "$status" ] && [ -f "$status" ]; then printf '  status sidecar:\n' >&2; sed 's/^/    /' "$status" >&2
+  else printf '  no status sidecar\n' >&2; fi
+}
+
+# Block until <slug> reaches a terminal state. Read-only over the journal + mux + sidecars; no
+# daemon, no writes. Exits: 0 a terminal journal row landed (printed to stdout) OR the slug was
+# already terminal; 1 the window died and no terminal row exists (residue to stderr); 2 timeout.
+cmd_wait() {
+  local slug="" timeout=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --timeout)   timeout="${2:-0}"; shift 2 || true ;;
+      --timeout=*) timeout="${1#*=}"; shift ;;
+      -*) _warn "queue wait: unknown flag '$1'"; return 64 ;;
+      *)  if [ -z "$slug" ]; then slug="$1"; else _warn "queue wait: extra arg '$1'"; return 64; fi; shift ;;
+    esac
+  done
+  [ -n "$slug" ] || { _warn "usage: queue.sh wait <slug> [--timeout S]"; return 64; }
+  _slug_ok "$slug" || { _warn "queue wait: refusing slug '$slug' (contains ':' '.' or '/')"; return 64; }
+  case "$timeout" in ''|*[!0-9]*) timeout=0 ;; esac
+
+  local poll base start now_n elapsed
+  poll="${QUEUE_WAIT_POLL_SECS:-5}"
+  case "$poll" in ''|*[!0-9]*) poll=5 ;; esac
+  base=$(_journal_count "$slug")
+  start=$(date +%s)
+  while :; do
+    now_n=$(_journal_count "$slug")
+    if [ "$now_n" -gt "$base" ]; then _journal_last_row "$slug"; return 0; fi
+    if ! _mux_capture "$slug" >/dev/null 2>&1; then
+      # Window-gone-vs-verdict race: the run can append its row a beat AFTER the window closes.
+      # Re-check once before declaring death (the exact race this verb exists to end).
+      sleep "$poll"
+      now_n=$(_journal_count "$slug")
+      if [ "$now_n" -gt "$base" ]; then _journal_last_row "$slug"; return 0; fi
+      # No new row. If a terminal row already existed when we started, the run finished before
+      # we watched -- that is still a terminal state, report it 0.
+      if [ "$base" -gt 0 ]; then _journal_last_row "$slug"; return 0; fi
+      _wait_residue "$slug"; return 1
+    fi
+    if [ "$timeout" -gt 0 ]; then
+      elapsed=$(( $(date +%s) - start ))
+      [ "$elapsed" -ge "$timeout" ] && { _warn "queue wait: timeout after ${timeout}s (slug=$slug still running)"; return 2; }
+    fi
+    sleep "$poll"
+  done
+}
+
 # ---- git preflight ----------------------------------------------------------------------------
 _default_branch() {  # repo
   local repo="$1" b
@@ -942,8 +1014,10 @@ main() {
     # The backlog watcher (SPEC-217): a filter that turns `#auto`-marked queued board rows into
     # the same TSV `run` above consumes. It owns its own flags, so this is a forward, not a wrapper.
     watch) exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/watch-board.sh" "$@" ;;
+    wait)  cmd_wait "$@" ;;
     *)     _warn "usage: queue.sh run <src.tsv> [--dry-run] [--max-megas N] [--from-boards] [--journal <path>]"
-           _warn "       queue.sh watch [--apply] [--max N] [--board <path>]"; exit 64 ;;
+           _warn "       queue.sh watch [--apply] [--max N] [--board <path>]"
+           _warn "       queue.sh wait <slug> [--timeout S]"; exit 64 ;;
   esac
 }
 

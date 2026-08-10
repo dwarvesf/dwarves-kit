@@ -340,3 +340,51 @@ jverdict() { awk -F'\t' -v s="$1" '$2==s{print $3}' "$JOURNAL"; }    # slug -> v
   [ "$(_run_dir)" = "$KIT_LEDGER_DIR/queue-runs" ]
   case "$(_run_dir)" in "$WORK"/*) : ;; *) false ;; esac
 }
+
+# =============================================================================================
+# wait verb (ID-470): block until a slug reaches a terminal state. Read-only over journal + mux.
+# The fake-mux capture-pane exits nonzero iff $QSTUB/<slug>.dead exists (window gone), so these
+# drive the alive/dead axis with a file.
+
+# W1 already-terminal: a done row already present, window gone -> exit 0, prints the row.
+@test "W1 wait already-terminal -> exit 0 prints the row" {
+  printf '%s\tw1\tdone\tshipped\n' "2026-08-10T00:00:00Z" > "$JOURNAL"
+  seed_dead w1
+  QUEUE_WAIT_POLL_SECS=0 run bash "$QUEUE" wait w1
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "	w1	done	"
+}
+
+# W2 new terminal row lands mid-wait (window alive) -> exit 0, prints the new row.
+@test "W2 wait new-row -> exit 0" {
+  : > "$JOURNAL"                                   # empty: base count 0
+  ( sleep 1; printf '%s\tw2\tgated\tneeds-human\n' "2026-08-10T00:00:01Z" >> "$JOURNAL" ) &
+  QUEUE_WAIT_POLL_SECS=1 run bash "$QUEUE" wait w2 --timeout 10
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "	w2	gated	"
+}
+
+# W3 window dies with no terminal row -> exit 1, residue to stderr.
+@test "W3 wait window-died-no-verdict -> exit 1" {
+  : > "$JOURNAL"
+  seed_dead w3
+  QUEUE_WAIT_POLL_SECS=0 run bash "$QUEUE" wait w3
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "gone with no terminal journal row"
+}
+
+# W4 timeout: window alive, no row ever -> exit 2.
+@test "W4 wait timeout -> exit 2" {
+  : > "$JOURNAL"                                   # window alive (no .dead), never a row
+  QUEUE_WAIT_POLL_SECS=1 run bash "$QUEUE" wait w4 --timeout 1
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "timeout after 1s"
+}
+
+# W5 bad input: a slug with a tmux/path separator, and a missing slug -> usage exit 64.
+@test "W5 wait bad-slug and missing-slug -> exit 64" {
+  run bash "$QUEUE" wait 'a:b'
+  [ "$status" -eq 64 ]
+  run bash "$QUEUE" wait
+  [ "$status" -eq 64 ]
+}
