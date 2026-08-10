@@ -102,7 +102,7 @@ echo "=== AC5: bin/config functional smoke (list/get/explain + provenance fixtur
 # cell's human markdown (backticks / parenthetical annotations) -- review finding, 2026-07-12.
 assert_eq "get WAVE_CAP (default, no overrides) is the clean scalar 2" "$(env -u WAVE_CAP bash "$CONFIG_BIN" get WAVE_CAP)" '2'
 assert_eq "get mega.wave_cap (dotted-key lookup) is the clean scalar 2" "$(env -u WAVE_CAP bash "$CONFIG_BIN" get mega.wave_cap)" '2'
-assert_eq "get TIER4_CLOSE strips the annotation ((truthy)) from the default cell" "$(env -u TIER4_CLOSE bash "$CONFIG_BIN" get TIER4_CLOSE)" '1'
+assert_eq "get TIER4_CLOSE returns the resolved boolean from kit.toml (matches the list source)" "$(env -u TIER4_CLOSE bash "$CONFIG_BIN" get TIER4_CLOSE)" 'true'
 assert_eq "get MEGA_MERGE_POSTURE unquotes the default (one \" layer, like _kit_toml_get)" "$(env -u MEGA_MERGE_POSTURE bash "$CONFIG_BIN" get MEGA_MERGE_POSTURE)" 'auto-to-final'
 if bash "$CONFIG_BIN" get NOT_A_REAL_KEY >/dev/null 2>&1; then RC=1; else RC=0; fi
 assert "get on an unknown key fails (exit != 0)" $RC
