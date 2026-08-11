@@ -28,9 +28,7 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # +plugin-check, +skill-improve, +skill-review (SPEC-200 C2, 2026-07-14): each was a module
 # executable reachable from NO operator surface. The contract lint (C2) now fails on that, and
 # this census is the other half of the same guarantee: bin/ may not grow silently either.
-# `activate` and `release` were already live in bin/ and absent from this list, so the census
-# has been red since they landed. Added here with `cloud` so the census guards again.
-EXPECTED="activate board classify cloud config gate goal learn mega plugin-check prose-rag queue release session skill-improve skill-review spec stats worktree-provision"
+EXPECTED="board classify config gate goal learn mega plugin-check prose-rag queue session skill-improve skill-review spec stats worktree-provision"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
@@ -96,13 +94,6 @@ out="$("$KIT_DIR/bin/mega" --help 2>&1)"
 assert_true "mega forwarder reaches mega.sh" "$(grep -q 'mega status' <<<"$out"; echo $?)"
 out="$("$KIT_DIR/bin/queue" --help 2>&1 || true)"
 assert_true "queue forwarder reaches queue.sh" "$(grep -q 'usage: queue.sh run' <<<"$out"; echo $?)"
-
-echo "== cloud: forwarder reaches the cloud dispatcher (deep behavior: lib/cloud/tests/smoke.sh) =="
-out="$("$KIT_DIR/bin/cloud" --help 2>&1)"; rc=$?
-assert_true "cloud forwarder exits 0 through bin/cloud (--help)" "$rc"
-assert_true "cloud forwarder reaches the dispatcher usage" "$(grep -q 'cloud provision' <<<"$out"; echo $?)"
-out="$("$KIT_DIR/bin/cloud" bogus-verb 2>&1)"; rc=$?
-assert_true "cloud rejects an unknown verb (exit 1)" "$([ $rc -eq 1 ]; echo $?)"
 
 echo "== stats: forwarder reaches the uv CLI (SKIP without uv) =="
 if command -v uv >/dev/null 2>&1; then

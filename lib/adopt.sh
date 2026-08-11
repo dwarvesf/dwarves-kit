@@ -23,7 +23,7 @@
 # goal 01) already merges <target>/.kit.toml over the kit-root default. This closes the loop:
 # adopt seeds a starter <target>/.kit.toml (opt-in; never overwritten after creation) and, on
 # EVERY run (fresh or --refresh), wires the currently-enabled HOOK-bearing modules (board,
-# session, advisor, cosmetic, cloud) into <target>/.claude/settings.json via a jq MERGE (never a
+# session, advisor, cosmetic) into <target>/.claude/settings.json via a jq MERGE (never a
 # wholesale file rewrite -- other entries in that file are preserved). Command/skill modules
 # (queue, stats, quiz_gate, weekend_batch, bridge) need no settings.json entry, so they are
 # recorded in .kit.toml but never touch settings.json. This is "wired at adopt time", not read
@@ -178,19 +178,18 @@ done
 # module -> its hook script basenames (space-separated; empty = hookless -- queue, stats,
 # quiz_gate, weekend_batch, bridge are commands/skills with no hook to gate). Kept in sync
 # with install.sh's kit_module_hooks() (same doc note there): only board/session/advisor/
-# cosmetic/cloud carry a hook, so only those need a settings.json entry.
+# cosmetic carry a hook, so only those need a settings.json entry.
 kit_module_hooks() {
   case "$1" in
     board) echo "backlog-stage.sh" ;;
     session) echo "context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh" ;;
     advisor) echo "context-hints.sh" ;;
     cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
-    cloud) echo "cloud-session-start.sh cloud-dash-guard.sh" ;;
     *) echo "" ;;
   esac
 }
 
-KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge cloud"
+KIT_KNOWN_MODULES="board session advisor cosmetic queue stats quiz_gate weekend_batch bridge"
 
 # Load the config resolver in a function scope so its own `${1:-}` selftest check (see
 # lib/config/kit-config.sh) never sees adopt.sh's own positional parameters (TARGET etc).
@@ -255,7 +254,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
     [ -f "$c" ] && { settings_src="$c"; break; }
   done
   if [ -n "$settings_src" ]; then
-    HOOKED_MODULES="board session advisor cosmetic cloud"
+    HOOKED_MODULES="board session advisor cosmetic"
     enabled_list="" wired_hook_names=""
     for m in $HOOKED_MODULES; do
       KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
