@@ -325,6 +325,15 @@ If verdict is SHIP: suggest `/kit:docs` then `/kit:ship`.
 If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Unvalidated CRITICAL/HIGH findings are treated as LIVE (the SPEC-082 fail-safe); responding-to-review notes the unvalidated status when proposing their fixes. Route by class (SPEC-078), UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
 If verdict is DO NOT SHIP: explain what's fundamentally wrong.
 
+**Deslop strip (OPT-IN, before ship).** When the operator wants the AI-slop strip
+before merge, dispatch `slop-stripper` (agents/slop-stripper.md) with the base ref
+(`git merge-base <default-branch> HEAD`, or the diff range the lenses reviewed). It
+applies surgical, behavior-preserving edits to the branch diff (redundant comments,
+over-defensive handling, unnecessary casts, flattenable nesting, patterns
+inconsistent with the file) and returns a STRIP REPORT. Never auto-run: the
+operator's judgment at this gate is the gate (SPEC-078, `gated_auto` is applied
+after judgment, never blindly). Run `/kit:verify` after the strip, then `/kit:ship`.
+
 ### Step 6: Operator rejection appends to the ledger (SPEC-144)
 
 If the operator rejects one or more findings from the unified report (by-design, false
