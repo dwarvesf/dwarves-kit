@@ -43,7 +43,48 @@ worktree       = false          # hookless; exposes the worktree-provision CLI
 money_gate     = false          # money-gate.sh PreToolUse guard; inert without MONEY_GATE_REPOS
 prose_rag      = false          # prose-rag.sh recall inject + CLI; dormant without PROSE_RAG_INJECT=1
 sync           = false          # hookless; `board sync` two-way spoke mirror, inert without [sync] sources
+cloud          = false          # cloud-session support. NOTE: this toggle gates the INSTALLER
+                                #   path only. hooks.json (the plugin manifest) is not
+                                #   filtered, so each cloud hook ALSO requires its own
+                                #   switch: CLOUD_PROVISION=1 / CLOUD_DASH_GUARD=1
 team_mode      = false          # reserved , install.sh hard-rejects it today
+
+[cloud]                         # read by lib/cloud/provision.sh in a Claude Code cloud VM.
+                                # TWO TIERS, because a project's .kit.toml rides in the repo
+                                # and a pull request can set it:
+                                #   PROJECT tier -- set it in the PROJECT's .kit.toml.
+                                #   OPERATOR tier -- set it HERE or in the environment's own
+                                #     CLOUD_<KEY> variable; a project .kit.toml is IGNORED,
+                                #     because the value selects code to run or names a
+                                #     credential (lib/config/kit-config.sh kit_config_get_root).
+                                # Every key also takes a CLOUD_<KEY> env override; for an
+                                # OPERATOR key the environment is the trust anchor, not just an
+                                # override (CLOUD_PROVISION, the module's master switch, is
+                                # env-only). Unset keys fall back to a neutral default, so
+                                # provisioning still does the generic work with no config at all.
+# --- PROJECT tier (names a path inside this repo; repo_path REFUSES anything else) ---
+# map        = ""               # repo-relative routing map printed by `cloud map`
+# rules      = ""               # repo-relative cloud-rules file. default lib/cloud/CLOUD-RULES.md
+# --- OPERATOR tier (reaches outside the repo, runs code, or names a credential) ---
+# workspace  = "~/workspace"    # where the session repo is linked and siblings are cloned. It
+#                               # names a directory OUTSIDE the repo and a symlink is created
+#                               # there, so a project value pointed it at ~/.claude/skills and
+#                               # made a PR-authored root SKILL.md a live skill
+# op_version = "v2.31.1"        # pinned 1Password CLI release. The value is interpolated into a
+#                               # download URL for a binary that is then chmod +x and put on
+#                               # PATH; validated against ^v?[0-9]+(\.[0-9]+)*$ on top
+# repos      = "a,b/c"          # sibling repos to clone: <name> or <owner>/<name>. A clone
+#                               # runs no code, but its AGENTS.md/CLAUDE.md are then NAMED
+#                               # to the model as files to read
+# repo_owner = ""               # default owner for a bare name in `repos`
+# plugins    = "x@mk|owner/mk"  # behavioral plugins to install: <id>|<marketplace-slug> pairs.
+#                               # An install runs unattended, with no human to approve it
+# hooks_path = ".githooks"      # repo-relative core.hooksPath to arm. Arming it turns scripts a
+#                               # plain clone leaves inert into code every git command runs.
+#                               # Never auto-armed from a directory found in the tree
+# vault      = ""               # secret vault name, reported in the canary verdict
+# canary_ref = ""               # op:// ref proving the vault is reachable. default
+#                               # op://<vault>/cloud-canary/credential when vault is set
 
 [ledger]                        # where the harness stores its operation record
 location            = "shared"  # [impl] "shared" (XDG, one root for all projects)

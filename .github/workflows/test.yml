@@ -217,3 +217,6 @@ jobs:
 
       - name: Run kit-weekly scheduler tests (ADR-0034 decision 9, harness-loop sub-goal 10)
         run: bash tests/test-kit-weekly.sh
+
+      - name: "Run the cloud-session suite (provision, gate, guards, installers)"
+        run: bash lib/cloud/tests/smoke.sh

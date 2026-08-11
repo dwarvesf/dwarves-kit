@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# bin/cloud -- STABLE consumer entrypoint for the cloud subsystem (SPEC-184 shape).
+#
+# A consumer (an adopted repo's settings.json hook, an environment Setup script,
+# a doc) references THIS path, never a deep `lib/cloud/<file>.sh` path, so a
+# later reorganisation of lib/cloud/ costs one line here instead of every
+# consumer. Resolution is relative to this file, so it works identically in the
+# kit repo (dev) and in the copied install.
+#
+# Usage: cloud [provision|vm-setup|install-gh|rules|map|repo|secrets|plugins] ...
+set -uo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/cloud/cloud.sh" "$@"
