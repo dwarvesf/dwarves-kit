@@ -203,3 +203,50 @@ prove and the CI leg that has not been dispatched. Added by this round:
 | a repo-committed `.claude/settings.json` `env` block does NOT reach a hook subprocess in a cloud VM | UNVERIFIED, and it is the load-bearing assumption under the operator tier. If it DOES reach one, a PR can set `CLOUD_PROVISION=1` plus any operator key and the tier split is bypassed. That needs a kit-wide env-hardening pass, not a cloud-local one. Only a real cloud VM answers it |
 | the 90s sibling-clone budget is the right number against the real SessionStart timeout | UNVERIFIED. The platform's hook timeout is not documented; 90s leaves room for the 150s gh install under a 300s assumption. A real VM run calibrates it |
 | the `safe.directory` gate does not break a real cloud session | UNVERIFIED on the platform. The write now needs `CLAUDE_CODE_REMOTE=true` and Linux, which is exactly the context the comment names, but only a VM run confirms root still resolves the repo root there |
+
+---
+
+## 2026-08-11: independent verification round, and the one gap it left
+
+An independent pass re-ran every claimed fix by BREAKING it rather than
+reading it, in more shapes than the fixing round tested: 8 escape shapes per
+constrained key, 3 gate neuterings beyond the 5 already recorded, 3
+config-redirect vectors, plus glob, command-substitution and multi-line
+values. Every fix reproduced with a demonstrated before and after.
+
+Two results worth recording beyond "it holds":
+
+- The config-root pinning closed a hole that was LIVE on the pre-fix branch:
+  `KIT_CONFIG_ROOT=<repo>` and `DWARVES_KIT=<repo>` each armed
+  `core.hooksPath=.githooks` from a repo-committed file, which is arbitrary
+  code execution on the next git command. Verified armed before, inert after.
+- The original false green was confirmed real: on the pre-fix tree with the
+  cloud gate DELETED from both hooks, the suite still reported
+  `smoke: all 118 passed`, exit 0.
+
+### N1 (LOW), found and fixed here
+
+The `op_version` validator used `printf '%s' "$V" | grep -qE '...'`. `grep`
+matches LINE-wise, so a multi-line value passes when ANY line matches and the
+rest still reaches the URL.
+
+| Input | grep form | case form |
+|---|---|---|
+| `v1.0\n../../../../attacker-path` | ACCEPTED | rejected |
+| `vEVIL/../../../../attacker-path` | rejected | rejected |
+| `v1.0;id`, `$(id)`, empty | rejected | rejected |
+| `v2.31.1`, `2.30.0`, `v2.31` | accepted | accepted |
+
+Replaced with a `case` glob, which tests the whole string. Host was pinned
+either way so severity was low, but operator tier is not a reason to skip
+validating a value that lands in a URL.
+
+Suite after the change: `smoke: all 146 passed`, shellcheck clean.
+
+### Still unverified, and it caps what the tier split is worth
+
+Whether a repo-committed `.claude/settings.json` `env` block reaches a hook
+subprocess in a cloud VM. If it does, a pull request sets `CLOUD_PROVISION=1`
+plus an operator key and bypasses the split. Until a real VM answers it, treat
+the operator tier as defense in depth, not a boundary. This is a kit-wide
+settings/env question, not a cloud-local one.

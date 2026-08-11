@@ -276,7 +276,20 @@ RULES=""; [ -n "$RULES_RAW" ] && repo_path rules "$RULES_RAW" && RULES="$REPO_PA
 # than failing the session, per the exits-0 invariant.
 OP_DEFAULT_VERSION=v2.31.1
 OP_VERSION="$(cfg_root op_version "$OP_DEFAULT_VERSION")"
-if ! printf '%s' "$OP_VERSION" | grep -qE '^v?[0-9]+(\.[0-9]+)*$'; then
+# `case`, not `grep -qE`: grep matches LINE-wise, so a multi-line value passes
+# when ANY line matches and the rest still reaches the URL. Verified:
+# CLOUD_OP_VERSION=$'v1.0\n../../../../attacker-path' was ACCEPTED by the grep
+# form. A case glob tests the whole string, so a newline cannot hide behind a
+# valid first line. Host stays pinned either way, so this was low severity, but
+# operator tier is not a reason to skip validating a value that lands in a URL.
+case "$OP_VERSION" in
+  v[0-9]*|[0-9]*) _op_shape=ok ;;
+  *) _op_shape=bad ;;
+esac
+case "$OP_VERSION" in
+  *[!v0-9.]*) _op_shape=bad ;;
+esac
+if [ "$_op_shape" != ok ]; then
   note "op_version '$OP_VERSION' is not a version string; falling back to $OP_DEFAULT_VERSION"
   OP_VERSION="$OP_DEFAULT_VERSION"
 fi
