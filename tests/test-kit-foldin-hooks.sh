@@ -56,6 +56,18 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local NAME="$1" NEEDLE="$2" HAY="$3"
+  TOTAL=$((TOTAL + 1))
+  if printf '%s' "$HAY" | grep -qF "$NEEDLE"; then
+    echo -e "  ${RED}FAIL${NC} $NAME (unexpectedly found '$NEEDLE')"
+    FAIL=$((FAIL + 1))
+  else
+    echo -e "  ${GREEN}PASS${NC} $NAME"
+    PASS=$((PASS + 1))
+  fi
+}
+
 # Detached work lands asynchronously: poll a file for a needle instead of asserting
 # right after the hook returns (the hook is expected to return before the write happens).
 wait_for_file_contains() {
@@ -94,6 +106,36 @@ assert_exit "NC: empty stdin exits 0" 0 $RC
 # NC: malformed JSON never crashes / never blocks.
 RC=0; echo 'not json' | bash "$KIT_DIR/hooks/context-hints.sh" >/dev/null 2>&1 || RC=$?
 assert_exit "NC: malformed JSON exits 0" 0 $RC
+
+# ID-269: session-age cache-hygiene nudge. Threshold is NUDGE_THRESHOLD_SECONDS in
+# context-hints.py (6h = 21600s). Each row primes a session's "start" at t=BASE via a
+# first hook call, then re-invokes at t=BASE+ELAPSED to control the elapsed value the
+# hook computes (same CONTEXT_HINTS_NOW seam the row-1 test above already relies on).
+NUDGE_STATE="$TD/ch-nudge-state"
+NUDGE_THRESHOLD=21600
+
+# row 5a (negative control, well under threshold): no nudge line at all.
+CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=1000 \
+  bash -c "echo '{\"prompt\":\"hi\",\"session_id\":\"nudge-far-under\"}' | bash '$KIT_DIR/hooks/context-hints.sh'" >/dev/null
+OUT=$(CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=$((1000 + 100)) \
+  bash -c "echo '{\"prompt\":\"hi\",\"session_id\":\"nudge-far-under\"}' | bash '$KIT_DIR/hooks/context-hints.sh'")
+assert_not_contains "row 5a: far under threshold (100s elapsed), no nudge (negative control)" \
+  "cache-hygiene rule" "$OUT"
+
+# row 5b: just under threshold (threshold - 5s elapsed), still no nudge.
+CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=2000 \
+  bash -c "echo '{\"prompt\":\"hi\",\"session_id\":\"nudge-just-under\"}' | bash '$KIT_DIR/hooks/context-hints.sh'" >/dev/null
+OUT=$(CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=$((2000 + NUDGE_THRESHOLD - 5)) \
+  bash -c "echo '{\"prompt\":\"hi\",\"session_id\":\"nudge-just-under\"}' | bash '$KIT_DIR/hooks/context-hints.sh'")
+assert_not_contains "row 5b: 5s under threshold, no nudge" "cache-hygiene rule" "$OUT"
+
+# row 5c: just over threshold (threshold + 5s elapsed), nudge fires with the exact line.
+CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=3000 \
+  bash -c "echo '{\"prompt\":\"hi\",\"session_id\":\"nudge-just-over\"}' | bash '$KIT_DIR/hooks/context-hints.sh'" >/dev/null
+OUT=$(CONTEXT_HINTS_STATE="$NUDGE_STATE" CONTEXT_HINTS_NOW=$((3000 + NUDGE_THRESHOLD + 5)) \
+  bash -c "echo '{\"prompt\":\"hi\",\"session_id\":\"nudge-just-over\"}' | bash '$KIT_DIR/hooks/context-hints.sh'")
+assert_contains "row 5c: 5s over threshold, nudge fires" \
+  "consider /clear or a handoff split (cache-hygiene rule)" "$OUT"
 
 # ============================================================
 echo ""
