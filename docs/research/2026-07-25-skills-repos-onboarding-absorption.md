@@ -29,6 +29,8 @@ noah-zender-it queued separately (ID-134, untouched here).
 | mattpocock/skills | CHANGELOG.md version; re-read on MINOR bump or `Add/graduate/promote/rename .* skill` commit | v1.1.0 released; plugin/Codex/prototype/wayfinder changes are 9 unreleased changesets, next release = 1.2.0 (corrected 2026-07-31, see 2026-07-31-mattpocock-trio-adoption.md) | monthly |
 | zvadaadam/az-skills | closed-PR titles (`Add * skill`) or PRs touching `scripts/install.sh`/`.githooks/` | PR #21 (Remove ai-journal) | quarterly |
 
+Registered as `/kit:absorb` seed sources per `docs/ABSORPTION.md` (ID-403, 2026-08-11). This table stays the single source for the last-seen values; ABSORPTION.md points here rather than duplicating them.
+
 # 1. mattpocock/skills delta since 2026-07-08
 
 NOT a quiet window: ~44 commits, v1.1.0 + v1.2 (native CC plugin). New:

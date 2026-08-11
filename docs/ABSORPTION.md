@@ -35,6 +35,16 @@ Pinned non-Credits extras (from the SPEC-014 survey set, repos not in README Cre
 - `doraemonkeys/claude-code-debug-mode` , tagged-log debug patterns
 - `EveryInc/compound-engineering-plugin` , parallel-persona review -> structured-JSON merge gate (apply-class gated_auto/manual/advisory; upstream deprecated safe_auto, drift caught 2026-06-11), QA-matrix auto-fix-until-green, screenshot/GIF PR evidence (surveyed 2026-06-08; review/test layer is the prize)
 - `cursor/plugins` (cursor-team-kit/skills) , `verify-this` falsifiable baseline-vs-treatment single-verdict evidence gate, `deslop`, `thermo-nuclear` <1k-line maintainability gate (surveyed 2026-06-08; runtime-needing UI pieces route to recommend-external per PHILOSOPHY)
+- `zvadaadam/az-skills` , dev-workflow skills repo; devs-roundtable/design-roundtable already absorbed into `/kit:devs-team` + `/kit:visual-team` lenses (SPEC-016); watched for new skill additions (see Watch signals below)
+
+**Watch signals (per-seed, short-circuits the rescan).** `mattpocock/skills` is already covered by the Credits-parse half of the union above; both it and `zvadaadam/az-skills` additionally carry a registered watch signal so a rescan diffs a marker instead of cold-reading the repo:
+
+| Repo | Watch signal | Cadence |
+|---|---|---|
+| `mattpocock/skills` | `CHANGELOG.md` MINOR version bump; also any commit subject matching `Add\|graduate\|promote\|rename .* skill\|ship.*plugin` | monthly |
+| `zvadaadam/az-skills` | closed-PR titles matching `Add * skill`, or any PR touching `scripts/install.sh` / `.githooks/` (install-mechanism changes alter how absorbing works) | quarterly |
+
+Last-seen markers are maintained in the research record's watch-markers table (`docs/research/2026-07-25-skills-repos-onboarding-absorption.md`, updated after each check), not duplicated here, so this registry never goes stale between checks. A fired signal is a REASON to read, never an auto-absorb; it still routes through the gate above.
 
 **Since-last-run baseline.** Lane B detects "changed" per repo by comparing its current HEAD SHA (`gh api repos/{owner}/{repo}/commits/HEAD --jq .sha`) to the SHA recorded in the most recent prior proposal's footer; the first run flags every repo as new and records the baseline. WebFetch has no diff capability, so the SHA ledger is the baseline.
 
