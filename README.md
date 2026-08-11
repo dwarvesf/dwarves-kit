@@ -71,7 +71,7 @@ Stages are metadata, not directories: each module keeps its name and install uni
 | Stage | Modules / subsystems |
 |---|---|
 | Shape (Specify) | `spec`, `classify`, `goal`, `board` (input side), `sync` (spoke intake; outward mirror is its Watch side) |
-| Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate`, `cloud` (prepares the environment a build runs in) |
+| Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate` |
 | Watch (Observe) | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror 2026-07-16) |
 | Check (Govern) | `gate`, `money_gate`, `advisor`, `gauntlet` |
 | Learn | `learn`, `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending ADR-0034 amendment) |
@@ -100,7 +100,6 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | 1 hook |
 | `prose_rag` | `prose-rag` recall inject (UserPromptSubmit, dormant until `PROSE_RAG_INJECT=1`) + the `prose-rag` CLI on PATH (`lib/prose-rag/`, Rust engine) | 1 hook + 1 CLI |
 | `sync` | `board sync` two-way spoke mirror (BACKLOG.md ⇄ Apple Reminders / Notion / Hermes kanban; engine `lib/sync/`, per-repo `.kit.toml [sync]` config), inert without `[sync] sources` | hookless (lib) |
-| `cloud` | cloud-session support: `cloud-session-start` (provisions a Claude Code cloud VM) + `cloud-dash-guard` (prose dash backstop), plus the `cloud` CLI on PATH (engine `lib/cloud/`, per-repo `.kit.toml [cloud]` config). Each hook needs its own switch (`CLOUD_PROVISION=1` / `CLOUD_DASH_GUARD=1`) AND `CLAUDE_CODE_REMOTE=true`, because `hooks.json` is not module-filtered on the plugin path | 2 hooks + 1 CLI |
 
 `team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
 
@@ -247,8 +246,6 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | tool-policy-guard | PreToolUse | Enforces the tool-choice policy file (allow/ask/deny per tool domain; the enforcement half of the dashboard's tool-policy page) |
 | statusline | StatusLine | Shows model, branch, context %, cost, thinking mode |
 | codebase-index | SessionStart (opt-in) | Background-indexes the repo into codebase-memory-mcp |
-| cloud-session-start | SessionStart(startup\|resume) | Provisions a Claude Code cloud VM (workspace, sibling repos, gh, git hooks, plugins, secrets canary) and reports it back as context. Inert unless CLOUD_PROVISION=1 and CLAUDE_CODE_REMOTE=true |
-| cloud-dash-guard | PostToolUse(Write\|Edit\|MultiEdit) | Strips em/en dashes from prose files a cloud session wrote, skipping fenced and inline code. Inert unless CLOUD_DASH_GUARD=1 and CLAUDE_CODE_REMOTE=true |
 
 Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.md` "Hook fallback layer" (hard / advisory / convenience, parity-pinned).
 
