@@ -74,15 +74,57 @@ Config follows the kit's existing seam, not a new one: `--repo-root` /
 resolver for values. It resolves in two tiers, because a project's `.kit.toml`
 rides inside the repo and a pull request can therefore set it.
 
-| Tier | Resolver | Rule |
-|---|---|---|
-| PROJECT | `CLOUD_<KEY>` env, then `kit_config_get` | the key may only name something INSIDE this repo |
-| OPERATOR | `CLOUD_<KEY>` env, then `kit_config_get_root` | anything that reaches outside the repo, runs code, or names a credential |
+| Tier | Keys | Resolver | Rule |
+|---|---|---|---|
+| PROJECT | `map`, `rules` | `CLOUD_<KEY>` env, then `kit_config_get` | the key may only name something INSIDE this repo, and `repo_path` enforces it |
+| OPERATOR | `workspace`, `op_version`, `repos`, `repo_owner`, `plugins`, `hooks_path`, `vault`, `canary_ref` | `CLOUD_<KEY>` env, then `kit_config_get_root` | anything that reaches outside the repo, runs code, or names a credential |
 
 The two lists are declared once in `provision.sh`
 (`CLOUD_PROJECT_KEYS` / `CLOUD_OPERATOR_KEYS`) and the suite fails if a key is
-read through the wrong resolver or belongs to neither list, so the next key
-cannot silently pick the wrong tier.
+read through the wrong resolver or belongs to neither list.
+
+**That lint checks CONSISTENCY, not CORRECTNESS**, and the earlier claim that it
+stops the next key picking the wrong tier was wrong. It proves each key is read
+through the resolver its own list names; it cannot know whether the list is the
+right one. Three keys sat in the PROJECT list, passed the lint on every run of
+this branch, and each reached outside the repo: `workspace` accepted any
+absolute path and pointed the assemble symlink at `$HOME/.claude/skills`, which
+turned a PR-authored root `SKILL.md` into a live skill in the same session;
+`map` and `rules` accepted any absolute path and printed a file from outside the
+repo into model context; `op_version` selected a downloaded binary.
+
+The correctness half is therefore enforced in code, per key class:
+
+| Enforcement | Applies to | What it does |
+|---|---|---|
+| tier | every key | operator keys skip the project overlay entirely |
+| `repo_path` | every PROJECT-tier PATH | resolves against the repo root and REFUSES an absolute path, a leading `~`, a `..` segment, a directory that resolves outside the repo, or a final component that is a symlink |
+| shape validation | `op_version` | must match `^v?[0-9]+(\.[0-9]+)*$` before it is interpolated into a download URL |
+
+The kit-root config path is PINNED to the kit install `provision.sh` belongs to.
+`kit-config.sh` otherwise takes it from `KIT_CONFIG_ROOT`/`DWARVES_KIT`, so the
+operator-owned half of the split could be redirected at a file inside the repo,
+which would have made the tier split decorative.
+
+### What the operator tier trusts
+
+The environment. `CLOUD_<KEY>` sits ABOVE both config tiers for operator keys,
+and `CLOUD_PROVISION` (the master switch for the whole module) is env-only with
+no config channel at all. The environment is therefore the trust anchor, not
+just an override.
+
+That is deliberate. In a cloud VM the kit-root `kit.toml` arrives inside the git
+clone, so the environment's variables are the only per-environment operator
+channel that exists. Removing the env tier for operator keys while the master
+switch stays env-read would close nothing: an actor who can set environment
+variables sets `CLOUD_PROVISION=1` and owns the module regardless of where the
+individual keys resolve.
+
+UNVERIFIED, and it decides whether this trust holds: whether a repo-committed
+`.claude/settings.json` `env` block reaches a hook subprocess in a cloud VM. If
+it does, the environment is repo-writable and this whole layer needs a
+kit-wide env-hardening pass, not a cloud-local one. Only a real cloud VM answers
+it. Recorded in `docs/proof-of-done.md` under "Not proved here".
 
 ## Invariants
 
@@ -100,11 +142,18 @@ every row.
 6. The dash guard rewrites prose files only, skips fenced and inline code, skips
    a file with unbalanced fences whole, and matches horizontal whitespace
    (`[ \t]`), never `\s`.
-7. `repos`, `repo_owner`, `plugins`, `hooks_path`, `vault` and `canary_ref`
-   resolve at the operator tier only. A project `.kit.toml` cannot set them, and
-   `hooks_path` is never inferred from a directory found in the tree.
-8. The suite carries its failures into its exit code, proved by a self-check
-   that re-invokes the suite with one planted failure.
+7. `workspace`, `op_version`, `repos`, `repo_owner`, `plugins`, `hooks_path`,
+   `vault` and `canary_ref` resolve at the operator tier only. A project
+   `.kit.toml` cannot set them, and `hooks_path` is never inferred from a
+   directory found in the tree.
+8. A PROJECT-tier path resolves INSIDE the repo root or it is refused, and the
+   refusal is explained. Naming the tier is not the control; `repo_path` is.
+9. `op_version` matches a version shape before it reaches a download URL.
+10. Each hook's THREE gates (its switch, `CLAUDE_CODE_REMOTE`, Linux) is proved
+    individually. Neutering any one of them turns the suite red. The suite used
+    to prove only that SOME gate fired.
+11. The suite carries its failures into its exit code, proved by a self-check
+    that re-invokes the suite with one planted failure.
 
 ## Verification
 

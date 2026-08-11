@@ -10,8 +10,14 @@
 #   cloud secrets                       just the secrets step
 #   cloud plugins                       just the behavioral-plugin step
 #
-# Every verb exits 0 by design: this subsystem runs on the cloud startup path,
+# Every VERB exits 0 by design: this subsystem runs on the cloud startup path,
 # where a non-zero exit aborts the session before Claude Code starts.
+#
+# ONE exception, and it matters on that same path: an UNKNOWN verb exits 1, so a
+# typo in the environment's Setup-script field would abort the session. That is
+# why the documented Setup-script line ends in `|| true`, and why the `|| true`
+# is load-bearing rather than decorative. The dispatcher keeps the non-zero exit
+# because a silent 0 on a misspelled verb hides the typo forever.
 set -uo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
