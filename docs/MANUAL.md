@@ -352,6 +352,7 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
 | `recheck-verifier` | `/execute` (fresh-context re-audit over a right-arm PASS) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
 | `responding-to-review` | `/review-team` (FIX-THEN-SHIP) | Triages findings without sycophancy |
+| `slop-stripper` | `/review-team` (Step 5, opt-in deslop strip) | Behavior-preserving AI-slop strip pass: surgical edits only, never behavior changes unless fixing a real bug |
 | `research-stack` | `/spec` | Brownfield stack mapping |
 | `research-context` | `/spec`, `/kit:test-plan` | Quick brownfield orientation, capped at 80 lines |
 | `research-architecture` | `/spec` | Brownfield architecture patterns |

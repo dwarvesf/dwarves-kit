@@ -32,6 +32,17 @@ All notable changes to dwarves-kit are documented here.
   tree byte-identical (checksummed before/after, plus an independent negative control).
 
 ### Added
+- **`slop-stripper` agent: the behavior-preserving AI-slop strip pass (kit ID-402).** Resolves the
+  deslop absorption contradiction (2026-06-11 pinned-kits called it a duplicate of the simplify +
+  maintainability-lens surfaces; the 2026-07-25 absorption survey scored it ABSORB). Both were
+  right about different halves: the DETECT half (the 5-item checklist) duplicates the review lenses
+  and the slop-cleaner hook, but the FIX half, an edit-capable, behavior-preserving strip pass that
+  applies surgical edits before merge, had no home in the kit. Every existing surface is
+  detect-only by design (review lenses are read-only, ADR-0005; slop-cleaner nudges and never
+  auto-fixes; fix-agent only fires on verifier FAIL:fixable and its anti-patterns forbid
+  "improving" unflagged code). The new agent re-implements the deslop mechanism from az-skills
+  (no license; original prose, source cited) and lands as an OPT-IN step on `/kit:review-team`'s
+  decision gate: the operator's judgment is the gate, then `/kit:verify` before `/kit:ship`.
 - **Test-plan coverage advisory at the ship boundary (ID-466).** The test plan fed
   `/kit:execute`'s verify steps but nothing at the gate traced the proof back to the matrix.
   New `proof-gate.sh coverage <spec> [proof.md ...]` subcommand parses both matrix dialects

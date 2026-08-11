@@ -318,6 +318,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | advisor | final boundary | Cross-cutting kit-default lens: critique + over-suggest modes |
 | brief-reviewer | /think | Static review of a brief/requirement before it hardens into a spec |
 | responding-to-review | /review-team | Verifies review findings, pushes back when wrong, proposes fixes (no performative agreement) |
+| slop-stripper | /review-team | Behavior-preserving AI-slop strip pass: surgical edits only, never behavior changes unless fixing a real bug |
 | agent-effectiveness | agent authoring | Validates a new/changed agent definition's effectiveness (4 lenses) |
 | doc-verifier | /docs | Read-only check that docs match the live codebase |
 | research-stack | /spec | Maps technology stack (brownfield) |
