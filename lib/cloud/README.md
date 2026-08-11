@@ -85,6 +85,11 @@ git clone --depth 1 https://github.com/dwarvesf/dwarves-kit.git \
 bash "$HOME/.claude/dwarves-kit/bin/cloud" vm-setup || true
 ```
 
+Both `|| true` guards are load-bearing, not decoration. A non-zero exit anywhere
+in the Setup script aborts the environment build. Every `cloud` VERB exits 0 by
+design, but an UNKNOWN verb exits 1, so a typo in this field would otherwise
+abort the session with no session to read the error in.
+
 ## Consumer config
 
 A project's `.kit.toml` rides inside the repo, so a pull request can change it.
@@ -92,15 +97,15 @@ Config therefore resolves in two tiers.
 
 | Tier | Resolution | Why |
 |---|---|---|
-| PROJECT | `CLOUD_<KEY>` env, then the project's `.kit.toml` `[cloud]`, then the kit-root default | the value is inert data: a path to print, a clone target, a directory name |
-| OPERATOR | `CLOUD_<KEY>` env, then the kit-root `kit.toml` only. A project `.kit.toml` is IGNORED | the value selects code to run or names a credential, so a branch under review must not be able to set it |
+| PROJECT | `CLOUD_<KEY>` env, then the project's `.kit.toml` `[cloud]`, then the kit-root default | the value is inert data naming something INSIDE this repo, and `repo_path` enforces that |
+| OPERATOR | `CLOUD_<KEY>` env, then the kit-root `kit.toml` only. A project `.kit.toml` is IGNORED | the value reaches outside the repo, selects code to run, or names a credential, so a branch under review must not be able to set it |
 
 | Key | Tier | Default | What it drives |
 |---|---|---|---|
-| `workspace` | project | `$HOME/workspace` | where the session repo is linked and siblings are cloned |
 | `map` | project | none | repo-relative routing map printed by `cloud map` |
 | `rules` | project | `lib/cloud/CLOUD-RULES.md` | repo-relative cloud-rules file for this repo |
-| `op_version` | project | `v2.31.1` | pinned 1Password CLI release |
+| `workspace` | operator | `$HOME/workspace` | where the session repo is linked and siblings are cloned |
+| `op_version` | operator | `v2.31.1` | pinned 1Password CLI release |
 | `repos` | operator | none | comma-separated sibling repos to clone: `<name>` or `<owner>/<name>` |
 | `repo_owner` | operator | none | default owner for a bare name in `repos` |
 | `plugins` | operator | none | behavioral plugins to install: comma-separated `<id>\|<marketplace-slug>` |
@@ -112,13 +117,31 @@ Example, in a consumer repo's `.kit.toml`:
 
 ```toml
 [cloud]
-workspace = "~/workspace/acme"
-map       = "docs/REPO-MAP.md"
-rules     = "docs/CLOUD-RULES.md"
+map   = "docs/REPO-MAP.md"
+rules = "docs/CLOUD-RULES.md"
 ```
 
+Both project keys are PATHS, and both are resolved against the repo root by
+`repo_path`, which refuses an absolute path, a leading `~`, a `..` segment, a
+directory that resolves outside the repo, and a final component that is a
+symlink. A refused value is reported as a `!!` line and dropped: `map` prints
+nothing, `rules` falls back to the kit's own template. Naming a key "project
+tier" is a comment; this check is the control.
+
 Operator-tier keys go in the kit-root `kit.toml`, or in the cloud environment as
-`CLOUD_REPOS`, `CLOUD_PLUGINS`, `CLOUD_HOOKS_PATH` and so on.
+`CLOUD_WORKSPACE`, `CLOUD_REPOS`, `CLOUD_PLUGINS`, `CLOUD_HOOKS_PATH` and so on.
+The kit-root path is pinned to the kit install the hook runs from, so
+`KIT_CONFIG_ROOT` cannot redirect the operator half at a file inside the repo.
+
+`workspace` is operator-tier because it names a directory OUTSIDE the repo and
+the assemble step creates a symlink in it. A project-settable value pointed it
+at `$HOME/.claude/skills`, which made a PR-authored root `SKILL.md` a live skill
+in the same session, loaded immediately because the hook emits `reloadSkills`.
+Constraining it to "under the home" would not have helped: that path IS under
+the home. `op_version` is operator-tier because it selects a binary that is
+downloaded, `chmod +x`, prepended to PATH and persisted into `CLAUDE_ENV_FILE`;
+it is validated against `^v?[0-9]+(\.[0-9]+)*$` on top, because operator-tier is
+not a reason to skip validating a value that lands in a URL.
 
 Why the operator tier exists, plainly. Installing a plugin normally requires a
 human on the machine to approve a project-declared plugin from an external
@@ -149,7 +172,12 @@ path into every later turn.
 | the SessionStart matcher is `startup\|resume` | without it the whole assembly re-ran on every `clear` and every compaction |
 | plugins are installed imperatively | declaring them in a project's settings duplicates the record in the operator's shared per-user plugin registry |
 | each hook checks its own switch FIRST | the plugin manifest is not filtered by the enabled module set, so `modules.cloud = false` alone does not turn the hooks off for a plugin consumer |
-| operator-tier keys skip the project overlay | a project `.kit.toml` rides inside the repo, so a branch under review could otherwise arm `core.hooksPath`, install a plugin, redirect the secret probe, or clone a repo whose instruction files are then named to the model |
+| operator-tier keys skip the project overlay | a project `.kit.toml` rides inside the repo, so a branch under review could otherwise arm `core.hooksPath`, install a plugin, redirect the secret probe, choose the workspace, or clone a repo whose instruction files are then named to the model |
+| a project-tier PATH resolves inside the repo or is refused | `map` and `rules` both took an absolute path, so a project value printed a file from outside the repo into model context |
+| `op_version` is validated as a version | the value is interpolated into a download URL; `vEVIL/../../../../attacker-path` produced a traversal-shaped URL |
+| the kit-root config path is pinned to the kit install | `KIT_CONFIG_ROOT` otherwise redirects the operator-owned half of the tier split at a file inside the repo |
+| the `safe.directory` write is gated to a Linux cloud session | it writes the operator's GLOBAL `~/.gitconfig`, and a hand-run on a workstation did |
+| the sibling-clone loop carries a total budget | the 60s cap bounds ONE clone; three unreachable siblings plus the gh install exceeded the SessionStart budget, which kills the whole hook |
 | a `~` in a config value is expanded | a tilde read out of a file is a literal character, so `mkdir -p` silently created a directory named `~` under the repo |
 
 ## Test
@@ -157,6 +185,13 @@ path into every later turn.
 ```bash
 bash lib/cloud/tests/smoke.sh    # "smoke: all N passed"
 ```
+
+Each hook has THREE gates: its own switch, `CLAUDE_CODE_REMOTE`, and Linux. The
+suite proves each one INDIVIDUALLY: neutering any single gate turns it red. An
+earlier version proved only that SOME gate fired, because the OFF cases ran
+without the `uname` stub, so on macOS the Linux gate short-circuited before the
+cloud gate was ever read, and the suite stayed fully green with the cloud gate
+deleted.
 
 The suite runs on macOS with a stubbed `uname`, which proves which BRANCH the
 code takes, never that the branch works. The CI workflow includes an

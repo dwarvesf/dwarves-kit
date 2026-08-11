@@ -9,6 +9,14 @@ Pinned to commit `f1612c0` on `feat/cloud-session-support`, tree clean. Every
 number below was produced at that commit; re-running at a later commit and
 getting a different count is drift, not a discrepancy.
 
+SUPERSEDED IN PART. An adversarial review after this pin found three
+project-tier keys that reached outside the repo and, worse, that the cloud gate
+was UNVERIFIED: the suite below passed 118/118 with the `CLAUDE_CODE_REMOTE`
+gate deleted from both hooks. Commit `547076e` fixes both. The current counts,
+the per-gate red runs and the per-key before/after controls are the dated
+section in `lib/cloud/docs/proof-of-done.md`. Read that first; this file is the
+historical record of the pre-review state.
+
 Design + scope: `lib/cloud/SPEC.md`. Per-invariant assertion map:
 `lib/cloud/docs/proof-of-done.md`.
 

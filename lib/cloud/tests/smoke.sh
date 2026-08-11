@@ -80,8 +80,16 @@ sha() { if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -c1-
 # Two entry points rather than one with an env prefix: a variable assignment in
 # front of a FUNCTION call leaks into the calling shell in bash, which would
 # leave PATH rewritten for the rest of the run.
+#
+# ON_PATH IS LOAD-BEARING IN THE OFF CASE TOO. Without it the macOS `uname` gate
+# fires first and the hook exits before the cloud gate is ever read, so every
+# OFF assertion passed with the cloud gate DELETED. That was the sixth false
+# green in this subsystem's history: the suite proved at least one of the three
+# gates fires, never which one. With the stub in place the OFF case reaches the
+# cloud gate for real, and neutering that one line turns this suite red.
 guard_off() { printf '{"tool_input":{"file_path":"%s"}}' "$1" \
-    | env -u CLAUDE_CODE_REMOTE CLOUD_DASH_GUARD=1 bash "$H/cloud-dash-guard.sh"; }
+    | PATH="$ON_PATH" env -u CLAUDE_CODE_REMOTE CLOUD_DASH_GUARD=1 \
+      bash "$H/cloud-dash-guard.sh"; }
 guard_on()  { printf '{"tool_input":{"file_path":"%s"}}' "$1" \
     | PATH="$ON_PATH" CLOUD_DASH_GUARD=1 CLAUDE_CODE_REMOTE=true HOME="$W/home" \
       bash "$H/cloud-dash-guard.sh"; }
@@ -94,8 +102,17 @@ guard_noswitch() { printf '{"tool_input":{"file_path":"%s"}}' "$1" \
 echo
 echo "=== 1. STATIC: the gate is the documented variable, not a directory probe ==="
 has() { grep -q "$1" "$2" 2>/dev/null && echo yes || echo no; }
+# has_gate matches the EXECUTABLE gate line, not any occurrence of the name.
+# `has` greps the whole file, and every gate in these hooks has a paragraph of
+# prose above it naming the variable, so `has` reported yes for a hook whose
+# gate had been changed from `|| exit 0` to `|| :`. The static check has to
+# match the line that does the work: the test, the comparison, and the exit.
+has_gate() {  # has_gate <VARNAME> <file>
+  grep -qE "^\[ \"\\\$\{$1:-\}\" = \"[^\"]*\" \] \|\| exit 0" "$2" 2>/dev/null \
+    && echo yes || echo no
+}
 for h in cloud-session-start.sh cloud-dash-guard.sh; do
-  ck "$h gates on CLAUDE_CODE_REMOTE" yes "$(has 'CLAUDE_CODE_REMOTE' "$H/$h")"
+  ck "$h gates on CLAUDE_CODE_REMOTE" yes "$(has_gate CLAUDE_CODE_REMOTE "$H/$h")"
   # The failure this replaces: a gate that tested for a sibling checkout, so
   # cloning that sibling disabled the hook mid-session.
   ck "$h has no '-d \$HOME/...' cloud probe" no \
@@ -109,6 +126,18 @@ ck "NC: the same pattern fires on the historical gate shape" yes \
   "$(grep -qE '^\[ -d "\$HOME/' "$W/old-gate-fixture" && echo yes || echo no)"
 ck "NC: the helper reports absent for a string in no hook" no \
   "$(has 'zzz-not-in-any-hook' "$H/cloud-session-start.sh")"
+# NC for has_gate, the check this suite's sixth false green turned on: a fixture
+# that MENTIONS the variable in prose and neuters the gate must report no, and
+# the intact shape must report yes.
+printf '# gates on CLAUDE_CODE_REMOTE, the documented cloud signal\n[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || :\n' \
+  >"$W/neutered-gate-fixture"
+ck "NC: has_gate rejects a neutered gate whose name survives in a comment" no \
+  "$(has_gate CLAUDE_CODE_REMOTE "$W/neutered-gate-fixture")"
+ck "NC: the plain grep is fooled by that same fixture (why has_gate exists)" yes \
+  "$(has 'CLAUDE_CODE_REMOTE' "$W/neutered-gate-fixture")"
+printf '[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0\n' >"$W/intact-gate-fixture"
+ck "NC: has_gate accepts the intact shape" yes \
+  "$(has_gate CLAUDE_CODE_REMOTE "$W/intact-gate-fixture")"
 
 # The master switch is checked FIRST, before the cloud gate. hooks.json is the
 # plugin manifest and is NOT filtered by the enabled module set, so on the
@@ -125,7 +154,7 @@ gate_order() {  # gate_order <file> <switch-name>
 }
 for pair in "cloud-session-start.sh|CLOUD_PROVISION" "cloud-dash-guard.sh|CLOUD_DASH_GUARD"; do
   h="${pair%%|*}"; sw="${pair##*|}"
-  ck "$h checks $sw" yes "$(has "$sw" "$H/$h")"
+  ck "$h checks $sw" yes "$(has_gate "$sw" "$H/$h")"
   ck "$h checks the switch before CLAUDE_CODE_REMOTE" yes "$(gate_order "$H/$h" "$sw")"
 done
 # NC: the order check reports 'no' on a fixture where the switch comes second.
@@ -134,9 +163,12 @@ printf '[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0\n[ "${CLOUD_PROVISION:-
 ck "NC: the order check catches a switch placed after the cloud gate" no \
   "$(gate_order "$W/order-fixture" CLOUD_PROVISION)"
 
-# The tier split is declared once and read from there, so a new key cannot pick
-# the wrong resolver silently. Every key provision.sh reads must appear in
-# exactly one list, and be read through that list's resolver.
+# The tier split is declared once and read from there. This lint checks
+# CONSISTENCY, never CORRECTNESS: every key provision.sh reads appears in
+# exactly one list and is read through that list's resolver. It cannot know
+# whether the list is the RIGHT one for the key, and three keys that reached
+# outside the repo passed it for the whole life of the branch. The correctness
+# half for a project-tier PATH is the repo_path containment assertions in 5b-3.
 tier_bad=""
 proj="$(grep -oE '^CLOUD_PROJECT_KEYS="[^"]*"' "$L/provision.sh" | sed 's/.*"\(.*\)"/\1/')"
 oper="$(grep -oE '^CLOUD_OPERATOR_KEYS="[^"]*"' "$L/provision.sh" | sed 's/.*"\(.*\)"/\1/')"
@@ -161,7 +193,7 @@ ck "NC: the tier lists are non-empty (the extraction is not vacuous)" yes \
 
 # The op CLI pin lives in two files that run in different contexts (Setup-script
 # time and per-session). A bump that touches one and not the other desyncs them.
-op_pin_a="$(grep -oE 'cfg op_version v[0-9.]+' "$L/provision.sh" | grep -oE 'v[0-9.]+')"
+op_pin_a="$(grep -oE '^OP_DEFAULT_VERSION=v[0-9.]+' "$L/provision.sh" | grep -oE 'v[0-9.]+')"
 op_pin_b="$(grep -oE 'OP_VERSION:-v[0-9.]+' "$L/vm-setup.sh" | grep -oE 'v[0-9.]+')"
 ck "the op version pin matches across provision.sh and vm-setup.sh" "$op_pin_a" "$op_pin_b"
 ck "NC: the op pin extraction is not empty on both sides" yes \
@@ -193,9 +225,17 @@ ck "dash guard OFF exit code" 0 "$rc"
 ck "dash guard OFF is silent" "" "$out"
 ck "dash guard OFF leaves the file byte-identical" "$before" "$(sha "$W/off.md")"
 
-out="$(echo '{}' | env -u CLAUDE_CODE_REMOTE CLOUD_PROVISION=1 bash "$H/cloud-session-start.sh")"; rc=$?
+# Same reason as guard_off: ON_PATH so the uname gate cannot short-circuit the
+# run before the cloud gate. Every side effect is aimed at the workdir, because
+# a NEUTERED cloud gate makes this invocation really provision.
+mkdir -p "$W/off-repo"; git -C "$W/off-repo" init -q 2>/dev/null || true
+out="$(echo '{}' | PATH="$ON_PATH" env -u CLAUDE_CODE_REMOTE CLOUD_PROVISION=1 \
+       HOME="$W/home-off" CLOUD_WORKSPACE="$W/ws-off" CLAUDE_PROJECT_DIR="$W/off-repo" \
+       bash "$H/cloud-session-start.sh")"; rc=$?
 ck "session-start hook OFF exit code" 0 "$rc"
 ck "session-start hook OFF is silent" "" "$out"
+ck "session-start hook OFF assembled nothing" no \
+  "$([ -e "$W/ws-off" ] && echo yes || echo no)"
 
 # The other half of OFF: a real cloud session that never opted in.
 printf '%s\n' "$PROSE_IN" >"$W/noswitch.md"
@@ -222,6 +262,31 @@ mkdir -p "$W/home/workspace/sibling"
 printf '%s\n' "$PROSE_IN" >"$W/sib.md"
 guard_on "$W/sib.md" >/dev/null
 ck "dash guard still fires with a sibling repo cloned" "$PROSE_OUT" "$(cat "$W/sib.md")"
+
+# Each hook has THREE gates: its switch, the cloud signal, and Linux. The suite
+# proved that SOME gate fired, never which one, so any single gate could be
+# deleted and every assertion stayed green. Sections 2 and 3 now pin the switch
+# and the cloud signal; this pins the third, with both other gates ON.
+mkdir -p "$W/darwin"
+printf '#!/bin/sh\n[ "$1" = "-s" ] && { echo Darwin; exit 0; }\nexec /usr/bin/uname "$@"\n' \
+  >"$W/darwin/uname"
+chmod +x "$W/darwin/uname"
+DARWIN_PATH="$W/darwin:$PATH"
+printf '%s\n' "$PROSE_IN" >"$W/darwin.md"
+before="$(sha "$W/darwin.md")"
+out="$(printf '{"tool_input":{"file_path":"%s"}}' "$W/darwin.md" \
+       | PATH="$DARWIN_PATH" CLOUD_DASH_GUARD=1 CLAUDE_CODE_REMOTE=true HOME="$W/home" \
+         bash "$H/cloud-dash-guard.sh")"; rc=$?
+ck "dash guard off Linux exit code" 0 "$rc"
+ck "dash guard off Linux is silent" "" "$out"
+ck "dash guard off Linux leaves the file byte-identical" "$before" "$(sha "$W/darwin.md")"
+out="$(echo '{}' | PATH="$DARWIN_PATH" CLOUD_PROVISION=1 CLAUDE_CODE_REMOTE=true \
+       HOME="$W/home-dar" CLOUD_WORKSPACE="$W/ws-dar" CLAUDE_PROJECT_DIR="$W/off-repo" \
+       bash "$H/cloud-session-start.sh")"; rc=$?
+ck "session-start off Linux exit code" 0 "$rc"
+ck "session-start off Linux is silent" "" "$out"
+ck "session-start off Linux assembled nothing" no \
+  "$([ -e "$W/ws-dar" ] && echo yes || echo no)"
 
 echo
 echo "=== 4. STRUCTURE: no newline consumed, code untouched, prose only ==="
@@ -331,10 +396,22 @@ out="$(PATH="$ON_PATH" HOME="$W/home5" env -u CLOUD_WORKSPACE \
 ck "rules verb reads [cloud] rules from the project .kit.toml" "PROJECT RULES MARKER" "$out"
 out="$(PATH="$ON_PATH" HOME="$W/home5" env -u CLOUD_WORKSPACE \
        bash "$L/provision.sh" --repo-root "$W/cfgrepo" 2>&1)"
-ck "assemble honours [cloud] workspace" yes \
-  "$([ -L "$W/ws-from-toml/cfgrepo" ] && echo yes || echo no)"
+# workspace is OPERATOR-tier: the same project .kit.toml that legitimately sets
+# `rules` must not be able to choose the directory this script creates a symlink
+# in. Set to `$HOME/.claude/skills` from a project file, it made a PR-authored
+# root SKILL.md a live skill in the same session.
+ck "the project .kit.toml did NOT choose the workspace" no \
+  "$([ -e "$W/ws-from-toml" ] && echo yes || echo no)"
+ck "the workspace fell back to the default under HOME" yes \
+  "$([ -L "$W/home5/workspace/cfgrepo" ] && echo yes || echo no)"
 case "$out" in *"docs/MY-RULES.md"*) got=yes ;; *) got=no ;; esac
 ck "assemble names the project rules file" yes "$got"
+# NC: the SAME value from the operator tier does choose the workspace, so the
+# two assertions above are the tier boundary and not a workspace that never works.
+out="$(PATH="$ON_PATH" HOME="$W/home5b" CLOUD_WORKSPACE="$W/ws-from-env" \
+       bash "$L/provision.sh" --repo-root "$W/cfgrepo" 2>&1)"
+ck "NC: the operator tier DOES choose the workspace" yes \
+  "$([ -L "$W/ws-from-env/cfgrepo" ] && echo yes || echo no)"
 # NC: with no project config, the kit's own template is the rules file.
 out="$(PATH="$ON_PATH" HOME="$W/home5" env -u CLOUD_WORKSPACE CLOUD_WORKSPACE="$W/ws3" \
        bash "$L/provision.sh" --repo-root "$W/repo" 2>&1)"
@@ -360,6 +437,69 @@ ck "NC: no literal '~' directory was created under the repo" no \
   "$([ -e "$W/repo/~" ] && echo yes || echo no)"
 
 echo
+echo "=== 5b-3. a project-tier PATH resolves INSIDE the repo, or it is refused ==="
+# Calling a key "project tier" is a comment. This is the enforcement. Both
+# project keys are paths, and each escape shape below printed a file from
+# outside the repo straight into model context before repo_path existed.
+mkdir -p "$W/escape/docs" "$W/curlfail"
+printf 'SECRET OUTSIDE THE REPO\n' >"$W/outside-secret.md"
+printf 'IN-REPO MAP MARKER\n' >"$W/escape/docs/MAP.md"
+printf 'IN-REPO RULES MARKER\n' >"$W/escape/docs/RULES.md"
+ln -sf "$W/outside-secret.md" "$W/escape/docs/link-out.md"
+printf '#!/bin/sh\nexit 1\n' >"$W/curlfail/curl"; chmod +x "$W/curlfail/curl"
+
+esc() {  # esc <verb> <toml-line> -- run one verb with a hostile project value
+  printf '[cloud]\n%s\n' "$2" >"$W/escape/.kit.toml"
+  PATH="$ON_PATH" HOME="$W/home9" CLOUD_WORKSPACE="$W/ws-escape" \
+    env -u CLOUD_MAP -u CLOUD_RULES \
+    bash "$L/provision.sh" --repo-root "$W/escape" "$1" 2>&1
+}
+for k in map rules; do
+  out="$(esc "$k" "$k = \"$W/outside-secret.md\"")"
+  case "$out" in *'SECRET OUTSIDE THE REPO'*) got=leaked ;; *) got=refused ;; esac
+  ck "$k: an absolute path outside the repo is refused" refused "$got"
+  case "$out" in *'!!'*) got=yes ;; *) got=no ;; esac
+  ck "$k: the refusal is explained, not silent" yes "$got"
+  out="$(esc "$k" "$k = \"../outside-secret.md\"")"
+  case "$out" in *'SECRET OUTSIDE THE REPO'*) got=leaked ;; *) got=refused ;; esac
+  ck "$k: a .. traversal out of the repo is refused" refused "$got"
+  out="$(esc "$k" "$k = \"docs/link-out.md\"")"
+  case "$out" in *'SECRET OUTSIDE THE REPO'*) got=leaked ;; *) got=refused ;; esac
+  ck "$k: a committed symlink pointing out of the repo is refused" refused "$got"
+done
+# NC: the legitimate repo-relative use of both keys still works, so the six
+# assertions above are a containment check and not a key that never resolves.
+ck "NC: a repo-relative map is still printed" "IN-REPO MAP MARKER" \
+  "$(esc map 'map = "docs/MAP.md"')"
+ck "NC: a repo-relative rules file is still printed" "IN-REPO RULES MARKER" \
+  "$(esc rules 'rules = "docs/RULES.md"')"
+
+# op_version selects a BINARY: the value lands in a download URL, and the
+# download is chmod +x, prepended to PATH and persisted into CLAUDE_ENV_FILE.
+# The tier is observable because a failed install prints the URL it tried.
+opv() {  # opv <env-assignments...> -- run the secrets step with curl broken
+  PATH="$W/curlfail:$W/nogh" HOME="$W/home-opv" CLOUD_WORKSPACE="$W/ws-opv" \
+    OP_SERVICE_ACCOUNT_TOKEN=stub-value-never-read CLOUD_VAULT=TestVault \
+    env "$@" bash "$L/provision.sh" --repo-root "$W/escape" secrets 2>&1
+}
+printf '[cloud]\nop_version = "v9.9.9"\n' >"$W/escape/.kit.toml"
+out="$(opv -u CLOUD_OP_VERSION)"
+case "$out" in *v9.9.9*) got=used ;; *) got=ignored ;; esac
+ck "op_version: a project .kit.toml value never reaches the download URL" ignored "$got"
+case "$out" in *"$op_pin_a"*) got=yes ;; *) got=no ;; esac
+ck "op_version: the URL carries the operator-tier pin instead" yes "$got"
+# NC: the same value from the operator tier DOES reach the URL.
+out="$(opv CLOUD_OP_VERSION=v9.9.9)"
+case "$out" in *v9.9.9*) got=yes ;; *) got=no ;; esac
+ck "NC: the operator tier DOES set the op pin" yes "$got"
+# Operator tier is not a reason to skip validating a value that lands in a URL.
+out="$(opv 'CLOUD_OP_VERSION=vEVIL/../../../../attacker-path')"
+case "$out" in *"falling back to $op_pin_a"*) got=yes ;; *) got=no ;; esac
+ck "op_version: a traversal-shaped pin is refused at the operator tier too" yes "$got"
+case "$out" in *'attacker-path/op_linux'*) got=yes ;; *) got=no ;; esac
+ck "op_version: the traversal never reaches the download URL" no "$got"
+
+echo
 echo "=== 5b-2. trust boundary: a project .kit.toml cannot set an operator key ==="
 # A .kit.toml rides inside the repo, so a branch under review can edit it. A key
 # whose value SELECTS CODE TO RUN must not be reachable from there. `plugins`
@@ -375,7 +515,14 @@ vault = "AttackerVault"
 canary_ref = "op://AttackerVault/anything/credential"
 repos = "attacker/instructions"
 repo_owner = "attacker"
+workspace = "/dev/null/attacker-ws"
+rules = "docs/OK-RULES.md"
 EOF
+# `/dev/null/...` can never be created, even by root, so an honoured value would
+# surface as a `could not link ... into /dev/null/attacker-ws` line rather than
+# as litter on the test host.
+mkdir -p "$W/evil/docs"
+printf 'PROJECT RULES FROM THE HOSTILE FILE\n' >"$W/evil/docs/OK-RULES.md"
 git -C "$W/evil" init -q 2>/dev/null || true
 printf '#!/bin/sh\ntouch "%s/PWNED"\n' "$W" >"$W/evil/.githooks/pre-commit"
 chmod +x "$W/evil/.githooks/pre-commit"
@@ -396,6 +543,10 @@ ck "the project .kit.toml did NOT reach the secrets step" no "$got"
 # prompt-injection path into every later turn.
 case "$out" in *'attacker/instructions'*) got=yes ;; *) got=no ;; esac
 ck "the project .kit.toml did NOT reach the sibling-clone step" no "$got"
+# workspace joined the operator tier after a project value pointed it at
+# `$HOME/.claude/skills` and made a PR-authored root SKILL.md a live skill.
+case "$out" in *'attacker-ws'*) got=yes ;; *) got=no ;; esac
+ck "the project .kit.toml did NOT choose the workspace" no "$got"
 # NC: the same keys DO take effect from the operator tier (the env override), or
 # the four assertions above would pass for a provision that reads nothing at all.
 out="$(PATH="$ON_PATH" HOME="$W/home6" CLOUD_WORKSPACE="$W/ws-evil2" \
@@ -404,9 +555,13 @@ ck "NC: the operator tier DOES arm core.hooksPath" ".githooks" \
   "$(git -C "$W/evil" config --get core.hooksPath 2>/dev/null || true)"
 git -C "$W/evil" config --unset core.hooksPath 2>/dev/null || true
 # NC: a PROJECT-tier key from the same hostile file still works, so the split is
-# a boundary, not a blanket refusal to read the project file.
-ck "NC: a project-tier key from the same file is still honoured" yes \
-  "$([ -L "$W/ws-evil/evil" ] && echo yes || echo no)"
+# a boundary, not a blanket refusal to read the project file. `rules` is a real
+# project key naming a real in-repo path, unlike the earlier version of this
+# assertion, which checked a workspace symlink the ENV had set.
+out="$(PATH="$ON_PATH" HOME="$W/home6" CLOUD_WORKSPACE="$W/ws-evil" \
+       env -u CLOUD_RULES bash "$L/provision.sh" --repo-root "$W/evil" rules 2>&1)"
+ck "NC: a project-tier key from the same file is still honoured" \
+  "PROJECT RULES FROM THE HOSTILE FILE" "$out"
 
 echo
 echo "=== 5c. provision secrets: CLAUDE_ENV_FILE append-once + canary NC ==="

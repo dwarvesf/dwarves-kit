@@ -57,15 +57,22 @@ team_mode      = false          # reserved , install.sh hard-rejects it today
                                 #     CLOUD_<KEY> variable; a project .kit.toml is IGNORED,
                                 #     because the value selects code to run or names a
                                 #     credential (lib/config/kit-config.sh kit_config_get_root).
-                                # Every key also takes a CLOUD_<KEY> env override. Unset keys
-                                # fall back to a neutral default, so provisioning still does the
-                                # generic work with no config at all.
-# --- PROJECT tier (names something inside this repo) ---
-# workspace  = "~/workspace"    # where sibling repos are cloned. default $HOME/workspace
+                                # Every key also takes a CLOUD_<KEY> env override; for an
+                                # OPERATOR key the environment is the trust anchor, not just an
+                                # override (CLOUD_PROVISION, the module's master switch, is
+                                # env-only). Unset keys fall back to a neutral default, so
+                                # provisioning still does the generic work with no config at all.
+# --- PROJECT tier (names a path inside this repo; repo_path REFUSES anything else) ---
 # map        = ""               # repo-relative routing map printed by `cloud map`
 # rules      = ""               # repo-relative cloud-rules file. default lib/cloud/CLOUD-RULES.md
-# op_version = "v2.31.1"        # pinned 1Password CLI release
 # --- OPERATOR tier (reaches outside the repo, runs code, or names a credential) ---
+# workspace  = "~/workspace"    # where the session repo is linked and siblings are cloned. It
+#                               # names a directory OUTSIDE the repo and a symlink is created
+#                               # there, so a project value pointed it at ~/.claude/skills and
+#                               # made a PR-authored root SKILL.md a live skill
+# op_version = "v2.31.1"        # pinned 1Password CLI release. The value is interpolated into a
+#                               # download URL for a binary that is then chmod +x and put on
+#                               # PATH; validated against ^v?[0-9]+(\.[0-9]+)*$ on top
 # repos      = "a,b/c"          # sibling repos to clone: <name> or <owner>/<name>. A clone
 #                               # runs no code, but its AGENTS.md/CLAUDE.md are then NAMED
 #                               # to the model as files to read
