@@ -5,7 +5,15 @@ Ported from ops-toolkit's cc-context-hooks (function-named per the kit-foldin de
 note: no host-agent prefix). Two small, pure-string additions, both sub-millisecond:
 
   temporal   how long this session has run + how long since the last prompt
-             (helps time/deadline reasoning)
+             (helps time/deadline reasoning); past NUDGE_THRESHOLD_SECONDS elapsed,
+             adds a cache-hygiene nudge (suggest /clear or a handoff split) reusing
+             the same elapsed value, no extra data collection. A compaction-count
+             leg was in-scope per the source row but is not implemented: this hook's
+             inputs (stdin payload + its own per-session {start, last} state) carry
+             no compaction counter, and the only compaction signal in the repo
+             (hooks/pre-compact-backup.sh's per-repo backup-file count) is not
+             session-keyed, so wiring it in would be new cross-hook data collection,
+             which the row explicitly ruled out.
   skill-hint keyword -> skill nudges from a small map, so a relevant skill/command is
              surfaced even if its description did not auto-fire (JIT activation)
 
@@ -35,6 +43,7 @@ import time
 HERE = os.path.dirname(os.path.realpath(__file__))
 DEFAULT_MAP = os.path.join(HERE, "context-hints-skills-map.json")
 DEFAULT_STATE = os.path.expanduser("~/.claude/dwarves-kit/state/context-hints")
+NUDGE_THRESHOLD_SECONDS = 6 * 3600  # ~6h elapsed: cache-hygiene rule (ID-269)
 
 
 def now():
@@ -73,7 +82,10 @@ def temporal_line(session_id):
         pass
     if elapsed < 1:
         return None  # first prompt of the session: nothing useful yet
-    return f"Session time: {humanize(elapsed)} elapsed, {humanize(idle)} since your last prompt."
+    line = f"Session time: {humanize(elapsed)} elapsed, {humanize(idle)} since your last prompt."
+    if elapsed > NUDGE_THRESHOLD_SECONDS:
+        line += "\nconsider /clear or a handoff split (cache-hygiene rule)"
+    return line
 
 
 def skill_hints(prompt):
