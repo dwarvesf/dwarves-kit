@@ -104,15 +104,18 @@ memory (the review surfaces' rejected-findings ledger), with no owning slug and 
 sub-goal contract that created it names this exact path; treat it as the one named exception
 to the per-slug convention above, not a precedent for a second one.
 
-## Two homes: repo-root layout or co-located with the tool (ADR-0026)
+## Three homes: repo-root layout, co-located proof-of-done.md, or a tool's own verification dir (ADR-0026)
 
-A proof has two equally-valid homes. Pick per context:
+A proof has three equally-valid homes. Pick per context:
 
 - **Repo-root** `docs/verification/<slug>/{test-design.md, runs/}` , the default for a feature
   branch with no single tool home.
 - **Co-located** `tools/<name>/docs/proof-of-done.md` , first-class for a tool in a `tools/<name>/`
   monorepo, so the proof travels WITH the code it proves. Optional `tools/<name>/docs/runs/<ts>.md`
   (immutable history) and `tools/<name>/docs/test-design.md` sit beside it.
+- **Tool verification dir** `tools/<name>/docs/verification/<slug>.md`, or set-wise
+  `tools/<name>/docs/verification/<slug>/` , the repo-root convention rooted under the tool
+  instead of the repo root, for a monorepo tool that keeps its own `docs/verification/` folder.
 
 **The filename is load-bearing.** The gate's only co-located match is a file literally named
 `proof-of-done.md` (regex `(^|/)proof-of-done\.md$` in `lib/gate/proof-ledger.sh`); a co-located `runs/`
@@ -233,7 +236,8 @@ work came through `/kit:execute` or a freeform `/goal` loop. Properties:
 - **Fresh proof only.** The proof must be one the branch itself added/modified.
 - **Set-wise for the directory layout.** A `<slug>/` work item is satisfied when, ACROSS its
   files, there is both a green run AND a negative control , the two may live in different
-  `runs/` files. A flat `<slug>.md` or `proof-of-done.md` is still validated per-file.
+  `runs/` files. Same rule for a tool's own `tools/<name>/docs/verification/<slug>/` group. A
+  flat `<slug>.md` or `proof-of-done.md` is still validated per-file.
 - **Honest passes.** Inert passes with no ritual; stateful passes with a rollback note or
   `[UNAVAILABLE: reason]`.
 - **Logged override, never silent.** `bash lib/gate/proof-ledger.sh override <slug> "<reason>"`
