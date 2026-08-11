@@ -25,6 +25,10 @@
 #                                       (duration derivable) + caught=<bool>; ignored by
 #                                       check()/override()/descent()/_rows() (key on $2==GATE)
 #   outcome-read <rid> [phase]         read the outcome + duration back for a rid (round-trip)
+#   config   <rid> [model=] [effort=] [kit_version=] [modules=] [lane=] [task_type=] [suite_hash=] [session_id=] [phase=]
+#                                       record a run's config dimensions as an ADDITIVE marker
+#                                       (ID-420, bench-plane prerequisite); repeat with a
+#                                       different phase= for per-stage model stamping
 #   override <rid> <phase> <reason>    record a human override for a gate
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
 #   show     <rid>                     print the run's ledger
@@ -619,6 +623,62 @@ mutation() {
   append_run_line "$rid" "$(printf '%s | MUTATION | verdict=%s%s' "$(now)" "$verdict" "$rest")"
 }
 
+# config_stamp: record a run's configuration dimensions as an ADDITIVE marker
+# (ID-420, bench-plane prerequisite: DECISION-BRIEF-bench-plane.md §1), the exact
+# `| TOKENS |`/`| DEBT |`/`| MUTATION |` shape reused for a fourth concern: a
+# `| CONFIG |` line that check()/override()/descent()/_rows() all ignore (same
+# key-on-$2 convention), so a config line can never fake or mask a gate. Every
+# value passes through oneline() (embedded newlines/pipes collapsed) before it
+# is written, matching every other free-text field in this file.
+#
+# `phase=` (optional, same idiom as tokens()'s phase=) scopes one CONFIG line to
+# a single stage, so a caller emits one line per stage for "model-per-stage"
+# instead of one flat rid-wide line; omitting it stamps the whole run.
+# kit_version defaults to $KIT_ROOT/VERSION when omitted (the running kit's own
+# version, not a value the caller should normally need to pass). suite_hash
+# stays empty for real work by contract (only a bench replay sets it, per the
+# brief's "null for real work" line) -- this function never invents one.
+# Usage: config <rid> [model=M] [effort=E] [kit_version=V] [modules=M1,M2,...]
+#               [lane=L] [task_type=T] [suite_hash=H] [session_id=S] [phase=P]
+config_stamp() {
+  local rid="${1:-}"; shift 2>/dev/null || {
+    echo "usage: config <rid> [model=M] [effort=E] [kit_version=V] [modules=M1,M2,...] [lane=L] [task_type=T] [suite_hash=H] [session_id=S] [phase=P]" >&2
+    return 64
+  }
+  [ -n "$rid" ] || { echo "config requires a rid" >&2; return 64; }
+  local model="" effort="" kver="" modules="" lane="" ttype="" shash="" sid="" phase="" kv k v
+  for kv in "$@"; do
+    k="${kv%%=*}"; v="${kv#*=}"
+    case "$k" in
+      model)       model="$(oneline "$v")" ;;
+      effort)      effort="$(oneline "$v")" ;;
+      kit_version) kver="$(oneline "$v")" ;;
+      modules)     modules="$(oneline "$v")" ;;
+      lane)        lane="$(oneline "$v")" ;;
+      task_type)   ttype="$(oneline "$v")" ;;
+      suite_hash)  shash="$(oneline "$v")" ;;
+      session_id)  sid="$(oneline "$v")" ;;
+      phase)       phase="$(normalize_phase "$v")" ;;
+    esac
+  done
+  if [ -z "$kver" ]; then
+    kver="$(cat "$KIT_ROOT/VERSION" 2>/dev/null)" || kver=""
+    [ -n "$kver" ] || kver="unknown"
+  fi
+  [ -n "$sid" ] || sid="${CLAUDE_SESSION_ID:-}"
+  mkdir -p "$RUNS_DIR"
+  local line; line="kit_version=$kver"
+  [ -n "$model" ]   && line="$line model=$model"
+  [ -n "$effort" ]  && line="$line effort=$effort"
+  [ -n "$modules" ] && line="$line modules=$modules"
+  [ -n "$lane" ]    && line="$line lane=$lane"
+  [ -n "$ttype" ]   && line="$line task_type=$ttype"
+  [ -n "$shash" ]   && line="$line suite_hash=$shash"
+  [ -n "$sid" ]     && line="$line session_id=$sid"
+  [ -n "$phase" ]   && line="$line phase=$phase"
+  append_run_line "$rid" "$(printf '%s | CONFIG | %s' "$(now)" "$line")"
+}
+
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
@@ -631,6 +691,7 @@ case "$cmd" in
   outcome)      outcome "$@" ;;
   outcome-read) outcome_read "$@" ;;
   mutation) mutation "$@" ;;
+  config)   config_stamp "$@" ;;
   override) override "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
@@ -638,5 +699,5 @@ case "$cmd" in
   progress) progress "$@" ;;
   rid)      rid "$@" ;;
   descent)  descent "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
 esac
