@@ -90,12 +90,18 @@ expensive to get wrong first:
 Rules (absorbed from grill-with-docs, see Source):
 
 - **ONE question per turn.** Wait for the answer before the next.
+- **Facts vs decisions**: facts about the codebase come from exploration (read the code, run
+  the commands), never from the operator; only a genuine decision is put to the operator as a
+  question. A fact the repo can answer is not a question.
 - **Every question carries a recommended answer** with one line of reasoning, so the operator
   corrects instead of composing from scratch.
 - **Challenge vague or overloaded terms** against the glossary; surface contradictions with the
   actual code/records IMMEDIATELY, not at the end.
 - **Walk the dependency tree**: when an answer opens a branch (a named system, an implied
   constraint), follow it before moving on.
+- **Shared-understanding gate**: before the grill proceeds past a resolved question, and again
+  before exit, the operator must confirm the shared understanding is real; without that
+  confirmation the grill holds where it is.
 - **Stop when** every branch is resolved or the operator says enough. Do not pad; five sharp
   questions beat twenty generic ones.
 
