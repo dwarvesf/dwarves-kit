@@ -32,6 +32,14 @@ All notable changes to dwarves-kit are documented here.
   tree byte-identical (checksummed before/after, plus an independent negative control).
 
 ### Added
+- **Auto review-fix loop on the full lane (SPEC-231).** The multi-lens review now runs by
+  default, not on request: `/kit:execute` drives `/kit:review-team` (the three specialist
+  lenses plus the kit-default advisor, in one pass) after build on the full lane, and the
+  spec stage runs a default design-time critique plus advisor over-suggest before validate.
+  Findings sort convergent-first (a defect two or more lenses agree on outranks single-lens
+  taste), and the review re-runs over each fix batch up to two rounds, because a fix batch
+  can reopen the bug it fixed. The verdict stays advisory (auto-run, not auto-block), and a
+  lane gate keeps the cost on the full lane only. Foundation: `docs/patterns/review-fix-loop.md`.
 - **`slop-stripper` agent: the behavior-preserving AI-slop strip pass (kit ID-402).** Resolves the
   deslop absorption contradiction (2026-06-11 pinned-kits called it a duplicate of the simplify +
   maintainability-lens surfaces; the 2026-07-25 absorption survey scored it ABSORB). Both were

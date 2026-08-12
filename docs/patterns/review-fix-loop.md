@@ -1,5 +1,7 @@
 # Pattern: the review-fix loop
 
+> Wired into the spine by SPEC-231 (`docs/specs/SPEC-231-auto-review-loop.md`).
+
 A multi-lens review is not a one-shot gate. A fix batch that resolves review
 findings can introduce new ones, so the review must run again on the fix, until
 the findings that matter stop appearing. This pattern names the three moves that
