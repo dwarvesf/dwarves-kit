@@ -515,7 +515,8 @@ The gate-ledger's `RUN_REPORT.md` (`/kit:mega`'s per-sub-goal gate matrix) can o
 as covered if SOME command actually calls `gate-ledger.sh` for it. A 2026-07-04 audit of every
 file under `commands/` found 11 of 29 commands with a real `bash lib/gate/gate-ledger.sh <verb>` call
 and 18 dark, with no distinction between "this phase genuinely has no ledger concern" and "nobody
-wired it yet" -- the RUN_REPORT under-counts silently either way. This section is the single
+wired it yet" -- the RUN_REPORT under-counts silently either way (`commands/` has since grown to
+36 files; 26 now match `gate-ledger.sh`). This section is the single
 source of truth for that distinction (parsed by `tests/test-command-emit-sweep.sh`, no second
 copy): every command in `commands/` either contains a `gate-ledger` call, or is listed below with
 a reason it legitimately does not need one.
@@ -529,12 +530,13 @@ pure RUN_REPORT observability, never a new required gate; `think` / `design` / `
 `validate` / `reflect` (the phase `retro.md` records) already ARE matrix rows and this closes
 their record-side gap.
 
-**10 utility commands, exempted (no direct emit by design):**
+**11 utility commands, exempted (no direct emit by design):**
 
 | Command | Why no direct emit |
 |---|---|
 | `absorb.md` | Maintainer-only external-source absorption audit (SPEC-004); propose-only, approves/merges nothing itself, and runs outside any spec's rid/lane lifecycle. |
 | `adopt.md` | One-time repo-bootstrap into a NEW consumer repo (injects AGENTS.md/CLAUDE.md/WORKFLOW pointer); runs BEFORE any rid or lane exists in that repo. |
+| `feature-map.md` | Standalone source-cited feature-inventory generator for ANY target project (this kit's own or an external one); not a `Lane x phase depth matrix` row (no lane requires it, the same carve-out as `verify.md`/`explain.md` above), so it has no phase to record against. |
 | `onboard.md` | Interactive first-run orchestrator (SPEC-199); CALLS start/adopt/config (each of which emits or is itself exempt) but owns no V-model phase and runs before any rid or lane exists in a fresh consumer, exactly like `adopt.md`. |
 | `next.md` | Pure read-only task dispatcher, own text says "Do NOT execute anything. Just detect and recommend."; hands off to `/kit:execute`, which is the one that emits. |
 | `start.md` | Pure read-only session entry-point detector, own text says "Do NOT execute anything."; same shape as `next.md`. |
@@ -1052,7 +1054,7 @@ operator detail read `MANUAL.md`; for component fit and the SDLC state machine r
 the cycle, V-model, and type loops) lives at [`docs/workflow-map.md`](workflow-map.md).
 
 At a glance: **1** backbone (the spine, above), **5** primary intake lanes (the lane
-table, above), **3** bounded loops (the engines, below), **10** opt-in side-flows,
+table, above), **3** bounded loops (the engines, below), **11** opt-in side-flows,
 **7** alternate/branch flows, and **4** hard stops (the only blockers). Everything
 except the four hard stops **suggests and routes; it does not block**.
 
@@ -1282,7 +1284,7 @@ mistake is irreversible:
 | `/kit:dispatch <specs>` | disjointness gate -> N background worktree workers -> lead-owned convergence | all workers READY + drift-clean, converged via `/kit:ship` | disjointness gate + drift guard (`lib/gate/dispatch-gate.sh`); no auto-merge; no DAG (ADR-0019) |
 | `/kit:think` | decision brief | brief written (if BUILD) | advisory |
 | `/kit:spec` | spec scaffold | spec exists, `Status: DRAFT` | spec-drift-guard hook |
-| `/kit:spec-validate` | 5-lens adversarial review | `Status: VALIDATED` | advisory (full lane) |
+| `/kit:spec-validate` | 6-lens adversarial review (5 advisory, 1 blocking) | `Status: VALIDATED` | advisory (full lane) |
 | `/kit:execute` | verification pipeline | all tasks + integration PASS | verification pipeline (hard) |
 | `/kit:debug` | feedback-loop-first debug loop (Phase 0 + 4 phases) | root cause + fix verified + human-confirmed | iron law + guess-fix guard |
 | `/kit:review[-team]` | review | verdict recorded in the spec's `## Review` | advisory |

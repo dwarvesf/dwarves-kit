@@ -128,7 +128,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `/kit:spec-validate` | command | Spec review | gate | Adversarial pre-build gate; 6 lenses attack the spec (5 advisory, 1 blocking on the design record); sets Status: VALIDATED |
 | `/kit:devs-team` | command | Design critique | gate | Opt-in; 5 engineering lenses stress-test the solution design before the spec hardens |
 | `/kit:review` | command | Code review | gate | Single-pass paranoid review; security, architecture, regressions, edge cases |
-| `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches the `code-reviewer` agent x3 (security / architecture / test-coverage lenses) |
+| `/kit:review-team` | command | Code review | gate | Parallel variant; dispatches `security-reviewer` (security) plus the `code-reviewer` agent x2 (architecture / test-coverage lenses) |
 | `/kit:visual-team` | command | Visual critique | gate | Opt-in; 5 design lenses critique UI output; mirrors review-team for visual work |
 | `/kit:docs` | command | Doc sync | gate | Diffs code vs docs and patches drift; dispatches doc-verifier before committing |
 | `/kit:explain` | command | Understanding (AFTER gate) | gate | ADR-0031 §2; emits a literate-diff explainer (background -> goal+intuition -> prose-ordered diff -> diagram) via `lib/explain.sh`, composing narrate-log + svg-knowledge-diagram; grounded in the diff + test results, advisory |
@@ -561,7 +561,7 @@ Two paths, do not run both. See ADR-0009.
 The "## State model" above is the *data* state (the three stores). This is the *process*
 state: the states a single unit of work moves through, and the guarded transitions
 between them. It is the formal model behind `WORKFLOW.md`'s cycle/lanes (the rules) and
-`MANUAL.md`'s "## Operator scenarios" (the operator-facing projection). The point of
+`docs/MANUAL.md`'s "## Operator scenarios" (the operator-facing projection). The point of
 declaring it is that at any moment Claude (and the operator) can answer four questions
 without guessing: where am I, where can I go, what does each transition cost/require (the
 guard), and how do I trigger it.
@@ -646,8 +646,8 @@ guard), and how do I trigger it.
 
 ### Sub-machines
 
-- **BUILDING** expands to: `worker -> task-verifier -> {PASS | FAIL:fixable -> fix-agent (<=2) | FAIL:escalate} -> integration-verifier`. The diagram is in `WORKFLOW.md` "## Flow and loop reference" (the execute pipeline), and the read-only contract is in "## Verification pipeline" above.
-- **DEBUGGING** expands to: `Phase 1 Root cause -> Phase 2 Pattern -> Phase 3 Hypothesis -> Phase 4 Implementation`, under the iron law (no fix without a recorded root cause), guarded by the guess-fix guard. The diagram is in `WORKFLOW.md` "## Flow and loop reference" (the debug loop).
+- **BUILDING** expands to: `worker -> task-verifier -> {PASS | FAIL:fixable -> fix-agent (<=2) | FAIL:escalate} -> integration-verifier`. The diagram is in `docs/WORKFLOW.md` "## Flow and loop reference" (the execute pipeline), and the read-only contract is in "## Verification pipeline" above.
+- **DEBUGGING** expands to: `Phase 1 Root cause -> Phase 2 Pattern -> Phase 3 Hypothesis -> Phase 4 Implementation`, under the iron law (no fix without a recorded root cause), guarded by the guess-fix guard. The diagram is in `docs/WORKFLOW.md` "## Flow and loop reference" (the debug loop).
 
 ### Hard stops as guards (the only blockers)
 
