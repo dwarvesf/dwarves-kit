@@ -126,6 +126,21 @@ def _repo_root():
     return os.getcwd()
 
 
+def _kit_adopted():
+    """OPT-IN: engage only in a repo that adopted the kit contract. Both of harvest's write
+    paths land under the consumer's `_meta/`, which is the KIT's project-contract namespace,
+    not a namespace every repo the user touches has agreed to. The marker is the one
+    hooks/ship-gate.sh already gates on and the one lib/adopt.sh never overwrites
+    (`docs/verification/README.md`, the third leg of adopt's AGENTS.md + marker + loader
+    triple), so there is exactly one adoption signal in the kit, not a second convention.
+
+    Plugin mode is what makes this load-bearing: .claude-plugin registers all 25 hooks
+    globally and unconditionally, so before this guard a SessionEnd in ANY repo staged a
+    draft into a `_meta/` that repo never asked for.
+    """
+    return os.path.isfile(os.path.join(_repo_root(), "docs", "verification", "README.md"))
+
+
 def _default_ledger():
     return os.path.join(_repo_root(), "_meta", "learned-ledger.md")
 
@@ -608,6 +623,11 @@ def cmd_harvest_run(pf):
 
 
 def _dispatch(argv):
+    # Adoption guard FIRST, ahead of every mode including the detached children: the child
+    # inherits this cwd, so guarding here covers both legs with one check. Silent (a hook
+    # that is deliberately inert should say nothing) and exit 0, like every other harvest path.
+    if not _kit_adopted():
+        return 0
     if "--cleanup" in argv:
         return cmd_cleanup()
     if "--lab-log-run" in argv:

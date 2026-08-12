@@ -174,6 +174,8 @@ echo ""
 echo "=== backlog-stage.sh (SessionEnd) ==="
 # ============================================================
 mkdir -p "$TD/bs-repo/_meta"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/bs-repo/docs/verification" && : > "$TD/bs-repo/docs/verification/README.md"
 git -C "$TD/bs-repo" init -q
 BS_TRANS="$TD/bs-transcript.jsonl"
 cat > "$BS_TRANS" <<'EOF'
@@ -195,9 +197,33 @@ assert_exit "row 3: stages a candidate, exits 0" 0 $RC
 STAGED=$(cat "$TD/bs-repo/_meta/backlog-staging.md" 2>/dev/null)
 assert_contains "row 3: staged file has the candidate (repo-relative default)" "fix flaky deploy script" "$STAGED"
 
+# row 3-nc (adoption guard): a repo that never adopted the kit gets NOTHING written. The
+# plugin registers every hook globally + unconditionally, so without the guard a SessionEnd
+# in any repo the user merely touched writes into a `_meta/` that repo never asked for.
+# Fixture is deliberately marker-LESS (no docs/verification/README.md).
+mkdir -p "$TD/bs-repo-unadopted"
+git -C "$TD/bs-repo-unadopted" init -q
+RC=0
+REPO_ROOT="$TD/bs-repo-unadopted" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" \
+  BACKLOG_STAGE_STATE_DIR="$TD/bs-state-unadopted" BACKLOG_STAGE_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || RC=$?
+assert_exit "row 3-nc: non-adopted repo, hook still exits 0 (inert, never blocks)" 0 $RC
+BS_UNADOPTED=$(ls -A "$TD/bs-repo-unadopted" | grep -v '^\.git$' || true)
+assert_not_contains "row 3-nc: no _meta/ written into a non-adopted repo" "_meta" "$BS_UNADOPTED"
+# positive control: the SAME payload + extractor DOES stage once the marker appears, so the
+# silence above is the guard, not a broken hook.
+mkdir -p "$TD/bs-repo-unadopted/docs/verification" && : > "$TD/bs-repo-unadopted/docs/verification/README.md"
+REPO_ROOT="$TD/bs-repo-unadopted" BACKLOG_STAGE_EXTRACTOR="$TD/bs-extractor.sh" \
+  BACKLOG_STAGE_STATE_DIR="$TD/bs-state-unadopted-2" BACKLOG_STAGE_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$BS_TRANS\"}' | bash '$KIT_DIR/hooks/backlog-stage.sh'" >/dev/null 2>&1 || true
+assert_contains "row 3-nc: positive control -- marker present, candidate stages" \
+  "fix flaky deploy script" "$(cat "$TD/bs-repo-unadopted/_meta/backlog-staging.md" 2>/dev/null)"
+
 # row 3b (detach fix): the DEFAULT path (no BACKLOG_STAGE_SYNC) must return fast and
 # stage the candidate in a detached child -- this is what SessionEnd actually invokes.
 mkdir -p "$TD/bs-repo-async/_meta"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/bs-repo-async/docs/verification" && : > "$TD/bs-repo-async/docs/verification/README.md"
 git -C "$TD/bs-repo-async" init -q
 START_NS=$(date +%s%N)
 RC=0
@@ -229,6 +255,8 @@ JSON
 EOF
 chmod +x "$TD/bs-slow-extractor.sh"
 mkdir -p "$TD/bs-repo-slow/_meta"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/bs-repo-slow/docs/verification" && : > "$TD/bs-repo-slow/docs/verification/README.md"
 git -C "$TD/bs-repo-slow" init -q
 START_NS=$(date +%s%N)
 RC=0
@@ -253,6 +281,8 @@ wait_for_file_contains "row 3c: candidate lands ~2s later, after the slow extrac
 # the SYNC env var (typo, _truthy break) would still pass every other row, since a fast
 # extractor makes both the sync and detached paths finish quickly either way.
 mkdir -p "$TD/bs-repo-syncslow/_meta"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/bs-repo-syncslow/docs/verification" && : > "$TD/bs-repo-syncslow/docs/verification/README.md"
 git -C "$TD/bs-repo-syncslow" init -q
 START_NS=$(date +%s%N)
 RC=0
@@ -280,6 +310,8 @@ assert_contains "row 3d: candidate already present immediately (proves it ran in
 # isolated from the invoking process group. Verified via `pgrep`/`ps`, not a kill/signal
 # race (avoids flakiness from timing a signal against process spawn).
 mkdir -p "$TD/bs-repo-pgid/_meta"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/bs-repo-pgid/docs/verification" && : > "$TD/bs-repo-pgid/docs/verification/README.md"
 git -C "$TD/bs-repo-pgid" init -q
 cat > "$TD/bs-pgid-extractor.sh" <<'EOF'
 #!/usr/bin/env bash
@@ -378,6 +410,8 @@ echo ""
 echo "=== harvest.sh (PreCompact / SessionEnd) ==="
 # ============================================================
 mkdir -p "$TD/hv-repo"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/hv-repo/docs/verification" && : > "$TD/hv-repo/docs/verification/README.md"
 git -C "$TD/hv-repo" init -q
 HV_TRANS="$TD/hv-transcript.jsonl"
 cat > "$HV_TRANS" <<'EOF'
@@ -414,12 +448,37 @@ assert_exit "row 4b: --lab-log drafts an entry, exits 0" 0 $RC
 DRAFT=$(cat "$TD/hv-repo/_meta/.lab-log-draft.md" 2>/dev/null)
 assert_contains "row 4b: draft never writes the real LAB_LOG.md" "repo-root-seam" "$DRAFT"
 
+# row 4-nc (adoption guard): BOTH harvest legs stay silent in a repo that never adopted the
+# kit. This is the live miss: a plugin-mode SessionEnd collected 15 KB of drafts into a
+# non-adopted repo's `_meta/` over four days. Fixture is deliberately marker-LESS.
+mkdir -p "$TD/hv-repo-unadopted"
+git -C "$TD/hv-repo-unadopted" init -q
+RC=0
+REPO_ROOT="$TD/hv-repo-unadopted" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || RC=$?
+assert_exit "row 4-nc: --lab-log in a non-adopted repo exits 0 (inert, never blocks)" 0 $RC
+RC=0
+REPO_ROOT="$TD/hv-repo-unadopted" HARVEST_EXTRACTOR="$TD/hv-extractor.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh'" >/dev/null 2>&1 || RC=$?
+assert_exit "row 4-nc: no-arg (ledger) harvest in a non-adopted repo exits 0" 0 $RC
+HV_UNADOPTED=$(ls -A "$TD/hv-repo-unadopted" | grep -v '^\.git$' || true)
+assert_not_contains "row 4-nc: neither leg wrote _meta/ into a non-adopted repo" "_meta" "$HV_UNADOPTED"
+# positive control: same payload + extractor DOES draft once the marker appears, so the
+# silence above is the guard, not a broken hook.
+mkdir -p "$TD/hv-repo-unadopted/docs/verification" && : > "$TD/hv-repo-unadopted/docs/verification/README.md"
+REPO_ROOT="$TD/hv-repo-unadopted" HARVEST_EXTRACTOR="$TD/hv-lablog.sh" HARVEST_MIN_INTERVAL=0 HARVEST_SYNC=1 \
+  bash -c "echo '{\"transcript_path\":\"$HV_TRANS\"}' | bash '$KIT_DIR/hooks/harvest.sh' --lab-log" >/dev/null 2>&1 || true
+assert_contains "row 4-nc: positive control -- marker present, draft lands" \
+  "repo-root-seam" "$(cat "$TD/hv-repo-unadopted/_meta/.lab-log-draft.md" 2>/dev/null)"
+
 # row 4c (detach fix): the DEFAULT path (no HARVEST_SYNC) for BOTH no-arg and --lab-log
 # must return fast and do the real work in a detached child -- this is what
 # PreCompact/SessionEnd actually invoke, and is the fix for the SessionEnd-cancellation
 # bug (the `claude -p` extractor call can take up to 120s, the invoking hook only gets
 # ~30s, and SessionEnd fires while the CLI process is already exiting).
 mkdir -p "$TD/hv-repo-async"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/hv-repo-async/docs/verification" && : > "$TD/hv-repo-async/docs/verification/README.md"
 git -C "$TD/hv-repo-async" init -q
 START_NS=$(date +%s%N)
 RC=0
@@ -459,6 +518,8 @@ JSON
 EOF
 chmod +x "$TD/hv-slow-extractor.sh"
 mkdir -p "$TD/hv-repo-slow"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/hv-repo-slow/docs/verification" && : > "$TD/hv-repo-slow/docs/verification/README.md"
 git -C "$TD/hv-repo-slow" init -q
 
 START_NS=$(date +%s%N)
@@ -512,6 +573,8 @@ wait_for_file_contains "row 4f: LAB_LOG draft lands ~2s later, after the slow ex
 # env var would still pass every other row, since a fast extractor finishes quickly
 # either way.
 mkdir -p "$TD/hv-repo-syncslow"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/hv-repo-syncslow/docs/verification" && : > "$TD/hv-repo-syncslow/docs/verification/README.md"
 git -C "$TD/hv-repo-syncslow" init -q
 
 START_NS=$(date +%s%N)
@@ -555,6 +618,8 @@ assert_contains "row 4h: LAB_LOG draft already present immediately (proves it ra
 # SessionEnd's process teardown" claim rests on. Verified via `pgrep`/`ps` (not a
 # kill/signal race, which would be flaky to time against process spawn).
 mkdir -p "$TD/hv-repo-pgid"
+# adopted-repo fixture: the `_meta/` writers are opt-in on adopt.sh's marker
+mkdir -p "$TD/hv-repo-pgid/docs/verification" && : > "$TD/hv-repo-pgid/docs/verification/README.md"
 git -C "$TD/hv-repo-pgid" init -q
 cat > "$TD/hv-pgid-extractor.sh" <<'EOF'
 #!/usr/bin/env bash

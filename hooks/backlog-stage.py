@@ -82,6 +82,15 @@ def _repo_root():
     return os.getcwd()
 
 
+def _kit_adopted():
+    """OPT-IN: engage only in a repo that adopted the kit contract. The staging buffer lands
+    under the consumer's `_meta/`, the KIT's project-contract namespace. Same marker as
+    hooks/ship-gate.sh and hooks/harvest.py -- one adoption signal for the whole kit.
+    Load-bearing under the plugin, which registers every hook globally and unconditionally.
+    """
+    return os.path.isfile(os.path.join(_repo_root(), "docs", "verification", "README.md"))
+
+
 def _default_backlog():
     return os.path.join(_repo_root(), "_meta", "BACKLOG.md")
 
@@ -367,6 +376,10 @@ def cmd_staged_run(pf):
 
 
 def main():
+    # Adoption guard FIRST, ahead of every mode including --staged-run's detached child
+    # (it inherits this cwd). Silent + exit 0: an inert hook says nothing.
+    if not _kit_adopted():
+        return 0
     if "--surface" in sys.argv[1:]:
         return surface()
     if "--staged-run" in sys.argv[1:]:
