@@ -163,7 +163,7 @@ Who calls whom. An arrow is a real invocation (shell-out, source, or import).
               │                           ├─► intel ──► (calls observe)           │
               │                           ├─► audit ──► triage ────────────────┐  │
               │                           └─► recall                           │  │
-              │                  bridge ──► board mirror (to Hermes cockpit)   │  │
+              │                  sync   ──► board mirror (to Hermes cockpit)   │  │
               │                                                                ▼  ▼
               └──────────────────────────────────────────────────── board (staging/promote)
                                           the loop closes here
