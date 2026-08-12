@@ -411,6 +411,12 @@ After all phases complete:
    3. /kit:ship -- commit and PR (include the implementation-notes path in the PR body)
    ```
 
+   <!-- review-loop --> On the FULL lane, step 1 is not a suggestion: run
+   `/kit:review-team` by default before docs and ship, and drive its Step 5b
+   bounded loop (re-review each fix batch, up to two rounds, per
+   `docs/patterns/review-fix-loop.md`). The verdict stays advisory; the loop
+   runs without an operator prompt. Normal and tiny lanes keep review opt-in.
+
    Record the build gate (closes the recording gap WORKFLOW.md "## Command emit coverage"
    used to flag as pre-existing): `bash lib/gate/gate-ledger.sh record <rid> build ran
    "tasks=<N>/<N> verified=<N> tests=<pass|fail>"`. This is Build's own phase-owner record

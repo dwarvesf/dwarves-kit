@@ -268,6 +268,15 @@ When approved, update the Status line in SPEC.md to `APPROVED`.
 
 Remind the user they can run `/kit:spec-validate` for adversarial review before implementation.
 
+<!-- review-loop --> On the FULL lane, a design-time pass runs by default before
+validate, not on request: dispatch `/kit:devs-team` for design critique and the
+`advisor` agent in over-suggest mode over the spec. This catches the class a code
+review cannot, a missing invariant, an unhandled failure mode, a threat surface,
+what breaks at ten times the load, while a fix is still one spec edit
+(`docs/patterns/review-fix-loop.md`, both-arms rule). It never blocks; findings
+fold into `## Edge Cases`, `## Failure modes`, and `## Review`. Normal keeps this
+opt-in; tiny skips it.
+
 After approval, record it for lane telemetry (SPEC-139), one line:
 `bash lib/gate/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.
 
