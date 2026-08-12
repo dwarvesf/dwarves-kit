@@ -1,5 +1,7 @@
 # Decision Brief: auto review-fix loop as a default spine phase
 
+> Realized by SPEC-231 (`docs/specs/SPEC-231-auto-review-loop.md`).
+
 The design was discussed with the operator across prior conversation turns; this
 brief records the accepted shape. The operator raised the pain directly and
 approved the recommendation before this brief was written.

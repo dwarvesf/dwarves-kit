@@ -384,7 +384,7 @@ the V-model lens above. Every cell is one of:
 |---|---|---|---|---|---|
 | Think | skip | run-lite | measure-twice | skip | run-lite |
 | Design (opt-in) | skip | skip | measure-twice | skip | skip |
-| Design critique (opt-in) | skip | skip | measure-twice | skip | skip |
+| Design critique (default full, opt-in normal) | skip | skip | measure-twice | skip | skip |
 | UI design (opt-in) | skip | skip | run-lite | skip | skip |
 | Spec | skip | measure-twice | measure-twice | skip | run-lite |
 | Validate | skip | skip | measure-twice | skip | skip |
