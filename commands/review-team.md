@@ -183,7 +183,7 @@ After all 3 specialist lenses + the advisor complete:
 
 1. Collect all issues from all 3 lenses (and the advisor's cross-cutting findings)
 2. Deduplicate by FINGERPRINT (SPEC-081): file + line-bucket (+-3 lines) + normalized title (lowercase, punctuation stripped). The same fingerprint across reviewers = ONE finding listing every lens that caught it.
-3. Sort by severity (CRITICAL > HIGH > MEDIUM > LOW)
+3. Sort by severity (CRITICAL > HIGH > MEDIUM > LOW). <!-- review-loop --> Within a severity, sort CONVERGENT findings first: a finding whose fingerprint two or more lenses hit independently outranks a single-lens finding, because independent agreement is the cheapest reliable signal of a real defect (docs/patterns/review-fix-loop.md, move 2). The corroboration promotion in item 5 already encodes this as confidence; this sort surfaces it so the operator reads the convergent findings first.
 4. **Classify each finding's Route (SPEC-078 / ID-076, EveryInc action-class
    rubric):** severity says how URGENT, the Route says what FOLLOW-UP SHAPE:
    - `gated_auto` , a concrete suggested fix exists; applied after judgment at
@@ -333,6 +333,20 @@ over-defensive handling, unnecessary casts, flattenable nesting, patterns
 inconsistent with the file) and returns a STRIP REPORT. Never auto-run: the
 operator's judgment at this gate is the gate (SPEC-078, `gated_auto` is applied
 after judgment, never blindly). Run `/kit:verify` after the strip, then `/kit:ship`.
+
+<!-- review-loop -->
+### Step 5b: The bounded review-fix loop (full lane)
+
+A fix batch can reintroduce the bug it fixed: the review that caught the money-path regressions in the founding session ran AGAIN after each fix, over the fix diff. On the full lane, after the operator addresses the FIX THEN SHIP findings (Step 5), re-run this whole command over the NEW diff (the fix batch), in fresh context. The loop foundation and its scaling gate live in `docs/patterns/review-fix-loop.md`.
+
+Stop conditions, whichever comes first:
+
+- **Converged:** the re-run surfaces no CONVERGENT finding (no fingerprint hit by two or more lenses) at CRITICAL or HIGH. Single-lens taste does not restart the loop.
+- **Round cap:** two review rounds have run (the original plus one re-review). Two rounds caught the real regressions in practice; more rounds spiral into polish.
+
+At the cap with a convergent CRITICAL or HIGH finding still open, do NOT report SHIP: report `UNRESOLVED AT CAP` and name the finding, so the operator judges it rather than a silent pass. The verdict grammar is otherwise unchanged.
+
+Lane gate: this loop runs on the FULL lane only. Normal runs one pass with no re-review; tiny runs no review. The gate is the cost guard, not an omission.
 
 ### Step 6: Operator rejection appends to the ledger (SPEC-144)
 

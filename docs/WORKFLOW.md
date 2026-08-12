@@ -137,14 +137,14 @@ migration (same dry-run + rollback shape); agent-org config rides spec-feature l
 |----------|---------|-----------|-------------|
 | Think    | /kit:think | decision brief written (if BUILD) | advisory |
 | Design (opt-in) | /kit:design | solution agreed + appended to the brief | advisory |
-| Design critique (opt-in) | /kit:devs-team, /kit:visual-team | critique appended to the active spec (else the brief) | advisory (normal/full) |
+| Design critique (default full lane, opt-in normal) | /kit:devs-team, /kit:visual-team | critique appended to the active spec (else the brief) | advisory (default-run on full: SPEC-231) |
 | Prototype (opt-in) | /kit:prototype | validated decision folded into the brief/spec + `prototype/<name>` branch pointer on the owning row | advisory (HITL; SPEC-206) |
 | UI design (opt-in, downstream) | /kit:ui-design | brief -> generate (frontend-design) -> critique -> revise | advisory (downstream only) |
 | Spec     | /kit:spec | spec exists, Status: DRAFT | spec-drift-guard hook |
 | Validate | /kit:spec-validate | Status: VALIDATED | advisory (full lane) |
 | Test plan (default for normal/full) | /kit:test-plan | `## Test plan` written into the spec, in the type's dialect (test-design-standard §5b) | advisory default (normal/full); tiny exempt |
 | Build    | /kit:execute or /kit:next | tasks checked, verifier PASS | verification pipeline (worker, verifier, fix; max 2) |
-| Review   | /kit:review or /kit:review-team | review verdict recorded | advisory |
+| Review   | /kit:review or /kit:review-team | review verdict recorded; full lane loops per SPEC-231 | advisory (default-run + bounded loop on full: SPEC-231, docs/patterns/review-fix-loop.md) |
 | Docs     | /kit:docs | README/CHANGELOG match code | advisory |
 | Ship     | /kit:ship | tagged + PR | ship gate (blocks on DO NOT SHIP), push-to-main blocker |
 | Reflect  | /kit:retro | docs/retro/v<version>.md written | advisory |
@@ -335,6 +335,15 @@ One agent, two modes. Its `model:` (default `sonnet`) is the cheap-first tier kn
 a kit-default lens never silently burns `opus` on every run (WORKFLOW.md verification
 cost routing). Born under ADR-0029 as the named-noun `advisor`, gated by the SG-01
 `agent-effectiveness` validator.
+
+<!-- review-loop --> **Two firing points on the full lane (SPEC-231).** Over-suggest
+also runs at the DESIGN-TIME pass (the spec stage), not only at the ship boundary, so
+the full lane gets a generative pass while a fix is still one spec edit. Critique
+(P5) drives the bounded review-fix loop: after a fix batch clears the convergent
+findings, `/kit:review-team` re-runs over the fix diff, up to two rounds, because a
+fix batch can reopen the bug it fixed. Both the design-time pass and the loop are
+default-run on the full lane and opt-in below it (the scaling gate). Foundation:
+`docs/patterns/review-fix-loop.md`.
 
 ## Role-specialist roster: two dispatch paths by type (SPEC-111)
 

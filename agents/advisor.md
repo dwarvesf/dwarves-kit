@@ -79,6 +79,12 @@ Output: `SUGGESTIONS: <N proposals>`, each a one-line idea + why it is now cheap
 These are proposals for the human, never auto-actioned. Over-suggesting is the point:
 offer more than will be taken; the human filters.
 
+<!-- review-loop --> On the FULL lane this mode ALSO fires at the design-time pass
+(the spec stage), not only at the ship boundary (SPEC-231): a generative pass over
+the spec surfaces the missing invariant or hardening step while a fix is still one
+spec edit. Same output grammar, same proposals-only contract. Design-time input is
+the brief plus the draft spec, not a code diff.
+
 ## Ledger visibility (SPEC-145)
 
 You are read-only and never run `bash` yourself, so you do not emit your own ledger row --
