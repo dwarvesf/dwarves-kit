@@ -61,8 +61,12 @@ and filling its `<spoke>_*` keys; CLI flags override:
 apps              = "reminders,notion,hermes,multica"
 reminders_list    = "Backlog"
 notion_db         = "<database_id>"   # or notion_parent = "<page_id>" to bootstrap
-hermes_target     = "mini-tieubao"
+hermes_target     = "mini-tieubao"   # ssh host, or "local", or "sudo:<user>"
 hermes_home       = "/Users/tieubao/hermes-personal/home"
+# optional, for an instance whose board, workers, and deliverables are shared:
+# hermes_board     = "dw-ops"
+# hermes_assignee  = "chief-of-staff"
+# hermes_workspace = "dir:/Users/server/hermes-dfoundation/home/outbox/backlog/{id}"
 multica_url       = "https://multica.d.foundation"
 multica_workspace = "<workspace_uuid>"
 multica_project   = "<project_uuid>"
@@ -73,7 +77,8 @@ Resolution happens in `board.sh cmd_sync` via `kit-config.sh` (the one TOML
 reader); the python engine takes flags only and reads no config file. Flags:
 `--apps a,b` · `--backlog PATH` · `--state-root PATH` · `--dry-run` ·
 `--list` · `--notion-db` / `--notion-parent` · `--hermes-target` /
-`--hermes-home`. State snapshots live per board at
+`--hermes-home` / `--hermes-board` / `--hermes-assignee` /
+`--hermes-workspace`. State snapshots live per board at
 `~/.cache/backlog-sync/<board-slug>/<source>.state.json`.
 
 ### Scheduled runs (cron)

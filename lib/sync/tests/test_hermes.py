@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sources.hermes import HermesSource  # noqa: E402
+from sources.hermes import HermesSource, _target_cmd  # noqa: E402
 from sync_core import Plan  # noqa: E402
 
 
@@ -96,3 +96,66 @@ def test_apply_noop_makes_no_ssh_call():
     src, fake = make_src("")
     assert src.apply(Plan(), {}, {}) == {}
     assert fake.scripts == []
+
+
+# --- instance reach: target, board, assignee, workspace ---------------------
+
+def test_target_forms_pick_ssh_local_or_sudo():
+    assert _target_cmd("mini-tieubao") == ["ssh", "mini-tieubao", "bash -s"]
+    assert _target_cmd("local") == ["bash", "-s"]
+    assert _target_cmd("sudo:server") == [
+        "sudo", "-n", "-u", "server", "-H", "bash", "-s"]
+
+
+def test_board_flag_rides_reads_and_writes():
+    """Reading one board while writing another would hide a just-created task
+    from the planner, so the flag has to be on both."""
+    reader = FakeSsh("[]\n@@SEP@@\n[]\n")
+    HermesSource(runner=reader, board="dw-ops").read()
+    assert reader.scripts[0].count("hermes kanban --board dw-ops list") == 2
+    fake = FakeSsh("@@CREATED ID-10 t_aa\n")
+    HermesSource(runner=fake, board="dw-ops").apply(
+        Plan(src_create=[("ID-10", "ID-10 · x", "b", "queued")],
+             src_set_status=[("t1", "shipped"), ("t2", "dropped")]), {}, {})
+    write = fake.scripts[0]
+    assert "hermes kanban --board dw-ops create" in write
+    assert "hermes kanban --board dw-ops complete t1" in write
+    assert "hermes kanban --board dw-ops archive t2" in write
+
+
+def test_no_board_configured_leaves_the_command_bare():
+    fake = FakeSsh("[]\n@@SEP@@\n[]\n")
+    HermesSource(runner=fake).read()
+    assert "--board" not in fake.scripts[0]
+
+
+def test_create_carries_assignee_and_per_id_workspace():
+    fake = FakeSsh("@@CREATED ID-10 t_aa\n@@CREATED ID-11 t_bb\n")
+    src = HermesSource(runner=fake, assignee="chief-of-staff",
+                       workspace="dir:/srv/outbox/{id}")
+    src.apply(Plan(src_create=[("ID-10", "ID-10 · a", "", "queued"),
+                               ("ID-11", "ID-11 · b", "", "queued")]), {}, {})
+    script = fake.scripts[0]
+    assert "--assignee chief-of-staff" in script
+    # one directory per task: a shared path would have them overwrite each other
+    assert "--workspace dir:/srv/outbox/ID-10" in script
+    assert "--workspace dir:/srv/outbox/ID-11" in script
+
+
+def test_assignee_and_workspace_are_shell_quoted():
+    fake = FakeSsh("@@CREATED ID-10 t_aa\n")
+    src = HermesSource(runner=fake, assignee="a b;rm -rf /",
+                       workspace="dir:/srv/o u t/{id}")
+    src.apply(Plan(src_create=[("ID-10", "ID-10 · a", "", "queued")]), {}, {})
+    script = fake.scripts[0]
+    assert "'a b;rm -rf /'" in script
+    assert "rm -rf /'" in script and ";rm -rf / " not in script
+
+
+def test_unconfigured_create_is_unchanged():
+    """Default construction must emit exactly what it emitted before."""
+    fake = FakeSsh("@@CREATED ID-10 t_aa\n")
+    HermesSource(runner=fake).apply(
+        Plan(src_create=[("ID-10", "ID-10 · a", "", "queued")]), {}, {})
+    script = fake.scripts[0]
+    assert "--assignee" not in script and "--workspace" not in script

@@ -282,7 +282,9 @@ def build_source(name: str, args):
             sys.exit("hermes: set hermes_home in [sync] (.kit.toml) or pass "
                      "--hermes-home (the HERMES_HOME to sync against)")
         return HermesSource(args.hermes_target or "mini-tieubao",
-                            args.hermes_home)
+                            args.hermes_home, board=args.hermes_board,
+                            assignee=args.hermes_assignee,
+                            workspace=args.hermes_workspace)
     if name == "multica":
         missing = [f for f, v in (("multica_url", args.multica_url),
                                   ("multica_workspace", args.multica_workspace),
@@ -315,8 +317,18 @@ def main(argv=None):
     ap.add_argument("--github-repo",
                     help="owner/repo for the github app (default: the cwd's "
                          "origin remote, as gh resolves it)")
-    ap.add_argument("--hermes-target")
+    ap.add_argument("--hermes-target",
+                    help="ssh host, or `local`, or `sudo:<user>` for an "
+                         "instance owned by another uid on this host")
     ap.add_argument("--hermes-home")
+    ap.add_argument("--hermes-board",
+                    help="kanban board slug (default: the instance's own "
+                         "current board)")
+    ap.add_argument("--hermes-assignee",
+                    help="profile name to assign every relayed task to")
+    ap.add_argument("--hermes-workspace",
+                    help="workspace for every relayed task, e.g. "
+                         "'dir:/path/outbox/{id}'; `{id}` is the board id")
     ap.add_argument("--notion-taskboard-db",
                     help="target Notion database id for the one-way "
                          "insert-only Task Board push")
