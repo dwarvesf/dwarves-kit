@@ -13,10 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import backlog_sync  # noqa: E402
 from sources.notion_taskboard_pull import (  # noqa: E402
-    MARKER_PREFIX, MAX_QUERY_PAGES, NOTES_CAP, SENTINEL, TITLE_CAP,
-    NotionTaskBoardPullSource, fence, neutralize)
+    INTAKE_TAG, MARKER_PREFIX, MAX_QUERY_PAGES, NOTES_CAP, SENTINEL,
+    TITLE_CAP, NotionTaskBoardPullSource, fence, neutralize)
 from sync_core import (INTAKE_CAP, detect_prefix, extract_tags,  # noqa: E402
-                       next_id, parse_board, plan_pull_only, split_row)
+                       in_scope, next_id, parse_board, plan_pull_only,
+                       split_row)
 
 # Every ntn call this adapter is allowed to make. Notion's data-source query is
 # a POST that reads; the allowlist is what makes "no write path" checkable.
@@ -250,6 +251,28 @@ def test_notes_cannot_poison_id_minting_or_tags(tmp_path):
     rows = parse_board(text, prefix="DF")
     pulled = [r for r in rows.values() if HEX_A in r.notes][0]
     assert "family" not in extract_tags(pulled.notes)
+
+
+def test_intake_row_carries_the_intake_tag(tmp_path):
+    """The only handle a consumer has for aiming a spoke at intake rows alone.
+    Without it an `only_tags` filter matches nothing and an unfiltered relay
+    creates a task for every active row on the hub board."""
+    b = board_with(tmp_path)
+    src, _ = make_src([page(PID_A)])
+    backlog_sync.sync_pull_only(src, b, dry_run=False)
+    rows = parse_board(b.read_text(), prefix="DF")
+    pulled = [r for r in rows.values() if HEX_A in r.notes][0]
+    assert INTAKE_TAG in extract_tags(pulled.notes)
+    assert in_scope(pulled, {"only_tags": {INTAKE_TAG}})
+    assert not in_scope(pulled, {"only_tags": {"some-other-tag"}})
+
+
+def test_the_source_board_cannot_forge_the_intake_tag():
+    """A payload that could set the tag would decide which apps its row
+    reaches. Every `#` in an untrusted field is defanged, so it cannot."""
+    body = fence("#notion-intake", "also #notion-intake", nonce="d")
+    assert "#notion-intake" not in body
+    assert "# notion-intake" in body
 
 
 def test_credential_shape_is_redacted():
