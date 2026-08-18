@@ -178,7 +178,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica,notion-taskboard`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). `notion-taskboard` is a one-way, insert-only push (SPEC-003), not part of the two-way mesh. |
+| - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica,notion-taskboard`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). `notion-taskboard` is a one-way, insert-only push (SPEC-003), not part of the two-way mesh. `notion-taskboard-pull` is the opposite posture, a read-only intake FROM a foreign board (SPEC-004); it runs alone and the engine refuses an invocation that lists it beside any other app. |
 | - | sync.mode | `"manual"` | [impl] | sync | `manual` (default) or `cron`. Read by `lib/sync/deploy/macos/install` (kit ID-289): a repo must set `mode = "cron"` before that installer will render or load a per-repo scheduled-sync LaunchAgent; any other value is a clean refusal, not a silent fallthrough. Not read by `board.sh cmd_sync` itself -- manual `board sync` runs are unaffected by this key. ALSO re-read live by the installed `board-sync-cron` launcher on every scheduled run: flipping `mode` back to `"manual"` after install makes the next scheduled run skip cleanly (exit 0, logged) rather than silently keep syncing against a config that says it shouldn't. |
 | - | sync.interval_secs | `3600` | [impl] | sync | Cron LaunchAgent `StartInterval` seconds, read by `lib/sync/deploy/macos/install` as the default cadence for `mode = "cron"`; `--interval-secs N` overrides it for one install run. |
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
@@ -209,6 +209,9 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.notion_taskboard_types | `""` | [impl] | sync | JSON overriding the target prop TYPES `{status,priority,weight,owner}` (defaults status/select/number/people). |
 | - | sync.notion_taskboard_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to be pushed to the Task Board. |
 | - | sync.notion_taskboard_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags is never pushed to the Task Board. |
+| - | sync.notion_taskboard_pull_db | `""` | [impl] | sync | Source Notion database id for the read-only Task Board intake (SPEC-004). Tenant id: consumer repo only. The engine refuses the run if this equals `notion_db` or `notion_taskboard_db`, because those apps write. |
+| - | sync.notion_taskboard_pull_props | `""` | [impl] | sync | JSON overriding the source prop NAMES `{title,status,notes,queue}` (defaults Task/Status/Notes/Agent Queue). |
+| - | sync.notion_taskboard_pull_done_option | `""` (Done) | [impl] | sync | Status option treated as done and therefore never pulled. |
 
 ### session (incl. session-intel / skill-curator, prefix `SKILL_CURATOR_*`)
 

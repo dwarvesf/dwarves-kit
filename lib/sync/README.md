@@ -129,7 +129,7 @@ connected). Hermes: `mini-tieubao`, `~/hermes-personal/home` (restic-covered).
 
 A fifth app, `notion-taskboard`, is NOT part of the two-way mesh: it is a
 one-way, **insert-only** push of a repo's board rows to a foreign, team-OWNED
-Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). This push direction (BACKLOG.md rows UP) complements the opposite intake: dfoundation's infra/hermes-kanban-sync cron job pulls Task Board rows (where Agent Queue is checked) INTO Hermes, insert-only. Both target the same database by design; retiring either breaks one critical direction. The board is the source of truth; the sink is never read for merge and the board
+Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). This push direction (BACKLOG.md rows UP) complements the opposite intake, now served by `notion-taskboard-pull` below (SPEC-004), which absorbs the standalone dfoundation cron that used to pull Task Board rows straight into Hermes. Both apps target the same database by design; they never run in the same invocation, and the engine refuses a run that aims a write-capable app at the pull app's database. The board is the source of truth; the sink is never read for merge and the board
 file is never written. Fields are set ONLY on page-create, so a team member's
 later edits on the card are never overwritten. The local sync-state map is the
 identity index (a `bid` already pushed is never re-pushed), because the team
@@ -166,6 +166,54 @@ _meta/board sync --apps notion-taskboard              # push new rows
 Prop NAMES/TYPES are overridable via `notion_taskboard_props` /
 `notion_taskboard_types` (JSON); defaults are Task/Status/Priority/Weight/
 Owner/Notes and status/select/number/people.
+
+## Read-only intake from a foreign team board (`notion-taskboard-pull`, SPEC-004)
+
+A sixth app, `notion-taskboard-pull`, is the mirror image of the push above and
+absorbs dfoundation's standalone `infra/hermes-kanban-sync` cron (kit ID-479).
+It READS the same foreign, team-OWNED Notion board and turns approved rows into
+queued hub rows; the existing `hermes` spoke then relays them to the Hermes
+kanban, so one engine owns both directions. Rows qualify exactly as the cron
+selected them: the `Agent Queue` checkbox is checked and `Status` is not `Done`.
+A human ticking that checkbox is the whole gate.
+
+Pull-only by SHAPE: the adapter has a `read()` and no write method, no
+page-create, no schema PATCH. Nothing to configure, nothing to flip. It also
+writes no state file, because identity lives in the board itself: each intake
+row carries the Notion page id in its notes cell, matched against the raw board
+text, so a run is a pure function of (board, query result) and safe to
+recompute after a lost git push.
+
+Everything the Task Board hands over is untrusted, title as much as notes. Both
+ride inside a per-item nonce-delimited fence (a fixed sentinel is forgeable
+with a doubled space or a homoglyph), and five token classes are defanged: the
+fence sentinel, a page id, a board id (`next_id` scans the whole board text), a
+`#tag` (it decides which apps the row reaches), and credential shapes. Notes
+clip at 2000 characters and a run intakes at most 25 rows.
+
+```toml
+[sync]
+notion_taskboard_pull_db          = "<database_id>"   # tenant id: consumer repo only
+notion_taskboard_pull_props       = '{"queue": "Agent Queue"}'   # optional
+notion_taskboard_pull_done_option = "Done"            # optional
+```
+
+The app is NOT listed in `apps`. It runs alone, on one clone, in its own
+invocation, and the engine refuses anything else:
+
+```
+board sync --apps notion-taskboard-pull      # 1. intake
+<commit + push the board>                    # 2. publish
+board sync --apps hermes                     # 3. relay
+```
+
+That ordering is load-bearing, not stylistic. Intake mints a board id and the
+Hermes spoke keys its create on it, so the id must be published before anything
+keys on it; otherwise a rejected push discards the row while the kanban task
+survives, and the next tick mints a new id and creates a duplicate task. The
+engine also refuses a run where `notion_db` or `notion_taskboard_db` points at
+the same database, since those apps write. Design, including the git model and
+the honest residuals: `docs/specs/SPEC-004-pull-mode-intake.md`.
 
 ## Cockpit channel (SPEC-002 P2, ID-290)
 

@@ -184,6 +184,48 @@ rollback: create-only never touches the board file; to undo a live push, trash
 the created pages in Notion and delete
 `~/.cache/backlog-sync/<board-slug>/notion-taskboard.state.json`.
 
+## SPEC-004, read-only Task Board intake (2026-08-18, ID-479)
+
+Fourth posture: `notion-taskboard-pull` app, read-only, intake-only. Absorbs
+dfoundation's standalone `infra/hermes-kanban-sync` cron. Contract proven by
+fixtures only, NO live team-board reads or writes during build; live activation
+is a phase 2 operator step.
+
+| When | Command | Exit | Verdict |
+|---|---|---|---|
+| 2026-08-18 | `bash tests/test-sync.sh` | 0 | 224 passed (175 pre-change + 49 new pull cases; every pre-existing suite unchanged, so the pull path has zero blast radius on the two-way mesh or the create-only push) |
+| 2026-08-18 | PRIMARY FLOW e2e: `bin/board sync --backlog-file <tmp> --apps notion-taskboard-pull` against a stub `ntn` on PATH (real subprocess, temp git repo + `.kit.toml`, isolated HOME), source page carrying an adversarial payload | 0 | one page became `DF-2` under `### Reminders inbox` with a nonce-delimited fence. Every defense fired on live data: the url slug `ID-99999999` never reached the board (the link is rebuilt from the page id), `#urgent` became `# urgent`, `DF-4200` became `[defanged]`, a `ghp_` token became `[redacted]`. Dry-run wrote nothing; re-run reported `0 to intake`. The stub exits 9 on any call outside the read set and never fired. No `notion-taskboard-pull.state.json` exists afterward |
+| 2026-08-18 | `backlog_sync.py --apps notion-taskboard-pull,hermes` | 1 | isolation guard refuses before any transport or board access, naming the offending app and the ordering rule |
+| 2026-08-18 | `bash tests/test-board.sh` | 0 | 45/45; `cmd_sync`'s new config keys do not disturb the board verb surface |
+| 2026-08-18 | `bash tests/test-config-registry.sh` | 0 | 19/19; the three new `[sync]` keys resolve and are registered |
+| 2026-08-18 | `bash tests/test-hooks.sh` | 0 | 492/492 |
+| 2026-08-18 | `bash tests/test-meta.sh` | 1 | 807/813, the SAME 6 failures as `origin/master` run in a detached worktree (devops-triage roster rows, V-model lens phrase, FEATURES.md freshness). Pre-existing, untouched by this branch. |
+| 2026-08-18 | 3 adversarial spec lenses (fresh contexts, pre-build) | 0 | 24 findings; every CRITICAL and MAJOR fixed in the design or recorded as an honest residual. Landed: the intake/publish/relay ordering guard, raw-text marker matching, the per-item fence nonce, the title moved inside the fence, the same-database refusal, tag/credential/board-id neutralization, size and count caps |
+| 2026-08-18 | kit:security-reviewer + kit:code-reviewer (architecture + test coverage) on the built diff | 0 | 12 findings, 4 verified by execution against the branch. Fixed: clip-before-neutralize (truncation was reviving a defanged `ID-` token), the page url rebuilt from the id (Notion slugifies the title into it), the hex defang unanchored (`0x<id>` bypassed a word-bounded pattern while the identity check is a substring test), the database guard made unconditional and dash-insensitive, pagination termination + page ceiling, the `--filter` refusal, a tautological assertion replaced. Declined with reason: the duplicated missing-db guard and the argparse-namespace signature, both matching the SPEC-003 sibling exactly |
+
+Negative control (2026-08-18, both invariants broken at once, then restored):
+`neutralize` stubbed to `return text` AND an `apply()` writing `v1/pages` added
+to the adapter. 7 tests went RED across both invariants
+(`test_source_has_no_write_method`, `test_module_code_contains_no_write_call`,
+`test_forged_close_cannot_end_the_fence`,
+`test_planted_page_id_cannot_suppress_another_page`,
+`test_notes_cannot_poison_id_minting_or_tags`,
+`test_credential_shape_is_redacted`, `test_neutralize_is_case_insensitive`);
+restoring the file returned 209 passed.
+
+Standing negative controls in `tests/test_notion_taskboard_pull.py`:
+`test_identity_survives_a_prefix_flip` and `_a_broken_row` (a page never
+re-intakes when the board's parse would fail),
+`test_done_page_leaves_the_existing_row_alone` (an empty query result touches
+nothing), `test_dry_run_writes_nothing`, `test_live_run_writes_no_state_file`,
+`test_pull_app_refuses_to_share_an_invocation`,
+`test_write_capable_app_may_not_target_the_pull_database`,
+`test_planner_emits_no_source_side_action`, `test_bulk_intake_is_capped`.
+
+rollback: the pull path only appends board rows. To undo a run, delete the
+appended rows from `### Reminders inbox`; there is no state file to clear and
+nothing was written to Notion.
+
 ## Reproduce
 
 ```

@@ -124,7 +124,7 @@ pilot            = false        # [design] end-to-end UAT (held)
 # via kit-config.sh -- the engine itself never reads TOML.
 
 [sync]
-apps           = ""             # [impl] comma list of apps to sync to: reminders,notion,hermes,multica; empty = sync off. Legacy aliases: `surfaces`, `sources`
+apps           = ""             # [impl] comma list of apps to sync to: reminders,notion,hermes,multica,notion-taskboard (notion-taskboard-pull runs alone, never listed here); empty = sync off. Legacy aliases: `surfaces`, `sources`
 mode           = "manual"       # [impl] manual | cron; cron gates lib/sync/deploy/macos/install (kit ID-289)
 interval_secs  = 3600           # [impl] cron LaunchAgent StartInterval seconds; --interval-secs overrides at install
 reminders_list = "Backlog"      # [impl] Reminders list name
@@ -147,6 +147,11 @@ multica_only_tags   = ""        # [impl]
 multica_skip_tags   = ""        # [impl]
 multica_intake      = ""        # [impl] default all
 hermes_home    = ""             # [impl] HERMES_HOME of the kanban store to sync
+# Read-only intake FROM a foreign team board (SPEC-004). Runs alone: never list
+# it in `apps` beside another app, the engine refuses that invocation.
+notion_taskboard_pull_db          = ""  # [impl] source Notion database id
+notion_taskboard_pull_props       = ""  # [impl] JSON prop-name overrides {title,status,notes,queue}
+notion_taskboard_pull_done_option = ""  # [impl] Status option never pulled; default Done
 
 [observe]                       # the bench/observability plane (lib/bench)
 # Scope of the exported fleet payload. Empty = PERSONAL (everything on this

@@ -27,16 +27,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sync_core import (ID_TOKEN, apply_board, build_state, describe,  # noqa: E402
-                       detect_prefix, parse_board, plan_create_only, plan_sync)
+                       detect_prefix, parse_board, plan_create_only,
+                       plan_pull_only, plan_sync)
 
 # apps that push one-way and read boards with any repo prefix (not just ID-)
 CREATE_ONLY_APPS = {"notion-taskboard"}
+# apps that only READ a foreign board and intake into the hub (SPEC-004)
+PULL_ONLY_APPS = {"notion-taskboard-pull"}
 from sources.github import GitHubSource  # noqa: E402
 from sources.hermes import HermesSource  # noqa: E402
 from sources.multica import MulticaSource  # noqa: E402
 from sources.notion import NotionSource  # noqa: E402
 from sources.notion_taskboard import (NotionTaskBoardSource,  # noqa: E402
                                       parse_map)
+from sources.notion_taskboard_pull import (  # noqa: E402
+    NotionTaskBoardPullSource)
 from sources.reminders import RemindersSource  # noqa: E402
 
 LEGACY_REMINDERS_STATE = (Path.home() / ".cache" / "backlog-reminders-sync"
@@ -109,9 +114,80 @@ def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
     print(describe(plan, created))
 
 
+def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
+    """One-way, insert-only INTAKE from a read-only source (SPEC-004). Writes
+    only the board file: no spoke write (the source has no write method), and
+    no state file at all. Identity lives in the board row's own notes cell, so
+    there is nothing to lose and a re-run recomputes exactly the missing rows.
+    """
+    text = backlog.read_text()
+    prefix = detect_prefix(text)
+    plan = plan_pull_only(text, src.read())
+    header = f"{src.name}: {len(plan.board_add)} to intake"
+    if dry_run:
+        print(f"dry-run {header}")
+        print(describe(plan))
+        return
+    new_text, assigned = apply_board(text, plan, prefix=prefix)
+    if new_text != text:
+        atomic_write(backlog, new_text)
+    print(f"synced {header}")
+    print(describe(plan, assigned))
+
+
+def check_pull_isolation(names: list, args,
+                         filters: dict | None = None) -> None:
+    """Three refusals that keep a read-only intake read-only (SPEC-004).
+
+    FILTER: this app takes none. The source board's own `Agent Queue` checkbox
+    is the gate, and the pull path never consults `filt`, so accepting
+    `--filter notion-taskboard-pull:intake=none` would hand an operator a
+    guard that silently does nothing.
+
+    ISOLATION: a pull app runs alone. Intake mints a board id, and a downstream
+    spoke keys its own idempotency on that id, so an intake row must be
+    published to git BEFORE anything relays it. Sharing one invocation would
+    let a relay key on an id the publish step may still discard, which
+    duplicates the relayed task on the next run. The runner sequences
+    intake, publish, relay as separate invocations instead.
+
+    TARGET: no other app may point at the pull source's own database. The pull
+    adapter cannot write, but `notion` is two-way and hub-wins; aimed at the
+    same board it would PATCH the very human-owned pages this app exists to
+    leave alone, and trash them on a scope exit. The guard is on the engine
+    because the adapter cannot see its siblings.
+    """
+    # The TARGET check runs whenever a pull database is configured, even on a
+    # run that lists no pull app: `--apps notion` alone against that database
+    # is exactly the write this guard exists to stop. Ids are compared with
+    # dashes stripped, since Notion accepts both forms for the same database.
+    target = (args.notion_taskboard_pull_db or "").replace("-", "")
+    if target:
+        clash = [k for k, v in
+                 (("notion_db", args.notion_db),
+                  ("notion_taskboard_db", args.notion_taskboard_db))
+                 if v and v.replace("-", "") == target]
+        if clash:
+            sys.exit(f"{', '.join(clash)} points at the same database as "
+                     "notion_taskboard_pull_db. That board is read-only by "
+                     "contract; never aim a write-capable app at it.")
+    filtered = sorted(set(filters or {}) & PULL_ONLY_APPS)
+    if filtered:
+        sys.exit(f"{filtered[0]}: this app takes no --filter; the source "
+                 "board's own Agent Queue checkbox is the gate.")
+    pull = [n for n in names if n in PULL_ONLY_APPS]
+    others = [n for n in names if n not in PULL_ONLY_APPS]
+    if pull and others:
+        sys.exit(f"{pull[0]}: a pull app runs alone, but this invocation also "
+                 f"lists {', '.join(others)}. Run intake first, publish the "
+                 "board, then run the other apps (SPEC-004 design question 1).")
+
+
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
                 filt: dict | None = None, cap: int = 20,
                 allow: int = 0) -> None:
+    if getattr(src, "pull_only", False):
+        return sync_pull_only(src, backlog, dry_run)
     if getattr(src, "create_only", False):
         return sync_create_only(src, backlog, state_path, dry_run, filt)
     text = backlog.read_text()
@@ -186,6 +262,15 @@ def build_source(name: str, args):
             priority_map=parse_map(args.notion_taskboard_priority_map),
             weight_map=parse_map(args.notion_taskboard_weight_map),
             owner=args.notion_taskboard_owner, props=props, types=types)
+    if name == "notion-taskboard-pull":
+        if not args.notion_taskboard_pull_db:
+            sys.exit("notion-taskboard-pull: set notion_taskboard_pull_db in "
+                     "[sync] (.kit.toml) or pass --notion-taskboard-pull-db")
+        props = json.loads(args.notion_taskboard_pull_props) \
+            if args.notion_taskboard_pull_props else None
+        return NotionTaskBoardPullSource(
+            db=args.notion_taskboard_pull_db, props=props,
+            done_option=args.notion_taskboard_pull_done_option or "Done")
     if name == "github":
         # repo empty is fine: gh resolves origin from the backlog's own repo
         # (KIT_PROJECT_ROOT), never the process cwd, which under launchd is
@@ -252,6 +337,15 @@ def main(argv=None):
     ap.add_argument("--notion-taskboard-types",
                     help="JSON overriding prop types "
                          "{status,priority,weight,owner}")
+    ap.add_argument("--notion-taskboard-pull-db",
+                    help="source Notion database id for the read-only "
+                         "Task Board intake (SPEC-004)")
+    ap.add_argument("--notion-taskboard-pull-props",
+                    help="JSON overriding prop names "
+                         "{title,status,notes,queue}")
+    ap.add_argument("--notion-taskboard-pull-done-option",
+                    help="Status option treated as done, and thus never "
+                         "pulled (default: Done)")
     ap.add_argument("--multica-url", help="Multica server base URL")
     ap.add_argument("--multica-workspace", help="Multica workspace UUID")
     ap.add_argument("--multica-project", help="Multica project UUID")
@@ -276,10 +370,14 @@ def main(argv=None):
         else:
             sys.exit(f"bad --filter key {key!r} (only_tags|skip_tags|intake)")
 
+    names = [s.strip() for s in args.apps.split(",") if s.strip()]
+    # before any source is built, so a refused combination never touches a
+    # transport or the board file
+    check_pull_isolation(names, args, filters)
+
     if not args.backlog.exists():
         sys.exit(f"no backlog at {args.backlog}; pass --backlog or run via "
                  "`board sync` from an adopted repo")
-    names = [s.strip() for s in args.apps.split(",") if s.strip()]
 
     state_dir = board_state_dir(args.state_root, args.backlog)
     # single-writer lock: overlapping runs would hand out colliding IDs and
