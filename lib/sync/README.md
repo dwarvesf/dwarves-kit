@@ -129,8 +129,7 @@ connected). Hermes: `mini-tieubao`, `~/hermes-personal/home` (restic-covered).
 
 A fifth app, `notion-taskboard`, is NOT part of the two-way mesh: it is a
 one-way, **insert-only** push of a repo's board rows to a foreign, team-OWNED
-Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). The
-board is the source of truth; the sink is never read for merge and the board
+Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). This push direction (BACKLOG.md rows UP) complements the opposite intake: dfoundation's infra/hermes-kanban-sync cron job pulls Task Board rows (where Agent Queue is checked) INTO Hermes, insert-only. Both target the same database by design; retiring either breaks one critical direction. The board is the source of truth; the sink is never read for merge and the board
 file is never written. Fields are set ONLY on page-create, so a team member's
 later edits on the card are never overwritten. The local sync-state map is the
 identity index (a `bid` already pushed is never re-pushed), because the team
