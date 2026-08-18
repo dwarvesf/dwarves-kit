@@ -184,8 +184,11 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
 | - | sync.notion_db | `""` | [impl] | sync | Bind an existing Notion database id. |
 | - | sync.notion_parent | `""` | [impl] | sync | Notion page id to create the board under (bootstrap). |
-| - | sync.hermes_target | `"mini-tieubao"` | [impl] | sync | ssh host for the hermes spoke. |
+| - | sync.hermes_target | `"mini-tieubao"` | [impl] | sync | Where the hermes instance lives: an ssh host, `local`, or `sudo:<user>` for an instance owned by another uid on this host. |
 | - | sync.hermes_home | `""` | [impl] | sync | HERMES_HOME of the kanban store to sync against. |
+| - | sync.hermes_board | `""` | [impl] | sync | Kanban board slug, on reads as well as writes. Empty uses the instance's own current board, which is mutable global state. |
+| - | sync.hermes_assignee | `""` | [impl] | sync | Profile every relayed task is assigned to. Empty leaves tasks unassigned, so no worker picks them up. |
+| - | sync.hermes_workspace | `""` | [impl] | sync | Workspace for every relayed task, e.g. `dir:/path/outbox/{id}`. `{id}` is the board id, so each task gets its own directory. Empty means the CLI default, `scratch`, which is deleted on completion. |
 | - | sync.scope_exit_cap | `20` | [impl] | sync | Max rows one run may close on an app when a filter changes; `--allow-scope-exit N` is the one-run override. |
 | - | sync.reminders_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on reminders. |
 | - | sync.reminders_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on reminders. |

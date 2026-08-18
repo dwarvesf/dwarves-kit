@@ -130,7 +130,7 @@ interval_secs  = 3600           # [impl] cron LaunchAgent StartInterval seconds;
 reminders_list = "Backlog"      # [impl] Reminders list name
 notion_db      = ""             # [impl] bind an existing Notion database id
 notion_parent  = ""             # [impl] Notion page id to create the board under (bootstrap)
-hermes_target  = "mini-tieubao" # [impl] ssh host for the hermes spoke
+hermes_target  = "mini-tieubao" # [impl] where the hermes instance lives: ssh host, or "local", or "sudo:<user>" for another uid on this host
 scope_exit_cap = 20             # [impl] max rows one run may close on an app when a filter changes; --allow-scope-exit overrides
 # Per-app audience filters (SPEC-002 P1). only_tags: row must carry one;
 # skip_tags: row must carry none; intake: all | tagged:<tag> | none.
@@ -147,6 +147,9 @@ multica_only_tags   = ""        # [impl]
 multica_skip_tags   = ""        # [impl]
 multica_intake      = ""        # [impl] default all
 hermes_home    = ""             # [impl] HERMES_HOME of the kanban store to sync
+hermes_board     = ""           # [impl] kanban board slug; default is the instance's own current board
+hermes_assignee  = ""           # [impl] profile every relayed task is assigned to; unset leaves tasks unassigned
+hermes_workspace = ""           # [impl] workspace for every relayed task, e.g. "dir:/path/outbox/{id}"; {id} is the board id
 # Read-only intake FROM a foreign team board (SPEC-004). Runs alone: never list
 # it in `apps` beside another app, the engine refuses that invocation.
 notion_taskboard_pull_db          = ""  # [impl] source Notion database id
