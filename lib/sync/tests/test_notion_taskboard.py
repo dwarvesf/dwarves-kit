@@ -9,7 +9,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sources.notion_taskboard import NotionTaskBoardSource, parse_map  # noqa: E402
+from sources.notion_taskboard import (NotionTaskBoardSource, _rich,  # noqa: E402
+                                      parse_map)
 from sync_core import Plan, Row, plan_create_only  # noqa: E402
 
 
@@ -443,6 +444,18 @@ def test_partial_batch_failure_checkpoints_and_never_duplicates(tmp_path):
     backlog_sync.sync_create_only(src2, board, state, dry_run=False)
     assert len(fake2.page_bodies()) == 1
     assert sorted(json.loads(state.read_text())["map"]) == ["DF-1", "DF-2"]
+
+
+def test_rich_chunks_by_utf16_units_not_codepoints():
+    # The dfoundation board carried a Notes cell with one emoji inside its
+    # first 2000 codepoints: 2001 UTF-16 units, Notion 400'd every hourly
+    # sync (2026-08-18). Chunks must weigh <= 2000 UTF-16 units.
+    text = "a" * 1999 + "\U0001F4CA" + "b" * 50
+    chunks = _rich(text)
+    utf16 = [sum(2 if ord(c) > 0xFFFF else 1 for c in ch["text"]["content"])
+             for ch in chunks]
+    assert all(u <= 2000 for u in utf16)
+    assert "".join(ch["text"]["content"] for ch in chunks) == text
 
 
 def test_warn_duplicate_ids_general_prefix():
