@@ -37,14 +37,18 @@ MARKER_PREFIX = "notion-page:"
 UNTITLED = "(untitled Notion task)"
 TITLE_CAP = 120     # board item cell; the full title rides inside the fence
 NOTES_CAP = 2000    # one Notion Notes property can be far larger than a row
+MAX_QUERY_PAGES = 20  # runaway guard, not a business limit: 100 rows per page
 
 DEFAULT_PROPS = {"title": "Task", "status": "Status", "notes": "Notes",
                  "queue": "Agent Queue"}
 
+# The hex branch is deliberately UNANCHORED. The planner's identity check is a
+# plain substring test, so `0x<page id>` would slip a live marker through a
+# word-bounded pattern and let one row suppress another page's intake forever.
 _NEUTRALIZE = re.compile("|".join((re.escape(SENTINEL),
                                    re.escape(MARKER_PREFIX),
                                    r"\b[A-Z][A-Z0-9]*-\d+\b",
-                                   r"\b[0-9a-f]{32}\b")), re.I)
+                                   r"[0-9a-f]{32}")), re.I)
 # `#word` becomes `# word`: `extract_tags` no longer sees a tag, the text stays
 # readable, and a payload cannot set the board tags that drive app filters.
 _DEFANG_TAG = re.compile(r"#(?=[A-Za-z0-9])")
@@ -105,6 +109,14 @@ def _clip(text: str, cap: int) -> str:
     return text if len(text) <= cap else text[:cap] + " [truncated]"
 
 
+def safe(text: str, cap: int) -> str:
+    """Clip FIRST, then neutralize. The other order is a sanitizer bypass:
+    `ID-99999999a` survives the board-id pattern (the trailing letter breaks
+    `\\d+\\b`), and clipping afterwards would cut that letter off and hand the
+    board a live id token."""
+    return neutralize(_clip(text, cap))
+
+
 def fence(title: str, notes: str, nonce: str | None = None) -> str:
     """Wrap both untrusted fields in one nonce-delimited block. The title is
     fenced too: it is the cheaper channel, being the field that reaches a
@@ -113,8 +125,8 @@ def fence(title: str, notes: str, nonce: str | None = None) -> str:
     nonce = nonce or secrets.token_hex(4)
     return "\n".join([
         f"--- BEGIN {SENTINEL} [{nonce}] ({GUIDANCE}) ---",
-        f"title: {neutralize(title)}",
-        f"notes: {_clip(neutralize(notes), NOTES_CAP)}",
+        f"title: {safe(title, NOTES_CAP)}",
+        f"notes: {safe(notes, NOTES_CAP)}",
         f"--- END {SENTINEL} [{nonce}] ---",
     ])
 
@@ -171,7 +183,7 @@ class NotionTaskBoardPullSource:
         b = self.ensure_binding()
         items: list[dict] = []
         cursor = None
-        while True:
+        for _ in range(MAX_QUERY_PAGES):
             body = {"page_size": 100, "filter": self.query_filter()}
             if cursor:
                 body["start_cursor"] = cursor
@@ -182,9 +194,17 @@ class NotionTaskBoardPullSource:
                 if page.get("archived") or page.get("in_trash"):
                     continue
                 items.append(self._item(page))
-            if not resp.get("has_more"):
+            nxt = resp.get("next_cursor")
+            # A truthy has_more with a missing or repeated cursor would
+            # re-issue the identical query forever. The loop bound is the
+            # outer backstop: the plan-level intake cap bounds the BOARD,
+            # never the fetch, so a runaway page drains the database first.
+            if not resp.get("has_more") or not nxt or nxt == cursor:
                 return items
-            cursor = resp.get("next_cursor")
+            cursor = nxt
+        print(f"  · note      {self.name}: stopped after {MAX_QUERY_PAGES} "
+              "query pages; check the source board's filter")
+        return items
 
     def _item(self, page: dict) -> dict:
         props = page.get("properties", {})
@@ -193,14 +213,18 @@ class NotionTaskBoardPullSource:
         notes = _plain((props.get(self.props["notes"], {}) or {})
                        .get("rich_text", []))
         pid = page["id"].replace("-", "")
+        # The link is BUILT from the page id, never taken from `page["url"]`:
+        # Notion slugifies the page title into that url, so a title of
+        # `ID 99999999` would smuggle a live board-id token past every defense
+        # here. The id-only form resolves the same page.
         body = "\n".join([
-            f"From Notion Task Board: {page.get('url', '')}",
+            f"From Notion Task Board: https://www.notion.so/{pid}",
             MARKER_PREFIX + pid,
             fence(title, notes),
         ])
         # The row's item cell is a short, defanged display title; the full
         # untrusted title lives inside the fence, never in trusted position.
-        display = _clip(" ".join(neutralize(title).split()), TITLE_CAP)
+        display = " ".join(safe(title, TITLE_CAP).split())
         return {"rid": page["id"], "title": display or UNTITLED,
                 "done": False, "body": body, "status": "queued",
                 "marker": pid}

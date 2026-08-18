@@ -197,12 +197,15 @@ cannot be what passes the test) contains no page or schema write, and every
 allowlist. Notion's data-source `query` is a POST that reads; naming the
 allowlist is what makes the claim checkable rather than asserted.
 
-**The adapter cannot see its siblings, so one guard lives in the engine.**
-`apps` is a list and nothing otherwise binds one database to one app. A
-consumer running `notion` (two-way, hub-wins) against the Task Board id would
-PATCH the very human-owned pages this app exists to leave alone, and trash them
-on a scope exit. The engine refuses a run where `notion_db` or
-`notion_taskboard_db` equals `notion_taskboard_pull_db`.
+**The adapter cannot see its siblings, so the remaining guards live in the
+engine**, all three before any source is built, so a refused run never reaches
+a transport or the board file:
+
+| Guard | Why the adapter cannot do it |
+|---|---|
+| a pull app runs alone | it cannot see the other apps in the run |
+| no write-capable app targets its database | it cannot see `notion_db` or `notion_taskboard_db`; the check fires whenever a pull database is configured, even on a run that lists no pull app, because `--apps notion` alone against that board is exactly the write being prevented; ids compare with dashes stripped |
+| a pull app takes no `--filter` | the pull path never consults `filt`, so accepting one would hand an operator a guard that silently does nothing |
 
 ### 4. The fence
 
@@ -308,8 +311,12 @@ inside the page URL.
    result, and an existing row is unchanged.
 7. `--dry-run` writes neither the board file nor any state file.
 8. A live run writes no state file for this app either.
-9. The engine refuses a run that lists the pull app beside another app, or that
-   points a write-capable app at the pull database.
+9. The engine refuses a run that lists the pull app beside another app, that
+   points a write-capable app at the pull database, or that aims a `--filter`
+   at the pull app.
+10. Neither the query nor the plan is unbounded: pagination stops on a missing
+    or repeated cursor and at a page ceiling, notes clip, and a run intakes at
+    most `INTAKE_CAP` rows.
 
 ## Test plan
 
@@ -344,10 +351,16 @@ Fake `ntn` transport, no network, no live writes.
 | 25 | planner refuses a markerless item | 3 | `ValueError` naming the marker |
 | 26 | bulk intake capped | 4 | at most `INTAKE_CAP` rows, with a note |
 | 27 | pull app refuses to share an invocation | 9 | `SystemExit` naming the other apps |
-| 28 | write-capable app on the pull database refused | 9 | `SystemExit` naming the clash |
-| 29 | missing required config | - | `SystemExit` naming `notion_taskboard_pull_db` |
-| 30 | untitled page | - | documented placeholder, never an empty row |
-| 31 | pipes and newlines in a title | - | the written row still parses as 4 cells |
+| 28 | write-capable app on the pull database refused | 9 | `SystemExit` naming the clash, including on a run with no pull app, and with either id form |
+| 29 | `--filter` aimed at the pull app refused | 9 | `SystemExit`; a filter for another app is untouched |
+| 30 | truncation cannot revive a defanged token | 4 | clip runs before neutralize, so `ID-9…9a` never becomes a live id |
+| 31 | the link is built from the page id | 4 | `page["url"]` carries a title slug, so it is never used raw |
+| 32 | hex defang is not word-bounded | 4 | `0x<page id>` cannot smuggle a live marker |
+| 33 | pagination stops on a stuck cursor | 10 | a truthy `has_more` with a missing or repeated cursor terminates |
+| 34 | missing required config | - | `SystemExit` naming `notion_taskboard_pull_db` |
+| 35 | data-source resolve response shapes | - | every branch of `_resolve_ds` returns the id |
+| 36 | untitled page | - | documented placeholder, never an empty row |
+| 37 | pipes and newlines in a title | - | the written row still parses as 4 cells |
 
 ## Validation
 
@@ -361,6 +374,13 @@ fixes are the reason this document differs from its draft.
 | concurrent writers and git conflicts | the intake/publish/relay ordering and its code-level guard; raw-text marker matching; trailer-gated reset; the single-runner requirement; board-id neutralization |
 | security, injection, write-back | the per-item nonce; the title moved inside the fence; the same-database refusal; tag and credential neutralization; size and count caps; the cold-binding allowlist test |
 | idempotency and duplication | the corrected hop-2 survival mechanism; AC 6 rescoped to the pull source; the marker-preservation note on human closes; tests driven through the engine rather than the planner |
+
+Two review lenses then attacked the BUILD, and their findings landed too:
+
+| Lens | Landed changes |
+|---|---|
+| security | clip before neutralize (truncation was reviving a defanged id token); the link built from the page id, since Notion slugifies the title into `page["url"]`; the hex defang unanchored, since the identity check is a substring test; the database guard made unconditional and dash-insensitive |
+| architecture and test coverage | the pagination termination condition and page ceiling; the `--filter` refusal; a real assertion in the forged-close test, which had carried a tautology; coverage for both database-clash branches and every `_resolve_ds` response shape |
 
 ## Verification
 

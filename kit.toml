@@ -124,7 +124,7 @@ pilot            = false        # [design] end-to-end UAT (held)
 # via kit-config.sh -- the engine itself never reads TOML.
 
 [sync]
-apps           = ""             # [impl] comma list of apps to sync to: reminders,notion,hermes,multica; empty = sync off. Legacy aliases: `surfaces`, `sources`
+apps           = ""             # [impl] comma list of apps to sync to: reminders,notion,hermes,multica,notion-taskboard (notion-taskboard-pull runs alone, never listed here); empty = sync off. Legacy aliases: `surfaces`, `sources`
 mode           = "manual"       # [impl] manual | cron; cron gates lib/sync/deploy/macos/install (kit ID-289)
 interval_secs  = 3600           # [impl] cron LaunchAgent StartInterval seconds; --interval-secs overrides at install
 reminders_list = "Backlog"      # [impl] Reminders list name

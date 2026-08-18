@@ -135,8 +135,14 @@ def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
     print(describe(plan, assigned))
 
 
-def check_pull_isolation(names: list, args) -> None:
-    """Two refusals that keep a read-only intake read-only (SPEC-004).
+def check_pull_isolation(names: list, args,
+                         filters: dict | None = None) -> None:
+    """Three refusals that keep a read-only intake read-only (SPEC-004).
+
+    FILTER: this app takes none. The source board's own `Agent Queue` checkbox
+    is the gate, and the pull path never consults `filt`, so accepting
+    `--filter notion-taskboard-pull:intake=none` would hand an operator a
+    guard that silently does nothing.
 
     ISOLATION: a pull app runs alone. Intake mints a board id, and a downstream
     spoke keys its own idempotency on that id, so an intake row must be
@@ -151,22 +157,30 @@ def check_pull_isolation(names: list, args) -> None:
     leave alone, and trash them on a scope exit. The guard is on the engine
     because the adapter cannot see its siblings.
     """
+    # The TARGET check runs whenever a pull database is configured, even on a
+    # run that lists no pull app: `--apps notion` alone against that database
+    # is exactly the write this guard exists to stop. Ids are compared with
+    # dashes stripped, since Notion accepts both forms for the same database.
+    target = (args.notion_taskboard_pull_db or "").replace("-", "")
+    if target:
+        clash = [k for k, v in
+                 (("notion_db", args.notion_db),
+                  ("notion_taskboard_db", args.notion_taskboard_db))
+                 if v and v.replace("-", "") == target]
+        if clash:
+            sys.exit(f"{', '.join(clash)} points at the same database as "
+                     "notion_taskboard_pull_db. That board is read-only by "
+                     "contract; never aim a write-capable app at it.")
+    filtered = sorted(set(filters or {}) & PULL_ONLY_APPS)
+    if filtered:
+        sys.exit(f"{filtered[0]}: this app takes no --filter; the source "
+                 "board's own Agent Queue checkbox is the gate.")
     pull = [n for n in names if n in PULL_ONLY_APPS]
-    if not pull:
-        return
     others = [n for n in names if n not in PULL_ONLY_APPS]
-    if others:
+    if pull and others:
         sys.exit(f"{pull[0]}: a pull app runs alone, but this invocation also "
                  f"lists {', '.join(others)}. Run intake first, publish the "
                  "board, then run the other apps (SPEC-004 design question 1).")
-    target = args.notion_taskboard_pull_db
-    clash = [k for k, v in (("notion_db", args.notion_db),
-                            ("notion_taskboard_db", args.notion_taskboard_db))
-             if target and v == target]
-    if clash:
-        sys.exit(f"{pull[0]}: {', '.join(clash)} points at the same database "
-                 "as notion_taskboard_pull_db. That board is read-only by "
-                 "contract; a write-capable app must never be aimed at it.")
 
 
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,
@@ -359,7 +373,7 @@ def main(argv=None):
     names = [s.strip() for s in args.apps.split(",") if s.strip()]
     # before any source is built, so a refused combination never touches a
     # transport or the board file
-    check_pull_isolation(names, args)
+    check_pull_isolation(names, args, filters)
 
     if not args.backlog.exists():
         sys.exit(f"no backlog at {args.backlog}; pass --backlog or run via "

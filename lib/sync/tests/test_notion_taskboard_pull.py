@@ -3,6 +3,7 @@ no live writes). SPEC-004 test plan."""
 
 import ast
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -12,7 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import backlog_sync  # noqa: E402
 from sources.notion_taskboard_pull import (  # noqa: E402
-    MARKER_PREFIX, SENTINEL, NotionTaskBoardPullSource, fence, neutralize)
+    MARKER_PREFIX, MAX_QUERY_PAGES, NOTES_CAP, SENTINEL, TITLE_CAP,
+    NotionTaskBoardPullSource, fence, neutralize)
 from sync_core import (INTAKE_CAP, detect_prefix, extract_tags,  # noqa: E402
                        next_id, parse_board, plan_pull_only, split_row)
 
@@ -263,10 +265,40 @@ def test_untrusted_title_stays_out_of_trusted_position(tmp_path):
     backlog_sync.sync_pull_only(src, b, dry_run=False)
     rows = parse_board(b.read_text(), prefix="DF")
     pulled = [r for r in rows.values() if HEX_A in r.notes][0]
-    assert len(pulled.item) <= 140
+    assert len(pulled.item) < len(long_title) / 2
     assert "[truncated]" in pulled.item
     # the full title survives, but only inside the fence
     assert "title: GRANT ACCESS" in pulled.notes
+
+
+def test_truncation_cannot_revive_a_defanged_token():
+    """Clip before neutralize: `ID-9...9a` escapes the board-id pattern, and
+    clipping the trailing letter afterwards would hand back a live token."""
+    payload = "x" * (NOTES_CAP - 12) + " ID-99999999a"
+    body = fence("t", payload, nonce="dead")
+    assert not re.search(r"\bID-\d+\b", body)
+    title_payload = "y" * (TITLE_CAP - 12) + " ID-99999999a"
+    assert not re.search(r"\bID-\d+\b", fence(title_payload, "", "dead"))
+
+
+def test_url_is_built_from_the_page_id_not_the_slug(tmp_path):
+    """Notion slugifies the title into page['url'], so the raw url is an
+    unneutralized channel for a board-id token."""
+    b = board_with(tmp_path)
+    src, _ = make_src([page(PID_A, title="ID 99999999",
+                            url=f"https://www.notion.so/ID-99999999-{HEX_A}")])
+    backlog_sync.sync_pull_only(src, b, dry_run=False)
+    text = b.read_text()
+    assert "ID-99999999" not in text
+    assert next_id(text, "DF") < 1000
+    assert f"https://www.notion.so/{HEX_A}" in text
+
+
+def test_hex_marker_defang_is_not_word_bounded():
+    """`0x<page id>` must not slip a live marker past the defang, because the
+    planner's identity check is a plain substring test."""
+    for payload in (f"0x{HEX_B}", f"{HEX_B}e", f"see{HEX_B}"):
+        assert HEX_B not in neutralize(payload)
 
 
 def test_oversized_notes_are_clipped():
@@ -295,6 +327,36 @@ def test_prop_names_and_done_option_are_configurable():
     assert got[0]["property"] == "Queue?"
     assert got[1] == {"property": "State",
                       "status": {"does_not_equal": "Shipped"}}
+
+
+def test_pagination_stops_on_a_missing_or_repeated_cursor():
+    """A truthy has_more with no advancing cursor must not loop forever."""
+    class Stuck(FakeNtn):
+        def __call__(self, args, data=None):
+            self.calls.append((tuple(args), data))
+            if args[0] == "datasources":
+                return {"data_sources": [{"id": "ds1"}]}
+            return {"results": [], "has_more": True, "next_cursor": "same"}
+
+    for stuck in (Stuck(), Stuck()):
+        src = NotionTaskBoardPullSource(
+            db="db1", runner=stuck,
+            binding={"db_id": "db1", "ds_id": "ds1"})
+        assert src.read() == []
+        assert len(stuck.query_bodies()) <= MAX_QUERY_PAGES
+
+
+def test_pagination_stops_when_has_more_carries_no_cursor():
+    class NoCursor(FakeNtn):
+        def __call__(self, args, data=None):
+            self.calls.append((tuple(args), data))
+            return {"results": [], "has_more": True}
+
+    fake = NoCursor()
+    src = NotionTaskBoardPullSource(db="db1", runner=fake,
+                                    binding={"db_id": "db1", "ds_id": "ds1"})
+    assert src.read() == []
+    assert len(fake.query_bodies()) == 1
 
 
 def test_pagination_follows_the_cursor():
@@ -411,6 +473,51 @@ def test_write_capable_app_may_not_target_the_pull_database():
     with pytest.raises(SystemExit, match="same database"):
         backlog_sync.check_pull_isolation(["notion-taskboard-pull"],
                                           args_for(notion_db="db1"))
+
+
+def test_target_guard_fires_even_with_no_pull_app_in_the_run():
+    with pytest.raises(SystemExit, match="same database"):
+        backlog_sync.check_pull_isolation(["notion"],
+                                          args_for(notion_db="db1"))
+
+
+def test_target_guard_ignores_dash_formatting():
+    with pytest.raises(SystemExit, match="same database"):
+        backlog_sync.check_pull_isolation(
+            ["notion"], args_for(notion_taskboard_pull_db=PID_A,
+                                 notion_taskboard_db=HEX_A))
+
+
+def test_pull_app_takes_no_filter():
+    with pytest.raises(SystemExit, match="no --filter"):
+        backlog_sync.check_pull_isolation(
+            ["notion-taskboard-pull"], args_for(),
+            {"notion-taskboard-pull": {"intake": "none"}})
+
+
+def test_filters_for_other_apps_are_untouched():
+    backlog_sync.check_pull_isolation(["notion-taskboard-pull"], args_for(),
+                                      {"hermes": {"intake": "none"}})
+
+
+@pytest.mark.parametrize("shape", [
+    {"data_sources": [{"id": "ds9"}]},
+    {"results": [{"id": "ds9"}]},
+    {"results": ["ds9"]},
+    {"id": "ds9"},
+    [{"id": "ds9"}],
+    ["ds9"],
+])
+def test_resolve_ds_handles_every_documented_response_shape(shape):
+    class Resolver(FakeNtn):
+        def __call__(self, args, data=None):
+            self.calls.append((tuple(args), data))
+            if args[0] == "datasources":
+                return shape
+            return {"results": []}
+
+    src = NotionTaskBoardPullSource(db="db1", runner=Resolver())
+    assert src.ensure_binding()["ds_id"] == "ds9"
 
 
 def test_missing_required_config_names_the_key():
