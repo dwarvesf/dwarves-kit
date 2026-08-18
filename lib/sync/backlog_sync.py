@@ -356,13 +356,14 @@ def main(argv=None):
         else:
             sys.exit(f"bad --filter key {key!r} (only_tags|skip_tags|intake)")
 
-    check_pull_isolation([s.strip() for s in args.apps.split(",") if s.strip()],
-                         args)
+    names = [s.strip() for s in args.apps.split(",") if s.strip()]
+    # before any source is built, so a refused combination never touches a
+    # transport or the board file
+    check_pull_isolation(names, args)
 
     if not args.backlog.exists():
         sys.exit(f"no backlog at {args.backlog}; pass --backlog or run via "
                  "`board sync` from an adopted repo")
-    names = [s.strip() for s in args.apps.split(",") if s.strip()]
 
     state_dir = board_state_dir(args.state_root, args.backlog)
     # single-writer lock: overlapping runs would hand out colliding IDs and

@@ -194,6 +194,8 @@ is a phase 2 operator step.
 | When | Command | Exit | Verdict |
 |---|---|---|---|
 | 2026-08-18 | `bash tests/test-sync.sh` | 0 | 209 passed (175 pre-change + 34 new pull cases; every pre-existing suite unchanged, so the pull path has zero blast radius on the two-way mesh or the create-only push) |
+| 2026-08-18 | PRIMARY FLOW e2e: `bin/board sync --backlog-file <tmp> --apps notion-taskboard-pull` against a stub `ntn` on PATH (real subprocess, temp git repo + `.kit.toml`) | 0 | one page became `DF-2` under `### Reminders inbox`, carrying `notion-page:2d364b29…`, a nonce-delimited fence, `#urgent` defanged to `# urgent` and `DF-4200` to `[defanged]`. Re-run: `0 to intake`, `(nothing to do)`, file unchanged. The stub exits 9 on any call outside the read set and was never triggered. No `notion-taskboard-pull.state.json` exists afterward |
+| 2026-08-18 | `backlog_sync.py --apps notion-taskboard-pull,hermes` | 1 | isolation guard refuses before any transport or board access, naming the offending app and the ordering rule |
 | 2026-08-18 | `bash tests/test-board.sh` | 0 | 45/45; `cmd_sync`'s new config keys do not disturb the board verb surface |
 | 2026-08-18 | `bash tests/test-config-registry.sh` | 0 | 19/19; the three new `[sync]` keys resolve and are registered |
 | 2026-08-18 | `bash tests/test-hooks.sh` | 0 | 492/492 |
