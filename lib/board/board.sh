@@ -905,6 +905,15 @@ cmd_sync() {
   [ -n "$v" ] && args+=(--notion-taskboard-props "$v")
   v="$(kit_config_get sync.notion_taskboard_types "")"
   [ -n "$v" ] && args+=(--notion-taskboard-types "$v")
+  # notion-taskboard-pull: read-only intake FROM the same foreign team board
+  # (SPEC-004). No filter keys: the source board's own Agent Queue checkbox is
+  # the gate, and a second gate has no user.
+  v="$(kit_config_get sync.notion_taskboard_pull_db "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-pull-db "$v")
+  v="$(kit_config_get sync.notion_taskboard_pull_props "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-pull-props "$v")
+  v="$(kit_config_get sync.notion_taskboard_pull_done_option "")"
+  [ -n "$v" ] && args+=(--notion-taskboard-pull-done-option "$v")
   v="$(kit_config_get sync.github_repo "")";     [ -n "$v" ] && args+=(--github-repo "$v")
   v="$(kit_config_get sync.hermes_target "")";   [ -n "$v" ] && args+=(--hermes-target "$v")
   v="$(kit_config_get sync.hermes_home "")";     [ -n "$v" ] && args+=(--hermes-home "$v")

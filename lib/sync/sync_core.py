@@ -367,6 +367,49 @@ def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
     return p
 
 
+INTAKE_CAP = 25  # rows one pull run may add; a bulk tick is a mistake, not work
+
+
+def plan_pull_only(text: str, items: list, cap: int = INTAKE_CAP) -> Plan:
+    """One-way, insert-only INTAKE plan for a read-only source (SPEC-004).
+
+    Emits one `board_add` per source item whose identity marker is not already
+    present in the board, and nothing else: no `src_*` action (the source is
+    never written), no status flow, no tombstone. Identity therefore lives in
+    the committed board text rather than a cache, which is what makes a run a
+    pure function of (board, source) and safe to recompute after a lost git
+    race.
+
+    The marker is matched against the RAW board text, not against parsed rows.
+    Parsing is prefix-scoped (`detect_prefix` keeps only the majority prefix)
+    and drops malformed rows, so a parsed lookup would lose a marker whenever
+    the board's majority prefix flipped or a human broke a row, and every page
+    behind those rows would re-intake. The raw text has neither failure mode.
+    The marker is an opaque string the item carries, so this stays
+    source-agnostic. A row that has moved to a closed section still counts as
+    present, which is the point: a shipped intake row must never re-intake.
+    """
+    p = Plan()
+    for it in items:
+        marker = it.get("marker")
+        if not marker:
+            raise ValueError(f"pull source item {it.get('rid')!r} has no "
+                             "marker; identity would not survive a re-run")
+        if marker in text:
+            continue
+        p.board_add.append((it["rid"], it["title"].strip(),
+                            (it.get("body") or "").strip(), "queued"))
+    if len(p.board_add) > cap:
+        # Each intake row becomes an agent task downstream, so a sudden bulk
+        # tick (a bad filter, a bulk edit on the source board) is a blast
+        # radius, not a backlog. Take the cap and say so; the rest arrive next
+        # run once someone has looked.
+        p.notes.append(f"intake capped at {cap} rows this run "
+                       f"({len(p.board_add)} pending); check the source board")
+        p.board_add = p.board_add[:cap]
+    return p
+
+
 # --- board apply -------------------------------------------------------------
 
 

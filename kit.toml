@@ -147,6 +147,11 @@ multica_only_tags   = ""        # [impl]
 multica_skip_tags   = ""        # [impl]
 multica_intake      = ""        # [impl] default all
 hermes_home    = ""             # [impl] HERMES_HOME of the kanban store to sync
+# Read-only intake FROM a foreign team board (SPEC-004). Runs alone: never list
+# it in `apps` beside another app, the engine refuses that invocation.
+notion_taskboard_pull_db          = ""  # [impl] source Notion database id
+notion_taskboard_pull_props       = ""  # [impl] JSON prop-name overrides {title,status,notes,queue}
+notion_taskboard_pull_done_option = ""  # [impl] Status option never pulled; default Done
 
 [observe]                       # the bench/observability plane (lib/bench)
 # Scope of the exported fleet payload. Empty = PERSONAL (everything on this
