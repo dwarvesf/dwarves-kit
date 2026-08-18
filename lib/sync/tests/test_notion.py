@@ -184,6 +184,19 @@ def test_rich_never_empty_and_json_safe():
     json.dumps(_rich("a" * 5000))
 
 
+def test_rich_chunks_by_utf16_units_not_codepoints():
+    # 1999 ASCII + one astral char = 2000 codepoints but 2001 UTF-16 units;
+    # a len()-based chunk ships it whole and Notion 400s the request.
+    text = "a" * 1999 + "\U0001F4CA"
+    chunks = _rich(text)
+    utf16 = [sum(2 if ord(c) > 0xFFFF else 1 for c in ch["text"]["content"])
+             for ch in chunks]
+    assert all(u <= 2000 for u in utf16)
+    assert "".join(ch["text"]["content"] for ch in chunks) == text
+    # plain ASCII still packs a full 2000 per chunk
+    assert _rich("a" * 2000)[0]["text"]["content"] == "a" * 2000
+
+
 def test_unbound_without_flags_exits_with_guidance():
     src = NotionSource(runner=FakeNtn())
     with pytest.raises(SystemExit, match="notion-db"):

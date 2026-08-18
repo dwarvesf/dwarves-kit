@@ -19,7 +19,7 @@ import subprocess
 
 from sync_core import extract_tags, strip_tags
 
-RICH_LIMIT = 2000  # Notion rich_text element content cap
+RICH_LIMIT = 2000  # Notion rich_text element content cap, in UTF-16 code units
 
 
 def _run_ntn(args: list, data: dict | None = None):
@@ -37,7 +37,19 @@ def _run_ntn(args: list, data: dict | None = None):
 
 
 def _rich(text: str) -> list:
-    chunks = [text[i:i + RICH_LIMIT] for i in range(0, len(text), RICH_LIMIT)]
+    # Notion measures the cap in UTF-16 code units, not codepoints: an astral
+    # char (emoji) counts as 2, so len()-based 2000-char slices can weigh 2001
+    # and 400 the whole request (validation_error, board-sync rc=1 every run).
+    chunks, buf, units = [], [], 0
+    for ch in text:
+        u = 2 if ord(ch) > 0xFFFF else 1
+        if units + u > RICH_LIMIT:
+            chunks.append("".join(buf))
+            buf, units = [], 0
+        buf.append(ch)
+        units += u
+    if buf:
+        chunks.append("".join(buf))
     return [{"type": "text", "text": {"content": c}} for c in chunks[:100]] \
         or [{"type": "text", "text": {"content": ""}}]
 
