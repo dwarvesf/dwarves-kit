@@ -341,19 +341,36 @@ KIT_REQUESTED_MODULES="$(echo "$KIT_REQUESTED_MODULES" | xargs)"
 # "don't run both paths" hazard the README warns about.
 #
 # So on a plugin machine we do a COMPAT-ONLY install: symlink the legacy
-# ~/.claude/dwarves-kit paths (lib, WORKFLOW.md, AGENTS.md) that docs still call
-# as plain bash (`bash ~/.claude/dwarves-kit/lib/<x>.sh`, where CLAUDE_PLUGIN_ROOT
-# is not set). No settings.json hooks, no flat commands. The symlinks track this
-# checkout (KIT_DIR), which is also the marketplace source, so a `git pull`
-# updates them. Force the full bash install with KIT_FORCE_FULL=1.
+# ~/.claude/dwarves-kit paths (lib, hooks, WORKFLOW.md, AGENTS.md) that docs still
+# call as plain bash (`bash ~/.claude/dwarves-kit/lib/<x>.sh`, where
+# CLAUDE_PLUGIN_ROOT is not set). No settings.json hooks, no flat commands. The
+# symlinks track this checkout (KIT_DIR), which is also the marketplace source,
+# so a `git pull` updates them. Force the full bash install with KIT_FORCE_FULL=1.
+#
+# kit_symlink_hardened <target> <linkname> -- `ln -sfn` silently no-ops on macOS
+# when LINKNAME already exists as a REAL (non-symlink) directory: -n only guards
+# against LINKNAME being a symlink-to-dir, so ln instead treats LINKNAME as a
+# directory and links TARGET's basename INSIDE it, leaving LINKNAME itself
+# unchanged (observed: a stale real ~/.claude/dwarves-kit/hooks/ dir that never
+# auto-updated). Move a real non-empty dir aside first, loudly, before linking.
+kit_symlink_hardened() {
+  local target="$1" linkname="$2"
+  if [ -e "$linkname" ] && [ ! -L "$linkname" ] && [ -d "$linkname" ] && [ -n "$(ls -A "$linkname" 2>/dev/null)" ]; then
+    local bak="${linkname}.pre-symlink.bak.$(date +%Y%m%d-%H%M%S)"
+    echo "[warn] $linkname is a real non-empty directory (ln -sfn would silently no-op); moving it to $bak"
+    mv "$linkname" "$bak"
+  fi
+  mkdir -p "$(dirname "$linkname")"
+  ln -sfn "$target" "$linkname"
+}
 PLUGIN_LIB="$(ls -d "$CLAUDE_DIR"/plugins/cache/dwarves-marketplace/kit/*/lib 2>/dev/null | sort -V | tail -1 || true)"
 if [ -n "${PLUGIN_LIB:-}" ] && [ -z "${KIT_FORCE_FULL:-}" ]; then
   echo "[plugin detected] kit@dwarves-marketplace is installed; runtime comes from the plugin."
   echo "Doing a COMPAT-ONLY install (legacy path shims), not the full bash install,"
   echo "to avoid double-registering hooks."
   mkdir -p "$CLAUDE_DIR/dwarves-kit/docs"
-  for f in bin lib WORKFLOW.md AGENTS.md docs/WORKFLOW.md docs/impl-playbook; do
-    ln -sfn "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
+  for f in bin lib hooks WORKFLOW.md AGENTS.md docs/WORKFLOW.md docs/impl-playbook; do
+    kit_symlink_hardened "$KIT_DIR/$f" "$CLAUDE_DIR/dwarves-kit/$f"
     echo "[ok] compat symlink ~/.claude/dwarves-kit/$f -> $KIT_DIR/$f"
   done
   # CLI shims too: a plugin/compat machine is a dev machine, so expose every
