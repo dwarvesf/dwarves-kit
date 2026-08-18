@@ -3,6 +3,7 @@
 All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
+- agents: new devops-triage subagent, on-demand production error-alert triage (evidence-first, read-only, bounded verdict); ambient twin lives in ops-toolkit tools/alert-triage/
 
 ### Fixed
 - **Queue launcher pre-flights the `/goal` 4000-char cap.** Interactive `/goal` refuses
