@@ -3002,10 +3002,12 @@ bash "$KIT_DIR/lib/registry/feature-registry.sh" generate "$REG_TMP2" 2>/dev/nul
 cmp -s "$REG_TMP" "$REG_TMP2"
 assert_true "feature-registry generator is deterministic (double run byte-identical, SPEC-219)" $?
 # Skill-dispatcher derivation pin: an agent dispatched only by skills must not
-# show `-`; audit-scanner is dispatched by the doc-drift + topology-drift skills.
+# show `-`; audit-scanner is dispatched by the doc-drift + topology-drift + ci-drift skills
+# (cap_list caps the shown names at 3 alphabetically then "+N" for the rest, so a fourth
+# dispatcher pushes the last name into the overflow count rather than dropping it silently).
 ASROW=$(grep -E '^\| `audit-scanner` ' "$KIT_DIR/docs/FEATURES.md")
-RC=0; { echo "$ASROW" | grep -q 'doc-drift (skill)' && echo "$ASROW" | grep -q 'topology-drift (skill)'; } || RC=1
-assert_eq "audit-scanner dispatched-by names both skill dispatchers (doc-drift + topology-drift)" 0 $RC
+RC=0; { echo "$ASROW" | grep -q 'doc-drift (skill)' && echo "$ASROW" | grep -q 'ci-drift (skill)' && echo "$ASROW" | grep -qE '\+[0-9]+ *\|'; } || RC=1
+assert_eq "audit-scanner dispatched-by names doc-drift + ci-drift, overflow count covers the rest" 0 $RC
 rm -f "$REG_TMP" "$REG_TMP2"
 
 # ============================================================
