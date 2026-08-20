@@ -99,6 +99,15 @@ This is documented here and enforced by the SAME ship-time proof-gate every
 stateful diff already passes through (`hooks/ship-gate.sh` ->
 `lib/gate/proof-ledger.sh check`) -- no new gate is invented for the terminus.
 
+**Check the target's deploy-branch policy before writing a branch-dispatch `Done =`.**
+Before tagging a sub-goal `gate` with a "prove from the branch" `Done =`, check the target
+repo's production environment (`gh api repos/<r>/environments/production --jq
+.deployment_branch_policy` and its branch policies). If only the default branch may deploy, a
+branch dispatch is rejected before any step runs, so the gate must be written as
+merge-then-prove instead, with the old path left in the tree as the revert; the re-run guard of
+a content pipeline may also count the rejected dispatch as a failed previous run. Field record:
+retire-apps SG-02/SG-04, 2026-08-20.
+
 ### Step 2: Front-load every clarification, ONCE (mirrors the skill's single checkpoint)
 
 Before writing anything, batch **every** open question across **every** sub-goal
