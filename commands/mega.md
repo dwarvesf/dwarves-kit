@@ -78,6 +78,14 @@ task outside the mega-goal entirely (`lib/classify/lane-classify.sh classify` wi
 `tiny` on its own merits). Reserve dedicated sub-goals for work substantial enough to
 need its own PR, proof, and merge gate.
 
+**A port-then-delete chain owes a re-diff (mirrors the skill's decompose rule).** When one
+sub-goal PORTS code out of a location and a later sub-goal DELETES that source, the deleting
+sub-goal's `Done =` MUST include: "every ported file re-diffed against the source's FINAL state
+(`git diff <port-base> <head> -- <source-dir>` is empty, or the delta re-applied)". The port
+branch froze the source at the moment it was cut; anything that landed in the source afterwards
+is invisible to the port and dies with the delete. Field case: two fixes merged into the source
+between the port branch and the delete, and both were lost until a post-close audit found them.
+
 **Deployable terminus (mirrors the skill's "definition of done extends past
 built").** Once real diffs exist, check `lib/gate/proof-ledger.sh deployable <root>
 <base>` (SG-07's classifier, reused verbatim, never a second one). When it prints
@@ -253,6 +261,12 @@ mark):
 gh pr create --draft ...                      # open held: draft is the GitHub-intrinsic block
 bash lib/goal/mega-merge.sh mark <pr> [repo]        # ensure the do-not-merge label + draft + add label (idempotent)
 ```
+
+`lib/queue/orchestrate.sh` enforces this half of the contract directly: a `gate` / `gate!` sub-goal
+is DISPATCHED like an `auto` one, its prompt carries the held-PR instruction above, and the loop
+holds AFTER the session, grounded on the PR existing (a gate sub-goal never flips its own box, so a
+missing PR is the same no-self-claim halt an unflipped box gets). `MEGA_GATE_DISPATCH=0` restores
+the older stop-before-running posture.
 
 `mega-merge.sh mark` ensures the `do-not-merge` label exists (so `--label` never fails),
 converts the PR to a draft, and adds the label -- exactly the state `_merge_exclusion`
