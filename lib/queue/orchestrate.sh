@@ -27,8 +27,14 @@
 # <megagoal-dir> holds: ROADMAP.md (sub-goal lines `- [ ] SG-NN ... , auto|gate , ...`),
 # POINTER_PROMPT.md (static resume prompt), HANDOFF.md (feed-forward, written by each sub-goal).
 # Grounded completion: a sub-goal session MUST flip its ROADMAP checkbox to [x]; the
-# orchestrator advances only then (no self-claim). It STOPS at the first `gate` sub-goal
-# (shared-repo review needs a human).
+# orchestrator advances only then (no self-claim). When the local box is unchecked it reconciles
+# against `origin/<default>` first, so a box flipped inside a now-merged PR still counts (a remote
+# box counts only when its line also carries a real `PR #<n>`).
+#
+# Gate sub-goals (env MEGA_GATE_DISPATCH=1 default): a `gate` / `gate!` sub-goal is DISPATCHED like
+# an `auto` one, its prompt carries the held-PR contract (open the PR as a DRAFT, `mega-merge.sh
+# mark` it, never merge it, never flip the box), and the loop HOLDS afterwards for the human merge,
+# grounded on the PR existing. MEGA_GATE_DISPATCH=0 restores the old stop-before-running behavior.
 #
 # TIER-4 mega-close (SPEC-118/ID-093, env TIER4_CLOSE=1 default): when EVERY box is checked, the run
 # does a real mega-level close over the ASSEMBLED WAVE -- a mechanical no-orphan sweep (a dispatchable
@@ -215,6 +221,20 @@ PANE_VIEWER_ALLOWED="auto cmux kitty wezterm ghostty iterm terminal none"
 # else on (1).
 TIER4_CLOSE="${TIER4_CLOSE:-$(_kit_bool01 "$(kit_config_get mega.tier4_close)" 1)}"
 
+# Gate-sub-goal DISPATCH (default 1). The documented contract (commands/mega.md Step 5, the
+# plan-for-mega-goal skill) is that a `gate` sub-goal's worker DOES the work, opens its PR as a
+# DRAFT, marks it via `mega-merge.sh mark`, and the loop then stops for a HUMAN MERGE. The driver
+# used to stop BEFORE running it ("open/await its PR for review"), so a gate sub-goal was never
+# dispatched and its work never happened -- the loop asked a human to review a PR nobody had
+# opened. With this on, a `gate`/`gate!` sub-goal is dispatched exactly like an `auto` one, its
+# prompt carries the held-PR contract, and the hold happens AFTER the session, keyed on the PR
+# existing. MEGA_GATE_DISPATCH=0 restores the old stop-before-running behavior.
+MEGA_GATE_DISPATCH="${MEGA_GATE_DISPATCH:-1}"
+
+# `gh` seam for the gate hold's PR lookup, mirroring CLAUDE_CMD's mock seam so tests need no
+# network and no GitHub auth.
+GH_CMD="${GH_CMD:-gh}"
+
 _say() { printf '%s\n' "$*"; }
 
 # Portable file mtime (epoch secs). GNU `stat -c` FIRST: it errors cleanly on BSD/macOS, so the
@@ -325,6 +345,73 @@ _ready_set() {
     line=$(_sg_line "$roadmap" "$id")
     [ -z "$(_sg_deps_blocked "$roadmap" "$line")" ] && printf '%s\t%s\n' "$id" "$policy"
   done < <(_subgoals "$roadmap")
+}
+
+# ---- Merged-PR box reconciliation + gate-hold PR lookup ---------------------------------------
+# The repo's default branch, from `origin/HEAD` when the remote HEAD ref is present, else whichever
+# of main/master the remote actually carries. Empty when neither resolves (no remote, bare checkout).
+_default_branch() {  # repo
+  local repo="$1" d
+  d=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)
+  [ -n "$d" ] && { printf '%s' "${d#origin/}"; return 0; }
+  for d in main master; do
+    git -C "$repo" show-ref --verify --quiet "refs/remotes/origin/$d" && { printf '%s' "$d"; return 0; }
+  done
+}
+
+# A view of ROADMAP.md that reflects `origin/<default>`, for the grounded-completion box check.
+# A sub-goal worker commonly flips its own box INSIDE its PR; once that PR merges, the box is
+# checked on the remote while this driver's local checkout is still behind, and the box check below
+# called a healthy session a liar (observed on a real 5-sub-goal run). Prints the path to READ:
+#   * the LOCAL roadmap, after a `git fetch` + `--ff-only` merge, when the megagoal sits in a repo
+#     whose checkout is ON the default branch with a CLEAN tree (never force-pull a dirty tree);
+#   * a TEMP copy read out of `origin/<default>` when the tree is dirty (check only, no mutation);
+#   * nothing at all when there is no repo / no remote / the checkout is on a feature branch.
+# The caller deletes a temp path; a returned path equal to $roadmap is the live file. STDOUT carries
+# the path and NOTHING else (the caller reads it through a command substitution), so the two log
+# lines below go to stderr.
+_roadmap_remote_view() {  # dir roadmap
+  local dir="$1" roadmap="$2" repo branch def rel tmp
+  repo=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || return 0
+  [ -n "$repo" ] || return 0
+  def=$(_default_branch "$repo"); [ -n "$def" ] || return 0
+  branch=$(git -C "$repo" rev-parse --abbrev-ref HEAD 2>/dev/null)
+  [ "$branch" = "$def" ] || return 0
+  git -C "$repo" fetch --quiet origin "$def" 2>/dev/null || return 0
+  # Repo-relative path of the ROADMAP, derived by prefix-stripping PHYSICAL paths rather than by
+  # `git ls-files <abspath>`: on macOS the megadir often arrives via the /var -> /private/var symlink,
+  # which git rejects as "outside repository" even though it is not.
+  rel=$(cd "$(dirname "$roadmap")" 2>/dev/null && pwd -P)/$(basename "$roadmap")
+  rel="${rel#"$repo"/}"
+  case "$rel" in /*) return 0 ;; esac   # not under the repo root: nothing to reconcile against
+  # Untracked files are EXCLUDED from the dirty test: the driver itself writes BOARD.md and
+  # .orchestrate/ into the megagoal dir, so `--porcelain` alone would call every run dirty and the
+  # fast-forward would never happen. `merge --ff-only` still refuses on its own if the fast-forward
+  # would clobber an untracked file, and the `git show` path below catches that refusal.
+  if [ -z "$(git -C "$repo" status --porcelain --untracked-files=no 2>/dev/null)" ] \
+     && git -C "$repo" merge --ff-only "origin/$def" >/dev/null 2>&1; then
+    echo "[orchestrate] [reconcile] fast-forwarded $def to origin/$def before the box check." >&2
+    printf '%s' "$roadmap"; return 0
+  fi
+  tmp=$(mktemp) || return 0
+  if git -C "$repo" show "origin/$def:$rel" > "$tmp" 2>/dev/null; then
+    echo "[orchestrate] [reconcile] tree not fast-forwardable; reading ROADMAP.md from origin/$def for the box check only." >&2
+    printf '%s' "$tmp"; return 0
+  fi
+  rm -f "$tmp"
+}
+
+# The PR URL for a sub-goal's declared branch, or empty. This is how a GATE sub-goal's completion is
+# grounded: it must NOT flip its own box (a human merges its PR), so the evidence that its session
+# actually finished is that a PR exists. Mockable via GH_CMD; any failure (no gh, no auth, no PR)
+# yields empty, which the caller treats exactly like an unflipped box.
+_sg_pr_url() {  # dir id
+  local dir="$1" id="$2" branch url
+  branch=$(_sg_branch "$(_goalfile "$dir" "$id")" "$id")
+  [ -n "$branch" ] || return 0
+  # shellcheck disable=SC2086 # GH_CMD is operator config; word-splitting is intended (mirrors CLAUDE_FLAGS).
+  url=$($GH_CMD pr view "$branch" --json url -q .url 2>/dev/null | head -1)
+  case "$url" in http*) printf '%s' "$url" ;; esac
 }
 
 # ---- SG-10 board-view / event-sourced status -----------------------------------------------
@@ -714,9 +801,19 @@ _emit_start() {  # dir id
 }
 
 _build_prompt() {
-  local dir="$1" id="$2"
+  local dir="$1" id="$2" gate_policy="${3:-}"
   cat "$dir/POINTER_PROMPT.md" 2>/dev/null
   printf '\n\nNEXT SUB-GOAL: %s\n' "$id"
+  # Held-PR contract for a `gate` / `gate!` sub-goal (MEGA_GATE_DISPATCH). The worker does the work
+  # like any other sub-goal; what differs is the ending. Absent third arg -> nothing is printed and
+  # an `auto` sub-goal's prompt stays byte-identical.
+  if [ -n "$gate_policy" ]; then
+    printf '\nHELD SUB-GOAL (%s): this sub-goal ends at a HUMAN MERGE, not at a merge you perform.\n' "$gate_policy"
+    printf -- '- Do the work and verify it exactly as any other sub-goal.\n'
+    printf -- '- Open the PR as a DRAFT (`gh pr create --draft ...`), then run `bash lib/goal/mega-merge.sh mark <pr>` so the do-not-merge label and the draft state are both set.\n'
+    printf -- '- Do NOT merge the PR. Do NOT flip this sub-goal ROADMAP box. A human merges, and the merge is what checks the box.\n'
+    printf -- '- The orchestrator grounds your completion on the PR EXISTING, so the PR is the deliverable.\n'
+  fi
   # Inject the goal file's CONTENT (not just a path), so the session has the contract and
   # re-discovery is actually eliminated (SPEC-087 "Session invocation").
   local gf; gf=$(_goalfile "$dir" "$id")
@@ -1955,7 +2052,7 @@ _tier4_close() {  # dir roadmap
 # -----------------------------------------------------------------------------------------------
 
 cmd_run() {
-  local dir="" dry=0 step=0 stream=0 board_arg=""
+  local dir="" dry=0 step=0 stream=0 board_arg="" forced_pick=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --dry-run)  dry=1 ;;
@@ -2008,9 +2105,17 @@ cmd_run() {
     local any=0
     while IFS=$'\t' read -r sg ppolicy; do
       any=1
-      local rmodel reffort
+      local rmodel reffort plabel="$ppolicy"
       IFS=$'\t' read -r rmodel reffort < <(_route "$(_goalfile "$dir" "$sg")")
-      _say "  -> $sg ($ppolicy)  [model: ${rmodel:-inherit}, effort: ${reffort:-inherit}]  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
+      # Under MEGA_GATE_DISPATCH a gate sub-goal is RUN and only then held, so the plan must not
+      # read as "skipped": name the dispatch and the hold in the same breath.
+      if [ "$MEGA_GATE_DISPATCH" = 1 ]; then
+        case "$ppolicy" in
+          gate)    plabel="gate, dispatch then hold for human merge" ;;
+          'gate!') plabel="gate!, dispatch then halt the whole loop for human merge" ;;
+        esac
+      fi
+      _say "  -> $sg ($plabel)  [model: ${rmodel:-inherit}, effort: ${reffort:-inherit}]  [prompt: POINTER_PROMPT + goal-file + $([ -s "$dir/HANDOFF.md" ] && echo HANDOFF || echo no-handoff)]"
       [ "$ppolicy" = "gate!" ] && { _say "  == STOP at $sg (gate!: global halt for human review) =="; break; }
       [ "$ppolicy" = gate ] && { _say "  == STOP at $sg (gate: human review) =="; break; }
       [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
@@ -2051,11 +2156,24 @@ cmd_run() {
       local gbang
       gbang=$(_ready_set "$roadmap" | awk -F'\t' '$2=="gate!"{print $1; exit}')
       if [ -n "$gbang" ]; then
-        _emit_event "$dir" "$gbang" blocked "gate!: global halt for human review"
-        [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
-        _say "[orchestrate] STOP (gate!): global halt for human review; $gbang is a gate! sub-goal. Resolve, then re-run."
-        return 0
+        if [ "$MEGA_GATE_DISPATCH" = 1 ]; then
+          # A gate! sub-goal is DISPATCHED (it does the work and opens the held PR) and only THEN
+          # halts the loop. Force it as this cycle's serial pick so the wave still quiesces around
+          # it -- nothing else is admitted alongside it, exactly as before; the only change is that
+          # the gate! sub-goal's own work now happens instead of being skipped.
+          forced_pick="$gbang"
+        else
+          _emit_event "$dir" "$gbang" blocked "gate!: global halt for human review"
+          [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+          _say "[orchestrate] STOP (gate!): global halt for human review; $gbang is a gate! sub-goal. Resolve, then re-run."
+          return 0
+        fi
       fi
+    fi
+
+    # Wave admission. Skipped when a gate! sub-goal was forced as this cycle's pick above: the wave
+    # quiesces around it, so nothing may be admitted alongside it.
+    if [ "$WAVE_CAP" -ge 2 ] && [ -z "$forced_pick" ]; then
       local admitted_n
       admitted_n=$(_wave_gate "$dir" "$roadmap" | awk -F'\t' '$1=="run"{n++} END{print n+0}')
       if [ "$admitted_n" -ge 2 ]; then
@@ -2115,7 +2233,12 @@ cmd_run() {
     fi
 
     local nx id policy
-    nx=$(_next "$roadmap")
+    if [ -n "$forced_pick" ]; then
+      nx=$(_subgoals "$roadmap" | awk -F'\t' -v i="$forced_pick" '$1==i && $3==0 {print $1"\t"$2}')
+      forced_pick=""
+    else
+      nx=$(_next "$roadmap")
+    fi
     if [ -z "$nx" ]; then
       # All boxes checked. TIER-4 mega-close (SPEC-118) replaces the bare "done"-and-return: verify
       # the assembled wave (no-orphan sweep + integration-verifier + review-team + advisor) THEN HOLD
@@ -2130,23 +2253,30 @@ cmd_run() {
     # exactly (blocked event + message + return 0). Checked BEFORE plain `gate` since they are
     # distinct policy values. On WAVE_CAP=1 this is the ONLY gate! stop (the wave-block twin above
     # is skipped), and it is also the catch-all when the wave path falls through to `_next`.
-    if [ "$policy" = "gate!" ]; then
-      _emit_event "$dir" "$id" blocked "gate!: global halt for human review"
-      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
-      _say "[orchestrate] STOP (gate!): global halt for human review; $id is a gate! sub-goal. Resolve, then re-run."
-      return 0
-    fi
-
-    if [ "$policy" = gate ]; then
-      _emit_event "$dir" "$id" blocked "gate: human review"
-      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
-      _say "[orchestrate] STOP: $id is a gate sub-goal; open/await its PR for review, then re-run."
-      # Advisory (ID-090 default flip): under the concurrent default (WAVE_CAP>=2) a `gate` holds only
-      # its OWN dependent chain , independent branches with disjoint `## Touches` keep running in the
-      # wave. If you meant "quiesce EVERYTHING for review", use `gate!` (global stop-all) instead. (On
-      # a Touches-less mega-goal there is no concurrency, so this `gate` still stopped the whole loop.)
-      [ "$WAVE_CAP" -ge 2 ] && echo "[orchestrate] [advisory] '$id' is a chain-stop \`gate\`; under WAVE_CAP=$WAVE_CAP independent Touches-disjoint branches keep running. Use \`gate!\` for a global stop-all." >&2
-      return 0
+    # A gate / gate! sub-goal is DISPATCHED like an auto one and HELD afterwards (MEGA_GATE_DISPATCH,
+    # the default): its worker does the work, opens a DRAFT PR, marks it, and does NOT flip its box.
+    # `gate_hold` carries the policy through the shared dispatch body below to the post-session hold.
+    # MEGA_GATE_DISPATCH=0 restores the old stop-BEFORE-running behavior verbatim.
+    local gate_hold=""
+    if [ "$policy" = "gate!" ] || [ "$policy" = gate ]; then
+      if [ "$MEGA_GATE_DISPATCH" = 1 ]; then
+        gate_hold="$policy"
+      elif [ "$policy" = "gate!" ]; then
+        _emit_event "$dir" "$id" blocked "gate!: global halt for human review"
+        [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+        _say "[orchestrate] STOP (gate!): global halt for human review; $id is a gate! sub-goal. Resolve, then re-run."
+        return 0
+      else
+        _emit_event "$dir" "$id" blocked "gate: human review"
+        [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+        _say "[orchestrate] STOP: $id is a gate sub-goal; open/await its PR for review, then re-run."
+        # Advisory (ID-090 default flip): under the concurrent default (WAVE_CAP>=2) a `gate` holds only
+        # its OWN dependent chain , independent branches with disjoint `## Touches` keep running in the
+        # wave. If you meant "quiesce EVERYTHING for review", use `gate!` (global stop-all) instead. (On
+        # a Touches-less mega-goal there is no concurrency, so this `gate` still stopped the whole loop.)
+        [ "$WAVE_CAP" -ge 2 ] && echo "[orchestrate] [advisory] '$id' is a chain-stop \`gate\`; under WAVE_CAP=$WAVE_CAP independent Touches-disjoint branches keep running. Use \`gate!\` for a global stop-all." >&2
+        return 0
+      fi
     fi
 
     # Per-sub-goal model/effort routing (SPEC-087): read the goal file's hints and pass them as
@@ -2196,7 +2326,7 @@ cmd_run() {
     # below covers the happy path; this trap covers an interrupt. Cheap to reset every cycle (only
     # EXIT trap this script sets on the serial path).
     trap 'rm -f "$pfile"' EXIT
-    _build_prompt "$dir" "$id" > "$pfile"
+    _build_prompt "$dir" "$id" "$gate_hold" > "$pfile"
     # Run the session via the extracted helper (TASK-000): it picks the correct run-path
     # (watchdog / --stream|det-handoff stream-json / plain) and returns the session exit code.
     # slog (the stream-log path, "" when no capture happened) comes back via _ROS_SLOG for the
@@ -2213,8 +2343,57 @@ cmd_run() {
       return 1
     fi
 
+    # Gate hold: the session ran; a human now merges. A gate sub-goal must NOT flip its own box, so
+    # its completion is grounded on the PR EXISTING instead. No PR -> the same no-self-claim halt an
+    # unflipped box gets: the session did not produce the one artifact the hold is about.
+    if [ -n "$gate_hold" ]; then
+      local prurl; prurl=$(_sg_pr_url "$dir" "$id")
+      if [ -z "$prurl" ]; then
+        _emit_event "$dir" "$id" blocked "$gate_hold: no PR opened (no self-claim)"
+        [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+        echo "[orchestrate] [guardrail] $id is a $gate_hold sub-goal but opened no PR for its branch; halting (no self-claim, no advance on a dead/incomplete session)." >&2
+        return 1
+      fi
+      _record_tokens "$dir" "$id" "$slog"
+      _emit_event "$dir" "$id" blocked "$gate_hold: awaiting human merge ($prurl)"
+      [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
+      if [ "$gate_hold" = "gate!" ]; then
+        _say "[orchestrate] STOP (gate!): global halt for human review; $id ran and opened $prurl. Merge it, then re-run."
+      else
+        _say "[orchestrate] STOP: $id is a gate sub-goal; it ran and opened $prurl for human review. Merge it, then re-run."
+        [ "$WAVE_CAP" -ge 2 ] && echo "[orchestrate] [advisory] '$id' is a chain-stop \`gate\`; under WAVE_CAP=$WAVE_CAP independent Touches-disjoint branches keep running. Use \`gate!\` for a global stop-all." >&2
+      fi
+      return 0
+    fi
+
     # grounded completion: advance only if the box actually flipped.
     local checked; checked=$(_subgoals "$roadmap" | awk -F'\t' -v i="$id" '$1==i {print $3}')
+    if [ "$checked" != 1 ]; then
+      # Merged-PR reconciliation before the halt (the false-halt fix). A worker commonly flips its box
+      # INSIDE its PR; the PR merges, and this checkout is still behind, so the local box reads
+      # unchecked and a healthy run halted. Consult the remote default branch. No-self-claim is
+      # UNCHANGED: a remote box counts only when its line also carries a real `PR #<n>`, so a bare
+      # checked box never advances the loop, on either side.
+      local rview rline
+      rview=$(_roadmap_remote_view "$dir" "$roadmap")
+      if [ -n "$rview" ]; then
+        rline=$(_sg_line "$rview" "$id")
+        case "$rline" in
+          '- ['[xX]']'*)
+            if printf '%s' "$rline" | grep -qE 'PR #[0-9]+'; then
+              checked=1
+              _say "[orchestrate] [reconcile] $id box is checked on origin with $(printf '%s' "$rline" | grep -oE 'PR #[0-9]+' | head -1); accepting the merged-PR flip."
+              # Mirror the merged flip into the LOCAL ROADMAP when the fast-forward could not run
+              # (dirty tree). Without it `_next` re-picks this same sub-goal every cycle and the loop
+              # spins forever. This writes the ONE box line the remote already carries, through the
+              # same locked idempotent flip the loop uses -- it is a reconcile, never a claim, and it
+              # never force-pulls anything else out of the operator's working tree.
+              [ "$rview" = "$roadmap" ] || cmd_flip "$dir" "$id" >/dev/null 2>&1 || true
+            fi ;;
+        esac
+        [ "$rview" = "$roadmap" ] || rm -f "$rview"
+      fi
+    fi
     if [ "$checked" != 1 ]; then
       _emit_event "$dir" "$id" blocked "box not flipped (no self-claim)"
       [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null

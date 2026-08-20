@@ -70,7 +70,10 @@ grep -q '^- \[ \] SG-01' "$D/ROADMAP.md" && [ ! -f "$D/HANDOFF.md" ] \
 # ============================ TEST 3: real run via good mock ============================
 D2="$TMP/mg2"; mk_megagoal "$D2"; mk_mock_good
 export MOCK_ROADMAP="$D2/ROADMAP.md" MOCK_DIR="$D2"
-CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$D2" > "$TMP/run.out" 2>&1
+# MEGA_GATE_DISPATCH=0 pins the LEGACY stop-BEFORE-running posture this test was written for; the
+# default (dispatch the gate sub-goal, then hold for the human merge) is covered by
+# tests/test-orchestrate-gate-dispatch.sh.
+MEGA_GATE_DISPATCH=0 CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$D2" > "$TMP/run.out" 2>&1
 rc=$?
 [ "$rc" = 0 ] && pass "run exited 0" || { fail "run exited $rc"; cat "$TMP/run.out"; }
 grep -q '^- \[x\] SG-01' "$D2/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$D2/ROADMAP.md" \
@@ -236,7 +239,7 @@ grep -q '^- \[ \] SG-01' "$DS/ROADMAP.md" && pass "--step --dry-run did not exec
 # 9b: --step real run, operator resumes (Enter) -> chain completes, stops at gate.
 D9="$TMP/mg9"; mk_megagoal "$D9"; mk_mock_good
 export MOCK_ROADMAP="$D9/ROADMAP.md" MOCK_DIR="$D9"
-printf '\n\n' | CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$D9" --step > "$TMP/step.out" 2>&1
+printf '\n\n' | MEGA_GATE_DISPATCH=0 CLAUDE_CMD="$TMP/claude-good" bash "$ORCH" run "$D9" --step > "$TMP/step.out" 2>&1
 { grep -q '^- \[x\] SG-01' "$D9/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$D9/ROADMAP.md" \
   && grep -q '^- \[ \] SG-03' "$D9/ROADMAP.md"; } \
   && pass "--step resume: SG-01+SG-02 ran, gate SG-03 untouched" || { fail "--step resume wrong"; cat "$TMP/step.out"; }

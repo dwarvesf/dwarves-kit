@@ -959,7 +959,7 @@ bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
 MOCK
 chmod +x "$TMP/claude-resume"
 # Run 1: flips SG-01+SG-02, stops at the gate SG-03 (partway; the kill boundary).
-( export ORCH="$ORCH" MEGADIR="$RES" RESLOG="$RESLOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-resume"
+( export ORCH="$ORCH" MEGADIR="$RES" RESLOG="$RESLOG" CLAUDE_FLAGS="" MEGA_GATE_DISPATCH=0 CLAUDE_CMD="$TMP/claude-resume"
   bash "$ORCH" run "$RES" ) > "$TMP/resume1.out" 2>&1
 c1_r1=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r1=$(wc -l < "$RESLOG/SG-02.runs" 2>/dev/null | tr -d ' ')
 { grep -q '^- \[x\] SG-01' "$RES/ROADMAP.md" && grep -q '^- \[x\] SG-02' "$RES/ROADMAP.md" \
@@ -967,7 +967,7 @@ c1_r1=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r1=$(wc -l < "
   && pass "resume: run 1 flips SG-01+SG-02, stops at gate (each ran once)" \
   || { fail "resume: run 1 partial-progress wrong (c1=$c1_r1 c2=$c2_r1)"; cat "$TMP/resume1.out"; }
 # Run 2 (the restart): re-derive from ROADMAP; already-checked boxes must NOT be re-run.
-( export ORCH="$ORCH" MEGADIR="$RES" RESLOG="$RESLOG" CLAUDE_FLAGS="" CLAUDE_CMD="$TMP/claude-resume"
+( export ORCH="$ORCH" MEGADIR="$RES" RESLOG="$RESLOG" CLAUDE_FLAGS="" MEGA_GATE_DISPATCH=0 CLAUDE_CMD="$TMP/claude-resume"
   bash "$ORCH" run "$RES" ) > "$TMP/resume2.out" 2>&1
 c1_r2=$(wc -l < "$RESLOG/SG-01.runs" 2>/dev/null | tr -d ' '); c2_r2=$(wc -l < "$RESLOG/SG-02.runs" 2>/dev/null | tr -d ' ')
 { [ "$c1_r2" = 1 ] && [ "$c2_r2" = 1 ]; } \
@@ -1138,6 +1138,10 @@ grep -q 'blocked: SG-01 is dep-blocked (not in ready set)' "$TMP/dep-fallthrough
 # V-CRIT-7). Driven OUT-OF-PROCESS (`bash "$ORCH" run`) so the real WAVE_CAP env is exercised.
 
 # ---- (m) gate! GLOBAL-STOP at WAVE_CAP=2 halts everything even with other ready sub-goals ----
+# These blocks pin the SCHEDULER contract (what quiesces, what holds), so they run with
+# MEGA_GATE_DISPATCH=0: the escape hatch keeps the stop-BEFORE-running posture they were written
+# for, and gets real coverage in the process. The default (dispatch the gate sub-goal, then hold
+# for the human merge) is covered by tests/test-orchestrate-gate-dispatch.sh.
 # SG-01 is `gate!` and independent; SG-02/SG-03 are independent, Touches-declaring, disjoint -> absent
 # the gate! stop they would form a 2-wide wave. The gate! scan runs BEFORE admission, so the loop must
 # STOP (rc 0, clear message) and run NOTHING. No git repo needed: the stop precedes any worktree.
@@ -1169,7 +1173,7 @@ bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
 MOCK
 chmod +x "$TMP/claude-gatebang"
 gbrc=0
-( export ORCH="$ORCH" MEGADIR="$GBM" GBLOG="$GBLOG" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-gatebang"
+( export ORCH="$ORCH" MEGADIR="$GBM" GBLOG="$GBLOG" CLAUDE_FLAGS="" WAVE_CAP=2 MEGA_GATE_DISPATCH=0 CLAUDE_CMD="$TMP/claude-gatebang"
   bash "$ORCH" run "$GBM" ) > "$TMP/gatebang.out" 2>&1 || gbrc=$?
 # (1) clean human-stop: rc 0, no false-complete
 { [ "$gbrc" = 0 ] && ! grep -q 'all sub-goals checked; done' "$TMP/gatebang.out"; } \
@@ -1228,7 +1232,7 @@ bash "$ORCH" flip "$MEGADIR" "$id" >/dev/null 2>&1
 MOCK
 chmod +x "$TMP/claude-chainhold"
 chrc=0
-( export ORCH="$ORCH" MEGADIR="$CPM" CHLOG="$CHLOG" CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-chainhold"
+( export ORCH="$ORCH" MEGADIR="$CPM" CHLOG="$CHLOG" CLAUDE_FLAGS="" WAVE_CAP=2 MEGA_GATE_DISPATCH=0 CLAUDE_CMD="$TMP/claude-chainhold"
   bash "$ORCH" run "$CPM" ) > "$TMP/chainhold.out" 2>&1 || chrc=$?
 # (1) the loop stops cleanly at the gate (rc 0, gate chain-stop message)
 { [ "$chrc" = 0 ] && grep -q 'STOP: SG-01 is a gate sub-goal' "$TMP/chainhold.out"; } \
