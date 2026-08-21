@@ -23,7 +23,7 @@ and cannot reach the instance at all.
 | 7 | Stable-interface contract holds | `bash tests/test-stable-interface.sh` | exit 0 | PASS |
 | 8 | `sudo:` form reaches a real foreign-uid instance | `printf 'export HERMES_HOME=/Users/server/hermes-dfoundation\nset -e\nhermes kanban --board dw-ops list --json\n' \| sudo -n -u server -H bash -s` | exit 0; stdout starts `[` and parses as a 17-task array; stderr empty | PASS |
 
-Row 8 ran on mac-mini-danang as `tieubao` against the dfoundation instance, and
+Row 8 ran on the Mini ops account against the dfoundation instance, and
 is the one check a fake transport cannot make: it proves the uid hop works
 unattended (`-n`, no TTY) and that `-H` is what stops the CLI reading the
 caller's dotenv.
