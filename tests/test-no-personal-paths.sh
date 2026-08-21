@@ -17,13 +17,17 @@ ok() { PASS=$((PASS + 1)); echo "ok - $1"; }
 no() { FAIL=$((FAIL + 1)); echo "NOT ok - $1"; }
 
 # ---------------------------------------------------------------- 1. RENDER
+# Pin KIT_ROOT to a sentinel instead of trusting this machine's own install path:
+# the assertion then holds wherever the suite runs, and a template that interpolates
+# KIT_ROOT shows up as the sentinel rather than as a home that happens to look benign.
+SENTINEL="/opt/kit-root-sentinel"
 T="$(mktemp -d)"; git -C "$T" init -q
-bash lib/adopt.sh "$T" >/dev/null 2>&1
-RENDERED="$(grep -rl '/Users/' "$T" --exclude-dir=.git 2>/dev/null)"
+CLAUDE_PLUGIN_ROOT="$SENTINEL" bash lib/adopt.sh "$T" >/dev/null 2>&1
+RENDERED="$(grep -rl -e "$SENTINEL" -e '/Users/' "$T" --exclude-dir=.git 2>/dev/null)"
 if [ -z "$RENDERED" ]; then
-  ok "adopt renders no absolute /Users/ path into the consumer repo"
+  ok "adopt renders no render-time install path into the consumer repo"
 else
-  no "adopt baked an absolute home into: $(echo "$RENDERED" | tr '\n' ' ')"
+  no "adopt baked the install path into: $(echo "$RENDERED" | tr '\n' ' ')"
 fi
 
 # The rendered kit references must still be resolvable, not merely home-free: a
@@ -36,10 +40,12 @@ else
 fi
 
 # --------------------------------------------------------------- 2. TREE
-# The kit's own leak-guard tests quote these patterns as data. Skip those files by
-# name: matching the pattern is their job, not a leak.
+# These three files quote the patterns as data: two leak-guard tests and this guard's
+# own proof, whose negative-control transcript has to show the string it caught. Skip
+# them by name; matching the pattern is their job, not a leak.
 SELF="tests/test-no-personal-paths.sh"
 GUARD="tests/test-kit-foldin-hooks.sh"
+PROOF="docs/verification/no-personal-paths.md"
 
 OWNER="tieu""bao"   # split so this file is not itself a hit in a plain tree grep
 
@@ -50,7 +56,7 @@ OWNER="tieu""bao"   # split so this file is not itself a hit in a plain tree gre
 LEAKS="$(git ls-files -z \
   | xargs -0 grep -IHn -F -e "/Users/$OWNER" -e "workspace/$OWNER" -e "Hans-Air" \
       -e "mini-$OWNER" 2>/dev/null \
-  | grep -v -e "^$SELF:" -e "^$GUARD:")"
+  | grep -v -e "^$SELF:" -e "^$GUARD:" -e "^$PROOF:")"
 if [ -z "$LEAKS" ]; then
   ok "no operator path or hostname anywhere in the tree"
 else
