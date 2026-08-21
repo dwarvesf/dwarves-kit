@@ -6,7 +6,7 @@
 2. Any hardcoded plugin-dir path becomes an arg/env default, opt-in (no ops-toolkit-layout assumption).
 3. A fixture plugin dir under `tests/fixtures/` with a fresh variant and a stale variant.
 4. Run-table: fresh fixture -> verdict `current`; stale fixture -> verdict `OUTDATED` (the named NC).
-5. Done gate: `grep -rn 'workspace/tieubao' tools/plugin-check/` empty.
+5. Done gate: `grep -rn 'workspace/<owner>' tools/plugin-check/` empty.
 
 ## Implementation
 
@@ -58,7 +58,7 @@ smoke: all 27 passed
 ## Done-gate check
 
 ```
-$ grep -rn 'workspace/tieubao' tools/plugin-check/
+$ grep -rn 'workspace/<owner>' tools/plugin-check/
 (no output, exit 1)
 ```
 

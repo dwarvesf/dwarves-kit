@@ -196,7 +196,7 @@ hard-exits if `_route` is not sourceable.
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 git switch feat/multi-vendor-dispatch
 bash tests/test-harness-adapter.sh          # expect: all green
 bash lib/queue/harness.sh argv codex gpt-5 high   # eyeball a resolved argv

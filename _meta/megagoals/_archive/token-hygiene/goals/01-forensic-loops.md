@@ -13,7 +13,7 @@ waste class is measurable per run. Implements SPEC-120.
 
 ## Close the loop (verification)
 ```
-cd ~/workspace/tieubao/ops-toolkit/tools/token-forensic
+cd ~/workspace/<owner>/ops-toolkit/tools/token-forensic
 ./bin/token-forensic --loops --days 30                 # Loops view appears, flags 4800/3251-turn runs
 ./bin/token-forensic --loops --loop-min 1500 --days 30 # fewer flagged (flag works)
 ```

@@ -2,7 +2,7 @@
 
 **Merge policy:** gate
 **Time budget:** 1-1.5 hours of loop work
-**Proof:** run-table: (a) `chezmoi apply` clean + source/applied checksums match; (b) the teammate-grep NC: `rg -n 'ops-toolkit|/Users/tieubao' references/OPERATE.md` returns ONLY the optional-overlay mention (captured); (c) a resolution walk-through showing a scaffold in a NON-ops repo resolves the RUN CONTRACT line to the skill's portable copy.
+**Proof:** run-table: (a) `chezmoi apply` clean + source/applied checksums match; (b) the teammate-grep NC: `rg -n 'ops-toolkit|~' references/OPERATE.md` returns ONLY the optional-overlay mention (captured); (c) a resolution walk-through showing a scaffold in a NON-ops repo resolves the RUN CONTRACT line to the skill's portable copy.
 **Design:** obvious
 **Depends on:** none (dotfiles stack head)
 Model: sonnet

@@ -23,7 +23,7 @@ This is the acceptance test of the whole mega-goal: if any hop needs hand-holdin
 ## How to close the loop
 
 ```sh
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 bash lib/backlog.sh board | grep -A3 done                  # the dogfood item shows done
 git log --oneline -5 -- _meta/BACKLOG.md                   # the status transitions are in history
 ls docs/verification/ | grep -i kanban                      # the dogfood task's test-design + runs exist

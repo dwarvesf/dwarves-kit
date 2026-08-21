@@ -61,12 +61,12 @@ and filling its `<spoke>_*` keys; CLI flags override:
 apps              = "reminders,notion,hermes,multica"
 reminders_list    = "Backlog"
 notion_db         = "<database_id>"   # or notion_parent = "<page_id>" to bootstrap
-hermes_target     = "mini-tieubao"   # ssh host, or "local", or "sudo:<user>"
-hermes_home       = "/Users/tieubao/hermes-personal/home"
+hermes_target     = "<ssh-host>"      # an ssh host, or "local", or "sudo:<user>"; no default
+hermes_home       = "<HERMES_HOME>"   # the kanban store to sync against; no default
 # optional, for an instance whose board, workers, and deliverables are shared:
 # hermes_board     = "dw-ops"
 # hermes_assignee  = "chief-of-staff"
-# hermes_workspace = "dir:/Users/server/hermes-dfoundation/home/outbox/backlog/{id}"
+# hermes_workspace = "dir:<HERMES_HOME>/outbox/backlog/{id}"
 multica_url       = "https://multica.d.foundation"
 multica_workspace = "<workspace_uuid>"
 multica_project   = "<project_uuid>"
@@ -128,7 +128,8 @@ details.
 Live wiring (2026-07-16): Notion DB `612f123c-7476-4a78-90e2-e1465c0a0df6`
 ("ops-toolkit Backlog" under US Operating, **Dwarves workspace**, the only
 workspace `ntn` is logged into; move it if a personal workspace gets
-connected). Hermes: `mini-tieubao`, `~/hermes-personal/home` (restic-covered).
+connected). Hermes: the operator sets `hermes_target` + `hermes_home` per machine; neither
+key has a default, so an unset one aborts the run instead of guessing a host.
 
 ## One-way push to a foreign team board (`notion-taskboard`, SPEC-003)
 

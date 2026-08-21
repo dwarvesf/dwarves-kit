@@ -184,7 +184,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
 | - | sync.notion_db | `""` | [impl] | sync | Bind an existing Notion database id. |
 | - | sync.notion_parent | `""` | [impl] | sync | Notion page id to create the board under (bootstrap). |
-| - | sync.hermes_target | `"mini-tieubao"` | [impl] | sync | Where the hermes instance lives: an ssh host, `local`, or `sudo:<user>` for an instance owned by another uid on this host. |
+| - | sync.hermes_target | `""` | [impl] | sync | Where the hermes instance lives: an ssh host, `local`, or `sudo:<user>` for an instance owned by another uid on this host. No default: unset aborts the sync. |
 | - | sync.hermes_home | `""` | [impl] | sync | HERMES_HOME of the kanban store to sync against. |
 | - | sync.hermes_board | `""` | [impl] | sync | Kanban board slug, on reads as well as writes. Empty uses the instance's own current board, which is mutable global state. |
 | - | sync.hermes_assignee | `""` | [impl] | sync | Profile every relayed task is assigned to. Empty leaves tasks unassigned, so no worker picks them up. |

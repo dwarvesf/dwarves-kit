@@ -117,7 +117,7 @@ right now:
   checked by eye). The one genuine failure, `tests/test-board.sh` (36/45, 9 FAIL), reproduces
   **byte-identically with my files stashed out** (confirmed via `git stash -u` + re-run): it is a
   pre-existing failure caused by this machine's installed `~/.claude/dwarves-kit` still pointing
-  at the pre-SG-01 flat `lib/board.sh` path (`bash: /Users/tieubao/.claude/dwarves-kit/lib/
+  at the pre-SG-01 flat `lib/board.sh` path (`bash: ~/.claude/dwarves-kit/lib/
   board.sh: No such file or directory`), an install-staleness issue this box has independent of
   this branch, not a regression this PR introduces. `tests/test-meta.sh` (679/679) and
   `tests/test-hooks.sh` (452/452, confirmed stable on a clean rerun after an initial flaky

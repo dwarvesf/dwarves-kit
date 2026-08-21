@@ -1,4 +1,4 @@
-Drive the cc-elevation-r3 mega-goal to completion autonomously. Source of truth: `_meta/megagoals/cc-elevation-r3/ROADMAP.md` and the per-sub-goal files in `_meta/megagoals/cc-elevation-r3/goals/`. Read them every turn; they hold the outcomes, Done= lines, scope edges, and verification paths. Work in `~/workspace/tieubao/ops-toolkit`.
+Drive the cc-elevation-r3 mega-goal to completion autonomously. Source of truth: `_meta/megagoals/cc-elevation-r3/ROADMAP.md` and the per-sub-goal files in `_meta/megagoals/cc-elevation-r3/goals/`. Read them every turn; they hold the outcomes, Done= lines, scope edges, and verification paths. Work in `~/workspace/<owner>/ops-toolkit`.
 
 Pre-flight (turn 1): confirm `gh` is installed; if missing, stop and tell me. Confirm you are on a clean checkout of latest `main`.
 

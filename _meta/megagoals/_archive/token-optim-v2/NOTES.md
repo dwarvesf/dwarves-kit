@@ -63,7 +63,7 @@
   floor was stale 48581B at session start but the S-64 dotfiles-watcher applied a pending prior
   compaction mid-session (-> 44921B baseline) AND advanced dotfiles main 66893e2->22ba5cd under me,
   so I had to git reset --keep the worktree onto current main before editing; (2) chezmoi sources
-  from a SEPARATE clone ~/.local/share/chezmoi, not ~/workspace/tieubao/dotfiles. The ONE genuine-fat
+  from a SEPARATE clone ~/.local/share/chezmoi, not ~/workspace/<owner>/dotfiles. The ONE genuine-fat
   cut: macOS LaunchAgent BTM section -> one-line ops-toolkit pointer (rarely-used + already fully
   duplicated in ops-toolkit/CLAUDE.md where plists are authored), -211B rendered floor (44921->44710).
   Everything heavier is security/machine-routing/Tool-selection = always-consulted, left untouched per

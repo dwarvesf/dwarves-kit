@@ -1,7 +1,7 @@
 # Proof of Done: cc-intel
 
 **Feature:** weekly read-only intelligence digest (observe + sweep + synthesis + repeat-detect).
-**Date:** 2026-06-15 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5) · **Mega-goal:** cc-elevation-r2 sub-goal 06 (folds #3 sweeps + #4 synthesis + #5 repeat-detect)
+**Date:** 2026-06-15 · **Lane:** normal · **Host:** dev laptop (macOS 26.5) · **Mega-goal:** cc-elevation-r2 sub-goal 06 (folds #3 sweeps + #4 synthesis + #5 repeat-detect)
 
 Deterministic (fixtures + stubbed observe/sweep + `CC_INTEL_DATE`), so the smoke is the proof. The live weekly plist load is a deploy check (runbook).
 
@@ -76,7 +76,7 @@ plutil -lint deploy/macos/cc-intel-weekly.plist
 # Proof of Done: repeat-detect noise filter + ranked top-N digest
 
 **Feature:** ID-226 (filter benign idioms out of repeat-detect) + ID-227 (rank + top-N the merge proposals).
-**Date:** 2026-06-28 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5)
+**Date:** 2026-06-28 · **Lane:** normal · **Host:** dev laptop (macOS 26.5)
 
 Deterministic (fixtures + `CC_INTEL_DATE`), so the smoke is the proof. Two new assertions added to `tests/smoke.sh` (now 8 total).
 

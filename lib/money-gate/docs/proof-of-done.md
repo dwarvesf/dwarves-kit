@@ -1,7 +1,7 @@
 # Proof of Done: money-gate
 
 **Feature:** the module's first SPEC (`lib/money-gate/SPEC.md`) + its own acceptance record, replacing the joint proof it shared with `prose_rag`.
-**Date:** 2026-07-15 · **Lane:** docs · **Host:** Hans-Air-M4 (macOS 26.5.2, Python 3.14.6) · **Kit:** v2.0.0
+**Date:** 2026-07-15 · **Lane:** docs · **Host:** dev laptop (macOS 26.5.2, Python 3.14.6) · **Kit:** v2.0.0
 
 `money_gate` was the one kit module with no SPEC. It entered at kit-foldin (2026-07-11) as
 a port of ops-toolkit's `cc-money-gate`, and its only acceptance record was

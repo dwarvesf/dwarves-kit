@@ -9,14 +9,14 @@ falling back to `${DWARVES_KIT:-$HOME/.claude/dwarves-kit}`.
 
 ## Test repo
 
-`/Users/hieutieutu/workspace/prohome/projects` — has `AGENTS.md`
+`~/workspace/prohome/projects` — has `AGENTS.md`
 (copied verbatim from this kit) but no local `lib/`, `hooks/`, or
 `bin/` (plugin-only scaffold, adopt intentionally skipped).
 
 ## Negative control (RED — before fix, bare repo-relative form)
 
 ```
-$ cd /Users/hieutieutu/workspace/prohome/projects
+$ cd ~/workspace/prohome/projects
 $ bash lib/gate/gate-ledger.sh rid
 bash: lib/gate/gate-ledger.sh: No such file or directory
 Exit: 127
@@ -28,7 +28,7 @@ exactly the bug reported in #401.
 ## Green run (after fix — DWARVES_KIT fallback form)
 
 ```
-$ cd /Users/hieutieutu/workspace/prohome/projects
+$ cd ~/workspace/prohome/projects
 $ bash "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh" rid
 construction-project-tracking
 Exit: 0

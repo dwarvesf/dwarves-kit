@@ -23,7 +23,7 @@ Reads like the rest of global CLAUDE.md: terse contracts, no lecture. A cold age
 
 ## How to close the loop
 
-- Edit the chezmoi SOURCE in ~/workspace/tieubao/dotfiles (never the rendered file); `chezmoi apply`; then capture a run-table: `grep` the rendered ~/.claude/CLAUDE.md for the two block headings (exit 0 each) + `jq -r .effortLevel ~/.claude/settings.json` prints `medium`.
+- Edit the chezmoi SOURCE in ~/workspace/<owner>/dotfiles (never the rendered file); `chezmoi apply`; then capture a run-table: `grep` the rendered ~/.claude/CLAUDE.md for the two block headings (exit 0 each) + `jq -r .effortLevel ~/.claude/settings.json` prints `medium`.
 - Dotfiles watcher reverts uncommitted tracked changes: stage+commit in ONE shell call; use `cmp`, not `diff` (aliased).
 - Kit routing: dotfiles is a cross-repo sub-goal; classify via `bash ~/.claude/dwarves-kit/lib/lane-classify.sh classify "<task>"`, draft the spec, run spec-validate lenses on it, record phases via `lib/gate-ledger.sh` (never /kit:* from the ops-toolkit session). If dotfiles lacks the kit markers, record the lane in the PR body instead.
 

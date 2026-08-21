@@ -4,7 +4,7 @@
 **Quality bar:** The kit takes its own medicine. Every sub-goal ships through the kit's lanes with recorded gates; spec statuses stay truthful; nothing phantom (no documented-but-unimplemented feature, the SPEC-039/040 lesson).
 **Stacking tool:** gh (sequential: a dependent PR opens only after its parent merges)
 **Started:** 2026-06-10
-**Work repo:** `~/workspace/tieubao/dwarves-kit` (shared repo; never push master; one PR per sub-goal)
+**Work repo:** `~/workspace/<owner>/dwarves-kit` (shared repo; never push master; one PR per sub-goal)
 
 ## Sub-goals
 

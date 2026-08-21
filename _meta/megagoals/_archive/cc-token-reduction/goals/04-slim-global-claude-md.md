@@ -12,7 +12,7 @@ The global CLAUDE.md, the single biggest recurring token sink, loaded on every s
 
 ## CROSS-REPO + dotfiles discipline (read first)
 
-This sub-goal does NOT land in ops-toolkit. The global CLAUDE.md source is the chezmoi template `~/workspace/tieubao/dotfiles/home/dot_claude/modify_CLAUDE.md.tmpl`. Consequences:
+This sub-goal does NOT land in ops-toolkit. The global CLAUDE.md source is the chezmoi template `~/workspace/<owner>/dotfiles/home/dot_claude/modify_CLAUDE.md.tmpl`. Consequences:
 - `/kit:*` slash commands bind to the ops-toolkit cwd and CANNOT drive this work. Skip SDD-via-slash here; do the change directly and open the PR with plain `gh` from the dotfiles repo.
 - The dotfiles watcher reverts uncommitted tracked changes (memory `project_dotfiles_watcher_atomic_commit`). Edit the template, then stage AND commit in ONE shell invocation; never leave the edit unstaged.
 - `diff` is shell-aliased and fails non-interactively in dotfiles; use `cmp` / `shasum` to compare.
@@ -36,7 +36,7 @@ Sub-goal-specific verification:
 
 ## Where to look
 
-The dotfiles repo (`~/workspace/tieubao/dotfiles/home/dot_claude/modify_CLAUDE.md.tmpl`), the sub-goal 01 audit's CLAUDE.md cheap-wins rows, and memory `project_dotfiles_watcher_atomic_commit`.
+The dotfiles repo (`~/workspace/<owner>/dotfiles/home/dot_claude/modify_CLAUDE.md.tmpl`), the sub-goal 01 audit's CLAUDE.md cheap-wins rows, and memory `project_dotfiles_watcher_atomic_commit`.
 
 ## PR body
 

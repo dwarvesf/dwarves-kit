@@ -2,11 +2,11 @@
 
 Prerequisites, start/attach/read/stop, and failure modes for draining the cross-repo
 kanban cockpit overnight by running the dwarves-kit `orchestrate.sh queue` launcher
-(SPEC-146) on **the Air** (Han's daily-driver MacBook, `Hans-Air-M4`). Phase 1 only:
+(SPEC-146) on **the Air** (Han's daily-driver MacBook, `dev laptop`). Phase 1 only:
 manual `caffeinate` + `tmux`, zero new daemons. Adapted from the shape of
 `tools/hermes/deploy/macos/personal/mini.hermes-runbook.md`; the queue launcher's own
 source, tests, and implementation notes live in the sibling `dwarves-kit` checkout
-(`~/workspace/tieubao/dwarves-kit/lib/{queue,orchestrate,board}.sh`), not here , this repo
+(`~/workspace/<owner>/dwarves-kit/lib/{queue,orchestrate,board}.sh`), not here , this repo
 only owns the deploy story for running it on this host.
 
 ## What this runs
@@ -52,12 +52,12 @@ the inner session shows a specific mega's live Claude Code pane.
 
 ## Prerequisites
 
-1. **The kit resolves with zero extra sync step.** `~/.claude/dwarves-kit/{lib,AGENTS.md,WORKFLOW.md}` are symlinks into `~/workspace/tieubao/dwarves-kit` (confirmed on this machine). No build step , it is bash.
+1. **The kit resolves with zero extra sync step.** `~/.claude/dwarves-kit/{lib,AGENTS.md,WORKFLOW.md}` are symlinks into `~/workspace/<owner>/dwarves-kit` (confirmed on this machine). No build step , it is bash.
 2. **`tmux` + `caffeinate` present.** Verified on this machine: `tmux 3.7a` (`/opt/homebrew/bin/tmux`), `caffeinate` (`/usr/bin/caffeinate`, ships with macOS).
 3. **`claude` already logged in, non-interactively-capable.** The launcher opens `claude --dangerously-skip-permissions` in a fresh window; it must come up already-authenticated (same OAuth/keychain session the operator already uses on this machine). No separate credential wiring.
 4. **The personal cross-repo registry**: `ops-toolkit/_meta/boards.txt` (already exists, lists 13 repos' `BACKLOG.md` paths).
 5. **No `board` binary on PATH by default** , see the corrected invocation below; this is a deviation from the goal file's placeholder.
-6. **tmux's pane shell may not be bash.** This machine's `UserShell` (`dscl . -read /Users/tieubao UserShell`) is `fish`, and tmux spawns each pane using the OS user shell, not the shell you invoked `tmux` from. Fish's `2>&1` is a syntax error (POSIX-only), which silently kills the pane's command near-instantly if you assume bash semantics. **Always wrap the driven command in `bash -lc '...'` explicitly**, regardless of what `$SHELL` reports in your own session.
+6. **tmux's pane shell may not be bash.** This machine's `UserShell` (`dscl . -read "$HOME" UserShell`) is `fish`, and tmux spawns each pane using the OS user shell, not the shell you invoked `tmux` from. Fish's `2>&1` is a syntax error (POSIX-only), which silently kills the pane's command near-instantly if you assume bash semantics. **Always wrap the driven command in `bash -lc '...'` explicitly**, regardless of what `$SHELL` reports in your own session.
 
 ## Corrected kit invocation (goal file's placeholder did not match reality)
 
@@ -80,7 +80,7 @@ against the actual 03K merge (`dwarves-kit` PR #178, squash `358373c`):
   right registry via the **`REPO_ROOT` environment variable** instead (never a fabricated
   `CONSUMER_ROOT`, no such variable exists anywhere in the kit): `board.sh cmd_queue`
   resolves its registry as `${OPT_REGISTRY:-$REPO_ROOT/_meta/boards.txt}`, so
-  `REPO_ROOT=$HOME/workspace/tieubao/ops-toolkit` makes it find `ops-toolkit/_meta/boards.txt`
+  `REPO_ROOT=$HOME/workspace/<owner>/ops-toolkit` makes it find `ops-toolkit/_meta/boards.txt`
   with no extra flag.
 
 ## The Phase-1 one-liner (config only, no daemon)
@@ -89,7 +89,7 @@ Real night, draining the cross-repo cockpit:
 
 ```bash
 KIT="$HOME/.claude/dwarves-kit/lib"
-REPO_ROOT="$HOME/workspace/tieubao/ops-toolkit"
+REPO_ROOT="$HOME/workspace/<owner>/ops-toolkit"
 SESSION="mega-queue"                 # outer wrapper session name, pick anything != dk-queue
 
 tmux kill-session -t "$SESSION" 2>/dev/null || true
@@ -117,7 +117,7 @@ sits inside the `bash -lc "..."` payload, after the env-var prefix, wrapping
 Always run this first, unattended and side-effect-free:
 
 ```bash
-REPO_ROOT="$HOME/workspace/tieubao/ops-toolkit" \
+REPO_ROOT="$HOME/workspace/<owner>/ops-toolkit" \
 QUEUE_BOARD_CMD="bash $HOME/.claude/dwarves-kit/lib/board.sh" \
 bash "$HOME/.claude/dwarves-kit/lib/orchestrate.sh" queue --from-boards --dry-run
 ```
@@ -185,7 +185,7 @@ nothing written to the journal.
   felt.
 - **Mini migration.** If leaving the Air awake overnight proves annoying (battery, fan,
   can't close the lid, can't carry it around), the always-on Mac Mini (`ssh
-  mini-tieubao`) is the natural home: same steps, over `ssh mini-tieubao 'tmux
+  <mini-host>`) is the natural home: same steps, over `ssh <mini-host> 'tmux
   new-session -d -s mega-queue ...'` instead of running locally; the Mini already never
   sleeps (per its own substrate docs) so `caffeinate` becomes optional there (harmless to
   keep anyway). This paragraph is prose only , not an executed step in this sub-goal

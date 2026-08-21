@@ -1,10 +1,10 @@
-Mega-goal kit-adopt-enforce: make the dwarves-kit full-flow orchestration self-install and self-enforce per-repo. Roadmap + sub-goals: ~/workspace/tieubao/ops-toolkit/_meta/megagoals/kit-adopt-enforce/. Every turn, read ROADMAP.md + NOTES.md and the goals/NN-*.md for the sub-goal you are on.
+Mega-goal kit-adopt-enforce: make the dwarves-kit full-flow orchestration self-install and self-enforce per-repo. Roadmap + sub-goals: ~/workspace/<owner>/ops-toolkit/_meta/megagoals/kit-adopt-enforce/. Every turn, read ROADMAP.md + NOTES.md and the goals/NN-*.md for the sub-goal you are on.
 
 Three sub-goals, one destination: adopting a repo is one command, and a full-lane change cannot ship review-less because lane + loop-type classification drives the gates. Build the dwarves-kit sub-goals (01, 02) THROUGH the kit's own full lane (the dogfood): /kit:start, /kit:assign lane=full, /kit:think, /kit:spec, /kit:spec-validate, /kit:execute, /kit:review-team, /kit:docs, /kit:ship, with `lib/gate-ledger.sh` recording each gate. Reuse the existing classifiers (lib/{lane-classify,task-type-classify,proof-gate}.sh); do NOT rebuild them or change the lane / proof-class taxonomy.
 
 Where each sub-goal lives (use absolute paths; this loop is cross-repo):
-- 01, 02 -> ~/workspace/tieubao/dwarves-kit. SHARED repo: branch in a worktree, PR, CI green, NEVER merge, never auto-merge. These need Han's nod.
-- 03 -> ~/workspace/tieubao/ops-toolkit.
+- 01, 02 -> ~/workspace/<owner>/dwarves-kit. SHARED repo: branch in a worktree, PR, CI green, NEVER merge, never auto-merge. These need Han's nod.
+- 03 -> ~/workspace/<owner>/ops-toolkit.
 
 Hard rules (commands, not suggestions):
 - One PR per sub-goal. A sub-goal that is only a local diff is unstarted. The moment `gh pr create` returns a URL, write `PR #N` on that sub-goal's ROADMAP.md row. Flip `[ ]`->`[x]` ONLY when its goals/NN Done is verified by its own close-the-loop commands AND the PR is open + CI green (`gh pr checks <N>`) + not CHANGES_REQUESTED. A checked box without a passing PR # is invalid.

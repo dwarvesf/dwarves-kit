@@ -16,10 +16,11 @@
 #   AC6  SPEC-136 silent-wave path: a REAL `record` call producing verdict=wave with NO human
 #        response ever following IS collected as waved -- the newly-live logged-wave path
 #
-# AC2/AC4 read a file in the SIBLING dotfiles repo (~/workspace/tieubao/dotfiles). That path is
-# ABSENT in CI (same precedent as SPEC-107's dotfiles-half check in tests/test-meta.sh: "its path
-# is absent in CI"), so those two checks SKIP (not fail) when the path is missing, and run for
-# real whenever it is present (every local run on the operator's own machine).
+# AC2/AC4 read a file in the SIBLING dotfiles repo. Its location is per-operator, so the test
+# takes it from $KIT_SIBLING_ROOT (the directory holding this checkout's sibling repos) and
+# hard-codes no home. Unset in CI, and unset by default anywhere else, so those two checks SKIP
+# (not fail); export KIT_SIBLING_ROOT to run them for real (same precedent as SPEC-107's
+# dotfiles-half check in tests/test-meta.sh: "its path is absent in CI").
 #
 # Run: bash tests/test-weekend-batch.sh   (exit 0 = all AC green, including skips)
 
@@ -108,7 +109,7 @@ assert "AC1e ug-10's (unmatched) explainer honestly reported absent" \
 
 echo ""
 echo "=== AC2: routes through learning-day-process + learning-ledger; til flush is privacy-stripped ==="
-SKILL_MD="$HOME/workspace/tieubao/dotfiles/home/dot_claude/skills/weekend-debt-paydown/SKILL.md"
+SKILL_MD="${KIT_SIBLING_ROOT:-}/dotfiles/home/dot_claude/skills/weekend-debt-paydown/SKILL.md"
 if [ -f "$SKILL_MD" ]; then
   assert "AC2a skill invokes learning-day-process" "$(grep -q 'learning-day-process' "$SKILL_MD" && echo 0 || echo 1)"
   assert "AC2b skill invokes learning-ledger" "$(grep -q 'learning-ledger' "$SKILL_MD" && echo 0 || echo 1)"

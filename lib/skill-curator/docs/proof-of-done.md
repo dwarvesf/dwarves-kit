@@ -14,7 +14,7 @@ is built in three phases (cc-elevation-r4 sub-goals 02/03/04); each phase append
 
 ## Feature A: skill-draft reviewer (cc-elevation-r4 sub-goal 02)
 
-**Date:** 2026-06-19 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** SPEC-103 TASK-001..005
+**Date:** 2026-06-19 · **Lane:** full · **Host:** dev laptop (macOS 26.5) · **Spec:** SPEC-103 TASK-001..005
 
 ### Acceptance criteria
 
@@ -116,7 +116,7 @@ cat $TMP/p/demo/SKILL.md; cat $SKILL_CURATOR_STATE_DIR/ledger.jsonl
 
 ## Feature B: promote gate + surfacing + install (cc-elevation-r4 sub-goal 03)
 
-**Date:** 2026-06-19 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** SPEC-103 TASK-006..010
+**Date:** 2026-06-19 · **Lane:** full · **Host:** dev laptop (macOS 26.5) · **Spec:** SPEC-103 TASK-006..010
 
 Closes the human gate and makes the loop visible + installable. `/skill-review` (via `bin/skill-review`)
 is the ONLY writer of `~/.claude/skills/`; the background reviewer never is.
@@ -226,7 +226,7 @@ Exit: 0   (verified by tests/test-install.sh -> "test-install: all 6 passed")
 
 ## Feature C: skill-library curator + round close-out (cc-elevation-r4 sub-goal 04)
 
-**Date:** 2026-06-19 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** SPEC-103 TASK-011..014 · **Merge: GATE (held for Han's click)**
+**Date:** 2026-06-19 · **Lane:** full · **Host:** dev laptop (macOS 26.5) · **Spec:** SPEC-103 TASK-011..014 · **Merge: GATE (held for Han's click)**
 
 The explicitly-missing piece: a curator that consolidates the skill library into umbrellas and
 archives stale/superseded skills , **never deletes**. Propose-only by default; a weekly launchd runs
@@ -334,7 +334,7 @@ plutil -lint deploy/macos/mini.cc-curator.plist
 
 ## Feature D: signal-marker pre-gate (opt-in cost gate)
 
-**Date:** 2026-07-02 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **ADR:** 0010
+**Date:** 2026-07-02 · **Lane:** full · **Host:** dev laptop (macOS 26.5) · **ADR:** 0010
 
 ### Acceptance criteria
 

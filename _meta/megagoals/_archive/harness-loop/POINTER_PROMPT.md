@@ -1,4 +1,4 @@
-Mega-goal: harness-loop. Work repo: ~/workspace/tieubao/dwarves-kit (kit-adopted; NEVER push master). Roadmap folder: _meta/megagoals/harness-loop/ , re-read ROADMAP.md + the current sub-goal's goals/NN-*.md at the start of EVERY turn; they are the source of truth, not memory.
+Mega-goal: harness-loop. Work repo: ~/workspace/<owner>/dwarves-kit (kit-adopted; NEVER push master). Roadmap folder: _meta/megagoals/harness-loop/ , re-read ROADMAP.md + the current sub-goal's goals/NN-*.md at the start of EVERY turn; they are the source of truth, not memory.
 
 Destination: the Specify -> Execute -> Observe -> Govern -> Learn loop CLOSES: run ledgers distill weekly into evidence-cited backlog proposals behind the unchanged human gate (board promote), a per-mega HTML dashboard becomes the sign-off surface, the surface consolidates per ADR-0034, and the front door (README, /kit:onboard, bin/config) tells the five-leg story. Quality bar: propose never dispose; every proposal cites lens + figure + rids or it does not stage; no new diaries (every artifact has a named reader or is a forcing function); one word one meaning (retro = per-run, propose = cross-run).
 

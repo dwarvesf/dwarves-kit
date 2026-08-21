@@ -58,7 +58,7 @@ Wall-clock end-to-end ≈ 85 min (vs 133 worker-min summed , parallelism bought 
 | 06 | ✓ | bearing | ✓ | ✓ | ✓ | proof✓ | agent-effectiveness + smoke | 3 |
 | 07 | , | , | ✓ | ✓ | , | proof✓ (fresh-proof+rollback, no override) | git-revert dry-run | 2 |
 
-Convergence lenses: integration-install (4 hooks + skills) ✓ · system-verify (kit 40/40 + all tool suites) ✓ · both-repo dangling-ref grep ✓ · advisor P5/P6 (in-harness) ✓ → **2 tenant-path leaks CAUGHT + fixed + merged (kit PR #189, `b7e44b1`)** + 5 P6 follow-ups filed. The gate did its job: the advisor's dash-slug + prose-form leaks had evaded every sub-goal's `workspace/tieubao` grep.
+Convergence lenses: integration-install (4 hooks + skills) ✓ · system-verify (kit 40/40 + all tool suites) ✓ · both-repo dangling-ref grep ✓ · advisor P5/P6 (in-harness) ✓ → **2 tenant-path leaks CAUGHT + fixed + merged (kit PR #189, `b7e44b1`)** + 5 P6 follow-ups filed. The gate did its job: the advisor's dash-slug + prose-form leaks had evaded every sub-goal's `workspace/<owner>` grep.
 
 ## Callable-stack tree (what now lives where in the kit)
 

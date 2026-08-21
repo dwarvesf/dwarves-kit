@@ -1,7 +1,7 @@
 # Proof of Done: cc-observe
 
 **Feature:** report Claude Code skill/tool usage + per-hook latency + subagent mix + friction + session-shape + token-cost signals from session transcripts.
-**Date:** 2026-06-14 (skills/tools/hooks); 2026-06-15 (subagents, friction, sessions, cost views) · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Mega-goal:** cc-elevation SG-01; subagents per ID-100; friction/sessions/cost = cc-elevation-r3 SG-01/02/03 / `research/2026-06-15-claude-code-usage-metrics-and-tooling.md`
+**Date:** 2026-06-14 (skills/tools/hooks); 2026-06-15 (subagents, friction, sessions, cost views) · **Lane:** full · **Host:** dev laptop (macOS 26.5) · **Mega-goal:** cc-elevation SG-01; subagents per ID-100; friction/sessions/cost = cc-elevation-r3 SG-01/02/03 / `research/2026-06-15-claude-code-usage-metrics-and-tooling.md`
 
 ## Acceptance criteria
 
@@ -185,7 +185,7 @@ bin/cc-observe hooks --days 7 | sort -t$'\t' -k5 # slowest hooks first
 ## cc-semantic (cc-elevation-r3 SG-04)
 
 **Feature:** LLM-derived semantic signals over recent prompts , topic-drift + self-correction , as PROPOSALS ONLY (writes nothing durable). A sibling script to `cc-observe`; off main (independent of the SG-01/02/03 stack).
-**Date:** 2026-06-15 · **Lane:** full · **Host:** Hans-Air-M4.
+**Date:** 2026-06-15 · **Lane:** full · **Host:** dev laptop.
 
 ### Acceptance criteria
 
@@ -238,7 +238,7 @@ bin/cc-semantic --days 7                             # real run (uses claude -p)
 ## cc-vps-report (SG-05)
 
 **Feature:** bridge the weekly cc-observe digest into the LIVE vps-mon: HMAC-signed snapshot of headline metrics + a heartbeat ping that surfaces digest liveness on the public `/status` page.
-**Date:** 2026-06-15 · **Lane:** full · **Host:** Hans-Air-M4 · **Mega-goal:** cc-elevation-r3 sub-goal 05 (supersedes r2 SG-01 cc-notify). **Target:** personal `mon-ingest` (`https://mon-ingest.han-ws.workers.dev`, CF account Han Ngo).
+**Date:** 2026-06-15 · **Lane:** full · **Host:** dev laptop · **Mega-goal:** cc-elevation-r3 sub-goal 05 (supersedes r2 SG-01 cc-notify). **Target:** personal `mon-ingest` (`https://mon-ingest.han-ws.workers.dev`, CF account Han Ngo).
 
 > **Post-ship fix (2026-06-15, PR #347-follow-up): heartbeat-only by default, snapshot opt-in.** The original design had the weekly run POST `/v1/snapshot` (registers a vps-mon `hosts` row) AND ping the heartbeat. The snapshot UPSERT made `cc-air` subject to the prober's hardcoded `agent-silent` rule (`AGENT_SILENT_THRESHOLD_SEC = 600s`, `tools/vps-mon/worker/src/prober.ts`), which CRITs any host whose `last_seen` is older than 600s. Because the pusher runs WEEKLY, `cc-air` looked silent 6 days out of 7 → a guaranteed weekly false CRIT (fired once 2026-06-15 19:50). Mitigation: deleted the `cc-air` host row + acked the alert. Fix: the heartbeat GET is now the DEFAULT action, and the `/v1/snapshot` POST is behind an opt-in `--snapshot` flag (default OFF); `cc-intel-weekly` calls `cc-vps-report` with no flag (heartbeat-only). The heartbeat (interval 604800 + grace 86400) does not touch the `hosts` table, so the 600s rule cannot see it; it is the correct weekly liveness signal. The signer + snapshot code are kept (valid + tested), usable via `--snapshot` once/if vps-mon grows a per-host exempt for low-frequency pushers. The B4/B6/B7 live verifications below were performed once at original ship (#343); they remain valid for the `--snapshot` path and were NOT re-run for this code-only change.
 
@@ -385,7 +385,7 @@ that the eval's done-gate (a recorded eval ending in a written verdict) is satis
 
 **Type:** verify-and-close, not new code. ID-117 said "capture the metric deltas, do not adopt token-dashboard." This section proves cc-observe's subagent-attribution and cache-hit math are faithful to token-dashboard's formulas (`research/2026-06-15-claude-code-usage-metrics-and-tooling.md`). **Verdict: FAITHFUL, no drift, no code change.**
 
-**Date:** 2026-06-20 · **Host:** Hans-Air-M4 · **Mega-goal:** cc-token-reduction SG-02.
+**Date:** 2026-06-20 · **Host:** dev laptop · **Mega-goal:** cc-token-reduction SG-02.
 
 ### What was checked, against the code
 
@@ -432,7 +432,7 @@ Drift would surface as one of: (a) the printed cache-hit% diverging from a hand-
 ## ID-225 per-skill total wall-time view (`skills --latency`)
 
 **Feature:** surface death-by-a-thousand-cuts skill overhead , total wall-time per skill summed across every fire (a skill firing 100x at 50ms = 5s hidden, vs a one-off slow skill). New `--latency` flag on the `skills` view; existing views byte-for-byte unchanged.
-**Date:** 2026-06-28 · **Lane:** full · **Host:** Hans-Air-M4 · **Backlog:** ID-225.
+**Date:** 2026-06-28 · **Lane:** full · **Host:** dev laptop · **Backlog:** ID-225.
 
 ### Data-path verification (before any code)
 
@@ -507,7 +507,7 @@ bin/cc-observe skills --latency --json --days 7      # additive skill_latency ke
 ## ID-229 collapse `/goal` Stop-hook rows via hash label
 
 **Feature:** a `/goal` Stop hook injects the long goal prose as its hook `command`. `hook_label()` keyed those by first word, so one feature scattered across many rows (Drive / Outcome: / Execute / Mega-goal: / ...), DISTINCT goals sharing a first word merged onto one "Drive" row, and the script-filename regex matched a `*.sh`/`*.py` mentioned deep in the prose, mislabelling goals as `build.sh` / `lib.sh` / `marked.js` / `lane-classify.sh`. Fix: match a script filename only in the first two whitespace tokens (the executable), and hash any long inline command into the existing `inline-echo:<hash>` scheme, so each UNIQUE inline hook collapses to one stable row. Only the `hooks` view changes; all other views are byte-for-byte unchanged.
-**Date:** 2026-06-28 · **Lane:** full · **Host:** Hans-Air-M4 · **Backlog:** ID-229 (polish part 1).
+**Date:** 2026-06-28 · **Lane:** full · **Host:** dev laptop · **Backlog:** ID-229 (polish part 1).
 
 ### Acceptance criteria
 

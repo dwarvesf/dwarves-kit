@@ -1,4 +1,4 @@
-Drive the cc-elevation-r4 mega-goal to completion autonomously. Source of truth: `_meta/megagoals/cc-elevation-r4/ROADMAP.md` + the `goals/NN-*.md` files beside it. Read them every turn (outcomes, Done= lines, scope edges, verification paths). Work in `~/workspace/tieubao/ops-toolkit`. Umbrella spec `tools/cc-self-improve/docs/specs/SPEC-103-cc-self-improve.md` is VALIDATED; do not re-litigate its design.
+Drive the cc-elevation-r4 mega-goal to completion autonomously. Source of truth: `_meta/megagoals/cc-elevation-r4/ROADMAP.md` + the `goals/NN-*.md` files beside it. Read them every turn (outcomes, Done= lines, scope edges, verification paths). Work in `~/workspace/<owner>/ops-toolkit`. Umbrella spec `tools/cc-self-improve/docs/specs/SPEC-103-cc-self-improve.md` is VALIDATED; do not re-litigate its design.
 
 Pre-flight (turn 1): confirm `gh` installed (else stop and tell me) and clean latest `main`.
 

@@ -124,7 +124,7 @@ Phase 1 is a manual start per night. launchd nightly is PARKED until journal
 data proves the cadence (minimum-infra rule). The Mini (always-on; claude
 2.1.201 + repos + Max auth already there, attachable from iPhone) stays the
 named LATER option if leaving the Air awake proves annoying; same steps over
-`ssh mini-tieubao`, nothing else changes.
+`ssh <mini-host>`, nothing else changes.
 
 ### Known risks, named
 

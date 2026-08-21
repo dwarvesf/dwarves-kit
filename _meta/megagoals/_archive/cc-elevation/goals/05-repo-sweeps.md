@@ -7,7 +7,7 @@
 
 ## Outcome
 
-A new `tools/repo-sweep/` provides a read-only harness that walks my repos under `~/workspace/tieubao/` and runs six deterministic sweeps, emitting one consolidated digest: (1) stale branches + abandoned `.claude/worktrees/`, (2) dependency + advisory audit (npm/pip/uv + the patch-exploit advisory check) on deployed repos, (3) doc-drift (CLAUDE.md/README claims vs reality), (4) memory hygiene (`.claude/memory/MEMORY.md` refs to files/flags that no longer exist), (5) proof-of-done gaps (`tools/` entries missing `docs/proof-of-done.md`), (6) MANIFEST / tool.toml drift.
+A new `tools/repo-sweep/` provides a read-only harness that walks my repos under `~/workspace/<owner>/` and runs six deterministic sweeps, emitting one consolidated digest: (1) stale branches + abandoned `.claude/worktrees/`, (2) dependency + advisory audit (npm/pip/uv + the patch-exploit advisory check) on deployed repos, (3) doc-drift (CLAUDE.md/README claims vs reality), (4) memory hygiene (`.claude/memory/MEMORY.md` refs to files/flags that no longer exist), (5) proof-of-done gaps (`tools/` entries missing `docs/proof-of-done.md`), (6) MANIFEST / tool.toml drift.
 
 ## Quality bar
 
@@ -30,7 +30,7 @@ Read-only and safe: the harness never writes to any swept repo, it only emits a 
 
 ## Where to look
 
-The repo list under `~/workspace/tieubao/`, the patch-exploit skill for the advisory check, `MANIFEST.md` + the `tool.toml` schema (`_meta/SCHEMAS.md`), the proof-of-done gate convention, `tools/tide/` for tool shape.
+The repo list under `~/workspace/<owner>/`, the patch-exploit skill for the advisory check, `MANIFEST.md` + the `tool.toml` schema (`_meta/SCHEMAS.md`), the proof-of-done gate convention, `tools/tide/` for tool shape.
 
 ## PR body
 

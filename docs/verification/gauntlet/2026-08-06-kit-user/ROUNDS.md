@@ -3,7 +3,7 @@
 Engine: `/kit:gauntlet` per `commands/gauntlet.md`. Surface: the kit's
 contributor surface (README, MANUAL, onboard/adopt docs, guides). Probe:
 `claude-sonnet-5`, headless, `--dangerously-skip-permissions`, 30-min cap.
-Runner: round 1 local (Air); round 2 planned remote (`mini-tieubao`) via
+Runner: round 1 local (Air); round 2 planned remote (`<mini-host>`) via
 `run-remote.sh`, dogfooding the runner-host knob.
 
 **Key caveat (recorded per B7):** rounds run on the shared

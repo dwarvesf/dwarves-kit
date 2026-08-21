@@ -11,7 +11,7 @@ Model: sonnet
 
 ## Outcome
 
-The skill self-improvement loop (was cc-self-improve, 22 files / 11 tests) lives at `dwarves-kit/tools/skill-curator/` , renamed off `self-improve` (which reads as recursive-on-itself) to name its function: it curates/improves skills. Its one hardcoded personal default (`lib/surface.sh` `CC_SI_MEMORY_LEDGER` -> `$HOME/workspace/tieubao/ops-toolkit/_meta/learned-ledger.md`) is flipped to opt-in: unset = a clean error at the call site, never a silent write. No hardcoded Hermes host exists (confirmed); the personal deploy runbook stays ops-toolkit-side (deploy-follows-source). **The subtree's embedded `skills/skill-review/SKILL.md` is PROMOTED to top-level `dwarves-kit/skills/skill-review/`** (per Decision 2, `skills/*/SKILL.md` is loader-mandated top-level, same class as `agents/` , left nested under `tools/` it would silently never install for any consumer). SG-02 generalizes `install.sh`'s skill-copy step to a `skills/*` glob loop that picks it up; if that has not landed yet, the skill dir still sits in the right place for whenever it does.
+The skill self-improvement loop (was cc-self-improve, 22 files / 11 tests) lives at `dwarves-kit/tools/skill-curator/` , renamed off `self-improve` (which reads as recursive-on-itself) to name its function: it curates/improves skills. Its one hardcoded personal default (`lib/surface.sh` `CC_SI_MEMORY_LEDGER` -> `$HOME/workspace/<owner>/ops-toolkit/_meta/learned-ledger.md`) is flipped to opt-in: unset = a clean error at the call site, never a silent write. No hardcoded Hermes host exists (confirmed); the personal deploy runbook stays ops-toolkit-side (deploy-follows-source). **The subtree's embedded `skills/skill-review/SKILL.md` is PROMOTED to top-level `dwarves-kit/skills/skill-review/`** (per Decision 2, `skills/*/SKILL.md` is loader-mandated top-level, same class as `agents/` , left nested under `tools/` it would silently never install for any consumer). SG-02 generalizes `install.sh`'s skill-copy step to a `skills/*` glob loop that picks it up; if that has not landed yet, the skill dir still sits in the right place for whenever it does.
 
 ## Quality bar
 
@@ -21,14 +21,14 @@ The move is invisible to behavior , all 11 tests pass unchanged. The tool is now
 
 - Move the tool subtree from `ops-toolkit/tools/cc-self-improve/` (57 files total, NOT 22 , "22" was only the code-file count) to `dwarves-kit/tools/skill-curator/`, WITH these exclusions/rewrites (else the Done grep below fails):
   - **`deploy/` stays ops-toolkit-side** (the `mini.cc-curator.plist` + `cc-curator-runbook.md` are personal deploy artifacts, deploy-follows-source per Assumption 7) , do NOT move it.
-  - **`RUNBOOK.md` + `MANUAL.md` hardcode `~/workspace/tieubao/ops-toolkit/...`** and are NOT under `deploy/` , rewrite those paths to be generic (or strip the personal examples) as part of the move.
+  - **`RUNBOOK.md` + `MANUAL.md` hardcode `~/workspace/<owner>/ops-toolkit/...`** and are NOT under `deploy/` , rewrite those paths to be generic (or strip the personal examples) as part of the move.
   - Cross-repo history-preservation is best-effort: try `git format-patch`/`git subtree split` replayed via `git am` for real per-commit history before falling back to a single-commit move (advisor P6 #4); log which was used.
 - Rename internal `cc-si`/`cc-self-improve` identifiers to `skill-curator` where they are user-facing; keep internal var names if renaming risks the tests (surgical).
 - Flip `lib/surface.sh:9`: `CC_SI_MEMORY_LEDGER` default from the hardcoded ops path to empty; add a guard that errors clearly if unset when the ledger is actually needed.
 - Move the embedded `skills/skill-review/` out of the tool subtree to top-level `dwarves-kit/skills/skill-review/` (it is loader-mandated top-level); confirm nothing in the tool hardcodes the old nested path.
 - Run the tool's own 11-test suite; capture the run-table (identical pass count).
 - NC: unset `CC_SI_MEMORY_LEDGER`, invoke the ledger path, assert the clean error (not a silent write / not a crash with a confusing trace).
-- `grep -r 'workspace/tieubao' tools/skill-curator/` must be empty.
+- `grep -r 'workspace/<owner>' tools/skill-curator/` must be empty.
 
 Kit-adopted: record build + review via `bash lib/gate-ledger.sh`; `lane-classify` likely `normal`.
 

@@ -36,7 +36,7 @@ not billing).
 
 ## Where to look
 
-02's branch + `tools/cc-observe/bin/cc-observe`, transcript `message.usage` shape, [ccusage](https://github.com/ryoppippi/ccusage) pricing-table shape, `git log --merges` per repo under `~/workspace/tieubao`, the research note's cost section.
+02's branch + `tools/cc-observe/bin/cc-observe`, transcript `message.usage` shape, [ccusage](https://github.com/ryoppippi/ccusage) pricing-table shape, `git log --merges` per repo under `~/workspace/<owner>`, the research note's cost section.
 
 ## PR body
 

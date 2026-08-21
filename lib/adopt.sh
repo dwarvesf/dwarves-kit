@@ -32,6 +32,13 @@
 set -uo pipefail
 
 KIT_ROOT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}"
+# KIT_ROOT is THIS machine's absolute install path. Never render it into a consumer repo:
+# those files get committed, so an expanded /Users/<operator> leaks a personal home to every
+# reader of that repo. KIT_REF is the portable form the consumer's own shell expands, and it
+# resolves for every install mode because install.sh keeps ~/.claude/dwarves-kit pointing at
+# the install (in place, or via the per-dir compat symlinks). settings.json already writes its
+# hook commands as $HOME/.claude/dwarves-kit/hooks/*.sh for the same reason.
+KIT_REF="~/.claude/dwarves-kit"
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC_ROOT="$(cd "$SELF_DIR/.." && pwd)"   # the dwarves-kit repo root when run from its lib/
 START="<!-- kit:adopt -->"               # managed-block markers in the consumer CLAUDE.md
@@ -91,7 +98,7 @@ workflow_block() {
 # WORKFLOW.md (pointer)
 
 This repo is adopted into the dwarves-kit. The canonical lanes and the lane x phase gate matrix
-live in the installed kit: \`$KIT_ROOT/WORKFLOW.md\`. Read that for the lanes and the gate at each
+live in the installed kit: \`$KIT_REF/WORKFLOW.md\`. Read that for the lanes and the gate at each
 phase boundary. The gate machinery (gate-ledger, ship-gate) parses that copy, not this file.
 EOF
 }
@@ -100,8 +107,8 @@ claude_block() {
   printf '%s\n' "$START"
   printf '## Operating layer (dwarves-kit)\n\n'
   printf '@AGENTS.md\n\n'
-  printf 'Before touching code, classify the lane: `bash %s/bin/classify lane classify "<task>"`.\n' "$KIT_ROOT"
-  printf 'A full-lane change records its gates via `%s/bin/gate ledger` or the ship-gate blocks the push.\n' "$KIT_ROOT"
+  printf 'Before touching code, classify the lane: `bash %s/bin/classify lane classify "<task>"`.\n' "$KIT_REF"
+  printf 'A full-lane change records its gates via `%s/bin/gate ledger` or the ship-gate blocks the push.\n' "$KIT_REF"
   printf '%s\n' "$END"
 }
 
@@ -160,7 +167,7 @@ if [ ! -f "$marker" ]; then
 
 Presence of this file opts this repo into the dwarves-kit proof-of-done ship-gate. A
 behavioral/stateful change owes a recorded run here; the shape per loop type comes from the
-install: \`bash $KIT_ROOT/lib/gate/proof-gate.sh contract "<task>"\`.
+install: \`bash $KIT_REF/lib/gate/proof-gate.sh contract "<task>"\`.
 EOF
   fi
   did=1
@@ -216,8 +223,8 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
       {
         echo "# .kit.toml -- this PROJECT's override of the kit-root defaults (SPEC-192)."
         echo "# Only the keys you set here matter; every key you omit inherits the kit-root"
-        echo "# default at $KIT_ROOT/kit.toml (lib/config/kit-config.sh: project keys WIN)."
-        echo "# Re-run \`bash $KIT_ROOT/lib/adopt.sh --refresh <this repo>\` (or /kit:adopt) after"
+        echo "# default at $KIT_REF/kit.toml (lib/config/kit-config.sh: project keys WIN)."
+        echo "# Re-run \`bash $KIT_REF/lib/adopt.sh --refresh <this repo>\` (or /kit:adopt) after"
         echo "# editing [modules] to re-wire this project's .claude/settings.json to match --"
         echo "# adopt reads this file at adopt time; no hook reads it at hook-fire time."
         echo ""

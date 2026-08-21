@@ -15,7 +15,7 @@ DF-152. Survey + verdicts: `docs/research/2026-07-25-skills-repos-onboarding-abs
   (v2.0.0), so `/plugin marketplace add dwarvesf/dwarves-kit` + `/plugin install kit` works with no
   clone and no installer. It is just not the story any doc tells.
 - THE DEFECT: `lib/adopt.sh` expands `$KIT_ROOT` at render time (the `claude_block` printf and the
-  proof-marker heredoc), so adopted repos carry literal `/Users/tieubao/.claude/dwarves-kit/...`
+  proof-marker heredoc), so adopted repos carry literal `~/.claude/dwarves-kit/...`
   paths (verified: 2 hits in ops-toolkit `CLAUDE.md`). No symlinks are written (audited); the
   operator's "symlinks" recollection is this path-baking. Any non-maintainer machine breaks.
 

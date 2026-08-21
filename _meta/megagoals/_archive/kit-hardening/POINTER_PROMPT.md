@@ -1,6 +1,6 @@
-Objective: harden the dwarves-kit autonomous SDD loop per ADR-0028 (team-blessed 2026-07-01) + ADR-0029, so a full run stops only at ONE final human review. 8 sub-goals live in `~/workspace/tieubao/ops-toolkit/_meta/megagoals/kit-hardening/`.
+Objective: harden the dwarves-kit autonomous SDD loop per ADR-0028 (team-blessed 2026-07-01) + ADR-0029, so a full run stops only at ONE final human review. 8 sub-goals live in `~/workspace/<owner>/ops-toolkit/_meta/megagoals/kit-hardening/`.
 
-SETUP (turn 1). Run from a session whose cwd IS `~/workspace/tieubao/dwarves-kit` (the `/kit:*` commands + `lib/` bind to cwd; the roadmap lives cross-repo in ops-toolkit). Pre-flight `which gh` (required; if missing, stop). Read the ROADMAP.md, NOTES.md, and every `goals/NN-*.md` under the kit-hardening dir above. Create the integration branch `mega/kit-hardening` off `master` if absent. dwarves-kit is kit-adopted: read AGENTS.md + WORKFLOW.md FIRST (the operate-contract, the authority on how each phase runs).
+SETUP (turn 1). Run from a session whose cwd IS `~/workspace/<owner>/dwarves-kit` (the `/kit:*` commands + `lib/` bind to cwd; the roadmap lives cross-repo in ops-toolkit). Pre-flight `which gh` (required; if missing, stop). Read the ROADMAP.md, NOTES.md, and every `goals/NN-*.md` under the kit-hardening dir above. Create the integration branch `mega/kit-hardening` off `master` if absent. dwarves-kit is kit-adopted: read AGENTS.md + WORKFLOW.md FIRST (the operate-contract, the authority on how each phase runs).
 
 SOURCE OF TRUTH. ROADMAP.md = what-is-done + which PRs belong. Each `goals/NN-*.md` holds a sub-goal's immutable contract (Done=, verification, deps, Model/Effort). ADR-0028 + ADR-0029 in `dwarves-kit/docs/decisions/` are the intent.
 

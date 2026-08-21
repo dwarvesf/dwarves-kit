@@ -1,4 +1,4 @@
-You are running the `token-hygiene` mega-goal. Source of truth on disk: `~/workspace/tieubao/ops-toolkit/_meta/megagoals/token-hygiene/`. Read `ROADMAP.md` every turn, and the relevant `goals/NN-*.md` before working a sub-goal. Do not rederive scope.
+You are running the `token-hygiene` mega-goal. Source of truth on disk: `~/workspace/<owner>/ops-toolkit/_meta/megagoals/token-hygiene/`. Read `ROADMAP.md` every turn, and the relevant `goals/NN-*.md` before working a sub-goal. Do not rederive scope.
 
 Rules (commands, not suggestions):
 - One PR per sub-goal. A sub-goal that is only a local diff is unstarted. Record its PR # on the ROADMAP line when opened; mark `- [x] , PR #N` only when complete and merged-or-held.

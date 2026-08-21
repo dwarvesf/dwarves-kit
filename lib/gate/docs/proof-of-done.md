@@ -1,7 +1,7 @@
 # Proof of Done: gate
 
 **Feature:** the module's front door (`lib/gate/README.md`) + its own acceptance record, closing two of the four `lib/gate/*` / `lib/learn/*` IOUs in `tests/kit-contract-known-gaps.txt`.
-**Date:** 2026-07-15 · **Lane:** docs · **Host:** Hans-Air-M4 (macOS 26.5, bash 3.2, Python 3.13) · **Branch:** `feat/retro-propose`
+**Date:** 2026-07-15 · **Lane:** docs · **Host:** dev laptop (macOS 26.5, bash 3.2, Python 3.13) · **Branch:** `feat/retro-propose`
 
 `gate` is the Check stage's engine (formerly "Govern leg", ADR-0034). It is the most heavily specced module in the kit (fourteen
 numbered SPECs, five ADRs) and one of the best tested (119 assertions across six suites), and it

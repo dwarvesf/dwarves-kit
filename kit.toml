@@ -130,7 +130,7 @@ interval_secs  = 3600           # [impl] cron LaunchAgent StartInterval seconds;
 reminders_list = "Backlog"      # [impl] Reminders list name
 notion_db      = ""             # [impl] bind an existing Notion database id
 notion_parent  = ""             # [impl] Notion page id to create the board under (bootstrap)
-hermes_target  = "mini-tieubao" # [impl] where the hermes instance lives: ssh host, or "local", or "sudo:<user>" for another uid on this host
+hermes_target  = ""             # [impl] where the hermes instance lives: ssh host, or "local", or "sudo:<user>" for another uid on this host. No default (it names one machine); unset aborts the sync
 scope_exit_cap = 20             # [impl] max rows one run may close on an app when a filter changes; --allow-scope-exit overrides
 # Per-app audience filters (SPEC-002 P1). only_tags: row must carry one;
 # skip_tags: row must carry none; intake: all | tagged:<tag> | none.
@@ -164,5 +164,5 @@ repos = ""                      # [impl] comma list, e.g. "dwarves-kit,webapp"; 
 push_url = ""                   # [impl] gateway base for `export --push` (FORGE_ADMIN_TOKEN in env)
 
 [gauntlet]                      # side-flow 11 (commands/gauntlet.md); read by tests/gauntlet/cleanroom/run-remote.sh
-runner_host = "local"           # "local" runs rounds on this machine; an ssh host alias (e.g. "mini-tieubao") ships committed state there, runs the round, pulls the record back. The host resolves the probe key from ITS OWN secret store; the key never travels over ssh.
+runner_host = "local"           # "local" runs rounds on this machine; an ssh host alias (e.g. "build-box") ships committed state there, runs the round, pulls the record back. The host resolves the probe key from ITS OWN secret store; the key never travels over ssh.
 probe_key_ref = "op://Toolkit/anthropic-api-key/credential"  # 1P ref the RUNNER host resolves at run time; point at a dedicated spend-capped item when minted

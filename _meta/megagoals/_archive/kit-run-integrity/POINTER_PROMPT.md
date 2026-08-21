@@ -1,6 +1,6 @@
 # POINTER_PROMPT , kit-run-integrity
 
-RUN CONTRACT: `_meta/megagoals/OPERATE.md` is BINDING (run-mode, strips, visible close, checkpoint discipline). This run's cwd is `dwarves-kit`; reference OPERATE.md by its absolute path `~/workspace/tieubao/ops-toolkit/_meta/megagoals/OPERATE.md`.
+RUN CONTRACT: `_meta/megagoals/OPERATE.md` is BINDING (run-mode, strips, visible close, checkpoint discipline). This run's cwd is `dwarves-kit`; reference OPERATE.md by its absolute path `~/workspace/<owner>/ops-toolkit/_meta/megagoals/OPERATE.md`.
 
 Objective: make dwarves-kit's autonomous run layer MEASURABLE + COLLISION-SAFE + HONESTLY-PROVEN. 6 sub-goals (2026-07-02/03 benchmark kit-side follow-ups): 01 gate-outcome emit (`caught=` + `START`/`END`), 02 wavefront SPEC-number race fix, 03 coverage-delta gate (advisory), 04 mutation smoke (advisory), 05 generated proof-table, 06 docs-wiring. Scaffold in ops-toolkit `_meta/megagoals/kit-run-integrity/`; BUILD in dwarves-kit.
 

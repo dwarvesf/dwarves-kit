@@ -11,7 +11,7 @@ into `~/.local/bin` (already on PATH) first.
 ## Install bins
 
 ```bash
-cd ~/workspace/tieubao/ops-toolkit
+cd ~/workspace/<owner>/ops-toolkit
 for t in cc-observe cc-citation-guard cc-harvest repo-sweep verify-claim cc-money-gate; do
   ln -sf "$PWD/tools/$t/bin/$t" ~/.local/bin/$t
 done

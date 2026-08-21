@@ -22,7 +22,7 @@ Kit-grade: behavior change lands with tests in the same PR, and the full kit gua
 
 ## How to close the loop
 
-- Work in dwarves-kit (`~/workspace/tieubao/dwarves-kit`, deployed copy at `~/.claude/dwarves-kit`). Cross-repo: lane via `lib/lane-classify.sh` + spec + spec-validate + gate-ledger, never /kit:*.
+- Work in dwarves-kit (`~/workspace/<owner>/dwarves-kit`, deployed copy at `~/.claude/dwarves-kit`). Cross-repo: lane via `lib/lane-classify.sh` + spec + spec-validate + gate-ledger, never /kit:*.
 - New tests: (a) slop-cleaner flags a file, second Stop with unchanged content stays silent, content change re-flags; (b) proof-ledger override on a batch touching a source file is rejected/demands the exclusion list. Run the kit's full test suite; capture the run-table (command + exit 0 + stdout slice).
 
 **Done =** both new behaviors covered by green tests AND the full kit suite passes, proven by the committed run-table.

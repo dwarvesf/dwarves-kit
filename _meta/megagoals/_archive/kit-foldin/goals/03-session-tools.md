@@ -21,7 +21,7 @@ The transcript/session tools live in the kit as `tools/session-observe/` (keeps 
 
 - Move each tool to `tools/session-<name>/` (drop `cc-`), preserving its own tests/docs/pyproject where present (session-recall is Python).
 - Extract the shared JSONL turn-parser: read both `cc-observe`'s single-pass scan and `cc-recall`'s `load()/_role()/_ts()`; design the ONE interface `lib/session/parse-transcript.sh` exposes (spec this , Design: bearing); rewrite both callers to use it.
-- Adapter defaults: transcript dir via env (opt-in), no `~/workspace/tieubao` default; kit-internal paths repo-relative via `_repo_root()`.
+- Adapter defaults: transcript dir via env (opt-in), no `~/workspace/<owner>` default; kit-internal paths repo-relative via `_repo_root()`.
 - Commit a small fixture transcript (a few synthetic JSONL turns, NO real personal content) under `tests/fixtures/`.
 - Run-table: observe table, recall lookup, intel digest, parser unit test , all over the fixture.
 - NCs: empty transcript, one malformed line, missing dir.

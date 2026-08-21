@@ -1,11 +1,11 @@
 === Positive: generator writes to docs/verification/generated/ ===
-wrote /Users/tieubao/workspace/<owner>/dwarves-kit/.claude/worktrees/ho-11-runs/docs/verification/generated/smoke-test-goal11.md (rid=smoke-test-goal11, lane=unknown, gates=0, outcomes=0)
+wrote ~/workspace/<owner>/dwarves-kit/.claude/worktrees/ho-11-runs/docs/verification/generated/smoke-test-goal11.md (rid=smoke-test-goal11, lane=unknown, gates=0, outcomes=0)
 
 === Jail accepts the new path (file exists there) ===
 -rw-r--r--@ 1 tieubao  staff  1220 Jul  6 09:26 docs/verification/generated/smoke-test-goal11.md
 
 === Negative control: explicit out-path OUTSIDE the jail is refused ===
-proof-table-gen: refusing to write '/tmp/outside-jail-goal11.md': resolves to '/private/tmp/outside-jail-goal11.md', outside the allowed run-table tree '/Users/tieubao/workspace/<owner>/dwarves-kit/.claude/worktrees/ho-11-runs/docs/verification/generated' (this generator only writes under docs/verification/generated/)
+proof-table-gen: refusing to write '/tmp/outside-jail-goal11.md': resolves to '/private/tmp/outside-jail-goal11.md', outside the allowed run-table tree '~/workspace/<owner>/dwarves-kit/.claude/worktrees/ho-11-runs/docs/verification/generated' (this generator only writes under docs/verification/generated/)
 exit=1
 
 === Confirm nothing was written outside the jail ===

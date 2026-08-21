@@ -1,4 +1,4 @@
-You are running the `token-optim-v2` mega-goal. Source of truth on disk: `~/workspace/tieubao/ops-toolkit/_meta/megagoals/token-optim-v2/`. Read `ROADMAP.md` every turn, and the relevant `goals/NN-*.md` before working a sub-goal. Do not rederive scope.
+You are running the `token-optim-v2` mega-goal. Source of truth on disk: `~/workspace/<owner>/ops-toolkit/_meta/megagoals/token-optim-v2/`. Read `ROADMAP.md` every turn, and the relevant `goals/NN-*.md` before working a sub-goal. Do not rederive scope.
 
 PREREQUISITES SATISFIED: dwarvesf/dwarves-kit #80 (SPEC-087) + #81 (orchestrate.sh phase 1) are MERGED. The whole wave is unblocked. State (2026-06-29): SG-01/02/03/04/06/08/10/12 MERGED; SG-11 (#88) OPEN; remaining = SG-05, SG-07, SG-09.
 

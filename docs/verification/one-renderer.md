@@ -1,7 +1,7 @@
 # Proof of Done: one renderer, actually
 
 **Feature:** the two private copies of the staged-block grammar import the shared renderer, and C5 can no longer pass vacuously for a file that defines its own.
-**Date:** 2026-07-15 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** SPEC-200 I1 / ADR-0034 decision 1
+**Date:** 2026-07-15 · **Lane:** normal · **Host:** dev laptop (macOS 26.5) · **Spec:** SPEC-200 I1 / ADR-0034 decision 1
 
 ## What was wrong
 

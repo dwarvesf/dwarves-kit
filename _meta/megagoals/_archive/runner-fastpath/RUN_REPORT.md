@@ -35,7 +35,7 @@ Everything buildable without the operator's gate review is DONE:
    ```
 2. **`board queue --dry-run`** against the real ops-toolkit cockpit (read-only):
    ```
-   $ bash lib/board.sh queue --repo-root ~/workspace/tieubao/ops-toolkit --dry-run
+   $ bash lib/board.sh queue --repo-root ~/workspace/<owner>/ops-toolkit --dry-run
    queue: --dry-run has no additional effect (queue never mutates any BACKLOG.md)
    queue: 0 rows
    ```
