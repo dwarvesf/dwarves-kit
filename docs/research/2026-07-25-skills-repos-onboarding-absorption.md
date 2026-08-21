@@ -175,7 +175,7 @@ MOMENT 3 - WORK           /kit:start at the top of every session: state + ONE
 ```
 
 Blocking gaps, in build order: **ID-406** (portable adopt: today's rendered
-files carry /Users/tieubao/... paths, breaking Moment 2 on any other machine)
+files carry ~/... paths, breaking Moment 2 on any other machine)
 -> **ID-400** (docs say exactly this story, plugin-first) -> **DF-152** (the
 Moment-0 message artifact). ID-405 (ambient self-suggest) deepens Moment 3
 later. The install defect Han remembered as "symlinks" is actually

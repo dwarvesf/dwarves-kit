@@ -32,7 +32,7 @@ corrects two things the sub-goal's placeholder got wrong, found by reading
 1. There is no `bin/orchestrate.sh`; the entry point is `lib/orchestrate.sh`
    (`~/.claude/dwarves-kit/lib/orchestrate.sh` via the pre-existing symlink).
 2. `--from-boards` needs `QUEUE_BOARD_CMD="bash $HOME/.claude/dwarves-kit/lib/board.sh"`
-   (no `board` binary on PATH) plus `REPO_ROOT=$HOME/workspace/tieubao/ops-toolkit` (not a
+   (no `board` binary on PATH) plus `REPO_ROOT=$HOME/workspace/<owner>/ops-toolkit` (not a
    fabricated `CONSUMER_ROOT`) for `board.sh queue` to find the right `boards.txt`.
 
 Plus one live-verified deployment gotcha not in the sub-goal contract at all: `caffeinate`
@@ -51,11 +51,11 @@ detail" below for the experiment that proved this.
 | `~/.claude/dwarves-kit` resolves via symlink, zero sync step | `ls -la ~/.claude/dwarves-kit` | `lib -> .../dwarves-kit/lib` (symlink) |
 | tmux + caffeinate present on this machine | `which tmux caffeinate; tmux -V` | `/opt/homebrew/bin/tmux` (3.7a), `/usr/bin/caffeinate` |
 | caffeinate-wraps-tmux-client is WRONG (experiment) | `tmux new-session -d -s caftest "caffeinate -dims sleep 8; ..."` | caffeinate process lived exactly as long as the pane's `sleep 8`, confirming caffeinate belongs INSIDE the pane, not wrapping the tmux client |
-| tmux pane shell is fish, not bash (found the hard way) | first smoke attempt using bare `2>&1` in the pane command | pane died instantly, no log written; `dscl . -read /Users/tieubao UserShell` = `/opt/homebrew/bin/fish`; fixed by wrapping in `bash -lc` |
+| tmux pane shell is fish, not bash (found the hard way) | first smoke attempt using bare `2>&1` in the pane command | pane died instantly, no log written; `dscl . -read "$HOME" UserShell` = `/opt/homebrew/bin/fish`; fixed by wrapping in `bash -lc` |
 | `--dry-run` sanity check against the fixture | `orchestrate.sh queue <fixture.tsv> --dry-run` | `[dry-run] sg06-air-smoke: WOULD LAUNCH (...)` |
 | LIVE smoke (real tmux + real claude, via caffeinate+tmux exactly as the runbook prescribes) | see below | journal `done`, fixture repo untouched |
 | ops-toolkit worktree untouched by the smoke | `git status --porcelain` (this worktree) | empty |
-| dwarves-kit repo untouched by the smoke | `git status --porcelain` (`~/workspace/tieubao/dwarves-kit`) | empty |
+| dwarves-kit repo untouched by the smoke | `git status --porcelain` (`~/workspace/<owner>/dwarves-kit`) | empty |
 | Fixture repo untouched (no writes/commits from the launched session) | `git -C <fixture>/repo status --porcelain` / `log --oneline` | only untracked `.claude/` (the launched session's own local settings, harmless); still 1 commit (`chore: fixture init`) |
 
 ## Run detail
@@ -177,7 +177,7 @@ $ git -C <FX>/repo log --oneline
 $ cd <ops-toolkit worktree> && git status --porcelain
 (empty)
 
-$ cd ~/workspace/tieubao/dwarves-kit && git status --porcelain
+$ cd ~/workspace/<owner>/dwarves-kit && git status --porcelain
 (empty)
 
 $ tmux ls    # after the outer session's single command finished

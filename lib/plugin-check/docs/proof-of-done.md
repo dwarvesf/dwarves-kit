@@ -1,7 +1,7 @@
 # Proof of Done: plugin-check
 
 **Feature:** read-only freshness lens over installed Claude Code plugins (which are outdated, and the exact bump command).
-**Date:** 2026-07-14 (packaged; the suite predates this and rode in with the kit-foldin migration, 2026-07-05) · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** `docs/specs/SPEC-105-cc-plugin-check.md`
+**Date:** 2026-07-14 (packaged; the suite predates this and rode in with the kit-foldin migration, 2026-07-05) · **Lane:** normal · **Host:** dev laptop (macOS 26.5) · **Spec:** `docs/specs/SPEC-105-cc-plugin-check.md`
 
 Written to close a real gap the SPEC-200 contract lint found: the tool shipped with a
 27-assertion suite and no proof-of-done, so the kit's own done-gate had nothing to read.

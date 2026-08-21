@@ -2,7 +2,9 @@
 # Negative control for the find-delete gate fix.
 # Payloads live here (not on the caller's command line) so the live gate does not
 # fire on the harness that is testing it.
-cd ~/workspace/tieubao/dwarves-kit || exit 1
+# Resolve the repo root from this script's own location, so the harness carries no
+# checkout path of its own and runs from wherever the repo is cloned.
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)" || exit 1
 export DWARVES_KIT_LOG_DIR=$(mktemp -d)
 
 INCIDENT='find ~/.cache/.bun -mindepth 1 -delete 2>/dev/null'

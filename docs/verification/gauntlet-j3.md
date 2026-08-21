@@ -5,7 +5,7 @@ full lane, repeatably.
 
 ## Recorded runs (gate format)
 
-Command: GAUNTLET_RUNNER_HOST=mini-tieubao bash tests/gauntlet/cleanroom/run-remote.sh user J3 <round-1 out>  (probe cap 2700s)
+Command: GAUNTLET_RUNNER_HOST=<mini-host> bash tests/gauntlet/cleanroom/run-remote.sh user J3 <round-1 out>  (probe cap 2700s)
 Exit: 0
 Verdict: PASS
 

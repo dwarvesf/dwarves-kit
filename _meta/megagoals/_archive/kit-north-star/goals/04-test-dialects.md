@@ -21,7 +21,7 @@ A test plan for an eval looks like an eval (numbers, seeds, controls), not a fea
 ## How to close the loop
 
 ```sh
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 grep -c 'dialect' docs/verification/test-design-standard.md      # >= 6 (one per type)
 grep -c 'task-type\|dialect' commands/test-plan.md               # >= 1 (wiring)
 grep -A2 'Test plan' WORKFLOW.md | grep -vc 'opt-in'             # default flip visible in the cycle table

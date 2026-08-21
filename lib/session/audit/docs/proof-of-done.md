@@ -1,7 +1,7 @@
 # Proof of Done: session-audit
 
 **Feature:** LLM deep-audit verb over CC session transcripts (forensic prompt + chained metric-diff reports).
-**Date:** 2026-07-14 · **Lane:** full · **Host:** Hans-Air-M4 (macOS 26.5) · **Provenance:** ops-toolkit `experiments/log-intel-prompt-v2/`
+**Date:** 2026-07-14 · **Lane:** full · **Host:** dev laptop (macOS 26.5) · **Provenance:** ops-toolkit `experiments/log-intel-prompt-v2/`
 
 Deterministic (fixture runtime via `SESSION_AUDIT_CMD` + `SESSION_AUDIT_DATE`), so the
 smoke is the proof. Live-model quality was validated in the origin experiment

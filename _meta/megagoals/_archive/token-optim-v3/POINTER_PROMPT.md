@@ -1,4 +1,4 @@
-You are running the `token-optim-v3` mega-goal. Source of truth on disk: `~/workspace/tieubao/ops-toolkit/_meta/megagoals/token-optim-v3/`. Read `ROADMAP.md` every turn and the relevant `goals/NN-*.md` before working a sub-goal. Do not rederive scope.
+You are running the `token-optim-v3` mega-goal. Source of truth on disk: `~/workspace/<owner>/ops-toolkit/_meta/megagoals/token-optim-v3/`. Read `ROADMAP.md` every turn and the relevant `goals/NN-*.md` before working a sub-goal. Do not rederive scope.
 
 This wave complements token-optim-v2 by adopting pi-vcc (deterministic no-LLM compaction + recall) + a meta-agent. Done: SG-01 (#598 merged), SG-03 (#599 merged), SG-02 (#90 open+held). Remaining: SG-04, SG-05, SG-06, SG-07. v2 SG-09 LANDED (#601): SG-06 unblocked; SG-07's SG-09 dep cleared (still needs SG-01..04 built).
 

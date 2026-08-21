@@ -21,7 +21,7 @@ A maintainer reading WORKFLOW.md sees ONE coherent intake: classify type -> if c
 ## How to close the loop
 
 ```sh
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 # every type row carries a loop + agent entry:
 awk '/^\|/' docs/verification/task-types.md | grep -c ' -> '   # >= 5 (loop arrows per non-pointer row)
 grep -c 'Type loops' WORKFLOW.md                                # >= 1

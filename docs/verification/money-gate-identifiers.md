@@ -1,7 +1,7 @@
 # Proof of Done: money-gate matches identifier-shaped money code
 
 **Feature:** close the money gate's two safety holes (snake_case blindness; a strict knob that silently did nothing).
-**Date:** 2026-07-15 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** `lib/money-gate/SPEC.md` divergences 3 and 4
+**Date:** 2026-07-15 · **Lane:** normal · **Host:** dev laptop (macOS 26.5) · **Spec:** `lib/money-gate/SPEC.md` divergences 3 and 4
 
 ## What was wrong
 

@@ -8,7 +8,7 @@ created     = 2026-06-15
 # Moved into dwarves-kit (kit-foldin SG-03, 2026-07-05) from ops-toolkit's
 # tools/session-intel/, renamed session-intel -> session-intel per the kit naming rule.
 # Keeps bin/session-intel unchanged (surgical). Its deploy/ (a personal launchd
-# cron: an absolute /Users/tieubao plist ProgramArguments path, a runbook that
+# cron: an absolute home-rooted plist ProgramArguments path, a runbook that
 # assumes an ops-toolkit checkout) did NOT move -- it is not a generic install
 # script the way skill-curator's deploy/install.sh was, so deploy-follows-
 # source does not apply; it stays in ops-toolkit and SG-07 must preserve it on

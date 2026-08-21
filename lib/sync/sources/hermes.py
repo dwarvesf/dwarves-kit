@@ -62,8 +62,10 @@ class HermesSource:
     name = "hermes"
     sync_fields = False
 
-    def __init__(self, target: str = "mini-tieubao",
-                 home: str = "/Users/tieubao/hermes-personal/home",
+    # No default target/home: both name ONE operator's machine, so a default here
+    # would silently sync the wrong instance on anyone else's box. The caller
+    # (backlog_sync.build_source) fails loudly when either is unset.
+    def __init__(self, target: str, home: str,
                  runner=None, board: str | None = None,
                  assignee: str | None = None,
                  workspace: str | None = None):

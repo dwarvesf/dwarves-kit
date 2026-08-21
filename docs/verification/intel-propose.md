@@ -1,7 +1,7 @@
 # Proof of Done: session-intel propose
 
 **Feature:** session-intel's two detectors reach the Learn gate as `## [staged]` blocks instead of prose nobody can promote (SPEC-200 T6 / I1).
-**Date:** 2026-07-15 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5)
+**Date:** 2026-07-15 · **Lane:** normal · **Host:** dev laptop (macOS 26.5)
 
 ## Acceptance criteria
 

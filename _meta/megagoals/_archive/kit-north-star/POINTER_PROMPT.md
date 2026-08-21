@@ -1,10 +1,10 @@
-Mega-goal kit-north-star. Source of truth: `_meta/megagoals/kit-north-star/ROADMAP.md` in ops-toolkit (~/workspace/tieubao/ops-toolkit). Re-read it plus the active sub-goal file under its `goals/` every turn; update NOTES.md and FEEDBACK.md per their section rules.
+Mega-goal kit-north-star. Source of truth: `_meta/megagoals/kit-north-star/ROADMAP.md` in ops-toolkit (~/workspace/<owner>/ops-toolkit). Re-read it plus the active sub-goal file under its `goals/` every turn; update NOTES.md and FEEDBACK.md per their section rules.
 
 Destination: dwarves-kit routes every kind of task through a right-sized loop. Chat stays chat; tasks classify by type and lane; non-code types (research/eval/compare/test-design/cleanup/doc) get defined loops with a designated or dynamic agent; the kit BACKLOG becomes a status-driven kanban an agent can pull from; tests are designed first in the dialect fitting the type, and runs are stored as proofs.
 
 Quality bar: the kit takes its own medicine. Every sub-goal ships through the kit's lanes with recorded gates; spec statuses stay truthful; nothing phantom (no documented-but-unimplemented feature).
 
-Work repo: ~/workspace/tieubao/dwarves-kit (shared; NEVER push master). One branch + one PR per sub-goal (branch names in the sub-goal files), gh sequential: a dependent PR opens only after its parent merges; while waiting, work a non-dependent sub-goal or stop blocked. The kit repo is kit-adopted: classify each sub-goal's lane with lib/lane-classify.sh and record its gates with lib/gate-ledger.sh (slash commands bind to cwd; from an ops-toolkit session drive the lib machinery directly). Both suites (tests/test-meta.sh, tests/test-hooks.sh) must be green before any PR.
+Work repo: ~/workspace/<owner>/dwarves-kit (shared; NEVER push master). One branch + one PR per sub-goal (branch names in the sub-goal files), gh sequential: a dependent PR opens only after its parent merges; while waiting, work a non-dependent sub-goal or stop blocked. The kit repo is kit-adopted: classify each sub-goal's lane with lib/lane-classify.sh and record its gates with lib/gate-ledger.sh (slash commands bind to cwd; from an ops-toolkit session drive the lib machinery directly). Both suites (tests/test-meta.sh, tests/test-hooks.sh) must be green before any PR.
 
 Hard rules:
 - One PR per sub-goal; a local-only diff is an unstarted sub-goal.

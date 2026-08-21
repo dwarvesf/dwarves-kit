@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Phase-2 skeleton, NOT installed (see README.md). Authoring rules honored:
      ProgramArguments[0] is the launcher's own absolute path (never /bin/sh),
-     the launcher carries no .sh extension, its shebang is /bin/bash. Fill the
-     KIT_ROOT path at install time; verify with launchctl print + the BTM row. -->
+     the launcher carries no .sh extension, its shebang is /bin/bash. This file
+     ships with no real home path: replace both __KIT_ROOT__ tokens at install
+     time with the checkout root on the target host, then verify the launchd
+     job and the BTM row. -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -10,12 +12,12 @@
   <string>mini.gauntlet-campaign</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/tieubao/.cache/kit-gauntlet/kit/tests/gauntlet/deploy/gauntlet-campaign</string>
+    <string>__KIT_ROOT__/tests/gauntlet/deploy/gauntlet-campaign</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>KIT_ROOT</key>
-    <string>/Users/tieubao/.cache/kit-gauntlet/kit</string>
+    <string>__KIT_ROOT__</string>
   </dict>
   <key>StartCalendarInterval</key>
   <dict>

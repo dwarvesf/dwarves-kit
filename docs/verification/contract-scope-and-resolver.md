@@ -1,7 +1,7 @@
 # Proof of Done: contract scope + the one resolver
 
 **Feature:** kill the split-brain ledger resolver, and stop the contract lint from being blind to hook-only modules.
-**Date:** 2026-07-15 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** SPEC-200 (contract), ADR-0035 (durable root)
+**Date:** 2026-07-15 · **Lane:** normal · **Host:** dev laptop (macOS 26.5) · **Spec:** SPEC-200 (contract), ADR-0035 (durable root)
 
 ## What was wrong
 

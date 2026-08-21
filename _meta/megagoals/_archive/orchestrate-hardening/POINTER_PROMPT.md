@@ -4,7 +4,7 @@ RUN MODE: DELEGATE (5 sub-goals). You are the THIN CONDUCTOR: do NOT run a sub-g
 
 GATE ZERO (turn 1). ADR-0032 (`docs/decisions/0032-megagoal-execution-hygiene.md`) must be ACCEPTED (Proposed, PR #131). Check its Status; if not, STOP for Han's bless (ADR-0028 pattern). Sequenced AFTER kit-face SG-03 (token) + understanding-gate SG-02 (debt) , they DEFINE the ledgers this hardens.
 
-PRECONDITION. cwd IS `~/workspace/tieubao/dwarves-kit` (kit-adopted , read AGENTS.md + WORKFLOW FIRST). Pre-flight `which gh claude tmux`. Read ROADMAP (`## Assumptions` + `## The delegate run model` BINDING; `## Open forks` /spec-resolved), NOTES.md, every `goals/NN`. Code + PRs land in `dwarvesf/dwarves-kit`.
+PRECONDITION. cwd IS `~/workspace/<owner>/dwarves-kit` (kit-adopted , read AGENTS.md + WORKFLOW FIRST). Pre-flight `which gh claude tmux`. Read ROADMAP (`## Assumptions` + `## The delegate run model` BINDING; `## Open forks` /spec-resolved), NOTES.md, every `goals/NN`. Code + PRs land in `dwarvesf/dwarves-kit`.
 
 SOURCE OF TRUTH. ROADMAP.md = done + which PRs belong; each goals/NN is immutable; ADR-0032 + the research note are intent. HARD CONSTRAINTS: `/goal` stays the OFFICIAL outer loop (delegate changes what it does, not the runner); delegate = plain `-p`, `--stream`-to-FILE only for 02; gate/proof ledgers ALREADY work under delegation (verify + document, do NOT rebuild); multiplexer OPT-IN; minimum-infra.
 

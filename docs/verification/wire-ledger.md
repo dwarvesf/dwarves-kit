@@ -19,7 +19,7 @@ transcribed below)
   location=isolated -> /var/folders/.../tmp.AydX1pVImY/.kit/logs
   PASS isolated resolves to PWD/.kit/logs
 == NC2: [ledger] location=shared resolves to XDG default ==
-  location=shared -> /Users/tieubao/.local/state/dwarves-kit/logs
+  location=shared -> ~/.local/state/dwarves-kit/logs
   PASS shared resolves to XDG default
 == NC3 (negative control): KIT_LEDGER_DIR env wins over BOTH config values ==
   KIT_LEDGER_DIR=/var/folders/.../tmp.AydX1pVImY/env-wins-dir + location=shared -> /var/folders/.../tmp.AydX1pVImY/env-wins-dir

@@ -21,7 +21,7 @@ Reads like the other five principle sections wrote it: opinionated, tradeoff-awa
 ## How to close the loop
 
 ```sh
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 grep -c '^## 6\. North-star criteria' docs/PHILOSOPHY.md   # == 1
 grep -c 'N1\|N2\|N3' docs/PHILOSOPHY.md                     # >= 6 (each named + referenced)
 bash tests/test-meta.sh                                      # all green (no pin counts sections)

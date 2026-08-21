@@ -5,7 +5,7 @@ and the kit's doorway contributor surface passes the gauntlet twice, unaided.
 
 ## Recorded runs (gate format)
 
-Command: GAUNTLET_RUNNER_HOST=mini-tieubao bash tests/gauntlet/cleanroom/run-remote.sh user doorway <round-2 out>
+Command: GAUNTLET_RUNNER_HOST=<mini-host> bash tests/gauntlet/cleanroom/run-remote.sh user doorway <round-2 out>
 Exit: 0
 Verdict: PASS (room built on the Mini, probe ran headless, record pulled back)
 
@@ -13,7 +13,7 @@ Command: KIT_ROOT=$PWD bash <round-2>/checks/check-submission-user.sh <round-2 f
 Exit: 0
 Verdict: PASS (SUBMISSION: GREEN, 6/6)
 
-Command: GAUNTLET_RUNNER_HOST=mini-tieubao bash tests/gauntlet/cleanroom/run-remote.sh user doorway <round-3 out>
+Command: GAUNTLET_RUNNER_HOST=<mini-host> bash tests/gauntlet/cleanroom/run-remote.sh user doorway <round-3 out>
 Exit: 0
 Verdict: PASS
 

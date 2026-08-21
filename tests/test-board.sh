@@ -18,10 +18,11 @@
 #                                    `sh -c`'s parsed content)
 #   NC-e RENDER NON-REGRESSION    -> board/next/priority[overview|matrix]/states against the REAL
 #                                    ops-toolkit cockpit are byte-identical to the pre-migration
-#                                    `_meta/board`/`_meta/board-all` output. SKIPS (not fails) when
-#                                    ~/workspace/tieubao/ops-toolkit is absent (CI has no home dir
-#                                    with Han's other repos -- same precedent as
-#                                    test-weekend-batch.sh's dotfiles-path skip).
+#                                    `_meta/board`/`_meta/board-all` output. The cockpit lives in a
+#                                    sibling repo whose location is per-operator, so the test reads
+#                                    $KIT_SIBLING_ROOT/ops-toolkit and hard-codes no home. SKIPS
+#                                    (not fails) when that is unset or absent, which is the CI case
+#                                    -- same precedent as test-weekend-batch.sh's dotfiles skip.
 #
 # Run: bash tests/test-board.sh   (exit 0 = all AC/NC green, including expected skips)
 
@@ -229,7 +230,7 @@ assert "all states renders per repo" "$(printf '%s\n' "$ALL_STATES" | grep -q '=
 
 echo ""
 echo "=== NC-e: RENDER NON-REGRESSION against the REAL ops-toolkit cockpit ==="
-OPS="$HOME/workspace/tieubao/ops-toolkit"
+OPS="${KIT_SIBLING_ROOT:-}/ops-toolkit"
 if [ -x "$OPS/_meta/board" ] && [ -x "$OPS/_meta/board-all" ] && [ -f "$OPS/_meta/BACKLOG.md" ]; then
   RP="$TMPDIR_T/render-proof"; mkdir -p "$RP"
   pair() {

@@ -34,8 +34,8 @@ Destination now fully holds: with sub-goal 04, `/kit:adopt` + the lane gate work
 
 ## Repos
 
-- 01, 02 -> `~/workspace/tieubao/dwarves-kit` (SHARED repo: branch + PR, never merge, needs Han's nod)
-- 03 -> `~/workspace/tieubao/ops-toolkit` (personal)
+- 01, 02 -> `~/workspace/<owner>/dwarves-kit` (SHARED repo: branch + PR, never merge, needs Han's nod)
+- 03 -> `~/workspace/<owner>/ops-toolkit` (personal)
 
 ## Audit cheat sheet
 

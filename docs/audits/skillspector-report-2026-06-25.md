@@ -1,7 +1,7 @@
 # SkillSpector Security Report
 
 **Skill:** unknown  
-**Source:** `/Users/tieubao/workspace/<owner>/dwarves-kit`  
+**Source:** `~/workspace/<owner>/dwarves-kit`  
 **Scanned:** 2026-06-25 10:25:46 UTC  
 
 ## Risk Assessment

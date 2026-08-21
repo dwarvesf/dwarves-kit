@@ -18,7 +18,7 @@ Command: KIT_CONFIG_ROOT=$PWD bash -c 'source lib/config/kit-config.sh && kit_co
 Exit: 0
 Verdict: PASS (runner_host=local, key_ref=op://Toolkit/anthropic-api-key/credential; the first attempt without KIT_CONFIG_ROOT returned the default, proving the knob reads the file rather than a fallback)
 
-Command: ssh mini-tieubao 'colima start; docker info; docker run --rm curlimages/curl -o /dev/null -w %{http_code} https://api.anthropic.com/v1/models'
+Command: ssh <mini-host> 'colima start; docker info; docker run --rm curlimages/curl -o /dev/null -w %{http_code} https://api.anthropic.com/v1/models'
 Exit: 0
 Verdict: PASS (DOCKER-OK; 401 = endpoint reached from a Mini container, egress viable for remote rounds)
 

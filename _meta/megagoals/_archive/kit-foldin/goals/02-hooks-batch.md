@@ -15,7 +15,7 @@ The 4 deterministic cc-* guard tools live in `dwarves-kit/hooks/` under function
 
 ## Quality bar
 
-A consumer who runs the kit installer gets these hooks with zero ops-toolkit snapshot step. The hooks are agent-generic: no hardcoded `~/workspace/tieubao` path, no tenant assumption. Each keeps the source tool's fail-open/fail-closed posture exactly (a guard that blocked stays blocking; a hint that was advisory stays advisory).
+A consumer who runs the kit installer gets these hooks with zero ops-toolkit snapshot step. The hooks are agent-generic: no hardcoded `~/workspace/<owner>` path, no tenant assumption. Each keeps the source tool's fail-open/fail-closed posture exactly (a guard that blocked stays blocking; a hint that was advisory stays advisory).
 
 ## How to close the loop
 
@@ -31,7 +31,7 @@ Per the design note landing names. For each hook:
 
 Kit-adopted: record build + review + (for the untrusted-input hooks) a recheck gate via `bash lib/gate-ledger.sh`. `lane-classify` this as `normal`.
 
-**Done =** all 4 hooks pass their fixture rows AND the temp-HOME install shows all 4 wired, captured in `docs/proof/kit-foldin-hooks.md`; no hardcoded ops-toolkit path remains (`grep -r 'workspace/tieubao' hooks/` is empty for the new files).
+**Done =** all 4 hooks pass their fixture rows AND the temp-HOME install shows all 4 wired, captured in `docs/proof/kit-foldin-hooks.md`; no hardcoded ops-toolkit path remains (`grep -r 'workspace/<owner>' hooks/` is empty for the new files).
 
 ## Handoff on completion
 

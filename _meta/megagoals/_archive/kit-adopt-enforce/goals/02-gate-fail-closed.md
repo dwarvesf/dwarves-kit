@@ -2,7 +2,7 @@
 
 **Time budget:** 1-3 hours of loop work, after 01's PR is MERGED to dwarves-kit master
 **Depends on:** 01 (install.sh's adopt path calls the new `/kit:adopt`; rebase this branch on master after 01 merges)
-**Branch:** `feat/kit-adopt-02-gate` (in `~/workspace/tieubao/dwarves-kit`)
+**Branch:** `feat/kit-adopt-02-gate` (in `~/workspace/<owner>/dwarves-kit`)
 
 ## Outcome
 

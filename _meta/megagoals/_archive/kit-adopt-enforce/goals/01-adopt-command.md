@@ -2,7 +2,7 @@
 
 **Time budget:** 2-5 hours of loop work (full-lane dogfood adds ceremony on purpose)
 **Depends on:** none
-**Branch:** `feat/kit-adopt-01-cmd` (in `~/workspace/tieubao/dwarves-kit`)
+**Branch:** `feat/kit-adopt-01-cmd` (in `~/workspace/<owner>/dwarves-kit`)
 
 ## Outcome
 

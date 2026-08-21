@@ -31,7 +31,7 @@ session. Full report in this dir. Key rows:
 | Check | Result | Meaning |
 |---|---|---|
 | OS | `Darwin`, no `/etc/os-release` | native macOS, not a Linux container |
-| user / HOME | `tieubao` / `/Users/tieubao` | real local account, not a throwaway |
+| user / HOME | the operator account / its real `$HOME` | real local account, not a throwaway |
 | pwd | `.../ops-toolkit/.claude/worktrees/agent-a9cfab24...` | a worktree of the REAL local checkout |
 | private repo auth | `git ls-remote` on private `tieubao/ops-toolkit` succeeded | inherited real gh-backed GitHub auth |
 | push capability | `git push --dry-run` reported `[new branch]` | real write access, not scoped |

@@ -5,7 +5,7 @@ process says features ship). Checker: `check-submission-user-J3.sh` (11
 assertions covering the DISCIPLINE: spec with acceptance criteria +
 verification command, feature incl. bad-input handling the spec decides,
 tests green via the repo's own test command, review verdict, proof-of-done or
-override, PR shape). Runner: `mini-tieubao`, probe cap raised to 45 min for
+override, PR shape). Runner: `<mini-host>`, probe cap raised to 45 min for
 the full lane.
 
 ## Rounds

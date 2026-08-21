@@ -1,7 +1,7 @@
 # Proof of Done: learn
 
 **Feature:** the module's front door (`lib/learn/README.md`) + its own acceptance record, closing the other two `lib/gate/*` / `lib/learn/*` IOUs in `tests/kit-contract-known-gaps.txt`.
-**Date:** 2026-07-15 · **Lane:** docs · **Host:** Hans-Air-M4 (macOS 26.5, bash 3.2, Python 3.13) · **Branch:** `feat/retro-propose`
+**Date:** 2026-07-15 · **Lane:** docs · **Host:** dev laptop (macOS 26.5, bash 3.2, Python 3.13) · **Branch:** `feat/retro-propose`
 
 `learn` is the Learn leg's home: the read-and-propose side of the harness loop. It had SPEC-195,
 SPEC-196, SPEC-126 and ADR-0034, 64 passing assertions, and **no module-level README and no proof

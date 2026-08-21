@@ -103,7 +103,7 @@ Profile: feature   Proof class: behavioral
 - Command: `bash tests/test-ship-gate-profiles.sh`
 - Exit: 1
 - Output (excerpt): `[NO EXECUTABLE CHECK: ship-gate hook not installed at
-  /Users/tieubao/.claude/dwarves-kit/hooks/ship-gate.sh]`
+  ~/.claude/dwarves-kit/hooks/ship-gate.sh]`
 - Verdict: [UNAVAILABLE: this dev sandbox has no kit installed at `~/.claude/dwarves-kit`,
   so the test's own install-guard exits before reaching any code this branch touches]
 - Note: R5-NEG (`git stash` + re-run) reproduces the byte-identical failure with none of
@@ -113,7 +113,7 @@ Profile: feature   Proof class: behavioral
 ## 5. Reproduce
 
 ```
-cd /Users/tieubao/workspace/<owner>/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 bash tests/test-deployable-done.sh
 bash tests/test-proof-dir-layout.sh
 bash tests/test-proof-visual-evidence.sh

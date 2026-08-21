@@ -22,7 +22,7 @@ the `bin/mega runs` entry a consumer would type.
 
 | # | Check | Command | Result |
 |---|---|---|---|
-| 1 | Live estate render | `bash bin/mega runs --registry ~/workspace/tieubao/ops-toolkit/_meta/boards.txt --out /tmp/rd-estate.html` | Exit 0. **492 cards across 7 repos**, 42 images embedded, 1 honest over-budget fallback, 11 MB, 0.4s wall |
+| 1 | Live estate render | `bash bin/mega runs --registry ~/workspace/<owner>/ops-toolkit/_meta/boards.txt --out /tmp/rd-estate.html` | Exit 0. **492 cards across 7 repos**, 42 images embedded, 1 honest over-budget fallback, 11 MB, 0.4s wall |
 | 2 | Single-repo render (this repo) | `bash bin/mega runs --root . --out /tmp/rd-real.html && grep -c 'class="card ' /tmp/rd-real.html` | Exit 0, prints **205** |
 | 3 | Negative control A, empty root | `bash bin/mega runs --root "$(mktemp -d)" --out /tmp/rd-empty.html && grep -c 'no run artifacts' /tmp/rd-empty.html` | Exit 0, prints **1**; card count **0** |
 | 4 | Negative control B, revert | `mv lib/mega/runs-dashboard.py /tmp/ && bash tests/test-runs-dashboard.sh` | **RED: passed 3, failed 17** |

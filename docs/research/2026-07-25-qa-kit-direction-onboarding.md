@@ -105,7 +105,7 @@ the machinery already existed; the story was never told plugin-first.
 ## Q: What is wrong with the current install/adopt (the "symlinks" problem)?
 
 **A:** Not symlinks: render-time path expansion. lib/adopt.sh bakes
-/Users/tieubao/.claude/dwarves-kit/... into consumer files (verified 2 hits in
+~/.claude/dwarves-kit/... into consumer files (verified 2 hits in
 ops-toolkit CLAUDE.md), so adopted repos break on any other machine. Fix
 (ID-408, blocker for the onboarding story; renumbered from ID-406): templates emit the read-time
 resolver `KIT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}"`, plus a

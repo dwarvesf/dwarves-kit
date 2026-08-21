@@ -22,7 +22,7 @@ The hook and skills enforce exactly what CLAUDE.md says after 02, nothing more. 
 
 ## How to close the loop
 
-- Edits live in ~/workspace/tieubao/dotfiles (hooks + `~/.claude/skills/{wrap-session,plan-for-mega-goal}` chezmoi sources). Cross-repo: lane via `lib/lane-classify.sh` + spec + spec-validate + gate-ledger, never /kit:*.
+- Edits live in ~/workspace/<owner>/dotfiles (hooks + `~/.claude/skills/{wrap-session,plan-for-mega-goal}` chezmoi sources). Cross-repo: lane via `lib/lane-classify.sh` + spec + spec-validate + gate-ledger, never /kit:*.
 - Run-table: grep hook for the spec-gating condition; grep wrap-session for the one-line default; `rg -c FEEDBACK ~/.claude/skills/plan-for-mega-goal/` shows only the retirement note; grep the habit line. All committed.
 - Dotfiles watcher: stage+commit in ONE shell call.
 

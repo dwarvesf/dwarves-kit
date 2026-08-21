@@ -1,7 +1,7 @@
 # Proof of Done: telemetry
 
 **Feature:** the durable ledger root (`kit-log-dir.sh`, the ONE resolver every kit ledger routes through) and the lane/gate misroute aggregator (`lane-telemetry.sh`).
-**Date:** 2026-07-15 · **Lane:** full (lib/ enforcement-adjacent storage; data-loss class) · **Host:** Hans-Air-M4 (macOS 26.5)
+**Date:** 2026-07-15 · **Lane:** full (lib/ enforcement-adjacent storage; data-loss class) · **Host:** dev laptop (macOS 26.5)
 **Specs:** `docs/specs/SPEC-097-ledger-durability.md` (origin), `docs/specs/SPEC-182-stats-plane.md` D2 (one root, two planes), `docs/specs/SPEC-061-lane-telemetry.md` (the aggregator) · **ADR:** `docs/decisions/0035-durable-ledger-root.md`
 
 Written to close a gap the module's own records named: `telemetry` shipped the resolver that decides where EVERY durable ledger in the kit is written, and carried no ADR, no proof, and no tests of its own (`tests/kit-contract-known-gaps.txt`, 2026-07-14 doc sweep). The machinery was real and the evidence was not. This proof and the 17-assertion suite it records are new; the behavior they pin is not.

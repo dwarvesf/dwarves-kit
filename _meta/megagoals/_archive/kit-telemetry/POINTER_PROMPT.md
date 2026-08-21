@@ -1,6 +1,6 @@
-Objective: close the dwarves-kit measurement loop that kit-hardening opened , durable telemetry, the SPEC-073 effectiveness eval run on real data, lane rules audited, usage visible, auto-merge code-guarded. 5 sub-goals live in `~/workspace/tieubao/ops-toolkit/_meta/megagoals/kit-telemetry/`.
+Objective: close the dwarves-kit measurement loop that kit-hardening opened , durable telemetry, the SPEC-073 effectiveness eval run on real data, lane rules audited, usage visible, auto-merge code-guarded. 5 sub-goals live in `~/workspace/<owner>/ops-toolkit/_meta/megagoals/kit-telemetry/`.
 
-SETUP (turn 1). Run from a session whose cwd IS `~/workspace/tieubao/dwarves-kit`. Pre-flight `which gh` (missing = stop). Read ROADMAP.md, NOTES.md, every `goals/NN-*.md` in the kit-telemetry dir. Kit-adopted: read AGENTS.md + WORKFLOW.md FIRST (the operate-contract).
+SETUP (turn 1). Run from a session whose cwd IS `~/workspace/<owner>/dwarves-kit`. Pre-flight `which gh` (missing = stop). Read ROADMAP.md, NOTES.md, every `goals/NN-*.md` in the kit-telemetry dir. Kit-adopted: read AGENTS.md + WORKFLOW.md FIRST (the operate-contract).
 
 SOURCE OF TRUTH. ROADMAP.md = what-is-done + which PRs belong. Each `goals/NN-*.md` is that sub-goal's immutable contract (Done=, proof, deps, Model/Effort). Board rows kit ID-082/067/083 + ops ID-149/150 are the briefs; the 2026-07-02 process-effectiveness audit is the evidence base , consume it, never re-derive.
 

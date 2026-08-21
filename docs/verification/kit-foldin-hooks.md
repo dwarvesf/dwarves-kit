@@ -14,7 +14,7 @@ them into both hook manifests, and generalizes `install.sh`'s skill-copy step.
 2. Both `settings.json` (the real registration file) and `hooks/hooks.json` (the plugin
    manifest) register all 4 hooks, in parity (`tests/test-meta.sh`'s own parity check).
 3. `install.sh`'s skill-copy step generalizes to a glob over `skills/*/SKILL.md`.
-4. No hardcoded ops-toolkit path (`workspace/tieubao`) in any new file.
+4. No hardcoded ops-toolkit path (`workspace/<owner>`) in any new file.
 5. Full kit test suite stays green; a fresh-context recheck re-verifies the untrusted-input
    hooks (citation-guard, context-hints, harvest).
 
@@ -82,7 +82,7 @@ stateful rollback flow , not a deploy/data change.]
 | 7 | Manifest parity: both files name all 4 hooks | same file, "Registration parity" block | PASS (8/8) |
 | 8 | Temp-HOME install wires all 4 + companions | same file, "Installer materializes..." block | PASS (17/17) |
 | 9 | Skill-copy loop generalization (2nd fabricated skill) | same file, "Skill-copy loop generalization" block | PASS |
-| 10 | Done gate: no `workspace/tieubao` in new files | same file, "Done gate" block | PASS |
+| 10 | Done gate: no `workspace/<owner>` in new files | same file, "Done gate" block | PASS |
 | 11 | Full kit meta suite unaffected | `tests/test-meta.sh` | PASS 672/672 |
 | 12 | Full kit hooks suite unaffected (count pin bumped 17->22) | `tests/test-hooks.sh` | PASS 452/452 |
 | 13 | Rung-3 fresh-context recheck (citation-guard/context-hints/harvest) | `kit:recheck-verifier` dispatch, independent re-run + source re-read | see Run detail |
@@ -118,13 +118,13 @@ above AND re-derive from source (not from this doc's claims) that citation-guard
 context-hints.py, and harvest.py all fail open on empty/malformed stdin, that
 `CITATION_GUARD_STRICT=1` only exits 2 on a genuinely unresolved ref, that harvest's
 extractor subprocess call uses `shlex.split` (never `shell=True`), and that none of the 4
-hooks' files contain `workspace/tieubao`. Verdict: **PASS** , the verifier reproduced all 3 suites by fresh
+hooks' files contain `workspace/<owner>`. Verdict: **PASS** , the verifier reproduced all 3 suites by fresh
 re-execution (49/49, 672/672, 452/452) and independently re-derived each safety property by
 live-executing each hook with crafted stdin: citation-guard/context-hints/harvest all exit 0
 on empty + malformed stdin (context-hints also on a non-dict `[1,2,3]` payload that would
 raise on `.get`), `CITATION_GUARD_STRICT=1` exits 2 only on a genuine unresolved ref,
 harvest's `run_extractor` uses `subprocess.run(shlex.split(cmd), ...)` with zero `shell=True`
-hits (transcript text cannot reach a shell), and `rg` found no `workspace/tieubao` across all
+hits (transcript text cannot reach a shell), and `rg` found no `workspace/<owner>` across all
 9 files. Verifier note: the Rung-3 edge cases are covered by
 `tests/test-kit-foldin-hooks.sh` (which it re-ran) but not by the two pre-existing suites; a
 dedicated `test-hooks-security.sh` is a reasonable future hardening, filed as a follow-up

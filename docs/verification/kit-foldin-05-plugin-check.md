@@ -60,7 +60,7 @@ bash tests/smoke.sh          # 27/27, includes the fresh [3] + stale [4] run-tab
 ## Done-gate: no hardcoded ops path
 
 ```
-Command: grep -rn 'workspace/tieubao' tools/plugin-check/
+Command: grep -rn 'workspace/<owner>' tools/plugin-check/
 Exit: 1 (no matches)
 Verdict: PASS
 ```

@@ -117,7 +117,7 @@ Profile: feature   Proof class: behavioral
 ### R4 [UNAVAILABLE] (pre-existing environmental gap)
 - Command: `bash tests/test-ship-gate-profiles.sh`
 - Exit: 1
-- Output: `[NO EXECUTABLE CHECK: ship-gate hook not installed at /Users/tieubao/.claude/dwarves-kit/hooks/ship-gate.sh]`
+- Output: `[NO EXECUTABLE CHECK: ship-gate hook not installed at ~/.claude/dwarves-kit/hooks/ship-gate.sh]`
 - This is the dev sandbox not having the kit installed at `~/.claude/dwarves-kit`; it fails identically on `main` before this branch's changes and is called out as a pre-existing gap in the SG-08 goal file itself.
 
 ## 5. Reproduce

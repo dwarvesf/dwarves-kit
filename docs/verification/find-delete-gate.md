@@ -93,7 +93,7 @@ PASS; the sha line is what caught it and is why it stays in the script):
 ## Reproduce
 
 ```bash
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 bash tests/test-hooks.sh                 # 471/471
 
 # negative control: pin the payloads in a file, not on the command line, or the

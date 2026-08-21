@@ -1,6 +1,6 @@
-Objective: make the dwarves-kit telemetry produce CLEAN data + close the SPEC-100 merge-guard loop. 5 sub-goals live in `~/workspace/tieubao/ops-toolkit/_meta/megagoals/kit-telem-cleanup/`. They are the five `#kit-telem-followup` dwarves-kit board rows (ID-085/086/087/088/089) from the kit-telemetry wave's eval + reviews.
+Objective: make the dwarves-kit telemetry produce CLEAN data + close the SPEC-100 merge-guard loop. 5 sub-goals live in `~/workspace/<owner>/ops-toolkit/_meta/megagoals/kit-telem-cleanup/`. They are the five `#kit-telem-followup` dwarves-kit board rows (ID-085/086/087/088/089) from the kit-telemetry wave's eval + reviews.
 
-SETUP (turn 1). Run from a session whose cwd IS `~/workspace/tieubao/dwarves-kit`. Pre-flight `which gh` (missing = stop). Read ROADMAP.md, NOTES.md, every `goals/NN-*.md`. dwarves-kit is kit-adopted: read AGENTS.md + WORKFLOW.md FIRST , they govern how each phase runs.
+SETUP (turn 1). Run from a session whose cwd IS `~/workspace/<owner>/dwarves-kit`. Pre-flight `which gh` (missing = stop). Read ROADMAP.md, NOTES.md, every `goals/NN-*.md`. dwarves-kit is kit-adopted: read AGENTS.md + WORKFLOW.md FIRST , they govern how each phase runs.
 
 SOURCE OF TRUTH. ROADMAP.md = what-is-done + which PRs belong. Each `goals/NN-*.md` is that sub-goal's immutable contract (Done=, proof, deps, Model/Effort). The dwarves-kit board rows ID-085..089 are the briefs; the 2026-07-02 effectiveness-eval + lane-rule-audit + SPEC-100 are the evidence base , consume them, never re-derive.
 

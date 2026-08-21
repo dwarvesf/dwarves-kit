@@ -9,7 +9,7 @@ Moves `ops-toolkit/tools/cc-self-improve/` to `dwarves-kit/tools/skill-curator/`
 1. The 11 existing tests pass at identical count post-move.
 2. NC: unset `CC_SI_MEMORY_LEDGER`, invoke the ledger path, assert a clean error (not a silent
    write, not a confusing crash trace).
-3. `grep -r 'workspace/tieubao' tools/skill-curator/` is empty.
+3. `grep -r 'workspace/<owner>' tools/skill-curator/` is empty.
 4. `deploy/` (the personal macOS launchd artifacts) stays ops-toolkit-side.
 5. The embedded `skills/skill-review/` is promoted to top-level `dwarves-kit/skills/skill-review/`.
 
@@ -24,7 +24,7 @@ Moves `ops-toolkit/tools/cc-self-improve/` to `dwarves-kit/tools/skill-curator/`
   `cc-curator-runbook.md` are personal deploy artifacts)". Taken as "the whole `deploy/` dir stays"
   literally, this self-contradicts the "11 tests pass at identical count" bar: `tests/test-install.sh`
   (6 of the 11 test files) exercises `deploy/install.sh` / `deploy/uninstall.sh`, which are generic
-  settings.json-wiring logic, not personal deploy artifacts, and contain no `workspace/tieubao`
+  settings.json-wiring logic, not personal deploy artifacts, and contain no `workspace/<owner>`
   hardcode. **Resolution:** split `deploy/` --  `deploy/macos/{mini.cc-curator.plist,
   cc-curator-runbook.md}` (the actual personal Mini launchd artifacts the DECISIONS text names)
   stayed in ops-toolkit untouched; `deploy/install.sh` + `deploy/uninstall.sh` (generic, tested,
@@ -105,7 +105,7 @@ generalization work and this proof.
 | Check | Command | Result |
 |---|---|---|
 | 11-test suite, post-move | `for f in tests/test-*.sh; do bash "$f"; done` | all 11 files green, **70/70 assertions** (identical to the pre-move baseline run in ops-toolkit) |
-| Done-gate grep | `grep -r 'workspace/tieubao' tools/skill-curator/` | empty (PASS) |
+| Done-gate grep | `grep -r 'workspace/<owner>' tools/skill-curator/` | empty (PASS) |
 | NC: unset-ledger clean error at the call site | `unset CC_SI_MEMORY_LEDGER; bash -c '. lib/surface.sh; memory_ledger_count'` | `skill-curator: CC_SI_MEMORY_LEDGER is not set -- set it to your knowledge/learning ledger path to surface staged-memory counts (see MANUAL.md)`, exit 1 (clean error, no crash trace) |
 | NC: hook-safe wrapper never breaks the session | `unset CC_SI_MEMORY_LEDGER; bash hooks/sessionstart-surface.sh < /dev/null` | valid `additionalContext` JSON, `skill-curator loop: 0 staged memory ...`, exit 0 |
 | NC: no silent write anywhere (old ops-toolkit default, or the unset var's would-be path) | `find <fresh CC_SI_STATE_DIR> -type f` after the above | empty -- surface.sh is read-only by design; nothing was written |
@@ -136,8 +136,8 @@ was identical: 2+9+4+6+9+3+10+12+5+4+6 = 70.
 ```
 cd dwarves-kit/tools/skill-curator
 for f in tests/test-*.sh; do bash "$f"; done
-grep -r 'workspace/tieubao' .. -- .    # from tools/skill-curator, or:
-grep -r 'workspace/tieubao' /path/to/dwarves-kit/tools/skill-curator/
+grep -r 'workspace/<owner>' .. -- .    # from tools/skill-curator, or:
+grep -r 'workspace/<owner>' /path/to/dwarves-kit/tools/skill-curator/
 unset CC_SI_MEMORY_LEDGER
 bash -c '. lib/surface.sh; memory_ledger_count; echo exit=$?'
 ```

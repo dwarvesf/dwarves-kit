@@ -15,7 +15,7 @@ The Air can drain the queue tonight-onward with zero rediscovery (Han's call 202
 
 ## Quality bar
 
-Minimum infra: Phase 1 is a local `caffeinate -dims tmux new -d -s mega-queue '<kit>/bin/orchestrate.sh queue --from-boards'` one-liner, nothing else; no launchd, no new daemons, no ssh. The runbook covers the three planes (config in repo; secrets N/A; runtime state = `runs/` journal/logs, gitignored) and names the two later options WITHOUT building them: launchd Phase 2 (trigger: journal shows a steady nightly cadence) and a Mini migration (same steps over `ssh mini-tieubao`; the Mini is the always-on home if the Air proves annoying to leave awake).
+Minimum infra: Phase 1 is a local `caffeinate -dims tmux new -d -s mega-queue '<kit>/bin/orchestrate.sh queue --from-boards'` one-liner, nothing else; no launchd, no new daemons, no ssh. The runbook covers the three planes (config in repo; secrets N/A; runtime state = `runs/` journal/logs, gitignored) and names the two later options WITHOUT building them: launchd Phase 2 (trigger: journal shows a steady nightly cadence) and a Mini migration (same steps over `ssh <mini-host>`; the Mini is the always-on home if the Air proves annoying to leave awake).
 
 ## How to close the loop
 

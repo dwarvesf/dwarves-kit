@@ -33,7 +33,7 @@ per-spoke snapshot (`~/.cache/backlog-sync/<source>.state.json`).
             +---------------------+----------------------+
             |                     |                      |
    sources/reminders.py   sources/notion.py      sources/hermes.py
-   (osascript JXA)        (ntn CLI, Dwarves ws)  (ssh mini-tieubao +
+   (osascript JXA)        (ntn CLI, Dwarves ws)  (ssh <hermes-host> +
                                                   hermes kanban CLI)
 ```
 

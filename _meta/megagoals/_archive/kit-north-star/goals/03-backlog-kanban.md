@@ -22,7 +22,7 @@ A returning maintainer answers "what is queued, what is moving, what is stuck" f
 ## How to close the loop
 
 ```sh
-cd ~/workspace/tieubao/dwarves-kit
+cd ~/workspace/<owner>/dwarves-kit
 bash lib/backlog.sh board                                   # renders columns, exit 0
 # fixture round-trip on a temp copy: queued -> claimed -> done flips mechanically:
 bash tests/test-hooks.sh                                    # includes new backlog state tests

@@ -2,7 +2,7 @@
 
 **Time budget:** 1-2 hours of loop work, after 01 + 02 are MERGED to dwarves-kit master
 **Depends on:** 01 + 02 (the installed kit at `~/.claude/dwarves-kit` must carry the new command + the fail-closed gate; refresh the install if its hooks are copied rather than symlinked)
-**Branch:** `feat/kit-adopt-03-otk` (in `~/workspace/tieubao/ops-toolkit`)
+**Branch:** `feat/kit-adopt-03-otk` (in `~/workspace/<owner>/ops-toolkit`)
 
 ## Outcome
 
@@ -15,7 +15,7 @@ The proof is a reproduction, not an assertion. You must recreate the growatt-tui
 ## How to close the loop
 
     # 1. Adopt (uses the command from 01, now in the installed kit):
-    cd ~/workspace/tieubao/ops-toolkit
+    cd ~/workspace/<owner>/ops-toolkit
     /kit:adopt .    # or the CLI it shells to
     test -f AGENTS.md && test -f WORKFLOW.md && grep -q -i 'AGENTS.md' CLAUDE.md
     # 2. Classifiers reachable + loop-type -> artifact resolves here:

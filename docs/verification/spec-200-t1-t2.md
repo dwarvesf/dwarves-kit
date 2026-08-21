@@ -1,7 +1,7 @@
 # Proof of Done: SPEC-200 T1 + T2 (env-family unification + prefix lint)
 
 **Feature:** one env family per resource (`BACKLOG_STAGE_*` canonical, `CC_BACKLOG_*` deprecated alias) + a lint that keeps it that way.
-**Date:** 2026-07-14 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5) · **Spec:** `docs/specs/SPEC-200-signal-pipelines.md`
+**Date:** 2026-07-14 · **Lane:** normal · **Host:** dev laptop (macOS 26.5) · **Spec:** `docs/specs/SPEC-200-signal-pipelines.md`
 
 ## Acceptance criteria
 

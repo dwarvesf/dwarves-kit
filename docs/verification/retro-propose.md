@@ -1,7 +1,7 @@
 # Proof of Done: retro action items reach the Learn gate
 
 **Feature:** `learn propose --retro <RETRO.md>` stages a retro's action items as `## [staged]` blocks (SPEC-200 I1 / T7, the last proposer that leaked).
-**Date:** 2026-07-15 · **Lane:** normal · **Host:** Hans-Air-M4 (macOS 26.5)
+**Date:** 2026-07-15 · **Lane:** normal · **Host:** dev laptop (macOS 26.5)
 
 ## What was wrong
 
