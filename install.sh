@@ -711,16 +711,33 @@ fi
 echo "[ok] Wrote kit.toml: $KIT_TOML"
 echo "[ok] Enabled modules: ${KIT_ENABLED_MODULES:-<spine-only>}"
 
-# 3. Symlink commands
-for CMD_FILE in "$KIT_DIR/commands/"*.md; do
-  CMD_NAME=$(basename "$CMD_FILE")
-  LINK="$CLAUDE_DIR/commands/$CMD_NAME"
-  if [ -L "$LINK" ] || [ -f "$LINK" ]; then
-    rm "$LINK"
-  fi
-  ln -s "$CMD_FILE" "$LINK"
-  echo "[ok] Linked command: /${CMD_NAME%.md}"
-done
+# 3. Symlink commands. Skipped when the kit is also installed as a Claude Code
+# plugin: the plugin already serves every command live under the kit: prefix, and
+# bare-name symlinks would duplicate the slash menu and shadow same-named Anthropic
+# built-ins (/design was the first real collision). On a plugin install this step
+# instead removes any kit-owned bare symlinks a previous shell install left behind.
+PLUGINS_FILE="$CLAUDE_DIR/plugins/installed_plugins.json"
+if [ -f "$PLUGINS_FILE" ] && jq -e '.plugins | keys[] | select(startswith("kit@"))' "$PLUGINS_FILE" >/dev/null 2>&1; then
+  for CMD_FILE in "$KIT_DIR/commands/"*.md; do
+    CMD_NAME=$(basename "$CMD_FILE")
+    LINK="$CLAUDE_DIR/commands/$CMD_NAME"
+    if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$CMD_FILE" ]; then
+      rm "$LINK"
+      echo "[ok] Removed bare command symlink (plugin serves kit:${CMD_NAME%.md}): /${CMD_NAME%.md}"
+    fi
+  done
+  echo "[ok] Plugin install detected: commands served as kit:*, no bare symlinks"
+else
+  for CMD_FILE in "$KIT_DIR/commands/"*.md; do
+    CMD_NAME=$(basename "$CMD_FILE")
+    LINK="$CLAUDE_DIR/commands/$CMD_NAME"
+    if [ -L "$LINK" ] || [ -f "$LINK" ]; then
+      rm "$LINK"
+    fi
+    ln -s "$CMD_FILE" "$LINK"
+    echo "[ok] Linked command: /${CMD_NAME%.md}"
+  done
+fi
 
 # 4. Copy skills (symlinks don't always work for skills). Loop over every
 # skills/*/SKILL.md the kit ships (glob, not a hardcoded single skill), so a newly
