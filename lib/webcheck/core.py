@@ -71,17 +71,18 @@ _NO_REDIRECT_OPENER = urllib.request.build_opener(_NoRedirectHandler)
 
 
 class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
-    """Follows redirects only while they stay on one host. A URL that arrived
-    from remote content (a sitemap entry) may be same-host at the start and
-    redirect anywhere; refusing the off-host hop keeps the audit from reading
-    internal services into the report."""
+    """Follows redirects only while they stay on one host. EVERY fetch this module makes
+    installs one of these, because every response it reads comes from the audited site: a
+    sitemap entry, an openapi `servers[0]`, but equally the site's own robots.txt or
+    homepage. Refusing the off-host hop is what keeps the audit from reading internal
+    services into the report."""
 
     def __init__(self, allowed_host: str):
         self.allowed_host = allowed_host.lower()
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         u = urlparse(newurl)
-        if u.scheme not in ("http", "https") or u.netloc.lower() != self.allowed_host:
+        if u.scheme not in ALLOWED_SCHEMES or u.netloc.lower() != self.allowed_host:
             return None
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
