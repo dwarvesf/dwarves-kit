@@ -17,6 +17,7 @@ Host: macOS 25.5, Python 3.13, `uv` for pytest. Date: 2026-08-24.
 | 8 | the branch adds no new kit-contract offender | `bash tests/test-kit-contract.sh` | C3/C4 offenders are `lib/bench/SPEC` and `lib/bench`, identical to the pre-branch baseline |
 | 9 | the branch adds no new meta failure and closes one | `bash tests/test-meta.sh` | baseline 807/814 with 7 failures; after 809/815 with 6. `docs/FEATURES.md is fresh` went green; nothing new went red |
 | 10 | no operator path or hostname ships | `bash tests/test-no-personal-paths.sh` | `Passed: 3 / 3`, exit 0 |
+| 11 | the ported logic is byte-identical to the origin below the header, so every SSRF guard came across unchanged | `diff <(tail -n +20 <origin>/seo_geo_check/core.py) <(tail -n +27 lib/webcheck/core.py)` | exactly two differences: the added `USER_AGENT` line and one comment reworded to drop an operator name. No guard, no check, no threshold moved. |
 
 ### Run 6 transcript (memo.d.foundation)
 
