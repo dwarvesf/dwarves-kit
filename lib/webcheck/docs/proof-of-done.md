@@ -98,6 +98,35 @@ Both runs exercise the API tier's two branches: memo activates it and passes eve
 dwarves.foundation has no API surface and the tier drops out of the denominator rather than
 failing. That is the not-applicable rule working on live evidence, not a fixture.
 
+## Test plan coverage
+
+Every row of `docs/specs/SPEC-232-web-drift.md` `## Test plan`, mapped to the run that covers it.
+
+| Test plan row | Covered by | Run |
+|---|---|---|
+| Ported behavior: all 61 non-geo tests from the origin suite | the 61 ported functions in `tests/test_webcheck.py` | claims 1 and 2 |
+| SSRF: every groundwork and openapi fetch pins to the audited host | `test_every_groundwork_fetch_pins_to_the_audited_host`, `test_openapi_spec_fetch_pins_to_the_audited_host` | claims 1, 2, 11; control B |
+| SSRF: `fetch_ex` defaults its pin to the requested URL's own host | `test_fetch_ex_defaults_the_pin_to_the_requested_host`, `test_fetch_ex_pin_can_be_narrowed_to_the_audited_host` | claims 1, 2; control B |
+| SSRF: a non-http(s) URL is refused before any request | `test_fetch_ex_refuses_a_non_http_scheme_before_requesting`, `test_fetchable_predicate_covers_scheme_and_host` | claims 1, 2 |
+| SSRF: a DOCTYPE behind a padded XML prolog is still refused | `test_sitemap_doctype_is_refused_even_behind_a_padded_prolog` | claims 1, 2 |
+| Robustness: body read capped, control-character URL returns a miss | `test_body_read_is_capped`, `test_fetch_ex_survives_a_url_with_control_characters` | claims 1, 2; control B |
+| Integrity: a canonical carrying a newline cannot forge a report line | `test_report_cannot_be_forged_by_a_canonical_carrying_a_newline` | claims 1, 2 |
+| SSRF: off-host redirect refused on a page fetch | `test_page_fetch_surfaces_an_offhost_redirect_instead_of_following`, `test_same_host_redirect_handler_refuses_offhost` | claims 1, 2; controls A and B |
+| SSRF: reach probe never follows a redirect | `test_reach_probe_never_follows_redirects` | claims 1, 2 |
+| SSRF: off-host and non-http API base recorded, never fetched | `test_off_host_server_is_recorded_but_never_fetched`, `test_non_http_scheme_base_is_never_fetched`, `test_empty_servers_entry_does_not_skip_the_probe_guard` | claims 1, 2 |
+| SSRF: sitemap URLs split on host before fan-out | `test_same_host_urls_splits_on_host`, `test_same_host_urls_refuses_a_non_http_scheme_on_the_right_host` | claims 1, 2 |
+| SSRF: sitemap XML with a DOCTYPE refused | `test_sitemap_parser_refuses_doctype` | claims 1, 2 |
+| Consumer knob: unset yields the inert message and no URL | `test_sites_verb_is_inert_and_green_when_unset`, `test_declared_sites_unset_yields_nothing` | claims 1, 2, 4 |
+| Consumer knob: comma, whitespace, and mixed lists parse | `test_declared_sites_splits_on_comma_and_whitespace`, `test_sites_verb_prints_one_declared_site_per_line` | claims 1, 2, 5 |
+| Consumer knob: a colon inside a URL never splits | `test_declared_sites_never_splits_on_the_colon_inside_a_url` | claims 1, 2 |
+| Negative control | controls A and B below | Negative control section |
+| Live: `audit https://memo.d.foundation` | run 6 transcript | claim 6 |
+| Live: `audit https://dwarves.foundation` | run 7 transcript | claim 7 |
+
+No row is skipped. `test_declared_sites_refuses_a_non_http_entry` and
+`test_sites_verb_reports_a_refused_entry_and_stays_green` exceed the matrix; they cover the
+gate's finding that a `file://` entry in `WEB_DRIFT_SITES` was fetchable.
+
 ## Negative control
 
 Two controls, because the SSRF defense has two parts and each must be shown load-bearing on
