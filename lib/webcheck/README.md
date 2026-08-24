@@ -55,7 +55,7 @@ A tier that does not apply reports so and drops out of the denominator. It is ne
 | `webcheck.py` | CLI: `sites` and `audit`, plus the printers |
 | `core.py` | the three tiers, the fetch layer, and the SSRF guards |
 | `SPEC.md` | the tool contract: surface, hard-fail-vs-warning rule, request budget, SSRF invariants |
-| `tests/test_webcheck.py` | 66 plain-assert tests, pytest-discoverable and standalone-runnable |
+| `tests/test_webcheck.py` | plain-assert tests, pytest-discoverable and standalone-runnable |
 | `docs/proof-of-done.md` | the recorded verification, including the two live runs |
 
 ## Tests

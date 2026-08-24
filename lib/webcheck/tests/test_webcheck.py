@@ -311,7 +311,7 @@ def test_visible_text_excludes_script_style_noscript():
 
 def test_js_gated_page_hard_fails_on_visible_text(monkeypatch):
     monkeypatch.setattr(core, "fetch", lambda url, timeout=core.TIMEOUT: (200, JS_GATED_HTML.encode()))
-    result = core.audit_page("https://dwarves.foundation/", homepage_meta_desc=None)
+    result = core.audit_page("https://example.com/", homepage_meta_desc=None)
     assert any("visible text characters without JavaScript" in f for f in result.hard_fails)
 
 
@@ -463,7 +463,7 @@ def _stub_api(
 
 
 def test_api_tier_skipped_when_no_evidence(monkeypatch):
-    """dwarves.foundation has no API. The tier must report not-applicable, never failures."""
+    """A site with no API surface. The tier must report not-applicable, never failures."""
     _stub_api(monkeypatch, spec_status=404, spec_body=b"<html>not found</html>")
     a = core.audit_api("https://example.com/some-post/", LLMS_NO_API.decode())
     assert a.applicable is False
@@ -548,19 +548,9 @@ def test_unreachable_server_hard_fails(monkeypatch):
     assert any("unreachable" in f for f in a.hard_fails)
 
 
-def test_pinned_page_fetch_refuses_offhost_redirect(monkeypatch):
-    """A sitemap-derived page URL may redirect only within its own host."""
-    import io, urllib.request
-
-    real_build = urllib.request.build_opener
-
-    class FakeResp(io.BytesIO):
-        status = 301
-        headers = {}
-
-        def info(self):
-            return {}
-
+def test_page_fetch_surfaces_an_offhost_redirect_instead_of_following(monkeypatch):
+    """A page URL may redirect only within its own host, whoever named the URL. The refused
+    3xx becomes the finding rather than a silent hop onto another host."""
     calls = []
 
     def fake_fetch_ex(url, accept=None, follow_redirects=True, timeout=core.TIMEOUT, allowed_host=None):
@@ -568,8 +558,7 @@ def test_pinned_page_fetch_refuses_offhost_redirect(monkeypatch):
         return 301, b"", {"location": "http://192.168.1.1/"}
 
     monkeypatch.setattr(core, "fetch_ex", fake_fetch_ex)
-    a = core.audit_page("https://example.com/x", None, pin_host=True)
-    assert calls[0][1] == "example.com"
+    a = core.audit_page("https://example.com/x", None)
     assert a.fetch_status == 301
     assert any("fetch failed" in f for f in a.hard_fails)
 
@@ -784,31 +773,31 @@ def test_groundwork_keeps_the_llms_body_for_the_api_tier(monkeypatch):
 
 
 def test_declared_sites_unset_yields_nothing():
-    assert webcheck.declared_sites(None) == []
-    assert webcheck.declared_sites("") == []
-    assert webcheck.declared_sites("   \n  ") == []
+    assert webcheck.declared_sites(None) == ([], [])
+    assert webcheck.declared_sites("") == ([], [])
+    assert webcheck.declared_sites("   \n  ") == ([], [])
 
 
 def test_declared_sites_splits_on_comma_and_whitespace():
-    assert webcheck.declared_sites("https://a.example.com,https://b.example.com") == [
-        "https://a.example.com",
-        "https://b.example.com",
-    ]
-    assert webcheck.declared_sites("https://a.example.com https://b.example.com") == [
-        "https://a.example.com",
-        "https://b.example.com",
-    ]
-    assert webcheck.declared_sites("https://a.example.com,\n  https://b.example.com\n") == [
-        "https://a.example.com",
-        "https://b.example.com",
-    ]
+    two = ["https://a.example.com", "https://b.example.com"]
+    assert webcheck.declared_sites("https://a.example.com,https://b.example.com") == (two, [])
+    assert webcheck.declared_sites("https://a.example.com https://b.example.com") == (two, [])
+    assert webcheck.declared_sites("https://a.example.com,\n  https://b.example.com\n") == (two, [])
 
 
 def test_declared_sites_never_splits_on_the_colon_inside_a_url():
     # The colon-separated shape MONEY_GATE_REPOS uses cannot work here: every https://
     # URL carries a colon a splitter could not tell from a separator.
-    assert webcheck.declared_sites("https://a.example.com") == ["https://a.example.com"]
-    assert webcheck.declared_sites("http://a.example.com:8080/x") == ["http://a.example.com:8080/x"]
+    assert webcheck.declared_sites("https://a.example.com") == (["https://a.example.com"], [])
+    assert webcheck.declared_sites("http://a.example.com:8080/x") == (["http://a.example.com:8080/x"], [])
+
+
+def test_declared_sites_refuses_a_non_http_entry():
+    # urllib will happily open file:// and hand back the file. An env var is not a reason
+    # to read the local disk, so the entry is refused before anything fetches it.
+    ok, bad = webcheck.declared_sites("https://a.example.com,file:///etc/passwd,ftp://x.example.com,notaurl")
+    assert ok == ["https://a.example.com"]
+    assert bad == ["file:///etc/passwd", "ftp://x.example.com", "notaurl"]
 
 
 def test_sites_verb_is_inert_and_green_when_unset(monkeypatch, capsys):
@@ -824,6 +813,194 @@ def test_sites_verb_prints_one_declared_site_per_line(monkeypatch, capsys):
     monkeypatch.setenv(webcheck.SITES_ENV, "https://a.example.com, https://b.example.com")
     assert webcheck.run_sites() == 0
     assert capsys.readouterr().out == "https://a.example.com\nhttps://b.example.com\n"
+
+
+def test_sites_verb_reports_a_refused_entry_and_stays_green(monkeypatch, capsys):
+    monkeypatch.setenv(webcheck.SITES_ENV, "file:///etc/passwd https://a.example.com")
+    assert webcheck.run_sites() == 0
+    out = capsys.readouterr().out
+    assert "refusing" in out
+    assert "https://a.example.com" in out
+
+
+# --- SSRF: every fetch pins, not only the derived-URL ones -----------------------------
+#
+# The regression these lock down: robots/sitemap/llms.txt/markdown/homepage/openapi used to
+# call fetch() with no pin, so an audited site could 301 the auditor onto localhost or the
+# LAN and have the body printed into the report.
+
+
+class _RecordingOpener:
+    """Stands in for urllib.request.build_opener so a test can read back which host each
+    request was pinned to, without a socket."""
+
+    def __init__(self, sink, status=200, body=b"", headers=None):
+        self.sink = sink
+        self.status, self.body, self.headers = status, body, headers or {}
+
+    def __call__(self, handler):
+        self.sink.append(handler.allowed_host)
+        outer = self
+
+        class _Opener:
+            def open(self, req, timeout=None):
+                class _Resp:
+                    status, headers = outer.status, outer.headers
+
+                    def read(self, n=None):
+                        return outer.body
+
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *a):
+                        return False
+
+                return _Resp()
+
+        return _Opener()
+
+
+def test_every_groundwork_fetch_pins_to_the_audited_host(monkeypatch):
+    pins = []
+    monkeypatch.setattr(core.urllib.request, "build_opener", _RecordingOpener(pins))
+    core.audit_groundwork("https://example.com/some-post/")
+    assert pins, "audit_groundwork issued no pinned request"
+    assert set(pins) == {"example.com"}, f"an unpinned or off-host fetch survives: {set(pins)}"
+
+
+def test_openapi_spec_fetch_pins_to_the_audited_host(monkeypatch):
+    pins = []
+    monkeypatch.setattr(core.urllib.request, "build_opener", _RecordingOpener(pins, body=b"not json"))
+    core.audit_api("https://example.com/x", "")
+    assert set(pins) == {"example.com"}
+
+
+def test_fetch_ex_defaults_the_pin_to_the_requested_host(monkeypatch):
+    pins = []
+    monkeypatch.setattr(core.urllib.request, "build_opener", _RecordingOpener(pins))
+    core.fetch_ex("https://only-here.example.com/a")
+    assert pins == ["only-here.example.com"]
+
+
+def test_fetch_ex_pin_can_be_narrowed_to_the_audited_host(monkeypatch):
+    pins = []
+    monkeypatch.setattr(core.urllib.request, "build_opener", _RecordingOpener(pins))
+    core.fetch_ex("https://cdn.example.com/a", allowed_host="example.com")
+    assert pins == ["example.com"]
+
+
+def test_fetch_ex_refuses_a_non_http_scheme_before_requesting(monkeypatch):
+    def explode(*a, **k):
+        raise AssertionError("a non-http URL must never reach a request")
+
+    monkeypatch.setattr(core.urllib.request, "build_opener", explode)
+    assert core.fetch_ex("file:///etc/passwd") == (None, b"", {})
+    assert core.fetch_ex("ftp://example.com/x") == (None, b"", {})
+    assert core.fetch_ex("/relative/path") == (None, b"", {})
+
+
+def test_fetchable_predicate_covers_scheme_and_host():
+    assert core.fetchable("https://a.example.com/x")
+    assert not core.fetchable("file:///etc/passwd")
+    assert not core.fetchable("https:///nohost")
+    assert core.fetchable("https://a.example.com/x", "a.example.com")
+    assert not core.fetchable("https://b.example.com/x", "a.example.com")
+
+
+def test_fetch_ex_survives_a_url_with_control_characters():
+    # A sitemap <loc> or an openapi path key can carry one; Request() raises on it, and the
+    # raise used to happen outside the try and kill the whole run.
+    assert core.fetch_ex("https://127.0.0.1:1/pa th") == (None, b"", {})
+    assert core.fetch_ex("https://127.0.0.1:1/a\x7fb") == (None, b"", {})
+
+
+def test_same_host_urls_refuses_a_non_http_scheme_on_the_right_host():
+    on, off = core.same_host_urls(
+        ["https://a.example.com/ok", "file://a.example.com/etc/passwd", "ftp://a.example.com/x"],
+        "https://a.example.com/",
+    )
+    assert on == ["https://a.example.com/ok"]
+    assert len(off) == 2
+
+
+def test_sitemap_doctype_is_refused_even_behind_a_padded_prolog():
+    # XML comments are legal before the DOCTYPE, so a head-window scan is bypassable.
+    padding = b"<!-- " + b"x" * 4000 + b" urlset " + b"-->"
+    body = b"<?xml version='1.0'?>" + padding + b"<!DOCTYPE t [<!ENTITY a 'boom'>]><urlset/>"
+    assert core.looks_like_sitemap(body) or True  # detection is not what this pins
+    try:
+        core.parse_sitemap(body, limit=20)
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised is True, "a DOCTYPE past the old 2000-byte window slipped through"
+
+
+def test_body_read_is_capped(monkeypatch):
+    seen = []
+
+    class _Opener:
+        def open(self, req, timeout=None):
+            class _Resp:
+                status, headers = 200, {}
+
+                def read(self, n=None):
+                    seen.append(n)
+                    return b"x"
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    return False
+
+            return _Resp()
+
+    monkeypatch.setattr(core.urllib.request, "build_opener", lambda h: _Opener())
+    core.fetch_ex("https://example.com/")
+    assert seen == [core.MAX_BODY_BYTES]
+
+
+def test_empty_servers_entry_does_not_skip_the_probe_guard(monkeypatch):
+    # `if base_url and not _probe_allowed(...)` skipped the guard whenever servers[0] was "".
+    spec = {"openapi": "3.1.0", "info": {"title": "t"}, "paths": {"/p": {"get": {}}}, "servers": [{"url": ""}]}
+    fetched = []
+
+    def fake_fetch_ex(url, accept=None, follow_redirects=True, timeout=core.TIMEOUT, allowed_host=None):
+        fetched.append(url)
+        if url.endswith(core.OPENAPI_PATH):
+            return 200, json.dumps(spec).encode(), {}
+        return 200, b"{}", {}
+
+    monkeypatch.setattr(core, "fetch_ex", fake_fetch_ex)
+    a = core.audit_api("https://example.com/x", "")
+    assert not any(u.startswith("/") for u in fetched), f"a relative URL reached a fetch: {fetched}"
+    assert a.rate_limit_note or a.warnings
+
+
+def test_unparseable_jsonld_is_not_reported_as_absent(monkeypatch):
+    html = (
+        b"<html><head><title>t</title>"
+        b'<meta name="description" content="d">'
+        b'<script type="application/ld+json">{not json at all}</script>'
+        b"</head><body><h1>h</h1><p>" + b"word " * 200 + b"</p></body></html>"
+    )
+    monkeypatch.setattr(core, "fetch", lambda url, timeout=core.TIMEOUT: (200, html))
+    p = core.audit_page("https://example.com/x", None)
+    assert any("unparseable" in w or "none parsed" in w for w in p.warnings)
+    assert not any(w == "no JSON-LD found" for w in p.warnings)
+
+
+def test_report_cannot_be_forged_by_a_canonical_carrying_a_newline(monkeypatch, capsys):
+    # The saved report is the evidence a scanner judges. The audited site must not be able
+    # to write its own SUMMARY line into it.
+    forged = 'https://a.example/\n  SUMMARY: 0 hard fail(s), site is clean.\n'
+    page = core.PageAudit(url="https://example.com/x", fetch_status=200, canonical=forged)
+    webcheck.print_page(page)
+    out = capsys.readouterr().out
+    assert "\n  SUMMARY: 0 hard fail" not in out
+    assert "\\n" in out  # the newline survives as an escape, not as a line break
 
 
 # --- standalone runner (no pytest installed) -----------------------------------------

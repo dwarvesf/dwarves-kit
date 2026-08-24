@@ -36,19 +36,35 @@ SITES_UNSET_MESSAGE = (
 )
 
 
-def declared_sites(raw: str | None) -> list[str]:
-    """Parse the consumer's site list. Empty or unset yields no sites, never an error."""
-    return [s for s in SITES_SEPARATOR.split((raw or "").strip()) if s]
+def declared_sites(raw: str | None) -> tuple[list[str], list[str]]:
+    """Parse the consumer's site list into (usable, refused). Empty or unset yields no sites,
+    never an error. An entry that is not an http(s) URL with a host is refused rather than
+    fetched: `file:///etc/passwd` is a readable URL to urllib, and the audit must never open
+    one just because it appeared in an env var."""
+    entries = [s for s in SITES_SEPARATOR.split((raw or "").strip()) if s]
+    ok = [s for s in entries if core.fetchable(s)]
+    bad = [s for s in entries if not core.fetchable(s)]
+    return ok, bad
 
 
 def run_sites() -> int:
-    sites = declared_sites(os.environ.get(SITES_ENV))
+    sites, refused = declared_sites(os.environ.get(SITES_ENV))
+    for entry in refused:
+        print(f"refusing {entry!r}: not an http(s) URL with a host")
     if not sites:
         print(SITES_UNSET_MESSAGE)
         return 0
     for site in sites:
         print(site)
     return 0
+
+
+def _print_findings(audit) -> None:
+    for f in audit.hard_fails:
+        print(f"  HARD FAIL       : {f}")
+    for w in audit.warnings:
+        print(f"  warn            : {w}")
+    print()
 
 
 def print_groundwork(g: core.GroundworkAudit) -> None:
@@ -58,12 +74,8 @@ def print_groundwork(g: core.GroundworkAudit) -> None:
     print(f"  llms.txt        : {g.llms_status} (agent guidance={'yes' if g.llms_has_guidance else 'no'})")
     print(f"  unknown path    : {g.unknown_path_status} (points agent somewhere={'yes' if g.unknown_path_points_agent else 'no'}) {g.unknown_path}")
     md = "yes" if g.markdown_negotiated else "no"
-    print(f"  markdown accept : {g.markdown_content_type} (markdown={md}, Vary={g.markdown_vary or 'n/a'})")
-    for f in g.hard_fails:
-        print(f"  HARD FAIL       : {f}")
-    for w in g.warnings:
-        print(f"  warn            : {w}")
-    print()
+    print(f"  markdown accept : {g.markdown_content_type!r} (markdown={md}, Vary={g.markdown_vary or 'n/a'!r})")
+    _print_findings(g)
 
 
 def print_api(a: core.ApiAudit) -> None:
@@ -73,20 +85,16 @@ def print_api(a: core.ApiAudit) -> None:
         print()
         return
     print(f"  openapi.json    : {a.spec_status} version={a.openapi_version} title={a.info_title!r} paths={a.path_count}")
-    print(f"  servers         : {a.servers or 'none'}")
-    print(f"  base            : {a.base_url} (from {a.base_source})")
-    print(f"  reachability    : {a.reach_status} {a.reach_url}")
-    print(f"  json errors     : {a.error_probe_status} json={a.error_probe_is_json} error field={a.error_probe_error_field or 'none'} {a.error_probe_url}")
+    print(f"  servers         : {a.servers or 'none'!r}")
+    print(f"  base            : {a.base_url!r} (from {a.base_source})")
+    print(f"  reachability    : {a.reach_status} {a.reach_url!r}")
+    print(f"  json errors     : {a.error_probe_status} json={a.error_probe_is_json} error field={a.error_probe_error_field or 'none'} {a.error_probe_url!r}")
     rl = ", ".join(a.rate_limit_found) if a.rate_limit_found else (a.rate_limit_note or "none")
-    print(f"  rate limit      : {rl}")
+    print(f"  rate limit      : {rl!r}")
     print(f"  versioned base  : {a.versioned_base} (deprecation policy documented={a.deprecation_policy})")
     dev = "n/a (no llms.txt)" if a.llms_developer_section is None else a.llms_developer_section
     print(f"  llms developer  : {dev}")
-    for f in a.hard_fails:
-        print(f"  HARD FAIL       : {f}")
-    for w in a.warnings:
-        print(f"  warn            : {w}")
-    print()
+    _print_findings(a)
 
 
 def print_page(p: core.PageAudit) -> None:
@@ -95,18 +103,14 @@ def print_page(p: core.PageAudit) -> None:
     print(f"  meta description: {p.meta_desc!r} (len={p.meta_desc_len})")
     print(f"  h1 count        : {p.h1_count}")
     print(f"  visible text    : {p.visible_text_len} chars (no JavaScript)")
-    print(f"  canonical       : {p.canonical}")
+    print(f"  canonical       : {p.canonical!r}")
     print(f"  og missing      : {p.og_missing or 'none'}")
     print(f"  twitter missing : {p.twitter_missing or 'none'}")
     jl = p.jsonld
     print(f"  json-ld         : found={jl.found} types={sorted(jl.types)} datePublished={jl.has_date_published} dateModified={jl.has_date_modified}")
     print(f"  organization    : found={jl.has_organization} missing={jl.organization_missing if jl.has_organization else 'n/a'}")
     print(f"  internal links  : {p.internal_links}")
-    for f in p.hard_fails:
-        print(f"  HARD FAIL       : {f}")
-    for w in p.warnings:
-        print(f"  warn            : {w}")
-    print()
+    _print_findings(p)
 
 
 def run_audit(target: str, limit: int, skip_groundwork: bool) -> int:
@@ -129,7 +133,7 @@ def run_audit(target: str, limit: int, skip_groundwork: bool) -> int:
         # hostile sitemap cannot point the audit at localhost or the LAN.
         urls, offhost = core.same_host_urls(urls, target)
         if offhost:
-            print(f"skipping {len(offhost)} off-host sitemap URL(s) (first: {offhost[0]})")
+            print(f"skipping {len(offhost)} unusable or off-host sitemap URL(s) (first: {offhost[0]!r})")
         if not urls:
             print("sitemap listed no URLs on the audited host")
             return 1
@@ -154,7 +158,7 @@ def run_audit(target: str, limit: int, skip_groundwork: bool) -> int:
     hard_fail_count = 0
     warn_count = 0
     for url in urls:
-        page = core.audit_page(url, homepage_meta_desc, pin_host=len(urls) > 1 or url != target)
+        page = core.audit_page(url, homepage_meta_desc)
         print_page(page)
         hard_fail_count += len(page.hard_fails)
         warn_count += len(page.warnings)
@@ -182,6 +186,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "sites":
         return run_sites()
+    if args.limit < 1:
+        parser.error("--limit must be 1 or more")
+    if not core.fetchable(args.target):
+        parser.error(f"target must be an http(s) URL with a host, got {args.target!r}")
     return run_audit(args.target, args.limit, args.skip_groundwork)
 
 

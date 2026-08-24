@@ -6,14 +6,17 @@ status, markdown negotiation), page (title, meta, h1, JavaScript-free visible te
 OG, JSON-LD, internal links), and API (openapi spec, reachability, JSON errors, rate-limit
 headers, versioning), which activates only on evidence of an API surface.
 
-Every outward fetch is host-pinned or redirect-refusing. A URL that arrived from remote content
-(a sitemap entry, an openapi `servers[0]`, an llms.txt base) is never followed off the audited
-host, so a hostile site cannot turn this tool into an internal port probe. See SPEC.md.
+EVERY fetch is host-pinned. A redirect never leaves the requested URL's host, and a URL that
+arrived from remote content (a sitemap entry, an openapi `servers[0]`, an llms.txt base) pins to
+the AUDITED host rather than its own. There is no cross-host mode: the audited site is
+untrusted, so following its redirect anywhere would turn this tool into an internal port probe
+and an exfiltration channel. Non-http(s) schemes are refused before any request. See SPEC.md.
 
 Contract: SPEC.md. Skill that drives it: skills/web-drift/SKILL.md.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import urllib.error
@@ -26,6 +29,10 @@ from xml.etree import ElementTree
 
 USER_AGENT = "dwarves-kit-webcheck/1.0 (+https://github.com/dwarvesf/dwarves-kit)"
 TIMEOUT = 10
+# A hostile or merely huge endpoint must not exhaust the auditor. Every body read stops here;
+# no page this tool judges needs more, and a truncated body still answers every check.
+MAX_BODY_BYTES = 5 * 1024 * 1024
+ALLOWED_SCHEMES = ("http", "https")
 GOOD_META_LEN = (150, 160)
 MIN_INTERNAL_LINKS = 2
 MIN_VISIBLE_TEXT_CHARS = 500
@@ -79,6 +86,16 @@ class _SameHostRedirectHandler(urllib.request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
+def fetchable(url: str, allowed_host: str | None = None) -> bool:
+    """True when this tool is willing to request `url` at all: an http(s) scheme, a real host,
+    and (when given) that host. Every URL the tool did not construct itself passes through
+    here, so a `file://`, `ftp://`, or schemeless entry never reaches a request."""
+    u = urlparse(url)
+    if u.scheme not in ALLOWED_SCHEMES or not u.netloc:
+        return False
+    return allowed_host is None or u.netloc.lower() == allowed_host.lower()
+
+
 def fetch_ex(
     url: str,
     accept: str | None = None,
@@ -87,24 +104,33 @@ def fetch_ex(
     allowed_host: str | None = None,
 ) -> tuple[int | None, bytes, dict[str, str]]:
     """GET a URL. Returns (status_code, body, lowercased-header-map); status is None on a
-    network-level failure (DNS/timeout/refused). An HTTP error status still returns its body
-    and headers. With follow_redirects=False a 3xx comes back as that 3xx."""
+    network-level failure (DNS/timeout/refused) or on a URL this tool refuses to request.
+    An HTTP error status still returns its body and headers. With follow_redirects=False a
+    3xx comes back as that 3xx.
+
+    A redirect NEVER leaves a host. `allowed_host` names which one, defaulting to the
+    requested URL's own; a URL that arrived from remote content passes the AUDITED host so a
+    hostile page cannot redirect the audit onto localhost or the LAN. Bodies stop at
+    MAX_BODY_BYTES."""
+    if not fetchable(url):
+        return None, b"", {}
     req_headers = {"User-Agent": USER_AGENT}
     if accept:
         req_headers["Accept"] = accept
-    req = urllib.request.Request(url, headers=req_headers)
-    if not follow_redirects:
-        opener = _NO_REDIRECT_OPENER.open
-    elif allowed_host:
-        opener = urllib.request.build_opener(_SameHostRedirectHandler(allowed_host)).open
-    else:
-        opener = urllib.request.urlopen
+    pin = allowed_host or urlparse(url).netloc
     try:
+        # Request() itself raises on a URL carrying control characters, which a sitemap
+        # <loc> or an openapi path key can, so it is inside the try with the fetch.
+        req = urllib.request.Request(url, headers=req_headers)
+        if follow_redirects:
+            opener = urllib.request.build_opener(_SameHostRedirectHandler(pin)).open
+        else:
+            opener = _NO_REDIRECT_OPENER.open
         with opener(req, timeout=timeout) as resp:
-            return resp.status, resp.read(), _lower_headers(resp.headers)
+            return resp.status, resp.read(MAX_BODY_BYTES), _lower_headers(resp.headers)
     except urllib.error.HTTPError as e:
-        return e.code, e.read(), _lower_headers(e.headers)
-    except (urllib.error.URLError, TimeoutError, OSError):
+        return e.code, e.read(MAX_BODY_BYTES), _lower_headers(e.headers)
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, http.client.HTTPException):
         return None, b"", {}
 
 
@@ -314,13 +340,11 @@ TWITTER_REQUIRED = ["twitter:card"]
 GOOD_JSONLD_TYPES = {"Article", "TechArticle", "BlogPosting", "NewsArticle"}
 
 
-def audit_page(url: str, homepage_meta_desc: str | None, pin_host: bool = False) -> PageAudit:
-    # pin_host: the URL came from remote content (a sitemap), so redirects may
-    # not leave its host. An operator-named URL follows redirects freely.
-    if pin_host:
-        status, body, _ = fetch_ex(url, allowed_host=urlparse(url).netloc)
-    else:
-        status, body = fetch(url)
+def audit_page(url: str, homepage_meta_desc: str | None) -> PageAudit:
+    # No pin flag: fetch_ex pins every request to its own host, whether the URL came from a
+    # sitemap or from the operator. A page that redirects off-host reports that 3xx, which is
+    # itself the finding ("declare the URL the site actually serves").
+    status, body = fetch(url)
     result = PageAudit(url=url, fetch_status=status)
     if status != 200 or not body:
         result.hard_fails.append(f"page fetch failed (status={status})")
@@ -378,7 +402,12 @@ def audit_page(url: str, homepage_meta_desc: str | None, pin_host: bool = False)
 
     result.jsonld = extract_jsonld(parser.ld_json_blocks)
     if not result.jsonld.found:
-        result.warnings.append("no JSON-LD found")
+        if result.jsonld.parse_errors:
+            result.warnings.append(
+                f"{result.jsonld.parse_errors} JSON-LD block(s) present but none parsed as JSON"
+            )
+        else:
+            result.warnings.append("no JSON-LD found")
     elif not (result.jsonld.types & GOOD_JSONLD_TYPES):
         result.warnings.append(f"JSON-LD @type {sorted(result.jsonld.types) or 'unknown'} not Article-shaped")
     if result.jsonld.found and not result.jsonld.has_date_published:
@@ -507,8 +536,10 @@ def parse_sitemap(body: bytes, limit: int) -> list[str]:
     # defusedxml would add a dep the task forbids. A real sitemap.xml never declares
     # a DOCTYPE, so reject any body that does instead of parsing it. Upgrade to
     # defusedxml if this tool is ever pointed at a domain the operator does not own.
-    head = body[:2000]
-    if b"<!DOCTYPE" in head or b"<!ENTITY" in head:
+    # Scan the whole body, never a head window: XML comments are legal in the prolog, so a
+    # padded prolog pushes the declaration past any fixed window and billion-laughs lands.
+    # A real sitemap contains neither string anywhere, so the full scan costs nothing.
+    if b"<!DOCTYPE" in body or b"<!ENTITY" in body:
         raise ValueError("refusing to parse sitemap XML with a DOCTYPE/ENTITY declaration")
     root = ElementTree.fromstring(body)
     locs = [el.text.strip() for el in root.iter(f"{SITEMAP_NS}loc") if el.text]
@@ -566,7 +597,6 @@ class ApiAudit:
     error_probe_status: int | None = None
     error_probe_is_json: bool = False
     error_probe_error_field: str | None = None
-    rate_limit_url: str | None = None
     rate_limit_found: list[str] = field(default_factory=list)
     rate_limit_note: str = ""
     versioned_base: bool = False
@@ -649,9 +679,9 @@ def rate_limit_headers_in(headers: dict[str, str]) -> list[str]:
 def same_host_urls(urls: list[str], target: str) -> tuple[list[str], list[str]]:
     """Split sitemap URLs into (on the audited host, off it). A sitemap is
     remote content, so the fan-out must not follow it to another host."""
-    host = urlparse(target).netloc.lower()
-    on = [u for u in urls if urlparse(u).netloc.lower() == host]
-    off = [u for u in urls if urlparse(u).netloc.lower() != host]
+    host = urlparse(target).netloc
+    on = [u for u in urls if fetchable(u, host)]
+    off = [u for u in urls if not fetchable(u, host)]
     return on, off
 
 
@@ -664,8 +694,7 @@ def _probe_allowed(candidate: str, audited_host: str) -> bool:
     a hostile site could point it at localhost or the LAN and turn the audit
     into an internal port probe. Probes therefore only follow http(s) URLs on
     the audited host itself; anything else is recorded but never fetched."""
-    u = urlparse(candidate)
-    return u.scheme in ("http", "https") and u.netloc.lower() == audited_host.lower()
+    return fetchable(candidate, audited_host)
 
 
 def audit_api(base_url: str, llms_text: str = "") -> ApiAudit:
@@ -723,7 +752,9 @@ def audit_api(base_url: str, llms_text: str = "") -> ApiAudit:
 
     # One request doing double duty: it proves servers[0] answers, and it is the documented
     # GET whose response headers check 3 reads.
-    if a.base_url and not _probe_allowed(a.base_url, parsed.netloc):
+    # `and` on the LEFT would skip the guard whenever base_url is falsy, and an openapi
+    # servers[0] of "" is a valid str the parser accepts. Guard first, then the value.
+    if not (a.base_url and _probe_allowed(a.base_url, parsed.netloc)):
         a.warnings.append(
             f"api base {a.base_url} is off the audited host; recorded but not probed"
         )
@@ -739,7 +770,6 @@ def audit_api(base_url: str, llms_text: str = "") -> ApiAudit:
         if a.reach_status is None:
             a.hard_fails.append(f"openapi servers[0] {a.base_url} is unreachable (network error)")
         if probe_path:
-            a.rate_limit_url = a.reach_url
             a.rate_limit_found = rate_limit_headers_in(headers)
             if not a.rate_limit_found:
                 a.warnings.append(
