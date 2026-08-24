@@ -126,9 +126,11 @@ and where that value comes from. Then:
   -- offer to write the chosen value into `<repo>/.kit.toml`. Preview the exact line you would add or
   change and confirm before writing; a decline leaves the file untouched.
 - **An env-only knob** (EXPLAIN says "this key has no `kit.toml` backing", e.g. `PROSE_RAG_INJECT`,
-  `MONEY_GATE_REPOS`, the `STATS_*` sources) -- there is no `.kit.toml` sink for it, so print the exact
-  shell guidance instead, e.g. `export PROSE_RAG_INJECT=1` to activate prose-rag recall, and say which
-  shell profile it belongs in. Do not try to edit the user's shell config.
+  `MONEY_GATE_REPOS`, `WEB_DRIFT_SITES`, the `STATS_*` sources) -- there is no `.kit.toml` sink for it,
+  so print the exact shell guidance instead, e.g. `export PROSE_RAG_INJECT=1` to activate prose-rag
+  recall, and say which shell profile it belongs in. Do not try to edit the user's shell config.
+  Quote the separator when a knob has an unusual one: `WEB_DRIFT_SITES` splits on comma or whitespace,
+  never colon, because every URL in it carries a colon.
 - **A `**no-default-consumer**` knob** (the VALUE column shows that marker, e.g. `stats`'s
   `STATS_TIDE_DB` / `STATS_LEARNED_MD` / `STATS_REPOS` source vars) -- these are OPTIONAL data
   sources, skip-safe by design: unset means "that source's table renders empty", never an error.

@@ -248,6 +248,12 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | PROSE_RAG_CORPUS | env-only | unset (index skips clean) | [impl] | prose_rag | Colon-separated corpus dirs/files for `prose-rag index` (adapter-default invariant: no personal path in the kit). Unset with no `--corpus` = unconfigured consumer -> `index` exits 0, db untouched (the shipped kit-weekly `prose-rag-index` job stays silent-green). Under launchd, supplied via `~/.config/kit-weekly/env`. |
 | MONEY_GATE_REPOS | env-only | (unset) | [impl] | money_gate | Colon-separated list of repo names the guard treats as financial; hook is inert (exits 0) without it. |
 
+### web_drift (skill knob, no install module)
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| WEB_DRIFT_SITES | env-only | (unset) | [impl] | (none) | Sites the `kit:web-drift` audit loop enumerates, read by `lib/webcheck/webcheck.py sites` (adapter-default invariant: the kit ships no hostname). Separator is COMMA or WHITESPACE, never colon, because every `https://` URL carries a colon. Unset means no sites are declared: the skill reports that and stops, which is a clean result, not an error. |
+
 ### modules (install-time manifest, `install.sh` `KIT_KNOWN_MODULES`, one row per entry)
 
 No env var exists for any of these , they are install-time flags recorded in the

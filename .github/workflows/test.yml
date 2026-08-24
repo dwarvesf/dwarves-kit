@@ -220,3 +220,11 @@ jobs:
 
       - name: Run kit-weekly scheduler tests (ADR-0034 decision 9, harness-loop sub-goal 10)
         run: bash tests/test-kit-weekly.sh
+
+      - name: Run webcheck tiers + SSRF guards + site-knob tests (SPEC-232)
+        run: bash tests/test-webcheck.sh
+
+      # The module documents a pytest-free entry point; run it too, or that runner rots
+      # silently while only the pytest path is exercised.
+      - name: Run the webcheck standalone runner (no pytest)
+        run: python3 lib/webcheck/tests/test_webcheck.py

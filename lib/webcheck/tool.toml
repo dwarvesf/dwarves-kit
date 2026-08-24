@@ -1,0 +1,13 @@
+[tool]
+name = "webcheck"
+status = "stable"
+summary = "Agent-readiness audit for a live public website: groundwork, page, and API tiers over read-only HTTP"
+entry = "webcheck.py"
+language = "python-stdlib"
+
+[links]
+spec = "docs/specs/SPEC-232-web-drift.md"
+contract = "lib/webcheck/SPEC.md"
+skill = "skills/web-drift/SKILL.md"
+pattern = "docs/patterns/audit-loop.md"
+board = ["ID-483"]
