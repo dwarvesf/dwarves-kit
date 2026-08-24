@@ -128,10 +128,19 @@ def _classify_and_test(token: str) -> tuple[str, bool] | None:
             return ("path", Path(token).expanduser().exists())
         except RuntimeError:
             return ("path", False)
+        except OSError:
+            # exists() can RAISE instead of returning False when a parent dir is
+            # unreadable on this host (e.g. a note quoting /var/root/...): that is
+            # "untestable here", not "dead", so skip rather than report a false
+            # dead-ref or crash the sweep.
+            return None
     if token.startswith("/"):
         if not token.startswith(_REAL_PATH_PREFIXES):
             return None
-        return ("path", Path(token).exists())
+        try:
+            return ("path", Path(token).exists())
+        except OSError:
+            return None
     return None
 
 
