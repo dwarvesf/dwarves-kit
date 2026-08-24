@@ -7,9 +7,9 @@ Host: macOS 25.5, Python 3.13, `uv` for pytest. Date: 2026-08-24.
 
 | # | Claim | Command | Result |
 |---|---|---|---|
-| 1 | the ported suite passes under pytest | `bash tests/test-webcheck.sh` | `66 passed in 0.04s`, exit 0 |
-| 2 | the same suite passes standalone with no pytest installed | `python3 lib/webcheck/tests/test_webcheck.py` | `PASSED 66/66`, exit 0 |
-| 3 | 61 of the origin's 71 tests ported; the 10 geo tests stayed | origin `grep -c '^def test_'` = 71, of which 10 import `geo`; ported file carries 61 ported + 5 new resolver tests | 66 = 61 + 5 |
+| 1 | the suite passes under pytest | `bash tests/test-webcheck.sh` | `81 passed in 0.24s`, exit 0 |
+| 2 | the same suite passes standalone with no pytest installed | `python3 lib/webcheck/tests/test_webcheck.py` | `PASSED 81/81`, exit 0 |
+| 3 | 61 of the origin's 71 tests ported; the 10 geo tests stayed | origin `grep -c '^def test_'` = 71, of which 10 import `geo` | 81 = 61 ported + 5 resolver + 15 hardening regressions |
 | 4 | `sites` is inert and green when the knob is unset | `env -u WEB_DRIFT_SITES python3 lib/webcheck/webcheck.py sites` | prints the documented message, exit 0, no URL |
 | 5 | `sites` lists what the consumer declared | `WEB_DRIFT_SITES='https://example.com, https://docs.example.com' python3 lib/webcheck/webcheck.py sites` | two lines, one URL each, exit 0 |
 | 6 | a live site with all three tiers clean audits clean | `python3 lib/webcheck/webcheck.py audit https://memo.d.foundation --limit 1` | groundwork ok, api tier ok, 0 hard fails, 5 warnings, exit 0 |
@@ -17,7 +17,8 @@ Host: macOS 25.5, Python 3.13, `uv` for pytest. Date: 2026-08-24.
 | 8 | the branch adds no new kit-contract offender | `bash tests/test-kit-contract.sh` | C3/C4 offenders are `lib/bench/SPEC` and `lib/bench`, identical to the pre-branch baseline |
 | 9 | the branch adds no new meta failure and closes one | `bash tests/test-meta.sh` | baseline 807/814 with 7 failures; after 809/815 with 6. `docs/FEATURES.md is fresh` went green; nothing new went red |
 | 10 | no operator path or hostname ships | `bash tests/test-no-personal-paths.sh` | `Passed: 3 / 3`, exit 0 |
-| 11 | the ported logic is byte-identical to the origin below the header, so every SSRF guard came across unchanged | `diff <(tail -n +20 <origin>/seo_geo_check/core.py) <(tail -n +27 lib/webcheck/core.py)` | exactly two differences: the added `USER_AGENT` line and one comment reworded to drop an operator name. No guard, no check, no threshold moved. |
+| 11 | the SSRF the port inherited is closed | reviewer's two-loopback-server repro (`scratchpad/ssrf_demo.py`), before and after | before: `paths reached on the INTERNAL host: ['/internal/robots.txt', '/internal/sitemap.xml', '/internal/llms.txt', '/internal/', '/internal/', '/internal/openapi.json']` and the internal banner printed as `info.title`. After: `paths reached on the INTERNAL host: []`, every tier reporting the refused `302`. |
+| 12 | no tenant hostname ships inside the module | `grep -rn 'd\.foundation' lib/webcheck skills/web-drift` | only `docs/proof-of-done.md`, which is the recorded live-run evidence |
 
 ### Run 6 transcript (memo.d.foundation)
 
@@ -99,26 +100,36 @@ failing. That is the not-applicable rule working on live evidence, not a fixture
 
 ## Negative control
 
-The SSRF hardening is the part that must not silently rot, so the control targets it directly.
+Two controls, because the SSRF defense has two parts and each must be shown load-bearing on
+its own. The branch is committed first, so a control run cannot lose the real code (`d0fc645`).
 
-| Step | What | Result |
-|---|---|---|
-| 1 | commit the branch first (a control run must not be able to lose the real code) | `a928af8` |
-| 2 | remove the same-host guard from `_SameHostRedirectHandler.redirect_request` in `lib/webcheck/core.py`, replacing the body with a bare `return super().redirect_request(...)` | guard gone |
-| 3 | `bash tests/test-webcheck.sh` | `FAILED lib/webcheck/tests/test_webcheck.py::test_same_host_redirect_handler_refuses_offhost` / `1 failed, 65 passed in 0.08s` |
-| 4 | `git checkout -- lib/webcheck/core.py` | guard restored, working tree clean |
-| 5 | `bash tests/test-webcheck.sh` | `66 passed in 0.04s` |
-
-The failure names the guard's own test and nothing else, so the test is specific to the
-invariant rather than passing on unrelated behavior. Failing output for reference:
+**Control A, the handler.** Replace the body of `_SameHostRedirectHandler.redirect_request`
+with a bare `return super().redirect_request(...)`.
 
 ```
-newurl = 'http://10.0.0.1/'
->       m = req.get_method()
-E       AttributeError: 'NoneType' object has no attribute 'get_method'
 FAILED lib/webcheck/tests/test_webcheck.py::test_same_host_redirect_handler_refuses_offhost
-1 failed, 65 passed in 0.08s
+1 failed, 80 passed in 0.35s
 ```
+
+**Control B, the default pin.** This is the one that matters for the reported bug: the handler
+class was always correct, the hole was that `fetch_ex` installed it only when a caller passed
+`allowed_host`. Replace `pin = allowed_host or urlparse(url).netloc` with `pin = allowed_host`.
+
+```
+FAILED test_same_host_redirect_handler_refuses_offhost
+FAILED test_every_groundwork_fetch_pins_to_the_audited_host
+FAILED test_openapi_spec_fetch_pins_to_the_audited_host
+FAILED test_fetch_ex_defaults_the_pin_to_the_requested_host
+FAILED test_fetch_ex_survives_a_url_with_control_characters
+FAILED test_body_read_is_capped
+6 failed, 75 passed in 0.14s
+```
+
+Control B is the meaningful one: reverting only the default pin turns exactly the tests that
+encode the fixed invariant red, and leaves the other 75 green. Control A alone would have
+passed on the vulnerable code, which is why the pre-fix suite reported a green 66.
+
+**Restore.** `git checkout -- lib/webcheck/core.py`, working tree clean, `81 passed in 0.24s`.
 
 ## Reproducible
 

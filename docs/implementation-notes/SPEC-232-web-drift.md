@@ -126,3 +126,66 @@ Why: `lib/registry/feature-registry.sh` reads the description with a line-orient
 block scalar makes it emit the literal `>-` as the description into `docs/FEATURES.md`, which
 `tests/test-meta.sh` then pins as fresh. The generator, not taste, decides this.
 Impact: one long line in the frontmatter. Fixing the generator is a separate change.
+
+## 2026-08-24 15:30 The port inherited an SSRF hole, and my own claim hid it
+
+Context: the security-review gate reproduced a working SSRF against the vendored tool using two
+loopback servers.
+Decision: `fetch_ex` pins every fetch by default; there is no cross-host mode.
+Why: the origin guarded the three DERIVED-URL classes (sitemap entries, openapi `servers[0]`, an
+llms.txt base) and stopped there. The six fetches against the audited host's own robots.txt,
+sitemap.xml, llms.txt, homepage, markdown negotiation, and `/openapi.json` fell through to a bare
+`urlopen`, which follows a 302 anywhere. Since the threat model already calls the audited site
+hostile, that turns the auditor into an internal port scanner whose findings get printed: the
+repro read an internal service and printed its banner as `info.title`.
+
+The root cause was the shape of the fork, not any one call site. `fetch_ex` chose an unpinned
+opener whenever no `allowed_host` was passed, so unpinned was the DEFAULT and each of the six
+call sites was merely exercising it. Patching six call sites would have left the seventh to
+whoever adds a check next. The pin now derives from the requested URL, so an unpinned fetch is
+not expressible.
+
+What made this worse than an inherited bug: the module docstring I wrote for the port claimed
+"Every outward fetch is host-pinned or redirect-refusing", and the `SPEC.md` invariant table I
+wrote listed only the three derived-URL rows. The claim was broader than the table, and the
+table was narrower than the code needed. A reader checking the guard would have read the
+docstring and stopped. Writing an invariant is a promise to test it; the table now names a test
+per row, and the two rows that did not exist are the two that were missing.
+
+Alternatives: patch the six call sites (rejected, leaves the default wrong); add an
+`allow_cross_host` escape for the operator-named target so an apex-to-www redirect still follows
+(rejected, it reintroduces the hole for the exact input the threat model distrusts, and an audit
+tool reporting "your declared URL 302s to X, declare X" is better behavior than silently
+following).
+Impact: `audit_page`'s `pin_host` parameter became a no-op and is gone. The port-fidelity claim
+in the proof-of-done is retired: the port was faithful, and faithful was not safe.
+Open questions: **the same hole is live in `ops-toolkit/tools/seo-geo-check`, which this branch
+treated as read-only source.** It needs the same fix, and that is a separate change in a
+separate repo. Flagged for the operator, not silently fixed from here.
+
+## 2026-08-24 15:45 Two negative controls, because one of them would have passed
+
+Context: the pre-fix suite reported a green 66 while the SSRF was live.
+Decision: the proof records a control on the redirect handler AND a control on the default pin.
+Why: reverting the handler class fails one test on both the vulnerable and the fixed code, so it
+proves nothing about this fix. Reverting the default pin fails exactly the six tests that encode
+the fixed invariant. A negative control has to target the line the fix changed, not the nearest
+component with a test on it, or it certifies the wrong thing. This is the concrete reason the
+original green run was not evidence.
+Impact: `docs/proof-of-done.md` carries both, and says which one is load-bearing.
+
+## 2026-08-24 15:55 Accepted the architecture review; two findings noted, not fixed
+
+Acted on: the `agents/audit-scanner.md` contradiction (its body said "You gather and judge
+evidence" against the gather-then-judge rule this branch added to the pattern, and a dispatched
+scanner reads its own body, not the pattern doc); `JsonLdInfo.parse_errors` counted but never
+read, so a page whose JSON-LD all failed to parse reported "no JSON-LD found", which is a lie the
+counter was written to prevent; the write-only `ApiAudit.rate_limit_url`; a third copy of the
+findings-printer; a hardcoded test count in the README; an undefined `$KIT` in the skill; and the
+standalone runner now runs in CI so it cannot rot behind the pytest path.
+
+Not fixed, deliberately: `core.py` carries four responsibilities in 776 lines, and splitting it
+today buys nothing while each tier is already independently callable and tested. `WEB_DRIFT_*`
+sits outside the config drift lint's fixed prefix family, so a future `WEB_DRIFT_*` orphan would
+go uncaught; widening that family is a change to a test this branch does not own, and it belongs
+with whoever next touches the lint.

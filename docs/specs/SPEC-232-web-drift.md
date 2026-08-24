@@ -35,13 +35,15 @@ no default. The geo-probe half stays in ops-toolkit.
 | `seo_geo_check/geo.py` | stays | shells out to the `claude` CLI, reads a tenant question bank, appends to a path inside a sibling ops-toolkit tool |
 | `questions.toml` | stays | Dwarves pillars and tracked domains, tenant data |
 | `pyproject.toml`, `uv.lock`, `.venv` | dropped | kit style is bare stdlib modules; no packaging ceremony |
-| 61 of 71 tests | graduate as `lib/webcheck/tests/test_webcheck.py` | every test that does not import `geo` |
+| 61 of 71 tests | graduate as `lib/webcheck/tests/test_webcheck.py` | every test that does not import `geo`; 5 resolver tests and 15 hardening regressions join them, for 81 |
 | 10 geo tests | stay | they test `geo.py` |
 
-The SSRF hardening ports byte-for-byte: `_SameHostRedirectHandler`, the
-`follow_redirects=False` probes, `pin_host` on sitemap fan-out, `same_host_urls`,
-`_probe_allowed`, and the DOCTYPE/ENTITY refusal in `parse_sitemap`. Their tests port
-with them.
+The SSRF hardening ports with its tests, and the security gate then found the port had
+inherited a hole: the origin guarded only URLs derived from remote content, while the six
+fetches against the audited host's OWN robots.txt, sitemap.xml, llms.txt, homepage, markdown
+negotiation, and `/openapi.json` followed redirects anywhere. `fetch_ex` now pins every fetch
+by default, so an unpinned fetch is not expressible. Full invariant table: `lib/webcheck/SPEC.md`.
+`audit_page`'s `pin_host` flag is gone, having become a no-op once every path pins.
 
 ### The four slots
 
@@ -86,7 +88,8 @@ subagent would cost more than the table lookup it performs.
 | `lib/webcheck/` | new module: `core.py`, `webcheck.py`, `tool.toml`, `README.md`, `SPEC.md`, `docs/proof-of-done.md`, `tests/test_webcheck.py` |
 | `skills/web-drift/SKILL.md` | new skill, auto-namespaced `kit:web-drift`, frontmatter `name` + long-form `description` with NOT-for clauses + `disable-model-invocation: false` |
 | `tests/test-webcheck.sh` | root wrapper running the Python suite via `uv run --no-project --with pytest`, mirroring `tests/test-sync.sh` |
-| `.github/workflows/test.yml` | one step running that wrapper. The workflow is `workflow_dispatch` only, so this buys a manual-run slot, not gating CI; the runnable entry that `tests/test-kit-contract.sh` C4 looks for is the wrapper itself |
+| `agents/audit-scanner.md` | its body said "You gather and judge evidence", contradicting the gather-then-judge rule this spec adds to the pattern. A dispatched scanner reads its own body, not the pattern doc, so both sides are pinned. |
+| `.github/workflows/test.yml` | two steps, one per documented entry point (pytest wrapper and standalone runner), so neither rots behind the other. The workflow is `workflow_dispatch` only, so this buys a manual-run slot, not gating CI; the runnable entry that `tests/test-kit-contract.sh` C4 looks for is the wrapper itself |
 | `lib/config/module-registry.md` | one `WEB_DRIFT_SITES` row, env-only, no default, with the separator deviation stated |
 | `commands/onboard.md` | section D names `WEB_DRIFT_SITES` among the env-only knob examples and quotes its separator |
 | `docs/patterns/audit-loop.md` | the Known instances section gains web-drift, and the "all instances dispatch audit-scanner" line is amended to name web-drift's gather-then-judge order |
@@ -105,7 +108,7 @@ subagent would cost more than the table lookup it performs.
 - `python3 lib/webcheck/webcheck.py audit <url>` runs the three tiers and exits non-zero on a hard fail.
 - `python3 lib/webcheck/webcheck.py sites` prints the declared sites, or prints the inert message and exits 0 when `WEB_DRIFT_SITES` is unset.
 - `kit:web-drift` is discoverable and states its own four slots, its verdict mapping, and its fix-recipe reference table.
-- `bash tests/test-webcheck.sh` runs 61 ported tests plus the new resolver tests, all green.
+- `bash tests/test-webcheck.sh` and the standalone runner both run the full suite green, and CI runs both.
 - `tests/test-kit-contract.sh` gains no new C3 or C4 offender.
 - `docs/FEATURES.md` regenerates clean, so `tests/test-meta.sh` gains no new failure.
 - No file this branch adds carries a tenant hostname.
@@ -115,6 +118,12 @@ subagent would cost more than the table lookup it performs.
 | Category | Case | Where |
 |---|---|---|
 | Ported behavior | all 61 non-geo tests from the origin suite | `lib/webcheck/tests/test_webcheck.py` |
+| SSRF | every groundwork and openapi fetch pins to the audited host | new (the gate's finding) |
+| SSRF | `fetch_ex` defaults its pin to the requested URL's own host | new |
+| SSRF | a non-http(s) URL is refused before any request | new |
+| SSRF | a DOCTYPE behind a padded XML prolog is still refused | new |
+| Robustness | a body read is capped; a control-character URL returns a miss, not a traceback | new |
+| Integrity | a canonical carrying a newline cannot forge a report line | new |
 | SSRF | off-host redirect refused on a pinned page fetch | ported |
 | SSRF | reach probe never follows a redirect | ported |
 | SSRF | off-host and non-http API base recorded, never fetched | ported |
@@ -129,7 +138,7 @@ subagent would cost more than the table lookup it performs.
 
 ## Verification
 
-- `bash tests/test-webcheck.sh` exits 0 and reports the full ported count.
+- `bash tests/test-webcheck.sh` exits 0, and `python3 lib/webcheck/tests/test_webcheck.py` exits 0 with the same count.
 - `WEB_DRIFT_SITES` unset, `python3 lib/webcheck/webcheck.py sites` prints the documented inert line and exits 0.
 - `python3 lib/webcheck/webcheck.py audit https://memo.d.foundation --limit 1` prints a groundwork block, an api-tier block, and a page block, with a SUMMARY line.
 - `python3 lib/webcheck/webcheck.py audit https://dwarves.foundation --limit 1` prints the same three blocks.
