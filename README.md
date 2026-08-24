@@ -328,7 +328,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | research-features | /kit:feature-map | Deep, uncapped, source-cited feature inventory for any project: MIGRATE table + parity contract when porting, else a behavior contract |
 | meta-agent | /draft-agent | Drafts a new subagent (or sub-goal file) from a one-line description |
 | test-writer | /kit:test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row |
-| audit-scanner | doc-drift, topology-drift skills | Shared read-only Tier-2 evidence scanner for audit-loop instances; roster physically cannot write |
+| audit-scanner | every audit-loop skill | Shared read-only Tier-2 evidence scanner for audit-loop instances; roster physically cannot write, and it judges saved evidence rather than gathering it (a network-side Tier 1 saves output first) |
 
 | Skill | What it does |
 |-------|-------------|
@@ -336,6 +336,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | doc-drift | Whole-estate doc audit (audit-loop instance): enumerates every living doc, verdicts each claim against the live repo, fixes drift behind a PR gate |
 | ci-drift | Whole-estate CI audit (audit-loop instance): enumerates every workflow + GitHub-side state (enabled, secrets/vars, runners, releases, environment policy), verdicts each against the live repo, fixes drift behind a PR gate |
 | topology-drift | **Maintainer-only** (dwarves-kit repo dev only): audits THIS KIT's own feature estate (audit-loop instance), cross-checks the generated `docs/FEATURES.md` registry against the `docs/workflow-paths.md` path index both directions, re-places only delta features on the topology, PR-gated. To inventory a project the kit is pointed at, use `/kit:feature-map` instead |
+| web-drift | Live-website agent-readiness audit (audit-loop instance, general-purpose): probes every site in `WEB_DRIFT_SITES` with `lib/webcheck` over read-only HTTP (groundwork, page, API tiers), verdicts each `(site, check)` pair, and files fixes as board rows in the repo that owns the site's source. Inert until the consumer declares its sites |
 | get-api-docs | Fetches curated API docs via Context Hub before coding |
 | loop-engineering | Designs a new bounded loop for the kit's orchestration: the gate (should this be a loop), then the anatomy (artifact / scanner / reviser / stop condition) on the generic bounded-revise engine |
 | memory-tidy | Audits a repo's `.claude/memory` store: evidence-gated verdicts, PR-gated merges/deletions, index rebuild (judgment half of `stats memory-sweep`) |
