@@ -115,11 +115,17 @@ case "$INTERVAL" in
     ;;
 esac
 
-# Slug mirrors backlog_sync.py's board_state_dir() slugging (same identity
-# rule, now over the same physical-path convention -- see the -P note above),
-# so the LaunchAgent label is stable and recognizably the same identity as
-# the sync state dir.
-slug="$(printf '%s' "$backlog" | sed -E 's/[^a-zA-Z0-9]+/-/g; s/^-+//; s/-+$//')"
+# Slug is the REPO's own name (git toplevel basename, else the backlog's
+# grandparent dir), so the label reads board-sync-<repo> everywhere the label
+# is the identity: BTM rows, launchctl, the vps-mon catalog. The original
+# full-path slug (board-sync-Users-tieubao-workspace-...-BACKLOG-md) was
+# unreadable in every one of those surfaces (2026-08-25 catalog review).
+# Uniqueness is NOT assumed: two repos can share a dirname, and the existing
+# collision guard below refuses a takeover by comparing the backlog path
+# baked into any already-installed plist for this label.
+_backlog_dir="$(cd "$(dirname "$backlog")" && pwd)"
+repo_root="$(git -C "$_backlog_dir" rev-parse --show-toplevel 2>/dev/null || dirname "$_backlog_dir")"
+slug="$(basename "$repo_root" | sed -E 's/[^a-zA-Z0-9]+/-/g; s/^-+//; s/-+$//')"
 label="board-sync-$slug"
 plist="$HOME/Library/LaunchAgents/$label.plist"
 
