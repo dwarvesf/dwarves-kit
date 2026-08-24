@@ -105,6 +105,17 @@ RuntimeError, a real bug found via the first real-corpus run against `~server/..
 notes).
 EOF
 
+cat > "$GITREPO/.claude/memory/unreadable-abs-path-note.md" <<'EOF'
+---
+name: unreadable-abs-path-note
+---
+
+See `/var/root/Library/Application Support/fixture-file` for context; an absolute path whose
+parent dir is unreadable on this host makes Path.exists() RAISE PermissionError instead of
+returning False. That is untestable-here, not dead: the sweep must skip it (no ref, no crash),
+found via the first ops-toolkit real-corpus run.
+EOF
+
 cat > "$GITREPO/.claude/memory/MEMORY.md" <<'EOF'
 # fixture memory index
 
@@ -218,7 +229,7 @@ PY
 SCAN_OUT="$(cat "$FIX/scan.out")"
 echo "$SCAN_OUT"
 
-has "M-total 13 units (8 repo + 4 builtin + 1 prose-store MEMORY.md)" "TOTAL=13" "$SCAN_OUT"
+has "M-total 14 units (9 repo + 4 builtin + 1 prose-store MEMORY.md)" "TOTAL=14" "$SCAN_OUT"
 has "M-dead-path-note dead=1, not stale" "|dead-path-note|note|dead=1|stale=False" "$SCAN_OUT"
 has "M-live-path-note dead=0 (absolute path under a real root, live)" "|live-path-note|note|dead=0|stale=False" "$SCAN_OUT"
 has "M-old-note dead=0, STALE=True (git-commit path)" "|old-note|note|dead=0|stale=True" "$SCAN_OUT"
@@ -226,6 +237,7 @@ has "M-flag-fence-note dead=0 (flag skipped, no crash)" "|flag-fence-note|note|d
 has "M-prose-path-note dead=0 (no backticks, not extracted)" "|prose-path-note|note|dead=0|stale=False" "$SCAN_OUT"
 has "M-repo-relative-skip-note dead=0 (bare relative path SKIPPED, repo store)" "|repo-relative-skip-note|note|dead=0|stale=False" "$SCAN_OUT"
 has "M-unresolvable-tilde-user-note dead=2 (two unresolvable ~user refs, RuntimeError caught, flagged dead, no crash)" "|unresolvable-tilde-user-note|note|dead=2|stale=False" "$SCAN_OUT"
+hasnt "M-unreadable-abs-path-note not flagged dead (PermissionError path skipped as untestable, no crash)" "|unreadable-abs-path-note|note|dead=1" "$SCAN_OUT"
 REPO_NAME="$(basename "$GITREPO")"
 has "M-repo MEMORY.md dead=2 (missing-note link + orphan tombstone)" "repo:${REPO_NAME}|MEMORY|index|dead=2" "$SCAN_OUT"
 has "M-builtin-abs-note dead=0 (absolute path under a real root, live)" "|builtin-abs-note|note|dead=0|stale=False" "$SCAN_OUT"
@@ -245,12 +257,12 @@ has "M-cli orphan index entries surface as index-link" "index-link:(no linked fi
 echo
 echo "== M-lens: ledger rebuild + ledger show memories materializes the compact 5-column table =="
 REBUILD_OUT="$(R rebuild)"
-has "M-lens memories=13 in rebuild counts" '"memories": 13' "$REBUILD_OUT"
+has "M-lens memories=14 in rebuild counts" '"memories": 14' "$REBUILD_OUT"
 SHOW_OUT="$(R show memories --json)"
 has "M-lens show memories has store/slug/written/last_verified/dead_ref_count columns" '"store":' "$SHOW_OUT"
 has "M-lens show memories dead-path-note row present" '"slug": "dead-path-note",' "$SHOW_OUT"
 N_ROWS="$(printf '%s' "$SHOW_OUT" | grep -c '"slug":' || true)"
-if [ "$N_ROWS" -eq 13 ]; then ok "M-lens exactly 13 rows in memories table"; else bad "M-lens want 13 rows, got $N_ROWS"; fi
+if [ "$N_ROWS" -eq 14 ]; then ok "M-lens exactly 14 rows in memories table"; else bad "M-lens want 14 rows, got $N_ROWS"; fi
 
 echo
 echo "== M-anomaly: _detect_memory_hygiene fires (fixture dead-ref rate over the 15% threshold + min-sample) =="
