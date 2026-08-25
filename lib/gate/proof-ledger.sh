@@ -147,19 +147,26 @@ delivery_ratio() {
 }
 
 # the verification-log files this branch added/modified (excludes the convention README).
-# Three accepted shapes: the repo-root convention (docs/verification/<slug>.md), a proof
-# co-located with its subject anywhere in the tree (any path ending /proof-of-done.md, e.g.
-# a monorepo's tools/<name>/docs/proof-of-done.md), and a monorepo tool's own verification
-# dir (tools/<name>/docs/verification/<slug>.md, per ops-toolkit's per-tool co-location
-# convention). The content check in check() validates all three the same way; location is
-# just where the proof lives.
+# Two accepted shapes, both location-agnostic: any `docs/verification/<slug>.md` (at the
+# repo root or nested under whatever owns it) and any path ending `/proof-of-done.md`. The
+# content check in check() validates both the same way; location is just where the proof
+# lives.
+#
+# The nested case used to be spelled out as `tools/<name>/docs/verification/`, which only
+# covered a monorepo TOOL. ops-toolkit's co-location rule also puts an experiment's proof at
+# `experiments/<slug>/docs/verification/<feature>.md`, and that matched nothing, so a real
+# proof was invisible and the gate fell through to the override branch and refused the source
+# change (hit 2026-08-25). Enumerating owner directories is the bug: every new co-location
+# home needs another alternative, and the failure is silent. Matching `docs/verification/` at
+# any depth is both smaller and closed over future owners, and it grants nothing the
+# already-anywhere `/proof-of-done.md` rule did not.
 _fresh_proof_files() {
   local root="$1" base="$2"
   { git -C "$root" diff --name-only "$base"..HEAD 2>/dev/null
     git -C "$root" diff --name-only HEAD 2>/dev/null
     git -C "$root" diff --name-only --cached 2>/dev/null
     git -C "$root" ls-files --others --exclude-standard 2>/dev/null
-  } | sort -u | grep -E '^docs/verification/.+\.md$|^tools/[^/]+/docs/verification/.+\.md$|(^|/)proof-of-done\.md$' | grep -v '/README\.md$' || true
+  } | sort -u | grep -E '(^|/)docs/verification/.+\.md$|(^|/)proof-of-done\.md$' | grep -v '/README\.md$' || true
 }
 
 # Repo identity for override scoping (ID-299). The override log is machine-local and now
@@ -281,7 +288,7 @@ check() {
   # satisfy when the UNION of a group's files carries both markers.
   if [ "$ok" -ne 0 ] && [ -n "$files" ]; then
     local groups g content grp_img
-    groups="$(printf '%s\n' "$files" | sed -nE 's#^(docs/verification/[^/]+/).*#\1#p;s#^(tools/[^/]+/docs/verification/[^/]+/).*#\1#p' | sort -u)"
+    groups="$(printf '%s\n' "$files" | sed -nE 's#^(.*docs/verification/[^/]+/).*#\1#p' | sort -u)"
     while IFS= read -r g; do
       [ -n "$g" ] || continue
       content=""; grp_img=1     # grp_img=0 iff some file in the group embeds a REAL image
