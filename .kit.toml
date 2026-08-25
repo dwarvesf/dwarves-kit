@@ -3,7 +3,7 @@
 [sync]
 mode                 = "cron"
 apps                 = "reminders"
-reminders_list       = "Backlog"
+reminders_list       = "Backlog · kit"
 # only high-urgency rows reach the personal Reminders list; everything else
 # waits for a work session on the board itself
 reminders_only_tags  = "u-hi"
