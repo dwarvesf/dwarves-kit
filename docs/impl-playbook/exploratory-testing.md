@@ -17,6 +17,10 @@ Unscripted testing without structure produces no record of what was actually cov
 
 After the scripted cases from `test-case-design.md` pass, not instead of them. Scripted cases check the shapes you already thought of; a short exploratory pass catches the shape you didn't. Reach for it on anything with real integration points, a UI/CLI flow, or a feature whose actual runtime behavior might drift from what the spec describes, exactly the gap the router intro's "floor, not ceiling" line points at, applied specifically to testing.
 
+## Probing live systems safely
+
+- **Mutation-safe auth probes**: exploit the route's check ORDER to test auth against production without side effects. Pick inputs that pass the gate under test but are guaranteed to fail a LATER gate (a real resource id plus a bogus actor, so authz returns 403 before any mutation runs). The probe proves the auth layer live while the doomed final check guarantees nothing changes. Judge the response BODY, not the status code alone: platform errors hide inside ordinary statuses (a dead Cloudflare Worker returns its 1042 error wrapped in an HTTP 404, indistinguishable by status from an app-level not-found).
+
 ## At personal scale
 
 Skip the formal session report and metrics tracking, that overhead is for an auditable QA team, not a solo maintainer. Keep the three ideas in lightweight form: state the one-line charter before you start poking, time-box it (15-30 minutes is plenty for a personal-scale tool, not 90), and if a session turns out to be mostly Setup time, that is itself a finding, the thing was not ready to explore.
