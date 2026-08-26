@@ -679,6 +679,40 @@ config_stamp() {
   append_run_line "$rid" "$(printf '%s | CONFIG | %s' "$(now)" "$line")"
 }
 
+# Usage: history [--lane L] [--json] : one row per run over all gate ledgers.
+# Ported from learning-kit/bin/study-history (ID-444): aggregates every
+# runs/<rid>.log START line's lane + repo with its GATE ran/skipped counts.
+history() {
+  local lane_opt="" fmt=csv arg
+  while [ $# -gt 0 ]; do case "$1" in
+    --json) fmt=json ;;
+    --lane) lane_opt="${2:-}"; shift ;;
+    *) echo "usage: history [--lane L] [--json]" >&2; return 64 ;;
+  esac; shift; done
+  [ -d "$RUNS_DIR" ] || return 0
+  local rows="" f rid runlane repo t0 t1 ran skipped
+  for f in "$RUNS_DIR"/*.log; do
+    [ -f "$f" ] || continue
+    grep -q '| START |' "$f" || continue
+    runlane="$(grep -m1 '| START |' "$f" | grep -o 'lane=[^ ]*' | head -1 | cut -d= -f2)"
+    if [ -n "$lane_opt" ] && [ "${runlane:-}" != "$lane_opt" ]; then continue; fi
+    rid="$(basename "$f" .log)"
+    repo="$(grep -m1 '| START |' "$f" | grep -o 'repo=[^ ]*' | head -1 | cut -d= -f2)"
+    t0="$(head -1 "$f" | cut -d' ' -f1)"
+    t1="$(tail -1 "$f" | cut -d' ' -f1)"
+    ran="$(grep -c '| GATE | .* | ran |' "$f" 2>/dev/null || true)"
+    skipped="$(grep -c '| GATE | .* | skipped |' "$f" 2>/dev/null || true)"
+    rows="${rows}${rid},${runlane},${repo},${t0},${t1},${ran},${skipped}\n"
+  done
+  if [ "$fmt" = csv ]; then
+    printf 'rid,lane,repo,first_ts,last_ts,gates_ran,gates_skipped\n'
+    printf '%b' "$rows"
+  else
+    printf '%b' "$rows" | awk -F, 'BEGIN{print "["} NR>1{print ","} NR>=1{printf "{\"rid\":\"%s\",\"lane\":\"%s\",\"repo\":\"%s\",\"first_ts\":\"%s\",\"last_ts\":\"%s\",\"gates_ran\":%s,\"gates_skipped\":%s}",$1,$2,$3,$4,$5,$6,$7} END{print "\n]"}'
+  fi
+}
+
+
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
   required) required "$@" ;;
@@ -699,5 +733,6 @@ case "$cmd" in
   progress) progress "$@" ;;
   rid)      rid "$@" ;;
   descent)  descent "$@" ;;
+  history) history "$@" ;;
   *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
 esac

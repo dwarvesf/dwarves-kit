@@ -120,6 +120,9 @@ jobs:
       - name: Run gate-outcome emit tests (SPEC-129)
         run: bash tests/test-gate-outcome.sh
 
+      - name: Run gate-ledger history export tests (ID-444)
+        run: bash tests/test-gate-ledger-history.sh
+
       - name: Run redteam-gate tests (rung-4 cost checkpoint)
         run: bash tests/test-redteam-gate.sh
 
