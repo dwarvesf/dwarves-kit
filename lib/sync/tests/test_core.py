@@ -19,6 +19,7 @@ from sync_core import (  # noqa: E402
     plan_sync,
     strip_tags,
     title_for,
+    UNTRUSTED_PREFIX,
 )
 
 BOARD = """# Backlog
@@ -262,7 +263,7 @@ def test_apply_board_add_inbox_section_and_status():
     assert new_text.index("### Reminders inbox") < new_text.index("## Recently closed")
     rows = parse_board(new_text)
     assert rows["ID-14"].status_kw == "claimed"
-    assert rows["ID-14"].notes.startswith("2% only ; from shop ; added from spoke")
+    assert rows["ID-14"].notes.startswith(UNTRUSTED_PREFIX)
     plan2 = Plan(board_add=[("r11", "third", "", "queued")])
     text3, assigned2 = apply_board(new_text, plan2)
     assert text3.count("### Reminders inbox") == 1
@@ -409,3 +410,18 @@ def test_build_state_preserves_binding():
     rows = parse_board(BOARD)
     s = build_state(rows, [], Plan(), {}, {}, {"binding": {"ds_id": "x"}})
     assert s["binding"] == {"ds_id": "x"}
+
+
+def test_board_add_marks_intake_notes_untrusted():
+    """ID-481: intake-born rows carry the untrusted-data prefix in their notes,
+    so foreign spoke content reaches agent context flagged DATA not instructions.
+    The title is deliberately left clean: it carries the minted id + item that
+    titles_agree()/re-linking compare, so a permanent prefix would break the
+    two-way identity check."""
+    plan = Plan(board_add=[("r9", "buy milk", "2% only", "claimed")])
+    new_text, assigned = apply_board(BOARD, plan)
+    row = parse_board(new_text)[assigned["r9"]]
+    assert row.notes.startswith(UNTRUSTED_PREFIX)
+    assert "2% only" in row.notes
+    assert row.notes.endswith("#inbox")
+    assert row.item == "buy milk"  # title deliberately not tagged
