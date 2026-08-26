@@ -20,6 +20,9 @@ import json
 import shlex
 import subprocess
 
+from cockpit import (mark_untrusted_body, mark_untrusted_title,
+                     unmark_untrusted_body, unmark_untrusted_title)
+
 ACTIVE = {"queued", "claimed", "speccing", "validated", "executing"}
 COMPLETE_KWS = {"shipped", "done", "resolved"}
 STATUS_FROM_HERMES = {"done": "shipped", "archived": "dropped"}
@@ -113,9 +116,16 @@ class HermesSource:
                     continue
                 seen.add(t["id"])
                 kw = STATUS_FROM_HERMES.get(t.get("status"))
-                items.append({"rid": t["id"], "title": t.get("title") or "",
+                # Strip the untrusted markers this leg applied at create, so the
+                # planner's title-prefix re-link (sync_core.parse_title) still
+                # recovers the bare `ID-NNN`. Without this, a state-loss re-sync
+                # reads `[untrusted] ID-9 ...`, fails to re-link, and re-mints
+                # the card as a junk board row (double-mapped rid).
+                title = unmark_untrusted_title(t.get("title") or "")
+                body = unmark_untrusted_body(t.get("body") or "")
+                items.append({"rid": t["id"], "title": title,
                               "done": t.get("status") in ("done", "archived"),
-                              "body": t.get("body") or "", "status": kw})
+                              "body": body, "status": kw})
         return items
 
     def apply(self, plan, assigned: dict, rows_after: dict) -> dict:
@@ -130,6 +140,14 @@ class HermesSource:
             if self.workspace:
                 extra += " --workspace " + shlex.quote(
                     self.workspace.format(id=bid))
+            # A created card's title/body is git-board content = DATA, never
+            # instructions to whatever Hermes agent later reads this board. This
+            # is a LOAD leg, so it MUST route card text through the untrusted
+            # markers (SPEC-147), same as board-mirror.sh and cockpit's leg.
+            # sync_fields=False freezes these at create, so marking once here
+            # never double-wraps on a re-sync.
+            title = mark_untrusted_title(title)
+            body = mark_untrusted_body(body)
             lines.append(
                 "{kb} create {t} --body {b}{x} --idempotency-key "
                 "bls-{bid} --created-by backlog-sync --json | python3 -c "
