@@ -19,7 +19,7 @@
 # later when RUN_REPORT quietly under-counts it.
 #
 #   AC1  every command in commands/ (a) mentions gate-ledger, or (b) is in the exemption table
-#   AC2  the exemption table names exactly the 9 expected utility commands (no silent drift)
+#   AC2  the exemption table names exactly the 11 expected utility commands (no silent drift)
 #   AC3  each of the 9 newly-wired commands genuinely contains a gate-ledger record call
 #        (not just present-by-coincidence in the loose AC1 check)
 #   AC4  NEGATIVE CONTROL: a fixture command with NEITHER an emit NOR an exemption entry IS
