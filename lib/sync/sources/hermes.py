@@ -20,6 +20,8 @@ import json
 import shlex
 import subprocess
 
+from cockpit import mark_untrusted_body, mark_untrusted_title
+
 ACTIVE = {"queued", "claimed", "speccing", "validated", "executing"}
 COMPLETE_KWS = {"shipped", "done", "resolved"}
 STATUS_FROM_HERMES = {"done": "shipped", "archived": "dropped"}
@@ -130,6 +132,14 @@ class HermesSource:
             if self.workspace:
                 extra += " --workspace " + shlex.quote(
                     self.workspace.format(id=bid))
+            # A created card's title/body is git-board content = DATA, never
+            # instructions to whatever Hermes agent later reads this board. This
+            # is a LOAD leg, so it MUST route card text through the untrusted
+            # markers (SPEC-147), same as board-mirror.sh and cockpit's leg.
+            # sync_fields=False freezes these at create, so marking once here
+            # never double-wraps on a re-sync.
+            title = mark_untrusted_title(title)
+            body = mark_untrusted_body(body)
             lines.append(
                 "{kb} create {t} --body {b}{x} --idempotency-key "
                 "bls-{bid} --created-by backlog-sync --json | python3 -c "
