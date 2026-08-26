@@ -83,15 +83,16 @@ if [ "$ORPHAN_RC" -eq 0 ]; then RC=0; else RC=1; fi
 assert "every command in commands/ mentions gate-ledger OR is exempted (0 orphans)" $RC
 
 TOTAL_COMMANDS=$(find "$COMMANDS_DIR" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')
-assert_eq "commands/ has 32 command files (2026-07-04 count +1 pitch.md/SPEC-140 +1 onboard.md/SPEC-199 +1 test-write.md/SPEC-203; update this pin if it legitimately changes)" "$TOTAL_COMMANDS" "32"
+assert_eq "commands/ has 36 command files (was 32 on 2026-07-04, +4 since; every command still classifies as emit-or-exempt per AC1's sweep, so update this pin when it legitimately changes)" "$TOTAL_COMMANDS" "36"
 
 echo ""
-echo "=== AC2: the exemption table names exactly the 10 expected utility commands ==="
+echo "=== AC2: the exemption table names exactly the 11 expected utility commands ==="
 
 EXPECTED_EXEMPT="absorb
 adopt
 dispatch
 draft-agent
+feature-map
 kit-health
 mega
 next
@@ -101,7 +102,7 @@ visual-team"
 
 SORTED_EXPECTED="$(printf '%s\n' "$EXPECTED_EXEMPT" | sort)"
 SORTED_ACTUAL="$(printf '%s\n' "$EXEMPT" | sort)"
-assert_eq "exemption table = {absorb,adopt,dispatch,draft-agent,kit-health,mega,next,onboard,start,visual-team}, no more no less" "$SORTED_ACTUAL" "$SORTED_EXPECTED"
+assert_eq "exemption table = {absorb,adopt,dispatch,draft-agent,feature-map,kit-health,mega,next,onboard,start,visual-team}, no more no less" "$SORTED_ACTUAL" "$SORTED_EXPECTED"
 
 echo ""
 echo "=== AC3: each of the 9 newly-wired commands genuinely records its own phase ==="
