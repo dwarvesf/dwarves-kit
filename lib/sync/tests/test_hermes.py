@@ -8,9 +8,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from cockpit import UNTRUSTED_PREFIX, UNTRUSTED_TITLE_TAG  # noqa: E402
+from cockpit import (UNTRUSTED_PREFIX, UNTRUSTED_TITLE_TAG,  # noqa: E402
+                     mark_untrusted_body, mark_untrusted_title)
 from sources.hermes import HermesSource, _target_cmd  # noqa: E402
-from sync_core import Plan  # noqa: E402
+from sync_core import Plan, parse_board, plan_sync  # noqa: E402
 
 # HermesSource has no default target/home (both would name one operator machine);
 # every construction here supplies these fakes explicitly.
@@ -91,6 +92,41 @@ def test_apply_never_emits_a_bare_unmarked_title():
     script = fake.scripts[0]
     assert "create 'raw title'" not in script
     assert f"create '{UNTRUSTED_TITLE_TAG}raw title'" in script
+
+
+# --- read() must strip the markers so the planner's re-link still works ------
+
+def test_read_strips_untrusted_markers():
+    # A card this leg created is stored marked; read() must return the BARE
+    # title/body, or the engine's title-prefix re-link breaks (see next test).
+    marked_title = mark_untrusted_title("ID-10 · Fix it")
+    marked_body = mark_untrusted_body("do the thing")
+    live = json.dumps([{"id": "t1", "title": marked_title,
+                        "body": marked_body, "status": "todo"}])
+    src, _ = make_src(f"{live}\n@@SEP@@\n[]\n")
+    item = src.read()[0]
+    assert item["title"] == "ID-10 · Fix it"
+    assert item["body"] == "do the thing"
+
+
+def test_marked_card_relinks_after_state_loss():
+    # CRITICAL regression: with state lost (empty snapshot), a card THIS leg
+    # created (stored marked) must still re-link to its board row by the
+    # ID-prefix in its title. Before read() stripped the marker, the planner
+    # saw `[untrusted] ID-10 ...`, failed parse_title, and re-minted the card
+    # as a junk board row + a redundant create, double-mapping the rid.
+    board = ("| ID | Item | Notes & source | Status |\n"
+             "|---|---|---|---|\n"
+             "| ID-10 | Fix it | notes | queued |\n")
+    marked_title = mark_untrusted_title("ID-10 · Fix it")
+    marked_body = mark_untrusted_body("notes")
+    live = json.dumps([{"id": "t-42", "title": marked_title,
+                        "body": marked_body, "status": "todo"}])
+    src, _ = make_src(f"{live}\n@@SEP@@\n[]\n")
+    items = src.read()
+    p = plan_sync(parse_board(board), items, {}, sync_fields=False)
+    assert p.board_add == []      # no junk hub row minted
+    assert p.src_create == []     # no redundant re-create
 
 
 def test_apply_routes_statuses_and_skips_unrepresentable(capsys):
