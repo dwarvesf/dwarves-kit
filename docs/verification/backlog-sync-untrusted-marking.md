@@ -10,6 +10,23 @@
 | AC4 | mark helpers are idempotent (no double-wrap) | idempotency guard in cockpit.mark_untrusted_* |
 | AC5 | markers are the canonical strings, no divergent copy | byte-identical to board-mirror.sh; defined once in cockpit.py, imported by hermes.py |
 
+## Recorded run
+
+```
+Command: uv run --no-project --with pytest -- pytest lib/sync/tests/test_hermes.py -q
+Exit: 0
+17 passed
+
+Command: uv run --no-project --with pytest -- pytest lib/sync/tests -q
+Exit: 0
+236 passed
+```
+
+NEGATIVE CONTROL: deleting the two `unmark_untrusted_*` lines in
+`HermesSource.read()` makes `test_read_strips_untrusted_markers` and
+`test_marked_card_relinks_after_state_loss` fail (Exit: non-zero); restoring
+them returns Exit: 0. Verdict: PASS.
+
 ## Confirmation runs
 
 | Run | Command | Result |
