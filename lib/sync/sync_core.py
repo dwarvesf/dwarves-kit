@@ -103,9 +103,20 @@ def parse_board(text: str, strict_id: bool = True,
 
 
 def next_id(text: str, prefix: str = "ID") -> int:
-    nums = [int(m) for m in
-            re.findall(r"\b" + re.escape(prefix) + r"-(\d+)\b", text)]
-    return max(nums, default=0) + 1
+    """Mint one past the highest id in play, from PARSED row ids -- never from
+    a bare regex over the raw text (ID-480): a token anywhere in the text (a
+    notes cell, a prose paragraph, a quoted log line) used to count the same
+    as a real row, so one oversized token could push every future mint past
+    it permanently. The raw-text floor stays, narrowed to row-SHAPED lines
+    (`| <prefix>-N |` at line start) so a row that fails to fully parse
+    (test_next_id_skips_id_in_malformed_row) still blocks id reuse, while
+    prose elsewhere never does.
+    """
+    row_nums = [int(rid.rsplit("-", 1)[1])
+                for rid in parse_board(text, prefix=prefix)]
+    line_re = re.compile(r"^\| " + re.escape(prefix) + r"-(\d+) \|", re.M)
+    line_nums = [int(m) for m in line_re.findall(text)]
+    return max(row_nums + line_nums, default=0) + 1
 
 
 def escape(cell: str) -> str:
