@@ -62,6 +62,16 @@ fn default_db() -> PathBuf {
         .unwrap_or_else(|_| home().join(".claude/prose-rag/index.bin"))
 }
 
+// query's relevance floor, calibrated against prose corpora; table-shaped notes
+// (dense short rows) can sit below this floor on real matches, so make it
+// overridable without a rebuild. Precedence: --floor flag > PROSE_RAG_FLOOR > default.
+fn default_query_floor() -> f32 {
+    std::env::var("PROSE_RAG_FLOOR")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0.32)
+}
+
 // Corpus is consumer config (adapter-default invariant: no personal path baked in).
 // PROSE_RAG_CORPUS is colon-separated dirs/files; "~/" expands to $HOME.
 fn default_corpus() -> Vec<PathBuf> {
@@ -618,6 +628,10 @@ fn usage() -> ! {
     eprintln!("usage: prose-rag index [--corpus PATH]... [--db PATH] [--full]");
     eprintln!("       prose-rag query <text> [--db PATH] [--k N] [--floor F] [--json]");
     eprintln!("       prose-rag hook  [--db PATH] [--k N] [--floor F] [--force] [--no-gate]");
+    eprintln!(
+        "  query --floor default 0.32, env PROSE_RAG_FLOOR overrides; table-shaped notes \
+         may score below this floor on real matches and need a lower value"
+    );
     std::process::exit(2);
 }
 
@@ -668,7 +682,13 @@ fn main() -> Result<()> {
             };
             // floors recalibrated for potion-retrieval-32M (noise <=0.26, real 0.41-0.58;
             // the bge originals were 0.55/0.62)
-            cmd_query(text, &db, k.unwrap_or(5), floor.unwrap_or(0.32), json)?
+            cmd_query(
+                text,
+                &db,
+                k.unwrap_or(5),
+                floor.unwrap_or_else(default_query_floor),
+                json,
+            )?
         }
         "hook" => cmd_hook(&db, k.unwrap_or(4), floor.unwrap_or(0.40), force, no_gate)?,
         _ => usage(),

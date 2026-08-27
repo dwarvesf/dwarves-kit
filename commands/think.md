@@ -39,6 +39,8 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
    **Q6: What's the exit criteria?**
    How will you know if this worked or failed? Name a specific metric and a specific number. "More users" is not a metric. "50 weekly active users by day 30" is.
 
+   **Alignment check:** which `docs/PHILOSOPHY.md` §6 north-star criterion (N1-N7) does this idea serve, if any? Does it conflict with one? Advisory only -- note the answer in the Decision Brief, never block on it.
+
 3. After all 6 questions, synthesize into a **Decision Brief**:
 
 ```markdown
@@ -50,6 +52,7 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
 ## If BUILD: recommended scope for v1
 ## If RETHINK: what needs to change before building
 ## If KILL: what would have to be true to reconsider
+## North-star alignment: [N1-N7 served, or "none"]
 ## Survival scenarios
 <!-- scenario-gen: 3-5 rows from the Q5 sketch; situations, no oracles -->
 | # | Scenario | Category |

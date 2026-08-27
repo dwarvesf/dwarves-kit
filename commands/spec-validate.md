@@ -60,6 +60,7 @@ Look for:
 - Extensibility: does the design state what changes when the load-bearing dimension grows, and is that claim grounded or hand-waved? Flag "it scales" with no mechanism.
 - Is there a materially lower-coupling or more extensible design the spec didn't consider?
 - If the spec has an `### Interfaces (I/O contract)`, check inputs/outputs/invariants are concrete (named shapes, not "data in / data out").
+- **Alignment (advisory):** which `docs/PHILOSOPHY.md` §6 north-star criterion (N1-N7) does this spec serve? Does it conflict with any? Note the answer in the report's Passed/Warnings section; this never blocks the verdict.
 
 **Calibration (critical):** only flag issues that would produce a flawed implementation or a design that cannot evolve. Do NOT flag stylistic preferences, "this section could be longer", or theoretical extensibility nobody asked for (YAGNI). Approve unless there is a real design weakness. If a spec predates this template (no `Approaches considered` section), raise the absent structure as ONE advisory recommendation, not a per-point critical flag; do not storm legacy or downstream specs.
 
