@@ -248,13 +248,21 @@ TASK-[ID]: [description]
 [paste worker's output]
 ```
 
-The task-verifier will return one of three verdicts:
+The task-verifier will return one of three verdicts. Each maps onto one of the kit's named
+failure policies (ID-398, `docs/patterns/failure-policy.md`), noted below -- the policy is
+the interpretive layer used when recording this task's outcome (2e) and the phase's outcome
+(Step 4); it never replaces the verdict string itself:
 
-**PASS** -> Mark task as done, continue to next task.
+**PASS** -> Mark task as done, continue to next task. (policy: continue)
 
-**FAIL:fixable** -> Enter the retry loop (see 2d below).
+**FAIL:fixable** -> Enter the retry loop (see 2d below). (policy: continue if the loop
+resolves it, else escalate)
 
-**FAIL:escalate** -> Stop and present the issue to the user. Do not attempt to fix it.
+**FAIL:escalate** -> Stop and present the issue to the user. Do not attempt to fix it. Read
+the verifier's stated reason to pick the policy: a reason naming an architecture, risk, or
+design decision is **escalate** (the task is correct-shaped, a human must choose a direction);
+a reason naming the spec/task itself as wrong, unclear, or not worth building is **close**
+(nothing to hand forward, drop the line of work and let a human reopen it later if warranted).
 
 #### 2c-1. Fresh-context re-audit of a task-verifier PASS (recheck-verifier)
 
@@ -308,6 +316,13 @@ if verdict still != "PASS":
 ```
 
 **Why max 2 retries**: Most fixable issues (missing import, wrong assertion, off-by-one) resolve in 1-2 fix cycles. If it takes 3+, the issue is likely a design problem, not a code bug. Further retries burn tokens without progress.
+
+**Naming the exit (ID-398, `docs/patterns/failure-policy.md`)**: an exhausted retry loop is
+**policy: escalate** by default (a human decides the direction). If the final task-verifier
+verdict is itself `FAIL:escalate` with a "the spec/task is wrong" reason rather than a design
+question, name it **policy: close** instead when reporting to the user -- the retry loop
+proved the issue isn't a fixable code bug, so the honest ask is "should this task exist at
+all", not "which way should I build it".
 
 #### 2e. Update spec after successful task
 
@@ -399,6 +414,7 @@ After all phases complete:
    Phases: [N]/[N] complete
    Retries: [N] total
    Escalations: [N] (required human intervention)
+   Closed: [N] (task/spec judged wrong-shaped, dropped rather than retried -- ID-398)
    Commits: [N]
    Tests: [pass/fail]
    Files changed: [list]
@@ -423,7 +439,12 @@ After all phases complete:
    (execute.md IS the Build phase), the same one-line convention every other phase owner
    (`think.md`, `design.md`, `spec.md`, ...) already uses.
 
-   Close the timing bracket opened at Step 1 (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> build end caught=<true if any escalation occurred or tests=fail, else false>`.
+   Close the timing bracket opened at Step 1 (SPEC-129), naming the build's failure policy
+   (ID-398, `docs/patterns/failure-policy.md`) alongside `caught=`: `policy=close` if any
+   task in this build was closed as wrong-shaped (Closed>0 above), else `policy=escalate` if
+   any task was escalated (Escalations>0), else `policy=continue`.
+
+   `bash lib/gate/gate-ledger.sh outcome <rid> build end caught=<true if any escalation/close occurred or tests=fail, else false> policy=<close|escalate|continue, per the rule above>`.
 
 ## Error handling
 

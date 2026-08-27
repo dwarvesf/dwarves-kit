@@ -177,6 +177,25 @@ grep -q 'outcome "\$SLUG" ship start'  "$SHIP" && assert "AC9 ship-gate emits OU
 grep -q 'outcome "\$SLUG" ship end caught=true'  "$SHIP" && assert "AC9 ship-gate emits caught=true on block" 0 || assert "AC9 ship-gate emits caught=true on block" 1
 grep -q 'outcome "\$SLUG" ship end caught=false' "$SHIP" && assert "AC9 ship-gate emits caught=false on clean pass" 0 || assert "AC9 ship-gate emits caught=false on clean pass" 1
 
+# ---------------------------------------------------------------------------
+# AC10: ID-398 failure-policy vocabulary -- optional `policy=` on `outcome ... end`,
+# round-tripped by outcome-read, validated as a closed enum, omitted stays additive.
+# ---------------------------------------------------------------------------
+new_log
+gl outcome pv1 build start >/dev/null 2>&1
+gl outcome pv1 build end caught=true policy=escalate >/dev/null 2>&1
+gl outcome-read pv1 build 2>/dev/null | grep -q 'policy=escalate' && assert "AC10 policy=escalate round-trips via outcome-read" 0 || assert "AC10 policy=escalate round-trips via outcome-read" 1
+
+new_log
+gl outcome pv2 build start >/dev/null 2>&1
+gl outcome pv2 build end caught=false policy=bogus >/dev/null 2>&1; rc=$?
+[ "$rc" -eq 64 ] && assert "AC10 bad policy value rejected (rc 64)" 0 || assert "AC10 bad policy value rejected (rc=$rc)" 1
+
+new_log
+gl outcome pv3 build start >/dev/null 2>&1
+gl outcome pv3 build end caught=false >/dev/null 2>&1
+gl outcome-read pv3 build 2>/dev/null | grep -q 'policy=' && assert "AC10 omitted policy stays additive (no policy= token)" 1 || assert "AC10 omitted policy stays additive (no policy= token)" 0
+
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
