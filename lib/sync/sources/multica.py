@@ -24,12 +24,22 @@ human act on the Multica UI (the multica-eval cost lesson).
 
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
 
 MARKER_PREFIX = "<!-- board:"
 MARKER_SUFFIX = " -->"
+# The card-ready template (dfoundation docs/agent-teamwork-guide.md §4) requires a
+# named verification command, mirroring the kit's own `Done =` contract for goal
+# drafts (AGENTS.md zone 2 / commands/assign.md Step 5). A row missing this line is
+# refused at creation, not merely encouraged to have one (DF-151).
+VERIFICATION_RE = re.compile(r"(?im)^\s*verif(?:y|ication)\s*:\s*(\S.*)$")
+
+
+def _has_verification(body: str) -> bool:
+    return bool(VERIFICATION_RE.search(body or ""))
 TO_MULTICA = {"queued": "backlog", "claimed": "todo", "speccing": "todo",
               "validated": "in_review", "executing": "in_progress",
               "shipped": "done", "parked": "blocked", "dropped": "cancelled"}
@@ -134,6 +144,13 @@ class MulticaSource:
     def apply(self, plan, assigned: dict, rows_after: dict) -> dict:
         created = {}
         for bid, title, body, kw in plan.src_create:
+            if not _has_verification(body):
+                print(f"multica: refused {bid} ({title!r}): no verification "
+                      "command (a 'Verify:' or 'Verification:' line naming "
+                      "the check). See the card-ready template, dfoundation "
+                      "docs/agent-teamwork-guide.md §4. Not created; retried "
+                      "next sync once fixed.")
+                continue
             resp = self.runner("POST", "/api/issues" + self._qs(), {
                 "title": title, "description": with_marker(body, kw),
                 "status": TO_MULTICA[kw], "project_id": self.project})
