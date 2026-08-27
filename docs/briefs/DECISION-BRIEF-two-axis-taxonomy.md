@@ -1,9 +1,16 @@
 # Decision Brief: two-axis taxonomy cleanup (lanes = pure evidence, a ~6-type public view)
 
 Date: 2026-07-25 · Source: the 2026-07-24 workflow assessment's taxonomy corrections, HAN-GATED
-(risk-classification surface per AGENTS.md zone 4). Status: DRAFT, awaiting Han's go on the two
-decisions below. Consuming row: ID-391. Record: ops-toolkit
+(risk-classification surface per AGENTS.md zone 4). Status: approved-with-condition (2026-08-27,
+Han). Consuming row: ID-391. Record: ops-toolkit
 `research/2026-07-24-workflow-pattern-and-assessment.md` §2.2.
+
+## Decision (2026-08-27)
+
+Approved with one non-negotiable condition: the bug TYPE loop must carry the mandatory Debug gate
+and a review floor of measure-twice regardless of lane, so a defect can never ship with less
+scrutiny than today. The migration itself (D1/D2 below) is future work; this brief records the
+condition it must satisfy, not an implementation.
 
 ## The defect (verified against docs/WORKFLOW.md)
 

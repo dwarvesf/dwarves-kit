@@ -184,6 +184,17 @@ same change (`_meta/BACKLOG.md` ID-292).
 `prose_rag`'s leg assignment (flagged as a documented deviation in `lib/config/module-registry.md`)
 is unaffected by this amendment; it is a separate open question.
 
+## Amendment (2026-08-27, Han): command-invoked internal libraries stay at lib/ root
+
+Decision (ID-308): the deliberate orphans stay orphans; no folder move. `adopt.sh`, `explain.sh`,
+`pitch.sh`, and `precedent.sh` were already named bin-less, command-invoked internal libraries in
+the census above (decision area, "Deliberately bin-less" list); this amendment covers the same
+class explicitly and adds `onboard-detect.sh`, which the census left off that list. All five sit at
+`lib/` root by design, not by drift: none is an operator CLI, each is invoked by a command file
+(`commands/*.md`) rather than typed at a shell, and folding any of them into a module folder would
+suggest a subsystem boundary that does not exist. No taxonomy or module-registry change follows
+from this amendment.
+
 ## Consequences
 
 - SG-04 executes the census target state in one wave (moves, collapses, new bin entries, skill relocation, call-site repoints incl. the dotfiles companion PR); SG-05/06 build `learn propose`/`drain` in the decision-1 home; SG-08 builds `bin/config` (decision 4) + the one module-metadata registry at `lib/config/module-registry.md` (decision 3); SG-09 builds `/kit:onboard` inside the decision-4 fences; SG-10 retires the per-job plist per decision 9.
