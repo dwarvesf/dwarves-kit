@@ -9,6 +9,7 @@
 #   B) per-row ceiling    NC: a run under the ceiling reaches `done`, never `spend_ceiling`
 #   C) queue-wide ceiling NC: a batch under the total runs every row
 #   D) _status_num + backward compat
+#   E) --push-only (ID-472) NC: without the flag the draft clause still types
 #
 # Isolation: KIT_LEDGER_DIR points at a temp dir, so sidecars and the journal never touch real
 # machine state. The mux is the same stub the sibling suites use (no real UI, no real claude), and
@@ -45,7 +46,7 @@ new_env() {
   export QUEUE_JOURNAL="$JOURNAL"
   export QUEUE_POLL_SECS=1 QUEUE_TIMEOUT_SECS=1 QUEUE_RETRY_SLEEP_SECS=0
   export QUEUE_STARTUP_SECS=0 QUEUE_SUBMIT_SETTLE_SECS=0
-  unset QUEUE_PR_READY QUEUE_MAX_TOOL_CALLS QUEUE_MAX_TOTAL_TOOL_CALLS 2>/dev/null || true
+  unset QUEUE_PR_READY QUEUE_PUSH_ONLY QUEUE_MAX_TOOL_CALLS QUEUE_MAX_TOTAL_TOOL_CALLS 2>/dev/null || true
 }
 
 # The wrapper sources $QSTUB/<slug>.during on capture-pane, which is how a test simulates the
@@ -192,6 +193,33 @@ run_row f1 "$REPO" "$WORK/p.txt" >/dev/null
 assert_eq "D2: with ceilings unset a big count never trips" "$(jverdict f1)" "done"
 case "$(typed f1)" in *TOOL_CALLS*) R=1 ;; *) R=0 ;; esac
 assert "D2: no ceiling means no TOOL_CALLS clause on the typed line" $R
+
+echo
+echo "--- Section E: --push-only (ID-472) ---"
+
+# E1 --push-only types a push-and-stop clause, no `gh pr create` at all, and wins over the
+# draft-PR default (which would otherwise fire).
+new_env; REPO="$WORK/rE1"; mkrepo "$REPO"; echo p > "$WORK/p.txt"
+status_during e1 "EXIT_SIGNAL: true"
+run_row e1 "$REPO" "$WORK/p.txt" --push-only >/dev/null
+case "$(typed e1)" in *"push the branch"*) R=0 ;; *) R=1 ;; esac
+assert "E1: --push-only types a push-and-stop clause" $R "-- got: $(typed e1)"
+case "$(typed e1)" in *"gh pr create --draft"*) R=1 ;; *) R=0 ;; esac
+assert "E1: --push-only types no draft-PR clause (the prohibition mentions gh pr create only to forbid it)" $R "-- got: $(typed e1)"
+
+# E2 --push-only wins even when --ready is also passed (no PR beats which-kind-of-PR).
+new_env; REPO="$WORK/rE2"; mkrepo "$REPO"; echo p > "$WORK/p.txt"
+status_during e2 "EXIT_SIGNAL: true"
+run_row e2 "$REPO" "$WORK/p.txt" --push-only --ready >/dev/null
+case "$(typed e2)" in *"push the branch"*) R=0 ;; *) R=1 ;; esac
+assert "E2: --push-only overrides --ready" $R "-- got: $(typed e2)"
+
+# E3 NEGATIVE CONTROL: without --push-only the draft clause is back (the unaffected default).
+new_env; REPO="$WORK/rE3"; mkrepo "$REPO"; echo p > "$WORK/p.txt"
+status_during e3 "EXIT_SIGNAL: true"
+run_row e3 "$REPO" "$WORK/p.txt" >/dev/null
+case "$(typed e3)" in *"gh pr create --draft"*) R=0 ;; *) R=1 ;; esac
+assert "E3 NC: without the flag the draft-PR clause still types" $R "-- got: $(typed e3)"
 
 echo
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
