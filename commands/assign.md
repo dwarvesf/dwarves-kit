@@ -41,6 +41,10 @@ Read `$ARGUMENTS` for the `ID-NNN`. Find that row in the `_meta/BACKLOG.md` Acti
 
 If a `.claude/goals/<slug>.md` already exists for this id (one draft per id), re-surface the existing draft instead of creating a duplicate, and skip to Step 5. Mirrors SPEC-005 edge 6: the filesystem is the source of truth.
 
+### Step 2b: Brief-on-file check
+
+Before drafting the goal, check whether a solution design already exists on disk: `docs/briefs/DECISION-BRIEF.md` (the per-worktree convention) or a slug-matched `docs/briefs/DECISION-BRIEF-<slug>.md`. If one is found, offer to reuse it -- fold its Problem/Solution framing into Step 3's Context-to-read instead of drafting the goal blind. Decline = no-op, proceed to Step 3 as if no brief existed. Advisory only ("Detect, don't dictate"): it never blocks drafting the goal.
+
 ### Step 3: Project the six-section operating directive
 
 From the item's Title + Target artifact, craft the goal as a **six-section operating directive**, not a one-line contract. Each section *projects* from an `AGENTS.md` zone or a section of the active spec; this is the projection contract, and it must match `AGENTS.md`'s "How a goal is composed" table (keep the two in sync, or the `AGENTS.md`↔`assign.md` drift failure-mode fires). The mapping is a composition, not 1:1: two of the six sections come from the active spec, not from `AGENTS.md`.
