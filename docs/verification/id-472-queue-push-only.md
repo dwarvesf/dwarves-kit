@@ -11,12 +11,29 @@ which kind of PR).
 
 ## Run table
 
+Command: `bash tests/test-cheap-guards.sh`
+Exit: 0
+Verdict: PASS (23/23 passed)
+
 | # | Action | Result |
 |---|---|---|
 | 1 | `bash tests/test-cheap-guards.sh` | 23/23 passed |
 | 2 | Section E1: `--push-only` types a push-and-stop clause | present, no draft-PR clause |
 | 3 | Section E2: `--push-only --ready` together | push-only still wins |
 | 4 | Section E3 (negative control): no flag at all | draft-PR clause still types, unaffected |
+
+## NEGATIVE CONTROL
+
+Neutered the `QUEUE_PUSH_ONLY` branch in `_goal_line()` (`if [ 1 = 0 ]; then`)
+and re-ran the suite: Section E1 fails RED (the typed line falls through to
+the draft-PR clause instead of the push-and-stop clause), proving the test
+actually exercises the new branch rather than passing vacuously. Restored via
+`git checkout -- lib/queue/queue.sh` immediately after; the full suite is
+back to 23/23.
+
+Command: `bash tests/test-cheap-guards.sh` (push-only branch neutered)
+Exit: 1
+Verdict: FAIL as expected (RED), restored immediately after
 
 ## Review
 

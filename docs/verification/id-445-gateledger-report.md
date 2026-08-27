@@ -11,6 +11,10 @@ both would otherwise re-derive separately.
 
 ## Run table
 
+Command: `bash tests/test-gate-ledger-report.sh`
+Exit: 0
+Verdict: PASS (8/8 passed)
+
 | # | Action | Result |
 |---|---|---|
 | 1 | `bash tests/test-gate-ledger-report.sh` | 8/8 passed |
@@ -19,11 +23,18 @@ both would otherwise re-derive separately.
 | 4 | `gate-ledger.sh report --period month` against an empty runs dir | header + `No runs recorded.`, honest-empty |
 | 5 | `gate-ledger.sh report --period year` (negative control: unknown period) | rc 64 |
 
-## Negative control
+## NEGATIVE CONTROL
 
 C3 in the test backdates a run's START line 40 days and asserts a 30-day
 (`month`) window excludes it (`No runs in this window.`). Proves the period
-filter actually filters by time, not just by presence of `--period`.
+filter actually filters by time, not just by presence of `--period`. Ran the
+suite again with C3's backdating step commented out: C3 flips RED (the old
+run stays IN the window and the assertion fails), confirming the check is
+live, then restored.
+
+Command: `bash tests/test-gate-ledger-report.sh` (C3 backdate step removed)
+Exit: 1
+Verdict: FAIL as expected (RED), restored immediately after
 
 ## Review
 

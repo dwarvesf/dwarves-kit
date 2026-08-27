@@ -11,11 +11,28 @@ against whichever repo a FIX would target.
 
 ## Run table
 
+Command: `bash tests/test-web-drift-refusal-guard.sh`
+Exit: 0
+Verdict: PASS (7/7 passed)
+
 | # | Action | Result |
 |---|---|---|
 | 1 | `bash tests/test-web-drift-refusal-guard.sh` | 7/7 passed |
 | 2 | extracted the guard's exact `test -f _meta/BACKLOG.md ...` line from the shipped SKILL.md and ran it against a real temp repo WITH `_meta/BACKLOG.md` | exit 0, no REFUSE line |
 | 3 | same guard line against a temp repo with NO `_meta/BACKLOG.md` (negative control) | exit 1, `REFUSE: ... bin/board init ...` |
+
+## NEGATIVE CONTROL
+
+C2 above (a boardless temp repo) is the logic-level negative control (the run
+that must refuse). Separately, to prove the TEST itself depends on the real
+doc content rather than passing vacuously: removed the guard line from
+`skills/web-drift/SKILL.md` and re-ran, which fails RED at extraction ("FAIL
+extracted the guard line ... 0/1 passed"), then restored via `git checkout --
+skills/web-drift/SKILL.md`. Full suite back to 7/7 after restore.
+
+Command: `bash tests/test-web-drift-refusal-guard.sh` (guard line removed from SKILL.md)
+Exit: 1
+Verdict: FAIL as expected (RED), restored immediately after
 
 ## Why extraction, not a lib test
 
