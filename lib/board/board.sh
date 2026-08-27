@@ -944,6 +944,34 @@ _legacy_bridge_note() {
   echo "      folded into the sync module; port tracked as kit ID-290." >&2
 }
 
+# board promote [list | <n>... | all | reject <n>...] [--backlog-file <path>]
+# -- the human gate. Consumer shims scaffolded by `cmd_init` ALWAYS append
+# `--backlog-file`, and `bin/add-backlog` understands no flags at all: it reads
+# BACKLOG_STAGE_BACKLOG / BACKLOG_STAGE_STAGING with a cwd-derived fallback.
+# Forwarding argv verbatim therefore broke twice over -- the flag reached
+# add-backlog's `int(x)` selection parse (so `promote <n>` and `promote reject
+# <n>` always failed usage, leaving `all` as the only working path and reducing
+# the review gate to all-or-nothing), and the operator's explicit target was
+# silently dropped, so promote resolved its write target from cwd and could land
+# rows in a DIFFERENT repo's board than the shim addressed. Translate here, the
+# same way cmd_sync already does for its engine. Fixes #443.
+cmd_promote() {
+  local backlog="" args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --backlog-file) backlog="${2:-}"; shift 2 ;;
+      *) args+=("$1"); shift ;;
+    esac
+  done
+  if [ -n "$backlog" ]; then
+    export BACKLOG_STAGE_BACKLOG="$backlog"
+    # staging is the board's sibling by construction (cmd_init scaffolds both
+    # into _meta/), so derive rather than adding a second flag to every shim.
+    export BACKLOG_STAGE_STAGING="${BACKLOG_STAGE_STAGING:-$(dirname "$backlog")/backlog-staging.md}"
+  fi
+  exec "$BOARD_DIR/bin/add-backlog" ${args+"${args[@]}"}
+}
+
 usage() { sed -n '2,166p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
@@ -957,7 +985,7 @@ main() {
     sync) shift; cmd_sync "$@" ;;
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
-    promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
+    promote) shift; cmd_promote "$@" ;;
     -h|--help|help) usage ;;
     *) cmd_board_single "$@" ;;
   esac

@@ -132,6 +132,22 @@ def main(argv):
         print(f"\npromote with: board promote <n>...  |  board promote all  |  board promote reject <n>")
         return 0
 
+    # This engine takes no flags -- it resolves its targets from
+    # BACKLOG_STAGE_BACKLOG / BACKLOG_STAGE_STAGING. Say so plainly instead of
+    # feeding an unrecognised flag to int() below and reporting it as a usage
+    # error about the SELECTION, which is what made #443 hard to read: consumer
+    # shims append --backlog-file, and every `promote <n>` failed with a message
+    # about candidate numbers. board.sh translates the flag before we are
+    # reached; anything still flag-shaped here is genuinely unhandled.
+    flags = [a for a in argv if a.startswith("-")]
+    if flags:
+        print(f"add-backlog: unrecognised option(s): {' '.join(flags)}", file=sys.stderr)
+        print("  this engine takes no flags; set BACKLOG_STAGE_BACKLOG / "
+              "BACKLOG_STAGE_STAGING instead.", file=sys.stderr)
+        print("  (invoked via `board promote`? board.sh translates "
+              "--backlog-file for you -- reaching here means it did not.)", file=sys.stderr)
+        return 2
+
     reject = argv[0] == "reject"
     sel = argv[1:] if reject else argv
     if (not reject) and argv[0] == "all":

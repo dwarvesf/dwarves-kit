@@ -10,6 +10,11 @@ All notable changes to dwarves-kit are documented here.
 - agents: new devops-triage subagent, on-demand production error-alert triage (evidence-first, read-only, bounded verdict); ambient twin lives in ops-toolkit tools/alert-triage/
 
 ### Fixed
+- `board promote` now translates the consumer shim's `--backlog-file` instead of forwarding it
+  verbatim (#443). Numeric selection (`promote <n>`, `promote reject <n>`) always failed with a
+  usage error, leaving `promote all` as the only working path and reducing the documented human
+  review gate to all-or-nothing. The flag was also discarded outright, so promote resolved its
+  write target from cwd and could land rows on a DIFFERENT repo's board than the shim addressed.
 - **Queue launcher pre-flights the `/goal` 4000-char cap.** Interactive `/goal` refuses
   anything over 4000 chars, but the launcher never checked before typing, so an over-budget
   pointer opened a real window, typed a silently-rejected goal, and sat idle forever with no

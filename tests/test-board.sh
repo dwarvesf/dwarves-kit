@@ -258,6 +258,59 @@ else
 fi
 
 echo ""
+echo "=== AC7: promote translates --backlog-file (issue #443) ==="
+# Consumer shims scaffolded by `board init` ALWAYS append --backlog-file, and
+# bin/add-backlog takes no flags. Forwarding argv verbatim broke twice: the flag
+# reached add-backlog's int() selection parse (so `promote <n>` always failed
+# usage, leaving `all` as the only working path), and the operator's explicit
+# target was dropped, so promote wrote to a cwd-derived board -- possibly a
+# DIFFERENT repo's than the shim addressed.
+PROMO_A="$TMPDIR_T/promoA"; PROMO_B="$TMPDIR_T/promoB"
+for r in "$PROMO_A" "$PROMO_B"; do
+  mkdir -p "$r/_meta"
+  printf '# BACKLOG\n\n| ID | Item | Notes & source | Status |\n|---|---|---|---|\n' > "$r/_meta/BACKLOG.md"
+done
+cat > "$PROMO_A/_meta/backlog-staging.md" <<'STAGE'
+# staging
+
+## [staged] A-first
+- Intent: selected by number
+- Tags: #u-lo #f-lo
+
+## [staged] A-second
+- Intent: must stay staged
+- Tags: #u-lo #f-lo
+STAGE
+cat > "$PROMO_B/_meta/backlog-staging.md" <<'STAGE'
+# staging
+
+## [staged] B-own
+- Intent: must never be touched by repoA's shim
+- Tags: #u-lo #f-lo
+STAGE
+
+# Run from INSIDE promoB while addressing promoA's board -- the cross-repo case.
+( cd "$PROMO_B" && bash "$BOARD" promote 1 --backlog-file "$PROMO_A/_meta/BACKLOG.md" ) >/dev/null 2>&1
+A_ROWS="$(grep -c '^| ID-' "$PROMO_A/_meta/BACKLOG.md" || true)"
+B_ROWS="$(grep -c '^| ID-' "$PROMO_B/_meta/BACKLOG.md" || true)"
+
+assert "AC7a: numeric selection works through the shim's --backlog-file (was: usage error)" \
+  "$([ "$A_ROWS" -eq 1 ] && echo 0 || echo 1)"
+assert "AC7b: the addressed repo is written, not the cwd repo" \
+  "$([ "$B_ROWS" -eq 0 ] && echo 0 || echo 1)"
+assert "AC7c: promoted the SELECTED candidate (A-first), not all of them" \
+  "$(grep -q 'A-first' "$PROMO_A/_meta/BACKLOG.md" && echo 0 || echo 1)"
+assert "AC7d: unselected candidate stays staged -- the review gate is not all-or-nothing" \
+  "$(grep -q '^## \[staged\] A-second' "$PROMO_A/_meta/backlog-staging.md" && echo 0 || echo 1)"
+
+# NC-f: the engine no longer misreports an unknown flag as a selection error.
+NCF_OUT="$(BACKLOG_STAGE_BACKLOG="$PROMO_A/_meta/BACKLOG.md" \
+  BACKLOG_STAGE_STAGING="$PROMO_A/_meta/backlog-staging.md" \
+  python3 "$KIT_DIR/lib/board/bin/add-backlog" 1 --bogus 2>&1 || true)"
+assert "NC-f: unrecognised flag is named explicitly, not reported as a bad candidate number" \
+  "$(echo "$NCF_OUT" | grep -q 'unrecognised option' && echo 0 || echo 1)"
+
+echo ""
 echo "=== Coverage delta ==="
 BEFORE_COUNT=0   # no lib/board/board.sh, no lib/board/parse-board.sh, no tests/test-board.sh before SPEC-146
 AFTER_COUNT="$TOTAL"
