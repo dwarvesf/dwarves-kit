@@ -116,6 +116,14 @@ We believe the kit should detect the user's current state and suggest the right 
 
 **Decision this would reject:** "Add a phase-locking system that blocks /execute unless /spec-validate has been run." Rigid *mid-flight* phase gates annoy experienced coders who know when to skip a step. Detect and suggest, never block progression mid-flight. **The exception is irreversible-cost actions, which DO block:** safety hooks (rm-rf, push-to-main, force-push) and, per ADR-0024, the ship/push boundary, which refuses when a lane's required (measure-twice) gate has no `ran`/`override` entry in the run ledger. This is the same logic as push-to-main (ship is irreversible), not a new kind of gate: the block lives only at ship, never at a mid-flight phase, and a logged override always exists, so the mechanism records what was skipped rather than forcing every gate. See ADR-0024 (the ID-036 hooks-also-enforce-at-ship layering bend).
 
+### "Disclose gaps, don't hide them"
+
+We believe a doc describing an alternate or degraded path should state exactly what it cannot do, in short bullets, right where that path is offered. A silent gap surfaces later as a confused bug report; a disclosed gap lets the user route around it up front.
+
+**Decision this already made:** `/kit:onboard` section E states the plugin-path gaps (no statusLine HUD, a frozen SHA vs `git pull`, project hook wiring that points at the bash path, the `KIT_FORCE_FULL=1` escape) as four short bullets, at the exact moment the plugin path is offered, not buried in a troubleshooting doc.
+
+**Decision this would reject:** "Just skip mentioning the gap; most people will not hit it." Every doc offering a path with a known limit generalizes this convention, README included.
+
 ### "Verify, then trust"
 
 We believe every task output should be verified by a separate agent before being accepted. The worker who writes code is not the right judge of whether that code meets the spec. A dedicated verifier with read-only access and specific acceptance criteria catches issues that self-assessment misses. When verification fails on fixable issues, a scoped fix agent gets exactly one shot (max 2 retries total) before escalating to a human. We don't retry ambiguous failures because they indicate design problems, not code bugs.

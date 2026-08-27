@@ -1,6 +1,6 @@
 # docs/, the kit's design record (you do NOT need this to USE the kit)
 
-If you just want to **use** dwarves-kit, stop here and read the repo [`README.md`](../README.md): install, then run your first `/kit:` cycle. Everything in `docs/` is the kit's own design history and dogfood output, written while building the kit. A new user never has to open it.
+If you just want to **use** dwarves-kit, stop here and read the repo [`README.md`](../README.md) or the condensed [`QUICKSTART.md`](QUICKSTART.md): install, then run your first `/kit:` cycle. Everything else in `docs/` is the kit's own design history and dogfood output, written while building the kit. A new user never has to open it.
 
 This folder is large because the kit was built **through its own workflow**: every feature got a spec, most got an ADR, each cycle got a retro. That accumulation is the point, not clutter, but it is for maintainers and the curious, not for getting started.
 
