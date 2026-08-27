@@ -3,6 +3,10 @@
 All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
+- docs: onboarding golden-path pass (ID-400). README leads with the two-command plugin install +
+  `/kit:onboard` + `/kit:start`, module list stays below the fold; new `docs/QUICKSTART.md`; the
+  bash installer is relabeled a maintainer/power path; a "disclose gaps, don't hide them" principle
+  in `docs/PHILOSOPHY.md` generalizes `/kit:onboard` section E's honest-disclosure convention.
 - agents: new devops-triage subagent, on-demand production error-alert triage (evidence-first, read-only, bounded verdict); ambient twin lives in ops-toolkit tools/alert-triage/
 
 ### Fixed

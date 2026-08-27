@@ -7,6 +7,20 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-plugin-blue)](https://code.claude.com)
 
+## Quickstart
+
+```
+/plugin marketplace add dwarvesf/dwarves-kit
+/plugin install kit@dwarves-marketplace
+```
+
+Open your repo and run `/kit:onboard`. It previews every write and adopts the repo with sane
+defaults. Then run `/kit:start` at the top of every session: it reads where the repo stands and
+hands you the next command. Onboarding never finishes; `/kit:start` is the onboarding.
+
+Condensed walkthrough: [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Full command reference:
+[`MANUAL.md`](MANUAL.md).
+
 Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, and agents iterate inside them until a read-only verifier passes, never grading their own homework.
 
 It ships as a **toolbox, not an appliance.** Every subsystem is a standalone shell command that already works on its own, `bash lib/board/board.sh --help`, and the same for `gate`/`stats`/`classify`/`spec`/`goal`/`session`, so there is no `kit` uber-binary and no install step to just poke at it (the same bash reads under pi, opencode, Claude Code, or a bare terminal). Wiring it into Claude Code (`bash install.sh`) adds an always-on safety spine and lets you `--with` exactly the modules you want and nothing else; [Install](#install) has the layers.
@@ -103,6 +117,10 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 
 `team_mode` is a reserved, not-yet-installable slot (parked, see `docs/PHILOSOPHY.md` "Team mode: parked, not absent"); naming it in `--with` errors on purpose.
 
+**Add a module later** (module #13 never re-onboards you): edit `.kit.toml`'s `[modules]` section
+by hand, then re-run `/kit:adopt --refresh` (or `bash lib/adopt.sh --refresh <repo>`) to re-wire
+`settings.json` to match. Full detail: [`commands/adopt.md`](commands/adopt.md).
+
 ```bash
 bash install.sh                         # spine only
 bash install.sh --with board,stats      # spine + those two
@@ -122,9 +140,11 @@ That's it. Hooks, commands, agents, and the skill all install automatically. No 
 
 To get the kit listed on Anthropic's official marketplace (`claude-plugins-official`), submit it via [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit). One-time manual step; not blocking the self-hosted install above.
 
-### Option 2: Bash installer (alternative)
+### Option 2: Bash installer (maintainer / power path)
 
-For environments without Claude Code's plugin system (CI, project templates, older Claude Code versions):
+Demoted from the default doc path (Moment 1 of the onboarding design is plugin-only). Reach for it
+only in environments without Claude Code's plugin system (CI, project templates, older Claude Code
+versions), or as a kit maintainer:
 
 ```bash
 git clone https://github.com/dwarvesf/dwarves-kit.git ~/.claude/dwarves-kit
