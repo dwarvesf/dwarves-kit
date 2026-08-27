@@ -31,6 +31,9 @@ Profile: feature   Proof class: behavioral
 | R3 | 2026-08-27T17:06Z | `git checkout HEAD -- lib/gate/gate-ledger.sh lib/telemetry/lane-telemetry.sh` then re-run R1/R1b | 0 | RESTORE: PASS 25/25 and 29/29 again |
 | R4 | 2026-08-27T16:55Z | `bash tests/test-meta.sh` | 1 | pre-existing baseline: 808/815, identical 7 failures reproduced on unmodified `master` at the same commit (side-by-side run, not a stash) |
 | R5 | 2026-08-27T16:52Z | `bash tests/test-outcome-emit-sweep.sh` | 1 | pre-existing baseline: 49/51, identical 2 failures reproduced on unmodified `master` |
+| R6 | 2026-08-27T17:20Z | `git merge origin/master` (real conflict in `lib/telemetry/lane-telemetry.sh` vs the concurrently-merged ID-392 review-economics section, both inserting a new aggregator at the same spot in `report()`), resolved keeping both blocks | 0 | merge conflict resolved; see R7 |
+| R7 | 2026-08-27T17:21Z | `bash tests/test-hooks.sh` (post-merge, full suite, includes the ID-392 review-economics section's own negative control) | 0 | PASS 497/497 |
+| R8 | 2026-08-27T17:22Z | `bash tests/test-meta.sh` (post-merge, both in this branch and side-by-side on `master @ e3294cf`) | 1 | 808/818 on both -- 10 pre-existing failures (3 new vs R4: two other merged PRs added commands/agents that drifted the README/architecture.md count docs, unrelated to this change), identical set on both |
 
 ## 4. Run detail
 
