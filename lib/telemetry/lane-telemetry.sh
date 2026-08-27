@@ -130,6 +130,36 @@ _rows() {
   done
 }
 
+# _review_agg: review-economics counters over runs that recorded at least one review round
+# (ID-392, per docs/briefs/DECISION-BRIEF-review-economics.md). Read-side only, over the
+# ledger lines SPEC-061 (`| GATE | review | ran |`) and SPEC-129 (`| OUTCOME | review | end |
+# caught=.. dur_s=..`) already write -- no new write verb, no new store. One TSV row per
+# reviewed run: <rid>\t<rounds>\t<last-caught>\t<total-review-dur_s>\t<shipped 0|1>.
+# `rounds` = count of review GATE ran lines (a rework round-trip is a review that ran again
+# after a prior one); `last-caught` = the LAST OUTCOME|review|end caught= value (false = the
+# verdict was SHIP, matching the caught= convention commands/review.md already writes);
+# dur_s sums EVERY review-phase OUTCOME bracket for the run (cumulative reviewer time across
+# rework rounds, not just the last one). A run with no review GATE line is excluded (nothing
+# to measure); `caught=""` (a rounds>0 run whose OUTCOME never closed) stays honestly unfirst-pass.
+_review_agg() {
+  local f rid
+  for f in "$RUNS_DIR"/*.log; do
+    [ -e "$f" ] || continue
+    rid="$(basename "$f" .log)"
+    awk -v rid="$rid" '
+      BEGIN { FS=" \\| " }
+      $2=="GATE" && $3=="review" && $4=="ran" { rounds++ }
+      $2=="OUTCOME" && $3=="review" && $4=="end" {
+        n=split($5, kv, " ")
+        for (i=1; i<=n; i++) { split(kv[i], p, "="); if (p[1]=="caught") caught=p[2]; if (p[1]=="dur_s") dur+=p[2]+0 }
+      }
+      $2=="GATE" && $3=="ship" && $4=="ran" { ship=1 }
+      END {
+        if (rounds+0 > 0) printf "%s\t%d\t%s\t%d\t%d\n", rid, rounds+0, (caught==""?"?":caught), dur+0, ship+0
+      }' "$f"
+  done
+}
+
 # "<spec>\t<bug-rid>" per escaped-from ACTION marker (SPEC-062: test-design quality feed)
 _escapes() {
   local f rid
@@ -250,6 +280,36 @@ report() {
     echo ""
     echo "  failure policy (close/escalate/continue, ID-398):"
     printf '%s\n' "$pagg" | awk -F'\t' '{ printf "    %-10s %5d\n", $1, $2 }'
+  fi
+
+  # Review economics (ID-392, DECISION-BRIEF-review-economics.md): first-pass acceptance,
+  # rework round-trips, reviewer minutes, escape rate. Same read-side-only shape as the token
+  # section above -- over the review GATE/OUTCOME lines already written, no new store. Time-
+  # to-merge is not duplicated here: the per-run first..last window above already carries it
+  # (BSD awk has no mktime, the same portability limit SPEC-061 named for duration math).
+  local ragg; ragg="$(_review_agg)"
+  echo ""
+  if [ -n "$ragg" ]; then
+    printf '%s\n' "$ragg" | awk -F'\t' '
+      { total++; rounds=$2; caught=$3; dur=$4
+        if (rounds==1 && caught=="false") fp++
+        if (rounds>1) rework++
+        roundsum+=rounds; sumdur+=dur }
+      END {
+        printf "  review economics (%d reviewed run%s):\n", total, (total==1?"":"s")
+        printf "    first-pass acceptance: %d/%d (%d%%)\n", fp+0, total, int(100*fp/total)
+        printf "    rework round-trips: avg %.1f review round(s)/run; %d run(s) needed >1 round\n", roundsum/total, rework+0
+        printf "    reviewer time: %.1f min (sum of review-phase OUTCOME brackets)\n", sumdur/60
+      }'
+  else
+    echo "  review economics: (no review rounds recorded yet)"
+  fi
+  local shipped_n esc_n
+  shipped_n="$(printf '%s\n' "$rows" | awk -F'\t' '{s+=$12} END{print s+0}')"
+  esc_n="$(printf '%s\n' "$esc" | grep -c . || true)"
+  if [ "${shipped_n:-0}" -gt 0 ]; then
+    printf '    escape rate: %d/%d shipped run(s) later traced an escaped defect (%d%%)\n' \
+      "${esc_n:-0}" "$shipped_n" "$((100 * ${esc_n:-0} / shipped_n))"
   fi
 }
 
