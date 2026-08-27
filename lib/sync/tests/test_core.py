@@ -72,11 +72,25 @@ def test_parse_board_skips_malformed():
 
 def test_next_id_skips_id_in_malformed_row():
     """A pipe-broken row is invisible to parse_board, but its literal ID
-    token must still block reuse: next_id scans raw text, not parsed rows,
-    so a malformed row can never let a later spoke-born item mint its id."""
+    token must still block reuse: next_id's raw-text floor matches any
+    row-SHAPED line (`| ID-N |` at line start) even when the rest of the row
+    fails to parse, so a malformed row can never let a later spoke-born item
+    mint its id."""
     broken = BOARD + "| ID-309 | Queue-watcher pilot widening | notes\n"
     assert "ID-309" not in parse_board(broken)  # confirms invisibility
     assert next_id(broken) == 310
+
+
+def test_next_id_ignores_id_token_in_notes_prose():
+    """ID-480: an id-like token in a notes/prose cell -- not row-shaped, just
+    text inside another row's third column -- must never inflate next_id.
+    Before the fix, next_id regex-scanned the whole raw text and this row
+    alone would have pushed the mint to 100000000."""
+    poisoned = BOARD + (
+        "| ID-14 | Demo row | mentions ID-99999999 in prose, not a row "
+        "| queued |\n"
+    )
+    assert next_id(poisoned) == 15  # from the real ID-14 row, not the token
 
 
 def test_next_id_and_title_and_tags():

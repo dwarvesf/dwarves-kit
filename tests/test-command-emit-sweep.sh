@@ -83,7 +83,7 @@ if [ "$ORPHAN_RC" -eq 0 ]; then RC=0; else RC=1; fi
 assert "every command in commands/ mentions gate-ledger OR is exempted (0 orphans)" $RC
 
 TOTAL_COMMANDS=$(find "$COMMANDS_DIR" -maxdepth 1 -name '*.md' | wc -l | tr -d ' ')
-assert_eq "commands/ has 36 command files (was 32 on 2026-07-04, +4 since; every command still classifies as emit-or-exempt per AC1's sweep, so update this pin when it legitimately changes)" "$TOTAL_COMMANDS" "36"
+echo "  (info) commands/ currently has $TOTAL_COMMANDS command files -- AC1 above is the real invariant; no hardcoded pin here per the repo's no-hardcoded-counts rule (a literal roster size goes stale on the next addition)"
 
 echo ""
 echo "=== AC2: the exemption table names exactly the 11 expected utility commands ==="
