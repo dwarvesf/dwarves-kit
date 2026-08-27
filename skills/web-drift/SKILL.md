@@ -27,7 +27,7 @@ one. A deploy can break any of those silently, and nothing in a repo notices.
 | Item set | one `(site, check)` pair. The site axis is `WEB_DRIFT_SITES`, enumerated by `python3 lib/webcheck/webcheck.py sites` (comma or whitespace separated, never colon: every URL carries one). The check axis is fixed by the contract below. A site is not the item: a site with one hard fail and eight warnings has no single verdict, and a tier that does not apply has to drop out of the denominator, which only works per check. `WEB_DRIFT_SITES` unset means no sites are declared: report that and stop. The kit ships no hostname. |
 | Contract | each site stays discoverable, fetchable, and understandable without JavaScript: the groundwork tier (robots, sitemap, llms.txt, unknown-path status, markdown negotiation with `Vary`), the page tier (title, meta description, one h1, 500+ visible characters, canonical, OG, JSON-LD, internal links), and the API tier where the site exposes an API |
 | Evidence class | live HTTP responses, quoted from `webcheck audit` output. A hard fail and a warning are each quoted evidence. No response at all is not evidence. |
-| Apply mechanics | no code edit lands in this repo. Each FIX becomes one row appended to the `_meta/BACKLOG.md` of the CONSUMER repo that owns the site's source, in the shared kanban format (`\| ID \| Item \| Notes & source \| Status \|`, status `queued`). The board CLI has no add verb, so the row is written directly; `bin/board board --backlog-file <path>` (in the kit install root) renders it back and `bin/board set <ID> <state>` moves it afterwards. Plus a report listing every verdict. UNSURE items go in the report for the operator, never into a row. |
+| Apply mechanics | no code edit lands in this repo. Each FIX becomes one row appended to the `_meta/BACKLOG.md` of the CONSUMER repo that owns the site's source, in the shared kanban format (`\| ID \| Item \| Notes & source \| Status \|`, status `queued`). The board CLI has no add verb, so the row is written directly; `bin/board board --backlog-file <path>` (in the kit install root) renders it back and `bin/board set <ID> <state>` moves it afterwards. Plus a report listing every verdict. UNSURE items go in the report for the operator, never into a row. A consumer with no `_meta/BACKLOG.md` has nowhere to file: the refusal guard (Step 1) stops the whole run against that consumer rather than falling back to a local ledger this skill would then own (ID-484). |
 | Closing evidence | a row closes only when a later `webcheck audit <url>` shows that `(site, check)` pair green. The next run re-audits every site carrying an open row FIRST and reports each open row as still-failing or now-green. Without that the loop cannot fail, because a filed row proposes a fix and nothing re-tests it. |
 
 ## Verdict mapping
@@ -96,10 +96,22 @@ evidence is the saved output, never a memory of it.
    when the site last deployed. A finding measured before the fix deployed is not a finding.
    Name both timestamps in the report.
 
-7. **Apply.** For each FIX, file one row on the board of the repo that owns that site's SOURCE,
-   not the repo that owns the domain. A static site built from a separate engine repo takes its
-   fix in the engine, and the content repo cannot carry it. Say which repo and why in the row's
-   Notes column. Never edit a site from here.
+7. **Apply.** For each FIX, resolve the target repo, the one that owns that site's SOURCE, not
+   the repo that owns the domain. A static site built from a separate engine repo takes its fix
+   in the engine, and the content repo cannot carry it.
+
+   **Refusal guard (ID-484): a boardless target repo REFUSES THE RUN, no local ledger.** Before
+   filing anything, check the target repo has `_meta/BACKLOG.md`:
+   ```
+   test -f _meta/BACKLOG.md || { echo "REFUSE: <repo> has no _meta/BACKLOG.md -- a FIX has nowhere to file and no closing loop. Fix: run 'bin/board init' in <repo> to give it a kit board, then re-run web-drift."; exit 1; }
+   ```
+   Stop the whole run there and report it; do not keep a local per-consumer ledger as a
+   fallback (that ledger would be a second source of truth this skill would then have to own
+   and reconcile). A consumer's own choice not to adopt a kit board is a decision for that
+   consumer to make, by running `bin/board init`, not one this skill works around silently.
+
+   Once the target repo passes the guard, file one row per FIX, say which repo and why in the
+   row's Notes column. Never edit a site from here.
 
 8. **Report.** One table: site, check, verdict, evidence, target repo. List every UNSURE and
    every UNTESTABLE separately for the operator, plus the state of each row carried in from the
@@ -143,6 +155,7 @@ enumeration list.
 - Reporting a finding for a site that did not answer: that is UNTESTABLE, always.
 - Filing rows and never re-auditing them: a loop with no closing evidence cannot fail.
 - Filing a row against the repo that owns the domain when a different repo owns the site's source.
+- Falling back to a local ledger when the target repo has no board. Refuse the run instead (ID-484): a second, skill-owned source of truth is the same drift class the closing-evidence rule exists to prevent.
 - Asking `kit:audit-scanner` to FETCH anything: it has no network verb. Save the output first, then hand it the file.
 - Calling a DANGER on an llms.txt nobody opened. Tier 1 never produces that verdict.
 - Re-running the checks by hand in a browser when the tool already quoted the response.
