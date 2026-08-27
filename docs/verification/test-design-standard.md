@@ -141,6 +141,32 @@ gates on its own repo, and the proof they work is that they block an
 evidence-free change (the release-hygiene guard self-firing on its own
 release is the canonical example).
 
+## 8. Scenario-harness discipline: two-tier real-dependency mocking
+
+When the SUT reads an external SaaS API (Notion, Airwallex, any third-party service with
+real-world state), a single mock-or-live choice is wrong either way: an all-mock suite drifts
+from the real API's actual semantics, and an all-live suite is slow, flaky, and racks up a
+cleanup debt no one owns. Pattern proven in foundation-workers (SPEC-006, first consumer):
+split the fixture source into two tiers behind one shared **scenario-builder module**, so
+both tiers stay in sync and no test hand-writes a payload.
+
+- **Tier A, seeded in-memory mock.** Default; runs in CI. Fast, deterministic, covers the
+  logic under test.
+- **Tier B, ephemeral live sandbox against the real API.** Opt-in only, and reserved for
+  semantics a mock cannot fake, a rollup field that only resolves against real relations, a
+  formula whose output depends on the API's own timezone handling. If Tier A can prove it,
+  Tier B does not run it.
+- **Spin-up** creates a dated parent record plus seeded children, so a run's fixtures are
+  identifiable and never collide with production data.
+- **Tear-down** archives the parent, sweeps any leftover children the run orphaned, and
+  refuses to touch anything carrying a production id. A tear-down that cannot prove an id is
+  test-owned skips it rather than deleting it.
+
+This is a dialect refinement of §5b's spec-feature and data-tool matrices: when the SUT
+reads an external SaaS API, the test-design names the shared builder, the spin-up/tear-down
+shape, and which Tier B semantics justify the live leg, as one matrix, not two unrelated
+suites.
+
 ## Failure modes this prevents
 
 - **The stale under-covering plan:** a `test-design` written for task one, never grown, while
