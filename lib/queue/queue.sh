@@ -26,6 +26,8 @@
 #     --journal PATH  override the journal file
 #     --ready         open a NORMAL PR instead of the unattended draft default (SPEC-224); the
 #                     escape hatch mirroring OpenHands' model-overridable draft=False.
+#     --push-only     the run pushes its branch and opens no PR at all (ID-472); use on a runner
+#                     host with no `gh` credentials. Overrides --ready.
 #     --sanitize-prompt  treat the pointer body as UNTRUSTED (SPEC-223): run it through
 #                     `sanitize_cell`, prepend the XPIA preamble, and gate the row if the run
 #                     wrote a protected path. Implied by `--from-boards`; the watcher passes it
@@ -168,7 +170,14 @@ QUEUE_RETRY_JITTER_SPAN="${QUEUE_RETRY_JITTER_SPAN:-11}"
 #                              non-gameable backstop, composed OR-style (first-to-trip wins).
 #   QUEUE_MAX_TOTAL_TOOL_CALLS queue-wide ceiling across rows this run (0 = unlimited). The current
 #                              row finishes + ships first, then remaining rows are skipped.
+#   QUEUE_PUSH_ONLY            0 = normal (the run itself opens the PR, draft or ready per above);
+#                              1 = the run commits + pushes its branch and stops there, no `gh pr
+#                              create` at all -- for a runner host with no GitHub credentials
+#                              (SSH push works, `gh` does not). PR-open then falls to the authed
+#                              CLIENT session (`gh pr create --head <branch>`). Overrides
+#                              QUEUE_PR_READY (moot when no PR is opened at all).
 QUEUE_PR_READY="${QUEUE_PR_READY:-0}"
+QUEUE_PUSH_ONLY="${QUEUE_PUSH_ONLY:-0}"
 QUEUE_MAX_TOOL_CALLS="${QUEUE_MAX_TOOL_CALLS:-0}"
 QUEUE_MAX_TOTAL_TOOL_CALLS="${QUEUE_MAX_TOTAL_TOOL_CALLS:-0}"
 # Coerce to a safe integer so a junk config value never errors a later `-gt`/`-ge` comparison in the
@@ -565,10 +574,16 @@ _goal_line() {  # pointer-path slug
       line="$line Also update $status every few tool calls with a line \"TOOL_CALLS: <your cumulative tool-call count>\"."
     fi
   fi
+  # ID-472: on a runner host with no GitHub credentials, the run commits + pushes its branch
+  # (SSH remote, no `gh` needed) and stops -- opening the PR moves to the authed CLIENT session
+  # (`gh pr create --head <branch>`). This takes precedence over the draft/ready choice below,
+  # since no PR means "draft vs ready" is moot.
+  if [ "$QUEUE_PUSH_ONLY" = 1 ]; then
+    line="$line Commit your work and push the branch (git push -u origin <branch>), then STOP. Do NOT run \`gh pr create\`; opening the pull request is a separate step the operator's own authed session will do."
   # SPEC-224: draft-PR-by-default on this unattended path (OpenHands posture). This builder is only
   # ever called by the autonomous queue, so appending here IS "autonomous path only"; interactive
   # /kit:ship never reaches it. QUEUE_PR_READY=1 is the --ready escape hatch (their draft=False).
-  if [ "$QUEUE_PR_READY" != 1 ]; then
+  elif [ "$QUEUE_PR_READY" != 1 ]; then
     # Footer the journal BASENAME, not the resolved path (security review, LOW): the full path
     # defaults under the operator's home and would leak a local path + username into a public PR
     # body. The basename + slug still identify the run in the journal, which is all the footer is for.
@@ -900,6 +915,8 @@ cmd_run() {
       --journal)    QUEUE_JOURNAL="${2:-$QUEUE_JOURNAL}"; shift 2 ;;
       # SPEC-224: open a NORMAL PR instead of the unattended draft default (OpenHands draft=False).
       --ready)      QUEUE_PR_READY=1; shift ;;
+      # ID-472: no GitHub creds on this runner host -- push the branch, open no PR at all.
+      --push-only)  QUEUE_PUSH_ONLY=1; shift ;;
       --*)          _warn "queue: unknown flag '$1'"; return 64 ;;
       *)            src="$1"; shift ;;
     esac

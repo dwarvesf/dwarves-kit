@@ -36,6 +36,8 @@
 #   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist (SPEC-063)
 #   rid                                the canonical run id for the cwd: branch slug (SPEC-070)
 #   descent  <rid> <lane>              plan-order timeline check; violations detected, never blocked (SPEC-076)
+#   history  [--lane L] [--json]       one row per run: lane, repo, ran/skipped counts (ID-444)
+#   report   --period week|month [--lane L]   markdown table of runs in the window + totals (ID-445)
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -712,6 +714,64 @@ history() {
   fi
 }
 
+# _cutoff_iso <days> -- "now minus <days> days" as an ISO8601 Z timestamp. Portable: BSD `date`
+# (macOS) needs `-v-Nd`; GNU `date` (Linux/CI) needs `-d "-N days"`. ISO8601 Z timestamps sort
+# correctly as PLAIN STRINGS, so filtering below is a string compare, never a date parse.
+# Same idiom as lib/learn/weekend-batch.sh's helper of the same name (kept local, not shared,
+# since it is six lines and the two callers have no other coupling).
+_cutoff_iso() {
+  local days="$1"
+  if date -v-1d >/dev/null 2>&1; then
+    date -u -v-"${days}"d +%Y-%m-%dT%H:%M:%SZ
+  else
+    date -u -d "-${days} days" +%Y-%m-%dT%H:%M:%SZ
+  fi
+}
+
+# Usage: report --period week|month [--lane L] : cross-cutting markdown table of runs whose
+# first ledger line falls in the window, with GATE ran/skipped totals. ID-445 absorb: the
+# smallest useful version over gate-ledger's own runs/ corpus (mega.sh cmd_report is a
+# different, per-mega-goal report and does not satisfy this).
+report() {
+  local period="" lane_opt=""
+  while [ $# -gt 0 ]; do case "$1" in
+    --period) period="${2:-}"; shift ;;
+    --lane) lane_opt="${2:-}"; shift ;;
+    *) echo "usage: report --period week|month [--lane L]" >&2; return 64 ;;
+  esac; shift; done
+  local days
+  case "$period" in
+    week)  days=7 ;;
+    month) days=30 ;;
+    *) echo "usage: report --period week|month [--lane L]" >&2; return 64 ;;
+  esac
+  local since; since="$(_cutoff_iso "$days")"
+  printf '# Gate-ledger report (%s, since %s)\n\n' "$period" "$since"
+  [ -d "$RUNS_DIR" ] || { printf 'No runs recorded.\n'; return 0; }
+  local f rid runlane repo t0 ran skipped rows="" total_runs=0 total_ran=0 total_skipped=0
+  for f in "$RUNS_DIR"/*.log; do
+    [ -f "$f" ] || continue
+    grep -q '| START |' "$f" || continue
+    t0="$(head -1 "$f" | cut -d' ' -f1)"
+    [ -n "$t0" ] && { [ "$t0" '>' "$since" ] || [ "$t0" = "$since" ]; } || continue
+    runlane="$(grep -m1 '| START |' "$f" | grep -o 'lane=[^ ]*' | head -1 | cut -d= -f2)"
+    if [ -n "$lane_opt" ] && [ "${runlane:-}" != "$lane_opt" ]; then continue; fi
+    rid="$(basename "$f" .log)"
+    repo="$(grep -m1 '| START |' "$f" | grep -o 'repo=[^ ]*' | head -1 | cut -d= -f2)"
+    ran="$(grep -c '| GATE | .* | ran |' "$f" 2>/dev/null || true)"
+    skipped="$(grep -c '| GATE | .* | skipped |' "$f" 2>/dev/null || true)"
+    rows="${rows}| ${rid} | ${runlane} | ${repo} | ${ran} | ${skipped} |\n"
+    total_runs=$((total_runs + 1)); total_ran=$((total_ran + ran)); total_skipped=$((total_skipped + skipped))
+  done
+  if [ "$total_runs" -eq 0 ]; then
+    printf 'No runs in this window.\n'
+    return 0
+  fi
+  printf '| rid | lane | repo | gates_ran | gates_skipped |\n|---|---|---|---|---|\n'
+  printf '%b' "$rows"
+  printf '\n**Totals:** %d runs, %d gates ran, %d gates skipped\n' "$total_runs" "$total_ran" "$total_skipped"
+}
+
 
 cmd="${1:-}"; shift 2>/dev/null || true
 case "$cmd" in
@@ -734,5 +794,6 @@ case "$cmd" in
   rid)      rid "$@" ;;
   descent)  descent "$@" ;;
   history) history "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|check|show|plan|progress|rid|descent} ..." >&2; exit 64 ;;
+  report)  report "$@" ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|check|show|plan|progress|rid|descent|history|report} ..." >&2; exit 64 ;;
 esac
