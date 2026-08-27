@@ -1,0 +1,6 @@
+name: "Kit: Start"
+command: claude "/kit:start"
+tags:
+  - dwarves-kit
+  - kit
+description: Detect project state and suggest the next dwarves-kit command. Opens an interactive Claude Code session with the prompt pre-filled.
