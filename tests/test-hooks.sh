@@ -1150,6 +1150,36 @@ assert_output_contains "telemetry: negative control (ctype stripped -> 0)" "type
 
 # ============================================================
 echo ""
+echo "=== lane-telemetry: review economics (ID-392) ==="
+# ============================================================
+RE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-re.XXXXXX")
+RE() { DWARVES_KIT_LOG_DIR="$RE_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" "$@" 2>/dev/null; }
+LTRE() { DWARVES_KIT_LOG_DIR="$RE_DIR" bash "$KIT_DIR/lib/telemetry/lane-telemetry.sh" "$@" 2>/dev/null; }
+# run-fp: one review round, clean SHIP -> first-pass.
+RE start run-fp normal normal spec-feature spec-feature kitA
+RE outcome run-fp review start
+RE record run-fp review ran "SHIP findings=0"
+RE outcome run-fp review end caught=false
+RE record run-fp ship ran "shipping pr=#1"
+# run-rw: two review rounds (a rework round-trip) before SHIP.
+RE start run-rw normal normal spec-feature spec-feature kitA
+RE outcome run-rw review start
+RE record run-rw review ran "FIX THEN SHIP findings=3"
+RE outcome run-rw review end caught=true
+RE outcome run-rw review start
+RE record run-rw review ran "SHIP findings=0"
+RE outcome run-rw review end caught=false
+RE record run-rw ship ran "shipping pr=#2"
+assert_output_contains "review-econ: first-pass acceptance counts only the 1-round clean run" "first-pass acceptance: 1/2 (50%)" "$(LTRE report)"
+assert_output_contains "review-econ: rework round-trips names the 2-round run" "1 run(s) needed >1 round" "$(LTRE report)"
+assert_output_contains "review-econ: reviewer time sums every review-phase bracket" "reviewer time:" "$(LTRE report)"
+# negative control: collapse run-rw to a single clean round -> first-pass becomes 2/2, no rework.
+sed '/FIX THEN SHIP/d; /caught=true/d' "$RE_DIR/runs/run-rw.log" > "$RE_DIR/runs/run-rw.log.tmp" && mv -f "$RE_DIR/runs/run-rw.log.tmp" "$RE_DIR/runs/run-rw.log"
+assert_output_contains "review-econ: negative control (rework line stripped -> 2/2 first-pass)" "first-pass acceptance: 2/2 (100%)" "$(LTRE report)"
+assert_output_contains "review-econ: negative control also clears the rework count" "0 run(s) needed >1 round" "$(LTRE report)"
+
+# ============================================================
+echo ""
 echo "=== run legibility: plan / progress / trace (SPEC-063) ==="
 # ============================================================
 GL() { DWARVES_KIT_LOG_DIR="$LT2_DIR" bash "$KIT_DIR/lib/gate/gate-ledger.sh" "$@" 2>/dev/null; }
