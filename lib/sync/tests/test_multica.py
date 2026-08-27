@@ -85,14 +85,15 @@ def test_read_paginates():
 def test_apply_creates_with_marker_and_mapped_status():
     src, fake = make_src([[]])
     src.read()
-    plan = Plan(src_create=[("ID-10", "ID-10 · New thing", "the notes",
-                             "queued")])
+    plan = Plan(src_create=[("ID-10", "ID-10 · New thing",
+                             "the notes\n\nVerify: pytest", "queued")])
     created = src.apply(plan, {}, {})
     assert created == {"ID-10": "mi_1"}
     method, path, body = fake.calls[-1]
     assert (method, body["status"]) == ("POST", "backlog")
     assert body["project_id"] == PJ
-    assert split_marker(body["description"]) == ("the notes", "queued")
+    assert split_marker(body["description"]) == \
+        ("the notes\n\nVerify: pytest", "queued")
 
 
 def test_apply_status_change_rewrites_marker_without_clobbering_body():
@@ -135,3 +136,67 @@ def test_missing_config_or_token_fails_closed():
     import pytest
     with pytest.raises(SystemExit):
         MulticaSource("https://x.example", WS, PJ, token=None)  # no env token
+
+
+def test_apply_creates_card_with_verification_line():
+    src, fake = make_src([[]])
+    src.read()
+    plan = Plan(src_create=[("ID-10", "ID-10 · New thing",
+                             "context\n\nVerify: pytest lib/sync/tests/"
+                             "test_multica.py", "queued")])
+    created = src.apply(plan, {}, {})
+    assert created == {"ID-10": "mi_1"}
+    assert fake.calls[-1][0] == "POST"
+
+
+def test_apply_refuses_card_with_no_verification_line(capsys):
+    src, fake = make_src([[]])
+    src.read()
+    plan = Plan(src_create=[("ID-11", "ID-11 · No verify", "context only, "
+                             "nothing else", "queued")])
+    created = src.apply(plan, {}, {})
+    assert created == {}
+    assert not [c for c in fake.calls if c[0] == "POST"]  # no POST at all
+    out = capsys.readouterr().out
+    assert "ID-11" in out and "verification" in out.lower()
+    assert "agent-teamwork-guide.md" in out
+
+
+def test_apply_refuses_card_with_blank_verification_line():
+    src, fake = make_src([[]])
+    src.read()
+    plan = Plan(src_create=[("ID-12", "ID-12 · Blank verify",
+                             "Verification:   ", "queued")])
+    created = src.apply(plan, {}, {})
+    assert created == {}
+    assert not [c for c in fake.calls if c[0] == "POST"]
+
+
+def test_apply_refused_card_does_not_block_its_siblings():
+    src, fake = make_src([[]])
+    src.read()
+    plan = Plan(src_create=[
+        ("ID-13", "ID-13 · No verify", "context only", "queued"),
+        ("ID-14", "ID-14 · Has verify", "Verify: go test ./...", "queued"),
+    ])
+    created = src.apply(plan, {}, {})
+    assert created == {"ID-14": "mi_1"}
+    posts = [c for c in fake.calls if c[0] == "POST"]
+    assert len(posts) == 1
+
+
+def test_apply_board_add_unaffected_by_verification_gate():
+    # NEGATIVE CONTROL for AC-5: the gate only runs inside src_create; a
+    # Multica-authored card with no verification line still adopts as before.
+    issues = [{"id": "m9", "title": "team idea", "status": "backlog",
+               "description": "raw, no verify line at all"}]
+    src, fake = make_src([issues])
+    src.read()
+    plan = Plan(board_add=[("m9", "team idea", "raw, no verify line at all",
+                            "queued")])
+    rows_after = {"ID-42": Row("ID-42", "team idea", "queued", 0,
+                               "raw, no verify line at all")}
+    src.apply(plan, {"m9": "ID-42"}, rows_after)
+    _, path, body = fake.calls[-1]
+    assert path.startswith("/api/issues/m9")
+    assert body["title"] == "ID-42 · team idea"
