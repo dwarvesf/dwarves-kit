@@ -65,3 +65,15 @@ grounding + ranked pickups/avoids: `docs/research/2026-07-25-dag-orchestration-p
 The "Explicitly NOT built" list above stands MINUS the graph itself (still no priority scheduling,
 no cross-machine, no speculative execution, no CP-SAT before the ready-queue ships). The mini-ADR
 in Sequencing step (1) now amends ADR-0028 to retire the boundary entirely rather than narrow it.
+
+## Failure semantics for the ready-queue's task-state-transition hooks (ID-398)
+
+When this brief's task-state-transition hooks land, a mid-graph node's exit is one of the
+three named failure policies in `docs/patterns/failure-policy.md`: **continue** (unblock
+dependents, proceed), **escalate** (a human decision is needed; the node holds, dependents
+stay blocked, the rest of the ready set keeps moving), **close** (the node's spec/task was
+wrong-shaped; prune its descendants rather than retry them -- "prune-descendants-on-failure"
+is the concrete instance of `close` at graph scale, and PHILOSOPHY.md N5 already names it as
+undocumented industry-wide). The hook contract when built: a node's transition function
+returns one of these three, `escalate`/`close` both halt that node's own subtree, only
+`close` prunes it from the ready set outright.

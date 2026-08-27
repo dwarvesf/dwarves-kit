@@ -93,6 +93,23 @@ OUTE="$(DWARVES_KIT_LOG_DIR="$(mktemp -d)/empty" NO_COLOR=1 bash "$LT" render 2>
 has "no runs recorded" "$OUTE"; ok "empty corpus renders an honest 'no runs recorded' [NC]" $?
 if printf '%s' "$OUTE" | grep -qiE 'error|not found|unbound|syntax'; then ok "empty render does not crash [NC]" 1; else ok "empty render does not crash [NC]" 0; fi
 
+# --- ID-398: failure-policy breakdown in `report` ---
+PD="$(mktemp -d)/logs"
+DWARVES_KIT_LOG_DIR="$PD" bash "$GL" start pr1 full full spec-feature spec-feature rp >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$PD" bash "$GL" outcome pr1 build start >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$PD" bash "$GL" outcome pr1 build end caught=true policy=escalate >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$PD" bash "$GL" start pr2 full full spec-feature spec-feature rp >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$PD" bash "$GL" outcome pr2 build start >/dev/null 2>&1
+DWARVES_KIT_LOG_DIR="$PD" bash "$GL" outcome pr2 build end caught=false policy=continue >/dev/null 2>&1
+OUTP="$(DWARVES_KIT_LOG_DIR="$PD" NO_COLOR=1 bash "$LT" report 2>&1)"
+has "failure policy" "$OUTP"; ok "ID-398: report has a failure-policy section" $?
+printf '%s' "$OUTP" | grep -qE 'escalate[[:space:]]+1'; ok "ID-398: report counts an escalate outcome" $?
+printf '%s' "$OUTP" | grep -qE 'continue[[:space:]]+1'; ok "ID-398: report counts a continue outcome" $?
+
+# --- ID-398 NEGATIVE CONTROL: no policy= anywhere -> section omitted entirely ---
+OUTNP="$(NO_COLOR=1 bash "$LT" report 2>&1)"   # the seeded corpus at the top of this file has no policy= fields
+if printf '%s' "$OUTNP" | grep -qF "failure policy"; then ok "ID-398 NC: no policy-carrying runs -> section omitted" 1; else ok "ID-398 NC: no policy-carrying runs -> section omitted" 0; fi
+
 echo ""
 echo "=== $PASS/$TOTAL passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

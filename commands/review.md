@@ -37,6 +37,20 @@ For EVERY changed file, evaluate:
 - Race conditions: any shared mutable state?
 - Off-by-one: loops, slices, pagination?
 
+**Root cause vs symptom (weight: high; ID-398, `docs/patterns/failure-policy.md`)**
+A distinct judged step, not a clause folded into Correctness above -- a fix that reads clean
+and passes its check can still be patching the symptom while the underlying defect survives.
+For a diff that fixes a reported bug or failing check, ask on its own: does this change the
+place the failure ORIGINATES, or only the place it was OBSERVED (a guard added at the call
+site instead of the invariant fixed at the source; a retry wrapped around a call that still
+returns wrong data; a null-check added instead of fixing why the value is null)? If the diff
+is new-feature work with no bug behind it, this step is N/A, say so, do not force a finding.
+A genuine symptom-patch is its own finding with a `root-cause:` finding-key prefix (e.g.
+`root-cause: <file>:<line> guards the null instead of fixing <file>:<line> which produces it`),
+severity HIGH by default (the original defect ships unfixed and will resurface elsewhere).
+
+
+
 **Tests (weight: medium)**
 - Is the new code covered by tests?
 - Are edge cases from the spec tested?

@@ -19,6 +19,8 @@
 #   TS | START | lane=<chosen> classified=<suggested> type=<t> [ctype=<suggested-type>] repo=<r>
 #   TS | ACTION | ... escaped-from=<spec-slug> ...   (SPEC-062: a bug run indicting a shipped spec)
 #   TS | GATE | <phase> | ran|skipped|override | <reason>
+#   TS | OUTCOME | <phase> | end | at=<epoch> caught=<bool> [policy=<close|escalate|continue>]
+#                                    (ID-398: `report`'s failure-policy breakdown, when present)
 # A run with no START line surfaces as lane "?" (an untracked run is itself a signal).
 #
 # DWARVES_KIT_LOG_DIR overrides the log root (tests point it at a fixture copy).
@@ -205,6 +207,22 @@ _token_agg() {
       printf "__ALL__\t%d\t%d\t%d\t%d\n", total, withtok, unknown, rework }'
 }
 
+# _policy_agg: failure-policy breakdown (ID-398, docs/patterns/failure-policy.md) over every
+# `| OUTCOME | <phase> | end | ... policy=<close|escalate|continue>` line in every run ledger.
+# Runs/lines with no policy= are simply not counted (graceful-empty, no fake zeros): a corpus
+# with zero policy-carrying lines prints nothing and report() omits the section entirely.
+_policy_agg() {
+  local f
+  for f in "$RUNS_DIR"/*.log; do
+    [ -e "$f" ] || continue
+    awk -F' [|] ' '
+      $2=="OUTCOME" && $4=="end" {
+        n=split($5,a," ")
+        for(i=1;i<=n;i++){split(a[i],kv,"="); if(kv[1]=="policy" && kv[2]!="") print kv[2]}
+      }' "$f"
+  done | sort | uniq -c | awk '{printf "%s\t%s\n", $2, $1}'
+}
+
 report() {
   [ -d "$RUNS_DIR" ] || { echo "(no runs dir at $RUNS_DIR)"; return 0; }
   local rows; rows="$(_rows)"
@@ -253,6 +271,15 @@ report() {
       printf '    rework share (bug-lane tokens / total, run-granularity v1): %s%%\n' "${rework:-0}"
     fi
     printf '    (no thresholds pinned; baseline forms after ~5 captured runs, SPEC-073 pattern)\n'
+  fi
+
+  # Failure-policy breakdown (ID-398, docs/patterns/failure-policy.md): only over OUTCOME
+  # end lines that carried a policy= field; silent when none did (graceful-empty).
+  local pagg; pagg="$(_policy_agg)"
+  if [ -n "$pagg" ]; then
+    echo ""
+    echo "  failure policy (close/escalate/continue, ID-398):"
+    printf '%s\n' "$pagg" | awk -F'\t' '{ printf "    %-10s %5d\n", $1, $2 }'
   fi
 
   # Review economics (ID-392, DECISION-BRIEF-review-economics.md): first-pass acceptance,

@@ -20,9 +20,11 @@
 #                                       additive marker, ignored by check()/override()/descent()
 #   debt-response <rid> <engage|defer|wave> [reason]  append the HUMAN's ★-tap choice (ADR-0031 §3,
 #                                       SG-04); additive `| DEBT |` marker, same ignore rules as debt
-#   outcome  <rid> <phase> <start|end> [caught=<true|false>]   record a gate's OUTCOME as an
-#                                       ADDITIVE marker (SPEC-129): a start/end timing bracket
-#                                       (duration derivable) + caught=<bool>; ignored by
+#   outcome  <rid> <phase> <start|end> [caught=<true|false>] [policy=<close|escalate|continue>]
+#                                       record a gate's OUTCOME as an ADDITIVE marker (SPEC-129):
+#                                       a start/end timing bracket (duration derivable) +
+#                                       caught=<bool> + an optional named failure-policy (ID-398,
+#                                       docs/patterns/failure-policy.md); ignored by
 #                                       check()/override()/descent()/_rows() (key on $2==GATE)
 #   outcome-read <rid> [phase]         read the outcome + duration back for a rid (round-trip)
 #   config   <rid> [model=] [effort=] [kit_version=] [modules=] [lane=] [task_type=] [suite_hash=] [session_id=] [phase=]
@@ -351,9 +353,13 @@ debt_response() {
 # no date -d/-r, no stat). `caught=` is derived at the CALL SITE from the gate's own recorded
 # state (non-pass -> true, clean pass -> false; open-fork 2 default) -- the verb only
 # validates + records it, never re-computes it. The timing bracket is unconditional.
-# Usage: outcome <rid> <phase> <start|end> [caught=<true|false>]
+# `policy=` (ID-398) is an OPTIONAL, ADDITIVE third field naming which of the kit's three
+# failure policies (close/escalate/continue, docs/patterns/failure-policy.md) this outcome
+# was: omitted by a caller that doesn't classify one, so old callers and old ledger lines
+# are unaffected.
+# Usage: outcome <rid> <phase> <start|end> [caught=<true|false>] [policy=<close|escalate|continue>]
 outcome() {
-  local rid="${1:-}" raw="${2:-}" event="${3:-}"; shift 3 2>/dev/null || { echo "usage: outcome <rid> <phase> <start|end> [caught=<true|false>]" >&2; return 64; }
+  local rid="${1:-}" raw="${2:-}" event="${3:-}"; shift 3 2>/dev/null || { echo "usage: outcome <rid> <phase> <start|end> [caught=<true|false>] [policy=<close|escalate|continue>]" >&2; return 64; }
   [ -n "$rid" ] || { echo "outcome requires a rid" >&2; return 64; }
   local phase; phase="$(normalize_phase "$raw")"
   [ -n "$phase" ] || { echo "outcome requires a phase" >&2; return 64; }
@@ -368,12 +374,13 @@ outcome() {
   # event=end: caught defaults to false (a clean pass is the safe default); duration is
   # derived from THIS rid+phase's last start bracket (0 if none, so an unbracketed end stays
   # honest rather than erroring).
-  local caught=false kv k v
+  local caught=false policy="" kv k v
   for kv in "$@"; do
     k="${kv%%=*}"; v="${kv#*=}"
-    case "$k" in caught) caught="$v" ;; esac
+    case "$k" in caught) caught="$v" ;; policy) policy="$v" ;; esac
   done
   case "$caught" in true|false) ;; *) echo "outcome: caught must be true|false (got '$caught')" >&2; return 64;; esac
+  case "$policy" in ""|close|escalate|continue) ;; *) echo "outcome: policy must be close|escalate|continue (got '$policy')" >&2; return 64;; esac
   local start_epoch="" dur=0
   if [ -f "$f" ]; then
     start_epoch="$(awk -F' [|] ' -v p="$phase" '
@@ -384,13 +391,17 @@ outcome() {
       dur=$((epoch - start_epoch)); [ "$dur" -ge 0 ] || dur=0
     fi
   fi
-  append_run_line "$rid" "$(printf '%s | OUTCOME | %s | end | at=%s caught=%s dur_s=%s' "$(now)" "$phase" "$epoch" "$caught" "$dur")"
+  local line; line="$(printf '%s | OUTCOME | %s | end | at=%s caught=%s dur_s=%s' "$(now)" "$phase" "$epoch" "$caught" "$dur")"
+  [ -n "$policy" ] && line="$line policy=$policy"
+  append_run_line "$rid" "$line"
 }
 
 # outcome-read: read a gate's OUTCOME back (SPEC-129 round-trip). For each completed
 # start/end bracket (or the one given phase), print "<phase> caught=<bool> dur_s=<N>" from
 # the LAST end line for that phase (last-end-wins, agreeing with the ledger's append-only
-# semantics). A phase with a start but no end prints "<phase> incomplete". Read-only.
+# semantics), plus a trailing " policy=<val>" (ID-398) only when that end line carried one --
+# an old or policy-less line reads back byte-identical to before. A phase with a start but
+# no end prints "<phase> incomplete". Read-only.
 # Usage: outcome-read <rid> [phase]
 outcome_read() {
   local rid="${1:-}" want="${2:-}"
@@ -402,15 +413,18 @@ outcome_read() {
   awk -F' [|] ' -v want="$filter" '
     $2=="OUTCOME" && $4=="start" { started[$3]=1; if(!($3 in ord)) ord[$3]=++seq }
     $2=="OUTCOME" && $4=="end" {
-      n=split($5,a," "); c=""; d=""
-      for(i=1;i<=n;i++){split(a[i],kv,"="); if(kv[1]=="caught")c=kv[2]; if(kv[1]=="dur_s")d=kv[2]}
-      caught[$3]=c; dur[$3]=d; ended[$3]=1; if(!($3 in ord)) ord[$3]=++seq
+      n=split($5,a," "); c=""; d=""; p2=""
+      for(i=1;i<=n;i++){split(a[i],kv,"="); if(kv[1]=="caught")c=kv[2]; if(kv[1]=="dur_s")d=kv[2]; if(kv[1]=="policy")p2=kv[2]}
+      caught[$3]=c; dur[$3]=d; policy[$3]=p2; ended[$3]=1; if(!($3 in ord)) ord[$3]=++seq
     }
     END {
       for (p in ord) {
         if (want!="" && p!=want) continue
-        if (p in ended) printf "%d\t%s caught=%s dur_s=%s\n", ord[p], p, caught[p], dur[p]
-        else            printf "%d\t%s incomplete\n", ord[p], p
+        if (p in ended) {
+          line = sprintf("%s caught=%s dur_s=%s", p, caught[p], dur[p])
+          if (policy[p] != "") line = line " policy=" policy[p]
+          printf "%d\t%s\n", ord[p], line
+        } else printf "%d\t%s incomplete\n", ord[p], p
       }
     }' "$f" | sort -n | cut -f2-
 }
