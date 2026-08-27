@@ -1,0 +1,6 @@
+name: "Kit: Spec Index"
+command: "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/bin/spec index"
+tags:
+  - dwarves-kit
+  - kit
+description: List every spec under docs/specs/ grouped by status. Plain CLI, no Claude Code session needed.
