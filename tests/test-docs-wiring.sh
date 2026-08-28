@@ -67,6 +67,9 @@ assert "AC5: WORKFLOW.md does NOT affirmatively describe the multiplexer as defa
 [ -f "$AGENTS" ]; assert "AC1: AGENTS.md exists" $?
 grep -qi 'mega-goal delegate execution' "$AGENTS"; assert "AC1: AGENTS.md points at the delegate-execution section" $?
 
+grep -qi 'read-only subagent panes\|subagent panes' "$WORKFLOW"
+assert "AC11: WORKFLOW.md documents read-only subagent panes (SPEC-234)" $?
+
 echo "--- AC6-9: no-orphan sweep (each documented capability has a LIVE call site) ------"
 
 _wired "$ORCH" 'route_flags="$route_flags --model $rmodel"'
@@ -82,6 +85,15 @@ assert "AC8: TIER-4 close is actually invoked from the run terminal (live call s
 
 _wired "$ORCH" '_pane_spawn "$megadir" "$id" "$wt" "$pfile" "$route_flags" "$donefile"'
 assert "AC9: a pane spawns under MULTIPLEXER=1 (live call site in lib/queue/orchestrate.sh)" $?
+
+# `panes` (SPEC-234) has no in-kit caller under DEFAULT (background-subagent) run mode -- the
+# real invoker is the conductor's own prose in commands/mega.md, a named exemption from the
+# usual "grep the .sh corpus" shape. The live-call-site half greps mega.md for the invocation
+# plus the main() dispatch entry that makes `panes` actually reachable as a subcommand.
+_wired "$KIT_DIR/commands/mega.md" 'orchestrate.sh panes'
+assert "AC11: mega.md's conductor prose points at 'orchestrate.sh panes' (live invoker, named exemption)" $?
+_wired "$ORCH" 'panes) cmd_panes "$@" ;;'
+assert "AC11: panes has a live main() dispatch entry in lib/queue/orchestrate.sh" $?
 
 echo "--- AC10 [NEGATIVE CONTROL, load-bearing]: an over-claim is CAUGHT by the sweep ---"
 

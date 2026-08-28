@@ -75,6 +75,9 @@ jobs:
       - name: Run pane-viewer push tests (SPEC-120)
         run: bash tests/test-pane-viewer.sh
 
+      - name: Run subagent-panes tests (SPEC-234)
+        run: bash tests/test-subagent-panes.sh
+
       - name: Run token-capture tests (SPEC-117)
         run: bash tests/test-token-capture.sh
 

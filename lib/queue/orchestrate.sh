@@ -59,6 +59,17 @@
 # pull behavior above exactly; headless (no TTY / nothing detected) degrades silently to pull.
 # See the PANE_VIEWER env block below.
 #
+# Subagent panes (SPEC-234, `orchestrate.sh panes <megadir> <target>...`): the DEFAULT mega-goal
+# run mode dispatches sub-goals as background SUBAGENTS via the conductor's own Agent tool
+# (commands/mega.md "Run mode"), a path this driver never sees, so there is no dispatch loop to
+# hook. `panes` is a one-shot subcommand the conductor shells out to after dispatching: for each
+# resolved subagent transcript (a jsonl path, a directory of them, or `--latest` to derive the
+# conductor's own subagents dir) it grows a READ-ONLY tmux window that tails the transcript
+# through a small jq formatter (`$PANE_TAIL_JQ`). Read-only by construction (`tail | jq`, no
+# shell in the pane) -- steering a subagent still routes through the conductor (SendMessage),
+# never the pane. Always rc 0; skips warn on stderr and land in a `[panes] spawned N, skipped M`
+# summary.
+#
 # The `claude` invocation is `$CLAUDE_CMD` (default: claude), so tests mock it and operators
 # tune the permission flags.
 set -uo pipefail
@@ -204,6 +215,12 @@ TMUX_CMD="${TMUX_CMD:-tmux}"
 PANE_VIEWER="${PANE_VIEWER:-auto}"
 VIEWER_CMD="${VIEWER_CMD:-}"
 PANE_VIEWER_ALLOWED="auto cmux kitty wezterm ghostty iterm terminal none"
+
+# Subagent pane formatter (SPEC-234, the `panes` subcommand). `cmd_panes` resolves this HERE,
+# caller-side, and hands it to the pane as an argv token, never an env read inside the pane --
+# exported env does not cross the tmux server boundary, so an env-only seam would be a
+# false-green in direct-call tests. Default: the formatter shipped next to this script.
+PANE_TAIL_JQ="${PANE_TAIL_JQ:-$ORCH_DIR/pane-tail.jq}"
 
 # TIER-4 mega-close (SPEC-118/ID-093, executes ADR-0032 section 5). Default ON (1): when EVERY
 # sub-goal box is checked, `cmd_run` runs a real mega-level close over the ASSEMBLED WAVE instead of
@@ -1411,6 +1428,204 @@ _viewer_open() {  # megadir
 }
 # -----------------------------------------------------------------------------------------------
 
+# ---- Subagent panes (SPEC-234) ------------------------------------------------------------------
+# The DEFAULT mega-goal run mode dispatches sub-goals as parallel background SUBAGENTS via the
+# conductor's own Agent tool (commands/mega.md "Run mode"), not through this driver's dispatch
+# loop -- there is nothing here to hook (`_wave_run` only runs under DELEGATE mode). `panes` is a
+# one-shot subcommand the conductor shells out to after dispatching, so a background subagent's
+# live JSONL transcript (`~/.claude/projects/<slug>/<session>/subagents/agent-<id>.jsonl`) gets a
+# READ-ONLY tmux pane the operator can watch (`tmux attach`). Read-only by construction (the
+# pane's process tree is `tail | jq`, no shell, no REPL); steering still routes through the
+# conductor (SendMessage), never the pane -- see SPEC-234 "Out of scope".
+
+# Slugify a cwd the way the harness names `~/.claude/projects/<slug>` dirs: EACH '/' and '.'
+# character becomes '-' individually (not collapsed) -- verified against a live worktree project
+# dir (".claude/worktrees/x" -> "--claude-worktrees-x": the double dash is '/' then '.' adjacent).
+_panes_project_slug() {  # path
+  printf '%s' "$1" | tr '/.' '-'
+}
+
+# `--latest`: the conductor cannot name its own dispatched subagents' transcript paths (the Agent
+# tool returns none, DEC-007), so this derives them -- slugify $PWD, then pick the newest-mtime
+# `subagents/` dir among that project's session dirs. Pure + fake-$HOME testable (T4). Prints
+# nothing (rc 0) on a clean miss (no such project/session yet) -- the caller warns and moves on,
+# no error.
+_panes_latest_subagents_dir() {
+  local slug proj d mt newest="" newest_mt=0
+  slug=$(_panes_project_slug "$PWD")
+  proj="$HOME/.claude/projects/$slug"
+  [ -d "$proj" ] || return 0
+  for d in "$proj"/*/subagents; do
+    [ -d "$d" ] || continue
+    mt=$(_mtime "$d"); [ -n "$mt" ] || mt=0
+    if [ -z "$newest" ] || [ "$mt" -gt "$newest_mt" ]; then newest="$d"; newest_mt="$mt"; fi
+  done
+  [ -n "$newest" ] && printf '%s\n' "$newest"
+  return 0
+}
+
+# Expand a directory target into its `agent-*.jsonl` members, one per line (none found: warn,
+# move on -- this is the ONLY place an empty-dir warning fires; it is separate from cmd_panes's
+# own per-candidate skip tally below, since an empty dir resolves to zero candidates).
+_panes_expand_dir() {  # dir
+  local dir="$1" f any=0
+  for f in "$dir"/agent-*.jsonl; do
+    [ -e "$f" ] || continue
+    any=1
+    printf '%s\n' "$f"
+  done
+  [ "$any" = 1 ] || echo "[panes] $dir: no agent-*.jsonl transcripts found (empty dir)" >&2
+}
+
+# Expand every `panes` <target> arg into candidate jsonl paths (one per line, UNVALIDATED --
+# cmd_panes does the readable/regular/basename gate per candidate so every skip reason reports at
+# one place). A directory expands via `_panes_expand_dir`; anything else (a file path, or an
+# unexpanded `agent-*.jsonl` glob literal with no shell match) passes through untouched so
+# cmd_panes's own existence check reports the clean skip.
+_panes_resolve_targets() {  # target...
+  local t dir
+  for t in "$@"; do
+    case "$t" in
+      --latest)
+        dir=$(_panes_latest_subagents_dir)
+        if [ -z "$dir" ]; then
+          echo "[panes] --latest: no subagents directory found under \$HOME/.claude/projects/<slug>/*/subagents; skipping" >&2
+          continue
+        fi
+        _panes_expand_dir "$dir" ;;
+      *)
+        if [ -d "$t" ]; then _panes_expand_dir "$t"; else printf '%s\n' "$t"; fi ;;
+    esac
+  done
+}
+
+# Absolute-normalize an existing file path (a leading-dash or relative path must never reach a
+# downstream command's arg parser as an untrusted argv token). Fails if its directory can't be
+# resolved.
+_panes_abspath() {  # file-path
+  local d b ad
+  d=$(dirname "$1"); b=$(basename "$1")
+  ad=$(cd "$d" 2>/dev/null && pwd -P) || return 1
+  printf '%s/%s\n' "$ad" "$b"
+}
+
+# `agent-<id>.jsonl` -> `sa-<id>`, charset-gated the same way `_mux_session_name` sanitizes a
+# derived name (DEC-004: the `sa-` prefix namespaces subagent panes away from mega.md's `SG-NN`
+# sub-goal windows, and guarantees the name is never all-digits, which tmux would resolve as a
+# window INDEX rather than a name).
+_panes_window_name() {  # jsonl-path
+  local base id
+  base=$(basename "$1"); id="${base#agent-}"; id="${id%.jsonl}"
+  printf 'sa-%s\n' "$(printf '%s' "$id" | tr -c 'A-Za-z0-9_-' '-')"
+}
+
+# `orchestrate.sh panes <megadir> <target>...` (public). Grows one read-only tmux window per
+# resolved transcript under the megagoal's shared tmux session (same has-session/new-session
+# dance as `_pane_spawn`); idempotent (`kill-window` best-effort precedes each `new-window`, so
+# re-invoking for the same transcript pre-cleans and respawns its window). rc CONTRACT: ALWAYS
+# 0 -- a pane is a visibility affordance; the most common real case (a just-dispatched subagent
+# whose transcript doesn't exist yet) must not read as a failure to an LLM conductor. Every skip
+# warns on stderr and is counted in the final summary line instead.
+cmd_panes() {  # megadir target...
+  local megadir="${1:-}"; shift 2>/dev/null || true
+  if [ -z "$megadir" ] || [ "$#" -lt 1 ]; then
+    {
+      echo "usage: orchestrate.sh panes <megadir> <target>..."
+      echo "  <target>: a jsonl file path | a directory (expands agent-*.jsonl) | --latest"
+    } >&2
+    return 0
+  fi
+
+  local formatter="${PANE_TAIL_JQ:-$ORCH_DIR/pane-tail.jq}"
+  local mux; mux=$(_mux_session_name "$megadir")
+  local session_created=0
+  if ! "$TMUX_CMD" has-session -t "$mux" 2>/dev/null; then
+    "$TMUX_CMD" new-session -d -s "$mux" -n _init 2>/dev/null && session_created=1
+  fi
+
+  local jsonl abs win spawned=0 skipped=0
+  while IFS= read -r jsonl; do
+    [ -n "$jsonl" ] || continue
+    if [ ! -f "$jsonl" ] || [ ! -r "$jsonl" ]; then
+      echo "[panes] skip: not a readable regular file: $jsonl" >&2
+      skipped=$((skipped + 1)); continue
+    fi
+    case "$(basename "$jsonl")" in
+      agent-*.jsonl) : ;;
+      *) echo "[panes] skip: basename does not match agent-*.jsonl: $jsonl" >&2
+         skipped=$((skipped + 1)); continue ;;
+    esac
+    if ! abs=$(_panes_abspath "$jsonl"); then
+      echo "[panes] skip: could not resolve an absolute path: $jsonl" >&2
+      skipped=$((skipped + 1)); continue
+    fi
+    win=$(_panes_window_name "$abs")
+    "$TMUX_CMD" kill-window -t "$mux:$win" 2>/dev/null || true
+    if "$TMUX_CMD" new-window -d -t "$mux" -n "$win" -- \
+        "$ORCH_DIR/orchestrate.sh" _pane-tail "$abs" "$formatter"; then
+      spawned=$((spawned + 1))
+      _say "[panes] spawned $win <- $(basename "$abs")"
+    else
+      echo "[panes] skip: tmux new-window failed for $abs" >&2
+      skipped=$((skipped + 1))
+    fi
+  done < <(_panes_resolve_targets "$@")
+
+  # SPEC-121 push, gated on session CREATION here (not `_viewer_open`'s own `_VIEWER_OPENED`
+  # guard, which is process-local -- every `panes` call is a fresh process, so that guard cannot
+  # dedupe ACROSS calls): a second `panes` call against an already-running session must not
+  # re-open a viewer.
+  [ "$session_created" = 1 ] && _viewer_open "$megadir"
+
+  _say "[panes] spawned $spawned, skipped $skipped"
+  return 0
+}
+
+# Hidden re-entry point for a `panes` window (SPEC-234): `tmux new-window` always execs a fresh
+# command line, so the pane re-enters `orchestrate.sh` via this subcommand instead of the shell
+# expressing `tail | jq` as a joined string (the SPEC-119 #143 exec-direct rule). Refuses
+# non-regular / symlinked / wrong-basename transcripts and a missing/unreadable formatter itself
+# (defense in depth -- `cmd_panes` already gates these, but a re-entry subcommand must not be
+# repurposable to tail an arbitrary file). tmux closes a window whose command exits, so a refusal
+# is invisible in the pane; these checks matter for an operator invoking `_pane-tail` by hand.
+# `-n 200` (not `-n +1`): an idempotent respawn (kill-window + new-window on a re-invoked `panes`)
+# would otherwise replay an entire long transcript into a fresh pane. `-R` on the jq side is
+# load-bearing: jq's own parser ABORTS the whole process on one malformed or half-written line
+# under structured input (`tail -F` can deliver one); raw mode + the formatter's own
+# `fromjson? // empty` makes a bad line render nothing instead of killing the pipe. Deliberately
+# absent from `main()`'s usage string, like `_pane-exec`.
+cmd_pane_tail() {  # jsonl formatter
+  local jsonl="${1:-}" formatter="${2:-}"
+  if [ -z "$jsonl" ] || [ -z "$formatter" ]; then
+    echo "usage: orchestrate.sh _pane-tail <jsonl> <formatter>" >&2
+    return 64
+  fi
+  if [ -L "$jsonl" ]; then
+    echo "[pane-tail] refusing: symlink, not a real transcript file: $jsonl" >&2
+    return 64
+  fi
+  if [ ! -f "$jsonl" ]; then
+    echo "[pane-tail] refusing: not a regular file: $jsonl" >&2
+    return 64
+  fi
+  if [ ! -r "$jsonl" ]; then
+    echo "[pane-tail] refusing: transcript not readable: $jsonl" >&2
+    return 64
+  fi
+  case "$(basename "$jsonl")" in
+    agent-*.jsonl) : ;;
+    *) echo "[pane-tail] refusing: basename does not match agent-*.jsonl: $jsonl" >&2; return 64 ;;
+  esac
+  if [ ! -f "$formatter" ] || [ ! -r "$formatter" ]; then
+    echo "[pane-tail] refusing: formatter missing or unreadable: $formatter" >&2
+    return 64
+  fi
+  echo "[panes] tailing $(basename "$jsonl") -- read-only; steer via the conductor (SendMessage)"
+  local program; program=$(cat "$formatter")
+  tail -n 200 -F -- "$jsonl" | jq -R -r --unbuffered "$program"
+}
+# ---------------------------------------------------------------------------------------------
+
 # Abort handler for `_wave_run`'s INT/TERM trap: kill every still-live wave job's PROCESS GROUP then
 # reap, so an operator ctrl-C never leaves an orphaned `claude -p` (mock) grandchild. `_WAVE_PIDS`
 # holds the backgrounded SUBSHELL WRAPPER pid (`( cd ... && _run_one_session ... ) &`), not the
@@ -2471,12 +2686,17 @@ main() {
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
     _pane-exec) cmd_pane_exec "$@" ;;
+    # Subagent panes (SPEC-234): read-only tmux tail windows over background-subagent transcripts.
+    # `_pane-tail` is the hidden re-entry the pane's own command line runs, deliberately absent
+    # from the usage string below, same as `_pane-exec`.
+    panes) cmd_panes "$@" ;;
+    _pane-tail) cmd_pane_tail "$@" ;;
     # Overnight queue LAUNCHER (SPEC-148): a thin alias for the sibling lib/queue/queue.sh, whose logic
     # lives entirely there (orchestrate.sh's own suite stays untouched). `orchestrate.sh queue
     # <src>` == `queue.sh run <src>`. It drives REAL interactive `/goal` sessions via terminal-mux
     # send-keys, NOT the headless `claude -p` per-sub-goal path the rest of this driver uses.
     queue) exec "$ORCH_DIR/queue.sh" run "$@" ;;
-    *) echo "usage: orchestrate.sh {next|run|flip|queue} <megagoal-dir|src> [<SG-NN>] [--dry-run] [--step] [--stream] [--capture-tokens] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
+    *) echo "usage: orchestrate.sh {next|run|flip|panes|queue} <megagoal-dir|src> [<SG-NN>] [--dry-run] [--step] [--stream] [--capture-tokens] [--board=roadmap|kanban|both]" >&2; exit 64 ;;
   esac
 }
 
