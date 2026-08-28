@@ -940,6 +940,21 @@ host command through the unsanitized `Model:`/`Effort:` header into a `$SHELL -c
 re-parse; closed in PR #143). **Do not describe the multiplexer as default-on anywhere**
 -- that over-claim is exactly what `tests/test-docs-wiring.sh`'s negative control catches.
 
+### Read-only subagent panes
+
+The DEFAULT run mode above dispatches sub-goals as background SUBAGENTS through the
+conductor's own Agent tool, not through `orchestrate.sh`'s dispatch loop -- there is no
+wave to attach a tmux pane to. `orchestrate.sh panes <megadir> <target>...` is a one-shot
+subcommand the conductor shells out to AFTER dispatching, so a subagent's live JSONL
+transcript still gets a watchable pane: each `<target>` (a transcript path, a directory of
+them, or `--latest` to derive the conductor's own subagents dir under
+`~/.claude/projects/<slug>/`) grows a tmux window that tails the transcript through a small
+jq formatter (`$PANE_TAIL_JQ`). The pane is **read-only by construction** -- its process
+tree is `tail | jq`, no shell, no `send-keys` helper targets it -- so steering a subagent
+still routes through the conductor (SendMessage), never the pane. Idempotent (re-invoking
+for the same transcript respawns its window) and always rc 0 (a just-dispatched subagent
+with no transcript yet is a skip-and-warn, not a failure).
+
 ## What this contract does NOT do
 It does not lock phases. An experienced operator may skip /spec-validate on a
 normal-lane change or go straight to /next. The kit detects state

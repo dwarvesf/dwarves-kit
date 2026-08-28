@@ -214,7 +214,9 @@ verifier/reviewer fan-out); a `claude -p` delegate per sub-goal is the pick for
 unattended runs or tmux-pane visibility; INLINE (execute in-session) only when the
 chain is <=4 sub-goals. Whichever mode runs, the checkpoint semantics below are
 identical -- the mode changes where a worker's context lives, never what it must
-record.
+record. After dispatching background subagents, the conductor MAY run
+`bash lib/queue/orchestrate.sh panes <dir> --latest` to grow a read-only tmux pane
+per worker transcript for the operator to watch.
 
 The driver emits a
 `gate-ledger start` per dispatched sub-goal (rid derived from the goal file's
