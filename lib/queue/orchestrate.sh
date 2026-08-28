@@ -1474,7 +1474,7 @@ _panes_expand_dir() {  # dir
     any=1
     printf '%s\n' "$f"
   done
-  [ "$any" = 1 ] || echo "[panes] $dir: no agent-*.jsonl transcripts found (empty dir)" >&2
+  [ "$any" = 1 ] || echo "[panes] $(_panes_show "$dir"): no agent-*.jsonl transcripts found (empty dir)" >&2
 }
 
 # Expand every `panes` <target> arg into candidate jsonl paths (one per line, UNVALIDATED --
@@ -1504,8 +1504,8 @@ _panes_resolve_targets() {  # target...
 # resolved.
 _panes_abspath() {  # file-path
   local d b ad
-  d=$(dirname "$1"); b=$(basename "$1")
-  ad=$(cd "$d" 2>/dev/null && pwd -P) || return 1
+  d=$(dirname -- "$1"); b=$(basename -- "$1")
+  ad=$(cd -- "$d" 2>/dev/null && pwd -P) || return 1
   printf '%s/%s\n' "$ad" "$b"
 }
 
@@ -1515,9 +1515,18 @@ _panes_abspath() {  # file-path
 # window INDEX rather than a name).
 _panes_window_name() {  # jsonl-path
   local base id
-  base=$(basename "$1"); id="${base#agent-}"; id="${id%.jsonl}"
+  base=$(basename -- "$1"); id="${base#agent-}"; id="${id%.jsonl}"
   printf 'sa-%s\n' "$(printf '%s' "$id" | tr -c 'A-Za-z0-9_-' '-')"
 }
+
+# Render-side counterpart of the formatter's own viz strip (SPEC-119 pane-tail.jq): a target path
+# is SUBAGENT-INFLUENCED data (the conductor names its own transcript files), so an operator
+# WARNING that echoes it verbatim would put an attacker-chosen ESC/OSC byte sequence straight onto
+# the operator's real terminal (window-NAME charset gates like `_panes_window_name` above already
+# block this for tmux window names; this is the same gate for the plain `_say`/`echo` messages
+# that were never charset-restricted). Strip to a safe display charset -- never used on an argv
+# value handed to tmux/tail/jq, only on strings a human reads.
+_panes_show() { printf '%s' "$1" | tr -c 'A-Za-z0-9_./ -' '?'; }
 
 # `orchestrate.sh panes <megadir> <target>...` (public). Grows one read-only tmux window per
 # resolved transcript under the megagoal's shared tmux session (same has-session/new-session
@@ -1536,7 +1545,11 @@ cmd_panes() {  # megadir target...
     return 0
   fi
 
-  local formatter="${PANE_TAIL_JQ:-$ORCH_DIR/pane-tail.jq}"
+  local formatter="$PANE_TAIL_JQ"
+  # Same abspath normalization the jsonl target already gets (an argv token headed for tmux's
+  # exec'd argv must never be a bare relative/leading-dash path); the formatter was missing this.
+  local formatter_abs
+  formatter_abs=$(_panes_abspath "$formatter") && formatter="$formatter_abs"
   local mux; mux=$(_mux_session_name "$megadir")
   local session_created=0
   if ! "$TMUX_CMD" has-session -t "$mux" 2>/dev/null; then
@@ -1546,17 +1559,24 @@ cmd_panes() {  # megadir target...
   local jsonl abs win spawned=0 skipped=0
   while IFS= read -r jsonl; do
     [ -n "$jsonl" ] || continue
-    if [ ! -f "$jsonl" ] || [ ! -r "$jsonl" ]; then
-      echo "[panes] skip: not a readable regular file: $jsonl" >&2
+    # A symlink passes the `-f` test below (it follows the link), so without this check a symlink
+    # target would count as "spawned" here while `_pane-tail`'s own `-L` gate then refuses it
+    # invisibly inside the pane (ghost window + a summary line that lies about what ran).
+    if [ -L "$jsonl" ]; then
+      echo "[panes] skip: symlink, not a real transcript file: $(_panes_show "$jsonl")" >&2
       skipped=$((skipped + 1)); continue
     fi
-    case "$(basename "$jsonl")" in
+    if [ ! -f "$jsonl" ] || [ ! -r "$jsonl" ]; then
+      echo "[panes] skip: not a readable regular file: $(_panes_show "$jsonl")" >&2
+      skipped=$((skipped + 1)); continue
+    fi
+    case "$(basename -- "$jsonl")" in
       agent-*.jsonl) : ;;
-      *) echo "[panes] skip: basename does not match agent-*.jsonl: $jsonl" >&2
+      *) echo "[panes] skip: basename does not match agent-*.jsonl: $(_panes_show "$jsonl")" >&2
          skipped=$((skipped + 1)); continue ;;
     esac
     if ! abs=$(_panes_abspath "$jsonl"); then
-      echo "[panes] skip: could not resolve an absolute path: $jsonl" >&2
+      echo "[panes] skip: could not resolve an absolute path: $(_panes_show "$jsonl")" >&2
       skipped=$((skipped + 1)); continue
     fi
     win=$(_panes_window_name "$abs")
@@ -1564,9 +1584,9 @@ cmd_panes() {  # megadir target...
     if "$TMUX_CMD" new-window -d -t "$mux" -n "$win" -- \
         "$ORCH_DIR/orchestrate.sh" _pane-tail "$abs" "$formatter"; then
       spawned=$((spawned + 1))
-      _say "[panes] spawned $win <- $(basename "$abs")"
+      _say "[panes] spawned $win <- $(_panes_show "$(basename -- "$abs")")"
     else
-      echo "[panes] skip: tmux new-window failed for $abs" >&2
+      echo "[panes] skip: tmux new-window failed for $(_panes_show "$abs")" >&2
       skipped=$((skipped + 1))
     fi
   done < <(_panes_resolve_targets "$@")
@@ -1601,26 +1621,26 @@ cmd_pane_tail() {  # jsonl formatter
     return 64
   fi
   if [ -L "$jsonl" ]; then
-    echo "[pane-tail] refusing: symlink, not a real transcript file: $jsonl" >&2
+    echo "[pane-tail] refusing: symlink, not a real transcript file: $(_panes_show "$jsonl")" >&2
     return 64
   fi
   if [ ! -f "$jsonl" ]; then
-    echo "[pane-tail] refusing: not a regular file: $jsonl" >&2
+    echo "[pane-tail] refusing: not a regular file: $(_panes_show "$jsonl")" >&2
     return 64
   fi
   if [ ! -r "$jsonl" ]; then
-    echo "[pane-tail] refusing: transcript not readable: $jsonl" >&2
+    echo "[pane-tail] refusing: transcript not readable: $(_panes_show "$jsonl")" >&2
     return 64
   fi
-  case "$(basename "$jsonl")" in
+  case "$(basename -- "$jsonl")" in
     agent-*.jsonl) : ;;
-    *) echo "[pane-tail] refusing: basename does not match agent-*.jsonl: $jsonl" >&2; return 64 ;;
+    *) echo "[pane-tail] refusing: basename does not match agent-*.jsonl: $(_panes_show "$jsonl")" >&2; return 64 ;;
   esac
   if [ ! -f "$formatter" ] || [ ! -r "$formatter" ]; then
-    echo "[pane-tail] refusing: formatter missing or unreadable: $formatter" >&2
+    echo "[pane-tail] refusing: formatter missing or unreadable: $(_panes_show "$formatter")" >&2
     return 64
   fi
-  echo "[panes] tailing $(basename "$jsonl") -- read-only; steer via the conductor (SendMessage)"
+  echo "[panes] tailing $(_panes_show "$(basename -- "$jsonl")") -- read-only; steer via the conductor (SendMessage)"
   local program; program=$(cat "$formatter")
   tail -n 200 -F -- "$jsonl" | jq -R -r --unbuffered "$program"
 }

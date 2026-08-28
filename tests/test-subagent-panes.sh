@@ -185,6 +185,39 @@ else
   fail "T3: rc=$rc3b out=$out3b"
 fi
 
+# ============== T3b: filename-embedded ESC bytes never reach the operator's terminal raw ==============
+echo "=== T3b: ESC-embedded filename is sanitized on display; symlink target is skipped, never spawned ==="
+FIX3B="$TMP/transcripts3b"; mkdir -p "$FIX3B"
+# Never paste literal ESC/OSC bytes into this file -- generate the fixture name at runtime via
+# ANSI-C quoting (SPEC-234 review finding: a transcript FILENAME is subagent-influenced data).
+badname=$'agent-\x1b]52;c;evil\x07x.jsonl'
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}' >| "$FIX3B/$badname"
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}' >| "$FIX3B/agent-real.jsonl"
+ln -s agent-real.jsonl "$FIX3B/agent-link.jsonl"
+MEGA3B="$TMP/mega3b"; mkdir -p "$MEGA3B"
+STATE3B="$TMP/tmux3b"; mkdir -p "$STATE3B"
+out3b2=$(
+  export TMUX_CMD="$TMP/tmux-mock" TMUX_MOCK_STATE="$STATE3B" TMUX_SESSION=orch-panes-t3b PANE_VIEWER=none
+  cmd_panes "$MEGA3B" "$FIX3B" 2>&1
+)
+if printf '%s' "$out3b2" | grep -q "$(printf '\x1b')"; then
+  fail "T3b: raw ESC byte reached combined stdout+stderr: $(printf '%s' "$out3b2" | cat -v)"
+else
+  pass "T3b: no raw ESC byte in combined output"
+fi
+printf '%s\n' "$out3b2" | grep -qF 'agent-??52?c?evil?x.jsonl' \
+  && pass "T3b: ESC-embedded filename rendered sanitized ('?' replacement)" \
+  || fail "T3b: sanitized filename not found: $out3b2"
+printf '%s\n' "$out3b2" | grep -q 'skip: symlink, not a real transcript file' \
+  && pass "T3b: symlink target skipped with its own warning (not spawned then ghost-killed)" \
+  || fail "T3b: no symlink-skip warning: $out3b2"
+[ ! -f "$STATE3B/win.orch-panes-t3b.sa-link" ] \
+  && pass "T3b: no window created for the symlink target" \
+  || fail "T3b: a window was created for the symlink target"
+printf '%s\n' "$out3b2" | grep -q 'spawned 2, skipped 1' \
+  && pass "T3b: summary counts symlink as skipped (2 spawned: badname + real)" \
+  || fail "T3b: summary: $out3b2"
+
 # ================================ T4: directory expansion + --latest ================================
 echo "=== T4: --latest derives slug + newest-mtime subagents dir under a fake \$HOME (DEC-007) ==="
 FAKEHOME="$TMP/fakehome"; mkdir -p "$FAKEHOME"

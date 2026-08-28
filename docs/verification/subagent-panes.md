@@ -16,18 +16,33 @@ still routes through the conductor (SendMessage), never the pane.
 | T1 | 2 fixture transcripts -> 2 `sa-<id>` windows; tmux session ensured exactly once; re-invoke -> `kill-window` precedes each respawn (idempotence) | PASS |
 | T2 | `new-window` argv is exec-direct: `--` separator present, re-entry tokens (`orchestrate.sh`, `_pane-tail`, jsonl, formatter) are 4 SEPARATE argv items, jsonl + formatter paths absolute | PASS |
 | T3 | Skips (missing file, wrong basename, unexpanded `agent-*.jsonl` glob literal, empty dir) each warn on stderr and are counted in `[panes] spawned N, skipped M`; rc 0 throughout; a valid sibling still spawns; `<2` total args -> usage on stderr, rc 0 | PASS |
+| T3b | Review-round fix: a transcript FILENAME carrying embedded ESC/OSC bytes never reaches the operator's terminal raw (combined stdout+stderr has zero ESC bytes; the warning/summary line shows the `_panes_show`-sanitized `?`-replaced name instead); a symlinked target is skipped with its own named warning (not spawned then invisibly killed by `_pane-tail`'s `-L` gate) and counted in the skip tally | PASS |
 | T4 | A directory target expands to its members; `--latest` derives slug + newest-mtime subagents dir under a fake `$HOME` (DEC-007); a `--latest` miss (no project dir) is a clean warn, rc 0, spawns nothing | PASS |
 | T5 | `_pane-tail` refuses a directory, an unreadable file, a symlink, a wrong-basename file, and a missing formatter -- each exit 64 with a distinct named stderr message [NEGATIVE CONTROL] | PASS |
 | T6 | Formatter: assistant text verbatim, `tool_use` -> `-> <name> <input prefix>`, `tool_result` -> count-only `<- result (N chars)`, attachments dropped, a malformed line and a truncated-JSON line render nothing (later valid lines still render), ESC/OSC-52 control bytes stripped with an EXACT output match, a >2000-char line capped with `...[truncated]` | PASS |
 | T7 | SPEC-121 viewer push fires only on session CREATION (a second `panes` call against the same session opens no additional viewer); a metachar `TMUX_SESSION` is refused by `_viewer_open`'s pre-existing charset gate -- no host command runs, rc still 0 [SECURITY NEGATIVE CONTROL] | PASS |
-| R | Regressions unedited + green: `test-multiplexer.sh`, `test-pane-viewer.sh`, `test-orchestrate-wavefront.sh`, `test-orchestrate-hardening.sh`, `test-docs-wiring.sh` (+2 new AC pinning the `commands/mega.md` call site and the `panes` `main()` dispatch entry); `shellcheck -S error lib/queue/orchestrate.sh tests/test-subagent-panes.sh` clean | PASS |
+| R | Regressions unedited: `test-multiplexer.sh`, `test-pane-viewer.sh`, `test-orchestrate-hardening.sh`, `test-docs-wiring.sh` green (+2 new AC pinning the `commands/mega.md` call site and the `panes` `main()` dispatch entry); `test-orchestrate-wavefront.sh` is PRE-EXISTING TIMING-FLAKY on this tree (see below, NOT claimed green); `shellcheck -S error lib/queue/orchestrate.sh tests/test-subagent-panes.sh` clean | PASS (wavefront excluded, pre-existing) |
 | B1 | BEHAVIORAL (real tmux server, no mocks): `panes` spawns a real window; `capture-pane -p` shows the `[panes] tailing ...` header + the formatted text | PASS |
 | B2 | BEHAVIORAL: appending a line to the live transcript makes it appear on the next `capture-pane` (the `tail -F` follow property) | PASS |
-| B3 | BEHAVIORAL NEGATIVE CONTROL: pointing `PANE_TAIL_JQ` at a broken formatter (`.`, no `fromjson`) renders raw JSON instead of rendered text (RED); restoring the real formatter and re-invoking `panes` on the same session renders correctly again (GREEN) | PASS |
+| B3 | BEHAVIORAL NEGATIVE CONTROL: pointing `PANE_TAIL_JQ` at a broken formatter (`.`, no `fromjson`) renders raw JSON for the transcript line, while the header line still prints correctly (RED, faithfully re-run 2026-08-28); restoring the real formatter and re-invoking `panes` on the same session renders correctly again (GREEN) | PASS |
 
 `test-orchestrate.sh` carries two pre-existing failures (`dry-run SG-02 inherit wrong`, `SG-02
 got an unexpected --model`) unrelated to this change -- confirmed via `git stash` on this branch:
 identical failures on the pre-SPEC-234 tree.
+
+**`test-orchestrate-wavefront.sh` is PRE-EXISTING TIMING-FLAKY, not a regression from this
+change** (fresh recheck, 2026-08-28): 6 consecutive re-runs on this tree failed 6/6 on
+`wave_run g` ("concurrency NOT proven"), 3/6 also failed `wave_run h2` ("both mock sessions
+never started"), one run hung outright waiting on its own mock barrier, and the reviewer's
+separate pass additionally caught `dispatch k` failing intermittently ("wave not taken/failed").
+All three (`wave_run g`, `dispatch k`, `wave_run h2`) are mock-barrier concurrency assertions in
+the same suite, none of which this diff's code touches (`cmd_panes`/`cmd_pane_tail`/`_panes_*`
+are new, additive functions; nothing in `_wave_run`/`_wave_gate`/the mock-barrier plumbing
+changed). A clean checkout of the pre-change commit `599ee97` reproduces the identical failure
+signature (`wave_run g` + `wave_run h2`) under the same system load, and a clean pre-change run
+under lighter load passes -- consistent with a load-sensitive timing race in the suite's mock
+barrier, present before this branch. This suite is never claimed green in the Run/Regression
+table below; it is excluded from the required-green set per this fix.
 
 ## Run table
 
@@ -55,6 +70,12 @@ PASS T3: wrong-basename skip warns
 PASS T3: empty-dir warns
 PASS T3: summary counts 1 spawned / 3 skipped (valid sibling still spawns)
 PASS T3: <2 total args -> usage on stderr, rc 0
+=== T3b: ESC-embedded filename is sanitized on display; symlink target is skipped, never spawned ===
+PASS T3b: no raw ESC byte in combined output
+PASS T3b: ESC-embedded filename rendered sanitized ('?' replacement)
+PASS T3b: symlink target skipped with its own warning (not spawned then ghost-killed)
+PASS T3b: no window created for the symlink target
+PASS T3b: summary counts symlink as skipped (2 spawned: badname + real)
 === T4: --latest derives slug + newest-mtime subagents dir under a fake $HOME (DEC-007) ===
 PASS T4: --latest picked the NEWEST-mtime subagents dir
 PASS T4: --latest did NOT also spawn the older session's window
@@ -84,9 +105,10 @@ PASS T7: the refusal names the charset gate (loud)
 ALL PASS
 ```
 
-Regression (all rc 0): `test-multiplexer.sh`, `test-pane-viewer.sh`, `test-orchestrate-wavefront.sh`,
-`test-orchestrate-hardening.sh`, `test-docs-wiring.sh` (25/25, including the 2 new AC); `shellcheck
--S error lib/queue/orchestrate.sh tests/test-subagent-panes.sh` clean.
+Regression (all rc 0): `test-multiplexer.sh`, `test-pane-viewer.sh`, `test-orchestrate-hardening.sh`,
+`test-docs-wiring.sh` (25/25, including the 2 new AC); `shellcheck -S error lib/queue/orchestrate.sh
+tests/test-subagent-panes.sh` clean. `test-orchestrate-wavefront.sh` is PRE-EXISTING TIMING-FLAKY
+(see the acceptance-criteria table above) and is deliberately NOT included in this green set.
 
 ## Behavioral run (real tmux server, no mocks)
 
@@ -112,10 +134,15 @@ hello from the real pane
 $ echo '.' > /tmp/broken.jq
 $ TMUX_SESSION=orch-behav-nc PANE_TAIL_JQ=/tmp/broken.jq bash lib/queue/orchestrate.sh panes /tmp/mega-nc /tmp/agent-realtest.jsonl
 $ tmux capture-pane -p -t orch-behav-nc:2
+[panes] tailing agent-realtest.jsonl -- read-only; steer via the conductor (Send
+Message)
 {"type":"assistant","message":{"content":[{"type":"text","text":"hello from the
 real pane"}]}}
-# RED confirmed: raw JSON, not the rendered text -- proves capture-pane is reading the
-# actual formatter wiring, not a cached/hardcoded pane.
+# RED confirmed: the header line is unaffected (echoed by the `_pane-tail` wrapper before it
+# execs `tail | jq`, not by jq itself), and the transcript renders as raw JSON instead of the
+# formatted text -- proves capture-pane is reading the actual formatter wiring, not a
+# cached/hardcoded pane. (Corrected from an earlier over-trimmed excerpt that dropped the
+# header line and implied jq alone controls the pane's full content.)
 
 # restore the real formatter on the SAME session (idempotent respawn) -> GREEN
 $ TMUX_SESSION=orch-behav-nc bash lib/queue/orchestrate.sh panes /tmp/mega-nc /tmp/agent-realtest.jsonl
@@ -123,7 +150,6 @@ $ tmux capture-pane -p -t orch-behav-nc:2
 [panes] tailing agent-realtest.jsonl -- read-only; steer via the conductor (Send
 Message)
 hello from the real pane
--> Bash {"command":"echo live-append-test"}
 ```
 
 Note: `tmux capture-pane -t <session>:<window-name>` (name-based targeting) resolved to the
@@ -138,9 +164,11 @@ kill-precedes-respawn assertion), never reads state back via name-based `capture
 ```
 cd <dwarves-kit>
 bash tests/test-subagent-panes.sh          # ALL PASS (T1-T7, mocked tmux/viewer, CI-safe)
-bash tests/test-multiplexer.sh tests/test-pane-viewer.sh tests/test-orchestrate-wavefront.sh \
+bash tests/test-multiplexer.sh tests/test-pane-viewer.sh \
   tests/test-orchestrate-hardening.sh tests/test-docs-wiring.sh   # regression
 shellcheck -S error lib/queue/orchestrate.sh tests/test-subagent-panes.sh
+# tests/test-orchestrate-wavefront.sh is PRE-EXISTING TIMING-FLAKY (see acceptance-criteria
+# table); run it separately if needed, do not fold it into the required-green set.
 ```
 
 The mocked suite needs no real tmux server (CI-safe, mirrors the SPEC-119/121 discipline); the
@@ -149,7 +177,8 @@ behavioral block above needs a real `tmux` + `jq` on PATH (both present on the d
 ## Coverage delta
 
 - **Covered:** window spawn + idempotent respawn (T1) · exec-direct argv security pin (T2) ·
-  every named skip shape + the usage path (T3) · directory expansion + `--latest` derivation
+  every named skip shape + the usage path (T3) · a filename-embedded-ESC display sanitize and a
+  symlink-target skip (T3b, review-round) · directory expansion + `--latest` derivation
   including its clean-miss case (T4) · every `_pane-tail` refusal shape (T5) · the formatter's
   full render/drop/strip/cap behavior against generated fixtures, including the malformed-line
   survival property (T6) · viewer-push once-per-session-creation + the charset-gate negative

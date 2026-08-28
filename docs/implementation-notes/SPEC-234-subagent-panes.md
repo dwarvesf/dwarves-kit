@@ -76,3 +76,37 @@ Why logged: saves a future verifier from chasing a phantom bug when a manual `ca
 Impact: none on the shipped feature; the proof-of-done's behavioral transcript notes this and
 uses numeric targeting.
 Open questions: none.
+
+## 2026-08-28 15:10 Review round: filename-sanitize MEDIUM + proof-doc over-claim correction
+
+Context: 4-lens re-review (security, symlink/argv hardening, test coverage, proof-doc accuracy)
+found a MEDIUM: `cmd_panes`/`cmd_pane_tail` echo raw jsonl/formatter paths and basenames into
+operator-facing warnings and the summary line -- these paths are subagent-influenced data (the
+conductor names its own transcript files), so an embedded ESC/OSC byte sequence in a filename
+would reach the operator's real terminal unfiltered (window-name charset gates already blocked
+this; the plain `_say`/`echo` sites did not). Also found: a symlinked jsonl passes `cmd_panes`'s
+`-f` test and counts as spawned while `_pane-tail`'s own `-L` gate then silently refuses it
+inside the pane (ghost window, lying summary); the formatter path skipped the same abspath
+normalization the jsonl target got; a few new-code `dirname`/`basename`/`cd` calls lacked `--`.
+Decision: added `_panes_show` (a `tr`-based display-only charset strip, the render-side
+counterpart of `pane-tail.jq`'s `viz`), wrapped every path/basename/formatter value in an
+operator message with it, added the `cmd_panes` symlink check (counted as skipped, matching
+`_pane-tail`'s own refusal), ran the formatter through `_panes_abspath`, and added `--` to the
+new code's path-operand calls. Added T3b (runtime-generated ANSI-C-quoted filename, never
+literal bytes in the test file) proving no raw ESC byte reaches combined stdout+stderr and the
+symlink is skipped, not ghost-killed.
+Separately, the proof doc's Row R and Run table claimed `test-orchestrate-wavefront.sh` green;
+a fresh re-execution (6 runs) showed it fails 6/6 on `wave_run g` and intermittently on
+`wave_run h2`/`dispatch k` (mock-barrier concurrency assertions), and a clean checkout of the
+pre-change commit reproduces the identical signature under the same load -- pre-existing, not
+caused by this diff (which never touches `_wave_run`/`_wave_gate`). Corrected the doc to name it
+PRE-EXISTING TIMING-FLAKY and drop it from the required-green set, and re-ran the B3 negative
+control for real (it was previously trimmed in a way that implied jq alone controls a broken-
+formatter pane's content; the header line prints regardless, only the transcript line goes raw).
+Why: an operator-facing sanitize gap and a mis-stated regression claim both erode the same trust
+the proof-of-done exists to establish.
+Impact: `lib/queue/orchestrate.sh` (`_panes_show`, symlink check, formatter abspath, `--`
+guards), `tests/test-subagent-panes.sh` (T3b), `docs/verification/subagent-panes.md` (Row R,
+Run table, B3 capture, Reproduce section), `docs/specs/SPEC-234-subagent-panes.md` (T6 wording:
+">2000-char line" instead of "multi-MB", matching what the test actually drives).
+Open questions: none.

@@ -168,7 +168,7 @@ lives in Verification, not here.
 | T3 | unit | skip behavior: missing file, wrong basename, unexpanded `agent-*.jsonl` literal, empty dir -> warnings + summary line, rc=0, valid siblings still spawn; `<2` args -> usage on stderr, rc=0 |
 | T4 | unit | directory target expands to members; `--latest` derives slug+newest-mtime under a fake `$HOME` (DEC-007) |
 | T5 | negative | `_pane-tail` refusals, each exit 64 + named stderr: directory, unreadable, symlink, wrong basename, missing formatter |
-| T6 | formatter | fixture drives: assistant text verbatim, `->`/`<-` lines, attachment dropped, malformed line + truncated-JSON line survived (later lines still render), ESC/OSC-52 bytes stripped (assert exact output), multi-MB line capped with `…[truncated]` |
+| T6 | formatter | fixture drives: assistant text verbatim, `->`/`<-` lines, attachment dropped, malformed line + truncated-JSON line survived (later lines still render), ESC/OSC-52 bytes stripped (assert exact output), >2000-char line capped with `…[truncated]` (multi-MB shares the code path) |
 | T7 | integration | viewer: `_viewer_open` fires only on session creation (second `panes` call: no viewer exec); `TMUX_SESSION='a b; touch pwned'` -> tmux argv tokens stay separate, `_viewer_open` refuses via its charset gate, rc still 0 |
 
 ## Verification
