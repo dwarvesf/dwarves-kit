@@ -191,3 +191,15 @@ behavioral block above needs a real `tmux` + `jq` on PATH (both present on the d
   of `orchestrate.sh`'s testable surface; `commands/mega.md`'s prose pointer is the wiring,
   pinned by `test-docs-wiring.sh` AC11) · cmux as a pane viewer surface for `panes` specifically
   (reuses `_viewer_open` unchanged, already covered by `test-pane-viewer.sh`'s own cmux tests).
+
+## Test plan coverage
+
+| Row | Run / skip reason |
+|---|---|
+| T1 | tests/test-subagent-panes.sh T1 block (spawn x2, session ensured once, kill-window-before-respawn); rerun in the fresh recheck re-audit |
+| T2 | T2 block, exec-direct argv pin (4 discrete tokens incl. abs jsonl + abs formatter); independently re-verified by the security lens via a mock argv dump |
+| T3 | T3 block (missing file, wrong basename, glob literal, empty dir, <2 args, rc=0 + summary) + T3b (ESC-embedded filename sanitize, symlink skip; added in the review round) |
+| T4 | T4 block, fake-$HOME `--latest` derivation incl. newest-mtime pick and clean-miss |
+| T5 | T5 block, every `_pane-tail` refusal shape exit 64 (dir, unreadable, symlink, wrong basename, missing formatter) |
+| T6 | T6 block, generated fixtures: render/drop, malformed + truncated-line survival, ESC/OSC-52 strip exact-match, >2000-char cap; formatter also re-verified empirically by the security lens |
+| T7 | T7 block, viewer-on-session-creation first-vs-second-call distinction + TMUX_SESSION charset-gate poison pin; B1-B3 real-tmux runs cover the live half |
