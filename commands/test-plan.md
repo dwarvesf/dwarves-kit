@@ -76,6 +76,28 @@ keeps a real-model probe."
 
 **Smoke/retry doctrine:** a case is `smoke-eligible` only when it exists to iterate on grading rules, never as a substitute for the `behavioral` proof. A security or side-effect case is NEVER smoke-eligible, only ever `behavioral`. A case is `retry-eligible` only for a benign-phrasing miss on an explicit allowlist; the default is NOT eligible, and a security or side-effect verdict is never retry-eligible regardless of allowlist. On failure, name the failed case IDs (a summary that survives a piped run), not just a pass/fail count.
 
+### Step 1d: Scenario-harness tiering (when applicable)
+
+Also ADDITIVE to Step 1b's dialect, independent of Step 1c. **The operative test:** does the
+spec's SUT read an external SaaS API with real-world state (Notion, Airwallex, any third-party
+service)? If not, skip this step, no scenario-builder line, no Tier column. If it does, apply
+`docs/verification/test-design-standard.md` §8 before enumerating Step 2:
+
+1. Name the shared **scenario-builder module** the matrix's fixtures will come from (one set of
+   typed factories, never a hand-written payload per test).
+2. Every case whose fixture comes from that module gets a **Tier** tag: `A` (seeded in-memory
+   mock, default, CI) or `B` (ephemeral live sandbox, opt-in, reserved for semantics a mock
+   cannot fake, e.g. a rollup field or a timezone-dependent formula). If Tier A can prove a
+   case, it does not also get a Tier B row.
+3. If any case needs Tier B, add ONE row (or a short block) naming the spin-up (dated parent +
+   seeded children) and tear-down (archive parent + leftover sweep + refuses anything carrying
+   a production id) as its own case, category `failure-injection` (a crashed run leaving
+   orphans) or `security/abuse` (a prod-id guard), whichever it tests.
+
+This is a dialect REFINEMENT, not a new column type on every spec: a spec whose SUT never
+touches an external SaaS API gets no Tier column at all, same as Step 1c's live-model tiering
+gates on live-model ACs only.
+
 ### Step 2: Enumerate the coverage matrix
 
 Enumerate test cases across these categories. Map each case to the acceptance criterion (or criteria) it covers.
@@ -94,6 +116,10 @@ A boundary/edge or security/abuse case that is actually a live-model NL claim be
 `behavioral`, never `mechanical`, even though "boundary" and "security" are Step 2 categories,
 not tiers -- category and tier are independent axes (a behavioral-floor case can be any
 category).
+
+When Step 1d applies, also tag each case sourced from the scenario-builder module with its
+**harness tier** (`A` / `B`) per that step's rule. A case with no external-API dependency
+carries no tier tag; do not force one on it.
 
 Skip a category only when it genuinely does not apply to this spec, and say why in the coverage notes. Do not pad with cases that do not map to an acceptance criterion.
 
@@ -137,12 +163,29 @@ the coverage notes, inside the same `## Test plan` section:
   misses only; security/side-effect verdicts are never retry-eligible.
 ```
 
+When Step 1d applied, extend the matrix with one `Harness tier` column and name the scenario
+builder in the coverage notes, inside the same `## Test plan` section (compose with Step 1c's
+own extra columns if both apply, one matrix, not two):
+
+```markdown
+| # | Case | Category | Covers (AC) | Expected | Proof | Harness tier |
+|---|------|----------|-------------|----------|-------|---------------|
+| 1 | [case] | happy-path | AC-1 | [expected result] | [command/artifact, or TBD] | A |
+| 2 | [case] | boundary/edge | AC-1 | [expected result] | [command/artifact, or TBD] | A |
+| 3 | [case] | boundary/edge | AC-2 | [rollup/formula semantics match live] | [command/artifact, or TBD] | B |
+| ... | | | | | | |
+
+### Coverage notes
+- Scenario builder: `[module path]`, the single fixture source for every Tier A/B case above.
+- Categories skipped: [category -- why, or "none"]
+```
+
 ### Step 4: Hand off
 
 Tell the user the plan is written into the spec's `## Test plan` and `/kit:execute` will build against it as the coverage target (each case's `proof` becomes that step's verify command where named). Do NOT run `/kit:execute` yourself; this lane only plans the test cases.
 
 ## Source
-The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/kit:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018. Step 1c's tier taxonomy, floor rule, and smoke/retry doctrine realize `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md` SG-1 (SPEC-201): the proven-on-permtest pattern (PR #145), generalized as guidance the generator emits, not a new runner (SG-3 stays deferred until a second consumer).
+The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/kit:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018. Step 1c's tier taxonomy, floor rule, and smoke/retry doctrine realize `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md` SG-1 (SPEC-201): the proven-on-permtest pattern (PR #145), generalized as guidance the generator emits, not a new runner (SG-3 stays deferred until a second consumer). Step 1d's scenario-harness tiering realizes `docs/verification/test-design-standard.md` §8 (ID-465): the two-tier mock/live pattern proven in foundation-workers SPEC-006, generalized here as the emission rule so a second consumer gets it for free instead of re-deriving it.
 
 After writing the plan, record it for lane telemetry (SPEC-062), one line:
 `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "matrix rows=<N> categories=<list>"`.
