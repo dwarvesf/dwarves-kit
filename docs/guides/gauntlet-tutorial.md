@@ -194,9 +194,11 @@ sonnet round, one finding strengthened (`docs/verification/gauntlet/2026-08-31-u
 `PROBE_CMD` for the omp/NeuralWatt recipe:
 
 ```bash
-export PATH="$HOME/omptool/node_modules/.bin:$PATH"
-npm install --no-fund --no-audit --prefix "$HOME/omptool" @oh-my-pi/pi-coding-agent bun \
-  > /work/omp-install.log 2>&1 || { echo omp-install-failed; cat /work/omp-install.log; exit 0; }
+command -v omp >/dev/null && echo omp-baked > /work/omp-install.log || {
+  export PATH="$HOME/omptool/node_modules/.bin:$PATH"
+  npm install --no-fund --no-audit --prefix "$HOME/omptool" @oh-my-pi/pi-coding-agent bun \
+    > /work/omp-install.log 2>&1 || { echo omp-install-failed; cat /work/omp-install.log; exit 0; }
+}
 mkdir -p "$HOME/.omp/agent"
 printf 'providers:\n  neuralwatt:\n    baseUrl: https://api.neuralwatt.com/v1\n    api: openai-completions\n    apiKey: %s\n    models:\n      - id: deepseek-v4-flash\n' \
   "$ANTHROPIC_API_KEY" > "$HOME/.omp/agent/models.yml"
@@ -204,11 +206,29 @@ printf 'tools:\n  approvalMode: yolo\n  enabled: true\nsetupVersion: 2\nmodelRol
   > "$HOME/.omp/agent/config.yml"
 timeout 1800 omp -p --auto-approve --mode json --model neuralwatt/deepseek-v4-flash \
   "$(cat /work/PROMPT.txt)" </dev/null > /work/transcript.jsonl 2>/work/probe-stderr.log
-rc=$?; echo probe-exit=$rc; exit $rc
+rc=$?; echo probe-exit=$rc
+
+# Optional: persist the probe's OWN session logs (fuller fidelity than the
+# --mode json stdout projection above), text files only. `models.yml` carries
+# the room's one credential and must never leave the container; copy known
+# text extensions one file at a time and delete anything binary rather than
+# risk it dodging the (text-only, grep -I) scrub below.
+mkdir -p /work/omp-state
+find "$HOME/.omp" -type f \( -name '*.log' -o -name '*.jsonl' \) ! -name 'models.yml' ! -name 'config.yml' \
+  -print0 2>/dev/null | while IFS= read -r -d '' f; do
+    if file -b --mime-encoding "$f" 2>/dev/null | grep -q binary; then continue; fi
+    cp "$f" "/work/omp-state/$(basename "$f")"
+  done
+
+exit $rc
 ```
 
 Swap `neuralwatt`/`deepseek-v4-flash`/`baseUrl` for any other OpenAI-compatible
-endpoint; the shape stays the same.
+endpoint; the shape stays the same. The `command -v omp` guard uses the baked
+toolchain (`tests/gauntlet/cleanroom/Dockerfile`, SPEC-238) when present and
+writes the `omp-baked` signal; on an unbaked image it falls back to the
+per-round install unchanged, so this block still runs to completion either
+way.
 
 Three rules this recipe cost real rounds to learn:
 
