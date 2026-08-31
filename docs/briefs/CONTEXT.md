@@ -15,7 +15,7 @@ Bash + markdown command prompts. Commands live in `commands/*.md` (frontmatter `
 - `tests/gauntlet/**` - the kit's own onboarding INSTANCE (cleanroom stager, Tier-1 suite, checkers, J1-J11 scenario pack, campaign deploy). DO NOT rewrite; it becomes the reference preset's implementation.
 - `kit.toml [gauntlet]` + `lib/config/kit-config.sh:96-114` + `lib/config/module-registry.md:52` - config keys `gauntlet.runner_host` / `gauntlet.probe_key_ref` are root-only-readable; key shape must not change.
 - `docs/specs/SPEC-226-gauntlet-telemetry-learning.md` - telemetry contract; phase name literal `gauntlet`, marker `[[QL-VERDICT ...]]` grammar preset-invariant.
-- Full surface map: `docs/research/features.md`; landmines: `docs/research/pitfalls.md`.
+- Full surface map: `docs/research/2026-08-31-gauntlet-surface-map.md`; landmines: `docs/research/2026-08-31-gauntlet-pitfalls.md`.
 
 ## External dependencies
 None. The change is prompt + doc files plus one registry regeneration. Live consumer to compat-check (not edit): `tests/gauntlet/deploy/mini.gauntlet-campaign.plist` invokes the onboarding campaign runner with today's input names.

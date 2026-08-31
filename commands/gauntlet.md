@@ -35,10 +35,10 @@ rule; where a preset's text and an engine rule disagree, the rule wins.
 
 | Slot | What it is | Onboarding example |
 |---|---|---|
-| **Artifact under convergence** | the globs the reviser may touch; the thing that evolves | CONTRIBUTING.md, docs/onboarding*, README, `scripts/onboard-*`, the card template |
+| **Artifact under convergence** | the globs the reviser may touch; the thing that evolves | CONTRIBUTING.md, docs/onboarding*, README, `scripts/onboard-*`, `scripts/preview-*`, the card template |
 | **Outcome contract** | a probe card (ONE bounded real task in a card template, <= 1 agent-day, with acceptance criteria + a verification command), a deterministic checker (ANY oracle over the probe's output, not necessarily a patch), and a Tier 1 deterministic suite | card: one small feature; checker: patch applies + card's command passes + PR body present; Tier 1: e.g. `ONBOARDING_TESTS=1 npx vitest run test/onboarding` |
 | **Probe framing** | the persona line handed to the probe (who it is, what it may read) | "You are a new contributor. Follow the repo's own docs. Complete the card. Submit per the docs." |
-| **Clean-room recipe** | how a fresh environment is built from committed/versioned state, BY ARTIFACT KIND (see below) | `test/onboarding/run.sh` (docker build from `git archive HEAD`) |
+| **Clean-room recipe** | how a fresh environment is built from committed/versioned state, BY ARTIFACT KIND (see below) | the repo's committed clean-room runner (docker build from `git archive HEAD`) |
 
 **Clean-room recipes by artifact kind.** Each recipe must state its own answer-key
 exclusion (rule 7) and its own "clean room vs real target" gap:
@@ -56,8 +56,9 @@ exclusion (rule 7) and its own "clean room vs real target" gap:
 
 Invocation: `/kit:gauntlet [<preset-name>]`, slots overridable at this confirm step. A
 BARE invocation ASKS which preset (or custom slots); it resolves to `onboarding` only
-when the operator names it or the repo carries onboarding fixtures (`tests/gauntlet/` or
-a `test/onboarding/` tree). Never silently assume a preset in a repo without fixtures.
+when the operator names it or the repo carries a committed onboarding-gauntlet fixture
+tree (its own Tier 1 suite + clean-room runner). Never silently assume a preset in a
+repo without fixtures.
 
 | Input | What it is | Default |
 |---|---|---|
@@ -82,8 +83,9 @@ and card template before it can run; the onboarding ones are instance-specific):
 - `spec`: converge a spec until a probe implements it without asking a question the spec cannot answer.
 - `api-dx`: converge an API's docs/errors until a probe integrates from the public surface alone.
 
-Preset rows cite worked instances by SPEC number ONLY, never a checker or fixture path:
-this file ships into the clean room, so a path here is answer key.
+This file ships into the clean room, so it names NO checker or fixture path anywhere:
+preset rows cite worked instances by SPEC number ONLY, and every example above
+describes fixtures by role, never by location.
 
 ## Bad input? Teach, then fix (never fail dry, never proceed silently)
 
@@ -183,8 +185,10 @@ docs/verification/gauntlet/<YYYY-MM-DD>-<preset>-<slug>/
                          # (absent on the final round)
 ```
 
-The preset segment in the directory name is mandatory; an EXISTING directory is a
-refusal, never an overwrite (rule 8 forbids trimming a prior record). `ROUNDS.md` is the
+The preset segment in the directory name is mandatory for new runs (records and
+campaign paths from before the preset era are grandfathered as-is); an EXISTING
+directory is a refusal, never an overwrite (this contract forbids trimming a prior
+record). `ROUNDS.md` is the
 eval artifact and the proof-of-done for the artifact; the round dirs are its evidence.
 Never trim a failed round's record: the failure trail is what justifies each artifact
 change (same rule as the debug loop's evidence ledger).

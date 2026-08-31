@@ -101,7 +101,7 @@ Out of bounds: `tests/gauntlet/**` content, `kit.toml` key shapes, SPEC-226's ph
   - **Probe framing** (was the hardcoded "new contributor" instruction): the persona line handed to the probe, plus the probe model tier (mid-tier default and its rationale stay engine-level).
   - **Clean-room recipe** (generalized): how a fresh environment is built from committed/versioned state, BY ARTIFACT KIND: repo artifact = `git archive HEAD` + container (today's recipe); host/service artifact = a declared snapshot/restore recipe; doc-only artifact = minimal container holding only the artifact + the card. The recipe must state its own answer-key exclusion (rule 7) and its own "clean room vs real target" gap (patterns limit 8). Host-kind recipes carry two extra gates: (a) a host whose snapshot contains ANY credential beyond the probe key is rejected as a bad input (the one-key invariant is enforceable in an empty container and unenforceable on a lived-in host; the fix is a stripped clone/VM, never an exception); (b) snapshot-restore teardown is a destructive operation and needs explicit operator confirmation before round 1 (a pause-if, not a loop decision).
   - Unchanged inputs: Target repo, Probe credentials, Round cap, Runner host (`kit.toml [gauntlet] runner_host` / `probe_key_ref`, one shared pair for all presets, root-only-readable, key shape frozen).
-- Outputs / produces: run-record contract keeps its grammar, with the run directory renamed to `docs/verification/gauntlet/<date>-<preset>-<slug>/` (preset name mandatory in the path; an existing directory is a REFUSAL, never an overwrite, since rule 8 forbids trimming a failed round's record). `[[QL-VERDICT round=N clean=<bool> findings=K]]` marker byte-identical across presets, gate-ledger phase literal `gauntlet`. ROUNDS.md's inputs table gains one `preset:` row (free text; `custom` when slots are hand-assembled), which is where dashboards distinguish presets, never the phase name.
+- Outputs / produces: run-record contract keeps its grammar, with the run directory renamed to `docs/verification/gauntlet/<date>-<preset>-<slug>/` for NEW runs (pre-preset-era records and campaign paths are grandfathered as-is; an existing directory is a REFUSAL, never an overwrite, since the run-record contract forbids trimming a prior record). `[[QL-VERDICT round=N clean=<bool> findings=K]]` marker byte-identical across presets, gate-ledger phase literal `gauntlet`. ROUNDS.md's inputs table gains one `preset:` row (free text; `custom` when slots are hand-assembled), which is where dashboards distinguish presets, never the phase name.
 - Invocation grammar: `/kit:gauntlet [<preset-name>]` plus per-slot overrides via the confirm-inputs step. BARE invocation ASKS which preset (or custom); it resolves to `onboarding` only when the operator names it or the repo carries onboarding fixtures (`tests/gauntlet/` or a `test/onboarding/` tree). Preset table columns: `preset | artifact globs | outcome contract (card + checker + Tier-1) | probe framing | clean-room recipe | worked instance (SPEC number only)`.
 - Invariants: engine rules 1-10 bind every preset; a preset supplies slot VALUES only and can never weaken a rule. Probe-safety invariants (spend-capped key only, no answer key, scrub transcripts, mid-tier probe) are stated once, engine-level.
 
@@ -172,7 +172,7 @@ grep -c 'QL-VERDICT' tests/test-meta.sh              # gained a gauntlet pin
 4. A preset proposes editing files outside its artifact globs (e.g. a spec-completeness preset tempted to fix product code): rule 4 (artifact-only revisions) blocks it; finding recorded instead.
 5. Host-kind clean-room recipe declared but no snapshot/restore procedure named: treated as "no clean-room recipe" in the bad-input table (a host you cannot rebuild is not a clean room).
 6. Host-kind recipe whose snapshot carries any credential beyond the probe key (ssh keys, 1P agent, cloud CLI tokens): rejected as a bad input; the fix is a stripped clone/VM, never an exception to the one-key invariant.
-7. Two runs land on the same date + slug: the run dir `<date>-<preset>-<slug>` disambiguates presets, and an existing directory is a refusal (rule 8 forbids overwriting a prior record), never an overwrite.
+7. Two runs land on the same date + slug: the run dir `<date>-<preset>-<slug>` disambiguates presets, and an existing directory is a refusal (the run-record contract forbids overwriting a prior record), never an overwrite.
 8. QL-VERDICT parsing: a preset run emits the identical marker grammar; observe/stats need no change (SPEC-226 claim preserved), now pinned by the test-meta assertion TASK-004 adds.
 
 ## Failure modes
@@ -202,6 +202,23 @@ grep -c 'QL-VERDICT' tests/test-meta.sh              # gained a gauntlet pin
 - DEC-004: Probe-safety invariants stay engine-level, stated once. Rationale: pitfall 4, they exist in exactly two files today; per-preset restatement is the drift vector.
 - DEC-005 (validation round): presets cite worked instances by SPEC number only, never a path; run-record dirs gain a mandatory preset segment with existing-dir refusal; bare invocation asks instead of assuming onboarding; host-kind recipes get a credential-rejection bad-input row and a teardown pause-if; TASK-004 adds the gauntlet QL-VERDICT pin to test-meta and may widen the run.sh strip list as the one permitted tests/gauntlet hunk. Rationale: spec-validate round (4 criticals, 9 warnings) 2026-08-31; the byte-compat claim was re-anchored to the command's own defaults table because the kit instance deliberately overrides every default.
 - DEC-006: extensibility claim scoped to the prompt layer; a new preset must build its own stager, Tier-1 command, checker, and card. Rationale: the onboarding stager is persona-hardcoded (`PERSONA` switch, J1-J11 row checker, hand-baked fixture); promising table-row-cheap presets would misstate the cost.
+
+## Review
+
+### Verdict: FIX THEN SHIP (fixes applied same session)
+
+### Findings
+
+- BLOCKER (fixed): this PR's own records (spec, research files, CONTEXT.md, impl notes) enumerate checker/fixture paths and shipped into the clean room; run.sh strip widened + research files renamed to gauntlet-named dated slugs.
+- MAJOR (fixed): the command named fixture paths in its bare-invocation rule and slot example, violating its own answer-key rule; reworded by role, rule broadened to the whole file.
+- MAJOR (fixed): mandatory preset run-dir segment had zero conforming producers; scoped to new runs, legacy paths grandfathered.
+- MINOR (fixed): rule-8 misattribution x3 (the no-trim rule is the run-record contract's); host-kind operator gates added to the guide; test-meta pin strengthened to include the marker field grammar; `scripts/preview-*` restored in the slot example cell.
+
+### TODOs
+
+- Follow-up (not this PR): reconcile `tests/gauntlet/README.md` + `deploy/gauntlet-campaign` run paths with the new-run grammar when the onboarding campaign next runs.
+
+Acceptance verification: PASS 4/4 tasks + 3/3 global (fresh-context verifier; suite 810/819 vs master 808/818, failures an exact subset of master's, FEATURES freshness fixed here).
 
 ## Open questions
 

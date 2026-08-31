@@ -26,6 +26,11 @@ is only what YOU do.
 | A spend-capped model API key | the probe's ONLY credential | never CF / 1Password / GitHub credentials |
 | The room's runtime available | the clean room needs it | Docker running (repo kind) |
 
+Host-kind artifact (a runbook against a real machine)? Two extra things fall on YOU:
+the room must be a credential-stripped clone/VM (a snapshot carrying any credential
+beyond the probe key is rejected), and teardown is destructive, so the kit asks you
+to confirm it before round 1.
+
 Not ready? Say so, the kit will help you build the missing piece first. Do not
 hand-polish the artifact beyond "the suite is green": the gaps a cold consumer hits
 are invisible to you (you know too much), and finding them is the gauntlet's job.
