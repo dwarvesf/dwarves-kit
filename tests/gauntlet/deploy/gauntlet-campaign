@@ -34,7 +34,9 @@ new_pass_dir() {
 # done-markers, then symlink over it), or absent (start a fresh pass).
 resolve_pass_dir() {
   if [ -L "${LINK}" ]; then
-    readlink "${LINK}"
+    # readlink prints the RELATIVE target (ln -sfn used a basename); anchor it,
+    # or tick 2 resolves against KIT_ROOT and restarts the matrix (review fix).
+    echo "${GAUNTLET_DIR}/$(readlink "${LINK}")"
     return
   fi
   if [ -d "${LINK}" ]; then

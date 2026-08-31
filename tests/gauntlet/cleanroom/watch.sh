@@ -56,7 +56,10 @@ if printf '%s' "${FIRST_LINE}" | grep -qF '"type":"session"' \
     elif .type == "tool_execution_end" and (.isError // false) then "<- ERROR " + .toolName
     else empty end
   '
-elif printf '%s' "${FIRST_LINE}" | grep -qF '"type":"assistant"'; then
+elif printf '%s' "${FIRST_LINE}" | grep -qF '"subtype":"init"' \
+  || printf '%s' "${FIRST_LINE}" | grep -qF '"type":"assistant"'; then
+  # Real claude --output-format stream-json sessions open with
+  # {"type":"system","subtype":"init",...}; assistant-first covers partial logs.
   tail "${TAIL_ARGS[@]}" | jq -R -r --unbuffered -f "${PANE_TAIL_JQ}"
 else
   echo "watch.sh: unrecognized transcript format, plain tail" >&2

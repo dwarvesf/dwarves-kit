@@ -84,6 +84,6 @@ ssh "${HOST}" bash -s < "${DRIVER}" || rc=$?
 
 echo "== pulling the round record"
 mkdir -p "${OUT}"
-rsync -a "${HOST}:${RDIR}/out/" "${OUT}/"
+rsync -a "${HOST}:${RDIR}/out/" "${OUT}/" || echo "pull failed (nothing persisted remotely?); inspect ${HOST}:${RDIR}" >&2
 echo "record at ${OUT}; remote workdir ${HOST}:${RDIR} left for inspection (sweep old run-* dirs periodically)"
 exit "${rc}"

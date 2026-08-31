@@ -124,7 +124,7 @@ None.
 
 - [ ] All task ACs pass; `bash tests/test-meta.sh` failure set stays an exact subset of master's
 - [ ] `shellcheck -S warning` clean on both touched/new scripts
-- [ ] Zero changes outside `tests/gauntlet/`, `commands/gauntlet.md` (grandfather sentence), `docs/guides/gauntlet-tutorial.md`
+- [ ] Zero changes outside `tests/gauntlet/`, `commands/gauntlet.md` (grandfather sentence), `docs/guides/gauntlet-tutorial.md`, plus the ride-along bookkeeping every branch carries (`docs/FEATURES.md` regeneration, `_meta/BACKLOG.md` row flips, spec/impl-notes/verification records)
 
 ## Verification
 
@@ -168,6 +168,24 @@ grep -q "heredoc" docs/guides/gauntlet-tutorial.md && echo quoting-rule-present
 - DEC-003: recipe block over harness slot. Rationale: two harnesses do not earn a plugin system; PROBE_CMD is already the seam.
 - DEC-004 (revised, validation round): `campaign-current` is a convenience symlink to the active pass container, repointed only at new-pass start. Original compat rationale was FALSE (the plist references no path; the only consumer is the campaign runner itself); the symlink survives purely as a stable human/agent entry point, and the pass-container shape exists to preserve the runner's dir-existence worklist semantics (validation critical 3).
 - DEC-005 (validation round): panel found 5 criticals + 6 warnings, all folded: probe-exit propagation through PROBE_DEFAULT + the recipe (the old `echo probe-exit=$?` tail made every probe exit 0); run-remote's remote leg strands records (capture + always-pull); pass-container naming instead of per-row dirs; format-aware watch (pane-tail.jq is claude-format-only; omp gets an inline filter, verified against the real -nw transcript); `! grep -q` ACs; persist-check standalone with docker SKIP; tier1 shellcheck glob extension; explicit `|| echo` on persist cp; failed-round scrub sentence; watch local-rounds-only.
+
+## Review
+
+### Verdict: FIX THEN SHIP (all findings fixed same session)
+
+### Findings
+
+- CRITICAL (fixed): campaign `resolve_pass_dir` returned `readlink`'s bare relative target, so tick 2 would resolve against the repo root and restart the matrix; anchored to `GAUNTLET_DIR`.
+- MEDIUM (fixed): remote-leg rsync under `set -e` could mask the probe's exit when nothing persisted remotely; guarded.
+- MEDIUM (fixed): tutorial told readers to single-quote a block that contains single quotes; now recommends a quoted heredoc, and the block no longer duplicates run.sh's room preamble.
+- LOW (fixed): global AC file fence widened to name ride-along bookkeeping.
+- Verifier FAIL:fixable (fixed): real claude transcripts open with `system/init`, so watch.sh's pane-tail branch was unreachable on genuine data; sniff extended, re-verified against the real J1 claude record (pane-tail render confirmed).
+
+Acceptance verification: 5/5 spec Verification commands pass with decisive output (persist-check GREEN both legs, suite failures an exact pre-existing subset, FEATURES freshness fixed); TASK-001..003 verified by execution + static read; TASK-004 verified post-fix.
+
+### TODOs
+
+- (none open)
 
 ## Open questions
 

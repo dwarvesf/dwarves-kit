@@ -194,10 +194,6 @@ sonnet round, one finding strengthened (`docs/verification/gauntlet/2026-08-31-u
 `PROBE_CMD` for the omp/NeuralWatt recipe:
 
 ```bash
-mkdir -p /tmp/probe-home
-git config --global init.defaultBranch main
-cd /work
-
 export PATH="$HOME/omptool/node_modules/.bin:$PATH"
 npm install --no-fund --no-audit --prefix "$HOME/omptool" @oh-my-pi/pi-coding-agent bun \
   > /work/omp-install.log 2>&1 || { echo omp-install-failed; cat /work/omp-install.log; exit 0; }
@@ -218,8 +214,11 @@ Three rules this recipe cost real rounds to learn:
 
 1. `run.sh` writes `PROBE_CMD` through an unquoted heredoc. Text that arrives FROM a
    variable expansion is not re-scanned for escapes. Set `PROBE_CMD` in the launcher
-   with a single-quoted assignment carrying plain `$VAR` / `$(...)`, never `\$VAR`. A
-   backslash-escaped dollar survives into the room literally and never resolves.
+   carrying plain `$VAR` / `$(...)`, never `\$VAR` (a backslash-escaped dollar survives
+   into the room literally and never resolves). Since the block above itself contains
+   single quotes, assign it via a quoted heredoc, not a single-quoted string:
+   `read -r -d '' PROBE_CMD <<'EOF' ... EOF`. run.sh already writes the room preamble
+   (probe HOME, git identity, `cd /work`); the block starts after that.
 2. `omp` blocks forever on a non-TTY stdin. Always redirect `</dev/null`, or the round
    hangs until the timeout.
 3. The room has exactly one credential slot, `ANTHROPIC_API_KEY`, regardless of which
