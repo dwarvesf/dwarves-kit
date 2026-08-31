@@ -20,7 +20,7 @@ import json
 import shlex
 import subprocess
 
-from cockpit import (mark_untrusted_body, mark_untrusted_title,
+from cockpit import (mark_untrusted_body, mark_untrusted_title, redact_secrets,
                      unmark_untrusted_body, unmark_untrusted_title)
 
 ACTIVE = {"queued", "claimed", "speccing", "validated", "executing"}
@@ -121,8 +121,13 @@ class HermesSource:
                 # recovers the bare `ID-NNN`. Without this, a state-loss re-sync
                 # reads `[untrusted] ID-9 ...`, fails to re-link, and re-mints
                 # the card as a junk board row (double-mapped rid).
-                title = unmark_untrusted_title(t.get("title") or "")
-                body = unmark_untrusted_body(t.get("body") or "")
+                # A Hermes ticket is free text a teammate (or an agent) wrote
+                # on the OTHER end of this intake, and this leg commits it
+                # verbatim to a git-tracked board (intake=all, foundation-ops).
+                # Redact before the row is built, same as the notion-taskboard
+                # intake leg: a git push cannot be recalled.
+                title = redact_secrets(unmark_untrusted_title(t.get("title") or ""))
+                body = redact_secrets(unmark_untrusted_body(t.get("body") or ""))
                 items.append({"rid": t["id"], "title": title,
                               "done": t.get("status") in ("done", "archived"),
                               "body": body, "status": kw})

@@ -26,6 +26,8 @@ import re
 import secrets
 import subprocess
 
+from cockpit import redact_secrets
+
 # Sentinel wording copied from the cron being absorbed, so a worker LLM that
 # already learned this fence keeps recognizing it. The per-item NONCE is the
 # part that actually holds: literal sentinel matching is defeated by extra
@@ -59,12 +61,10 @@ _NEUTRALIZE = re.compile("|".join((re.escape(SENTINEL),
 # `#word` becomes `# word`: `extract_tags` no longer sees a tag, the text stays
 # readable, and a payload cannot set the board tags that drive app filters.
 _DEFANG_TAG = re.compile(r"#(?=[A-Za-z0-9])")
-# High-signal credential shapes. Intake text is committed to a git board and
-# pushed by an unattended job, and a push cannot be recalled; a teammate who
-# pastes a token into a task note should not mint permanent history.
-_SECRETISH = re.compile(
-    r"(AKIA[0-9A-Z]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}"
-    r"|xox[abposr]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
+# High-signal credential shapes: see cockpit.redact_secrets (shared with the
+# hermes intake leg). Intake text is committed to a git board and pushed by
+# an unattended job, and a push cannot be recalled; a teammate who pastes a
+# token into a task note should not mint permanent history.
 
 
 def _run_ntn(args: list, data: dict | None = None):
@@ -108,7 +108,7 @@ def neutralize(text: str) -> str:
     Matching is case-insensitive, because a worker LLM reading the fence does
     not care about case either.
     """
-    out = _SECRETISH.sub("[redacted]", text)
+    out = redact_secrets(text)
     return _DEFANG_TAG.sub("# ", _NEUTRALIZE.sub("[defanged]", out))
 
 

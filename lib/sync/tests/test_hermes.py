@@ -54,6 +54,24 @@ def test_read_merges_live_and_archived_and_normalizes():
     assert "--status archived" in fake.scripts[0]
 
 
+# --- secret redaction on the intake path: a Hermes ticket is untrusted free
+# text a teammate wrote, and read() commits it verbatim to a git-tracked
+# board; a real token pasted into a ticket must not survive that commit -----
+
+def test_read_redacts_secret_shapes_in_title_and_body():
+    fake_key = "AKIA" + "IOSFODNN7EXAMPLE"  # AWS's own published example key
+    live = json.dumps([
+        {"id": "t1", "title": f"ID-10 · leaked {fake_key}",
+         "body": f"the token is {fake_key}", "status": "todo"},
+    ])
+    src, _ = make_src(f"{live}\n@@SEP@@\n[]\n")
+    item = src.read()[0]
+    assert fake_key not in item["title"]
+    assert fake_key not in item["body"]
+    assert "[redacted]" in item["title"]
+    assert "[redacted]" in item["body"]
+
+
 def test_apply_creates_with_idempotency_key_and_quoting():
     src, fake = make_src("@@CREATED ID-10 t_aa\n@@CREATED ID-11 t_bb\n")
     plan = Plan(src_create=[
