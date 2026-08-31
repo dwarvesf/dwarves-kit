@@ -31,7 +31,8 @@ never overrides those, it translates them.
 | [scenarios.md](scenarios.md) | the kit starts surfacing "survival scenarios" and "must-NOT-happen" rows while you shape work |
 | [gates-and-proof.md](gates-and-proof.md) | something BLOCKED (ship gate, proof of done, iron law) and you want the way through |
 | [review.md](review.md) | you got a SHIP / FIX THEN SHIP / DO NOT SHIP verdict |
-| [gauntlet.md](gauntlet.md) | you are about to let outside devs into a repo, or just rewrote its contributor docs |
+| [gauntlet.md](gauntlet.md) | an artifact (docs, a runbook, a spec) must survive a cold consumer unaided |
+| [gauntlet-tutorial.md](gauntlet-tutorial.md) | first gauntlet run: step-by-step, with copy-paste slot files |
 
 Convention for new guides: user voice, second person, one diagram per guide,
 a "what you do" per outcome, and a short common-questions tail. Name the file

@@ -13,7 +13,8 @@ the room down, and tries again with a fresh one, up to three rounds.
 
 For the mechanics (the four slots, presets, rules) read `commands/gauntlet.md`; for
 the design rationale and known limits read `docs/patterns/gauntlet.md`. This guide
-is only what YOU do.
+is only what YOU do. First run, or unsure how to fill the slots? The step-by-step
+walkthrough with copy-paste slot files is `docs/guides/gauntlet-tutorial.md`.
 
 ## Before you run it (the checklist)
 
