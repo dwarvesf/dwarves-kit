@@ -141,6 +141,21 @@ def unmark_untrusted_body(body: str) -> str:
     return body
 
 
+# High-signal credential shapes (AWS/GitHub/Slack/OpenAI keys, PEM headers).
+# Shared by every LOAD leg that copies free-text ticket/task content into a
+# git-tracked board (sources/notion_taskboard_pull.py, sources/hermes.py):
+# that commit cannot be recalled, so a real token a teammate pasted into a
+# ticket title or body must not survive the trip into board history.
+_SECRETISH = re.compile(
+    r"(AKIA[0-9A-Z]{12,}|gh[pousr]_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}"
+    r"|xox[abposr]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)")
+
+
+def redact_secrets(text: str) -> str:
+    """Replace every high-signal credential shape in `text` with `[redacted]`."""
+    return _SECRETISH.sub("[redacted]", text)
+
+
 # Stderr banner for the CLI paths that print raw board `item`/`notes`
 # (`extract`, `plan --json`): the LOAD leg's structural marking does not exist
 # yet, so an operator/agent piping this dry-run output into a downstream (LLM)
