@@ -214,20 +214,28 @@ PROBE_EOF
   # Headless round: run the probe command instead of an interactive shell.
   # -u node because the claude CLI refuses permission-bypass as root; a fresh
   # HOME keeps the probe's config disposable with the room.
+  # rc is captured with `|| rc=$?`, not a bare `rc=$?` after the command: under
+  # `set -e`, a bare form never runs because the non-zero docker exit already
+  # kills the script first (this destroyed round evidence until SPEC-236).
+  rc=0
   docker run --rm \
     -u node -e HOME=/tmp/probe-home \
     -e GIT_AUTHOR_NAME="Gauntlet Probe" -e GIT_AUTHOR_EMAIL=probe@gauntlet.local \
     -e GIT_COMMITTER_NAME="Gauntlet Probe" -e GIT_COMMITTER_EMAIL=probe@gauntlet.local \
     -e ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
     -v "${STAGE}/work:/work" \
-    kit-gauntlet-room bash /work/.probe-cmd.sh
-  rc=$?
-  # Persist the room's contents before the stage trap wipes them: the round
-  # record (transcript, submission, fixture state) must outlive the room.
+    kit-gauntlet-room bash /work/.probe-cmd.sh || rc=$?
+  # Persist the room's contents before the stage trap wipes them, UNCONDITIONALLY
+  # (rules 6/8: a failing round must not destroy its own evidence). A persist
+  # failure (disk full, bad path) is reported but never overrides the probe's
+  # own exit code, the round's outcome is the probe's outcome, not the cp's.
   if [ -n "${RUN_OUT:-}" ]; then
     mkdir -p "${RUN_OUT}"
-    cp -R "${STAGE}/work/." "${RUN_OUT}/"
-    echo "room contents persisted to ${RUN_OUT}"
+    if cp -R "${STAGE}/work/." "${RUN_OUT}/"; then
+      echo "room contents persisted to ${RUN_OUT}"
+    else
+      echo "persist failed: cp -R ${STAGE}/work/. -> ${RUN_OUT}/" >&2
+    fi
   fi
   exit "${rc}"
 fi

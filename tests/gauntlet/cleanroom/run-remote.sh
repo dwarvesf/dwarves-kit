@@ -29,7 +29,7 @@ KEY_REF="$(kit_config_get_root gauntlet.probe_key_ref "op://Toolkit/anthropic-ap
 # The prompt lives in /work/PROMPT.txt (written by run.sh); the command never
 # quotes it. Keeping data out of command strings is what ended the quoting-bug
 # class this runner hit three times.
-PROBE_DEFAULT="timeout 1800 claude -p --dangerously-skip-permissions --model claude-sonnet-5 --output-format stream-json --verbose < /work/PROMPT.txt > /work/transcript.jsonl 2>/work/probe-stderr.log; echo probe-exit=\$?"
+PROBE_DEFAULT="timeout 1800 claude -p --dangerously-skip-permissions --model claude-sonnet-5 --output-format stream-json --verbose < /work/PROMPT.txt > /work/transcript.jsonl 2>/work/probe-stderr.log; rc=\$?; echo probe-exit=\$rc; exit \$rc"
 
 if [ "${HOST}" = "local" ]; then
   RUN_OUT="${OUT}" PROBE_CMD="${PROBE_CMD:-${PROBE_DEFAULT}}" \
@@ -76,9 +76,14 @@ PROBE_CMD="\$(printf '%s' '${PROBE_B64}' | base64 -d)"
 export PROBE_CMD
 bash tests/gauntlet/cleanroom/run.sh "${PERSONA}" "${ROW}"
 EOF
-ssh "${HOST}" bash -s < "${DRIVER}"
+# Captured, not left to `set -e`: run.sh now honestly exits with the probe's
+# code (TASK-001), which would otherwise kill this script before the rsync
+# pull below and strand the record on the runner host.
+rc=0
+ssh "${HOST}" bash -s < "${DRIVER}" || rc=$?
 
 echo "== pulling the round record"
 mkdir -p "${OUT}"
-rsync -a "${HOST}:${RDIR}/out/" "${OUT}/"
+rsync -a "${HOST}:${RDIR}/out/" "${OUT}/" || echo "pull failed (nothing persisted remotely?); inspect ${HOST}:${RDIR}" >&2
 echo "record at ${OUT}; remote workdir ${HOST}:${RDIR} left for inspection (sweep old run-* dirs periodically)"
+exit "${rc}"

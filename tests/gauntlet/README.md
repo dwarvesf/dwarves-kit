@@ -57,10 +57,12 @@ one pass over the whole matrix.
   same pass, that is the next campaign's job after the surface revision.
 - **Findings accumulate on the same surface across rows.** A campaign does
   not reset the surface between rows; a fix landed for J4 stays landed when
-  J5 runs. One `ROUNDS.md` per campaign, at
-  `docs/verification/gauntlet/<date>-kit-user/ROUNDS.md`, records every row's
-  outcome (SOLID / REVISE / RECONSIDER / BLOCKED) in run order , this is the
-  campaign's run record, the per-row cards are frozen alongside it.
+  J5 runs. One `ROUNDS.md` per campaign PASS, at
+  `docs/verification/gauntlet/<date>-onboarding-campaign/ROUNDS.md` (the pass
+  container `gauntlet-campaign` writes and `campaign-current` symlinks to),
+  records every row's outcome (SOLID / REVISE / RECONSIDER / BLOCKED) in run
+  order , this is the campaign's run record, the per-row cards are frozen
+  alongside it.
 - **A row's BLOCKER finding pauses the campaign.** If a round on row N ends
   BLOCKED (the probe wrote a valid `BLOCKED.md`, or the checker cannot pass
   for a surface reason, not a probe error), the campaign stops at row N until
@@ -78,8 +80,8 @@ pair per row (`make-card.sh J4` .. `make-card.sh J11`).
 2. Mint the probe key (spend-capped), the room's ONLY secret.
 3. Invoke `/kit:gauntlet` with persona A's table, working `scenarios.md`'s
    rows in order (campaign shape above); run records land in
-   `docs/verification/gauntlet/<date>-kit-user/`, one `ROUNDS.md` for the
-   whole campaign.
+   `docs/verification/gauntlet/<date>-onboarding-campaign/`, one `ROUNDS.md`
+   for the whole pass.
 4. On a row's BLOCKER finding, pause the campaign, land the surface revision,
    re-verify, then resume at that row.
 5. Persona B after A's campaign converges (or its halt is understood).

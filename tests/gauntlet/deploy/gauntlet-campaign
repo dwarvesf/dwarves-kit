@@ -7,25 +7,82 @@ set -euo pipefail
 KIT_ROOT="${KIT_ROOT:?set KIT_ROOT to the kit checkout this campaign runs from}"
 cd "${KIT_ROOT}"
 
-CAMPAIGN_DIR="docs/verification/gauntlet/campaign-current"
-mkdir -p "${CAMPAIGN_DIR}"
+GAUNTLET_DIR="docs/verification/gauntlet"
+LINK="${GAUNTLET_DIR}/campaign-current"
+mkdir -p "${GAUNTLET_DIR}"
 
-# Worklist = matrix row order; done-markers are per-row record dirs.
-next_row=""
-for row in J1 J2 J3 J4 J5 J6 J7 J8 J9 J10 J11; do
-  if [ ! -d "${CAMPAIGN_DIR}/${row}" ]; then next_row="${row}"; break; fi
-done
+# new_pass_dir -- creates a fresh dated pass container and repoints
+# campaign-current at it (DEC-004: the symlink is operator convenience only,
+# no consumer depends on the resolved path). A same-day collision (a second
+# pass starting the same calendar day) gets a numbered suffix.
+new_pass_dir() {
+  local fresh n
+  fresh="${GAUNTLET_DIR}/$(date +%F)-onboarding-campaign"
+  n=2
+  while [ -e "${fresh}" ]; do
+    fresh="${GAUNTLET_DIR}/$(date +%F)-onboarding-campaign-${n}"
+    n=$((n + 1))
+  done
+  mkdir -p "${fresh}"
+  ln -sfn "$(basename "${fresh}")" "${LINK}"
+  echo "${fresh}"
+}
+
+# resolve_pass_dir -- prints the ACTIVE pass container, adopting whatever
+# campaign-current already is: a symlink (follow it), a legacy real directory
+# (SPEC-235-era grammar: rename it to a dated container, preserving its row
+# done-markers, then symlink over it), or absent (start a fresh pass).
+resolve_pass_dir() {
+  if [ -L "${LINK}" ]; then
+    # readlink prints the RELATIVE target (ln -sfn used a basename); anchor it,
+    # or tick 2 resolves against KIT_ROOT and restarts the matrix (review fix).
+    echo "${GAUNTLET_DIR}/$(readlink "${LINK}")"
+    return
+  fi
+  if [ -d "${LINK}" ]; then
+    local stamp legacy
+    stamp="$(date -r "${LINK}" +%F 2>/dev/null || date +%F)"
+    legacy="${GAUNTLET_DIR}/${stamp}-onboarding-campaign"
+    [ -e "${legacy}" ] && legacy="${GAUNTLET_DIR}/$(date +%F)-onboarding-campaign"
+    mv "${LINK}" "${legacy}"
+    ln -sfn "$(basename "${legacy}")" "${LINK}"
+    echo "${legacy}"
+    return
+  fi
+  new_pass_dir
+}
+
+# next_row_in <pass_dir> -- worklist = matrix row order; done-markers are
+# per-row record dirs inside the pass container (unchanged within a pass).
+next_row_in() {
+  local dir="$1" row
+  for row in J1 J2 J3 J4 J5 J6 J7 J8 J9 J10 J11; do
+    [ -d "${dir}/${row}" ] || { echo "${row}"; return; }
+  done
+}
+
+PASS_DIR="$(resolve_pass_dir)"
+mkdir -p "${PASS_DIR}"
+next_row="$(next_row_in "${PASS_DIR}")"
+
 if [ -z "${next_row}" ]; then
-  echo "campaign complete: all rows have records"
-  exit 0
+  # All rows done at tick start: this pass is complete, start a new one in
+  # the same tick rather than idling until the next invocation.
+  echo "pass complete at ${PASS_DIR}; starting a new pass"
+  PASS_DIR="$(new_pass_dir)"
+  next_row="$(next_row_in "${PASS_DIR}")"
 fi
 
 # A BLOCKER pause-marker halts the walk until the surface revision lands.
-if [ -f "${CAMPAIGN_DIR}/PAUSED" ]; then
-  echo "campaign paused: $(cat "${CAMPAIGN_DIR}/PAUSED")"
+if [ -f "${PASS_DIR}/PAUSED" ]; then
+  echo "campaign paused: $(cat "${PASS_DIR}/PAUSED")"
   exit 0
 fi
 
-echo "campaign step: row ${next_row}"
-bash tests/gauntlet/cleanroom/run-remote.sh user "${next_row}" "${CAMPAIGN_DIR}/${next_row}"
-echo "row ${next_row} record at ${CAMPAIGN_DIR}/${next_row}; score it before the next step runs"
+echo "campaign step: row ${next_row} (pass: ${PASS_DIR})"
+# Captured, not left to `set -e`: a failing row must still reach the echo
+# below (the runner's own logging path) instead of killing this script silently.
+rc=0
+bash tests/gauntlet/cleanroom/run-remote.sh user "${next_row}" "${PASS_DIR}/${next_row}" || rc=$?
+echo "row ${next_row} record at ${PASS_DIR}/${next_row}; score it before the next step runs"
+exit "${rc}"

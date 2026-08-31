@@ -42,13 +42,14 @@ echo "== T1.5 gauntlet prep scripts lint"
 if command -v shellcheck >/dev/null 2>&1; then
   # Glob, not a hand-maintained list (SPEC-227 P3): every gauntlet script,
   # including the scenario-pack additions (make-card.sh, check-lib.sh, the
-  # per-row checkers), gets linted without a separate edit here per new row.
+  # per-row checkers) and the cleanroom/deploy scripts (SPEC-236), gets
+  # linted without a separate edit here per new row or new script.
   shopt -s nullglob
-  gauntlet_scripts=(tests/gauntlet/*.sh tests/gauntlet/cleanroom/run.sh)
+  gauntlet_scripts=(tests/gauntlet/*.sh tests/gauntlet/cleanroom/*.sh tests/gauntlet/deploy/gauntlet-campaign)
   shopt -u nullglob
   # -x: follow the check-lib.sh source (SPEC-227 P3) so shellcheck sees `fail`
   # used inside its check()/gauntlet_verdict(), not just declared.
-  check "shellcheck -x tests/gauntlet/*.sh tests/gauntlet/cleanroom/run.sh" shellcheck -x "${gauntlet_scripts[@]}"
+  check "shellcheck -x tests/gauntlet/*.sh tests/gauntlet/cleanroom/*.sh tests/gauntlet/deploy/gauntlet-campaign" shellcheck -x "${gauntlet_scripts[@]}"
 else
   echo "SKIP  shellcheck not installed"
 fi
