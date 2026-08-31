@@ -267,8 +267,9 @@ Advisory, never blocking. Output binds to the active spec (replace-not-stack).
   /kit:review-team         PR-grade review, 3 lenses      ## Review                 SHIP / FIX / DO NOT
   /kit:absorb              maintainer absorption audit    docs/absorption/ report   proposal-only
   /kit:kit-health          self-assessment vs PHILOSOPHY  report (stdout)           assessment rendered
-  /kit:gauntlet            before outside-dev access, or  docs/verification/        SOLID / REVISE /
-                           after contributor-surface edits  gauntlet/<run>/ records   RECONSIDER
+  /kit:gauntlet            before an artifact faces its    docs/verification/        SOLID / REVISE /
+                           cold consumers, or after major  gauntlet/<run>/ records   RECONSIDER
+                           artifact edits (preset-driven)
 ```
 
 ## 12 · The 7 alternate / branch flows
