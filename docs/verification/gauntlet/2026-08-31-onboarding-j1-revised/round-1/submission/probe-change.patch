@@ -1,0 +1,59 @@
+From 0dd03479bd96300c91de46fc6f0122d5acaa2283 Mon Sep 17 00:00:00 2001
+From: Gauntlet Probe <probe@gauntlet.local>
+Date: Mon, 31 Aug 2026 15:46:00 +0000
+Subject: [PATCH 1/2] docs: correct shout README example to use --upper flag
+
+---
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 1852de0..bc4e19f 100644
+--- a/README.md
++++ b/README.md
+@@ -4,4 +4,4 @@ Tiny demo CLI.
+ 
+ ## Usage
+ 
+-    node cli.js --uppercase hello   # prints HELLO
++    node cli.js --upper hello   # prints HELLO
+-- 
+2.55.0
+
+
+From 905bcb78df2286c11aa7b585bf553961230c1788 Mon Sep 17 00:00:00 2001
+From: Gauntlet Probe <probe@gauntlet.local>
+Date: Mon, 31 Aug 2026 15:46:16 +0000
+Subject: [PATCH 2/2] docs: add PR description for README fix
+
+---
+ PR.md | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+ create mode 100644 PR.md
+
+diff --git a/PR.md b/PR.md
+new file mode 100644
+index 0000000..1fddebd
+--- /dev/null
++++ b/PR.md
+@@ -0,0 +1,17 @@
++# docs: correct shout README example to use --upper flag
++
++## Summary
++The README's Usage example documents `node cli.js --uppercase hello`, but the CLI only accepts `--upper`. Running the documented command fails with a usage error.
++
++## Change
++Update the README example to the actual flag:
++
++    node cli.js --upper hello   # prints HELLO
++
++## Verification
++Tiny-lane change (docs only, no behavior change). Confirmed the corrected command runs:
++
++    $ node cli.js --upper hello
++    HELLO
++
++Lane: tiny. Lane gates recorded in the run ledger (build, review).
+-- 
+2.55.0
+
