@@ -483,6 +483,26 @@ pipeline) are **never** waived by any autonomy level.
 
 (The at-a-glance intent cheat-sheet now lives at the top: see `## Drive it by intent (start here)`.)
 
+## Gate ledger CLI (the grammar commands record with)
+
+Commands normally write these lines for you; when driving by hand (headless runs, a bare adopter
+session), the shapes are:
+
+```bash
+bash lib/gate/gate-ledger.sh record  <rid> <phase> <ran|skipped> [reason]
+bash lib/gate/gate-ledger.sh outcome <rid> <phase> <start|end> [caught=<true|false>]
+bash lib/gate/gate-ledger.sh show    <rid>
+```
+
+- `<rid>` is the spec/branch slug (e.g. `payment-retry`), never a board `ID-NNN`: the ship-gate
+  resolves the slug from the branch name and reads only entries recorded under it.
+- Every `[reason]` is free text EXCEPT a `grill` + `skipped` line, whose reason must START with
+  one closed-enum token: `reason=home-turf`, `reason=density-low`, or `reason=operator-wave`,
+  optionally followed by `: <why>` (e.g. `reason=density-low: one-file doc fix`). Any other
+  first token is refused at write time.
+- The full verb list (`start`, `debt`, `override`, `check`, ...) is the usage header of
+  `lib/gate/gate-ledger.sh` itself; run it with no arguments to print it.
+
 ## Troubleshooting and recovery
 
 Diagnose and recover when the kit misbehaves. For why a behavior exists, see `docs/PHILOSOPHY.md` and `docs/decisions/`.

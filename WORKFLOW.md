@@ -12,8 +12,11 @@ Read `AGENTS.md` zone 1 ("Read in this order") for the full ordered list, then
 return here.
 
 **Full content:** [`docs/WORKFLOW.md`](docs/WORKFLOW.md) -- the phase cycle, the
-V-model lens, the lane×phase depth matrix, gate ledger + ship enforcement, the
+V-model lens, the lane×phase depth matrix (lanes: `tiny` / `normal` / `full` /
+`bug` / `backfill`; phases: grill, think, spec, spec-validate, test-plan,
+execute, review, docs, ship, retro), gate ledger + ship enforcement, the
 understanding axis, mega-goal delegate execution, and the flow/loop ASCII
-reference all live there. This root file is a thin entry point kept short so a
+reference all live there. If you grepped THIS file for a lane or phase and
+landed here: the matrix you want is in `docs/WORKFLOW.md`, one hop, no further. This root file is a thin entry point kept short so a
 newcomer isn't buried on arrival; every code/test reader in this repo resolves
 the bulk at `docs/WORKFLOW.md` directly (SPEC-185).
