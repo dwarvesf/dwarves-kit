@@ -35,9 +35,15 @@ else
   TAIL_ARGS=(-n 200 -f -- "${TRANSCRIPT}")
 fi
 
+# Every render path routes through this: transcript text is probe-controlled,
+# so strip terminal control bytes (ANSI/OSC escapes) before it reaches the
+# operator's terminal. Newline and tab survive.
+sanitize() { LC_ALL=C tr -d '\000-\010\013\014\016-\037\177'; }
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "watch.sh: jq not found, plain tail" >&2
-  exec tail "${TAIL_ARGS[@]}"
+  tail "${TAIL_ARGS[@]}" | sanitize
+  exit 0
 fi
 
 FIRST_LINE="$(head -n 1 "${TRANSCRIPT}")"
@@ -55,13 +61,13 @@ if printf '%s' "${FIRST_LINE}" | grep -qF '"type":"session"' \
     elif .type == "tool_execution_start" then "-> " + .toolName
     elif .type == "tool_execution_end" and (.isError // false) then "<- ERROR " + .toolName
     else empty end
-  '
+  ' | sanitize
 elif printf '%s' "${FIRST_LINE}" | grep -qF '"subtype":"init"' \
   || printf '%s' "${FIRST_LINE}" | grep -qF '"type":"assistant"'; then
   # Real claude --output-format stream-json sessions open with
   # {"type":"system","subtype":"init",...}; assistant-first covers partial logs.
-  tail "${TAIL_ARGS[@]}" | jq -R -r --unbuffered -f "${PANE_TAIL_JQ}"
+  tail "${TAIL_ARGS[@]}" | jq -R -r --unbuffered -f "${PANE_TAIL_JQ}" | sanitize
 else
   echo "watch.sh: unrecognized transcript format, plain tail" >&2
-  tail "${TAIL_ARGS[@]}"
+  tail "${TAIL_ARGS[@]}" | sanitize
 fi

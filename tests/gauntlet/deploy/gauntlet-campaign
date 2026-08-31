@@ -63,6 +63,12 @@ next_row_in() {
 
 PASS_DIR="$(resolve_pass_dir)"
 mkdir -p "${PASS_DIR}"
+# Containment (security review of #456): a tampered campaign-current symlink must
+# not steer record writes outside the gauntlet tree.
+case "$(cd "${PASS_DIR}" 2>/dev/null && pwd -P)" in
+  "$(cd "${GAUNTLET_DIR}" && pwd -P)"/*) ;;
+  *) echo "campaign-current resolves outside ${GAUNTLET_DIR}; refusing" >&2; exit 1;;
+esac
 next_row="$(next_row_in "${PASS_DIR}")"
 
 if [ -z "${next_row}" ]; then

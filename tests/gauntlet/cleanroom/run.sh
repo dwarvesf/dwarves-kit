@@ -230,8 +230,27 @@ PROBE_EOF
   # failure (disk full, bad path) is reported but never overrides the probe's
   # own exit code, the round's outcome is the probe's outcome, not the cp's.
   if [ -n "${RUN_OUT:-}" ]; then
+    # Automated scrub (rule 8; security review of #456): the room env carried the
+    # probe key, and probe/tool output is untrusted text, so redact every literal
+    # occurrence BEFORE anything leaves the stage. Bash ${var//pat/rep} with a
+    # quoted pattern is a literal replace, immune to key metacharacters.
+    if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+      grep -rlIF "${ANTHROPIC_API_KEY}" "${STAGE}/work" 2>/dev/null | while IFS= read -r f; do
+        _c="$(cat "$f")"
+        printf '%s\n' "${_c//"${ANTHROPIC_API_KEY}"/<REDACTED-KEY>}" > "$f"
+      done
+      if grep -rqIF "${ANTHROPIC_API_KEY}" "${STAGE}/work" 2>/dev/null; then
+        echo "SCRUB FAILED: key still present after redaction; refusing to persist the room" >&2
+        mkdir -p "${RUN_OUT}"
+        echo "Room persist REFUSED: automated key redaction could not clean the contents; the stage was discarded with the room." > "${RUN_OUT}/SCRUB-REFUSED.md"
+        exit "${rc}"
+      fi
+    fi
     mkdir -p "${RUN_OUT}"
     if cp -R "${STAGE}/work/." "${RUN_OUT}/"; then
+      # A probe-created symlink persisted into the repo could point at a host
+      # path; records carry copies, never links.
+      find "${RUN_OUT}" -type l -delete 2>/dev/null || true
       echo "room contents persisted to ${RUN_OUT}"
     else
       echo "persist failed: cp -R ${STAGE}/work/. -> ${RUN_OUT}/" >&2
