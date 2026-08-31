@@ -1,6 +1,6 @@
 # Spec: Gauntlet ops hardening (failing-round evidence, path grammar, probe recipe, watch)
 Generated: 2026-08-31
-Status: DRAFT
+Status: VALIDATED
 Lane: full
 References: `tests/gauntlet/cleanroom/run.sh` (the runner whose fail path loses evidence; imitate its existing stage/persist structure); `docs/verification/gauntlet/2026-08-31-user-J1-nw/ROUNDS.md` + the session scratchpad probe launcher it records (the working omp/NW recipe to promote verbatim); `lib/queue/pane-tail.jq` (the existing formatter the watch surface reuses); `../2026-08-06-kit-user/` and `deploy/gauntlet-campaign` (the legacy path grammar being reconciled).
 
@@ -85,9 +85,10 @@ Touches only `tests/gauntlet/` scripts and guide docs. See `## Failure modes`.
 
 ### Interfaces (I/O contract)
 
-- `run.sh`: same CLI (`run.sh <persona> [ROW]`, env `PROBE_CMD`, `RUN_OUT`, `ANTHROPIC_API_KEY`, `GAUNTLET_STAGE_DIR`). NEW invariant: when `RUN_OUT` is set, the room's `/work` contents are persisted for EVERY docker exit code, and run.sh's own exit code equals the probe's. Callers relying on set -e death before persist: none (verified: run-remote.sh `exec`s it; the campaign runner checks exit codes after).
-- `gauntlet-campaign`: run dirs become `docs/verification/gauntlet/<date>-onboarding-<row-slug>/`; `campaign-current` becomes a symlink to the latest dated dir so `mini.gauntlet-campaign.plist` and any log-reader keep resolving. No plist change.
-- `watch.sh <user|contributor|--latest>`: read-only; finds the newest `room.*` under the stage root (`GAUNTLET_STAGE_DIR` or the mktemp default is undiscoverable, so it requires `GAUNTLET_STAGE_DIR` and says why), prints the container line from `docker ps`, then `tail -f transcript.jsonl | jq -rf lib/queue/pane-tail.jq --unbuffered`. Degrades to plain `tail -f` when jq is absent.
+- `run.sh`: same CLI (`run.sh <persona> [ROW]`, env `PROBE_CMD`, `RUN_OUT`, `ANTHROPIC_API_KEY`, `GAUNTLET_STAGE_DIR`). NEW invariant: when `RUN_OUT` is set, the room's `/work` contents are persisted for EVERY docker exit code (`cp` failures reported with `|| echo`, never fatal), and run.sh's own exit code equals the probe's. The exit code is real only if the probe command propagates it: `run-remote.sh`'s `PROBE_DEFAULT` (and the tutorial recipe) currently END with `echo probe-exit=$?`, making every probe script exit 0; both become `rc=$?; echo probe-exit=$rc; exit $rc`.
+- `run-remote.sh` (validation round, criticals 1-2): the LOCAL leg execs run.sh (fine); the REMOTE leg runs `ssh ... bash -s` under `set -e` and dies BEFORE the rsync pull when run.sh honestly exits non-zero, stranding the record on the runner host. Fix in the same task: capture the ssh exit (`|| rc=$?`), always pull, exit `$rc`. `gauntlet-campaign`'s bare invocation under `set -e` gets the same capture.
+- `gauntlet-campaign` (reworked after validation critical 3: the runner uses `campaign-current/<row>` dir-existence as its per-row done-markers, so any repoint-per-row scheme restarts the matrix). New shape: ONE dated container per campaign PASS, `docs/verification/gauntlet/<date>-onboarding-campaign/`, chosen at pass start; row dirs live inside it, preserving the worklist semantics within a pass; `campaign-current` is a convenience symlink to the active pass container, repointed ONLY when a new pass starts (previous pass complete, or operator reset). A legacy real `campaign-current` directory is preserved by moving it to its start-date name before the symlink is created. The plist references only `KIT_ROOT` + the launcher (validated: no path consumer exists), so no plist change and no compat constraint; the symlink is operator convenience, not compatibility (DEC-004 revised).
+- `watch.sh [--latest|--last]`: read-only; finds the newest `room.*` under `GAUNTLET_STAGE_DIR` (required, with a teach-line: the mktemp default is undiscoverable, and remote-leg rounds stage on the runner host, so watch is LOCAL rounds only), prints the `docker ps` line, then follows `transcript.jsonl`. Format-aware (validation critical 5: `pane-tail.jq` keys on claude stream-json `.type==assistant/user` and renders an omp v3 transcript as blank): sniff the first line; claude-format pipes through `lib/queue/pane-tail.jq`, omp v3 pipes through a small inline jq filter (message text + tool events from `message_end`/`tool_execution_*`), unknown format falls back to plain `tail`. `--last` renders the newest FINISHED room without following (testability + the no-live-room case).
 - Tutorial: a new `## Cheap probe: omp + an OpenAI-compatible endpoint` section carrying the PROBE_CMD block verbatim from the proven run, the two quoting rules, the `</dev/null` rule, the key-slot convention, and one line naming `bg-run` (ops-toolkit) as an optional launcher convention.
 - Invariants: engine rules 1-10 untouched; QL-VERDICT grammar untouched; `kit.toml` keys untouched.
 
@@ -103,14 +104,14 @@ None.
 ## Task Breakdown
 
 ### Phase 1: runner correctness
-- [ ] TASK-001 (`tests/gauntlet/cleanroom/run.sh`, `tests/gauntlet/cleanroom/Dockerfile`): capture the docker exit with `|| rc=$?`, persist `RUN_OUT` unconditionally, exit `$rc`; Dockerfile slim-image comment. Acceptance: with `RUN_OUT` set and a `PROBE_CMD` of `exit 7`, the room persists AND run.sh exits 7; with `exit 0` behavior unchanged. A runnable check under `tests/gauntlet/` proves both (see `## Verification`).
+- [ ] TASK-001 (`tests/gauntlet/cleanroom/run.sh`, `tests/gauntlet/cleanroom/run-remote.sh`, `tests/gauntlet/cleanroom/Dockerfile`, new `tests/gauntlet/cleanroom/persist-check.sh`): rc capture (`|| rc=$?`) + unconditional `RUN_OUT` persist (`|| echo`-guarded cp) + `exit $rc` in run.sh; `PROBE_DEFAULT` propagates the probe exit (`rc=$?; echo probe-exit=$rc; exit $rc`); run-remote's remote leg captures the ssh exit, always pulls the record, exits `$rc`; Dockerfile slim-image comment. `persist-check.sh` is STANDALONE (not tier1: needs docker; prints `SKIP: docker unavailable` and exits 0 without it). Acceptance: with `RUN_OUT` set and `PROBE_CMD='exit 7'`, the room persists AND run.sh exits 7; with `exit 0` behavior unchanged; both legs proven by persist-check.sh.
 
 ### Phase 2: grammar reconcile
-- [ ] TASK-002 (`tests/gauntlet/deploy/gauntlet-campaign`, `tests/gauntlet/README.md`): campaign writes `<date>-onboarding-<row-slug>/` + refresh a `campaign-current` symlink; README's two path prescriptions updated; the command's grandfather clause in `commands/gauntlet.md` narrows to past records only ("pre-2026-09 records are grandfathered"; producers now conform). Acceptance: `grep -c 'kit-user/' tests/gauntlet/README.md` = 0 for prescriptive paths; campaign dry-logic writes the dated shape; plist consumer path (`campaign-current`) still resolves.
+- [ ] TASK-002 (`tests/gauntlet/deploy/gauntlet-campaign`, `tests/gauntlet/README.md`, `commands/gauntlet.md`, `tests/gauntlet/tier1.sh`): campaign pass-container naming per Interfaces (dated container at pass start, row dirs inside, `campaign-current` symlink repointed only at new-pass start, legacy real dir preserved under its start-date name); campaign invocation gets the `|| rc=$?` capture so a failing row still reaches the runner's own logging; README's path prescriptions updated; the command's grandfather clause narrows to "pre-2026-09 records"; tier1's shellcheck line extends to cover `cleanroom/*.sh` and `deploy/gauntlet-campaign`. Acceptance: `! grep -qE '<date>-kit-user/|^.*docs/verification/gauntlet/[0-9-]+-kit-user' tests/gauntlet/README.md` as a prescriptive path (historical mentions in prose citing past records stay allowed, checked by eye); worklist resume semantics unchanged within a pass (row done-markers still resolve through the container path).
 
 ### Phase 3: docs + watch
-- [ ] TASK-003 (`docs/guides/gauntlet-tutorial.md`): the cheap-probe recipe section per Interfaces. Acceptance: section contains the PROBE_CMD block, both quoting rules, `</dev/null`, and the bg-run line; `bash -n` on the embedded block extracted verbatim passes.
-- [ ] TASK-004 (`tests/gauntlet/cleanroom/watch.sh`, tutorial mention): the read-only watch surface per Interfaces. Acceptance: `shellcheck -S warning` clean; with a fake stage dir + transcript, `watch.sh --latest` (non-follow mode `--last` for testability) renders lines through pane-tail.jq; refuses with a teach-line when `GAUNTLET_STAGE_DIR` unset.
+- [ ] TASK-003 (`docs/guides/gauntlet-tutorial.md`): the cheap-probe recipe section per Interfaces, with the PROBE_CMD block updated to propagate the probe exit (`rc=$?; echo probe-exit=$rc; exit $rc`). Acceptance: section contains the PROBE_CMD block, both quoting rules, `</dev/null`, the key-slot convention, and the bg-run line; `bash -n` on the extracted block passes.
+- [ ] TASK-004 (`tests/gauntlet/cleanroom/watch.sh`, tutorial mention): the format-aware read-only watch per Interfaces. Acceptance: `shellcheck -S warning` clean; `--last` renders BOTH a claude-format sample AND the real omp transcript at `docs/verification/gauntlet/2026-08-31-user-J1-nw/round-1/room/transcript.jsonl` to non-empty output; refuses with a teach-line when `GAUNTLET_STAGE_DIR` unset; states local-rounds-only.
 
 ## After state
 
@@ -129,19 +130,21 @@ None.
 
 ```
 cd <worktree>
-bash tests/gauntlet/cleanroom/persist-check.sh     # TASK-001: rc=7 round persists + exit code preserved (docker required)
-shellcheck -S warning tests/gauntlet/cleanroom/run.sh tests/gauntlet/cleanroom/watch.sh tests/gauntlet/deploy/gauntlet-campaign
+bash tests/gauntlet/cleanroom/persist-check.sh     # standalone; rc=7 persists + exit preserved; SKIPs cleanly without docker
+shellcheck -S warning tests/gauntlet/cleanroom/run.sh tests/gauntlet/cleanroom/run-remote.sh tests/gauntlet/cleanroom/watch.sh tests/gauntlet/deploy/gauntlet-campaign
+bash tests/gauntlet/cleanroom/watch.sh --last      # against the real omp record: non-empty (GAUNTLET_STAGE_DIR pointed at a fixture)
 bash tests/test-meta.sh                            # subset-of-master failures
-grep -c "heredoc" docs/guides/gauntlet-tutorial.md # >= 1 (quoting rule present)
+grep -q "heredoc" docs/guides/gauntlet-tutorial.md && echo quoting-rule-present
 ```
 
 ## Edge Cases
 
 1. `RUN_OUT` unset + failing probe: no persist target exists; run.sh still exits with the probe's code and the trap wipes the stage (unchanged, correct: interactive/debug use).
 2. Persist itself fails (disk full, bad path): report the cp error and still exit with the PROBE's code, not the cp's (the round's outcome is the probe's outcome).
-3. `campaign-current` exists as a real directory from the legacy grammar: the campaign runner replaces it with a symlink once, preserving the old dir under its dated name if derivable, else `campaign-legacy/`.
-4. watch.sh with no live room: prints the newest finished room's tail instead of blocking on a nonexistent file.
+3. `campaign-current` exists as a real directory from the legacy grammar: preserved by moving it to its start-date container name; the symlink then points at it, so its row done-markers survive and the in-flight pass resumes, never restarts.
+4. watch.sh with no live room: `--last` prints the newest finished room's rendered tail instead of blocking.
 5. Two rooms live simultaneously (parallel rounds): `--latest` picks newest mtime and SAYS which it picked.
+6. Persist of a FAILED round copies probe-stderr/install logs into `docs/verification/`: rule 8's scrub-before-commit applies to failed rounds exactly as to passes; the run-record `.gitignore` still excludes fixture/kit trees, and the operator scrubs logs before any commit (one sentence added to the run-record contract by TASK-002's grandfather edit).
 
 ## Failure modes
 
@@ -163,7 +166,8 @@ grep -c "heredoc" docs/guides/gauntlet-tutorial.md # >= 1 (quoting rule present)
 - DEC-001: persist-on-every-path with the probe's exit code preserved; rationale: rules 6/8 apply to the runner itself, tonight's three evidence-less failures are the red arm.
 - DEC-002: kit-native watch over pane-tail.jq; bg-run stays an operator convention. Rationale: ownership boundary, the kit cannot depend on a personal monorepo.
 - DEC-003: recipe block over harness slot. Rationale: two harnesses do not earn a plugin system; PROBE_CMD is already the seam.
-- DEC-004: `campaign-current` becomes a symlink so the deploy plist never changes. Rationale: the plist is the one consumer no test covers.
+- DEC-004 (revised, validation round): `campaign-current` is a convenience symlink to the active pass container, repointed only at new-pass start. Original compat rationale was FALSE (the plist references no path; the only consumer is the campaign runner itself); the symlink survives purely as a stable human/agent entry point, and the pass-container shape exists to preserve the runner's dir-existence worklist semantics (validation critical 3).
+- DEC-005 (validation round): panel found 5 criticals + 6 warnings, all folded: probe-exit propagation through PROBE_DEFAULT + the recipe (the old `echo probe-exit=$?` tail made every probe exit 0); run-remote's remote leg strands records (capture + always-pull); pass-container naming instead of per-row dirs; format-aware watch (pane-tail.jq is claude-format-only; omp gets an inline filter, verified against the real -nw transcript); `! grep -q` ACs; persist-check standalone with docker SKIP; tier1 shellcheck glob extension; explicit `|| echo` on persist cp; failed-round scrub sentence; watch local-rounds-only.
 
 ## Open questions
 
