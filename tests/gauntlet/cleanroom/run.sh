@@ -43,6 +43,11 @@ fi
 # two known dirs.
 rm -rf "${STAGE}/kit-src/tests/gauntlet"
 find "${STAGE}/kit-src/docs/verification" -name '*gauntlet*' -exec rm -rf {} + 2>/dev/null || true
+# SPEC-235 review: the generalization's own records (spec, research, impl notes)
+# enumerate checker/fixture paths; they and the per-cycle brief never enter the room.
+find "${STAGE}/kit-src/docs/research" "${STAGE}/kit-src/docs/specs" \
+  "${STAGE}/kit-src/docs/implementation-notes" -name '*gauntlet*' -exec rm -rf {} + 2>/dev/null || true
+rm -f "${STAGE}/kit-src/docs/briefs/CONTEXT.md"
 tar -czf "${STAGE}/work/kit.tar.gz" -C "${STAGE}/kit-src" .
 
 # row_checker <row> -- the check-submission-user*.sh filename for a matrix row

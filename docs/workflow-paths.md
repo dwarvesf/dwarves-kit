@@ -395,6 +395,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H/I] /kit:ship -> gate check + version + changelog + PR -> /kit:retro (HARD on DO NOT SHIP)` |
 | `[H/I] /kit:retro -> capture learnings -> docs/retro/v<version>.md -> feeds next /kit:think` |
 | `[H/I] /kit:draft-agent -> meta-agent -> agent-effectiveness -> install (--draft stops staged)` |
+| `[H] /kit:gauntlet -> preset/slot confirm -> Tier 1 -> clean-room probe rounds (bounded) -> artifact revised on failure -> SOLID / REVISE / RECONSIDER + run record` |
 | `[H] /kit:kit-health -> self-assessment vs PHILOSOPHY -> report (terminal)` |
 | `[H] /kit:absorb -> Credits drift + seed rescan -> proposal-only, human merges` |
 

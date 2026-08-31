@@ -49,7 +49,7 @@ it is not a row here either , the completeness rule is scoped to
 | mega | Build (Execute) | spine machinery (ADR-0034 decision 3). |
 | learn | Learn | spine machinery; created BY ADR-0034 decision 1 (the Learn stage's home). |
 | telemetry | Watch (Observe) | spine machinery; the durable-root resolver + lane telemetry. |
-| gauntlet | Check (Govern) | side-flow 11 (commands/gauntlet.md). Config: `gauntlet.runner_host` ("local" or an ssh alias; remote rounds ship committed state, run there, pull the record back) + `gauntlet.probe_key_ref` (1P ref the RUNNER host resolves itself; the key never travels over ssh). Consumer: `tests/gauntlet/cleanroom/run-remote.sh`. |
+| gauntlet | Check (Govern) | side-flow 11 (commands/gauntlet.md): probe-convergence engine, onboarding is the reference preset; one shared config pair serves every preset. Config: `gauntlet.runner_host` ("local" or an ssh alias; remote rounds ship committed state, run there, pull the record back) + `gauntlet.probe_key_ref` (1P ref the RUNNER host resolves itself; the key never travels over ssh). Consumer: `tests/gauntlet/cleanroom/run-remote.sh`. |
 | skill-curator | Learn | ADR-0034 decision 3 lists it under Learn; installs via hooks, not a `--with` module. |
 | prose_rag | Learn | **deviation, not in ADR-0034's decision-3 table** (checked: `grep -n prose_rag docs/decisions/0034-harness-loop-taxonomy.md` has zero hits in the leg table). Assigned Learn by this sub-goal's own judgment: prose-rag is a recall/retrieval read over the user's own accumulated corpus (til/research/learned-ledger), the same read-side shape as the Learn stage's other members, not a Watch-class run-telemetry capture. Flagged for Han; a later ADR-0034 amendment may reassign it. |
 

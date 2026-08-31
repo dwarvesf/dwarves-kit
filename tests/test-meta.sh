@@ -710,6 +710,14 @@ else
   echo -e "  ${RED}FAIL${NC} test-plan-review-team.md lost the QL-VERDICT loop or the standard reference"
   FAIL=$((FAIL + 1))
 fi
+TOTAL=$((TOTAL + 1))
+if grep -qF '[[QL-VERDICT' "$KIT_DIR/commands/gauntlet.md" 2>/dev/null && grep -qF 'round=N clean=' "$KIT_DIR/commands/gauntlet.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} gauntlet.md emits the QL-VERDICT round marker, preset-invariant (SPEC-235)"
+  PASS=$((PASS + 1))
+else
+  echo -e "  ${RED}FAIL${NC} gauntlet.md lost the QL-VERDICT round marker"
+  FAIL=$((FAIL + 1))
+fi
 
 # SPEC-201: AI-in-the-loop cost-tier taxonomy in /kit:test-plan (Step 1c) + the
 # test-plan-review-team's 6th lens (Tiering & floor). DECISION-BRIEF-behavioral-test-tiering.md

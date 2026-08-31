@@ -311,7 +311,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
 | /kit:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
 | /kit:draft-agent | Meta | Meta-agent agent-builder: generates a subagent (or sub-goal file) from a description and installs it by default (`--draft` to stop at a review draft) |
-| /kit:gauntlet | Meta | Maintainer-only bounded-revise loop that converges the contributor surface (onboarding docs, helper scripts, card template) by having a synthetic-dev agent onboard from the docs alone in a clean room, build one seed card, and submit unaided; each round persists a full run record and the orchestrator revises the surface |
+| /kit:gauntlet | Meta | Probe-convergence engine: converges an artifact (docs, a runbook, a spec, an API surface) toward a fixed outcome by having a fresh clean-room probe agent attempt the outcome contract unaided each round; failures revise the artifact, every round persists a full run record. Onboarding ships as the reference preset |
 
 </details>
 
