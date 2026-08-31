@@ -50,7 +50,13 @@ validated specs (1..N, possibly N repos)
                     ship-gate reminder
     operator-inputs table (extracted STOP-and-ask items, status=pending)
                   ▼
-  hand off: paste a dispatch file into a worker session, or /kit:dispatch
+  save into the TICKET: the goal's board row gets the pack link + a
+  `ready-for-dispatch` marker in its notes cell (status stays the board's
+  state machine); a picker (human or the executor daemon) launches workers
+  only off that marker
+                  |
+  hand off: paste a dispatch file into a worker session, /kit:dispatch,
+  or the picker daemon
 ```
 
 ## Design
@@ -72,8 +78,8 @@ Out of bounds: running the workers (that stays `/kit:dispatch` / manual paste), 
 ### Interfaces (I/O contract)
 
 - Inputs: spec file paths (flags) or the active mega-goal folder; each spec must be `Status: VALIDATED` with a `## Test plan` (refuse otherwise, naming the missing lane, `/kit:spec-validate` or `/kit:test-plan`).
-- Outputs: `_meta/megagoals/<slug>/{roadmap.md, dispatch-G<n>.md...}` in the invoking (cockpit) repo; context-block patches committed to each spec's repo on a branch (one small PR per repo, or direct when the lead says so).
-- Invariants: dispatch prompts always carry the test-first contract and the STOP-on-uncovered-decision clause verbatim; worker model defaults to Sonnet and never names a stateless-glue model for implementation; an operator input is never guessed, always extracted into the pending table.
+- Outputs: `_meta/megagoals/<slug>/{roadmap.md, dispatch-G<n>.md...}` in the invoking (cockpit) repo; context-block patches committed to each spec's repo on a branch (one small PR per repo, or direct when the lead says so); each goal's board-row notes cell updated with the pack path + `ready-for-dispatch` marker, the ticket IS the pickup surface for the executor.
+- Invariants: dispatch prompts always carry the test-first contract and the STOP-on-uncovered-decision clause verbatim; worker model defaults to Sonnet (DeepSeek-tier allowed for mechanical, fully-specified tasks at the operator's routing table; judgment-bearing or frontend tasks stay Sonnet+); an operator input is never guessed, always extracted into the pending table.
 
 ### Data model changes
 New agent def `agents/cold-start-auditor.md` (read-only roster: Read, Grep, Glob, Bash(git log/diff, ls, find, cat, head)). New templates under `lib/pack/templates/{roadmap.md, dispatch.md}` seeded from the 2026-08-31 hand-run files.
@@ -120,6 +126,13 @@ None.
 |---|---|---|
 | Auditor rubber-stamps (cheap-model audit too shallow) | workers stall mid-execute on missing context | auditor briefed to REFUTE readiness (brief-source-readers-to-refute discipline); audit runs at Sonnet minimum |
 | Template drift from evolving estate conventions | packs stop matching repo reality | templates are files, edited like any kit surface; topology-drift covers the registry rows |
+
+### Per-goal loop and dialect routing (written into every dispatch prompt)
+
+- Loop: CODE goals run the goal-loop (fixed test matrix, worker converges the code until every Proof command passes, verifiers re-execute). ARTIFACT goals (docs, runbooks, specs) run the gauntlet (fixed outcome contract, disposable probes, artifact converges). The pack routes by what mutates.
+- Test dialect comes from the test-plan lane's own classifier (Step 1b: spec-feature = BDD-style category matrix; eval, migration, data-tool, doc types get their own dialects). "Certified" rigor = the matrix reviewed at planning tier plus the test-plan review team when the operator asks; workers never design test cases, they implement them.
+- Skill pinning: a goal whose diff touches UI gets its dispatch prompt pinned to the frontend skills (frontend-design, frontend-reviewer, visual-team) so domain taste never depends on the operator's own head.
+- Green = every matrix Proof command exits 0 plus the spec's Verification command passes, re-executed by fresh-context verifiers; a TBD proof must be resolved or moved to the operator-verify list BEFORE dispatch.
 
 ## Out of Scope
 - Auto-launching workers (stays `/kit:dispatch` or manual paste).
