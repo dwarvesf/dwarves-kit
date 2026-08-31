@@ -235,10 +235,13 @@ PROBE_EOF
     # occurrence BEFORE anything leaves the stage. Bash ${var//pat/rep} with a
     # quoted pattern is a literal replace, immune to key metacharacters.
     if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
-      grep -rlIF "${ANTHROPIC_API_KEY}" "${STAGE}/work" 2>/dev/null | while IFS= read -r f; do
+      # Process substitution + `|| true`: a CLEAN room means grep matches nothing
+      # and exits 1, which must not kill the persist under pipefail (the exact
+      # regression that re-ran campaign row J1 forever on 2026-09-01).
+      while IFS= read -r f; do
         _c="$(cat "$f")"
         printf '%s\n' "${_c//"${ANTHROPIC_API_KEY}"/<REDACTED-KEY>}" > "$f"
-      done
+      done < <(grep -rlIF "${ANTHROPIC_API_KEY}" "${STAGE}/work" 2>/dev/null || true)
       if grep -rqIF "${ANTHROPIC_API_KEY}" "${STAGE}/work" 2>/dev/null; then
         echo "SCRUB FAILED: key still present after redaction; refusing to persist the room" >&2
         mkdir -p "${RUN_OUT}"
