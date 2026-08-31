@@ -73,7 +73,7 @@ else
   ANTHROPIC_API_KEY=""
 fi
 [ -n "\${ANTHROPIC_API_KEY}" ] || ANTHROPIC_API_KEY="\$(op read '${KEY_REF}' 2>/dev/null || true)"
-[ -n "\${ANTHROPIC_API_KEY}" ] || { echo "probe key resolved EMPTY on the runner host (cache suppressed AND op read failed; check the host's 1P session)" >&2; exit 65; }
+[ -n "\${ANTHROPIC_API_KEY}" ] || { echo "probe key resolved EMPTY on the runner host from ${KEY_REF}. Set gauntlet.probe_key_ref in kit.toml [gauntlet] to your own key ref, and confirm the runner host can op read it (1P session live)." >&2; exit 65; }
 export ANTHROPIC_API_KEY
 export RUN_OUT="\$PWD/out"
 export GAUNTLET_SRC_TAR="\$PWD/.gauntlet-src.tar"
