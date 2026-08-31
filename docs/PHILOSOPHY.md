@@ -124,6 +124,8 @@ We believe a doc describing an alternate or degraded path should state exactly w
 
 **Decision this would reject:** "Just skip mentioning the gap; most people will not hit it." Every doc offering a path with a known limit generalizes this convention, README included.
 
+**Corollary (distribution honesty):** a shipped surface (script, agent frontmatter, spec) names a Tier-1 default first, external tools any adopter has (docker, git, the `claude` CLI); a personal or platform-specific tool (a maintainer's own vault ref, ops-toolkit CLI, container runtime) appears only as a clearly-marked example the adopter substitutes. An adopter should never hit a dependency they do not have on the default path.
+
 ### "Verify, then trust"
 
 We believe every task output should be verified by a separate agent before being accepted. The worker who writes code is not the right judge of whether that code meets the spec. A dedicated verifier with read-only access and specific acceptance criteria catches issues that self-assessment misses. When verification fails on fixable issues, a scoped fix agent gets exactly one shot (max 2 retries total) before escalating to a human. We don't retry ambiguous failures because they indicate design problems, not code bugs.

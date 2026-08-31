@@ -4,6 +4,8 @@ Status: VALIDATED
 Lane: normal
 References: `tests/gauntlet/cleanroom/Dockerfile` (the image to extend); `docs/guides/gauntlet-tutorial.md` "Cheap probe" section (the omp recipe whose install step this bakes away); `tests/gauntlet/cleanroom/run.sh` scrub/persist block (the guard every new persisted byte must pass through); ops-toolkit `tools/cloud-cockpit/bin/provision` (the prepared-environment precedent, prepared HERE meaning toolchain only, never estate state).
 
+**Scope:** the default gauntlet probe is the Tier-1 `claude` CLI. The omp/bun toolchain this spec bakes into the room image is the OPTIONAL cheap-probe path for an operator who runs the omp/OpenAI-compatible recipe; it is never required to adopt or run the gauntlet.
+
 ## Problem
 
 Every gauntlet round pays a per-round toolchain install (omp + bun via npm, ~1 min, network-dependent: 2 of 3 environment failures on 2026-08-31 were install-path failures), and probe tool versions float with npm's latest, so two rounds in one campaign can run different probe harnesses. Separately, the omp probe's REAL session state (`$HOME/.omp/logs`, session JSONL, full-fidelity replay) dies with the container; the persisted `transcript.jsonl` is only the `--mode json` stdout projection. Operator ask (2026-09-01): rooms prepared like the cloud-cockpit VM, and session logs persisted "like we run omp normally".
