@@ -1,0 +1,7 @@
+# Campaign rows persist the room /work directly (no round-N/room nesting).
+# Nested git repos and the kit tarball/extract stay out of the record; their
+# evidence is the checker output + transcript + (where needed) a patch.
+J*/fixture-repo/
+J*/kit/
+J*/kit-extract/
+J*/kit.tar.gz

@@ -1,0 +1,12 @@
+== root cause recorded before the fix
+PASS  an evidence ledger exists
+PASS  the root-cause section is filled in
+== the regression is fixed
+PASS  the repo's test command passes
+== the fix traces to the diagnosis
+PASS  fix commit message references the root cause
+== process leave-behinds
+PASS  a non-default branch exists
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN

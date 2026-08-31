@@ -1,0 +1,10 @@
+== the assigned task still landed despite the stale kit doc
+PASS  README documents --upper
+PASS  --upper actually works end to end
+== the fix stayed on target, not derailed into the wrong repo
+PASS  commit history stays small (not a stalled sprawl)
+== process leave-behinds
+PASS  a non-default branch exists
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN

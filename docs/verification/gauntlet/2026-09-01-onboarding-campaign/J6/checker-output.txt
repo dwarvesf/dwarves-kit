@@ -1,0 +1,14 @@
+== specced before built
+PASS  a spec file exists
+== the amendment is add-only, not a silent rewrite
+PASS  an ## Amendments entry exists in the spec
+PASS  amendment mentions the empty-string case
+== the amended behavior is real
+PASS  --repeat still works (N=3)
+PASS  the repo's test command passes
+PASS  a test covers the empty-string case
+== process leave-behinds
+PASS  a non-default branch exists
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN
