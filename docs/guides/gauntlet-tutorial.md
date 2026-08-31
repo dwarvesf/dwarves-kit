@@ -182,6 +182,56 @@ Per round: `findings.md` (each finding carries a transcript quote), `transcript.
 (the probe's full session), `submission/`, `artifact-diff.patch` (what the reviser
 changed after that round).
 
+## Cheap probe: omp + an OpenAI-compatible endpoint
+
+A mid-tier Anthropic probe stays the primary signal (see mistake 2 below). A
+flat-rate or cheap OpenAI-compatible model, run through `omp`
+(`@oh-my-pi/pi-coding-agent`), makes a replication round close to free, so you can
+run a second opinion on every round without spend anxiety. Proven 2026-08-31: a
+NeuralWatt `deepseek-v4-flash` round reproduced every finding from the same-day
+sonnet round, one finding strengthened (`docs/verification/gauntlet/2026-08-31-user-J1-nw/ROUNDS.md`).
+
+`PROBE_CMD` for the omp/NeuralWatt recipe:
+
+```bash
+mkdir -p /tmp/probe-home
+git config --global init.defaultBranch main
+cd /work
+
+export PATH="$HOME/omptool/node_modules/.bin:$PATH"
+npm install --no-fund --no-audit --prefix "$HOME/omptool" @oh-my-pi/pi-coding-agent bun \
+  > /work/omp-install.log 2>&1 || { echo omp-install-failed; cat /work/omp-install.log; exit 0; }
+mkdir -p "$HOME/.omp/agent"
+printf 'providers:\n  neuralwatt:\n    baseUrl: https://api.neuralwatt.com/v1\n    api: openai-completions\n    apiKey: %s\n    models:\n      - id: deepseek-v4-flash\n' \
+  "$ANTHROPIC_API_KEY" > "$HOME/.omp/agent/models.yml"
+printf 'tools:\n  approvalMode: yolo\n  enabled: true\nsetupVersion: 2\nmodelRoles:\n  default: neuralwatt/deepseek-v4-flash\n' \
+  > "$HOME/.omp/agent/config.yml"
+timeout 1800 omp -p --auto-approve --mode json --model neuralwatt/deepseek-v4-flash \
+  "$(cat /work/PROMPT.txt)" </dev/null > /work/transcript.jsonl 2>/work/probe-stderr.log
+rc=$?; echo probe-exit=$rc; exit $rc
+```
+
+Swap `neuralwatt`/`deepseek-v4-flash`/`baseUrl` for any other OpenAI-compatible
+endpoint; the shape stays the same.
+
+Three rules this recipe cost real rounds to learn:
+
+1. `run.sh` writes `PROBE_CMD` through an unquoted heredoc. Text that arrives FROM a
+   variable expansion is not re-scanned for escapes. Set `PROBE_CMD` in the launcher
+   with a single-quoted assignment carrying plain `$VAR` / `$(...)`, never `\$VAR`. A
+   backslash-escaped dollar survives into the room literally and never resolves.
+2. `omp` blocks forever on a non-TTY stdin. Always redirect `</dev/null`, or the round
+   hangs until the timeout.
+3. The room has exactly one credential slot, `ANTHROPIC_API_KEY`, regardless of which
+   provider it actually authenticates; put the NeuralWatt (or other endpoint) key
+   there. The config file that holds it, `~/.omp/agent/models.yml`, exists only
+   inside the disposable container and is gone when the room tears down.
+
+`bg-run` (ops-toolkit) is a convenient launcher for the round itself (tmux session +
+a status dir); it is an operator convenience, not a kit dependency.
+
+Watching a round live: `bash tests/gauntlet/cleanroom/watch.sh`.
+
 ## The three mistakes everyone makes first
 
 1. **Helping the probe.** One answered question voids the round and destroys the

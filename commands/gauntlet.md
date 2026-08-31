@@ -185,13 +185,14 @@ docs/verification/gauntlet/<YYYY-MM-DD>-<preset>-<slug>/
                          # (absent on the final round)
 ```
 
-The preset segment in the directory name is mandatory for new runs (records and
-campaign paths from before the preset era are grandfathered as-is); an EXISTING
+The preset segment in the directory name is mandatory for new runs (pre-2026-09
+records are grandfathered as-is; producers now conform); an EXISTING
 directory is a refusal, never an overwrite (this contract forbids trimming a prior
 record). `ROUNDS.md` is the
 eval artifact and the proof-of-done for the artifact; the round dirs are its evidence.
 Never trim a failed round's record: the failure trail is what justifies each artifact
-change (same rule as the debug loop's evidence ledger).
+change (same rule as the debug loop's evidence ledger). Failed rounds persist their
+logs too, and rule 8's scrub applies to them before any commit.
 
 ## Rules (engine-level; no preset may weaken one)
 

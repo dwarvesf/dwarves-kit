@@ -1,6 +1,8 @@
 # Gauntlet clean room for the kit's own runs. Carries NOTHING from the host:
 # no kit install, no credentials, no prior run records. Rule 7: the gauntlet's
 # own directory and past run records are excluded by run.sh's staging step.
+# node:22-slim ships neither `tail` nor `ps`: a PROBE_CMD or probe transcript
+# depending on either dies opaquely. Use `cat`/shell builtins instead.
 FROM node:22-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
