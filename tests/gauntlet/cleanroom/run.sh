@@ -147,6 +147,41 @@ Do this once, at a task checkpoint, never before the spec exists. This
 directory is host-side staging; it is not mounted into the room by run.sh.
 EOF
         ;;
+      J7)
+        # Resume plant (SPEC J7): stage the disk state of a PRIOR session that
+        # was killed mid-execute, so /work/RESUME-MARKER (written after the seed
+        # commit below) corresponds to a real "restart happened" state and the
+        # no-redo check has teeth. The prior session specced --repeat (first
+        # task checked) and left a session-state breadcrumb; it did NOT finish
+        # the implementation, the PR, or the test. The resumed probe continues
+        # from the unchecked tasks.
+        mkdir -p "${FIX}/docs/specs" "${FIX}/.claude/session-state"
+        cat > "${FIX}/docs/specs/SPEC-001-repeat.md" <<'EOF'
+# Spec: --repeat N flag for the shout CLI
+Status: VALIDATED
+
+## Problem
+`cli.js --upper <text>` prints the uppercased text once. Add `--repeat N` so it
+prints the result N times, one per line.
+
+## Verification
+`node cli.js --upper --repeat 3 hi` prints `HI` on three lines; `npm test` green.
+
+## Task Breakdown
+- [x] TASK-001: write this spec with acceptance criteria + a verification command.
+- [ ] TASK-002: implement `--repeat N` in cli.js (default N=1 when the flag is absent).
+- [ ] TASK-003: add test.js covering N=3 and the default, wire `npm test`.
+- [ ] TASK-004: write PR.md (title + body).
+EOF
+        cat > "${FIX}/.claude/session-state/last-state.md" <<'EOF'
+# Last state (prior session, killed mid-execute)
+
+Task: add `--repeat N` to the shout CLI through the kit's lane.
+Done: SPEC-001-repeat.md written + validated (TASK-001 checked).
+Next: TASK-002 (implement --repeat in cli.js), then TASK-003 (test), TASK-004 (PR).
+Do NOT re-spec: the spec is complete on branch feat/repeat. Resume from TASK-002.
+EOF
+        ;;
       J8)
         # Review-response plant: --upper already silently mishandles empty
         # input (prints a blank line, exit 0); document a promise the code
@@ -173,6 +208,15 @@ EOF
       rm -f "${FIX}/cli.js.bak"
       git -C "${FIX}" add -A && git -C "${FIX}" commit -qm "chore: tweak usage text (other contributor, in flight)"
       git -C "${FIX}" checkout -q "${SEED_BRANCH}"
+    fi
+
+    if [ "${ROW}" = "J7" ]; then
+      # The prior session's committed work lives on feat/repeat; leave the room
+      # checked out there so the resumed probe continues from disk state. Then
+      # write the harness marker that PROVES a cold restart happened (card J7
+      # rule: the harness writes it, never the probe).
+      git -C "${FIX}" checkout -qb feat/repeat
+      printf 'cold restart at %s: prior session killed mid-execute; resume from /work/fixture-repo disk state (SPEC-001-repeat.md, feat/repeat, last-state.md).\n' "$(date -u +%FT%TZ)" > "${STAGE}/work/RESUME-MARKER"
     fi
 
     # make-card.sh knows matrix rows (J1..J11), not the "doorway" alias;
