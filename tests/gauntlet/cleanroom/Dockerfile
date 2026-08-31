@@ -10,6 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g @anthropic-ai/claude-code
 
+# Prepared toolchain (SPEC-238): TOOLS only, never config/keys/repos. Baked so
+# the cheap-probe recipe (docs/guides/gauntlet-tutorial.md "Cheap probe") skips
+# its per-round npm install, which flaked repeatedly on 2026-08-31 (bun's
+# postinstall ENOENT-renaming its own binary in /tmp). `npm install -g` puts
+# both on the global bin, which is on PATH for every user including -u node
+# (the round's real user, HOME=/tmp/probe-home); root-only installs would not
+# resolve there. Pins recorded here, bumped deliberately, never `latest`:
+RUN npm install -g bun@1.4.0 @oh-my-pi/pi-coding-agent@18.0.11
+
 # /work is the probe's whole world:
 #   kit.tar.gz      the kit, NOT installed (installing is part of day one)
 #   fixture-repo/   persona A's adoption target
