@@ -50,6 +50,29 @@ echo "== persist-check: RUN_OUT persists on every docker exit code, rc propagate
 run_leg "leg A (PROBE_CMD='exit 7')" "exit 7" 7
 run_leg "leg B (PROBE_CMD='exit 0')" "exit 0" 0
 
+# Leg C: the automated key scrub. A probe that echoes the room key into /work
+# must persist as <REDACTED-KEY>, never the literal value.
+leg_c() {
+  local stage_dir out_dir log rc ok=1
+  stage_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/stage.XXXXXX")"
+  out_dir="$(mktemp -d "${HOME}/.cache/gauntlet-persist-check/out.XXXXXX")"
+  log="$(mktemp "${HOME}/.cache/gauntlet-persist-check/log.XXXXXX")"
+  rc=0
+  ANTHROPIC_API_KEY="dummy-scrub-canary-0451" \
+    GAUNTLET_STAGE_DIR="${stage_dir}" RUN_OUT="${out_dir}/room" \
+    PROBE_CMD='echo "$ANTHROPIC_API_KEY" > /work/leak.txt; exit 0' \
+    bash tests/gauntlet/cleanroom/run.sh user > "${log}" 2>&1 || rc=$?
+  [ "${rc}" -eq 0 ] || { echo "  leg C: exit ${rc}, expected 0 (see ${log})"; ok=0; }
+  if grep -rqF "dummy-scrub-canary-0451" "${out_dir}" 2>/dev/null; then
+    echo "  leg C: literal key survived into the persisted room"; ok=0
+  fi
+  grep -qF "<REDACTED-KEY>" "${out_dir}/room/leak.txt" 2>/dev/null \
+    || { echo "  leg C: redaction marker missing from leak.txt"; ok=0; }
+  if [ "${ok}" -eq 1 ]; then echo "PASS  leg C (key scrubbed to <REDACTED-KEY>)"; rm -f "${log}"; else echo "FAIL  leg C (log kept at ${log})"; fail=1; fi
+  rm -rf "${stage_dir}" "${out_dir}"
+}
+leg_c
+
 echo
 if [ "${fail}" -eq 0 ]; then echo "PERSIST-CHECK: GREEN"; else echo "PERSIST-CHECK: RED"; fi
 exit "${fail}"

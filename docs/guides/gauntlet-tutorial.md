@@ -223,8 +223,12 @@ Three rules this recipe cost real rounds to learn:
    hangs until the timeout.
 3. The room has exactly one credential slot, `ANTHROPIC_API_KEY`, regardless of which
    provider it actually authenticates; put the NeuralWatt (or other endpoint) key
-   there. The config file that holds it, `~/.omp/agent/models.yml`, exists only
-   inside the disposable container and is gone when the room tears down.
+   there. The config file that holds it lives under the container-only HOME and dies
+   with the room, BUT anything the probe or its tools ECHO into `/work` (transcripts,
+   stderr, install logs) is persisted, on failing rounds too. run.sh redacts every
+   literal occurrence of the key before persisting and refuses the persist if
+   redaction cannot clean it; treat that as a backstop, not a license, the record
+   still gets an eyeball before commit (rule 8).
 
 `bg-run` (ops-toolkit) is a convenient launcher for the round itself (tmux session +
 a status dir); it is an operator convenience, not a kit dependency.
