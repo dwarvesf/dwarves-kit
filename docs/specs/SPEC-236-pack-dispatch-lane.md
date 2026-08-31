@@ -1,5 +1,7 @@
 # Spec: /kit:pack, the plan-rich-dispatch-cheap packaging lane
 
+<!-- renumbered 235 -> 236: parallel session claimed 235 for gauntlet-generalize on feat/gauntlet-generalize -->
+
 Generated: 2026-08-31
 Status: DRAFT
 References: ops-toolkit `_meta/megagoals/cluster-notify-wiring/` (the hand-run this lane automates: roadmap.md + dispatch-G*.md + fixture, produced 2026-08-31 across 4 repos; imitate its file shapes verbatim); ops-toolkit `docs/specs/SPEC-128-*` + dfoundation `SPEC-107` + event-bridge `SPEC-018` + foundation-workers `SPEC-238` (what "pack-ready" specs look like after the cold-start audit closed their gaps).
@@ -23,7 +25,7 @@ Approach 1. Packing is its own lifecycle moment (after validate, before dispatch
 ### Extensibility & boundaries
 
 - Load-bearing dimension: number of goals in a pack. Each goal = one audit dispatch + one prompt file; O(goals), independent.
-- Units: (a) cold-start auditor (new agent def, read-only), (b) pack emitter (roadmap + prompts from templates), (c) operator-input extractor (scans specs for STOP-and-ask markers). Each testable alone.
+- Units: (a) cold-start audit step, two strengths: DEFAULT one-shot auditor agent (read-only, refute-briefed) and, for high-stakes packs, the generalized gauntlet (SPEC-235) run with a 'spec-dispatch readiness' preset, artifact = the spec + context blocks, outcome contract = a clean-room Sonnet probe executes a designated task slice, probes failing -> spec context revised -> respin. Probe-convergence is strictly stronger than one review pass; /kit:pack names which strength it used in the roadmap. (b) pack emitter (templates), (c) operator-input extractor. Each testable alone.
 
 ## Picture
 
@@ -128,6 +130,7 @@ None.
 - DEC-001: Separate command over extending mega/execute, packing is its own lifecycle moment (post-validate, pre-dispatch) with its own artifact class.
 - DEC-002: The pack lands in the invoking cockpit repo's `_meta/megagoals/<slug>/`, matching the estate's existing mega-goal container; the kit does not invent a new location.
 - DEC-003: Context-block patches go to each spec's own repo, specs stay the single source a worker reads; the pack never duplicates spec content.
+- DEC-004 (parallel-session reconciliation): the audit step composes with the gauntlet generalization instead of competing. One-shot auditor = cheap default; the gauntlet's spec-readiness preset = the escalation for packs where a stalled worker is expensive. The preset itself is a preset-table row under that spec's rules, not built here.
 
 ## Open questions
 (none)
