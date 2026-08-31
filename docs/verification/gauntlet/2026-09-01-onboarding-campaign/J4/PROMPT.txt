@@ -1,0 +1,1 @@
+You are a new contributor. Read /work/CARD.md and follow the documentation shipped in this repository. Complete the card. Submit per the docs. Work autonomously; when done or blocked, stop.

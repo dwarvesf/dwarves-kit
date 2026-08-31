@@ -1,0 +1,12 @@
+== the collision was noticed, not stumbled into
+PASS  PR.md documents the concurrent branch
+== the other contributor's work is untouched
+PASS  other/logging-tweak still exists
+== no silent collision
+PASS  merges cleanly against the other branch
+== the tiny-lane fix itself still landed
+PASS  the README example matches the real flag
+PASS  a non-default branch exists
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN

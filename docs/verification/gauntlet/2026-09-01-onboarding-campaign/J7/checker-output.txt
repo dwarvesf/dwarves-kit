@@ -1,0 +1,14 @@
+== specced before built
+PASS  a spec file exists
+== the round actually restarted (proof the no-redo check means something)
+FAIL  RESUME-MARKER is present in /work
+== completed work was not redone
+PASS  no duplicate-subject commits
+== final state is green
+PASS  --repeat works (N=3)
+PASS  the repo's test command passes
+== process leave-behinds
+PASS  a non-default branch exists
+PASS  PR.md exists with title + body
+
+SUBMISSION: RED
