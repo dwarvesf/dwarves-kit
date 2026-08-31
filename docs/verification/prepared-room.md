@@ -82,3 +82,7 @@ A live NW round exercising the recipe's `omp-baked` signal + `omp-state`
 persistence end-to-end (the SPEC's TASK-003 "live NW round" framing) was not
 run. This proof instead uses the direct `-u node` binary-resolution command,
 which is the load-bearing claim (validation W2) and does not require spend.
+
+## Negative control (measured red arm)
+
+The pre-bake image (master's Dockerfile, no omp/bun layer) makes `omp` command-not-found for the `-u node` round, so the probe must install omp+bun per round. That install failed LIVE in tonight's regression smoke: `npm error ENOENT rename /tmp/bun-.../node_modules/@oven/bun-linux-aarch64 -> node_modules/@oven/bun-linux-aarch64 ... Failed to install package "bun"`, leaving the round checker RED with no probe run. Post-bake, `docker run --rm -u node -e HOME=/tmp/probe-home kit-gauntlet-room bash -lc 'command -v omp'` resolves `/usr/local/bin/omp` and the recipe writes the `omp-baked` skip signal, no network install. Revert the Dockerfile bake layer and the `-u node` omp resolution returns command-not-found again (the red state).
