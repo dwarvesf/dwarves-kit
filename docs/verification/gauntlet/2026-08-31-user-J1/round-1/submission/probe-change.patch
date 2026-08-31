@@ -1,0 +1,22 @@
+From f64cd131c4bc8ab3a59fee3693774a546f6f0c04 Mon Sep 17 00:00:00 2001
+From: Gauntlet Probe <probe@gauntlet.local>
+Date: Mon, 31 Aug 2026 14:54:39 +0000
+Subject: [PATCH] fix: correct README CLI flag from --uppercase to --upper
+
+---
+ README.md | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index 1852de0..bc4e19f 100644
+--- a/README.md
++++ b/README.md
+@@ -4,4 +4,4 @@ Tiny demo CLI.
+ 
+ ## Usage
+ 
+-    node cli.js --uppercase hello   # prints HELLO
++    node cli.js --upper hello   # prints HELLO
+-- 
+2.55.0
+
