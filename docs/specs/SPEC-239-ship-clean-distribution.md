@@ -120,7 +120,7 @@ bash tests/test-meta.sh
 ```
 
 ## Edge Cases
-1. Han's own remote run: his `kit.toml [gauntlet] probe_key_ref` sets the real ref, so the neutral default is never reached; behavior unchanged.
+1. Han's own remote run: his `kit.toml [gauntlet] probe_key_ref` sets the real ref, so the neutral key default is never reached; key behavior unchanged. The docker-down branch DOES change for everyone (it no longer auto-runs `colima start`); a runner host is expected to keep its docker runtime up, and a clear error beats silently starting one specific runtime, so this is an accepted uniform change, NOT config-gated (battery follow-up correction).
 2. An adopter with no kit.toml ref and no key: the clear error names the config key to set, instead of silently failing on a missing Han vault.
 3. An adopter on Docker Desktop: the runtime-agnostic docker-down message applies; colima is one named option among several.
 4. devops-triage on a non-Cloudflare stack: the scoping line tells them to substitute; the agent does not silently assume Workers.
@@ -128,13 +128,26 @@ bash tests/test-meta.sh
 ## Failure modes
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
-| A reframe changes Han's own behavior | edge case 1 + the local-runner test | defaults only reached when the operator's config is unset |
+| A reframe changes Han's own behavior | edge case 1 + the local-runner test | the KEY default is config-gated (his kit.toml pre-empts it); the docker-down branch changes uniformly by design (no auto-colima), accepted since a runner keeps docker up |
 | Deleting instead of reframing loses teaching value | ACs keep wl-query/omp as labeled examples | grep counts assert they stay |
 
 ## Out of Scope
 - Re-auditing the whole kit (the audit already classified every hit; OK-tier items stay).
 - Provenance/lineage refs in specs (`Source:`/`Board:` pointing at ops-toolkit paths), they never break a run, only point at repos an adopter cannot open; noted, not fixed.
 - Moving any tool between repos.
+
+## Review
+
+### Verdict: SHIP (battery, first cold /kit:battery run, post-merge on #463)
+
+### Findings (disjoint arms, the battery's own thesis reproduced)
+
+- Leg 1 acceptance-verify (fresh Sonnet): PASS 4/4 tasks + 3/3 global; caught an ENVIRONMENTAL contamination re-execution alone reveals: local gauntlet-campaign room debris (`J*/kit/`, `J*/fixture-repo/`) carries nested `test-meta.sh` copies that trip the SPEC-031 stale-string check, showing 8 fails locally vs the true 7 in a clean worktree. Debris cleared from the working tree.
+- Leg 2 review + advisor + folded security angle (fresh Opus): SHIP, 2 MINOR honesty-gaps a static read reveals: (a) the docker-down branch changes uniformly, not config-gated as the Failure-modes table claimed; (b) the empty-key error named "1P session", not `gauntlet.probe_key_ref`. Both fixed on the follow-up branch.
+- One AC-wording note (leg 1): TASK-002's literal "wl-query count unchanged" moved 3->4 because the new scope sentence itself names the CLI; DEC-001's intent (keep as labeled example, don't delete) held. AC wording, not a defect.
+- No BLOCKER/MAJOR; no new Tier-3 leak reachable on the default path (neighborhood grep clean).
+
+Disagreement between arms IS the result: each caught a class the other structurally could not (contamination vs prose-honesty).
 
 ## Decision Log
 - DEC-001: reframe, never delete; the personal instances teach.
