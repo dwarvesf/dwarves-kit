@@ -389,6 +389,7 @@ One line per live feature: `entry -> ... -> terminal`. Grouped by kind; every fe
 | `[H] /kit:ui-design -> brief -> frontend-design skill -> visual-team -> fix-agent revise -> SOLID` |
 | `[H/I] /kit:docs -> diff code vs every doc -> doc-verifier -> /kit:ship` |
 | `[H/I] /kit:verify -> 4 verifiers read-only -> verdict, no rebuild, no fix` |
+| `[H/I] /kit:battery -> acceptance-verifier + reviewer lenses + advisor in parallel (fresh context, baseline-aware) -> merged verdict -> lead applies fixes -> gate-ledger records` |
 | `[H/I] /kit:explain -> literate-diff explainer -> feeds /kit:quiz-gate` |
 | `[H] /kit:quiz-gate -> 5 diff-grounded questions -> engage/defer/wave logged (advisory)` |
 | `[H] /kit:pitch <rid> -> assemble buy-in doc from existing sources -> doc (never fabricates)` |

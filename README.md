@@ -299,6 +299,8 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:execute | Build | Autonomous: worker > verifier > fix-agent retry loop |
 | /kit:next | Build | Lightweight: picks next undone task, loads context, you drive |
 | /kit:verify | Verify | Read-only re-run of task-verifier + integration-verifier, no rebuild; verdict PASS / FAIL / INCONCLUSIVE with the claim restated falsifiably |
+| /kit:battery | Verify | The full independent right arm for a finished branch: fresh-context acceptance verifier + multi-lens review + advisor in parallel at prescribed model tiers, baseline-aware, findings merged, fixes applied by the lead |
+| /kit:greenlight | Ship | Post-push CI-green lane: snapshots an open PR's checks, fixes real failures via the fix-agent shape, retries flaky ones within a bounded budget, reports one terminal state; opt-in, never hard-gates merge |
 | /kit:debug | Bug (off-cycle) | Systematic debug loop: root cause before any fix, evidence ledger, 3-fix wall |
 | /kit:review | Review | Paranoid single-pass code review |
 | /kit:review-team | Review | Parallel 3-lens review (security + architecture + test-coverage); findings confidence-gated, deduped by fingerprint, verdict-driving ones adversarially validated per finding |
@@ -345,6 +347,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | slop-stripper | /review-team | Behavior-preserving AI-slop strip pass: surgical edits only, never behavior changes unless fixing a real bug |
 | agent-effectiveness | agent authoring | Validates a new/changed agent definition's effectiveness (4 lenses) |
 | doc-verifier | /docs | Read-only check that docs match the live codebase |
+| devops-triage | on-demand | Read-only production-alert triage: Workers Logs history + git around the deploy sha into a bounded root-cause verdict |
 | research-stack | /spec | Maps technology stack (brownfield) |
 | research-context | /spec, /kit:test-plan | Quick brownfield orientation (endpoints, models, UI, tests, recent history), capped at 80 lines |
 | research-architecture | /spec | Maps architecture patterns and conventions |
