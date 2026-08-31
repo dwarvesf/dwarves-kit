@@ -1,6 +1,7 @@
 # Spec: Generalize /kit:gauntlet into a parameterized probe-convergence engine
 Generated: 2026-08-31
 Status: VALIDATED
+Lane: normal
 References: `commands/gauntlet.md` (the engine mechanics to preserve verbatim: two-tier loop, severity grammar, run-record contract, rules 1-10); `commands/test-plan-review-team.md` (the bounded-revise sibling whose marker grammar gauntlet shares); `tests/gauntlet/` (the onboarding instance that becomes the reference preset, imitate its slot shapes, never rewrite it).
 
 ## Problem
