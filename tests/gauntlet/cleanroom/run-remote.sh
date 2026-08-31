@@ -24,7 +24,9 @@ source lib/config/kit-config.sh
 # resolve from the operator-owned kit-root kit.toml alone. GAUNTLET_RUNNER_HOST (an
 # operator-controlled env var) still overrides.
 HOST="${GAUNTLET_RUNNER_HOST:-$(kit_config_get_root gauntlet.runner_host local)}"
-KEY_REF="$(kit_config_get_root gauntlet.probe_key_ref "op://Toolkit/anthropic-api-key/credential")"
+# Placeholder only: the operator sets the real ref in kit.toml [gauntlet]
+# probe_key_ref. This default never resolves to a real secret on its own.
+KEY_REF="$(kit_config_get_root gauntlet.probe_key_ref "op://<vault>/anthropic-api-key/credential")"
 
 # The prompt lives in /work/PROMPT.txt (written by run.sh); the command never
 # quotes it. Keeping data out of command strings is what ended the quoting-bug
@@ -59,18 +61,23 @@ PROBE_B64="$(printf '%s' "${PROBE_CMD:-${PROBE_DEFAULT}}" | base64 | tr -d '\n')
 cat > "${DRIVER}" <<EOF
 set -euo pipefail
 cd "${RDIR}"
-docker info >/dev/null 2>&1 || colima start --cpu 2 --memory 4
+docker info >/dev/null 2>&1 || { echo "start your docker runtime (Docker Desktop, OrbStack, or any local VM-backed runtime), then re-run" >&2; exit 1; }
 # Cache first (zero 1P calls on a hit). A non-interactive Keychain session
 # cannot cache and leaves a 6h suppression marker (round-2 finding), so fall
 # back to one direct read per ROUND, never per tick. On a host running 1P
-# Connect this costs no service-account quota.
-ANTHROPIC_API_KEY="\$(secret-cache-read --ttl 3600 ANTHROPIC_API_KEY ${KEY_REF} 2>/dev/null || true)"
+# Connect this costs no service-account quota. secret-cache-read is optional;
+# a host without it falls straight to op read.
+if command -v secret-cache-read >/dev/null 2>&1; then
+  ANTHROPIC_API_KEY="\$(secret-cache-read --ttl 3600 ANTHROPIC_API_KEY ${KEY_REF} 2>/dev/null || true)"
+else
+  ANTHROPIC_API_KEY=""
+fi
 [ -n "\${ANTHROPIC_API_KEY}" ] || ANTHROPIC_API_KEY="\$(op read '${KEY_REF}' 2>/dev/null || true)"
 [ -n "\${ANTHROPIC_API_KEY}" ] || { echo "probe key resolved EMPTY on the runner host (cache suppressed AND op read failed; check the host's 1P session)" >&2; exit 65; }
 export ANTHROPIC_API_KEY
 export RUN_OUT="\$PWD/out"
 export GAUNTLET_SRC_TAR="\$PWD/.gauntlet-src.tar"
-# Under \$HOME so a colima VM can see the bind mount (round-2 finding).
+# Under \$HOME so a VM-backed docker runtime can see the bind mount (round-2 finding).
 export GAUNTLET_STAGE_DIR="\$PWD/stage"
 PROBE_CMD="\$(printf '%s' '${PROBE_B64}' | base64 -d)"
 export PROBE_CMD
