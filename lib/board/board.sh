@@ -937,6 +937,54 @@ cmd_sync() {
   exec python3 "$BOARD_DIR/../sync/backlog_sync.py" "${args[@]}" ${fwd[@]+"${fwd[@]}"}
 }
 
+# publish: the git leg of SPEC-002's intake -> publish -> relay sequencing.
+# `board sync` mutates the board file in place; without this leg a scheduled
+# runner (the estate's hourly sweeper) leaves every checkout permanently
+# dirty, spoke writes invisible off-host and every ff-pull blocked
+# (ops-toolkit ID-638). Stages ONLY the board file; other dirt is untouched.
+# Rebase-first so the checkout stays fast-forwardable; a failed push keeps
+# the commit local and warns (the next publish rebases over it).
+cmd_publish() {
+  local backlog="" push=1
+  while [ $# -gt 0 ]; do case "$1" in
+    --backlog-file) backlog="${2:-}"; shift 2 ;;
+    --no-push) push=0; shift ;;
+    *) echo "publish: unknown arg: $1" >&2; return 64 ;;
+  esac; done
+  backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
+  [ -f "$backlog" ] || { echo "board publish: no backlog at $backlog" >&2; return 2; }
+  local absdir; absdir="$(cd "$(dirname "$backlog")" && pwd)"
+  case "$absdir" in
+    */.claude/worktrees/*)
+      echo "board publish: refusing a worktree checkout ($backlog); publish" >&2
+      echo "  runs from the canonical checkout only (same fence as sync)." >&2
+      return 2 ;;
+  esac
+  local root; root="$(git -C "$absdir" rev-parse --show-toplevel 2>/dev/null)" \
+    || { echo "board publish: $backlog is not in a git repo" >&2; return 2; }
+  local rel="${absdir}/$(basename "$backlog")"; rel="${rel#"$root"/}"
+  if git -C "$root" diff --quiet -- "$rel" 2>/dev/null; then
+    echo "board publish: no board changes in $rel"
+    return 0
+  fi
+  # never rebase away a concurrent writer: autostash covers other dirt
+  git -C "$root" pull --rebase --autostash --quiet 2>/dev/null || true
+  git -C "$root" diff --quiet -- "$rel" 2>/dev/null && { echo "board publish: changes were upstream already"; return 0; }
+  git -C "$root" add -- "$rel"
+  if ! git -C "$root" commit --quiet -m "chore(board): publish spoke updates" -- "$rel"; then
+    echo "board publish: commit failed for $rel" >&2
+    return 1
+  fi
+  echo "board publish: committed $rel"
+  if [ "$push" -eq 1 ]; then
+    if git -C "$root" push --quiet 2>/dev/null; then
+      echo "board publish: pushed"
+    else
+      echo "board publish: WARN push failed (auth?); commit is local, next publish rebases" >&2
+    fi
+  fi
+}
+
 # bridge was folded into the sync module 2026-07-16; these verbs are the
 # legacy cockpit engine until the SPEC-002 P2 port (kit board ID-290).
 _legacy_bridge_note() {
@@ -955,6 +1003,7 @@ main() {
     status) shift; cmd_status "$@" ;;
     writeback) shift; cmd_writeback "$@" ;;
     sync) shift; cmd_sync "$@" ;;
+    publish) shift; cmd_publish "$@" ;;
     init) shift; cmd_init "$@" ;;
     capture) shift; cmd_capture "$@" ;;
     promote) shift; exec "$BOARD_DIR/bin/add-backlog" "$@" ;;
