@@ -69,7 +69,7 @@ None. New driver file + record grammar only.
 
 ## Acceptance Criteria (global)
 
-1. Live run: A=master vs B=planted-defect ref on the doorway row, N=1 each → A GREEN, B RED, `[[AB-VERDICT winner=A a=1/1 b=0/1]]` in AB-ROUNDS.md.
+1. Live run: A=master vs B=planted-defect ref (adopt path removed) on the doorway row, N=1 each, proves VARIANT PROPAGATION by room contents (A's persisted room carries `lib/adopt.sh`, B's verifiably lacks it) and end-to-end scoring. The expected B-RED did NOT materialize: the probe rebuilt the deleted script from the kit's own docs, a genuine finding (a single-file deletion is a RECOVERABLE defect; A/B separation needs variants that differ in what the docs can teach, not in what a probe can reconstruct). Tally discrimination is proven deterministically instead: a seeded GREEN-vs-RED verdict pair → `[[AB-VERDICT winner=A a=1/1 b=0/1]]`.
 2. AB-ROUNDS.md carries the variant refs and the inter-variant diffstat (anti-gaming disclosure).
 3. Interrupted run resumes on the verdict file: a round dir WITHOUT `ab-verdict.txt` (the shape a killed round leaves, since run-remote pre-creates the dir) is re-run; a scored round is never re-run.
 4. Negative control: corrupt/absent checker for the row → the driver fails loud naming the checker, no verdict emitted.

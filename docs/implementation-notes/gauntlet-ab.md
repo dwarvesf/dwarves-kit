@@ -18,6 +18,10 @@ At small N a 2-1 lead is noise. Winner requires margin >= rounds-per-variant; a 
 
 GNU tar cannot auto-detect compression on a pipe (remote ship path); bsdtar can. Plain tar works on both.
 
+## 2026-09-01 the planted defect was recoverable
+
+The smoke's defect variant deleted `lib/adopt.sh`. The probe noticed, rebuilt a working script from the kit's own docs, and passed the doorway checker. AC-1 was amended: the live run proves propagation (room contents differ per variant) and end-to-end scoring; tally discrimination is proven with a seeded verdict pair. Lesson for future A/B cards: vary what the docs TEACH, not what a probe can reconstruct.
+
 ## 2026-09-01 tiebreak duplicates the stats derivation
 
 The token tiebreak re-states the dual-format usage derivation from `lib/gauntlet/stats.sh` (that script is an executable, not a sourceable library). Accepted duplication, two expressions; extract a shared lib only if a third consumer appears.
