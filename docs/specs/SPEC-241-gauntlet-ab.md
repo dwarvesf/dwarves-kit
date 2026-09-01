@@ -69,7 +69,7 @@ None. New driver file + record grammar only.
 
 ## Acceptance Criteria (global)
 
-1. Live run: A=master vs B=planted-defect ref (adopt path removed) on the doorway row, N=1 each, proves VARIANT PROPAGATION by room contents (A's persisted room carries `lib/adopt.sh`, B's verifiably lacks it) and end-to-end scoring. The expected B-RED did NOT materialize: the probe rebuilt the deleted script from the kit's own docs, a genuine finding (a single-file deletion is a RECOVERABLE defect; A/B separation needs variants that differ in what the docs can teach, not in what a probe can reconstruct). Tally discrimination is proven deterministically instead: a seeded GREEN-vs-RED verdict pair → `[[AB-VERDICT winner=A a=1/1 b=0/1]]`.
+1. Live run: A=master vs B=planted-defect ref (adopt path removed) on the doorway row, N>=2, proves VARIANT PROPAGATION by room contents (A's persisted room carries `lib/adopt.sh`, B's verifiably lacks it) and end-to-end scoring under the shipped driver (verdict files are the driver's own checker-exit classification, not seeded). The expected B-RED did NOT materialize: the probe rebuilt the deleted script from the kit's own docs, a genuine finding (a single-file deletion is a RECOVERABLE defect; A/B separation needs variants that differ in what the docs can teach, not in what a probe can reconstruct). Tally discrimination is proven separately and deterministically: the row's checker on a valid fixture exits 0 (driver → GREEN) and on an empty fixture exits non-zero (driver → RED), so a GREEN-vs-RED pass yields `winner=A` by sweep. N=1 is rejected by the driver for a winner (one round is a coin): the marker at N=1 is `winner=weak`, never `winner=A`.
 2. AB-ROUNDS.md carries the variant refs and the inter-variant diffstat (anti-gaming disclosure).
 3. Interrupted run resumes on the verdict file: a round dir WITHOUT `ab-verdict.txt` (the shape a killed round leaves, since run-remote pre-creates the dir) is re-run; a scored round is never re-run.
 4. Negative control: corrupt/absent checker for the row → the driver fails loud naming the checker, no verdict emitted.
@@ -78,8 +78,10 @@ None. New driver file + record grammar only.
 ## Verification
 
 ```
-bash tests/gauntlet/deploy/gauntlet-ab <master-sha> <defect-ref> user J1 1   # AC-1,2,5
-# re-invoke after deleting B/ → AC-3; point at a row with no checker → AC-4
+bash tests/gauntlet/deploy/gauntlet-ab <master-sha> <defect-ref> user doorway 2   # AC-1,2,5 (N>=2 for a winner)
+# re-invoke after deleting a round's ab-verdict.txt → AC-3 (only that round re-runs)
+# point at a row with no checker → AC-4 (exit 2, nothing staged)
+# checker on valid vs empty fixture → the GREEN/RED driver-scoring inputs behind AC-1's discrimination
 ```
 
 ## Survival set (loop-engineering Step 2b)

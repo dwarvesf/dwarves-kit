@@ -10,11 +10,14 @@ set -uo pipefail
 REF_A="${1:?usage: gauntlet-ab <ref-A> <ref-B> <user|contributor> <row> [rounds-per-variant]}"
 REF_B="${2:?usage: gauntlet-ab <ref-A> <ref-B> <user|contributor> <row> [rounds-per-variant]}"
 PERSONA="${3:?usage: gauntlet-ab <ref-A> <ref-B> <user|contributor> <row> [rounds-per-variant]}"
-ROW="${4:?usage: gauntlet-ab <ref-A> <ref-B> <user|contributor> <row> [rounds-per-variant]}"
-ROUNDS="${5:-2}"
+ROW="${4:?usage: gauntlet-ab <ref-A> <ref-B> <user|contributor> <row> <rounds-per-variant>}"
+# The budget is the operator's call per use (advisor finding: a default invites
+# unowned statistics); N < 2 can never produce a winner, only AB-WEAK/AB-TIE.
+ROUNDS="${5:?rounds-per-variant is required: state the budget (winner needs N >= 2)}"
 
 KIT_ROOT="${KIT_ROOT:?set KIT_ROOT to the kit checkout this A/B runs from}"
-cd "${KIT_ROOT}"
+cd "${KIT_ROOT}" || exit 2
+case "${ROUNDS}" in ''|*[!0-9]*|0) echo "gauntlet-ab: rounds-per-variant must be a positive integer, got '${ROUNDS}'" >&2; exit 2;; esac
 
 # Bad input fails loud before anything is staged (survival set: bad input).
 for ref in "${REF_A}" "${REF_B}"; do
@@ -45,9 +48,19 @@ for V in A B; do
     RD="${AB_DIR}/${V}/round-${i}"
     # Resume keys on the round's VERDICT, not the dir: run-remote pre-creates
     # the dir, so a killed round leaves an empty one (survival set: interrupted).
-    [ -f "${RD}/ab-verdict.txt" ] && { echo "ab: ${V} round ${i} already scored ($(cat "${RD}/ab-verdict.txt")), skipping"; continue; }
+    # A HARNESS verdict is transient infrastructure, never evidence: it is
+    # retried on re-invocation instead of sticking forever (review finding).
+    if [ -f "${RD}/ab-verdict.txt" ]; then
+      prior="$(cat "${RD}/ab-verdict.txt")"
+      case "${prior}" in
+        GREEN|RED|BLOCKED) echo "ab: ${V} round ${i} already scored (${prior}), skipping"; continue ;;
+        *) echo "ab: ${V} round ${i} prior verdict '${prior}' is retryable; re-running" ;;
+      esac
+    fi
     echo "ab: variant ${V} (${!ref_var}) round ${i}/${ROUNDS}"
     rc=0
+    # Ship only the tarball THIS driver built from the ref (never an inherited
+    # ambient GAUNTLET_SRC_TAR): the variant is always committed ref state.
     GAUNTLET_SRC_TAR="${TARS}/${V}.tar" \
       bash tests/gauntlet/cleanroom/run-remote.sh "${PERSONA}" "${ROW}" "${RD}" || rc=$?
     mkdir -p "${RD}"
@@ -66,8 +79,18 @@ for V in A B; do
       HARNESS_FAILS=$((HARNESS_FAILS + 1))
       continue
     fi
+    # Score with git's config surface neutralized: the fixture repo came back
+    # from the probe, so its .git/config and hooks are UNTRUSTED input to the
+    # host-side git the checker runs (security review HIGH-1). GIT_CONFIG_*
+    # env entries have the highest precedence and override the repo-local
+    # config; hooksPath into an empty dir disarms planted hooks.
     ck_rc=0
-    bash "${CK}" "${fx}" > "${RD}/checker-output.txt" 2>&1 || ck_rc=$?
+    GIT_CONFIG_COUNT=3 \
+      GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=false \
+      GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=/var/empty \
+      GIT_CONFIG_KEY_2=core.pager GIT_CONFIG_VALUE_2=cat \
+      GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+      bash "${CK}" "${fx}" > "${RD}/checker-output.txt" 2>&1 || ck_rc=$?
     case "${ck_rc}" in
       0) echo "GREEN" > "${RD}/ab-verdict.txt" ;;
       3) echo "BLOCKED" > "${RD}/ab-verdict.txt" ;;  # honest stop: card evidence, not variant evidence
@@ -96,34 +119,43 @@ count_class() {
 
 read -r GA NA <<< "$(score A)"
 read -r GB NB <<< "$(score B)"
+if [ $(( NA + NB )) -eq 0 ]; then
+  echo "gauntlet-ab: zero scored rounds; no verdict can be emitted (all rounds HARNESS or missing)" >&2
+  exit 65
+fi
 
-# Verdict honesty (design critique): a winner needs a SWEEP (margin >= rounds
-# per variant); a smaller lead is AB-WEAK, a tally, not a finding. Exact ties
-# fall to the token tiebreak, then AB-TIE.
+# Verdict honesty (design critique + advisor): a winner needs a SWEEP (margin
+# >= rounds per variant) AND at least 2 rounds per variant; at N=1 any non-tie
+# margin is trivially a "sweep" of one coin flip, so N=1 never declares a
+# winner and never tiebreaks: it reports AB-WEAK or AB-TIE only.
 WINNER="tie"; WEAK=""
 MARGIN=$(( GA - GB )); [ "${MARGIN}" -lt 0 ] && MARGIN=$(( -MARGIN ))
 if [ "${GA}" -ne "${GB}" ]; then
-  if [ "${MARGIN}" -ge "${ROUNDS}" ]; then
+  if [ "${ROUNDS}" -ge 2 ] && [ "${MARGIN}" -ge "${ROUNDS}" ]; then
     [ "${GA}" -gt "${GB}" ] && WINNER="A" || WINNER="B"
+  elif [ "${ROUNDS}" -lt 2 ]; then
+    WINNER="weak"; WEAK="single round per variant is below the winner floor (N >= 2)"
   else
     WINNER="weak"; WEAK="lead margin ${MARGIN} < ${ROUNDS} rounds"
   fi
 fi
 TIEBREAK=""
-if [ "${WINNER}" = "tie" ]; then
+if [ "${WINNER}" = "tie" ] && [ "${ROUNDS}" -ge 2 ]; then
   # Mean probe tokens (cheaper-to-satisfy artifact wins). Both transcript
   # formats, same derivation as lib/gauntlet/stats.sh.
   toks() {
     find "${AB_DIR}/$1" -maxdepth 3 -name transcript.jsonl -print0 2>/dev/null \
-      | xargs -0 -r cat 2>/dev/null \
+      | xargs -0 cat 2>/dev/null \
       | jq -s '[.[] | if .type=="turn_end" and ((.usage // .message.usage)|type=="object") then ((.usage // .message.usage) | (.input//0)+(.output//0)) elif .type=="result" then ((.usage.input_tokens//0)+(.usage.output_tokens//0)) else empty end] | add // 0' 2>/dev/null || echo 0
   }
   TA="$(toks A)"; TB="$(toks B)"
   if [ "${TA:-0}" -gt 0 ] && [ "${TB:-0}" -gt 0 ] && [ "${TA}" != "${TB}" ]; then
     [ "${TA}" -lt "${TB}" ] && WINNER="A" || WINNER="B"
+    WHY="tiebreak"
     TIEBREAK="tokens A=${TA} B=${TB}"
   fi
 fi
+[ "${WINNER}" = "A" ] || [ "${WINNER}" = "B" ] && : "${WHY:=sweep}"
 
 {
   echo "# A/B: row ${ROW}, ${REF_A} (A) vs ${REF_B} (B), ${ROUNDS} round(s) per variant"
@@ -143,11 +175,18 @@ fi
   case "${WINNER}" in
     weak) echo "Verdict: AB-WEAK (${WEAK}): a lead this thin at this budget is a coin, not a finding; raise the rounds to separate." ;;
     tie)  echo "Verdict: AB-TIE (honest halt): no separation at ${ROUNDS} round(s) per variant; raise the budget or the variants do not move the metric." ;;
-    *)    echo "Verdict: variant ${WINNER} wins (sweep at this budget)." ;;
+    *)
+      # The record must say WHY the winner won: a cost tiebreak on a tied
+      # tally is not a sweep (review finding: the old wording stated one).
+      if [ "${WHY:-sweep}" = "tiebreak" ]; then
+        echo "Verdict: variant ${WINNER} wins on cost tiebreak (tally tied)."
+      else
+        echo "Verdict: variant ${WINNER} wins (sweep at this budget)."
+      fi ;;
   esac
   [ "${HARNESS_FAILS}" -gt 0 ] && echo "WARNING: ${HARNESS_FAILS} round(s) lost to harness failure and excluded; the tally above is over fewer rounds than budgeted."
   echo
-  echo "[[AB-VERDICT winner=${WINNER} a=${GA}/${NA} b=${GB}/${NB}]]"
+  echo "[[AB-VERDICT winner=${WINNER} why=${WHY:-none} a=${GA}/${NA} b=${GB}/${NB}]]"
 } > "${AB_DIR}/AB-ROUNDS.md"
 
 echo "ab: record at ${AB_DIR}/AB-ROUNDS.md"

@@ -15,3 +15,12 @@ installed anywhere: install it only when ssh-invoked runs demonstrably hurt
 Before any install: the launchd-context traps apply (verify egress + secret
 cache IN launchd context, not over ssh; a cache warmed over ssh leaves a
 .nostore marker that blocks the launchd retry).
+
+- `gauntlet-ab <ref-A> <ref-B> <persona> <row> <N>` (SPEC-241), an on-demand
+  driver, never scheduled: runs one card against two committed artifact
+  variants (rule-7 `git archive` tarballs through the runner's
+  `GAUNTLET_SRC_TAR` slot), N rounds each, scored by the row's own checker, and
+  writes `AB-ROUNDS.md` with a `[[AB-VERDICT ...]]` marker. A winner needs
+  N >= 2 and a sweep; thinner leads report `AB-WEAK`/`AB-TIE`. Use it to pick
+  between two contested revisions of an artifact; it does not revise (that is
+  the gauntlet loop, run after the pick).

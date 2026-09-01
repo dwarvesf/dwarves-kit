@@ -4,8 +4,10 @@
 #   bash tests/gauntlet/cleanroom/run-remote.sh <user|contributor> [ROW] [RUN_OUT]
 #
 # runner_host = "local"  -> exec run.sh here (interactive unless PROBE_CMD set).
-# runner_host = <ssh alias> -> ship COMMITTED state to the host, run the round
-# headlessly there, pull the record back to RUN_OUT. The probe key is resolved
+# runner_host = <ssh alias> -> ship committed HEAD as the harness, plus the
+# artifact tarball (committed HEAD by default, or the caller's GAUNTLET_SRC_TAR
+# for an A/B variant, SPEC-241), run the round headlessly there, pull the
+# record back to RUN_OUT. The probe key is resolved
 # ON the runner host from its own secret store (gauntlet.probe_key_ref); it
 # never travels over ssh and never lands in a shell history.
 set -euo pipefail

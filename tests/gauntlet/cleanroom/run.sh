@@ -31,10 +31,20 @@ mkdir -p "${STAGE}/work/checks"
 # The kit as a tarball of COMMITTED state, minus the answer key (rule 7):
 # the gauntlet dir and any prior run records never enter the room.
 mkdir -p "${STAGE}/kit-src"
-if [ -n "${GAUNTLET_SRC_TAR:-}" ] && [ -f "${GAUNTLET_SRC_TAR}" ]; then
-  # Remote round: the caller already exported committed state (this checkout
-  # is a tarball extraction, not a git repo, so git archive would fail here).
-  tar -x -f "${GAUNTLET_SRC_TAR}" -C "${STAGE}/kit-src"
+if [ -n "${GAUNTLET_SRC_TAR:-}" ]; then
+  # Set-but-missing is a caller error, never a silent HEAD fallback: a typo'd
+  # path would ship HEAD for both A/B variants and fake a tie (review MEDIUM-4).
+  [ -f "${GAUNTLET_SRC_TAR}" ] || { echo "run.sh: GAUNTLET_SRC_TAR='${GAUNTLET_SRC_TAR}' is not a file" >&2; exit 2; }
+  echo "run.sh: room source = ${GAUNTLET_SRC_TAR}" >&2
+  # The tarball is UNTRUSTED (an A/B variant is built from an arbitrary ref):
+  # reject absolute, parent-traversal, and symlink/hardlink members before
+  # extracting as the host user (security review HIGH-2). Committed kit state
+  # holds zero symlinks, so any symlink member is hostile.
+  if tar -tvf "${GAUNTLET_SRC_TAR}" | awk '$1 ~ /^[lh]/ || $NF ~ /(^|\/)\.\.(\/|$)/ || $NF ~ /^\// {found=1} END{exit !found}'; then
+    echo "run.sh: refusing ${GAUNTLET_SRC_TAR}: it contains a symlink/hardlink or an absolute/.. member" >&2
+    exit 2
+  fi
+  tar -x --no-same-owner --no-same-permissions -f "${GAUNTLET_SRC_TAR}" -C "${STAGE}/kit-src"
 else
   git archive HEAD | tar -x -C "${STAGE}/kit-src"
 fi

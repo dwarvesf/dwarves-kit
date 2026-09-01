@@ -1,0 +1,11 @@
+# Room artifacts persisted per round are large and untrusted-origin (probe
+# output, extracted kit copies). Commit only the curated text record
+# (ROUNDS/AB-ROUNDS.md, CARD, PROMPT, transcript.jsonl, checker-output,
+# ab-verdict, checks/*.txt); never the nested repos or tarballs. This is the
+# ID-640 class: an untracked kit/ copy carries its own test-meta.sh and trips
+# filesystem scans, and one `git add -A` would commit ~90MB.
+*/**/kit/
+*/**/kit-extract/
+*/**/fixture-repo/
+*/**/kit.tar.gz
+*/**/checks/*.sh
