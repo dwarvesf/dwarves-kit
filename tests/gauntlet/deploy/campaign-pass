@@ -1,0 +1,68 @@
+#!/bin/bash
+# campaign-pass -- run ONE full onboarding-campaign pass (rows J1..J11) now,
+# unattended, scoring each row as it lands. The loop that produced the two
+# committed campaign records (2026-09-01-onboarding-campaign, -2) lived in a
+# session scratchpad both times; this is that loop, committed and Tier-1 clean.
+#
+#   KIT_ROOT=<kit> [PROBE_CMD=...] bash tests/gauntlet/deploy/campaign-pass [--dry-run]
+#
+# Per tick it calls the one-row-per-invocation driver (gauntlet-campaign),
+# scores the row with its own staged checker, and stops on PASS-COMPLETE, a
+# probe-written BLOCKED.md (writes PAUSED, per the campaign contract), or a
+# tick cap. Launch it detached (bg-run / tmux); it prints one line per row.
+#
+# Probe: inherits PROBE_CMD from the environment or falls back to the runner's
+# Tier-1 default (claude -p). The omp/NeuralWatt cheap-probe recipe is an
+# OPT-IN the operator exports (docs/guides/gauntlet-tutorial.md "Cheap probe");
+# nothing operator-specific is baked here (SPEC-239 distribution honesty).
+set -uo pipefail
+KIT_ROOT="${KIT_ROOT:?set KIT_ROOT to the kit checkout this pass runs from}"
+cd "$KIT_ROOT" || exit 2
+DRY=0; [ "${1:-}" = "--dry-run" ] && DRY=1
+G="docs/verification/gauntlet"
+ROWS="J1 J2 J3 J4 J5 J6 J7 J8 J9 J10 J11"
+MAX_TICKS=12
+
+started_pass=""
+for tick in $(seq 1 "$MAX_TICKS"); do
+  if [ -L "$G/campaign-current" ]; then
+    P="$G/$(readlink "$G/campaign-current")"
+    done_n=$(find "$P" -maxdepth 1 -type d -name 'J*' 2>/dev/null | wc -l | tr -d ' ')
+    # The first tick may see a FINISHED prior pass (the driver rolls a fresh
+    # container); only stop once the pass THIS loop started is complete.
+    if [ -n "$started_pass" ] && [ "$done_n" -ge 11 ]; then echo "PASS-COMPLETE rows=$done_n"; break; fi
+    [ -f "$P/PAUSED" ] && { echo "PASS-PAUSED: $(cat "$P/PAUSED")"; break; }
+  fi
+  echo "=== tick $tick $(date +%H:%M:%S) ==="
+  if [ "$DRY" -eq 1 ]; then
+    echo "dry-run: would run tests/gauntlet/deploy/gauntlet-campaign (probe: ${PROBE_CMD:+custom PROBE_CMD}${PROBE_CMD:-runner default})"
+    [ "$tick" -ge 2 ] && { echo "dry-run: plan shown, stopping"; break; }
+    continue
+  fi
+  rc=0
+  bash tests/gauntlet/deploy/gauntlet-campaign || rc=$?
+  P="$G/$(readlink "$G/campaign-current")"
+  [ -z "$started_pass" ] && started_pass="$P"
+  row_dir=$(find "$P" -maxdepth 1 -type d -name 'J*' | sort -V | tail -1)
+  row=$(basename "$row_dir" 2>/dev/null || echo "?")
+  verdict="no-checker"
+  ck=$(find "$row_dir" -path '*checks/check-submission*' -name '*.sh' 2>/dev/null | head -1)
+  fx=$(find "$row_dir" -maxdepth 2 -type d -name fixture-repo 2>/dev/null | head -1)
+  if [ -n "$ck" ] && [ -n "$fx" ]; then
+    # Same host-side git fence as the A/B driver (security review HIGH-1): the
+    # fixture came back from the probe, its .git config/hooks are untrusted.
+    if GIT_CONFIG_COUNT=3 \
+       GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=false \
+       GIT_CONFIG_KEY_1=core.hooksPath GIT_CONFIG_VALUE_1=/var/empty \
+       GIT_CONFIG_KEY_2=core.pager GIT_CONFIG_VALUE_2=cat \
+       GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+       bash "$ck" "$fx" > "$row_dir/checker-output.txt" 2>&1; then verdict=GREEN; else verdict=RED; fi
+  fi
+  echo "ROW $row rc=$rc checker=$verdict"
+  if find "$row_dir" -name 'BLOCKED.md' 2>/dev/null | grep -q .; then
+    echo "row $row wrote BLOCKED.md; pausing campaign" > "$P/PAUSED"
+    echo "PASS-PAUSED-BLOCKER row=$row"
+    break
+  fi
+done
+echo "CAMPAIGN-LOOP-DONE"
