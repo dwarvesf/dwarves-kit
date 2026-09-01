@@ -58,7 +58,7 @@ report: a PR body (or a CLEAN report if nothing flagged); UNSURE/DANGER
 | Slot | This instance |
 |---|---|
 | Item set | `git ls-files 'docs/verification/gauntlet/*/ROUNDS.md' 'docs/verification/gauntlet/*/*-ROUNDS.md' 'docs/verification/gauntlet/*/AB-ROUNDS.md'` (committed records only; a room copy's own ROUNDS is untracked and never enters the set) |
-| Contract | every CLAIM in the record is backed by its committed EVIDENCE: markers well-formed; recorded verdict == committed `checker-output.txt`; findings count reconciles with the rows; scrub clean (no key/op:// leak in committed evidence); run-dir grammar conforms; a quoted finding string is present in the cited transcript |
+| Contract | every CLAIM in the record is backed by its committed EVIDENCE: markers well-formed; recorded verdict == committed `checker-output.txt`; findings count reconciles with the rows; scrub clean (no resolved credential VALUE in committed evidence, `sk-ant-`/an assigned key value; a bare `op://` pointer is allowed per estate policy, not a leak); run-dir grammar conforms; a quoted finding string is present in the cited transcript |
 | Evidence class | Tier 1: the committed record files themselves via grep/wc/diff. Tier 2: `kit:audit-scanner` reads a quoted finding against the transcript. Evidence gitignored as a room artifact (transcript pruned) = UNTESTABLE → UNSURE |
 | Apply mechanics | REPORT-first: a genuine discrepancy is FLAGGED with a dated correction note appended to the record (never a silent rewrite of the historical claim); UNSURE/DANGER listed in the PR body; REMOVE is disallowed (a record is evidence, not deleted) |
 

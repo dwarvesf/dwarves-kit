@@ -53,6 +53,7 @@ Hard rules: a verdict with no checkable evidence downgrades to UNSURE. Evidence 
 | Feature liveness | shipped features/flags | each feature has real usage | analytics, request logs, flag states; no data = UNSURE |
 | Memory store | .claude/memory notes | fact still true, referents alive | tested paths, superseding notes |
 | Backlog reconcile | board rows | row status matches reality | commits, PRs, deploy state |
+| Gauntlet proof-audit | gauntlet run records | claims match committed evidence | the record files + transcript |
 
 ## The loop bridge
 
