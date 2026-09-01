@@ -369,6 +369,7 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | `claim-verifier` | dispatched on a load-bearing free-text claim | Read-only adversarial panel: runs N in-context independent skeptics (default N=3, distinct attack angles, default-refute-if-uncertain, fail-closed) over an ARBITRARY claim and returns a structured majority-vote verdict (HOLDS/REFUTED + tally + threshold + per-skeptic reasons) |
 | `test-writer` | `/kit:test-write` | Write-capable: turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing test framework; scope-locked to test files, frozen-evaluator on the spec's AC/Verification |
 | `audit-scanner` | doc-drift + topology-drift skills (Tier 2) | Shared read-only evidence scanner for audit-loop instances: receives a target set + contract + evidence class, returns per-item verdicts (audit-loop grammar) with quoted evidence and severity; never fixes, roster has no write path |
+| `devops-triage` | on-demand ("triage this production alert/error") | Read-only production-alert triage: bounded root-cause verdict from Workers Logs history + git log/diff/show around the deploy sha; NOT for local repro or test failures (that is `/kit:debug`); cannot modify the codebase or post anywhere |
 
 ## Path-scoped rules
 
