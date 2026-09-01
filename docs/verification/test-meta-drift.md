@@ -26,8 +26,17 @@ Verdict: PASS (was 815/822 on master; the count grew by one because the new MANU
 
 Reverted `docs/MANUAL.md` to origin/master, re-ran: `FAIL agent devops-triage NOT listed in MANUAL.md`, 821/822. Restored from HEAD; working tree clean.
 
+## Battery round (three independent legs, parallel)
+
+- **Acceptance verifier (sonnet)**: caught a self-inflicted regression the author missed: the first draft of THIS proof doc reintroduced the banned user-prefix literal in its failure table (822/823). Fixed, re-verified 823/823. It also independently confirmed all 7 fixes file-by-file.
+- **Reviewer (opus)**: verdict SHIP. Confirmed the grep loosening is not a weakening (the old fixed-string pin asserted a string that no longer exists anywhere: a dead pin). Two LOWs, both fixed: a third phase-name spelling at WORKFLOW.md's rigor table; the grandfather list now mirrored into ADR-0029 as a live register with a no-row-no-entry rule.
+- **Advisor (sonnet)**: named the root cause both drift repairs (ID-467, ID-639) skipped: no gate runs the projection checks at ship time. Fixed in this branch: `lib/gate/doc-projection-check.sh` (grep-only subset, ~0.1s: MANUAL rows per agent, architecture inventory count, V-model lens phases) wired into `hooks/ship-gate.sh`, firing only on kit-repo pushes whose diff touches a projection surface; the slow FEATURES regen (~17s) stays in the full suite. Escape: `DWARVES_KIT_SKIP_DOC_PROJECTION=1`. The advisor also flagged mid-session master movement; the branch was merged onto current master and the suite re-run before ship.
+- Gate negative control: a scratch tree with the devops-triage MANUAL row deleted → `doc-projection: agent 'devops-triage' has no docs/MANUAL.md row`, exit 1. The gate's positive live proof is this branch's own push (its diff touches MANUAL/architecture/WORKFLOW, so the gate ran on it).
+- Dogfood note: the new check script itself tripped the hooks-roster parity pins while it lived in `hooks/` (819/823), which is those pins working; it moved to `lib/gate/` where a non-event helper belongs.
+
 ## Reproduce
 
 ```
 bash tests/test-meta.sh
+bash lib/gate/doc-projection-check.sh "$(git rev-parse --show-toplevel)"
 ```

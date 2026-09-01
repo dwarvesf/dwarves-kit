@@ -106,6 +106,29 @@ if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2
   echo "[advisory] branch slug '$SLUG' appears nowhere in _meta/BACKLOG.md; if this is real work, give it a board row (SPEC-069)" >&2
 fi
 
+# Doc-projection gate (kit repo only): the drift class that shipped twice
+# (ID-467, ID-639) is an agent/command landing without its MANUAL/architecture
+# rows. When THIS push touches a projection surface, run the fast grep subset
+# (lib/gate/doc-projection-check.sh, ~0.1s; the slow FEATURES regen stays in
+# the full suite). Kit repo only by the file-existence scoping (a consumer repo
+# has neither file). Escape hatch: DWARVES_KIT_SKIP_DOC_PROJECTION=1.
+if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-meta.sh" ] \
+   && [ "${DWARVES_KIT_SKIP_DOC_PROJECTION:-0}" != "1" ]; then
+  DPBASE=$(git -C "$ROOT" merge-base HEAD "$(_resolve_base)" 2>/dev/null || true)
+  if [ -n "$DPBASE" ] && git -C "$ROOT" diff --name-only "$DPBASE" HEAD 2>/dev/null \
+       | grep -qE '^(agents/|commands/|AGENTS\.md$|docs/(MANUAL|architecture|WORKFLOW)\.md$)'; then
+    if ! DPMSG=$(bash "$ROOT/lib/gate/doc-projection-check.sh" "$ROOT" 2>&1); then
+      echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | doc-projection | $SLUG" >> "${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}/ship-gate.log" 2>/dev/null || true
+      {
+        echo "BLOCKED: doc-projection drift. This push touches a projection surface and the derived doc rows are out of sync:"
+        printf '%s\n' "$DPMSG"
+        echo "Fix the named rows (or run 'bash tests/test-meta.sh' for the full picture). Escape: DWARVES_KIT_SKIP_DOC_PROJECTION=1."
+      } >&2
+      exit 2
+    fi
+  fi
+fi
+
 # SPEC-071 / ID-062 advisory (never blocks): a run that recorded real build work but
 # ships no committable verification record dies with the session (the run ledger is
 # gitignored by design). The proof-gate BLOCKS behavioral diffs in adopted repos; this
