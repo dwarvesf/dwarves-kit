@@ -36,19 +36,23 @@ never rewrites a historical record; it reports discrepancies for the operator.
 
 3. **Tier 1, mechanical pass, zero model cost, every record.** For each record, extract and
    check the mechanical claims:
-   - every `[[QL-VERDICT round=N clean=true|false findings=K]]` / `[[AB-VERDICT ...]]` marker is
-     well-formed per the grammar `lib/gauntlet/stats.sh` enforces (`grep -h 'QL-VERDICT' <file>`,
-     full-line match after stripping backticks; a marker that half-matches is a loud failure,
-     not a skip),
+   - marker well-formedness is DELEGATED, never restated here: run `bash lib/gauntlet/stats.sh`
+     first (like doc-drift runs `test-meta.sh` first). Its Pass-1 sweep is the single enforcer of
+     the `[[QL-VERDICT ...]]` / `[[AB-VERDICT ...]]` grammar across the whole corpus; a non-zero
+     exit naming a file is a pre-confirmed marker finding. Do not re-implement the regex here, so
+     the grammar cannot desync from its enforcer,
    - for a record whose rounds carry a per-round `checker-output.txt` (`round-N/submission/` or
      `round-N/`, or a campaign row's own dir), the recorded verdict (the round table's
      GREEN/RED cell, or the row's Checker column) matches that file's own `SUBMISSION:
-     GREEN|RED` tail line,
+     GREEN|RED` tail line, AND the marker's own `clean=true|false` agrees with that verdict
+     (clean=true only when every scored round is GREEN); a marker that disagrees with the
+     checker output is a finding even when the table cell happens to agree,
    - the marker's `findings=K` reconciles with the round's named findings (an inline `F1..FK`
      list, or `round-N/findings.md`'s own heading count); K=0 means no F-item is named,
-   - scrub: no resolved credential VALUE in the record dir's COMMITTED files, a `sk-ant-...`
-     token or an assigned `ANTHROPIC_API_KEY=<hex/base64 value>` (a real value is DANGER, it is
-     an actual leak). A bare `op://...` reference is NOT a leak: it is a pointer, allowed by
+   - scrub: no resolved credential VALUE in the record dir's COMMITTED files, an
+     `ANTHROPIC_API_KEY=<hex/base64 value>` or any recognizable token shape (`sk-ant-`,
+     `sk-`, `ghp_`, an assigned `<TOKEN>=<20+ opaque chars>`); a real value is DANGER, it is
+     an actual leak. A bare `op://...` reference is NOT a leak: it is a pointer, allowed by
      estate secret-handling policy exactly as a path containing an ID is; do not flag it. Note
      it only if the operator asked for a pointer inventory, never as a finding on its own,
    - run-dir grammar: the directory name carries a `<YYYY-MM-DD>-<preset>-<slug>` shape for any

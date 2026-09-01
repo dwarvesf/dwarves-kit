@@ -11,6 +11,15 @@ Impact: the corrected contract turns those 4 FLAGs into OK. The audit surfaced i
 
 `2026-08-06-kit-user` (ROUNDS.md + J3-ROUNDS.md) predates the per-round `checker-output.txt` convention, so the "recorded verdict == checker-output" axis cannot be tested there. Correctly downgraded to UNSURE per the audit-loop hard rule (no-evidence verdict is UNSURE, never a fabricated OK), not treated as a defect.
 
+## 2026-09-01 battery deltas
+
+Four-leg battery (acceptance/review/advisor; security lens skipped by decision, read-only audit skill, no subprocess/secret/network surface). Fixes folded:
+- Review LOW-MED: Tier-1 now cross-checks the marker's own `clean=` against the checker verdict, not only the table cell (a marker could disagree while the cell agrees).
+- Review LOW: stale "no op:// string" wording in the spec Picture bullet corrected to match the four-slots table; audit-loop.md gained a Known-instances paragraph (not just the SDLC-table row).
+- Review LOW nit: the scrub shape widened past Anthropic-only to any recognizable token (`sk-ant-`, `sk-`, `ghp_`, an assigned 20+-char opaque value).
+- Advisor: marker grammar now DELEGATES to `bash lib/gauntlet/stats.sh` (its Pass-1 sweep is the single enforcer) instead of restating the regex, so it cannot desync; added `tests/test-gauntlet-proof-audit.sh` (extracts the item-set command from the SKILL and runs the verdict/scrub rules against fixtures) so the AC-3 control is a re-runnable regression, wired into FEATURES and CI; flipped SPEC status VALIDATED + board shipped.
+- Advisor accept-by-design (operator owns): report-first means a FLAG can sit un-acted-on; cadence stays on-demand (no schedule shipped); FLAG never auto-corrects (a dated note lands only on DANGER).
+
 ## 2026-09-01 skill, not command
 
 Per the spec: siblings (doc-drift, backlog-reconcile) are skills invoked as `/kit:<name>`; a skill needs a README Skills-table row + a FEATURES regen, but no architecture-inventory row (that counts commands + agents). Keeps the doc-projection surface untouched.

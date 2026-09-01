@@ -1,7 +1,7 @@
 # Spec: Gauntlet proof-audit, an audit-loop instance over the run-record corpus
 
 Generated: 2026-09-01
-Status: DRAFT
+Status: VALIDATED
 Lane: normal
 References: `docs/patterns/audit-loop.md` (the pattern this instances); `skills/doc-drift/SKILL.md` + `skills/backlog-reconcile/SKILL.md` (sibling instances, the authoring template); `commands/gauntlet.md` (the record grammar being audited: QL-VERDICT/AB-VERDICT markers, per-round `checker-output.txt`, scrub rules 7/8); `lib/gauntlet/stats.sh` (SPEC-240, reads the same corpus, shares the record-dir enumeration); `agents/audit-scanner.md` (the shared read-only Tier-2 scanner); `_meta/BACKLOG.md` ID-495.
 
@@ -38,7 +38,7 @@ per record, Tier 1 (grep/wc, zero model cost):
   - every QL/AB-VERDICT marker is well-formed (the stats.sh grammar)
   - the recorded per-round verdict matches committed checker-output.txt
   - claimed findings count reconciles with the round rows
-  - scrub: no probe-key-shaped or op:// string in committed evidence
+  - scrub: no resolved credential VALUE in committed evidence (a bare op:// pointer is allowed)
   - run-dir grammar conforms (dated container, per-round files present)
       |
       v

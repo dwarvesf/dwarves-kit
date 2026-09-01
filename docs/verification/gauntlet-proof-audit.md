@@ -49,7 +49,21 @@ Verdict: PASS   # 824 / 824, incl. "README skills table rows == live skills (12 
 
 The SKILL.md apply-mechanics section states REMOVE is never used and a historical claim is never silently rewritten (a discrepancy is reported; a dated correction note lands only on a DANGER record). Verified by reading the skill against this contract.
 
-Rollback: additive (one new skill dir, one README row, a FEATURES regen, one audit-loop pattern row); `git revert` removes the skill and its wiring, no state.
+## Battery round (acceptance / review / advisor)
+
+- **Acceptance (sonnet): PASS 5/5**, AC-3 independently reproduced from scratch (not read from this transcript).
+- **Review (opus): SHIP** + 4 LOW, all folded: marker `clean=` now cross-checked against the checker verdict; stale spec op:// wording fixed; audit-loop.md Known-instances paragraph added; scrub shape widened past Anthropic-only.
+- **Advisor (sonnet)**: flagged the missing regression test and the grammar duplication. Both closed: `tests/test-gauntlet-proof-audit.sh` (11/11) extracts the item-set command from the SKILL and runs the verdict/scrub rules against fixtures, wired into FEATURES + CI; the marker check now delegates to `lib/gauntlet/stats.sh` rather than restating the regex. Status trail reconciled (SPEC VALIDATED, board shipped).
+
+```
+Command: bash tests/test-gauntlet-proof-audit.sh
+Exit: 0
+Verdict: PASS   # 11/11 Tier-1 pins
+```
+
+Security lens skipped by decision: a read-only audit skill with no subprocess, secret, network, or persist-path surface. Recorded here so the skip is a choice, not a default.
+
+Rollback: additive (one new skill dir, one README row, a FEATURES regen, one audit-loop pattern row, one test, one CI step); `git revert` removes the skill and its wiring, no state.
 
 ## Reproduce
 
