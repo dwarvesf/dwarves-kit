@@ -130,6 +130,11 @@ free. Point the user at `docs/guides/gauntlet.md` for the full checklist.
   verdict=wave reason="gauntlet: artifact not converging | gaps: <list> | next: <one line>"`.
   When a finding graduates into Tier 1 (rule 10), append one ROUNDS.md line
   naming the finding and its new deterministic check.
+- Corpus-level projection: `bash lib/gauntlet/stats.sh` prints one convergence
+  table over every run record (findings trajectory, rounds-to-clean, campaign
+  rows GREEN, probe tokens/cost, same-card probe-model deltas); `--write` drops
+  a dated snapshot beside the records (SPEC-240). Read-only over the records;
+  a malformed QL-VERDICT marker fails the run loud.
 
 ## The loop
 
