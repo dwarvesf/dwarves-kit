@@ -71,7 +71,7 @@ echo "=== Invocation namespace guard (SPEC-029, SPEC-030) ==="
 # automatically. tests/ is NOT scanned: this file names /user: to describe the
 # guard. Enforces /user: ABSENCE only (DEC-005); bare-/cmd is not auto-checked.
 USER_NS_HITS=$(cd "$KIT_DIR" && { git ls-files '*.md' \
-      | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|_meta/|CHANGELOG\.md|docs/CHANGELOG\.md)'; \
+      | grep -vE '^(docs/specs/|docs/retro/|docs/decisions/|docs/handoff/|docs/research/|docs/verification/|_meta/|CHANGELOG\.md|docs/CHANGELOG\.md)'; \
     git ls-files 'install.sh' 'hooks/*.sh'; } \
   | xargs grep -l '/user:' 2>/dev/null)
 if [ -n "$USER_NS_HITS" ]; then
@@ -1450,9 +1450,12 @@ echo "=== V-model lens, convergence, and inventory parity (SPEC-031) ==="
 # does this): a raw `grep -r` sweeps UNTRACKED gauntlet room copies under
 # docs/verification/gauntlet/*/ , which each carry their own test-meta.sh and
 # trip on the string this test names to describe itself (ID-640).
+# docs/verification/ is also excluded below: a proof-of-done record is a
+# point-in-time artifact that legitimately quotes the very string it fixed
+# (like retro/handoff), so it is not a live operating surface.
 PHASES_8_HITS=$(cd "$KIT_DIR" && git ls-files \
       'docs/*' 'commands/*' 'WORKFLOW.md' 'README.md' 'MANUAL.md' 'AGENTS.md' \
-    | grep -vE '^(docs/specs/|docs/decisions/|docs/research/|docs/retro/|docs/handoff/|docs/CHANGELOG\.md)' \
+    | grep -vE '^(docs/specs/|docs/decisions/|docs/research/|docs/retro/|docs/handoff/|docs/verification/|docs/CHANGELOG\.md)' \
     | xargs grep -In -E "8 (workflow|lifecycle )?phases" 2>/dev/null | head -1)
 TOTAL=$((TOTAL + 1))
 if [ -z "$PHASES_8_HITS" ]; then
