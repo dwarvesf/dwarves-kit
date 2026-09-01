@@ -1,0 +1,11 @@
+== adoption leave-behinds
+PASS  kit reports the repo adopted
+PASS  AGENTS.md present
+== the change itself
+PASS  a non-default branch exists
+PASS  the branch changed the README example
+PASS  conventional-commit subject
+== the submission shape
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN
