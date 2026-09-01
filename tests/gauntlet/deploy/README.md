@@ -16,6 +16,13 @@ Before any install: the launchd-context traps apply (verify egress + secret
 cache IN launchd context, not over ssh; a cache warmed over ssh leaves a
 .nostore marker that blocks the launchd retry).
 
+- `campaign-pass [--dry-run]`, the unattended full-pass loop: ticks
+  `gauntlet-campaign` through J1..J11 now, scores each row with its staged
+  checker (host-side git fenced), stops on PASS-COMPLETE / a BLOCKED.md pause /
+  a tick cap. Launch it detached (bg-run/tmux). Probe from `PROBE_CMD` in the
+  env, else the runner's Tier-1 default; the cheap omp/NW recipe is an
+  operator-exported opt-in, never baked here. This is the loop that produced
+  both committed campaign records.
 - `gauntlet-ab <ref-A> <ref-B> <persona> <row> <N>` (SPEC-241), an on-demand
   driver, never scheduled: runs one card against two committed artifact
   variants (rule-7 `git archive` tarballs through the runner's

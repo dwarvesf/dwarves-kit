@@ -10,6 +10,7 @@
 #   goal.sh merge <gate|merge|mark>         -> mega-merge.sh (mega-goal box merge)
 #   goal.sh stack-merge <next|chain>        -> stack-merge.sh (stacked-PR merge)
 #   goal.sh handoff <args...>               -> handoff-gen (two-tier handoff doc)
+#   goal.sh wt <start|close> <slug> ...     -> wt.sh (one work unit's worktree start/close ritual)
 #   goal.sh -h|--help|help                  -> this usage
 set -euo pipefail
 
@@ -24,6 +25,7 @@ main() {
     merge)         exec bash "$GOAL_DIR/mega-merge.sh" "$@" ;;
     stack-merge)   exec bash "$GOAL_DIR/stack-merge.sh" "$@" ;;
     handoff)       exec bash "$GOAL_DIR/handoff-gen" "$@" ;;
+    wt|worktree)   exec bash "$GOAL_DIR/wt.sh" "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "goal: unknown verb '$verb' (try: goal --help)" >&2; exit 1 ;;
   esac
