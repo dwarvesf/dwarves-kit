@@ -333,7 +333,17 @@ def plan_sync(rows: dict, items: list, state: dict,
                                f"(board={row.item!r} spoke={it_title!r})")
             p.src_set_title.append((it["rid"], want_title))
         elif src_t_changed and not board_t_changed:
-            p.board_edit_item.append((bid, it_title))
+            # rotation guard: a spoke "retitle" that lands exactly on ANOTHER
+            # row's current item is the cross-row mispairing signature (the
+            # 2026-09-01 scramble), never a real edit; board wins.
+            others = {r.item for b2, r in rows.items() if b2 != bid}
+            if it_title in others:
+                p.conflicts.append(
+                    f"{bid}: spoke title duplicates another row's item; "
+                    f"mispairing suspected, board wins (spoke={it_title!r})")
+                p.src_set_title.append((it["rid"], want_title))
+            else:
+                p.board_edit_item.append((bid, it_title))
         elif it["title"] != want_title:
             p.src_set_title.append((it["rid"], want_title))
         if snapd.get("notes") != row.notes:
@@ -533,13 +543,21 @@ def build_state(rows: dict, items: list, plan: Plan, created: dict,
     for rid, _t, _b, _kw in plan.board_add:
         if rid in assigned and assigned[rid] in rows:
             m[assigned[rid]] = entry_for(assigned[rid], rid)
-    # adopt prefix-matched items that weren't in the old map
+    # adopt prefix-matched items that weren't in the old map. titles_agree is
+    # load-bearing here exactly as in plan_sync's link path: without it, a
+    # mispaired spoke item ("DF-311 · <some other row's text>") is adopted
+    # with the BOARD's title stored as snap-truth, and the next sync reads
+    # the spoke's text as a retitle and overwrites the board row (the
+    # 2026-09-01 dfoundation DF-310/311/312 scramble, identical on two
+    # machines syncing the same poisoned list).
     known_rids = {e["rid"] for e in m.values()}
     for it in items:
         if it["rid"] in known_rids:
             continue
-        bid, _ = parse_title(it["title"])
+        bid, it_title = parse_title(it["title"])
         if bid and bid in rows and bid not in m:
+            if not titles_agree(it_title, rows[bid].item):
+                continue  # id collision: plan_sync notes it next run
             m[bid] = entry_for(bid, it["rid"])
     # scope flags: set on exit, cleared on re-entry, carried while frozen
     exited = {bid for bid, _ in plan.src_scope_exit}

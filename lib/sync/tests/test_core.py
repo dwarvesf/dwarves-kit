@@ -439,3 +439,60 @@ def test_board_add_marks_intake_notes_untrusted():
     assert "2% only" in row.notes
     assert row.notes.endswith("#inbox")
     assert row.item == "buy milk"  # title deliberately not tagged
+
+
+def test_build_state_refuses_mispaired_prefix_adoption():
+    """A spoke item whose embedded id points at a board row with DIFFERENT
+    text must not be adopted into the snapshot map: adoption stores the
+    BOARD's title as snap-truth, so the very next sync reads the spoke's
+    text as a retitle and overwrites the board row (the 2026-09-01
+    dfoundation DF-310/311/312 scramble, reproduced on two machines)."""
+    rows = parse_board(BOARD)
+    poisoned = item("r-poison", "ID-10 · Ship the widget")  # ID-11's text
+    honest = item("r-ok", "ID-11 · Ship the widget")
+    state = build_state(rows, [poisoned, honest], Plan(), {}, {}, {})
+    assert "ID-10" not in state["map"]
+    assert state["map"]["ID-11"]["rid"] == "r-ok"
+
+
+def test_rotation_guard_board_wins_on_cross_row_title():
+    """A linked spoke item 'retitled' to exactly ANOTHER row's current item
+    is the cross-row mispairing signature: the board must win (spoke gets
+    re-titled back), never a board_edit_item."""
+    rows = parse_board(BOARD)
+    state = {"map": snap("ID-10", "r1", "Fix the frobnicator")}
+    it = item("r1", "ID-10 · Ship the widget")  # ID-11's exact item text
+    p = plan_sync(rows, [it], state)
+    assert p.board_edit_item == []
+    assert any("mispairing" in c for c in p.conflicts)
+    assert ("r1", title_for("ID-10", "Fix the frobnicator")) in p.src_set_title
+
+
+def test_rotation_guard_still_allows_real_retitle():
+    """A genuine spoke retitle (text not matching any other row) still flows
+    to the board."""
+    rows = parse_board(BOARD)
+    state = {"map": snap("ID-10", "r1", "Fix the frobnicator")}
+    it = item("r1", "ID-10 · Fix the frobnicator properly")
+    p = plan_sync(rows, [it], state)
+    assert ("ID-10", "Fix the frobnicator properly") in p.board_edit_item
+    assert p.conflicts == []
+
+
+def test_worktree_fence_refuses_sync(tmp_path):
+    """Spokes are shared per board; a worktree checkout's divergent rows
+    poison them for every other checkout. The engine refuses the path
+    outright (KIT_SYNC_ALLOW_WORKTREE=1 is the explicit override)."""
+    import os
+    import subprocess
+    wt = tmp_path / "repo" / ".claude" / "worktrees" / "x" / "_meta"
+    wt.mkdir(parents=True)
+    (wt / "BACKLOG.md").write_text(BOARD)
+    engine = Path(__file__).resolve().parents[1] / "backlog_sync.py"
+    env = {k: v for k, v in os.environ.items() if k != "KIT_SYNC_ALLOW_WORKTREE"}
+    r = subprocess.run(
+        [sys.executable, str(engine), "--backlog", str(wt / "BACKLOG.md"),
+         "--apps", "reminders", "--dry-run"],
+        capture_output=True, text=True, env=env)
+    assert r.returncode != 0
+    assert "refusing to sync a worktree" in (r.stderr + r.stdout)

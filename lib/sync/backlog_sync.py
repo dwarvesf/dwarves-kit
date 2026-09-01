@@ -396,6 +396,20 @@ def main(argv=None):
         sys.exit(f"no backlog at {args.backlog}; pass --backlog or run via "
                  "`board sync` from an adopted repo")
 
+    # worktree fence: spokes (a Reminders list, a Notion db) are shared per
+    # BOARD, not per checkout. A sync run from a git worktree pairs the
+    # spoke's items against that branch's divergent row set and poisons the
+    # shared state for every other checkout (a 180-row cross-board fossil
+    # map from exactly this, 2026-08-16, fed the 2026-09-01 dfoundation
+    # title scramble). Only the canonical checkout may sync.
+    if "/.claude/worktrees/" in str(args.backlog.resolve()) \
+            and not os.environ.get("KIT_SYNC_ALLOW_WORKTREE"):
+        sys.exit("board sync: refusing to sync a worktree checkout "
+                 f"({args.backlog}); spokes are shared per board, and a "
+                 "worktree's divergent rows poison them for every checkout. "
+                 "Run from the canonical checkout, or set "
+                 "KIT_SYNC_ALLOW_WORKTREE=1 if you truly know better.")
+
     state_dir = board_state_dir(args.state_root, args.backlog)
     # single-writer lock: overlapping runs would hand out colliding IDs and
     # clobber each other's board writes
