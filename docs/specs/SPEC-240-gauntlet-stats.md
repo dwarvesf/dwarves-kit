@@ -1,7 +1,7 @@
 # Spec: Gauntlet stats, eval projection over the run-record corpus
 
 Generated: 2026-09-01
-Status: DRAFT
+Status: VALIDATED
 Lane: normal
 References: `commands/gauntlet.md` (QL-VERDICT grammar, rule 10 findings-graduation); `docs/verification/gauntlet/*/ROUNDS.md` (the corpus); `lib/telemetry/lane-telemetry.sh` (the existing ledger-projection idiom this mirrors); `_meta/BACKLOG.md` ID-494 (the source row); ID-496 (the A/B search-select loop this unblocks).
 
