@@ -1,0 +1,23 @@
+{"type":"assistant","timestamp":"2026-06-14T10:00:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_1","name":"Skill","input":{"skill":"prose-rag","args":""}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:01Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_2","name":"Bash","input":{"command":"ls"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:02Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_2","is_error":true,"content":"boom"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:03Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_3","name":"Bash","input":{"command":"echo hi"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:04Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_3","is_error":false,"content":"hi"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:05Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_4","name":"Read","input":{"file_path":"/x"}}]}}
+{"type":"system","timestamp":"2026-06-14T10:00:06Z","hookCount":2,"hookErrors":["slow-hook.sh failed once"],"hookInfos":[{"command":"bash /x/slow-hook.sh","durationMs":500},{"command":"echo approve","durationMs":12}]}
+{"type":"user","timestamp":"2026-06-14T10:00:07Z","message":{"role":"user","content":[{"type":"text","text":"do the thing"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:08Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_5","name":"Agent","input":{"subagent_type":"Explore","description":"search"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:09Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_6","name":"Agent","input":{"subagent_type":"general-purpose","description":"build"}}]}}
+{"type":"assistant","isSidechain":true,"timestamp":"2026-06-14T10:00:10Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_7","name":"Agent","input":{"subagent_type":"Explore","description":"nested spawn inside a subagent, must NOT be counted"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:11Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_8","name":"Edit","input":{"file_path":"/x/thrash.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:12Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_9","name":"Edit","input":{"file_path":"/x/thrash.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:13Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_10","name":"Write","input":{"file_path":"/x/thrash.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:14Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_11","name":"Edit","input":{"file_path":"/x/once.py"}}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:15Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_12","name":"Bash","input":{"command":"deploy --prod"}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:16Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_12","is_error":true,"content":"Permission to use Bash with command deploy --prod was denied"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:17Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu_13","name":"Skill","input":{"skill":"flaky-skill","args":""}}]}}
+{"type":"user","timestamp":"2026-06-14T10:00:18Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_13","is_error":true,"content":"skill blew up"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:19Z","isCompactSummary":true,"message":{"role":"assistant","content":[{"type":"text","text":"(compacted)"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:20Z","message":{"role":"assistant","model":"claude-opus-4-8","usage":{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":900000,"cache_creation_input_tokens":100000},"content":[{"type":"text","text":"opus turn"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:21Z","message":{"role":"assistant","model":"claude-haiku-4-5-20251001","usage":{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"haiku turn"}]}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:22Z","message":{"role":"assistant","model":"claude-fable-5","usage":{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"content":[{"type":"text","text":"fable turn (unknown pricing)"}]}}

@@ -1,0 +1,141 @@
+<title>bench · smoke-code@30595ce9057e</title>
+<style>
+:root{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;--accent:#4f46e5;
+--card:#ffffff;--pass:#dcfce7;--fail:#fee2e2;--mixed:#fef9c3}
+@media(prefers-color-scheme:dark){:root{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;
+--muted:#9ca3af;--accent:#818cf8;--card:#1f2937;--pass:#14532d;--fail:#7f1d1d;--mixed:#713f12}}
+:root[data-theme=dark]{--bg:#111827;--fg:#f3f4f6;--line:#9ca3af44;--muted:#9ca3af;
+--accent:#818cf8;--card:#1f2937;--pass:#14532d;--fail:#7f1d1d;--mixed:#713f12}
+:root[data-theme=light]{--bg:#fafafa;--fg:#111827;--line:#37415155;--muted:#6b7280;
+--accent:#4f46e5;--card:#ffffff;--pass:#dcfce7;--fail:#fee2e2;--mixed:#fef9c3}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--fg);
+max-width:960px;margin:2rem auto;padding:0 1rem;line-height:1.55}
+h1{font-size:1.3rem;text-wrap:balance}h2{font-size:1.05rem;margin-top:2.2rem}
+code{font-family:ui-monospace,monospace;font-size:.9em}
+p.lede{font-size:1rem;max-width:65ch}
+p.note,figcaption{color:var(--muted);font-size:.85rem;max-width:70ch}
+table{border-collapse:collapse;margin:.75rem 0;width:100%;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--line);padding:.45rem .6rem;text-align:left;font-size:.9rem}
+th{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+td.pass{background:var(--pass)}td.fail{background:var(--fail)}td.mixed{background:var(--mixed)}
+td a{color:inherit;text-decoration:underline dotted;text-underline-offset:3px}
+small{color:var(--muted)}
+.pipe{display:flex;flex-wrap:wrap;gap:.6rem;align-items:stretch;margin:1rem 0}
+.pipe .box{flex:1 1 12rem;border:1px solid var(--line);border-radius:6px;
+padding:.6rem .8rem;font-size:.85rem;background:var(--card)}
+.pipe .box b{display:block;font-size:.72rem;text-transform:uppercase;
+letter-spacing:.05em;margin-bottom:.25rem;color:var(--muted)}
+.pipe .sut{border:2px solid var(--accent)}
+.pipe .sut b{color:var(--accent)}
+.arrow{align-self:center;color:var(--muted)}
+details{border:1px solid var(--line);border-radius:6px;padding:.5rem .8rem;margin:.5rem 0;
+background:var(--card)}
+details summary{cursor:pointer;font-size:.9rem}
+details pre{overflow-x:auto;font-size:.8rem;line-height:1.45;padding:.5rem;margin:.5rem 0 0}
+dl.legend{font-size:.85rem;display:grid;grid-template-columns:max-content 1fr;
+gap:.15rem 1rem;margin:.5rem 0}
+dl.legend dt{font-weight:600}dl.legend dd{margin:0;color:var(--muted)}
+.callout{border-left:3px solid var(--accent);padding:.5rem .9rem;margin:1rem 0;
+background:var(--card);font-size:.9rem;max-width:75ch}
+.cell-card{border:1px solid var(--line);border-radius:6px;background:var(--card);
+padding:.6rem .9rem;margin:.6rem 0;font-size:.88rem}
+.cell-card h3{font-size:.9rem;margin:.1rem 0 .4rem}
+.cell-card .fd{font-family:ui-monospace,monospace;font-size:.78rem;overflow-x:auto;
+display:block;white-space:pre;padding:.4rem;border:1px dashed var(--line);margin-top:.4rem}
+.badge{display:inline-block;border-radius:99px;padding:.05rem .6rem;font-size:.75rem;
+font-weight:600}
+.badge.ok{background:var(--pass)}.badge.bad{background:var(--fail)}
+pre.repro{overflow-x:auto;border:1px solid var(--line);border-radius:6px;
+padding:.6rem .8rem;font-size:.8rem;background:var(--card)}
+</style>
+<h1>bench scoreboard · suite <code>smoke-code</code> @ <code>30595ce9057e</code></h1>
+<p class="lede">Every number here answers one question: <em>given the exact same frozen
+tasks and the exact same hidden checks, how do different models and workflows compare?</em>
+12 attempts recorded 2026-07-24T20:40:21+00:00.</p>
+
+<h2>1 · What was tested</h2>
+<figure>
+<div class="pipe">
+<div class="box"><b>Pinned: frozen task suite</b>2 tasks, content-hash
+<code>30595ce9057e</code>. Same bytes for every contender, forever comparable.</div>
+<div class="arrow">→</div>
+<div class="box sut"><b>Varied: system under test</b>Model (haiku, sonnet) ×
+workflow (agent, model). The ONLY thing that changes
+between columns.</div>
+<div class="arrow">→</div>
+<div class="box"><b>Pinned: hidden checks</b>Hand-written expected answers
+(26 cases total), kept out of the sandbox until the attempt is
+done, so nothing can study for the test.</div>
+<div class="arrow">→</div>
+<div class="box"><b>Output: immutable rows</b>One JSON row per attempt: passed?,
+cases passed, cost, time. Never edited; a correction is a new run.</div>
+</div>
+<figcaption>Everything except the highlighted box is pinned, so any difference in
+the numbers below is attributable to the model or workflow, not to luck or a moving
+target.</figcaption></figure>
+
+<h2>2 · The tasks (click to read the actual prompt)</h2>
+<details><summary><code>dedup-urls</code> · <code>dedup_urls(urls: list[str]) -&gt; list[str]</code> · 12 hidden checks</summary><pre>Write a Python module defining exactly one function:
+
+    dedup_urls(urls: list[str]) -&gt; list[str]
+
+It removes duplicate URLs while preserving first-seen order. Two URLs are
+duplicates when they are equal after normalization:
+
+- scheme and host compared case-insensitively (&quot;HTTP://Example.com&quot; == &quot;http://example.com&quot;)
+- a single trailing slash on the path is ignored (&quot;http://a.com/x/&quot; == &quot;http://a.com/x&quot;)
+- the fragment is ignored (&quot;http://a.com/x#top&quot; == &quot;http://a.com/x&quot;)
+- query strings are significant and compared as-is
+- default ports are ignored (&quot;:80&quot; for http, &quot;:443&quot; for https)
+
+The returned list contains the ORIGINAL strings (first occurrence wins),
+not the normalized forms. Non-URL junk strings that cannot be parsed are
+kept, deduplicated by exact string match.
+
+Standard library only.
+</pre></details><details><summary><code>parse-semver</code> · <code>parse_semver(version: str) -&gt; dict | None</code> · 14 hidden checks</summary><pre>Write a Python module defining exactly one function:
+
+    parse_semver(version: str) -&gt; dict | None
+
+It parses a semantic version string per semver 2.0.0 and returns a dict with
+keys: major (int), minor (int), patch (int), prerelease (str or None),
+build (str or None).
+
+Rules:
+- &quot;1.2.3&quot; -&gt; {&quot;major&quot;: 1, &quot;minor&quot;: 2, &quot;patch&quot;: 3, &quot;prerelease&quot;: None, &quot;build&quot;: None}
+- &quot;1.2.3-alpha.1&quot; -&gt; prerelease &quot;alpha.1&quot;
+- &quot;1.2.3+build.5&quot; -&gt; build &quot;build.5&quot;
+- &quot;1.2.3-rc.2+build.9&quot; -&gt; both
+- Return None for invalid input: missing parts (&quot;1.2&quot;), leading zeros in a
+  numeric field (&quot;01.2.3&quot;), negative numbers, empty string, non-string input,
+  a leading &quot;v&quot; (&quot;v1.2.3&quot;).
+
+Standard library only.
+</pre></details>
+
+<h2>3 · The contenders</h2>
+<table><tr><th>model</th><th>workflow</th><th>meaning</th></tr><tr><td><code>haiku</code></td><td><code>agent</code></td><td>a full tool-using Claude Code run in a sandbox dir: measures the model inside a workflow</td></tr><tr><td><code>haiku</code></td><td><code>model</code></td><td>one bare completion, no tools: measures the raw model</td></tr><tr><td><code>sonnet</code></td><td><code>model</code></td><td>one bare completion, no tools: measures the raw model</td></tr></table>
+
+<h2>4 · Results per contender</h2>
+<table><tr><th>model</th><th>workflow</th><th>attempts</th><th>first-pass yield</th>
+<th>$/task</th><th>s/task</th><th>harness errors</th></tr><tr><td><code>haiku</code></td><td><code>agent</code></td><td>4</td><td>0.5</td><td>0.1127</td><td>49.0</td><td>0</td></tr><tr><td><code>haiku</code></td><td><code>model</code></td><td>4</td><td>0.5</td><td>0.1114</td><td>55.3</td><td>0</td></tr><tr><td><code>sonnet</code></td><td><code>model</code></td><td>4</td><td>0.5</td><td>0.5527</td><td>29.4</td><td>0</td></tr></table>
+<dl class="legend">
+<dt>first-pass yield</dt><dd>share of tasks fully passed on the first attempt, no retries, no human help; the headline quality number</dd>
+<dt>$/task</dt><dd>average API cost per attempt; quality per dollar is the routing decision</dd>
+<dt>s/task</dt><dd>average wall-clock seconds per attempt</dd>
+<dt>harness errors</dt><dd>attempts that broke in the harness itself (not counted as task failures)</dd>
+</dl>
+
+<h2>5 · Task × contender matrix (click a cell for its detail)</h2>
+<table><tr><th>task</th><th><code>haiku</code><br><small>agent</small></th><th><code>haiku</code><br><small>model</small></th><th><code>sonnet</code><br><small>model</small></th></tr>
+<tr><th><code>dedup-urls</code></th><td class="fail"><a href="#d-dedup-urls-haiku-agent">0/2</a> <small>11/12, 11/12 cases</small></td><td class="fail"><a href="#d-dedup-urls-haiku-model">0/2</a> <small>11/12, 11/12 cases</small></td><td class="mixed"><a href="#d-dedup-urls-sonnet-model">1/2</a> <small>11/12, 12/12 cases</small></td></tr><tr><th><code>parse-semver</code></th><td class="pass"><a href="#d-parse-semver-haiku-agent">2/2</a> <small>14/14, 14/14 cases</small></td><td class="pass"><a href="#d-parse-semver-haiku-model">2/2</a> <small>14/14, 14/14 cases</small></td><td class="mixed"><a href="#d-parse-semver-sonnet-model">1/2</a> <small>14/14, 0/0 cases</small></td></tr></table>
+
+
+<h2>6 · Attempt details</h2>
+<div class="cell-card" id="d-dedup-urls-haiku-agent"><h3><code>dedup-urls</code> · <code>haiku/agent</code> <span class="badge bad">failed</span></h3>11/12 cases · $0.1070375 · 40.0s wall · 26/3848 tok</div><div class="cell-card" id="d-dedup-urls-haiku-agent"><h3><code>dedup-urls</code> · <code>haiku/agent</code> <span class="badge bad">failed</span></h3>11/12 cases · $0.1263225 · 68.0s wall · 26/6610 tok<span class="fd">FAIL dedup_urls([&#x27;http://a.com&#x27;, &#x27;http://a.com/&#x27;]) = [&#x27;http://a.com&#x27;, &#x27;http://a.com/&#x27;], want [&#x27;http://a.com&#x27;]</span></div><div class="cell-card" id="d-dedup-urls-haiku-model"><h3><code>dedup-urls</code> · <code>haiku/model</code> <span class="badge bad">failed</span></h3>11/12 cases · $0.13564500000000002 · 78.2s wall · 10/8663 tok</div><div class="cell-card" id="d-dedup-urls-haiku-model"><h3><code>dedup-urls</code> · <code>haiku/model</code> <span class="badge bad">failed</span></h3>11/12 cases · $0.11005250000000001 · 73.2s wall · 10/7886 tok<span class="fd">FAIL dedup_urls([&#x27;http://a.com&#x27;, &#x27;http://a.com/&#x27;]) = [&#x27;http://a.com&#x27;, &#x27;http://a.com/&#x27;], want [&#x27;http://a.com&#x27;]</span></div><div class="cell-card" id="d-dedup-urls-sonnet-model"><h3><code>dedup-urls</code> · <code>sonnet/model</code> <span class="badge bad">failed</span></h3>11/12 cases · $0.6092849999999999 · 36.4s wall · 10/2860 tok</div><div class="cell-card" id="d-dedup-urls-sonnet-model"><h3><code>dedup-urls</code> · <code>sonnet/model</code> <span class="badge ok">passed</span></h3>12/12 cases · $0.5497160999999999 · 35.3s wall · 6/2790 tok</div><div class="cell-card" id="d-parse-semver-haiku-agent"><h3><code>parse-semver</code> · <code>haiku/agent</code> <span class="badge ok">passed</span></h3>14/14 cases · $0.1198268 · 58.9s wall · 26/5691 tok</div><div class="cell-card" id="d-parse-semver-haiku-agent"><h3><code>parse-semver</code> · <code>haiku/agent</code> <span class="badge ok">passed</span></h3>14/14 cases · $0.09745870000000001 · 28.9s wall · 26/2500 tok</div><div class="cell-card" id="d-parse-semver-haiku-model"><h3><code>parse-semver</code> · <code>haiku/model</code> <span class="badge ok">passed</span></h3>14/14 cases · $0.115325 · 41.2s wall · 10/4641 tok</div><div class="cell-card" id="d-parse-semver-haiku-model"><h3><code>parse-semver</code> · <code>haiku/model</code> <span class="badge ok">passed</span></h3>14/14 cases · $0.0845535 · 28.5s wall · 10/2829 tok</div><div class="cell-card" id="d-parse-semver-sonnet-model"><h3><code>parse-semver</code> · <code>sonnet/model</code> <span class="badge ok">passed</span></h3>14/14 cases · $0.5278854 · 25.3s wall · 6/1757 tok</div><div class="cell-card" id="d-parse-semver-sonnet-model"><h3><code>parse-semver</code> · <code>sonnet/model</code> <span class="badge bad">failed</span></h3>0/0 cases · $0.5239362 · 20.8s wall · 6/1445 tok</div>
+
+<h2>7 · Reproduce this page</h2>
+<pre class="repro">python3 bench.py run --suite suites/smoke-code --models haiku,sonnet --out runs.jsonl
+python3 bench.py render runs.jsonl --suite suites/smoke-code --html scoreboard.html</pre>
+<p class="note">Rows are append-only evidence: the same suite hash re-run later lands new
+rows next to these, and <code>bench diff</code> reports exactly what got better or worse.</p>

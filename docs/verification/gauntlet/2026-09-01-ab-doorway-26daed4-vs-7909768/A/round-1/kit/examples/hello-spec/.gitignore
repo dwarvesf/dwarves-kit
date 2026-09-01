@@ -1,0 +1,9 @@
+# Local Claude Code user state and per-machine settings
+.claude/
+
+# Legacy / retired artifacts the kit no longer writes (review output lives in the
+# spec's `## Review` section; specs live in docs/specs/). Ignored so a stray copy
+# never enters version control.
+REVIEW.md
+TODOS.md
+.planning/

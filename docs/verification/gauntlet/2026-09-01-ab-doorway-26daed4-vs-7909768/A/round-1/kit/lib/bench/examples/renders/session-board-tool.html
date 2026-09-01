@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>board-tool · Forge session</title>
+<meta name="description" content="Forge session log for run board-tool: gate timeline, conformance, outcomes.">
+<style>
+:root{--coal:#F2F0EC;--sheet:#FAF9F6;--card:#FFF;--ink:#1C1E24;--iron:#3A3F49;
+--ash:#6E7480;--rule:#D8D4CC;--rule-strong:#B9B4AA;--ember:#C84A16;--heat2:#C84A16;
+--heat3:#F08C1B;--heat4:#FFD75E;--ok:#2E7D4F;--warn:#B07B10;--bad:#B3261E;
+--glow:rgba(200,74,22,.12);
+--mono:ui-monospace,"SF Mono","Cascadia Code","JetBrains Mono",Menlo,monospace;
+--sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif}
+@media (prefers-color-scheme:dark){:root{--coal:#15171C;--sheet:#1B1E24;--card:#1F232B;
+--ink:#ECEAE4;--iron:#B8BDC7;--ash:#8A8F99;--rule:#2B2F37;--rule-strong:#3C414B;
+--ok:#5DBB84;--warn:#D9A441;--bad:#E5726B;--glow:rgba(240,140,27,.10)}}
+:root[data-theme=dark]{--coal:#15171C;--sheet:#1B1E24;--card:#1F232B;--ink:#ECEAE4;
+--iron:#B8BDC7;--ash:#8A8F99;--rule:#2B2F37;--rule-strong:#3C414B;--ok:#5DBB84;
+--warn:#D9A441;--bad:#E5726B;--glow:rgba(240,140,27,.10)}
+:root[data-theme=light]{--coal:#F2F0EC;--sheet:#FAF9F6;--card:#FFF;--ink:#1C1E24;
+--iron:#3A3F49;--ash:#6E7480;--rule:#D8D4CC;--rule-strong:#B9B4AA;--ok:#2E7D4F;
+--warn:#B07B10;--bad:#B3261E;--glow:rgba(200,74,22,.12)}
+*{box-sizing:border-box}
+body{background:var(--coal);color:var(--ink);font-family:var(--sans);margin:0;
+line-height:1.55;-webkit-font-smoothing:antialiased}
+.spine{height:6px;background:linear-gradient(90deg,#8A8E96,var(--heat2),var(--heat3),var(--heat4))}
+main{max-width:960px;margin:0 auto;padding:22px 20px 60px}
+.crumb{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;
+font-family:var(--mono);font-size:12px}
+.crumb a{color:var(--ash);text-decoration:none}
+.crumb a:hover{color:var(--ember)}
+.crumb button{font:inherit;font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
+text-transform:uppercase;background:var(--card);color:var(--ember);
+border:1px solid var(--ember);padding:5px 12px;cursor:pointer}
+:focus-visible{outline:2px solid var(--ember);outline-offset:2px}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;
+text-transform:uppercase;color:var(--ember)}
+h1{font-family:var(--mono);font-weight:700;text-transform:uppercase;
+font-size:clamp(20px,3.4vw,30px);line-height:1.06;margin:2px 0 6px;word-break:break-all}
+h2{font-family:var(--mono);font-size:13px;letter-spacing:.12em;text-transform:uppercase;
+margin:30px 0 8px;color:var(--iron)}
+.meta{color:var(--ash);font-size:13.5px;max-width:70ch}
+.dim{color:var(--ash)}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;
+background:var(--rule);border:1px solid var(--rule);margin:18px 0}
+.tile{background:var(--card);padding:12px 14px}
+.tile b{display:block;font-family:var(--mono);font-size:17px}
+.tile span{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;
+text-transform:uppercase;color:var(--ash)}
+table{border-collapse:collapse;width:100%;margin:8px 0;font-variant-numeric:tabular-nums}
+th,td{border:1px solid var(--rule);padding:6px 9px;font-size:12.5px;text-align:left;
+background:var(--card);vertical-align:top}
+th{font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;
+color:var(--ash);position:sticky;top:0}
+td.mono,.mono{font-family:var(--mono);font-size:11.5px;white-space:nowrap}
+tr.s-missed td{background:color-mix(in srgb,var(--bad) 8%,var(--card))}
+tr.s-override td{background:color-mix(in srgb,var(--warn) 8%,var(--card))}
+tr:hover td{background:var(--glow)}
+.chip{display:inline-block;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+padding:1px 8px;border:1px solid var(--rule-strong);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:var(--ok)}
+.chip.bad{color:var(--bad);border-color:var(--bad)}
+.chip.warn{color:var(--warn);border-color:var(--warn)}
+.chip.dim{color:var(--ash)}
+.scroll{max-height:none;overflow-x:auto;border:1px solid var(--rule)}
+.scroll table{margin:0;border:none}
+pre{background:var(--sheet);border:1px solid var(--rule);padding:10px 12px;overflow-x:auto;
+font-family:var(--mono);font-size:12px}
+.foot{margin-top:32px;font-family:var(--mono);font-size:11px;color:var(--ash)}
+</style>
+</head>
+<body>
+<div class="spine"></div>
+<main>
+<div class="crumb"><a href="../index.html">&larr; control plane</a>
+<button id="share">Share this session</button></div>
+<div class="eyebrow">Session log</div>
+<h1>board-tool</h1>
+<p class="meta">dwarves-kit ·
+spec-feature ·
+2026-07-04 · 35 min
+</p>
+
+<div class="tiles">
+<div class="tile"><b>full</b><span>lane
+(classifier agreed)</span></div>
+<div class="tile"><b><span class="chip ok">12/12</span></b><span>required gates present</span></div>
+<div class="tile"><b>31 ● 5 ○ 1 ⚑</b><span>ran / skipped / overridden</span></div>
+<div class="tile"><b>37</b><span>gate events</span></div>
+</div>
+
+<h2>Gate timeline</h2>
+<p class="meta">Every recorded decision, in order, with the reason it carried. Rows marked
+<span class="chip bad">◌ MISSED</span> are gates the lane expected that this run never recorded.</p>
+<div class="scroll"><table><tr><th>time</th><th>gate</th><th>verdict</th><th>reason</th></tr>
+<tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>think</td><td><span class="chip ok">● OK</span></td><td>read AGENTS.md/WORKFLOW.md + ops-toolkit board/board-all/boards.txt + board-hermes-bridge-design.md (incl 2026-07-05 amendment) before designing</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>design</td><td><span class="chip ok">● OK</span></td><td>token grammar #queue{repo=...,pointer=...}, allow-list model (charset+self-consistency+containment+existence), CONSUMER config via --repo-root/REPO_ROOT -- recorded in SPEC-146 Design section</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>design-critique</td><td><span class="chip ok">● OK</span></td><td>self-adversarial rung-4 red-team pass (7 attack attempts) recorded in docs/verification/board-tool/proof-of-done.md</td></tr><tr class="s-skipped"><td class=mono>07-04 20:42:17</td><td class=mono>ui-design</td><td><span class="chip dim">○ SKIP</span></td><td>no UI, CLI only</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>spec</td><td><span class="chip ok">● OK</span></td><td>docs/specs/SPEC-146-cockpit-board-tool.md written</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>validate</td><td><span class="chip ok">● OK</span></td><td>self-validated against goal quality bar + scope edges; AC/test-plan cross-checked against tests/test-board.sh</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>design-record</td><td><span class="chip ok">● OK</span></td><td>SPEC-146 Design section non-empty (new command surface + security model)</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>test-plan</td><td><span class="chip ok">● OK</span></td><td>9-row test plan table in SPEC-146, mapped 1:1 to tests/test-board.sh sections</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>build</td><td><span class="chip ok">● OK</span></td><td>lib/board.sh + lib/parse-board.sh + tests/test-board.sh + doc-impact updates (README/architecture/test-meta pin/CI step)</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>review</td><td><span class="chip ok">● OK</span></td><td>self code-review: shellcheck clean, bash 3.2 compat verified, 2 deliberate-breakage negative controls confirmed RED then reverted</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:17</td><td class=mono>docs</td><td><span class="chip ok">● OK</span></td><td>SPEC-146 + implementation-notes + proof-of-done.md + README/architecture doc-impact entries</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:28</td><td class=mono>think</td><td><span class="chip ok">● OK</span></td><td>read AGENTS.md/WORKFLOW.md + ops-toolkit board/board-all/boards.txt + board-hermes-bridge-design.md (incl 2026-07-05 amendment) before designing</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:28</td><td class=mono>design</td><td><span class="chip ok">● OK</span></td><td>token grammar #queue{repo=...,pointer=...}, allow-list model (charset+self-consistency+containment+existence), CONSUMER config via --repo-root/REPO_ROOT -- recorded in SPEC-146 Design section</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:28</td><td class=mono>design-critique</td><td><span class="chip ok">● OK</span></td><td>self-adversarial rung-4 red-team pass (7 attack attempts) recorded in docs/verification/board-tool/proof-of-done.md</td></tr><tr class="s-skipped"><td class=mono>07-04 20:42:28</td><td class=mono>ui-design</td><td><span class="chip dim">○ SKIP</span></td><td>no UI, CLI only</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:28</td><td class=mono>spec</td><td><span class="chip ok">● OK</span></td><td>docs/specs/SPEC-146-cockpit-board-tool.md written</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:28</td><td class=mono>validate</td><td><span class="chip ok">● OK</span></td><td>self-validated against goal quality bar + scope edges; AC/test-plan cross-checked against tests/test-board.sh</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:28</td><td class=mono>design-record</td><td><span class="chip ok">● OK</span></td><td>SPEC-146 Design section non-empty (new command surface + security model)</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:28</td><td class=mono>test-plan</td><td><span class="chip ok">● OK</span></td><td>9-row test plan table in SPEC-146, mapped 1:1 to tests/test-board.sh sections</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:29</td><td class=mono>build</td><td><span class="chip ok">● OK</span></td><td>lib/board.sh + lib/parse-board.sh + tests/test-board.sh + doc-impact updates (README/architecture/test-meta pin/CI step)</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:29</td><td class=mono>review</td><td><span class="chip ok">● OK</span></td><td>self code-review: shellcheck clean, bash 3.2 compat verified, 2 deliberate-breakage negative controls confirmed RED then reverted</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:29</td><td class=mono>docs</td><td><span class="chip ok">● OK</span></td><td>SPEC-146 + implementation-notes + proof-of-done.md + README/architecture doc-impact entries</td></tr><tr class="s-skipped"><td class=mono>07-04 20:42:52</td><td class=mono>grill</td><td><span class="chip dim">○ SKIP</span></td><td>reason=operator-wave: goal file (runner-fastpath sub-goal 04) is a pre-resolved grill written by the conductor session</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>think</td><td><span class="chip ok">● OK</span></td><td>read AGENTS.md/WORKFLOW.md + ops-toolkit board/board-all/boards.txt + board-hermes-bridge-design.md (incl 2026-07-05 amendment) before designing</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>design</td><td><span class="chip ok">● OK</span></td><td>token grammar #queue{repo=...,pointer=...}, allow-list model (charset+self-consistency+containment+existence), CONSUMER config via --repo-root/REPO_ROOT -- recorded in SPEC-146 Design section</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>design-critique</td><td><span class="chip ok">● OK</span></td><td>self-adversarial rung-4 red-team pass (7 attack attempts) recorded in docs/verification/board-tool/proof-of-done.md</td></tr><tr class="s-skipped"><td class=mono>07-04 20:42:52</td><td class=mono>ui-design</td><td><span class="chip dim">○ SKIP</span></td><td>no UI, CLI only</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>spec</td><td><span class="chip ok">● OK</span></td><td>docs/specs/SPEC-146-cockpit-board-tool.md written</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>validate</td><td><span class="chip ok">● OK</span></td><td>self-validated against goal quality bar + scope edges; AC/test-plan cross-checked against tests/test-board.sh</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>design-record</td><td><span class="chip ok">● OK</span></td><td>SPEC-146 Design section non-empty (new command surface + security model)</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>test-plan</td><td><span class="chip ok">● OK</span></td><td>9-row test plan table in SPEC-146, mapped 1:1 to tests/test-board.sh sections</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>build</td><td><span class="chip ok">● OK</span></td><td>lib/board.sh + lib/parse-board.sh + tests/test-board.sh + doc-impact updates (README/architecture/test-meta pin/CI step)</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>review</td><td><span class="chip ok">● OK</span></td><td>self code-review: shellcheck clean, bash 3.2 compat verified, 2 deliberate-breakage negative controls confirmed RED then reverted</td></tr><tr class="s-ran"><td class=mono>07-04 20:42:52</td><td class=mono>docs</td><td><span class="chip ok">● OK</span></td><td>SPEC-146 + implementation-notes + proof-of-done.md + README/architecture doc-impact entries</td></tr><tr class="s-skipped"><td class=mono>07-04 20:42:59</td><td class=mono>reflect</td><td><span class="chip dim">○ SKIP</span></td><td>single-worker sub-goal inside the runner-fastpath mega-goal; retro owned by the conductor at mega-goal close, not per sub-goal</td></tr><tr class="s-override"><td class=mono>07-04 20:43:23</td><td class=mono>reflect</td><td><span class="chip warn">⚑ OVERRIDE</span></td><td>single sub-goal worker inside the runner-fastpath mega-goal; per WORKFLOW.md&#x27;s spine the mega-goal&#x27;s own /kit:retro (run by the conductor at mega-goal close) is the reflect gate for this cycle, not a per-sub-goal retro</td></tr><tr class="s-ran"><td class=mono>07-04 20:44:10</td><td class=mono>ship</td><td><span class="chip ok">● OK</span></td><td>3 commits (feat/test/docs); pushing feat/board-tool, opening PR against master</td></tr></table></div>
+
+<h2>Ship outcomes</h2>
+<table><tr><th>time</th><th>phase</th><th>detail</th></tr><tr><td class=mono>07-04 20:44:14</td><td class=mono>ship</td><td class=mono>start | at=1783197854</td></tr><tr><td class=mono>07-04 20:44:14</td><td class=mono>ship</td><td class=mono>end | at=1783197854 caught=false dur_s=0</td></tr><tr><td class=mono>07-04 20:59:19</td><td class=mono>ship</td><td class=mono>start | at=1783198759</td></tr><tr><td class=mono>07-04 20:59:19</td><td class=mono>ship</td><td class=mono>end | at=1783198759 caught=false dur_s=0</td></tr><tr><td class=mono>07-04 20:59:37</td><td class=mono>ship</td><td class=mono>start | at=1783198777</td></tr><tr><td class=mono>07-04 20:59:37</td><td class=mono>ship</td><td class=mono>end | at=1783198777 caught=false dur_s=0</td></tr><tr><td class=mono>07-04 20:59:45</td><td class=mono>ship</td><td class=mono>start | at=1783198785</td></tr><tr><td class=mono>07-04 20:59:45</td><td class=mono>ship</td><td class=mono>end | at=1783198785 caught=false dur_s=0</td></tr></table>
+
+
+<h2>Reproduce</h2>
+<pre>forge-tui run board-tool
+bash lib/telemetry/lane-telemetry.sh trace board-tool</pre>
+<p class="foot">FORGE · session log rendered from the append-only gate ledger ·
+2026-07-25T04:29:06+00:00</p>
+</main>
+<script>
+document.getElementById("share").onclick=()=>{
+  const u=location.href;
+  const b=document.getElementById("share");
+  const done=()=>{b.textContent="Link copied";setTimeout(()=>b.textContent="Share this session",1400);};
+  if(navigator.clipboard)navigator.clipboard.writeText(u).then(done,done);
+  else{const t=document.createElement("textarea");t.value=u;document.body.appendChild(t);
+    t.select();document.execCommand("copy");t.remove();done();}
+};
+</script>
+</body>
+</html>

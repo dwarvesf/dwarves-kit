@@ -1,0 +1,59 @@
+#!/bin/bash
+# activate , the client half of free -> pro (ID-438 scope).
+#
+#   bin/activate <FRG-...>     store the key (0600) + verify + print entitlement
+#   bin/activate --status      verify the stored key + doctor line (grace, updates)
+#   bin/activate --remove      forget the key (the install keeps working: free core)
+#
+# Free vs pro is ONE file-exists check at update time, never a runtime gate.
+# The key gates the update stream; removing it changes nothing about what runs.
+set -euo pipefail
+API="${FORGE_API:-https://forge-api.infras.workers.dev}"
+KEYFILE="${DWARVES_KIT_LICENSE:-$HOME/.config/dwarves-kit/license}"
+UA="dwarves-kit-activate/1"
+
+doctor() { # doctor <key>
+  local key="$1" v
+  v="$(curl -sf -H "User-Agent: $UA" "$API/verify/$key")" || { echo "verify unreachable (offline is fine: the runtime never needs it)"; return 0; }
+  python3 - "$v" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+tier, seats, until = d.get("tier"), d.get("seats"), d.get("updates_until")
+if not d.get("valid"):
+    print(f"key status: {d.get('status')} , the install keeps working (perpetual fallback); the stream is off")
+elif d.get("grace"):
+    print(f"{tier} · {seats} seat(s) · update window ended {until} , GRACE: renew within 14 days to keep updates flowing")
+elif d.get("stream"):
+    print(f"{tier} · {seats} seat(s) · updates until {until} · stream ON")
+else:
+    print(f"{tier} · {seats} seat(s) · updates paused since {until} , renew to resume; everything installed keeps working")
+PY
+  # stream head, when entitled: is there a newer version than the installed one?
+  local latest here
+  latest="$(curl -sf -H "User-Agent: $UA" "$API/stream/latest?key=$key" 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin).get('version',''))" 2>/dev/null || true)"
+  here="$(cat "$(dirname "$0")/../VERSION" 2>/dev/null || echo '?')"
+  if [ -n "$latest" ] && [ "$latest" != "$here" ]; then
+    echo "stream: v$latest available (you're on v$here) , claude plugin marketplace update"
+  elif [ -n "$latest" ]; then
+    echo "stream: up to date (v$here)"
+  fi
+}
+
+case "${1:-}" in
+  --status)
+    [ -f "$KEYFILE" ] || { echo "no key stored ($KEYFILE): free core, fully functional. Buy at forge → bin/activate <key>"; exit 0; }
+    doctor "$(cat "$KEYFILE")"
+    ;;
+  --remove)
+    [ -f "$KEYFILE" ] && mv -f "$KEYFILE" "$KEYFILE.removed" && echo "key set aside ($KEYFILE.removed); free core continues unchanged" || echo "no key stored"
+    ;;
+  FRG-*)
+    mkdir -p "$(dirname "$KEYFILE")"
+    ( umask 177; printf '%s\n' "$1" > "$KEYFILE" )
+    echo "key stored at $KEYFILE (0600)"
+    doctor "$1"
+    ;;
+  *)
+    echo "usage: bin/activate <FRG-...> | --status | --remove" >&2; exit 64
+    ;;
+esac

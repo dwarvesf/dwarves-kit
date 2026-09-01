@@ -1,0 +1,6 @@
+{
+  "name": "smoke-code",
+  "version": 1,
+  "description": "Smoke tier: tiny, deterministic, hand-verified coding tasks. Minutes and cents per config; the first gate for any new model.",
+  "tasks": ["parse-semver", "dedup-urls"]
+}

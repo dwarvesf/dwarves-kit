@@ -1,0 +1,5 @@
+{"type":"summary","summary":"OLD-SUMMARY-LINE-should-be-skipped"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"deploy the worker with wrangler"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"THINKING-should-be-skipped"},{"type":"text","text":"running wrangler deploy now"}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"ok"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"deployed successfully"}]}}

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Hermetic stub for the `claude` CLI used by tests/smoke.sh.
+#
+# It answers ONLY the read-only / benign verbs cc-plugin-check legitimately calls:
+#   plugin --help                  -> exit 0 (the probe)
+#   plugin list --json             -> emit $STUB_ROSTER (the installed roster)
+#   plugin marketplace update [..] -> exit 0, UNLESS $STUB_REFRESH_FAIL=1 (AC4 offline sim)
+#
+# ANY OTHER verb , crucially `plugin update <x>` (the REAL updater) , is treated as an
+# UNEXPECTED verb: the stub touches $STUB_CANARY and exits non-zero. The suite asserts the
+# canary never appears, proving cc-plugin-check never shelled the real plugin updater
+# (AC9 autonomy gate, AC10 injection defense). It never reaches the network.
+set -euo pipefail
+
+canary() { : > "${STUB_CANARY:-/tmp/cc-plugin-check-stub-canary}"; }
+
+# Drop a leading "plugin"/"plugins" if present so we can match subverbs uniformly.
+if [ "${1:-}" = "plugin" ] || [ "${1:-}" = "plugins" ]; then
+  shift
+fi
+
+case "${1:-}" in
+  --help|-h|help)
+    echo "stub claude plugin help"
+    exit 0
+    ;;
+  list)
+    # Only the read-only JSON list is supported.
+    shift || true
+    want_json=0
+    for a in "$@"; do [ "$a" = "--json" ] && want_json=1; done
+    if [ "$want_json" = "1" ]; then
+      if [ -n "${STUB_ROSTER:-}" ] && [ -f "${STUB_ROSTER}" ]; then
+        cat "${STUB_ROSTER}"
+        exit 0
+      fi
+      echo "[]"
+      exit 0
+    fi
+    # A non-json list is not something the tool calls; treat as unexpected.
+    canary
+    echo "stub: unexpected 'plugin list' without --json" >&2
+    exit 3
+    ;;
+  marketplace)
+    shift || true
+    if [ "${1:-}" = "update" ]; then
+      if [ "${STUB_REFRESH_FAIL:-0}" = "1" ]; then
+        echo "stub: simulated marketplace update failure (offline)" >&2
+        exit 7
+      fi
+      exit 0
+    fi
+    canary
+    echo "stub: unexpected 'plugin marketplace ${1:-}'" >&2
+    exit 3
+    ;;
+  update)
+    # `update` is the real mutating verb. BY DEFAULT reaching it means the tool shelled the real
+    # updater -> canary so the test fails loudly (AC9 autonomy gate). In STUB_ALLOW_UPDATE mode the
+    # stub instead ACTS as a controllable updater so the apply/summary path (AC6) can be exercised:
+    # exit 0, or exit 1 when the target matches STUB_FAIL_PLUGIN. It is still the stub, never the
+    # real CLI; the autonomy story for the default suite ([13][17][18]) is unchanged.
+    if [ "${STUB_ALLOW_UPDATE:-0}" = "1" ]; then
+      shift || true
+      target=""
+      for a in "$@"; do [ "$a" = "--" ] && continue; target="$a"; done
+      # MIMIC THE REAL CLI's name contract: the update verb needs the full <plugin>@<marketplace>
+      # pluginId; a BARE name (no '@') is rejected as "Plugin not found". This is the regression
+      # guard for the bump-form bug (the old stub accepted any shape, so the bug shipped).
+      case "$target" in
+        *@*) : ;;
+        *) echo "Checking for updates for plugin \"$target\" at user scope…"; echo "✘ Failed to update plugin \"$target\": Plugin \"$target\" not found" >&2; exit 1 ;;
+      esac
+      target_name="${target%@*}"   # match STUB_* knobs on the name part, not the full id
+      if [ -n "${STUB_FAIL_PLUGIN:-}" ] && [ "$target_name" = "${STUB_FAIL_PLUGIN}" ]; then
+        echo "stub: simulated update FAILURE for $target" >&2
+        exit 1
+      fi
+      if [ -n "${STUB_ALREADY_LATEST:-}" ] && [ "$target_name" = "${STUB_ALREADY_LATEST}" ]; then
+        echo "✔ $target_name is already at the latest version."
+        exit 0
+      fi
+      echo "✔ Plugin \"$target_name\" updated. Restart to apply changes."
+      exit 0
+    fi
+    canary
+    echo "stub: FORBIDDEN verb reached: plugin update $*" >&2
+    exit 42
+    ;;
+  install|uninstall|remove|enable|disable|tag|prune|autoremove|init|new|validate|details)
+    # The other mutating verbs cc-plugin-check must never shell.
+    canary
+    echo "stub: FORBIDDEN verb reached: plugin ${1:-} $*" >&2
+    exit 42
+    ;;
+  *)
+    canary
+    echo "stub: unexpected verb: ${1:-} $*" >&2
+    exit 3
+    ;;
+esac

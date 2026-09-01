@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# bin/prose-rag -- STABLE consumer entrypoint (SPEC-184). Rust engine only
+# (the Python/fastembed engine was dropped at the fold: the Rust engine is
+# strictly better on every axis and one engine is one truth).
+# Build once: (cd lib/prose-rag/rust && cargo build --release
+#              && cp target/release/prose-rag ../bin/prose-rag-rs)
+# `hook` with no engine built exits 0: a recall hook must never break a prompt.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PR="$SELF_DIR/../lib/prose-rag"
+if [ -x "$PR/bin/prose-rag-rs" ]; then
+  exec "$PR/bin/prose-rag-rs" "$@"
+elif [ -x "$PR/rust/target/release/prose-rag" ]; then
+  exec "$PR/rust/target/release/prose-rag" "$@"
+fi
+[ "${1:-}" = "hook" ] && exit 0
+# `index` with no corpus configured = an unconfigured consumer (the shipped
+# kit-weekly job): skip clean, same contract as the engine's own guard. An
+# explicit --corpus means someone is driving interactively -> honest error.
+if [ "${1:-}" = "index" ] && [ -z "${PROSE_RAG_CORPUS:-}" ] && [[ "$*" != *"--corpus"* ]]; then
+  echo "prose-rag: no corpus configured (set PROSE_RAG_CORPUS or pass --corpus); nothing indexed"
+  exit 0
+fi
+echo "prose-rag: engine not built. Run: (cd $PR/rust && cargo build --release && cp target/release/prose-rag ../bin/prose-rag-rs)" >&2
+exit 1

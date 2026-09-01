@@ -1,0 +1,6 @@
+name: "Kit: Board"
+command: "${DWARVES_KIT:-$HOME/.claude/dwarves-kit}/bin/board board"
+tags:
+  - dwarves-kit
+  - kit
+description: Render the project's kanban board from _meta/BACKLOG.md. Plain CLI, no Claude Code session needed.

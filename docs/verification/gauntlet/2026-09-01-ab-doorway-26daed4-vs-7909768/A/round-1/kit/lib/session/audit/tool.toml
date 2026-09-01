@@ -1,0 +1,13 @@
+name        = "session-audit"
+description = "LLM deep-audit over CC session transcripts: renders a forensic-style prompt (schema-first, evidence tiers, no dark buckets, owner-tagged recommendations with metric contracts) and hands it to an agent runtime that explores the JSONL itself. Dated reports chain via {PREV} into an improve-measure-improve loop. Propose-don't-dispose; expensive by design (weekly/on-demand, ~$3.5/run Sonnet)."
+language    = "python"
+status      = "pilot"
+entry       = "bin/session-audit"
+created     = 2026-07-14
+
+# Born in ops-toolkit experiments/log-intel-prompt-v2 (2026-07-14): a gist-style
+# forensic rewrite of session-semantic's thin clustering prompt, validated
+# head-to-head on a 3-day corpus (HIGH-tier claims reproduced exactly on
+# independent re-run). The prompt template is generic (no tenant paths); the
+# corpus root, window, and pricing are all run-time parameters.
+consumers   = []

@@ -1,0 +1,5 @@
+2026-07-18T13:00:00Z | START | lane=full classified=full type=spec-feature ctype=spec-feature repo=fixrepo
+2026-07-18T13:00:01Z | OUTCOME | redteam | start | at=5000
+2026-07-18T13:00:02Z | TOKENS | in=50 out=10 cache_read=0 cache_create=0 cost=0 phase=redteam
+2026-07-18T13:00:02Z | GATE | redteam | ran | round=1 verdict=secure a real zero-cost round, must not be treated as null
+2026-07-18T13:00:02Z | OUTCOME | redteam | end | at=5005 caught=false dur_s=5

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# bin/board -- STABLE consumer entrypoint for the board subsystem (SPEC-184).
+#
+# This is the durable fix for the board-shim class of bug: a consumer (an adopted
+# repo's `_meta/board` / `board-all` shim) references THIS stable path, never a deep
+# `$DWARVES_KIT/lib/board/<file>.sh` path. When the internal lib layout is reorganised
+# (as the kit-modularity regroup moved `lib/board.sh` -> `lib/board/board.sh` and
+# silently broke every consumer), the blast radius is this ONE kit-owned wrapper line,
+# not every consumer.
+#
+# Resolution is relative to this file's own location, so it works identically in the
+# kit repo (dev) and in the copied install ($DWARVES_KIT/bin next to $DWARVES_KIT/lib).
+#
+# Usage: board [all|queue|mirror|status|writeback|<render-args>] ...  (forwards to lib/board/board.sh)
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/board/board.sh" "$@"

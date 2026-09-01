@@ -44,10 +44,17 @@ RDIR=".cache/kit-gauntlet/run-${TS}"
 echo "== shipping committed state to ${HOST}:${RDIR}"
 # shellcheck disable=SC2029  # client-side expansion of RDIR is intentional
 git archive HEAD | ssh "${HOST}" "mkdir -p '${RDIR}' && tar -x -C '${RDIR}'"
-# Ship the same committed state AS A TARBALL too: the remote copy is not a git
-# repo, so run.sh cannot build the room's kit archive there (round-2 finding).
+# Ship the ARTIFACT tarball: the committed state by default, or the caller's
+# GAUNTLET_SRC_TAR when set (SPEC-241 A/B: the variant under test travels; the
+# harness code shipped above stays HEAD, so only the artifact varies). The
+# remote copy is not a git repo, so run.sh cannot build the archive there
+# (round-2 finding).
 # shellcheck disable=SC2029
-git archive HEAD | ssh "${HOST}" "cat > '${RDIR}/.gauntlet-src.tar'"
+if [ -n "${GAUNTLET_SRC_TAR:-}" ] && [ -f "${GAUNTLET_SRC_TAR}" ]; then
+  ssh "${HOST}" "cat > '${RDIR}/.gauntlet-src.tar'" < "${GAUNTLET_SRC_TAR}"
+else
+  git archive HEAD | ssh "${HOST}" "cat > '${RDIR}/.gauntlet-src.tar'"
+fi
 
 echo "== running round on ${HOST} (persona=${PERSONA} row=${ROW})"
 # The remote driver: bring docker up if needed, resolve the key locally on the

@@ -1,0 +1,481 @@
+#!/usr/bin/env bash
+# plugin-check: which adopted Claude Code plugins are outdated, in one glance.
+#
+# The CC-plugin analogue of the mini-agent-update skill. Read-only on installed
+# state. Compares each installed plugin's commit sha against its upstream sha and
+# prints the exact bump command for every stale one. Prints "current" ONLY when it
+# can prove it (installed sha == upstream sha); every doubt degrades to "unknown,
+# go look", never a false all-clear. A false "current" is the one unacceptable output.
+#
+#   plugin-check                 # = status
+#   plugin-check status [--no-refresh]
+#   plugin-check update [name]            # dry-run: print the bump commands
+#   plugin-check update [name] --apply    # OPERATOR ONLY: run the bumps
+#
+# Resolution is delegated to the official `claude plugin` CLI and the state files it
+# owns. NO `gh`, no hand-rolled GitHub path resolution. See README "How it resolves"
+# and docs/implementation-notes for why the data sources differ from SPEC-105's named
+# JSON shape (the CLI version on this host does not expose upstream sha via
+# `list --available --json`; the catalog-cache file it writes does).
+#
+# Hard deps: `claude` (the CLI it delegates to) and `jq`.
+set -euo pipefail
+
+PLUGINS_DIR="${CC_PLUGINS_DIR:-$HOME/.claude/plugins}"
+INSTALLED_JSON="$PLUGINS_DIR/installed_plugins.json"
+CATALOG_JSON="$PLUGINS_DIR/plugin-catalog-cache.json"
+MARKETPLACES_JSON="$PLUGINS_DIR/known_marketplaces.json"
+# Test seam: tests set CLAUDE_BIN to a stub so the suite never shells the real CLI.
+CLAUDE_BIN="${CLAUDE_BIN:-claude}"
+
+die() { echo "plugin-check: $*" >&2; exit 1; }
+
+# ---- dependency + CLI probes ------------------------------------------------
+
+need_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq is required but not found on PATH. Install jq (e.g. brew install jq)."
+}
+
+# Probe the CLI once. The tool fully depends on it; if it (or the plugin verb) is
+# gone, print the intended commands and exit non-zero, never a partial shell error.
+probe_claude() {
+  if ! command -v "$CLAUDE_BIN" >/dev/null 2>&1; then
+    echo "plugin-check: the 'claude' CLI was not found on PATH; this tool delegates to it." >&2
+    echo "  Intended freshness flow (run once 'claude' is available):" >&2
+    echo "    claude plugin marketplace update      # refresh the catalog" >&2
+    echo "    claude plugin list --json             # the installed roster" >&2
+    return 1
+  fi
+  if ! "$CLAUDE_BIN" plugin --help >/dev/null 2>&1; then
+    echo "plugin-check: 'claude plugin' verb is unrecognized (CLI too old or changed)." >&2
+    echo "  Update Claude Code, then re-run. Intended flow: claude plugin marketplace update; claude plugin list --json" >&2
+    return 1
+  fi
+  return 0
+}
+
+# ---- the ONE parser boundary: read_state() ----------------------------------
+# Emits one normalized TSV record per installed (scope=user) plugin:
+#   plugin <TAB> marketplace <TAB> installed_version <TAB> installed_sha <TAB>
+#   upstream_sha <TAB> source_type <TAB> resolved_via
+# Everything downstream consumes this; a CLI/state-file schema change is a one-place fix.
+# A field that cannot be resolved is the literal "-" (never empty, never guessed).
+#
+# Data sources (all CLI-owned; refreshed by `claude plugin marketplace update`):
+#   roster + display version + scope : `claude plugin list --json`
+#   installed_sha                    : installed_plugins.json .plugins[id][0].gitCommitSha
+#   upstream_sha (official)          : plugin-catalog-cache.json .catalog.plugins[id].source_sha (else .sha)
+#   upstream_sha (other marketplaces): git -C <known_marketplaces installLocation> rev-parse HEAD
+read_state() {
+  local roster
+  # The roster comes from the CLI (authoritative "what is installed"). A torn read
+  # (CC mid-write) makes this invalid JSON; the caller handles a non-zero return.
+  roster="$("$CLAUDE_BIN" plugin list --json 2>/dev/null)" || return 2
+  echo "$roster" | jq -e 'type=="array"' >/dev/null 2>&1 || return 2
+
+  # Pre-read the two state files into jq-safe blobs (absent file -> empty object).
+  local installed_blob catalog_blob mkts_blob
+  installed_blob="$( [ -f "$INSTALLED_JSON" ] && cat "$INSTALLED_JSON" 2>/dev/null || echo '{}' )"
+  echo "$installed_blob" | jq -e . >/dev/null 2>&1 || installed_blob='{}'
+  catalog_blob="$( [ -f "$CATALOG_JSON" ] && cat "$CATALOG_JSON" 2>/dev/null || echo '{}' )"
+  echo "$catalog_blob" | jq -e . >/dev/null 2>&1 || catalog_blob='{}'
+  mkts_blob="$( [ -f "$MARKETPLACES_JSON" ] && cat "$MARKETPLACES_JSON" 2>/dev/null || echo '{}' )"
+  echo "$mkts_blob" | jq -e . >/dev/null 2>&1 || mkts_blob='{}'
+
+  # First jq pass: emit per-plugin id/marketplace/version/installed_sha/upstream_sha
+  # (catalog) /source_type, and for rows still missing an upstream sha, the marketplace
+  # installLocation so the shell can ask git for the clone HEAD.
+  local rows
+  rows="$(
+    echo "$roster" | jq -r \
+      --argjson inst "$installed_blob" \
+      --argjson cat "$catalog_blob" \
+      --argjson mkts "$mkts_blob" '
+      ($inst.plugins // {}) as $ip
+      | ($cat.catalog.plugins // {}) as $cp
+      | .[]
+      | select((.scope // "user") == "user")
+      | .id as $id
+      | ($id | split("@")) as $parts
+      | ($parts[0]) as $name
+      | ($parts[1] // "?") as $mp
+      | ($ip[$id][0].gitCommitSha // "-") as $isha
+      | ($ip[$id][0].version // .version // "-") as $iver
+      | ($cp[$id]) as $ce
+      | (if ($ce|type)=="object" then ($ce.source_sha // $ce.sha // "-") else "-" end) as $usha
+      | ($mkts[$mp].source.source // "?") as $mptype
+      | (if ($ce|type)=="object"
+           then (($ce.marketplace_entry.source) as $ms
+                 | if ($ms|type)=="object" then ($ms.source // "catalog")
+                   elif ($ms|type)=="string" then "subdir-string"
+                   else "catalog" end)
+           else $mptype end) as $stype
+      | ($mkts[$mp].installLocation // "-") as $loc
+      | [$name, $mp, $iver, $isha, $usha, $stype, $loc] | @tsv
+    '
+  )" || return 2
+
+  # Second pass (shell): for rows whose upstream sha is still "-", resolve it from the
+  # marketplace clone HEAD (the CLI's own clone; for a `directory` source that is the
+  # live dev tree). This is the only non-CLI-JSON read, and it touches only the CLI's
+  # own clone path, never a third-party slug.
+  local name mp iver isha usha stype loc
+  while IFS=$'\t' read -r name mp iver isha usha stype loc; do
+    [ -z "${name:-}" ] && continue
+    if [ "$usha" = "-" ] && [ "$loc" != "-" ] && [ -d "$loc/.git" ]; then
+      local head
+      head="$(git -C "$loc" rev-parse HEAD 2>/dev/null || true)"
+      [ -n "$head" ] && usha="$head"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$mp" "$iver" "$isha" "$usha" "$stype"
+  done <<< "$rows"
+}
+
+# ---- verdict logic ----------------------------------------------------------
+# Comparison: sha-primary. A sentinel installed version (unknown/empty/0.0.0/-) never
+# string-compares; it forces the sha path. A `directory` source never gets a hard
+# verdict (its dev tree is routinely ahead of the installed snapshot).
+# Echoes: STATUS<TAB>note   where STATUS in {current,OUTDATED,unknown}.
+
+# A version string we must NOT trust for a version-equality compare. These are the CLI's
+# placeholders for "no real version", so string-diffing them would manufacture a verdict.
+is_sentinel_version() {
+  case "$1" in
+    unknown|0.0.0|""|-) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# A value we will trust as a git commit sha for an equality compare. Anything not shaped like
+# a hex object id (7-40 hex chars) is refused, so a non-hex sentinel (the literal "null", "-",
+# empty, a placeholder) can NEVER manufacture a `current`. Defense-in-depth behind read_state's
+# "-" rule: a false "current" is the one unacceptable output, so we exclude it structurally,
+# not just by trusting the upstream to never write a non-hex sha.
+is_real_sha() {
+  [[ "$1" =~ ^[0-9a-f]{7,40}$ ]]
+}
+
+verdict() {
+  local iver="$1" isha="$2" usha="$3" stype="$4" catalog_stale="$5"
+  # directory source: dev-tree hint only, never a hard verdict.
+  if [ "$stype" = "directory" ]; then
+    echo -e "unknown\tlocal (dev tree, may be ahead)"
+    return
+  fi
+  # Both shas shaped like real git object ids -> the universal, provable signal. The hex-shape
+  # guard (is_real_sha, not merely != "-") means no non-hex sentinel can ever reach `current`.
+  if is_real_sha "$isha" && is_real_sha "$usha"; then
+    if [ "$isha" = "$usha" ]; then
+      # Provably current. But if the catalog could not be refreshed we cannot prove
+      # the upstream sha is fresh, so we must not assert current off a stale catalog.
+      if [ "$catalog_stale" = "1" ]; then
+        echo -e "unknown\tcatalog stale; sha matches stale upstream"
+      else
+        echo -e "current\t"
+      fi
+    else
+      echo -e "OUTDATED\tsha differs from upstream"
+    fi
+    return
+  fi
+  # No sha on one side. We do NOT manufacture a verdict from version strings here:
+  # versions are display-only (spec: sha is primary, version secondary-for-display), and
+  # the only honest fallback signals available are shas. Never string-compare a sentinel.
+  if ! is_sentinel_version "$iver" && [ "$usha" = "-" ]; then
+    echo -e "unknown\tno upstream sha to compare"
+    return
+  fi
+  echo -e "unknown\tno installed sha"
+}
+
+# ---- catalog refresh --------------------------------------------------------
+# Returns 0 if the catalog was refreshed, 1 if refresh failed/skipped (caller then
+# marks rows "catalog stale" and downgrades not-provably-current rows to unknown).
+refresh_catalog() {
+  "$CLAUDE_BIN" plugin marketplace update >/dev/null 2>&1
+}
+
+# ---- status -----------------------------------------------------------------
+cmd_status() {
+  local no_refresh=0
+  for a in "$@"; do
+    case "$a" in
+      --no-refresh) no_refresh=1 ;;
+      *) die "status: unknown argument '$a' (only --no-refresh)" ;;
+    esac
+  done
+
+  need_jq
+  probe_claude || exit 1
+
+  if [ ! -d "$PLUGINS_DIR" ]; then
+    echo "no plugins installed (no $PLUGINS_DIR)"
+    exit 0
+  fi
+
+  local catalog_stale=0
+  if [ "$no_refresh" = "1" ]; then
+    catalog_stale=1
+  else
+    if ! refresh_catalog; then
+      catalog_stale=1
+    fi
+  fi
+
+  local state rc=0
+  state="$(read_state)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "CC plugin state unreadable; re-run in a moment."
+    exit 0
+  fi
+  if [ -z "$state" ]; then
+    echo "no plugins installed"
+    exit 0
+  fi
+
+  # Build rows: PLUGIN INSTALLED UPSTREAM STATUS MARKETPLACE
+  # INSTALLED/UPSTREAM show the version when known, else a short sha.
+  local out
+  out=""
+  local name mp iver isha usha stype
+  local n_current=0 n_outdated=0 n_unknown=0
+  while IFS=$'\t' read -r name mp iver isha usha stype; do
+    [ -z "${name:-}" ] && continue
+    local v
+    v="$(verdict "$iver" "$isha" "$usha" "$stype" "$catalog_stale")"
+    local status note
+    status="${v%%$'\t'*}"
+    note="${v#*$'\t'}"
+    case "$status" in
+      current)  n_current=$((n_current+1)) ;;
+      OUTDATED) n_outdated=$((n_outdated+1)) ;;
+      *)        n_unknown=$((n_unknown+1)) ;;
+    esac
+    local inst_disp up_disp
+    if is_sentinel_version "$iver"; then inst_disp="$(short_sha "$isha")"; else inst_disp="$iver"; fi
+    up_disp="$(short_sha "$usha")"
+    # A stale-catalog row carries the note so the operator knows why it is unknown.
+    local mp_disp="$mp"
+    if [ -n "$note" ]; then mp_disp="$mp  ($note)"; fi
+    out+="$name"$'\t'"$inst_disp"$'\t'"$up_disp"$'\t'"$status"$'\t'"$mp_disp"$'\n'
+  done <<< "$state"
+
+  local header=""
+  if [ "$catalog_stale" = "1" ]; then
+    if [ "$no_refresh" = "1" ]; then
+      header="# plugin-check  (catalog NOT refreshed: --no-refresh; not-provably-current rows = unknown)"
+    else
+      header="# plugin-check  (catalog refresh FAILED, likely offline; rows labelled stale, downgraded to unknown)"
+    fi
+  else
+    header="# plugin-check  (catalog refreshed)"
+  fi
+  echo "$header"
+  print_table "$out"
+  echo
+  echo "  current=$n_current  OUTDATED=$n_outdated  unknown=$n_unknown"
+  if [ "$n_outdated" -gt 0 ]; then
+    echo "  bump a stale one:  plugin-check update <plugin>        (dry-run; add --apply to run)"
+  fi
+  exit 0
+}
+
+short_sha() {
+  local s="$1"
+  if [ "$s" = "-" ] || [ -z "$s" ]; then echo "-"; else echo "${s:0:9}"; fi
+}
+
+# Fixed-width table: first column left-aligned, rest left-aligned (values are short
+# tokens / words, not numbers). Input is TSV rows on stdin-arg.
+print_table() {
+  local data="$1"
+  printf '%s' "$data" | awk -F'\t' '
+    BEGIN { split("PLUGIN\tINSTALLED\tUPSTREAM\tSTATUS\tMARKETPLACE", H, "\t"); for (i=1;i<=5;i++){ w[i]=length(H[i]) } }
+    { for (i=1;i<=5;i++){ if (length($i)>w[i]) w[i]=length($i) }; for (i=1;i<=5;i++) rows[NR""SUBSEP i]=$i; nr=NR }
+    END {
+      line=""
+      for (i=1;i<=5;i++){ line=line sprintf("  %-*s", w[i], H[i]) }
+      print line
+      sep=""
+      for (i=1;i<=5;i++){ d=""; for (k=0;k<w[i];k++) d=d"-"; sep=sep sprintf("  %-*s", w[i], d) }
+      print sep
+      for (r=1;r<=nr;r++){ line=""; for (i=1;i<=5;i++){ line=line sprintf("  %-*s", w[i], rows[r""SUBSEP i]) } print line }
+    }
+  '
+}
+
+# ---- update -----------------------------------------------------------------
+cmd_update() {
+  local apply=0 name=""
+  for a in "$@"; do
+    case "$a" in
+      --apply) apply=1 ;;
+      --*) die "update: unknown flag '$a' (only --apply)" ;;
+      *) if [ -n "$name" ]; then die "update: only one plugin name accepted (got '$name' and '$a')"; fi; name="$a" ;;
+    esac
+  done
+
+  need_jq
+  probe_claude || exit 1
+  [ -d "$PLUGINS_DIR" ] || { echo "no plugins installed (no $PLUGINS_DIR)"; exit 0; }
+
+  # update reads current state WITHOUT mutating it (no catalog refresh here; the operator
+  # who runs --apply will have just looked at `status`). Treat catalog as possibly-stale.
+  local state rc=0
+  state="$(read_state)" || rc=$?
+  if [ "$rc" -ne 0 ]; then echo "CC plugin state unreadable; re-run in a moment."; exit 0; fi
+  [ -n "$state" ] || { echo "no plugins installed"; exit 0; }
+
+  # Collect the targets: a single named plugin (must be installed), else every OUTDATED.
+  # Each target is "name<TAB>marketplace". We do NOT include directory-source or unknown
+  # rows in the "all outdated" set (no hard OUTDATED verdict for those).
+  local targets="" found_name=0 named_refused="" named_refused_mp=""
+  local n mp iver isha usha stype
+  while IFS=$'\t' read -r n mp iver isha usha stype; do
+    [ -z "${n:-}" ] && continue
+    if [ -n "$name" ]; then
+      [ "$n" = "$name" ] || continue
+      found_name=1
+      # Gate the NAMED row on its verdict: refuse to act on a row the tool itself cannot call
+      # OUTDATED (a directory dev-tree, or an unknown/no-sha row). Bumping something we labelled
+      # "unknown" would contradict the honest-unknown contract. A `current` row passes through
+      # (the --apply loop no-ops it); only unknown / dev-tree is refused. The operator can still
+      # run the official `claude plugin update <id>` by hand if they are sure.
+      local nv nst
+      nv="$(verdict "$iver" "$isha" "$usha" "$stype" 0)"
+      nst="${nv%%$'\t'*}"
+      if [ "$nst" != "OUTDATED" ] && [ "$nst" != "current" ]; then
+        named_refused="$nst"; named_refused_mp="$mp"
+      else
+        targets+="$n"$'\t'"$mp"$'\t'"$iver"$'\t'"$isha"$'\t'"$usha"$'\t'"$stype"$'\n'
+      fi
+    else
+      local v st
+      v="$(verdict "$iver" "$isha" "$usha" "$stype" 0)"
+      st="${v%%$'\t'*}"
+      if [ "$st" = "OUTDATED" ]; then
+        targets+="$n"$'\t'"$mp"$'\t'"$iver"$'\t'"$isha"$'\t'"$usha"$'\t'"$stype"$'\n'
+      fi
+    fi
+  done <<< "$state"
+
+  if [ -n "$name" ] && [ "$found_name" = "0" ]; then
+    die "update: plugin '$name' is not installed (run plugin-check status to see installed plugins)"
+  fi
+  # A named row the tool refused to verdict (unknown / directory dev-tree): do not pretend it is
+  # "nothing to do" and do not silently act on it. Refuse explicitly, exit non-zero.
+  if [ -n "$name" ] && [ -n "$named_refused" ] && [ -z "$targets" ]; then
+    echo "refusing to --apply '$name': status is '$named_refused' (no provable OUTDATED verdict)." >&2
+    echo "  If you are sure, run the official CLI directly:  claude plugin update -- $(printf '%q' "$name@$named_refused_mp")" >&2
+    exit 1
+  fi
+  if [ -z "$targets" ]; then
+    if [ -n "$name" ]; then echo "nothing to do: '$name' has no resolvable update."; else echo "nothing to do: no OUTDATED plugins."; fi
+    exit 0
+  fi
+
+  if [ "$apply" = "0" ]; then
+    # Dry-run: print the exact bump commands. Runs nothing.
+    echo "# dry-run (nothing was run). To apply: re-run with --apply."
+    while IFS=$'\t' read -r n mp iver isha usha stype; do
+      [ -z "${n:-}" ] && continue
+      emit_bump_commands "$n" "$mp"
+    done <<< "$targets"
+    echo
+    echo "# Restart Claude Code after applying for the new plugin version to load."
+    exit 0
+  fi
+
+  # --apply: OPERATOR ONLY. Per-plugin, echo each command before running, continue past
+  # a failure, exit non-zero if any failed, print the restart reminder once after success.
+  local any_fail=0 any_ok=0
+  local applied="" failed="" skipped=""
+  while IFS=$'\t' read -r n mp iver isha usha stype; do
+    [ -z "${n:-}" ] && continue
+    # idempotent no-op: a plugin already current (sha match, real shas) is skipped.
+    if [ "$isha" != "-" ] && [ "$usha" != "-" ] && [ "$isha" = "$usha" ]; then
+      echo "skip: $n already current ($(short_sha "$isha"))"
+      skipped+="$n "
+      continue
+    fi
+    echo "==> $n@$mp"
+    # AC10: names pass as quoted argv with a `--` guard; never interpolated into a string,
+    # never eval'd. The `--` stops any name that looks like a flag from being parsed as one.
+    echo "    \$ $CLAUDE_BIN plugin marketplace update -- $mp"
+    if "$CLAUDE_BIN" plugin marketplace update -- "$mp" >/dev/null 2>&1; then :; else
+      echo "    marketplace update failed for $mp (continuing)"
+    fi
+    # The real CLI's update verb needs the FULL pluginId <plugin>@<marketplace>; a bare name is
+    # "Plugin not found" (learned by running it live, see implementation-notes). `--` guard kept.
+    echo "    \$ $CLAUDE_BIN plugin update -- $n@$mp"
+    local up_out up_rc=0
+    up_out="$("$CLAUDE_BIN" plugin update -- "$n@$mp" 2>&1)" || up_rc=$?
+    if [ "$up_rc" -ne 0 ]; then
+      echo "    FAILED: $n"
+      failed+="$n "; any_fail=1
+    elif printf '%s' "$up_out" | grep -qiE 'already (at the latest|up to date)'; then
+      # Version-current despite a differing sha (the accepted over-report): the CLI did nothing.
+      echo "    already latest: $n (no change)"
+      skipped+="$n "
+    else
+      echo "    applied: $n"
+      applied+="$n "; any_ok=1
+    fi
+  done <<< "$targets"
+
+  echo
+  echo "# summary"
+  [ -n "$applied" ] && echo "  applied:  $applied"
+  [ -n "$skipped" ] && echo "  skipped:  $skipped (already current)"
+  [ -n "$failed" ]  && echo "  failed:   $failed"
+  if [ "$any_ok" = "1" ]; then
+    echo "# Restart Claude Code for the updated plugin(s) to load."
+  fi
+  [ "$any_fail" = "1" ] && exit 1
+  exit 0
+}
+
+# Print the bump commands for one plugin. The `plugin update` verb needs the FULL pluginId
+# <plugin>@<marketplace> (a bare name is "Plugin not found" on the real CLI); see implementation-notes.
+emit_bump_commands() {
+  local n="$1" mp="$2"
+  # These lines are meant to be COPY-PASTED, so they must be paste-safe even when a (hostile)
+  # marketplace/plugin name carries shell metacharacters or a leading dash: shell-quote the id
+  # (printf %q) AND keep the `--` end-of-options guard, mirroring the --apply exec path. For an
+  # ordinary id printf %q is a no-op, so the common output stays clean ("... update -- ponytail@ponytail").
+  local qid qmp
+  qid="$(printf '%q' "$n@$mp")"
+  qmp="$(printf '%q' "$mp")"
+  echo "  # $n  (marketplace: $mp)"
+  echo "  claude plugin marketplace update -- $qmp"
+  echo "  claude plugin update -- $qid"
+}
+
+# ---- dispatch ---------------------------------------------------------------
+main() {
+  local cmd="${1:-status}"
+  case "$cmd" in
+    status) shift || true; cmd_status "$@" ;;
+    update) shift; cmd_update "$@" ;;
+    -h|--help|help)
+      cat <<'EOF'
+plugin-check , which adopted Claude Code plugins are outdated, in one glance.
+
+  plugin-check                       same as: status
+  plugin-check status [--no-refresh] freshness table (refreshes the catalog first)
+  plugin-check update [name]         print the exact bump command(s); runs nothing
+  plugin-check update [name] --apply OPERATOR ONLY: run the bumps via the official CLI
+
+STATUS column: current (installed sha == upstream sha, proven), OUTDATED (sha differs),
+unknown (offline / no sha / version-less / directory-source dev tree). It prints "current"
+only when it can prove it; every doubt is "unknown, go look", never a false all-clear.
+
+Resolution is delegated to the official `claude plugin` CLI + the state files it owns
+(no gh, no hand-rolled GitHub path math). See README "How it resolves".
+EOF
+      ;;
+    *) die "unknown command '$cmd' (use: status | update | --help)" ;;
+  esac
+}
+
+main "$@"
