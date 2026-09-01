@@ -96,7 +96,7 @@ ROADMAP_ACTIVE
 
 REGISTRY="$TMPDIR_T/boards.txt"
 cat > "$REGISTRY" <<REG
-fixR        $FIXR/_meta/BACKLOG.md        on
+fixR        $FIXR/_meta/BACKLOG.md        on rail=personal
 fixTrading  $FIXT/_meta/BACKLOG.md        off
 REG
 
@@ -292,7 +292,7 @@ echo ""
 echo "=== NC6: REGISTRY NON-REGRESSION -- board/next/priority/states/queue unaffected by the bridge column ==="
 NC6_REG="$TMPDIR_T/nc6-boards.txt"
 cat > "$NC6_REG" <<REG3
-fixR        $FIXR/_meta/BACKLOG.md        on
+fixR        $FIXR/_meta/BACKLOG.md        on rail=personal
 fixTrading  $FIXT/_meta/BACKLOG.md        off
 REG3
 ALL_BOARD="$(bash "$BOARD" all board --registry "$NC6_REG")"

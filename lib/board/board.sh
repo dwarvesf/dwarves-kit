@@ -617,7 +617,7 @@ cmd_status() {
   bash "$BOARD_MIRROR_SH" snapshot-read "$snapshot" > "$snap_tsv"
 
   local name path bridge rroot last_mirror last_touch changed=0 total_bridged=0 newest=""
-  while read -r name path bridge; do
+  while read -r name path bridge _rest; do  # _rest: a 4th column (rail=) must not slurp into bridge (ops ID-633)
     [ -n "${name:-}" ] || continue
     case "$name" in \#*) continue ;; esac
     [ "${bridge:-}" = "on" ] || continue
