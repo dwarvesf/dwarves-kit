@@ -366,7 +366,7 @@ cmd_plan() {
   prior_tsv="$(mktemp "${TMPDIR:-/tmp}/board-mirror-prior.XXXXXX")"
 
   local name path bridge rroot
-  while read -r name path bridge; do
+  while read -r name path bridge _rest; do  # _rest: a 4th column (rail=) must not slurp into bridge (ops ID-633)
     [ -n "${name:-}" ] || continue
     case "$name" in \#*) continue ;; esac
     [ "${bridge:-}" = "on" ] || continue
