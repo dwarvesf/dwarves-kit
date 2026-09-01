@@ -84,6 +84,13 @@ Gated (team-facing rename): open the PR, `/kit:review-team`, human ships (this A
 - The V-model lens (ADR-0018) gains a naming rule row, and `test-meta.sh` asserts every review-agent name matches the axis (`-reviewer` | `-verifier` | `-team` | `advisor`) so a future off-axis name FAILS CLOSED (SG-08, default-2 Han 2026-07-01). The convention is machine-enforced, not just documented.
 - Cost: the rename touches ~50 unique reference sites across the 3 agents; external callers of `kit:security-auditor` break (one-axis resolved , SG-08 updates the external registry exposure too).
 
+## Grandfathered exceptions (live register; the test's AXIS_GRANDFATHERED mirrors this list)
+
+- `audit-scanner`: off-axis suffix pending the amend-or-rename decision recorded in the test comment.
+- `devops-triage`: shipped read-only with no axis suffix (SPEC-239 era); rename (triage-reviewer?) or sanction `-triage` as an incident class is the pending operator call (ID-639).
+
+An entry here is temporary by definition: it carries the board row that will retire it. Adding a third name without a row is a naming-axis regression, not an exception.
+
 ## Out of Scope
 
 - Renaming non-review agents (`fix-agent`, `responding-to-review`, `research-*`, `meta-agent`) , they are not reviewers.

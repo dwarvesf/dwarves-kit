@@ -2,16 +2,16 @@
 
 Delta from the spec only. Scope: TASK-1 (Phase A, the CI-green core) only. TASK-2 through TASK-5 are not touched.
 
-## 2026-08-27 Invocation is `/kit:greenlight`, not `/user:greenlight`
+## 2026-08-27 Invocation is `/kit:greenlight`, not the dead user-prefix form
 
-Context: the spec's own title and body use `/user:greenlight` throughout (it predates the
+Context: the spec's own title and body use the dead user-prefix greenlight form throughout (it predates the
 kit's namespace migration).
 
 Decision: `commands/greenlight.md` refers to itself as `/kit:greenlight` (and points to
-`/kit:ship`, `/kit:review`, `/kit:review-team`), never `/user:`.
+`/kit:ship`, `/kit:review`, `/kit:review-team`), never the user prefix.
 
-Why: `tests/test-meta.sh`'s "no /user: invocation form in live docs" guard (SPEC-029/SPEC-030)
-scans every tracked `commands/*.md`; a literal `/user:greenlight` in the new file would fail
+Why: `tests/test-meta.sh`'s dead-prefix invocation-form guard (SPEC-029/SPEC-030)
+scans every tracked `commands/*.md`; the user-prefix literal in the new file would fail
 that check immediately. The kit's live invocation form is `/kit:<cmd>` (plugin) or bare
 `/<cmd>` (bash install).
 
