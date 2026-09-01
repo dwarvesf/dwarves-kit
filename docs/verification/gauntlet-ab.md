@@ -49,6 +49,26 @@ Full battery: acceptance (sonnet), review (opus), security (opus, the diff quali
 
 Delta log: `docs/implementation-notes/gauntlet-ab.md`.
 
+## Recorded run (gate grammar)
+
+```
+Command: KIT_ROOT=$PWD bash tests/gauntlet/deploy/gauntlet-ab 26daed4 ab-smoke-defect user doorway 2
+Exit: 0
+Verdict: PASS   # 4 live GREEN rounds, [[AB-VERDICT winner=A why=tiebreak a=2/2 b=2/2]]
+```
+
+NEGATIVE CONTROL (the driver must refuse to score, not emit a false verdict):
+
+```
+Command: KIT_ROOT=$PWD bash tests/gauntlet/deploy/gauntlet-ab 26daed4 ab-smoke-defect user nope 2
+Exit: 2
+Verdict: PASS   # "no checker ... a scoreless A/B is meaningless", nothing staged
+```
+
+Winner-logic control (a scored RED tally must NOT tie): seeded `A=GREEN×2, B=RED×2, N=2` → `Exit: 0`, `[[AB-VERDICT winner=A why=sweep a=2/2 b=0/2]]`; the same shape at `N=1` → `winner=weak` (the coin floor).
+
+Rollback: pure additive change (one new driver `tests/gauntlet/deploy/gauntlet-ab`, one guarded passthrough branch in `run-remote.sh`/`run.sh`, docs, a `.gitignore`). Reverting the branch removes the `gauntlet-ab` command and restores `run-remote.sh` to unconditional `git archive HEAD`; no data migration, no state, nothing to undo beyond `git revert`.
+
 ## Reproduce
 
 ```
