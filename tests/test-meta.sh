@@ -1911,7 +1911,7 @@ fi
 # intake story: board pull, type-first classification, done-first phase 0. Losing any leg
 # strands consumer repos on the old code-only contract.
 TOTAL=$((TOTAL + 1))
-if grep -qF 'backlog.sh next' "$KIT_DIR/AGENTS.md" && grep -qF 'task-type-classify.sh classify' "$KIT_DIR/AGENTS.md" \
+if grep -qE 'backlog\.sh"? next' "$KIT_DIR/AGENTS.md" && grep -qE 'task-type-classify\.sh"? classify' "$KIT_DIR/AGENTS.md" \
    && grep -qF 'Done =' "$KIT_DIR/AGENTS.md" && grep -qF 'Where work comes from' "$KIT_DIR/docs/WORKFLOW.md"; then
   echo -e "  ${GREEN}PASS${NC} operating layer carries the intake story: board + type-first + done-first (SPEC-057)"
   PASS=$((PASS + 1))
@@ -2842,7 +2842,10 @@ done
 # (claim-verifier passes this suffix scan but wears the wrong CLASS of suffix,
 #  finding 2 / proposal claim-reviewer or a -team shape; a suffix scan cannot
 #  police semantics, so that stays a report proposal, not a test.)
-AXIS_GRANDFATHERED="audit-scanner"
+# devops-triage -- shipped read-only with no axis suffix (SPEC-239 era);
+#                  proposal: triage-reviewer, or sanction -triage as an
+#                  incident class. Pending operator decision (ID-639).
+AXIS_GRANDFATHERED="audit-scanner devops-triage"
 REVIEW_AGENTS=""
 for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
   AGENT_NAME=$(awk -F': ' '/^name:/{print $2; exit}' "$AGENT_FILE" | tr -d '[:space:]')

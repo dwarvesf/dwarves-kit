@@ -248,7 +248,7 @@ the question actually needs judgment.
   output.
 
 **Cycle-table mapping.** The V-phase names above map onto the cycle-table rows:
-Think, Design (opt-in), Design critique (opt-in), Prototype (opt-in), UI design (opt-in), Spec,
+Think, Design (opt-in), Design critique (default full lane, opt-in normal), Prototype (opt-in), UI design (opt-in), Spec,
 Validate, Test plan (default for normal/full), Build, Review, Docs, Ship, Reflect, and
 Debug (off-cycle).
 
