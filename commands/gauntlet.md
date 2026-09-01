@@ -135,6 +135,18 @@ free. Point the user at `docs/guides/gauntlet.md` for the full checklist.
   rows GREEN, probe tokens/cost, same-card probe-model deltas); `--write` drops
   a dated snapshot beside the records (SPEC-240). Read-only over the records;
   a malformed QL-VERDICT marker fails the run loud.
+- A/B mode (SPEC-241, bounded search-select): when a REVISION is contested,
+  `bash tests/gauntlet/deploy/gauntlet-ab <ref-A> <ref-B> <persona> <row> <N>`
+  runs the same card against two committed variants of the artifact
+  (rule-7 `git archive` tarballs through the runner's `GAUNTLET_SRC_TAR`
+  slot), N rounds each, scored by the row's own checker. N is required and is
+  the operator's call per use: a WINNER needs N >= 2 AND a full sweep (margin
+  >= N); a thinner lead is `AB-WEAK`, an exact tie falls to the mean-probe-token
+  tiebreak, else `AB-TIE`. N=1 can only ever report AB-WEAK/AB-TIE (one round
+  is a coin, not a finding). No revision happens inside the A/B (that is this
+  loop's job, run after the pick), and the record's `AB-ROUNDS.md` must
+  disclose the full inter-variant diffstat so a teach-to-the-test variant is
+  visible. Marker: `[[AB-VERDICT winner=.. why=sweep|tiebreak ..]]`.
 
 ## The loop
 
