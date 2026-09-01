@@ -226,8 +226,26 @@ def plan_sync(rows: dict, items: list, state: dict,
     collided: set[str] = set()  # bids with a title-mismatched spoke item
     for bid, entry in smap.items():
         it = by_rid.get(entry.get("rid", ""))
-        if it is not None:
-            linked[bid] = it
+        if it is None:
+            continue
+        if bid not in rows:
+            # rename reconciliation: the map is keyed by board id, so
+            # renumbering a linked row (collision fix, manual edit) strands
+            # its entry under a dead id. The row then reads as unlinked and
+            # the next tick mints a SECOND card for the same work; the two
+            # idempotency namespaces live apart, so the spoke can never catch
+            # it. A renumber does not change the row text, so relink on that
+            # instead, and only when exactly one unmapped row still carries
+            # it. Guessing between candidates is how mispairing starts.
+            cands = [b for b, r in rows.items()
+                     if b not in smap
+                     and titles_agree(entry.get("title", ""), r.item)]
+            if len(cands) != 1:
+                continue
+            bid = cands[0]
+        if bid in linked:
+            continue
+        linked[bid] = it
     claimed_rids = {it["rid"] for it in linked.values()}
     for it in items:
         if it["rid"] in claimed_rids:
