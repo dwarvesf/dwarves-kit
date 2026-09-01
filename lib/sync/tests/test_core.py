@@ -509,3 +509,43 @@ def test_collided_bid_holds_create_instead_of_duplicating():
     assert any("create held" in n for n in p.notes)
     # other rows still create normally
     assert any(bid == "ID-11" for bid, *_ in p.src_create)
+
+
+def test_renumbered_row_relinks_instead_of_minting_a_duplicate():
+    """Renumbering a linked row must not orphan its spoke card.
+
+    The map is keyed by board id, so a renumber (collision fix, manual edit)
+    leaves the entry under a dead id. The row then reads as unlinked and the
+    next tick mints a SECOND card for the same work. Reproduced live on the
+    personal board: an incident card filed by vps-mon was adopted as ID-629,
+    the row was renumbered to ID-634 in git, and the following sync created a
+    duplicate `ID-634 · ...` card. The two idempotency namespaces cannot
+    collide, so spoke-side idempotency can never catch it.
+
+    The card carries no `ID-NNN ·` prefix here on purpose: that is how a
+    sensor-filed card looks, and it is why prefix matching cannot recover the
+    link.
+    """
+    rows = parse_board(BOARD)
+    dead = {"map": {"ID-99": {"rid": "r1", "title": "Fix the frobnicator",
+                              "notes": rows["ID-10"].notes,
+                              "status": rows["ID-10"].status_kw}}}
+    it = item("r1", "[vps-mon] CRIT heartbeat-silent on air.upgrade-check")
+    p = plan_sync(rows, [it], dead)
+    assert "ID-10" not in creates(p), "renumbered row minted a duplicate card"
+    assert p.tombstone == [], "renumbered row must not stop mirroring either"
+
+
+def test_renumber_relink_needs_an_unambiguous_match():
+    """The relink keys on the stored title, so it only fires when exactly one
+    unmapped row still carries that text. Two candidates means we cannot tell
+    which row inherited the card: leave it alone rather than guess."""
+    board = BOARD.replace("| ID-11 | Ship the widget |",
+                          "| ID-11 | Fix the frobnicator |")
+    rows = parse_board(board)
+    dead = {"map": {"ID-99": {"rid": "r1", "title": "Fix the frobnicator",
+                              "notes": rows["ID-10"].notes,
+                              "status": rows["ID-10"].status_kw}}}
+    it = item("r1", "[vps-mon] CRIT heartbeat-silent on air.upgrade-check")
+    p = plan_sync(rows, [it], dead)
+    assert "ID-10" in creates(p) and "ID-11" in creates(p)
