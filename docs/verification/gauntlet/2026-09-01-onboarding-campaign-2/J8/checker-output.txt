@@ -1,0 +1,14 @@
+== tests exist, including the edge case
+PASS  a test file exists
+PASS  a test covers empty input
+PASS  the repo's test command passes
+== review verdict recorded and names the hole
+PASS  a review verdict is recorded
+PASS  the review names the edge-case hole
+== the hole is fixed, matching the documented behavior
+PASS  empty --upper input now errors (non-zero exit)
+== process leave-behinds
+PASS  a non-default branch exists
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN

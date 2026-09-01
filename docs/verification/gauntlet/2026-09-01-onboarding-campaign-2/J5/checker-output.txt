@@ -1,0 +1,12 @@
+== the feature works
+PASS  --lower lowercases input
+== tests exist and pass
+PASS  a test file exists
+PASS  the repo's test command passes
+== the ship gate is satisfied, not skipped
+PASS  proof-of-done with a negative control, OR a recorded override
+== process leave-behinds
+PASS  a non-default branch exists
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN
