@@ -496,3 +496,16 @@ def test_worktree_fence_refuses_sync(tmp_path):
         capture_output=True, text=True, env=env)
     assert r.returncode != 0
     assert "refusing to sync a worktree" in (r.stderr + r.stdout)
+
+
+def test_collided_bid_holds_create_instead_of_duplicating():
+    """After an id-collision refusal (title-mismatched spoke item), the row
+    must NOT src_create a second spoke item; that would duplicate forever
+    while the stale item lingers (battery 2026-09-01)."""
+    rows = parse_board(BOARD)
+    stale = item("r-stale", "ID-10 · Ship the widget")  # wrong text for ID-10
+    p = plan_sync(rows, [stale], {})
+    assert all(bid != "ID-10" for bid, *_ in p.src_create)
+    assert any("create held" in n for n in p.notes)
+    # other rows still create normally
+    assert any(bid == "ID-11" for bid, *_ in p.src_create)

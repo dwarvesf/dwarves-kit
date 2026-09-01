@@ -223,6 +223,7 @@ def plan_sync(rows: dict, items: list, state: dict,
 
     # link spoke items to board ids: snapshot map first, then title prefix
     linked: dict[str, dict] = {}
+    collided: set[str] = set()  # bids with a title-mismatched spoke item
     for bid, entry in smap.items():
         it = by_rid.get(entry.get("rid", ""))
         if it is not None:
@@ -242,6 +243,7 @@ def plan_sync(rows: dict, items: list, state: dict,
                 p.notes.append(
                     f"id collision: {bid} title mismatch, not linked "
                     f"(board={rows[bid].item!r} spoke={it_title!r})")
+                collided.add(bid)
                 continue
             linked[bid] = it
             claimed_rids.add(it["rid"])
@@ -267,6 +269,14 @@ def plan_sync(rows: dict, items: list, state: dict,
                 continue
             if not row_in:
                 continue  # filtered off this app: never created here
+            if bid in collided:
+                # a mismatched spoke item already carries this id: creating a
+                # second one would duplicate forever (battery 2026-09-01, MED
+                # finding). Surface the stall instead; the operator fixes or
+                # deletes the stale spoke item and the next sync creates.
+                p.notes.append(f"{bid}: create held, a title-mismatched spoke "
+                               "item already carries this id (fix or remove it)")
+                continue
             p.src_create.append((bid, title_for(bid, row.item), row.notes,
                                  row.status_kw))
             continue
