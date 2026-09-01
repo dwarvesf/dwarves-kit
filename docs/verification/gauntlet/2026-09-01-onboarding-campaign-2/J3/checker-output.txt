@@ -1,0 +1,17 @@
+== specced before built
+PASS  a spec file exists
+PASS  spec carries acceptance criteria + verification
+== the feature works
+PASS  --repeat 3 prints three lines
+PASS  --repeat 1 prints one line
+PASS  bad N handled (non-zero exit)
+== tests exist and pass
+PASS  a test file exists
+PASS  the repo's test command passes
+== process leave-behinds
+PASS  a non-default branch exists
+PASS  review verdict recorded somewhere
+PASS  proof-of-done or override
+PASS  PR.md exists with title + body
+
+SUBMISSION: GREEN
