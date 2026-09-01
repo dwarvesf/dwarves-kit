@@ -1446,11 +1446,14 @@ echo "=== V-model lens, convergence, and inventory parity (SPEC-031) ==="
 # docs/CHANGELOG.md (AMEND-001: archive dirs / the changelog are point-in-time and may
 # reference old counts -- a retro or a changelog entry that documents the fix must be
 # free to quote the forbidden string; only live surfaces are checked).
-PHASES_8_HITS=$(cd "$KIT_DIR" && grep -rIn \
-  --exclude-dir=research --exclude-dir=specs --exclude-dir=decisions \
-  --exclude-dir=retro --exclude-dir=handoff --exclude=CHANGELOG.md \
-  -E "8 (workflow|lifecycle )?phases" \
-  docs/ commands/ WORKFLOW.md README.md MANUAL.md AGENTS.md 2>/dev/null | head -1)
+# git ls-files, never a filesystem walk (SPEC-029's dead-prefix scan already
+# does this): a raw `grep -r` sweeps UNTRACKED gauntlet room copies under
+# docs/verification/gauntlet/*/ , which each carry their own test-meta.sh and
+# trip on the string this test names to describe itself (ID-640).
+PHASES_8_HITS=$(cd "$KIT_DIR" && git ls-files \
+      'docs/*' 'commands/*' 'WORKFLOW.md' 'README.md' 'MANUAL.md' 'AGENTS.md' \
+    | grep -vE '^(docs/specs/|docs/decisions/|docs/research/|docs/retro/|docs/handoff/|docs/CHANGELOG\.md)' \
+    | xargs grep -In -E "8 (workflow|lifecycle )?phases" 2>/dev/null | head -1)
 TOTAL=$((TOTAL + 1))
 if [ -z "$PHASES_8_HITS" ]; then
   echo -e "  ${GREEN}PASS${NC} no '8 (workflow|lifecycle )?phases' string in operating surfaces (SPEC-031, AMEND-001)"
