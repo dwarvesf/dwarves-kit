@@ -10,7 +10,7 @@ Seven pre-existing `tests/test-meta.sh` failures on master, all drift from the S
 | V-model lens missing 'Design critique (default full lane, opt-in normal)' | SPEC-231 renamed the phase in the cycle table; the lens prose still said "(opt-in)" | lens prose updated to the canonical phase name |
 | AGENTS.md/WORKFLOW.md intake story (SPEC-057) | PR #402's `${DWARVES_KIT:...}` quoting broke the test's fixed-string greps (`backlog.sh" next`); the story itself never left | test greps made quote-tolerant (`backlog\.sh"? next`); AGENTS.md untouched |
 | docs/FEATURES.md stale | registry drift | regenerated via `lib/registry/feature-registry.sh generate` |
-| /user: form in live docs | `docs/implementation-notes/spec-019-greenlight.md` described the guard using the literal it bans | note reworded without the literal |
+| dead user-prefix form in live docs | `docs/implementation-notes/spec-019-greenlight.md` described the guard using the literal it bans | note reworded without the literal (as is this row: the battery's acceptance leg caught the first draft of this very table reintroducing it) |
 
 ## Green run
 
