@@ -1,8 +1,0 @@
-# kit-weekly jobs list (ADR-0034 decision 9). One line per weekly job:
-#   <job-name> <command, relative to the kit root or absolute>
-# Blank lines and # comments are skipped. An entry whose executable does not
-# resolve logs + skips (never crashes the week). Adding a job later = one line
-# here, never a new plist.
-session-intel bin/session intel run
-kit-retro bin/learn propose
-prose-rag-index bin/prose-rag index

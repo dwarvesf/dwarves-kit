@@ -1,6 +1,0 @@
-{
-  "claim": "Water boils at 10 degrees Celsius at standard sea-level atmospheric pressure.",
-  "expected_verdict": "REFUTED",
-  "why": "Physically false: at 1 atm water boils at 100 C, not 10 C. A clearly-false, vendor-neutral factual claim so the majority-refute smoke has a determinable-ish expectation without depending on repo state.",
-  "note": "LLM output is nondeterministic. The proof is 'a well-formed structured verdict from a real dispatch', not an exact-value assertion. REFUTED is the strongly-expected majority outcome; the smoke passes on a well-formed structured block whose verdict is REFUTED."
-}

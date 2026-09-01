@@ -1,6 +1,0 @@
-2026-07-05T01:00:00Z | START | lane=full classified=full type=data-tool ctype=data-tool repo=fixrepo
-2026-07-05T01:00:01Z | GATE | grill | skipped | single well-scoped sub-goal, no open branches
-2026-07-05T01:00:02Z | OUTCOME | spec | start | at=1000
-2026-07-05T01:05:00Z | GATE | spec | ran | drafted
-2026-07-05T01:05:01Z | OUTCOME | build | start | at=1300
-2026-07-05T01:20:00Z | GATE | build | ran | implemented

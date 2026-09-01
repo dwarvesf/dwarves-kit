@@ -1,4 +1,0 @@
-{"type":"user","timestamp":"2026-06-14T08:00:00Z","message":{"role":"user","content":[{"type":"text","text":"task one"}]}}
-{"type":"assistant","timestamp":"2026-06-14T08:00:01Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"s_1","name":"Bash","input":{"command":"ls"}}]}}
-{"type":"assistant","timestamp":"2026-06-14T08:05:00Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"s_2","name":"Read","input":{"file_path":"/a"}}]}}
-{"type":"user","timestamp":"2026-06-14T08:10:30Z","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user] stop"}]}}

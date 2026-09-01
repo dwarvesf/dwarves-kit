@@ -1,7 +1,0 @@
-2026-07-04T04:00:00Z | START | lane=normal classified=normal type=docs ctype=docs repo=fixrepo
-2026-07-04T04:00:01Z | GATE | grill | skipped
-not-a-valid-line-at-all-no-pipe-delimiter
-2026-07-04T04:00:02Z | GATE | spec | ran | first spec call, ok
-2026-07-04T04:00:03Z | GATE | spec | ran | second spec call, duplicate gate name in one rid
-2026-07-04T04:00:04Z | OUTCOME | spec | start | at=notanumber
-2026-07-04T04:00:05Z | OUTCOME | spec | end | at=2000 caught=maybe dur_s=x
