@@ -942,8 +942,13 @@ cmd_sync() {
 # runner (the estate's hourly sweeper) leaves every checkout permanently
 # dirty, spoke writes invisible off-host and every ff-pull blocked
 # (ops-toolkit ID-638). Stages ONLY the board file; other dirt is untouched.
-# Rebase-first so the checkout stays fast-forwardable; a failed push keeps
-# the commit local and warns (the next publish rebases over it).
+#
+# COMMIT-FIRST by design (battery 2026-09-01): committing before any pull
+# means a rebase conflict can never stage conflict markers into the board
+# file, and a failed rebase aborts back to the committed state instead of
+# wedging the checkout. Exit codes: 0 published or clean no-op; 2 usage or
+# fence refusal; 3 committed locally but NOT on the remote (push/rebase
+# failure) -- callers treat 3 as a monitoring signal, the commit is safe.
 cmd_publish() {
   local backlog="" push=1
   while [ $# -gt 0 ]; do case "$1" in
@@ -953,7 +958,9 @@ cmd_publish() {
   esac; done
   backlog="${backlog:-$PWD/_meta/BACKLOG.md}"
   [ -f "$backlog" ] || { echo "board publish: no backlog at $backlog" >&2; return 2; }
-  local absdir; absdir="$(cd "$(dirname "$backlog")" && pwd)"
+  # physical path (pwd -P): the worktree fence must not be evadable through
+  # a symlinked path, matching the sync engine's resolve() fence
+  local absdir; absdir="$(cd "$(dirname "$backlog")" && pwd -P)"
   case "$absdir" in
     */.claude/worktrees/*)
       echo "board publish: refusing a worktree checkout ($backlog); publish" >&2
@@ -962,27 +969,47 @@ cmd_publish() {
   esac
   local root; root="$(git -C "$absdir" rev-parse --show-toplevel 2>/dev/null)" \
     || { echo "board publish: $backlog is not in a git repo" >&2; return 2; }
+  local branch; branch="$(git -C "$root" symbolic-ref --quiet --short HEAD)" \
+    || { echo "board publish: detached HEAD; refusing to publish" >&2; return 2; }
   local rel="${absdir}/$(basename "$backlog")"; rel="${rel#"$root"/}"
-  if git -C "$root" diff --quiet -- "$rel" 2>/dev/null; then
+  # :(literal) everywhere: a board path with glob characters must never
+  # widen the pathspec to unrelated files in an auto-pushed commit
+  local spec=":(literal)$rel"
+  if git -C "$root" diff --quiet -- "$spec" 2>/dev/null; then
     echo "board publish: no board changes in $rel"
     return 0
   fi
-  # never rebase away a concurrent writer: autostash covers other dirt
-  git -C "$root" pull --rebase --autostash --quiet 2>/dev/null || true
-  git -C "$root" diff --quiet -- "$rel" 2>/dev/null && { echo "board publish: changes were upstream already"; return 0; }
-  git -C "$root" add -- "$rel"
-  if ! git -C "$root" commit --quiet -m "chore(board): publish spoke updates" -- "$rel"; then
+  # a scheduled runner must never hang on a credential or hostkey prompt
+  local -a G=(git -c core.askPass=true -C "$root")
+  export GIT_TERMINAL_PROMPT=0
+  export GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}"
+  "${G[@]}" add -- "$spec"
+  if ! "${G[@]}" commit --quiet -m "chore(board): publish spoke updates" -- "$spec"; then
     echo "board publish: commit failed for $rel" >&2
     return 1
   fi
   echo "board publish: committed $rel"
-  if [ "$push" -eq 1 ]; then
-    if git -C "$root" push --quiet 2>/dev/null; then
-      echo "board publish: pushed"
-    else
-      echo "board publish: WARN push failed (auth?); commit is local, next publish rebases" >&2
-    fi
+  [ "$push" -eq 1 ] || return 0
+  # pinned refspec: only ever the current branch, never a surprise target
+  if "${G[@]}" push --quiet origin "HEAD:refs/heads/$branch" 2>/dev/null; then
+    echo "board publish: pushed"
+    return 0
   fi
+  # non-ff or auth failure: try one rebase, abort hard on any conflict so
+  # the checkout is never left mid-rebase (the commit survives either way)
+  if ! "${G[@]}" pull --rebase --autostash --quiet origin "$branch" 2>/dev/null \
+      || [ -n "$("${G[@]}" ls-files -u -- "$spec" 2>/dev/null)" ]; then
+    "${G[@]}" rebase --abort >/dev/null 2>&1 || true
+    echo "board publish: WARN remote diverged and rebase did not apply cleanly;" >&2
+    echo "  commit is local, checkout restored, will retry next publish" >&2
+    return 3
+  fi
+  if "${G[@]}" push --quiet origin "HEAD:refs/heads/$branch" 2>/dev/null; then
+    echo "board publish: pushed (after rebase)"
+    return 0
+  fi
+  echo "board publish: WARN push failed (auth?); commit is local, next publish retries" >&2
+  return 3
 }
 
 # bridge was folded into the sync module 2026-07-16; these verbs are the
