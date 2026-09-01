@@ -234,3 +234,6 @@ jobs:
       # silently while only the pytest path is exercised.
       - name: Run the webcheck standalone runner (no pytest)
         run: python3 lib/webcheck/tests/test_webcheck.py
+
+      - name: Run the gauntlet-proof-audit Tier-1 pins
+        run: bash tests/test-gauntlet-proof-audit.sh
