@@ -9,8 +9,8 @@
 ```
 $ bash lib/gauntlet/stats.sh
 | Run | Date | Rounds | Findings | Clean at | Rows GREEN | Probe tokens | Probe cost | Probe |
-| 2026-08-06-kit-user | 2026-08-06 | 3 | 3->1->0 | 3 | - | 146497 | 18.2230 | - |
-| 2026-08-06-kit-user/J3 | 2026-08-06 | 2 | 0->0 | 1 | - | - | - | - |
+| 2026-08-06-kit-user | 2026-08-06 | 3 | 3->1->0 | 3 | - | 69703 | 7.2991 | - |
+| 2026-08-06-kit-user/J3 | 2026-08-06 | 2 | 0->0 | 1 | - | 76794 | 10.9239 | - |
 | 2026-08-31-onboarding-j1-revised | 2026-08-31 | 2 | 0->0 | 1 | - | 172199 | 0.0392 | - |
 | 2026-08-31-user-J1 | 2026-08-31 | 1 | 4 | - | - | 13117 | 1.0144 | claude-sonnet-5, headless `claude -p`, one spend |
 | 2026-08-31-user-J1-nw | 2026-08-31 | 1 | 4 | - | - | 165557 | 0.0332 | - |
@@ -38,6 +38,15 @@ Restored corpus: green run above. A malformed marker is a loud named error, neve
 bash lib/gauntlet/stats.sh            # table on stdout
 bash lib/gauntlet/stats.sh --write    # dated snapshot, same-day overwrite refused without --force
 ```
+
+## Review round
+
+Independent code-reviewer (sonnet, correctness + robustness lens) found 1 HIGH + 2 MEDIUM + 1 LOW; all four fixed and re-verified in the run above:
+
+- HIGH: tokens were per record DIR, so a multi-run dir credited sibling transcripts to the primary row. Now scoped per run by the round-dir convention; the reviewer's independently measured split (69703/$7.30 primary, 76794/$10.92 J3) matches the fixed output exactly.
+- MEDIUM: the claude-format jq branch lacked the usage-type guard; one corrupt event could silently blank a whole dir's numbers. Guarded.
+- MEDIUM: unquoted `$files` word-splitting; replaced with a bash-3.2-safe indexed array.
+- LOW: marker sweep was a substring match; now strict full-line after backtick strip (negative control re-run RED, corpus re-run green).
 
 ## Notes
 

@@ -34,23 +34,31 @@ rounds_files() {
 
 # tokens_cost <dir> -- sum probe usage across the dir's transcripts, both
 # formats: omp v3 (turn_end.usage) and claude stream-json (result event).
-# Room contents (nested repos, kit copies) are pruned. Prints "tok cost"
-# or nothing when no transcript parses.
+# Room contents (nested repos, kit copies) are pruned. Scoped per RUN, not
+# per dir: a prefixed run (<p>-ROUNDS.md) owns only its <p>-round-* subtrees;
+# the primary run owns the rest (its own round-* dirs and campaign row dirs
+# never match '*-round-*'). Prints "tok cost" or nothing.
 tokens_cost() {
-  local d="$1" files
-  files=$(find "$d" \( -name kit-extract -o -name fixture-repo -o -name kit -o -name home \) -prune \
-            -o -name transcript.jsonl -print 2>/dev/null)
-  [ -n "$files" ] || return 0
-  # shellcheck disable=SC2086
+  local d="$1" prefix="$2" files=()
+  if [ -n "$prefix" ]; then
+    while IFS= read -r line; do files+=("$line"); done < <(
+      find "$d" \( -name kit-extract -o -name fixture-repo -o -name kit -o -name home \) -prune \
+        -o -path "*/${prefix}-round-*" -name transcript.jsonl -print 2>/dev/null)
+  else
+    while IFS= read -r line; do files+=("$line"); done < <(
+      find "$d" \( -name kit-extract -o -name fixture-repo -o -name kit -o -name home -o -name '*-round-*' \) -prune \
+        -o -name transcript.jsonl -print 2>/dev/null)
+  fi
+  [ "${#files[@]}" -gt 0 ] || return 0
   jq -n '
     [inputs
      | if .type=="turn_end" and ((.usage // .message.usage)|type=="object") then
          ((.usage // .message.usage) | {t: ((.input//0)+(.output//0)), c: (.cost.total//0)})
-       elif .type=="result" then
+       elif .type=="result" and ((.usage|type)=="object" or (.usage|type)=="null") then
          {t: (((.usage.input_tokens//0))+((.usage.output_tokens//0))), c: (.total_cost_usd//0)}
        else empty end]
     | if length==0 then empty else "\(map(.t)|add) \(map(.c)|add)" end
-    | @text' -r $files 2>/dev/null
+    | @text' -r "${files[@]}" 2>/dev/null
 }
 
 # probe_label <rounds-file> -- best-effort probe/model note for display.
@@ -68,7 +76,10 @@ for d in "$G"/*/; do
   [ -L "$d" ] && continue
   while IFS= read -r f; do
     while IFS= read -r line; do
-      printf '%s' "$line" | grep -qE "$QL_OK" || { echo "stats.sh: malformed QL-VERDICT in $f: $line" >&2; bad=1; }
+      # Full-line match after stripping backticks/whitespace: a line pairing a
+      # valid marker with a corrupted one must still fail, so no substring pass.
+      printf '%s' "$line" | sed 's/`//g; s/^ *//; s/ *$//' | grep -qxE "$QL_OK" \
+        || { echo "stats.sh: malformed QL-VERDICT in $f: $line" >&2; bad=1; }
     done < <(grep -h 'QL-VERDICT' "$f")
   done < <(rounds_files "$d")
 done
@@ -79,12 +90,11 @@ for d in "$G"/*/; do
   d="${d%/}"
   [ -L "$d" ] && continue
   name="$(basename "$d")"
-  dir_counted=0
   while IFS= read -r f; do
-    run="$name"
+    run="$name" prefix=""
     case "$f" in
       */ROUNDS.md) ;;
-      *) run="$name/$(basename "$f" -ROUNDS.md)" ;;
+      *) prefix="$(basename "$f" -ROUNDS.md)"; run="$name/$prefix" ;;
     esac
     date_part="${name:0:10}"
     # QL-VERDICT projection: round-ordered findings trajectory + first clean round.
@@ -106,15 +116,12 @@ for d in "$G"/*/; do
     else
       rows="-"
     fi
-    # Tokens/cost: whole record dir, attached to its primary (ROUNDS.md) row.
+    # Tokens/cost: scoped to this run's own transcripts (see tokens_cost).
     tok="-" cost="-"
-    if [ "$run" = "$name" ] || [ "$dir_counted" -eq 0 ]; then
-      tc=$(tokens_cost "$d")
-      if [ -n "$tc" ]; then
-        tok="${tc%% *}"
-        cost=$(printf '%.4f' "${tc#* }")
-      fi
-      dir_counted=1
+    tc=$(tokens_cost "$d" "$prefix")
+    if [ -n "$tc" ]; then
+      tok="${tc%% *}"
+      cost=$(printf '%.4f' "${tc#* }")
     fi
     probe=$(probe_label "$f")
     [ -n "$probe" ] || probe="-"
