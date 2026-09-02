@@ -11,7 +11,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sources.notion_taskboard import (NotionTaskBoardSource, _rich,  # noqa: E402
                                       parse_map)
-from sync_core import Plan, Row, plan_create_only  # noqa: E402
+from sources.notion_taskboard_pull import MARKER_PREFIX  # noqa: E402
+from sync_core import (PULL_MARKER_RE, Plan, Row,  # noqa: E402
+                       plan_create_only)
 
 
 class FakeNtn:
@@ -100,6 +102,62 @@ def test_custom_skip_kw_extends_dropped():
     r = rows(("DF-1", "a", "shipped", ""), ("DF-2", "b", "queued", ""))
     plan = plan_create_only(r, {}, skip_kw={"dropped", "shipped"})
     assert [c[0] for c in plan.src_create] == ["DF-2"]
+
+
+# --- marker-aware adoption: never re-create a row the pull leg made ------
+
+PULL_PID = "0123456789abcdef0123456789abcdef"
+
+
+def test_marker_row_adopts_instead_of_creating():
+    r = rows(("DF-1", "intake row", "queued",
+              f"notion-intake ; notion-page:{PULL_PID} ; some body"))
+    plan = plan_create_only(r, {})
+    assert plan.src_create == []
+    assert plan.src_adopt == [("DF-1", PULL_PID)]
+
+
+def test_normal_row_without_marker_still_creates():
+    r = rows(("DF-1", "plain row", "queued", "no marker here"))
+    plan = plan_create_only(r, {})
+    assert [c[0] for c in plan.src_create] == ["DF-1"]
+    assert plan.src_adopt == []
+
+
+def test_dropped_or_filtered_marker_row_plans_nothing():
+    r = rows(("DF-1", "dropped intake", "dropped", f"notion-page:{PULL_PID}"),
+             ("DF-2", "filtered intake", "queued",
+              f"#family notion-page:{PULL_PID}"))
+    plan = plan_create_only(r, {}, filt={"skip_tags": {"family"}})
+    assert plan.src_create == [] and plan.src_adopt == []
+
+
+def test_adoption_persists_to_state_and_second_run_is_empty(tmp_path):
+    import backlog_sync
+
+    board = tmp_path / "BACKLOG.md"
+    board.write_text(
+        "| ID | Item | Notes & source | Status |\n|---|---|---|---|\n"
+        f"| DF-1 | intake row | notion-page:{PULL_PID} | queued |\n")
+    state = tmp_path / "s.json"
+
+    src, fake = make_src()
+    backlog_sync.sync_create_only(src, board, state, dry_run=False)
+    assert fake.page_bodies() == []
+    saved = json.loads(state.read_text())
+    assert saved["map"]["DF-1"] == {"rid": PULL_PID, "via": "pull-marker"}
+
+    src2, fake2 = make_src()
+    backlog_sync.sync_create_only(src2, board, state, dry_run=False)
+    assert fake2.page_bodies() == []  # no ntn write call for the adopted row
+
+
+def test_marker_pattern_matches_pull_adapter_prefix():
+    # A rename on either side (this pattern or the pull adapter's own
+    # constant) must turn this test red before it can turn any row red.
+    text = MARKER_PREFIX + PULL_PID
+    m = PULL_MARKER_RE.search(text)
+    assert m and m.group(1) == PULL_PID
 
 
 # --- apply: field mapping (case 1, 4) ------------------------------------

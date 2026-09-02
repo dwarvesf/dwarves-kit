@@ -150,6 +150,17 @@ option. `dropped` rows are skipped; a state absent from the map uses
 preflight, so `--dry-run` surfaces config errors with zero writes, and state is
 checkpointed after each create so a mid-batch failure never re-pushes a page.
 
+A row whose notes already carry `notion-page:<32-hex>` (the identity marker
+`notion-taskboard-pull` below writes on intake) is never pushed as a create,
+whatever its tags: `plan_create_only` binds it into the state map instead
+(`{"rid": pid, "via": "pull-marker"}`), with no network call. This is what
+stops a team-approved intake row from minting a second, title-prefixed copy of
+the very page it came from the moment human triage strips its `#inbox`
+quarantine tag; a consumer's own `notion_taskboard_skip_tags` config is
+belt-and-braces on top, not the only guard. `describe()` prints one line per
+adoption (`= spoke DF-412 bound to an existing Notion page (pull marker), not
+created`); a steady-state run afterward reads `(nothing to do)` like any other.
+
 ```toml
 [sync]
 apps                             = "notion-taskboard"

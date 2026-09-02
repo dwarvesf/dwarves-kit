@@ -102,12 +102,23 @@ def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
     new_map = dict(state.get("map", {}))
     state_path.parent.mkdir(parents=True, exist_ok=True)
 
-    def checkpoint(bid: str, rid: str) -> None:
-        new_map[bid] = {"rid": rid}
+    def write_state() -> None:
         new_state = {"map": new_map}
         if getattr(src, "binding", None):
             new_state["binding"] = src.binding
         atomic_write(state_path, json.dumps(new_state, indent=1))
+
+    def checkpoint(bid: str, rid: str) -> None:
+        new_map[bid] = {"rid": rid}
+        write_state()
+
+    # Adoptions bind an existing page with no network call, so they are
+    # persisted up front rather than through the create-only checkpoint,
+    # which fires per POST.
+    if plan.src_adopt:
+        for bid, pid in plan.src_adopt:
+            new_map[bid] = {"rid": pid, "via": "pull-marker"}
+        write_state()
 
     created = src.apply(plan, {}, rows, on_created=checkpoint)
     print(f"synced {header}")
