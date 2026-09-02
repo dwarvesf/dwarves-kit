@@ -226,6 +226,50 @@ rollback: the pull path only appends board rows. To undo a run, delete the
 appended rows from `### Reminders inbox`; there is no state file to clear and
 nothing was written to Notion.
 
+## SPEC-243, taskboard push marker dedupe (2026-09-02)
+
+The push leg (`notion-taskboard`, SPEC-003) never re-creates a page that came
+from the pull leg (`notion-taskboard-pull`, SPEC-004). A row whose notes carry
+the pull adapter's own identity marker (`notion-page:<32-hex>`) is bound into
+the create-only state map instead of pushed, closing the gap that let a
+dfoundation intake row mint a second, title-prefixed Task Board card the
+moment human triage stripped its `#inbox` quarantine tag
+(`notion_taskboard_skip_tags = "inbox"` stays as belt-and-braces, no longer the
+only guard).
+
+| When | Command | Exit | Verdict |
+|---|---|---|---|
+| 2026-09-02 | `uv run --no-project --with pytest -- pytest lib/sync/tests/test_notion_taskboard.py -q` | 0 | 35 passed (30 pre-change + 5 new marker cases) |
+| 2026-09-02 | `bash tests/test-sync.sh` | 0 | 256 passed, whole sync suite unchanged elsewhere (zero blast radius on the two-way mesh, the pull leg, or cockpit) |
+| 2026-09-02 | manual: `sync_create_only` against a one-row board carrying `notion-page:<pid>`, fake ntn | 0 | `describe()` printed `= spoke DF-1 bound to an existing Notion page (pull marker), not created`; zero POSTs (`fake.page_bodies() == []`); state map recorded `{"rid": "<pid>", "via": "pull-marker"}`; a second run against the persisted state printed `(nothing to do)` with zero POSTs |
+| 2026-09-02 | NEGATIVE CONTROL: `git show <pre-guard-sha>:lib/sync/sync_core.py` written over the working copy, keeping the new tests, then `pytest -k marker -v` | 1 | red: `ImportError: cannot import name 'PULL_MARKER_RE' from 'sync_core'`, collection aborts before any case runs; file restored via `git checkout -- lib/sync/sync_core.py`, suite back to green (35 passed) |
+
+Acceptance criteria mapping (SPEC-243 `## Acceptance Criteria`): (1) marker row
+with no `#inbox` tag plans zero creates and one adoption --
+`test_marker_row_adopts_instead_of_creating`; (2) a normal row still creates --
+`test_normal_row_without_marker_still_creates`; (3) the adoption persists and a
+second run is empty with no ntn write for that row --
+`test_adoption_persists_to_state_and_second_run_is_empty`; (4) a dropped or
+filtered marker row plans neither -- `test_dropped_or_filtered_marker_row_plans_nothing`;
+(5) no test in the suite issues a Notion write (unchanged from SPEC-003); (6)
+the negative control above.
+
+Cross-module guard: `test_marker_pattern_matches_pull_adapter_prefix` asserts
+`sync_core.PULL_MARKER_RE` matches `sources.notion_taskboard_pull.MARKER_PREFIX
++ <pid>`, so a rename on either side turns the suite red before it can turn any
+row red.
+
+DEC-004 (see `docs/implementation-notes/SPEC-243-taskboard-push-marker-dedupe.md`):
+an adoption is plan data, not counted in `Plan.empty()`. The run that performs
+one prints the adoption line (visibly not idle); a steady-state run afterward
+prints `(nothing to do)`, matching the reading operators already trust.
+
+rollback: the guard only changes what the push planner decides; it writes no
+new state shape beyond an extra `via` key alongside the existing `rid`. To
+undo, drop the `src_adopt` branch in `plan_create_only` and the persistence
+block in `sync_create_only`; existing `{"rid": ...}` map entries (no `via` key)
+are read the same as before.
+
 ## Reproduce
 
 ```
