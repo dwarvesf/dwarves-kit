@@ -29,10 +29,8 @@
 #   override <slug> <reason>          log a human override for this branch (leaves a trace)
 #   is-overridden <slug>              exit 0 if an override is logged
 #   negctl   <root> <test-cmd> <mutate-cmd>
-#                                     run the negative control for a behavioral proof:
-#                                     test GREEN, mutate, test RED, restore tracked files,
-#                                     test GREEN; prints the paste-ready NEGATIVE CONTROL
-#                                     block (Command:/Exit:/Verdict:) that check() reads
+#                                     forwards to lib/gate/negctl.sh (the mechanised negative
+#                                     control; FAILS CLOSED, prints the block check() reads)
 set -uo pipefail
 
 PROOF_LEDGER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -198,55 +196,9 @@ _repo_id() {
   printf '%s' "$common" | tr -d '|'
 }
 
-# The negative control, mechanised. Every behavioral proof owes "revert -> RED -> restore",
-# and every session re-derives the same five steps by hand (mutate a line, run the suite,
-# `git checkout --`, run again), which is where two hazards live: the restore wipes
-# UNCOMMITTED work (so the tree must be clean of tracked changes first), and a control that
-# never went red is recorded as PASS anyway. This verb runs the sequence, refuses a dirty
-# tree, restores on every path (trap), and prints the block in the grammar check() reads.
-negctl() {
-  local root="${1:-}" test_cmd="${2:-}" mutate_cmd="${3:-}"
-  [ -n "$root" ] && [ -n "$test_cmd" ] && [ -n "$mutate_cmd" ] \
-    || { echo "usage: negctl <root> <test-cmd> <mutate-cmd>" >&2; return 64; }
-  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "negctl: $root is not a git repo" >&2; return 64; }
-  if [ -n "$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
-    echo "negctl: REFUSED -- tracked files are modified in $root; commit first (the restore step is 'git checkout --', it would wipe them)" >&2
-    return 2
-  fi
-  local rc_before rc_red rc_after changed verdict="PASS"
-  local restore_files=""
-  # first failure wins: a no-op mutation must not be re-labelled as "vacuous" downstream
-  _negctl_fail() { [ "$verdict" = "PASS" ] && verdict="FAIL: $1"; return 0; }
-  # restore on every exit path, so a failing mutation never leaves the tree mutated
-  _negctl_restore() { [ -n "$restore_files" ] && git -C "$root" checkout -q -- $restore_files 2>/dev/null || true; }
-  trap _negctl_restore RETURN
-
-  echo "## Negative control (proof-ledger negctl)"
-  echo "Command: $test_cmd"
-  (cd "$root" && bash -c "$test_cmd") >/dev/null 2>&1; rc_before=$?
-  echo "Exit: $rc_before (green before mutation)"
-  [ "$rc_before" -eq 0 ] || _negctl_fail "test was not green before the mutation"
-
-  (cd "$root" && bash -c "$mutate_cmd") >/dev/null 2>&1
-  changed="$(git -C "$root" diff --name-only 2>/dev/null | tr '\n' ' ')"
-  restore_files="$changed"
-  echo "Mutation: $mutate_cmd"
-  echo "Changed: ${changed:-<nothing>}"
-  [ -n "$changed" ] || _negctl_fail "the mutation changed no tracked file"
-
-  (cd "$root" && bash -c "$test_cmd") >/dev/null 2>&1; rc_red=$?
-  echo "Exit: $rc_red (under mutation, RED expected)"
-  [ "$rc_red" -ne 0 ] || _negctl_fail "test stayed green under the mutation (the check is vacuous)"
-
-  _negctl_restore; restore_files=""
-  echo "Restore: git checkout -- ${changed:-<nothing>}"
-  (cd "$root" && bash -c "$test_cmd") >/dev/null 2>&1; rc_after=$?
-  echo "Exit: $rc_after (green after restore)"
-  [ "$rc_after" -eq 0 ] || _negctl_fail "test not green after restore"
-
-  echo "Verdict: $verdict"
-  [ "$verdict" = "PASS" ]
-}
+# negctl forwards to lib/gate/negctl.sh: a tree-mutating, FAIL-CLOSED tool does not belong
+# inside the gate (which FAILS OPEN on ambiguity by contract); the verb stays for callers.
+negctl() { bash "$PROOF_LEDGER_DIR/negctl.sh" "$@"; }
 
 is_overridden() {
   local slug repo
@@ -332,7 +284,7 @@ check() {
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
         grep -qi 'NEGATIVE CONTROL' "$p" && { grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' "$p" || _has_committed_image "$p" "$root"; } \
-          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' && ok=0 && break
+          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' && ok=0 && break
       else # stateful
         grep -qiE 'rollback|\[UNAVAILABLE' "$p" && { grep -qE 'Command:|Exit:' "$p" || _has_committed_image "$p" "$root"; } && ok=0 && break
       fi
@@ -358,7 +310,7 @@ check() {
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
         printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
           && { printf '%s' "$content" | grep -qE 'Exit:[[:space:]]*0|VERDICT: PASS|Verdict: PASS|PASS' || [ "$grp_img" -eq 0 ]; } \
-          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*INCONCLUSIVE' \
+          && ! printf '%s' "$last_v" | grep -qiE 'Verdict:[[:space:]]*(INCONCLUSIVE|FAIL)' \
           && ok=0 && break
       else # stateful
         printf '%s' "$content" | grep -qiE 'rollback|\[UNAVAILABLE' \
