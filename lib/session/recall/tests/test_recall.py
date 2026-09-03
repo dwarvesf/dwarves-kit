@@ -29,6 +29,69 @@ class TestRecall(unittest.TestCase):
         hits = r.search(r.load(SEED), "string-that-does-not-exist-zzz")
         self.assertEqual(hits, [])
 
+    # --- --project short names and --sessions -----------------------------------
+    # Motivating miss: `session recall whathas --project ops-toolkit` printed
+    # "no matches" (the dir was never found), and the turn view never named the
+    # transcript, so a session hand-rolled jq over ~/.claude/projects instead.
+
+    def _fake_projects(self):
+        import shutil
+        import tempfile
+        import time
+        base = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, base)
+        main_slug = os.path.join(base, "-Users-me-workspace-zzrepo")
+        wt_slug = os.path.join(base, "-Users-me-workspace-zzrepo--claude-worktrees-agent-1")
+        os.makedirs(main_slug)
+        os.makedirs(wt_slug)
+        old = os.path.join(main_slug, "old-session.jsonl")
+        new = os.path.join(main_slug, "new-session.jsonl")
+        shutil.copy(SEED, old)
+        shutil.copy(SEED, new)
+        # the worktree slug carries the term too; it must NOT be swept in by the short name
+        shutil.copy(SEED, os.path.join(wt_slug, "wt-session.jsonl"))
+        now = time.time()
+        os.utime(old, (now - 3600, now - 3600))
+        os.utime(new, (now, now))
+        return base, main_slug
+
+    def test_short_project_name_resolves_to_suffix_match_only(self):
+        base, main_slug = self._fake_projects()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            self.assertEqual(r.resolve_project_dirs("zzrepo"), [main_slug])
+            self.assertEqual(r.resolve_project_dirs("-Users-me-workspace-zzrepo"), [main_slug])
+            self.assertEqual(r.resolve_project_dirs("no-such-repo-zzz"), [])
+        finally:
+            r.PROJECTS = orig
+
+    def test_unknown_project_is_exit_1_not_no_matches(self):
+        base, _ = self._fake_projects()
+        env = dict(os.environ)
+        code = ("import sys, session_recall as r; r.PROJECTS=%r; "
+                "sys.exit(r.main(['backoff', '--project', 'no-such-repo-zzz']))") % base
+        p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env,
+                           capture_output=True, text=True)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("no project dir", p.stderr)
+        self.assertNotIn("no matches", p.stderr)
+
+    def test_sessions_view_one_line_per_transcript_newest_first(self):
+        base, _ = self._fake_projects()
+        code = ("import sys, session_recall as r; r.PROJECTS=%r; "
+                "sys.exit(r.main(['backoff', '--project', 'zzrepo', '--sessions']))") % base
+        p = subprocess.run([sys.executable, "-c", code], cwd=ROOT,
+                           capture_output=True, text=True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = p.stdout.strip().splitlines()
+        self.assertEqual(lines[0], "# sessions matching 'backoff': 2")
+        self.assertIn("new-session", lines[1])
+        self.assertIn("old-session", lines[2])
+        self.assertNotIn("wt-session", p.stdout)
+        # the seed fixture has no plain-string user turn, so the opening ask is empty here
+        self.assertRegex(lines[1], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}  new-session\s+\d+ hits  ")
+
     def test_negative_control_cli_clean_exit(self):
         p = subprocess.run([sys.executable, BIN, "string-that-does-not-exist-zzz",
                             "--file", SEED], capture_output=True, text=True)

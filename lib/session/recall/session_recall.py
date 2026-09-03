@@ -157,10 +157,54 @@ def resolve_files(file=None, project=None, search_all=False):
                 out += sorted(os.path.join(pd, f) for f in os.listdir(pd) if f.endswith(".jsonl"))
         return out
     slug = project or _cwd_slug()
+    out = []
+    for pd in resolve_project_dirs(slug):
+        out += sorted(os.path.join(pd, f) for f in os.listdir(pd) if f.endswith(".jsonl"))
+    return out
+
+
+def resolve_project_dirs(slug: str):
+    """Project dirs for a `--project` value. A full slug (`-Users-x-workspace-y-repo`)
+    resolves to itself; a short repo name (`repo`) resolves to every project dir whose
+    slug ends in `-repo`, which excludes that repo's worktree slugs (they continue with
+    `--claude-worktrees-...`). Empty when nothing matches; callers report that as a
+    missing project, never as "no matches" for the query."""
     pd = os.path.join(PROJECTS, slug)
-    if not os.path.isdir(pd):
+    if os.path.isdir(pd):
+        return [pd]
+    if not os.path.isdir(PROJECTS) or "/" in slug:
         return []
-    return sorted(os.path.join(pd, f) for f in os.listdir(pd) if f.endswith(".jsonl"))
+    suffix = "-" + slug
+    return sorted(os.path.join(PROJECTS, d) for d in os.listdir(PROJECTS)
+                  if d.endswith(suffix) and os.path.isdir(os.path.join(PROJECTS, d)))
+
+
+def opening_ask(entries, width: int = 110) -> str:
+    """The session's first human turn (a string-content user message that is not a
+    hook/system block), one line, capped. What a person recognises a session by."""
+    for e in entries:
+        if _role(e) != "user":
+            continue
+        c = (e.get("message") or {}).get("content")
+        if not isinstance(c, str) or not c.strip() or c.lstrip().startswith("<"):
+            continue
+        line = " ".join(c.split())
+        return line if len(line) <= width else line[:width - 1] + "…"
+    return ""
+
+
+def render_sessions(per_file, query: str) -> str:
+    """One line per transcript, newest first: mtime, session id, match count, opening
+    ask. The view for "which session did X", where the turn view is for "what did it
+    say"."""
+    import time
+    rows = sorted(per_file, key=lambda r: -r[0])
+    lines = [f"# sessions matching {query!r}: {len(rows)}"]
+    for mtime, f, n, ask in rows:
+        sid = os.path.basename(f)[:-len(".jsonl")]
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(mtime))
+        lines.append(f"{when}  {sid}  {n:>4} hits  {ask}")
+    return "\n".join(lines)
 
 
 # --- CLI ---------------------------------------------------------------------
@@ -168,9 +212,11 @@ def resolve_files(file=None, project=None, search_all=False):
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     file = project = None
-    search_all = as_json = False
+    search_all = as_json = sessions = False
     limit = 50
     query_parts = []
+    usage = ("usage: session-recall <query> [--file F | --project SLUG-or-repo-name | --all] "
+             "[--sessions] [--limit N] [--json]\n")
     it = iter(argv)
     for a in it:
         if a == "--file":
@@ -179,35 +225,58 @@ def main(argv=None) -> int:
             project = next(it, None)
         elif a == "--all":
             search_all = True
+        elif a == "--sessions":
+            sessions = True
         elif a == "--json":
             as_json = True
         elif a == "--limit":
             limit = int(next(it, "50") or 50)
         elif a in ("-h", "--help"):
-            sys.stderr.write("usage: session-recall <query> [--file F | --project SLUG | --all] "
-                             "[--limit N] [--json]\n")
+            sys.stderr.write(usage)
             return 0
         else:
             query_parts.append(a)
     query = " ".join(query_parts).strip()
     if not query:
-        sys.stderr.write("usage: session-recall <query> [--file F | --project SLUG | --all] "
-                         "[--limit N] [--json]\n")
+        sys.stderr.write(usage)
         return 2
+
+    if project and not resolve_project_dirs(project):
+        # Distinct from "no matches": the query was never run against anything.
+        sys.stderr.write(f"session-recall: no project dir under {PROJECTS} is '{project}' "
+                         f"or ends in '-{project}'\n")
+        return 1
 
     files = resolve_files(file=file, project=project, search_all=search_all)
     all_hits = []
+    per_file = []  # (mtime, file, match_count, opening_ask) for --sessions
     for f in files:
         try:
             entries = load(f)
         except OSError:
             continue
-        for idx, entry, n in search(entries, query):
+        hits = search(entries, query)
+        if sessions:
+            if hits:
+                per_file.append((os.path.getmtime(f), f, sum(n for _, _, n in hits), opening_ask(entries)))
+            continue
+        for idx, entry, n in hits:
             all_hits.append((f, idx, entry, n))
             if len(all_hits) >= limit:
                 break
         if len(all_hits) >= limit:
             break
+
+    if sessions:
+        rows = sorted(per_file, key=lambda r: -r[0])[:limit]
+        if as_json:
+            payload = [{"file": f, "mtime": int(m), "matches": n, "opening_ask": ask} for m, f, n, ask in rows]
+            sys.stdout.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        else:
+            sys.stdout.write(render_sessions(rows, query) + "\n")
+            if not rows:
+                sys.stderr.write(f"no matches for {query!r}\n")
+        return 0
 
     if as_json:
         payload = [{"file": f, "turn": idx, "role": _role(e), "timestamp": _ts(e),
