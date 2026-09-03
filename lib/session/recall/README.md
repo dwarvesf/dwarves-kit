@@ -26,7 +26,10 @@ because it searches the file on disk, not the compacted view.
 ```
 session-recall "<query>"                      # search the current project (slug from cwd)
 session-recall "<query>" --project <slug>     # a specific ~/.claude/projects/<slug>
+session-recall "<query>" --project ops-toolkit  # or the repo name: every slug ending in -ops-toolkit
 session-recall "<query>" --all                # every project
+session-recall "<query>" --project ops-toolkit --sessions   # WHICH sessions: one line per
+                                              # transcript, newest first, hit count + opening ask
 session-recall "<query>" --file <path.jsonl>  # one transcript file
 session-recall "<query>" --json --limit 20    # machine-readable, capped
 ```
