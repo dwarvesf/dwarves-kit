@@ -29,7 +29,12 @@ session-recall "<query>" --project <slug>     # a specific ~/.claude/projects/<s
 session-recall "<query>" --project ops-toolkit  # or the repo name: every slug ending in -ops-toolkit
 session-recall "<query>" --all                # every project
 session-recall "<query>" --project ops-toolkit --sessions   # WHICH sessions: one line per
-                                              # transcript, newest first, hit count + opening ask
+                                              # transcript, newest first, hit count + opening ask;
+                                              # walks newest-first and stops at --limit hits, so the
+                                              # header says "(capped by --limit)" when it did.
+                                              # The opening ask is redacted for secret shapes and
+                                              # the block carries a DATA marker: it gets pasted
+                                              # into a Claude session by the close-out skill.
 session-recall "<query>" --file <path.jsonl>  # one transcript file
 session-recall "<query>" --json --limit 20    # machine-readable, capped
 ```

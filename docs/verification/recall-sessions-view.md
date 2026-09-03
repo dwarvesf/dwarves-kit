@@ -1,39 +1,50 @@
-# Proof of done: session recall takes a repo name and adds a --sessions view
+# Proof of done: session recall --project <repo-name> and --sessions, hardened
 
-Change under proof: `lib/session/recall/session_recall.py`.
-1. `--project` accepts a repo name (`ops-toolkit`), resolved to every `~/.claude/projects`
-   slug ending in `-ops-toolkit`; that suffix rule excludes the repo's worktree slugs
-   (`...-ops-toolkit--claude-worktrees-...`). A full slug still resolves to itself.
-2. An unknown project is exit 1 with `no project dir under ... is 'X' or ends in '-X'`,
-   distinct from the query's own `no matches`. Before, the query silently ran against
-   nothing and printed `no matches`.
-3. `--sessions` prints one line per transcript with hits, newest mtime first: `YYYY-MM-DD
-   HH:MM  <session-id>  <n> hits  <opening ask>`. `--json` gives the same rows as objects.
+Change under proof: `lib/session/recall/session_recall.py`, its tests and README. Replaces the
+#482 record after the kit:battery over it: security MED 3 (`--project ..` resolved to
+`~/.claude`; the guard sat after the isdir check), MED 4 (opening ask printed raw transcript
+text into session context), LOW 6 (`--project` with no value fell through to the cwd project);
+reviewer M5 (every transcript loaded to print a few rows), M6 (silent multi-dir union), L7
+(sliced count posed as a total), L8 (list-content first turns gave an empty ask).
 
-Motivation: a session asked "which session this evening worked on X" and hand-rolled `jq`
-over the raw JSONL four times, because `session recall X --project ops-toolkit` printed
-`no matches` (the slug never resolved) and the turn view never names the transcript.
+1. `--project` accepts a repo name resolved to every slug ending `-<name>`; the value is
+   validated (no `/`, `.`, `..`, empty) BEFORE any directory check; a missing value is exit 2.
+2. Unknown project is exit 1 with its own message, distinct from `no matches`.
+3. `--sessions` walks transcripts newest-first and stops at `--limit` hits; the header says
+   `(capped by --limit, raise it for more)` when it did; more than one matched dir is named.
+4. The opening ask reads string or list content, skips hook/system blocks, redacts secret
+   shapes to `[redacted]`; the block starts with a DATA marker. `--json` carries both.
 
 ## Confirmation run-table
 
 | # | Check | Command | Result | Verdict |
 |---|---|---|---|---|
-| 1 | Unit tests (7 prior + 3 new) | `cd lib/session/recall && python3 -m unittest discover -s tests` | `Ran 10 tests ... OK` | PASS |
-| 2 | Short name resolves to the main slug only | test `test_short_project_name_resolves_to_suffix_match_only` | main slug returned, worktree slug and unknown name excluded | PASS |
-| 3 | Unknown project is exit 1, own message | test `test_unknown_project_is_exit_1_not_no_matches` | rc 1, stderr `no project dir`, no `no matches` | PASS |
-| 4 | Sessions view, newest first, worktree slug excluded | test `test_sessions_view_one_line_per_transcript_newest_first` | header `# sessions matching 'backoff': 2`, new before old | PASS |
-| 5 | Live | `bin/session recall whathas --project ops-toolkit --sessions --limit 5` | 5 rows, newest `2026-09-04 00:10`, each with hit count and opening ask | PASS |
-| 6 | Live unknown | `bin/session recall whathas --project nosuchrepo-zz` | rc 1, `no project dir under /Users/tieubao/.claude/projects is 'nosuchrepo-zz' or ends in '-nosuchrepo-zz'` | PASS |
-| 7 | Shared parser untouched | `bash lib/session/tests/test-parse-transcript.sh` | `smoke: all 7 passed` | PASS |
+| 1 | Unit tests (7 original + 7 new) | `cd lib/session/recall && python3 -m unittest discover -s tests` | `Ran 14 tests ... OK` | PASS |
+| 2 | Traversal and empty names never resolve | `test_traversal_and_empty_names_never_resolve` | `..`, `.`, `../x`, `a/b`, `""` all `[]` | PASS |
+| 3 | `--project` with no value is usage, exit 2 | `test_project_flag_without_value_is_usage_exit_2` | rc 2 | PASS |
+| 4 | List-content ask read, hook block skipped, `op://` redacted | `test_opening_ask_list_content_and_redaction_and_hook_skip` | `rotate the key [redacted] and ship it` | PASS |
+| 5 | Walk stops at `--limit`, header says so, older file never loaded | `test_sessions_view_stops_at_limit_and_says_so` | 1 row, capped header | PASS |
+| 6 | Marker line under the header | `test_sessions_view_one_line_per_transcript_newest_first` | line 2 is `DATA_MARKER` | PASS |
+| 7 | Live | `bin/session recall whathas --project ops-toolkit --sessions --limit 2` | 2 rows, capped header, marker | PASS |
+| 8 | Live traversal | `bin/session recall x --project ..` | rc 1, `no project dir ... is '..'` | PASS |
+| 9 | Shared parser untouched | `bash lib/session/tests/test-parse-transcript.sh` | all 7 passed | PASS |
+| 10 | Structural suite | `bash tests/test-meta.sh` | 824/824 | PASS |
 
-## Negative control
+## Negative control (negctl)
 
-Command: append `return []` after `suffix = "-" + slug` in `resolve_project_dirs`, so a
-short name never resolves.
-Exit: unit suite `FAILED (failures=2)` (tests 2 and 4 above); live query prints the
-unknown-project message for `ops-toolkit`.
-Restore: `git checkout -- session_recall.py`, suite `OK`.
-Verdict: PASS (revert -> RED -> restore -> GREEN).
+Produced by `lib/gate/negctl.sh` against the unit suite, with the validate-first guard
+disabled as the mutation:
+
+```
+Command: cd lib/session/recall && python3 -m unittest discover -s tests
+Exit: 0 (green before mutation)
+Mutation: sed -i.bak 's/^    if not slug or "\/" in slug or os.sep in slug or slug in (".", ".."):$/    if False:/' lib/session/recall/session_recall.py && rm -f lib/session/recall/session_recall.py.bak
+Changed: lib/session/recall/session_recall.py
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/session/recall/session_recall.py
+Exit: 0 (green after restore)
+Verdict: PASS
+```
 
 ## Reproduce
 

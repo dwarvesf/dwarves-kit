@@ -86,11 +86,54 @@ class TestRecall(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         lines = p.stdout.strip().splitlines()
         self.assertEqual(lines[0], "# sessions matching 'backoff': 2")
-        self.assertIn("new-session", lines[1])
-        self.assertIn("old-session", lines[2])
+        self.assertEqual(lines[1], r.DATA_MARKER)
+        self.assertIn("new-session", lines[2])
+        self.assertIn("old-session", lines[3])
         self.assertNotIn("wt-session", p.stdout)
         # the seed fixture has no plain-string user turn, so the opening ask is empty here
-        self.assertRegex(lines[1], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}  new-session\s+\d+ hits  ")
+        self.assertRegex(lines[2], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}  new-session\s+\d+ hits  ")
+
+    # --- battery fixes (2026-09-04) -----------------------------------------------
+
+    def test_traversal_and_empty_names_never_resolve(self):
+        # `..` IS a dir under PROJECTS, so a guard placed after the isdir check was unreachable
+        base, _ = self._fake_projects()
+        orig = r.PROJECTS
+        r.PROJECTS = base
+        try:
+            for bad in ("..", ".", "../x", "a/b", ""):
+                self.assertEqual(r.resolve_project_dirs(bad), [], bad)
+        finally:
+            r.PROJECTS = orig
+
+    def test_project_flag_without_value_is_usage_exit_2(self):
+        base, _ = self._fake_projects()
+        code = ("import sys, session_recall as r; r.PROJECTS=%r; "
+                "sys.exit(r.main(['backoff', '--project']))") % base
+        p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("usage:", p.stderr)
+
+    def test_opening_ask_list_content_and_redaction_and_hook_skip(self):
+        entries = [
+            {"type": "user", "message": {"role": "user", "content": "<system-reminder>hook noise</system-reminder>"}},
+            {"type": "user", "message": {"role": "user", "content": [
+                {"type": "text", "text": "rotate the key op://Vault/item/field and ship it"},
+                {"type": "image", "source": {}}]}},
+        ]
+        ask = r.opening_ask(entries)
+        self.assertTrue(ask.startswith("rotate the key [redacted] and ship it"))
+        self.assertNotIn("op://", ask)
+
+    def test_sessions_view_stops_at_limit_and_says_so(self):
+        base, _ = self._fake_projects()
+        code = ("import sys, session_recall as r; r.PROJECTS=%r; "
+                "sys.exit(r.main(['backoff', '--project', 'zzrepo', '--sessions', '--limit', '1']))") % base
+        p = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
+        lines = p.stdout.strip().splitlines()
+        self.assertEqual(lines[0], "# sessions matching 'backoff': 1 (capped by --limit, raise it for more)")
+        self.assertIn("new-session", lines[2])  # newest first, the older one never loaded
+        self.assertNotIn("old-session", p.stdout)
 
     def test_negative_control_cli_clean_exit(self):
         p = subprocess.run([sys.executable, BIN, "string-that-does-not-exist-zzz",
