@@ -39,7 +39,12 @@ For COMPARATIVE claims (faster/smaller/fewer), add the optional evidence pair
    picture of the thing running counts as "it ran". Pick the form that fits the work-type; non-visual
    logic still owes a run-table.
 2. **A negative control.** The same check shown to go RED when the work is reverted, so the
-   green is not trivially green. A check that passes no matter what proves nothing.
+   green is not trivially green. A check that passes no matter what proves nothing. Produce
+   it with `bash lib/gate/negctl.sh <root> "<test-cmd>" "<mutate-cmd>"` (or
+   `proof-ledger.sh negctl ...`): it refuses a dirty tree, runs GREEN -> mutate -> RED ->
+   restore -> GREEN, fails closed on a vacuous mutation or an unrestorable tree, and prints
+   the block in the gate's grammar to paste here. Commit the change first; the restore is
+   `git checkout HEAD --`. A `Verdict: FAIL` block never satisfies the gate.
 3. **Reproducible.** Re-running the logged `Command:` reproduces the verdict.
 
 For a load-bearing change, all three are required. Green-only is a weak proof.
