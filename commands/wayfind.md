@@ -9,6 +9,8 @@ Ported from mattpocock/skills `wayfinder` (MIT), re-based onto files + the kit b
 
 **Router check first (upstream's admitted failure mode is over-reach).** Wayfind is slower and denser than a single grill. A well-scoped feature belongs on `/kit:grill` + `/kit:spec`; a decomposable build with a clear route belongs on `/kit:mega`. Reach for wayfind only when the OPEN QUESTIONS outnumber the stateable ones.
 
+Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Wayfind start` (rid = the umbrella effort's branch when one exists, else the session's own).
+
 ## Plan, don't do
 
 Every ticket resolves a decision; the map is done when nothing is left to decide before someone goes and does the thing. The pull to just do the work is usually the signal you have reached the edge of the map: time to hand off. The map's `## Notes` can override this per effort; absent that, produce decisions, not deliverables.
@@ -111,4 +113,6 @@ Nothing left to decide: hand off, never straight to execute.
 - A build needing ordered sub-goals -> write `ROADMAP.md` beside map.md and run it as a mega-goal (`/kit:mega`, ADR-0032); the map stays as the decision record.
 - Flip the umbrella board row to reflect the handoff (`bash lib/board/backlog.sh set <ID> speccing` for the single-spec path, `executing` once a ROADMAP run starts); the map goes read-only.
 
-Record the beat when a wayfind session ends: `bash lib/gate/gate-ledger.sh record <rid> Wayfind ran "mode=<chart|work> ticket=<NN|-> frontier=<N-remaining>"` (rid = the umbrella effort's branch when one exists, else the session's own).
+Record the beat when a wayfind session ends: `bash lib/gate/gate-ledger.sh record <rid> Wayfind ran "mode=<chart|work> ticket=<NN|-> frontier=<N-remaining>"` (same rid as the opening bracket).
+
+Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Wayfind end` (no verdict to derive `caught=` from; the verb's own `false` default stands. A session whose ticket resolution killed or re-routed the effort is `caught=true`).
