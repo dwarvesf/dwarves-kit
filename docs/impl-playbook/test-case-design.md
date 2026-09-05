@@ -15,6 +15,10 @@ Distills the ISTQB CTFL black-box test design techniques plus Cucumber's Gherkin
 - Keep each scenario to 3-5 steps. One scenario, one behavior; a scenario that needs "and also" to describe is two scenarios.
 - Write the acceptance criteria BEFORE building, agreed with whoever signs off (the stakeholder, or your future self reading it in a month). Ambiguous words ("fast", "works correctly") are not acceptance criteria.
 
+## Regression gates enumerate from live code, not from fixtures
+
+A gate that walks a fixture set has a ceiling worth stating out loud: it catches a new case inside a renderer or handler the fixtures already cover, and misses one inside a renderer nothing covers. Enumerate the cases from the code paths themselves (the route table, the formatter registry, the enum) and derive the fixtures from that list, so a newly added path is a failing test before it is a missing one. Learned 2026-09-04 on a message-formatter suite that stayed green while a new event type rendered as raw JSON.
+
 ## At personal scale
 
 Solo-maintained tools do not need a decision-table spreadsheet for every function. Reach for these four techniques together only where a bug would be expensive to miss: money paths, auth/permission boundaries, parsers, anything with 3+ interacting conditions. For everything else, EP + BVA on the one or two trickiest inputs is enough; skip decision tables and state-transition diagrams unless the code genuinely has combinatorial conditions or explicit states.

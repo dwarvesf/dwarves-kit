@@ -10,6 +10,9 @@ Distills Modern Treasury's decimal-vs-float guidance and Stripe's idempotency-ke
 - Prefer an append-only ledger (every balance change is a recorded entry, not an overwritten field) over mutating a running balance in place. The current balance is a derived sum, not the source of truth.
 - Every entry carries enough context to reconstruct why it happened (source, timestamp, actor) so an audit trail exists without extra tooling.
 
+## A stored identifier is not a promise about behaviour
+- A column holding an address, an account number, or a wallet does not mean a deposit to it credits that account. Crediting is governed by a registration (a watch list, a mapping table, a subscription) that can drift from the display field. A "will this deposit be credited" check reads the governing registration, never the field that displays the identifier. Learned 2026-09-05 on a deposit that landed on a stored address no watcher was registered for.
+
 ## Idempotency for money-moving operations
 - Any operation that moves or creates money (a transfer, a mint, a payout) takes an idempotency key from the caller. Replaying the same request with the same key must not double-execute; store seen keys and their result, and return the stored result on a repeat.
 - Idempotency lives at the operation boundary (the API/function that actually moves money), not sprinkled through the call chain.
