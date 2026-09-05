@@ -7,6 +7,9 @@
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ORCH="$KIT/lib/queue/orchestrate.sh"
+# The kit-root kit.toml ships `[mega].default_model`; a sub-goal with no Model: field
+# dispatches it (SPEC-087 chain). Read the shipped value rather than pin either outcome.
+DEF_MODEL=$(grep -E '^default_model' "$KIT/kit.toml" 2>/dev/null | sed -E 's/^[^"]*"([^"]*)".*/\1/')
 fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
@@ -205,8 +208,8 @@ DR="$TMP/mgr"; mk_routed "$DR"
 out=$(bash "$ORCH" run "$DR" --dry-run)
 echo "$out" | grep -qE 'SG-01 \(auto\).*model: sonnet, effort: low' \
   && pass "dry-run shows SG-01 routed model/effort" || { fail "dry-run SG-01 tier wrong"; echo "$out"; }
-echo "$out" | grep -qE 'SG-02 \(auto\).*model: inherit, effort: inherit' \
-  && pass "dry-run shows SG-02 inherit (no hints)" || { fail "dry-run SG-02 inherit wrong"; echo "$out"; }
+echo "$out" | grep -qE "SG-02 \(auto\).*model: ${DEF_MODEL:-inherit}, effort: inherit" \
+  && pass "dry-run shows SG-02 ${DEF_MODEL:-inherit} (no hints)" || { fail "dry-run SG-02 inherit wrong"; echo "$out"; }
 
 # TEST 8: real run passes --model/--effort for the hinted sub-goal, none for the inherit one.
 # Prompt arrives on STDIN now, so the mock logs "<id>|<flags>" from "$@" (flags only, no prompt arg).
@@ -224,8 +227,14 @@ ROUTE_LOG="$TMP/route.log" ROUTE_RM="$DR2/ROADMAP.md" CLAUDE_FLAGS="" \
   CLAUDE_CMD="$TMP/claude-route" bash "$ORCH" run "$DR2" >/dev/null 2>&1
 grep -q '^SG-01|.*--model sonnet --effort low' "$TMP/route.log" \
   && pass "run passes --model/--effort for hinted SG-01" || { fail "SG-01 routing flags missing"; cat "$TMP/route.log"; }
-{ grep '^SG-02|' "$TMP/route.log" | grep -qv -- '--model'; } \
-  && pass "run passes no --model for inherit SG-02" || { fail "SG-02 got an unexpected --model"; cat "$TMP/route.log"; }
+# SG-02 carries no Model: field: see DEF_MODEL at the top.
+if [ -n "$DEF_MODEL" ]; then
+  grep -q "^SG-02|.*--model $DEF_MODEL" "$TMP/route.log" \
+    && pass "run passes the kit-root default --model $DEF_MODEL for inherit SG-02" || { fail "SG-02 did not get the default --model $DEF_MODEL"; cat "$TMP/route.log"; }
+else
+  { grep '^SG-02|' "$TMP/route.log" | grep -qv -- '--model'; } \
+    && pass "run passes no --model for inherit SG-02" || { fail "SG-02 got an unexpected --model"; cat "$TMP/route.log"; }
+fi
 
 # ============================ TEST 9: --step run-modes (SG-01) ============================
 # 9a: --step --dry-run annotates the plan with pause points (no claude invoked).

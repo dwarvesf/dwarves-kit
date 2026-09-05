@@ -94,7 +94,7 @@ Command: bash tests/test-meta.sh          (run in this worktree)
 Exit: 1
 Verdict: 808/815 -- 7 failures, all pre-existing
 
-Command: bash tests/test-meta.sh          (run in /Users/tieubao/workspace/dwarvesf/dwarves-kit,
+Command: bash tests/test-meta.sh          (run in the kit checkout root,
                                             master @ f5e10cb, this branch's own base)
 Exit: 1
 Verdict: 808/815 -- the identical 7 failures (agent devops-triage / V-model lens / architecture.md

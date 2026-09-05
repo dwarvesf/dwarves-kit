@@ -8,6 +8,8 @@ INDEPENDENT right arm: fresh-context agents that did not write the code, re-exec
 and re-reading it. Never "review" inline in the session that wrote the code and call
 it the battery.
 
+
+Bracket the phase for timing (SPEC-129) before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> review start` (rid = the branch slug, the same key the ship-gate reads).
 ## When this runs
 
 - The operator says "run the battery" / "overtest this" / "full check before merge".
@@ -68,7 +70,8 @@ Skipping a qualifying lens is a decision; record it, do not default into it.
 3. A verifier-caught gap means an AC or test was too weak: strengthen the check in
    the same pass, not only the code.
 4. Write the spec's `## Review` section (replace-not-stack) and record the legs in
-   the gate ledger under the BRANCH SLUG (`record <slug> review ran "..."`, the
-   slug, never a board ID, is what the ship-gate reads).
+   the gate ledger under the BRANCH SLUG: `bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> arms=<n> caught=<n>"`
+   (the slug, never a board ID, is what the ship-gate reads). Then close the
+   timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if any arm found a defect, else false>`.
 5. Name what each arm caught in the report. Disagreement between arms is the
    signal this battery exists to produce.

@@ -6,6 +6,8 @@ You are driving an already-open PR toward a green, mergeable state. You do not o
 
 This is Phase A (the CI-green core) of SPEC-019. Bot-comment triage (FIX/DISAGREE/DEFER replies, `stop_waiting_review`) is Phase B and is not built by this command; a PR whose only blocker is a pending review or an unresolved comment thread is reported as such, not acted on.
 
+
+Bracket the phase for timing (SPEC-129) before the first snapshot: `bash lib/gate/gate-ledger.sh outcome <rid> Greenlight start` (rid = the PR's branch slug).
 ## Prerequisites
 
 - `gh` installed and authenticated. No auth, or any `gh`/GitHub API failure anywhere in this command, ends the loop in `stop_error` -- never spin on a broken transport.
@@ -113,6 +115,8 @@ In a `bypassPermissions` session, the push in Step 6 is auto-approved with no pe
 7. **The PR head advanced under us.** Push rejected -> re-fetch, re-snapshot, re-evaluate. Never force. Unrecoverable resync -> `stop_error`.
 8. **The PR has no checks configured.** Terminal `done` -- nothing to drive.
 9. **A fix passes locally but CI still fails it after push.** Re-classified and re-attempted on the next snapshot within the budget, then surfaced if it keeps failing. Local verify reduces, does not eliminate, environment divergence.
+
+Record the beat when the lane ends, green or escalated: `bash lib/gate/gate-ledger.sh record <rid> Greenlight ran "<green|escalated> iterations=<n> fixed=<n> flaky=<n>"`, then close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Greenlight end caught=<true if a real failure was fixed, else false>`.
 
 ## When to use vs `/kit:review` / `/kit:ship`
 

@@ -88,9 +88,18 @@ run_serial_case() {  # tier(opus|sonnet|haiku|none) expect_flag(--model X or emp
       && pass "serial: Model: $tier -> dispatch '$want' (default-applied)" \
       || { fail "serial: Model: $tier did NOT reach '$want'"; cat "$log"; }
   else
-    { grep '^SG-01|' "$log" | grep -qv -- '--model'; } \
-      && pass "serial: no Model: field -> no --model flag (inherit fallback, no crash)" \
-      || { fail "serial: no-Model: case got an unexpected --model flag"; cat "$log"; }
+    # No Model: field: the kit-root kit.toml's `[mega].default_model` wins when shipped
+    # (SPEC-087 chain); with no config the inherit fallback passes no flag.
+    def_model=$(grep -E '^default_model' "$KIT/kit.toml" 2>/dev/null | sed -E 's/^[^"]*"([^"]*)".*/\1/')
+    if [ -n "$def_model" ]; then
+      grep -q "^SG-01|.*--model $def_model" "$log" \
+        && pass "serial: no Model: field -> kit-root default '--model $def_model'" \
+        || { fail "serial: no-Model: case did not get the default --model $def_model"; cat "$log"; }
+    else
+      { grep '^SG-01|' "$log" | grep -qv -- '--model'; } \
+        && pass "serial: no Model: field -> no --model flag (inherit fallback, no crash)" \
+        || { fail "serial: no-Model: case got an unexpected --model flag"; cat "$log"; }
+    fi
   fi
 }
 
