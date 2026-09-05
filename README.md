@@ -447,7 +447,7 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Weekly scheduler.** The kit ships ONE weekly LaunchAgent (ADR-0034): a dispatcher over a declarative jobs list (session-intel digest, `learn propose` staging; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
 
-**Testing.** `bash tests/test-hooks.sh` covers hook behavior (safety-gate blocking, anti-rationalization patterns, permission-auto-approve pipe-injection protection); `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links).
+**Testing.** `bash tests/run-workflow.sh` runs every step of the CI workflow locally in order and prints only the red ones (side-effect files restored); `bash tests/test-hooks.sh` covers hook behavior (safety-gate blocking, anti-rationalization patterns, permission-auto-approve pipe-injection protection); `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links).
 
 **External dependencies** (install alongside, not bundled):
 
