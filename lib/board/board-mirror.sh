@@ -504,7 +504,10 @@ cmd_plan() {
 # so a caller piping this over `ssh` can persist the snapshot incrementally per line, satisfying
 # "per successfully-loaded row" even across the network boundary. A single op's failure is
 # reported (status=error) and does NOT abort the remaining ops (one bad row must not block the
-# rest of the batch, same posture `board.sh queue` already takes for a bad Notes cell).
+# rest of the batch, same posture `board.sh queue` already takes for a bad Notes cell). Exception:
+# a `complete` op that fails with "unknown id or terminal state" means the card is already gone
+# or already done, so it is reported status=ok/hermes_status=done instead of status=error, letting
+# the snapshot drop the origin rather than re-planning the same complete on every future run.
 # ---------------------------------------------------------------------------
 cmd_apply_plan() {
   local line op origin board hermes_id target followup argv_json new_id out rc
@@ -536,6 +539,18 @@ cmd_apply_plan() {
     # promises.
     if out="$("$HERMES_BIN" "${argv[@]}" 2>&1)"; then rc=0; else rc=$?; fi
     if [ "$rc" -ne 0 ]; then
+      # A `complete` op failing with "unknown id or terminal state" means the Hermes card is
+      # already gone or already terminal (deleted, or completed by some other path). There is
+      # nothing left to complete, so this is not a real error: report it as satisfied (status
+      # "ok", hermes_status "done") the same as a successful complete, so the caller's
+      # snapshot-upsert drops the origin line instead of re-planning the same complete forever.
+      if [ "$op" = "complete" ] && printf '%s' "$out" | grep -qi 'unknown id or terminal state'; then
+        hermes_id="$(printf '%s' "$line" | jq -r '.hermes_id')"
+        echo "board-mirror: complete ${origin} (${hermes_id}): card gone or already terminal, recording done" >&2
+        jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg hermes_id "$hermes_id" \
+          '{origin:$origin, op:$op, board:$board, hermes_id:$hermes_id, row_hash:null, hermes_status:"done", status:"ok"}'
+        continue
+      fi
       jq -nc --arg origin "$origin" --arg op "$op" --arg board "$board" --arg err "$out" \
         '{origin:$origin, op:$op, board:$board, status:"error", error:$err}'
       continue

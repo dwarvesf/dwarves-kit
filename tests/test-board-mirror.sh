@@ -381,6 +381,40 @@ assert "NC7c: the CHANGE comment carries the untrusted marker" "$(printf '%s' "$
 assert "NC7c: the CHANGE comment strips the #queue{} token" "$(printf '%s' "$CH_COMMENT" | grep -q '#queue{' && echo 1 || echo 0)"
 
 echo ""
+echo "=== NC8: a 'complete' op failing with 'unknown id or terminal state' records ok/done, not error ==="
+# The Mini incident (ops-toolkit ID-727): a snapshot maps an origin to a hermes_id whose card was
+# deleted or otherwise reached a terminal state outside the mirror's control. `hermes kanban
+# complete` on that id fails, and without this handling the op is reported status:error forever
+# (the snapshot line never clears, so the same complete is replanned on every future run).
+STUB_DEAD="$TMPDIR_T/stub-hermes-dead"
+cat > "$STUB_DEAD" <<'STUBDEADEOF'
+#!/usr/bin/env bash
+if [ "$1" = "kanban" ] && [ "$4" = "complete" ]; then
+  echo "cannot complete $5 (unknown id or terminal state)" >&2
+  exit 1
+fi
+echo "stub-hermes-dead: unhandled call: $*" >&2
+exit 1
+STUBDEADEOF
+chmod +x "$STUB_DEAD"
+
+COMPLETE_PLAN="$(jq -nc '{op:"complete", origin:"fixR:ID-999", board:"fixR", hermes_id:"t_dead1234", row_hash:null, argv:["kanban","--board","fixR","complete","t_dead1234","--result","board-mirror: origin removed from fixR board"]}')"
+COMPLETE_RESULT="$(printf '%s\n' "$COMPLETE_PLAN" | HERMES_BIN="$STUB_DEAD" bash "$BOARD_MIRROR" apply-plan)"
+assert "NC8: a dead-card complete is reported status:ok" "$(printf '%s' "$COMPLETE_RESULT" | jq -e '.status=="ok"' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "NC8: a dead-card complete is reported hermes_status:done" "$(printf '%s' "$COMPLETE_RESULT" | jq -e '.hermes_status=="done"' >/dev/null 2>&1 && echo 0 || echo 1)"
+assert "NC8: a dead-card complete preserves the origin" "$([ "$(printf '%s' "$COMPLETE_RESULT" | jq -r '.origin')" = "fixR:ID-999" ] && echo 0 || echo 1)"
+
+STUB_OTHERERR="$TMPDIR_T/stub-hermes-othererr"
+cat > "$STUB_OTHERERR" <<'STUBERREOF'
+#!/usr/bin/env bash
+echo "some other hermes failure, not the dead-card shape" >&2
+exit 1
+STUBERREOF
+chmod +x "$STUB_OTHERERR"
+OTHERERR_RESULT="$(printf '%s\n' "$COMPLETE_PLAN" | HERMES_BIN="$STUB_OTHERERR" bash "$BOARD_MIRROR" apply-plan)"
+assert "NC8: any OTHER complete failure still reports status:error" "$(printf '%s' "$OTHERERR_RESULT" | jq -e '.status=="error"' >/dev/null 2>&1 && echo 0 || echo 1)"
+
+echo ""
 echo "=== Coverage delta ==="
 BEFORE_COUNT=0   # no lib/board/board-mirror.sh, no mirror/status subcommands, no tests/test-board-mirror.sh before SPEC-147
 AFTER_COUNT="$TOTAL"
