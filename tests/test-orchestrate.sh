@@ -6,6 +6,10 @@
 # Negative control: a session that does NOT flip its box halts the loop (no self-claim).
 set -uo pipefail
 KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The kit-root config layer is $HOME/.claude/dwarves-kit by default, which CI does not have and
+# a dev machine has as an installed copy of THIS checkout. Pin it to the checkout so the
+# no-Model: expectations below (read from $KIT/kit.toml) hold in both places.
+export KIT_CONFIG_ROOT="${KIT_CONFIG_ROOT:-$KIT}"
 ORCH="$KIT/lib/queue/orchestrate.sh"
 # The kit-root kit.toml ships `[mega].default_model`; a sub-goal with no Model: field
 # dispatches it (SPEC-087 chain). Read the shipped value rather than pin either outcome.
