@@ -1,7 +1,13 @@
 name: test
 
+# push + pull_request were removed on 2026-08-10 and the workflow then sat hand-disabled
+# until 2026-09-05; master drifted red under it with nothing to notice. Public repo,
+# hosted minutes are free, so every push and PR runs the suites again.
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+  pull_request:
 
 # Least-privilege token: workflow only reads code and runs tests; no writes,
 # no PR comments, no release operations.
@@ -143,6 +149,7 @@ jobs:
 
       - name: Run bench module tests
         run: bash tests/test-bench.sh
+
       - name: Run outcome-emit-sweep no-orphan check (SPEC-193, harness-loop sub-goal 02)
         run: bash tests/test-outcome-emit-sweep.sh
 

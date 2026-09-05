@@ -112,7 +112,9 @@ normalize_phase() {
   # ("execute") instead of the matrix gate it owns ("build"), leaving check() blind to a
   # build that ran (seen 2026-07-21, finance-warehouse run). "verify" is NOT aliased to
   # "review": /kit:verify (right-arm re-run) and /kit:review (code review) are distinct gates.
-  case "$p" in execute) p=build ;; esac
+  # "battery" is /kit:battery's own beat: distinct attribution in stats, but it satisfies
+  # the same review gate the ship-gate checks (it IS the fresh-context review).
+  case "$p" in execute) p=build ;; battery) p=review ;; esac
   printf '%s' "$p"
 }
 

@@ -42,6 +42,8 @@ The taxonomy is a consolidation plan, so it opens with what exists. Four surface
 
 Deliberately bin-less (internal libs, command-invoked, not operator CLIs): `ledger`, `telemetry`, `plugin-check`, `skill-curator`, `adopt.sh`, `explain.sh`, `pitch.sh`, `precedent.sh`. Target bin/ after SG-04+08: 11 subsystem entries (`board classify config gate goal learn mega queue session spec stats`) + 2 module CLIs (`prose-rag`, `worktree-provision`) = 13, two grammar classes, both stated in decision 7.
 
+Amendment 2026-09-06: a third class, standalone operator executables that dispatch to no engine because they ARE the whole feature: `activate` (the free-to-pro client, ID-438), `release` (the semver tag + two-channel publish, ID-437), plus `plugin-check`, `skill-improve`, `skill-review` which had already landed in bin/ under the same shape. The census in `tests/test-bin-forwarders.sh` names every entry in all three classes and proves each standalone one answers with its own contract; a bin/ entry outside those lists is still the drift the census exists to catch.
+
 ### skills/, 2 visible, 1 hidden
 
 | Skill | Location today | Target |

@@ -26,6 +26,9 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # a dev machine has as an installed copy of THIS checkout. Pin it to the checkout so the
 # no-Model: expectations below (read from $KIT/kit.toml) hold in both places.
 export KIT_CONFIG_ROOT="${KIT_CONFIG_ROOT:-$KIT}"
+export KIT_PROJECT_ROOT="${KIT_PROJECT_ROOT:-$(mktemp -d)}"
+# The expectation comes from the resolver itself, never a re-implementation of its toml parse.
+kit_default_model() { ( cd "$KIT" && bash -c 'source lib/config/kit-config.sh; kit_config_get mega.default_model' ); }
 ORCH="$KIT/lib/queue/orchestrate.sh"
 fails=0; total=0
 pass() { total=$((total + 1)); echo "PASS $*"; }
@@ -94,7 +97,7 @@ run_serial_case() {  # tier(opus|sonnet|haiku|none) expect_flag(--model X or emp
   else
     # No Model: field: the kit-root kit.toml's `[mega].default_model` wins when shipped
     # (SPEC-087 chain); with no config the inherit fallback passes no flag.
-    def_model=$(grep -E '^default_model' "$KIT/kit.toml" 2>/dev/null | sed -E 's/^[^"]*"([^"]*)".*/\1/')
+    def_model=$(kit_default_model)
     if [ -n "$def_model" ]; then
       grep -q "^SG-01|.*--model $def_model" "$log" \
         && pass "serial: no Model: field -> kit-root default '--model $def_model'" \
