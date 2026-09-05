@@ -117,6 +117,10 @@ real reader consumes it today (all rows below are, except where noted).
 | MEGAGOALS_ROOT | env-only | (none) | [impl] | mega | Root dir where mega-goal folders live; unset falls through to further path resolution in `lib/mega/mega.sh`. |
 | MEGA_MERGE_PR_INFO_CMD | env-only | (none) | [impl] | mega | Override the command used to fetch PR info at merge time; called directly when set. |
 | MEGA_MERGE_GATE_LEDGER | env-only | `$LIB_ROOT/gate/gate-ledger.sh` | [impl] | mega | Which `gate-ledger.sh` `mega-merge.sh` shells out to. |
+| MEGA_GATE_DISPATCH | env-only | `1` | [impl] | mega | `1` dispatches a `gate` / `gate!` sub-goal like any other (grounded on the PR existing); `0` restores the stop-before-running behavior. |
+| PANE_TAIL_JQ | env-only | `$ORCH_DIR/pane-tail.jq` | [impl] | mega | The jq formatter the multiplexer pane tail reads through; read-only by construction. |
+| QUEUE_PUSH_ONLY | env-only | `0` | [impl] | queue | `1` pushes the branch and stops without opening the PR (draft or ready per the run's own rule). |
+| DWARVES_KIT_SKIP_DOC_PROJECTION | env-only | `0` | [impl] | gate | `1` skips the ship-gate's doc-projection check for a repo that has neither projection file; an escape hatch, never a default. |
 | MEGA_MERGE_GH | env-only | `gh` | [impl] | mega | Override the `gh` binary/wrapper used for PR ops at merge. |
 | BACKLOG_LIB | env-only | `$LIB_ROOT/board/backlog.sh` | [impl] | mega | Which `backlog.sh` `orchestrate.sh` shells out to for wave admission reads. |
 | PANE_VIEWER | env-only | `auto` | [impl] | mega | Which terminal-viewer surface to push-open on wave spawn (SPEC-119). |
@@ -302,6 +306,7 @@ against any of these bare tokens as covered without a registry row.
 | KIT_LOG_DIR | the RESOLVED ledger root, exported by `lib/telemetry/kit-log-dir.sh` for child tools (`mega review`/`mega report` read it); operators configure `KIT_LEDGER_DIR` / `[ledger].location`, never this |
 |---|---|
 | BACKLOG_DIR | `lib/board/backlog.sh`: computed via `pwd`, script-local. |
+| KIT_REF | `lib/adopt.sh`: the literal `~/.claude/dwarves-kit` string written into a consumer's AGENTS.md for its own shell to expand; assigned, never env-read. |
 | BACKLOG_SH | `lib/board/board.sh`: computed path, not env-overridable. |
 | CC_BACKLOG_BACKLOG_FIX | `lib/stats/tests/test-deviation-rate.sh`: test-fixture-local, assigned then used in the same file, never read as inherited env. |
 | SKILL_CURATOR_LEDGER | `lib/skill-curator/lib/common.sh`: derived from `SKILL_CURATOR_STATE_DIR`, not independently env-read. |

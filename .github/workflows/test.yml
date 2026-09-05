@@ -141,6 +141,8 @@ jobs:
           uv sync
           bash tests/test-kit-gates-cost.sh
 
+      - name: Run bench module tests
+        run: bash tests/test-bench.sh
       - name: Run outcome-emit-sweep no-orphan check (SPEC-193, harness-loop sub-goal 02)
         run: bash tests/test-outcome-emit-sweep.sh
 

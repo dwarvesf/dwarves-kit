@@ -28,7 +28,9 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # +plugin-check, +skill-improve, +skill-review (SPEC-200 C2, 2026-07-14): each was a module
 # executable reachable from NO operator surface. The contract lint (C2) now fails on that, and
 # this census is the other half of the same guarantee: bin/ may not grow silently either.
-EXPECTED="board classify config gate goal learn mega plugin-check prose-rag queue session skill-improve skill-review spec stats worktree-provision"
+# activate and release joined bin/ after the SG-04 set was written; the census names them so
+# the dispatch-only test workflow stops failing on a roster it was never told about.
+EXPECTED="activate board classify config gate goal learn mega plugin-check prose-rag queue release session skill-improve skill-review spec stats worktree-provision"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
