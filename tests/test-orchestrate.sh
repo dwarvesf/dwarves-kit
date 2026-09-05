@@ -10,10 +10,13 @@ KIT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # a dev machine has as an installed copy of THIS checkout. Pin it to the checkout so the
 # no-Model: expectations below (read from $KIT/kit.toml) hold in both places.
 export KIT_CONFIG_ROOT="${KIT_CONFIG_ROOT:-$KIT}"
+export KIT_PROJECT_ROOT="${KIT_PROJECT_ROOT:-$(mktemp -d)}"
+# The expectation comes from the resolver itself, never a re-implementation of its toml parse.
+kit_default_model() { ( cd "$KIT" && bash -c 'source lib/config/kit-config.sh; kit_config_get mega.default_model' ); }
 ORCH="$KIT/lib/queue/orchestrate.sh"
 # The kit-root kit.toml ships `[mega].default_model`; a sub-goal with no Model: field
 # dispatches it (SPEC-087 chain). Read the shipped value rather than pin either outcome.
-DEF_MODEL=$(grep -E '^default_model' "$KIT/kit.toml" 2>/dev/null | sed -E 's/^[^"]*"([^"]*)".*/\1/')
+DEF_MODEL=$(kit_default_model)
 fails=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; fails=$((fails + 1)); }
@@ -231,6 +234,15 @@ ROUTE_LOG="$TMP/route.log" ROUTE_RM="$DR2/ROADMAP.md" CLAUDE_FLAGS="" \
   CLAUDE_CMD="$TMP/claude-route" bash "$ORCH" run "$DR2" >/dev/null 2>&1
 grep -q '^SG-01|.*--model sonnet --effort low' "$TMP/route.log" \
   && pass "run passes --model/--effort for hinted SG-01" || { fail "SG-01 routing flags missing"; cat "$TMP/route.log"; }
+# The inherit fallback (SPEC-087, "no config -> no flag") stays asserted: with BOTH config
+# layers pointed at empty dirs, SG-02 must dispatch with no --model at all.
+EMPTY_ROOT="$(mktemp -d)"
+DR3="$TMP/mgr3"; mk_routed "$DR3"; : > "$TMP/route3.log"
+KIT_CONFIG_ROOT="$EMPTY_ROOT" KIT_PROJECT_ROOT="$EMPTY_ROOT" ROUTE_LOG="$TMP/route3.log" ROUTE_RM="$DR3/ROADMAP.md" CLAUDE_FLAGS="" \
+  CLAUDE_CMD="$TMP/claude-route" bash "$ORCH" run "$DR3" >/dev/null 2>&1
+{ grep '^SG-02|' "$TMP/route3.log" | grep -qv -- '--model'; } \
+  && pass "no config layer at all -> SG-02 inherits (no --model)" || { fail "inherit fallback lost: SG-02 got a --model with no config"; cat "$TMP/route3.log"; }
+
 # SG-02 carries no Model: field: see DEF_MODEL at the top.
 if [ -n "$DEF_MODEL" ]; then
   grep -q "^SG-02|.*--model $DEF_MODEL" "$TMP/route.log" \

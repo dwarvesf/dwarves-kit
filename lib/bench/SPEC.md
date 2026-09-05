@@ -14,6 +14,8 @@ The kit's loops (orchestrate, gate, review) need a repeatable way to measure a c
 | `events.py` | the event stream a run emits (start, scenario, score, end) that the report and dashboard consume |
 | `report.py` | summarize one run, diff two runs, render HTML |
 | `dashboard.py` | the terminal frontend over the same events: state machine, mid-run frame, roundtrip |
+| `tui.py` | the interactive terminal view the dashboard drives |
+| `viewer.py` | the read-only run viewer, the roundtrip target of a finished run |
 | `docs/METRICS.md` | what each score means and how it is derived |
 | `docs/test-catalog.md` | the L1 / L2 / L3 coverage map |
 
@@ -21,7 +23,7 @@ The kit's loops (orchestrate, gate, review) need a repeatable way to measure a c
 
 - A suite runs end to end and leaves a run directory whose summary matches its own events (`tests/test_bench.py`).
 - Two runs diff without recomputing scores (`tests/test_report.py`).
-- The dashboard renders a mid-run frame and round-trips a finished run (`tests/test_dashboard.py`, `tests/test_tui.py`).
+- The dashboard renders a mid-run frame and the viewer round-trips a finished run (`tests/test_dashboard.py`, `tests/test_viewer.py`); events are the shared contract (`tests/test_events.py`).
 - Repo-root entry: `bash tests/test-bench.sh` runs every module test the same way CI does.
 
 ## Out of scope

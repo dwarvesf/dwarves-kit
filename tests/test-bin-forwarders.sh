@@ -3,7 +3,8 @@
 # forwarder's dispatch chain, exercised THROUGH the stable entrypoints (not the deep lib
 # paths the per-tool suites already cover).
 #
-#   1. CENSUS: bin/ contains exactly the ADR-0034 SG-04 target set (10 subsystem entries
+#   1. CENSUS: bin/ contains exactly the ADR-0034 set (11 subsystem entries, 2 module CLIs, and
+#      the standalone executables the 2026-09-06 amendment names
 #      + 2 module CLIs; `config` lands in SG-08), and every retired entry stays gone.
 #   2. DISPATCH: each new/changed forwarder routes a real invocation end to end:
 #      learn debt (the relocated weekend-batch), every session <verb>, board promote,
@@ -28,8 +29,10 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # +plugin-check, +skill-improve, +skill-review (SPEC-200 C2, 2026-07-14): each was a module
 # executable reachable from NO operator surface. The contract lint (C2) now fails on that, and
 # this census is the other half of the same guarantee: bin/ may not grow silently either.
-# activate and release joined bin/ after the SG-04 set was written; the census names them so
-# the dispatch-only test workflow stops failing on a roster it was never told about.
+# activate and release are standalone executables (ADR-0034, amendment 2026-09-06), not
+# SPEC-184 forwarders; the census names them because the DISPATCH block below proves each
+# answers with its own contract. A bin/ entry with no such block is still the drift this
+# census exists to catch.
 EXPECTED="activate board classify config gate goal learn mega plugin-check prose-rag queue release session skill-improve skill-review spec stats worktree-provision"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
@@ -43,6 +46,12 @@ echo "== census NC: every retired entry stays gone =="
 for retired in add-backlog session-intel session-observe session-recall session-report session-semantic; do
   assert_true "bin/$retired absent" "$([ ! -e "$KIT_DIR/bin/$retired" ]; echo $?)"
 done
+
+echo "== activate + release: the two non-forwarder CLIs in bin/ answer with their own contract =="
+out="$("$KIT_DIR/bin/activate" 2>&1)"; rc=$?
+assert_true "bin/activate with no args prints its usage line" "$(grep -q 'usage: bin/activate' <<<"$out"; echo $?)"
+out="$("$KIT_DIR/bin/release" --help 2>&1)"; rc=$?
+assert_true "bin/release rejects a non-semver argument with its own message" "$(grep -q 'semver required' <<<"$out"; echo $?)"
 
 echo "== learn: debt dispatches to the relocated weekend-batch =="
 TMPLOG="$(mktemp -d)"
