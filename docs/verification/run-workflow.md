@@ -18,6 +18,16 @@ Recorded run
 - Exit: 0
 - Verdict: PASS
 
+## Parallel run (`-j N`, 2026-09-06)
+
+Every suite builds its own temp dirs, so steps run concurrently; each step's block prints whole, failures are counted through marker files.
+
+| Command | Exit | Verdict |
+|---|---|---|
+| `bash tests/run-workflow.sh -j 4` on the real list | 0 | PASS, `0 red of 64 steps`, wall 156s |
+| `bash tests/run-workflow.sh` (serial, same tree) | 0 | PASS, `0 red of 64 steps`, wall 454s |
+| fixture with one red among three, `-j 3` and serial | 1 | PASS, the red step reported in both modes |
+
 ## NEGATIVE CONTROL
 
 Targeted edit: blind the runner to step exit codes (`rc=0` after each step).
