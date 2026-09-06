@@ -183,3 +183,8 @@ Open questions: none.
 
 - Context: the ubuntu CI leg failed the fresh-lock case. The guard treated a young `index.lock` as ordinary traffic only when `git status --porcelain` passed; on that git build the probe contends for the same lock and fails, so a young lock was refused. macOS git did not contend, which is why every local run passed.
 - Change: `_write_guard` polls the lock file itself for up to `LOCK_STALE_SECS`; a lock that clears in the window is traffic, one that persists is a writer. The fresh-lock test now releases the lock from the background after 2 s (write proceeds) and then leaves one in place (refused). Spec Interfaces and `commands/wrap.md` step 0 say the same rule.
+
+## 2026-09-07 CI: GNU stat -f is file-system mode (lead)
+
+- Context: the fresh-lock case still failed on ubuntu after the poll fix. `_mtime` tried `stat -f %m` first; on GNU stat `-f` reports the file system and prints the mount point with exit 0, so the fallback to `-c %Y` never ran and the age parsed as garbage.
+- Change: both helpers try GNU `-c` first; BSD stat rejects `-c` and falls through to `-f`. Local macOS run stays 131/131 through the fallback.

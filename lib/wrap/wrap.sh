@@ -77,9 +77,11 @@ _gh_note() {
   esac
 }
 
-_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+# GNU stat first: on GNU, `-f` means file-system status and prints a mount point with exit 0,
+# so a BSD-first order parses garbage on Linux. BSD stat rejects `-c` and falls through.
+_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 
-_fmode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1" 2>/dev/null; }
+_fmode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1" 2>/dev/null; }
 
 _short() { printf '%s' "${1:0:7}"; }
 
