@@ -3,6 +3,7 @@
 All notable changes to dwarves-kit are documented here.
 
 ## [Unreleased]
+- precedent: `bin/precedent find` now answers "done before?" over two corpora. The records surface (specs, ADRs, retros, verification, run ledger) is unchanged and byte-parity pinned; the new inventory surface scans what has been BUILT (tools, scripts, bin, cli, `_meta` wrappers, experiments, memory notes, skills, feature registries, the kit's own verbs, `~/.claude/skills`, `~/.local/bin`, launchd plists, wrangler crons) with AND scoring, secret redaction, a 240-char cap, and a DATA marker. Sources beyond the repo and the kit come from a consumer registry (`repo | scripts | skills | crons | memory` rows; `--registry` > `PRECEDENT_REGISTRY` > `kit.toml [precedent] registry` > the XDG default). `--explain <label>` prints a hit's header, confined to the scanned roots. `lib/precedent.sh` (root orphan) is gone; `/kit:assign` and `/kit:grill` call `bin/precedent find`. Ported from ops-toolkit's `repo-sweep whathas` (SPEC-245).
 - docs: onboarding golden-path pass (ID-400). README leads with the two-command plugin install +
   `/kit:onboard` + `/kit:start`, module list stays below the fold; new `docs/QUICKSTART.md`; the
   bash installer is relabeled a maintainer/power path; a "disclose gaps, don't hide them" principle

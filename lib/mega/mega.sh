@@ -16,8 +16,10 @@
 # `lib/gate/proof-table-gen.py` already established: bash 3.2 has no associative arrays, which
 # the phase/token/PR joins need). Same shape as `lib/board/board.sh` delegating to
 # `lib/board/board-mirror.sh` for its own heavier verbs. The single-verb orphans
-# (`lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh` / `lib/precedent.sh`) stay at root as
-# ADR-0034 "deliberate orphans" pending their own ruling.
+# (`lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh`) stay at root as ADR-0034 "deliberate
+# orphans" pending their own ruling. `lib/precedent.sh` was promoted out of that set into
+# `lib/precedent/precedent.sh` (SPEC-245: records + inventory surfaces, stable entry
+# `bin/precedent`).
 #
 # WHY THIS EXISTS (provenance): a live session hit the SG-02 HANDOFF-vs-reality lie by hand --
 # HANDOFF.md claimed "running" while the `kitmod-02` worktree sat at 0 commits, empty. A dumb

@@ -33,7 +33,7 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # SPEC-184 forwarders; the census names them because the DISPATCH block below proves each
 # answers with its own contract. A bin/ entry with no such block is still the drift this
 # census exists to catch.
-EXPECTED="activate board classify config gate goal learn mega plugin-check prose-rag queue release session skill-improve skill-review spec stats worktree-provision"
+EXPECTED="activate board classify config gate goal learn mega plugin-check precedent prose-rag queue release session skill-improve skill-review spec stats worktree-provision"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
@@ -105,6 +105,16 @@ out="$("$KIT_DIR/bin/mega" --help 2>&1)"
 assert_true "mega forwarder reaches mega.sh" "$(grep -q 'mega status' <<<"$out"; echo $?)"
 out="$("$KIT_DIR/bin/queue" --help 2>&1 || true)"
 assert_true "queue forwarder reaches queue.sh" "$(grep -q 'usage: queue.sh run' <<<"$out"; echo $?)"
+
+echo "== precedent: forwarder reaches precedent.sh (records + inventory surfaces, SPEC-245) =="
+out="$("$KIT_DIR/bin/precedent" --help 2>&1)"; rc=$?
+assert_true "precedent forwarder reaches precedent.sh usage" "$rc"
+assert_true "precedent --help prints precedent.sh's own usage" "$(grep -q 'precedent.sh --' <<<"$out"; echo $?)"
+EMPTY_PRECEDENT="$(mktemp -d)"
+out="$(cd "$EMPTY_PRECEDENT" && "$KIT_DIR/bin/precedent" find "spec drift" --surface records 2>&1)"; rc=$?
+assert_true "precedent find --surface records dispatches end to end (empty repo, no hits)" "$rc"
+out="$("$KIT_DIR/bin/precedent" find x --surface bogus 2>&1)"; rc=$?
+assert_true "precedent find rejects an unknown surface (exit 64)" "$([ $rc -eq 64 ]; echo $?)"
 
 echo "== stats: forwarder reaches the uv CLI (SKIP without uv) =="
 if command -v uv >/dev/null 2>&1; then
