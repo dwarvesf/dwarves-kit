@@ -30,8 +30,9 @@ import sys
 import time
 
 # ---------------------------------------------------------------------------
-# Output guards -- byte-equal to lib/session/recall/session_recall.py:189-211 (DEC-004: a
-# third copy, pinned equal by a test, not a shared import across two lib dirs).
+# SECRET_SHAPE_RE and LINE_CAP mirror lib/session/recall/session_recall.py:189-211
+# (DEC-004: a third copy, the regex pinned equal by a test, not a shared import).
+# DATA_MARKER differs by design: files here, transcripts there.
 # ---------------------------------------------------------------------------
 SECRET_SHAPE_RE = re.compile(
     r"op://[^\s]+|sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|xox[abp]-[A-Za-z0-9-]{10,}|\b[0-9a-f]{32,}\b"
@@ -328,7 +329,7 @@ def skip_note(path: str) -> str:
     return f"skipped: no dir at {path}"
 
 
-def tail(text: str) -> str:
+def suffix(text: str) -> str:
     return f"  , {text}" if text else ""
 
 
@@ -354,7 +355,7 @@ def scan_repo_files(dirpath: str, label_prefix: str, terms, sections: Sections, 
             continue
         summary, searchable = got
         s = score(terms, name, searchable)
-        sections.add(title, s, f"{label_prefix}{name}" + tail(summary))
+        sections.add(title, s, f"{label_prefix}{name}" + suffix(summary))
 
 
 def scan_repo_meta(dirpath: str, label_prefix: str, terms, sections: Sections, title: str):
@@ -373,7 +374,7 @@ def scan_repo_meta(dirpath: str, label_prefix: str, terms, sections: Sections, t
             continue
         summary, searchable = got
         s = score(terms, name, searchable)
-        sections.add(title, s, f"{label_prefix}{name}" + tail(summary))
+        sections.add(title, s, f"{label_prefix}{name}" + suffix(summary))
 
 
 def scan_repo_tools(root: str, label_prefix: str, terms, sections: Sections, title: str):
@@ -394,7 +395,7 @@ def scan_repo_tools(root: str, label_prefix: str, terms, sections: Sections, tit
             if m:
                 systems = m.group(1)
             s = score(terms, name, f"{desc} {systems}")
-            sections.add(title, s, f"{label_prefix}tools/{name}/" + tail(desc))
+            sections.add(title, s, f"{label_prefix}tools/{name}/" + suffix(desc))
         bin_dir = os.path.join(tdir, "bin")
         if os.path.isdir(bin_dir):
             for fn in sorted(os.listdir(bin_dir)):
@@ -406,7 +407,7 @@ def scan_repo_tools(root: str, label_prefix: str, terms, sections: Sections, tit
                     continue
                 summary, searchable = got
                 s = score(terms, fn, searchable)
-                sections.add(title, s, f"{label_prefix}tools/{name}/bin/{fn}" + tail(summary))
+                sections.add(title, s, f"{label_prefix}tools/{name}/bin/{fn}" + suffix(summary))
 
 
 def scan_repo_experiments(root: str, label_prefix: str, terms, sections: Sections, title: str):
@@ -425,7 +426,7 @@ def scan_repo_experiments(root: str, label_prefix: str, terms, sections: Section
             m = re.search(r'^#\s*(.+)$', body, re.MULTILINE)
             title_or_desc = m.group(1).strip() if m else ""
         s = score(terms, slug, title_or_desc)
-        sections.add(title, s, f"{label_prefix}experiments/{slug}/" + tail(title_or_desc))
+        sections.add(title, s, f"{label_prefix}experiments/{slug}/" + suffix(title_or_desc))
 
 
 def add_memory_entries(sections: Sections, title: str, dirpath: str, label_prefix: str, terms):
@@ -443,7 +444,7 @@ def add_memory_entries(sections: Sections, title: str, dirpath: str, label_prefi
             continue
         stem, desc, body_flat = got
         s = score(terms, stem, f"{desc} {body_flat}")
-        sections.add(title, s, f"{label_prefix}{fn}" + tail(f"{desc}{tail(body_flat)}"))
+        sections.add(title, s, f"{label_prefix}{fn}" + suffix(f"{desc}{suffix(body_flat)}"))
     for sub in sorted(os.listdir(dirpath)):
         subdir = os.path.join(dirpath, sub, "memory")
         if not os.path.isdir(subdir):
@@ -457,7 +458,7 @@ def add_memory_entries(sections: Sections, title: str, dirpath: str, label_prefi
                 continue
             stem, desc, body_flat = got
             s = score(terms, stem, f"{desc} {body_flat}")
-            sections.add(title, s, f"{label_prefix}{sub}/memory/{fn}" + tail(desc))
+            sections.add(title, s, f"{label_prefix}{sub}/memory/{fn}" + suffix(desc))
     return True
 
 
@@ -480,7 +481,7 @@ def add_skill_entries(sections: Sections, title: str, dirpath: str, terms, label
         s = 2 * head_score if head_score else (1 if score(terms, "", body) else 0)
         if s:
             label = f"skill {label_tag}{skill_name}" if label_tag else f"skill {skill_name}"
-            sections.add(title, s, label + tail(first_sentence(desc)))
+            sections.add(title, s, label + suffix(first_sentence(desc)))
     return True
 
 
@@ -525,7 +526,7 @@ def add_feature_registry(sections: Sections, title: str, fp: str, owner: str, te
     sections.ensure(title)
     for name, desc in read_features_rows(fp):
         s = score(terms, name, desc)
-        sections.add(title, s, f"{owner} {name}" + tail(first_sentence(desc)))
+        sections.add(title, s, f"{owner} {name}" + suffix(first_sentence(desc)))
     return True
 
 
@@ -599,7 +600,7 @@ def scan_kit_verbs(sections: Sections, kit_root: str, terms, title: str = "kit v
             label, summary, searchable, verbs = entry
             extra = f"  verbs: {', '.join(verbs[:8])}" if verbs else ""
             s = score(terms, label, searchable)
-            sections.add(title, s, label + tail(summary) + extra)
+            sections.add(title, s, label + suffix(summary) + extra)
     if os.path.isdir(lib_dir):
         for dirpath, _dirnames, filenames in os.walk(lib_dir):
             for fn in sorted(filenames):
@@ -613,7 +614,7 @@ def scan_kit_verbs(sections: Sections, kit_root: str, terms, title: str = "kit v
                 label, summary, searchable, verbs = entry
                 extra = f"  verbs: {', '.join(verbs[:8])}" if verbs else ""
                 s = score(terms, label, searchable)
-                sections.add(title, s, label + tail(summary) + extra)
+                sections.add(title, s, label + suffix(summary) + extra)
 
 
 def scan_local_bin(sections: Sections, home: str, terms, indexed_roots, title: str = "house scripts"):
@@ -634,7 +635,7 @@ def scan_local_bin(sections: Sections, home: str, terms, indexed_roots, title: s
             continue
         summary, searchable = got
         s = score(terms, fn, searchable)
-        sections.add(title, s, f"~/.local/bin/{fn}" + tail(summary))
+        sections.add(title, s, f"~/.local/bin/{fn}" + suffix(summary))
 
 
 def scan_launchd(sections: Sections, home: str, terms, title: str = "launchd"):
@@ -654,7 +655,7 @@ def scan_launchd(sections: Sections, home: str, terms, title: str = "launchd"):
             try:
                 r = subprocess.run(["plutil", "-p", fp], capture_output=True, text=True, timeout=5)
                 text = r.stdout
-            except (OSError, ValueError):
+            except (OSError, ValueError, subprocess.SubprocessError):
                 continue
             m = re.search(r'"Label"\s*=>\s*"([^"]+)"', text)
             label = m.group(1) if m else fn[: -len(".plist")]
@@ -708,12 +709,11 @@ def build_sections(root: str, kit_root: str, home: str, registry_rows, terms) ->
 
     # Registry-only kinds: scripts/skills/memory fold into their shared global section;
     # crons has no repo-kind equivalent, so it is a section on its own.
-    kind_title = {"scripts": "scripts", "skills": "skills", "memory": "memory", "crons": "crons"}
     kind_seen = {}
     for kind, path in registry_rows:
         if kind == "repo":
             continue
-        title = kind_title[kind]
+        title = kind
         if kind == "scripts":
             n = kind_seen.get("scripts", 0)
             disamb_title = title if n == 0 else f"{title} ({os.path.basename(path.rstrip('/'))})"
@@ -783,14 +783,33 @@ def resolve_explain(label: str, root: str, kit_root: str, home: str, registry_ro
                 os.path.join(kit_root, rel),
             ]
     fp = next((c for c in cands if os.path.isfile(c)), None)
-    return fp
+    if fp is None:
+        return None, False
+    allowed_roots = [
+        root,
+        kit_root,
+        os.path.join(home, ".claude", "skills"),
+        os.path.join(home, ".local", "bin"),
+        os.path.join(home, "Library", "LaunchAgents"),
+        "/Library/LaunchDaemons",
+    ]
+    allowed_roots += [p for _, p in registry_rows]
+    real = os.path.realpath(fp)
+    for allowed in allowed_roots:
+        allowed_real = os.path.realpath(allowed)
+        if real == allowed_real or real.startswith(allowed_real.rstrip("/") + "/"):
+            return fp, False
+    return None, True
 
 
 def cmd_explain(args):
     registry_path = resolve_registry_path(args.registry)
     registry_rows = parse_registry(registry_path)
     home = os.path.expanduser("~")
-    fp = resolve_explain(args.explain, args.root, args.kit, home, registry_rows)
+    fp, outside = resolve_explain(args.explain, args.root, args.kit, home, registry_rows)
+    if outside:
+        print(f"explain: {args.explain} resolves outside the scanned roots")
+        return 1
     if fp is None:
         print(f"explain: no file for {args.explain}")
         return 1
@@ -823,6 +842,8 @@ def append_log(words_str: str, total_hits: int, top_section: str):
     try:
         d = log_dir()
         os.makedirs(d, exist_ok=True)
+        words_str = " ".join(words_str.split())
+        top_section = " ".join(top_section.split())
         with open(os.path.join(d, "precedent.log"), "a", encoding="utf-8") as fh:
             fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}\t{words_str}\t{total_hits}\t{top_section}\n")
     except OSError:
@@ -848,7 +869,11 @@ def parse_records_lines(lines):
             r_count += 1
             file_ = lines[i][m.end():].strip()
             headline = lines[i + 1].strip() if i + 1 < len(lines) else ""
-            records.append({"hits": int(m.group(1)), "file": file_, "headline": headline})
+            records.append({
+                "hits": int(m.group(1)),
+                "file": safe_text(file_),
+                "headline": safe_text(headline),
+            })
             i += 2
             continue
         i += 1
@@ -887,13 +912,14 @@ def render(ranked, words_str, limit, quiet, records_lines, r_count, as_json):
         print(json.dumps(out, indent=2))
         return 0
 
+    print(f"# precedent inventory: {words_str}\n{DATA_MARKER}\n")
+
     if records_lines is not None:
         print("## records")
         for line in records_lines:
-            print(f"  {line}")
+            print(f"  {safe_text(line)}")
         print()
 
-    print(f"# precedent inventory: {words_str}\n{DATA_MARKER}\n")
     silent = []
     for title, skip, hits in ranked:
         if quiet and (skip or not hits):

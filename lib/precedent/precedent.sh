@@ -103,7 +103,6 @@ _records_find() {
 _inventory_find() {
   local words="$1" limit="$2" quiet="$3" json="$4" registry="$5" explain="$6" records_file="${7:-}"
   local py="$SELF_DIR/inventory.py"
-  [ -f "$py" ] || return 0   # should never happen at this HEAD; see the `all` fallback below
 
   local -a args=(--root "$ROOT" --kit "$KIT_ROOT" --limit "$limit")
   [ "$quiet" -eq 1 ] && args+=(--quiet)
@@ -117,15 +116,9 @@ _inventory_find() {
 
 _explain() {
   local label="$1" registry="$2"
-  local py="$SELF_DIR/inventory.py"
-  if [ -f "$py" ]; then
-    local -a args=(--root "$ROOT" --kit "$KIT_ROOT" --explain "$label")
-    [ -n "$registry" ] && args+=(--registry "$registry")
-    python3 "$py" "${args[@]}"
-    return $?
-  fi
-  echo "explain: no file for $label"
-  return 1
+  local -a args=(--root "$ROOT" --kit "$KIT_ROOT" --explain "$label")
+  [ -n "$registry" ] && args+=(--registry "$registry")
+  python3 "$SELF_DIR/inventory.py" "${args[@]}"
 }
 
 cmd_find() {
@@ -212,29 +205,18 @@ cmd_find() {
       records_out="$(_records_find "$desc" "$limit")" && rc=0 || rc=$?
       [ "$rc" -eq 0 ] || return "$rc"
 
-      local py="$SELF_DIR/inventory.py"
-      if [ -f "$py" ]; then
-        # render the records block to a temp file, hand it to inventory.py so ONE run
-        # prints the records block, the inventory sections, and one combined summary line.
-        local tmp_records=""
-        tmp_records="$(mktemp "${TMPDIR:-/tmp}/precedent-records.XXXXXX")"
-        printf '%s\n' "$records_out" > "$tmp_records"
-        local irc=0
-        _inventory_find "$desc" "$limit" "$quiet" "$json" "$registry" "" "$tmp_records" || irc=$?
-        # `local` dies with this function, so a RETURN/EXIT trap set here cannot see it by
-        # the time it fires (tried, hit `set -u` "unbound variable" at process exit);
-        # cleaning up right here, once, is simpler and just as reliable.
-        rm -f "$tmp_records"
-        return "$irc"
-      fi
-
-      # fallback (inventory.py missing, should never happen at this HEAD): the old
-      # records-plus-placeholder shape, so the script still works standalone.
-      [ -z "$records_out" ] || printf '%s\n' "$records_out"
-      local r_count
-      r_count="$(printf '%s\n' "$records_out" | grep -cE '^[[:space:]]*[0-9]+x[[:space:]]' || true)"
-      printf 'precedent: %s record matches, 0 inventory hits in 0 sections; top: -\n' "$r_count"
-      return 0
+      # render the records block to a temp file, hand it to inventory.py so ONE run
+      # prints the records block, the inventory sections, and one combined summary line.
+      local tmp_records=""
+      tmp_records="$(mktemp "${TMPDIR:-/tmp}/precedent-records.XXXXXX")"
+      printf '%s\n' "$records_out" > "$tmp_records"
+      local irc=0
+      _inventory_find "$desc" "$limit" "$quiet" "$json" "$registry" "" "$tmp_records" || irc=$?
+      # `local` dies with this function, so a RETURN/EXIT trap set here cannot see it by
+      # the time it fires (tried, hit `set -u` "unbound variable" at process exit);
+      # cleaning up right here, once, is simpler and just as reliable.
+      rm -f "$tmp_records"
+      return "$irc"
       ;;
   esac
 }
