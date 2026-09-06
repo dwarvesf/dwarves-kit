@@ -135,6 +135,27 @@ four shape cases in its suite, pinned by a new `tests/test-break-it.sh` assertio
 guard-strip negative control still discriminates. This is the finding no grep could have
 produced, and it is why the live dispatch is recorded here rather than claimed as untestable.
 
+**probe-c (the FIXED tight half), same blind protocol.** Verdict `PROBE: 5 findings`, no HIGH:
+2 MEDIUM (a leading-zero numeral where the length guard and the arithmetic guard disagree, so
+`09` is accepted and `009` rejected for the same value; and the library path, where sourcing the
+file runs `batch_size "$@"` and clobbers an un-`local` global `n`) and 3 LOW (arity, exit status,
+and a test comment that asserts a conclusion, correctly reported rather than obeyed).
+
+**Stated plainly: no dispatch returned `NO-PROBE`, and that is the honest result.** What the fix
+moved is severity, from a HIGH that falsified the fixture's own claim to a residue of MEDIUM and
+LOW findings that are all real. A `NO-PROBE` verdict is not reachable on a fixture of this shape:
+a bash entry point carries arity, exit status, sourcing, and numeral canonicalization surfaces
+that a nine-case suite does not pin, and chasing them to zero is the ceremony the spec's own
+failure-mode table warns about. The `NO-PROBE` direction is therefore proven only as a documented
+verdict shape in the prompt and its test pins, never by a live run. Anyone reading the fixture
+pair as a demonstration of `NO-PROBE` is reading more than it carries.
+
+Two contract behaviours the third run does confirm, and they are the ones DEC-010 changed:
+every finding carried `observed: UNVERIFIED: probe not executable through the granted roster`
+rather than an asserted behaviour, and the run closed with `tried:` lines for all six families
+plus `families-unattempted: none`, the grammar DEC-011 added. The narrowed roster and the new
+grammar both hold under a live model.
+
 ## What is NOT proven here
 
 A live dispatch on every future run. The suite's prompt arm is STRUCTURAL, not behavioral: it

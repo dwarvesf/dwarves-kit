@@ -206,3 +206,23 @@ both. Re-run against the same gutted file, 7 section pins fail.
 
 **Impact.** The SG-01 closing move stays, with its scope stated honestly in the test header: it
 duplicates the tool/tier/name checks made above and adds no discrimination of its own.
+
+## 2026-09-07 Battery: NO-PROBE is not reachable on the tight fixture, and that is recorded
+
+**Context.** Three blind live dispatches ran against the fixture pair. All three returned PROBE.
+The fixed tight half returned 2 MEDIUM and 3 LOW findings, every one of them real.
+
+**Decision.** Accept the residue. Record in the proof of done that no live run returned
+`NO-PROBE`, and stop short of hardening the fixture further.
+
+**Why.** A bash entry point carries arity, exit status, sourcing, and numeral-canonicalization
+surfaces that a nine-case suite does not pin. Each round of hardening moves the severity down and
+leaves a new residue, which is the ceremony the spec's own failure-mode table names. The
+measurable result is the severity drop, from a HIGH that falsified the fixture's claim to a
+MEDIUM/LOW residue.
+
+**Alternatives.** Keep hardening until a run returns `NO-PROBE`. Rejected: it tunes a fixture to
+a model's output, which proves nothing about either.
+
+**Impact.** The `NO-PROBE` verdict is proven only as a shape in the prompt and its test pins,
+never by a live run. The spec's `## After state` does not claim otherwise, so no criterion moves.
