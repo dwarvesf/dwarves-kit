@@ -29,6 +29,10 @@ TMPDIR_T="$(mktemp -d "${TMPDIR:-/tmp}/dk-precedent-test.XXXXXX")"
 TMPDIR_T="$(cd "$TMPDIR_T" && pwd)"   # normalize a double slash, same reason as test-board.sh
 trap 'rm -rf "$TMPDIR_T"' EXIT
 
+# Pin the operator config overlay (SPEC-248) at a path that does not exist, so the operator's
+# REAL ~/.config/dwarves-kit/kit.toml can never reach a case that does not set it deliberately.
+KIT_CONFIG_OPERATOR="$TMPDIR_T/no-operator-config"; export KIT_CONFIG_OPERATOR
+
 # ---------------------------------------------------------------------------
 # Fixture builder, reusable by TASK-003. Lays down a real git repo covering both surfaces
 # (records: docs/specs + docs/decisions; inventory: tools/scripts/memory/skills/FEATURES/
@@ -313,6 +317,28 @@ if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'zeta.sh'; then
   assert "kit-root kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 0
 else
   assert "kit-root kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 1
+  echo "rc=$RC" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# SPEC-248: the operator config overlay carries the same key. With PRECEDENT_REGISTRY unset
+# and an EMPTY kit-root kit.toml, an operator kit.toml setting [precedent] registry still
+# selects the registry (the operator file sits on the operator's machine, never in a PR).
+# ---------------------------------------------------------------------------
+OP_CONF_DIR="$TMPDIR_T/operator-config"
+EMPTY_ROOT_FOR_OP="$TMPDIR_T/kit-root-empty-for-op"
+mkdir -p "$OP_CONF_DIR" "$EMPTY_ROOT_FOR_OP"
+printf '[precedent]\n' > "$EMPTY_ROOT_FOR_OP/kit.toml"
+cat > "$OP_CONF_DIR/kit.toml" <<TOML
+[precedent]
+registry = "$FIX_REGISTRY"
+TOML
+OUT="$(env -u PRECEDENT_REGISTRY KIT_CONFIG_ROOT="$EMPTY_ROOT_FOR_OP" \
+  KIT_CONFIG_OPERATOR="$OP_CONF_DIR" "$PRECEDENT_BIN" find notion --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'zeta.sh'; then
+  assert "operator kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 0
+else
+  assert "operator kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 1
   echo "rc=$RC" | sed 's/^/      /'
 fi
 
