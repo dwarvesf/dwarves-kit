@@ -5,7 +5,7 @@ Status: VALIDATED (design-critique REVISE and spec-validate REVISE folded; see D
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-246-kit-wrap.md`
-References: the operator's `session-closeout` skill Phase 2 and its skim-first report shape (dotfiles `home/dot_claude/skills/session-closeout/SKILL.md`, the six numbered steps and the `## Closeout` block: port the steps and the report grammar, drop the operator-specific distill phase); `repo-wrapup` scripts `wrapup-scan.sh` (report-only scanner: checkout, ahead/behind, dirty files, worktrees, branch verdicts, open PRs) and `wrapup-apply.sh` (gated executor: branch delete only as an ancestor of the default branch or with a merged PR whose head equals the tip, worktree remove only under a flag and only clean and attached, pull ff-only on the default branch; every skip prints its reason): port both verbatim as `wrap scan` and `wrap apply`, generalising `origin/main` to the detected default branch; `bin/learn` + `lib/learn/learn.sh` (shim and verb entry); `lib/precedent/precedent.sh` (repo-root resolution, `kit_config_get_root` for a consumer key); `commands/retro.md` (the cycle-scoped reflect step this command calls); ops-toolkit `_meta/lablog-add` (the activity-log line format: `YYYY-MM-DD · <slug>: <one sentence>` prepended newest-first, dash refusal, 300-char warn).
+References: the operator's `session-closeout` skill Phase 2 and its skim-first report shape (the operator's dotfiles `session-closeout` skill, the six numbered steps and the `## Closeout` block: port the steps and the report grammar, drop the operator-specific distill phase); `repo-wrapup` scripts `wrapup-scan.sh` (report-only scanner: checkout, ahead/behind, dirty files, worktrees, branch verdicts, open PRs) and `wrapup-apply.sh` (gated executor: branch delete only as an ancestor of the default branch or with a merged PR whose head equals the tip, worktree remove only under a flag and only clean and attached, pull ff-only on the default branch; every skip prints its reason): port both verbatim as `wrap scan` and `wrap apply`, generalising `origin/main` to the detected default branch; `bin/learn` + `lib/learn/learn.sh` (shim and verb entry); `lib/precedent/precedent.sh` (repo-root resolution, `kit_config_get_root` for a consumer key); `commands/retro.md` (the cycle-scoped reflect step this command calls); ops-toolkit `_meta/lablog-add` (the activity-log line format: `YYYY-MM-DD · <slug>: <one sentence>` prepended newest-first, dash refusal, 300-char warn).
 
 ## Problem
 
@@ -148,7 +148,7 @@ None.
 bash tests/test-wrap.sh && bash tests/test-meta.sh && bash tests/test-bin-forwarders.sh
 bin/wrap scan . | grep -E '^-- vs origin/(main|master): ahead='
 bin/wrap default-branch . | grep -E '^(main|master)$'
-bin/wrap merge . | grep -E '^(eligible|SKIP|\(gh )'
+bin/wrap merge . | grep -E '^(eligible|SKIP|no open PRs|\(gh )'
 ```
 
 ## Edge Cases
@@ -189,6 +189,36 @@ bin/wrap merge . | grep -E '^(eligible|SKIP|\(gh )'
 - DEC-003: merge is a gated verb (`wrap merge`), not command prose, so "one PR per call, never `--delete-branch`, never `--auto`" is enforced rather than remembered.
 - DEC-004: the report grammar moves into the kit with "the operator" for "Han"; the two personal lines (`Distilled`, `Candidates`) are not in the kit grammar; an overlay appends after `FYI`.
 - DEC-005: the retro trigger is a ledger fact (a merged PR number in a `ship ran "shipping pr=#N"` line), not a guess about "this session".
+
+## Review
+
+One parallel wave on HEAD fdb63f7 served the review gate and the battery: acceptance-verifier, security (opus), architecture, test-coverage, advisor. Coverage-delta: source and tests moved together. Negative control recorded in `docs/verification/kit-wrap.md`.
+
+### Verdict: FIX THEN SHIP
+
+| # | Finding | Arm | Sev | Route |
+|---|---|---|---|---|
+| 1 | `log --date` takes its value raw; a newline or an em dash in the date bypasses both content gates and forges extra ledger-shaped lines (proven). | security | HIGH | fixed: `YYYY-MM-DD` gate, exit 1 |
+| 2 | Pending or failing `statusCheckRollup` rejection has no red-turning test; deleting the clause leaves 101/101 green (proven by mutation). | test-coverage | HIGH | fixed: PENDING and FAILURE fixtures |
+| 3 | `reviewDecision == CHANGES_REQUESTED` rejection: same, no red-turning test. | test-coverage | HIGH | fixed: fixture |
+| 4 | The `--repo` pin on `gh` calls is never asserted; the stub ignores it, so stripping it stays green. | test-coverage | HIGH | fixed: argv assertions on the recorded calls |
+| 5 | `merge` reads gates from a snapshot and merges whatever the head is at call time; no head-SHA pin (the delete path has one). | security | MEDIUM | fixed: `headRefOid` + `--match-head-commit` |
+| 6 | An empty check rollup with `UNSTABLE` passes vacuously. | security | MEDIUM | fixed: empty rollup only with `CLEAN` |
+| 7 | Pre-write tip re-check has no test; Edge Case 13 unproven. | test-coverage, acceptance | MEDIUM | fixed: internal `--tips-file` seam + case |
+| 8 | Stale `index.lock` rule has no test. | test-coverage | MEDIUM | fixed: both sides |
+| 9 | `cmd_merge` fetches each PR's detail twice against its own comment. | architecture | MEDIUM | fixed: one cached JSON per PR |
+| 10 | `docs/briefs/CONTEXT.md` leaks home-rooted paths; `test-no-personal-paths.sh` red inside `run-workflow.sh`. | acceptance | regression | fixed by the lead |
+| 11 | The spec's Verification `merge` grep exits 1 on a real repo with zero open PRs. | acceptance | spec | fixed: pattern widened |
+| 12 | Edge Case 9 (fetch failed) has no test. | acceptance | MEDIUM | fixed: broken-remote fixture |
+| 13 | Step 7's PR-number grep is unanchored (`#4` matches `#498`). | security | LOW | fixed |
+| 14 | A worktree path with a newline vanishes from the report; empty gate verdict prints an empty reason; `_write_guard` treats an uninterrogable repo as writable. | security | LOW | fixed |
+| 15 | `set -uo` without a comment; two magic numbers; kit.toml comment says mtime where the code preserves mode. | architecture, advisor | LOW | fixed |
+| 16 | `REVIEW_REQUIRED` with `CLEAN` on an unprotected repo merges; the spec forbids only `CHANGES_REQUESTED`. | security | accepted | recorded here as the spec's choice |
+| 17 | ID-644 at `speccing` while built. | advisor | LOW | fixed: `executing` |
+
+### Scores
+
+Security: FIX THEN SHIP (every path-escape variant held; the `--date` door and the merge pin were the gaps). Architecture 8/10 (deep module, real stub seam, lifecycle consistent). Test coverage 6/10 before the batch.
 
 ## Open questions
 (none)

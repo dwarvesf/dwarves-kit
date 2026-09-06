@@ -15,7 +15,7 @@ Bash entry scripts under `lib/<subsystem>/<subsystem>.sh` with a 3-line `bin/<su
 - `lib/precedent/precedent.sh`: `kit_config_get_root` usage and repo-root resolution.
 - `commands/retro.md`, `commands/start.md`, `commands/ship.md`: the neighbours `/kit:wrap` sits between.
 - `tests/test-precedent.sh`, `tests/test-board.sh`: fixture style.
-- Reference scripts (read-only, outside this repo): `~/workspace/tieubao/dotfiles/home/dot_claude/skills/repo-wrapup/scripts/executable_wrapup-scan.sh` and `executable_wrapup-apply.sh`; the report grammar and step list: `~/workspace/tieubao/dotfiles/home/dot_claude/skills/session-closeout/SKILL.md` lines 134-265; the log line format: `~/workspace/tieubao/ops-toolkit/_meta/lablog-add`.
+- Reference scripts (read-only, outside this repo): the operator's dotfiles repo, skill `repo-wrapup`, scripts `wrapup-scan.sh` and `wrapup-apply.sh`; the report grammar and step list: the operator's dotfiles repo, skill `session-closeout`, its Phase 2 and `## Closeout` block; the log line format: the ops-toolkit repo's `_meta/lablog-add`.
 
 ## External dependencies
 `gh` optional at runtime (stubbed in tests). git only otherwise.
