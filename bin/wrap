@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# bin/wrap -- STABLE consumer entrypoint for the wrap subsystem (SPEC-246, ADR-0034
+# decision 1).
+#
+# Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/wrap/<file>.sh`
+# path. Forwards to the wrap subsystem entry, which owns the verb grammar.
+#
+# Usage:
+#   wrap scan <repo> [<repo>...]                        report only
+#   wrap apply [--apply] [--worktrees] <repo> [...]     gated writes, dry-run by default
+#   wrap merge [--apply] <repo>                         one own green PR
+#   wrap log "<slug>: <one sentence>" [--date D]        the activity line
+#   wrap default-branch <repo>                          the detected default branch
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/wrap/wrap.sh" "$@"
