@@ -1,7 +1,7 @@
 # Spec: `/kit:wrap`, the landing step after ship
 
 Generated: 2026-09-06
-Status: VALIDATED (design-critique REVISE and spec-validate REVISE folded; see Decision Log)
+Status: SHIPPED (dwarves-kit #502, merge 9e360ce7)
 Lane: full
 Type: spec-feature
 File: `docs/specs/SPEC-246-kit-wrap.md`
@@ -127,7 +127,7 @@ None.
 - [x] TASK-002 (DONE, commit 0a386af, verified by test-meta 832/832 and the grep tokens): `commands/wrap.md` (frontmatter `description`; the Self-intro banner line; `## When this runs`; the eight steps with every fixed rule from the Interfaces paragraph, each rule quoted as its own bullet so a reader can grep `wrap merge`, `SPEC-065`, `headSha`, `ExitWorktree keep`, `--ff-only`, `ship | ran | shipping pr=`, `Needs you`; the report grammar block), `kit.toml [wrap]` + `lib/config/module-registry.md` row, `commands/start.md` and `commands/retro.md` pointers, README (lifecycle sentence, subsystem command list, stage table Govern row), `docs/architecture.md` bin paragraph, `docs/consumer-contract.md` entry (verbs, gates in one line each, the `activity_log` rule), `docs/CHANGELOG.md` [Unreleased], `docs/FEATURES.md` regenerated. Acceptance: `bash lib/registry/feature-registry.sh generate` byte-stable; `test-meta.sh` green; `grep -n "kit:wrap" commands/start.md commands/retro.md README.md` each non-empty; `grep -c` of each quoted rule token above in `commands/wrap.md` is at least 1.
 
 ### Phase 3: Polish
-- [ ] TASK-003 (lead): proof of done at `docs/verification/kit-wrap.md` (behavioral: a real `wrap scan` and `wrap apply` dry-run on this worktree's repo, `wrap merge` dry-run, `wrap log` against a scratch kit root; negative control by disabling the `baseRefName` check in the squash proof and watching the suite go RED); battery before merge.
+- [x] TASK-003 (DONE, lead; docs/verification/kit-wrap.md, battery wave, negative control): proof of done at `docs/verification/kit-wrap.md` (behavioral: a real `wrap scan` and `wrap apply` dry-run on this worktree's repo, `wrap merge` dry-run, `wrap log` against a scratch kit root; negative control by disabling the `baseRefName` check in the squash proof and watching the suite go RED); battery before merge.
 
 ## After state
 - [ ] `bin/wrap scan <repo>` on this kit prints the checkout, ahead/behind vs `origin/master`, dirty files, worktrees, branch verdicts, and own open PRs. (Today: the same report needs the operator's dotfiles script.)
