@@ -16,21 +16,28 @@ Exit: 0
 ```
 === break-it prober lens (SPEC-247) ===
 ...
-=== 53/53 passed, 0 failed ===
+=== 68/68 passed, 0 failed ===
 
-=== Results ===
+=== Results ===          <- tests/test-meta.sh
+Passed: 837 / 837
+All meta tests passed.
+
+=== Results ===          <- tests/test-hooks.sh
 Passed: 497 / 497
 All tests passed.
 ```
 
-`grep -c FAIL` over the whole combined output: `0`.
+`grep -c FAIL` over the whole combined output: `0`. The three suites are recorded separately
+below because a single chained tail shows only the last one's counter, which the first version
+of this file mistook for the whole chain.
 
 ## Per-suite detail
 
 | Suite | Command | Exit | Result |
 |---|---|---|---|
-| break-it | `bash tests/test-break-it.sh` | 0 | 53/53 passed, 0 failed |
-| meta + hooks | `bash tests/test-meta.sh && bash tests/test-hooks.sh` | 0 | 497/497, all tests passed |
+| break-it | `bash tests/test-break-it.sh` | 0 | 68/68 passed, 0 failed |
+| meta | `bash tests/test-meta.sh` | 0 | 837/837, all meta tests passed |
+| hooks | `bash tests/test-hooks.sh` | 0 | 497/497, all tests passed |
 | effectiveness gate | `bash tests/test-agent-effectiveness.sh agents/break-it.md` | 0 | 3/3 passed (read-only tools, model tier `opus`, name not a retired suffix) |
 
 ## Negative control
@@ -42,17 +49,17 @@ assertion. Restore, re-run, green.
 ```
 ### 1. baseline (guard in place)
 exit=0
-=== 53/53 passed, 0 failed ===
+=== 68/68 passed, 0 failed ===
 
 ### 2. guard line removed
 exit=1
   FAIL T3-AC3: the tight suite is GREEN with the guard in place
   PASS T3-AC3 [NEGATIVE CONTROL]: without the guard the tight suite goes RED
-=== 51/53 passed, 2 failed ===
+=== 66/68 passed, 2 failed ===
 
 ### 3. restored
 exit=0
-=== 53/53 passed, 0 failed ===
+=== 68/68 passed, 0 failed ===
 ```
 
 The suite discriminates: removing the one guard line flips it red, restoring it flips it back.
@@ -90,13 +97,52 @@ HOLE CONFIRMED: the contract says reject, the code says ok, and test.sh stays gr
 Command: `bash tests/fixtures/break-it/leaky/test.sh`
 Exit: 0 (the suite is green over that hole, which is the fixture's whole point)
 
+## Live dispatch (the lens's own judgment), 2026-09-07
+
+The suite cannot dispatch a live prober in CI, so the judgment was exercised by hand once,
+outside CI, against a BLIND copy of the fixture pair: the two directories were copied to neutral
+names (`probe-a` = leaky, `probe-b` = the pre-fix tight half) with the kit-role commentary
+stripped, so neither dispatch could read which half it held. Each ran at `model: opus`, handed
+only `agents/break-it.md` as its operating prompt.
+
+**probe-a (leaky).** Verdict `PROBE: 1 finding`, in grammar:
+
+```
+PROBE: the suite does not constrain the upper bound of the accepted range
+  probe:            bash impl.sh 11
+  expected:         "reject" -- CONTRACT (impl.sh:2-4) makes 1..10 a closed range
+  observed:         "ok" (also "ok" for 100)
+  unconstrained-by: test.sh:21
+  severity:         HIGH
+```
+
+**probe-b (the pre-fix tight half).** Expected `NO-PROBE`. Returned `PROBE: 1 finding` instead,
+and the finding was REAL:
+
+```
+PROBE: the suite does not constrain non-integer input
+  probe:            bash impl.sh abc        (same class: "3.5", "1e3", "+5", "0x5")
+  expected:         "reject" for anything outside 1..10
+  observed:         "ok". Both numeric tests exit 2 on non-integer input, `2>/dev/null`
+                    hides it, the failed test reads false, control falls through to "ok"
+  unconstrained-by: test.sh:20-24
+  severity:         HIGH
+```
+
+Reproduced against the committed fixture: `bash tests/fixtures/break-it/tight/impl.sh abc`
+printed `ok`. The "tight" half was not tight. It has since been fixed (an input-shape guard plus
+four shape cases in its suite, pinned by a new `tests/test-break-it.sh` assertion), and the
+guard-strip negative control still discriminates. This is the finding no grep could have
+produced, and it is why the live dispatch is recorded here rather than claimed as untestable.
+
 ## What is NOT proven here
 
-The lens's own judgment. `break-it` cannot be dispatched live in CI, the same limit
-`tests/test-agent-effectiveness.sh` and `tests/test-review-team-plants.sh` already carry. Every
-assertion about what the agent CONCLUDES is a prompt-completeness grep: it proves the prompt
-carries the vocabulary to name each class, never that a live run names it. The mechanism (the
-fixtures, the axis arm, the battery and docs wiring) is proven by real exit codes.
+A live dispatch on every future run. The suite's prompt arm is STRUCTURAL, not behavioral: it
+proves each load-bearing token sits under the section that owns it, never that a live run
+concludes correctly. Section-scoping is what makes that arm discriminate at all; a flat
+file-wide grep passes on a bag of words, proven on 2026-09-07 by a gutted 12-line agent file
+that carried every pinned phrase in one paragraph and passed the earlier greps AND the SG-01
+gate. The same file fails 7 of the section pins.
 
 Probe yield is unmeasured by design. Open question 5 settled as manual review for v1; no counter
 ships.
@@ -131,3 +177,43 @@ holds for the spec's verification chain, and NOT for the unscoped project suite.
 against a `git archive` of the merge-base. It is an orchestrate-module concurrency test with
 hardcoded sleep and poll windows, outside this spec's touched area. Whether that is a local
 timing flake or a latent defect is a maintainer call, not this branch's to make.
+
+## Test plan coverage
+
+The spec's `## Test plan` matrix has 26 rows. Runs referenced below: **R1** the green-run chain
+(`bash tests/test-break-it.sh && bash tests/test-meta.sh && bash tests/test-hooks.sh`, exit 0);
+**R2** the guard-strip negative control; **R3** the naming-axis arm negative control; **R4** the
+fixture's own exit-code proof (`leaky/probe-check.sh`); **R5** the blind live dispatch.
+
+| Row | Run / skip reason |
+|---|---|
+| 1 | R1 (`tests/test-agent-effectiveness.sh agents/break-it.md`, exit 0) |
+| 2 | R1 (`tools_violation()` assertion, plus the exact-set roster assertion added by DEC-010) |
+| 3 | R1 (meta 837/837) |
+| 4 | R3 |
+| 5 | R1 |
+| 6 | R1 |
+| 7 | R1 |
+| 8 | R1 |
+| 9 | R4 |
+| 10 | R1 |
+| 11 | R2 |
+| 12 | R1, re-shaped: the invariant pins are section-scoped under `## Invariants` and the count is derived, not a literal |
+| 13 | R1, re-shaped: the edge-case pins are section-scoped under `## Edge cases` |
+| 14 | R1, re-worded by DEC-010: the rule is now "executes no code from the branch", pinned under `## Command safety` together with the runner-load reason |
+| 15 | R1 (masking pins under `## Masking`, including the any-output-field scope) |
+| 16 | R1, with the honest-scope note: SG-01 duplicates checks the assertions above already make, so the section pins are what discriminate |
+| 17 | R1 |
+| 18 | R1 |
+| 19 | R1, extended: a ledger row introduced by the diff under review is checked for provenance |
+| 20 | R1 |
+| 21 | R1 |
+| 22 | R1 |
+| 23 | R1 (meta) |
+| 24 | R1 (meta) |
+| 25 | R1 |
+| 26 | R1 (hooks 497/497) |
+
+Row 10's claim was FALSIFIED by R5 before this map was written: the tight fixture pinned the
+boundary but not the input shape. The fixture and its suite were fixed, and the shape cases are
+pinned in `tests/test-break-it.sh` as well as in the fixture's own suite. See `## Live dispatch`.

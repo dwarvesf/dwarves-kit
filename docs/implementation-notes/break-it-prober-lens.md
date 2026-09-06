@@ -137,3 +137,72 @@ mid-run. The seam keeps the control read-only over the working tree.
 
 **Impact.** The spec's manual negative control (edit the file, re-run, restore) still works
 unchanged, because the default path is the committed `impl.sh`.
+
+## 2026-09-07 Invariant 5 is a build-phase promotion the spec never declared
+
+**Context.** The spec declares four invariants. The shipped agent carries five: "a finding
+without an `unconstrained-by:` citation is not emitted".
+
+**Decision.** Keep the fifth and record it here rather than editing the spec's invariant list.
+
+**Why.** It promotes spec edge case 4 from a described case to an enforced rule, which is what
+stops the lens reporting something a test it never opened already covers.
+
+**Impact.** The spec's invariant count and the agent's disagree by one, deliberately. The test
+derives the count instead of pinning a literal, so a future addition does not lie.
+
+## 2026-09-07 Battery: the tool roster was narrowed, overturning DEC-007
+
+**Context.** Three battery arms converged on the roster independently.
+
+**Decision.** Drop `Bash(npm test *)`, `Bash(go test *)`, `Bash(pytest *)`. The lens now executes
+nothing from the branch under review, and `observed:` documents `UNVERIFIED:` as its default.
+
+**Why.** The security lens showed the grants deliver adversary code through the runner's own
+load path, not through argument crafting, so the prompt-level command-safety rule guarded the
+wrong actor. The effectiveness validator showed the same grants cannot run this repo's
+`bash tests/*.sh` suites at all, and that `observed:` was structurally unreachable even where
+they fit, leaving a model to either emit `UNVERIFIED` every run or speculate silently. Battery
+leg 1 re-executes the suite before this lens is dispatched, so the grants bought a second
+execution of hostile code for a result the lens already had.
+
+**Alternatives.** Keep the roster and rely on the prompt rule (the shipped position, DEC-007).
+Not kept: the mitigation does not cover the delivery path.
+
+**Impact.** Open question 4 is answered in the "narrow the roster" direction. DEC-010 records it.
+The roster assertion in `tests/test-break-it.sh` now pins the exact set both ways instead of
+asserting an intact copy of `code-reviewer`'s, which had omitted `Bash(git log *)` and could not
+have caught the narrowing it claimed to guard.
+
+## 2026-09-07 Battery: the tight fixture was not tight
+
+**Context.** A blind live dispatch of the lens against a neutral copy of the tight fixture
+returned a HIGH finding instead of the expected `NO-PROBE`, and the finding reproduced against
+the committed file: `bash tests/fixtures/break-it/tight/impl.sh abc` printed `ok`.
+
+**Decision.** Add an input-shape guard to the tight implementation and four shape cases to its
+suite, and pin the shape rejection in `tests/test-break-it.sh` as well.
+
+**Why.** The fixture pair's whole claim is that one half is unconstrained and the other is
+constrained. The tight half pinned two integer boundaries and nothing else, so it stood for a
+claim it did not meet. Every exit-code test passed because none of them asked the falsifying
+question of the fixture itself.
+
+**Impact.** The guard-strip negative control still discriminates (11 flips to `ok`). The leaky
+half is untouched, and a new assertion pins that it still carries its hole, so a future tidy-up
+cannot accidentally close it.
+
+## 2026-09-07 Battery: the prompt arm was a bag-of-words rubber stamp
+
+**Context.** The review arm built a gutted 12-line agent file whose body was one paragraph of
+pinned phrases. It passed every prompt grep AND the SG-01 gate.
+
+**Decision.** Scope every prompt assertion to the `## ` section that owns the token, and pin
+tokens rather than sentences.
+
+**Why.** The flat greps were loose where it mattered (a gutted prompt passed) and tight where it
+did not (reordering two words in a sentence would have gone red). The section-scoped form fixes
+both. Re-run against the same gutted file, 7 section pins fail.
+
+**Impact.** The SG-01 closing move stays, with its scope stated honestly in the test header: it
+duplicates the tool/tier/name checks made above and adds no discrimination of its own.
