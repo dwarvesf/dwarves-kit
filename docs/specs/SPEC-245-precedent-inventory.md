@@ -93,7 +93,7 @@ ADR-0034 (grammar: subsystem noun + verb; this promotes `precedent` from a root-
 
 ### Boundaries & failure modes
 
-Read-only over every source. Never writes a board, a spec, or a memory note. The only write is the append-only log line, and a failed write never fails the query. Out of bounds: the ops-toolkit side (retiring `repo-sweep whathas`, the dotfiles `new-tool-gate` phase name), see Out of Scope.
+Read-only over every source. Never writes a board, a spec, or a memory note. The only write is the append-only log line, redacted and whitespace-collapsed before it lands, and a failed write never fails the query. The registry is operator config: it resolves from the flag, the environment, or the kit-root `kit.toml` only, never from a project `.kit.toml`, because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR. The legacy `--surface records` output stays byte-identical to the pre-move script and therefore unredacted: it prints headings from the repo's own committed docs, the same trust level as `grep` over that repo; the `all` and `--json` paths redact it. Out of bounds: the ops-toolkit side (retiring `repo-sweep whathas`, the dotfiles `new-tool-gate` phase name), see Out of Scope.
 
 ## Technical Design
 
@@ -161,15 +161,15 @@ None.
 ## After state
 
 - [x] `bin/precedent find "board set"` in this repo prints a `## records` block and lists `lib/board/board.sh` under `## kit verbs`, with SPEC-146 named inline on that line, in one run. (Today: `lib/precedent.sh find` prints the records block only; no bin entry exists.)
-- [ ] `bin/precedent find "notion sync" --surface inventory --registry <file>` scans every `repo` and `scripts` root in the file and prints a skip note for a missing one. (Today: the source roots are hardcoded in ops-toolkit.)
-- [ ] `bash tests/test-precedent.sh` exists and is green; `lib/precedent.sh` has a test for the first time. (Today: zero tests.)
-- [ ] `grep -rn 'precedent.sh find' commands/` returns nothing; both callers say `precedent find`. (Today: two literal callers.)
-- [ ] `$LOG_DIR/precedent.log` gains one line per query, checkable with `tail -1`. (Today: the log lives in `~/.local/state/repo-sweep/whathas.log`.)
+- [x] `bin/precedent find "notion sync" --surface inventory --registry <file>` scans every `repo` and `scripts` root in the file and prints a skip note for a missing one. (Today: the source roots are hardcoded in ops-toolkit.)
+- [x] `bash tests/test-precedent.sh` exists and is green; `lib/precedent.sh` has a test for the first time. (Today: zero tests.)
+- [x] `grep -rn 'precedent.sh find' commands/` returns nothing; both callers say `precedent find`. (Today: two literal callers.)
+- [x] `$LOG_DIR/precedent.log` gains one line per query, checkable with `tail -1`. (Today: the log lives in `~/.local/state/repo-sweep/whathas.log`.)
 
 ## Acceptance Criteria (global)
-- [ ] All tasks pass their individual acceptance criteria
-- [ ] Tests cover happy path + edge cases listed below
-- [ ] No regressions in existing functionality: records-surface parity pin, `tests/test-meta.sh`, `tests/test-bin-forwarders.sh`
+- [x] All tasks pass their individual acceptance criteria
+- [x] Tests cover happy path + edge cases listed below
+- [x] No regressions in existing functionality: records-surface parity pin, `tests/test-meta.sh`, `tests/test-bin-forwarders.sh`
 
 ## Verification
 
@@ -212,6 +212,25 @@ Parallel review, 2026-09-06, diff e7f5fee..a15edd2, 25 files. Reviewers: securit
 ### Verdict: FIX THEN SHIP
 
 Fix batch applied in b66e5bf: findings 1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 14, 16 (14 new test cases, 37/37). Finding 12 is board row ID-642. Findings 9, 11, 15 recorded as advisory. Lead re-check after the batch: `--explain` refuses `/etc/hosts`, a 16-level `../` traversal, and `~/.gitconfig` with exit 1; the DATA marker precedes the records block.
+
+### Battery (post-merge HEAD 67fc945, four fresh-context arms)
+
+Acceptance verifier PASS (every After-state and AC bullet re-executed; the launchd skip branch is unreachable on a macOS host, recorded as a coverage gap). Reviewer (opus) FIX THEN SHIP. Security lens (opus) FIX THEN SHIP. Advisor: 1 LOW. Arms disagreed with the earlier review-team pass on two HIGHs, the signal the battery exists for.
+
+| # | Finding | Arm | Sev | Route |
+|---|---|---|---|---|
+| B1 | A repo-committed `.kit.toml` sets `precedent.registry`; registry rows widen the `--explain` allowed roots; `repo /` re-opens the arbitrary read with no flags. Reproduced end to end. | security | HIGH | fixed: `kit_config_get_root` only (kit-root `kit.toml`, never a project toml), negative test with a hostile project `.kit.toml` |
+| B2 | `Sections.set_skip` replaces a section wholesale; a registry row with a missing path wipes the ROOT hits already collected under the shared `skills`, `memory`, or `scripts` title and prints a skip note in their place: a silent false negative in an existence gate. | reviewer | HIGH | fixed: skip notes append, hits stay; test with missing `skills` and `memory` rows |
+| B3 | `python3` absent or failing blanks the whole default digest, so assign and grill lose a lookup that was pure bash. | reviewer | MEDIUM | fixed: print the records block, one stderr line, propagate the rc |
+| B4 | `~` in the registry file path never expands; a typo'd explicit path scans nothing silently. | reviewer | MEDIUM | fixed: expanduser, stderr warning for an explicit path that is not a file |
+| B5 | The log line stores the query verbatim: a pasted token persists to the ledger. | security | MEDIUM | fixed: `safe_text` on the query and top section |
+| B6 | `--surface records` prints unredacted with no DATA marker (parity with the pre-move script). | security | MEDIUM | accepted, recorded in Boundaries: the repo's own committed docs at grep trust; `all` and `--json` redact |
+| B7 | `cmd_explain` opens the candidate path, not the realpath the gate checked (local TOCTOU). | security | LOW | fixed: read the realpath |
+| B8 | `--records-file` is an unconfined read reachable only from `inventory.py` argv, never from `bin/precedent`. | security | LOW | docstring marks it internal |
+| B9 | The jsonc stripper treats `//` inside a URL as a comment and drops live crons on that line. | security | LOW | fixed: line-start comments only, ceiling noted in a comment |
+| B10 | Zero record matches renders an empty `## records` block. | reviewer | LOW | fixed: `(no match)`, collapsed under `--quiet` |
+| B11 | `return $?` after a bare command under `set -e` is unreachable. | reviewer | LOW | advisory |
+| B12 | Spec After-state and global AC boxes unticked while every claim is verified. | advisor | LOW | fixed |
 
 ### Findings
 

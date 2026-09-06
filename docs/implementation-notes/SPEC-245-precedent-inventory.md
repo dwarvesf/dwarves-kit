@@ -108,3 +108,11 @@ Judgment calls:
 Verified: `bash tests/test-precedent.sh` (37/37), `bash tests/test-hooks.sh` (497/497), `bash tests/test-bin-forwarders.sh` (36/36), `bash tests/test-no-personal-paths.sh` (3/3), `bash tests/test-meta.sh` (829/829, after regenerating `docs/FEATURES.md`), `python3 -m py_compile lib/precedent/inventory.py` (exit 0), `grep -n "def tail\|kind_title\|should never happen" lib/precedent/inventory.py lib/precedent/precedent.sh` (empty).
 
 No further deviations from SPEC-245.
+
+## 2026-09-06 Battery fixes (lead)
+
+- Context: `/kit:battery` on the post-merge HEAD (67fc945) with four fresh arms found two HIGHs the review-team pass at a15edd2 missed: a project `.kit.toml` selecting the registry (and through it the `--explain` allowed roots), and `Sections.set_skip` discarding ROOT hits when a registry row path is missing. Both reproduced by the arms before the fix.
+- Decision: the registry resolves from the kit-root `kit.toml` only (`kit_config_get_root`), the rule kit-config.sh already states for runner, secret, and dispatch keys. A project override is not offered; a repo that needs its own roots passes `--registry` or the env var.
+- Decision: `--surface records` stays unredacted and marker-less. The parity contract with the pre-move script is the reason; the surface prints headings from the repo's own committed docs. Recorded in the spec Boundaries so a later reader does not reopen it as a defect.
+- Decision: an inventory engine failure degrades to the records block plus one stderr line and the engine rc, instead of the loud-failure stance recorded at review finding 10. Blank output in intake was the worse failure.
+- Open: the launchd skip branch has no test because `/Library/LaunchDaemons` exists on every macOS host; a Linux CI leg or an env override for the two dirs would close it.

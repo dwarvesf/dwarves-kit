@@ -52,3 +52,11 @@ Command: `bash tests/test-precedent.sh && bash tests/test-hooks.sh && bash tests
 Exit: 0 across all five
 Output (excerpt): `37/37 passed`; `Passed: 497 / 497`; `all 36 passed`; `Passed: 3 / 3`; `Passed: 829 / 829`
 Verdict: PASS (review-team FIX THEN SHIP, 16 findings, 1 HIGH validated: `--explain` read any path; fixed by realpath confinement to ROOT, KIT_ROOT, `~/.claude/skills`, `~/.local/bin`, the launchd dirs, and registry rows. Lead re-check: `--explain /etc/hosts`, a 16-level `../` traversal, and `~/.gitconfig` each exit 1 with `outside the scanned roots`; `bin/precedent find "board set"` prints the DATA marker before `## records`.)
+
+## Battery (67fc945, fixes in 1b1dcf3)
+
+Command: `bash tests/run-workflow.sh` at 1b1dcf3, plus `bash tests/test-precedent.sh` (47/47), `bash tests/test-hooks.sh` (497/497), `bash tests/test-bin-forwarders.sh` (36/36), `bash tests/test-no-personal-paths.sh` (3/3), `bash tests/test-meta.sh` (829/829)
+Exit: workflow 1 red of 65 (`tests/test-orchestrate-wavefront.sh`); every other suite 0
+Output (excerpt): `run-workflow: 1 red of 65 steps`; red cases `wave_run g: concurrency NOT proven`, `wave_run h2: both mock sessions never started`
+Verdict: PASS for this diff. The red suite is environmental and pre-existing: the only branch change under its subject is a comment in `lib/mega/mega.sh`; the same suite passed 0 red on this branch at 2d34dd1 earlier today; a throwaway worktree at origin/master fails 1 case in it on this host right now; the failing count varies run to run (3, 3, 2) which is the timing signature of its mock-session markers.
+Battery arms: acceptance-verifier PASS (every After-state and AC bullet re-executed, records byte-parity re-diffed); reviewer FIX THEN SHIP (B2 set_skip clobber HIGH, B3 python3 blank, B4 registry path, B10, B11); security FIX THEN SHIP (B1 project .kit.toml widens the registry HIGH, B5 log line, B6 records surface, B7 TOCTOU, B8 records-file, B9 jsonc); advisor 1 LOW (B12). Lead re-check after 1b1dcf3: a hostile project `.kit.toml` with `repo /` leaves `--explain /etc/hosts` at exit 1; a missing `skills` registry row leaves the kit skills listed with the skip note beside them.
