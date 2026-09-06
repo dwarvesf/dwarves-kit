@@ -156,5 +156,5 @@ Source: the Thoughtworks Future of Software Engineering Europe 2026 ladder for a
 suite (coverage, then an agent actively trying to break the code without breaking a test, then
 mutation testing). Named-noun cross-cutting lens under ADR-0029, like `advisor`. Refuter stance
 and fail-safe posture from `agent-effectiveness` (SPEC-082). Rejected-findings consult from
-SPEC-144. See `docs/specs/SPEC-246-break-it-prober-lens.md`. Gated by the SG-01
+SPEC-144. See `docs/specs/SPEC-247-break-it-prober-lens.md`. Gated by the SG-01
 agent-effectiveness validator.

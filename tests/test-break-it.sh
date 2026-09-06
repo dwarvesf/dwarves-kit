@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-break-it.sh -- SPEC-246, the adversarial prober lens.
+# test-break-it.sh -- SPEC-247, the adversarial prober lens.
 #
 # Like test-agent-effectiveness.sh and test-review-team-plants.sh, we cannot
 # dispatch a live Claude prober in CI. So the suite splits in two:
@@ -37,7 +37,7 @@ tools_violation() {
     | grep -E '^[[:space:]]*-[[:space:]]*(Edit|Write|NotebookEdit|MultiEdit)[[:space:]]*$|^[[:space:]]*-[[:space:]]*Bash[[:space:]]*$'
 }
 
-echo "=== break-it prober lens (SPEC-246) ==="
+echo "=== break-it prober lens (SPEC-247) ==="
 
 # --- TASK-001: the agent def -------------------------------------------------
 echo ""

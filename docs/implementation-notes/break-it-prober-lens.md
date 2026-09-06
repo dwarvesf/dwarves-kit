@@ -1,4 +1,4 @@
-# Implementation notes: SPEC-246 break-it prober lens
+# Implementation notes: SPEC-247 break-it prober lens
 
 Delta from the spec only. Nothing here restates what the spec says.
 

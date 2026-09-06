@@ -2839,7 +2839,7 @@ done
 # reviews an AGENT DEFINITION, not a V-model work artifact, so like `advisor`
 # it is a named-noun validator, NOT a naming violation -- do not "fix" its
 # name to *-reviewer.
-# `break-it` (SPEC-246) joins them: it probes the WHOLE branch for an input the
+# `break-it` (SPEC-247) joins them: it probes the WHOLE branch for an input the
 # suite does not constrain, a cross-cutting lens like `advisor`, so a
 # *-reviewer suffix would misname it as per-artifact -- do not "fix" it either.
 # The review-agent roster is DERIVED from the live agents/ dir instead of a

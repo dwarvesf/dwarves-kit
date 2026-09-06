@@ -500,7 +500,7 @@ those surfaces alone would not know either ran, or was skipped, this run).
 | `lib/gate/coverage-delta.sh` (SPEC-130) | a behavioral diff moved source with no matching test change | `commands/review-team.md` Step 1, the Build->Review boundary | PROSE-INVOKED (inside `/kit:review-team`'s own markdown, off the push blocker); records `\| GATE \| coverage-delta \| ran \|`, ALWAYS exits 0 | a diff-LINE HEURISTIC (changed non-test lines vs changed test lines), NOT a real %-coverage delta; `COVERAGE_DELTA_RUNNER` hooks in a real runner but is unset by default |
 | `lib/gate/mutation-smoke.sh` (SPEC-131) | a suite that stays green when a changed line is mutated (a false proof of correctness) | `commands/verify.md` Step 6b, inside `/kit:verify` | PROSE-INVOKED (inside `/kit:verify`'s own markdown, off the push blocker); records `\| MUTATION \|`, ALWAYS exits 0, `MUTATION_SMOKE_MAX` (default 5) bounds the run | a small FIXED mutation-operator set on the CHANGED HUNKS only, first-survivor-stops -- NOT a full mutation-testing sweep |
 
-**The three-rung ladder (SPEC-246).** The rungs run in this order: **coverage** (the green
+**The three-rung ladder (SPEC-247).** The rungs run in this order: **coverage** (the green
 suite, `/kit:battery` leg 1 plus `coverage-delta` above), then **probe** (`break-it`, the
 escalation lens dispatched from `/kit:battery` when the diff carries behavioral code with
 tests), then **mutation** (`lib/gate/mutation-smoke.sh`, `commands/verify.md` Step 6b). A

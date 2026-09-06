@@ -1,6 +1,6 @@
-# Proof of done: SPEC-246 break-it prober lens
+# Proof of done: SPEC-247 break-it prober lens
 
-Class: `behavioral` (`bash lib/gate/proof-gate.sh contract "SPEC-246 break-it lens"` returns
+Class: `behavioral` (`bash lib/gate/proof-gate.sh contract "SPEC-247 break-it lens"` returns
 `type=spec-feature class=behavioral`). Owed: the real primary flow run end to end, plus a
 negative control that proves the check discriminates.
 
@@ -14,7 +14,7 @@ Command: `bash tests/test-break-it.sh && bash tests/test-meta.sh && bash tests/t
 Exit: 0
 
 ```
-=== break-it prober lens (SPEC-246) ===
+=== break-it prober lens (SPEC-247) ===
 ...
 === 53/53 passed, 0 failed ===
 
@@ -103,7 +103,7 @@ ships.
 
 ## /kit:verify run (the full right arm), 2026-09-07
 
-Restated claim: SPEC-246 holds when the break-it lens exists, is reachable from `/kit:battery`,
+Restated claim: SPEC-247 holds when the break-it lens exists, is reachable from `/kit:battery`,
 and its suite discriminates. Measured by the spec's own `## Verification` chain plus the four
 right-arm verifiers, each in fresh context. Passing threshold: exit 0 on the chain, and no NEW
 failure anywhere in the unscoped project suite relative to the merge-base `682dda91`.
@@ -123,7 +123,7 @@ Command: `bash lib/gate/mutation-smoke.sh run`
 Exit: 0
 Output: `[MUTATION-SMOKE] SKIP: no mutable changed code lines (only tests/docs, or no operator match)`
 
-**Verdict: PASS for SPEC-246.**
+**Verdict: PASS for SPEC-247.**
 
 Baseline correction, stated plainly: the "zero known failures" baseline this build worked from
 holds for the spec's verification chain, and NOT for the unscoped project suite.
