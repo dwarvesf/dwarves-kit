@@ -256,7 +256,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get precedent.registry` (project `.kit.toml` at the searched repo's root, else the kit-root default) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
+| PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get_root precedent.registry` (the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR, `kit-config.sh:64-75`) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
 
 ### web_drift (skill knob, no install module)
 
