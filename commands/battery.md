@@ -59,7 +59,7 @@ Add specialized lenses when the diff touches their domain; each is its own agent
 | UI | frontend-reviewer | mid |
 | deploy, CI, IaC, launchd | infra-reviewer | mid |
 | hot paths, N+1, allocations | performance-reviewer | mid |
-| behavioral code with tests (the branch claims a green suite) | break-it | high |
+| input handling, a trust boundary, a state machine, or a stated numeric/format contract, WITH tests | break-it | high |
 
 The measured lesson behind the escalation rule: a diff that qualified for the
 security lens shipped without it, and the lens later found a HIGH (a key-persist
@@ -68,6 +68,11 @@ missed, because each looked from a different frame and none from the threat mode
 Skipping a qualifying lens is a decision; record it, do not default into it.
 
 ## Probe rung (break-it), before the mutation rung
+
+**break-it is the one escalation lens that does NOT ride leg 2's parallel dispatch.** Every
+other row in the table above goes out in the same message as legs 1 and 2. This one needs leg
+1's verdict first, because a red suite makes the probe meaningless, so it is a SECOND dispatch
+after leg 1 returns green. Leg 1 green is the trigger; the table row is the domain filter.
 
 A green suite proves the tests ran, never that they constrain the code. Three rungs answer
 that in order:
@@ -110,9 +115,9 @@ probe and mutation; report that inversion in one line and re-run nothing.
    not the whole battery.
 3. A verifier-caught gap means an AC or test was too weak: strengthen the check in
    the same pass, not only the code.
-3b. Decide per break-it finding: add the test that pins the probe, or accept the
-   finding and record WHY in the report. A `NO-PROBE` verdict is a result, not
-   silence; say so in the report so the lead does not read it as laziness.
+   - Decide per break-it finding: add the test that pins the probe, or accept the
+     finding and record WHY in the report. A `NO-PROBE` verdict is a result, not
+     silence; say so in the report so the lead does not read it as laziness.
 4. Write the spec's `## Review` section (replace-not-stack) and record the legs in
    the gate ledger under the BRANCH SLUG: `bash lib/gate/gate-ledger.sh record <rid> battery ran "<verdict> arms=<n> caught=<n>"`
    (the slug, never a board ID, is what the ship-gate reads). Then close the
