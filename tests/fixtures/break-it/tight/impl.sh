@@ -4,8 +4,8 @@
 #
 # This is the TIGHT half of the break-it fixture pair. It carries the upper-bound
 # guard the leaky half omits, and its suite pins the boundary. The line tagged
-# GUARD-LINE below is what the negative control strips: with it gone, test.sh
-# must go red.
+# tagged line below is what the negative control strips: with it gone, test.sh
+# must go red. The tag appears on that one line only, so the strip is exact.
 
 batch_size() {
   n="$1"
