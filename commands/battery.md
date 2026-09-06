@@ -9,7 +9,24 @@ and re-reading it. Never "review" inline in the session that wrote the code and 
 it the battery.
 
 
-Bracket the phase for timing (SPEC-129) before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate).
+Bracket the phase for timing (SPEC-129) before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
+
+## Target (optional argument)
+
+Resolve the target FIRST, before the bracket and before any dispatch.
+
+| Argument | Resolves to |
+|---|---|
+| none | the cwd repo, its current branch, compare ref `origin/<default branch>` |
+| a worktree or repo path | that checkout's branch, its repo's default branch as compare ref |
+| `owner/repo#N` or a PR URL | `gh pr view N -R owner/repo --json headRefName,baseRefName,headRefOid`; compare ref is the PR base |
+
+Read a repo's default branch from `git -C <path> symbolic-ref --short refs/remotes/origin/HEAD`.
+
+For a PR target, find a local checkout of that repo under `~/workspace/<owner>/<repo>`, or any `git worktree list` entry already on the head branch. If no worktree holds the head branch, stop and tell the lead to create one at `<repo>/.claude/worktrees/<slug>` on that branch before dispatching. Never branch-switch a primary checkout.
+
+Print the resolved target as a `## Target` block: path, branch, compare ref, PR number when one exists.
+
 ## When this runs
 
 - The operator says "run the battery" / "overtest this" / "full check before merge".
@@ -51,10 +68,14 @@ Skipping a qualifying lens is a decision; record it, do not default into it.
 
 ## Non-negotiable prompt ingredients (every leg)
 
-1. The repo/worktree path, branch, and compare ref.
+1. The resolved `## Target` block verbatim: path, branch, compare ref, PR number
+   when one exists. Thread it into EVERY leg; no leg infers the target from its
+   own cwd.
 2. The BASELINE: the pre-existing failure set, stated numerically ("suite has 9
    known failures; FAIL only on NEW failures"). A battery without a baseline
-   converts known debt into false alarms.
+   converts known debt into false alarms. The lead states it. For a foreign
+   target, read it from the PR body's proof section or the repo's known-failures
+   note.
 3. Verifier: "execute the commands verbatim; report actual output"; name any
    fixture it must build.
 4. Reviewers: the lens list, findings by severity with file:line quotes, a verdict
