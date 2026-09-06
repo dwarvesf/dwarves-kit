@@ -27,3 +27,11 @@ Command: `bash tests/test-meta.sh && bash tests/test-docs-wiring.sh && bash test
 Exit: 0
 Output (excerpt): `Passed: 832 / 832`; docs-wiring 25/25; command-emit-sweep 18/18; FEATURES.md byte-stable across two generator runs; every rule token (`bin/wrap scan`, `board set`, `wrap merge`, `SPEC-065`, `headSha`, `ExitWorktree keep`, `bin/wrap apply`, `--ff-only`, `bin/wrap log`, `ship | ran | shipping pr=`, `Needs you`) present in commands/wrap.md
 Verdict: PASS (lead check of the worker report; the battery re-executes)
+
+## Review wave on fdb63f7, fix batch c9ba7e7
+
+Command: `bash tests/test-wrap.sh && bash tests/test-bin-forwarders.sh && bash tests/test-meta.sh && bash tests/test-docs-wiring.sh && bash -n lib/wrap/wrap.sh`
+Exit: 0
+Output (excerpt): `test-wrap: all 130 passed` (96 before the batch); `all 41 passed`; `Passed: 832 / 832`; docs-wiring 25/25
+Verdict: PASS after fixes (five arms: acceptance FAIL:fixable on a CONTEXT.md path leak, a spec grep, two untested edge cases; security FIX THEN SHIP: `--date` bypass HIGH, merge head pin, vacuous empty rollup; test-coverage 6/10 with three mutation-proven HIGH gaps; architecture 8/10; advisor 2 LOW. Mutation results after the batch, each RED in a throwaway copy: the `--date` case, the checks clauses, the `CHANGES_REQUESTED` line, the `--repo` pin, the tip re-check, the lock-age line.)
+Re-audit: PASS (recheck-verifier, fresh context: 130/41/832/25, three mutations re-run RED, every behavior claim reproduced)
