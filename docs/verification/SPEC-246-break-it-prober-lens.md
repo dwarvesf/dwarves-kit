@@ -100,3 +100,34 @@ fixtures, the axis arm, the battery and docs wiring) is proven by real exit code
 
 Probe yield is unmeasured by design. Open question 5 settled as manual review for v1; no counter
 ships.
+
+## /kit:verify run (the full right arm), 2026-09-07
+
+Restated claim: SPEC-246 holds when the break-it lens exists, is reachable from `/kit:battery`,
+and its suite discriminates. Measured by the spec's own `## Verification` chain plus the four
+right-arm verifiers, each in fresh context. Passing threshold: exit 0 on the chain, and no NEW
+failure anywhere in the unscoped project suite relative to the merge-base `682dda91`.
+
+Base ref: `682dda91` (`git merge-base HEAD origin/master`). Working tree clean at dispatch.
+No `Model:` header on the spec, so each verifier ran at its frontmatter default.
+
+| Level | Agent | Verdict | Evidence |
+|---|---|---|---|
+| Unit / task | task-verifier | PASS | 5/5 tasks, all AC met. Effectiveness gate 3/3, break-it 53/53, meta 837/837, hooks 497/497 |
+| Integration | integration-verifier | PASS | 4/4 components reach their activation point; the three-rung order is consistent across `docs/WORKFLOW.md`, `commands/battery.md`, and `agents/break-it.md`; `lib/gate/mutation-smoke.sh` keeps its single call site at `commands/verify.md:62` |
+| Acceptance | acceptance-verifier | PASS | 10/10 after-state items plus every task AC re-derived independently; negative control run and restored, `git status --short` clean after |
+| System | system-verifier | FAIL:escalate (pre-existing, not a regression) | 68/69 suites green. `tests/test-orchestrate-wavefront.sh` fails 3 concurrency assertions, byte-identical at the merge-base tree, and this branch touches no file under `lib/queue/` |
+| Mutation smoke (advisory) | `lib/gate/mutation-smoke.sh run` | SKIP | `no mutable changed code lines (only tests/docs, or no operator match)`, exit 0. Normal for a markdown-and-bash-tests change, never a verdict change |
+
+Command: `bash lib/gate/mutation-smoke.sh run`
+Exit: 0
+Output: `[MUTATION-SMOKE] SKIP: no mutable changed code lines (only tests/docs, or no operator match)`
+
+**Verdict: PASS for SPEC-246.**
+
+Baseline correction, stated plainly: the "zero known failures" baseline this build worked from
+holds for the spec's verification chain, and NOT for the unscoped project suite.
+`tests/test-orchestrate-wavefront.sh` was already red at `682dda91`, proven by re-running it
+against a `git archive` of the merge-base. It is an orchestrate-module concurrency test with
+hardcoded sleep and poll windows, outside this spec's touched area. Whether that is a local
+timing flake or a latent defect is a maintainer call, not this branch's to make.
