@@ -160,7 +160,7 @@ None.
 
 ## After state
 
-- [ ] `bin/precedent find "board set"` in this repo lists `bin/board` under a kit-verbs section and the SPEC-146 spec under records, in one run. (Today: `lib/precedent.sh find` lists the spec only; no bin entry exists.)
+- [ ] `bin/precedent find "board set"` in this repo lists `lib/board/board.sh` under a kit-verbs section and the SPEC-146 spec under records, in one run. (Today: `lib/precedent.sh find` lists the spec only; no bin entry exists.)
 - [ ] `bin/precedent find "notion sync" --surface inventory --registry <file>` scans every `repo` and `scripts` root in the file and prints a skip note for a missing one. (Today: the source roots are hardcoded in ops-toolkit.)
 - [ ] `bash tests/test-precedent.sh` exists and is green; `lib/precedent.sh` has a test for the first time. (Today: zero tests.)
 - [ ] `grep -rn 'precedent.sh find' commands/` returns nothing; both callers say `precedent find`. (Today: two literal callers.)

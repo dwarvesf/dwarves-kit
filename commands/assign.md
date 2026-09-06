@@ -111,8 +111,8 @@ created: <YYYY-MM-DD>
 
   It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, full, bug, normal; "when in doubt, heavier"). Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: if you disagree, override and say why (a heavier lane is always safe). The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
 
-- **Precedent lookup (SPEC-068).** Before sizing, ask the repo what it already knows:
-  `bash bin/precedent find "<the item title>"`. It covers both the written record (specs,
+- **Precedent lookup (SPEC-068).** Before sizing, run
+  `bash bin/precedent find "<the item title>"`: it covers both the written record (specs,
   retros, runs) and the built inventory (tools, scripts, skills, crons, memory) in one call
   (SPEC-245). Surface the top matches in the goal draft's Context (prior specs/retros/runs
   shape the Done= and prevent re-derivation); no matches is itself information (genuinely

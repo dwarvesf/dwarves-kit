@@ -62,6 +62,7 @@ The adopt-injected `CLAUDE.md` block already does this for you:
 | `bin/goal` | `lib/goal/goal.sh` |
 | `bin/learn` | `lib/learn/learn.sh` (`learn debt <list\|collect\|mark-paid>`; `propose`/`drain` refuse until SPEC-195/196) |
 | `bin/mega` | `lib/mega/mega.sh` |
+| `bin/precedent` | `lib/precedent/precedent.sh` (`find "<words>" --surface records\|inventory\|all`, `--quiet` the close-out form, `--explain <label>`; registry rows are `<kind> <path>` for `repo\|scripts\|skills\|crons\|memory`, resolved `--registry` > `PRECEDENT_REGISTRY` > `kit.toml [precedent] registry` > `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt`) |
 | `bin/queue` | `lib/queue/queue.sh` |
 | `bin/session` | `lib/session/session.sh` (`session <intel\|observe\|recall\|report\|semantic>`, ex the five `bin/session-*`) |
 | `bin/spec` | `lib/spec/spec.sh` |
