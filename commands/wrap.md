@@ -44,7 +44,7 @@ Foreign activity in a repo's checkout means either signal is present: a worktree
 
 ### Step 1: board rows
 
-For every backlog row whose source of truth this session closed, flip it: `bin/board set <ID> shipped|parked|dropped`. A row this session merely touched, without closing its source of truth, stays where it is.
+For every backlog row whose source of truth this session closed, flip it through THAT repo's board wrapper, `<repo>/_meta/board set <ID> shipped|parked|dropped "<PR or SHA>"` (or `<repo>/board set` where the wrapper lives at the root); with no wrapper, `bin/board set <ID> <state> --backlog-file <repo>/_meta/BACKLOG.md`. A bare `bin/board set` without `--backlog-file` targets the kit's own board, never the wrapped repo's. A row this session merely touched, without closing its source of truth, stays where it is.
 
 ### Step 2: commit by name
 
