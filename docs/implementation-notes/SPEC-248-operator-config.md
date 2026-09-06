@@ -31,3 +31,8 @@ Decision: the cases went into the resolver's own `selftest` block in `lib/config
 Why: `tests/test-config.sh` is a four-line delegator with no case of its own. Adding a second, parallel case list there would split the resolver's test surface across two files.
 
 Impact: `bash tests/test-config.sh` runs the new cases unchanged, and the required mutation still turns it RED.
+
+## 2026-09-07 Verifier: stale kit-root-only prose (lead)
+
+- Context: the verifier proved the operator file overrides `precedent.registry` and `wrap.activity_log`, while two module-registry rows and the precedent.sh comment still said "kit-root kit.toml ONLY" with an old line citation.
+- Change: both rows and the comment now say "the operator kit.toml or the kit-root kit.toml ONLY" with the citation at kit-config.sh:82-90.
