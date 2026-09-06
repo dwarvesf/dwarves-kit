@@ -500,6 +500,17 @@ those surfaces alone would not know either ran, or was skipped, this run).
 | `lib/gate/coverage-delta.sh` (SPEC-130) | a behavioral diff moved source with no matching test change | `commands/review-team.md` Step 1, the Build->Review boundary | PROSE-INVOKED (inside `/kit:review-team`'s own markdown, off the push blocker); records `\| GATE \| coverage-delta \| ran \|`, ALWAYS exits 0 | a diff-LINE HEURISTIC (changed non-test lines vs changed test lines), NOT a real %-coverage delta; `COVERAGE_DELTA_RUNNER` hooks in a real runner but is unset by default |
 | `lib/gate/mutation-smoke.sh` (SPEC-131) | a suite that stays green when a changed line is mutated (a false proof of correctness) | `commands/verify.md` Step 6b, inside `/kit:verify` | PROSE-INVOKED (inside `/kit:verify`'s own markdown, off the push blocker); records `\| MUTATION \|`, ALWAYS exits 0, `MUTATION_SMOKE_MAX` (default 5) bounds the run | a small FIXED mutation-operator set on the CHANGED HUNKS only, first-survivor-stops -- NOT a full mutation-testing sweep |
 
+**The three-rung ladder (SPEC-247).** The rungs run in this order: **coverage** (the green
+suite, `/kit:battery` leg 1 plus `coverage-delta` above), then **probe** (`break-it`, the
+escalation lens dispatched from `/kit:battery` when the diff carries behavioral code with
+tests), then **mutation** (`lib/gate/mutation-smoke.sh`, `commands/verify.md` Step 6b). A
+`PROBE` finding stops the ladder: the suite has a proven hole, so the mutation rung is not
+spent on code already known to be under-constrained. `NO-PROBE` is what clears the mutation
+rung to run. The order is STATED, not enforced: `/kit:verify` can run before `/kit:battery`
+and invert probe and mutation, in which case the battery reports the inversion in one line
+and re-runs nothing. `break-it` is an agent, so it records inside the existing `battery` gate
+line and adds no ledger verb of its own.
+
 **Advisory-to-block promotion is Han's call, not taken here.** Once the ledger has accrued real
 `caught=` data from the OUTCOME marker above, a future retro can ask whether either gate has
 earned a hard block; the mega-goal's own advisor pass recommends NOT YET (there is no per-gate
