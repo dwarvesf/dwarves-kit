@@ -269,11 +269,18 @@ LOCK_BRANCHES="$(git -C "$LOCKREPO" for-each-ref --format='%(refname:short)' ref
 chk "apply: a stale index.lock deleted nothing" \
   "$([ "$LOCK_BRANCHES" = "main merged-ancestor squash-ok squash-stale stacked-child unmerged wt-clean wt-dirty " ]; echo $?)"
 
+# A young lock that clears within the window is ordinary traffic: release it after 2 s from
+# the background and the write proceeds. A young lock that persists is a writer (next case).
 rm -f "$LOCKREPO/.git/index.lock"; touch "$LOCKREPO/.git/index.lock"
+( sleep 2; rm -f "$LOCKREPO/.git/index.lock" ) &
 out="$("$WRAP" apply --apply "$LOCKREPO" 2>&1)"
-chk_no "apply: a fresh index.lock does not refuse the write" "$out" "index.lock held by another writer"
-chk "apply: a fresh index.lock still deleted the proven branches" \
+wait
+chk_no "apply: a fresh index.lock that clears does not refuse the write" "$out" "index.lock held by another writer"
+chk "apply: a fresh index.lock that clears still deleted the proven branches" \
   "$(git -C "$LOCKREPO" show-ref --verify --quiet refs/heads/merged-ancestor && echo 1 || echo 0)"
+touch "$LOCKREPO/.git/index.lock"
+out="$("$WRAP" apply --apply "$LOCKREPO" 2>&1)"
+chk_has "apply: a fresh index.lock that persists past the window refuses the write" "$out" "index.lock held by another writer"
 rm -f "$LOCKREPO/.git/index.lock"
 
 out="$("$WRAP" apply --apply "$TMPD/not-a-repo" "$LOCKREPO" 2>&1)"

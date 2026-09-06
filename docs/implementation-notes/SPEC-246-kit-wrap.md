@@ -178,3 +178,8 @@ Decision, `commands/wrap.md` step 7: the retro grep anchors the PR number, so `#
 `#71`.
 
 Open questions: none.
+
+## 2026-09-07 CI: the lock guard probed git status (lead)
+
+- Context: the ubuntu CI leg failed the fresh-lock case. The guard treated a young `index.lock` as ordinary traffic only when `git status --porcelain` passed; on that git build the probe contends for the same lock and fails, so a young lock was refused. macOS git did not contend, which is why every local run passed.
+- Change: `_write_guard` polls the lock file itself for up to `LOCK_STALE_SECS`; a lock that clears in the window is traffic, one that persists is a writer. The fresh-lock test now releases the lock from the background after 2 s (write proceeds) and then leaves one in place (refused). Spec Interfaces and `commands/wrap.md` step 0 say the same rule.

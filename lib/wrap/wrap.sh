@@ -194,16 +194,21 @@ TIPS_OVERRIDE=""
 # it. An index.lock at least LOCK_STALE_SECS old is foreign; a younger one is normal git
 # traffic, proven by a passing status call. An unresolvable git dir refuses the write.
 _write_guard() {
-  local repo="$1" gd lock age m now
+  # A young index.lock is ordinary git traffic and clears within the stale window; one that
+  # persists past it is a writer. Polling the file itself is portable: a `git status` probe
+  # contends for the same lock on some git builds and fails for the wrong reason.
+  local repo="$1" gd lock age m now waited=0
   gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 1
   [ -n "$gd" ] || return 1
   lock="${gd}/index.lock"
-  [ -e "$lock" ] || return 0
-  now="$(date +%s)"; m="$(_mtime "$lock")"
-  case "$m" in ''|*[!0-9]*) return 1 ;; esac
-  age=$(( now - m ))
-  [ "$age" -lt "$LOCK_STALE_SECS" ] || return 1
-  git -C "$repo" status --porcelain >/dev/null 2>&1 || return 1
+  while [ -e "$lock" ]; do
+    now="$(date +%s)"; m="$(_mtime "$lock")"
+    case "$m" in ''|*[!0-9]*) return 1 ;; esac
+    age=$(( now - m ))
+    [ "$age" -lt "$LOCK_STALE_SECS" ] || return 1
+    [ "$waited" -lt "$LOCK_STALE_SECS" ] || return 1
+    sleep 1; waited=$(( waited + 1 ))
+  done
   return 0
 }
 
