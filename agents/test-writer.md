@@ -64,7 +64,7 @@ Unwritten (if any):
 1. row [#] -- [why: matrix case unsatisfiable as specified / needs a fixture not available / other]
 ```
 
-Long hex tokens in `Output (excerpt)` and `Notes` (a SHA-256, an HMAC, a tx hash, anything 32+ hex chars) appear as `first8…last8`, never in full. A full 64-hex value is shape-identical to a private key, and the lead's secret-scan prompt hook blocks the next prompt that carries this record.
+Credential-shaped strings in `Output (excerpt)` and `Notes` never appear in full. A long hex token (a SHA-256, an HMAC, a tx hash, anything 32+ hex chars) appears as `first8…last8`. A prefixed token (`ghp_`, `gho_`, `sk-`, `AKIA`, `xox`, any vendor prefix plus 20+ chars) appears as the prefix plus `first4…last4`, deliberately fake test fixtures included. The lead's secret-scan prompt hook matches on shape alone, and it blocks the task-notification that carries this record, so the lead never receives the verdict.
 
 ## Return contract (distilled return, SPEC-087 Mechanism C)
 
