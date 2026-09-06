@@ -37,3 +37,18 @@ Command: `bash lib/gate/negctl.sh <throwaway> "bash tests/test-precedent.sh" "se
 Exit: 0 green before mutation; 1 under mutation; 0 after `git checkout HEAD -- lib/precedent/inventory.py`
 Output (excerpt, under mutation): `17/23 passed`; RED cases: default (all) surface nonzero summary line, kit.toml registry fallthrough scans the scripts row, name-over-body ranking, `~` expansion row scanned, secret redaction reaches a hit line, crons section lists both expressions
 Verdict: RED-as-expected (negctl `Verdict: PASS`); the throwaway worktree was removed afterwards, the shared checkout was never mutated
+
+## Integration + final (a15edd2)
+
+Command: `bash tests/run-workflow.sh`
+Exit: 0
+Output (excerpt): `run-workflow: 0 red of 65 steps`
+Verdict: PASS (integration-verifier at b270831 returned FAIL:fixable on two regressions the three-suite check missed: a home-relative path in the inventory.py header tripping `tests/test-no-personal-paths.sh`, and `tests/test-hooks.sh` calling `precedent.sh find` bare, which became the `all` surface once the records block moved under `## records`. Both fixed by the lead in a15edd2 with the spec After-state clause the task-verifier refuted. Activation points 6/6 wired: bin shim, precedent.sh to inventory.py dispatch, assign and grill callers, workflow step, bin-forwarders census, kit.toml plus module-registry row. No hardcoded estate path survives in lib/precedent/. Flag parity between precedent.sh and inventory.py exact. Registry kinds in docs/consumer-contract.md equal VALID_REGISTRY_KINDS.)
+Re-audit: PASS (recheck-verifier, fresh context: `run-workflow: 0 red of 65 steps`, no-personal-paths 3/3, hooks 497/497, precedent 23/23, forwarders 36/36, every activation point read from the file; the runner prints only RED lines unless `-v`, so a green precedent step leaves no line)
+
+## Review fix batch (b66e5bf)
+
+Command: `bash tests/test-precedent.sh && bash tests/test-hooks.sh && bash tests/test-bin-forwarders.sh && bash tests/test-no-personal-paths.sh && bash tests/test-meta.sh`
+Exit: 0 across all five
+Output (excerpt): `37/37 passed`; `Passed: 497 / 497`; `all 36 passed`; `Passed: 3 / 3`; `Passed: 829 / 829`
+Verdict: PASS (review-team FIX THEN SHIP, 16 findings, 1 HIGH validated: `--explain` read any path; fixed by realpath confinement to ROOT, KIT_ROOT, `~/.claude/skills`, `~/.local/bin`, the launchd dirs, and registry rows. Lead re-check: `--explain /etc/hosts`, a 16-level `../` traversal, and `~/.gitconfig` each exit 1 with `outside the scanned roots`; `bin/precedent find "board set"` prints the DATA marker before `## records`.)

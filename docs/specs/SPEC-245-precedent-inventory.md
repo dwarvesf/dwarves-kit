@@ -127,7 +127,7 @@ Registry file: whitespace-delimited `<kind> <path>` rows, `#` comments, `~` expa
 
 Scoring (ported verbatim): every term must match (word boundary, case-insensitive) in the name or the haystack, else the hit scores 0; a name hit counts 2, a haystack hit 1; a multi-term query in order as one phrase adds a flat bonus. Skills: name or description hit scores double, a body-only hit scores a flat 1.
 
-Output guards: every hit line passes through the secret-shape regex (`op://`, `sk-`, `ghp_`, `AKIA`, `xox[abp]-`, 32+ hex) to `[redacted]` and a 240-char cap; the digest opens with the DATA marker line. The regex and marker are byte-equal to `session_recall.py`; a test pins the equality so the two copies cannot drift.
+Output guards: every hit line passes through the secret-shape regex (`op://`, `sk-`, `ghp_`, `AKIA`, `xox[abp]-`, 32+ hex) to `[redacted]` and a 240-char cap; the digest opens with the DATA marker line. The regex is byte-equal to `session_recall.py` and a test pins it so the two copies cannot drift; the DATA marker wording differs by design (files here, transcripts there) and is not pinned.
 
 Log line: `$LOG_DIR/precedent.log`, `LOG_DIR` from `kit_resolve_log_dir` (so `KIT_LEDGER_DIR` redirects it in tests), tab-separated `<iso-ts> <query> <total_hits> <top_section>`, append-only, best-effort.
 
@@ -204,6 +204,64 @@ bin/precedent find "board set" | grep -E '^precedent: [0-9]+ record matches'
 - DEC-003: Registry kinds are a closed set with an exit-64 on unknown kinds, so a misspelled row never scans nothing silently.
 - DEC-004: Third copy of the redaction regex, pinned equal to `session_recall.py` by a test, instead of a shared import across two lib dirs. A shared module would be the right move at the fourth copy.
 - DEC-005: `lib/precedent.sh` is removed rather than left as a forwarder. It has two in-repo callers and no external adopters (research: no bin entry, no FEATURES row); a forwarder would keep the orphan alive.
+
+## Review
+
+Parallel review, 2026-09-06, diff e7f5fee..a15edd2, 25 files. Reviewers: security (opus), architecture, test-coverage, advisor (critique). Coverage-delta: ok. Every CRITICAL or HIGH finding got one independent refuter; the refuter's disposition is in the Status column.
+
+### Verdict: FIX THEN SHIP
+
+Fix batch applied in b66e5bf: findings 1, 2, 3, 4, 5, 6, 7, 8, 10, 13, 14, 16 (14 new test cases, 37/37). Finding 12 is board row ID-642. Findings 9, 11, 15 recorded as advisory. Lead re-check after the batch: `--explain` refuses `/etc/hosts`, a 16-level `../` traversal, and `~/.gitconfig` with exit 1; the DATA marker precedes the records block.
+
+### Findings
+
+| # | Finding | Found by | Sev | Conf | Status | Route |
+|---|---|---|---|---|---|---|
+| 1 | `--explain` reads any path: absolute labels taken verbatim, relative labels joined onto ROOT without normalization, `~` and `memory` expanded; nothing confines the resolved path to ROOT, the kit, the skills dir, or registry roots (`inventory.py:759-786`). Reproduced on `/etc/hosts`, a `../` traversal, `~/.gitconfig`. | security | HIGH | 100 | validated | gated_auto: realpath the candidate and refuse it outside the allowed roots (ROOT, KIT_ROOT, `~/.claude/skills`, `~/.local/bin`, registry rows, launchd dirs) |
+| 2 | Records block prints above the header and DATA marker, unredacted and uncapped, in text and in the JSON `records` list (`inventory.py:880-896`). | security | MEDIUM | 100 | | gated_auto: print header and marker first; pass records lines and fields through `safe_text` |
+| 3 | The implicit positional `[max]` branch (`precedent.sh:193-196`, forces `records` when `--surface` is absent) has no standing test; verified once by hand. | test-coverage | MEDIUM (raised as HIGH, refuter: proportionate at MEDIUM) | 75 | validated | gated_auto: one case `find "notion sync" 3` asserting records only |
+| 4 | `--explain` label shapes: only `skill <name>` is tested; `kit`, `memory`, `~`, bare-relative branches run zero times in CI (`inventory.py:759-786`). | test-coverage | MEDIUM | 75 | | gated_auto: one case per shape |
+| 5 | `crons` jsonc comment stripping (`inventory.py:572-580`) has no commented fixture; a stripper that does nothing passes. | test-coverage | MEDIUM | 75 | | gated_auto: decoy commented cron in the fixture |
+| 6 | `memory <dir>` one-level `*/memory/*.md` walk (`inventory.py:447-461`) unexercised. | test-coverage | MEDIUM | 75 | | gated_auto: nested fixture note |
+| 7 | Spec Technical Design and the `inventory.py:33` header claim regex AND marker byte-equality with `session_recall.py`; only the regex is pinned, the marker differs by design (files vs transcripts). `stale-adr:` | advisor | MEDIUM | 100 | | gated_auto: reword both lines |
+| 8 | Board row ID-641 still `speccing` while the build is verified. `stale-backlog-status:` | advisor | LOW | 100 | | gated_auto: `executing` now, `shipped` at merge |
+| 9 | Scan preamble (`isdir`, `ensure`, sorted `listdir`) repeated; raised as a rule-of-three HIGH. Refuter: 5 of the 7 cited sites share only a 4-line preamble, 2 are recursive walks; a shared helper nets 10 to 15 lines against callback sprawl and risks the `ensure`-before-scoring ordering fix. | architecture | MEDIUM (raised HIGH) | 75 | validated: partially confirmed | advisory: no change |
+| 10 | Dead fallback for a missing `inventory.py` in `precedent.sh:105-106, 215-237`; `install.sh` copies `lib/` wholesale, no partial install exists. | architecture | MEDIUM | 75 | | gated_auto: delete the guard and placeholder branch |
+| 11 | Label round-trip: printed labels derive from bot-writable fields and the usage text invites `--explain "<label as printed>"`. | security | MEDIUM | 75 | | manual, closed by finding 1's confinement |
+| 12 | Redaction regex thin for a 60-line file dump (no AWS secret keys, PEM blocks, `ops_` tokens, `PASSWORD=` assignments); three pinned copies move together. | security | MEDIUM | 75 | | advisory: board row, cross-file change |
+| 13 | Query text reaches the log line with newlines and tabs intact (`inventory.py:822-829`). | security | LOW | 100 | | gated_auto: collapse whitespace |
+| 14 | `plutil` `TimeoutExpired` is not caught (`inventory.py:655-658`); one hung plist kills the digest. | security | LOW | 100 | | gated_auto: catch `subprocess.SubprocessError` |
+| 15 | No frontmatter fence: any `description:` line in the file matches (`inventory.py:160-161`). | security | LOW | 75 | | advisory |
+| 16 | `tail()` names a suffix helper; an identity dict `kind_title` (`inventory.py:331, 711`). | architecture | LOW | 75 | | gated_auto: rename, delete |
+
+### Suppressed (below the confidence gate)
+
+test-coverage at 50: `~/.local/bin` dedup untested; body-only skill ranking untested (edge case 10); 240-char cap boundary; `--limit` overflow line; kit-root `kit.toml` fallthrough; positional max with explicit `--surface all`. Self-tests recorded in the lens output; not actioned.
+
+### Previously rejected
+
+None.
+
+### Scores
+
+Security 6/10 (8 after finding 1). Architecture 7/10. Test coverage 6/10. Combined 6.3/10.
+
+### Security
+
+Findings 1, 2, 11, 12, 13, 14, 15. Checked clean: no `shell=True`, `plutil` list-form argv with timeout, grep keywords filtered to `[:alnum:]-`, terms `re.escape`d with no nested quantifier, stdlib only, `mktemp` removed on both paths.
+
+### Architecture
+
+Findings 9, 10, 16. Passed: shim shape byte-equal to `bin/learn`; bash/Python seam at the right cut; closed registry kinds enforced before scanning; repo-root precedence mirrors `board`; docs updated in lockstep; per-capability sections match the spec's examples.
+
+### Test coverage
+
+Findings 3 to 6 plus the suppressed list. Passed: real assertions throughout, byte-parity guard at the right layer, regex pin at unit level, no stale path references, CI wiring present.
+
+### TODOs
+
+- Board row: widen the shared redaction regex across `inventory.py`, `session_recall.py`, and the ops-toolkit source in one change (finding 12).
+- Follow-up outside this repo: retire `repo-sweep whathas` in ops-toolkit and point the operator's global instructions at `precedent find --surface inventory`; rename the `whathas` phase the dotfiles `new-tool-gate` hook reads.
 
 ## Open questions
 (none)
