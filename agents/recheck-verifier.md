@@ -10,7 +10,7 @@ tools:
   - Bash(pytest*)
   - Bash(bash tests/*)
   - Bash(git diff*)
-model: sonnet
+model: opus
 generated-by: draft-agent 2026-07-02 kit-hardening (ADR-0028/0029 trust metric, fresh-context re-audit)
 ---
 

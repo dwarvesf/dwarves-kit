@@ -31,7 +31,9 @@ hard-reasoning escape hatch , expressed consistently on all three AUTHORING surf
 1. **execute.md 2b:** workers dispatch at `sonnet` by default. The active spec's optional bare
    `Model:` header is the hard-reasoning escape hatch: a spec carrying `Model: opus` dispatches
    its workers on opus; absent, workers dispatch sonnet. Verifiers keep their own frontmatter
-   tiers (unchanged). A fable-tier session STILL dispatches workers at sonnet , the cheap-first
+   tiers (unchanged). **Superseded by SPEC-244 for verifiers:** a spec carrying `Model: opus` now
+   dispatches its verifiers on opus too, and `recheck-verifier` pins opus in frontmatter.
+   A fable-tier session STILL dispatches workers at sonnet , the cheap-first
    default is a stated policy that applies regardless of session tier, not a silent down-tier
    (consistent with SPEC-078's "an explicit tier override is intentional"). If the dispatch
    surface cannot pass a model override, omit it and note that (the SPEC-078 / review-team

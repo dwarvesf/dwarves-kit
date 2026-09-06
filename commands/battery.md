@@ -23,7 +23,7 @@ Bracket the phase for timing (SPEC-129) before dispatching any arm: `bash lib/ga
 
 | Leg | Agent | Model tier | Job |
 |---|---|---|---|
-| 1. Acceptance verify | acceptance-verifier (or task-verifier for a single task) | mid (Sonnet-class) | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
+| 1. Acceptance verify | acceptance-verifier (or task-verifier for a single task) | mid, or the spec's tier when it carries `Model: opus` (SPEC-244) | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
 | 2. Review | code-reviewer single-pass; escalate domain lenses per the table below | high (Opus-class) | static-read judgment: what re-execution cannot see |
 | 3. Advisor | advisor (critique mode) | mid | the uniform extra lens; additive, never replaces leg 2 |
 

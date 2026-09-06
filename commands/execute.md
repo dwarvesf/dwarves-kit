@@ -159,11 +159,18 @@ non-reused task; the worker itself is the same Task-tool dispatch as always.
 **Model tiering (SPEC-107, cheap-first default).** Workers dispatch at `sonnet` by default ,
 mid-tier is the stated cheap-first stance (SPEC-087: Opus only on the hard sub-goals). The active
 spec's optional bare `Model:` header is the hard-reasoning escape hatch: a spec carrying
-`Model: opus` dispatches its workers on opus; absent, workers default to sonnet. Verifiers keep
-their own frontmatter tiers (unchanged). A fable-tier session still dispatches workers at sonnet ,
+`Model: opus` dispatches its workers on opus; absent, workers default to sonnet. A fable-tier session still dispatches workers at sonnet ,
 the cheap-first default is stated policy, not a silent down-tier (SPEC-078: an explicit tier
 override is intentional). If the dispatch surface cannot pass a model override, omit it and note
 that in the run record (the SPEC-078 / review-team graceful-degrade clause).
+
+**Verifier tier parity (SPEC-244): a verifier is never dumber than its worker.** When the active
+spec carries `Model: opus`, every verifier you dispatch for that spec (task, recheck, integration,
+acceptance, system) is one you dispatch with an explicit model override matching the spec tier , a
+sonnet judge over an opus worker cannot follow the reasoning it is asked to audit. Absent a
+`Model:` header, verifiers keep their frontmatter default. The same graceful-degrade clause
+applies: if the override is unavailable in the dispatch surface, omit it and note that.
+`doc-verifier` is out of scope; it runs in the docs phase against a doc diff, not against a spec.
 
 For each task, use the **Task tool** with this prompt structure (when 2b-0 produced a specialist PREAMBLE, that preamble REPLACES the generic "You are implementing a single task…" opener below):
 
@@ -230,7 +237,8 @@ demand (and passes it to the task-verifier).
 
 #### 2c. Verify worker output (THE VERIFICATION PIPELINE)
 
-After each worker subagent completes, dispatch the **task-verifier** subagent:
+After each worker subagent completes, dispatch the **task-verifier** subagent. Per the parity rule
+above, pass `model: opus` when the active spec carries `Model: opus`:
 
 ```
 Verify TASK-[ID] against the spec.
@@ -269,7 +277,9 @@ a reason naming the spec/task itself as wrong, unclear, or not worth building is
 Right-arm PASSes are unreviewed by default (ADR-0028 "Right-arm review parity"). When
 task-verifier returns PASS, dispatch the **recheck-verifier** subagent in a FRESH context
 (a new Task-tool call, not a continuation of the task-verifier's own context) with the
-task-verifier's full verdict block (including its `Verification record`). recheck-verifier
+task-verifier's full verdict block (including its `Verification record`). It pins `model: opus` in
+its own frontmatter, so no override is needed to raise it; pass one only to match a higher spec
+tier. recheck-verifier
 RE-EXECUTES the recorded `Command:` itself and re-judges the outcome from what it observes,
 it never reads back the recorded `Exit:`/`Output (excerpt):` text as evidence -- this is
 what lets it catch a stale or fabricated PASS. Route its verdict:
@@ -388,7 +398,7 @@ After all phases complete:
    - **inert** (docs / comments / cosmetic): exempt. Record
      `[PROOF OF DONE: exempt -- <reason>]` on the task line; skip the negative control.
    Marking a behavioral or stateful task inert is a finding, not a pass.
-2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
+2. **Integration check (multi-task specs only).** If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only, `model: opus` when the active spec carries `Model: opus`), passing it the pre-build base ref (record `git rev-parse HEAD` before Step 2 begins, or use the parent of this build's first commit) so it diffs the whole build. It verifies every new component reaches its activation point and that the spec's stated end-to-end chains hold (cross-task wiring, not per-task acceptance). Route the verdict like task-verifier:
    - **PASS**: continue to the summary.
    - **FAIL:fixable**: dispatch fix-agent on the named wiring gap (reuse the max-2 retry cap), then re-run the integration-verifier.
    - **FAIL:escalate** (or retry >= 2): stop and report the broken seam to the human; do not declare the build complete.

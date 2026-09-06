@@ -319,6 +319,19 @@ All notable changes to dwarves-kit are documented here.
   opus/sonnet/haiku on the serial path plus one case on the concurrent wave path, and the fallback
   negative control. No `lib/` behavior change; this is a proof + documentation pin.
 
+## [2.1.0] - 2026-09-06
+
+### Added
+- **Verifier tier parity (SPEC-244): a verifier is never dumber than its worker.** A spec carrying
+  the bare `Model: opus` header now dispatches every verifier for that spec (task, recheck,
+  integration, acceptance, system) with an explicit `model: opus` override, the review-team
+  dispatch-time pattern. Absent the header, verifiers keep their frontmatter default.
+  `recheck-verifier` pins `model: opus` unconditionally: it is the false-PASS backstop and runs
+  once per verified task, so the volume is low. Reviewers, research agents, and `doc-verifier`
+  stay as they are, stated as deliberate in the spec so nobody reverses it by accident.
+  `commands/execute.md` loses the old "Verifiers keep their own frontmatter tiers (unchanged)"
+  wall-off, and SPEC-107 gains a supersession note for the verifier half.
+
 ## [2.0.0] - 2026-07-03
 
 The release hold lifts: its stated condition , the **kit-hardening** megagoal , is complete, and
