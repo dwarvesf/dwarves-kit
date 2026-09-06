@@ -255,3 +255,6 @@ jobs:
 
       - name: Run precedent records-surface tests (SPEC-245)
         run: bash tests/test-precedent.sh
+
+      - name: Run break-it prober lens tests (SPEC-247)
+        run: bash tests/test-break-it.sh
