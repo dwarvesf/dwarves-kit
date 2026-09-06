@@ -64,6 +64,8 @@ Unwritten (if any):
 1. row [#] -- [why: matrix case unsatisfiable as specified / needs a fixture not available / other]
 ```
 
+Long hex tokens in `Output (excerpt)` and `Notes` (a SHA-256, an HMAC, a tx hash, anything 32+ hex chars) appear as `first8…last8`, never in full. A full 64-hex value is shape-identical to a private key, and the lead's secret-scan prompt hook blocks the next prompt that carries this record.
+
 ## Return contract (distilled return, SPEC-087 Mechanism C)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
