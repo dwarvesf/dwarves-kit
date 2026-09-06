@@ -39,8 +39,16 @@ project's ledger must not mix with anything else on the machine.
 
 Seeded once by `/kit:adopt` (opt-in; never overwritten after creation; `--with a,b,c` seeds
 those modules `true` instead of inheriting the kit-root default). Only the keys you set win;
-everything you omit inherits the kit-root `kit.toml` default (`lib/config/kit-config.sh`,
-project keys win).
+everything you omit inherits the operator `kit.toml`, then the kit-root `kit.toml` default
+(`lib/config/kit-config.sh` resolves project > operator > kit-root > default; a missing file
+at any layer is skipped).
+
+The operator file lives at `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/kit.toml`
+(`KIT_CONFIG_OPERATOR` overrides the directory). It holds the keys that name per-operator
+paths, such as `wrap.activity_log` and `precedent.registry`, so they survive a kit upgrade
+instead of living in the kit checkout. It carries the same trust as the kit root: it sits on
+the operator's machine and never rides inside a pull request, so `kit_config_get_root` reads
+it and still skips the project `.kit.toml`.
 
 Re-run `/kit:adopt` (or `lib/adopt.sh --refresh`) after hand-editing `[modules]` to re-wire
 `.claude/settings.json` -- adopt reads `.kit.toml` at adopt time; no hook reads it at
@@ -62,12 +70,12 @@ The adopt-injected `CLAUDE.md` block already does this for you:
 | `bin/goal` | `lib/goal/goal.sh` |
 | `bin/learn` | `lib/learn/learn.sh` (`learn debt <list\|collect\|mark-paid>`; `propose`/`drain` refuse until SPEC-195/196) |
 | `bin/mega` | `lib/mega/mega.sh` |
-| `bin/precedent` | `lib/precedent/precedent.sh` (`find "<words>" --surface records\|inventory\|all`, `--quiet` the close-out form, `--explain <label>`; registry rows are `<kind> <path>` for `repo\|scripts\|skills\|crons\|memory`, resolved `--registry` > `PRECEDENT_REGISTRY` > `kit.toml [precedent] registry` (kit-root only, never a project `.kit.toml`) > `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt`) |
+| `bin/precedent` | `lib/precedent/precedent.sh` (`find "<words>" --surface records\|inventory\|all`, `--quiet` the close-out form, `--explain <label>`; registry rows are `<kind> <path>` for `repo\|scripts\|skills\|crons\|memory`, resolved `--registry` > `PRECEDENT_REGISTRY` > `kit.toml [precedent] registry` (operator or kit-root only, never a project `.kit.toml`) > `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt`) |
 | `bin/queue` | `lib/queue/queue.sh` |
 | `bin/session` | `lib/session/session.sh` (`session <intel\|observe\|recall\|report\|semantic>`, ex the five `bin/session-*`) |
 | `bin/spec` | `lib/spec/spec.sh` |
 | `bin/stats` | `lib/stats/` (via `uv run --project`) |
-| `bin/wrap` | `lib/wrap/wrap.sh` (`scan` report-only; `apply [--apply] [--worktrees]` branch delete + worktree remove + `--ff-only` pull, dry-run by default; `merge [--apply]` one own green PR per call, base = default branch, mergeable, checks green, no unresolved threads, no open dependents (SPEC-065); `log` prepends a dated line to `[wrap] activity_log`, kit-root `kit.toml` only, path must resolve under `$HOME`; `default-branch` prints the detected name) |
+| `bin/wrap` | `lib/wrap/wrap.sh` (`scan` report-only; `apply [--apply] [--worktrees]` branch delete + worktree remove + `--ff-only` pull, dry-run by default; `merge [--apply]` one own green PR per call, base = default branch, mergeable, checks green, no unresolved threads, no open dependents (SPEC-065); `log` prepends a dated line to `[wrap] activity_log`, operator or kit-root `kit.toml` only, path must resolve under `$HOME`; `default-branch` prints the detected name) |
 
 Module CLIs keep their module names (ADR-0034 two-class rule): `bin/prose-rag`,
 `bin/worktree-provision`.

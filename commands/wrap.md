@@ -1,5 +1,5 @@
 ---
-description: "The session-scoped landing step after ship: flips board rows, merges the operator's own green PRs one at a time, checks deploys, tidies branches and worktrees, writes the activity line, calls /kit:retro when a shipped PR merged, and prints the skim-first report."
+description: "The session-scoped landing step after ship: flips board rows, merges the operator's own green PRs one at a time, checks deploys, tidies branches and worktrees, writes the activity line, calls /kit:retro when a shipped PR merged, and prints the skim-first report. Use when the operator says to wrap up or close out the session, land the work, or run the end-of-session routine: 'wrap up', 'wrap this up', 'close out', 'let's wrap', 'session wrap', 'land it', 'pack this up for the day', 'wrap up, update items status, commit, merge PRs and clean up worktrees and stale branches, then pull the latest'."
 ---
 
 Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:wrap] Land the session after ship: board rows, merges, deploy check, tidy, activity line, retro.`, then proceed.
@@ -23,6 +23,16 @@ You are the session's landing step. The operator just shipped, or is ending the 
 Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> wrap start`.
 
 Run the steps below once per repo the session touched (the current repo when the operator names none). Positional repo arguments; wrap never discovers touched repos on its own (Out of Scope).
+
+### Step -1: the before seam
+
+An operator can put one skill in front of this command. Read the key first:
+
+```bash
+. lib/config/kit-config.sh && kit_config_get_root wrap.before ""
+```
+
+An empty value means no skill runs, which is the default; go straight to step 0. A named skill runs NOW, before step 0, and its report lines fold into step 8's report after the `FYI` line. The key resolves with `kit_config_get_root`, so it comes from the operator `kit.toml` or the kit-root `kit.toml` and never from a project `.kit.toml`: it names code this command runs, and a project toml rides inside an untrusted PR.
 
 ### Step 0: concurrent-writer check
 
@@ -102,7 +112,7 @@ b. ...
 - `Shipped` is one line per repo: PR number, merge SHA, deploy state.
 - `Left alone` names another session's dirty files, worktrees, and branches with the owner, so the operator knows a repo is not fully clean and why.
 - `FYI` closes the message: what is not the operator's to act on but changes something they will meet next time, or `NOTHING`.
-- An overlay (a consumer's own routing, distill, or knowledge-capture step) appends its own lines after `FYI`; the kit's grammar stops there.
+- An overlay (a consumer's own routing, distill, or knowledge-capture step) appends its own lines after `FYI`; the kit's grammar stops there. A `wrap.before` skill's report lines fold in at that same place.
 - No table unless the session touched four or more repos. No restating what each step did.
 
 Record the run (SPEC-139), one line: `bash lib/gate/gate-ledger.sh record <rid> wrap ran "<summary>"`. Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> wrap end caught=<true if a repo hit step 0's foreign-activity STOP, else false>`.

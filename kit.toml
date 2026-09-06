@@ -183,3 +183,9 @@ activity_log = ""               # [consumer] absolute or ~-prefixed path, under 
                                  #        per-project setting. Empty = `wrap log` prints the line and
                                  #        says where it did not land, exit 0. The kit prepends
                                  #        `<date> · <text>` newest-first (mode preserved, no clobber).
+before = ""                     # [consumer] name of a skill `/kit:wrap` invokes FIRST, before
+                                 #        step 0. Read from the operator `kit.toml` or the KIT-ROOT
+                                 #        `kit.toml` ONLY; a project `.kit.toml` is never read for
+                                 #        this key, because it names code the command runs. The
+                                 #        skill's report lines fold into the wrap report after its
+                                 #        `FYI` line. Empty = no skill runs, which is the default.

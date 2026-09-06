@@ -29,6 +29,10 @@ TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-test.XXXXXX")"
 TMPD="$(cd "$TMPD" && pwd)"
 trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 
+# Pin the operator config overlay at a path that does not exist, so the operator's REAL
+# ~/.config/dwarves-kit/kit.toml can never reach a case that does not set it deliberately.
+KIT_CONFIG_OPERATOR="$TMPD/no-operator-config"; export KIT_CONFIG_OPERATOR
+
 # --------------------------------------------------------------------------- gh stub
 mkdir -p "$TMPD/stub"
 cat > "$TMPD/stub/gh" <<'STUB'
@@ -482,6 +486,21 @@ chk "log ignores a project .kit.toml key (exit 0)" "$rc"
 chk "log says the line did not land" "$(printf '%s' "$out" | grep -q 'no wrap.activity_log key in the kit-root kit.toml; line not written'; echo $?)"
 chk "log still prints the line it would have written" "$(printf '%s' "$out" | grep -q ' · wrap: project toml'; echo $?)"
 chk "log left the project-named file untouched" "$([ "$(cat "$LOGHOME/PROJECT.md")" = "untouched" ]; echo $?)"
+
+# The operator config overlay (SPEC-248) owns this key too: it is as trusted as the kit root,
+# so its value overrides a kit-root value for the same key.
+OPCONF="$TMPD/opconfig"; mkdir -p "$OPCONF"
+printf 'operator base\n' > "$LOGHOME/OPERATOR.md"
+printf 'kit-root base\n' > "$LOGHOME/KITROOT.md"
+set_log_key "$LOGHOME/KITROOT.md"
+printf '[wrap]\nactivity_log = "%s"\n' "$LOGHOME/OPERATOR.md" > "$OPCONF/kit.toml"
+out="$(HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" KIT_CONFIG_OPERATOR="$OPCONF" \
+  "$WRAP" log "wrap: operator toml" 2>&1)"; rc=$?
+chk "log exits 0 with the operator kit.toml key set" "$rc"
+chk "log prepends to the operator-named file" \
+  "$([ "$(head -1 "$LOGHOME/OPERATOR.md")" = "$(date +%F) · wrap: operator toml" ]; echo $?)"
+chk "log left the kit-root-named file untouched (operator wins)" \
+  "$([ "$(cat "$LOGHOME/KITROOT.md")" = "kit-root base" ]; echo $?)"
 
 # ===========================================================================
 echo "=== help and usage ==="

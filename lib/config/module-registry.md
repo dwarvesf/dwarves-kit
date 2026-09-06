@@ -68,6 +68,7 @@ real reader consumes it today (all rows below are, except where noted).
 | DWARVES_KIT | env-only | `$HOME/.claude/dwarves-kit` | [impl] | config | The kit install root; `KIT_CONFIG_ROOT`'s own fallback. |
 | KIT_CONFIG_ROOT | env-only | `${DWARVES_KIT:-$HOME/.claude/dwarves-kit}` | [impl] | config | Override where the kit-root `kit.toml` itself is read from (this IS the resolver's own bootstrap knob; it cannot have a `kit.toml` key). |
 | KIT_PROJECT_ROOT | env-only | `$PWD` | [impl] | config | Override which project's `.kit.toml` is consulted. |
+| KIT_CONFIG_OPERATOR | env-only | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit` | [impl] | config | Override where the OPERATOR `kit.toml` is read from (the overlay between the project `.kit.toml` and the kit root; it is a bootstrap knob, so it cannot have a `kit.toml` key). The operator file carries per-operator paths across kit upgrades and is as trusted as the kit root, since it lives on the operator's own machine and never rides inside a pull request. |
 | DWARVES_KIT_DEBUG | env-only | `0` | [impl] | (none) | Verbose hook/command debug logging; cross-cutting, not config-subsystem-specific. |
 | DWARVES_KIT_LICENSE | env-only | `$HOME/.config/dwarves-kit/license` | [impl] | config | `bin/activate`: path to the license keyfile the activation check reads. |
 | KIT_TOOL_POLICY | env-only | `$HOME/.claude/dwarves-kit/tool-policy.json` | [impl] | config | `hooks/tool-policy-guard.sh`: path to the tool-policy JSON the guard enforces. |
@@ -256,13 +257,14 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get_root precedent.registry` (the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR, `kit-config.sh:64-75`) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
+| PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get_root precedent.registry` (the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
 
 ### wrap (`/kit:wrap` landing-step config, no install module)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| - | wrap.activity_log | `""` | [consumer] | wrap | Absolute or `~`-prefixed path to the operator's own activity-log file, resolved with `kit_config_get_root` (the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names a file the kit writes to, `kit-config.sh:64-75`). Its resolved realpath must sit under `$HOME`'s realpath and name an existing regular file, else `wrap log` exits 1 naming the resolved path. Empty means `wrap log` prints the line and reports that nothing was written, exit 0. |
+| - | wrap.activity_log | `""` | [consumer] | wrap | Absolute or `~`-prefixed path to the operator's own activity-log file, resolved with `kit_config_get_root` (the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names a file the kit writes to, `kit-config.sh:75-90`). Its resolved realpath must sit under `$HOME`'s realpath and name an existing regular file, else `wrap log` exits 1 naming the resolved path. Empty means `wrap log` prints the line and reports that nothing was written, exit 0. |
+| - | wrap.before | `""` | [consumer] | wrap | Name of a skill `/kit:wrap` invokes FIRST, before step 0, resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names code the command runs and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`). The skill's report lines fold into the wrap report after its `FYI` line. Empty means no skill runs. |
 
 ### web_drift (skill knob, no install module)
 
