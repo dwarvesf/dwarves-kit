@@ -26,7 +26,7 @@ Approach 1. Session scope is the distinguishing property: one pass over every re
 ### Extensibility & boundaries
 
 - Load-bearing dimension: the number of touched repos and the number of consumer seams (activity log today; a deploy verifier later). Repos are positional arguments; a seam is one config key read with `kit_config_get_root`, never a project toml (it names a file the kit writes to).
-- Units: `lib/wrap/wrap.sh` (verbs, gates, default-branch detection), `commands/wrap.md` (the ordered steps, the merge and deploy rules, the report grammar), `tests/test-wrap.sh` (fixture remotes and clones). The verbs never merge a PR, never switch a branch, never touch a dirty file; those stay in the command as judgment calls with named rules.
+- Units: `lib/wrap/wrap.sh` (verbs, gates, default-branch detection), `commands/wrap.md` (the ordered steps, the merge and deploy rules, the report grammar), `tests/test-wrap.sh` (fixture remotes and clones). The verbs never switch a branch and never touch a dirty file; `merge` is the one verb that talks to GitHub, under its own gates; board flips and commits stay in the command as judgment calls with named rules.
 - Out of the closed set: the distill phase (til, learned-ledger, memory routing) stays with the operator overlay; `learning-kit` owns the study side (LK-23).
 
 ### Architecture
@@ -42,12 +42,12 @@ See `## Design`.
 /kit:wrap  (per session, per touched repo)            bin/wrap ──exec──▶ lib/wrap/wrap.sh
   0 concurrent-writer check (worktree list, reflog)        scan  <repo>...        report only
   1 board rows        board set <ID> shipped|parked|dropped apply [--apply] [--worktrees] <repo>...
-  2 commit by name    (command, judgment)                   log   <repo> "<slug>: <sentence>"
+  2 commit by name    (command, judgment)                   log   "<slug>: <sentence>"
   3 merge own PRs     wrap merge [--apply] <repo>  (one PR per call)   └─ prepends to wrap.activity_log
   4 deploy check      headSha == merge SHA where deploy is a dispatch   (kit-root kit.toml key)
   5 branches, worktrees, pull  wrap scan -> wrap apply (dry) -> wrap apply --apply
   6 activity line     wrap log
-  7 reflect           /kit:retro when a spec cycle merged this session
+  7 reflect           /kit:retro when a merged PR appears in a ship ledger line
   8 report            skim-first block: Needs you, What happened, Shipped, Left alone, FYI
   (step 0 re-runs before 3, 5 and 6)
 ```
@@ -78,7 +78,7 @@ commands/wrap.md
 
 ### ADR link(s)
 
-ADR-0034 (`bin/<subsystem> <verb>`; `wrap` is a subsystem noun with three verbs). ADR-0028 P5 unchanged: retro remains the reflect step; wrap is its caller. No new ADR.
+ADR-0034 (`bin/<subsystem> <verb>`; `wrap` is a subsystem noun with five verbs). ADR-0028 P5 unchanged: retro remains the reflect step; wrap is its caller. No new ADR.
 
 ### Boundaries & failure modes
 
