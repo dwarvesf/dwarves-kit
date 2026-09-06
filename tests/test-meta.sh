@@ -2076,9 +2076,9 @@ fi
 
 # SPEC-068: precedent lookup exists and intake reads it (assign + grill).
 TOTAL=$((TOTAL + 1))
-if [ -x "$KIT_DIR/lib/precedent.sh" ] \
-   && grep -qF 'precedent.sh find' "$KIT_DIR/commands/assign.md" \
-   && grep -qF 'precedent.sh find' "$KIT_DIR/commands/grill.md"; then
+if [ -x "$KIT_DIR/bin/precedent" ] \
+   && grep -qF 'precedent find' "$KIT_DIR/commands/assign.md" \
+   && grep -qF 'precedent find' "$KIT_DIR/commands/grill.md"; then
   echo -e "  ${GREEN}PASS${NC} precedent lookup wired into intake (SPEC-068)"
   PASS=$((PASS + 1))
 else

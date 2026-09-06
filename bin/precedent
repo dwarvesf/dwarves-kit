@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# bin/precedent -- STABLE consumer entrypoint for the precedent subsystem (SPEC-245,
+# ADR-0034 decision 1).
+#
+# Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/precedent/<file>.sh`
+# path. Forwards to the precedent subsystem entry, which owns the verb grammar.
+#
+# Usage:
+#   precedent find "<task description>" [--surface records|inventory|all] [--limit N]
+#                  [--quiet] [--json] [--registry <file>] [--repo-root <path>]
+#   precedent find --explain "<hit label as printed>"
+#
+# "have we done something like this before?" at intake: the records surface reads the
+# written record (specs, ADRs, retros, run ledger); the inventory surface reads what has
+# been BUILT (tools, scripts, skills, crons, memory notes). /kit:assign and /kit:grill call
+# this before sizing a task.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/precedent/precedent.sh" "$@"

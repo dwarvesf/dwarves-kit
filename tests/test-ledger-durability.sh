@@ -15,7 +15,7 @@ GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 LT="$KIT_DIR/lib/telemetry/lane-telemetry.sh"
 LC="$KIT_DIR/lib/classify/lane-classify.sh"
 PL="$KIT_DIR/lib/gate/proof-ledger.sh"
-PREC="$KIT_DIR/lib/precedent.sh"
+PREC="$KIT_DIR/lib/precedent/precedent.sh"
 MM="$KIT_DIR/lib/goal/mega-merge.sh"
 
 PASS=0; FAIL=0; TOTAL=0

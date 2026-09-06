@@ -20,7 +20,8 @@ orphans with no cluster stay as bare scripts at the root.
 | `mega/` | `mega.sh` `mega-report.py` `mega-review.py` (the mega-goal engine + its two python halves; stable entry via `bin/mega`) |
 | `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |
 | `session/` | `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser + its tests) |
-| *(root)* | `adopt.sh` `explain.sh` `pitch.sh` `precedent.sh`, orphans, no cluster |
+| `precedent/` | `precedent.sh` (records + inventory surfaces, SPEC-245; stable entry `bin/precedent`) |
+| *(root)* | `adopt.sh` `explain.sh` `pitch.sh`, orphans, no cluster |
 
 ## Resolution scheme (the `LIB_ROOT` anchor, no shims)
 
@@ -37,8 +38,8 @@ LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"   # the lib/ dir
 - **Cross-subsystem** sibling  ->  `"$LIB_ROOT/<callee-subsystem>/<callee>.sh"`
   (e.g. `queue/orchestrate.sh` calls `"$LIB_ROOT/gate/gate-ledger.sh"`).
 - **Repo-root** file (WORKFLOW.md, docs/, _meta/)  ->  `"$LIB_ROOT/.."` (two
-  levels above a `lib/<subsystem>/` script). A bare root orphan (`pitch.sh`,
-  `precedent.sh`) sets `LIB_ROOT="$SELF_DIR"` since its own dir already IS `lib/`.
+  levels above a `lib/<subsystem>/` script). A bare root orphan (`pitch.sh`) sets
+  `LIB_ROOT="$SELF_DIR"` since its own dir already IS `lib/`.
 
 There are NO alias symlinks and NO dispatcher; the anchor is the whole mechanism.
 External callers (hooks, commands, tests, `install.sh`) reference the real

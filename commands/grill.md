@@ -64,7 +64,8 @@ Read what already answers questions so you never ask one the repo answers:
    already made. A question whose answer sits in an ADR is a wasted turn; a claim that
    CONTRADICTS one is your first question.
 3. The active spec / BACKLOG row / goal draft, whatever context the item already carries.
-4. `bash lib/precedent.sh find "<task>"` (SPEC-068): the repo's own prior art.
+4. `bash bin/precedent find "<task>"` (SPEC-068): the repo's own prior art, both the written
+   record and the built inventory (SPEC-245).
 5. For an UNFAMILIAR code area (you cannot name the files involved), query the
    codebase-memory index first ("where is X defined / what calls Y") instead of blind
    grep; fall back to grep when no index exists (SPEC-069). A question
