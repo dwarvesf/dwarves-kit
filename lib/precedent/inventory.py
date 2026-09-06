@@ -14,6 +14,9 @@ Usage (called by `lib/precedent/precedent.sh`, never run standalone by an operat
                [--records-file <file>] -- <words...>
   inventory.py --root <ROOT> --kit <KIT_ROOT> --explain <label> [--registry <file>]
 
+--records-file is internal: precedent.sh writes it to a mktemp file for the `all` surface's
+own call. It is never exposed by bin/precedent and never confined like an --explain candidate.
+
 Registry file: whitespace-delimited `<kind> <path>` rows, `#` comments, blank lines skipped,
 `~` expanded. Kinds: repo | scripts | skills | crons | memory. Any other kind is a usage
 error (exit 64) raised before any scanning starts.
@@ -264,11 +267,16 @@ def default_registry_path() -> str:
 
 
 def resolve_registry_path(cli_flag):
-    if cli_flag:
-        return cli_flag
-    env = os.environ.get("PRECEDENT_REGISTRY")
-    if env:
-        return env
+    """--registry flag, else PRECEDENT_REGISTRY, else the XDG default. An explicit path
+    (flag or env) is expanduser'd; when it does not resolve to a file, warn on stderr and
+    fall back to the XDG default rather than silently scanning nothing (a missing XDG
+    default is the normal, quiet case: parse_registry already treats it as no rows)."""
+    explicit = cli_flag or os.environ.get("PRECEDENT_REGISTRY")
+    if explicit:
+        path = os.path.expanduser(explicit)
+        if os.path.isfile(path):
+            return path
+        print(f"precedent: registry not found: {path}", file=sys.stderr)
     return default_registry_path()
 
 
@@ -311,10 +319,17 @@ class Sections:
         self._data = {}
 
     def ensure(self, title: str):
-        return self._data.setdefault(title, {"skip": None, "hits": []})
+        return self._data.setdefault(title, {"skip": None, "hits": [], "notes": []})
 
     def set_skip(self, title: str, note: str):
-        self._data[title] = {"skip": note, "hits": []}
+        entry = self._data.get(title)
+        if entry and entry["hits"]:
+            # a later registry row skipping the same title must not discard hits this
+            # title already collected (e.g. ROOT's own skills/memory scan); note it
+            # instead, rendered after the hits.
+            entry["notes"].append(note)
+            return
+        self._data[title] = {"skip": note, "hits": [], "notes": []}
 
     def add(self, title: str, s: int, text: str):
         if s <= 0:
@@ -571,11 +586,14 @@ def add_crons_dir(sections: Sections, dirpath: str, terms, title: str):
         if text is None:
             continue
         # jsonc may hold comments; strip them before the field regexes so a commented-out
-        # "crons" array is never mistaken for a live one (ponytail: line/block comment
-        # stripping only, not string-literal aware -- a `//` inside a quoted value would
-        # still get cut; not a shape wrangler.jsonc uses).
-        stripped = re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
-        stripped = re.sub(r"//.*", "", stripped)
+        # "crons" array is never mistaken for a live one. Only a comment marker that
+        # STARTS a line (block: at line start or right after whitespace) is stripped, so a
+        # `/*` or `//` inside a quoted value (a URL's query string, say) is left alone
+        # (ponytail: line-start heuristic only, not string-literal aware -- a marker that
+        # starts a line inside a multi-line quoted value would still get cut; not a shape
+        # wrangler.jsonc uses).
+        stripped = re.sub(r"(?m)(^|(?<=\s))/\*.*?\*/", "", text, flags=re.DOTALL)
+        stripped = re.sub(r"(?m)^\s*//.*$", "", stripped)
         m = re.search(r'"name"\s*:\s*"([^"]+)"', stripped)
         wname = m.group(1) if m else os.path.relpath(dirpath_walk, dirpath)
         for cron_block in re.finditer(r'"crons"\s*:\s*\[([^\]]*)\]', stripped):
@@ -750,7 +768,7 @@ def rank_sections(sections: Sections):
         enumerate(items),
         key=lambda pair: (-max((s for s, _ in pair[1][1]["hits"]), default=-1), pair[0]),
     )
-    return [(title, entry["skip"], entry["hits"]) for _, (title, entry) in ranked]
+    return [(title, entry["skip"], entry["hits"], entry["notes"]) for _, (title, entry) in ranked]
 
 
 # ---------------------------------------------------------------------------
@@ -798,7 +816,7 @@ def resolve_explain(label: str, root: str, kit_root: str, home: str, registry_ro
     for allowed in allowed_roots:
         allowed_real = os.path.realpath(allowed)
         if real == allowed_real or real.startswith(allowed_real.rstrip("/") + "/"):
-            return fp, False
+            return real, False
     return None, True
 
 
@@ -806,18 +824,18 @@ def cmd_explain(args):
     registry_path = resolve_registry_path(args.registry)
     registry_rows = parse_registry(registry_path)
     home = os.path.expanduser("~")
-    fp, outside = resolve_explain(args.explain, args.root, args.kit, home, registry_rows)
+    real, outside = resolve_explain(args.explain, args.root, args.kit, home, registry_rows)
     if outside:
         print(f"explain: {args.explain} resolves outside the scanned roots")
         return 1
-    if fp is None:
+    if real is None:
         print(f"explain: no file for {args.explain}")
         return 1
-    text = read_head(fp, 8192)
+    text = read_head(real, 8192)
     if text is None:
-        print(f"explain: {fp} is binary")
+        print(f"explain: {real} is binary")
         return 1
-    print(f"# precedent --explain: {fp}\n{DATA_MARKER}\n")
+    print(f"# precedent --explain: {real}\n{DATA_MARKER}\n")
     for line in text.splitlines()[:60]:
         print(safe_text(line))
     return 0
@@ -842,8 +860,8 @@ def append_log(words_str: str, total_hits: int, top_section: str):
     try:
         d = log_dir()
         os.makedirs(d, exist_ok=True)
-        words_str = " ".join(words_str.split())
-        top_section = " ".join(top_section.split())
+        words_str = safe_text(" ".join(words_str.split()))
+        top_section = safe_text(" ".join(top_section.split()))
         with open(os.path.join(d, "precedent.log"), "a", encoding="utf-8") as fh:
             fh.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}\t{words_str}\t{total_hits}\t{top_section}\n")
     except OSError:
@@ -890,19 +908,22 @@ def read_records_file(fp):
 # Output.
 # ---------------------------------------------------------------------------
 def render(ranked, words_str, limit, quiet, records_lines, r_count, as_json):
-    total_hits = sum(len(hits) for _, skip, hits in ranked if not skip)
-    sections_with_hits = sum(1 for _, skip, hits in ranked if not skip and hits)
-    top_section = next((title for title, skip, hits in ranked if not skip and hits), "-")
+    total_hits = sum(len(hits) for _, skip, hits, _notes in ranked if not skip)
+    sections_with_hits = sum(1 for _, skip, hits, _notes in ranked if not skip and hits)
+    top_section = next((title for title, skip, hits, _notes in ranked if not skip and hits), "-")
     nothing_matched = total_hits == 0
     append_log(words_str, total_hits, top_section if top_section != "-" else "")
 
     if as_json:
         out = {"data_marker": DATA_MARKER}
-        for title, skip, hits in ranked:
+        for title, skip, hits, notes in ranked:
             if skip:
                 out[title] = {"skipped": skip}
             else:
-                out[title] = {"hits": [t for _, t in sorted(hits, key=lambda x: -x[0])[:limit]]}
+                entry = {"hits": [t for _, t in sorted(hits, key=lambda x: -x[0])[:limit]]}
+                if notes:
+                    entry["notes"] = notes
+                out[title] = entry
         if records_lines is not None:
             _, records = parse_records_lines(records_lines)
             out["records"] = records
@@ -914,14 +935,20 @@ def render(ranked, words_str, limit, quiet, records_lines, r_count, as_json):
 
     print(f"# precedent inventory: {words_str}\n{DATA_MARKER}\n")
 
-    if records_lines is not None:
-        print("## records")
-        for line in records_lines:
-            print(f"  {safe_text(line)}")
-        print()
-
     silent = []
-    for title, skip, hits in ranked:
+    if records_lines is not None:
+        if quiet and r_count == 0:
+            silent.append("records")
+        else:
+            print("## records")
+            if r_count == 0:
+                print("  (no match)")
+            else:
+                for line in records_lines:
+                    print(f"  {safe_text(line)}")
+            print()
+
+    for title, skip, hits, notes in ranked:
         if quiet and (skip or not hits):
             silent.append(title)
             continue
@@ -936,6 +963,8 @@ def render(ranked, words_str, limit, quiet, records_lines, r_count, as_json):
                 print(f"  {text}")
             if len(ranked_hits) > limit:
                 print(f"  ... {len(ranked_hits) - limit} more (raise --limit)")
+        for note in notes:
+            print(f"  ({note})")
         print()
     if silent:
         print(f"({len(silent)} sections with no match or skipped)\n")

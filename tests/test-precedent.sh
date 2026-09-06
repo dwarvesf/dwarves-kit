@@ -80,7 +80,7 @@ description: notion token rotation
 ---
 # gamma
 
-Rotate the token after a leak. Sample shape: ${fake_token_a}${fake_token_b}
+Rotate the token after a leak, then sync the notion rotation log. Sample shape: ${fake_token_a}${fake_token_b}
 FIX
 
   cat > "$FIX_REPO/.claude/skills/delta/SKILL.md" <<'FIX'
@@ -134,6 +134,13 @@ FIX
 // notion cron worker
 /* "crons": ["1 1 1 1 1"] */
 {"name":"notion-cron","triggers":{"crons":["0 * * * *","30 2 * * *"]}}
+FIX
+
+  # Finding G fixture: a `/*` mid-line inside a route URL (not at line start) must not be
+  # mistaken for a block-comment opener; only a line-start marker strips.
+  mkdir -p "$FIX_CRONS/routetest"
+  cat > "$FIX_CRONS/routetest/wrangler.jsonc" <<'FIX'
+{"name":"route-worker","triggers":{"crons":["0 3 * * *"]},"route":"https://x.example/*y"}
 FIX
 
   cat > "$FIX_MEMORY/theta.md" <<'FIX'
@@ -289,23 +296,55 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# TASK-004 AC(d): with PRECEDENT_REGISTRY unset, a project .kit.toml at the fixture repo
-# root setting [precedent] registry to the fixture registry still scans the registry's
-# `scripts` row (the zeta.sh hit). kit_config_project() reads `$KIT_PROJECT_ROOT/.kit.toml`,
-# defaulting to $PWD; a real repo-root .kit.toml file is the least-fixture-plumbing way to
-# exercise it (no KIT_PROJECT_ROOT override needed since ROOT resolves to $FIX_REPO already).
+# TASK-004 AC(d) (security fix): with PRECEDENT_REGISTRY unset, a kit-root kit.toml (the
+# operator-owned file, never a repo-committed one) setting [precedent] registry to the
+# fixture registry still scans the registry's `scripts` row (the zeta.sh hit).
 # ---------------------------------------------------------------------------
-cat > "$FIX_REPO/.kit.toml" <<TOML
+KIT_ROOT_AC_D="$TMPDIR_T/kit-root-ac-d"
+mkdir -p "$KIT_ROOT_AC_D"
+cat > "$KIT_ROOT_AC_D/kit.toml" <<TOML
 [precedent]
 registry = "$FIX_REGISTRY"
 TOML
-OUT="$(env -u PRECEDENT_REGISTRY "$PRECEDENT_BIN" find notion --surface inventory 2>&1)"; RC=$?
-rm -f "$FIX_REPO/.kit.toml"
+OUT="$(env -u PRECEDENT_REGISTRY KIT_CONFIG_ROOT="$KIT_ROOT_AC_D" "$PRECEDENT_BIN" find notion --surface inventory 2>&1)"; RC=$?
 if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'zeta.sh'; then
-  assert "kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 0
+  assert "kit-root kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 0
 else
-  assert "kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 1
+  assert "kit-root kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 1
   echo "rc=$RC" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# Security negative: a repo-committed PROJECT .kit.toml must NEVER select the registry.
+# Its [precedent] registry points at a registry holding `repo /` (the whole filesystem);
+# if the project value won, /etc/hosts would land inside a scanned root and zeta.sh (only
+# reachable via the real fixture registry) would surface with no registry override in play.
+# KIT_CONFIG_ROOT points at an empty kit root (no kit.toml there), so the kit-root rung
+# resolves empty too -- the only way either check could pass is a live project-config leak.
+# ---------------------------------------------------------------------------
+EVIL_REGISTRY="$TMPDIR_T/evil-registry.txt"
+printf 'repo /\n' > "$EVIL_REGISTRY"
+cat > "$FIX_REPO/.kit.toml" <<TOML
+[precedent]
+registry = "$EVIL_REGISTRY"
+TOML
+EMPTY_KIT_ROOT="$TMPDIR_T/kit-root-empty"
+mkdir -p "$EMPTY_KIT_ROOT"
+OUT="$(env -u PRECEDENT_REGISTRY KIT_CONFIG_ROOT="$EMPTY_KIT_ROOT" "$PRECEDENT_BIN" find --explain /etc/hosts --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q 'outside the scanned roots'; then
+  assert "a project .kit.toml registry cannot select the registry: --explain /etc/hosts still refused" 0
+else
+  assert "a project .kit.toml registry cannot select the registry: --explain /etc/hosts still refused" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
+
+OUT="$(env -u PRECEDENT_REGISTRY KIT_CONFIG_ROOT="$EMPTY_KIT_ROOT" "$PRECEDENT_BIN" find zeta --surface inventory 2>&1)"; RC=$?
+rm -f "$FIX_REPO/.kit.toml"
+if [ "$RC" -eq 0 ] && ! printf '%s' "$OUT" | grep -q 'zeta.sh'; then
+  assert "a project .kit.toml registry cannot select the registry: zeta.sh never surfaces" 0
+else
+  assert "a project .kit.toml registry cannot select the registry: zeta.sh never surfaces" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------
@@ -660,6 +699,124 @@ if [ "$AFTER" -eq "$((BEFORE + 1))" ] && [ "$FIELD_COUNT" -eq 4 ]; then
 else
   assert "a query with an embedded newline collapses to one well-formed log line" 1
   echo "before=$BEFORE after=$AFTER fields=$FIELD_COUNT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# B: Sections.set_skip must not discard hits a title already collected. A registry row
+# pointing `skills`/`memory` at a missing dir must not wipe ROOT's own .claude/skills and
+# .claude/memory hits; the section shows both the hits and the skip note.
+# ---------------------------------------------------------------------------
+SKIP_REGISTRY="$TMPDIR_T/skip-registry.txt"
+cat > "$SKIP_REGISTRY" <<EOF
+skills /nonexistent/skills/dir
+memory /nonexistent/memory/dir
+EOF
+OUT="$(PRECEDENT_REGISTRY="$SKIP_REGISTRY" "$PRECEDENT_BIN" find "sync notion" --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] \
+   && printf '%s' "$OUT" | grep -q 'skill delta' \
+   && printf '%s' "$OUT" | grep -q 'gamma.md' \
+   && printf '%s' "$OUT" | grep -q 'skipped: no dir at /nonexistent/skills/dir' \
+   && printf '%s' "$OUT" | grep -q 'skipped: no dir at /nonexistent/memory/dir'; then
+  assert "set_skip keeps existing hits: skills/memory sections show hits AND the skip note" 0
+else
+  assert "set_skip keeps existing hits: skills/memory sections show hits AND the skip note" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# C: the `all` surface degrades gracefully when the inventory engine (python3) is
+# unavailable -- the records block still prints, plus a one-line stderr notice, and the
+# exit is nonzero, never a blank stdout.
+# ---------------------------------------------------------------------------
+NO_PY_PATH="$TMPDIR_T/no-python-path"
+mkdir -p "$NO_PY_PATH"
+for tool in bash git grep sed awk sort uniq head mktemp rm cat tr dirname basename printf wc; do
+  tool_path="$(command -v "$tool" 2>/dev/null)"
+  [ -n "$tool_path" ] && ln -sf "$tool_path" "$NO_PY_PATH/$tool"
+done
+OUT="$(PATH="$NO_PY_PATH" "$PRECEDENT_BIN" find "notion sync" 2>/dev/null)"; RC=$?
+HIT_COUNT="$(printf '%s\n' "$OUT" | grep -cE '^[[:space:]]*[0-9]+x[[:space:]]' || true)"
+if [ "$RC" -ne 0 ] && [ "$HIT_COUNT" -gt 0 ]; then
+  assert "all surface degrades: records hits still print when the inventory engine is missing, exit nonzero" 0
+else
+  assert "all surface degrades: records hits still print when the inventory engine is missing, exit nonzero" 1
+  echo "rc=$RC hits=$HIT_COUNT out=$OUT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# D: resolve_registry_path expanduser's an explicit --registry/PRECEDENT_REGISTRY value,
+# and a missing explicit value warns on stderr and falls back to defaults instead of
+# silently scanning nothing.
+# ---------------------------------------------------------------------------
+cat > "$FIX_HOME/eta-registry.txt" <<EOF
+repo $FIX_HOME/eta-repo
+EOF
+OUT="$(PRECEDENT_REGISTRY='~/eta-registry.txt' "$PRECEDENT_BIN" find zorbington --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'eta-repo/scripts/eta.sh'; then
+  assert "PRECEDENT_REGISTRY='~/...' is expanded against HOME and scanned" 0
+else
+  assert "PRECEDENT_REGISTRY='~/...' is expanded against HOME and scanned" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
+
+OUT="$(PRECEDENT_REGISTRY=/no/such/registry "$PRECEDENT_BIN" find notion --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'precedent: registry not found: /no/such/registry'; then
+  assert "a missing explicit PRECEDENT_REGISTRY prints the not-found stderr line and exits 0" 0
+else
+  assert "a missing explicit PRECEDENT_REGISTRY prints the not-found stderr line and exits 0" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# E: append_log redacts a secret shape in the collapsed query before writing the log line.
+# ---------------------------------------------------------------------------
+fake_log_token_a="ghp_abcdefghij"; fake_log_token_b="klmnopqrstuvwxyz0123456789"
+"$PRECEDENT_BIN" find "notion ${fake_log_token_a}${fake_log_token_b}" --surface inventory >/dev/null 2>&1
+LAST_LOG_LINE="$(tail -n1 "$LOG_FILE")"
+if printf '%s' "$LAST_LOG_LINE" | grep -q '\[redacted\]' \
+   && ! printf '%s' "$LAST_LOG_LINE" | grep -q "${fake_log_token_a}${fake_log_token_b}"; then
+  assert "append_log redacts a secret-shaped query before writing the log line" 0
+else
+  assert "append_log redacts a secret-shaped query before writing the log line" 1
+  echo "$LAST_LOG_LINE" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# G: jsonc comment stripping only cuts a `//`/`/*` that starts a line. A `/*` mid-line
+# inside a route URL's query string must not swallow the real cron expression after it.
+# ---------------------------------------------------------------------------
+ROUTE_JSON="$("$PRECEDENT_BIN" find "route-worker" --surface inventory --json 2>&1)"
+ROUTE_CHECK="$(printf '%s' "$ROUTE_JSON" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+text = " ".join(d["crons"]["hits"])
+print("ok" if "0 3 * * *" in text else "bad")
+' 2>/dev/null)"
+if [ "$ROUTE_CHECK" = "ok" ]; then
+  assert "jsonc line-start-only comment stripping: a mid-line /* in a route URL does not swallow the cron" 0
+else
+  assert "jsonc line-start-only comment stripping: a mid-line /* in a route URL does not swallow the cron" 1
+  echo "$ROUTE_JSON" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# H: an empty records surface renders `## records` + `(no match)` in normal mode, and
+# collapses under --quiet like an empty inventory section.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find zzzqqqxx 2>&1)"
+if printf '%s' "$OUT" | grep -A1 '^## records$' | grep -q '(no match)'; then
+  assert "empty records surface: (no match) under ## records in normal mode" 0
+else
+  assert "empty records surface: (no match) under ## records in normal mode" 1
+  echo "$OUT" | sed 's/^/      /'
+fi
+
+OUT="$("$PRECEDENT_BIN" find zzzqqqxx --quiet 2>&1)"
+if ! printf '%s' "$OUT" | grep -q '^## records$'; then
+  assert "empty records surface: no ## records header under --quiet" 0
+else
+  assert "empty records surface: no ## records header under --quiet" 1
+  echo "$OUT" | sed 's/^/      /'
 fi
 
 echo

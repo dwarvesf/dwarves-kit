@@ -167,12 +167,13 @@ cmd_find() {
   ROOT="$(_resolve_root "$repo_root_flag")"
 
   # registry resolution precedence (SPEC-245): --registry flag > PRECEDENT_REGISTRY env >
-  # kit_config_get precedent.registry (project .kit.toml at ROOT, else the kit-root default)
+  # kit_config_get_root precedent.registry (kit-root kit.toml ONLY -- a project .kit.toml
+  # rides inside an untrusted PR and must never select the registry, kit-config.sh:64-68)
   # > inventory.py's own XDG default. Only the third rung is resolved here; the other two
   # already won by the time this runs empty.
   if [ -z "$registry" ] && [ -z "${PRECEDENT_REGISTRY:-}" ]; then
     local cfg_registry
-    cfg_registry="$(KIT_PROJECT_ROOT="$ROOT" kit_config_get precedent.registry "")"
+    cfg_registry="$(kit_config_get_root precedent.registry "")"
     [ -n "$cfg_registry" ] && registry="$cfg_registry"
   fi
 
@@ -210,13 +211,21 @@ cmd_find() {
       local tmp_records=""
       tmp_records="$(mktemp "${TMPDIR:-/tmp}/precedent-records.XXXXXX")"
       printf '%s\n' "$records_out" > "$tmp_records"
-      local irc=0
-      _inventory_find "$desc" "$limit" "$quiet" "$json" "$registry" "" "$tmp_records" || irc=$?
+      local inv_out="" irc=0
+      inv_out="$(_inventory_find "$desc" "$limit" "$quiet" "$json" "$registry" "" "$tmp_records")" || irc=$?
       # `local` dies with this function, so a RETURN/EXIT trap set here cannot see it by
       # the time it fires (tried, hit `set -u` "unbound variable" at process exit);
       # cleaning up right here, once, is simpler and just as reliable.
       rm -f "$tmp_records"
-      return "$irc"
+      if [ "$irc" -ne 0 ]; then
+        # the inventory engine crashed: never leave stdout blank, fall back to the
+        # records block the run-ledger and docs surfaces already produced.
+        printf '%s\n' "$records_out"
+        echo "precedent: inventory engine failed (rc=$irc); records surface only" >&2
+        return "$irc"
+      fi
+      printf '%s\n' "$inv_out"
+      return 0
       ;;
   esac
 }
