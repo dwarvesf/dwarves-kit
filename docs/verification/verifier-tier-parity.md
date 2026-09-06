@@ -37,6 +37,16 @@ All meta tests passed.
 
 Exit: 0
 
+Full suite on the final tree:
+
+```
+$ bash tests/run-workflow.sh
+restored 3 side-effect file(s)
+run-workflow: 0 red of 64 steps
+```
+
+Exit: 0
+
 ## Negative control
 
 Revert the frontmatter pin and re-run the same command.

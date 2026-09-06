@@ -17,3 +17,18 @@ Delta from the spec only. A mirror of the spec belongs in the spec.
 - Why: repeating one sentence four times in a prompt file adds tokens and invites drift between copies.
 - Impact: the verbatim parity phrase still appears in both `commands/execute.md` and `commands/verify.md`, which is what the tests pin.
 - Open questions: none.
+
+## 2026-09-06 The VERSION bump pulled two more surfaces
+
+- Context: the spec named `VERSION` and the changelog only.
+- Change: bumped `.claude-plugin/plugin.json` and `tool.toml` to 2.1.0 as well.
+- Why: `tests/test-meta.sh` pins all three surfaces against `VERSION` (SPEC-115). Bumping `VERSION` alone turned the suite red.
+- Impact: none beyond the version strings.
+- Open questions: none.
+
+## 2026-09-06 run-workflow.sh restores side-effect files mid-run
+
+- Context: a background `bash tests/run-workflow.sh` ran while the tree was edited.
+- Observation: the runner restored side-effect files and silently reverted two uncommitted edits, so a commit found nothing to stage.
+- Impact: the final full-suite run happened in the foreground on a committed tree instead.
+- Open questions: worth a note in the testing docs if it bites again.
