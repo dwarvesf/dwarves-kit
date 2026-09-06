@@ -89,3 +89,45 @@ Decision and why, one line each:
 Impact: none beyond the report text and portability.
 
 Open questions: none.
+
+## 2026-09-07 TASK-002 Report block heading is `## Wrap:`, not `## Closeout:`
+
+Context: the spec's Interfaces paragraph says the report block is "the `## Closeout` grammar",
+naming the operator's ported skill as the shape reference (DEC-004). It does not say the kit's
+own heading text must stay `## Closeout`.
+
+Decision: the kit's block opens `## Wrap: <session slug>`.
+
+Why: `/kit:wrap` is the command emitting the block; a heading naming the operator's personal
+skill would read as unexplained inside a kit doc a stranger repo reads with no dotfiles
+context. Every other rule (Needs you first, the two emoji, the uppercase tokens, What
+happened / Shipped / Left alone / FYI, the overlay-appends-after-FYI seam) is ported verbatim.
+
+Alternatives: keep `## Closeout:` literally (rejected, ties a generic kit report to a personal
+skill's name).
+
+Impact: none beyond the heading string; an overlay matching on the ported grammar should match
+on the section names below the heading, not the heading itself.
+
+Open questions: none.
+
+## 2026-09-07 TASK-002 `wrap` gets no Module stages table row
+
+Context: `lib/config/module-registry.md`'s `## Module stages` table is scoped to
+`KIT_KNOWN_MODULES` (`install.sh`), the completeness rule stated at the top of that section.
+`wrap` has no install hook and is not in that list, the same position `precedent` is already in
+(no Module stages row, no README Install-table row; only its own env<->key subsection).
+
+Decision: add `wrap`'s env<->key row and its README stage-table (Check/Govern) mention, but no
+`## Module stages` row and no Install-layer table row.
+
+Why: matches the existing precedent case exactly; adding a row would put `wrap` in a table
+whose completeness check does not expect it, a drift the next `KIT_KNOWN_MODULES` sweep would
+have to explain away.
+
+Alternatives: add a row anyway for visibility (rejected, breaks the stated scope of that table).
+
+Impact: none; `wrap` is documented as a subsystem in the five-stages prose table, not as an
+installable module.
+
+Open questions: none.

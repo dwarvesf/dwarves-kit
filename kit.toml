@@ -174,3 +174,12 @@ registry = ""                   # [consumer] extra scan locations for `find --su
                                  #        kit + home dirs). Env override: PRECEDENT_REGISTRY. Default
                                  #        path when both are empty (inventory.py's own fallback):
                                  #        ${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt
+
+[wrap]                          # `/kit:wrap` landing-step config (lib/wrap/wrap.sh log)
+activity_log = ""               # [consumer] absolute or ~-prefixed path, under $HOME, to the
+                                 #        operator's own activity log file. Read from the KIT-ROOT
+                                 #        `kit.toml` ONLY; a project `.kit.toml` is never read for
+                                 #        this key, because it names a file the kit writes to, not a
+                                 #        per-project setting. Empty = `wrap log` prints the line and
+                                 #        says where it did not land, exit 0. The kit prepends
+                                 #        `<date> · <text>` newest-first (mtime preserved, no clobber).

@@ -23,9 +23,9 @@ Condensed walkthrough: [`docs/QUICKSTART.md`](docs/QUICKSTART.md). Full command 
 
 Agent workflows are shifting from `prompt -> output` to `goal -> loop -> evaluate -> improve -> result`. dwarves-kit is the **closed** kind of that loop: you set the goal and the gates up front, and agents iterate inside them until a read-only verifier passes, never grading their own homework.
 
-It ships as a **toolbox, not an appliance.** Every subsystem is a standalone shell command that already works on its own, `bash lib/board/board.sh --help`, and the same for `gate`/`stats`/`classify`/`spec`/`goal`/`session`/`precedent` (e.g. `bin/precedent find "<query>"`), so there is no `kit` uber-binary and no install step to just poke at it (the same bash reads under pi, opencode, Claude Code, or a bare terminal). Wiring it into Claude Code (`bash install.sh`) adds an always-on safety spine and lets you `--with` exactly the modules you want and nothing else; [Install](#install) has the layers.
+It ships as a **toolbox, not an appliance.** Every subsystem is a standalone shell command that already works on its own, `bash lib/board/board.sh --help`, and the same for `gate`/`stats`/`classify`/`spec`/`goal`/`session`/`precedent`/`wrap` (e.g. `bin/precedent find "<query>"`), so there is no `kit` uber-binary and no install step to just poke at it (the same bash reads under pi, opencode, Claude Code, or a bare terminal). Wiring it into Claude Code (`bash install.sh`) adds an always-on safety spine and lets you `--with` exactly the modules you want and nothing else; [Install](#install) has the layers.
 
-The loop itself is one spec-driven lifecycle, **think → spec → execute → review → ship → retro**, with a gate at every phase boundary:
+The loop itself is one spec-driven lifecycle, **think → spec → execute → review → ship → wrap → retro**, with a gate at every phase boundary:
 
 ```mermaid
 flowchart LR
@@ -87,7 +87,7 @@ Stages are metadata, not directories: each module keeps its name and install uni
 | Shape (Specify) | `spec`, `classify`, `precedent`, `goal`, `board` (input side), `sync` (spoke intake; outward mirror is its Watch side) |
 | Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate` |
 | Watch (Observe) | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror 2026-07-16) |
-| Check (Govern) | `gate`, `money_gate`, `advisor`, `gauntlet` |
+| Check (Govern) | `gate`, `money_gate`, `advisor`, `gauntlet`, `wrap` |
 | Learn | `learn`, `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending ADR-0034 amendment) |
 | (no stage) | `cosmetic` (statusline; orthogonal to the loop) |
 
@@ -313,6 +313,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | /kit:quiz-gate | Understand | ★-tap nudge before merging a significant+worthy gate PR: 5 diff-grounded quiz questions routed through deep-understand, three logged responses (engage/defer/wave), advisory never must-pass (ADR-0031) |
 | /kit:pitch | Understand (outward) | Assembles an outward buy-in doc from the spec, proof-of-done, implementation-notes, and grill/DEBT ledger records; the outward twin of /kit:explain, ends in an ask not a quiz; never fabricates a missing source (SPEC-140) |
 | /kit:ship | Ship | Review gate, version bump, changelog, commit, PR |
+| /kit:wrap | Land | Session-scoped landing step after ship: board rows, the operator's own PR merges, deploy check, branch and worktree tidy, the activity line, calls /kit:retro when a shipped PR merged |
 | /kit:retro | Reflect | What worked, what hurt, action items for next cycle |
 | /kit:kit-health | Meta | Self-assessment against kit philosophy |
 | /kit:absorb | Meta | Maintainer-only: audit upstream sources (Credits drift + seed-rescan) + draft a dated absorption proposal |
