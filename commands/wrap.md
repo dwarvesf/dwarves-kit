@@ -76,7 +76,7 @@ Re-run the step 0 check first. Then: `bin/wrap scan <repo>` again to see the cur
 
 ### Step 6: activity line
 
-Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. With no `wrap.activity_log` key in the kit-root `kit.toml`, it prints the line and says where it did not land; that is a clean result, not a failure.
+Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. When the current directory is a git worktree of the repo that holds the configured file, the same repo-relative file inside that worktree is written instead, so the line is committable on the session's branch; the main checkout's copy is left alone. With no `wrap.activity_log` key in the kit-root `kit.toml`, it prints the line and says where it did not land; that is a clean result, not a failure.
 
 ### Step 7: reflect
 
