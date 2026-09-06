@@ -51,7 +51,7 @@ make_fixture() {
   FIX_REGISTRY="$TMPDIR_T/registry.txt"
   export FIX_HOME FIX_REPO FIX_SCRIPTS FIX_CRONS FIX_MEMORY FIX_LEDGER FIX_REGISTRY
 
-  mkdir -p "$FIX_HOME/eta-repo" "$FIX_LEDGER"
+  mkdir -p "$FIX_HOME/eta-repo/scripts" "$FIX_LEDGER"
   mkdir -p "$FIX_REPO/tools/alpha/bin" "$FIX_REPO/scripts" "$FIX_REPO/.claude/memory" \
            "$FIX_REPO/.claude/skills/delta" "$FIX_REPO/docs/specs" "$FIX_REPO/docs/decisions" \
            "$FIX_REPO/experiments/eps"
@@ -135,6 +135,14 @@ FIX
 # theta
 
 A memory note with no notion mention, used only by the TASK-003 iterator tests.
+FIX
+
+  # ~-expansion case (TASK-003): a second `repo` registry row under $HOME, distinct from
+  # $FIX_REPO. "zorbington" is a unique word this row's own scripts/ dir carries, so a hit
+  # here proves the `~` row actually got scanned.
+  cat > "$FIX_HOME/eta-repo/scripts/eta.sh" <<'FIX'
+#!/usr/bin/env bash
+# eta: zorbington rotation helper
 FIX
 
   cat > "$FIX_REGISTRY" <<FIX
@@ -224,6 +232,159 @@ fi
 # TASK-003 cases land here (inventory surface: AND semantics, name-over-body ranking,
 # adjacent-phrase bonus, registry skip note, ~ expansion, secret redaction, --json keys,
 # --quiet collapse, --explain, precedent.log line, exit 64 on a bogus registry kind).
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC1: AND semantics -- a two-term query where one term is absent scores 0
+# everywhere, so nothing_matched is true.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find "notion zzzqqq" --surface inventory --json 2>&1)"; RC=$?
+NOTHING="$(printf '%s' "$OUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["nothing_matched"])' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$NOTHING" = "True" ]; then
+  assert "AND semantics: an absent term zeroes every inventory hit" 0
+else
+  assert "AND semantics: an absent term zeroes every inventory hit" 1
+  echo "rc=$RC nothing_matched=$NOTHING" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC2: name-over-body ranking -- "alpha" hits tools/alpha/ by name (tool.toml),
+# first in the tools section.
+# ---------------------------------------------------------------------------
+FIRST_TOOLS_HIT="$("$PRECEDENT_BIN" find alpha --surface inventory --json 2>&1 \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["tools"]["hits"][0])' 2>/dev/null)"
+if printf '%s' "$FIRST_TOOLS_HIT" | grep -q 'tools/alpha/'; then
+  assert "name-over-body: the tools section's first hit names tools/alpha/" 0
+else
+  assert "name-over-body: the tools section's first hit names tools/alpha/" 1
+  echo "first=$FIRST_TOOLS_HIT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC3: adjacent-phrase bonus -- tools/alpha's description carries the literal
+# phrase "notion sync" (adjacent, in order); delta's skill description has both words
+# apart/reversed ("sync notion pages"). The phrase bonus puts the tools section's top
+# score above the skills section's, so tools ranks first in section order.
+# ---------------------------------------------------------------------------
+SECTION_ORDER="$("$PRECEDENT_BIN" find "notion sync" --surface inventory --json 2>&1 \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(list(d.keys()))' 2>/dev/null)"
+TOOLS_IDX="$(printf '%s' "$SECTION_ORDER" | grep -bo "'tools'" | head -1 | cut -d: -f1)"
+SKILLS_IDX="$(printf '%s' "$SECTION_ORDER" | grep -bo "'skills'" | head -1 | cut -d: -f1)"
+if [ -n "$TOOLS_IDX" ] && [ -n "$SKILLS_IDX" ] && [ "$TOOLS_IDX" -lt "$SKILLS_IDX" ]; then
+  assert "adjacent-phrase bonus: tools (phrase match) outranks skills (words apart)" 0
+else
+  assert "adjacent-phrase bonus: tools (phrase match) outranks skills (words apart)" 1
+  echo "order=$SECTION_ORDER" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC4: registry skip note for the missing `repo /nonexistent/path/for/test` row.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find notion --surface inventory 2>&1)"
+if printf '%s' "$OUT" | grep -q 'skipped: no dir at /nonexistent/path/for/test'; then
+  assert "registry skip note for a missing repo path" 0
+else
+  assert "registry skip note for a missing repo path" 1
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC5: ~ expansion -- the `repo ~/eta-repo` row is scanned; its scripts/eta.sh
+# (a unique word, "zorbington") shows up as a hit.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find zorbington --surface inventory 2>&1)"
+if printf '%s' "$OUT" | grep -q 'eta-repo/scripts/eta.sh'; then
+  assert "~ expansion: the eta-repo registry row is scanned" 0
+else
+  assert "~ expansion: the eta-repo registry row is scanned" 1
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC6: secret redaction -- the ghp_ token in .claude/memory/gamma.md prints as
+# [redacted], never in the clear.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find "token rotation" --surface inventory 2>&1)"
+if printf '%s' "$OUT" | grep -q '\[redacted\]' && ! printf '%s' "$OUT" | grep -q 'ghp_abcdefghij'; then
+  assert "secret redaction: a ghp_ token prints as [redacted]" 0
+else
+  assert "secret redaction: a ghp_ token prints as [redacted]" 1
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC7: --json carries the required top-level keys.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find notion --surface inventory --json 2>&1)"
+KEYS_OK="$(printf '%s' "$OUT" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+need = ("data_marker", "total_hits", "sections_with_hits", "nothing_matched")
+print("yes" if all(k in d for k in need) else "no")
+' 2>/dev/null)"
+if [ "$KEYS_OK" = "yes" ]; then
+  assert "--json carries data_marker/total_hits/sections_with_hits/nothing_matched" 0
+else
+  assert "--json carries data_marker/total_hits/sections_with_hits/nothing_matched" 1
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC8: --quiet collapses every empty/skipped section to one count line.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find "notion zzzqqq" --surface inventory --quiet 2>&1)"
+if printf '%s' "$OUT" | grep -q 'sections with no match or skipped)'; then
+  assert "--quiet collapses empty/skipped sections to one line" 0
+else
+  assert "--quiet collapses empty/skipped sections to one line" 1
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC9: --explain resolves a hit label as printed; a label that resolves nowhere
+# exits 1.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find --explain "skill delta" --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'name: delta'; then
+  assert "--explain \"skill delta\" prints the SKILL.md header, exit 0" 0
+else
+  assert "--explain \"skill delta\" prints the SKILL.md header, exit 0" 1
+fi
+
+"$PRECEDENT_BIN" find --explain "skill nope" --surface inventory >/dev/null 2>&1
+assert "--explain \"skill nope\" (no file) exits 1" "$([ $? -eq 1 ]; echo $?)"
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC10: precedent.log gains exactly one tab-separated, 4-field line per query.
+# ---------------------------------------------------------------------------
+LOG_FILE="$FIX_LEDGER/precedent.log"
+BEFORE=0
+[ -f "$LOG_FILE" ] && BEFORE="$(wc -l < "$LOG_FILE" | tr -d ' ')"
+"$PRECEDENT_BIN" find "notion" --surface inventory >/dev/null 2>&1
+AFTER="$(wc -l < "$LOG_FILE" | tr -d ' ')"
+LAST_LINE="$(tail -n1 "$LOG_FILE")"
+FIELD_COUNT="$(printf '%s' "$LAST_LINE" | awk -F'\t' '{print NF}')"
+if [ "$AFTER" -eq "$((BEFORE + 1))" ] && [ "$FIELD_COUNT" -eq 4 ]; then
+  assert "precedent.log gains one tab-separated, 4-field line per query" 0
+else
+  assert "precedent.log gains one tab-separated, 4-field line per query" 1
+  echo "before=$BEFORE after=$AFTER fields=$FIELD_COUNT" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC11: an unknown registry kind exits 64 before any scanning starts.
+# ---------------------------------------------------------------------------
+BAD_REGISTRY="$TMPDIR_T/bad-registry.txt"
+cp "$FIX_REGISTRY" "$BAD_REGISTRY"
+echo "bogus /tmp" >> "$BAD_REGISTRY"
+PRECEDENT_REGISTRY="$BAD_REGISTRY" "$PRECEDENT_BIN" find notion --surface inventory >/dev/null 2>&1
+assert "an unknown registry kind exits 64" "$([ $? -eq 64 ]; echo $?)"
+
+# ---------------------------------------------------------------------------
+# TASK-003 AC12: the crons registry row surfaces both cron expressions for a worker hit.
+# ---------------------------------------------------------------------------
+CRON_HITS="$("$PRECEDENT_BIN" find "notion-cron" --surface inventory --json 2>&1 \
+  | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["crons"]["hits"]))' 2>/dev/null)"
+if [ "$CRON_HITS" = "2" ]; then
+  assert "crons section lists both cron expressions for a matching worker" 0
+else
+  assert "crons section lists both cron expressions for a matching worker" 1
+  echo "cron_hits=$CRON_HITS" | sed 's/^/      /'
+fi
 
 echo
 echo "== summary =="
