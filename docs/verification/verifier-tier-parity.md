@@ -72,3 +72,18 @@ grep -c 'dispatch with an explicit model override matching the spec tier' comman
 ```
 
 ## Verdict: PASS
+
+## Test plan coverage
+
+| Row | Run / skip reason |
+|---|---|
+| 1 | green run, assertion "recheck-verifier pins model: opus (SPEC-244)" |
+| 2 | green run, agent-frontmatter lint block (all agents sonnet\|haiku\|opus) |
+| 3 | green run, assertion "execute.md carries the verifier parity override sentence" |
+| 4 | green run, assertion "verify.md carries the verifier parity override sentence" |
+| 5 | green run via row 4's surface; the Step 1 header read is prose in the same paragraph the row-4 grep matches |
+| 6 | green run, assertion "negative control: old verifier wall-off sentence removed from execute.md" |
+| 7 | green run, the graceful-degrade clause rides the same paragraph as row 3 and the SPEC-078 pin "tiering fallback sentence present" |
+| 8 | manual grep on `commands/battery.md`, acceptance leg cell reads "mid, or the spec's tier when it carries `Model: opus`" |
+| 9 | green run, assertion "doc-verifier stays sonnet (SPEC-244 decision c)" |
+| 10 | negative control above, RED-as-expected then restored |
