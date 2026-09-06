@@ -1,0 +1,541 @@
+#!/usr/bin/env bash
+# wrap.sh -- the landing step after ship (SPEC-246). One pass over every repo a session
+# touched, with five verbs:
+#
+#   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
+#   wrap.sh apply [--apply] [--worktrees] <repo> [...]      dry-run by default
+#   wrap.sh merge [--apply] <repo>                          merges ONE own green PR
+#   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
+#   wrap.sh default-branch <repo>                           prints the detected name
+#   wrap.sh --help
+#
+# The write set is closed: branch delete under two proofs, worktree remove under
+# --worktrees, pull --ff-only on the default branch, the activity-log prepend, and one
+# gh pr merge. Every other action is a report line. The verbs never switch a branch,
+# never touch a dirty file, never force, and never retry a failed git call.
+#
+# Ported from the operator's repo-wrapup scripts. The default branch is DETECTED, never
+# assumed to be main.
+set -uo pipefail
+
+# A git call must never block on a credential prompt inside an unattended wrap.
+export GIT_TERMINAL_PROMPT=0
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
+# shellcheck source=lib/config/kit-config.sh
+source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
+
+_usage() { sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+
+# --------------------------------------------------------------------------- helpers
+
+_is_repo() { [ -e "$1/.git" ] || git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
+
+_origin_url() { git -C "$1" remote get-url origin 2>/dev/null; }
+
+_ref_exists() { git -C "$1" show-ref --verify --quiet "$2"; }
+
+# _default_branch <repo> -- origin/HEAD when it resolves to a live remote ref, else main,
+# else master. Exit 1 when none resolves; the caller skips that repo.
+_default_branch() {
+  local repo="$1" ref name
+  ref="$(git -C "$repo" symbolic-ref --quiet refs/remotes/origin/HEAD 2>/dev/null)"
+  if [ -n "$ref" ]; then
+    name="${ref#refs/remotes/origin/}"
+    if [ "$name" != "$ref" ] && _ref_exists "$repo" "refs/remotes/origin/$name"; then
+      printf '%s\n' "$name"; return 0
+    fi
+  fi
+  for name in main master; do
+    if _ref_exists "$repo" "refs/remotes/origin/$name"; then printf '%s\n' "$name"; return 0; fi
+  done
+  return 1
+}
+
+# _gh_state -- ok | unavailable | unauthenticated. Read once per verb run.
+_gh_state() {
+  command -v gh >/dev/null 2>&1 || { printf 'unavailable\n'; return 0; }
+  gh auth status >/dev/null 2>&1 || { printf 'unauthenticated\n'; return 0; }
+  printf 'ok\n'
+}
+
+_gh_note() {
+  case "$1" in
+    unavailable)     printf '(gh unavailable)\n' ;;
+    unauthenticated) printf '(gh unauthenticated)\n' ;;
+  esac
+}
+
+_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null; }
+
+_fmode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1" 2>/dev/null; }
+
+_short() { printf '%s' "${1:0:7}"; }
+
+# _squash_json <repo-url> <branch> -- the merged-PR list gh reports for that head.
+_squash_json() {
+  gh pr list --repo "$1" --head "$2" --state merged --json headRefOid,baseRefName,mergedAt 2>/dev/null
+}
+
+# _squash_verdict <json> <local tip> <default branch> -- one of:
+#   OK            a merged PR into the default branch has this exact tip
+#   TIP <sha>     merged into the default branch, but from a different tip
+#   BASE <name>   merged into another branch
+#   NONE          no merged PR for this head (also the answer for unusable JSON)
+_squash_verdict() {
+  local json="$1" tip="$2" def="$3" out
+  out="$(printf '%s' "$json" | jq -r --arg tip "$tip" --arg def "$def" '
+    [.[] | select(.mergedAt != null)] as $m
+    | if ($m | length) == 0 then "NONE"
+      elif ([$m[] | select(.baseRefName == $def and .headRefOid == $tip)] | length) > 0 then "OK"
+      elif ([$m[] | select(.baseRefName == $def)] | length) > 0
+        then "TIP " + ([$m[] | select(.baseRefName == $def)][0].headRefOid)
+      else "BASE " + ($m[0].baseRefName) end' 2>/dev/null)"
+  [ -n "$out" ] || out="NONE"
+  printf '%s\n' "$out"
+}
+
+# --------------------------------------------------------------------------- scan
+
+_scan_repo() {
+  local repo="$1" ghs="$2"
+  _is_repo "$repo" || { echo "== ${repo}: not a git repo, skipped"; return 0; }
+  echo "===================================================================="
+  echo "== ${repo}"
+  git -C "$repo" fetch --prune -q 2>/dev/null || echo "  (fetch failed; counts may be stale)"
+
+  local def
+  def="$(_default_branch "$repo")" || {
+    echo "-- no default branch resolved (origin/HEAD, origin/main and origin/master all absent); skipped"
+    return 0
+  }
+
+  local cur; cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
+  echo "-- checkout on: ${cur:-<detached>}"
+
+  local ahead behind
+  ahead="$(git -C "$repo" rev-list --count "origin/${def}..HEAD" 2>/dev/null)"
+  behind="$(git -C "$repo" rev-list --count "HEAD..origin/${def}" 2>/dev/null)"
+  case "$ahead" in ''|*[!0-9]*) ahead='?' ;; esac
+  case "$behind" in ''|*[!0-9]*) behind='?' ;; esac
+  echo "-- vs origin/${def}: ahead=${ahead} behind=${behind}"
+
+  echo "-- dirty files (do NOT assume they are yours):"
+  local st; st="$(git -C "$repo" status --short 2>/dev/null)"
+  if [ -n "$st" ]; then printf '%s\n' "$st" | sed -n 1,10p | sed 's/^/     /'
+  else echo "     (clean)"; fi
+
+  echo "-- worktrees:"
+  git -C "$repo" worktree list 2>/dev/null | sed 's/^/     /'
+
+  echo "-- local branches (an ancestor of origin/${def} is SAFE-d; a squash merge needs the gh proof):"
+  local b tip json verdict
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+    case "$b" in "$def"|main|master) continue ;; esac
+    if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+      echo "     ${b}  [SAFE-d: ancestor of origin/${def}]"
+      continue
+    fi
+    if [ "$ghs" != "ok" ]; then
+      echo "     ${b}  [NOT merged / unknown: LEAVE]"
+      continue
+    fi
+    tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+    json="$(_squash_json "$(_origin_url "$repo")" "$b")"
+    verdict="$(_squash_verdict "$json" "$tip" "$def")"
+    case "$verdict" in
+      OK) echo "     ${b}  [SQUASH-MERGED per gh: safe to -D]" ;;
+      *)  echo "     ${b}  [NOT merged / unknown: LEAVE]" ;;
+    esac
+  done
+
+  echo "-- open PRs authored by me:"
+  case "$ghs" in
+    ok)
+      gh pr list --repo "$(_origin_url "$repo")" --author "@me" --state open \
+        --json number,title,headRefName 2>/dev/null \
+        | jq -r '.[] | "     #\(.number) \(.title) [\(.headRefName)]"' 2>/dev/null \
+        || echo "     (gh query failed)"
+      ;;
+    *) echo "     $(_gh_note "$ghs")" ;;
+  esac
+}
+
+cmd_scan() {
+  [ $# -ge 1 ] || { echo "usage: wrap.sh scan <repo> [<repo>...]" >&2; return 64; }
+  local ghs repo; ghs="$(_gh_state)"
+  for repo in "$@"; do _scan_repo "$repo" "$ghs"; done
+  echo "===================================================================="
+  echo "Report only. Deletion, merging and pulling stay a judgment call."
+  return 0
+}
+
+# --------------------------------------------------------------------------- apply
+
+APPLY=0
+WORKTREES=0
+MODE="DRY-RUN"
+FAILURES=0
+TIPS_FILE=""
+
+# _write_guard <repo> -- 0 when the checkout is free to write, 1 when another writer holds
+# it. An index.lock older than 5 s is foreign; a younger one is normal git traffic, proven
+# by a passing status call.
+_write_guard() {
+  local repo="$1" gd lock age m now
+  gd="$(git -C "$repo" rev-parse --path-format=absolute --git-dir 2>/dev/null)" || return 0
+  lock="${gd}/index.lock"
+  [ -e "$lock" ] || return 0
+  now="$(date +%s)"; m="$(_mtime "$lock")"
+  case "$m" in ''|*[!0-9]*) return 1 ;; esac
+  age=$(( now - m ))
+  [ "$age" -lt 5 ] || return 1
+  git -C "$repo" status --porcelain >/dev/null 2>&1 || return 1
+  return 0
+}
+
+# run <repo> <verdict> <command...> -- print the verdict, execute only under --apply.
+# A failed write is reported once and turns the run's exit code into 2. Nothing is retried.
+run() {
+  local repo="$1" verdict="$2"; shift 2
+  if ! _write_guard "$repo"; then
+    echo "     SKIP ${verdict}: index.lock held by another writer"
+    return 0
+  fi
+  echo "     [${MODE}] ${verdict}"
+  [ "$APPLY" = 1 ] || return 0
+  "$@"
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "     FAILED ${verdict}: exit ${rc}"
+    FAILURES=1
+  fi
+  return 0
+}
+
+_scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
+
+_apply_worktrees() {
+  local repo="$1" main_wt wt wt_c
+  echo "-- worktrees:"
+  main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
+  main_wt="${main_wt%/.git}"; main_wt="${main_wt%/}"
+  main_wt="$(cd "$main_wt" 2>/dev/null && pwd -P)"
+  while IFS= read -r wt; do
+    wt_c="$(cd "$wt" 2>/dev/null && pwd -P)" || continue
+    [ -n "$wt_c" ] || continue
+    [ "$wt_c" = "$main_wt" ] && continue
+    if [ "$WORKTREES" != 1 ]; then
+      echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"
+    elif [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
+      echo "     SKIP ${wt}: dirty (another session's work stays)"
+    elif [ -z "$(git -C "$wt" branch --show-current 2>/dev/null)" ]; then
+      echo "     SKIP ${wt}: detached HEAD (removal could orphan the commit)"
+    else
+      run "$repo" "remove worktree ${wt} (clean; the branch survives removal)" \
+        git -C "$repo" worktree remove "$wt"
+    fi
+  done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | sed -n 's/^worktree //p')
+}
+
+_apply_branches() {
+  local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
+  echo "-- branches:"
+  local b tip scanned json verdict
+  for b in $(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads/); do
+    case "$b" in "$def"|main|master) echo "     SKIP ${b}: default or protected branch name"; continue ;; esac
+    if [ "$b" = "$cur" ]; then echo "     SKIP ${b}: currently checked out"; continue; fi
+    if git -C "$repo" worktree list --porcelain 2>/dev/null | grep -qx "branch refs/heads/${b}"; then
+      echo "     SKIP ${b}: held by a worktree"; continue
+    fi
+    if [ "$fetch_ok" != 1 ]; then
+      echo "     SKIP ${b}: fetch failed, stale ancestor data"; continue
+    fi
+    tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+    scanned="$(_scanned_tip "$b")"
+    if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
+      echo "     SKIP ${b}: tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
+    fi
+    if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+      run "$repo" "delete ${b} (ancestor of origin/${def})" git -C "$repo" branch -d "$b"
+      continue
+    fi
+    if [ "$ghs" != "ok" ]; then
+      echo "     SKIP ${b}: $(_gh_note "$ghs"), no squash proof available"; continue
+    fi
+    json="$(_squash_json "$(_origin_url "$repo")" "$b")"
+    verdict="$(_squash_verdict "$json" "$tip" "$def")"
+    case "$verdict" in
+      OK)
+        run "$repo" "delete ${b} (squash-merged into ${def}, tip matches the PR head)" \
+          git -C "$repo" branch -D "$b" ;;
+      TIP\ *)
+        echo "     SKIP ${b}: tip $(_short "$tip") != merged PR head $(_short "${verdict#TIP }") (unpushed commits, leave it)" ;;
+      BASE\ *)
+        echo "     SKIP ${b}: merged into ${verdict#BASE }, not the default branch" ;;
+      *)
+        echo "     SKIP ${b}: no merged PR found for this head" ;;
+    esac
+  done
+}
+
+_apply_repo() {
+  local repo="$1" ghs="$2"
+  _is_repo "$repo" || { echo "== ${repo}: not a git repo, skipped"; return 0; }
+  echo "== ${repo}"
+  local fetch_ok=1
+  git -C "$repo" fetch --prune -q 2>/dev/null || { fetch_ok=0; echo "     (fetch failed; every delete is skipped)"; }
+
+  local def
+  def="$(_default_branch "$repo")" || {
+    echo "     SKIP ${repo}: no default branch resolved (origin/HEAD, origin/main and origin/master all absent)"
+    return 0
+  }
+  local cur; cur="$(git -C "$repo" branch --show-current 2>/dev/null)"
+
+  # Tip snapshot for this repo, taken once, compared right before each delete.
+  TIPS_FILE="$(mktemp)"
+  git -C "$repo" for-each-ref --format='%(refname:short) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
+
+  _apply_worktrees "$repo"
+  _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
+
+  echo "-- pull:"
+  if [ "$cur" = "$def" ]; then
+    run "$repo" "pull --ff-only (checkout on ${cur})" git -C "$repo" pull --ff-only
+  else
+    echo "     SKIP pull: checkout on '${cur:-<detached>}', not the default branch ${def}"
+    run "$repo" "fetch origin ${def}:${def} (ff-only by nature)" git -C "$repo" fetch origin "${def}:${def}"
+  fi
+
+  rm -f "$TIPS_FILE"; TIPS_FILE=""
+}
+
+cmd_apply() {
+  # Indexed assignment plus a counter, not `arr+=()` with `${#arr[@]}`: an empty array reads
+  # as unbound under `set -u` in bash 3.2, which is what macOS ships.
+  local arg count=0 i=1
+  local repos
+  for arg in "$@"; do
+    case "$arg" in
+      --apply) APPLY=1 ;;
+      --worktrees) WORKTREES=1 ;;
+      -*) echo "wrap.sh apply: unknown flag '$arg'" >&2; return 64 ;;
+      *) count=$(( count + 1 )); repos[count]="$arg" ;;
+    esac
+  done
+  [ "$count" -ge 1 ] || { echo "usage: wrap.sh apply [--apply] [--worktrees] <repo> [<repo>...]" >&2; return 64; }
+  [ "$APPLY" = 1 ] && MODE="APPLY"
+  local ghs; ghs="$(_gh_state)"
+  while [ "$i" -le "$count" ]; do _apply_repo "${repos[$i]}" "$ghs"; i=$(( i + 1 )); done
+  echo "== ${MODE} complete. PR merges, deploy dispatch and board rows stay with the command."
+  [ "$FAILURES" = 0 ] || return 2
+  return 0
+}
+
+# --------------------------------------------------------------------------- merge
+
+# _pr_detail <url> <number> -- the fields every merge gate reads.
+_pr_detail() {
+  gh pr view "$2" --repo "$1" \
+    --json number,title,headRefName,baseRefName,mergeable,mergeStateStatus,reviewDecision,statusCheckRollup 2>/dev/null
+}
+
+# _pr_gate <json> <default branch> -- "OK" or "SKIP <reason>". mergeStateStatus carries the
+# unresolved-conversation signal: gh pr view has no reviewThreads field, and BLOCKED is the
+# state GitHub reports for an unresolved thread or an unmet review requirement. Anything but
+# a clean state fails closed here.
+_pr_gate() {
+  printf '%s' "$1" | jq -r --arg def "$2" '
+    def checks: (.statusCheckRollup // []);
+    if (.baseRefName != $def) then "SKIP base is \(.baseRefName), not the default branch \($def)"
+    elif (.mergeable != "MERGEABLE") then "SKIP not mergeable (\(.mergeable // "unknown"))"
+    elif ((checks | map(select(((.conclusion // .state // "") | ascii_upcase) as $c
+                               | $c != "SUCCESS" and $c != "SKIPPED")) | length) > 0)
+      then "SKIP checks are pending or failing"
+    elif (.reviewDecision == "CHANGES_REQUESTED") then "SKIP changes requested"
+    elif ((.mergeStateStatus // "CLEAN") as $m
+          | $m != "CLEAN" and $m != "HAS_HOOKS" and $m != "UNSTABLE")
+      then "SKIP merge state \(.mergeStateStatus) (an unresolved thread or a blocked merge)"
+    else "OK" end' 2>/dev/null
+}
+
+cmd_merge() {
+  local do_apply=0 arg repo="" count=0
+  for arg in "$@"; do
+    case "$arg" in
+      --apply) do_apply=1 ;;
+      -*) echo "wrap.sh merge: unknown flag '$arg'" >&2; return 64 ;;
+      *) count=$(( count + 1 )); repo="$arg" ;;
+    esac
+  done
+  [ "$count" -eq 1 ] || { echo "usage: wrap.sh merge [--apply] <repo>" >&2; return 64; }
+  _is_repo "$repo" || { echo "wrap.sh merge: ${repo} is not a git repo" >&2; return 64; }
+
+  local ghs; ghs="$(_gh_state)"
+  if [ "$ghs" != "ok" ]; then _gh_note "$ghs"; return 1; fi
+
+  local def; def="$(_default_branch "$repo")" || { echo "no default branch resolved for ${repo}" >&2; return 1; }
+  local url; url="$(_origin_url "$repo")"
+
+  local numbers; numbers="$(gh pr list --repo "$url" --author "@me" --state open \
+    --json number,title,headRefName 2>/dev/null | jq -r '.[].number' 2>/dev/null)"
+  [ -n "$numbers" ] || { echo "no open PRs authored by the operator on ${url}"; return 0; }
+
+  # One detail read per PR, cached to a temp file: the dependents gate needs every base.
+  local cache; cache="$(mktemp)"
+  local n detail base head
+  for n in $numbers; do
+    detail="$(_pr_detail "$url" "$n")"
+    base="$(printf '%s' "$detail" | jq -r '.baseRefName // ""' 2>/dev/null)"
+    head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
+    printf '%s\t%s\t%s\n' "$n" "$head" "$base" >> "$cache"
+  done
+
+  local first_eligible="" verdict title
+  for n in $numbers; do
+    detail="$(_pr_detail "$url" "$n")"
+    title="$(printf '%s' "$detail" | jq -r '.title // ""' 2>/dev/null)"
+    head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
+    verdict="$(_pr_gate "$detail" "$def")"
+    if [ "$verdict" = "OK" ] && awk -F'\t' -v h="$head" -v n="$n" '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
+      verdict="SKIP dependents open, retarget them first (SPEC-065)"
+    fi
+    if [ "$verdict" = "OK" ]; then
+      echo "eligible #${n} ${title} [${head}]"
+      [ -n "$first_eligible" ] || first_eligible="$n"
+    else
+      echo "SKIP #${n} ${title}: ${verdict#SKIP }"
+    fi
+  done
+  rm -f "$cache"
+
+  [ "$do_apply" = 1 ] || { echo "dry run; pass --apply to merge one PR."; return 0; }
+  [ -n "$first_eligible" ] || { echo "nothing eligible to merge."; return 0; }
+
+  # Squash only, one PR per call, never --delete-branch (a worktree may hold the branch)
+  # and never --auto (an armed auto-merge lands a later push, SPEC-065 trap).
+  gh pr merge "$first_eligible" --repo "$url" --squash
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then echo "FAILED merge #${first_eligible}: exit ${rc}" >&2; return 2; fi
+
+  local after state sha
+  after="$(gh pr view "$first_eligible" --repo "$url" --json state,mergeCommit 2>/dev/null)"
+  state="$(printf '%s' "$after" | jq -r '.state // ""' 2>/dev/null)"
+  sha="$(printf '%s' "$after" | jq -r '.mergeCommit.oid // ""' 2>/dev/null)"
+  if [ "$state" != "MERGED" ]; then
+    echo "FAILED merge #${first_eligible}: state is '${state:-unknown}', not MERGED" >&2
+    return 2
+  fi
+  echo "merged #${first_eligible} ${sha}"
+  return 0
+}
+
+# --------------------------------------------------------------------------- log
+
+# _realpath_f <path> -- absolute path with every symlink on it resolved. The directory must
+# exist; the leaf need not.
+_realpath_f() {
+  local p="$1" dir base tgt n=0
+  dir="$(cd "$(dirname "$p")" 2>/dev/null && pwd -P)" || return 1
+  base="$(basename "$p")"
+  while [ -L "$dir/$base" ] && [ "$n" -lt 16 ]; do
+    tgt="$(readlink "$dir/$base")"
+    case "$tgt" in /*) ;; *) tgt="${dir}/${tgt}" ;; esac
+    dir="$(cd "$(dirname "$tgt")" 2>/dev/null && pwd -P)" || return 1
+    base="$(basename "$tgt")"
+    n=$(( n + 1 ))
+  done
+  printf '%s/%s\n' "${dir%/}" "$base"
+}
+
+cmd_log() {
+  local date_str text="" arg have_text=0
+  date_str="$(date +%F)"
+  while [ $# -gt 0 ]; do
+    arg="$1"
+    case "$arg" in
+      --date) [ $# -ge 2 ] || { echo "usage: wrap.sh log [--date YYYY-MM-DD] \"<slug>: <one sentence>\"" >&2; return 64; }
+              date_str="$2"; shift 2 ;;
+      *) [ "$have_text" = 0 ] || { echo "wrap.sh log: one text argument only" >&2; return 64; }
+         text="$arg"; have_text=1; shift ;;
+    esac
+  done
+  [ "$have_text" = 1 ] && [ -n "$text" ] || { echo "usage: wrap.sh log [--date YYYY-MM-DD] \"<slug>: <one sentence>\"" >&2; return 64; }
+
+  case "$text" in
+    *$'\n'*|*$'\r'*|*$'\t'*)
+      echo "wrap log: the text carries a control character; one line, no tabs" >&2; return 1 ;;
+  esac
+  case "$text" in
+    *$'\xe2\x80\x94'*|*$'\xe2\x80\x93'*)
+      echo "wrap log: the text carries an em or en dash; use a comma, a colon or a new sentence" >&2; return 1 ;;
+  esac
+
+  local line="${date_str} · ${text}"
+
+  local target; target="$(kit_config_get_root wrap.activity_log "")"
+  if [ -z "$target" ]; then
+    printf '%s\n' "$line"
+    echo "wrap log: no wrap.activity_log key in the kit-root kit.toml; line not written" >&2
+    return 0
+  fi
+
+  case "$target" in
+    "~"/*) target="${HOME}/${target#\~/}" ;;
+    /*) ;;
+    *) echo "wrap log: wrap.activity_log must be an absolute or ~-prefixed path, got '${target}'" >&2; return 1 ;;
+  esac
+
+  local resolved home_real
+  resolved="$(_realpath_f "$target")" || { echo "wrap log: cannot resolve '${target}'" >&2; return 1; }
+  home_real="$(cd "$HOME" 2>/dev/null && pwd -P)" || { echo "wrap log: cannot resolve HOME" >&2; return 1; }
+  case "$resolved" in
+    "$home_real"/*) ;;
+    *) echo "wrap log: resolved path '${resolved}' is outside HOME (${home_real})" >&2; return 1 ;;
+  esac
+  [ -f "$resolved" ] || { echo "wrap log: '${resolved}' is not an existing regular file" >&2; return 1; }
+
+  local n=${#line}
+  [ "$n" -gt 300 ] && echo "wrap log: note: ${n} chars, over the 300-char routine budget" >&2
+
+  local tmp mode; tmp="$(mktemp)"
+  printf '%s\n' "$line" > "$tmp"
+  cat "$resolved" >> "$tmp"
+  mode="$(_fmode "$resolved")"
+  case "$mode" in ''|*[!0-7]*) mode="" ;; esac
+  [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
+  mv -f "$tmp" "$resolved"
+  printf '%s\n' "$line"
+  return 0
+}
+
+# --------------------------------------------------------------------------- default-branch
+
+cmd_default_branch() {
+  [ $# -eq 1 ] || { echo "usage: wrap.sh default-branch <repo>" >&2; return 64; }
+  _is_repo "$1" || { echo "wrap.sh default-branch: $1 is not a git repo" >&2; return 1; }
+  local def
+  def="$(_default_branch "$1")" || { echo "wrap.sh default-branch: no default branch resolved for $1" >&2; return 1; }
+  printf '%s\n' "$def"
+  return 0
+}
+
+# --------------------------------------------------------------------------- entry
+
+main() {
+  local verb="${1:-}"
+  [ $# -gt 0 ] && shift
+  case "$verb" in
+    scan)           cmd_scan "$@" ;;
+    apply)          cmd_apply "$@" ;;
+    merge)          cmd_merge "$@" ;;
+    log)            cmd_log "$@" ;;
+    default-branch) cmd_default_branch "$@" ;;
+    -h|--help|help|"") _usage; return 0 ;;
+    *) echo "wrap: unknown verb '$verb' (try: wrap --help)" >&2; return 64 ;;
+  esac
+}
+
+main "$@"

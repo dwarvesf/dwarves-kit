@@ -255,3 +255,6 @@ jobs:
 
       - name: Run precedent records-surface tests (SPEC-245)
         run: bash tests/test-precedent.sh
+
+      - name: Run wrap verb tests (SPEC-246)
+        run: bash tests/test-wrap.sh

@@ -1,0 +1,394 @@
+#!/usr/bin/env bash
+# test-wrap.sh -- SPEC-246 TASK-001: the whole acceptance matrix for `bin/wrap` and
+# `lib/wrap/wrap.sh`.
+#
+# Fixture: three bare remotes whose default branches are `main`, `master` and `develop`,
+# each with the branch set the gates discriminate on (merged-ancestor, unmerged, squash-ok,
+# squash-stale, stacked-child, wt-clean, wt-dirty), clones with three secondary worktrees
+# (clean, dirty, detached), a clone whose origin/HEAD dangles, and a repo with no remote.
+# `gh` is a stub on PATH driven by env vars; it records every call so the merge case can
+# assert the exact flags.
+#
+# Run: bash tests/test-wrap.sh
+
+set -uo pipefail
+KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WRAP="$KIT_DIR/bin/wrap"
+
+PASS=0; FAIL=0; TOTAL=0
+RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'
+chk() {
+  TOTAL=$((TOTAL+1))
+  if [ "$2" -eq 0 ] 2>/dev/null; then echo -e "  ${GREEN}PASS${NC} $1"; PASS=$((PASS+1))
+  else echo -e "  ${RED}FAIL${NC} $1"; FAIL=$((FAIL+1)); fi
+}
+chk_has() { chk "$1" "$(printf '%s' "$2" | grep -qF -- "$3"; echo $?)"; }
+chk_no()  { chk "$1" "$(printf '%s' "$2" | grep -qF -- "$3" && echo 1 || echo 0)"; }
+
+TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-test.XXXXXX")"
+TMPD="$(cd "$TMPD" && pwd)"
+trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
+
+# --------------------------------------------------------------------------- gh stub
+mkdir -p "$TMPD/stub"
+cat > "$TMPD/stub/gh" <<'STUB'
+#!/usr/bin/env bash
+# gh stub: answers exactly what wrap.sh asks and records every call.
+printf '%s\n' "$*" >> "${GH_STUB_CALLS:-/dev/null}"
+sub="${1:-}"; [ $# -gt 0 ] && shift
+case "$sub" in
+  auth)
+    [ "${GH_STUB_UNAUTH:-0}" = "1" ] && exit 1
+    exit 0 ;;
+  pr)
+    verb="${1:-}"; [ $# -gt 0 ] && shift
+    case "$verb" in
+      list)
+        head=""
+        while [ $# -gt 0 ]; do
+          case "$1" in
+            --head) head="${2:-}"; shift 2 ;;
+            *) shift ;;
+          esac
+        done
+        if [ -n "$head" ]; then
+          key="GH_STUB_MERGED_$(printf '%s' "$head" | tr -c 'A-Za-z0-9' '_')"
+          eval "val=\"\${$key:-}\""
+          [ -n "$val" ] || val="[]"
+          printf '%s\n' "$val"
+        else
+          printf '%s\n' "${GH_STUB_OPEN_PRS:-[]}"
+        fi
+        exit 0 ;;
+      view)
+        n="${1:-}"; [ $# -gt 0 ] && shift
+        fields=""
+        while [ $# -gt 0 ]; do
+          case "$1" in --json) fields="${2:-}"; shift 2 ;; *) shift ;; esac
+        done
+        case "$fields" in
+          state,mergeCommit)
+            default_state='{"state":"MERGED","mergeCommit":{"oid":"1a2b3c4d5e6f"}}'
+            printf '%s\n' "${GH_STUB_VIEW_STATE:-$default_state}" ;;
+          *)
+            key="GH_STUB_PR_$n"; eval "val=\"\${$key:-}\""
+            [ -n "$val" ] || val="{}"
+            printf '%s\n' "$val" ;;
+        esac
+        exit 0 ;;
+      merge) exit "${GH_STUB_MERGE_RC:-0}" ;;
+    esac
+    exit 1 ;;
+esac
+exit 1
+STUB
+chmod +x "$TMPD/stub/gh"
+PATH="$TMPD/stub:$PATH"; export PATH
+GH_STUB_CALLS="$TMPD/gh-calls.log"; export GH_STUB_CALLS; : > "$GH_STUB_CALLS"
+
+# --------------------------------------------------------------------------- fixture
+gitc() { git -C "$1" config user.email t@t; git -C "$1" config user.name t; git -C "$1" config commit.gpgsign false; }
+
+build_remote() { # build_remote <name> <default branch>
+  local name="$1" def="$2" work="$TMPD/work-$1" b
+  mkdir -p "$work"
+  git -C "$work" init -q
+  gitc "$work"
+  git -C "$work" symbolic-ref HEAD "refs/heads/$def"
+  echo base > "$work/a.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
+  git -C "$work" branch merged-ancestor
+  echo second >> "$work/a.txt"; git -C "$work" commit -qam second
+  for b in unmerged squash-ok squash-stale stacked-child wt-clean wt-dirty; do
+    git -C "$work" branch "$b"
+    git -C "$work" checkout -q "$b"
+    echo "$b" > "$work/$b.txt"; git -C "$work" add -A; git -C "$work" commit -qm "$b"
+  done
+  git -C "$work" checkout -q "$def"
+  git clone -q --bare "$work" "$TMPD/bare-$name"
+}
+
+make_clone() { # make_clone <name> <remote name> <default branch> <checkout branch>
+  local name="$1" rname="$2" def="$3" co="$4" clone="$TMPD/clone-$1" b
+  git clone -q "$TMPD/bare-$rname" "$clone"
+  gitc "$clone"
+  git -C "$clone" remote set-head origin "$def" >/dev/null 2>&1
+  for b in merged-ancestor unmerged squash-ok squash-stale stacked-child wt-clean wt-dirty; do
+    git -C "$clone" branch "$b" "origin/$b" >/dev/null 2>&1
+  done
+  git -C "$clone" worktree add "$TMPD/wt-$name-clean" wt-clean >/dev/null 2>&1
+  git -C "$clone" worktree add "$TMPD/wt-$name-dirty" wt-dirty >/dev/null 2>&1
+  echo dirt > "$TMPD/wt-$name-dirty/dirt.txt"
+  git -C "$clone" worktree add --detach "$TMPD/wt-$name-det" HEAD >/dev/null 2>&1
+  git -C "$clone" checkout -q "$co"
+}
+
+set_stub() { # set_stub <remote name> <default branch>
+  local bare="$TMPD/bare-$1" def="$2"
+  export GH_STUB_MERGED_squash_ok="[{\"headRefOid\":\"$(git -C "$bare" rev-parse squash-ok)\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+  export GH_STUB_MERGED_squash_stale="[{\"headRefOid\":\"1111111111111111111111111111111111111111\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+  export GH_STUB_MERGED_stacked_child="[{\"headRefOid\":\"$(git -C "$bare" rev-parse stacked-child)\",\"baseRefName\":\"feat/parent\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+}
+
+build_remote rmain main
+build_remote rmaster master
+build_remote rdev develop
+
+export GH_STUB_OPEN_PRS='[{"number":7,"title":"wrap the session","headRefName":"feat/wrap"}]'
+export GH_STUB_PR_7='{"number":7,"title":"wrap the session","headRefName":"feat/wrap","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"},{"conclusion":"SKIPPED"}]}'
+
+# ===========================================================================
+echo "=== scan: every verdict, for main, master and develop defaults ==="
+# ===========================================================================
+for pair in "rmain main" "rmaster master" "rdev develop"; do
+  set -- $pair
+  rname="$1"; def="$2"
+  make_clone "scan-$def" "$rname" "$def" unmerged
+  set_stub "$rname" "$def"
+  out="$("$WRAP" scan "$TMPD/clone-scan-$def" 2>&1)"
+  chk_has "scan/$def: ahead-behind line names origin/$def" "$out" "-- vs origin/$def: ahead="
+  chk_has "scan/$def: merged-ancestor is SAFE-d" "$out" "merged-ancestor  [SAFE-d: ancestor of origin/$def]"
+  chk_has "scan/$def: squash-ok is squash-merged" "$out" "squash-ok  [SQUASH-MERGED per gh: safe to -D]"
+  chk_has "scan/$def: squash-stale is LEAVE" "$out" "squash-stale  [NOT merged / unknown: LEAVE]"
+  chk_has "scan/$def: unmerged is LEAVE" "$out" "unmerged  [NOT merged / unknown: LEAVE]"
+  chk_has "scan/$def: the open PR is listed" "$out" "#7 wrap the session [feat/wrap]"
+  chk_has "scan/$def: checkout line" "$out" "-- checkout on: unmerged"
+done
+
+echo "=== scan: a non-repo argument is skipped, the repo after it still reports ==="
+out="$("$WRAP" scan "$TMPD/not-a-repo" "$TMPD/clone-scan-main" 2>&1)"
+chk_has "scan: non-repo prints the skip line" "$out" "not a git repo, skipped"
+chk_has "scan: the following repo still reports" "$out" "-- vs origin/main: ahead="
+
+# ===========================================================================
+echo "=== apply dry-run: every SKIP reason, and no write ==="
+# ===========================================================================
+set_stub rmain main
+DRY="$TMPD/clone-scan-main"
+before_b="$(git -C "$DRY" branch --list)"
+before_w="$(git -C "$DRY" worktree list)"
+out="$("$WRAP" apply "$DRY" 2>&1)"; rc=$?
+chk "apply dry-run exits 0" "$rc"
+chk_has "apply dry-run: wt-clean skipped without --worktrees" "$out" "--worktrees not given"
+chk_has "apply dry-run: the checked-out branch is skipped" "$out" "SKIP unmerged: currently checked out"
+chk_has "apply dry-run: squash-stale names both short SHAs" "$out" "SKIP squash-stale: tip $(git -C "$DRY" rev-parse squash-stale | cut -c1-7) != merged PR head 1111111"
+chk_has "apply dry-run: stacked-child names the other base" "$out" "SKIP stacked-child: merged into feat/parent, not the default branch"
+chk_has "apply dry-run: pull skipped off the default branch" "$out" "SKIP pull: checkout on 'unmerged', not the default branch main"
+chk_has "apply dry-run: the deletes are announced, not run" "$out" "[DRY-RUN] delete merged-ancestor"
+
+out="$("$WRAP" apply --worktrees "$DRY" 2>&1)"; rc=$?
+chk "apply dry-run --worktrees exits 0" "$rc"
+chk_has "apply dry-run: the dirty worktree is skipped" "$out" "dirty (another session's work stays)"
+chk_has "apply dry-run: the detached worktree is skipped" "$out" "detached HEAD (removal could orphan the commit)"
+after_b="$(git -C "$DRY" branch --list)"
+after_w="$(git -C "$DRY" worktree list)"
+chk "apply without --apply changes no branch (byte-equal)" "$([ "$before_b" = "$after_b" ]; echo $?)"
+chk "apply without --apply changes no worktree (byte-equal)" "$([ "$before_w" = "$after_w" ]; echo $?)"
+
+# ===========================================================================
+echo "=== apply --apply --worktrees: only the proven deletes, and a ff pull ==="
+# ===========================================================================
+make_clone apply-main rmain main main
+# Advance the remote default branch so the pull has something to fast-forward to.
+git clone -q "$TMPD/bare-rmain" "$TMPD/pusher"
+gitc "$TMPD/pusher"
+echo advance >> "$TMPD/pusher/a.txt"
+git -C "$TMPD/pusher" commit -qam advance
+git -C "$TMPD/pusher" push -q origin main
+NEW_TIP="$(git -C "$TMPD/bare-rmain" rev-parse main)"
+
+set_stub rmain main
+APPLYREPO="$TMPD/clone-apply-main"
+out="$("$WRAP" apply --apply --worktrees "$APPLYREPO" 2>&1)"; rc=$?
+chk "apply --apply exits 0 on a healthy repo" "$rc"
+branches="$(git -C "$APPLYREPO" for-each-ref --format='%(refname:short)' refs/heads/ | sort | tr '\n' ' ')"
+chk "apply --apply deleted merged-ancestor and squash-ok only" \
+  "$([ "$branches" = "main squash-stale stacked-child unmerged wt-clean wt-dirty " ]; echo $?)"
+chk_no "apply --apply never touched the default branch" "$out" "delete main"
+chk "apply --apply removed the clean worktree only" \
+  "$([ ! -d "$TMPD/wt-apply-main-clean" ] && [ -d "$TMPD/wt-apply-main-dirty" ] && [ -d "$TMPD/wt-apply-main-det" ]; echo $?)"
+chk "apply --apply fast-forwarded the default branch" \
+  "$([ "$(git -C "$APPLYREPO" rev-parse HEAD)" = "$NEW_TIP" ]; echo $?)"
+
+# ===========================================================================
+echo "=== apply --apply: a non-ff default branch is FAILED, exit 2, never forced ==="
+# ===========================================================================
+make_clone apply-nonff rmaster master master
+OLD_MASTER="$(git -C "$TMPD/clone-apply-nonff" rev-parse master)"
+git clone -q "$TMPD/bare-rmaster" "$TMPD/rewriter"
+gitc "$TMPD/rewriter"
+git -C "$TMPD/rewriter" reset -q --hard HEAD~1
+echo divergent > "$TMPD/rewriter/divergent.txt"
+git -C "$TMPD/rewriter" add -A; git -C "$TMPD/rewriter" commit -qm divergent
+git -C "$TMPD/rewriter" push -q --force origin HEAD:refs/heads/master
+set_stub rmaster master
+out="$("$WRAP" apply --apply "$TMPD/clone-apply-nonff" 2>&1)"; rc=$?
+chk "apply --apply exits 2 when a write fails" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "apply --apply reports the failed pull" "$out" "FAILED pull --ff-only"
+chk "apply --apply never reset the local default branch" \
+  "$([ "$(git -C "$TMPD/clone-apply-nonff" rev-parse master)" = "$OLD_MASTER" ]; echo $?)"
+
+# ===========================================================================
+echo "=== gh absent: every non-ancestor is LEAVE, merge refuses ==="
+# ===========================================================================
+mkdir -p "$TMPD/nogh"
+for t in bash env git jq sed awk grep date stat mktemp readlink mv rm cat tr sort head cut basename dirname chmod; do
+  p="$(command -v "$t" 2>/dev/null)" && ln -sf "$p" "$TMPD/nogh/$t"
+done
+chk "the gh-free PATH really has no gh" "$(PATH="$TMPD/nogh" command -v gh >/dev/null 2>&1 && echo 1 || echo 0)"
+out="$(PATH="$TMPD/nogh" "$WRAP" scan "$TMPD/clone-scan-main" 2>&1)"
+chk_has "scan without gh: squash-ok falls back to LEAVE" "$out" "squash-ok  [NOT merged / unknown: LEAVE]"
+chk_has "scan without gh: the PR line says so" "$out" "(gh unavailable)"
+out="$(PATH="$TMPD/nogh" "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge without gh exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "merge without gh names the reason" "$out" "(gh unavailable)"
+
+echo "=== gh unauthenticated: the same verdicts, merge still refuses ==="
+out="$(GH_STUB_UNAUTH=1 "$WRAP" scan "$TMPD/clone-scan-main" 2>&1)"
+chk_has "scan unauthenticated: squash-ok falls back to LEAVE" "$out" "squash-ok  [NOT merged / unknown: LEAVE]"
+chk_has "scan unauthenticated: the PR line says so" "$out" "(gh unauthenticated)"
+out="$(GH_STUB_UNAUTH=1 "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge unauthenticated exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "merge unauthenticated names the reason" "$out" "(gh unauthenticated)"
+
+# ===========================================================================
+echo "=== merge: dry-run lists the eligible PR, --apply merges exactly one ==="
+# ===========================================================================
+: > "$GH_STUB_CALLS"
+out="$("$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge dry-run exits 0" "$rc"
+chk_has "merge dry-run lists the PR as eligible" "$out" "eligible #7 wrap the session [feat/wrap]"
+chk "merge dry-run calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+: > "$GH_STUB_CALLS"
+out="$("$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --apply exits 0" "$rc"
+chk_has "merge --apply reports the merge SHA" "$out" "merged #7 1a2b3c4d5e6f"
+chk "merge --apply called pr merge exactly once" "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk "merge --apply passed --squash" "$(grep -q '^pr merge 7 .*--squash' "$GH_STUB_CALLS"; echo $?)"
+chk "merge --apply passed no --delete-branch" "$(grep -q -- '--delete-branch' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "merge --apply passed no --auto" "$(grep -q -- '--auto' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+chk "merge --apply verified through pr view" "$(grep -q '^pr view 7 .*state,mergeCommit' "$GH_STUB_CALLS"; echo $?)"
+
+echo "=== merge: a stacked parent with an open dependent skips, naming the retarget rule ==="
+STACK_OPEN='[{"number":7,"title":"parent","headRefName":"feat/wrap"},{"number":8,"title":"child","headRefName":"feat/child"}]'
+STACK_8='{"number":8,"title":"child","headRefName":"feat/child","baseRefName":"feat/wrap","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}'
+STACK_7='{"number":7,"title":"parent","headRefName":"feat/wrap","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}'
+out="$(GH_STUB_OPEN_PRS="$STACK_OPEN" GH_STUB_PR_7="$STACK_7" GH_STUB_PR_8="$STACK_8" "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
+chk_has "merge skips the stacked parent" "$out" "SKIP #7 parent: dependents open, retarget them first (SPEC-065)"
+chk_has "merge skips the child whose base is not the default branch" "$out" "SKIP #8 child: base is feat/wrap, not the default branch main"
+
+echo "=== merge: the post-merge state check fails closed ==="
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_VIEW_STATE='{"state":"OPEN","mergeCommit":null}' "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
+chk "merge --apply exits 2 when the PR is not MERGED after the call" "$([ "$rc" -eq 2 ]; echo $?)"
+
+# ===========================================================================
+echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
+# ===========================================================================
+chk "default-branch prints main" "$([ "$("$WRAP" default-branch "$TMPD/clone-scan-main")" = "main" ]; echo $?)"
+chk "default-branch prints master" "$([ "$("$WRAP" default-branch "$TMPD/clone-scan-master")" = "master" ]; echo $?)"
+chk "default-branch prints develop" "$([ "$("$WRAP" default-branch "$TMPD/clone-scan-develop")" = "develop" ]; echo $?)"
+
+git clone -q "$TMPD/bare-rmain" "$TMPD/clone-dangling"
+gitc "$TMPD/clone-dangling"
+git -C "$TMPD/clone-dangling" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/renamed-away
+chk "default-branch falls through to main when origin/HEAD dangles" \
+  "$([ "$("$WRAP" default-branch "$TMPD/clone-dangling")" = "main" ]; echo $?)"
+
+mkdir -p "$TMPD/remoteless"
+git -C "$TMPD/remoteless" init -q; gitc "$TMPD/remoteless"
+echo x > "$TMPD/remoteless/x.txt"; git -C "$TMPD/remoteless" add -A; git -C "$TMPD/remoteless" commit -qm x
+out="$("$WRAP" default-branch "$TMPD/remoteless" 2>&1)"; rc=$?
+chk "default-branch exits 1 on a repo with no remote" "$([ "$rc" -eq 1 ]; echo $?)"
+
+# ===========================================================================
+echo "=== log: the activity line, its path rules and its text rules ==="
+# ===========================================================================
+LOGHOME="$TMPD/home"; mkdir -p "$LOGHOME"
+mkdir -p "$TMPD/outside"
+KITROOT="$TMPD/kitroot"; mkdir -p "$KITROOT"
+LOGFILE="$LOGHOME/ACTIVITY.md"
+printf 'first old line\n' > "$LOGFILE"
+printf 'old\n' > "$TMPD/outside/ACTIVITY.md"
+
+set_log_key() { printf '[wrap]\nactivity_log = "%s"\n' "$1" > "$KITROOT/kit.toml"; }
+wrap_log() { HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "$@"; }
+
+set_log_key "$LOGFILE"
+out="$(wrap_log "wrap: landed the session" 2>&1)"; rc=$?
+chk "log exits 0 with the key set" "$rc"
+chk "log prepends the dated line as line 1" \
+  "$([ "$(head -1 "$LOGFILE")" = "$(date +%F) · wrap: landed the session" ]; echo $?)"
+chk "log keeps the old first line" "$(grep -qx 'first old line' "$LOGFILE"; echo $?)"
+
+wrap_log --date 2026-01-02 "wrap: backdated" >/dev/null 2>&1
+chk "log --date overrides the prefix" \
+  "$([ "$(head -1 "$LOGFILE")" = "2026-01-02 · wrap: backdated" ]; echo $?)"
+
+BEFORE="$(cat "$LOGFILE")"
+# The dash is assembled from its bytes: a literal one in this file would violate the
+# repo-wide formatting rule the verb under test enforces.
+EM="$(printf '\xe2\x80\x94')"
+out="$(wrap_log "wrap: an em dash ${EM} here" 2>&1)"; rc=$?
+chk "log refuses an em dash (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "log wrote nothing on the em dash" "$([ "$BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
+
+out="$(wrap_log "$(printf 'wrap: two\nlines')" 2>&1)"; rc=$?
+chk "log refuses a newline (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "log wrote nothing on the newline" "$([ "$BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
+
+LONG="wrap: $(head -c 320 < /dev/zero | tr '\0' 'x')"
+out="$(wrap_log "$LONG" 2>&1)"; rc=$?
+chk "log writes a 320-char text" "$rc"
+chk "log warns over the 300-char budget" "$(printf '%s' "$out" | grep -q 'over the 300-char routine budget'; echo $?)"
+
+set_log_key "$LOGHOME/no-such-file.md"
+out="$(wrap_log "wrap: missing target" 2>&1)"; rc=$?
+chk "log exits 1 on a missing file" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "log names the resolved path" "$(printf '%s' "$out" | grep -q 'no-such-file.md'; echo $?)"
+
+set_log_key "$TMPD/outside/ACTIVITY.md"
+out="$(wrap_log "wrap: outside home" 2>&1)"; rc=$?
+chk "log exits 1 on an absolute path outside HOME" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "log left the outside file untouched" "$([ "$(cat "$TMPD/outside/ACTIVITY.md")" = "old" ]; echo $?)"
+
+set_log_key "$LOGHOME/../outside/ACTIVITY.md"
+out="$(wrap_log "wrap: dotdot" 2>&1)"; rc=$?
+chk "log exits 1 on a .. path that escapes HOME" "$([ "$rc" -eq 1 ]; echo $?)"
+
+set_log_key "relative/ACTIVITY.md"
+out="$(wrap_log "wrap: relative" 2>&1)"; rc=$?
+chk "log exits 1 on a relative path" "$([ "$rc" -eq 1 ]; echo $?)"
+
+mkdir -p "$TMPD/projrepo"
+printf '[wrap]\nactivity_log = "%s"\n' "$LOGHOME/PROJECT.md" > "$TMPD/projrepo/.kit.toml"
+printf 'untouched\n' > "$LOGHOME/PROJECT.md"
+printf '[wrap]\n' > "$KITROOT/kit.toml"
+out="$(cd "$TMPD/projrepo" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: project toml" 2>&1)"; rc=$?
+chk "log ignores a project .kit.toml key (exit 0)" "$rc"
+chk "log says the line did not land" "$(printf '%s' "$out" | grep -q 'no wrap.activity_log key in the kit-root kit.toml; line not written'; echo $?)"
+chk "log still prints the line it would have written" "$(printf '%s' "$out" | grep -q ' · wrap: project toml'; echo $?)"
+chk "log left the project-named file untouched" "$([ "$(cat "$LOGHOME/PROJECT.md")" = "untouched" ]; echo $?)"
+
+# ===========================================================================
+echo "=== help and usage ==="
+# ===========================================================================
+out="$("$WRAP" --help 2>&1)"; rc=$?
+chk "--help exits 0" "$rc"
+for verb in scan apply merge log default-branch; do
+  chk_has "--help names $verb" "$out" "$verb"
+done
+out="$("$WRAP" scan 2>&1)"; rc=$?
+chk "scan with no argument exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$("$WRAP" apply 2>&1)"; rc=$?
+chk "apply with no repo exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$("$WRAP" merge 2>&1)"; rc=$?
+chk "merge with no repo exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$("$WRAP" log 2>&1)"; rc=$?
+chk "log with no text exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+out="$("$WRAP" bogus 2>&1)"; rc=$?
+chk "an unknown verb exits 64" "$([ "$rc" -eq 64 ]; echo $?)"
+
+echo
+if [ "$FAIL" -gt 0 ]; then echo "test-wrap: $PASS passed, $FAIL FAILED of $TOTAL" >&2; exit 1; fi
+echo "test-wrap: all $PASS passed"
