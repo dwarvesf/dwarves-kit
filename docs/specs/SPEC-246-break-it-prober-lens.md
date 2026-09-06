@@ -226,7 +226,7 @@ must therefore land in the SAME task, not two phases apart. TASK-001 carries bot
 
 ### Phase 1: Foundation
 
-- [ ] **TASK-001** (normal): Write `agents/break-it.md` AND add the naming-axis arm in the same
+- [x] **TASK-001** (normal): Write `agents/break-it.md` AND add the naming-axis arm in the same
   commit. The agent carries frontmatter (`name: break-it`, a description naming the trigger, the
   `code-reviewer` tool roster, `model: opus`), the refuter stance, the six probe families, the
   command-safety and masking rules, the rejected-findings consult, both output grammars, and the
@@ -237,7 +237,7 @@ must therefore land in the SAME task, not two phases apart. TASK-001 carries bot
   - AC3: `bash tests/test-meta.sh` exits 0 with the agent present.
   - AC4: deleting the `break-it)` arm makes `bash tests/test-meta.sh` fail (the arm is load-bearing).
 
-- [ ] **TASK-002** (normal): Wire the lens into `commands/battery.md`, three edits.
+- [x] **TASK-002** (normal): Wire the lens into `commands/battery.md`, three edits.
   (a) a row in the `## Lens escalation` table after the performance-reviewer row at
   `commands/battery.md:61`: `| behavioral code with tests (the branch claims a green suite) | break-it | high |`;
   (b) a `## Probe rung (break-it), before the mutation rung` section after the escalation table's
@@ -253,7 +253,7 @@ must therefore land in the SAME task, not two phases apart. TASK-001 carries bot
 
 ### Phase 2: Core
 
-- [ ] **TASK-003** (tiny): Build the fixture pair under `tests/fixtures/break-it/`, each with a
+- [x] **TASK-003** (tiny): Build the fixture pair under `tests/fixtures/break-it/`, each with a
   deterministic self-check so the fixture's own claim is machine-proven, not asserted in prose.
   `leaky/` holds `impl.sh` with a documented contract in its header, `test.sh` (a suite that
   passes), `probe.txt` (the one input that violates the contract), and `probe-check.sh` (feeds
@@ -263,7 +263,7 @@ must therefore land in the SAME task, not two phases apart. TASK-001 carries bot
   - AC2: `bash tests/fixtures/break-it/leaky/probe-check.sh` exits 0 (the hole is real).
   - AC3: `bash tests/fixtures/break-it/tight/test.sh` exits 0, and exits non-zero once the guard line is removed.
 
-- [ ] **TASK-004** (tiny): Write `tests/test-break-it.sh` on the `test-agent-effectiveness.sh`
+- [x] **TASK-004** (tiny): Write `tests/test-break-it.sh` on the `test-agent-effectiveness.sh`
   shape: a deterministic negative control over the fixtures, plus prompt-completeness greps that
   every edge case and invariant in this spec has vocabulary in the agent prompt.
   - AC1: the negative control passes both directions (the leaky fixture's hole is proven real by AC2 above; the tight fixture's suite catches the boundary and fails without the guard).
@@ -274,24 +274,24 @@ must therefore land in the SAME task, not two phases apart. TASK-001 carries bot
 
 ### Phase 3: Polish
 
-- [ ] **TASK-005** (tiny): Docs wiring. The rung order into `docs/WORKFLOW.md` "## Advisory
+- [x] **TASK-005** (tiny): Docs wiring. The rung order into `docs/WORKFLOW.md` "## Advisory
   measurement gates", a row in the README agents table, a row in the `docs/MANUAL.md` agents table.
   - AC1: `bash tests/test-meta.sh` passes its README-row-count and MANUAL-cross-ref checks with the new agent present.
   - AC2: `docs/WORKFLOW.md` names the three rungs in order.
 
 ## After state
 
-- [ ] `agents/break-it.md` exists and passes the effectiveness gate. (Today: the kit has 30 agents and none probes adversarially.)
-- [ ] `/kit:battery` names break-it in its escalation table and prints the three-rung ladder. (Today: `grep break-it commands/battery.md` returns nothing.)
-- [ ] The fixture pair proves both directions: the leaky suite stays green on a real hole, the tight suite catches it. (Today: no fixture in the repo represents a suite that does not constrain its code.)
-- [ ] `bash tests/test-break-it.sh` exits 0.
-- [ ] `bash tests/test-meta.sh` exits 0 with the new agent on the naming axis, in the README table, and in the MANUAL table.
+- [x] `agents/break-it.md` exists and passes the effectiveness gate. (Today: the kit has 30 agents and none probes adversarially.)
+- [x] `/kit:battery` names break-it in its escalation table and prints the three-rung ladder. (Today: `grep break-it commands/battery.md` returns nothing.)
+- [x] The fixture pair proves both directions: the leaky suite stays green on a real hole, the tight suite catches it. (Today: no fixture in the repo represents a suite that does not constrain its code.)
+- [x] `bash tests/test-break-it.sh` exits 0.
+- [x] `bash tests/test-meta.sh` exits 0 with the new agent on the naming axis, in the README table, and in the MANUAL table.
 
 ## Acceptance Criteria (global)
 
-- [ ] All tasks pass their individual acceptance criteria
-- [ ] Tests cover the happy path plus every edge case listed below
-- [ ] No regressions: `bash tests/test-meta.sh && bash tests/test-hooks.sh` still pass
+- [x] All tasks pass their individual acceptance criteria
+- [x] Tests cover the happy path plus every edge case listed below
+- [x] No regressions: `bash tests/test-meta.sh && bash tests/test-hooks.sh` still pass
 
 ## Verification
 
