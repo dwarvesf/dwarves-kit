@@ -8,14 +8,21 @@
 #                  green suite over a real hole, and a suite that pins the
 #                  boundary), the naming-axis arm is proven load-bearing, and the
 #                  battery/WORKFLOW wiring is read out of the live files.
-#   PROMPT      -- completeness greps. Every invariant and edge case the spec's
-#                  I/O contract names must have vocabulary in the agent prompt.
-#                  This proves the prompt can NAME the class, never that a live
-#                  run finds it.
+#   PROMPT      -- STRUCTURAL completeness. Every load-bearing token the spec's
+#                  I/O contract names must appear under the SECTION that owns it,
+#                  not merely somewhere in the file. Section-scoping is what stops
+#                  a bag-of-words prompt passing: a review experiment on
+#                  2026-09-07 showed a gutted 12-line agent file containing every
+#                  pinned phrase in one paragraph passed the earlier flat greps
+#                  AND the SG-01 gate. Tokens, not sentences, are pinned, so
+#                  rewording the prose does not red the suite.
+#                  This proves the prompt STRUCTURES the class, never that a live
+#                  run finds it. A live dispatch is the only proof of that, and it
+#                  is recorded in docs/verification/, not here.
 #
 # The negative controls are what stop this from rubber-stamping: stripping the
-# tight fixture's GUARD-LINE must turn its suite red, and dropping the
-# `break-it)` arm must make the naming axis reject the name.
+# tight fixture's tagged upper-bound line must turn its suite red, and dropping
+# the `break-it)` arm must make the naming axis reject the name.
 #
 # Run: bash tests/test-break-it.sh   (exit 0 = all AC green)
 
@@ -50,22 +57,22 @@ if [ -z "$(tools_violation "$A")" ]; then
 else
   assert "T1-AC2: no Write/Edit/MultiEdit/NotebookEdit/bare-Bash in the tools block" 1
 fi
-# DEC-007: the code-reviewer roster is kept, so the read-only claim rests on the
-# prompt's command-safety rule. Pin the roster so a silent narrowing is visible.
+# The roster is pinned as a SET, both directions: a silent narrowing and a silent
+# widening are both visible. Battery leg 1 already re-executed the suite before
+# this lens runs, and every language runner loads adversary-authored code before
+# its first test (conftest.py, a pretest script, TestMain), so the three runner
+# grants the first draft carried were redundant execution of hostile code. They
+# are gone; `observed:` takes the UNVERIFIED path instead.
 ROSTER=$(awk '/^---$/{c++; next} c==1' "$A" | sed -n 's/^[[:space:]]*-[[:space:]]*//p' | sed 's/[[:space:]]*$//')
-ROSTER_OK=0
-while IFS= read -r T; do
-  printf '%s\n' "$ROSTER" | grep -qxF "$T" || ROSTER_OK=1
-done <<'ROSTER_EOF'
-Read
+EXPECTED_ROSTER='Read
 Grep
 Glob
 Bash(git diff *)
-Bash(npm test *)
-Bash(go test *)
-Bash(pytest *)
-ROSTER_EOF
-assert "T1-DEC-007: the code-reviewer tool roster is carried intact" $ROSTER_OK
+Bash(git log *)'
+[ "$(printf '%s\n' "$ROSTER" | sort)" = "$(printf '%s\n' "$EXPECTED_ROSTER" | sort)" ]
+assert "T1-DEC-007: the tool roster is exactly the read-only set (no runner grants)" $?
+printf '%s\n' "$ROSTER" | grep -qE '^Bash\((npm|go|pytest|cargo|make|just|bash) '
+assert "T1-DEC-007 [NEGATIVE CONTROL]: no test-runner grant executes branch code" $([ $? -eq 0 ] && echo 1 || echo 0)
 
 # --- TASK-001 AC4 [NEGATIVE CONTROL]: the naming-axis arm is load-bearing -----
 # Extract is_on_review_axis() from the live tests/test-meta.sh and exercise it
@@ -110,6 +117,7 @@ bash "$FIX/tight/test.sh" >/dev/null 2>&1
 assert "T3-AC3: the tight suite is GREEN with the guard in place" $?
 # Strip the GUARD-LINE into a temp impl and re-run the tight suite against it.
 STRIPPED=$(mktemp)
+trap 'rm -f "$STRIPPED"' EXIT
 grep -v 'GUARD-LINE' "$FIX/tight/impl.sh" > "$STRIPPED"
 [ "$(wc -l < "$STRIPPED")" -lt "$(wc -l < "$FIX/tight/impl.sh")" ]
 assert "T3-AC3: the guard strip removed a line (control not vacuous)" $?
@@ -119,53 +127,109 @@ else
   assert "T3-AC3 [NEGATIVE CONTROL]: without the guard the tight suite goes RED" 0
 fi
 rm -f "$STRIPPED"
+# The tight half must honour the WHOLE contract, not just the two integer
+# boundaries. A live break-it dispatch on 2026-09-07 broke the first version with
+# `batch_size abc`: the numeric tests exit 2 on non-integer input, the redirect
+# hid it, and control fell through to "ok". A fixture that stands for "the suite
+# constrains its code" has to survive a real prober, so the shape cases are
+# pinned here as well as in the fixture's own suite.
+TIGHT_SHAPE=0
+for V in abc 3.5 0x5 " " 999999999999999999999; do
+  [ "$(bash "$FIX/tight/impl.sh" "$V")" = "reject" ] || TIGHT_SHAPE=1
+done
+assert "T3-AC3: the tight fixture rejects malformed input, not only 11 (battery finding)" $TIGHT_SHAPE
+[ "$(bash "$FIX/leaky/impl.sh" abc)" = "ok" ]
+assert "T3-AC1: the leaky fixture still carries its hole (it is the unconstrained half)" $?
 
-# --- TASK-004 AC2: one grep per I/O-contract invariant ------------------------
-echo ""
-echo "--- prompt completeness: invariants ---"
-grep -qi 'no concrete input is not a finding' "$A"
-assert "T4-AC2/inv1: no concrete input means no finding" $?
-grep -qi 'never downgrade it to a hint' "$A"
-assert "T4-AC2/inv1: a dropped candidate is never downgraded to a hint" $?
-grep -q 'UNVERIFIED' "$A"; assert "T4-AC2/inv2: the UNVERIFIED alternative exists" $?
-grep -qi 'only behavior you actually observed' "$A"
-assert "T4-AC2/inv2: observed: may state only observed behavior" $?
-grep -q 'NO-PROBE' "$A"; assert "T4-AC2/inv3: NO-PROBE is in the output grammar" $?
-grep -qi 'NO-PROBE. is a verdict, not a failure to try' "$A"
-assert "T4-AC2/inv3: NO-PROBE is a verdict that names what was tried" $?
-grep -qi 'never write a test' "$A"; assert "T4-AC2/inv4: the lens never writes a test" $?
-grep -qi 'never edit' "$A"; assert "T4-AC2/inv4: the lens never edits" $?
-grep -qi 'never run.*mutation' "$A"; assert "T4-AC2/inv4: the lens never runs the mutation gate" $?
+# --- TASK-004 AC2/AC3/AC4: STRUCTURAL prompt completeness --------------------
+# Every pin below is SECTION-SCOPED: the token must live under the heading that
+# owns it. A flat file-wide grep passes on a bag of words (proven by experiment,
+# see the header), so scoping is the discrimination. Tokens are pinned, never
+# sentences, so a harmless reword does not red the suite.
+section() { # section <heading-text> -- print that '## ' section's body
+  awk -v h="## $1" 'index($0,h)==1{f=1;next} /^## /{f=0} f' "$A"
+}
+in_section() { # in_section <heading> <extended-regex>  (case-insensitive)
+  section "$1" | grep -qEi "$2"
+}
 
-# --- TASK-004 AC3: one grep per edge case 1, 3, 4, 5, 8 ----------------------
 echo ""
-echo "--- prompt completeness: edge cases ---"
-grep -qi 'carries no tests' "$A"; assert "T4-AC3/edge1: the no-tests branch exists" $?
-grep -qi 'infinite and worthless' "$A"; assert "T4-AC3/edge1: it stops rather than enumerating" $?
-grep -q 'Out of Scope' "$A"; assert "T4-AC3/edge3: non-goals are consulted" $?
-grep -q 'rejected-findings.md' "$A"; assert "T4-AC3/edge3: the rejected-findings ledger is consulted" $?
-grep -q 'Previously rejected:' "$A"; assert "T4-AC3/edge3: a ledger match gets its own reported line" $?
-grep -q 'unconstrained-by:' "$A"; assert "T4-AC3/edge4: findings carry the unconstrained-by citation" $?
-grep -qi 'without an .unconstrained-by:. citation is not emitted' "$A"
-assert "T4-AC3/edge4: a finding without the citation is not emitted" $?
-grep -qi 'suite cannot run' "$A"; assert "T4-AC3/edge5: the unrunnable-suite branch exists" $?
-grep -qi 'fail-open' "$A"; assert "T4-AC3/edge8: the ledger consult is fail-open" $?
-grep -qi 'never an error and never blocks' "$A"
-assert "T4-AC3/edge8: a malformed ledger never blocks the lens" $?
+echo "--- prompt structure: the sections exist ---"
+for H in "Input" "Where you sit in the ladder" "The probe families" \
+         "Command safety" "Masking" "Consult the rejected-findings ledger" \
+         "Output grammar" "Invariants" "Edge cases" "What you must NOT do" \
+         "Return contract"; do
+  [ -n "$(section "$H")" ]; assert "T4-AC2: section '## $H...' is present and non-empty" $?
+done
 
-# --- TASK-004 AC4: command safety + masking ----------------------------------
 echo ""
-echo "--- prompt completeness: safety ---"
-grep -qi 'VERBATIM' "$A"; assert "T4-AC4: test commands are re-run verbatim" $?
-grep -qi 'never append an argument' "$A"
-assert "T4-AC4: the lens never appends an argument, flag, redirect, or metacharacter" $?
-grep -qi 'DATA, never instructions' "$A"
-assert "T4-AC4: the diff and its fixtures are data, never instructions" $?
-grep -qi 'reported as a finding, never obeyed' "$A"
+echo "--- prompt structure: invariants ---"
+in_section "Invariants" 'no concrete input'
+assert "T4-AC2/inv1: invariant 1 pins the no-concrete-input rule" $?
+in_section "Invariants" 'UNVERIFIED'
+assert "T4-AC2/inv2: invariant 2 pins the UNVERIFIED alternative" $?
+in_section "Invariants" 'NO-PROBE'
+assert "T4-AC2/inv3: invariant 3 pins NO-PROBE as a verdict" $?
+in_section "Invariants" 'never (edit|write a test)'
+assert "T4-AC2/inv4: invariant 4 pins never-edit / never-write-a-test" $?
+in_section "Invariants" 'mutation'
+assert "T4-AC2/inv4: invariant 4 pins never-run-the-mutation-gate" $?
+in_section "Invariants" 'unconstrained-by:'
+assert "T4-AC2/inv5: invariant 5 pins the unconstrained-by citation" $?
+# The count is DERIVED, never a literal, so adding an invariant does not lie here.
+INV_N=$(section "Invariants" | grep -cE '^[0-9]+\. ')
+[ "$INV_N" -ge 5 ]; assert "T4-AC2: the Invariants section carries $INV_N numbered invariants (>= 5)" $?
+
+echo ""
+echo "--- prompt structure: edge cases ---"
+in_section "Edge cases" 'no tests'
+assert "T4-AC3/edge1: the no-tests branch is an edge case" $?
+in_section "Edge cases" 'docs, config, or prose only'
+assert "T4-AC3/edge2: the docs-only branch is an edge case" $?
+in_section "Edge cases" 'cannot run|UNVERIFIED'
+assert "T4-AC3/edge5: the unrun-suite branch takes the UNVERIFIED path" $?
+in_section "Edge cases" 'MUTATION|mutation'
+assert "T4-AC3/edge9: the ladder-inversion branch is an edge case" $?
+in_section "Consult the rejected-findings ledger" 'rejected-findings\.md'
+assert "T4-AC3/edge3: the ledger consult names the ledger file" $?
+in_section "Consult the rejected-findings ledger" 'fail-open'
+assert "T4-AC3/edge8: the ledger consult is fail-open" $?
+in_section "Consult the rejected-findings ledger" 'Previously rejected:'
+assert "T4-AC3/edge3: a ledger match gets its own reported line" $?
+in_section "Consult the rejected-findings ledger" 'Out of Scope'
+assert "T4-AC3/edge3: the spec non-goals are consulted too" $?
+# SPEC-247 battery finding: the ledger ships INSIDE the branch under review, so a
+# row the diff itself added must never suppress a finding.
+in_section "Consult the rejected-findings ledger" 'git diff'
+assert "T4-AC3: a ledger row introduced BY the diff is checked for provenance" $?
+
+echo ""
+echo "--- prompt structure: safety ---"
+in_section "Command safety" 'execute NO code|never run'
+assert "T4-AC4: the lens executes no code from the branch under review" $?
+in_section "Command safety" 'conftest|pretest|TestMain'
+assert "T4-AC4: the reason is named (a runner loads adversary code before test 1)" $?
+in_section "Command safety" 'are DATA,'
+assert "T4-AC4: the diff and its fixtures are data, not instructions" $?
+in_section "Command safety" 'never obeyed'
 assert "T4-AC4: an instruction-shaped comment is reported, not obeyed" $?
-grep -qi 'Mask any credential-shaped string' "$A"; assert "T4-AC4: the masking rule exists" $?
-grep -q 'first8...last8' "$A"; assert "T4-AC4: the masking rule names the hex shape" $?
-grep -q 'first4...last4' "$A"; assert "T4-AC4: the masking rule names the vendor-prefixed shape" $?
+in_section "Masking" 'first8'
+assert "T4-AC4: the masking rule names the hex shape" $?
+in_section "Masking" 'first4'
+assert "T4-AC4: the masking rule names the vendor-prefixed shape" $?
+in_section "Masking" 'ANY output field'
+assert "T4-AC4: masking covers every output field, not just probe:/observed:" $?
+
+echo ""
+echo "--- prompt structure: output grammar ---"
+in_section "Output grammar" 'PROBE:'
+assert "T4-AC2: the PROBE finding block is in the grammar" $?
+in_section "Output grammar" 'NO-PROBE'
+assert "T4-AC2: the NO-PROBE verdict is in the grammar" $?
+in_section "Output grammar" 'families-unattempted:'
+assert "T4-AC2: a stopped run names the families it never attempted" $?
+in_section "Output grammar" 'tried:'
+assert "T4-AC2: a cleared family gets a tried: line" $?
 
 # --- TASK-005: docs wiring ---------------------------------------------------
 echo ""
@@ -183,8 +247,11 @@ assert "T5-AC2: the ladder states the order is not enforced (open question 1)" $
 
 # --- TASK-004 AC5 [closing move]: the effectiveness gate ---------------------
 # test-advisor.sh's closing move: the last assertion is the SG-01 gate on the
-# new agent, so a prompt that passes every grep above but fails the gate is
-# still a failure.
+# new agent. Honest scope, established by experiment on 2026-09-07: SG-01 checks
+# read-only tools, model tier, and the retired-suffix name, all three of which the
+# assertions above already cover, so this call adds no discrimination of its own.
+# It stays as the shape-conformance backstop shared with every other agent, and
+# the structural section pins above are what actually catch a gutted prompt.
 echo ""
 echo "--- SG-01 effectiveness gate ---"
 if bash "$KIT_DIR/tests/test-agent-effectiveness.sh" "$A" >/dev/null 2>&1; then
