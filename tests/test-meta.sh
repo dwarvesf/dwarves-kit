@@ -2776,7 +2776,7 @@ is_retired_suffix() {
 # is_on_review_axis NAME -> 0 (conforms) | 1 (off-axis)
 # The convention's positive axis: a review-function name ends in -reviewer
 # (static/left-arm), -verifier (dynamic/right-arm), or -team (panel command).
-# advisor and agent-effectiveness are the named-noun exceptions (see (b)).
+# advisor, agent-effectiveness, and break-it are the named-noun exceptions (see (b)).
 is_on_review_axis() {
   case "$1" in
     *-reviewer) return 0 ;;
@@ -2784,6 +2784,9 @@ is_on_review_axis() {
     *-team) return 0 ;;
     advisor) return 0 ;;
     agent-effectiveness) return 0 ;;
+    # break-it reads the WHOLE branch for an unconstrained input, so it is a
+    # cross-cutting named-noun lens like advisor, not a per-artifact -reviewer.
+    break-it) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -2829,13 +2832,16 @@ for ENTRY in $ALL_NAMES; do
 done
 
 # (b) POSITIVE AXIS, roster-scanning: every current V-model review agent must
-# be on-axis, i.e. end in -reviewer/-verifier/-team, OR be one of the two
+# be on-axis, i.e. end in -reviewer/-verifier/-team, OR be one of the three
 # allowed named-noun validators. `advisor` is the ADR-0028 cross-cutting
 # generic lens (not per-artifact, so it earns its own noun).
 # `agent-effectiveness` (SPEC-088, SG-01) is intentionally allowed too: it
 # reviews an AGENT DEFINITION, not a V-model work artifact, so like `advisor`
 # it is a named-noun validator, NOT a naming violation -- do not "fix" its
 # name to *-reviewer.
+# `break-it` (SPEC-247) joins them: it probes the WHOLE branch for an input the
+# suite does not constrain, a cross-cutting lens like `advisor`, so a
+# *-reviewer suffix would misname it as per-artifact -- do not "fix" it either.
 # The review-agent roster is DERIVED from the live agents/ dir instead of a
 # frozen name list (the pre-widening hardcoded 11 names missed every agent
 # added after the list froze; naming-reconciliation finding 6): a review agent

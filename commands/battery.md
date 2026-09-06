@@ -59,12 +59,37 @@ Add specialized lenses when the diff touches their domain; each is its own agent
 | UI | frontend-reviewer | mid |
 | deploy, CI, IaC, launchd | infra-reviewer | mid |
 | hot paths, N+1, allocations | performance-reviewer | mid |
+| input handling, a trust boundary, a state machine, or a stated numeric/format contract, WITH tests | break-it | high |
 
 The measured lesson behind the escalation rule: a diff that qualified for the
 security lens shipped without it, and the lens later found a HIGH (a key-persist
 path into a public repo) that the panel, the reviewer, AND the verifier had all
 missed, because each looked from a different frame and none from the threat model.
 Skipping a qualifying lens is a decision; record it, do not default into it.
+
+## Probe rung (break-it), before the mutation rung
+
+**break-it is the one escalation lens that does NOT ride leg 2's parallel dispatch.** Every
+other row in the table above goes out in the same message as legs 1 and 2. This one needs leg
+1's verdict first, because a red suite makes the probe meaningless, so it is a SECOND dispatch
+after leg 1 returns green. Leg 1 green is the trigger; the table row is the domain filter.
+
+A green suite proves the tests ran, never that they constrain the code. Three rungs answer
+that in order:
+
+1. **Coverage** -- leg 1 above returns green.
+2. **Probe** -- `break-it`, the escalation lens in the table above, dispatched only after leg 1
+   returns green. It hunts one concrete input or call sequence the suite does not constrain,
+   and returns `PROBE: <N>` or `NO-PROBE`.
+3. **Mutation** -- `lib/gate/mutation-smoke.sh`, owned by `/kit:verify` Step 6b. Battery never
+   invokes it: one engine, one call site.
+
+A `PROBE` finding STOPS the ladder. The suite has a proven hole, so the mutation rung is not
+spent on code already known to be under-constrained; the lead adds the test or accepts, and
+mutation-smoke runs on the next pass. `NO-PROBE` is what clears rung 3 to run.
+
+The order is stated here, not enforced. `/kit:verify` can run before this battery, inverting
+probe and mutation; report that inversion in one line and re-run nothing.
 
 ## Non-negotiable prompt ingredients (every leg)
 
@@ -90,6 +115,9 @@ Skipping a qualifying lens is a decision; record it, do not default into it.
    not the whole battery.
 3. A verifier-caught gap means an AC or test was too weak: strengthen the check in
    the same pass, not only the code.
+   - Decide per break-it finding: add the test that pins the probe, or accept the
+     finding and record WHY in the report. A `NO-PROBE` verdict is a result, not
+     silence; say so in the report so the lead does not read it as laziness.
 4. Write the spec's `## Review` section (replace-not-stack) and record the legs in
    the gate ledger under the BRANCH SLUG: `bash lib/gate/gate-ledger.sh record <rid> battery ran "<verdict> arms=<n> caught=<n>"`
    (the slug, never a board ID, is what the ship-gate reads). Then close the

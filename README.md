@@ -343,6 +343,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | infra-reviewer | /review-team | Infra lens (deploy/rollback safety, CI/CD, least-privilege) |
 | performance-reviewer | /review-team | Performance lens (hot paths, N+1, allocations, caching) |
 | advisor | final boundary | Cross-cutting kit-default lens: critique + over-suggest modes |
+| break-it | /kit:battery (escalation) | Adversarial prober: hunts one concrete input the suite does not constrain; rung 2 of coverage -> probe -> mutation |
 | brief-reviewer | /think | Static review of a brief/requirement before it hardens into a spec |
 | responding-to-review | /review-team | Verifies review findings, pushes back when wrong, proposes fixes (no performative agreement) |
 | slop-stripper | /review-team | Behavior-preserving AI-slop strip pass: surgical edits only, never behavior changes unless fixing a real bug |
