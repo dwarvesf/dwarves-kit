@@ -21,6 +21,10 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
 
 If `$ARGUMENTS` names a `SPEC-NNN`, use that spec. Otherwise use the highest-numbered non-SHIPPED spec in `docs/specs/`. If none resolves, stop per Prerequisites.
 
+Then read the spec's optional bare `Model:` header (`grep -m1 '^Model:' <spec>`). It sets the verifier tier for Steps 3-6.
+
+**Verifier tier parity (SPEC-244): a verifier is never dumber than its worker.** When the spec carries `Model: opus`, dispatch with an explicit model override matching the spec tier for every verifier below (task, integration, acceptance, system). Absent a `Model:` header, each verifier keeps its frontmatter default. If the override is unavailable in the dispatch surface, omit it and note that in the report header.
+
 ### Step 2: Compute the diff base (for integration-verifier)
 
 Unlike `/kit:execute`, there is no pre-build base ref recorded. Compute one:
@@ -32,19 +36,19 @@ This is the base `integration-verifier` diffs the branch against.
 
 ### Step 3: Dispatch the unit/task level (read-only)
 
-For each task marked done (`- [x]`) in the spec's `## Task Breakdown`, dispatch the **task-verifier** subagent (read-only) against that task's acceptance criteria plus the project test suite. Collect each verdict (PASS / FAIL:fixable / FAIL:escalate). If there are no done tasks, note "no completed tasks to unit-verify" and continue.
+For each task marked done (`- [x]`) in the spec's `## Task Breakdown`, dispatch the **task-verifier** subagent (read-only, at the spec tier per Step 1) against that task's acceptance criteria plus the project test suite. Collect each verdict (PASS / FAIL:fixable / FAIL:escalate). If there are no done tasks, note "no completed tasks to unit-verify" and continue.
 
 ### Step 4: Dispatch the integration level (read-only, multi-task only)
 
-If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only), passing the base ref from Step 2, to check cross-task wiring (every new component reaches its activation point; the spec's end-to-end chains hold). Single-task specs skip this step.
+If the spec's `## Task Breakdown` had more than one task, dispatch the **integration-verifier** subagent (read-only, at the spec tier per Step 1), passing the base ref from Step 2, to check cross-task wiring (every new component reaches its activation point; the spec's end-to-end chains hold). Single-task specs skip this step.
 
 ### Step 5: Dispatch the acceptance level (read-only)
 
-Dispatch the **acceptance-verifier** subagent (read-only) against the spec's own `## Verification` section and its `## Acceptance criteria`. It re-runs each command the spec itself designates as the acceptance gate and maps every AC to a passing check, independent of any task-level or integration-level PASS already collected in Steps 3-4 -- a prior verifier's PASS is not evidence here. If the spec has no `## Verification` section, or no command in it is runnable in this environment, note "no executable acceptance check for this spec" and continue; do not invent a substitute check.
+Dispatch the **acceptance-verifier** subagent (read-only, at the spec tier per Step 1) against the spec's own `## Verification` section and its `## Acceptance criteria`. It re-runs each command the spec itself designates as the acceptance gate and maps every AC to a passing check, independent of any task-level or integration-level PASS already collected in Steps 3-4 -- a prior verifier's PASS is not evidence here. If the spec has no `## Verification` section, or no command in it is runnable in this environment, note "no executable acceptance check for this spec" and continue; do not invent a substitute check.
 
 ### Step 6: Dispatch the system level (read-only)
 
-Dispatch the **system-verifier** subagent (read-only) to run the whole project's test/build suite, UNSCOPED -- not filtered to this spec's files -- as the dynamic mirror of the design phase. If the project defines no suite runnable in this environment, note "no executable project suite" and continue; do not invent a substitute check.
+Dispatch the **system-verifier** subagent (read-only, at the spec tier per Step 1) to run the whole project's test/build suite, UNSCOPED -- not filtered to this spec's files -- as the dynamic mirror of the design phase. If the project defines no suite runnable in this environment, note "no executable project suite" and continue; do not invent a substitute check.
 
 ### Step 6b: Advisory mutation smoke (warn-only, never a verdict downgrade)
 

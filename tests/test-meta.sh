@@ -2929,6 +2929,23 @@ RC=0; grep -qE 'OMIT the .?Model:.? line' "$MA" && RC=1
 assert_eq "negative control: old 'OMIT the Model: line' abstain removed from meta-agent" 0 $RC
 
 # ============================================================
+# SPEC-244: verifier tier parity , a verifier is never dumber than its worker.
+# ============================================================
+PARITY='dispatch with an explicit model override matching the spec tier'
+RC=0; grep -qE '^model: opus$' "$KIT_DIR/agents/recheck-verifier.md" || RC=1
+assert_eq "recheck-verifier pins model: opus (SPEC-244)" 0 $RC
+RC=0; grep -qF "$PARITY" "$EX" || RC=1
+assert_eq "execute.md carries the verifier parity override sentence (SPEC-244)" 0 $RC
+RC=0; grep -qF "$PARITY" "$KIT_DIR/commands/verify.md" || RC=1
+assert_eq "verify.md carries the verifier parity override sentence (SPEC-244)" 0 $RC
+# Negative control: the OLD wall-off stance is GONE from execute.md, not merely supplemented.
+RC=0; grep -qF 'Verifiers keep their own frontmatter tiers (unchanged).' "$EX" && RC=1
+assert_eq "negative control: old verifier wall-off sentence removed from execute.md" 0 $RC
+# doc-verifier is deliberately out of scope (docs phase, not spec-tier-bound).
+RC=0; grep -qE '^model: sonnet$' "$KIT_DIR/agents/doc-verifier.md" || RC=1
+assert_eq "doc-verifier stays sonnet (SPEC-244 decision c)" 0 $RC
+
+# ============================================================
 # SPEC-108: meta-agent provenance , the generated agents carry a well-formed generated-by:,
 # and the key is SET-EQUAL to the known generated roster (no silent spread to hand-written agents).
 # ============================================================
