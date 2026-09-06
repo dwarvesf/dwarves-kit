@@ -166,3 +166,11 @@ push_url = ""                   # [impl] gateway base for `export --push` (FORGE
 [gauntlet]                      # side-flow 11 (commands/gauntlet.md); read by tests/gauntlet/cleanroom/run-remote.sh
 runner_host = "local"           # "local" runs rounds on this machine; an ssh host alias (e.g. "build-box") ships committed state there, runs the round, pulls the record back. The host resolves the probe key from ITS OWN secret store; the key never travels over ssh.
 probe_key_ref = "op://Toolkit/anthropic-api-key/credential"  # 1P ref the RUNNER host resolves at run time; point at a dedicated spend-capped item when minted
+
+[precedent]                     # `precedent find` inventory surface (lib/precedent/inventory.py)
+registry = ""                   # [consumer] extra scan locations for `find --surface inventory|all`:
+                                 #        a `<kind> <path>` registry file (kind = repo|scripts|skills|
+                                 #        crons|memory). Empty = built-in scan only (this repo + the
+                                 #        kit + home dirs). Env override: PRECEDENT_REGISTRY. Default
+                                 #        path when both are empty (inventory.py's own fallback):
+                                 #        ${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt

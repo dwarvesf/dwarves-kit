@@ -28,8 +28,7 @@
 #
 # Surfaces searched (repo-relative when present): docs/specs/, docs/decisions/,
 # docs/retro/, docs/verification/, plus run-ledger reasons in $DWARVES_KIT_LOG_DIR/runs/
-# (records); tools, scripts, skills, crons, memory per the registry (inventory, once
-# `inventory.py` lands).
+# (records); tools, scripts, skills, crons, memory per the registry (inventory).
 set -euo pipefail
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,6 +38,8 @@ KIT_ROOT="$(cd "$SELF_DIR/../.." && pwd)"
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
 LOG_DIR="$(kit_resolve_log_dir)"
+# shellcheck source=lib/config/kit-config.sh
+source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 
 ROOT=""  # resolved per-call in cmd_find, once --repo-root is known
 
@@ -96,18 +97,20 @@ _records_find() {
   return 0
 }
 
-# _inventory_find: dispatch to inventory.py (SPEC-245 Phase 2). Until that file lands, this
-# is the placeholder the spec calls for: the inventory surface prints nothing, 0 hits.
+# _inventory_find: dispatch to inventory.py. records_file (7th arg, optional) is a rendered
+# records-surface text block; when given, inventory.py folds it into the digest and the
+# summary line (the `all` surface's own call shape).
 _inventory_find() {
-  local words="$1" limit="$2" quiet="$3" json="$4" registry="$5" explain="$6"
+  local words="$1" limit="$2" quiet="$3" json="$4" registry="$5" explain="$6" records_file="${7:-}"
   local py="$SELF_DIR/inventory.py"
-  [ -f "$py" ] || return 0   # placeholder: no inventory.py yet, no inventory output
+  [ -f "$py" ] || return 0   # should never happen at this HEAD; see the `all` fallback below
 
   local -a args=(--root "$ROOT" --kit "$KIT_ROOT" --limit "$limit")
   [ "$quiet" -eq 1 ] && args+=(--quiet)
   [ "$json" -eq 1 ] && args+=(--json)
   [ -n "$registry" ] && args+=(--registry "$registry")
   [ -n "$explain" ] && args+=(--explain "$explain")
+  [ -n "$records_file" ] && args+=(--records-file "$records_file")
   args+=(-- "$words")
   python3 "$py" "${args[@]}"
 }
@@ -170,6 +173,16 @@ cmd_find() {
 
   ROOT="$(_resolve_root "$repo_root_flag")"
 
+  # registry resolution precedence (SPEC-245): --registry flag > PRECEDENT_REGISTRY env >
+  # kit_config_get precedent.registry (project .kit.toml at ROOT, else the kit-root default)
+  # > inventory.py's own XDG default. Only the third rung is resolved here; the other two
+  # already won by the time this runs empty.
+  if [ -z "$registry" ] && [ -z "${PRECEDENT_REGISTRY:-}" ]; then
+    local cfg_registry
+    cfg_registry="$(KIT_PROJECT_ROOT="$ROOT" kit_config_get precedent.registry "")"
+    [ -n "$cfg_registry" ] && registry="$cfg_registry"
+  fi
+
   if [ -n "$explain" ]; then
     _explain "$explain" "$registry"
     return $?
@@ -198,13 +211,28 @@ cmd_find() {
       local records_out rc=0
       records_out="$(_records_find "$desc" "$limit")" && rc=0 || rc=$?
       [ "$rc" -eq 0 ] || return "$rc"
-      [ -z "$records_out" ] || printf '%s\n' "$records_out"
 
+      local py="$SELF_DIR/inventory.py"
+      if [ -f "$py" ]; then
+        # render the records block to a temp file, hand it to inventory.py so ONE run
+        # prints the records block, the inventory sections, and one combined summary line.
+        local tmp_records=""
+        tmp_records="$(mktemp "${TMPDIR:-/tmp}/precedent-records.XXXXXX")"
+        printf '%s\n' "$records_out" > "$tmp_records"
+        local irc=0
+        _inventory_find "$desc" "$limit" "$quiet" "$json" "$registry" "" "$tmp_records" || irc=$?
+        # `local` dies with this function, so a RETURN/EXIT trap set here cannot see it by
+        # the time it fires (tried, hit `set -u` "unbound variable" at process exit);
+        # cleaning up right here, once, is simpler and just as reliable.
+        rm -f "$tmp_records"
+        return "$irc"
+      fi
+
+      # fallback (inventory.py missing, should never happen at this HEAD): the old
+      # records-plus-placeholder shape, so the script still works standalone.
+      [ -z "$records_out" ] || printf '%s\n' "$records_out"
       local r_count
       r_count="$(printf '%s\n' "$records_out" | grep -cE '^[[:space:]]*[0-9]+x[[:space:]]' || true)"
-
-      _inventory_find "$desc" "$limit" "$quiet" "$json" "$registry" ""
-      # placeholder (SPEC-245 Phase 1): no inventory.py yet, so 0 hits in 0 sections, top: -
       printf 'precedent: %s record matches, 0 inventory hits in 0 sections; top: -\n' "$r_count"
       return 0
       ;;

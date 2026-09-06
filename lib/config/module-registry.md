@@ -252,6 +252,12 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | PROSE_RAG_CORPUS | env-only | unset (index skips clean) | [impl] | prose_rag | Colon-separated corpus dirs/files for `prose-rag index` (adapter-default invariant: no personal path in the kit). Unset with no `--corpus` = unconfigured consumer -> `index` exits 0, db untouched (the shipped kit-weekly `prose-rag-index` job stays silent-green). Under launchd, supplied via `~/.config/kit-weekly/env`. |
 | MONEY_GATE_REPOS | env-only | (unset) | [impl] | money_gate | Colon-separated list of repo names the guard treats as financial; hook is inert (exits 0) without it. |
 
+### precedent (`precedent find` inventory surface, no install module)
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get precedent.registry` (project `.kit.toml` at the searched repo's root, else the kit-root default) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
+
 ### web_drift (skill knob, no install module)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |

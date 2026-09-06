@@ -208,15 +208,102 @@ assert "a non-numeric positional [max] exits 64" "$([ $? -eq 64 ]; echo $?)"
 assert "an unknown --surface exits 64" "$([ $? -eq 64 ]; echo $?)"
 
 # ---------------------------------------------------------------------------
-# AC5: default surface (all), inventory.py absent at this HEAD
+# AC5 (TASK-004): default surface (all) wires records + inventory + one summary line.
+# The `## records` block prints before any inventory section; the summary line carries
+# nonzero record and inventory counts on this fixture query.
 # ---------------------------------------------------------------------------
 OUT="$("$PRECEDENT_BIN" find "notion sync" 2>&1)"; RC=$?
 LAST_LINE="$(printf '%s\n' "$OUT" | tail -n1)"
-if [ "$RC" -eq 0 ] && printf '%s' "$LAST_LINE" | grep -qE '^precedent: [0-9]+ record matches, 0 inventory hits in 0 sections; top: -$'; then
-  assert "default (all) surface ends on the 0-inventory summary line" 0
+RECORDS_LINE="$(printf '%s\n' "$OUT" | grep -n '^## records$' | head -1 | cut -d: -f1)"
+FIRST_INVENTORY_LINE="$(printf '%s\n' "$OUT" | grep -nE '^## [a-z]' | grep -v '^[0-9]*:## records$' | head -1 | cut -d: -f1)"
+if [ "$RC" -eq 0 ] && [ -n "$RECORDS_LINE" ] && [ -n "$FIRST_INVENTORY_LINE" ] \
+   && [ "$RECORDS_LINE" -lt "$FIRST_INVENTORY_LINE" ] \
+   && printf '%s' "$LAST_LINE" | grep -qE '^precedent: [1-9][0-9]* record matches, [1-9][0-9]* inventory hits in [0-9]+ sections; top: .+$'; then
+  assert "default (all) surface: records block before inventory, nonzero summary line" 0
 else
-  assert "default (all) surface ends on the 0-inventory summary line" 1
-  echo "rc=$RC last=$LAST_LINE" | sed 's/^/      /'
+  assert "default (all) surface: records block before inventory, nonzero summary line" 1
+  echo "rc=$RC records_line=$RECORDS_LINE first_inv_line=$FIRST_INVENTORY_LINE last=$LAST_LINE" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-004 AC(b): `all --json` prints exactly one JSON object with a non-empty `records`
+# list and a `total_hits` key.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find "notion sync" --json 2>&1)"; RC=$?
+JSON_CHECK="$(printf '%s' "$OUT" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("bad-json"); sys.exit()
+ok = isinstance(d.get("records"), list) and len(d["records"]) > 0 and "total_hits" in d
+print("ok" if ok else "missing")
+' 2>/dev/null)"
+if [ "$RC" -eq 0 ] && [ "$JSON_CHECK" = "ok" ]; then
+  assert "all --json: one object, non-empty records list, total_hits present" 0
+else
+  assert "all --json: one object, non-empty records list, total_hits present" 1
+  echo "rc=$RC check=$JSON_CHECK" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-004 AC(c): `all --quiet` still carries the summary line and the empty/skipped
+# sections collapse line.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find "notion sync" --quiet 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] \
+   && printf '%s' "$OUT" | grep -qE '^precedent: [0-9]+ record matches, [0-9]+ inventory hits in [0-9]+ sections; top: .+$' \
+   && printf '%s' "$OUT" | grep -q 'sections with no match or skipped)'; then
+  assert "all --quiet: summary line and the empty/skipped collapse line both present" 0
+else
+  assert "all --quiet: summary line and the empty/skipped collapse line both present" 1
+  echo "rc=$RC" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-004 AC(d): with PRECEDENT_REGISTRY unset, a project .kit.toml at the fixture repo
+# root setting [precedent] registry to the fixture registry still scans the registry's
+# `scripts` row (the zeta.sh hit). kit_config_project() reads `$KIT_PROJECT_ROOT/.kit.toml`,
+# defaulting to $PWD; a real repo-root .kit.toml file is the least-fixture-plumbing way to
+# exercise it (no KIT_PROJECT_ROOT override needed since ROOT resolves to $FIX_REPO already).
+# ---------------------------------------------------------------------------
+cat > "$FIX_REPO/.kit.toml" <<TOML
+[precedent]
+registry = "$FIX_REGISTRY"
+TOML
+OUT="$(env -u PRECEDENT_REGISTRY "$PRECEDENT_BIN" find notion --surface inventory 2>&1)"; RC=$?
+rm -f "$FIX_REPO/.kit.toml"
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'zeta.sh'; then
+  assert "kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 0
+else
+  assert "kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 1
+  echo "rc=$RC" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# TASK-004 AC(e): SECRET_SHAPE_RE in inventory.py is byte-equal to session_recall.py's copy
+# (DEC-004). DATA_MARKER differs by design (files vs transcripts, implementation-notes
+# 2026-09-06 TASK-003) and is NOT pinned; LINE_CAP has no session_recall.py counterpart and
+# is NOT pinned either.
+# ---------------------------------------------------------------------------
+REGEX_EQ="$(python3 -c "
+import importlib.util, sys
+
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+inv = load('inv', '$KIT_DIR/lib/precedent/inventory.py')
+rec = load('rec', '$KIT_DIR/lib/session/recall/session_recall.py')
+print('eq' if inv.SECRET_SHAPE_RE.pattern == rec.SECRET_SHAPE_RE.pattern else 'ne')
+" 2>&1)"
+if [ "$REGEX_EQ" = "eq" ]; then
+  assert "inventory.py SECRET_SHAPE_RE is byte-equal to session_recall.py's" 0
+else
+  assert "inventory.py SECRET_SHAPE_RE is byte-equal to session_recall.py's" 1
+  echo "$REGEX_EQ" | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------
