@@ -141,6 +141,8 @@ Verification record:
 - Output (excerpt): <decisive lines: pass/fail counts, failing assertion, summary>
 ```
 
+Long hex tokens in `Output (excerpt)` and `Notes` (a SHA-256, an HMAC, a tx hash, anything 32+ hex chars) appear as `first8…last8`, never in full. A full 64-hex value is shape-identical to a private key, and the lead's secret-scan prompt hook blocks the next prompt that carries this record.
+
 If there was no runnable check, the block's `Command:` is `none` and the verdict line
 is `[NO EXECUTABLE CHECK: <reason>]` (see Section 2) , do not invent a command or a
 passing exit code.
