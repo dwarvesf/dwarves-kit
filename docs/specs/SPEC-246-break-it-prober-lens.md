@@ -387,3 +387,46 @@ spec's own prose.
 5. **Probe-yield measurement.** The brief's exit criterion (1 converted finding and at least 5
    `NO-PROBE` verdicts over 10 runs) has no counter behind it and this spec builds none. Confirm
    that manual review is enough for v1, or file a follow-up row for the counter.
+## Test plan
+Date: 2026-09-07
+Source: this spec's `## Task Breakdown` acceptance criteria, `## Acceptance Criteria (global)`, `## Edge Cases`, and `## Failure modes`
+
+Type: `spec-feature`, so the BDD-style category matrix applies. Step 1c (AI-in-the-loop tiering)
+does NOT apply: the subject is an agent prompt, but every acceptance criterion is checkable
+without observing a live model (exit codes, greps, fixture exit codes). Step 1d does not apply:
+no external SaaS API is read.
+
+| # | Case | Category | Covers (AC) | Expected | Proof |
+|---|------|----------|-------------|----------|-------|
+| 1 | `agents/break-it.md` exists and passes the deterministic effectiveness gate | happy-path | T1-AC1 | exit 0 | `bash tests/test-agent-effectiveness.sh agents/break-it.md` |
+| 2 | The frontmatter tools block grants no write-capable or bare-Bash tool | security/abuse | T1-AC2 | no match for `Edit`/`Write`/`MultiEdit`/`NotebookEdit`/bare `Bash` | the `tools_violation()` core in `tests/test-break-it.sh` |
+| 3 | The naming-axis arm accepts `break-it` with the agent present | happy-path | T1-AC3 | exit 0 | `bash tests/test-meta.sh` |
+| 4 | Removing the `break-it)` arm makes the roster scan fail | regression | T1-AC4 | non-zero exit, the arm is load-bearing | `bash tests/test-break-it.sh` arm-removal assertion over a temp copy of `tests/test-meta.sh` |
+| 5 | The escalation table carries the break-it row | happy-path | T2-AC1 | the row is inside the `## Lens escalation` section | `sed -n '/## Lens escalation/,/^## /p' commands/battery.md \| grep -q 'break-it'` |
+| 6 | The probe-rung section names mutation-smoke and `/kit:verify` as the next rung | happy-path | T2-AC2 | both names present under `## Probe rung` | `grep -q '## Probe rung' commands/battery.md` + section greps |
+| 7 | The after-the-legs step tells the lead to decide per probe finding | happy-path | T2-AC3 | `break-it` appears after `## After the legs return` | `sed -n '/## After the legs return/,$p' commands/battery.md \| grep -q 'break-it'` |
+| 8 | The leaky fixture's suite is green on holed code | happy-path | T3-AC1 | exit 0 | `bash tests/fixtures/break-it/leaky/test.sh` |
+| 9 | The leaky fixture's hole is real, proven by exit code not prose | failure-injection | T3-AC2, DEC-009 | exit 0 only when the documented contract is VIOLATED | `bash tests/fixtures/break-it/leaky/probe-check.sh` |
+| 10 | The tight fixture pins the boundary the leaky one leaves open | happy-path | T3-AC3 | exit 0 | `bash tests/fixtures/break-it/tight/test.sh` |
+| 11 | NEGATIVE CONTROL: removing the tight fixture's guard line turns its suite red | regression | T3-AC3, T4-AC1, global AC | non-zero exit with the guard removed, exit 0 restored | the in-test guard-strip assertion in `tests/test-break-it.sh`, plus the manual negative control in `## Verification` |
+| 12 | The prompt carries the four I/O-contract invariants in its own words | happy-path | T4-AC2 | one grep per invariant matches | `bash tests/test-break-it.sh` |
+| 13 | The prompt carries vocabulary for edge cases 1, 3, 4, 5, 8 | boundary/edge | T4-AC3 | one grep per edge case matches | `bash tests/test-break-it.sh` |
+| 14 | The prompt carries the command-safety rule (verbatim commands, no appended argument) | security/abuse | T4-AC4, failure mode "prompt injection from the diff" | grep matches | `bash tests/test-break-it.sh` |
+| 15 | The prompt carries the credential-masking rule | security/abuse | T4-AC4 | grep matches | `bash tests/test-break-it.sh` |
+| 16 | The test closes by calling the effectiveness gate on the new agent | regression | T4-AC5 | the gate call is the last assertion and it passes | `bash tests/test-break-it.sh` |
+| 17 | The branch carries no tests at all: the prompt bounds the response to one line, not an infinite list | boundary/edge | edge case 1 | grep matches the no-tests exit rule | `bash tests/test-break-it.sh` |
+| 18 | A docs-only or config-only diff: the lens is not dispatched, and returns `NO-PROBE` if it is | boundary/edge | edge case 2 | the escalation trigger names behavioral code with tests | `sed -n '/## Lens escalation/,/^## /p' commands/battery.md` row text |
+| 19 | A previously rejected probe is reported on a `Previously rejected:` line, not counted fresh | failure-injection | edge case 3 | grep matches the rejected-findings consult | `bash tests/test-break-it.sh` |
+| 20 | A finding with no `unconstrained-by:` citation is not emitted | boundary/edge | edge case 4 | grep matches the citation rule | `bash tests/test-break-it.sh` |
+| 21 | The suite cannot run: `observed:` becomes `UNVERIFIED:` | failure-injection | edge case 5 | grep matches the UNVERIFIED path | `bash tests/test-break-it.sh` |
+| 22 | The rejected-findings ledger is missing or malformed: fail-open, never an error | failure-injection | edge case 8 | grep matches the fail-open rule | `bash tests/test-break-it.sh` |
+| 23 | Docs wiring: README agents-table row count still equals the live agent count | regression | T5-AC1, global AC | exit 0 | `bash tests/test-meta.sh` |
+| 24 | Docs wiring: `docs/MANUAL.md` carries a `break-it` row so the cross-ref check passes | regression | T5-AC1 | exit 0 | `bash tests/test-meta.sh` |
+| 25 | `docs/WORKFLOW.md` names the three rungs in order | happy-path | T5-AC2 | coverage, probe, mutation in that order | `bash tests/test-break-it.sh` ordering assertion |
+| 26 | No regression in the hook suite | regression | global AC | exit 0 | `bash tests/test-hooks.sh` |
+
+### Coverage notes
+- Categories skipped: none. All five categories carry at least one case.
+- The lens itself cannot be dispatched live in CI (the `test-agent-effectiveness.sh` precedent), so every case about the AGENT'S JUDGMENT is a prompt-completeness grep, and every case about MECHANISM (the fixtures, the axis arm, the wiring) is a real exit-code check. Cases 12 to 22 are prompt-completeness by necessity: they prove the prompt carries the vocabulary to name the class, never that a live run names it.
+- The discriminating power of this plan rests on cases 4, 9, and 11: each fails when the thing it guards is removed. The rest are presence checks and would rubber-stamp on their own.
+- This is a coverage TARGET across the enumerated categories, NOT an exhaustive test list. A missing acceptance criterion or an unenumerated category is a gap, surfaced here, not a guarantee.
