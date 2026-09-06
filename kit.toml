@@ -182,4 +182,4 @@ activity_log = ""               # [consumer] absolute or ~-prefixed path, under 
                                  #        this key, because it names a file the kit writes to, not a
                                  #        per-project setting. Empty = `wrap log` prints the line and
                                  #        says where it did not land, exit 0. The kit prepends
-                                 #        `<date> · <text>` newest-first (mtime preserved, no clobber).
+                                 #        `<date> · <text>` newest-first (mode preserved, no clobber).

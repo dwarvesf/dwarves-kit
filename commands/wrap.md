@@ -70,7 +70,7 @@ Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. Wi
 
 ### Step 7: reflect
 
-Resolve the kit log dir (`bash lib/telemetry/kit-log-dir.sh` resolves it) and grep the run ledgers under it for a `| GATE | ship | ran | shipping pr=#<n>` line naming any PR number merged in step 3. Any hit means run `/kit:retro` now, before the report. No hit means no spec cycle shipped this session; skip retro and say so in the report's FYI line.
+Resolve the kit log dir (`bash lib/telemetry/kit-log-dir.sh` resolves it) and grep the run ledgers under it for a `| GATE | ship | ran | shipping pr=#<n>` line naming any PR number merged in step 3. Anchor the number so `#7` never matches `#71`: `grep -rE "shipping pr=#<n>([^0-9]|$)" "<log dir>"`. Any hit means run `/kit:retro` now, before the report. No hit means no spec cycle shipped this session; skip retro and say so in the report's FYI line.
 
 ### Step 8: report
 

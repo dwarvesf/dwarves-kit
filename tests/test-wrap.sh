@@ -134,7 +134,8 @@ build_remote rmaster master
 build_remote rdev develop
 
 export GH_STUB_OPEN_PRS='[{"number":7,"title":"wrap the session","headRefName":"feat/wrap"}]'
-export GH_STUB_PR_7='{"number":7,"title":"wrap the session","headRefName":"feat/wrap","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"},{"conclusion":"SKIPPED"}]}'
+PR7_OID=deadbeefcafe1234567890abcdef1234567890ab
+export GH_STUB_PR_7="{\"number\":7,\"title\":\"wrap the session\",\"headRefName\":\"feat/wrap\",\"headRefOid\":\"$PR7_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"},{\"conclusion\":\"SKIPPED\"}]}"
 
 # ===========================================================================
 echo "=== scan: every verdict, for main, master and develop defaults ==="
@@ -153,6 +154,16 @@ for pair in "rmain main" "rmaster master" "rdev develop"; do
   chk_has "scan/$def: the open PR is listed" "$out" "#7 wrap the session [feat/wrap]"
   chk_has "scan/$def: checkout line" "$out" "-- checkout on: unmerged"
 done
+
+echo "=== scan: the gh calls carry the origin URL the repo actually has ==="
+set_stub rmain main
+SCAN_URL="$(git -C "$TMPD/clone-scan-main" remote get-url origin)"
+: > "$GH_STUB_CALLS"
+"$WRAP" scan "$TMPD/clone-scan-main" >/dev/null 2>&1
+SCAN_CALLS="$(cat "$GH_STUB_CALLS")"
+chk_has "scan: pr list names --repo and --head" "$SCAN_CALLS" \
+  "pr list --repo ${SCAN_URL} --head squash-ok"
+chk_has "scan: the open-PR query names --repo" "$SCAN_CALLS" "pr list --repo ${SCAN_URL} --author"
 
 echo "=== scan: a non-repo argument is skipped, the repo after it still reports ==="
 out="$("$WRAP" scan "$TMPD/not-a-repo" "$TMPD/clone-scan-main" 2>&1)"
@@ -228,6 +239,63 @@ chk "apply --apply never reset the local default branch" \
   "$([ "$(git -C "$TMPD/clone-apply-nonff" rev-parse master)" = "$OLD_MASTER" ]; echo $?)"
 
 # ===========================================================================
+echo "=== apply: a tip that moved during the run is skipped, not deleted ==="
+# ===========================================================================
+make_clone tips rmain main unmerged
+set_stub rmain main
+TIPSREPO="$TMPD/clone-tips"
+STALE_TIPS="$TMPD/stale-tips.txt"
+git -C "$TIPSREPO" for-each-ref --format='%(refname:short) %(objectname)' refs/heads/ > "$STALE_TIPS"
+# Rewrite merged-ancestor's recorded tip so the pre-delete re-check sees a moved branch.
+sed 's/^merged-ancestor .*/merged-ancestor 2222222222222222222222222222222222222222/' \
+  "$STALE_TIPS" > "$STALE_TIPS.new" && mv -f "$STALE_TIPS.new" "$STALE_TIPS"
+out="$("$WRAP" apply --apply --tips-file "$STALE_TIPS" "$TIPSREPO" 2>&1)"
+chk_has "apply: a moved tip is skipped" "$out" "SKIP merged-ancestor: tip moved during this run"
+chk "apply: the moved-tip branch survives" \
+  "$(git -C "$TIPSREPO" show-ref --verify --quiet refs/heads/merged-ancestor; echo $?)"
+chk "apply: the unmoved squash-ok branch still went" \
+  "$(git -C "$TIPSREPO" show-ref --verify --quiet refs/heads/squash-ok && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== apply: index.lock age decides, and a non-repo never reaches a write ==="
+# ===========================================================================
+make_clone lock rmain main unmerged
+set_stub rmain main
+LOCKREPO="$TMPD/clone-lock"
+touch -t 202601010000 "$LOCKREPO/.git/index.lock"
+out="$("$WRAP" apply --apply "$LOCKREPO" 2>&1)"
+chk_has "apply: a stale index.lock refuses every write" "$out" "index.lock held by another writer"
+LOCK_BRANCHES="$(git -C "$LOCKREPO" for-each-ref --format='%(refname:short)' refs/heads/ | sort | tr '\n' ' ')"
+chk "apply: a stale index.lock deleted nothing" \
+  "$([ "$LOCK_BRANCHES" = "main merged-ancestor squash-ok squash-stale stacked-child unmerged wt-clean wt-dirty " ]; echo $?)"
+
+rm -f "$LOCKREPO/.git/index.lock"; touch "$LOCKREPO/.git/index.lock"
+out="$("$WRAP" apply --apply "$LOCKREPO" 2>&1)"
+chk_no "apply: a fresh index.lock does not refuse the write" "$out" "index.lock held by another writer"
+chk "apply: a fresh index.lock still deleted the proven branches" \
+  "$(git -C "$LOCKREPO" show-ref --verify --quiet refs/heads/merged-ancestor && echo 1 || echo 0)"
+rm -f "$LOCKREPO/.git/index.lock"
+
+out="$("$WRAP" apply --apply "$TMPD/not-a-repo" "$LOCKREPO" 2>&1)"
+chk_has "apply: a non-repo argument is skipped before any write" "$out" "not a git repo, skipped"
+chk_has "apply: the repo after the non-repo still runs" "$out" "-- branches:"
+
+# ===========================================================================
+echo "=== apply: a broken origin URL fails the fetch and deletes nothing ==="
+# ===========================================================================
+make_clone brokenremote rmain main unmerged
+set_stub rmain main
+BROKEN="$TMPD/clone-brokenremote"
+BROKEN_BEFORE="$(git -C "$BROKEN" for-each-ref --format='%(refname:short)' refs/heads/ | sort)"
+git -C "$BROKEN" remote set-url origin /nonexistent
+out="$("$WRAP" apply --apply "$BROKEN" 2>&1)"
+chk_has "apply: the failed fetch is reported" "$out" "(fetch failed; every delete is skipped)"
+chk_has "apply: the ancestor branch names the stale-data reason" "$out" \
+  "SKIP merged-ancestor: fetch failed, stale ancestor data"
+chk "apply: the broken-remote repo lost no branch" \
+  "$([ "$BROKEN_BEFORE" = "$(git -C "$BROKEN" for-each-ref --format='%(refname:short)' refs/heads/ | sort)" ]; echo $?)"
+
+# ===========================================================================
 echo "=== gh absent: every non-ancestor is LEAVE, merge refuses ==="
 # ===========================================================================
 mkdir -p "$TMPD/nogh"
@@ -268,6 +336,35 @@ chk "merge --apply passed --squash" "$(grep -q '^pr merge 7 .*--squash' "$GH_STU
 chk "merge --apply passed no --delete-branch" "$(grep -q -- '--delete-branch' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 chk "merge --apply passed no --auto" "$(grep -q -- '--auto' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 chk "merge --apply verified through pr view" "$(grep -q '^pr view 7 .*state,mergeCommit' "$GH_STUB_CALLS"; echo $?)"
+MERGE_URL="$(git -C "$TMPD/clone-scan-main" remote get-url origin)"
+MERGE_CALLS="$(cat "$GH_STUB_CALLS")"
+chk_has "merge --apply pinned the head it gated on" "$MERGE_CALLS" \
+  "pr merge 7 --repo ${MERGE_URL} --squash --match-head-commit ${PR7_OID}"
+chk_has "merge: the detail read names --repo" "$MERGE_CALLS" "pr view 7 --repo ${MERGE_URL}"
+chk "merge reads each PR detail exactly once" \
+  "$([ "$(grep -c "^pr view 7 --repo ${MERGE_URL} --json number,title" "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+
+echo "=== merge: the checks gate refuses pending, failing, empty-and-unstable, and changes requested ==="
+gate_verdict() { # gate_verdict <pr json>
+  GH_STUB_OPEN_PRS='[{"number":9,"title":"gate case","headRefName":"feat/gate"}]' \
+  GH_STUB_PR_9="$1" "$WRAP" merge "$TMPD/clone-scan-main" 2>&1
+}
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"},{"status":"PENDING"}]}')"
+chk_has "merge: a pending check skips" "$out" "SKIP #9 gate case: checks are pending or failing"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"FAILURE"}]}')"
+chk_has "merge: a failing check skips" "$out" "SKIP #9 gate case: checks are pending or failing"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"UNSTABLE","reviewDecision":"APPROVED","statusCheckRollup":[]}')"
+chk_has "merge: an empty rollup on a non-CLEAN state skips" "$out" "SKIP #9 gate case: checks are pending or failing"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":null}')"
+chk_has "merge: a null rollup on a CLEAN state stays eligible" "$out" "eligible #9 gate case [feat/gate]"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}')"
+chk_has "merge: an empty rollup on a CLEAN state stays eligible" "$out" "eligible #9 gate case [feat/gate]"
+out="$(gate_verdict '{"number":9,"title":"gate case","headRefName":"feat/gate","headRefOid":"aa","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}')"
+chk_has "merge: changes requested skips" "$out" "SKIP #9 gate case: changes requested"
+
+echo "=== merge: unparseable PR JSON skips instead of passing the gate ==="
+out="$(gate_verdict 'not json at all')"
+chk_has "merge: unreadable JSON skips" "$out" "SKIP #9: unreadable PR JSON"
 
 echo "=== merge: a stacked parent with an open dependent skips, naming the retarget rule ==="
 STACK_OPEN='[{"number":7,"title":"parent","headRefName":"feat/wrap"},{"number":8,"title":"child","headRefName":"feat/child"}]'
@@ -324,6 +421,15 @@ chk "log keeps the old first line" "$(grep -qx 'first old line' "$LOGFILE"; echo
 wrap_log --date 2026-01-02 "wrap: backdated" >/dev/null 2>&1
 chk "log --date overrides the prefix" \
   "$([ "$(head -1 "$LOGFILE")" = "2026-01-02 · wrap: backdated" ]; echo $?)"
+
+DATE_BEFORE="$(cat "$LOGFILE")"
+out="$(wrap_log --date "$(printf '2026-01-01\nFORGED')" "wrap: forged date" 2>&1)"; rc=$?
+chk "log refuses a multi-line --date (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "log names the --date format" "$(printf '%s' "$out" | grep -q 'wrap log: --date must be YYYY-MM-DD'; echo $?)"
+chk "log wrote nothing on the forged date" "$([ "$DATE_BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
+out="$(wrap_log --date 2026-13-45 "wrap: impossible date" 2>&1)"; rc=$?
+chk "log refuses an out-of-range --date (exit 1)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk "log wrote nothing on the out-of-range date" "$([ "$DATE_BEFORE" = "$(cat "$LOGFILE")" ]; echo $?)"
 
 BEFORE="$(cat "$LOGFILE")"
 # The dash is assembled from its bytes: a literal one in this file would violate the

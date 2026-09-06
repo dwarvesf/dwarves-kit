@@ -131,3 +131,50 @@ Impact: none; `wrap` is documented as a subsystem in the five-stages prose table
 installable module.
 
 Open questions: none.
+
+## 2026-09-07 Review fix batch
+
+Context: a multi-lens review of the branch returned a fix batch. This entry records the deltas from the spec, one per finding.
+
+Decision, `--date` validation: `wrap log` now refuses any `--date` that is not a literal
+`YYYY-MM-DD`, before any write. Why: the value prefixes a line in a file the kit writes, so a
+multi-line value forged an extra log line. The check is a `case` glob, so `2026-13-45` fails on
+its day field. Impact: an operator who passes a malformed date gets exit 1 and an untouched file.
+
+Decision, merge head pin: `_pr_detail` now reads `headRefOid` and `gh pr merge` carries
+`--match-head-commit`. Why: a push landing between the gate and the merge would otherwise ship
+an unreviewed head. Fail-closed: an absent head SHA aborts the merge with exit 2 rather than
+merging unpinned.
+
+Decision, checks gate: an empty or null `statusCheckRollup` now passes only when GitHub reports
+`mergeStateStatus == CLEAN`. Why: an empty rollup proves nothing on its own, and a repo whose
+checks have not registered yet reported the same shape as a repo with no checks.
+
+Judgment call, the `--tips-file` seam: `apply` gained an internal `--tips-file <path>` option,
+documented in `--help` as a test seam. Why: the mid-run tip re-check had no test, because a real
+concurrent push cannot be staged deterministically inside the suite. The option replaces the
+run's own snapshot, which is the smallest surface that makes the re-check observable.
+Alternatives: a hidden env var (rejected, a flag is visible in `--help`); a sleep-and-push race
+(rejected, flaky). Impact: one more parsed flag on `apply`; it refuses a path that does not exist.
+
+Decision, `_write_guard` fails closed: an unresolvable git dir now returns 1 (refuse) instead of
+0 (allow). Why: the old code treated "cannot tell" as "safe to write".
+
+Decision, worktree paths: `_apply_worktrees` reads `git worktree list --porcelain -z`, so a path
+carrying a newline stays whole. A path that cannot be entered now prints `SKIP <path>:
+unresolvable` instead of being dropped silently.
+
+Decision, one detail read per PR: `cmd_merge` writes each PR's full JSON to a temp file and the
+eligibility loop reads it back. The second `_pr_detail` call is gone. Why: the dependents gate
+needs every base before the first verdict, which forced the two-pass shape, not two fetches.
+
+Decision, unreadable PR JSON: an empty `_pr_gate` verdict prints `SKIP #n: unreadable PR JSON`
+rather than falling through the gate.
+
+Decision, named constants: `LOCK_STALE_SECS` and `LOG_LINE_BUDGET` replace the two literals, and
+one comment above `set -uo pipefail` records why `-e` is absent (the `run()` rc-capture pattern).
+
+Decision, `commands/wrap.md` step 7: the retro grep anchors the PR number, so `#7` cannot match
+`#71`.
+
+Open questions: none.
