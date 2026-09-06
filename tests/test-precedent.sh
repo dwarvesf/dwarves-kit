@@ -207,7 +207,9 @@ export REPO_ROOT="$FIX_REPO"
 # support), so both calls run with REPO_ROOT unset and cwd = the fixture repo.
 # ---------------------------------------------------------------------------
 OLD_SCRIPT="$KIT_DIR/lib/precedent-old.sh"
-git -C "$KIT_DIR" show e7f5fee:lib/precedent.sh > "$OLD_SCRIPT"
+# A vendored copy of lib/precedent.sh at e7f5fee: CI checkouts are depth 1, so `git show`
+# of that blob returns nothing there and the parity diff would compare against an empty file.
+cp "$KIT_DIR/tests/fixtures/precedent/precedent-pre-move.sh" "$OLD_SCRIPT"
 
 NEW_OUT="$(cd "$FIX_REPO" && env -u REPO_ROOT "$PRECEDENT_BIN" find "notion sync" --surface records 2>&1)"
 OLD_OUT="$(cd "$FIX_REPO" && env -u REPO_ROOT bash "$OLD_SCRIPT" find "notion sync" 2>&1)"

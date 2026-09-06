@@ -116,3 +116,8 @@ No further deviations from SPEC-245.
 - Decision: `--surface records` stays unredacted and marker-less. The parity contract with the pre-move script is the reason; the surface prints headings from the repo's own committed docs. Recorded in the spec Boundaries so a later reader does not reopen it as a defect.
 - Decision: an inventory engine failure degrades to the records block plus one stderr line and the engine rc, instead of the loud-failure stance recorded at review finding 10. Blank output in intake was the worse failure.
 - Open: the launchd skip branch has no test because `/Library/LaunchDaemons` exists on every macOS host; a Linux CI leg or an env override for the two dirs would close it.
+
+## 2026-09-06 CI parity fixture (lead)
+
+- Context: the ubuntu CI leg failed the records byte-parity case only: `actions/checkout` is depth 1, so `git show e7f5fee:lib/precedent.sh` returned nothing and the diff ran against an empty script. Every local run had full history and never saw it.
+- Change: the pre-move script is vendored at `tests/fixtures/precedent/precedent-pre-move.sh` and the test copies it into `lib/` for the run, then moves it out as before. Parity no longer depends on git history being present.
