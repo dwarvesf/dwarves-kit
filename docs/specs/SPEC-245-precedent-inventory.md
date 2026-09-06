@@ -1,7 +1,7 @@
 # Spec: precedent finds the built inventory, not only the written record
 
 Generated: 2026-09-06
-Status: APPROVED
+Status: SHIPPED (dwarves-kit #498, merge 78b13041)
 Lane: normal
 Type: spec-feature
 File: `docs/specs/SPEC-245-precedent-inventory.md`
