@@ -1,21 +1,24 @@
-# Context for implementation (SPEC-235, gauntlet generalization)
+# Context for implementation (SPEC-245, precedent inventory surface)
 
 ## Stack
-Bash + markdown command prompts. Commands live in `commands/*.md` (frontmatter `description:` + prompt body). Test runner: `bash tests/test-meta.sh`. Feature registry: `bash lib/registry/feature-registry.sh generate` regenerates `docs/FEATURES.md` from command frontmatter (freshness-gated by test-meta).
+Bash entry scripts under `lib/<subsystem>/<subsystem>.sh` with a `bin/<subsystem>` forwarder; stdlib-only Python 3 beside the bash entry when the logic outgrows grep (`lib/learn/drain.py`, `lib/session/recall/session_recall.py`). Python is invoked as `python3 <file>.py` with env vars as the only IPC. Tests are raw bash (`tests/test-*.sh`, mktemp fixtures), discovered by `tests/run-workflow.sh` from `.github/workflows/test.yml`. Config: `kit_config_get <section.key> [default]` from `lib/config/kit-config.sh` (kit.toml, per-project `.kit.toml` overrides). Ledger root: `lib/telemetry/kit-log-dir.sh::kit_resolve_log_dir`, redirectable with `KIT_LEDGER_DIR` in tests.
 
 ## Conventions
-- Command files are the product; prose IS the code. STE-lite register, no em dashes.
-- Generated projections (`docs/FEATURES.md`) are never hand-edited; hand-maintained renderings (`docs/workflow-map.md`, `README.md` command table, `docs/workflow-paths.md`) get a wording pass in the same PR.
-- Gate ledger brackets phases; ship-gate reads recorded gates before push.
+- ADR-0034 grammar: `bin/<subsystem> <verb>`; the shim is a 3-line `exec bash "$SELF_DIR/../lib/<sub>/<sub>.sh" "$@"`; the lib entry owns the verb grammar. `tests/test-bin-forwarders.sh` is the census; a new bin entry registers there.
+- Exit 64 on usage errors (CLIs). Hooks always exit 0; hooks are bash only (PHILOSOPHY). Python under `lib/` is allowed and common.
+- `docs/FEATURES.md` is generated (`bash lib/registry/feature-registry.sh generate`), never hand-edited; it covers commands, agents, skills, hooks, not `bin/`.
+- Consumer paths never hardcoded: repo root resolves flag > `REPO_ROOT` > `git rev-parse --show-toplevel` > cwd (`lib/board/board.sh`, `hooks/harvest.py`).
+- Fold-in naming: bare function name, no host-agent prefix (`harvest`, not `cc-harvest`).
+- STE-lite prose, no em dashes, no spec IDs in commit subjects.
 
 ## Key files
-- `commands/gauntlet.md` - the engine + (today) the onboarding hardcoding. Primary rewrite target.
-- `docs/patterns/gauntlet.md` - kit-dev positioning, 10 known limits. Genericize wording; restate limits 4/8 per artifact kind.
-- `docs/guides/gauntlet.md` - operator how-to. Generic top layer + onboarding worked example.
-- `tests/gauntlet/**` - the kit's own onboarding INSTANCE (cleanroom stager, Tier-1 suite, checkers, J1-J11 scenario pack, campaign deploy). DO NOT rewrite; it becomes the reference preset's implementation.
-- `kit.toml [gauntlet]` + `lib/config/kit-config.sh:96-114` + `lib/config/module-registry.md:52` - config keys `gauntlet.runner_host` / `gauntlet.probe_key_ref` are root-only-readable; key shape must not change.
-- `docs/specs/SPEC-226-gauntlet-telemetry-learning.md` - telemetry contract; phase name literal `gauntlet`, marker `[[QL-VERDICT ...]]` grammar preset-invariant.
-- Full surface map: `docs/research/2026-08-31-gauntlet-surface-map.md`; landmines: `docs/research/2026-08-31-gauntlet-pitfalls.md`.
+- `lib/precedent.sh`: today's records-surface finder (73 lines, bash grep, no tests, no bin entry). Moves to `lib/precedent/precedent.sh`.
+- `commands/assign.md:115`, `commands/grill.md:67`: the two callers; both pinned by `tests/test-meta.sh:2079-2087` on the literal `precedent.sh find` and `-x lib/precedent.sh`.
+- `lib/README.md:23,41`, `lib/mega/mega.sh:19`: name precedent.sh a root-level orphan; update wording.
+- `lib/session/recall/session_recall.py:189-211`: the redaction regex, DATA marker, line cap already ported from whathas.
+- `bin/learn`, `lib/learn/learn.sh`: the shim + entry shape to copy.
+- `tests/test-board.sh`, `tests/test-mega.sh:24-50`: fixture patterns (temp repo, env overrides).
+- Reference source (read-only, outside this repo): `~/workspace/tieubao/ops-toolkit/tools/repo-sweep/bin/repo-sweep` lines 625-660 (`_score`), 667-1290 (`_iter_*`), 1295-1520 (`_whathas_*`, `cmd_whathas`).
 
 ## External dependencies
-None. The change is prompt + doc files plus one registry regeneration. Live consumer to compat-check (not edit): `tests/gauntlet/deploy/mini.gauntlet-campaign.plist` invokes the onboarding campaign runner with today's input names.
+None new. python3, grep, git, jq already required by tests.
