@@ -30,3 +30,10 @@ Exit: 0 / 0 / 0
 Output (excerpt): `23/23 passed`; `Passed: 829 / 829`; `all 36 passed, 0 skipped`
 Verdict: PASS (task-verifier 9/9: `bin/precedent find "board set"` prints `## records` first, `## kit verbs` at line 16, last line `precedent: 5 record matches, 22 inventory hits in 3 sections; top: kit verbs`; `--json` is one object with `records` and `total_hits`; records surface byte-equal to the e7f5fee script; five runs leave no `precedent-records.*` temp files)
 Re-audit: PASS (recheck-verifier, fresh context; parity confirmed by cmp and sha256, 520 bytes both sides)
+
+## NEGATIVE CONTROL (lead, throwaway worktree at 1c23d91)
+
+Command: `bash lib/gate/negctl.sh <throwaway> "bash tests/test-precedent.sh" "sed -i '' 's/^    if not terms:$/    if True:/' lib/precedent/inventory.py"` (the scorer returns 0 for every entry)
+Exit: 0 green before mutation; 1 under mutation; 0 after `git checkout HEAD -- lib/precedent/inventory.py`
+Output (excerpt, under mutation): `17/23 passed`; RED cases: default (all) surface nonzero summary line, kit.toml registry fallthrough scans the scripts row, name-over-body ranking, `~` expansion row scanned, secret redaction reaches a hit line, crons section lists both expressions
+Verdict: RED-as-expected (negctl `Verdict: PASS`); the throwaway worktree was removed afterwards, the shared checkout was never mutated

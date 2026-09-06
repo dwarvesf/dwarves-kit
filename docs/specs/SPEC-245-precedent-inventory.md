@@ -5,7 +5,7 @@ Status: APPROVED
 Lane: normal
 Type: spec-feature
 File: `docs/specs/SPEC-245-precedent-inventory.md`
-References: `lib/precedent.sh` (the records surface: keep its keyword filter, grep ranking, and the two-line hit format verbatim); `~/workspace/tieubao/ops-toolkit/tools/repo-sweep/bin/repo-sweep` `_score` at line 625 (AND across terms, name hit 2 vs body hit 1, adjacent-phrase bonus), `_whathas_sources` at line 1310 (one row per source: title, skip note, entries, hit function), `cmd_whathas` at line 1441 (sections ranked by their top hit, `--quiet` collapse, `--json` shape, one log line per query); `lib/session/recall/session_recall.py:189-211` (secret-shape redaction, DATA marker, per-line cap); `bin/learn` + `lib/learn/learn.sh` (shim and entry shape); `lib/board/board.sh:158-168` (registry file format and repo-root precedence); `hooks/harvest.py:1-30` (the fold-in naming rule and consumer-seam wording).
+References: `lib/precedent.sh` (the records surface: keep its keyword filter, grep ranking, and the two-line hit format verbatim); ops-toolkit `tools/repo-sweep/bin/repo-sweep` `_score` at line 625 (AND across terms, name hit 2 vs body hit 1, adjacent-phrase bonus), `_whathas_sources` at line 1310 (one row per source: title, skip note, entries, hit function), `cmd_whathas` at line 1441 (sections ranked by their top hit, `--quiet` collapse, `--json` shape, one log line per query); `lib/session/recall/session_recall.py:189-211` (secret-shape redaction, DATA marker, per-line cap); `bin/learn` + `lib/learn/learn.sh` (shim and entry shape); `lib/board/board.sh:158-168` (registry file format and repo-root precedence); `hooks/harvest.py:1-30` (the fold-in naming rule and consumer-seam wording).
 
 ## Problem
 
@@ -156,11 +156,11 @@ None.
 - [x] TASK-004 (DONE, commit 0f8d25a, verified): Wire `all`: records block first, inventory sections after, the summary line last; regex/marker equality pin against `session_recall.py`; `kit.toml` gains `[precedent] registry` (status `[consumer]`) and `lib/config/module-registry.md` gains its row. Acceptance: `bin/precedent find "notion sync"` on the fixture prints the records block, the ranked inventory, and a summary line matching `^precedent: [0-9]+ record matches, [0-9]+ inventory hits in [0-9]+ sections; top: `; the equality pin passes.
 
 ### Phase 3: Polish
-- [ ] TASK-005: Docs: `commands/assign.md` and `commands/grill.md` describe both surfaces in one sentence each; `docs/architecture.md` and `MANUAL.md` gain the `precedent` bin row where `learn` is listed; `docs/FEATURES.md` regenerated if the generator's inputs changed (it should not: no command, agent, skill, or hook is added). Proof of done at `docs/verification/precedent-inventory.md` per the behavioral contract (real run on this repo, negative control by reverting `inventory.py`'s scorer). Acceptance: `bash tests/test-meta.sh` green; `bash tests/run-workflow.sh` green.
+- [x] TASK-005 (DONE, commit b270831, verified after one lead fix): Docs: `commands/assign.md` and `commands/grill.md` describe both surfaces in one sentence each; `docs/architecture.md` and `MANUAL.md` gain the `precedent` bin row where `learn` is listed; `docs/FEATURES.md` regenerated if the generator's inputs changed (it should not: no command, agent, skill, or hook is added). Proof of done at `docs/verification/precedent-inventory.md` per the behavioral contract (real run on this repo, negative control by reverting `inventory.py`'s scorer). Acceptance: `bash tests/test-meta.sh` green; `bash tests/run-workflow.sh` green.
 
 ## After state
 
-- [ ] `bin/precedent find "board set"` in this repo lists `lib/board/board.sh` under a kit-verbs section and the SPEC-146 spec under records, in one run. (Today: `lib/precedent.sh find` lists the spec only; no bin entry exists.)
+- [x] `bin/precedent find "board set"` in this repo prints a `## records` block and lists `lib/board/board.sh` under `## kit verbs`, with SPEC-146 named inline on that line, in one run. (Today: `lib/precedent.sh find` prints the records block only; no bin entry exists.)
 - [ ] `bin/precedent find "notion sync" --surface inventory --registry <file>` scans every `repo` and `scripts` root in the file and prints a skip note for a missing one. (Today: the source roots are hardcoded in ops-toolkit.)
 - [ ] `bash tests/test-precedent.sh` exists and is green; `lib/precedent.sh` has a test for the first time. (Today: zero tests.)
 - [ ] `grep -rn 'precedent.sh find' commands/` returns nothing; both callers say `precedent find`. (Today: two literal callers.)

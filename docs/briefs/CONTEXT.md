@@ -18,7 +18,7 @@ Bash entry scripts under `lib/<subsystem>/<subsystem>.sh` with a `bin/<subsystem
 - `lib/session/recall/session_recall.py:189-211`: the redaction regex, DATA marker, line cap already ported from whathas.
 - `bin/learn`, `lib/learn/learn.sh`: the shim + entry shape to copy.
 - `tests/test-board.sh`, `tests/test-mega.sh:24-50`: fixture patterns (temp repo, env overrides).
-- Reference source (read-only, outside this repo): `~/workspace/tieubao/ops-toolkit/tools/repo-sweep/bin/repo-sweep` lines 625-660 (`_score`), 667-1290 (`_iter_*`), 1295-1520 (`_whathas_*`, `cmd_whathas`).
+- Reference source (read-only, outside this repo): ops-toolkit `tools/repo-sweep/bin/repo-sweep` lines 625-660 (`_score`), 667-1290 (`_iter_*`), 1295-1520 (`_whathas_*`, `cmd_whathas`).
 
 ## External dependencies
 None new. python3, grep, git, jq already required by tests.

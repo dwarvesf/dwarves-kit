@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """inventory.py -- SPEC-245 (precedent-inventory TASK-003): the inventory surface for
-`precedent find`. Ported from `~/workspace/tieubao/ops-toolkit/tools/repo-sweep/bin/repo-sweep`
-`whathas` (its estate paths, the house-CLI table, and the git-native table are dropped; see the
-spec's Out of Scope). Answers "has something like this already been BUILT" (tools, scripts,
+`precedent find`. Ported from the `whathas` command of ops-toolkit's `repo-sweep` tool (its
+estate paths, the house-CLI table, and the git-native table are dropped; see the spec's Out of
+Scope). Answers "has something like this already been BUILT" (tools, scripts,
 scheduled jobs, skills, memory notes, feature registries), the half of intake the `records`
 surface in `precedent.sh` cannot see because none of that lives in `docs/`.
 

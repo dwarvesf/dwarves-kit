@@ -78,3 +78,12 @@ Deviation: `docs/architecture.md` has no table or paragraph that inventories `li
 Verified: `bash tests/test-meta.sh` (829/829), `bash tests/test-precedent.sh` (23/23), `bash tests/test-bin-forwarders.sh` (36/36, 0 skipped) all green with no code touched; `docs/FEATURES.md` freshness pin PASS, no regenerate needed; `grep -nP '[\x{2013}\x{2014}]'` empty across every file this task touched.
 
 No further deviations from SPEC-245 TASK-005.
+
+## 2026-09-06 Integration fixes (lead)
+
+- Context: the task-verifier refuted one After-state clause ("the SPEC-146 spec under records"): `board set` reduces to the single keyword `board` (the records keyword filter drops tokens under 4 chars), 233 files tie at one hit, and the pre-existing tie-break leaves SPEC-146 outside the top 5. The integration-verifier then ran all 65 suites and found two regressions the three-suite check missed.
+- Change 1: reworded the After-state bullet to what a run shows (records block present, `lib/board/board.sh` under kit verbs with SPEC-146 named inline). `_records_find` ranking untouched, out of scope by the parity contract.
+- Change 2: `inventory.py` header comment named the ported source by a home-relative path, which trips `tests/test-no-personal-paths.sh`; reworded to name the tool without a path.
+- Change 3: `tests/test-hooks.sh` (SPEC-068 suite) called `precedent.sh find` bare; since TASK-004 the bare call is the `all` surface, so the `^ 3x` assertion no longer matched the records block nested under `## records`. The four calls now pass `--surface records`, the isolated behavior that suite was written for. TASK-001 reported that suite green because inventory.py did not exist yet at that point.
+- Process: the integration-verifier ran `git checkout e7f5fee -- .` in the shared worktree and restored, which wiped two uncommitted lead edits (this note and the spec bullet); both re-applied. Verifiers must never checkout in the shared worktree; a throwaway worktree is the tool.
+- Open question: the records tie-break (reverse alphabetical by path) is weak for one-keyword queries; a follow-up could weight the file kind or count hits per file. Not this spec.
