@@ -33,7 +33,7 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # SPEC-184 forwarders; the census names them because the DISPATCH block below proves each
 # answers with its own contract. A bin/ entry with no such block is still the drift this
 # census exists to catch.
-EXPECTED="activate board classify config gate goal learn mega plugin-check precedent prose-rag queue release session skill-improve skill-review spec stats worktree-provision"
+EXPECTED="activate board classify config gate goal learn mega plugin-check precedent prose-rag queue release session skill-improve skill-review spec stats worktree-provision wrap"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
@@ -115,6 +115,17 @@ out="$(cd "$EMPTY_PRECEDENT" && "$KIT_DIR/bin/precedent" find "spec drift" --sur
 assert_true "precedent find --surface records dispatches end to end (empty repo, no hits)" "$rc"
 out="$("$KIT_DIR/bin/precedent" find x --surface bogus 2>&1)"; rc=$?
 assert_true "precedent find rejects an unknown surface (exit 64)" "$([ $rc -eq 64 ]; echo $?)"
+
+echo "== wrap: forwarder reaches wrap.sh (deep behavior: test-wrap.sh) =="
+out="$("$KIT_DIR/bin/wrap" --help 2>&1)"; rc=$?
+assert_true "wrap forwarder exits 0 (--help)" "$rc"
+assert_true "wrap --help prints wrap.sh's own usage" "$(grep -q 'wrap.sh scan' <<<"$out"; echo $?)"
+WRAP_EMPTY="$(mktemp -d)"
+out="$("$KIT_DIR/bin/wrap" scan "$WRAP_EMPTY" 2>&1)"; rc=$?
+assert_true "wrap scan dispatches end to end (non-repo argument, exit 0)" "$rc"
+assert_true "wrap scan prints the not-a-repo skip line" "$(grep -q 'not a git repo, skipped' <<<"$out"; echo $?)"
+out="$("$KIT_DIR/bin/wrap" bogus-verb 2>&1)"; rc=$?
+assert_true "wrap rejects an unknown verb (exit 64)" "$([ $rc -eq 64 ]; echo $?)"
 
 echo "== stats: forwarder reaches the uv CLI (SKIP without uv) =="
 if command -v uv >/dev/null 2>&1; then

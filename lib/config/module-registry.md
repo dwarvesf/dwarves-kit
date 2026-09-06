@@ -258,6 +258,12 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 |---|---|---|---|---|---|
 | PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get_root precedent.registry` (the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR, `kit-config.sh:64-75`) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
 
+### wrap (`/kit:wrap` landing-step config, no install module)
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| - | wrap.activity_log | `""` | [consumer] | wrap | Absolute or `~`-prefixed path to the operator's own activity-log file, resolved with `kit_config_get_root` (the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names a file the kit writes to, `kit-config.sh:64-75`). Its resolved realpath must sit under `$HOME`'s realpath and name an existing regular file, else `wrap log` exits 1 naming the resolved path. Empty means `wrap log` prints the line and reports that nothing was written, exit 0. |
+
 ### web_drift (skill knob, no install module)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |

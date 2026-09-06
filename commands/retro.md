@@ -9,6 +9,7 @@ This is NOT a celebration. This is NOT a blame session. This is a structured ext
 ## When to run
 
 - After `/kit:ship` completes
+- Called by `/kit:wrap` when a shipped PR merged in that session
 - At the end of a sprint or milestone
 - After a significant bug or incident
 - Periodically (weekly or biweekly) for ongoing projects

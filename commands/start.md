@@ -94,7 +94,7 @@ If git is clean, review passed, everything shipped:
 
 ```
 Project is in a clean state. Nothing pending.
-Suggested: /kit:retro if you haven't captured learnings, or describe the next feature to start a new cycle.
+Suggested: /kit:wrap to land the session (board rows, merges, tidy, activity line), then /kit:retro if you haven't captured learnings, or describe the next feature to start a new cycle.
 ```
 
 ### Additional context (always show)
@@ -135,6 +135,7 @@ When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
    - Debug: `/kit:debug` (bug lane)
    - Review: `/kit:review`, `/kit:review-team`
    - Ship: `/kit:docs`, `/kit:ship`
+   - Land: `/kit:wrap`
    - Reflect: `/kit:retro`
    - Utility: `/kit:start`, `/kit:kit-health`
 
