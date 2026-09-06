@@ -502,6 +502,24 @@ chk "log prepends to the operator-named file" \
 chk "log left the kit-root-named file untouched (operator wins)" \
   "$([ "$(cat "$LOGHOME/KITROOT.md")" = "kit-root base" ]; echo $?)"
 
+# The configured log sits inside a repo's main checkout; a session working in a worktree of
+# that repo gets the same repo-relative file inside its worktree, so the line is committable.
+LOGREPO="$LOGHOME/logrepo"
+git init -q "$LOGREPO" && git -C "$LOGREPO" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+mkdir -p "$LOGREPO/_meta" && printf 'main copy
+' > "$LOGREPO/_meta/LOG.md"
+git -C "$LOGREPO" add _meta/LOG.md && git -C "$LOGREPO" -c user.name=t -c user.email=t@t commit -q -m log
+git -C "$LOGREPO" worktree add -q -b side "$LOGHOME/logrepo-wt"
+set_log_key "$LOGREPO/_meta/LOG.md"
+( cd "$LOGHOME/logrepo-wt" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: from a worktree" >/dev/null 2>&1 )
+chk "log from a worktree prepends to the worktree's copy" \
+  "$([ "$(head -1 "$LOGHOME/logrepo-wt/_meta/LOG.md")" = "$(date +%F) · wrap: from a worktree" ]; echo $?)"
+chk "log from a worktree leaves the main checkout's copy untouched" \
+  "$([ "$(cat "$LOGREPO/_meta/LOG.md")" = "main copy" ]; echo $?)"
+( cd "$LOGHOME" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: from outside" >/dev/null 2>&1 )
+chk "log from outside the repo prepends to the configured file itself" \
+  "$([ "$(head -1 "$LOGREPO/_meta/LOG.md")" = "$(date +%F) · wrap: from outside" ]; echo $?)"
+
 # ===========================================================================
 echo "=== help and usage ==="
 # ===========================================================================

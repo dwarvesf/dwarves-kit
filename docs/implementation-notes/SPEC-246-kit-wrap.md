@@ -188,3 +188,8 @@ Open questions: none.
 
 - Context: the fresh-lock case still failed on ubuntu after the poll fix. `_mtime` tried `stat -f %m` first; on GNU stat `-f` reports the file system and prints the mount point with exit 0, so the fallback to `-c %Y` never ran and the age parsed as garbage.
 - Change: both helpers try GNU `-c` first; BSD stat rejects `-c` and falls through to `-f`. Local macOS run stays 131/131 through the fallback.
+
+## 2026-09-07 wrap log and worktrees (lead)
+
+- Context: the operator file names one fixed LAB_LOG path inside the ops-toolkit main checkout. Sessions work in worktrees of that repo and the main checkout cannot switch branches, so a line written there was uncommittable. Found on the first live use.
+- Change: `_worktree_copy` rewrites the target to the same repo-relative file inside the current worktree when both share a git common dir. Three test cases: the worktree copy gets the line, the main copy stays, running from outside the repo writes the configured file itself.

@@ -503,6 +503,25 @@ _realpath_f() {
   printf '%s/%s\n' "${dir%/}" "$base"
 }
 
+# _worktree_copy <file>: the configured log names one fixed file, usually inside a repo's
+# main checkout. A session that works in a git worktree of that same repo cannot commit a
+# line written to the main checkout (its branch is not the session's), so when the current
+# directory is a worktree sharing the file's repo, the same repo-relative path inside the
+# current worktree is the target. Prints the path to use; the input when nothing applies.
+_worktree_copy() {
+  local file="$1" fdir fcommon ftop cur_common cur_top rel
+  fdir="$(dirname "$file")"
+  fcommon="$(git -C "$fdir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || { printf '%s' "$file"; return 0; }
+  ftop="$(git -C "$fdir" rev-parse --show-toplevel 2>/dev/null)" || { printf '%s' "$file"; return 0; }
+  cur_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || { printf '%s' "$file"; return 0; }
+  cur_top="$(git rev-parse --show-toplevel 2>/dev/null)" || { printf '%s' "$file"; return 0; }
+  [ "$fcommon" = "$cur_common" ] || { printf '%s' "$file"; return 0; }
+  [ "$ftop" != "$cur_top" ] || { printf '%s' "$file"; return 0; }
+  rel="${file#"$ftop"/}"
+  [ -f "$cur_top/$rel" ] || { printf '%s' "$file"; return 0; }
+  printf '%s' "$cur_top/$rel"
+}
+
 cmd_log() {
   local date_str text="" arg have_text=0
   date_str="$(date +%F)"
@@ -556,6 +575,7 @@ cmd_log() {
     *) echo "wrap log: resolved path '${resolved}' is outside HOME (${home_real})" >&2; return 1 ;;
   esac
   [ -f "$resolved" ] || { echo "wrap log: '${resolved}' is not an existing regular file" >&2; return 1; }
+  resolved="$(_worktree_copy "$resolved")"
 
   local n=${#line}
   [ "$n" -gt "$LOG_LINE_BUDGET" ] && echo "wrap log: note: ${n} chars, over the ${LOG_LINE_BUDGET}-char routine budget" >&2
