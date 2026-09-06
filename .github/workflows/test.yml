@@ -252,3 +252,6 @@ jobs:
 
       - name: Run the gauntlet-proof-audit Tier-1 pins
         run: bash tests/test-gauntlet-proof-audit.sh
+
+      - name: Run precedent records-surface tests (SPEC-245)
+        run: bash tests/test-precedent.sh
