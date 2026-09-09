@@ -36,10 +36,12 @@ jobs:
       # here); it only wires the one new test this PR added.
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
 
-      - name: Install jq (Ubuntu)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y jq
-
+      # jq ships preinstalled on both hosted images, so the step below only verifies it.
+      # An `apt-get update` used to run first on Ubuntu, and it refreshed EVERY configured
+      # source, including the Google Chrome repo the image preinstalls. On 2026-09-09 that
+      # repo served a hash-mismatched index and exit 100 failed the whole run twice, on work
+      # that touches no package. Never refresh the index to reach a preinstalled tool: the
+      # verify step below is the real gate, and it fails loudly if an image ever drops jq.
       - name: Verify jq available
         run: jq --version
 
