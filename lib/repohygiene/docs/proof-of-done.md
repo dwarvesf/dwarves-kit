@@ -261,3 +261,57 @@ the backticks were what excluded the boilerplate. Measured against all 31 mega-g
 the corpus, stripping changed no count anywhere: the line anchor was already doing the work.
 The negative control is what surfaced it, by breaking the stripping and watching the suite stay
 green. The dead pass is gone and the comment now names the real mechanism.
+
+### Negative control
+
+Run after the build commits `82fe6e9` and `a463c06`, one break per load-bearing half of the
+precedence. Each break is a single-line edit, applied with a checked literal replacement so a
+control that fails to apply reports itself instead of passing silently.
+
+```
+=== NC-1: let commit evidence outrank the folder's own open checkboxes ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL a 'build complete' commit cannot close a goal with open sub-goals
+  FAIL an in-progress [~] sub-goal keeps a goal out of the findings
+  FAIL a 'live-close' commit cannot close a goal with an open sub-goal
+  FAIL a closed marker over open items is UNSURE, not FIX
+  FAIL a slug containing a closure keyword does not declare the goal closed
+58/63 passed, 5 failed
+
+=== NC-2: let a commit keyword earn a mega-goal FIX ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL a folder with no status marker is UNSURE
+  FAIL a commit keyword alone never earns FIX for a mega-goal
+61/63 passed, 2 failed
+
+=== NC-3: drop the checkbox line anchor, so prose about a box counts as one ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL prose describing a checkbox is not an open sub-goal
+62/63 passed, 1 failed
+
+=== NC-4: let the status keyword test read the folder path, not just the line text ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL a slug containing a closure keyword does not declare the goal closed
+62/63 passed, 1 failed
+
+=== NC-5: let an open marker lose to a closed one ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL an open status marker outranks a closing commit subject
+62/63 passed, 1 failed
+
+=== restored, green again ===
+63/63 passed, 0 failed
+```
+
+NC-1 raised the open-item guard past any real count, so the commit-evidence branch judged
+folders with open sub-goals again: the three real misreads all came back. NC-2 promoted that
+branch's verdict from `UNSURE` to `FIX`. NC-3 removed the `(^|\|)` anchor from the checkbox
+match. NC-4 prepended the file path to the status line before the keyword test. NC-5 made
+`mg_state` report an open marker as closed. Each was restored with `git checkout --` and the
+suite returned to green.
+
+Two controls did NOT bite on the first pass, and both were real gaps rather than noise. NC-3
+stayed green because the code-span stripping, not the anchor, was absorbing the break, which is
+how the dead pass above was found. NC-4 stayed green because the `safari-net-complete` fixture
+carried a bare `## Status` heading, which is not a declaration, so the keyword test never ran
+and the case passed for the wrong reason. Both were fixed before the control was re-run.
