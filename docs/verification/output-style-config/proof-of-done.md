@@ -12,8 +12,37 @@
 | AC5b | A style name with `/` or `..` is refused: key unchanged, nothing written | PASS | "output.style with a path component is refused (key unchanged, nothing written)" |
 | AC6 | Negative control | PASS | `.outputStyle` renamed to `.outputStyleX` in the adopt jq merge: `tests/test-adopt.sh` reports 2 NOT ok (AC2, AC4); restored, 0 NOT ok |
 | AC7 | No regression | PASS | `test-install-modules.sh` 37/37, `test-install-contract.sh` 4/4, `shellcheck -S warning install.sh lib/adopt.sh` rc 1 with the same 5 warnings as origin/master (SC2034/SC2088/SC2155 at pre-existing lines, none new), `test-meta.sh` 843/843 after `feature-registry.sh generate` (the new test file mention moved one FEATURES.md row) |
+| AC8 | `install.sh` step 7b: operator-level `outputStyle` default, path-shaped refusal, idempotent | PASS | `test-install-modules.sh` 42/42 (4 new cases; see run-table below) |
 
 **Total: 27/27 PASS in `tests/test-adopt.sh` (21 pre-existing + 6 new). Regression suites unchanged.**
+
+## Operator-level install.sh step (AC8, added 2026-09-10)
+
+| Case | Result | Evidence |
+|---|---|---|
+| Operator `kit.toml` `[output] style = "adhd"` sets `outputStyle` in a scratch `$CLAUDE_DIR/settings.json` | PASS | `tests/test-install-modules.sh`: "operator kit.toml [output] style=adhd sets outputStyle in settings.json" |
+| No `[output] style` anywhere in operator/kit-root scope | PASS | "no operator/kit-root output.style -> outputStyle key absent" |
+| Re-run with the same operator style | PASS | "re-run with the same operator style is byte-identical" (settled past install.sh's own pre-existing first-run-vs-merge-path hook/permission reordering, unrelated to this step, before the byte comparison) |
+| `[output] style = "../evil"` (path-shaped) | PASS | "path-shaped output.style is refused (outputStyle key absent)" + "path-shaped output.style prints a warning" |
+
+```
+$ bash tests/test-install-modules.sh 2>&1 | tail -10
+== NC output-style operator-level (SPEC-252 install gap): install.sh sets outputStyle from operator kit.toml ==
+  PASS  operator kit.toml [output] style=adhd sets outputStyle in settings.json
+== NC output-style empty: no [output] style leaves outputStyle unset ==
+  PASS  no operator/kit-root output.style -> outputStyle key absent
+== NC output-style idempotent re-run: byte-identical settings.json ==
+  PASS  re-run with the same operator style is byte-identical
+== NC output-style path-shaped name refused ==
+  PASS  path-shaped output.style is refused (outputStyle key absent)
+  PASS  path-shaped output.style prints a warning
+
+== 42 passed, 0 failed ==
+```
+
+Negative control: renamed the jq write target from `.outputStyle` to `.outputStyleX` in `install.sh` step 7b; `test-install-modules.sh` dropped to 41/42, failing exactly "operator kit.toml [output] style=adhd sets outputStyle in settings.json"; reverted, back to 42/42.
+
+Regression, same run: `bash tests/test-adopt.sh` 27/27 PASS (unaffected; adopt's own path is untouched), `bash tests/test-meta.sh` 843/843 (no `docs/FEATURES.md` drift), `shellcheck -S warning install.sh` rc 1 with the same 5 warnings as `origin/master:install.sh` (3x SC2034, 2x SC2155 at pre-existing lines), none new.
 
 `tests/test-no-personal-paths.sh` is red on master before this branch (`_meta/megagoals/learning-boundary/POINTER_PROMPT.md:9`); this branch adds no personal path (`output-styles/` and the spec are tenant-free).
 

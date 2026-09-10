@@ -857,6 +857,45 @@ case " $KIT_ENABLED_HOOK_NAMES " in
     ;;
 esac
 
+# 7b. Output style, operator-level (closes the SPEC-252 gap: adopt.sh step 6b writes a
+# per-PROJECT outputStyle, but nothing wrote an OPERATOR's own default). `[output] style`
+# resolves operator > kit-root here -- KIT_PROJECT_ROOT points at an empty scratch dir so a
+# nearby repo's .kit.toml can never leak into a person's own global setting (install has no
+# "project", unlike adopt's per-repo write). A set value becomes this operator's default
+# outputStyle in $CLAUDE_DIR/settings.json; empty never touches the file. Not run on
+# --uninstall (handled above, before this point): we do not strip a person's chosen style
+# back out on uninstall, it is their own setting, not ours to revoke.
+if [ -f "$KIT_DIR/kit.toml" ] && [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+  _kit_load_config_resolver_for_style() {
+    # shellcheck source=lib/config/kit-config.sh
+    source "$KIT_DIR/lib/config/kit-config.sh"
+  }
+  if _kit_load_config_resolver_for_style 2>/dev/null; then
+    KIT_STYLE_SCRATCH="$(mktemp -d)"
+    OUTPUT_STYLE_NAME="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_PROJECT_ROOT="$KIT_STYLE_SCRATCH" \
+      kit_config_get "output.style" "")"
+    rmdir "$KIT_STYLE_SCRATCH" 2>/dev/null || true
+    case "$OUTPUT_STYLE_NAME" in
+      */*|*..*)
+        echo "[warn] output.style '$OUTPUT_STYLE_NAME' is not a bare name; skipped" >&2
+        OUTPUT_STYLE_NAME=""
+        ;;
+    esac
+    if [ -n "$OUTPUT_STYLE_NAME" ]; then
+      EXISTING_OUTPUT_STYLE="$(jq -r '.outputStyle // ""' "$SETTINGS_FILE" 2>/dev/null)"
+      if [ "$EXISTING_OUTPUT_STYLE" != "$OUTPUT_STYLE_NAME" ]; then
+        jq --arg s "$OUTPUT_STYLE_NAME" '.outputStyle = $s' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+          && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+        echo "[ok] Set outputStyle=$OUTPUT_STYLE_NAME (operator kit.toml [output] style)"
+      else
+        echo "[ok] outputStyle already $OUTPUT_STYLE_NAME"
+      fi
+    else
+      echo "[skip] outputStyle not set (no [output] style in operator/kit-root kit.toml)"
+    fi
+  fi
+fi
+
 # 6. Verify
 echo ""
 echo "=== Verification ==="

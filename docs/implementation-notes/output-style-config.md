@@ -28,6 +28,18 @@ Delta from the spec only; see `docs/specs/SPEC-252-output-style-config.md` for t
 
 **Why:** the existing install suites drive `install.sh` against a scratch `CLAUDE_DIR`; adding a style assertion there is a small follow-up, not a blocker for a step that mirrors the command-symlink loop line for line.
 
+## 2026-09-10 11:20 operator-level default closes the install.sh gap
+
+**Context:** adopt.sh step 6b writes `outputStyle` into an ADOPTED PROJECT's settings.json. Nothing wrote it for an operator who wants a style as their own default on every repo, adopted or not.
+
+**Decision:** `install.sh` step 7b, right after the statusLine merge, resolves `output.style` operator-only (`kit_config_get`, but with `KIT_PROJECT_ROOT` pointed at an empty scratch dir so the project layer never applies) and sets `.outputStyle` in `$CLAUDE_DIR/settings.json` directly, following the same "overwrite when it differs" rule as adopt's write and the same path-traversal refusal.
+
+**Why:** install has no per-project settings.json to write, and no repo to read `.kit.toml` from that means anything at install time (a stray nearby `.kit.toml` would be someone else's project config, not the operator's intent) -- pointing `KIT_PROJECT_ROOT` at an empty dir makes that explicit instead of relying on the caller's cwd happening to have no `.kit.toml`.
+
+**Alternatives:** a new top-level `[operator]` config section (rejected, `output.style` already resolves operator > kit-root when the project layer is out of the picture, a second key would duplicate the same value); writing the key unconditionally on every install run even when unchanged (rejected, matches adopt's own idempotency contract, and the existing statusLine step already sets the "only write on a real change" precedent this step follows).
+
+**Impact:** an operator with `[output] style = "adhd"` in `~/.config/dwarves-kit/kit.toml` gets `outputStyle: "adhd"` in their own `~/.claude/settings.json` on the next `install.sh` run, with no per-repo adopt step needed. `--uninstall` does not strip it back out; it is the operator's own setting.
+
 ## 2026-09-10 10:50 FEATURES.md regenerated in the same commit
 
 The new test block mentions `SPEC-252`, which moved one row of the generated `docs/FEATURES.md` (`test-adopt.sh` joined the /kit:ship test list). Regenerated with `lib/registry/feature-registry.sh generate`; `tests/test-meta.sh` pins freshness.

@@ -28,6 +28,7 @@ One config key, one adopt step, one install step, one shipped directory.
 | `output-styles/<name>.md` | Kit-shipped styles. The directory name is the plugin-native one, so a plugin install serves them with no extra step. Frontmatter: `name`, `description`, `keep-coding-instructions`. No tenant content (kit contract). |
 | `lib/adopt.sh` step 6b | When the resolved style is non-empty: copy `output-styles/<name>.md` to `<project>/.claude/output-styles/<name>.md` if the kit ships it (byte-compare first, so an unchanged re-run is a no-op), then set `.outputStyle` in `<project>/.claude/settings.json` by a targeted jq merge (every other key, the hook wiring included, is preserved). A name the kit does not ship sets the key only. A name carrying `/` or `..` is refused with a warning and nothing is written. Runs on every adopt invocation, so editing the key and re-running adopt reconfigures the project. Empty never writes and never removes. |
 | `install.sh` step 4a | Symlink every kit style into `~/.claude/output-styles/` so `/output-style <name>` works user-wide. A real file already there is left alone. `--uninstall` removes only links that point at the kit. |
+| `install.sh` step 7b | Operator-level default (closes the gap adopt.sh step 6b left: adopt writes a per-PROJECT style, nothing wrote an OPERATOR's own default). Resolves `output.style` operator > kit-root only (`KIT_PROJECT_ROOT` points at an empty scratch dir, so no nearby repo's `.kit.toml` leaks in); a non-empty, bare (`/`, `..` refused) name sets `.outputStyle` in `$CLAUDE_DIR/settings.json` by a targeted jq merge when it differs from the current value. Empty never writes. Not run on `--uninstall`: a person's chosen style is their own setting, never stripped back out. |
 
 Precedence is the harness's own: `settings.local.json` (what the `/output-style` and
 `/config` pickers write) outranks the project `settings.json` the kit writes, which
@@ -55,6 +56,7 @@ that is a harness property, not a kit choice.
 | AC5b | A name with `/` or `..` is refused, key unchanged, nothing written | "output.style with a path component is refused" |
 | AC6 | Negative control: breaking the settings write fails AC2 and AC4 | run-table in the proof |
 | AC7 | No regression: install module suite, install contract, meta, shellcheck | proof |
+| AC8 | `install.sh` sets an operator-level default `outputStyle` from operator/kit-root `[output] style`, refuses a path-shaped name, and is idempotent | `tests/test-install-modules.sh` "NC output-style operator-level" block |
 
 ## Verification
 
