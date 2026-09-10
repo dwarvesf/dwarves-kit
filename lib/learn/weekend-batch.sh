@@ -202,8 +202,9 @@ _find_artifact() {
 # _strip_ug_prefix <rid> -- the understanding-gate mega-goal's rid convention is
 # "ug-<NN>-<feature-slug>"; docs/implementation-notes/ + docs/verification/explain-command/ files
 # for THAT convention are named by the shorter feature-slug (e.g. "explain-command.md", not
-# "ug-03-explain-command.md" -- see SPEC-126 Problem). Other rids (e.g. "cc-hyg-04-stop-tax") have
-# no such prefix and the rid IS the slug. Both are tried; this is the best-effort half of that.
+# "ug-03-explain-command.md" -- see SPEC-126 Problem). Other rids (a plain `fix/<slug>` branch,
+# no `ug-<NN>-` prefix) have no such prefix and the rid IS the slug. Both are tried; this is the
+# best-effort half of that.
 _strip_ug_prefix() {
   printf '%s' "$1" | sed -E 's/^ug-[0-9]+-//'
 }

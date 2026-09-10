@@ -78,7 +78,7 @@ the platform feature instead of reimplementing it. `gh` is not a dependency.
 > refresh-via-`marketplace update`, honest-unknown) but read: installed sha from
 > `installed_plugins.json`; upstream sha from `plugin-catalog-cache.json .catalog.plugins[id].source_sha`
 > (the file `marketplace update` writes) else the marketplace clone HEAD. See Amendments v3 and
-> `docs/implementation-notes/cc-plugin-check.md`. The prose below is retained for design history.
+> `docs/implementation-notes/plugin-check.md`. The prose below is retained for design history.
 
 A bash CLI `bin/cc-plugin-check` (no `.sh` extension, `#!/usr/bin/env bash`, `set -euo
 pipefail`, `chmod +x`), jq for parsing the CLI's JSON. **No `gh`.** Subcommands:
@@ -281,7 +281,7 @@ runs its `lane-classify` lane and the ship-gate is the final `Done` check.
   NOT-installed plugins. Shipped resolution keeps the v2 intent but reads installed sha from
   `installed_plugins.json` and upstream sha from `plugin-catalog-cache.json
   .catalog.plugins[id].source_sha` (the file `marketplace update` writes) else the marketplace
-  clone HEAD; detail in `docs/implementation-notes/cc-plugin-check.md`. (b) **Review-round
+  clone HEAD; detail in `docs/implementation-notes/plugin-check.md`. (b) **Review-round
   hardening (3 lenses, no criticals; warnings folded):** a hex-sha guard so a non-hex sentinel
   can never reach `current` (defense-in-depth behind the honest-unknown contract); the dry-run
   bump commands are now paste-safe (`printf %q` + `--` guard, mirroring `--apply`); a named

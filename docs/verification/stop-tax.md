@@ -1,4 +1,4 @@
-# Proof of done cc-hyg-04: Stop-hook + override tax reduction
+# Proof of done stop-tax: Stop-hook + override tax reduction
 
 VERDICT: PASS
 
@@ -15,7 +15,7 @@ Both new behaviors covered by green tests AND the full kit suite passes:
 - `hooks/session-state-save.sh`: change-gated debounce on `branch|dirty|HEAD` fingerprint (dirty via `--untracked-files=all` minus the hook's own `.claude/session-state/`).
 - `lib/gate/proof-ledger.sh` `check()`: an override on a source-code file outside `deploy/` is rejected (exit 1); deploy scripts + non-code stay override-able.
 
-## Confirmation run-table (2026-07-02, Air, cc-hyg-04 worktree)
+## Confirmation run-table (2026-07-02, Air, stop-tax worktree)
 
 | # | Command | Exit | Output |
 |---|---------|------|--------|
@@ -61,7 +61,7 @@ The override-rejection is falsifiable, not a rubber stamp:
 ## Reproduce
 
 ```
-cd <dwarves-kit>/.claude/worktrees/cc-hyg-04   # or the merged master
+cd <dwarves-kit>/.claude/worktrees/stop-tax   # or the merged master
 for t in test-hooks test-deployable-done test-proof-visual-evidence \
          test-ledger-durability test-meta test-e2e test-lane-classify \
          test-meta-agent test-orchestrate test-review-team-plants test-role-classify; do

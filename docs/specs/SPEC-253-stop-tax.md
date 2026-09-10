@@ -1,4 +1,4 @@
-# Spec cc-hyg-04: reduce the Stop-hook + override tax
+# SPEC-253: reduce the Stop-hook + override tax
 
 Cross-repo: sub-goal 04 of the ops-toolkit **cc-hygiene** mega-goal
 (`ops-toolkit/_meta/megagoals/cc-hygiene/goals/04-kit-stop-tax.md`). Lane `full`

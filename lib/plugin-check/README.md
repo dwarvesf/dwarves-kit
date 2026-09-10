@@ -11,7 +11,7 @@ from `ops-toolkit/tools/cc-plugin-check/` (dropped the `cc-` prefix per the kit 
 rule: kit artifacts are named by function, not by host agent). No functional change: same
 verdict logic, same CLI surface, same 27-assertion test suite, unmodified. Full design:
 `docs/specs/SPEC-105-cc-plugin-check.md`. Why the data sources differ from the spec's
-originally-named JSON shape: `docs/implementation-notes/cc-plugin-check.md`.
+originally-named JSON shape: `docs/implementation-notes/plugin-check.md`.
 
 ## The one contract: a false "current" is unacceptable
 
