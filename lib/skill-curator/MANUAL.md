@@ -1,7 +1,7 @@
 # skill-curator MANUAL
 
 Daily-use guide. What it is + the design: [README.md](./README.md) and
-[docs/architecture.md](./docs/architecture.md). When something breaks: [RUNBOOK.md](./RUNBOOK.md).
+[docs/architecture.md](./docs/architecture.md). When something breaks: [RUNBOOK.md](./docs/RUNBOOK.md).
 
 | Task | Section |
 |---|---|

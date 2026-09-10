@@ -10,7 +10,7 @@ Master spec: `docs/specs/SPEC-103-skill-curator.md` (VALIDATED, historical , wri
 tool's original name). Suite parity was asserted at the originating cc-elevation-r4 mega-goal.
 
 > Daily use: [MANUAL.md](./MANUAL.md). Diagrams + trust boundary: [docs/architecture.md](./docs/architecture.md).
-> Incident recovery: [RUNBOOK.md](./RUNBOOK.md). Doc index: [SPEC.md](./SPEC.md). Why it is built this
+> Incident recovery: [RUNBOOK.md](./docs/RUNBOOK.md). Doc index: [SPEC.md](./SPEC.md). Why it is built this
 > way: [docs/decisions/](./docs/decisions/). Proof: [docs/proof-of-done.md](./docs/proof-of-done.md).
 
 ## The one idea: the model has no write

@@ -9,7 +9,7 @@ behaviour contract lives in `docs/specs/`, the why in `docs/decisions/`.
 |---|---|
 | [README.md](./README.md) | What it is + install + quick reference |
 | [MANUAL.md](./MANUAL.md) | Daily-use guide (CLI surfaces, config knobs, operator flow) |
-| [RUNBOOK.md](./RUNBOOK.md) | Incident triage (cost, runaway, stuck lock, settings.json, promote refusals, curator) |
+| [RUNBOOK.md](./docs/RUNBOOK.md) | Incident triage (cost, runaway, stuck lock, settings.json, promote refusals, curator) |
 | [docs/architecture.md](./docs/architecture.md) | Topology, trust boundary, data flow, component + state map |
 | [docs/specs/SPEC-103-skill-curator.md](./docs/specs/SPEC-103-skill-curator.md) | The umbrella behaviour contract (Phases A/B/C, DEC-001..008) |
 | [docs/specs/CONTEXT.md](./docs/specs/CONTEXT.md) | Implementation context (stack, conventions, key files) |
