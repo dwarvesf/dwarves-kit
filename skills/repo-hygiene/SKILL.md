@@ -41,7 +41,7 @@ the ask is "my disk is full", it is the wrong loop.
 |---|---|---|---|---|
 | 1 | `unreferenced-doc` | a tracked non-code file that no other tracked file references | last touched more than `--stale-days` ago (default 180) | the exact `git grep -I -n -E '(^\|[^A-Za-z0-9_-])<basename>' -- ':(exclude)<path>'` and its `0 hits outside itself`, plus the last-touch date and age |
 | 2 | `stale-inbox` | an entry directly under a staging dir (`_inbox`, `inbox`, `_staging`) | mtime older than `--inbox-days` (default 30) | the age in days against the threshold, plus `duplicate-of <path> (identical sha256 <first12>)` when a content-identical copy exists elsewhere in the repo |
-| 3 | `misplaced-record` | a record in a central control directory (`_meta`, `docs/research`, `docs/briefs`) whose owner is one tool or experiment, and a closed mega-goal still parked in the control surface | owner accounts for at least half the commits touching the file | the owner, the count of owning commits out of the file's total, the latest commit subject, and the destination path it should co-locate to |
+| 3 | `misplaced-record` | a record in a central control directory (`_meta`, `docs/research`, `docs/briefs`) whose owner is one tool or experiment, and a closed mega-goal still parked in the control surface | owner accounts for at least half the commits touching the file; a mega-goal folder must also be closed by its own record (see below) | the owner, the count of owning commits out of the file's total, the latest commit subject, and the destination path it should co-locate to; for a mega-goal, the `file:line` of its status marker and its checked-against-open counts |
 | 4 | `log-budget` | an append-only log past the line budget the repo's own docs state | the repo's documented numbers, never the scanner's | total lines against the threshold, the busiest `YYYY-MM` against the per-month threshold, and the `file:line` of the sentence that states them, quoted |
 | 5 | `cold-ignored-dir` | a gitignored directory that is large and cold | size at or above `--cold-mb` (default 100) with no file newer than `--cold-days` (default 90) | the size in MB and the fact that no file is newer than the threshold, tagged `REPORT ONLY, gitignored, never a deletion proposal` |
 
@@ -50,12 +50,44 @@ the file, not from the file's contents. Content was tried first and is too noisy
 note names every tool it surveyed, so a file owned by one tool mentions four others. What a
 file's own history says about who wrote it does not have that problem.
 
+### Mega-goal completion is read from the folder, not the log
+
+Detector 3 also judges mega-goal FOLDERS, and there the OWNER question comes second to the
+CLOSED question. A closed mega-goal is a record and co-locates with its owner; an open one is
+a live engine and stays where it is. The test runs in a fixed precedence and stops at the
+first step that answers:
+
+1. **An explicit status marker** in the folder's top-level docs, a `Status:` or `State:`
+   heading or bold label. An OPEN marker anywhere (charter, draft, held, blocked, pending,
+   deferred, in progress) wins over a closed one, because the loop's only mutation is a move
+   and a live engine must not be moved out of the control surface.
+2. **Its own checkboxes.** An unchecked item anywhere in the folder (`- [ ]`, and the `- [~]`
+   in-progress form) means the goal is not complete, whatever the commits say. A box inside a
+   code span does not count: every POINTER_PROMPT.md in the estate writes the convention out
+   as `` `- [ ] NN-... PR #N` ``.
+3. **Commit evidence, only for a folder that declares nothing at all**, and then the verdict
+   is UNSURE. A commit keyword alone never earns a mega-goal folder a FIX.
+
+FIX needs all three: a closed marker, no open item, and a commit scope that resolves an owner
+to give the move a destination.
+
+This precedence exists because commit keywords alone were the first test, and on the first
+live run they misread three of five real folders: a sweep commit reading "co-locate completed
+mega-goals" carries a keyword about OTHER goals, and "mochi build complete, 08 shipped" closed
+nothing while that folder's ROADMAP still carried four open sub-goals and a section blocked on
+a human. The cost is deliberate and asymmetric: a stale unchecked box on a genuinely finished
+goal suppresses one finding, while a wrong FIX moves a live engine. Measured before and after:
+`lib/repohygiene/docs/proof-of-done.md`.
+
 ## Verdict mapping
 
 | Finding | Verdict | Applied? |
 |---|---|---|
 | detector 3, one owner confirmed by Tier 2 | FIX | yes, `git mv` |
+| detector 3, a mega-goal whose own marker says closed, nothing open, one owner | FIX | yes, `git mv` |
 | detector 3, two or more owners, or a closed mega-goal with no resolvable owner | UNSURE | no |
+| detector 3, a mega-goal that declares no status, nothing open, commit evidence only | UNSURE | no |
+| detector 3, a mega-goal with any open checklist item and no closed marker | not emitted | no |
 | detector 2 with a content-identical copy elsewhere | REMOVE, the copy being the named successor | never |
 | detector 1, detector 2 without a duplicate | UNSURE | never |
 | detector 4 | FIX, rotate or compact per the repo's own procedure | never |
@@ -149,4 +181,7 @@ checkout, and a multi-repo sweep is that command in a loop, not a mode inside it
 - Treating an experiment's own result dump or draft folder as decayed. Those are frozen
   records of a run and are excluded, on the same reasoning that keeps dated records out of
   `doc-drift`'s item set.
+- Reading a commit subject as proof that a mega-goal closed. A commit says what one run did,
+  not what the goal's own roadmap still has open, and this loop's one applied verdict rides on
+  the difference.
 - Auditing a directory that is not a git repo. That is `disk-reclaim`'s surface.

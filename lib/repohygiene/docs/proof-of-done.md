@@ -165,6 +165,13 @@ Every row of SPEC-256's `## Test plan`, mapped to the run that covers it.
 | Detector 3, owned record is FIX with owner, evidence, destination | detector-3 block |
 | Detector 3, control-surface log is never an owned record | detector-3 block |
 | Detector 3, minority owner scope does not claim the file | detector-3 block |
+| Detector 3, a mega-goal closed by its own marker with nothing open is FIX with a destination | mega-goal completion block |
+| Detector 3, a commit keyword over open checklist items emits nothing | mega-goal completion block, one case per real misread |
+| Detector 3, an unmarked mega-goal is UNSURE and never FIX | mega-goal completion block |
+| Detector 3, a closed marker over open items is UNSURE, never FIX | mega-goal completion block |
+| Detector 3, an open marker outranks a closing commit subject | mega-goal completion block |
+| Detector 3, a checkbox inside a code span is not an open sub-goal | mega-goal completion block |
+| Detector 3, a slug containing a closure keyword does not declare the goal closed | mega-goal completion block |
 | Detector 4, over-budget log is FIX with counts and quoted source | detector-4 block |
 | Detector 4, no documented budget yields UNSURE | detector-4 block |
 | Detector 5, large cold ignored dir is UNSURE, REPORT ONLY | detector-5 block |
@@ -179,3 +186,72 @@ Every row of SPEC-256's `## Test plan`, mapped to the run that covers it.
 Section 5's nine defects are covered beyond the test plan, in the `hostile input` block. The
 test plan predates the review; the block is the review's own reproductions turned into
 regressions.
+
+## 7. Mega-goal completion precision (2026-09-11)
+
+The first real run of this loop against `ops-toolkit` emitted five mega-goal findings. A human
+then read each folder's own ROADMAP and found only TWO were finished. Every miss came from the
+same cause: the detector decided a folder was complete by grepping the commits that touched it
+for a closure keyword, and a commit subject describes one run, not the state of a roadmap.
+
+Detector 3 is the one verdict this loop applies, so the folder's own record decides now, per
+the precedence in `lib/repohygiene/SPEC.md`.
+
+### Test suite
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `bash tests/test-repohygiene.sh` | 63/63 passed, 0 failed (was 51 assertions; the mega-goal completion block added 12) |
+| 2 | `bash tests/test-meta.sh` | 844/844 passed, all meta tests passed |
+| 3 | `bash tests/test-kit-contract.sh` | 25 passed, 0 failed |
+
+### Measurement
+
+Both runs use the same frozen tree, `ops-toolkit` at `7be6151f`, which is the tree the first
+live run saw. That commit is one before `ops-toolkit` PR #2550, which co-located two of the
+five folders; freezing keeps that move out of the measurement.
+
+```
+git -C <ops-toolkit> worktree add --detach <snap> 7be6151f
+bash lib/repohygiene/repohygiene.sh scan --repo <snap> --detectors 3
+```
+
+| | Findings | Mega-goal rows | True | False |
+|---|---|---|---|---|
+| Before | 6 | 5 | 2 | 3 |
+| After | 2 | 1 | 1 | 0 |
+
+The non-mega-goal row (`docs/briefs/CONTEXT.md`, a central path with three competing owners) is
+unchanged in both runs, which is the negative half of the measurement: the file path of
+detector 3 did not move.
+
+### Per-folder outcome
+
+| Folder | Human verdict | After | Why |
+|---|---|---|---|
+| `mochi-icy-simplify` | NOT complete, 4 open sub-goals and a "Blocked on Han" section, against a commit reading "mochi build complete, 08 shipped" | gone, fixed | 11 open checklist items, plus an open `State:` marker in HANDOFF.md |
+| `vibe-dex-saas` | NOT complete, SG-08 is "BLOCKED-ON-ROUND-CAP, not completion" | gone, fixed | 2 open items, one of them the `- [~]` in-progress form |
+| `hermes-multiplex-followups` | NOT complete, SG-03 half done and folded into another row | gone, fixed | 1 open item at `ROADMAP.md:44` |
+| `icy-ops-enhancements` | complete | gone, fixed | 1 open item at `ROADMAP.md:20`, "06, final review ... PR #487 (OPEN, awaiting Han)", a box never flipped after the merge |
+| `vibe-dex-showcase` | complete | gone, fixed | 1 open item at `ROADMAP.md:49`, "This roadmap reviewed by Han ... before SG-01 starts", a pre-flight box never flipped |
+| `cluster-notify-wiring` | not reached by the hand pass | NEW, `UNSURE` | its own `## Status 2026-09-01: all four goals SHIPPED` and no open box anywhere |
+
+The three false positives are gone. So are the two true ones, and that cost is deliberate:
+both carried a stale unchecked box, so both folders' own records say they are unfinished. A
+suppressed true positive costs one un-filed finding; a false FIX moves a live engine out of
+the control surface. The loop takes the first cost.
+
+Against the CURRENT tree (`ops-toolkit` at `1139120a`, after PR #2550) the same command
+returns the same two findings, but the attribution differs per line: `icy-ops-enhancements` is
+absent because #2550 moved it, and `vibe-dex-showcase` is absent for two reasons at once,
+#2550 moved its documents and this fix's residue guard suppresses the empty directory the move
+left behind. Before the fix, that empty shell still produced a finding, judged by the very
+commit that emptied it.
+
+### The archived corpus, as a control
+
+`ops-toolkit` keeps seven already-archived mega-goals under `_meta/megagoals/_archive/`, every
+one of them genuinely finished. All seven read as closed under the new test, with zero open
+items each. That only holds because a checkbox inside a code span is stripped first: every
+`POINTER_PROMPT.md` in the estate spells the convention out as `` `- [ ] NN-... PR #N` ``, and
+counting that instruction made all seven read as unfinished.

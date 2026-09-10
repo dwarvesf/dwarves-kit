@@ -145,6 +145,147 @@ OUT="$(scan "$R3B" --detectors 3)"
 has "$OUT" "study-queue.md" && R=1 || R=0
 assert "a minority owner scope does not claim the file" $R "-- got: $OUT"
 
+# ------------------------------------- detector 3: mega-goal completion precedence
+# A mega-goal folder's completion used to be decided by keywords in the commits that touched
+# it. On the first live run that misread three of five real folders, and detector 3 is the one
+# verdict the loop acts on. The folder's own record decides now: an explicit status marker
+# first, then its own checkboxes, and only a folder that says nothing falls back to the log,
+# where the best available verdict is UNSURE. Each case below is one of those real folders.
+echo "-- detector 3: mega-goal completion reads the folder, not the commit log --"
+
+# One throwaway repo with a tool available to own records, plus an empty mega-goal folder.
+mkmega() {
+  local d slug="$1"
+  d="$(mkrepo)"
+  mkdir -p "$d/tools/icy-ops" "$d/_meta/megagoals/$slug"
+  echo t > "$d/tools/icy-ops/README.md"; echo r > "$d/README.md"
+  git -C "$d" add -A; commit_at "$d" "2024-01-02T00:00:00" "chore: seed"
+  printf '%s' "$d"
+}
+seal() { git -C "$1" add -A; commit_at "$1" "2024-02-02T00:00:00" "$2"; }
+
+# A folder that declares itself closed and has nothing open is the only shape that earns FIX,
+# and only when a commit scope resolves an owner to give the move a destination.
+MA="$(mkmega icy-thing)"
+printf '%s\n' \
+  '# Mega-goal: icy-thing' '' \
+  '## Status 2026-09-01: all sub-goals SHIPPED' '' \
+  '- [x] 01 first, PR #1' \
+  '- [x] 02 second, PR #2' > "$MA/_meta/megagoals/icy-thing/ROADMAP.md"
+seal "$MA" "feat(icy-ops): land the last icy-thing sub-goal"
+OUT="$(scan "$MA" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/icy-thing'; assert "a closed marker with no open item earns FIX" $? "-- got: $OUT"
+has "$OUT" "co-locate to tools/icy-ops/docs/megagoals/icy-thing/" && R=0 || R=1
+assert "the FIX names the co-location destination" $R "-- got: $OUT"
+
+# The estate writes the checkbox convention out as an INSTRUCTION inside a code span in every
+# POINTER_PROMPT.md. Counting that instruction made all seven already-archived mega-goals read
+# as unfinished, so a box inside backticks is not an open sub-goal.
+printf '%s\n' \
+  '- Record the PR # the moment `gh pr create` returns: `- [ ] NN-... PR #N`.' \
+  '- Flip to `[x]` only when the sub-goal is verified.' \
+  > "$MA/_meta/megagoals/icy-thing/POINTER_PROMPT.md"
+seal "$MA" "docs(icy-ops): pointer prompt"
+OUT="$(scan "$MA" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/icy-thing'; assert "a checkbox inside a code span is not an open sub-goal" $? "-- got: $OUT"
+
+# Real folder 1: the commit said the build was complete and the goal shipped; the ROADMAP
+# still carried four open sub-goals and the notes still carried a section blocked on a human.
+MB="$(mkmega mochi-icy-simplify)"
+printf '%s\n' \
+  '# Mega-goal: mochi-icy-simplify' '' \
+  '- [x] 04-payment-paths, tip/transfer against the hardened sequence, PR #8' \
+  '- [ ] 00-oracle-and-measurement, the parity net has an input, `gate`, PR #' \
+  '- [ ] 07-live-estate-sweep, the live security and cost items are closed, `gate`, PR #' \
+  '- [ ] 09-uat, a human accepts the deployed estate, `gate`, PR #' \
+  > "$MB/_meta/megagoals/mochi-icy-simplify/ROADMAP.md"
+printf '%s\n' '## Blocked on Han, not on the loop' '' 'Arming is Han}s action.' \
+  > "$MB/_meta/megagoals/mochi-icy-simplify/NOTES.md"
+seal "$MB" "chore(megagoals): mochi build complete, 08 shipped, arming is Han's"
+OUT="$(scan "$MB" --detectors 3)"
+has "$OUT" "mochi-icy-simplify" && R=1 || R=0
+assert "a 'build complete' commit cannot close a goal with open sub-goals" $R "-- got: $OUT"
+
+# Real folder 2: a sweep commit whose subject named OTHER goals as completed, over a roadmap
+# whose last sub-goal is the repo's in-progress `[~]` form, explicitly not done.
+MC="$(mkmega vibe-dex-saas)"
+printf '%s\n' \
+  '# Mega-goal: vibe-dex-saas' '' \
+  '- [x] 07-uat-launch, PR #650' \
+  '- [~] 08-improve-until-dry, review rounds; **BLOCKED-ON-ROUND-CAP, not dry**: R1 #657' \
+  > "$MC/_meta/megagoals/vibe-dex-saas/ROADMAP.md"
+seal "$MC" "chore(megagoal): lifecycle rule + co-locate completed mega-goals"
+OUT="$(scan "$MC" --detectors 3)"
+has "$OUT" "vibe-dex-saas" && R=1 || R=0
+assert "an in-progress [~] sub-goal keeps a goal out of the findings" $R "-- got: $OUT"
+
+# Real folder 3: a live-close commit over a Status section whose last sub-goal is half done
+# and folded into another backlog row.
+MD="$(mkmega hermes-multiplex-followups)"
+printf '%s\n' \
+  '# Mega-goal: hermes-multiplex review follow-ups' '' \
+  '## Status' '' \
+  '- [x] SG-01 desk-connection-probe deploy (live 2026-08-30)' \
+  '- [x] SG-02 dashboard false-stopped fix' \
+  '- [ ] SG-03 patch sweep (0018/0027 shipped; 0014/0015/0019 remain, folding into another row)' \
+  '- [x] SG-04 keeper D1 probe, live-verified' \
+  > "$MD/_meta/megagoals/hermes-multiplex-followups/ROADMAP.md"
+seal "$MD" "chore(hermes): multiplex live-close, orphan kill + 0018/0027 live"
+OUT="$(scan "$MD" --detectors 3)"
+has "$OUT" "hermes-multiplex-followups" && R=1 || R=0
+assert "a 'live-close' commit cannot close a goal with an open sub-goal" $R "-- got: $OUT"
+
+# A bare `## Status` heading declares nothing, so the folder above reached its verdict through
+# its checkboxes. With every box checked and still no declaration, commit evidence is all
+# there is, and commit evidence never earns more than UNSURE even when an owner resolves.
+ME="$(mkmega unmarked-goal)"
+printf '%s\n' \
+  '# Mega-goal: unmarked-goal' '' \
+  '- [x] 01 first, PR #1' \
+  '- [x] 02 second, PR #2' > "$ME/_meta/megagoals/unmarked-goal/ROADMAP.md"
+seal "$ME" "feat(icy-ops): complete the unmarked-goal mega-goal"
+OUT="$(scan "$ME" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	UNSURE	_meta/megagoals/unmarked-goal'; assert "a folder with no status marker is UNSURE" $? "-- got: $OUT"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/unmarked-goal'; R=$?
+assert "a commit keyword alone never earns FIX for a mega-goal" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+
+# A folder that claims closure while carrying open items contradicts itself. That is the
+# operator's call to resolve, never a move.
+MF="$(mkmega contradictory-goal)"
+printf '%s\n' \
+  '# Mega-goal: contradictory-goal' '' \
+  '**Status:** COMPLETE' '' \
+  '- [x] 01 first, PR #1' \
+  '- [ ] 02 second, PR #' > "$MF/_meta/megagoals/contradictory-goal/ROADMAP.md"
+seal "$MF" "feat(icy-ops): finish contradictory-goal"
+OUT="$(scan "$MF" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	UNSURE	_meta/megagoals/contradictory-goal.*contradicts itself'; assert "a closed marker over open items is UNSURE, not FIX" $? "-- got: $OUT"
+
+# An open marker outranks everything, because the loop's only mutation is a move and a live
+# engine must not be moved out of the control surface.
+MG="$(mkmega charter-goal)"
+printf '%s\n' \
+  '# Mega-goal: charter-goal' '' \
+  '**Status:** charter only. Decompose into sub-goals later.' \
+  > "$MG/_meta/megagoals/charter-goal/ROADMAP.md"
+seal "$MG" "feat(icy-ops): charter-goal is complete and closed"
+OUT="$(scan "$MG" --detectors 3)"
+has "$OUT" "charter-goal" && R=1 || R=0
+assert "an open status marker outranks a closing commit subject" $R "-- got: $OUT"
+
+# The keyword test reads the status line's TEXT. A goal whose own directory is named
+# `...-complete` would otherwise declare itself finished through its path.
+MH="$(mkmega safari-net-complete)"
+printf '%s\n' \
+  '# Mega-goal: safari-net-complete' '' \
+  '## Status' '' \
+  '- [ ] 01-capture-completion, request bodies + real HAR timing, PR #' \
+  > "$MH/_meta/megagoals/safari-net-complete/ROADMAP.md"
+seal "$MH" "feat(icy-ops): scaffold safari-net-complete"
+OUT="$(scan "$MH" --detectors 3)"
+has "$OUT" "safari-net-complete" && R=1 || R=0
+assert "a slug containing a closure keyword does not declare the goal closed" $R "-- got: $OUT"
+
 # ---------------------------------------------------------------- detector 4
 echo "-- detector 4: log past the budget the repo documents --"
 R4="$(mkrepo)"
@@ -301,6 +442,7 @@ assert "a non-numeric threshold is rejected at parse time" $([ "$RC" -ne 0 ] && 
 # ---------------------------------------------------------------- wiring
 echo "-- wiring: registration surfaces --"
 grep -q 'kit:audit-scanner' "$SKILL"; assert "SKILL.md dispatches kit:audit-scanner for Tier 2" $?
+grep -q 'status marker' "$SKILL"; assert "SKILL.md states the mega-goal completion precedence" $?
 grep -q 'general-purpose subagent' "$SKILL"; assert "SKILL.md names the general-purpose fallback" $?
 grep -q 'repo-hygiene' "$KIT_DIR/agents/audit-scanner.md"; assert "audit-scanner names repo-hygiene as a dispatching instance" $?
 grep -q 'repo-hygiene' "$KIT_DIR/docs/patterns/audit-loop.md"; assert "the pattern doc lists repo-hygiene under Known instances" $?

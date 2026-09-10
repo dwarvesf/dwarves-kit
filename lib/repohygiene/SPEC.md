@@ -34,6 +34,41 @@ the scan ran, whatever it found; exit 2 on bad usage or a target that is not a g
 | 6 | A target that is not a git repo is refused, naming `disk-reclaim` | refusal-guard case |
 | 7 | The only mutation the loop ever applies is `git mv`, applied by the skill, never by this script | invariant 1 plus the skill's own Apply step |
 
+## Mega-goal completion precedence
+
+**Invariant.** A mega-goal folder's completion is decided by the folder's own record, per the
+precedence below, and a commit subject alone never earns it a `FIX`. Enforced by the mega-goal
+completion cases in `tests/test-repohygiene.sh`, one per real misread.
+
+Detector 3 judges mega-goal FOLDERS as well as files. A folder's completion test runs in this
+order, and stops at the first step that answers:
+
+| # | Step | Effect |
+|---|---|---|
+| 1 | An explicit status marker in the folder's top-level docs: a `Status:` or `State:` heading or bold label. An OPEN marker anywhere wins over a closed one | open, no finding. closed, continue |
+| 2 | An unchecked checklist item anywhere in the folder (`- [ ]`, and the `- [~]` in-progress form). Boxes inside a code span do not count | any open item, no finding, or `UNSURE` when a closed marker contradicts it |
+| 3 | Only for a folder that declares nothing: the commit subjects that touched it | `UNSURE` at most, never `FIX` |
+
+`FIX` requires all three: a closed marker, no open item, and a commit scope that resolves an
+owner to give the move a destination.
+
+The order exists because commit keywords alone were the first test and misread three of five
+real folders on the first live run. A sweep commit reading "co-locate completed mega-goals"
+carries a keyword about OTHER goals, and "mochi build complete, 08 shipped" closed nothing
+while that folder's ROADMAP still carried four open sub-goals. Detector 3 is the one verdict
+the loop acts on, so its precision is load-bearing. Full before-and-after:
+`docs/proof-of-done.md`.
+
+Two consequences, both deliberate:
+
+- **A stale unchecked box suppresses a genuinely finished goal.** Two of the five real folders
+  were finished but never had their last box flipped. The loop stays silent on them rather
+  than moving a folder whose own record says it is unfinished, because a missed move costs one
+  un-filed finding and a wrong move takes a live engine out of the control surface.
+- **A box inside a code span is not an open sub-goal.** Every POINTER_PROMPT.md in the estate
+  spells the convention out as `` `- [ ] NN-... PR #N` ``. Counting that instruction made all
+  seven already-archived mega-goals read as unfinished.
+
 ## The audited repo is hostile input
 
 A contributor to the audited repo picks its filenames and its commit subjects, and a
