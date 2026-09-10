@@ -58,6 +58,16 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   done
 
+  # Remove output-style symlinks (only links that point at the kit; a real file stays)
+  for STYLE_FILE in "$KIT_DIR/output-styles/"*.md; do
+    [ -f "$STYLE_FILE" ] || continue
+    LINK="$CLAUDE_DIR/output-styles/$(basename "$STYLE_FILE")"
+    if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$STYLE_FILE" ]; then
+      rm "$LINK"
+      echo "[ok] Removed output style: $(basename "${STYLE_FILE%.md}")"
+    fi
+  done
+
   # Remove agents
   for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
     AGENT_NAME=$(basename "$AGENT_FILE")
@@ -750,6 +760,27 @@ for SKILL_FILE in "$KIT_DIR/skills/"*/SKILL.md; do
   cp "$SKILL_FILE" "$CLAUDE_DIR/skills/$SKILL_NAME/SKILL.md"
   echo "[ok] Installed skill: $SKILL_NAME"
 done
+
+# 4a. Output styles (SPEC-252): symlink every output-styles/<name>.md into
+# ~/.claude/output-styles/ so `/output-style <name>` works user-wide. A real file
+# already there (an operator's own copy) is never replaced; only our own stale
+# symlinks are refreshed. Which style a project USES is adopt's job (kit.toml
+# [output] style), not install's.
+if [ -d "$KIT_DIR/output-styles" ]; then
+  mkdir -p "$CLAUDE_DIR/output-styles"
+  for STYLE_FILE in "$KIT_DIR/output-styles/"*.md; do
+    [ -f "$STYLE_FILE" ] || continue
+    STYLE_NAME="$(basename "$STYLE_FILE")"
+    [ "$STYLE_NAME" = "README.md" ] && continue
+    LINK="$CLAUDE_DIR/output-styles/$STYLE_NAME"
+    if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
+      echo "[ok] Output style ${STYLE_NAME%.md} already present as a real file (not overwriting)"
+      continue
+    fi
+    ln -sfn "$STYLE_FILE" "$LINK"
+    echo "[ok] Linked output style: ${STYLE_NAME%.md}"
+  done
+fi
 
 # 4b. Install subagent definitions
 if [ -d "$KIT_DIR/agents" ]; then

@@ -86,6 +86,13 @@ enabled_agent_clis = ""         # [impl] opt-in NON-claude dispatch. Space-separ
 understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031). Always-on
                                 #        today; exposing an on/off toggle is NEW work.
 
+[output]                        # [impl] lib/adopt.sh step 6b (SPEC-252); read at adopt time, never by a hook
+style = ""                      #        Claude Code output style for adopted projects. A name under
+                                #        output-styles/ (adhd) is copied into <project>/.claude/output-styles/
+                                #        and set as .outputStyle in <project>/.claude/settings.json; any
+                                #        other name sets the key only. "" leaves the project's setting alone.
+                                #        The /output-style picker writes settings.local.json, which outranks it.
+
 [features]                      # harness-adjacent toggles (kept as one control surface)
 auto_improvement = false        # [impl] `learn propose` (SPEC-195): read-plane loop over the
                                 #        ledger -> cited, deduped, adversarially-checked backlog

@@ -343,6 +343,47 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
   fi
 fi
 
+# 6b. Output style (SPEC-252). `[output] style` resolves project > operator > kit-root. A set
+# value is written on EVERY adopt run (that is what makes it reconfigurable); the harness's
+# own settings.local.json (what /output-style writes) outranks the project file, so a
+# person's pick still wins on their machine. An empty value never touches settings.json
+# and never removes a style file: handing control back is the operator's edit, not ours.
+if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/null 2>&1; then
+  KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
+    style_name="$(kit_config_get "output.style" "")"
+  if [ -n "$style_name" ]; then
+    style_src=""
+    for c in "$SRC_ROOT/output-styles/$style_name.md" "$KIT_ROOT/output-styles/$style_name.md"; do
+      [ -f "$c" ] && { style_src="$c"; break; }
+    done
+    style_dst="$TARGET/.claude/output-styles/$style_name.md"
+    if [ "$DRY" -eq 1 ]; then
+      note "set outputStyle=$style_name in $project_settings$([ -n "$style_src" ] && echo " and copy $style_src -> $style_dst")"
+    else
+      if [ -n "$style_src" ] && ! cmp -s "$style_src" "$style_dst" 2>/dev/null; then
+        mkdir -p "$(dirname "$style_dst")"
+        cp "$style_src" "$style_dst"
+        did=1
+      fi
+      existing_style=""
+      [ -f "$project_settings" ] && existing_style="$(jq -r '.outputStyle // ""' "$project_settings" 2>/dev/null)"
+      if [ "$existing_style" != "$style_name" ]; then
+        mkdir -p "$(dirname "$project_settings")"
+        existing_json='{}'
+        [ -f "$project_settings" ] && existing_json="$(cat "$project_settings")"
+        merged="$(jq -S --arg s "$style_name" '.outputStyle = $s' <<<"$existing_json" 2>/dev/null)"
+        if [ -n "$merged" ]; then
+          printf '%s\n' "$merged" > "$project_settings"
+          did=1
+        else
+          echo "adopt: warning: could not set outputStyle in $project_settings; left untouched" >&2
+        fi
+      fi
+      echo "adopt: output style for $TARGET -> $style_name$([ -z "$style_src" ] && echo ' (not kit-shipped; key only)')"
+    fi
+  fi
+fi
+
 if [ "$DRY" -eq 1 ]; then
   echo "adopt: --dry-run for $TARGET ($([ "$did" -eq 1 ] && echo 'changes above' || echo 'already adopted, nothing to do'))"
 else
