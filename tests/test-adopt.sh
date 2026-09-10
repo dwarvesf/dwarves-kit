@@ -198,6 +198,60 @@ fi
 rm -rf "$T8" "$T9" "$T10" "$T11"
 fi
 
+# --- SPEC-252: [output] style -> project output-styles/ + settings.json outputStyle ---
+# The operator kit.toml is fenced off (a real operator may set output.style); only the
+# kit-root default ("") and the project .kit.toml speak here.
+export KIT_CONFIG_OPERATOR="$(mktemp -d)"
+T12="$(newrepo)"
+bash lib/adopt.sh "$T12" >/dev/null
+if [ ! -f "$T12/.claude/output-styles/adhd.md" ] \
+  && { [ ! -f "$T12/.claude/settings.json" ] || [ "$(jq -r '.outputStyle // ""' "$T12/.claude/settings.json")" = "" ]; }; then
+  ok "kit-root default style=\"\" leaves the project's outputStyle and output-styles/ untouched"
+else
+  no "empty output.style still wrote a style into the project"
+fi
+printf '\n[output]\nstyle = "adhd"\n' >> "$T12/.kit.toml"
+bash lib/adopt.sh --refresh "$T12" >/dev/null
+if [ -f "$T12/.claude/output-styles/adhd.md" ] && cmp -s output-styles/adhd.md "$T12/.claude/output-styles/adhd.md" \
+  && [ "$(jq -r '.outputStyle' "$T12/.claude/settings.json")" = "adhd" ]; then
+  ok "project .kit.toml [output] style=adhd copies the kit style in and sets outputStyle"
+else
+  no "output.style=adhd did not wire the style file + settings key"
+fi
+git -C "$T12" add -A
+git -C "$T12" -c user.email=t@t -c user.name=t commit -qm styled
+bash lib/adopt.sh --refresh "$T12" >/dev/null
+if git -C "$T12" diff --quiet; then
+  ok "re-running adopt --refresh with an unchanged output.style is a clean no-op"
+else
+  no "re-running adopt --refresh churned the style file or settings.json"
+fi
+# Negative control (name the kit does not ship): the key is set, nothing is copied.
+sed -i.bak 's/^style = "adhd"/style = "Explanatory"/' "$T12/.kit.toml" && rm -f "$T12/.kit.toml.bak"
+bash lib/adopt.sh --refresh "$T12" >/dev/null
+if [ "$(jq -r '.outputStyle' "$T12/.claude/settings.json")" = "Explanatory" ] \
+  && [ ! -f "$T12/.claude/output-styles/Explanatory.md" ]; then
+  ok "a style the kit does not ship sets the key only (nothing copied)"
+else
+  no "non-kit style name mishandled"
+fi
+# A name with a path component is refused: nothing copied, the key left as it was.
+sed -i.bak 's#^style = "Explanatory"#style = "../../etc/passwd"#' "$T12/.kit.toml" && rm -f "$T12/.kit.toml.bak"
+bash lib/adopt.sh --refresh "$T12" >/dev/null 2>&1
+if [ "$(jq -r '.outputStyle' "$T12/.claude/settings.json")" = "Explanatory" ] \
+  && [ ! -e "$T12/.claude/output-styles/../../etc/passwd" ] && [ ! -e "$T12/etc/passwd" ]; then
+  ok "output.style with a path component is refused (key unchanged, nothing written)"
+else
+  no "path-shaped output.style was not refused"
+fi
+# Hook wiring survives the style write (the merge is targeted, never a file rewrite).
+if jq -e '.hooks | length > 0' "$T12/.claude/settings.json" >/dev/null 2>&1; then
+  ok "setting outputStyle preserves the hook-module wiring in settings.json"
+else
+  no "outputStyle write dropped the hooks block"
+fi
+rm -rf "$T12" "$KIT_CONFIG_OPERATOR"; unset KIT_CONFIG_OPERATOR
+
 rm -rf "$T1" "$T2" "$T3" "$T4" "$T5" "$T6" "$T7"
 echo "---"
 echo "PASS=$PASS FAIL=$FAIL"

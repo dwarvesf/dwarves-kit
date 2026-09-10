@@ -230,6 +230,56 @@ grep -rq "weekend" "$KIT_DIR/commands" 2>/dev/null || COV_FAIL="$COV_FAIL weeken
 [ -d "$KIT_DIR/lib/sync" ] || COV_FAIL="$COV_FAIL sync:lib/sync"
 assert_true "every manifest module maps to a real installable unit (missing:${COV_FAIL:-none})" "$([ -z "$COV_FAIL" ]; echo $?)"
 
+# ============================================================
+echo "== NC output-style operator-level (SPEC-252 install gap): install.sh sets outputStyle from operator kit.toml =="
+# ============================================================
+# KIT_CONFIG_OPERATOR is a DIRECTORY (lib/config/kit-config.sh appends /kit.toml); scratch
+# per case so the real operator ~/.config/dwarves-kit/kit.toml never leaks into this suite.
+H8="$(mktemp -d)"
+OP8="$(mktemp -d)"
+cat > "$OP8/kit.toml" <<'TOML'
+[output]
+style = "adhd"
+TOML
+HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h8.log 2>&1
+STYLE8="$(jq -r '.outputStyle // ""' "$H8/.claude/settings.json" 2>/dev/null)"
+assert_true "operator kit.toml [output] style=adhd sets outputStyle in settings.json" "$([ "$STYLE8" = "adhd" ]; echo $?)"
+# Settle: install.sh's own hook/permission jq merge reorders between the very first run
+# (no prior settings.json, direct copy) and the second (merge pipeline); a third run
+# against an already-merged file is stable (pre-existing, unrelated to this step). One
+# more run here reaches that stable state before the idempotency check below.
+HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h8-settle.log 2>&1
+
+# ============================================================
+echo "== NC output-style empty: no [output] style leaves outputStyle unset =="
+# ============================================================
+H9="$(mktemp -d)"
+OP9="$(mktemp -d)"
+HOME="$H9" KIT_CONFIG_OPERATOR="$OP9" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h9.log 2>&1
+HAS_STYLE9="$(jq -r 'has("outputStyle")' "$H9/.claude/settings.json" 2>/dev/null)"
+assert_true "no operator/kit-root output.style -> outputStyle key absent" "$([ "$HAS_STYLE9" = "false" ]; echo $?)"
+
+# ============================================================
+echo "== NC output-style idempotent re-run: byte-identical settings.json =="
+# ============================================================
+cp "$H8/.claude/settings.json" /tmp/kitmod-h8-before.json
+HOME="$H8" KIT_CONFIG_OPERATOR="$OP8" bash "$KIT_DIR/install.sh" >/tmp/kitmod-h8-rerun.log 2>&1
+assert_true "re-run with the same operator style is byte-identical" "$(cmp -s /tmp/kitmod-h8-before.json "$H8/.claude/settings.json"; echo $?)"
+
+# ============================================================
+echo "== NC output-style path-shaped name refused =="
+# ============================================================
+H10="$(mktemp -d)"
+OP10="$(mktemp -d)"
+cat > "$OP10/kit.toml" <<'TOML'
+[output]
+style = "../evil"
+TOML
+ERR10="$(HOME="$H10" KIT_CONFIG_OPERATOR="$OP10" bash "$KIT_DIR/install.sh" 2>&1)"
+HAS_STYLE10="$(jq -r 'has("outputStyle")' "$H10/.claude/settings.json" 2>/dev/null)"
+assert_true "path-shaped output.style is refused (outputStyle key absent)" "$([ "$HAS_STYLE10" = "false" ]; echo $?)"
+assert_true "path-shaped output.style prints a warning" "$({ trap '' PIPE; printf '%s' "$ERR10" 2>/dev/null || :; } | grep -qi 'not a bare name'; echo $?)"
+
 echo
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

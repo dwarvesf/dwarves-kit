@@ -58,6 +58,16 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   done
 
+  # Remove output-style symlinks (only links that point at the kit; a real file stays)
+  for STYLE_FILE in "$KIT_DIR/output-styles/"*.md; do
+    [ -f "$STYLE_FILE" ] || continue
+    LINK="$CLAUDE_DIR/output-styles/$(basename "$STYLE_FILE")"
+    if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$STYLE_FILE" ]; then
+      rm "$LINK"
+      echo "[ok] Removed output style: $(basename "${STYLE_FILE%.md}")"
+    fi
+  done
+
   # Remove agents
   for AGENT_FILE in "$KIT_DIR/agents/"*.md; do
     AGENT_NAME=$(basename "$AGENT_FILE")
@@ -751,6 +761,27 @@ for SKILL_FILE in "$KIT_DIR/skills/"*/SKILL.md; do
   echo "[ok] Installed skill: $SKILL_NAME"
 done
 
+# 4a. Output styles (SPEC-252): symlink every output-styles/<name>.md into
+# ~/.claude/output-styles/ so `/output-style <name>` works user-wide. A real file
+# already there (an operator's own copy) is never replaced; only our own stale
+# symlinks are refreshed. Which style a project USES is adopt's job (kit.toml
+# [output] style), not install's.
+if [ -d "$KIT_DIR/output-styles" ]; then
+  mkdir -p "$CLAUDE_DIR/output-styles"
+  for STYLE_FILE in "$KIT_DIR/output-styles/"*.md; do
+    [ -f "$STYLE_FILE" ] || continue
+    STYLE_NAME="$(basename "$STYLE_FILE")"
+    [ "$STYLE_NAME" = "README.md" ] && continue
+    LINK="$CLAUDE_DIR/output-styles/$STYLE_NAME"
+    if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
+      echo "[ok] Output style ${STYLE_NAME%.md} already present as a real file (not overwriting)"
+      continue
+    fi
+    ln -sfn "$STYLE_FILE" "$LINK"
+    echo "[ok] Linked output style: ${STYLE_NAME%.md}"
+  done
+fi
+
 # 4b. Install subagent definitions
 if [ -d "$KIT_DIR/agents" ]; then
   mkdir -p "$CLAUDE_DIR/agents"
@@ -825,6 +856,45 @@ case " $KIT_ENABLED_HOOK_NAMES " in
     echo "[skip] statusLine not registered (cosmetic module not enabled; --with cosmetic to opt in)"
     ;;
 esac
+
+# 7b. Output style, operator-level (closes the SPEC-252 gap: adopt.sh step 6b writes a
+# per-PROJECT outputStyle, but nothing wrote an OPERATOR's own default). `[output] style`
+# resolves operator > kit-root here -- KIT_PROJECT_ROOT points at an empty scratch dir so a
+# nearby repo's .kit.toml can never leak into a person's own global setting (install has no
+# "project", unlike adopt's per-repo write). A set value becomes this operator's default
+# outputStyle in $CLAUDE_DIR/settings.json; empty never touches the file. Not run on
+# --uninstall (handled above, before this point): we do not strip a person's chosen style
+# back out on uninstall, it is their own setting, not ours to revoke.
+if [ -f "$KIT_DIR/kit.toml" ] && [ -f "$SETTINGS_FILE" ] && command -v jq >/dev/null 2>&1; then
+  _kit_load_config_resolver_for_style() {
+    # shellcheck source=lib/config/kit-config.sh
+    source "$KIT_DIR/lib/config/kit-config.sh"
+  }
+  if _kit_load_config_resolver_for_style 2>/dev/null; then
+    KIT_STYLE_SCRATCH="$(mktemp -d)"
+    OUTPUT_STYLE_NAME="$(KIT_CONFIG_ROOT="$KIT_DIR" KIT_PROJECT_ROOT="$KIT_STYLE_SCRATCH" \
+      kit_config_get "output.style" "")"
+    rmdir "$KIT_STYLE_SCRATCH" 2>/dev/null || true
+    case "$OUTPUT_STYLE_NAME" in
+      */*|*..*)
+        echo "[warn] output.style '$OUTPUT_STYLE_NAME' is not a bare name; skipped" >&2
+        OUTPUT_STYLE_NAME=""
+        ;;
+    esac
+    if [ -n "$OUTPUT_STYLE_NAME" ]; then
+      EXISTING_OUTPUT_STYLE="$(jq -r '.outputStyle // ""' "$SETTINGS_FILE" 2>/dev/null)"
+      if [ "$EXISTING_OUTPUT_STYLE" != "$OUTPUT_STYLE_NAME" ]; then
+        jq --arg s "$OUTPUT_STYLE_NAME" '.outputStyle = $s' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" \
+          && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+        echo "[ok] Set outputStyle=$OUTPUT_STYLE_NAME (operator kit.toml [output] style)"
+      else
+        echo "[ok] outputStyle already $OUTPUT_STYLE_NAME"
+      fi
+    else
+      echo "[skip] outputStyle not set (no [output] style in operator/kit-root kit.toml)"
+    fi
+  fi
+fi
 
 # 6. Verify
 echo ""
