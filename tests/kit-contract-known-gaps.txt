@@ -32,7 +32,7 @@
 # 0031/0035; learn: SPEC-126/195/196 + ADR-0034), but C3 accepts a spec only INSIDE the module dir,
 # so the IOU stands until someone decides whether to write one or teach C3 about repo-root specs.
 lib/gate/SPEC
-lib/learn/SPEC
+lib/reflect/SPEC
 
 # worktree-provision: has README + SPEC; its proof lives at repo docs/verification/ (the fold PR).
 lib/worktree-provision/docs/proof-of-done.md

@@ -259,7 +259,7 @@ tokens() {
 #
 # response=<engage|defer|wave> (SPEC-126, understanding-gate SG-05): an OPTIONAL additive key,
 # the three-way human disposition ADR-0031's Refinement point 3 names. First written by
-# `lib/learn/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
+# `lib/reflect/weekend-batch.sh mark-paid` (response=engage, closing the loop so a paid item is never
 # re-collected); SG-04's future ★-tap nudge is a second, later caller of the SAME field --
 # there is exactly one place a human response is recorded, never two.
 # Usage: debt <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [response=<engage|defer|wave>] [reason=...]
@@ -733,7 +733,7 @@ history() {
 # _cutoff_iso <days> -- "now minus <days> days" as an ISO8601 Z timestamp. Portable: BSD `date`
 # (macOS) needs `-v-Nd`; GNU `date` (Linux/CI) needs `-d "-N days"`. ISO8601 Z timestamps sort
 # correctly as PLAIN STRINGS, so filtering below is a string compare, never a date parse.
-# Same idiom as lib/learn/weekend-batch.sh's helper of the same name (kept local, not shared,
+# Same idiom as lib/reflect/weekend-batch.sh's helper of the same name (kept local, not shared,
 # since it is six lines and the two callers have no other coupling).
 _cutoff_iso() {
   local days="$1"

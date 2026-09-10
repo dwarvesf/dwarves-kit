@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-staging-stage.sh -- SPEC-249 TASK-003: `python3 lib/learn/staging-format.py stage`,
+# test-staging-stage.sh -- SPEC-249 TASK-003: `python3 lib/reflect/staging-format.py stage`,
 # the one staging WRITER (dedupe + render_block + append in a single process). See
 # `### Interfaces` `staging-format.py stage` in docs/specs/SPEC-249-estate-seams.md,
 # edge cases 18, 19, 22, 23, DEC-007.
@@ -8,7 +8,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SF="$KIT_DIR/lib/learn/staging-format.py"
+SF="$KIT_DIR/lib/reflect/staging-format.py"
 
 PASS=0; FAIL=0; TOTAL=0
 RED='\033[0;31m'; GREEN='\033[0;32m'; NC='\033[0m'

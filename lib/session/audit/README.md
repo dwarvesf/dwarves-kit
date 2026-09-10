@@ -25,7 +25,7 @@ agentic evidence for change decisions** (weekly / on demand). Measured on a
 
 In five-stage terms (ADR-0034): `run` is the deep **Watch** pass for usage
 telemetry, `triage` is a **Learn**-stage proposer (same propose-don't-dispose
-gate as `learn propose`); the enhance work is the ordinary Shape -> Build
+gate as `reflect propose`); the enhance work is the ordinary Shape -> Build
 -> Check lanes, and the measure step is the next run's {PREV} metric diff.
 Full path contract: `docs/feedback-loop.md`.
 
@@ -40,12 +40,12 @@ session audit triage --dry-run             # print the blocks, write nothing
 
 `triage` is propose-only and speaks the kit's ONE proposal currency: it appends
 `## [staged]` blocks to `_meta/backlog-staging.md` through
-`lib/learn/staging-format.py` (ADR-0034 decision 1), exactly like `learn
+`lib/reflect/staging-format.py` (ADR-0034 decision 1), exactly like `learn
 propose` and `stats anomalies --propose`. The metric contract rides on
 `Approach` (it is what the next audit re-runs), the report + owner ride on
 `Source` (the citation). Dedup is against every staging state + the board, so a
 rejected proposal never returns on the next weekly audit. The human gate is
-unchanged: review with `learn drain`, accept with `board promote`.
+unchanged: review with `reflect drain`, accept with `board promote`.
 
 It reads the report's machine-triage json footer (the prompt requires one;
 reports from older prompt versions degrade to `_none_`).

@@ -632,7 +632,7 @@ def _staging_env(canonical: str, legacy: str) -> str | None:
     a one-line deprecation on stderr. The kit's naming invariant bans host-agent
     prefixes (docs/verification/kit-foldin-hooks.md renamed the legacy backlog vars to
     BACKLOG_STAGE_* once already); stats entered the kit after that sweep and kept the
-    banned name, so board/learn/hooks/session-audit and stats addressed the SAME two
+    banned name, so board/reflect/hooks/session-audit and stats addressed the SAME two
     files under different env names. Canonical wins; the alias keeps existing setups
     working for one release."""
     v = os.environ.get(canonical)
@@ -648,7 +648,7 @@ def _staging_env(canonical: str, legacy: str) -> str | None:
 def staging_path() -> str | None:
     """The staging buffer (the PROPOSAL surface, the ONLY write target of `--propose`).
     Canonical env `BACKLOG_STAGE_STAGING` (deprecated alias `CC_BACKLOG_STAGING`), the
-    same name board/learn/hooks/session-audit read. None when neither it nor
+    same name board/reflect/hooks/session-audit read. None when neither it nor
     `OPS_TOOLKIT` is set (05K: ops-toolkit-specific, required-explicit post-move);
     `stage_proposals` refuses to write rather than silently resolving a bogus relative
     path off an empty root."""
@@ -700,7 +700,7 @@ def _staging_format():
     """The kit's ONE staging-block grammar (ADR-0034 decision 1 / SPEC-200 I1)."""
     import importlib.util
     from . import config as _cfg
-    path = _cfg._kit_repo_root() / "lib" / "learn" / "staging-format.py"
+    path = _cfg._kit_repo_root() / "lib" / "reflect" / "staging-format.py"
     spec = importlib.util.spec_from_file_location("staging_format", str(path))
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

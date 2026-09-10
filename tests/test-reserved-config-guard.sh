@@ -19,7 +19,7 @@ ok()  { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; }
 assert_true() { if [ "$2" -eq 0 ]; then ok "$1"; else bad "$1"; fi; }
 
-# auto_improvement graduated [design] -> [impl] in SPEC-195 (`learn propose` is now built),
+# auto_improvement graduated [design] -> [impl] in SPEC-195 (`reflect propose` is now built),
 # but its FLAG must STILL never be read kit-side: the command is always available, and the
 # weekly cadence gates on the flag CONSUMER-side (SG-10), never kit-side. So it stays in the
 # no-live-path guard below -- that assertion now protects a live invariant (no kit-side read

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test-weekend-batch.sh -- SPEC-126, understanding-gate SG-05.
-# Proves lib/learn/weekend-batch.sh (Flow B, the debt-paydown reader/closer; relocated
+# Proves lib/reflect/weekend-batch.sh (Flow B, the debt-paydown reader/closer; relocated
 # from lib/queue/ per ADR-0034 decision 1, behavior unchanged):
 #   AC1  collects the week's deferred+waved debt-ledger items + impl-notes + explainers
 #   AC2  (retired) used to grep a consumer skill in the operator's dotfiles by path; the
@@ -27,7 +27,7 @@
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-WB="$KIT_DIR/lib/learn/weekend-batch.sh"
+WB="$KIT_DIR/lib/reflect/weekend-batch.sh"
 GL="$KIT_DIR/lib/gate/gate-ledger.sh"
 SC="$KIT_DIR/lib/classify/significance-classify.sh"
 

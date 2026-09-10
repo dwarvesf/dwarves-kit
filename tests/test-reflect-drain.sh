@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# test-learn-drain.sh -- SPEC-196 (harness-loop sub-goal 06).
-# Proves `learn drain` (lib/learn/drain.py, staging-format.py, drain.sh, and the learn.sh
+# test-reflect-drain.sh -- SPEC-196 (harness-loop sub-goal 06).
+# Proves `reflect drain` (lib/reflect/drain.py, staging-format.py, drain.sh, and the reflect.sh
 # dispatch that no longer refuses):
 #   AC1  render on real-shaped data: grouped by Home, oldest-first within each group, one
 #        line per candidate (title / age / tags / evidence), numbered over the staged subset
-#   AC2  numbering parity: the index `learn drain` prints for a candidate == the index
+#   AC2  numbering parity: the index `reflect drain` prints for a candidate == the index
 #        `board promote` (list mode) prints for the same candidate, same file
 #   AC3  NEGATIVE CONTROL, expiry: a 31d-old [staged] row moves to [expired]; a 5d-old
 #        [staged] row does not
@@ -23,10 +23,10 @@
 # every drain run performs); AC3-AC6 (expiry + move-not-delete + idempotency + add-backlog
 # unchanged) use a fixture with one row deliberately past the window.
 #
-# Run: bash tests/test-learn-drain.sh   (exit 0 = all AC green)
+# Run: bash tests/test-reflect-drain.sh   (exit 0 = all AC green)
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-LEARN="$KIT_DIR/bin/learn"
+REFLECT="$KIT_DIR/bin/reflect"
 ADD_BACKLOG="$KIT_DIR/lib/board/bin/add-backlog"
 
 PASS=0; FAIL=0; TOTAL=0
@@ -86,7 +86,7 @@ Candidates auto-extracted from sessions. Review + promote by hand.
 EOF
 
 echo "=== AC1: render on real-shaped data ==="
-OUT="$(BACKLOG_STAGE_STAGING="$RSTAGING" "$LEARN" drain 2>&1)"
+OUT="$(BACKLOG_STAGE_STAGING="$RSTAGING" "$REFLECT" drain 2>&1)"
 assert "AC1a groups by Home (repo-a header present)" "$(grep -q '^## Home: repo-a' <<<"$OUT"; echo $?)"
 assert "AC1b groups by Home (repo-b header present)" "$(grep -q '^## Home: repo-b' <<<"$OUT"; echo $?)"
 assert "AC1c one line per candidate: title present" "$(grep -q 'Alpha task in repo A' <<<"$OUT"; echo $?)"
@@ -141,7 +141,7 @@ EOF
 cp "$STAGING" "$TMPDIR_T/staging.before"
 
 echo "=== AC3: NEGATIVE CONTROL, expiry (31d expires, 5d does not) ==="
-BACKLOG_STAGE_STAGING="$STAGING" "$LEARN" drain >/dev/null 2>&1
+BACKLOG_STAGE_STAGING="$STAGING" "$REFLECT" drain >/dev/null 2>&1
 assert "AC3a Old candidate (31d) moved to [expired]" \
   "$(grep -q '^## \[expired\] Old candidate past the window' "$STAGING"; echo $?)"
 assert "AC3b Recent candidate (5d) still [staged]" \
@@ -166,7 +166,7 @@ sys.exit(0 if not missing else 1)
 
 echo "=== AC5: NEGATIVE CONTROL, idempotency (immediate re-run expires nothing new) ==="
 cp "$STAGING" "$TMPDIR_T/staging.after-first-drain"
-BACKLOG_STAGE_STAGING="$STAGING" "$LEARN" drain >/dev/null 2>&1
+BACKLOG_STAGE_STAGING="$STAGING" "$REFLECT" drain >/dev/null 2>&1
 assert "AC5 re-run is a byte-identical no-op" "$(diff -q "$TMPDIR_T/staging.after-first-drain" "$STAGING" >/dev/null; echo $?)"
 
 # ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ cat > "$STAGING2" <<EOF
 - Home: repo-c
 - Source: session $D5
 EOF
-BACKLOG_STAGE_STAGING="$STAGING2" "$LEARN" drain --days 3 >/dev/null 2>&1
+BACKLOG_STAGE_STAGING="$STAGING2" "$REFLECT" drain --days 3 >/dev/null 2>&1
 assert "AC7 a 5d row expires under --days 3" "$(grep -q '^## \[expired\]' "$STAGING2"; echo $?)"
 
 # ---------------------------------------------------------------------------
@@ -205,7 +205,7 @@ assert "AC7 a 5d row expires under --days 3" "$(grep -q '^## \[expired\]' "$STAG
 # ---------------------------------------------------------------------------
 echo "=== AC8: honest-empty (no staging file) ==="
 NOFILE="$TMPDIR_T/does-not-exist/_meta/backlog-staging.md"
-OUT8="$(BACKLOG_STAGE_STAGING="$NOFILE" "$LEARN" drain 2>&1)"; RC8=$?
+OUT8="$(BACKLOG_STAGE_STAGING="$NOFILE" "$REFLECT" drain 2>&1)"; RC8=$?
 assert "AC8a exits 0" "$RC8"
 assert "AC8b reports nothing staged" "$(grep -q 'nothing staged' <<<"$OUT8"; echo $?)"
 assert "AC8c never creates the file" "$([ ! -f "$NOFILE" ]; echo $?)"

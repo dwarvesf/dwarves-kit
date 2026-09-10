@@ -261,7 +261,7 @@ def _staging_format():
     """The kit's ONE staging-block grammar (ADR-0034 decision 1). Hyphenated filename, so it
     needs the importlib dance drain.py / propose.py / session-audit already use."""
     import importlib.util
-    path = os.path.join(_repo_root(), "lib", "learn", "staging-format.py")
+    path = os.path.join(_repo_root(), "lib", "reflect", "staging-format.py")
     spec = importlib.util.spec_from_file_location("staging_format", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -336,7 +336,7 @@ def cmd_propose(args):
         return 0
     where = staging if blocks else "(nothing new)"
     print(f"session-intel propose: staged {len(staged)}, skipped {len(skipped)} duplicate -> {where}\n"
-          f"  review with: learn drain   promote with: board promote <n>")
+          f"  review with: reflect drain   promote with: board promote <n>")
     return 0
 
 

@@ -46,7 +46,7 @@ prose, prefer the plain word.
 | tombstone | a removed-item marker |
 | surface | an operator-facing entry point (the sync-target sense is already "app") |
 | phase | one gate checkpoint inside a lane's run (grill, spec, review, ...) |
-| stage | one of the five loop stages: Shape / Build / Watch / Check / Learn |
+| stage | one of the five loop stages: Shape / Build / Watch / Check / Reflect |
 | wayfind | plan a big chunk of work as a shared decision map before splitting it |
 | doc-drift | the docs no longer match the code (sibling of spec-drift) |
 | topology-drift | the audit of every kit feature against its path map |
@@ -73,7 +73,8 @@ one release where it was a config key or command):
 | surface / spoke / sources (sync target) | app |
 | hub | board |
 | leg | stage |
-| Specify / Execute / Observe / Govern | Shape / Build / Watch / Check (Learn kept) |
+| Specify / Execute / Observe / Govern | Shape / Build / Watch / Check (Learn kept, then renamed Reflect by ADR-0036) |
+| Learn (stage + `learn` subsystem) | Reflect (`reflect`) |
 | verif-counts | verify-counts |
 | SDD (first use) | spec-driven development (SDD) |
 
@@ -81,7 +82,7 @@ one release where it was a config key or command):
 
 The README quickstart, `/kit:onboard`, and the MANUAL opening tell the loop as one story: an
 interview, a night shift, a logbook, an inspector, and a debrief. These are prose only, never
-command or file names; the code keeps calling the stages Shape/Build/Watch/Check/Learn.
+command or file names; the code keeps calling the stages Shape/Build/Watch/Check/Reflect.
 
 | Story name | Real name |
 |---|---|
@@ -89,7 +90,7 @@ command or file names; the code keeps calling the stages Shape/Build/Watch/Check
 | The night shift | Build |
 | The logbook | Watch |
 | The inspector | Check |
-| The debrief | Learn |
+| The debrief | Reflect |
 
 ## Why the big five are not renamed here
 

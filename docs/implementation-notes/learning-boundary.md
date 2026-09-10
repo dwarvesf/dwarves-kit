@@ -32,3 +32,36 @@ Why: sub-goal 01 would otherwise have edited a spec file and found nothing to ad
 Impact: goal 05 In-scope line reads "the seams-table row". No other change.
 
 The same verifier confirmed: the axis table is byte-identical between ADR and roadmap; every characterization of ADR-0031 and ADR-0034 traces to a line in those files; `skipped: no teacher`, the `reflect` verbs, and "no engine file names a consumer skill" are prospective (sub-goal 01 builds them; `commands/explain.md` names `narrate-log` and `svg-knowledge-diagram` today).
+
+## 2026-09-10 11:40 SG-01 built: the boundary lint's scan scope is narrower than the goal file's literal words
+
+Context: the goal file says the lint "greps `lib/`, `commands/`, `tests/`, `kit.toml`". A literal full-`lib/` grep for `ops-toolkit/`/`dotfiles` or a fixed skill-name denylist hits 30+ pre-existing, legitimate, unrelated mentions: `lib/stats/`, `lib/prose-rag/`, `lib/sync/`, `lib/webcheck/`, `lib/plugin-check/` all document their own "graduated from ops-toolkit" history in READMEs and specs; `commands/pitch.md` composes `narrate-log` for an unrelated pitch-deck feature; `commands/ui-design.md` names the external `frontend-design` skill directly, an accepted, pre-existing pattern outside this axis; `tests/test-wrap.sh` uses the literal string `learning-ledger` as generic fixture text for `report-lint.sh`'s "names a skill" acceptance check.
+Decision: the lint's path check runs over `lib/gate/`, `lib/reflect/`, `commands/`, `tests/`, `kit.toml` with two narrow patterns (`dotfiles/home`, `ops-toolkit/(tools|_meta)/`) that match the actual historical violation shape, not a bare word. The skill-name check runs over an explicit small file list (the seam-adjacent surfaces this sub-goal actually owns), not directory recursion.
+Why: a lint that immediately fails the suite on introduction, over content this sub-goal has no mandate to touch, violates the repo's own "the engine's suite stays green with zero skips at every sub-goal boundary" bar. Full rationale + the measured hit counts: `docs/specs/SPEC-285-engine-learn-seam.md` DEC-003/DEC-004.
+Alternatives: the literal full-directory scan (rejected, breaks green on unrelated content); fixing all 30+ unrelated mentions in this sub-goal (rejected, unbounded scope creep for a `normal`-lane sub-goal).
+Impact: `lib/gate/boundary-lint.sh` is a disclosed narrower implementation than the goal file's literal words; flagged as an Open question in SPEC-285 for the operator to confirm or revise. A future sub-goal widening the scope needs its own cleanup pass over the unrelated mentions first.
+
+## 2026-09-10 12:05 The subsystem rename touched three test files' names, not just their content
+
+Context: the goal's Quality bar says "Every existing test passes unchanged except for the path of the thing it calls," read at first as "never rename a test file." Renaming `lib/learn/` to `lib/reflect/` alone left `tests/test-kit-contract.sh`'s C4 rule ("every module has a test") looking for `test-reflect-*` and finding only `test-learn-propose.sh`/`test-learn-drain.sh`/`test-learn-propose-precision.sh`, a genuine new gap `test-kit-contract.sh` correctly flagged.
+Decision: renamed those three test files to `test-reflect-propose.sh`/`test-reflect-drain.sh`/`test-reflect-propose-precision.sh` (git mv, content substituted `learn`->`reflect` throughout) rather than adding a known-gap entry for a rename this sub-goal chose to make. `test-weekend-batch.sh` and `test-staging-stage.sh` keep their names (already generic); `test-bin-forwarders.sh` and `test-understanding-wiring.sh` keep their names and had their internal path/string references repointed.
+Why: `tests/kit-contract-known-gaps.txt`'s own header says "no NEW debt can land"; adding a gap entry for self-inflicted debt from a rename this sub-goal is doing contradicts that.
+Impact: `bin/reflect propose --help` now prints `usage: reflect propose` (the internal argparse `prog=` and every `Source: learn propose ...` citation string in `propose.py`/`drain.py` also renamed, since leaving them would reintroduce the retired word `learn` as literal output of the renamed subsystem). `LEARN_PROPOSE_RID` env var renamed to `REFLECT_PROPOSE_RID`.
+
+## 2026-09-10 12:20 quiz-gate.sh's engine, not just its command file, hardcoded the consumer name
+
+Context: the task instructions named `commands/quiz-gate.md` (the markdown prose) as the surface to fix; `lib/gate/quiz-gate.sh` (the bash engine) prints "ROUTE: deep-understand" and "engine: deep-understand skill" as literal stdout, which is a harder violation of "no engine file names a consumer skill" than the command prose.
+Decision: `lib/gate/quiz-gate.sh` now sources `kit-config.sh` and resolves `understand.teach` at `cmd_route`/`cmd_tap`/`cmd_respond` time, emitting the resolved name (or "skipped: no teacher") instead of the literal string. `tests/test-quiz-gate.sh` AC3 rewritten with a fixture `KIT_CONFIG_OPERATOR` for both the filled and empty cases.
+Why: the boundary lint's scope includes `lib/gate/` (in scope per the goal's literal words), so leaving the engine hardcoded would make the lint's own scope inconsistent with what it actually enforces.
+Impact: `lib/gate/README.md`'s "gate quiz" table cell updated to describe the seam generically. `lib/explain.sh` (the sibling mechanical engine) was NOT touched: it lives at `lib/` root, not `lib/gate/` or `lib/reflect/`, a distinct architectural category per ADR-0034's 2026-08-27 amendment (deliberately bin-less, command-invoked internal libraries), so its header comment naming `narrate-log`/`svg-knowledge-diagram` is a stale-but-harmless architecture note, not a lint violation. Recorded as an Out of Scope line in SPEC-285.
+
+## 2026-09-10 12:40 SPEC number collision: origin/master had moved since the worktree branched
+
+Context: `lib/spec/spec-next.sh next` returned 135 early in the build; `docs/specs/SPEC-135-docs-wiring-no-orphan-check.md` already existed on `origin/master` (merged after this worktree's base commit), so `tests/test-meta.sh`'s SPEC-number-collision guard caught the duplicate.
+Decision: `git fetch origin master`, re-ran `spec-next.sh next` (returned 285), renamed the spec file and every internal cross-reference to SPEC-285.
+Why: `spec-next.sh` scans the local checkout's specs, branches, and commit subjects; a stale local view of `origin/master` is exactly the trap `_meta/claude-md-history.md`-adjacent memory already names for backlog IDs, and the same class of bug applies to SPEC numbers.
+Impact: none beyond the rename; caught before commit by `bash tests/test-meta.sh`, not by hand-inspection.
+
+## Open questions
+
+DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.

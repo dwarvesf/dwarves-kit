@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-learn-propose-precision.sh -- the ID-305 precision measurement, run as a test.
+# test-reflect-propose-precision.sh -- the ID-305 precision measurement, run as a test.
 #
 # Measures promote-precision END TO END: how many of the candidates that reach the BOARD are
 # genuinely new work. It runs the same labelled sample twice, once with the ID-305 surfaces
@@ -7,7 +7,7 @@
 # no home root) and once with them on, then prints both figures.
 #
 # THE SAMPLE IS SMALL AND SYNTHETIC. It is 17 candidates whose class mix is scaled down from
-# the 69-candidate manual triage in docs/verification/learn-propose-precision.md (16 promote,
+# the 69-candidate manual triage in docs/verification/reflect-propose-precision.md (16 promote,
 # 28 duplicate, 19 already-done, 4 stale, 2 learning). That triage's raw candidate list was
 # never kept, so it cannot be replayed; this reconstruction reproduces the CLASSES it
 # identified, not its exact rows. Read the after-figure as what the fix can catch on a
@@ -18,11 +18,11 @@
 # as false positives after the fix. That residual is the point: a harness that scored 100%
 # would only be measuring its own fixture.
 #
-# Run: bash tests/test-learn-propose-precision.sh
+# Run: bash tests/test-reflect-propose-precision.sh
 set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROPOSE="$KIT_DIR/lib/learn/propose.py"
+PROPOSE="$KIT_DIR/lib/reflect/propose.py"
 ADD_BACKLOG="$KIT_DIR/lib/board/bin/add-backlog"
 
 PASS=0; FAIL=0
@@ -144,7 +144,7 @@ measure() {
   fi
 
   LEARN_PROPOSE_INTERPRETER="$TMPD/interp.sh" LEARN_PROPOSE_VERIFIER="$TMPD/verify-holds.sh" \
-  LEARN_PROPOSE_RID="precision-$label" DWARVES_KIT_LOG_DIR="$dir/logs" \
+  REFLECT_PROPOSE_RID="precision-$label" DWARVES_KIT_LOG_DIR="$dir/logs" \
   LEARN_PROPOSE_COCKPIT="$cockpit" LEARN_PROPOSE_MEGAGOALS="$megagoals" \
   REPO_ROOT="$dir" BACKLOG_STAGE_STAGING="$staging" BACKLOG_STAGE_BACKLOG="$board" \
     python3 "$PROPOSE" --aggregate-file "$TMPD/agg.json" >"$dir/propose.out" 2>&1

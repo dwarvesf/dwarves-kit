@@ -4,5 +4,5 @@
 # resolve logs + skips (never crashes the week). Adding a job later = one line
 # here, never a new plist.
 session-intel bin/session intel run
-kit-retro bin/learn propose
+kit-retro bin/reflect propose
 prose-rag-index bin/prose-rag index

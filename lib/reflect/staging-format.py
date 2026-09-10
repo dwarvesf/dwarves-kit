@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """staging-format.py -- the ONE definition of the `_meta/backlog-staging.md` block grammar
-(SPEC-196/SPEC-195, ADR-0034 decision 1: shared by `learn drain` and `learn propose`, landed
+(SPEC-196/SPEC-195, ADR-0034 decision 1: shared by `reflect drain` and `reflect propose`, landed
 by whichever of the two sub-goals merges first; SG-06 landed it -- SG-05's `staging-format*`
 did not exist yet on this branch's history).
 
@@ -83,7 +83,7 @@ def age_days(fields, today=None):
     today = today or date.today()
     return (today - d).days
 
-# --- write side (from SG-05 `learn propose`; unified here per ADR-0034 decision 1:
+# --- write side (from SG-05 `reflect propose`; unified here per ADR-0034 decision 1:
 # ONE staging-block definition, shared by drain, propose, and the `stage` verb below) ---
 
 # Unicode word runs (letters and digits in any script, underscore excluded): an ASCII-only

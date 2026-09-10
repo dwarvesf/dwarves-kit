@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""drain.py -- `learn drain` (SPEC-196, ADR-0034 decision 1): the staging-review render for
+"""drain.py -- `reflect drain` (SPEC-196, ADR-0034 decision 1): the staging-review render for
 `_meta/backlog-staging.md`. Pure read + render, with exactly ONE write: rows staged longer
 than the expiry window get relabeled in place (header token only, `## [staged]` ->
 `## [expired]`), signalling "past due for a decision" -- never deleted.
@@ -135,7 +135,7 @@ def main(argv):
         try:
             days = int(argv[i + 1])
         except (IndexError, ValueError):
-            print("usage: learn drain [--days N]", file=sys.stderr)
+            print("usage: reflect drain [--days N]", file=sys.stderr)
             return 2
 
     staging = _staging_path()
