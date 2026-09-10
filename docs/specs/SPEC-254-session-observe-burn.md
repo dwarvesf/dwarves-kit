@@ -31,6 +31,15 @@ Add `burn` to the `cmd` choices. It gets its own collector, because `collect()` 
 ~/.claude/sessions/<pid>.json (sessionId) ─────────┘      (dedup by message.id+requestId)
 ```
 
+## Design
+
+| Decision | Why |
+|---|---|
+| `burn` lives inside `session-observe` as a view, not a new tool or a `stats` query | The host already parses the same transcripts and usage blocks; see Approaches considered above. |
+| Rank key: `input + cache_create + cache_read/10 + output*5` | List-price ratios per token type collapsed into one sortable number, so a session is ranked by cost weight, not raw token count. Attribution, not a bill. |
+| `ctx` is the last main-chain assistant usage entry, in file order | A subagent's sidechain turn can carry a different context size. Reading only the main chain keeps `ctx` a true read of the parent session's own live context, not a subagent's. |
+| `burn` stays out of `report` | `report` is the weekly digest, built to answer "how did this week go". `burn` answers a live, different question: "what's burning right now". Merging the two would blur two separate check cadences. |
+
 ## Technical Design
 
 ### Interfaces (I/O contract)
