@@ -165,6 +165,24 @@ Every row of SPEC-256's `## Test plan`, mapped to the run that covers it.
 | Detector 3, owned record is FIX with owner, evidence, destination | detector-3 block |
 | Detector 3, control-surface log is never an owned record | detector-3 block |
 | Detector 3, minority owner scope does not claim the file | detector-3 block |
+| Detector 3, a mega-goal closed by its own marker with nothing open is FIX with a destination | mega-goal completion block |
+| Detector 3, a commit keyword over open checklist items emits nothing | mega-goal completion block, one case per real misread |
+| Detector 3, an unmarked mega-goal is UNSURE and never FIX | mega-goal completion block |
+| Detector 3, a closed marker over open items is UNSURE, never FIX | mega-goal completion block |
+| Detector 3, an open marker outranks a closing commit subject | mega-goal completion block |
+| Detector 3, a checkbox inside a code span is not an open sub-goal | mega-goal completion block |
+| Detector 3, a slug containing a closure keyword does not declare the goal closed | mega-goal completion block |
+| Detector 3, a glob-named folder never earns a FIX and cannot harvest a sibling's owner | mega-goal hostile-input block |
+| Detector 3, a checklist in a non-markdown record still counts | mega-goal hostile-input block |
+| Detector 3, numbered and blockquoted open items are not invisible | mega-goal hostile-input block |
+| Detector 3, a closed marker with nothing checked is UNSURE, not a move | mega-goal hostile-input block |
+| Detector 3, a symlinked record never decides the verdict | mega-goal hostile-input block |
+| Detector 3, no repo-controlled prose reaches a finding, and the applied row names one destination | mega-goal hostile-input block |
+| Detector 3, a folder with no tracked record is residue | mega-goal hostile-input block |
+| Detector 3, a sub-goal's own status line does not declare the mega-goal closed | mega-goal hostile-input block |
+| Detector 3, competing and minority owner scopes both keep a folder out of FIX, naming the reason | mega-goal hostile-input block |
+| Detector 3, a file named like a glob is judged on its own history alone | mega-goal hostile-input block |
+| Detector 3, a list-form `State:` label is a status declaration | mega-goal hostile-input block |
 | Detector 4, over-budget log is FIX with counts and quoted source | detector-4 block |
 | Detector 4, no documented budget yields UNSURE | detector-4 block |
 | Detector 5, large cold ignored dir is UNSURE, REPORT ONLY | detector-5 block |
@@ -179,3 +197,199 @@ Every row of SPEC-256's `## Test plan`, mapped to the run that covers it.
 Section 5's nine defects are covered beyond the test plan, in the `hostile input` block. The
 test plan predates the review; the block is the review's own reproductions turned into
 regressions.
+
+## 7. Mega-goal completion precision (2026-09-11)
+
+The first real run of this loop against `ops-toolkit` emitted five mega-goal findings. A human
+then read each folder's own ROADMAP and found only TWO were finished. Every miss came from the
+same cause: the detector decided a folder was complete by grepping the commits that touched it
+for a closure keyword, and a commit subject describes one run, not the state of a roadmap.
+
+Detector 3 is the one verdict this loop applies, so the folder's own record decides now, per
+the precedence in `lib/repohygiene/SPEC.md`.
+
+### Test suite
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `bash tests/test-repohygiene.sh` | 82/82 passed, 0 failed (was 51 assertions; the mega-goal completion block added 12 and the hostile-input block that followed the review added 19) |
+| 2 | `bash tests/test-meta.sh` | 844/844 passed, all meta tests passed |
+| 3 | `bash tests/test-kit-contract.sh` | 25 passed, 0 failed |
+
+### Measurement
+
+Both runs use the same frozen tree, `ops-toolkit` at `7be6151f`, which is the tree the first
+live run saw. That commit is one before `ops-toolkit` PR #2550, which co-located two of the
+five folders; freezing keeps that move out of the measurement.
+
+```
+git -C <ops-toolkit> worktree add --detach <snap> 7be6151f
+bash lib/repohygiene/repohygiene.sh scan --repo <snap> --detectors 3
+```
+
+| | Findings | Mega-goal rows | True | False |
+|---|---|---|---|---|
+| Before | 6 | 5 | 2 | 3 |
+| After | 2 | 1 | 1 | 0 |
+
+The non-mega-goal row (`docs/briefs/CONTEXT.md`, a central path with three competing owners) is
+unchanged in both runs, which is the negative half of the measurement: the file path of
+detector 3 did not move.
+
+### Per-folder outcome
+
+| Folder | Human verdict | After | Why |
+|---|---|---|---|
+| `mochi-icy-simplify` | NOT complete, 4 open sub-goals and a "Blocked on Han" section, against a commit reading "mochi build complete, 08 shipped" | gone, fixed | 11 open checklist items, plus an open `State:` marker in HANDOFF.md |
+| `vibe-dex-saas` | NOT complete, SG-08 is "BLOCKED-ON-ROUND-CAP, not completion" | gone, fixed | 2 open items, one of them the `- [~]` in-progress form |
+| `hermes-multiplex-followups` | NOT complete, SG-03 half done and folded into another row | gone, fixed | 1 open item at `ROADMAP.md:44` |
+| `icy-ops-enhancements` | complete | gone, fixed | 1 open item at `ROADMAP.md:20`, "06, final review ... PR #487 (OPEN, awaiting Han)", a box never flipped after the merge |
+| `vibe-dex-showcase` | complete | gone, fixed | 1 open item at `ROADMAP.md:49`, "This roadmap reviewed by Han ... before SG-01 starts", a pre-flight box never flipped |
+| `cluster-notify-wiring` | not reached by the hand pass | NEW, `UNSURE` | its own `## Status 2026-09-01: all four goals SHIPPED` and no open box anywhere |
+
+The three false positives are gone. So are the two true ones, and that cost is deliberate:
+both carried a stale unchecked box, so both folders' own records say they are unfinished. A
+suppressed true positive costs one un-filed finding; a false FIX moves a live engine out of
+the control surface. The loop takes the first cost.
+
+Against the CURRENT tree (`ops-toolkit` at `1139120a`, after PR #2550) the same command
+returns the same two findings, but the attribution differs per line: `icy-ops-enhancements` is
+absent because #2550 moved it, and `vibe-dex-showcase` is absent for two reasons at once,
+#2550 moved its documents and this fix's residue guard suppresses the empty directory the move
+left behind. Before the fix, that empty shell still produced a finding, judged by the very
+commit that emptied it.
+
+### The archived corpus, as a control
+
+`ops-toolkit` keeps seven already-archived mega-goals under `_meta/megagoals/_archive/`, every
+one of them genuinely finished. All seven read as closed under the new test, with zero open
+items each. That only holds because a box counts at the start of a line or of a table cell and
+nowhere else: every `POINTER_PROMPT.md` in the estate spells the convention out mid-sentence as
+`` `- [ ] NN-... PR #N` ``, and matching that instruction made all seven read as unfinished.
+
+The first version of this fix also stripped code spans before counting, on the assumption that
+the backticks were what excluded the boilerplate. Measured against all 31 mega-goal folders in
+the corpus, stripping changed no count anywhere: the line anchor was already doing the work.
+The negative control is what surfaced it, by breaking the stripping and watching the suite stay
+green. The dead pass is gone and the comment now names the real mechanism.
+
+### Negative control
+
+Run after the build commits `82fe6e9` and `a463c06`, one break per load-bearing half of the
+precedence. Each break is a single-line edit, applied with a checked literal replacement so a
+control that fails to apply reports itself instead of passing silently.
+
+```
+=== NC-1: let commit evidence outrank the folder's own open checkboxes ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL a 'build complete' commit cannot close a goal with open sub-goals
+  FAIL an in-progress [~] sub-goal keeps a goal out of the findings
+  FAIL a 'live-close' commit cannot close a goal with an open sub-goal
+  FAIL a closed marker over open items is UNSURE, not FIX
+  FAIL a slug containing a closure keyword does not declare the goal closed
+58/63 passed, 5 failed
+
+=== NC-2: let a commit keyword earn a mega-goal FIX ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL a folder with no status marker is UNSURE
+  FAIL a commit keyword alone never earns FIX for a mega-goal
+61/63 passed, 2 failed
+
+=== NC-3: drop the checkbox line anchor, so prose about a box counts as one ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL prose describing a checkbox is not an open sub-goal
+62/63 passed, 1 failed
+
+=== NC-4: let the status keyword test read the folder path, not just the line text ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL a slug containing a closure keyword does not declare the goal closed
+62/63 passed, 1 failed
+
+=== NC-5: let an open marker lose to a closed one ===
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+  FAIL an open status marker outranks a closing commit subject
+62/63 passed, 1 failed
+
+=== restored, green again ===
+63/63 passed, 0 failed
+```
+
+NC-1 raised the open-item guard past any real count, so the commit-evidence branch judged
+folders with open sub-goals again: the three real misreads all came back. NC-2 promoted that
+branch's verdict from `UNSURE` to `FIX`. NC-3 removed the `(^|\|)` anchor from the checkbox
+match. NC-4 prepended the file path to the status line before the keyword test. NC-5 made
+`mg_state` report an open marker as closed.
+
+Two controls did NOT bite on the first pass, and both were real gaps rather than noise. NC-3
+stayed green because the code-span stripping, not the anchor, was absorbing the break, which is
+how the dead pass above was found. NC-4 stayed green because the `safari-net-complete` fixture
+carried a bare `## Status` heading, which is not a declaration, so the keyword test never ran
+and the case passed for the wrong reason. Both were fixed before the control was re-run.
+
+**Restore from a copy, never from git.** The first two runs of this control restored the
+source with `git checkout --`, which silently reverted UNCOMMITTED work each time and left
+every later control reading "did not apply". The script now backs the file up to a temp copy
+and restores from that.
+
+## 8. Adversarial review of the mega-goal path (2026-09-11)
+
+Two lenses ran against the frozen branch: a security and hostile-input lens, and an
+architecture and correctness lens. Between them they reproduced twelve defects against live
+fixtures. Every one landed on the mega-goal branch, which is where the FIX verdict became
+reachable for a FOLDER for the first time, and two of them moved a live, open mega-goal out of
+the control surface.
+
+| Severity | Defect | Fix |
+|---|---|---|
+| CRITICAL | a git pathspec globs by default, so a folder literally named `*` matched every sibling's history: a one-commit folder harvested a live goal's owner AND its commit majority into a FIX row, whose `git mv` then swept every sibling | every repo-controlled path handed to git is `:(literal)`, and a basename carrying a glob metacharacter never earns a FIX, because that path would expand again in the shell running the move |
+| CRITICAL | the open-item gate was a veto only, so anything that emptied the box scan turned unfinished into finished. Two triggers were live: `awk -v` rejects a newline in a value and printed nothing, and a checklist in `ROADMAP.txt` fell outside the `.md` scan | the path prefix is written by the shell, the extension set covers markdown and text case-insensitively, and a FIX additionally requires at least one CHECKED item, which closes the class at the point a move is proposed |
+| HIGH | the box anchor matched only `-`/`*` bullets, so a numbered or blockquoted open item was invisible. Sub-goals in this estate are numbered, and two visibly open items read as "none open" under a closed marker | the anchor accepts a number or a bullet, after an optional blockquote marker |
+| HIGH | repo-controlled marker prose landed in the FIX evidence AHEAD of the real destination. A status line reading `co-locate to <path>` put a second destination first, and one carrying a deletion verb put that verb in a finding, against invariant 1 | only `file:line` is emitted from the mega-goal path, never a line of repo text |
+| MEDIUM | `mg_state`'s glob followed a symlink, so `STATUS.md -> /outside/secret` decided the verdict and put lines from outside the repo into a report bound for a PR body | file discovery moved to `find -type f`, which does not follow symlinks |
+| MEDIUM | the mega-goal UNSURE row always claimed "no single commit scope resolves an owner", including when two resolved cleanly or one resolved without a majority | the row names the condition that actually failed, and lists the owners it resolved |
+| MEDIUM | `SPEC.md` and `SKILL.md` both promised a heading or bold label, and the regex accepted neither a list-form label nor an h5/h6 heading | the marker shape accepts all three, at the start of a line |
+| MEDIUM | the residue guard was a fourth precedence step no doc mentioned and no test covered | documented as step 0 in both, and covered by a case |
+| MEDIUM | `scope_owners` was extracted but the resolve-and-decide numbers were written twice, and the two copies had already diverged | `resolve_owner` returns the four numbers, and both branches read the majority rule from it |
+| LOW | the mega-goal destination dropped the central-dir segment the file branch keeps, so two central dirs holding the same slug collided on one destination | the folder destination honours the same `case "$d"` mapping |
+| LOW | two test comments named a mechanism their case did not exercise | rewritten to name what the case actually holds |
+| LOW | `mg_state` scanned only lowercase `.md`, so a `ROADMAP.MD` was invisible | `-iname` on the whole extension set |
+
+The suite went from 63 to 82 assertions, one case per reproduction.
+
+### Mutation battery
+
+Every rule the docs now claim was mutated one at a time against the full suite. A rule no test
+holds is a rule the docs assert and nothing enforces.
+
+| # | Rule broken | Assertions that failed |
+|---|---|---|
+| 1 | the open-item gate | 8 |
+| 2 | the commit-evidence verdict ceiling | 2 |
+| 3 | the checkbox line anchor | 1 |
+| 4 | the keyword test reads text, not path | 1 |
+| 5 | open marker outranks closed | 2 |
+| 6 | `:(literal)` on a repo-controlled pathspec | 1 |
+| 7 | the glob-metacharacter refusal | 1 |
+| 8 | the extension set | 1 |
+| 9 | the numbered and blockquoted box forms | 2 |
+| 10 | the checked-item requirement for a FIX | 1 |
+| 11 | symlink exclusion | 1 |
+| 12 | marker prose stays out of a finding | 2 |
+| 13 | the residue guard | 1 |
+| 14 | `mg_state` reads the top level only | 1 |
+| 15 | the `State:` marker form | 1 |
+| 16 | the owner-majority gate on a folder | 2 |
+
+All 16 bite. Six did not on the first pass, and each miss was a fixture defect rather than a
+missing rule: four cases were masked by the checked-item gate firing first (their fixtures now
+carry a checked box that survives the mutation), one used a mutation that was still a matching
+shell pattern, and one asserted against a `mg_state` symlink guard that `find -type f` had
+already made unreachable. That dead guard is gone, and the comment now names `-type f` as the
+mechanism.
+
+### The measurement after the review
+
+The frozen-tree numbers are unchanged: 6 findings with 3 false positives before, 2 findings
+with none after. The one remaining mega-goal row now refuses the move for a stated reason
+(`cluster-notify-wiring` declares itself shipped but carries no checked item, so nothing in it
+positively records a finished sub-goal) rather than for a reason the scanner had not checked.

@@ -34,6 +34,52 @@ the scan ran, whatever it found; exit 2 on bad usage or a target that is not a g
 | 6 | A target that is not a git repo is refused, naming `disk-reclaim` | refusal-guard case |
 | 7 | The only mutation the loop ever applies is `git mv`, applied by the skill, never by this script | invariant 1 plus the skill's own Apply step |
 
+## Mega-goal completion precedence
+
+**Invariant.** A mega-goal folder's completion is decided by the folder's own record, per the
+precedence below, and a commit subject alone never earns it a `FIX`. Enforced by the mega-goal
+completion cases in `tests/test-repohygiene.sh`, one per real misread.
+
+Detector 3 judges mega-goal FOLDERS as well as files. A folder's completion test runs in this
+order, and stops at the first step that answers:
+
+| # | Step | Effect |
+|---|---|---|
+| 0 | The folder holds at least one TRACKED record (`.md`, `.markdown`, `.mdx`, `.txt`, case-insensitive) | none, skip. It is residue a `git mv` left behind, not a mega-goal |
+| 1 | An explicit status marker in the folder's TOP-LEVEL docs: a `Status:` or `State:` heading, bold label, or list item, each at the start of a line. Files under `goals/` are excluded, so one drafted sub-goal never describes the goal. An OPEN marker anywhere wins over a closed one | open, no finding. closed, continue |
+| 2 | An unchecked checklist item anywhere in the folder (`- [ ]`, and the `- [~]` in-progress form), counted at the start of a line, a blockquote, or a table cell, on a bullet or a number | any open item, no finding, or `UNSURE` when a closed marker contradicts it |
+| 3 | Only for a folder that declares nothing: the commit subjects that touched it | `UNSURE` at most, never `FIX` |
+
+`FIX` requires all of: a closed marker, no open item, at least one CHECKED item, a basename
+carrying no glob metacharacter, and a commit scope that resolves a majority owner to give the
+move a destination. Each refusal names itself in the `UNSURE` row it produces instead.
+
+The checked-item requirement is not decoration. Every way the box scan can come back empty
+(an unreadable checklist, a record in an extension the scan misses, a directory name the
+prefix builder rejects) produces zero checked items too, so requiring one closes the whole
+class of fail-open holes at the point where a move would otherwise be proposed.
+
+The order exists because commit keywords alone were the first test and misread three of five
+real folders on the first live run. A sweep commit reading "co-locate completed mega-goals"
+carries a keyword about OTHER goals, and "mochi build complete, 08 shipped" closed nothing
+while that folder's ROADMAP still carried four open sub-goals. Detector 3 is the one verdict
+the loop acts on, so its precision is load-bearing. Full before-and-after:
+`docs/proof-of-done.md`.
+
+Two consequences, both deliberate:
+
+- **A stale unchecked box suppresses a genuinely finished goal.** Two of the five real folders
+  were finished but never had their last box flipped. The loop stays silent on them rather
+  than moving a folder whose own record says it is unfinished, because a missed move costs one
+  un-filed finding and a wrong move takes a live engine out of the control surface.
+- **Prose describing a checkbox is not an open sub-goal.** Every POINTER_PROMPT.md in the
+  estate spells the convention out mid-sentence as `` `- [ ] NN-... PR #N` ``. Matching that
+  instruction made all seven already-archived mega-goals read as unfinished, so a box counts
+  only at the start of a line or of a table cell, which is where a checklist puts one.
+- **A checklist inside a fenced code block still counts**, because the line anchor cannot see
+  the fence. The effect is conservative (the folder reads unfinished and no finding is
+  emitted), so it costs a missed move, never a wrong one.
+
 ## The audited repo is hostile input
 
 A contributor to the audited repo picks its filenames and its commit subjects, and a
@@ -50,6 +96,11 @@ review broke each one against a live fixture, not as precautions.
 | 13 | An operator-supplied `--staging-dir` or `--central-dir` that resolves outside the repo root is refused | hostile-input out-of-repo case |
 | 14 | Every numeric flag is validated before any arithmetic or `find` argument sees it | hostile-input non-numeric-threshold case |
 | 15 | An unreadable age fails CLOSED (`-1`, older than any threshold), so a poisoned timestamp keeps the item in the set instead of skipping it | `days_since` guard, exercised by invariant 9's case |
+| 16 | Every repo-controlled path handed to git is a `:(literal)` pathspec | mega-goal glob-name case: a folder named `*` otherwise matched every sibling's history and harvested a live goal's owner and commit majority into a FIX row |
+| 17 | A mega-goal basename carrying a glob metacharacter never earns a `FIX`, whatever its record says | mega-goal glob-name case: the row is applied as `git mv`, and that path would expand in the shell that runs it |
+| 18 | The mega-goal completion gate fails CLOSED. Anything that empties the box scan (an unreadable checklist, a record in an unscanned extension, a directory name the prefix builder rejects) must not read as finished | the non-markdown-record case and the checked-item requirement in step 1 above |
+| 19 | No repo-controlled prose reaches a finding from the mega-goal path. Only `file:line` | the marker-prose case: a status line reading `co-locate to <path>` put a second destination ahead of the real one in the one row the loop applies, and a status line carrying a deletion verb put that verb in a finding, against invariant 1 |
+| 20 | A symlinked record inside a mega-goal folder is not read | the symlink case: a link to a file outside the repo decided the verdict and put lines from outside the repo into a report bound for a PR body, the escape invariant 13 exists for |
 
 ## Deliberate deviations
 

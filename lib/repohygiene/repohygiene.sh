@@ -232,24 +232,218 @@ detect_stale_inbox() {
 # tried first and are too noisy: a research note names every tool it surveyed, so a file whose
 # owner is vps-mon mentions four other tools too. What a file's own history says about who
 # wrote it does not have that problem.
+
+# The owner of a path, by the conventional-commit scope of the commits that touched it. Prints
+# "<count> <owner>" per resolved owner, most-owning first, and nothing when none resolves.
+#
+# A scope must start alphanumeric and carry no `..` segment. `feat(..): x` otherwise resolved
+# as the owner `tools/..` and produced a FIX row whose destination traversed out of the tool
+# directory, on the one verdict the loop actually acts on.
+#
+# The path arrives as `:(literal)`, because a git pathspec has WILDCARD MAGIC ON BY DEFAULT and
+# the path is repo-controlled. A directory literally named `*` otherwise matched every sibling's
+# history, so a one-commit folder harvested a live goal's owner and its commit majority, and
+# both landed in a FIX row.
+scope_owners() {
+  git log --format='%s' -- ":(literal)$1" 2>/dev/null \
+    | sed -n 's/^[a-z]\{2,\}(\([A-Za-z0-9][A-Za-z0-9._-]*\)).*/\1/p' \
+    | grep -v '\.\.' | awk 'NF' | sort | uniq -c | sort -rn \
+    | while read -r c s; do
+        if [ -d "tools/$s" ]; then echo "$c tools/$s"
+        elif [ -d "experiments/$s" ]; then echo "$c experiments/$s"; fi
+      done
+}
+
+# The single owner of a path plus the numbers that justify it, as
+# "<owners resolved>\t<top owner>\t<its commits>\t<total commits>". Both detector-3 branches
+# decide with the same majority rule, so they read it from one place.
+resolve_owner() {
+  local owners
+  owners=$(scope_owners "$1")
+  printf '%s\t%s\t%s\t%s\n' \
+    "$(printf '%s\n' "$owners" | awk 'NF' | wc -l | tr -d ' ')" \
+    "$(printf '%s\n' "$owners" | head -1 | awk '{print $2}')" \
+    "$(printf '%s\n' "$owners" | head -1 | awk '{print $1+0}')" \
+    "$(git log --oneline -- ":(literal)$1" 2>/dev/null | wc -l | tr -d ' ')"
+}
+
+# Whether a mega-goal folder DECLARES itself finished, read from the folder's own top-level
+# docs. Prints "<closed|open|unmarked>\t<file>:<line>".
+#
+# A declaration is a `Status:` or `State:` heading, bold label, or list item at the start of a
+# line, which is the shape the estate writes ("## Status 2026-09-01: all four goals SHIPPED",
+# "**Status:** charter only"). A bare `## Status` heading declares nothing and is not a marker.
+# Sub-goal files under goals/ carry their own per-sub-goal status lines and are excluded: one
+# drafted sub-goal does not describe the goal. An open marker anywhere WINS over a closed one,
+# because the loop's only mutation is a move and a live engine must not be moved out of the
+# control surface.
+#
+# The keyword test runs on the line's TEXT, never on its path: a mega-goal literally named
+# `safari-net-complete` would otherwise declare itself complete through its own directory name.
+#
+# Only the marker's `file:line` ever reaches a finding, never the line itself. The line is
+# repo-controlled free text, and a FIX row's evidence is what an agent parses the `git mv`
+# destination out of: a status line reading `co-locate to ../../../tmp/pwned` put a SECOND
+# destination in front of the real one, and a status line carrying a deletion verb put that verb
+# into a finding, which invariant 1 forbids outright.
+MG_CLOSED_RE='(closed|close-out|closeout|complete|completed|done|shipped|archived|dropped|superseded|retired|abandoned)'
+MG_OPEN_RE='(charter|draft|queued|active|live|in progress|in-progress|wip|held|blocked|pending|open|scaffolded|deferred|planned|ready|not started)'
+MG_DECL_RE='^([[:space:]]*[-*][[:space:]]+|#{1,6}[[:space:]]*)?[[:space:]]*\**(Status|State)\**[[:space:]]*[:[:space:]]'
+
+# The files that can carry a mega-goal's record. `$2` of 1 reads the folder's own top level
+# only, which is what keeps a per-sub-goal `Status:` line under goals/ from describing the goal.
+#
+# The extension set is wider than the `.md` the estate writes, and the match is
+# case-insensitive, because the completion gate must not be dodged by renaming one file: a
+# checklist in `ROADMAP.txt` was invisible to the box count, and the folder above it then read
+# as finished with "none open".
+#
+# `-type f` is load-bearing, not tidiness: it excludes SYMLINKS. A tracked
+# `STATUS.md -> /outside/secret` otherwise decided a folder's verdict and put matching lines
+# from outside the repo into a report bound for a PR body, the same escape invariant 13 exists
+# for on the `--staging-dir` side.
+mg_docs() {
+  local depth=""
+  [ "${2:-0}" = "1" ] && depth="-maxdepth 1"
+  find "$1" $depth -type f \
+    \( -iname '*.md' -o -iname '*.markdown' -o -iname '*.mdx' -o -iname '*.txt' \) \
+    -print0 2>/dev/null
+}
+
+mg_state() {
+  local f rec n lower first_closed=""
+  while IFS= read -r -d '' f; do
+    while IFS= read -r rec; do
+      n="${rec%%:*}"
+      lower=$(printf '%s' "${rec#*:}" | tr 'A-Z' 'a-z')
+      if printf '%s\n' "$lower" | grep -qE "(^|[^a-z])${MG_OPEN_RE}([^a-z]|\$)"; then
+        printf 'open\t%s:%s\n' "$f" "$n"; return 0
+      fi
+      if [ -z "$first_closed" ] \
+         && printf '%s\n' "$lower" | grep -qE "(^|[^a-z])${MG_CLOSED_RE}([^a-z]|\$)"; then
+        first_closed="$f:$n"
+      fi
+    done < <(grep -nE "$MG_DECL_RE" "$f" 2>/dev/null)
+  done < <(mg_docs "$1" 1)
+  [ -n "$first_closed" ] && { printf 'closed\t%s\n' "$first_closed"; return 0; }
+  printf 'unmarked\t\n'
+}
+
+# Every checkbox anywhere in a mega-goal folder, one `<file>:<line>` per line. `unchecked`
+# counts `- [ ]` and the `- [~]` in-progress form the estate writes; `checked` counts `- [x]`.
+#
+# A box counts only where a checklist actually puts one: at the start of a line, of a
+# blockquote, or of a table cell, on a bullet OR a number. That anchor is what keeps PROSE
+# ABOUT checkboxes out of the count, since every POINTER_PROMPT.md in the estate spells the
+# convention out mid-sentence as `- [ ] NN-... PR #N`. The numbered and blockquoted forms count
+# because sub-goals in this estate are numbered, and missing one reads as "none open", which
+# fails in the direction that MOVES something.
+#
+# The path prefix is written by the shell, never by `awk -v`: awk REJECTS a newline in a `-v`
+# value, exits 2, and prints nothing, so a mega-goal directory with a newline in its name
+# emitted zero boxes and the gate above read the folder as finished. Only the `file:line` is
+# returned, never the line, so no repo-controlled prose reaches a finding.
+mg_boxes() {
+  local f line
+  while IFS= read -r -d '' f; do
+    while IFS= read -r line; do
+      printf '%s:%s\n' "$f" "${line%%:*}"
+    done < <(grep -nE "(^|\|)[[:space:]>]*([0-9]+[.)]|[-*])[[:space:]]*\[[$2]\]" "$f" 2>/dev/null)
+  done < <(mg_docs "$1" 0)
+}
+
 detect_misplaced_record() {
-  local dirs d f scopes owner owners n n_owner total rel dest slug closing
+  local dirs d f owner owners n n_owner total rel dest slug closing base
+  local state marker unchecked n_un n_ok first_un hold
   dirs="${CENTRAL_DIRS:-_meta docs/research docs/briefs}"
   for d in $dirs; do
     inside_repo "$d" || continue
     [ -d "$d" ] || continue
 
-    # Mega-goals are folders, not files, and their completion marker is a closing commit,
-    # not a status field (no repo in the estate writes one). A closed mega-goal is a record
-    # and belongs with its owner; an open one is a live engine and belongs where it is.
+    # Mega-goals are folders, not files. A closed one is a record and belongs with its owner;
+    # an open one is a live engine and belongs where it is.
+    #
+    # The completion test reads the folder's OWN state first, in a fixed precedence, because
+    # commit keywords alone were the first test and misfired on three of five real folders: a
+    # sweep commit reading "co-locate completed mega-goals" carried a keyword about OTHER
+    # goals, and "mochi build complete, 08 shipped" closed nothing while the folder's ROADMAP
+    # still carried four open sub-goals and a "Blocked on Han" section.
+    #
+    #   0. a folder with no tracked record in it is residue, not a mega-goal, and is skipped
+    #   1. an explicit status marker in the folder outranks everything (mg_state)
+    #   2. an unchecked checklist item anywhere means NOT complete, whatever the log says
+    #   3. only a folder that declares nothing at all falls back to commit evidence, and that
+    #      can never do better than UNSURE
+    #
+    # A commit subject alone never produces a FIX for a mega-goal folder.
     if [ -d "$d/megagoals" ]; then
       for slug in "$d"/megagoals/*/; do
         [ -d "$slug" ] || continue
-        case "$(basename "$slug")" in _archive|archive) continue ;; esac
-        closing=$(git log --format='%h %s' -- "$slug" 2>/dev/null \
+        base=$(basename "$slug")
+        case "$base" in _archive|archive) continue ;; esac
+        slug="${slug%/}"
+        # A folder holding no TRACKED record is residue, not a mega-goal: `git mv` leaves the
+        # source directory behind whenever untracked scratch sits inside it, and judging that
+        # empty shell by the very commit that emptied it reported the move as still pending.
+        # `:(literal)` because the path is repo-controlled and a pathspec globs by default.
+        git -c core.quotePath=false ls-files -z -- ":(literal)$slug" 2>/dev/null \
+          | tr '\0' '\n' | grep -qiE '\.(md|markdown|mdx|txt)$' || continue
+
+        state=$(mg_state "$slug")
+        marker="${state#*	}"; state="${state%%	*}"
+        [ "$state" = "open" ] && continue
+
+        unchecked=$(mg_boxes "$slug" '[:space:]~-')
+        n_un=$(printf '%s' "$unchecked" | grep -c .)
+        n_ok=$(mg_boxes "$slug" 'xX' | grep -c .)
+        first_un=$(printf '%s\n' "$unchecked" | head -1)
+
+        if [ "$n_un" -gt 0 ]; then
+          # Its own record says unfinished. A closed marker on top of open boxes is a folder
+          # contradicting itself, which is the operator's call, not a move.
+          [ "$state" = "closed" ] && emit 3 UNSURE "$slug" \
+            "a status marker at $marker says closed, but $n_un checklist items are still open, first at $first_un; the folder contradicts itself, so nothing moves until the operator resolves which is true"
+          continue
+        fi
+
+        if [ "$state" = "closed" ]; then
+          IFS='	' read -r n owner n_owner total < <(resolve_owner "$slug")
+          # Everything that must hold before a move is proposed, each with the reason it did
+          # not. A FIX needs POSITIVE completion evidence, not merely the absence of an open
+          # box: zero checked items is also what every fail-open path produces, so a folder
+          # whose checklist could not be read cannot reach FIX through that hole.
+          hold=""
+          case "$base" in
+            *[][*?]*) hold="its directory name carries a glob metacharacter, which would steer both the pathspec that resolves its owner and the move itself" ;;
+          esac
+          if [ -z "$hold" ] && [ "${n_ok:-0}" -eq 0 ]; then
+            hold="the folder carries no checked checklist item either, so nothing in it positively records a finished sub-goal"
+          fi
+          if [ -z "$hold" ] && [ "${n:-0}" != "1" ]; then
+            hold="$n commit scopes resolve an owner ($(scope_owners "$slug" | awk '{printf "%s x%s ", $2, $1}')), so no single one names the destination"
+          fi
+          if [ -z "$hold" ] && [ $(( n_owner * 2 )) -lt "${total:-0}" ]; then
+            hold="its only owner scope $owner accounts for $n_owner of the $total commits touching it, short of the majority a move needs"
+          fi
+          if [ -z "$hold" ]; then
+            case "$d" in
+              _meta) dest="$owner/docs/megagoals/$base/" ;;
+              docs/*) dest="$owner/docs/${d#docs/}/megagoals/$base/" ;;
+              *) dest="$owner/docs/$d/megagoals/$base/" ;;
+            esac
+            emit 3 FIX "$slug" "closed mega-goal still in the control surface: its own marker at $marker, $n_ok checklist items checked and none open; owner $owner in $n_owner of $total commits touching it, by conventional-commit scope; co-locate to $dest"
+          else
+            emit 3 UNSURE "$slug" "closed mega-goal still in the control surface: its own marker at $marker, $n_ok checklist items checked and none open; no move is proposed because $hold; the operator names the destination"
+          fi
+          continue
+        fi
+
+        # Unmarked and with nothing open. The folder says nothing about itself, so commit
+        # evidence is all there is, and commit evidence is never enough to move anything.
+        closing=$(git log --format='%h %s' -- ":(literal)$slug" 2>/dev/null \
           | grep -iE '\b(close|closed|closing|complete|completed|concluded)\b' | head -1)
         [ -n "$closing" ] || continue
-        emit 3 UNSURE "${slug%/}" "closed mega-goal still in the control surface: \"$closing\"; a completed mega-goal is a record and co-locates with its owner; no commit scope resolves an owner, so the operator names the destination"
+        emit 3 UNSURE "$slug" "possibly-closed mega-goal in the control surface: the folder declares no status and has $n_ok checked items and none open, so the only evidence is a commit subject, \"$closing\"; a commit keyword is not a closure record, so the operator confirms before anything moves"
       done
     fi
 
@@ -262,29 +456,16 @@ detect_misplaced_record() {
       # design. Judging them by who touched them says "everyone", which is not an owner.
       printf '%s\n' "$f" | grep -qE "$CONTROL_SURFACE_RE" && continue
 
-      total=$(git log --oneline -- "$f" 2>/dev/null | wc -l | tr -d ' ')
-      [ "${total:-0}" -ge 1 ] || continue
-      # A scope must start alphanumeric and carry no `..` segment. `feat(..): x` otherwise
-      # resolved as the owner `tools/..` and produced a FIX row whose destination traversed
-      # out of the tool directory, on the one verdict the loop actually acts on.
-      scopes=$(git log --format='%s' -- "$f" 2>/dev/null \
-        | sed -n 's/^[a-z]\{2,\}(\([A-Za-z0-9][A-Za-z0-9._-]*\)).*/\1/p' \
-        | grep -v '\.\.')
-      owners=$(printf '%s\n' "$scopes" | awk 'NF' | sort | uniq -c | sort -rn \
-        | while read -r c s; do
-            if [ -d "tools/$s" ]; then echo "$c tools/$s"
-            elif [ -d "experiments/$s" ]; then echo "$c experiments/$s"; fi
-          done)
-      n=$(printf '%s\n' "$owners" | awk 'NF' | wc -l | tr -d ' ')
-      [ "${n:-0}" -ge 1 ] || continue
-      rel="${f#"$d"/}"
-
       # One owner wins only when it accounts for at least half the file's own commits, so a
       # minority scope in a file some other surface owns cannot claim it. A file with ONE
       # commit still yields a FIX, deliberately: that is exactly the fixed-central-path case
       # this detector was built for, where a single agent run wrote the file and moved on.
-      owner=$(printf '%s\n' "$owners" | head -1 | awk '{print $2}')
-      n_owner=$(printf '%s\n' "$owners" | head -1 | awk '{print $1+0}')
+      IFS='	' read -r n owner n_owner total < <(resolve_owner "$f")
+      [ "${total:-0}" -ge 1 ] || continue
+      [ "${n:-0}" -ge 1 ] || continue
+      owners=$(scope_owners "$f")
+      rel="${f#"$d"/}"
+
       if [ "$n" = "1" ] && [ $(( n_owner * 2 )) -ge "$total" ]; then
         case "$d" in
           _meta) dest="$owner/docs/$rel" ;;
