@@ -235,6 +235,15 @@ if [ "$(jq -r '.outputStyle' "$T12/.claude/settings.json")" = "Explanatory" ] \
 else
   no "non-kit style name mishandled"
 fi
+# A name with a path component is refused: nothing copied, the key left as it was.
+sed -i.bak 's#^style = "Explanatory"#style = "../../etc/passwd"#' "$T12/.kit.toml" && rm -f "$T12/.kit.toml.bak"
+bash lib/adopt.sh --refresh "$T12" >/dev/null 2>&1
+if [ "$(jq -r '.outputStyle' "$T12/.claude/settings.json")" = "Explanatory" ] \
+  && [ ! -e "$T12/.claude/output-styles/../../etc/passwd" ] && [ ! -e "$T12/etc/passwd" ]; then
+  ok "output.style with a path component is refused (key unchanged, nothing written)"
+else
+  no "path-shaped output.style was not refused"
+fi
 # Hook wiring survives the style write (the merge is targeted, never a file rewrite).
 if jq -e '.hooks | length > 0' "$T12/.claude/settings.json" >/dev/null 2>&1; then
   ok "setting outputStyle preserves the hook-module wiring in settings.json"

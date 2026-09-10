@@ -351,6 +351,9 @@ fi
 if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/null 2>&1; then
   KIT_CONFIG_ROOT="$(dirname "$kit_root_toml")" KIT_PROJECT_ROOT="$TARGET" \
     style_name="$(kit_config_get "output.style" "")"
+  case "$style_name" in
+    */*|*..*) echo "adopt: warning: output.style '$style_name' is not a bare name; ignored" >&2; style_name="" ;;
+  esac
   if [ -n "$style_name" ]; then
     style_src=""
     for c in "$SRC_ROOT/output-styles/$style_name.md" "$KIT_ROOT/output-styles/$style_name.md"; do
