@@ -100,6 +100,28 @@ if ! printf '%s' "$input" | grep -q '\*\*Built:\*\*'; then
 elif ! printf '%s' "$input" | grep -qE '\*\*Built:\*\*[[:space:]]*(NOTHING|SKIPPED|[^[:space:]])'; then
   echo "line 0: '**Built:**' is empty; name what was built, or NOTHING, or SKIPPED with a reason" >&2
   findings=$((findings + 1))
+else
+  # The three states must stay distinguishable. `SKIPPED: nothing to build` says the step did
+  # not run AND that it found nothing, which is two states in one line and means neither; it
+  # appeared thirteen times in two weeks of real reports, every one from a step that never
+  # scanned. An empty scan is NOTHING. And a non-empty line must carry ENHANCE or NEW: those
+  # tokens are the slot that forces naming the existing tool a candidate joins. A `Built:` that
+  # is only a path and a commit is the session's own deliverable wearing step 7b's label, which
+  # is how the step reported "built" every session and enhanced nothing.
+  built_line="$(printf '%s' "$input" | grep -m1 '\*\*Built:\*\*' | sed 's/^.*\*\*Built:\*\*[[:space:]]*//')"
+  built_lower="$(printf '%s' "$built_line" | tr '[:upper:]' '[:lower:]')"
+  case "$built_lower" in
+    skipped:*nothing*|skipped:*no\ candidate*|skipped:*none*)
+      echo "line 0: '**Built:** SKIPPED: ...' says the step did not run; an empty scan is 'NOTHING: no candidates', not a skip" >&2
+      echo "  ${built_line}" >&2
+      findings=$((findings + 1)) ;;
+    nothing*|skipped:*) : ;;
+    *enhance*|*new\ \(*) : ;;
+    *)
+      echo "line 0: '**Built:**' names something built with no ENHANCE <home> or NEW (precedent: ...) token; name the existing tool it joins, or the precedent miss" >&2
+      echo "  ${built_line}" >&2
+      findings=$((findings + 1)) ;;
+  esac
 fi
 
 # Step -1 coverage, the same three-state rule as `Built:` above. A seam that was never
