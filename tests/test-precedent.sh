@@ -292,11 +292,21 @@ FIX
 # Spec: rotate ${fake_token_c}${fake_token_d}
 FIX
 
+  # learnings row: a browser-harness per-site recipe registry (manifest.json per learning).
+  FIX_LEARNINGS="$TMPDIR_T/learnings"
+  mkdir -p "$FIX_LEARNINGS/iota-site/notes"
+  cat > "$FIX_LEARNINGS/iota-site/manifest.json" <<'FIX'
+{"id":"iota-site","name":"Iota portal","domains":["iota.example"],"notes":["notes/overview.md"],
+ "nodeTools":{"submit":{"description":"file the notion export on the signed-in tab","path":"tools/x.mjs","callable":"submit"}}}
+FIX
+  printf '# iota-site\n' > "$FIX_LEARNINGS/iota-site/notes/overview.md"
+
   cat > "$FIX_REGISTRY" <<FIX
 repo $FIX_REPO
 scripts $FIX_SCRIPTS
 crons $FIX_CRONS
 memory $FIX_MEMORY
+learnings $FIX_LEARNINGS
 repo /nonexistent/path/for/test
 repo ~/eta-repo
 # comment
@@ -425,6 +435,19 @@ if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | g
   assert "kit-root kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 0
 else
   assert "kit-root kit.toml [precedent] registry (no PRECEDENT_REGISTRY) still scans the registry's scripts row" 1
+  echo "rc=$RC" | sed 's/^/      /'
+fi
+
+# ---------------------------------------------------------------------------
+# learnings kind: a registry row pointing at a browser-harness learnings dir surfaces each
+# manifest.json as `learnings/<id>` with its tool names, so a site already driven through
+# the harness answers a web-control candidate before a sibling script gets written.
+# ---------------------------------------------------------------------------
+OUT="$("$PRECEDENT_BIN" find notion --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | grep -q 'learnings/iota-site'; then
+  assert "learnings registry row surfaces the manifest as learnings/<id> on a tool-description hit" 0
+else
+  assert "learnings registry row surfaces the manifest as learnings/<id> on a tool-description hit" 1
   echo "rc=$RC" | sed 's/^/      /'
 fi
 
