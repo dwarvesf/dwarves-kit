@@ -8,7 +8,7 @@ Context: the first roadmap draft (merged as #555) said "every learning-shaped su
 Decision: split by who changes (system: Reflect, engine; human about shipped work: Understand, gate in engine + teacher in learning-kit via `understand.teach`; human expanding: Study, learning-kit). `absorb` stays whole; `explain` and `quiz-gate` stay as gate-side entry points and only their pedagogy bodies move.
 Why: ADR-0031 was right about the gate's placement; it never separated the gate from the teacher. Moving the commands would strand engine-only adopters with no gate at all.
 Alternatives: move everything learning-shaped (rejected above); keep everything in the engine (violates SPEC-249, keeps the dotfiles reach-across).
-Impact: sub-goal 02 renamed `dev-learner-teacher`; seam key renamed `wrap.learn` to `understand.teach` across 01, 03, 05; ADR-0036 carries the axis table.
+Impact: sub-goal 02 renamed `understand-teacher`; seam key renamed `wrap.learn` to `understand.teach` across 01, 03, 05; ADR-0036 carries the axis table.
 Open questions: none; the ADR is the operator's click.
 
 ## 2026-09-10 10:35 Two "dotfiles" skills live in a different repo

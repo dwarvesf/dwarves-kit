@@ -1,7 +1,7 @@
 # 0036. Loops split by who changes
 
 Date: 2026-09-10
-Status: Proposed
+Status: Accepted (operator, 2026-09-10, on the pull request that proposed it)
 Relates-to: ADR-0031 (the understanding gate, upheld in substance and in the gate's placement; this ADR separates the gate from the teacher it left fused), ADR-0034 (harness-loop taxonomy, whose `learn` subsystem this ADR renames to `reflect`), SPEC-249 (estate seams, the one-config-key rule this ADR extends with `understand.teach`), `_meta/megagoals/learning-boundary/ROADMAP.md` (the axis table below, verbatim, and the sub-goals that execute it), `docs/verification/wrap-candidates-scan.md` (the candidate-scan regression that opened the question), learning-kit `docs/ARCHITECTURE.md` (the overlay contract the teacher joins)
 
 ## Context
@@ -22,7 +22,7 @@ Split every loop by one axis, who changes when the loop runs.
 |---|---|---|---|---|
 | Reflect | the system | gate telemetry, run ledgers, retros | backlog rows, skill patches, config | dwarves-kit (`reflect`, ex `learn`) |
 | Understand, the gate | a human, about work the system did | diff, tests, the significance verdict | the DEBT row: that understanding is owed, on what, by when | dwarves-kit (`significance-classify`, Step 7a, `reflect debt`) |
-| Understand, the teacher | the same human, paying that debt | the DEBT row, the diff | an explainer, a quiz, a paid row | learning-kit `dev-learner`, through `understand.teach` |
+| Understand, the teacher | the same human, paying that debt | the DEBT row, the diff | an explainer, a quiz, a paid row | learning-kit `understand`, through `understand.teach` |
 | Study | a human, expanding | lectures, books, topics | notes, cards, glossary rows | learning-kit `study` |
 
 ### Reflect: dwarves-kit
@@ -39,7 +39,7 @@ The engine keeps the whole gate. `lib/classify/significance-classify.sh record`,
 
 ### Understand, the teacher, and Study: learning-kit
 
-learning-kit ships `skills/dev-learner/` with the explain, quiz, and paydown bodies, plus its `lanes.d/dev-learner.plan`. Its install step fills the seam. The `study` lane is untouched by this ADR and keeps every surface where a human expands from outside material.
+learning-kit ships `skills/understand/` with the explain, quiz, and paydown bodies, plus its `lanes.d/understand.plan`. Its install step fills the seam. The `study` lane is untouched by this ADR and keeps every surface where a human expands from outside material.
 
 ### Knowledge writers: context-kit
 
@@ -57,9 +57,9 @@ With no teacher installed, the gate still records. `significance-classify record
 
 **An engine-only adopter keeps the gate whole.** Every ledger, the significance classifier, the nudge, the debt balance, `reflect` in all three verbs, and `explain` and `quiz-gate` as material-gathering commands all work with zero overlays present. What that adopter loses is pedagogy, and the `skipped: no teacher` line says so in one line at the moment it matters.
 
-**learning-kit owes three things before the seam has a filler.** The `dev-learner` skill with the explain, quiz, and paydown bodies moved under `Moved-from:` trailers. The `lanes.d/dev-learner.plan` those bodies run inside. An install step that writes `understand.teach` into the operator `kit.toml`, so `bin/config seams` resolves the row instead of reporting it empty.
+**learning-kit owes three things before the seam has a filler.** The `understand` skill with the explain, quiz, and paydown bodies moved under `Moved-from:` trailers. The `lanes.d/understand.plan` those bodies run inside. An install step that writes `understand.teach` into the operator `kit.toml`, so `bin/config seams` resolves the row instead of reporting it empty.
 
-**The `learn` to `reflect` rename touches every call site.** `bin/learn` gains a forwarder so an existing consumer script keeps working through one release, per the kit's repoint-everything discipline. Documentation, the module registry, the five-stage tables, and the weekend-paydown skill's entry point all move to the new name in the same release. The Learn stage of ADR-0034's five-stage table keeps its name, because the stage is metadata over modules and this ADR renames a subsystem.
+**The `learn` to `reflect` rename touches every call site.** `bin/learn` gains a forwarder so an existing consumer script keeps working through one release, per the kit's repoint-everything discipline. Documentation, the module registry, the five-stage tables, and the weekend-paydown skill's entry point all move to the new name in the same release. The Learn stage of ADR-0034's five-stage table is renamed Reflect in the same release, so the stage and the subsystem under it share one word and no reader has to map "Learn" onto a module called `reflect`. The operator's rule for this ADR: taxonomy and naming stay consistent across the three kits, one word per loop (Reflect, Understand, Study) wherever that loop appears, whether as a stage, a subsystem, a seam key, a lane, or a skill directory.
 
 **One concept store survives.** The `learned-ledger.md` format wins, learning-kit's `bin/study-concepts` becomes its CLI, and the two flush skills collapse into one skill in learning-kit. Three ledgers going to one is what makes a concept captured in a dev session visible to a study session.
 

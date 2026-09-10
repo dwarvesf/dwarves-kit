@@ -2,7 +2,7 @@
 
 **Merge policy:** auto
 **Time budget:** 3 hours
-**Proof:** run-table: `bin/config seams` lists `understand.teach` (kind `skill`, filled by "learning-kit dev-learner lane, or the operator"); `commands/wrap.md` Step 7a and 7c invoke the seam and name no skill; `tests/test-boundary-lint.sh` is green on this branch and RED when a fixture line `learning-ledger` is planted in `lib/learn/weekend-batch.sh` (NEGATIVE CONTROL); `bin/learn` forwards to `bin/reflect` with a one-line deprecation, `tests/run-all.sh` green.
+**Proof:** run-table: `bin/config seams` lists `understand.teach` (kind `skill`, filled by "learning-kit understand lane, or the operator"); `commands/wrap.md` Step 7a and 7c invoke the seam and name no skill; `tests/test-boundary-lint.sh` is green on this branch and RED when a fixture line `learning-ledger` is planted in `lib/learn/weekend-batch.sh` (NEGATIVE CONTROL); `bin/learn` forwards to `bin/reflect` with a one-line deprecation, `tests/run-all.sh` green.
 **Depends on:** 00 Accepted.
 Model: sonnet
 Effort: high
@@ -24,6 +24,6 @@ No new engine: the seam is one more row in the tables SPEC-249 already built. Th
 
 ## Scope edges
 
-**In:** the key, the lint, the rename, Step 7a/7c prose, the seams table.
+**In:** the key, the lint, the rename (subsystem `learn` to `reflect` AND the Learn stage of ADR-0034's five-stage table to Reflect, in every doc that prints the table: WORKFLOW.md, AGENTS.md, README.md, `docs/FEATURES.md` if it names stages), Step 7a/7c prose, the seams table. One word per loop, everywhere: Reflect, Understand, Study.
 **Out:** any skill body; learning-kit; dotfiles.
 **Not:** changing what the DEBT marker records or when.

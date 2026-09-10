@@ -25,5 +25,5 @@ Receive in context-kit, retire in dotfiles, verify `bin/config seams` on the ope
 ## Scope edges
 
 **In:** the two skills, their root resolution, the retirements.
-**Out:** the study or dev-learner lanes; the concept ledger.
+**Out:** the study or understand lanes; the concept ledger.
 **Not:** a new write path into the tree (context-kit's rule: no non-file write path).

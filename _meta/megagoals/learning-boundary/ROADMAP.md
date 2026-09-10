@@ -1,12 +1,12 @@
 # Mega-goal: learning-boundary
 
-**Destination:** The three kits split every loop by ONE axis, who changes when the loop runs, and the engine knows no consumer by name. dwarves-kit keeps the process plane: gates, ledgers, the landing step, its own reflection loop (the system improves itself from its telemetry), and the understanding GATE (that a human owes understanding on a shipped change, which change, and when it is due) with one seam for how a human pays it. learning-kit owns every surface where a human learns: the `study` lane (outside material, expansion) and the `dev-learner` teacher that fills the engine's teach seam (the explainer, the quiz, the paydown pedagogy). context-kit owns writing knowledge into the tree. One concept ledger, one store format, one flush skill.
+**Destination:** The three kits split every loop by ONE axis, who changes when the loop runs, and the engine knows no consumer by name. dwarves-kit keeps the process plane: gates, ledgers, the landing step, its own reflection loop (the system improves itself from its telemetry), and the understanding GATE (that a human owes understanding on a shipped change, which change, and when it is due) with one seam for how a human pays it. learning-kit owns every surface where a human learns: the `study` lane (outside material, expansion) and the `understand` teacher that fills the engine's teach seam (the explainer, the quiz, the paydown pedagogy). context-kit owns writing knowledge into the tree. One concept ledger, one store format, one flush skill.
 **Quality bar:** No consumer named in the engine (SPEC-249's rule, now enforced by a lint over `lib/`, `commands/`, `tests/`). No second engine: every move is a `git mv` plus a path fix plus a seam key, never a rewrite. Each move ships with its tests and its proof-of-done file, and the engine's suite stays green with zero skips at every sub-goal boundary. An adopter of dwarves-kit alone keeps every gate and every ledger; what they lose without learning-kit is the teacher, and the gate says so in one `skipped: no teacher` line instead of teaching badly.
 **Work repo:** dwarves-kit for 00, 01, 05; learning-kit for 02, 03; context-kit for 04; dotfiles carries the retirements (chezmoi remove entries) in the same PR as each move.
 **Stacking tool:** gh, one PR per sub-goal, sequential (cross-repo, no stacking).
 **Merge mode:** bottom-up, each sub-goal merged before the next starts.
 **Merge autonomy:** gated-final on 00 (the ADR is Han's click); `auto` from 01 on.
-**Terminus:** 05 merged and `bin/config seams` shows `understand.teach` filled by learning-kit's `dev-learner` teacher on the operator machine.
+**Terminus:** 05 merged and `bin/config seams` shows `understand.teach` filled by learning-kit's `understand` teacher on the operator machine.
 **Started:** 2026-09-10
 
 ## The axis: who changes
@@ -17,10 +17,22 @@ The operator's question that opened this (2026-09-10): the dev kit has an auto-i
 |---|---|---|---|---|
 | Reflect | the system | gate telemetry, run ledgers, retros | backlog rows, skill patches, config | dwarves-kit (`reflect`, ex `learn`) |
 | Understand, the gate | a human, about work the system did | diff, tests, the significance verdict | the DEBT row: that understanding is owed, on what, by when | dwarves-kit (`significance-classify`, Step 7a, `reflect debt`) |
-| Understand, the teacher | the same human, paying that debt | the DEBT row, the diff | an explainer, a quiz, a paid row | learning-kit `dev-learner`, through `understand.teach` |
+| Understand, the teacher | the same human, paying that debt | the DEBT row, the diff | an explainer, a quiz, a paid row | learning-kit `understand`, through `understand.teach` |
 | Study | a human, expanding | lectures, books, topics | notes, cards, glossary rows | learning-kit `study` |
 
 Two consequences the earlier draft of this roadmap got wrong. `absorb` (external ideas into the workflow) changes the system, so it is Reflect and stays in the engine. And `explain` and `quiz-gate` do not move as commands: the engine keeps them as gate-side entry points that gather the data (diff, tests, DEBT rows) and hand it to the seam; only the pedagogy bodies move to learning-kit. ADR-0031 was right about the gate's placement. What it never separated was the gate from the teacher.
+
+## Names (binding for every sub-goal)
+
+One word per loop, everywhere that loop appears. A sub-goal that introduces a second word for the same loop has failed its own quality bar.
+
+| Loop | Stage (ADR-0034 table) | Engine subsystem | Seam key | learning-kit lane and skill dir | Command names kept |
+|---|---|---|---|---|---|
+| Reflect | Reflect (was Learn) | `bin/reflect`, `lib/reflect/` (was `learn`; forwarder kept one release) | none (engine-internal) | none | `absorb`, `retro` |
+| Understand | none (a gate, not a stage) | `significance-classify`, `reflect debt` | `understand.teach` | `lanes.d/understand.plan`, `skills/understand/{explain,quiz,paydown}` | `explain`, `quiz-gate` (thin, gate-side) |
+| Study | none | none | `wrap.after` (the operator's flush) | `lanes.d/study.plan`, the existing study skills; `concept-flush` is the one flush | none |
+
+Retired words, never reintroduced: `dev-learner`, `learn` as a subsystem name, `session-closeout`, `session-distill`, `learning-ledger` as a skill name (the store keeps `learned-ledger.md` as its file name; the skill is `concept-flush`).
 
 ## Gate zero (decision before code)
 
@@ -39,12 +51,12 @@ SPEC-249 (estate seams, the one-config-key rule). ADR-0031 (the gate, upheld; th
 
 ## Sub-goals
 
-- [ ] 00-adr-placement , ADR-0036: loops split by who changes; the engine keeps reflect and the understanding gate, learning-kit owns the teacher and study, context-kit owns the tree; one seam `understand.teach`; ADR-0031 upheld, its gate/teacher conflation resolved , `gated-final`
-- [ ] 01-engine-seam-and-lint , `understand.teach` key + registry row + seams-table row; `explain`, `quiz-gate`, Step 7a and 7c gather data and invoke the seam, naming no skill; `lib/`+`commands/`+`tests/` lint that fails on any consumer skill name or dotfiles path; `learn` → `reflect` rename with a forwarder , `auto`
-- [ ] 02-dev-learner-teacher , learning-kit gains `skills/dev-learner/{explain,quiz,paydown}` (the pedagogy bodies from dwarves-kit `commands/explain.md`, `commands/quiz-gate.md`, dotfiles `weekend-debt-paydown`; `Moved-from:` trailers), `lanes.d/dev-learner.plan`, their tests (incl. the routing assertions #554 retired), the install step that fills `understand.teach` , `auto`
-- [ ] 03-one-ledger , `bin/study-concepts` adopts the learned-ledger format; `concept-flush` + dotfiles `learning-ledger` → one `concept-flush`; dotfiles `learning-router`, `learning-day-process`, `concept-explain`, `deep-understand` and claude-skills `learn-skill` (dotfiles holds only a chezmoi symlink to `~/workspace/claude-skills/skills/learn-skill`) → learning-kit `presets/operator/skills/`; chezmoi remove entries , `auto`
-- [ ] 04-context-kit-writers , claude-skills `knowledge-capture` (dotfiles holds only a chezmoi symlink to `~/workspace/claude-skills/skills/knowledge-capture`) + dotfiles `memorize` → context-kit `skills/`; both already write into a tree and both name `knowledge.root`; chezmoi remove entries , `auto`
-- [ ] 05-docs-and-terminus , WORKFLOW.md, AGENTS.md, README of all three kits carry the axis table; `config seams` on the operator machine shows every seam filled by the kit the table names; `lib/config/module-registry.md` `## Seams` gains `understand.teach` (the table SPEC-249 documents and does not hold) , `auto`
+- [x] SG-00 adr-placement , ADR-0036: loops split by who changes; the engine keeps reflect and the understanding gate, learning-kit owns the teacher and study, context-kit owns the tree; one seam `understand.teach`; ADR-0031 upheld, its gate/teacher conflation resolved , gate , PR #556 (Accepted by the operator on the PR, 2026-09-10)
+- [ ] SG-01 engine-seam-and-lint , `understand.teach` key + registry row + seams-table row; `explain`, `quiz-gate`, Step 7a and 7c gather data and invoke the seam, naming no skill; `lib`+`commands`+`tests` lint that fails on any consumer skill name or dotfiles path; `learn` → `reflect` rename with a forwarder, and the Learn stage → Reflect in every five-stage table , auto , depends SG-00
+- [ ] SG-02 understand-teacher , learning-kit gains `skills/understand/{explain,quiz,paydown}` (the pedagogy bodies from dwarves-kit `commands/explain.md`, `commands/quiz-gate.md`, dotfiles `weekend-debt-paydown`; `Moved-from:` trailers), `lanes.d/understand.plan`, their tests (incl. the routing assertions #554 retired), the install step that fills `understand.teach` , auto , depends SG-01
+- [ ] SG-03 one-ledger , `bin/study-concepts` adopts the learned-ledger format; `concept-flush` + dotfiles `learning-ledger` → one `concept-flush`; dotfiles `learning-router`, `learning-day-process`, `concept-explain`, `deep-understand` and claude-skills `learn-skill` (dotfiles holds only a chezmoi symlink to `~/workspace/claude-skills/skills/learn-skill`) → learning-kit `presets/operator/skills/`; chezmoi remove entries , auto , depends SG-02
+- [ ] SG-04 context-kit-writers , claude-skills `knowledge-capture` (dotfiles holds only a chezmoi symlink to `~/workspace/claude-skills/skills/knowledge-capture`) + dotfiles `memorize` → context-kit `skills/`; both already write into a tree and both name `knowledge.root`; chezmoi remove entries , auto , depends SG-01
+- [ ] SG-05 docs-and-terminus , WORKFLOW.md, AGENTS.md, README of all three kits carry the axis table; `config seams` on the operator machine shows every seam filled by the kit the table names; `lib/config/module-registry.md` `## Seams` gains `understand.teach` (the table SPEC-249 documents and does not hold) , auto , depends SG-02 SG-03 SG-04
 
 ## Dependencies
 
