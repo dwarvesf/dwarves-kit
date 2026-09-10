@@ -14,6 +14,7 @@ import session_recall as r  # noqa: E402
 
 SEED = os.path.join(ROOT, "fixtures", "seed.jsonl")
 BIN = os.path.join(ROOT, "bin", "session-recall")
+NONDICT = os.path.join(ROOT, "tests", "nondict-edge", "nondict.jsonl")  # OUTSIDE fixtures/: hostile, not a seed
 
 
 class TestRecall(unittest.TestCase):
@@ -28,6 +29,13 @@ class TestRecall(unittest.TestCase):
     def test_negative_control_empty(self):
         hits = r.search(r.load(SEED), "string-that-does-not-exist-zzz")
         self.assertEqual(hits, [])
+
+    def test_load_skips_non_dict_top_level_line(self):
+        # A JSONL line that decodes to valid JSON but not an object (e.g. `["x"]`)
+        # must not crash load(); the valid entry after it is still returned.
+        entries = r.load(NONDICT)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(r._role(entries[0]), "user")
 
     # --- --project short names and --sessions -----------------------------------
     # Motivating miss: `session recall whathas --project ops-toolkit` printed

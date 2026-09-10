@@ -298,6 +298,20 @@ echo "[56] burn F6: ctx uses the LAST main-chain usage in file order, even with 
 out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f6-ctxorder.jsonl" --since 60)"
 if grep -Eq 'f6-ctxor[[:space:]]+-[[:space:]]+/x/proj-f6[[:space:]]+1[[:space:]]+0[[:space:]]+7001[[:space:]]+0[[:space:]]+900000[[:space:]]+1[[:space:]]' <<<"$out"; then ok "F6 ctx=7001 (last main-chain entry wins, timestamp irrelevant)"; else no "F6 ctx wrong: $out"; fi
 
+NEDGE="${DIR}/tests/nondict-edge"   # non-dict-line/message fixtures for cost/report/session-semantic, OUTSIDE tests/fixtures/
+
+echo "[57] cost: a non-dict top-level JSONL line (\"[\\\"x\\\"]\") does not crash; the valid entry is still counted"
+out="$("$CC" cost --file "$BEDGE/f1-baddict.jsonl")"
+if grep -Eq 'claude-sonnet-5[[:space:]]+1[[:space:]]+1[[:space:]]+1[[:space:]]+1' <<<"$out"; then ok "F1 non-dict line skipped, valid entry counted"; else no "F1 cost wrong: $out"; fi
+
+echo "[58] report: a non-dict message and non-dict usage field do not crash any section; the valid entry is still counted"
+out="$("$CC" report --file "$BEDGE/f2-badmsg.jsonl")"
+if grep -q '^# cost' <<<"$out" && grep -Eq 'claude-sonnet-5[[:space:]]+1[[:space:]]+1[[:space:]]+1[[:space:]]+1' <<<"$out"; then ok "F2 non-dict message/usage skipped, report ran end to end, valid entry counted"; else no "F2 report wrong: $out"; fi
+
+echo "[59] session-semantic: a non-dict top-level line and a non-dict user message are skipped; the two valid prompts are still sampled"
+out="$(SESSION_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$NEDGE" --days 0 --json)"
+if grep -q '"prompts": 2' <<<"$out"; then ok "2 valid prompts sampled, non-dict line/message skipped"; else no "session-semantic nondict-edge wrong: $out"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"
