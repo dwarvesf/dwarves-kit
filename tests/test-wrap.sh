@@ -877,7 +877,7 @@ out="$(_report '🔴 **Needs you:**
 a. RUN gh pr merge 12 once security signs off; it is blocked on their approval.' | bash "$LINT" 2>&1)"; rc=$?
 chk_no "a stated blocker clears the warn" "$out" "names a command the kit can run"
 
-out="$(printf 'no needs-you section at all\n\n**Built:** SKIPPED: nothing to build\n\n**Seam:** SKIPPED: no seam\n' | bash "$LINT" 2>&1)"; rc=$?
+out="$(printf 'no needs-you section at all\n\n**Built:** SKIPPED: build_candidates knob is false\n\n**Seam:** SKIPPED: no seam\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "a report with no Needs you block is clean" "$([ "$rc" -eq 0 ]; echo $?)"
 
 # The Built rule itself. commands/wrap.md: step 7b owes exactly one of built / NOTHING /
@@ -890,8 +890,26 @@ out="$(_report '✅ **Needs you:** NOTHING' | sed 's/^\*\*Built:\*\* .*/**Built:
 chk "an empty Built line fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding says it is empty" "$out" "is empty; name what was built"
 
+# The three states must stay distinguishable, and a non-empty line must name the home it
+# joins. `SKIPPED: nothing to build` (two states in one) appeared thirteen times in two weeks
+# of real reports; `Built: <path> @ <sha>` with no ENHANCE/NEW was every "built" line in the
+# same window, and each one was the session's own deliverable, not a 7b candidate.
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** lib/wrap/report-lint.sh @ abc1234|' | bash "$LINT" 2>&1)"; rc=$?
-chk "a Built line naming what was built passes" "$([ "$rc" -eq 0 ]; echo $?)"
+chk "a Built line that is only a path and a commit fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding asks for the ENHANCE or NEW token" "$out" "no ENHANCE <home> or NEW (precedent: ...) token"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: nothing to build|' | bash "$LINT" 2>&1)"; rc=$?
+chk "SKIPPED: nothing to build fails (an empty scan is NOTHING)" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the two-states-in-one shape" "$out" "an empty scan is 'NOTHING: no candidates', not a skip"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an ENHANCE line naming the home and insertion point passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (staged)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW line carrying the precedent miss passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: build_candidates knob is false|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a real SKIPPED reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
 # The Seam rule. Same three states as Built, for the same reason one level up: a seam that was
 # never configured and a seam that was silently dropped read identically without the line, and
