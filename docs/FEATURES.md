@@ -20,7 +20,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `/kit:design` | `[H/I]` | Opt-in interactive solution-design beat between /think and /spec. Explores 2-3 approaches one question at a time, holds for your approval p… | SPEC-003, SPEC-004, SPEC-005 +105 | test-command-emit-sweep.sh, test-design-record.sh, test-gate-vocab-recording.sh +20 |
 | `/kit:devs-team` | `[H/I]` | Parallel multi-lens critique of a solution design (the active spec if present, else the decision brief). Dispatches 5 engineering lenses, m… | SPEC-016, SPEC-018, SPEC-019 +11 | test-gate-vocab-recording.sh, test-meta.sh, test-outcome-emit-sweep.sh |
 | `/kit:dispatch` | `[H/I]` | Fire several disjoint VALIDATED specs concurrently, each in its own worktree, then converge. Cross-goal fan-out behind a disjointness gate … | SPEC-002, SPEC-016, SPEC-017 +77 | test-advisor-ledger-emit.sh, test-agent-effectiveness.sh, test-audit-scanner-contract.sh +30 |
-| `/kit:docs` | `[H/I]` | Update all project documentation to match the current codebase. Cross-references the diff against every doc file and fixes drift. | SPEC-001, SPEC-002, SPEC-003 +184 | proof-loop-09-scenario-b.sh, run-workflow.sh, test-adopt.sh +63 |
+| `/kit:docs` | `[H/I]` | Update all project documentation to match the current codebase. Cross-references the diff against every doc file and fixes drift. | SPEC-001, SPEC-002, SPEC-003 +185 | proof-loop-09-scenario-b.sh, run-workflow.sh, test-adopt.sh +63 |
 | `/kit:draft-agent` | `[H/I]` | Meta-agent agent-builder. From a one-line description, generates a new subagent definition OR a mega-goal sub-goal file and (by default) in… | SPEC-089, SPEC-108, SPEC-139 +1 | test-agent-effectiveness.sh, test-command-emit-sweep.sh, test-meta-agent.sh +1 |
 | `/kit:execute` | `[H/I]` | Autonomous spec execution with verification. Dispatches worker subagents per task, verifies each with task-verifier, retries fixable failur… | SPEC-001, SPEC-003, SPEC-004 +58 | test-break-it.sh, test-gate-vocab-recording.sh, test-hooks.sh +9 |
 | `/kit:explain` | `[H/I]` | Turn a merged change into a literate-diff explainer a human READS to understand: background -> goal + intuition -> a prose-ordered diff -> … | SPEC-050, SPEC-060, SPEC-094 +18 | proof-loop-09-scenario-b.sh, test-command-emit-sweep.sh, test-config-registry.sh +10 |
@@ -99,9 +99,9 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `get-api-docs` | `[I]` | Fetch curated API documentation using Context Hub (chub) before coding against any external API. Use when the task involves calling a third… | SPEC-285 | test-kit-foldin-hooks.sh |
 | `loop-engineering` | `[I]` | Use when the user wants to design or add a new bounded loop to the kit's own SDLC orchestration ("let's build a loop", "design a new loop f… | SPEC-209, SPEC-222, SPEC-225 +4 | test-loop-engineering-contract.sh, test-research-arch-contract.sh |
 | `memory-tidy` | `[I]` | Use when auditing, consolidating, or cleaning a repo's .claude/memory store, "dọn memory", "memory tidy", the biweekly memory audit, dupl… | SPEC-208, SPEC-225, SPEC-249 | test-memory-tidy-contract.sh, test-research-arch-contract.sh |
-| `observe` | `[I]` | Query and render the kit's control plane from an agent session. Use when asked about the fleet's runs, gate verdicts, conformance, spend/to… | SPEC-033, SPEC-052, SPEC-128 +10 | test-bin-forwarders.sh, test-kit-contract.sh, test-orchestrate-wavefront.sh +1 |
+| `observe` | `[I]` | Query and render the kit's control plane from an agent session. Use when asked about the fleet's runs, gate verdicts, conformance, spend/to… | SPEC-033, SPEC-052, SPEC-128 +11 | test-bin-forwarders.sh, test-kit-contract.sh, test-orchestrate-wavefront.sh +1 |
 | `skill-review` | `[I]` | Review and promote skill drafts that skill-curator staged from past sessions. Use when the user runs /skill-review, says "review my skill d… | SPEC-218, SPEC-285 | test-bin-forwarders.sh, test-kit-contract.sh |
-| `stats` | `[I]` | Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers (the dwarves-kit gate/proof/telemetry corpus, tide file-move… | SPEC-001, SPEC-182, SPEC-192 +16 | proof-loop-09-scenario-b.sh, test-bin-forwarders.sh, test-config-stamp.sh +9 |
+| `stats` | `[I]` | Query or render the state of the scattered kit/tide/tg-cleanup/learned ledgers (the dwarves-kit gate/proof/telemetry corpus, tide file-move… | SPEC-001, SPEC-182, SPEC-192 +17 | proof-loop-09-scenario-b.sh, test-bin-forwarders.sh, test-config-stamp.sh +9 |
 | `topology-drift` | `[I]` | Maintainer-only (dwarves-kit repo dev only). Use to audit THIS KIT's OWN feature estate against its path map, "run the topology-drift loop"… | SPEC-225, SPEC-235, SPEC-237 | test-audit-scanner-contract.sh, test-meta.sh |
 | `web-drift` | `[I]` | Use for the live-website agent-readiness audit, "run the web-drift loop", "audit our websites", "are our sites still readable by an agent",… | SPEC-232 | test-web-drift-refusal-guard.sh |
 
@@ -109,10 +109,10 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 
 | Hook | Trigger | Event | Description | Specs | Tests |
 |---|---|---|---|---|---|
-| `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +7 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
+| `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +8 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `auto-format.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: Write\|Edit | SPEC-003, SPEC-084 | test-adopt.sh, test-hooks.sh, test-install-modules.sh |
 | `backlog-stage.sh` | `[E]` | SessionEnd | SessionEnd hook, function-named port of ops-toolkit's cc-backlog | SPEC-192, SPEC-194, SPEC-195 +4 | test-adopt.sh, test-install-modules.sh, test-intake-sweep.sh +2 |
-| `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | - | test-install-modules.sh, test-kit-foldin-hooks.sh |
+| `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | SPEC-253 | test-install-modules.sh, test-kit-foldin-hooks.sh |
 | `codebase-index.sh` | `[E]` | SessionStart | SessionStart hook (OPT-IN), dwarves-kit | SPEC-043, SPEC-084, SPEC-085 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `commit-format.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-014, SPEC-032, SPEC-064 +1 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `context-hints.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook, function-named port of ops-toolkit's | - | test-adopt.sh, test-install-modules.sh, test-kit-foldin-hooks.sh |
@@ -128,9 +128,9 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +3 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +2 |
 | `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +7 | proof-loop-09-scenario-b.sh, test-hooks.sh, test-install-modules.sh +2 |
 | `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
-| `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +3 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
+| `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +4 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `ship-gate.sh` | `[E]` | PreToolUse | each matrix row mapped to the run that exercised it, or an | SPEC-006, SPEC-042, SPEC-044 +47 | test-every-step-review.sh, test-gate-outcome.sh, test-hooks.sh +13 |
-| `slop-cleaner.sh` | `[E]` | Stop | breaking the "Exit 0 always" contract three lines above. | SPEC-013, SPEC-014, SPEC-084 +2 | test-hooks.sh, test-install-modules.sh |
+| `slop-cleaner.sh` | `[E]` | Stop | breaking the "Exit 0 always" contract three lines above. | SPEC-013, SPEC-014, SPEC-084 +3 | test-hooks.sh, test-install-modules.sh |
 | `spec-drift-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Write | SPEC-003, SPEC-005, SPEC-006 +4 | test-hooks.sh, test-install-modules.sh |
 | `statusline.sh` | `[E]` | StatusLine | StatusLine script | SPEC-025, SPEC-084, SPEC-219 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `tool-policy-guard.sh` | `[E]` | PreToolUse | PreToolUse hook enforcing the tool-choice policy. | SPEC-212 | test-install-modules.sh, test-tool-policy-guard.sh |
