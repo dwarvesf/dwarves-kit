@@ -10,7 +10,7 @@ Effort: medium
 
 ## Outcome
 
-Two skills whose whole job is writing knowledge into a tree: `knowledge-capture` (the til leg: format, privacy strip, push) and `memorize` (route a fact to its durable store). They already read `knowledge.root` in spirit; now they read it by name, the seam SPEC-249 gave context-kit. The til privacy gate moves with `knowledge-capture` unchanged and stays the only path to a public note.
+Two skills whose whole job is writing knowledge into a tree: `knowledge-capture` (the til leg: format, privacy strip, push) and `memorize` (route a fact to its durable store). They already read `knowledge.root` in spirit; now they read it by name, the seam SPEC-249 gave context-kit. `memorize` is a dotfiles directory; `knowledge-capture` is a chezmoi `symlink_*` entry pointing at `~/workspace/claude-skills/skills/knowledge-capture/`, so its body moves from the claude-skills repo and the dotfiles half is removing the symlink entry. The til privacy gate moves with `knowledge-capture` unchanged and stays the only path to a public note.
 
 ## Quality bar
 
@@ -25,5 +25,5 @@ Receive in context-kit, retire in dotfiles, verify `bin/config seams` on the ope
 ## Scope edges
 
 **In:** the two skills, their root resolution, the retirements.
-**Out:** the study or dev-learner lanes; the concept ledger.
+**Out:** the study or understand lanes; the concept ledger.
 **Not:** a new write path into the tree (context-kit's rule: no non-file write path).

@@ -2,7 +2,7 @@
 
 **Merge policy:** auto
 **Time budget:** 3 hours
-**Proof:** run-table: `bin/config seams` lists `wrap.learn` (kind `skill`, filled by "learning-kit dev-learner lane, or the operator"); `commands/wrap.md` Step 7a and 7c invoke the seam and name no skill; `tests/test-boundary-lint.sh` is green on this branch and RED when a fixture line `learning-ledger` is planted in `lib/learn/weekend-batch.sh` (NEGATIVE CONTROL); `bin/learn` forwards to `bin/reflect` with a one-line deprecation, `tests/run-all.sh` green.
+**Proof:** run-table: `bin/config seams` lists `understand.teach` (kind `skill`, filled by "learning-kit understand lane, or the operator"); `commands/wrap.md` Step 7a and 7c invoke the seam and name no skill; `tests/test-boundary-lint.sh` is green on this branch and RED when a fixture line `learning-ledger` is planted in `lib/learn/weekend-batch.sh` (NEGATIVE CONTROL); `bin/learn` forwards to `bin/reflect` with a one-line deprecation, `tests/run-all.sh` green.
 **Depends on:** 00 Accepted.
 Model: sonnet
 Effort: high
@@ -10,7 +10,7 @@ Effort: high
 
 ## Outcome
 
-Three things. A `wrap.learn` seam key: `[wrap] learn = ""` in `kit.toml`, a registry row, a `## Seams` row, resolved with `kit_config_get_root` like its siblings; Step 7a records the DEBT marker as it does today and then invokes whatever `wrap.learn` names, and Step 7c does the same for the incident memory note, so the engine writes the data and the learner's kit decides what to teach from it. A boundary lint, `lib/gate/boundary-lint.sh`, wired into `tests/run-all.sh`, that greps `lib/`, `commands/`, `tests/`, `kit.toml` for any of: a dotfiles path, `ops-toolkit/`, or the name of a skill that is not under `skills/` in this repo, and fails naming the line; the allowlist is the `## Seams` table's `Filled by` column and nothing else. The `learn` → `reflect` rename: `bin/reflect` and `lib/reflect/` carry `propose` and `drain`; `bin/learn` stays as a forwarder that prints one deprecation line; `learn debt` moves under `bin/reflect debt` because the DEBT ledger reader is engine data.
+Three things. A `understand.teach` seam key: `[understand] teach = ""` in `kit.toml`, a registry row, a `## Seams` row, resolved with `kit_config_get_root` like its siblings; Step 7a records the DEBT marker as it does today and then invokes whatever `understand.teach` names, and Step 7c does the same for the incident memory note, so the engine writes the data and the learner's kit decides what to teach from it. A boundary lint, `lib/gate/boundary-lint.sh`, wired into `tests/run-all.sh`, that greps `lib/`, `commands/`, `tests/`, `kit.toml` for any of: a dotfiles path, `ops-toolkit/`, or the name of a skill that is not under `skills/` in this repo, and fails naming the line; the allowlist is the `## Seams` table's `Filled by` column and nothing else. The `learn` → `reflect` rename: `bin/reflect` and `lib/reflect/` carry `propose` and `drain`; `bin/learn` stays as a forwarder that prints one deprecation line; `learn debt` moves under `bin/reflect debt` because the DEBT ledger reader is engine data.
 
 ## Quality bar
 
@@ -24,6 +24,6 @@ No new engine: the seam is one more row in the tables SPEC-249 already built. Th
 
 ## Scope edges
 
-**In:** the key, the lint, the rename, Step 7a/7c prose, the seams table.
+**In:** the key, the lint, the rename (subsystem `learn` to `reflect` AND the Learn stage of ADR-0034's five-stage table to Reflect, in every doc that prints the table: WORKFLOW.md, AGENTS.md, README.md, `docs/FEATURES.md` if it names stages), Step 7a/7c prose, the seams table. One word per loop, everywhere: Reflect, Understand, Study.
 **Out:** any skill body; learning-kit; dotfiles.
 **Not:** changing what the DEBT marker records or when.
