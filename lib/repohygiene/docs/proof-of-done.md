@@ -47,8 +47,17 @@ closed mega-goals, and `_meta/learned-ledger.md` (counts, no documented threshol
 reference half of the contract reproduces exactly and the evidence grep returns zero hits at
 `c2e7ae56^`, but at any sane `--stale-days` the age gate suppresses it. Age is a noise filter,
 not part of the contract, so the skill instructs a first pass over a repo to run detector 1
-twice, once at the default and once at `--stale-days 0`. The second run is what surfaces this
-file. At the default 180 days, the same repo yields zero detector-1 findings in 8 seconds.
+twice, once at the default and once at `--stale-days 0`.
+
+```
+git -C <ops-toolkit> worktree add --detach <tmp> c2e7ae56^
+bash lib/repohygiene/repohygiene.sh scan --repo <tmp> --detectors 1                        # 0 findings, 8s
+bash lib/repohygiene/repohygiene.sh scan --repo <tmp> --detectors 1 --stale-days 0 \
+     --max-candidates 5000                                                                 # 93 findings, ~9min
+```
+
+The wide run is where the map appears, at line 3 of 95. The cost is why `--max-candidates`
+exists: the reference grep is one pass per candidate, because that grep IS the evidence.
 
 ### Caveat 2: detector 2 cannot be validated against this history
 
@@ -83,6 +92,33 @@ ignored dir, then the same dir under the size threshold and warm.
 
 ## 4. Negative control
 
-Recorded in section 5 below, after the build commit.
+Run after the build commit `d66b16e`, against the two invariants that carry the real cost if
+they break: the detector-3 majority rule (a wrong owner moves someone's record to the wrong
+place) and the detector-5 report-only verdict (a `REMOVE` on a gitignored path is a deletion
+proposal the contract forbids).
 
-## 5. Negative control run
+```
+=== NC-1: break the detector-3 majority rule ===
+ lib/repohygiene/repohygiene.sh | 2 +-
+  FAIL a minority owner scope does not claim the file
+40/41 passed, 1 failed
+
+=== NC-2: break the detector-5 report-only verdict ===
+ lib/repohygiene/repohygiene.sh | 2 +-
+  FAIL flags the large cold ignored dir as UNSURE
+  FAIL every detector-5 finding is UNSURE, never FIX or REMOVE
+39/41 passed, 2 failed
+
+=== restored, green again ===
+41/41 passed, 0 failed
+```
+
+NC-1 replaced the majority guard with a bare single-owner test. NC-2 changed detector 5's
+`emit 5 UNSURE` to `emit 5 REMOVE`. Both were restored with `git checkout --` and the suite
+returns to 41/41.
+
+The first NC-2 run failed only ONE assertion, because the detector-5 warm-dir case earlier in
+the suite left the fixture fresh and the contract case had no detector-5 finding to judge. The
+contract case now asserts that it produced one before judging it, which is what turned NC-2
+into two failures. A negative control that catches a hole in the test suite itself is the
+point of running one.

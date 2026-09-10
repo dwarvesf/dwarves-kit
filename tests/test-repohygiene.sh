@@ -196,7 +196,9 @@ assert "a warm dir is not flagged" $R
 echo "-- contract: the loop surfaces, it never deletes --"
 # Every detector, one repo, all decay classes at once: no output line may carry a delete verb
 # or the REMOVE verdict outside detector 2, and no line may propose acting on an ignored path.
+touch -t 202401020000 "$R5/.venv/lib/blob.bin"   # the warm-dir case above left it fresh
 OUT="$(scan "$R2" --detectors 1,2,3,4,5 --stale-days 1 --cold-mb 1)$(scan "$R5" --detectors 1,2,3,4,5 --stale-days 1 --cold-mb 1)"
+printf '%s\n' "$OUT" | grep -q '^5	'; assert "the contract run actually produced a detector-5 finding to judge" $?
 printf '%s\n' "$OUT" | grep -qE '(^|[^a-z])(rm -rf|rm -f|git rm|unlink |trash )'; R=$?
 assert "no scan output contains a deletion command" $([ "$R" -ne 0 ] && echo 0 || echo 1)
 # The scanner cleans up its OWN mktemp dir; every other deletion verb is a defect.
