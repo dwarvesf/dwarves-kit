@@ -305,7 +305,7 @@ seal "$MI" "feat(icy-ops): live engine wave one"
 echo x >> "$MI/_meta/megagoals/live-engine/ROADMAP.md"; seal "$MI" "feat(icy-ops): live engine wave two"
 mkdir -p "$MI/_meta/megagoals/*"
 printf '%s\n' '# g' '' '**Status:** COMPLETE' '' '- [x] 01 done' > "$MI/_meta/megagoals/*/ROADMAP.md"
-seal "$MI" "docs: a folder named star"
+seal "$MI" "feat(icy-ops): a folder named star"
 OUT="$(scan "$MI" --detectors 3)"
 printf '%s\n' "$OUT" | grep -q '^3	FIX'; R=$?
 assert "a glob-named mega-goal folder never earns a FIX" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
@@ -316,8 +316,11 @@ assert "the live sibling stays suppressed beside a glob-named folder" $R "-- got
 
 # The open-item gate is a veto, so anything that empties the box count silently converts
 # "unfinished" into "finished". A checklist in a non-markdown record used to be invisible.
+# The checked box lives in the .md so the checked-item gate cannot mask the miss: narrowing the
+# extension set must flip this case to FIX, not merely to a different UNSURE.
 MJ="$(mkmega txt-goal)"
-printf '%s\n' '# g' '' '**Status:** SHIPPED' > "$MJ/_meta/megagoals/txt-goal/README.md"
+printf '%s\n' '# g' '' '**Status:** SHIPPED' '' '- [x] 00 prep, PR #0' \
+  > "$MJ/_meta/megagoals/txt-goal/README.md"
 printf '%s\n' '- [x] 01 done, PR #1' '- [ ] 02 still open, PR #' \
   > "$MJ/_meta/megagoals/txt-goal/ROADMAP.txt"
 seal "$MJ" "feat(icy-ops): txt-goal"
@@ -327,9 +330,12 @@ assert "a checklist in a non-markdown record still counts" $([ "$R" -ne 0 ] && e
 
 # Sub-goals in this estate are numbered, so a numbered or blockquoted open item is not exotic.
 # Missing one reads as "none open", which fails in the direction that MOVES something.
+# A bullet-checked item sits beside the numbered one so the checked-item gate cannot mask the
+# miss: narrowing the anchor must flip this case to FIX, not merely to a different UNSURE.
 MK="$(mkmega numbered-goal)"
 printf '%s\n' \
   '# Mega-goal: numbered-goal' '' '**Status:** SHIPPED' '' \
+  '- [x] zero, PR #0' \
   '1. [x] first, PR #1' \
   '2. [ ] second, STILL OPEN' > "$MK/_meta/megagoals/numbered-goal/ROADMAP.md"
 seal "$MK" "feat(icy-ops): numbered-goal"
@@ -411,6 +417,36 @@ seal "$MQ" "feat(icy-ops): subgoal-status"
 OUT="$(scan "$MQ" --detectors 3)"
 printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/subgoal-status'; R=$?
 assert "a sub-goal's own status line does not declare the mega-goal closed" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+
+# The pathspec hazard is not confined to folders. A tracked FILE literally named `*.md` in a
+# central directory matched every sibling there, so its owner and its commit count were both
+# harvested from files it never touched, in a row that carries a destination.
+MS="$(mkrepo)"
+mkdir -p "$MS/_meta" "$MS/tools/icy-ops" "$MS/tools/other-tool"
+echo t > "$MS/tools/icy-ops/README.md"; echo t > "$MS/tools/other-tool/README.md"; echo r > "$MS/README.md"
+git -C "$MS" add -A; commit_at "$MS" "2024-01-02T00:00:00" "chore: seed"
+echo a > "$MS/_meta/notes.md"; git -C "$MS" add -A; commit_at "$MS" "2024-02-01T00:00:00" "feat(other-tool): one"
+echo b >> "$MS/_meta/notes.md"; git -C "$MS" add -A; commit_at "$MS" "2024-02-02T00:00:00" "feat(other-tool): two"
+echo c >> "$MS/_meta/notes.md"; git -C "$MS" add -A; commit_at "$MS" "2024-02-03T00:00:00" "feat(other-tool): three"
+echo s > "$MS/_meta/*.md"; git -C "$MS" add -A; commit_at "$MS" "2024-02-04T00:00:00" "feat(icy-ops): star file"
+OUT="$(scan "$MS" --detectors 3)"
+has "$OUT" "owner tools/icy-ops in 1 of 1 commits" && R=0 || R=1
+assert "a file named like a glob is judged on its own history alone" $R "-- got: $OUT"
+
+# One owner that resolves but does not hold a majority is short of what a move needs, exactly
+# as it is on the file side.
+MT="$(mkmega minority-goal)"
+printf '%s\n' '# g' '' '**Status:** SHIPPED' '' '- [x] 01 done, PR #1' \
+  > "$MT/_meta/megagoals/minority-goal/ROADMAP.md"
+seal "$MT" "feat(icy-ops): minority-goal one"
+echo x >> "$MT/_meta/megagoals/minority-goal/ROADMAP.md"; seal "$MT" "docs: minority-goal two"
+echo y >> "$MT/_meta/megagoals/minority-goal/ROADMAP.md"; seal "$MT" "docs: minority-goal three"
+echo z >> "$MT/_meta/megagoals/minority-goal/ROADMAP.md"; seal "$MT" "docs: minority-goal four"
+OUT="$(scan "$MT" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/minority-goal'; R=$?
+assert "a minority owner scope does not move a mega-goal" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+has "$OUT" "short of the majority a move needs" && R=0 || R=1
+assert "the UNSURE row names the majority as the condition that failed" $R "-- got: $OUT"
 
 # `State:` is the other half of the documented marker shape, and a list-form label is the third.
 MR="$(mkmega state-marker)"

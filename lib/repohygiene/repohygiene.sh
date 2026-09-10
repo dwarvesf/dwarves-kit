@@ -297,6 +297,11 @@ MG_DECL_RE='^([[:space:]]*[-*][[:space:]]+|#{1,6}[[:space:]]*)?[[:space:]]*\**(S
 # case-insensitive, because the completion gate must not be dodged by renaming one file: a
 # checklist in `ROADMAP.txt` was invisible to the box count, and the folder above it then read
 # as finished with "none open".
+#
+# `-type f` is load-bearing, not tidiness: it excludes SYMLINKS. A tracked
+# `STATUS.md -> /outside/secret` otherwise decided a folder's verdict and put matching lines
+# from outside the repo into a report bound for a PR body, the same escape invariant 13 exists
+# for on the `--staging-dir` side.
 mg_docs() {
   local depth=""
   [ "${2:-0}" = "1" ] && depth="-maxdepth 1"
@@ -308,10 +313,6 @@ mg_docs() {
 mg_state() {
   local f rec n lower first_closed=""
   while IFS= read -r -d '' f; do
-    # A SYMLINK is not read. A tracked `STATUS.md -> /outside/secret` otherwise decided the
-    # verdict and put matching lines from outside the repo into a report bound for a PR body,
-    # the same escape invariant 13 exists for on the `--staging-dir` side.
-    [ -L "$f" ] && continue
     while IFS= read -r rec; do
       n="${rec%%:*}"
       lower=$(printf '%s' "${rec#*:}" | tr 'A-Z' 'a-z')
