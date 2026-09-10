@@ -51,16 +51,16 @@ echo "=== AC-3: dispatch contract, both sides ==="
 grep -qF '### Step 2: Research (if brownfield)' "$C"
 assert "row 7: dispatcher Step 2 is brownfield-gated" $?
 
-grep -qF '**research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/architecture.md`."' "$C"
+grep -qF '**research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."' "$C"
 assert "row 8: Mode A dispatch line names agent + exact write target" $?
 
 grep -qF 'dispatch all 4 via the Task tool in parallel' "$C"
 assert "row 9: all 4 research agents dispatched in parallel via Task tool" $?
 
-grep -qF 'Map architecture patterns. Find: directory structure conventions, error handling patterns, naming conventions, how the 2-3 most recent features were built (check git log). Show concrete examples. Max 60 lines. Write to docs/research/architecture.md.' "$C"
+grep -qF 'Map architecture patterns. Find: directory structure conventions, error handling patterns, naming conventions, how the 2-3 most recent features were built (check git log). Show concrete examples. Max 60 lines. Write to docs/research/<date>-<slug>-architecture.md.' "$C"
 assert "row 10: Mode B inline fallback prompt pinned verbatim" $?
 
-test "$(sed -n '/^### Step 2: Research/,/^### Step 3/p' "$C" | grep -cF 'docs/research/architecture.md')" -eq 2 && grep -qF 'Write to `docs/research/architecture.md`:' "$A"
+test "$(sed -n '/^### Step 2: Research/,/^### Step 3/p' "$C" | grep -cF 'docs/research/<date>-<slug>-architecture.md')" -eq 2 && grep -qF 'Write to `docs/research/<date>-<slug>-architecture.md`' "$A"
 assert "row 11: write target agrees across files (Step 2 region count 2 + agent body)" $?
 
 echo ""

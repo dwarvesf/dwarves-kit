@@ -43,7 +43,7 @@ If a `.claude/goals/<slug>.md` already exists for this id (one draft per id), re
 
 ### Step 2b: Brief-on-file check
 
-Before drafting the goal, check whether a solution design already exists on disk: `docs/briefs/DECISION-BRIEF.md` (the per-worktree convention) or a slug-matched `docs/briefs/DECISION-BRIEF-<slug>.md`. If one is found, offer to reuse it -- fold its Problem/Solution framing into Step 3's Context-to-read instead of drafting the goal blind. Decline = no-op, proceed to Step 3 as if no brief existed. Advisory only ("Detect, don't dictate"): it never blocks drafting the goal.
+Before drafting the goal, check whether a solution design already exists on disk: a slug-matched `docs/briefs/DECISION-BRIEF-<slug>.md`, else the legacy `docs/briefs/DECISION-BRIEF.md` (the pre-slug per-worktree convention). If one is found, offer to reuse it -- fold its Problem/Solution framing into Step 3's Context-to-read instead of drafting the goal blind. Decline = no-op, proceed to Step 3 as if no brief existed. Advisory only ("Detect, don't dictate"): it never blocks drafting the goal.
 
 ### Step 3: Project the six-section operating directive
 

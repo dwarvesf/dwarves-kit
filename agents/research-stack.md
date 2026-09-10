@@ -25,7 +25,7 @@ If codebase-memory-mcp is available, use `get_structure()` instead of reading fi
 
 ## Output format
 
-Write to `docs/research/stack.md`:
+Write to `docs/research/<date>-<slug>-stack.md` (the dispatch prompt supplies `<date>` and `<slug>`; if neither was supplied, fall back to `docs/research/stack.md`):
 
 ```markdown
 # Stack Report

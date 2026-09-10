@@ -31,7 +31,7 @@ If codebase-memory-mcp is available, use `find_dead_code()` and `trace_call_path
 
 ## Output format
 
-Write to `docs/research/pitfalls.md`:
+Write to `docs/research/<date>-<slug>-pitfalls.md` (the dispatch prompt supplies `<date>` and `<slug>`; if neither was supplied, fall back to `docs/research/pitfalls.md`):
 
 ```markdown
 # Pitfall Report

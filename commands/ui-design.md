@@ -10,7 +10,7 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
 
 ## Step 1: Write the `## UI design` brief (spec-first)
 
-Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005). Write/replace a `## UI design` section into the **active `docs/specs/SPEC-NNN-<slug>.md` if one exists, else `docs/briefs/DECISION-BRIEF.md`** (else create the brief). If several specs match, ask the user which one; do not auto-pick. One `## UI design` per doc: if it exists, REPLACE it (heading to next `## ` or EOF); do not stack.
+Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005). Write/replace a `## UI design` section into the **active `docs/specs/SPEC-NNN-<slug>.md` if one exists, else `docs/briefs/DECISION-BRIEF-<slug>.md` (falling back to the legacy `docs/briefs/DECISION-BRIEF.md` if that is the one already on disk)** (else create the brief at `docs/briefs/DECISION-BRIEF-<slug>.md`). If several specs match, ask the user which one; do not auto-pick. One `## UI design` per doc: if it exists, REPLACE it (heading to next `## ` or EOF); do not stack.
 
 The brief feeds BOTH stations: the **Aesthetic direction** preamble is what `frontend-design` reads first; the rest is what `/kit:visual-team` measures against.
 

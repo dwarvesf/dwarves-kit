@@ -28,7 +28,7 @@ If codebase-memory-mcp is available, use `search_symbols()` and `trace_call_path
 
 ## Output format
 
-Write to `docs/research/features.md`:
+Write to `docs/research/<date>-<slug>-features.md` (the dispatch prompt supplies `<date>` and `<slug>`; if neither was supplied, fall back to `docs/research/features.md`):
 
 ```markdown
 # Feature Map: [target area]
