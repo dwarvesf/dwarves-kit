@@ -13,10 +13,10 @@ run caught a real defect (AC9) that was fixed before this record (see Recheck be
 |---|---|---|---|
 | 1 | Detector suite (AC1-9) | `bash tests/test-onboard-detect.sh` | 19/19: four modes classified from fixture `$CLAUDE_DIR`s, explain non-empty, third-party-hook NC not misread, read-only tree-hash proof, install.sh signal drift pin, no-hardcoded-roster pin |
 | 2 | Scenario-(b) re-execution harness | `bash tests/proof-loop-09-scenario-b.sh` | 19/19: every transcript claim reproduced live (detect=bash, not-adopted, dry-run previews 5 writes + writes nothing, decline leaves porcelain 0, 12-module registry roster, ONE `adopt --with` seeds `bridge=true`, `prose_rag` honestly not seedable, `PROSE_RAG_INJECT` env-only + inert default) |
-| 3 | Transcript (a): fresh plugin-only machine | fixture captures | `docs/proof/loop-09-onboard-wizard/a-fresh-plugin-machine.md` , detect=`plugin`, dry-run preview, baseline accepted, one adopt call, plugin-gap disclosure, five-leg tour |
-| 4 | Transcript (b): bash machine + unadopted repo | fixture captures | `docs/proof/loop-09-onboard-wizard/b-bash-unadopted-repo.md` , detect=`bash`, `--with` genuinely seeds a toggled module, registry-only add-on disclosed honestly with registry-generated knob guidance |
-| 5 | Transcript (c): already-adopted repo | fixture captures | `docs/proof/loop-09-onboard-wizard/c-already-adopted-repo.md` , adopted branch reports healthy, calls adopt zero times, file-set hash byte-identical before/after |
-| 6 | Decline-NC | fixture captures | `docs/proof/loop-09-onboard-wizard/decline-nc.md` , every prompt declined: `git status --porcelain` 0/0 lines, git tree `d1f694d2...` == `d1f694d2...`, file-set sha `650791aa...` == `650791aa...`, byte-identical |
+| 3 | Transcript (a): fresh plugin-only machine | fixture captures | `docs/verification/loop-09-onboard-wizard/a-fresh-plugin-machine.md` , detect=`plugin`, dry-run preview, baseline accepted, one adopt call, plugin-gap disclosure, five-leg tour |
+| 4 | Transcript (b): bash machine + unadopted repo | fixture captures | `docs/verification/loop-09-onboard-wizard/b-bash-unadopted-repo.md` , detect=`bash`, `--with` genuinely seeds a toggled module, registry-only add-on disclosed honestly with registry-generated knob guidance |
+| 5 | Transcript (c): already-adopted repo | fixture captures | `docs/verification/loop-09-onboard-wizard/c-already-adopted-repo.md` , adopted branch reports healthy, calls adopt zero times, file-set hash byte-identical before/after |
+| 6 | Decline-NC | fixture captures | `docs/verification/loop-09-onboard-wizard/decline-nc.md` , every prompt declined: `git status --porcelain` 0/0 lines, git tree `d1f694d2...` == `d1f694d2...`, file-set sha `650791aa...` == `650791aa...`, byte-identical |
 | 7 | Rung-3 recheck (fresh context) | recheck-verifier re-executes #1 + #2 | Round 1: FAIL:fixable , caught AC9 red (the honest-caveat prose hardcoded module names, contradicting the transcript's "never a hardcoded list" claim). Fixed (caveat now derives adopt's seedable set at runtime). Round 2: PASS (both harnesses re-executed fresh, 19/19 + 19/19) |
 | 8 | Advisor P5 critique on transcripts | advisor, critique mode | see "Advisor pass" below |
 | 9 | Multi-lens review (SPEC-069: lib/ touched) | security + architecture code-reviewer lenses | Security: SHIP (0 critical/major; read-only contract of the detector verified line-by-line + by AC7; 1 pre-existing repo-wide MINOR noted, unguarded mktemp convention). Architecture: see below |
@@ -102,5 +102,5 @@ caveat's removal. Follow-up for the lead: sync adopt.sh's module list (one-line 
 ## Done= check
 
 Per the goal file: "three transcripts + decline-NC committed + advisor pass recorded + PR open and
-HELD for Han." Transcripts #3-#5 + NC #6 committed under `docs/proof/loop-09-onboard-wizard/`;
+HELD for Han." Transcripts #3-#5 + NC #6 committed under `docs/verification/loop-09-onboard-wizard/`;
 advisor pass recorded above; the PR is opened GATED (never merged) per the sub-goal's merge policy.

@@ -1,7 +1,7 @@
 # skill-curator RUNBOOK
 
-Operator-mid-incident guide. Symptom, diagnosis, fix. For daily use see [MANUAL.md](./MANUAL.md);
-for the design see [docs/architecture.md](./docs/architecture.md).
+Operator-mid-incident guide. Symptom, diagnosis, fix. For daily use see [MANUAL.md](../MANUAL.md);
+for the design see [architecture.md](./architecture.md).
 
 The standing safety net: every reviewer/curate path **logs and exits 0** on any failure (a
 self-improvement run must never break your session), and nothing here ever deletes a skill. So most

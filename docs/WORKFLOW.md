@@ -1033,14 +1033,15 @@ fallback because it alone can run with neither a spec nor a brief.
 | `## Test plan` | in the active spec | per-spec | build input `/kit:execute` reads from the spec it runs |
 | `## Design critique` (`/kit:devs-team`) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
 | `## UI design` + `## Visual critique` (`/kit:ui-design`; `/kit:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
-| `docs/briefs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
+| `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) | working-tree file | one per feature slug (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier. Slugged per feature (not just per worktree) since these files get committed and merged, so two features sharing a worktree/branch history must not collide |
 | `## Review` (`/kit:review`, `/kit:review-team`) | in the active spec | per-spec | review verdict + findings + TODOs; replace-not-stack; inline in chat if no spec exists |
 | kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |
 
 The pre-spec brief is the one artifact that cannot be per-spec (no SPEC-NNN exists
-yet); in that window concurrency relies on worktree isolation, and `/spec` folds the
-brief into the spec so the spec becomes the carrier from then on. Same-directory
-branch-switching is NOT a supported concurrency mode; use a worktree per spec.
+yet); in that window it is named per feature slug (`DECISION-BRIEF-<slug>.md`), and
+`/spec` folds it into the spec so the spec becomes the carrier from then on.
+Same-directory branch-switching is NOT a supported concurrency mode; use a worktree
+per spec.
 
 ### Multi-session (cross-session) coordination
 `/kit:dispatch` above is the **single-session** case: one lead session fans out workers
@@ -1254,7 +1255,7 @@ later reader and an earlier writer never split across two specs.
 
 | # | Flow | Trigger | Writes to | Stop |
 |---|---|---|---|---|
-| 1 | `/kit:design` | between `/think` and `/spec`, when the solution needs working out | `docs/briefs/DECISION-BRIEF.md` (folded into the spec by `/spec`) | solution agreed per section |
+| 1 | `/kit:design` | between `/think` and `/spec`, when the solution needs working out | `docs/briefs/DECISION-BRIEF-<slug>.md` (folded into the spec by `/spec`) | solution agreed per section |
 | 2 | `/kit:devs-team` | before the spec hardens; 5 engineering lenses | `## Design critique` in the active spec (else the brief) | verdict recorded |
 | 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
 | 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |

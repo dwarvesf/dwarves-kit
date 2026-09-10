@@ -46,8 +46,10 @@ consuming end.
 (`docs/implementation-notes/<slug>.md`) -- reporting `found`/`absent` honestly either way.
 
 **Why (the gap the spec's Problem section flags):** the corpus already has BOTH conventions. A
-non-mega-goal run like `fix/cc-hyg-04-stop-tax` produces rid `cc-hyg-04-stop-tax`, and its
-impl-notes file IS `docs/implementation-notes/cc-hyg-04-stop-tax.md` -- rid and slug match exactly.
+non-mega-goal run like `fix/cc-hyg-04-stop-tax` produced rid `cc-hyg-04-stop-tax`, and its
+impl-notes file WAS `docs/implementation-notes/cc-hyg-04-stop-tax.md` -- rid and slug matched
+exactly (that file is since renamed to `stop-tax.md` per the `cc-` prefix retirement, so this
+example now illustrates the historical shape, not a live one).
 But the understanding-gate mega-goal's own sub-goals (SG-02, SG-03) used the SHORTER feature slug
 (`docs/implementation-notes/significance-classify.md`, `explain-command.md`), dropping the
 `ug-02-`/`ug-03-` branch prefix their rid carries. There is no single deterministic rid->slug rule

@@ -76,7 +76,7 @@ Human override always wins; the registry suggests. More types get appended as ne
 1. `lib/classify/task-type-classify.sh classify "<desc>"` returns a type for each of the 6 seed types on representative descriptions; `... types` lists them.
 2. `docs/verification/task-types.md` exists with one row per seed type (type, artifact, skill, default class).
 3. `proof-gate.sh contract "<desc>"` composes CLASS + TYPE and returns the type-specific requirement + skill pointer (e.g. a CLI-build desc returns the recorded-run requirement pointing at `ops-tool-shape`).
-4. Proof of done for THIS spec: a recorded run showing the new classifier + contract on sample tasks, plus a negative control (a description that should NOT match a type falls through to a sane default), captured in `docs/verification/SPEC-044.md`.
+4. Proof of done for THIS spec: a recorded run showing the new classifier + contract on sample tasks, plus a negative control (a description that should NOT match a type falls through to a sane default), captured in `docs/verification/proof-done-task-types.md`.
 5. `tests/test-meta.sh` still passes (no duplicate SPEC number; registry well-formed).
 
 ## Resolved decisions (during build)
@@ -92,7 +92,7 @@ Implemented + self-verified on `feat/proof-done-task-types`. Acceptance criteria
 1. classifier 6 types + `types` , **met** (test-meta pins `classify -> {eval,research,doc,migration,data-tool}` + default `spec-feature`).
 2. registry with a row per type , **met** (`docs/verification/task-types.md`; test-meta pins each row).
 3. `proof-gate.sh contract` composes , **met** (test-meta pins the data-tool artifact+owner + the migration class upgrade).
-4. proof of done for this spec , **met** (`docs/verification/SPEC-044.md`: green run + negative control + reproducible).
+4. proof of done for this spec , **met** (`docs/verification/proof-done-task-types.md`: green run + negative control + reproducible).
 5. `tests/test-meta.sh` passes , **met** (389/389, Exit 0; SPEC-008 collision resolved by renumber to 044).
 
 Validation + ship record: the `/kit:*` commands could not target dwarves-kit from the ops-toolkit session that ran this loop, so the validate + review gates ran as **adversarial sub-agents** on the branch diff (the kit's `reviewer` + `security-auditor` agents, the same agents `/kit:spec-validate` / `/kit:review-team` dispatch):

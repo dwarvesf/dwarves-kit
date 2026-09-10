@@ -11,6 +11,9 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
               pressure (compactions), skill mis-fires
   sessions  - session shape: archetype mix, circadian (by hour), interruption rate
   cost      - tokens by model + cache economics + $ estimate (attribution, not a bill)
+  burn      - live per-session token burn in the last --since minutes (default 60),
+              ranked by burn rate; subagent transcripts roll into their parent session;
+              not part of `report` (report is the weekly digest, burn is a live check)
   report    - all of the above, the weekly self-observability digest
 
 The subagents view answers "is my subagent mix drifting?" that a raw tool count
@@ -502,6 +505,244 @@ def circ_rows(circ, top):
     return rows[:top] if top else rows
 
 
+def _burn_now():
+    """Wall-clock 'now' in epoch seconds. SESSION_OBSERVE_NOW overrides it (an
+    epoch number or an ISO timestamp) so burn fixtures get a fixed, deterministic
+    clock instead of the real one."""
+    override = os.environ.get("SESSION_OBSERVE_NOW")
+    if not override:
+        return time.time()
+    try:
+        return float(override)
+    except ValueError:
+        dt = parse_ts(override)
+        if dt is None:
+            raise ValueError(f"SESSION_OBSERVE_NOW: cannot parse {override!r}")
+        return dt.timestamp()
+
+
+def _burn_session_id(path):
+    """(sid, is_subagent) for a burn transcript path.
+    Main:     <root>/<proj>/<sid>.jsonl
+    Subagent: <root>/<proj>/<sid>/subagents/<agent>.jsonl -> rolls into <sid>.
+    """
+    d = os.path.dirname(path)
+    if os.path.basename(d) == "subagents":
+        return os.path.basename(os.path.dirname(d)), True
+    return os.path.splitext(os.path.basename(path))[0], False
+
+
+def _burn_files(args, cutoff_epoch):
+    """Transcript files for burn: the same walk as iter_files(), but the coarse
+    skip is an epoch-seconds cutoff (a minutes window), not iter_files' whole-day one."""
+    if args.file:
+        yield args.file
+        return
+    root = args.root or DEFAULT_ROOT
+    if args.project:
+        root = os.path.join(root, args.project)
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in files:
+            if not fn.endswith(".jsonl"):
+                continue
+            path = os.path.join(dirpath, fn)
+            try:
+                if os.path.getmtime(path) < cutoff_epoch:
+                    continue
+            except OSError:
+                continue
+            yield path
+
+
+# type -> field name, for the three known title-carrying entry shapes.
+BURN_TITLE_FIELDS = {"ai-title": "aiTitle", "summary": "summary", "custom-title": "customTitle"}
+
+
+def _burn_pid_map():
+    """sessionId -> live pid, from ~/.claude/sessions/<pid>.json.
+    SESSION_OBSERVE_PIDS_DIR overrides the directory for fixtures, which also
+    skips the os.kill liveness probe (a fixture pid is never a real process)."""
+    override = os.environ.get("SESSION_OBSERVE_PIDS_DIR")
+    d = override or os.path.expanduser("~/.claude/sessions")
+    check_live = not override
+    out = {}
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return out
+    for fn in names:
+        if not fn.endswith(".json"):
+            continue
+        pid_s = fn[: -len(".json")]
+        if not pid_s.isdigit():
+            continue
+        pid = int(pid_s)
+        if check_live:
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                continue
+        try:
+            with open(os.path.join(d, fn), encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue  # e.g. a pid file that is valid JSON but not an object
+        sid = data.get("sessionId")
+        if sid:
+            out[sid] = pid
+    return out
+
+
+def burn_collect(args, now, cutoff):
+    """Per-session live token burn in the window [cutoff, now]. A separate
+    collector from collect(): a burn row is keyed by session + an entry-
+    timestamp window, not aggregated by model + day like every other view."""
+    sess = {}
+
+    def row(sid):
+        return sess.setdefault(sid, {
+            "cwd": None, "reqs": 0, "input": 0, "cache_create": 0,
+            "cache_read": 0, "output": 0, "sub_active": set(), "models": set(),
+            "title": None, "last_ts": None, "ctx": 0,
+            "seen_keys": set(),
+        })
+
+    # main files before subagent files, so "the first entry carrying cwd" (per
+    # the spec) is the main session's cwd when both exist.
+    for path in sorted(_burn_files(args, cutoff), key=lambda p: _burn_session_id(p)[1]):
+        sid, is_sub = _burn_session_id(path)
+        r = row(sid)
+        for entry in iter_entries(path):
+            if not isinstance(entry, dict):
+                continue  # malformed transcript line (untrusted input): skip, never crash
+            ts = entry.get("timestamp")
+            dt = parse_ts(ts) if isinstance(ts, str) else None
+            epoch = dt.timestamp() if dt else None
+            active = epoch is not None and epoch >= cutoff
+
+            if r["cwd"] is None and entry.get("cwd"):
+                r["cwd"] = entry["cwd"]
+
+            field = BURN_TITLE_FIELDS.get(entry.get("type"))
+            if field and entry.get(field):
+                r["title"] = entry[field]
+
+            if is_sub and active:
+                r["sub_active"].add(path)
+
+            if entry.get("type") != "assistant":
+                continue
+            msg = entry.get("message")
+            if not isinstance(msg, dict):
+                continue  # e.g. message: "oops" (untrusted transcript)
+            u = msg.get("usage")
+            if not isinstance(u, dict):
+                continue
+            side = bool(entry.get("isSidechain"))
+            inp = u.get("input_tokens") or 0
+            cc = u.get("cache_creation_input_tokens") or 0
+            cr = u.get("cache_read_input_tokens") or 0
+            out = u.get("output_tokens") or 0
+
+            # ctx: live context = the LAST main-chain usage in FILE ITERATION
+            # ORDER (spec), independent of timestamp -- a trailing main-chain
+            # entry with no timestamp must still win over an earlier one.
+            if not side:
+                r["ctx"] = inp + cc + cr
+
+            if not active:
+                continue  # older than --since: not counted
+
+            key = (msg.get("id"), entry.get("requestId"))
+            if key != (None, None):
+                if key in r["seen_keys"]:
+                    continue  # a streamed chunk repeating the same usage block
+                r["seen_keys"].add(key)
+            # else: neither id present, nothing to dedup on; count every such entry
+            r["reqs"] += 1
+            r["input"] += inp
+            r["cache_create"] += cc
+            r["cache_read"] += cr
+            r["output"] += out
+            if msg.get("model"):
+                r["models"].add(msg["model"])
+            if r["last_ts"] is None or epoch > r["last_ts"]:
+                r["last_ts"] = epoch
+
+    return sess
+
+
+def burn_rank(sess):
+    """Rank key: input + cache_create + cache_read/10 + output*5 (the list-price
+    ratios; attribution, not a bill). Sessions with zero counted entries are omitted."""
+    ranked = [(sid, r) for sid, r in sess.items() if r["reqs"] > 0]
+    ranked.sort(
+        key=lambda kv: kv[1]["input"] + kv[1]["cache_create"] + kv[1]["cache_read"] / 10 + kv[1]["output"] * 5,
+        reverse=True,
+    )
+    return ranked
+
+
+def burn_row_dict(sid, r, now, pid_map):
+    idle_min = int(round((now - r["last_ts"]) / 60.0)) if r["last_ts"] is not None else 0
+    title = r["title"] or "-"
+    if len(title) > 40:
+        title = title[:37] + "..."
+    return {
+        "session_id": sid,
+        "pid": pid_map.get(sid),
+        "cwd": r["cwd"],
+        "reqs": r["reqs"],
+        "subagents": len(r["sub_active"]),
+        "ctx": r["ctx"],
+        "input": r["input"],
+        "cache_create": r["cache_create"],
+        "cache_read": r["cache_read"],
+        "output": r["output"],
+        "idle_min": idle_min,
+        "models": sorted(r["models"]),
+        "title": title,
+    }
+
+
+def burn_table_row(d):
+    return [
+        d["session_id"][:8], d["pid"] if d["pid"] is not None else "-",
+        shorten_path(d["cwd"]) if d["cwd"] else "-", d["reqs"], d["subagents"],
+        d["ctx"], d["cache_create"], d["cache_read"], d["output"], d["idle_min"],
+        ",".join(d["models"]) if d["models"] else "-", d["title"],
+    ]
+
+
+def run_burn(args):
+    """The `burn` view: live per-session token burn. A separate I/O path from
+    emit(): its own window/JSON shape, no model+day aggregation, and never part
+    of `report` (report is the weekly digest, burn is a live check)."""
+    now = _burn_now()
+    since_min = args.since if args.since is not None else 60
+    cutoff = now - since_min * 60
+    sess = burn_collect(args, now, cutoff)
+    pid_map = _burn_pid_map()
+    ranked = burn_rank(sess)
+    rows = [burn_row_dict(sid, r, now, pid_map) for sid, r in ranked]
+
+    if args.json:
+        print(json.dumps({"window_min": since_min, "sessions": rows}, indent=2))
+        return
+
+    shown = rows[: args.top] if args.top else rows
+    tot_cw = sum(d["cache_create"] for d in rows)
+    tot_cr = sum(d["cache_read"] for d in rows)
+    tot_out = sum(d["output"] for d in rows)
+    print(f"# burn  (window {since_min}m, {len(rows)} sessions; totals cache-wr {tot_cw}, cache-rd {tot_cr}, out {tot_out})")
+    print_table(
+        ["session", "pid", "cwd", "reqs", "subs", "ctx", "cache-wr", "cache-rd", "out", "idle", "models", "title"],
+        [burn_table_row(d) for d in shown],
+    )
+
+
 def emit(args, data):
     if args.json:
         out = {
@@ -595,7 +836,7 @@ def emit(args, data):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="session-observe", description="Report Claude Code skill/tool/hook usage from session transcripts.")
-    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "report"], help="which view")
+    p.add_argument("cmd", choices=["skills", "tools", "hooks", "subagents", "friction", "sessions", "cost", "burn", "report"], help="which view")
     src = p.add_mutually_exclusive_group()
     src.add_argument("--file", help="parse a single transcript file (used by tests)")
     src.add_argument("--project", help="project slug under ~/.claude/projects/")
@@ -603,12 +844,17 @@ def main(argv=None):
     p.add_argument("--days", type=int, default=0, help="only files modified within N days (0 = all)")
     p.add_argument("--top", type=int, default=0, help="limit to top N rows (0 = all)")
     p.add_argument("--latency", action="store_true", help="(skills) add a per-skill total wall-time table, ranked by summed ms")
+    p.add_argument("--since", type=int, default=60, help="(burn only) window in minutes (default 60)")
     p.add_argument("--json", action="store_true", help="machine-readable output (for vps-mon ingest)")
     args = p.parse_args(argv)
 
     if args.file and not os.path.exists(args.file):
         print(f"session-observe: file not found: {args.file}", file=sys.stderr)
         return 1
+
+    if args.cmd == "burn":
+        run_burn(args)
+        return 0
 
     data = collect(args)
     emit(args, data)

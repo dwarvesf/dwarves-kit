@@ -2,7 +2,7 @@
 # proof-loop-09-scenario-b.sh -- SPEC-199 rung-3 re-execution harness (NOT a CI suite; the
 # `proof-` prefix keeps it out of the test-* conventions on purpose).
 #
-# RE-EXECUTES scenario (b) of docs/proof/loop-09-onboard-wizard/b-bash-unadopted-repo.md LIVE:
+# RE-EXECUTES scenario (b) of docs/verification/loop-09-onboard-wizard/b-bash-unadopted-repo.md LIVE:
 # builds the same temp-HOME fixture (bash-install machine + fresh unadopted repo), runs the exact
 # command sequence /kit:onboard drives, and ASSERTS the outputs the committed transcript claims.
 # Also re-executes the decline-NC (decline-nc.md): the pre-adopt reads leave the repo

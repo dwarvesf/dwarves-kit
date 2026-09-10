@@ -25,7 +25,7 @@ If codebase-memory-mcp is available, use `get_structure()` for directory layout 
 
 ## Output format
 
-Write to `docs/research/architecture.md`:
+Write to `docs/research/<date>-<slug>-architecture.md` (the dispatch prompt supplies `<date>` and `<slug>`; if neither was supplied, fall back to `docs/research/architecture.md`):
 
 ```markdown
 # Architecture Patterns

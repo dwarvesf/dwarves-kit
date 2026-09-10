@@ -13,7 +13,7 @@ Bracket both phases this lane owns for timing (SPEC-129): `bash lib/gate/gate-le
 Read the design's `## Solution`, **spec-first**:
 
 1. The active `docs/specs/SPEC-NNN-<slug>.md`'s `## Solution` section IF a spec exists. Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005); if several specs match, ask the user which one, do not auto-pick.
-2. ELSE `docs/briefs/DECISION-BRIEF.md`'s `## Solution` section (the pre-spec window, before a `SPEC-NNN` exists).
+2. ELSE `docs/briefs/DECISION-BRIEF-<slug>.md`'s `## Solution` section (falling back to the legacy `docs/briefs/DECISION-BRIEF.md`), the pre-spec window, before a `SPEC-NNN` exists. `<slug>` is the feature's kebab-case slug, the same one `/kit:think`/`/kit:design` used for this feature's brief.
 
 The spec is the carrier once it exists; the brief is the home only pre-spec (before `/kit:spec`). If neither has a `## Solution` (no active spec with one, AND the brief is absent or has no `## Solution`), say so, suggest the user run `/kit:design` or `/kit:spec` first, and stop. Do not invent a design to critique.
 
@@ -48,7 +48,7 @@ Append a `## Design critique` section to whichever doc holds the design (the act
 ```markdown
 ## Design critique
 Date: [date]
-Design source: [DECISION-BRIEF.md ## Solution | SPEC-NNN ## Solution]
+Design source: [DECISION-BRIEF-<slug>.md ## Solution | SPEC-NNN ## Solution]
 Lenses run: [list]; missing: [list, or "none"]
 
 ### Critical findings

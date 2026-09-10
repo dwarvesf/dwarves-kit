@@ -69,7 +69,7 @@ The adopt-injected `CLAUDE.md` block already does this for you:
 | `bin/gate` | `lib/gate/gate.sh` |
 | `bin/goal` | `lib/goal/goal.sh` |
 | `bin/mega` | `lib/mega/mega.sh` |
-| `bin/precedent` | `lib/precedent/precedent.sh` (`find "<words>" --surface records\|inventory\|all`, `--quiet` the close-out form, `--explain <label>`; registry rows are `<kind> <path>` for `repo\|scripts\|skills\|crons\|memory`, resolved `--registry` > `PRECEDENT_REGISTRY` > `kit.toml [precedent] registry` (operator or kit-root only, never a project `.kit.toml`) > `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt`) |
+| `bin/precedent` | `lib/precedent/precedent.sh` (`find "<words>" --surface records\|inventory\|all`, `--quiet` the close-out form, `--explain <label>`; registry rows are `<kind> <path>` for `repo\|scripts\|skills\|crons\|memory\|learnings` (`learnings` = a browser-harness per-site recipe dir, one `manifest.json` per site), resolved `--registry` > `PRECEDENT_REGISTRY` > `kit.toml [precedent] registry` (operator or kit-root only, never a project `.kit.toml`) > `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt`) |
 | `bin/queue` | `lib/queue/queue.sh` |
 | `bin/reflect` | `lib/reflect/reflect.sh` (`reflect debt <list\|collect\|mark-paid>`, `reflect propose`, `reflect drain`; renamed from `learn` by ADR-0036, `bin/learn` kept one release as a deprecation forwarder) |
 | `bin/session` | `lib/session/session.sh` (`session <intel\|observe\|recall\|report\|semantic>`, ex the five `bin/session-*`) |

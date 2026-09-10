@@ -9,6 +9,12 @@ All notable changes to dwarves-kit are documented here.
 - Ledger grammar, lanes.d plan format, export `schema`: unchanged.
 - Config surface (new key, additive, MINOR): `[output] style`, default `""`. Resolves project > operator > kit-root. Empty leaves every existing install untouched (SPEC-252).
 
+### Changed
+- Retired the `cc-` host-agent prefix (kit-contract C1) from the last doc filenames still carrying it: the cc-hyg-04-stop-tax spec/verification/impl-notes trio (spec claims SPEC-253), the cc-hyg-09-override-yaml proof, and four `lib/*/docs/implementation-notes/cc-*.md` files.
+- Renamed three `docs/verification/` files to their feature slug instead of a bare SPEC number: `SPEC-044.md` -> `proof-done-task-types.md`, `SPEC-045.md` -> `gate-lib-install-path.md`, `spec-200-t1-t2.md` -> `signal-pipelines-t1-t2.md`.
+- Dated the two undated `docs/research/` files that had no live wiring (`architecture-patterns.md`, `architecture-orchestrator-wavefront.md`) and the undated retro `v1.3-v1.5.md`, using each file's own git or in-body date.
+- Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
+
 ### Fixed
 - `bin/release` rolled `[Unreleased]` into the root `CHANGELOG.md` stub instead of `docs/CHANGELOG.md` (SPEC-185 moved the real history there), wrote a stray comma in the section header instead of a hyphen, and missed the third version surface `tool.toml` that `tests/test-meta.sh` pins (SPEC-115). Now targets `docs/CHANGELOG.md`, writes `## [X.Y.Z] - date`, bumps `tool.toml` alongside `VERSION`/`plugin.json`, and prints the tag-push line last so it is not missed (ID-648).
 - The shared `SECRET_SHAPE_RE` in `lib/precedent/inventory.py` and `lib/session/recall/session_recall.py` missed AWS secret access keys, PEM private-key blocks, 1Password `ops_` service tokens, and `PASSWORD=`/`TOKEN=` assignments. Widened both byte-equal copies (pinned by `tests/test-precedent.sh`) as defense in depth on top of the `--explain` confinement (ID-642).
@@ -26,6 +32,7 @@ All notable changes to dwarves-kit are documented here.
 - `docs/PHILOSOPHY.md` gains "Reversible in git is the line between acting and asking", the principle behind every autonomy knob added this cycle. The knobs were documented individually; the policy behind them was not, which is how three other docs kept describing the old ask-first behavior.
 - `Needs you` in the `/kit:wrap` report carries an admission test. An item belongs there only when the operator is the only one who can do it: it needs a human credential or presence, it is irreversible and outward-facing, or it is a judgment whose options carry different irreversible outcomes. Everything else runs before the report prints and is reported past tense in `What happened`. Five cases are named explicitly, because they are the ones that kept surfacing as permission requests: merging your own green PR, pulling the default branch, installing what you just merged, dispatching an established deploy, rerunning a check (#524).
 - Three `[wrap]` autonomy knobs make each of wrap's write actions a choice, defaulting to the acting posture: `merge_own_prs` (step 3), `tidy_worktrees` (step 5), `build_candidates` (step 7b). A `false` turns that step's action into a report line named in `FYI`; it never turns the step off and never relaxes a refusal the tools make on their own (#526).
+- `session observe burn`: ranks live sessions by token burn over a `--since` minutes window. Subagents roll into their parent, usage is deduplicated by message and request id, and each row shows the live context size and the owning PID. It answers "which session is burning tokens right now" without a hand script. Stdlib only, additive view, every other view unchanged (SPEC-254).
 
 ## [2.2.0] - 2026-09-07
 

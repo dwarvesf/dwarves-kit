@@ -189,7 +189,7 @@ bash tests/test-meta.sh              # structural integrity, unaffected
 bash tests/test-hooks.sh             # hook behavior, unaffected
 ```
 
-Real-corpus render (proof rung 2, `docs/proof/loop-07-mega-dashboard/`):
+Real-corpus render (proof rung 2, `docs/verification/loop-07-mega-dashboard/`):
 ```bash
 bash lib/mega.sh review harness-ops --html \
   --megagoals-root _meta/megagoals/_archive --code-root . --base master --out /tmp/harness-ops-review.html

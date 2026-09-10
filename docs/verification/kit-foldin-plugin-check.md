@@ -19,7 +19,7 @@ The plugin-state directory was already opt-in before the move: `PLUGINS_DIR="${C
 (`bin/plugin-check:24`) defaults to the standard per-user Claude Code plugin directory, not
 an ops-toolkit path, so there was no hardcoded ops-toolkit path in the executable to
 replace. The two doc-only mentions of `~/workspace/<owner>/dwarves-kit` (in the ported
-`docs/specs/SPEC-105-cc-plugin-check.md` and `docs/implementation-notes/cc-plugin-check.md`,
+`docs/specs/SPEC-105-cc-plugin-check.md` and `docs/implementation-notes/plugin-check.md`,
 describing Han's own `directory`-marketplace dev checkout as a worked example) were
 generalized to "the local dwarves-kit checkout" so the grep-clean gate holds across the
 whole moved subtree, docs included.

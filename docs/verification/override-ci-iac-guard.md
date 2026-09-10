@@ -1,4 +1,4 @@
-# Proof of done cc-hyg-09: override CI/IaC guard + non-vacuous debounce test
+# Proof of done override-ci-iac-guard: override CI/IaC guard + non-vacuous debounce test
 
 VERDICT: PASS
 
@@ -55,6 +55,6 @@ Both fixes are falsifiable, mutation-verified:
 ## Reproduce
 
 ```
-cd <dwarves-kit>/.claude/worktrees/cc-hyg-09-fix   # or merged master
+cd <dwarves-kit>/.claude/worktrees/override-ci-iac-guard   # or merged master
 GIT_CONFIG_GLOBAL=/dev/null bash tests/test-hooks.sh   # 455/455
 ```

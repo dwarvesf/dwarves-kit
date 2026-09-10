@@ -17,7 +17,7 @@ Running log of decisions/changes not pinned in the spec.
 
 ## 2026-06-08 11:05 Cross-repo session caveat
 
-- This loop is being driven from an ops-toolkit session, not a dwarves-kit session. The kit's own `/kit:spec-validate` / `/kit:execute` / `/kit:ship` commands resolve against the session's project (ops-toolkit), so they cannot be invoked against dwarves-kit from here. Substituting the equivalent discipline manually: implement the pieces, run `bash tests/test-meta.sh` + the classifier/contract runs as the verification, and record the proof of done in `docs/verification/SPEC-044.md`. The `/kit:*` ceremony steps should be re-run in a dwarves-kit session for the true dogfood + the ship gate; flagged to the operator.
+- This loop is being driven from an ops-toolkit session, not a dwarves-kit session. The kit's own `/kit:spec-validate` / `/kit:execute` / `/kit:ship` commands resolve against the session's project (ops-toolkit), so they cannot be invoked against dwarves-kit from here. Substituting the equivalent discipline manually: implement the pieces, run `bash tests/test-meta.sh` + the classifier/contract runs as the verification, and record the proof of done in `docs/verification/proof-done-task-types.md`. The `/kit:*` ceremony steps should be re-run in a dwarves-kit session for the true dogfood + the ship gate; flagged to the operator.
 
 ## 2026-06-08 12:30 Validate + review (adversarial sub-agents) and the ship decision
 

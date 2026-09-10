@@ -30,7 +30,7 @@ as its implementation; apply the deletion test to suspect modules (complexity va
 pass-through; complexity reappears across N callers = it earns its keep); name seams (one
 adapter = hypothetical seam, two = real); justify findings in terms of leverage (what
 callers gain) and locality (where change, bugs, and knowledge concentrate).
-- Does the change follow existing architecture patterns? (check `docs/research/architecture.md` if it exists)
+- Does the change follow existing architecture patterns? (check this feature's dated research file, `docs/research/*-<slug>-architecture.md`, if it exists, else the legacy `docs/research/architecture.md`)
 - Are there new abstractions that aren't justified?
 - Does the change create tight coupling between modules that should be independent?
 - Is there dead code or unreachable branches introduced?
