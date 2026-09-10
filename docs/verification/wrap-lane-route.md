@@ -22,7 +22,9 @@ Three parts, one cause.
    needs. Worker model tiers are named: Sonnet default, Opus for verification and for
    security, money, or data-model work, Haiku for mechanical fan-out.
 3. The `**Built:**` line carries the lane and the closure:
-   `(lane=tiny, verified: <check>, <commit>)` or `(lane=<lane>, staged + goal drafted: <path>)`.
+   `(lane=tiny, verified: <check>, <commit>)`, `(lane=<lane>, staged + goal drafted: <path>)`, or
+   `(lane=<lane>, staged: build_candidates off)`. The knob still governs building only; it now
+   classifies too, so a row staged under it names the lane it owes.
 
 `lib/wrap/report-lint.sh` needs no change: its `ENHANCE` / `NEW` token check already survives
 a suffix, and a line carrying only a lane suffix still fails. That claim is what the new tests
@@ -32,15 +34,16 @@ pin, because an unpinned claim about a lint is the same shape of trust this step
 
 - Command: `bash tests/test-wrap.sh`
 - Exit: 0
-- Output: `test-wrap: all 258 passed`
+- Output: `test-wrap: all 259 passed`
 - Verdict: PASS
 
-The three new cases inside that run:
+The four new cases inside that run:
 
 | Case | Fixture `**Built:**` value | Expected | Got |
 |---|---|---|---|
 | tiny build | `wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=tiny, verified: bash tests/test-alert.sh, a1b2c3d)` | exit 0 | exit 0 |
 | routed on | `cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, staged + goal drafted: .claude/goals/cron-fire.md)` | exit 0 | exit 0 |
+| knob off | `cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal, staged: build_candidates off)` | exit 0 | exit 0 |
 | suffix alone | `lib/wrap/report-lint.sh (lane=tiny, verified: bash tests/test-wrap.sh, abc1234)` | exit 1, names the missing token | exit 1, `no ENHANCE <home> or NEW (precedent: ...) token` |
 
 The third case is the one that matters: the lane suffix must never let a session's own
