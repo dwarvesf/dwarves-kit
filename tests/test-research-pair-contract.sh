@@ -123,22 +123,22 @@ assert "row 25: stack distilled return contract (heading + fields + bounds)" $?
 echo ""
 echo "=== AC-3: dispatch deltas, both sides ==="
 
-grep -qF '**research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/pitfalls.md`."' "$C"
+grep -qF '**research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/<date>-<slug>-pitfalls.md`."' "$C"
 assert "row 26: Mode A pitfalls dispatch line names agent + exact write target" $?
 
-grep -qF '**research-stack** agent: "Map the technology stack. Write to `docs/research/stack.md`."' "$C" && grep -qF '`.claude/agents/research-stack.md`' "$C"
+grep -qF '**research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."' "$C" && grep -qF '`.claude/agents/research-stack.md`' "$C"
 assert "row 27: Mode A stack dispatch line + gate example filename" $?
 
-grep -qF 'Find landmines in [target area]. Look for: deprecated code still referenced, TODO/FIXME comments, test gaps, circular dependencies, files over 500 lines, missing env/config values the new feature will need. Max 40 lines. Write to docs/research/pitfalls.md.' "$C"
+grep -qF 'Find landmines in [target area]. Look for: deprecated code still referenced, TODO/FIXME comments, test gaps, circular dependencies, files over 500 lines, missing env/config values the new feature will need. Max 40 lines. Write to docs/research/<date>-<slug>-pitfalls.md.' "$C"
 assert "row 28: Mode B pitfalls prompt pinned verbatim (6-of-7 divergence as-is)" $?
 
-grep -qF 'Map the technology stack. Read package.json / go.mod / Cargo.toml / pyproject.toml and config files. Report: languages, frameworks, versions, key dependencies (top 5-10), build/test/deploy commands. If codebase-memory-mcp is available, use get_architecture(). Max 50 lines. Write to docs/research/stack.md.' "$C"
+grep -qF 'Map the technology stack. Read package.json / go.mod / Cargo.toml / pyproject.toml and config files. Report: languages, frameworks, versions, key dependencies (top 5-10), build/test/deploy commands. If codebase-memory-mcp is available, use get_architecture(). Max 50 lines. Write to docs/research/<date>-<slug>-stack.md.' "$C"
 assert "row 29: Mode B stack prompt pinned verbatim (get_architecture divergence as-is)" $?
 
-test "$(sed -n '/^### Step 2: Research/,/^### Step 3/p' "$C" | grep -cF 'docs/research/pitfalls.md')" -eq 2 && grep -qF 'Write to `docs/research/pitfalls.md`:' "$P"
+test "$(sed -n '/^### Step 2: Research/,/^### Step 3/p' "$C" | grep -cF 'docs/research/<date>-<slug>-pitfalls.md')" -eq 2 && grep -qF 'Write to `docs/research/<date>-<slug>-pitfalls.md`' "$P"
 assert "row 30: pitfalls write target agrees (Step 2 region count 2 + agent body)" $?
 
-test "$(sed -n '/^### Step 2: Research/,/^### Step 3/p' "$C" | grep -cF 'docs/research/stack.md')" -eq 2 && grep -qF 'Write to `docs/research/stack.md`:' "$S"
+test "$(sed -n '/^### Step 2: Research/,/^### Step 3/p' "$C" | grep -cF 'docs/research/<date>-<slug>-stack.md')" -eq 2 && grep -qF 'Write to `docs/research/<date>-<slug>-stack.md`' "$S"
 assert "row 31: stack write target agrees (Step 2 region count 2 + agent body)" $?
 
 echo ""

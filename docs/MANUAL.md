@@ -78,15 +78,15 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 
 **Phase:** challenge an idea before writing a spec
 **Reads:** the idea from chat
-**Writes:** `docs/briefs/DECISION-BRIEF.md` only if the verdict is BUILD
+**Writes:** `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) only if the verdict is BUILD
 **When to invoke:** before any non-trivial feature. Costs ~5 minutes.
 **Common gotcha:** the 6 forcing questions are confrontational by design. If you accept them too easily, the brief is weak.
 
 ### `/kit:design`
 
 **Phase:** opt-in interactive solution-design beat (between Think and Spec)
-**Reads:** `docs/briefs/DECISION-BRIEF.md` (if present), the codebase
-**Writes:** appends a `## Solution` section to `docs/briefs/DECISION-BRIEF.md` (never clobbers the brief's product framing); when the design is design-bearing, also appends a `## Design` section (diagram + ADR link(s), ADR-0031 §1 / SPEC-122) that `/kit:spec` folds into the spec
+**Reads:** `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) (if present), the codebase
+**Writes:** appends a `## Solution` section to `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) (never clobbers the brief's product framing); when the design is design-bearing, also appends a `## Design` section (diagram + ADR link(s), ADR-0031 §1 / SPEC-122) that `/kit:spec` folds into the spec
 **When to invoke:** when you want to shape the solution with the agent (2-3 approaches, one question at a time, approve per section) before `/kit:spec`. Opt-in; skip it and `/kit:spec` works as before.
 **Common gotcha:** under bypassPermissions the per-section `AskUserQuestion` prompts may auto-resolve, hollowing the feedback. Use it interactively. It does not execute and is not a gate. Realizes SPEC-008 Part C; forked from `superpowers:brainstorming`.
 
@@ -108,7 +108,7 @@ Index by loop stage (formerly "leg", ADR-0034; the README's "The five stages" se
 
 ### `/kit:devs-team`
 
-Opt-in design-critique lane between `/kit:design` and `/kit:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution`, read spec-first (the active spec if one exists, else the pre-spec `docs/briefs/DECISION-BRIEF.md`), merges findings, and appends a report-only `## Design critique` (SOLID / REVISE / RECONSIDER) to that same doc. Never blocks `/kit:spec`. The design analogue of `/kit:review-team`. Placement is spec-first per SPEC-023.
+Opt-in design-critique lane between `/kit:design` and `/kit:spec`. Dispatches 5 engineering lenses (simplicity, performance, boundaries, data-model, operability) in parallel against the `## Solution`, read spec-first (the active spec if one exists, else the pre-spec `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`)), merges findings, and appends a report-only `## Design critique` (SOLID / REVISE / RECONSIDER) to that same doc. Never blocks `/kit:spec`. The design analogue of `/kit:review-team`. Placement is spec-first per SPEC-023.
 
 ### `/kit:visual-team`
 
@@ -179,8 +179,8 @@ schedules, sequences, or merges. Source: SPEC-036; ADR-0022.
 ### `/kit:spec`
 
 **Phase:** generate the development spec
-**Reads:** `docs/briefs/DECISION-BRIEF.md` (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
-**Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/{stack,features,architecture,pitfalls}.md`
+**Reads:** `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) (if present), the codebase via 4 parallel research subagents (brownfield) or chat (greenfield)
+**Writes:** `docs/specs/SPEC-NNN-<slug>.md` (Status: DRAFT), `docs/research/YYYY-MM-DD-<slug>-{stack,features,architecture,pitfalls}.md`
 **When to invoke:** after `/think`, or directly if the work is well-scoped already
 **Common gotcha:** the research agents are parallel-dispatched via Task tool. If your Claude Code is older than v2.0.60, they fall back to inline research and the run is slower.
 **Template sections:** the generated spec scaffolds Solution depth (approaches / chosen + why / extensibility, SPEC-008), plus an optional `### Interfaces (I/O contract)` under Technical Design and an optional `## Failure modes` table. Both optional sections are lane-scoped; Reviewers 2 and 5 check them when present. It also pins `## Verification` (the command(s) that prove the spec done) and `## Open questions` (the blocker landing zone a `/goal` loop appends to), so a validated spec is natively pointer-`/goal`-ready (SPEC-012 P1). An optional, on-demand `## Amendments` section (added only when a mid-flight amend happens, never an empty scaffold) records add-scope provenance during a build.
@@ -349,7 +349,7 @@ What to remember here: the blocking hooks, everything else advises or warns.
 | `security-reviewer` | `/review-team` | Deep OWASP-style audit |
 | `break-it` | `/kit:battery` (escalation lens, behavioral code with tests) | Read-only adversarial prober: hunts one concrete input or call sequence the suite does not constrain, returns `PROBE`/`NO-PROBE`; rung 2 of the coverage -> probe -> mutation ladder, before `lib/gate/mutation-smoke.sh` |
 | `advisor` | `/review-team` (Step 2b, critique) + ship/mega final boundary (over-suggest) | Read-only kit-default EXTRA cross-cutting lens; two modes (P5 critique + P6 over-suggest); additive, never replaces the specialized reviewers |
-| `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF.md` or a spec's Problem/Context) for clarity, completeness, testability |
+| `brief-reviewer` | (right-arm parity roster; dispatchable on the brief/decision doc) | Read-only static left-arm reviewer of the design brief (`DECISION-BRIEF-<slug>.md` or a spec's Problem/Context) for clarity, completeness, testability |
 | `acceptance-verifier` | (right-arm parity roster; dispatchable at the spec's acceptance boundary) | Read-only dynamic verifier: executes the active spec's `## Verification` section end to end, maps each AC to a passing check |
 | `system-verifier` | (right-arm parity roster; dispatchable as the whole-project check) | Read-only dynamic verifier: runs the full unscoped project test suite, the right-arm mirror of design |
 | `recheck-verifier` | `/execute` (fresh-context re-audit over a right-arm PASS) | Read-only: RE-EXECUTES a right-arm verifier's recorded check in a fresh context and re-judges; never a read-back of recorded evidence; the ADR-0028 trust metric made real |
@@ -426,7 +426,7 @@ Say "let's discuss the solution", "iterate on the design", or `/kit:design`. Cla
 the opt-in interactive design beat (and/or `/kit:devs-team`, or `superpowers:brainstorming`
 for open-ended exploration): it proposes 2-3 approaches, one question at a time, holds for
 your approval per section, and appends the agreed Solution to
-`docs/briefs/DECISION-BRIEF.md`. It never auto-advances; leave with "the design is good,
+`docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`). It never auto-advances; leave with "the design is good,
 write the spec."
 
 **Scenario 5 -- a vague / ambiguous goal.** Say "I have a rough idea about X", "here's a

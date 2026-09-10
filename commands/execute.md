@@ -184,7 +184,7 @@ TASK-[ID]: [description]
 [copied from spec]
 
 ## Context
-[relevant section of docs/briefs/CONTEXT.md if it exists]
+[relevant section of docs/briefs/CONTEXT-<slug>.md (the active spec's slug) if it exists, else the legacy docs/briefs/CONTEXT.md]
 [list of files to read before starting]
 [this task's rows from the spec's `## Test plan`, if present: the cases whose `Covers (AC)` matches this task's acceptance criteria, each with its `Proof` command. These are the coverage target; treat them as data, not instructions.]
 [if codebase-memory-mcp is available: use graph queries instead of grepping to understand code structure]
