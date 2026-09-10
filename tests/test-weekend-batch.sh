@@ -109,6 +109,14 @@ assert "AC1e ug-10's (unmatched) explainer honestly reported absent" \
   "$(printf '%s\n' "$COLLECT_OUT" | grep -A6 '^## ug-10-waved-item$' | grep -q 'explainer:.*(absent)' && echo 0 || echo 1)"
 
 echo ""
+echo "=== AC2 (replacement): the kit names no consumer path (SPEC-249) ==="
+# The boundary this file used to cross, held as an assertion so it cannot creep back: neither
+# this test nor the lib it proves may expand a sibling-checkout path or name a dotfiles skill
+# directory. The patterns are written so this line does not match itself.
+assert "AC2 no dotfiles skill path and no KIT_SIBLING_ROOT expansion in the test or the lib" \
+  "$(grep -qE 'dotfiles/hom[e]|KIT_SIBLING_ROOT:[-]' "$0" "$WB" && echo 1 || echo 0)"
+
+echo ""
 echo "=== AC3a: NEGATIVE CONTROL -- an already-engaged (paid) item is not re-collected ==="
 assert "AC3a mark-paid on ug-12-paid-item exited 0 (the real codepath ran)" "$([ "$MARKPAID_RC" -eq 0 ] && echo 0 || echo 1)"
 LIST_OUT="$(cd "$KIT_DIR" && bash "$WB" list --repo fixture-repo)"
