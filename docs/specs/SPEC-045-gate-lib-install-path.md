@@ -32,7 +32,7 @@ Out: changing the gate's block LOGIC (unchanged, still proof-ledger), the proof 
 1. `hooks/ship-gate.sh` resolves proof-ledger + gate-ledger from `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/`, not `$ROOT/lib/`.
 2. `install.sh` into a throwaway `HOME` leaves `$HOME/.claude/dwarves-kit/lib/gate/proof-ledger.sh` resolvable; `--uninstall` removes it.
 3. `tests/test-meta.sh` passes and pins (2) (fails if the lib deploy is reverted, the negative control).
-4. Proof of done in `docs/verification/SPEC-045.md`: a recorded run where the gate BLOCKS a behavioral diff in a CONSUMER-style repo (real bug repro: before the fix it fails open; after, it blocks) + a negative control.
+4. Proof of done in `docs/verification/gate-lib-install-path.md`: a recorded run where the gate BLOCKS a behavioral diff in a CONSUMER-style repo (real bug repro: before the fix it fails open; after, it blocks) + a negative control.
 
 ## Verification
 

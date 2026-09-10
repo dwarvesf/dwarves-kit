@@ -226,7 +226,7 @@ AGENTS.md Pause-if).
    `commands/onboard.md` drives `bin/config list` for the module roster and does not hardcode a list
    of `KIT_KNOWN_MODULES` names (proves the "zero onboard edits when a module is added" invariant by
    test, not just advisor eyeball).
-2. Three recorded walkthrough transcripts, committed under `docs/proof/loop-09-onboard-wizard/`:
+2. Three recorded walkthrough transcripts, committed under `docs/verification/loop-09-onboard-wizard/`:
    (a) fresh plugin-only machine (temp HOME + fixture repo), (b) bash-install machine with an
    unadopted repo (temp HOME + fixture repo), (c) already-adopted repo (this repo) -> wizard reports
    healthy and exits without writing.
@@ -255,7 +255,7 @@ AGENTS.md Pause-if).
   none of them.
 - The command/inventory surfaces (README, architecture.md, WORKFLOW emit-coverage, the emit-sweep
   test) count `onboard` as the 31st command / 10th exempt utility, with no test weakened.
-- Proof: `docs/verification/loop-09-onboard-wizard.md` + `docs/proof/loop-09-onboard-wizard/`.
+- Proof: `docs/verification/loop-09-onboard-wizard.md` + `docs/verification/loop-09-onboard-wizard/`.
 
 ## Decision log
 

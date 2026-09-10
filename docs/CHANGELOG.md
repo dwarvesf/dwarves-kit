@@ -9,6 +9,12 @@ All notable changes to dwarves-kit are documented here.
 - Ledger grammar, lanes.d plan format, export `schema`: unchanged.
 - Config surface (new key, additive, MINOR): `[output] style`, default `""`. Resolves project > operator > kit-root. Empty leaves every existing install untouched (SPEC-252).
 
+### Changed
+- Retired the `cc-` host-agent prefix (kit-contract C1) from the last doc filenames still carrying it: the cc-hyg-04-stop-tax spec/verification/impl-notes trio (spec claims SPEC-253), the cc-hyg-09-override-yaml proof, and four `lib/*/docs/implementation-notes/cc-*.md` files.
+- Renamed three `docs/verification/` files to their feature slug instead of a bare SPEC number: `SPEC-044.md` -> `proof-done-task-types.md`, `SPEC-045.md` -> `gate-lib-install-path.md`, `spec-200-t1-t2.md` -> `signal-pipelines-t1-t2.md`.
+- Dated the two undated `docs/research/` files that had no live wiring (`architecture-patterns.md`, `architecture-orchestrator-wavefront.md`) and the undated retro `v1.3-v1.5.md`, using each file's own git or in-body date.
+- Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
+
 ### Fixed
 - `bin/release` rolled `[Unreleased]` into the root `CHANGELOG.md` stub instead of `docs/CHANGELOG.md` (SPEC-185 moved the real history there), wrote a stray comma in the section header instead of a hyphen, and missed the third version surface `tool.toml` that `tests/test-meta.sh` pins (SPEC-115). Now targets `docs/CHANGELOG.md`, writes `## [X.Y.Z] - date`, bumps `tool.toml` alongside `VERSION`/`plugin.json`, and prints the tag-push line last so it is not missed (ID-648).
 - The shared `SECRET_SHAPE_RE` in `lib/precedent/inventory.py` and `lib/session/recall/session_recall.py` missed AWS secret access keys, PEM private-key blocks, 1Password `ops_` service tokens, and `PASSWORD=`/`TOKEN=` assignments. Widened both byte-equal copies (pinned by `tests/test-precedent.sh`) as defense in depth on top of the `--explain` confinement (ID-642).

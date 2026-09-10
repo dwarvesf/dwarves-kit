@@ -1,4 +1,4 @@
-# Implementation notes cc-hyg-04 (delta from spec)
+# Implementation notes stop-tax (delta from spec)
 
 ## Decisions the spec left open
 
@@ -25,7 +25,7 @@
    and the override is the sanctioned manual-verification escape). Fix: exclude files
    under a `deploy/` path from the source-remainder check. So: source code OUTSIDE
    `deploy/` -> reject (the rtk-611 case, a `lib/` change); anything under `deploy/`
-   or any non-code file -> still override-able. Reconciles cc-hyg-04 with SPEC-095.
+   or any non-code file -> still override-able. Reconciles stop-tax with SPEC-095.
 
 3. **Test signal for the debounce = the DEBUG "skipping" line, not archive count.**
    Archive filenames are `state-<YYYYmmdd-HHMMSS>.md` (1s resolution); rapid test runs
@@ -68,5 +68,8 @@ re-saves.
 
 ## Spec/impl-notes naming
 
-Named `cc-hyg-04-*` (not the next `SPEC-099`) to avoid colliding with the concurrent
-kit-telemetry mega-goal's SPEC numbering; marks its cc-hygiene provenance.
+Originally named `cc-hyg-04-*` (not the next `SPEC-099`) to avoid colliding with the
+concurrent kit-telemetry mega-goal's SPEC numbering; marked its cc-hygiene provenance.
+
+Renamed to `SPEC-253-stop-tax.md` / `stop-tax.md` (2026-09-10) to retire the `cc-`
+prefix per kit-contract C1; the cc-hygiene provenance is this note.

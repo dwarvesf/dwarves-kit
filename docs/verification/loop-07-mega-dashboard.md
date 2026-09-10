@@ -66,7 +66,7 @@ Command: bash lib/mega.sh review kit-modularity --html \
 Exit: 0
 ```
 
-Screenshots (`docs/proof/loop-07-mega-dashboard/`, taken headless via Playwright/Chromium):
+Screenshots (`docs/verification/loop-07-mega-dashboard/`, taken headless via Playwright/Chromium):
 
 - **`01-overview.png`** -- the harness-ops dashboard, full page: 12 real `OK` sub-goal groups
   collapsed (green left border, no `open` attribute) + `01-config-resolver`'s real

@@ -109,10 +109,10 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 
 | Hook | Trigger | Event | Description | Specs | Tests |
 |---|---|---|---|---|---|
-| `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +7 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
+| `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +8 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `auto-format.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: Write\|Edit | SPEC-003, SPEC-084 | test-adopt.sh, test-hooks.sh, test-install-modules.sh |
 | `backlog-stage.sh` | `[E]` | SessionEnd | SessionEnd hook, function-named port of ops-toolkit's cc-backlog | SPEC-192, SPEC-194, SPEC-195 +4 | test-adopt.sh, test-install-modules.sh, test-intake-sweep.sh +2 |
-| `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | - | test-install-modules.sh, test-kit-foldin-hooks.sh |
+| `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | SPEC-253 | test-install-modules.sh, test-kit-foldin-hooks.sh |
 | `codebase-index.sh` | `[E]` | SessionStart | SessionStart hook (OPT-IN), dwarves-kit | SPEC-043, SPEC-084, SPEC-085 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `commit-format.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-014, SPEC-032, SPEC-064 +1 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `context-hints.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook, function-named port of ops-toolkit's | - | test-adopt.sh, test-install-modules.sh, test-kit-foldin-hooks.sh |
@@ -128,9 +128,9 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +2 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +2 |
 | `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +7 | proof-loop-09-scenario-b.sh, test-hooks.sh, test-install-modules.sh +2 |
 | `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
-| `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +3 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
+| `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +4 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `ship-gate.sh` | `[E]` | PreToolUse | each matrix row mapped to the run that exercised it, or an | SPEC-006, SPEC-042, SPEC-044 +47 | test-every-step-review.sh, test-gate-outcome.sh, test-hooks.sh +13 |
-| `slop-cleaner.sh` | `[E]` | Stop | breaking the "Exit 0 always" contract three lines above. | SPEC-013, SPEC-014, SPEC-084 +2 | test-hooks.sh, test-install-modules.sh |
+| `slop-cleaner.sh` | `[E]` | Stop | breaking the "Exit 0 always" contract three lines above. | SPEC-013, SPEC-014, SPEC-084 +3 | test-hooks.sh, test-install-modules.sh |
 | `spec-drift-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Write | SPEC-003, SPEC-005, SPEC-006 +4 | test-hooks.sh, test-install-modules.sh |
 | `statusline.sh` | `[E]` | StatusLine | StatusLine script | SPEC-025, SPEC-084, SPEC-219 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `tool-policy-guard.sh` | `[E]` | PreToolUse | PreToolUse hook enforcing the tool-choice policy. | SPEC-212 | test-install-modules.sh, test-tool-policy-guard.sh |
