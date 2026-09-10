@@ -307,6 +307,128 @@ chk "apply: the broken-remote repo lost no branch" \
   "$([ "$BROKEN_BEFORE" = "$(git -C "$BROKEN" for-each-ref --format='%(refname:short)' refs/heads/ | sort)" ]; echo $?)"
 
 # ===========================================================================
+echo "=== apply: a union-marked log is carried across the pull, nothing else is ==="
+# ===========================================================================
+# Real repos on disk, not a stubbed `git`: the whole point is what git itself does to a dirty
+# checkout during a pull, which a command-text stub would never exercise.
+LAB_BASE=$'# Lab log\n\n---\n\n2026-09-01 · base: the first line\n'
+LAB_REMOTE=$'# Lab log\n\n---\n\n2026-09-02 · remote: the incoming line\n2026-09-01 · base: the first line\n'
+LAB_LOCAL=$'# Lab log\n\n---\n\n2026-09-03 · local: the other session line\n2026-09-01 · base: the first line\n'
+
+build_union_repo() { # build_union_repo <name> -- bare origin plus a clone on main
+  local name="$1" work clone
+  work="$TMPD/uwork-$name"; clone="$TMPD/uclone-$name"
+  mkdir -p "$work/_meta"
+  git -C "$work" init -q
+  gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+  printf '%s' "$LAB_BASE" > "$work/_meta/LAB_LOG.md"
+  printf 'readme base\n' > "$work/README.md"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/ubare-$name"
+  git clone -q "$TMPD/ubare-$name" "$clone"
+  gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+}
+
+advance_union_repo() { # advance_union_repo <name> -- one incoming commit touching both files
+  local name="$1" push
+  push="$TMPD/upush-$name"
+  git clone -q "$TMPD/ubare-$name" "$push"
+  gitc "$push"
+  printf '%s' "$LAB_REMOTE" > "$push/_meta/LAB_LOG.md"
+  printf 'readme remote\n' > "$push/README.md"
+  git -C "$push" commit -qam advance
+  git -C "$push" push -q origin main
+}
+
+echo "--- case 1+4: a dirty union log pulls clean, keeps both sides, anchors below the header"
+build_union_repo carry; advance_union_repo carry
+UC="$TMPD/uclone-carry"
+printf '%s' "$LAB_LOCAL" > "$UC/_meta/LAB_LOG.md"
+UC_TIP="$(git -C "$TMPD/ubare-carry" rev-parse main)"
+out="$("$WRAP" apply --apply "$UC" 2>&1)"; rc=$?
+chk "union carry: apply exits 0" "$rc"
+chk_no "union carry: the pull did not fail" "$out" "FAILED pull --ff-only"
+chk "union carry: HEAD moved to the incoming commit" \
+  "$([ "$(git -C "$UC" rev-parse HEAD)" = "$UC_TIP" ]; echo $?)"
+chk_has "union carry: HEAD prints in the pull block" "$out" "     HEAD: $(git -C "$UC" log --oneline -1)"
+chk_has "union carry: the save is reported" "$out" "saved 1 union-marked file(s) aside"
+chk_has "union carry: the carry-back count is reported" "$out" "carried 1 local line(s) back into _meta/LAB_LOG.md"
+chk "union carry: the incoming line landed" \
+  "$(grep -qF 'remote: the incoming line' "$UC/_meta/LAB_LOG.md"; echo $?)"
+chk "union carry: the local uncommitted line survived" \
+  "$(grep -qF 'local: the other session line' "$UC/_meta/LAB_LOG.md"; echo $?)"
+chk "union carry: the local line is still uncommitted" \
+  "$(git -C "$UC" diff --name-only | grep -qx '_meta/LAB_LOG.md'; echo $?)"
+chk "union carry: README took the incoming content" \
+  "$([ "$(cat "$UC/README.md")" = "readme remote" ]; echo $?)"
+# Anchor rule: the header and the `---` separator stay above every carried line.
+CARRY_LN="$(grep -n 'local: the other session line' "$UC/_meta/LAB_LOG.md" | cut -d: -f1)"
+SEP_LN="$(grep -n '^---$' "$UC/_meta/LAB_LOG.md" | head -1 | cut -d: -f1)"
+chk "union carry: line 1 is still the header" \
+  "$([ "$(sed -n 1p "$UC/_meta/LAB_LOG.md")" = "# Lab log" ]; echo $?)"
+chk "union carry: the carried line sits BELOW the --- anchor" \
+  "$([ "$CARRY_LN" -gt "$SEP_LN" ]; echo $?)"
+chk "union carry: the carried line sits ABOVE the older entries" \
+  "$([ "$CARRY_LN" -lt "$(grep -n 'remote: the incoming line' "$UC/_meta/LAB_LOG.md" | cut -d: -f1)" ]; echo $?)"
+
+echo "--- case 2: a dirty NON-union file is untouched and the pull behaves as it does today"
+build_union_repo nonunion; advance_union_repo nonunion
+UN="$TMPD/uclone-nonunion"
+printf 'readme local edit\n' > "$UN/README.md"
+UN_BEFORE="$(cksum < "$UN/README.md")"
+UN_HEAD="$(git -C "$UN" rev-parse HEAD)"
+out="$("$WRAP" apply --apply "$UN" 2>&1)"; rc=$?
+chk "non-union: apply exits 2 because the pull still aborts" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "non-union: the blocking file is named before the pull" "$out" \
+  "NOTE: uncommitted and not declared merge=union, so the pull aborts on: README.md"
+chk_has "non-union: the pull failure is still reported" "$out" "FAILED pull --ff-only"
+chk_no "non-union: nothing was saved aside" "$out" "union-marked file(s) aside"
+chk "non-union: the dirty file is byte-identical" \
+  "$([ "$UN_BEFORE" = "$(cksum < "$UN/README.md")" ]; echo $?)"
+chk "non-union: HEAD did not move" "$([ "$(git -C "$UN" rev-parse HEAD)" = "$UN_HEAD" ]; echo $?)"
+
+echo "--- case 3: one union plus one non-union is treated as the non-union case"
+build_union_repo mixed; advance_union_repo mixed
+UM="$TMPD/uclone-mixed"
+printf '%s' "$LAB_LOCAL" > "$UM/_meta/LAB_LOG.md"
+printf 'readme local edit\n' > "$UM/README.md"
+UM_LAB_BEFORE="$(cksum < "$UM/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply --apply "$UM" 2>&1)"
+chk_has "mixed: the non-union file is named" "$out" "not declared merge=union, so the pull aborts on: README.md"
+chk_no "mixed: the union file was never saved aside" "$out" "union-marked file(s) aside"
+chk_no "mixed: no carry-back happened" "$out" "carried"
+chk "mixed: the union file is byte-identical" \
+  "$([ "$UM_LAB_BEFORE" = "$(cksum < "$UM/_meta/LAB_LOG.md")" ]; echo $?)"
+
+echo "--- case 5: a dirty index is skipped with a reason, nothing is touched"
+build_union_repo staged; advance_union_repo staged
+US="$TMPD/uclone-staged"
+printf '%s' "$LAB_LOCAL" > "$US/_meta/LAB_LOG.md"
+git -C "$US" add _meta/LAB_LOG.md
+US_BEFORE="$(cksum < "$US/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply --apply "$US" 2>&1)"
+chk_has "dirty index: the reason prints" "$out" "NOTE: the index carries staged changes"
+chk_no "dirty index: nothing was saved aside" "$out" "union-marked file(s) aside"
+chk "dirty index: the staged path is still staged" \
+  "$(git -C "$US" diff --cached --name-only | grep -qx '_meta/LAB_LOG.md'; echo $?)"
+chk "dirty index: the file is byte-identical" \
+  "$([ "$US_BEFORE" = "$(cksum < "$US/_meta/LAB_LOG.md")" ]; echo $?)"
+
+echo "--- dry-run: a dirty union log is announced, never saved or checked out"
+build_union_repo dry; advance_union_repo dry
+UD="$TMPD/uclone-dry"
+printf '%s' "$LAB_LOCAL" > "$UD/_meta/LAB_LOG.md"
+UD_BEFORE="$(cksum < "$UD/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply "$UD" 2>&1)"
+chk_has "dry-run: the carry is announced only" "$out" "--apply would carry its local lines across the pull"
+chk_no "dry-run: nothing was saved aside" "$out" "union-marked file(s) aside"
+chk "dry-run: the union file is byte-identical" \
+  "$([ "$UD_BEFORE" = "$(cksum < "$UD/_meta/LAB_LOG.md")" ]; echo $?)"
+
+# ===========================================================================
 echo "=== gh absent: every non-ancestor is LEAVE, merge refuses ==="
 # ===========================================================================
 mkdir -p "$TMPD/nogh"
