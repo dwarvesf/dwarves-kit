@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# bin/spec -- STABLE consumer entrypoint for the spec subsystem (SPEC-184,
-# ADR-0034 decision 7: every subsystem gets its bin entry).
+# bin/spec -- STABLE consumer entrypoint for the spec subsystem (every subsystem
+# gets its bin entry).
 #
 # Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/spec/<file>.sh`
 # path, so an internal lib reorg never breaks them again. Forwards to the spec
