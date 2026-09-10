@@ -117,8 +117,8 @@ is why `lib/reflect/SPEC` is still an open IOU in `tests/kit-contract-known-gaps
 ## Tests
 
 ```bash
-bash tests/test-learn-propose.sh   # 41, grounding, dedup, fail-closed refute, --retro, sanitization
-bash tests/test-learn-drain.sh     # 23, render, promote-numbering parity, expiry, move-not-delete
+bash tests/test-reflect-propose.sh # 41, grounding, dedup, fail-closed refute, --retro, sanitization
+bash tests/test-reflect-drain.sh   # 23, render, promote-numbering parity, expiry, move-not-delete
 ```
 
 ## The three things a newcomer gets wrong

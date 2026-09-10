@@ -40,7 +40,7 @@ session audit triage --dry-run             # print the blocks, write nothing
 
 `triage` is propose-only and speaks the kit's ONE proposal currency: it appends
 `## [staged]` blocks to `_meta/backlog-staging.md` through
-`lib/reflect/staging-format.py` (ADR-0034 decision 1), exactly like `learn
+`lib/reflect/staging-format.py` (ADR-0034 decision 1), exactly like `reflect
 propose` and `stats anomalies --propose`. The metric contract rides on
 `Approach` (it is what the next audit re-runs), the report + owner ride on
 `Source` (the citation). Dedup is against every staging state + the board, so a
