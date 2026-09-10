@@ -288,14 +288,15 @@ mg_state() {
 # Every checkbox in a mega-goal folder, one `<file>:<line>:<text>` per line. `unchecked` counts
 # `- [ ]` and the `- [~]` in-progress form the estate writes; `checked` counts `- [x]`.
 #
-# A box inside a code span is stripped BEFORE the match: every POINTER_PROMPT.md in the estate
-# spells the convention out as `- [ ] NN-... PR #N`, and counting that instruction made all
-# seven already-archived mega-goals read as unfinished.
+# A box counts only where a checklist actually puts one: at the start of a line, or of a table
+# cell. That anchor is what keeps PROSE ABOUT checkboxes out of the count. Every
+# POINTER_PROMPT.md in the estate spells the convention out mid-sentence as
+# `- [ ] NN-... PR #N`, and matching that instruction made all seven already-archived
+# mega-goals read as unfinished.
 mg_boxes() {
   local f
   while IFS= read -r -d '' f; do
-    sed 's/`[^`]*`//g' "$f" 2>/dev/null \
-      | grep -nE "(^|\|)[[:space:]]*[-*][[:space:]]*\[[$2]\]" \
+    grep -nE "(^|\|)[[:space:]]*[-*][[:space:]]*\[[$2]\]" "$f" 2>/dev/null \
       | awk -v p="$f" '{print p ":" $0}'
   done < <(find "$1" -name '*.md' -type f -print0 2>/dev/null)
 }

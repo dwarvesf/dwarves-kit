@@ -178,16 +178,17 @@ printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/icy-thing'; assert "a clo
 has "$OUT" "co-locate to tools/icy-ops/docs/megagoals/icy-thing/" && R=0 || R=1
 assert "the FIX names the co-location destination" $R "-- got: $OUT"
 
-# The estate writes the checkbox convention out as an INSTRUCTION inside a code span in every
-# POINTER_PROMPT.md. Counting that instruction made all seven already-archived mega-goals read
-# as unfinished, so a box inside backticks is not an open sub-goal.
+# Every POINTER_PROMPT.md in the estate spells the checkbox convention out MID-SENTENCE as an
+# instruction. Matching that prose made all seven already-archived mega-goals read as
+# unfinished, so a box counts only where a checklist puts one: at the start of a line or of a
+# table cell.
 printf '%s\n' \
   '- Record the PR # the moment `gh pr create` returns: `- [ ] NN-... PR #N`.' \
   '- Flip to `[x]` only when the sub-goal is verified.' \
   > "$MA/_meta/megagoals/icy-thing/POINTER_PROMPT.md"
 seal "$MA" "docs(icy-ops): pointer prompt"
 OUT="$(scan "$MA" --detectors 3)"
-printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/icy-thing'; assert "a checkbox inside a code span is not an open sub-goal" $? "-- got: $OUT"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/icy-thing'; assert "prose describing a checkbox is not an open sub-goal" $? "-- got: $OUT"
 
 # Real folder 1: the commit said the build was complete and the goal shipped; the ROADMAP
 # still carried four open sub-goals and the notes still carried a section blocked on a human.
@@ -274,11 +275,12 @@ has "$OUT" "charter-goal" && R=1 || R=0
 assert "an open status marker outranks a closing commit subject" $R "-- got: $OUT"
 
 # The keyword test reads the status line's TEXT. A goal whose own directory is named
-# `...-complete` would otherwise declare itself finished through its path.
+# `...-complete` would otherwise declare itself finished through its path. The status line here
+# IS a declaration (a bare `## Status` heading is not), so only the text keeps it open.
 MH="$(mkmega safari-net-complete)"
 printf '%s\n' \
   '# Mega-goal: safari-net-complete' '' \
-  '## Status' '' \
+  '## Status (refreshed each wave)' '' \
   '- [ ] 01-capture-completion, request bodies + real HAR timing, PR #' \
   > "$MH/_meta/megagoals/safari-net-complete/ROADMAP.md"
 seal "$MH" "feat(icy-ops): scaffold safari-net-complete"

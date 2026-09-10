@@ -62,9 +62,10 @@ first step that answers:
    deferred, in progress) wins over a closed one, because the loop's only mutation is a move
    and a live engine must not be moved out of the control surface.
 2. **Its own checkboxes.** An unchecked item anywhere in the folder (`- [ ]`, and the `- [~]`
-   in-progress form) means the goal is not complete, whatever the commits say. A box inside a
-   code span does not count: every POINTER_PROMPT.md in the estate writes the convention out
-   as `` `- [ ] NN-... PR #N` ``.
+   in-progress form) means the goal is not complete, whatever the commits say. A box counts
+   only at the start of a line or of a table cell, which keeps prose ABOUT checkboxes out of
+   the count: every POINTER_PROMPT.md in the estate writes the convention out mid-sentence as
+   `` `- [ ] NN-... PR #N` ``.
 3. **Commit evidence, only for a folder that declares nothing at all**, and then the verdict
    is UNSURE. A commit keyword alone never earns a mega-goal folder a FIX.
 

@@ -46,7 +46,7 @@ order, and stops at the first step that answers:
 | # | Step | Effect |
 |---|---|---|
 | 1 | An explicit status marker in the folder's top-level docs: a `Status:` or `State:` heading or bold label. An OPEN marker anywhere wins over a closed one | open, no finding. closed, continue |
-| 2 | An unchecked checklist item anywhere in the folder (`- [ ]`, and the `- [~]` in-progress form). Boxes inside a code span do not count | any open item, no finding, or `UNSURE` when a closed marker contradicts it |
+| 2 | An unchecked checklist item anywhere in the folder (`- [ ]`, and the `- [~]` in-progress form), counted only at the start of a line or of a table cell | any open item, no finding, or `UNSURE` when a closed marker contradicts it |
 | 3 | Only for a folder that declares nothing: the commit subjects that touched it | `UNSURE` at most, never `FIX` |
 
 `FIX` requires all three: a closed marker, no open item, and a commit scope that resolves an
@@ -65,9 +65,13 @@ Two consequences, both deliberate:
   were finished but never had their last box flipped. The loop stays silent on them rather
   than moving a folder whose own record says it is unfinished, because a missed move costs one
   un-filed finding and a wrong move takes a live engine out of the control surface.
-- **A box inside a code span is not an open sub-goal.** Every POINTER_PROMPT.md in the estate
-  spells the convention out as `` `- [ ] NN-... PR #N` ``. Counting that instruction made all
-  seven already-archived mega-goals read as unfinished.
+- **Prose describing a checkbox is not an open sub-goal.** Every POINTER_PROMPT.md in the
+  estate spells the convention out mid-sentence as `` `- [ ] NN-... PR #N` ``. Matching that
+  instruction made all seven already-archived mega-goals read as unfinished, so a box counts
+  only at the start of a line or of a table cell, which is where a checklist puts one.
+- **A checklist inside a fenced code block still counts**, because the line anchor cannot see
+  the fence. The effect is conservative (the folder reads unfinished and no finding is
+  emitted), so it costs a missed move, never a wrong one.
 
 ## The audited repo is hostile input
 

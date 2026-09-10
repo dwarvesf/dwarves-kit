@@ -252,6 +252,12 @@ commit that emptied it.
 
 `ops-toolkit` keeps seven already-archived mega-goals under `_meta/megagoals/_archive/`, every
 one of them genuinely finished. All seven read as closed under the new test, with zero open
-items each. That only holds because a checkbox inside a code span is stripped first: every
-`POINTER_PROMPT.md` in the estate spells the convention out as `` `- [ ] NN-... PR #N` ``, and
-counting that instruction made all seven read as unfinished.
+items each. That only holds because a box counts at the start of a line or of a table cell and
+nowhere else: every `POINTER_PROMPT.md` in the estate spells the convention out mid-sentence as
+`` `- [ ] NN-... PR #N` ``, and matching that instruction made all seven read as unfinished.
+
+The first version of this fix also stripped code spans before counting, on the assumption that
+the backticks were what excluded the boilerplate. Measured against all 31 mega-goal folders in
+the corpus, stripping changed no count anywhere: the line anchor was already doing the work.
+The negative control is what surfaced it, by breaking the stripping and watching the suite stay
+green. The dead pass is gone and the comment now names the real mechanism.
