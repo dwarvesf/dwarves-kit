@@ -9,6 +9,7 @@ Kit-shipped Claude Code output styles. An output style is a markdown file whose 
 | Plugin install | Claude Code reads this directory as-is (`output-styles/` is the plugin-native name). |
 | Bash install (`install.sh`) | each `<name>.md` here is symlinked into `~/.claude/output-styles/`; an existing real file there is left alone. |
 | Adopted project | `[output] style = "<name>"` in the project's `.kit.toml` (or the operator or kit-root `kit.toml`) makes `lib/adopt.sh` copy `<name>.md` into `<project>/.claude/output-styles/` and set `outputStyle` in `<project>/.claude/settings.json`. |
+| Operator default | `install.sh` step 7b sets `outputStyle` in `$CLAUDE_DIR/settings.json` from the operator or kit-root `[output] style` (project scope skipped; install has no project), so it becomes a person's own default on every repo. |
 
 Precedence follows the harness: `.claude/settings.local.json` (what the `/config` and `/output-style` pickers write) outranks the project `settings.json` the kit writes, so a person's own pick always wins on their machine. An empty `style = ""` leaves the project's setting untouched.
 
