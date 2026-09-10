@@ -18,7 +18,7 @@ HOOK="$KIT_DIR/hooks/context-budget.sh"
 _tmp="$(mktemp -d "${TMPDIR:-/tmp}/dwarves-kit-context-budget-tests.XXXXXX")"
 trap 'rm -rf "$_tmp"' EXIT
 export HOME="$_tmp"
-unset CC_CTX_WARN CC_CTX_STEP
+unset KIT_CTX_WARN KIT_CTX_STEP
 mkdir -p "$HOME/.claude/projects/p"
 
 PASS=0
@@ -89,7 +89,7 @@ echo '{"type":"user"}' > "$HOME/nouse.jsonl"; step "5.3 no assistant turn yet" s
 echo "== Case 6: thresholds come from env =="
 T6="$HOME/.claude/projects/p/s6.jsonl"
 transcript "$T6" 120000
-CC_CTX_WARN=100000 step "6.1 120k with CC_CTX_WARN=100000" speak s6 "$T6"
+KIT_CTX_WARN=100000 step "6.1 120k with KIT_CTX_WARN=100000" speak s6 "$T6"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

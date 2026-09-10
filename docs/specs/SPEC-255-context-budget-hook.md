@@ -35,9 +35,9 @@ context-budget.sh
   -> last main-chain (isSidechain != true) assistant usage
   -> ctx = input + cache_creation + cache_read
         |
-   ctx < CC_CTX_WARN (200k)?  --yes--> clear state, exit 0 (silent)
+   ctx < KIT_CTX_WARN (200k)?  --yes--> clear state, exit 0 (silent)
         | no
-   band = (ctx - WARN) / CC_CTX_STEP (100k)
+   band = (ctx - WARN) / KIT_CTX_STEP (100k)
    band > last-warned-band (~/.cache/claude-context-budget/<session_id>)?
         | no --> exit 0 (silent, already warned this band)
         | yes
@@ -50,8 +50,8 @@ context-budget.sh
 ### Interfaces (I/O contract)
 
 - Event: `UserPromptSubmit`. Stdin: the standard hook payload (`session_id`, `transcript_path`, `prompt`).
-- Env knobs: `CC_CTX_WARN` (default 200000, first warning threshold) and `CC_CTX_STEP` (default 100000, band width for repeat warnings). Non-numeric or a non-positive `CC_CTX_STEP` disables the hook for that invocation (fail-open).
-- State: `~/.cache/claude-context-budget/<session_id>`, one line holding the last-warned band index (an integer, or absent). Removed when context drops back under `CC_CTX_WARN`.
+- Env knobs: `KIT_CTX_WARN` (default 200000, first warning threshold) and `KIT_CTX_STEP` (default 100000, band width for repeat warnings). Non-numeric or a non-positive `KIT_CTX_STEP` disables the hook for that invocation (fail-open).
+- State: `~/.cache/claude-context-budget/<session_id>`, one line holding the last-warned band index (an integer, or absent). Removed when context drops back under `KIT_CTX_WARN`.
 - Output on warn: `{"systemMessage": "<operator-facing text>", "hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "<model-facing text>"}}`. No output (empty stdout) when silent. Exit code is always 0.
 - Context computation: the LAST JSONL line in the transcript tail (2MB) whose `type == "assistant"` and `isSidechain != true` and carries `message.usage`; `ctx = input_tokens + cache_creation_input_tokens + cache_read_input_tokens` (missing fields treated as 0).
 
@@ -91,7 +91,7 @@ Run `bash tests/test-context-budget.sh`. All 13 cases pass:
 10. A missing transcript path stays silent (fail-open).
 11. An unparseable transcript stays silent (fail-open).
 12. A transcript with no assistant turn yet stays silent.
-13. `CC_CTX_WARN` overridden via env (100000) warns at 120k, below the hardcoded default.
+13. `KIT_CTX_WARN` overridden via env (100000) warns at 120k, below the hardcoded default.
 
 Negative control: revert the sidechain filter (`isSidechain != true` -> drop the clause) and the band-comparison guard (`$BAND -gt $LAST` -> always true) in a committed tree; cases 3, 5, and 8 must fail; restore and confirm green again.
 

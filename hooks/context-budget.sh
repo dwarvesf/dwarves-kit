@@ -10,8 +10,8 @@
 # != true) assistant turn in the transcript tail. That is the payload the next turn
 # re-reads from cache.
 #
-# Bands: first warning at CC_CTX_WARN (default 200000), then one more per CC_CTX_STEP
-# (default 100000). A drop below CC_CTX_WARN (e.g. after /compact) clears the state so
+# Bands: first warning at KIT_CTX_WARN (default 200000), then one more per KIT_CTX_STEP
+# (default 100000). A drop below KIT_CTX_WARN (e.g. after /compact) clears the state so
 # the next crossing warns again.
 #
 # State: ~/.cache/claude-context-budget/<session_id>, one line: last warned band.
@@ -28,8 +28,8 @@ SESSION_ID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
 TRANSCRIPT=$(printf '%s' "$INPUT" | jq -r '.transcript_path // empty' 2>/dev/null)
 [ -n "$SESSION_ID" ] && [ -r "$TRANSCRIPT" ] || exit 0
 
-WARN=${CC_CTX_WARN:-200000}
-STEP=${CC_CTX_STEP:-100000}
+WARN=${KIT_CTX_WARN:-200000}
+STEP=${KIT_CTX_STEP:-100000}
 case "$WARN$STEP" in *[!0-9]*) exit 0 ;; esac
 [ "$STEP" -gt 0 ] || exit 0
 

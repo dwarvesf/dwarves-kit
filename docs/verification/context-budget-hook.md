@@ -1,6 +1,6 @@
 # Proof of Done: context-budget hook (SPEC-255)
 
-**Feature:** a UserPromptSubmit hook in the opt-in `session` module. Once a session's live context passes `CC_CTX_WARN` (200000), it warns once per `CC_CTX_STEP` (100000) band, to the user through `systemMessage` and to the model through `additionalContext`.
+**Feature:** a UserPromptSubmit hook in the opt-in `session` module. Once a session's live context passes `KIT_CTX_WARN` (200000), it warns once per `KIT_CTX_STEP` (100000) band, to the user through `systemMessage` and to the model through `additionalContext`.
 **Date:** 2026-09-10 · **Lane:** normal · **Spec:** `docs/specs/SPEC-255-context-budget-hook.md`
 
 ## Acceptance criteria
@@ -11,7 +11,7 @@
 | C2 | First warning at the budget, then one per band, never twice in a band |
 | C3 | A drop below the budget clears the state, so the next crossing warns again |
 | C4 | Subagent sidechain usage never sets the number |
-| C5 | Thresholds come from `CC_CTX_WARN` and `CC_CTX_STEP` |
+| C5 | Thresholds come from `KIT_CTX_WARN` and `KIT_CTX_STEP` |
 | C6 | Fail-open: a missing, unreadable or unparseable transcript exits 0 and prints nothing |
 | C7 | Wired on both install paths (plugin `hooks.json`, bash `settings.json`) and in the `session` module list |
 | C8 | Bash and jq only, per the Bash-over-binaries rule |
