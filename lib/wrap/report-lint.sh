@@ -93,41 +93,99 @@ done <<< "$input"
 # empty `**Built:**` header cannot satisfy it. BUILT names what was built or staged;
 # NOTHING says the precedent check ran and produced no candidate; SKIPPED says the step did
 # not run and why. A report with no such line means nobody can tell which happened.
+#
+# BUILT itself comes in two forms. INLINE keeps one candidate on the header line, the
+# original shape. LIST is a bare `**Built:**` header followed by `- ` bullets, one candidate
+# per line, added because a real session crammed three candidates onto one line joined by
+# nothing readable. Both forms carry the same per-candidate rule below; LIST just applies it
+# once per bullet instead of once per line, which is the whole point of the form: a report
+# with a bare path and a commit buried as the second of three items used to slip through
+# because only the first item on the line got read closely.
 if ! printf '%s' "$input" | grep -q '\*\*Built:\*\*'; then
   echo "line 0: no '**Built:**' line; step 7b (build the candidates) owes an outcome" >&2
-  echo "  add one of: '**Built:** <what>', '**Built:** NOTHING: no candidates', '**Built:** SKIPPED: <why>'" >&2
-  findings=$((findings + 1))
-elif ! printf '%s' "$input" | grep -qE '\*\*Built:\*\*[[:space:]]*(NOTHING|SKIPPED|[^[:space:]])'; then
-  echo "line 0: '**Built:**' is empty; name what was built, or NOTHING, or SKIPPED with a reason" >&2
+  echo "  add one of: '**Built:** <what>', '**Built:** NOTHING: no candidates', '**Built:** SKIPPED: <why>', or a bare '**Built:**' header followed by '- ' bullets" >&2
   findings=$((findings + 1))
 else
-  # The three states must stay distinguishable. `SKIPPED: nothing to build` says the step did
-  # not run AND that it found nothing, which is two states in one line and means neither; it
-  # appeared thirteen times in two weeks of real reports, every one from a step that never
-  # scanned. An empty scan is NOTHING. And a non-empty line must carry ENHANCE or NEW: those
-  # tokens are the slot that forces naming the existing tool a candidate joins. A `Built:` that
-  # is only a path and a commit is the session's own deliverable wearing step 7b's label, which
-  # is how the step reported "built" every session and enhanced nothing.
-  built_line="$(printf '%s' "$input" | grep -m1 '\*\*Built:\*\*' | sed 's/^.*\*\*Built:\*\*[[:space:]]*//')"
-  built_lower="$(printf '%s' "$built_line" | tr '[:upper:]' '[:lower:]')"
-  case "$built_lower" in
-    skipped:*nothing*|skipped:*no\ candidate*|skipped:*none*)
-      echo "line 0: '**Built:** SKIPPED: ...' says the step did not run; an empty scan is 'NOTHING: no candidates', not a skip" >&2
-      echo "  ${built_line}" >&2
-      findings=$((findings + 1)) ;;
-    nothing*|skipped:*) : ;;
-    *enhance*|*new\ \(*) : ;;
-    *)
-      echo "line 0: '**Built:**' names something built with no ENHANCE <home> or NEW (precedent: ...) token; name the existing tool it joins, or the precedent miss" >&2
-      echo "  ${built_line}" >&2
-      findings=$((findings + 1)) ;;
-  esac
+  # Split the block: built_inline is whatever trails the header on its own line; built_bullets
+  # is every immediately-following `- ` line, up to the first blank line or the next bold
+  # header. A header with neither is empty; a header with both is two grammars fighting over
+  # one line, never valid (NOTHING and SKIPPED are whole-outcome states and stay inline, per
+  # the rule below).
+  built_inline=""
+  built_bullets=()
+  _b_state=0   # 0 = looking for the header, 1 = header seen, scanning bullets
+  while IFS= read -r _b_line; do
+    if [ "$_b_state" = 0 ]; then
+      case "$_b_line" in
+        *'**Built:**'*)
+          built_inline="$(printf '%s' "$_b_line" | sed 's/^.*\*\*Built:\*\*[[:space:]]*//')"
+          _b_state=1
+          ;;
+      esac
+      continue
+    fi
+    case "$_b_line" in
+      '- '*) built_bullets+=("${_b_line#- }") ;;
+      *) _b_state=2 ;;
+    esac
+    [ "$_b_state" = 2 ] && break
+  done <<< "$input"
+  built_bullet_count=${#built_bullets[@]}
+
+  if [ -z "$built_inline" ] && [ "$built_bullet_count" -eq 0 ]; then
+    echo "line 0: '**Built:**' is empty; name what was built, or NOTHING, or SKIPPED with a reason, or list '- ' bullets" >&2
+    findings=$((findings + 1))
+  elif [ -n "$built_inline" ] && [ "$built_bullet_count" -gt 0 ]; then
+    echo "line 0: '**Built:**' carries both inline content and bullets; NOTHING, SKIPPED, and a single inline candidate stay on the header line and are never mixed with a bullet list" >&2
+    echo "  ${built_inline}" >&2
+    findings=$((findings + 1))
+  elif [ "$built_bullet_count" -gt 0 ]; then
+    # LIST form. The three-state rule (NOTHING/SKIPPED/named) is a whole-outcome call already
+    # made by staying inline above, so every bullet here is a candidate and owes the same
+    # ENHANCE/NEW token the inline form owes, checked per bullet so one bad item among several
+    # good ones cannot hide.
+    _b_idx=0
+    for _b_item in "${built_bullets[@]}"; do
+      _b_idx=$((_b_idx + 1))
+      _b_item_lower="$(printf '%s' "$_b_item" | tr '[:upper:]' '[:lower:]')"
+      case "$_b_item_lower" in
+        *enhance*|*new\ \(*) : ;;
+        *)
+          echo "line 0: '**Built:**' bullet ${_b_idx} names something built with no ENHANCE <home> or NEW (precedent: ...) token; name the existing tool it joins, or the precedent miss" >&2
+          echo "  - ${_b_item}" >&2
+          findings=$((findings + 1)) ;;
+      esac
+    done
+  else
+    # INLINE form. `SKIPPED: nothing to build` says the step did not run AND that it found
+    # nothing, which is two states in one line and means neither; it appeared thirteen times
+    # in two weeks of real reports, every one from a step that never scanned. An empty scan is
+    # NOTHING. And a non-empty line must carry ENHANCE or NEW: those tokens are the slot that
+    # forces naming the existing tool a candidate joins. A `Built:` that is only a path and a
+    # commit is the session's own deliverable wearing step 7b's label, which is how the step
+    # reported "built" every session and enhanced nothing.
+    built_lower="$(printf '%s' "$built_inline" | tr '[:upper:]' '[:lower:]')"
+    case "$built_lower" in
+      skipped:*nothing*|skipped:*no\ candidate*|skipped:*none*)
+        echo "line 0: '**Built:** SKIPPED: ...' says the step did not run; an empty scan is 'NOTHING: no candidates', not a skip" >&2
+        echo "  ${built_inline}" >&2
+        findings=$((findings + 1)) ;;
+      nothing*|skipped:*) : ;;
+      *enhance*|*new\ \(*) : ;;
+      *)
+        echo "line 0: '**Built:**' names something built with no ENHANCE <home> or NEW (precedent: ...) token; name the existing tool it joins, or the precedent miss" >&2
+        echo "  ${built_inline}" >&2
+        findings=$((findings + 1)) ;;
+    esac
+  fi
 fi
 
 # A `NEW (precedent: nothing matched)` candidate is a fresh script by definition, no home to
 # join. But if it turns out to speak CDP, it already has a home: browser-harness-js's
 # per-site learnings. Warn only (the precedent check ran and genuinely found nothing to
 # ENHANCE; this catches the narrower case where the candidate duplicates the harness itself).
+# This walks every line of the input, so it fires the same way on an inline `Built:` line and
+# on a LIST-form bullet: the token match does not care which grammar carried it.
 HARNESS_CDP_RE='session\.(Runtime|Input|DOM|Page|Target)\.|listPageTargets\(|Runtime\.evaluate'
 while IFS= read -r built_new_line; do
   case "$built_new_line" in
