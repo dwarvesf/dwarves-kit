@@ -5,7 +5,7 @@
 # body args and -F bodies are ignored, so a long body never trips the length
 # check. Editor commits, --no-edit, and merge/fixup/squash/revert subjects pass
 # through (no subject to lint, or tool-generated).
-# Source: GSD gsd-validate-commit.sh (adapted to bash+jq). SPEC-014. Exit 2 = block.
+# Source: GSD gsd-validate-commit.sh (adapted to bash+jq). Exit 2 = block.
 
 set -uo pipefail
 INPUT=$(cat 2>/dev/null) || exit 0

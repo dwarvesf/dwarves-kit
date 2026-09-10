@@ -1,6 +1,6 @@
 #!/bin/bash
 # ship-gate.sh, PreToolUse hook, matcher: Bash
-# Workflow-completeness gate at the ship/push boundary (ADR-0024). When a feature
+# Workflow-completeness gate at the ship/push boundary. When a feature
 # branch is pushed or a PR is opened, refuse if the active spec's lane has a
 # required (measure-twice) gate with no `ran`/`override` entry in its run ledger.
 #
@@ -9,13 +9,13 @@
 # work. push-to-main and force-push stay safety-gate.sh's job. Exit 2 = block.
 set -uo pipefail
 # Preserve fail-open even on the pathological case (HOME unset under set -u): the lib
-# fallback below uses $HOME, so default it to empty rather than error-exit (SPEC-045 review).
+# fallback below uses $HOME, so default it to empty rather than error-exit.
 HOME="${HOME:-}"
 INPUT=$(cat)
 CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null || true)
 [ -z "$CMD" ] && exit 0
 
-# SPEC-064: strip heredoc bodies BEFORE the engage check, so "git push" appearing in
+# Strip heredoc bodies BEFORE the engage check, so "git push" appearing in
 # generated prose (PR bodies, test fixtures) never engages the gate. Same normalizer
 # shape as safety-gate.sh.
 CMD_CODE=$(printf '%s\n' "$CMD" | awk '
@@ -37,7 +37,7 @@ echo "$CMD_CODE" | grep -qE 'git[[:space:]]+push|gh[[:space:]]+pr[[:space:]]+cre
 # Leave push-to-main / force-push to safety-gate; do not double-handle.
 echo "$CMD_CODE" | grep -qE '\b(main|master)\b|--force' && exit 0
 
-# SPEC-064: a command that cd's elsewhere ships THAT repo, not the session cwd (the
+# A command that cd's elsewhere ships THAT repo, not the session cwd (the
 # cross-repo misfire: a `cd other-repo && git push` was gated against the SESSION
 # repo's spec). Resolve the repo from a leading cd prefix when present.
 # BSD-sed-portable: grab the cd arg with grep -o, then strip the prefix + quotes.
@@ -67,7 +67,7 @@ _resolve_base() {
 # freeform /goal work too, because it classifies the branch DIFF instead of a spec. A
 # load-bearing (behavioral/stateful) change cannot ship without a matching proof-of-done
 # entry. Fails open on ambiguity (handled inside proof-ledger). Exit 2 = block. ---
-# Resolve the lib from the kit's INSTALL location, not the repo being pushed (SPEC-045):
+# Resolve the lib from the kit's INSTALL location, not the repo being pushed:
 # in bash-install mode CLAUDE_PLUGIN_ROOT is unset, and a consumer repo has no lib/, so a
 # $ROOT fallback fails open in every consumer. The stable install path fixes that; plugin
 # mode (CLAUDE_PLUGIN_ROOT set) is unchanged.
@@ -88,7 +88,7 @@ if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
       exit 2
     fi
   fi
-  # delivery-ratio advisory (ID-277 delivery-audit fix; NEVER blocks): surface a proof-heavy
+  # delivery-ratio advisory (NEVER blocks): surface a proof-heavy
   # branch -- lots of proof-of-done/verification/spec lines wrapped around a near-zero real
   # change -- so a reviewer can spot-check delivery vs the sub-goal's claim. Heuristic with real
   # false positives (a docs sub-goal is proof-heavy by design; a 1-line fix can be load-bearing),
@@ -99,7 +99,7 @@ if [ -f "$PROOF" ] && [ -f "$ROOT/docs/verification/README.md" ]; then
   fi
 fi
 
-# SPEC-069 advisory (never blocks), relocated ABOVE the spec check (SPEC-071 / ID-063):
+# Board-registration advisory (never blocks), relocated ABOVE the spec check:
 # spec-less freeform pushes are exactly the work most likely to be un-boarded, and the
 # old placement exited before the nudge could fire.
 if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2>/dev/null | grep -qF -- "$SLUG"; then
@@ -107,7 +107,7 @@ if [ -f "$ROOT/_meta/BACKLOG.md" ] && ! grep -E '^\|' "$ROOT/_meta/BACKLOG.md" 2
 fi
 
 # Doc-projection gate (kit repo only): the drift class that shipped twice
-# (ID-467, ID-639) is an agent/command landing without its MANUAL/architecture
+# is an agent/command landing without its MANUAL/architecture
 # rows. When THIS push touches a projection surface, run the fast grep subset
 # (lib/gate/doc-projection-check.sh, ~0.1s; the slow FEATURES regen stays in
 # the full suite). Kit repo only by the file-existence scoping (a consumer repo
@@ -129,7 +129,7 @@ if [ -f "$ROOT/lib/gate/doc-projection-check.sh" ] && [ -f "$ROOT/tests/test-met
   fi
 fi
 
-# SPEC-071 / ID-062 advisory (never blocks): a run that recorded real build work but
+# Build-ran advisory (never blocks): a run that recorded real build work but
 # ships no committable verification record dies with the session (the run ledger is
 # gitignored by design). The proof-gate BLOCKS behavioral diffs in adopted repos; this
 # covers its deliberate fail-open seams (non-adopted repo, tests/CI-only diff). Lane
@@ -140,7 +140,7 @@ LEDGER62="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.
 if [ -f "$LEDGER62" ]; then
   RLED=$(bash "$LEDGER62" show "$SLUG" 2>/dev/null || true)
   # RLANE derived from START unconditionally (review: descent must not depend on the
-  # ID-062 build-ran gate; a run can violate order without ever recording build).
+  # build-ran gate; a run can violate order without ever recording build).
   RLANE=$( { printf '%s' "$RLED" | grep '| START-AMEND |' | tail -1; printf '%s' "$RLED" | grep '| START |' | head -1; } | head -1 | sed -nE 's/.*\| lane=([a-z-]+).*/\1/p')
   if printf '%s' "$RLED" | grep -q '| GATE | build | ran'; then
     case "$RLANE" in
@@ -156,8 +156,8 @@ if [ -f "$LEDGER62" ]; then
   fi
 fi
 
-# SPEC-076 advisory (never blocks): V-model descent , phases recorded out of the
-# lane's plan order. Lane from the ledger START line (same source as the ID-062 warn).
+# V-model descent advisory (never blocks): phases recorded out of the
+# lane's plan order. Lane from the ledger START line (same source as the build-ran warn).
 if [ -f "$LEDGER62" ] && [ -n "${RLANE:-}" ]; then
   DOUT=$(bash "$LEDGER62" descent "$SLUG" "$RLANE" 2>/dev/null || true)
   DN=$(printf '%s' "$DOUT" | grep -c '^DESCENT:' || true)
@@ -170,7 +170,7 @@ fi
 SPEC=$(ls "$ROOT"/docs/specs/SPEC-*-"$SLUG".md 2>/dev/null | head -1 || true)
 [ -n "$SPEC" ] || exit 0
 
-# ID-466 advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
+# Test-plan coverage advisory (never blocks): the spec carries a ## Test plan, so the proof-of-done owes
 # a ## Test plan coverage map -- each matrix row mapped to the run that exercised it, or an
 # explicit skip reason (shape: docs/verification/README.md "Test plan coverage map"). WARNS
 # on a missing map or unmapped rows; no test plan in the spec = no new requirement.
@@ -210,7 +210,7 @@ fi
 LEDGER="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/dwarves-kit}/lib/gate/gate-ledger.sh"
 [ -f "$LEDGER" ] || exit 0
 
-# SPEC-129: bracket the ship gate with an OUTCOME emit (caught= + START/END timing). This is
+# Bracket the ship gate with an OUTCOME emit (caught= + START/END timing). This is
 # the live invocation path for the additive OUTCOME marker. It is BEST-EFFORT and writes ONLY
 # to the rid ledger, so it can never change this hook's fail-open contract, exit code, or
 # operator output. caught=true when the check BLOCKS (it caught a missing-gate defect),

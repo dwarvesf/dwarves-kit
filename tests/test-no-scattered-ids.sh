@@ -7,12 +7,23 @@
 #
 # THIS LINT IS A RATCHET, NOT A FULL AUDIT. The repo carries roughly 2,600 scattered ids that
 # predate the rule, so a lint over all of them would fail on day one and be disabled by
-# Tuesday. It enforces the two zones that are already clean, so they cannot regrow, and gains
-# a zone each time a cleanup batch lands. Widening it is the point; a zone list that never
+# Tuesday. It enforces the zones that are already clean, so they cannot regrow, and gains a
+# zone each time a cleanup batch lands. Widening it is the point; a zone list that never
 # grows means the cleanup stopped.
 #
 #   Zone 1  no id inside a string the code PRINTS (hooks/, lib/, excluding nested tests/)
 #   Zone 2  no instruction telling the model to EMIT an id into its own output (commands/)
+#   Zone 3  no id anywhere in hooks/*.sh (comments included, not just printed strings)
+#   Zone 4  no id anywhere in bin/* (help text and comments)
+#   Zone 5  no id in skills/*/SKILL.md prose (frontmatter keys excepted)
+#
+# Zones 1 and 2 predate lib/lint/scattered-ids.sh and keep their own narrow inline greps on
+# purpose: Zone 1 only cares whether an id reaches the terminal (echo/printf), Zone 2 only
+# cares whether a command tells the MODEL to mint an id token; both are stricter shapes than
+# "any id in the file," so lib/ and commands/ still carry plenty of comment-only ids Zone 1/2
+# do not see (lib/ is a future batch; commands/ is Zone 7 below, added its own way). Zones 3
+# onward are the general "any non-exempt id" check and are driven by the shared enumerator
+# (`lib/lint/scattered-ids.sh`) so a new zone is one line here, not a new grep.
 #
 # Run: bash tests/test-no-scattered-ids.sh
 
@@ -70,6 +81,23 @@ if [ "$emit" -eq 0 ]; then
 else
   no "$emit instruction(s) emit an id; remove the token, keep the instruction"
 fi
+
+ENUM="lib/lint/scattered-ids.sh"
+clean_zone() {  # clean_zone <zone-name> <zone-number> <label>
+  z="$1"; n="$2"; label="$3"
+  echo ""
+  echo "=== Zone $n: $label ==="
+  hits="$(bash "$ENUM" --zone "$z" 2>/dev/null || true)"
+  if [ -z "$hits" ]; then
+    ok "no scattered id in $z"
+  else
+    printf '%s\n' "$hits" | while IFS= read -r l; do [ -n "$l" ] && echo "     $l" >&2; done
+    no "$(printf '%s\n' "$hits" | grep -c .) hit(s) in $z; see lib/lint/README.md for the exemption list"
+  fi
+}
+clean_zone hooks    3 "no id anywhere in hooks/*.sh"
+clean_zone bin      4 "no id anywhere in bin/*"
+clean_zone skills   5 "no id in skills/*/SKILL.md prose"
 
 echo ""
 echo "=== Ratchet: the zone list is meant to grow ==="

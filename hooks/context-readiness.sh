@@ -22,7 +22,7 @@ fi
 # Only warn about missing essentials, don't confirm present ones
 [ ! -f "CLAUDE.md" ] && WARNINGS+="No CLAUDE.md in project root. "
 
-# Board awareness (SPEC-083 / ID-033): the SessionStart injection is the entry
+# Board awareness: the SessionStart injection is the entry
 # surface, so it must see the board, or queued work is invisible at session
 # start. Twin of lib/board/backlog.sh _rows: status = second-to-last pipe cell,
 # leading keyword before space/bracket/paren (keep the two parsers in sync).
@@ -36,11 +36,11 @@ if [ -f "_meta/BACKLOG.md" ]; then
 fi
 
 # Spec status + command suggestion
-# Resolve the active spec (SPEC-005 dual-detect, reconciled to ADR-0010):
+# Resolve the active spec (dual-detect, reconciled with the unified spec-location decision):
 # docs/specs/ is primary (kit + downstream). Among non-SHIPPED/PARKED specs:
 # exactly one -> use it; more than one -> the one whose slug matches the git
 # branch; zero/multiple branch matches -> emit spec:ambiguous and pick none
-# (never silently guess). See docs/specs/SPEC-005, SPEC-010.
+# (never silently guess).
 SPEC_FILE=""
 SPEC_AMBIG=""
 CANDIDATES=$(
@@ -88,7 +88,7 @@ if [ -n "$SPEC_AMBIG" ]; then
   STATE+="spec:ambiguous(${SPEC_AMBIG}) "
   SUGGEST="multiple live specs, no branch match; disambiguate (check out a spec's branch, or ship/park the others)"
 elif [ -z "$SPEC_FILE" ]; then
-  # Intent-first (SPEC-083): the operator states intent; commands are named in
+  # Intent-first: the operator states intent; commands are named in
   # parentheses for reference. A non-empty queue routes to the board pull.
   if [ -n "$BOARD_Q" ] && [ "$BOARD_Q" -gt 0 ]; then
     SUGGEST="${BOARD_Q} queued on the board; state the task, or /kit:assign --next"
@@ -108,8 +108,8 @@ else
       TOTAL=$(grep -c '^\- \[.\]' "$SPEC_FILE" 2>/dev/null || true)
       DONE=$(grep -c '^\- \[x\]' "$SPEC_FILE" 2>/dev/null || true)
       STATE+="tasks:${DONE}/${TOTAL} "
-      # A live spec's cycle suggestion beats the board pull (SPEC-083:
-      # mid-cycle, finishing beats starting); the board: token stays either way.
+      # A live spec's cycle suggestion beats the board pull (mid-cycle, finishing
+      # beats starting); the board: token stays either way.
       if [ "$DONE" -eq "$TOTAL" ] && [ "$TOTAL" -gt 0 ]; then
         if grep -q '^## Review' "$SPEC_FILE" 2>/dev/null; then
           SUGGEST="all tasks done and reviewed; say 'ship it' (or /kit:ship)"
