@@ -9,7 +9,7 @@ disable-model-invocation: false
 ## Overview
 
 The kit runs 3 first-party bounded loops: Goal, Debug, Execute. It also runs a bounded-revise
-side-flow, `test-plan-review-team` (SPEC-203/204). This skill extracts the reusable shape from
+side-flow, `test-plan-review-team`. This skill extracts the reusable shape from
 that fourth loop. Use it to design a new loop against a known pattern, instead of starting from
 scratch.
 
