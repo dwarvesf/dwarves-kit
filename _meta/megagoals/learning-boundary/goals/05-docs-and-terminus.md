@@ -2,7 +2,7 @@
 
 **Merge policy:** auto
 **Time budget:** 2 hours
-**Proof:** run-table: dwarves-kit `WORKFLOW.md`, `AGENTS.md`, `README.md`, learning-kit `README.md` + `docs/ARCHITECTURE.md`, context-kit `README.md` each carry the same three-row boundary table (kit, learner or plane, what it owns, the seam it fills); `docs/specs/SPEC-249-estate-seams.md` `## Seams` lists `wrap.learn`; `bash bin/config seams --check` exits 0 on the operator machine with `wrap.after`, `wrap.learn`, `knowledge.root` all `filled` and `Filled by` naming the kit that filled each; `bash bin/kit-health` (if present) clean; NEGATIVE CONTROL: the boundary lint from 01 is RED when one moved skill's old name is planted in `commands/wrap.md`.
+**Proof:** run-table: dwarves-kit `WORKFLOW.md`, `AGENTS.md`, `README.md`, learning-kit `README.md` + `docs/ARCHITECTURE.md`, context-kit `README.md` each carry the same three-row boundary table (kit, learner or plane, what it owns, the seam it fills); `docs/specs/SPEC-249-estate-seams.md` `## Seams` lists `understand.teach`; `bash bin/config seams --check` exits 0 on the operator machine with `wrap.after`, `understand.teach`, `knowledge.root` all `filled` and `Filled by` naming the kit that filled each; `bash bin/kit-health` (if present) clean; NEGATIVE CONTROL: the boundary lint from 01 is RED when one moved skill's old name is planted in `commands/wrap.md`.
 **Depends on:** 02, 03, 04.
 Model: sonnet
 Effort: medium
