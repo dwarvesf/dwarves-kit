@@ -9,10 +9,11 @@ run of the REAL primary flow with a negative control.
 
 | # | Command | Result |
 |---|---|---|
-| 1 | `bash tests/test-repohygiene.sh` | 40/40 passed, 0 failed |
+| 1 | `bash tests/test-repohygiene.sh` | 51/51 passed, 0 failed |
 | 2 | `bash tests/test-meta.sh` | All meta tests passed (master baseline: same) |
 | 3 | `bash tests/test-audit-scanner-contract.sh` | All audit-scanner-contract tests passed |
 | 4 | `bash tests/test-kit-contract.sh` | 25 passed, 0 failed (master baseline: 25/0) |
+| 5 | `bash tests/run-all.sh` | 134 suites run, 1 skipped; the only failures are `test-orchestrate-gate-dispatch` (rc=5) and `test-orchestrate-wavefront` (rc=1), both of which fail identically on master with the same exit codes and touch nothing this branch changes |
 
 ## 2. Acceptance: does it rediscover the hand pass?
 
@@ -56,8 +57,9 @@ bash lib/repohygiene/repohygiene.sh scan --repo <tmp> --detectors 1 --stale-days
      --max-candidates 5000                                                                 # 93 findings, ~9min
 ```
 
-The wide run is where the map appears, at line 3 of 95. The cost is why `--max-candidates`
-exists: the reference grep is one pass per candidate, because that grep IS the evidence.
+The wide run is where the map appears, at line 3 of the 95-line output: a header row, 93
+findings, and a `SUMMARY` row. The cost is why `--max-candidates` exists: the reference grep
+is one pass per candidate, because that grep IS the evidence.
 
 ### Caveat 2: detector 2 cannot be validated against this history
 
@@ -115,10 +117,65 @@ proposal the contract forbids).
 
 NC-1 replaced the majority guard with a bare single-owner test. NC-2 changed detector 5's
 `emit 5 UNSURE` to `emit 5 REMOVE`. Both were restored with `git checkout --` and the suite
-returns to 41/41.
+returned to green. The transcript reads 41 assertions because it predates section 5, which
+added ten.
 
-The first NC-2 run failed only ONE assertion, because the detector-5 warm-dir case earlier in
-the suite left the fixture fresh and the contract case had no detector-5 finding to judge. The
-contract case now asserts that it produced one before judging it, which is what turned NC-2
-into two failures. A negative control that catches a hole in the test suite itself is the
-point of running one.
+The first NC-2 run failed only ONE assertion. The detector-5 warm-dir case earlier in the
+suite left the fixture fresh, so the contract case had no detector-5 finding to judge. The
+contract case now asserts a finding exists before judging it, which is what turned NC-2 into
+two failures.
+
+## 5. Review findings applied
+
+Two adversarial lenses ran against the frozen build commit. Nine defects came back with a
+live reproduction attached; all nine are fixed and each carries a regression case in the
+`hostile input` block of `tests/test-repohygiene.sh`. The full invariant list is
+`lib/repohygiene/SPEC.md`. The suite went from 41 to 51 assertions.
+
+| Severity | Defect | Fix |
+|---|---|---|
+| CRITICAL | a newline in a staging filename forged an entire output row, and a detector-3 FIX row is the one verdict the loop acts on | `scrub` in `emit`, applied to all four fields |
+| HIGH | a tab in a commit subject injected TSV columns into the evidence field | same |
+| HIGH | detector 4 took the FIRST threshold source in path order, so a decoy doc claiming a 99999-line budget suppressed a real finding and the scan reported clean | read every source, take the strictest |
+| HIGH | a tracked path named `COMMIT <ts>` parsed as a git-log header, poisoned the next file's timestamp, and the failed arithmetic dropped a real candidate | find the header by the blank line after it |
+| HIGH | `stat -f %m` on GNU means `--file-system`, so every age on Linux was garbage and detector 2 silently found nothing | probe the format once at first use |
+| HIGH | `core.quotePath` defaults on, so every non-ASCII path arrived C-quoted and dropped out of detectors 1, 3, and 4 | `-c core.quotePath=false` plus `-z` reads |
+| MEDIUM | unquoted `$(git ls-files)` word-split a path with a space and dropped it | `-z` plus `read -r -d ''` |
+| MEDIUM | a commit scope of `..` resolved as the owner `tools/..` and produced a FIX whose destination traversed out | scope charset and `..` rejection |
+| MEDIUM | `--staging-dir` reached outside the repo, so it could put private-key filenames and hash prefixes into a PR body | `inside_repo` guard on every operator-supplied directory |
+
+Three smaller ones landed with them: `find`'s exit status now decides coldness rather than its
+output, every numeric flag is validated before arithmetic or a `find` argument sees it, and
+`days_since` fails closed at `-1` so a poisoned timestamp keeps an item in the set.
+
+## 6. Test plan coverage
+
+Every row of SPEC-256's `## Test plan`, mapped to the run that covers it.
+
+| Test-plan row | Covered by |
+|---|---|
+| Refusal, non-git target exits non-zero and names disk-reclaim | `tests/test-repohygiene.sh` refusal-guard block, 4 assertions |
+| Detector 1, unreferenced flagged, referenced not | detector-1 block |
+| Detector 1, young file below threshold | detector-1 block |
+| Detector 1, regex metacharacters in a basename | detector-1 block |
+| Detector 1, evidence carries the grep and its zero-hit result | detector-1 block |
+| Detector 2, duplicate is REMOVE with path and sha | detector-2 block |
+| Detector 2, no duplicate is UNSURE | detector-2 block |
+| Detector 2, freshly touched drop leaves the set | detector-2 block |
+| Detector 3, owned record is FIX with owner, evidence, destination | detector-3 block |
+| Detector 3, control-surface log is never an owned record | detector-3 block |
+| Detector 3, minority owner scope does not claim the file | detector-3 block |
+| Detector 4, over-budget log is FIX with counts and quoted source | detector-4 block |
+| Detector 4, no documented budget yields UNSURE | detector-4 block |
+| Detector 5, large cold ignored dir is UNSURE, REPORT ONLY | detector-5 block |
+| Detector 5, under threshold or warm is not flagged | detector-5 block |
+| Contract, no deletion verb in output or source | contract block |
+| Contract, every detector-5 finding is UNSURE | contract block |
+| Contract, every finding carries evidence | contract block |
+| Wiring, dispatches audit-scanner, names the fallback, registered everywhere | wiring block, 5 assertions |
+| Acceptance, rediscovers the hand-pass findings | section 2 above |
+| Negative control | section 4 above |
+
+Section 5's nine defects are covered beyond the test plan, in the `hostile input` block. The
+test plan predates the review; the block is the review's own reproductions turned into
+regressions.

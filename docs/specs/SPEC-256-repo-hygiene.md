@@ -86,7 +86,7 @@ means. The operator deletes. This instance never issues a delete.
 |---|---|
 | `lib/repohygiene/` | new module: `repohygiene.sh`, `README.md`, `SPEC.md`, `tool.toml`, `docs/proof-of-done.md` |
 | `skills/repo-hygiene/SKILL.md` | new skill, auto-namespaced `kit:repo-hygiene`, frontmatter `name` + long-form `description` with NOT-for clauses + `disable-model-invocation: false` |
-| `tests/test-repohygiene.sh` | real throwaway git repos per detector, plus the two contract cases (no deletion verb anywhere, every detector-5 finding UNSURE) |
+| `tests/test-repohygiene.sh` | real throwaway git repos per detector, the contract cases (no deletion verb anywhere, every detector-5 finding UNSURE, every finding carries evidence), and a hostile-input block treating the audited repo as untrusted |
 | `agents/audit-scanner.md` | its instance list gains repo-hygiene, both in the description and in the body |
 | `docs/patterns/audit-loop.md` | a Known-instances paragraph and an SDLC-instances row |
 | `README.md` | one row in the skills inventory table, pinned by `tests/test-meta.sh` |
@@ -114,7 +114,7 @@ means. The operator deletes. This instance never issues a delete.
 - A target that is not a git repo exits 2 with a message naming `disk-reclaim`.
 - `kit:repo-hygiene` is discoverable and states its own four slots, its detector table, its
   verdict mapping, and its scope boundary.
-- `bash tests/test-repohygiene.sh` is green.
+- `bash tests/test-repohygiene.sh` is green, including the hostile-input block.
 - `docs/FEATURES.md` regenerates clean, so `tests/test-meta.sh` gains no new failure.
 
 ## Test plan
@@ -140,8 +140,16 @@ means. The operator deletes. This instance never issues a delete.
 | Contract | every detector-5 finding is UNSURE | same |
 | Contract | every emitted finding carries a non-trivial evidence field | same |
 | Wiring | the skill dispatches `kit:audit-scanner`, names the fallback, and is registered in the pattern doc, README, and the agent | same |
+| Hostile input | a newline or tab in a filename or commit subject cannot forge a row or a column | `tests/test-repohygiene.sh` |
+| Hostile input | a path shaped like the git-log header does not hide a real candidate | same |
+| Hostile input | a non-ASCII path and a path with a space both reach detectors 1 and 3 | same |
+| Hostile input | a `..` commit scope never resolves as an owner | same |
+| Hostile input | a lax decoy budget cannot suppress the strict one | same |
+| Hostile input | an operator-supplied directory outside the repo is refused | same |
+| Hostile input | a non-numeric threshold is rejected at parse time | same |
 | Acceptance | the detectors rediscover the 2026-09-10 hand-pass findings at their pre-fix commits | `lib/repohygiene/docs/proof-of-done.md` |
 | Negative control | break the majority rule, the detector-3 tests go red, restore | same |
+| Negative control | make detector 5 emit REMOVE, the report-only cases go red, restore | same |
 
 ## Verification
 

@@ -21,19 +21,16 @@ Two constraints shape everything below, both learned running this pass by hand:
   in one pass, and twice the human chose against the recommendation. The only fix this
   instance applies is a MOVE, and even a move gates through the PR.
 
-## Scope boundary
-
-This instance is REPO-SCOPED. The machine surface, an abandoned tool directory in a home
-folder, a package cache, a downloads pile, anything outside a git checkout, belongs to
-`ops-toolkit tools/disk-reclaim`, which already owns read-first machine cleanup with its own
-safe set. If the ask is "my disk is full", it is the wrong loop. If the ask is "what has
-rotted inside this repo", it is this one.
+The loop is REPO-SCOPED. The machine surface, an abandoned tool directory in a home folder, a
+package cache, a downloads pile, anything outside a git checkout, belongs to `ops-toolkit
+tools/disk-reclaim`, which already owns read-first machine cleanup with its own safe set. If
+the ask is "my disk is full", it is the wrong loop.
 
 ## The four slots (per the audit-loop pattern)
 
 | Slot | This instance |
 |---|---|
-| Item set | five detector classes over ONE git repo, enumerated by `bash lib/repohygiene/repohygiene.sh scan --repo <dir>`: an unreferenced non-code file past an age threshold, a staging drop past 30 days, a record parked in a central control directory whose owner is one tool or experiment, an append-only log past the budget the repo itself documents, and a gitignored directory that is large and cold |
+| Item set | five detector classes over ONE git repo, enumerated by `bash lib/repohygiene/repohygiene.sh scan --repo <dir>`: an unreferenced non-code file past its age threshold, a staging drop past its age threshold, a record parked in a central control directory whose owner is one tool or experiment, an append-only log past the budget the repo itself documents, and a gitignored directory that is large and cold |
 | Contract | a file earns its place: something references it, or it is young, or it sits with its owner, or it is inside its own stated budget. A gitignored directory has no contract at all here, only a size and a date |
 | Evidence class | Tier 1: the scanner's own output, one line per finding, each carrying the proof inline (the exact path-boundary grep and its zero-hit result, an age in days against its threshold, a duplicate's path plus its sha256, an owner plus the commits that name it, a line count plus the `file:line` where the repo states the threshold, a size plus a newest-mtime). Tier 2: `agents/audit-scanner.md`, dispatched only on the FIX and REMOVE rows, never on the whole set |
 | Apply mechanics | `git mv` for a detector-3 FIX, and nothing else. Detectors 1, 2, 4, and 5 are report-only in every case. No deletion is ever applied, proposed as a command, or staged |
@@ -53,6 +50,26 @@ the file, not from the file's contents. Content was tried first and is too noisy
 note names every tool it surveyed, so a file owned by one tool mentions four others. What a
 file's own history says about who wrote it does not have that problem.
 
+## Verdict mapping
+
+| Finding | Verdict | Applied? |
+|---|---|---|
+| detector 3, one owner confirmed by Tier 2 | FIX | yes, `git mv` |
+| detector 3, two or more owners, or a closed mega-goal with no resolvable owner | UNSURE | no |
+| detector 2 with a content-identical copy elsewhere | REMOVE, the copy being the named successor | never |
+| detector 1, detector 2 without a duplicate | UNSURE | never |
+| detector 4 | FIX, rotate or compact per the repo's own procedure | never |
+| detector 5 | UNSURE, always | never |
+
+A REMOVE here is a PROPOSAL with a named successor, which is what the pattern's grammar
+means, and it is still the operator who deletes. This instance never issues a delete.
+
+DANGER never comes from Tier 1. No detector reads a file's content for a policy claim, so
+"this record tells the operator to do something now wrong" is a judgment only the lead can
+make after reading the file, and it must quote the contradiction. UNTESTABLE does not arise
+either: every detector runs against a local checkout the scanner can read, so evidence it
+cannot gather is a scan that failed, not a vantage problem.
+
 ## Process
 
 1. **Refusal guard.** REFUSE if the target is not a git repo. The machine surface belongs to
@@ -62,8 +79,10 @@ file's own history says about who wrote it does not have that problem.
    git -C "$TARGET" rev-parse --show-toplevel >/dev/null 2>&1 || { echo "REFUSE: '$TARGET' is not a git repo -- the machine surface belongs to ops-toolkit tools/disk-reclaim, not to this loop"; exit 1; }
    ```
 
-2. **Branch in a worktree first** (native worktree tool), and only when a detector-3 FIX
-   exists. A report-only run needs no branch and creates none.
+2. **Branch in a worktree first** (native worktree tool). Every sibling instance branches
+   before it judges anything, and auditing on the main branch is the failure they all exist
+   to prevent. A run that turns out to have nothing to move reports inline at step 8 and the
+   branch goes away unused.
 
 3. **Tier 1, mechanical, one pass, zero model cost.**
 
@@ -86,21 +105,13 @@ file's own history says about who wrote it does not have that problem.
    roster is unavailable) with the FIX and REMOVE rows, this instance's contract, and its
    evidence class. Its job is narrow: does the stated owner actually own this record, and is
    the destination path right. A scanner timeout, error, or an out-of-vocabulary verdict is
-   treated as UNSURE, never coerced to OK.
+   treated as UNSURE, never coerced to OK. The dispatch set needs no chunking: it is bounded
+   by the FIX and REMOVE rows, which are a small fraction of one repo's findings, unlike
+   `backlog-reconcile`, whose delta can span a whole board.
 
-5. **Verdict each finding** with the audit-loop grammar. This instance's mapping:
-
-   | Finding | Verdict | Applied? |
-   |---|---|---|
-   | detector 3, one owner confirmed by Tier 2 | FIX | yes, `git mv` |
-   | detector 3, two or more owners, or a closed mega-goal with no resolvable owner | UNSURE | no |
-   | detector 2 with a content-identical copy elsewhere | REMOVE (the copy is the named successor) | never |
-   | detector 1, detector 2 without a duplicate | UNSURE | never |
-   | detector 4 | FIX (rotate or compact per the repo's own procedure) | never |
-   | detector 5 | UNSURE, always | never |
-
-   A REMOVE here is a PROPOSAL with a named successor, which is what the pattern's grammar
-   means, and it is still the operator who deletes. This instance never issues a delete.
+5. **Verdict each finding** with the audit-loop grammar, per the Verdict mapping above.
+   Treat the scanner's verdict as a proposal: a Tier-2 judgment can move a row from FIX to
+   UNSURE, never the other way.
 
 6. **Apply.** `git mv <path> <destination>` per confirmed detector-3 FIX, creating the
    destination directory first. Nothing else is applied. Never `rm`, never `git rm`, never a
@@ -114,13 +125,16 @@ file's own history says about who wrote it does not have that problem.
 
 8. **Ship.** Commit, push, open a PR whose body carries every finding with its evidence,
    grouped by detector, with the UNSURE rows listed for the operator and the applied moves
-   listed separately. Nothing to move: no branch, report the findings inline.
+   listed separately. Follow the repo's own session-close conventions. A push or
+   `gh pr create` failure after Apply exits non-zero and names the orphan branch, never a
+   silent success. Nothing to move: no branch, report the findings inline.
 
 ## Cadence
 
-Run on demand, or wrap in `/loop` or a schedule per the audit-loop driver ladder. One repo
-per invocation: the scan is bounded by one checkout, and a multi-repo sweep is that command
-in a loop, not a mode inside it.
+Run after a batch of merges that added records to a central directory, after a staging-dir
+intake session, before a repo changes owner or gets archived, or on a schedule via `/loop`
+per the audit-loop driver ladder. One repo per invocation: the scan is bounded by one
+checkout, and a multi-repo sweep is that command in a loop, not a mode inside it.
 
 ## Red flags
 

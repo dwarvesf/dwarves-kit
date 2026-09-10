@@ -53,9 +53,19 @@ usage() { sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'; }
 
 die() { echo "repohygiene: $*" >&2; exit 2; }
 
-# stat(1) is not portable: BSD wants -f %m, GNU wants -c %Y. Every age in this script goes
-# through here so the split lives in exactly one place.
-mtime_of() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+# stat(1) is not portable: BSD wants -f %m, GNU wants -c %Y. Probe ONCE and remember which.
+# Chaining the two forms with || is wrong, not merely ugly: GNU `stat -f` means
+# --file-system, so it prints a seven-line filesystem report to stdout AND exits 1, and the
+# fallback then appends the real mtime to that report. Every age on Linux came back as
+# garbage, every arithmetic on it failed, and every detector-2 entry silently dropped out.
+STAT_FMT=""
+mtime_of() {
+  if [ -z "$STAT_FMT" ]; then
+    if stat -c %Y . >/dev/null 2>&1; then STAT_FMT="gnu"; else STAT_FMT="bsd"; fi
+  fi
+  if [ "$STAT_FMT" = "gnu" ]; then stat -c %Y "$1" 2>/dev/null || echo 0
+  else stat -f %m "$1" 2>/dev/null || echo 0; fi
+}
 
 sha_of() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
@@ -73,15 +83,44 @@ newest_mtime() {
   fi
 }
 
-days_since() { echo $(( ( NOW - ${1:-0} ) / 86400 )); }
+# Fail CLOSED. A non-numeric timestamp used to kill the arithmetic, leave `age` empty, and
+# make the `[ "$age" -gt N ] || continue` guard skip the item, so a poisoned input read as
+# "young enough, nothing to see". An unreadable age now returns -1, which is older than any
+# threshold, so the item stays in the set and gets looked at.
+days_since() {
+  case "${1:-}" in
+    ''|*[!0-9]*) echo -1; return ;;
+  esac
+  echo $(( ( NOW - $1 ) / 86400 ))
+}
 
 # A basename goes into a grep pattern, so every regex metacharacter in it has to stop being
 # one. A file literally named `notes(1).md` would otherwise search for a capture group.
-re_escape() { printf '%s' "$1" | sed 's/[.[\*^$()+?{}|\\]/\\&/g'; }
+re_escape() { printf '%s' "$1" | sed 's/[].[\*^$()+?{}|\\]/\\&/g'; }
 
-emit() { printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4"; FINDINGS=$((FINDINGS + 1)); }
+# The output is TSV and its fields carry repo-controlled text: a filename, a commit subject,
+# a quoted line from a repo doc. A newline in a staging filename used to forge an ENTIRE
+# extra row, and a detector-3 FIX row is the one verdict the loop acts on, so a forged row
+# chose the `git mv` source and destination. A tab forged a column. Both die here, once, for
+# every call site.
+scrub() { printf '%s' "$1" | tr '\t\n\r' '   '; }
+
+emit() { printf '%s\t%s\t%s\t%s\n' "$(scrub "$1")" "$(scrub "$2")" "$(scrub "$3")" "$(scrub "$4")"; FINDINGS=$((FINDINGS + 1)); }
 
 wants() { case ",$DETECTORS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
+
+# The skill promises this loop is REPO-SCOPED. Without this, `--staging-dir ~/.ssh` put
+# private-key filenames and a hash prefix of each key into a report meant for a PR body.
+# Every operator-supplied directory resolves and must land under the repo root.
+inside_repo() {
+  local abs
+  abs=$(cd "$1" 2>/dev/null && pwd -P) || return 1
+  case "$abs/" in
+    "$REPO_ROOT"/*) return 0 ;;
+    "$REPO_ROOT"/) return 0 ;;
+    *) echo "repohygiene: refusing '$1', it resolves outside the repo root; this loop is repo-scoped and the machine surface belongs to disk-reclaim" >&2; return 1 ;;
+  esac
+}
 
 # ------------------------------------------------------------------ detector 1
 # A tracked non-code file, older than the threshold, that no other tracked file references.
@@ -93,8 +132,18 @@ wants() { case ",$DETECTORS," in *",$1,"*) return 0 ;; *) return 1 ;; esac; }
 detect_unreferenced() {
   local ages candidates path ts age esc hits cmd
   ages="$TMP/ages"
-  git log --format='COMMIT %ct' --name-only --diff-filter=AMR -- '*.md' '*.txt' 2>/dev/null \
-    | awk '/^COMMIT /{ts=$2; next} NF && !(seen[$0]++){print ts"\t"$0}' > "$ages"
+  # The header is found STRUCTURALLY, by the blank line git always puts after it, never by a
+  # text prefix. A prefix is forgeable: a tracked path named `COMMIT 9999999999` parsed as a
+  # header and poisoned the timestamp of the file listed after it, which then failed the
+  # arithmetic and dropped a real candidate out of the set. A path is never blank and is
+  # never followed by a blank line here, so the one-line lookbehind below cannot be spoofed.
+  # `core.quotePath=false` keeps a Vietnamese filename from arriving C-quoted, which used to
+  # drop every non-ASCII path out of detectors 1, 3, and 4 without a word.
+  git -c core.quotePath=false log --format='%ct' --name-only --diff-filter=AMR \
+    -- '*.md' '*.txt' 2>/dev/null \
+    | awk '/^$/ { ts = prev; prev = ""; next }
+           { if (prev != "" && !(seen[prev]++)) print ts "\t" prev; prev = $0 }
+           END { if (prev != "" && !(seen[prev]++)) print ts "\t" prev }' > "$ages"
 
   candidates="$TMP/d1-candidates"
   : > "$candidates"
@@ -133,9 +182,12 @@ detect_unreferenced() {
 # A staging entry older than the threshold. Staging dirs are usually gitignored, so age comes
 # from the filesystem, not from git, and a duplicate is proven by content hash, not by name.
 detect_stale_inbox() {
-  local dirs d entry age base dup dupsha entrysha found
+  local dirs d entry age base dup dupsha entrysha found tracked
   dirs="${STAGING_DIRS:-_inbox inbox _staging}"
+  tracked="$TMP/tracked"
+  git -c core.quotePath=false ls-files -z 2>/dev/null > "$tracked"
   for d in $dirs; do
+    inside_repo "$d" || continue
     [ -d "$d" ] || continue
     for entry in "$d"/* "$d"/.[!.]*; do
       [ -e "$entry" ] || continue
@@ -147,14 +199,18 @@ detect_stale_inbox() {
       found=""
       if [ -f "$entry" ]; then
         entrysha=$(sha_of "$entry")
-        for dup in $(git ls-files -- "*/$base" "$base" 2>/dev/null); do
+        # The basename is compared in the shell, never handed to git as a pathspec: a file
+        # literally named `*` used to match every tracked file and the first hit was
+        # reported as its "same-name copy", which is forged evidence.
+        while IFS= read -r -d '' dup; do
+          [ "$(basename "$dup")" = "$base" ] || continue
           case "$dup" in "$d"/*) continue ;; esac
           dupsha=$(sha_of "$dup")
           if [ -n "$entrysha" ] && [ "$entrysha" = "$dupsha" ]; then
             found="$dup"; break
           fi
           [ -z "$found" ] && found="~$dup"
-        done
+        done < "$tracked"
       fi
 
       if [ -n "$found" ] && [ "${found#\~}" = "$found" ]; then
@@ -180,6 +236,7 @@ detect_misplaced_record() {
   local dirs d f scopes owner owners n n_owner total rel dest slug closing
   dirs="${CENTRAL_DIRS:-_meta docs/research docs/briefs}"
   for d in $dirs; do
+    inside_repo "$d" || continue
     [ -d "$d" ] || continue
 
     # Mega-goals are folders, not files, and their completion marker is a closing commit,
@@ -196,7 +253,9 @@ detect_misplaced_record() {
       done
     fi
 
-    for f in $(git ls-files -- "$d" 2>/dev/null); do
+    # NUL-delimited, quoting disabled: an unquoted `$(git ls-files)` word-split a path with a
+    # space into two nonexistent paths and dropped it, and C-quoting hid every non-ASCII one.
+    while IFS= read -r -d '' f; do
       case "$f" in "$d"/megagoals/*) continue ;; esac
       printf '%s\n' "$f" | grep -qE '\.(md|txt)$' || continue
       # The control surface's OWN index and log files touch every tool in the repo by
@@ -205,8 +264,12 @@ detect_misplaced_record() {
 
       total=$(git log --oneline -- "$f" 2>/dev/null | wc -l | tr -d ' ')
       [ "${total:-0}" -ge 1 ] || continue
+      # A scope must start alphanumeric and carry no `..` segment. `feat(..): x` otherwise
+      # resolved as the owner `tools/..` and produced a FIX row whose destination traversed
+      # out of the tool directory, on the one verdict the loop actually acts on.
       scopes=$(git log --format='%s' -- "$f" 2>/dev/null \
-        | sed -n 's/^[a-z]\{2,\}(\([A-Za-z0-9._-]\{1,\}\)).*/\1/p')
+        | sed -n 's/^[a-z]\{2,\}(\([A-Za-z0-9][A-Za-z0-9._-]*\)).*/\1/p' \
+        | grep -v '\.\.')
       owners=$(printf '%s\n' "$scopes" | awk 'NF' | sort | uniq -c | sort -rn \
         | while read -r c s; do
             if [ -d "tools/$s" ]; then echo "$c tools/$s"
@@ -216,9 +279,10 @@ detect_misplaced_record() {
       [ "${n:-0}" -ge 1 ] || continue
       rel="${f#"$d"/}"
 
-      # One owner wins only when it accounts for at least half the file's own commits.
-      # A single stray commit under a tool's scope, in a file some other surface owns, is
-      # a coincidence, and acting on it would move a record that was never that tool's.
+      # One owner wins only when it accounts for at least half the file's own commits, so a
+      # minority scope in a file some other surface owns cannot claim it. A file with ONE
+      # commit still yields a FIX, deliberately: that is exactly the fixed-central-path case
+      # this detector was built for, where a single agent run wrote the file and moved on.
       owner=$(printf '%s\n' "$owners" | head -1 | awk '{print $2}')
       n_owner=$(printf '%s\n' "$owners" | head -1 | awk '{print $1+0}')
       if [ "$n" = "1" ] && [ $(( n_owner * 2 )) -ge "$total" ]; then
@@ -231,7 +295,7 @@ detect_misplaced_record() {
       elif [ "$n" -ge 2 ] && [ "$n" -le 3 ]; then
         emit 3 UNSURE "$f" "a central path reused across runs: $total commits, $n owners by commit scope ($(printf '%s\n' "$owners" | awk '{printf "%s x%s ", $2, $1}')); the operator splits it or names one owner"
       fi
-    done
+    done < <(git -c core.quotePath=false ls-files -z -- "$d" 2>/dev/null)
   done
 }
 
@@ -239,10 +303,10 @@ detect_misplaced_record() {
 # An append-only log past the budget THE REPO ITSELF documents. A threshold this scanner
 # invented would be an opinion; a threshold quoted from the repo's own prose is evidence.
 detect_log_budget() {
-  local globs g f total month_line month_max month_name src srcline nums total_t month_t quoted
+  local globs g f total month_line month_max month_name srcs src srcline nums total_t month_t quoted nsrc
   globs="${LOG_GLOBS:-*LAB_LOG.md *INGEST_LOG.md *learned-ledger.md}"
   for g in $globs; do
-    for f in $(git ls-files -- "$g" "**/$g" 2>/dev/null | awk 'NF && !seen[$0]++'); do
+    while IFS= read -r -d '' f; do
       [ -f "$f" ] || continue
       total=$(wc -l < "$f" | tr -d ' ')
       # One month per LINE, not per occurrence: a log line that quotes three dates is still
@@ -255,16 +319,30 @@ detect_log_budget() {
       # The threshold's source: a line in the repo's own docs that names this log and carries
       # line counts. Largest number on that line is the whole-file budget, smallest the
       # per-month one, which is the shape every repo in the estate happens to write.
-      src=$(git grep -n -F -- "$(basename "$f" .md)" -- '*CLAUDE.md' '*README.md' 'docs/*.md' 2>/dev/null \
-        | grep -E '[0-9]{3,5}[^0-9]{0,20}lines' | head -1)
-      total_t=""; month_t=""
-      if [ -n "$src" ]; then
-        srcline="${src#*:*:}"
-        nums=$(printf '%s' "$srcline" | grep -oE '[0-9]{3,5}' | sort -n | awk 'NF && !seen[$0]++')
-        month_t=$(printf '%s\n' "$nums" | head -1)
-        total_t=$(printf '%s\n' "$nums" | tail -1)
+      #
+      # Every matching line counts, not `head -1`. Taking the first hit in git's path order
+      # let anyone suppress a real finding by adding a doc that sorts earlier and claims a
+      # 99999-line budget, and the scan then reported CLEAN. The STRICTEST budget wins, and
+      # disagreeing sources make the finding UNSURE rather than picking one.
+      srcs=$(git -c core.quotePath=false grep -n -F -- "$(basename "$f" .md)" \
+        -- 'CLAUDE.md' 'README.md' 'docs/*.md' '*/CLAUDE.md' '*/README.md' 2>/dev/null \
+        | grep -E '[0-9]{3,5}[^0-9]{0,20}lines')
+      total_t=""; month_t=""; quoted=""; nsrc=0
+      if [ -n "$srcs" ]; then
+        nsrc=$(printf '%s\n' "$srcs" | wc -l | tr -d ' ')
+        # Strictest budget across all sources: the smallest whole-file number any of them
+        # states, and the smallest per-month number any of them states.
+        total_t=$(printf '%s\n' "$srcs" | while IFS= read -r s; do
+                    printf '%s' "${s#*:*:}" | grep -oE '[0-9]{3,5}' | sort -n | tail -1
+                  done | sort -n | head -1)
+        month_t=$(printf '%s\n' "$srcs" | while IFS= read -r s; do
+                    printf '%s' "${s#*:*:}" | grep -oE '[0-9]{3,5}' | sort -n | head -1
+                  done | sort -n | head -1)
         [ "$month_t" = "$total_t" ] && month_t=""
+        src=$(printf '%s\n' "$srcs" | head -1)
+        srcline="${src#*:*:}"
         quoted="source ${src%%:*}:$(printf '%s' "$src" | cut -d: -f2) \"$(printf '%s' "$srcline" | sed 's/^[[:space:]]*//' | cut -c1-160)\""
+        [ "$nsrc" -gt 1 ] && quoted="$quoted (strictest of $nsrc sources stating a budget)"
       fi
 
       if [ -z "$total_t" ]; then
@@ -276,7 +354,7 @@ detect_log_budget() {
       elif [ -n "$month_t" ] && [ "${month_max:-0}" -gt "$month_t" ]; then
         emit 4 FIX "$f" "total=${total} lines within threshold ${total_t}, but month ${month_name} at ${month_max} vs per-month ${month_t}; ${quoted}; rotate or compact per the repo's own procedure, report only"
       fi
-    done
+    done < <(git -c core.quotePath=false ls-files -z -- "$g" "**/$g" 2>/dev/null)
   done
 }
 
@@ -285,16 +363,22 @@ detect_log_budget() {
 # cannot see what a gitignored path is for, so proposing its deletion would be a guess with
 # an irreversible cost attached.
 detect_cold_ignored() {
-  local d kb mb newest
-  for d in $(git status --porcelain --ignored=matching 2>/dev/null | sed -n 's|^!! \(.*\)/$|\1|p'); do
+  local d kb mb newest warm rc
+  while IFS= read -r -d '' d; do
+    d="${d%/}"
     [ -d "$d" ] || continue
     kb=$(du -sk "$d" 2>/dev/null | awk '{print $1+0}')
     mb=$(( kb / 1024 ))
     [ "$mb" -ge "$COLD_MB" ] || continue
-    find "$d" -type f -newermt "-${COLD_DAYS} days" -print -quit 2>/dev/null | grep -q . && continue
+    # find's EXIT STATUS decides, not its output. A rejected -newermt argument printed
+    # nothing and exited non-zero, which read as "cold" and produced a coldness claim the
+    # scan never actually verified.
+    warm=$(find "$d" -type f -newermt "-${COLD_DAYS} days" -print -quit 2>/dev/null); rc=$?
+    [ "$rc" -eq 0 ] || { emit 5 UNSURE "$d" "size ${mb}MB (threshold ${COLD_MB}MB); could not test coldness, find exited $rc for -newermt '-${COLD_DAYS} days'; REPORT ONLY, gitignored, never a deletion proposal"; continue; }
+    [ -n "$warm" ] && continue
     newest=$(find "$d" -type f -newermt "-$(( COLD_DAYS * 4 )) days" -print -quit 2>/dev/null)
     emit 5 UNSURE "$d" "size ${mb}MB (threshold ${COLD_MB}MB), no file newer than ${COLD_DAYS}d$( [ -n "$newest" ] && echo ", newest within $(( COLD_DAYS * 4 ))d" ); REPORT ONLY, gitignored, never a deletion proposal"
-  done
+  done < <(git status --porcelain -z --ignored=matching 2>/dev/null | tr '\0' '\n' | sed -n 's|^!! \(.*/\)$|\1|p' | tr '\n' '\0')
 }
 
 # ------------------------------------------------------------------ main
@@ -331,9 +415,24 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# Every numeric flag is validated before any arithmetic sees it. An unvalidated one used to
+# reach `$(( COLD_DAYS * 4 ))`, where bash evaluates command substitution inside an array
+# subscript, and reached `find -newermt` where a rejected argument read as a passing verdict.
+for _pair in "STALE_DAYS=$STALE_DAYS" "INBOX_DAYS=$INBOX_DAYS" "COLD_DAYS=$COLD_DAYS" \
+             "COLD_MB=$COLD_MB" "MAX_CANDIDATES=$MAX_CANDIDATES"; do
+  case "${_pair#*=}" in
+    ''|*[!0-9]*) die "${_pair%%=*} must be a non-negative integer (got '${_pair#*=}')" ;;
+  esac
+done
+case "$DETECTORS" in
+  ''|*[!1-5,]*) die "--detectors takes a comma-separated list of 1..5 (got '$DETECTORS')" ;;
+esac
+
 cd "$REPO" 2>/dev/null || die "cannot enter '$REPO'"
 git rev-parse --show-toplevel >/dev/null 2>&1 || die "'$REPO' is not a git repo (the machine surface belongs to disk-reclaim, not here)"
-cd "$(git rev-parse --show-toplevel)" || die "cannot enter the repo root"
+REPO_ROOT=$(git rev-parse --show-toplevel)
+cd "$REPO_ROOT" || die "cannot enter the repo root"
+REPO_ROOT=$(pwd -P)
 
 NOW=$(date +%s)
 FINDINGS=0
