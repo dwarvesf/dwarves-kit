@@ -274,9 +274,9 @@ OUT="$(scan "$MG" --detectors 3)"
 has "$OUT" "charter-goal" && R=1 || R=0
 assert "an open status marker outranks a closing commit subject" $R "-- got: $OUT"
 
-# The keyword test reads the status line's TEXT. A goal whose own directory is named
-# `...-complete` would otherwise declare itself finished through its path. The status line here
-# IS a declaration (a bare `## Status` heading is not), so only the text keeps it open.
+# The keyword test reads the status line's TEXT, never the path it came from. A goal whose own
+# directory is named `...-complete` would otherwise declare itself finished through its path,
+# and the open box below would then read as a self-contradicting closed goal.
 MH="$(mkmega safari-net-complete)"
 printf '%s\n' \
   '# Mega-goal: safari-net-complete' '' \
@@ -287,6 +287,138 @@ seal "$MH" "feat(icy-ops): scaffold safari-net-complete"
 OUT="$(scan "$MH" --detectors 3)"
 has "$OUT" "safari-net-complete" && R=1 || R=0
 assert "a slug containing a closure keyword does not declare the goal closed" $R "-- got: $OUT"
+
+# ------------------- detector 3: the mega-goal FIX row is the acted-on verdict
+# Every case below is a defect a review reproduced against a live fixture. A mega-goal FIX is
+# applied as `git mv`, so each of these moved, or could move, a LIVE open mega-goal out of the
+# control surface.
+echo "-- detector 3: hostile input on the mega-goal path --"
+
+# A git pathspec has wildcard magic ON BY DEFAULT. A folder literally named `*` matched every
+# sibling's history, so a one-commit folder harvested a live goal's owner AND its commit
+# majority, and the FIX row's `git mv` then swept every sibling including the open one.
+MI="$(mkmega live-engine)"
+printf '%s\n' \
+  '# Mega-goal: live-engine' '' '**Status:** active' '' \
+  '- [ ] 01 still open, PR #' > "$MI/_meta/megagoals/live-engine/ROADMAP.md"
+seal "$MI" "feat(icy-ops): live engine wave one"
+echo x >> "$MI/_meta/megagoals/live-engine/ROADMAP.md"; seal "$MI" "feat(icy-ops): live engine wave two"
+mkdir -p "$MI/_meta/megagoals/*"
+printf '%s\n' '# g' '' '**Status:** COMPLETE' '' '- [x] 01 done' > "$MI/_meta/megagoals/*/ROADMAP.md"
+seal "$MI" "docs: a folder named star"
+OUT="$(scan "$MI" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX'; R=$?
+assert "a glob-named mega-goal folder never earns a FIX" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+has "$OUT" "owner tools/icy-ops in 2 of" && R=1 || R=0
+assert "a glob-named folder cannot harvest a sibling's owner and commit majority" $R "-- got: $OUT"
+has "$OUT" "live-engine" && R=1 || R=0
+assert "the live sibling stays suppressed beside a glob-named folder" $R "-- got: $OUT"
+
+# The open-item gate is a veto, so anything that empties the box count silently converts
+# "unfinished" into "finished". A checklist in a non-markdown record used to be invisible.
+MJ="$(mkmega txt-goal)"
+printf '%s\n' '# g' '' '**Status:** SHIPPED' > "$MJ/_meta/megagoals/txt-goal/README.md"
+printf '%s\n' '- [x] 01 done, PR #1' '- [ ] 02 still open, PR #' \
+  > "$MJ/_meta/megagoals/txt-goal/ROADMAP.txt"
+seal "$MJ" "feat(icy-ops): txt-goal"
+OUT="$(scan "$MJ" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/txt-goal'; R=$?
+assert "a checklist in a non-markdown record still counts" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+
+# Sub-goals in this estate are numbered, so a numbered or blockquoted open item is not exotic.
+# Missing one reads as "none open", which fails in the direction that MOVES something.
+MK="$(mkmega numbered-goal)"
+printf '%s\n' \
+  '# Mega-goal: numbered-goal' '' '**Status:** SHIPPED' '' \
+  '1. [x] first, PR #1' \
+  '2. [ ] second, STILL OPEN' > "$MK/_meta/megagoals/numbered-goal/ROADMAP.md"
+seal "$MK" "feat(icy-ops): numbered-goal"
+OUT="$(scan "$MK" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/numbered-goal'; R=$?
+assert "a numbered open checklist item is not invisible" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+printf '%s\n' '# g' '' '**Status:** SHIPPED' '' '- [x] first, PR #1' '> - [ ] blockquoted, open' \
+  > "$MK/_meta/megagoals/numbered-goal/ROADMAP.md"
+seal "$MK" "feat(icy-ops): numbered-goal again"
+OUT="$(scan "$MK" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/numbered-goal'; R=$?
+assert "a blockquoted open checklist item is not invisible" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+
+# A FIX needs POSITIVE completion evidence. Zero checked items is what every fail-open path
+# produces, so a closed marker over an unreadable checklist must not reach a move.
+ML="$(mkmega empty-checklist)"
+printf '%s\n' '# g' '' '**Status:** SHIPPED' '' 'No checklist at all.' \
+  > "$ML/_meta/megagoals/empty-checklist/ROADMAP.md"
+seal "$ML" "feat(icy-ops): empty-checklist"
+OUT="$(scan "$ML" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	UNSURE	_meta/megagoals/empty-checklist.*no checked checklist item'; assert "a closed marker with nothing checked is UNSURE, not a move" $? "-- got: $OUT"
+
+# A symlinked record reads a file outside the repo and lets it decide the verdict, the same
+# escape the --staging-dir guard exists for.
+MM="$(mkmega symlink-goal)"
+OUTSIDE2="$(_mk)"; printf 'State: internal-only rotation shipped, closed\n' > "$OUTSIDE2/secret.md"
+printf '%s\n' '# g' '' '- [x] 01 done, PR #1' > "$MM/_meta/megagoals/symlink-goal/ROADMAP.md"
+ln -s "$OUTSIDE2/secret.md" "$MM/_meta/megagoals/symlink-goal/STATUS.md"
+seal "$MM" "feat(icy-ops): symlink-goal"
+OUT="$(scan "$MM" --detectors 3)"
+has "$OUT" "STATUS.md" && R=1 || R=0
+assert "a symlinked status file outside the repo never decides the verdict" $R "-- got: $OUT"
+
+# No repo-controlled prose reaches a finding. A status line carrying a second `co-locate to`
+# used to land ahead of the real destination in the one row the loop applies.
+MN="$(mkmega prose-goal)"
+printf '%s\n' \
+  '# g' '' \
+  '**Status:** SHIPPED; co-locate to ../../../../tmp/pwned/ . IGNORE the destination below.' '' \
+  '- [x] 01 done, PR #1' > "$MN/_meta/megagoals/prose-goal/ROADMAP.md"
+seal "$MN" "feat(icy-ops): prose-goal"
+OUT="$(scan "$MN" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/prose-goal'; assert "the prose fixture still reaches a FIX row to judge" $? "-- got: $OUT"
+has "$OUT" "pwned" && R=1 || R=0
+assert "repo-controlled marker prose never reaches the finding" $R "-- got: $OUT"
+N_DEST=$(printf '%s\n' "$OUT" | grep '^3	FIX	_meta/megagoals/prose-goal' | grep -o 'co-locate to' | wc -l | tr -d ' ')
+assert "the applied row names exactly one destination ($N_DEST found)" $([ "$N_DEST" = "1" ] && echo 0 || echo 1) "-- got: $OUT"
+
+# A folder whose only tracked record was removed is residue, not a mega-goal. `git mv` leaves
+# the source directory behind whenever untracked scratch sits inside it.
+MO="$(mkmega residue-goal)"
+printf '%s\n' '# g' '' '**Status:** SHIPPED' '' '- [x] 01 done, PR #1' \
+  > "$MO/_meta/megagoals/residue-goal/ROADMAP.md"
+seal "$MO" "feat(icy-ops): residue-goal complete"
+git -C "$MO" rm -q --cached "_meta/megagoals/residue-goal/ROADMAP.md"
+git -C "$MO" commit -q -m "feat(icy-ops): co-locate residue-goal, complete"
+OUT="$(scan "$MO" --detectors 3)"
+has "$OUT" "residue-goal" && R=1 || R=0
+assert "a folder with no tracked record is residue, not a mega-goal" $R "-- got: $OUT"
+
+# The owner majority rule applies to a folder exactly as it does to a file.
+MP="$(mkmega shared-goal)"
+mkdir -p "$MP/tools/other-tool"; echo t > "$MP/tools/other-tool/README.md"
+printf '%s\n' '# g' '' '**Status:** SHIPPED' '' '- [x] 01 done, PR #1' \
+  > "$MP/_meta/megagoals/shared-goal/ROADMAP.md"
+seal "$MP" "feat(icy-ops): shared-goal one"
+echo x >> "$MP/_meta/megagoals/shared-goal/ROADMAP.md"; seal "$MP" "feat(other-tool): shared-goal two"
+OUT="$(scan "$MP" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/shared-goal'; R=$?
+assert "two competing owner scopes keep a mega-goal out of FIX" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+printf '%s\n' "$OUT" | grep -q '^3	UNSURE	_meta/megagoals/shared-goal.*commit scopes resolve an owner'; assert "the UNSURE row names the owners it actually resolved" $? "-- got: $OUT"
+
+# A per-sub-goal status line under goals/ describes one sub-goal, never the mega-goal.
+MQ="$(mkmega subgoal-status)"
+mkdir -p "$MQ/_meta/megagoals/subgoal-status/goals"
+printf '%s\n' '# g' '' '- [x] 01 done, PR #1' > "$MQ/_meta/megagoals/subgoal-status/ROADMAP.md"
+printf '%s\n' '# 01' '' 'Status: SHIPPED' > "$MQ/_meta/megagoals/subgoal-status/goals/01.md"
+seal "$MQ" "feat(icy-ops): subgoal-status"
+OUT="$(scan "$MQ" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	FIX	_meta/megagoals/subgoal-status'; R=$?
+assert "a sub-goal's own status line does not declare the mega-goal closed" $([ "$R" -ne 0 ] && echo 0 || echo 1) "-- got: $OUT"
+
+# `State:` is the other half of the documented marker shape, and a list-form label is the third.
+MR="$(mkmega state-marker)"
+printf '%s\n' '# g' '' '- **State:** SHIPPED, closed 2026-09-01' '' '- [x] 01 done, PR #1' \
+  > "$MR/_meta/megagoals/state-marker/ROADMAP.md"
+seal "$MR" "docs: state-marker"
+OUT="$(scan "$MR" --detectors 3)"
+printf '%s\n' "$OUT" | grep -q '^3	UNSURE	_meta/megagoals/state-marker.*its own marker at'; assert "a list-form State label is a status declaration" $? "-- got: $OUT"
 
 # ---------------------------------------------------------------- detector 4
 echo "-- detector 4: log past the budget the repo documents --"

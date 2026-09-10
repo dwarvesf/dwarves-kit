@@ -57,20 +57,26 @@ CLOSED question. A closed mega-goal is a record and co-locates with its owner; a
 a live engine and stays where it is. The test runs in a fixed precedence and stops at the
 first step that answers:
 
-1. **An explicit status marker** in the folder's top-level docs, a `Status:` or `State:`
-   heading or bold label. An OPEN marker anywhere (charter, draft, held, blocked, pending,
-   deferred, in progress) wins over a closed one, because the loop's only mutation is a move
-   and a live engine must not be moved out of the control surface.
+0. **A tracked record.** A folder holding no tracked `.md` / `.markdown` / `.mdx` / `.txt` is
+   residue a `git mv` left behind, not a mega-goal, and is skipped.
+1. **An explicit status marker** in the folder's TOP-LEVEL docs, a `Status:` or `State:`
+   heading, bold label, or list item at the start of a line. Files under `goals/` are excluded,
+   so one drafted sub-goal never describes the goal. An OPEN marker anywhere (charter, draft,
+   held, blocked, pending, deferred, in progress) wins over a closed one, because the loop's
+   only mutation is a move and a live engine must not be moved out of the control surface.
 2. **Its own checkboxes.** An unchecked item anywhere in the folder (`- [ ]`, and the `- [~]`
-   in-progress form) means the goal is not complete, whatever the commits say. A box counts
-   only at the start of a line or of a table cell, which keeps prose ABOUT checkboxes out of
-   the count: every POINTER_PROMPT.md in the estate writes the convention out mid-sentence as
-   `` `- [ ] NN-... PR #N` ``.
+   in-progress form) means the goal is not complete, whatever the commits say. A box counts at
+   the start of a line, a blockquote, or a table cell, on a bullet or a number, which keeps
+   prose ABOUT checkboxes out of the count: every POINTER_PROMPT.md in the estate writes the
+   convention out mid-sentence as `` `- [ ] NN-... PR #N` ``.
 3. **Commit evidence, only for a folder that declares nothing at all**, and then the verdict
    is UNSURE. A commit keyword alone never earns a mega-goal folder a FIX.
 
-FIX needs all three: a closed marker, no open item, and a commit scope that resolves an owner
-to give the move a destination.
+FIX needs all of: a closed marker, no open item, at least one CHECKED item, a basename with no
+glob metacharacter in it, and a commit scope that resolves a majority owner to give the move a
+destination. Each refusal names itself in the UNSURE row it produces instead. The checked-item
+requirement is the fail-closed catch: every way the box scan can come back empty also yields
+zero checked items, so a folder whose checklist could not be read never reaches a move.
 
 This precedence exists because commit keywords alone were the first test, and on the first
 live run they misread three of five real folders: a sweep commit reading "co-locate completed
@@ -85,8 +91,8 @@ goal suppresses one finding, while a wrong FIX moves a live engine. Measured bef
 | Finding | Verdict | Applied? |
 |---|---|---|
 | detector 3, one owner confirmed by Tier 2 | FIX | yes, `git mv` |
-| detector 3, a mega-goal whose own marker says closed, nothing open, one owner | FIX | yes, `git mv` |
-| detector 3, two or more owners, or a closed mega-goal with no resolvable owner | UNSURE | no |
+| detector 3, a mega-goal closed by its own marker, nothing open, something checked, one majority owner, no glob in its name | FIX | yes, `git mv` |
+| detector 3, two or more owners, or a closed mega-goal that fails any other FIX condition | UNSURE, naming which condition failed | no |
 | detector 3, a mega-goal that declares no status, nothing open, commit evidence only | UNSURE | no |
 | detector 3, a mega-goal with any open checklist item and no closed marker | not emitted | no |
 | detector 2 with a content-identical copy elsewhere | REMOVE, the copy being the named successor | never |

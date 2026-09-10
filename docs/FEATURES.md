@@ -119,7 +119,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `context-budget.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook that warns once per band once live context passes a budget. | SPEC-255 | test-context-budget.sh, test-install-modules.sh |
 | `context-hints.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook, function-named port of ops-toolkit's | SPEC-255 | test-adopt.sh, test-install-modules.sh, test-kit-foldin-hooks.sh |
 | `context-readiness.sh` | `[E]` | SessionStart | SessionStart hook | SPEC-003, SPEC-005, SPEC-010 +8 | test-adopt.sh, test-hooks.sh, test-install-modules.sh +1 |
-| `harvest.sh` | `[E]` | PreCompact | PreCompact / SessionEnd hook, function-named port of ops-toolkit's | SPEC-194, SPEC-196, SPEC-245 +2 | test-install-modules.sh, test-kit-foldin-hooks.sh |
+| `harvest.sh` | `[E]` | PreCompact | PreCompact / SessionEnd hook, function-named port of ops-toolkit's | SPEC-194, SPEC-196, SPEC-245 +2 | test-install-modules.sh, test-kit-foldin-hooks.sh, test-repohygiene.sh |
 | `intake-sweep.sh` | `[E]` | - | thin shim over intake-sweep.py (backlog-stage.sh precedent). | SPEC-200 | test-board-promote.sh, test-intake-sweep.sh |
 | `money-gate.sh` | `[E]` | PreToolUse | PreToolUse(Edit\|Write\|MultiEdit) hook, function-named port of | SPEC-232 | test-install-clis.sh, test-install-modules.sh, test-learn-propose.sh +1 |
 | `notification.sh` | `[E]` | Notification | Notification hook | SPEC-032, SPEC-084, SPEC-196 +1 | test-hooks.sh, test-install-modules.sh |
