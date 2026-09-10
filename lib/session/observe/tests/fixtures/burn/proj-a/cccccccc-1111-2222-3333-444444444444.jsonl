@@ -1,0 +1,1 @@
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-09-10T06:00:00.000Z", "requestId": "req_c1", "cwd": "/x/proj-c", "message": {"id": "msg_c1", "model": "claude-sonnet-5", "usage": {"input_tokens": 7, "cache_creation_input_tokens": 7, "cache_read_input_tokens": 7, "output_tokens": 7}}}

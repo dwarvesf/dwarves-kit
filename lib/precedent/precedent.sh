@@ -22,6 +22,9 @@
 #                                [--json] [--registry <file>] [--repo-root <path>]
 #       -> `--surface` default `all`: records block, then inventory sections, then a
 #          summary line. `records` alone is byte-identical to the legacy call.
+#   precedent.sh find <bare words...> [--surface ...] [--limit N] ...
+#       -> unquoted words are also accepted: every extra positional folds into the
+#          description (a lone digit-only word still sets the legacy [max] as above).
 #   precedent.sh find --explain "<hit label as printed>"
 #       -> the header of the file behind an inventory hit label.
 #   precedent.sh -h | --help | help
@@ -44,7 +47,7 @@ source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.
 ROOT=""  # resolved per-call in cmd_find, once --repo-root is known
 
 _usage() {
-  sed -n '2,29p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 # repo-root resolution precedence (lib/board/board.sh:158-168): --repo-root flag > REPO_ROOT
@@ -149,9 +152,15 @@ cmd_find() {
       -*)
         echo "precedent find: unknown flag '$1'" >&2; return 64 ;;
       *)
-        if [ "$desc_set" -eq 0 ]; then desc="$1"; desc_set=1
-        elif [ -z "$max" ]; then max="$1"
-        else echo "precedent find: unexpected argument '$1'" >&2; return 64
+        if [ "$desc_set" -eq 0 ]; then
+          desc="$1"; desc_set=1
+        elif [ -z "$max" ] && printf '%s' "$1" | grep -qE '^[1-9][0-9]*$'; then
+          # legacy call shape: a lone digit-only second positional is still the [max] override
+          max="$1"
+        else
+          # any other extra word (the documented `<two or three words>` bare-word call) folds
+          # into the description instead of erroring
+          desc="$desc $1"
         fi
         shift ;;
     esac
@@ -236,7 +245,7 @@ main() {
     -h|--help|help) _usage; return 0 ;;
     find) shift; cmd_find "$@" ;;
     *)
-      echo "usage: precedent.sh find \"<task description>\" [--surface records|inventory|all] [--limit N] [--quiet] [--json] [--registry <file>] [--repo-root <path>] [--explain <label>]" >&2
+      echo "usage: precedent.sh find \"<task description>\" | <bare words...> [--surface records|inventory|all] [--limit N] [--quiet] [--json] [--registry <file>] [--repo-root <path>] [--explain <label>]" >&2
       return 64 ;;
   esac
 }
