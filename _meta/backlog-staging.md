@@ -71,7 +71,7 @@ Gitignored: may name unfiled work. NEVER the source of truth.
 - Home: dwarvesf/dwarves-kit
 - Source: session 2026-09-10
 
-## [promoted ID-828] wrap log prepends above the LAB_LOG header
+## [dropped: fixed upstream by #574] wrap log prepends above the LAB_LOG header
 - Intent: bin/wrap log's fallback path writes the new entry above the '# LAB_LOG' header instead of below it, so the header drifts down the file one session at a time; the 2026-09-10 compaction found it at line 878 of 4190 and had to move it back by hand. Fix the fallback insertion point and add a test asserting the header stays at line 1 after a log write.
 - Approach: (no approach extracted)
 - Tags: #u-lo #f-mid
