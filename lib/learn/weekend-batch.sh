@@ -19,9 +19,10 @@
 #                                                to resolve -- the batch does not race it)  skip
 #
 # The kit does not reinvent pedagogy or a second dedup/batching engine here (ADR-0031,
-# Alternatives): this lib is the dwarves-kit-generic collection half. The ORCHESTRATION into the
-# operator's ops-toolkit learning skills (learning-day-process / learning-ledger / deep-understand
-# / til) is a separate, operator-specific Claude Code skill in the dotfiles repo -- see SPEC-126.
+# Alternatives): this lib is the dwarves-kit-generic collection half. What a consumer does with
+# the collected digest (route it into a study process, quiz on it, publish from it) is that
+# consumer's own skill, in that consumer's own repo; this file knows the contract below and no
+# consumer by name. The engine may know an overlay only through a config key the overlay fills.
 #
 # Usage:
 #   weekend-batch.sh list    [--days N] [--since <ISO8601>] [--repo <name>] [--all-repos]
