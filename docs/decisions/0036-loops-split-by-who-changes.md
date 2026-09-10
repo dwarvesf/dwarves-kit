@@ -47,7 +47,7 @@ The skills that write knowledge into the tree (`knowledge-capture`, `memorize`) 
 
 ### One seam, `understand.teach`
 
-The engine reaches the teacher through exactly one config key, `understand.teach`, of kind `skill`. It resolves with `kit_config_get_root`, the same rule `wrap.before` follows: the operator `kit.toml` or the kit-root `kit.toml` only, never a project `.kit.toml`, because the key names code a command runs and a project toml rides inside an untrusted pull request. It gains a row in `lib/config/module-registry.md`, a row in that file's `## Seams` table filled by learning-kit, and a row in SPEC-249's own `## Seams` section. No engine file names a consumer skill; a lint over `lib/`, `commands/`, and `tests/` fails on any consumer skill name or dotfiles path.
+The engine reaches the teacher through exactly one config key, `understand.teach`, of kind `skill`. It resolves with `kit_config_get_root`, the same rule `wrap.before` follows: the operator `kit.toml` or the kit-root `kit.toml` only, never a project `.kit.toml`, because the key names code a command runs and a project toml rides inside an untrusted pull request. It gains a row in `lib/config/module-registry.md`, and a row in that file's `## Seams` table filled by learning-kit; SPEC-249 documents the table but does not hold it. No engine file names a consumer skill; a lint over `lib/`, `commands/`, and `tests/` fails on any consumer skill name or dotfiles path.
 
 ### The empty seam
 

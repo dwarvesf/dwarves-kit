@@ -23,3 +23,12 @@ Impact: sub-goals 03 and 04 each touch three repos (source, destination, dotfile
 Context: the same verifier noted the main dwarves-kit checkout still holds the #555 draft (seam `wrap.learn`, `absorb` moving).
 Decision: no action; it is the unmerged state of this branch. Anyone dispatching a sub-goal before this PR merges reads the wrong cut.
 Impact: do not run `orchestrate.sh` on this mega-goal until the ADR PR is merged with Status Accepted.
+
+## 2026-09-10 10:50 The Seams table lives in the registry, not in SPEC-249
+
+Context: a read-only verifier on ADR-0036 refuted one line: the ADR, the roadmap, and goal 05 said a new seam row lands in "SPEC-249 `## Seams`". SPEC-249 has no such heading; it documents the table that `lib/config/module-registry.md` holds, outside the registry parser window.
+Decision: all three now name `lib/config/module-registry.md` as the table and SPEC-249 as its documentation.
+Why: sub-goal 01 would otherwise have edited a spec file and found nothing to add to.
+Impact: goal 05 In-scope line reads "the seams-table row". No other change.
+
+The same verifier confirmed: the axis table is byte-identical between ADR and roadmap; every characterization of ADR-0031 and ADR-0034 traces to a line in those files; `skipped: no teacher`, the `reflect` verbs, and "no engine file names a consumer skill" are prospective (sub-goal 01 builds them; `commands/explain.md` names `narrate-log` and `svg-knowledge-diagram` today).
