@@ -23,7 +23,7 @@ Manual repro of the reported bug, against a real repo:
 
 ```
 $ bash bin/precedent find --surface inventory --quiet mini run \
-    --repo-root /Users/tieubao/workspace/tieubao/ops-toolkit
+    --repo-root <consumer-repo>
 # precedent inventory: mini run
 ...
 ## tools
@@ -42,7 +42,7 @@ name alone:
 
 ```
 $ bash bin/precedent find --surface inventory --quiet "mini-run" \
-    --repo-root /Users/tieubao/workspace/tieubao/ops-toolkit
+    --repo-root <consumer-repo>
 ## tools
   tools/mac-mini-substrate/mini-run  , mini-run: run a LOCAL script on the Mac Mini and get its real exit status.
 ```
