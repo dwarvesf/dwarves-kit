@@ -3,26 +3,27 @@
 # Proves lib/learn/weekend-batch.sh (Flow B, the debt-paydown reader/closer; relocated
 # from lib/queue/ per ADR-0034 decision 1, behavior unchanged):
 #   AC1  collects the week's deferred+waved debt-ledger items + impl-notes + explainers
-#   AC2  the dotfiles weekend-debt-paydown skill ROUTES through learning-day-process +
-#        learning-ledger + a privacy-stripped til flush (grep, best-effort cross-repo)
+#   AC2  (retired) used to grep a consumer skill in the operator's dotfiles by path; the
+#        engine may know a consumer only through a config key, so that assertion moved to
+#        the consumer's own tests
 #   AC3a NEGATIVE CONTROL: an already-engaged (paid) item is not re-collected
 #   AC3b NEGATIVE CONTROL: a non-significant change never enters the collectible view
 #   AC3c window scoping: an item older than --days is excluded
 #   AC3d repo scoping: a different-repo item is excluded by default, included with --all-repos
-#   AC4  NEGATIVE CONTROL (reuse): the skill invokes, does not fork a second engine
+#   AC4  (retired with AC2, same reason)
 #   AC5  SPEC-136 payoff loop: a REAL `significance-classify.sh record` call (grounded in actual
 #        --files/desc, not a hand-seeded fixture line) -> a human debt-response forward-carries the
 #        classification -> collect shows real sig/wor -> mark-paid exits 0, disposed paid
 #   AC6  SPEC-136 silent-wave path: a REAL `record` call producing verdict=wave with NO human
 #        response ever following IS collected as waved -- the newly-live logged-wave path
 #
-# AC2/AC4 read a file in the SIBLING dotfiles repo. Its location is per-operator, so the test
-# takes it from $KIT_SIBLING_ROOT (the directory holding this checkout's sibling repos) and
-# hard-codes no home. Unset in CI, and unset by default anywhere else, so those two checks SKIP
-# (not fail); export KIT_SIBLING_ROOT to run them for real (same precedent as SPEC-107's
-# dotfiles-half check in tests/test-meta.sh: "its path is absent in CI").
+# AC2 and AC4 used to read the operator's weekend-debt-paydown skill out of a sibling dotfiles
+# checkout via $KIT_SIBLING_ROOT, guarded by a skip when absent. That made the shared kit know
+# the path and contents of one operator's personal skill, which SPEC-249 forbids: the engine may
+# know a consumer only through a config key the consumer fills. The consumer asserts its own
+# routing in its own tests now; this file proves only the kit-generic collect/close half.
 #
-# Run: bash tests/test-weekend-batch.sh   (exit 0 = all AC green, including skips)
+# Run: bash tests/test-weekend-batch.sh   (exit 0 = all AC green)
 
 set -uo pipefail
 KIT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -108,19 +109,12 @@ assert "AC1e ug-10's (unmatched) explainer honestly reported absent" \
   "$(printf '%s\n' "$COLLECT_OUT" | grep -A6 '^## ug-10-waved-item$' | grep -q 'explainer:.*(absent)' && echo 0 || echo 1)"
 
 echo ""
-echo "=== AC2: routes through learning-day-process + learning-ledger; til flush is privacy-stripped ==="
-SKILL_MD="${KIT_SIBLING_ROOT:-}/dotfiles/home/dot_claude/skills/weekend-debt-paydown/SKILL.md"
-if [ -f "$SKILL_MD" ]; then
-  assert "AC2a skill invokes learning-day-process" "$(grep -q 'learning-day-process' "$SKILL_MD" && echo 0 || echo 1)"
-  assert "AC2b skill invokes learning-ledger" "$(grep -q 'learning-ledger' "$SKILL_MD" && echo 0 || echo 1)"
-  assert "AC2c skill invokes deep-understand for worthy items" "$(grep -q 'deep-understand' "$SKILL_MD" && echo 0 || echo 1)"
-  assert "AC2d skill flushes evergreen concepts to til, privacy-stripped" \
-    "$(grep -qi 'til' "$SKILL_MD" && grep -qi 'privacy' "$SKILL_MD" && echo 0 || echo 1)"
-  assert "AC2e skill closes the loop via learn debt mark-paid" \
-    "$(grep -q 'mark-paid' "$SKILL_MD" && echo 0 || echo 1)"
-else
-  skip "AC2 (dotfiles path absent -- $SKILL_MD; not present in CI, run locally to exercise, see docs/verification/weekend-batch/)"
-fi
+echo "=== AC2 (replacement): the kit names no consumer path (SPEC-249) ==="
+# The boundary this file used to cross, held as an assertion so it cannot creep back: neither
+# this test nor the lib it proves may expand a sibling-checkout path or name a dotfiles skill
+# directory. The patterns are written so this line does not match itself.
+assert "AC2 no dotfiles skill path and no KIT_SIBLING_ROOT expansion in the test or the lib" \
+  "$(grep -qE 'dotfiles/hom[e]|KIT_SIBLING_ROOT:[-]' "$0" "$WB" && echo 1 || echo 0)"
 
 echo ""
 echo "=== AC3a: NEGATIVE CONTROL -- an already-engaged (paid) item is not re-collected ==="
@@ -153,21 +147,6 @@ assert "AC3d default (--repo fixture-repo) excludes the other-repo item" \
 LIST_ALL="$(cd "$KIT_DIR" && bash "$WB" list --all-repos --days 400)"
 assert "AC3d --all-repos INCLUDES the other-repo item" \
   "$({ trap '' PIPE; printf '%s\n' "$LIST_ALL" 2>/dev/null || :; } | grep -q 'ug-15-otherrepo-item' && echo 0 || echo 1)"
-
-echo ""
-echo "=== AC4: NEGATIVE CONTROL (reuse) -- the skill invokes, does not fork a second engine ==="
-if [ -f "$SKILL_MD" ]; then
-  # A precise smoking-gun check, not a bare keyword ban: the skill's OWN hard rules legitimately
-  # say "never reimplement" (a negation, the correct statement), so this must not collide with
-  # that -- it looks for an actual FORK claim (a second/own/new engine, or a reimplement of one of
-  # the named skills), never the bare word "reimplement".
-  assert "AC4 [NC] no 'a second/own/new dedup-or-ledger-or-quiz engine' fork-tell in the skill" \
-    "$(grep -qiE '(a |an |our |the )(second|own|new|custom) (dedup|ledger|batching|quiz) (engine|logic|system)|reimplements? (learning-day-process|learning-ledger|deep-understand)' "$SKILL_MD" && echo 1 || echo 0)"
-  assert "AC4 [NC] the skill explicitly states it does not fork the learning skills" \
-    "$(grep -qiE 'never (fork|reinvent)|does not (fork|reinvent)' "$SKILL_MD" && echo 0 || echo 1)"
-else
-  skip "AC4 (dotfiles path absent -- same as AC2)"
-fi
 
 echo ""
 echo "=== TIER-4 regression: respond -> collect -> mark-paid via the REAL codepaths (thin response, no prior classifier) ==="
