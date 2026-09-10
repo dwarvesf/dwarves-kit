@@ -1,13 +1,13 @@
 # Weekend batch: debt paydown
 
-Window: since 2026-09-03T15:45:48Z (repo: fixture-repo)
+Window: since 2026-09-03T02:03:18Z (repo: fixture-repo)
 Items: 2 (1 waved, 1 deferred)
 
 ## ug-10-waved-item
 - disposition: waved
 - significance: high / worthiness: low
 - reason: sig:full-lane wor:none
-- recorded: 2026-09-10T15:45:48Z
+- recorded: 2026-09-10T02:03:17Z
 - impl-notes: docs/implementation-notes/ug-10-waved-item.md (found)
 - explainer: docs/verification/explain-command/ug-10-waved-item-explainer.md (absent)
 
@@ -15,6 +15,6 @@ Items: 2 (1 waved, 1 deferred)
 - disposition: deferred
 - significance: high / worthiness: high
 - reason: deferred to weekend batch
-- recorded: 2026-09-10T15:45:48Z
+- recorded: 2026-09-10T02:03:17Z
 - impl-notes: docs/implementation-notes/ug-11-deferred-item.md (absent)
 - explainer: docs/verification/explain-command/deferred-item-explainer.md (found)
