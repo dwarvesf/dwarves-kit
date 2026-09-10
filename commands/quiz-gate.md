@@ -1,5 +1,5 @@
 ---
-description: "The ★-tap NUDGE before merging a significant+worthy gate PR: a 5-question quiz built from the ACTUAL diff+tests, routed through deep-understand's mastery gate. Three logged responses (engage/defer/wave); advisory, never must-pass. Gates the human's attention, not the merge."
+description: "The ★-tap NUDGE before merging a significant+worthy gate PR: a 5-question quiz built from the ACTUAL diff+tests, handed to the operator's configured teacher seam. Three logged responses (engage/defer/wave); advisory, never must-pass. Gates the human's attention, not the merge."
 ---
 
 You are the understanding-gate NUDGE (ADR-0031 §2/§3, the AFTER gate's speed regulator). At the merge
@@ -18,9 +18,9 @@ three responses are recorded.
    is no narrative channel, so a false story physically cannot leak in. Never hand-write quiz questions from
    memory, the commit message, or what you "meant" to do. If the commit message contradicts the diff, the
    diff wins.
-2. **Route through `deep-understand`, do not build a second quiz.** The kit builds the QUESTIONS and dispatches;
-   the `deep-understand` skill runs the AskUserQuestion mastery gate (shuffled answer slots, per-item gate on a
-   demonstrated answer). The kit scores nothing.
+2. **Route through the `understand.teach` seam, do not build a second quiz.** The kit builds the QUESTIONS
+   and dispatches; whatever skill `understand.teach` names runs the mastery gate (shuffled answer slots,
+   per-item gate on a demonstrated answer). The kit scores nothing and names no skill itself.
 
 ## Process
 
@@ -49,11 +49,13 @@ bash lib/gate/quiz-gate.sh respond <rid> defer                # send to the week
 bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt knowingly
 ```
 
-- **engage** , `respond ... engage --ref <ref>` emits the `deep-understand` dispatch payload (the 5
-  diff-grounded questions + the SPEC-124 explainer material). Invoke the **`deep-understand`** skill with
-  that payload: it runs the AskUserQuestion mastery gate until the human demonstrates understanding. You do
-  NOT score or grade , `deep-understand` owns the pedagogy.
-- **defer** , recorded; the change is queued for the weekend batch (SG-05). The merge proceeds.
+- **engage** , `respond ... engage --ref <ref>` emits the dispatch payload (the 5 diff-grounded questions +
+  the SPEC-124 explainer material). Read `kit_config_get_root understand.teach ""`. Empty: print
+  `skipped: no teacher` and hand the payload to the human directly, no mastery gate. Named: invoke that
+  skill through the Skill tool with the payload: it runs the mastery gate until the human demonstrates
+  understanding. You do NOT score or grade , the seam's skill owns the pedagogy, and this command names
+  none itself.
+- **defer** , recorded; the change is queued for the weekend batch. The merge proceeds.
 - **wave** , recorded; the debt is accepted knowingly. The merge proceeds.
 
 ### Step 3: The merge proceeds either way
@@ -66,15 +68,16 @@ gate. The correctness gates (ADR-0024 ship-gate, ADR-0025 proof-of-done) remain 
 - Ground every question in the diff + recorded tests. The diff wins over the commit message and over memory.
 - Tap ONLY on a `tap` verdict + a gate/gated-final PR (anti-fatigue). Never quiz a `wave` or `not-significant`
   change , that IS the fatigue failure mode.
-- Route engage through `deep-understand`; never reimplement a quiz/scoring engine in the kit.
+- Route engage through the `understand.teach` seam; never name a skill directly, never reimplement a quiz/scoring engine in the kit.
 - All three responses are logged; waving is a first-class, RECORDED choice, not a failure.
 - Advisory only: this never blocks a correct build (ADR-0031). It gates attention, not the merge.
-- Do not write the explainer (SG-03, `/kit:explain`), the significance heuristic (SG-02), or the batch flow (SG-05).
+- Do not write the explainer (`/kit:explain`), the significance heuristic, or the batch flow; those are their own commands' seams.
 
 ## Source
 
-ADR-0031 §2 (the AFTER gate's quiz half) + §3 (the nudge, three responses, debt budget) + SPEC-125. Engine:
-`lib/gate/quiz-gate.sh` (questions from the diff+tests, the tap decision keyed on `lib/classify/significance-classify.sh`,
-the three logged responses via `lib/gate/gate-ledger.sh debt-response`). Composes the `deep-understand` skill.
-Proof: `tests/test-quiz-gate.sh` (5-from-diff, three-responses-logged, deep-understand routing, the grounded
+ADR-0031 §2 (the AFTER gate's quiz half) + §3 (the nudge, three responses, debt budget) + SPEC-125 + ADR-0036
+(the `understand.teach` seam). Engine: `lib/gate/quiz-gate.sh` (questions from the diff+tests, the tap decision
+keyed on `lib/classify/significance-classify.sh`, the three logged responses via `lib/gate/gate-ledger.sh
+debt-response`, the route payload resolved through the seam rather than a hardcoded skill name).
+Proof: `tests/test-quiz-gate.sh` (5-from-diff, three-responses-logged, seam routing (filled and empty), the grounded
 NC, the wiring NC, and never-must-pass).

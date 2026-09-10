@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# test-quiz-gate.sh -- SPEC-125, understanding-gate SG-04.
+# test-quiz-gate.sh -- SPEC-125, understanding-gate SG-04; seam per ADR-0036/SPEC-285.
 # Proves the ★-tap NUDGE (ADR-0031 §2/§3): a 5-question quiz built from the ACTUAL diff+tests,
-# wired at the merge boundary keyed on the SPEC-123 verdict, three logged responses, routed to
-# deep-understand, and NEVER must-pass.
+# wired at the merge boundary keyed on the SPEC-123 verdict, three logged responses, routed
+# through the understand.teach seam, and NEVER must-pass.
 #   AC1  a high×high change generates exactly 5 quiz questions FROM the actual diff + test results
 #   AC2  the three responses (engage/defer/wave) each land in the debt ledger
-#   AC3  engage routes through deep-understand's mastery-gate engine (dispatch, not a reimplementation)
+#   AC3  engage routes through the understand.teach seam (dispatch, not a reimplementation); an
+#        empty seam prints skipped: no teacher and hands the payload over directly
 #   AC4  GROUNDED NC: a narrative that contradicts the diff -> the quiz is built from the DIFF
 #   AC5  WIRING NC: the tap FIRES on `tap`, is ABSENT on `wave` AND on `not-significant` (+ non-gate)
 #   AC6  NEVER must-pass: a waved change still merges (no verb blocks; every advisory path exits 0)
@@ -83,22 +84,28 @@ CHK="$( bash "$GL" check full "$RID" 2>&1 )"; CHK_RC=$?
 assert "AC2 a DEBT-only ledger fails gate check (response lines never satisfy a required gate)" \
   "$([ "$CHK_RC" -ne 0 ] && { trap '' PIPE; printf '%s' "$CHK" 2>/dev/null || :; } | grep -q 'MISSING-GATE' && echo 0 || echo 1)"
 
-echo "=== AC3: engage routes through deep-understand (dispatch, not reimplementation) ==="
-ROUT="$( cd "$DA" && bash "$QG" respond "engage-rid-$$" engage --ref "$REFA" )"
-assert "AC3 engage output names the deep-understand engine" \
-  "$({ trap '' PIPE; printf '%s' "$ROUT" 2>/dev/null || :; } | grep -q 'deep-understand' && echo 0 || echo 1)"
-assert "AC3 engage output names the AskUserQuestion mastery gate" \
-  "$({ trap '' PIPE; printf '%s' "$ROUT" 2>/dev/null || :; } | grep -qi 'AskUserQuestion' && echo 0 || echo 1)"
-# defer / wave do NOT route to deep-understand (only engage does)
-DWAVE="$( bash "$QG" respond "wave-rid-$$" wave )"
-assert "AC3 wave does NOT route to deep-understand" \
-  "$({ trap '' PIPE; printf '%s' "$DWAVE" 2>/dev/null || :; } | grep -q 'deep-understand' && echo 1 || echo 0)"
+echo "=== AC3: engage routes through the understand.teach seam (dispatch, not reimplementation) ==="
+# Fixture operator kit.toml with understand.teach FILLED, isolated from the real machine's own
+# ~/.config/dwarves-kit/kit.toml (KIT_CONFIG_OPERATOR points here instead).
+OPDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR" "$OPDIR"' EXIT
+mkdir -p "$OPDIR/filled" "$OPDIR/none"
+printf '[understand]\nteach = "fixture-teacher"\n' > "$OPDIR/filled/kit.toml"
+ROUT="$( cd "$DA" && KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "engage-rid-$$" engage --ref "$REFA" )"
+assert "AC3 engage output names the CONFIGURED teacher (fixture-teacher), not a hardcoded skill" \
+  "$({ trap '' PIPE; printf '%s' "$ROUT" 2>/dev/null || :; } | grep -q 'fixture-teacher' && echo 0 || echo 1)"
+ROUT_EMPTY="$( cd "$DA" && KIT_CONFIG_OPERATOR="$OPDIR/none" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "engage-rid2-$$" engage --ref "$REFA" )"
+assert "AC3 empty seam: engage prints 'skipped: no teacher' and still hands over the questions" \
+  "$({ trap '' PIPE; printf '%s' "$ROUT_EMPTY" 2>/dev/null || :; } | grep -q 'skipped: no teacher' && { trap '' PIPE; printf '%s' "$ROUT_EMPTY" 2>/dev/null || :; } | grep -q '^Q1\.' && echo 0 || echo 1)"
+# defer / wave do NOT route through the seam at all (only engage does)
+DWAVE="$( KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "wave-rid-$$" wave )"
+assert "AC3 wave does NOT route through the seam (no teacher name, no ROUTE: line)" \
+  "$({ trap '' PIPE; printf '%s' "$DWAVE" 2>/dev/null || :; } | grep -q 'fixture-teacher\|ROUTE:' && echo 1 || echo 0)"
 # the kit does NOT reimplement a quiz scorer: quiz-gate.sh has no answer-key / grading logic
 assert "AC3 quiz-gate.sh reimplements no scorer (no answer-key/grade/score logic)" \
   "$(grep -qiE 'answer[_ -]?key|def .*score|grade_quiz|correct_answer|is_correct' "$QG" && echo 1 || echo 0)"
-# the command surface names the routing target too (live dispatch path)
-assert "AC3 commands/quiz-gate.md names deep-understand (live dispatch path)" \
-  "$(grep -q 'deep-understand' "$KIT_DIR/commands/quiz-gate.md" && echo 0 || echo 1)"
+# the command surface reaches the seam, and names no skill directly (live dispatch path)
+assert "AC3 commands/quiz-gate.md reaches understand.teach and names no skill directly" \
+  "$(grep -q 'understand.teach' "$KIT_DIR/commands/quiz-gate.md" && ! grep -qE 'deep-understand|narrate-log' "$KIT_DIR/commands/quiz-gate.md" && echo 0 || echo 1)"
 
 echo "=== AC4: GROUNDED negative control (narrative differs from the diff) ==="
 # Fixture B: the diff adds `subtract`; the commit BODY and an untracked file claim `multiply`. `questions`

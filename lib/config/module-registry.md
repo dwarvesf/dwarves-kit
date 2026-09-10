@@ -22,8 +22,9 @@ list` can render "every declared key," not just the env-shaped subset.
 ## Module stages
 
 Authoritative assignment per ADR-0034 decision 3, renamed by the 2026-07-18 amendment (leg ->
-stage; Specify/Execute/Observe/Govern -> Shape/Build/Watch/Check, Learn kept). Old names shown
-parenthetically for one release. Every `KIT_KNOWN_MODULES` entry
+stage; Specify/Execute/Observe/Govern -> Shape/Build/Watch/Check, Learn kept) and by ADR-0036
+(Learn -> Reflect, the subsystem `learn` -> `reflect`). Old names shown parenthetically for one
+release. Every `KIT_KNOWN_MODULES` entry
 (`install.sh`, 12 modules) has exactly one row. `team_mode` is excluded from
 `KIT_KNOWN_MODULES` itself (install.sh hard-rejects it until team-mode ships), so
 it is not a row here either , the completeness rule is scoped to
@@ -38,7 +39,7 @@ it is not a row here either , the completeness rule is scoped to
 | queue | Build (Execute) | |
 | stats | Watch (Observe) | |
 | quiz_gate | Build (Execute) | |
-| weekend_batch | Learn | |
+| weekend_batch | Reflect (Learn) | |
 | sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port (ID-290). FIRST SLICE LANDED (`lib/sync/cockpit.py`, `board mirror --engine sync --dry-run`): the deterministic multi-source EXTRACT + keyed `row_hash` git-wins diff, carrying over the reachable-state map {triage, ready, blocked, done}. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
 | worktree | Build (Execute) | |
 | money_gate | Check (Govern) | |
@@ -47,11 +48,11 @@ it is not a row here either , the completeness rule is scoped to
 | spec | Shape (Specify) | spine machinery (ADR-0034 decision 3). |
 | goal | Shape (Specify) | spine machinery (ADR-0034 decision 3). |
 | mega | Build (Execute) | spine machinery (ADR-0034 decision 3). |
-| learn | Learn | spine machinery; created BY ADR-0034 decision 1 (the Learn stage's home). |
+| reflect | Reflect (Learn) | spine machinery; created BY ADR-0034 decision 1 (the Learn stage's home), renamed `learn` -> `reflect` by ADR-0036 (`bin/learn` kept one release as a deprecation forwarder). |
 | telemetry | Watch (Observe) | spine machinery; the durable-root resolver + lane telemetry. |
 | gauntlet | Check (Govern) | side-flow 11 (commands/gauntlet.md): probe-convergence engine, onboarding is the reference preset; one shared config pair serves every preset. Config: `gauntlet.runner_host` ("local" or an ssh alias; remote rounds ship committed state, run there, pull the record back) + `gauntlet.probe_key_ref` (1P ref the RUNNER host resolves itself; the key never travels over ssh). Consumer: `tests/gauntlet/cleanroom/run-remote.sh`. |
-| skill-curator | Learn | ADR-0034 decision 3 lists it under Learn; installs via hooks, not a `--with` module. |
-| prose_rag | Learn | **deviation, not in ADR-0034's decision-3 table** (checked: `grep -n prose_rag docs/decisions/0034-harness-loop-taxonomy.md` has zero hits in the leg table). Assigned Learn by this sub-goal's own judgment: prose-rag is a recall/retrieval read over the user's own accumulated corpus (til/research/learned-ledger), the same read-side shape as the Learn stage's other members, not a Watch-class run-telemetry capture. Flagged for Han; a later ADR-0034 amendment may reassign it. |
+| skill-curator | Reflect (Learn) | ADR-0034 decision 3 lists it under Learn; installs via hooks, not a `--with` module. |
+| prose_rag | Reflect (Learn) | **deviation, not in ADR-0034's decision-3 table** (checked: `grep -n prose_rag docs/decisions/0034-harness-loop-taxonomy.md` has zero hits in the leg table). Assigned Learn by this sub-goal's own judgment: prose-rag is a recall/retrieval read over the user's own accumulated corpus (til/research/learned-ledger), the same read-side shape as the Learn (now Reflect) stage's other members, not a Watch-class run-telemetry capture. Flagged for Han; a later ADR-0034 amendment may reassign it. |
 
 ## Env <-> key registry
 
@@ -98,8 +99,8 @@ real reader consumes it today (all rows below are, except where noted).
 | STATS_SESSIONS_DIR | env-only | `~/.claude/projects` | [impl] | stats | Claude Code's own session-transcript dir; host-generic. |
 | STATS_SECRET_GUARD_LOG | env-only | `~/.cache/claude-secret-guard.log` | [impl] | stats | The secret-guard hook's audit log path; host-generic. |
 | STATS_MEMORY_PROJECTS_ROOT | env-only | `~/.claude/projects` | [impl] | stats | Root `stats` scans for cross-project memory-lens data; host-generic. |
-| BACKLOG_STAGE_BACKLOG | env-only | (none) | [impl] | stats, board, learn, session, wrap | **Canonical (SPEC-200 I2)**: read-only backlog file every proposer dedups against. Unset -> dedup source unavailable. One name, one resource: `stats --propose`, `board promote`, `learn propose`, `session audit triage` and `hooks/backlog-stage.py` all read THIS. `wrap stage` is the one reader that does not error when unset: it defaults to the current repo's `_meta/BACKLOG.md`. |
-| BACKLOG_STAGE_STAGING | env-only | (none) | [impl] | stats, board, learn, session, wrap | **Canonical (SPEC-200 I2)**: the feedback loop's ONLY write target (the staging buffer). Unset -> a proposer errors "no destination configured" rather than writing a stray relative path. `wrap stage` is the one reader that does not error when unset: it defaults to the current repo's `_meta/backlog-staging.md`. Under `wrap stage` an override path must already exist as a regular file, because the value arrives from the environment a repo `.envrc` writes and create-on-absent would let it seed a new file under `$HOME`. |
+| BACKLOG_STAGE_BACKLOG | env-only | (none) | [impl] | stats, board, reflect, session, wrap | **Canonical (SPEC-200 I2)**: read-only backlog file every proposer dedups against. Unset -> dedup source unavailable. One name, one resource: `stats --propose`, `board promote`, `reflect propose`, `session audit triage` and `hooks/backlog-stage.py` all read THIS. `wrap stage` is the one reader that does not error when unset: it defaults to the current repo's `_meta/BACKLOG.md`. |
+| BACKLOG_STAGE_STAGING | env-only | (none) | [impl] | stats, board, reflect, session, wrap | **Canonical (SPEC-200 I2)**: the feedback loop's ONLY write target (the staging buffer). Unset -> a proposer errors "no destination configured" rather than writing a stray relative path. `wrap stage` is the one reader that does not error when unset: it defaults to the current repo's `_meta/backlog-staging.md`. Under `wrap stage` an override path must already exist as a regular file, because the value arrives from the environment a repo `.envrc` writes and create-on-absent would let it seed a new file under `$HOME`. |
 | CC_BACKLOG_BACKLOG | env-only | (none) | [impl] | stats | **Deprecated alias** of `BACKLOG_STAGE_BACKLOG` (SPEC-200 I2). Still read by `stats`; warns on stderr; removed one release after SPEC-200 lands. The host-agent `CC_*` prefix is banned by the kit naming invariant and lint-enforced (`tests/test-config-registry.sh`). |
 | CC_BACKLOG_STAGING | env-only | (none) | [impl] | stats | **Deprecated alias** of `BACKLOG_STAGE_STAGING` (SPEC-200 I2). Same terms as the row above. |
 | STATS_DB_REMOVED | (none , not a real config var) | n/a | n/a | n/a | **Registered, not excluded** (scope fence: never delete an undocumented var without registering it first): grepped `lib/stats/src/stats/{config,materialize,adapters}.py` , zero references. Only appears in `lib/stats/tests/*.sh` as an exported scratch path used purely for test-fixture cleanup (`rm -f "$STATS_DB_REMOVED"`). Not read by any product code path; the drift lint allowlists it (see Allowlist below) as dead/vestigial rather than a live knob. |
@@ -296,6 +297,12 @@ never turns the step off.
 |---|---|---|---|---|---|
 | - | knowledge.root | `""` | [consumer] | wrap | Absolute or `~`-prefixed path to the context tree root (context-kit fills this), resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names a tree outside the repo, `kit-config.sh:75-90`). Empty means repo-local: knowledge notes stay under `<repo>/.claude/memory/`. Filled, repo knowledge files land under `<root>/projects/<repo-basename>/`. |
 
+### understand (teacher seam, no install module)
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| - | understand.teach | `""` | [consumer] | gate | Name of a skill that pays the understanding debt the gate recorded (ADR-0036): an explainer, a quiz, a weekend paydown session. Resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it names code `commands/wrap.md` Step 7a/7c, `commands/explain.md`, and `commands/quiz-gate.md` run, `kit-config.sh:75-90`). Empty means no teacher: the gate still records the debt; the commands print `skipped: no teacher` and hand over the gathered material instead of teaching badly. Filled by learning-kit's `understand` lane, or the operator directly. |
+
 ### web_drift (skill knob, no install module)
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
@@ -385,6 +392,7 @@ module, and description come from the registry rows above and are not repeated h
 | precedent.registry | file | operator |
 | knowledge.root | dir | context-kit |
 | PROSE_RAG_BIN | binary | context-kit |
+| understand.teach | skill | learning-kit understand lane, or the operator |
 
 ## Known gaps (documented, not enforced by this lint , out of this sub-goal's scope)
 
@@ -406,7 +414,7 @@ allowlist, would close this), but are named here so they are not lost:
 (`lib/goal/goal-drafts.sh`), `SPEC_RESERVE_FILE` / `SPEC_RESERVE_TTL` /
 `SPEC_RESERVE_MAX_TRIES` (`lib/spec/spec-next.sh`), `SIGNIFICANCE_WORTHINESS_MIN`
 (`lib/classify/significance-classify.sh`), `HERMES_BIN` (`lib/board/board-mirror.sh`),
-`REPO_FILTER` (`lib/learn/weekend-batch.sh`), `OFFLOAD_MAX_TOKENS`
+`REPO_FILTER` (`lib/reflect/weekend-batch.sh`), `OFFLOAD_MAX_TOKENS`
 (`hooks/output-offload.sh`), `KIT_WEEKLY_JOBS` (`deploy/macos/kit-weekly`; its
 predecessor `INTEL_DIR` retired with the per-job session-intel launcher,
 ADR-0034 decision 9).

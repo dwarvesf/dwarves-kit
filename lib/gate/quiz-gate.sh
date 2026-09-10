@@ -13,9 +13,10 @@
 # false story physically cannot leak into the quiz (the same architectural guarantee as lib/explain.sh,
 # which this reuses for the grounded material). A quiz on the agent's misconceptions is worse than none.
 #
-# THE KIT DOES NOT REINVENT PEDAGOGY: the quiz ROUTES through the operator's existing `deep-understand`
-# AskUserQuestion mastery-gate engine. This lib builds the QUESTIONS (from the diff) and emits the
-# dispatch payload; it never scores or grades a quiz itself.
+# THE KIT DOES NOT REINVENT PEDAGOGY: the quiz ROUTES through whatever skill the operator's
+# `understand.teach` seam names (ADR-0036), resolved with kit_config_get_root, never hardcoded.
+# This lib builds the QUESTIONS (from the diff) and emits the dispatch payload; it never scores
+# or grades a quiz itself, and it never names a specific consumer skill.
 #
 # Verbs:
 #   quiz-gate.sh questions <ref>
@@ -26,10 +27,10 @@
 #          nothing and exits 0 (the anti-fatigue guard, keyed on the SPEC-123 verdict).
 #   quiz-gate.sh respond <rid> <engage|defer|wave> [--ref R]
 #       -> logs the human choice to the debt ledger (gate-ledger.sh debt-response). For `engage`
-#          (with --ref) also emits the deep-understand routing directive. Always exits 0 (advisory).
+#          (with --ref) also emits the routing directive through the seam. Always exits 0 (advisory).
 #   quiz-gate.sh route <ref>
-#       -> the deep-understand dispatch payload: the skill + its AskUserQuestion mastery gate + the
-#          5 diff-grounded questions + a pointer to the SPEC-124 explainer material.
+#       -> the seam's dispatch payload: whatever `understand.teach` names (or "skipped: no teacher"
+#          when empty) + the 5 diff-grounded questions + a pointer to the SPEC-124 explainer material.
 
 set -uo pipefail
 
@@ -38,6 +39,12 @@ LIB_ROOT="$(cd "$QG_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings r
 EXPLAIN="$LIB_ROOT/explain.sh"
 SIG_CLASSIFY="$LIB_ROOT/classify/significance-classify.sh"
 GATE_LEDGER="$QG_DIR/gate-ledger.sh"
+# shellcheck source=lib/config/kit-config.sh
+source "$LIB_ROOT/config/kit-config.sh"
+
+# _teacher -- resolve understand.teach (ADR-0036); prints the name or nothing when unset. Never
+# a project .kit.toml (kit_config_get_root): the key names code this engine's own callers run.
+_teacher() { kit_config_get_root understand.teach ""; }
 
 # _primary_file <ref> -- the first non-doc, non-test changed file in READING order (reuses
 # lib/explain.sh's grounded ordering). This is the code the quiz drills. Prints NOTHING when the
@@ -82,7 +89,7 @@ cmd_questions() {
 
   echo "# 5-question understanding quiz for \`${ref}\`"
   echo "# Grounded in the ACTUAL diff + recorded test results, NOT any agent narrative."
-  echo "# These questions are the payload for the deep-understand mastery gate, they are not scored here."
+  echo "# These questions are the payload for the understand.teach mastery gate, they are not scored here."
   echo
   echo "Q1. Background: this change is read in the order: ${order:-（no files）}. Start from \`${first_file:-（none）}\` -- what existing context does the change build on, and why is that the reader's first stop?"
   echo "Q2. Goal (off the diff): the change touches these files: ${order:-（none）}. In your own words, what is the goal read OFF THE DIFF -- not off the commit message?"
@@ -97,15 +104,22 @@ cmd_questions() {
   echo "Q5. Blast radius / why: why was it resolved this way, and what breaks downstream if you misunderstand \`${primary:-${first_file:-this change}}\`?"
 }
 
-# route: the deep-understand dispatch payload. The kit builds the questions + names the engine; it
-# does NOT score the quiz (no reinvented pedagogy).
+# route: the seam's dispatch payload. The kit builds the questions + resolves the teacher; it
+# does NOT score the quiz (no reinvented pedagogy) and does NOT hardcode which skill teaches.
 cmd_route() {
-  local ref="${1:-HEAD}"
-  echo "ROUTE: deep-understand"
-  echo "engine: deep-understand skill (its AskUserQuestion mastery-gate quiz)"
-  echo "material: the literate explainer (lib/explain.sh render ${ref}); docs/verification/"
-  echo "instruction: hand these 5 diff-grounded questions to deep-understand; it runs the mastery gate,"
-  echo "             shuffles answer slots, and gates each item on a demonstrated answer. The kit scores nothing."
+  local ref="${1:-HEAD}" teacher
+  teacher="$(_teacher)"
+  if [ -n "$teacher" ]; then
+    echo "ROUTE: ${teacher}"
+    echo "engine: ${teacher} skill (its mastery-gate quiz)"
+    echo "material: the literate explainer (lib/explain.sh render ${ref}); docs/verification/"
+    echo "instruction: hand these 5 diff-grounded questions to ${teacher}; it runs the mastery gate,"
+    echo "             shuffles answer slots, and gates each item on a demonstrated answer. The kit scores nothing."
+  else
+    echo "ROUTE: skipped: no teacher"
+    echo "material: the literate explainer (lib/explain.sh render ${ref}); docs/verification/"
+    echo "instruction: no understand.teach configured; hand these 5 diff-grounded questions to the operator directly."
+  fi
   echo
   cmd_questions "$ref"
 }
@@ -152,13 +166,13 @@ cmd_tap() {
   printf '★ worth understanding: %s\n' "${desc:-this change}"
   echo "  This gate/gated-final PR is significant AND understanding-worthy. Before you merge, pick one"
   echo "  (all three are logged to the debt ledger; the quiz never blocks the merge):"
-  echo "    engage  -- pull the 5-question quiz now (deep-understand mastery gate)"
+  echo "    engage  -- pull the 5-question quiz now (the configured teacher's mastery gate)"
   echo "    defer   -- send it to the weekend batch"
   echo "    wave    -- accept the debt knowingly (the change still merges)"
   echo "  Respond: bash lib/gate/quiz-gate.sh respond ${rid} <engage|defer|wave> [--ref <ref>]"
 }
 
-# respond: log the human's choice; for engage, also emit the deep-understand routing directive.
+# respond: log the human's choice; for engage, also emit the seam's routing directive.
 cmd_respond() {
   local rid="${1:-}" response="${2:-}"; shift 2 2>/dev/null || { echo "usage: quiz-gate.sh respond <rid> <engage|defer|wave> [--ref R]" >&2; return 64; }
   case "$response" in engage|defer|wave) ;; *) echo "quiz-gate.sh respond: response must be engage|defer|wave (got '$response')" >&2; return 64;; esac
@@ -174,9 +188,10 @@ cmd_respond() {
 
   case "$response" in
     engage)
-      echo "recorded: engage (rid=${rid}). Routing to the deep-understand mastery gate:"
+      echo "recorded: engage (rid=${rid}). Routing through the understand.teach seam:"
       if [ -n "$ref" ]; then cmd_route "$ref"; else
-        echo "ROUTE: deep-understand (no --ref given; run 'quiz-gate.sh route <ref>' to build the questions)"
+        local teacher; teacher="$(_teacher)"
+        echo "ROUTE: ${teacher:-skipped: no teacher} (no --ref given; run 'quiz-gate.sh route <ref>' to build the questions)"
       fi
       ;;
     defer) echo "recorded: defer (rid=${rid}) -- queued for the weekend batch. The change still merges." ;;

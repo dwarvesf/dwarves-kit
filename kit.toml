@@ -87,7 +87,7 @@ understanding_gate = true       # [impl] hooks/anti-rationalization.sh (ADR-0031
                                 #        today; exposing an on/off toggle is NEW work.
 
 [features]                      # harness-adjacent toggles (kept as one control surface)
-auto_improvement = false        # [impl] `learn propose` (SPEC-195): read-plane loop over the
+auto_improvement = false        # [impl] `reflect propose` (SPEC-195): read-plane loop over the
                                 #        ledger -> cited, deduped, adversarially-checked backlog
                                 #        proposals. The command is always available; this flag
                                 #        gates only the WEEKLY unattended cadence, consumer-side
@@ -104,7 +104,7 @@ memory_tidy      = false        # [consumer] the unattended biweekly memory-audi
                                 #        tools/memory-tidy LaunchAgent). Default off (opt-in).
 
 # =============== TEAM COLLABORATION (designed, not built , all off) ===============
-# Source: ops-toolkit/_meta/megagoals/team-mode/ (ROADMAP + DESIGN-01..07),
+# Source: the operator's personal-tools repo, `_meta/megagoals/team-mode/` (ROADMAP + DESIGN-01..07),
 #         docs/research/2026-07-04-team-collab-workflow-proposal.md (v3).
 # Held until kit-modularity ships; install.sh rejects team_mode until then.
 
@@ -278,3 +278,16 @@ root = ""                       # [consumer] absolute or ~-prefixed path to the 
                                  #        dwarves-kit-only install today. Filled, repo knowledge
                                  #        files land under `<root>/projects/<repo-basename>/`.
                                  #        `~` expands the same way `wrap.activity_log` does.
+
+[understand]                    # the Understanding gate's teacher seam (ADR-0036)
+teach = ""                      # [consumer] name of a skill that PAYS the understanding debt
+                                 #        the gate recorded: an explainer for `/kit:explain`, a
+                                 #        quiz for `/kit:quiz-gate`, a paydown session for the
+                                 #        weekend batch. Read from the operator `kit.toml` or the
+                                 #        KIT-ROOT `kit.toml` ONLY; a project `.kit.toml` is
+                                 #        never read for this key, because it names code the
+                                 #        command runs. Empty means no teacher: the gate still
+                                 #        records the debt (unchanged), and the command prints
+                                 #        `skipped: no teacher` plus the gathered material's path
+                                 #        instead of teaching badly. Filled by learning-kit's
+                                 #        `understand` lane, or the operator directly.

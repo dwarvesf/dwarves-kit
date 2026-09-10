@@ -1,5 +1,5 @@
 ---
-description: "Turn a merged change into a literate-diff explainer a human READS to understand: background -> goal + intuition -> a prose-ordered diff -> a diagram. Composes narrate-log + svg-knowledge-diagram; grounded in the actual diff + test results, never the agent's narrative."
+description: "Turn a merged change into a literate-diff explainer a human READS to understand: background -> goal + intuition -> a prose-ordered diff -> a diagram. Grounds the material mechanically, then hands it to the operator's configured teacher seam; grounded in the actual diff + test results, never the agent's narrative."
 ---
 
 You are an explainer. Your job is to turn a shipped change (`$ARGUMENTS`: a commit, a PR, or a spec)
@@ -8,8 +8,8 @@ understanding axis (ADR-0031 §2): as agents self-verify, the human's job shifts
 "do I understand this enough to shape the next loop?". A raw diff does not answer that , it is "a pile of
 files edited in alphabetical order with no explanation" (Litt), and reading it is easy to fake.
 
-You produce the MATERIAL. The 5-question quiz built ON this material is a separate step
-(`deep-understand`, understanding-gate SG-04); do not write the quiz here.
+You produce the MATERIAL. The 5-question quiz built ON this material is a separate step, run by
+`/kit:quiz-gate` through its own seam; do not write the quiz here.
 
 ## The hard constraint (Litt's caveat , the whole point)
 
@@ -35,16 +35,13 @@ background (existing context)  ->  goal + intuition (concepts)  ->  the change i
 `lib/explain.sh order` ranks the changed files into reading order: background (docs/specs/ADRs) -> the new
 concept (added files) -> integration (modified files) -> verification (tests), last. Keep that order.
 
-## Compose, do not reinvent
+## Compose through the seam, never by name
 
-The kit does not fork pedagogy. Two existing operator skills do the heavy lifting:
-
-- **`narrate-log`** , the session/change -> prose arc. Use it to write the Background and Goal-and-intuition
-  prose (pick the archetype: usually a decision-narrative or build-log; follow its voice rules, no em-dashes).
-  It reads the distilled records (spec, impl-notes, LAB_LOG, git log) for the skeleton.
-- **`svg-knowledge-diagram`** , a richer conceptual figure when the change earns one. The default diagram
-  is the mermaid change-map `lib/explain.sh mermaid` emits (GitHub-native, per SPEC-113); upgrade to an SVG
-  via this skill when a containment / flow / comparison figure would teach better than the change-map.
+The kit does not fork pedagogy, and it does not hardcode which skill supplies it either
+(ADR-0036): the engine gathers the grounded material (Step 1) and hands it to whatever
+`understand.teach` names, through the Skill tool. It never names a specific skill itself. An
+operator with no teacher installed still gets the grounded skeleton, `skipped: no teacher`, and
+the material's path, never a broken reference to a skill that was never there.
 
 ## Process
 
@@ -62,30 +59,24 @@ Read what it produced: the four sections, the reading-ordered hunks, the mermaid
 recorded-test line (either a real verdict from `docs/verification/`, or an honest `[no recorded test
 result]`). This is your grounded floor. Never contradict it.
 
-### Step 2: Enrich the prose (narrate-log)
+### Step 2: Gather the material and invoke the seam
 
-For the **Background** and **Goal and intuition** sections, invoke `narrate-log` on the change's records
-(the spec under `docs/specs/`, its `docs/implementation-notes/<slug>.md`, the commit trail) to write prose
-that teaches: what existed before, why the change was needed, the intuition BEFORE the reader hits a hunk.
-Keep every factual claim traceable to a record or a hunk. Do not restate the diff in prose; explain it.
+The grounded skeleton from Step 1 (its path, plus the records it cites: the spec under `docs/specs/`,
+`docs/implementation-notes/<slug>.md`, the commit trail) IS the material. Read `kit_config_get_root
+understand.teach ""`.
 
-### Step 3: Explain each hunk in reading order
+- **Empty:** print `skipped: no teacher` plus the skeleton's path, and hand that file to the user
+  directly as the deliverable. Skip to Step 5; there is no enrichment step without a teacher.
+- **Named:** invoke that skill through the Skill tool, handing it the skeleton's path and the ref. The
+  skill owns the prose enrichment (Background, Goal and intuition, per-hunk explanation) and any richer
+  diagram; this command names no skill itself and does not reimplement that pedagogy.
 
-Walk the "The change, in reading order" section the engine emitted. For each file, in the given order, add
-a 1-3 sentence explanation of WHAT the hunk does and WHY, keyed to the actual `+`/`-` lines. Do not
-reorder. Do not summarize files you did not read in the diff.
+### Step 3: Land the artifact
 
-### Step 4: The diagram
-
-Keep the mermaid change-map, or, if a conceptual figure would teach better, replace it with an SVG via
-`svg-knowledge-diagram` (match the consuming repo's palette). The diagram must be grounded in the change,
-not decorative.
-
-### Step 5: Land the artifact
-
-Save the enriched explainer under `docs/verification/explain-command/` (or alongside the change's proof).
-Tell the user it is ready and that the quiz built on it is `deep-understand` (SG-04). Do NOT merge, do NOT
-gate the merge; the explainer is advisory (ADR-0031: engage / defer / wave, never must-pass).
+Save whatever came back (the enriched explainer, or the grounded skeleton when there was no teacher)
+under `docs/verification/explain-command/` (or alongside the change's proof). Tell the user it is ready
+and that the quiz built on it runs through `/kit:quiz-gate`'s own seam. Do NOT merge, do NOT gate the
+merge; the explainer is advisory (ADR-0031: engage / defer / wave, never must-pass).
 
 Record the run for lane telemetry (SPEC-139), one line (`explain` carries no matrix row of its
 own, same as `verify` -- RUN_REPORT observability, never a new required gate):
@@ -97,8 +88,8 @@ Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid>
 
 - Ground every claim in the diff or a recorded verdict. The diff wins over the commit message and over memory.
 - Reading order, never alphabetical. Concepts before code.
-- Compose narrate-log + svg-knowledge-diagram; never reinvent a narrative or diagram engine in the kit.
-- Do not write the quiz (SG-04), the significance trigger (SG-02), or the batch flow (SG-05).
+- Reach the teacher through `understand.teach` only; never name a specific skill in this file or hardcode a fallback narrative/diagram engine in the kit.
+- Do not write the quiz, the significance trigger, or the batch flow; those are `/kit:quiz-gate`'s and the weekend batch's own seams.
 - Advisory only: this artifact is read to understand, it never blocks a correct build.
 
 ## Source
