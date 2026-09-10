@@ -911,6 +911,29 @@ chk "a NEW line carrying the precedent miss passes" "$([ "$rc" -eq 0 ]; echo $?)
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: build_candidates knob is false|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a real SKIPPED reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
+# The LIST form: a bare `**Built:**` header followed by `- ` bullets, one candidate per
+# line. Added after a real report crammed three candidates onto one unreadable line. Each
+# bullet owes the same ENHANCE/NEW token as the inline form, checked per bullet, so one bare
+# item among several good ones cannot hide the way it did when the whole line was one string.
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- untracked-blocks-ff-pull NEW (precedent: nothing matched): dwarvesf/dwarves-kit lib/wrap, the pull path in wrap apply (staged)\n- mini-script-run-loop ENHANCE ops-toolkit tools/mac-mini-substrate/mini-run (no change needed, precedent hit is the helper itself)\n- sandbox-overlap-probe ENHANCE dwarvesf/foundation-ops fleet/knowledge-guard (already homed as OPS-16)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a three-bullet Built list passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- alpha ENHANCE tools/x: file.sh (abc1234)\n- lib/wrap/report-lint.sh @ def5678\n- gamma NEW (precedent: nothing matched): tools/gamma (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a list with one bare path-and-commit bullet fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the offending bullet by index" "$out" "bullet 2"
+chk_has "the finding quotes the bare bullet" "$out" "lib/wrap/report-lint.sh @ def5678"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a bare Built header with no bullets and no inline content fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding says it is empty" "$out" "is empty"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:** NOTHING: no candidates\n- stray ENHANCE tools/x: file.sh (abc1234)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "NOTHING inline mixed with bullets fails, the two grammars never combine" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the mixed-grammar shape" "$out" "both inline content and bullets"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:** NOTHING: no candidates\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "NOTHING inline alone still passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
 # The harness-shape check: a `NEW (precedent: nothing matched)` candidate that turns out to
 # speak CDP already has a home (browser-harness-js learnings), so it warns instead of passing
 # clean, but it never fails the lint (the precedent check itself was still honest).
@@ -924,6 +947,13 @@ chk_has "the warn names the harness home" "$out" "browser-harness-js skills/cdp/
 out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: ${HARNESS_FIX} (a1b2c3d)|" | bash "$LINT" 2>&1)"; rc=$?
 chk "an ENHANCE item is never checked for harness shape, even over the same CDP content" "$([ "$rc" -eq 0 ]; echo $?)"
 chk_no "no harness warn on an ENHANCE line" "$out" "browser-harness-js skills/cdp/learnings"
+
+# The harness-shape check on a LIST-form bullet: the same token match, on a `- ` line.
+LIST_HARNESS_FIX="$TMPD/harness-fixture-list"; mkdir -p "$LIST_HARNESS_FIX"
+printf "await session.Runtime.evaluate({ expression: '1+1' });\n" > "$LIST_HARNESS_FIX/probe.js"
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- site-probe NEW (precedent: nothing matched): %s (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' "$LIST_HARNESS_FIX" | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW bullet whose files call the CDP harness warns, not fails" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "the warn names the harness home for a bullet item" "$out" "browser-harness-js skills/cdp/learnings"
 
 printf 'echo "plain shell content, no CDP calls here"\n' > "$HARNESS_FIX/probe.js"
 out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
