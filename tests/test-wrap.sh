@@ -521,6 +521,52 @@ chk "log from outside the repo prepends to the configured file itself" \
   "$([ "$(head -1 "$LOGREPO/_meta/LOG.md")" = "$(date +%F) · wrap: from outside" ]; echo $?)"
 
 # ===========================================================================
+echo "=== log: the --- anchor lands the entry below the header, not above it ==="
+# ===========================================================================
+ANCHFILE="$LOGHOME/ANCHOR.md"
+printf '# LAB_LOG\n\nChronological log. Newest first.\n\n---\n\n2026-01-01 · old entry\n' > "$ANCHFILE"
+set_log_key "$ANCHFILE"
+wrap_log "wrap: anchored entry" >/dev/null 2>&1
+chk "log: the title stays line 1, not pushed down" \
+  "$([ "$(sed -n '1p' "$ANCHFILE")" = "# LAB_LOG" ]; echo $?)"
+chk "log: the new entry lands right after the --- and its blank line" \
+  "$([ "$(sed -n '7p' "$ANCHFILE")" = "$(date +%F) · wrap: anchored entry" ]; echo $?)"
+chk "log: the previously-newest entry is now second" \
+  "$([ "$(sed -n '8p' "$ANCHFILE")" = "2026-01-01 · old entry" ]; echo $?)"
+
+FMFILE="$LOGHOME/FRONTMATTER.md"
+printf -- '---\nkind: log\n---\n2026-01-01 · old entry\n' > "$FMFILE"
+set_log_key "$FMFILE"
+wrap_log "wrap: past the frontmatter" >/dev/null 2>&1
+chk "log: frontmatter's opening --- is not mistaken for the anchor" \
+  "$([ "$(sed -n '1p' "$FMFILE")" = "---" ]; echo $?)"
+chk "log: the entry lands after the frontmatter's closing ---, not inside it" \
+  "$([ "$(sed -n '4p' "$FMFILE")" = "$(date +%F) · wrap: past the frontmatter" ]; echo $?)"
+chk "log: the frontmatter body is untouched" \
+  "$([ "$(sed -n '2p' "$FMFILE")" = "kind: log" ]; echo $?)"
+
+NOANCHFILE="$LOGHOME/NOANCHOR.md"
+printf 'just a plain log, no header at all\n' > "$NOANCHFILE"
+set_log_key "$NOANCHFILE"
+wrap_log "wrap: no anchor falls back to prepend" >/dev/null 2>&1
+chk "log: no --- anchor falls back to the old prepend-at-line-1 behavior" \
+  "$([ "$(sed -n '1p' "$NOANCHFILE")" = "$(date +%F) · wrap: no anchor falls back to prepend" ]; echo $?)"
+
+HDRONLYFILE="$LOGHOME/HDRONLY.md"
+printf '# LAB_LOG\n\nChronological log.\n\n---\n' > "$HDRONLYFILE"
+set_log_key "$HDRONLYFILE"
+wrap_log "wrap: first entry in a header-only file" >/dev/null 2>&1
+chk "log: a header-only file (no entries yet) still gets the entry after ---" \
+  "$([ "$(sed -n '6p' "$HDRONLYFILE")" = "$(date +%F) · wrap: first entry in a header-only file" ]; echo $?)"
+
+EMPTYFILE="$LOGHOME/EMPTY.md"
+: > "$EMPTYFILE"
+set_log_key "$EMPTYFILE"
+wrap_log "wrap: an empty file still works" >/dev/null 2>&1
+chk "log: an empty file gets the entry as line 1" \
+  "$([ "$(sed -n '1p' "$EMPTYFILE")" = "$(date +%F) · wrap: an empty file still works" ]; echo $?)"
+
+# ===========================================================================
 echo "=== knowledge-root: the key, the HOME fence, and the repo argument ==="
 # ===========================================================================
 KRHOME="$TMPD/kr-home"; mkdir -p "$KRHOME/root-ok"

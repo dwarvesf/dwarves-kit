@@ -556,6 +556,30 @@ _worktree_copy() {
   printf '%s' "$cur_top/$rel"
 }
 
+# _log_anchor_head_lines <file>: prints how many lines of <file> stay ABOVE the new entry.
+# The anchor is the first line that is exactly `---` (the header/entries separator), plus
+# any blank lines immediately following it, so the new entry lands as the newest ENTRY, not
+# above the file's title. If line 1 is itself `---` (a YAML frontmatter opening delimiter),
+# the frontmatter's own closing `---` is the SECOND such line and becomes the anchor instead,
+# so the entry never lands inside frontmatter. Prints 0 when no anchor line exists at all
+# (or line 1 is `---` with no closing delimiter): the caller falls back to the old prepend-at-
+# line-0 behavior rather than failing, since a file with no recognizable header has no wrong
+# place to land above, and every pre-anchor-rule caller already depends on that prepend shape.
+_log_anchor_head_lines() {
+  awk '
+    NR==1 { want = ($0=="---") ? 2 : 1 }
+    state==0 {
+      if ($0=="---") { c++; if (c==want) { state=1; head=NR } }
+      next
+    }
+    state==1 {
+      if ($0=="") { head=NR; next }
+      state=2
+    }
+    END { print head+0 }
+  ' "$1"
+}
+
 cmd_log() {
   local date_str text="" arg have_text=0
   date_str="$(date +%F)"
@@ -620,9 +644,16 @@ cmd_log() {
   local n=${#line}
   [ "$n" -gt "$LOG_LINE_BUDGET" ] && echo "wrap log: note: ${n} chars, over the ${LOG_LINE_BUDGET}-char routine budget" >&2
 
-  local tmp mode; tmp="$(mktemp)"
-  printf '%s\n' "$line" > "$tmp"
-  cat "$resolved" >> "$tmp"
+  local head_n tmp mode; tmp="$(mktemp)"
+  head_n="$(_log_anchor_head_lines "$resolved")"
+  if [ "$head_n" -gt 0 ] 2>/dev/null; then
+    sed -n "1,${head_n}p" "$resolved" > "$tmp"
+    printf '%s\n' "$line" >> "$tmp"
+    tail -n "+$((head_n + 1))" "$resolved" >> "$tmp"
+  else
+    printf '%s\n' "$line" > "$tmp"
+    cat "$resolved" >> "$tmp"
+  fi
   mode="$(_fmode "$resolved")"
   case "$mode" in ''|*[!0-7]*) mode="" ;; esac
   [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
