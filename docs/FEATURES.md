@@ -85,7 +85,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `security-reviewer` | `[D]` | battery, review-team | Deep security review of code changes. Read-only. Dispatched by /review-team for focused security analysis. More thorough than /review's bui… | SPEC-090, SPEC-092, SPEC-111 +3 | test-kit-contract.sh, test-review-team-plants.sh |
 | `slop-stripper` | `[D]` | review-team | Behavior-preserving AI-slop strip pass. Given a base ref, scans the branch diff and applies surgical edits that strip AI-generated smell (r… | - | - |
 | `system-verifier` | `[D]` | verify | Runs the whole assembled project's test suite end to end as the dynamic right-arm mirror of the design phase. Fills the agent-less System-t… | SPEC-090, SPEC-092, SPEC-108 +1 | test-every-step-review.sh, test-meta.sh, test-right-arm-parity.sh |
-| `task-verifier` | `[D]` | battery, debug, dispatch +4 | Verifies a completed task against its spec acceptance criteria. Run after each worker subagent completes a task. Read-only -- cannot modify… | SPEC-002, SPEC-003, SPEC-007 +16 | test-agent-effectiveness.sh, test-every-step-review.sh, test-meta.sh +2 |
+| `task-verifier` | `[D]` | battery, debug, dispatch +5 | Verifies a completed task against its spec acceptance criteria. Run after each worker subagent completes a task. Read-only -- cannot modify… | SPEC-002, SPEC-003, SPEC-007 +16 | test-agent-effectiveness.sh, test-every-step-review.sh, test-meta.sh +2 |
 | `test-writer` | `[D]` | test-write | Turns a reviewed test-plan coverage matrix into runnable test code, one case per matrix row, in the repo's existing test framework. Write-c… | SPEC-203, SPEC-220 | test-test-writer-contract.sh |
 
 ## Skills
