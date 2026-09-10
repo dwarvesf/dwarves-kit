@@ -588,7 +588,12 @@ bin/cc-observe hooks --days 30                               # real data: goal r
 
 | Check | Command | Expected | Result |
 |---|---|---|---|
-| Suite green | `bash tests/smoke.sh \| tail -1` | `smoke: all 49 passed` | PASS |
+| Suite green | `bash tests/smoke.sh \| tail -1` | `smoke: all 56 passed` | PASS |
+| Untrusted input (review F1-F3) | smoke 50-52 | non-dict line, message, pid file: exit 0, valid row still printed | PASS |
+| Id-less usage (review F4) | smoke 53 | two id-less entries count reqs 2 | PASS |
+| mtime skip (review F5) | smoke 54 + 55 | pre-cutoff file absent, in-window file present | PASS |
+| ctx file order (review F6) | smoke 56 | ctx 7001 from the trailing untimestamped turn | PASS |
+| Feature registry fresh | `bash tests/test-meta.sh` | `All meta tests passed.` | PASS |
 | Dedup (V3) | smoke 41 | session A reqs 4, not 5 | PASS |
 | Subagent roll-up (V2) | smoke 42 | subs 1, tokens folded into parent | PASS |
 | ctx main chain only (V4) | smoke 43 | ctx 601, not the sidechain 10020 | PASS |
@@ -603,10 +608,12 @@ bin/cc-observe hooks --days 30                               # real data: goal r
 
 `if key in r["seen_keys"]:` was replaced with `if False:` in a committed tree, and the dedup went away. Smoke returned `47 passed, 2 FAILED` (41 reqs, 42 roll-up). `git checkout` restored the file, and smoke returned `all 49 passed`.
 
+After the review fixes, the F1 guard and the F6 file-order update were reverted together. Smoke returned `54 passed, 2 FAILED` (50 crashed with `AttributeError`, 56 printed ctx 900001). Restored: `all 56 passed`.
+
 ### Reproduce
 
 ```bash
-bash lib/session/observe/tests/smoke.sh      # -> smoke: all 49 passed
+bash lib/session/observe/tests/smoke.sh      # -> smoke: all 56 passed
 bash bin/session observe burn --since 60     # live ranked table
 bash bin/session observe burn --json         # {window_min, sessions[]}
 ```

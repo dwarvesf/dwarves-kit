@@ -246,6 +246,58 @@ echo "[49] report has no burn section (existing views unchanged)"
 out="$("$CC" report --file "$FIX")"
 if ! grep -q '# burn' <<<"$out"; then ok "report has no burn section"; else no "burn leaked into report: $out"; fi
 
+BEDGE="${DIR}/tests/burn-edge"   # single-file edge-case fixtures for F1-F4/F6, deliberately OUTSIDE tests/fixtures/
+                                  # (f1's non-dict top-level line would otherwise also break session-semantic's
+                                  # own --root tests/fixtures walk, an unrelated tool with the same un-scoped bug)
+BURNFIX5="${DIR}/tests/fixtures/burn5"    # isolated root for the F5 mtime-skip case, kept apart from $BURNFIX's rank-order assertions above
+
+echo "[50] burn F1: non-dict top-level JSONL line (\"[\\\"x\\\"]\") does not crash; valid session's row still printed"
+set +e
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f1-baddict.jsonl" --since 60 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'f1-baddi' <<<"$out"; then ok "F1 non-dict entry skipped, exit 0, valid session row present"; else no "F1 crashed or row missing (rc=$rc): $out"; fi
+
+echo "[51] burn F2: non-dict message / non-dict usage fields do not crash; valid session's row still printed"
+set +e
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f2-badmsg.jsonl" --since 60 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'f2-badms' <<<"$out"; then ok "F2 non-dict message/usage skipped, exit 0, valid session row present"; else no "F2 crashed or row missing (rc=$rc): $out"; fi
+
+echo "[52] burn F3: a sessions pid file that is valid JSON but not an object does not crash; valid session's row still printed"
+set +e
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" SESSION_OBSERVE_PIDS_DIR="$BEDGE/pids" "$CC" burn --file "$BEDGE/f3-session.jsonl" --since 60 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'f3-sessi' <<<"$out"; then ok "F3 non-dict pid file skipped, exit 0, valid session row present"; else no "F3 crashed or row missing (rc=$rc): $out"; fi
+
+echo "[53] burn F4: two id-less usage entries (msg.id and requestId both None) count as reqs=2, not merged into 1"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f4-noids.jsonl" --since 60)"
+if grep -Eq 'f4-noids[[:space:]]+-[[:space:]]+/x/proj-f4[[:space:]]+2[[:space:]]' <<<"$out"; then ok "F4 reqs=2 for two id-less entries (not deduped to 1)"; else no "F4 dedup wrong: $out"; fi
+
+echo "[54] burn F5: a fixture file mtime BEFORE the --since cutoff is skipped (coarse file-mtime skip fires)"
+python3 -c "
+import os, calendar, time
+epoch = calendar.timegm(time.strptime('2026-09-10T06:00:00Z', '%Y-%m-%dT%H:%M:%SZ'))
+os.utime('$BURNFIX5/proj-d/dddddddd.jsonl', (epoch, epoch))
+"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --root "$BURNFIX5" --since 60)"
+if ! grep -q 'dddddddd' <<<"$out"; then ok "session absent, file mtime predates cutoff"; else no "session wrongly present despite old mtime: $out"; fi
+
+echo "[55] burn F5 negative control: same file, mtime moved INSIDE the window -> session now present"
+python3 -c "
+import os, calendar, time
+epoch = calendar.timegm(time.strptime('2026-09-10T07:30:00Z', '%Y-%m-%dT%H:%M:%SZ'))
+os.utime('$BURNFIX5/proj-d/dddddddd.jsonl', (epoch, epoch))
+"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --root "$BURNFIX5" --since 60)"
+if grep -Eq 'dddddddd[[:space:]]+-[[:space:]]+/x/proj-d[[:space:]]+1[[:space:]]' <<<"$out"; then ok "session present once mtime is inside the window"; else no "session should be present: $out"; fi
+
+echo "[56] burn F6: ctx uses the LAST main-chain usage in file order, even with no timestamp (ctx=7001, not 900001)"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f6-ctxorder.jsonl" --since 60)"
+if grep -Eq 'f6-ctxor[[:space:]]+-[[:space:]]+/x/proj-f6[[:space:]]+1[[:space:]]+0[[:space:]]+7001[[:space:]]+0[[:space:]]+900000[[:space:]]+1[[:space:]]' <<<"$out"; then ok "F6 ctx=7001 (last main-chain entry wins, timestamp irrelevant)"; else no "F6 ctx wrong: $out"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

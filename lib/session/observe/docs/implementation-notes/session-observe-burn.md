@@ -35,3 +35,12 @@ Why: fixtures carry fixed timestamps; a checkout's mtime is arbitrary.
 Alternatives: make the mtime skip honor `SESSION_OBSERVE_NOW` too.
 Impact: test-only.
 Open questions: none.
+
+## 2026-09-10 15:40 Review found crash paths on untrusted input
+
+Context: a fresh-context correctness review of PR #563 reported six findings. The lead reproduced four on the branch: a non-dict JSONL line, a non-dict `message`, and a non-dict pid file each raised `AttributeError` and killed the whole view; a trailing main-chain usage entry with no timestamp left `ctx` at the earlier 900001 instead of 7001.
+Decision: fix all six on the branch before merge. Skip non-dict entries, messages, usage blocks and pid files. Count id-less usage entries without dedup. Update `ctx` in file order, whatever the timestamp. F5 found no code bug: the mtime skip already reads the burn clock. It got smoke cases 54 and 55.
+Why: one malformed line in any transcript must not blank the view for every session; the spec defines `ctx` by file order.
+Alternatives: guard only the reproduced crashes; this leaves the undercount and the untested mtime skip.
+Impact: the edge fixtures live in `tests/burn-edge/`, outside `tests/fixtures/`. The non-dict line would crash `session-semantic`, which walks `tests/fixtures/` in smoke 27 to 30.
+Open questions: the older views share the non-dict crash. On master, `session observe cost --file` with one `["x"]` line raises `AttributeError`, and `session-semantic` does too. This spec does not cover them; they need a follow-up.

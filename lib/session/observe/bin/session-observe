@@ -587,6 +587,8 @@ def _burn_pid_map():
                 data = json.load(fh)
         except (OSError, json.JSONDecodeError):
             continue
+        if not isinstance(data, dict):
+            continue  # e.g. a pid file that is valid JSON but not an object
         sid = data.get("sessionId")
         if sid:
             out[sid] = pid
@@ -603,7 +605,7 @@ def burn_collect(args, now, cutoff):
         return sess.setdefault(sid, {
             "cwd": None, "reqs": 0, "input": 0, "cache_create": 0,
             "cache_read": 0, "output": 0, "sub_active": set(), "models": set(),
-            "title": None, "last_ts": None, "ctx": 0, "ctx_ts": None,
+            "title": None, "last_ts": None, "ctx": 0,
             "seen_keys": set(),
         })
 
@@ -613,6 +615,8 @@ def burn_collect(args, now, cutoff):
         sid, is_sub = _burn_session_id(path)
         r = row(sid)
         for entry in iter_entries(path):
+            if not isinstance(entry, dict):
+                continue  # malformed transcript line (untrusted input): skip, never crash
             ts = entry.get("timestamp")
             dt = parse_ts(ts) if isinstance(ts, str) else None
             epoch = dt.timestamp() if dt else None
@@ -630,7 +634,9 @@ def burn_collect(args, now, cutoff):
 
             if entry.get("type") != "assistant":
                 continue
-            msg = entry.get("message") or {}
+            msg = entry.get("message")
+            if not isinstance(msg, dict):
+                continue  # e.g. message: "oops" (untrusted transcript)
             u = msg.get("usage")
             if not isinstance(u, dict):
                 continue
@@ -640,19 +646,21 @@ def burn_collect(args, now, cutoff):
             cr = u.get("cache_read_input_tokens") or 0
             out = u.get("output_tokens") or 0
 
-            # ctx: live context = last MAIN-CHAIN usage, regardless of the burn
-            # window (a sidechain/subagent turn never counts, however recent).
-            if not side and epoch is not None and (r["ctx_ts"] is None or epoch >= r["ctx_ts"]):
-                r["ctx_ts"] = epoch
+            # ctx: live context = the LAST main-chain usage in FILE ITERATION
+            # ORDER (spec), independent of timestamp -- a trailing main-chain
+            # entry with no timestamp must still win over an earlier one.
+            if not side:
                 r["ctx"] = inp + cc + cr
 
             if not active:
                 continue  # older than --since: not counted
 
             key = (msg.get("id"), entry.get("requestId"))
-            if key in r["seen_keys"]:
-                continue  # a streamed chunk repeating the same usage block
-            r["seen_keys"].add(key)
+            if key != (None, None):
+                if key in r["seen_keys"]:
+                    continue  # a streamed chunk repeating the same usage block
+                r["seen_keys"].add(key)
+            # else: neither id present, nothing to dedup on; count every such entry
             r["reqs"] += 1
             r["input"] += inp
             r["cache_create"] += cc
