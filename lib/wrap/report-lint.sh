@@ -124,6 +124,32 @@ else
   esac
 fi
 
+# A `NEW (precedent: nothing matched)` candidate is a fresh script by definition, no home to
+# join. But if it turns out to speak CDP, it already has a home: browser-harness-js's
+# per-site learnings. Warn only (the precedent check ran and genuinely found nothing to
+# ENHANCE; this catches the narrower case where the candidate duplicates the harness itself).
+HARNESS_CDP_RE='session\.(Runtime|Input|DOM|Page|Target)\.|listPageTargets\(|Runtime\.evaluate'
+while IFS= read -r built_new_line; do
+  case "$built_new_line" in
+    *'NEW (precedent: nothing matched):'*) : ;;
+    *) continue ;;
+  esac
+  new_path="$(printf '%s' "$built_new_line" | sed -n 's/.*NEW (precedent: nothing matched): *//p')"
+  new_path="$(printf '%s' "$new_path" | sed -E 's/[[:space:]]*\([^)]*\)[[:space:]]*$//; s/[[:space:]]+$//')"
+  [ -n "$new_path" ] && [ -e "$new_path" ] || continue
+  if [ -d "$new_path" ]; then
+    harness_hit="$(grep -rlE "$HARNESS_CDP_RE" "$new_path" 2>/dev/null | head -1)"
+  elif [ -r "$new_path" ]; then
+    harness_hit="$(grep -lE "$HARNESS_CDP_RE" "$new_path" 2>/dev/null)"
+  else
+    harness_hit=""
+  fi
+  if [ -n "$harness_hit" ]; then
+    echo "warn: Built item ${new_path} drives a site through the browser harness; its home is browser-harness-js skills/cdp/learnings/<short-id>/ (a thin CLI may stay here), see the Distill homes table" >&2
+    warns=$((warns + 1))
+  fi
+done <<< "$input"
+
 # Step -1 coverage, the same three-state rule as `Built:` above. A seam that was never
 # configured and a seam that was silently dropped read identically without this line, and the
 # seam is where an operator's whole distill half lives: `wrap.before`/`wrap.after` name a

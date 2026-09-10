@@ -911,6 +911,25 @@ chk "a NEW line carrying the precedent miss passes" "$([ "$rc" -eq 0 ]; echo $?)
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: build_candidates knob is false|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a real SKIPPED reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
+# The harness-shape check: a `NEW (precedent: nothing matched)` candidate that turns out to
+# speak CDP already has a home (browser-harness-js learnings), so it warns instead of passing
+# clean, but it never fails the lint (the precedent check itself was still honest).
+HARNESS_FIX="$TMPD/harness-fixture"; mkdir -p "$HARNESS_FIX"
+printf "await session.Runtime.evaluate({ expression: '1+1' });\n" > "$HARNESS_FIX/probe.js"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW item whose files call the CDP harness warns, not fails" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "the warn names the harness home" "$out" "browser-harness-js skills/cdp/learnings"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: ${HARNESS_FIX} (a1b2c3d)|" | bash "$LINT" 2>&1)"; rc=$?
+chk "an ENHANCE item is never checked for harness shape, even over the same CDP content" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_no "no harness warn on an ENHANCE line" "$out" "browser-harness-js skills/cdp/learnings"
+
+printf 'echo "plain shell content, no CDP calls here"\n' > "$HARNESS_FIX/probe.js"
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
+chk "the same NEW path with plain content does not warn" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_no "no harness warn printed" "$out" "browser-harness-js skills/cdp/learnings"
+
 # The Seam rule. Same three states as Built, for the same reason one level up: a seam that was
 # never configured and a seam that was silently dropped read identically without the line, and
 # the seam is where an operator's whole distill half lives.
