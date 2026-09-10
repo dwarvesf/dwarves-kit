@@ -102,7 +102,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | Module | What it wires | Kind |
 |---|---|---|
 | `board` | `backlog-stage` (SessionEnd: stage session work-items to the board); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated) | 1 hook |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`; plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 7 hooks + 1 CLI |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once per 100k-token band once live context passes 200k, `CC_CTX_WARN`/`CC_CTX_STEP`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
@@ -257,6 +257,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
 | money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Asks before a money-touching edit lands in a repo named in MONEY_GATE_REPOS (inert unset) |
 | prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
+| context-budget | UserPromptSubmit | Warns once per 100k-token band once live session context passes 200k (CC_CTX_WARN/CC_CTX_STEP); clears on a drop below budget (e.g. after /compact) |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
 | output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
