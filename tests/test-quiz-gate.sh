@@ -90,6 +90,10 @@ echo "=== AC3: engage routes through the understand.teach seam (dispatch, not re
 OPDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR" "$OPDIR"' EXIT
 mkdir -p "$OPDIR/filled" "$OPDIR/none"
 printf '[understand]\nteach = "fixture-teacher"\n' > "$OPDIR/filled/kit.toml"
+assert "AC3 the named 'teacher' verb is the one shared resolver (filled)" \
+  "$([ "$(KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" teacher)" = "fixture-teacher" ] && echo 0 || echo 1)"
+assert "AC3 the named 'teacher' verb prints nothing when unset" \
+  "$([ -z "$(KIT_CONFIG_OPERATOR="$OPDIR/none" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" teacher)" ] && echo 0 || echo 1)"
 ROUT="$( cd "$DA" && KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "engage-rid-$$" engage --ref "$REFA" )"
 assert "AC3 engage output names the CONFIGURED teacher (fixture-teacher), not a hardcoded skill" \
   "$({ trap '' PIPE; printf '%s' "$ROUT" 2>/dev/null || :; } | grep -q 'fixture-teacher' && echo 0 || echo 1)"

@@ -50,7 +50,8 @@ bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt 
 ```
 
 - **engage** , `respond ... engage --ref <ref>` emits the dispatch payload (the 5 diff-grounded questions +
-  the SPEC-124 explainer material). Read `kit_config_get_root understand.teach ""`. Empty: print
+  the SPEC-124 explainer material), resolving the teacher via `bash lib/gate/quiz-gate.sh teacher` (the
+  one resolver every seam-adjacent site cites; never read `understand.teach` any other way). Empty: print
   `skipped: no teacher` and hand the payload to the human directly, no mastery gate. Named: invoke that
   skill through the Skill tool with the payload: it runs the mastery gate until the human demonstrates
   understanding. You do NOT score or grade , the seam's skill owns the pedagogy, and this command names

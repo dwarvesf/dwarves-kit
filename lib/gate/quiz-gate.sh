@@ -31,6 +31,9 @@
 #   quiz-gate.sh route <ref>
 #       -> the seam's dispatch payload: whatever `understand.teach` names (or "skipped: no teacher"
 #          when empty) + the 5 diff-grounded questions + a pointer to the SPEC-124 explainer material.
+#   quiz-gate.sh teacher
+#       -> the ONE resolver every seam-adjacent site cites: prints the name `understand.teach`
+#          names, or nothing when empty. Never a project .kit.toml (kit_config_get_root).
 
 set -uo pipefail
 
@@ -200,6 +203,11 @@ cmd_respond() {
   return 0
 }
 
+# teacher: the ONE named reader every seam-adjacent command site cites (commands/wrap.md
+# Step 7a/7c, commands/explain.md, commands/quiz-gate.md), so the fence lives in code once
+# instead of as prose repeated four times. Prints the resolved name, or nothing when empty.
+cmd_teacher() { _teacher; }
+
 usage() { sed -n '2,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
@@ -209,6 +217,7 @@ main() {
     tap)       cmd_tap "$@" ;;
     respond)   cmd_respond "$@" ;;
     route)     cmd_route "$@" ;;
+    teacher)   cmd_teacher "$@" ;;
     ""|-h|--help|help) usage ;;
     *) echo "quiz-gate.sh: unknown subcommand '$sub'" >&2; usage >&2; exit 2 ;;
   esac

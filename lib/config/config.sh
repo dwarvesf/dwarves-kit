@@ -132,6 +132,17 @@ _default_value() {
   esac
 }
 
+# _is_root_only <row> -- true when this row's Doc column (col 6) documents itself as
+# resolved with `kit_config_get_root` (SPEC-249's root-only fence: the project .kit.toml
+# layer must never win for a key that names code a command runs or a path outside the repo,
+# because a project toml rides inside an untrusted PR). Read from the registry's own prose,
+# never a second hardcoded list: every root-only row already says so (wrap.before/after,
+# the [wrap] autonomy knobs, precedent.registry, knowledge.root, understand.teach, ...).
+_is_root_only() {
+  case "$(_row_get "$1" 6)" in *kit_config_get_root*) return 0 ;; esac
+  return 1
+}
+
 # _resolve <row> -- sets EFFECTIVE / PROVENANCE / ENV_VAL / ENV_SET / PROJ_VAL / PROJ_SET /
 # ROOT_VAL / ROOT_SET (globals; mirrors the small-bash-script house style of
 # lib/classify/lane-classify.sh's LANE/REASON/FIRED globals, not a subshell-return dance).
@@ -158,8 +169,12 @@ _resolve() {
   PROJ_VAL=""; PROJ_SET=0; ROOT_VAL=""; ROOT_SET=0
   if [ "$tomlkey" != "env-only" ] && [ "$tomlkey" != "-" ]; then
     section="${tomlkey%%.*}"; key="${tomlkey#*.}"
-    PROJ_VAL="$(_kit_toml_get "$(kit_config_project)" "$section" "$key")"
-    [ -n "$PROJ_VAL" ] && PROJ_SET=1
+    # Root-only keys never consult the project layer: a project .kit.toml rides inside an
+    # untrusted PR, and a row like understand.teach names code a command runs.
+    if ! _is_root_only "$row"; then
+      PROJ_VAL="$(_kit_toml_get "$(kit_config_project)" "$section" "$key")"
+      [ -n "$PROJ_VAL" ] && PROJ_SET=1
+    fi
     ROOT_VAL="$(_kit_toml_get "$(kit_config_root)" "$section" "$key")"
     [ -n "$ROOT_VAL" ] && ROOT_SET=1
   fi

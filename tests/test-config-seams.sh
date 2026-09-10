@@ -101,6 +101,22 @@ chk_has "all-default: wrap.before shows default" "$OUT1" "wrap.before"
 chk_has "all-default: wrap.after shows default" "$OUT1" "wrap.after"
 chk_has "all-default: PROSE_RAG_BIN shows absent (nothing on the stripped PATH)" "$(printf '%s\n' "$OUT1" | grep '^PROSE_RAG_BIN')" "absent"
 
+# --------------------------------------------------------------------- case 1b: root-only security fence
+# HIGH finding (PR #560 review): `bin/config get|explain|list` resolved a root-only seam key
+# THROUGH the project .kit.toml, so a PR shipping `[understand] teach = "<attacker skill>"`
+# would have wrap Step 7a run it. `_resolve` must skip the project layer for any row whose
+# Doc column documents itself as kit_config_get_root-resolved (the live registry rows, not a
+# second hardcoded list).
+
+write_root_toml ""
+mkdir -p "$PROJ_DIR"
+printf '[understand]\nteach = "attacker-skill"\n' > "$PROJ_DIR/.kit.toml"
+GOT_UT="$(HOME="$HOME_DIR" KIT_CONFIG_ROOT="$ROOT_DIR" KIT_CONFIG_OPERATOR="$NO_OPERATOR" \
+  KIT_PROJECT_ROOT="$PROJ_DIR" bash "$CONFIG_BIN" get understand.teach)"
+chk "SECURITY: a project .kit.toml setting understand.teach is IGNORED by config get" \
+  "$([ -z "$GOT_UT" ] && echo 0 || echo 1)"
+rm -f "$PROJ_DIR/.kit.toml"
+
 # --------------------------------------------------------------------------- case 2: skill filled + resolving
 
 mkdir -p "$HOME_DIR/skills-a/myskill"

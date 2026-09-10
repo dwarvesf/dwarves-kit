@@ -62,8 +62,8 @@ result]`). This is your grounded floor. Never contradict it.
 ### Step 2: Gather the material and invoke the seam
 
 The grounded skeleton from Step 1 (its path, plus the records it cites: the spec under `docs/specs/`,
-`docs/implementation-notes/<slug>.md`, the commit trail) IS the material. Read `kit_config_get_root
-understand.teach ""`.
+`docs/implementation-notes/<slug>.md`, the commit trail) IS the material. Run `bash lib/gate/quiz-gate.sh
+teacher` (the one resolver every seam-adjacent site cites; never read `understand.teach` any other way).
 
 - **Empty:** print `skipped: no teacher` plus the skeleton's path, and hand that file to the user
   directly as the deliverable. Skip to Step 5; there is no enrichment step without a teacher.
