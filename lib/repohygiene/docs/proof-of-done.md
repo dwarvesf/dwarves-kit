@@ -450,3 +450,56 @@ Three assertions exist only to catch a check that suppresses too much:
 - a real drop sitting beside the OS junk must still be flagged.
 
 Without the first, a reference check that suppressed EVERY entry would have passed.
+
+---
+
+## Detector 4 clause-scoped budget read (ID-831, 2026-09-11)
+
+Detector 4 read a budget from any doc line that named the log and carried a line count. Naming
+the log and carrying a count are not the same as stating a budget FOR it.
+
+### 1. Test suite
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `bash tests/test-repohygiene.sh` | 98/98 passed, 0 failed (91/91 before this change) |
+| 2 | `bash tests/run-all.sh` | run by CI on both platforms; see the PR's checks |
+
+Seven assertions added. Four of them are controls.
+
+### 2. The real primary flow, measured
+
+| Repo | Before | After |
+|---|---|---|
+| dfoundation | `FIX` against threshold 100 and per-month `0001` | `UNSURE`, no documented threshold, which is the verdict reached by hand |
+| ops-toolkit | `FIX`, month 2026-09 at 530 vs per-month 200 | unchanged, the true positive survives |
+| family-office | 0 | 0 |
+| console-labs | 0 | 0 |
+| trading, books | 0 | 0 |
+
+The 100 belonged to `HANDOFF.md`, from `docs/specs/SPEC-019-folder-simplification.md:27`:
+"Slim `HANDOFF.md` to <=100 lines (status-only; journal content stays in INGEST_LOG)". The
+`0001` came from digit runs in two unrelated `docs/decisions.md` rows.
+
+### 3. Negative controls
+
+| # | Mutation | Observed |
+|---|---|---|
+| 1 | the clause need not name the log | 96/98, failing exactly the two sibling-budget assertions |
+| 2 | the number need not sit in an `N lines` phrase | 96/98, failing exactly the two loose-digit-run assertions |
+
+Disjoint, which is what proves the two halves are tested separately.
+
+Control 2 did not bite on the first attempt. The miss was a fixture defect: the noise line's
+`3400 lines` shared a clause with the log's name, so it qualified under both the fixed and the
+mutated code, and the assertions named numbers the scanner emitted under neither. The phrase is
+now fenced in its own clause and the assertions test the evidence field's actual text. This is
+the same class of miss the detector-3 review found, and it is worth stating plainly: a control
+that passes is not proof the rule holds until you have watched it fail.
+
+### 4. The helper's own trap
+
+`budget_numbers_in` saves `RSTART` and `RLENGTH` before the inner match. The inner match
+overwrites both, and advancing the cursor by the inner values instead of the phrase's re-read
+the same phrase until the clause ran out. One budget came back dozens of times. Caught by
+running the helper standalone against four real lines before wiring it in.

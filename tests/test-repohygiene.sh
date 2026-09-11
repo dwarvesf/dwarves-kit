@@ -580,16 +580,18 @@ R4D="$(mkrepo)"
 mkdir -p "$R4D/_meta" "$R4D/docs"
 i=0; : > "$R4D/_meta/LAB_LOG.md"
 while [ "$i" -lt 250 ]; do echo "2026-08-0$(( i % 9 + 1 )) - entry $i" >> "$R4D/_meta/LAB_LOG.md"; i=$((i+1)); done
-printf 'D-0001 2026-04-25 restructure: promoted 1200 files, LAB_LOG.md updated, see 3400 lines of diff elsewhere\n' \
+# The digit runs sit in the SAME clause as the log's name; the only `N lines` phrase on the
+# line is fenced off in its own clause, so nothing here states a budget for this log.
+printf 'D-0001 2026-04-25 restructure: promoted 1200 files, LAB_LOG.md updated (see 3400 lines of diff elsewhere)\n' \
   > "$R4D/docs/decisions.md"
 printf 'A real budget: LAB_LOG holds at most 200 lines.\n' > "$R4D/CLAUDE.md"
 echo r > "$R4D/README.md"
 git -C "$R4D" add -A; commit_at "$R4D" "2024-01-02T00:00:00" "docs: seed"
 OUT="$(scan "$R4D" --detectors 4)"
-has "$OUT" "per-month 1200" && R=1 || R=0
+has "$OUT" "sources stating a budget" && R=1 || R=0
+assert "a line with digit runs but no N-lines phrase is not a budget source" $R "-- got: $OUT"
+has "$OUT" "per-month" && R=1 || R=0
 assert "a loose digit run in prose never becomes a per-month threshold" $R "-- got: $OUT"
-has "$OUT" "threshold 3400" && R=1 || R=0
-assert "a digit run outside an N-lines phrase never becomes a whole-file threshold" $R "-- got: $OUT"
 # Negative control: the genuine budget, on a different line from the noise, still applies.
 has "$OUT" "total=250 lines vs threshold 200" && R=0 || R=1
 assert "negative control: the genuine budget on another line still applies" $R "-- got: $OUT"
