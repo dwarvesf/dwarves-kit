@@ -19,3 +19,11 @@ Why: the transcript schema is untrusted input at every nesting level, not just t
 Alternatives: none considered; this is the same class of bug one level deeper.
 Impact: no caller's output changes for valid input. `session-recall`'s own `_role`/`searchable_text`/`opening_ask` have the same latent non-dict-message shape but were left untouched (out of the reported bug's scope); its `load()` was covered for the top-level fix only.
 Open questions: whether session-recall's second-level message-shape paths should get the same guard in a follow-up.
+
+## 2026-09-11 session-recall gets the same second-level guard
+
+Context: the open question above.
+Decision: `_msg(entry)` in `lib/session/recall/session_recall.py` returns the message when it is a dict and `{}` otherwise; `_role`, `searchable_text` and `opening_ask` all read through it.
+Why: one helper instead of three inline checks, so the untrusted-shape rule lives once per module, matching how `iter_entries()` owns the top-level case.
+Impact: no output change for valid input; proof in `docs/verification/recall-message-shape.md`.
+Open questions: none.
