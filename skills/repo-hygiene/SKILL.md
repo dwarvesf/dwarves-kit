@@ -42,7 +42,7 @@ the ask is "my disk is full", it is the wrong loop.
 | 1 | `unreferenced-doc` | a tracked non-code file that no other tracked file references | last touched more than `--stale-days` ago (default 180) | the exact `git grep -I -n -E '(^\|[^A-Za-z0-9_-])<basename>' -- ':(exclude)<path>'` and its `0 hits outside itself`, plus the last-touch date and age |
 | 2 | `stale-inbox` | an entry directly under a staging dir (`_inbox`, `inbox`, `_staging`) that no tracked file names, and that is not an OS artifact | mtime older than `--inbox-days` (default 30) | the age in days against the threshold, plus `duplicate-of <path> (identical sha256 <first12>)` when a content-identical copy exists elsewhere in the repo |
 | 3 | `misplaced-record` | a record in a central control directory (`_meta`, `docs/research`, `docs/briefs`) whose owner is one tool or experiment, and a closed mega-goal still parked in the control surface | owner accounts for at least half the commits touching the file; a mega-goal folder must also be closed by its own record (see below) | the owner, the count of owning commits out of the file's total, the latest commit subject, and the destination path it should co-locate to; for a mega-goal, the `file:line` of its status marker and its checked-against-open counts |
-| 4 | `log-budget` | an append-only log past the line budget the repo's own docs state | the repo's documented numbers, never the scanner's | total lines against the threshold, the busiest `YYYY-MM` against the per-month threshold, and the `file:line` of the sentence that states them, quoted |
+| 4 | `log-budget` | an append-only log past the line budget the repo's own docs state FOR THAT LOG | the repo's documented numbers, never the scanner's | total lines against the threshold, the busiest `YYYY-MM` against the per-month threshold, and the `file:line` of the sentence that states them, quoted |
 | 5 | `cold-ignored-dir` | a gitignored directory that is large and cold | size at or above `--cold-mb` (default 100) with no file newer than `--cold-days` (default 90) | the size in MB and the fact that no file is newer than the threshold, tagged `REPORT ONLY, gitignored, never a deletion proposal` |
 
 Detector 2 runs detector 1's reference grep before it flags anything. A staging entry a
@@ -55,6 +55,14 @@ deliberate privacy split. The grep excludes the whole staging dir, so a drop can
 itself, and the basename carries the path, so one pass covers `_inbox/x.md` and a bare `x.md`
 alike. An OS artifact (`.DS_Store`, `Thumbs.db`, `desktop.ini`, `.localized`) is skipped
 outright: nobody dropped it and routing it is not a decision anybody owes.
+
+Detector 4 reads a budget only from a clause that names the log AND carries an `<N> ... lines`
+phrase. Naming the log and carrying a line count somewhere on the same line is not enough: one
+sentence routinely states one file's budget while merely mentioning another. A SPEC line
+reading `Slim HANDOFF.md to <=100 lines (status-only; journal content stays in INGEST_LOG)`
+handed a real INGEST_LOG a 100-line budget owned by HANDOFF.md, and two decisions-table rows
+handed it a per-month threshold of `0001` scraped out of digit runs in unrelated prose. A
+number loose in the prose is not a budget, whatever else shares its line.
 
 Detector 3 resolves the owner from the CONVENTIONAL-COMMIT SCOPE of the commits that touched
 the file, not from the file's contents. Content was tried first and is too noisy: a research
@@ -195,7 +203,9 @@ checkout, and a multi-repo sweep is that command in a loop, not a mode inside it
   hands the whole cost back to the operator, which is the failure this instance was built
   against.
 - Inventing a line threshold for detector 4. If the repo documents no budget, the verdict is
-  UNSURE with the counts, not a number the scanner made up.
+  UNSURE with the counts, not a number the scanner made up. Borrowing a number that belongs to
+  a DIFFERENT file counts as inventing one: the rule is about whose budget it is, not about
+  whether a constant was hardcoded.
 - Treating an experiment's own result dump or draft folder as decayed. Those are frozen
   records of a run and are excluded, on the same reasoning that keeps dated records out of
   `doc-drift`'s item set.
