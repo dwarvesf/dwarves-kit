@@ -1102,6 +1102,37 @@ chk_has "the finding names the mixed-grammar shape" "$out" "both inline content 
 out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:** NOTHING: no candidates\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
 chk "NOTHING inline alone still passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
+# The prose rule. `bin/precedent` indexes memory notes and research files as hit kinds, so a
+# step 7b whose top hit is a note turns a build into a write and still carries the ENHANCE
+# token. On 2026-09-10 a procedure run six times by hand, which had already cost a bad
+# production deploy, produced two memory notes and one research note and zero mechanism, and
+# the report linted clean. The same precedent output named `lib/wrap/wrap.sh` one line below
+# the note, and the real fix landed there later: a code home beats a prose home.
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "an all-prose Built list fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the prose rule" "$out" "a precedent hit on a note is not a build"
+chk_has "the finding says the code home wins" "$out" "the code home wins"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n- PROSE-ONLY: the call is one human judgment per run, no mechanism fits it\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "the same all-prose Built passes with a real PROSE-ONLY reason" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- PROSE-ONLY: none\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a too-short PROSE-ONLY reason cannot silence the rule" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding still names the prose rule" "$out" "a precedent hit on a note is not a build"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a mixed Built passes, because something was built" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an inline Built naming a single memory note fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the inline finding names the prose rule" "$out" "a precedent hit on a note is not a build"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234) PROSE-ONLY: the pull path already guards itself, only the trap was new|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an inline PROSE-ONLY token with a real reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an inline Built naming a code path still passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
 # The harness-shape check: a `NEW (precedent: nothing matched)` candidate that turns out to
 # speak CDP already has a home (browser-harness-js learnings), so it warns instead of passing
 # clean, but it never fails the lint (the precedent check itself was still honest).
