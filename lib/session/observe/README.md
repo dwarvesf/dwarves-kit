@@ -25,6 +25,7 @@ session-observe subagents --days 7       # subagent spawns per day + by type, pe
 session-observe friction --days 7        # thrash / permission-friction / context-pressure / skill mis-fires
 session-observe sessions --days 7        # archetype mix / circadian (by hour) / interruption rate
 session-observe cost --days 7            # tokens by model + cache economics + $ estimate
+session-observe burn --since 60          # live per-session token burn, ranked (not part of report)
 session-observe report --days 7 --json   # machine-readable, for vps-mon ingest
 ```
 
@@ -53,6 +54,7 @@ Each transcript entry already carries `hookInfos: [{command, durationMs}]`, `hoo
 - **friction**: four deterministic working-pattern signals. **thrash** = a file edited `>= THRASH_MIN` (3) times in one session (rework/debug spiral). **permission-friction** = `tool_result` content matching a real permission marker (capital-P `"Permission to use "`, `"doesn't want to proceed"`, `"denied by your permission"`), attributed to the tool (Bash by command). **context-pressure** = `isCompactSummary` entries per day (the window collapsing). **skill-precision** = skills that mis-fired (errored), ranked by inert-rate, surfaced from the skill-error data the `skills` view buries.
 - **sessions**: per-transcript shape. **archetype** = each session bucketed quick / standard / deep / marathon / automation from wall-clock (first->last `timestamp`) + tool-use volume + whether a human prompted; subagent transcripts (`isSidechain`) are excluded so they do not inflate `automation`. **circadian** = prompt-turns + tool-uses by UTC hour-of-day. **interruption rate** = user turns carrying `"[Request interrupted"`, as a count + per-100-turns.
 - **cost**: from the assistant `message.usage` block (input / output / cache-read / cache-create tokens) + `message.model`. **tokens-by-model** + a **$ estimate** from an embedded dated `PRICING` table (Max plan is flat-rate, so this is *attribution*, not a bill; unknown model families like `fable` count tokens but show `?`). **cache economics** = cache-read / (read + create) hit ratio, the biggest cost lever. (cost-per-merged-PR is deferred, see proof/impl-notes: transcripts are cross-repo and this repo squash-merges, so there is no clean per-PR attribution.)
+- **burn**: which session is burning tokens *right now*, not over the week. One row per top-level session inside the last `--since` minutes (default 60); a subagent transcript (`<sid>/subagents/*.jsonl`) rolls its tokens into its parent row and counts toward `subs`. Usage is deduplicated by `(message.id, requestId)` (a streamed chunk repeats the same usage block). `ctx` is the live context size: input + cache-creation + cache-read of the last main-chain (non-sidechain) assistant usage, regardless of the window. Ranked by `input + cache_create + cache_read/10 + output*5` (attribution, not a bill). The `pid` column maps through the live `~/.claude/sessions/<pid>.json` files. Not part of `report`.
 
 ## Output (real run, abbreviated)
 

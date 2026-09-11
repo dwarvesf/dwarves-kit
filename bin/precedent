@@ -5,8 +5,8 @@
 # path. Forwards to the precedent subsystem entry, which owns the verb grammar.
 #
 # Usage:
-#   precedent find "<task description>" [--surface records|inventory|all] [--limit N]
-#                  [--quiet] [--json] [--registry <file>] [--repo-root <path>]
+#   precedent find "<task description>" | <bare words...> [--surface records|inventory|all]
+#                  [--limit N] [--quiet] [--json] [--registry <file>] [--repo-root <path>]
 #   precedent find --explain "<hit label as printed>"
 #
 # "have we done something like this before?" at intake: the records surface reads the

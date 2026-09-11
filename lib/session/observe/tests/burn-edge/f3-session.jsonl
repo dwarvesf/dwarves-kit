@@ -1,0 +1,1 @@
+{"type": "assistant", "isSidechain": false, "timestamp": "2026-09-10T07:50:00.000Z", "requestId": "req_f3", "cwd": "/x/proj-f3", "message": {"id": "msg_f3", "model": "claude-sonnet-5", "usage": {"input_tokens": 1, "cache_creation_input_tokens": 1, "cache_read_input_tokens": 1, "output_tokens": 1}}}

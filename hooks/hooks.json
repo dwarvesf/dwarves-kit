@@ -195,6 +195,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/context-budget.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "SubagentStop": [

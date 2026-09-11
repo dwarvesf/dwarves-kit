@@ -1,0 +1,13 @@
+[tool]
+name = "repohygiene"
+status = "stable"
+summary = "Whole-repo decay scan: unreferenced docs, stale staging drops, mis-shelved records, over-budget logs, cold ignored dirs, each finding carrying its evidence"
+entry = "repohygiene.sh"
+language = "bash"
+
+[links]
+spec = "docs/specs/SPEC-256-repo-hygiene.md"
+contract = "lib/repohygiene/SPEC.md"
+skill = "skills/repo-hygiene/SKILL.md"
+pattern = "docs/patterns/audit-loop.md"
+board = ["ID-829"]

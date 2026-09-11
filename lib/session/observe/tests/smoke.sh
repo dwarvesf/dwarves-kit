@@ -196,6 +196,122 @@ rows=[h for h in d["hooks"] if h["hook"]=="real-hook.sh"]
 assert len(rows)==1 and rows[0]["count"]==1, ("real script hook label/count changed: "+str(rows))
 '; then ok "real-hook.sh unchanged (script-hook labelling preserved)"; else no "real script hook wrong: $gjson"; fi
 
+BURNFIX="${DIR}/tests/fixtures/burn"     # fake projects root: proj-a/<sid>.jsonl [+ subagents/], pids/<pid>.json
+BURNNOW="2026-09-10T08:00:00Z"           # fixed simulated clock (SESSION_OBSERVE_NOW), paired with fixed fixture timestamps
+# Pin every burn fixture's mtime safely after BURNNOW so the coarse file-mtime
+# skip (real disk time) never races the simulated clock above.
+python3 -c "
+import os, glob, calendar, time
+epoch = calendar.timegm(time.strptime('2026-09-10T09:00:00Z', '%Y-%m-%dT%H:%M:%SZ'))
+for p in glob.glob(os.path.join('$BURNFIX', '**', '*.jsonl'), recursive=True):
+    os.utime(p, (epoch, epoch))
+"
+
+echo "[41] burn: streamed-chunk repeat of (message.id, requestId) collapses to one req (session A reqs=4, not 5)"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" SESSION_OBSERVE_PIDS_DIR="$BURNFIX/pids" "$CC" burn --root "$BURNFIX" --since 60)"
+if grep -Eq 'aaaaaaaa[[:space:]]+55555[[:space:]]+/x/proj-a[[:space:]]+4[[:space:]]' <<<"$out"; then ok "session A reqs=4 (dup chunk deduped)"; else no "session A reqs wrong: $out"; fi
+
+echo "[42] burn: subagent transcript rolls into its parent (subs=1, cache-wr/cache-rd/out fold in its tokens)"
+if grep -Eq 'aaaaaaaa[[:space:]]+55555[[:space:]]+/x/proj-a[[:space:]]+4[[:space:]]+1[[:space:]]+601[[:space:]]+206500[[:space:]]+11100[[:space:]]+90' <<<"$out"; then ok "session A subs=1, cache-wr=206500, cache-rd=11100, out=90 (subagent tokens folded in)"; else no "session A rollup wrong: $out"; fi
+
+echo "[43] burn: ctx ignores sidechain usage (601 from the last main-chain entry, not the larger sidechain one)"
+if grep -q '[[:space:]]601[[:space:]]' <<<"$out" && ! grep -q '10020' <<<"$out"; then ok "ctx=601, sidechain entry's larger total (10020) absent"; else no "ctx leaked sidechain usage: $out"; fi
+
+echo "[44] burn: rank order, high cache-write session A outranks higher-reqs low-token session B"
+al="$(awk '/^  aaaaaaaa/{print NR; exit}' <<<"$out")"
+bl="$(awk '/^  bbbbbbbb/{print NR; exit}' <<<"$out")"
+if [[ -n "$al" && -n "$bl" && "$al" -lt "$bl" ]]; then ok "A (line $al) ranked above B (line $bl)"; else no "rank order wrong: A=$al B=$bl : $out"; fi
+
+echo "[45] burn: PID maps via SESSION_OBSERVE_PIDS_DIR (session A -> 55555); unmapped session B shows -"
+if grep -Eq '^  aaaaaaaa[[:space:]]+55555' <<<"$out" && grep -Eq '^  bbbbbbbb[[:space:]]+-[[:space:]]' <<<"$out"; then ok "A mapped to 55555, B shows -"; else no "pid mapping wrong: $out"; fi
+
+echo "[46] burn --since 60 (default): session C's entry (2h old) predates the cutoff, row absent"
+if ! grep -q 'cccccccc' <<<"$out"; then ok "session C absent under --since 60"; else no "session C wrongly present: $out"; fi
+
+echo "[47] burn --since 180: negative control of [46], the same old entry is now inside the window"
+out2="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --root "$BURNFIX" --since 180)"
+if grep -Eq 'cccccccc[[:space:]]+-[[:space:]]+/x/proj-c[[:space:]]+1[[:space:]]' <<<"$out2"; then ok "session C present under --since 180 (reqs=1)"; else no "session C not counted with wider window: $out2"; fi
+
+echo "[48] burn --json: valid JSON, window_min echoes --since, sessions in rank order"
+jout="$(SESSION_OBSERVE_NOW="$BURNNOW" SESSION_OBSERVE_PIDS_DIR="$BURNFIX/pids" "$CC" burn --root "$BURNFIX" --since 60 --json)"
+if echo "$jout" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d["window_min"] == 60, d
+sids = [s["session_id"] for s in d["sessions"]]
+assert sids[0].startswith("aaaaaaaa") and sids[1].startswith("bbbbbbbb"), sids
+'; then ok "json window_min=60, rank order A then B"; else no "json wrong: $jout"; fi
+
+echo "[49] report has no burn section (existing views unchanged)"
+out="$("$CC" report --file "$FIX")"
+if ! grep -q '# burn' <<<"$out"; then ok "report has no burn section"; else no "burn leaked into report: $out"; fi
+
+BEDGE="${DIR}/tests/burn-edge"   # single-file edge-case fixtures for F1-F4/F6, deliberately OUTSIDE tests/fixtures/
+                                  # (f1's non-dict top-level line would otherwise also break session-semantic's
+                                  # own --root tests/fixtures walk, an unrelated tool with the same un-scoped bug)
+BURNFIX5="${DIR}/tests/fixtures/burn5"    # isolated root for the F5 mtime-skip case, kept apart from $BURNFIX's rank-order assertions above
+
+echo "[50] burn F1: non-dict top-level JSONL line (\"[\\\"x\\\"]\") does not crash; valid session's row still printed"
+set +e
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f1-baddict.jsonl" --since 60 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'f1-baddi' <<<"$out"; then ok "F1 non-dict entry skipped, exit 0, valid session row present"; else no "F1 crashed or row missing (rc=$rc): $out"; fi
+
+echo "[51] burn F2: non-dict message / non-dict usage fields do not crash; valid session's row still printed"
+set +e
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f2-badmsg.jsonl" --since 60 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'f2-badms' <<<"$out"; then ok "F2 non-dict message/usage skipped, exit 0, valid session row present"; else no "F2 crashed or row missing (rc=$rc): $out"; fi
+
+echo "[52] burn F3: a sessions pid file that is valid JSON but not an object does not crash; valid session's row still printed"
+set +e
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" SESSION_OBSERVE_PIDS_DIR="$BEDGE/pids" "$CC" burn --file "$BEDGE/f3-session.jsonl" --since 60 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'f3-sessi' <<<"$out"; then ok "F3 non-dict pid file skipped, exit 0, valid session row present"; else no "F3 crashed or row missing (rc=$rc): $out"; fi
+
+echo "[53] burn F4: two id-less usage entries (msg.id and requestId both None) count as reqs=2, not merged into 1"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f4-noids.jsonl" --since 60)"
+if grep -Eq 'f4-noids[[:space:]]+-[[:space:]]+/x/proj-f4[[:space:]]+2[[:space:]]' <<<"$out"; then ok "F4 reqs=2 for two id-less entries (not deduped to 1)"; else no "F4 dedup wrong: $out"; fi
+
+echo "[54] burn F5: a fixture file mtime BEFORE the --since cutoff is skipped (coarse file-mtime skip fires)"
+python3 -c "
+import os, calendar, time
+epoch = calendar.timegm(time.strptime('2026-09-10T06:00:00Z', '%Y-%m-%dT%H:%M:%SZ'))
+os.utime('$BURNFIX5/proj-d/dddddddd.jsonl', (epoch, epoch))
+"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --root "$BURNFIX5" --since 60)"
+if ! grep -q 'dddddddd' <<<"$out"; then ok "session absent, file mtime predates cutoff"; else no "session wrongly present despite old mtime: $out"; fi
+
+echo "[55] burn F5 negative control: same file, mtime moved INSIDE the window -> session now present"
+python3 -c "
+import os, calendar, time
+epoch = calendar.timegm(time.strptime('2026-09-10T07:30:00Z', '%Y-%m-%dT%H:%M:%SZ'))
+os.utime('$BURNFIX5/proj-d/dddddddd.jsonl', (epoch, epoch))
+"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --root "$BURNFIX5" --since 60)"
+if grep -Eq 'dddddddd[[:space:]]+-[[:space:]]+/x/proj-d[[:space:]]+1[[:space:]]' <<<"$out"; then ok "session present once mtime is inside the window"; else no "session should be present: $out"; fi
+
+echo "[56] burn F6: ctx uses the LAST main-chain usage in file order, even with no timestamp (ctx=7001, not 900001)"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f6-ctxorder.jsonl" --since 60)"
+if grep -Eq 'f6-ctxor[[:space:]]+-[[:space:]]+/x/proj-f6[[:space:]]+1[[:space:]]+0[[:space:]]+7001[[:space:]]+0[[:space:]]+900000[[:space:]]+1[[:space:]]' <<<"$out"; then ok "F6 ctx=7001 (last main-chain entry wins, timestamp irrelevant)"; else no "F6 ctx wrong: $out"; fi
+
+NEDGE="${DIR}/tests/nondict-edge"   # non-dict-line/message fixtures for cost/report/session-semantic, OUTSIDE tests/fixtures/
+
+echo "[57] cost: a non-dict top-level JSONL line (\"[\\\"x\\\"]\") does not crash; the valid entry is still counted"
+out="$("$CC" cost --file "$BEDGE/f1-baddict.jsonl")"
+if grep -Eq 'claude-sonnet-5[[:space:]]+1[[:space:]]+1[[:space:]]+1[[:space:]]+1' <<<"$out"; then ok "F1 non-dict line skipped, valid entry counted"; else no "F1 cost wrong: $out"; fi
+
+echo "[58] report: a non-dict message and non-dict usage field do not crash any section; the valid entry is still counted"
+out="$("$CC" report --file "$BEDGE/f2-badmsg.jsonl")"
+if grep -q '^# cost' <<<"$out" && grep -Eq 'claude-sonnet-5[[:space:]]+1[[:space:]]+1[[:space:]]+1[[:space:]]+1' <<<"$out"; then ok "F2 non-dict message/usage skipped, report ran end to end, valid entry counted"; else no "F2 report wrong: $out"; fi
+
+echo "[59] session-semantic: a non-dict top-level line and a non-dict user message are skipped; the two valid prompts are still sampled"
+out="$(SESSION_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$NEDGE" --days 0 --json)"
+if grep -q '"prompts": 2' <<<"$out"; then ok "2 valid prompts sampled, non-dict line/message skipped"; else no "session-semantic nondict-edge wrong: $out"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

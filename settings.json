@@ -196,6 +196,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $HOME/.claude/dwarves-kit/hooks/context-budget.sh",
+            "timeout": 5
+          }
+        ]
       }
     ],
     "SubagentStop": [
