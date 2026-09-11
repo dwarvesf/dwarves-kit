@@ -372,7 +372,7 @@ IN="$FIFODIR/$id.fifo"; OUT=""
 for x in $WAVE_MOCK_IDS; do [ "$x" != "$id" ] && OUT="$FIFODIR/$x.fifo"; done
 exec 3<>"$IN"; exec 4<>"$OUT"       # RDWR opens: non-blocking, so a lone process does not deadlock
 printf 'r\n' >&4                    # signal the sibling
-if read -t "${BARRIER_T:-4}" _tok <&3; then
+if read -t "${BARRIER_T:-20}" _tok <&3; then
   # Sibling proven concurrently alive -> flip our box in the SHARED roadmap. Two wave sessions flip
   # the SAME file at once, so this MUST go through the locked `orchestrate.sh flip` CLI (DEC-008),
   # not a raw sed/awk+mv (which would race and lose one flip). This mirrors the real session contract.
@@ -385,8 +385,11 @@ chmod +x "$TMP/claude-barrier"
 
 RUNDIR_CC="$TMP/run-cc"; mkdir -p "$RUNDIR_CC"
 wrc=0
+# BARRIER_T bounds the START SKEW between the two sessions, not the proof. A serial impl still fails
+# at any value (the lone reader always times out); a larger value only makes that failure slower.
+# 4s flaked under load on a dev Mac (1 in 3 runs); 20s tolerates worktree + tmux spawn jitter.
 ( export FIFODIR="$FIFODIR" WAVE_MOCK_IDS="SG-01 SG-02" ORCH="$ORCH" MEGADIR="$WCM" \
-    RUNDIR="$RUNDIR_CC" BARRIER_T=4 CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-barrier"
+    RUNDIR="$RUNDIR_CC" BARRIER_T=20 CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-barrier"
   _wave_run "$WCM" "$WCM/ROADMAP.md" ) > "$TMP/cc.out" 2>&1 || wrc=$?
 
 cc_b1=$(_sg_line "$WCM/ROADMAP.md" SG-01); cc_b2=$(_sg_line "$WCM/ROADMAP.md" SG-02)
@@ -556,8 +559,10 @@ chmod +x "$TMP/claude-longsleep"
 driver_pid=$!
 
 # Poll for both marker files (bounded wait, not a fixed sleep -- the mocks must actually be up).
+# 30s window: 10s flaked under load on a dev Mac (two worktrees + two spawns). The mock sleeps 30s
+# AFTER writing its pid, so a slow start never shortens the time it stays alive for the SIGTERM.
 ab_started=0
-for _i in $(seq 1 40); do
+for _i in $(seq 1 120); do
   [ -f "$RUNDIR_AB/SG-01.pid" ] && [ -f "$RUNDIR_AB/SG-02.pid" ] && { ab_started=1; break; }
   sleep 0.25
 done
@@ -717,7 +722,7 @@ mkfifo "$FIFODIR_K/SG-01.fifo" "$FIFODIR_K/SG-02.fifo"
 RUNDIR_K="$TMP/run-k"; mkdir -p "$RUNDIR_K"
 krc=0
 ( export FIFODIR="$FIFODIR_K" WAVE_MOCK_IDS="SG-01 SG-02" ORCH="$ORCH" MEGADIR="$WKM" \
-    RUNDIR="$RUNDIR_K" BARRIER_T=6 CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-barrier"
+    RUNDIR="$RUNDIR_K" BARRIER_T=20 CLAUDE_FLAGS="" WAVE_CAP=2 CLAUDE_CMD="$TMP/claude-barrier"
   bash "$ORCH" run "$WKM" ) > "$TMP/dispatch-wave.out" 2>&1 || krc=$?
 k_b1=$(_sg_line "$WKM/ROADMAP.md" SG-01); k_b2=$(_sg_line "$WKM/ROADMAP.md" SG-02)
 k_ok=1
