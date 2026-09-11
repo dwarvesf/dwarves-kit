@@ -49,7 +49,9 @@ case "$verb" in
     st="$(gh pr list --state all --head "$br" --json state --jq '.[0].state' 2>/dev/null)"
     [ "$st" = "MERGED" ] || { echo "wt.sh: refusing to close: PR for $br is '${st:-none}', not MERGED" >&2; exit 1; }
     bash "$LIB/goal/goal-registry.sh" release "$slug" 2>/dev/null || true
-    [ -d "$wt" ] && git worktree remove --force "$wt"
+    # -f -f: a single --force no-ops on a locked worktree, and the `git branch -D` below then
+    # fails with "used by worktree", which reads as a second unrelated problem.
+    [ -d "$wt" ] && git worktree remove -f -f "$wt"
     git branch -D "$br" >/dev/null
     git push origin --delete "$br" >/dev/null 2>&1 || true
     git worktree prune
