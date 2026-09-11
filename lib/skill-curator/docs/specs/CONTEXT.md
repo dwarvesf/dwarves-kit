@@ -15,7 +15,7 @@
 - Secrets: none. `op://` only if ever needed; never raw values.
 - LaunchAgent authoring: `ProgramArguments[0]` = the script itself (no `.sh` on the top-level
   launcher), `#!/usr/bin/env bash` + `chmod +x`. Helper libs keep `.sh`.
-- Done gate (SPEC-016): co-located `docs/proof-of-done.md`, table-first; multi-feature tool → a
+- Done gate: co-located `docs/proof-of-done.md`, table-first; multi-feature tool → a
   per-feature index. A behavioral change needs a recorded live run + negative control.
 - No em dashes in any prose. English artifacts.
 - New background job (the Phase C launchd curator) must be wired into vps-mon before "done"

@@ -5,13 +5,13 @@ status      = "active"
 entry       = "bin/plugin-check"
 created     = 2026-06-20
 
-# Migrated into dwarves-kit (kit-foldin SG-05, 2026-07-05): this tool moved here verbatim
+# Migrated into dwarves-kit (kit-foldin, 2026-07-05): this tool moved here verbatim
 # from ops-toolkit/tools/cc-plugin-check/ (kit-foldin design note, per-tool disposition
 # table). Renamed cc-plugin-check -> plugin-check per the kit naming rule (drop the
 # host-agent prefix on entry; the object here is CC's own plugin state, not a session).
 # No functional change: same verdict logic, same CLI surface, same test suite (27/27
 # pass unmodified in the new location). The ops-toolkit copy retires in the paired
-# batched retire sweep (SG-07).
+# batched retire sweep.
 #
 # No plugin-check-specific tenant config exists to make opt-in: CC_PLUGINS_DIR already
 # defaulted to $HOME/.claude/plugins (the standard per-user Claude Code plugin dir, not an

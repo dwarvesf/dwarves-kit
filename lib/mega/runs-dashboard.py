@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""runs-dashboard.py -- `mega runs` (SPEC-215): ONE self-contained static HTML page of run cards
+"""runs-dashboard.py -- `mega runs`: ONE self-contained static HTML page of run cards
 over the WHOLE estate, the estate-wide sibling of `mega review --html`'s per-mega sign-off page.
 
 Same projection discipline as SPEC-197/SPEC-182: reads only, persists nothing, safe to re-run.
@@ -17,14 +17,14 @@ Roots come from a REGISTRY, never a hardcoded path list: the existing `boards.tx
 (`<name>  <path-to-BACKLOG.md>  [bridge]`, `#` comments, `~` expands), resolved to repo roots by
 `lib/sync/cockpit.py`'s own `repo_root_of()`. Unlike the sync cockpit this reads EVERY row, not
 only `bridge == "on"` ones: `bridge` opts a repo into a Hermes WRITE path, which has nothing to
-do with reading that repo's own reports (SPEC-215 DEC-002).
+do with reading that repo's own reports.
 
 Presentation is IMPORTED from `lib/mega/mega-review.py` (`_CSS`, `_e`, `_run`) through the same
 `importlib` cross-module convention mega-review.py itself uses for `lib/gate/proof-table-gen.py`,
 so the two surfaces share one stylesheet and one escaper instead of two that drift. mega-review's
 render loop itself is NOT reusable here: it is built around one mega's ROADMAP sub-goal rows and
 the per-rid gate ledger, and has no seam that accepts an estate of unrelated documents
-(SPEC-215 DEC-003).
+.
 
 Usage: runs-dashboard.py [--registry FILE] [--root DIR ...] [--out PATH] [--max-embed-bytes N]
 """
@@ -52,7 +52,7 @@ def _load(path, name):
 _MR = _load(os.path.join(_SELF_DIR, "mega-review.py"), "mega_review")
 _CKPT = _load(os.path.join(_SELF_DIR, "..", "sync", "cockpit.py"), "cockpit")
 
-_e = _MR._e  # noqa: SLF001 -- the sanctioned cross-module reuse points (SPEC-215 DEC-003)
+_e = _MR._e  # noqa: SLF001 -- the sanctioned cross-module reuse points
 _BASE_CSS = _MR._CSS  # noqa: SLF001
 
 # Per-image and whole-page embed budgets. A self-contained page means base64, and base64 costs
@@ -100,7 +100,7 @@ class Card:
 
 def parse_registry_all(text):
     """Every row of a `boards.txt` registry as (name, backlog_path). Unlike cockpit.py's
-    `parse_registry` this does NOT filter on the third `bridge` column (SPEC-215 DEC-002)."""
+    `parse_registry` this does NOT filter on the third `bridge` column."""
     out = []
     for line in text.splitlines():
         s = line.strip()
@@ -319,7 +319,7 @@ def scan(roots, budget):
 # ---- 4. render ---------------------------------------------------------------------------------
 
 # Layered ON TOP of the imported mega-review stylesheet, never a second copy of it: the palette,
-# the dark-scheme block, and the badge colours all come from `_BASE_CSS` (SPEC-215 DEC-003).
+# the dark-scheme block, and the badge colours all come from `_BASE_CSS`.
 _GRID_CSS = """
 body { max-width: 78rem; }
 .summary { color: #6b7280; font-size: 0.85rem; margin-bottom: 1.25rem; }
@@ -423,7 +423,7 @@ def render_page(cards, roots):
         "</head><body>"
         "<h1>estate runs dashboard</h1>"
         f'<p class="meta">generated {_e(now)} &middot; a projection over run reports, proofs of '
-        "done, and verification runs; never a stored source of truth (SPEC-215). Re-run to "
+        "done, and verification runs; never a stored source of truth. Re-run to "
         "refresh.</p>"
         + "\n".join(body)
         + "</body></html>"

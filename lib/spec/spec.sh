@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# spec.sh -- thin standalone entry for the spec subsystem (kit-modularity SG-03,
-# board.sh/orchestrate.sh shape). Forwards `spec <verb> <args...>` to the sibling
+# spec.sh -- thin standalone entry for the spec subsystem (board.sh/orchestrate.sh
+# shape). Forwards `spec <verb> <args...>` to the sibling
 # script that already owns that verb; adds NO new logic. Additive: every existing
 # `bash lib/spec/<x>.sh ...` call-site keeps working unchanged.
 #

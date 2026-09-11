@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# goal-drafts.sh -- the goal-draft lifecycle helper (ADR-0023, SPEC-037).
+# goal-drafts.sh -- the goal-draft lifecycle helper.
 #
 # Goal DRAFTS live at .claude/goals/<slug>.md: the design-time "what's active"
-# candidate work, gitignored and per-machine (ADR-0011). They are NOT the
+# candidate work, gitignored and per-machine. They are NOT the
 # cross-session running-goal REGISTRY (.git/kit-goals/<slug>.goal, ADR-0022); the
 # slug is the shared key, draft = candidate work, registry = the run-time lock.
 # See docs/architecture.md "## State model" for the two stores side by side.

@@ -1,6 +1,6 @@
 # Implementation notes: cc-plugin-check
 
-**Migrated into dwarves-kit (kit-foldin SG-05, 2026-07-05).** This tool moved here verbatim
+**Migrated into dwarves-kit (kit-foldin, 2026-07-05).** This tool moved here verbatim
 from `ops-toolkit/tools/cc-plugin-check/`, renamed `plugin-check` (kit naming rule: drop
 the host-agent prefix on entry). No functional or test change; kept below for continuity,
 predating the move.

@@ -67,7 +67,7 @@ bash tests/test-money-gate.sh   # -> test-money-gate: all 12 passed
 `SPEC.md` carries the full contract, the degrade paths, and three divergences worth
 knowing before you trust this gate:
 
-1. The log path bypasses the SPEC-097 durable-root resolver (`lib/telemetry/kit-log-dir.sh`).
+1. The log path bypasses the durable-root resolver (`lib/telemetry/kit-log-dir.sh`).
 2. The keyword list (`token`, `secret`, `password`) also fires on ordinary auth code.
 3. **The regex is `\b`-anchored, so it misses snake_case identifiers and plurals.**
    `payroll_total = 5000` does **not** trip the gate; `payroll = 5000` does. This is the

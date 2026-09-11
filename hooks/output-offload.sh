@@ -7,7 +7,7 @@
 # cannot strip the current turn's output. The real per-turn saver for shell output is the native
 # BASH_MAX_OUTPUT_LENGTH (caps at the source); see WORKFLOW.md. This hook is the safety net for
 # NON-Bash tools (no source cap): it makes the bloat visible, persists a reversible full copy,
-# and trains scope-narrowing. SPEC: token-optim-v2 SG-06.
+# and trains scope-narrowing. SPEC: token-optim-v2.
 #
 # Token estimate = chars / 4 (rough; no tokenizer in a shell hook). Threshold via OFFLOAD_MAX_TOKENS.
 set -uo pipefail

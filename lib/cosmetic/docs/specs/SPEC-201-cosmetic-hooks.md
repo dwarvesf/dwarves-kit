@@ -8,12 +8,12 @@ Supersedes: nothing. Fills the gap recorded in `tests/kit-contract-known-gaps.tx
 ## Problem
 
 `cosmetic` is the thinnest-documented module in the kit. It ships six hooks; only one
-(`codebase-index`, SPEC-043) was ever specced. The other five were absorbed from external
+(`codebase-index`, `docs/specs/SPEC-043-codebase-index-hook.md`) was ever specced. The other five were absorbed from external
 sources (Anthropic's hooks guide, `disler/hooks-mastery`, Trail of Bits, oh-my-claudecode)
 and never had their contract written down.
 
 That matters more than a normal doc gap, because this module's defining property is a
-NEGATIVE one. ADR-0034 gives every module a primary leg; `cosmetic` is the only module
+NEGATIVE one. Every module is given a primary leg; `cosmetic` is the only module
 assigned **`(none)` , orthogonal to the loop** (`lib/config/module-registry.md`). A module
 whose contract is "must never interfere" needs that contract stated and TESTED, or it decays
 into one that quietly does. Nothing was asserting it.
@@ -154,7 +154,7 @@ default and is not part of the always-wired spine.
   it *could* exit 5 on garbage stdin, which fell through to the normal dialog (fail-closed, so
   not a security hole) but still breached the exit-0 contract. Fixed.
 
-### 6. `codebase-index` , SessionStart, timeout 10s (specced: SPEC-043)
+### 6. `codebase-index` , SessionStart, timeout 10s (specced: `docs/specs/SPEC-043-codebase-index-hook.md`)
 
 - **Triggers on:** `SessionStart`.
 - **Does:** background-refreshes the current repo's `codebase-memory-mcp` structural index

@@ -6,9 +6,9 @@
 
 ## Proposed additions
 
-- 2026-07-03: the ledger-event schema (SG-01) is the SAME additive `ISO8601 | VERB | k=v` marker convention already shared by kit-face SG-03 (TOKENS) + understanding-gate SG-02 (debt ledger). SG-01 formalizes it as THE canonical schema; reuse it, do NOT invent a third/fourth marker convention (mirrors understanding-gate's same note).
+- 2026-07-03: the ledger-event schema is the SAME additive `ISO8601 | VERB | k=v` marker convention already shared by kit-face SG-03 (TOKENS) + understanding-gate SG-02 (debt ledger). SG-01 formalizes it as THE canonical schema; reuse it, do NOT invent a third/fourth marker convention (mirrors understanding-gate's same note).
 - 2026-07-03: micro-worlds rendering (an `interactive-concept-board`-style inhabitable view of the ledger state) is a possible FUTURE 03 enhancement; deferred , Phase 1 renders terminal (bot-reply-formatting) + web Artifact only. Surface to the advisor over-suggest at TIER-4.
-- 2026-07-03: the feedback loop (SG-04) gives the kit ledgers a CONSUMER, the same "reverse the write-only drop" move understanding-gate made for impl-notes (ID-234). If a proposed anomaly row overlaps understanding-gate's debt-ledger paydown, dedup at work-intake rather than double-filing.
+- 2026-07-03: the feedback loop gives the kit ledgers a CONSUMER, the same "reverse the write-only drop" move understanding-gate made for impl-notes. If a proposed anomaly row overlaps understanding-gate's debt-ledger paydown, dedup at work-intake rather than double-filing.
 - 2026-07-04 (TIER-4 findings, routed for follow-up work-intake; out of SG-05's code scope):
   - Single column-spec (or a parity assert) to kill the `adapters.KIT_COLUMNS` / `materialize._KIT_DDL` schema double-definition silent-drift.
   - A field-count assert in `read_kit()` so lane-telemetry `_rows()` drift fails loud instead of truncate-padding with empty strings.

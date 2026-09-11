@@ -1,5 +1,5 @@
 #!/bin/bash
-# gauntlet stats: read-only projection over the run-record corpus (SPEC-240).
+# gauntlet stats: read-only projection over the run-record corpus.
 # Scans docs/verification/gauntlet/ record dirs, parses QL-VERDICT markers +
 # row-verdict tables + probe transcripts, prints one convergence table.
 # --write drops a dated snapshot next to the records (refuses same-day

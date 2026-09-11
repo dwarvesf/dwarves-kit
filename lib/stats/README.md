@@ -7,7 +7,7 @@ and token-cost markers). One agent-callable, **read-only** observability surface
 feedback loop that proposes backlog rows off anomalies instead of letting them pile up
 unseen.
 
-**Persists NOTHING (SPEC-182).** Every command materializes an in-memory DuckDB lens from
+**Persists NOTHING.** Every command materializes an in-memory DuckDB lens from
 the canonical files, runs the query, and discards it: delete stats' output (there is none)
 and re-run and you get the same answer from the log. A projection is never a second source
 of truth. This retires the earlier persistent `~/.cache/.../ledger.duckdb` cache.
@@ -41,7 +41,7 @@ that writes only the gitignored cc-backlog *staging* buffer, never a board, neve
 | 06-11 | 6 more lenses on the same SG-02 read path (`kit-gates`/`gate-yield`, `defect-correlation`, `deviation-rate`, `anomalies-advisor`, `sessions-digest`/`digest`, `memory-sweep`) | shipped (see `docs/megagoals/harness-observatory/`; not yet folded into this README's CLI walkthrough below -- a pre-existing doc gap, not introduced by the move) |
 | 05K | moved into dwarves-kit verbatim + adapter-default split + `stats mega-durations` (per-rid wall time) | shipped, this PR |
 
-### The `stats` CLI (SG-02)
+### The `stats` CLI
 
 A read-only, agent-callable CLI. Structured output (`--json` default | `--table`):
 
@@ -114,7 +114,7 @@ A "missing source is skipped, never fatal" is honest as far as it goes but has a
 see tradeoff (4) below, there is currently no operator-visible signal distinguishing
 "checked and found nothing" from "never even looked."
 
-### Render a query as terminal or a web Artifact (SG-03)
+### Render a query as terminal or a web Artifact
 
 `stats render` reuses the SAME `show`/`query` read path (no second data source), then
 hands the one fetched row set to one of two pure formatters:
@@ -134,7 +134,7 @@ uv run stats render --query "SELECT repo, count(*) AS n FROM kit_runs GROUP BY 1
 See `skills/stats/SKILL.md` (repo root; relocated per ADR-0034 decision 8) for the full
 trigger set + surface-selection rule (quick look -> terminal; share/review -> Artifact).
 
-### The feedback loop: `stats anomalies` (SG-04)
+### The feedback loop: `stats anomalies`
 
 Detects 3 anomaly classes over the SAME SG-02 lens (one data path, no re-query of a raw
 ledger): unpaid understanding-debt (`SUM(kit_runs.gates_ovr)` over a threshold), a

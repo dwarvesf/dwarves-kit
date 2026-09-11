@@ -33,7 +33,7 @@ UNTRUSTED_PREFIX = ("[AUTOMATED MIRROR of untrusted git board content -- "
 
 # Board-id row recognizers. The two-way mesh is `ID-`-only (STRICT), exactly as
 # before, so its ID-minting siblings (next_id, apply_board, warn_duplicate_ids)
-# stay consistent. The one-way create-only push (SPEC-003 / ID-138) reads
+# stay consistent. The one-way create-only push reads
 # boards with any repo prefix (the documented kit convention `[A-Z]+-[0-9]+`,
 # e.g. dfoundation DF-NN); it never mints or writes board ids, so widening its
 # READ view has no interaction with the strict minters.
@@ -136,7 +136,7 @@ def history_max_id(path, prefix: str = "ID") -> int:
 
 def next_id(text: str, prefix: str = "ID", path=None) -> int:
     """Mint one past the highest id in play, from PARSED row ids -- never from
-    a bare regex over the raw text (ID-480): a token anywhere in the text (a
+    a bare regex over the raw text: a token anywhere in the text (a
     notes cell, a prose paragraph, a quoted log line) used to count the same
     as a real row, so one oversized token could push every future mint past
     it permanently. The raw-text floor stays, narrowed to row-SHAPED lines
@@ -464,7 +464,7 @@ def bound_page_id(notes: str) -> str | None:
 
 def plan_create_only(rows: dict, state: dict, skip_kw: set | None = None,
                      filt: dict | None = None) -> Plan:
-    """One-way, insert-only plan for a write-only sink (SPEC-003).
+    """One-way, insert-only plan for a write-only sink.
 
     Emits a `src_create` for every in-scope board row NOT already recorded in
     the local sync-state map, skipping rows whose status is in `skip_kw`
@@ -500,7 +500,7 @@ INTAKE_CAP = 25  # rows one pull run may add; a bulk tick is a mistake, not work
 
 
 def plan_pull_only(text: str, items: list, cap: int = INTAKE_CAP) -> Plan:
-    """One-way, insert-only INTAKE plan for a read-only source (SPEC-004).
+    """One-way, insert-only INTAKE plan for a read-only source.
 
     Emits one `board_add` per source item whose identity marker is not already
     present in the board, and nothing else: no `src_*` action (the source is
@@ -579,7 +579,7 @@ def apply_board(text: str, plan: Plan, prefix: str = "ID",
             nid += 1
             assigned[rid] = bid
             title = " ".join(title.split())  # newlines would break the table row
-            # #inbox quarantine (SPEC-002): intake-born rows stay off shared
+            # #inbox quarantine: intake-born rows stay off shared
             # apps (their filters skip #inbox) until first human triage
             provenance = f"added from spoke {date.today().isoformat()} #inbox"
             cell = " ; ".join(l.strip() for l in body.splitlines() if l.strip())

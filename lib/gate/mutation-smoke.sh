@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mutation-smoke.sh -- ADVISORY mutation smoke (SPEC-131, kit-run-integrity SG-04).
 #
-# The HONESTLY-PROVEN check that coverage-delta (SG-03) cannot be: coverage sees whether a
+# The HONESTLY-PROVEN check that coverage-delta cannot be: coverage sees whether a
 # changed line HAS a test near it; this asks whether that test actually BITES. It mutates a
 # line in the CHANGED code and re-runs the suite. A biting suite (the mutation is caught ->
 # the suite goes red) is quiet; a NON-biting suite (the mutation survives -> the suite stays

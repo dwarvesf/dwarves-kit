@@ -1,4 +1,4 @@
-# Implementation notes: collapse /goal Stop-hook rows (ID-229)
+# Implementation notes: collapse /goal Stop-hook rows
 
 Deltas / non-obvious decisions only. The what + proof live in `docs/proof-of-done.md` (ID-229 section).
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# kit-log-dir.sh -- the single resolver for the kit's durable run-telemetry root (SPEC-097).
+# kit-log-dir.sh -- the single resolver for the kit's durable run-telemetry root.
 #
 # WHY: the run corpus that feeds /kit:retro and the SPEC-073 effectiveness eval used to
 # default to ~/.claude/dwarves-kit/logs -- INSIDE the plugin state dir, which a plugin

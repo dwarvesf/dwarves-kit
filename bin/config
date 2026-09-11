@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# bin/config -- STABLE consumer entrypoint for the config subsystem (SPEC-198, ADR-0034
-# decision 4). Read/explain surface only: `config set` is not built (hand-edit .kit.toml).
+# bin/config -- STABLE consumer entrypoint for the config subsystem. Read/explain
+# surface only: `config set` is not built (hand-edit .kit.toml).
 #
 # Usage: config {list|get|explain|seams} [args...]
 #   e.g. config list

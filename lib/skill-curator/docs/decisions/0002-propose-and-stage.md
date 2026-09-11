@@ -1,7 +1,7 @@
 # ADR 0002: propose-and-stage, not auto-apply
 
 **Date:** 2026-06-19
-**Status:** accepted (SPEC-103 DEC-003)
+**Status:** accepted
 
 ## Context
 
@@ -16,7 +16,7 @@ The reviewer stages drafts under `~/.claude/skill-proposals/<slug>/SKILL.md`, a 
 NOT auto-load. The only writer of `~/.claude/skills/` is `bin/skill-review` (the `/skill-review`
 human gate), which moves a draft in only after the operator vets it against
 `superpowers:writing-skills`. Reject moves the draft to `_rejected/` (never `rm`). The staging path
-IS the gate, and it is enforced structurally because the model has no write (ADR-0001).
+IS the gate, and it is enforced structurally because the model has no write.
 
 **Scoped exception:** an optional `auto_promote` knob (default OFF) lets `skill-review auto` write a
 `references/<topic>.md` INTO an existing umbrella under `skills/`, and only for a draft explicitly

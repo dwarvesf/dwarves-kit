@@ -235,7 +235,7 @@ CC_SEMANTIC_CMD="cat tests/fixtures/semantic-llm-out.json" bin/cc-semantic --roo
 bin/cc-semantic --days 7                             # real run (uses claude -p)
 ```
 
-## cc-vps-report (SG-05)
+## cc-vps-report
 
 **Feature:** bridge the weekly cc-observe digest into the LIVE vps-mon: HMAC-signed snapshot of headline metrics + a heartbeat ping that surfaces digest liveness on the public `/status` page.
 **Date:** 2026-06-15 · **Lane:** full · **Host:** dev laptop · **Mega-goal:** cc-elevation-r3 sub-goal 05 (supersedes r2 SG-01 cc-notify). **Target:** personal `mon-ingest` (`https://mon-ingest.han-ws.workers.dev`, CF account Han Ngo).
@@ -356,11 +356,11 @@ curl -s https://mon-ingest.han-ws.workers.dev/status/ai-substrate   # the item r
 ```
 
 
-## Native OTel eval (SG-06)
+## Native OTel eval
 
 **Type:** eval, not code. SG-06 owes a written adopt-or-skip verdict, not a behavioral run, so its
 proof **is** the verdict. Canonical artifact:
-`research/2026-06-15-claude-code-usage-metrics-and-tooling.md`, section "Native OTel eval (SG-06)".
+`research/2026-06-15-claude-code-usage-metrics-and-tooling.md`, section "Native OTel eval".
 
 **Verdict:** CONDITIONAL-ADOPT, the metric source is valuable (live cost + per-turn/per-tool
 latency the transcript views cannot produce); wiring is gated on (i) vps-mon gaining OTLP ingest

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# bin/precedent -- STABLE consumer entrypoint for the precedent subsystem (SPEC-245,
-# ADR-0034 decision 1).
+# bin/precedent -- STABLE consumer entrypoint for the precedent subsystem.
 #
 # Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/precedent/<file>.sh`
 # path. Forwards to the precedent subsystem entry, which owns the verb grammar.

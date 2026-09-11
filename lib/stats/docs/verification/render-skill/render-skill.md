@@ -1,4 +1,4 @@
-# Proof of done: ledger-observatory feature `render-skill` (SG-03)
+# Proof of done: ledger-observatory feature `render-skill`
 
 > Per-feature record. The canonical multi-feature index is
 > [`../../proof-of-done.md`](../../proof-of-done.md); this file is its `render-skill`
@@ -52,8 +52,8 @@ PASS  R-cli render command present / reuses materialize.show / reuses materializ
 == 30 passed, 0 failed ==
 ```
 
-Regression check on the same run: `bash tests/test-schema-conform.sh` (SG-01) 11/11,
-`bash tests/test-ledger-cli.sh` (SG-02) 26/26 , the `ledger render` CLI addition and the
+Regression check on the same run: `bash tests/test-schema-conform.sh` 11/11,
+`bash tests/test-ledger-cli.sh` 26/26 , the `ledger render` CLI addition and the
 `render.py` import in `cli.py` introduced no regression in either existing suite.
 
 ## Self-review finding, folded in before this run (worth naming)

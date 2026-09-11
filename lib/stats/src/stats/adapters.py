@@ -2,23 +2,23 @@
 missing source (returns its known columns + an empty row list). None writes back.
 
 - kit        : REUSES lane-telemetry.sh `_rows()` (the SPEC-061 pipe-log parser). No re-parse.
-- kit_gates  : a NEW per-line parser over the same run-ledger files (SPEC-131).
-- git_fixes  : `git log` over a repo's full history (SPEC-132), the tool's first git-sourced read.
+- kit_gates  : a NEW per-line parser over the same run-ledger files.
+- git_fixes  : `git log` over a repo's full history, the tool's first git-sourced read.
 - impl_notes : a filesystem walk over hook-enforced `docs/implementation-notes/*.md` files
-  (SPEC-133), the upstream-unknowns half of the benchmark bridge.
+, the upstream-unknowns half of the benchmark bridge.
 - tide       : DuckDB-native ATTACH (TYPE sqlite), read-only.
 - tg         : tg-cleanup *.json, both shapes (array / object-of-arrays), category carried.
 - learned    : a small markdown-table adapter over learned-ledger.md.
-- sessions   : Claude Code transcript jsonl (SPEC-135), a per-line field ALLOWLIST returning
+- sessions   : Claude Code transcript jsonl, a per-line field ALLOWLIST returning
   NUMBERS/timestamps/short-slugs only -- see `_parse_session_file`'s docstring for the exact
   privacy boundary this adapter enforces.
-- safety     : the secret-guard audit log (SPEC-135), a bracket-prefix regex parser; the log's
+- safety     : the secret-guard audit log, a bracket-prefix regex parser; the log's
   free-text remainder is never captured.
-- memories   : memory-verify sweep (SPEC-136) over `.claude/memory/` + built-in auto-memory
+- memories   : memory-verify sweep over `.claude/memory/` + built-in auto-memory
   stores, via `memory_lens.scan()`; conservative reference extraction, NEVER writes back to a
   memory file -- see `memory_lens.py` for the full contract.
 - rejected_findings : per-(repo, lens) aggregate over each configured repo's `docs/
-  verification/rejected-findings.md` `## Rows` table (SPEC-137), a NUMBERS-ONLY markdown-table
+  verification/rejected-findings.md` `## Rows` table, a NUMBERS-ONLY markdown-table
   adapter (like `learned`); the tool's first genuinely multi-repo-in-one-materialization
   adapter -- see `config.rejected_findings_repos()`.
 """
@@ -55,7 +55,7 @@ def read_kit(lib_dir: Path | None = None):
     `_rows` is callable. See impl-notes.
     """
     lib = lib_dir or config.kit_lib_dir()
-    # Post-restructure (SPEC-182/SG-01): lane-telemetry.sh lives in the telemetry subsystem,
+    # Post-restructure: lane-telemetry.sh lives in the telemetry subsystem,
     # not flat at lib/ root. Fall back to the flat path for a pre-restructure kit copy.
     script = lib / "telemetry" / "lane-telemetry.sh"
     if not script.exists():
@@ -94,7 +94,7 @@ def read_kit(lib_dir: Path | None = None):
     return KIT_COLUMNS, rows
 
 
-# ---- kit gate ledger, per-GATE-line (SPEC-131) -----------------------------
+# ---- kit gate ledger, per-GATE-line -----------------------------
 
 # Column names/order come from `schemas.KIT_GATES_SCHEMA` (single source of truth, see above).
 KIT_GATES_COLUMNS = schemas.column_names(schemas.KIT_GATES_SCHEMA)
@@ -121,7 +121,7 @@ def read_kit_gates(runs_dir: Path | None = None):
     `caught` / `start_ts` / `end_ts` come from a SEPARATE, additive `| OUTCOME |` start/end
     bracket (kit's own SPEC-129: `TS | OUTCOME | <phase> | start | at=<epoch>` then `... | end
     | at=<epoch> caught=<bool> dur_s=<N>`), paired to a `GATE` row by matching phase name,
-    FIFO per (rid, gate) in file order (SPEC-131 DEC-002).
+    FIFO per (rid, gate) in file order.
 
     `cost` is the SAME FIFO-by-phase pairing extended to a phase-scoped `| TOKENS |` line
     (`TS | TOKENS | in=N out=N cache_read=N cache_create=N cost=<dollars> phase=<gate>`, the
@@ -333,7 +333,7 @@ _ENTRY_HEADER_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})(?:\s+(\d{2}:\d{2}))?\s
 # is free text. A `## `-prefixed entry header line can never match this (it starts with "#",
 # not "no"), so a TITLE merely mentioning "no deviation" as prose (e.g. "## 2026-06-14 Shipping
 # mechanics (no deviation from spec, two host quirks)", confirmed present in the real corpus) is
-# correctly counted as a real logged entry, never mistaken for the marker (SPEC-133 DEC-002).
+# correctly counted as a real logged entry, never mistaken for the marker.
 _ZERO_MARKER_RE = re.compile(r"^\s*[-*]?\s*no deviations?\b", re.IGNORECASE)
 
 # Directory names never descended into while walking for impl-notes files: hidden dirs (this
@@ -396,11 +396,11 @@ def _parse_impl_notes_file(path: Path) -> tuple[int, bool, str | None, str | Non
 
 def read_impl_notes(repo_path: Path | None = None):
     """One row per hook-enforced `docs/implementation-notes/<slug>.md` file found anywhere
-    under a repo root (SPEC-133): `(repo, slug, file, n_deviations, zero_marker, first_ts,
+    under a repo root: `(repo, slug, file, n_deviations, zero_marker, first_ts,
     last_ts)`.
 
     Shares `config.git_repo_dir()` with `read_git_fixes` rather than a second env knob
-    (SPEC-133 DEC-001): `deviation-rate`'s SUSPECT/CLEAN classification JOINs the two tables,
+: `deviation-rate`'s SUSPECT/CLEAN classification JOINs the two tables,
     and both must describe the SAME repo or the join silently drifts apart per-invocation.
 
     Read-only: no write, ever. Skip-safe: a missing repo path returns (columns, []), matching
@@ -474,7 +474,7 @@ def read_learned(md_path: Path | None = None):
     return LEARNED_COLUMNS, rows
 
 
-# ---- rejected-findings ledger, per-(repo, lens) aggregate (SPEC-137) ----------------------
+# ---- rejected-findings ledger, per-(repo, lens) aggregate ----------------------
 
 # Column names/order come from `schemas.REJECTED_FINDINGS_SCHEMA` (single source of truth).
 REJECTED_FINDINGS_COLUMNS = schemas.column_names(schemas.REJECTED_FINDINGS_SCHEMA)
@@ -586,11 +586,11 @@ SESSIONS_COLUMNS = schemas.column_names(schemas.SESSIONS_SCHEMA)
 # The exact trailing line the global `~/.claude/CLAUDE.md` adherence canary mandates on every
 # assistant reply. Checked ONLY to derive a per-turn boolean (see `_parse_session_file` below);
 # the text itself is never persisted, matching every other text block this adapter touches
-# (SPEC-135 DEC-003).
+#.
 _CANARY_LINE = "\U0001f431 Neko-san"  # the cat-emoji + "Neko-san" canary line
 
 # A light ISO8601 shape-gate for the ONE accepted-verbatim field (`timestamp`). Defense in
-# depth (SPEC-135 DEC-009): `timestamp` is harness-synthesized, not conversation-derived, so
+# depth: `timestamp` is harness-synthesized, not conversation-derived, so
 # this is not a real leak surface, but the adapter's stated principle is a strict allowlist that
 # never trusts a transcript field's shape -- a non-ISO8601 string is dropped (that line's ts
 # contribution only, not the whole line) rather than persisted raw into first_ts/last_ts.
@@ -628,7 +628,7 @@ def _parse_session_file(path: Path) -> list | None:
     miss); the string itself is reassigned to `None` immediately after the check and is never
     appended to any accumulator, logged, or returned. This applies to every text block
     encountered, not only ones near the canary check, so even a real secret pasted into a
-    message is only ever glanced at in memory, never captured (SPEC-135 DEC-003/DEC-006).
+    message is only ever glanced at in memory, never captured.
 
     Confirmed during design-time AND real-corpus smoke-testing: `tool_result` blocks (and their
     `is_error` flag) live under a `type == "user"` line (the tool-result turn Claude Code
@@ -803,7 +803,7 @@ def read_safety(log_path: Path | None = None):
     return SAFETY_COLUMNS, rows
 
 
-# ---- memory-verify sweep (SPEC-136) --------------------------------------------------------
+# ---- memory-verify sweep --------------------------------------------------------
 
 # Column names/order come from `schemas.MEMORY_SCHEMA` (single source of truth, see above).
 MEMORY_COLUMNS = schemas.column_names(schemas.MEMORY_SCHEMA)

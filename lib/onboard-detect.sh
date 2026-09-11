@@ -4,7 +4,7 @@
 # READ-ONLY by contract: it inspects install state under $CLAUDE_DIR and prints a mode word (and,
 # on `explain`, a one-line explanation). It never writes anything. The interactive first-run flow
 # (commands/onboard.md) is the orchestrator; this is the one deterministic seam worth testing as
-# bash rather than proving by transcript (SPEC-199).
+# bash rather than proving by transcript.
 #
 # The detection signals mirror install.sh's own plugin-detect block (install.sh:315-353) exactly,
 # so onboard and install agree on what "installed as a plugin" means:

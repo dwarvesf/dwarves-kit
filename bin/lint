@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# bin/lint -- STABLE consumer entrypoint for the lint subsystem.
+#
+# Forwards to the scattered-id enumerator, which is the only tool in this subsystem today.
+# Resolution is relative to this file's own location, so it works identically in the kit repo
+# (dev) and in the copied install ($DWARVES_KIT/bin next to $DWARVES_KIT/lib).
+#
+# Usage: lint --zone <name>|--all [--count]   (forwards to lib/lint/scattered-ids.sh)
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/lint/scattered-ids.sh" "$@"

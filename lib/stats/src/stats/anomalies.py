@@ -41,26 +41,26 @@ DEFAULTS: dict[str, float] = {
     "cost_multiplier": 3.0,   # latest cost > 3x the recent median = a spike, not variance
     "misfire_rate_max": 0.25,  # >25% of runs misrouting is signal, not noise
     "misfire_min_runs": 4.0,  # <4 runs => a rate is meaningless (1-of-1 = 100% false positive)
-    "deviation_window": 5.0,      # rolling-median window AND min-sample floor (SPEC-133)
+    "deviation_window": 5.0,      # rolling-median window AND min-sample floor
     "deviation_median_max": 2.0,  # rolling median n_deviations over this = unknown-density fire
-    "ceremony_min_ran": 5.0,          # min-sample floor (SPEC-134): the gate's ran+override
+    "ceremony_min_ran": 5.0,          # min-sample floor: the gate's ran+override
                                       # count AND the evidence-sufficiency floor for
                                       # caught_known/bridged below -- NEVER conditioned on
                                       # skip-rate, see _detect_ceremony
     "serial_min_minutes_saved": 10.0,  # min plausible minutes-saved before the
                                        # serial-when-parallel advisor bothers proposing (a
                                        # 1-2 min saving is real-corpus noise, not worth a row)
-    "token_budget_max": 50_000_000.0,  # per-session token-runaway budget (SPEC-135): total
+    "token_budget_max": 50_000_000.0,  # per-session token-runaway budget: total
                                        # input+output+cache tokens across a whole session's
                                        # transcript. Loose on purpose (open-fork 3 convention):
                                        # cache-read tokens are billed PER assistant turn, not
                                        # once, so even a normal long session can legitimately
                                        # sum into the tens of millions; tune down via
                                        # --threshold once real sessions data accrues.
-    "memory_min_notes": 5.0,             # min-sample floor (SPEC-136): thin data proposes
+    "memory_min_notes": 5.0,             # min-sample floor: thin data proposes
                                           # nothing, same convention as cost_window/deviation_window
     "memory_dead_ref_rate_max": 0.15,    # >15% of memory units carrying >=1 dead ref is signal
-    "review_fp_min_n": 5.0,       # dual min-sample floor (SPEC-137): BOTH a lens's own
+    "review_fp_min_n": 5.0,       # dual min-sample floor: BOTH a lens's own
                                   # n_rejected AND the global raised denominator must clear
                                   # this before the rate means anything -- same convention as
                                   # `review-yield --min-n`'s own low_n floor
@@ -159,7 +159,7 @@ def _detect_misfire(th: dict) -> Anomaly | None:
 
 
 def _detect_unknown_density(th: dict) -> Anomaly | None:
-    """Unknown-density (SPEC-133): rolling median `n_deviations` over the last
+    """Unknown-density: rolling median `n_deviations` over the last
     `deviation_window` implementation-notes files (`impl_notes`), the upstream half of the
     benchmark bridge. Ordered by `first_ts` (a zero-marker file with no logged entry has no
     `first_ts` and sorts first via a sentinel -- the schema carries no filesystem mtime by
@@ -203,7 +203,7 @@ _FIX_SUBJECT_RE = r"^fix(\(.*\))?!?:"
 
 
 def _detect_ceremony(th: dict) -> Anomaly | None:
-    """Ceremony (SPEC-134): a kit gate that structurally never mattered. Reads `kit_gates`
+    """Ceremony: a kit gate that structurally never mattered. Reads `kit_gates`
     (gate-yield's own GROUP BY gate shape) joined to a PER-GATE generalization of
     defect-correlation's rid-to-git bridge (SPEC-132 DEC-001's two-stage bridge: a textual
     rid-in-subject match once, then genuine file-equality thereafter -- same technique, applied
@@ -333,7 +333,7 @@ def _detect_token_runaway(th: dict) -> Anomaly | None:
     `sessions` is empty (no data, no fire -- same honest-empty convention `unknown_density`/
     `ceremony` already use).
 
-    A flat per-session threshold, NOT a per-rid budget (SPEC-135 DEC-004): `sessions` carries no
+    A flat per-session threshold, NOT a per-rid budget: `sessions` carries no
     rid/repo column in v1 (a session transcript has no structural link to a kit rid), so
     attributing cost to a specific sub-goal would need the SAME time-containment bridge
     `ledger digest`'s cost-per-verified-outcome JOIN already builds -- duplicating that bridge
@@ -378,7 +378,7 @@ def _seconds_between(start: str, end: str) -> float | None:
 
 
 def _detect_serial_when_parallel(th: dict) -> Anomaly | None:
-    """Time-to-done advisor, serial-when-parallel (SPEC-134): two candidate rids (any rid seen
+    """Time-to-done advisor, serial-when-parallel: two candidate rids (any rid seen
     in `kit_gates`) bridged to git the same way `defect-correlation`/`_detect_ceremony` bridge
     (textual rid-in-subject match), windowed by `MIN(ts)..MAX(ts)` across ALL of a rid's own
     bridged commits.
@@ -467,7 +467,7 @@ def _detect_serial_when_parallel(th: dict) -> Anomaly | None:
 
 
 def _detect_memory_hygiene(th: dict) -> Anomaly | None:
-    """Memory hygiene (SPEC-136): dead-ref RATE over the `memories` lens table, the v1
+    """Memory hygiene: dead-ref RATE over the `memories` lens table, the v1
     retrieval-precision proxy for "stale-but-confident" memory notes (a note that reads as
     confidently as ever but points at a path/command that no longer exists). Reads ONLY
     `materialize.query()` (the one-data-path contract every detector in this module follows --
@@ -640,7 +640,7 @@ def _staging_env(canonical: str, legacy: str) -> str | None:
         return v
     v = os.environ.get(legacy)
     if v:
-        print(f"stats: {legacy} is deprecated, use {canonical} (SPEC-200)", file=sys.stderr)
+        print(f"stats: {legacy} is deprecated, use {canonical}", file=sys.stderr)
         return v
     return None
 

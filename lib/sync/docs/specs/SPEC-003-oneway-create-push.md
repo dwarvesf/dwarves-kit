@@ -12,7 +12,7 @@ sink is the Dwarves **Notion Task Board**, a foreign, team-OWNED database with
 its own schema (`Task` / `Status` / `Priority` / `Weight` / `Owner` / `Notes`)
 and team members who edit the cards after they land.
 
-The existing `NotionSource` (SPEC-001) cannot serve this:
+The existing `NotionSource` cannot serve this:
 
 - it is **two-way** (hub-wins), so it would revert a team member's status edit
   on the next run;

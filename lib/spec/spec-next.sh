@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# spec-next.sh -- collision-proof next SPEC number (SPEC-064 / ID-052).
+# spec-next.sh -- collision-proof next SPEC number.
 #
-# SPEC numbers collided twice in one week (SPEC-047, SPEC-041) because "max of
+# SPEC numbers collided twice in one week because "max of
 # docs/specs/ + 1" goes stale the moment a numbered spec ages inside an unmerged
 # branch. This scans EVERY visible surface: docs/specs/ filenames, local branch
 # names, remote branch names (after a fetch), and SPEC-NNN mentions in recent
@@ -10,9 +10,9 @@
 # Usage:
 #   spec-next.sh next         -> the next free number (e.g. "064")
 #   spec-next.sh check <NNN>  -> exit 0 if free, exit 1 (+ where seen) if taken
-#   spec-next.sh reserve      -> atomically claim + print the next free number (SPEC-128)
+#   spec-next.sh reserve      -> atomically claim + print the next free number
 #
-# SPEC-128 closes the CONCURRENCY case SPEC-064 did not: a parallel wave that each calls
+# This closes a CONCURRENCY gap the original scan-only version did not: a parallel wave that each calls
 # `next` BEFORE any branch/spec exists all scan the same surfaces and get the SAME number.
 # The scan is correct; the reservation happens too late. `reserve` claims a number under a
 # portable mkdir-mutex and records it in a reservations ledger that `_numbers()` folds in, so
@@ -53,7 +53,7 @@ _iso_to_epoch() {
   printf '%s' "$e"
 }
 
-# The REAL scan surfaces (specs + branches + commits) , the SPEC-064 union, unchanged. Split
+# The REAL scan surfaces (specs + branches + commits), the original union, unchanged. Split
 # out so reconciliation can tell a REALIZED reservation (its number now here) from a live one.
 _scan_numbers() {
   {
@@ -65,7 +65,7 @@ _scan_numbers() {
 
 # LIVE reservation numbers for THIS repo: repo-scoped AND within TTL (an expired line stops
 # counting even before it is physically pruned). Empty when no ledger exists (the common case,
-# which keeps `next`/`check` byte-identical to SPEC-064).
+# which keeps `next`/`check` byte-identical to the original scan-only behavior).
 _reservations() {
   [ -f "$RES_FILE" ] || return 0
   local cutoff; cutoff=$(( $(now_epoch) - SPEC_RESERVE_TTL ))
@@ -87,7 +87,7 @@ _reservations() {
 }
 
 # The full union readers see: the real scan PLUS live reservations. `_scan_numbers` is the
-# SPEC-064 body verbatim; folding reservations in is purely additive.
+# original scan-only body verbatim; folding reservations in is purely additive.
 _numbers() {
   { _scan_numbers; _reservations; } | sort -n | uniq
 }
@@ -103,7 +103,7 @@ check() {
   local n="${1:-}"; [ -n "$n" ] || { echo "usage: check <NNN>" >&2; return 64; }
   n="$(printf '%03d' "$((10#$n))")"
   if _numbers | grep -qx "$((10#$n))" || _numbers | grep -qx "$n"; then
-    # Byte-identical to SPEC-064 when no reservations exist (Acceptance 4): the reservation
+    # Byte-identical to the original scan-only behavior when no reservations exist (Acceptance 4): the reservation
     # clause is appended ONLY when the ledger actually contributed a live number (review LOW #5).
     local src="seen in specs/, a branch, or a recent commit subject"
     [ -n "$(_reservations)" ] && src="seen in specs/, a branch, a recent commit subject, or a live reservation"
@@ -113,7 +113,7 @@ check() {
   echo "SPEC-$n is free"
 }
 
-# ---- SPEC-128: atomic reservation ---------------------------------------------------------
+# ---- Atomic reservation --------------------------------------------------------------------
 # Prune dead reservation lines IN PLACE (called only while the lock is held, so the rewrite
 # is serialized). Two independent rules:
 #   * EXPIRED (older than TTL) -> dropped for EVERY repo. Expiry is pure timestamp math and

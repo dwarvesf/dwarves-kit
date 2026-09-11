@@ -279,14 +279,14 @@ harness); large-row-count performance (fixtures are small, matching SG-02's own 
 
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
-| `ledger render` invoked before `ledger rebuild` (fresh host, no db) | `materialize.show`/`query`'s existing lazy-rebuild-on-missing (SG-02) already covers this; no new behavior needed | none needed, inherited |
+| `ledger render` invoked before `ledger rebuild` (fresh host, no db) | `materialize.show`/`query`'s existing lazy-rebuild-on-missing already covers this; no new behavior needed | none needed, inherited |
 | Skill not yet installed (`~/.claude/skills/ledger-observatory/` missing) | the skill simply never fires (Claude Code silently has no matching skill) | documented in README install section; SG-05's no-orphan check is the real gate |
 
 ## Out of Scope
 
 - The `ledger` CLI's read/query/rebuild logic itself (SG-02, already shipped).
-- The anomaly/feedback loop that proposes `work-intake` rows (SG-04).
-- The full README/proof-of-done polish pass + no-orphan wiring verification (SG-05).
+- The anomaly/feedback loop that proposes `work-intake` rows.
+- The full README/proof-of-done polish pass + no-orphan wiring verification.
 - Actually installing the skill into `~/.claude/skills/` or any dotfiles-managed path
   (doc-only install pointer this PR).
 - A live Discord/Telegram bot integration (the skill is a Claude Code in-session render
@@ -319,7 +319,7 @@ harness); large-row-count performance (fixtures are small, matching SG-02's own 
   modes, assumptions, scope, solution-design/extensibility): no findings , failure modes
   table is real (2 classes, both inherited from SG-02's existing lazy-rebuild + read-only
   guard, not hand-waved); no unstated assumptions beyond what's already named; tasks are
-  atomic (each <=2 files, single sentence, <=4 AC bullets); the pure-function split (DEC-001)
+  atomic (each <=2 files, single sentence, <=4 AC bullets); the pure-function split
   is the simplest design that makes the single-data-path NC structural rather than
   documentation-only.
 - **Build-time self-review (2026-07-03):** caught SKILL.md's frontmatter `description:`

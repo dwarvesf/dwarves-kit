@@ -32,7 +32,7 @@ from sync_core import (ID_TOKEN, apply_board, build_state, describe,  # noqa: E4
 
 # apps that push one-way and read boards with any repo prefix (not just ID-)
 CREATE_ONLY_APPS = {"notion-taskboard"}
-# apps that only READ a foreign board and intake into the hub (SPEC-004)
+# apps that only READ a foreign board and intake into the hub
 PULL_ONLY_APPS = {"notion-taskboard-pull"}
 from sources.github import GitHubSource  # noqa: E402
 from sources.hermes import HermesSource  # noqa: E402
@@ -77,7 +77,7 @@ def warn_duplicate_ids(text: str, strict_id: bool = True) -> None:
 
 def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
                      filt: dict | None = None) -> None:
-    """One-way, insert-only push to a write-only sink (SPEC-003). The board
+    """One-way, insert-only push to a write-only sink. The board
     file is never written; the local state map is the identity index. State is
     checkpointed after EACH create, so a mid-batch failure never re-pushes an
     already-created page (no duplicate cards on a team-owned board)."""
@@ -126,7 +126,7 @@ def sync_create_only(src, backlog: Path, state_path: Path, dry_run: bool,
 
 
 def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
-    """One-way, insert-only INTAKE from a read-only source (SPEC-004). Writes
+    """One-way, insert-only INTAKE from a read-only source. Writes
     only the board file: no spoke write (the source has no write method), and
     no state file at all. Identity lives in the board row's own notes cell, so
     there is nothing to lose and a re-run recomputes exactly the missing rows.
@@ -148,7 +148,7 @@ def sync_pull_only(src, backlog: Path, dry_run: bool) -> None:
 
 def check_pull_isolation(names: list, args,
                          filters: dict | None = None) -> None:
-    """Three refusals that keep a read-only intake read-only (SPEC-004).
+    """Three refusals that keep a read-only intake read-only.
 
     FILTER: this app takes none. The source board's own `Agent Queue` checkbox
     is the gate, and the pull path never consults `filt`, so accepting
@@ -367,7 +367,7 @@ def main(argv=None):
                          "{status,priority,weight,owner}")
     ap.add_argument("--notion-taskboard-pull-db",
                     help="source Notion database id for the read-only "
-                         "Task Board intake (SPEC-004)")
+                         "Task Board intake")
     ap.add_argument("--notion-taskboard-pull-props",
                     help="JSON overriding prop names "
                          "{title,status,notes,queue}")

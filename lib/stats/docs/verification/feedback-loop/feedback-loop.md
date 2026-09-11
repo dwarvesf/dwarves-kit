@@ -1,4 +1,4 @@
-# Verification: feedback-loop (SG-04)
+# Verification: feedback-loop
 
 Per-feature proof detail for the `feedback-loop` feature. The canonical index is
 [`../../proof-of-done.md`](../../proof-of-done.md); this file holds the run detail + the
@@ -32,9 +32,9 @@ false-positive negative control: a noise-floor lens state proposes NOTHING.
 | feedback suite | 2026-07-03T20:54Z | `bash tests/test-feedback.sh` | 0 | PASS (39/39) |
 | FB-1 falsifiability (NC not vacuous) | 2026-07-03T20:55Z | noise fixture, default vs `--threshold debt_max=3` | n/a | staged 0 -> 1 (NC load-bearing) |
 | FB-2 falsifiability (auto-file bug) | 2026-07-03T20:56Z | injected board-append into `stage_proposals`, ran `--propose` | n/a | board sha CHANGED (RED-as-expected); restored -> 39/39 |
-| regression schema (SG-01) | 2026-07-03T20:56Z | `bash tests/test-schema-conform.sh` | 0 | PASS (11/11) |
-| regression etl-cli (SG-02) | 2026-07-03T20:56Z | `bash tests/test-ledger-cli.sh` | 0 | PASS (26/26) |
-| regression render (SG-03) | 2026-07-03T20:56Z | `bash tests/test-render-skill.sh` | 0 | PASS (30/30) |
+| regression schema | 2026-07-03T20:56Z | `bash tests/test-schema-conform.sh` | 0 | PASS (11/11) |
+| regression etl-cli | 2026-07-03T20:56Z | `bash tests/test-ledger-cli.sh` | 0 | PASS (26/26) |
+| regression render | 2026-07-03T20:56Z | `bash tests/test-render-skill.sh` | 0 | PASS (30/30) |
 | live smoke (real lens) | 2026-07-03T20:39Z | `uv run ledger anomalies --json` (no --propose) | 0 | debt fired (gates_ovr_sum=40), report-only, nothing staged |
 
 ### Negative controls (load-bearing, not vacuous)
