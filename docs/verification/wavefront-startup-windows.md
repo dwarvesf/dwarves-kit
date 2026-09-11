@@ -1,57 +1,89 @@
 # Verification: wavefront suite startup windows
 
-`tests/test-orchestrate-wavefront.sh` has three fixed windows that bound how far apart two mock wave sessions may start: the fifo barrier at block (g), the same barrier reused at block (k), and the marker-file poll at block (h2). Each one flaked under load on a dev Mac. The 2026-09-10 handoff read the suite as Air-local; it is timing-dependent.
+`tests/test-orchestrate-wavefront.sh` has three fixed windows that bound how far apart two mock wave sessions may start: the fifo barrier at block (g), the same barrier reused at block (k), and the marker-file poll at block (h2). All three flaked on a dev Mac. The 2026-09-10 handoff read the suite as Air-local; it is load-dependent.
 
-None of the three windows is the proof. The proof is that a serial implementation cannot pass. That holds at any value: the lone reader always times out and exits without flipping. A larger window only makes that failure slower.
+## Mechanism
+
+`_wave_run`'s spawn loop does real per-sub-goal work BEFORE backgrounding each session (`lib/queue/orchestrate.sh`): `_wave_worktree` (a `git worktree add`) at :1754, `_route` at :1769, `mktemp` + `_build_prompt` at :1781, and `_wave_reserve_spec`, which takes a LOCK, at :1804. Only then does :1864 background the session. Session 2 therefore starts that whole gap after session 1, and under load that gap is unbounded.
+
+Every one of the three windows must exceed that skew. None of them is the proof. The proof is that a serial implementation cannot pass, and that holds at any value: the lone reader always times out and exits without flipping. The window only decides how slowly a true regression fails.
 
 ## Change
 
 | Block | Window | Before | After |
 |---|---|---|---|
-| (g) concurrency proof | `BARRIER_T` on the fifo `read -t` | 4s | 20s |
-| (k) full-wire dispatch | `BARRIER_T` on the same mock | 6s | 20s |
-| (h2) abort path | poll for both `.pid` markers | 40 x 0.25s = 10s | 120 x 0.25s = 30s |
+| (g) concurrency proof | `BARRIER_T` on the fifo `read -t` | 20s | 120s |
+| (k) full-wire dispatch | `BARRIER_T` on the same mock | 20s | 120s |
+| (h2) abort path | poll for both `.pid` markers | 120 x 0.25s = 30s | 480 x 0.25s = 120s |
+| (h2) abort path | mock lifetime after writing its pid | 30s | 300s |
 
-The (h2) mock sleeps 30s AFTER writing its pid, so a slow start never shortens the time it stays alive for the SIGTERM.
+The mock lifetime moves with the poll deliberately. The two must stay consistent: a mock that expires before the SIGTERM lands dies of old age, and the both-mocks-dead assertion then passes without exercising the process-group kill. At the previous values the poll equalled the mock lifetime, which left no margin; 120s against 300s leaves 180s.
 
-## Before (kit 4261e2b, the Air, 2026-09-11)
+The soft-barrier negative control at :448 and :460 keeps `BARRIER_T=1` on purpose and is untouched.
 
-| Block | Runs | Failures | Failing line |
-|---|---|---|---|
-| (g) | 3 | 1 | `wave_run g: concurrency NOT proven (rc=1 b1='- [ ] SG-01 ...' b2='- [ ] SG-02 ...')` |
-| (h2) | 5 | 2 | `wave_run h2: both mock sessions never started (marker files missing)` |
+## Green run (this branch, the Air, 2026-09-11)
 
-## Green run (kit 504f516, the Air, 2026-09-11)
-
-Five consecutive standalone runs, machine under normal load for runs 1 to 4.
+Three runs under load induced by 8 spin-loop burners.
 
 ```
-Command: for i in 1 2 3 4 5; do bash tests/test-orchestrate-wavefront.sh; done
-run 1: ALL PASS (103s)
-run 2: ALL PASS (135s)
-run 3: ALL PASS (123s)
-run 4: ALL PASS (132s)
-run 5: 1 FAILED (243s)   dispatch k: wave not taken/failed (rc=1 b1='- [ ] SG-01 ...' b2='- [ ] SG-02 ...')
-Exit: 0 (runs 1 to 4), 1 (run 5)
-Verdict: PASS for (g) and (h2), 0 failures in 5 against 1 in 3 and 2 in 5 before. (k) NOT proven.
+Command: bash measure-loaded.sh 3 8
+run 1: ALL PASS (319s) load=90.66 50.83 27.32
+run 2: ALL PASS (338s) load=81.47 73.23 46.11
+run 3: ALL PASS (489s) load=31.69 51.44 48.62
+RESULT: 0 failure(s) in 3 run(s) under induced load
+Exit: 0
+Verdict: PASS
 ```
 
-Run 5 took twice as long as the others, so the machine was under heavy load during it. (k) drives the whole `orchestrate.sh run` wire, not just `_wave_run`, and its rc=1 can come from the barrier or from anything else on that path. The loop kept only the FAIL line; `dispatch-wave.out` is gone with the temp dir. The next measurement must keep it:
+Idle wall time is roughly 130s, so these ran at up to 3.7x slowdown.
+
+## Negative control (matched load)
+
+Restore the four previous values, hold the load comparable, run three times.
+
+```
+Command: bash negctl-matched.sh 3 16
+OLD values in place: 2 barrier sites, poll=seq 1 120, mock=1
+negctl run 1: 1 FAILED (347s) load=42.61 32.34 27.12
+  FAIL wave_run h2: both mock sessions never started (marker files missing)
+negctl run 2: 1 FAILED (369s) load=44.45 39.21 32.31
+  FAIL wave_run h2: both mock sessions never started (marker files missing)
+negctl run 3: 2 FAILED (401s) load=47.72 45.00 37.49
+  FAIL wave_run h2: both mock sessions never started (marker files missing)
+  FAIL dispatch k: wave not taken/failed (rc=1 b1='- [ ] SG-01 ...' b2='- [ ] SG-02 ...')
+NEGCTL RESULT: 3 failure(s) in 3 run(s) at OLD values under matched load
+restored: 0 dirty
+Exit: 0
+Verdict: RED as expected, then restored clean
+```
+
+The control bites: 3 of 3 fail at the old values where 3 of 3 pass at the new ones.
+
+A FIRST attempt at this control did NOT reproduce (`ALL PASS`, 286s). It is recorded here because it is the reason the matched version exists: its burners only drove the 1-minute average to 11.4, while the green measurement ran at 31 to 91, so it compared two different conditions and proved nothing. The matched version uses 16 burners and a 60s ramp.
+
+## What this settles about block (k)
+
+(k) was the open question on ID-834. Run 3 of the control reproduced it, and its driver log names the mechanism:
+
+```
+[orchestrate] [wave] spawned SG-01 (pid 17063) in .../worktrees/SG-01
+[orchestrate] [wave] SG-02 reserved SPEC-452
+[orchestrate] [wave] spawned SG-02 (pid 27068) in .../worktrees/SG-02
+[orchestrate] [wave] SG-01 session exited nonzero (7); draining siblings, then failing.
+[orchestrate] [wave] SG-02 session exited nonzero (7); draining siblings, then failing.
+```
+
+Exit 7 is the barrier mock's own timeout branch (`exit 7  # timed out: sibling never overlapped`). Both sessions timed out on each other. In the same run `dispatch k: wave-path marker present ([wave] spawned)` and `dispatch k: no orphaned mock processes remain` both PASSED, so `cmd_run` routed to the wave path correctly and reaped correctly. (k) is the same start-skew mechanism as (g) and (h2), not a fault on the dispatch wire. It shows the widest skew because it drives the whole `cmd_run` wire rather than calling `_wave_run` directly.
+
+## Reproduce
 
 ```bash
-# reproduce (k): loop until it fails, keep the driver output
-for i in $(seq 1 10); do
-  out=$(bash tests/test-orchestrate-wavefront.sh 2>&1)
-  printf '%s' "$out" | grep -q '^FAIL dispatch k' && { printf '%s' "$out" > /tmp/wavefront-k-fail.txt; break; }
-done
+bash docs/verification/wavefront-startup-windows-measure.sh 3 8    # green under load
+bash docs/verification/wavefront-startup-windows-negctl.sh 3 16    # old values, expect RED
 ```
 
-The suite `cat`s `dispatch-wave.out` right after the FAIL line, so the saved file carries the driver log.
-
-## Negative control
-
-A revert-to-red is probabilistic for a widened window, so the control is the before table above plus the serial-impl argument: the value never changes which implementations pass, only how long a failing one takes. Both (g) and (h2) reproduced their old failure rate at the old values in the same session, on the same machine, and stopped failing at the new values.
+Both scripts kill their burners on every exit path and the control restores the file with `git checkout --`.
 
 ## Not touched
 
-The lock-acquire poll at line 209 (10 x 0.5s) and the post-SIGTERM settle at line 571 (`sleep 0.5`) have the same shape and have not flaked. Left alone.
+The lock-acquire poll at line 209 (10 x 0.5s) and the post-SIGTERM settle at line 576 (`sleep 0.5`) have the same shape and have not flaked.
