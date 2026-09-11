@@ -113,6 +113,71 @@ OUT="$(scan "$R2" --detectors 2)"
 has "$OUT" "unique-drop.md" && R=1 || R=0
 assert "a freshly touched drop drops out of the item set" $R
 
+# A staging entry a tracked file names is somebody's deliberate home, not a drop awaiting
+# triage. Three of five findings in the first family-office sweep turned on this.
+echo "-- detector 2: the reference check --"
+R2B="$(mkrepo)"
+mkdir -p "$R2B/_inbox" "$R2B/docs" "$R2B/ops"
+echo "r" > "$R2B/README.md"
+# Cited by full path, the shape that keeps third-party phone numbers out of a tracked tree.
+printf 'Numbers stay in `_inbox/shop-list.md`; they do not belong in the tracked tree.\n' \
+  > "$R2B/ops/mobility-aid.md"
+# Cited by bare basename, the shape an ingest record uses to point at a rename map.
+printf 'The map at rename-applied.tsv proves this source path.\n' > "$R2B/docs/dedupe.md"
+git -C "$R2B" add -A; commit_at "$R2B" "2024-01-02T00:00:00" "docs: seed"
+echo "shops" > "$R2B/_inbox/shop-list.md"
+echo "old,new" > "$R2B/_inbox/rename-applied.tsv"
+echo "nobody wants me" > "$R2B/_inbox/orphan-drop.md"
+touch -t 202401020000 "$R2B/_inbox/shop-list.md" "$R2B/_inbox/rename-applied.tsv" \
+  "$R2B/_inbox/orphan-drop.md"
+OUT="$(scan "$R2B" --detectors 2)"
+has "$OUT" "shop-list.md" && R=1 || R=0
+assert "an entry cited by full path is not flagged" $R "-- got: $OUT"
+has "$OUT" "rename-applied.tsv" && R=1 || R=0
+assert "an entry cited by bare basename is not flagged" $R "-- got: $OUT"
+has "$OUT" "orphan-drop.md" && R=0 || R=1
+assert "an uncited entry of the same age is still flagged" $R "-- got: $OUT"
+
+# Negative control: drop the citations and all three must come back. Without this, a check
+# that suppressed EVERY entry would pass the three assertions above.
+rm "$R2B/ops/mobility-aid.md" "$R2B/docs/dedupe.md"
+git -C "$R2B" add -A; commit_at "$R2B" "2024-01-03T00:00:00" "docs: drop the citers"
+OUT="$(scan "$R2B" --detectors 2)"
+has "$OUT" "shop-list.md" && R=0 || R=1
+assert "negative control: uncited, the path-cited entry is flagged again" $R "-- got: $OUT"
+has "$OUT" "rename-applied.tsv" && R=0 || R=1
+assert "negative control: uncited, the basename-cited entry is flagged again" $R "-- got: $OUT"
+
+# A citation from INSIDE the staging dir must not count, or any drop with a sibling README
+# naming it would silently suppress itself.
+R2C="$(mkrepo)"
+mkdir -p "$R2C/_inbox"
+echo "r" > "$R2C/README.md"
+git -C "$R2C" add -A; commit_at "$R2C" "2024-01-02T00:00:00" "docs: seed"
+printf 'This zone holds self-cited.md\n' > "$R2C/_inbox/notes.md"
+echo "body" > "$R2C/_inbox/self-cited.md"
+touch -t 202401020000 "$R2C/_inbox/notes.md" "$R2C/_inbox/self-cited.md"
+OUT="$(scan "$R2C" --detectors 2)"
+has "$OUT" "self-cited.md" && R=0 || R=1
+assert "a citation from inside the staging dir does not suppress the finding" $R "-- got: $OUT"
+
+# An OS artifact is not a drop anybody made; it was the only finding one repo produced.
+R2D="$(mkrepo)"
+mkdir -p "$R2D/_inbox"
+echo "r" > "$R2D/README.md"
+git -C "$R2D" add -A; commit_at "$R2D" "2024-01-02T00:00:00" "docs: seed"
+printf '\0\0' > "$R2D/_inbox/.DS_Store"
+echo "thumbs" > "$R2D/_inbox/Thumbs.db"
+echo "real" > "$R2D/_inbox/real-drop.md"
+touch -t 202401020000 "$R2D/_inbox/.DS_Store" "$R2D/_inbox/Thumbs.db" "$R2D/_inbox/real-drop.md"
+OUT="$(scan "$R2D" --detectors 2)"
+has "$OUT" ".DS_Store" && R=1 || R=0
+assert "a .DS_Store is never a finding" $R "-- got: $OUT"
+has "$OUT" "Thumbs.db" && R=1 || R=0
+assert "a Thumbs.db is never a finding" $R "-- got: $OUT"
+has "$OUT" "real-drop.md" && R=0 || R=1
+assert "negative control: a real drop beside the junk is still flagged" $R "-- got: $OUT"
+
 # ---------------------------------------------------------------- detector 3
 echo "-- detector 3: record parked in a control surface --"
 R3="$(mkrepo)"

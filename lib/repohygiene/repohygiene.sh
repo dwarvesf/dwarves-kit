@@ -182,7 +182,7 @@ detect_unreferenced() {
 # A staging entry older than the threshold. Staging dirs are usually gitignored, so age comes
 # from the filesystem, not from git, and a duplicate is proven by content hash, not by name.
 detect_stale_inbox() {
-  local dirs d entry age base dup dupsha entrysha found tracked
+  local dirs d entry age base dup dupsha entrysha found tracked esc refs
   dirs="${STAGING_DIRS:-_inbox inbox _staging}"
   tracked="$TMP/tracked"
   git -c core.quotePath=false ls-files -z 2>/dev/null > "$tracked"
@@ -192,9 +192,30 @@ detect_stale_inbox() {
     for entry in "$d"/* "$d"/.[!.]*; do
       [ -e "$entry" ] || continue
       base=$(basename "$entry")
-      case "$base" in README.md|.gitignore|.gitkeep) continue ;; esac
+      # The operator's own markers, plus the files an operating system drops on its own. A
+      # .DS_Store is not a drop anybody made and routing it is not a decision anybody owes;
+      # it was the ONLY finding one repo produced in a six-repo sweep.
+      case "$base" in
+        README.md|.gitignore|.gitkeep) continue ;;
+        .DS_Store|.localized|Thumbs.db|desktop.ini) continue ;;
+      esac
       age=$(days_since "$(newest_mtime "$entry")")
       [ "$age" -gt "$INBOX_DAYS" ] || continue
+
+      # A staging entry a tracked file names is somebody's deliberate home, not a drop
+      # awaiting triage. Detector 1 proves nothing references a tracked file before it
+      # flags one; this is that same proof for staging, which detector 2 skipped. Three of
+      # five findings in the first family-office sweep turned on it: a note a tracked doc
+      # names as the home for phone numbers it keeps OUT of the tracked tree, a rename map
+      # cited as evidence in an ingest record, and a bot's landing zone whose drain job is
+      # documented. Acting on the first would have stripped a deliberate privacy split.
+      #
+      # The whole staging dir is excluded so an entry can never cite itself, and the
+      # basename carries the path too, so one grep covers both `_inbox/x.md` and a bare
+      # `x.md`. Per-candidate, like detector 1, because the grep IS the evidence.
+      esc=$(re_escape "$base")
+      refs=$(git grep -I -n -E "(^|[^A-Za-z0-9_-])$esc" -- ":(exclude)$d" 2>/dev/null | wc -l | tr -d ' ')
+      [ "$refs" = "0" ] || continue
 
       found=""
       if [ -f "$entry" ]; then

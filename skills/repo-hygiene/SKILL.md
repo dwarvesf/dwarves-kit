@@ -40,10 +40,21 @@ the ask is "my disk is full", it is the wrong loop.
 | # | Name | What it flags | Threshold | Evidence format |
 |---|---|---|---|---|
 | 1 | `unreferenced-doc` | a tracked non-code file that no other tracked file references | last touched more than `--stale-days` ago (default 180) | the exact `git grep -I -n -E '(^\|[^A-Za-z0-9_-])<basename>' -- ':(exclude)<path>'` and its `0 hits outside itself`, plus the last-touch date and age |
-| 2 | `stale-inbox` | an entry directly under a staging dir (`_inbox`, `inbox`, `_staging`) | mtime older than `--inbox-days` (default 30) | the age in days against the threshold, plus `duplicate-of <path> (identical sha256 <first12>)` when a content-identical copy exists elsewhere in the repo |
+| 2 | `stale-inbox` | an entry directly under a staging dir (`_inbox`, `inbox`, `_staging`) that no tracked file names, and that is not an OS artifact | mtime older than `--inbox-days` (default 30) | the age in days against the threshold, plus `duplicate-of <path> (identical sha256 <first12>)` when a content-identical copy exists elsewhere in the repo |
 | 3 | `misplaced-record` | a record in a central control directory (`_meta`, `docs/research`, `docs/briefs`) whose owner is one tool or experiment, and a closed mega-goal still parked in the control surface | owner accounts for at least half the commits touching the file; a mega-goal folder must also be closed by its own record (see below) | the owner, the count of owning commits out of the file's total, the latest commit subject, and the destination path it should co-locate to; for a mega-goal, the `file:line` of its status marker and its checked-against-open counts |
 | 4 | `log-budget` | an append-only log past the line budget the repo's own docs state | the repo's documented numbers, never the scanner's | total lines against the threshold, the busiest `YYYY-MM` against the per-month threshold, and the `file:line` of the sentence that states them, quoted |
 | 5 | `cold-ignored-dir` | a gitignored directory that is large and cold | size at or above `--cold-mb` (default 100) with no file newer than `--cold-days` (default 90) | the size in MB and the fact that no file is newer than the threshold, tagged `REPORT ONLY, gitignored, never a deletion proposal` |
+
+Detector 2 runs detector 1's reference grep before it flags anything. A staging entry a
+tracked file names is somebody's deliberate home, not a drop awaiting triage, and age alone
+never distinguished the two. The first family-office sweep ran three of five false positive on
+exactly this: a note a tracked doc names as the home for third-party phone numbers it keeps OUT
+of the tracked tree, a rename map cited as evidence in an ingest record, and a bot's landing
+zone whose nightly drain job is documented. Acting on the first would have stripped a
+deliberate privacy split. The grep excludes the whole staging dir, so a drop can never cite
+itself, and the basename carries the path, so one pass covers `_inbox/x.md` and a bare `x.md`
+alike. An OS artifact (`.DS_Store`, `Thumbs.db`, `desktop.ini`, `.localized`) is skipped
+outright: nobody dropped it and routing it is not a decision anybody owes.
 
 Detector 3 resolves the owner from the CONVENTIONAL-COMMIT SCOPE of the commits that touched
 the file, not from the file's contents. Content was tried first and is too noisy: a research
