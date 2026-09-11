@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/board -- STABLE consumer entrypoint for the board subsystem (SPEC-184).
+# bin/board -- STABLE consumer entrypoint for the board subsystem.
 #
 # This is the durable fix for the board-shim class of bug: a consumer (an adopted
 # repo's `_meta/board` / `board-all` shim) references THIS stable path, never a deep

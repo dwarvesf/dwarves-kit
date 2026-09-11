@@ -15,8 +15,8 @@ is no path through this skill that mutates anything.**
 
 Never re-derive a ledger reading by grepping `~/.local/state/dwarves-kit/logs/` or
 `tide`'s sqlite or `tg-cleanup`'s json yourself , that is a second, divergent data
-source and breaks the whole point of the lens (SG-02 already reuses `lane-telemetry`
-for the kit read; re-implementing it here would drift). Always go through `stats`.
+source and breaks the whole point of the lens (the understanding-gate work already reuses
+`lane-telemetry` for the kit read; re-implementing it here would drift). Always go through `stats`.
 
 ## Which command answers which question
 
@@ -73,13 +73,13 @@ uv run stats anomalies --propose
 ```
 
 If the db has never been built on this host, `stats render` (like `show`/`query`)
-lazy-rebuilds from the source files first (SG-02 behavior, unchanged here); no extra
+lazy-rebuilds from the source files first (existing lane-telemetry behavior, unchanged here); no extra
 step needed.
 
 ## Install
 
 This skill's canonical source is this file (`skills/stats/SKILL.md`; relocated
-from `lib/stats/skill/` per ADR-0034 decision 8 -- at the old subsystem-internal
+from `lib/stats/skill/` -- at the old subsystem-internal
 path it never installed, because `install.sh` globs `skills/*/SKILL.md` only).
 It now installs automatically on both install paths (bash installer + plugin),
 same as `get-api-docs` and `skill-review`. No symlink step needed; edit the
@@ -94,7 +94,7 @@ in-repo file.
   show` directly; this skill is the rendered-answer path, not a SQL console.
 - Filing a board row directly , `stats anomalies --propose` only STAGES a candidate;
   promoting it to `_meta/BACKLOG.md` still goes through the existing `board promote`
-  human gate (ex `add-backlog`, ADR-0034), same as any other cc-backlog candidate.
+  human gate (ex `add-backlog`), same as any other cc-backlog candidate.
 - A persistent dashboard or TUI , there isn't one; every render (or anomaly check) is
   one on-demand query, driven by the agent, per the ROADMAP's binding "consumer is the
   agent on-demand, not a human TUI" decision.

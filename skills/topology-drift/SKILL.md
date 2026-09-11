@@ -15,7 +15,7 @@ codebase you want documented), use `/kit:feature-map` instead -- see
 
 ## Overview
 
-Audit the live feature estate (every command, agent, skill, hook) against the workflow path map and ship fixes as a PR. This is the feature-inventory instance of `docs/patterns/audit-loop.md`: the generated registry `docs/FEATURES.md` (SPEC-219) is the machine truth; `docs/workflow-paths.md` section 5 is the hand-derived path index that drifts when features land or leave. Tier 1 is pure shell; Tier 2 spends model time only on the delta.
+Audit the live feature estate (every command, agent, skill, hook) against the workflow path map and ship fixes as a PR. This is the feature-inventory instance of `docs/patterns/audit-loop.md`: the generated registry `docs/FEATURES.md` is the machine truth; `docs/workflow-paths.md` section 5 is the hand-derived path index that drifts when features land or leave. Tier 1 is pure shell; Tier 2 spends model time only on the delta.
 
 ## The four slots (per the audit-loop pattern)
 

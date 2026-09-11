@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# bin/prose-rag -- STABLE consumer entrypoint (SPEC-184), an ADAPTER since SPEC-250.
+# bin/prose-rag -- STABLE consumer entrypoint, an ADAPTER over the context-kit engine.
 # context-kit owns the engine; `cargo install --path src/prose-rag` in a context-kit
 # checkout puts the binary on PATH. This shim only RESOLVES it, in the order
 # `config seams` reports for the PROSE_RAG_BIN row: $PROSE_RAG_BIN (a regular
 # executable file), then `prose-rag` on PATH. It never builds and never looks
 # under lib/.
 # `hook` with no engine exits 0: a recall hook must never break a prompt.
-# The lookup itself is `lib/prose-rag/resolve.sh` (SPEC-251), shared with
+# The lookup itself is `lib/prose-rag/resolve.sh`, shared with
 # `config seams` so the two readers cannot drift.
 set -euo pipefail
 

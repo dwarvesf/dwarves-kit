@@ -1,12 +1,12 @@
 #!/bin/bash
-# release , one semver tag, two channels (ID-437).
+# release , one semver tag, two channels.
 #
 #   bin/release <X.Y.Z> [--stream-push] [--dry-run]
 #
 # Channel 1 (public, free core): bumps VERSION + .claude-plugin/plugin.json,
 # rolls CHANGELOG's [Unreleased] into [X.Y.Z], commits and tags LOCALLY.
 # Pushing the tag and cutting the GitHub Release stay HUMAN steps (printed at
-# the end) , releases are outward-facing (ID-295 rule).
+# the end) , releases are outward-facing.
 #
 # Channel 2 (paid stream): tars the stream/ payload (packs, maintained ladders,
 # Insights when they exist; CHANGELOG + tiers doc always), computes sha256, and
@@ -47,7 +47,7 @@ python3 - "$VER" <<'PY'
 import json, re, sys
 v = sys.argv[1]
 
-# Three version surfaces must move together (SPEC-115): plugin.json, VERSION,
+# Three version surfaces must move together: plugin.json, VERSION,
 # tool.toml. The 1.7.0 cut missed tool.toml and drifted; tests/test-meta.sh
 # now pins all three, so a missed surface fails CI instead of drifting silently.
 p = ".claude-plugin/plugin.json"
@@ -61,8 +61,8 @@ open("tool.toml", "w").write(t)
 print(f"  plugin.json + VERSION + tool.toml -> {v}")
 PY
 # roll [Unreleased] into the new section; skeleton from git log if it was empty.
-# Targets docs/CHANGELOG.md, the full-history file (SPEC-185 made the root
-# CHANGELOG.md a thin stub that this script must never touch).
+# Targets docs/CHANGELOG.md, the full-history file (the root CHANGELOG.md is a
+# thin stub that this script must never touch).
 python3 - "$VER" <<'PY'
 import re, subprocess, sys, datetime
 v, today = sys.argv[1], datetime.date.today().isoformat()
@@ -138,7 +138,7 @@ fi
 # (VERSION/plugin.json/tool.toml moved, no v2.1.0 tag ever reached origin), so
 # it is the one line that must not scroll off before someone reads it.
 cat <<EOF
-== human steps (outward-facing, per ID-295) ==
+== human steps (outward-facing) ==
   gh release create v$VER --title "v$VER" --notes-file <(changelog section)
   claude plugin marketplace update      # propagates the free core
   git push origin master --tags
