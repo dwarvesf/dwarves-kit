@@ -133,7 +133,7 @@ def _ledger_dt(prev_ts, ts):
 
 def expected_plan(lane, kit_root=None):
     """The lane's ordered expected phases [(phase, level)] from the kit's own
-    WORKFLOW matrix via `gate-ledger.sh plan <lane>` (SPEC-063). Returns [] when
+    WORKFLOW matrix via `gate-ledger.sh plan <lane>`. Returns [] when
     no kit is reachable, so standalone use degrades to no-ghost replay."""
     import os
     import re

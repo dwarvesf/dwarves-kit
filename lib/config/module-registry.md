@@ -1,4 +1,4 @@
-# lib/config/module-registry.md , module<->stage + env<->key registry (SPEC-198)
+# lib/config/module-registry.md , module<->stage + env<->key registry
 
 Machine home pinned by ADR-0034 decision 3 (stage names renamed by the 2026-07-18 amendment,
 leg -> stage): ONE checked-in file carrying both the
@@ -40,7 +40,7 @@ it is not a row here either , the completeness rule is scoped to
 | stats | Watch (Observe) | |
 | quiz_gate | Build (Execute) | |
 | weekend_batch | Reflect (Learn) | |
-| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port (ID-290). FIRST SLICE LANDED (`lib/sync/cockpit.py`, `board mirror --engine sync --dry-run`): the deterministic multi-source EXTRACT + keyed `row_hash` git-wins diff, carrying over the reachable-state map {triage, ready, blocked, done}. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
+| sync | Shape (Specify) | spanner: spoke intake -> board rows (Shape input side) + outward mirror to Reminders/Notion/Hermes (Watch, presentation). Engine lib/sync/, verb `board sync`, per-repo `[sync]` config. ABSORBED `bridge` 2026-07-16 (same engine surface, zero live consumers at fold time: no `bridge=on` rows, no snapshot, module off): the SPEC-147 cockpit mirror + SPEC-149 writeback become a sync EDGE in the SPEC-002 P2 port. FIRST SLICE LANDED (`lib/sync/cockpit.py`, `board mirror --engine sync --dry-run`): the deterministic multi-source EXTRACT + keyed `row_hash` git-wins diff, carrying over the reachable-state map {triage, ready, blocked, done}. The legacy `mirror`/`status`/`writeback` verbs + lib/board/board-mirror.sh + board-writeback.sh stay the DEFAULT and runnable, serving the still-deferred live LOAD leg, two-way writeback, snapshot migration, and eventual verb-retirement. |
 | worktree | Build (Execute) | |
 | money_gate | Check (Govern) | |
 | classify | Shape (Specify) | not a `KIT_KNOWN_MODULES` install toggle (it is spine machinery), but ADR-0034 decision 3 assigns it a stage and pins THIS file as the machine home for that table. Added 2026-07-14: the stage was answerable only from ADR prose. |
@@ -93,7 +93,7 @@ real reader consumes it today (all rows below are, except where noted).
 | STATS_TIDE_DB | env-only | **no-default-consumer** | [impl] | stats | ops-toolkit-specific: path to tide's sqlite state db. Unset -> `config.tide_db_path()` returns `None` -> that source's table renders empty, skip-safe (no hardcoded fallback path). |
 | STATS_TGCLEANUP_DIR | env-only | **no-default-consumer** | [impl] | stats | ops-toolkit-specific: root of the tg-cleanup tool's data. Unset -> `None` -> that source is skipped. |
 | STATS_LEARNED_MD | env-only | **no-default-consumer** | [impl] | stats | ops-toolkit-specific: path to the learned-ledger markdown file. Unset -> `None` -> that source is skipped. |
-| STATS_REPOS | env-only | **no-default-consumer** | [impl] | stats | Comma-separated repo ROOTs for `rejected_findings` / `stats review-yield` (SPEC-137). Unset -> `""` splits to `[]`, zero repos scanned. |
+| STATS_REPOS | env-only | **no-default-consumer** | [impl] | stats | Comma-separated repo ROOTs for `rejected_findings` / `stats review-yield`. Unset -> `""` splits to `[]`, zero repos scanned. |
 | STATS_GIT_REPO_DIR | env-only | (kit repo root) | [impl] | stats | Where `stats` looks for its own git history; kit-internal, computed dynamically, never hardcoded. |
 | STATS_MEMORY_REPO_DIR | env-only | (kit repo root) | [impl] | stats | Where `stats` looks for memory-lens data; kit-internal, computed dynamically. |
 | STATS_SESSIONS_DIR | env-only | `~/.claude/projects` | [impl] | stats | Claude Code's own session-transcript dir; host-generic. |
@@ -110,12 +110,12 @@ real reader consumes it today (all rows below are, except where noted).
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
 | WAVE_CAP | mega.wave_cap | `2` | [impl] | mega | Max concurrent sub-goals admitted per wave. |
-| TIER4_CLOSE | mega.tier4_close | `true` | [impl] | mega | Enables the Tier-4 mega-close auto-verify+hold sequence (SPEC-118). |
-| MULTIPLEXER | mega.multiplexer | `0` (off) | [impl] | mega | Opt-in wave pane multiplexing (SPEC-119); only engages when a wave actually admits >=1 sub-goal concurrently. |
+| TIER4_CLOSE | mega.tier4_close | `true` | [impl] | mega | Enables the Tier-4 mega-close auto-verify+hold sequence. |
+| MULTIPLEXER | mega.multiplexer | `0` (off) | [impl] | mega | Opt-in wave pane multiplexing; only engages when a wave actually admits >=1 sub-goal concurrently. |
 | MEGA_MERGE_POSTURE | mega.mega_merge_posture | `"auto-to-final"` | [impl] | mega | `"auto-to-final"` or `"per-pr-review"` merge posture. |
 | - | mega.merge_autonomy | `"gated-final"` | [design] | mega | `"gated-final"` or `"full-auto"`; no env override found. |
 | - | mega.default_model | `"sonnet"` | [design] | mega | GLOBAL model fallback; real control is the per-sub-goal goal-file `Model:` field. Precedence: goal-file `Model:` > project cfg > this default. |
-| - | mega.over_test | `false` | [design] | mega | GLOBAL scaffold-rigor default; real control is per-sub-goal `Done-mode: over-test` (SPEC-112). |
+| - | mega.over_test | `false` | [design] | mega | GLOBAL scaffold-rigor default; real control is per-sub-goal `Done-mode: over-test`. |
 | MEGAGOALS_ROOT | env-only | (none) | [impl] | mega | Root dir where mega-goal folders live; unset falls through to further path resolution in `lib/mega/mega.sh`. |
 | MEGA_MERGE_PR_INFO_CMD | env-only | (none) | [impl] | mega | Override the command used to fetch PR info at merge time; called directly when set. |
 | MEGA_MERGE_GATE_LEDGER | env-only | `$LIB_ROOT/gate/gate-ledger.sh` | [impl] | mega | Which `gate-ledger.sh` `mega-merge.sh` shells out to. |
@@ -125,7 +125,7 @@ real reader consumes it today (all rows below are, except where noted).
 | DWARVES_KIT_SKIP_DOC_PROJECTION | env-only | `0` | [impl] | gate | `1` skips the ship-gate's doc-projection check for a repo that has neither projection file; an escape hatch, never a default. |
 | MEGA_MERGE_GH | env-only | `gh` | [impl] | mega | Override the `gh` binary/wrapper used for PR ops at merge. |
 | BACKLOG_LIB | env-only | `$LIB_ROOT/board/backlog.sh` | [impl] | mega | Which `backlog.sh` `orchestrate.sh` shells out to for wave admission reads. |
-| PANE_VIEWER | env-only | `auto` | [impl] | mega | Which terminal-viewer surface to push-open on wave spawn (SPEC-119). |
+| PANE_VIEWER | env-only | `auto` | [impl] | mega | Which terminal-viewer surface to push-open on wave spawn. |
 | TMUX_CMD | env-only | `tmux` | [impl] | mega | Override the tmux binary `orchestrate.sh` drives for wave panes. |
 | TMUX_SESSION | env-only | (none) | [impl] | mega | Override the tmux session name for a mega run; unset falls to `_mux_session_name` derivation. |
 | TIER4_CORPUS | env-only | `""` (empty) | [impl] | mega | Override the corpus path used by Tier-4 close checks. |
@@ -152,15 +152,15 @@ real reader consumes it today (all rows below are, except where noted).
 | QUEUE_ALLOWED_POINTER_GLOB | env-only | `_meta/megagoals/* .claude/goals/*` | [impl] | queue | Glob allowlist for pointer files the queue may submit. |
 | QUEUE_GOAL_CHAR_LIMIT | env-only | `4000` | [impl] | queue | `/goal` char ceiling; an over-budget pointer fails fast before a window opens. |
 | QUEUE_WAIT_POLL_SECS | env-only | `5` | [impl] | queue | Poll interval (seconds) for the `queue wait` verb. |
-| QUEUE_BEAT_STALE_SECS | env-only | `600` | [impl] | queue | Beat age past which the conductor is presumed gone (SPEC-221). |
-| QUEUE_BEAT_DEAD_SECS | env-only | `3600` | [impl] | queue | Beat age past which the reaper writes a verdict (SPEC-221). |
+| QUEUE_BEAT_STALE_SECS | env-only | `600` | [impl] | queue | Beat age past which the conductor is presumed gone. |
+| QUEUE_BEAT_DEAD_SECS | env-only | `3600` | [impl] | queue | Beat age past which the reaper writes a verdict. |
 | QUEUE_MAX_STALLS | env-only | `3` | [impl] | queue | Stalls before a slug is quarantined (empty retry_after). |
 | QUEUE_COOLDOWN_SECS | env-only | `1800` | [impl] | queue | Breaker cooldown before an `error` row is re-picked. |
 | QUEUE_NOPROGRESS_TRIP | env-only | `3` | [impl] | queue | Consecutive no-progress runs that trip the breaker. |
 | QUEUE_SAMEERROR_TRIP | env-only | `5` | [impl] | queue | Consecutive `error` runs that trip the breaker. |
 | QUEUE_RETRY_JITTER_MIN | env-only | `5` | [impl] | queue | Floor (minutes) of the jittered retry window after a stall. |
 | QUEUE_RETRY_JITTER_SPAN | env-only | `11` | [impl] | queue | Span (minutes) of the jittered retry window after a stall. |
-| QUEUE_PR_READY | env-only | `0` | [impl] | queue | `1` opens a normal PR; `0` keeps the unattended draft-PR default (SPEC-224). |
+| QUEUE_PR_READY | env-only | `0` | [impl] | queue | `1` opens a normal PR; `0` keeps the unattended draft-PR default. |
 | QUEUE_MAX_TOOL_CALLS | env-only | `0` | [impl] | queue | Per-row ceiling on the run's self-reported TOOL_CALLS (`0` = off). |
 | QUEUE_MAX_TOTAL_TOOL_CALLS | env-only | `0` | [impl] | queue | Queue-wide TOOL_CALLS ceiling across rows this run (`0` = off). |
 | QUEUE_SANITIZE_PROMPT | env-only | `0` | [impl] | queue | `1` treats the pointer body as untrusted (SPEC-223 XPIA pass); implied by `--from-boards`. |
@@ -184,7 +184,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica,notion-taskboard`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). `notion-taskboard` is a one-way, insert-only push (SPEC-003), not part of the two-way mesh. `notion-taskboard-pull` is the opposite posture, a read-only intake FROM a foreign board (SPEC-004); it runs alone and the engine refuses an invocation that lists it beside any other app. |
+| - | sync.apps | `""` (sync off) | [impl] | sync | Comma list of apps to sync to (`reminders,notion,hermes,multica,notion-taskboard`); the plugin mechanism. Legacy aliases `surfaces` and `sources` still read as fallbacks (renamed 2026-07-16 for plain vocabulary; `sources` also collided with SPEC-002's board-side inputs). `notion-taskboard` is a one-way, insert-only push, not part of the two-way mesh. `notion-taskboard-pull` is the opposite posture, a read-only intake FROM a foreign board; it runs alone and the engine refuses an invocation that lists it beside any other app. |
 | - | sync.mode | `"manual"` | [impl] | sync | `manual` (default) or `cron`. Read by `lib/sync/deploy/macos/install` (kit ID-289): a repo must set `mode = "cron"` before that installer will render or load a per-repo scheduled-sync LaunchAgent; any other value is a clean refusal, not a silent fallthrough. Not read by `board.sh cmd_sync` itself -- manual `board sync` runs are unaffected by this key. ALSO re-read live by the installed `board-sync-cron` launcher on every scheduled run: flipping `mode` back to `"manual"` after install makes the next scheduled run skip cleanly (exit 0, logged) rather than silently keep syncing against a config that says it shouldn't. |
 | - | sync.interval_secs | `3600` | [impl] | sync | Cron LaunchAgent `StartInterval` seconds, read by `lib/sync/deploy/macos/install` as the default cadence for `mode = "cron"`; `--interval-secs N` overrides it for one install run. |
 | - | sync.reminders_list | `"Backlog"` | [impl] | sync | Apple Reminders list name. |
@@ -208,7 +208,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.multica_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to appear on multica. |
 | - | sync.multica_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags never appears on multica. |
 | - | sync.multica_intake | `""` (all) | [impl] | sync | Up-filter for foreign multica items: `all`, `tagged:<tag>`, or `none`. |
-| - | sync.notion_taskboard_db | `""` | [impl] | sync | Target Notion database id for the one-way insert-only Task Board push (SPEC-003). Tenant id: lives in the consumer repo's `.kit.toml`, never here. Required when `notion-taskboard` is in `apps`. |
+| - | sync.notion_taskboard_db | `""` | [impl] | sync | Target Notion database id for the one-way insert-only Task Board push. Tenant id: lives in the consumer repo's `.kit.toml`, never here. Required when `notion-taskboard` is in `apps`. |
 | - | sync.notion_taskboard_status_map | `""` | [impl] | sync | `board-state=OptionName` comma map to the team board's OWN Status options, e.g. `queued=Backlog,executing=In progress,parked=Waiting,shipped=Done`. `dropped` is skipped by default (never pushed). |
 | - | sync.notion_taskboard_status_default | `""` | [impl] | sync | Status option for board states absent from the map (e.g. claimed/speccing/validated); without it, an unmapped state is a hard, guided error rather than a guess. |
 | - | sync.notion_taskboard_priority_map | `""` | [impl] | sync | `tag=Option` map for Priority, e.g. `u-hi=P0,u-mid=P1,u-lo=P2` (derived from a row's `#u-*` tag). |
@@ -218,7 +218,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | - | sync.notion_taskboard_types | `""` | [impl] | sync | JSON overriding the target prop TYPES `{status,priority,weight,owner}` (defaults status/select/number/people). |
 | - | sync.notion_taskboard_only_tags | `""` | [impl] | sync | Down-filter: a row must carry one of these tags to be pushed to the Task Board. |
 | - | sync.notion_taskboard_skip_tags | `""` | [impl] | sync | Down-filter: a row carrying any of these tags is never pushed to the Task Board. |
-| - | sync.notion_taskboard_pull_db | `""` | [impl] | sync | Source Notion database id for the read-only Task Board intake (SPEC-004). Tenant id: consumer repo only. The engine refuses the run if this equals `notion_db` or `notion_taskboard_db`, because those apps write. |
+| - | sync.notion_taskboard_pull_db | `""` | [impl] | sync | Source Notion database id for the read-only Task Board intake. Tenant id: consumer repo only. The engine refuses the run if this equals `notion_db` or `notion_taskboard_db`, because those apps write. |
 | - | sync.notion_taskboard_pull_props | `""` | [impl] | sync | JSON overriding the source prop NAMES `{title,status,notes,queue}` (defaults Task/Status/Notes/Agent Queue). |
 | - | sync.notion_taskboard_pull_done_option | `""` (Done) | [impl] | sync | Status option treated as done and therefore never pulled. |
 
@@ -235,6 +235,8 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 | SKILL_CURATOR_CURATOR_CMD | env-only | (real `claude -p`) | [impl] | session | Override the curator's model-invocation command (test injection point). |
 | SKILL_CURATOR_REVIEWER_CMD | env-only | (real `claude -p`) | [impl] | session | Override the async reviewer's model-invocation command. |
 | DWARVES_KIT_SESSION_MARKER | env-only | `/tmp/.dwarves-kit-session-start` | [impl] | session | Path of the session-start marker file. |
+| KIT_CTX_WARN | env-only | `200000` | [impl] | session | Live-context token budget the context-budget hook warns at (SPEC-255). |
+| KIT_CTX_STEP | env-only | `100000` | [impl] | session | Band width above the budget; the context-budget hook warns once per band (SPEC-255). |
 | SESSION_AUDIT_CMD | env-only | `claude -p --model <M> --allowedTools Bash,Read,Grep,Glob --output-format json` | [impl] | session | Agent runtime `session audit run` pipes its rendered prompt to; tests inject fixtures here. |
 | SESSION_AUDIT_DATE | env-only | (today) | [impl] | session | Report-date override (YYYY-MM-DD) for deterministic tests. |
 
@@ -242,7 +244,7 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 
 | Env var | kit.toml key | Default | Status | Module | Doc |
 |---|---|---|---|---|---|
-| - | gate.understanding_gate | `true` | [impl] | gate | `hooks/anti-rationalization.sh` (ADR-0031). Always-on today; no env override exists , exposing an on/off toggle is new work. |
+| - | gate.understanding_gate | `true` | [impl] | gate | `hooks/anti-rationalization.sh`. Always-on today; no env override exists , exposing an on/off toggle is new work. |
 | DWARVES_KIT_PRINT_CDDIR | env-only | `0` | [impl] | gate | Debug: print the resolved cwd/repo-root and exit. |
 | KIT_ROOT | env-only | `$SCRIPT_ROOT` | [impl] | gate | Mixed usage: most files compute this internally from `BASH_SOURCE`, not the environment; `lib/gate/proof-table-gen.sh` alone treats it as an operator-settable override, defaulting to `$SCRIPT_ROOT`. |
 
@@ -276,7 +278,7 @@ never turns the step off.
 | - | ship.confirm_bump | `"major"` | [impl] | (none) | `commands/ship.md` step 4. Which version bumps still need a yes: `"major"` (default, the breaking bump alone, because it is a semver promise to consumers), `"always"`, or `"never"`. A minor or patch bump applies and is reported. |
 | - | ship.create_changelog | `true` | [impl] | (none) | `commands/ship.md` step 5. `true` creates the changelog file when none exists; `false` offers and skips on a decline. |
 | - | debug.confirm_fix | `false` | [impl] | (none) | `commands/debug.md` Phase 4 step 5. `false` declares the fix done once the phase's own three conditions hold (the new test passes, no other test broke, the symptom is gone) and reports the evidence; `true` holds the verdict for a human yes. A fix missing any of the three is never declared fixed at either setting. |
-| - | review.apply_findings | `true` | [impl] | (none) | `commands/review-team.md` step 5. `true` applies the `gated_auto` findings that `responding-to-review` VERIFIED, via `fix-agent`, leaving the PR as the review surface; `false` proposes them for the operator to apply. A finding that agent pushed back on is never applied at either setting; `manual` and `advisory` findings never route here (SPEC-078). |
+| - | review.apply_findings | `true` | [impl] | (none) | `commands/review-team.md` step 5. `true` applies the `gated_auto` findings that `responding-to-review` VERIFIED, via `fix-agent`, leaving the PR as the review surface; `false` proposes them for the operator to apply. A finding that agent pushed back on is never applied at either setting; `manual` and `advisory` findings never route here. |
 
 ### wrap (`/kit:wrap` landing-step config, no install module)
 
@@ -289,7 +291,7 @@ never turns the step off.
 | - | wrap.tidy_worktrees | `true` | [impl] | wrap | Step 5 autonomy. `true` passes `--worktrees` to `wrap apply`, removing clean secondary worktrees and freeing the branches they hold; `false` leaves them and reports them under `Left alone`. Resolved with `kit_config_get_root`, same fence and reason as the row above. Neither setting touches a dirty, detached, or checked-out worktree; `apply` refuses those on its own. |
 | - | wrap.build_candidates | `true` | [impl] | wrap | Step 7b autonomy. `true` wires a precedent hit into the tool it named and builds a clear-shaped miss, each committed in its home repo; `false` stages every candidate as a row in `_meta/backlog-staging.md`. Resolved with `kit_config_get_root`, same fence and reason as the two rows above. A candidate whose scope is a judgment with differing irreversible outcomes stages at either setting. |
 | - | wrap.drain_staged | `false` | [impl] | wrap | Step 7b tail. `true` hands this session's own staged rows to `queue run` after the report; `false` reports each row and its home and stops. The only `[wrap]` knob whose default does not act: `queue run` drives a real interactive claude in a tmux window under `QUEUE_CLAUDE_FLAGS` (default `--dangerously-skip-permissions`) for up to `QUEUE_TIMEOUT_SECS` per row, so `true` means the words "wrap up" start an unattended run. Scoped to a session-authored tsv passed with `--sanitize-prompt`, never `--from-boards` (which reads the whole board queue and would run untouched rows). A staged row without a goal pointer is skipped with its reason, because `wrap stage` writes prose and `queue run` needs `slug<TAB>repo<TAB>pointer`. Resolved with `kit_config_get_root`, same fence as the knobs above and for a stronger reason: this one starts an unattended agent. |
-| KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` (TASK-002) is the first consumer. |
+| KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` is the first consumer. |
 
 ### knowledge (context tree root, no install module)
 

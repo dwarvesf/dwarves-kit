@@ -153,7 +153,9 @@ def iter_entries(path):
 
 def blocks(entry):
     """Content blocks of a user/assistant entry, or empty."""
-    msg = entry.get("message") or {}
+    msg = entry.get("message")
+    if not isinstance(msg, dict):
+        return []  # e.g. message: "oops" (untrusted transcript)
     c = msg.get("content")
     return c if isinstance(c, list) else []
 
@@ -244,7 +246,11 @@ def collect(args):
                     f_first = ts
                 f_last = ts
             # token economy: the usage block rides on assistant messages.
-            msg = entry.get("message") or {}
+            # message/usage are untrusted transcript fields (e.g. message: "oops");
+            # a non-dict here must not crash the .get() calls below.
+            msg = entry.get("message")
+            if not isinstance(msg, dict):
+                msg = {}
             u = msg.get("usage")
             if isinstance(u, dict):
                 t = tok[msg.get("model") or "?"]
@@ -254,7 +260,7 @@ def collect(args):
                 t[3] += u.get("cache_creation_input_tokens") or 0
             # A prompt turn is a real user message (text), not a tool_result carrier.
             if entry.get("type") == "user" and not side and day:
-                c = (entry.get("message") or {}).get("content")
+                c = msg.get("content")
                 has_text = isinstance(c, str) or any(
                     isinstance(b, dict) and b.get("type") == "text"
                     for b in (c if isinstance(c, list) else [])

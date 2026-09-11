@@ -305,7 +305,7 @@ TIGHTENING (open-fork 3: the defaults are scaffolds, tuned after data accrues).
 
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
-| lens db missing (fresh host) | `materialize`'s existing lazy-rebuild-on-missing (SG-02) | inherited, no new behavior |
+| lens db missing (fresh host) | `materialize`'s existing lazy-rebuild-on-missing | inherited, no new behavior |
 | a threshold set so loose it fires on noise | the false-positive NC (F-nc-noise) goes RED | the NC is the guard; defaults ship with min-sample floors; `--threshold` is the escape hatch |
 | the tool accidentally writes the board | F-proposal-not-autofile (sha256) goes RED | `stage_proposals` opens only the staging path for write; the board is opened read-only for dedup |
 
@@ -317,7 +317,7 @@ TIGHTENING (open-fork 3: the defaults are scaffolds, tuned after data accrues).
 - Auto-filing rows (forbidden by the goal file; propose only).
 - A second data path / re-reading raw ledgers (detect via SG-02 only).
 - True trend/time-series detection (misfire "climbing" is scaffolded as rate-over-threshold).
-- The tool README/no-orphan wiring polish (SG-05).
+- The tool README/no-orphan wiring polish.
 
 ## Decision Log
 

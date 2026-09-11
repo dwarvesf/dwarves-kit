@@ -135,7 +135,7 @@ key has a default, so an unset one aborts the run instead of guessing a host.
 
 A fifth app, `notion-taskboard`, is NOT part of the two-way mesh: it is a
 one-way, **insert-only** push of a repo's board rows to a foreign, team-OWNED
-Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). This push direction (BACKLOG.md rows UP) complements the opposite intake, now served by `notion-taskboard-pull` below (SPEC-004), which absorbs the standalone dfoundation cron that used to pull Task Board rows straight into Hermes. Both apps target the same database by design; they never run in the same invocation, and the engine refuses a run that aims a write-capable app at the pull app's database. The board is the source of truth; the sink is never read for merge and the board
+Notion board (implements ops-toolkit ID-138, design locked 2026-06-16). This push direction (BACKLOG.md rows UP) complements the opposite intake, now served by `notion-taskboard-pull` below, which absorbs the standalone dfoundation cron that used to pull Task Board rows straight into Hermes. Both apps target the same database by design; they never run in the same invocation, and the engine refuses a run that aims a write-capable app at the pull app's database. The board is the source of truth; the sink is never read for merge and the board
 file is never written. Fields are set ONLY on page-create, so a team member's
 later edits on the card are never overwritten. The local sync-state map is the
 identity index (a `bid` already pushed is never re-pushed), because the team
@@ -260,7 +260,7 @@ ids, so the existing bridge snapshot is a format-compatible bearing interface
 for a later cutover. DEFERRED to
 a later slice (still served by the legacy `mirror`/`status`/`writeback` verbs,
 which keep working and print a legacy banner): the live Hermes LOAD leg, two-way
-status writeback (SPEC-149), snapshot state-shape migration, and retiring those
+status writeback, snapshot state-shape migration, and retiring those
 verbs to thin aliases. Design: `docs/specs/SPEC-002-sync-mesh.md` "P2".
 
 ## Tests

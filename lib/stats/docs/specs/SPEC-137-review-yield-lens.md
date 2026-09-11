@@ -27,7 +27,7 @@ read of two unrelated files; there is no query.
 
 1. **New `rejected_findings` table (numbers-only) + a `review-yield` CLI query that regex-extracts
    `findings=`/`rejected=` out of `kit_gates.reason` at query time (CHOSEN).** Matches the exact
-   precedent `gate-yield` (SPEC-131) and `defect-correlation`/`deviation-rate` (SPEC-132/133) set:
+   precedent `gate-yield` and `defect-correlation`/`deviation-rate` (SPEC-132/133) set:
    `kit_gates`'s own parser is never touched (SPEC-131's grammar is a `| GATE | <phase> |
    ran/skipped/override | <reason> |` line; the `review` phase's reason field is free text to
    that parser, and 02's KV grammar lives entirely inside it), a NEW adapter reads a NEW source
@@ -43,7 +43,7 @@ read of two unrelated files; there is no query.
 3. **Wait for a future per-lens emit before building the query.** Rejected: the goal file
    explicitly calls the per-run denominator an accepted, LABELED approximation for v1 ("a
    lens-level emit is a NAMED follow-on, not this sub-goal"), matching the same "ship a correct
-   reader over what exists today" precedent `kit-gates-lens` (SPEC-131) set for the 100%-NULL
+   reader over what exists today" precedent `kit-gates-lens` set for the 100%-NULL
    `caught` column before its emitter existed.
 
 ### Chosen approach + why
@@ -188,7 +188,7 @@ None.
   on a missing file per repo (contributes zero rows, never an error); tolerant of a malformed row
   (wrong cell count, non-`rejected` verdict, unparseable date -- each skipped with a counted
   stderr warning, never raises, never miscounts a well-formed sibling). Acceptance: golden-fixture
-  (TASK-004).
+.
 
 ### Phase 2: Core
 - [x] TASK-003: `materialize.py`: `_REJECTED_FINDINGS_DDL = schemas.ddl(...)`; wire
@@ -378,7 +378,7 @@ tools/ledger-observatory/**
 (none)
 
 ## Review
-Self-review via a 6-lens spec-validate pass, 2026-07-04 (DEC-005). Verdict: APPROVED after the
+Self-review via a 6-lens spec-validate pass, 2026-07-04. Verdict: APPROVED after the
 Design-record lens's flowchart addition. Status flipped DRAFT -> VALIDATED. A second,
 finished-diff review (`kit:code-reviewer`, security + architecture/correctness lens) is recorded
 in `docs/verification/review-yield-lens.md`'s own `## Review` section per the repo's "a

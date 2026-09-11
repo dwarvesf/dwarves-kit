@@ -2512,6 +2512,26 @@ assert_true "proof-gate contract names the recorded-run artifact + owning skill"
   "$({ trap '' PIPE; printf '%s' "$CONTRACT_OUT" 2>/dev/null || :; } | grep -qi 'recorded live run' && { trap '' PIPE; printf '%s' "$CONTRACT_OUT" 2>/dev/null || :; } | grep -qi 'ops-tool-shape' && echo 0 || echo 1)"
 assert_true "proof-gate contract upgrades a migration to stateful (class wins on rigor)" \
   "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract 'migrate the database schema' 2>/dev/null | grep -q 'class=stateful' && echo 0 || echo 1)"
+assert_true "proof-gate contract points at the skeleton subcommand" \
+  "$(bash "$KIT_DIR/lib/gate/proof-gate.sh" contract 'add a flag to the CLI' 2>/dev/null | grep -q 'proof-gate.sh skeleton' && echo 0 || echo 1)"
+
+SKEL_BEHAVIORAL="$(bash "$KIT_DIR/lib/gate/proof-gate.sh" skeleton 'add-cli-flag' 'add a flag to the CLI' 2>/dev/null)"
+assert_true "proof-gate skeleton names the slug in the title" \
+  "$({ trap '' PIPE; printf '%s' "$SKEL_BEHAVIORAL" 2>/dev/null || :; } | grep -q '# Verification -- add-cli-flag' && echo 0 || echo 1)"
+assert_true "proof-gate skeleton carries Green run + Negative control" \
+  "$({ trap '' PIPE; printf '%s' "$SKEL_BEHAVIORAL" 2>/dev/null || :; } | grep -q '## Green run' && { trap '' PIPE; printf '%s' "$SKEL_BEHAVIORAL" 2>/dev/null || :; } | grep -q '## Negative control' && echo 0 || echo 1)"
+assert_true "proof-gate skeleton omits Rollback for a behavioral task" \
+  "$({ trap '' PIPE; printf '%s' "$SKEL_BEHAVIORAL" 2>/dev/null || :; } | grep -q '## Rollback' && echo 1 || echo 0)"
+
+SKEL_STATEFUL="$(bash "$KIT_DIR/lib/gate/proof-gate.sh" skeleton 'deploy-worker' 'deploy to production' 2>/dev/null)"
+assert_true "proof-gate skeleton adds Rollback for a stateful task" \
+  "$({ trap '' PIPE; printf '%s' "$SKEL_STATEFUL" 2>/dev/null || :; } | grep -q '## Rollback' && echo 0 || echo 1)"
+
+SKEL_NO_DESC="$(bash "$KIT_DIR/lib/gate/proof-gate.sh" skeleton 'no-desc-given' 2>/dev/null)"
+assert_true "proof-gate skeleton with no task arg says so in a comment line" \
+  "$({ trap '' PIPE; printf '%s' "$SKEL_NO_DESC" 2>/dev/null || :; } | grep -q 'no task description given' && echo 0 || echo 1)"
+assert_true "proof-gate skeleton with no task arg defaults to behavioral (no Rollback)" \
+  "$({ trap '' PIPE; printf '%s' "$SKEL_NO_DESC" 2>/dev/null || :; } | grep -q '## Rollback' && echo 1 || echo 0)"
 
 # ============================================================
 

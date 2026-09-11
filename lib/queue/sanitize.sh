@@ -49,7 +49,7 @@ QUEUE_MAX_PROMPT_CHARS="${QUEUE_MAX_PROMPT_CHARS:-20000}"
 # `.claude/*` covers agents, goals, and settings; the two instruction files are the engine's own
 # rules; `.github/*` is CI; the board is the queue's own input. `hooks/*` is deliberately ABSENT:
 # this repo's own autonomous rows legitimately edit hooks, and gating every one of them would train
-# the operator to click past the signal (SPEC-223 DEC-005).
+# the operator to click past the signal.
 QUEUE_PROTECTED_GLOBS="${QUEUE_PROTECTED_GLOBS:-.claude/* CLAUDE.md AGENTS.md .github/* _meta/BACKLOG.md}"
 
 # sanitize_cell [file] -- the pipeline above. Reads <file> or stdin, prints ONE sanitized line.

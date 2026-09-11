@@ -4,7 +4,7 @@ Semantic search over your own prose corpus (a knowledge base, research notes, a
 learned-ledger), so a prompt can pull in the relevant notes you have already
 written. Fully local, no cloud embedder.
 
-**This module is an adapter, not an engine (SPEC-250).** context-kit owns the
+**This module is an adapter, not an engine.** context-kit owns the
 recall engine and its Rust crate; the kit vendored a second copy of it until
 2026-09-07, and two builds of one engine drift. What ships here is the wiring:
 the dormant UserPromptSubmit recall hook (`hooks/prose-rag.sh`, active only with
@@ -29,7 +29,7 @@ reports for the `PROSE_RAG_BIN` row:
 2. `prose-rag` on PATH.
 
 One function answers that question for both readers: `prose_rag_resolve` in
-`resolve.sh` (SPEC-251), sourced by `bin/prose-rag` and by `lib/config/config.sh`'s
+`resolve.sh`, sourced by `bin/prose-rag` and by `lib/config/config.sh`'s
 binary seam, so the shim and `bash bin/config seams` can never disagree about
 whether an engine exists. It walks PATH and skips two impostors: a candidate whose
 first 200 bytes carry install.sh's `dwarves-kit CLI shim` marker (that wrapper only

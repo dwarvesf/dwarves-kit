@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# drain.sh -- bash entry for `reflect drain` (SPEC-196), forwards to the Python
+# drain.sh -- bash entry for `reflect drain`, forwards to the Python
 # implementation. The staging-file grammar (`## [state] title` blocks + `- Field: value`
 # lines, date parsing) is already proven in this exact codebase in Python
 # (hooks/backlog-stage.py writes it, lib/board/bin/add-backlog reads it); drain.py/

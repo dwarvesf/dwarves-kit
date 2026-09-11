@@ -11,7 +11,7 @@ Data split, honest by construction:
   gates, statuses, reasons. Never hand-written.
 - CONTEXT the ledger does not yet record (model, PR, lane, labels, incidents,
   waves) rides an overlay JSON, declared, visible, and replaced by the trace
-  spine (ID-423) as those dims start being recorded.
+  spine as those dims start being recorded.
 
   build --rids r1,r2,... [--overlay overlay.json] [--out report.html]
 

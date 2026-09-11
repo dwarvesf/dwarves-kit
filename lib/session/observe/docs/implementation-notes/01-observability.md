@@ -24,7 +24,7 @@ Delta from `_meta/megagoals/cc-elevation/goals/01-observability.md`. Not a resta
 - `slop-cleaner.sh`: 1072 runs, p50 ~2967ms, max ~10303ms. That is a Stop hook adding multiple seconds to most turns. Surfaced to NOTES proposed-additions as a candidate backlog item (this is exactly the signal the tool was built to find).
 
 ## 2026-06-15 subagents view: count both `Agent` and `Task`; prompt-turn denominator
-- Context: added the `subagents` view (ID-100) after a session investigating subagent-mix drift.
+- Context: added the `subagents` view after a session investigating subagent-mix drift.
 - Decision / Change: count `tool_use` named **both** `Agent` and `Task`. This harness names the spawn tool `Agent`; older Claude Code transcripts name it `Task`. Counting both keeps the view correct across the rename + any mixed-age transcript window. The SPEC states the sidechain-exclusion + per100 design; this note holds only the two implementation choices the spec leaves open.
 - Why: a single-name match would silently undercount on whichever transcripts use the other name.
 - Alternatives considered: (a) count only `Agent` , rejected, breaks on historical transcripts; (b) normalize per "task" , rejected, transcripts have no clean task boundary, so the denominator is **user-prompt turns** (a turn = a non-sidechain `user` entry with a text block, i.e. a real prompt, not a tool_result carrier). per100 = spawns / prompts * 100.
@@ -52,7 +52,7 @@ Delta from `_meta/megagoals/cc-elevation/goals/01-observability.md`. Not a resta
 - **Cache-hit ratio = read / (read + create)** across all models; on real data it runs ~97%, confirming caching is doing its job (the biggest cost lever per the research note).
 - Impact: `bin/cc-observe` `collect()` (per-model usage tally) + `model_cost`/`cost_rows` + `cost` view; `PRICING` constant; fixture +3 usage entries (opus/haiku/fable); smoke 22 -> 26. Non-goal #2 in SPEC.md rewritten (it previously said "no cost accounting", now superseded).
 
-## 2026-06-15 cc-semantic (SG-04): separate script, injectable LLM, live run deferred
+## 2026-06-15 cc-semantic: separate script, injectable LLM, live run deferred
 - Context: cc-elevation-r3 SG-04 added LLM-derived semantic signals (topic-drift + self-correction). Off main, independent of the SG-01/02/03 stack.
 - **Separate script, not a cc-observe view.** cc-observe is stdlib-only + "runs anywhere including from a hook"; adding an LLM/subprocess call would break that contract. So SG-04 is a sibling `bin/cc-semantic` (still part of the cc-observe tool dir + proof). cc-observe stays pure.
 - **LLM command is injectable** (`CC_SEMANTIC_CMD`, prompt piped to stdin) so tests run with a fixed response , no live model, deterministic. Default is `claude -p` (Haiku tier intent; binary at `~/.local/bin/claude`). `parse_json` requires both expected keys or returns None -> the tool degrades to `_unavailable_` rather than fabricating.

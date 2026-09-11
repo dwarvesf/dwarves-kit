@@ -10,18 +10,18 @@
 # Subcommands:
 #   required <lane>                     print the lane's required (measure-twice) gate keys
 #   start    <rid> <chosen-lane> <classified-lane> <chosen-type> [classified-type] [repo]   record routing facts (SPEC-061/062)
-#   start --amend <same args>           sanctioned correction; readers take the last AMEND (SPEC-077)
+#   start --amend <same args>           sanctioned correction; readers take the last AMEND
 #   record   <rid> <phase> <ran|skipped> [reason]   append a gate decision (a `grill`+`skipped`
 #                                       reason MUST start with reason=<home-turf|density-low|
 #                                       operator-wave>, SPEC-138; every other phase/state is free text)
 #   action   <rid> <text>              append an action-log line
 #   debt     <rid> significance=<low|high> worthiness=<low|high> verdict=<tap|wave|not-significant> [reason=...]
-#                                       append an understanding-debt verdict (ADR-0031, SPEC-123);
+#                                       append an understanding-debt verdict;
 #                                       additive marker, ignored by check()/override()/descent()
 #   debt-response <rid> <engage|defer|wave> [reason]  append the HUMAN's ★-tap choice (ADR-0031 §3,
 #                                       SG-04); additive `| DEBT |` marker, same ignore rules as debt
 #   outcome  <rid> <phase> <start|end> [caught=<true|false>] [policy=<close|escalate|continue>]
-#                                       record a gate's OUTCOME as an ADDITIVE marker (SPEC-129):
+#                                       record a gate's OUTCOME as an ADDITIVE marker:
 #                                       a start/end timing bracket (duration derivable) +
 #                                       caught=<bool> + an optional named failure-policy (ID-398,
 #                                       docs/patterns/failure-policy.md); ignored by
@@ -34,23 +34,23 @@
 #   override <rid> <phase> <reason>    record a human override for a gate
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
 #   show     <rid>                     print the run's ledger
-#   plan     <lane>                    the lane's ordered phase checklist (SPEC-063)
-#   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist (SPEC-063)
-#   rid                                the canonical run id for the cwd: branch slug (SPEC-070)
-#   descent  <rid> <lane>              plan-order timeline check; violations detected, never blocked (SPEC-076)
-#   history  [--lane L] [--json]       one row per run: lane, repo, ran/skipped counts (ID-444)
-#   report   --period week|month [--lane L]   markdown table of runs in the window + totals (ID-445)
+#   plan     <lane>                    the lane's ordered phase checklist
+#   progress <rid> <lane>              plan x ledger -> "step k/n" + checklist
+#   rid                                the canonical run id for the cwd: branch slug
+#   descent  <rid> <lane>              plan-order timeline check; violations detected, never blocked
+#   history  [--lane L] [--json]       one row per run: lane, repo, ran/skipped counts
+#   report   --period week|month [--lane L]   markdown table of runs in the window + totals
 set -euo pipefail
 
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$GATE_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
-WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
-# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration out of the
+WORKFLOW="${GATE_LEDGER_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives in docs/; root WORKFLOW.md is a thin stub
+# Durable run-telemetry root: resolve + one-time additive migration out of the
 # ~/.claude/dwarves-kit reinstall blast zone. One resolver, no hard-coded default here.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
-# The ONE append substrate (SPEC-182): row-append + root-location live here, not re-implemented
+# The ONE append substrate: row-append + root-location live here, not re-implemented
 # below. gate-ledger's writes route through ledger_append; reads still use ledger_file()'s path.
 # shellcheck source=lib/ledger/ledger.sh
 source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missing or unreadable" >&2; exit 1; }
@@ -59,7 +59,7 @@ LOG_DIR="$(kit_resolve_log_dir)" || exit 1
 RUNS_DIR="$LOG_DIR/runs"
 
 now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
-# Machine-readable epoch seconds for duration math (SPEC-129). `date +%s` is identical on
+# Machine-readable epoch seconds for duration math. `date +%s` is identical on
 # GNU (ubuntu) and BSD (macOS); we deliberately do NOT parse the ISO8601 now() back to epoch
 # (that is the `date -d` vs `date -jf` portability trap the kit CI fails on). Duration is a
 # pure integer subtraction of two epochs carried explicitly on the OUTCOME start/end lines.
@@ -73,7 +73,7 @@ now_epoch() { date +%s; }
 # line makes check() believe a required gate ran). One ledger line per call, always.
 oneline() { printf '%s' "${*:-}" | tr '\n\r' '  '; }
 
-# TTY-gated colors (SPEC-069): escape codes emit ONLY on an interactive stdout with
+# TTY-gated colors: escape codes emit ONLY on an interactive stdout with
 # NO_COLOR unset, so every piped consumer (300+ test pins, scripts) sees plain bytes.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   C_DONE=$'\033[32m'; C_CUR=$'\033[1;33m'; C_DIM=$'\033[2m'; C_BOLD=$'\033[1m'; C_OFF=$'\033[0m'
@@ -89,7 +89,7 @@ ledger_file() {
   printf '%s/%s.log' "$RUNS_DIR" "$safe"
 }
 
-# Append ONE line to this rid's run ledger, ROUTED through the substrate (SPEC-182): the
+# Append ONE line to this rid's run ledger, ROUTED through the substrate: the
 # substrate owns "compute root + mkdir + append", so gate-ledger no longer re-implements it.
 # The stream is always `runs/<safe>.log`, the same file ledger_file() names for reads.
 append_run_line() {
@@ -150,11 +150,11 @@ required() {
   return 0
 }
 
-# START records the run's routing facts for lane telemetry (SPEC-061): the lane the
+# START records the run's routing facts for lane telemetry: the lane the
 # operator chose, the classifier's suggestion, the work type, and the repo. One line per
 # run, written at assign/start time; lib/telemetry/lane-telemetry.sh aggregates these read-side.
 start() {
-  # --amend (SPEC-077 / ID-072): a sanctioned correction. Writes START-AMEND; every
+  # --amend: a sanctioned correction. Writes START-AMEND; every
   # reader takes the LAST START-AMEND, else the FIRST plain START. Append-only stands.
   local marker=START uprefix=start
   if [ "${1:-}" = "--amend" ]; then marker=START-AMEND; uprefix="start --amend"; shift; fi
@@ -181,7 +181,7 @@ record() {
   case "$state" in ran|skipped) ;; *) echo "state must be ran|skipped" >&2; return 64;; esac
   local phase; phase="$(normalize_phase "$raw")"
   local reason; reason="$(oneline "$@")"
-  # Grill unknown-density conditioning (SPEC-138): a grill SKIP must carry a reason= token from
+  # Grill unknown-density conditioning: a grill SKIP must carry a reason= token from
   # the closed enum below, as the FIRST word of its reason text, so the kit's least-used,
   # highest-leverage gate (82% skipped over a 63-run probe) is auditable, not free text. The
   # sibling harness-observatory `kit_gates` reader treats this field as opaque text either way
@@ -214,7 +214,7 @@ action() {
   append_run_line "$rid" "$(printf '%s | ACTION | %s' "$(now)" "$(oneline "$@")")"
 }
 
-# tokens: record a run's token usage as an ADDITIVE marker (SPEC-110). Emits a `| TOKENS |` line
+# tokens: record a run's token usage as an ADDITIVE marker. Emits a `| TOKENS |` line
 # that check()/override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a
 # token line can never fake a gate. Values are sanitized to non-negative integers.
 #
@@ -248,13 +248,13 @@ tokens() {
   append_run_line "$rid" "$(printf '%s | TOKENS | %s' "$(now)" "$line")"
 }
 
-# debt: record an understanding-debt verdict as an ADDITIVE marker (ADR-0031, SPEC-123),
+# debt: record an understanding-debt verdict as an ADDITIVE marker,
 # the exact `| TOKENS |` shape reused for a second concern: a `| DEBT |` line that check()/
 # override()/descent()/_rows() all ignore (they key on $2=="GATE"|START|ACTION), so a debt
 # line can never fake a gate or be mistaken for one. Written by `lib/classify/significance-classify.sh
 # record` (the worker side, ADR-0032 section 3: "the worker session writes the significance/
 # worthiness marker"); the human-facing ★-tap nudge (engage/defer/wave) is a LATER, SEPARATE
-# `| DEBT |` line appended by the conductor-side nudge (SG-04) -- this command only ever
+# `| DEBT |` line appended by the conductor-side nudge -- this command only ever
 # writes the classifier's verdict, never a human response.
 #
 # response=<engage|defer|wave> (SPEC-126, understanding-gate SG-05): an OPTIONAL additive key,
@@ -346,7 +346,7 @@ debt_response() {
   append_run_line "$rid" "$(printf '%s | DEBT | %s' "$(now)" "$line")"
 }
 
-# outcome: record a gate's OUTCOME as an ADDITIVE marker (SPEC-129) beside TOKENS + DEBT.
+# outcome: record a gate's OUTCOME as an ADDITIVE marker beside TOKENS + DEBT.
 # Emits a `| OUTCOME |` line that check()/override()/descent()/_rows()/_token_agg()/the
 # ship-gate all IGNORE (they key on $2=="GATE"|START|START-AMEND|TOKENS|ACTION|DEBT), so an
 # outcome line can never fake, mask, or be mistaken for a gate. Mirrors the `| GATE |` field
@@ -355,7 +355,7 @@ debt_response() {
 # no date -d/-r, no stat). `caught=` is derived at the CALL SITE from the gate's own recorded
 # state (non-pass -> true, clean pass -> false; open-fork 2 default) -- the verb only
 # validates + records it, never re-computes it. The timing bracket is unconditional.
-# `policy=` (ID-398) is an OPTIONAL, ADDITIVE third field naming which of the kit's three
+# `policy=` is an OPTIONAL, ADDITIVE third field naming which of the kit's three
 # failure policies (close/escalate/continue, docs/patterns/failure-policy.md) this outcome
 # was: omitted by a caller that doesn't classify one, so old callers and old ledger lines
 # are unaffected.
@@ -401,7 +401,7 @@ outcome() {
 # outcome-read: read a gate's OUTCOME back (SPEC-129 round-trip). For each completed
 # start/end bracket (or the one given phase), print "<phase> caught=<bool> dur_s=<N>" from
 # the LAST end line for that phase (last-end-wins, agreeing with the ledger's append-only
-# semantics), plus a trailing " policy=<val>" (ID-398) only when that end line carried one --
+# semantics), plus a trailing " policy=<val>" only when that end line carried one --
 # an old or policy-less line reads back byte-identical to before. A phase with a start but
 # no end prints "<phase> incomplete". Read-only.
 # Usage: outcome-read <rid> [phase]
@@ -436,7 +436,7 @@ override() {
   local reason; reason="$(oneline "$@")"; [ -n "$reason" ] || { echo "override requires a reason" >&2; return 64; }
   local phase; phase="$(normalize_phase "$raw")"
   local f; f="$(ledger_file "$rid")"
-  # Blanket-override guard (SPEC-097): a reason already used to override a DIFFERENT phase
+  # Blanket-override guard: a reason already used to override a DIFFERENT phase
   # in this run is one pasted across all gates, which defeats the per-gate audit trail --
   # reject it (exit 65). Re-applying the same reason to the SAME phase (idempotent re-run)
   # is fine. Split on ' | ' so fields line up with the write format below.
@@ -484,7 +484,7 @@ check() {
 # plan: the lane's ordered phase checklist, derived from the WORKFLOW matrix (skip cells
 # omitted; measure-twice = required, run-lite = lite). grill is prepended as the universal
 # intake phase (SPEC-058; tiny lane exempt). This is what /kit:assign prints right after a
-# lane is committed, so the operator sees the road before the run starts (SPEC-063).
+# lane is committed, so the operator sees the road before the run starts.
 plan() {
   local lane="${1:-}"; [ -n "$lane" ] || { echo "usage: plan <lane>" >&2; return 64; }
   # Overlay lanes: a vertical kit (learning-kit etc.) drops <lane>.plan into
@@ -516,7 +516,7 @@ plan() {
 
 # progress: plan x ledger -> one status line + checklist. A phase counts done when the
 # ledger carries ANY entry for it (ran, skipped-with-reason, override); the current step
-# is the first phase without one. Commands print this at phase entry (SPEC-063).
+# is the first phase without one. Commands print this at phase entry.
 progress() {
   local rid="${1:-}" lane="${2:-}"
   [ -n "$rid" ] && [ -n "$lane" ] || { echo "usage: progress <rid> <lane>" >&2; return 64; }
@@ -553,7 +553,7 @@ progress() {
   return 0
 }
 
-# Descent check (SPEC-076 / ID-068): the lane's plan order IS the V-model descent
+# Descent check: the lane's plan order IS the V-model descent
 # order. Replay the ledger timeline; a phase recorded while an EARLIER plan phase is
 # still undisposed at that moment is a descent violation. Detection only: exit 0
 # always (ADR-0024, mid-flight never blocks); ship-gate surfaces the count as an
@@ -590,7 +590,7 @@ descent() {
   return 0
 }
 
-# The canonical run id (SPEC-070 / ID-059): the current branch with its leading
+# The canonical run id: the current branch with its leading
 # `type/` segment stripped, the EXACT transform ship-gate keys its ledger check by
 # (`${branch#*/}` here == `${BRANCH#*/}` in hooks/ship-gate.sh; agreement-pinned in tests/test-meta.sh).
 # One rid from assign to ship means no mirror records. Fails loudly off a work
@@ -629,7 +629,7 @@ mutation() {
     k="${kv%%=*}"; v="${kv#*=}"
     # every value is single-token (space-split read-side); collapse spaces + neuter embedded "="
     # in free text so a value can never smuggle a second KV or split the ledger line. The "="->":"
-    # step (SPEC-134) matches debt()'s pre-existing neutering and makes this line's comment true.
+    # step matches debt()'s pre-existing neutering and makes this line's comment true.
     v="$(printf '%s' "$v" | tr '\n\r' '  ' | tr ' ' '_' | tr '=' ':')"
     case "$k" in
       verdict) verdict="$v" ;;
@@ -698,7 +698,7 @@ config_stamp() {
 }
 
 # Usage: history [--lane L] [--json] : one row per run over all gate ledgers.
-# Ported from learning-kit/bin/study-history (ID-444): aggregates every
+# Ported from learning-kit/bin/study-history: aggregates every
 # runs/<rid>.log START line's lane + repo with its GATE ran/skipped counts.
 history() {
   local lane_opt="" fmt=csv arg

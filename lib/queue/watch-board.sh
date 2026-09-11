@@ -23,9 +23,9 @@
 # Rule 4 is the idempotency rule and it deliberately differs from `queue run`'s own
 # `done`-only skip: gated-final merge is the DEFAULT posture, so `gated` is the COMMON
 # terminal state, and a done-only rule would re-plan every gated row on every run forever
-# (SPEC-217 DEC-002). `error`/`stalled`/`skipped` stay re-planned: those are retryable.
+#. `error`/`stalled`/`skipped` stay re-planned: those are retryable.
 #
-# Rule 5 is what makes rule 4's "retryable" bounded (SPEC-221). Retryable used to mean
+# Rule 5 is what makes rule 4's "retryable" bounded. Retryable used to mean
 # re-planned on EVERY tick with no backoff and no ceiling, so a row that fails identically
 # every time opened a fresh `--dangerously-skip-permissions` session every hour, forever.
 # This run also REAPS before it plans: a slug whose conductor process died left no journal
@@ -71,7 +71,7 @@ QUEUE_SH="$WATCH_DIR/queue.sh"
 # watcher applies the hardened pass to its OWN plan, before any window can open. parse-board's
 # containment is lexical and does not follow symlinks; this one does (architecture review).
 #
-# The same reasoning is why `--apply` forwards `--sanitize-prompt` (SPEC-223): the allow-list says
+# The same reasoning is why `--apply` forwards `--sanitize-prompt`: the allow-list says
 # WHICH file may be read, and the sanitizer says what may reach the model out of it.
 # shellcheck source=lib/queue/queue.sh
 . "$QUEUE_SH" || { echo "watch-board: lib/queue/queue.sh did not load" >&2; exit 1; }
@@ -113,7 +113,7 @@ _journal_last_verdict() {
   awk -F'\t' -v s="$slug" '$2==s {v=$3} END{if(v!="") print v}' "$journal"
 }
 
-# ---- the stale-window reaper (SPEC-221) --------------------------------------------------------
+# ---- the stale-window reaper --------------------------------------------------------
 # The tick IS the reaper. No daemon: this runs inside the watcher run the operator already invokes,
 # BEFORE any planning, so a slug whose conductor died gets its verdict before it is reconsidered.
 #
@@ -122,7 +122,7 @@ _journal_last_verdict() {
 #   stale (STALE .. DEAD)  the conductor is presumed gone but not confirmed. WARN, write nothing.
 #                          The donor frees a claim here; this kit has no claim registry to free,
 #                          and killing the window at 10 minutes would destroy a run whose conductor
-#                          is merely paused (SPEC-221 DEC-002).
+#                          is merely paused.
 #   dead  (>= DEAD)        confirmed gone. Write the verdict, schedule the retry, clear the beat.
 _reap_stale_runs() {  # journal
   local journal="$1" rundir beat slug age sig reason verdict stalls
@@ -314,7 +314,7 @@ cmd_watch() {
   fi
 
   _say "[watch] applying: $planned row(s), cap $max."
-  # `--sanitize-prompt` (SPEC-223) rides on the same reasoning as the hardened containment pass
+  # `--sanitize-prompt` rides on the same reasoning as the hardened containment pass
   # above: a watcher-planned row is NOT operator-authored, so the pointer body it feeds into the
   # typed `/goal` line is untrusted text, not a prompt the operator wrote.
   # shellcheck disable=SC2086 # WATCH_QUEUE_CMD is operator config (the mock seam); split intended.

@@ -5,7 +5,7 @@
 # `claude -p` reviewer (the MODEL has --allowedTools "" so it can write nothing) -> parse the
 # returned JSON draft -> the WRAPPER writes it to ~/.claude/skill-proposals/<slug>/SKILL.md and
 # appends cost to the ledger. The model never touches the filesystem; staging-by-path is a hard
-# gate (SPEC-103 DEC-008). Always exits 0 (a reviewer must never break a session).
+# gate. Always exits 0 (a reviewer must never break a session).
 #
 # Test seam: SKILL_CURATOR_REVIEWER_CMD overrides the claude call (reads the prompt on stdin, emits a
 # `claude -p --output-format json` envelope on stdout), so tests run without a live model.

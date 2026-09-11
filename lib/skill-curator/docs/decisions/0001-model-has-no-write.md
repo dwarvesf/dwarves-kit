@@ -31,7 +31,7 @@ path-traversal slug is contained by `safe_slug`.
 
 The wrapper must parse the model's JSON and perform the writes itself (the two-layer parse, ADR-0009,
 and more wrapper code). Accepted: a structural guarantee beats a prompt promise. Staging-by-path
-(ADR-0002) only becomes a real gate because of this decision.
+ only becomes a real gate because of this decision.
 
 ## Open questions
 

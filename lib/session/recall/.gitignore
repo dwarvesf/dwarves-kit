@@ -1,4 +1,5 @@
 # Real CC transcripts can contain secrets/PII , never commit one.
-# Only the synthetic seed fixture is allowed.
+# Only synthetic fixtures are allowed.
 *.jsonl
 !fixtures/seed.jsonl
+!tests/nondict-edge/nondict.jsonl

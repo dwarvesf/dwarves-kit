@@ -116,7 +116,7 @@ notion_exclude_tags = "family"      # per-app down-filter
 reminders_intake = "all"
 hermes_intake = "all"
 
-[sync.profile.cockpit]                 # bridge, ported (ID-290)
+[sync.profile.cockpit]                 # bridge, ported
 registry = "_meta/boards.txt"
 objects = "todo,megagoal"
 direction = "status-writeback"
@@ -160,7 +160,7 @@ or flatten to `profile_personal_*` keys if we refuse to touch the resolver.)
    intake up-filter + scope-exit rule + cap): small, pure-planner change +
    config keys; immediately fixes "personal rows visible in the Dwarves
    Notion workspace".
-2. **P2, named profiles + multi-source extract + cockpit port** (ID-290):
+2. **P2, named profiles + multi-source extract + cockpit port**:
    bridge retires to thin aliases; snapshot migration.
    - FIRST SLICE LANDED (`lib/sync/cockpit.py`): the two deterministic legs,
      multi-source EXTRACT (registry rows + active mega-goals, origin-prefixed
@@ -168,7 +168,7 @@ or flatten to `profile_personal_*` keys if we refuse to touch the resolver.)
      UNCHANGED / CHANGE / COMPLETE). Carries over the reachable-state map
      `{triage, ready, blocked, done}` and the git-wins rule. Reachable via
      `board mirror --engine sync --dry-run`; legacy stays the default.
-   - STILL DEFERRED: the live Hermes LOAD leg, two-way writeback (SPEC-149),
+   - STILL DEFERRED: the live Hermes LOAD leg, two-way writeback,
      snapshot state-shape migration, named-profile config (`[sync.profile.*]`),
      and retiring `mirror`/`status`/`writeback` to thin aliases. The legacy
      engine (board-mirror.sh + board-writeback.sh) stays runnable until then.

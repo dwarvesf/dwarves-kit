@@ -26,7 +26,7 @@ behaviour contract lives in `docs/specs/`, the why in `docs/decisions/`.
 | B | promote gate (`/skill-review`) + SessionStart surfacing + idempotent install | on demand + SessionStart | SPEC-103 TASK-006..010 |
 | C | skill-library curator (`cc-improve curate`, git-mv archive, never delete) | on demand + weekly propose-only launchd | SPEC-103 TASK-011..014 |
 
-A single umbrella spec (SPEC-103) covers all three; the phases are indexed in `docs/proof-of-done.md`
+A single umbrella spec covers all three; the phases are indexed in `docs/proof-of-done.md`
 per feature rather than split into SPEC-001/002/003, because they share one design and one I/O
 contract.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# wrap.sh -- the landing step after ship (SPEC-246). One pass over every repo a session
+# wrap.sh -- the landing step after ship. One pass over every repo a session
 # touched, with seven verbs:
 #
 #   wrap.sh scan  <repo> [<repo>...]                        report only, exit 0
@@ -7,8 +7,8 @@
 #   wrap.sh merge [--apply] <repo>                          merges ONE own green PR
 #   wrap.sh log   "<slug>: <one sentence>" [--date YYYY-MM-DD]
 #   wrap.sh default-branch <repo>                           prints the detected name
-#   wrap.sh knowledge-root <repo>                           SPEC-249: the fenced knowledge dir
-#   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  SPEC-249: stage a candidate
+#   wrap.sh knowledge-root <repo>                           the fenced knowledge dir
+#   wrap.sh stage "<title>" "<intent>" "<home>" [--repo <repo>]  stage a candidate
 #   wrap.sh --help
 #
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
@@ -36,7 +36,7 @@ LOG_LINE_BUDGET=300
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
-# The one staging-block writer (SPEC-249 TASK-003/004): `stage` shells out to it rather
+# The one staging-block writer: `stage` shells out to it rather
 # than growing a second copy of the dedupe/render/append grammar in bash.
 STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 # shellcheck source=lib/config/kit-config.sh
@@ -308,6 +308,110 @@ _apply_branches() {
   done
 }
 
+# _union_marked <repo> <path> -- 0 when .gitattributes declares the path merge=union.
+# The repo declares which files resolve by keeping every line from both sides. That
+# declaration, not a guess, is what makes carrying local lines across a pull correct.
+_union_marked() {
+  case "$(git -C "$1" check-attr merge -- "$2" 2>/dev/null)" in
+    *"merge: union") return 0 ;;
+  esac
+  return 1
+}
+
+# _union_carry_back <saved-copy> <target> -- put back every line the saved copy holds and the
+# pulled file lacks. Prints the count. The insert point comes from _log_anchor_head_lines, so
+# a carried line lands below the header exactly where `wrap log` puts a new entry.
+_union_carry_back() {
+  local saved="$1" target="$2" add tmp head_n mode n
+  add="$(mktemp)"
+  grep -Fxv -f "$target" "$saved" > "$add" 2>/dev/null
+  n="$(grep -c '' "$add" 2>/dev/null)"; n="${n:-0}"
+  if [ "$n" -gt 0 ] 2>/dev/null; then
+    head_n="$(_log_anchor_head_lines "$target")"
+    tmp="$(mktemp)"
+    if [ "$head_n" -gt 0 ] 2>/dev/null; then
+      sed -n "1,${head_n}p" "$target" > "$tmp"
+      cat "$add" >> "$tmp"
+      tail -n "+$((head_n + 1))" "$target" >> "$tmp"
+    else
+      cat "$add" "$target" > "$tmp"
+    fi
+    mode="$(_fmode "$target")"
+    case "$mode" in ''|*[!0-7]*) mode="" ;; esac
+    [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
+    mv -f "$tmp" "$target"
+  fi
+  rm -f "$add"
+  printf '%s' "$n"
+}
+
+# _pull_default <repo> <branch> -- the ff-only pull, with the repo's own append-only logs
+# carried across it.
+#
+# Several sessions share one checkout, so uncommitted lines sit in log files nobody committed
+# yet. Git prints `Updating a..b`, then aborts the merge to protect them, and the checkout
+# stays behind. An operator who missed that abort deployed from a stale tree. Files marked
+# merge=union are the safe case: the repo declares that keeping both sides resolves them, so
+# this saves each one aside, restores the committed content, pulls, then carries the local
+# lines back. Any other modified file keeps today's behavior, with the reason printed before
+# the pull instead of buried under the abort.
+_pull_default() {
+  local repo="$1" cur="$2"
+  local verdict="pull --ff-only (checkout on ${cur})"
+  local staged modified f nonunion="" saved_dir="" n=0 before carried
+
+  staged="$(git -C "$repo" diff --cached --name-only 2>/dev/null)"
+  modified="$(git -C "$repo" diff --name-only 2>/dev/null)"
+
+  if [ -n "$staged" ]; then
+    echo "     NOTE: the index carries staged changes, so no log file is carried across (restoring an index is out of scope)"
+  elif [ -n "$modified" ]; then
+    while IFS= read -r -d '' f; do
+      # A path git reports as modified but that is not a regular file cannot be copied back,
+      # so it counts as a judgment call and stops the whole carry.
+      if [ -f "$repo/$f" ] && _union_marked "$repo" "$f"; then continue; fi
+      nonunion="${nonunion}${nonunion:+, }${f}"
+    done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
+    if [ -n "$nonunion" ]; then
+      echo "     NOTE: uncommitted and not declared merge=union, so the pull aborts on: ${nonunion}"
+    elif [ "$APPLY" != 1 ]; then
+      echo "     NOTE: every modified file is merge=union; --apply would carry its local lines across the pull"
+    else
+      saved_dir="$(mktemp -d)"
+      while IFS= read -r -d '' f; do
+        n=$(( n + 1 ))
+        cp "$repo/$f" "${saved_dir}/${n}"
+        printf '%s\0' "$f" >> "${saved_dir}/list"
+        git -C "$repo" checkout -- "$f"
+      done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
+      echo "     saved ${n} union-marked file(s) aside so the pull can fast-forward"
+    fi
+  fi
+
+  before="$FAILURES"
+  run "$repo" "$verdict" git -C "$repo" pull --ff-only
+
+  if [ -n "$saved_dir" ]; then
+    n=0
+    while IFS= read -r -d '' f; do
+      n=$(( n + 1 ))
+      if [ "$FAILURES" = "$before" ]; then
+        carried="$(_union_carry_back "${saved_dir}/${n}" "$repo/$f")"
+        echo "     carried ${carried} local line(s) back into ${f}"
+      else
+        # The operator's lines never stay only in a temp file, whatever failed the pull.
+        cp "${saved_dir}/${n}" "$repo/$f"
+        echo "     pull failed, restored ${f} to its pre-pull content"
+      fi
+    done < "${saved_dir}/list"
+    rm -rf "$saved_dir"
+  fi
+
+  # A pull that printed is not a pull that landed. HEAD prints in the same block so a stale
+  # checkout cannot hide behind an abort line the operator scrolled past.
+  echo "     HEAD: $(git -C "$repo" log --oneline -1 2>/dev/null)"
+}
+
 _apply_repo() {
   local repo="$1" ghs="$2"
   _is_repo "$repo" || { echo "== ${repo}: not a git repo, skipped"; return 0; }
@@ -337,7 +441,7 @@ _apply_repo() {
 
   echo "-- pull:"
   if [ "$cur" = "$def" ]; then
-    run "$repo" "pull --ff-only (checkout on ${cur})" git -C "$repo" pull --ff-only
+    _pull_default "$repo" "$cur"
   else
     echo "     SKIP pull: checkout on '${cur:-<detached>}', not the default branch ${def}"
     run "$repo" "fetch origin ${def}:${def} (ff-only by nature)" git -C "$repo" fetch origin "${def}:${def}"
@@ -472,7 +576,7 @@ cmd_merge() {
     echo "FAILED merge #${first_eligible}: no head SHA to pin the merge to" >&2; return 2; }
 
   # Squash only, one PR per call, never --delete-branch (a worktree may hold the branch)
-  # and never --auto (an armed auto-merge lands a later push, SPEC-065 trap).
+  # and never --auto (an armed auto-merge lands a later push).
   # --match-head-commit pins the merge to the head the gates just read, so a push that
   # lands between the gate and the merge aborts the call instead of shipping unreviewed.
   gh pr merge "$first_eligible" --repo "$url" --squash --match-head-commit "$head_oid"
@@ -556,6 +660,30 @@ _worktree_copy() {
   printf '%s' "$cur_top/$rel"
 }
 
+# _log_anchor_head_lines <file>: prints how many lines of <file> stay ABOVE the new entry.
+# The anchor is the first line that is exactly `---` (the header/entries separator), plus
+# any blank lines immediately following it, so the new entry lands as the newest ENTRY, not
+# above the file's title. If line 1 is itself `---` (a YAML frontmatter opening delimiter),
+# the frontmatter's own closing `---` is the SECOND such line and becomes the anchor instead,
+# so the entry never lands inside frontmatter. Prints 0 when no anchor line exists at all
+# (or line 1 is `---` with no closing delimiter): the caller falls back to the old prepend-at-
+# line-0 behavior rather than failing, since a file with no recognizable header has no wrong
+# place to land above, and every pre-anchor-rule caller already depends on that prepend shape.
+_log_anchor_head_lines() {
+  awk '
+    NR==1 { want = ($0=="---") ? 2 : 1 }
+    state==0 {
+      if ($0=="---") { c++; if (c==want) { state=1; head=NR } }
+      next
+    }
+    state==1 {
+      if ($0=="") { head=NR; next }
+      state=2
+    }
+    END { print head+0 }
+  ' "$1"
+}
+
 cmd_log() {
   local date_str text="" arg have_text=0
   date_str="$(date +%F)"
@@ -620,9 +748,16 @@ cmd_log() {
   local n=${#line}
   [ "$n" -gt "$LOG_LINE_BUDGET" ] && echo "wrap log: note: ${n} chars, over the ${LOG_LINE_BUDGET}-char routine budget" >&2
 
-  local tmp mode; tmp="$(mktemp)"
-  printf '%s\n' "$line" > "$tmp"
-  cat "$resolved" >> "$tmp"
+  local head_n tmp mode; tmp="$(mktemp)"
+  head_n="$(_log_anchor_head_lines "$resolved")"
+  if [ "$head_n" -gt 0 ] 2>/dev/null; then
+    sed -n "1,${head_n}p" "$resolved" > "$tmp"
+    printf '%s\n' "$line" >> "$tmp"
+    tail -n "+$((head_n + 1))" "$resolved" >> "$tmp"
+  else
+    printf '%s\n' "$line" > "$tmp"
+    cat "$resolved" >> "$tmp"
+  fi
   mode="$(_fmode "$resolved")"
   case "$mode" in ''|*[!0-7]*) mode="" ;; esac
   [ -n "$mode" ] && chmod "$mode" "$tmp"   # mktemp opens 0600; carry the target's mode over
@@ -633,7 +768,7 @@ cmd_log() {
 
 # --------------------------------------------------------------------------- knowledge-root
 
-# cmd_knowledge_root <repo> -- SPEC-249 TASK-004. Prints one absolute directory and always
+# cmd_knowledge_root <repo> -- prints one absolute directory and always
 # exits 0: `knowledge.root` empty or any failure resolving/fencing/creating it falls back to
 # `<repo>/.claude/memory`, never an error. The `<repo>` argument itself is validated (must
 # exist, basename must not be `.`/`..`/empty) and THAT failure is the one case that is a
@@ -712,7 +847,7 @@ cmd_knowledge_root() {
 
 # --------------------------------------------------------------------------- stage
 
-# cmd_stage "<title>" "<intent>" "<home>" [--repo <repo>] -- SPEC-249 TASK-004. Resolves the
+# cmd_stage "<title>" "<intent>" "<home>" [--repo <repo>] -- resolves the
 # staging file the same way cmd_log resolves its target (dir realpath, symlink refusal, a
 # HOME/repo fence, `_worktree_copy`), then hands the write itself to the one place the
 # staging-block grammar and its dedupe rule live: `staging-format.py stage`.

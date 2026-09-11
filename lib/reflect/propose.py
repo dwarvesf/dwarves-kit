@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""propose.py -- `reflect propose`: the cross-run auto-improvement distiller (SPEC-195).
+"""propose.py -- `reflect propose`: the cross-run auto-improvement distiller.
 
 A retro one layer up from /kit:retro. /kit:retro reads ONE run; this reads MANY megas'
 worth of ledger telemetry, interprets the aggregate, and emits candidate BACKLOG ROWS a
@@ -610,7 +610,7 @@ def run(days, megas, staging, backlog, dry_run, aggregate_file):
 
 
 def main(argv):
-    p = argparse.ArgumentParser(prog="reflect propose", description="cross-run backlog proposer (SPEC-195)")
+    p = argparse.ArgumentParser(prog="reflect propose", description="cross-run backlog proposer")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--days", type=int, default=30, help="window in days (default 30)")
     g.add_argument("--megas", type=int, help="window as the last N run-ids")

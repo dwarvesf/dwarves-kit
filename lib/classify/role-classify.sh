@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# role-classify.sh -- deterministic task description -> SPECIALIST DOMAIN (SPEC-089).
+# role-classify.sh -- deterministic task description -> SPECIALIST DOMAIN.
 #
 # A cheap FAST-PATH hint for high-frequency specialist domains. It is NOT the role
 # universe: the role space is open-ended, and the meta-agent (Mode C) is the
@@ -63,7 +63,7 @@ _role_match() {
 # agent-for <domain>: the predefined WORKER agent for a domain (the execute.md 2b-0 reuse target,
 # an IMPLEMENTER), or EMPTY. Reviewers are deliberately NOT here , a read-only reviewer cannot
 # implement a task, so it dispatches via /kit:review-team's domain lenses, not the 2b-0 worker slot
-# (SPEC-111). `generic` returns empty so 2b-0 falls through to Mode-C synthesis (SPEC-089:79, the
+#. `generic` returns empty so 2b-0 falls through to Mode-C synthesis (SPEC-089:79, the
 # dynamic long tail); a generic->agent map would collapse that escalation.
 agent_for() {
   case "${1:-}" in

@@ -17,7 +17,7 @@ a committed nested repo (SPEC-132 DEC-005: a `.git` tree does not commit cleanly
 in this repo; every other suite in this tool already uses this same mktemp-per-run precedent). A
 matching `kit_gates` fixture (5 shipped rids, one `.log` file each) points at the same 5 rid
 slugs the git fixture's commit subjects mention. `git init --template=` disables this machine's
-global Conventional-Commit `commit-msg` hook (DEC-006) so the disposable fixture repo is fully
+global Conventional-Commit `commit-msg` hook so the disposable fixture repo is fully
 independent of host git config.
 
 ### Golden fixture (generated at test time)
@@ -119,7 +119,7 @@ $ uv run ledger defect-correlation --table
 
 **Honest yield note:** across both scanned repos, only **1 of ~600 distinct shipped `kit_gates`
 rids** (`dag-wavefront`) resolves via the rid-substring bridge into a matched git commit at all.
-This is a real, stated limitation of the name-bridge heuristic (SPEC-132 DEC-002): most `kit`
+This is a real, stated limitation of the name-bridge heuristic: most `kit`
 run slugs are NOT literal substrings of the eventual commit subject in either repo's history
 (commit subjects here follow a Conventional-Commit `type(scope): summary` shape that often
 summarizes the CHANGE, not the run's internal slug). The one hit that DOES resolve is real and

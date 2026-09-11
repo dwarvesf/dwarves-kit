@@ -34,7 +34,7 @@ READ_POINTER_CAP = 8
 
 
 def sum_usage(transcript_path: str) -> dict:
-    """Sum token usage across ASSISTANT entries only (SPEC-110).
+    """Sum token usage across ASSISTANT entries only.
 
     A real `claude --output-format stream-json` run ends with a `type:"result"`
     event carrying CUMULATIVE usage; summing every usage block would double-count
@@ -152,7 +152,7 @@ def write_outputs(transcript: str, out_dir: str, next_id: str, next_title: str, 
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # sum-usage mode (SPEC-110): a distinct subcommand so the existing positional
+    # sum-usage mode: a distinct subcommand so the existing positional
     # `handoff_gen.py <transcript> --dir ...` interface stays byte-compatible.
     if argv and argv[0] == "sum-usage":
         if len(argv) < 2 or not os.path.isfile(argv[1]):

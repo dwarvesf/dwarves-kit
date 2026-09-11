@@ -29,14 +29,14 @@
 #                       (still requires --execute to actually call gh; see above).
 #     per-pr-review  -- merge ALWAYS dry-runs, regardless of --execute or the gate
 #                       result, so a team run keeps a human on every PR.
-#   Resolution (SPEC-187 / SG-03): --posture=<value> flag > MEGA_MERGE_POSTURE env >
+#   Resolution: --posture=<value> flag > MEGA_MERGE_POSTURE env >
 #   the config layer's [mega].mega_merge_posture (project .kit.toml > kit-root kit.toml) >
 #   default auto-to-final. The env var still wins over config outright, same as every other
 #   `[mega]` knob orchestrate.sh resolves.
 #
 # commands/mega.md routes a `gate`-tagged sub-goal or the held final PR away from `merge`
 # at the PROMPT level (mirrors /kit:dispatch and the skill: a human always merges those).
-# SPEC-100 (ID-083) adds a CODE-LEVEL backstop: `merge` itself calls `_merge_exclusion`,
+# SPEC-100 adds a CODE-LEVEL backstop: `merge` itself calls `_merge_exclusion`,
 # which reads the PR's GitHub STATE (draft / hold-label / bracketed title marker) and
 # refuses , fail-closed on unreadable OR malformed state , so a prompt-rationalizing model
 # cannot merge past the exclusion for a MARKED held PR even if the prompt-level rule is
@@ -52,12 +52,12 @@ set -uo pipefail
 MM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$MM_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 GATE_LEDGER="${MEGA_MERGE_GATE_LEDGER:-$LIB_ROOT/gate/gate-ledger.sh}"
-# Config layer (SPEC-187 / SG-03): see kit-config.sh header. Sourced once; idempotent if a
+# Config layer: see kit-config.sh header. Sourced once; idempotent if a
 # caller already sourced it.
 CONFIG_LIB="${CONFIG_LIB:-$LIB_ROOT/config/kit-config.sh}"
 # shellcheck source=lib/config/kit-config.sh
 [ -f "$CONFIG_LIB" ] && . "$CONFIG_LIB"
-# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
+# Durable run-telemetry root: resolve + one-time additive migration.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
@@ -103,7 +103,7 @@ _pr_info() {
     --jq '[(.isDraft|tostring), ([.labels[].name]|join(",")), .title] | join("")' 2>/dev/null
 }
 
-# _merge_exclusion <pr> -- the CODE-LEVEL gate/held-final exclusion (SPEC-100, ID-083),
+# _merge_exclusion <pr> -- the CODE-LEVEL gate/held-final exclusion,
 # defense-in-depth over commands/mega.md's prompt-only rule. Reads PR STATE:
 #   return 0 + a reason  -> this PR must NOT auto-merge (draft / hold-label / title marker)
 #   return 1             -> clear to auto-merge (normal `auto` sub-goal PR)
@@ -176,7 +176,7 @@ merge() {
   done
   local posture; posture="$(_resolve_posture "$posture_flag")"
 
-  # CODE-LEVEL gate/held-final exclusion (SPEC-100, ID-083), checked BEFORE the gate so a
+  # CODE-LEVEL gate/held-final exclusion, checked BEFORE the gate so a
   # held PR is refused even if its gates pass. Fail-closed: unreadable state is refused.
   local excl rc
   excl="$(_merge_exclusion "$pr")"; rc=$?
@@ -219,7 +219,7 @@ merge() {
   gh pr merge "$pr" --squash --delete-branch
 }
 
-# mark <pr> [repo] -- the MARK half of the SPEC-100 guard (SG-04, ID-089). The guard
+# mark <pr> [repo] -- the MARK half of the SPEC-100 guard. The guard
 # (_merge_exclusion) defends a PR that CARRIES a mark but cannot synthesize one, so an
 # UN-marked gate/gated-final PR would slip through. This opens the mark: it puts a
 # gate-tagged sub-goal PR (and the held final PR) into exactly the state the guard refuses

@@ -218,7 +218,7 @@ Plus a recorded live run in `docs/proof-of-done.md`: a real session producing a 
 a ledger line, and `cc-improve curate` producing a report.
 
 ## Edge Cases
-1. **Reviewer pile-up.** Single-flight via an atomic mkdir lock (ADR-0004): a second trigger while one is in flight is skipped
+1. **Reviewer pile-up.** Single-flight via an atomic mkdir lock: a second trigger while one is in flight is skipped
    (logged), bounding cost.
 2. **Malformed/empty `claude -p` JSON.** Wrapper logs and continues; no partial draft written.
 3. **`claude` not on PATH / auth expired / non-zero exit.** Wrapper exits 0 with a log line; no
@@ -259,7 +259,7 @@ a ledger line, and `cc-improve curate` producing a report.
   + `git` orchestration; no daemon/perf path). *Flagged for override at review.*
 - DEC-002: **Reviewer model = haiku** (configurable).
 - DEC-003: **Staging-by-path is the gate** (drafts outside `~/.claude/skills/`).
-- DEC-004: **Repo-wide spec numbering (SPEC-103)** via dwarves-kit `spec-next.sh`.
+- DEC-004: **Repo-wide spec numbering** via dwarves-kit `spec-next.sh`.
 - DEC-005: **Single-flight lock** bounds cost + rate-limit exposure.
 - DEC-006: **Reframed 2026-06-19 after discovering cc-harvest.** Dropped the per-turn memory
   reviewer (duplicate of shipped cc-harvest); skill-curator is now the SKILL half + curator.

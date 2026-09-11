@@ -11,7 +11,7 @@ Effort: medium
 
 ## Outcome
 
-The tool's front docs land truthfully: `tools/ledger-observatory/README.md` (front door: what it is, the read-only-lens contract, the `ledger show/query/rebuild` commands, the render skill, the feedback loop) + a co-located `docs/proof-of-done.md` in the table-first review format (SPEC-016), shaped per `ops-tool-shape` (structure) then `ops-tool-docs` (content). Plus the `tool.toml` + `MANIFEST.md` topology row. Every claim is backed by a LIVE invocation path , the no-orphan wiring check (kit-hardening c6fbd99 bug class) runs over the whole wave: the render skill actually fires on its triggers, the skill actually calls the `ledger` CLI, and 04 actually hands work-intake a proposed row. A documented-but-unwired artifact or an over-claim is a blocking finding.
+The tool's front docs land truthfully: `tools/ledger-observatory/README.md` (front door: what it is, the read-only-lens contract, the `ledger show/query/rebuild` commands, the render skill, the feedback loop) + a co-located `docs/proof-of-done.md` in the table-first review format, shaped per `ops-tool-shape` (structure) then `ops-tool-docs` (content). Plus the `tool.toml` + `MANIFEST.md` topology row. Every claim is backed by a LIVE invocation path , the no-orphan wiring check (kit-hardening c6fbd99 bug class) runs over the whole wave: the render skill actually fires on its triggers, the skill actually calls the `ledger` CLI, and 04 actually hands work-intake a proposed row. A documented-but-unwired artifact or an over-claim is a blocking finding.
 
 ## Quality bar
 

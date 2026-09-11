@@ -148,7 +148,7 @@ class HermesSource:
             # A created card's title/body is git-board content = DATA, never
             # instructions to whatever Hermes agent later reads this board. This
             # is a LOAD leg, so it MUST route card text through the untrusted
-            # markers (SPEC-147), same as board-mirror.sh and cockpit's leg.
+            # markers, same as board-mirror.sh and cockpit's leg.
             # sync_fields=False freezes these at create, so marking once here
             # never double-wraps on a re-sync.
             title = mark_untrusted_title(title)

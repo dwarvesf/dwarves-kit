@@ -11,7 +11,7 @@ created     = 2026-06-14
 # not "cc" itself). Keeps all 3 bins verbatim (bin/session-observe, bin/session-semantic,
 # bin/session-report -- surgical, renaming binary names churns tests for zero
 # navigation win, same call SG-04 made for skill-curator's bin/cc-improve).
-# The ops-toolkit copy retires in the paired batched retire sweep (SG-07).
+# The ops-toolkit copy retires in the paired batched retire sweep.
 consumers   = []
 
 systems     = ["claude-code", "vps-mon"]

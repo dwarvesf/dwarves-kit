@@ -7,7 +7,7 @@ concurrency), not in any one script. This catalog enumerates the cases per layer
 fault is injected, the expected signal, and where the result surfaces.
 
 Status: design catalog. Cases become executable via the L1 `scripted` executor and the
-L2/L3 suites (ID-423); the TUI renders any of them live from the same event stream.
+L2/L3 suites; the TUI renders any of them live from the same event stream.
 
 ## L1 · Mechanism correctness (scripted model, every kit commit, ~free)
 
@@ -39,7 +39,7 @@ real artifacts. This is where per-part model profiles come from.
 | S-01 spec quality | brief -> spec | frozen real briefs | rubric + spec-validate lenses |
 | S-02 test-plan coverage | spec -> test plan | frozen specs | coverage vs hand-built matrix |
 | S-03 worker build | spec -> diff | smoke-code-shaped task suites | hidden checks (shipped today) |
-| S-04 verifier catch rate | diff -> verdict | real clean diff + N planted defects | catch rate vs false-alarm rate on the clean twin (ID-392) |
+| S-04 verifier catch rate | diff -> verdict | real clean diff + N planted defects | catch rate vs false-alarm rate on the clean twin |
 | S-05 review lenses | diff -> findings | seeded vulns/regressions per lens | seeded-recall + precision |
 | S-06 fix-agent | finding -> patch | frozen verifier findings | fixes the finding, no collateral diff |
 
