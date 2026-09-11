@@ -105,6 +105,11 @@ def parse_board(text: str, strict_id: bool = True,
     return rows
 
 
+# history_max_id's own fetch, deduped per repo so next_id's per-row calls
+# (one board can mint several rows in one sync) don't re-fetch on every row.
+_fetched_repos: set[str] = set()
+
+
 def history_max_id(path, prefix: str = "ID") -> int:
     """Highest `<prefix>-N` this board file ever carried, across every ref in
     the clone. Returns 0 when git cannot answer.
@@ -113,7 +118,12 @@ def history_max_id(path, prefix: str = "ID") -> int:
     origin reads a board missing rows another session already pushed, so the
     mint hands out an id that is already taken. Measured live on the
     ops-toolkit board: the working copy topped out at ID-822 while history
-    already held ID-823, so the very next mint would have collided.
+    already held ID-823, so the very next mint would have collided. The same
+    lag lets a `--all` scan miss an id another session minted straight to
+    origin without this clone ever fetching it, so this function fetches
+    origin (best-effort, 10s, once per repo per process) before reading
+    history; a fetch failure (offline, no remote) is swallowed and the scan
+    proceeds on whatever refs the clone already has.
 
     `--all` reaches remote-tracking refs, so a stale working TREE stops
     mattering once the clone has fetched. `-p` reaches rows later deleted or
@@ -122,6 +132,14 @@ def history_max_id(path, prefix: str = "ID") -> int:
     `<prefix>-N` token sitting in prose or a notes cell still never counts.
     """
     p = Path(path)
+    repo = str(p.parent)
+    if repo not in _fetched_repos:
+        _fetched_repos.add(repo)
+        try:
+            subprocess.run(["git", "fetch", "--quiet", "origin"], cwd=repo,
+                            capture_output=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            pass  # offline or no origin: fall through, scan what we have
     try:
         r = subprocess.run(
             ["git", "log", "-p", "--all", "--format=", "--", p.name],
