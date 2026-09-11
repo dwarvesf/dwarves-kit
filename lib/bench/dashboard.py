@@ -409,7 +409,7 @@ def efficiency_rankings(sessions, min_cost=1.0):
     share from cheap models, higher better). Composite = min-max normalized,
     weighted 40/30/30, graded A>=80 B>=65 C>=50 D>=35 else E. Members below
     min_cost USD are excluded (volume floor: one tiny session must not top
-    the board). Cost-per-shipped-run needs the session<->rid join (ID-420)
+    the board). Cost-per-shipped-run needs the session<->rid join
     and is deliberately absent rather than faked."""
     agg = {}
     for s in sessions:
@@ -1363,7 +1363,7 @@ cannot top the board.</p>
 <span class="seg ok" style="width:30%"><i>30%</i></span></span><span class="val">30%</span></div>
 <p class="meta" style="margin:.5rem 0 0">Each metric is min-max normalized across members,
 then weighted. Cost-per-shipped-run is the metric that should dominate this board and is
-deliberately absent until the session-to-run join lands (ID-420): without it there is no
+deliberately absent until the session-to-run join lands: without it there is no
 defensible denominator.</p></figure>
 </div>
 <h2>Leaderboard</h2>
@@ -1496,7 +1496,7 @@ def debt_section(dm):
     return f"""<section id="debt">
 <div class="eyebrow">Verify</div>
 <h1>Cognitive debt</h1>
-<p class="meta">The understanding gate's read side (ADR-0031): verification proves the work
+<p class="meta">The understanding gate's read side: verification proves the work
 is correct; this score tracks whether the HUMAN still understands it. Computed only from
 recorded <span class=mono>DEBT</span> ledger lines; formula in
 DECISION-BRIEF-cognitive-debt-score.md. It pressures the weekend paydown; it never blocks.</p>

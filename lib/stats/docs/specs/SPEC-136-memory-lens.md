@@ -69,7 +69,7 @@ no verification is worse than an honest "I don't know," because it actively misl
 
 Approach 3. It is the only one that satisfies all three goal-file deliverables (sweep command +
 lens table + anomaly) while preserving the tool's two standing contracts: single-source-of-truth
-schemas (SG-01) and one-data-path anomaly detection (SG-04's `anomalies.py` module docstring).
+schemas and one-data-path anomaly detection (SG-04's `anomalies.py` module docstring).
 
 ### Extensibility & boundaries
 
@@ -100,7 +100,7 @@ flowchart TD
     B --> C
     C --> D{"unit kind?"}
     D -->|"note"| E["extract_refs()<br/>inline-code spans ONLY (fenced blocks stripped)<br/>ONE head token per span"]
-    D -->|"index (MEMORY.md)"| F["IS-IT-AN-INDEX gate: >=1 [..](..) link bullet?<br/>no -&gt; prose scratchpad, flag nothing (DEC-010)"]
+    D -->|"index (MEMORY.md)"| F["IS-IT-AN-INDEX gate: >=1 [..](..) link bullet?<br/>no -&gt; prose scratchpad, flag nothing"]
     E --> G{"classify head token (PATHS ONLY, v1)"}
     G -->|"flag - / URL :// / placeholder &lt;&gt;*{} / bare word / relative / slash-cmd"| H["SKIPPED -- not tested (DEC-008/009)"]
     G -->|"~/... or /realroot/... (allowlist)"| I["Path(...).exists()"]
@@ -170,7 +170,7 @@ Head-token classification (`_classify_and_test`), in order:
 | a bare word or a relative path (contains `/` but no leading `/` or `~`, or no `/` at all) | (none, skipped) | not tested | command-testing removed (DEC-008: bare prose words / shell builtins flooded the sweep); relative paths cannot be safely attributed to the note's own repo (DEC-009: even repo-store notes reference other trees) |
 
 `MEMORY.md` index parsing is a separate, deliberately different rule (`_extract_index_refs`),
-gated by the **IS-IT-AN-INDEX** check (DEC-010): a MEMORY.md with ZERO `[title](slug.md)` link
+gated by the **IS-IT-AN-INDEX** check: a MEMORY.md with ZERO `[title](slug.md)` link
 bullets is a free-prose scratchpad, not a broken index, and contributes NO refs. Once a file
 has >= 1 real link bullet, each `- ...` bullet is matched against `\[([^\]]+)\]\(([^)]+)\)`; a
 match resolves the target against the SAME directory the MEMORY.md lives in; a sibling bullet
@@ -359,7 +359,7 @@ All test lines print `PASS`; the final line is `== N passed, 0 failed ==`.
   sweep is propose-only, so a human reviewing the paydown table can recognize and dismiss a
   cross-host reference (the same "propose, don't over-trust" posture the whole feedback loop
   already has toward every detector's `home` attribution).
-- **A leading-`/` token not under a recognized real root is never tested** (DEC-009): a real
+- **A leading-`/` token not under a recognized real root is never tested**: a real
   absolute path in an unusual mount point (e.g. `/data/...`, `/srv/...`, not in
   `_REAL_PATH_PREFIXES`) reads as extracted-but-unverified, a false NEGATIVE (never flagged).
   Deliberate: a false negative is cheap here, a false positive costs trust. The allowlist is a
@@ -454,7 +454,7 @@ All test lines print `PASS`; the final line is `== N passed, 0 failed ==`.
   paths in BOTH stores; the `base_dir` plumbing became dead and was removed). A `<...>`/glob/
   brace placeholder is never a literal path. Net on the real corpus: 135 -> 33 units flagged.
 - **DEC-010 (the IS-IT-AN-INDEX gate for MEMORY.md):** the draft's "a bullet with no link is a
-  dead orphan" rule (DEC-006) assumed every MEMORY.md is a `[title](slug.md)` link index.
+  dead orphan" rule assumed every MEMORY.md is a `[title](slug.md)` link index.
   Real-corpus finding: some MEMORY.md files are free-PROSE scratchpads (confirmed:
   `claude-guardrails`'s is 39 prose bullets, none a link), and flagging all 39 as orphans is
   exactly the false-positive flood this sweep must avoid. Fix: a MEMORY.md with ZERO

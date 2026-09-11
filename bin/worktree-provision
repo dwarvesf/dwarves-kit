@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bin/worktree-provision -- STABLE consumer entrypoint (SPEC-184). Consumers and the install.sh
+# bin/worktree-provision -- STABLE consumer entrypoint. Consumers and the install.sh
 # CLI shims reference THIS path, never the deep lib/ path, so an internal lib
 # reorg only ever moves the one line below.
 # Resolution is relative to this file, so it works in the kit repo (dev) and in

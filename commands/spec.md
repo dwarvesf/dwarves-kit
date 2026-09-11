@@ -10,7 +10,9 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
 
 ### Step 1: Gather intent
 
-If a `docs/briefs/DECISION-BRIEF.md` exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
+**Derive `<slug>`:** a kebab-case slug for this feature (the same one `/kit:think` uses for `DECISION-BRIEF-<slug>.md`, if `/think` ran first; otherwise derive it fresh from the feature name/idea). This is the same slug that names `docs/specs/SPEC-NNN-<slug>.md` in Step 3, and reused for every artifact this run writes, so parallel feature runs in the same worktree/repo never overwrite each other's research or context files. Also note `<date>` = today's date, `YYYY-MM-DD`.
+
+Check for an existing brief, slugged file first: `docs/briefs/DECISION-BRIEF-<slug>.md` if present, else the legacy `docs/briefs/DECISION-BRIEF.md`. If either exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
 - What are you building? (one paragraph)
 - Is this greenfield or modifying existing code?
 - What's the tech stack? (or read from CLAUDE.md / package.json / go.mod)
@@ -24,40 +26,40 @@ Create `docs/research/` directory first.
 
 #### Mode A: Formal agents (preferred)
 
-If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel:
+If the research agents are installed (check: do `.claude/agents/research-stack.md` etc. exist?), dispatch all 4 via the Task tool in parallel, each dispatch prompt carrying `<date>` and `<slug>` from Step 1:
 
-1. **research-stack** agent: "Map the technology stack. Write to `docs/research/stack.md`."
-2. **research-context** agent: "Map existing features related to [user's feature area]. Write to `docs/research/features.md`."
-3. **research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/architecture.md`."
-4. **research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/pitfalls.md`."
+1. **research-stack** agent: "Map the technology stack. Write to `docs/research/<date>-<slug>-stack.md`."
+2. **research-context** agent: "Map existing features related to [user's feature area]. Write to `docs/research/<date>-<slug>-features.md`."
+3. **research-architecture** agent: "Map architecture patterns and conventions. Write to `docs/research/<date>-<slug>-architecture.md`."
+4. **research-pitfalls** agent: "Find landmines in [target area / target files]. Write to `docs/research/<date>-<slug>-pitfalls.md`."
 
 #### Mode B: Inline fallback
 
-If the formal agents are NOT installed, dispatch 4 Task tool subagents with these inline prompts:
+If the formal agents are NOT installed, dispatch 4 Task tool subagents with these inline prompts (`<date>` and `<slug>` from Step 1):
 
 **Stack research:**
 ```
-Map the technology stack. Read package.json / go.mod / Cargo.toml / pyproject.toml and config files. Report: languages, frameworks, versions, key dependencies (top 5-10), build/test/deploy commands. If codebase-memory-mcp is available, use get_architecture(). Max 50 lines. Write to docs/research/stack.md.
+Map the technology stack. Read package.json / go.mod / Cargo.toml / pyproject.toml and config files. Report: languages, frameworks, versions, key dependencies (top 5-10), build/test/deploy commands. If codebase-memory-mcp is available, use get_architecture(). Max 50 lines. Write to docs/research/<date>-<slug>-stack.md.
 ```
 
 **Feature research:**
 ```
-Map existing features related to [user's feature area]. Find: relevant endpoints/routes, data models, UI components, test coverage, recent git history for this area. If codebase-memory-mcp is available, use search_code() and trace_path(). Max 80 lines. Write to docs/research/features.md.
+Map existing features related to [user's feature area]. Find: relevant endpoints/routes, data models, UI components, test coverage, recent git history for this area. If codebase-memory-mcp is available, use search_code() and trace_path(). Max 80 lines. Write to docs/research/<date>-<slug>-features.md.
 ```
 
 **Architecture research:**
 ```
-Map architecture patterns. Find: directory structure conventions, error handling patterns, naming conventions, how the 2-3 most recent features were built (check git log). Show concrete examples. Max 60 lines. Write to docs/research/architecture.md.
+Map architecture patterns. Find: directory structure conventions, error handling patterns, naming conventions, how the 2-3 most recent features were built (check git log). Show concrete examples. Max 60 lines. Write to docs/research/<date>-<slug>-architecture.md.
 ```
 
 **Pitfall research:**
 ```
-Find landmines in [target area]. Look for: deprecated code still referenced, TODO/FIXME comments, test gaps, circular dependencies, files over 500 lines, missing env/config values the new feature will need. Max 40 lines. Write to docs/research/pitfalls.md.
+Find landmines in [target area]. Look for: deprecated code still referenced, TODO/FIXME comments, test gaps, circular dependencies, files over 500 lines, missing env/config values the new feature will need. Max 40 lines. Write to docs/research/<date>-<slug>-pitfalls.md.
 ```
 
 #### After research (both modes)
 
-Synthesize all 4 reports into `docs/briefs/CONTEXT.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; CONTEXT.md is the distilled version that worker subagents read.
+Synthesize all 4 reports into `docs/briefs/CONTEXT-<slug>.md`. Read them, extract key facts, organize into the CONTEXT.md format (Stack, Conventions, Key files, External dependencies). The research files stay in `docs/research/` for reference; `CONTEXT-<slug>.md` is the distilled version that worker subagents read.
 
 For **greenfield** projects, skip this step entirely. There's nothing to research.
 
@@ -237,7 +239,7 @@ Optional; written on-demand by `/kit:review` or `/kit:review-team`, never an emp
 (none; a /goal loop appends here if it hits a decision this spec does not cover, then stops)
 ```
 
-**`docs/briefs/CONTEXT.md`** (for Claude Code sessions):
+**`docs/briefs/CONTEXT-<slug>.md`** (for Claude Code sessions):
 
 ```markdown
 # Context for implementation

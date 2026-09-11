@@ -23,7 +23,7 @@ CONFIG_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY_FILE="${CONFIG_REGISTRY_FILE:-$CONFIG_SELF/module-registry.md}"
 # shellcheck source=lib/config/kit-config.sh
 source "$CONFIG_SELF/kit-config.sh" || { echo "config: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
-# The binary seam's PATH lookup is the SAME contract bin/prose-rag execs (SPEC-251): one
+# The binary seam's PATH lookup is the SAME contract bin/prose-rag execs: one
 # resolver, so a stale kit wrapper on PATH cannot read `filled` here while the shim
 # correctly reports no engine.
 # The readability test comes first: bash 3.2 exits the whole shell on a `source` it cannot
@@ -81,7 +81,7 @@ _row_get() {
 }
 
 # _seam_rows -- print every data row (raw, pipe-delimited) from the "## Seams" join table
-# (SPEC-249 TASK-002). This table sits AFTER "## Allowlist", outside _registry_rows' window,
+#. This table sits AFTER "## Allowlist", outside _registry_rows' window,
 # so it never doubles as a fake registry row in `config list`. Three columns: Key, Kind,
 # Filled by. The window CLOSES at the next top-level "## " heading, so a pipe table under a
 # later section (module-registry.md already carries "## Known gaps") is never read as a seam
@@ -132,6 +132,17 @@ _default_value() {
   esac
 }
 
+# _is_root_only <row> -- true when this row's Doc column (col 6) documents itself as
+# resolved with `kit_config_get_root` (SPEC-249's root-only fence: the project .kit.toml
+# layer must never win for a key that names code a command runs or a path outside the repo,
+# because a project toml rides inside an untrusted PR). Read from the registry's own prose,
+# never a second hardcoded list: every root-only row already says so (wrap.before/after,
+# the [wrap] autonomy knobs, precedent.registry, knowledge.root, understand.teach, ...).
+_is_root_only() {
+  case "$(_row_get "$1" 6)" in *kit_config_get_root*) return 0 ;; esac
+  return 1
+}
+
 # _resolve <row> -- sets EFFECTIVE / PROVENANCE / ENV_VAL / ENV_SET / PROJ_VAL / PROJ_SET /
 # ROOT_VAL / ROOT_SET (globals; mirrors the small-bash-script house style of
 # lib/classify/lane-classify.sh's LANE/REASON/FIRED globals, not a subshell-return dance).
@@ -158,8 +169,12 @@ _resolve() {
   PROJ_VAL=""; PROJ_SET=0; ROOT_VAL=""; ROOT_SET=0
   if [ "$tomlkey" != "env-only" ] && [ "$tomlkey" != "-" ]; then
     section="${tomlkey%%.*}"; key="${tomlkey#*.}"
-    PROJ_VAL="$(_kit_toml_get "$(kit_config_project)" "$section" "$key")"
-    [ -n "$PROJ_VAL" ] && PROJ_SET=1
+    # Root-only keys never consult the project layer: a project .kit.toml rides inside an
+    # untrusted PR, and a row like understand.teach names code a command runs.
+    if ! _is_root_only "$row"; then
+      PROJ_VAL="$(_kit_toml_get "$(kit_config_project)" "$section" "$key")"
+      [ -n "$PROJ_VAL" ] && PROJ_SET=1
+    fi
     ROOT_VAL="$(_kit_toml_get "$(kit_config_root)" "$section" "$key")"
     [ -n "$ROOT_VAL" ] && ROOT_SET=1
   fi
@@ -182,7 +197,7 @@ _seam_cells() {
 }
 
 # _skill_dirs -- the ordered list of skill dirs a "skill" kind seam is checked against
-# (SPEC-249 TASK-002). KIT_SKILL_DIRS entries are kept only when their realpath sits under
+#. KIT_SKILL_DIRS entries are kept only when their realpath sits under
 # $HOME's realpath (a repo .envrc can set this env var, so it is untrusted); the default list
 # ($HOME/.claude/skills plus $CLAUDE_PLUGIN_ROOT/skills when set) is the kit's own and needs
 # no fence. set -u safe: CLAUDE_PLUGIN_ROOT and KIT_SKILL_DIRS are read with ${VAR:-}.
@@ -299,7 +314,7 @@ _seam_resolve() {
     return 0
   fi
 
-  # binary: "default" never applies (DEC-009); env-set must be executable, else PATH lookup.
+  # binary: "default" never applies; env-set must be executable, else PATH lookup.
   if [ -n "$raw" ]; then
     SEAM_VALUE="$raw"
     # [ -x ] alone is true for a searchable directory; a binary must be a regular file too.
@@ -417,7 +432,7 @@ usage: config {list|get|explain|seams} [args...]
   config list             every declared knob: key, status, effective value, provenance, module
   config get <key>        the resolved effective value only (env var name or dotted kit.toml key)
   config explain <key>    the full 4-level provenance chain (env > project > kit-root > default)
-  config seams [--check]  cross-kit seam report: KEY KIND VALUE STATUS FILLED-BY (SPEC-249);
+  config seams [--check]  cross-kit seam report: KEY KIND VALUE STATUS FILLED-BY;
                           --check exits 1 if any row is unresolved
 
 `config set` is not built. Hand-edit <project>/.kit.toml to change a project-level value; the

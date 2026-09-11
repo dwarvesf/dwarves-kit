@@ -7,11 +7,13 @@
 #      the standalone executables the 2026-09-06 amendment names
 #      + 2 module CLIs; `config` lands in SG-08), and every retired entry stays gone.
 #   2. DISPATCH: each new/changed forwarder routes a real invocation end to end:
-#      learn debt (the relocated weekend-batch), every session <verb>, board promote,
-#      spec/goal/mega/queue/stats.
-#   3. `learn propose` (SPEC-195) and `learn drain` (SPEC-196) are both LIVE; their dispatch
-#      is smoke-tested here (deep behavior: tests/test-learn-propose.sh, test-learn-drain.sh).
+#      reflect debt (the relocated weekend-batch, renamed from `learn` by ADR-0036), every
+#      session <verb>, board promote, spec/goal/mega/queue/stats.
+#   3. `reflect propose` (SPEC-195) and `reflect drain` (SPEC-196) are both LIVE; their dispatch
+#      is smoke-tested here (deep behavior: tests/test-reflect-propose.sh, test-reflect-drain.sh).
 #      The unknown-verb NC below still proves the router refuses what it does not own.
+#   4. `bin/learn` is the ADR-0036 deprecation forwarder: one release only, one stderr line,
+#      then the exact same dispatch as `bin/reflect`.
 #
 # Hermetic: learn-debt reads point DWARVES_KIT_LOG_DIR at a temp dir; board promote runs
 # in an empty temp repo. `stats` needs uv (the module's own dependency) -- SKIPs cleanly
@@ -33,7 +35,7 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # SPEC-184 forwarders; the census names them because the DISPATCH block below proves each
 # answers with its own contract. A bin/ entry with no such block is still the drift this
 # census exists to catch.
-EXPECTED="activate board classify config gate goal learn mega plugin-check precedent prose-rag queue release session skill-improve skill-review spec stats worktree-provision wrap"
+EXPECTED="activate board classify config gate goal learn lint mega plugin-check precedent prose-rag queue reflect release session skill-improve skill-review spec stats worktree-provision wrap"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
@@ -53,28 +55,34 @@ assert_true "bin/activate with no args prints its usage line" "$(grep -q 'usage:
 out="$("$KIT_DIR/bin/release" --help 2>&1)"; rc=$?
 assert_true "bin/release rejects a non-semver argument with its own message" "$(grep -q 'semver required' <<<"$out"; echo $?)"
 
-echo "== learn: debt dispatches to the relocated weekend-batch =="
+echo "== reflect: debt dispatches to the relocated weekend-batch =="
 TMPLOG="$(mktemp -d)"
-out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/learn" debt list 2>&1)"; rc=$?
-assert_true "learn debt list exits 0 through bin/learn (empty ledger)" "$rc"
-out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/learn" debt collect --all-repos 2>&1)"; rc=$?
-assert_true "learn debt collect exits 0 through bin/learn" "$rc"
-assert_true "learn debt collect emits the digest header" "$(grep -q 'Weekend batch: debt paydown' <<<"$out"; echo $?)"
-out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/learn" debt mark-paid no-such-rid 2>&1)"; rc=$?
-assert_true "learn debt mark-paid reaches the engine (engine's own no-ledger error, nonzero)" "$([ $rc -ne 0 ] && grep -q 'mark-paid: no ledger file' <<<"$out"; echo $?)"
+out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/reflect" debt list 2>&1)"; rc=$?
+assert_true "reflect debt list exits 0 through bin/reflect (empty ledger)" "$rc"
+out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/reflect" debt collect --all-repos 2>&1)"; rc=$?
+assert_true "reflect debt collect exits 0 through bin/reflect" "$rc"
+assert_true "reflect debt collect emits the digest header" "$(grep -q 'Weekend batch: debt paydown' <<<"$out"; echo $?)"
+out="$(DWARVES_KIT_LOG_DIR="$TMPLOG" "$KIT_DIR/bin/reflect" debt mark-paid no-such-rid 2>&1)"; rc=$?
+assert_true "reflect debt mark-paid reaches the engine (engine's own no-ledger error, nonzero)" "$([ $rc -ne 0 ] && grep -q 'mark-paid: no ledger file' <<<"$out"; echo $?)"
 
-echo "== learn: propose dispatches to the SPEC-195 distiller (deep behavior: test-learn-propose.sh) =="
-out="$("$KIT_DIR/bin/learn" propose --help 2>&1)"; rc=$?
-assert_true "learn propose exits 0 through bin/learn (--help)" "$rc"
-assert_true "learn propose reaches the distiller (its own usage, not a refusal)" "$(grep -q 'usage: learn propose' <<<"$out"; echo $?)"
+echo "== reflect: propose dispatches to the SPEC-195 distiller (deep behavior: test-reflect-propose.sh) =="
+out="$("$KIT_DIR/bin/reflect" propose --help 2>&1)"; rc=$?
+assert_true "reflect propose exits 0 through bin/reflect (--help)" "$rc"
+assert_true "reflect propose reaches the distiller (its own usage, not a refusal)" "$(grep -q 'usage: reflect propose' <<<"$out"; echo $?)"
 
-echo "== learn: drain dispatches to the SPEC-196 render (deep behavior: test-learn-drain.sh) =="
+echo "== reflect: drain dispatches to the SPEC-196 render (deep behavior: test-reflect-drain.sh) =="
 TMPSTAGE="$(mktemp -d)/backlog-staging.md"
-out="$(BACKLOG_STAGE_STAGING="$TMPSTAGE" "$KIT_DIR/bin/learn" drain 2>&1)"; rc=$?
-assert_true "learn drain exits 0 through bin/learn (no staging file)" "$rc"
-assert_true "learn drain reports nothing staged (honest-empty)" "$(grep -q 'nothing staged' <<<"$out"; echo $?)"
-out="$("$KIT_DIR/bin/learn" bogus-verb 2>&1)"; rc=$?
-assert_true "learn rejects an unknown verb (exit 1)" "$([ $rc -eq 1 ]; echo $?)"
+out="$(BACKLOG_STAGE_STAGING="$TMPSTAGE" "$KIT_DIR/bin/reflect" drain 2>&1)"; rc=$?
+assert_true "reflect drain exits 0 through bin/reflect (no staging file)" "$rc"
+assert_true "reflect drain reports nothing staged (honest-empty)" "$(grep -q 'nothing staged' <<<"$out"; echo $?)"
+out="$("$KIT_DIR/bin/reflect" bogus-verb 2>&1)"; rc=$?
+assert_true "reflect rejects an unknown verb (exit 1)" "$([ $rc -eq 1 ]; echo $?)"
+
+echo "== learn: the ADR-0036 deprecation forwarder (one release only) =="
+out="$("$KIT_DIR/bin/learn" propose --help 2>&1)"; rc=$?
+assert_true "bin/learn propose --help exits 0 (forwards to bin/reflect)" "$rc"
+assert_true "bin/learn prints its deprecation line" "$(grep -q 'bin/learn: deprecated' <<<"$out"; echo $?)"
+assert_true "bin/learn's output still reaches the real usage after the deprecation line" "$(grep -q 'usage: reflect propose' <<<"$out"; echo $?)"
 
 echo "== session: all five verbs route through the one dispatcher =="
 out="$("$KIT_DIR/bin/session" observe --help 2>&1)"

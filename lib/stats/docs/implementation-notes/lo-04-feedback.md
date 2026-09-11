@@ -7,7 +7,7 @@ a constraint. Not a mirror of the spec.
 
 - Context: the goal file names "unpaid-debt count over a threshold (debt ledger)". The
   understanding-DEBT ledger (kit understanding-gate) is PLANNED and conforms to the kit schema
-  (SG-01) but is NOT yet materialized as its own table in the SG-02 lens.
+ but is NOT yet materialized as its own table in the SG-02 lens.
 - Decision: the `debt` detector reads `SUM(kit_runs.gates_ovr)` (gate OVERRIDES = consciously
   WAVED gates = unpaid understanding debt) as the debt signal present in the lens today.
 - Why: the contract mandates ONE data path (detect via SG-02, never re-query a raw ledger). An

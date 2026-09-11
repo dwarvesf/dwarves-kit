@@ -14,7 +14,7 @@
 # determined bypass (obfuscated reader, python -c, base64) is out of scope.
 #
 # Source: Trail of Bits claude-code-config deny-list + claudekit file-guard.
-# SPEC-014 / ADR-0014. Exit 2 = block.
+# Exit 2 = block.
 
 set -uo pipefail
 
@@ -96,7 +96,7 @@ case "$TOOL" in
   Bash)
     CMD=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // empty' 2>/dev/null) || exit 0
     [ -z "$CMD" ] && exit 0
-    # Best-effort (DEC-008): a reader/redirect touching a clear secret token.
+    # Best-effort: a reader/redirect touching a clear secret token.
     if printf '%s' "$CMD" | grep -qE '(\bcat\b|\bless\b|\bmore\b|\bhead\b|\btail\b|\bxxd\b|\bstrings\b|\bod\b|\btac\b|\bnl\b|\bbase64\b|\bcp\b)' \
        && printf '%s' "$CMD" | grep -qE '(\.ssh/id_|id_rsa|id_ed25519|\.aws/credentials|\.gnupg/|\.git-credentials|\.pem\b|\.p12\b|\.kube/config|\.npmrc)'; then
       log_block "Bash" "$(printf '%s' "$CMD" | head -c 120)"

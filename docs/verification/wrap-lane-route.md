@@ -34,7 +34,7 @@ pin, because an unpinned claim about a lint is the same shape of trust this step
 
 - Command: `bash tests/test-wrap.sh`
 - Exit: 0
-- Output: `test-wrap: all 259 passed`
+- Output: `test-wrap: all 326 passed`
 - Verdict: PASS
 
 The four new cases inside that run:
@@ -51,7 +51,7 @@ deliverable pass as a 7b candidate.
 
 - Command: `bash tests/test-meta.sh`
 - Exit: 0
-- Output: `Passed: 843 / 843`
+- Output: `Passed: 851 / 851`
 - Verdict: PASS
 
 ## Negative control
@@ -82,3 +82,27 @@ a much bigger surface than the hole justifies. The line makes the lane and the c
 and attributable, which is the step that was missing.
 
 <!-- provenance: ID-827 -->
+
+## Re-verified after merging master
+
+Master moved 32 commits under this branch before the PR landed, and two of them touched the
+same step. It gained the LIST form for `**Built:**` (a bare header plus one bullet per
+candidate) and a rewritten per-item rule in `lib/wrap/report-lint.sh` that checks each bullet
+rather than each line. The lane suffix composes with both: the token check reads the item, the
+suffix trails it, and neither rule reads the other's slot.
+
+`commands/wrap.md` was resolved by taking master's text and re-applying the lane delta on top,
+because master's `b. Candidates` gained material the branch never had (the OUTPUT-versus-METHOD
+hole, and repetition a session delegated to subagents). A mechanical keep-both would have
+shipped that paragraph twice. `_meta/BACKLOG.md` and `tests/test-wrap.sh` were additive on both
+sides and kept both.
+
+| Check | Command | Before the merge | After |
+|---|---|---|---|
+| wrap suite | `bash tests/test-wrap.sh` | 259 passed | 326 passed |
+| meta suite | `bash tests/test-meta.sh` | 843 passed | 851 passed |
+| conflict markers | `grep -rlE '^<<<<<<<\|^>>>>>>>' .` | n/a | none |
+
+The four lane cases still pass unchanged against master's rewritten lint, which is the claim
+that mattered: the suffix never stands in for the `ENHANCE` or `NEW` token, and a line carrying
+only a suffix still fails and still names the missing token.

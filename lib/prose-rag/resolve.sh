@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# resolve.sh -- the ONE prose-rag engine resolver (SPEC-251).
+# resolve.sh -- the ONE prose-rag engine resolver.
 #
 # WHY: `bin/prose-rag` and `lib/config/config.sh` both answered "where is the engine?"
 # with their own `command -v prose-rag`. That lookup finds the wrapper install.sh writes

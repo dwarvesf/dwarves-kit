@@ -587,28 +587,30 @@ loop?" Advisory by construction -- nothing below ever blocks a correct build.
   `VALIDATED` on an empty/missing block for design-bearing work -- the one reviewer of six that can
   block). Otherwise-obvious work collapses the whole block to one line (`obvious: <why>`). See the
   "Design record" row in the lane x phase depth matrix above.
-- **AFTER: the explainer + quiz (SG-03/SG-04, ADR-0031 §2).** `/kit:explain` (`lib/explain.sh`)
+- **AFTER: the explainer + quiz (ADR-0031 §2, seam per ADR-0036).** `/kit:explain` (`lib/explain.sh`)
   turns a shipped change into a literate-diff explainer -- background, goal+intuition, a
-  prose-ordered (not alphabetical) diff, a diagram -- composing `narrate-log` +
-  `svg-knowledge-diagram`, grounded in the actual diff + recorded tests, never the agent's
-  narrative. Human-invoked, on demand; no auto-fire. On a `gate`/gated-final PR, `/kit:ship`'s
+  prose-ordered (not alphabetical) diff, a diagram -- grounded in the actual diff + recorded
+  tests, never the agent's narrative. The engine gathers this material mechanically and hands it
+  to whatever skill the operator's `understand.teach` seam names (empty: `skipped: no teacher`,
+  the grounded material stands alone); it never hardcodes which skill teaches. Human-invoked, on
+  demand; no auto-fire. On a `gate`/gated-final PR, `/kit:ship`'s
   Step 8 first runs `lib/classify/significance-classify.sh record` (SPEC-136, below), persisting the
   `significance=`/`worthiness=`/`verdict=` marker to the debt ledger; then Step 8 runs `lib/gate/quiz-gate.sh tap`, which asks `lib/classify/significance-classify.sh classify` for the
   same verdict (two signals: significance x understanding-worthiness) and, ONLY on a `tap` (high x
   high), prints the ★-tap nudge: a one-line "worth understanding: <why>" plus a 5-question quiz
-  grounded in the diff+tests, routed through `deep-understand`'s mastery gate.
+  grounded in the diff+tests, routed through the same `understand.teach` seam.
 - **The conscious debt-budget model (ADR-0031 Refinement).** The goal is CONSCIOUS debt, not zero
   debt: two signals (significance x worthiness) resolve to a verdict (`tap` / `wave` /
   `not-significant`); a `tap` offers three responses -- **engage** now (pull the quiz),
   **defer** (to the weekend batch), **wave** (accept the debt knowingly) -- and all three write to
   one ledger (`gate-ledger.sh debt-response`, an additive `| DEBT |` line). Every response still
   merges the PR; the only real failure is UNTRACKED debt, not deferred or waved debt.
-- **Weekend batch (SG-05, ADR-0031 §3, SPEC-126).** Han-invoked only, no scheduled job:
-  `bin/learn debt collect` (this repo; engine `lib/learn/weekend-batch.sh`) reads the `| DEBT |` ledger and surfaces the week's
+- **Weekend batch (ADR-0031 §3, SPEC-126).** Han-invoked only, no scheduled job:
+  `bin/reflect debt collect` (this repo; engine `lib/reflect/weekend-batch.sh`, renamed from `learn` by ADR-0036, `bin/learn` kept one release as a deprecation forwarder) reads the `| DEBT |` ledger and surfaces the week's
   WAVED/DEFERRED items; the ops-toolkit `weekend-debt-paydown` skill orchestrates the collected
   items into the operator's existing learning skills (`learning-day-process`, `learning-ledger`,
   `deep-understand`, `knowledge-capture`) rather than reinventing a second batching engine;
-  `bin/learn debt mark-paid <rid>` closes an item so it is never re-collected.
+  `bin/reflect debt mark-paid <rid>` closes an item so it is never re-collected.
 - **`significance-classify.sh record` wired at Ship.** The verb that PERSISTS a raw
   `significance=`/`worthiness=`/`verdict=` `| DEBT |` marker independent of the quiz nudge --
   previously an honestly-documented gap with no invoking command -- is now called by
@@ -1031,14 +1033,15 @@ fallback because it alone can run with neither a spec nor a brief.
 | `## Test plan` | in the active spec | per-spec | build input `/kit:execute` reads from the spec it runs |
 | `## Design critique` (`/kit:devs-team`) | active spec, else the pre-spec brief | spec-first | binds to the design it critiques |
 | `## UI design` + `## Visual critique` (`/kit:ui-design`; `/kit:visual-team`) | active spec, else the pre-spec brief (visual-team: else inline-only) | spec-first | both write `## Visual critique` to the same heading + location; replace-not-stack dedups |
-| `docs/briefs/DECISION-BRIEF.md` | working-tree file | one per worktree (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier |
+| `docs/briefs/DECISION-BRIEF-<slug>.md` (legacy: `docs/briefs/DECISION-BRIEF.md`) | working-tree file | one per feature slug (pre-spec) | exists during `/think`+`/design` before a SPEC-NNN exists; `/spec` folds it into the spec's `## Solution`, after which the spec is the carrier. Slugged per feature (not just per worktree) since these files get committed and merged, so two features sharing a worktree/branch history must not collide |
 | `## Review` (`/kit:review`, `/kit:review-team`) | in the active spec | per-spec | review verdict + findings + TODOs; replace-not-stack; inline in chat if no spec exists |
 | kit logs, session-state | `~/.claude/dwarves-kit/...` | namespaced by worktree id | shared-path writes isolated per worktree |
 
 The pre-spec brief is the one artifact that cannot be per-spec (no SPEC-NNN exists
-yet); in that window concurrency relies on worktree isolation, and `/spec` folds the
-brief into the spec so the spec becomes the carrier from then on. Same-directory
-branch-switching is NOT a supported concurrency mode; use a worktree per spec.
+yet); in that window it is named per feature slug (`DECISION-BRIEF-<slug>.md`), and
+`/spec` folds it into the spec so the spec becomes the carrier from then on.
+Same-directory branch-switching is NOT a supported concurrency mode; use a worktree
+per spec.
 
 ### Multi-session (cross-session) coordination
 `/kit:dispatch` above is the **single-session** case: one lead session fans out workers
@@ -1252,7 +1255,7 @@ later reader and an earlier writer never split across two specs.
 
 | # | Flow | Trigger | Writes to | Stop |
 |---|---|---|---|---|
-| 1 | `/kit:design` | between `/think` and `/spec`, when the solution needs working out | `docs/briefs/DECISION-BRIEF.md` (folded into the spec by `/spec`) | solution agreed per section |
+| 1 | `/kit:design` | between `/think` and `/spec`, when the solution needs working out | `docs/briefs/DECISION-BRIEF-<slug>.md` (folded into the spec by `/spec`) | solution agreed per section |
 | 2 | `/kit:devs-team` | before the spec hardens; 5 engineering lenses | `## Design critique` in the active spec (else the brief) | verdict recorded |
 | 3 | `/kit:visual-team` | a visual/UI design exists (downstream) | `## Visual critique` in the active spec (else brief, else inline) | verdict recorded |
 | 4 | `/kit:ui-design` | downstream UI work, after `/design` | `## UI design` in the spec; generates via `frontend-design`; critiques via `/visual-team` | SOLID/RECONSIDER verdict or max-2 revise |

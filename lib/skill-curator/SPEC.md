@@ -9,7 +9,7 @@ behaviour contract lives in `docs/specs/`, the why in `docs/decisions/`.
 |---|---|
 | [README.md](./README.md) | What it is + install + quick reference |
 | [MANUAL.md](./MANUAL.md) | Daily-use guide (CLI surfaces, config knobs, operator flow) |
-| [RUNBOOK.md](./RUNBOOK.md) | Incident triage (cost, runaway, stuck lock, settings.json, promote refusals, curator) |
+| [RUNBOOK.md](./docs/RUNBOOK.md) | Incident triage (cost, runaway, stuck lock, settings.json, promote refusals, curator) |
 | [docs/architecture.md](./docs/architecture.md) | Topology, trust boundary, data flow, component + state map |
 | [docs/specs/SPEC-103-skill-curator.md](./docs/specs/SPEC-103-skill-curator.md) | The umbrella behaviour contract (Phases A/B/C, DEC-001..008) |
 | [docs/specs/CONTEXT.md](./docs/specs/CONTEXT.md) | Implementation context (stack, conventions, key files) |
@@ -26,7 +26,7 @@ behaviour contract lives in `docs/specs/`, the why in `docs/decisions/`.
 | B | promote gate (`/skill-review`) + SessionStart surfacing + idempotent install | on demand + SessionStart | SPEC-103 TASK-006..010 |
 | C | skill-library curator (`cc-improve curate`, git-mv archive, never delete) | on demand + weekly propose-only launchd | SPEC-103 TASK-011..014 |
 
-A single umbrella spec (SPEC-103) covers all three; the phases are indexed in `docs/proof-of-done.md`
+A single umbrella spec covers all three; the phases are indexed in `docs/proof-of-done.md`
 per feature rather than split into SPEC-001/002/003, because they share one design and one I/O
 contract.
 

@@ -1,6 +1,6 @@
 # Architecture
 
-How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five stages, formerly "legs": Shape → Build → Watch → Check → Learn, and which module serves which) lives in the README's "The five stages" section, backed by ADR-0034 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
+How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five stages, formerly "legs": Shape → Build → Watch → Check → Reflect, and which module serves which) lives in the README's "The five stages" section, backed by ADR-0034/ADR-0036 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
 
 ## Component layout
 
@@ -30,11 +30,11 @@ operator-wave>` enum, SPEC-138, so the kit's least-used gate is auditable rather
 
 ```
 /kit:think      reads:  user idea (chat)
-                 writes: docs/briefs/DECISION-BRIEF.md  (if BUILD)
+                 writes: docs/briefs/DECISION-BRIEF-<slug>.md  (if BUILD; legacy: DECISION-BRIEF.md)
 
-/kit:spec       reads:  docs/briefs/DECISION-BRIEF.md, codebase via 4 research agents
+/kit:spec       reads:  docs/briefs/DECISION-BRIEF-<slug>.md, codebase via 4 research agents
                  writes: docs/specs/SPEC-NNN-<slug>.md  (Status: DRAFT)
-                         docs/research/{stack,features,architecture,pitfalls}.md
+                         docs/research/YYYY-MM-DD-<slug>-{stack,features,architecture,pitfalls}.md
 
 /kit:spec-validate  reads:  docs/specs/SPEC-NNN-<slug>.md
                      writes: docs/specs/SPEC-NNN-<slug>.md  (Status: VALIDATED) or comments
@@ -82,7 +82,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 
 | Entry | Type | V-phase | Arm | Note |
 |---|---|---|---|---|
-| `/kit:think` | command | Brief | build | Stress-tests the idea before any spec; primary output is `DECISION-BRIEF.md` |
+| `/kit:think` | command | Brief | build | Stress-tests the idea before any spec; primary output is `DECISION-BRIEF-<slug>.md` |
 | `/kit:assign` | command | Requirement | build | Turns a backlog item into a goal draft; routes it into the right lane |
 | `/kit:grill` | command | Requirement (intake) | build | Universal intake interview between type classification and the phase-0 Done=; type-shaped one-question-at-a-time, write-as-you-go |
 | `/kit:design` | command | Solution-design | build | Opt-in interactive beat between think and spec; shapes the solution one decision at a time |
@@ -142,7 +142,7 @@ Every command and agent mapped to its V-model arm, grouped so the left side (BUI
 | `agent-effectiveness` | agent | Agent-def review | gate | Validates a new/changed agent definition's effectiveness across 4 lenses (tools/description/instructions/tier); dispatched diff-keyed by /kit:draft-agent Step 4.7; read-only, advisory, fail-safe |
 | `break-it` | agent | Adversarial probe (extra lens) | test | Escalation-tier lens dispatched by /kit:battery when the diff carries behavioral code with tests; hunts one concrete input the suite does not constrain and returns PROBE/NO-PROBE; rung 2 of the coverage -> probe -> mutation ladder, before lib/gate/mutation-smoke.sh; read-only, advisory, never writes a test |
 | `advisor` | agent | Cross-cutting review (extra lens) | gate | Kit-default generic lens at the final integration/UAT boundary; two modes (P5 critique via /review-team Step 2b, P6 over-suggest before the final review); additive to the specialized reviewers, read-only, advisory |
-| `brief-reviewer` | agent | Brief review | gate | Static left-arm reviewer of the design brief / requirement (`DECISION-BRIEF.md` or a spec's Problem/Context) for clarity, completeness, and testability before it hardens into a spec; read-only; the mirror the brief row previously lacked (ADR-0028 right-arm parity, ADR-0029) |
+| `brief-reviewer` | agent | Brief review | gate | Static left-arm reviewer of the design brief / requirement (`DECISION-BRIEF-<slug>.md` or a spec's Problem/Context) for clarity, completeness, and testability before it hardens into a spec; read-only; the mirror the brief row previously lacked (ADR-0028 right-arm parity, ADR-0029) |
 
 ### Cross-phase (outside the V)
 
@@ -262,6 +262,7 @@ file count so this table cannot drift):
 | `codebase-index` | SessionStart (opt-in) | convenience | none (background indexing) |
 | `money-gate` | PreToolUse Edit/Write/MultiEdit | convenience | a silent careless edit to a ledger/payroll/wallet file in a repo the consumer named financial (inert until MONEY_GATE_REPOS is set) |
 | `prose-rag` | UserPromptSubmit | convenience | re-deriving what the consumer already wrote; injects prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
+| `context-budget` | UserPromptSubmit | advisory | a long session burning most of its spend re-reading the same context from cache unnoticed; warns once per 100k-token band past 200k, never blocks |
 | `tool-policy-guard` | PreToolUse | advisory | drifting to a denied/ask-tier tool the policy file maps per domain (inert until a tool-policy.json exists) |
 
 **C3 reconciled.** PHILOSOPHY's "Guardrails over guidance" is bounded, not

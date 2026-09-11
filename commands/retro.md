@@ -118,13 +118,13 @@ this way.
 Run the deterministic proposer (no LLM, no grounding pass: the retro IS the evidence):
 
 ```bash
-bash lib/learn/learn.sh propose --retro docs/retro/RETRO-[date].md
+bash lib/reflect/reflect.sh propose --retro docs/retro/RETRO-[date].md
 ```
 
 It stages every UNCHECKED item as a `## [staged]` block through the one renderer, deduped
 against staging + the board, with `Source: retro <date> | <file> owner=<x>` as the citation.
 A `[x]` item is already done and is deliberately skipped. Then tell the operator: review with
-`learn drain`, accept with `board promote <n>`. The retro doc keeps its checkboxes untouched;
+`reflect drain`, accept with `board promote <n>`. The retro doc keeps its checkboxes untouched;
 it is a historical record, not a tracker.
 
 ### Step 4: Update kit if needed

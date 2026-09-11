@@ -76,7 +76,7 @@ docstring precision fix.
 | AC14 | `scan()` skip-safe on a missing root (returns `[]`, never raises) | PASS | O1-missing-roots |
 | (extra) | undecodable/oversized file -> empty text, never crashes the scan | PASS | O2-undecodable-file-no-crash |
 | (extra) | bare word / slash-command / placeholder NOT tested; real-root path IS (DEC-008/009) | PASS | O4, O5, O6, O7 |
-| (extra) | IS-IT-AN-INDEX gate: prose MEMORY.md flags nothing; real index still flags orphans (DEC-010) | PASS | M-prose MEMORY.md, O8 |
+| (extra) | IS-IT-AN-INDEX gate: prose MEMORY.md flags nothing; real index still flags orphans | PASS | M-prose MEMORY.md, O8 |
 | (extra) | `~<unresolvable-user>` caught (RuntimeError) -> flagged dead, no crash | PASS | M-unresolvable-tilde-user-note |
 
 ## Confirmation (recorded runs)

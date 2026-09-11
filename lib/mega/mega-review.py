@@ -29,7 +29,7 @@ goal file requires surfaced HERE because the dashboard is "the one surface with 
 reader"): staged-candidate count + oldest age (`_meta/backlog-staging.md`, the existing
 BACKLOG_STAGE_STAGING seam), learned-ledger queued count (the existing STATS_LEARNED_MD seam,
 no kit-side default -- ops-toolkit-specific per lib/stats/src/stats/config.py), unpaid-debt
-count (`bin/learn debt list`, its own default 7-day window, labeled honestly).
+count (`bin/reflect debt list`, its own default 7-day window, labeled honestly).
 Every one of the three reads via its OWN pre-existing consumer-config seam; an absent/unset
 source renders "-" (honest-dash), NEVER a fabricated zero -- SPEC-197 Design.
 
@@ -144,7 +144,7 @@ _ATTENTION = {
 # ---- 2. the gate/run ledger --------------------------------------------------------------------
 
 def _sanitize_branch_to_rid(branch):
-    """gate-ledger.sh `rid()`'s transform (SPEC-070): the branch with its leading `type/`
+    """gate-ledger.sh `rid()`'s transform: the branch with its leading `type/`
     segment stripped (`${branch#*/}` -- a no-op if there is no slash at all), then normalized to
     the ledger filename charset via proof-table-gen.py's port of runid()."""
     if not branch:
@@ -300,7 +300,7 @@ def _learned_queued():
 
 
 def _unpaid_debt_count(code_root):
-    wb = os.path.join(_SELF_DIR, "..", "learn", "weekend-batch.sh")
+    wb = os.path.join(_SELF_DIR, "..", "reflect", "weekend-batch.sh")
     if not os.path.isfile(wb):
         return None
     res = _run(["bash", wb, "list", "--all-repos"], cwd=code_root)
@@ -370,7 +370,7 @@ def _e(v):
 
 def render_gate_table(gate_rows, outcomes, tokens):
     if not gate_rows:
-        # Honest-empty (SPEC-197): distinguish "no ledger at all" from the narrower "ledger
+        # Honest-empty: distinguish "no ledger at all" from the narrower "ledger
         # exists but carries no GATE row" (e.g. a rid whose file has only OUTCOME/TOKENS lines)
         # -- never claim "no ledger rows" when rows of a DIFFERENT marker type are present.
         if outcomes:
@@ -503,7 +503,7 @@ def render_html(slug, roadmap_rows, truth_map, kit_log_dir, code_root, footer):
         "</head><body>"
         f"<h1>mega review: {_e(slug)}</h1>"
         f'<p class="meta">generated {_e(now)} &middot; a projection over the run ledger + gh + '
-        "proof paths, never a stored source of truth (SPEC-197). Re-render to refresh.</p>"
+        "proof paths, never a stored source of truth. Re-render to refresh.</p>"
         + "\n".join(body)
         + render_footer(footer)
         + "</body></html>"

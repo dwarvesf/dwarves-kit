@@ -11,7 +11,7 @@ disable-model-invocation: false
 Audit a repo's git-tracked `_meta/BACKLOG.md` Active queue against reality and ship the fixes
 as a PR. This is the backlog-reconcile instance of `docs/patterns/audit-loop.md` (the pattern
 doc's own "Backlog reconcile" SDLC-instances row): every adopter repo gets this schema via
-`/kit:adopt` (SPEC-005), so this instance is general-purpose, not maintainer-only like
+`/kit:adopt`, so this instance is general-purpose, not maintainer-only like
 `topology-drift`.
 
 ## The four slots (per the audit-loop pattern)
@@ -50,7 +50,7 @@ doc's own "Backlog reconcile" SDLC-instances row): every adopter repo gets this 
       `Target artifact` does NOT start with `_meta/megagoals/` -> flag FIX ("shipped rows drop
       off the Active queue per the schema", evidence = `_meta/BACKLOG.md`'s own `## Schema`
       text). A `shipped` row under `_meta/megagoals/` is an umbrella/tracking row kept
-      deliberately (this repo's own `ID-101`) and is exempt, not flagged.
+      deliberately (a tracking row for this repo's own megagoal work) and is exempt, not flagged.
 
    b. **SPEC-NNN existence + status mapping.** `Target artifact` matches `^SPEC-\d+$`:
       `test -e docs/specs/<Target artifact>-*.md`. Missing -> flag (Tier 2 judges

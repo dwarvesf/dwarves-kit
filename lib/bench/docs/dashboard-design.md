@@ -203,7 +203,7 @@ possible, and each is enforced in code with a test:
    fail-open; real transcripts never enter a publicly-shipping tree.
 8. Feature attribution names `main`/`HEAD` as unattributed rather than inventing features.
 
-**Known gaps, in priority order.** (a) The session↔run join (ID-420) unlocks cost per
+**Known gaps, in priority order.** (a) The session↔run join unlocks cost per
 shipped change, the metric that should dominate the efficiency board. (b) Per-member
 identity needs the team gateway; everything member-shaped is project-shaped until then.
 (c) Codex is the natural second runtime adapter , its rollout files are already JSONL.

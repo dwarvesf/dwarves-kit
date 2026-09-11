@@ -18,15 +18,18 @@ schema, two different questions asked of it.
 
 Contract:
   iter_entries(path) -> Iterator[dict]
-      Stream one parsed JSON object per valid line, in file order. A blank line
-      is skipped. A line that fails `json.loads` is skipped silently (this
-      matches BOTH source tools' pre-extraction behavior byte-for-byte; the
-      schema is untrusted input, so a single bad line must never abort the scan).
-      Raises FileNotFoundError / OSError if `path` itself cannot be opened --
-      the CALLER decides what that means (session-observe's many-file scan
-      lets a missing file just contribute zero entries; session-recall's
-      single --file mode wants to surface it). Yields nothing for an empty
-      file (honest-zero, not an error).
+      Stream one parsed JSON *object* per valid line, in file order. A blank
+      line is skipped. A line that fails `json.loads`, OR that decodes to
+      valid JSON that is not an object (a bare array/string/number/bool/null,
+      e.g. `["x"]`), is skipped silently (this matches BOTH source tools'
+      pre-extraction behavior byte-for-byte; the schema is untrusted input, so
+      a single bad line must never abort the scan). Every caller treats an
+      entry as a dict (`entry.get(...)`), so a non-object line is exactly as
+      unusable to them as a malformed one. Raises FileNotFoundError / OSError
+      if `path` itself cannot be opened -- the CALLER decides what that means
+      (session-observe's many-file scan lets a missing file just contribute
+      zero entries; session-recall's single --file mode wants to surface it).
+      Yields nothing for an empty file (honest-zero, not an error).
 
   load(path) -> list[dict]
       `list(iter_entries(path))` -- for a caller that needs random-access
@@ -48,11 +51,15 @@ from typing import Iterator
 
 
 def iter_entries(path: str) -> Iterator[dict]:
-    """Yield each successfully-parsed JSON object in `path`, in file order.
+    """Yield each successfully-parsed JSON *object* in `path`, in file order.
 
-    Malformed / blank lines are skipped, never raised. A missing or unreadable
-    `path` raises (FileNotFoundError / PermissionError / OSError) so the caller
-    can decide whether that is a per-file skip or a reported error.
+    Malformed / blank lines are skipped, never raised. A line that decodes to
+    non-object JSON (e.g. `["x"]`, a bare string/number) is skipped too: every
+    caller reads an entry as a dict, so a non-object line would otherwise crash
+    the first `.get()` downstream instead of being treated as the untrusted
+    input it is. A missing or unreadable `path` raises (FileNotFoundError /
+    PermissionError / OSError) so the caller can decide whether that is a
+    per-file skip or a reported error.
     """
     with open(path, "r", encoding="utf-8") as fh:
         for line in fh:
@@ -60,9 +67,12 @@ def iter_entries(path: str) -> Iterator[dict]:
             if not line:
                 continue
             try:
-                yield json.loads(line)
+                entry = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(entry, dict):
+                continue
+            yield entry
 
 
 def load(path: str) -> list:

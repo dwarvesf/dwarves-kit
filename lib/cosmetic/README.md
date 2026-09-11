@@ -1,7 +1,7 @@
 # cosmetic
 
 Six hooks that make a session nicer to sit in front of. **None of them is part of the
-loop.** ADR-0034 assigns every kit module a primary stage (Shape / Build / Watch /
+loop.** Every kit module is assigned a primary stage (Shape / Build / Watch /
 Check / Learn, formerly Specify / Execute / Observe / Govern / Learn); `cosmetic` is the one module with **`(none)`**, and
 `lib/config/module-registry.md` records it as "orthogonal to the loop". That is not a
 filing accident, it is the module's whole contract.
@@ -12,7 +12,7 @@ This dir is documentation only. **The module has no code of its own** and this R
 does not move any: all six executables live in the kit's flat `hooks/` dir alongside the
 spine hooks, because that is where the installer's hook map reads them from
 (`install.sh `kit_module_hooks()``). This dir exists so the module has a front door, a spec, and a proof
-like every other module the kit contract (SPEC-200) enumerates.
+like every other module the kit contract enumerates.
 
 | What | Where |
 |---|---|

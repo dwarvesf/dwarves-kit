@@ -4,7 +4,7 @@
 Ports the pi-vcc technique (sticky-vs-volatile extraction) to Claude Code's
 transcript schema. Pure extraction + formatting: same input bytes -> byte-identical
 output. No model calls, no network, no clock, no randomness. Anything not extracted
-here is still recoverable by the recall CLI (SG-03); fidelity, not reduction, is the bar.
+here is still recoverable by the recall CLI; fidelity, not reduction, is the bar.
 
 ponytail: one module, stdlib only. Heuristic regex cues, not a parser framework.
 """

@@ -6,12 +6,12 @@ marketplaces, the local `directory` marketplace (e.g. a `kit@<marketplace>` dev 
 and a big multi-plugin marketplace such as `claude-plugins-official`. It prints the exact
 command to bump each stale one.
 
-**Migrated into dwarves-kit (kit-foldin SG-05, 2026-07-05).** This tool moved here verbatim
+**Migrated into dwarves-kit (kit-foldin, 2026-07-05).** This tool moved here verbatim
 from `ops-toolkit/tools/cc-plugin-check/` (dropped the `cc-` prefix per the kit naming
 rule: kit artifacts are named by function, not by host agent). No functional change: same
 verdict logic, same CLI surface, same 27-assertion test suite, unmodified. Full design:
 `docs/specs/SPEC-105-cc-plugin-check.md`. Why the data sources differ from the spec's
-originally-named JSON shape: `docs/implementation-notes/cc-plugin-check.md`.
+originally-named JSON shape: `docs/implementation-notes/plugin-check.md`.
 
 ## The one contract: a false "current" is unacceptable
 
@@ -119,7 +119,7 @@ The tool reads Claude Code's own plugin state from `$CC_PLUGINS_DIR`, which defa
 kit- or consumer-specific path assumption: set `CC_PLUGINS_DIR` only to point the tool at a
 non-default location (e.g. a test fixture, per `tests/smoke.sh`).
 
-> Note: SPEC-105 named `claude plugin list --available --json` `source.sha` as the upstream
+> Note: the design spec (`docs/specs/SPEC-105-cc-plugin-check.md`) named `claude plugin list --available --json` `source.sha` as the upstream
 > signal. On the CLI version it was built against (2.1.183), `--available` lists only
 > *not-installed* plugins and carries no installed-plugin sha, so the tool reads the CLI's
 > catalog-cache + clone state instead. This is still CLI-delegation (the catalog is the

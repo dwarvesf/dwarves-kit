@@ -10,7 +10,7 @@ Depends-on: 02 (`git_fixes`, merged to `main` at `026da172`)
 `tools/ledger-observatory/docs/benchmark-followup.md` change 5 and
 `research/2026-07-04-fable-unknowns-absorption.md` Design 2 name the upstream half of the
 benchmark that today does not exist: defects ORIGINATE as unclarified unknowns upstream (spec
-quality, mid-run deviations), but `gate-yield` (SG-01) and `defect-correlation` (SG-02) only
+quality, mid-run deviations), but `gate-yield` and `defect-correlation` only
 measure defects CAUGHT or ESCAPED downstream. The bridge metric already exists on disk and
 nobody reads it: the global CLAUDE.md's hook-enforced `docs/implementation-notes/<slug>.md`
 convention requires every spec-driven task to log its mid-run deviations from the spec (or an
@@ -19,7 +19,7 @@ explicit zero-deviation marker line), but no adapter has ever read these files.
 ```
 unknowns upstream          mid-flight              downstream
 (grill/spec quality) ---> deviations logged --->  gate catches / fix() escapes
-     (out of scope)         THIS LENS (SG-03)        SG-01 / SG-02 (shipped)
+     (out of scope)         THIS LENS        SG-01 / SG-02 (shipped)
 ```
 
 Two facts, found during Think (not assumed), shape the design:
@@ -96,7 +96,7 @@ silently forced into one of the three named classes the goal file specifies.
 - 04-anomalies-advisor (next) reads `gate-yield`'s aggregation shape and `defect-correlation`'s
   output for its own conditioning; nothing here couples to that sub-goal's internals.
 - If a future sub-goal needs `impl_notes` and `git_fixes` to describe different repos in one
-  materialization, the shared-knob decision (DEC-001) is the first thing to revisit; today
+  materialization, the shared-knob decision is the first thing to revisit; today
   nothing needs it.
 - Unit boundary: this sub-goal owns `impl_notes` + `deviation-rate` + `unknown-density` only. The
   hook that WRITES implementation-notes files (the global CLAUDE.md contract, enforced
@@ -177,7 +177,7 @@ IMPL_NOTES_SCHEMA = [
 
 `file` is the note's OWN relative path (e.g. `tools/vps-mon/docs/implementation-notes/
 SPEC-075-mini-launchd-collector.md`), NOT a list of files the underlying work touched -- that
-list is derived at query time from `git_fixes` via the slug bridge (DEC-002), never stored
+list is derived at query time from `git_fixes` via the slug bridge, never stored
 redundantly on this table.
 
 ### API changes
@@ -206,7 +206,7 @@ None.
   text). Malformed-file policy (marker line AND real entries both present): counted as entries,
   `zero_marker` forced `False`, a stderr warning logged. Skip-safe on a missing repo path or an
   unreadable file. Acceptance: unit-level (via the golden fixture, TASK-004) + the over-test
-  pass (TASK-006).
+  pass.
 
 ### Phase 2: Core
 - [x] TASK-003: `materialize.py`: `_IMPL_NOTES_DDL = schemas.ddl(schemas.IMPL_NOTES_SCHEMA)`;
@@ -333,7 +333,7 @@ bash tests/test-feedback.sh     # regression: pre-existing 30/39 (9 fail), uncha
 | Failure class | Detection signal | Mitigation / recovery |
 |---|---|---|
 | Honest-zero NC written vacuously (a CLEAN slug flagged SUSPECT merely because SOME later fix() exists anywhere in history) | golden-fixture assertion checks the EXACT class for `clean-notes`; a deliberate break (drop the `lf.file = af.file` join condition) re-run and PROVEN to flip it to SUSPECT | required as TASK-004 acceptance; the deliberate-break run is documented in the proof, restored via `git checkout` |
-| `unknown-density` spuriously firing on uncontrolled real-repo data inside an unrelated pre-existing test's fixture | discovered during Build against `test-feedback.sh`'s `F-nc-noise`; fixed by isolating `LEDGER_OBS_GIT_REPO_DIR` in the 3 affected suites (DEC-004) | TASK-007 acceptance, verified via `git stash` before/after |
+| `unknown-density` spuriously firing on uncontrolled real-repo data inside an unrelated pre-existing test's fixture | discovered during Build against `test-feedback.sh`'s `F-nc-noise`; fixed by isolating `LEDGER_OBS_GIT_REPO_DIR` in the 3 affected suites | TASK-007 acceptance, verified via `git stash` before/after |
 | Malformed file (marker + real entries) silently trusted at face value | `_parse_impl_notes_file`'s explicit contradiction check forces `zero_marker=False` + logs a stderr warning, asserted in O-malformed | TASK-006 acceptance |
 | Nested worktree double-counting a file | `os.walk`'s hidden-dir pruning (`.claude`, `.git`, `.venv`) asserted directly (O4) | TASK-006 acceptance |
 | `impl_notes` schema drifts from its DDL the same way `KIT_SCHEMA` originally did | `schemas.assert_parity` runs at load time (same guard `test-schema-parity.sh` already proves is wired) | belt-and-suspenders; TASK-003 wires the SAME call site pattern `_load_python_table` already uses |
@@ -417,14 +417,14 @@ tools/ledger-observatory/**
   Typer-validated ints interpolated into fixed SQL positions, not user strings, same convention
   `defect-correlation` already uses). Failure-mode: the table above covers vacuous-NC,
   cross-suite-pollution, malformed-file, and worktree-double-count classes. Assumption: the
-  slug-substring bridge's false-positive risk (DEC-002) is stated explicitly, not hidden. Scope:
+  slug-substring bridge's false-positive risk is stated explicitly, not hidden. Scope:
   tasks are each single-file/narrow-scope and atomic, matching SG-01/SG-02's task granularity.
 
 ## Amendments
 (none)
 
 ## Review
-Self-review via the `/kit:spec-validate` 6-reviewer pass, 2026-07-04. Verdict: APPROVED (DEC-007).
+Self-review via the `/kit:spec-validate` 6-reviewer pass, 2026-07-04. Verdict: APPROVED.
 Status: VALIDATED.
 
 ## Open questions

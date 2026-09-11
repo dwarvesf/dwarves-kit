@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# significance-classify.sh -- deterministic understanding-gate classifier (ADR-0031, SPEC-123).
+# significance-classify.sh -- deterministic understanding-gate classifier.
 #
 # Sibling to lib/classify/lane-classify.sh (same shape: pure bash + grep, no binary, no LLM). Where
 # lane-classify decides HOW MUCH RISK a task carries, this decides WHEN the understanding gate

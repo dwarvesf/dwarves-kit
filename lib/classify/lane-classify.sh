@@ -20,7 +20,7 @@
 # stays above the hard-gate so "a typo about auth" is still a typo; backfill stays first so a
 # keyword inside a doc task (e.g. "write its AGENTS.md") does not escalate.
 #
-# The `check` subcommand adds the floor guard (SPEC-053): given the lane actually CHOSEN
+# The `check` subcommand adds the floor guard: given the lane actually CHOSEN
 # plus the task text, it warns (advisory, exit 0) when the choice is lighter than the
 # suggestion, so an under-sized full/bug task does not slip through /kit:assign unnoticed.
 #
@@ -31,21 +31,21 @@
 #   lane-classify.sh escalate <current-lane> <spec-file>  -> up-only spec->build re-classify
 #                                                            (ESCALATE <cur> -> <heavier> | HOLD <cur>), exit 0
 #   lane-classify.sh deescalate <chosen-lane> [--rid <rid>] [--root <path>] [--base <ref>] [--floor <N>]
-#                                                        -> down-only SHIP-time size nudge (SPEC-141):
+#                                                        -> down-only SHIP-time size nudge:
 #                                                           advisory line + ledger action, never blocks, exit 0
 #   lane-classify.sh lanes                              -> prints the 5 lane names
 #   lane-classify.sh flags                              -> prints the flag names
 
 set -euo pipefail
 
-# Durable run-telemetry root (SPEC-097): the LANE-CHECK downgrade writer below must land
+# Durable run-telemetry root: the LANE-CHECK downgrade writer below must land
 # in the same durable dir lane-telemetry.sh reads from, or downgrades go split-brain
 # (written to the legacy path, invisible to the migrated reader).
 LC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$LC_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
-# deescalate()'s ledger write only (SPEC-141); no other verb in this file touches gate-ledger.
+# deescalate()'s ledger write only; no other verb in this file touches gate-ledger.
 GATE_LEDGER="$LIB_ROOT/gate/gate-ledger.sh"
 
 # Hard-gate flags (any hit -> full). name <-> regex, index-aligned.
@@ -76,7 +76,7 @@ _soft_re=(
 
 LANE=""; REASON=""; FIRED=""
 
-# Edit-vs-mention signal (SPEC-105 / ID-088). FILES = the change's touched files (space-
+# Edit-vs-mention signal. FILES = the change's touched files (space-
 # separated); FILES_SET = 1 when the caller passed --files (even empty). Default: no files
 # supplied -> the kit-machinery hard-gate keeps its legacy text-only behavior (a mention
 # escalates), so nothing regresses for callers that pass none. Set per-invocation by
@@ -119,7 +119,7 @@ _extract_files() {
 
 # classify_core "<desc>" -- sets LANE, REASON, FIRED. The single source of truth both
 # `classify` and `explain` read. Reads the FILES/FILES_SET globals for the edit-vs-mention
-# discriminator (SPEC-105); callers that don't set them get the legacy text-only path.
+# discriminator; callers that don't set them get the legacy text-only path.
 classify_core() {
   local lc; lc="$(printf '%s' "$*" | tr '[:upper:]' '[:lower:]')"
   LANE=""; REASON=""; FIRED=""
@@ -148,7 +148,7 @@ classify_core() {
   local i hard=""
   for i in "${!_hard_re[@]}"; do
     if [ "${_hard_name[$i]}" = kit-machinery ]; then
-      # Edit-vs-mention (SPEC-105 / ID-088): kit-machinery is a proxy for "touches the
+      # Edit-vs-mention: kit-machinery is a proxy for "touches the
       # enforcement surface", which is a FILE fact, not a semantic one (unlike auth /
       # data-model, which are risky by subject regardless of files). When the caller supplied
       # --files, the FILE is authoritative: escalate on an actual EDIT to lib/ or hooks/, NOT
@@ -167,7 +167,7 @@ classify_core() {
     LANE=full; REASON="hard-gate flag(s):$hard"; FIRED="${hard# }"; return 0
   fi
 
-  # 3b. doc-bootstrap (SPEC-072 / ID-064), deliberately AFTER the hard-gate pass:
+  # 3b. doc-bootstrap, deliberately AFTER the hard-gate pass:
   # markdown-only or doc-tree bootstrap work is tiny, but these anchors describe the
   # SUBJECT of the work, not a cosmetic surface, so a README about auth tokens or
   # gate machinery must let the hard-gate win first (review HIGH, SPEC-072).
@@ -190,7 +190,7 @@ classify_core() {
   LANE=normal; REASON="bounded feature/fix (default)"; FIRED="${soft# }"; FIRED="${FIRED:-none}"; return 0
 }
 
-# Risk rank for the floor check (SPEC-053). Under-sizing (a lighter lane than the text
+# Risk rank for the floor check. Under-sizing (a lighter lane than the text
 # implies) is the only dangerous direction; over-sizing is always safe ("when in doubt,
 # heavier"). normal/bug/backfill share rank 2 (same ceremony weight); full is the headline
 # floor. An unrecognized lane returns -1 so lane_check can flag it distinctly.
@@ -276,7 +276,7 @@ escalate() {
   return 0
 }
 
-# --- ship-time de-escalation (SPEC-141): the size-floor sibling of escalate() above. ---
+# --- ship-time de-escalation: the size-floor sibling of escalate() above. ---
 # escalate() is TEXT-based and up-only, at the spec->build boundary. deescalate() is
 # DIFF-SIZE-based and down-only, at the SHIP boundary: when the lane actually SHIPPED was
 # normal/full but the final diff stayed under a changed-lines floor, this is a NUDGE for next

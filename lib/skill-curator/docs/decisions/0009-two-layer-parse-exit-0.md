@@ -5,7 +5,7 @@
 
 ## Context
 
-Two consequences fall out of "the model has no write" (ADR-0001): the wrapper must extract both the
+Two consequences fall out of "the model has no write": the wrapper must extract both the
 COST and the model's ANSWER from the `claude -p` output, and the whole thing runs as a hook that must
 never break the operator's session.
 

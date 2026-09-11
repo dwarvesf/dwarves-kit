@@ -3,8 +3,9 @@
 # seam report over the "## Seams" join table (lib/config/config.sh `_seam_rows` /
 # `_seam_resolve` / `cmd_seams`).
 #
-# Two registries are exercised: the LIVE lib/config/module-registry.md (its six real seam
-# rows: wrap.before, wrap.after, wrap.activity_log, precedent.registry, knowledge.root, PROSE_RAG_BIN),
+# Two registries are exercised: the LIVE lib/config/module-registry.md (its seven real seam
+# rows: wrap.before, wrap.after, wrap.activity_log, precedent.registry, knowledge.root,
+# PROSE_RAG_BIN, understand.teach),
 # and a small FIXTURE registry (CONFIG_REGISTRY_FILE is overridable, same as
 # tests/test-config-registry.sh's own fixtures) that adds a malformed row and an unknown-kind
 # row -- neither of which the live registry can carry (it is lint-guarded by
@@ -95,10 +96,26 @@ OUT1="$(HOME="$HOME_DIR" KIT_CONFIG_ROOT="$ROOT_DIR" KIT_CONFIG_OPERATOR="$NO_OP
 RC1=$?
 chk "all-default: exits 0" "$RC1"
 ROWCOUNT1="$(printf '%s\n' "$OUT1" | tail -n +2 | grep -c .)"
-chk "all-default report has six rows" "$([ "$ROWCOUNT1" -eq 6 ] && echo 0 || echo 1)"
+chk "all-default report has seven rows" "$([ "$ROWCOUNT1" -eq 7 ] && echo 0 || echo 1)"
 chk_has "all-default: wrap.before shows default" "$OUT1" "wrap.before"
 chk_has "all-default: wrap.after shows default" "$OUT1" "wrap.after"
 chk_has "all-default: PROSE_RAG_BIN shows absent (nothing on the stripped PATH)" "$(printf '%s\n' "$OUT1" | grep '^PROSE_RAG_BIN')" "absent"
+
+# --------------------------------------------------------------------- case 1b: root-only security fence
+# HIGH finding (PR #560 review): `bin/config get|explain|list` resolved a root-only seam key
+# THROUGH the project .kit.toml, so a PR shipping `[understand] teach = "<attacker skill>"`
+# would have wrap Step 7a run it. `_resolve` must skip the project layer for any row whose
+# Doc column documents itself as kit_config_get_root-resolved (the live registry rows, not a
+# second hardcoded list).
+
+write_root_toml ""
+mkdir -p "$PROJ_DIR"
+printf '[understand]\nteach = "attacker-skill"\n' > "$PROJ_DIR/.kit.toml"
+GOT_UT="$(HOME="$HOME_DIR" KIT_CONFIG_ROOT="$ROOT_DIR" KIT_CONFIG_OPERATOR="$NO_OPERATOR" \
+  KIT_PROJECT_ROOT="$PROJ_DIR" bash "$CONFIG_BIN" get understand.teach)"
+chk "SECURITY: a project .kit.toml setting understand.teach is IGNORED by config get" \
+  "$([ -z "$GOT_UT" ] && echo 0 || echo 1)"
+rm -f "$PROJ_DIR/.kit.toml"
 
 # --------------------------------------------------------------------------- case 2: skill filled + resolving
 

@@ -14,6 +14,8 @@ import session_recall as r  # noqa: E402
 
 SEED = os.path.join(ROOT, "fixtures", "seed.jsonl")
 BIN = os.path.join(ROOT, "bin", "session-recall")
+NONDICT = os.path.join(ROOT, "tests", "nondict-edge", "nondict.jsonl")  # OUTSIDE fixtures/: hostile, not a seed
+NONDICT_MSG = os.path.join(ROOT, "tests", "nondict-edge", "nondict-message.jsonl")  # valid objects, hostile `message`
 
 
 class TestRecall(unittest.TestCase):
@@ -28,6 +30,26 @@ class TestRecall(unittest.TestCase):
     def test_negative_control_empty(self):
         hits = r.search(r.load(SEED), "string-that-does-not-exist-zzz")
         self.assertEqual(hits, [])
+
+    def test_load_skips_non_dict_top_level_line(self):
+        # A JSONL line that decodes to valid JSON but not an object (e.g. `["x"]`)
+        # must not crash load(); the valid entry after it is still returned.
+        entries = r.load(NONDICT)
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(r._role(entries[0]), "user")
+
+    def test_second_level_non_dict_message_never_crashes(self):
+        # A valid object whose `message` is a string or a list is one level deeper than
+        # the case above. Every reader must survive it and the valid entry after it
+        # must still be found. `_role` falls back to the top-level `type`.
+        entries = r.load(NONDICT_MSG)
+        self.assertEqual(len(entries), 3)
+        for e in entries:
+            self.assertIsInstance(r.searchable_text(e), str)
+        self.assertEqual(r._role(entries[0]), "user")
+        self.assertEqual(r._role(entries[1]), "assistant")
+        self.assertIn("still findable", r.opening_ask(entries))
+        self.assertEqual(len(r.search(entries, "still findable")), 1)
 
     # --- --project short names and --sessions -----------------------------------
     # Motivating miss: `session recall whathas --project ops-toolkit` printed

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# coverage-delta.sh -- ADVISORY coverage-delta gate (SPEC-130).
+# coverage-delta.sh -- ADVISORY coverage-delta gate.
 #
 # For a behavioral diff, asks "did the test surface move the right way?" and WARNS when a
 # change moves source lines but not test lines. It is ADVISORY by hard contract: it prints one

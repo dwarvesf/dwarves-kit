@@ -4,7 +4,7 @@
 backlog-stage.py harvests SESSION transcripts into `_meta/backlog-staging.md`; this is
 the same funnel fed from PERSISTED "review later" stores the session harvest cannot see
 (a digest keeper ledger, saved browser collections, any future source). One funnel, one
-grammar (lib/learn/staging-format.py), one human promote gate (`board promote`). This
+grammar (lib/reflect/staging-format.py), one human promote gate (`board promote`). This
 NEVER writes the board directly (propose-don't-dispose, same contract as backlog-stage).
 
 Config-gated: the kit carries NO personal data or source paths. A consumer declares its
@@ -73,7 +73,7 @@ def _repo_root():
 def _staging_format():
     """Load the ONE staging-block grammar (hyphenated filename, importlib per drain.py)."""
     here = os.path.dirname(os.path.realpath(__file__))
-    path = os.path.join(here, "..", "lib", "learn", "staging-format.py")
+    path = os.path.join(here, "..", "lib", "reflect", "staging-format.py")
     spec = importlib.util.spec_from_file_location("staging_format", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

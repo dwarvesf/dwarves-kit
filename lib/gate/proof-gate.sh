@@ -30,11 +30,14 @@
 #   proof-gate.sh class "<task description>"        -> stateful | behavioral | inert
 #   proof-gate.sh requirement "<task description>"  -> the one-line proof requirement
 #   proof-gate.sh classes                            -> the three class names
+#   proof-gate.sh skeleton "<slug>" ["<task description>"]
+#                                                     -> a ready-to-fill docs/verification/<slug>.md,
+#                                                        printed to stdout, nothing written to disk
 
 set -euo pipefail
 
 # pwd -P (physical): when invoked through a symlinked install dir (~/.claude/dwarves-kit/lib),
-# resolve to the real repo so ../docs/verification/task-types.md still loads (SPEC-045).
+# resolve to the real repo so ../docs/verification/task-types.md still loads.
 PROOF_GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LIB_ROOT="$(cd "$PROOF_GATE_DIR/.." && pwd -P)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 
@@ -58,7 +61,7 @@ proof_class() {
     echo stateful; return 0
   fi
 
-  # 3. registry default for the classified type (SPEC-071 / ID-061): a doc task is
+  # 3. registry default for the classified type: a doc task is
   # inert by its own registry row; the blanket behavioral default was overriding it.
   # Deliberate side effect (reviewed): migration/incident/operate now floor at
   # stateful and planning/learning at inert even without step-2 keywords; the
@@ -115,6 +118,53 @@ proof_contract() {
   echo "proof: $artifact"
   echo "owner: $skill"
   echo "rigor: $(proof_requirement "$desc")"
+  echo "hint: run 'proof-gate.sh skeleton <slug>' for a fillable verification file"
+}
+
+# proof_skeleton <slug> [<task description>] -- prints a ready-to-fill
+# docs/verification/<slug>.md to stdout (SPEC per _meta/backlog-staging.md "proof-gate
+# contract emits the verification skeleton"). Writes nothing to disk; the caller redirects
+# if it wants a file. Reuses proof_class so the skeleton always matches what `contract`
+# would say for the same task description, instead of a second classifier drifting from it.
+proof_skeleton() {
+  local slug="${1:-}" desc="${2:-}"
+  [ -n "$slug" ] || { echo "usage: proof-gate.sh skeleton \"<slug>\" [\"<task description>\"]" >&2; return 64; }
+  local class
+  if [ -n "$desc" ]; then
+    class="$(proof_class "$desc")"
+  else
+    class="behavioral"
+    echo "<!-- no task description given; emitting the behavioral shape -->"
+  fi
+
+  echo "# Verification -- $slug"
+  echo
+  echo "<one-line statement of what this change is>"
+  echo
+  echo "## Green run"
+  echo '```'
+  echo "Command:"
+  echo "Exit:"
+  echo "Verdict:"
+  echo '```'
+  echo
+  echo "## Negative control"
+  echo '```'
+  echo "Command:"
+  echo "Exit:"
+  echo "Verdict:"
+  echo '```'
+  echo "<what was broken, and confirmation it was restored>"
+  echo
+  if [ "$class" = "stateful" ]; then
+    echo "## Rollback"
+    echo "| Change | How to undo | Blast radius |"
+    echo "|---|---|---|"
+    echo "| | | |"
+    echo
+  fi
+  echo "## Not proven"
+  echo "- <what this run does not cover>"
 }
 
 # ID-466: test-plan -> proof-of-done coverage (ADVISORY; always exit 0). When the active
@@ -177,8 +227,9 @@ main() {
     requirement) proof_requirement "$@";;
     contract)    proof_contract "$@";;
     coverage)    proof_coverage "$@";;
+    skeleton)    proof_skeleton "$@";;
     classes)     printf 'stateful\nbehavioral\ninert\n';;
-    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|coverage <spec> [proof.md ...]|classes}" >&2; return 64;;
+    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|coverage <spec> [proof.md ...]|skeleton <slug> [\"<desc>\"]|classes}" >&2; return 64;;
   esac
 }
 

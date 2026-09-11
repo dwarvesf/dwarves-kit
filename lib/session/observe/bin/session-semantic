@@ -78,7 +78,8 @@ def collect_prompts(root, days, cap):
         for e in entries:
             if e.get("type") != "user" or e.get("isSidechain"):
                 continue
-            c = (e.get("message") or {}).get("content")
+            msg = e.get("message")
+            c = msg.get("content") if isinstance(msg, dict) else None  # e.g. message: "oops"
             txt = c if isinstance(c, str) else " ".join(
                 b.get("text", "") for b in (c if isinstance(c, list) else [])
                 if isinstance(b, dict) and b.get("type") == "text")

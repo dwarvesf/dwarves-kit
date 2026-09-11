@@ -28,13 +28,13 @@
 
 ## Acceptance criteria (per feature)
 
-### `schema` (SG-01) , see [`verification/schema.md`](verification/schema.md) for evidence
+### `schema` , see [`verification/schema.md`](verification/schema.md) for evidence
 
 | # | Criterion | Status |
 |---|---|---|
 | AC1-AC6 | Canonical schema names the real kit grammar; ~10 stores confirmed; DEBT/TOKENS conform; 3 outlier adapter contracts; conformance check w/ negative control; read-only | PASS (11/11 + 4 NC) |
 
-### `etl-cli` (SG-02) , see [`verification/etl-cli.md`](verification/etl-cli.md) for evidence
+### `etl-cli` , see [`verification/etl-cli.md`](verification/etl-cli.md) for evidence
 
 | # | Criterion (measurable) | Status | Evidence |
 |---|---|---|---|
@@ -48,7 +48,7 @@
 | AC8 | COVERAGE-DELTA recorded (covered + uncovered named) | PASS | verification/etl-cli.md |
 | AC9 | schema-drift guard (2026-07-04 fix): the adapter column-name list and the DDL agree for all 3 Python-sourced tables, single-sourced from `schemas.py` + a load-time parity assertion; a reordered/dropped column is REJECTED (negative control) | PASS | P-parity, N-drift, N-drift-missing, R-load |
 
-### `render-skill` (SG-03) , see [`verification/render-skill/render-skill.md`](verification/render-skill/render-skill.md) for evidence
+### `render-skill` , see [`verification/render-skill/render-skill.md`](verification/render-skill/render-skill.md) for evidence
 
 | # | Criterion (measurable) | Status | Evidence |
 |---|---|---|---|
@@ -60,7 +60,7 @@
 | AC6 | a real terminal-render sample + a real Artifact HTML sample captured on disk | PASS | `verification/render-skill/samples/` |
 | AC7 | SG-03 indexed in the multi-feature proof without overwriting 01/02's canonical content | PASS | this row |
 
-### `feedback-loop` (SG-04) , see [`verification/feedback-loop/feedback-loop.md`](verification/feedback-loop/feedback-loop.md) for evidence
+### `feedback-loop` , see [`verification/feedback-loop/feedback-loop.md`](verification/feedback-loop/feedback-loop.md) for evidence
 
 | # | Criterion (measurable) | Status | Evidence |
 |---|---|---|---|
@@ -154,8 +154,8 @@ index above and this file stay ONE canonical proof per the tool, per SPEC-016.
 | AC12 | `ledger anomalies --help` lists `ceremony_min_ran` + `serial_min_minutes_saved` | PASS | H-help |
 | AC13 | real `uv run ledger rebuild` + `ledger anomalies --table` capture, honest yield stated | PASS | `verification/anomalies-advisor.md` "Real-corpus capture" |
 | AC14 | a REAL regression found + fixed during Build: the original design anchored on `kit_runs`, which returns 0 rows in this local environment (a pre-existing, out-of-scope `lane-telemetry.sh` issue); redesigned to window on `git_fixes.ts` before any fixture was written | PASS | `verification/anomalies-advisor.md` "Test design" |
-| AC15 | `/kit:spec-validate` dispatched on the draft design; 2 CRITICAL + 3 MAJOR findings, all addressed (SPEC-134 DEC-004/DEC-005) before Build closed | PASS | SPEC-134 "Review" |
-| AC17 | `kit:code-reviewer` dispatched on the FINISHED diff (a fresh, independent Round-2 pass); confirmed Round-1 fixes real, found + this branch fixed 1 MAJOR (DEC-006) | PASS | SPEC-134 "Review" Round 2 |
+| AC15 | `/kit:spec-validate` dispatched on the draft design; 2 CRITICAL + 3 MAJOR findings, all addressed before Build closed | PASS | SPEC-134 "Review" |
+| AC17 | `kit:code-reviewer` dispatched on the FINISHED diff (a fresh, independent Round-2 pass); confirmed Round-1 fixes real, found + this branch fixed 1 MAJOR | PASS | SPEC-134 "Review" Round 2 |
 | AC16 | no existing per-feature `verification/*`/`docs/specs/*` file for 01-05/SG-01/SG-02/SG-03 was modified | PASS | `git diff --stat` empty for those paths |
 
 ### `sessions-digest` (harness-observatory mega-goal, SG-05) , see [`verification/sessions-digest.md`](verification/sessions-digest.md) for evidence
@@ -179,10 +179,10 @@ whitelist, verbatim in `_meta/megagoals/harness-observatory/DECISIONS.md`).
 | AC12 | a real `uv run ledger rebuild` + `ledger digest --table` capture against the live corpus, honest about the JOIN | PASS | `verification/sessions-digest.md` "Real-corpus capture" |
 | AC13 | `ledger anomalies --help` lists `token_budget_max` | PASS | H-help |
 | AC14 | `read_sessions`/`read_safety` are skip-safe on a missing source | PASS | O-missing |
-| AC15 | a REAL Build-time bug found + fixed: `tool_result`/`is_error` lives on a `type=="user"` line, not the `type=="assistant"` line that emitted the matching `tool_use` (SPEC-135 DEC-007); `error_count` silently stayed 0 across the real corpus before the fix | PASS | `verification/sessions-digest.md` "Test design" |
+| AC15 | a REAL Build-time bug found + fixed: `tool_result`/`is_error` lives on a `type=="user"` line, not the `type=="assistant"` line that emitted the matching `tool_use`; `error_count` silently stayed 0 across the real corpus before the fix | PASS | `verification/sessions-digest.md` "Test design" |
 | AC16 | a real cross-suite regression found + fixed: 7 existing suites never isolated the two new source env vars (one timed out entirely against the 2.1GB real corpus); one stale assertion (`test-anomalies-advisor.sh`'s `T-not-armed`) updated to match the now-armed detector | PASS | `verification/sessions-digest.md` "Test design"; full regression 230/230 |
 | AC17 | no existing per-feature `verification/*`/`docs/specs/*` file for 01-05/SG-01..04 was modified | PASS | `git diff --stat` empty for those paths |
-| AC18 | `kit:code-reviewer` dispatched on the FINISHED diff (Round 2, independent of the draft-stage validate); found + this branch fixed a CRITICAL content-leak (bare `int()` on a non-numeric usage field surfacing content in a traceback -- DEC-008), a MAJOR cost double-count across overlapping sessions (DEC-010), and a MINOR unvalidated timestamp (DEC-009); suite grew 49 -> 59 assertions, all green | PASS | O-badtype, D-overlap, O-badts; SPEC-135 "Review" Round 2 |
+| AC18 | `kit:code-reviewer` dispatched on the FINISHED diff (Round 2, independent of the draft-stage validate); found + this branch fixed a CRITICAL content-leak (bare `int()` on a non-numeric usage field surfacing content in a traceback -- DEC-008), a MAJOR cost double-count across overlapping sessions, and a MINOR unvalidated timestamp; suite grew 49 -> 59 assertions, all green | PASS | O-badtype, D-overlap, O-badts; SPEC-135 "Review" Round 2 |
 
 ### `review-yield-lens` (gate-review-absorptions mega-goal, SG-04) , see [`verification/review-yield-lens.md`](verification/review-yield-lens.md) for evidence
 
@@ -238,7 +238,7 @@ read as if they were:
    rows (35/79 measured live on this repo) carry `repo = "?"` (unattributed).
 4. A missing source (e.g. no tide db) is skipped exactly like a present-but-empty one; no
    `ledger doctor`-style "checked, not found" signal exists today.
-5. `review-yield`'s FP-rate is a stated, labeled APPROXIMATION (SPEC-137 DEC-002): the
+5. `review-yield`'s FP-rate is a stated, labeled APPROXIMATION: the
    numerator is per-(repo, lens) but the denominator is a GLOBAL sum across every
    `gate='review'` `kit_gates` row (that table carries no lens or repo column). Every row
    carries `approx=true` and a `low_n` flag so this is never presented as more precise than it
@@ -258,7 +258,7 @@ Follow-up candidates for all five are routed to `_meta/megagoals/ledger-observat
 | Read-only | THREE layers: a statement guard (single read-verb statement, no mutator, no PRAGMA, no multi-statement) + `read_only=True` + `enable_external_access=False` (blocks filesystem writes). sqlite ATTACH is `READ_ONLY`. No write path to any source (HIGH-1 filesystem-write bypass found at review + closed). |
 | Touches | Additive; `lib/lane-telemetry.sh`, tide, tg-cleanup, learned-ledger all read, none modified. |
 
-### `render-skill` (SG-03)
+### `render-skill`
 
 | Aspect | Detail |
 |---|---|
@@ -276,8 +276,8 @@ Follow-up candidates for all five are routed to `_meta/megagoals/ledger-observat
 | What | A `kit_gates` table (one row per `\| GATE \|` kit run-ledger line) + a `ledger gate-yield [--json\|--table]` ceremony-detector command, per-gate `ran/override/skipped/caught/override_pct`. |
 | Where | `src/ledger_observatory/schemas.py` (`KIT_GATES_SCHEMA`), `adapters.py` (`read_kit_gates`, a NEW per-line parser), `materialize.py` (DDL + rebuild wiring + `SHOW_ORDER`), `cli.py` (`gate-yield`); tests `tests/test-gate-yield.sh` + committed fixtures `tests/fixtures/kit-gates/runs/*.log` |
 | How it runs | `uv run ledger rebuild` then `uv run ledger gate-yield --table`; no new daemon, no new refresh trigger (inherits the lazy-rebuild-on-missing SG-02 already ships) |
-| Reuse | Cannot reuse lane-telemetry's `_rows()` (aggregates per-file, no per-line output mode) -- a deliberate, documented exception (SPEC-131 DEC-001), scoped to the one grammar line `_rows()` doesn't expose. `gate-yield` itself reuses the SAME `materialize.query()` read path `show`/`query`/`render` already use; zero new duckdb connection. |
-| Two-marker join | `caught`/`start_ts`/`end_ts` come from a SEPARATE `\| OUTCOME \|` bracket (kit's own SPEC-129), paired to the `GATE` row by phase name, FIFO per (rid, gate); on the real corpus this is 100% NULL today (zero run ledgers emit a real OUTCOME line yet, verified across all files), by design, not a bug (SPEC-131 DEC-003). |
+| Reuse | Cannot reuse lane-telemetry's `_rows()` (aggregates per-file, no per-line output mode) -- a deliberate, documented exception, scoped to the one grammar line `_rows()` doesn't expose. `gate-yield` itself reuses the SAME `materialize.query()` read path `show`/`query`/`render` already use; zero new duckdb connection. |
+| Two-marker join | `caught`/`start_ts`/`end_ts` come from a SEPARATE `\| OUTCOME \|` bracket (kit's own SPEC-129), paired to the `GATE` row by phase name, FIFO per (rid, gate); on the real corpus this is 100% NULL today (zero run ledgers emit a real OUTCOME line yet, verified across all files), by design, not a bug. |
 | Touches | Additive; `kit_runs`/`tide_moves`/`tg_dialogs`/`learned` unchanged, `show`/`query`/`rebuild`/`tables`/`render`/`anomalies` unchanged. |
 
 ### `defect-correlation` (harness-observatory mega-goal, SG-02)
@@ -287,8 +287,8 @@ Follow-up candidates for all five are routed to `_meta/megagoals/ledger-observat
 | What | A `git_fixes` table (one row per (commit, file-touched) pair across a repo's full non-merge `git log` history, the tool's FIRST git-sourced table) + a `ledger defect-correlation [--window-days N] [--json\|--table]` command correlating shipped `kit_gates` runs against later `fix()` commits touching the same files. |
 | Where | `src/ledger_observatory/schemas.py` (`GIT_FIXES_SCHEMA`), `adapters.py` (`read_git_fixes`, a NEW `git log` subprocess reader), `config.py` (`git_repo_dir`), `materialize.py` (DDL + rebuild wiring + `SHOW_ORDER`), `cli.py` (`defect-correlation`); tests `tests/test-defect-correlation.sh` (a generated, not committed, git-history fixture per SPEC-132 DEC-005) |
 | How it runs | `uv run ledger rebuild` then `uv run ledger defect-correlation --table`; no new daemon, no new refresh trigger (inherits the lazy-rebuild-on-missing SG-02/etl-cli already ships) |
-| Reuse | `read_git_fixes` is a NEW reader (no existing git-log parser to reuse in this tool); it stores the FULL history, not fix-filtered, so `defect-correlation`'s query classifies fix-ness in SQL, the same convention `gate-yield` already uses for `outcome` (SPEC-132 DEC-001). The CLI command reuses the SAME `materialize.query()` read path every other command uses; zero new duckdb connection. |
-| Rid-to-git bridge | `kit_gates` v1 carries no per-file/repo column (SPEC-131), so a literal file-level JOIN is impossible without rewriting it (out of scope). A two-stage design bridges by name once (`contains(lower(subject), lower(rid))`, empirically verified real signal) then correlates by genuine FILE equality thereafter (SPEC-132 DEC-002), keeping "touching the same files" honest instead of degrading to a name-only heuristic. |
+| Reuse | `read_git_fixes` is a NEW reader (no existing git-log parser to reuse in this tool); it stores the FULL history, not fix-filtered, so `defect-correlation`'s query classifies fix-ness in SQL, the same convention `gate-yield` already uses for `outcome`. The CLI command reuses the SAME `materialize.query()` read path every other command uses; zero new duckdb connection. |
+| Rid-to-git bridge | `kit_gates` v1 carries no per-file/repo column, so a literal file-level JOIN is impossible without rewriting it (out of scope). A two-stage design bridges by name once (`contains(lower(subject), lower(rid))`, empirically verified real signal) then correlates by genuine FILE equality thereafter, keeping "touching the same files" honest instead of degrading to a name-only heuristic. |
 | Touches | Additive; `kit_gates`/`kit_runs`/`tide_moves`/`tg_dialogs`/`learned` unchanged, `show`/`query`/`rebuild`/`tables`/`render`/`gate-yield`/`anomalies` unchanged. No git WRITE operation is ever invoked. |
 
 ### `deviation-rate` (harness-observatory mega-goal, SG-03)
@@ -298,9 +298,9 @@ Follow-up candidates for all five are routed to `_meta/megagoals/ledger-observat
 | What | An `impl_notes` table (one row per hook-enforced `docs/implementation-notes/<slug>.md` file) + a `ledger deviation-rate [--under-specced-min N] [--window-days N] [--json\|--table]` command classifying each file `UNDER-SPECCED`/`CLEAN`/`SUSPECT`/`OTHER` + an `unknown-density` anomaly detector. The upstream-unknowns half of the benchmark. |
 | Where | `src/ledger_observatory/schemas.py` (`IMPL_NOTES_SCHEMA`), `adapters.py` (`read_impl_notes`, a NEW filesystem-walk reader), `materialize.py` (DDL + rebuild wiring + `SHOW_ORDER`), `cli.py` (`deviation-rate`), `anomalies.py` (`_detect_unknown_density`); tests `tests/test-deviation-rate.sh` (a generated, not committed, git-history fixture per SPEC-132 DEC-005 precedent + 7 plain-file implementation-notes fixtures) |
 | How it runs | `uv run ledger rebuild` then `uv run ledger deviation-rate --table`; no new daemon, no new refresh trigger (inherits the lazy-rebuild-on-missing SG-02/etl-cli already ships) |
-| Reuse | `read_impl_notes` is a NEW reader (no existing implementation-notes parser in this tool); it shares `config.git_repo_dir()` with `read_git_fixes` rather than a second env knob (SPEC-133 DEC-001). The CLI command reuses the SAME `materialize.query()` read path every other command uses; zero new duckdb connection. The anomaly detector reuses the SAME `materialize.query`-only contract every other detector uses. |
-| Slug-to-git bridge | An implementation-notes file carries a `slug`, never a sha or a file list of its own (the SAME JOIN-key shape SPEC-132 already solved for `rid`). A two-stage design bridges by name once (`contains(lower(subject), lower(slug))`) then correlates by genuine FILE equality thereafter (SPEC-133 DEC-002), keeping "a later fix on the same files" honest instead of degrading to a name-only heuristic. `UNDER-SPECCED` needs no bridge at all (a pure `n_deviations` count threshold). |
-| Parser tolerance | Confirmed real prose drift (a 208+76-file corpus survey at design time): the entry-header `HH:MM` time component is frequently dropped; the zero-marker line's trailing wording varies. Both tolerated by design (SPEC-133 Edge Cases 3-4). A file with BOTH a zero-marker line AND real entries (confirmed real, a self-contradiction) is counted as entries with `zero_marker` forced `False` and a stderr warning logged (DEC-003). |
+| Reuse | `read_impl_notes` is a NEW reader (no existing implementation-notes parser in this tool); it shares `config.git_repo_dir()` with `read_git_fixes` rather than a second env knob. The CLI command reuses the SAME `materialize.query()` read path every other command uses; zero new duckdb connection. The anomaly detector reuses the SAME `materialize.query`-only contract every other detector uses. |
+| Slug-to-git bridge | An implementation-notes file carries a `slug`, never a sha or a file list of its own (the SAME JOIN-key shape SPEC-132 already solved for `rid`). A two-stage design bridges by name once (`contains(lower(subject), lower(slug))`) then correlates by genuine FILE equality thereafter, keeping "a later fix on the same files" honest instead of degrading to a name-only heuristic. `UNDER-SPECCED` needs no bridge at all (a pure `n_deviations` count threshold). |
+| Parser tolerance | Confirmed real prose drift (a 208+76-file corpus survey at design time): the entry-header `HH:MM` time component is frequently dropped; the zero-marker line's trailing wording varies. Both tolerated by design (SPEC-133 Edge Cases 3-4). A file with BOTH a zero-marker line AND real entries (confirmed real, a self-contradiction) is counted as entries with `zero_marker` forced `False` and a stderr warning logged. |
 | Touches | Additive; `kit_gates`/`kit_runs`/`git_fixes`/`tide_moves`/`tg_dialogs`/`learned` unchanged, `show`/`query`/`rebuild`/`tables`/`render`/`gate-yield`/`defect-correlation` unchanged. Fixed a real regression in 3 PRE-EXISTING test files (`test-ledger-cli.sh`/`test-feedback.sh`/`test-gate-yield.sh`, one isolation-env line each, DEC-004); no assertion logic in those files changed. |
 
 ### `anomalies-advisor` (harness-observatory mega-goal, SG-04)
@@ -325,9 +325,9 @@ Follow-up candidates for all five are routed to `_meta/megagoals/ledger-observat
 | How it runs | `uv run ledger rebuild` then `uv run ledger digest --table`/`--propose`; no new daemon, no new refresh trigger |
 | The privacy boundary | A per-line field ALLOWLIST enforced AT PARSE TIME (`_parse_session_file`/`read_safety`), not filtered later: `tool_result.content`, `custom-title`, `last-prompt`, `agent-name`, `cwd`, `sessionId` and every other transcript key are never assigned to a variable, let alone returned. The one `text` field DOES get read, but transiently (a derived boolean for the adherence-canary check), never persisted. Verbatim whitelist: `_meta/megagoals/harness-observatory/DECISIONS.md`. |
 | The PRIVACY NC (load-bearing) | A fixture embeds a fake secret in BOTH `tool_result.content` and `custom-title`; a full-text scan of every materialized table/column finds zero hits while the session's numeric row exists. Falsifiable: a deliberate schema/parser widen (adding a raw-text column) turns it RED, restored. |
-| Digest JOIN | `sessions` carries no rid/repo column in v1; `cost_per_verified_outcome_tokens`/`avg_time_to_done_min` bridge a shipped `kit_gates` rid to git (the SAME rid-to-git-subject technique defect-correlation/ceremony/serial-when-parallel already use) then to a `sessions` row by TIME CONTAINMENT (the commit's timestamp falling inside the session's `[first_ts, last_ts]` window) instead of file equality, since `sessions` has no file list (SPEC-135 DEC-002). |
+| Digest JOIN | `sessions` carries no rid/repo column in v1; `cost_per_verified_outcome_tokens`/`avg_time_to_done_min` bridge a shipped `kit_gates` rid to git (the SAME rid-to-git-subject technique defect-correlation/ceremony/serial-when-parallel already use) then to a `sessions` row by TIME CONTAINMENT (the commit's timestamp falling inside the session's `[first_ts, last_ts]` window) instead of file equality, since `sessions` has no file list. |
 | Token-runaway armed | A flat per-session `token_budget_max` threshold (not per-rid, DEC-004: would need the SAME bridge `digest` builds, duplicated inside a detector for marginal benefit), flags the single highest-total session, matching every other detector's single-shot shape. |
-| Two REAL bugs found + fixed during Build | (1) `tool_result`/`is_error` lives on a `type=="user"` line, not the assistant line that emitted the matching `tool_use` -- `error_count` silently stayed 0 across the real corpus before the fix (DEC-007). (2) 7 existing suites never isolated the two new source env vars, timing one out entirely against the real 2.1GB corpus; fixed with the same isolation-line convention SG-03 established, plus one stale assertion update in `test-anomalies-advisor.sh`. |
+| Two REAL bugs found + fixed during Build | (1) `tool_result`/`is_error` lives on a `type=="user"` line, not the assistant line that emitted the matching `tool_use` -- `error_count` silently stayed 0 across the real corpus before the fix. (2) 7 existing suites never isolated the two new source env vars, timing one out entirely against the real 2.1GB corpus; fixed with the same isolation-line convention SG-03 established, plus one stale assertion update in `test-anomalies-advisor.sh`. |
 | Touches | Additive; `kit_gates`/`git_fixes`/`kit_runs`/`impl_notes`/`tide_moves`/`tg_dialogs`/`learned` and every existing CLI command unchanged beyond `anomalies.py`'s docstring + `_detect_token_runaway`'s body. |
 
 ## Confirmation (recorded runs)
@@ -369,7 +369,7 @@ Follow-up candidates for all five are routed to `_meta/megagoals/ledger-observat
 | deviation-rate PRE-EXISTING, unrelated regression (test-ledger-cli) | 2026-07-04 | `bash tests/test-ledger-cli.sh` | 1 | same 19/26 (7 `kit_runs`-related failures) as SG-01/SG-02 recorded; unaffected by this branch (once isolated) |
 | deviation-rate PRE-EXISTING, unrelated regression (test-feedback) | 2026-07-04 | `bash tests/test-feedback.sh` | 1 | same 30/39 (9 failures) as SG-02 recorded; unaffected by this branch (once isolated) |
 | anomalies-advisor suite (Round 1, pre-code-review) | 2026-07-04T08:39Z | `bash tests/test-anomalies-advisor.sh` | 0 | PASS (36/36) |
-| anomalies-advisor suite (Round 2, post-code-review DEC-006 fix) | 2026-07-04T08:55Z | `bash tests/test-anomalies-advisor.sh` | 0 | PASS (37/37: ceremony CUT/CONDITION + mixed-caught NC + count-inflation NC + thin-true-catch NC (DEC-006) + FP-NC + falsifiability + serial-when-parallel fire/dependent-no-fire/zero-evidence-no-fire + token-runaway static+live + propose x2 + help + one-path) |
+| anomalies-advisor suite (Round 2, post-code-review DEC-006 fix) | 2026-07-04T08:55Z | `bash tests/test-anomalies-advisor.sh` | 0 | PASS (37/37: ceremony CUT/CONDITION + mixed-caught NC + count-inflation NC + thin-true-catch NC + FP-NC + falsifiability + serial-when-parallel fire/dependent-no-fire/zero-evidence-no-fire + token-runaway static+live + propose x2 + help + one-path) |
 | anomalies-advisor DEC-006 falsifiability (deliberate break) | 2026-07-04T08:55Z | `caught_true>0` guard reverted to its original (buggy) position inside the `caught_known>=floor` branch | n/a | RED-as-expected (36/37, `C-thin-true` failed), restored -> 37/37 exit 0 |
 | anomalies-advisor regression | 2026-07-04 | `test-gate-yield.sh` + `test-defect-correlation.sh` + `test-deviation-rate.sh` + `test-schema-parity.sh` + `test-docs-wiring.sh` + `test-render-skill.sh` + `test-schema-conform.sh` re-run alongside the new suite | 0 (x7) | PASS (25/25, 20/20, 25/25, 4/4, 19/19, 30/30, 11/11, all unchanged) |
 | anomalies-advisor real-corpus capture | 2026-07-04 | `uv run ledger rebuild && uv run ledger anomalies --table` against the live ops-toolkit corpus | 0 | see `verification/anomalies-advisor.md` "Real-corpus capture" (only `unknown_density` fires; `ceremony`/`token_runaway`/`serial_when_parallel` honestly abstain) |
@@ -380,7 +380,7 @@ Follow-up candidates for all five are routed to `_meta/megagoals/ledger-observat
 | sessions-digest Round-2 code review (finished diff) | 2026-07-04 | `kit:code-reviewer` dispatched on `main...HEAD`, adversarial on the privacy boundary | n/a | 1 CRITICAL (bare-`int()` content leak, DEC-008) + 1 MAJOR (overlap double-count, DEC-010) + 1 MINOR (unvalidated ts, DEC-009), all reproduced live by the reviewer + this branch fixed with new fixtures |
 | sessions-digest DEC-008 falsifiability | 2026-07-04 | a `usage.input_tokens` value containing a planted secret-shaped string, `uv run ledger rebuild` | 0 | the OLD bare `int()` printed it in a `ValueError` traceback; the fixed `_safe_int` + broad per-line catch: `rebuild` exit 0, zero hits in any column, string absent from output, row still counted (bad field -> 0) |
 | sessions-digest PRIV-nc (deliberate break, falsifiability) | 2026-07-04 | `SESSIONS_SCHEMA`/`_parse_session_file` widened to capture raw `tool_result.content` into a new column, rebuilt against the SAME privacy fixture | n/a | RED-as-expected (`HITS: 1`, the leaked string now in a materialized column), restored via `git checkout --`, suite re-confirmed green exit 0 |
-| sessions-digest Build-time bug found + fixed | 2026-07-04 | a real smoke run against the live corpus found `total_errors: 0` (implausible; a design-time probe of one file alone found 37 `is_error` blocks) | n/a | root-caused: `tool_result`/`is_error` lives on a `type=="user"` line, not `type=="assistant"` (SPEC-135 DEC-007); fixed, re-verified `total_errors: 4262` on the real corpus |
+| sessions-digest Build-time bug found + fixed | 2026-07-04 | a real smoke run against the live corpus found `total_errors: 0` (implausible; a design-time probe of one file alone found 37 `is_error` blocks) | n/a | root-caused: `tool_result`/`is_error` lives on a `type=="user"` line, not `type=="assistant"`; fixed, re-verified `total_errors: 4262` on the real corpus |
 | sessions-digest cross-suite regression found + fixed | 2026-07-04 | `bash tests/test-anomalies-advisor.sh` (and 6 sibling suites) right after the sessions/safety adapters landed, before isolation | timeout/1 | `test-anomalies-advisor.sh` timed out entirely (15+ real-corpus `rebuild()` calls at ~25s each); fixed by adding `LEDGER_OBS_SESSIONS_DIR`/`LEDGER_OBS_SECRET_GUARD_LOG` isolation to all 7 affected suites (SG-03's `LEDGER_OBS_GIT_REPO_DIR` precedent) + updating `test-anomalies-advisor.sh`'s stale `T-not-armed` docstring assertion to `T-armed` |
 | sessions-digest full regression | 2026-07-04 | all 9 suites re-run after all fixes (isolation + Round-2 DEC-008/009/010) | 0 (x9) | PASS (4/4, 11/11, 25/25, 20/20, 25/25, 37/37, 30/30, 19/19, 59/59 = 230/230) |
 | sessions-digest real-corpus capture | 2026-07-04 | `uv run ledger rebuild && uv run ledger digest --table` against the live `~/.claude/projects/` corpus (6706 sessions) + the live secret-guard log (5302 rows) | 0 | see `verification/sessions-digest.md` "Real-corpus capture" (coverage_pct=0.0/cost+time-to-done both null, the same honest-empty rid-to-git bridge finding SG-02/03/04 already documented; `token_runaway` DOES fire on a real ~2.1B-token session) |
@@ -735,11 +735,11 @@ Full run detail + the COVERAGE-DELTA live in the per-feature docs under `verific
 
 ```bash
 cd ~/workspace/<owner>/ops-toolkit
-bash tools/ledger-observatory/tests/test-schema-conform.sh   # schema (SG-01)
+bash tools/ledger-observatory/tests/test-schema-conform.sh   # schema
 cd tools/ledger-observatory && uv sync
-bash tests/test-ledger-cli.sh                                 # etl-cli (SG-02) -- pre-existing kit_runs env issue here, see above
-bash tests/test-render-skill.sh                                # render-skill (SG-03)
-bash tests/test-feedback.sh                                    # feedback-loop (SG-04)
+bash tests/test-ledger-cli.sh                                 # etl-cli -- pre-existing kit_runs env issue here, see above
+bash tests/test-render-skill.sh                                # render-skill
+bash tests/test-feedback.sh                                    # feedback-loop
 bash tests/test-docs-wiring.sh                                 # docs-wiring (SG-05, final)
 bash tests/test-gate-yield.sh                                  # kit-gates-lens (harness-observatory SG-01)
 uv run ledger rebuild && uv run ledger gate-yield --table      # real-corpus materialization

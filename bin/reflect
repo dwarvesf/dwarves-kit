@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# bin/reflect -- STABLE consumer entrypoint for the reflect subsystem.
+#
+# Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/reflect/<file>.sh`
+# path. Forwards to the reflect subsystem entry, which owns the verb grammar.
+#
+# `learn` -> `reflect`: the system changes from its own telemetry (gate ledgers, run
+# ledgers, retros), nobody learns. `bin/learn` stays as a deprecation forwarder for one
+# release; repoint any existing call site to this file.
+#
+# Usage:
+#   reflect propose [--days N | --megas N]        cross-run proposals from the ledger
+#   reflect propose --retro <RETRO.md>            a retro's action items
+#   reflect drain [--days N]                      render the staging pile for review
+#   reflect debt <list|collect|mark-paid>         understanding-debt paydown (weekend-batch)
+#
+# Every proposal path above ends at the staging buffer as a `## [staged]` block; a human
+# promotes with `board promote`. Nothing here writes a board.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/reflect/reflect.sh" "$@"

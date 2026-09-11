@@ -1,5 +1,5 @@
 #!/bin/bash
-# activate , the client half of free -> pro (ID-438 scope).
+# activate , the client half of free -> pro.
 #
 #   bin/activate <FRG-...>     store the key (0600) + verify + print entitlement
 #   bin/activate --status      verify the stored key + doctor line (grace, updates)

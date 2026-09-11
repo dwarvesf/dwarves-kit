@@ -143,8 +143,9 @@ blocks an edit.
 Two things the code does that no design record ever justified. Both are described because
 this SPEC documents reality; neither is changed by it.
 
-1. **The log does not resolve through `lib/telemetry/kit-log-dir.sh`.** SPEC-097 and
-   contract rule C6 make that the durable-root resolver for every module that persists
+1. **The log does not resolve through `lib/telemetry/kit-log-dir.sh`.** The ledger-durability
+   spec (`docs/specs/SPEC-097-ledger-durability.md`) and contract rule C6 make that the
+   durable-root resolver for every module that persists
    state. `money-gate.py` builds `~/.claude/logs/money-gate.log` directly. C6's sweep
    greps `lib` only, so a hook-only module is outside its scope and the divergence is
    invisible to the lint. Whether an append-only audit trail is "state" in C6's sense

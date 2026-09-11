@@ -17,7 +17,7 @@ not exist at all: `kit_gates` has no git-sourced counterpart, and the tool has n
 history (0 of its 6 tables are git-sourced).
 
 The load-bearing complication (found during Think, not assumed): `kit_gates`'s v1 schema
-(SPEC-131) is `(rid, gate, outcome, caught, reason, start_ts, end_ts)` -- **no file column, no
+ is `(rid, gate, outcome, caught, reason, start_ts, end_ts)` -- **no file column, no
 repo column**. A textbook "JOIN on shared files" is impossible without either rewriting
 `kit_gates` (explicitly out of scope: "Not: rewriting kit_gates or a second schema mechanism")
 or bridging `rid` to git history some other way. Two more facts close off the obvious
@@ -142,7 +142,7 @@ GIT_FIXES_SCHEMA = [
 Despite the literal name (kept per the goal file's outcome section), the table stores the FULL
 commit history, not fix()-filtered: `defect-correlation` classifies fix-ness at query time
 (`regexp_matches(subject, '^fix(\(.*\))?!?:')`), the same convention `gate-yield` already uses
-for `outcome` classification in SQL rather than in the adapter (DEC-001).
+for `outcome` classification in SQL rather than in the adapter.
 
 ### API changes
 
@@ -314,7 +314,7 @@ tools/ledger-observatory/**
   bridge match and the later fix commit -- NOT on `kit_gates.start_ts`/`end_ts` (100% NULL on the
   real corpus, SPEC-131 DEC-003) or `kit_runs.last_ts` (0 rows in this local dev environment, the
   HANDOFF-flagged pre-existing `read_kit()` subprocess issue). This sidesteps both known-broken
-  timestamp sources entirely; the real run's non-zero yield (TASK-007) is direct evidence the
+  timestamp sources entirely; the real run's non-zero yield is direct evidence the
   chosen anchor works where the alternatives would have produced a silently-empty result.
 - DEC-004: a rename occurring in or after the ship anchor commit is NOT followed (v1 limitation,
   proven via the `renamer` fixture case): `ship_files` only ever contains the EARLIEST matching
@@ -344,7 +344,7 @@ tools/ledger-observatory/**
   inject; no untrusted-input SQL interpolation (the `--window-days` int is Typer-validated and
   interpolated as a plain integer into a fixed `INTERVAL (...) DAY` position, not a user string).
   Failure-mode: the table above covers vacuous-NC, empty-anchor, merge-leak, and schema-drift
-  classes. Assumption: the rid-substring bridge's false-positive risk (DEC-002) is stated
+  classes. Assumption: the rid-substring bridge's false-positive risk is stated
   explicitly, not hidden. Scope: tasks are each single-file/narrow-scope and atomic, matching
   SG-01's task granularity.
 
@@ -352,7 +352,7 @@ tools/ledger-observatory/**
 (none)
 
 ## Review
-Self-review via the `/kit:spec-validate` 6-reviewer pass, 2026-07-04. Verdict: APPROVED (DEC-007).
+Self-review via the `/kit:spec-validate` 6-reviewer pass, 2026-07-04. Verdict: APPROVED.
 Status: VALIDATED.
 
 ## Open questions

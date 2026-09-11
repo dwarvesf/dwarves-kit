@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# board.sh -- the kit's cockpit board command (SPEC-146, runner-fastpath sub-goal 04;
-# `mirror`/`status` added by SPEC-147, sub-goal 07; `writeback` added by SPEC-149, sub-goal 08).
+# board.sh -- the kit's cockpit board command. `mirror`/`status` and `writeback` were added
+# later as the git<->Hermes kanban bridge's read-mirror and writeback legs.
 #
 # The SOLE cockpit board command: it ABSORBS the render logic that used to live in ops-toolkit's
 # `_meta/board` (the `priority` quadrant awk, single-repo) and `_meta/board-all` (the `boards.txt`
 # registry walk + `priority matrix` cross-repo pivot), ADDS a `queue` subcommand that emits an
-# allow-listed overnight-runner queue, ADDS `mirror`/`status` (SPEC-147): a one-way git ->
+# allow-listed overnight-runner queue, ADDS `mirror`/`status`: a one-way git ->
 # Hermes kanban bridge over opt-in repos + active mega-goals, native `hermes kanban` CLI only, and
-# ADDS `writeback` (SPEC-149): the reverse leg -- a Hermes-side card status move flows back into a
+# ADDS `writeback`: the reverse leg -- a Hermes-side card status move flows back into a
 # repo's BACKLOG.md as a reviewable, HELD `chore/board-sync` PR (never auto-merged), gated by the
 # mirror snapshot's row_hash conflict rule (git wins, always). Base kanban render
 # (board/next/set/states) is UNCHANGED and still delegates to `lib/board/backlog.sh` -- this file never
@@ -19,7 +19,7 @@
 # The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
 # describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
 # `--repo-root <path>` / the `REPO_ROOT` env var (the kit's existing consumer pattern -- see
-# lib/learn/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
+# lib/reflect/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
 # precedent). Never invents a `CONSUMER_ROOT` var.
 #
 # Usage:
@@ -33,7 +33,7 @@
 #                                                               staged candidates onto the board
 #                                                               (the human gate; absorbed the
 #                                                               retired `add-backlog` entry per
-#                                                               ADR-0034 decision 7, no alias).
+#                                                               the kit naming decision, no alias).
 #                                                               Forwards to lib/board/bin/add-backlog
 #                                                               verbatim, behavior unchanged.
 #
@@ -71,8 +71,8 @@
 #   board.sh mirror [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
 #                    [--mega-board <name>] [--board-prefix <prefix>]
 #                    [--remote <user@host>] [--remote-kit-path <path>] [--engine legacy|sync]
-#                                                               `--engine sync` (ID-290, the
-#                                                               SPEC-002 P2 cockpit channel) routes
+#                                                               `--engine sync` (the sync-engine
+#                                                               cockpit channel) routes
 #                                                               the deterministic extract+diff
 #                                                               through lib/sync/cockpit.py; today
 #                                                               it is dry-run-only (the plan), the
@@ -131,10 +131,10 @@
 #
 #   board.sh writeback [--dry-run] [--repo-root <path>] [--registry <path>] [--snapshot <path>]
 #                       [--board-prefix <prefix>] [--branch <name>] [--pr-base <branch>]
-#                                                               the reverse leg (SPEC-149): reads
+#                                                               the reverse leg: reads
 #                                                               each opted-in repo's live Hermes
 #                                                               board (`hermes kanban --board <b>
-#                                                               list --json`) + the SPEC-147 mirror
+#                                                               list --json`) + the mirror
 #                                                               snapshot, builds a changeset of
 #                                                               rows whose Hermes status moved,
 #                                                               validates (opted-in repo, legal
@@ -166,7 +166,7 @@
 # exactly the literal token `on` opts in; absent, `off`, or any other value stays OUT (default
 # OFF -- a repo must explicitly opt in; sensitive repos like `trading`/`family-office` must never
 # be `on`). `board`/`next`/`priority`/`states`/`queue` never read this field (they only ever
-# consumed the first two columns, per SPEC-146's own forward-compat design), so adding it is a
+# consumed the first two columns, per this command's own forward-compat design), so adding it is a
 # zero-code-change, non-regressing registry format extension.
 #
 # --repo-root resolution precedence (cross-repo `all`/`queue`/`mirror`/`status` modes only): the
@@ -185,7 +185,7 @@ BACKLOG_SH="$BOARD_DIR/backlog.sh"
 PARSE_BOARD_SH="$BOARD_DIR/parse-board.sh"
 BOARD_MIRROR_SH="$BOARD_DIR/board-mirror.sh"
 BOARD_WRITEBACK_SH="$BOARD_DIR/board-writeback.sh"
-COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port (ID-290)
+COCKPIT_PY="$(cd "$BOARD_DIR/.." && pwd)/sync/cockpit.py"  # lib/sync/, the P2 sync-engine port
 MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one level up from lib/board/
 
 [ -f "$BACKLOG_SH" ]         || { echo "board: lib/board/backlog.sh not found at $BACKLOG_SH" >&2; exit 1; }
@@ -199,7 +199,7 @@ MEGA_SH="$(cd "$BOARD_DIR/.." && pwd)/mega/mega.sh"  # lib/mega/mega.sh, one lev
 # from anywhere in argv, leaving the rest in POSITIONAL in order. Re-callable per subcommand (each
 # resets its own OPT_* vars first). The mirror-only flags are harmless no-ops for every OTHER
 # subcommand (board/next/set/states/priority/all/queue never read them), so folding them into the
-# one shared parser costs nothing and keeps a single flag-parsing surface (SPEC-146's own design).
+# one shared parser costs nothing and keeps a single flag-parsing surface (by design).
 # ---------------------------------------------------------------------------
 OPT_BACKLOG_FILE=""; OPT_REPO_ROOT=""; OPT_REGISTRY=""; OPT_DRY_RUN=0
 OPT_SNAPSHOT=""; OPT_MEGA_BOARD=""; OPT_BOARD_PREFIX=""; OPT_REMOTE=""; OPT_REMOTE_KIT_PATH=""
@@ -333,7 +333,7 @@ _iso_to_utc_z() {
 # ---------------------------------------------------------------------------
 # Priority render (single repo) -- verbatim port of the awk program from ops-toolkit's
 # `_meta/board` `priority` branch. Byte-identical output is the load-bearing non-regression
-# contract (SPEC-146 proof-of-done); do not "clean up" this awk without re-running that proof.
+# contract (see this module's proof-of-done); do not "clean up" this awk without re-running that proof.
 # ---------------------------------------------------------------------------
 _priority_render() {  # <backlog-file> <mode>
   local file="$1" mode="${2:-overview}"
@@ -527,7 +527,7 @@ cmd_all() {
 }
 
 # ---------------------------------------------------------------------------
-# queue -- the new overnight-runner feed (SPEC-146). Never mutates any BACKLOG.md.
+# queue -- the new overnight-runner feed. Never mutates any BACKLOG.md.
 # ---------------------------------------------------------------------------
 cmd_queue() {
   _parse_flags "$@"
@@ -565,12 +565,12 @@ cmd_queue() {
 }
 
 # ---------------------------------------------------------------------------
-# mirror -- git<->Hermes kanban bridge, read-mirror leg (SPEC-147, runner-fastpath sub-goal 07).
+# mirror -- git<->Hermes kanban bridge, read-mirror leg.
 # Delegates ALL substantial logic (extract/diff/plan/apply) to lib/board/board-mirror.sh, exactly the
 # way `queue` above delegates parsing to lib/board/parse-board.sh; this function is the thin,
 # human-facing wrapper: resolve config, get a plan, apply it (locally or over one `ssh` call),
 # persist the snapshot incrementally as results stream back, print a summary. Never mutates any
-# BACKLOG.md (mirror is one-way: git -> Hermes; SG-08 owns the reverse leg).
+# BACKLOG.md (mirror is one-way: git -> Hermes; writeback owns the reverse leg).
 # ---------------------------------------------------------------------------
 cmd_mirror() {
   _parse_flags "$@"
@@ -578,7 +578,7 @@ cmd_mirror() {
   local registry="${OPT_REGISTRY:-$repo_root/_meta/boards.txt}"
   local snapshot="${OPT_SNAPSHOT:-$repo_root/_meta/.board-mirror-snapshot.jsonl}"
 
-  # SPEC-002 P2 port (ID-290): the sync-engine cockpit channel. Opt-in via
+  # The sync-engine cockpit channel port. Opt-in via
   # `--engine sync`; today it re-lands the DETERMINISTIC legs (multi-source
   # extract + the keyed row_hash-git-wins diff) as a dry-run plan. The live
   # LOAD leg (applying to a Hermes kanban) and two-way writeback stay on the
@@ -671,7 +671,7 @@ cmd_mirror() {
 }
 
 # ---------------------------------------------------------------------------
-# status -- mirror staleness report (SPEC-147). Compares the snapshot's newest `seen_at` per
+# status -- mirror staleness report. Compares the snapshot's newest `seen_at` per
 # opted-in repo against that repo's BACKLOG.md's own last git-log touch time; never touches
 # Hermes or the snapshot file (read-only).
 # ---------------------------------------------------------------------------
@@ -687,7 +687,7 @@ cmd_status() {
   bash "$BOARD_MIRROR_SH" snapshot-read "$snapshot" > "$snap_tsv"
 
   local name path bridge rroot last_mirror last_touch changed=0 total_bridged=0 newest=""
-  while read -r name path bridge _rest; do  # _rest: a 4th column (rail=) must not slurp into bridge (ops ID-633)
+  while read -r name path bridge _rest; do  # _rest: a 4th column (rail=) must not slurp into bridge
     [ -n "${name:-}" ] || continue
     case "$name" in \#*) continue ;; esac
     [ "${bridge:-}" = "on" ] || continue
@@ -741,7 +741,7 @@ cmd_status() {
 }
 
 # ---------------------------------------------------------------------------
-# writeback -- git<->Hermes bridge, the WRITEBACK leg (SPEC-149, runner-fastpath sub-goal 08).
+# writeback -- git<->Hermes bridge, the WRITEBACK leg.
 # Delegates ALL substantial logic (diff/validate/apply/PR) to lib/board/board-writeback.sh, the same
 # thin-wrapper shape `mirror` above has with lib/board/board-mirror.sh: resolve config, get a validated
 # changeset, apply it (branch+commit+push+PR per affected repo), refresh the snapshot per applied
@@ -804,7 +804,7 @@ cmd_writeback() {
 
 # board sync [--dry-run] [--sources a,b] ... -- two-way spoke sync (the `sync`
 # module, lib/sync/). Consumer shims append --backlog-file; translate it to the
-# engine's --backlog. Config resolution happens HERE per ADR-0034: a command
+# engine's --backlog. Config resolution happens HERE, per the kit's stage-taxonomy decision: a command
 # reads [sync] keys via the ONE resolver at invocation and hands the python
 # init: scaffold the board files adopt does not cover. `kit adopt` seeds
 # .kit.toml and wires modules; the board itself (_meta/BACKLOG.md + the _meta/
@@ -952,7 +952,7 @@ cmd_sync() {
   v="$(kit_config_get sync.notion_db "")";       [ -n "$v" ] && args+=(--notion-db "$v")
   v="$(kit_config_get sync.notion_parent "")";   [ -n "$v" ] && args+=(--notion-parent "$v")
   # notion-taskboard: one-way, insert-only push to a foreign team board
-  # (SPEC-003). Down-filter only (a write-only sink has no intake path); the
+  #. Down-filter only (a write-only sink has no intake path); the
   # keys are TOML-friendly underscores but the engine's --filter app token
   # keeps the hyphenated adapter name.
   for fk in only_tags skip_tags; do
@@ -976,7 +976,7 @@ cmd_sync() {
   v="$(kit_config_get sync.notion_taskboard_types "")"
   [ -n "$v" ] && args+=(--notion-taskboard-types "$v")
   # notion-taskboard-pull: read-only intake FROM the same foreign team board
-  # (SPEC-004). No filter keys: the source board's own Agent Queue checkbox is
+  #. No filter keys: the source board's own Agent Queue checkbox is
   # the gate, and a second gate has no user.
   v="$(kit_config_get sync.notion_taskboard_pull_db "")"
   [ -n "$v" ] && args+=(--notion-taskboard-pull-db "$v")
@@ -1007,11 +1007,11 @@ cmd_sync() {
   exec python3 "$BOARD_DIR/../sync/backlog_sync.py" "${args[@]}" ${fwd[@]+"${fwd[@]}"}
 }
 
-# publish: the git leg of SPEC-002's intake -> publish -> relay sequencing.
+# publish: the git leg of the sync-engine's intake -> publish -> relay sequencing.
 # `board sync` mutates the board file in place; without this leg a scheduled
 # runner (the estate's hourly sweeper) leaves every checkout permanently
 # dirty, spoke writes invisible off-host and every ff-pull blocked
-# (ops-toolkit ID-638). Stages ONLY the board file; other dirt is untouched.
+# Stages ONLY the board file; other dirt is untouched.
 #
 # COMMIT-FIRST by design (battery 2026-09-01): committing before any pull
 # means a rebase conflict can never stage conflict markers into the board
@@ -1083,7 +1083,7 @@ cmd_publish() {
 }
 
 # bridge was folded into the sync module 2026-07-16; these verbs are the
-# legacy cockpit engine until the SPEC-002 P2 port (kit board ID-290).
+# legacy cockpit engine until the sync-engine port lands fully.
 _legacy_bridge_note() {
   echo "note: mirror/status/writeback are the legacy cockpit engine (bridge)," >&2
   echo "      folded into the sync module; the port is tracked on the kit board." >&2
@@ -1110,3 +1110,5 @@ main() {
 }
 
 main "$@"
+
+# provenance: SPEC-146, SPEC-147, SPEC-149, SPEC-002, ADR-0034

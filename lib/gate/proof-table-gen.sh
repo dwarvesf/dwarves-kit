@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # proof-table-gen.sh -- thin launcher for the proof-of-done confirmation-table
-# generator (SPEC-132). Resolves the kit's durable log dir the exact way
+# generator. Resolves the kit's durable log dir the exact way
 # lib/gate/gate-ledger.sh does (sources lib/telemetry/kit-log-dir.sh, so there is ONE resolver, not
 # a second copy), then delegates ledger-parsing + table rendering to the sibling
 # Python module -- bash-3.2 (the macOS CI runner's default /bin/bash, the same

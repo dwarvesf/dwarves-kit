@@ -235,7 +235,7 @@ CC_SEMANTIC_CMD="cat tests/fixtures/semantic-llm-out.json" bin/cc-semantic --roo
 bin/cc-semantic --days 7                             # real run (uses claude -p)
 ```
 
-## cc-vps-report (SG-05)
+## cc-vps-report
 
 **Feature:** bridge the weekly cc-observe digest into the LIVE vps-mon: HMAC-signed snapshot of headline metrics + a heartbeat ping that surfaces digest liveness on the public `/status` page.
 **Date:** 2026-06-15 · **Lane:** full · **Host:** dev laptop · **Mega-goal:** cc-elevation-r3 sub-goal 05 (supersedes r2 SG-01 cc-notify). **Target:** personal `mon-ingest` (`https://mon-ingest.han-ws.workers.dev`, CF account Han Ngo).
@@ -356,11 +356,11 @@ curl -s https://mon-ingest.han-ws.workers.dev/status/ai-substrate   # the item r
 ```
 
 
-## Native OTel eval (SG-06)
+## Native OTel eval
 
 **Type:** eval, not code. SG-06 owes a written adopt-or-skip verdict, not a behavioral run, so its
 proof **is** the verdict. Canonical artifact:
-`research/2026-06-15-claude-code-usage-metrics-and-tooling.md`, section "Native OTel eval (SG-06)".
+`research/2026-06-15-claude-code-usage-metrics-and-tooling.md`, section "Native OTel eval".
 
 **Verdict:** CONDITIONAL-ADOPT, the metric source is valuable (live cost + per-turn/per-tool
 latency the transcript views cannot produce); wiring is gated on (i) vps-mon gaining OTLP ingest
@@ -576,4 +576,44 @@ cd tools/cc-observe
 bash tests/smoke.sh                                          # -> smoke: all 40 passed (incl. 36-40)
 bin/cc-observe hooks --file tests/fixtures/goal-hook-sample.jsonl --json   # 3 inline-echo rows + real-hook.sh
 bin/cc-observe hooks --days 30                               # real data: goal rows now stable inline-echo:<hash>
+```
+
+
+## SPEC-254 `burn`: live per-session token burn
+
+**Feature:** `session observe burn` ranks sessions by token burn over a `--since` minutes window. It rolls subagents into their parent, deduplicates streamed usage, and shows live context and the owning PID. Spec: `docs/specs/SPEC-254-session-observe-burn.md`.
+**Date:** 2026-09-10 · **Lane:** normal (classified full) · **Host:** Hans Air M4 · **Commit:** `1c5484b`
+
+### Confirmation run-table
+
+| Check | Command | Expected | Result |
+|---|---|---|---|
+| Suite green | `bash tests/smoke.sh \| tail -1` | `smoke: all 56 passed` | PASS |
+| Untrusted input (review F1-F3) | smoke 50-52 | non-dict line, message, pid file: exit 0, valid row still printed | PASS |
+| Id-less usage (review F4) | smoke 53 | two id-less entries count reqs 2 | PASS |
+| mtime skip (review F5) | smoke 54 + 55 | pre-cutoff file absent, in-window file present | PASS |
+| ctx file order (review F6) | smoke 56 | ctx 7001 from the trailing untimestamped turn | PASS |
+| Feature registry fresh | `bash tests/test-meta.sh` | `All meta tests passed.` | PASS |
+| Dedup (V3) | smoke 41 | session A reqs 4, not 5 | PASS |
+| Subagent roll-up (V2) | smoke 42 | subs 1, tokens folded into parent | PASS |
+| ctx main chain only (V4) | smoke 43 | ctx 601, not the sidechain 10020 | PASS |
+| Rank key (V5) | smoke 44 | high cache-write session first | PASS |
+| PID map (V6) | smoke 45 | A maps 55555, B shows `-` | PASS |
+| Window (V1) | smoke 46 + 47 | 2h-old entry absent at 60, present at 180 | PASS |
+| JSON (V7) | smoke 48 | valid, `window_min` 60, rank order kept | PASS |
+| Report unchanged (V8) | smoke 49 | no burn section | PASS |
+| Live, real data | `bash bin/session observe burn --since 60 --top 3` | ranked table under 5s | PASS, 3.84s wall, 12 sessions |
+
+### Negative control
+
+`if key in r["seen_keys"]:` was replaced with `if False:` in a committed tree, and the dedup went away. Smoke returned `47 passed, 2 FAILED` (41 reqs, 42 roll-up). `git checkout` restored the file, and smoke returned `all 49 passed`.
+
+After the review fixes, the F1 guard and the F6 file-order update were reverted together. Smoke returned `54 passed, 2 FAILED` (50 crashed with `AttributeError`, 56 printed ctx 900001). Restored: `all 56 passed`.
+
+### Reproduce
+
+```bash
+bash lib/session/observe/tests/smoke.sh      # -> smoke: all 56 passed
+bash bin/session observe burn --since 60     # live ranked table
+bash bin/session observe burn --json         # {window_min, sessions[]}
 ```

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lane-telemetry.sh -- the read side of lane effectiveness (SPEC-061).
+# lane-telemetry.sh -- the read side of lane effectiveness.
 #
 # The kit records run facts in append-only ledgers (lib/gate/gate-ledger.sh -> logs/runs/<rid>.log,
 # lane downgrades -> logs/completeness.log) but until SPEC-061 nothing AGGREGATED them, so
@@ -12,8 +12,8 @@
 #   lane-telemetry.sh misfires    -> the runs where chosen lane != classified lane, plus
 #                                    completeness.log LANE-CHECK lines: the feed for keyword fixes
 #   lane-telemetry.sh render      -> task-type -> lane -> gate routing diagram + run counts
-#                                    (SPEC-099 / ID-150); ASCII, graceful-empty, no new dep
-#   lane-telemetry.sh trace <rid> -> one run's full story, formatted for review (SPEC-063)
+#; ASCII, graceful-empty, no new dep
+#   lane-telemetry.sh trace <rid> -> one run's full story, formatted for review
 #
 # Line formats consumed (produced by gate-ledger.sh):
 #   TS | START | lane=<chosen> classified=<suggested> type=<t> [ctype=<suggested-type>] repo=<r>
@@ -28,7 +28,7 @@ set -euo pipefail
 
 KIT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$KIT_LIB/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
-# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
+# Durable run-telemetry root: resolve + one-time additive migration.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$KIT_LIB/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
 kit_migrate_log_dir || true
@@ -36,14 +36,14 @@ LOG_DIR="$(kit_resolve_log_dir)"
 RUNS_DIR="$LOG_DIR/runs"
 COMPLETENESS="$LOG_DIR/completeness.log"
 
-# TTY-gated colors (SPEC-069): plain bytes whenever piped or NO_COLOR is set.
+# TTY-gated colors: plain bytes whenever piped or NO_COLOR is set.
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   C_RED=$'\033[1;31m'; C_BOLD=$'\033[1m'; C_OFF=$'\033[0m'
 else
   C_RED=""; C_BOLD=""; C_OFF=""
 fi
 
-# Boardless runs (SPEC-069): a run ledger whose repo matches the cwd repo but whose rid
+# Boardless runs: a run ledger whose repo matches the cwd repo but whose rid
 # the board never mentions. Detection only; the board file is the repo's own.
 _boardless() {
   local root board myrepo f rid tok matched
@@ -71,7 +71,7 @@ _boardless() {
   done
 }
 
-# Shipped-incomplete (SPEC-069): a shipped run that would NOT pass its own ship-gate, i.e.
+# Shipped-incomplete: a shipped run that would NOT pass its own ship-gate, i.e.
 # a REQUIRED (measure-twice) gate lacks a ran/override entry. Reads lane from the START line,
 # asks gate-ledger check. INTENTIONAL SEAM (review A4): this is lane-telemetry's ONE runtime
 # call into gate-ledger, delegated to avoid duplicating the lane->phase map (WORKFLOW matrix
@@ -106,7 +106,7 @@ _rows() {
         n=split($3, kv, " ")
         for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
       }
-      $2=="START-AMEND" {   # sanctioned correction: last amend wins (SPEC-077)
+      $2=="START-AMEND" {   # sanctioned correction: last amend wins
         started=1   # review F1: an amend also closes the plain-START first-wins window
         n=split($3, kv, " ")
         for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
@@ -174,7 +174,7 @@ _escapes() {
   done
 }
 
-# _token_agg: per-lane token aggregates over runs carrying a `| TOKENS |` line (SPEC-110).
+# _token_agg: per-lane token aggregates over runs carrying a `| TOKENS |` line.
 # Joins each run's TOKENS totals to its lane via _rows (rid->lane), then per lane emits a TSV:
 #   <lane>\t<runs_with_tokens>\t<median_tokens_to_done>\t<cache_eff_pct>
 # plus one summary line: __ALL__\t<runs_total>\t<runs_with_tokens>\t<usage_unknown>\t<rework_pct>.
@@ -254,7 +254,7 @@ report() {
   echo "runs (rid  repo  lane<-classified  type<-ctype  review  first..last):"
   printf '%s\n' "$rows" | awk 'BEGIN{FS="\t"} { printf "  %-28s %-12s %s<-%s  %s<-%s  %-24s %s .. %s\n", $1, $2, $3, $4, $5, $6, $13, $14, $15 }'
 
-  # Token efficiency (SPEC-110): only over runs carrying a TOKENS line; a no-capture run is an
+  # Token efficiency: only over runs carrying a TOKENS line; a no-capture run is an
   # honest usage=? and is EXCLUDED from medians (never a fake zero). No thresholds until a
   # ~5-run baseline forms (the SPEC-073 pattern).
   local tagg; tagg="$(_token_agg)"
@@ -346,7 +346,7 @@ misfires() {
   return 0
 }
 
-# trace: one run's ledger rendered as a reviewable story (SPEC-063): routing header with
+# trace: one run's ledger rendered as a reviewable story: routing header with
 # misfire flags, then the humanized timeline (gates with state + reason, actions, with
 # escaped-from indictments called out).
 trace() {
@@ -367,7 +367,7 @@ trace() {
       for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
       next
     }
-    $2=="START-AMEND" {   # sanctioned correction (SPEC-077): last amend wins, no MULTI-START flag
+    $2=="START-AMEND" {   # sanctioned correction: last amend wins, no MULTI-START flag
       amended++
       n=split($3, kv, " ")
       for (i=1; i<=n; i++) { split(kv[i], p, "="); m[p[1]]=p[2] }
@@ -402,7 +402,7 @@ trace() {
 }
 
 # render: the task-type -> lane -> gate routing DIAGRAM with run counts over the durable
-# ledgers (SPEC-099 / ID-150). ASCII + markdown only, no new dependency, renders over ssh.
+# ledgers. ASCII + markdown only, no new dependency, renders over ssh.
 # Reuses _rows() (no second parser); degrades gracefully to an honest "no runs recorded"
 # on an empty/fresh install rather than crashing or printing fake zeros.
 render() {

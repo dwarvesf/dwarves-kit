@@ -83,7 +83,7 @@ Both render from the same rows (the stats single-data-path rule); they differ
 only in selection and framing. Never maintain a second dataset for marketing.
 
 1. **Internal scoreboard** (operators): everything above; anomalies feed
-   `learn propose`. Terminal table + Artifact via the stats render path;
+   `reflect propose`. Terminal table + Artifact via the stats render path;
    `bench render --html` is the standalone fallback.
 2. **User trust page** (buyers/users): the six headline numbers only, each with
    three mandatory attachments: the replay command that reproduces it, the

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# bin/stats -- STABLE consumer entrypoint for the stats subsystem (SPEC-184,
-# ADR-0034 decision 7: every subsystem gets its bin entry).
+# bin/stats -- STABLE consumer entrypoint for the stats subsystem (every subsystem
+# gets its bin entry).
 #
-# The stats engine is the uv-managed Python CLI at lib/stats/ (SPEC-182: a
+# The stats engine is the uv-managed Python CLI at lib/stats/ (a
 # stateless read-only projection over the append-only ledgers). This wrapper
 # forwards through `uv run --project` so a consumer types `stats <cmd>` from
 # anywhere instead of cd-ing into lib/stats first. Requires `uv` on PATH

@@ -34,12 +34,12 @@ to it.
    findings are stable currency across runs; MEDIUM/LOW are leads.
 2. **Learn (propose).** `session audit triage` turns the footer into the kit's
    ONE proposal currency: `## [staged]` blocks appended to
-   `_meta/backlog-staging.md` via `lib/learn/staging-format.py` (ADR-0034
-   decision 1), byte-compatible with `learn propose` and `stats anomalies
+   `_meta/backlog-staging.md` via `lib/reflect/staging-format.py` (ADR-0034
+   decision 1), byte-compatible with `reflect propose` and `stats anomalies
    --propose`. The metric contract rides on `Approach`, the report + owner on
    `Source`. Dedup runs against every staging state (staged/expired/rejected/
    promoted) + the board, so a rejected proposal never returns. Human gate
-   unchanged (ADR-0034 decision 2/5): review with `learn drain`, accept with
+   unchanged (ADR-0034 decision 2/5): review with `reflect drain`, accept with
    `board promote`. Nothing auto-files.
 3. **Shape -> Build -> Check (enhance).** An accepted row is ordinary kit
    work through the normal lanes and gates. Nothing special; the audit only
@@ -73,7 +73,7 @@ the diff meaningful regardless of spacing.
 
 - Propose-don't-dispose at every joint: the audit writes reports, triage writes
   stdout, only a human writes the board (ADR-0034 decision 2/5, same rule
-  SPEC-195 enforces for `learn propose`).
+  SPEC-195 enforces for `reflect propose`).
 - Claims never exceed evidence; a recommendation without a metric contract is
   not triage-able and should be treated as prose, not a proposal.
 - The loop measures itself: hook-block counts, error decomposition, and
