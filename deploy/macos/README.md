@@ -18,7 +18,7 @@ three weeks once) -> each `jobs.txt` line in order:
 | Job | Command | What it writes |
 |---|---|---|
 | `session-intel` | `bin/session intel run` | `~/.claude/intel/intel-YYYY-MM-DD.md`, the weekly digest: harness scorecard (`stats digest`), usage, repo health, merge + extract-workflow proposals |
-| `kit-retro` | `bin/learn propose` | cited, deduped, adversarially-checked proposals into the staging file (review with `learn drain`, promote with `board promote`) |
+| `kit-retro` | `bin/reflect propose` | cited, deduped, adversarially-checked proposals into the staging file (review with `reflect drain`, promote with `board promote`) |
 | `prose-rag-index` | `bin/prose-rag index` | incremental recall-index refresh (`~/.claude/prose-rag/index.bin`). Opt-in by config: with no `PROSE_RAG_CORPUS` (and no built engine) it skips clean, exit 0, db untouched |
 
 **Consumer env (optional).** launchd gives jobs a bare env (Claude Code's

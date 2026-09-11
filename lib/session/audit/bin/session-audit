@@ -15,8 +15,8 @@ Sonnet over a 3-day window); run weekly or on demand, not per-session --
 session-semantic stays the cheap cron signal.
 
 `triage` emits the kit's ONE proposal currency: `## [staged]` blocks via
-lib/learn/staging-format.py (ADR-0034 decision 1), deduped against every
-staging state + the board, exactly like `learn propose` and `stats
+lib/reflect/staging-format.py (ADR-0034 decision 1), deduped against every
+staging state + the board, exactly like `reflect propose` and `stats
 anomalies --propose`. The metric contract rides on Approach, the report +
 owner ride on Source.
 
@@ -142,7 +142,7 @@ def _staging_format():
     """Load the kit's ONE staging-block grammar (ADR-0034 decision 1). Hyphenated
     filename, so it needs the importlib dance drain.py/propose.py already use."""
     import importlib.util
-    p = os.path.join(_repo_root(), "lib", "learn", "staging-format.py")
+    p = os.path.join(_repo_root(), "lib", "reflect", "staging-format.py")
     spec = importlib.util.spec_from_file_location("staging_format", p)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -235,7 +235,7 @@ def cmd_triage(args):
         return 0
     where = staging if blocks else "(nothing new)"
     print(f"session-audit triage: staged {len(staged)}, skipped {len(skipped)} duplicate "
-          f"-> {where}\n  promote with: board promote <n>   (review first: learn drain)")
+          f"-> {where}\n  promote with: board promote <n>   (review first: reflect drain)")
     return 0
 
 

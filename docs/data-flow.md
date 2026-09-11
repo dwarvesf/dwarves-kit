@@ -67,7 +67,7 @@ The Learn stage's whole job. Every arrow is code, not intent; the names are the 
 
 | Invariant | In this diagram |
 |---|---|
-| **I1 one currency** | Every proposer lands in the SAME box: `## [staged]` blocks rendered by `lib/learn/staging-format.py`. `learn propose`, `stats --propose`, and `session audit triage` all write it. Nothing writes `BACKLOG.md` directly. |
+| **I1 one currency** | Every proposer lands in the SAME box: `## [staged]` blocks rendered by `lib/reflect/staging-format.py`. `reflect propose`, `stats --propose`, and `session audit triage` all write it. Nothing writes `BACKLOG.md` directly. |
 | **I2 one env family** | That box's path is `BACKLOG_STAGE_STAGING` for every writer (was three different names). |
 | **I3 one durable root** | Everything on the left resolves its paths through `kit_resolve_log_dir` (flow 2). |
 | **I4 one verb** | `run` produces, `propose` stages, `promote` is the human gate. |

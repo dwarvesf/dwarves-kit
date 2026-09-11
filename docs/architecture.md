@@ -1,6 +1,6 @@
 # Architecture
 
-How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five stages, formerly "legs": Shape → Build → Watch → Check → Learn, and which module serves which) lives in the README's "The five stages" section, backed by ADR-0034 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
+How dwarves-kit fits together. Read PHILOSOPHY.md first for the WHY; this file is the WHAT and HOW. The harness-level loop story (the five stages, formerly "legs": Shape → Build → Watch → Check → Reflect, and which module serves which) lives in the README's "The five stages" section, backed by ADR-0034/ADR-0036 and the machine registry `lib/config/module-registry.md`; this file does not restate it.
 
 ## Component layout
 

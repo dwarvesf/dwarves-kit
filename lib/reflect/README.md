@@ -1,6 +1,6 @@
-# learn
+# reflect
 
-The **Learn stage's** home (ADR-0034 decision 1, stage names per the 2026-07-18 amendment: Shape / Build / Watch / Check / Learn).
+The **Reflect stage's** home (ADR-0034 decision 1, renamed `Learn` -> `Reflect` and the subsystem `learn` -> `reflect` by ADR-0036; stage names per the 2026-07-18 amendment: Shape / Build / Watch / Check / Reflect).
 The read-and-propose side of the loop. It reads what the harness recorded about itself, distills
 it, and proposes work. It never does the work, and it never files it.
 
@@ -10,27 +10,27 @@ board, rewrites a ledger, or edits a skill / CLAUDE.md.
 
 ```
    gate ledger telemetry ──┐
-   stats lenses           ─┼──> learn propose ──┐
+   stats lenses           ─┼──> reflect propose ──┐
    a RETRO doc            ─┘                    │
                                                 ├──> _meta/backlog-staging.md ──> board promote
    session transcripts ───> session audit/intel ┤          (the human gate)
    stats anomalies ───────> anomalies --propose ┘
                                                 │
-                              learn drain <─────┘   (review + expire)
+                              reflect drain <────┘   (review + expire)
 ```
 
 ## The callables
 
-Entry point is `bin/learn <verb>` (stable; SPEC-184). Three verbs, all live.
+Entry point is `bin/reflect <verb>` (stable; SPEC-184; `bin/learn` forwards to it for one release). Three verbs, all live.
 
 | Verb | Script | What it does |
 |---|---|---|
-| `learn propose` | `propose.py` | The cross-run distiller. A retro one layer up from `/kit:retro`: that reads one run, this reads many runs of ledger telemetry and proposes backlog rows. |
-| `learn propose --retro FILE` | `propose.py` | Stages a RETRO doc's `## Action items`. Deterministic: no model call, the retro *is* the evidence. |
-| `learn drain` | `drain.py` | The staging review. Renders what is staged, grouped by Home. Expires anything past the window. |
-| `learn debt <list\|collect\|mark-paid>` | `weekend-batch.sh` | The debt paydown. Reads `\| DEBT \|` markers off the gate ledger, surfaces the week's waved + deferred items, closes one with `mark-paid`. |
+| `reflect propose` | `propose.py` | The cross-run distiller. A retro one layer up from `/kit:retro`: that reads one run, this reads many runs of ledger telemetry and proposes backlog rows. |
+| `reflect propose --retro FILE` | `propose.py` | Stages a RETRO doc's `## Action items`. Deterministic: no model call, the retro *is* the evidence. |
+| `reflect drain` | `drain.py` | The staging review. Renders what is staged, grouped by Home. Expires anything past the window. |
+| `reflect debt <list\|collect\|mark-paid>` | `weekend-batch.sh` | The debt paydown. Reads `\| DEBT \|` markers off the gate ledger, surfaces the week's waved + deferred items, closes one with `mark-paid`. |
 
-### `learn propose`, the three stages
+### `reflect propose`, the three stages
 
 1. **Aggregate** (deterministic, no model). Runs the `stats` lenses over a window and builds a
    signal table: `{id, lens, figure, rids, detail}`. Each lens fails independently, so a broken
@@ -76,8 +76,8 @@ of two:
 
 | Proposer | Renders via | Status |
 |---|---|---|
-| `learn propose` (`propose.py`) | imports `staging-format.py` | converged |
-| `learn propose --retro` (`propose.py`) | imports `staging-format.py` | converged |
+| `reflect propose` (`propose.py`) | imports `staging-format.py` | converged |
+| `reflect propose --retro` (`propose.py`) | imports `staging-format.py` | converged |
 | `session audit` (`lib/session/audit/bin/session-audit`) | imports `staging-format.py` | converged |
 | `session intel` (`lib/session/intel/bin/session-intel`) | imports `staging-format.py` | converged |
 | `stats anomalies --propose` (`lib/stats/src/stats/anomalies.py`) | its **own** `render_block()` | **copy** |
@@ -104,20 +104,21 @@ human-gated edge into the board, and C5 exempts it by name.
 
 | Where | What |
 |---|---|
-| `docs/decisions/0034-harness-loop-taxonomy.md` | The five stages, `lib/learn/` as the Learn stage's one home, the three-verb grammar |
+| `docs/decisions/0034-harness-loop-taxonomy.md` | The five stages, `lib/reflect/` (renamed from `lib/learn/` by ADR-0036) as the Reflect stage's one home, the three-verb grammar |
+| `docs/decisions/0036-loops-split-by-who-changes.md` | The `learn` -> `reflect` rename and the `understand.teach` seam |
 | `docs/decisions/0031-understanding-gate.md` | Understanding debt, and why waving is a first-class recorded choice |
 | `docs/specs/SPEC-195-learn-propose.md` | The cross-run distiller |
 | `docs/specs/SPEC-196-staging-drain.md` | The staging review + expiry |
 | `docs/specs/SPEC-126-weekend-batch.md` | Debt collection and paydown |
 
 This module has no module-local `SPEC.md`; its specs are the numbered ones at the repo root. That
-is why `lib/learn/SPEC` is still an open IOU in `tests/kit-contract-known-gaps.txt`.
+is why `lib/reflect/SPEC` is still an open IOU in `tests/kit-contract-known-gaps.txt`.
 
 ## Tests
 
 ```bash
-bash tests/test-learn-propose.sh   # 41, grounding, dedup, fail-closed refute, --retro, sanitization
-bash tests/test-learn-drain.sh     # 23, render, promote-numbering parity, expiry, move-not-delete
+bash tests/test-reflect-propose.sh # 41, grounding, dedup, fail-closed refute, --retro, sanitization
+bash tests/test-reflect-drain.sh   # 23, render, promote-numbering parity, expiry, move-not-delete
 ```
 
 ## The three things a newcomer gets wrong

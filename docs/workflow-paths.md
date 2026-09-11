@@ -20,7 +20,7 @@ GENERATED projection. This file enumerates every entry point and where each path
 
 Enforcement marks: `HARD` = blocking (exit 2 or pipeline gate); `adv` = advisory (warns, logs, never blocks); `conv` = convenience (never blocks, no verdict). The four hard stops are safety-gate, the push-to-main blocker (inside safety-gate + ship-gate), anti-rationalization, and the execute verification pipeline; everything else advises.
 
-Stage grouping (Shape / Build / Watch / Check / Learn) follows the README's five stages. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
+Stage grouping (Shape / Build / Watch / Check / Reflect) follows the README's five stages. Stages are metadata: a feature sits where its work happens, and Check gates every boundary rather than owning a segment.
 
 ## 2 · Flow topology (the one big picture)
 
@@ -299,7 +299,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
     |                 [E] ship-gate HARD: no push without recorded proof/gates
     |                 [E] safety-gate HARD: push-to-main / force-push / destructive Bash
     v
- shipped ──> Learn (/kit:retro)
+ shipped ──> Reflect (/kit:retro)
 
  On-demand re-verification, read-only, no rebuild:
  [H/I] /kit:verify ──> [D] task-verifier + integration-verifier
@@ -330,7 +330,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
  Every automated Watch path ends at a staging file or a render, never a direct board/ledger write.
 ```
 
-### 4.5 · LEARN: distill the record into the next cycle
+### 4.5 · REFLECT: distill the record into the next cycle
 
 ```
  shipped
@@ -344,7 +344,7 @@ Off-ramp entries that also land in Shape: `[H] /kit:onboard` (first run, orchest
     +── [H] /kit:kit-health ──> self-assessment vs PHILOSOPHY (report)
     +── [H] /kit:absorb ──> Credits drift + seed rescan ──> proposal, human merges
 
- Learn-side skills (auto-fire [I] unless noted):
+ Reflect-side skills (auto-fire [I] unless noted):
  doc-drift ──> whole-estate doc audit ──> fixes on a branch ──> PR gate
  topology-drift ──> FEATURES.md vs path-index cross-check ──> delta re-placed ──> PR gate
    (both dispatch [D] audit-scanner for Tier 2: read-only evidence, skill applies)

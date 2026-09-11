@@ -19,7 +19,7 @@
 # The kit itself carries NO personal data: the consumer registry (`boards.txt`), the repo it
 # describes, and any future bridge opt-ins are CONSUMER config this tool reads at runtime via
 # `--repo-root <path>` / the `REPO_ROOT` env var (the kit's existing consumer pattern -- see
-# lib/learn/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
+# lib/reflect/weekend-batch.sh's `_repo_root()` / `--repo-root`, lib/goal/mega-merge.sh's env-override
 # precedent). Never invents a `CONSUMER_ROOT` var.
 #
 # Usage:

@@ -69,12 +69,12 @@ An open loop (the agent roams free and judges its own output) is a fast slop mac
 
 ## The five stages
 
-The lifecycle above is what one run looks like. Across runs, the kit is organized as five stages (formerly called "legs", ADR-0034): **Shape** turns work into contracts, **Build** builds inside them, **Watch** records what happened, **Check** gates every boundary, and **Learn** distills the record into proposals for the next cycle.
+The lifecycle above is what one run looks like. Across runs, the kit is organized as five stages (formerly called "legs", ADR-0034; the fifth renamed Learn -> Reflect by ADR-0036): **Shape** turns work into contracts, **Build** builds inside them, **Watch** records what happened, **Check** gates every boundary, and **Reflect** distills the record into proposals for the next cycle.
 
 ```mermaid
 flowchart LR
-  SH([Shape]) --> BD([Build]) --> WA([Watch]) --> LN([Learn])
-  LN -->|cited proposals,<br/>human promotes| SH
+  SH([Shape]) --> BD([Build]) --> WA([Watch]) --> RF([Reflect])
+  RF -->|cited proposals,<br/>human promotes| SH
   CH([Check]) -. gates every<br/>phase boundary .- BD
 ```
 
@@ -88,12 +88,12 @@ Stages are metadata, not directories: each module keeps its name and install uni
 | Build (Execute) | `queue`, `mega`, `worktree`, `quiz_gate` |
 | Watch (Observe) | `stats`, `session` (capture side), `telemetry`, `sync` (outward mirror side; absorbed the bridge cockpit mirror 2026-07-16) |
 | Check (Govern) | `gate`, `money_gate`, `advisor`, `gauntlet`, `wrap` |
-| Learn | `learn`, `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending ADR-0034 amendment) |
+| Reflect | `reflect` (was `learn`), `weekend_batch`, `session` (harvest), `board` (staging/promote), `skill-curator`, `prose_rag` (registry assignment, pending ADR-0034 amendment) |
 | (no stage) | `cosmetic` (statusline; orthogonal to the loop) |
 
-Two modules honestly span stages: **board** (Shape's intake on one side, Learn's staging/promote on the other) and **session** (Watch's capture, Learn's harvest).
+Two modules honestly span stages: **board** (Shape's intake on one side, Reflect's staging/promote on the other) and **session** (Watch's capture, Reflect's harvest).
 
-**What happens to a run's data after it ships:** every gate decision and run outcome appends to the ledgers (append-only, never rewritten). `stats` projects them read-only; `session intel` writes the weekly digest, harness scorecard included; `learn propose` distills cross-run evidence into cited proposals in a staging file; `learn drain` renders that staging for review; `board promote` is the human gate that turns a proposal into a backlog row feeding the next Shape stage. Every automated stage ends at a staging file or a rendered surface, never a direct write to a board or ledger: propose, never dispose.
+**What happens to a run's data after it ships:** every gate decision and run outcome appends to the ledgers (append-only, never rewritten). `stats` projects them read-only; `session intel` writes the weekly digest, harness scorecard included; `reflect propose` distills cross-run evidence into cited proposals in a staging file; `reflect drain` renders that staging for review; `board promote` is the human gate that turns a proposal into a backlog row feeding the next Shape stage. Every automated stage ends at a staging file or a rendered surface, never a direct write to a board or ledger: propose, never dispose.
 
 ## Install
 
@@ -108,7 +108,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
 | `stats` | the `stats` CLI, a read-only projection over the run/gate ledgers | hookless (uv CLI) |
 | `quiz_gate` | `/kit:quiz-gate` (ADR-0031 understanding-gate nudge) | hookless (command) |
-| `weekend_batch` | the debt-paydown reader/closer (`bin/learn debt`; engine `lib/learn/weekend-batch.sh`, relocated per ADR-0034), invoked by a consumer's own skill or directly | hookless (lib) |
+| `weekend_batch` | the debt-paydown reader/closer (`bin/reflect debt`; engine `lib/reflect/weekend-batch.sh`, relocated per ADR-0034, renamed from `learn` by ADR-0036), invoked by a consumer's own skill or directly | hookless (lib) |
 | `bridge` | FOLDED INTO `sync` 2026-07-16. The git↔Hermes cockpit mirror/writeback verbs (`board.sh mirror/status/writeback`, `bridge=on` rows in `boards.txt`) remain runnable as the legacy engine until the SPEC-002 P2 port (kit ID-290) re-lands them as a sync edge | absorbed |
 | `worktree` | `worktree-provision` on PATH (manual worktree env-symlink + install provisioner, `lib/worktree-provision/`) | hookless (CLI) |
 | `money_gate` | `money-gate` (PreToolUse Edit/Write guard for money-touching edits; inert until you set `MONEY_GATE_REPOS`) | 1 hook |
@@ -406,7 +406,7 @@ dwarves-kit/
   install.sh / settings.json    Bash install path
   .claude-plugin/               Plugin install path (plugin.json, marketplace.json)
   .github/workflows/test.yml    CI: macOS + Ubuntu test matrix
-  bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`learn`/`mega`/`precedent`/`queue`/`session`/`spec`/`stats`/`config`/`plugin-check` thin forwarders to `lib/<subsystem>/`, plus the module CLIs (`prose-rag`, `worktree-provision`, `skill-improve`, `skill-review`) that keep their own names, and two standalone maintainer tools outside the forwarder pattern (`activate`, `release`, licensing and release cutting). A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
+  bin/                          STABLE consumer entrypoints (SPEC-184, one `<subsystem> <verb>` grammar per ADR-0034): `board`/`classify`/`gate`/`goal`/`reflect`/`mega`/`precedent`/`queue`/`session`/`spec`/`stats`/`config`/`plugin-check` thin forwarders to `lib/<subsystem>/`, plus the module CLIs (`prose-rag`, `worktree-provision`, `skill-improve`, `skill-review`) that keep their own names, and two standalone maintainer tools outside the forwarder pattern (`activate`, `release`, licensing and release cutting). `learn` stays for one release as a deprecation forwarder to `reflect` (ADR-0036). A consumer (an adopted repo's board shim, the adopt-injected CLAUDE.md block) references `$DWARVES_KIT/bin/<name>`, NEVER a deep lib path, so an internal lib reorg cannot silently break it (the board-shim class of bug). Deployed by install.sh next to lib/.
   agents/                       Subagents dispatched by commands
   commands/                     Markdown command prompts
   hooks/                        Hook scripts + hooks.json plugin manifest
@@ -450,7 +450,7 @@ For the full file listing including individual agent/hook/command names, run `gi
 
 **Hook logs.** Hooks that make enforcement decisions append to `~/.claude/dwarves-kit/logs/` (`anti-rationalization.log`, `safety-gate.log`, `spec-drift-guard.log`, `slop-cleaner.log`). These build the eval corpus for future optimization.
 
-**Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `learn propose` staging; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
+**Weekly scheduler.** The kit ships ONE weekly LaunchAgent: a dispatcher over a declarative jobs list (session-intel digest, `reflect propose` staging; adding a job = one line, never a new plist). Consumer instantiates it: `bash deploy/macos/install`; runbook at [`deploy/macos/README.md`](deploy/macos/README.md).
 
 **Testing.** `bash tests/run-workflow.sh` runs every step of the CI workflow locally in order and prints only the red ones (side-effect files restored); `bash tests/test-hooks.sh` covers hook behavior (safety-gate blocking, anti-rationalization patterns, permission-auto-approve pipe-injection protection); `bash tests/test-meta.sh` covers structural integrity (manifests, frontmatter, cross-links).
 

@@ -38,7 +38,7 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 # The one staging-block writer: `stage` shells out to it rather
 # than growing a second copy of the dedupe/render/append grammar in bash.
-STAGING_FORMAT_PY="$LIB_ROOT/learn/staging-format.py"
+STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 

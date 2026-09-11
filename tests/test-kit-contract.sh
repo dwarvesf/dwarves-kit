@@ -10,7 +10,7 @@
 #                tool is a tool nobody runs (session-audit shipped unwired, 2026-07-14).
 # C3  DOCS       every module dir carries README.md + SPEC.md + docs/proof-of-done.md.
 # C4  TESTS      every module dir carries at least one tests/*.sh.
-# C5  CURRENCY   every proposer LOADS lib/learn/staging-format.py to render its `## [staged]`
+# C5  CURRENCY   every proposer LOADS lib/reflect/staging-format.py to render its `## [staged]`
 #                blocks (naming a renderer is not enough: two files kept private copies, one
 #                drifted into a forgery hole, and the old grep matched their own definitions)
 #                and NEVER writes a board directly (ADR-0034 decision 1 / SPEC-200 I1).
@@ -60,14 +60,14 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 # green (found 2026-07-15). A declared module now MUST have a lib/<name>/ home, even if that
 # home holds only its docs: the missing home is itself the finding, not an excuse to skip it.
 # A module's home is not always lib/<its-own-name>: several are FEATURES of another lib
-# (quiz_gate lives in lib/gate/, weekend_batch in lib/learn/, bridge in lib/board/), and one
+# (quiz_gate lives in lib/gate/, weekend_batch in lib/reflect/, bridge in lib/board/), and one
 # is an agent, not a lib at all. This map is the honest resolution; without it the lint either
 # skipped them (the old blind spot: money_gate went its whole lifetime unspecced while C3 stayed
 # green) or reported a phantom lib/<name> that was never supposed to exist.
 module_home() {  # module_home <module> -> its dir, or "" for "documented elsewhere by design"
   case "$1" in
     quiz-gate)      echo "lib/gate" ;;        # lib/gate/quiz-gate.sh
-    weekend-batch)  echo "lib/learn" ;;       # lib/learn/weekend-batch.sh
+    weekend-batch)  echo "lib/reflect" ;;     # lib/reflect/weekend-batch.sh (renamed from lib/learn by ADR-0036)
     bridge)         echo "lib/board" ;;       # lib/board/board-mirror.sh + board-writeback.sh
     worktree)       echo "lib/worktree-provision" ;;
     advisor)        echo "" ;;                # an AGENT (agents/advisor.md), not a lib module

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""propose.py -- `learn propose`: the cross-run auto-improvement distiller.
+"""propose.py -- `reflect propose`: the cross-run auto-improvement distiller.
 
 A retro one layer up from /kit:retro. /kit:retro reads ONE run; this reads MANY megas'
 worth of ledger telemetry, interprets the aggregate, and emits candidate BACKLOG ROWS a
@@ -39,7 +39,7 @@ Env / seams:
                                 json envelope) on stdout.
   LEARN_PROPOSE_VERIFIER=CMD    adversarial pass (default claude -p sonnet). Reads the prompt
                                 on stdin, writes a verdict (`VERDICT: HOLDS|REFUTED`) on stdout.
-  LEARN_PROPOSE_RID=STR         rid for the TOKENS markers (default: gate rid / date slug).
+  REFLECT_PROPOSE_RID=STR         rid for the TOKENS markers (default: gate rid / date slug).
   BACKLOG_STAGE_STAGING / BACKLOG_STAGE_BACKLOG   staging + board defaults (shared with the
                                 hook + add-backlog, so propose writes where board promote reads).
   LEARN_PROPOSE_COCKPIT         cross-repo board registry read for dedup (default
@@ -61,10 +61,10 @@ import subprocess
 import sys
 
 SELF_DIR = os.path.dirname(os.path.abspath(__file__))
-KIT_ROOT = os.path.dirname(os.path.dirname(SELF_DIR))  # lib/learn -> lib -> repo root
+KIT_ROOT = os.path.dirname(os.path.dirname(SELF_DIR))  # lib/reflect -> lib -> repo root
 sys.path.insert(0, SELF_DIR)
 # staging-format.py is the ONE staging-block definition (ADR-0034 decision 1), shared with
-# `learn drain`. Its hyphenated name is not directly importable, so load it by path, the
+# `reflect drain`. Its hyphenated name is not directly importable, so load it by path, the
 # same shim drain.py uses.
 import importlib.util  # noqa: E402
 _sf_spec = importlib.util.spec_from_file_location(
@@ -140,7 +140,7 @@ def _dedup_sources(staging, backlog):
 
 
 def _rid():
-    env = os.environ.get("LEARN_PROPOSE_RID")
+    env = os.environ.get("REFLECT_PROPOSE_RID")
     if env:
         return env
     try:
@@ -151,7 +151,7 @@ def _rid():
             return out.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         pass
-    return "learn-propose-" + datetime.date.today().isoformat()
+    return "reflect-propose-" + datetime.date.today().isoformat()
 
 
 def _stats_json(subcmd, extra):
@@ -202,10 +202,10 @@ def _stats_query(sql):
 
 
 def _debt_count():
-    """Starvation counter: `bin/learn debt list` row count. Best-effort (0 on failure)."""
+    """Starvation counter: `bin/reflect debt list` row count. Best-effort (0 on failure)."""
     try:
         r = subprocess.run(
-            [os.path.join(KIT_ROOT, "bin", "learn"), "debt", "list"],
+            [os.path.join(KIT_ROOT, "bin", "reflect"), "debt", "list"],
             capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return 0
@@ -288,7 +288,7 @@ def build_aggregate(days, megas):
 
     debt = _debt_count()
     if debt:
-        add("learn-debt", f"learn debt: {debt} unpaid", {"count": debt})
+        add("reflect-debt", f"reflect debt: {debt} unpaid", {"count": debt})
 
     lcount, loldest = _learned_ledger_stat()
     if lcount:
@@ -431,7 +431,7 @@ def _citation_source(signal, date):
         rids = ",".join(all_rids[:_RIDS_SHOWN]) + f",+{len(all_rids) - _RIDS_SHOWN} more"
     else:
         rids = ",".join(all_rids) or "(none)"
-    return f'learn propose {date} | lens={signal["lens"]} figure="{figure}" rids={rids}'
+    return f'reflect propose {date} | lens={signal["lens"]} figure="{figure}" rids={rids}'
 
 
 # `- [ ] change -- owner: x -- deadline: y`. Only UNCHECKED boxes: a `[x]` item is already done,
@@ -525,7 +525,7 @@ def run_retro(retro_path, staging, backlog, dry_run):
 
     if blocks and not dry_run:
         header = "" if os.path.isfile(staging) else (
-            "# Backlog staging (auto, via learn propose)\n\n"
+            "# Backlog staging (auto, via reflect propose)\n\n"
             "Candidates auto-extracted from the ledger. Review + promote by hand "
             "(`board promote`).\nGitignored: may name unfiled work. NEVER the source of truth.\n\n"
         )
@@ -534,12 +534,12 @@ def run_retro(retro_path, staging, backlog, dry_run):
             fh.write(header + "".join(blocks))
 
     if dry_run:
-        sys.stdout.write("".join(blocks) or "learn propose --retro: nothing new to stage\n")
+        sys.stdout.write("".join(blocks) or "reflect propose --retro: nothing new to stage\n")
         return 0
-    print(f"learn propose --retro: {len(cands)} action item{'s' if len(cands) != 1 else ''} read, "
+    print(f"reflect propose --retro: {len(cands)} action item{'s' if len(cands) != 1 else ''} read, "
           f"{len(staged)} staged, {len(skipped)} duplicate -> "
           f"{staging if blocks else '(nothing new)'}\n"
-          f"  review with: learn drain   promote with: board promote <n>")
+          f"  review with: reflect drain   promote with: board promote <n>")
     return 0
 
 
@@ -590,7 +590,7 @@ def run(days, megas, staging, backlog, dry_run, aggregate_file):
     n = len(staged_blocks)
     if staged_blocks and not dry_run:                     # (3d) staged write
         header = "" if os.path.isfile(staging) else (
-            "# Backlog staging (auto, via learn propose)\n\n"
+            "# Backlog staging (auto, via reflect propose)\n\n"
             "Candidates auto-extracted from the ledger. Review + promote by hand "
             "(`board promote`).\nGitignored: may name unfiled work. NEVER the source of truth.\n\n"
         )
@@ -598,19 +598,19 @@ def run(days, megas, staging, backlog, dry_run, aggregate_file):
         with open(staging, "a", encoding="utf-8") as fh:
             fh.write(header + "".join(staged_blocks))
 
-    print(f"learn propose: {len(aggregate['signals'])} signals over "
+    print(f"reflect propose: {len(aggregate['signals'])} signals over "
           f"{aggregate['window']['n_rids']} rids -> {len(hypotheses)} hypotheses -> "
           f"{n} candidate{'s' if n != 1 else ''} staged "
           f"(dropped: {dropped['ungrounded']} ungrounded, {dropped['refuted']} refuted, "
           f"{dropped['duplicate']} duplicate)"
           + (" [dry-run]" if dry_run else ""))
     if n == 0:
-        print("learn propose: 0 candidates" + (" (empty window)" if not aggregate["signals"] else ""))
+        print("reflect propose: 0 candidates" + (" (empty window)" if not aggregate["signals"] else ""))
     return 0
 
 
 def main(argv):
-    p = argparse.ArgumentParser(prog="learn propose", description="cross-run backlog proposer")
+    p = argparse.ArgumentParser(prog="reflect propose", description="cross-run backlog proposer")
     g = p.add_mutually_exclusive_group()
     g.add_argument("--days", type=int, default=30, help="window in days (default 30)")
     g.add_argument("--megas", type=int, help="window as the last N run-ids")

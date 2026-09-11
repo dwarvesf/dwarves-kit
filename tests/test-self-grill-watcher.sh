@@ -210,7 +210,7 @@ for probe in \
   "verdict=wave" \
   "never answers its own questions" \
   "AUTONOMOUS" \
-  "learn debt collect"
+  "reflect debt collect"
 do
   grep -qF -- "$probe" "$G"
   assert "grill.md carries: $probe" $?

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-learn-propose.sh -- SPEC-195 `learn propose` (harness-loop SG-05).
+# test-reflect-propose.sh -- SPEC-195 `reflect propose` (harness-loop SG-05).
 #
 # Stages 2-3 (interpret + adversarial-check + dedup + staged write) are exercised with an
 # INJECTED aggregate (--aggregate-file) and MOCKED LLM seams (LEARN_PROPOSE_INTERPRETER /
@@ -7,12 +7,12 @@
 # are proven without a live model or live stats. Stage 1 (the live stats aggregate) is
 # proven by the LIVE run in docs/verification/loop-05-retro-cycle.md.
 #
-# Run: bash tests/test-learn-propose.sh
+# Run: bash tests/test-reflect-propose.sh
 set -uo pipefail
 
 KIT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROPOSE="$KIT_DIR/lib/learn/propose.py"
-SF="$KIT_DIR/lib/learn/staging-format.py"
+PROPOSE="$KIT_DIR/lib/reflect/propose.py"
+SF="$KIT_DIR/lib/reflect/staging-format.py"
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); printf '  PASS  %s\n' "$1"; }
@@ -45,7 +45,7 @@ cat >/dev/null; echo 'hmm, not sure'
 EOF
   chmod +x "$TD"/verify-*.sh
   export BACKLOG_STAGE_STAGING="$STAGING" BACKLOG_STAGE_BACKLOG="$BACKLOG"
-  export LEARN_PROPOSE_RID="test-rid" DWARVES_KIT_LOG_DIR="$TD/logs"
+  export REFLECT_PROPOSE_RID="test-rid" DWARVES_KIT_LOG_DIR="$TD/logs"
   export LEARN_PROPOSE_VERIFIER="$TD/verify-holds.sh"
   # The widened dedup anchor reads a cockpit registry + a megagoal tree. Point both at the
   # sandbox so a suite run never reads (or is deduped by) the real repo's surfaces.
@@ -72,7 +72,7 @@ mock_interp '[{"title":"Clarify the spec Design block","intent":"reduce denials"
 OUT="$(python3 "$PROPOSE" --aggregate-file "$AGG" 2>&1)"; RC=$?
 assert_true "happy: exit 0" "$([ $RC -eq 0 ]; echo $?)"
 assert_true "happy: one block staged" "$(grep -qc '## \[staged\] Clarify the spec Design block' "$STAGING"; echo $?)"
-assert_true "happy: Source cites lens" "$(grep -q 'Source: learn propose .* lens=gate-yield' "$STAGING"; echo $?)"
+assert_true "happy: Source cites lens" "$(grep -q 'Source: reflect propose .* lens=gate-yield' "$STAGING"; echo $?)"
 assert_true "happy: Source cites figure" "$(grep -q 'figure="spec-validate override_pct=40"' "$STAGING"; echo $?)"
 assert_true "happy: Source cites rids" "$(grep -q 'rids=loop-05,loop-04' "$STAGING"; echo $?)"
 
@@ -138,7 +138,7 @@ cat > "$STAGING" <<'EOF'
 - Intent: prior rejected proposal
 - Approach: n/a
 - Tags: #u-lo #f-lo
-- Source: learn propose 2026-07-01 | lens=x figure="y" rids=r0
+- Source: reflect propose 2026-07-01 | lens=x figure="y" rids=r0
 EOF
 mock_interp '[{"title":"design block","intent":"a shorter suffix-key proposal","approach":"z","u":"mid","f":"hi","home":"dwarves-kit","signal":"S1"}]'
 python3 "$PROPOSE" --aggregate-file "$AGG" >/dev/null 2>&1
@@ -152,7 +152,7 @@ cat > "$STAGING" <<'EOF'
 - Intent: prior rejected proposal
 - Approach: n/a
 - Tags: #u-lo #f-lo
-- Source: learn propose 2026-07-01 | lens=x figure="y" rids=r0
+- Source: reflect propose 2026-07-01 | lens=x figure="y" rids=r0
 EOF
 mock_interp '[{"title":"Improve the Spec Template Design Block","intent":"same idea, different case","approach":"z","u":"mid","f":"hi","home":"dwarves-kit","signal":"S1"}]'
 OUT="$(python3 "$PROPOSE" --aggregate-file "$AGG" 2>&1)"
@@ -173,7 +173,7 @@ echo "== staging_format: render -> parse round-trip recovers fields =="
 # ============================================================
 setup
 python3 "$SF" render > "$TD/block.md" <<'EOF'
-{"title":"Round trip","intent":"i","approach":"a","u":"hi","f":"lo","home":"h","source":"learn propose 2026-07-12 | lens=L figure=\"F\" rids=r1"}
+{"title":"Round trip","intent":"i","approach":"a","u":"hi","f":"lo","home":"h","source":"reflect propose 2026-07-12 | lens=L figure=\"F\" rids=r1"}
 EOF
 PARSED="$(python3 "$SF" parse "$TD/block.md" 2>&1)"
 assert_true "round-trip: state is staged" "$({ trap '' PIPE; echo "$PARSED" 2>/dev/null || :; } | grep -q '\"state\": \"staged\"'; echo $?)"
@@ -197,14 +197,14 @@ echo "== rid fallback: TOKENS still land when the gate-rid call fails (master/de
 # breaking the gate path so the subprocess errors and asserting the fallback string.
 RID_OUT="$(cd "$KIT_DIR" && python3 - <<'PY'
 import sys, os, datetime
-sys.path.insert(0, "lib/learn")
+sys.path.insert(0, "lib/reflect")
 import propose
 propose.KIT_ROOT = "/nonexistent-kit-root-xyz"   # gate-ledger.sh absent -> rid falls back
-os.environ.pop("LEARN_PROPOSE_RID", None)
+os.environ.pop("REFLECT_PROPOSE_RID", None)
 os.environ.pop("REPO_ROOT", None)
 rid = propose._rid()
 print(rid)
-print("OK" if rid == "learn-propose-" + datetime.date.today().isoformat() else "BAD")
+print("OK" if rid == "reflect-propose-" + datetime.date.today().isoformat() else "BAD")
 PY
 )"
 assert_true "rid: falls back to a date slug when gate-rid is unavailable" "$({ trap '' PIPE; echo "$RID_OUT" 2>/dev/null || :; } | grep -q '^OK$'; echo $?)"
@@ -227,7 +227,7 @@ printf '%s' '{"window":{"days":30,"megas":null,"rids":["r1","r2"],"n_rids":2},"s
 mock_interp '[{"title":"Sanitized citation","intent":"x","approach":"y","u":"mid","f":"mid","home":"","signal":"S1"}]'
 python3 "$PROPOSE" --aggregate-file "$AGG" >/dev/null 2>&1
 assert_true "sanitize: exactly one staged block (figure newline did not split it)" "$([ "$(grep -c '## \[staged\]' "$STAGING")" -eq 1 ]; echo $?)"
-assert_true "sanitize: the Source line still carries rids (citation not truncated)" "$(grep -q 'Source: learn propose.*rids=r1,r2' "$STAGING"; echo $?)"
+assert_true "sanitize: the Source line still carries rids (citation not truncated)" "$(grep -q 'Source: reflect propose.*rids=r1,r2' "$STAGING"; echo $?)"
 assert_true "sanitize: block round-trips under the reader (still one parsed block)" "$([ "$(python3 "$SF" parse "$STAGING" | grep -c '\"state\":')" -eq 1 ]; echo $?)"
 
 # ============================================================
@@ -264,7 +264,7 @@ assert_true "subprocess-fail: 0 candidates, staging untouched" "$([ ! -f "$STAGI
 # promote` reads ONLY the staging buffer, so those items could never be promoted: a human had to
 # retype one to act on it, and so nobody did. Same disease session-intel had (T6).
 echo ""
-echo "== T7: learn propose --retro stages a retro's action items =="
+echo "== T7: reflect propose --retro stages a retro's action items =="
 RT="$(mktemp -d)"
 cat > "$RT/RETRO-2026-07-15.md" <<'EOF'
 # Retro: a cycle

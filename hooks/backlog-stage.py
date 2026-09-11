@@ -214,7 +214,7 @@ def _staging_format():
     """The kit's ONE staging-block grammar (ADR-0034 decision 1 / SPEC-200 I1)."""
     import importlib.util
     here = os.path.dirname(os.path.realpath(__file__))
-    path = os.path.join(here, "..", "lib", "learn", "staging-format.py")
+    path = os.path.join(here, "..", "lib", "reflect", "staging-format.py")
     spec = importlib.util.spec_from_file_location("staging_format", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
