@@ -174,6 +174,42 @@ Impact: goal file `02-understand-teacher.md` Quality bar reworded. No dwarves-ki
 changed.
 Open questions: none new.
 
+## 2026-09-12 03:05 A lint that exempts the field the violation lives in
+
+Context: a fresh-context re-verification found `learning-kit#9`'s new
+`lib/lint/scattered-ids.sh` blanket-exempting `name:`, `description:`, and `Moved-from:`
+lines by field name, while `skills/concept-flush/SKILL.md:3` (a file predating this
+sub-goal) carried a bare `SPEC-249` in its `description:` field. The lint reported zero
+hits with a live violation sitting in the exact field it excused.
+Decision: narrow the exemption to `name:` (an identifier, never prose) and a
+`<!-- provenance: ... -->` footer only. `description:` and `Moved-from:` are scanned like
+any other line now; `Moved-from:` needed no exemption in practice, it names a path and a
+sha, never an ADR/SPEC id. Cleaned `concept-flush/SKILL.md`'s pre-existing hit (the
+pointer moved to a provenance footer) as a deliberate pre-existing fix, same as SG-04 did
+for its own equivalent hit in context-kit.
+Why: the bar does not move to fit the violation. `description:` is what a model reads to
+decide whether to invoke the skill; an id there answers that question not at all, so it
+is prose by function regardless of which frontmatter key it sits under. A guard that
+cannot see the one field a real hit lived in was not yet a guard.
+A second, smaller defect surfaced in the same review: the fixture-isolation assertion did
+`cd "$TMP" && bash "$ENUM" --zone skills`, but the enumerator unconditionally `cd`'d to
+its own repo root internally, ignoring the caller's cwd, so the assertion silently
+re-scanned the real repo instead of the fixture. It happened to pass because the real
+repo was clean, not because the fixture was being read. Fixed by adding `--root <dir>` to
+the enumerator (chosen over narrowing the assertion, since a root-scoped enumerator is
+the more generally useful shape and lets the test prove isolation directly: a follow-up
+check plants an id only inside the fixture and confirms `--root` sees it while the real
+tree stays unaffected).
+Alternatives: widen the fixture to include a plausible id-bearing `description:` and
+trust the exemption regex was already narrow enough (rejected -- that is exactly the
+untested-guard shape this finding caught; the fix has to touch the exemption, not add
+more fixture coverage around an unchanged one).
+Impact: `lib/lint/scattered-ids.sh` (learning-kit) narrower + `--root`-aware;
+`tests/test_no_scattered_ids.sh` gained a description-field negative control and a
+fixture-isolation proof; `skills/concept-flush/SKILL.md` cleaned. No dwarves-kit code
+changed.
+Open questions: none new.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
