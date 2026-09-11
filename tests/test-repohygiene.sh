@@ -555,7 +555,7 @@ mkdir -p "$R4C/_meta" "$R4C/docs"
 i=0; : > "$R4C/_meta/INGEST_LOG.md"
 while [ "$i" -lt 250 ]; do echo "2026-08-0$(( i % 9 + 1 )) - entry $i" >> "$R4C/_meta/INGEST_LOG.md"; i=$((i+1)); done
 printf 'Slim `HANDOFF.md` to <=100 lines (status-only; journal content stays in INGEST_LOG).\n' \
-  > "$R4C/docs/spec.md"
+  > "$R4C/docs/slim-note.md"
 echo r > "$R4C/README.md"
 git -C "$R4C" add -A; commit_at "$R4C" "2024-01-02T00:00:00" "docs: seed"
 OUT="$(scan "$R4C" --detectors 4)"
@@ -566,7 +566,7 @@ assert "the sibling's number never becomes a threshold" $R "-- got: $OUT"
 # Negative control: move the budget onto the log itself and the FIX must appear. Without
 # this, a clause test that rejected EVERY source would pass the two assertions above.
 printf 'Slim `INGEST_LOG.md` to <=100 lines (status-only; the rest stays in HANDOFF).\n' \
-  > "$R4C/docs/spec.md"
+  > "$R4C/docs/slim-note.md"
 git -C "$R4C" add -A; commit_at "$R4C" "2024-01-03T00:00:00" "docs: the budget is the log's own"
 OUT="$(scan "$R4C" --detectors 4)"
 printf '%s\n' "$OUT" | grep -q '^4	FIX	_meta/INGEST_LOG.md'; assert "negative control: the log's own budget on that same line does apply" $?
