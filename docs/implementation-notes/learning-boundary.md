@@ -184,6 +184,56 @@ verbatim.
 Open questions: none new; dwarves-kit's own `tests/test-no-scattered-ids.sh` (zones 1-5) is the
 pattern to widen if a THIRD kit in this estate ever needs the same lint.
 
+## 2026-09-12 A move is not done until the destination is reachable
+
+Context: PR #7 merged SG-04's two skills into context-kit. The operator then found a gap the
+goal file never named: neither retirement PR's merge would have left the operator with a working
+skill. `~/.claude/skills/knowledge-capture` was a symlink into `claude-skills` and
+`~/.claude/skills/memorize` a chezmoi-managed directory; context-kit was not installed as a
+plugin anywhere (`~/.claude/plugins/installed_plugins.json` had no `context-kit@*` entry).
+Merging claude-skills#6 and dotfiles#436 as they stood would have deleted both skills from the
+machine with nothing installed in their place.
+Decision: held both retirement PRs unmerged and traced the actual install sequence rather than
+trusting the goal file or the README. The README's own documented line, `claude plugin install
+./context-kit`, does not work: reproduced verbatim from `~/workspace/tieubao`, it fails "not
+found in any configured marketplace." `claude plugin install` only installs from an
+already-registered marketplace (`claude plugin --help`); a bare path is a marketplace SOURCE,
+never an install target. context-kit's own `.claude-plugin/marketplace.json` already declares
+the marketplace name (`context-kit-local`) and the plugin name (`context-kit`) inside it; the
+correct two-step sequence, matching the working precedent already on this machine
+(`kit@dwarves-marketplace`, a directory marketplace registered the same way), is:
+```
+claude plugin marketplace add ~/workspace/tieubao/context-kit
+claude plugin install context-kit@context-kit-local
+```
+Fixed the README, `docs/QUICKSTART.md`, and `docs/INTEGRATIONS.md` to this sequence in
+tieubao/context-kit#8 (a new branch off the merged master, not a reopen of #7).
+Why: a move that deletes the source before the destination is reachable is not a move, it is
+data loss with a delay; and a README whose OWN documented install command fails is worse than no
+docs, because it reads as tested.
+Alternatives: fix only the goal file's silence on install mechanics and merge the retirement PRs
+anyway, trusting the README (rejected -- the README itself was wrong, so that path would have
+shipped a broken install alongside the deletion); have this agent run the marketplace/install
+commands itself (rejected by the operator -- registering a marketplace or installing a plugin is
+a persistent, cross-session change to the operator's own machine, reserved for him to run,
+consistent with the estate's own when-to-ask-vs-act rule for GUI/config-mutating actions).
+Impact: verified as far as possible without mutating plugin config: `claude plugin validate`
+(read-only) passed clean on both manifests; `claude --plugin-dir ~/workspace/tieubao/context-kit
+plugin details context-kit` (an ad-hoc, single-invocation load, confirmed via mtimes to touch
+neither `installed_plugins.json` nor `settings.json`) printed `Skills (5) knowledge-capture,
+memorize, onboarding, setup, topic-map` -- proof the moved skills resolve correctly, short of
+proof that a normal session sees them, which needs the persistent install. Both retirement PRs'
+bodies now state the block plainly, name the two commands, and name the verify command
+(`claude plugin details context-kit@context-kit-local` or `claude plugin list`) to run
+afterward. `docs/verification/feat-knowledge-writers.md` (context-kit) carries the full
+transcript. `learning-kit`'s own README carries the identical wrong install line
+(`claude plugin install ./learning-kit`); not fixed here, it belongs to that kit's sub-goal in
+this mega-goal.
+Open questions: whether the goal-file template for a cross-repo skill move should gain a
+mandatory "how does the destination become reachable" line, so this class of gap is asked up
+front instead of found after a merge, is a real question for whoever next writes a mega-goal
+sub-goal that moves a skill between kits; not decided here.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
