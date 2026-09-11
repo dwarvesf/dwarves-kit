@@ -120,6 +120,9 @@ make_clone() { # make_clone <name> <remote name> <default branch> <checkout bran
     git -C "$clone" branch "$b" "origin/$b" >/dev/null 2>&1
   done
   git -C "$clone" worktree add "$TMPD/wt-$name-clean" wt-clean >/dev/null 2>&1
+  # Locked, because the Agent tool locks every worktree it creates. A single `--force` declines
+  # to remove a locked worktree, so the clean case only tests the tidy once it survives a lock.
+  git -C "$clone" worktree lock "$TMPD/wt-$name-clean" >/dev/null 2>&1
   git -C "$clone" worktree add "$TMPD/wt-$name-dirty" wt-dirty >/dev/null 2>&1
   echo dirt > "$TMPD/wt-$name-dirty/dirt.txt"
   git -C "$clone" worktree add --detach "$TMPD/wt-$name-det" HEAD >/dev/null 2>&1

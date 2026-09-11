@@ -17,7 +17,8 @@
 # --worktrees, pull --ff-only on the default branch, the activity-log prepend, the
 # knowledge-root project directory, the staging-file append, and one gh pr merge. Every
 # other action is a report line. The verbs never switch a branch, never touch a dirty
-# file, never force, and never retry a failed git call.
+# file, never force a push or a pull, and never retry a failed git call. The one force is
+# `worktree remove -f -f`, which overrides a lock after the dirty and detached guards pass.
 #
 # Ported from the operator's repo-wrapup scripts. The default branch is DETECTED, never
 # assumed to be main.
@@ -261,8 +262,11 @@ _apply_worktrees() {
     elif [ -z "$(git -C "$wt" branch --show-current 2>/dev/null)" ]; then
       echo "     SKIP ${wt}: detached HEAD (removal could orphan the commit)"
     else
+      # `-f -f`, not `--force`: one --force leaves a LOCKED worktree in place and only prints a
+      # hint, so the call reports success while nothing moved. The Agent tool locks every
+      # worktree it creates. The dirty and detached guards above ran, so -f -f overrides the lock alone.
       run "$repo" "remove worktree ${wt} (clean; the branch survives removal)" \
-        git -C "$repo" worktree remove "$wt"
+        git -C "$repo" worktree remove -f -f "$wt"
     fi
   done < <(git -C "$repo" worktree list --porcelain -z 2>/dev/null)
 }
