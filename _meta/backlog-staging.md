@@ -85,3 +85,17 @@ Gitignored: may name unfiled work. NEVER the source of truth.
 - Home: dwarves-kit
 - Source: session 2026-09-10
 
+## [built 67cbc53] worker brief template for subagent dispatch
+- Intent: Twenty-plus dispatch prompts repeated the same preamble by hand: pwd, fetch origin main and merge, absolute paths, git -C, rename branch, do not edit shared modules, verification file required, LAB_LOG line, STE-lite, no dashes, commit not push, report in N lines. Drift between copies caused two real defects: workers blind to merged docs, and a fenced worker leaving stale doc lines. Fork: a kit doc the commands cite, versus a lib helper that emits the block, versus fields on the agent definitions.
+- Approach: Built as `docs/patterns/worker-brief.md`, the kit-doc-a-command-cites option (the reversible first step). The lib-helper and agent-definition-fields alternatives are still open; see the fork note above.
+- Tags: #u-lo #f-mid
+- Home: dwarves-kit
+- Source: session 2026-09-11
+
+## [built 4595dea] proof-gate contract emits the verification skeleton
+- Intent: Fifteen-plus workers each wrote docs/verification/<slug>.md from a prose description re-specified in every dispatch: run table with Command/Exit/Verdict, negative control, determinism hash, rollback note, Not proven. proof-gate.sh contract already tells a work type what it owes; it could emit the file skeleton too. Fork: contract prints it versus a separate verb writes the file, and whether the skeleton belongs in the kit or in each adopting repo.
+- Approach: Built as a new `proof-gate.sh skeleton "<slug>" ["<task>"]` subcommand; `contract` prints a pointer to it rather than the skeleton itself. Lives in the kit since proof-gate.sh already does. The determinism-hash field named in the intent did not carry into the built shape; the skeleton carries Green run, Negative control, Rollback (stateful only), and Not proven.
+- Tags: #u-lo #f-mid
+- Home: dwarves-kit
+- Source: session 2026-09-11
+
