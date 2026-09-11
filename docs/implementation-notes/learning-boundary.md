@@ -92,6 +92,40 @@ Impact: SG-02 and SG-04 dispatch under these rules. `HANDOFF.md` is machine-loca
 `.gitignore` carries `HANDOFF*.md`, so this entry is the durable copy of the same material.
 Open questions: none new.
 
+## 2026-09-12 SG-04 built: no hand-kept index inside the context tree, and `config get` under-reports the seam
+
+Context: `memorize`'s repo-scoped destination now resolves `knowledge.root` before falling
+back to `<repo>/.claude/memory/`. The goal file's own precedent (the repo-local shape) pairs
+every fact file with a hand-kept `MEMORY.md` index; a first pass carried that shape into the
+filled-seam destination too, `<root>/projects/<repo-basename>/MEMORY.md`.
+Decision: dropped the index for the filled-seam case only. An index file with no single
+`last_verified` date fails context-kit's own `ctx-check` staleness finding (reproduced: a
+fixture tree with such a file reports `NO-VERIFIED`, 1 finding; dropping the index and
+writing only the fact page per SPEC-001 §2's contract reports `0 findings`). The unset-seam
+default (`<repo>/.claude/memory/`) keeps its `MEMORY.md`, unchanged, since that shape predates
+this seam and ctx-check never sees it.
+Why: `ctx-graph`/backlinks already enumerate a tree directory's pages; a hand-kept index there
+would be a second, driftable copy of what the tree derives for free, and it would fail the
+receiving kit's own audit on day one.
+Also recorded: the shared resolver (`context-kit skills/knowledge-root.sh`) calls dwarves-kit's
+`bin/config seams`, not `bin/config get knowledge.root`, for its second resolution rung.
+Reproduced: `config get`'s `_resolve` function never consults the operator `kit.toml` for any
+key (only `cmd_seams`'s `_seam_resolve` calls `kit_config_get_root`), so `config get
+knowledge.root` under-reports a root-only seam the operator has actually filled; `config
+seams` is the one verb proven to read the operator layer. This is a `config get`/`config
+explain` gap, not a `knowledge.root`-specific one, and out of SG-04's mandate to fix (the
+shared contract permits editing only this file and the ROADMAP line in dwarves-kit).
+Alternatives: keep the index everywhere for symmetry with the repo-local shape (rejected, it
+fails the receiving kit's own gate); patch `config.sh`'s `_resolve` to add the operator layer
+generally (rejected, a behavioral dwarves-kit change outside this sub-goal's touched-files
+contract, and every OTHER key's `config get` behavior would change on an unrelated branch).
+Impact: `memorize`'s Root resolution section documents the no-index rule; `docs/verification/feat-knowledge-writers.md`
+(context-kit PR) carries the reproduction (both ctx-check runs, before and after dropping the
+index) and the `config get` vs `config seams` finding, run table included.
+Open questions: whether `config get`/`config explain` should gain the operator layer for every
+root-only key is a real question for whoever next touches `lib/config/config.sh`; not decided
+here.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
