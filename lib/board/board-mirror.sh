@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# board-mirror.sh -- git<->Hermes kanban bridge, read-mirror leg (SPEC-147, runner-fastpath
-# sub-goal 07). Reused by `lib/board/board.sh`'s `mirror`/`status` subcommands the same way `board.sh`
+# board-mirror.sh -- git<->Hermes kanban bridge, read-mirror leg. Reused by
+# `lib/board/board.sh`'s `mirror`/`status` subcommands the same way `board.sh`
 # already reuses `lib/board/parse-board.sh` for `queue`; this file is the substantial logic, `board.sh`
 # stays the thin, human-facing dispatcher.
 #
@@ -19,7 +19,7 @@
 #             origin -> CREATE, same hash -> UNCHANGED (no-op, the idempotence guarantee), changed
 #             hash -> CHANGE (status transition + a content comment), a prior origin missing from
 #             the current extract -> COMPLETE (done + "origin removed", Hermes has no delete verb).
-#   LOAD      `hermes kanban` CLI verbs ONLY (ADR-0001, native-first; no SQLite ATTACH, ever) via
+#   LOAD      `hermes kanban` CLI verbs ONLY (native-first; no SQLite ATTACH, ever) via
 #             argv vectors, never a templated shell string (card title/body/notes are opaque
 #             values passed as literal argv elements to `${HERMES_BIN:-hermes}`).
 #
@@ -57,9 +57,9 @@
 #             DISAPPEARED-row path)
 # A CHANGE (content differs, origin unchanged) can only ADD a `comment` (title/body cannot be
 # rewritten); this is a genuine CLI limitation, not a design choice, and is called out explicitly
-# in the spec so SG-08 (writeback) does not assume a richer update primitive exists.
+# in the spec so writeback does not assume a richer update primitive exists.
 #
-# Snapshot (the SG-08 "bearing" interface): NDJSON (one JSON object per line), one line per
+# Snapshot (the writeback "bearing" interface): NDJSON (one JSON object per line), one line per
 # mirrored origin:
 #   {"origin":"...", "repo":"...", "id":"...", "board":"...", "hermes_id":"t_...",
 #    "row_hash":"...", "hermes_status":"triage|ready|blocked|done", "seen_at":"<ISO8601Z>"}
@@ -107,7 +107,7 @@ source "$PARSE_BOARD_SH"
 
 HERMES_BIN="${HERMES_BIN:-hermes}"
 
-# CONTENT TRUST (SPEC-147 "Content trust"). A mirrored card's title/body/comment is unreviewed,
+# CONTENT TRUST ("Content trust" in the design doc above). A mirrored card's title/body/comment is unreviewed,
 # free-form git content (a BACKLOG.md Item/Notes cell OR a ROADMAP.md `# Mega-goal:` title), and a
 # Hermes `ready` card is an AGENT surface (it can be dispatched to a worker whose task text is the
 # card). So a crafted git row is a stored-injection vector the moment any card-reading automation
@@ -118,7 +118,7 @@ HERMES_BIN="${HERMES_BIN:-hermes}"
 #      MIRROR_UNTRUSTED_TITLE_TAG on every card TITLE (a title has no room for the full sentence but
 #      is the most prominent field, so it gets its own short tag rather than being left unmarked).
 #      Content is LABELLED, never dropped (dropping would hide real board text and be its own bug).
-#   2. _strip_routing_tags removes the `#queue{...}` runner-routing token (SG-04 queue metadata,
+#   2. _strip_routing_tags removes the `#queue{...}` runner-routing token (queue metadata,
 #      never human-facing content) from title+notes on BOTH extract paths, before the row_hash and
 #      before any card use -- denying a crafted row the trick of riding a valid-looking token into
 #      an agent-visible card.
@@ -218,7 +218,7 @@ extract_rows() {
         print s
       }
     }')"
-    # CONTENT TRUST: strip the SG-04 `#queue{...}` routing token before item/notes become card
+    # CONTENT TRUST: strip the `#queue{...}` routing token before item/notes become card
     # text. Done here (not at card-build time) so the token is gone from EVERY downstream use --
     # card title, card body, and the CHANGE-op comment -- and so the row_hash keys off the actual
     # human content, not the machine tag. (No existing/live row carries such a token, so this is a
@@ -366,7 +366,7 @@ cmd_plan() {
   prior_tsv="$(mktemp "${TMPDIR:-/tmp}/board-mirror-prior.XXXXXX")"
 
   local name path bridge rroot
-  while read -r name path bridge _rest; do  # _rest: a 4th column (rail=) must not slurp into bridge (ops ID-633)
+  while read -r name path bridge _rest; do  # _rest: a 4th column (rail=) must not slurp into bridge
     [ -n "${name:-}" ] || continue
     case "$name" in \#*) continue ;; esac
     [ "${bridge:-}" = "on" ] || continue
@@ -660,3 +660,5 @@ main() {
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   main "$@"
 fi
+
+# provenance: SPEC-147 (docs/specs/SPEC-147-board-bridge-mirror.md)

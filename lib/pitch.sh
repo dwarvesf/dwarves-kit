@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# pitch.sh -- the assembly engine behind /kit:pitch (Design 4, SPEC-140).
+# pitch.sh -- the assembly engine behind /kit:pitch.
 #
 # Turns a shipped change into an OUTWARD-facing buy-in doc: re-audiences artifacts a gated
 # run ALREADY produced (the spec, the proof-of-done, the implementation-notes, the gate
@@ -9,10 +9,10 @@
 # buy-in. Same grounding discipline as explain.sh: every section traces to a file on disk or
 # a ledger line; a missing source produces an EXPLICIT absence line, never invented content.
 # This is the ONLY thing that makes "never fabricate" a property of the code rather than of
-# instruction-following (SPEC-140 Design, approach #3).
+# instruction-following.
 #
 # <rid> doubles as the spec/proof/implementation-notes slug, per this repo's own convention
-# (SPEC-070: the branch slug IS the spec slug IS the implementation-notes filename).
+# (the branch slug IS the spec slug IS the implementation-notes filename).
 #
 # Usage:
 #   pitch.sh outcome      <rid>            one-paragraph outcome from the spec (or absence line)
@@ -26,7 +26,7 @@
 #                                           `gh` failure (fail-safe: never blocks, never nags
 #                                           on uncertain data)
 #
-# Boundaries (SPEC-140 Out of Scope): this file NEVER shells out to `gh pr comment`, `gh
+# Boundaries: this file NEVER shells out to `gh pr comment`, `gh
 # issue comment`, a Discord/Slack webhook, or `curl`. Output is stdout or --out, full stop.
 
 set -uo pipefail
@@ -57,7 +57,7 @@ _find_spec() {
 }
 
 # _find_proof <slug> -- the two homes (docs/verification/README.md): flat, nested-canonical,
-# nested-latest-run, in that order (SPEC-140 Decision Log DEC-003: the kit's own three real
+# nested-latest-run, in that order (the kit's own three real
 # proof files disagree on shape today, so all three are tried).
 _find_proof() {
   local slug="$1" latest
@@ -264,7 +264,7 @@ cmd_ask() {
   fi
 }
 
-# --- team-shared: the ship-time predicate (SPEC-140 Decision Log DEC-002) ----------------
+# --- team-shared: the ship-time predicate -------------------------------------------------
 cmd_team_shared() {
   local t
   t="$(gh api repos/'{owner}'/'{repo}' --jq '.owner.type' 2>/dev/null)" || { echo "no"; return 1; }

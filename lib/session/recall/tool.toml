@@ -10,7 +10,7 @@ created     = 2026-06-29
 # rule (drop the host-agent prefix). Keeps bin/session-recall and session_recall.py
 # unchanged (surgical, avoids test churn -- same call SG-04 made for
 # skill-curator's bin/cc-improve). The ops-toolkit copy retires in the
-# paired batched retire sweep (SG-07).
+# paired batched retire sweep.
 consumers   = []
 
 systems     = ["claude-code"]

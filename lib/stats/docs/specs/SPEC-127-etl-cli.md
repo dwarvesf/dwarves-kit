@@ -245,8 +245,8 @@ performance; concurrent rebuild races, single-writer on-demand model).
 
 ## Out of Scope
 
-- The render skill (SG-03), the feedback/anomaly loop (SG-04), the full README/proof
-  docs polish (SG-05).
+- The render skill, the feedback/anomaly loop, the full README/proof
+  docs polish.
 - Per-EVENT kit rows (one row per GATE line): `kit_runs` is run-level by the reuse
   mandate; a per-event view would require re-parsing (forbidden). Named, not a gap.
 - Any write path to a source ledger; any daemon/scheduled refresh.

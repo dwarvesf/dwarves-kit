@@ -112,7 +112,7 @@ to skip the model entirely on sessions with no signal markers (opt-in; skips are
 `skip-no-signal` so you can audit what it dropped before trusting it , see ADR-0010).
 
 **Gotcha:** the reviewer always runs `--allowedTools ""` (the model can write nothing); that is not
-configurable by design (SPEC-103 DEC-008 / ADR-0001).
+configurable by design.
 
 ## 6. Turn it off
 

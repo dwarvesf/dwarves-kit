@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# precedent.sh -- "have we done something like this before?" at intake (SPEC-068 / ID-056,
-# promoted to a subsystem dir + the inventory surface by SPEC-245).
+# precedent.sh -- "have we done something like this before?" at intake, later promoted to
+# a subsystem dir with an inventory surface alongside it.
 #
 # The kit WRITES knowledge constantly (specs, retros, run ledgers, ADRs) but nothing READ
 # it back at intake, so every new task started from a blank page. The `records` surface is
 # that read-back: keyword-grep the durable surfaces, rank files by distinct-keyword hits,
 # print the top matches. Grep-based by design: no embeddings, no index, no daemon.
 #
-# SPEC-068 answered the written record only. A task can still duplicate a tool, script,
-# skill, cron, or memory note, none of which live in docs/. The `inventory` surface (SPEC-245)
+# The original design answered the written record only. A task can still duplicate a tool, script,
+# skill, cron, or memory note, none of which live in docs/. The `inventory` surface
 # answers that half by scanning what has been BUILT, delegated to `inventory.py` beside this
 # file (a dozen iterators and a scorer, past what grep pipelines express well). `all` runs
 # both and prints one digest. /kit:assign and /kit:grill call `find` right after
@@ -63,8 +63,9 @@ _keywords() {
     | grep -vE '^-' | awk 'length($0) >= 4' | sort -u | head -8 || true   # empty after filtering is a valid result, not a pipeline failure
 }
 
-# _records_find: the SPEC-068 body, unchanged. Byte-identical output to the pre-SPEC-245
-# `lib/precedent.sh find` for the same input (the parity pin in the tests). Reads the global
+# _records_find: the original `records` body, unchanged. Byte-identical output to the
+# pre-inventory-surface `lib/precedent.sh find` for the same input (the parity pin in the
+# tests). Reads the global
 # ROOT + LOG_DIR set by cmd_find before calling this.
 _records_find() {
   local desc="${1:-}" max="${2:-5}"
@@ -166,7 +167,7 @@ cmd_find() {
 
   ROOT="$(_resolve_root "$repo_root_flag")"
 
-  # registry resolution precedence (SPEC-245): --registry flag > PRECEDENT_REGISTRY env >
+  # registry resolution precedence: --registry flag > PRECEDENT_REGISTRY env >
   # kit_config_get_root precedent.registry (operator or kit-root kit.toml ONLY -- a project .kit.toml
   # rides inside an untrusted PR and must never select the registry, kit-config.sh:82-90)
   # > inventory.py's own XDG default. Only the third rung is resolved here; the other two
@@ -182,7 +183,7 @@ cmd_find() {
     return $?
   fi
 
-  # A positional [max] is the legacy records-only call shape (SPEC-068 callers): it forces
+  # A positional [max] is the legacy records-only call shape: it forces
   # the records surface unless the caller also passed --surface explicitly, and it caps the
   # records list the same way --limit would.
   if [ -n "$max" ]; then
@@ -242,3 +243,5 @@ main() {
 }
 
 main "$@"
+
+# provenance: SPEC-068, ID-056, SPEC-245

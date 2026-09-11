@@ -1,9 +1,9 @@
-# Proof of done: cosmetic hooks (SPEC-201)
+# Proof of done: cosmetic hooks
 
 Module: `cosmetic` · Type: docs + a behavioral fix (Finding 1) · Spec:
 `lib/cosmetic/docs/specs/SPEC-201-cosmetic-hooks.md`
 
-The module's contract is a NEGATIVE one ("orthogonal to the loop", ADR-0034 /
+The module's contract is a NEGATIVE one ("orthogonal to the loop",
 `lib/config/module-registry.md`), so the proof is built around negative controls: feed each
 hook input it cannot possibly handle, and show it still exits 0 without gating anything.
 
@@ -99,7 +99,7 @@ hook fixes, with the tests untouched:
 $ git stash push hooks/slop-cleaner.sh hooks/permission-auto-approve.sh
 $ bash tests/test-hooks.sh
 
-=== cosmetic module: the non-blocking contract (SPEC-201) ===
+=== cosmetic module: the non-blocking contract ===
   PASS NEGATIVE CONTROL: auto-format exits 0 on all 10 garbage-input shapes (exit 0)
   PASS NEGATIVE CONTROL: notification exits 0 on all 10 garbage-input shapes (exit 0)
   FAIL NEGATIVE CONTROL: slop-cleaner exits 0 on all 10 garbage-input shapes (expected exit 0, got 5)
@@ -183,9 +183,10 @@ git stash pop
   Repo-level paths would have forced three NEW debt lines into
   `tests/kit-contract-known-gaps.txt`, whose header states it only shrinks, and the lines would
   have been false (the artifacts exist). Co-location is also house style: `lib/stats`,
-  `lib/plugin-check`, and `lib/skill-curator` all carry `docs/specs/SPEC-NNN-*.md`, and ADR-0026
-  mandates the co-located table-first proof. The spec keeps the next free number in the repo-wide
-  sequence (SPEC-201), per the brief.
+  `lib/plugin-check`, and `lib/skill-curator` all carry `docs/specs/SPEC-NNN-*.md`, and
+  `docs/decisions/0026-colocated-table-first-proof.md` mandates the co-located table-first
+  proof. The spec keeps the next free number in the repo-wide
+  sequence, per the brief.
 - **One known-gap line added:** `lib/cosmetic/tests`. C4 only looks for `lib/<m>/tests/*.sh` or
   `tests/test-<m>.*`; the cosmetic assertions live in the shared hook suite
   (`tests/test-hooks.sh`), which the brief specified and which is where every other hook test in

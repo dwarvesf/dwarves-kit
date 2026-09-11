@@ -365,7 +365,7 @@ def deviation_rate(
 def review_yield(
     min_n: int = typer.Option(
         5, "--min-n",
-        help="low-n floor (SPEC-137): a (repo, lens) row whose OWN n_rejected, OR the global "
+        help="low-n floor: a (repo, lens) row whose OWN n_rejected, OR the global "
         "raised denominator, is under this count is flagged low_n (never hidden, just labeled)",
     ),
     as_json: bool = _FMT,
@@ -380,16 +380,16 @@ def review_yield(
 
     The per-lens FP-rate is therefore a deliberate APPROXIMATION (a per-lens numerator over a
     per-run, not per-lens, denominator) -- every row carries a constant `approx=true` column
-    so this is never presented as more precise than it is (SPEC-137 DEC-002). `suppressed=`
+    so this is never presented as more precise than it is. `suppressed=`
     (SPEC-081's confidence-gate auto-suppression) is a DIFFERENT axis from a human `rejected=`
-    decision and is NEVER added into `raised` (SPEC-137 DEC-003).
+    decision and is NEVER added into `raised`.
 
     Honest-zero (SPEC-137 DEC's failure-mode table): a repo with no rejected-findings.md file
     contributes NO row, ever (never a fabricated 0-rejected row); if `rejected_findings` has
     ZERO rows overall, this returns ZERO rows (never a fabricated all-NULL row); if `raised`
     is 0, `fp_rate_approx` is NULL for every row (never 0.0). `n_rejected` can legitimately
     exceed `raised` (a numerator/denominator time-scope mismatch inherent to the
-    approximation); the resulting rate is reported exactly, never clamped (DEC-004).
+    approximation); the resulting rate is reported exactly, never clamped.
 
     Read-only: goes through the SAME `materialize.query()` path every other command uses, no
     new duckdb connection."""
@@ -496,10 +496,10 @@ def anomalies(
     _emit(cols, rows, as_json)
 
 
-# The north-star scorecard SQL (SPEC-135): sessions x kit_gates bridged the SAME way
+# The north-star scorecard SQL: sessions x kit_gates bridged the SAME way
 # defect-correlation/ceremony/serial-when-parallel already bridge rid-to-git (name-match once,
 # then a genuine shared fact thereafter), here substituting TIME containment for file equality
-# since `sessions` carries no file list (SPEC-135 DEC-002). Every "empty" branch (no shipped
+# since `sessions` carries no file list. Every "empty" branch (no shipped
 # rids, no bridged session) resolves to NULL via an explicit CASE, never a crash, never a
 # fabricated number.
 _DIGEST_SQL = """
@@ -577,7 +577,7 @@ def digest(
     ),
     as_json: bool = _FMT,
 ):
-    """The weekly north-star scorecard (SPEC-135): token efficiency incl.
+    """The weekly north-star scorecard: token efficiency incl.
     cost-per-verified-outcome (a `sessions` x `kit_gates` JOIN, bridged by the SAME
     rid-to-git-subject technique defect-correlation/ceremony/serial-when-parallel already use,
     here bridged further by TIME containment against a session's `[first_ts, last_ts]` window

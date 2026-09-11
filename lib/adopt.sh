@@ -17,9 +17,9 @@
 #   --with <a,b,c> : only meaningful the first time (seeding a fresh <target>/.kit.toml): the
 #               named modules start `true` in the seeded [modules] section instead of the
 #               kit-root defaults. Ignored (with a note) once <target>/.kit.toml exists -- a
-#               project's own config is never overwritten by re-running adopt (SPEC-192).
+#               project's own config is never overwritten by re-running adopt.
 #
-# Per-project override close-out (SPEC-192, goal 06): the resolver (lib/config/kit-config.sh,
+# Per-project override close-out (goal 06): the resolver (lib/config/kit-config.sh,
 # goal 01) already merges <target>/.kit.toml over the kit-root default. This closes the loop:
 # adopt seeds a starter <target>/.kit.toml (opt-in; never overwritten after creation) and, on
 # EVERY run (fresh or --refresh), wires the currently-enabled HOOK-bearing modules (board,
@@ -173,7 +173,7 @@ EOF
   did=1
 fi
 
-# --- SPEC-192 (goal 06): close the per-project override loop -----------------------------
+# --- Close the per-project override loop (goal 06) ---------------------------------------
 
 # Resolve the kit-root kit.toml (dev checkout first, then the install) -- same lookup shape
 # as src_agents above.
@@ -207,7 +207,7 @@ _kit_load_config_resolver() {
 RESOLVER_OK=1
 _kit_load_config_resolver 2>/dev/null || RESOLVER_OK=0
 
-# 5. Per-project .kit.toml -- an OPT-IN starter (SPEC-192). Created only if absent; a
+# 5. Per-project .kit.toml -- an OPT-IN starter. Created only if absent; a
 # project's own config is NEVER overwritten by adopt, fresh or --refresh (same invariant as
 # AGENTS.md / the proof marker). --with (first run only) seeds the named modules `true`;
 # every other key seeds the kit-root default it would inherit anyway -- writing the line
@@ -247,7 +247,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ]; then
   fi
 fi
 
-# 6. Per-project hook-module wiring into <target>/.claude/settings.json (SPEC-192). Runs on
+# 6. Per-project hook-module wiring into <target>/.claude/settings.json. Runs on
 # EVERY adopt invocation (fresh or --refresh), reading this project's CURRENT .kit.toml (project
 # override, else the kit-root default -- the resolver from goal 01), so a hand-edited .kit.toml
 # is picked up the next time adopt runs. Never on hook-fire (Not: runtime per-call module
@@ -343,7 +343,7 @@ if [ -n "$kit_root_toml" ] && [ "$RESOLVER_OK" -eq 1 ] && command -v jq >/dev/nu
   fi
 fi
 
-# 6b. Output style (SPEC-252). `[output] style` resolves project > operator > kit-root. A set
+# 6b. Output style. `[output] style` resolves project > operator > kit-root. A set
 # value is written on EVERY adopt run (that is what makes it reconfigurable); the harness's
 # own settings.local.json (what /output-style writes) outranks the project file, so a
 # person's pick still wins on their machine. An empty value never touches settings.json

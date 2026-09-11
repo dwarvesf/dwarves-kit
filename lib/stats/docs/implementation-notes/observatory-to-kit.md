@@ -60,7 +60,7 @@ Decision: left `kit_log_dir()`'s default (`~/.local/state/dwarves-kit/logs`) unt
 
 Why: read `lib/kit-log-dir.sh` (the real shell resolver this Python function mirrors).
 It resolves to `${XDG_STATE_HOME:-$HOME/.local/state}/dwarves-kit/logs` by design,
-explicitly moved OUT of `~/.claude/dwarves-kit/*` (SPEC-097) specifically so a plugin
+explicitly moved OUT of `~/.claude/dwarves-kit/*` specifically so a plugin
 reinstall or repo relocation never wipes the run-telemetry corpus. This was ALREADY
 host-generic runtime state before this move, not a hardcoded personal-repo path like
 `DWARVES_KIT_LIB` was; making it "repo-relative" would reintroduce the exact blast-radius

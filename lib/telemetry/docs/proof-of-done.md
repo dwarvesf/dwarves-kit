@@ -105,7 +105,7 @@ Exit: 0
 
 ## Defect found while writing this proof (NOT fixed here)
 
-The write plane and the read plane disagree about the root whenever `[ledger].location` is not the default. `lib/stats/src/stats/config.py::kit_log_dir` is a SECOND, Python implementation of this precedence and it implements only levels 1, 2 and 4: it never reads `kit.toml [ledger].location`, although its docstring claims it "mirrors the shell resolver exactly (SPEC-182)". The shell resolver gained the config layer later; the Python copy was never updated. SPEC-182 D2 requires precisely the opposite ("the writer writes and `stats` reads the SAME root").
+The write plane and the read plane disagree about the root whenever `[ledger].location` is not the default. `lib/stats/src/stats/config.py::kit_log_dir` is a SECOND, Python implementation of this precedence and it implements only levels 1, 2 and 4: it never reads `kit.toml [ledger].location`, although its docstring claims it "mirrors the shell resolver exactly". The shell resolver gained the config layer later; the Python copy was never updated. SPEC-182 D2 requires precisely the opposite ("the writer writes and `stats` reads the SAME root").
 
 ```
 kit.toml: [ledger].location = /var/folders/.../tmp.L1Rmg8vmsm/explicit

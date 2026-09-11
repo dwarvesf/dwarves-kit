@@ -106,7 +106,7 @@
 #
 #   mega.sh runs [--registry <path>] [--root <dir>]... [--out <path>]
 #                [--max-embed-bytes <n>] [--total-embed-bytes <n>]
-#     The ESTATE-WIDE sibling of `review` (SPEC-215): ONE self-contained static HTML page of run
+#     The ESTATE-WIDE sibling of `review`: ONE self-contained static HTML page of run
 #     cards over EVERY registered repo, composed from run reports (`_meta/megagoals/**/
 #     RUN_REPORT.md`), proofs of done (`**/docs/proof-of-done.md`), and verification runs
 #     (`docs/verification/**/runs/*.md`), with each report's own capture images embedded inline.
@@ -114,7 +114,7 @@
 #     --registry   a `boards.txt`-format registry of repos to scan. Precedence: this flag >
 #                  $KIT_BOARDS_REGISTRY > `<git-toplevel-of-cwd>/_meta/boards.txt`. Every row is
 #                  scanned, including rows without the `bridge` column -- `bridge` gates a
-#                  Hermes WRITE path, not reading a repo's own reports (SPEC-215 DEC-002).
+#                  Hermes WRITE path, not reading a repo's own reports.
 #     --root       scan this repo root directly; repeatable, and bypasses the registry entirely.
 #     --out        default `runs-dashboard.html` in the cwd.
 #     Empty estate is NOT an error: an empty or artifact-free root renders a valid page carrying
@@ -341,7 +341,7 @@ cmd_status() {
   [ "$drift_count" -eq 0 ]
 }
 
-# cmd_review: the bash launcher half of `mega review --html <slug>` (SPEC-197). Resolves
+# cmd_review: the bash launcher half of `mega review --html <slug>`. Resolves
 # KIT_LOG_DIR the exact way `lib/gate/proof-table-gen.sh` already does (source
 # lib/telemetry/kit-log-dir.sh, export the result) so there is ONE resolver, not a second copy,
 # then execs the sibling `lib/mega/mega-review.py` (bash 3.2 has no associative arrays, the same

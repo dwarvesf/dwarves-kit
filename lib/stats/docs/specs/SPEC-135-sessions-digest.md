@@ -17,7 +17,7 @@ COST of that work is recorded: Claude Code's own session transcripts
 (`~/.cache/claude-secret-guard.log`). Two concrete gaps:
 
 1. **No token/cost telemetry exists anywhere in the lens.** `anomalies.py`'s
-   `_detect_token_runaway` (SPEC-134 DEC-003) is wired into `DETECTORS` but hard-coded to
+   `_detect_token_runaway` is wired into `DETECTORS` but hard-coded to
    always return `None` -- there is no materialized table carrying a per-session token figure
    to threshold against. Every "north-star" question this mega-goal was framed around
    (`_meta/megagoals/harness-observatory/ROADMAP.md`: token efficiency, cost-per-verified-outcome,
@@ -81,7 +81,7 @@ skip-safe on a missing source, tolerant of malformed lines), and needs no new mo
 - If a future sub-goal wants richer session telemetry (e.g. per-tool-name breakdown, per-model
   cost), it extends `SESSIONS_SCHEMA` + `_parse_session_file`'s allowlist explicitly -- the
   allowlist is the boundary a reviewer checks, not an afterthought.
-- `_detect_token_runaway` (SPEC-134) arms against `sessions` in THIS spec (a flat per-session
+- `_detect_token_runaway` arms against `sessions` in THIS spec (a flat per-session
   budget threshold, no rid bridge -- `sessions` carries no rid column in v1, see DEC-002 below).
   A future sub-goal wanting cost attributed to a specific rid would need a session-to-rid bridge
   column or a new bridge query; not built here.
@@ -216,10 +216,10 @@ None. No daemon, no cron, no new dependency.
   allowlisted per-line parser above, one row per `*.jsonl` file, skip-safe on a missing root dir,
   tolerant of a malformed/truncated JSON line (skip, never raise), never returns a row for a file
   with zero timestamped lines (an empty/junk file is not a session). Acceptance: golden fixture
-  (TASK-006).
+.
 - [ ] TASK-004: `adapters.read_safety(log_path=None)`: the bracket-regex parser above, one row
   per matching log line, skip-safe on a missing log, tolerant of a non-matching line (skip,
-  never raise). Acceptance: golden fixture (TASK-006).
+  never raise). Acceptance: golden fixture.
 
 ### Phase 2: Core
 - [ ] TASK-005: `materialize.py`: `_SESSIONS_DDL`/`_SAFETY_DDL` via `schemas.ddl(...)`, wired into
@@ -236,7 +236,7 @@ None. No daemon, no cron, no new dependency.
   outcome; `ledger anomalies --help` lists `token_budget_max`.
 - [ ] TASK-008: `cli.py`: `digest` command (the JOIN scorecard SQL below + the folded-in
   `anomalies_mod.detect()`/`stage_proposals()` call). Acceptance: golden-fixture exact values
-  (TASK-006).
+.
 
 ### Phase 3: Polish
 - [ ] TASK-009: Over-test pass (malformed jsonl lines, a truncated file cut mid-line, an empty
@@ -411,7 +411,7 @@ All test lines print `PASS`; the final line is `== N passed, 0 failed ==`.
   The lens (the materialized db) never receives the text, only the count of drops -- satisfying
   the goal file's literal wording ("no message text... lands in the lens").
 - **DEC-004 (`token_runaway` armed as a flat per-session threshold, not per-rid):** since
-  `sessions` carries no rid column (DEC-002), arming the detector against a "per-sub-goal budget"
+  `sessions` carries no rid column, arming the detector against a "per-sub-goal budget"
   (the HANDOFF's suggested phrasing) would require the SAME time-containment bridge `digest`
   uses, duplicating that logic inside a detector for marginal benefit. Chosen instead: flag the
   single highest-total `sessions` row over a flat `token_budget_max`, matching every other
@@ -428,7 +428,7 @@ All test lines print `PASS`; the final line is `== N passed, 0 failed ==`.
   session, sharing its `type`/`message.usage`/`message.content` shape. `read_sessions` does not
   filter on `isSidechain` (a field outside the whitelist in any case) -- every assistant-typed
   line in a file, sidechain or not, contributes to that file's one `sessions` row. This is
-  consistent with "one file = one row" (DEC-005) and avoids a second, unwhitelisted field read
+  consistent with "one file = one row" and avoids a second, unwhitelisted field read
   just to exclude data that belongs to the same billed session either way (spawning a subagent
   is part of the parent session's own token/tool-call footprint, not a  separate session).
   Found by `/kit:spec-validate` (Reviewer 3); fixed by stating the decision explicitly rather

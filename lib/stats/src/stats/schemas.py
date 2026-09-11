@@ -61,7 +61,7 @@ LEARNED_SCHEMA: list[tuple[str, str]] = [
     ("status", "VARCHAR"),
 ]
 
-# One row per `| GATE |` kit run-ledger line (SPEC-131). `caught`/`start_ts`/`end_ts` come
+# One row per `| GATE |` kit run-ledger line. `caught`/`start_ts`/`end_ts` come
 # from a SEPARATE, additive `| OUTCOME |` start/end bracket (kit's own SPEC-129), paired by
 # phase name; NULL when no bracket exists for that gate (see adapters.py `read_kit_gates`
 # docstring for the pairing mechanics). `cost` is the same pairing extended to a
@@ -83,7 +83,7 @@ KIT_GATES_SCHEMA: list[tuple[str, str]] = [
     ("cost", "DOUBLE"),
 ]
 
-# The tool's FIRST git-sourced table (SPEC-132). One row per (commit, file-touched) pair
+# The tool's FIRST git-sourced table. One row per (commit, file-touched) pair
 # across a repo's `git log` history -- despite the name (kept literal to the goal file's
 # "git_fixes: sha, files, ts, subject"), this stores EVERY commit, not just fix()-typed ones:
 # fix-classification is a query-time predicate (`defect-correlation`'s `subject ~ '^fix...'`),
@@ -98,7 +98,7 @@ GIT_FIXES_SCHEMA: list[tuple[str, str]] = [
     ("subject", "VARCHAR"),
 ]
 
-# The upstream half of the benchmark (SPEC-133): one row per hook-enforced
+# The upstream half of the benchmark: one row per hook-enforced
 # `docs/implementation-notes/<slug>.md` file (NOT per commit -- `file` here is the note file's
 # OWN relative path). `deviation-rate` JOINs this against `git_fixes` by bridging `slug` to a
 # commit subject the same way SPEC-132 bridges `rid` (two-stage: name-match once, then
@@ -114,7 +114,7 @@ IMPL_NOTES_SCHEMA: list[tuple[str, str]] = [
 ]
 
 
-# The tool's FIRST numeric-only telemetry table (SPEC-135). One row per Claude Code session
+# The tool's FIRST numeric-only telemetry table. One row per Claude Code session
 # transcript file (`~/.claude/projects/<project-slug>/*.jsonl`). Every column here is a number,
 # a timestamp, or a short filesystem-derived slug -- by design, NO column can ever hold message
 # text, a tool input/output, or a path from inside a conversation (the privacy boundary this
@@ -137,7 +137,7 @@ SESSIONS_SCHEMA: list[tuple[str, str]] = [
     ("canary_drop_count", "INTEGER"),
 ]
 
-# The safety-posture counter (SPEC-135): one row per secret-guard audit-log line, parsed via a
+# The safety-posture counter: one row per secret-guard audit-log line, parsed via a
 # fixed leading-bracket regex ONLY (`adapters.read_safety`); the log's free-text remainder
 # (confirmed to sometimes carry a real file path) is never captured into any column here.
 SAFETY_SCHEMA: list[tuple[str, str]] = [
@@ -163,7 +163,7 @@ REJECTED_FINDINGS_SCHEMA: list[tuple[str, str]] = [
     ("last_ts", "VARCHAR"),
 ]
 
-# The tool's first cross-machine hygiene table (SPEC-136): one row per memory FILE (a note or
+# The tool's first cross-machine hygiene table: one row per memory FILE (a note or
 # its store's own MEMORY.md index) across every memory STORE `memory_lens.scan()` walks (repo
 # `.claude/memory/`, builtin `~/.claude/projects/*/memory/`). `written` is the file's most
 # recent modification signal (a git commit ts for the git-tracked repo store, else mtime for

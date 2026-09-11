@@ -86,7 +86,7 @@ for humans. Nothing here needs a server.
 | Verb | What it produces | Primary caller |
 |---|---|---|
 | `stats` | fleet + money + debt + alerts as one JSON blob | agent |
-| `debt` | cognitive-debt score, open defers, last paydown (ADR-0031) | agent |
+| `debt` | cognitive-debt score, open defers, last paydown | agent |
 | `allocation` | pool → member → feature, period comparison, proposed allowances | lead / agent |
 | `export` | the fleet data payload (`sections.json`) the forge dashboard SPA loads; `--push` PUTs it to the gateway; `--repos a,b` = TEAM scope (allowlist filtered before any metric; default is personal scope, the whole host) | machine (the SPA / CI) |
 | `session <rid>` | ONE standalone session-log page (gate timeline, conformance, outcomes) | human, shareable |
@@ -156,7 +156,7 @@ as the path taken: the `route` root node carries lane-chosen vs lane-classified
 (misfires flagged ⚑), skipped gates render dashed ⊘ with the skip reason (the
 branch NOT taken and why), overrides render ⚑ with the override reason. Hour
 gaps compress to watchable pacing; real wall-clock stays in the summary.
-Terminal twin: `bash lib/telemetry/lane-telemetry.sh trace <rid>` (SPEC-063).
+Terminal twin: `bash lib/telemetry/lane-telemetry.sh trace <rid>`.
 
 ### Web diagram player
 
@@ -206,7 +206,7 @@ python3 report.py build --rids rid1,rid2,rid3 \
 
 Honest data split: spans, gates, statuses, and reasons come ONLY from the run
 ledgers; model / PR / lane / incidents ride a declared overlay JSON until the
-trace spine (ID-423) records those dims natively, at which point the overlay
+trace spine records those dims natively, at which point the overlay
 shrinks to nothing. Zero-JS output; tooltips are title attributes.
 
 ### Event protocol

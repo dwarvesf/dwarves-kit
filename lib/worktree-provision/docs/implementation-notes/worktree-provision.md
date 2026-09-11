@@ -16,7 +16,7 @@ Delta from `_meta/megagoals/cc-elevation-r2/goals/04-worktree-autoprovision.md`.
 - Per the spec, install runs by default when a manifest is present. Tradeoff: `uv sync`/`pnpm install` can be slow and runs synchronously in the hook; `CC_WT_PROVISION_NO_INSTALL=1` is the escape hatch for fast worktrees. Chose opt-out over opt-in to match the spec wording; the env hatch covers the "fast and safe" quality-bar tension.
 - Alternative considered: backgrounding the install (non-blocking) -> rejected for v1 (a detached process complicates the always-exit-0 contract + error reporting; revisit if the synchronous wait bites).
 
-## 2026-06-28 Go/Rust/Ruby manifests + verbose mode (ID-229 polish)
+## 2026-06-28 Go/Rust/Ruby manifests + verbose mode
 - Added go.mod -> `go mod download`, Cargo.toml -> `cargo fetch`, Gemfile -> `bundle install`. Refactored the if-ladder in `install_cmd()` into an ordered `MANIFEST_INSTALL` tuple; first present manifest wins, py/node kept first to preserve existing precedence for polyglot worktrees.
 - `CC_WT_PROVISION_VERBOSE=1` echoes `running <cmd>` and streams the install's stdout+stderr live; default stays silent.
 - Default-silence clarification (a small tightening of the prior code, not a spec deviation): the install now runs with `stdout=DEVNULL, stderr=PIPE` by default and prints a 5-line stderr tail only on non-zero exit, matching the documented "silent except errors" contract. The previous code inherited stdout/stderr unconditionally; under a captured-output hook context that read as silent, so default observable behavior is unchanged for the user while the verbose flag now meaningfully toggles visibility. Always-exit-0 preserved (no raise escapes; non-zero install exit is reported, not propagated).

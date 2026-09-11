@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # orchestrate.sh -- drive a mega-goal as ONE fresh `claude -p` session per sub-goal, so the
 # loop lives in this dumb (non-LLM) driver and no session accumulates more than one sub-goal's
-# context (SPEC-087, ADR-0027). Each `claude -p` is a new session, so the `/clear` between
+# context. Each `claude -p` is a new session, so the `/clear` between
 # sub-goals is free; the kit never self-`/clear`s. Each sub-goal session writes HANDOFF.md for
 # the next, and the orchestrator injects it (re-discovery becomes a read). The driver MUST stay
 # non-LLM: an LLM orchestrator spawning a subagent per sub-goal would re-accumulate every return
-# and become the new marathon (DEC-004).
+# and become the new marathon.
 #
 # Usage:
 #   orchestrate.sh next <megagoal-dir>             print the next unchecked sub-goal + policy
@@ -14,8 +14,8 @@
 #       --step     pause for the operator after each sub-goal (resume on Enter, q to stop)
 #       --stream   stream each session live (stream-json) + capture to .orchestrate/<id>.stream.jsonl
 #       --capture-tokens  stream each session SILENTLY to .orchestrate/<id>.stream.jsonl for token
-#                  usage extraction (SPEC-117); the conductor stays lean (no tee). Also CAPTURE_TOKENS=1.
-#       --board=roadmap|kanban|both  surface progress as a per-mega-goal kanban (SG-10); default
+#                  usage extraction; the conductor stays lean (no tee). Also CAPTURE_TOKENS=1.
+#       --board=roadmap|kanban|both  surface progress as a per-mega-goal kanban; default
 #                  detects (backlog.sh present -> both, else roadmap). Event-sourced + derived;
 #                  ROADMAP.md stays canonical, the repo-wide BACKLOG cockpit is never touched.
 #   --step/--stream are opt-in; default behavior is unchanged (SG-01, SPEC-087 Mechanism A).
@@ -104,18 +104,18 @@ DETERMINISTIC_HANDOFF="${DETERMINISTIC_HANDOFF:-0}"
 # bloat path) and NOT coupled to handoff regeneration. Read as a GLOBAL (like DETERMINISTIC_HANDOFF,
 # not a positional arg) so it inherits into the wave subshell on fork with no `_run_one_session`
 # signature change and no `_wave_run` call-site touch. The serial token hook is already `$slog`-gated,
-# so this needs no hook change; the wave-path per-sub-goal ledger extraction (ID-094) recomputes the
+# so this needs no hook change; the wave-path per-sub-goal ledger extraction recomputes the
 # same deterministic stream path in the reap loop, since `_run_one_session`'s `_ROS_SLOG` global does
 # not cross the wave's forked-subshell boundary back to the caller.
 CAPTURE_TOKENS="${CAPTURE_TOKENS:-0}"
 
-# Kanban renderer reused by the board-view (SG-10). Resolved next to this script; override in
+# Kanban renderer reused by the board-view. Resolved next to this script; override in
 # tests. When absent, board mode fail-safes to roadmap-only so a kit without the tooling runs.
 ORCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$ORCH_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 BACKLOG_LIB="${BACKLOG_LIB:-$LIB_ROOT/board/backlog.sh}"
 
-# Multi-vendor dispatch adapter (ID-390): vendor -> headless argv + prompt-delivery mode.
+# Multi-vendor dispatch adapter: vendor -> headless argv + prompt-delivery mode.
 # SOURCED, unlike dispatch-gate.sh which must be a subprocess because its `set -euo` would leak `-e`
 # into this driver's deliberate `set -uo` posture. harness.sh is `set -uo` too, so it composes
 # cleanly and the functions stay callable without a fork per dispatch.
@@ -153,7 +153,7 @@ _kit_bool01() {
 WATCHDOG_STALL_SECS="${WATCHDOG_STALL_SECS:-0}"
 WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 
-# Flip-lock stale-reclaim threshold (SPEC-106 TASK-002 / DEC-009). The box-flip mutual-exclusion
+# Flip-lock stale-reclaim threshold. The box-flip mutual-exclusion
 # primitive is a `mkdir` lock (atomic on POSIX; flock is absent on macOS and unused in this repo).
 # A lock whose recorded holder PID is DEAD (crashed) is reclaimed immediately; a lock with no
 # readable PID (a racy just-created lock) is reclaimed only after this many seconds. Default 120.
@@ -177,7 +177,7 @@ WAVE_CAP="${WAVE_CAP:-$(kit_config_get mega.wave_cap 2)}"
 # branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
 # `_wave_converge`); the actual merge goes through THIS mockable hook. Default is the real path
 # (`lib/goal/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
-# invoked with mega-merge's real `<pr> <rid> <lane>` arity (ID-090). It only fires for a sub-goal that
+# invoked with mega-merge's real `<pr> <rid> <lane>` arity. It only fires for a sub-goal that
 # has a real recorded PR#; a placeholder `#__` is skipped, so a wave with no real PRs converges to a
 # clean no-op. Tests set WAVE_MERGE_CMD to a mock that records merge ordering. Word-split intentionally
 # (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
@@ -197,7 +197,7 @@ WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$LIB_ROOT/goal/mega-merge.sh merge}"
 MULTIPLEXER="${MULTIPLEXER:-$(_kit_bool01 "$(kit_config_get mega.multiplexer)" 0)}"
 TMUX_CMD="${TMUX_CMD:-tmux}"
 
-# Pane viewer push (SPEC-121). SPEC-119's panes are PULL-only (the operator must know the tmux
+# Pane viewer push. SPEC-119's panes are PULL-only (the operator must know the tmux
 # session name and attach by hand); PANE_VIEWER is the PUSH half: on wave spawn, open ONE viewer
 # surface in the operator's own terminal app, already attached to the wave's tmux session (one
 # surface per wave session per run, never one per worker -- noise control; tmux's own window keys
@@ -264,7 +264,7 @@ _mtime() {
   case "$m" in ''|*[!0-9]*) return 0 ;; *) printf '%s' "$m" ;; esac
 }
 
-# ---- Portable mkdir-based mutual exclusion (SPEC-106 TASK-002 / DEC-009) ----------------------
+# ---- Portable mkdir-based mutual exclusion ----------------------
 # `mkdir "$lockdir"` is the atomic acquire (NOT `flock`: absent on macOS, zero repo usage). The
 # holder writes its PID to "$lockdir/pid"; `_lock` blocks/retries with a short sleep until it wins.
 # A STALE lock is reclaimed ONLY when: [ -n "$lockdir" ] AND the recorded PID fails `kill -0` (the
@@ -325,7 +325,7 @@ _unlock() {  # lockdir
 
 # Emit "id<TAB>policy<TAB>checked(0|1)" per sub-goal line, in ROADMAP order.
 # Policy is the comma-separated field that EQUALS auto|gate|gate! after trim (not a regex hit on the
-# description, so "(gate review)" or "gate-aware" do not false-match). `gate!` (SPEC-106 TASK-007) is
+# description, so "(gate review)" or "gate-aware" do not false-match). `gate!` is
 # the global-stop policy; the `!` survives tolower and the exact-match compare, so it is kept distinct
 # from plain `gate` (chain-stop). Unknown -> gate (fail-safe: a malformed line stops the loop for a
 # human rather than silently auto-running). The trailing `|| true` keeps a no-match grep from escaping
@@ -347,7 +347,7 @@ _subgoals() {
 # Next unchecked sub-goal as "id<TAB>policy", or empty.
 _next() { _subgoals "$1" | awk -F'\t' '$3==0 {print $1"\t"$2; exit}'; }
 
-# Wavefront ready set (SPEC-106 TASK-001): every sub-goal that is unchecked AND has no blocking
+# Wavefront ready set: every sub-goal that is unchecked AND has no blocking
 # deps, in ROADMAP order, as "id<TAB>policy" (the _subgoals shape minus the checked column).
 # Ready = checked==0 AND `_sg_deps_blocked` empty (reuses the existing dep parser at L133; no
 # reimplementation). PURE READ helper: it changes NO scheduling (nothing calls it into the run
@@ -440,7 +440,7 @@ _events_file() { printf '%s/.orchestrate/events.log\n' "$1"; }
 
 _emit_event() {  # dir id status [note]
   local dir="$1" id="$2" status="$3" note="${4:-}" ef
-  # Review-fix FIX 3 (DEC-009): truncate comfortably under PIPE_BUF (512B) so the atomic-append
+  # Review-fix FIX 3: truncate comfortably under PIPE_BUF (512B) so the atomic-append
   # guarantee concurrent wave sessions rely on is structural, not by-convention.
   note=${note:0:400}
   ef=$(_events_file "$dir"); mkdir -p "$(dirname "$ef")"
@@ -473,7 +473,7 @@ _sg_deps_blocked() {  # roadmap raw-line
   printf '%s' "${blockers# }"
 }
 
-# Dependents test (SPEC-106 TASK-005): does any OTHER sub-goal's `depends` list name <id>?
+# Dependents test: does any OTHER sub-goal's `depends` list name <id>?
 # Exit 0 iff <id> HAS DEPENDENTS (something feeds forward FROM it), else nonzero. Reuses the same
 # `depends SG-NN` token parse as _sg_deps_blocked (no new format). Read-only. This is the WRITE-side
 # key: a sub-goal writes HANDOFF-<id>.md only when this holds; a leaf / linear-tail has none and
@@ -592,7 +592,7 @@ _wave_gate() {  # megadir roadmap
   while IFS=$'\t' read -r id policy; do
     [ -n "$id" ] || continue
     decision=defer
-    # A `gate` / `gate!` sub-goal is NEVER admitted to a wave (SPEC-106 TASK-007, DEC-010). This is
+    # A `gate` / `gate!` sub-goal is NEVER admitted to a wave. This is
     # what makes the wave-path chain-hold work: the gate sub-goal is not run, so anything that
     # `depends` on it stays dep-blocked (its chain holds), while INDEPENDENT ready sub-goals are still
     # admitted below. `gate!` (global stop) is caught earlier in cmd_run; deferring it here too is
@@ -638,7 +638,7 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # `cmd_run`'s own WAVE_CAP/PANE_VIEWER pre-flight checks use), so a caller checking `_route`'s exit
 # status (`local out; out=$(_route "$gf"); rc=$?`, an assignment's `$?` reflects the command
 # substitution's own exit code) catches it before dispatch. Absent `Model:` (empty) is untouched,
-# still the documented inherit fallback (SPEC-107), never rejected. Case-insensitive: `Opus`/`OPUS`
+# still the documented inherit fallback, never rejected. Case-insensitive: `Opus`/`OPUS`
 # match same as `opus` (goal files are hand-authored prose headers, not a strict schema).
 #
 # Membership is EXACT-TOKEN enumeration (iterate the allowlist, compare `==`), NOT a
@@ -648,7 +648,7 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # value like `Model: opus sonnet` would slip through (`" opus sonnet "` is a substring of
 # `" opus sonnet haiku "`) and get passed verbatim to `--model "opus sonnet"`, dying deep in the
 # spawned `claude -p` , precisely the failure ID-096 exists to stop.
-# The set of NON-claude harnesses this kit installation permits, from `mega.enabled_agent_clis` (ID-390).
+# The set of NON-claude harnesses this kit installation permits, from `mega.enabled_agent_clis`.
 # DEFAULT EMPTY = claude-only: out of the box, multi-vendor dispatch is OFF, so a stray `Harness:
 # codex` header errors clearly instead of surprise-spending on another vendor's account. An operator
 # who has, say, codex installed and authenticated opts in by setting `enabled_agent_clis = "codex"`
@@ -666,7 +666,7 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # PR-writable); this is the single place the normal project-wins precedence is inverted, on purpose.
 _harness_allowed() { _kit_toml_get "$(kit_config_root)" mega enabled_agent_clis; }
 
-# The goal file's `Harness:` header, lowercased, defaulting to `claude` (ID-390). This is the ONE
+# The goal file's `Harness:` header, lowercased, defaulting to `claude`. This is the ONE
 # place the vendor is decided; everything downstream branches on its result. Three outcomes:
 #
 #   absent header      -> `claude` -> every existing code path runs BYTE-IDENTICALLY (the backward-
@@ -734,7 +734,7 @@ _route() {
   # back through the config layer's [mega].default_model (project .kit.toml > kit-root
   # kit.toml). No hardcoded value is baked in HERE: with no config file either, `model` stays
   # empty and the pre-existing "inherit the session's own tier" behavior is preserved byte-
-  # for-byte (SPEC-087). The documented "hardcoded" floor of the four-layer chain is
+  # for-byte. The documented "hardcoded" floor of the four-layer chain is
   # kit.toml.example's own shipped `default_model = "sonnet"` line -- once an adopter installs
   # that file as their kit-root kit.toml, THIS lookup picks it up as the kit-root layer, same
   # as any other operator-set value.
@@ -756,7 +756,7 @@ _route() {
   printf '%s\t%s\n' "$model" "$effort"
 }
 
-# Emit a gate-ledger START for a dispatched sub-goal (SPEC-101 / ID-085), the automated
+# Emit a gate-ledger START for a dispatched sub-goal, the automated
 # mirror of the `gate-ledger.sh start` that `commands/assign.md` makes for hand-run work.
 # Without it, mega-dispatched runs are untracked (`?` lane/type) in lane-telemetry, the root
 # cause of the SPEC-073 eval's NULL lane/type/skip/escape rates. Advisory + non-fatal: a
@@ -780,7 +780,7 @@ _rid_for() {  # dir id
 }
 
 # _record_tokens <dir> <id> <slog>: extract per-session token usage from a captured stream-json
-# file and record a TOKENS ledger line for the sub-goal's rid (SPEC-110). SHARED by the serial
+# file and record a TOKENS ledger line for the sub-goal's rid. SHARED by the serial
 # per-sub-goal loop (cmd_run) AND the wave reap loop (_wave_run, ID-094) so both paths write to
 # the exact same ledger stream via the exact same extraction. CAPTURE-GATED but the gate lives in
 # the CALLER (an absent/empty $slog is also a harmless no-op here, so double-gating is safe, never
@@ -843,7 +843,7 @@ _build_prompt() {
   #                      next action + read-pointers so re-discovery becomes a read.
   #   WARM DECISIONS.md -- append-only ledger of invariants + dead-ends; injected as a POINTER
   #                      only (path + size), read on demand, so it never bloats the prompt.
-  # Per-edge feed-forward (SPEC-106 TASK-005): if <id> DECLARES deps, inject each dep-PARENT's
+  # Per-edge feed-forward: if <id> DECLARES deps, inject each dep-PARENT's
   # HANDOFF-<MM>.md (falling back to plain HANDOFF.md when the per-edge file is absent, so a chain
   # root that only wrote plain still feeds forward). A sub-goal with NO deps takes the ORIGINAL
   # plain path below UNCHANGED (byte-identical) -- do not fold the two together.
@@ -880,7 +880,7 @@ _build_prompt() {
     printf '\nWARM LEDGER: %s exists (%s lines) -- invariants + dead-ends. Read it on demand before re-deciding; it is NOT inlined here to keep this prompt lean.\n' "$dir/DECISIONS.md" "$dlines"
   fi
   # pi-swarm wording: the next session reads these records, not your transcript.
-  # Per-edge WRITE target (SPEC-106 TASK-005): a sub-goal that HAS DEPENDENTS writes its own
+  # Per-edge WRITE target: a sub-goal that HAS DEPENDENTS writes its own
   # HANDOFF-<id>.md so parallel siblings never clobber one hot file; a leaf / linear-tail keeps
   # writing plain HANDOFF.md, so the instruction stays byte-identical for the no-dependents case.
   local hf="HANDOFF.md"
@@ -948,7 +948,7 @@ _step_pause() {
   esac
 }
 
-# ---- Stream retention + redaction (ID-095) ----------------------------------------------------
+# ---- Stream retention + redaction ----------------------------------------------------
 # Verified reality (orchestrate-hardening NOTES advisor #3): `.orchestrate/*.stream.jsonl` files
 # are NOT unbounded growth -- each is per-sub-goal-id and truncated (`: > "$slog"`) at the start of
 # every run, so the SET is bounded by the sub-goal count, not by wall-clock time. The real risk is
@@ -999,12 +999,12 @@ _prune_streams() {  # dir
   _say "[orchestrate] [retention] pruned $n stream/session file(s) older than ${STREAM_RETENTION_DAYS}d from $logdir"
 }
 
-# Run a session under the stall-watchdog (SG-11). Backgrounds claude (output -> a session log),
+# Run a session under the stall-watchdog. Backgrounds claude (output -> a session log),
 # polls liveness (`kill -0`, no daemon) + the log's mtime; after WATCHDOG_STALL_SECS of no new
 # output while the process is still alive, emits a `stalled` event + WARN ONCE (advisory: never
 # kills). Returns the session's exit code. The captured output is surfaced after completion.
 #
-# Token accounting (ID-097): before this fix, the watchdog branch NEVER exposed a slog to its
+# Token accounting: before this fix, the watchdog branch NEVER exposed a slog to its
 # caller, so `_record_tokens` always no-op'd on a stalled/watchdog-run session -- a stall was an
 # accounting black hole, not just an event. Fix: when a capture was actually requested (`capture`
 # param = 1, mirroring `_run_one_session`'s own stream/DETERMINISTIC_HANDOFF/CAPTURE_TOKENS gate),
@@ -1052,7 +1052,7 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
   return "$rc"
 }
 
-# Run ONE sub-goal on a NON-CLAUDE harness (ID-390). Split out of `_run_one_session` rather than
+# Run ONE sub-goal on a NON-CLAUDE harness. Split out of `_run_one_session` rather than
 # folded into its if/elif chain so the claude path keeps exactly the shape 178 existing assertions
 # already pin; this function is only ever reached when a goal file explicitly says `Harness:`.
 #
@@ -1124,7 +1124,7 @@ _run_one_session_vendor() {  # dir id pfile harness stream
 # `dir id pfile route_flags stream` (stream is a cmd_run local, so it is passed explicitly).
 # Returns the session exit code; exposes the stream-log path via the global _ROS_SLOG so the
 # caller can wire post-session logic (grounded completion, deterministic handoff) to it. Extracted
-# from cmd_run (TASK-000) so the serial and wave paths share ONE copy and the three run-paths are
+# from cmd_run so the serial and wave paths share ONE copy and the three run-paths are
 # never forked. Zero behavior change vs the former inline block.
 _run_one_session() {  # dir id pfile route_flags stream
   local dir="$1" id="$2" pfile="$3" route_flags="$4" stream="$5"
@@ -1145,7 +1145,7 @@ _run_one_session() {  # dir id pfile route_flags stream
   # Everything below is the ORIGINAL claude path, untouched: `$CLAUDE_CMD` stays the mock seam every
   # pre-existing test drives, so an absent `Harness:` header is byte-for-byte the old behavior.
   if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
-    # SG-11 watchdog path (opt-in). Token accounting (ID-097): mirror the same capture gate the
+    # SG-11 watchdog path (opt-in). Token accounting: mirror the same capture gate the
     # non-watchdog elif below uses, so a stall no longer silently drops the sub-goal's tokens (the
     # accounting-black-hole gap `_run_session_watchdog`'s own header comment used to describe).
     # `_WD_SLOG` (set by `_run_session_watchdog`) feeds `_ROS_SLOG` below exactly like the elif's
@@ -1205,7 +1205,7 @@ _sg_branch() {  # goalfile id
   printf '%s\n' "$branch"
 }
 
-# Atomically reserve ONE SPEC number for a wave sub-goal at dispatch (SPEC-128), so a
+# Atomically reserve ONE SPEC number for a wave sub-goal at dispatch, so a
 # concurrent wave cannot hand the same number to two workers. Delegates to `spec-next.sh
 # reserve` (mkdir-mutex + reservation ledger folded into the scan). Best-effort by contract:
 # on any failure it echoes nothing and returns nonzero, and the caller degrades to letting
@@ -1320,7 +1320,7 @@ _pane_send_keys() {  # megadir id keys...
   "$TMUX_CMD" send-keys -t "$mux:$id" "$@"
 }
 
-# ---- Pane viewer push (SPEC-121) ----------------------------------------------------------------
+# ---- Pane viewer push ----------------------------------------------------------------
 # The push half of SPEC-119's pull-only panes: on wave spawn, open ONE viewer tab/surface in the
 # operator's terminal app, attached to the wave's tmux session. Three functions: a pure env
 # detector, a mode resolver, and the best-effort opener. See the PANE_VIEWER env block up top.
@@ -1346,7 +1346,7 @@ _viewer_detect() {
 
 # PANE_VIEWER mode -> the effective viewer (or `none`). `auto` degrades SILENTLY to none when
 # stderr is not a TTY or nothing is detected (headless CI byte-identical -- the named negative
-# control). An explicit name is operator intent and skips the TTY gate (DEC-005). An unknown
+# control). An explicit name is operator intent and skips the TTY gate. An unknown
 # value maps to none here (defense-in-depth; cmd_run's pre-flight already rejected it loudly).
 _viewer_resolve() {
   case "$PANE_VIEWER" in
@@ -1428,7 +1428,7 @@ _viewer_open() {  # megadir
 }
 # -----------------------------------------------------------------------------------------------
 
-# ---- Subagent panes (SPEC-234) ------------------------------------------------------------------
+# ---- Subagent panes ------------------------------------------------------------------
 # The DEFAULT mega-goal run mode dispatches sub-goals as parallel background SUBAGENTS via the
 # conductor's own Agent tool (commands/mega.md "Run mode"), not through this driver's dispatch
 # loop -- there is nothing here to hook (`_wave_run` only runs under DELEGATE mode). `panes` is a
@@ -1601,7 +1601,7 @@ cmd_panes() {  # megadir target...
   return 0
 }
 
-# Hidden re-entry point for a `panes` window (SPEC-234): `tmux new-window` always execs a fresh
+# Hidden re-entry point for a `panes` window: `tmux new-window` always execs a fresh
 # command line, so the pane re-enters `orchestrate.sh` via this subcommand instead of the shell
 # expressing `tail | jq` as a joined string (the SPEC-119 #143 exec-direct rule). Refuses
 # non-regular / symlinked / wrong-basename transcripts and a missing/unreadable formatter itself
@@ -1794,7 +1794,7 @@ _wave_run() {  # megadir roadmap
       printf 'once your box is flipped there (grounded completion; no self-claim).\n'
     } >> "$pfile"
 
-    # Reserved SPEC number injection (SPEC-128). Claim a number atomically at DISPATCH , before
+    # Reserved SPEC number injection. Claim a number atomically at DISPATCH , before
     # this worker (and its siblings) can race `spec-next next` at spec-time , and tell the worker
     # to use exactly it. Best-effort: a reserve failure leaves no block, and the worker falls back
     # to computing its own number (the reservation ledger it would then scan already folds in any
@@ -1929,7 +1929,7 @@ _wave_run() {  # megadir roadmap
           mux=$(_mux_session_name "$megadir")
           "$TMUX_CMD" kill-window -t "$mux:$id" 2>/dev/null || true
         fi
-        # Token accounting (ID-094): closes the SPEC-117 declared gap ("the wave-path per-sub-goal
+        # Token accounting: closes the SPEC-117 declared gap ("the wave-path per-sub-goal
         # ledger extraction is a declared gap"). The serial path reads $slog off `_ROS_SLOG`, a
         # global `_run_one_session` sets directly in the caller's shell; the wave path backgrounds
         # `_run_one_session` in a FORKED SUBSHELL ("( cd "$wt" ... ) &" above), so that global never
@@ -2118,7 +2118,7 @@ _tier4_objective() {  # roadmap
 }
 
 # _build_verifier_prompt <dir> <roadmap> <n>: compose the n-th (1..3) of THREE independent
-# fresh-context verifier prompts for the TIER-4 close (ID-093). Splitting one single-prompt
+# fresh-context verifier prompts for the TIER-4 close. Splitting one single-prompt
 # verifier (that ran all three checks itself, in one session) into three separate sessions means
 # no single session's blind spot can silently pass the whole assembled wave -- each of the three
 # reports its OWN verdict, and `_aggregate_tier4_verdicts` fails closed if any one dissents. Each
@@ -2155,7 +2155,7 @@ EOF
 }
 
 # _aggregate_tier4_verdicts <out1> <out2> <out3>: fail-closed aggregation over the three verifier
-# outputs (ID-093). PASS only when all three sessions exited 0 (checked by the caller, which passes
+# outputs. PASS only when all three sessions exited 0 (checked by the caller, which passes
 # an already-nonzero session through as a synthetic DISSENT line) AND all three printed
 # `TIER4-VERDICT: PASS` as their last matching verdict line. A single dissent -- one session, one
 # blind spot averted -- is enough to fail closed; this is the whole point of the split (a single
@@ -2183,7 +2183,7 @@ _aggregate_tier4_verdicts() {  # out1 out2 out3
 }
 
 # _dispatch_tier4_verifiers <dir> <roadmap>: dispatch the THREE independent fresh-context verifier
-# sessions (ID-093), each a separate `claude -p` process (never --stream to the conductor, ADR-0032
+# sessions, each a separate `claude -p` process (never --stream to the conductor, ADR-0032
 # section 1), capture each session's stdout to its own temp file, then aggregate. Returns
 # `_aggregate_tier4_verdicts`'s rc; a nonzero session exit is folded in as a synthetic DISSENT line
 # (a crashed/erroring verifier must never be silently treated as an implicit PASS). Temp files are
@@ -2356,7 +2356,7 @@ cmd_run() {
       [ "$step" = 1 ] && _say "     [--step] pause here for the operator before the next sub-goal"
     done < <(_subgoals "$roadmap" | awk -F'\t' '$3==0 {print $1"\t"$2}')
     [ "$any" = 1 ] || _say "  (no unchecked sub-goals)"
-    # Preview the terminal action too (SPEC-118): with TIER4_CLOSE=1 a real run does NOT just print
+    # Preview the terminal action too: with TIER4_CLOSE=1 a real run does NOT just print
     # "done" at the all-checked terminal -- it dispatches a live verifier session + a no-orphan sweep.
     # An operator previewing the plan must see that a `claude -p` session is about to fire.
     [ "$TIER4_CLOSE" = 1 ] \
@@ -2475,7 +2475,7 @@ cmd_run() {
       nx=$(_next "$roadmap")
     fi
     if [ -z "$nx" ]; then
-      # All boxes checked. TIER-4 mega-close (SPEC-118) replaces the bare "done"-and-return: verify
+      # All boxes checked. TIER-4 mega-close replaces the bare "done"-and-return: verify
       # the assembled wave (no-orphan sweep + integration-verifier + review-team + advisor) THEN HOLD
       # the human gate. TIER4_CLOSE=0 restores the old return (the unrelated-all-auto-test escape hatch).
       if [ "$TIER4_CLOSE" = 1 ]; then _tier4_close "$dir" "$roadmap"; return $?; fi
@@ -2483,7 +2483,7 @@ cmd_run() {
     fi
     id=$(printf '%s' "$nx" | cut -f1); policy=$(printf '%s' "$nx" | cut -f2)
 
-    # gate! GLOBAL-STOP on the serial path too (SPEC-106 TASK-007): when the pick is a `gate!`
+    # gate! GLOBAL-STOP on the serial path too: when the pick is a `gate!`
     # sub-goal, halt the WHOLE loop for a human, preserving the pre-wavefront global `gate` stop
     # exactly (blocked event + message + return 0). Checked BEFORE plain `gate` since they are
     # distinct policy values. On WAVE_CAP=1 this is the ONLY gate! stop (the wave-block twin above
@@ -2514,7 +2514,7 @@ cmd_run() {
       fi
     fi
 
-    # Per-sub-goal model/effort routing (SPEC-087): read the goal file's hints and pass them as
+    # Per-sub-goal model/effort routing: read the goal file's hints and pass them as
     # flags, so this sub-goal runs on its own tier instead of inheriting Opus-for-everything.
     # Absent hint -> no flag -> inherit.
     # ID-096: reject an off-allowlist `Model:` tier pre-flight (same command-substitution exit-
@@ -2535,7 +2535,7 @@ cmd_run() {
     fi
     [ -n "$rmodel" ] && route_flags="$route_flags --model $rmodel"
     [ -n "$reffort" ] && route_flags="$route_flags --effort $reffort"
-    # Guardrail (SG-11): a sub-goal with no goals/ file runs without its contract -- a re-discovery
+    # Guardrail: a sub-goal with no goals/ file runs without its contract -- a re-discovery
     # hazard. Warn loudly (advisory; the loop still runs it on POINTER_PROMPT + handoff alone).
     if [ -z "$(_goalfile "$dir" "$id")" ]; then
       echo "[orchestrate] [guardrail] WARN: $id has no goals/ file; session runs without its contract (re-discovery hazard)." >&2
@@ -2562,7 +2562,7 @@ cmd_run() {
     # EXIT trap this script sets on the serial path).
     trap 'rm -f "$pfile"' EXIT
     _build_prompt "$dir" "$id" "$gate_hold" > "$pfile"
-    # Run the session via the extracted helper (TASK-000): it picks the correct run-path
+    # Run the session via the extracted helper: it picks the correct run-path
     # (watchdog / --stream|det-handoff stream-json / plain) and returns the session exit code.
     # slog (the stream-log path, "" when no capture happened) comes back via _ROS_SLOG for the
     # grounded-completion + deterministic-handoff logic below.
@@ -2639,7 +2639,7 @@ cmd_run() {
     [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
     _say "[orchestrate] $id complete (box checked); advancing."
 
-    # Deterministic handoff (SG-02): regenerate the two-tier handoff for the NEXT sub-goal from
+    # Deterministic handoff: regenerate the two-tier handoff for the NEXT sub-goal from
     # this session's captured transcript, so the handoff is always produced and reproducible
     # rather than depending on the model having written a good one. Overwrites HANDOFF.md (hot)
     # and appends DECISIONS.md (warm, idempotent). Failure is non-fatal: the loop continues and
@@ -2651,7 +2651,7 @@ cmd_run() {
         nid=$(printf '%s' "$nx2" | cut -f1)
         nraw=$(_sg_line "$roadmap" "$nid"); ntitle=$(_sg_title "$nraw" "$nid")
         if "$LIB_ROOT/goal/handoff-gen" "$slog" --dir "$dir" --next-id "$nid" --next-title "$ntitle" --date "$(date -u +%F)"; then
-          # Per-edge WRITE (SPEC-106 TASK-005): handoff-gen always writes $dir/HANDOFF.md; if the
+          # Per-edge WRITE: handoff-gen always writes $dir/HANDOFF.md; if the
           # JUST-completed $id HAS DEPENDENTS, rename it to the per-edge HANDOFF-<id>.md so parallel
           # siblings (CAP>1) never clobber one hot file. No dependents -> leave plain (byte-identical).
           if _sg_dependents "$roadmap" "$id"; then
@@ -2664,13 +2664,13 @@ cmd_run() {
         fi
       fi
     fi
-    # Token accounting (SPEC-110): whenever this session was CAPTURED to stream-json (--stream or
+    # Token accounting: whenever this session was CAPTURED to stream-json (--stream or
     # DETERMINISTIC_HANDOFF both set $slog), extract per-session usage and record a TOKENS ledger
     # line for this sub-goal's rid, so lane-telemetry can price the run. CAPTURE-GATED: the default
     # no-capture path leaves $slog empty and writes NO token line (honest usage=?, never a fake
     # zero). Additive marker; non-fatal (a parse miss must not stop the loop). SPEC-087 default
     # invocation is untouched (this runs only when a capture exists). Delegates to the shared
-    # `_record_tokens` helper (ID-094) so the wave reap loop below writes to the identical stream.
+    # `_record_tokens` helper so the wave reap loop below writes to the identical stream.
     _record_tokens "$dir" "$id" "$slog"
     # --step: pause for the operator between sub-goals, but only when the NEXT one is auto (the
     # loop would actually run it). If next is a gate, the gate-stop below is the natural halt, so
@@ -2684,7 +2684,7 @@ cmd_run() {
   done
 }
 
-# Hidden re-entry point for a tmux-hosted wave session (SPEC-119): `_pane_spawn` execs THIS
+# Hidden re-entry point for a tmux-hosted wave session: `_pane_spawn` execs THIS
 # subcommand as the pane's command line -- `tmux new-window` always execs a fresh command line, it
 # cannot call a bash function living in the orchestrator's own process. Runs the EXACT same
 # `_run_one_session` the plain background-job path uses (no duplicated dispatch logic), then writes
@@ -2706,12 +2706,12 @@ main() {
     run)  cmd_run "$@" ;;
     flip) cmd_flip "$@" ;;
     _pane-exec) cmd_pane_exec "$@" ;;
-    # Subagent panes (SPEC-234): read-only tmux tail windows over background-subagent transcripts.
+    # Subagent panes: read-only tmux tail windows over background-subagent transcripts.
     # `_pane-tail` is the hidden re-entry the pane's own command line runs, deliberately absent
     # from the usage string below, same as `_pane-exec`.
     panes) cmd_panes "$@" ;;
     _pane-tail) cmd_pane_tail "$@" ;;
-    # Overnight queue LAUNCHER (SPEC-148): a thin alias for the sibling lib/queue/queue.sh, whose logic
+    # Overnight queue LAUNCHER: a thin alias for the sibling lib/queue/queue.sh, whose logic
     # lives entirely there (orchestrate.sh's own suite stays untouched). `orchestrate.sh queue
     # <src>` == `queue.sh run <src>`. It drives REAL interactive `/goal` sessions via terminal-mux
     # send-keys, NOT the headless `claude -p` per-sub-goal path the rest of this driver uses.

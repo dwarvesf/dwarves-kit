@@ -23,7 +23,7 @@ holder writes its `pid`; a later caller that finds the lock held checks whether 
 - **`flock(1)`** (the spec's original choice). Rejected: not present on macOS; would need a brew
   install on the primary host, an undeclared dependency.
 - **Python `fcntl.flock` one-liner** (as cc-harvest does in-process). Rejected: this tool is
-  bash-only (ADR-0008); shelling to Python for a lock is an avoidable cross-language dependency.
+  bash-only; shelling to Python for a lock is an avoidable cross-language dependency.
 
 ## Trade-offs
 

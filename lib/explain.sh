@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# explain.sh -- the grounding + ordering engine behind /kit:explain (ADR-0031 §2, SPEC-124).
+# explain.sh -- the grounding + ordering engine behind /kit:explain.
 #
 # Turns a merged change into a LITERATE-DIFF explainer skeleton: background -> goal + intuition
 # -> a PROSE-ORDERED diff (reading order, NOT git alphabetical) -> a diagram. It is the mechanical,
@@ -13,7 +13,7 @@
 # could. If the artifact ever described the agent's intent instead of the diff, that would be a bug in
 # a DIFFERENT layer, never here.
 #
-# Reading-order rank (spec SPEC-124): within a rank, git order is preserved.
+# Reading-order rank: within a rank, git order is preserved.
 #   rank 0  background     docs/, specs (SPEC-*), ADRs/decisions -- the context the reader needs first
 #   rank 1  new concept    newly-ADDED files -- the thing introduced, before its wiring
 #   rank 2  integration    modified non-test files -- how the new thing is wired in
@@ -58,7 +58,7 @@ _resolve() {
 
 # _rank <status> <path> -> 0..3 (see header). Precedence: background, then verification, then new, else integration.
 # Globs are ANCHORED on the path segment / basename, not loose substrings, so `latest-value.js`
-# or `aerospec.txt` do NOT misclassify as tests (review finding, SPEC-124 impl-notes).
+# or `aerospec.txt` do NOT misclassify as tests (a review finding).
 _rank() {
   local status="$1" path="$2" lc bn
   lc="$(printf '%s' "$path" | tr '[:upper:]' '[:lower:]')"
@@ -209,8 +209,8 @@ cmd_render() {
   local _r; _r="$(_resolve "$ref")" || exit 3; IFS=$'\t' read -r base head <<<"$_r"
   # The commit subject is the AUTHOR's narrative, NOT the diff. It is surfaced ONCE, explicitly
   # labeled UNVERIFIED, and NEVER used as the title or the goal -- else a lying message ("adds
-  # multiply" over a diff that adds subtract) would teach the reader the wrong model (ADR-0031 §2,
-  # the exact leak the review caught). The goal is DERIVED FROM THE DIFF via _change_shape.
+  # multiply" over a diff that adds subtract) would teach the reader the wrong model (the exact
+  # leak the review caught). The goal is DERIVED FROM THE DIFF via _change_shape.
   subject="$(git log -1 --format='%s' "$head" 2>/dev/null || echo "(no subject)")"
   shape="$(_change_shape "$base" "$head")"
 

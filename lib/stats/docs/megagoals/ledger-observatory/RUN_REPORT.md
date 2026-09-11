@@ -82,8 +82,8 @@ kit_runs            79             ?                       35   21
 learned             54             dwarves-kit            29   15
 tg_dialogs         625             ops-toolkit             9    5
 tide_moves           0  (no db)    dotfiles                3    0
-tide_tier_b_calls    0  (no db)    agent-a3a2fcbe…(SG-03)  1    0
-                                   agent-ae757e5f…(SG-05)  1    0
+tide_tier_b_calls    0  (no db)    agent-a3a2fcbe…  1    0
+                                   agent-ae757e5f…  1    0
 ```
 
 The lens sees this very run: the SG-03 and SG-05 worktree agents appear as their own `kit_runs` rows. The 4

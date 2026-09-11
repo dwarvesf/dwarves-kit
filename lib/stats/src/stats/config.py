@@ -2,7 +2,7 @@
 
 Every source is overridable so tests point at fixtures and the tool stays
 portable across hosts. A missing source is skipped (empty table), never fatal.
-There is no derivable db path: `stats` (SPEC-182) materializes in-memory per invocation
+There is no derivable db path: `stats` materializes in-memory per invocation
 and persists nothing, so no `*_DB` cache knob exists.
 
 **Adapter-default split (SPEC/goal 05K, the ops-toolkit -> dwarves-kit move).** Two
@@ -141,7 +141,7 @@ def learned_md_path() -> Path | None:
 
 
 def sessions_dir() -> Path:
-    """Root of Claude Code session transcripts (SPEC-135): one subdir per project-cwd slug,
+    """Root of Claude Code session transcripts: one subdir per project-cwd slug,
     one *.jsonl file per session. `adapters.read_sessions` reads a fixed field WHITELIST only
     (numbers/timestamps/short slugs); this knob never widens what gets read, only where from.
     Host-generic (Claude Code's own dir), unaffected by the 05K move."""
@@ -149,14 +149,14 @@ def sessions_dir() -> Path:
 
 
 def secret_guard_log_path() -> Path:
-    """The secret-guard audit log (SPEC-135): bracket-prefixed lines, COUNTS ONLY (see
+    """The secret-guard audit log: bracket-prefixed lines, COUNTS ONLY (see
     `adapters.read_safety`, which never captures the log's free-text remainder).
     Host-generic, unaffected by the 05K move."""
     return _env_path("STATS_SECRET_GUARD_LOG", "~/.cache/claude-secret-guard.log")
 
 
 def git_repo_dir() -> Path:
-    """The repo whose commit history `git_fixes` reads (SPEC-132). Kit-internal (05K):
+    """The repo whose commit history `git_fixes` reads. Kit-internal (05K):
     defaults to this tool's OWN repo root (`_kit_repo_root()`, now dwarves-kit) rather
     than a hardcoded ops-toolkit path; override per-invocation to run
     `defect-correlation` against a different repo's history (e.g.
@@ -167,18 +167,18 @@ def git_repo_dir() -> Path:
 
 def memory_repo_dir() -> Path:
     """The repo whose `.claude/memory/` the memory-verify sweep walks as the 'repo'
-    store (SPEC-136). Kit-internal (05K), same convention as `git_repo_dir()` -- but a
+    store. Kit-internal (05K), same convention as `git_repo_dir()` -- but a
     SEPARATE env knob, so isolating one source in a test never silently isolates the
     other (the HANDOFF cross-suite-pollution lesson)."""
     return _env_path("STATS_MEMORY_REPO_DIR", str(_kit_repo_root()))
 
 
 def rejected_findings_repos() -> list[Path]:
-    """Repos `read_rejected_findings` (SPEC-137) walks for a `docs/verification/
+    """Repos `read_rejected_findings` walks for a `docs/verification/
     rejected-findings.md` file. `STATS_REPOS` is a comma-separated list of repo ROOT
     paths -- the tool's FIRST genuinely multi-repo-in-one-materialization knob, unlike every
     other repo-scoped adapter here (`git_repo_dir`/`memory_repo_dir`), which is single-repo-
-    per-invocation by convention. Chosen over reusing `_meta/boards.txt` (SPEC-137 DEC-001):
+    per-invocation by convention. Chosen over reusing `_meta/boards.txt`:
     that registry names paths to each repo's `BACKLOG.md` at an inconsistent nesting depth
     across its own rows (some `_meta/BACKLOG.md`, some bare `BACKLOG.md`), so deriving a repo
     root from it generically is unreliable; a dedicated env var matches this file's own
@@ -194,7 +194,7 @@ def rejected_findings_repos() -> list[Path]:
 
 
 def memory_projects_root() -> Path:
-    """Root of the built-in Claude Code auto-memory project dirs (SPEC-136): one
+    """Root of the built-in Claude Code auto-memory project dirs: one
     `<project-slug>/memory/` subdirectory per project the harness has ever auto-memoried. Same
     real root as `sessions_dir()` (`~/.claude/projects`), but a DEDICATED env knob -- a test
     isolating one source must never silently isolate the other. Host-generic, unaffected by

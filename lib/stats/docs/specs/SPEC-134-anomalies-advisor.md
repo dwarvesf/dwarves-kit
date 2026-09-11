@@ -318,7 +318,7 @@ branch, so a gate with THIN (below-floor) but REAL caught data (e.g. `caught_kno
 caught_true=1`) left the soft/fix-correlation path free to fire CONDITION anyway,
 directly contradicting the module's own "NONE of them true" claim. Fixed by hoisting
 `if caught_true > 0: continue` to run BEFORE the `caught_known >= min_ran` branch, so
-it applies unconditionally to both the hard and soft paths (DEC-006). Falsifiability
+it applies unconditionally to both the hard and soft paths. Falsifiability
 proven: reverting the hoist turns the new `C-thin-true` fixture RED (36/37), restoring
 it returns 37/37. `_detect_serial_when_parallel`'s structural evidence floor and
 `_detect_token_runaway`'s always-`None` contract were both independently re-confirmed,

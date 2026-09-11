@@ -134,7 +134,7 @@ def render_block(candidate):
 
 _BOARD_ROW_RE = re.compile(r"\s*\|\s*[A-Z]+-\d+\s*\|\s*([^|]+)\|")
 # `- [ ] title` / `- [x] title`. A CHECKED item counts for dedup too: it is finished work,
-# and re-proposing finished work is the second-largest false-positive class (ID-294).
+# and re-proposing finished work is the second-largest false-positive class.
 _CHECKBOX_RE = re.compile(r"(?m)^\s*[-*]\s*\[[ xX]\]\s*(.+?)\s*$")
 # A cockpit registry line: `<name>  <path-to-BACKLOG.md>`, `#` comments, `~` expands.
 _REGISTRY_RE = re.compile(r"^([^\s#]+)\s+(\S.*)$")

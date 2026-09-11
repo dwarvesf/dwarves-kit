@@ -112,7 +112,7 @@ Deterministic (fixtures + `CC_INTEL_DATE`), so the smoke is the proof. Two new a
 
 ```
 $ bash tests/smoke.sh | tail -3
-[8] synthesis ranks by match count, caps at top-10, notes truncation (ID-227)
+[8] synthesis ranks by match count, caps at top-10, notes truncation
   ok: ranked top-10 + truncation note
 smoke: all 8 passed
 

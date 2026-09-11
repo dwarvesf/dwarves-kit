@@ -28,7 +28,7 @@ Python was considered and declined at review.
 
 ## Trade-offs
 
-Bash is harder to unit-test than Python, mitigated by the env-seam (ADR-0006) + 58 shell-level
+Bash is harder to unit-test than Python, mitigated by the env-seam + 58 shell-level
 checks. Cross-language with cc-harvest means the transcript parser is reimplemented in bash
 (`transcript.sh`) rather than imported; accepted as a small, locked-by-fixture cost.
 

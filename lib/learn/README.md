@@ -25,10 +25,10 @@ Entry point is `bin/learn <verb>` (stable; SPEC-184). Three verbs, all live.
 
 | Verb | Script | What it does |
 |---|---|---|
-| `learn propose` | `propose.py` | The cross-run distiller (SPEC-195). A retro one layer up from `/kit:retro`: that reads one run, this reads many runs of ledger telemetry and proposes backlog rows. |
+| `learn propose` | `propose.py` | The cross-run distiller. A retro one layer up from `/kit:retro`: that reads one run, this reads many runs of ledger telemetry and proposes backlog rows. |
 | `learn propose --retro FILE` | `propose.py` | Stages a RETRO doc's `## Action items`. Deterministic: no model call, the retro *is* the evidence. |
-| `learn drain` | `drain.py` | The staging review (SPEC-196). Renders what is staged, grouped by Home. Expires anything past the window. |
-| `learn debt <list\|collect\|mark-paid>` | `weekend-batch.sh` | The debt paydown (SPEC-126, ADR-0031). Reads `\| DEBT \|` markers off the gate ledger, surfaces the week's waved + deferred items, closes one with `mark-paid`. |
+| `learn drain` | `drain.py` | The staging review. Renders what is staged, grouped by Home. Expires anything past the window. |
+| `learn debt <list\|collect\|mark-paid>` | `weekend-batch.sh` | The debt paydown. Reads `\| DEBT \|` markers off the gate ledger, surfaces the week's waved + deferred items, closes one with `mark-paid`. |
 
 ### `learn propose`, the three stages
 

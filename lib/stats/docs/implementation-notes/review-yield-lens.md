@@ -1,4 +1,4 @@
-# Implementation notes: review-yield-lens (SPEC-137)
+# Implementation notes: review-yield-lens
 
 Deltas only; reference SPEC-137 / `verification/review-yield-lens.md` for anything already
 pinned there.

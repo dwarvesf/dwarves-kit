@@ -14,7 +14,7 @@
 
 `tests/test-anomalies-advisor.sh` builds its git-history fixture at test time (`git init` in
 `mktemp -d` + commits at controlled `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE`), the same precedent
-as `test-defect-correlation.sh`/`test-deviation-rate.sh` (SPEC-132 DEC-005). `kit_gates` rows
+as `test-defect-correlation.sh`/`test-deviation-rate.sh`. `kit_gates` rows
 come from plain run-ledger log files (`gate_row` helper), the SAME grammar `read_kit_gates`
 parses -- no committed fixture dir, no `kit_runs` dependency anywhere.
 
@@ -28,7 +28,7 @@ caused to a `bash 3.2` (`source`/`return`/`set -e` interaction) quirk, reproduce
 currently fail 9/39 for the SAME reason -- a pre-existing, out-of-scope issue, see
 `_meta/megagoals/harness-observatory/DECISIONS.md`). Redesigned before any fixture was written to
 window every `kit_gates` rid by `MIN(ts)..MAX(ts)` across its OWN git-bridged commits instead
-(SPEC-134 DEC-005) -- `git_fixes.ts` is the one reliable timestamp source per HANDOFF's standing
+ -- `git_fixes.ts` is the one reliable timestamp source per HANDOFF's standing
 windowing lesson. `_detect_serial_when_parallel` never touches `kit_runs`.
 
 **`/kit:spec-validate` was dispatched on the initial draft (Round 1)** (the `kit_runs`-anchored
@@ -44,7 +44,7 @@ reviewed the actual committed code, not the draft). It confirmed both Round-1 CR
 fixed, and found ONE NEW MAJOR: the `caught_true > 0` guard only lived inside the
 `caught_known >= ceremony_min_ran` branch, so a gate with THIN (below-floor) caught data
 containing a REAL catch could still fire CONDITION via the soft path -- contradicting the
-module's own "NONE of them true" claim. Fixed (DEC-006) by hoisting the guard to run
+module's own "NONE of them true" claim. Fixed by hoisting the guard to run
 unconditionally before either path is considered; the `C-thin-true` fixture below proves it,
 falsifiably (reverting the hoist turns it RED).
 
