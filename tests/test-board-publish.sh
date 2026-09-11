@@ -11,6 +11,8 @@
 #   AC5  diverged remote, non-conflicting upstream edit -> rebase + push
 #   AC6  diverged remote, conflicting board edit -> no markers, abort, rc 3
 #   AC7  detached HEAD refused (exit 2)
+#   AC8  diverged remote, rebase applies a duplicate row id (union-merge
+#        shape) -> no push, WARN names the id, exit 3, remote keeps one row
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 BOARD_SH="$HERE/../lib/board/board.sh"
@@ -109,6 +111,36 @@ printf '| ID-5 | detached row | x | queued |\n' >> "$WORK/r1/_meta/BACKLOG.md"
 out="$(bash "$BOARD_SH" publish --backlog-file "$WORK/r1/_meta/BACKLOG.md" 2>&1)"; rc=$?
 [ "$rc" -eq 2 ] && ok "detached HEAD exits 2" || bad "rc=$rc (want 2)"
 { trap '' PIPE; echo "$out" 2>/dev/null || :; } | grep -q "detached HEAD" && ok "refusal names detached HEAD" || bad "no detached-HEAD message: $out"
+
+echo "case AC8 (rebase lands a duplicate row id -> no push, WARN, exit 3):"
+mkrepo "$WORK/r6"
+# the ops-toolkit convention this bug depends on: BACKLOG.md marked
+# merge=union so two independent append-only edits blend instead of
+# conflicting -- without it, two rows added at the same spot just conflict
+# (that shape is already covered by AC6) and never reach the duplicate scan.
+printf '_meta/BACKLOG.md merge=union\n' > "$WORK/r6/.gitattributes"
+git -C "$WORK/r6" -c user.email=t@t -c user.name=t add .gitattributes
+git -C "$WORK/r6" -c user.email=t@t -c user.name=t commit -qm "chore: union-merge the board"
+git -C "$WORK/r6" push -q origin main
+git clone -q -b main "$WORK/r6.remote" "$WORK/r6b" && cd "$WORK/r6b" || bad "clone failed"
+printf '| ID-2 | first mint | x | queued |\n' >> "$WORK/r6/_meta/BACKLOG.md"
+out="$(cd "$WORK/r6" && GIT_AUTHOR_EMAIL=t@t GIT_AUTHOR_NAME=t GIT_COMMITTER_EMAIL=t@t GIT_COMMITTER_NAME=t \
+  bash "$BOARD_SH" publish --backlog-file "$WORK/r6/_meta/BACKLOG.md" 2>&1)"; rc=$?
+[ "$rc" -eq 0 ] && ok "setup: first clone mints ID-2 and publishes cleanly" || bad "setup: r6 first publish rc=$rc: $out"
+printf '| ID-2 | second mint collision | y | queued |\n' >> "$WORK/r6b/_meta/BACKLOG.md"
+out="$(cd "$WORK/r6b" && GIT_AUTHOR_EMAIL=t@t GIT_AUTHOR_NAME=t GIT_COMMITTER_EMAIL=t@t GIT_COMMITTER_NAME=t \
+  bash "$BOARD_SH" publish --backlog-file "$WORK/r6b/_meta/BACKLOG.md" 2>&1)"; rc=$?
+[ "$rc" -eq 3 ] && ok "duplicate row id after rebase exits 3" || bad "rc=$rc (want 3): $out"
+{ trap '' PIPE; echo "$out" 2>/dev/null || :; } | grep -q "WARN duplicate row ids after rebase: ID-2" \
+  && ok "warning names the duplicated id" || bad "no duplicate-id warning: $out"
+[ "$(git -C "$WORK/r6b" log --format=%s -1 | grep -c 'chore(board)')" -eq 1 ] \
+  && ok "local commit kept (not lost, just not pushed)" || bad "local publish commit missing after the WARN"
+[ "$(git -C "$WORK/r6.remote" log --format=%s main | grep -c 'chore(board)')" -eq 1 ] \
+  && ok "remote still holds only the first clone's publish commit" || bad "remote gained a second publish commit"
+[ "$(git -C "$WORK/r6.remote" show main:_meta/BACKLOG.md | grep -c '^| ID-2 |')" -eq 1 ] \
+  && ok "remote board still has exactly one ID-2 row" || bad "remote board row count for ID-2 is wrong"
+[ "$(grep -c '^| ID-2 |' "$WORK/r6b/_meta/BACKLOG.md")" -eq 2 ] \
+  && ok "local working copy shows the collision the rebase applied cleanly" || bad "local file did not reproduce the collision"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"

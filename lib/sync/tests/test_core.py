@@ -9,6 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import sync_core  # noqa: E402
 from sync_core import (  # noqa: E402
     Plan,
     apply_board,
@@ -183,6 +184,47 @@ def test_history_max_id_returns_zero_outside_a_repo():
         board.write_text(HEADER + "| ID-5 | row | notes | queued |\n")
         assert history_max_id(board) == 0
         assert next_id(board.read_text(), "ID", board) == 6
+
+
+def test_history_max_id_fetches_origin_once_per_repo(monkeypatch):
+    """ID-835: history_max_id must fetch origin before reading history, so a
+    clone that never fetched still sees an id another session minted straight
+    to origin. next_id can call history_max_id once per row it mints in one
+    sync run, so the fetch must be deduped per repo, not re-run per call."""
+    sync_core._fetched_repos.clear()
+    real_run = subprocess.run
+    calls = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(cmd)
+        if cmd[:2] == ["git", "fetch"]:
+            return subprocess.CompletedProcess(cmd, 0)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with tempfile.TemporaryDirectory() as tmp:
+        board = _board_repo(tmp, [1])
+        history_max_id(board)
+        history_max_id(board)
+    fetches = [c for c in calls if c[:2] == ["git", "fetch"]]
+    assert len(fetches) == 1
+
+
+def test_history_max_id_survives_a_failed_fetch(monkeypatch):
+    """Offline runs (no network, no remote) must still answer from whatever
+    history the clone already holds, not raise or silently return 0."""
+    sync_core._fetched_repos.clear()
+    real_run = subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        if cmd[:2] == ["git", "fetch"]:
+            raise subprocess.SubprocessError("no network")
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with tempfile.TemporaryDirectory() as tmp:
+        board = _board_repo(tmp, [820, 821])
+        assert history_max_id(board) == 821
 
 
 def test_apply_board_mint_clears_ids_only_history_holds():
