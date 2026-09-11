@@ -92,6 +92,55 @@ Impact: SG-02 and SG-04 dispatch under these rules. `HANDOFF.md` is machine-loca
 `.gitignore` carries `HANDOFF*.md`, so this entry is the durable copy of the same material.
 Open questions: none new.
 
+## 2026-09-12 01:30 The plugin loader is flat: one dispatcher skill, not three
+
+Context: the goal file's literal paths are `skills/understand/{explain,quiz,paydown}/SKILL.md`,
+two levels under `skills/`. A fresh-context check against Claude Code's Skills docs and
+anthropics/claude-code#16438 confirmed the plugin loader only discovers a direct child of
+`skills/`; anything nested one level deeper is invisible to it. The goal's own Proof line
+also names the seam value literally: `understand.teach = "understand"`, a single word
+matching no individual sub-skill name.
+Decision: `learning-kit/skills/understand/SKILL.md` is the one loader-discoverable skill
+(its name matches the seam value exactly). It dispatches to the three sibling bodies by
+reading them; they keep the exact paths and `SKILL.md` filename the goal names, as pedagogy
+references this dispatcher reads rather than skills Claude Code independently discovers.
+Why: this is the only shape that satisfies both hard constraints at once (the literal file
+paths the Proof checks for, and a seam value that actually resolves to something the Skill
+tool can invoke) without abandoning either.
+Alternatives: three flat `understand-explain`/`understand-quiz`/`understand-paydown`
+skill dirs (the documented workaround) -- rejected, it would make `understand.teach =
+"understand"` unresolvable to any of the three, and #560's `_teacher()` resolver returns
+one name for every call site (explain and quiz share the same seam key). A single
+`skills/understand/SKILL.md` with no sibling files, folding all three pedagogies inline --
+rejected, it would not produce the three `Moved-from:`-carrying files the goal's Proof
+line names by path.
+Impact: `learning-kit#9`'s `tests/test_understand_skills.sh` asserts the dispatcher is the
+direct child of `skills/` and names all three sibling paths, so a future edit that
+flattens or nests the wrong file fails loudly.
+Open questions: whether Claude Code ships nested-skill discovery (anthropics/claude-code#16438)
+before SG-05 (docs-and-terminus) runs; if it does, the dispatcher indirection becomes
+optional but the file paths need no further change.
+
+## 2026-09-12 01:35 SG-01 had already finished dwarves-kit's half of SG-02
+
+Context: SG-02's Outcome text for dwarves-kit ("`commands/explain.md` and
+`commands/quiz-gate.md` keep their names and their triggers and become gate-side entry
+points... invoke whatever `understand.teach` names") describes exactly what SG-01
+(`bfd1334`) already built while wiring the seam itself: both commands were already thin,
+named no consumer skill, and `lib/gate/quiz-gate.sh`'s engine already resolved the seam
+via `_teacher()`.
+Decision: `refactor/thin-understand-commands` carries no dwarves-kit behavioral diff. It
+adds `docs/verification/thin-understand-commands.md` (a run table confirming
+`test-explain.sh`, `test-quiz-gate.sh`, and `boundary-lint.sh` are still green) plus this
+implementation-notes delta, gated through `proof-ledger.sh override` per the docs-only
+path.
+Why: re-thinning already-thin files would be a no-op edit for its own sake; the actual
+proof owed here is that the state SG-01 built is still correct now that learning-kit has
+shipped a real teacher behind the seam, which the run table demonstrates.
+Impact: none to dwarves-kit code. The "routing assertions #554 retired" line in the SG-02
+goal's Proof now lives in `learning-kit#9`'s `tests/test_understand_skills.sh`.
+Open questions: none new.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
