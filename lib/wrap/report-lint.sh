@@ -36,6 +36,17 @@ PERMISSION_RE='say (the word|go)|just say|let me know if|want me to|shall i |sho
 # but not always wrong (a merge really can be blocked on a human), so this is a WARN.
 SELF_RUNNABLE_RE='gh pr merge|gh workflow run|gh run (watch|rerun)|git (pull|push|merge)\b|git branch -[dD]|git worktree remove|chezmoi apply|npm (test|install)\b|pytest\b'
 
+# Targets that hold PROSE. `bin/precedent` indexes memory notes and research files as hit
+# kinds, so a step 7b whose top hit is a note turns a build into a write and still reports
+# `ENHANCE <repo> .claude/memory/foo.md`, which satisfies every other rule here. The word
+# `memory` as its own path segment covers `.claude/memory/` and the bare `MEMORY.md` index,
+# and the phrase "machine memory" that reports use for the per-project store.
+PROSE_TARGET_RE='(^|/|[[:space:]])memory([/.]|[[:space:]]|$)|(^|/|[[:space:]])research/|_meta/handoffs/'
+
+# The escape hatch for a session where no mechanism was possible. The reason must be long
+# enough to be a reason: an empty or one-word token would silence the rule for free.
+PROSE_ONLY_MIN_REASON=12
+
 # Markers that name a real blocker. Their presence downgrades a SELF_RUNNABLE warn to clean:
 # the item is not asking permission, it is reporting what stands in the way.
 BLOCKER_RE='blocked (on|by)|waiting on|needs? (your|a) (password|credential|2fa|approval from|signature)|only you can|requires (a )?human|cannot (run|reach|access)|no (credential|access|token)|fails? with|permission denied'
@@ -113,6 +124,8 @@ else
   # the rule below).
   built_inline=""
   built_bullets=()
+  built_items=()      # every candidate, inline or bullet, for the prose rule below
+  prose_only_line=""  # the PROSE-ONLY escape, wherever it appeared
   _b_state=0   # 0 = looking for the header, 1 = header seen, scanning bullets
   while IFS= read -r _b_line; do
     if [ "$_b_state" = 0 ]; then
@@ -147,6 +160,11 @@ else
     _b_idx=0
     for _b_item in "${built_bullets[@]}"; do
       _b_idx=$((_b_idx + 1))
+      # The escape hatch takes its own bullet. It is not a candidate, so it owes no token.
+      case "$_b_item" in
+        PROSE-ONLY:*) prose_only_line="$_b_item"; continue ;;
+      esac
+      built_items+=("$_b_item")
       _b_item_lower="$(printf '%s' "$_b_item" | tr '[:upper:]' '[:lower:]')"
       case "$_b_item_lower" in
         *enhance*|*new\ \(*) : ;;
@@ -171,12 +189,52 @@ else
         echo "  ${built_inline}" >&2
         findings=$((findings + 1)) ;;
       nothing*|skipped:*) : ;;
-      *enhance*|*new\ \(*) : ;;
+      *enhance*|*new\ \(*)
+        # INLINE carries the escape appended after the candidate, on the same line.
+        case "$built_inline" in
+          *PROSE-ONLY:*) prose_only_line="PROSE-ONLY:$(printf '%s' "$built_inline" | sed 's/^.*PROSE-ONLY://')" ;;
+        esac
+        built_items+=("$built_inline") ;;
       *)
         echo "line 0: '**Built:**' names something built with no ENHANCE <home> or NEW (precedent: ...) token; name the existing tool it joins, or the precedent miss" >&2
         echo "  ${built_inline}" >&2
         findings=$((findings + 1)) ;;
     esac
+  fi
+
+  # A precedent hit on a NOTE is not a build. `bin/precedent` indexes memory notes and
+  # research files as hit kinds, so when the top hit is prose the step silently turns a build
+  # into a write, and the ENHANCE token above accepts it. That happened on 2026-09-10: a
+  # procedure run six times by hand, which had already cost a bad production deploy, produced
+  # two memory notes and one research note and zero mechanism. The same precedent output also
+  # named the code that owned the procedure, one line below the note, and the real fix landed
+  # in that file later. So a prose home and a code home in one hit list resolve to the code
+  # home. This runs only on a Built that already passed the per-item token rule, so it judges
+  # well formed items only.
+  if [ "${#built_items[@]}" -gt 0 ]; then
+    prose_count=0
+    for _p_item in "${built_items[@]}"; do
+      _p_target="$(printf '%s' "$_p_item" \
+        | sed -E 's/^.*NEW \(precedent: [^)]*\): *//; s/^.*ENHANCE +//; s/PROSE-ONLY:.*$//; s/[[:space:]]*\([^)]*\)[[:space:]]*$//' \
+        | tr '[:upper:]' '[:lower:]')"
+      if printf '%s' "$_p_target" | grep -qE "$PROSE_TARGET_RE"; then
+        prose_count=$((prose_count + 1))
+      fi
+    done
+    if [ "$prose_count" -eq "${#built_items[@]}" ]; then
+      prose_reason=""
+      case "$prose_only_line" in
+        PROSE-ONLY:*)
+          prose_reason="$(printf '%s' "${prose_only_line#PROSE-ONLY:}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')" ;;
+      esac
+      if [ "${#prose_reason}" -lt "$PROSE_ONLY_MIN_REASON" ]; then
+        echo "line 0: every '**Built:**' item targets prose (a memory note, a research file, a handoff); a precedent hit on a note is not a build" >&2
+        echo "  a note is where the lesson goes AFTER a build, never instead of the build" >&2
+        echo "  when precedent returns both a prose home and a code home, the code home wins" >&2
+        echo "  if no mechanism was possible here, say why: add a 'PROSE-ONLY: <reason>' bullet, or append the token to the inline item, with at least ${PROSE_ONLY_MIN_REASON} characters of reason" >&2
+        findings=$((findings + 1))
+      fi
+    fi
   fi
 fi
 
