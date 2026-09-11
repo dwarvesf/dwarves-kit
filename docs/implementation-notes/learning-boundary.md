@@ -126,6 +126,63 @@ Open questions: whether `config get`/`config explain` should gain the operator l
 root-only key is a real question for whoever next touches `lib/config/config.sh`; not decided
 here.
 
+## 2026-09-12 The til privacy gate was asserted, never verified
+
+Context: the goal file's Outcome says "the til privacy gate moves with `knowledge-capture`
+unchanged and stays the only path to a public note," and its Quality bar calls the rule list
+"byte-identical." A fresh-context verifier grepped case-insensitively for "privacy" in both the
+source and the moved copy and got zero hits either place, so neither the build nor the first
+verification pass had actually checked the claim.
+Decision: read the full source body for any strip enforcement under any wording (credentials,
+tokens, account ids, client/NDA details, personal/financial data, embargoed material) before
+concluding anything from the single-word grep. None existed: "Strip ALL conversational
+artifacts" (Step 2) removes chat fluff, not sensitive data, and "Important rules" had a
+content-quality gate and a confirm-before-push rule, neither a data-safety check. Took path (b):
+a real gap, not a wording problem. Added a new `### Step 5.9: Privacy gate` to the moved
+`knowledge-capture/SKILL.md`, sourced from the estate's own til privacy rule (the operator's
+global CLAUDE.md "Privacy gate for `tieubao/til`" line: credentials/secrets, cloud account ids
+tied to billing, client/NDA-bound details, personal financial data, family names/addresses/
+phones, embargoed feature details), plus a suite-visible rule pointing at it so a batch push
+cannot skip it per note.
+Why: this skill is the only path a note takes to a public repo (per the goal's own framing);
+asserting a gate that does not exist is worse than having none, because it reads as already
+handled.
+Alternatives: reword the goal's claim to describe the content-quality gate as if it were the
+privacy gate (rejected -- that gate screens for thinness, not sensitivity, a different axis
+entirely); leave the gap and only fix the goal file's wording (rejected -- the goal's own audit
+path (a)/(b) split says a missing gate is a gap, not a doc problem, when the skill is the sole
+public-write path).
+Impact: `knowledge-capture/SKILL.md` gains Step 5.9 and Important-rules item 7, a real
+behavioral addition at the destination -- NOT a byte-identical carry-over from source, disclosed
+as such in `docs/verification/feat-knowledge-writers.md` (context-kit PR) rather than claimed
+unchanged. No automated body-content check exists yet for Step 5.9 (the suite's per-skill loop
+only checks description-level signals); flagged as an open question below rather than built, to
+keep this fix scoped to what the audit asked for.
+Open questions: whether `tests/test_context_contract.sh` should gain a body-content assertion
+that fails if Step 5.9 is later dropped is a real question for whoever next touches that skill;
+not decided here.
+
+## 2026-09-12 Scattered ids in this sub-goal's own new prose, the second time in this mega-goal
+
+Context: the same audit found `SPEC-249`/`ADR-0036`/`SPEC-001` scattered inline across the two
+moved skills' new root-resolution prose and the shared `knowledge-root.sh` resolver -- the exact
+mistake this mega-goal's SG-01 already paid for once (learning-kit had no lint either), and
+neither context-kit nor learning-kit had a lint that would ever catch it.
+Decision: reworded every inline reference to state the behavior plainly (name the seam,
+`knowledge.root`; describe the fence as "operator or kit-root file only, never a project file,"
+never the spec number that says so), moved every id to one `<!-- provenance: ... -->` footer at
+the bottom of each of the three files, and added `tests/test-no-scattered-ids.sh` to context-kit
+(modelled on dwarves-kit's own zone 5, scoped to `skills/*/SKILL.md`, wired into `tests/all.sh`).
+The audit also turned up one pre-existing hit in `skills/setup/SKILL.md` (predates this
+sub-goal); fixed in the same pass so the new lint starts green.
+Why: a written rule with no lint behind it is advice, not a rule, and this mega-goal had already
+demonstrated that once is not enough to prevent a recurrence.
+Impact: `docs/verification/feat-knowledge-writers.md` carries the lint's negative control
+(planted-id fixture caught; the pre-existing hit caught before the fix, clean after), pasted
+verbatim.
+Open questions: none new; dwarves-kit's own `tests/test-no-scattered-ids.sh` (zones 1-5) is the
+pattern to widen if a THIRD kit in this estate ever needs the same lint.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
