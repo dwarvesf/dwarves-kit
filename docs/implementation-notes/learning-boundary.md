@@ -62,6 +62,36 @@ Decision: `git fetch origin master`, re-ran `spec-next.sh next` (returned 285), 
 Why: `spec-next.sh` scans the local checkout's specs, branches, and commit subjects; a stale local view of `origin/master` is exactly the trap `_meta/claude-md-history.md`-adjacent memory already names for backlog IDs, and the same class of bug applies to SPEC numbers.
 Impact: none beyond the rename; caught before commit by `bash tests/test-meta.sh`, not by hand-inspection.
 
+## 2026-09-11 18:40 Five lessons from the SG-01 run
+
+Context: SG-01 merged as `bfd1334`, but it cost two agent deaths, four merges of master, one
+bad verification, and two CI failures. The mechanics cost more than the code did.
+Decision: record the five as standing practice for SG-02 onward.
+
+1. **Freeze the branch head before dispatching a verifier.** A recheck ran while the sub-goal
+   agent still held the worktree open. It reported four failing suites that were not the
+   recorded three, one of them transient and one caused by an uncommitted fence. Push, stop
+   editing, then dispatch.
+2. **A sub-goal agent can die holding finished work.** This one was killed twice, once by a
+   session limit and once by session teardown. Both times every change sat uncommitted and
+   unpushed in its worktree. Check the worktree before believing the task landed, and resume
+   the agent by its id rather than respawning it on the same branch.
+3. **Give "pre-existing failure" one check.** An agent called a failing suite pre-existing.
+   The suite did fail on master, but the cause was a path this mega-goal had itself introduced
+   in `POINTER_PROMPT.md` one sub-goal earlier.
+4. **A rename outruns a cleanup that touched only the old path.** `git mv bin/learn
+   bin/reflect` carried the old header forward. Master's id-strip cleaned `bin/learn` alone,
+   so five ids survived in the new file and the zone-4 gate rejected the branch. After any
+   rename, run the lints that cover the destination, not only the source.
+5. **Master moves under a long-lived branch.** This branch merged master four times. Every
+   conflict had one shape: the branch moved `lib/learn` to `lib/reflect` while master edited
+   the old path. Take master's text, then re-apply the rename. Expect the same in SG-02.
+
+Why: each of the five cost a round trip that a written rule prevents.
+Impact: SG-02 and SG-04 dispatch under these rules. `HANDOFF.md` is machine-local, because
+`.gitignore` carries `HANDOFF*.md`, so this entry is the durable copy of the same material.
+Open questions: none new.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
