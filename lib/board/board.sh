@@ -1074,6 +1074,22 @@ cmd_publish() {
     echo "  commit is local, checkout restored, will retry next publish" >&2
     return 3
   fi
+  # ID-835: a rebase can apply cleanly onto a genuine row-id collision instead
+  # of conflicting on it, because consumer boards mark BACKLOG.md
+  # `merge=union` -- two sessions each minting an id from a clone that never
+  # fetched land both rows, silently. `parse_board` then keeps only the FIRST
+  # occurrence per id, so the second row becomes invisible to sync while the
+  # snapshot still maps the id to whichever row minted last, mispairing the
+  # two. Only the post-rebase file can carry this; a clean ff push cannot
+  # introduce a collision the pre-push diff didn't already have.
+  local dup_ids
+  dup_ids="$(grep -oE '^\| [A-Z][A-Z0-9]*-[0-9]+ \|' "$root/$rel" 2>/dev/null \
+    | tr -d '| ' | sort | uniq -d | tr '\n' ' ')"
+  dup_ids="${dup_ids% }"
+  if [ -n "$dup_ids" ]; then
+    echo "board publish: WARN duplicate row ids after rebase: $dup_ids; not pushing, fix by hand" >&2
+    return 3
+  fi
   if "${G[@]}" push --quiet origin "HEAD:refs/heads/$branch" 2>/dev/null; then
     echo "board publish: pushed (after rebase)"
     return 0
