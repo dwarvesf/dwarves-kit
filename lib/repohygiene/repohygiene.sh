@@ -98,6 +98,34 @@ days_since() {
 # one. A file literally named `notes(1).md` would otherwise search for a capture group.
 re_escape() { printf '%s' "$1" | sed 's/[].[\*^$()+?{}|\\]/\\&/g'; }
 
+# The budget numbers a doc line ($1) states ABOUT one log ($2), and no others.
+#
+# A line that names the log and carries a line count is not evidence of a budget for it:
+# one sentence routinely states one file's budget while merely mentioning another. So the
+# line is split into CLAUSES first, a clause must contain the log's name, and only a number
+# inside an `<N> ... lines` phrase in that same clause is read. A digit run sitting loose in
+# the prose is not a budget, whatever else shares its line.
+#
+# The saved RSTART and RLENGTH are load-bearing: the inner match overwrites both, and
+# advancing by the inner values instead of the phrase's re-read the same phrase until the
+# clause ran out, which reported one budget dozens of times.
+budget_numbers_in() {
+  printf '%s\n' "$1" | awk -v base="$2" '{
+    n = split($0, parts, /[;()|]/)
+    for (i = 1; i <= n; i++) {
+      seg = parts[i]
+      if (index(seg, base) == 0) continue
+      s = seg
+      while (match(s, /[0-9][0-9][0-9][0-9]?[0-9]?[^0-9]*lines/)) {
+        st = RSTART; len = RLENGTH
+        phrase = substr(s, st, len)
+        if (match(phrase, /[0-9]+/)) print substr(phrase, RSTART, RLENGTH)
+        s = substr(s, st + len)
+      }
+    }
+  }'
+}
+
 # The output is TSV and its fields carry repo-controlled text: a filename, a commit subject,
 # a quoted line from a repo doc. A newline in a staging filename used to forge an ENTIRE
 # extra row, and a detector-3 FIX row is the one verdict the loop acts on, so a forged row
@@ -505,7 +533,7 @@ detect_misplaced_record() {
 # An append-only log past the budget THE REPO ITSELF documents. A threshold this scanner
 # invented would be an opinion; a threshold quoted from the repo's own prose is evidence.
 detect_log_budget() {
-  local globs g f total month_line month_max month_name srcs src srcline nums total_t month_t quoted nsrc
+  local globs g f total month_line month_max month_name src srcline nums total_t month_t quoted nsrc logbase qualified
   globs="${LOG_GLOBS:-*LAB_LOG.md *INGEST_LOG.md *learned-ledger.md}"
   for g in $globs; do
     while IFS= read -r -d '' f; do
@@ -518,30 +546,40 @@ detect_log_budget() {
       month_max=$(printf '%s' "$month_line" | awk '{print $1+0}')
       month_name=$(printf '%s' "$month_line" | awk '{print $2}')
 
-      # The threshold's source: a line in the repo's own docs that names this log and carries
-      # line counts. Largest number on that line is the whole-file budget, smallest the
-      # per-month one, which is the shape every repo in the estate happens to write.
+      # The threshold's source: a doc line that names this log AND states a budget FOR it.
+      # Naming the log and carrying a line count is NOT enough, because one sentence
+      # routinely states one file's budget while merely mentioning another. A SPEC line
+      # reading `Slim HANDOFF.md to <=100 lines (status-only; journal content stays in
+      # INGEST_LOG)` handed INGEST_LOG a 100-line budget belonging to HANDOFF.md, and two
+      # decisions-table rows handed it a per-month threshold of `0001` scraped out of digit
+      # runs in unrelated prose. Both produced a FIX verdict against a number nobody wrote
+      # about that file. `budget_numbers_in` is the narrowing: the log's name and the
+      # `<N> ... lines` phrase must share one clause, and only the N in that phrase counts.
       #
-      # Every matching line counts, not `head -1`. Taking the first hit in git's path order
-      # let anyone suppress a real finding by adding a doc that sorts earlier and claims a
-      # 99999-line budget, and the scan then reported CLEAN. The STRICTEST budget wins, and
-      # disagreeing sources make the finding UNSURE rather than picking one.
-      srcs=$(git -c core.quotePath=false grep -n -F -- "$(basename "$f" .md)" \
+      # Every qualifying line counts, not `head -1`. Taking the first hit in git's path
+      # order let anyone suppress a real finding by adding a doc that sorts earlier and
+      # claims a 99999-line budget, and the scan then reported CLEAN. The STRICTEST budget
+      # wins. Largest number in a source is its whole-file budget, smallest its per-month
+      # one, which is the shape every repo in the estate happens to write.
+      logbase=$(basename "$f" .md)
+      qualified="$TMP/d4-src"
+      git -c core.quotePath=false grep -n -F -- "$logbase" \
         -- 'CLAUDE.md' 'README.md' 'docs/*.md' '*/CLAUDE.md' '*/README.md' 2>/dev/null \
-        | grep -E '[0-9]{3,5}[^0-9]{0,20}lines')
+        | while IFS= read -r s; do
+            nums=$(budget_numbers_in "${s#*:*:}" "$logbase" | sort -n)
+            [ -n "$nums" ] || continue
+            printf '%s\t%s\t%s\n' "$(printf '%s\n' "$nums" | tail -1)" \
+                                  "$(printf '%s\n' "$nums" | head -1)" "$s"
+          done > "$qualified"
       total_t=""; month_t=""; quoted=""; nsrc=0
-      if [ -n "$srcs" ]; then
-        nsrc=$(printf '%s\n' "$srcs" | wc -l | tr -d ' ')
+      if [ -s "$qualified" ]; then
+        nsrc=$(wc -l < "$qualified" | tr -d ' ')
         # Strictest budget across all sources: the smallest whole-file number any of them
         # states, and the smallest per-month number any of them states.
-        total_t=$(printf '%s\n' "$srcs" | while IFS= read -r s; do
-                    printf '%s' "${s#*:*:}" | grep -oE '[0-9]{3,5}' | sort -n | tail -1
-                  done | sort -n | head -1)
-        month_t=$(printf '%s\n' "$srcs" | while IFS= read -r s; do
-                    printf '%s' "${s#*:*:}" | grep -oE '[0-9]{3,5}' | sort -n | head -1
-                  done | sort -n | head -1)
+        total_t=$(cut -f1 "$qualified" | sort -n | head -1)
+        month_t=$(cut -f2 "$qualified" | sort -n | head -1)
         [ "$month_t" = "$total_t" ] && month_t=""
-        src=$(printf '%s\n' "$srcs" | head -1)
+        src=$(head -1 "$qualified" | cut -f3-)
         srcline="${src#*:*:}"
         quoted="source ${src%%:*}:$(printf '%s' "$src" | cut -d: -f2) \"$(printf '%s' "$srcline" | sed 's/^[[:space:]]*//' | cut -c1-160)\""
         [ "$nsrc" -gt 1 ] && quoted="$quoted (strictest of $nsrc sources stating a budget)"
