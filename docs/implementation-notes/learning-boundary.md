@@ -155,12 +155,13 @@ public-write path).
 Impact: `knowledge-capture/SKILL.md` gains Step 5.9 and Important-rules item 7, a real
 behavioral addition at the destination -- NOT a byte-identical carry-over from source, disclosed
 as such in `docs/verification/feat-knowledge-writers.md` (context-kit PR) rather than claimed
-unchanged. No automated body-content check exists yet for Step 5.9 (the suite's per-skill loop
-only checks description-level signals); flagged as an open question below rather than built, to
-keep this fix scoped to what the audit asked for.
-Open questions: whether `tests/test_context_contract.sh` should gain a body-content assertion
-that fails if Step 5.9 is later dropped is a real question for whoever next touches that skill;
-not decided here.
+unchanged. `tests/test-privacy-gate.sh` (context-kit, added same-day on a precise follow-up spec)
+closes the open question this entry originally left: three read-only assertions (the Step 5.9
+heading exists; the gate body names each of the six privacy categories independently, on a short
+distinctive substring per category; a scratch copy with the gate section mechanically deleted
+fails the identical check), wired into `tests/all.sh`. Verdict pasted in
+`docs/verification/feat-knowledge-writers.md`: `test-privacy-gate: all 8 passed`, including the
+negative control.
 
 ## 2026-09-12 Scattered ids in this sub-goal's own new prose, the second time in this mega-goal
 
