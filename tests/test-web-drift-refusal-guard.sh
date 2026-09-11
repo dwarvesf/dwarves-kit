@@ -23,14 +23,14 @@ _mk() { local d; d="$(mktemp -d)"; TMPS+=("$d"); printf '%s' "$d"; }
 cleanup() { local d; for d in "${TMPS[@]:-}"; do [ -n "$d" ] && rm -rf "$d" 2>/dev/null; done; }
 trap cleanup EXIT
 
-echo "=== web-drift refusal guard (ID-484) ==="
+echo "=== web-drift refusal guard ==="
 
 # ---------------------------------------------------------------------------
 # Extract the guard line: the "test -f _meta/BACKLOG.md ..." statement inside the fenced code
 # block right after the "Refusal guard" heading. A missing extraction is itself a failure (the
 # doc drifted out from under this test), not a silent skip.
 # ---------------------------------------------------------------------------
-GUARD_LINE="$(awk '/Refusal guard \(ID-484\)/{f=1} f && /^   test -f _meta\/BACKLOG\.md/{print; exit}' "$SKILL" | sed -E 's/^[[:space:]]+//')"
+GUARD_LINE="$(awk '/Refusal guard/{f=1} f && /^   test -f _meta\/BACKLOG\.md/{print; exit}' "$SKILL" | sed -E 's/^[[:space:]]+//')"
 
 [ -n "$GUARD_LINE" ] && assert "extracted the guard line from skills/web-drift/SKILL.md" 0 \
   || { assert "extracted the guard line from skills/web-drift/SKILL.md" 1; echo "$PASS/$TOTAL passed, $FAIL failed"; exit 1; }

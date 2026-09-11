@@ -10,7 +10,7 @@ disable-model-invocation: false
 
 Audit a repo's git-tracked `.claude/memory/` store and ship the cleanup as a PR. Core principle: **every verdict cites checkable evidence, and deletions reach main only through a PR merge**, the PR is the operator's approval gate, so the audit itself never needs to ask permission.
 
-This is the judgment half of the kit's memory plane. The mechanical half is `stats memory-sweep` (lib/stats, SPEC-136): a read-only scanner that never writes. This skill consumes its output and is the only path that edits a store, always behind a PR.
+This is the judgment half of the kit's memory plane. The mechanical half is `stats memory-sweep` (lib/stats): a read-only scanner that never writes. This skill consumes its output and is the only path that edits a store, always behind a PR.
 
 ## Process
 

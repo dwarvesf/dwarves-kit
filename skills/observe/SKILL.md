@@ -13,7 +13,7 @@ human will look at it.
 
 ```sh
 python3 lib/bench/dashboard.py stats                 # fleet + money + debt + alerts, one blob
-python3 lib/bench/dashboard.py debt --format json    # cognitive-debt score alone (ADR-0031)
+python3 lib/bench/dashboard.py debt --format json    # cognitive-debt score alone
 python3 lib/bench/dashboard.py allocation --period week --budget N --format json
 ```
 
@@ -33,7 +33,7 @@ mirrors the agent verbs so a terminal session needs nothing from this repo:
 
 ```sh
 forge-tui runs --format json [--repo R] [--lane L] [--misfires] [--low-conformance]
-forge-tui debt --format json                # same ADR-0031 score as the web
+forge-tui debt --format json                # same cognitive-debt score as the web
 forge-tui stats --format json               # fleet numbers
 forge-tui run <rid>                         # replay with the conformance overlay
 bash lib/telemetry/lane-telemetry.sh trace <rid>   # the text run report

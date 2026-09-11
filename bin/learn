@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# bin/learn -- DEPRECATED forwarder (ADR-0036: the subsystem is renamed `reflect`, the system
-# changes from its own telemetry, nobody learns). Kept for ONE release so an existing external
-# caller keeps working; repoint to `bin/reflect`, same verbs, same arguments, same exit codes.
+# bin/learn -- DEPRECATED forwarder. The subsystem is renamed `reflect`: the system
+# changes from its own telemetry, nobody learns. Kept for ONE release so an existing
+# external caller keeps working; repoint to `bin/reflect`, same verbs, same arguments,
+# same exit codes.
 set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "bin/learn: deprecated, use 'bin/reflect <verb>' instead" >&2

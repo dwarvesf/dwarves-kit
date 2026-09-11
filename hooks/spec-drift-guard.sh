@@ -24,11 +24,11 @@ case "$FILE" in
     exit 0 ;;
 esac
 
-# Resolve what to check the new file against (SPEC-005 union rule, reconciled to
-# ADR-0010): the UNION of all non-SHIPPED/PARKED specs in docs/specs/ (a file in
-# ANY active design is "known"), else .gsd/.
+# Resolve what to check the new file against (the union rule, reconciled with the
+# unified spec-location decision): the UNION of all non-SHIPPED/PARKED specs in
+# docs/specs/ (a file in ANY active design is "known"), else .gsd/.
 # Grepping the union (not a single spec) avoids a false-positive storm while more
-# than one spec is open. See docs/specs/SPEC-005.
+# than one spec is open.
 SPEC_SRCS=""
 for F in $(ls docs/specs/SPEC-*.md 2>/dev/null | sort || true); do
   grep -qiE '^Status:[[:space:]]*(SHIPPED|PARKED)' "$F" && continue

@@ -4,7 +4,7 @@
 # Source: Trail of Bits claude-code-config (adapted for dwarves-kit)
 # Exit 2 = block action, stderr = reason shown to Claude
 #
-# SPEC-064: parse-aware, not prose-aware. The original grepped the WHOLE command
+# Parse-aware, not prose-aware. The original grepped the WHOLE command
 # string, so heredoc bodies, quoted prose, and unrelated flags tripped it (five
 # logged false positives on 2026-06-10 alone, including the gate firing on a
 # BACKLOG row's prose that merely DESCRIBED the bug). Now the command is

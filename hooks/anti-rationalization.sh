@@ -50,7 +50,7 @@ for PATTERN in "${PATTERNS[@]}"; do
   fi
 done
 
-# Guess-fix guard (SPEC-013). Backstop for the debug iron law:
+# Guess-fix guard. Backstop for the debug iron law:
 # "no fix without a recorded root cause". Gated so it is silent outside a
 # debug session: it fires ONLY when an active ledger under .claude/debug/
 # still has an empty "## Root cause" AND the response shows a guess-fix smell.
@@ -96,7 +96,7 @@ if [ -d ".claude/debug" ]; then
   fi
 fi
 
-# Phantom-implementation guard (SPEC-014). On a completion claim, block if the
+# Phantom-implementation guard. On a completion claim, block if the
 # uncommitted diff's ADDED lines contain a strong "not implemented" stub marker.
 # Scoped tight (completion claim + added lines + strong markers only) so bare
 # TODO/FIXME and mid-work states never trip it. Source: claudekit self-review.
