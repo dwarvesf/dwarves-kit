@@ -21,7 +21,7 @@
 # purpose: Zone 1 only cares whether an id reaches the terminal (echo/printf), Zone 2 only
 # cares whether a command tells the MODEL to mint an id token; both are stricter shapes than
 # "any id in the file," so lib/ and commands/ still carry plenty of comment-only ids Zone 1/2
-# do not see (lib/ is a future batch; commands/ is Zone 7 below, added its own way). Zones 3
+# do not see (lib/ and commands/ are future batches). Zones 3
 # onward are the general "any non-exempt id" check and are driven by the shared enumerator
 # (`lib/lint/scattered-ids.sh`) so a new zone is one line here, not a new grep.
 #
