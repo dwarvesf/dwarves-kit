@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# premerge.sh -- merge the default branch into the working branch before a PR opens (ID-653).
+# premerge.sh -- merge the default branch into the working branch before a PR opens.
 #
 # GitHub's squash-merge does not honour .gitattributes merge=union. A branch that touched an
 # append-only log (LAB_LOG.md, BACKLOG.md) after the default branch moved can show CONFLICTING

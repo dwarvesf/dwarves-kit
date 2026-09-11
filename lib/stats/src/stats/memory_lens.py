@@ -1,4 +1,4 @@
-"""The memory-verify sweep (SPEC-136): walks every memory STORE (repo `.claude/memory/`,
+"""The memory-verify sweep: walks every memory STORE (repo `.claude/memory/`,
 built-in Claude Code auto-memory `~/.claude/projects/*/memory/`), conservatively extracts
 PATH references out of each note (note scanning), tests them against the LIVE environment,
 and flags `MEMORY.md` index entries with no backing file (index scanning, a separate,
@@ -19,7 +19,7 @@ routinely ordinary prose emphasis (`` `README.md` ``, `` `main` ``) or shell BUI
 keywords `which()` can never find (`trap`, `export`, `const`), producing overwhelming false
 dead-refs even after restricting to multi-token spans. v1 tests PATHS ONLY (home `~/...` and
 absolute paths under a recognized real filesystem root); see `_classify_and_test`'s docstring
-for the full real-corpus-evidence rationale (SPEC-136 DEC-008/DEC-009).
+for the full real-corpus-evidence rationale.
 
 Two consumers read `scan()`'s output: `adapters.read_memories()` (the compact `memories` lens
 row) and `cli.memory_sweep()` (the rich human-facing paydown report). Neither re-scans; both
@@ -173,7 +173,7 @@ def _extract_index_refs(text: str, memory_dir: Path) -> list[MemoryRef]:
     (unambiguous, no repo-root guessing needed). A bullet with NO link at all, when the file
     is a link index, is flagged dead (a "(no linked file)" orphan/tombstone, e.g. Han's own
     "MIGRATED to repo memory: ..." lines) -- an index entry claiming a memory exists with
-    nothing backing it is exactly the signal this sweep exists to surface (SPEC-136 DEC-006);
+    nothing backing it is exactly the signal this sweep exists to surface;
     the sweep PROPOSES, a human confirms or dismisses.
 
     IS-IT-AN-INDEX gate (SPEC-136 DEC-010, a real-corpus precision fix): a MEMORY.md with ZERO
@@ -196,7 +196,7 @@ def _extract_index_refs(text: str, memory_dir: Path) -> list[MemoryRef]:
             has_any_link = True
             parsed.append((s, m.group(2)))
     if not has_any_link:
-        return []  # a prose scratchpad, not a link index -- flag nothing (DEC-010).
+        return []  # a prose scratchpad, not a link index -- flag nothing.
     refs: list[MemoryRef] = []
     for _s, target in parsed:
         if target is None:
@@ -333,7 +333,7 @@ def scan(repo_dir: Path | None = None, projects_root: Path | None = None) -> lis
 
     # (store label, memory dir, git repo root or None -- the repo store is git-tracked, the
     # builtin store is not; see written_ts). No base_dir for relative-path resolution: v1
-    # tests only home/known-root-absolute paths, never a relative path (SPEC-136 DEC-009).
+    # tests only home/known-root-absolute paths, never a relative path.
     stores: list[tuple[str, Path, Path | None]] = []
     repo_store = _discover_repo_store(repo_dir)
     if repo_store is not None:

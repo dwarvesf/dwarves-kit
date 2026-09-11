@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # dispatch-gate.sh -- the disjointness gate + drift guard for /kit:dispatch.
 #
-# The moat that makes bounded cross-goal fan-out safe (ADR-0019, SPEC-032). Pure
+# The moat that makes bounded cross-goal fan-out safe. Pure
 # bash + glob; no binary, no runtime, no scheduler. Two goals run concurrently only
 # when their declared `## Touches` file globs are provably disjoint; any pair the gate
 # cannot PROVE disjoint is serialized (DEC-008, conservative prove-or-serialize). The
@@ -28,7 +28,7 @@ set -euo pipefail
 # Resolve the kit root (this file lives in <root>/lib/).
 GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT_ROOT="$(cd "$GATE_DIR/../.." && pwd)"  # repo root = two levels above lib/<subsystem>/
-WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives in docs/ (SPEC-185); root WORKFLOW.md is a thin stub
+WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives in docs/; root WORKFLOW.md is a thin stub
 
 # --- prefix extraction ------------------------------------------------------
 
@@ -37,7 +37,7 @@ WORKFLOW="${DISPATCH_GATE_WORKFLOW:-$KIT_ROOT/docs/WORKFLOW.md}"  # bulk lives i
 # `**/x`, `a/*.ext`, a brace glob) -> the glob verbatim with a leading "?" marker so
 # callers treat it as unprovable (forces conservative overlap). This is the single
 # source for the prefix rule, shared by gate_touches (spec `## Touches` lists) and
-# lib/goal/goal-registry.sh (cross-session CLI globs). Keep them on one rule (ID-029).
+# lib/goal/goal-registry.sh (cross-session CLI globs). Keep them on one rule.
 gate_normalize_glob() {
   local g="$1"
   if printf '%s' "$g" | grep -qE '^[A-Za-z0-9._/-]+/\*\*$'; then
@@ -111,7 +111,7 @@ gate_disjoint() {
 # --- parallel-safe set + wait-queue -----------------------------------------
 # Greedy: walk specs in order; a spec is PARALLEL if it is disjoint from every spec
 # already admitted to the parallel set, else it WAITs on the first admitted spec it
-# overlaps. Over-serializing is safe-but-slower; merges are human-gated (DEC-008).
+# overlaps. Over-serializing is safe-but-slower; merges are human-gated.
 gate_plan() {
   local specs=("$@")
   local admitted=()

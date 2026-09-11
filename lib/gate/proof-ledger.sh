@@ -35,10 +35,10 @@ set -uo pipefail
 
 PROOF_LEDGER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_ROOT="$(cd "$PROOF_LEDGER_DIR/.." && pwd)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
-# Durable run-telemetry root (SPEC-097): resolve + one-time additive migration.
+# Durable run-telemetry root: resolve + one-time additive migration.
 # shellcheck source=lib/telemetry/kit-log-dir.sh
 source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-log-dir.sh missing or unreadable" >&2; exit 1; }
-# The ONE append substrate (SPEC-182): the override write routes through ledger_append.
+# The ONE append substrate: the override write routes through ledger_append.
 # shellcheck source=lib/ledger/ledger.sh
 source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missing or unreadable" >&2; exit 1; }
 # The config-layer resolver (SPEC-186 [ledger] wiring): the delivery-ratio thresholds below
@@ -172,7 +172,7 @@ _fresh_proof_files() {
   } | sort -u | grep -E '(^|/)docs/verification/.+\.md$|(^|/)proof-of-done\.md$' | grep -v '/README\.md$' || true
 }
 
-# Repo identity for override scoping (ID-299). The override log is machine-local and now
+# Repo identity for override scoping. The override log is machine-local and now
 # keys each entry by repo+slug, so a `backlog-reconcile` override logged in one repo cannot
 # short-circuit the ship-gate for the SAME slug in an unrelated repo (the family-office ->
 # console-labs collision that hid a real proof). Repo id = the git COMMON dir's parent (the
@@ -224,7 +224,7 @@ override() {
   raw="${1:-}"; shift 2>/dev/null || { echo "usage: override <slug> <reason>" >&2; return 64; }
   reason="${*:-}"; slug="$(slugify "$raw")"
   [ -n "$slug" ] && [ -n "$reason" ] || { echo "usage: override <slug> <reason>" >&2; return 64; }
-  # CONTRACT (ID-299): the override is scoped to the repo it is logged FROM, so run it from
+  # CONTRACT: the override is scoped to the repo it is logged FROM, so run it from
   # inside that repo's tree. Refuse when cwd is not a git repo, rather than log a cwd-keyed
   # entry that will never match a push (review: the write side must not silently no-op). This
   # is the write twin of check()'s explicit-$root read; it also closes the cwd-ambiguity class

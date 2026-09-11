@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# goal-registry.sh -- the cross-session running-goal registry (ADR-0022, SPEC-036).
+# goal-registry.sh -- the cross-session running-goal registry.
 #
 # The substrate that lets ONE operator run several Claude sessions on ONE machine
 # (one goal per session) without the goals colliding, and lets a human see every
 # running goal in one place. It is the cross-session complement to /kit:dispatch's
-# single-lead in-session fan-out (SPEC-032): there is no shared lead across sessions,
+# single-lead in-session fan-out: there is no shared lead across sessions,
 # so the disjointness moat and the monitor both move onto disk.
 #
 # It RECORDS and COMPARES; it never launches a session, sequences goals, or merges.

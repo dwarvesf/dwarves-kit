@@ -195,7 +195,7 @@ def resolve_project_dirs(slug: str):
 # turn is exactly where a pasted token or an "ignore previous instructions" line lives. Same
 # two guards the whathas digest carries: secret shapes to [redacted], a DATA marker. That
 # digest now forwards to `precedent find --surface inventory`, so it holds no copy of its own.
-# Widened per SPEC-245 review finding 12 (ID-642), see lib/precedent/inventory.py for the
+# Widened per SPEC-245 review finding 12, see lib/precedent/inventory.py for the
 # per-shape rationale; the pattern string must stay byte-equal (tests/test-precedent.sh).
 SECRET_SHAPE_RE = re.compile(
     r"op://[^\s]+|sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{20,}|ops_[A-Za-z0-9_-]{20,}"

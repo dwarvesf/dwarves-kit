@@ -37,7 +37,7 @@
 set -euo pipefail
 
 # pwd -P (physical): when invoked through a symlinked install dir (~/.claude/dwarves-kit/lib),
-# resolve to the real repo so ../docs/verification/task-types.md still loads (SPEC-045).
+# resolve to the real repo so ../docs/verification/task-types.md still loads.
 PROOF_GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 LIB_ROOT="$(cd "$PROOF_GATE_DIR/.." && pwd -P)"  # the lib/ dir; cross-subsystem siblings resolve as "$LIB_ROOT/<subsystem>/<file>"
 
@@ -61,7 +61,7 @@ proof_class() {
     echo stateful; return 0
   fi
 
-  # 3. registry default for the classified type (SPEC-071 / ID-061): a doc task is
+  # 3. registry default for the classified type: a doc task is
   # inert by its own registry row; the blanket behavioral default was overriding it.
   # Deliberate side effect (reviewed): migration/incident/operate now floor at
   # stateful and planning/learning at inert even without step-2 keywords; the

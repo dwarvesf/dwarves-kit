@@ -23,10 +23,10 @@ heredocs, one JSON object per line -- the real shape confirmed by probing this m
 bracket-shape confirmed against the real `~/.cache/claude-secret-guard.log`), and (for the
 digest bridge test) a `kit_gates` run-ledger + a generated git repo, same precedent as
 `test-defect-correlation.sh`/`test-deviation-rate.sh`/`test-anomalies-advisor.sh`
-(SPEC-132 DEC-005).
+.
 
 **A real Build-time bug was found and fixed, not anticipated by the spec's own field
-whitelist** (SPEC-135 DEC-007): the first pass only scanned `content[]` on `type=="assistant"`
+whitelist**: the first pass only scanned `content[]` on `type=="assistant"`
 lines, so `error_count` silently stayed 0 across the ENTIRE real corpus -- confirmed via a real
 smoke run (`total_errors: 0` over 6706 sessions), despite an earlier design-time probe of one
 file alone finding 37 `is_error: true` blocks. Root-caused: Claude Code synthesizes the tool

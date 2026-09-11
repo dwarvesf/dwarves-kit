@@ -24,11 +24,11 @@
 #     --dry-run       list which megas WOULD launch (preflight only; NO send-keys, no journal run)
 #     --max-megas N   stop after N launch attempts this run
 #     --journal PATH  override the journal file
-#     --ready         open a NORMAL PR instead of the unattended draft default (SPEC-224); the
+#     --ready         open a NORMAL PR instead of the unattended draft default; the
 #                     escape hatch mirroring OpenHands' model-overridable draft=False.
-#     --push-only     the run pushes its branch and opens no PR at all (ID-472); use on a runner
+#     --push-only     the run pushes its branch and opens no PR at all; use on a runner
 #                     host with no `gh` credentials. Overrides --ready.
-#     --sanitize-prompt  treat the pointer body as UNTRUSTED (SPEC-223): run it through
+#     --sanitize-prompt  treat the pointer body as UNTRUSTED: run it through
 #                     `sanitize_cell`, prepend the XPIA preamble, and gate the row if the run
 #                     wrote a protected path. Implied by `--from-boards`; the watcher passes it
 #                     explicitly for its own generated plan. A hand-authored tsv without the flag
@@ -49,7 +49,7 @@
 #                            below); a hand-authored tsv is allow-list-exempt by design (operator
 #                            authorship IS the trust boundary for that path)
 #
-# RUNAWAY GUARDS (SPEC-221). Three per-slug sidecar files under <log-dir>/queue-runs/, each with
+# RUNAWAY GUARDS. Three per-slug sidecar files under <log-dir>/queue-runs/, each with
 # exactly ONE writer: `<slug>.beat` (this conductor touches it every poll; its mtime IS the
 # liveness signal and its PRESENCE is the in-flight claim), `<slug>.status` (the RUN writes it;
 # carries the explicit EXIT_SIGNAL line), `<slug>.guard` (counters + timers, key=value). The
@@ -127,7 +127,7 @@ esac
 # hand-authored tsv is exempt by design: the OPERATOR authored it, which IS the trust boundary).
 QUEUE_ALLOWED_POINTER_GLOB="${QUEUE_ALLOWED_POINTER_GLOB:-_meta/megagoals/* .claude/goals/*}"
 
-# The untrusted-input pass (SPEC-223). Sourced, not re-implemented, so `watch-board.sh` (which
+# The untrusted-input pass. Sourced, not re-implemented, so `watch-board.sh` (which
 # sources this file) gets the same one. Fail loudly if it is missing: this launcher drives an
 # unattended `--dangerously-skip-permissions` session, and a silently absent sanitizer would look
 # exactly like a sanitized run.
@@ -140,7 +140,7 @@ fi
 # 0 = the shipped operator-authored path (pointer body typed verbatim). 1 = board-sourced.
 QUEUE_SANITIZE_PROMPT="${QUEUE_SANITIZE_PROMPT:-0}"
 
-# ---- runaway-guard thresholds (SPEC-221) -------------------------------------------------------
+# ---- runaway-guard thresholds -------------------------------------------------------
 # Re-derived for THIS kit's clocks, not copied from the donor: the beat interval here is
 # QUEUE_POLL_SECS (15s, vs the donor's 30s) and the per-row ceiling is QUEUE_TIMEOUT_SECS (2h, vs
 # their hours-long stage budget). So the short threshold is tighter in beat-multiples and the long
@@ -158,7 +158,7 @@ QUEUE_SAMEERROR_TRIP="${QUEUE_SAMEERROR_TRIP:-5}"
 QUEUE_RETRY_JITTER_MIN="${QUEUE_RETRY_JITTER_MIN:-5}"
 QUEUE_RETRY_JITTER_SPAN="${QUEUE_RETRY_JITTER_SPAN:-11}"
 
-# ---- cheap guardrails (SPEC-224) ---------------------------------------------------------------
+# ---- cheap guardrails ---------------------------------------------------------------
 # Two wins that ride channels SPEC-221 already built. Both default OFF-or-safe, so the shipped
 # overnight behavior is byte-identical until an operator opts in.
 #   QUEUE_PR_READY             0 = draft-PR-by-default on this unattended path (the queue is always
@@ -189,7 +189,7 @@ _say()  { printf '%s\n' "$*"; }
 _warn() { printf '%s\n' "$*" >&2; }
 _now()  { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# ---- per-slug sidecars (SPEC-221) --------------------------------------------------------------
+# ---- per-slug sidecars --------------------------------------------------------------
 # Portable file mtime in epoch seconds. GNU `stat -c` is tried FIRST because it errors cleanly on
 # BSD/macOS so the `stat -f` fallback runs there; the reverse order is unsafe (GNU `stat -f`
 # SUCCEEDS with filesystem text, starving the fallback and poisoning the arithmetic). Same shape
@@ -250,7 +250,7 @@ _guard_num() {  # slug key
   case "$v" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$v" ;; esac
 }
 
-# ---- the explicit exit signal (SPEC-221) -------------------------------------------------------
+# ---- the explicit exit signal -------------------------------------------------------
 # `<slug>.status` is written BY THE RUN. Read one key's value, first occurrence wins.
 _status_get() {  # slug key
   local f; f=$(_run_file "$1" status) || return 0
@@ -322,7 +322,7 @@ _journal_append() {  # slug verdict reason
   printf '%s\t%s\t%s\t%s\n' "$(_now)" "$1" "$2" "$reason" >> "$QUEUE_JOURNAL"
 }
 
-# ---- wait: block until a slug reaches a terminal state (ID-470) -------------------------------
+# ---- wait: block until a slug reaches a terminal state -------------------------------
 # Field-exact count of TERMINAL journal rows for <slug> (col2==slug). awk, not `grep -c`: a
 # grep count mis-handles a final line without a trailing newline and can false-match the slug in
 # another row's reason text. 0 when the journal is absent.
@@ -755,7 +755,7 @@ _pointer_allowlist_reason() {  # repo pointer
   printf 'pointer "%s" not allow-listed (want one of: %s)' "$rel" "$QUEUE_ALLOWED_POINTER_GLOB"
 }
 
-# ---- circuit breaker (SPEC-221) ----------------------------------------------------------------
+# ---- circuit breaker ----------------------------------------------------------------
 # The FOUR no-progress escape hatches, ported because git-diff-only stall detection produces false
 # stalls and that is precisely the failure this guard must not have.
 #
@@ -769,7 +769,7 @@ _pointer_allowlist_reason() {  # repo pointer
 # read `<slug>.status`, which the RUN itself writes. If a self-report could reset the STALL
 # counter, any run that emits `FILES_CHANGED: 1` (or `QUESTION: true`) on every attempt would never
 # accrue a stall, never back off, and never quarantine: the guard's central promise, opted out of
-# by the exact population most likely to need it, whether through a hostile Notes cell (ID-459) or
+# by the exact population most likely to need it, whether through a hostile Notes cell or
 # an agent that merely over-reports itself. So self-report may calm the BREAKER, and only a real
 # repo delta may clear the STALL ladder.
 _progress_evidence() {  # slug repo head-before
@@ -869,7 +869,7 @@ _schedule_retry() {  # slug stall-count
   _guard_set "$slug" retry_after $((now + mins * 60))
 }
 
-# ---- protected paths (SPEC-223) ----------------------------------------------------------------
+# ---- protected paths ----------------------------------------------------------------
 # Print a reason if the run touched a path an unattended run may not write, else nothing.
 #
 # DETECTION, NOT PREVENTION, and the distinction is the whole honest claim: the launched session
@@ -1028,7 +1028,7 @@ main() {
   local cmd="${1:-}"; shift 2>/dev/null || true
   case "$cmd" in
     run)   cmd_run "$@" ;;
-    # The backlog watcher (SPEC-217): a filter that turns `#auto`-marked queued board rows into
+    # The backlog watcher: a filter that turns `#auto`-marked queued board rows into
     # the same TSV `run` above consumes. It owns its own flags, so this is a forward, not a wrapper.
     watch) exec bash "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/watch-board.sh" "$@" ;;
     wait)  cmd_wait "$@" ;;

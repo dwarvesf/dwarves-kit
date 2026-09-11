@@ -270,14 +270,14 @@ tools/ledger-observatory/**
   assumption, scope, solution-design) found no blocking issues: no auth/secret/injection surface (pure
   local read of `.log` files + a static SQL aggregation, no untrusted-input SQL interpolation); failure
   modes table already covers malformed input and empty-source; tasks are each single-file/narrow-scope
-  and atomic; the FIFO-pairing assumption (DEC-002) is stated explicitly, not hidden.
+  and atomic; the FIFO-pairing assumption is stated explicitly, not hidden.
 
 ## Amendments
 (none)
 
 ## Review
 Self-review via `/kit:spec-validate` (6-reviewer pass), 2026-07-04. Verdict: APPROVED after the
-Reviewer-6 Design-section fix (DEC-004). Status flipped DRAFT -> VALIDATED.
+Reviewer-6 Design-section fix. Status flipped DRAFT -> VALIDATED.
 
 ## Open questions
 (none)

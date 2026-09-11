@@ -1,8 +1,8 @@
 # SPEC-004, Pull-mode Notion Task Board intake
 
 Status: VALIDATED 2026-08-18. Implements dwarves-kit board row ID-479. Extends
-the SPEC-001 engine with a fourth posture beside the two-way mesh (SPEC-001),
-the one-way create push (SPEC-003), and the cockpit channel (SPEC-002). It
+the SPEC-001 engine with a fourth posture beside the two-way mesh,
+the one-way create push, and the cockpit channel. It
 modifies none of them.
 
 Lane: full. Type: spec-feature.
@@ -24,9 +24,9 @@ onward, so the standalone cron can retire.
 
 The three existing postures cannot serve this:
 
-- `NotionSource` (SPEC-001) is two-way and hub-wins, so it would write status,
+- `NotionSource` is two-way and hub-wins, so it would write status,
   title, and notes back onto the team's Task Board. The Task Board is human-only.
-- `NotionTaskBoardSource` (SPEC-003) points at the same database but is a
+- `NotionTaskBoardSource` points at the same database but is a
   write-only sink; its `read()` returns `[]` by contract.
 - Neither carries the Task Board's `Agent Queue` filter, and neither fences the
   `Notes` field as untrusted content.

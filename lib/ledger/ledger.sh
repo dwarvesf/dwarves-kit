@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ledger.sh -- the kit's ONE append substrate (SPEC-182, kit-modularity SG-02).
+# ledger.sh -- the kit's ONE append substrate.
 #
 # WHY: row-append + root-location used to be re-implemented in gate-ledger.sh,
 # proof-ledger.sh, and any other harness-internal writer. This is the single place both
@@ -24,7 +24,7 @@
 [ -n "${_KIT_LEDGER_SOURCED:-}" ] && return 0 2>/dev/null || true
 _KIT_LEDGER_SOURCED=1
 
-# Resolve LIB_ROOT from this script's own location (the anti-alias mechanism, SG-01): this
+# Resolve LIB_ROOT from this script's own location (the anti-alias mechanism): this
 # file is lib/ledger/ledger.sh, so LIB_ROOT is its parent's parent.
 _LEDGER_SELF="${BASH_SOURCE[0]}"
 LIB_ROOT="$(cd "$(dirname "$_LEDGER_SELF")/.." && pwd)"

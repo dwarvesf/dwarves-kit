@@ -1,4 +1,4 @@
-# Proof of done: ledger-observatory feature `etl-cli` (SG-02)
+# Proof of done: ledger-observatory feature `etl-cli`
 
 > Per-feature record. The canonical multi-feature index is
 > [`../proof-of-done.md`](../proof-of-done.md); this file is its `etl-cli` feature detail.
@@ -15,7 +15,7 @@
 (kit pipe-log via `$DWARVES_KIT_LOG_DIR/runs/`, a generated tide `state.sqlite`, synthetic
 tg-cleanup json in BOTH shapes, a fixture `learned-ledger.md`), points every source env
 var at it, and asserts hand-verified VALUES (not non-empty counts). The test-plan cases
-map onto AC1-AC8 (SPEC-127), plus a HIGH-1 regression (`R-guard-pragma`). No live source is
+map onto AC1-AC8, plus a HIGH-1 regression (`R-guard-pragma`). No live source is
 read; no source is mutated.
 
 ## Confirmation run (recorded)

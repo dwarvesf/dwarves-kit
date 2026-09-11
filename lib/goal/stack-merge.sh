@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# stack-merge.sh -- merge a squash-stacked PR chain without the manual dance (SPEC-065).
+# stack-merge.sh -- merge a squash-stacked PR chain without the manual dance.
 #
 # Squash-merging a stacked chain by hand requires, per link: SELF-RECONCILE the link's
 # own branch onto its base first (state-keyed, SPEC-077; resumes used to skip this and

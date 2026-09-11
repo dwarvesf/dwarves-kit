@@ -1,7 +1,7 @@
 # ADR 0005: the curator never deletes (`git mv` archive + restore)
 
 **Date:** 2026-06-19
-**Status:** accepted (SPEC-103 TASK-012)
+**Status:** accepted
 
 ## Context
 

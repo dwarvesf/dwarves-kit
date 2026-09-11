@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """proof-table-gen.py -- generate the SPEC-016 table-first proof-of-done confirmation
-run-table from a rid's gate/run ledger (SPEC-132). Never hand-authored; run again to
+run-table from a rid's gate/run ledger. Never hand-authored; run again to
 regenerate.
 
 Hard rule (docs/verification/README.md: "Generators write run ledgers, never the
 canonical"): this script refuses to write to any out-path whose basename is literally
 `proof-of-done.md`, the exact filename `lib/gate/proof-ledger.sh` keys the ship-gate on.
 
-Path safety (SPEC-134): `rid` is CALLER-controlled, so it is normalized to
+Path safety: `rid` is CALLER-controlled, so it is normalized to
 `lib/gate/gate-ledger.sh`'s `runid()` charset before it touches ANY path (read ledger + default
 write), and the FINAL resolved out-path is confined under `realpath(KIT_ROOT/docs/verification/generated)` --
 enforced EVEN for an explicit out-path arg. So the default out-path is always under
@@ -42,7 +42,7 @@ CANONICAL_BASENAME = "proof-of-done.md"
 
 
 def _normalize_rid(raw):
-    """Normalize a caller-supplied rid to lib/gate/gate-ledger.sh's runid() charset (SPEC-134).
+    """Normalize a caller-supplied rid to lib/gate/gate-ledger.sh's runid() charset.
     runid() is `tr '/ ' '--' | tr -cd '[:alnum:]._-'`: replace '/' and space with '-', then
     drop every char outside [A-Za-z0-9._-]. This strips path separators (no '/' survives, so
     no `..` can act as a parent-dir step) before the rid is ever joined into a filesystem path.
@@ -92,7 +92,7 @@ def parse_ledger(ledger_path):
             gate_rows.append({"ts": ts, "phase": phase, "state": state, "reason": reason})
 
         elif marker == "OUTCOME" and len(parts) >= 4:
-            # Real shape (SPEC-129): field 3 = phase, field 4 = event (start|end); the
+            # Real shape: field 3 = phase, field 4 = event (start|end); the
             # kv blob (caught=/dur_s=) lives only on the end line.
             phase = parts[2]
             event = parts[3]
@@ -143,7 +143,7 @@ def _kit_lib_root():
 
 
 def gate_ledger_sh(_kit_root=None):
-    # `_kit_root` is VESTIGIAL (SPEC-134): callers still pass kit_root, but it is intentionally
+    # `_kit_root` is VESTIGIAL: callers still pass kit_root, but it is intentionally
     # ignored -- the helper is resolved via __file__, never via the (now caller-influenceable)
     # KIT_ROOT. This also closes a latent path-hijack: the old `os.path.join(kit_root, "lib",
     # "gate-ledger.sh")` would have exec'd whatever script sat at an attacker-set KIT_ROOT/lib.

@@ -14,7 +14,7 @@ This makes the close mechanical: the same three blocks, every run, from the ledg
 
 Read-only over every source. The ONLY write is --out, and only when passed.
 
-Rid resolution per sub-goal: the ledger rid is the branch slug (SPEC-070), which the
+Rid resolution per sub-goal: the ledger rid is the branch slug, which the
 ROADMAP does not carry, so we match runs/<rid>.log by token: the rid must contain the
 sub-goal's name tokens (the NN- prefix stripped). Ambiguity -> the longest-name match;
 none -> an honest all-"-" row (never a guess). --rid-map "SG=rid,SG=rid" overrides.

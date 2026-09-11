@@ -51,7 +51,7 @@ EXTRACT (registry rows + active mega-goals, origin-prefixed identity
 the two assets ID-290 required: the `row_hash` git-wins conflict rule and the
 live-probed Hermes reachable-state map `{triage, ready, blocked, done}`.
 DEFERRED (documented, still on the legacy engine which stays runnable): the
-live Hermes LOAD leg, two-way status writeback (SPEC-149), snapshot state-shape
+live Hermes LOAD leg, two-way status writeback, snapshot state-shape
 migration, and retiring `mirror`/`status`/`writeback` to thin aliases.
 
 ### Implementation

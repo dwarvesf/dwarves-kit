@@ -370,16 +370,16 @@ via `git checkout --`. Full detail: `tools/ledger-observatory/docs/verification/
   sweep tests ONLY inline code-span tokens, and only if clearly path-like: an absolute path under
   a recognized real filesystem root (`_REAL_PATH_PREFIXES`: `/Users/`, `/etc/`, `/opt/`, `/tmp/`,
   ...), or a `~/...`/`~user` home. Command-testing was in the draft (`shutil.which()` on a bare
-  word) and was REMOVED ENTIRELY (DEC-008): the FIRST real `ledger memory-sweep` run flagged
+  word) and was REMOVED ENTIRELY: the FIRST real `ledger memory-sweep` run flagged
   135/248 units, overwhelmingly junk , bare backtick words (`README.md`, `main`) and shell
   builtins/keywords (`trap`, `export`, `const`) `which()` cannot resolve. Leading-`/` tokens NOT
-  under a real root are skipped too (DEC-009): the dominant leading-`/` false positive was Claude
+  under a real root are skipped too: the dominant leading-`/` false positive was Claude
   Code slash-commands (`/goal`, `/kit:spec`) and REST fragments (`/v1/chat/completions`),
   syntactically a path but never one. Bare relative paths, flags (`--foo`), prose paths (no
   backticks), placeholders (`<x>`/glob/brace), and `://` URLs are all SKIPPED. Net on the real
   corpus: 135 -> 33 units flagged, junk gone, real dead paths kept. A false dead-ref costs trust;
   under-flagging is the safer error for a v1 precision proxy.
-- **IS-IT-AN-INDEX gate for MEMORY.md (DEC-010):** the draft flagged every no-link bullet in a
+- **IS-IT-AN-INDEX gate for MEMORY.md:** the draft flagged every no-link bullet in a
   MEMORY.md as a dead orphan, assuming every MEMORY.md is a `[title](slug.md)` link index. Real
   finding: some are free-PROSE scratchpads (`claude-guardrails`'s is 39 prose bullets, none a
   link) , flagging all 39 was noise. A MEMORY.md with ZERO link bullets now contributes NO refs;
@@ -406,6 +406,6 @@ via `git checkout --`. Full detail: `tools/ledger-observatory/docs/verification/
   carried the DEC-008/009/010 precision fixes (committed) but the proof docs (proof-of-done.md
   recorded-run + verification/memory-lens.md) still carried the STALE pre-DEC-010 numbers (33/33,
   memories:12, guardrails 39-dead). Reconciled all proof docs to the committed reality: 39 tests,
-  13 fixture units, 248 real memories / 33 carrying dead refs, guardrails 0 (DEC-010), the
+  13 fixture units, 248 real memories / 33 carrying dead refs, guardrails 0, the
   ops-toolkit MIGRATED tombstones still caught. No source/logic behavior changed in the reconcile
   , docs-only drift correction.

@@ -17,12 +17,12 @@
 # the case every test here covers, write NOTHING -- see `cost=` below; a crash or kill BETWEEN
 # the three subprocess calls, after validation passes, is a narrower residual window this script
 # does not protect against). The FIFO pairing `lib/stats` `read_kit_gates` already uses for
-# GATE<->OUTCOME (SPEC-129 DEC-002) extends unchanged to GATE<->TOKENS(phase=) here (kit_gates
+# GATE<->OUTCOME extends unchanged to GATE<->TOKENS(phase=) here (kit_gates
 # gains a `cost` column, additive, NULL for every pre-existing gate). `read_kit_gates` itself
 # tolerates a phase-scoped TOKENS line with no cost= (or a malformed one): it lands `cost=NULL`
 # in that queue slot, FIFO position preserved, no desync -- so the FIFO pairing is not actually
 # why `cost=` is REQUIRED here. The real reason: this tool exists solely to make rung-4 cost
-# measurable (ID-372), so a round allowed to record itself WITHOUT a cost would reproduce the
+# measurable, so a round allowed to record itself WITHOUT a cost would reproduce the
 # checkpoint's original failure in a new shape (rounds ledgered, average still uncomputable, or
 # worse, silently understated by treating unmeasured rounds as free). Fail closed -- reject,
 # write nothing -- so a missing cost is loud (rc 64) at the call site instead of a quiet gap in
