@@ -92,6 +92,124 @@ Impact: SG-02 and SG-04 dispatch under these rules. `HANDOFF.md` is machine-loca
 `.gitignore` carries `HANDOFF*.md`, so this entry is the durable copy of the same material.
 Open questions: none new.
 
+## 2026-09-12 01:30 The plugin loader is flat: one dispatcher skill, not three
+
+Context: the goal file's literal paths are `skills/understand/{explain,quiz,paydown}/SKILL.md`,
+two levels under `skills/`. A fresh-context check against Claude Code's Skills docs and
+anthropics/claude-code#16438 confirmed the plugin loader only discovers a direct child of
+`skills/`; anything nested one level deeper is invisible to it. The goal's own Proof line
+also names the seam value literally: `understand.teach = "understand"`, a single word
+matching no individual sub-skill name.
+Decision: `learning-kit/skills/understand/SKILL.md` is the one loader-discoverable skill
+(its name matches the seam value exactly). It dispatches to the three sibling bodies by
+reading them; they keep the exact paths and `SKILL.md` filename the goal names, as pedagogy
+references this dispatcher reads rather than skills Claude Code independently discovers.
+Why: this is the only shape that satisfies both hard constraints at once (the literal file
+paths the Proof checks for, and a seam value that actually resolves to something the Skill
+tool can invoke) without abandoning either.
+Alternatives: three flat `understand-explain`/`understand-quiz`/`understand-paydown`
+skill dirs (the documented workaround) -- rejected, it would make `understand.teach =
+"understand"` unresolvable to any of the three, and #560's `_teacher()` resolver returns
+one name for every call site (explain and quiz share the same seam key). A single
+`skills/understand/SKILL.md` with no sibling files, folding all three pedagogies inline --
+rejected, it would not produce the three `Moved-from:`-carrying files the goal's Proof
+line names by path.
+Impact: `learning-kit#9`'s `tests/test_understand_skills.sh` asserts the dispatcher is the
+direct child of `skills/` and names all three sibling paths, so a future edit that
+flattens or nests the wrong file fails loudly.
+Open questions: whether Claude Code ships nested-skill discovery (anthropics/claude-code#16438)
+before SG-05 (docs-and-terminus) runs; if it does, the dispatcher indirection becomes
+optional but the file paths need no further change.
+
+## 2026-09-12 01:35 SG-01 had already finished dwarves-kit's half of SG-02
+
+Context: SG-02's Outcome text for dwarves-kit ("`commands/explain.md` and
+`commands/quiz-gate.md` keep their names and their triggers and become gate-side entry
+points... invoke whatever `understand.teach` names") describes exactly what SG-01
+(`bfd1334`) already built while wiring the seam itself: both commands were already thin,
+named no consumer skill, and `lib/gate/quiz-gate.sh`'s engine already resolved the seam
+via `_teacher()`.
+Decision: `refactor/thin-understand-commands` carries no dwarves-kit behavioral diff. It
+adds `docs/verification/thin-understand-commands.md` (a run table confirming
+`test-explain.sh`, `test-quiz-gate.sh`, and `boundary-lint.sh` are still green) plus this
+implementation-notes delta, gated through `proof-ledger.sh override` per the docs-only
+path.
+Why: re-thinning already-thin files would be a no-op edit for its own sake; the actual
+proof owed here is that the state SG-01 built is still correct now that learning-kit has
+shipped a real teacher behind the seam, which the run table demonstrates.
+Impact: none to dwarves-kit code. The "routing assertions #554 retired" line in the SG-02
+goal's Proof now lives in `learning-kit#9`'s `tests/test_understand_skills.sh`.
+Open questions: none new.
+
+## 2026-09-12 02:10 The bodies were restructured, not moved, and why the contract now says so
+
+Context: a fresh-context audit of `learning-kit#9` diffed each moved body against its
+source and found `explain/SKILL.md` roughly 70 of 80 lines different from
+`commands/explain.md@a626db2`, contradicting this goal file's Quality bar ("the only hunks
+are paths and the `Moved-from:` line") and the receiving PR's proof doc, which had
+asserted a plain move.
+Decision: keep the restructuring, stop asserting it was a plain move. The goal file's
+Quality bar is amended to require a PRESERVATION TABLE instead of a byte-diff: one row per
+teaching element in each source body, naming where it now lives or marking it DROPPED
+with a reason. `learning-kit#9`'s `docs/verification/understand-teacher.md` carries that
+table for all three bodies; two elements the audit found genuinely missing (`explain`'s
+"prose ordering is the point" mnemonic + rank explanation, and both `explain` and `quiz`'s
+`## Source` pointer to their engine + proof files) were restored rather than left as
+findings, since restoring them cost nothing and closing a real gap beats reporting one
+that is trivial to close.
+Why: the calling convention for `explain` and `quiz` genuinely changed (command a human
+invokes directly, with the mechanical grounding done in the SAME file -> body a dispatcher
+reads, receiving an already-grounded skeleton or an already-built question set); a body
+that still opened "you are an explainer, `$ARGUMENTS` is..." would describe a convention
+that no longer exists, so SOME rewrite was unavoidable. What was avoidable, and is now the
+actual quality bar, is asserting "unchanged beyond paths" when the true state is
+"restructured, and here is proof nothing was lost."
+Alternatives: revert to the original wording verbatim inside the new calling convention
+(rejected -- the file would describe a way of being invoked it is no longer invoked
+under, which is a worse kind of drift than an honest restructure); leave the Quality bar
+as written and treat `learning-kit#9` as non-compliant (rejected -- `paydown`, which had
+no convention change, DOES satisfy the byte-diff bar, so the bar itself was wrong for a
+dispatcher-body move, not the artifact).
+Impact: goal file `02-understand-teacher.md` Quality bar reworded. No dwarves-kit code
+changed.
+Open questions: none new.
+
+## 2026-09-12 03:05 A lint that exempts the field the violation lives in
+
+Context: a fresh-context re-verification found `learning-kit#9`'s new
+`lib/lint/scattered-ids.sh` blanket-exempting `name:`, `description:`, and `Moved-from:`
+lines by field name, while `skills/concept-flush/SKILL.md:3` (a file predating this
+sub-goal) carried a bare `SPEC-249` in its `description:` field. The lint reported zero
+hits with a live violation sitting in the exact field it excused.
+Decision: narrow the exemption to `name:` (an identifier, never prose) and a
+`<!-- provenance: ... -->` footer only. `description:` and `Moved-from:` are scanned like
+any other line now; `Moved-from:` needed no exemption in practice, it names a path and a
+sha, never an ADR/SPEC id. Cleaned `concept-flush/SKILL.md`'s pre-existing hit (the
+pointer moved to a provenance footer) as a deliberate pre-existing fix, same as SG-04 did
+for its own equivalent hit in context-kit.
+Why: the bar does not move to fit the violation. `description:` is what a model reads to
+decide whether to invoke the skill; an id there answers that question not at all, so it
+is prose by function regardless of which frontmatter key it sits under. A guard that
+cannot see the one field a real hit lived in was not yet a guard.
+A second, smaller defect surfaced in the same review: the fixture-isolation assertion did
+`cd "$TMP" && bash "$ENUM" --zone skills`, but the enumerator unconditionally `cd`'d to
+its own repo root internally, ignoring the caller's cwd, so the assertion silently
+re-scanned the real repo instead of the fixture. It happened to pass because the real
+repo was clean, not because the fixture was being read. Fixed by adding `--root <dir>` to
+the enumerator (chosen over narrowing the assertion, since a root-scoped enumerator is
+the more generally useful shape and lets the test prove isolation directly: a follow-up
+check plants an id only inside the fixture and confirms `--root` sees it while the real
+tree stays unaffected).
+Alternatives: widen the fixture to include a plausible id-bearing `description:` and
+trust the exemption regex was already narrow enough (rejected -- that is exactly the
+untested-guard shape this finding caught; the fix has to touch the exemption, not add
+more fixture coverage around an unchanged one).
+Impact: `lib/lint/scattered-ids.sh` (learning-kit) narrower + `--root`-aware;
+`tests/test_no_scattered_ids.sh` gained a description-field negative control and a
+fixture-isolation proof; `skills/concept-flush/SKILL.md` cleaned. No dwarves-kit code
+changed.
+Open questions: none new.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
