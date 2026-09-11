@@ -195,7 +195,7 @@ Merging claude-skills#6 and dotfiles#436 as they stood would have deleted both s
 machine with nothing installed in their place.
 Decision: held both retirement PRs unmerged and traced the actual install sequence rather than
 trusting the goal file or the README. The README's own documented line, `claude plugin install
-./context-kit`, does not work: reproduced verbatim from `~/workspace/tieubao`, it fails "not
+./context-kit`, does not work: reproduced verbatim from `~/workspace/<owner>`, it fails "not
 found in any configured marketplace." `claude plugin install` only installs from an
 already-registered marketplace (`claude plugin --help`); a bare path is a marketplace SOURCE,
 never an install target. context-kit's own `.claude-plugin/marketplace.json` already declares
@@ -203,7 +203,7 @@ the marketplace name (`context-kit-local`) and the plugin name (`context-kit`) i
 correct two-step sequence, matching the working precedent already on this machine
 (`kit@dwarves-marketplace`, a directory marketplace registered the same way), is:
 ```
-claude plugin marketplace add ~/workspace/tieubao/context-kit
+claude plugin marketplace add ~/workspace/<owner>/context-kit
 claude plugin install context-kit@context-kit-local
 ```
 Fixed the README, `docs/QUICKSTART.md`, and `docs/INTEGRATIONS.md` to this sequence in
@@ -218,7 +218,7 @@ commands itself (rejected by the operator -- registering a marketplace or instal
 a persistent, cross-session change to the operator's own machine, reserved for him to run,
 consistent with the estate's own when-to-ask-vs-act rule for GUI/config-mutating actions).
 Impact: verified as far as possible without mutating plugin config: `claude plugin validate`
-(read-only) passed clean on both manifests; `claude --plugin-dir ~/workspace/tieubao/context-kit
+(read-only) passed clean on both manifests; `claude --plugin-dir ~/workspace/<owner>/context-kit
 plugin details context-kit` (an ad-hoc, single-invocation load, confirmed via mtimes to touch
 neither `installed_plugins.json` nor `settings.json`) printed `Skills (5) knowledge-capture,
 memorize, onboarding, setup, topic-map` -- proof the moved skills resolve correctly, short of
