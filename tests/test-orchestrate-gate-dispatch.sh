@@ -52,7 +52,10 @@ EOF
 # the local checkout -- exactly the merged-PR shape. The local box therefore reads unchecked.
 mk_repo_pair() {  # base
   local base="$1"
-  git init -q --bare "$base/upstream.git"
+  # -b master pins the bare remote's HEAD. Without it HEAD follows the machine's
+  # init.defaultBranch, and a clone of a remote whose HEAD names a branch the seed
+  # never pushed lands an empty working tree.
+  git init -q --bare -b master "$base/upstream.git"
   git init -q "$base/seed"
   git -C "$base/seed" config user.email t@t.t; git -C "$base/seed" config user.name t
   mkdir -p "$base/seed/mega/goals"
