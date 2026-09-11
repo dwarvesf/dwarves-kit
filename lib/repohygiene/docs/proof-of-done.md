@@ -393,3 +393,60 @@ The frozen-tree numbers are unchanged: 6 findings with 3 false positives before,
 with none after. The one remaining mega-goal row now refuses the move for a stated reason
 (`cluster-notify-wiring` declares itself shipped but carries no checked item, so nothing in it
 positively records a finished sub-goal) rather than for a reason the scanner had not checked.
+
+---
+
+## Detector 2 reference check (ID-832, 2026-09-11)
+
+Detector 1 proves nothing references a tracked file before flagging it. Detector 2 did the same
+job for staging and skipped that proof, emitting on age alone. Detector 2 now runs the same
+grep, and skips OS artifacts outright.
+
+### 1. Test suite
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `bash tests/test-repohygiene.sh` | 91/91 passed, 0 failed (was 82/82 before this change) |
+| 2 | `bash tests/run-all.sh` | see the run table in the branch's PR; the pre-existing `test-orchestrate-*` failures are unchanged from master |
+
+Nine assertions added. Five of them are negative controls.
+
+### 2. The real primary flow, measured
+
+The five repos of the 2026-09-11 sweep, scanned with `--detectors 2`, before and after:
+
+| Repo | Before | After | Every dropped row verified live by hand |
+|---|---|---|---|
+| family-office | 3 | 0 | `_inbox/gay-chong-co-ghe-da-nang.md` cited by path at `operations/eldercare-mobility-aid-danang.md:31`; `_inbox/rename-applied-2026-05-25.log.tsv` cited at `docs/ingest/drive-dedupe-2026-09-03.md:70`; `_inbox/from-hermes/` is the bot landing zone its own README and `infra/launchd/README.md` describe |
+| trading | 1 | 0 | `_inbox/.DS_Store`, the only finding that repo produced in the whole sweep |
+| dfoundation | 0 | 0 | no change |
+| console-labs | 0 | 0 | no change |
+| books | 0 | 0 | no change |
+
+Four findings dropped, all four confirmed false positives before the fix existed. No finding
+that a human had judged real was suppressed.
+
+### 3. Negative controls
+
+Each control disables ONE half of the change and re-runs the suite. A control that does not
+change the result is a test that was never checking anything.
+
+| # | Mutation | Expected | Observed |
+|---|---|---|---|
+| 1 | replace the reference-check guard with a no-op | the two citation assertions fail, the junk assertions still pass | 89/91, exactly `an entry cited by full path is not flagged` and `an entry cited by bare basename is not flagged` |
+| 2 | replace the OS-artifact case arm with a pattern that never matches | the two junk assertions fail, the citation assertions still pass | 89/91, exactly `a .DS_Store is never a finding` and `a Thumbs.db is never a finding` |
+
+The two controls fail DISJOINT assertions, which is what proves the two halves are tested
+separately rather than one guard masking the other. The tree was restored to `4152f9b` after
+each and the suite returned to 91/91.
+
+### 4. In-suite controls
+
+Three assertions exist only to catch a check that suppresses too much:
+
+- the citers are deleted and committed, and both entries must reappear as findings;
+- a citation from INSIDE the staging dir must not suppress, or a drop with a sibling note
+  naming it would silently suppress itself;
+- a real drop sitting beside the OS junk must still be flagged.
+
+Without the first, a reference check that suppressed EVERY entry would have passed.
