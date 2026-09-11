@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# bin/reflect -- STABLE consumer entrypoint for the reflect subsystem (SPEC-184,
-# ADR-0034 decision 1, renamed from `learn` by ADR-0036).
+# bin/reflect -- STABLE consumer entrypoint for the reflect subsystem.
 #
 # Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/reflect/<file>.sh`
 # path. Forwards to the reflect subsystem entry, which owns the verb grammar.
@@ -10,9 +9,9 @@
 # release; repoint any existing call site to this file.
 #
 # Usage:
-#   reflect propose [--days N | --megas N]        cross-run proposals from the ledger (SPEC-195)
-#   reflect propose --retro <RETRO.md>            a retro's action items (SPEC-200 T7)
-#   reflect drain [--days N]                      render the staging pile for review (SPEC-196)
+#   reflect propose [--days N | --megas N]        cross-run proposals from the ledger
+#   reflect propose --retro <RETRO.md>            a retro's action items
+#   reflect drain [--days N]                      render the staging pile for review
 #   reflect debt <list|collect|mark-paid>         understanding-debt paydown (weekend-batch)
 #
 # Every proposal path above ends at the staging buffer as a `## [staged]` block; a human
