@@ -141,6 +141,39 @@ Impact: none to dwarves-kit code. The "routing assertions #554 retired" line in 
 goal's Proof now lives in `learning-kit#9`'s `tests/test_understand_skills.sh`.
 Open questions: none new.
 
+## 2026-09-12 02:10 The bodies were restructured, not moved, and why the contract now says so
+
+Context: a fresh-context audit of `learning-kit#9` diffed each moved body against its
+source and found `explain/SKILL.md` roughly 70 of 80 lines different from
+`commands/explain.md@a626db2`, contradicting this goal file's Quality bar ("the only hunks
+are paths and the `Moved-from:` line") and the receiving PR's proof doc, which had
+asserted a plain move.
+Decision: keep the restructuring, stop asserting it was a plain move. The goal file's
+Quality bar is amended to require a PRESERVATION TABLE instead of a byte-diff: one row per
+teaching element in each source body, naming where it now lives or marking it DROPPED
+with a reason. `learning-kit#9`'s `docs/verification/understand-teacher.md` carries that
+table for all three bodies; two elements the audit found genuinely missing (`explain`'s
+"prose ordering is the point" mnemonic + rank explanation, and both `explain` and `quiz`'s
+`## Source` pointer to their engine + proof files) were restored rather than left as
+findings, since restoring them cost nothing and closing a real gap beats reporting one
+that is trivial to close.
+Why: the calling convention for `explain` and `quiz` genuinely changed (command a human
+invokes directly, with the mechanical grounding done in the SAME file -> body a dispatcher
+reads, receiving an already-grounded skeleton or an already-built question set); a body
+that still opened "you are an explainer, `$ARGUMENTS` is..." would describe a convention
+that no longer exists, so SOME rewrite was unavoidable. What was avoidable, and is now the
+actual quality bar, is asserting "unchanged beyond paths" when the true state is
+"restructured, and here is proof nothing was lost."
+Alternatives: revert to the original wording verbatim inside the new calling convention
+(rejected -- the file would describe a way of being invoked it is no longer invoked
+under, which is a worse kind of drift than an honest restructure); leave the Quality bar
+as written and treat `learning-kit#9` as non-compliant (rejected -- `paydown`, which had
+no convention change, DOES satisfy the byte-diff bar, so the bar itself was wrong for a
+dispatcher-body move, not the artifact).
+Impact: goal file `02-understand-teacher.md` Quality bar reworded. No dwarves-kit code
+changed.
+Open questions: none new.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
