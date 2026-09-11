@@ -75,7 +75,15 @@ set_state() {
     $0 ~ "^\\| *" id " *\\|" {
       cell=$(NF-1); sub(/^[ \t]+/, "", cell)
       rest=cell; sub(/^[A-Za-z-]+/, "", rest)
-      if (note != "") rest = " [" note "]" rest
+      # A terminal state ends the row, so its note SUPERSEDES the in-flight ones rather than
+      # stacking in front of them. Stacking let a shipped row keep an older note that still
+      # described the work as open, and a reader cannot tell which note is current.
+      # Only when a note is given: flipping to terminal with no note would otherwise erase
+      # the only record the row has and leave nothing in its place.
+      if (note != "") {
+        if (st == "shipped" || st == "dropped") rest = " [" note "]"
+        else rest = " [" note "]" rest
+      }
       $(NF-1) = " " st rest " "
     } { print }' "$BACKLOG_FILE" > "$BACKLOG_FILE.tmp" && mv -f "$BACKLOG_FILE.tmp" "$BACKLOG_FILE"
   echo "$id -> $state"
