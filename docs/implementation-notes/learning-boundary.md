@@ -92,6 +92,147 @@ Impact: SG-02 and SG-04 dispatch under these rules. `HANDOFF.md` is machine-loca
 `.gitignore` carries `HANDOFF*.md`, so this entry is the durable copy of the same material.
 Open questions: none new.
 
+## 2026-09-12 SG-04 built: no hand-kept index inside the context tree, and `config get` under-reports the seam
+
+Context: `memorize`'s repo-scoped destination now resolves `knowledge.root` before falling
+back to `<repo>/.claude/memory/`. The goal file's own precedent (the repo-local shape) pairs
+every fact file with a hand-kept `MEMORY.md` index; a first pass carried that shape into the
+filled-seam destination too, `<root>/projects/<repo-basename>/MEMORY.md`.
+Decision: dropped the index for the filled-seam case only. An index file with no single
+`last_verified` date fails context-kit's own `ctx-check` staleness finding (reproduced: a
+fixture tree with such a file reports `NO-VERIFIED`, 1 finding; dropping the index and
+writing only the fact page per SPEC-001 §2's contract reports `0 findings`). The unset-seam
+default (`<repo>/.claude/memory/`) keeps its `MEMORY.md`, unchanged, since that shape predates
+this seam and ctx-check never sees it.
+Why: `ctx-graph`/backlinks already enumerate a tree directory's pages; a hand-kept index there
+would be a second, driftable copy of what the tree derives for free, and it would fail the
+receiving kit's own audit on day one.
+Also recorded: the shared resolver (`context-kit skills/knowledge-root.sh`) calls dwarves-kit's
+`bin/config seams`, not `bin/config get knowledge.root`, for its second resolution rung.
+Reproduced: `config get`'s `_resolve` function never consults the operator `kit.toml` for any
+key (only `cmd_seams`'s `_seam_resolve` calls `kit_config_get_root`), so `config get
+knowledge.root` under-reports a root-only seam the operator has actually filled; `config
+seams` is the one verb proven to read the operator layer. This is a `config get`/`config
+explain` gap, not a `knowledge.root`-specific one, and out of SG-04's mandate to fix (the
+shared contract permits editing only this file and the ROADMAP line in dwarves-kit).
+Alternatives: keep the index everywhere for symmetry with the repo-local shape (rejected, it
+fails the receiving kit's own gate); patch `config.sh`'s `_resolve` to add the operator layer
+generally (rejected, a behavioral dwarves-kit change outside this sub-goal's touched-files
+contract, and every OTHER key's `config get` behavior would change on an unrelated branch).
+Impact: `memorize`'s Root resolution section documents the no-index rule; `docs/verification/feat-knowledge-writers.md`
+(context-kit PR) carries the reproduction (both ctx-check runs, before and after dropping the
+index) and the `config get` vs `config seams` finding, run table included.
+Open questions: whether `config get`/`config explain` should gain the operator layer for every
+root-only key is a real question for whoever next touches `lib/config/config.sh`; not decided
+here.
+
+## 2026-09-12 The til privacy gate was asserted, never verified
+
+Context: the goal file's Outcome says "the til privacy gate moves with `knowledge-capture`
+unchanged and stays the only path to a public note," and its Quality bar calls the rule list
+"byte-identical." A fresh-context verifier grepped case-insensitively for "privacy" in both the
+source and the moved copy and got zero hits either place, so neither the build nor the first
+verification pass had actually checked the claim.
+Decision: read the full source body for any strip enforcement under any wording (credentials,
+tokens, account ids, client/NDA details, personal/financial data, embargoed material) before
+concluding anything from the single-word grep. None existed: "Strip ALL conversational
+artifacts" (Step 2) removes chat fluff, not sensitive data, and "Important rules" had a
+content-quality gate and a confirm-before-push rule, neither a data-safety check. Took path (b):
+a real gap, not a wording problem. Added a new `### Step 5.9: Privacy gate` to the moved
+`knowledge-capture/SKILL.md`, sourced from the estate's own til privacy rule (the operator's
+global CLAUDE.md "Privacy gate for `tieubao/til`" line: credentials/secrets, cloud account ids
+tied to billing, client/NDA-bound details, personal financial data, family names/addresses/
+phones, embargoed feature details), plus a suite-visible rule pointing at it so a batch push
+cannot skip it per note.
+Why: this skill is the only path a note takes to a public repo (per the goal's own framing);
+asserting a gate that does not exist is worse than having none, because it reads as already
+handled.
+Alternatives: reword the goal's claim to describe the content-quality gate as if it were the
+privacy gate (rejected -- that gate screens for thinness, not sensitivity, a different axis
+entirely); leave the gap and only fix the goal file's wording (rejected -- the goal's own audit
+path (a)/(b) split says a missing gate is a gap, not a doc problem, when the skill is the sole
+public-write path).
+Impact: `knowledge-capture/SKILL.md` gains Step 5.9 and Important-rules item 7, a real
+behavioral addition at the destination -- NOT a byte-identical carry-over from source, disclosed
+as such in `docs/verification/feat-knowledge-writers.md` (context-kit PR) rather than claimed
+unchanged. `tests/test-privacy-gate.sh` (context-kit, added same-day on a precise follow-up spec)
+closes the open question this entry originally left: three read-only assertions (the Step 5.9
+heading exists; the gate body names each of the six privacy categories independently, on a short
+distinctive substring per category; a scratch copy with the gate section mechanically deleted
+fails the identical check), wired into `tests/all.sh`. Verdict pasted in
+`docs/verification/feat-knowledge-writers.md`: `test-privacy-gate: all 8 passed`, including the
+negative control.
+
+## 2026-09-12 Scattered ids in this sub-goal's own new prose, the second time in this mega-goal
+
+Context: the same audit found `SPEC-249`/`ADR-0036`/`SPEC-001` scattered inline across the two
+moved skills' new root-resolution prose and the shared `knowledge-root.sh` resolver -- the exact
+mistake this mega-goal's SG-01 already paid for once (learning-kit had no lint either), and
+neither context-kit nor learning-kit had a lint that would ever catch it.
+Decision: reworded every inline reference to state the behavior plainly (name the seam,
+`knowledge.root`; describe the fence as "operator or kit-root file only, never a project file,"
+never the spec number that says so), moved every id to one `<!-- provenance: ... -->` footer at
+the bottom of each of the three files, and added `tests/test-no-scattered-ids.sh` to context-kit
+(modelled on dwarves-kit's own zone 5, scoped to `skills/*/SKILL.md`, wired into `tests/all.sh`).
+The audit also turned up one pre-existing hit in `skills/setup/SKILL.md` (predates this
+sub-goal); fixed in the same pass so the new lint starts green.
+Why: a written rule with no lint behind it is advice, not a rule, and this mega-goal had already
+demonstrated that once is not enough to prevent a recurrence.
+Impact: `docs/verification/feat-knowledge-writers.md` carries the lint's negative control
+(planted-id fixture caught; the pre-existing hit caught before the fix, clean after), pasted
+verbatim.
+Open questions: none new; dwarves-kit's own `tests/test-no-scattered-ids.sh` (zones 1-5) is the
+pattern to widen if a THIRD kit in this estate ever needs the same lint.
+
+## 2026-09-12 A move is not done until the destination is reachable
+
+Context: PR #7 merged SG-04's two skills into context-kit. The operator then found a gap the
+goal file never named: neither retirement PR's merge would have left the operator with a working
+skill. `~/.claude/skills/knowledge-capture` was a symlink into `claude-skills` and
+`~/.claude/skills/memorize` a chezmoi-managed directory; context-kit was not installed as a
+plugin anywhere (`~/.claude/plugins/installed_plugins.json` had no `context-kit@*` entry).
+Merging claude-skills#6 and dotfiles#436 as they stood would have deleted both skills from the
+machine with nothing installed in their place.
+Decision: held both retirement PRs unmerged and traced the actual install sequence rather than
+trusting the goal file or the README. The README's own documented line, `claude plugin install
+./context-kit`, does not work: reproduced verbatim from `~/workspace/<owner>`, it fails "not
+found in any configured marketplace." `claude plugin install` only installs from an
+already-registered marketplace (`claude plugin --help`); a bare path is a marketplace SOURCE,
+never an install target. context-kit's own `.claude-plugin/marketplace.json` already declares
+the marketplace name (`context-kit-local`) and the plugin name (`context-kit`) inside it; the
+correct two-step sequence, matching the working precedent already on this machine
+(`kit@dwarves-marketplace`, a directory marketplace registered the same way), is:
+```
+claude plugin marketplace add ~/workspace/<owner>/context-kit
+claude plugin install context-kit@context-kit-local
+```
+Fixed the README, `docs/QUICKSTART.md`, and `docs/INTEGRATIONS.md` to this sequence in
+tieubao/context-kit#8 (a new branch off the merged master, not a reopen of #7).
+Why: a move that deletes the source before the destination is reachable is not a move, it is
+data loss with a delay; and a README whose OWN documented install command fails is worse than no
+docs, because it reads as tested.
+Alternatives: fix only the goal file's silence on install mechanics and merge the retirement PRs
+anyway, trusting the README (rejected -- the README itself was wrong, so that path would have
+shipped a broken install alongside the deletion); have this agent run the marketplace/install
+commands itself (rejected by the operator -- registering a marketplace or installing a plugin is
+a persistent, cross-session change to the operator's own machine, reserved for him to run,
+consistent with the estate's own when-to-ask-vs-act rule for GUI/config-mutating actions).
+Impact: verified as far as possible without mutating plugin config: `claude plugin validate`
+(read-only) passed clean on both manifests; `claude --plugin-dir ~/workspace/<owner>/context-kit
+plugin details context-kit` (an ad-hoc, single-invocation load, confirmed via mtimes to touch
+neither `installed_plugins.json` nor `settings.json`) printed `Skills (5) knowledge-capture,
+memorize, onboarding, setup, topic-map` -- proof the moved skills resolve correctly, short of
+proof that a normal session sees them, which needs the persistent install. Both retirement PRs'
+bodies now state the block plainly, name the two commands, and name the verify command
+(`claude plugin details context-kit@context-kit-local` or `claude plugin list`) to run
+afterward. `docs/verification/feat-knowledge-writers.md` (context-kit) carries the full
+transcript. `learning-kit`'s own README carries the identical wrong install line
+(`claude plugin install ./learning-kit`); not fixed here, it belongs to that kit's sub-goal in
+this mega-goal.
+Open questions: whether the goal-file template for a cross-repo skill move should gain a
+mandatory "how does the destination become reachable" line, so this class of gap is asked up
+front instead of found after a merge, is a real question for whoever next writes a mega-goal
+sub-goal that moves a skill between kits; not decided here.
 ## 2026-09-12 01:30 The plugin loader is flat: one dispatcher skill, not three
 
 Context: the goal file's literal paths are `skills/understand/{explain,quiz,paydown}/SKILL.md`,
