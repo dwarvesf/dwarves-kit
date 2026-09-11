@@ -307,6 +307,128 @@ chk "apply: the broken-remote repo lost no branch" \
   "$([ "$BROKEN_BEFORE" = "$(git -C "$BROKEN" for-each-ref --format='%(refname:short)' refs/heads/ | sort)" ]; echo $?)"
 
 # ===========================================================================
+echo "=== apply: a union-marked log is carried across the pull, nothing else is ==="
+# ===========================================================================
+# Real repos on disk, not a stubbed `git`: the whole point is what git itself does to a dirty
+# checkout during a pull, which a command-text stub would never exercise.
+LAB_BASE=$'# Lab log\n\n---\n\n2026-09-01 · base: the first line\n'
+LAB_REMOTE=$'# Lab log\n\n---\n\n2026-09-02 · remote: the incoming line\n2026-09-01 · base: the first line\n'
+LAB_LOCAL=$'# Lab log\n\n---\n\n2026-09-03 · local: the other session line\n2026-09-01 · base: the first line\n'
+
+build_union_repo() { # build_union_repo <name> -- bare origin plus a clone on main
+  local name="$1" work clone
+  work="$TMPD/uwork-$name"; clone="$TMPD/uclone-$name"
+  mkdir -p "$work/_meta"
+  git -C "$work" init -q
+  gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+  printf '%s' "$LAB_BASE" > "$work/_meta/LAB_LOG.md"
+  printf 'readme base\n' > "$work/README.md"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/ubare-$name"
+  git clone -q "$TMPD/ubare-$name" "$clone"
+  gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+}
+
+advance_union_repo() { # advance_union_repo <name> -- one incoming commit touching both files
+  local name="$1" push
+  push="$TMPD/upush-$name"
+  git clone -q "$TMPD/ubare-$name" "$push"
+  gitc "$push"
+  printf '%s' "$LAB_REMOTE" > "$push/_meta/LAB_LOG.md"
+  printf 'readme remote\n' > "$push/README.md"
+  git -C "$push" commit -qam advance
+  git -C "$push" push -q origin main
+}
+
+echo "--- case 1+4: a dirty union log pulls clean, keeps both sides, anchors below the header"
+build_union_repo carry; advance_union_repo carry
+UC="$TMPD/uclone-carry"
+printf '%s' "$LAB_LOCAL" > "$UC/_meta/LAB_LOG.md"
+UC_TIP="$(git -C "$TMPD/ubare-carry" rev-parse main)"
+out="$("$WRAP" apply --apply "$UC" 2>&1)"; rc=$?
+chk "union carry: apply exits 0" "$rc"
+chk_no "union carry: the pull did not fail" "$out" "FAILED pull --ff-only"
+chk "union carry: HEAD moved to the incoming commit" \
+  "$([ "$(git -C "$UC" rev-parse HEAD)" = "$UC_TIP" ]; echo $?)"
+chk_has "union carry: HEAD prints in the pull block" "$out" "     HEAD: $(git -C "$UC" log --oneline -1)"
+chk_has "union carry: the save is reported" "$out" "saved 1 union-marked file(s) aside"
+chk_has "union carry: the carry-back count is reported" "$out" "carried 1 local line(s) back into _meta/LAB_LOG.md"
+chk "union carry: the incoming line landed" \
+  "$(grep -qF 'remote: the incoming line' "$UC/_meta/LAB_LOG.md"; echo $?)"
+chk "union carry: the local uncommitted line survived" \
+  "$(grep -qF 'local: the other session line' "$UC/_meta/LAB_LOG.md"; echo $?)"
+chk "union carry: the local line is still uncommitted" \
+  "$(git -C "$UC" diff --name-only | grep -qx '_meta/LAB_LOG.md'; echo $?)"
+chk "union carry: README took the incoming content" \
+  "$([ "$(cat "$UC/README.md")" = "readme remote" ]; echo $?)"
+# Anchor rule: the header and the `---` separator stay above every carried line.
+CARRY_LN="$(grep -n 'local: the other session line' "$UC/_meta/LAB_LOG.md" | cut -d: -f1)"
+SEP_LN="$(grep -n '^---$' "$UC/_meta/LAB_LOG.md" | head -1 | cut -d: -f1)"
+chk "union carry: line 1 is still the header" \
+  "$([ "$(sed -n 1p "$UC/_meta/LAB_LOG.md")" = "# Lab log" ]; echo $?)"
+chk "union carry: the carried line sits BELOW the --- anchor" \
+  "$([ "$CARRY_LN" -gt "$SEP_LN" ]; echo $?)"
+chk "union carry: the carried line sits ABOVE the older entries" \
+  "$([ "$CARRY_LN" -lt "$(grep -n 'remote: the incoming line' "$UC/_meta/LAB_LOG.md" | cut -d: -f1)" ]; echo $?)"
+
+echo "--- case 2: a dirty NON-union file is untouched and the pull behaves as it does today"
+build_union_repo nonunion; advance_union_repo nonunion
+UN="$TMPD/uclone-nonunion"
+printf 'readme local edit\n' > "$UN/README.md"
+UN_BEFORE="$(cksum < "$UN/README.md")"
+UN_HEAD="$(git -C "$UN" rev-parse HEAD)"
+out="$("$WRAP" apply --apply "$UN" 2>&1)"; rc=$?
+chk "non-union: apply exits 2 because the pull still aborts" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "non-union: the blocking file is named before the pull" "$out" \
+  "NOTE: uncommitted and not declared merge=union, so the pull aborts on: README.md"
+chk_has "non-union: the pull failure is still reported" "$out" "FAILED pull --ff-only"
+chk_no "non-union: nothing was saved aside" "$out" "union-marked file(s) aside"
+chk "non-union: the dirty file is byte-identical" \
+  "$([ "$UN_BEFORE" = "$(cksum < "$UN/README.md")" ]; echo $?)"
+chk "non-union: HEAD did not move" "$([ "$(git -C "$UN" rev-parse HEAD)" = "$UN_HEAD" ]; echo $?)"
+
+echo "--- case 3: one union plus one non-union is treated as the non-union case"
+build_union_repo mixed; advance_union_repo mixed
+UM="$TMPD/uclone-mixed"
+printf '%s' "$LAB_LOCAL" > "$UM/_meta/LAB_LOG.md"
+printf 'readme local edit\n' > "$UM/README.md"
+UM_LAB_BEFORE="$(cksum < "$UM/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply --apply "$UM" 2>&1)"
+chk_has "mixed: the non-union file is named" "$out" "not declared merge=union, so the pull aborts on: README.md"
+chk_no "mixed: the union file was never saved aside" "$out" "union-marked file(s) aside"
+chk_no "mixed: no carry-back happened" "$out" "carried"
+chk "mixed: the union file is byte-identical" \
+  "$([ "$UM_LAB_BEFORE" = "$(cksum < "$UM/_meta/LAB_LOG.md")" ]; echo $?)"
+
+echo "--- case 5: a dirty index is skipped with a reason, nothing is touched"
+build_union_repo staged; advance_union_repo staged
+US="$TMPD/uclone-staged"
+printf '%s' "$LAB_LOCAL" > "$US/_meta/LAB_LOG.md"
+git -C "$US" add _meta/LAB_LOG.md
+US_BEFORE="$(cksum < "$US/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply --apply "$US" 2>&1)"
+chk_has "dirty index: the reason prints" "$out" "NOTE: the index carries staged changes"
+chk_no "dirty index: nothing was saved aside" "$out" "union-marked file(s) aside"
+chk "dirty index: the staged path is still staged" \
+  "$(git -C "$US" diff --cached --name-only | grep -qx '_meta/LAB_LOG.md'; echo $?)"
+chk "dirty index: the file is byte-identical" \
+  "$([ "$US_BEFORE" = "$(cksum < "$US/_meta/LAB_LOG.md")" ]; echo $?)"
+
+echo "--- dry-run: a dirty union log is announced, never saved or checked out"
+build_union_repo dry; advance_union_repo dry
+UD="$TMPD/uclone-dry"
+printf '%s' "$LAB_LOCAL" > "$UD/_meta/LAB_LOG.md"
+UD_BEFORE="$(cksum < "$UD/_meta/LAB_LOG.md")"
+out="$("$WRAP" apply "$UD" 2>&1)"
+chk_has "dry-run: the carry is announced only" "$out" "--apply would carry its local lines across the pull"
+chk_no "dry-run: nothing was saved aside" "$out" "union-marked file(s) aside"
+chk "dry-run: the union file is byte-identical" \
+  "$([ "$UD_BEFORE" = "$(cksum < "$UD/_meta/LAB_LOG.md")" ]; echo $?)"
+
+# ===========================================================================
 echo "=== gh absent: every non-ancestor is LEAVE, merge refuses ==="
 # ===========================================================================
 mkdir -p "$TMPD/nogh"
@@ -519,6 +641,52 @@ chk "log from a worktree leaves the main checkout's copy untouched" \
 ( cd "$LOGHOME" && HOME="$LOGHOME" KIT_CONFIG_ROOT="$KITROOT" "$WRAP" log "wrap: from outside" >/dev/null 2>&1 )
 chk "log from outside the repo prepends to the configured file itself" \
   "$([ "$(head -1 "$LOGREPO/_meta/LOG.md")" = "$(date +%F) · wrap: from outside" ]; echo $?)"
+
+# ===========================================================================
+echo "=== log: the --- anchor lands the entry below the header, not above it ==="
+# ===========================================================================
+ANCHFILE="$LOGHOME/ANCHOR.md"
+printf '# LAB_LOG\n\nChronological log. Newest first.\n\n---\n\n2026-01-01 · old entry\n' > "$ANCHFILE"
+set_log_key "$ANCHFILE"
+wrap_log "wrap: anchored entry" >/dev/null 2>&1
+chk "log: the title stays line 1, not pushed down" \
+  "$([ "$(sed -n '1p' "$ANCHFILE")" = "# LAB_LOG" ]; echo $?)"
+chk "log: the new entry lands right after the --- and its blank line" \
+  "$([ "$(sed -n '7p' "$ANCHFILE")" = "$(date +%F) · wrap: anchored entry" ]; echo $?)"
+chk "log: the previously-newest entry is now second" \
+  "$([ "$(sed -n '8p' "$ANCHFILE")" = "2026-01-01 · old entry" ]; echo $?)"
+
+FMFILE="$LOGHOME/FRONTMATTER.md"
+printf -- '---\nkind: log\n---\n2026-01-01 · old entry\n' > "$FMFILE"
+set_log_key "$FMFILE"
+wrap_log "wrap: past the frontmatter" >/dev/null 2>&1
+chk "log: frontmatter's opening --- is not mistaken for the anchor" \
+  "$([ "$(sed -n '1p' "$FMFILE")" = "---" ]; echo $?)"
+chk "log: the entry lands after the frontmatter's closing ---, not inside it" \
+  "$([ "$(sed -n '4p' "$FMFILE")" = "$(date +%F) · wrap: past the frontmatter" ]; echo $?)"
+chk "log: the frontmatter body is untouched" \
+  "$([ "$(sed -n '2p' "$FMFILE")" = "kind: log" ]; echo $?)"
+
+NOANCHFILE="$LOGHOME/NOANCHOR.md"
+printf 'just a plain log, no header at all\n' > "$NOANCHFILE"
+set_log_key "$NOANCHFILE"
+wrap_log "wrap: no anchor falls back to prepend" >/dev/null 2>&1
+chk "log: no --- anchor falls back to the old prepend-at-line-1 behavior" \
+  "$([ "$(sed -n '1p' "$NOANCHFILE")" = "$(date +%F) · wrap: no anchor falls back to prepend" ]; echo $?)"
+
+HDRONLYFILE="$LOGHOME/HDRONLY.md"
+printf '# LAB_LOG\n\nChronological log.\n\n---\n' > "$HDRONLYFILE"
+set_log_key "$HDRONLYFILE"
+wrap_log "wrap: first entry in a header-only file" >/dev/null 2>&1
+chk "log: a header-only file (no entries yet) still gets the entry after ---" \
+  "$([ "$(sed -n '6p' "$HDRONLYFILE")" = "$(date +%F) · wrap: first entry in a header-only file" ]; echo $?)"
+
+EMPTYFILE="$LOGHOME/EMPTY.md"
+: > "$EMPTYFILE"
+set_log_key "$EMPTYFILE"
+wrap_log "wrap: an empty file still works" >/dev/null 2>&1
+chk "log: an empty file gets the entry as line 1" \
+  "$([ "$(sed -n '1p' "$EMPTYFILE")" = "$(date +%F) · wrap: an empty file still works" ]; echo $?)"
 
 # ===========================================================================
 echo "=== knowledge-root: the key, the HOME fence, and the repo argument ==="
@@ -910,6 +1078,86 @@ chk "a NEW line carrying the precedent miss passes" "$([ "$rc" -eq 0 ]; echo $?)
 
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** SKIPPED: build_candidates knob is false|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a real SKIPPED reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+# The LIST form: a bare `**Built:**` header followed by `- ` bullets, one candidate per
+# line. Added after a real report crammed three candidates onto one unreadable line. Each
+# bullet owes the same ENHANCE/NEW token as the inline form, checked per bullet, so one bare
+# item among several good ones cannot hide the way it did when the whole line was one string.
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- untracked-blocks-ff-pull NEW (precedent: nothing matched): dwarvesf/dwarves-kit lib/wrap, the pull path in wrap apply (staged)\n- mini-script-run-loop ENHANCE ops-toolkit tools/mac-mini-substrate/mini-run (no change needed, precedent hit is the helper itself)\n- sandbox-overlap-probe ENHANCE dwarvesf/foundation-ops fleet/knowledge-guard (already homed as OPS-16)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a three-bullet Built list passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- alpha ENHANCE tools/x: file.sh (abc1234)\n- lib/wrap/report-lint.sh @ def5678\n- gamma NEW (precedent: nothing matched): tools/gamma (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a list with one bare path-and-commit bullet fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the offending bullet by index" "$out" "bullet 2"
+chk_has "the finding quotes the bare bullet" "$out" "lib/wrap/report-lint.sh @ def5678"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a bare Built header with no bullets and no inline content fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding says it is empty" "$out" "is empty"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:** NOTHING: no candidates\n- stray ENHANCE tools/x: file.sh (abc1234)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "NOTHING inline mixed with bullets fails, the two grammars never combine" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the mixed-grammar shape" "$out" "both inline content and bullets"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:** NOTHING: no candidates\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "NOTHING inline alone still passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+# The prose rule. `bin/precedent` indexes memory notes and research files as hit kinds, so a
+# step 7b whose top hit is a note turns a build into a write and still carries the ENHANCE
+# token. On 2026-09-10 a procedure run six times by hand, which had already cost a bad
+# production deploy, produced two memory notes and one research note and zero mechanism, and
+# the report linted clean. The same precedent output named `lib/wrap/wrap.sh` one line below
+# the note, and the real fix landed there later: a code home beats a prose home.
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "an all-prose Built list fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the prose rule" "$out" "a precedent hit on a note is not a build"
+chk_has "the finding says the code home wins" "$out" "the code home wins"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- pull-context ENHANCE ops-toolkit research/2026-09-10-ff-pull.md (def5678)\n- PROSE-ONLY: the call is one human judgment per run, no mechanism fits it\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "the same all-prose Built passes with a real PROSE-ONLY reason" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)\n- PROSE-ONLY: none\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a too-short PROSE-ONLY reason cannot silence the rule" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding still names the prose rule" "$out" "a precedent hit on a note is not a build"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)\n- pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (def5678)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "a mixed Built passes, because something was built" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an inline Built naming a single memory note fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the inline finding names the prose rule" "$out" "a precedent hit on a note is not a build"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-lesson ENHANCE ops-toolkit .claude/memory/ff-pull-trap.md (abc1234) PROSE-ONLY: the pull path already guards itself, only the trap was new|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an inline PROSE-ONLY token with a real reason passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** pull-guard ENHANCE dwarvesf/dwarves-kit lib/wrap/wrap.sh (abc1234)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an inline Built naming a code path still passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+# The harness-shape check: a `NEW (precedent: nothing matched)` candidate that turns out to
+# speak CDP already has a home (browser-harness-js learnings), so it warns instead of passing
+# clean, but it never fails the lint (the precedent check itself was still honest).
+HARNESS_FIX="$TMPD/harness-fixture"; mkdir -p "$HARNESS_FIX"
+printf "await session.Runtime.evaluate({ expression: '1+1' });\n" > "$HARNESS_FIX/probe.js"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW item whose files call the CDP harness warns, not fails" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "the warn names the harness home" "$out" "browser-harness-js skills/cdp/learnings"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: ${HARNESS_FIX} (a1b2c3d)|" | bash "$LINT" 2>&1)"; rc=$?
+chk "an ENHANCE item is never checked for harness shape, even over the same CDP content" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_no "no harness warn on an ENHANCE line" "$out" "browser-harness-js skills/cdp/learnings"
+
+# The harness-shape check on a LIST-form bullet: the same token match, on a `- ` line.
+LIST_HARNESS_FIX="$TMPD/harness-fixture-list"; mkdir -p "$LIST_HARNESS_FIX"
+printf "await session.Runtime.evaluate({ expression: '1+1' });\n" > "$LIST_HARNESS_FIX/probe.js"
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- site-probe NEW (precedent: nothing matched): %s (staged)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' "$LIST_HARNESS_FIX" | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW bullet whose files call the CDP harness warns, not fails" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_has "the warn names the harness home for a bullet item" "$out" "browser-harness-js skills/cdp/learnings"
+
+printf 'echo "plain shell content, no CDP calls here"\n' > "$HARNESS_FIX/probe.js"
+out="$(_report '✅ **Needs you:** NOTHING' | sed "s|^\*\*Built:\*\* .*|**Built:** site-probe NEW (precedent: nothing matched): ${HARNESS_FIX} (staged)|" | bash "$LINT" 2>&1)"; rc=$?
+chk "the same NEW path with plain content does not warn" "$([ "$rc" -eq 0 ]; echo $?)"
+chk_no "no harness warn printed" "$out" "browser-harness-js skills/cdp/learnings"
 
 # The Seam rule. Same three states as Built, for the same reason one level up: a seam that was
 # never configured and a seam that was silently dropped read identically without the line, and

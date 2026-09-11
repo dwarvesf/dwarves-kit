@@ -30,6 +30,9 @@
 #   proof-gate.sh class "<task description>"        -> stateful | behavioral | inert
 #   proof-gate.sh requirement "<task description>"  -> the one-line proof requirement
 #   proof-gate.sh classes                            -> the three class names
+#   proof-gate.sh skeleton "<slug>" ["<task description>"]
+#                                                     -> a ready-to-fill docs/verification/<slug>.md,
+#                                                        printed to stdout, nothing written to disk
 
 set -euo pipefail
 
@@ -115,6 +118,53 @@ proof_contract() {
   echo "proof: $artifact"
   echo "owner: $skill"
   echo "rigor: $(proof_requirement "$desc")"
+  echo "hint: run 'proof-gate.sh skeleton <slug>' for a fillable verification file"
+}
+
+# proof_skeleton <slug> [<task description>] -- prints a ready-to-fill
+# docs/verification/<slug>.md to stdout (SPEC per _meta/backlog-staging.md "proof-gate
+# contract emits the verification skeleton"). Writes nothing to disk; the caller redirects
+# if it wants a file. Reuses proof_class so the skeleton always matches what `contract`
+# would say for the same task description, instead of a second classifier drifting from it.
+proof_skeleton() {
+  local slug="${1:-}" desc="${2:-}"
+  [ -n "$slug" ] || { echo "usage: proof-gate.sh skeleton \"<slug>\" [\"<task description>\"]" >&2; return 64; }
+  local class
+  if [ -n "$desc" ]; then
+    class="$(proof_class "$desc")"
+  else
+    class="behavioral"
+    echo "<!-- no task description given; emitting the behavioral shape -->"
+  fi
+
+  echo "# Verification -- $slug"
+  echo
+  echo "<one-line statement of what this change is>"
+  echo
+  echo "## Green run"
+  echo '```'
+  echo "Command:"
+  echo "Exit:"
+  echo "Verdict:"
+  echo '```'
+  echo
+  echo "## Negative control"
+  echo '```'
+  echo "Command:"
+  echo "Exit:"
+  echo "Verdict:"
+  echo '```'
+  echo "<what was broken, and confirmation it was restored>"
+  echo
+  if [ "$class" = "stateful" ]; then
+    echo "## Rollback"
+    echo "| Change | How to undo | Blast radius |"
+    echo "|---|---|---|"
+    echo "| | | |"
+    echo
+  fi
+  echo "## Not proven"
+  echo "- <what this run does not cover>"
 }
 
 # ID-466: test-plan -> proof-of-done coverage (ADVISORY; always exit 0). When the active
@@ -177,8 +227,9 @@ main() {
     requirement) proof_requirement "$@";;
     contract)    proof_contract "$@";;
     coverage)    proof_coverage "$@";;
+    skeleton)    proof_skeleton "$@";;
     classes)     printf 'stateful\nbehavioral\ninert\n';;
-    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|coverage <spec> [proof.md ...]|classes}" >&2; return 64;;
+    *) echo "usage: proof-gate.sh {class \"<desc>\"|requirement \"<desc>\"|contract \"<desc>\"|coverage <spec> [proof.md ...]|skeleton <slug> [\"<desc>\"]|classes}" >&2; return 64;;
   esac
 }
 

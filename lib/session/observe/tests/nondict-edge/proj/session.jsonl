@@ -1,0 +1,5 @@
+["x"]
+{"type": "assistant", "isSidechain": false, "message": "oops"}
+{"type": "user", "isSidechain": false, "message": "oops"}
+{"type": "user", "isSidechain": false, "message": {"content": "real prompt one"}}
+{"type": "user", "isSidechain": false, "message": {"content": [{"type": "text", "text": "real prompt two"}]}}

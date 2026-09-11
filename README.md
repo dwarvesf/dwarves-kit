@@ -102,7 +102,7 @@ Layered by design: the SPINE installs unconditionally (six hooks guarding push, 
 | Module | What it wires | Kind |
 |---|---|---|
 | `board` | `backlog-stage` (SessionEnd: stage session work-items to the board); its `--surface` pass also runs `intake-sweep` (consumer-declared deferred-link sources, config-gated) | 1 hook |
-| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`; plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 7 hooks + 1 CLI |
+| `session` | `context-readiness`, `output-offload`, `pre-compact-backup`, `post-compact-reinject`, `session-state-save`, `harvest`, `citation-guard`, `context-budget` (warns once per 100k-token band once live context passes 200k, `KIT_CTX_WARN`/`KIT_CTX_STEP`); plus a PATH shim for the `session` CLI (`session <intel\|observe\|recall\|report\|semantic>`, ADR-0034: the five prefixed CLIs collapsed into one entry) | 8 hooks + 1 CLI |
 | `advisor` | `context-hints` (session-elapsed + keyword skill hints) + `tool-policy-guard` (PreToolUse allow/ask/deny per tool domain; inert until a `tool-policy.json` exists) | 2 hooks |
 | `cosmetic` | `auto-format`, `notification`, `slop-cleaner`, `statusline`, `codebase-index`, `permission-auto-approve` | 6 hooks |
 | `queue` | `/kit:mega` + `/kit:dispatch` machinery (`lib/queue/orchestrate.sh`), the overnight queue launcher (`lib/queue/queue.sh`) | hookless (lib) |
@@ -257,6 +257,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 | citation-guard | Stop | Flags (or blocks, CITATION_GUARD_STRICT=1) hallucinated file:line citations in the final message |
 | money-gate | PreToolUse(Edit\|Write\|MultiEdit) | Asks before a money-touching edit lands in a repo named in MONEY_GATE_REPOS (inert unset) |
 | prose-rag | UserPromptSubmit | Injects relevant prior notes on recall-shaped prompts (dormant unless PROSE_RAG_INJECT=1) |
+| context-budget | UserPromptSubmit | Warns once per 100k-token band once live session context passes 200k (KIT_CTX_WARN/KIT_CTX_STEP); clears on a drop below budget (e.g. after /compact) |
 | auto-format | PostToolUse(Write\|Edit) | Runs formatter on every file change |
 | output-offload | PostToolUse(*) | Offloads a >2k-token tool output to a file + leaves a terse pointer |
 | spec-drift-guard | PreToolUse(Write) | Warns when creating files not in the spec |
@@ -365,6 +366,7 @@ Which hooks BLOCK vs warn vs neither is a declared contract: `docs/architecture.
 | doc-drift | Whole-estate doc audit (audit-loop instance): enumerates every living doc, verdicts each claim against the live repo, fixes drift behind a PR gate |
 | ci-drift | Whole-estate CI audit (audit-loop instance): enumerates every workflow + GitHub-side state (enabled, secrets/vars, runners, releases, environment policy), verdicts each against the live repo, fixes drift behind a PR gate |
 | gauntlet-proof-audit | Audits committed gauntlet run records (audit-loop instance, general-purpose): markers well-formed, recorded verdict vs committed `checker-output.txt`, findings-count reconciliation, scrub clean, run-dir grammar; REMOVE disallowed, report-first |
+| repo-hygiene | Whole-repo decay audit (audit-loop instance, general-purpose): five detectors over one checkout (unreferenced doc, stale staging drop, record parked in a control surface, log past its documented budget, large cold gitignored dir), each finding carrying its evidence inline, `git mv` the only fix it ever applies, PR-gated. Repo-scoped: the machine surface belongs to ops-toolkit `tools/disk-reclaim` |
 | topology-drift | **Maintainer-only** (dwarves-kit repo dev only): audits THIS KIT's own feature estate (audit-loop instance), cross-checks the generated `docs/FEATURES.md` registry against the `docs/workflow-paths.md` path index both directions, re-places only delta features on the topology, PR-gated. To inventory a project the kit is pointed at, use `/kit:feature-map` instead |
 | web-drift | Live-website agent-readiness audit (audit-loop instance, general-purpose): probes every site in `WEB_DRIFT_SITES` with `lib/webcheck` over read-only HTTP (groundwork, page, API tiers), verdicts each `(site, check)` pair, and files fixes as board rows in the repo that owns the site's source. Inert until the consumer declares its sites |
 | get-api-docs | Fetches curated API docs via Context Hub before coding |

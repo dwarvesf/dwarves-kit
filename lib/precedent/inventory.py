@@ -444,7 +444,8 @@ def scan_repo_tools(root: str, label_prefix: str, terms, sections: Sections, tit
                 cands += [(f"tools/{name}/{sub}/{fn}", os.path.join(subdir, fn))
                           for fn in sorted(os.listdir(subdir))]
         cands += [(f"tools/{name}/{fn}", os.path.join(tdir, fn))
-                  for fn in sorted(os.listdir(tdir)) if fn.endswith((".sh", ".py"))]
+                  for fn in sorted(os.listdir(tdir))
+                  if fn.endswith((".sh", ".py")) or os.access(os.path.join(tdir, fn), os.X_OK)]
         for rel, fp in cands:
             fn = os.path.basename(fp)
             if not os.path.isfile(fp) or fn.startswith(".") or fn.startswith("test"):

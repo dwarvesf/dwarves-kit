@@ -6,10 +6,12 @@
 # Proves, records-only (green at e07bc30, before lib/precedent/inventory.py exists):
 #   AC1 `find --surface records` byte-parity with the pre-move `lib/precedent.sh` (TASK-001)
 #   AC2 a stopword-only query prints the no-keywords line, exit 0
-#   AC3 an out-of-range positional [max] exits 64
+#   AC3 a non-numeric --limit flag exits 64
 #   AC4 an unknown --surface exits 64
 #   AC5 default surface (`all`) with inventory.py absent ends on the 0-inventory summary line
 #   AC6 --help exits 0 and documents --surface
+#   AC7 bare unquoted words fold into one description; a lone digit-only word still sets the
+#       legacy [max] override
 #
 # Run: bash tests/test-precedent.sh
 
@@ -155,6 +157,15 @@ FIX
 #!/usr/bin/env python3
 """omicron: piunique report builder."""
 FIX
+
+  # A top-level extension-less executable entry point (the house convention for launchd
+  # launchers carries no .sh, e.g. ops-toolkit's mac-mini-substrate/mini-run): must still
+  # surface via its executable bit, not just the .sh/.py suffix check.
+  cat > "$FIX_REPO/tools/alpha/zeta-run" <<'FIX'
+#!/usr/bin/env bash
+# zeta-run: zetaunique launcher, no extension by design
+FIX
+  chmod +x "$FIX_REPO/tools/alpha/zeta-run"
 
   # Restored iterator 3: an experiment whose README has no `title:` and no `description:`.
   # Its subject is only in the `tech:` tag list and the opening paragraph.
@@ -355,10 +366,34 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# AC3: out-of-range positional [max]
+# AC3: a non-numeric --limit flag exits 64 (a bare non-numeric positional no longer errors,
+# see AC7: it folds into the description instead)
 # ---------------------------------------------------------------------------
-"$PRECEDENT_BIN" find "notion" abc --surface records >/dev/null 2>&1
-assert "a non-numeric positional [max] exits 64" "$([ $? -eq 64 ]; echo $?)"
+"$PRECEDENT_BIN" find "notion" --limit abc --surface records >/dev/null 2>&1
+assert "a non-numeric --limit exits 64" "$([ $? -eq 64 ]; echo $?)"
+
+# ---------------------------------------------------------------------------
+# AC7: bare unquoted words fold into one description reaching inventory.py; a lone
+# digit-only extra word still sets the legacy [max] override (records surface, no
+# inventory.py dependency).
+# ---------------------------------------------------------------------------
+BARE_OUT="$("$PRECEDENT_BIN" find mini run --surface inventory --quiet 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && printf '%s\n' "$BARE_OUT" | head -1 | grep -qF '# precedent inventory: mini run'; then
+  assert "bare words 'mini run' reach inventory.py as one description" 0
+else
+  assert "bare words 'mini run' reach inventory.py as one description" 1
+  echo "rc=$RC out=$BARE_OUT" | sed 's/^/      /'
+fi
+
+OUT="$("$PRECEDENT_BIN" find "notion" 3 --surface records 2>&1)"; RC=$?
+LIMIT_OK=1
+printf '%s\n' "$OUT" | grep -qE '^precedent find: --limit must be a positive integer$' && LIMIT_OK=0
+if [ "$RC" -eq 0 ] && [ "$LIMIT_OK" -eq 1 ]; then
+  assert "legacy \"desc\" 3 still sets limit 3, no error" 0
+else
+  assert "legacy \"desc\" 3 still sets limit 3, no error" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
 
 # ---------------------------------------------------------------------------
 # AC4: unknown --surface
@@ -1058,6 +1093,14 @@ if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | g
   assert "tool helpers: a top-level tools/<x>/*.py entry point surfaces" 0
 else
   assert "tool helpers: a top-level tools/<x>/*.py entry point surfaces" 1
+  echo "rc=$RC out=$OUT" | sed 's/^/      /'
+fi
+
+OUT="$("$PRECEDENT_BIN" find zetaunique --surface inventory 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && { trap '' PIPE; printf '%s' "$OUT" 2>/dev/null || :; } | grep -q 'tools/alpha/zeta-run'; then
+  assert "tool helpers: a top-level extension-less executable entry point surfaces" 0
+else
+  assert "tool helpers: a top-level extension-less executable entry point surfaces" 1
   echo "rc=$RC out=$OUT" | sed 's/^/      /'
 fi
 

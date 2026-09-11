@@ -47,8 +47,15 @@ from parse_transcript import load  # noqa: E402  (re-exported: session-recall's 
 # does.
 
 
+def _msg(entry) -> dict:
+    # The transcript is untrusted at every level: a `message` that is a string or a list
+    # (seen in the wild) reads as an empty message instead of crashing every reader.
+    m = entry.get("message")
+    return m if isinstance(m, dict) else {}
+
+
 def _role(entry):
-    return (entry.get("message") or {}).get("role") or entry.get("type") or "?"
+    return _msg(entry).get("role") or entry.get("type") or "?"
 
 
 def _ts(entry):
@@ -58,7 +65,7 @@ def _ts(entry):
 def searchable_text(entry) -> str:
     """All human-meaningful text in a turn: prose, thinking, tool inputs, tool results."""
     parts = []
-    msg = entry.get("message") or {}
+    msg = _msg(entry)
     content = msg.get("content")
     if isinstance(content, str):
         parts.append(content)
@@ -206,7 +213,7 @@ def opening_ask(entries, width: int = 110) -> str:
     for e in entries:
         if _role(e) != "user":
             continue
-        c = (e.get("message") or {}).get("content")
+        c = _msg(e).get("content")
         text = ""
         if isinstance(c, str):
             text = c
