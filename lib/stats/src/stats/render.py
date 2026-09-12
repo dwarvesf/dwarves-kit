@@ -5,7 +5,7 @@ hand-written/mocked `rows` object and can never re-read a source ledger.
 
 Both functions take the EXACT same input shape: a list of dicts, the shape
 `cli.py::_emit`'s `--json` output already produces. Calling both with the same `rows`
-object is the single-data-path guarantee (SPEC-128 AC5): one fetched object, two
+object is the single-data-path guarantee (AC5): one fetched object, two
 formatters, never a second read.
 """
 

@@ -3,7 +3,7 @@
 # on kit-repo pushes whose diff touches the projection surfaces. Lives in
 # lib/gate/ (a helper the gate calls), not hooks/ (event hooks only, the
 # roster-parity pins count that dir). Exists because
-# the same drift class shipped twice (ID-467 2026-08-10, ID-639 2026-09-01):
+# the same drift class shipped twice (2026-08-10, 2026-09-01):
 # an agent/command lands without its MANUAL/architecture rows and nobody runs
 # the suite until weeks later. Grep-only (milliseconds); the slow checks
 # (FEATURES regen ~17s) stay in the full suite. Exit 1 = drift, caller blocks.

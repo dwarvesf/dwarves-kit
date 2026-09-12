@@ -102,6 +102,7 @@ clean_zone bin      4 "no id anywhere in bin/*"
 clean_zone skills   5 "no id in skills/*/SKILL.md prose"
 clean_zone agents   6 "no id anywhere in agents/*.md"
 clean_zone commands 7 "no id anywhere in commands/*.md"
+clean_zone lib      8 "no id anywhere in lib/**/*.sh, lib/**/*.py"
 
 echo ""
 echo "=== Ratchet: the zone list is meant to grow ==="

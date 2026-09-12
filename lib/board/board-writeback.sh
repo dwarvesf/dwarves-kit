@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# board-writeback.sh -- git<->Hermes kanban bridge, the WRITEBACK leg (SPEC-149, runner-fastpath
-# sub-goal 08). Consumes SPEC-147's mirror snapshot as its bearing surface; reuses
+# board-writeback.sh -- git<->Hermes kanban bridge, the WRITEBACK leg (runner-fastpath
+# sub-goal 08). Consumes the mirror snapshot as its bearing surface; reuses
 # lib/board/board-mirror.sh's extract/hash/native-state machinery by SOURCING it (not re-forking),
 # the same delegation discipline board-mirror.sh itself uses for lib/board/parse-board.sh.
 #
@@ -45,7 +45,7 @@
 #                                                                    per repo group to stderr.
 #
 # Changeset format (one NDJSON object per row `diff` validated):
-#   {"origin":"ops-toolkit:ID-042","repo":"ops-toolkit","id":"ID-042","hermes_id":"t_...",
+#   {"origin":"ops-toolkit:ID-nnn","repo":"ops-toolkit","id":"ID-nnn","hermes_id":"t_...",
 #    "board":"ops-toolkit","backlog_file":"/abs/path/_meta/BACKLOG.md","repo_root":"/abs/path",
 #    "current_status":"queued","target_status":"claimed","hermes_status":"ready",
 #    "row_hash":"<sha256, PASSED THROUGH from the snapshot, unchanged>"}

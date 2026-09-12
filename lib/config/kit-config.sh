@@ -155,7 +155,7 @@ TOML
     "$(KIT_CONFIG_OPERATOR="$d/none" kit_config_get_root mega.wave_cap)"                        "2"
   chk "KIT_CONFIG_OPERATOR redirects the file" \
     "$(KIT_CONFIG_OPERATOR="$d/none" kit_config_get_root gauntlet.runner_host local)"           "local"
-  # SPEC-249 TASK-001: [knowledge] root is a root-only key like gauntlet.runner_host --
+  # [knowledge] root is a root-only key like gauntlet.runner_host --
   # a project .kit.toml MUST NOT be able to redirect where knowledge notes land.
   chk "root-only knowledge.root: operator wins over kit-root, project ignored" \
     "$(KIT_CONFIG_OPERATOR="$d/op" kit_config_get_root knowledge.root)"                         "/tmp/op"

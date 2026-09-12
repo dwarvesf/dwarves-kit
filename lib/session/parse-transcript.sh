@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # parse-transcript.sh -- thin launcher for the shared JSONL turn-parser
-# (lib/session/parse_transcript.py, kit-foldin SG-03). The parsing logic itself
+# (lib/session/parse_transcript.py, kit-foldin). The parsing logic itself
 # is Python (both callers -- session-observe, session-recall -- are Python;
 # shelling JSONL parsing out to bash per-line would mean re-implementing
 # `json.loads` in bash or a jq subprocess per line, slower and a second

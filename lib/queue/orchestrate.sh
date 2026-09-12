@@ -18,8 +18,8 @@
 #       --board=roadmap|kanban|both  surface progress as a per-mega-goal kanban; default
 #                  detects (backlog.sh present -> both, else roadmap). Event-sourced + derived;
 #                  ROADMAP.md stays canonical, the repo-wide BACKLOG cockpit is never touched.
-#   --step/--stream are opt-in; default behavior is unchanged (SG-01, SPEC-087 Mechanism A).
-#   Env (SG-11 robustness, advisory): WATCHDOG_STALL_SECS>0 backgrounds each session + flags it
+#   --step/--stream are opt-in; default behavior is unchanged (Mechanism A).
+#   Env (robustness, advisory): WATCHDOG_STALL_SECS>0 backgrounds each session + flags it
 #   `stalled` after that many seconds with no output (WATCHDOG_POLL_SECS poll interval); never
 #   kills. Default 0 = off (synchronous path unchanged). A dead/incomplete session never advances
 #   its box (`[guardrail]` halt); a sub-goal with no goals/ file warns before launch.
@@ -36,7 +36,7 @@
 # mark` it, never merge it, never flip the box), and the loop HOLDS afterwards for the human merge,
 # grounded on the PR existing. MEGA_GATE_DISPATCH=0 restores the old stop-before-running behavior.
 #
-# TIER-4 mega-close (SPEC-118/ID-093, env TIER4_CLOSE=1 default): when EVERY box is checked, the run
+# TIER-4 mega-close (env TIER4_CLOSE=1 default): when EVERY box is checked, the run
 # does a real mega-level close over the ASSEMBLED WAVE -- a mechanical no-orphan sweep (a dispatchable
 # agent defined-but-never-dispatched is BLOCKING, the c6fbd99 class) + THREE independent fresh-context
 # verifier sessions (integration-verifier / review-team incl. security / advisor both modes, one
@@ -45,7 +45,7 @@
 # "done"-and-return; TIER4_CORPUS overrides the no-orphan sweep root (default: the megadir's git
 # repo root).
 #
-# Multiplexer panes (SPEC-119, env MULTIPLEXER=0 default -- OPT-IN, ADR-0032 s4): when a wave
+# Multiplexer panes (env MULTIPLEXER=0 default -- OPT-IN, s4): when a wave
 # actually admits >=1 sub-goal concurrently (WAVE_CAP>1 + disjoint `## Touches`), MULTIPLEXER=1
 # spawns each wave session into its own tmux window (`tmux new-window`) instead of a plain
 # background job, so an operator can `tmux capture-pane` its live output or `tmux send-keys` into
@@ -53,13 +53,13 @@
 # pre-existing kill-0/wait path and $TMUX_CMD is never invoked. TMUX_CMD mirrors CLAUDE_CMD's mock
 # seam; TMUX_SESSION overrides the derived per-megagoal tmux session name.
 #
-# Pane viewer push (SPEC-121, env PANE_VIEWER=auto default): the push half of the multiplexer --
+# Pane viewer push (env PANE_VIEWER=auto default): the push half of the multiplexer --
 # on wave spawn, ONE viewer tab/surface (cmux/kitty/wezterm/ghostty/iterm/terminal, auto-detected)
 # opens in the operator's terminal app already attached to the wave's tmux session. `none` = the
 # pull behavior above exactly; headless (no TTY / nothing detected) degrades silently to pull.
 # See the PANE_VIEWER env block below.
 #
-# Subagent panes (SPEC-234, `orchestrate.sh panes <megadir> <target>...`): the DEFAULT mega-goal
+# Subagent panes (`orchestrate.sh panes <megadir> <target>...`): the DEFAULT mega-goal
 # run mode dispatches sub-goals as background SUBAGENTS via the conductor's own Agent tool
 # (commands/mega.md "Run mode"), a path this driver never sees, so there is no dispatch loop to
 # hook. `panes` is a one-shot subcommand the conductor shells out to after dispatching: for each
@@ -75,32 +75,32 @@
 set -uo pipefail
 
 CLAUDE_CMD="${CLAUDE_CMD:-claude}"
-# Permission posture for the unattended sub-goal session (SPEC-087 "Session invocation"). Default
+# Permission posture for the unattended sub-goal session ("Session invocation"). Default
 # is full access so the session can edit/commit/push/open-PR without a permission wall stalling
 # the loop; override with a tighter `--allowedTools` allowlist or an agentkernel sandbox via
 # CLAUDE_CMD. Word-split intentionally (operator config, not user data). Tests set CLAUDE_FLAGS=""
 # so the mock's prompt stays the last arg.
 CLAUDE_FLAGS="${CLAUDE_FLAGS:---dangerously-skip-permissions}"
 
-# Hot-handoff size cap (SPEC-087 Mechanism B, two-tier). The HOT HANDOFF.md is injected in full,
+# Hot-handoff size cap (Mechanism B, two-tier). The HOT HANDOFF.md is injected in full,
 # so it must stay small or it recreates the marathon. Over the cap -> inject head + a notice and
 # point at the file. The WARM DECISIONS.md ledger is never injected in full (pointer only).
 HANDOFF_MAX_LINES="${HANDOFF_MAX_LINES:-80}"
 
-# Deterministic handoff (token-optim-v3 SG-02). Off (0) by default -> the per-session invocation
+# Deterministic handoff (token-optim-v3). Off (0) by default -> the per-session invocation
 # stays byte-identical and the LLM session writes its own HANDOFF.md/DECISIONS.md (unchanged). On
 # (1) -> the session is captured to stream-json and, after grounded completion, the two-tier
-# handoff is REGENERATED deterministically from that transcript by lib/goal/handoff-gen (SPEC-087 Mech
+# handoff is REGENERATED deterministically from that transcript by lib/goal/handoff-gen (Mech
 # B fields preserved; no LLM in the handoff path). Always-produced + reproducible beats
 # occasionally-excellent-but-skippable.
 DETERMINISTIC_HANDOFF="${DETERMINISTIC_HANDOFF:-0}"
 
-# Lean token capture under delegation (SPEC-117, executes ADR-0032 section 3). Off (0) by default.
+# Lean token capture under delegation (executes section 3). Off (0) by default.
 # On (1, via CAPTURE_TOKENS=1 or the --capture-tokens flag) -> the delegated child streams to a FILE
 # (`claude -p --stream > .orchestrate/<id>.stream.jsonl`) purely so the post-session token hook can
 # extract usage; the conductor reads only the box-flip, NEVER the child transcript. It is a THIRD,
 # DECOUPLED trigger for the SAME silent `> "$slog"` stream-to-file branch that DETERMINISTIC_HANDOFF
-# uses -- NOT `--stream` (that tees the transcript to the conductor = the ADR-0032 section 1 forbidden
+# uses -- NOT `--stream` (that tees the transcript to the conductor = the forbidden
 # bloat path) and NOT coupled to handoff regeneration. Read as a GLOBAL (like DETERMINISTIC_HANDOFF,
 # not a positional arg) so it inherits into the wave subshell on fork with no `_run_one_session`
 # signature change and no `_wave_run` call-site touch. The serial token hook is already `$slog`-gated,
@@ -122,7 +122,7 @@ BACKLOG_LIB="${BACKLOG_LIB:-$LIB_ROOT/board/backlog.sh}"
 # shellcheck source=./harness.sh
 . "$ORCH_DIR/harness.sh"
 
-# Config layer (SPEC-187 / SG-03, executes ADR-0032 section 6): `[mega]` keys resolve
+# Config layer (executes section 6): `[mega]` keys resolve
 # project .kit.toml > kit-root kit.toml > the hardcoded default baked into each `${VAR:-...}`
 # below, and the ENV VAR always wins over all three (an operator's `WAVE_CAP=5` in the
 # shell overrides even a project config). Sourced once, here, so every `${X:-$(kit_config_get
@@ -145,7 +145,7 @@ _kit_bool01() {
   esac
 }
 
-# Loop robustness (SG-11, advisory). WATCHDOG_STALL_SECS=0 (default) keeps the synchronous run
+# Loop robustness (advisory). WATCHDOG_STALL_SECS=0 (default) keeps the synchronous run
 # path UNCHANGED. >0 backgrounds each session and polls every WATCHDOG_POLL_SECS: if the session
 # emits no output for WATCHDOG_STALL_SECS while its process is still alive, it is flagged
 # `stalled` (event + warn) -- never killed (flag, don't kill). Liveness is a `kill -0` probe (no
@@ -161,19 +161,19 @@ WATCHDOG_POLL_SECS="${WATCHDOG_POLL_SECS:-30}"
 FLIP_LOCK_STALE_SECS="${FLIP_LOCK_STALE_SECS:-120}"
 FLIP_LOCK_POLL_SECS="${FLIP_LOCK_POLL_SECS:-0.1}"
 
-# Wavefront concurrency cap (SPEC-106 DEC-002/009; default flipped to 2 in the ID-090 activation).
+# Wavefront concurrency cap (default flipped to 2 in the activation).
 # Default 2 = waves ON: dep-independent sub-goals that BOTH declare disjoint `## Touches` run
 # concurrently. A mega-goal whose sub-goals declare NO `## Touches` still runs fully serially
 # (admitted=0 -> serial fallthrough), so the flip is a no-op for Touches-less mega-goals except that
 # a `depends`-declaring one is now dep-aware (halts rather than running a dep-blocked sub-goal). Set
 # WAVE_CAP=1 to force the old always-serial loop. A non-numeric or <1 value is REJECTED at cmd_run
-# entry (NOT silently coerced), per DEC-009 / Edge case 4. Defaulted here so the top-of-loop `-ge 2`
+# entry (NOT silently coerced), per Edge case 4. Defaulted here so the top-of-loop `-ge 2`
 # test is `set -u`-safe.
-# SG-03: env wins outright; else the config layer's [mega].wave_cap (project > kit-root);
+# Precedence: env wins outright; else the config layer's [mega].wave_cap (project > kit-root);
 # else the hardcoded 2 below (kit_config_get's own caller-default arg).
 WAVE_CAP="${WAVE_CAP:-$(kit_config_get mega.wave_cap 2)}"
 
-# Wave-convergence merge hook (SPEC-106 TASK-004c). After a wave lands its sub-goals on their worktree
+# Wave-convergence merge hook. After a wave lands its sub-goals on their worktree
 # branches, their merges back to the mega-goal base MUST happen ONE AT A TIME under the flip lock (see
 # `_wave_converge`); the actual merge goes through THIS mockable hook. Default is the real path
 # (`lib/goal/mega-merge.sh merge`, whose semantics stay untouched , convergence only SEQUENCES calls to it),
@@ -183,21 +183,21 @@ WAVE_CAP="${WAVE_CAP:-$(kit_config_get mega.wave_cap 2)}"
 # (operator config, not user data), mirroring CLAUDE_FLAGS. Override the lane via WAVE_MERGE_LANE.
 WAVE_MERGE_CMD="${WAVE_MERGE_CMD:-$LIB_ROOT/goal/mega-merge.sh merge}"
 
-# Multiplexer panes (SPEC-119, executes ADR-0032 section 4). Opt-in (default 0/off): when a wave
+# Multiplexer panes (executes section 4). Opt-in (default 0/off): when a wave
 # runs (MULTIPLEXER=1, WAVE_CAP>1, sub-goals declaring disjoint Touches so >=1 is actually
 # admitted concurrently), each spawned wave session runs inside a tmux window instead of a plain
 # background job, so the operator can `tmux capture-pane`/`send-keys` it (watch + intervene across
-# tabs, ADR-0032 s4). OFF by default: `_wave_run`'s spawn/reap take the exact pre-existing
+# tabs). OFF by default: `_wave_run`'s spawn/reap take the exact pre-existing
 # kill-0/wait code path and $TMUX_CMD is never invoked (the off-path-unchanged property this
 # sub-goal's Proof is built on). TMUX_CMD mirrors CLAUDE_CMD's mock seam (tests point it at a fake
 # `tmux` so no real tmux server is needed in CI). TMUX_SESSION overrides the derived per-megagoal
 # tmux session name (default: sanitized from the megadir path, see _mux_session_name).
-# SG-03: env wins; else [mega].multiplexer (project > kit-root, "true"/"false" normalized);
+# Precedence: env wins; else [mega].multiplexer (project > kit-root, "true"/"false" normalized);
 # else off (0).
 MULTIPLEXER="${MULTIPLEXER:-$(_kit_bool01 "$(kit_config_get mega.multiplexer)" 0)}"
 TMUX_CMD="${TMUX_CMD:-tmux}"
 
-# Pane viewer push. SPEC-119's panes are PULL-only (the operator must know the tmux
+# Pane viewer push. the panes are PULL-only (the operator must know the tmux
 # session name and attach by hand); PANE_VIEWER is the PUSH half: on wave spawn, open ONE viewer
 # surface in the operator's own terminal app, already attached to the wave's tmux session (one
 # surface per wave session per run, never one per worker -- noise control; tmux's own window keys
@@ -216,13 +216,13 @@ PANE_VIEWER="${PANE_VIEWER:-auto}"
 VIEWER_CMD="${VIEWER_CMD:-}"
 PANE_VIEWER_ALLOWED="auto cmux kitty wezterm ghostty iterm terminal none"
 
-# Subagent pane formatter (SPEC-234, the `panes` subcommand). `cmd_panes` resolves this HERE,
+# Subagent pane formatter (the `panes` subcommand). `cmd_panes` resolves this HERE,
 # caller-side, and hands it to the pane as an argv token, never an env read inside the pane --
 # exported env does not cross the tmux server boundary, so an env-only seam would be a
 # false-green in direct-call tests. Default: the formatter shipped next to this script.
 PANE_TAIL_JQ="${PANE_TAIL_JQ:-$ORCH_DIR/pane-tail.jq}"
 
-# TIER-4 mega-close (SPEC-118/ID-093, executes ADR-0032 section 5). Default ON (1): when EVERY
+# TIER-4 mega-close (executes section 5). Default ON (1): when EVERY
 # sub-goal box is checked, `cmd_run` runs a real mega-level close over the ASSEMBLED WAVE instead of
 # just printing "done" -- a mechanical no-orphan sweep (a dispatchable AGENT defined-but-never-
 # dispatched is a BLOCKING finding, the kit-hardening c6fbd99 class) THEN THREE independent
@@ -234,7 +234,7 @@ PANE_TAIL_JQ="${PANE_TAIL_JQ:-$ORCH_DIR/pane-tail.jq}"
 # test uses so the close fires only in its own dedicated test). TIER4_CORPUS overrides the no-orphan
 # sweep root (default: the megadir's git repo root); unset AND unresolvable -> the sweep is SKIPPED
 # with a WARN (there is no corpus to sweep, so it must not manufacture a false halt).
-# SG-03: env wins; else [mega].tier4_close (project > kit-root, "true"/"false" normalized);
+# Precedence: env wins; else [mega].tier4_close (project > kit-root, "true"/"false" normalized);
 # else on (1).
 TIER4_CLOSE="${TIER4_CLOSE:-$(_kit_bool01 "$(kit_config_get mega.tier4_close)" 1)}"
 
@@ -431,11 +431,11 @@ _sg_pr_url() {  # dir id
   case "$url" in http*) printf '%s' "$url" ;; esac
 }
 
-# ---- SG-10 board-view / event-sourced status -----------------------------------------------
+# ---- board-view / event-sourced status -----------------------------------------------
 # Event-sourced status (pi-swarm borrow): the loop APPENDS status events; the board is DERIVED
 # by replay (last event per sub-goal wins), NEVER mutated in place -> a crashed/concurrent
 # session cannot corrupt a checkbox. ROADMAP.md + the goal files stay canonical; the board is a
-# regenerated view-sync. SG-11's watchdog reuses this file (mtime + last status) as its signal.
+# regenerated view-sync. the watchdog reuses this file (mtime + last status) as its signal.
 _events_file() { printf '%s/.orchestrate/events.log\n' "$1"; }
 
 _emit_event() {  # dir id status [note]
@@ -555,15 +555,15 @@ _goalfile() {
   for f in "$dir/goals/${id#SG-}-"*.md; do [ -f "$f" ] && { printf '%s\n' "$f"; return; }; done
 }
 
-# Wavefront admission gate (SPEC-106 TASK-003, DEC-007/011/012). PURE DECISION helper: it decides
-# which ready sub-goals may run concurrently; it spawns NOTHING and is not yet wired into cmd_run
-# (that is TASK-004). Reads the ready set (`_ready_set`), then admits GREEDILY in ROADMAP order , a
+# Wavefront admission gate. PURE DECISION helper: it decides
+# which ready sub-goals may run concurrently; it spawns NOTHING and is not yet wired into cmd_run.
+# Reads the ready set (`_ready_set`), then admits GREEDILY in ROADMAP order , a
 # candidate is admitted iff (a) its goal file declares its OWN `## Touches` section AND (b) it proves
-# disjoint (dispatch-gate.sh, the ONE disjointness authority per DEC-001) against EVERY already-
+# disjoint (dispatch-gate.sh, the ONE disjointness authority) against EVERY already-
 # admitted member. Admission stops at WAVE_CAP (env, default 2 => waves on by default; WAVE_CAP=1
 # forces the old always-serial admission of at most one `run`).
 #
-# Self-Touches is REQUIRED (DEC-012b): dispatch-gate admits the FIRST member vacuously (empty admitted
+# Self-Touches is REQUIRED: dispatch-gate admits the FIRST member vacuously (empty admitted
 # set => nothing to prove disjoint against), so without demanding the candidate's own `## Touches` a
 # Touches-less sub-goal would be wrongly admitted. A goal file with no `## Touches` => always `defer`
 # (the Option-B opt-in gate).
@@ -574,15 +574,15 @@ _goalfile() {
 # pair is negligible for a wave-launch decision over a small ready set. `disjoint` exit 0 = provably
 # disjoint (admit-eligible); any nonzero (1 overlap / 2 undeclared) = not disjoint => defer.
 #
-# Output: one `run<TAB>id` or `defer<TAB>id` line per ready sub-goal, in ROADMAP order. Wire format
-# per SPEC-106 "Helper wire formats". bash-3.2 safe: no assoc-arrays; the admitted set is a plain
-# array of goal-file paths, empty-guarded `${arr[@]+"${arr[@]}"}` (DEC-005, mega-merge.sh:224).
+# Output: one `run<TAB>id` or `defer<TAB>id` line per ready sub-goal, in ROADMAP order.
+# bash-3.2 safe: no assoc-arrays; the admitted set is a plain
+# array of goal-file paths, empty-guarded `${arr[@]+"${arr[@]}"}` (mega-merge.sh:224).
 # Process-sub (not a pipe) feeds the loop so the admitted state lives in THIS shell, not a subshell.
 _wave_gate() {  # megadir roadmap
   local megadir="$1" roadmap="$2"
   local cap="${WAVE_CAP:-1}"
   # Defensive numeric guard: a non-numeric/empty cap would make the `-lt` test emit a bash integer
-  # error. The parse-time rejection of `<1`/non-numeric WAVE_CAP is TASK-004b's wiring boundary; this
+  # error. The parse-time rejection of `<1`/non-numeric WAVE_CAP is the wiring boundary; this
   # helper only ever sees a validated cap in the wired path, so falling back to 1 here is belt-and-
   # braces for a direct call, never a substitute for that rejection.
   case "$cap" in ''|*[!0-9]*) cap=1 ;; esac
@@ -615,7 +615,7 @@ _wave_gate() {  # megadir roadmap
   done < <(_ready_set "$roadmap")
 }
 
-# ID-096: the allowlisted `Model:` tier names -- the same short names the decompose-time model
+# The allowlisted `Model:` tier names -- the same short names the decompose-time model
 # suggester's `tier_of()` normalizes to (haiku/sonnet/opus/fable). Kept as one constant so the
 # allowlist and its error message never drift apart.
 #
@@ -628,9 +628,9 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # Emit "model<TAB>effort" read from a goal file's `Model:`/`Effort:` lines (empty when absent).
 # Bare `Key: value` header lines, not YAML; first match each, value trimmed. Absent field or
 # absent file -> empty -> the orchestrator emits no flag and the session inherits its tier
-# (SPEC-087 "Model / Effort routing"). The biggest $ lever: Opus only on the hard sub-goals.
+# ("Model / Effort routing"). The biggest $ lever: Opus only on the hard sub-goals.
 #
-# ID-096: pre-flight allowlist validation. Before this fix, an off-allowlist `Model:` value (a
+# Pre-flight allowlist validation. Before this fix, an off-allowlist `Model:` value (a
 # typo, e.g. `Model: sonet`) was passed VERBATIM into `--model <value>` and died mid-dispatch as an
 # opaque `claude` CLI error deep inside a spawned session (or, worse under a wave, mid-drain with
 # sibling sessions already in flight). Reject it HERE instead, before any session spawns: an
@@ -647,7 +647,7 @@ _ROUTE_MODEL_ALLOWLIST="opus sonnet haiku fable"
 # adjacent allowed words joined by one space are a substring of the joined list, so a MULTI-WORD
 # value like `Model: opus sonnet` would slip through (`" opus sonnet "` is a substring of
 # `" opus sonnet haiku "`) and get passed verbatim to `--model "opus sonnet"`, dying deep in the
-# spawned `claude -p` , precisely the failure ID-096 exists to stop.
+# spawned `claude -p` , precisely the failure this guard exists to stop.
 # The set of NON-claude harnesses this kit installation permits, from `mega.enabled_agent_clis`.
 # DEFAULT EMPTY = claude-only: out of the box, multi-vendor dispatch is OFF, so a stray `Harness:
 # codex` header errors clearly instead of surprise-spending on another vendor's account. An operator
@@ -703,7 +703,7 @@ _route() {
     model=$(grep -iE '^Model:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
     effort=$(grep -iE '^Effort:[[:space:]]*' "$gf" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/[[:space:]]+$//')
   fi
-  # ID-390: the tier allowlist below is CLAUDE-ONLY. `opus`/`sonnet`/`haiku`/`fable` are Claude
+  # The tier allowlist below is CLAUDE-ONLY. `opus`/`sonnet`/`haiku`/`fable` are Claude
   # alias names, so validating a codex sub-goal's `Model: gpt-5` against them would reject every
   # legitimate non-claude model. There is no honest cross-vendor tier mapping (gpt-5 is not "opus"),
   # so a non-claude harness passes its model through VERBATIM and that vendor's own CLI is what
@@ -720,7 +720,7 @@ _route() {
   # model_reasoning_effort="<effort>"`, a TOML string an embedded `"` can break out of; (b) the
   # claude path word-splits `route_flags` (`--effort $reffort`) into the real `claude -p` argv, so a
   # value like `x --mcp-config /tmp/e.json` injects extra flags (the same argument-injection class
-  # SPEC-119 closed for the tmux path). A charset gate at this ONE chokepoint closes both. `Model:`
+  # already closed for the tmux path). A charset gate at this ONE chokepoint closes both. `Model:`
   # needs no equivalent: claude models pass the exact-token tier allowlist below, and a non-claude
   # model becomes a single `harness_argv` array token (never word-split), so it has no injection
   # surface. Effort words for every vendor fit `[A-Za-z0-9_-]` (low/medium/high/xhigh/max/minimal/off).
@@ -729,7 +729,7 @@ _route() {
     printf '%s\t%s\n' "$model" "$effort"
     return 64
   fi
-  # SG-03: the goal-file `Model:` field is UNCHANGED and still wins outright (Scope: "the
+  # The goal-file `Model:` field is UNCHANGED and still wins outright (Scope: "the
   # goal-file Model: parse ... still wins"). Only when the field is ABSENT does the run fall
   # back through the config layer's [mega].default_model (project .kit.toml > kit-root
   # kit.toml). No hardcoded value is baked in HERE: with no config file either, `model` stays
@@ -759,7 +759,7 @@ _route() {
 # Emit a gate-ledger START for a dispatched sub-goal, the automated
 # mirror of the `gate-ledger.sh start` that `commands/assign.md` makes for hand-run work.
 # Without it, mega-dispatched runs are untracked (`?` lane/type) in lane-telemetry, the root
-# cause of the SPEC-073 eval's NULL lane/type/skip/escape rates. Advisory + non-fatal: a
+# cause of the eval's NULL lane/type/skip/escape rates. Advisory + non-fatal: a
 # missing goal file or a goal file with no `**Branch:**` WARNs and skips (a rid that does not
 # match the session's real branch would only orphan the START). The rid is derived from the
 # goal file's declared `**Branch:** <type>/<slug>` (branch does not exist yet at dispatch;
@@ -768,7 +768,7 @@ _route() {
 # classified on both axes: the automated path takes the classifier verbatim (no human
 # override), which is honest and never reads as a misroute.
 # _rid_for: the canonical rid (branch slug) for a sub-goal, from its goal file's **Branch:** header.
-# SHARED by _emit_start (writes the START line) and the SPEC-110 token hook (writes the TOKENS line)
+# SHARED by _emit_start (writes the START line) and the token hook (writes the TOKENS line)
 # so both land in the SAME <rid>.log (spec-validate: no drift into separate ledger files). Empty
 # output => no goal file or no **Branch:** header; the caller decides how to warn.
 _rid_for() {  # dir id
@@ -781,7 +781,7 @@ _rid_for() {  # dir id
 
 # _record_tokens <dir> <id> <slog>: extract per-session token usage from a captured stream-json
 # file and record a TOKENS ledger line for the sub-goal's rid. SHARED by the serial
-# per-sub-goal loop (cmd_run) AND the wave reap loop (_wave_run, ID-094) so both paths write to
+# per-sub-goal loop (cmd_run) AND the wave reap loop (_wave_run) so both paths write to
 # the exact same ledger stream via the exact same extraction. CAPTURE-GATED but the gate lives in
 # the CALLER (an absent/empty $slog is also a harmless no-op here, so double-gating is safe, never
 # load-bearing). Non-fatal: a parse miss must not stop the loop.
@@ -832,13 +832,13 @@ _build_prompt() {
     printf -- '- The orchestrator grounds your completion on the PR EXISTING, so the PR is the deliverable.\n'
   fi
   # Inject the goal file's CONTENT (not just a path), so the session has the contract and
-  # re-discovery is actually eliminated (SPEC-087 "Session invocation").
+  # re-discovery is actually eliminated ("Session invocation").
   local gf; gf=$(_goalfile "$dir" "$id")
   if [ -n "$gf" ]; then
     printf '\nGOAL FILE (%s, the contract for this sub-goal):\n' "$(basename "$gf")"
     cat "$gf"
   fi
-  # Two-tier feed-forward (SPEC-087 Mechanism B):
+  # Two-tier feed-forward (Mechanism B):
   #   HOT  HANDOFF.md  -- overwritten each transition; injected in FULL but capped. Carries the
   #                      next action + read-pointers so re-discovery becomes a read.
   #   WARM DECISIONS.md -- append-only ledger of invariants + dead-ends; injected as a POINTER
@@ -891,14 +891,14 @@ _build_prompt() {
 cmd_next() {
   local dir="${1:-}"
   [ -f "$dir/ROADMAP.md" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
-  _prune_streams "$dir"   # ID-095: age-cap sweep at the cheap, frequently-run "what's next" touchpoint
+  _prune_streams "$dir"   # age-cap sweep at the cheap, frequently-run "what's next" touchpoint
   local nx; nx=$(_next "$dir/ROADMAP.md")
   if [ -n "$nx" ]; then printf '%s\n' "$nx"; else _say "(none unchecked)"; fi
 }
 
 # cmd_flip <megadir> <id>: flip "- [ ] SG-NN" -> "- [x]" in the SHARED absolute-path
-# `$megadir/ROADMAP.md` (never a per-sub-goal worktree copy: the driver only sees the shared one,
-# SPEC-106 DEC-008), UNDER the flip lock, via write-temp-then-`mv` (atomic rename) so a concurrent
+# `$megadir/ROADMAP.md` (never a per-sub-goal worktree copy: the driver only sees the shared one),
+# UNDER the flip lock, via write-temp-then-`mv` (atomic rename) so a concurrent
 # reader/flip never sees a torn file. Idempotent: flipping an already-checked box is a no-op
 # success. Unknown id -> nonzero + a clear message. NO scheduling is wired here (waves land later);
 # this is the mutual-exclusion primitive the wave loop will call for grounded box-flips.
@@ -1045,7 +1045,7 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
     fi
   done
   wait "$spid"; local rc=$?
-  _redact_secrets_file "$slog"   # ID-095: redact before it's surfaced (cat) or returned to the caller
+  _redact_secrets_file "$slog"   # redact before it's surfaced (cat) or returned to the caller
   cat "$slog"
   _WD_SLOG=""
   [ "$capture" = 1 ] && _WD_SLOG="$slog"
@@ -1062,8 +1062,8 @@ _run_session_watchdog() {  # dir id pfile route_flags capture
 # correctness ones, so per the house convention (advisory failures WARN+continue; only
 # grounded-completion / gate / nonzero-session failures halt) this WARNs once and degrades instead of
 # refusing to dispatch -- a globally-set CAPTURE_TOKENS=1 must not become a wall that blocks every
-# non-claude sub-goal. The WARN is what keeps it from being the silent accounting black hole ID-097
-# closed on the watchdog path.
+# non-claude sub-goal. The WARN is what keeps it from being the silent accounting black hole this
+# path already closed on the watchdog side.
 #
 # Grounded completion is UNAFFECTED and still the real done-signal: the caller re-reads ROADMAP.md
 # for the flipped checkbox regardless of vendor, so a non-claude session cannot self-claim done
@@ -1084,7 +1084,7 @@ _run_one_session_vendor() {  # dir id pfile harness stream
   [ "$route_rc" = 0 ] || { echo "[orchestrate] $id: routing rejected (see the 'orchestrate:' reason above); not dispatching to '$harness'." >&2; return 64; }
   IFS=$'\t' read -r model effort <<<"$route_out"
 
-  # Degrade WARN. `WATCHDOG_STALL_SECS` is included (review): the vendor path cannot run the SG-11
+  # Degrade WARN. `WATCHDOG_STALL_SECS` is included (review): the vendor path cannot run the
   # stall watchdog either (it needs the same stream-json capture the vendor CLIs lack), so an
   # operator running with the watchdog on must be told this sub-goal is exempt -- not left to assume
   # every session is monitored. Same advisory-WARN posture as the other lost observability features.
@@ -1120,7 +1120,7 @@ _run_one_session_vendor() {  # dir id pfile harness stream
 }
 
 # _run_one_session: run ONE sub-goal session via the correct mutually-exclusive run-path
-# (SG-11 watchdog / --stream|DETERMINISTIC_HANDOFF stream-json / plain claude -p). Keyed on
+# (watchdog / --stream|DETERMINISTIC_HANDOFF stream-json / plain claude -p). Keyed on
 # `dir id pfile route_flags stream` (stream is a cmd_run local, so it is passed explicitly).
 # Returns the session exit code; exposes the stream-log path via the global _ROS_SLOG so the
 # caller can wire post-session logic (grounded completion, deterministic handoff) to it. Extracted
@@ -1133,7 +1133,7 @@ _run_one_session() {  # dir id pfile route_flags stream
   # byte-identical (no pipe, no tee). pipefail (set at top) keeps the `if ! ... | tee` honest.
   local rc=0 slog="" wd_capture=0
 
-  # ID-390 multi-vendor branch. The harness is re-read from the goal file here rather than threaded
+  # Multi-vendor branch. The harness is re-read from the goal file here rather than threaded
   # in as a 6th positional, because `route_flags` reaches this function through FOUR call sites
   # (serial cmd_run, the wave subshell, _pane_spawn, cmd_pane_exec) and widening all of them for one
   # string would be a far larger diff than one grep. A non-claude sub-goal takes the plain path only.
@@ -1145,7 +1145,7 @@ _run_one_session() {  # dir id pfile route_flags stream
   # Everything below is the ORIGINAL claude path, untouched: `$CLAUDE_CMD` stays the mock seam every
   # pre-existing test drives, so an absent `Harness:` header is byte-for-byte the old behavior.
   if [ "$WATCHDOG_STALL_SECS" -gt 0 ]; then
-    # SG-11 watchdog path (opt-in). Token accounting: mirror the same capture gate the
+    # Watchdog path (opt-in). Token accounting: mirror the same capture gate the
     # non-watchdog elif below uses, so a stall no longer silently drops the sub-goal's tokens (the
     # accounting-black-hole gap `_run_session_watchdog`'s own header comment used to describe).
     # `_WD_SLOG` (set by `_run_session_watchdog`) feeds `_ROS_SLOG` below exactly like the elif's
@@ -1157,9 +1157,9 @@ _run_one_session() {  # dir id pfile route_flags stream
   elif [ "$stream" = 1 ] || [ "$DETERMINISTIC_HANDOFF" = 1 ] || [ "$CAPTURE_TOKENS" = 1 ]; then
     # Capture stream-json when the operator wants a live tail (--stream) OR the deterministic
     # handoff needs the transcript (DETERMINISTIC_HANDOFF=1) OR lean token capture is on
-    # (CAPTURE_TOKENS=1, SPEC-117). The live `tee` to the terminal happens ONLY under --stream;
+    # (CAPTURE_TOKENS=1). The live `tee` to the terminal happens ONLY under --stream;
     # det-handoff and capture-tokens both take the SILENT `> "$slog"` branch below, so the child
-    # transcript lands in the FILE only and never reaches the conductor's stdout (ADR-0032 s3).
+    # transcript lands in the FILE only and never reaches the conductor's stdout (s3).
     local logdir="$dir/.orchestrate"; mkdir -p "$logdir"
     slog="$logdir/${id}.stream.jsonl"
     # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
@@ -1167,7 +1167,7 @@ _run_one_session() {  # dir id pfile route_flags stream
       _say "[orchestrate] streaming $id -> $slog (live tail + captured)"
       "$CLAUDE_CMD" -p $route_flags --output-format stream-json --verbose $CLAUDE_FLAGS < "$pfile" | tee "$slog" || rc=$?
     else
-      # ponytail: fd1-only redirect. The transcript (the ADR-0032 accumulation trap) is claude's
+      # ponytail: fd1-only redirect. The transcript (the accumulation trap) is claude's
       # STDOUT and goes to the file; `--verbose` STDERR (diagnostic, no usage/turn content) is left
       # on fd2. Redirecting stderr too (`2>...`) is a deferred hardening for a stdout+stderr-merging
       # conductor invocation -- skipped because it would also silence real error output on this opt-in
@@ -1178,7 +1178,7 @@ _run_one_session() {  # dir id pfile route_flags stream
     # shellcheck disable=SC2086 # CLAUDE_FLAGS + route_flags are operator/goal config; word-splitting is intended.
     "$CLAUDE_CMD" -p $route_flags $CLAUDE_FLAGS < "$pfile" || rc=$?
   fi
-  # ID-095: redact secret-shaped substrings from the captured file before it's handed back (the
+  # Redact secret-shaped substrings from the captured file before it's handed back (the
   # live `--stream` terminal tee above already happened by this point -- redacting the FILE closes
   # the at-rest exposure, the primary risk this fix targets; a live-tee filter would need a
   # process-substitution rewrite of the stream FORMAT plumbing, out of scope for this sweep).
@@ -1187,12 +1187,12 @@ _run_one_session() {  # dir id pfile route_flags stream
   return "$rc"
 }
 
-# ---- Wavefront spawn/reap primitive (SPEC-106 TASK-004a, DEC-005) -----------------------------
+# ---- Wavefront spawn/reap primitive -----------------------------
 # The concurrent-wave engine: take the admitted `run` set, run those sub-goals concurrently (each in
 # its OWN worktree), reap on completion, drain safely on a sibling failure. bash-3.2 throughout: no
 # assoc arrays (the reap map is index-aligned plain arrays), no `wait -n` (poll `kill -0` like
 # `_run_session_watchdog`), no `flock`. Standalone-testable with a MOCK CLAUDE_CMD; wiring into
-# cmd_run (size-dispatch on admitted count) is the NEXT task (TASK-004b), so `_wave_run` has ZERO
+# cmd_run (size-dispatch on admitted count) is the NEXT task, so `_wave_run` has ZERO
 # call sites in the run loop after this task.
 
 # A sub-goal's declared branch from its goal file's `**Branch:** <type>/<slug>` header (same parse
@@ -1260,7 +1260,7 @@ _wave_worktree() {  # repo id branch
   printf '%s\n' "$wt"
 }
 
-# ---- Multiplexer panes (SPEC-119, ADR-0032 s4) ------------------------------------------------
+# ---- Multiplexer panes (s4) ------------------------------------------------
 # The per-megagoal tmux session name a wave's panes live in: $TMUX_SESSION if the operator set
 # one, else derived from the megadir's basename (sanitized to tmux-safe chars). Pure function.
 _mux_session_name() {  # megadir
@@ -1269,8 +1269,8 @@ _mux_session_name() {  # megadir
   printf 'orch-%s\n' "$(printf '%s' "$base" | tr -c 'A-Za-z0-9_-' '-')"
 }
 
-# Spawn ONE wave sub-goal's REAL session inside a tmux window (visibility + intervention, ADR-0032
-# s4) instead of a plain backgrounded job. `tmux new-window` cannot call a bash function in THIS
+# Spawn ONE wave sub-goal's REAL session inside a tmux window (visibility + intervention)
+# instead of a plain backgrounded job. `tmux new-window` cannot call a bash function in THIS
 # process -- it execs a fresh command line -- so the pane re-enters `orchestrate.sh` via the hidden
 # `_pane-exec` subcommand, which runs the exact same `_run_one_session` the plain path uses (no
 # duplicated dispatch logic). Ensures the shared per-megagoal tmux session exists first (`has-session`
@@ -1294,7 +1294,7 @@ _pane_spawn() {  # megadir id wt pfile route_flags donefile
   local mux; mux=$(_mux_session_name "$megadir")
   "$TMUX_CMD" has-session -t "$mux" 2>/dev/null || "$TMUX_CMD" new-session -d -s "$mux" -n _init 2>/dev/null || return 1
   "$TMUX_CMD" kill-window -t "$mux:$id" 2>/dev/null || true
-  # SECURITY (SPEC-119 fix): pass the pane command as SEPARATE argv tokens after `--`, never a
+  # SECURITY (fix): pass the pane command as SEPARATE argv tokens after `--`, never a
   # single joined string. tmux hands a lone command STRING to `$SHELL -c`, a second shell parse
   # (an eval); with the multi-arg form it execs directly, no re-parse. `route_flags` is built from
   # the goal file's unsanitized `Model:`/`Effort:` header, so the joined form was a host command
@@ -1321,7 +1321,7 @@ _pane_send_keys() {  # megadir id keys...
 }
 
 # ---- Pane viewer push ----------------------------------------------------------------
-# The push half of SPEC-119's pull-only panes: on wave spawn, open ONE viewer tab/surface in the
+# The push half of the pull-only panes: on wave spawn, open ONE viewer tab/surface in the
 # operator's terminal app, attached to the wave's tmux session. Three functions: a pure env
 # detector, a mode resolver, and the best-effort opener. See the PANE_VIEWER env block up top.
 
@@ -1331,7 +1331,7 @@ _pane_send_keys() {  # megadir id keys...
 _viewer_tty() { [ -t 2 ]; }
 
 # Pure env sniff -> the running viewer's name, or nothing. Order is load-bearing: cmux embeds a
-# terminal that sets $TERM_PROGRAM too, so the cmux env must win (SPEC-121 edge case 1).
+# terminal that sets $TERM_PROGRAM too, so the cmux env must win (edge case 1).
 _viewer_detect() {
   if [ -n "${CMUX_WORKSPACE_ID:-}" ]; then printf 'cmux\n'; return 0; fi
   case "${TERM_PROGRAM:-}" in
@@ -1366,7 +1366,7 @@ _viewer_resolve() {
 # Exec seam for the viewer argv, mirroring $TMUX_CMD/$CLAUDE_CMD: VIEWER_CMD set -> the mock
 # receives the FULL argv (binary name first) so tests assert both the pick and the exact
 # arguments; unset -> exec the argv DIRECTLY ("$@": no string join, no `$SHELL -c` re-parse --
-# the SPEC-119 #143 exec-direct pattern). Missing real binary -> nonzero (caller warns).
+# the #143 exec-direct pattern). Missing real binary -> nonzero (caller warns).
 _viewer_exec() {
   if [ -n "$VIEWER_CMD" ]; then "$VIEWER_CMD" "$@"; return $?; fi
   command -v "$1" >/dev/null 2>&1 || return 127
@@ -1374,12 +1374,12 @@ _viewer_exec() {
 }
 
 # Open ONE viewer surface attached to the wave's tmux session. Best-effort by contract: ALWAYS
-# returns 0 (a viewer is a visibility affordance; its failure must never mark the wave failed,
-# DEC-003). The exec itself is FIRE-AND-FORGET (backgrounded + disowned; review fix, architecture
+# returns 0 (a viewer is a visibility affordance; its failure must never mark the wave failed).
+# The exec itself is FIRE-AND-FORGET (backgrounded + disowned; review fix, architecture
 # P1): the osascript paths can block indefinitely on a first-run macOS Automation permission
 # dialog ("Terminal wants to control iTerm"), and a synchronous call here sits inside
 # `_wave_run`'s spawn loop, where a hang would stall every subsequent sub-goal -- exactly the
-# blocking-call class SG-11's watchdog exists for. `disown` drops the job from the shell's job
+# blocking-call class the watchdog exists for. `disown` drops the job from the shell's job
 # table so `_wave_abort`'s bare `wait` can never block on a hung viewer either. Reuse guard: one
 # attempt per tmux session name per run (`_VIEWER_OPENED`, a space-separated list -- bash 3.2 has
 # no assoc arrays), success or not, so a persistently broken viewer warns once instead of once
@@ -1436,7 +1436,7 @@ _viewer_open() {  # megadir
 # live JSONL transcript (`~/.claude/projects/<slug>/<session>/subagents/agent-<id>.jsonl`) gets a
 # READ-ONLY tmux pane the operator can watch (`tmux attach`). Read-only by construction (the
 # pane's process tree is `tail | jq`, no shell, no REPL); steering still routes through the
-# conductor (SendMessage), never the pane -- see SPEC-234 "Out of scope".
+# conductor (SendMessage), never the pane (see "Out of scope" above).
 
 # Slugify a cwd the way the harness names `~/.claude/projects/<slug>` dirs: EACH '/' and '.'
 # character becomes '-' individually (not collapsed) -- verified against a live worktree project
@@ -1446,7 +1446,7 @@ _panes_project_slug() {  # path
 }
 
 # `--latest`: the conductor cannot name its own dispatched subagents' transcript paths (the Agent
-# tool returns none, DEC-007), so this derives them -- slugify $PWD, then pick the newest-mtime
+# tool returns none), so this derives them -- slugify $PWD, then pick the newest-mtime
 # `subagents/` dir among that project's session dirs. Pure + fake-$HOME testable (T4). Prints
 # nothing (rc 0) on a clean miss (no such project/session yet) -- the caller warns and moves on,
 # no error.
@@ -1510,7 +1510,7 @@ _panes_abspath() {  # file-path
 }
 
 # `agent-<id>.jsonl` -> `sa-<id>`, charset-gated the same way `_mux_session_name` sanitizes a
-# derived name (DEC-004: the `sa-` prefix namespaces subagent panes away from mega.md's `SG-NN`
+# derived name (the `sa-` prefix namespaces subagent panes away from mega.md's `SG-NN`
 # sub-goal windows, and guarantees the name is never all-digits, which tmux would resolve as a
 # window INDEX rather than a name).
 _panes_window_name() {  # jsonl-path
@@ -1519,7 +1519,7 @@ _panes_window_name() {  # jsonl-path
   printf 'sa-%s\n' "$(printf '%s' "$id" | tr -c 'A-Za-z0-9_-' '-')"
 }
 
-# Render-side counterpart of the formatter's own viz strip (SPEC-119 pane-tail.jq): a target path
+# Render-side counterpart of the formatter's own viz strip (pane-tail.jq): a target path
 # is SUBAGENT-INFLUENCED data (the conductor names its own transcript files), so an operator
 # WARNING that echoes it verbatim would put an attacker-chosen ESC/OSC byte sequence straight onto
 # the operator's real terminal (window-NAME charset gates like `_panes_window_name` above already
@@ -1591,7 +1591,7 @@ cmd_panes() {  # megadir target...
     fi
   done < <(_panes_resolve_targets "$@")
 
-  # SPEC-121 push, gated on session CREATION here (not `_viewer_open`'s own `_VIEWER_OPENED`
+  # Push, gated on session CREATION here (not `_viewer_open`'s own `_VIEWER_OPENED`
   # guard, which is process-local -- every `panes` call is a fresh process, so that guard cannot
   # dedupe ACROSS calls): a second `panes` call against an already-running session must not
   # re-open a viewer.
@@ -1603,7 +1603,7 @@ cmd_panes() {  # megadir target...
 
 # Hidden re-entry point for a `panes` window: `tmux new-window` always execs a fresh
 # command line, so the pane re-enters `orchestrate.sh` via this subcommand instead of the shell
-# expressing `tail | jq` as a joined string (the SPEC-119 #143 exec-direct rule). Refuses
+# expressing `tail | jq` as a joined string (the #143 exec-direct rule). Refuses
 # non-regular / symlinked / wrong-basename transcripts and a missing/unreadable formatter itself
 # (defense in depth -- `cmd_panes` already gates these, but a re-entry subcommand must not be
 # repurposable to tail an arbitrary file). tmux closes a window whose command exits, so a refusal
@@ -1659,11 +1659,11 @@ cmd_pane_tail() {  # jsonl formatter
 _wave_abort() {
   local p ok=1
   for p in ${_WAVE_PIDS[@]+"${_WAVE_PIDS[@]}"}; do
-    [ -n "$p" ] || continue   # SPEC-119: a muxed entry has no reapable pid; handled below instead
+    [ -n "$p" ] || continue   # a muxed entry has no reapable pid; handled below instead
     kill -TERM -- -"$p" 2>/dev/null || kill -TERM "$p" 2>/dev/null || ok=0
   done
   wait 2>/dev/null
-  # SPEC-119: a muxed wave session's REAL process lives in a tmux pane, not this shell's job
+  # A muxed wave session's REAL process lives in a tmux pane, not this shell's job
   # table, so the pid loop above cannot reach it -- kill its window directly instead (best-effort;
   # a failure here does not flip `ok`, the pid-loop TERM confirmation is unrelated to pane cleanup).
   local n="${#_WAVE_DONEFILES[@]}" i mux
@@ -1727,7 +1727,7 @@ _wave_run() {  # megadir roadmap
   # `_wave_abort` can `rm -f` any still-live ones on an INT/TERM instead of leaking them into
   # ${TMPDIR:-/tmp}. Index-aligned with `_WAVE_PIDS` / `_WAVE_IDS`, same as the other reap-map arrays.
   _WAVE_PFILES=()
-  # `_WAVE_IDS` / `_WAVE_DONEFILES` are GLOBAL (SPEC-119, same reason as `_WAVE_PIDS`): a muxed
+  # `_WAVE_IDS` / `_WAVE_DONEFILES` are GLOBAL (same reason as `_WAVE_PIDS`): a muxed
   # entry has no reapable pid, so `_wave_abort` needs the sub-goal id (to address its tmux window)
   # and `_WAVE_DONEFILES[i]` non-empty is what marks index `i` as muxed vs plain-backgrounded.
   # `_WAVE_MUX_MEGADIR` lets the abort handler derive the tmux session name; harmless when unset
@@ -1761,7 +1761,7 @@ _wave_run() {  # megadir roadmap
     fi
 
     # Per-sub-goal model/effort routing (matches cmd_run); absent hint -> no flag -> inherit.
-    # ID-096: `route_out=$(_route "$gf")` assigns `$?` from `_route` itself (a simple command-
+    # `route_out=$(_route "$gf")` assigns `$?` from `_route` itself (a simple command-
     # substitution assignment, unlike `< <(...)` process substitution above it, which reflects
     # `read`'s exit status instead) -- an off-allowlist `Model:` tier is rejected HERE, before this
     # sub-goal's session ever spawns, same as a worktree-setup failure just above.
@@ -1769,7 +1769,7 @@ _wave_run() {  # megadir roadmap
     route_out=$(_route "$gf"); route_rc=$?
     IFS=$'\t' read -r rmodel reffort <<<"$route_out"
     if [ "$route_rc" != 0 ]; then
-      # ID-390: generic like the serial path -- _route rejects both an off-allowlist model tier and
+      # Generic like the serial path -- _route rejects both an off-allowlist model tier and
       # an unknown/not-enabled harness, each already reasoned to stderr.
       _emit_event "$megadir" "$id" blocked "wave: rejected pre-flight by routing (model tier or harness gate)"
       wave_failed=1
@@ -1780,7 +1780,7 @@ _wave_run() {  # megadir roadmap
 
     pfile=$(mktemp)
     _build_prompt "$megadir" "$id" > "$pfile"
-    # Flip-contract injection (WAVE sessions only, ID-090 activation). A wave session runs in its
+    # Flip-contract injection (WAVE sessions only, activation). A wave session runs in its
     # own worktree , a separate checkout , so editing ROADMAP.md there flips only the worktree's
     # copy, invisible to the driver, which reads the SHARED mega-goal-dir ROADMAP. Tell the session
     # to flip via the lock-guarded CLI against the shared ABSOLUTE path instead. Appended AFTER
@@ -1813,21 +1813,21 @@ _wave_run() {  # megadir roadmap
       _say "[orchestrate] [wave] $id: SPEC reservation unavailable; worker will self-compute (degraded, still scan-safe)."
     fi
     _emit_event "$megadir" "$id" executing "wave (worktree $wt)"
-    # ID-099: mirror the serial path's START/rid emission (cmd_run calls `_emit_start` right after
+    # Mirror the serial path's START/rid emission (cmd_run calls `_emit_start` right after
     # its own `executing` event, see line ~1811). Before this fix, `_wave_run`'s spawn loop emitted
     # ONLY `executing` and never `_emit_start`, so every wave dispatch was invisible to
     # lane-telemetry (zero START/rid records, even though the serial path tracked every run). Same
     # advisory behavior as serial: `_emit_start` itself WARNs-and-skips (does not abort the spawn)
     # when the goal file has no `**Branch:**` header to derive a rid from -- pinned to stay
     # advisory (a `?`-rid run is degraded-but-runnable, not corrupt), so no change needed here
-    # beyond adding the call. NC_SKIP_WAVE_START=1 is a TEST-ONLY escape hatch (ID-099 negative
+    # beyond adding the call. NC_SKIP_WAVE_START=1 is a TEST-ONLY escape hatch (negative
     # control, same pattern as NC_SKIP_WAVE_TOKENS above): it disables just this call so a test can
     # prove the causal effect (same wave scenario, but the pre-fix-equivalent code path records
     # ZERO START lines). Unset/0 in every real invocation; never documented as an operator flag.
     [ "${NC_SKIP_WAVE_START:-0}" = 1 ] || _emit_start "$megadir" "$id"
 
     if [ "$MULTIPLEXER" = 1 ]; then
-      # SPEC-119: host the REAL session inside a tmux pane instead of a plain background job (the
+      # Host the REAL session inside a tmux pane instead of a plain background job (the
       # off-by-default path below is untouched). `tmux new-window` returns as soon as the window is
       # created, before the pane's command exits, so there is no pid to `wait` on here -- the pane
       # writes its own exit code to $donefile instead (the reap loop polls it, see below).
@@ -1841,7 +1841,7 @@ _wave_run() {  # megadir roadmap
       fi
       pid=""
       _say "[orchestrate] [wave] [mux] spawned $id in tmux pane $(_mux_session_name "$megadir"):$id (worktree $wt)"
-      # SPEC-121 push: open ONE viewer surface attached to this wave's tmux session. Reuse-guarded
+      # Push: open ONE viewer surface attached to this wave's tmux session. Reuse-guarded
       # inside (one surface per session per run) and best-effort (always rc 0) -- a viewer failure
       # never marks the wave failed. Scoped INSIDE the MULTIPLEXER=1 branch: with the multiplexer
       # off there is no tmux session to attach, so the default path stays byte-identical.
@@ -1849,7 +1849,7 @@ _wave_run() {  # megadir roadmap
     else
       # Background the session INSIDE its worktree (genuine isolation). `_run_one_session` picks the
       # run-path (plain in the default/test posture); its `_ROS_SLOG` global is unused on the wave
-      # path (deterministic-handoff regen is TASK-005), so losing it in the subshell is fine. The
+      # path (deterministic-handoff regen is), so losing it in the subshell is fine. The
       # session's exit code comes back via `wait` in the reap loop, NOT via the subshell here.
       #
       # Job control ON only around the spawn itself (review-fix FIX 1): under `set -m` a `&` job
@@ -1886,7 +1886,7 @@ _wave_run() {  # megadir roadmap
   # which is bash 4.3+/absent on macOS). As each PID exits, reap it with `wait`, then run the
   # grounded box-flip check for THAT sub-goal. A nonzero exit OR an unflipped box marks the wave
   # failed but does NOT break the loop: in-flight siblings DRAIN to completion (never killed).
-  # SPEC-119: a muxed index (`_WAVE_DONEFILES[i]` non-empty) has no reapable pid -- `tmux
+  # A muxed index (`_WAVE_DONEFILES[i]` non-empty) has no reapable pid -- `tmux
   # new-window` already returned -- so that index polls for its donefile instead of `kill -0`.
   local remaining="$spawned" i rc box donefile mux
   while [ "$remaining" -gt 0 ]; do
@@ -1916,7 +1916,7 @@ _wave_run() {  # megadir roadmap
       else
         _emit_event "$megadir" "$id" shipped "wave: box checked"
         _WAVE_LANDED+=("$id")
-        # ID-098: happy-path tmux cleanup. Before this fix, ONLY `_wave_abort` ever killed a
+        # Happy-path tmux cleanup. Before this fix, ONLY `_wave_abort` ever killed a
         # window (and only an in-flight one, on operator Ctrl-C) -- a clean, successful reap left
         # the completed pane sitting in the shared per-megagoal tmux session forever, so a
         # multi-wave run accumulated one stale window per landed sub-goal. `_pane_spawn` already
@@ -1929,7 +1929,7 @@ _wave_run() {  # megadir roadmap
           mux=$(_mux_session_name "$megadir")
           "$TMUX_CMD" kill-window -t "$mux:$id" 2>/dev/null || true
         fi
-        # Token accounting: closes the SPEC-117 declared gap ("the wave-path per-sub-goal
+        # Token accounting: closes the declared gap ("the wave-path per-sub-goal
         # ledger extraction is a declared gap"). The serial path reads $slog off `_ROS_SLOG`, a
         # global `_run_one_session` sets directly in the caller's shell; the wave path backgrounds
         # `_run_one_session` in a FORKED SUBSHELL ("( cd "$wt" ... ) &" above), so that global never
@@ -1939,7 +1939,7 @@ _wave_run() {  # megadir roadmap
         # (mirrors _run_one_session's own capture gate at CAPTURE_TOKENS/DETERMINISTIC_HANDOFF);
         # `_record_tokens` is itself a no-op on an absent/empty file, so this is belt-and-braces, not
         # load-bearing, but avoids a pointless stat on the default (no-capture) path.
-        # NC_SKIP_WAVE_TOKENS=1 is a TEST-ONLY escape hatch (ID-094 negative control): it disables
+        # NC_SKIP_WAVE_TOKENS=1 is a TEST-ONLY escape hatch (negative control): it disables
         # just this extraction call so a test can prove the causal effect (same wave scenario, same
         # captured child.jsonl, but the pre-fix-equivalent code path records ZERO ledger lines).
         # Unset/0 in every real invocation; never documented as an operator flag.
@@ -1957,13 +1957,13 @@ _wave_run() {  # megadir roadmap
 }
 # -----------------------------------------------------------------------------------------------
 
-# ---- Wave convergence sequencer (SPEC-106 TASK-004c, DEC-008) ----------------------------------
+# ---- Wave convergence sequencer ----------------------------------
 # After a wave lands its sub-goals on their worktree branches, their merges back to the mega-goal base
 # MUST happen ONE AT A TIME (never concurrently), in ROADMAP order, each under the flip lock , so two
 # same-base merges never race. This is a THIN SEQUENCER: it does NOT reimplement merging. Each merge
 # goes through the MOCKABLE `$WAVE_MERGE_CMD` hook (default `lib/goal/mega-merge.sh merge`, whose merge
 # SEMANTICS stay untouched per scope , we only sequence calls to it). Real gh-backed merge is DEFERRED
-# to ID-090 (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
+# for now (waves are off at the default WAVE_CAP=1, so this is never reached and the serial
 # path stays byte-identical; a real merge also needs `gh` + real PRs).
 
 # Files a wave branch changed vs the base: three-dot diff = changes on <branch> since its merge-base
@@ -1975,7 +1975,7 @@ _wave_branch_files() {  # repo base branch
 
 # The PR number on a sub-goal's ROADMAP line (`... , PR #<n>`), or empty for a placeholder (`PR #__`)
 # / absent. A sub-goal with no real PR cannot be merged yet, so `_wave_converge` SKIPS it (the real
-# PR-open + merge wiring is ID-090), never fails on it.
+# PR-open + merge wiring is still pending), never fails on it.
 _sg_pr() {  # roadmap id
   _sg_line "$1" "$2" | sed -nE 's/.*PR #([0-9]+).*/\1/p' | head -1
 }
@@ -1984,14 +1984,14 @@ _sg_pr() {  # roadmap id
 # exactly those; with none, it reads the just-landed set from the global `_WAVE_LANDED` (populated by
 # `_wave_run`). Steps:
 #   1. Order the target ids by ROADMAP position (NOT argv order) , merges land in ROADMAP order.
-#   2. SAME-FILE cross-wave guard (belt-and-suspenders over dispatch-gate's PRE-admission disjointness,
-#      the SPEC-106 risk row): diff each landed branch vs the base; if two branches changed the SAME
+#   2. SAME-FILE cross-wave guard (belt-and-suspenders over dispatch-gate's PRE-admission
+#      disjointness): diff each landed branch vs the base; if two branches changed the SAME
 #      file, FLAG (event + message + nonzero) and REFUSE to merge , never silently land a clean-but-
 #      wrong merge. A file appearing from >=2 branches (union `sort | uniq -d`) is the overlap.
 #   3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, through `$WAVE_MERGE_CMD`. A
 #      sub-goal with no real PR (placeholder `#__`) is SKIPPED (merge wiring deferred), not failed.
 # bash-3.2: no assoc arrays (membership via a space-padded string match); arrays empty-guarded
-# `${arr[@]+"${arr[@]}"}` (DEC-005, mega-merge.sh:224). Returns 0 iff every mergeable sub-goal's hook
+# `${arr[@]+"${arr[@]}"}` (mega-merge.sh:224). Returns 0 iff every mergeable sub-goal's hook
 # succeeded and no same-file overlap was found; nonzero on an overlap flag or a merge-hook failure.
 _wave_converge() {  # megadir [id...]
   local megadir="$1"; shift 2>/dev/null || true
@@ -2040,8 +2040,8 @@ _wave_converge() {  # megadir [id...]
   fi
 
   # 3. Merge each in ROADMAP order, ONE AT A TIME under the flip lock, via the mockable hook.
-  #    The default hook is `lib/goal/mega-merge.sh merge`, whose signature is `<pr> <rid> <lane>` (ID-090:
-  #    the arity was `<pr> <id>` before). rid = the sub-goal's run id (its branch slug, from the goal
+  #    The default hook is `lib/goal/mega-merge.sh merge`, whose signature is `<pr> <rid> <lane>`
+  #    (the arity was `<pr> <id>` before). rid = the sub-goal's run id (its branch slug, from the goal
   #    file's `**Branch:**`); lane = the mega-goal's lane (`WAVE_MERGE_LANE`, default full , mega-goals
   #    run the full lane). Tests override `WAVE_MERGE_CMD` with a recorder, so the extra arg is inert.
   local lockdir="$megadir/.orchestrate/flip.lock"
@@ -2070,7 +2070,7 @@ _wave_converge() {  # megadir [id...]
 }
 # -----------------------------------------------------------------------------------------------
 
-# ---- TIER-4 mega-close (SPEC-118/ID-093, executes ADR-0032 section 5) --------------------------
+# ---- TIER-4 mega-close (executes section 5) --------------------------
 # Runs AFTER every sub-goal box is checked, over the ASSEMBLED WAVE -- it does NOT re-run each
 # sub-goal's per-task V-model (that already fired). Three steps: (1) a mechanical no-orphan sweep,
 # (2) THREE independent fresh-context `claude -p` verifier sessions (integration-verifier /
@@ -2183,8 +2183,8 @@ _aggregate_tier4_verdicts() {  # out1 out2 out3
 }
 
 # _dispatch_tier4_verifiers <dir> <roadmap>: dispatch the THREE independent fresh-context verifier
-# sessions, each a separate `claude -p` process (never --stream to the conductor, ADR-0032
-# section 1), capture each session's stdout to its own temp file, then aggregate. Returns
+# sessions, each a separate `claude -p` process (never --stream to the conductor),
+# capture each session's stdout to its own temp file, then aggregate. Returns
 # `_aggregate_tier4_verdicts`'s rc; a nonzero session exit is folded in as a synthetic DISSENT line
 # (a crashed/erroring verifier must never be silently treated as an implicit PASS). Temp files are
 # cleaned up inline after the loop (NOT via a RETURN trap): a `trap ... RETURN` referencing a `local`
@@ -2233,7 +2233,7 @@ _tier4_close() {  # dir roadmap
   local corpus="${TIER4_CORPUS:-}"
   [ -n "$corpus" ] || corpus=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null)
 
-  # Render the mega-review dashboard (SPEC-197, harness-loop SG-07): ONE self-contained static
+  # Render the mega-review dashboard (harness-loop): ONE self-contained static
   # HTML sign-off page, composed from ledger + gh + proof data, generated next to RUN_REPORT.md
   # -- "the one surface with a guaranteed reader" the goal file names. Runs FIRST (before the
   # no-orphan sweep / verifier dispatch) so it reflects a snapshot as of close-time regardless of
@@ -2264,9 +2264,9 @@ _tier4_close() {  # dir roadmap
       _say "[orchestrate] [close] no-orphan sweep clean over $corpus (every agent has a live dispatch)." ;;
   esac
 
-  # 2. Dispatch THREE independent fresh-context verifier sessions (ID-093: integration-verifier /
+  # 2. Dispatch THREE independent fresh-context verifier sessions (integration-verifier /
   #    review-team+security / advisor-both-modes, one process each, NEVER --stream to the
-  #    conductor, ADR-0032 section 1) and fail-closed aggregate their verdicts. This replaces the
+  #    conductor) and fail-closed aggregate their verdicts. This replaces the
   #    old single combined-prompt session: one session's blind spot could pass the whole assembled
   #    wave silently; three independent reads mean a lone dissent surfaces instead of being averaged
   #    away inside one session's own judgment.
@@ -2293,7 +2293,7 @@ cmd_run() {
       --dry-run)  dry=1 ;;
       --step)     step=1 ;;
       --stream)   stream=1 ;;
-      --capture-tokens) CAPTURE_TOKENS=1 ;;   # SPEC-117: lean token capture (silent stream-to-file); sets the global
+      --capture-tokens) CAPTURE_TOKENS=1 ;;   # lean token capture (silent stream-to-file); sets the global
       --board)    board_arg="both" ;;
       --board=*)  board_arg="${1#--board=}" ;;
       --*)        echo "unknown flag: $1" >&2; return 64 ;;
@@ -2304,13 +2304,13 @@ cmd_run() {
   [ -d "$dir" ] || { echo "no such megagoal dir: '$dir'" >&2; return 64; }
   local roadmap="$dir/ROADMAP.md"
   [ -f "$roadmap" ] || { echo "no ROADMAP.md in '$dir'" >&2; return 64; }
-  # ID-095: age-cap sweep at the start of every REAL run, not just `next`. Skipped under --dry-run
+  # Age-cap sweep at the start of every REAL run, not just `next`. Skipped under --dry-run
   # (dry=1): a preview must stay non-mutating, it never touches disk beyond reading.
   [ "$dry" = 1 ] || _prune_streams "$dir"
   local board_mode; board_mode=$(_resolve_board_mode "$board_arg")
   case "$board_mode" in roadmap|kanban|both) ;; *) echo "unknown --board mode: '$board_mode' (want roadmap|kanban|both)" >&2; return 64 ;; esac
 
-  # WAVE_CAP parse-time validation (SPEC-106 TASK-004b / DEC-009 / Edge case 4). Default 1 (waves
+  # WAVE_CAP parse-time validation (Edge case 4). Default 1 (waves
   # off). A non-numeric or <1 value is REJECTED with a clear error + nonzero exit here, NOT silently
   # coerced to 1 elsewhere, so a typo (`WAVE_CAP=0`, `WAVE_CAP=two`) fails loudly instead of quietly
   # running serial. The digit-class check rejects empty / non-numeric / negative (the sign char is a
@@ -2320,7 +2320,7 @@ cmd_run() {
   esac
   [ "$WAVE_CAP" -lt 1 ] && { echo "orchestrate: WAVE_CAP must be >=1 (got: '$WAVE_CAP')" >&2; return 64; }
 
-  # PANE_VIEWER pre-flight allowlist (SPEC-121, mirrors the WAVE_CAP rejection above): an unknown
+  # PANE_VIEWER pre-flight allowlist (mirrors the WAVE_CAP rejection above): an unknown
   # value is REJECTED loudly here, never silently coerced to none -- a typo (`PANE_VIEWER=kity`)
   # must not quietly disable the push the operator asked for. EXACT-token enumeration, not a
   # substring test against the joined allowlist (review fix, security P2: `PANE_VIEWER="cmux
@@ -2369,7 +2369,7 @@ cmd_run() {
   fi
 
   while :; do
-    # SPEC-106 TASK-004b size-dispatch (DEC-002/006/012): serial-vs-wave decided per cycle on the
+    # Size-dispatch: serial-vs-wave decided per cycle on the
     # ADMITTED count (post-`_wave_gate`), NOT the raw ready size (a no-deps mega-goal has ready size
     # N, so raw size can't gate the serial path). WAVE_CAP defaults to 1 (waves OFF) => this guard is
     # FALSE => the loop falls straight through to the byte-identical serial body below, exactly as the
@@ -2379,9 +2379,9 @@ cmd_run() {
     # `_wave_run` serializes its own flips under the flip lock and blocks until the wave drains, so we
     # `continue` to recompute the next cycle from the freshly re-read ROADMAP: one blocking wave per
     # cycle means no double-launch and no CAP overshoot across cycles. (Gate/`--step`/`--stream`/
-    # `--board` on the wave path are TASK-005/007's scope; at the default CAP=1 they are untouched.)
+    # `--board` on the wave path are out of scope here (handled elsewhere); at the default CAP=1 they are untouched.)
     if [ "$WAVE_CAP" -ge 2 ]; then
-      # gate! GLOBAL-STOP (SPEC-106 TASK-007 / DEC-010 / Edge case 8): a ready `gate!` sub-goal halts
+      # gate! GLOBAL-STOP (Edge case 8): a ready `gate!` sub-goal halts
       # the WHOLE loop for a human, even when independent ready sub-goals could still wave. Checked
       # BEFORE admission so nothing is admitted alongside it -- the wave quiesces entirely. This is
       # the wave-path twin of the serial `gate!` stop below; plain `gate` is NOT caught here (it is a
@@ -2413,7 +2413,7 @@ cmd_run() {
       admitted_n=$(_wave_gate "$dir" "$roadmap" | awk -F'\t' '$1=="run"{n++} END{print n+0}')
       if [ "$admitted_n" -ge 2 ]; then
         if _wave_run "$dir" "$roadmap"; then
-          # Converge the landed wave (TASK-004c): merge its sub-goals ONE AT A TIME under the flip
+          # Converge the landed wave: merge its sub-goals ONE AT A TIME under the flip
           # lock, in ROADMAP order, via the mockable hook. A same-file cross-wave edit or a merge-hook
           # failure halts the loop (no self-claim). At the default WAVE_CAP=1 this block is unreachable,
           # so the serial path stays byte-identical.
@@ -2426,7 +2426,7 @@ cmd_run() {
         echo "[orchestrate] [wave] a wave sub-goal did not complete (nonzero exit or unflipped box); halting (no self-claim)." >&2
         return 1
       fi
-      # Wait-vs-complete termination guard (SPEC-106 TASK-006, Edge case 1). Reached only when
+      # Wait-vs-complete termination guard (Edge case 1). Reached only when
       # admitted<2 (no wave launched this cycle). If unchecked sub-goals REMAIN but the ready set is
       # EMPTY -- every remaining unchecked is dep-blocked, nothing is runnable, and no wave is in
       # flight (`_wave_run` blocks to drain before we get here) -- the dep-IGNORANT serial `_next`
@@ -2445,7 +2445,7 @@ cmd_run() {
           echo "[orchestrate] [wave] blocked: $unchecked_n unchecked, none runnable (all remaining sub-goals are dep-blocked; no in-flight producer). Halting for human review (not a false-complete)." >&2
           return 1
         fi
-        # Dep-blocked serial-fallthrough halt (review-fix FIX 2 / ID-090 item (d)). Reached only when
+        # Dep-blocked serial-fallthrough halt (review-fix FIX 2 / item (d)). Reached only when
         # admitted<2 but ready_n>0: the code below falls through to `_next`'s pick, which is DEP-
         # IGNORANT (first unchecked ROADMAP line regardless of `depends`). If that pick is itself NOT
         # a member of the ready set (i.e. it IS dep-blocked -- proven live: a ROADMAP with an
@@ -2505,7 +2505,7 @@ cmd_run() {
         _emit_event "$dir" "$id" blocked "gate: human review"
         [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
         _say "[orchestrate] STOP: $id is a gate sub-goal; open/await its PR for review, then re-run."
-        # Advisory (ID-090 default flip): under the concurrent default (WAVE_CAP>=2) a `gate` holds only
+        # Advisory (default flip): under the concurrent default (WAVE_CAP>=2) a `gate` holds only
         # its OWN dependent chain , independent branches with disjoint `## Touches` keep running in the
         # wave. If you meant "quiesce EVERYTHING for review", use `gate!` (global stop-all) instead. (On
         # a Touches-less mega-goal there is no concurrency, so this `gate` still stopped the whole loop.)
@@ -2517,14 +2517,14 @@ cmd_run() {
     # Per-sub-goal model/effort routing: read the goal file's hints and pass them as
     # flags, so this sub-goal runs on its own tier instead of inheriting Opus-for-everything.
     # Absent hint -> no flag -> inherit.
-    # ID-096: reject an off-allowlist `Model:` tier pre-flight (same command-substitution exit-
+    # Reject an off-allowlist `Model:` tier pre-flight (same command-substitution exit-
     # code capture as the wave path above), same treatment as a `gate` sub-goal: halt the serial
     # loop for a human instead of dispatching a session that would die mid-`claude` on a typo.
     local rmodel reffort route_flags="" route_out route_rc
     route_out=$(_route "$(_goalfile "$dir" "$id")"); route_rc=$?
     IFS=$'\t' read -r rmodel reffort <<<"$route_out"
     if [ "$route_rc" != 0 ]; then
-      # ID-390: _route now has TWO pre-flight rejections -- an off-allowlist claude `Model:` tier
+      # _route now has TWO pre-flight rejections -- an off-allowlist claude `Model:` tier
       # AND a `Harness:` that is unknown or not enabled. Both already printed the precise reason to
       # stderr (the `orchestrate: ...` line), so this STOP stays GENERIC rather than hardcoding
       # "invalid Model: tier", which was a plain lie for a harness-gate rejection.
@@ -2541,13 +2541,13 @@ cmd_run() {
       echo "[orchestrate] [guardrail] WARN: $id has no goals/ file; session runs without its contract (re-discovery hazard)." >&2
     fi
     _emit_event "$dir" "$id" executing "model=${rmodel:-inherit} effort=${reffort:-inherit}"
-    # SPEC-101: record the run's routing facts so mega-dispatched runs are as measurable
+    # Record the run's routing facts so mega-dispatched runs are as measurable
     # as hand-run ones (assign.md makes this same START call). Before the session spawns,
     # so a run that dies mid-session is still tracked, not '?'.
     _emit_start "$dir" "$id"
     [ "$board_mode" != roadmap ] && _render_board "$dir" "$roadmap" "$board_mode" >/dev/null
-    # ID-390: name the ACTUAL harness. This line hardcoded "$CLAUDE_CMD -p", which read as a plain
-    # lie once a sub-goal could dispatch to codex ("running SG-01 ... (claude -p, model: gpt-5)").
+    # Name the ACTUAL harness. This line hardcoded "$CLAUDE_CMD -p", which read as a plain
+    # lie once a sub-goal could dispatch to codex ("running ... (claude -p, model: gpt-5)").
     # An operator scanning a run log has to be able to see which vendor a sub-goal went to.
     local _rh; _rh=$(_harness_of "$(_goalfile "$dir" "$id")") || _rh="claude"
     _say "[orchestrate] running $id in a fresh session ($([ "$_rh" = claude ] && printf '%s -p' "$CLAUDE_CMD" || printf 'harness: %s' "$_rh"), model: ${rmodel:-inherit}, effort: ${reffort:-inherit}) ..."
@@ -2668,7 +2668,7 @@ cmd_run() {
     # DETERMINISTIC_HANDOFF both set $slog), extract per-session usage and record a TOKENS ledger
     # line for this sub-goal's rid, so lane-telemetry can price the run. CAPTURE-GATED: the default
     # no-capture path leaves $slog empty and writes NO token line (honest usage=?, never a fake
-    # zero). Additive marker; non-fatal (a parse miss must not stop the loop). SPEC-087 default
+    # zero). Additive marker; non-fatal (a parse miss must not stop the loop). Default
     # invocation is untouched (this runs only when a capture exists). Delegates to the shared
     # `_record_tokens` helper so the wave reap loop below writes to the identical stream.
     _record_tokens "$dir" "$id" "$slog"

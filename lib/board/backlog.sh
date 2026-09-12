@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# backlog.sh -- the Active queue as a kanban board (SPEC-055, PHILOSOPHY §6 N2).
+# backlog.sh -- the Active queue as a kanban board (PHILOSOPHY §6 N2).
 #
 # The BACKLOG stays a markdown file (one source of truth; no parallel database). This
 # helper makes its Status column MECHANICAL: render the board, pick the next queued
 # item, flip a row's state, so a pull (`/kit:assign --next`) is scriptable and testable
-# instead of a hand-edit. Status vocabulary is SPEC-005's, plus `claimed` (a pulled
+# instead of a hand-edit. Status vocabulary is the, plus `claimed` (a pulled
 # item between `queued` and `speccing`; the cross-session claim itself lives in
 # lib/goal/goal-registry.sh, this only records the board state).
 #

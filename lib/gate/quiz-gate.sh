@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# quiz-gate.sh -- the mechanical half of the ★-tap NUDGE (ADR-0031 §2/§3, SPEC-125, SG-04).
+# quiz-gate.sh -- the mechanical half of the ★-tap NUDGE.
 #
 # The AFTER gate's SPEED REGULATOR (Litt): when a change is significant AND understanding-worthy
-# (SPEC-123's `tap` verdict) on a gate/gated-final PR, the human is NUDGED -- offered a 5-question
+# (the classifier's `tap` verdict) on a gate/gated-final PR, the human is NUDGED -- offered a 5-question
 # quiz built from the ACTUAL change -- before they click-to-merge. It gates the human's ATTENTION,
-# never the merge: it is a NUDGE, never must-pass (ADR-0031 Refinement point 3). A waved change
+# never the merge: it is a NUDGE, never must-pass (Refinement point 3). A waved change
 # still merges; nothing here ever blocks a correct build.
 #
 # THE HARD CONSTRAINT (Litt's plausible-but-wrong caveat, the whole reason this exists):
@@ -14,7 +14,7 @@
 # which this reuses for the grounded material). A quiz on the agent's misconceptions is worse than none.
 #
 # THE KIT DOES NOT REINVENT PEDAGOGY: the quiz ROUTES through whatever skill the operator's
-# `understand.teach` seam names (ADR-0036), resolved with kit_config_get_root, never hardcoded.
+# `understand.teach` seam names, resolved with kit_config_get_root, never hardcoded.
 # This lib builds the QUESTIONS (from the diff) and emits the dispatch payload; it never scores
 # or grades a quiz itself, and it never names a specific consumer skill.
 #
@@ -24,13 +24,13 @@
 #   quiz-gate.sh tap <rid> [--files F] [--impl-notes P] [--pr-kind K] "<desc>"
 #       -> the WIRING decision. Prints the one-line nudge + the 3 responses ONLY when
 #          significance-classify's verdict is `tap` AND the PR is gate/gated-final. Otherwise prints
-#          nothing and exits 0 (the anti-fatigue guard, keyed on the SPEC-123 verdict).
+#          nothing and exits 0 (the anti-fatigue guard, keyed on the verdict).
 #   quiz-gate.sh respond <rid> <engage|defer|wave> [--ref R]
 #       -> logs the human choice to the debt ledger (gate-ledger.sh debt-response). For `engage`
 #          (with --ref) also emits the routing directive through the seam. Always exits 0 (advisory).
 #   quiz-gate.sh route <ref>
 #       -> the seam's dispatch payload: whatever `understand.teach` names (or "skipped: no teacher"
-#          when empty) + the 5 diff-grounded questions + a pointer to the SPEC-124 explainer material.
+#          when empty) + the 5 diff-grounded questions + a pointer to the explainer material.
 #   quiz-gate.sh teacher
 #       -> the ONE resolver every seam-adjacent site cites: prints the name `understand.teach`
 #          names, or nothing when empty. Never a project .kit.toml (kit_config_get_root).
@@ -45,7 +45,7 @@ GATE_LEDGER="$QG_DIR/gate-ledger.sh"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh"
 
-# _teacher -- resolve understand.teach (ADR-0036); prints the name or nothing when unset. Never
+# _teacher -- resolve understand.teach; prints the name or nothing when unset. Never
 # a project .kit.toml (kit_config_get_root): the key names code this engine's own callers run.
 #
 # Trimmed here, once, so a whitespace-only value (an operator kit.toml with `teach = " "`)
@@ -139,7 +139,7 @@ cmd_route() {
   cmd_questions "$ref"
 }
 
-# tap: the wiring decision. Fire ONLY on the SPEC-123 `tap` verdict + a gate/gated-final PR.
+# tap: the wiring decision. Fire ONLY on the classifier's `tap` verdict + a gate/gated-final PR.
 cmd_tap() {
   local files="" impl="" pr_kind="gate" desc=""
   local a skip=""
@@ -167,7 +167,7 @@ cmd_tap() {
   # nudged). Silent, advisory: print nothing, exit 0.
   case "$pr_kind" in gate|gated-final) ;; *) return 0 ;; esac
 
-  # The verdict is the SPEC-123 classifier's, never re-derived here (single source of the WHEN).
+  # The verdict is the classifier's, never re-derived here (single source of the WHEN).
   local verdict clf_args=()
   [ -n "$files" ] && clf_args+=(--files "$files")
   [ -n "$impl" ] && clf_args+=(--impl-notes "$impl")
@@ -198,7 +198,7 @@ cmd_respond() {
   done
 
   # Log to the debt ledger (all three responses, always). This is the ONLY state this writes.
-  bash "$GATE_LEDGER" debt-response "$rid" "$response" "SG-04 quiz-gate nudge${ref:+ ref=$ref}" >/dev/null 2>&1 \
+  bash "$GATE_LEDGER" debt-response "$rid" "$response" "quiz-gate nudge${ref:+ ref=$ref}" >/dev/null 2>&1 \
     || { echo "quiz-gate.sh respond: failed to write debt-response to the ledger for rid '$rid'" >&2; return 1; }
 
   case "$response" in

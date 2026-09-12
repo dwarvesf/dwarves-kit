@@ -1,7 +1,7 @@
 """The source readers. Each returns (columns, rows); each is skip-safe on a
 missing source (returns its known columns + an empty row list). None writes back.
 
-- kit        : REUSES lane-telemetry.sh `_rows()` (the SPEC-061 pipe-log parser). No re-parse.
+- kit        : REUSES lane-telemetry.sh `_rows()` (the pipe-log parser). No re-parse.
 - kit_gates  : a NEW per-line parser over the same run-ledger files.
 - git_fixes  : `git log` over a repo's full history, the tool's first git-sourced read.
 - impl_notes : a filesystem walk over hook-enforced `docs/implementation-notes/*.md` files
@@ -116,10 +116,10 @@ def read_kit_gates(runs_dir: Path | None = None):
     end_ts, cost)`. A direct line-level parse of the SAME run-ledger files lane-telemetry.sh's
     `_rows()` aggregates (kit grammar: `TS | GATE | <phase> | ran|skipped|override |
     <reason>`); `_rows()` has no per-line output mode, so this is a NEW small parser, not a
-    second copy of an existing one (see impl-notes / SPEC-131 DEC-001).
+    second copy of an existing one (see impl-notes).
 
     `caught` / `start_ts` / `end_ts` come from a SEPARATE, additive `| OUTCOME |` start/end
-    bracket (kit's own SPEC-129: `TS | OUTCOME | <phase> | start | at=<epoch>` then `... | end
+    bracket (kit's own `TS | OUTCOME | <phase> | start | at=<epoch>` then `... | end
     | at=<epoch> caught=<bool> dur_s=<N>`), paired to a `GATE` row by matching phase name,
     FIFO per (rid, gate) in file order.
 
@@ -258,7 +258,7 @@ def read_tgcleanup(directory: Path | None = None):
     return TG_COLUMNS, rows
 
 
-# ---- git commit history (SPEC-132, the tool's first git-sourced adapter) --
+# ---- git commit history (the tool's first git-sourced adapter) --
 
 # Column names/order come from `schemas.GIT_FIXES_SCHEMA` (single source of truth, see above).
 GIT_FIXES_COLUMNS = schemas.column_names(schemas.GIT_FIXES_SCHEMA)
@@ -273,7 +273,7 @@ def read_git_fixes(repo_path: Path | None = None):
     """One row per (commit, file-touched) pair across a repo's FULL `git log` history
     (`--no-merges`: this repo's merges are GitHub squash-merges producing one linear
     conventional commit already, so a true 2+-parent merge carries no file list worth
-    reading; SPEC-132 over-test proves one is excluded, not crashed on).
+    reading; a dedicated over-test proves one is excluded, not crashed on).
 
     Read-only: no git WRITE subcommand is ever invoked. Skip-safe: a missing directory, a
     directory with no `.git`, or `git` itself failing/missing all return (columns, []),
@@ -282,8 +282,8 @@ def read_git_fixes(repo_path: Path | None = None):
     Despite the table name (kept literal to the goal spec), this does NOT pre-filter to
     fix()-typed commits: it is a full commit index. `defect-correlation` classifies
     fix-ness at query time (`subject ~ '^fix(\\(.*\\))?!?:'`), the same convention
-    `gate-yield` already uses for its ran/override/skipped classification. See SPEC-132
-    DEC-001 for why: one table has to answer BOTH sides of the correlation (which commit
+    `gate-yield` already uses for its ran/override/skipped classification: one table
+    has to answer BOTH sides of the correlation (which commit
     shipped a run, which later commit fixed it), and pre-filtering to fix-only would lose
     the first side entirely.
     """
@@ -315,7 +315,7 @@ def read_git_fixes(repo_path: Path | None = None):
     return GIT_FIXES_COLUMNS, rows
 
 
-# ---- implementation-notes files (SPEC-133, the upstream-unknowns bridge) --------------------
+# ---- implementation-notes files (the upstream-unknowns bridge) --------------------
 
 # Column names/order come from `schemas.IMPL_NOTES_SCHEMA` (single source of truth, see above).
 IMPL_NOTES_COLUMNS = schemas.column_names(schemas.IMPL_NOTES_SCHEMA)
@@ -349,7 +349,7 @@ def _parse_impl_notes_file(path: Path) -> tuple[int, bool, str | None, str | Non
     last_ts)`; `first_ts`/`last_ts` are `None` when there is no real entry (the marker-only
     case never has one).
 
-    Malformed-file policy (SPEC-133 DEC-003, an explicit over-test case): a file carrying BOTH
+    Malformed-file policy (an explicit over-test case): a file carrying BOTH
     a zero-marker line AND one or more real entry headers is malformed -- the marker's claim
     ("no deviations") directly contradicts the file's own logged content. It is counted as
     entries (`n_deviations` = the real header count) with `zero_marker` forced `False` (a file
@@ -479,13 +479,13 @@ def read_learned(md_path: Path | None = None):
 # Column names/order come from `schemas.REJECTED_FINDINGS_SCHEMA` (single source of truth).
 REJECTED_FINDINGS_COLUMNS = schemas.column_names(schemas.REJECTED_FINDINGS_SCHEMA)
 
-# The `## Rows` heading only (SPEC-144's format: a `## Format` section carries a TEMPLATE row
+# The `## Rows` heading only (the format: a `## Format` section carries a TEMPLATE row
 # with placeholder cells like `\<lens...\>` earlier in the same file -- that section is a
 # different heading and must never be read as data; see `learned`'s own "## Ledger"-only
 # heading-scope precedent, generalized to a second heading name here).
 _REJECTED_ROWS_HEADING_RE = re.compile(r"^##\s+rows\s*$", re.IGNORECASE)
 
-# The ONE accepted-verbatim field (`date`), a light ISO8601-date shape-gate (SPEC-137 edge
+# The ONE accepted-verbatim field (`date`), a light ISO8601-date shape-gate (edge
 # case 4): a row whose date cell does not match this is skipped, counted, never persisted raw.
 _REJECTED_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -494,7 +494,7 @@ def _parse_rejected_findings_file(path: Path, repo_label: str) -> tuple[dict[str
     """Parse ONE repo's `docs/verification/rejected-findings.md`, `## Rows` heading only:
     `| date | lens | finding-key | verdict | reason |`. Returns `({lens: [date, ...]},
     skipped_count)`. `finding-key`/`reason` cells are read only to confirm the row has 5
-    cells; neither is ever added to the returned dict (SPEC-137's numbers-only contract).
+    cells; neither is ever added to the returned dict (this reader's numbers-only contract).
 
     Skipped-and-counted, never raised: a row with fewer than 5 cells (edge case 2), a row
     whose `verdict` cell is not (case-insensitively) `rejected` (edge case 3 -- the file's own
@@ -540,7 +540,7 @@ def _parse_rejected_findings_file(path: Path, repo_label: str) -> tuple[dict[str
 
 def read_rejected_findings(repos: list[Path] | None = None):
     """One row per (repo, lens) pair with `>= 1` rejected finding, across every repo in
-    `repos` (default `config.rejected_findings_repos()`, SPEC-137 DEC-001): `(repo, lens,
+    `repos` (default `config.rejected_findings_repos()`): `(repo, lens,
     n_rejected, first_ts, last_ts)`.
 
     Skip-safe PER REPO: a repo whose `docs/verification/rejected-findings.md` does not exist
@@ -553,7 +553,7 @@ def read_rejected_findings(repos: list[Path] | None = None):
 
     Read-only: only ever `Path.read_text`s a file, never writes. NUMBERS ONLY: `finding-key`
     and `reason` cell text is read only inside `_parse_rejected_findings_file` to validate a
-    row's shape and is never returned in any column (SPEC-137's stated contract: "finding TEXT
+    row's shape and is never returned in any column (the stated contract: "finding TEXT
     stays in the repo file").
     """
     repo_list = repos if repos is not None else config.rejected_findings_repos()
@@ -578,7 +578,7 @@ def read_rejected_findings(repos: list[Path] | None = None):
     return REJECTED_FINDINGS_COLUMNS, rows
 
 
-# ---- Claude Code session transcripts (SPEC-135, numeric-only) --------------------------------
+# ---- Claude Code session transcripts (numeric-only) --------------------------------
 
 # Column names/order come from `schemas.SESSIONS_SCHEMA` (single source of truth, see above).
 SESSIONS_COLUMNS = schemas.column_names(schemas.SESSIONS_SCHEMA)
@@ -602,7 +602,7 @@ def _safe_int(v) -> int:
     raises). A bare `int(x)` on a valid-JSON-but-non-numeric field raises a ValueError whose
     message embeds `x` verbatim; this helper is the privacy-safe coercion the parse loop uses so
     such a value can never reach a CLI traceback (mirrors `_duration_seconds`'s own never-raise
-    contract; a `kit:code-reviewer` CRITICAL finding, SPEC-135 DEC-008)."""
+    contract; a `kit:code-reviewer` CRITICAL finding)."""
     try:
         return int(v or 0)
     except (ValueError, TypeError):
@@ -611,7 +611,7 @@ def _safe_int(v) -> int:
 
 def _parse_session_file(path: Path) -> list | None:
     """Parse ONE session `*.jsonl` file into one row of NUMBERS/timestamps/short-slugs ONLY --
-    the field whitelist named in SPEC-135's Technical Design and copied verbatim into
+    the field whitelist named in the Technical Design and copied verbatim into
     `_meta/megagoals/harness-observatory/DECISIONS.md` for review. Per line, this function reads
     ONLY: `type`, `subtype` (system lines), `timestamp`, `message.usage.{input_tokens,
     output_tokens,cache_read_input_tokens,cache_creation_input_tokens}`, `message.stop_reason`,
@@ -641,7 +641,7 @@ def _parse_session_file(path: Path) -> list | None:
 
     Sidechain (subagent, `isSidechain: true`) turns are interleaved inline in the SAME file and
     are NOT filtered out: every assistant-typed line in a file contributes to that one file's row
-    (SPEC-135 DEC-006 -- one file is one session, whether or not it dispatched subagents).
+    (-- one file is one session, whether or not it dispatched subagents).
 
     Tolerant: a malformed/truncated JSON line is skipped, never raises; a file with zero
     timestamped lines returns `None` (no row -- an empty/junk file is not a counted session).
@@ -658,7 +658,7 @@ def _parse_session_file(path: Path) -> list | None:
                 # ValueError whose message embeds the offending value VERBATIM; if that
                 # propagated out of rebuild() into a CLI traceback it would print transcript-
                 # sourced content in the clear (a `kit:code-reviewer` CRITICAL finding on the
-                # finished diff, SPEC-135 DEC-008). One malformed line is skipped, never crashes
+                # finished diff). One malformed line is skipped, never crashes
                 # the whole file's parse and never surfaces its content in an exception string.
                 try:
                     line = line.strip()
@@ -763,7 +763,7 @@ def read_sessions(root: Path | None = None):
     return SESSIONS_COLUMNS, rows
 
 
-# ---- secret-guard audit log (SPEC-135, counts only) -------------------------------------------
+# ---- secret-guard audit log (counts only) -------------------------------------------
 
 # Column names/order come from `schemas.SAFETY_SCHEMA` (single source of truth, see above).
 SAFETY_COLUMNS = schemas.column_names(schemas.SAFETY_SCHEMA)

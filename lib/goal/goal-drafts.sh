@@ -3,7 +3,7 @@
 #
 # Goal DRAFTS live at .claude/goals/<slug>.md: the design-time "what's active"
 # candidate work, gitignored and per-machine. They are NOT the
-# cross-session running-goal REGISTRY (.git/kit-goals/<slug>.goal, ADR-0022); the
+# cross-session running-goal REGISTRY (.git/kit-goals/<slug>.goal); the
 # slug is the shared key, draft = candidate work, registry = the run-time lock.
 # See docs/architecture.md "## State model" for the two stores side by side.
 #
@@ -13,8 +13,8 @@
 # (/kit:start, /kit:next) enumerate top-level *.md only, so a moved draft drops
 # out of "what's active" with no filter code. The archive trigger is /kit:ship.
 #
-# The filesystem is the SOLE source of truth (ADR-0023 dropped the never-built
-# INDEX.md derived-cache). No daemon, no scheduler, no durability state. Pure bash.
+# The filesystem is the SOLE source of truth (a never-built INDEX.md derived-cache
+# was dropped). No daemon, no scheduler, no durability state. Pure bash.
 #
 # Roots (override for tests):
 #   GOAL_DRAFTS_DIR   default $(git rev-parse --show-toplevel)/.claude/goals
@@ -83,7 +83,7 @@ draft_get() {
   ' "$file"
 }
 
-# Is SPEC <id> (e.g. SPEC-027) SHIPPED? Resolves docs/specs/<id>-*.md and reads its
+# Is SPEC <id> SHIPPED? Resolves docs/specs/<id>-*.md and reads its
 # Status: header the same way the hooks do (prefix-match, case-insensitive).
 # exit 0 = SHIPPED; exit 1 = not shipped / unresolvable / no spec.
 spec_is_shipped() {
@@ -106,7 +106,7 @@ drafts_archive() {
   for f in "$dir"/*.md; do
     slug="$(basename "$f" .md)"
     target="$(draft_get "$f" target_spec)"
-    # Pull a SPEC-NNN token out of target_spec ("SPEC-027", "(none)", "(none yet; ...)").
+    # Pull a SPEC-NNN token out of target_spec ("", "(none)", "(none yet; ...)").
     id="$(printf '%s\n' "$target" | grep -oE 'SPEC-[0-9]+' | head -1 || true)"
     [ -n "$id" ] || continue                       # specless draft: stays
     spec_is_shipped "$id" || continue              # unresolvable or not shipped: stays

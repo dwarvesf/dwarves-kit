@@ -140,7 +140,7 @@ def collect_events(log_dir):
 
 
 def collect_debt(log_dir):
-    """Every | DEBT | line across every rid (ADR-0031 understanding-gate markers)."""
+    """Every | DEBT | line across every rid (understanding-gate markers)."""
     out = []
     for f in Path(log_dir, "runs").glob("*.log"):
         for line in f.read_text().splitlines():
@@ -2741,7 +2741,7 @@ def main():
     old = sub.add_parser("build", help="RETIRED: the page is the forge SPA; use export")
     old.add_argument("--out", default=None, help=argparse.SUPPRESS)
     s = sub.add_parser("stats", help="all dashboard numbers as JSON (agent surface)")
-    d = sub.add_parser("debt", help="cognitive-debt score (ADR-0031 read side)")
+    d = sub.add_parser("debt", help="cognitive-debt score ( read side)")
     for x in (s, d):
         x.add_argument("--log-dir", default=os.environ.get(
             "DWARVES_KIT_LOG_DIR", str(Path.home() / ".local/state/dwarves-kit/logs")))

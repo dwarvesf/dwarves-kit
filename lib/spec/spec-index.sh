@@ -4,7 +4,7 @@
 # Specs can live co-located under any `*/docs/specs/` (the central docs/specs/ AND
 # co-located ones like tools/<name>/docs/specs/, experiments/<slug>/docs/specs/,
 # _meta/megagoals/<prog>/docs/specs/). Numbering is deliberately PER-NAMESPACE and
-# LOCAL: each namespace owns its own SPEC-001.. sequence, so the same number can
+# LOCAL: each namespace owns its own SPEC-NNN.. sequence, so the same number can
 # (and does) recur across namespaces. This command does NOT change that, and is NOT
 # wired into spec-next / goal-drafts / precedent -- those stay namespace-scoped.
 #

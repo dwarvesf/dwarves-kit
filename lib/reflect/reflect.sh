@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# reflect.sh -- thin standalone entry for the reflect subsystem (ADR-0034 decision 1,
-# renamed from `learn` by ADR-0036: the system changes from its own telemetry, nobody
+# reflect.sh -- thin standalone entry for the reflect subsystem (renamed from `learn`:
+# the system changes from its own telemetry, nobody
 # learns). Forwards `reflect <verb> <args...>` to the sibling script that owns that verb.
 # Adds NO new logic.
 #
 # All three verbs are LIVE: `debt` (weekend-batch, relocated from lib/queue/,
-# byte-identical behavior), `propose` (SPEC-195, the cross-run distiller),
-# `drain` (SPEC-196, the staging-review render).
+# byte-identical behavior), `propose` (the cross-run distiller),
+# `drain` (the staging-review render).
 #
 # Usage:
 #   reflect.sh debt <list|collect|mark-paid> <args...>  -> weekend-batch.sh (own usage)

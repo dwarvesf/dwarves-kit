@@ -2,9 +2,9 @@
 """Strip PURE-ID parentheticals from living docs. Conservative by design.
 
 Only touches a parenthetical whose entire content is ids and separators, e.g.
-  "... the ship gate (SPEC-016)."        -> "... the ship gate."
-  "... composition (SPEC-074 / ID-066)"  -> "... composition"
-A mixed parenthetical like "(ADR-0028 P2/P3, kit-hardening SG-08)" is LEFT ALONE and
+  "... the ship gate."        -> "... the ship gate."
+  "... composition"  -> "... composition"
+A mixed parenthetical like "(P2/P3, kit-hardening)" is LEFT ALONE and
 reported: stripping only the id there leaves "(P2/P3, kit-hardening)", which is worse
 than what it replaced. Those need a human sentence, not a regex.
 """
