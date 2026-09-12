@@ -202,6 +202,26 @@ else
     esac
   fi
 
+  # Lane closure. `wrap.build_lanes` widened step 7b: `tiny` is no longer the only lane that
+  # can build inline, so `lane=normal` and `lane=bug` are now legal on a `verified:` item. The
+  # lane token on its own says only that the candidate was SIZED. What became of it is the
+  # other half, and it is one of two words: `verified:` for a build that happened here, or
+  # `staged` for one routed on (`staged + goal drafted:`, `staged: build_candidates off`,
+  # `staged: build_lanes excludes <lane>`). An item carrying a lane and neither word reports a
+  # classification and no outcome, which is the same hole the `**Built:**` line itself exists
+  # to close, one level down.
+  if [ "${#built_items[@]}" -gt 0 ]; then
+    _l_idx=0
+    for _l_item in "${built_items[@]}"; do
+      _l_idx=$((_l_idx + 1))
+      printf '%s' "$_l_item" | grep -qE 'lane=[a-z]+' || continue
+      printf '%s' "$_l_item" | grep -qE 'verified:|staged' && continue
+      echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, or a 'staged' form for one routed on" >&2
+      echo "  ${_l_item}" >&2
+      findings=$((findings + 1))
+    done
+  fi
+
   # A precedent hit on a NOTE is not a build. `bin/precedent` indexes memory notes and
   # research files as hit kinds, so when the top hit is prose the step silently turns a build
   # into a write, and the ENHANCE token above accepts it. That happened on 2026-09-10: a

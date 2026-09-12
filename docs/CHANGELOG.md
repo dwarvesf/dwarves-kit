@@ -6,6 +6,7 @@ All notable changes to dwarves-kit are documented here.
 
 ### COMPAT (contract surfaces, per forge kit-versioning.md)
 - Config surface (new keys, additive, MINOR): `[wrap] merge_own_prs`, `[wrap] tidy_worktrees`, `[wrap] build_candidates`, all defaulting `true`. An existing install keeps its current behavior without editing anything. All three resolve root-only, so a project `.kit.toml` cannot set them.
+- Config surface (new key, additive, MINOR): `[wrap] build_lanes`, default `"tiny"`, which is step 7b's behavior before the key existed. Resolves root-only like the other `[wrap]` autonomy knobs.
 - Ledger grammar, lanes.d plan format, export `schema`: unchanged.
 - Config surface (new key, additive, MINOR): `[output] style`, default `""`. Resolves project > operator > kit-root. Empty leaves every existing install untouched (SPEC-252).
 
@@ -17,6 +18,7 @@ All notable changes to dwarves-kit are documented here.
   Repoint any external caller to `bin/reflect` now.
 
 ### Changed
+- `/kit:wrap` step 7b sizes a candidate against `wrap.build_lanes` instead of hardcoding `tiny`. A lane on that list builds inline in the home repo, in a worktree on its own branch, dispatched to a worker and closed by one quoted verification command; a non-`tiny` lane also opens a PR that step 3 merges only when green, so the home repo's ship-gate proof still applies. Every unlisted lane stages its row and drafts its goal as before. `full` and `backfill` never build inline whatever the list says, and report `(lane=<lane>, staged: build_lanes excludes <lane>)`. `lib/wrap/report-lint.sh` now accepts `verified:` on any lane and requires every item naming a lane to carry a closure, a check or a `staged` form.
 - `/kit:explain` no longer hardcodes `narrate-log` + `svg-knowledge-diagram`; it hands the
   grounded skeleton (reading-order diff, recorded test line, mermaid change-map) to whatever
   skill `understand.teach` names, through the Skill tool (ADR-0036). **Behavior change for an

@@ -1100,8 +1100,32 @@ out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:
 chk "a lane suffix with no ENHANCE or NEW still fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding still asks for the ENHANCE or NEW token" "$out" "no ENHANCE <home> or NEW (precedent: ...) token"
 
+# The lane closure rule. `wrap.build_lanes` lets an operator list heavier lanes for step 7b to
+# build inline, so `lane=normal` and `lane=bug` are now legal on a verified item and the lint
+# can no longer treat `tiny` as the only buildable lane. What it does enforce is the pairing: a
+# lane token says the candidate was sized and nothing about what became of it, so every item
+# naming a lane owes `verified:` or a `staged` form.
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=normal, verified: bash tests/test-alert.sh, #418)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an ENHANCE line carrying lane=normal and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=bug, verified: bash tests/test-cron.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW line carrying lane=bug and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged: build_lanes excludes full)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "the build_lanes exclusion shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a lane with neither a check nor a staged form fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the missing closure" "$out" "names a lane with no closure"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- alpha ENHANCE tools/x: file.sh (lane=normal, verified: bash tests/test-x.sh, #12)\n- beta NEW (precedent: nothing matched): tools/beta (lane=bug)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "one unclosed lane among good bullets fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the offending bullet by index" "$out" "item 2"
+
 chk_has "commands/wrap.md classifies each candidate's lane" "$(cat "$KIT_DIR/commands/wrap.md")" "lib/classify/lane-classify.sh classify"
 chk_has "commands/wrap.md names the worker model tiers" "$(cat "$KIT_DIR/commands/wrap.md")" "Sonnet is the default worker"
+chk_has "commands/wrap.md reads the build_lanes knob" "$(cat "$KIT_DIR/commands/wrap.md")" "kit_config_get_root wrap.build_lanes"
+chk_has "kit.toml ships build_lanes defaulting to tiny" "$(cat "$KIT_DIR/kit.toml")" 'build_lanes = "tiny"'
 # The LIST form: a bare `**Built:**` header followed by `- ` bullets, one candidate per
 # line. Added after a real report crammed three candidates onto one unreadable line. Each
 # bullet owes the same ENHANCE/NEW token as the inline form, checked per bullet, so one bare
