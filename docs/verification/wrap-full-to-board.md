@@ -48,6 +48,13 @@ Every pre-existing lane case (`lane=tiny, verified:`, `lane=normal, verified:`,
 build_candidates off`, a lane with no closure, one bad bullet among good) still passes, which
 is the backward-compatibility claim for every lane but `full`.
 
+- Command: `KIT_CONFIG_OPERATOR=$(mktemp -d) bash tests/run-all.sh`
+- Exit: 0
+- Output: `run-all: all 139 suites passed, 1 skipped for missing tooling`
+- Verdict: PASS. No failure, no timeout. The two anomalies `wrap-build-lanes.md` recorded are
+  both gone: `test-config-registry` passes once the operator dir is neutral, and
+  `test-orchestrate-wavefront` finished inside the 300s ceiling this run.
+
 ### The `board capture` reuse, proven against a real board
 
 A throwaway git repo with a `WK`-prefixed board, one live row `WK-12`, and `WK-40` present
