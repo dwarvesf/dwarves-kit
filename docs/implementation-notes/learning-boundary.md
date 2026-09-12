@@ -351,6 +351,87 @@ fixture-isolation proof; `skills/concept-flush/SKILL.md` cleaned. No dwarves-kit
 changed.
 Open questions: none new.
 
+## 2026-09-12 SG-03 built: learning-kit's own seam side was stale, the registry was already right
+
+Context: the goal file's Outcome text says `concept-flush` "is what `wrap.after`
+names on the operator machine from now on," but `bin/study-seam`, its test, the
+README install step, and `docs/ARCHITECTURE.md` in learning-kit all still wrote
+and documented `wrap.before` coming into this branch.
+Decision: checked this engine's own `lib/config/module-registry.md` `## Seams`
+table first rather than trusting either side blind. Row 392 already reads
+`wrap.after | skill | learning-kit concept flush, or the operator`, and
+`commands/wrap.md` already documents `after` as "the right side for a knowledge
+flush." No engine change was needed; learning-kit's own `bin/study-seam` was the
+stale side and moved to `after` in the receiving PR.
+Why: the registry is the seam's source of truth per SPEC-249; a consumer's own
+doc drifting from it is the consumer's bug, not a reason to change the registry
+to match the drift.
+Impact: no dwarves-kit file changed for this finding. learning-kit#11 carries the
+`wrap.before` -> `wrap.after` fix (code, test, README, ARCHITECTURE.md).
+Open questions: none new.
+
+## 2026-09-12 SG-03 built: a five-skill preset has no single seam to dispatch on
+
+Context: SG-02 solved the flat-loader problem for ONE seam-backed dispatcher
+(`understand`, whose name equals `understand.teach`'s value). SG-03's five skills
+(`learning-router`, `learning-day-process`, `learn-skill`, `concept-explain`,
+`deep-understand`) are independent, trigger-phrase-invoked skills with no shared
+seam key, so that pattern does not generalize: each needs independent
+discoverability or none of them fire, and there is no single dispatcher name to
+route through.
+Decision: a documented opt-in copy step (`presets/operator/install` in
+learning-kit), not a plugin route. These five are the operator's own conventions
+(an ops-toolkit path layout, a Vietnamese tutoring format, til/GLOSSARY routing),
+not skills every learning-kit install should carry, so they live under
+`presets/operator/skills/` (versioned, diffable, never loaded by the plugin) and
+copy into `~/.claude/skills/<name>/` on request, Claude Code's personal-skills
+directory, discovered independently of any plugin.
+Why: this is the exact mechanism these five already ran under (four as chezmoi-
+materialized directories, one as a chezmoi symlink into claude-skills); a copy
+script that reproduces that identical shape at that identical target is a like-
+for-like replacement, provable without a plugin-loader check, unlike SG-02's
+case where `plugin details` was the only way to confirm the seam resolved.
+Alternatives: ship the five flat under learning-kit's own `skills/` (rejected,
+loads one operator's personal conventions into every learning-kit install and
+its token cost); a second per-skill plugin/marketplace just for this preset
+(rejected, more infrastructure than five files need).
+Impact: no dwarves-kit file changed. learning-kit#11 carries
+`presets/operator/install` + `tests/test_operator_preset.sh` (21 checks,
+hermetic, proves flat landing + idempotence + a named-subset install + the
+negative control for an unknown name).
+Open questions: whether a fourth kit ever needs the same "operator preset, opt-in
+copy" shape is a question for whoever next moves a personal-convention skill out
+of dotfiles; not decided here.
+
+## 2026-09-12 SG-03 built: the row-format adoption changed behavior the goal's literal words did not name
+
+Context: adopting `learned-ledger.md`'s row format required more than a read; the
+goal's Proof line named two behavioral deltas from `bin/study-concepts`'s prior
+shape (a `--kind` field the CLI never had, and `home: research` routing to a
+dated filename it never produced) plus a documentation contradiction between the
+learned-ledger.md file's OWN header (a queued row "is removed the moment it
+flushes") and its observed 434-line reality (395 rows, none ever removed, going
+back to 2026-06).
+Decision: followed the documented schema (remove a routed row) rather than the
+observed drift, and disclosed the drift rather than reconciling 429 unrelated
+legacy rows. Verified read-only against a scratch copy of the real 434-line file
+before deciding anything: `list` and `flush --dry-run` parsed every row without
+error, routed only `status: queued` rows, left every legacy status (`flushed:*`,
+`routed:*`, `routed-dup:*`, `skipped:owner-*`, `dropped:*`) untouched, md5
+identical before/after.
+Why: "byte-compatible... no migration is needed" (the goal's own Quality bar)
+means the tool must not corrupt existing rows, not that its own future-row
+behavior must match an already-drifted file over its own documented contract.
+Alternatives: match the observed drift (never remove a row) for consistency with
+the live file (rejected -- concept-flush's own existing design already says
+"clears the buffer," and codifying an undocumented drift as the new contract
+buries the discrepancy instead of naming it); fix the 429 pre-existing rows to
+match the schema (rejected, unbounded scope creep on a file this sub-goal has no
+mandate to migrate).
+Impact: no dwarves-kit file changed. Full deltas + the real-file compatibility
+transcript: `docs/verification/one-ledger.md` (learning-kit#11).
+Open questions: none new.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
