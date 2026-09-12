@@ -1,5 +1,9 @@
 # wrap.build_lanes: step 7b builds the lanes the operator lists
 
+> Point 4 below is superseded. `backfill` now builds inline when listed, and a `full`
+> candidate files a queued board row instead of a staged one. See `wrap-full-to-board.md`.
+> The rest of this record stands as the proof of the run it describes.
+
 `/kit:wrap` step 7b hardcoded one buildable lane. `tiny` built inline; `normal`, `full`, `bug`,
 and `backfill` staged a row and drafted a goal. The staging side has no consumer: one operator
 board holds 248 rows staged since May and none has ever drained. A normal-lane enhancement is
