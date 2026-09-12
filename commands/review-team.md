@@ -13,17 +13,17 @@ If no changes exist, tell the user and stop.
 
 ## Process
 
-Bracket the `review` phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome "$rid" review start`.
+Bracket the `review` phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome "$rid" review start`.
 
 ### Step 1: Gather the diff
 
 Run `git diff main` (or `git diff HEAD~N` if on main). Capture the diff and the list of changed files.
 
-**Fail fast BEFORE any dispatch (SPEC-205).** Confirm the fixed point resolves
+**Fail fast BEFORE any dispatch.** Confirm the fixed point resolves
 (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or an empty diff
 fails here with one line , never inside four parallel subagents.
 
-**Advisory coverage-delta signal (SPEC-130, ADVISORY, never blocks).** Before dispatching the
+**Advisory coverage-delta signal (ADVISORY, never blocks).** Before dispatching the
 lenses, run the coverage-delta gate and fold its one line into the test-coverage lens's input:
 
 ```
@@ -34,16 +34,16 @@ It prints one `[coverage-delta]` line , `WARNING under-tested` (source moved, no
 change; it names the uncovered files), `ok` (source + test moved together), or `exempt`
 (docs/test/generated only). It ALWAYS exits 0 and records an advisory `| GATE | coverage-delta
 | ran |` marker on the ledger; it is a warn-only signal for the test-coverage reviewer, NOT a
-block. This is the live dispatch path for the SPEC-130 gate (the Review phase, off the push
+block. This is the live dispatch path for the coverage-delta gate (the Review phase, off the push
 blocker). A `WARNING` is advisory input to the test-coverage lens, never a stop.
 
 ### Step 2: Dispatch 3 lenses in parallel
 
 Dispatch these 3 subagents via the Task tool. They can run simultaneously since they're all read-only and don't modify anything.
 
-**Domain lens (opt-in, SPEC-111).** In addition to the fixed 3, classify the changed files' domain , `bash lib/classify/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`performance-reviewer`, `api-reviewer`, `frontend-reviewer`, `infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the SPEC-111 read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
+**Domain lens (opt-in).** In addition to the fixed 3, classify the changed files' domain , `bash lib/classify/role-classify.sh classify "<changed paths + diff summary>"` , and if a domain REVIEWER exists for that domain (`performance-reviewer`, `api-reviewer`, `frontend-reviewer`, `infra-reviewer`), dispatch it too, in the same parallel batch, through its domain lens. This is the live dispatch path for the read-only domain reviewers (workers dispatch via `/kit:execute` 2b-0 instead). Skip when no domain reviewer matches; the fixed 3 lenses are unchanged.
 
-**Model tiering (SPEC-078 / ID-078, EveryInc Stage 4 pattern):** dispatch the
+**Model tiering (EveryInc Stage 4 pattern):** dispatch the
 security reviewer with an EXPLICIT model override matching the session model ,
 the security-reviewer agent's frontmatter defaults to sonnet, so omitting the
 override would silently down-tier the high-stakes lens, not inherit; dispatch
@@ -52,7 +52,7 @@ the architecture and test-coverage reviewers with the mid-tier override
 it and note that in the report header. This roughly halves the command's token
 cost without dulling the lens that catches exploits.
 
-**Confidence anchors (SPEC-081 / ID-075, EveryInc findings-schema):** every reviewer
+**Confidence anchors (EveryInc findings-schema):** every reviewer
 returns each finding with a CONFIDENCE at one of five behavioral anchors, each with a
 self-test the reviewer must pass to claim it:
 
@@ -64,7 +64,7 @@ self-test the reviewer must pass to claim it:
 | 75 | traced the actual code path , "I can name the failing input" |
 | 100 | proved , "I ran it / the logic is airtight, I can show the output" |
 
-A finding block is: title, file:line, severity, Route (SPEC-078), Confidence anchor,
+A finding block is: title, file:line, severity, Route, Confidence anchor,
 self-test sentence, suggested fix (when gated_auto).
 
 **Lens 1: Security (deep)**
@@ -87,7 +87,7 @@ Use the code-reviewer agent with lens: architecture.
 **Stale-ADR inversion.** Behavior that matches what a spec/ADR/intent doc claims is BY DESIGN, not a finding, even if it looks surprising at first glance. Code that has DRIFTED from what a spec/ADR/intent doc claims IS itself a finding: report the drift naming the doc's line and the code's line. A doc can never blanket-mute observed behavior. Emit a drift finding with a `stale-adr:` finding-key prefix (e.g. `stale-adr: <doc>:<line> claims X, <code>:<line> does Y`) so it reads as this lens type, distinct from other findings.
 
 Express findings in deep-module vocabulary (Ousterhout, via mattpocock
-improve-codebase-architecture; SPEC-059): a module is DEEP when a small interface hides a
+improve-codebase-architecture): a module is DEEP when a small interface hides a
 lot of behavior, SHALLOW when its interface is nearly as complex as its implementation.
 Apply the deletion test to suspect modules: delete it mentally; if complexity vanishes it
 was a pass-through, if complexity reappears across N callers it earns its keep. Name seams
@@ -95,7 +95,7 @@ explicitly (one adapter = hypothetical seam, two adapters = real seam) and justi
 finding in terms of leverage (what callers gain) and locality (where change, bugs, and
 knowledge concentrate).
 
-Two hard tripwires (SPEC-080 / ID-080, cursor, MIT): (1) the diff must not push any
+Two hard tripwires (cursor, MIT): (1) the diff must not push any
 file from under 1k lines to over 1k lines without a stated strong reason in the PR ,
 flag it as a finding, not a nit; (2) weird if-statements in random places are a DESIGN
 problem (spaghetti growth), never a style nit , name the structural cause.
@@ -122,14 +122,14 @@ Use the code-reviewer agent with lens: test-coverage.
 ### Step 2b: dispatch the advisor extra lens (KIT DEFAULT, additive)
 
 In addition to the 3 specialist lenses, dispatch the `advisor` agent in **critique
-mode** (ADR-0028 P5). This is a KIT DEFAULT: it runs on every review-team pass, it
+mode**. This is a KIT DEFAULT: it runs on every review-team pass, it
 does NOT replace the 3 specialist lenses (they are the kit's tailored value), it ADDS one
 cross-cutting whole-of-work lens that catches what a per-artifact lens is not scoped
 to see (cross-artifact inconsistency, a seam between independently-reviewed pieces, a
 global assumption). Dispatch it read-only, advisory:
 
 ```
-Run in critique mode (ADR-0028 P5). You are the EXTRA cross-cutting lens on top of
+Run in critique mode. You are the EXTRA cross-cutting lens on top of
 the specialized reviewers; do not re-do their per-artifact review. Find only what a
 whole-work pass surfaces. Return ADVISORY: clean | N finding(s) with file:line.
 
@@ -140,10 +140,10 @@ whole-work pass surfaces. Return ADVISORY: clean | N finding(s) with file:line.
 The advisor's `model:` (default `sonnet`) is the cheap-first tier knob, so this
 default lens never silently burns opus on every run.
 
-Bracket the `advisor` phase for timing (SPEC-129) right before dispatching it:
+Bracket the `advisor` phase for timing right before dispatching it:
 `bash lib/gate/gate-ledger.sh outcome "$rid" advisor start`.
 
-**Record the advisor dispatch itself (SPEC-145, fail-open, never blocks).** The instant the
+**Record the advisor dispatch itself (fail-open, never blocks).** The instant the
 advisor's critique pass returns, emit a first-class ledger row BEFORE folding its findings
 into the Step 3 merge, so the advisor's own contribution is machine-visible even when
 `kit_gates` (the stats read plane) is asked "did the advisor run on this rid" independent of the
@@ -157,13 +157,13 @@ bash lib/gate/gate-ledger.sh outcome "$rid" advisor end caught=<true if N > 0, e
 ```
 
 `<N>` is the advisor's OWN fresh-finding count read off its `ADVISORY: <N findings>` output
-line (post rejected-findings-ledger, SPEC-144) -- distinct from Step 3's merged `findings=<K>`.
+line (post rejected-findings-ledger) -- distinct from Step 3's merged `findings=<K>`.
 Fail-open: the `||` fallback means an emit failure (a read-only ledger dir, a full disk) can
 only ever print a warning, never fail the review or the dispatch (NC2). A rid that never
 reaches this line simply has no `advisor` row -- `kit_gates` renders it zero/absent, never
 fabricated (NC1).
 
-**RID convention (SPEC-145, pinned).** In a standalone `/kit:review-team` run, `$rid` is the
+**RID convention (pinned).** In a standalone `/kit:review-team` run, `$rid` is the
 current run's own rid (`bash lib/gate/gate-ledger.sh rid`). In a mega/convergence-gate context
 (`commands/mega.md`'s convergence-gate step, below), the SAME advisor grammar records under
 the FINAL sub-goal's rid instead -- the de-facto convention the older TIER-4 free-text
@@ -182,9 +182,9 @@ mode** (P6) is a SEPARATE pass surfaced to the human just BEFORE the final revie
 After all 3 specialist lenses + the advisor complete:
 
 1. Collect all issues from all 3 lenses (and the advisor's cross-cutting findings)
-2. Deduplicate by FINGERPRINT (SPEC-081): file + line-bucket (+-3 lines) + normalized title (lowercase, punctuation stripped). The same fingerprint across reviewers = ONE finding listing every lens that caught it.
+2. Deduplicate by FINGERPRINT: file + line-bucket (+-3 lines) + normalized title (lowercase, punctuation stripped). The same fingerprint across reviewers = ONE finding listing every lens that caught it.
 3. Sort by severity (CRITICAL > HIGH > MEDIUM > LOW). <!-- review-loop --> Within a severity, sort CONVERGENT findings first: a finding whose fingerprint two or more lenses hit independently outranks a single-lens finding, because independent agreement is the cheapest reliable signal of a real defect (docs/patterns/review-fix-loop.md, move 2). The corroboration promotion in item 5 already encodes this as confidence; this sort surfaces it so the operator reads the convergent findings first.
-4. **Classify each finding's Route (SPEC-078 / ID-076, EveryInc action-class
+4. **Classify each finding's Route (EveryInc action-class
    rubric):** severity says how URGENT, the Route says what FOLLOW-UP SHAPE:
    - `gated_auto` , a concrete suggested fix exists; applied after judgment at
      the decision gate (never blindly).
@@ -193,10 +193,10 @@ After all 3 specialist lenses + the advisor complete:
    When lenses disagree on a finding's class, route conservatively: manual beats
    gated_auto, advisory never downgrades a class another lens raised.
    (Upstream deprecated `safe_auto`; there is deliberately no auto-apply class.)
-5. **Corroboration promotion (SPEC-081)**: each ADDITIONAL lens sharing a finding's
+5. **Corroboration promotion**: each ADDITIONAL lens sharing a finding's
    fingerprint promotes its confidence ONE anchor step (25 -> 50 -> 75 -> 100, max 100).
    Independent agreement is evidence; the promotion happens BEFORE any gating.
-6. **LATE confidence gate (SPEC-081)**: after dedup + promotion (weak findings get
+6. **LATE confidence gate**: after dedup + promotion (weak findings get
    their promotion chance first , that is the point of gating late), findings below 75 are suppressed
    from the main report; CRITICAL survives at 50+. Suppressed findings move to the
    appendix with their self-tests , never silently dropped. Suppressed findings do
@@ -205,7 +205,7 @@ After all 3 specialist lenses + the advisor complete:
    `suppressed=<S>`).
 7. Compute a combined score: average of the 3 lens scores
 
-### Step 3a: Consult the rejected-findings ledger (fail-open, SPEC-144)
+### Step 3a: Consult the rejected-findings ledger (fail-open)
 
 Before validating or reporting, check every UNSUPPRESSED merged finding (post-dedup, from
 Step 3.2-3.6, including the advisor's cross-cutting findings) against
@@ -213,7 +213,7 @@ Step 3.2-3.6, including the advisor's cross-cutting findings) against
 ledger = "no memory," never an error, never a blocked review.
 
 For each merged finding: compute its **finding-key** (`<defect-slug>:<file-path>`, a short
-kebab-case defect-shape slug colon-joined with the repo-relative file path -- SPEC-143's
+kebab-case defect-shape slug colon-joined with the repo-relative file path -- the
 `stale-adr:` prefix is one instance of this scheme), then `grep -F "| <finding-key> |"
 docs/verification/rejected-findings.md` -- pipe-anchored (pipe, single space, the key, single
 space, pipe) to match the WHOLE table cell, never a substring. **Do not** grep the bare
@@ -238,7 +238,7 @@ would wrongly suppress every future novel defect at a file that has ANY prior re
 `docs/verification/spec-144-review-findings-memory.md` for the proof (a deliberately-broken
 file-only match rule going RED, restored to finding-key matching going GREEN).
 
-### Step 3b: Validate verdict-driving findings (SPEC-082 / ID-079)
+### Step 3b: Validate verdict-driving findings
 
 For every UNSUPPRESSED finding with severity CRITICAL or HIGH (the ones that drive a
 FIX-THEN-SHIP / DO-NOT-SHIP verdict), dispatch ONE independent read-only validator
@@ -289,10 +289,10 @@ Reviewers: security, architecture, test-coverage
 (All severity rows use the same finding-line format: lens(es), Confidence, Route, fix.
 The verdict is determined by UNSUPPRESSED findings only.)
 
-**Per-lens summary rule (SPEC-205, via mattpocock/skills code-review, MIT).** The
+**Per-lens summary rule (via mattpocock/skills code-review, MIT).** The
 summary states finding totals and the worst issue PER LENS; it never crowns a single
 worst finding across lenses , that cross-lens reranking lets one lens mask another.
-The SPEC-081 merge machinery above (fingerprint dedup, corroboration promotion,
+The merge machinery above (fingerprint dedup, corroboration promotion,
 severity sort) is unchanged: cross-lens AGREEMENT on one finding is evidence; a
 cross-lens WINNER in the summary is masking.
 
@@ -305,10 +305,10 @@ cross-lens WINNER in the summary is masking.
 ## Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP
 ```
 
-Write the unified report as a `## Review` section IN the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the SPEC-005 rule), **replacing** any prior `## Review` (replace-not-stack). Keep the per-lens findings as subsections (`### Security`, `### Architecture`, `### Test coverage`) and the open items under `### TODOs`. If no active spec exists, output the report inline in chat instead. NEVER write the review (or per-lens files) to fixed-name files in the repo root; that pattern collides across concurrent worktrees and sessions.
+Write the unified report as a `## Review` section IN the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the active-spec review-section convention), **replacing** any prior `## Review` (replace-not-stack). Keep the per-lens findings as subsections (`### Security`, `### Architecture`, `### Test coverage`) and the open items under `### TODOs`. If no active spec exists, output the report inline in chat instead. NEVER write the review (or per-lens files) to fixed-name files in the repo root; that pattern collides across concurrent worktrees and sessions.
 
-Record the verdict for lane telemetry (SPEC-061), one line, now carrying the
-rejected-findings-memory counts (SPEC-144): `findings=<K>` counts FRESH unsuppressed findings
+Record the verdict for lane telemetry, one line, now carrying the
+rejected-findings-memory counts: `findings=<K>` counts FRESH unsuppressed findings
 only (unchanged meaning), `rejected=<M>` counts the Step 3a previously-rejected matches, and
 `actor=<name>` is `git config user.name` read at record time:
 
@@ -316,13 +316,13 @@ only (unchanged meaning), `rejected=<M>` counts the Step 3a previously-rejected 
 bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> suppressed=<S> rejected=<M> actor=$(git config user.name)"
 ```
 
-Close the `review` timing bracket opened at the top of this Process section (SPEC-129):
+Close the `review` timing bracket opened at the top of this Process section:
 `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SHIP, else false>`.
 
 ### Step 5: Decision gate
 
 If verdict is SHIP: suggest `/kit:docs` then `/kit:ship`.
-If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Unvalidated CRITICAL/HIGH findings are treated as LIVE (the SPEC-082 fail-safe); responding-to-review notes the unvalidated status when proposing their fixes. Route by class (SPEC-078), UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
+If verdict is FIX THEN SHIP: list the specific fixes needed, ask if the user wants to address them now. Unvalidated CRITICAL/HIGH findings are treated as LIVE (the fail-safe); responding-to-review notes the unvalidated status when proposing their fixes. Route by class, UNSUPPRESSED findings only (suppressed items never enter this gate, at any Route or severity): `gated_auto` findings go to the `responding-to-review` agent as input -- it verifies each item, pushes back on incorrect feedback, and proposes fixes in priority order without performative agreement; each `manual` finding becomes a board row in `_meta/BACKLOG.md` (design input owed, not an inline fix); `advisory` findings are recorded in the spec's `## Review` section and nothing else is owed.
 
 Then read `kit_config_get_root review.apply_findings true`. True, the default: dispatch `fix-agent` on the findings `responding-to-review` VERIFIED, scoped to those files and those issues, and report each fix with its finding. The branch is not the product, the PR is, and a fix sitting in a report costs a round trip to apply by hand. False: leave them proposed for the operator to apply. **The verification is the gate at either setting.** A finding `responding-to-review` pushed back on is never applied, because the agent judged the reviewer wrong; report the pushback and its reasoning instead. `manual` and `advisory` findings never reach this step.
 If verdict is DO NOT SHIP: explain what's fundamentally wrong.
@@ -337,7 +337,7 @@ inconsistent with the file) and returns a STRIP REPORT. Never auto-run, and
 style grounds rather than fixing a verified finding, so there is no per-item
 judgment to stand behind it. That is the line between the two. A `gated_auto`
 finding is applied only after `responding-to-review` verified that specific item
-(SPEC-078, never blindly); the strip has no such per-item verification, so it stays
+(never blindly); the strip has no such per-item verification, so it stays
 the operator's call. Run `/kit:verify` after the strip, then `/kit:ship`.
 
 <!-- review-loop -->
@@ -354,7 +354,7 @@ At the cap with a convergent CRITICAL or HIGH finding still open, do NOT report 
 
 Lane gate: this loop runs on the FULL lane only. Normal runs one pass with no re-review; tiny runs no review. The gate is the cost guard, not an omission.
 
-### Step 6: Operator rejection appends to the ledger (SPEC-144)
+### Step 6: Operator rejection appends to the ledger
 
 If the operator rejects one or more findings from the unified report (by-design, false
 positive, deliberate won't-fix), append ONE new row per rejected finding to
@@ -368,6 +368,6 @@ operator rejection appends a row; a finding the operator fixes, defers to `_meta
 ## When to use /review-team vs /review
 
 - `/review` (existing): Single-pass review by one agent. Faster, cheaper. Good for small changes, solo work, quick iteration.
-- `/review-team` (this command): Parallel 3-lens review. More thorough, ~1.5-2x the tokens with model tiering (3x untiered); each unsuppressed CRITICAL/HIGH finding adds one mid-tier validator subagent (SPEC-082). Good for: PRs before merge, contractor work review, pre-release code, anything touching auth/payments/data.
+- `/review-team` (this command): Parallel 3-lens review. More thorough, ~1.5-2x the tokens with model tiering (3x untiered); each unsuppressed CRITICAL/HIGH finding adds one mid-tier validator subagent. Good for: PRs before merge, contractor work review, pre-release code, anything touching auth/payments/data.
 
-Source: Addy Osmani's parallel agent review pattern. EveryInc/compound-engineering-plugin (MIT) for the apply-class rubric + model tiering (SPEC-078, absorption 2026-06-11). gstack /review for the paranoid tone. Claude Code Agent Teams documentation for parallel subagent dispatch. mattpocock/skills improve-codebase-architecture for the architecture lens's deep-module vocabulary (SPEC-059).
+Source: Addy Osmani's parallel agent review pattern. EveryInc/compound-engineering-plugin (MIT) for the apply-class rubric + model tiering (absorption 2026-06-11). gstack /review for the paranoid tone. Claude Code Agent Teams documentation for parallel subagent dispatch. mattpocock/skills improve-codebase-architecture for the architecture lens's deep-module vocabulary.

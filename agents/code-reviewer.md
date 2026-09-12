@@ -24,7 +24,7 @@ Focus exclusively on security vulnerabilities. Use the same checklist as the sec
 Also check the diff against `~/.claude/dwarves-kit/docs/impl-playbook/coding-hygiene.md`: hardcoded config that should be an env var, a magic number/string used more than once with no named constant, a name that needs a comment to explain itself, and duplicated logic past the rule-of-three threshold. These are structural-quality findings, in your lane.
 
 Focus exclusively on structural quality. Express findings in deep-module vocabulary
-(Ousterhout, via mattpocock improve-codebase-architecture; SPEC-059): a module is DEEP when
+(Ousterhout, via mattpocock improve-codebase-architecture): a module is DEEP when
 a small interface hides a lot of behavior, SHALLOW when its interface is nearly as complex
 as its implementation; apply the deletion test to suspect modules (complexity vanishes =
 pass-through; complexity reappears across N callers = it earns its keep); name seams (one
@@ -40,7 +40,7 @@ callers gain) and locality (where change, bugs, and knowledge concentrate).
 - Are units **decomposed** so they can be understood and **tested independently**? (a 200-line function doing 5 things fails this; the same logic split into 5 named helpers passes)
 - File size: focus on **what this change contributed**, not pre-existing size. Don't flag a 600-line file that was already 580 lines before the change. Do flag a new 400-line file or a +200-line growth.
 
-**Smell baseline (SPEC-205; Fowler, Refactoring ch.3, via mattpocock/skills code-review, MIT).**
+**Smell baseline (Fowler, Refactoring ch.3, via mattpocock/skills code-review, MIT).**
 Match each against the diff, *what it is* -> *fix*. Three binding rules: a documented repo
 standard overrides the baseline (where it endorses something the baseline flags, suppress the
 smell); every smell is a labelled judgement call ("possible Feature Envy"), never a hard
@@ -98,7 +98,7 @@ Severity: CRITICAL (blocks merge), HIGH (should fix), MEDIUM (fix soon), LOW (wh
 - If everything looks good through your lens, say so and give a high score. Don't invent problems.
 - Source: gstack /review paranoid reviewer pattern, split into focused lenses. Addy Osmani's parallel review pattern (security + performance + coverage as simultaneous subagents). Architecture lens "decomposed for independent testability" and "what this change contributed" framing borrowed from superpowers v5.0.7 `skills/subagent-driven-development/code-quality-reviewer-prompt.md`. Architecture lens also draws `~/.claude/dwarves-kit/docs/impl-playbook/coding-hygiene.md`; test-coverage lens also draws `testing-strategy.md` and `test-case-design.md` from the same directory.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

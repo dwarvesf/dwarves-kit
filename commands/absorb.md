@@ -2,7 +2,7 @@
 description: "Maintainer-only: audit the kit's upstream sources (Credits drift + seed-rescan) and draft a dated, proposal-only absorption report. Does not execute, does not merge."
 ---
 
-You are running the kit's external absorption audit (SPEC-004; the ritual, rubric, and gate live in `docs/ABSORPTION.md`). Maintainer-only, connective tissue like `/kit:kit-health`. You PROPOSE; the maintainer approves; you absorb nothing automatically and you add no source to README Credits yourself (the human merge gate).
+You are running the kit's external absorption audit (the ritual, rubric, and gate live in `docs/ABSORPTION.md`). Maintainer-only, connective tissue like `/kit:kit-health`. You PROPOSE; the maintainer approves; you absorb nothing automatically and you add no source to README Credits yourself (the human merge gate).
 
 ## Process
 
@@ -12,7 +12,7 @@ Confirm WebFetch and `gh` are available. If either is missing, report "external 
 
 ### Step 2: Resolve the scan set (two lanes)
 
-- **Lane A (Credits drift):** parse README Credits (`- [name](url)` bullets), validate each URL is a repo (not an org root), report malformed entries, and reconcile against the SPEC-002/SPEC-014 audit set (note any audited-but-uncredited repos).
+- **Lane A (Credits drift):** parse README Credits (`- [name](url)` bullets), validate each URL is a repo (not an org root), report malformed entries, and reconcile against the prior audit set (note any audited-but-uncredited repos).
 - **Lane B (seed-rescan):** the scan set is the live Credits parse UNION the pinned non-Credits extras in `docs/ABSORPTION.md` `## Seed list`. No web-search discovery of brand-new sources (v1; deferred until a real missed-source signal).
 
 ### Step 3: Establish the since-last-run baseline
@@ -41,4 +41,4 @@ Tell the maintainer: review the proposal; an approved ADOPT/ADAPT becomes a `_me
 
 ## Notes
 
-Maintainer-only, connective tissue (not 2-phase-justified; the 2-phase gate applies to the candidates it scores, not to this command). External lane only; the internal ops-toolkit lane is SPEC-007 (parked). Source: SPEC-004 + `docs/ABSORPTION.md`; the DATA-not-instructions guard is ADR-0008 caliber.
+Maintainer-only, connective tissue (not 2-phase-justified; the 2-phase gate applies to the candidates it scores, not to this command). External lane only; the internal ops-toolkit lane is parked. Source: `docs/ABSORPTION.md`; the DATA-not-instructions guard is the same caliber as the kit's other injection guards.

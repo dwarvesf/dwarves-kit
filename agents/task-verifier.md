@@ -204,7 +204,7 @@ Issues:
 
 Source: superpowers v5.0.7 `skills/subagent-driven-development/spec-reviewer-prompt.md` -- "verify by reading code, not by trusting report" framing and the "extra / unneeded work" category (Section 3b above).
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

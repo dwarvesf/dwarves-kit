@@ -2,12 +2,12 @@
 description: "The ★-tap NUDGE before merging a significant+worthy gate PR: a 5-question quiz built from the ACTUAL diff+tests, handed to the operator's configured teacher seam. Three logged responses (engage/defer/wave); advisory, never must-pass. Gates the human's attention, not the merge."
 ---
 
-You are the understanding-gate NUDGE (ADR-0031 §2/§3, the AFTER gate's speed regulator). At the merge
+You are the understanding-gate NUDGE (the AFTER gate's speed regulator). At the merge
 boundary of a `gate`/gated-final PR, when a change is BOTH significant AND understanding-worthy, you offer
 the human a 5-question quiz built from the actual change BEFORE they click-to-merge. `$ARGUMENTS` is the
 change under merge (a commit / PR / spec ref) and its run id (`<rid>`).
 
-This gates the human's ATTENTION, never the merge. It is a NUDGE (ADR-0031 Refinement point 3): a waved
+This gates the human's ATTENTION, never the merge. It is a NUDGE: a waved
 change still merges; you never hard-block a correct build. The only real failure is UNTRACKED debt, so all
 three responses are recorded.
 
@@ -24,12 +24,12 @@ three responses are recorded.
 
 ## Process
 
-### Step 1: Decide whether to tap (keyed on the SPEC-123 verdict)
+### Step 1: Decide whether to tap (keyed on the significance-classify verdict)
 
 Only a `tap` verdict (significant AND understanding-worthy) on a `gate`/gated-final PR is ever nudged , the
 anti-fatigue guard. A significant-but-low-worthiness change (`wave`) or a `not-significant` change is NEVER
-quizzed (it is already logged silently by SPEC-123's `significance-classify record`, wired into `/kit:ship`
-Step 8 by SPEC-136, immediately before this tap).
+quizzed (it is already logged silently by `significance-classify record`, wired into `/kit:ship`
+Step 8, immediately before this tap).
 
 ```bash
 bash lib/gate/quiz-gate.sh tap <rid> --files "<changed files>" --impl-notes docs/implementation-notes/<slug>.md --pr-kind gate "<what changed>"
@@ -45,12 +45,12 @@ the human made:
 
 ```bash
 bash lib/gate/quiz-gate.sh respond <rid> engage --ref <ref>   # pull the quiz now
-bash lib/gate/quiz-gate.sh respond <rid> defer                # send to the weekend batch (SG-05)
+bash lib/gate/quiz-gate.sh respond <rid> defer                # send to the weekend batch
 bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt knowingly
 ```
 
 - **engage** , `respond ... engage --ref <ref>` emits the dispatch payload (the 5 diff-grounded questions +
-  the SPEC-124 explainer material), resolving the teacher via `bash lib/gate/quiz-gate.sh teacher` (the
+  the concept-explainer material), resolving the teacher via `bash lib/gate/quiz-gate.sh teacher` (the
   one resolver every seam-adjacent site cites; never read `understand.teach` any other way). Empty: print
   `skipped: no teacher` and hand the payload to the human directly, no mastery gate. Named: invoke that
   skill through the Skill tool with the payload: it runs the mastery gate until the human demonstrates
@@ -62,7 +62,7 @@ bash lib/gate/quiz-gate.sh respond <rid> wave                 # accept the debt 
 ### Step 3: The merge proceeds either way
 
 The quiz is a NUDGE. Whatever the human picked (including ignoring it), the merge is not blocked by this
-gate. The correctness gates (ADR-0024 ship-gate, ADR-0025 proof-of-done) remain the only hard blocks.
+gate. The correctness gates (the ship-gate and the proof-of-done gate) remain the only hard blocks.
 
 ## Rules
 
@@ -71,13 +71,13 @@ gate. The correctness gates (ADR-0024 ship-gate, ADR-0025 proof-of-done) remain 
   change , that IS the fatigue failure mode.
 - Route engage through the `understand.teach` seam; never name a skill directly, never reimplement a quiz/scoring engine in the kit.
 - All three responses are logged; waving is a first-class, RECORDED choice, not a failure.
-- Advisory only: this never blocks a correct build (ADR-0031). It gates attention, not the merge.
+- Advisory only: this never blocks a correct build. It gates attention, not the merge.
 - Do not write the explainer (`/kit:explain`), the significance heuristic, or the batch flow; those are their own commands' seams.
 
 ## Source
 
-ADR-0031 §2 (the AFTER gate's quiz half) + §3 (the nudge, three responses, debt budget) + SPEC-125 + ADR-0036
-(the `understand.teach` seam). Engine: `lib/gate/quiz-gate.sh` (questions from the diff+tests, the tap decision
+The understanding-gate design (the AFTER gate's quiz half; the nudge, three responses, debt budget)
+and the `understand.teach` seam design. Engine: `lib/gate/quiz-gate.sh` (questions from the diff+tests, the tap decision
 keyed on `lib/classify/significance-classify.sh`, the three logged responses via `lib/gate/gate-ledger.sh
 debt-response`, the route payload resolved through the seam rather than a hardcoded skill name).
 Proof: `tests/test-quiz-gate.sh` (5-from-diff, three-responses-logged, seam routing (filled and empty), the grounded

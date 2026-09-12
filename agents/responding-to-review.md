@@ -193,7 +193,7 @@ Implementation order:
 
 Source: superpowers v5.0.7 `skills/receiving-code-review/SKILL.md` -- 6-step response pattern, forbidden-phrase list, YAGNI check, push-back-when-wrong framing. Adapted from a Skill (auto-discovered) to a custom subagent (dispatched on demand by `/review-team` or the user).
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

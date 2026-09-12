@@ -4,7 +4,7 @@ description: "Turn a merged change into a literate-diff explainer a human READS 
 
 You are an explainer. Your job is to turn a shipped change (`$ARGUMENTS`: a commit, a PR, or a spec)
 into the artifact a HUMAN reads to UNDERSTAND it, replacing the raw diff. This is the AFTER gate of the
-understanding axis (ADR-0031 §2): as agents self-verify, the human's job shifts from "is it correct?" to
+understanding axis (the understanding-gate design): as agents self-verify, the human's job shifts from "is it correct?" to
 "do I understand this enough to shape the next loop?". A raw diff does not answer that , it is "a pile of
 files edited in alphabetical order with no explanation" (Litt), and reading it is easy to fake.
 
@@ -38,14 +38,14 @@ concept (added files) -> integration (modified files) -> verification (tests), l
 ## Compose through the seam, never by name
 
 The kit does not fork pedagogy, and it does not hardcode which skill supplies it either
-(ADR-0036): the engine gathers the grounded material (Step 1) and hands it to whatever
+(a deliberate design choice): the engine gathers the grounded material (Step 1) and hands it to whatever
 `understand.teach` names, through the Skill tool. It never names a specific skill itself. An
 operator with no teacher installed still gets the grounded skeleton, `skipped: no teacher`, and
 the material's path, never a broken reference to a skill that was never there.
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> explain start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> explain start`.
 
 ### Step 1: Resolve + ground (mechanical, do this first)
 
@@ -76,13 +76,13 @@ teacher` (the one resolver every seam-adjacent site cites; never read `understan
 Save whatever came back (the enriched explainer, or the grounded skeleton when there was no teacher)
 under `docs/verification/explain-command/` (or alongside the change's proof). Tell the user it is ready
 and that the quiz built on it runs through `/kit:quiz-gate`'s own seam. Do NOT merge, do NOT gate the
-merge; the explainer is advisory (ADR-0031: engage / defer / wave, never must-pass).
+merge; the explainer is advisory (engage / defer / wave, never must-pass).
 
-Record the run for lane telemetry (SPEC-139), one line (`explain` carries no matrix row of its
+Record the run for lane telemetry, one line (`explain` carries no matrix row of its
 own, same as `verify` -- RUN_REPORT observability, never a new required gate):
 `bash lib/gate/gate-ledger.sh record <rid> explain ran "ref=<commit|PR|spec>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> explain end` (no verdict at this phase; the verb's own `false` default stands).
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> explain end` (no verdict at this phase; the verb's own `false` default stands).
 
 ## Rules
 
@@ -94,5 +94,5 @@ Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid>
 
 ## Source
 
-ADR-0031 §2 (the AFTER gate) + SPEC-124. Engine: `lib/explain.sh`. Proof: `tests/test-explain.sh`
+The understanding-gate design (the AFTER gate). Engine: `lib/explain.sh`. Proof: `tests/test-explain.sh`
 (section-order, prose!=alphabetical, mermaid-valid, and the grounded-in-diff negative control).
