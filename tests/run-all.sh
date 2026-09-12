@@ -19,7 +19,11 @@ ONLY=""
 TIMEOUT_SECS="${RUN_ALL_TIMEOUT_SECS:-300}"
 _timeout() { if command -v timeout >/dev/null 2>&1; then timeout "$@"; else shift; "$@"; fi; }
 
+# A timeout and a red assertion are DIFFERENT facts and are accumulated separately. Both
+# still exit 1, but a ceiling hit under load is not a broken suite, and flattening the two
+# into one "FAILED ->" line cost two full re-runs to tell apart on 2026-09-12.
 failed=""
+timedout=""
 count=0
 skipped=0
 for t in tests/test-*.sh; do
@@ -46,7 +50,17 @@ for t in tests/test-*.sh; do
     echo "ok"
   else
     rc=$?
-    [ "$rc" -eq 124 ] && echo "TIMEOUT (${TIMEOUT_SECS}s)" || echo "FAIL (rc=$rc)"
+    if [ "$rc" -eq 124 ]; then
+      echo "TIMEOUT (${TIMEOUT_SECS}s)"
+      timedout="$timedout $name"
+      # A killed suite printed no assertion, so the FAIL grep below would show nothing and
+      # read as "failed for no reason". Say what actually happened and skip it.
+      echo "      ! killed at ${TIMEOUT_SECS}s; no assertion failed, the suite ran out of time"
+      sed 's/^/      | /' /tmp/run-all-$$.log | tail -8
+      rm -f /tmp/run-all-$$.log
+      continue
+    fi
+    echo "FAIL (rc=$rc)"
     failed="$failed $name"
     # Show the FAILING lines, then a short tail for context. A plain tail hid the real
     # assertion in a suite with 840 of them: the failure was 700 lines above the summary.
@@ -64,8 +78,12 @@ for t in tests/test-*.sh; do
 done
 
 echo ""
-if [ -n "$failed" ]; then
-  echo "run-all: FAILED ->$failed"
+if [ -n "$failed" ] || [ -n "$timedout" ]; then
+  [ -n "$failed" ] && echo "run-all: FAILED ->$failed"
+  if [ -n "$timedout" ]; then
+    echo "run-all: TIMED OUT at ${TIMEOUT_SECS}s ->$timedout"
+    echo "run-all: a timeout is this runner's ceiling, NOT an assertion failure; re-run the suite alone, or with RUN_ALL_TIMEOUT_SECS=<n>, before treating it as broken"
+  fi
   echo "run-all: $count suites run${skipped:+, $skipped skipped for missing tooling}"
   exit 1
 fi
