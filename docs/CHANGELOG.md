@@ -42,6 +42,13 @@ All notable changes to dwarves-kit are documented here.
 - Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
 
 ### Fixed
+- `tests/test-explain.sh`, `tests/test-quiz-gate.sh`, and `tests/test-weekend-batch.sh` captured
+  their proof samples (`docs/verification/{explain-command,quiz-gate,weekend-batch}/sample-*.md`)
+  with a fresh run-specific value baked in (a new fixture commit SHA each run for the first two,
+  a fresh wall-clock timestamp for the third), so every `tests/run-all.sh` pass rewrote all three
+  tracked files and left the checkout dirty, blocking `lib/gate/negctl.sh`'s clean-tree
+  requirement. Each test now normalizes its run-specific value to a fixed placeholder before
+  writing the sample, so the captured content is deterministic across runs (ID-830).
 - `tests/test-boundary-lint.sh` AC2 and AC3 shared one `$FX` fixture dir, so AC3's "exits
   non-zero" assertion passed on AC2's own still-live planted violation instead of on the
   name check it claims to test; only the message-content assertion caught a broken
@@ -70,6 +77,7 @@ All notable changes to dwarves-kit are documented here.
 - Three `[wrap]` autonomy knobs make each of wrap's write actions a choice, defaulting to the acting posture: `merge_own_prs` (step 3), `tidy_worktrees` (step 5), `build_candidates` (step 7b). A `false` turns that step's action into a report line named in `FYI`; it never turns the step off and never relaxes a refusal the tools make on their own (#526).
 - `session observe burn`: ranks live sessions by token burn over a `--since` minutes window. Subagents roll into their parent, usage is deduplicated by message and request id, and each row shows the live context size and the owning PID. It answers "which session is burning tokens right now" without a hand script. Stdlib only, additive view, every other view unchanged (SPEC-254).
 - `hooks/context-budget.sh`: a `UserPromptSubmit` hook in the `session` module that warns once per 100k-token band once a session's live context (input + cache creation + cache read of the last main-chain assistant turn) passes 200k, and clears on a drop back under budget (e.g. after `/compact`). Ported from the operator's personal, already-tested dotfiles hook. `KIT_CTX_WARN`/`KIT_CTX_STEP` env knobs; advisory, never blocks (SPEC-255).
+- `doc-drift`'s Tier 1 pass now also checks diagram nodes: an ASCII/box diagram node naming a file, module, or symbol is a claim and gets the same existence check as a prose reference, quoting the node text when the target is missing. Contract lifted from archify's validated-IR idea (source-cited nodes, checked citations), not its renderer.
 - `skills/loop-engineering/SKILL.md` gains a stop condition covering every shape (a loop repeating an unchanged move, same diff, same command, same failure, must stop and report, the Ralph Wiggum failure) and a scorecard column for the bounded-revise engine (cost per accepted change: total spend over changes merged, per loop, never tokens per run).
 
 ## [2.2.0] - 2026-09-07
