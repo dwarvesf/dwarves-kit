@@ -56,9 +56,14 @@ Output (excerpt) under mutation:
 
 test-no-scattered-ids: 7 passed, 1 FAILED
 ```
-Restore: reverted `agents/advisor.md` to its post-strip content; re-ran, all 8 zones passed
-again.
+Rollback / restore: reverted `agents/advisor.md` to its post-strip content; re-ran, all 8
+zones passed again.
 Verdict: RED-as-expected, then PASS on restore.
+
+Rollback for the whole branch, if ever needed: `git revert` the two commits on
+`chore/ids-agents-commands` (the strip commit and the board-flip commit); nothing outside
+`agents/`, `commands/`, the two changed test files, `docs/FEATURES.md`,
+`tests/test-no-scattered-ids.sh`, and this doc is touched, so the revert is clean.
 
 ## A transient false failure during the run, and why it wasn't real
 
