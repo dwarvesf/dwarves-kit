@@ -26,7 +26,9 @@
 #   - own-number header: the id also names the file itself (its basename), e.g. a spec or
 #     ADR citing its own number.
 #   - a frontmatter/key line: Relates-to: / Backlog: / id: / generated-by:
-#   - a provenance footer: <!-- provenance: ... -->
+#   - a provenance footer: <!-- provenance: ... --> (markdown) or # provenance: ... (a
+#     bottom-of-file shell/python comment, the same clause-3 footer in a language with no
+#     HTML-comment syntax)
 #   - a board-row table line: | ID-nnn | ... (a row keyed by the id, clause 2)
 #   - a dated log line: starts with a YYYY-MM-DD date, or a `## YYYY-MM-DD` heading
 #     (LAB_LOG / CHANGELOG / retro shape, clause 2)
@@ -89,6 +91,7 @@ is_exempt() {  # is_exempt <path> <line-text> <id>
   esac
   printf '%s\n' "$text" | grep -qE '^[[:space:]]*(Relates-to|Backlog|id|generated-by):' && return 0
   printf '%s\n' "$text" | grep -qE '<!--[[:space:]]*provenance:' && return 0
+  printf '%s\n' "$text" | grep -qE '^[[:space:]]*#[[:space:]]*provenance:' && return 0
   printf '%s\n' "$text" | grep -qE '^\|[[:space:]]*[A-Z]+-[0-9]+[[:space:]]*\|' && return 0
   printf '%s\n' "$text" | grep -qE '^[[:space:]]*#{0,3}[[:space:]]*\[?[0-9]{4}-[0-9]{2}-[0-9]{2}\]?' && return 0
   printf '%s\n' "$text" | grep -qE 'board[[:space:]]*=[[:space:]]*\[' && return 0

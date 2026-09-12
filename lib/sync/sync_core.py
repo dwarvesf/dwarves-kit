@@ -1,6 +1,6 @@
 """Source-agnostic core of backlog-sync: board parsing/writing, the three-way
 planner, snapshot state. Pure logic apart from `history_max_id`, the one git
-read the ID mint needs to stay correct. See docs/specs/SPEC-001.
+read the ID mint needs to stay correct.
 
 Normalized spoke item: {rid, title, done, body, status} where status is a
 board keyword when the adapter can state it definitively, else None (then
@@ -23,9 +23,9 @@ TABLE_HEADER = "| ID | Item | Notes & source | Status |"
 TABLE_RULE = "|---|---|---|---|"
 CELL_SPLIT = re.compile(r"(?<!\\)\|")
 
-# ID-481: intake-born rows (foreign spoke data pulled into the hub) reach agent
+# Intake-born rows (foreign spoke data pulled into the hub) reach agent
 # context as untrusted DATA, not instructions. Mirrors board-mirror's
-# MIRROR_UNTRUSTED_PREFIX (SPEC-147 content-trust boundary) and must stay
+# MIRROR_UNTRUSTED_PREFIX (content-trust boundary) and must stay
 # identical to cockpit.py's UNTRUSTED_PREFIX. Kept local, not imported: the
 # two sync surfaces are independent and importing would couple them.
 UNTRUSTED_PREFIX = ("[AUTOMATED MIRROR of untrusted git board content -- "
@@ -127,8 +127,8 @@ def history_max_id(path, prefix: str = "ID") -> int:
     The working copy alone is not the set of ids in play. A checkout that lags
     origin reads a board missing rows another session already pushed, so the
     mint hands out an id that is already taken. Measured live on the
-    ops-toolkit board: the working copy topped out at ID-822 while history
-    already held ID-823, so the very next mint would have collided. The same
+    ops-toolkit board: the working copy topped out one id below what history
+    already held, so the very next mint would have collided. The same
     lag lets a `--all` scan miss an id another session minted straight to
     origin without this clone ever fetching it, so this function fetches
     origin (best-effort, 10s, once per repo per process) before reading
@@ -288,7 +288,7 @@ def plan_sync(rows: dict, items: list, state: dict,
               sync_fields: bool = True, filt: dict | None = None) -> Plan:
     """Three-way merge between board rows, spoke items, and the snapshot.
 
-    `filt` is this app's audience filter (SPEC-002 P1): {only_tags, skip_tags,
+    `filt` is this app's audience filter (P1): {only_tags, skip_tags,
     intake}. Out-of-scope linked pairs are FROZEN (no status/field flow either
     way); the transition out emits a scope-exit (close on the app), the
     transition back re-syncs from the board.
@@ -612,7 +612,7 @@ def apply_board(text: str, plan: Plan, prefix: str = "ID",
             provenance = f"added from spoke {date.today().isoformat()} #inbox"
             cell = " ; ".join(l.strip() for l in body.splitlines() if l.strip())
             notes = f"{cell} ; {provenance}" if cell else provenance
-            # ID-481: flag intake-born rows as untrusted data so they reach
+            # Flag intake-born rows as untrusted data so they reach
             # agent context marked DATA, not instructions. The title is
             # deliberately NOT tagged: it carries the minted id + item that
             # titles_agree()/re-linking compare, so a prefix would break the

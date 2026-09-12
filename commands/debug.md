@@ -39,7 +39,7 @@ Write `.claude/debug/<slug>.md` from this template, and **append to it before ea
 
 Leave `## Root cause` blank until you have actually found it. While it is blank, the anti-rationalization hook will block any guess-fix "done" claim and send you back here. That is intended.
 
-**Escaped-defect marker (SPEC-062).** If this defect traces to a SHIPPED spec whose test plan
+**Escaped-defect marker.** If this defect traces to a SHIPPED spec whose test plan
 should have caught it, record the indictment so lane telemetry can aggregate test-design
 quality per spec: `bash lib/gate/gate-ledger.sh action <slug> "escaped-from=<spec-slug>"`. Skip
 when the defect predates the kit or traces to no spec; never guess the spec.
@@ -121,4 +121,4 @@ If a fix does not work:
 
 This loop is for defects, regressions, and test failures (the `bug` lane in WORKFLOW.md). A one-character obvious typo fix does not need it (tiny lane). After a confirmed fix, run `/kit:review` on the diff.
 
-Source: obra/superpowers `systematic-debugging` (four phases, iron law, 3-fix wall); glittercowboy/get-shit-done `gsd-debugger` (the evidence ledger, falsifiability); doraemonkeys/claude-code-debug-mode (`[DEBUG Hn]` tagged logs to a debug file, region-marker cleanup, human-confirm before victory); SuperClaude `/sc:troubleshoot` (fix gated behind confirm); mattpocock/skills `diagnose` (Phase 0: the feedback-loop-first discipline, the loop-construction catalog, the repro-rate guidance for non-deterministic bugs; SPEC-059). Classic lineage: David Agans, "Debugging: The 9 Indispensable Rules" (audit trail, change one thing, "if you didn't fix it, it ain't fixed"); Andreas Zeller, "Why Programs Fail" (delta debugging / minimal reproduction). See docs/specs/SPEC-013-debug-loop.md and ADR-0012.
+Source: obra/superpowers `systematic-debugging` (four phases, iron law, 3-fix wall); glittercowboy/get-shit-done `gsd-debugger` (the evidence ledger, falsifiability); doraemonkeys/claude-code-debug-mode (`[DEBUG Hn]` tagged logs to a debug file, region-marker cleanup, human-confirm before victory); SuperClaude `/sc:troubleshoot` (fix gated behind confirm); mattpocock/skills `diagnose` (Phase 0: the feedback-loop-first discipline, the loop-construction catalog, the repro-rate guidance for non-deterministic bugs). Classic lineage: David Agans, "Debugging: The 9 Indispensable Rules" (audit trail, change one thing, "if you didn't fix it, it ain't fixed"); Andreas Zeller, "Why Programs Fail" (delta debugging / minimal reproduction). See the debug-loop design spec under docs/specs/.

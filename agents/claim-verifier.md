@@ -129,12 +129,12 @@ dropped.
 - Keep the output the compact structured block so the lead parses the verdict fast.
 
 Source: redesigns ops-toolkit `tools/verify-claim` (the N-parallel `claude -p`
-skeptic CLI, cc-elevation Q4 Path B) as an in-harness fan-out subagent, per
-kit-foldin SG-06. Cross-model default carries Omnigent's Polly property
+skeptic CLI, cc-elevation Q4 Path B) as an in-harness fan-out subagent, per the
+kit-foldin plan. Cross-model default carries Omnigent's Polly property
 (research/2026-07-05-omnigent-team-harness-absorption.md row 9) as far as a single
-dispatch allows. Gated by the SG-01 agent-effectiveness validator.
+dispatch allows. Gated by the agent-effectiveness validator.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is the structured verdict block above and nothing more: the
 verdict, the panel tally + threshold, the per-skeptic one-liners, and the basis. Not

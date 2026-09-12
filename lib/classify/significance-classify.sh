@@ -3,7 +3,7 @@
 #
 # Sibling to lib/classify/lane-classify.sh (same shape: pure bash + grep, no binary, no LLM). Where
 # lane-classify decides HOW MUCH RISK a task carries, this decides WHEN the understanding gate
-# fires: it emits TWO signals per ADR-0031's Refinement --
+# fires: it emits TWO signals per the Refinement --
 #
 #   significance          -- "did a lot change?" (full lane OR design-bearing OR a new public
 #                             surface). Fires on big-but-boring refactors too.
@@ -13,18 +13,18 @@
 #                             first-of-kind/novel; high blast radius if misunderstood; the human
 #                             will have to explain/defend/decide on it. `docs/implementation-
 #                             notes/<slug>.md` is read as a FEED: a non-empty impl-note is itself
-#                             an unspecified-decision signal (ADR-0031 Refinement point 4).
+#                             an unspecified-decision signal (Refinement point 4).
 #
 # The verdict taps ONLY high x high (the anti-fatigue guard -- over-tap fatigues the human,
-# under-tap lets debt return untracked, ADR-0031's load-bearing knob):
+# under-tap lets debt return untracked, the load-bearing knob):
 #
 #            worthiness LOW              worthiness HIGH
 #   sig LOW  not-significant             not-significant
 #   sig HIGH wave (silent log)           tap  (the only ★)
 #
 # `record` writes the verdict as an ADDITIVE marker via `gate-ledger.sh debt` (the worker-side
-# half of ADR-0032 section 3's debt-ledger split; the human-facing ★-tap nudge is a SEPARATE,
-# LATER marker written by SG-04 -- this lib never asks the human anything).
+# half of the debt-ledger split; the human-facing ★-tap nudge is a SEPARATE,
+# LATER marker written elsewhere -- this lib never asks the human anything).
 #
 # ONE tunable knob (documented, not magic): SIGNIFICANCE_WORTHINESS_MIN (default 1) -- the
 # number of distinct worthiness triggers that must fire before worthiness is called HIGH. Raise
@@ -58,7 +58,7 @@ _sig_re=(
   'new (public )?(api|cli|command|endpoint|interface)|expose[sd]? a new|new public (function|method|surface)'
 )
 
-# Understanding-worthiness triggers (ADR-0031 Refinement point 2). name <-> regex, index-aligned;
+# Understanding-worthiness triggers (Refinement point 2). name <-> regex, index-aligned;
 # the same parallel-array discipline as lane-classify.sh (fail loud if they drift out of sync).
 _wor_name=(primitive irreversible novel blast-radius must-explain)
 _wor_re=(
@@ -99,7 +99,7 @@ _extract_opts() {
 }
 
 # _impl_notes_signal -- true (0) if IMPL_NOTES points at a non-empty impl-note file (has at
-# least one "## " dated entry). Per ADR-0031 Refinement point 4: an impl-note entry IS an
+# least one "## " dated entry). An impl-note entry IS an
 # unspecified decision the agent made -- exactly a worthiness candidate, so its mere presence
 # (not its content) is the signal. Missing/empty file -> no signal (2, not an error).
 _impl_notes_signal() {
@@ -124,9 +124,9 @@ classify_core() {
   else
     lane="$(bash "$LANE_CLASSIFY" classify "$desc" 2>/dev/null)" || lane_rc=$?
   fi
-  # Fail LOUD (not silent) if the lane-classify.sh dependency itself broke (SPEC-123 review
+  # Fail LOUD (not silent) if the lane-classify.sh dependency itself broke (review
   # architecture MEDIUM): a swallowed subprocess failure would silently drop the "full lane"
-  # leg of significance to LOW, exactly the untracked-debt failure ADR-0031 exists to prevent.
+  # leg of significance to LOW, exactly the untracked-debt failure this gate exists to prevent.
   # This is still non-fatal (the OTHER significance triggers below still run), but it is now
   # visible on stderr instead of indistinguishable from a legitimate non-full classification.
   if [ "$lane_rc" -ne 0 ]; then
@@ -156,7 +156,7 @@ classify_core() {
   WOR_FIRED="${fired# }"; WOR_FIRED="${WOR_FIRED:-none}"
   if [ "$n" -ge "$WORTHINESS_MIN" ]; then WORTHINESS=high; else WORTHINESS=low; fi
 
-  # 3. Verdict: the two-signal matrix (ADR-0031 Refinement point 2). Tap only high x high.
+  # 3. Verdict: the two-signal matrix (Refinement point 2). Tap only high x high.
   if [ "$SIGNIFICANCE" != high ]; then
     VERDICT=not-significant
   elif [ "$WORTHINESS" = high ]; then

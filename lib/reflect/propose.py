@@ -3,7 +3,7 @@
 
 A retro one layer up from /kit:retro. /kit:retro reads ONE run; this reads MANY megas'
 worth of ledger telemetry, interprets the aggregate, and emits candidate BACKLOG ROWS a
-human triages. It is `propose`-only (ADR-0034 decision 5): its ONLY legal sink is the
+human triages. It is `propose`-only (decision 5): its ONLY legal sink is the
 staging file. It never writes a board, never rewrites a ledger, never edits kit/skill/
 CLAUDE.md. The three disciplines ARE the feature:
 
@@ -63,7 +63,7 @@ import sys
 SELF_DIR = os.path.dirname(os.path.abspath(__file__))
 KIT_ROOT = os.path.dirname(os.path.dirname(SELF_DIR))  # lib/reflect -> lib -> repo root
 sys.path.insert(0, SELF_DIR)
-# staging-format.py is the ONE staging-block definition (ADR-0034 decision 1), shared with
+# staging-format.py is the ONE staging-block definition (decision 1), shared with
 # `reflect drain`. Its hyphenated name is not directly importable, so load it by path, the
 # same shim drain.py uses.
 import importlib.util  # noqa: E402
@@ -118,7 +118,7 @@ def _dedup_sources(staging, backlog):
     """The dedup anchor set: this repo's staging + board, PLUS the cross-repo cockpit
     registry and every megagoal ROADMAP/TODO under this repo.
 
-    ID-294 measured 28 of 69 staged candidates duplicating work already tracked on exactly
+    A prior measurement found 28 of 69 staged candidates duplicating work already tracked on exactly
     those two surfaces. The anchor read neither, so that work re-entered staging as new.
     Archived megagoals stay in the set on purpose: they hold finished work, and proposing
     finished work is the same false positive.
@@ -276,7 +276,7 @@ def build_aggregate(days, megas):
             head = rows[0]
             add(subcmd, "; ".join(f"{k}={v}" for k, v in head.items() if v not in (None, "")), head)
 
-    # Surfaced counters (never processed; ID-100 owns memory repair).
+    # Surfaced counters (never processed; owns memory repair).
     mem = _stats_json("memory-sweep", [])
     if mem:
         dead = sum(1 for m in mem if (m.get("dead_ref_count") or 0))
@@ -469,7 +469,7 @@ def parse_retro_actions(path):
     /kit:retro writes its outcomes as a checkbox list inside docs/retro/RETRO-<date>.md.
     `board promote` reads ONLY the staging buffer, so those items could never be promoted:
     a human had to retype one to act on it, and so nobody did. Same disease session-intel had
-    (SPEC-200 I1/T6). This is the deterministic reader; the retro doc keeps its checkboxes as
+    (I1/T6). This is the deterministic reader; the retro doc keeps its checkboxes as
     the READING surface, staging becomes the ACTING surface.
 
     Deliberately NOT done in the /kit:retro prompt: that file is markdown an LLM reads, so
@@ -625,7 +625,7 @@ def main(argv):
     staging = args.staging or _default_staging()
     backlog = args.backlog or _default_backlog()
     if args.retro:
-        # Same verb (SPEC-200 I4: `propose` = stage proposals); the flag names the SOURCE.
+        # Same verb (I4: `propose` = stage proposals); the flag names the SOURCE.
         return run_retro(args.retro, staging, backlog, args.dry_run)
     return run(
         days=args.days, megas=args.megas,

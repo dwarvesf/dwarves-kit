@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # kit-log-dir.sh -- the single resolver for the kit's durable run-telemetry root.
 #
-# WHY: the run corpus that feeds /kit:retro and the SPEC-073 effectiveness eval used to
+# WHY: the run corpus that feeds /kit:retro and the effectiveness eval used to
 # default to ~/.claude/dwarves-kit/logs -- INSIDE the plugin state dir, which a plugin
 # reinstall recreates (the 2026-07-01 reinstall wiped the whole corpus). This resolver
 # moves the default OUT of that blast zone to XDG state, and migrates any legacy corpus
@@ -10,7 +10,7 @@
 #
 # Contract (all functions, no output on load, safe under set -euo pipefail):
 #   kit_resolve_log_dir   -> the durable log dir ($DWARVES_KIT_LOG_DIR wins if set)
-#   kit_legacy_log_dir    -> the pre-SPEC-097 default (~/.claude/dwarves-kit/logs)
+#   kit_legacy_log_dir    -> the original default (~/.claude/dwarves-kit/logs)
 #   kit_migrate_log_dir   -> one-time, additive, sentinel-guarded copy legacy -> durable
 #
 # Idempotent-source guard: sourcing twice is a no-op.
@@ -25,11 +25,11 @@ _KIT_LOG_DIR_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/config/kit-config.sh
 source "$_KIT_LOG_DIR_SELF/../config/kit-config.sh" || { echo "kit-log-dir: lib/config/kit-config.sh missing or unreadable" >&2; return 1; }
 
-# The durable default and precedence (SPEC-182, kit-modularity SG-02; [ledger] wiring SPEC-186):
+# The durable default and precedence (kit-modularity ; [ledger] wiring):
 # the ledger root is ONE root shared by both planes (the write-side append substrate and the
 # read-side `stats` projection). Precedence:
 #   1. $KIT_LEDGER_DIR      -- the canonical knob (essential-tier config, per-consumer root).
-#   2. $DWARVES_KIT_LOG_DIR -- back-compat alias (the pre-SPEC-182 name; every existing
+#   2. $DWARVES_KIT_LOG_DIR -- back-compat alias (the original name; every existing
 #      test pin + the live corpus still resolve through it unchanged).
 #   3. [ledger].location in .kit.toml (project) / kit.toml (kit-root), via kit-config.sh:
 #      "isolated" -> $PWD/.kit/logs; "shared" (or unset/empty) -> the XDG default below;
@@ -38,7 +38,7 @@ source "$_KIT_LOG_DIR_SELF/../config/kit-config.sh" || { echo "kit-log-dir: lib/
 #      outside ~/.claude entirely, so no ~/.claude/dwarves-kit* reinstall can touch it.
 # A set-but-EMPTY $KIT_LEDGER_DIR is a FATAL clean error, never a silent fall-through: an
 # empty root would make every writer append to a relative `runs/...` path in the caller's cwd
-# (the "silent-wrong-path" footgun SG-02's NC guards). Returns 1 so a caller using
+# (the "silent-wrong-path" footgun 's NC guards). Returns 1 so a caller using
 # `LOG_DIR="$(kit_resolve_log_dir)" || exit 1` aborts cleanly.
 kit_resolve_log_dir() {
   if [ "${KIT_LEDGER_DIR+set}" = "set" ]; then
@@ -70,7 +70,7 @@ kit_legacy_log_dir() { printf '%s' "$HOME/.claude/dwarves-kit/logs"; }
 # sentinel. All failures are swallowed: a migration hiccup must never break a tool call.
 kit_migrate_log_dir() {
   # An explicit root (either knob) means the caller owns the path -- do not migrate the
-  # machine corpus into a test's mktemp dir (SPEC-182: KIT_LEDGER_DIR joins the guard).
+  # machine corpus into a test's mktemp dir (: KIT_LEDGER_DIR joins the guard).
   [ "${KIT_LEDGER_DIR+set}" = "set" ] && return 0
   [ -n "${DWARVES_KIT_LOG_DIR:-}" ] && return 0
   local durable legacy

@@ -560,7 +560,7 @@ cmd_merge() {
     title="$(printf '%s' "$detail" | jq -r '.title // ""' 2>/dev/null)"
     head="$(printf '%s' "$detail" | jq -r '.headRefName // ""' 2>/dev/null)"
     if [ "$verdict" = "OK" ] && awk -F'\t' -v h="$head" -v n="$n" '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
-      verdict="SKIP dependents open, retarget them first (SPEC-065)"
+      verdict="SKIP dependents open, retarget them first"
     fi
     if [ "$verdict" = "OK" ]; then
       echo "eligible #${n} ${title} [${head}]"

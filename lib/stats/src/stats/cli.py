@@ -52,7 +52,7 @@ _FMT = typer.Option(True, "--json/--table", help="output format (json is the def
 @app.command()
 def rebuild():
     """Diagnostic: materialize the lens in-memory and print each table's row count.
-    Persists NOTHING (SPEC-182: stats is a stateless projection; there is no cache to
+    Persists NOTHING (stats is a stateless projection; there is no cache to
     rebuild). A 'what would I see over the current log' probe."""
     counts = materialize.rebuild()
     typer.echo(json.dumps(counts, indent=2))
@@ -130,7 +130,7 @@ def render(
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(3)
 
-    # The ONE data object both surfaces render from (SPEC-128 single-data-path NC):
+    # The ONE data object both surfaces render from (single-data-path NC):
     # same coercion `_emit`'s --json already uses, built once, passed to one formatter.
     row_dicts = [{c: _jsonable(v) for c, v in zip(cols, r)} for r in rows]
     surface_title = title or (name if name else "ledger query")
@@ -249,14 +249,14 @@ def defect_correlation(
     window_days: int = typer.Option(
         30, "--window-days",
         help="a later fix() commit counts as fix-followed only within this many days of the "
-        "rid's first git mention (the coarser join's anchor; see SPEC-132)",
+        "rid's first git mention (the coarser join's anchor;)",
     ),
     as_json: bool = _FMT,
 ):
     """Retrospective control arm (zero new runs): for each SHIPPED `kit_gates` rid (gate='ship',
     outcome ran/override), bridge it to git history by rid-substring match against a commit
     subject (kit_gates carries no per-file/repo column in v1, so this is the documented coarser
-    join, SPEC-132 DEC-001) to find its earliest mentioning commit's OWN files, then check
+    join) to find its earliest mentioning commit's OWN files, then check
     whether a LATER fix()-typed commit (within --window-days) touches any of those same files.
     Labeled 'fix-followed', never 'gate-failed': this is correlation, not proof of causation.
     Read-only, same `materialize.query()` path every other command uses."""
@@ -298,14 +298,13 @@ def defect_correlation(
 def deviation_rate(
     under_specced_min: int = typer.Option(
         3, "--under-specced-min",
-        help="n_deviations at or above this count classifies UNDER-SPECCED (named tunable, "
-        "SPEC-133)",
+        help="n_deviations at or above this count classifies UNDER-SPECCED (named tunable)",
     ),
     window_days: int = typer.Option(
         30, "--window-days",
         help="a later fix() commit counts toward SUSPECT only within this many days of the "
         "slug's first git mention (same bridge-anchor semantics as defect-correlation's "
-        "--window-days; see SPEC-133 DEC-001)",
+        "--window-days)",
     ),
     as_json: bool = _FMT,
 ):
@@ -316,7 +315,7 @@ def deviation_rate(
     deviations with no marker, or a file predating the hook's entry-header convention
     entirely). The slug-to-git bridge mirrors defect-correlation's rid-to-git bridge exactly
     (name-match once via `contains(lower(subject), lower(slug))`, then genuine file-equality
-    for the actual correlation; SPEC-133 DEC-001). Read-only, same `materialize.query()` path
+    for the actual correlation). Read-only, same `materialize.query()` path
     every other command uses."""
     sql = f"""
     WITH bridge AS (
@@ -375,16 +374,16 @@ def review_yield(
     re-litigate): `kit_gates` carries no lens or repo column and no findings/rejected columns
     -- `reason` is ONE opaque VARCHAR, and the `review` gate's emit is a WHOLE-REVIEW
     aggregate, never per-lens. THEREFORE this regex-extracts `findings=`/`rejected=` out of
-    `reason` itself at query time (`kit_gates`'s own parser is UNTOUCHED, SPEC-131); the raise
+    `reason` itself at query time (`kit_gates`'s own parser is UNTOUCHED); the raise
     denominator (`raised`) is summed across every `gate='review'` row, GLOBALLY, not per lens.
 
     The per-lens FP-rate is therefore a deliberate APPROXIMATION (a per-lens numerator over a
     per-run, not per-lens, denominator) -- every row carries a constant `approx=true` column
     so this is never presented as more precise than it is. `suppressed=`
-    (SPEC-081's confidence-gate auto-suppression) is a DIFFERENT axis from a human `rejected=`
+    (the confidence-gate's auto-suppression) is a DIFFERENT axis from a human `rejected=`
     decision and is NEVER added into `raised`.
 
-    Honest-zero (SPEC-137 DEC's failure-mode table): a repo with no rejected-findings.md file
+    Honest-zero (DEC's failure-mode table): a repo with no rejected-findings.md file
     contributes NO row, ever (never a fabricated 0-rejected row); if `rejected_findings` has
     ZERO rows overall, this returns ZERO rows (never a fabricated all-NULL row); if `raised`
     is 0, `fp_rate_approx` is NULL for every row (never 0.0). `n_rejected` can legitimately
@@ -429,7 +428,7 @@ def review_yield(
 
 @app.command(name="memory-sweep")
 def memory_sweep(as_json: bool = _FMT):
-    """Memory-verify sweep (SPEC-136, manual-first, no daemon): walk every memory store (repo
+    """Memory-verify sweep (manual-first, no daemon): walk every memory store (repo
     `.claude/memory/`, built-in `~/.claude/projects/*/memory/`), conservatively extract
     inline-code path/command references, test them against the LIVE environment, and emit the
     paydown table (dead refs + notes stale >180d). PROPOSE-ONLY: calls `memory_lens.scan()`
@@ -462,10 +461,10 @@ def anomalies(
     ),
     as_json: bool = _FMT,
 ):
-    """Detect anomalies over the SG-02/03/04/05 lenses (READ-ONLY: unpaid-debt count, token-cost
+    """Detect anomalies over the lenses (READ-ONLY: unpaid-debt count, token-cost
     spike vs rolling median, gate/proof misfire-rate, implementation-notes deviation density,
     gate ceremony via caught/fix-correlation, dep-independent serial-when-parallel runs, and
-    (SPEC-135, ARMED) a per-session token-runaway check over the `sessions` table). With
+    (ARMED) a per-session token-runaway check over the `sessions` table). With
     --propose, STAGE a proposal per fired anomaly into the cc-backlog staging buffer
     (`board promote` is the human gate). This tool NEVER auto-files a board row and never mutates
     a ledger."""
@@ -518,7 +517,7 @@ bridge AS (
     -- A shipped rid can fall inside MORE THAN ONE session's [first_ts, last_ts] window at once
     -- (parallel worktrees/subagents run concurrent sessions -- the NORM in this repo, not an
     -- edge case). Attributing an outcome's cost to ALL overlapping sessions double-counts the
-    -- headline metric (a `kit:code-reviewer` MAJOR finding, SPEC-135 DEC-010). Pick exactly ONE
+    -- headline metric (a `kit:code-reviewer` MAJOR finding). Pick exactly ONE
     -- session per rid -- the CLOSEST-PRECEDING one (greatest `first_ts` still <= `ship_ts`) --
     -- so cost AND time-to-done are both attributed to the SAME single session, one consistent
     -- model. `QUALIFY` filters the window function inline (DuckDB-native).
@@ -581,7 +580,7 @@ def digest(
     cost-per-verified-outcome (a `sessions` x `kit_gates` JOIN, bridged by the SAME
     rid-to-git-subject technique defect-correlation/ceremony/serial-when-parallel already use,
     here bridged further by TIME containment against a session's `[first_ts, last_ts]` window
-    since `sessions` carries no file list to compare -- SPEC-135 DEC-002), time-to-done, and
+    since `sessions` carries no file list to compare), time-to-done, and
     bridge coverage -- PLUS `anomalies --propose` folded into the ONE command (the SAME
     `anomalies_mod.detect()`/`stage_proposals()` path the `anomalies` command uses, never a
     second detection path). Read-only, same `materialize.query()` path every other command

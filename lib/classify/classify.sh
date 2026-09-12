@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# classify.sh -- thin standalone entry for the classify subsystem (kit-modularity
-# SG-03, board.sh/orchestrate.sh shape). Forwards `classify <verb> <args...>` to the
+# classify.sh -- thin standalone entry for the classify subsystem (kit-modularity,
+# board.sh/orchestrate.sh shape). Forwards `classify <verb> <args...>` to the
 # sibling script that already owns that verb; adds NO new logic. Additive: every
 # existing `bash lib/classify/<x>.sh ...` call-site keeps working unchanged.
 #

@@ -58,7 +58,7 @@ Write to `docs/research/<date>-<slug>-pitfalls.md` (the dispatch prompt supplies
 - If you find nothing, say "No significant pitfalls found." Don't pad the report.
 - Check `git blame` on suspicious code to see when it last changed. Code untouched for 6+ months in an active repo is a smell.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 
