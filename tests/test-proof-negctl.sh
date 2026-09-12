@@ -102,5 +102,55 @@ OUT="$(bash "$NC" "$REPO" 2>&1)"; RC=$?
 if [ "$RC" -eq 64 ] && grep -q 'usage: negctl.sh <root>' <<<"$OUT"; then ok "exit 64 with negctl usage"; else no "rc=$RC out=$OUT"; fi
 
 echo
+# --- NEGCTL_RED_ATTEMPTS: a PROBABILISTIC test must still be provable ---------------
+# `run_test` was treated as deterministic, so a flaky suite could come back green under a
+# REAL mutation and negctl called the control vacuous. The fixture below is deterministic,
+# not actually flaky: under mutation it is green on the first red-step run and red from the
+# second, which is the shape a flake has without the coin flip.
+FREPO="$TMP/flaky"; mkrepo "$FREPO"
+export FLAKY_COUNTER="$TMP/flaky-counter"
+cat > "$FREPO/flaky.sh" <<'FLAKY'
+#!/usr/bin/env bash
+source ./lib.sh
+[ "$(add 2 2)" = "4" ] && exit 0          # unmutated: green on every run
+n=$(cat "$FLAKY_COUNTER" 2>/dev/null || echo 0); n=$(( n + 1 )); printf '%s' "$n" > "$FLAKY_COUNTER"
+[ "$n" -ge 2 ] && exit 1 || exit 0        # mutated: green once, then red
+FLAKY
+git -C "$FREPO" add -A && git -C "$FREPO" -c user.name=t -c user.email=t@t commit -q -m flaky
+MUT="sed -i.bak 's/+/-/' lib.sh && rm -f lib.sh.bak"
+
+echo "[11] a flaky test defeats the single-attempt control (documents the gap)"
+: > "$FLAKY_COUNTER"
+OUT="$(bash "$NC" "$FREPO" "bash flaky.sh" "$MUT" 2>&1)"; RC=$?
+if [ "$RC" -ne 0 ] && grep -q 'Verdict: FAIL: test stayed green under the mutation (the check is vacuous)$' <<<"$OUT" && clean "$FREPO"; then
+  ok "one attempt calls a real mutation vacuous, and the default wording is unchanged"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[12] NEGCTL_RED_ATTEMPTS=3 catches the same real mutation"
+: > "$FLAKY_COUNTER"
+OUT="$(NEGCTL_RED_ATTEMPTS=3 bash "$NC" "$FREPO" "bash flaky.sh" "$MUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Verdict: PASS$' <<<"$OUT" && grep -q 'attempt 2 of 3' <<<"$OUT" && clean "$FREPO"; then
+  ok "retry reaches RED and names which attempt bit"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[13] retries never manufacture RED: a vacuous mutation stays FAIL at 5 attempts"
+OUT="$(NEGCTL_RED_ATTEMPTS=5 bash "$NC" "$REPO" "bash test.sh" "printf '\n# comment\n' >> lib.sh" 2>&1)"; RC=$?
+if [ "$RC" -ne 0 ] && grep -q 'on all 5 attempts' <<<"$OUT" && clean "$REPO"; then
+  ok "a genuinely vacuous mutation is still rejected"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[14] the default run is byte-identical: no attempt wording at all"
+OUT="$(bash "$NC" "$REPO" "bash test.sh" "$MUT" 2>&1)"; RC=$?
+if [ "$RC" -eq 0 ] && grep -q '^Exit: [1-9][0-9]* (under mutation, RED expected)$' <<<"$OUT" && ! grep -qi 'attempt' <<<"$OUT"; then
+  ok "unset NEGCTL_RED_ATTEMPTS prints the original lines"
+else no "rc=$RC out=$OUT"; fi
+
+echo "[15] a non-numeric or zero NEGCTL_RED_ATTEMPTS is REJECTED, never coerced to 1"
+OUT="$(NEGCTL_RED_ATTEMPTS=two bash "$NC" "$REPO" "bash test.sh" "$MUT" 2>&1)"; RC=$?
+OUT0="$(NEGCTL_RED_ATTEMPTS=0 bash "$NC" "$REPO" "bash test.sh" "$MUT" 2>&1)"; RC0=$?
+if [ "$RC" -eq 64 ] && grep -q 'NEGCTL_RED_ATTEMPTS' <<<"$OUT" && [ "$RC0" -eq 64 ] && grep -q 'NEGCTL_RED_ATTEMPTS' <<<"$OUT0"; then
+  ok "both bad values exit 64 naming the variable"
+else no "rc=$RC rc0=$RC0 out=$OUT out0=$OUT0"; fi
+
 if [ "$fail" -gt 0 ]; then echo "test-proof-negctl: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "test-proof-negctl: all $pass passed"
