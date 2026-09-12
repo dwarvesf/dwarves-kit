@@ -90,7 +90,7 @@ bash tests/test-watchdog-token-capture.sh             -> ALL PASS
 `origin/master` worktree with none of this branch's changes: same two FAILs, same 48/50. Not
 caused by this branch; pre-existing.
 
-## Negative control
+## Negative control (rollback)
 
 Command: planted `# NEGATIVE-CONTROL-PLANT SPEC-999 marker for zone-8 verification` as the new
 first line of `lib/gate/gate-ledger.sh`, then ran `bash tests/test-no-scattered-ids.sh`.
@@ -99,7 +99,8 @@ Output (excerpt): `FAIL 1 hit(s) in lib; see lib/lint/README.md for the exemptio
 naming `lib/gate/gate-ledger.sh:1` and the planted text.
 Verdict: RED-as-expected.
 
-Restore: removed the planted line. Re-ran `bash tests/test-no-scattered-ids.sh`.
+Rollback: removed the planted line, restoring the file to its committed state. Re-ran
+`bash tests/test-no-scattered-ids.sh`.
 Exit: 0
 Output: `test-no-scattered-ids: all 7 passed`
 Verdict: PASS, restored clean.
