@@ -107,6 +107,16 @@ def parse_board(text: str, strict_id: bool = True,
 
 # history_max_id's own fetch, deduped per repo so next_id's per-row calls
 # (one board can mint several rows in one sync) don't re-fetch on every row.
+#
+# This module-level cache lives for the process's lifetime, which is deliberately ONE
+# `bin/board sync` invocation, never a `[sync] interval_secs` loop iterating inside a single
+# long-running interpreter. `interval_secs` is a launchd `StartInterval` (lib/sync/deploy/
+# macos/install, lib/sync/deploy/macos/board-sync-cron): each tick is a fresh `bash bin/board
+# sync ...` process launchd starts, which re-imports this module from zero, so `_fetched_repos`
+# is empty again before `history_max_id` runs. There is no code path today that calls
+# `history_max_id` more than once per process across ticks, so an origin-lag reopening after
+# tick 1 cannot happen; if a future caller ever runs the sync loop in-process (a persistent
+# daemon instead of a cron-shaped script), clear this set at the top of that loop's own tick.
 _fetched_repos: set[str] = set()
 
 

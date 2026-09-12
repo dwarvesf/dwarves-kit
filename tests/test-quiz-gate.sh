@@ -88,12 +88,21 @@ echo "=== AC3: engage routes through the understand.teach seam (dispatch, not re
 # Fixture operator kit.toml with understand.teach FILLED, isolated from the real machine's own
 # ~/.config/dwarves-kit/kit.toml (KIT_CONFIG_OPERATOR points here instead).
 OPDIR="$(mktemp -d)"; trap 'rm -rf "$LOGDIR" "$OPDIR"' EXIT
-mkdir -p "$OPDIR/filled" "$OPDIR/none"
+mkdir -p "$OPDIR/filled" "$OPDIR/none" "$OPDIR/whitespace"
 printf '[understand]\nteach = "fixture-teacher"\n' > "$OPDIR/filled/kit.toml"
+printf '[understand]\nteach = " "\n' > "$OPDIR/whitespace/kit.toml"
 assert "AC3 the named 'teacher' verb is the one shared resolver (filled)" \
   "$([ "$(KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" teacher)" = "fixture-teacher" ] && echo 0 || echo 1)"
 assert "AC3 the named 'teacher' verb prints nothing when unset" \
   "$([ -z "$(KIT_CONFIG_OPERATOR="$OPDIR/none" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" teacher)" ] && echo 0 || echo 1)"
+# battery finding: a whitespace-only value is "empty" everywhere the operator means it (kit.toml
+# and the spec both say so), but `[ -n "$teacher" ]`/`${teacher:-...}` at the call sites treat a
+# single space as non-empty. Trimmed once in `_teacher` so every caller inherits the fix.
+assert "AC3 the named 'teacher' verb prints nothing for a WHITESPACE-ONLY value" \
+  "$([ -z "$(KIT_CONFIG_OPERATOR="$OPDIR/whitespace" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" teacher)" ] && echo 0 || echo 1)"
+ROUT_WS="$(KIT_CONFIG_OPERATOR="$OPDIR/whitespace" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" route "$REFA")"
+assert "AC3 route treats a whitespace-only understand.teach as no teacher (no blank ROUTE: name)" \
+  "$({ trap '' PIPE; printf '%s' "$ROUT_WS" 2>/dev/null || :; } | grep -qx 'ROUTE: skipped: no teacher' && echo 0 || echo 1)"
 ROUT="$( cd "$DA" && KIT_CONFIG_OPERATOR="$OPDIR/filled" KIT_CONFIG_ROOT="$KIT_DIR" bash "$QG" respond "engage-rid-$$" engage --ref "$REFA" )"
 assert "AC3 engage output names the CONFIGURED teacher (fixture-teacher), not a hardcoded skill" \
   "$({ trap '' PIPE; printf '%s' "$ROUT" 2>/dev/null || :; } | grep -q 'fixture-teacher' && echo 0 || echo 1)"

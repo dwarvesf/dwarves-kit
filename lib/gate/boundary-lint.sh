@@ -19,11 +19,18 @@
 # tests/test-wrap.sh uses "learning-ledger" as generic fixture text). See
 # docs/specs/SPEC-285-engine-learn-seam.md DEC-003/DEC-004.
 #
-# The allowlist is lib/config/module-registry.md's "## Seams" Filled-by column and nothing
-# else: that file is not in either scan set, so its prose never needs a special-case exemption.
+# name_files/name_re are a hand-maintained list, not derived from lib/config/module-
+# registry.md's "## Seams" table: that table's Filled-by column is free-text prose ("the
+# operator, for a skill that must read...") naming who fills a seam, not the compact retired-
+# skill names this check greps for, so deriving one from the other would not be meaningful.
 set -euo pipefail
 SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="${1:-$(cd "$SELF/../.." && pwd)}"
+# ROOT is resolved to an absolute realpath (`cd ... && pwd`) even when passed relative (e.g.
+# `boundary-lint.sh .`): the self-exclusion below matches grep hits by "$SELF/boundary-
+# lint.sh:" prefix, which only lines up when ROOT and SELF share the same absolute form --
+# a relative ROOT made grep emit "./lib/gate/boundary-lint.sh:" lines that never matched,
+# so the lint flagged its own PATH-check example lines.
+ROOT="$(cd "${1:-$SELF/../..}" && pwd)"
 fail=0
 flag() { printf 'boundary-lint: %s\n' "$1" >&2; fail=1; }
 
@@ -39,10 +46,16 @@ done < <(grep -rnE "${path_excl[@]}" "$path_re" \
 # Retired/pedagogy skill names (ROADMAP.md "Retired words" + the two names ADR-0036 moves
 # behind the seam), checked only where this repo could plausibly still hardcode one.
 name_re='narrate-log|svg-knowledge-diagram|deep-understand|dev-learner|session-closeout|session-distill|learning-ledger'
-name_files=(
-  "$ROOT/commands/wrap.md" "$ROOT/commands/explain.md" "$ROOT/commands/quiz-gate.md"
-  "$ROOT/kit.toml" "$ROOT/lib/gate/quiz-gate.sh" "$ROOT/lib/gate/README.md"
-)
+# Every commands/*.md file, not the three that existed when this list was written: a NEW
+# command file hardcoding a retired name previously stayed green (the finding this closes).
+# pitch.md is the one documented exception: it composes `narrate-log` for an unrelated
+# feature (a real, legitimate hit, not a boundary violation), so it is excluded by name
+# rather than silently dropped by a narrower glob.
+name_files=("$ROOT/kit.toml" "$ROOT/lib/gate/quiz-gate.sh" "$ROOT/lib/gate/README.md")
+while IFS= read -r -d '' f; do
+  [ "$(basename "$f")" = "pitch.md" ] && continue
+  name_files+=("$f")
+done < <(find "$ROOT/commands" -maxdepth 1 -name '*.md' -print0 2>/dev/null)
 while IFS= read -r -d '' f; do name_files+=("$f"); done \
   < <(find "$ROOT/lib/reflect" -type f -print0 2>/dev/null)
 

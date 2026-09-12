@@ -9,7 +9,22 @@ All notable changes to dwarves-kit are documented here.
 - Ledger grammar, lanes.d plan format, export `schema`: unchanged.
 - Config surface (new key, additive, MINOR): `[output] style`, default `""`. Resolves project > operator > kit-root. Empty leaves every existing install untouched (SPEC-252).
 
+### Deprecated
+- `bin/learn` forwards to `bin/reflect` (same verbs, arguments, exit codes) for ONE release,
+  per ADR-0036: the `learn` subsystem is renamed `reflect`. It ships here in 2.3.0 and is
+  removed starting 2.4.0 (backlog ID-839; `tests/test-meta.sh` trips once VERSION reaches
+  2.4.0 while `bin/learn` still exists, so the removal cannot be forgotten past that bump).
+  Repoint any external caller to `bin/reflect` now.
+
 ### Changed
+- `/kit:explain` no longer hardcodes `narrate-log` + `svg-knowledge-diagram`; it hands the
+  grounded skeleton (reading-order diff, recorded test line, mermaid change-map) to whatever
+  skill `understand.teach` names, through the Skill tool (ADR-0036). **Behavior change for an
+  engine-only adopter (no teacher configured):** `/kit:explain` used to always enrich the
+  skeleton with prose (Background, Goal and intuition) and a per-hunk explanation inline;
+  with `understand.teach` empty it now prints `skipped: no teacher` and hands over the
+  mechanical skeleton alone, with no enrichment step. Set `understand.teach` (learning-kit's
+  `understand` lane, or a custom skill) to keep the prior enrichment (#560).
 - Stripped scattered spec ids from `lib/` comments and module docs across 136 files: each id became the plain reason or a file path. Printed strings stayed clean, and tool.toml board arrays, own-number headers, tests and fixtures were left alone. The zone is not registered in the ratchet yet: about 478 hits remain, heaviest in queue, stats and gate.
 - Retired the `cc-` host-agent prefix (kit-contract C1) from the last doc filenames still carrying it: the cc-hyg-04-stop-tax spec/verification/impl-notes trio (spec claims SPEC-253), the cc-hyg-09-override-yaml proof, and four `lib/*/docs/implementation-notes/cc-*.md` files.
 - Renamed three `docs/verification/` files to their feature slug instead of a bare SPEC number: `SPEC-044.md` -> `proof-done-task-types.md`, `SPEC-045.md` -> `gate-lib-install-path.md`, `spec-200-t1-t2.md` -> `signal-pipelines-t1-t2.md`.
