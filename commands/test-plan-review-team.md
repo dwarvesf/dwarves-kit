@@ -8,11 +8,11 @@ Why this lane exists: the spec gets adversarial review (`/kit:spec-validate`) an
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.
 
 ### Step 1: Find the test plan to critique
 
-Read the `## Test plan`, **spec-first**: resolve the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware, SPEC-005); if several specs match, ask the user which one, do not auto-pick. `/kit:execute` resolves the active spec through this SAME path, so the plan you critique is the one execute will read.
+Read the `## Test plan`, **spec-first**: resolve the active `docs/specs/SPEC-NNN-<slug>.md` the way `/kit:next` does (branch-aware); if several specs match, ask the user which one, do not auto-pick. `/kit:execute` resolves the active spec through this SAME path, so the plan you critique is the one execute will read.
 
 Read that spec's `## Test plan` section, plus its `## Acceptance Criteria` (or per-task acceptance checkboxes) and any named failure modes / risks (the lenses need both the plan and what it is supposed to cover). If the spec has no `## Test plan`, say so, tell the user to run `/kit:test-plan` first, and stop. Do not invent a test plan to critique.
 
@@ -100,9 +100,9 @@ Under bypassPermissions the per-section `AskUserQuestion` approvals auto-resolve
 
 ## Source
 
-Mirrors the parallel multi-lens pattern in `commands/devs-team.md` + `commands/review-team.md`, at the test-design altitude (the `## Test plan`, not the solution design or the code). Lenses 1-5 encode `docs/verification/test-design-standard.md` (the senior-test-lead standard, which previously had no executor). The bounded revise loop + `[[QL-VERDICT round=N clean=BOOL findings=K]]` marker + strictly-falling-findings rule are the verify contract from `docs/verification/README.md`. Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/kit:devs-team` and `/kit:visual-team`. Realizes SPEC-052. Lens 6 (Tiering & floor) realizes `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md` SG-2 (SPEC-201): the test-plan review team catches a plan that mis-tiers a behavior/security claim or lets a smoke run gate a ship, the pre-registered negative control being a boundary claim parked in the `mechanical` (config) tier.
+Mirrors the parallel multi-lens pattern in `commands/devs-team.md` + `commands/review-team.md`, at the test-design altitude (the `## Test plan`, not the solution design or the code). Lenses 1-5 encode `docs/verification/test-design-standard.md` (the senior-test-lead standard, which previously had no executor). The bounded revise loop + `[[QL-VERDICT round=N clean=BOOL findings=K]]` marker + strictly-falling-findings rule are the verify contract from `docs/verification/README.md`. Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/kit:devs-team` and `/kit:visual-team`. Lens 6 (Tiering & floor) realizes `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md`'s second sub-goal: the test-plan review team catches a plan that mis-tiers a behavior/security claim or lets a smoke run gate a ship, the pre-registered negative control being a boundary claim parked in the `mechanical` (config) tier.
 
-After the verdict, record it for lane telemetry (SPEC-062), one line:
+After the verdict, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "<SOLID|REVISE|RECONSIDER> rounds=<N> findings=<K>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> test-plan end caught=<true if the verdict is not SOLID, else false>`.
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan end caught=<true if the verdict is not SOLID, else false>`.

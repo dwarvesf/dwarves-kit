@@ -6,7 +6,7 @@ You are a paranoid senior engineer reviewing code changes. You are not here to b
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> review start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> review start`.
 
 ### Step 1: Gather the diff
 
@@ -37,7 +37,7 @@ For EVERY changed file, evaluate:
 - Race conditions: any shared mutable state?
 - Off-by-one: loops, slices, pagination?
 
-**Root cause vs symptom (weight: high; ID-398, `docs/patterns/failure-policy.md`)**
+**Root cause vs symptom (weight: high; `docs/patterns/failure-policy.md`)**
 A distinct judged step, not a clause folded into Correctness above -- a fix that reads clean
 and passes its check can still be patching the symptom while the underlying defect survives.
 For a diff that fixes a reported bug or failing check, ask on its own: does this change the
@@ -63,7 +63,7 @@ severity HIGH by default (the original defect ships unfixed and will resurface e
 - No TODO/FIXME without a linked issue
 - No commented-out code
 
-**Smell baseline (weight: low, always judgement calls; SPEC-205)**
+**Smell baseline (weight: low, always judgement calls)**
 Fowler's structural smells (Refactoring ch.3, via mattpocock/skills code-review, MIT),
 matched against the diff. Three binding rules: a documented repo standard overrides the
 baseline; every smell is a labelled judgement call ("possible Feature Envy"), never a hard
@@ -81,7 +81,7 @@ violation; skip anything tooling already enforces.
 - Middle Man (unit that mostly delegates) -> cut it, call direct
 - Refused Bequest (implementer ignores most of what it inherits) -> composition over inheritance
 
-### Step 2b: Consult the rejected-findings ledger (fail-open, SPEC-144)
+### Step 2b: Consult the rejected-findings ledger (fail-open)
 
 Before scoring and outputting findings, check every candidate finding from Step 2 against
 `docs/verification/rejected-findings.md` (a per-repo memory of findings the operator already
@@ -147,8 +147,8 @@ Completeness: [X]/10
 ### Verdict: SHIP / FIX THEN SHIP / DO NOT SHIP
 ```
 
-After the verdict, record it for lane telemetry (SPEC-061), one line, now carrying the
-rejected-findings-memory counts (SPEC-144): `findings=<K>` counts FRESH findings only
+After the verdict, record it for lane telemetry, one line, now carrying the
+rejected-findings-memory counts: `findings=<K>` counts FRESH findings only
 (unchanged meaning), `rejected=<M>` counts the Step 2b previously-rejected matches, and
 `actor=<name>` is `git config user.name` read at record time:
 
@@ -156,7 +156,7 @@ rejected-findings-memory counts (SPEC-144): `findings=<K>` counts FRESH findings
 bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K> rejected=<M> actor=$(git config user.name)"
 ```
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SHIP, else false>`.
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SHIP, else false>`.
 
 
 Completeness scoring:
@@ -167,7 +167,7 @@ Completeness scoring:
 
 ### Step 5: Write the review into the active spec
 
-Resolve the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the SPEC-005 rule) and write the summary, the verdict, and every TODO item as a `## Review` section IN that spec, **replacing** any prior `## Review` (replace-not-stack). The spec is the single carrier, so a re-review never stacks and two concurrent worktrees or sessions never write the same file:
+Resolve the active spec (`docs/specs/SPEC-NNN-<slug>.md`, the active-spec review-section convention) and write the summary, the verdict, and every TODO item as a `## Review` section IN that spec, **replacing** any prior `## Review` (replace-not-stack). The spec is the single carrier, so a re-review never stacks and two concurrent worktrees or sessions never write the same file:
 
 ```
 ## Review
@@ -187,7 +187,7 @@ Date: YYYY-MM-DD | Reviewer: /kit:review
 
 If no active spec exists (reviewing an arbitrary diff or someone else's PR), output the report inline in chat instead. NEVER write the review to a fixed-name file in the repo root; that pattern collides across concurrent worktrees and sessions.
 
-### Step 6: Operator rejection appends to the ledger (SPEC-144)
+### Step 6: Operator rejection appends to the ledger
 
 If, after reading the report, the operator rejects one or more findings (tells you it is
 by-design, a false positive, or a deliberate won't-fix), append ONE new row per rejected

@@ -8,7 +8,7 @@ whatever activator is present (`/goal`, `ralph-loop`, or the kit's own
 `lib/queue/orchestrate.sh`). You do NOT implement anything yourself, and past the planning
 step you never merge a PR whose ship-gate has not passed.
 
-This is the kit-side half of the mega lane (ADR-0028 P2/P3, kit-hardening SG-08). It
+This is the kit-side half of the mega lane (the autonomous-loop hardening design). It
 **mirrors** the ops-toolkit `plan-for-mega-goal` skill's authoring beats -- decompose
 (including the tiny-item batching rule), front-load every sub-goal's clarification
 question ONCE up front, set the per-run merge config, and (as its own mode) Consolidate
@@ -23,13 +23,13 @@ projection of the same three beats, scoped to the kit's own conventions
 installed, prefer it for anything this command does not cover; the two must never
 diverge in checkpoint semantics -- a drift here is a bug in this file, not a feature.
 
-Sibling to `/kit:dispatch` (SPEC-032): dispatch is the INDEPENDENT/parallel case
+Sibling to `/kit:dispatch`: dispatch is the INDEPENDENT/parallel case
 behind a disjointness gate; `/kit:mega` is the DEPENDENT/sequenced case -- one
-bounded loop, one PR per sub-goal (SPEC-034). A real dependency GRAPH (fan-in,
+bounded loop, one PR per sub-goal. A real dependency GRAPH (fan-in,
 fan-out, waves, topological order) is neither; that is the GSD v2 handoff tripwire,
 not a reason to grow a scheduler here.
 
-The intake ladder below (mirrors the skill's ladder verbatim, SPEC-142) is the FIRST
+The intake ladder below (mirrors the skill's ladder verbatim) is the FIRST
 check, before Prerequisites: it decides whether this command is even the right one to
 invoke for the task at hand.
 
@@ -50,7 +50,7 @@ Escape hatch: the user explicitly asking for a mega-goal overrides the ladder; n
 1. The conversation names **3-8 genuinely dependent sub-goals** sharing one
    destination. Fewer than 3: use `/kit:assign` instead (this is one goal). Fan-in
    (a sub-goal needing two others) or fan-out (two sub-goals diverging off one):
-   route to GSD v2, do not force it into a chain (SPEC-034 DEC-008).
+   route to GSD v2, do not force it into a chain.
 2. `gh` is installed (PR creation, `gh pr checks`, `gh pr view`).
 3. Git working tree is clean.
 
@@ -88,7 +88,7 @@ between the port branch and the delete, and both were lost until a post-close au
 
 **Deployable terminus (mirrors the skill's "definition of done extends past
 built").** Once real diffs exist, check `lib/gate/proof-ledger.sh deployable <root>
-<base>` (SG-07's classifier, reused verbatim, never a second one). When it prints
+<base>` (the kit-hardening classifier, reused verbatim, never a second one). When it prints
 `yes`, the chain's LAST two sub-goals are terminal **gate** sub-goals -- a
 deploy/wire prep and a UAT prep -- per the skill's convention: PREPARE the deploy
 config / acceptance plan, OPEN the PR, and STOP for the human. Never auto-deploy,
@@ -106,7 +106,7 @@ repo's production environment (`gh api repos/<r>/environments/production --jq
 branch dispatch is rejected before any step runs, so the gate must be written as
 merge-then-prove instead, with the old path left in the tree as the revert; the re-run guard of
 a content pipeline may also count the rejected dispatch as a failed previous run. Field record:
-retire-apps SG-02/SG-04, 2026-08-20.
+retire-apps sub-goals 2 and 4, 2026-08-20.
 
 ### Step 2: Front-load every clarification, ONCE (mirrors the skill's single checkpoint)
 
@@ -128,7 +128,7 @@ State the resolved posture in one line before scaffolding:
   and every `gate` sub-goal, stop for the human) or `full-auto` (also merges the
   final PR -- only when NO `gate` sub-goal exists anywhere in the chain AND the
   target branch is unprotected; falls back to `gated-final` and says so otherwise).
-  Resolution order (SPEC-187 / SG-03): an explicit choice made in THIS step >
+  Resolution order: an explicit choice made in THIS step >
   `bash lib/config/kit-config.sh` (source it, then `kit_config_get mega.merge_autonomy`;
   project `.kit.toml` > kit-root `kit.toml`) > the `gated-final` default above. This
   knob has no runtime env-var mirror (unlike the pair below): it is a per-run
@@ -137,13 +137,13 @@ State the resolved posture in one line before scaffolding:
 - **`MEGA_MERGE_POSTURE`** -- `auto-to-final` (DEFAULT: an `auto` sub-goal's PR
   merges the moment its gate passes) or `per-pr-review` (a team run:
   `lib/goal/mega-merge.sh merge` always prints the `gh pr merge` it would run and waits
-  for a human, even on a passing gate). Resolution order (SPEC-187 / SG-03): an
+  for a human, even on a passing gate). Resolution order: an
   explicit `--posture=<value>` flag to `mega-merge.sh merge` > the `MEGA_MERGE_POSTURE`
   env var > the config layer's `[mega].mega_merge_posture` (project `.kit.toml` >
   kit-root `kit.toml`) > the `auto-to-final` default. A `mega_merge_posture:` line in
   `CLAUDE.md` is the older, still-honored per-conversation override; the config
   layer is the durable, cross-session equivalent. This is the ONE team-facing flag
-  ADR-0028 calls out: auto-merge-to-final on a SHARED repo defers per-PR team review
+  the autonomous-loop hardening design calls out: auto-merge-to-final on a SHARED repo defers per-PR team review
   to the final gate; a teammate who wants per-PR review sets `per-pr-review` for
   their own runs (env, or their own `.kit.toml`).
 
@@ -161,7 +161,7 @@ so the existing driver can walk it unmodified):
   for "done" (`- [x] SG-NN ... -- PR #N`, never a bare checked box). Policy: `auto`
   runs unattended; `gate` pauses only its OWN dependent chain (independent branches
   keep running under a wave); `gate!` halts the WHOLE loop for a human (use `gate!`
-  when you mean "quiesce everything so I can review the full state", SPEC-106).
+  when you mean "quiesce everything so I can review the full state").
 - `<dir>/goals/NN-<slug>.md` -- one `plan-for-goal`-shaped file per sub-goal
   (`Model:` / `Effort:` header lines so `lib/queue/orchestrate.sh`'s per-sub-goal routing
   works; `Done =`; scope edges; the proof expectation from Step 1, plus a
@@ -171,23 +171,23 @@ so the existing driver can walk it unmodified):
   **`Harness:` line** to dispatch it to a non-Claude CLI (codex / pi / opencode) so
   the work bills to that vendor's quota; it is opt-in and OFF by default. See
   "Harness routing (multi-vendor dispatch)" below. **`Model:` defaults to `sonnet`**
-  (SPEC-107 cheap-first); route `opus` for planning/design-dominant hard
+  (the cheap-first default); route `opus` for planning/design-dominant hard
   reasoning AND for a docs/design sub-goal that REWRITES for cohesion or
   persuasion (not a light append) -- write those with the `/kit:pitch`
   discipline (outcome-first, evidence-grounded; delete the stale narrative,
   do not just append) so the presentation convinces; a small docs update
   stays `sonnet`. `haiku` for trivial mechanical work, DELETE the line to deliberately
   inherit the parent tier. Each sub-goal also names a **`Design:` field**
-  (`bearing | obvious`, ADR-0031 §1: `bearing` means the executor's spec MUST
+  (`bearing | obvious`: `bearing` means the executor's spec MUST
   carry a non-empty `## Design` block and `/kit:spec-validate` refuses VALIDATED
   without it; omit to default `obvious`) and, for UI sub-goals ONLY, a
-  **`Done-mode:` line** (`proof | over-test | quiescence`, SPEC-112, consumed as
+  **`Done-mode:` line** (`proof | over-test | quiescence`, consumed as
   a `/kit:ui-design` `$ARGUMENTS` flag; omit for non-UI work).
   **Include a `## Touches` section** listing the directory-prefix globs this sub-goal
   will write, one per line, form `dir/**` (or `dir/sub/**`) -- the SAME shape
   `lib/gate/dispatch-gate.sh` proves disjointness over. This is what makes the sub-goal
   **wave-eligible**: `lib/queue/orchestrate.sh` runs dep-independent sub-goals whose
-  `## Touches` are provably disjoint CONCURRENTLY (default `WAVE_CAP=2`, SPEC-106).
+  `## Touches` are provably disjoint CONCURRENTLY (default `WAVE_CAP=2`).
   Derive the globs from the sub-goal's scope edges you already decided in Step 1 --
   each sub-goal should own a distinct slice of the tree so waves can form. A sub-goal
   with NO `## Touches` (or one that overlaps a wave-mate) simply runs serially -- the
@@ -200,7 +200,7 @@ so the existing driver can walk it unmodified):
 
 `<dir>` resolves the same way the skill resolves its scaffold root (an explicit
 override, a `megagoal_root:` CLAUDE.md hint, or auto-detect by repo shape); for the
-kit's own repo this is `.claude/goals/<slug>/` (SPEC-034 DEC-002 -- `_meta/` is
+kit's own repo this is `.claude/goals/<slug>/` (`_meta/` is
 reserved for the BACKLOG cockpit, never a working roadmap).
 
 ### Step 5: Hand off, then enforce at ship (never bypass)
@@ -221,7 +221,7 @@ per worker transcript for the operator to watch.
 The driver emits a
 `gate-ledger start` per dispatched sub-goal (rid derived from the goal file's
 `**Branch:**`), the automated mirror of the START `commands/assign.md` makes, so
-mega-dispatched runs are tracked in `lane-telemetry`, not `?` (SPEC-101). The loop
+mega-dispatched runs are tracked in `lane-telemetry`, not `?`. The loop
 works sub-goals in chain order; for each one that finishes with `Done =` verified and
 its PR's CI green:
 
@@ -234,16 +234,16 @@ bash lib/goal/mega-merge.sh merge <pr> "$RID" "$LANE" [--execute]       # action
 bash lib/classify/lane-classify.sh deescalate "$LANE" --rid "$RID"          # advisory nudge, mirrors ship.md Step 8
 ```
 
-**Ship-time de-escalation, mirrored here explicitly (SPEC-141).** `mega.md`'s per-sub-goal
+**Ship-time de-escalation, mirrored here explicitly.** `mega.md`'s per-sub-goal
 ship/close is this Step -- `gate-ledger` + `mega-merge.sh` -- never a call into
 `commands/ship.md`'s script, so its Step 8 bullets (the significance record, the ★-tap nudge,
-the pitch offer, the SPEC-141 de-escalation nudge) are not guaranteed to fire here just because
-they exist there. Worse, under DELEGATE mode (WORKFLOW.md "Mega-goal delegate execution",
-ADR-0032) each sub-goal runs in a fresh headless session, and the conductor "never reads a
+the pitch offer, the de-escalation nudge) are not guaranteed to fire here just because
+they exist there. Worse, under DELEGATE mode (WORKFLOW.md "Mega-goal delegate execution")
+each sub-goal runs in a fresh headless session, and the conductor "never reads a
 child's transcript" -- so even a child that happens to invoke `/kit:ship` internally would have
 any nudge it printed swallowed inside that invisible session. The fix reuses the SAME `LANE`
 and `RID` this Step already computes for the `mega-merge.sh gate` call above -- no new
-computation, no new verb, just the existing SPEC-141 `deescalate` call made explicit at the
+computation, no new verb, just the existing `deescalate` call made explicit at the
 one place a human watching the mega run actually sees output.
 
 `lib/goal/mega-merge.sh` is the ship-layer auto-merge ENFORCEMENT: `gate` reuses
@@ -252,7 +252,7 @@ set `hooks/ship-gate.sh` enforces at push) -- it never re-derives or loosens tha
 logic. `merge` runs `gate` FIRST; on a failing or missing gate it **REFUSES
 unconditionally** (prints `BLOCKED: ship-gate not satisfied, refusing auto-merge`,
 logs it, exits nonzero, never touches `gh`) -- a failing/missing gate can **never**
-auto-merge, the exact mis-build ADR-0028 names as its risk. On a passing gate it is
+auto-merge, the exact mis-build the autonomous-loop hardening design names as its risk. On a passing gate it is
 still DRY-RUN by default (prints the `gh pr merge` it would run); only `--execute`
 actually calls `gh`, and `MEGA_MERGE_POSTURE=per-pr-review` (Step 3) forces
 dry-run regardless of `--execute` or the gate result, for a team run that keeps a
@@ -263,7 +263,7 @@ passed to `mega-merge.sh merge` at all -- routing those to the human is this
 command's job, exactly as `/kit:dispatch` and the skill already do; `mega-merge.sh`
 itself only ever sees a PR it has been explicitly asked to consider auto-merging.
 
-**Mark the held PR at creation (SPEC-100 mark half, ID-089).** The instant such a PR
+**Mark the held PR at creation.** The instant such a PR
 is opened, mark it so the merge guard always has a mark to catch (an UN-marked held PR
 would slip past `_merge_exclusion`, which defends a marked PR but cannot synthesize a
 mark):
@@ -304,7 +304,7 @@ RUN_REPORT in chat (header, timeline gantt, worker-minutes bars, gate matrix or 
 `Hardening properties` P1..P6 line, callable stack, incidents). Summarizing instead of
 rendering is a contract miss.
 
-**The convergence gate dispatches advisor P5+P6, explicitly, with an emit (SPEC-145).** Once
+**The convergence gate dispatches advisor P5+P6, explicitly, with an emit.** Once
 every sub-goal in the chain is merged (or the run halts at the final `gate!`/`gated-final`
 boundary), dispatch the `advisor` agent TWICE, in-harness, over the assembled stack diff
 (`base..HEAD` across the whole mega-goal, not any one sub-goal's diff): once as **P5
@@ -318,7 +318,7 @@ contract, never a `/kit:review-team` dispatch) left the advisor completely unrea
 mirrors the ADVISOR SLICE of the ops-toolkit `plan-for-mega-goal` skill's own convergence-gate
 beat (`references/GUIDE.md` step 6a, `references/OPERATE.md` "The convergence gate is
 COMPOSED, not improvised"), which already prescribes this exact dispatch + grammar --
-"catching up" (never-diverge, SPEC-142) means this ONE beat, not full parity: the skill's
+"catching up" (never-diverge) means this ONE beat, not full parity: the skill's
 convergence gate is COMPOSED of `/kit:verify` + `/kit:review-team` + advisor P5/P6 together,
 and this paragraph wires only the advisor third of that composition. `commands/mega.md` still
 names no `/kit:verify` or `/kit:review-team` dispatch of its own at the assembled-stack close
@@ -348,7 +348,7 @@ bash lib/gate/gate-ledger.sh record "$FINAL_RID" advisor ran "mode=P6 findings=<
 bash lib/gate/gate-ledger.sh outcome "$FINAL_RID" advisor end caught=<true if P6's proposal count N > 0, else false>
 ```
 
-Each mode is its own SPEC-129 timing bracket (a `start` immediately before its `record`, an
+Each mode is its own timing bracket (a `start` immediately before its `record`, an
 `end` immediately after): `read_kit_gates` pairs GATE rows to OUTCOME brackets FIFO per phase
 in file-append order, so two sequential `advisor` brackets pair correctly with the two
 sequential `advisor ran` GATE rows above, P5 with the first, P6 with the second, with no new
@@ -414,7 +414,7 @@ Model:   gpt-5        # WHICH model. absent = that vendor's default.
 Effort:  high         # how hard it thinks. absent = inherit.
 ```
 
-Per sub-goal, independently: one mega-goal can put SG-01 on claude and SG-02 on codex.
+Per sub-goal, independently: one mega-goal can put sub-goal 1 on claude and sub-goal 2 on codex.
 
 ### Per-vendor vocabulary
 
@@ -447,7 +447,7 @@ allowlist (`opus|sonnet|haiku|fable`) applies to claude ONLY.
 ### The one caveat
 
 A non-claude sub-goal runs on the plain path only, so it gets **no token accounting, no live
-`--stream` tail, no deterministic-handoff regeneration, and no SG-11 stall watchdog** (all four
+`--stream` tail, no deterministic-handoff regeneration, and no stall watchdog** (all four
 need the `stream-json` capture the vendor CLIs lack). The driver WARNs and runs it anyway; a
 mega-goal mixing claude and vendor sub-goals will have a partial token ledger and its vendor
 sub-goals are not stall-monitored. That is the price of routing off-vendor, surfaced, not hidden.
@@ -485,12 +485,12 @@ no new binary or `lib/` file. Full depth + a worked dry-run: the skill's
 4. **Front-load clarifications ONCE**, over the whole union -- Step 2's beat, reused
    verbatim, just framed against the union rather than one mega.
 5. **Spec-number block reserve + release.** Reserve via `bash lib/spec/spec-next.sh reserve`
-   (SPEC-128's mkdir-mutex reservations ledger, the same mechanism the wavefront dispatch
+   (the spec-numbering mkdir-mutex reservations ledger, the same mechanism the wavefront dispatch
    already uses at Step 4). This kit has no separate `release` verb: an unclaimed reservation
    self-expires on its own stale-reclaim TTL, so "release the old megas' unused numbers" is a
    no-op here, not a command to run -- the ledger prunes them without an operator step.
-6. **Provenance per sub-goal.** Every consolidated sub-goal records `from: <mega-A>/SG-03 +
-   <mega-B>/SG-01` on its roadmap line and in its goal file. Done imports keep their own
+6. **Provenance per sub-goal.** Every consolidated sub-goal records `from: <mega-A>/SG-<N> +
+   <mega-B>/SG-<M>` on its roadmap line and in its goal file. Done imports keep their own
    single origin + PR.
 7. **Supersede, never delete.** Old mega `ROADMAP.md` headers gain `superseded_by:
    <new-slug>`. This kit's nearest archive analog is the goal-draft lifecycle already in
@@ -513,10 +513,10 @@ removes).
   `merge` asks before touching `gh`; there is no second override path inside
   `mega-merge.sh` -- the existing `lib/gate/gate-ledger.sh override <rid> <phase>
   <reason>` audit trail is still how a human clears a gate.
-- **A DAG / wave scheduler.** Single chain only (SPEC-034 DEC-008); fan-in/fan-out
+- **A DAG / wave scheduler.** Single chain only; fan-in/fan-out
   is the GSD v2 handoff tripwire, rejected at Step 1.
 - **The activator loop itself.** `/goal` / `ralph-loop` / `lib/queue/orchestrate.sh` own
-  the turn-by-turn execution (ADR-0017 activator-agnostic); this command is
+  the turn-by-turn execution (staying activator-agnostic); this command is
   planning plus the merge-enforcement affordance it hands the loop, not a new
   runtime.
 - **Deploying or UAT-ing anything.** The deploy/UAT terminus (Step 1) PREPARES and
@@ -528,11 +528,11 @@ removes).
   and waits for an explicit human go before writing a `superseded_by:` marker or moving
   anything.
 
-Source: ADR-0028 P2/P3 (autonomous-loop hardening, "Where each layer lives" table);
-SPEC-034 (mega-goal lane, ID-037 -- the roadmap conventions + single-chain gate
-this command reuses); SPEC-095 / kit-hardening SG-07 (`lib/gate/proof-ledger.sh
-deployable`, the terminus classifier reused here verbatim); SPEC-141 (ship-time lane
-de-escalation, the `lib/classify/lane-classify.sh deescalate` verb mirrored explicitly at Step 5);
+Source: the autonomous-loop hardening design ("Where each layer lives" table); the
+mega-goal lane design (the roadmap conventions + single-chain gate this command
+reuses); the kit-hardening deployable-terminus work (`lib/gate/proof-ledger.sh
+deployable`, the terminus classifier reused here verbatim); the ship-time lane
+de-escalation design (the `lib/classify/lane-classify.sh deescalate` verb mirrored explicitly at Step 5);
 `lib/gate/gate-ledger.sh` (the required-gate set this rides on); ops-toolkit
 `plan-for-mega-goal` SKILL.md (the authoring mirror source, incl. its tiny-item rule and
 its Consolidate mode).

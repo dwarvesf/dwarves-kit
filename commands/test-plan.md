@@ -8,7 +8,7 @@ This is NOT a roundtable and has NO personas. Test planning derives from FIXED a
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan start`.
 
 ### Step 0: No active spec, feature already live
 
@@ -185,9 +185,9 @@ own extra columns if both apply, one matrix, not two):
 Tell the user the plan is written into the spec's `## Test plan` and `/kit:execute` will build against it as the coverage target (each case's `proof` becomes that step's verify command where named). Do NOT run `/kit:execute` yourself; this lane only plans the test cases.
 
 ## Source
-The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable (SPEC-016 DEC-004): it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append (SPEC-016 Part A), so the plan is per-spec and `/kit:execute` can read the spec it is already executing (SPEC-018). The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). Realizes SPEC-016 Part B (the test lane) as revised by SPEC-018. Step 1c's tier taxonomy, floor rule, and smoke/retry doctrine realize `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md` SG-1 (SPEC-201): the proven-on-permtest pattern (PR #145), generalized as guidance the generator emits, not a new runner (SG-3 stays deferred until a second consumer). Step 1d's scenario-harness tiering realizes `docs/verification/test-design-standard.md` §8 (ID-465): the two-tier mock/live pattern proven in foundation-workers SPEC-006, generalized here as the emission rule so a second consumer gets it for free instead of re-deriving it.
+The kit's own coverage-matrix shape. There is no external roundtable source; this is deliberately NOT a persona roundtable: it enumerates against fixed acceptance criteria. The `## Test plan` section is written into the active spec, mirroring `/kit:devs-team`'s `## Design critique` append, so the plan is per-spec and `/kit:execute` can read the spec it is already executing. The `proof` column adapts harness-experimental's `TEST_MATRIX.md` Evidence column (behavior-to-proof). This realizes the test lane's design, as later revised. Step 1c's tier taxonomy, floor rule, and smoke/retry doctrine realize `docs/briefs/DECISION-BRIEF-behavioral-test-tiering.md`'s first sub-goal: the proven-on-permtest pattern (PR #145), generalized as guidance the generator emits, not a new runner (the third sub-goal stays deferred until a second consumer). Step 1d's scenario-harness tiering realizes `docs/verification/test-design-standard.md` §8: the two-tier mock/live pattern proven in foundation-workers, generalized here as the emission rule so a second consumer gets it for free instead of re-deriving it.
 
-After writing the plan, record it for lane telemetry (SPEC-062), one line:
+After writing the plan, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> test-plan ran "matrix rows=<N> categories=<list>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> test-plan end` (authoring, no verdict; the verb's own `false` default stands).
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> test-plan end` (authoring, no verdict; the verb's own `false` default stands).

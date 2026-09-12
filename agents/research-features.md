@@ -148,7 +148,7 @@ every line earns its place.
 - Never assert a port (if any) is done. This agent inventories the SOURCE only; it
   never reads or judges a target implementation.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

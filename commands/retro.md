@@ -16,7 +16,7 @@ This is NOT a celebration. This is NOT a blame session. This is a structured ext
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Reflect start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Reflect start`.
 
 ### Step 1: Gather data
 
@@ -41,7 +41,7 @@ Present a summary:
 
 ### Step 1b: Doc-impact + completeness sweep
 
-Run the pinned diff (the integration branch's merge-base) against the WORKFLOW doc-impact map and list any companion doc the diff should have updated but did not. Also read `~/.claude/dwarves-kit/logs/completeness.log` and surface un-cleared decision/doc warnings from this cycle. Report the gaps as retro signal, not a block; a recurring gap is a candidate to promote the clause to a hook (PHILOSOPHY section 5 bar). Source: SPEC-006.
+Run the pinned diff (the integration branch's merge-base) against the WORKFLOW doc-impact map and list any companion doc the diff should have updated but did not. Also read `~/.claude/dwarves-kit/logs/completeness.log` and surface un-cleared decision/doc warnings from this cycle. Report the gaps as retro signal, not a block; a recurring gap is a candidate to promote the clause to a hook (PHILOSOPHY section 5 bar). Source: the doc-impact-sweep design.
 
 ### Step 1c: Decision-capture nudge (advisory)
 
@@ -49,14 +49,14 @@ Ask once: **did this cycle make a non-obvious, reversible-with-cost decision tha
 
 If yes, suggest drafting `docs/decisions/NNNN-<slug>.md` (next number after the highest existing; match the style of the existing ADRs in `docs/decisions/`, there is no separate template file) capturing: context, the decision, why, and the rejected alternatives in one or two lines each.
 
-This is **advisory, never a block** (PHILOSOPHY "Detect, don't dictate": the kit reports completeness as retro signal, never a mid-flight gate). If the operator declines, log one line to `~/.claude/dwarves-kit/logs/completeness.log` (`decision-capture: declined <cycle/slug>`) so a recurring skip is visible as retro signal, exactly like Step 1b. Source: SPEC-051 (absorbed from repository-harness's decision-capture flow, A4-lite).
+This is **advisory, never a block** (PHILOSOPHY "Detect, don't dictate": the kit reports completeness as retro signal, never a mid-flight gate). If the operator declines, log one line to `~/.claude/dwarves-kit/logs/completeness.log` (`decision-capture: declined <cycle/slug>`) so a recurring skip is visible as retro signal, exactly like Step 1b. Source: the decision-capture nudge design (absorbed from repository-harness's decision-capture flow, A4-lite).
 
-### Step 1d: Lane telemetry sweep (SPEC-061)
+### Step 1d: Lane telemetry sweep
 
 Run `bash lib/telemetry/lane-telemetry.sh report` and `bash lib/telemetry/lane-telemetry.sh misfires`. Surface
 the aggregates (per-lane runs, misroute count, gate skip/override counts, ship rate, untracked
 runs) as retro signal. **Disposition contract:** every misfire line MUST leave the retro as one
-of (a) a classifier keyword fix + truth-table pin (the SPEC-057/SPEC-060 pattern: a real
+of (a) a classifier keyword fix + truth-table pin (the classifier-hardening pattern: a real
 misfire becomes a test row), (b) a kit BACKLOG row, or (c) one recorded "accepted noise:
 <reason>" line in the retro doc. A misfire that leaves as nothing is the open-circuit this
 step exists to close.
@@ -108,7 +108,7 @@ Sprint: [date range]
 [note any dwarves-kit friction: hooks that false-positived, commands that were awkward, missing workflows]
 ```
 
-### Step 3b: Stage the action items (SPEC-200 I1 / T7)
+### Step 3b: Stage the action items
 
 The checkbox list above is the READING surface. `board promote` reads ONLY the staging buffer,
 so an action item that lives just as a checkbox can never be promoted: a human has to retype it
@@ -146,8 +146,8 @@ Check if any action items should become:
 
 Ask: "Any of these action items worth adding to the project CLAUDE.md or kit config?"
 
-After the retro document is written, record it for lane telemetry (SPEC-139), one line
+After the retro document is written, record it for lane telemetry, one line
 (the matrix row this command owns is `Reflect`, not `retro`):
 `bash lib/gate/gate-ledger.sh record <rid> Reflect ran "action-items=<N>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Reflect end caught=<true if action-items > 0, else false>`.
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Reflect end caught=<true if action-items > 0, else false>`.

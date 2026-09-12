@@ -15,7 +15,7 @@ Before starting, verify:
 
 If any prerequisite fails, tell the user what's missing and stop.
 
-### Spec->build lane re-check (SPEC-094, ADR-0028 refinement point 4)
+### Spec->build lane re-check
 
 The lane is frozen at `/kit:assign` classify time -- every re-classify trigger up to
 this point keys on the ORIGINAL task text (intake, `/kit:grill` answers, the
@@ -36,15 +36,15 @@ bash lib/classify/lane-classify.sh escalate "$CURRENT_LANE" docs/specs/SPEC-NNN-
 - **`ESCALATE <current> -> <heavier>`**: the spec's own text matches a heavier lane
   than the one it carries. Re-plan up-only -- this never stops the run, it only adds
   rigor:
-  1. `bash lib/gate/gate-ledger.sh start --amend "$RID" <heavier> <classified-lane> <chosen-type> <ctype> <repo>` -- readers take the LAST START-AMEND (SPEC-077), so the ledger's effective lane becomes `<heavier>` and `required <heavier>`'s extra measure-twice gates are now required for this run.
+  1. `bash lib/gate/gate-ledger.sh start --amend "$RID" <heavier> <classified-lane> <chosen-type> <ctype> <repo>` -- readers take the LAST START-AMEND, so the ledger's effective lane becomes `<heavier>` and `required <heavier>`'s extra measure-twice gates are now required for this run.
   2. Bump the spec's `Lane:` header UP to `<heavier>` (never down) -- `hooks/ship-gate.sh` reads that header to pick the required gate set, so the heavier set is enforced at ship, not just recorded mid-flight.
-  3. `bash lib/gate/gate-ledger.sh action "$RID" "lane escalated <current> -> <heavier> at spec->build boundary (SPEC-094)"` -- one durable line naming the escalation.
+  3. `bash lib/gate/gate-ledger.sh action "$RID" "lane escalated <current> -> <heavier> at spec->build boundary"` -- one durable line naming the escalation.
 - **`HOLD <current>`**: the spec-implied lane is the same or lighter than the current
   one. Do nothing. This is the downgrade guard (mirrors `lane-classify.sh check`):
   escalation only ever adds rigor, it never removes it, and a lighter re-classification
   is refused.
 
-Advisory + recorded, not a hard block (ADR-0024, PHILOSOPHY): `escalate` always exits
+Advisory + recorded, not a hard block (per PHILOSOPHY): `escalate` always exits
 0, and a missed or skipped re-check does not stop `/kit:execute`. An unescalated
 under-sized lane still surfaces later, the same place every other lane gap does
 (`hooks/ship-gate.sh` at push, `lib/telemetry/lane-telemetry.sh misfires` at `/kit:retro`).
@@ -79,20 +79,20 @@ Present a summary:
 ```
 Execution plan:
   Phase 1: Foundation (3 tasks)
-    TASK-001: [description] -- no dependencies
-    TASK-002: [description] -- no dependencies
-    TASK-003: [description] -- depends on TASK-001
+    TASK-A: [description] -- no dependencies
+    TASK-B: [description] -- no dependencies
+    TASK-C: [description] -- depends on TASK-A
   Phase 2: Core (2 tasks)
-    TASK-004: [description] -- depends on Phase 1
-    TASK-005: [description] -- depends on TASK-004
+    TASK-D: [description] -- depends on Phase 1
+    TASK-E: [description] -- depends on TASK-D
 
-Independent tasks in Phase 1: TASK-001, TASK-002 (can execute without waiting)
-Sequential tasks: TASK-003 > TASK-004 > TASK-005
+Independent tasks in Phase 1: TASK-A, TASK-B (can execute without waiting)
+Sequential tasks: TASK-C > TASK-D > TASK-E
 ```
 
 Ask: "Execute this plan? (A) Start Phase 1 / (B) Adjust task order / (C) Skip to specific task"
 
-Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-verifier at Step 4 diffs the whole build from it. Also bracket the Build phase for timing (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> build start`.
+Before starting Phase 1, record the pre-build base ref (`git rev-parse HEAD`); the integration-verifier at Step 4 diffs the whole build from it. Also bracket the Build phase for timing: `bash lib/gate/gate-ledger.sh outcome <rid> build start`.
 
 ### Step 2: Execute phase by phase
 
@@ -119,11 +119,11 @@ The role space is OPEN-ENDED: the classifier below is only a cheap fast path for
    # OR: generic  (= no fast-path match; does NOT mean "generic worker", see step 3)
    ```
 
-   This is the SPEC-089 shared primitive (a peer of `lane-classify.sh` / `task-type-classify.sh`), so
+   This is the shared classify primitive (a peer of `lane-classify.sh` / `task-type-classify.sh`), so
    every command that dispatches task workers classifies the same way.
 
 2. **Reuse an existing specialist if present** (cheapest path, both known-domain and cached roles):
-   - **Deterministic worker lookup (SPEC-111):** `bash lib/classify/role-classify.sh agent-for <domain>`. A
+   - **Deterministic worker lookup:** `bash lib/classify/role-classify.sh agent-for <domain>`. A
      NON-EMPTY result names a predefined WORKER agent (an implementer) for this domain , dispatch
      THAT as `subagent_type`, skip synthesis (a reuse HIT). Empty -> no static worker for this
      domain; continue. Reviewers are deliberately NOT in this lookup: a read-only reviewer cannot
@@ -156,15 +156,15 @@ non-reused task; the worker itself is the same Task-tool dispatch as always.
 > the lead's context is worth the setup overhead, NOT for one-prompt tasks, a single tool call,
 > or when near a rate/budget limit. (research/2026-06-28-token-efficient-design.md Part 1.)
 
-**Model tiering (SPEC-107, cheap-first default).** Workers dispatch at `sonnet` by default ,
-mid-tier is the stated cheap-first stance (SPEC-087: Opus only on the hard sub-goals). The active
+**Model tiering (cheap-first default).** Workers dispatch at `sonnet` by default ,
+mid-tier is the stated cheap-first stance, Opus only on the hard sub-goals. The active
 spec's optional bare `Model:` header is the hard-reasoning escape hatch: a spec carrying
 `Model: opus` dispatches its workers on opus; absent, workers default to sonnet. A fable-tier session still dispatches workers at sonnet ,
-the cheap-first default is stated policy, not a silent down-tier (SPEC-078: an explicit tier
+the cheap-first default is stated policy, not a silent down-tier (an explicit tier
 override is intentional). If the dispatch surface cannot pass a model override, omit it and note
-that in the run record (the SPEC-078 / review-team graceful-degrade clause).
+that in the run record (the review-team graceful-degrade clause).
 
-**Verifier tier parity (SPEC-244): a verifier is never dumber than its worker.** When the active
+**Verifier tier parity: a verifier is never dumber than its worker.** When the active
 spec carries `Model: opus`, every verifier you dispatch for that spec (task, recheck, integration,
 acceptance, system) is one you dispatch with an explicit model override matching the spec tier , a
 sonnet judge over an opus worker cannot follow the reasoning it is asked to audit. Absent a
@@ -221,7 +221,7 @@ Before writing any code, expand this task into **bite-sized steps** and present 
 ## Decision mode
 [lead: pause for human approval / autonomous: proceed with recommendation and log]
 
-## When done (distilled return contract, SPEC-087 Mechanism C)
+## When done (distilled return contract)
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 - **verdict** -- one line: all acceptance criteria met? + the commit hash.
 - **key findings** -- decisions made (protocol format) + any blocker; the few things that
@@ -257,7 +257,7 @@ TASK-[ID]: [description]
 ```
 
 The task-verifier will return one of three verdicts. Each maps onto one of the kit's named
-failure policies (ID-398, `docs/patterns/failure-policy.md`), noted below -- the policy is
+failure policies (`docs/patterns/failure-policy.md`), noted below -- the policy is
 the interpretive layer used when recording this task's outcome (2e) and the phase's outcome
 (Step 4); it never replaces the verdict string itself:
 
@@ -274,7 +274,7 @@ a reason naming the spec/task itself as wrong, unclear, or not worth building is
 
 #### 2c-1. Fresh-context re-audit of a task-verifier PASS (recheck-verifier)
 
-Right-arm PASSes are unreviewed by default (ADR-0028 "Right-arm review parity"). When
+Right-arm PASSes are unreviewed by default (the "Right-arm review parity" decision). When
 task-verifier returns PASS, dispatch the **recheck-verifier** subagent in a FRESH context
 (a new Task-tool call, not a continuation of the task-verifier's own context) with the
 task-verifier's full verdict block (including its `Verification record`). It pins `model: opus` in
@@ -291,9 +291,9 @@ what lets it catch a stale or fabricated PASS. Route its verdict:
   in `docs/verification/<spec-slug>.md` and surface it to the user at the next phase
   checkpoint (Step 3).
 
-This step is ADVISORY + RECORDED, never a mid-flight hard block (ADR-0024): a recheck-verifier
+This step is ADVISORY + RECORDED, never a mid-flight hard block: a recheck-verifier
 FAIL does not reopen the retry loop and does not block the next task from dispatching; it is
-evidence for the human at the checkpoint. This realizes ADR-0028's trust metric: "% of
+evidence for the human at the checkpoint. This realizes the right-arm review parity trust metric: "% of
 autonomous done-claims that survive a fresh-context re-audit."
 
 #### 2d. Retry loop (max 2 attempts)
@@ -327,7 +327,7 @@ if verdict still != "PASS":
 
 **Why max 2 retries**: Most fixable issues (missing import, wrong assertion, off-by-one) resolve in 1-2 fix cycles. If it takes 3+, the issue is likely a design problem, not a code bug. Further retries burn tokens without progress.
 
-**Naming the exit (ID-398, `docs/patterns/failure-policy.md`)**: an exhausted retry loop is
+**Naming the exit (`docs/patterns/failure-policy.md`)**: an exhausted retry loop is
 **policy: escalate** by default (a human decides the direction). If the final task-verifier
 verdict is itself `FAIL:escalate` with a "the spec/task is wrong" reason rather than a design
 question, name it **policy: close** instead when reporting to the user -- the retry loop
@@ -338,7 +338,7 @@ all", not "which way should I build it".
 
 After each PASS verdict, mark it as done in `docs/specs/SPEC-NNN-<slug>.md`:
 ```
-- [x] TASK-001: [description] -- DONE (commit: abc1234, verified)
+- [x] TASK-A: [description] -- DONE (commit: abc1234, verified)
 ```
 
 The "verified" tag distinguishes tasks that passed the verification pipeline from tasks that were manually approved.
@@ -407,15 +407,15 @@ After all phases complete:
    integration-verifier above returns PASS, dispatch the **recheck-verifier** subagent in a
    FRESH context with its full verdict block. recheck-verifier RE-EXECUTES the recorded
    verification command itself and re-judges, never reading back the recorded record as
-   evidence -- this is what catches a stale or fabricated PASS (ADR-0028 "Right-arm review
-   parity", the trust metric "% of autonomous done-claims that survive a fresh-context
+   evidence -- this is what catches a stale or fabricated PASS (the "Right-arm review
+   parity" decision, the trust metric "% of autonomous done-claims that survive a fresh-context
    re-audit"). Route its verdict:
    - **PASS**: append `Re-audit: PASS` to the integration verification-log entry (Step 4 item
      1) and continue.
    - **FAIL:fixable / FAIL:escalate**: this is a caught stale/fabricated done-claim. Append
      `Re-audit: FAIL -- <finding>` to the same entry and surface it to the user alongside the
-     execution summary (Step 4 item 3). ADVISORY + RECORDED, never a mid-flight hard block
-     (ADR-0024): it does not reopen the integration retry loop.
+     execution summary (Step 4 item 3). ADVISORY + RECORDED, never a mid-flight hard block:
+     it does not reopen the integration retry loop.
    A single-task spec skips this step (nothing was checked by integration-verifier to re-audit).
 3. Show execution summary:
    ```
@@ -424,7 +424,7 @@ After all phases complete:
    Phases: [N]/[N] complete
    Retries: [N] total
    Escalations: [N] (required human intervention)
-   Closed: [N] (task/spec judged wrong-shaped, dropped rather than retried -- ID-398)
+   Closed: [N] (task/spec judged wrong-shaped, dropped rather than retried, per the failure-policy doc)
    Commits: [N]
    Tests: [pass/fail]
    Files changed: [list]
@@ -449,8 +449,8 @@ After all phases complete:
    (execute.md IS the Build phase), the same one-line convention every other phase owner
    (`think.md`, `design.md`, `spec.md`, ...) already uses.
 
-   Close the timing bracket opened at Step 1 (SPEC-129), naming the build's failure policy
-   (ID-398, `docs/patterns/failure-policy.md`) alongside `caught=`: `policy=close` if any
+   Close the timing bracket opened at Step 1, naming the build's failure policy
+   (`docs/patterns/failure-policy.md`) alongside `caught=`: `policy=close` if any
    task in this build was closed as wrong-shaped (Closed>0 above), else `policy=escalate` if
    any task was escalated (Escalations>0), else `policy=continue`.
 

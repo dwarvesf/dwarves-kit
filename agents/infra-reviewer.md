@@ -54,7 +54,7 @@ Scope: [files reviewed, diff range]
 
 Severity: CRITICAL (blocks merge), HIGH (should fix), MEDIUM (fix soon), LOW (when convenient).
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

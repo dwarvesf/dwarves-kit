@@ -20,7 +20,7 @@ You are the session's landing step. The operator just shipped, or is ending the 
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> wrap start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> wrap start`.
 
 Run the steps below once per repo the session touched (the current repo when the operator names none). Positional repo arguments; wrap never discovers touched repos on its own (Out of Scope).
 
@@ -76,7 +76,7 @@ Commit any of the operator's own outstanding work under its own name and message
 Otherwise re-run the step 0 check first. Then, once per PR: `bin/wrap merge --apply <repo>`. It merges exactly one own, green PR whose base is the default branch and reports every skip reason for the rest.
 
 - `wrap merge` never runs twice for the same PR in one call; call it again for the next PR.
-- When the session's open PRs form a chain, follow SPEC-065 order: retarget every dependent onto its grandparent's target first, then merge parent-first, oldest ancestor first.
+- When the session's open PRs form a chain, retarget every dependent onto its grandparent's target first, then merge parent-first, oldest ancestor first.
 - Never merge a PR the operator did not open.
 
 ### Step 4: deploy check
@@ -103,7 +103,7 @@ Re-run the step 0 check first. Then: `bin/wrap log "<slug>: <one sentence>"`. Wh
 
 ### Step 7: understand
 
-The process half of distill (SPEC-249): a DEBT marker for the run, new-tool candidates checked against precedent, and one memory note per incident this session caused. Three lettered sub-steps, each prints one line when idle.
+The process half of distill: a DEBT marker for the run, new-tool candidates checked against precedent, and one memory note per incident this session caused. Three lettered sub-steps, each prints one line when idle.
 
 Sub-step `b` BUILDS what it can rather than proposing it, and it builds through the lane, never around it. A tiny-lane candidate is built and verified here, because a wrong call costs one revert and a staged row that waits for a yes costs a round trip on work the operator already asked for. Anything heavier is staged with its goal drafted, because a spec, a review, or a root cause does not fit in the minutes an operator gave you to close the session, and a change that skips them is unreviewed and undocumented wherever it lands. A row is staged on its own merits too, whatever its lane, when the candidate fails the `Needs you` admission test, meaning its scope is a judgment whose options carry different irreversible outcomes. Sub-step `c` writes one memory note and never a board row.
 
@@ -115,7 +115,7 @@ rid_out="$(bash lib/gate/gate-ledger.sh rid 2>&1)"; rid_rc=$?
 
 **Every skip in this sub-step skips ONLY this sub-step.** `a` is the DEBT marker and nothing else; `b` and `c` do not depend on a run id, a run log, or the classifier, and they run whatever `a` reported. A real session on 2026-09-09 read `skipped: no run id` as "step 7 does not apply" and never ran `b`, which is the step that builds rather than proposes. If `a` skips, say so and go straight to `b`.
 
-**A non-zero `rid_rc` is a STRUCTURAL skip, not a clean one.** This is `gate-ledger.sh rid` refusing outright: landing from `master`/`main`, a detached HEAD, or a branch whose slug strips empty. There is no branch to key a ledger entry to, so the DEBT marker was never reachable this run, which is a different fact than "nothing to record." Print `skipped (structural): DEBT marker impossible this run (<rid_out>)`, quoting the tool's own reason. Do not synthesize a rid from anything other than the branch: the ledger's rid is the SAME key `hooks/ship-gate.sh` checks at push (SPEC-070), so a rid tied to the session instead of the branch would write an entry the ship-gate can never find and no other reader can trace back to a branch, a second failure mode worse than the skip it would replace.
+**A non-zero `rid_rc` is a STRUCTURAL skip, not a clean one.** This is `gate-ledger.sh rid` refusing outright: landing from `master`/`main`, a detached HEAD, or a branch whose slug strips empty. There is no branch to key a ledger entry to, so the DEBT marker was never reachable this run, which is a different fact than "nothing to record." Print `skipped (structural): DEBT marker impossible this run (<rid_out>)`, quoting the tool's own reason. Do not synthesize a rid from anything other than the branch: the ledger's rid is the SAME key `hooks/ship-gate.sh` checks at push, so a rid tied to the session instead of the branch would write an entry the ship-gate can never find and no other reader can trace back to a branch, a second failure mode worse than the skip it would replace.
 
 Otherwise `rid="$rid_out"` and resolve the log dir with `logdir=$(bash -c 'source lib/telemetry/kit-log-dir.sh; kit_resolve_log_dir')` (the file is source-only and prints nothing when run as a command); a missing `runs/<rid>.log` prints `skipped: no run log`; a `| DEBT |` line already in it prints `skipped: DEBT marker present`. Otherwise `bash lib/classify/significance-classify.sh record <rid> "<one-line session description>"`; a non-zero exit prints `skipped: classifier failed (rc N)` and the step continues to b. These three remain plain skips: the rid exists, so the marker was reachable and simply had nothing to add.
 
@@ -233,7 +233,7 @@ b. ...
 - An overlay (a consumer's own routing, distill, or knowledge-capture step) appends its own labelled sections after `FYI`, in the same shape: a bold label line followed by bullets, one item per note, candidate, or queue entry; the kit's grammar stops there. A `wrap.before` skill's report lines fold in at that same place.
 - No table unless the session touched four or more repos. No restating what each step did.
 
-Record the run (SPEC-139), one line: `bash lib/gate/gate-ledger.sh record <rid> wrap ran "<summary>"`. Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> wrap end caught=<true if a repo hit step 0's foreign-activity STOP, else false>`.
+Record the run, one line: `bash lib/gate/gate-ledger.sh record <rid> wrap ran "<summary>"`. Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> wrap end caught=<true if a repo hit step 0's foreign-activity STOP, else false>`.
 
 ## What this command does NOT do
 

@@ -1688,11 +1688,11 @@ fi
 # (d) kit-health carries the recorded fan-out carve-out so it does not flag dispatch.
 TOTAL=$((TOTAL + 1))
 if grep -qi "cross-goal fan-out" "$KIT_DIR/commands/kit-health.md" 2>/dev/null \
-   && grep -q "ADR-0019" "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} kit-health records the cross-goal fan-out carve-out (ADR-0019)"
+   && grep -q "parallel-execution-boundary decision" "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} kit-health records the cross-goal fan-out carve-out (parallel-execution-boundary decision)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} kit-health must record the cross-goal fan-out carve-out (ADR-0019)"
+  echo -e "  ${RED}FAIL${NC} kit-health must record the cross-goal fan-out carve-out (parallel-execution-boundary decision)"
   FAIL=$((FAIL + 1))
 fi
 
@@ -2013,7 +2013,7 @@ else
 fi
 
 TOTAL=$((TOTAL + 1))
-if grep -qF 'Lane telemetry sweep (SPEC-061)' "$KIT_DIR/commands/retro.md" \
+if grep -qF 'Lane telemetry sweep' "$KIT_DIR/commands/retro.md" \
    && grep -qF 'Disposition contract' "$KIT_DIR/commands/retro.md" \
    && grep -qF 'How lanes are judged' "$KIT_DIR/docs/WORKFLOW.md" \
    && grep -qF 'gate-ledger.sh start' "$KIT_DIR/commands/assign.md"; then
@@ -2181,11 +2181,11 @@ fi
 #     flag the registry as runtime duplication).
 TOTAL=$((TOTAL + 1))
 if grep -qi 'running-goal registry' "$KIT_DIR/commands/kit-health.md" 2>/dev/null \
-   && grep -q 'ADR-0022' "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
-  echo -e "  ${GREEN}PASS${NC} kit-health carries the running-goal-registry carve-out (ADR-0022) (SPEC-036)"
+   && grep -q 'cross-session registry decision' "$KIT_DIR/commands/kit-health.md" 2>/dev/null; then
+  echo -e "  ${GREEN}PASS${NC} kit-health carries the running-goal-registry carve-out (cross-session registry decision)"
   PASS=$((PASS + 1))
 else
-  echo -e "  ${RED}FAIL${NC} kit-health must record the running-goal-registry carve-out citing ADR-0022"
+  echo -e "  ${RED}FAIL${NC} kit-health must record the running-goal-registry carve-out citing the cross-session registry decision"
   FAIL=$((FAIL + 1))
 fi
 
@@ -2676,7 +2676,7 @@ echo ""
 echo "=== SPEC-081: anchored-confidence merge (ID-075) ==="
 # ============================================================
 RT81="$KIT_DIR/commands/review-team.md"
-RC=0; grep -qF 'Confidence anchors (SPEC-081' "$RT81" || RC=1
+RC=0; grep -qF 'Confidence anchors (EveryInc findings-schema)' "$RT81" || RC=1
 assert_eq "Step 2 carries the confidence-anchor contract" 0 $RC
 for a in "another lens would likely agree" "I can name the failing input" "the logic is airtight"; do
   RC=0; grep -qF "$a" "$RT81" || RC=1
