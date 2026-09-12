@@ -11,6 +11,12 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- `batch-debt-warn.sh` (PreToolUse Bash hook, `session` module): warns once per session when a
+  second `gh pr merge` runs and the gate ledger holds no lane START since that session's first
+  merge. A batch-shaped session (board sweep, overnight run) records neither gate taps nor a
+  debt marker, so its understanding debt used to be lost unless the operator backfilled by hand.
+  Advisory only, never blocks; the warn names the `gate-ledger.sh start` + `debt` fix in one line.
+  Merge counting uses the ledger substrate stream `merge-watch/<session_id>.log`.
 - `intake gate <url | "subject">` (`bin/intake`, `lib/intake/intake.sh`): the scripted dedup
   gate for knowledge intake. Reads six decision stores, the URL ledger, every board in the
   operator's boards registry, the verdict ledger, prior notes, this kit's own inventory via

@@ -244,6 +244,7 @@ file count so this table cannot drift):
 | `commit-format` | PreToolUse Bash | hard | drifting commit subjects (type, length, ticket-tag leakage) |
 | `anti-rationalization` | Stop | hard | declaring work complete while rationalizing known-incomplete work |
 | `spec-drift-guard` | PreToolUse Write | advisory | creating files the active spec never mentions |
+| `batch-debt-warn` | PreToolUse Bash | advisory | a session merging a second PR with no lane START since its first merge |
 | `slop-cleaner` | Stop | advisory | long-session code bloat; suggests, never blocks |
 | `context-readiness` | SessionStart | advisory | starting blind: injects spec/board state + an intent-first next step |
 | `context-hints` | UserPromptSubmit | convenience | none (temporal + keyword skill-hint injection, sub-ms, never blocks) |

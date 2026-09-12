@@ -113,6 +113,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `anti-rationalization.sh` | `[E]` | Stop | all legitimate phrases Claude | SPEC-003, SPEC-006, SPEC-008 +8 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `auto-format.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: Write\|Edit | SPEC-003, SPEC-084 | test-adopt.sh, test-hooks.sh, test-install-modules.sh |
 | `backlog-stage.sh` | `[E]` | SessionEnd | SessionEnd hook, function-named port of ops-toolkit's cc-backlog | SPEC-192, SPEC-194, SPEC-195 +4 | test-adopt.sh, test-install-modules.sh, test-intake-sweep.sh +2 |
+| `batch-debt-warn.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | - | test-batch-debt-warn.sh, test-install-modules.sh |
 | `citation-guard.sh` | `[E]` | Stop | Stop hook, function-named port of ops-toolkit's cc-citation-guard | SPEC-253 | test-install-modules.sh, test-kit-foldin-hooks.sh |
 | `codebase-index.sh` | `[E]` | SessionStart | SessionStart hook (OPT-IN), dwarves-kit | SPEC-043, SPEC-084, SPEC-085 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `commit-format.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-014, SPEC-032, SPEC-064 +1 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
