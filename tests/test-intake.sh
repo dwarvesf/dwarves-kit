@@ -131,12 +131,12 @@ assert "the hit label carries the prior verdict" "$(printf '%s' "$OUT" | jq -e '
 echo "=== AC4: a missing source is skipped, never fatal ==="
 run "$T/op-empty" gate "$FRESH_URL" >/dev/null
 assert "every key unset still exits 1 (a miss), not an error" "$([ "$RC" -eq 1 ]; echo $?)"
-for k in url board verdict note; do
+for k in url board verdict note pr; do
   assert "$k reported as skipped with a reason" \
     "$(printf '%s' "$OUT" | jq -e --arg k "$k" '[.skipped[] | select(.kind == $k) | select(.why != "")] | length == 1' >/dev/null; echo $?)"
 done
-assert "each of the four skipped sources printed one stderr line" \
-  "$([ "$(grep -c 'intake gate: skipped' "$T/err")" -eq 4 ]; echo $?)"
+assert "each of the five skipped sources printed one stderr line" \
+  "$([ "$(grep -c 'intake gate: skipped' "$T/err")" -eq 5 ]; echo $?)"
 # a command named but absent from PATH is the same non-fatal skip
 _write_operator "$T/op-nocmd" "dgst-does-not-exist"
 run "$T/op-nocmd" gate "$SEEN_URL" >/dev/null
