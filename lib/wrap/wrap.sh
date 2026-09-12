@@ -280,7 +280,7 @@ _wt_cleared() {
 # terminates every attribute with NUL, which keeps the path whole.
 _apply_worktrees() {
   local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
-  local main_wt rec wt wt_c wtb proof lock verdict
+  local main_wt rec wt wt_c wtb proof lock verdict tip scanned
   echo "-- worktrees:"
   main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   main_wt="${main_wt%/.git}"; main_wt="${main_wt%/}"
@@ -300,6 +300,9 @@ _apply_worktrees() {
     if [ -z "$wtb" ]; then
       echo "     SKIP ${wt}: detached HEAD (removal could orphan the commit)"; continue
     fi
+    case "$wtb" in "$def"|main|master)
+      echo "     SKIP ${wt}: ${wtb} is the default or a protected branch name"; continue ;;
+    esac
     if [ "$wtb" = "$cur" ]; then
       echo "     SKIP ${wt}: ${wtb} is the main checkout's branch"; continue
     fi
@@ -309,10 +312,17 @@ _apply_worktrees() {
     proof="$(_merge_proof "$repo" "$def" "$ghs" "$wtb")" || {
       echo "     SKIP ${wt}: ${wtb} is not proven merged into ${def} (leave it)"; continue
     }
-    # A lock is not a reason to keep a proven worktree: the Agent tool locks every worktree it
-    # creates, so the locked ones are exactly the finished agent runs. `-f -f`, not `--force`:
-    # one --force refuses a locked worktree outright (`cannot remove a locked working tree`),
-    # measured on git 2.55; two overrides the lock once the guards above have passed.
+    # The proof above can cost a network round trip, so both destructive inputs are re-read right
+    # before the force: `-f -f` overrides a worktree that went dirty, and `-D` discards a commit
+    # made since the run's own tip snapshot.
+    if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
+      echo "     SKIP ${wt}: went dirty while the proof was read"; continue
+    fi
+    tip="$(git -C "$repo" rev-parse "$wtb" 2>/dev/null)"
+    scanned="$(_scanned_tip "$wtb")"
+    if [ -n "$scanned" ] && [ "$tip" != "$scanned" ]; then
+      echo "     SKIP ${wt}: ${wtb} tip moved during this run ($(_short "$scanned") -> $(_short "$tip"))"; continue
+    fi
     lock="unlocked"; _wt_locked "$wt" && lock="locked"
     verdict="remove worktree ${wt} [${wtb}, ${lock}] and delete ${wtb} (${proof})"
     if [ "$APPLY" != 1 ]; then
@@ -321,6 +331,10 @@ _apply_worktrees() {
     if ! _write_guard "$repo"; then
       echo "     SKIP ${wt}: index.lock held by another writer"; continue
     fi
+    # A lock is not a reason to keep a proven worktree: the Agent tool locks every worktree it
+    # creates, so the locked ones are exactly the finished agent runs. `-f -f`, not `--force`:
+    # one --force refuses a locked worktree outright (`cannot remove a locked working tree`),
+    # measured on git 2.55; two overrides the lock once every guard above has passed.
     run "$repo" "$verdict" git -C "$repo" worktree remove -f -f "$wt"
     if _wt_cleared "$repo" "$wt"; then
       run "$repo" "delete ${wtb} (${proof}, its ${lock} worktree is gone)" \

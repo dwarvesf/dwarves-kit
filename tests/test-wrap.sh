@@ -255,6 +255,8 @@ for pair in "proven wt-clean" "dirty wt-dirty" "unproven squash-stale"; do
   git -C "$MTX" worktree add "$TMPD/mtx-$1" "$2" >/dev/null 2>&1
   git -C "$MTX" worktree lock "$TMPD/mtx-$1" >/dev/null 2>&1
 done
+# Unlocked and proven: the report reads the real lock state rather than assuming one.
+git -C "$MTX" worktree add "$TMPD/mtx-unlocked" merged-ancestor >/dev/null 2>&1
 echo dirt > "$TMPD/mtx-dirty/dirt.txt"
 set_stub rmain main
 
@@ -265,6 +267,8 @@ chk_has "matrix dry-run: the locked dirty worktree still skips as dirty" "$out" 
   "SKIP $TMPD_P/mtx-dirty: dirty (another session's work stays)"
 chk_has "matrix dry-run: the locked unproven worktree skips unproven" "$out" \
   "SKIP $TMPD_P/mtx-unproven: squash-stale is not proven merged into main (leave it)"
+chk_has "matrix dry-run: an unlocked proven worktree reads as unlocked" "$out" \
+  "WOULD remove worktree $TMPD_P/mtx-unlocked [merged-ancestor, unlocked] and delete merged-ancestor (ancestor of origin/main)"
 chk "matrix dry-run removed nothing" \
   "$([ -d "$TMPD/mtx-proven" ] && [ -d "$TMPD/mtx-dirty" ] && [ -d "$TMPD/mtx-unproven" ]; echo $?)"
 
@@ -279,6 +283,29 @@ chk "matrix apply kept the dirty and unproven worktrees" \
   "$([ -d "$TMPD/mtx-dirty" ] && [ -d "$TMPD/mtx-unproven" ]; echo $?)"
 chk "matrix apply kept the unproven worktree's branch" \
   "$(git -C "$MTX" show-ref --verify --quiet refs/heads/squash-stale; echo $?)"
+
+# ===========================================================================
+echo "=== apply --worktrees: the default branch and the main checkout's branch are off limits ==="
+# ===========================================================================
+# git allows a second worktree on an already-checked-out branch under --force, which is the only
+# way either guard can be reached. Both would otherwise pass the merge proof: the default branch is
+# an ancestor of itself, and a session's own branch may well be merged already.
+make_clone guards rmain main unmerged
+GUARDS="$TMPD/clone-guards"
+git -C "$GUARDS" worktree add --force "$TMPD/wt-guards-default" main >/dev/null 2>&1
+git -C "$GUARDS" worktree lock "$TMPD/wt-guards-default" >/dev/null 2>&1
+git -C "$GUARDS" worktree add --force "$TMPD/wt-guards-cur" unmerged >/dev/null 2>&1
+git -C "$GUARDS" worktree lock "$TMPD/wt-guards-cur" >/dev/null 2>&1
+set_stub rmain main
+out="$("$WRAP" apply --apply --worktrees "$GUARDS" 2>&1)"
+chk_has "apply --worktrees: a worktree on the default branch is skipped" "$out" \
+  "SKIP $TMPD_P/wt-guards-default: main is the default or a protected branch name"
+chk_has "apply --worktrees: a worktree on the main checkout's branch is skipped" "$out" \
+  "SKIP $TMPD_P/wt-guards-cur: unmerged is the main checkout's branch"
+chk "apply --worktrees: both guarded worktrees and their branches survive" \
+  "$([ -d "$TMPD/wt-guards-default" ] && [ -d "$TMPD/wt-guards-cur" ] \
+     && git -C "$GUARDS" show-ref --verify --quiet refs/heads/main \
+     && git -C "$GUARDS" show-ref --verify --quiet refs/heads/unmerged; echo $?)"
 
 # ===========================================================================
 echo "=== apply --apply --worktrees: a removal that leaves the path is FAILED, exit 2 ==="
@@ -301,6 +328,11 @@ chk "apply exits 2 when the postcondition fails" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "the failed postcondition is reported, not silent" "$out" \
   "FAILED remove worktree $TMPD_P/ro-parent/stuck [wt-clean, locked] and delete wt-clean (squash-merged per gh): $TMPD_P/ro-parent/stuck survived the removal, wt-clean not deleted"
 chk "the stuck worktree path is still there" "$([ -d "$TMPD/ro-parent/stuck" ]; echo $?)"
+# The branch delete is the half a silent postcondition would cost, so the worktree step must not
+# reach it. The later branch pass may still delete the same proven branch under its own gate,
+# which is why the assertion reads the step's own line rather than the ref.
+chk_no "a failed postcondition never reaches the worktree step's branch delete" "$out" \
+  "delete wt-clean (squash-merged per gh, its locked worktree is gone)"
 
 # ===========================================================================
 echo "=== apply --apply: a non-ff default branch is FAILED, exit 2, never forced ==="
@@ -338,6 +370,16 @@ chk "apply: the moved-tip branch survives" \
 chk "apply: the unmoved squash-ok branch still went" \
   "$(git -C "$TIPSREPO" show-ref --verify --quiet refs/heads/squash-ok && echo 1 || echo 0)"
 
+# The worktree gate re-reads the tip after the merge proof, because the proof can cost a network
+# round trip and `-D` discards a commit made inside that window.
+sed 's/^wt-clean .*/wt-clean 3333333333333333333333333333333333333333/' \
+  "$STALE_TIPS" > "$STALE_TIPS.new" && mv -f "$STALE_TIPS.new" "$STALE_TIPS"
+out="$("$WRAP" apply --apply --worktrees --tips-file "$STALE_TIPS" "$TIPSREPO" 2>&1)"
+chk_has "apply --worktrees: a worktree whose branch tip moved is skipped" "$out" \
+  "SKIP $TMPD_P/wt-tips-clean: wt-clean tip moved during this run (3333333"
+chk "apply --worktrees: the moved-tip worktree and branch survive" \
+  "$([ -d "$TMPD/wt-tips-clean" ] && git -C "$TIPSREPO" show-ref --verify --quiet refs/heads/wt-clean; echo $?)"
+
 # ===========================================================================
 echo "=== apply: index.lock age decides, and a non-repo never reaches a write ==="
 # ===========================================================================
@@ -365,6 +407,15 @@ out="$("$WRAP" apply --apply "$LOCKREPO" 2>&1)"
 chk_has "apply: a fresh index.lock that persists past the window refuses the write" "$out" "index.lock held by another writer"
 rm -f "$LOCKREPO/.git/index.lock"
 
+# The same guard, at the worktree write site: the clean locked worktree is proven, so only the
+# lock stands between it and a removal.
+touch -t 202601010000 "$LOCKREPO/.git/index.lock"
+out="$("$WRAP" apply --apply --worktrees "$LOCKREPO" 2>&1)"
+rm -f "$LOCKREPO/.git/index.lock"
+chk_has "apply --worktrees: a stale index.lock refuses the worktree removal" "$out" \
+  "SKIP $TMPD_P/wt-lock-clean: index.lock held by another writer"
+chk "apply --worktrees: the refused worktree is still there" "$([ -d "$TMPD/wt-lock-clean" ]; echo $?)"
+
 out="$("$WRAP" apply --apply "$TMPD/not-a-repo" "$LOCKREPO" 2>&1)"
 chk_has "apply: a non-repo argument is skipped before any write" "$out" "not a git repo, skipped"
 chk_has "apply: the repo after the non-repo still runs" "$out" "-- branches:"
@@ -381,6 +432,11 @@ out="$("$WRAP" apply --apply "$BROKEN" 2>&1)"
 chk_has "apply: the failed fetch is reported" "$out" "(fetch failed; every delete is skipped)"
 chk_has "apply: the ancestor branch names the stale-data reason" "$out" \
   "SKIP merged-ancestor: fetch failed, stale ancestor data"
+out="$("$WRAP" apply --apply --worktrees "$BROKEN" 2>&1)"
+chk_has "apply --worktrees: a failed fetch skips the worktree with the stale-proof reason" "$out" \
+  "SKIP $TMPD_P/wt-brokenremote-clean: fetch failed, stale merge proof for wt-clean"
+chk "apply --worktrees: the broken-remote repo lost no worktree" \
+  "$([ -d "$TMPD/wt-brokenremote-clean" ]; echo $?)"
 chk "apply: the broken-remote repo lost no branch" \
   "$([ "$BROKEN_BEFORE" = "$(git -C "$BROKEN" for-each-ref --format='%(refname:short)' refs/heads/ | sort)" ]; echo $?)"
 
