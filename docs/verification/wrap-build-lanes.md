@@ -77,11 +77,19 @@ pass unchanged, which is the backward-compatibility claim.
 Produced with `lib/gate/negctl.sh` after the change was committed.
 
 ```
-NEGCTL_BLOCK
+## Negative control (negctl)
+Command: bash tests/test-wrap.sh >/dev/null 2>&1
+Exit: 0 (green before mutation)
+Mutation: perl -pi -e "s/lane=\[a-z\]\+/lane=ZZZZZZ/" lib/wrap/report-lint.sh
+Changed: lib/wrap/report-lint.sh
+Exit: 1 (under mutation, RED expected)
+Restore: git checkout HEAD -- lib/wrap/report-lint.sh
+Exit: 0 (green after restore)
+Verdict: PASS
 ```
 
-The mutation removes the lane-closure arm, so an item carrying `lane=normal` and nothing else
-lints clean. The suite goes red, so the new cases constrain the rule they name.
+The mutation blinds the lane detector, so an item carrying `lane=normal` and nothing else lints
+clean. The suite goes red, so the new cases constrain the rule they name.
 
 ## Reproduce
 
