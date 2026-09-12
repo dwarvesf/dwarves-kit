@@ -59,6 +59,23 @@ assert_eq "plugin.json version matches VERSION file" "$VERSION_FILE" "$PLUGIN_VE
 TOOL_TOML_VERSION=$(grep -E '^version' "$KIT_DIR/tool.toml" | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
 assert_eq "tool.toml version matches VERSION file (3-surface pin, SPEC-115)" "$VERSION_FILE" "$TOOL_TOML_VERSION"
 
+# `bin/learn` (#560, ADR-0036) is a "kept for ONE release" forwarder: it first ships in
+# 2.3.0 and is due for deletion starting 2.4.0 (backlog ID-839, docs/CHANGELOG.md
+# Deprecated entry). Neither promise was ever mechanically enforced -- the battery's own
+# finding -- so this trips red the moment VERSION reaches 2.4.0 while the file still
+# exists, instead of the removal silently missing its own release like `bin/skill-
+# improve` did. `sort -V` handles "2.10.0" > "2.4.0" correctly; a bare string compare
+# would not.
+BIN_LEARN_DUE_VERSION="2.4.0"
+if [ -e "$KIT_DIR/bin/learn" ]; then
+  LOWER="$(printf '%s\n%s\n' "$VERSION_FILE" "$BIN_LEARN_DUE_VERSION" | sort -V | head -1)"
+  BIN_LEARN_OVERDUE=1
+  [ "$LOWER" = "$VERSION_FILE" ] && [ "$VERSION_FILE" != "$BIN_LEARN_DUE_VERSION" ] && BIN_LEARN_OVERDUE=0
+else
+  BIN_LEARN_OVERDUE=0
+fi
+assert_true "bin/learn forwarder is deleted by VERSION $BIN_LEARN_DUE_VERSION (ID-839; currently $VERSION_FILE)" "$BIN_LEARN_OVERDUE"
+
 # ============================================================
 echo "=== Invocation namespace guard (SPEC-029, SPEC-030) ==="
 # ============================================================
