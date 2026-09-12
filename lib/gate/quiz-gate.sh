@@ -47,7 +47,19 @@ source "$LIB_ROOT/config/kit-config.sh"
 
 # _teacher -- resolve understand.teach (ADR-0036); prints the name or nothing when unset. Never
 # a project .kit.toml (kit_config_get_root): the key names code this engine's own callers run.
-_teacher() { kit_config_get_root understand.teach ""; }
+#
+# Trimmed here, once, so a whitespace-only value (an operator kit.toml with `teach = " "`)
+# reads as empty everywhere: `[ -n "$teacher" ]` (cmd_route) and `${teacher:-skipped: no
+# teacher}` (cmd_respond's engage branch) both treat a single space as non-empty, which
+# routed a BLANK skill name through the Skill tool instead of "skipped: no teacher" -- the
+# key is root-only (only the operator can set it), so the damage is a confusing no-op, not an
+# injection, but it is silent. Fixed at the resolver so every caller inherits it, present and
+# future, rather than repeating the trim at each call site.
+_teacher() {
+  local t; t="$(kit_config_get_root understand.teach "")"
+  t="${t#"${t%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}"
+  printf '%s' "$t"
+}
 
 # _primary_file <ref> -- the first non-doc, non-test changed file in READING order (reuses
 # lib/explain.sh's grounded ordering). This is the code the quiz drills. Prints NOTHING when the
