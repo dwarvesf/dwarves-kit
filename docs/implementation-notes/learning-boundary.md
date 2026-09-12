@@ -432,6 +432,31 @@ Impact: no dwarves-kit file changed. Full deltas + the real-file compatibility
 transcript: `docs/verification/one-ledger.md` (learning-kit#11).
 Open questions: none new.
 
+## 2026-09-12 The preset carries operator paths that block a public launch
+
+Context: a fresh-context verifier audited SG-03's frozen heads and confirmed the
+scrub-later decision above is correct under move-not-rewrite (learning-kit stays
+private today), but flagged that its own README already promises a marketplace
+listing "at launch," and the five pre-existing lines carry more than a bare
+path: they name the operator's real vault layout and point at private repos
+(`ops-toolkit`).
+Decision: no scrub here (per the earlier ruling, unchanged). Filed as a named
+blocker instead: `tieubao/learning-kit` `_meta/BACKLOG.md` LK-25 names both
+files and all five line numbers (`presets/operator/skills/concept-explain/
+SKILL.md:116,118`; `presets/operator/skills/learning-day-process/references/
+GUIDE.md:21,54,170`) and states plainly that scrubbing them blocks the public
+flip.
+Why: a debt with no row is a debt nobody schedules; LK-19 already covers the
+general open-source-readiness question but predates this sub-goal and does not
+name these five lines, so a reader auditing LK-19 alone would not find them.
+Alternatives: scrub now (rejected by the operator's own move-not-rewrite ruling
+for a still-private repo, unchanged here); rely on LK-19 alone (rejected, it is
+a different, older, broader claim that does not name this preset's specific
+lines).
+Impact: no dwarves-kit file changed. `tieubao/learning-kit` PR carries LK-25 and
+`docs/verification/one-ledger.md`'s corresponding section.
+Open questions: none new.
+
 ## Open questions
 
 DEC-003's scope narrowing (this file's first entry above) is the operator's call to confirm; SPEC-285 carries the same question.
