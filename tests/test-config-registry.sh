@@ -298,6 +298,115 @@ wrap.drain_staged|false|true
 KEYS
 rm -rf "$AUTONOMY_DIR"
 
+# --------------------------------------------- AC10: root-only fence equality (battery finding)
+# The battery reproduced a real leak: five `[impl]` command-autonomy rows above resolve
+# root-only in their real consumers (commands/ship.md, debug.md, review-team.md) but their
+# Doc column never says `kit_config_get_root`, so the OLD `_is_root_only` (a substring grep
+# on Doc prose) fenced nothing for them and `bin/config get ship.confirm_bump` leaked a
+# project .kit.toml override. `_is_root_only` now reads the "## Root-only keys" table
+# instead of Doc prose (config.sh's `_root_only_rows`). This AC is the regression guard: it
+# re-derives BOTH sides independently and asserts they are the exact same set, so the two
+# lists can never drift apart again.
+echo ""
+echo "=== AC10: '## Root-only keys' table equals the real kit_config_get_root call-site set ==="
+
+# DECLARED side: the registry's own table, same window rule as config.sh's _root_only_rows
+# (kept local to this test file so it never depends on sourcing config.sh, per the _seam_rows
+# convention above).
+_root_only_declared() {
+  awk '
+    /^## Root-only keys/ {inroot=1; next}
+    inroot && /^## / {inroot=0}
+    inroot && /^\|/ {
+      if ($0 ~ /^\| Key \|/) next
+      if ($0 ~ /^\|---/) next
+      print
+    }
+  ' "$REGISTRY" | while IFS= read -r r; do printf '%s\n' "$(_window_col "$r" 1)"; done | sort -u
+}
+
+# ACTUAL side: every literal `section.key` argument passed to `kit_config_get_root` in
+# lib/, commands/, hooks/, and bin/ (the finding's own scope) -- EXCLUDING
+# lib/config/kit-config.sh, the accessor's OWN definition + `selftest` block. That block
+# demonstrates the generic primitive against fixture keys (mega.wave_cap, ledger.location,
+# gauntlet.runner_host, gauntlet.nope) that are not themselves root-only registry rows;
+# treating a self-test call as "a consumer reads this key root-only" would demand a registry
+# row for a key that has none, and none of gauntlet.* has an env<->key row at all (a
+# pre-existing, separately-documented gap under "## Known gaps", not this AC's job).
+_root_only_actual() {
+  grep -rhoE 'kit_config_get_root[[:space:]]+"?[A-Za-z_]+\.[A-Za-z_]+"?' \
+    "$KIT_DIR/lib" "$KIT_DIR/commands" "$KIT_DIR/hooks" "$KIT_DIR/bin" 2>/dev/null \
+    --exclude="$(basename "$KIT_DIR/lib/config/kit-config.sh")" \
+    | sed -E 's/kit_config_get_root[[:space:]]+"?([A-Za-z_]+\.[A-Za-z_]+)"?/\1/' \
+    | sort -u
+}
+
+DECLARED="$(_root_only_declared)"
+ACTUAL="$(_root_only_actual)"
+ROOT_DIFF="$(diff <(printf '%s\n' "$DECLARED") <(printf '%s\n' "$ACTUAL") || true)"
+if [ -n "$ROOT_DIFF" ]; then
+  echo "  DIFF (< declared, > actual call sites):" >&2
+  echo "$ROOT_DIFF" | sed 's/^/  /' >&2
+fi
+assert "declared root-only keys == actual kit_config_get_root call sites" "$([ -z "$ROOT_DIFF" ] && echo 0 || echo 1)"
+
+# NEGATIVE CONTROL: prove AC10 is not vacuous -- a key removed from the table must be flagged.
+PLANTED_DIFF="$(diff <(printf '%s\n' "$DECLARED" | grep -v '^ship\.confirm_bump$') <(printf '%s\n' "$ACTUAL") || true)"
+assert "AC10 negative control: dropping ship.confirm_bump from DECLARED is caught" "$([ -n "$PLANTED_DIFF" ] && echo 0 || echo 1)"
+# AC10 already covers precedent.registry mechanically (it is one of the 15 keys the ACTUAL
+# scan finds via lib/precedent/precedent.sh's real `kit_config_get_root precedent.registry`
+# call site, and one of the 15 rows in the DECLARED table) -- no hand-listing needed, and no
+# second, narrower assertion for it: the escaped-pipe bug below is why it needed its own AC.
+RC=0; printf '%s\n' "$DECLARED" | grep -qxF 'precedent.registry' || RC=1
+assert "precedent.registry is covered by AC10's mechanical scan, not hand-listed" "$RC"
+
+# --------------------------------------------- AC11: _row_get survives a markdown-escaped
+# pipe inside a cell (fresh-eyes battery finding, distinct from AC10's fence-source bug).
+# precedent.registry's live Doc cell lists `repo\|scripts\|skills\|crons\|memory`: a naive
+# `IFS='|' read -ra` splits on that escaped pipe too, so the row fragments into 13 fields
+# instead of 6 and column 6 (Doc) lands on a truncated fragment. This reimplements
+# config.sh's OWN `_row_get` fix locally (same reason `_window_rows`/`_seam_col` above do:
+# sourcing config.sh runs `main "$@"` on load) so the parser behavior is pinned even if
+# config.sh's internals move.
+_row_get_esc() {
+  local row="$1" idx="$2" f v
+  IFS='|' read -ra f <<< "${row//\\|/$'\x01'}"
+  v="${f[$idx]:-}"
+  v="${v//$'\x01'/|}"
+  v="${v#"${v%%[![:space:]]*}"}"; v="${v%"${v##*[![:space:]]}"}"
+  printf '%s' "$v"
+}
+echo ""
+echo "=== AC11: _row_get survives a markdown-escaped pipe inside a cell ==="
+ESC_ROW='| ENVX | sect.key | `d` | [impl] | mod | scan `a\|b\|c` for X |'
+RC=0; [ "$(_row_get_esc "$ESC_ROW" 2)" = "sect.key" ] || RC=1
+assert "field 2 (tomlkey) unaffected by a LATER escaped pipe" "$RC"
+RC=0; [ "$(_row_get_esc "$ESC_ROW" 6)" = 'scan `a|b|c` for X' ] || RC=1
+assert "field 6 (doc) keeps the escaped pipes as literal content, not truncated" "$RC"
+# The live row this bug actually hit, read straight from the registry file.
+LIVE_ROW="$(awk '/^## Env <-> key registry/{f=1} /^## Allowlist/{f=0} f' "$REGISTRY" | grep 'precedent.registry')"
+RC=0; [ "$(_row_get_esc "$LIVE_ROW" 2)" = "precedent.registry" ] || RC=1
+assert "live precedent.registry row: field 2 correct" "$RC"
+RC=0; case "$(_row_get_esc "$LIVE_ROW" 6)" in *'built-in scan only.') RC=0 ;; *) RC=1 ;; esac
+assert "live precedent.registry row: field 6 (doc) is the FULL sentence, not truncated at the first escaped pipe" "$RC"
+
+# --------------------------------------------- AC12: precedent.registry regression control
+# (the exact command pair from the finding). A project .kit.toml MUST NOT win this key on
+# the config READ surface (`bin/config get`/`explain`); `precedent find`'s own consumer was
+# never affected (lib/precedent/precedent.sh calls `kit_config_get_root` directly), so this
+# is scoped precisely to the scripting surface the module documents as its contract.
+echo ""
+echo "=== AC12: precedent.registry regression control (config get/explain, project override) ==="
+PREC_DIR="$(mktemp -d)"
+printf '[precedent]\nregistry = "/tmp/attacker-inventory.txt"\n' > "$PREC_DIR/.kit.toml"
+PREC_GET="$(KIT_PROJECT_ROOT="$PREC_DIR" bash "$CONFIG_BIN" get precedent.registry)"
+RC=0; [ "$PREC_GET" = "/tmp/attacker-inventory.txt" ] && RC=1
+assert "config get precedent.registry ignores the attacker project override (got: $PREC_GET)" "$RC"
+PREC_EXPLAIN="$(KIT_PROJECT_ROOT="$PREC_DIR" bash "$CONFIG_BIN" explain precedent.registry)"
+RC=0; printf '%s' "$PREC_EXPLAIN" | grep -q 'source: project .kit.toml' && RC=1
+assert "config explain precedent.registry never reports source: project .kit.toml" "$RC"
+rm -rf "$PREC_DIR"
+
 echo ""
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ]

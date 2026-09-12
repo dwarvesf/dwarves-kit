@@ -396,6 +396,42 @@ module, and description come from the registry rows above and are not repeated h
 | PROSE_RAG_BIN | binary | context-kit |
 | understand.teach | skill | learning-kit understand lane, or the operator |
 
+## Root-only keys
+
+The complete set of `kit.toml` keys resolved with `kit_config_get_root` (SPEC-249's fence: a
+project `.kit.toml` must never win for a key that names code a command runs or a path outside
+the repo, because a project toml rides inside an untrusted PR). This table is the ONE
+machine-readable source `_is_root_only` reads. It used to be inferred by grepping a row's Doc
+column for the literal string `kit_config_get_root`, and five `[impl]` command-autonomy rows
+above (`ship.confirm_bump`, `ship.confirm_commit`, `ship.create_changelog`,
+`debug.confirm_fix`, `review.apply_findings`) documented the behavior in prose without ever
+naming the accessor, so `bin/config get|list|explain` silently fenced nothing for them while
+their real consumers (`commands/ship.md`, `commands/debug.md`, `commands/review-team.md`)
+already read them root-only. `tests/test-config-registry.sh` AC10 asserts this table is
+EXACTLY the set of keys actually passed to `kit_config_get_root` across `lib/` (excluding
+`lib/config/kit-config.sh`, the accessor's own definition + self-test, whose demo calls
+exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host`,
+`gauntlet.nope`, `ledger.location` -- that are not themselves root-only rows), `commands/`,
+`hooks/`, and `bin/`.
+
+| Key |
+|---|
+| debug.confirm_fix |
+| knowledge.root |
+| precedent.registry |
+| review.apply_findings |
+| ship.confirm_bump |
+| ship.confirm_commit |
+| ship.create_changelog |
+| understand.teach |
+| wrap.activity_log |
+| wrap.after |
+| wrap.before |
+| wrap.build_candidates |
+| wrap.drain_staged |
+| wrap.merge_own_prs |
+| wrap.tidy_worktrees |
+
 ## Known gaps (documented, not enforced by this lint , out of this sub-goal's scope)
 
 The seed regex is deliberately the exact reproducible command named in

@@ -72,12 +72,20 @@ _registry_rows() {
 }
 
 # _row_get <row> <1..6> -- trimmed column (1=env var, 2=kit.toml key, 3=default, 4=status,
-# 5=module, 6=doc). Pipe-split is safe: the registry deliberately keeps no literal `|` inside
-# a cell (verified at authoring time; see the sub-goal's proof-of-done pipe-count check).
+# 5=module, 6=doc). A cell CAN carry a literal `|`, escaped as `\|` (markdown's own escape,
+# so the byte renders as a pipe instead of opening a phantom table cell): precedent.registry's
+# Doc cell lists `repo\|scripts\|skills\|crons\|memory`. A naive `IFS='|' read -ra` does not
+# know about that escape and splits on the byte anyway -- that row split into 13 fields
+# instead of 6, and `_row_get "$row" 6` (the OLD `_is_root_only`'s only read) landed on a
+# fragment truncated at the first escaped pipe. Swap `\|` for a sentinel byte before
+# splitting, then restore it per field, so an escaped pipe stays literal cell content instead
+# of a phantom boundary; every field index before the first escape is unaffected either way,
+# which is why the SHIP/DEBUG/REVIEW keys never showed this symptom.
 _row_get() {
-  local row="$1" idx="$2" f
-  IFS='|' read -ra f <<< "$row"
-  _trim "${f[$idx]:-}"
+  local row="$1" idx="$2" f v
+  IFS='|' read -ra f <<< "${row//\\|/$'\x01'}"
+  v="${f[$idx]:-}"
+  _trim "${v//$'\x01'/|}"
 }
 
 # _seam_rows -- print every data row (raw, pipe-delimited) from the "## Seams" join table
@@ -132,14 +140,41 @@ _default_value() {
   esac
 }
 
-# _is_root_only <row> -- true when this row's Doc column (col 6) documents itself as
-# resolved with `kit_config_get_root` (SPEC-249's root-only fence: the project .kit.toml
-# layer must never win for a key that names code a command runs or a path outside the repo,
-# because a project toml rides inside an untrusted PR). Read from the registry's own prose,
-# never a second hardcoded list: every root-only row already says so (wrap.before/after,
-# the [wrap] autonomy knobs, precedent.registry, knowledge.root, understand.teach, ...).
+# _root_only_rows -- print every Key cell (still pipe-delimited) from the "## Root-only
+# keys" table: the ONE machine-readable source `_is_root_only` reads. It sits AFTER
+# "## Seams" and BEFORE "## Known gaps"; the window closes at the next top-level "## "
+# heading, same stop rule as _seam_rows, so it never doubles as a registry row.
+_root_only_rows() {
+  [ -f "$REGISTRY_FILE" ] || { echo "config: registry file missing: $REGISTRY_FILE" >&2; return 1; }
+  awk '
+    /^## Root-only keys/ {inroot=1; next}
+    inroot && /^## / {inroot=0}
+    inroot && /^\|/ {
+      if ($0 ~ /^\| Key \|/) next
+      if ($0 ~ /^\|---/) next
+      print
+    }
+  ' "$REGISTRY_FILE"
+}
+
+# _is_root_only <row> -- true when this row's kit.toml key (col 2) is listed in the
+# "## Root-only keys" table (SPEC-249's root-only fence: the project .kit.toml layer must
+# never win for a key that names code a command runs or a path outside the repo, because a
+# project toml rides inside an untrusted PR). Membership in that table, NOT a substring
+# match on the row's own Doc prose: five `[impl]` command-autonomy rows (ship/debug/review)
+# described the behavior in words without ever naming the accessor, so the old
+# `*kit_config_get_root*` grep on col 6 silently fenced nothing for them while their real
+# consumers (commands/ship.md, debug.md, review-team.md) read them root-only regardless.
+# tests/test-config-registry.sh AC10 asserts the table equals the real call-site set.
 _is_root_only() {
-  case "$(_row_get "$1" 6)" in *kit_config_get_root*) return 0 ;; esac
+  local tomlkey rk r
+  tomlkey="$(_row_get "$1" 2)"
+  [ -n "$tomlkey" ] && [ "$tomlkey" != "-" ] || return 1
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    rk="$(_row_get "$r" 1)"
+    [ "$rk" = "$tomlkey" ] && return 0
+  done < <(_root_only_rows)
   return 1
 }
 
