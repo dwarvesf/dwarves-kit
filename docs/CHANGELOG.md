@@ -8,6 +8,16 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new keys, additive, MINOR): `[wrap] merge_own_prs`, `[wrap] tidy_worktrees`, `[wrap] build_candidates`, all defaulting `true`. An existing install keeps its current behavior without editing anything. All three resolve root-only, so a project `.kit.toml` cannot set them.
 - Ledger grammar, lanes.d plan format, export `schema`: unchanged.
 - Config surface (new key, additive, MINOR): `[output] style`, default `""`. Resolves project > operator > kit-root. Empty leaves every existing install untouched (SPEC-252).
+- Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
+
+### Added
+- `intake gate <url | "subject">` (`bin/intake`, `lib/intake/intake.sh`): the scripted dedup
+  gate for knowledge intake. Reads six decision stores, the URL ledger, every board in the
+  operator's boards registry, the verdict ledger, prior notes, this kit's own inventory via
+  `precedent find`, and open pull requests via `gh`, then prints every hit as one JSON object
+  and exits 0 on any hit, 1 on none. A store with no key, a command not on PATH, or a path
+  that does not exist is skipped with a reason and never fails the gate. Replaces five
+  hand-written prose copies of the same checklist, two of which had already drifted.
 
 ### Deprecated
 - `bin/learn` forwards to `bin/reflect` (same verbs, arguments, exit codes) for ONE release,

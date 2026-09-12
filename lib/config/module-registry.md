@@ -264,6 +264,22 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 |---|---|---|---|---|---|
 | PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get_root precedent.registry` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
 
+### intake (`intake gate` decision stores, no install module)
+
+Every row resolves with `kit_config_get_root` (the operator `kit.toml` or the kit-root
+`kit.toml` ONLY; a project `.kit.toml` is never read for any of them because two name a
+command the verb executes and two name a path outside the repo, and a project toml rides
+inside an untrusted pull request, `kit-config.sh:75-90`). Each store belongs to the operator,
+so every default is empty: an unset key, a command not on PATH, or a path that does not exist
+SKIPS that source with a stderr line and a `skipped` row, and never fails the gate.
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| - | intake.url_ledger | `""` | [consumer] | intake | Command that answers "have we consumed this URL", executed as `<cmd> check <url>` with exit 0 meaning seen and its stdout parsed as JSON (`date`, `verdict`, `conclusion`). The value is a command name or path, not a ledger file, because the ledger's dedup key is a normalized URL and only its own tool can compute that. Empty skips the `url` source. |
+| - | intake.verdicts | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the operator's verdict ledger, one decided evaluation per line. The gate cites a line containing every word of the subject. Empty skips the `verdict` source. |
+| - | intake.boards | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the boards registry: `<name> <path-to-BACKLOG.md>` rows with `#` comments, the same format the operator's cross-repo board renderer reads. The gate scans every board the registry names and reports each hit's board by name; a row whose file is gone is passed over. Empty skips the `board` source. |
+| - | intake.notes | `""` | [consumer] | intake | Command that answers "have I written about this", executed as `<cmd> query <subject> --k N --floor F --json` and expected to print an array of `{source, heading}`. Semantic recall returns rows for any input, so the verb passes a similarity floor; without it the source would hit on everything. Empty skips the `note` source. |
+
 ### ship / debug / review (command autonomy knobs, no install module)
 
 Each key gates an action that is reversible in git; the shipped default acts. All resolve with
@@ -392,6 +408,10 @@ module, and description come from the registry rows above and are not repeated h
 | wrap.after | skill | learning-kit concept flush, or the operator |
 | wrap.activity_log | file | operator |
 | precedent.registry | file | operator |
+| intake.url_ledger | binary | operator, the tool that owns the consumed-URL ledger |
+| intake.verdicts | file | operator |
+| intake.boards | file | operator |
+| intake.notes | binary | operator, a recall tool over their own writing |
 | knowledge.root | dir | context-kit |
 | PROSE_RAG_BIN | binary | context-kit |
 | understand.teach | skill | learning-kit understand lane, or the operator |
@@ -417,6 +437,10 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | Key |
 |---|
 | debug.confirm_fix |
+| intake.boards |
+| intake.notes |
+| intake.url_ledger |
+| intake.verdicts |
 | knowledge.root |
 | precedent.registry |
 | review.apply_findings |
