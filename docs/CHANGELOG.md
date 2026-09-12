@@ -32,6 +32,13 @@ All notable changes to dwarves-kit are documented here.
 - Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
 
 ### Fixed
+- `tests/test-explain.sh`, `tests/test-quiz-gate.sh`, and `tests/test-weekend-batch.sh` captured
+  their proof samples (`docs/verification/{explain-command,quiz-gate,weekend-batch}/sample-*.md`)
+  with a fresh run-specific value baked in (a new fixture commit SHA each run for the first two,
+  a fresh wall-clock timestamp for the third), so every `tests/run-all.sh` pass rewrote all three
+  tracked files and left the checkout dirty, blocking `lib/gate/negctl.sh`'s clean-tree
+  requirement. Each test now normalizes its run-specific value to a fixed placeholder before
+  writing the sample, so the captured content is deterministic across runs (ID-830).
 - A transcript JSONL line that decoded to valid JSON but not an object (e.g. `["x"]`) crashed `session-observe cost`/`report` and `session-semantic` with `AttributeError: 'list' object has no attribute 'get'`. The shared `lib/session/parse_transcript.py` `iter_entries()` now skips a non-object decoded line the same way it already skips a malformed one; `session-observe`'s `blocks()`/`collect()` and `session-semantic`'s `collect_prompts()` also guard a valid entry whose `message`/`usage` field is itself non-dict.
 - `bin/release` rolled `[Unreleased]` into the root `CHANGELOG.md` stub instead of `docs/CHANGELOG.md` (SPEC-185 moved the real history there), wrote a stray comma in the section header instead of a hyphen, and missed the third version surface `tool.toml` that `tests/test-meta.sh` pins (SPEC-115). Now targets `docs/CHANGELOG.md`, writes `## [X.Y.Z] - date`, bumps `tool.toml` alongside `VERSION`/`plugin.json`, and prints the tag-push line last so it is not missed (ID-648).
 - The shared `SECRET_SHAPE_RE` in `lib/precedent/inventory.py` and `lib/session/recall/session_recall.py` missed AWS secret access keys, PEM private-key blocks, 1Password `ops_` service tokens, and `PASSWORD=`/`TOKEN=` assignments. Widened both byte-equal copies (pinned by `tests/test-precedent.sh`) as defense in depth on top of the `--explain` confinement (ID-642).
