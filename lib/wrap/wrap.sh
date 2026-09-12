@@ -15,9 +15,9 @@
 #
 # The write set is closed: branch delete under two proofs, worktree remove under
 # --worktrees, pull --ff-only on the default branch, the activity-log prepend, the
-# knowledge-root project directory, the staging-file append, and one gh pr merge. Every
-# other action is a report line. The verbs never switch a branch, never touch a dirty
-# file, never force a push or a pull, and never retry a failed git call. The one force is
+# knowledge-root project directory, the staging-file append, one gh pr merge, and one
+# bounded union re-merge push. Every other action is a report line. The verbs never switch
+# a branch, never touch a dirty file, and never force a push or a pull. The one force is
 # `worktree remove -f -f`, which overrides a lock after the dirty and detached guards pass.
 #
 # Ported from the operator's repo-wrapup scripts. The default branch is DETECTED, never
@@ -514,6 +514,73 @@ _pr_gate() {
     else "OK" end' 2>/dev/null
 }
 
+# _pr_detail_settled <url> <number> -- the detail read once GitHub has recomputed
+# mergeability. A push flips `mergeable` to UNKNOWN for a second or two, and a gate that
+# reads it inside that window refuses a PR that is fine. Bounded: five tries, then whatever
+# the field says, because a gate that never settles must still fail closed rather than spin.
+_pr_detail_settled() {
+  local url="$1" n="$2" i=0 detail="" m
+  while [ "$i" -lt 5 ]; do
+    detail="$(_pr_detail "$url" "$n")"
+    m="$(printf '%s' "$detail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    [ "$m" = "UNKNOWN" ] || break
+    i=$(( i + 1 )); sleep 2
+  done
+  printf '%s' "$detail"
+}
+
+# _branch_worktree <repo> <branch> -- the checkout that holds <branch>, empty when none does.
+# `--porcelain -z` NUL-terminates every attribute, which keeps a path carrying a newline whole.
+_branch_worktree() {
+  local repo="$1" branch="$2" wt="" rec
+  while IFS= read -r -d '' rec; do
+    case "$rec" in
+      "worktree "*) wt="${rec#worktree }" ;;
+      "branch refs/heads/${branch}") printf '%s' "$wt"; return 0 ;;
+    esac
+  done < <(git -C "$repo" worktree list --porcelain -z 2>/dev/null)
+  return 1
+}
+
+# _union_remerge <repo> <branch> <def> <head-oid> -- the one bounded recovery from a conflict
+# GitHub invented. A squash merge resolves on GitHub's side, which never reads .gitattributes,
+# so two branches that both appended to a merge=union log conflict on the PR while a local
+# `git merge` resolves them by keeping both sides. This runs that merge in the checkout that
+# holds the branch and pushes the result, which is the recovery an operator runs by hand.
+#
+# A merge that stops on a conflict is the proof that the divergence was NOT the union case:
+# git applies the union attribute here, so anything it cannot resolve is a real conflict a
+# human owns. That case aborts and leaves the branch exactly as it was. Runs once, never in
+# a loop, and only when the branch tip is still the head the PR gates read.
+_union_remerge() {
+  local repo="$1" branch="$2" def="$3" head_oid="$4" wt tip
+  [ -n "$branch" ] && [ -n "$head_oid" ] || { echo "     no branch or head SHA to re-merge"; return 1; }
+  wt="$(_branch_worktree "$repo" "$branch")" || {
+    echo "     no local checkout holds ${branch}, so there is nothing to re-merge in"; return 1; }
+  tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  [ "$tip" = "$head_oid" ] || {
+    echo "     ${branch} tip $(_short "$tip") is not the PR head $(_short "$head_oid"), left alone"; return 1; }
+  [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || {
+    echo "     ${wt} is dirty, so a re-merge would sweep uncommitted work into the branch"; return 1; }
+  _write_guard "$wt" || { echo "     index.lock held by another writer in ${wt}"; return 1; }
+
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "     fetch origin ${def} failed"; return 1; }
+  if git -C "$repo" merge-base --is-ancestor "origin/${def}" "$branch" 2>/dev/null; then
+    echo "     ${branch} already contains origin/${def}, so a re-merge cannot clear the conflict"; return 1
+  fi
+  if ! git -C "$wt" merge --no-edit "origin/${def}" >/dev/null 2>&1; then
+    git -C "$wt" merge --abort >/dev/null 2>&1
+    echo "     merging origin/${def} into ${branch} conflicts beyond the union-marked files, aborted"
+    return 1
+  fi
+  if ! git -C "$wt" push -q origin "$branch" 2>/dev/null; then
+    echo "     push of the re-merged ${branch} failed; the merge stays local for a human to inspect"
+    return 1
+  fi
+  echo "     re-merged origin/${def} into ${branch}, pushed $(_short "$(git -C "$wt" rev-parse HEAD)")"
+  return 0
+}
+
 cmd_merge() {
   local do_apply=0 arg repo="" count=0
   for arg in "$@"; do
@@ -549,7 +616,7 @@ cmd_merge() {
     printf '%s\t%s\t%s\n' "$n" "$head" "$base" >> "$cache"
   done
 
-  local first_eligible="" verdict title
+  local first_eligible="" verdict title conflict_n="" conflict_count=0
   for n in $numbers; do
     detail="$(cat "${jsondir}/pr-${n}.json" 2>/dev/null)"
     verdict="$(_pr_gate "$detail" "$def")"
@@ -567,11 +634,47 @@ cmd_merge() {
       [ -n "$first_eligible" ] || first_eligible="$n"
     else
       echo "SKIP #${n} ${title}: ${verdict#SKIP }"
+      case "$verdict" in
+        "SKIP not mergeable (CONFLICTING)")
+          conflict_count=$(( conflict_count + 1 )); conflict_n="$n" ;;
+      esac
     fi
   done
 
   local head_oid=""
   [ -n "$first_eligible" ] && head_oid="$(jq -r '.headRefOid // ""' "${jsondir}/pr-${first_eligible}.json" 2>/dev/null)"
+
+  # One bounded retry, and only when the conflict is the whole story: nothing else is
+  # eligible and exactly one PR is conflicting, so the branch to recover is unambiguous.
+  # The re-gate after the push is the authority: it re-reads every gate against the new
+  # head, so a push that dismissed an approval or broke a check refuses here.
+  if [ -z "$first_eligible" ] && [ "$conflict_count" = 1 ]; then
+    local c_head c_oid
+    c_head="$(jq -r '.headRefName // ""' "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"
+    c_oid="$(jq -r '.headRefOid // ""' "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"
+    if [ "$do_apply" != 1 ]; then
+      echo "note: #${conflict_n} conflicts; --apply would try one re-merge of ${def} into ${c_head}"
+    else
+      echo "retry #${conflict_n}: one re-merge of ${def} into ${c_head}"
+      if _union_remerge "$repo" "$c_head" "$def" "$c_oid"; then
+        detail="$(_pr_detail_settled "$url" "$conflict_n")"
+        verdict="$(_pr_gate "$detail" "$def")"
+        if [ -z "$verdict" ]; then
+          verdict="SKIP unreadable PR JSON"
+        elif [ "$verdict" = "OK" ] && awk -F'\t' -v h="$c_head" -v n="$conflict_n" \
+             '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
+          verdict="SKIP dependents open, retarget them first (SPEC-065)"
+        fi
+        if [ "$verdict" = "OK" ]; then
+          first_eligible="$conflict_n"
+          head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+          echo "eligible #${conflict_n} after the re-merge"
+        else
+          echo "SKIP #${conflict_n} after the re-merge: ${verdict#SKIP }"
+        fi
+      fi
+    fi
+  fi
   rm -rf "$jsondir"
 
   [ "$do_apply" = 1 ] || { echo "dry run; pass --apply to merge one PR."; return 0; }

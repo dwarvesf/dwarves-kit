@@ -76,6 +76,14 @@ case "$sub" in
             printf '%s\n' "${GH_STUB_VIEW_STATE:-$default_state}" ;;
           *)
             key="GH_STUB_PR_$n"; eval "val=\"\${$key:-}\""
+            # A second detail read may serve a different body, so a case can model the PR
+            # whose mergeability changes once the re-merge push lands.
+            cnt_f="${GH_STUB_CALLS:-/dev/null}.view-$n"
+            cnt=$(( $(cat "$cnt_f" 2>/dev/null || echo 0) + 1 )); echo "$cnt" > "$cnt_f" 2>/dev/null
+            if [ "$cnt" -gt 1 ]; then
+              key2="GH_STUB_PR_${n}_2"; eval "val2=\"\${$key2:-}\""
+              [ -n "${val2:-}" ] && val="$val2"
+            fi
             [ -n "$val" ] || val="{}"
             printf '%s\n' "$val" ;;
         esac
@@ -514,6 +522,120 @@ echo "=== merge: the post-merge state check fails closed ==="
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_VIEW_STATE='{"state":"OPEN","mergeCommit":null}' "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 2 when the PR is not MERGED after the call" "$([ "$rc" -eq 2 ]; echo $?)"
+
+# ===========================================================================
+echo "=== merge: one bounded re-merge when GitHub conflicts on a union-marked log ==="
+# ===========================================================================
+# GitHub squash-merges without reading .gitattributes, so a log both sides appended to
+# conflicts on the PR while `git merge` resolves it by union. Each case gets its own remote
+# and its own PR number, because the stub counts detail reads per number.
+build_remerge() { # build_remerge <name> [--also-conflict]
+  local name="$1" also="${2:-}" work="$TMPD/rm-work-$1" clone="$TMPD/rm-clone-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  mkdir -p "$work/_meta"
+  printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+  printf 'base line\n' > "$work/_meta/LAB_LOG.md"
+  printf 'shared\n' > "$work/a.txt"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git -C "$work" checkout -q -b feat/union
+  printf 'branch line\nbase line\n' > "$work/_meta/LAB_LOG.md"
+  [ "$also" = "--also-conflict" ] && printf 'branch side\n' > "$work/a.txt"
+  git -C "$work" commit -qam "branch entry"
+  git -C "$work" checkout -q main
+  printf 'main line\nbase line\n' > "$work/_meta/LAB_LOG.md"
+  [ "$also" = "--also-conflict" ] && printf 'main side\n' > "$work/a.txt"
+  git -C "$work" commit -qam "main entry"
+  git clone -q --bare "$work" "$TMPD/rm-bare-$name"
+  git clone -q "$TMPD/rm-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/union origin/feat/union
+}
+conflict_json() { # conflict_json <number>
+  printf '{"number":%s,"title":"log entry","headRefName":"feat/union","headRefOid":"%s","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' "$1" "$2"
+}
+open_one() { printf '[{"number":%s,"title":"log entry","headRefName":"feat/union"}]' "$1"; }
+
+# --- dry run: the retry is announced, never run
+build_remerge dry
+RM_DRY="$TMPD/rm-clone-dry"; RM_DRY_TIP="$(git -C "$RM_DRY" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 11)" GH_STUB_PR_11="$(conflict_json 11 "$RM_DRY_TIP")" \
+  "$WRAP" merge "$RM_DRY" 2>&1)"
+chk_has "re-merge dry run names the branch it would re-merge" "$out" \
+  "note: #11 conflicts; --apply would try one re-merge of main into feat/union"
+chk "re-merge dry run left the branch tip alone" \
+  "$([ "$(git -C "$RM_DRY" rev-parse feat/union)" = "$RM_DRY_TIP" ]; echo $?)"
+chk "re-merge dry run called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- apply: the union log resolves, the push lands, the re-gate passes, one merge follows
+build_remerge ok
+RM_OK="$TMPD/rm-clone-ok"; RM_OK_TIP="$(git -C "$RM_OK" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 12)" GH_STUB_PR_12="$(conflict_json 12 "$RM_OK_TIP")" \
+  GH_STUB_PR_12_2='{"number":12,"title":"log entry","headRefName":"feat/union","headRefOid":"feedfacefeedfacefeedfacefeedfacefeedface","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  "$WRAP" merge --apply "$RM_OK" 2>&1)"; rc=$?
+chk "re-merge --apply exits 0" "$rc"
+chk_has "re-merge --apply reports the push" "$out" "re-merged origin/main into feat/union, pushed"
+chk_has "re-merge --apply re-gates the PR" "$out" "eligible #12 after the re-merge"
+chk_has "re-merge --apply merges the recovered PR" "$out" "merged #12 1a2b3c4d5e6f"
+chk "re-merge --apply called pr merge exactly once" \
+  "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk "re-merge --apply pinned the head the re-gate read, not the stale one" \
+  "$(grep -q -- '--match-head-commit feedfacefeedfacefeedfacefeedfacefeedface' "$GH_STUB_CALLS"; echo $?)"
+chk "re-merge --apply advanced the remote branch" \
+  "$([ "$(git -C "$TMPD/rm-bare-ok" rev-parse feat/union)" != "$RM_OK_TIP" ]; echo $?)"
+chk "re-merge --apply kept both log lines" \
+  "$(grep -q 'branch line' "$RM_OK/_meta/LAB_LOG.md" && grep -q 'main line' "$RM_OK/_meta/LAB_LOG.md"; echo $?)"
+
+# --- apply: a conflict outside the union-marked files aborts and changes nothing
+build_remerge bad --also-conflict
+RM_BAD="$TMPD/rm-clone-bad"; RM_BAD_TIP="$(git -C "$RM_BAD" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 13)" GH_STUB_PR_13="$(conflict_json 13 "$RM_BAD_TIP")" \
+  "$WRAP" merge --apply "$RM_BAD" 2>&1)"; rc=$?
+chk "re-merge with a real conflict exits 0 without merging" "$rc"
+chk_has "re-merge with a real conflict says it aborted" "$out" \
+  "conflicts beyond the union-marked files, aborted"
+chk "re-merge with a real conflict left the branch tip alone" \
+  "$([ "$(git -C "$RM_BAD" rev-parse feat/union)" = "$RM_BAD_TIP" ]; echo $?)"
+chk "re-merge with a real conflict left no half-merged tree" \
+  "$([ -z "$(git -C "$RM_BAD" status --porcelain)" ]; echo $?)"
+chk "re-merge with a real conflict called no pr merge" \
+  "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- apply: a tip that is not the gated head is never pushed
+build_remerge tip
+RM_TIP="$TMPD/rm-clone-tip"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 14)" \
+  GH_STUB_PR_14="$(conflict_json 14 3333333333333333333333333333333333333333)" \
+  "$WRAP" merge --apply "$RM_TIP" 2>&1)"
+chk_has "re-merge refuses a branch whose tip is not the PR head" "$out" "is not the PR head"
+chk "re-merge tip mismatch called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- apply: two conflicting PRs leave the branch ambiguous, so nothing is retried
+build_remerge two
+RM_TWO="$TMPD/rm-clone-two"; RM_TWO_TIP="$(git -C "$RM_TWO" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[{"number":15,"title":"log entry","headRefName":"feat/union"},{"number":16,"title":"other","headRefName":"feat/other"}]' \
+  GH_STUB_PR_15="$(conflict_json 15 "$RM_TWO_TIP")" \
+  GH_STUB_PR_16='{"number":16,"title":"other","headRefName":"feat/other","headRefOid":"bb","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  "$WRAP" merge --apply "$RM_TWO" 2>&1)"
+chk_no "two conflicting PRs retry neither" "$out" "one re-merge of main"
+chk "two conflicting PRs left the branch tip alone" \
+  "$([ "$(git -C "$RM_TWO" rev-parse feat/union)" = "$RM_TWO_TIP" ]; echo $?)"
+
+# --- apply: the re-gate after the push is the authority, not the merge that succeeded
+build_remerge gate
+RM_GATE="$TMPD/rm-clone-gate"; RM_GATE_TIP="$(git -C "$RM_GATE" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 17)" GH_STUB_PR_17="$(conflict_json 17 "$RM_GATE_TIP")" \
+  GH_STUB_PR_17_2='{"number":17,"title":"log entry","headRefName":"feat/union","headRefOid":"cc","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  "$WRAP" merge --apply "$RM_GATE" 2>&1)"
+chk_has "a re-gate that refuses after the push names the reason" "$out" \
+  "SKIP #17 after the re-merge: changes requested"
+chk "a refused re-gate calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
