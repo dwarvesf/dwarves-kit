@@ -98,10 +98,13 @@ where 823 is taken, 822 where 822 is taken, ID-821 where ID-821 is taken.
 
 One `git log -p --all` per mint, over one file.
 
-| Board | Rows | Time |
-|---|---|---|
-| ops-toolkit (largest in the estate) | ~820 | 0.44s |
-| dwarves-kit | ~650 | 0.04s |
+| Board | Rows | Time at ship (2026-09-09) | Re-measured 2026-09-12 |
+|---|---|---|---|
+| ops-toolkit (largest in the estate) | ~885 | 0.44s | 3.12s first call, 1.40s once the fetch is deduped |
+| dwarves-kit | ~872 | 0.04s | 3.65s first call |
+
+The re-measured numbers are higher for two reasons: both boards grew, and #596
+added the origin fetch described below, which the first call in a process pays.
 
 Mints are human-paced (`board capture`, `board promote`) or once per sync tick,
 and `add-backlog` pays it once per promote run rather than once per row.
@@ -116,10 +119,16 @@ Closing that needs a check at push time, not at mint time: compare the minted
 ids against the remote before the push lands, and renumber on a hit. That is a
 change to the push path, out of scope here.
 
-A `git fetch` before each mint was considered and deliberately rejected. It
-narrows the window without closing it, and it buys that by adding network
+A `git fetch` before each mint was considered and deliberately rejected here.
+It narrows the window without closing it, and it buys that by adding network
 latency plus an offline failure mode to every mint, including `board capture`,
 which the operator runs interactively.
+
+**Superseded by #596.** A live duplicate (consumer board ID-871, minted twice on
+2026-09-11) showed the unfetched window is wide enough to hit in practice, so
+`history_max_id` now does fetch origin: best-effort, 10s timeout, once per repo
+per process, and a failure is swallowed so an offline mint still scans local
+refs. #596 also added the publish-side duplicate check this section called for.
 
 Local concurrency between two promote runs on one machine was already covered
 by the `flock` in `add-backlog`; this branch does not change it.
@@ -129,4 +138,15 @@ by the `flock` in `add-backlog`; this branch does not change it.
 Command: `bash docs/verification/board-id-mint-history-floor.sh`
 Exit: 0
 Verdict: PASS
+
+## Row closure, 2026-09-12
+
+#541 shipped the fix but filed row ID-650 `queued` and never flipped it, so the
+row read as open work for three days. Re-verified on `origin/master` before
+closing it: all three minters pass the board path (`board.sh:870`,
+`sync_core.py:603`, `add-backlog:306` via the `floor` argument),
+`bash tests/test-sync.sh` 264 passed, `bash tests/test-board-promote.sh` 29
+passed, and the negative control above still reports RED without the fix and
+GREEN with it. The row is now `shipped`; the missing `docs/CHANGELOG.md` entry
+was added in the same pass.
 
