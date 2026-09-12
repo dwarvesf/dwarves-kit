@@ -19,18 +19,18 @@ A future third intake shape (e.g. an imported issue) is another branch of this s
 
 ### Step 1a: Freeform path (delegate, gate, sanitize, allocate, write)
 
-When the argument is freeform intent (does NOT match `^ID-[0-9]+$`), run these ordered steps. `/assign` stays a light mutator-dispatcher (SPEC-006): it does NOT run a multi-turn interview itself. Two invariants govern this path, and both come before any file is written:
+When the argument is freeform intent (does NOT match `^ID-[0-9]+$`), run these ordered steps. `/assign` stays a light mutator-dispatcher: it does NOT run a multi-turn interview itself. Two invariants govern this path, and both come before any file is written:
 
-- **approve-before-allocate**: pause for human approval of the crystallized objective BEFORE allocating an ID. A vague brief never auto-creates a row (DEC-002).
+- **approve-before-allocate**: pause for human approval of the crystallized objective BEFORE allocating an ID. A vague brief never auto-creates a row.
 - **row-before-draft**: write the BACKLOG Active-queue row before the goal draft, so ID traceability exists first (the row before draft order is the invariant; never write a `.claude/goals/` draft for an un-rowed intent).
 
-1. **Delegate crystallize to `/kit:think`.** Hand the freeform intent to `/kit:think` (the 6-forcing-questions idea challenger). It runs the interview and returns a crystallized objective + a lane. `/assign` does NOT embed that interview (DEC-003); it only consumes `/think`'s result. If the intent is too vague to name an outcome, `/think` loops; do not allocate anything until it converges.
+1. **Delegate crystallize to `/kit:think`.** Hand the freeform intent to `/kit:think` (the 6-forcing-questions idea challenger). It runs the interview and returns a crystallized objective + a lane. `/assign` does NOT embed that interview; it only consumes `/think`'s result. If the intent is too vague to name an outcome, `/think` loops; do not allocate anything until it converges.
 2. **Approval gate (approve-before-allocate).** Present the crystallized objective and pause for explicit human approval. Until the human approves, allocate nothing and write nothing. This is the gate that keeps half-baked rows out of the queue.
-3. **Dedup by slug.** Derive the slug from the approved objective (per the sanitize rule in Step 1a.4). If a `.claude/goals/<slug>.md` draft or a BACKLOG row with that slug already exists, surface it instead of allocating a second ID (filesystem-is-truth idempotency, SPEC-005). On a near-match slug, ask rather than silently merge or duplicate.
-4. **Sanitize (DEC-004).** Before the freeform text touches any file, sanitize it:
+3. **Dedup by slug.** Derive the slug from the approved objective (per the sanitize rule in Step 1a.4). If a `.claude/goals/<slug>.md` draft or a BACKLOG row with that slug already exists, surface it instead of allocating a second ID (filesystem-is-truth idempotency). On a near-match slug, ask rather than silently merge or duplicate.
+4. **Sanitize.** Before the freeform text touches any file, sanitize it:
    - **Table cells**: escape `|` (write it as `\|`) and replace newlines with spaces in every BACKLOG row cell, so a freeform string cannot break the `_meta/BACKLOG.md` pipe table.
    - **Slug**: reduce the derived slug to `[a-z0-9-]+` only. Lowercase, replace spaces with `-`, then strip `/`, `..`, and anything outside `[a-z0-9-]`, so the slug cannot traverse out of `.claude/goals/`. The kebab convention is unchanged; it is just hardened to `[a-z0-9-]+`.
-5. **Atomic allocate + write the row (DEC-005, row-before-draft).** Allocate the next `ID-NNN` by **re-reading the current max ID** in `_meta/BACKLOG.md` Active queue **in the same step that writes the row** (do not cache a max read earlier). The new ID is `max + 1`, zero-padded. Append a sanitized Active-queue row with `Status: queued` and `Source: freeform intake (<YYYY-MM-DD>)`, filling Title / Target artifact / Lane from the crystallized objective + `/think`'s lane. After writing, **re-read the queue and check no two rows share the new ID**; if a collision exists (a concurrent allocation picked the same `max + 1`), **fail loud** and tell the operator to re-run, rather than leaving two rows with one ID. This mirrors the existing SPEC/ADR dup-number guard.
+5. **Atomic allocate + write the row (row-before-draft).** Allocate the next `ID-NNN` by **re-reading the current max ID** in `_meta/BACKLOG.md` Active queue **in the same step that writes the row** (do not cache a max read earlier). The new ID is `max + 1`, zero-padded. Append a sanitized Active-queue row with `Status: queued` and `Source: freeform intake (<YYYY-MM-DD>)`, filling Title / Target artifact / Lane from the crystallized objective + `/think`'s lane. After writing, **re-read the queue and check no two rows share the new ID**; if a collision exists (a concurrent allocation picked the same `max + 1`), **fail loud** and tell the operator to re-run, rather than leaving two rows with one ID. This mirrors the existing SPEC/ADR dup-number guard.
 6. **Rejoin the ID-first tail.** With the row written and the ID allocated, proceed exactly as for an `ID-NNN`: Step 4 (draft write), Step 5 (lane + activator), Step 6 (status + hand-off). The freeform path adds no new tail; it reuses the ID path's.
 
 ### Step 1b: Resolve the item (ID-first path)
@@ -39,7 +39,7 @@ Read `$ARGUMENTS` for the `ID-NNN`. Find that row in the `_meta/BACKLOG.md` Acti
 
 ### Step 2: Idempotency check
 
-If a `.claude/goals/<slug>.md` already exists for this id (one draft per id), re-surface the existing draft instead of creating a duplicate, and skip to Step 5. Mirrors SPEC-005 edge 6: the filesystem is the source of truth.
+If a `.claude/goals/<slug>.md` already exists for this id (one draft per id), re-surface the existing draft instead of creating a duplicate, and skip to Step 5. Mirrors the same filesystem-is-truth idempotency rule (edge 6): the filesystem is the source of truth.
 
 ### Step 2b: Brief-on-file check
 
@@ -58,7 +58,7 @@ From the item's Title + Target artifact, craft the goal as a **six-section opera
 
 If the repo is spec-driven and the lane is normal/full, the directive is **spec-first**: its opening move is the lane's first command (`/kit:spec`), not building code. This matches the `goal-craft` skill's spec-driven-repo rule.
 
-### Step 4: Write the draft (the SPEC-005 contract / ADR-0011)
+### Step 4: Write the draft
 
 Create `.claude/goals/<slug>.md` with pinned frontmatter and the goal body:
 
@@ -73,7 +73,7 @@ created: <YYYY-MM-DD>
 <the six-section operating directive from Step 3 (Context-to-read / Constraints / Operating rules / Validation loop / Done-when / Pause-if), ready to paste into an activator>
 ```
 
-`.claude/` is gitignored (per-machine drafts). The filesystem (`ls .claude/goals/*.md`) is the sole source of truth; there is no derived cache (ADR-0023). A draft is retired (moved to `.claude/goals/done/`, never deleted) once its `target_spec` ships, via `lib/goal/goal-drafts.sh archive` at `/kit:ship`. Do NOT write `.claude/last-goal.md`: the built-in `/goal` owns that slot (ADR-0011).
+`.claude/` is gitignored (per-machine drafts). The filesystem (`ls .claude/goals/*.md`) is the sole source of truth; there is no derived cache. A draft is retired (moved to `.claude/goals/done/`, never deleted) once its `target_spec` ships, via `lib/goal/goal-drafts.sh archive` at `/kit:ship`. Do NOT write `.claude/last-goal.md`: the built-in `/goal` owns that slot.
 
 ### Step 5: Pick the lane + detect the activator
 
@@ -111,10 +111,10 @@ created: <YYYY-MM-DD>
 
   It applies the WORKFLOW.md "Size the work first" triggers deterministically (precedence: backfill, tiny, full, bug, normal; "when in doubt, heavier"). Use its output as the suggested lane and write it into the BACKLOG row. This SUGGESTS, it does not dictate: if you disagree, override and say why (a heavier lane is always safe). The same classifier seeds the lane for each spec `/kit:dispatch` fans out.
 
-- **Precedent lookup (SPEC-068).** Before sizing, run
+- **Precedent lookup.** Before sizing, run
   `bash bin/precedent find "<the item title>"`: it covers both the written record (specs,
-  retros, runs) and the built inventory (tools, scripts, skills, crons, memory) in one call
-  (SPEC-245). Surface the top matches in the goal draft's Context (prior specs/retros/runs
+  retros, runs) and the built inventory (tools, scripts, skills, crons, memory) in one call.
+  Surface the top matches in the goal draft's Context (prior specs/retros/runs
   shape the Done= and prevent re-derivation); no matches is itself information (genuinely
   new ground).
 
@@ -124,21 +124,21 @@ created: <YYYY-MM-DD>
   bash lib/classify/lane-classify.sh check "<the chosen lane>" "<the item title / crystallized objective>"
   ```
 
-  If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "anything on the full-trigger list uses full unless you narrow the scope and say why"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap (SPEC-053): the classifier suggested, but nothing caught an under-sized choice until now.
+  If it prints `LANE-DOWNGRADE`, the task text matches a heavier lane than you chose: size up, or state the explicit narrowing reason (per WORKFLOW "anything on the full-trigger list uses full unless you narrow the scope and say why"). It is advisory (exit 0, logged to `completeness.log`, reviewed at `/kit:ship`), never a block ("Detect, don't dictate"). Silence means the choice is at or above the floor. This is the guard for the classify-then-route gap: the classifier suggested, but nothing caught an under-sized choice until now.
 
-- **Record the routing facts (SPEC-061).** One line, right after the lane is committed, so lane telemetry has the chosen-vs-classified pair to aggregate:
+- **Record the routing facts.** One line, right after the lane is committed, so lane telemetry has the chosen-vs-classified pair to aggregate:
 
   ```bash
-  git switch -c <type>/<slug>              # the work branch MUST exist first (SPEC-070)
+  git switch -c <type>/<slug>              # the work branch MUST exist first
   RID=$(bash lib/gate/gate-ledger.sh rid)       # canonical run id = branch slug
   bash lib/gate/gate-ledger.sh start "$RID" "<chosen lane>" "<classifier's suggested lane>" "<chosen work type>" "<classifier's suggested type>"
   ```
 
-  Mis-recorded the lane or type? Correct it with `bash lib/gate/gate-ledger.sh start --amend "$RID" "<correct lane>" ...` , a sanctioned START-AMEND every reader takes as canonical (last amend wins; SPEC-077); an honest fix never reads as a MULTI-START misfire.
+  Mis-recorded the lane or type? Correct it with `bash lib/gate/gate-ledger.sh start --amend "$RID" "<correct lane>" ...` , a sanctioned START-AMEND every reader takes as canonical (last amend wins); an honest fix never reads as a MULTI-START misfire.
 
   The repo is auto-detected. `lib/telemetry/lane-telemetry.sh report|misfires` reads these at `/kit:retro`; a run without a START line surfaces as untracked (itself a signal).
 
-- **Show the road (SPEC-063).** Print the checklist the run will walk so the operator sees
+- **Show the road.** Print the checklist the run will walk so the operator sees
   the steps up front: `bash lib/gate/gate-ledger.sh plan "<chosen lane>"`. From here on, each
   phase entry prints `bash lib/gate/gate-ledger.sh progress "<rid>" "<chosen lane>"` (the
   `step k/n` line; AGENTS.md Task loop carries the standing rule).
@@ -147,7 +147,7 @@ created: <YYYY-MM-DD>
 ### Step 5b: Claim the goal in the cross-session registry (multi-session safety)
 
 If the operator may run other Claude sessions on this repo at the same time, claim the
-goal so two sessions never pick colliding file-sets (ADR-0022, SPEC-036). Use the slug,
+goal so two sessions never pick colliding file-sets. Use the slug,
 the lane from Step 5, and the goal's declared write-set (the target spec's `## Touches`
 globs if it has them, else the scope-fence dirs from the Constraints section, as `dir/**`
 prefix globs):
@@ -194,4 +194,4 @@ the registry then sees not just who is running but what each goal has attempted.
 
 ## What this command does NOT do
 
-It does not execute the task, does not write `.claude/last-goal.md`, and does not hard-gate. On the freeform path it does NOT embed a multi-turn interview either: the crystallize step is delegated to `/kit:think`, and `/assign` keeps only allocate + route (DEC-003). It is the mutator that sets up a goal; the lane's commands do the work and `/kit:start`/`/kit:next` only render. Source: SPEC-006; SPEC-026 (the freeform front door + its four invariants: row-before-draft, approve-before-allocate, sanitize, atomic-allocate); dispatcher pattern from `commands/next.md` + CCGS `/start`; goal breakdown from the `goal-craft` skill; draft store from ADR-0011.
+It does not execute the task, does not write `.claude/last-goal.md`, and does not hard-gate. On the freeform path it does NOT embed a multi-turn interview either: the crystallize step is delegated to `/kit:think`, and `/assign` keeps only allocate + route. It is the mutator that sets up a goal; the lane's commands do the work and `/kit:start`/`/kit:next` only render. Source: the mutator-dispatcher design; the freeform front door design (its four invariants: row-before-draft, approve-before-allocate, sanitize, atomic-allocate); dispatcher pattern from `commands/next.md` + CCGS `/start`; goal breakdown from the `goal-craft` skill; draft store design.

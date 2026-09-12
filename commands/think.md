@@ -8,7 +8,7 @@ Do NOT be a yes-man. Do NOT validate the idea by default. Push hard on weak poin
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Think start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Think start`.
 
 1. Ask the user to describe their idea in 2-3 sentences. If they already described it in the conversation, use that. Derive `<slug>`: a kebab-case slug for the idea (the same one that will name the spec, `SPEC-NNN-<slug>.md`, if this goes to `/kit:spec`). Reuse `<slug>` for the brief filename below so parallel ideas never overwrite each other's brief.
 
@@ -65,7 +65,7 @@ Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-led
 
 6. If BUILD, suggest (optional) `/kit:design` to shape the solution interactively before `/kit:spec`. It is opt-in; the user may go straight to `/kit:spec`.
 
-After the verdict, record it for lane telemetry (SPEC-139), one line:
+After the verdict, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Think ran "<verdict> <one-line thesis>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Think end caught=<true if verdict is RETHINK or KILL, else false>`.
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Think end caught=<true if verdict is RETHINK or KILL, else false>`.

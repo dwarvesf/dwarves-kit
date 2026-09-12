@@ -16,12 +16,14 @@
 #   Zone 3  no id anywhere in hooks/*.sh (comments included, not just printed strings)
 #   Zone 4  no id anywhere in bin/* (help text and comments)
 #   Zone 5  no id in skills/*/SKILL.md prose (frontmatter keys excepted)
+#   Zone 6  no id anywhere in agents/*.md (frontmatter, prose, Source lines)
+#   Zone 7  no id anywhere in commands/*.md (prose, headings, Source lines)
 #
 # Zones 1 and 2 predate lib/lint/scattered-ids.sh and keep their own narrow inline greps on
 # purpose: Zone 1 only cares whether an id reaches the terminal (echo/printf), Zone 2 only
 # cares whether a command tells the MODEL to mint an id token; both are stricter shapes than
-# "any id in the file," so lib/ and commands/ still carry plenty of comment-only ids Zone 1/2
-# do not see (lib/ and commands/ are future batches). Zones 3
+# "any id in the file," so lib/ still carries plenty of comment-only ids Zone 1
+# does not see (lib/ is a future batch). Zones 3
 # onward are the general "any non-exempt id" check and are driven by the shared enumerator
 # (`lib/lint/scattered-ids.sh`) so a new zone is one line here, not a new grep.
 #
@@ -98,6 +100,8 @@ clean_zone() {  # clean_zone <zone-name> <zone-number> <label>
 clean_zone hooks    3 "no id anywhere in hooks/*.sh"
 clean_zone bin      4 "no id anywhere in bin/*"
 clean_zone skills   5 "no id in skills/*/SKILL.md prose"
+clean_zone agents   6 "no id anywhere in agents/*.md"
+clean_zone commands 7 "no id anywhere in commands/*.md"
 clean_zone lib      8 "no id anywhere in lib/**/*.sh, lib/**/*.py"
 
 echo ""

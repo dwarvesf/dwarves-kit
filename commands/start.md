@@ -4,7 +4,7 @@ description: "Detect project state and suggest the right next command. The entry
 
 Self-intro (AGENTS.md "Self-intro" convention): open your first reply with exactly one banner line, `[kit:start] Detect project state and suggest the right next command.`, then the output for the selected mode. Exception: in `--brief` mode skip the banner; its one-line contract wins.
 
-You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/board/backlog.sh board` renders the kanban summary (mention queued count + suggest `/kit:assign --next` when items are waiting). If any run ledgers exist, `bash lib/telemetry/lane-telemetry.sh misfires` surfaces routing misfires worth a retro (SPEC-061). Read the current project and suggest what the user should do next. Do NOT execute anything. Just detect and recommend.
+You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/board/backlog.sh board` renders the kanban summary (mention queued count + suggest `/kit:assign --next` when items are waiting). If any run ledgers exist, `bash lib/telemetry/lane-telemetry.sh misfires` surfaces routing misfires worth a retro. Read the current project and suggest what the user should do next. Do NOT execute anything. Just detect and recommend.
 
 ## Output mode (read `$ARGUMENTS`)
 
@@ -16,7 +16,7 @@ You are a project state detector. If `_meta/BACKLOG.md` exists, `bash lib/board/
 
 ## Process
 
-**Resolving the active spec (SPEC-005 dual-mode, the same rule the hooks use, reconciled to ADR-0010):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. `docs/specs/SPEC-NNN-<slug>.md` is the sole spec location (ADR-0010). States 3-8 below operate on that resolved active spec.
+**Resolving the active spec (the dual-mode rule the hooks also use):** among `docs/specs/SPEC-*.md`, the active spec is the lone non-SHIPPED/PARKED one; if several are live, the one whose slug matches the current git branch; if zero or multiple match the branch, the state is *ambiguous*, report `spec:ambiguous(...)` and ask which spec, never guess. `docs/specs/SPEC-NNN-<slug>.md` is the sole spec location. States 3-8 below operate on that resolved active spec.
 
 Check these signals in order and recommend the FIRST matching action:
 
@@ -122,8 +122,8 @@ Branch: [branch] | Dirty: [N] files | Spec: [status or "none"]
 When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 
 1. **Backlog queue (what's left?)** -- render the `_meta/BACKLOG.md` Active queue (the Schema there defines the columns) as `ID | Title | Lane | Status`, skipping shipped/parked rows. Read-only. If the queue is malformed, render what parses, note unparseable rows, and never error out of session start.
-2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)` (or run `bash lib/goal/goal-drafts.sh list`). If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (no derived cache, ADR-0023). Archived drafts under `.claude/goals/done/` are skipped: the `*.md` glob is non-recursive, so a draft moved to `done/` on ship drops out automatically.
-2b. **Running goals (cross-session)** -- render `bash lib/goal/goal-registry.sh list`: every goal currently claimed across sessions, with its lane / status / branch / start time (ADR-0022). If none, it prints "(no running goals)". This is the cross-session monitor: it shows goals other Claude sessions are running on this machine, which the native agent view cannot. A `running` entry with no live work is a stale claim from a crashed session; clear it with `bash lib/goal/goal-registry.sh release <slug>`.
+2. **Goal drafts** -- list `.claude/goals/*.md` as `slug -> target_spec (status)` (or run `bash lib/goal/goal-drafts.sh list`). If none, print "Goal drafts: none". Read-only; the filesystem is the source of truth (no derived cache). Archived drafts under `.claude/goals/done/` are skipped: the `*.md` glob is non-recursive, so a draft moved to `done/` on ship drops out automatically.
+2b. **Running goals (cross-session)** -- render `bash lib/goal/goal-registry.sh list`: every goal currently claimed across sessions, with its lane / status / branch / start time. If none, it prints "(no running goals)". This is the cross-session monitor: it shows goals other Claude sessions are running on this machine, which the native agent view cannot. A `running` entry with no live work is a stale claim from a crashed session; clear it with `bash lib/goal/goal-registry.sh release <slug>`.
 3. **SPEC task checklist** -- parse the active spec (resolved per the dual-mode rule above) for `- [ ]` and `- [x]` lines and list each with its state. If no spec exists, print "SPEC: none".
 4. **Hook activity (last 7 days)** -- for each hook log file in the kit's log dir modified in the last 7 days, print `<name>: <N> lines`. Counts ONLY; never echo raw log lines (they can contain command fragments or secret-bearing paths). If no logs, print "Hook logs: none".
 5. **Recent commits** -- the output of `git log -5 --oneline`.
@@ -144,4 +144,4 @@ When `$ARGUMENTS` is `--full`, append these blocks after the standard output:
 Pattern: CCGS /start router (detects project stage and routes to the right agent).
 Adapted: reads docs/specs/SPEC-NNN-<slug>.md status field and dwarves-kit command names instead of game-dev-specific state.
 
-Tiered output (`--brief` / default / `--full`): GSD v1.43-rc2 `gsd-help --brief|--full|<topic>` pattern. Adapted to `--brief` + default + `--full` only, no `<topic>` mode (DEC-002: the kit's state space is small enough that section-level help is overkill).
+Tiered output (`--brief` / default / `--full`): GSD v1.43-rc2 `gsd-help --brief|--full|<topic>` pattern. Adapted to `--brief` + default + `--full` only, no `<topic>` mode (the kit's state space is small enough that section-level help is overkill).

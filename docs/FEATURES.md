@@ -57,7 +57,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | Agent | Trigger | Dispatched by | Description | Specs | Tests |
 |---|---|---|---|---|---|
 | `acceptance-verifier` | `[D]` | battery, verify | Dynamically executes the active spec's acceptance criteria via its `## Verification` section and reports whether the build actually satisfi… | SPEC-035, SPEC-090, SPEC-092 +4 | test-every-step-review.sh, test-kit-contract.sh, test-meta.sh +1 |
-| `advisor` | `[D]` | adopt, battery, mega +3 | The single cross-cutting generic review lens (ADR-0028 SG-05/P5-P6). Runs in TWO modes at the final integration/UAT boundary -- critique (a… | SPEC-090, SPEC-091, SPEC-092 +22 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-advisor-ledger-emit.sh +14 |
+| `advisor` | `[D]` | adopt, battery, mega +3 | The single cross-cutting generic review lens. Runs in TWO modes at the final integration/UAT boundary -- critique (an extra uniform lens ON… | SPEC-090, SPEC-091, SPEC-092 +22 | proof-loop-09-scenario-b.sh, test-adopt.sh, test-advisor-ledger-emit.sh +14 |
 | `agent-effectiveness` | `[D]` | draft-agent, loop-engineering (skill) | Validates an agent definition's EFFECTIVENESS (not just its structure) across four lenses -- tools minimal-yet-sufficient, description trig… | SPEC-088, SPEC-090, SPEC-091 +4 | test-advisor.sh, test-agent-effectiveness.sh, test-break-it.sh +2 |
 | `api-reviewer` | `[D]` | battery, review-team | Reviews a diff through the API-CONTRACT lens only (breaking changes, versioning, request/response schema, error codes, backward compat, ide… | SPEC-111 | test-meta.sh |
 | `audit-scanner` | `[D]` | backlog-reconcile (skill), ci-drift (skill), doc-drift (skill) +4 | Shared read-only Tier-2 evidence scanner for audit-loop instances (doc-drift, topology-drift, ci-drift, backlog-reconcile, web-drift, repo-… | SPEC-220, SPEC-222, SPEC-225 +3 | test-audit-scanner-contract.sh, test-meta.sh, test-repohygiene.sh |
@@ -127,7 +127,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `permission-auto-approve.sh` | `[E]` | PermissionRequest | PermissionRequest hook | SPEC-084 | test-hooks.sh, test-install-modules.sh |
 | `post-compact-reinject.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: compact | SPEC-003, SPEC-010, SPEC-034 +1 | test-install-modules.sh |
 | `pre-compact-backup.sh` | `[E]` | PreCompact | PreCompact hook | SPEC-010, SPEC-084 | test-install-modules.sh |
-| `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +4 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +2 |
+| `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +4 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +3 |
 | `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +7 | proof-loop-09-scenario-b.sh, test-hooks.sh, test-install-modules.sh +2 |
 | `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +5 | test-hooks.sh, test-install-modules.sh, test-meta.sh |

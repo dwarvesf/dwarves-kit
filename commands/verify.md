@@ -15,7 +15,7 @@ If no spec exists, say so, list the specs under `docs/specs/`, and stop. Do not 
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> verify start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> verify start`.
 
 ### Step 1: Resolve the active spec
 
@@ -23,7 +23,7 @@ If `$ARGUMENTS` names a `SPEC-NNN`, use that spec. Otherwise use the highest-num
 
 Then read the spec's optional bare `Model:` header (`grep -m1 '^Model:' <spec>`). It sets the verifier tier for Steps 3-6.
 
-**Verifier tier parity (SPEC-244): a verifier is never dumber than its worker.** When the spec carries `Model: opus`, dispatch with an explicit model override matching the spec tier for every verifier below (task, integration, acceptance, system). Absent a `Model:` header, each verifier keeps its frontmatter default. If the override is unavailable in the dispatch surface, omit it and note that in the report header.
+**Verifier tier parity: a verifier is never dumber than its worker.** When the spec carries `Model: opus`, dispatch with an explicit model override matching the spec tier for every verifier below (task, integration, acceptance, system). Absent a `Model:` header, each verifier keeps its frontmatter default. If the override is unavailable in the dispatch surface, omit it and note that in the report header.
 
 ### Step 2: Compute the diff base (for integration-verifier)
 
@@ -52,7 +52,7 @@ Dispatch the **system-verifier** subagent (read-only, at the spec tier per Step 
 
 ### Step 6b: Advisory mutation smoke (warn-only, never a verdict downgrade)
 
-Run the ADVISORY mutation smoke (SPEC-131) as the HONESTLY-PROVEN check the verifier stack
+Run the ADVISORY mutation smoke as the HONESTLY-PROVEN check the verifier stack
 structurally cannot be: `task-verifier` / `system-verifier` trust a green suite, but a green suite
 that stays green on mutated code is a FALSE proof. The smoke mutates a line in the CHANGED code and
 re-runs the suite: a biting suite (the mutation is caught) is quiet; a non-biting suite (the mutation
@@ -70,7 +70,7 @@ This is off the push blocker; treat a flag as a prompt to strengthen the suite, 
 
 ### Step 7: Report (do NOT fix)
 
-**Restate the claim first (SPEC-080 / ID-077, cursor verify-this pattern):** before
+**Restate the claim first (cursor verify-this pattern):** before
 reading any result, write what is being verified as condition + metric + threshold
 ("X holds when <condition>, measured by <metric>, passing at <threshold>"). A verdict
 without a falsifiable restatement is an opinion. For comparative claims (faster,
@@ -96,13 +96,13 @@ Base ref: <sha> (<how it was resolved>)
 ## System level (system-verifier)
 - PASS | FAIL -- [suite/regression, or NO EXECUTABLE CHECK]
 
-## Mutation smoke (advisory, SPEC-131)
+## Mutation smoke (advisory)
 - QUIET | FLAG | SKIP -- [file:line the mutation survived, or the skip reason] (never changes the verdict)
 
 ## Verdict: PASS / FAIL / INCONCLUSIVE
 ```
 
-`INCONCLUSIVE` (SPEC-080) is the honest third verdict, legal when: no valid
+`INCONCLUSIVE` is the honest third verdict, legal when: no valid
 baseline exists, the signal is noisy across reruns, or a confound (env drift,
 concurrent change) breaks attribution. Name the cause. INCONCLUSIVE is NOT a
 pass: the proof-of-done gate still demands a green run; an INCONCLUSIVE verify
@@ -118,11 +118,11 @@ lane-telemetry ledger line below) is the only thing `/kit:verify` writes; it nev
 the code under test. The recorded `Command:` line is what a later reader re-runs to
 regression-check this verdict.
 
-Also record the verdict for lane telemetry (SPEC-139), one line (`verify` carries no matrix
+Also record the verdict for lane telemetry, one line (`verify` carries no matrix
 row of its own -- this is RUN_REPORT observability, never a new required gate):
 `bash lib/gate/gate-ledger.sh record <rid> verify ran "<PASS|FAIL|INCONCLUSIVE>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> verify end caught=<true if the verdict is FAIL or INCONCLUSIVE, else false>`.
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> verify end caught=<true if the verdict is FAIL or INCONCLUSIVE, else false>`.
 
 Gate what the proof needs by the spec's **proof class** (`lib/gate/proof-gate.sh class
 "<spec title or task>"`):
@@ -178,4 +178,4 @@ On INCONCLUSIVE, end with: "Measurement ambiguous; design a better check (baseli
 - `/kit:review` / `/kit:review-team`: static **code review** (security, architecture, regressions). Judgment, not test execution.
 - `/kit:execute` / `/kit:next`: build, which runs the same verification inline AND fixes on FAIL:fixable.
 
-Source: SPEC-035 / ADR-0021. Reuses the `task-verifier` + `integration-verifier` agents (ADR-0005 verify-then-trust lineage); adds only a read-only on-demand trigger. Extended (TIER-4 close-gate fix) to also dispatch `acceptance-verifier` + `system-verifier` (ADR-0028 right-arm parity, SG-04) -- both agents existed and were gated/rostered/documented but had no command dispatching them; this closes that gap, so `/kit:verify` is now the on-demand executor of the FULL right arm (unit, integration, acceptance, system), not just its first two levels.
+Source: the on-demand verifier-dispatch design. Reuses the `task-verifier` + `integration-verifier` agents (the verify-then-trust lineage); adds only a read-only on-demand trigger. Extended (TIER-4 close-gate fix) to also dispatch `acceptance-verifier` + `system-verifier` (the right-arm-parity work) -- both agents existed and were gated/rostered/documented but had no command dispatching them; this closes that gap, so `/kit:verify` is now the on-demand executor of the FULL right arm (unit, integration, acceptance, system), not just its first two levels.

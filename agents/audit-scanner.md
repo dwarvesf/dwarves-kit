@@ -62,7 +62,7 @@ UNSURE/UNTESTABLE: [per item, what only the operator or another vantage can answ
 Out-of-scope notes: [0..n one-liners]
 ```
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

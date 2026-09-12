@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# bin/intake -- STABLE consumer entrypoint for the intake subsystem.
+#
+# Consumers reference THIS stable path, never a deep `$DWARVES_KIT/lib/intake/<file>.sh`
+# path. Forwards to the intake subsystem entry, which owns the verb grammar.
+#
+# Usage:
+#   intake gate <url | "subject">
+#
+# "have we already decided this?" at knowledge intake: one scripted read across the
+# operator's decision stores (the URL ledger, every board in the boards registry, the
+# verdict ledger, prior notes, this kit's own inventory, open pull requests). Prints the
+# hits as JSON, exit 0 on any hit, 1 on none.
+set -euo pipefail
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec bash "$SELF_DIR/../lib/intake/intake.sh" "$@"

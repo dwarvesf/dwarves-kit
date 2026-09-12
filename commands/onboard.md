@@ -3,8 +3,8 @@ description: "Guided first-run: detect the install mode, offer /kit:adopt for th
 ---
 
 You are running `/kit:onboard`: the kit introducing itself. This is a guided first-run, not a form.
-Your job is to ORCHESTRATE the surfaces that already exist, never to reimplement them (ADR-0034
-decision 4): you CALL `lib/onboard-detect.sh`, `lib/adopt.sh`, and `bin/config`; you never
+Your job is to ORCHESTRATE the surfaces that already exist, never to reimplement them: you CALL
+`lib/onboard-detect.sh`, `lib/adopt.sh`, and `bin/config`; you never
 re-detect, re-inject, or re-parse config yourself.
 
 **Three rules that hold for the whole run:**
@@ -58,8 +58,8 @@ Adoption is what makes an agent classify + pick a lane here and what makes the s
 - **Already adopted** -- Report it healthy: name what's present (`AGENTS.md`, the `CLAUDE.md` loader
   block, the `WORKFLOW.md` pointer, the `docs/verification/README.md` proof marker) and that
   `.kit.toml` records its module choices. **Write nothing, and do NOT call adopt.** To change modules
-  on an already-adopted repo, the honest path (since a project's own `.kit.toml` is never overwritten,
-  SPEC-192) is: hand-edit the `[modules]` section of `<repo>/.kit.toml`, then re-run `/kit:adopt` (or
+  on an already-adopted repo, the honest path (since a project's own `.kit.toml` is never overwritten)
+  is: hand-edit the `[modules]` section of `<repo>/.kit.toml`, then re-run `/kit:adopt` (or
   `bash "$KIT/lib/adopt.sh" --refresh "$REPO"`) to re-wire `settings.json` to match. Offer to show the
   current module state via the fenced read surface, `KIT_PROJECT_ROOT="$REPO" bash "$KIT/bin/config" list`
   filtered to the `modules.*` rows (PROVENANCE shows which values this repo's `.kit.toml` overrides);
@@ -89,7 +89,7 @@ few. **Recommended default: accept the kit-root defaults** (that is the sane bas
 `Enter` takes them as-is.
 
 **Then adopt ONCE, seeding the fresh `.kit.toml` with the picks in the same step.** `adopt --with`
-seeds modules only on a FRESH `.kit.toml` (it is a no-op once the file exists, SPEC-192), so the
+seeds modules only on a FRESH `.kit.toml` (it is a no-op once the file exists), so the
 order matters: pick first, then a single call:
 
 ```
@@ -179,7 +179,7 @@ A repo that declines any step stays fully functional; the board is additive.
 
 ## E. Disclose the plugin-path gaps (only for mode `plugin` or `both`)
 
-Be honest about what the plugin path cannot do (ADR-0009), in four short bullets:
+Be honest about what the plugin path cannot do, in four short bullets:
 - **statusLine HUD:** the v1 plugin schema has no `statusLine` field, so the status-line HUD is
   bash-install-only. If they want it, that is the one reason to run the bash install.
 - **Frozen SHA vs `git pull`:** a plugin install is pinned to the version you installed; it moves only
@@ -225,7 +225,7 @@ command to run first."** End the run there.
 
 ## Do NOT
 
-- Reimplement detection, injection, or config parsing (call the three surfaces above; ADR-0034 fence).
+- Reimplement detection, injection, or config parsing (call the three surfaces above instead).
 - Change `install.sh` or `adopt.sh`, or add a flag to `bin/config`. onboard is a consumer of them.
 - Write anything without a preview + an explicit yes. A decline changes nothing.
 - Auto-fix the `both` double-hooks hazard, or edit the user's shell profile. Disclose and point.
