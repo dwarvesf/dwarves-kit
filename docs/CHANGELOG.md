@@ -32,6 +32,13 @@ All notable changes to dwarves-kit are documented here.
 - Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
 
 ### Fixed
+- `tests/test-explain.sh`, `tests/test-quiz-gate.sh`, and `tests/test-weekend-batch.sh` captured
+  their proof samples (`docs/verification/{explain-command,quiz-gate,weekend-batch}/sample-*.md`)
+  with a fresh run-specific value baked in (a new fixture commit SHA each run for the first two,
+  a fresh wall-clock timestamp for the third), so every `tests/run-all.sh` pass rewrote all three
+  tracked files and left the checkout dirty, blocking `lib/gate/negctl.sh`'s clean-tree
+  requirement. Each test now normalizes its run-specific value to a fixed placeholder before
+  writing the sample, so the captured content is deterministic across runs (ID-830).
 - `tests/test-boundary-lint.sh` AC2 and AC3 shared one `$FX` fixture dir, so AC3's "exits
   non-zero" assertion passed on AC2's own still-live planted violation instead of on the
   name check it claims to test; only the message-content assertion caught a broken
