@@ -100,6 +100,21 @@ KIT_CONFIG_OPERATOR=$(mktemp -d) bash tests/test-config-registry.sh
 bash tests/test-orchestrate-wavefront.sh
 ```
 
+## Two master-caused test breaks fixed on the way through
+
+PR CI runs against the merge commit, so this branch inherited a red master. Neither break came
+from `build_lanes`; both are one-line test fixes carried here because the PR cannot go green
+without them.
+
+| Break | Cause | Fix |
+|---|---|---|
+| `test-config-seams`: `all-default report has seven rows` | four `intake.*` rows joined the live `## Seams` table and the literal `7` went stale | derive the count from the table, per the no-hardcoded-counts rule |
+| `test-wrap`: `merge skips the stacked parent` | the scattered-id strip removed `(SPEC-065)` from a PRINTED verdict string in `lib/wrap/wrap.sh`, and the assertion still expected it | assert the string the code now prints |
+
+Both were reproduced before the fix and pass after: `bash tests/test-config-seams.sh` gives
+`53/53 passed` with `all-default report has one row per live seam (11)`, and
+`bash tests/test-wrap.sh` returns to `all 335 passed`.
+
 ## What this does not cover
 
 The lint reads a report. It cannot see whether the build actually ran in a worktree, whether the

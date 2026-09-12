@@ -507,7 +507,7 @@ STACK_OPEN='[{"number":7,"title":"parent","headRefName":"feat/wrap"},{"number":8
 STACK_8='{"number":8,"title":"child","headRefName":"feat/child","baseRefName":"feat/wrap","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}'
 STACK_7='{"number":7,"title":"parent","headRefName":"feat/wrap","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}'
 out="$(GH_STUB_OPEN_PRS="$STACK_OPEN" GH_STUB_PR_7="$STACK_7" GH_STUB_PR_8="$STACK_8" "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
-chk_has "merge skips the stacked parent" "$out" "SKIP #7 parent: dependents open, retarget them first (SPEC-065)"
+chk_has "merge skips the stacked parent" "$out" "SKIP #7 parent: dependents open, retarget them first"
 chk_has "merge skips the child whose base is not the default branch" "$out" "SKIP #8 child: base is feat/wrap, not the default branch main"
 
 echo "=== merge: the post-merge state check fails closed ==="
