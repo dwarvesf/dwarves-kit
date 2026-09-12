@@ -132,10 +132,12 @@ assert "AC4b the derived-Goal line does NOT carry the false subject" \
 assert "AC4b the H1 title does NOT carry the false subject" \
   "$(head -1 "$ARTC" | grep -qi 'multiply' && echo 1 || echo 0)"
 
-# Capture the fixture-A explainer as the proof artifact.
+# Capture the fixture-A explainer as the proof artifact. REFA is a fresh SHA every run (a new
+# temp repo per invocation), so normalize it to a fixed placeholder -- else the committed sample
+# rewrites on every test run and leaves the tree dirty (ID-830).
 PROOF_DIR="$KIT_DIR/docs/verification/explain-command"
 mkdir -p "$PROOF_DIR"
-cp "$ART" "$PROOF_DIR/sample-explainer.md"
+sed "s/${REFA}/deadbeefdeadbeefdeadbeefdeadbeefdeadbeef/g" "$ART" > "$PROOF_DIR/sample-explainer.md"
 
 echo ""
 echo "  ---------------------------------------------"
