@@ -1101,18 +1101,29 @@ chk "a lane suffix with no ENHANCE or NEW still fails" "$([ "$rc" -eq 1 ]; echo 
 chk_has "the finding still asks for the ENHANCE or NEW token" "$out" "no ENHANCE <home> or NEW (precedent: ...) token"
 
 # The lane closure rule. `wrap.build_lanes` lets an operator list heavier lanes for step 7b to
-# build inline, so `lane=normal` and `lane=bug` are now legal on a verified item and the lint
-# can no longer treat `tiny` as the only buildable lane. What it does enforce is the pairing: a
-# lane token says the candidate was sized and nothing about what became of it, so every item
-# naming a lane owes `verified:` or a `staged` form.
+# build inline, so `lane=normal`, `lane=bug` and `lane=backfill` are legal on a verified item
+# and the lint can no longer treat `tiny` as the only buildable lane. What it does enforce is
+# the pairing: a lane token says the candidate was sized and nothing about what became of it,
+# so every item naming a lane owes `verified:`, `filed:`, or a `staged` form. `lane=full` is
+# narrower still: it owes `filed:` and the lint rejects it closed as `staged`.
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=normal, verified: bash tests/test-alert.sh, #418)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "an ENHANCE line carrying lane=normal and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=bug, verified: bash tests/test-cron.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a NEW line carrying lane=bug and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=backfill, verified: bash tests/test-cron.sh, b2c3d4e)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW line carrying lane=backfill and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, filed: ops-toolkit ID-901, goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "the full-lane filed shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged: build_lanes excludes full)|' | bash "$LINT" 2>&1)"; rc=$?
-chk "the build_lanes exclusion shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
+chk "a full lane closed as staged fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the board row a full lane owes" "$out" "closes a full-lane candidate as 'staged'"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged + goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a full lane staged with a goal draft still fails" "$([ "$rc" -eq 1 ]; echo $?)"
 
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a lane with neither a check nor a staged form fails" "$([ "$rc" -eq 1 ]; echo $?)"
@@ -1126,6 +1137,9 @@ chk_has "commands/wrap.md classifies each candidate's lane" "$(cat "$KIT_DIR/com
 chk_has "commands/wrap.md names the worker model tiers" "$(cat "$KIT_DIR/commands/wrap.md")" "Sonnet is the default worker"
 chk_has "commands/wrap.md reads the build_lanes knob" "$(cat "$KIT_DIR/commands/wrap.md")" "kit_config_get_root wrap.build_lanes"
 chk_has "kit.toml ships build_lanes defaulting to tiny" "$(cat "$KIT_DIR/kit.toml")" 'build_lanes = "tiny"'
+chk_has "commands/wrap.md files a full-lane candidate with board capture" "$(cat "$KIT_DIR/commands/wrap.md")" "bin/board capture"
+chk_no "commands/wrap.md dropped the staged-exclusion form" "$(cat "$KIT_DIR/commands/wrap.md")" "build_lanes excludes"
+chk_no "kit.toml dropped the staged-exclusion form" "$(cat "$KIT_DIR/kit.toml")" "build_lanes excludes"
 # The LIST form: a bare `**Built:**` header followed by `- ` bullets, one candidate per
 # line. Added after a real report crammed three candidates onto one unreadable line. Each
 # bullet owes the same ENHANCE/NEW token as the inline form, checked per bullet, so one bare

@@ -203,20 +203,30 @@ else
   fi
 
   # Lane closure. `wrap.build_lanes` widened step 7b: `tiny` is no longer the only lane that
-  # can build inline, so `lane=normal` and `lane=bug` are now legal on a `verified:` item. The
-  # lane token on its own says only that the candidate was SIZED. What became of it is the
-  # other half, and it is one of two words: `verified:` for a build that happened here, or
-  # `staged` for one routed on (`staged + goal drafted:`, `staged: build_candidates off`,
-  # `staged: build_lanes excludes <lane>`). An item carrying a lane and neither word reports a
-  # classification and no outcome, which is the same hole the `**Built:**` line itself exists
-  # to close, one level down.
+  # can build inline, so `lane=normal`, `lane=bug` and `lane=backfill` are legal on a
+  # `verified:` item. The lane token on its own says only that the candidate was SIZED. What
+  # became of it is the other half, and it is one of three words: `verified:` for a build that
+  # happened here, `filed:` for a full-lane candidate put on the home repo's board, or `staged`
+  # for one routed on (`staged + goal drafted:`, `staged: build_candidates off`). An item
+  # carrying a lane and none of them reports a classification and no outcome, which is the same
+  # hole the `**Built:**` line itself exists to close, one level down.
+  #
+  # `lane=full` closed as `staged` is its own finding. Staging was a dead end: one estate board
+  # accumulated 248 staged rows since May and drained none, so a full-lane candidate now files a
+  # queued row on a board an operator actually reads.
   if [ "${#built_items[@]}" -gt 0 ]; then
     _l_idx=0
     for _l_item in "${built_items[@]}"; do
       _l_idx=$((_l_idx + 1))
       printf '%s' "$_l_item" | grep -qE 'lane=[a-z]+' || continue
-      printf '%s' "$_l_item" | grep -qE 'verified:|staged' && continue
-      echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, or a 'staged' form for one routed on" >&2
+      if printf '%s' "$_l_item" | grep -qE 'lane=full' && printf '%s' "$_l_item" | grep -qE 'staged'; then
+        echo "line 0: '**Built:**' item ${_l_idx} closes a full-lane candidate as 'staged'; a full lane files a queued board row instead, 'filed: <repo> <ID-NNN>, goal drafted: <path>'" >&2
+        echo "  ${_l_item}" >&2
+        findings=$((findings + 1))
+        continue
+      fi
+      printf '%s' "$_l_item" | grep -qE 'verified:|filed:|staged' && continue
+      echo "line 0: '**Built:**' item ${_l_idx} names a lane with no closure; add 'verified: <check>, <commit or PR>' for a build, 'filed: <repo> <ID-NNN>' for a full lane on the board, or a 'staged' form for one routed on" >&2
       echo "  ${_l_item}" >&2
       findings=$((findings + 1))
     done

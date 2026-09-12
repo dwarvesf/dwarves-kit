@@ -287,14 +287,16 @@ build_candidates = true         # [impl] step 7b. true = a precedent hit wires t
                                  #        is a judgment stages at either setting.
 build_lanes = "tiny"            # [impl] step 7b sizing. Space-separated lanes step 7b builds INLINE;
                                  #        every other lane stages its row and drafts its goal. The
-                                 #        default is today's behavior exactly. `full` and `backfill`
-                                 #        are never built inline even when listed, because a spec and
-                                 #        a root-cause record do not fit in the minutes an operator
-                                 #        gave you to close the session; wrap reports each as
-                                 #        `(lane=<lane>, staged: build_lanes excludes <lane>)`. Adding
-                                 #        `normal bug` suits an operator whose staged rows pile up
-                                 #        with no consumer. Ignored entirely when `build_candidates`
-                                 #        is false, which stages everything.
+                                 #        default is today's behavior exactly. `full` is the one lane
+                                 #        listing cannot buy an inline build for, because a spec and
+                                 #        a review do not fit in the minutes an operator gave you to
+                                 #        close the session; a full candidate files a QUEUED ROW on
+                                 #        the home repo's `_meta/BACKLOG.md` via `bin/board capture`
+                                 #        and wrap reports `(lane=full, filed: <repo> <ID-NNN>,
+                                 #        goal drafted: <path>)`. Adding `normal bug backfill` suits
+                                 #        an operator whose staged rows pile up with no consumer.
+                                 #        Ignored entirely when `build_candidates` is false, which
+                                 #        stages everything.
 
 [knowledge]                     # context tree root for repo knowledge notes (context-kit fills this)
 root = ""                       # [consumer] absolute or ~-prefixed path to the context tree
