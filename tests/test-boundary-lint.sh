@@ -39,6 +39,13 @@ assert "planted path violation names itself in the message" "$(printf '%s' "$OUT
 
 echo ""
 echo "=== AC3: negative control -- a planted retired-skill name in a NEW commands/*.md is caught ==="
+# Fresh fixture dir, not AC2's $FX: a shared dir left AC2's path violation live here too, so
+# AC3's "exits non-zero" assertion passed on that violation instead of on the name check --
+# only the message-content assertion caught the break. A fresh dir makes the exit code prove
+# what it claims.
+rm -rf "$FX"
+FX="$(mktemp -d)"
+mkdir -p "$FX/commands"
 # Not one of the three files the old hand list carried before this fix (wrap.md/explain.md/
 # quiz-gate.md): proves name_files now globs every commands/*.md, the finding-3 fix.
 echo 'Compose narrate-log to write the session summary.' > "$FX/commands/brand-new-cmd.md"
