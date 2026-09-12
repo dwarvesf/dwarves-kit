@@ -21,6 +21,7 @@ orphans with no cluster stay as bare scripts at the root.
 | `telemetry/` | `lane-telemetry.sh` `kit-log-dir.sh` |
 | `session/` | `parse_transcript.py` `parse-transcript.sh` (the shared transcript parser + its tests) |
 | `precedent/` | `precedent.sh` `inventory.py` (records + inventory surfaces; stable entry `bin/precedent`) |
+| `intake/` | `intake.sh` (the knowledge-intake dedup gate; stable entry `bin/intake`) |
 | *(root)* | `adopt.sh` `explain.sh` `pitch.sh`, orphans, no cluster |
 
 ## Resolution scheme (the `LIB_ROOT` anchor, no shims)

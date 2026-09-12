@@ -218,6 +218,17 @@ registry = ""                   # [consumer] extra scan locations for `find --su
                                  #        path when both are empty (inventory.py's own fallback):
                                  #        ${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt
 
+[intake]                        # `intake gate` decision stores (lib/intake/intake.sh)
+url_ledger = ""                 # [consumer] command that answers "have we consumed this URL",
+                                 #        called as `<cmd> check <url>`, exit 0 = seen. Empty, or
+                                 #        not on PATH, skips the url source with a stderr line.
+verdicts = ""                   # [consumer] absolute or ~-prefixed path to the operator's
+                                 #        verdict ledger, one decided evaluation per line.
+boards = ""                     # [consumer] absolute or ~-prefixed path to the boards registry
+                                 #        (`<name> <path-to-BACKLOG.md>` rows, `#` comments).
+notes = ""                      # [consumer] command that answers "have I written about this",
+                                 #        called as `<cmd> query <subject> --k N --floor F --json`.
+
 [wrap]                          # `/kit:wrap` landing-step config (lib/wrap/wrap.sh log)
 activity_log = ""               # [consumer] absolute or ~-prefixed path, under $HOME, to the
                                  #        operator's own activity log file. Read from the KIT-ROOT

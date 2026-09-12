@@ -127,7 +127,7 @@ GENERATED , do not hand-edit. Regenerate: `bash lib/registry/feature-registry.sh
 | `permission-auto-approve.sh` | `[E]` | PermissionRequest | PermissionRequest hook | SPEC-084 | test-hooks.sh, test-install-modules.sh |
 | `post-compact-reinject.sh` | `[E]` | PostToolUse | PostToolUse hook, matcher: compact | SPEC-003, SPEC-010, SPEC-034 +1 | test-install-modules.sh |
 | `pre-compact-backup.sh` | `[E]` | PreCompact | PreCompact hook | SPEC-010, SPEC-084 | test-install-modules.sh |
-| `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +4 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +2 |
+| `prose-rag.sh` | `[E]` | UserPromptSubmit | UserPromptSubmit hook shim for the prose-rag recall inject | SPEC-194, SPEC-204, SPEC-249 +4 | test-bin-forwarders.sh, test-config-seams.sh, test-install-clis.sh +3 |
 | `safety-gate.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Bash | SPEC-003, SPEC-014, SPEC-019 +7 | proof-loop-09-scenario-b.sh, test-hooks.sh, test-install-modules.sh +2 |
 | `secrets-guard.sh` | `[E]` | PreToolUse | PreToolUse hook, matcher: Read\|Edit\|Bash | SPEC-014, SPEC-084 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
 | `session-state-save.sh` | `[E]` | Stop+SubagentStop | Stop hook (runs alongside anti-rationalization + slop-cleaner) | SPEC-003, SPEC-010, SPEC-030 +5 | test-hooks.sh, test-install-modules.sh, test-meta.sh |
