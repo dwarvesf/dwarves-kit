@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# gate.sh -- thin standalone entry for the gate subsystem (kit-modularity SG-03,
+# gate.sh -- thin standalone entry for the gate subsystem (same
 # board.sh/orchestrate.sh shape). Forwards `gate <verb> <args...>` to the sibling
 # script that already owns that verb; adds NO new logic. Additive: every existing
 # `bash lib/gate/<x>.sh ...` call-site keeps working unchanged.

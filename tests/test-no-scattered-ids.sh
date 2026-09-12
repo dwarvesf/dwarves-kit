@@ -98,6 +98,7 @@ clean_zone() {  # clean_zone <zone-name> <zone-number> <label>
 clean_zone hooks    3 "no id anywhere in hooks/*.sh"
 clean_zone bin      4 "no id anywhere in bin/*"
 clean_zone skills   5 "no id in skills/*/SKILL.md prose"
+clean_zone lib      8 "no id anywhere in lib/**/*.sh, lib/**/*.py"
 
 echo ""
 echo "=== Ratchet: the zone list is meant to grow ==="

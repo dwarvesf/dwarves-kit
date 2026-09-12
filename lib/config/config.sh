@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# config.sh -- the bin/config engine (SPEC-198, ADR-0034 decision 4).
+# config.sh -- the bin/config engine (decision 4).
 #
 # WHY: every runtime knob has an env var, a kit.toml key, or both, resolved by a DIFFERENT
 # ad-hoc precedence in a different file. There was no ONE place to see "what is this knob's
 # value right now, and WHY" (env override vs project .kit.toml vs kit-root kit.toml vs
 # hardcoded default) without opening files. This is that read/explain surface.
 #
-# FENCE (ADR-0034 decision 4): `lib/config/kit-config.sh` stays the ONLY reader of TOML. This
+# FENCE (decision 4): `lib/config/kit-config.sh` stays the ONLY reader of TOML. This
 # file does NOT parse kit.toml itself -- it calls INTO kit-config.sh's existing accessors
 # (kit_config_get / kit_config_root / kit_config_project / _kit_toml_get) for every value, and
 # reads the CHECKED-IN lib/config/module-registry.md (a markdown table, not TOML) to enumerate
@@ -158,7 +158,7 @@ _root_only_rows() {
 }
 
 # _is_root_only <row> -- true when this row's kit.toml key (col 2) is listed in the
-# "## Root-only keys" table (SPEC-249's root-only fence: the project .kit.toml layer must
+# "## Root-only keys" table (the root-only fence: the project .kit.toml layer must
 # never win for a key that names code a command runs or a path outside the repo, because a
 # project toml rides inside an untrusted PR). Membership in that table, NOT a substring
 # match on the row's own Doc prose: five `[impl]` command-autonomy rows (ship/debug/review)
@@ -295,7 +295,7 @@ _seam_target_resolves() {
 # _seam_resolve <row> -- sets SEAM_KEY / SEAM_KIND / SEAM_FILLEDBY / SEAM_VALUE / SEAM_STATUS
 # (globals, mirrors _resolve's own style). Joins the seam's Key to its registry row with
 # _find_row for the default and module -- NEVER _resolve (that reads the project .kit.toml,
-# which a seam target must never do; DEC-004/DEC-010). A section.key resolves through
+# which a seam target must never do). A section.key resolves through
 # kit_config_get_root; an env-only key reads ${VAR:-}. The verb never executes a target.
 _seam_resolve() {
   local srow="$1" key kind filledby row envvar tomlkey defaultval raw
@@ -471,7 +471,7 @@ usage: config {list|get|explain|seams} [args...]
                           --check exits 1 if any row is unresolved
 
 `config set` is not built. Hand-edit <project>/.kit.toml to change a project-level value; the
-kit-root default lives in kit.toml. See docs/specs/SPEC-198-config-surface.md.
+kit-root default lives in kit.toml. See this module's own config-surface design doc.
 EOF
 }
 

@@ -35,7 +35,7 @@ On top of the census pipeline's own exclusions, a hit is dropped when it is:
 
 - an own-number header (the id also names the file itself)
 - a frontmatter/key line (`Relates-to:`, `Backlog:`, `id:`, `generated-by:`)
-- a provenance footer (`<!-- provenance: ... -->`)
+- a provenance footer (`<!-- provenance: ... -->` in markdown, `# provenance: ...` in shell/python)
 - a board-row table line (`| ID-nnn | ... |`)
 - a dated log line (`YYYY-MM-DD ...` or a `## YYYY-MM-DD` heading)
 - a `tool.toml` `board = [...]` array

@@ -4,7 +4,7 @@
 # The moat that makes bounded cross-goal fan-out safe. Pure
 # bash + glob; no binary, no runtime, no scheduler. Two goals run concurrently only
 # when their declared `## Touches` file globs are provably disjoint; any pair the gate
-# cannot PROVE disjoint is serialized (DEC-008, conservative prove-or-serialize). The
+# cannot PROVE disjoint is serialized (conservative prove-or-serialize). The
 # drift guard then checks the real diff stayed inside the declared globs and never
 # touched a lead-owned shared surface.
 #

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """staging-format.py -- the ONE definition of the `_meta/backlog-staging.md` block grammar
-(SPEC-196/SPEC-195, ADR-0034 decision 1: shared by `reflect drain` and `reflect propose`, landed
-by whichever of the two sub-goals merges first; SG-06 landed it -- SG-05's `staging-format*`
+(shared by `reflect drain` and `reflect propose`; whichever of the two sub-goals
+merged first landed it, since `staging-format*`
 did not exist yet on this branch's history).
 
 Three verbs on the CLI: `parse <file>` (read blocks back as JSON), `render` (render one
 candidate from stdin JSON), and `stage` (the one staging WRITER: dedupe + render + append
-in a single process, used directly and by `wrap stage`, SPEC-249 TASK-003/004).
+in a single process, used directly and by `wrap stage`).
 
 A staging file is a sequence of `## [<state>] <title>` blocks, each followed by `- Field:
 value` lines (Intent, Approach, Tags, Home, Source, ...). This mirrors
@@ -83,7 +83,7 @@ def age_days(fields, today=None):
     today = today or date.today()
     return (today - d).days
 
-# --- write side (from SG-05 `reflect propose`; unified here per ADR-0034 decision 1:
+# --- write side (from `reflect propose`; unified here:
 # ONE staging-block definition, shared by drain, propose, and the `stage` verb below) ---
 
 # Unicode word runs (letters and digits in any script, underscore excluded): an ASCII-only
@@ -105,7 +105,7 @@ def render_block(candidate):
     # line-oriented grammar: an embedded "\n\n## [staged] ..." in a field forges a SECOND
     # proposal that parse_blocks() reads as real. The fields now carry LLM-authored text
     # derived from transcripts (session-audit), i.e. attacker-influenceable content, and
-    # SPEC-200 I1 routes ever more of it through this one renderer. Sanitize at the ONE
+    # More of it routes through this one renderer over time. Sanitize at the ONE
     # place every writer shares (review finding).
     def _flat(v, fallback=""):
         s = re.sub(r"\s+", " ", str(v)).strip()
@@ -168,7 +168,7 @@ def existing_keys(*sources):
     A missing file contributes nothing. Keys are norm()'d titles; membership is EXACT
     (the anchored dedup form).
 
-    The last two kinds close the anchor gap ID-294 measured: 28 of 69 staged candidates
+    The last two kinds close the anchor gap a prior measurement found: 28 of 69 staged candidates
     duplicated work already tracked on a cross-repo cockpit board or a megagoal TODO,
     surfaces this set never read, so that work re-entered staging as new.
     """
@@ -206,7 +206,7 @@ def existing_keys(*sources):
 def cmd_stage():
     """`staging-format.py stage`: read one JSON object on stdin (title, intent, home,
     staging, backlog?) and either report a duplicate or append one block. See the
-    `### Interfaces` `staging-format.py stage` paragraph, SPEC-249 TASK-003. The dedupe
+    `### Interfaces` `staging-format.py stage` paragraph. The dedupe
     check runs immediately before the append, in this same process -- there is no window
     between "is it staged" and "stage it" for another writer to land in."""
     try:

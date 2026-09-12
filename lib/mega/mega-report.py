@@ -77,7 +77,7 @@ def parse_roadmap(path):
 
 def resolve_spec(sg, mega_dir):
     """SPEC-ref from the goal file's own **Proof:** line ONLY. Anywhere else (ROADMAP
-    prose, goal-file body) names OTHER specs ('the SPEC-188 lint amended', a SPEC-097
+    prose, goal-file body) names OTHER specs ('the lint amended a different spec', a stray
     cross-ref) and misattributes; a spec-less sub-goal honestly renders '-'."""
     import glob as _g
     for gf in _g.glob(os.path.join(mega_dir, "goals", sg["num"] + "-*.md")):

@@ -97,8 +97,7 @@ def _classify_and_test(token: str) -> tuple[str, bool] | None:
     environment. Returns `(kind, live)` or `None` when the token is deliberately not a
     verifiable reference. v1 tests PATHS ONLY (home `~/...`, or an absolute path under a
     recognized real filesystem root) -- see the module docstring for the real-corpus evidence
-    that narrowed this from the original paths/flags/commands design (SPEC-136 DEC-008,
-    DEC-009):
+    that narrowed this from the original paths/flags/commands design:
 
     - A flag (leading `-`, e.g. `--dry-run`): never tested (flag validity needs invoking
       `--help` against a specific command, too fragile/risky for a hygiene sweep).
@@ -176,7 +175,7 @@ def _extract_index_refs(text: str, memory_dir: Path) -> list[MemoryRef]:
     nothing backing it is exactly the signal this sweep exists to surface;
     the sweep PROPOSES, a human confirms or dismisses.
 
-    IS-IT-AN-INDEX gate (SPEC-136 DEC-010, a real-corpus precision fix): a MEMORY.md with ZERO
+    IS-IT-AN-INDEX gate (a real-corpus precision fix): a MEMORY.md with ZERO
     markdown-link bullets is NOT a broken index -- it is a free-prose scratchpad that merely
     happens to be named MEMORY.md (confirmed real: `claude-guardrails`'s MEMORY.md is 39 prose
     bullets, none a link). Flagging every one of its bullets as a dead orphan is exactly the
@@ -242,7 +241,7 @@ def _mtime_ts(path: Path) -> str:
 
 
 def written_ts(path: Path, git_repo_dir: Path | None) -> str:
-    """"written" = the most recent modification signal (SPEC-136 DEC-004: tracks "has anyone
+    """"written" = the most recent modification signal (tracks "has anyone
     touched/reconfirmed this recently," not "how old is this note"). A git commit timestamp
     for the git-tracked repo store; `path.stat().st_mtime` fallback for the non-git builtin
     store (or when git yields nothing)."""

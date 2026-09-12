@@ -17,6 +17,7 @@ All notable changes to dwarves-kit are documented here.
   Repoint any external caller to `bin/reflect` now.
 
 ### Changed
+- Finished the `lib/` scattered-id strip and registered `lib` as ratchet zone 8: `bin/lint --zone lib --count` is 0 and `tests/test-no-scattered-ids.sh` enforces it going forward, alongside hooks/bin/skills. Also taught the enumerator's provenance-footer exemption to recognize the shell/python `# provenance: ...` shape, not just markdown's `<!-- provenance: ... -->`.
 - `/kit:explain` no longer hardcodes `narrate-log` + `svg-knowledge-diagram`; it hands the
   grounded skeleton (reading-order diff, recorded test line, mermaid change-map) to whatever
   skill `understand.teach` names, through the Skill tool (ADR-0036). **Behavior change for an

@@ -1074,7 +1074,7 @@ cmd_publish() {
     echo "  commit is local, checkout restored, will retry next publish" >&2
     return 3
   fi
-  # ID-835: a rebase can apply cleanly onto a genuine row-id collision instead
+  # A rebase can apply cleanly onto a genuine row-id collision instead
   # of conflicting on it, because consumer boards mark BACKLOG.md
   # `merge=union` -- two sessions each minting an id from a clone that never
   # fetched land both rows, silently. `parse_board` then keeps only the FIRST

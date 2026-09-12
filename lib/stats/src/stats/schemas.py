@@ -62,7 +62,7 @@ LEARNED_SCHEMA: list[tuple[str, str]] = [
 ]
 
 # One row per `| GATE |` kit run-ledger line. `caught`/`start_ts`/`end_ts` come
-# from a SEPARATE, additive `| OUTCOME |` start/end bracket (kit's own SPEC-129), paired by
+# from a SEPARATE, additive `| OUTCOME |` start/end bracket (kit's own), paired by
 # phase name; NULL when no bracket exists for that gate (see adapters.py `read_kit_gates`
 # docstring for the pairing mechanics). `cost` is the same pairing extended to a
 # phase-scoped `| TOKENS |` line (`phase=<gate>`, the rung-4 cost-checkpoint gap-close):
@@ -90,7 +90,7 @@ KIT_GATES_SCHEMA: list[tuple[str, str]] = [
 # the same convention `gate-yield` already uses (GROUP BY + CASE WHEN in SQL, not in the
 # adapter). Storing the full history is what lets one table answer BOTH sides of the
 # correlation: which commit shipped a given kit run (any commit) and which later commit fixed
-# it (a fix-typed commit) -- see SPEC-132 DEC-001.
+# it (a fix-typed commit).
 GIT_FIXES_SCHEMA: list[tuple[str, str]] = [
     ("sha", "VARCHAR"),
     ("files", "VARCHAR"),
@@ -101,8 +101,8 @@ GIT_FIXES_SCHEMA: list[tuple[str, str]] = [
 # The upstream half of the benchmark: one row per hook-enforced
 # `docs/implementation-notes/<slug>.md` file (NOT per commit -- `file` here is the note file's
 # OWN relative path). `deviation-rate` JOINs this against `git_fixes` by bridging `slug` to a
-# commit subject the same way SPEC-132 bridges `rid` (two-stage: name-match once, then
-# file-equality against the anchor commit's own files), see SPEC-133 DEC-001.
+# commit subject the same way `git_fixes` bridges `rid` (two-stage: name-match once, then
+# file-equality against the anchor commit's own files).
 IMPL_NOTES_SCHEMA: list[tuple[str, str]] = [
     ("repo", "VARCHAR"),
     ("slug", "VARCHAR"),
@@ -151,7 +151,7 @@ SAFETY_SCHEMA: list[tuple[str, str]] = [
 
 # The tool's SECOND markdown-table adapter (after `learned`): one row per (repo, lens) pair
 # aggregated from a repo's `docs/verification/rejected-findings.md` "## Rows" table
-# (SPEC-137, gate-review-absorptions mega-goal SG-04; the file format itself is SPEC-144 in
+# (from the gate-review-absorptions mega-goal; the file format itself is documented in
 # dwarves-kit's own numbering). NUMBERS ONLY -- `finding-key`/`reason` cell text is read only
 # to validate a row's shape, never stored in any column here (see adapters.py
 # `read_rejected_findings` docstring for the exact fields never captured).

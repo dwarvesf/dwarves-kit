@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# mega-merge.sh -- ship-layer auto-merge ENFORCEMENT for the mega lane (ADR-0028 P2/P3,
-# kit-hardening SG-08). Auto-merge RIDES ON the ship-gate; it never bypasses it.
+# mega-merge.sh -- ship-layer auto-merge ENFORCEMENT for the mega lane (P2/P3,
+# kit-hardening). Auto-merge RIDES ON the ship-gate; it never bypasses it.
 #
 # DECISION is separated from ACTION (two verbs) so the decision is testable without side
 # effects, and the action is dry-run by default so a passing gate alone never touches `gh`:
@@ -18,12 +18,12 @@
 #                                           gate REFUSES unconditionally (prints BLOCKED,
 #                                           logs it, exits nonzero, never touches `gh`) --
 #                                           a failing/missing gate can never auto-merge,
-#                                           the exact mis-build ADR-0028 names as the risk.
+#                                           the exact mis-build this design names as the risk.
 #                                           A passing gate still only PRINTS the `gh pr
 #                                           merge` it would run unless --execute is given.
 #
 # Per-run merge posture (mirrors the ops-toolkit plan-for-mega-goal skill's
-# merge_autonomy knob; the ONE team-facing flag ADR-0028 calls out):
+# merge_autonomy knob; the ONE team-facing flag this design calls out):
 #   MEGA_MERGE_POSTURE=auto-to-final (default) | per-pr-review
 #     auto-to-final  -- an `auto`-tagged sub-goal's PR merges once its gate passes
 #                       (still requires --execute to actually call gh; see above).
@@ -36,12 +36,12 @@
 #
 # commands/mega.md routes a `gate`-tagged sub-goal or the held final PR away from `merge`
 # at the PROMPT level (mirrors /kit:dispatch and the skill: a human always merges those).
-# SPEC-100 adds a CODE-LEVEL backstop: `merge` itself calls `_merge_exclusion`,
+# A CODE-LEVEL backstop: `merge` itself calls `_merge_exclusion`,
 # which reads the PR's GitHub STATE (draft / hold-label / bracketed title marker) and
 # refuses , fail-closed on unreadable OR malformed state , so a prompt-rationalizing model
 # cannot merge past the exclusion for a MARKED held PR even if the prompt-level rule is
 # absent. It defends a MARKED PR; it does not synthesize a mark (an un-marked held PR must be
-# opened draft/labelled at creation , enforcement tracked as ID-089). Defense-in-depth, not a
+# opened draft/labelled at creation). Defense-in-depth, not a
 # replacement for the routing.
 #
 # Subcommands:
@@ -219,7 +219,7 @@ merge() {
   gh pr merge "$pr" --squash --delete-branch
 }
 
-# mark <pr> [repo] -- the MARK half of the SPEC-100 guard. The guard
+# mark <pr> [repo] -- the MARK half of the merge-exclusion guard. The guard
 # (_merge_exclusion) defends a PR that CARRIES a mark but cannot synthesize one, so an
 # UN-marked gate/gated-final PR would slip through. This opens the mark: it puts a
 # gate-tagged sub-goal PR (and the held final PR) into exactly the state the guard refuses
@@ -242,7 +242,7 @@ mark() {
   "$gh" pr ready "$pr" ${rf[@]+"${rf[@]}"} --undo >/dev/null 2>&1 || true
   # do-not-merge label = the mark the code guard (_merge_exclusion) reads
   "$gh" pr edit "$pr" ${rf[@]+"${rf[@]}"} --add-label do-not-merge >/dev/null 2>&1 || true
-  # Confirm the mark actually landed (SPEC-104 TIER-4 security review, Medium). The three calls
+  # Confirm the mark actually landed (TIER-4 security review, Medium). The three calls
   # above are best-effort (|| true) so a gh auth/rate-limit/wrong-repo/creation-race failure never
   # crashes the loop -- but a silent no-op that still reported success would leave a held PR
   # UNPROTECTED while claiming otherwise. Reuse _merge_exclusion as the verifier: mark succeeded

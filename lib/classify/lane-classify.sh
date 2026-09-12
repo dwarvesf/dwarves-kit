@@ -7,7 +7,7 @@
 # judgment. Pure bash + grep; no binary.
 #
 # Flag-scoring model (absorbed from hoangnb24/repository-harness FEATURE_INTAKE, 2026-06-10;
-# see docs/specs/SPEC-050 + docs/absorption/2026-06-10-repository-harness.md). Named risk flags
+# see this module's own flag-scoring design doc + docs/absorption/2026-06-10-repository-harness.md). Named risk flags
 # are matched against the description:
 #   - HARD-gate flags: any one hit -> `full` (mirrors the harness auto-escalate list + the
 #     WORKFLOW full-lane triggers, PLUS a `kit-machinery` flag, the gap that misclassified the
@@ -84,7 +84,7 @@ LANE=""; REASON=""; FIRED=""
 FILES=""; FILES_SET=0; REMAIN=()
 
 # _files_touch_machinery -- true if any touched file is under lib/ or hooks/, the kit's
-# enforcement layer (SPEC-069's own definition of the machinery surface). This is the FILE
+# enforcement layer (this file's own definition of the machinery surface). This is the FILE
 # fact that separates an EDIT to a machinery lib from a mere textual MENTION of its basename.
 _files_touch_machinery() {
   # Quote the split (read -ra, not a bare `for f in $FILES`) so a path with a space or a
@@ -127,7 +127,7 @@ classify_core() {
   # 1. backfill: brownfield operating-layer documentation (first, so an in-doc keyword like
   #    "write its AGENTS.md" does not pull the task into the kit-machinery hard-gate).
   if printf '%s' "$lc" | grep -qE 'backfill|operating[ -]layer|brownfield|document the existing|writes?\b.{0,12}(agents|claude)\.md'; then
-    # SPEC-074 review HIGH: a backfill phrase that ALSO carries a hard-gate subject
+    # Review HIGH: a backfill phrase that ALSO carries a hard-gate subject
     # ("write its AGENTS.md and disable the safety hooks") must not be down-laned;
     # the pure doc case carries no hard keyword and stays backfill.
     local j
@@ -170,7 +170,7 @@ classify_core() {
   # 3b. doc-bootstrap, deliberately AFTER the hard-gate pass:
   # markdown-only or doc-tree bootstrap work is tiny, but these anchors describe the
   # SUBJECT of the work, not a cosmetic surface, so a README about auth tokens or
-  # gate machinery must let the hard-gate win first (review HIGH, SPEC-072).
+  # gate machinery must let the hard-gate win first (review HIGH).
   if printf '%s' "$lc" | grep -qE 'markdown[ -]only|bootstrap .{0,40}(readme|notes|reading list|learning track)'; then
     LANE=tiny; REASON="doc bootstrap (markdown-only / doc-tree), no hard-gate subject"; FIRED=doc-bootstrap; return 0
   fi
@@ -240,15 +240,15 @@ lane_check() {
   return 0
 }
 
-# Spec->build-boundary re-classification (SPEC-094, ADR-0028 refinement point 4,
-# kit-hardening SG-06). `check` above compares the CHOSEN lane against the original
+# Spec->build-boundary re-classification (refinement point 4, kit-hardening).
+# `check` above compares the CHOSEN lane against the original
 # task TEXT at intake; `escalate` compares the lane RECORDED at intake against the
 # SPEC's own text at the point the spec is validated and build is about to start --
 # the first point emergent scope (auth / data-model / migration the one-line task
 # description never carried) is concrete. Up-only: a heavier spec-implied lane
 # escalates; a same-or-lighter one HOLDS (the downgrade guard -- reuses lane_rank,
 # same as lane_check, so a lighter re-class can never win). Advisory: prints the
-# decision and exits 0 always ("Detect, don't dictate"; ADR-0024 mid-flight never
+# decision and exits 0 always ("Detect, don't dictate"; mid-flight never
 # hard-blocks). It does NOT mutate the gate-ledger or the spec file itself -- the
 # caller (commands/execute.md Prerequisites) does the recording on ESCALATE.
 escalate() {
@@ -310,7 +310,7 @@ _deesc_resolve_base() {
 # folds in the staged delta, so adding `--cached` again would double-count every staged line.
 # That double-count is harmless for those two gates (it biases them toward MORE warnings,
 # their safe direction); it would bias THIS gate the wrong way (under-nudging a genuinely
-# small diff). See docs/specs/SPEC-141-lane-de-escalation.md "Design" for the full note.
+# small diff). See this module's own design doc for the full note.
 _deesc_changed_lines() {
   local root="$1" base="$2" total=0 a d
   while IFS=$'\t' read -r a d _rest; do

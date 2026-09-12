@@ -8,20 +8,20 @@
 # `report` (the RUN_REPORT telemetry generator: header + gate matrix + callable-stack
 # skeleton from the rid ledgers; --out, --rid-map).
 #
-# A subsystem dir (SG-03's "2+-verb modules get a grouped `lib/<x>/<x>.sh`" rule): `mega` has
-# two verbs (`status`, `review` -- SPEC-197 / harness-loop SG-07) and was promoted into
-# `lib/mega/` (`lib/mega/mega.sh` + siblings, stable entry `bin/mega`) per ADR-0034 / ID-287.
+# A subsystem dir (the "2+-verb modules get a grouped `lib/<x>/<x>.sh`" rule): `mega` has
+# two verbs (`status`, `review`) and was promoted into
+# `lib/mega/` (`lib/mega/mega.sh` + siblings, stable entry `bin/mega`).
 # `review`'s substantial composition logic lives in the sibling `lib/mega/mega-review.py`
 # (bash-launcher-to-python, the exact delegation shape `lib/gate/proof-table-gen.sh` ->
 # `lib/gate/proof-table-gen.py` already established: bash 3.2 has no associative arrays, which
 # the phase/token/PR joins need). Same shape as `lib/board/board.sh` delegating to
 # `lib/board/board-mirror.sh` for its own heavier verbs. The single-verb orphans
-# (`lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh`) stay at root as ADR-0034 "deliberate
+# (`lib/adopt.sh` / `lib/explain.sh` / `lib/pitch.sh`) stay at root as documented "deliberate
 # orphans" pending their own ruling. `lib/precedent.sh` was promoted out of that set into
-# `lib/precedent/precedent.sh` (SPEC-245: records + inventory surfaces, stable entry
+# `lib/precedent/precedent.sh` (records + inventory surfaces, stable entry
 # `bin/precedent`).
 #
-# WHY THIS EXISTS (provenance): a live session hit the SG-02 HANDOFF-vs-reality lie by hand --
+# WHY THIS EXISTS (provenance): a live session hit the HANDOFF-vs-reality lie by hand --
 # HANDOFF.md claimed "running" while the `kitmod-02` worktree sat at 0 commits, empty. A dumb
 # reader that only echoes a roadmap's own `[x]`/`[ ]` boxes would have repeated that lie
 # verbatim. This verb is the manual reconciliation (grep ROADMAP, walk branches, verify PRs)
@@ -33,12 +33,12 @@
 # call `lib/board/board-mirror.sh`'s `extract_megas` already documents for this same file).
 # BOTH id forms are accepted: `SG-NN` is what `/kit:mega` scaffolds today (commands/mega.md),
 # `NN-slug` is the older form every archived roadmap still carries.
-#   - [x] SG-01 Collapse the module , auto , PR #190 merged cb64f15
+#   - [x] SG-NN Collapse the module , auto , PR #190 merged cb64f15
 #   - [x] 01-module-collapse (dwarves-kit), <prose>, PR #190 merged cb64f15 (<prose>)
 #   - [ ] 04-install-wire (dwarves-kit), <prose>, PR #
 #   - [~] 09-rehomed (dwarves-kit), rehomed into <other mega> (informational, never flagged)
 # `[x]`/`[X]` = checked, `[ ]` = unchecked, `[~]` = rehomed/superseded (informational only, per
-# DECISIONS.md's SG-01 outcome notes -- these are never drift-flagged even when git truth
+# DECISIONS.md's own outcome notes -- these are never drift-flagged even when git truth
 # disagrees, because the roadmap is explicitly saying "this box means something else now").
 #
 # Git truth per sub-goal (gathered against --code-root, the repo the sub-goal's OWN branches/
@@ -93,13 +93,13 @@
 #
 #   mega.sh review <slug> --html [--megagoals-root <path>] [--code-root <path>] [--base <branch>]
 #                          [--out <path>]
-#     Composes ONE self-contained static HTML sign-off page (SPEC-197, harness-loop SG-07) from
+#     Composes ONE self-contained static HTML sign-off page (harness-loop) from
 #     THREE read-only sources: this `status` verb's own git-truth reconciliation, the gate/run
 #     ledger (GATE/OUTCOME/TOKENS lines), and `gh pr view` (PR/CI/merge state) -- plus a
 #     best-effort harness-wide footer (staged candidates, learned-ledger queued, unpaid debt).
 #     `--html` is currently the ONLY surface and is required (no live/served variant; scope
 #     fence, see the goal file). Default `--out`: `<megagoals-root>/<slug>/REVIEW.html` (next to
-#     RUN_REPORT.md). A projection, never a stored source of truth (SPEC-182 discipline): safe
+#     RUN_REPORT.md). A projection, never a stored source of truth (discipline): safe
 #     to re-run any time, nothing cached. The substantial logic lives in the sibling
 #     `lib/mega/mega-review.py`; this verb is a thin bash launcher that resolves KIT_LOG_DIR the exact
 #     way `lib/gate/proof-table-gen.sh` already does, then execs it.
@@ -234,9 +234,9 @@ _classify() {
 }
 
 _label() {
-  # DOWNSTREAM COUPLING (review finding, SPEC-197): `lib/mega/mega-review.py`'s `_STATUS_LINE_RE`
+  # DOWNSTREAM COUPLING (review finding): `lib/mega/mega-review.py`'s `_STATUS_LINE_RE`
   # regex parses `cmd_status`'s stdout by matching this exact label set literally (shelled out
-  # to, not reimplemented -- SPEC-197 DEC-003). A cosmetic rename here degrades `mega review`
+  # to, not reimplemented). A cosmetic rename here degrades `mega review`
   # to a silent, non-fatal honest-empty read for the affected rows (never a crash, per the
   # composer's own "never fatal" contract) rather than a loud break -- worth a grep for
   # `_STATUS_LINE_RE` in `lib/mega/mega-review.py` before renaming any of these strings.

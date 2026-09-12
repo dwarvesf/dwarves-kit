@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# boundary-lint.sh -- SPEC-249/ADR-0036: the engine never names a consumer, by path or by
-# skill (SG-01, learning-boundary). Two checks, both read-only, both grep-with-an-allowlist.
+# boundary-lint.sh -- the engine never names a consumer, by path or by
+# skill (learning-boundary). Two checks, both read-only, both grep-with-an-allowlist.
 #
 # PATH: all of lib/ and hooks/ (minus four modules named below), commands/, tests/, kit.toml
 # for a hardcoded dotfiles or ops-toolkit path -- the shape behind the PR #554 regression (a
@@ -9,15 +9,15 @@
 # lib/{plugin-check,webcheck,sync,stats}/ -- each carries real, unrelated "graduated/migrated
 # from ops-toolkit/tools/X" provenance prose in its own README/SPEC/docs (verified: measured
 # 20+ such hits, zero of them a live path any code reads), which this lint has no mandate to
-# rewrite. A hit in any OTHER module is real; see docs/specs/SPEC-285-engine-learn-seam.md
-# DEC-003 for the full rationale and why a wider net there would break green on introduction.
+# rewrite. A hit in any OTHER module is real; see the engine-learn-seam spec for the
+# full rationale and why a wider net there would break green on introduction.
 #
 # NAME: an explicit, small file list (the seam-adjacent surfaces this repo owns) for a
 # hardcoded consumer-skill name that should route through a config seam instead. NOT a
 # directory-wide scan: `narrate-log`/`deep-understand`/etc. have real, unrelated, legitimate
 # hits elsewhere (commands/pitch.md composes narrate-log for an unrelated feature;
 # tests/test-wrap.sh uses "learning-ledger" as generic fixture text). See
-# docs/specs/SPEC-285-engine-learn-seam.md DEC-003/DEC-004.
+# the engine-learn-seam spec.
 #
 # name_files/name_re are a hand-maintained list, not derived from lib/config/module-
 # registry.md's "## Seams" table: that table's Filled-by column is free-text prose ("the
@@ -43,7 +43,7 @@ done < <(grep -rnE "${path_excl[@]}" "$path_re" \
   "$ROOT/lib" "$ROOT/hooks" "$ROOT/commands" "$ROOT/tests" "$ROOT/kit.toml" 2>/dev/null \
   | grep -v "^$SELF/boundary-lint.sh:" || true)
 
-# Retired/pedagogy skill names (ROADMAP.md "Retired words" + the two names ADR-0036 moves
+# Retired/pedagogy skill names (ROADMAP.md "Retired words" + the two names that migration moved
 # behind the seam), checked only where this repo could plausibly still hardcode one.
 name_re='narrate-log|svg-knowledge-diagram|deep-understand|dev-learner|session-closeout|session-distill|learning-ledger'
 # Every commands/*.md file, not the three that existed when this list was written: a NEW

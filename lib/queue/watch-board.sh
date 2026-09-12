@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# watch-board.sh -- the backlog watcher (SPEC-217, board row ID-457 gap B).
+# watch-board.sh -- the backlog watcher (board row gap B).
 #
 # Scans ONE board (`<repo-root>/_meta/BACKLOG.md`) for `queued` rows the OPERATOR marked
 # `#auto`, and hands them to the shipped queue launcher in the TSV contract it already
@@ -17,7 +17,7 @@
 #      charset, repo self-consistency, containment, and existence all check out)
 #   4. its slug's LAST queue-journal verdict is not terminal (`done` or `gated`)
 #
-#   5. no runaway guard is holding it back (SPEC-221: no live heartbeat, not quarantined,
+#   5. no runaway guard is holding it back (no live heartbeat, not quarantined,
 #      past its stall backoff, past its breaker cooldown)
 #
 # Rule 4 is the idempotency rule and it deliberately differs from `queue run`'s own
@@ -62,7 +62,7 @@ QUEUE_SH="$WATCH_DIR/queue.sh"
 
 # Source the queue itself (its own header sanctions this: `main` runs only when EXECUTED). Two
 # things come from it, neither re-implemented here: the resolved `$QUEUE_JOURNAL` (so an operator
-# who moved the journal moves this watcher's dedup with it, SPEC-097's ONE durable root), and
+# who moved the journal moves this watcher's dedup with it, the ONE durable root), and
 # `_pointer_allowlist_reason`, the realpath/symlink-aware containment check.
 #
 # That second one matters. `queue run` applies it only to `--from-boards` rows, and the watcher
@@ -171,8 +171,8 @@ _reap_stale_runs() {  # journal
 }
 
 # _guard_skip_reason <slug> -- why this slug must not be planned right now, or "" to allow it.
-# The single re-pick gate. Every runaway guard converges here, which is why SPEC-221 DEC-005
-# declined a separate transition table: a second copy of these rules could disagree with this one.
+# The single re-pick gate. Every runaway guard converges here, which is why a separate
+# transition table was declined: a second copy of these rules could disagree with this one.
 _guard_skip_reason() {  # slug
   local slug="$1" beat retry cooldown now stalls
   now=$(date +%s)
@@ -225,7 +225,7 @@ cmd_watch() {
   # it at the resolved journal once rather than threading it through every call site.
   QUEUE_JOURNAL="$journal"
 
-  # SPEC-221: reap dead runs BEFORE planning, so a slug whose conductor died gets its verdict in
+  # Reap dead runs BEFORE planning, so a slug whose conductor died gets its verdict in
   # the same tick that reconsiders it. Runs even when the board is missing: the runs that need
   # reaping are already launched, and a repo losing its board must not strand them.
   _reap_stale_runs "$journal"
@@ -278,7 +278,7 @@ cmd_watch() {
         skipped=$((skipped + 1))
         continue ;;
     esac
-    # SPEC-221's re-pick gate: in-flight claim, quarantine, stall backoff, breaker cooldown. Runs
+    # the re-pick gate: in-flight claim, quarantine, stall backoff, breaker cooldown. Runs
     # AFTER the terminal-verdict rule above, so a `done` row is still skipped for the shipped
     # reason rather than for a timer.
     local gr; gr="$(_guard_skip_reason "$slug")"

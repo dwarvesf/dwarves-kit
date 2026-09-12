@@ -16,7 +16,7 @@ set -euo pipefail
 # SCRIPT_ROOT = where this script + its libs live (always the real repo); used to source
 # libs and locate the .py. KIT_ROOT = the LOGICAL kit root the generator confines output
 # under (docs/verification/generated) and derives the default out-path from. KIT_ROOT defaults
-# to SCRIPT_ROOT but honors a pre-set env override (SPEC-134 test seam), so the SPEC-134 path
+# to SCRIPT_ROOT but honors a pre-set env override (test seam), so the path
 # confinement can be exercised against a throwaway docs/verification/generated without polluting
 # the real repo. Libs are always sourced from SCRIPT_ROOT, so a fake KIT_ROOT can never break
 # sourcing.
