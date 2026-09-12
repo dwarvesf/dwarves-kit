@@ -5,7 +5,8 @@
 # Fixture: three bare remotes whose default branches are `main`, `master` and `develop`,
 # each with the branch set the gates discriminate on (merged-ancestor, unmerged, squash-ok,
 # squash-stale, stacked-child, wt-clean, wt-dirty), clones with three secondary worktrees
-# (clean, dirty, detached), a clone whose origin/HEAD dangles, and a repo with no remote.
+# (clean, dirty, detached), a locked-worktree matrix clone (proven, dirty, unproven), a clone whose
+# removal leaves the path behind, a clone whose origin/HEAD dangles, and a repo with no remote.
 # `gh` is a stub on PATH driven by env vars; it records every call so the merge case can
 # assert the exact flags.
 #
@@ -27,6 +28,9 @@ chk_no()  { chk "$1" "$({ trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | g
 
 TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-test.XXXXXX")"
 TMPD="$(cd "$TMPD" && pwd)"
+# git records a worktree path fully resolved, so a report line naming one carries the
+# symlink-free form of TMPD on macOS (/private/var...), not the logical one.
+TMPD_P="$(cd "$TMPD" && pwd -P)"
 trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 
 # Pin the operator config overlay at a path that does not exist, so the operator's REAL
@@ -134,6 +138,9 @@ set_stub() { # set_stub <remote name> <default branch>
   export GH_STUB_MERGED_squash_ok="[{\"headRefOid\":\"$(git -C "$bare" rev-parse squash-ok)\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
   export GH_STUB_MERGED_squash_stale="[{\"headRefOid\":\"1111111111111111111111111111111111111111\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
   export GH_STUB_MERGED_stacked_child="[{\"headRefOid\":\"$(git -C "$bare" rev-parse stacked-child)\",\"baseRefName\":\"feat/parent\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+  # The clean worktree's own branch is squash-merged too: a locked worktree is removed only under
+  # the same merge proof a branch delete needs, so an unproven wt-clean would now be left alone.
+  export GH_STUB_MERGED_wt_clean="[{\"headRefOid\":\"$(git -C "$bare" rev-parse wt-clean)\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
 }
 
 build_remote rmain main
@@ -197,6 +204,8 @@ out="$("$WRAP" apply --worktrees "$DRY" 2>&1)"; rc=$?
 chk "apply dry-run --worktrees exits 0" "$rc"
 chk_has "apply dry-run: the dirty worktree is skipped" "$out" "dirty (another session's work stays)"
 chk_has "apply dry-run: the detached worktree is skipped" "$out" "detached HEAD (removal could orphan the commit)"
+chk_has "apply dry-run: the proven locked worktree prints WOULD with path, branch and locked" "$out" \
+  "WOULD remove worktree $TMPD_P/wt-scan-main-clean [wt-clean, locked] and delete wt-clean (squash-merged per gh)"
 after_b="$(git -C "$DRY" branch --list)"
 after_w="$(git -C "$DRY" worktree list)"
 chk "apply without --apply changes no branch (byte-equal)" "$([ "$before_b" = "$after_b" ]; echo $?)"
@@ -219,13 +228,79 @@ APPLYREPO="$TMPD/clone-apply-main"
 out="$("$WRAP" apply --apply --worktrees "$APPLYREPO" 2>&1)"; rc=$?
 chk "apply --apply exits 0 on a healthy repo" "$rc"
 branches="$(git -C "$APPLYREPO" for-each-ref --format='%(refname:short)' refs/heads/ | sort | tr '\n' ' ')"
-chk "apply --apply deleted merged-ancestor and squash-ok only" \
-  "$([ "$branches" = "main squash-stale stacked-child unmerged wt-clean wt-dirty " ]; echo $?)"
+chk "apply --apply deleted merged-ancestor, squash-ok and the removed worktree's wt-clean" \
+  "$([ "$branches" = "main squash-stale stacked-child unmerged wt-dirty " ]; echo $?)"
 chk_no "apply --apply never touched the default branch" "$out" "delete main"
 chk "apply --apply removed the clean worktree only" \
   "$([ ! -d "$TMPD/wt-apply-main-clean" ] && [ -d "$TMPD/wt-apply-main-dirty" ] && [ -d "$TMPD/wt-apply-main-det" ]; echo $?)"
+chk_has "apply --apply names the removed worktree's path, branch and lock" "$out" \
+  "remove worktree $TMPD_P/wt-apply-main-clean [wt-clean, locked] and delete wt-clean"
 chk "apply --apply fast-forwarded the default branch" \
   "$([ "$(git -C "$APPLYREPO" rev-parse HEAD)" = "$NEW_TIP" ]; echo $?)"
+
+# ===========================================================================
+echo "=== apply --worktrees: the locked-worktree matrix (proven, dirty, unproven) ==="
+# ===========================================================================
+# One clone, three locked worktrees: the Agent tool locks every worktree it creates, so a lock is
+# the normal state here and the merge proof, not the lock, decides.
+git clone -q "$TMPD/bare-rmain" "$TMPD/clone-wtmatrix"
+MTX="$TMPD/clone-wtmatrix"
+gitc "$MTX"
+git -C "$MTX" remote set-head origin main >/dev/null 2>&1
+for b in merged-ancestor squash-stale wt-clean wt-dirty; do
+  git -C "$MTX" branch "$b" "origin/$b" >/dev/null 2>&1
+done
+for pair in "proven wt-clean" "dirty wt-dirty" "unproven squash-stale"; do
+  set -- $pair
+  git -C "$MTX" worktree add "$TMPD/mtx-$1" "$2" >/dev/null 2>&1
+  git -C "$MTX" worktree lock "$TMPD/mtx-$1" >/dev/null 2>&1
+done
+echo dirt > "$TMPD/mtx-dirty/dirt.txt"
+set_stub rmain main
+
+out="$("$WRAP" apply --worktrees "$MTX" 2>&1)"
+chk_has "matrix dry-run: the proven locked worktree is a WOULD line" "$out" \
+  "WOULD remove worktree $TMPD_P/mtx-proven [wt-clean, locked] and delete wt-clean"
+chk_has "matrix dry-run: the locked dirty worktree still skips as dirty" "$out" \
+  "SKIP $TMPD_P/mtx-dirty: dirty (another session's work stays)"
+chk_has "matrix dry-run: the locked unproven worktree skips unproven" "$out" \
+  "SKIP $TMPD_P/mtx-unproven: squash-stale is not proven merged into main (leave it)"
+chk "matrix dry-run removed nothing" \
+  "$([ -d "$TMPD/mtx-proven" ] && [ -d "$TMPD/mtx-dirty" ] && [ -d "$TMPD/mtx-unproven" ]; echo $?)"
+
+out="$("$WRAP" apply --apply --worktrees "$MTX" 2>&1)"; rc=$?
+chk "matrix apply exits 0" "$rc"
+chk "matrix apply removed the proven locked worktree" "$([ ! -e "$TMPD/mtx-proven" ]; echo $?)"
+chk "matrix apply deleted the removed worktree's branch" \
+  "$(git -C "$MTX" show-ref --verify --quiet refs/heads/wt-clean && echo 1 || echo 0)"
+chk_has "matrix apply names the branch delete with its proof" "$out" \
+  "delete wt-clean (squash-merged per gh, its locked worktree is gone)"
+chk "matrix apply kept the dirty and unproven worktrees" \
+  "$([ -d "$TMPD/mtx-dirty" ] && [ -d "$TMPD/mtx-unproven" ]; echo $?)"
+chk "matrix apply kept the unproven worktree's branch" \
+  "$(git -C "$MTX" show-ref --verify --quiet refs/heads/squash-stale; echo $?)"
+
+# ===========================================================================
+echo "=== apply --apply --worktrees: a removal that leaves the path is FAILED, exit 2 ==="
+# ===========================================================================
+# The postcondition is the point: git prunes the admin entry even when it cannot delete the
+# directory, so a report that trusted the exit code alone would call this worktree removed.
+git clone -q "$TMPD/bare-rmain" "$TMPD/clone-wtpost"
+POST="$TMPD/clone-wtpost"
+gitc "$POST"
+git -C "$POST" remote set-head origin main >/dev/null 2>&1
+git -C "$POST" branch wt-clean origin/wt-clean >/dev/null 2>&1
+mkdir -p "$TMPD/ro-parent"
+git -C "$POST" worktree add "$TMPD/ro-parent/stuck" wt-clean >/dev/null 2>&1
+git -C "$POST" worktree lock "$TMPD/ro-parent/stuck" >/dev/null 2>&1
+set_stub rmain main
+chmod 500 "$TMPD/ro-parent"
+out="$("$WRAP" apply --apply --worktrees "$POST" 2>&1)"; rc=$?
+chmod 700 "$TMPD/ro-parent"
+chk "apply exits 2 when the postcondition fails" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "the failed postcondition is reported, not silent" "$out" \
+  "FAILED remove worktree $TMPD_P/ro-parent/stuck [wt-clean, locked] and delete wt-clean (squash-merged per gh): $TMPD_P/ro-parent/stuck survived the removal, wt-clean not deleted"
+chk "the stuck worktree path is still there" "$([ -d "$TMPD/ro-parent/stuck" ]; echo $?)"
 
 # ===========================================================================
 echo "=== apply --apply: a non-ff default branch is FAILED, exit 2, never forced ==="

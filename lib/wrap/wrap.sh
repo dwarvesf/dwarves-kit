@@ -18,7 +18,8 @@
 # knowledge-root project directory, the staging-file append, and one gh pr merge. Every
 # other action is a report line. The verbs never switch a branch, never touch a dirty
 # file, never force a push or a pull, and never retry a failed git call. The one force is
-# `worktree remove -f -f`, which overrides a lock after the dirty and detached guards pass.
+# `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
+# unproven worktree, and the removal counts only once a postcondition finds the path gone.
 #
 # Ported from the operator's repo-wrapup scripts. The default branch is DETECTED, never
 # assumed to be main.
@@ -242,10 +243,44 @@ run() {
 
 _scanned_tip() { awk -v b="$1" '$1 == b { print $2 }' "$TIPS_FILE"; }
 
+# _merge_proof <repo> <default branch> <gh state> <branch> -- prints the proof that the branch
+# already reached the default branch and exits 0; exit 1 when no proof exists. The two proofs are
+# the same two `_apply_branches` deletes a branch under: a plain ancestor, or the gh squash proof.
+_merge_proof() {
+  local repo="$1" def="$2" ghs="$3" b="$4" tip json
+  if git -C "$repo" merge-base --is-ancestor "$b" "origin/${def}" 2>/dev/null; then
+    printf 'ancestor of origin/%s\n' "$def"; return 0
+  fi
+  [ "$ghs" = "ok" ] || return 1
+  tip="$(git -C "$repo" rev-parse "$b" 2>/dev/null)"
+  json="$(_squash_json "$(_origin_url "$repo")" "$b")"
+  [ "$(_squash_verdict "$json" "$tip" "$def")" = "OK" ] || return 1
+  printf 'squash-merged per gh\n'
+}
+
+# _wt_locked <worktree path> -- 0 when the worktree carries a lock. git keeps the lock as a
+# `locked` file in that worktree's admin directory, the same state `worktree list` reports.
+_wt_locked() {
+  local gd
+  gd="$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ -n "$gd" ] && [ -f "${gd}/locked" ]
+}
+
+# _wt_cleared <repo> <worktree path> -- 0 when the path is gone AND the list no longer names it.
+# A removal that cannot delete the directory (a read-only parent) still prunes the admin entry,
+# so neither half alone proves the worktree went. The removal is believed only after both.
+_wt_cleared() {
+  [ -e "$2" ] && return 1
+  git -C "$1" worktree list --porcelain -z 2>/dev/null | tr '\0' '\n' \
+    | grep -qxF "worktree $2" && return 1
+  return 0
+}
+
 # A worktree path may carry a newline, so the record stream is NUL-delimited: `--porcelain -z`
 # terminates every attribute with NUL, which keeps the path whole.
 _apply_worktrees() {
-  local repo="$1" main_wt rec wt wt_c
+  local repo="$1" def="$2" cur="$3" fetch_ok="$4" ghs="$5"
+  local main_wt rec wt wt_c wtb proof lock verdict
   echo "-- worktrees:"
   main_wt="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"
   main_wt="${main_wt%/.git}"; main_wt="${main_wt%/}"
@@ -256,17 +291,43 @@ _apply_worktrees() {
     if [ -z "$wt_c" ]; then echo "     SKIP ${wt}: unresolvable"; continue; fi
     [ "$wt_c" = "$main_wt" ] && continue
     if [ "$WORKTREES" != 1 ]; then
-      echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"
-    elif [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
-      echo "     SKIP ${wt}: dirty (another session's work stays)"
-    elif [ -z "$(git -C "$wt" branch --show-current 2>/dev/null)" ]; then
-      echo "     SKIP ${wt}: detached HEAD (removal could orphan the commit)"
+      echo "     SKIP ${wt}: --worktrees not given (the operator must ask for worktree cleanup)"; continue
+    fi
+    if [ -n "$(git -C "$wt" status --short 2>/dev/null)" ]; then
+      echo "     SKIP ${wt}: dirty (another session's work stays)"; continue
+    fi
+    wtb="$(git -C "$wt" branch --show-current 2>/dev/null)"
+    if [ -z "$wtb" ]; then
+      echo "     SKIP ${wt}: detached HEAD (removal could orphan the commit)"; continue
+    fi
+    if [ "$wtb" = "$cur" ]; then
+      echo "     SKIP ${wt}: ${wtb} is the main checkout's branch"; continue
+    fi
+    if [ "$fetch_ok" != 1 ]; then
+      echo "     SKIP ${wt}: fetch failed, stale merge proof for ${wtb}"; continue
+    fi
+    proof="$(_merge_proof "$repo" "$def" "$ghs" "$wtb")" || {
+      echo "     SKIP ${wt}: ${wtb} is not proven merged into ${def} (leave it)"; continue
+    }
+    # A lock is not a reason to keep a proven worktree: the Agent tool locks every worktree it
+    # creates, so the locked ones are exactly the finished agent runs. `-f -f`, not `--force`:
+    # one --force refuses a locked worktree outright (`cannot remove a locked working tree`),
+    # measured on git 2.55; two overrides the lock once the guards above have passed.
+    lock="unlocked"; _wt_locked "$wt" && lock="locked"
+    verdict="remove worktree ${wt} [${wtb}, ${lock}] and delete ${wtb} (${proof})"
+    if [ "$APPLY" != 1 ]; then
+      echo "     WOULD ${verdict}"; continue
+    fi
+    if ! _write_guard "$repo"; then
+      echo "     SKIP ${wt}: index.lock held by another writer"; continue
+    fi
+    run "$repo" "$verdict" git -C "$repo" worktree remove -f -f "$wt"
+    if _wt_cleared "$repo" "$wt"; then
+      run "$repo" "delete ${wtb} (${proof}, its ${lock} worktree is gone)" \
+        git -C "$repo" branch -D "$wtb"
     else
-      # `-f -f`, not `--force`: one --force leaves a LOCKED worktree in place and only prints a
-      # hint, so the call reports success while nothing moved. The Agent tool locks every
-      # worktree it creates. The dirty and detached guards above ran, so -f -f overrides the lock alone.
-      run "$repo" "remove worktree ${wt} (clean; the branch survives removal)" \
-        git -C "$repo" worktree remove -f -f "$wt"
+      echo "     FAILED ${verdict}: ${wt} survived the removal, ${wtb} not deleted"
+      FAILURES=1
     fi
   done < <(git -C "$repo" worktree list --porcelain -z 2>/dev/null)
 }
@@ -440,7 +501,7 @@ _apply_repo() {
     git -C "$repo" for-each-ref --format='%(refname:short) %(objectname)' refs/heads/ > "$TIPS_FILE" 2>/dev/null
   fi
 
-  _apply_worktrees "$repo"
+  _apply_worktrees "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
   _apply_branches "$repo" "$def" "$cur" "$fetch_ok" "$ghs"
 
   echo "-- pull:"
