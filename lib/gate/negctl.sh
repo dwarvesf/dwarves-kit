@@ -12,6 +12,15 @@
 # CLOSED. Mixing the two behind one banner is the invariant a reader would trust and get
 # burned by. proof-ledger.sh keeps a `negctl` verb that forwards here.
 #
+# A PROBABILISTIC test breaks step 4. `run_test` is treated as deterministic, so a flaky
+# suite can come back green under the mutation and negctl calls the control vacuous when the
+# mutation was real. Set NEGCTL_RED_ATTEMPTS=<n> (default 1, byte-identical to before) to run
+# step 4 up to n times and take the FIRST non-zero as RED. It never makes a green test red:
+# a genuinely vacuous mutation stays green on every attempt and still FAILs.
+# Load is the other axis and is deliberately NOT here: holding machine load from a proof tool
+# is hostile on a shared box. Induce it around negctl instead, as
+# docs/verification/wavefront-startup-windows-negctl.sh does.
+#
 # Usage: negctl.sh <root> <test-cmd> <mutate-cmd>
 #   1. refuse if any tracked file is modified or staged (the restore would wipe it)
 #   2. snapshot the tree (tracked + untracked), run <test-cmd>: must be GREEN (exit 0)
@@ -29,6 +38,14 @@ root="${1:-}"; test_cmd="${2:-}"; mutate_cmd="${3:-}"
 [ -n "$root" ] && [ -n "$test_cmd" ] && [ -n "$mutate_cmd" ] \
   || { echo "usage: negctl.sh <root> <test-cmd> <mutate-cmd>" >&2; exit 64; }
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo "negctl: $root is not a git repo" >&2; exit 64; }
+
+# Bounded retries for the RED step only. Rejected rather than coerced: a typo that silently
+# became 1 would read as a clean single-attempt run and hide that the operator asked for more.
+red_attempts="${NEGCTL_RED_ATTEMPTS:-1}"
+case "$red_attempts" in
+  ''|*[!0-9]*) echo "negctl: NEGCTL_RED_ATTEMPTS must be a positive integer (got '$red_attempts')" >&2; exit 64 ;;
+esac
+[ "$red_attempts" -ge 1 ] || { echo "negctl: NEGCTL_RED_ATTEMPTS must be >= 1 (got '$red_attempts')" >&2; exit 64; }
 
 if [ -n "$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
   echo "negctl: REFUSED -- tracked files are modified or staged in $root; commit first (the restore step is 'git checkout HEAD --', it would wipe them)" >&2
@@ -68,9 +85,27 @@ else
   fail "the mutation changed no tracked file"
 fi
 
-run_test; rc_red=$?
-echo "Exit: $rc_red (under mutation, RED expected)"
-[ "$rc_red" -ne 0 ] || fail "test stayed green under the mutation (the check is vacuous)"
+red_used=0
+rc_red=0
+while [ "$red_used" -lt "$red_attempts" ]; do
+  red_used=$(( red_used + 1 ))
+  run_test; rc_red=$?
+  [ "$rc_red" -ne 0 ] && break
+done
+if [ "$red_attempts" -gt 1 ]; then
+  echo "Exit: $rc_red (under mutation, RED expected; attempt $red_used of $red_attempts)"
+else
+  echo "Exit: $rc_red (under mutation, RED expected)"
+fi
+if [ "$rc_red" -eq 0 ]; then
+  # The single-attempt wording is unchanged on purpose: the default path must stay
+  # byte-identical, and two dated proof records quote this exact line.
+  if [ "$red_attempts" -gt 1 ]; then
+    fail "test stayed green under the mutation on all $red_attempts attempts (the check is vacuous)"
+  else
+    fail "test stayed green under the mutation (the check is vacuous)"
+  fi
+fi
 
 restore
 echo "Restore: git checkout HEAD -- ${restore_files[*]:-<nothing>}"
