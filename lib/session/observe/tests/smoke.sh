@@ -312,6 +312,14 @@ echo "[59] session-semantic: a non-dict top-level line and a non-dict user messa
 out="$(SESSION_SEMANTIC_CMD="cat $SEMOUT" "$CS" --root "$NEDGE" --days 0 --json)"
 if grep -q '"prompts": 2' <<<"$out"; then ok "2 valid prompts sampled, non-dict line/message skipped"; else no "session-semantic nondict-edge wrong: $out"; fi
 
+echo "[60] burn F7: model share is PRICED, not token-counted; equal opus and sonnet tokens read 83/17, not 50/50"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f7-priced.jsonl" --since 60 2>&1)"
+if grep -q 'opus 83% sonnet 17%' <<<"$out"; then ok "F7 equal tokens priced 83/17 (opus lists at 5x sonnet on every axis)"; else no "F7 share not priced: $out"; fi
+
+echo "[61] burn F8: one unknown family (fable) drops the whole row to the token weight, marked with a tilde"
+out="$(SESSION_OBSERVE_NOW="$BURNNOW" "$CC" burn --file "$BEDGE/f8-unpriced.jsonl" --since 60 2>&1)"
+if grep -q 'opus 50% fable 50% ~' <<<"$out"; then ok "F8 unpriced row falls back to token weight, tilde present"; else no "F8 fallback wrong: $out"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

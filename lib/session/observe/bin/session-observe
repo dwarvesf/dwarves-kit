@@ -13,7 +13,9 @@ Three views, all derived from the JSONL transcripts under ~/.claude/projects/:
   cost      - tokens by model + cache economics + $ estimate (attribution, not a bill)
   burn      - live per-session token burn in the last --since minutes (default 60),
               ranked by burn rate; subagent transcripts roll into their parent session;
-              not part of `report` (report is the weekly digest, burn is a live check)
+              `model share` splits each row by model (priced, so an Opus fan-out is
+              visible at a glance); not part of `report` (report is the weekly digest,
+              burn is a live check)
   report    - all of the above, the weekly self-observability digest
 
 The subagents view answers "is my subagent mix drifting?" that a raw tool count
@@ -610,7 +612,7 @@ def burn_collect(args, now, cutoff):
     def row(sid):
         return sess.setdefault(sid, {
             "cwd": None, "reqs": 0, "input": 0, "cache_create": 0,
-            "cache_read": 0, "output": 0, "sub_active": set(), "models": set(),
+            "cache_read": 0, "output": 0, "sub_active": set(), "by_model": {},
             "title": None, "last_ts": None, "ctx": 0,
             "seen_keys": set(),
         })
@@ -673,7 +675,13 @@ def burn_collect(args, now, cutoff):
             r["cache_read"] += cr
             r["output"] += out
             if msg.get("model"):
-                r["models"].add(msg["model"])
+                # per-model [input, output, cache_read, cache_write], the tuple
+                # order model_cost() takes, so a tier's share is priced not guessed
+                t = r["by_model"].setdefault(msg["model"], [0, 0, 0, 0])
+                t[0] += inp
+                t[1] += out
+                t[2] += cr
+                t[3] += cc
             if r["last_ts"] is None or epoch > r["last_ts"]:
                 r["last_ts"] = epoch
 
@@ -691,8 +699,48 @@ def burn_rank(sess):
     return ranked
 
 
+def burn_model_share(by_model):
+    """Per-model share of one session's burn, biggest first.
+
+    Priced in USD via model_cost() when every model in the row has a known
+    family. One unknown family (fable) makes dollars unavailable for that row,
+    so the whole row falls back to the list-price TOKEN weight burn_rank uses
+    and sets priced=False. Mixing the two units inside one row would compare
+    dollars against tokens, so the fallback is all-or-nothing."""
+    if not by_model:
+        return [], True
+    costs = {m: model_cost(m, t) for m, t in by_model.items()}
+    priced = all(c is not None for c in costs.values())
+    if not priced:
+        costs = {m: t[0] + t[3] + t[2] / 10 + t[1] * 5 for m, t in by_model.items()}
+    total = sum(costs.values())
+    rows = [
+        {"model": m, "weight": costs[m], "pct": (costs[m] / total * 100) if total else 0.0}
+        for m in by_model
+    ]
+    rows.sort(key=lambda d: -d["weight"])
+    return rows, priced
+
+
+def burn_share_str(share, priced):
+    """`opus 82% sonnet 18%`, dropping families under 1% so the column stays a
+    glance. A tilde marks a row whose share is token-weighted, not priced."""
+    shown = [d for d in share if d["pct"] >= 1.0] or share[:1]
+    body = " ".join(f"{short_model(d['model'])} {d['pct']:.0f}%" for d in shown)
+    return (body + " ~") if (body and not priced) else (body or "-")
+
+
+def short_model(model):
+    """`claude-opus-5` -> `opus`. Falls back to the full id for an unknown shape."""
+    fam = next((f for f in PRICING if f in model), None)
+    if fam:
+        return fam
+    return model.replace("claude-", "").split("-")[0] or model
+
+
 def burn_row_dict(sid, r, now, pid_map):
     idle_min = int(round((now - r["last_ts"]) / 60.0)) if r["last_ts"] is not None else 0
+    share, priced = burn_model_share(r["by_model"])
     title = r["title"] or "-"
     if len(title) > 40:
         title = title[:37] + "..."
@@ -708,7 +756,9 @@ def burn_row_dict(sid, r, now, pid_map):
         "cache_read": r["cache_read"],
         "output": r["output"],
         "idle_min": idle_min,
-        "models": sorted(r["models"]),
+        "models": sorted(r["by_model"]),
+        "model_share": share,
+        "model_share_priced": priced,
         "title": title,
     }
 
@@ -718,7 +768,7 @@ def burn_table_row(d):
         d["session_id"][:8], d["pid"] if d["pid"] is not None else "-",
         shorten_path(d["cwd"]) if d["cwd"] else "-", d["reqs"], d["subagents"],
         d["ctx"], d["cache_create"], d["cache_read"], d["output"], d["idle_min"],
-        ",".join(d["models"]) if d["models"] else "-", d["title"],
+        burn_share_str(d["model_share"], d["model_share_priced"]), d["title"],
     ]
 
 
@@ -744,7 +794,7 @@ def run_burn(args):
     tot_out = sum(d["output"] for d in rows)
     print(f"# burn  (window {since_min}m, {len(rows)} sessions; totals cache-wr {tot_cw}, cache-rd {tot_cr}, out {tot_out})")
     print_table(
-        ["session", "pid", "cwd", "reqs", "subs", "ctx", "cache-wr", "cache-rd", "out", "idle", "models", "title"],
+        ["session", "pid", "cwd", "reqs", "subs", "ctx", "cache-wr", "cache-rd", "out", "idle", "model share", "title"],
         [burn_table_row(d) for d in shown],
     )
 
