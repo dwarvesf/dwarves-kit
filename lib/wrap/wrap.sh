@@ -17,7 +17,8 @@
 # --worktrees, pull --ff-only on the default branch, the activity-log prepend, the
 # knowledge-root project directory, the staging-file append, and one gh pr merge. Every
 # other action is a report line. The verbs never switch a branch, never touch a dirty
-# file, never force a push or a pull, and never retry a failed git call. The one force is
+# file (except under `wrap.pull_past_dirty`, off by default), never force a push or a
+# pull, and never retry a failed git call. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
 # unproven worktree, and the removal counts only once a postcondition finds the path gone.
 #
@@ -44,7 +45,7 @@ STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 
-_usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -424,6 +425,66 @@ _union_carry_back() {
   printf '%s' "$n"
 }
 
+# _pull_past_dirty_on -- 0 when the operator authorized stashing a sibling session's dirty
+# tracked files aside for the length of one pull. Root-only: a project `.kit.toml` rides
+# inside a pull request and must never authorize a write to a shared checkout.
+_pull_past_dirty_on() { [ "$(kit_config_get_root wrap.pull_past_dirty false)" = "true" ]; }
+
+# _ff_blocked_into <repo> <outfile> -- writes the NUL-separated paths a fast-forward would
+# refuse to overwrite and prints how many. A path qualifies when it is dirty in the worktree
+# AND changes between HEAD and the upstream tip, which is the same per-entry test git applies
+# before it reports `would be overwritten by merge`. Nothing qualifies when the upstream is
+# unresolvable or HEAD is not already an ancestor of it: then the pull refuses for a reason no
+# stash can clear. Untracked paths never qualify, so an incoming commit that adds one still
+# aborts the pull, as it does today.
+_ff_blocked_into() {
+  local repo="$1" out="$2" up inc="" f n=0
+  : > "$out"
+  up="$(git -C "$repo" rev-parse --verify --quiet '@{u}' 2>/dev/null)"
+  [ -n "$up" ] || { printf '0'; return 0; }
+  git -C "$repo" merge-base --is-ancestor HEAD "$up" 2>/dev/null || { printf '0'; return 0; }
+  while IFS= read -r -d '' f; do inc="${inc}${f}"$'\n'; done \
+    < <(git -C "$repo" diff --name-only -z HEAD "$up" 2>/dev/null)
+  while IFS= read -r -d '' f; do
+    case $'\n'"$inc" in
+      *$'\n'"$f"$'\n'*) printf '%s\0' "$f" >> "$out"; n=$(( n + 1 )) ;;
+    esac
+  done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
+  printf '%s' "$n"
+}
+
+# _stash_blocked <repo> <name> <nul-list file> -- stash exactly the listed paths under a
+# findable name. Pathspecs only: a bare `git stash` would take every other dirty file and
+# every untracked file in a checkout this session does not own.
+_stash_blocked() {
+  local repo="$1" name="$2" list="$3" f i=0
+  local paths
+  while IFS= read -r -d '' f; do paths[$i]="$f"; i=$(( i + 1 )); done < "$list"
+  [ "$i" -gt 0 ] || return 1
+  git -C "$repo" stash push -q -m "$name" -- "${paths[@]}" 2>/dev/null
+}
+
+# _unstash <repo> <name> -- pop the run's own stash BY REF. A bare `git stash pop` takes
+# whatever sits on top, which on a shared checkout is another session's stash. A pop conflict
+# keeps the stash and leaves the markers: wrap does not know which side of a file it did not
+# write is the right one. A file the repo declares merge=union never reaches that branch,
+# because the union driver resolves it during the pop itself.
+_unstash() {
+  local repo="$1" name="$2" ref conflicted
+  ref="$(git -C "$repo" stash list 2>/dev/null | grep -m1 -F -- "$name" | cut -d: -f1)"
+  if [ -z "$ref" ]; then
+    echo "     FAILED restore: no stash named ${name} in the stash list"
+    FAILURES=1; return 0
+  fi
+  if git -C "$repo" stash pop -q "$ref" >/dev/null 2>&1; then
+    echo "     restored the stashed file(s) and dropped ${name}"
+    return 0
+  fi
+  conflicted="$(git -C "$repo" diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')"
+  echo "     PULLED, POP CONFLICT: ${conflicted% }, stash ${name} kept"
+  FAILURES=1
+}
+
 # _pull_default <repo> <branch> -- the ff-only pull, with the repo's own append-only logs
 # carried across it.
 #
@@ -467,8 +528,32 @@ _pull_default() {
     fi
   fi
 
+  # The knob path: the files that block the fast-forward go aside under a name this run can
+  # find again, the pull lands, and they come back. Off by default, and never entered while
+  # the index carries staged changes, because a pop cannot restore an index it did not stash.
+  local blocked_file="" stash_name="" nblocked=0
+  if [ "$APPLY" = 1 ] && [ -z "$saved_dir" ] && [ -z "$staged" ] && [ -n "$nonunion" ] \
+     && _pull_past_dirty_on; then
+    blocked_file="$(mktemp)"
+    nblocked="$(_ff_blocked_into "$repo" "$blocked_file")"
+    if [ "$nblocked" -gt 0 ] 2>/dev/null; then
+      stash_name="wrap-pull-past-dirty-$(date +%s)-$$"
+      if _stash_blocked "$repo" "$stash_name" "$blocked_file"; then
+        echo "     stashed ${nblocked} dirty tracked file(s) as ${stash_name} so the pull can fast-forward"
+      else
+        echo "     FAILED stash: ${stash_name} was not created, the pull runs as it does today"
+        stash_name=""; FAILURES=1
+      fi
+    fi
+    rm -f "$blocked_file"
+  fi
+
   before="$FAILURES"
   run "$repo" "$verdict" git -C "$repo" pull --ff-only
+
+  # Whatever the pull did, the operator's lines come back out of the stash. A failed pull
+  # leaves the checkout exactly as it was found.
+  [ -n "$stash_name" ] && _unstash "$repo" "$stash_name"
 
   if [ -n "$saved_dir" ]; then
     n=0

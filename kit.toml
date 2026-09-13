@@ -280,6 +280,18 @@ drain_staged = false            # [impl] step 7b tail. The ONE knob here whose d
                                  #        goal pointer is never drained: `wrap stage` writes prose
                                  #        and `queue run` needs slug/repo/pointer, so those rows
                                  #        report the gap and the command that closes it.
+pull_past_dirty = false         # [impl] step 5 pull. false = a checkout whose ff pull git refuses
+                                 #        over dirty TRACKED files reports `FAILED` and stays behind,
+                                 #        which is the behavior before this key existed. true = the
+                                 #        files that block the fast-forward go into a stash named for
+                                 #        this run, the pull lands, and the stash pops straight back
+                                 #        by ref. Only the blocking files are stashed; every other
+                                 #        dirty file, every untracked file, and every pre-existing
+                                 #        stash stays put, and a dirty index skips the path entirely.
+                                 #        A pop conflict keeps the stash, leaves the markers, and
+                                 #        reports `PULLED, POP CONFLICT`. Turn it on for a checkout
+                                 #        several sessions share, where the dirty file is somebody
+                                 #        else's and the pull is the whole point of the step.
 build_candidates = true         # [impl] step 7b. true = a precedent hit wires the enhancement into
                                  #        that tool and a clear-shaped miss builds it, both committed
                                  #        in the home repo. false = every candidate stages a row in

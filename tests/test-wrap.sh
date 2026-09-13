@@ -563,6 +563,187 @@ chk "dry-run: the union file is byte-identical" \
   "$([ "$UD_BEFORE" = "$(cksum < "$UD/_meta/LAB_LOG.md")" ]; echo $?)"
 
 # ===========================================================================
+echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="
+# ===========================================================================
+# Real repos again, for the same reason: what git refuses to overwrite during a fast-forward
+# is the subject, and no stubbed `git` refuses anything.
+A_BASE=$'a1\na2\na3\na4\na5\na6\na7\na8\na9\na10\n'
+A_REMOTE=$'a1 remote\na2\na3\na4\na5\na6\na7\na8\na9\na10\n'
+A_LOCAL_FAR=$'a1\na2\na3\na4\na5\na6\na7\na8\na9\na10 local\n'
+A_LOCAL_SAME=$'a1 local\na2\na3\na4\na5\na6\na7\na8\na9\na10\n'
+
+PD_ON="$TMPD/pd-knob-on"; mkdir -p "$PD_ON"
+printf '[wrap]\npull_past_dirty = true\n' > "$PD_ON/kit.toml"
+PD_PROJ="$TMPD/pd-knob-project"; mkdir -p "$PD_PROJ"
+printf '[wrap]\npull_past_dirty = true\n' > "$PD_PROJ/.kit.toml"
+
+build_pd_repo() { # build_pd_repo <name> -- bare origin plus a clone on main
+  local name="$1" work clone
+  work="$TMPD/pdwork-$name"; clone="$TMPD/pdclone-$name"
+  mkdir -p "$work/_meta"
+  git -C "$work" init -q
+  gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+  printf '%s' "$LAB_BASE" > "$work/_meta/LAB_LOG.md"
+  printf '%s' "$A_BASE" > "$work/A.md"
+  printf 'b base\n' > "$work/B.md"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/pdbare-$name"
+  git clone -q "$TMPD/pdbare-$name" "$clone"
+  gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+}
+
+advance_pd_repo() { # advance_pd_repo <name> [also-lab] -- one incoming commit touching A.md
+  local name="$1" also="${2:-}" push
+  push="$TMPD/pdpush-$name"
+  git clone -q "$TMPD/pdbare-$name" "$push"
+  gitc "$push"
+  printf '%s' "$A_REMOTE" > "$push/A.md"
+  [ -n "$also" ] && printf '%s' "$LAB_REMOTE" > "$push/_meta/LAB_LOG.md"
+  git -C "$push" commit -qam advance
+  git -C "$push" push -q origin main
+}
+
+# A stash another session left behind. A bare `git stash pop` would take this one; every case
+# below asserts it survives untouched, which is the whole reason the pop resolves a ref.
+pd_sibling_stash() { # pd_sibling_stash <clone>
+  printf 'sibling work\n' >> "$1/B.md"
+  git -C "$1" stash push -q -m sibling -- B.md
+}
+pd_stash_count() { git -C "$1" stash list | grep -c '' ; }
+
+echo "--- knob off: the pull still aborts and nothing moves"
+build_pd_repo off; advance_pd_repo off
+PO="$TMPD/pdclone-off"
+pd_sibling_stash "$PO"
+printf '%s' "$A_LOCAL_FAR" > "$PO/A.md"
+printf 'b local edit\n' > "$PO/B.md"
+printf 'c untracked\n' > "$PO/C.md"
+PO_HEAD="$(git -C "$PO" rev-parse HEAD)"
+PO_A="$(cksum < "$PO/A.md")"; PO_B="$(cksum < "$PO/B.md")"
+out="$("$WRAP" apply --apply "$PO" 2>&1)"; rc=$?
+chk "knob off: apply still exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "knob off: the pull failure is still reported" "$out" "FAILED pull --ff-only"
+chk_has "knob off: git named the blocking file" "$out" "would be overwritten by merge"
+chk_no "knob off: nothing was stashed" "$out" "stashed"
+chk "knob off: HEAD did not move" "$([ "$(git -C "$PO" rev-parse HEAD)" = "$PO_HEAD" ]; echo $?)"
+chk "knob off: A.md is byte-identical" "$([ "$PO_A" = "$(cksum < "$PO/A.md")" ]; echo $?)"
+chk "knob off: B.md is byte-identical" "$([ "$PO_B" = "$(cksum < "$PO/B.md")" ]; echo $?)"
+chk "knob off: the untracked file is still there" "$([ -f "$PO/C.md" ]; echo $?)"
+chk "knob off: the sibling stash is the only stash" "$([ "$(pd_stash_count "$PO")" = "1" ]; echo $?)"
+
+echo "--- knob on: the blocking file goes aside, the pull lands, everything else stays put"
+build_pd_repo on; advance_pd_repo on
+PN="$TMPD/pdclone-on"
+pd_sibling_stash "$PN"
+printf '%s' "$A_LOCAL_FAR" > "$PN/A.md"
+printf 'b local edit\n' > "$PN/B.md"
+printf 'c untracked\n' > "$PN/C.md"
+PN_TIP="$(git -C "$TMPD/pdbare-on" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PN" 2>&1)"; rc=$?
+chk "knob on: apply exits 0" "$rc"
+chk_no "knob on: the pull did not fail" "$out" "FAILED pull --ff-only"
+chk_has "knob on: exactly the one blocking file was stashed" "$out" "stashed 1 dirty tracked file(s)"
+chk_has "knob on: the stash carries the run name" "$out" "as wrap-pull-past-dirty-"
+chk_has "knob on: the stash was restored and dropped" "$out" "restored the stashed file(s) and dropped"
+chk "knob on: HEAD moved to the incoming commit" \
+  "$([ "$(git -C "$PN" rev-parse HEAD)" = "$PN_TIP" ]; echo $?)"
+chk "knob on: the incoming line landed in A.md" "$(grep -qx 'a1 remote' "$PN/A.md"; echo $?)"
+chk "knob on: the local line survived in A.md" "$(grep -qx 'a10 local' "$PN/A.md"; echo $?)"
+chk_has "knob on: A.md is still uncommitted" "$(git -C "$PN" diff --name-only)" "A.md"
+chk "knob on: A.md is not staged" \
+  "$([ -z "$(git -C "$PN" diff --cached --name-only)" ]; echo $?)"
+chk "knob on: B.md kept its local edit" "$([ "$(cat "$PN/B.md")" = "b local edit" ]; echo $?)"
+chk_has "knob on: B.md is still dirty" "$(git -C "$PN" diff --name-only)" "B.md"
+chk "knob on: the untracked file is untouched" \
+  "$([ "$(cat "$PN/C.md")" = "c untracked" ]; echo $?)"
+chk "knob on: the sibling stash is the only stash left" \
+  "$([ "$(pd_stash_count "$PN")" = "1" ]; echo $?)"
+chk_has "knob on: the surviving stash is the sibling's" "$(git -C "$PN" stash list)" "sibling"
+
+echo "--- knob on: a pop conflict keeps the stash and reports it"
+build_pd_repo conflict; advance_pd_repo conflict
+PC="$TMPD/pdclone-conflict"
+pd_sibling_stash "$PC"
+printf '%s' "$A_LOCAL_SAME" > "$PC/A.md"
+PC_TIP="$(git -C "$TMPD/pdbare-conflict" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PC" 2>&1)"; rc=$?
+chk "pop conflict: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pop conflict: the report names the file and keeps the stash" "$out" \
+  "PULLED, POP CONFLICT: A.md, stash wrap-pull-past-dirty-"
+chk_has "pop conflict: the report says the stash is kept" "$out" "kept"
+chk "pop conflict: the pull still landed" \
+  "$([ "$(git -C "$PC" rev-parse HEAD)" = "$PC_TIP" ]; echo $?)"
+chk "pop conflict: the conflict markers are in the file" \
+  "$(grep -q '^<<<<<<<' "$PC/A.md"; echo $?)"
+chk_has "pop conflict: the run's own stash is still listed" "$(git -C "$PC" stash list)" "wrap-pull-past-dirty-"
+chk "pop conflict: the sibling stash survived too" \
+  "$([ "$(pd_stash_count "$PC")" = "2" ]; echo $?)"
+
+echo "--- knob on: a union-marked file blocked by the same pull resolves during the pop"
+build_pd_repo union; advance_pd_repo union also-lab
+PU="$TMPD/pdclone-union"
+printf '%s' "$A_LOCAL_FAR" > "$PU/A.md"
+printf '%s' "$LAB_LOCAL" > "$PU/_meta/LAB_LOG.md"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PU" 2>&1)"; rc=$?
+chk "union pop: apply exits 0" "$rc"
+chk_has "union pop: both blocking files were stashed" "$out" "stashed 2 dirty tracked file(s)"
+chk_no "union pop: the union file never conflicted" "$out" "POP CONFLICT"
+chk "union pop: the incoming log line landed" \
+  "$(grep -qF 'remote: the incoming line' "$PU/_meta/LAB_LOG.md"; echo $?)"
+chk "union pop: the local log line survived" \
+  "$(grep -qF 'local: the other session line' "$PU/_meta/LAB_LOG.md"; echo $?)"
+chk "union pop: no stash is left behind" "$([ "$(pd_stash_count "$PU")" = "0" ]; echo $?)"
+
+echo "--- knob on: an untracked file the incoming commit adds still aborts the pull"
+build_pd_repo untracked
+UPUSH="$TMPD/pdpush-untracked"
+git clone -q "$TMPD/pdbare-untracked" "$UPUSH"; gitc "$UPUSH"
+printf '%s' "$A_REMOTE" > "$UPUSH/A.md"; printf 'c incoming\n' > "$UPUSH/C.md"
+git -C "$UPUSH" add -A; git -C "$UPUSH" commit -qm advance; git -C "$UPUSH" push -q origin main
+PX="$TMPD/pdclone-untracked"
+pd_sibling_stash "$PX"
+printf '%s' "$A_LOCAL_FAR" > "$PX/A.md"
+printf 'c local untracked\n' > "$PX/C.md"
+PX_HEAD="$(git -C "$PX" rev-parse HEAD)"
+PX_A="$(cksum < "$PX/A.md")"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PX" 2>&1)"; rc=$?
+chk "untracked block: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "untracked block: the pull still failed" "$out" "FAILED pull --ff-only"
+chk_has "untracked block: the stash came back anyway" "$out" "restored the stashed file(s)"
+chk "untracked block: HEAD did not move" \
+  "$([ "$(git -C "$PX" rev-parse HEAD)" = "$PX_HEAD" ]; echo $?)"
+chk "untracked block: the dirty tracked file is byte-identical" \
+  "$([ "$PX_A" = "$(cksum < "$PX/A.md")" ]; echo $?)"
+chk "untracked block: the untracked file kept its local content" \
+  "$([ "$(cat "$PX/C.md")" = "c local untracked" ]; echo $?)"
+chk "untracked block: the sibling stash is the only stash" \
+  "$([ "$(pd_stash_count "$PX")" = "1" ]; echo $?)"
+
+echo "--- knob on: a dirty index is never stashed past"
+build_pd_repo staged2; advance_pd_repo staged2
+PS="$TMPD/pdclone-staged2"
+printf '%s' "$A_LOCAL_FAR" > "$PS/A.md"
+git -C "$PS" add A.md
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PS" 2>&1)"; rc=$?
+chk "dirty index: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "dirty index: the index reason prints" "$out" "NOTE: the index carries staged changes"
+chk_no "dirty index: nothing was stashed" "$out" "stashed"
+chk_has "dirty index: the path is still staged" "$(git -C "$PS" diff --cached --name-only)" "A.md"
+
+echo "--- knob on: a dry run never stashes"
+build_pd_repo dry2; advance_pd_repo dry2
+PD="$TMPD/pdclone-dry2"
+printf '%s' "$A_LOCAL_FAR" > "$PD/A.md"
+PD_A="$(cksum < "$PD/A.md")"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply "$PD" 2>&1)"
+chk_no "dry run: nothing was stashed" "$out" "stashed"
+chk "dry run: no stash was created" "$([ "$(pd_stash_count "$PD")" = "0" ]; echo $?)"
+chk "dry run: the dirty file is byte-identical" "$([ "$PD_A" = "$(cksum < "$PD/A.md")" ]; echo $?)"
+
+# ===========================================================================
 echo "=== gh absent: every non-ancestor is LEAVE, merge refuses ==="
 # ===========================================================================
 mkdir -p "$TMPD/nogh"
@@ -1189,10 +1370,18 @@ for knob in merge_own_prs tidy_worktrees build_candidates; do
   v="$(KIT_PROJECT_ROOT="$KNOB_PROJ" kit_config_get_root "wrap.$knob" true)"
   chk "wrap.$knob ignores a project .kit.toml" "$([ "$v" = "true" ]; echo $?)"
 done
-for knob in merge_own_prs tidy_worktrees build_candidates; do
+for knob in merge_own_prs tidy_worktrees build_candidates pull_past_dirty; do
   chk_has "commands/wrap.md reads wrap.$knob" "$(cat "$KIT_DIR/commands/wrap.md")" "wrap.$knob"
   chk_has "kit.toml declares $knob" "$(cat "$KIT_DIR/kit.toml")" "$knob"
 done
+# pull_past_dirty is the one knob whose shipped default does NOT act: it authorizes a write to
+# a dirty file in a checkout other sessions share, so it opts in, and the project fence holds.
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" kit_config_get_root wrap.pull_past_dirty true)"
+chk "wrap.pull_past_dirty ships as false" "$([ "$v" = "false" ]; echo $?)"
+v="$(KIT_CONFIG_OPERATOR="$PD_ON" kit_config_get_root wrap.pull_past_dirty false)"
+chk "wrap.pull_past_dirty honours the operator kit.toml" "$([ "$v" = "true" ]; echo $?)"
+v="$(KIT_PROJECT_ROOT="$PD_PROJ" kit_config_get_root wrap.pull_past_dirty false)"
+chk "wrap.pull_past_dirty ignores a project .kit.toml" "$([ "$v" = "false" ]; echo $?)"
 
 # ------------------------------------------------- main-checkout resolver recipe
 # `commands/wrap.md` step 5 prescribes one recipe for turning the session cwd into the
