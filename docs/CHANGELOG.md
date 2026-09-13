@@ -12,6 +12,16 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- `gate-ledger.sh plan-record <rid> <lane> [--ran|--skipped|--override <phase>[:<reason>]]...`
+  disposes every phase of a lane's plan in one call, instead of one `record`/`override` call per
+  gate (nine hand-typed calls on a normal-lane prose PR). The phase list comes from `plan`, so the
+  WORKFLOW lane matrix is still parsed in one place, and each line is written by the existing
+  `record`/`override` function, so the GATE line format, the grill-skip reason enum, and the
+  distinct-override-reason guard all keep applying unchanged. It refuses before writing anything:
+  an off-plan phase, a phase given twice, a reason-less `--skipped`/`--override`, or a plan phase
+  left undisposed exits 64, and the rules the two writers own are caught by replaying the set
+  against a scratch ledger first, so a rejected call leaves the real ledger byte-identical.
+  `ship` is the one phase a caller may omit, since the push records it.
 - `wrap merge --apply` verifies the default branch's tree after `gh pr merge` reports MERGED,
   instead of trusting gh's word alone: it fetches the default branch and checks the PR head's
   tree against the new tip, either whole or scoped to the paths the PR touched (another PR may

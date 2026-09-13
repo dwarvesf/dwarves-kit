@@ -32,6 +32,11 @@
 #                                       (bench-plane prerequisite); repeat with a
 #                                       different phase= for per-stage model stamping
 #   override <rid> <phase> <reason>    record a human override for a gate
+#   plan-record <rid> <lane> [--ran <phase>[:<reason>]]... [--skipped <phase>:<reason>]...
+#               [--override <phase>:<reason>]...
+#                                       dispose EVERY phase of the lane's plan in one call
+#                                       (`ship` may be omitted: the push records it); refuses
+#                                       and writes NOTHING on any invalid disposition
 #   check    <lane> <rid>              exit 0 if every required gate has a ran|override entry; else 1
 #   show     <rid>                     print the run's ledger
 #   plan     <lane>                    the lane's ordered phase checklist
@@ -514,6 +519,137 @@ plan() {
   done <<< "$rows"
 }
 
+# Replay the disposition set parsed by plan_record() through the SAME record()/override()
+# functions an operator calls by hand. Runs twice per call: once against a scratch ledger root
+# (the dry run), once for real. The set travels in globals because a second positional pass
+# would have to re-parse it, and bash 3.2 has no associative arrays to pass it in one value.
+_plan_record_apply() {
+  local i=0
+  while [ "$i" -lt "$_pr_n" ]; do
+    case "${_pr_kind[$i]}" in
+      override) override "$_pr_rid" "${_pr_phase[$i]}" "${_pr_reason[$i]}" || return $? ;;
+      *)        record "$_pr_rid" "${_pr_phase[$i]}" "${_pr_kind[$i]}" "${_pr_reason[$i]}" || return $? ;;
+    esac
+    i=$((i+1))
+  done
+}
+
+# plan-record: dispose EVERY phase of a lane's plan in one call. A run that
+# followed its lane needed one record/override call per gate, nine hand-typed calls on a
+# normal-lane prose PR, each one a chance to mistype a phase or forget one.
+#
+# The lane's phases come from plan(), so the lane table is read in exactly one place. Each line
+# is written by record() or override(), so the ledger line format, the grill-skip reason enum,
+# and the distinct-override-reason guard live in one place and keep applying here unchanged.
+#
+# Refuse-before-write: a rejected call must leave the ledger untouched, so the whole set is
+# first replayed against a scratch ledger root seeded with a copy of this rid's real log. The
+# copy matters because the override guard judges a duplicate reason against the run's history,
+# and the dry run must see both that history and the overrides the same call is adding. Only a
+# fully clean replay is then written for real.
+#
+# `ship` is the one plan phase a caller may omit, because the push records it. Every other
+# phase must carry a disposition, the lite and intake ones included: naming them all is what
+# leaves check() clean after a single call.
+#
+# The exit code answers "did the write happen", not "is the lane complete". check()'s verdict
+# prints after the written lines instead, since a run that leaves ship to the push would
+# otherwise exit non-zero on its happy path.
+# Usage: plan-record <rid> <lane> [--ran <phase>[:<reason>]]... [--skipped <phase>:<reason>]... [--override <phase>:<reason>]...
+plan_record() {
+  local rid="${1:-}" lane="${2:-}"
+  if [ -z "$rid" ] || [ -z "$lane" ]; then
+    echo "usage: plan-record <rid> <lane> [--ran <phase>[:<reason>]] [--skipped <phase>:<reason>] [--override <phase>:<reason>]" >&2
+    return 64
+  fi
+  shift 2
+  local plan_out; plan_out="$(plan "$lane")" || return 1
+
+  local plan_phases=" " pline ph
+  while IFS= read -r pline; do
+    ph="$(printf '%s' "$pline" | awk '{print $2}')"
+    [ -n "$ph" ] && plan_phases="$plan_phases$ph "
+  done <<< "$plan_out"
+
+  _pr_rid="$rid"; _pr_n=0; _pr_kind=(); _pr_phase=(); _pr_reason=()
+  local seen=" " kind arg raw reason
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --ran|--skipped|--override) kind="${1#--}" ;;
+      *) echo "plan-record: unexpected argument '$1' (expected --ran|--skipped|--override)" >&2; return 64 ;;
+    esac
+    arg="${2:-}"
+    [ -n "$arg" ] || { echo "plan-record: $1 needs a <phase>[:<reason>] argument" >&2; return 64; }
+    raw="${arg%%:*}"
+    if [ "$arg" = "$raw" ]; then reason=""; else reason="${arg#*:}"; fi
+    # "phase: reason" reads the same as "phase:reason": the grill enum and the override-reason
+    # comparison both key on the first characters of the text, so a stray space changes meaning.
+    reason="$(printf '%s' "$reason" | sed -E 's/^[[:space:]]+//')"
+    ph="$(normalize_phase "$raw")"
+    [ -n "$ph" ] || { echo "plan-record: $1 needs a phase name" >&2; return 64; }
+    case "$plan_phases" in
+      *" $ph "*) ;;
+      *) echo "plan-record: '$ph' is not a phase of lane '$lane' (plan:$plan_phases)" >&2; return 64 ;;
+    esac
+    case "$seen" in
+      *" $ph "*) echo "plan-record: phase '$ph' given twice" >&2; return 64 ;;
+    esac
+    if [ "$kind" != "ran" ] && [ -z "$reason" ]; then
+      echo "plan-record: --$kind needs a reason ('$ph:<reason>')" >&2; return 64
+    fi
+    seen="$seen$ph "
+    _pr_kind[$_pr_n]="$kind"; _pr_phase[$_pr_n]="$ph"; _pr_reason[$_pr_n]="$reason"
+    _pr_n=$((_pr_n+1))
+    shift 2
+  done
+
+  local missing=""
+  # shellcheck disable=SC2086  # plan phase keys are single tokens; the split is the iteration
+  for ph in $plan_phases; do
+    [ "$ph" = "ship" ] && continue
+    case "$seen" in *" $ph "*) ;; *) missing="$missing $ph" ;; esac
+  done
+  if [ -n "$missing" ]; then
+    echo "plan-record: lane '$lane' phases with no disposition:$missing (name every phase; only 'ship' may be omitted)" >&2
+    return 64
+  fi
+  [ "$_pr_n" -gt 0 ] || { echo "plan-record: no dispositions given" >&2; return 64; }
+
+  local scratch; scratch="$(mktemp -d)" || { echo "plan-record: cannot create a scratch dir for the dry run" >&2; return 1; }
+  local real stem rc=0
+  real="$(ledger_file "$rid")" || { rm -rf "$scratch"; return 1; }
+  stem="$(basename "$real")"
+  mkdir -p "$scratch/runs"
+  if [ -f "$real" ]; then cp "$real" "$scratch/runs/$stem"; fi
+  # Both roots move together: ledger_append resolves KIT_LEDGER_DIR per call, while
+  # override()'s duplicate-reason guard reads RUNS_DIR through ledger_file().
+  ( RUNS_DIR="$scratch/runs"; KIT_LEDGER_DIR="$scratch"; _plan_record_apply ) || rc=$?
+  rm -rf "$scratch"
+  if [ "$rc" -ne 0 ]; then
+    echo "plan-record: refused; nothing was written to the ledger for '$rid'" >&2
+    return "$rc"
+  fi
+
+  _plan_record_apply || {
+    echo "plan-record: the dry run passed but a write failed for '$rid'; inspect with: gate-ledger.sh show $rid" >&2
+    return 1
+  }
+
+  local i=0
+  while [ "$i" -lt "$_pr_n" ]; do
+    printf '%-18s %s\n' "${_pr_phase[$i]}" "${_pr_kind[$i]}"
+    i=$((i+1))
+  done
+  local gaps
+  if gaps="$(check "$lane" "$rid" 2>&1)"; then
+    printf 'check: clean for lane %s\n' "$lane"
+  else
+    printf '%s\n' "$gaps" >&2
+    printf 'check: gaps remain for lane %s (listed above)\n' "$lane"
+  fi
+  return 0
+}
+
 # progress: plan x ledger -> one status line + checklist. A phase counts done when the
 # ledger carries ANY entry for it (ran, skipped-with-reason, override); the current step
 # is the first phase without one. Commands print this at phase entry.
@@ -803,6 +939,7 @@ case "$cmd" in
   mutation) mutation "$@" ;;
   config)   config_stamp "$@" ;;
   override) override "$@" ;;
+  plan-record) plan_record "$@" ;;
   check)    check "$@" ;;
   show)     show "$@" ;;
   plan)     plan "$@" ;;
@@ -811,5 +948,5 @@ case "$cmd" in
   descent)  descent "$@" ;;
   history) history "$@" ;;
   report)  report "$@" ;;
-  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|check|show|plan|progress|rid|descent|history|report} ..." >&2; exit 64 ;;
+  *) echo "usage: gate-ledger.sh {required|start|record|action|tokens|debt|debt-response|outcome|outcome-read|mutation|config|override|plan-record|check|show|plan|progress|rid|descent|history|report} ..." >&2; exit 64 ;;
 esac
