@@ -81,6 +81,7 @@ Otherwise re-run the step 0 check first. Then, once per PR: `bin/wrap merge --ap
 - `wrap merge` never runs twice for the same PR in one call; call it again for the next PR.
 - When the session's open PRs form a chain, retarget every dependent onto its grandparent's target first, then merge parent-first, oldest ancestor first.
 - Never merge a PR the operator did not open.
+- After `gh` reports the PR MERGED, `wrap merge` fetches the default branch and verifies it actually holds the PR head's tree before reporting success; a `TREE MISMATCH` means gh's word and the tree disagree (a stale head SHA or a late push outran the gate) and the merge exits 3 without deleting the branch, so treat it as a merge that did not really land and re-check the PR by hand.
 
 ### Step 4: deploy check
 

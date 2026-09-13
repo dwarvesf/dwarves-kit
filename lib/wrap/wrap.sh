@@ -670,8 +670,52 @@ cmd_merge() {
     echo "FAILED merge #${first_eligible}: state is '${state:-unknown}', not MERGED" >&2
     return 2
   fi
-  echo "merged #${first_eligible} ${sha}"
+
+  # gh reporting MERGED is GitHub's word, not proof main holds the reviewed tree: a
+  # squash resolves on GitHub's own side, and a stale headRefOid captured before a late
+  # push, or an armed auto-merge overtaken by a push after the gates read, can both
+  # report MERGED while the default branch moves on without it.
+  local tv; tv="$(_tree_verify "$repo" "$def" "$head_oid")"
+  case "$tv" in
+    OK) echo "merged #${first_eligible} (${sha}): tree verified" ;;
+    MISMATCH*)
+      echo "merged #${first_eligible} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2
+      return 3 ;;
+    *)
+      echo "merged #${first_eligible} (${sha}): tree ${tv}" >&2
+      return 3 ;;
+  esac
   return 0
+}
+
+# _tree_verify <repo> <def> <head_oid> -- "OK", "MISMATCH <n>", or "UNVERIFIABLE <reason>".
+# Checks the WHOLE tree first (the common case: the squash carried nothing else onto the
+# default branch), falling back to only the paths the PR itself touched, because another
+# commit landing on the default branch meanwhile is not the mismatch this guards against.
+_tree_verify() {
+  local repo="$1" def="$2" head_oid="$3" tip base paths diff_paths n
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "UNVERIFIABLE fetch of ${def} failed"; return; }
+  tip="$(git -C "$repo" rev-parse "origin/${def}" 2>/dev/null)"
+  [ -n "$tip" ] || { echo "UNVERIFIABLE origin/${def} did not resolve"; return; }
+  git -C "$repo" cat-file -e "${head_oid}^{commit}" 2>/dev/null || {
+    echo "UNVERIFIABLE the PR head is not a local object"; return; }
+  if [ "$(git -C "$repo" rev-parse "${tip}^{tree}" 2>/dev/null)" = \
+       "$(git -C "$repo" rev-parse "${head_oid}^{tree}" 2>/dev/null)" ]; then
+    echo "OK"; return
+  fi
+  base="$(git -C "$repo" merge-base "$head_oid" "$tip" 2>/dev/null)"
+  [ -n "$base" ] || { echo "UNVERIFIABLE no common history with ${def}"; return; }
+  paths="$(git -C "$repo" diff --name-only "$base" "$head_oid" 2>/dev/null)"
+  [ -n "$paths" ] || { echo "UNVERIFIABLE the PR touched no path git can name"; return; }
+  # ponytail: word-splits $paths on IFS, so a touched filename containing a space is read as
+  # two paths. Upgrade to NUL-delimited (diff -z + a bash array) if that ever bites.
+  diff_paths="$(git -C "$repo" diff --name-only "$tip" "$head_oid" -- $paths 2>/dev/null)"
+  if [ -z "$diff_paths" ]; then
+    echo "OK"
+  else
+    n="$(printf '%s\n' "$diff_paths" | grep -c .)"
+    echo "MISMATCH ${n}"
+  fi
 }
 
 # --------------------------------------------------------------------------- log

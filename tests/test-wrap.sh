@@ -585,6 +585,21 @@ out="$(GH_STUB_UNAUTH=1 "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge unauthenticated exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "merge unauthenticated names the reason" "$out" "(gh unauthenticated)"
 
+# feat/wrap stops being a fake OID here: `merge --apply`'s tree-verify needs a real local
+# commit to check, so give the branch one and land its exact content on the remote's main,
+# standing in for the squash `gh pr merge` performs on GitHub's own side (this stub never
+# pushes anything for real).
+MERGE_CUR="$(git -C "$TMPD/clone-scan-main" branch --show-current)"
+git -C "$TMPD/clone-scan-main" fetch -q origin main
+git -C "$TMPD/clone-scan-main" checkout -q -b feat/wrap origin/main
+echo "wrap the session" > "$TMPD/clone-scan-main/wrap-note.txt"
+git -C "$TMPD/clone-scan-main" add -A
+git -C "$TMPD/clone-scan-main" commit -qm "wrap the session"
+PR7_OID="$(git -C "$TMPD/clone-scan-main" rev-parse feat/wrap)"
+git -C "$TMPD/clone-scan-main" checkout -q "$MERGE_CUR"
+export GH_STUB_PR_7="{\"number\":7,\"title\":\"wrap the session\",\"headRefName\":\"feat/wrap\",\"headRefOid\":\"$PR7_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"},{\"conclusion\":\"SKIPPED\"}]}"
+git -C "$TMPD/clone-scan-main" push -q "$TMPD/bare-rmain" feat/wrap:refs/heads/main
+
 # ===========================================================================
 echo "=== merge: dry-run lists the eligible PR, --apply merges exactly one ==="
 # ===========================================================================
@@ -597,7 +612,7 @@ chk "merge dry-run calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" &&
 : > "$GH_STUB_CALLS"
 out="$("$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 0" "$rc"
-chk_has "merge --apply reports the merge SHA" "$out" "merged #7 1a2b3c4d5e6f"
+chk_has "merge --apply reports the merge, tree verified" "$out" "merged #7 (1a2b3c4d5e6f): tree verified"
 chk "merge --apply called pr merge exactly once" "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 chk "merge --apply passed --squash" "$(grep -q '^pr merge 7 .*--squash' "$GH_STUB_CALLS"; echo $?)"
 chk "merge --apply passed no --delete-branch" "$(grep -q -- '--delete-branch' "$GH_STUB_CALLS" && echo 1 || echo 0)"
@@ -645,6 +660,64 @@ echo "=== merge: the post-merge state check fails closed ==="
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_VIEW_STATE='{"state":"OPEN","mergeCommit":null}' "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 2 when the PR is not MERGED after the call" "$([ "$rc" -eq 2 ]; echo $?)"
+
+# ===========================================================================
+echo "=== merge: gh saying MERGED is not proof the default branch holds the PR head ==="
+# ===========================================================================
+# Real git repos throughout: what a tree actually holds after a squash is the whole
+# subject, so nothing about the tree state is stubbed. `gh` stays stubbed (it always
+# reports MERGED via GH_STUB_VIEW_STATE's default), which is the point: the mismatch
+# and unverifiable cases below are exactly what gh's own word cannot catch.
+tv_pr_json() { # tv_pr_json <number> <head branch> <head oid>
+  printf '{"number":%s,"title":"tv case","headRefName":"%s","headRefOid":"%s","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' "$1" "$2" "$3"
+}
+tv_open_one() { printf '[{"number":%s,"title":"tv case","headRefName":"%s"}]' "$1" "$2"; }
+build_tv_repo() { # build_tv_repo <name> -- bare + clone, base.txt on main, feat/tv adds pr-file.txt
+  local name="$1" work="$TMPD/tv-work-$1" clone="$TMPD/tv-clone-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  echo base > "$work/base.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/tv-bare-$name"
+  git clone -q "$TMPD/tv-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/tv main
+  echo "pr change" > "$clone/pr-file.txt"
+  git -C "$clone" add -A; git -C "$clone" commit -qm "pr change"
+}
+
+echo "--- a real mismatch: main never got the PR's content, exits 3, branch untouched"
+build_tv_repo mismatch
+TVM="$TMPD/tv-clone-mismatch"; TVM_OID="$(git -C "$TVM" rev-parse feat/tv)"
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 21 feat/tv)" GH_STUB_PR_21="$(tv_pr_json 21 feat/tv "$TVM_OID")" \
+  "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
+chk "tree-verify: a real mismatch exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: mismatch names the count and that main lacks the head" "$out" \
+  "TREE MISMATCH, 1 paths differ; main does not hold the PR head"
+chk "tree-verify: mismatch leaves the branch in place" \
+  "$(git -C "$TVM" rev-parse --verify feat/tv >/dev/null 2>&1; echo $?)"
+
+echo "--- an unreachable head object: never a false pass, exits 3"
+BOGUS_OID="0000000000000000000000000000000000000f"
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 22 feat/tv)" GH_STUB_PR_22="$(tv_pr_json 22 feat/tv "$BOGUS_OID")" \
+  "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
+chk "tree-verify: an unreachable head object exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: names it unverifiable rather than passing silently" "$out" \
+  "tree UNVERIFIABLE the PR head is not a local object"
+
+echo "--- scoped match: another PR landed on main meanwhile, only the touched path must agree"
+build_tv_repo scoped
+TVS="$TMPD/tv-clone-scoped"; TVS_OID="$(git -C "$TVS" rev-parse feat/tv)"
+git clone -q "$TMPD/tv-bare-scoped" "$TMPD/tv-land-scoped" >/dev/null 2>&1
+gitc "$TMPD/tv-land-scoped"
+echo "someone else's change" > "$TMPD/tv-land-scoped/other-file.txt"
+git -C "$TMPD/tv-land-scoped" add -A; git -C "$TMPD/tv-land-scoped" commit -qm "other change"
+cp "$TVS/pr-file.txt" "$TMPD/tv-land-scoped/pr-file.txt"
+git -C "$TMPD/tv-land-scoped" add -A; git -C "$TMPD/tv-land-scoped" commit -qm "squash: pr change"
+git -C "$TMPD/tv-land-scoped" push -q origin main
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 23 feat/tv)" GH_STUB_PR_23="$(tv_pr_json 23 feat/tv "$TVS_OID")" \
+  "$WRAP" merge --apply "$TVS" 2>&1)"; rc=$?
+chk "tree-verify: a scoped match (another PR landed meanwhile) exits 0" "$rc"
+chk_has "tree-verify: scoped match reports verified" "$out" "tree verified"
 
 # ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
