@@ -616,19 +616,33 @@ plan_record() {
   [ "$_pr_n" -gt 0 ] || { echo "plan-record: no dispositions given" >&2; return 64; }
 
   local scratch; scratch="$(mktemp -d)" || { echo "plan-record: cannot create a scratch dir for the dry run" >&2; return 1; }
+  # The scratch dir holds a copy of the real ledger; an interrupt must not strand it in
+  # TMPDIR. The trap runs at script exit, after this function's locals are gone, so it
+  # reads a script-scope name (a local here made every refusal exit 1 under set -u).
+  _pr_scratch="$scratch"
+  trap 'rm -rf "${_pr_scratch:-}"' EXIT
   local real stem rc=0
-  real="$(ledger_file "$rid")" || { rm -rf "$scratch"; return 1; }
+  real="$(ledger_file "$rid")" || return 1
   stem="$(basename "$real")"
   mkdir -p "$scratch/runs"
   if [ -f "$real" ]; then cp "$real" "$scratch/runs/$stem"; fi
   # Both roots move together: ledger_append resolves KIT_LEDGER_DIR per call, while
   # override()'s duplicate-reason guard reads RUNS_DIR through ledger_file().
-  ( RUNS_DIR="$scratch/runs"; KIT_LEDGER_DIR="$scratch"; _plan_record_apply ) || rc=$?
-  rm -rf "$scratch"
+  # The subshell inherits the EXIT trap; it must not delete the scratch the parent still compares.
+  ( trap - EXIT; RUNS_DIR="$scratch/runs"; KIT_LEDGER_DIR="$scratch"; _plan_record_apply ) || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "plan-record: refused; nothing was written to the ledger for '$rid'" >&2
     return "$rc"
   fi
+
+  # The dry run validated against a snapshot. A writer that appended to the real
+  # ledger since then (another session's override on the same rid) could make the real
+  # pass fail mid-loop and leave a partial ledger, so refuse when the file moved.
+  if [ -f "$real" ] && ! cmp -s "$real" "$scratch/runs/$stem"; then
+    echo "plan-record: the ledger for '$rid' changed during the dry run; nothing was written, re-run" >&2
+    return 75
+  fi
+  rm -rf "$scratch"; _pr_scratch=""; trap - EXIT
 
   _plan_record_apply || {
     echo "plan-record: the dry run passed but a write failed for '$rid'; inspect with: gate-ledger.sh show $rid" >&2

@@ -26,3 +26,11 @@ Impact: `--ran` accepts a bare phase (matching `record`), `--skipped` and `--ove
 ## Open questions
 
 - `tests/test-meta.sh` fails one pre-existing pin on master (`sweep pin: zero gate-ledger rid call sites say spec-slug`, 15 found in commands/, AGENTS.md, docs/WORKFLOW.md); this branch touches none of those files. Someone should fix the pin or the call sites in their own PR.
+
+## 2026-09-13 22:05 Review findings folded in before the push
+
+Context: the code-reviewer lens (security + correctness) on the diff returned two findings above nit.
+Decision: (1) refuse with exit 75 when the rid's real ledger differs from the dry-run snapshot at write time, so a concurrent writer on the same rid can no longer leave a partial ledger; (2) an EXIT trap removes the scratch copy on interrupt. The trap reads a script-scope variable, because a function-local made every refusal exit 1 under `set -u` (two test cases caught it), and the dry-run subshell drops the inherited trap so it cannot delete the copy the parent still compares.
+Why: the documented contract is "writes nothing on any invalid disposition"; a race window contradicted it.
+Alternatives: a lock file spanning both passes. Rejected as heavier than the check for a per-rid file with rare concurrent writers.
+Impact: a drift refusal asks the operator to re-run; no data is lost.
