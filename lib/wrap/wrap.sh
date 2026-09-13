@@ -14,11 +14,10 @@
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #
 # The write set is closed: branch delete under two proofs, worktree remove under
-# --worktrees, pull --ff-only on the default branch, the activity-log prepend, the
-# knowledge-root project directory, the staging-file append, and one gh pr merge. Every
-# other action is a report line. The verbs never switch a branch, never touch a dirty
-# file (except under `wrap.pull_past_dirty`, off by default), never force a push or a
-# pull, and never retry a failed git call. The one force is
+# --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
+# activity-log prepend, the knowledge-root project directory, the staging-file append, and
+# one gh pr merge. Every other action is a report line. The verbs never switch a branch,
+# never force a push or a pull, and never retry a failed git call. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
 # unproven worktree, and the removal counts only once a postcondition finds the path gone.
 #
@@ -45,7 +44,7 @@ STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 
-_usage() { sed -n '2,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+_usage() { sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # --------------------------------------------------------------------------- helpers
 
@@ -443,9 +442,15 @@ _ff_blocked_into() {
   up="$(git -C "$repo" rev-parse --verify --quiet '@{u}' 2>/dev/null)"
   [ -n "$up" ] || { printf '0'; return 0; }
   git -C "$repo" merge-base --is-ancestor HEAD "$up" 2>/dev/null || { printf '0'; return 0; }
+  # --no-renames, because rename detection prints only the incoming name. A commit that
+  # renames a file the worktree has dirty would otherwise hide the very path git blocks on.
   while IFS= read -r -d '' f; do inc="${inc}${f}"$'\n'; done \
-    < <(git -C "$repo" diff --name-only -z HEAD "$up" 2>/dev/null)
+    < <(git -C "$repo" diff --name-only -z --no-renames HEAD "$up" 2>/dev/null)
   while IFS= read -r -d '' f; do
+    # A path that is not a regular file never belongs in the stash. Git rewrites a
+    # worktree-deleted file rather than refusing the fast-forward, and a dirty submodule
+    # gitlink is stashable by nobody; stashing either turns a clean pull into a pop conflict.
+    [ -f "$repo/$f" ] || continue
     case $'\n'"$inc" in
       *$'\n'"$f"$'\n'*) printf '%s\0' "$f" >> "$out"; n=$(( n + 1 )) ;;
     esac
@@ -454,26 +459,37 @@ _ff_blocked_into() {
 }
 
 # _stash_blocked <repo> <name> <nul-list file> -- stash exactly the listed paths under a
-# findable name. Pathspecs only: a bare `git stash` would take every other dirty file and
-# every untracked file in a checkout this session does not own.
+# findable name and print the stash commit. The list goes in as a NUL pathspec file, so a
+# path holding a glob character, a leading colon, or a space means itself and nothing else;
+# a bare `git stash` would take every other dirty file and every untracked file in a
+# checkout this session does not own. A push that saves nothing leaves refs/stash where it
+# was, and the empty answer says so, because a caller that recorded a stash it never made
+# would report the operator's work lost when nothing was ever taken.
 _stash_blocked() {
-  local repo="$1" name="$2" list="$3" f i=0
-  local paths
-  while IFS= read -r -d '' f; do paths[$i]="$f"; i=$(( i + 1 )); done < "$list"
-  [ "$i" -gt 0 ] || return 1
-  git -C "$repo" stash push -q -m "$name" -- "${paths[@]}" 2>/dev/null
+  local repo="$1" name="$2" list="$3" before after
+  before="$(git -C "$repo" rev-parse --verify --quiet refs/stash 2>/dev/null)"
+  git -C "$repo" stash push -q -m "$name" \
+    --pathspec-from-file="$list" --pathspec-file-nul 2>/dev/null || return 1
+  after="$(git -C "$repo" rev-parse --verify --quiet refs/stash 2>/dev/null)"
+  [ -n "$after" ] && [ "$after" != "$before" ] || return 1
+  printf '%s' "$after"
 }
 
-# _unstash <repo> <name> -- pop the run's own stash BY REF. A bare `git stash pop` takes
-# whatever sits on top, which on a shared checkout is another session's stash. A pop conflict
-# keeps the stash and leaves the markers: wrap does not know which side of a file it did not
-# write is the right one. A file the repo declares merge=union never reaches that branch,
-# because the union driver resolves it during the pop itself.
+# _unstash <repo> <sha> <name> <pulled> -- pop the run's own stash BY IDENTITY. A bare
+# `git stash pop` takes whatever sits on top, which on a shared checkout is another
+# session's stash; a positional ref resolved a moment earlier is no better, because any
+# session pushing or dropping an entry shifts every index. The commit recorded at push time
+# is the only handle that cannot drift. A pop conflict keeps the stash and leaves the
+# markers: wrap does not know which side of a file it did not write is the right one. A file
+# the repo declares merge=union never reaches that branch, because the union driver resolves
+# it during the pop itself.
 _unstash() {
-  local repo="$1" name="$2" ref conflicted
-  ref="$(git -C "$repo" stash list 2>/dev/null | grep -m1 -F -- "$name" | cut -d: -f1)"
+  local repo="$1" sha="$2" name="$3" pulled="$4" ref="" gd h conflicted
+  while read -r gd h; do
+    if [ "$h" = "$sha" ]; then ref="$gd"; break; fi
+  done < <(git -C "$repo" stash list --format='%gd %H' 2>/dev/null)
   if [ -z "$ref" ]; then
-    echo "     FAILED restore: no stash named ${name} in the stash list"
+    echo "     FAILED restore: stash ${name} left the stash list; recover it with git stash apply $(_short "$sha")"
     FAILURES=1; return 0
   fi
   if git -C "$repo" stash pop -q "$ref" >/dev/null 2>&1; then
@@ -481,7 +497,13 @@ _unstash() {
     return 0
   fi
   conflicted="$(git -C "$repo" diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')"
-  echo "     PULLED, POP CONFLICT: ${conflicted% }, stash ${name} kept"
+  if [ -z "$conflicted" ]; then
+    echo "     FAILED restore: the pop of ${name} refused with no conflict, so the stash is kept"
+  elif [ "$pulled" = 1 ]; then
+    echo "     PULLED, POP CONFLICT: ${conflicted% }, stash ${name} kept"
+  else
+    echo "     POP CONFLICT: ${conflicted% }, stash ${name} kept"
+  fi
   FAILURES=1
 }
 
@@ -512,8 +534,12 @@ _pull_default() {
       if [ -f "$repo/$f" ] && _union_marked "$repo" "$f"; then continue; fi
       nonunion="${nonunion}${nonunion:+, }${f}"
     done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
-    if [ -n "$nonunion" ]; then
+    if [ -n "$nonunion" ] && ! _pull_past_dirty_on; then
       echo "     NOTE: uncommitted and not declared merge=union, so the pull aborts on: ${nonunion}"
+    elif [ -n "$nonunion" ] && [ "$APPLY" = 1 ]; then
+      echo "     NOTE: uncommitted and not declared merge=union; wrap.pull_past_dirty is on, so the pull stashes whichever of these block it: ${nonunion}"
+    elif [ -n "$nonunion" ]; then
+      echo "     NOTE: uncommitted and not declared merge=union; --apply would stash whichever of these block the pull: ${nonunion}"
     elif [ "$APPLY" != 1 ]; then
       echo "     NOTE: every modified file is merge=union; --apply would carry its local lines across the pull"
     else
@@ -531,18 +557,19 @@ _pull_default() {
   # The knob path: the files that block the fast-forward go aside under a name this run can
   # find again, the pull lands, and they come back. Off by default, and never entered while
   # the index carries staged changes, because a pop cannot restore an index it did not stash.
-  local blocked_file="" stash_name="" nblocked=0
-  if [ "$APPLY" = 1 ] && [ -z "$saved_dir" ] && [ -z "$staged" ] && [ -n "$nonunion" ] \
-     && _pull_past_dirty_on; then
+  local blocked_file="" stash_name="" stash_sha="" nblocked=0
+  if [ "$APPLY" = 1 ] && [ -z "$staged" ] && [ -n "$nonunion" ] && _pull_past_dirty_on \
+     && _write_guard "$repo"; then
     blocked_file="$(mktemp)"
     nblocked="$(_ff_blocked_into "$repo" "$blocked_file")"
     if [ "$nblocked" -gt 0 ] 2>/dev/null; then
       stash_name="wrap-pull-past-dirty-$(date +%s)-$$"
-      if _stash_blocked "$repo" "$stash_name" "$blocked_file"; then
+      stash_sha="$(_stash_blocked "$repo" "$stash_name" "$blocked_file")"
+      if [ -n "$stash_sha" ]; then
         echo "     stashed ${nblocked} dirty tracked file(s) as ${stash_name} so the pull can fast-forward"
       else
-        echo "     FAILED stash: ${stash_name} was not created, the pull runs as it does today"
-        stash_name=""; FAILURES=1
+        stash_name=""
+        echo "     NOTE: no stash was created, so the pull runs as it does with the knob off"
       fi
     fi
     rm -f "$blocked_file"
@@ -553,7 +580,13 @@ _pull_default() {
 
   # Whatever the pull did, the operator's lines come back out of the stash. A failed pull
   # leaves the checkout exactly as it was found.
-  [ -n "$stash_name" ] && _unstash "$repo" "$stash_name"
+  if [ -n "$stash_name" ]; then
+    if [ "$FAILURES" = "$before" ]; then
+      _unstash "$repo" "$stash_sha" "$stash_name" 1
+    else
+      _unstash "$repo" "$stash_sha" "$stash_name" 0
+    fi
+  fi
 
   if [ -n "$saved_dir" ]; then
     n=0

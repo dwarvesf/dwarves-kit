@@ -645,6 +645,8 @@ PN_TIP="$(git -C "$TMPD/pdbare-on" rev-parse main)"
 out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PN" 2>&1)"; rc=$?
 chk "knob on: apply exits 0" "$rc"
 chk_no "knob on: the pull did not fail" "$out" "FAILED pull --ff-only"
+chk_has "knob on: the NOTE says the pull stashes rather than aborts" "$out" \
+  "wrap.pull_past_dirty is on, so the pull stashes"
 chk_has "knob on: exactly the one blocking file was stashed" "$out" "stashed 1 dirty tracked file(s)"
 chk_has "knob on: the stash carries the run name" "$out" "as wrap-pull-past-dirty-"
 chk_has "knob on: the stash was restored and dropped" "$out" "restored the stashed file(s) and dropped"
@@ -673,7 +675,6 @@ out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PC" 2>&1)"; rc=$?
 chk "pop conflict: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
 chk_has "pop conflict: the report names the file and keeps the stash" "$out" \
   "PULLED, POP CONFLICT: A.md, stash wrap-pull-past-dirty-"
-chk_has "pop conflict: the report says the stash is kept" "$out" "kept"
 chk "pop conflict: the pull still landed" \
   "$([ "$(git -C "$PC" rev-parse HEAD)" = "$PC_TIP" ]; echo $?)"
 chk "pop conflict: the conflict markers are in the file" \
@@ -740,8 +741,86 @@ printf '%s' "$A_LOCAL_FAR" > "$PD/A.md"
 PD_A="$(cksum < "$PD/A.md")"
 out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply "$PD" 2>&1)"
 chk_no "dry run: nothing was stashed" "$out" "stashed"
+chk_has "dry run: the knob is announced" "$out" "--apply would stash whichever of these block the pull"
 chk "dry run: no stash was created" "$([ "$(pd_stash_count "$PD")" = "0" ]; echo $?)"
 chk "dry run: the dirty file is byte-identical" "$([ "$PD_A" = "$(cksum < "$PD/A.md")" ]; echo $?)"
+
+echo "--- knob on: an incoming rename does not hide the path the pull blocks on"
+build_pd_repo rename
+RPUSH="$TMPD/pdpush-rename"
+git clone -q "$TMPD/pdbare-rename" "$RPUSH"; gitc "$RPUSH"
+git -C "$RPUSH" mv A.md Z.md
+printf '%s' "$A_REMOTE" > "$RPUSH/Z.md"
+git -C "$RPUSH" add -A; git -C "$RPUSH" commit -qm rename
+git -C "$TMPD/pdbare-rename" fetch -q "$RPUSH" main:main
+PR_="$TMPD/pdclone-rename"
+printf '%s' "$A_LOCAL_FAR" > "$PR_/A.md"
+PR_TIP="$(git -C "$TMPD/pdbare-rename" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PR_" 2>&1)"; rc=$?
+chk "rename: apply exits 0" "$rc"
+chk_has "rename: the renamed-away path was still stashed" "$out" "stashed 1 dirty tracked file(s)"
+chk "rename: HEAD moved to the incoming commit" \
+  "$([ "$(git -C "$PR_" rev-parse HEAD)" = "$PR_TIP" ]; echo $?)"
+# The pop follows the rename: the local edit lands on the incoming path, and nothing is lost.
+chk "rename: the renamed file carries the incoming content" \
+  "$(grep -qx 'a1 remote' "$PR_/Z.md"; echo $?)"
+chk "rename: the local edit followed the rename instead of being lost" \
+  "$(grep -qx 'a10 local' "$PR_/Z.md"; echo $?)"
+chk "rename: the old path is gone, as the incoming commit says" "$([ ! -e "$PR_/A.md" ]; echo $?)"
+
+echo "--- knob on: a worktree-deleted file is left for git to rewrite, never stashed"
+build_pd_repo deleted; advance_pd_repo deleted
+PDEL="$TMPD/pdclone-deleted"
+mv -f "$PDEL/A.md" "$TMPD/pd-deleted-A.md"
+PDEL_TIP="$(git -C "$TMPD/pdbare-deleted" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PDEL" 2>&1)"; rc=$?
+chk "deleted: apply exits 0, as it does with the knob off" "$rc"
+chk_no "deleted: nothing was stashed" "$out" "stashed"
+chk_no "deleted: no pop conflict was manufactured" "$out" "POP CONFLICT"
+chk "deleted: the pull landed" \
+  "$([ "$(git -C "$PDEL" rev-parse HEAD)" = "$PDEL_TIP" ]; echo $?)"
+chk "deleted: git rewrote the file with the incoming content" \
+  "$(grep -qx 'a1 remote' "$PDEL/A.md"; echo $?)"
+chk "deleted: the index carries no unmerged path" \
+  "$([ -z "$(git -C "$PDEL" diff --name-only --diff-filter=U)" ]; echo $?)"
+
+echo "--- knob on: a diverged checkout is never stashed past"
+build_pd_repo diverged; advance_pd_repo diverged
+PDIV="$TMPD/pdclone-diverged"
+printf 'local commit\n' > "$PDIV/B.md"
+git -C "$PDIV" commit -qam "chore: a local commit the remote never saw"
+printf '%s' "$A_LOCAL_FAR" > "$PDIV/A.md"
+PDIV_HEAD="$(git -C "$PDIV" rev-parse HEAD)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PDIV" 2>&1)"; rc=$?
+chk "diverged: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_no "diverged: nothing was stashed" "$out" "stashed"
+chk "diverged: no stash was created" "$([ "$(pd_stash_count "$PDIV")" = "0" ]; echo $?)"
+chk "diverged: HEAD did not move" \
+  "$([ "$(git -C "$PDIV" rev-parse HEAD)" = "$PDIV_HEAD" ]; echo $?)"
+
+echo "--- knob on: a path with a space and a glob character is stashed as itself"
+build_pd_repo oddname
+ONAME='a [odd] name.md'
+git -C "$TMPD/pdwork-oddname" checkout -q main 2>/dev/null
+printf '%s' "$A_BASE" > "$TMPD/pdwork-oddname/$ONAME"
+printf 'decoy\n' > "$TMPD/pdwork-oddname/a o name.md"
+git -C "$TMPD/pdwork-oddname" add -A
+git -C "$TMPD/pdwork-oddname" commit -qm "chore: add the odd names"
+git -C "$TMPD/pdbare-oddname" fetch -q "$TMPD/pdwork-oddname" main:main
+PODD="$TMPD/pdclone-oddname"
+git -C "$PODD" pull -q --ff-only
+printf '%s' "$A_REMOTE" > "$TMPD/pdwork-oddname/$ONAME"
+git -C "$TMPD/pdwork-oddname" commit -qam "chore: change the odd name"
+git -C "$TMPD/pdbare-oddname" fetch -q "$TMPD/pdwork-oddname" main:main
+printf '%s' "$A_LOCAL_FAR" > "$PODD/$ONAME"
+printf 'decoy local\n' > "$PODD/a o name.md"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PODD" 2>&1)"; rc=$?
+chk "odd name: apply exits 0" "$rc"
+chk_has "odd name: exactly one file was stashed" "$out" "stashed 1 dirty tracked file(s)"
+chk "odd name: the incoming line landed" "$(grep -qx 'a1 remote' "$PODD/$ONAME"; echo $?)"
+chk "odd name: the local edit came back" "$(grep -qx 'a10 local' "$PODD/$ONAME"; echo $?)"
+chk "odd name: the decoy the glob would have matched is untouched" \
+  "$([ "$(cat "$PODD/a o name.md")" = "decoy local" ]; echo $?)"
 
 # ===========================================================================
 echo "=== gh absent: every non-ancestor is LEAVE, merge refuses ==="

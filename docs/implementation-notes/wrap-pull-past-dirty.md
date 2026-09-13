@@ -22,8 +22,31 @@ Deltas from the draft at `.claude/goals/wrap-pull-past-dirty.md` and from SPEC-2
 - Why: `git stash pop` without `--index` restores staged changes as unstaged. On a shared checkout that silently unstages another session's work.
 - Impact: a staged path keeps today's behaviour and prints the existing index note.
 
-## 2026-09-13 `_usage` now prints two more header lines
-- Context: `_usage` is `sed -n '2,25p'` over the file header, and the knob needed a clause in the invariant sentence that says the verbs never touch a dirty file.
-- Decision/Change: the clause was added and the range moved to `2,26p`.
-- Why: without the range change `bin/wrap --help` ended mid-sentence on the default-branch note.
-- Impact: `--help` output grows by nothing; it just stops truncating.
+## 2026-09-13 Review found the intersection false in four directions; three were fixed, one is documented
+- Context: the correctness lens reproduced four cases where the computed blocking set disagrees with what git refuses. Two turned a knob-off exit 0 into a knob-on exit 2 with damage: a worktree-deleted path was stashed and popped into an unmerged index, and a dirty submodule gitlink produced a stash record for a stash that was never created.
+- Decision/Change: `_ff_blocked_into` now skips any path that is not a regular file and passes `--no-renames` on the incoming diff. `_stash_blocked` records the commit `refs/stash` moved to and returns empty when it did not move, so a push that saved nothing degrades to the knob-off pull instead of reporting the operator's work lost.
+- Why: each of the three is a one-line guard whose absence is a green-to-red regression inside the knob's own happy path. The fourth, `assume-unchanged` and `skip-worktree`, has no cheap exact fix; it makes the knob no-op and the pull report `FAILED`, which is knob-off behaviour, so SPEC-286 states the limit rather than claiming exactness.
+- Impact: four fixtures added, covering the rename, the worktree-deleted path, a diverged checkout, and a path holding a space and a bracket glob.
+
+## 2026-09-13 The pop resolves the stash by commit, not by name or position
+- Context: the security lens showed two ways the original `grep -m1 <name> | cut -d: -f1` resolution takes another session's entry: a pid that is a prefix of another run's pid, and any sibling push between the resolve and the pop, which shifts every index.
+- Decision/Change: `_stash_blocked` prints the stash commit; `_unstash` walks `git stash list --format='%gd %H'` and pops only the entry whose commit matches.
+- Why: the whole feature exists for a checkout other sessions write to. A handle that drifts under concurrency is the one thing this code cannot have.
+- Impact: the failure line now names a recovery command against the recorded commit, so a stash that leaves the list is not lost.
+
+## 2026-09-13 No signal trap around the pull
+- Context: the review asked for a trap so an interrupt between the stash push and the pop cannot leave the blocking files only inside a stash.
+- Decision/Change: no trap. The stash name prints before the pull, and `commands/wrap.md` step 5 carries the two-command recovery.
+- Why: a trap that pops a stash while the shell unwinds is a second write to a checkout whose state nobody has looked at, in the one code path that touches files this session did not write. The material is not lost either way; it is a stash entry with a searchable name.
+- Alternatives considered: `trap ... INT TERM` around the pull (rejected for the reason above); an EXIT trap (worse, it fires on every path including the ones that already popped).
+- Impact: an interrupted run needs one operator command. Recorded here so a later session does not read the absence as an oversight.
+
+## 2026-09-13 The blocking-file NOTE now says what the knob will do
+- Context: with the knob on, the pre-existing `NOTE: ... so the pull aborts on: <files>` printed immediately above a stash line and a pull that landed.
+- Decision/Change: the NOTE branches three ways: aborts (knob off), stashes (knob on, `--apply`), would stash (knob on, dry run).
+- Why: a report that contradicts the run is the defect class this file is most careful about, and the dry run previously gave no warning that `--apply` would stash at all.
+
+## 2026-09-13 The header names the stash in the write set, and `_usage` keeps its line range
+- Context: `_usage` is `sed -n '2,25p'` over the file header. A first attempt added a parenthetical to the sentence that says the verbs never touch a dirty file, which pushed the last header line out of the usage window.
+- Decision/Change: the write-set enumeration names `its pull-past-dirty stash` instead, and the paragraph was rewrapped to the same line count, so the range stays `2,25p`.
+- Why: the enumeration is where a reader looks for what the verbs write, and the stash is a write. Naming it there is more precise than an exception clause on the invariant, and it costs no line.
