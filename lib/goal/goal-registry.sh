@@ -9,7 +9,7 @@
 #
 # It RECORDS and COMPARES; it never launches a session, sequences goals, or merges.
 # No daemon, no lock server, no scheduler, no durability state machine (that is L5 /
-# Nimbalyst, ADR-0022). Pure bash + flat files.
+# Nimbalyst). Pure bash + flat files.
 #
 # Registry root: $(git rev-parse --git-common-dir)/kit-goals/ -- the git common dir,
 # shared by every worktree of one repo on one machine and inherently untracked. The
@@ -170,7 +170,7 @@ reg_claim() {
     printf 'updated=%s\n' "$now"
   } > "$dir/$slug.goal"
 
-  # Last-writer-loud re-read (SPEC-036 edge case 1): if a conflicting active goal
+  # Last-writer-loud re-read (edge case 1): if a conflicting active goal
   # appeared between the gate and the write, back out and fail loud.
   collision="$(_reg_first_collision "$slug" "${globs[*]}")"
   if [ -n "$collision" ]; then

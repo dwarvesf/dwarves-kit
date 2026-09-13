@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# goal.sh -- thin standalone entry for the goal subsystem (kit-modularity SG-03,
+# goal.sh -- thin standalone entry for the goal subsystem (same
 # board.sh/orchestrate.sh shape). Forwards `goal <verb> <args...>` to the sibling
 # script that already owns that verb; adds NO new logic. Additive: every existing
 # `bash lib/goal/<x>.sh ...` call-site keeps working unchanged.

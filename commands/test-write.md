@@ -6,11 +6,11 @@ You are a test-write dispatcher. Your job is to take a spec's ALREADY-REVIEWED `
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-write start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> test-write start`.
 
 ### Step 1: Find the active spec
 
-Detect the active `docs/specs/SPEC-NNN-<slug>.md` the same branch-aware way `/kit:test-plan` uses (SPEC-005). If several specs match, ask the user which one, do not auto-pick.
+Detect the active `docs/specs/SPEC-NNN-<slug>.md` the same branch-aware way `/kit:test-plan` uses. If several specs match, ask the user which one, do not auto-pick.
 
 ### Step 2: Require a fresh SOLID verdict
 
@@ -21,7 +21,7 @@ Read the spec's `## Test plan` and `## Test plan critique` sections. All of the 
 3. **Verdict is SOLID.** The critique's `### Verdict:` line reads exactly `SOLID`, not `REVISE` or `RECONSIDER`, and there is exactly one `### Verdict:` line (more than one is the same untrustworthy-file case as check 2).
 4. **Fresh, not stale.** Compare the `Date:` line under `## Test plan` against the `Date:` line under `## Test plan critique`. The critique's date must be on or after the plan's date. If the plan's date is later, the plan was rewritten after the critique ran (e.g. a re-run of `/kit:test-plan`) and the SOLID verdict no longer describes the matrix in front of you , treat as stale, same as missing.
 
-This is the same freshness/exactly-one-match discipline `/kit:test-harden` codifies for its own verdict read (SPEC-202), reused inline here rather than re-derived, since `test-harden.md` had not landed in this repo as of this writing.
+This is the same freshness/exactly-one-match discipline `/kit:test-harden` codifies for its own verdict read, reused inline here rather than re-derived, since `test-harden.md` had not landed in this repo as of this writing.
 
 ### Step 3: Stop on a bad verdict
 
@@ -52,9 +52,9 @@ Relay `kit:test-writer`'s report plus:
 
 ## Source
 
-Reuses `test-plan-review-team.md`'s `## Test plan critique` shape (the `Date:`/`### Verdict:` fields and the replace-not-stack rule) rather than re-deriving a verdict format. Dispatches `agents/test-writer.md`, which owns the actual matrix-row-to-test-code translation and its own frozen-evaluator/framework-detection rules. Realizes SPEC-203 Task 3 (Gap A, the materialization half); the freshness/exactly-one-match check mirrors the discipline SPEC-202 hardened into `test-harden.md`, described inline here since that file did not exist in this repo when this command was written.
+Reuses `test-plan-review-team.md`'s `## Test plan critique` shape (the `Date:`/`### Verdict:` fields and the replace-not-stack rule) rather than re-deriving a verdict format. Dispatches `agents/test-writer.md`, which owns the actual matrix-row-to-test-code translation and its own frozen-evaluator/framework-detection rules. Realizes the test-plan-to-test-code materialization design (Gap A, the materialization half); the freshness/exactly-one-match check mirrors the same discipline that later hardened into `test-harden.md`, described inline here since that file did not exist in this repo when this command was written.
 
-After the dispatch resolves, record it for lane telemetry (SPEC-062), one line:
+After the dispatch resolves, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> test-write ran "rows_covered=<N>/<M> executed=<clean|failed|mixed>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> test-write end caught=<true if Step 3 stopped the dispatch, else false>`.
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> test-write end caught=<true if Step 3 stopped the dispatch, else false>`.

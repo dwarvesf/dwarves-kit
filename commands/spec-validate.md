@@ -6,7 +6,7 @@ You are running an adversarial spec review. Read the spec from `docs/specs/SPEC-
 
 ## The 6 reviewers
 
-Bracket both phases this lane owns for timing (SPEC-129), before running Reviewer 1:
+Bracket both phases this lane owns for timing, before running Reviewer 1:
 `bash lib/gate/gate-ledger.sh outcome <rid> Validate start` and
 `bash lib/gate/gate-ledger.sh outcome <rid> design-record start`.
 
@@ -48,9 +48,9 @@ Look for:
 - Missing tasks (gaps between spec and acceptance criteria: does completing all tasks actually satisfy the global acceptance criteria?)
 - Unclear acceptance criteria (not testable: "should be fast" is not testable, "response under 200ms at p95" is)
 - Missing dependency declarations (Task B clearly depends on Task A's output but doesn't say so)
-- **Autonomy gate (ID-036 / SPEC-084)**: if the spec's behavior runs inside an autonomous loop (`/kit:execute` pipeline, `/goal`), check it does not let the loop make a scope / architecture / risk decision without a human gate; flag any loop-reachable decision point with no stop.
-- **Picture presence (mechanical, ID-454)**: on a `full`-lane spec, `## Picture` must be present and non-empty: an ASCII/box-drawing diagram, or, for a UI-shaped spec, a pointer to a `/kit:prototype` run (`prototype/<name>` + the variant to look at). A missing or empty `## Picture` on a full-lane spec is a finding. Below full lane, presence is encouraged only; do not flag its absence.
-- **Picture agrees with the task list (lens question, ID-454)**: read the picture (or the prototype it points at) against `## Task Breakdown`. Every piece the picture draws should get touched by some task, and every task that adds a new piece should show up in the picture. Flag drift either direction.
+- **Autonomy gate**: if the spec's behavior runs inside an autonomous loop (`/kit:execute` pipeline, `/goal`), check it does not let the loop make a scope / architecture / risk decision without a human gate; flag any loop-reachable decision point with no stop.
+- **Picture presence (mechanical)**: on a `full`-lane spec, `## Picture` must be present and non-empty: an ASCII/box-drawing diagram, or, for a UI-shaped spec, a pointer to a `/kit:prototype` run (`prototype/<name>` + the variant to look at). A missing or empty `## Picture` on a full-lane spec is a finding. Below full lane, presence is encouraged only; do not flag its absence.
+- **Picture agrees with the task list (lens question)**: read the picture (or the prototype it points at) against `## Task Breakdown`. Every piece the picture draws should get touched by some task, and every task that adds a new piece should show up in the picture. Flag drift either direction.
 
 ### Reviewer 5: Solution-Design & Extensibility Critic
 Look for:
@@ -64,9 +64,9 @@ Look for:
 
 **Calibration (critical):** only flag issues that would produce a flawed implementation or a design that cannot evolve. Do NOT flag stylistic preferences, "this section could be longer", or theoretical extensibility nobody asked for (YAGNI). Approve unless there is a real design weakness. If a spec predates this template (no `Approaches considered` section), raise the absent structure as ONE advisory recommendation, not a per-point critical flag; do not storm legacy or downstream specs.
 
-Source: forked from superpowers:brainstorming ("design for isolation and clarity") + its spec-document-reviewer calibration. See docs/specs/SPEC-008.
+Source: forked from superpowers:brainstorming ("design for isolation and clarity") + its spec-document-reviewer calibration. See the spec-validate design spec under docs/specs/.
 
-### Reviewer 6: Design Record Auditor (ADR-0031 §1, BLOCKING)
+### Reviewer 6: Design Record Auditor (BLOCKING)
 Unlike Reviewers 1-5 above (all advisory), this check can REFUSE the `VALIDATED` flip.
 
 1. **Decide design-bearing.** Is the spec above the tiny lane AND does it do any of: introduce
@@ -113,15 +113,15 @@ Spec: [spec name]
 
 If NEEDS REVISION, update `docs/specs/SPEC-NNN-<slug>.md` with the fixes and mark the Decision Log with entries for each change made.
 
-If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception (ADR-0031 §1):** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of Reviewers 1-5's outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
+If APPROVED, update the Status line in SPEC.md to `VALIDATED`. **Exception:** if Reviewer 6 raised a CRITICAL, BLOCKING finding (a design-bearing spec with an empty/missing `## Design` block), the Verdict is NEEDS REVISION regardless of Reviewers 1-5's outcome, and Status does NOT flip to `VALIDATED` until the Design block is filled and this reviewer re-runs clean.
 
-After the verdict, record it for lane telemetry (SPEC-139), one line:
+After the verdict, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Validate ran "<APPROVED|NEEDS REVISION> critical=<N> warnings=<K>"`.
-Close its timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if the verdict is NEEDS REVISION, else false>`.
+Close its timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Validate end caught=<true if the verdict is NEEDS REVISION, else false>`.
 
 Reviewer 6 is also the `design-record` matrix row's phase owner (it is the one enforcement point
 for that row, per WORKFLOW.md "## The understanding axis"), so record it by its own name too:
 `bash lib/gate/gate-ledger.sh record <rid> design-record ran "design-bearing=<yes|no> <pass|critical>"`.
 This closes the "no command records design-record ran" gap WORKFLOW.md's "## Command emit
-coverage" section used to flag as a known pre-existing gap. Close its timing bracket (SPEC-129):
+coverage" section used to flag as a known pre-existing gap. Close its timing bracket:
 `bash lib/gate/gate-ledger.sh outcome <rid> design-record end caught=<true if the row is critical, else false>`.

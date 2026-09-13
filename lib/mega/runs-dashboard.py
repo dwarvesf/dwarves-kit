@@ -2,7 +2,7 @@
 """runs-dashboard.py -- `mega runs`: ONE self-contained static HTML page of run cards
 over the WHOLE estate, the estate-wide sibling of `mega review --html`'s per-mega sign-off page.
 
-Same projection discipline as SPEC-197/SPEC-182: reads only, persists nothing, safe to re-run.
+Same projection discipline as the rest of this dashboard family: reads only, persists nothing, safe to re-run.
 A card is never fabricated -- every card is a file that exists on disk, and an absent field
 renders an honest label, never a zero or a placeholder image.
 
@@ -10,7 +10,7 @@ Sources scanned per repo root (the three artifact shapes the estate actually use
 full-tree walk, so a vendor/node_modules tree cannot blow up discovery):
 
   1. `_meta/megagoals/**/RUN_REPORT.md`      the mega-goal run reports, including `_archive/`
-  2. `**/docs/proof-of-done.md`              the SPEC-016 table-first proofs, tool- and repo-level
+  2. `**/docs/proof-of-done.md`              the table-first proofs, tool- and repo-level
   3. `docs/verification/**/runs/*.md`        the per-execution immutable run records
 
 Roots come from a REGISTRY, never a hardcoded path list: the existing `boards.txt` format
@@ -118,7 +118,7 @@ def parse_registry_all(text):
 
 def resolve_roots(registry_path, explicit_roots):
     """[(repo_name, root_path)], deduplicated by RESOLVED root so a repo registered twice under
-    two names never double-cards its runs (SPEC-215 edge case 1). Explicit --root args bypass the
+    two names never double-cards its runs (edge case 1). Explicit --root args bypass the
     registry entirely; that is the path the tests and the empty-state control use."""
     pairs = []
     for r in explicit_roots or []:
@@ -147,7 +147,7 @@ def resolve_roots(registry_path, explicit_roots):
 
 def _walk(start, want, max_depth=6):
     """Bounded walk under one prefix. Prunes the dirs that never hold run artifacts but do hold
-    enough files to make an unbounded walk slow (SPEC-215 failure mode 3)."""
+    enough files to make an unbounded walk slow (failure mode 3)."""
     hits = []
     if not os.path.isdir(start):
         return hits
@@ -166,7 +166,7 @@ def _walk(start, want, max_depth=6):
 
 def discover(root):
     """Every run artifact under one repo root, as [(path, kind)]. Honest-empty: a missing or
-    empty root yields [], never an exception (SPEC-215 edge case, empty-state control)."""
+    empty root yields [], never an exception (edge case, empty-state control)."""
     found = []
     for p in _walk(os.path.join(root, "_meta", "megagoals"),
                    lambda d, f: f == "RUN_REPORT.md"):
@@ -210,7 +210,7 @@ def classify_status(text):
 def _title_from_path(path, root):
     """Path-derived fallback when a document carries no `# ` heading: the owning directory,
     which for `tools/x/docs/proof-of-done.md` and `megagoals/x/RUN_REPORT.md` alike is the run's
-    real name. Never returns empty (SPEC-215 test case 2)."""
+    real name. Never returns empty (test case 2)."""
     rel = os.path.relpath(path, root)
     parts = [p for p in rel.split(os.sep) if p not in ("docs", "runs", "_meta", "megagoals", "_archive")]
     if len(parts) >= 2:
@@ -229,7 +229,7 @@ def _read_head(path, n_bytes=24000):
 def _collect_captures(text, doc_dir, budget):
     """Markdown image references resolved against the document's own directory. A reference whose
     target does not exist contributes NOTHING -- no broken <img>, no fabricated thumbnail
-    (SPEC-215 test case 6, which is also what keeps template/fixture placeholders off the page)."""
+    (test case 6, which is also what keeps template/fixture placeholders off the page)."""
     out = []
     for alt, rel in _MD_IMAGE_RE.findall(text):
         if rel.startswith(("http://", "https://", "data:", "//")):
@@ -289,7 +289,7 @@ def extract_card(path, kind, repo, root, budget):
         card.date, card.date_exact = m.group(1), True
     else:
         # Honest fallback: the file's own mtime, LABELLED as a file date so no reader mistakes
-        # it for a date the author wrote (SPEC-215 edge case 2).
+        # it for a date the author wrote (edge case 2).
         try:
             card.date = datetime.date.fromtimestamp(os.path.getmtime(path)).isoformat()
         except OSError:

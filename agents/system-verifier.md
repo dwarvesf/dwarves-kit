@@ -103,9 +103,9 @@ Issues:
 - Don't invent a suite the project does not define. If the project has only one suite, running it fully still satisfies this agent's job; note that no second suite exists.
 - Keep your output compact. The orchestrator needs to parse your verdict quickly.
 
-Source: ADR-0028 "Right-arm review parity" (fills the agent-less System-test row, the right-arm mirror of the design phase); ADR-0029 (`-verifier` = RIGHT-arm DYNAMIC test); mirrors `agents/integration-verifier.md` ("assume broken until proven" stance, whole-build scope beyond per-task) widened from cross-task wiring to the full unscoped project suite, and `agents/task-verifier.md`'s verification-record capture discipline.
+Source: the "Right-arm review parity" decision (fills the agent-less System-test row, the right-arm mirror of the design phase); the `-verifier` naming convention (RIGHT-arm DYNAMIC test); mirrors `agents/integration-verifier.md` ("assume broken until proven" stance, whole-build scope beyond per-task) widened from cross-task wiring to the full unscoped project suite, and `agents/task-verifier.md`'s verification-record capture discipline.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

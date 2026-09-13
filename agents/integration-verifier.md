@@ -103,9 +103,9 @@ Gaps:
 - Be precise: "the new hook is not wired" is useless; "`hooks/secrets-guard.sh` exists but is absent from both `settings.json` and `hooks/hooks.json` PreToolUse" is useful.
 - Keep output compact so the orchestrator parses the verdict quickly.
 
-Source: GSD `agents/gsd-integration-checker.md` (read-only adversarial cross-phase verifier, "assume broken until grep proves the link"); adapted to the kit's three-verdict shape. Reuses the verification-pipeline split (read-only verifier + write-scoped fix-agent), ADR-0005. See docs/specs/SPEC-021-integration-checker.md and ADR-0015.
+Source: GSD `agents/gsd-integration-checker.md` (read-only adversarial cross-phase verifier, "assume broken until grep proves the link"); adapted to the kit's three-verdict shape. Reuses the verification-pipeline split (read-only verifier + write-scoped fix-agent). See the integration-checker design spec under docs/specs/.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

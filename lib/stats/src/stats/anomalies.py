@@ -1,11 +1,11 @@
-"""Anomaly detection over the SG-02 lens + a PROPOSE-not-autofile stager.
+"""Anomaly detection over the lens + a PROPOSE-not-autofile stager.
 
 The feedback loop that stops the ledgers being write-only: ledgers -> lens -> anomaly ->
 PROPOSED backlog row -> operator gate -> improvement.
 
 Two hard contracts:
 
-1. ONE DATA PATH. Every detector reads ONLY through `materialize.query` (the SG-02 lens).
+1. ONE DATA PATH. Every detector reads ONLY through `materialize.query` (the lens).
    This module imports `materialize`; it never opens DuckDB itself and never reads a raw
    ledger file. Detection is pure read: `detect()` writes nothing.
 
@@ -13,7 +13,7 @@ Two hard contracts:
    block to the STAGING BUFFER (`_meta/backlog-staging.md`, env `BACKLOG_STAGE_STAGING`)
    in the exact format `tools/cc-backlog` writes and `board promote` consumes. It opens the board
    `BACKLOG.md` READ-ONLY (for dedup) and NEVER writes it. The operator promotes via the existing
-   `board promote` human gate (ex `add-backlog`, ADR-0034). This tool has no path to a board row.
+   `board promote` human gate (ex `add-backlog`). This tool has no path to a board row.
 
 Thresholds (open-fork 3) are defensible-default scaffolds + one `--threshold KEY=VALUE` flag to
 tune. The two min-sample floors (`cost_window`, `misfire_min_runs`) are the load-bearing
@@ -84,7 +84,7 @@ class Anomaly:
 
 def _detect_debt(th: dict) -> Anomaly | None:
     """Unpaid understanding-debt: SUM(kit_runs.gates_ovr). A gate override is a consciously
-    WAVED gate = unpaid debt (the signal materialized in the lens today; see SPEC-129 DEC-004)."""
+    WAVED gate = unpaid debt (the signal materialized in the lens today;)."""
     _cols, rows = materialize.query("SELECT COALESCE(SUM(gates_ovr), 0) AS n FROM kit_runs")
     n = int(rows[0][0] or 0) if rows else 0
     if n <= th["debt_max"]:
@@ -163,7 +163,7 @@ def _detect_unknown_density(th: dict) -> Anomaly | None:
     `deviation_window` implementation-notes files (`impl_notes`), the upstream half of the
     benchmark bridge. Ordered by `first_ts` (a zero-marker file with no logged entry has no
     `first_ts` and sorts first via a sentinel -- the schema carries no filesystem mtime by
-    design, see SPEC-133 -- a stated approximation, not true wall-clock order for those rows).
+    design -- a stated approximation, not true wall-clock order for those rows).
     `deviation_window` doubles as the min-sample floor (thin data proposes nothing, same
     convention as `cost_spike`'s `cost_window`)."""
     window = int(th["deviation_window"])
@@ -197,15 +197,14 @@ def _detect_unknown_density(th: dict) -> Anomaly | None:
 
 
 # conventional-commit fix() subject, same convention cli.py's defect-correlation/deviation-rate
-# use (a small deliberate duplication of that private literal, not a new shared module -- see
-# SPEC-134 "After state").
+# use (a small deliberate duplication of that private literal, not a new shared module).
 _FIX_SUBJECT_RE = r"^fix(\(.*\))?!?:"
 
 
 def _detect_ceremony(th: dict) -> Anomaly | None:
     """Ceremony: a kit gate that structurally never mattered. Reads `kit_gates`
     (gate-yield's own GROUP BY gate shape) joined to a PER-GATE generalization of
-    defect-correlation's rid-to-git bridge (SPEC-132 DEC-001's two-stage bridge: a textual
+    defect-correlation's rid-to-git bridge (the two-stage bridge: a textual
     rid-in-subject match once, then genuine file-equality thereafter -- same technique, applied
     to every gate's rids instead of only `gate='ship'`).
 
@@ -326,7 +325,7 @@ def _detect_ceremony(th: dict) -> Anomaly | None:
 
 
 def _detect_token_runaway(th: dict) -> Anomaly | None:
-    """Token-runaway (SPEC-135: ARMED). Reads ONLY the `sessions` table (numbers-only,
+    """Token-runaway (: ARMED). Reads ONLY the `sessions` table (numbers-only,
     `materialize.query()`, the one-data-path contract every detector in this module follows):
     flags the single highest-total session (input+output+cache_read+cache_creation tokens) when
     it exceeds `token_budget_max`. `None` when the top session is at/under budget, or when
@@ -401,7 +400,7 @@ def _detect_serial_when_parallel(th: dict) -> Anomaly | None:
     2. Their `[MIN(ts), MAX(ts)]` windows do NOT overlap (ran in separate waves, one strictly
        after the other).
     3. They share NO touched file across ALL their bridged commits (a dependency-INDEPENDENCE
-       proxy, not a real dep-graph read -- no new adapter in scope; SPEC-134 DEC-002). ANY
+       proxy, not a real dep-graph read -- no new adapter in scope). ANY
        shared file means genuinely dependent, correctly serial, never propose.
 
     Proposes collapsing the two waves into one, with the shorter rid's own window duration as
@@ -412,7 +411,7 @@ def _detect_serial_when_parallel(th: dict) -> Anomaly | None:
     Only the serial-when-parallel signal is implemented: slow-gate ranking, kill-churn, and
     discovery-heavy (also named in the goal file's Outcome paragraph) need per-session data that
     lands with the sessions table (sub-goal 05) and are deliberately left for then, not faked
-    here (SPEC-134 "Out of Scope")."""
+    here ("Out of Scope")."""
     min_save = th["serial_min_minutes_saved"]
     sql = """
     WITH candidates AS (
@@ -501,16 +500,16 @@ def _detect_memory_hygiene(th: dict) -> Anomaly | None:
 
 
 def _detect_review_fp(th: dict) -> Anomaly | None:
-    """Review-yield FP-rate anomaly (SPEC-137, gate-review-absorptions SG-04): a review lens
+    """Review-yield FP-rate anomaly (gate-review-absorptions): a review lens
     whose (repo, lens) `rejected_findings` count is disproportionate against the run-level
     `raised` denominator -- the SAME approximation `review-yield` itself reports (a per-lens
     numerator over a per-run, not per-lens, denominator; `kit_gates` carries no lens column,
-    SPEC-137 DEC-002), read via the identical SQL shape, not a second detection path.
+    read via the identical SQL shape, not a second detection path.
     `review_fp_min_n` is a DUAL min-sample floor (both `n_rejected` and `raised` must clear
     it), the same convention `review-yield --min-n`'s own `low_n` column uses -- thin data on
     either side proposes nothing, same discipline as every other detector's floor.
 
-    `suppressed=` is never read here either (SPEC-137 DEC-003, same as `review-yield` itself).
+    `suppressed=` is never read here either (same as `review-yield` itself).
     Reads ONLY `materialize.query()` (the one-data-path contract every detector in this module
     follows). Gates are checked in (repo, lens) alphabetical order (deterministic); the FIRST
     row over threshold fires. Returns `None` on honest-empty (no row clears the dual floor, or
@@ -584,7 +583,7 @@ def parse_thresholds(pairs: list[str]) -> dict:
     """Parse `KEY=VALUE` overrides. Unknown key or non-numeric value raises ValueError.
 
     Rejects non-finite values (`nan`/`inf`/`-inf`) explicitly (a `kit:code-reviewer` LOW
-    finding on `_detect_review_fp`, SPEC-137): `float("nan")` parses successfully in Python,
+    finding on `_detect_review_fp`): `float("nan")` parses successfully in Python,
     so an unvalidated override would splice a bare `nan`/`inf` token into
     `_detect_review_fp`'s f-string SQL (`... WHERE rf.n_rejected >= {min_n} ...`) rather than
     the intended "disable this floor" behavior. Not an injection (no quote-breaking is
@@ -628,7 +627,7 @@ def _ops_toolkit_root() -> str | None:
 
 
 def _staging_env(canonical: str, legacy: str) -> str | None:
-    """Read the canonical env name, falling back to the pre-SPEC-200 `CC_*` name with
+    """Read the canonical env name, falling back to the legacy `CC_*` name with
     a one-line deprecation on stderr. The kit's naming invariant bans host-agent
     prefixes (docs/verification/kit-foldin-hooks.md renamed the legacy backlog vars to
     BACKLOG_STAGE_* once already); stats entered the kit after that sweep and kept the
@@ -697,7 +696,7 @@ def _existing_titles(backlog: str | None, staging: str | None) -> set[str]:
 
 
 def _staging_format():
-    """The kit's ONE staging-block grammar (ADR-0034 decision 1 / SPEC-200 I1)."""
+    """The kit's ONE staging-block grammar (decision 1 / I1)."""
     import importlib.util
     from . import config as _cfg
     path = _cfg._kit_repo_root() / "lib" / "reflect" / "staging-format.py"

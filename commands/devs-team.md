@@ -6,13 +6,13 @@ You are a design-critique coordinator. Your job is to stress-test a solution DES
 
 ## Process
 
-Bracket both phases this lane owns for timing (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> review start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-critique start`.
+Bracket both phases this lane owns for timing: `bash lib/gate/gate-ledger.sh outcome <rid> review start` and `bash lib/gate/gate-ledger.sh outcome <rid> design-critique start`.
 
 ### Step 1: Find the design to critique
 
 Read the design's `## Solution`, **spec-first**:
 
-1. The active `docs/specs/SPEC-NNN-<slug>.md`'s `## Solution` section IF a spec exists. Resolve the active spec the way `/kit:next` does (branch-aware, SPEC-005); if several specs match, ask the user which one, do not auto-pick.
+1. The active `docs/specs/SPEC-NNN-<slug>.md`'s `## Solution` section IF a spec exists. Resolve the active spec the way `/kit:next` does (branch-aware); if several specs match, ask the user which one, do not auto-pick.
 2. ELSE `docs/briefs/DECISION-BRIEF-<slug>.md`'s `## Solution` section (falling back to the legacy `docs/briefs/DECISION-BRIEF.md`), the pre-spec window, before a `SPEC-NNN` exists. `<slug>` is the feature's kebab-case slug, the same one `/kit:think`/`/kit:design` used for this feature's brief.
 
 The spec is the carrier once it exists; the brief is the home only pre-spec (before `/kit:spec`). If neither has a `## Solution` (no active spec with one, AND the brief is absent or has no `## Solution`), say so, suggest the user run `/kit:design` or `/kit:spec` first, and stop. Do not invent a design to critique.
@@ -86,15 +86,15 @@ Never block `/kit:spec`. The maintainer decides whether to revise or proceed.
 Under bypassPermissions the per-section `AskUserQuestion` approvals auto-resolve; if you detect that, say so plainly. This lane delivers its full value in interactive (non-bypass) mode.
 
 ## Source
-Mirrors the parallel multi-lens pattern in `commands/review-team.md` + `agents/code-reviewer.md`, one altitude up (design, not code). Lenses adapted from `zvadaadam/az-skills` `engineering/devs-roundtable`, recast as generic house-style lenses (no named-person personas). Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/kit:visual-team` (same altitude). Realizes SPEC-016 Part A.
+Mirrors the parallel multi-lens pattern in `commands/review-team.md` + `agents/code-reviewer.md`, one altitude up (design, not code). Lenses adapted from `zvadaadam/az-skills` `engineering/devs-roundtable`, recast as generic house-style lenses (no named-person personas). Verdict vocabulary `SOLID / REVISE / RECONSIDER` is shared with `/kit:visual-team` (same altitude). Realizes the devs-team design's Part A.
 
-After the verdict, record it for lane telemetry (SPEC-061), one line:
+After the verdict, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> review ran "<verdict> findings=<K>"`.
-Close its timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SOLID, else false>`.
+Close its timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> review end caught=<true if the verdict is not SOLID, else false>`.
 
 This lane is the full-lane's `design-critique` phase owner (the pre-spec design lens, distinct
 from `review.md`'s post-build code review), so also record the matrix row by its own literal
 name: `bash lib/gate/gate-ledger.sh record <rid> design-critique ran "<verdict> findings=<K>"`.
-Close its timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> design-critique end caught=<true if the verdict is not SOLID, else false>`.
+Close its timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> design-critique end caught=<true if the verdict is not SOLID, else false>`.
 Both lines are additive; a run's `review ran` observability is unchanged, and `design-critique`
 now has an owner that closes the required-set gap.

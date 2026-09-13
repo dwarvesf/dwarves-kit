@@ -6,13 +6,13 @@ You are a senior technical architect producing a development specification. The 
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Spec start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Spec start`.
 
 ### Step 1: Gather intent
 
 **Derive `<slug>`:** a kebab-case slug for this feature (the same one `/kit:think` uses for `DECISION-BRIEF-<slug>.md`, if `/think` ran first; otherwise derive it fresh from the feature name/idea). This is the same slug that names `docs/specs/SPEC-NNN-<slug>.md` in Step 3, and reused for every artifact this run writes, so parallel feature runs in the same worktree/repo never overwrite each other's research or context files. Also note `<date>` = today's date, `YYYY-MM-DD`.
 
-Check for an existing brief, slugged file first: `docs/briefs/DECISION-BRIEF-<slug>.md` if present, else the legacy `docs/briefs/DECISION-BRIEF.md`. If either exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , ADR-0031 §1). Otherwise, ask the user:
+Check for an existing brief, slugged file first: `docs/briefs/DECISION-BRIEF-<slug>.md` if present, else the legacy `docs/briefs/DECISION-BRIEF.md`. If either exists, read it first (it may include a Solution design appended by `/kit:design`; fold that into the spec's `## Solution`. It may also include a `## Design` section, from the same command, with a diagram + ADR link(s); fold that into the spec's own `## Design` , the understanding-gate design). Otherwise, ask the user:
 - What are you building? (one paragraph)
 - Is this greenfield or modifying existing code?
 - What's the tech stack? (or read from CLAUDE.md / package.json / go.mod)
@@ -72,9 +72,9 @@ Create `docs/specs/` directory if it doesn't exist. Generate these files:
 **`docs/specs/SPEC-NNN-<slug>.md`** (main spec). Pick NNN with
 `bash lib/spec/spec-next.sh next`, never by eyeballing the specs dir: it also scans branch
 names and recent commit subjects, the two surfaces where a number ages invisibly inside
-an unmerged PR (two collisions in one week before this guard, SPEC-064 / ID-052). If a
+an unmerged PR (two collisions in one week before this guard). If a
 wavefront dispatch already RESERVED a number for you (a `RESERVED SPEC NUMBER` block in
-your prompt, SPEC-128), use THAT number instead of re-deriving one: it was claimed
+your prompt), use THAT number instead of re-deriving one: it was claimed
 atomically at dispatch so no sibling wave worker can take it.
 
 ```markdown
@@ -92,7 +92,7 @@ is no reference to point at.]
 [What user pain does this solve? Copy from decision brief if available.]
 
 ## Solution
-<!-- Depth pattern forked from superpowers:brainstorming ("propose 2-3 approaches"; "design for isolation and clarity"). See docs/specs/SPEC-008. -->
+<!-- Depth pattern forked from superpowers:brainstorming ("propose 2-3 approaches"; "design for isolation and clarity"). See the solution-depth design spec under docs/specs/. -->
 
 ### Approaches considered
 2-3 candidate approaches. For each: one line of description + its main tradeoff.
@@ -106,11 +106,11 @@ Which one, and what the rejected alternatives traded away.
 - Unit boundaries: each piece has one purpose, a defined interface, testable independently. A unit needing more than 3 sentences to describe is a split candidate.
 
 ### Architecture
-See `## Design` below , ADR-0031 §1 promotes the diagram out of this sub-section into its
+See `## Design` below , the understanding-gate design promotes the diagram out of this sub-section into its
 own gated block, so a design-bearing spec cannot ship an empty architecture hint.
 
 ## Picture
-<!-- ID-454, the PRE-build twin of ID-395's post-build visual proof. A ticket that carries a
+<!-- The PRE-build twin of the post-build visual-proof convention. A ticket that carries a
      picture (a diagram or a prototype) builds better than prose alone. Required (non-empty)
      for a `full`-lane spec; encouraged, not required, below full; do not force it on an
      obvious normal-lane change. Checked by `/kit:spec-validate` Reviewer 4 (mechanical
@@ -124,7 +124,7 @@ run `/kit:prototype`, then name the branch and the variant to look at: `prototyp
 variant <N>: <one line on what it shows>.
 
 ## Design
-<!-- ADR-0031 §1 (the understanding gate, BEFORE half). Required (non-empty) for any spec
+<!-- The understanding gate (BEFORE half). Required (non-empty) for any spec
      above the tiny lane that is DESIGN-BEARING: new component/module, non-obvious control
      flow, schema/data-model change, external integration, an irreversible choice, or 2+
      viable approaches. Otherwise collapse this WHOLE block to one line: `obvious: <why>` --
@@ -140,7 +140,7 @@ lowest design-review priority).
 
 ### Approaches considered + chosen
 Point at `## Solution`'s `### Approaches considered` / `### Chosen approach + why` above (the
-same SPEC-008 depth); do not re-litigate it here unless the design view surfaces a new tradeoff.
+same depth as that section above); do not re-litigate it here unless the design view surfaces a new tradeoff.
 
 ### Diagram (pick by fit, mermaid-first)
 One diagram, the kind that actually clarifies , not all five:
@@ -162,7 +162,7 @@ Required when this design touches data, an external integration, or a migration.
 of bounds for this design; point at `## Failure modes` below rather than duplicating its table.
 
 ## Technical Design
-<!-- Interfaces + Failure modes forked from ops-toolkit SDD (agency-lead-radar / tide). See docs/specs/SPEC-009. -->
+<!-- Interfaces + Failure modes forked from ops-toolkit SDD (agency-lead-radar / tide). See the SDD interfaces-and-failure-modes design spec under docs/specs/. -->
 
 ### Interfaces (I/O contract)
 Optional; strongest when this spec exposes or consumes an interface. This is the concrete declared interface; "Extensibility & boundaries" above is the qualitative design lens.
@@ -179,14 +179,14 @@ Optional; strongest when this spec exposes or consumes an interface. This is the
 Each task must be atomic: implementable in one session, fits in 50% of a context window.
 
 ### Phase 1: Foundation
-- [ ] TASK-001: [description] — [acceptance criteria]
-- [ ] TASK-002: [description] — [acceptance criteria]
+- [ ] TASK-A: [description], [acceptance criteria]
+- [ ] TASK-B: [description], [acceptance criteria]
 
 ### Phase 2: Core
-- [ ] TASK-003: [description] — [acceptance criteria]
+- [ ] TASK-C: [description], [acceptance criteria]
 
 ### Phase 3: Polish
-- [ ] TASK-004: [description] — [acceptance criteria]
+- [ ] TASK-D: [description], [acceptance criteria]
 
 ## After state
 The definition-of-done picture. Each bullet is false now and true after, and each is checkable by a human or a command. This feeds `## Acceptance Criteria` below and projects into the goal's `Done-when`.
@@ -225,7 +225,7 @@ Optional; REQUIRED only for a spec you intend to run via `/kit:dispatch` (concur
 - another/area/**
 
 ## Decision Log
-- DEC-001: [decision], [rationale], [alternatives rejected]
+- DEC-A: [decision], [rationale], [alternatives rejected]
 
 ## Amendments
 Optional; added only when a mid-flight amend happens (like `## Failure modes` / `## Open questions`, never an empty scaffold in a fresh spec). A running provenance log of mid-build scope additions. `WORKFLOW.md` owns the amend rule (when you may amend, the checkpoint guard, resume); this section is just the recorded entry. Entry shape:
@@ -279,7 +279,7 @@ what breaks at ten times the load, while a fix is still one spec edit
 fold into `## Edge Cases`, `## Failure modes`, and `## Review`. Normal keeps this
 opt-in; tiny skips it.
 
-After approval, record it for lane telemetry (SPEC-139), one line:
+After approval, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Spec ran "SPEC-NNN-<slug> approved, tasks=<N>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Spec end` (this record only fires post-approval; no reject path lands here, so the verb's own `caught=false` default stands).
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Spec end` (this record only fires post-approval; no reject path lands here, so the verb's own `caught=false` default stands).

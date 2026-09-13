@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sanitize.sh -- the untrusted-input pass for the autonomous run queue (SPEC-223, board row ID-459).
+# sanitize.sh -- the untrusted-input pass for the autonomous run queue (board row).
 #
 # The `#auto` path types file text into a `--dangerously-skip-permissions` Claude session. The board
 # row picks WHICH file (`parse-board.sh` reduces the row to a charset-gated `#queue{}` token), and
@@ -27,7 +27,7 @@
 #   9 size-cap           truncate, never reject, and leave a VISIBLE marker
 #  10 collapse + trim    last, so the marker itself is never trimmed away
 #
-# Deliberately NOT ported from gh-aw (see SPEC-223 `## Out of Scope`): homoglyph mapping, the
+# Deliberately NOT ported from gh-aw (see `## Out of Scope`): homoglyph mapping, the
 # domain allow-list, mention / GitHub-reference neutralization, template-delimiter escaping, and
 # the read-only-agent + NDJSON safe-outputs + model-judge separation.
 #

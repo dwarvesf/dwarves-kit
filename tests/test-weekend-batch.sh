@@ -299,10 +299,14 @@ assert "AC6d the collect digest shows $RID_WAVE's real significance/worthiness (
   "$(printf '%s\n' "$COLLECT_WAVE" | grep -A2 "^## ${RID_WAVE}\$" | grep -q 'significance: high / worthiness: low' && echo 0 || echo 1)"
 
 # Capture the fixture-A collect digest as the proof artifact (mirrors test-explain.sh's
-# sample-explainer.md capture).
+# sample-explainer.md capture). The digest's timestamps are all derived from $NOW (captured at
+# script start), a fresh wall-clock value every run, so normalize every ISO-8601 timestamp to a
+# fixed placeholder -- else the committed sample rewrites on every test run and leaves the tree
+# dirty (ID-830).
 PROOF_DIR="$KIT_DIR/docs/verification/weekend-batch"
 mkdir -p "$PROOF_DIR"
-printf '%s\n' "$COLLECT_OUT" > "$PROOF_DIR/sample-digest.md"
+printf '%s\n' "$COLLECT_OUT" \
+  | sed -E 's/[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z/1970-01-01T00:00:00Z/g' > "$PROOF_DIR/sample-digest.md"
 
 echo ""
 echo "=== Coverage delta ==="

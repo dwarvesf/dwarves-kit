@@ -264,6 +264,22 @@ single-reader fence). No env vars; per-repo values live in `.kit.toml [sync]`.
 |---|---|---|---|---|---|
 | PRECEDENT_REGISTRY | precedent.registry | `${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt` | [consumer] | precedent | Registry file of extra `<kind> <path>` scan locations (`repo\|scripts\|skills\|crons\|memory`) for `precedent find --surface inventory\|all`. Resolution: `--registry` flag > this env var > `kit_config_get_root precedent.registry` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because registry rows widen the roots `--explain` may read and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`) > the XDG default path shown here (read by `inventory.py` itself, not the resolver). Empty/missing registry means built-in scan only. |
 
+### intake (`intake gate` decision stores, no install module)
+
+Every row resolves with `kit_config_get_root` (the operator `kit.toml` or the kit-root
+`kit.toml` ONLY; a project `.kit.toml` is never read for any of them because two name a
+command the verb executes and two name a path outside the repo, and a project toml rides
+inside an untrusted pull request, `kit-config.sh:75-90`). Each store belongs to the operator,
+so every default is empty: an unset key, a command not on PATH, or a path that does not exist
+SKIPS that source with a stderr line and a `skipped` row, and never fails the gate.
+
+| Env var | kit.toml key | Default | Status | Module | Doc |
+|---|---|---|---|---|---|
+| - | intake.url_ledger | `""` | [consumer] | intake | Command that answers "have we consumed this URL", executed as `<cmd> check <url>` with exit 0 meaning seen and its stdout parsed as JSON (`date`, `verdict`, `conclusion`). The value is a command name or path, not a ledger file, because the ledger's dedup key is a normalized URL and only its own tool can compute that. Empty skips the `url` source. |
+| - | intake.verdicts | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the operator's verdict ledger, one decided evaluation per line. The gate cites a line containing every word of the subject. Empty skips the `verdict` source. |
+| - | intake.boards | `""` | [consumer] | intake | Absolute or `~`-prefixed path to the boards registry: `<name> <path-to-BACKLOG.md>` rows with `#` comments, the same format the operator's cross-repo board renderer reads. The gate scans every board the registry names and reports each hit's board by name; a row whose file is gone is passed over. Empty skips the `board` source. |
+| - | intake.notes | `""` | [consumer] | intake | Command that answers "have I written about this", executed as `<cmd> query <subject> --k N --floor F --json` and expected to print an array of `{source, heading}`. Semantic recall returns rows for any input, so the verb passes a similarity floor; without it the source would hit on everything. Empty skips the `note` source. |
+
 ### ship / debug / review (command autonomy knobs, no install module)
 
 Each key gates an action that is reversible in git; the shipped default acts. All resolve with
@@ -290,6 +306,7 @@ never turns the step off.
 | - | wrap.merge_own_prs | `true` | [impl] | wrap | Step 3 autonomy. `true` merges the operator's own green PRs, one per `wrap merge --apply` call, base default branch only; `false` leaves them open and reports each as `OPEN`. Resolved with `kit_config_get_root` (the operator `kit.toml` or the kit-root `kit.toml` ONLY; a project `.kit.toml` is never read for this key because it authorizes a write to the default branch and a project toml rides inside an untrusted PR, `kit-config.sh:75-90`). Neither setting merges a PR the operator did not open. |
 | - | wrap.tidy_worktrees | `true` | [impl] | wrap | Step 5 autonomy. `true` passes `--worktrees` to `wrap apply`, removing clean secondary worktrees and freeing the branches they hold; `false` leaves them and reports them under `Left alone`. Resolved with `kit_config_get_root`, same fence and reason as the row above. Neither setting touches a dirty, detached, or checked-out worktree; `apply` refuses those on its own. |
 | - | wrap.build_candidates | `true` | [impl] | wrap | Step 7b autonomy. `true` wires a precedent hit into the tool it named and builds a clear-shaped miss, each committed in its home repo; `false` stages every candidate as a row in `_meta/backlog-staging.md`. Resolved with `kit_config_get_root`, same fence and reason as the two rows above. A candidate whose scope is a judgment with differing irreversible outcomes stages at either setting. |
+| - | wrap.build_lanes | `"tiny"` | [impl] | wrap | Step 7b sizing. A space-separated list of the lanes `lib/classify/lane-classify.sh` can return that step 7b builds INLINE; every other lane stages its row and drafts its goal at `.claude/goals/<slug>.md`. The default is the behavior before this key existed. `full` never builds inline even when listed, because that lane owes a spec and a review; a full candidate files a queued row on the home repo's `_meta/BACKLOG.md` through `bin/board capture` and wrap reports `(lane=full, filed: <repo> <ID-NNN>, goal drafted: <path>)`. An inline build of a non-`tiny` lane runs in a worktree on its own branch in the home repo, quotes one verification command, and opens a PR that step 3 merges only when green, so the home repo's ship-gate proof still applies. Resolved with `kit_config_get_root`, same fence and reason as the rows above: widening it widens what wrap writes. Ignored when `build_candidates` is `false`, which stages every candidate. |
 | - | wrap.drain_staged | `false` | [impl] | wrap | Step 7b tail. `true` hands this session's own staged rows to `queue run` after the report; `false` reports each row and its home and stops. The only `[wrap]` knob whose default does not act: `queue run` drives a real interactive claude in a tmux window under `QUEUE_CLAUDE_FLAGS` (default `--dangerously-skip-permissions`) for up to `QUEUE_TIMEOUT_SECS` per row, so `true` means the words "wrap up" start an unattended run. Scoped to a session-authored tsv passed with `--sanitize-prompt`, never `--from-boards` (which reads the whole board queue and would run untouched rows). A staged row without a goal pointer is skipped with its reason, because `wrap stage` writes prose and `queue run` needs `slug<TAB>repo<TAB>pointer`. Resolved with `kit_config_get_root`, same fence as the knobs above and for a stronger reason: this one starts an unattended agent. |
 | KIT_SKILL_DIRS | env-only | `$HOME/.claude/skills` plus `${CLAUDE_PLUGIN_ROOT:-}/skills` when set | [consumer] | wrap | Colon-separated list of skill directories `config seams` searches for a `skill` kind row's `SKILL.md` (e.g. `wrap.before`). Entries whose realpath does not sit under `$HOME` are dropped, because a repo `.envrc` can set this. Not read by any code yet; `config seams` is the first consumer. |
 
@@ -392,6 +409,10 @@ module, and description come from the registry rows above and are not repeated h
 | wrap.after | skill | learning-kit concept flush, or the operator |
 | wrap.activity_log | file | operator |
 | precedent.registry | file | operator |
+| intake.url_ledger | binary | operator, the tool that owns the consumed-URL ledger |
+| intake.verdicts | file | operator |
+| intake.boards | file | operator |
+| intake.notes | binary | operator, a recall tool over their own writing |
 | knowledge.root | dir | context-kit |
 | PROSE_RAG_BIN | binary | context-kit |
 | understand.teach | skill | learning-kit understand lane, or the operator |
@@ -417,6 +438,10 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | Key |
 |---|
 | debug.confirm_fix |
+| intake.boards |
+| intake.notes |
+| intake.url_ledger |
+| intake.verdicts |
 | knowledge.root |
 | precedent.registry |
 | review.apply_findings |
@@ -428,6 +453,7 @@ exercise the primitive on fixture keys -- `mega.wave_cap`, `gauntlet.runner_host
 | wrap.after |
 | wrap.before |
 | wrap.build_candidates |
+| wrap.build_lanes |
 | wrap.drain_staged |
 | wrap.merge_own_prs |
 | wrap.tidy_worktrees |

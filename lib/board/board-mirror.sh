@@ -4,7 +4,7 @@
 # already reuses `lib/board/parse-board.sh` for `queue`; this file is the substantial logic, `board.sh`
 # stays the thin, human-facing dispatcher.
 #
-# Design (full detail in docs/specs/SPEC-147-board-bridge-mirror.md's `## Design` block; this
+# Design (full detail in this module's own design doc under docs/specs/; this
 # header carries only what a reader needs to navigate the code):
 #
 #   EXTRACT   each opted-in repo's BACKLOG.md (via lib/board/parse-board.sh's pb_rows -- the ONE
@@ -661,4 +661,4 @@ if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
   main "$@"
 fi
 
-# provenance: SPEC-147 (docs/specs/SPEC-147-board-bridge-mirror.md)
+# provenance: SPEC-147 (docs/specs/-board-bridge-mirror.md)

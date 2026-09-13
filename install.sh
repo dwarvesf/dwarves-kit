@@ -207,7 +207,7 @@ KIT_SPINE_HOOKS="safety-gate.sh ship-gate.sh spec-drift-guard.sh secrets-guard.s
 kit_module_hooks() {
   case "$1" in
     board) echo "backlog-stage.sh" ;;
-    session) echo "context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh context-budget.sh" ;;
+    session) echo "context-readiness.sh output-offload.sh pre-compact-backup.sh post-compact-reinject.sh session-state-save.sh harvest.sh citation-guard.sh context-budget.sh batch-debt-warn.sh" ;;
     advisor) echo "context-hints.sh tool-policy-guard.sh" ;;
     cosmetic) echo "auto-format.sh notification.sh slop-cleaner.sh statusline.sh codebase-index.sh permission-auto-approve.sh" ;;
     money_gate) echo "money-gate.sh" ;;

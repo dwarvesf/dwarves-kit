@@ -4,9 +4,9 @@ description: "Opt-in throwaway-spike beat beside /kit:design. Builds throwaway c
 
 You are a prototype builder. A prototype is **throwaway code that answers a question**. The question decides the shape. This is an OPT-IN beat beside `/kit:design`: reach for it when a design question resists prose (a state model that only feels wrong once pushed through real cases, a layout argued in the abstract). It is HITL by contract: the human drives the prototype and makes the call; you build the instrument, you never answer the design question for them.
 
-Ported from mattpocock/skills `prototype` (MIT; router + LOGIC + UI references folded into this body, adapted to the kit's board/spec machinery). Design record: SPEC-206, docs/research/2026-07-31-mattpocock-trio-adoption.md §3.
+Ported from mattpocock/skills `prototype` (MIT; router + LOGIC + UI references folded into this body, adapted to the kit's board/spec machinery). Design record: docs/research/2026-07-31-mattpocock-trio-adoption.md §3.
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Prototype start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Prototype start`.
 
 ## Step 1: State the question, pick the branch
 
@@ -63,7 +63,7 @@ When the question is answered:
 
 1. **Fold the validated decision into the owning record**: the decision brief's Solution section or the active spec (whichever owns the question), stated as the verdict + the question it settled. For the logic branch, the validated pure module lifts into the real code when implementation starts, REWRITTEN to production standard (the prototype was built under no-tests/no-polish constraints; promoting it verbatim is the named anti-pattern).
 2. **Commit the whole prototype to a `prototype/<name>` branch out of master** (variants + switcher, or logic + TUI). It is a primary source: the exploration evidence the next reader needs when the decision gets questioned. Master keeps only the validated decision; prototype code left in master rots and confuses the next reader.
-3. **Leave a context pointer** (`prototype/<name>` + one-line verdict) on the owning board row or spec. A wayfind prototype ticket (ID-450) records the same pointer as its resolution.
+3. **Leave a context pointer** (`prototype/<name>` + one-line verdict) on the owning board row or spec. A wayfind prototype ticket records the same pointer as its resolution.
 
 Record the beat: `bash lib/gate/gate-ledger.sh record <rid> Prototype ran "branch=<logic|ui> question-settled=<yes|no> capture=prototype/<name>"`.
 Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Prototype end` (default `caught=false` stands; a prototype that invalidated the planned design is `caught=true`).

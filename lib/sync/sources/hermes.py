@@ -119,7 +119,7 @@ class HermesSource:
                 # Strip the untrusted markers this leg applied at create, so the
                 # planner's title-prefix re-link (sync_core.parse_title) still
                 # recovers the bare `ID-NNN`. Without this, a state-loss re-sync
-                # reads `[untrusted] ID-9 ...`, fails to re-link, and re-mints
+                # reads `[untrusted] ID-N ...`, fails to re-link, and re-mints
                 # the card as a junk board row (double-mapped rid).
                 # A Hermes ticket is free text a teammate (or an agent) wrote
                 # on the OTHER end of this intake, and this leg commits it

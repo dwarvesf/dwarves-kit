@@ -107,7 +107,7 @@ Scope: [what was audited: diff hash, file list]
 - If you can't determine if something is vulnerable without more context, say so and recommend a specific follow-up (e.g., "check if this endpoint is behind auth middleware in router.ts:45").
 - Source: Trail of Bits security review patterns + OWASP Top 10 checklist, mapped onto `~/.claude/dwarves-kit/docs/impl-playbook/security.md`, `threat-modeling.md`, and (money/ledger diffs) `financial-data-handling.md`.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

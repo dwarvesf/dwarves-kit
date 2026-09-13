@@ -1,6 +1,6 @@
 """Materialize an IN-MEMORY DuckDB lens from the canonical files, per invocation.
 
-SPEC-182: `stats` is a stateless projection. There is no persistent db and no cache; every
+`stats` is a stateless projection. There is no persistent db and no cache; every
 query builds a fresh `:memory:` catalog from the log, runs, and discards it. Materialization
 writes only that ephemeral in-memory catalog, never a source ledger and never a disk file.
 The read guards (statement guard + a post-materialize `enable_external_access` latch) keep
@@ -132,7 +132,7 @@ _MATERIALIZED_TABLES = (
 def _materialize(con) -> None:
     """Load every table into the given (in-memory) connection from the canonical files.
     The ONLY write is into this ephemeral catalog; no source ledger and no disk file is
-    ever touched. This is the whole projection (SPEC-182: stats is a stateless read plane)."""
+    ever touched. This is the whole projection (: stats is a stateless read plane)."""
     cols, rows = adapters.read_kit()
     _load_python_table(con, "kit_runs", _KIT_DDL, cols, rows)
     cols, rows = adapters.read_kit_gates()
@@ -158,7 +158,7 @@ def _materialize(con) -> None:
 
 def rebuild() -> dict[str, int]:
     """Diagnostic probe: materialize in-memory + report a {table: row_count} map.
-    Writes NOTHING (SPEC-182: stats persists no derived view). This used to delete +
+    Writes NOTHING (: stats persists no derived view). This used to delete +
     rewrite a persistent DuckDB cache; that cache is gone. Kept as a 'what would I see over
     the current log' surface for `stats rebuild`."""
     con = duckdb.connect(":memory:")
@@ -173,8 +173,8 @@ def rebuild() -> dict[str, int]:
 def _read_conn():
     """A FRESH in-memory connection with every table materialized from the log. There is
     no disk db and no cache: the projection is recomputed on every call, so deleting stats'
-    output (there is none) and re-running yields the same answer from the log (SPEC-182
-    no-persist invariant, the board-mirror drift bug avoided by construction).
+    output (there is none) and re-running yields the same answer from the log (the
+    no-persist invariant avoids the board-mirror drift bug by construction).
 
     Security: materialization needs external filesystem access (the tide sqlite ATTACH), so
     the connection starts with it ON. Once materialization is done we LATCH it OFF

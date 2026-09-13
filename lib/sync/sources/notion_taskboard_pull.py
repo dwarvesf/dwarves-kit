@@ -1,6 +1,6 @@
 """Notion Task Board PULL source: read-only intake of team-approved rows into
 the hub board. Drives the `ntn` CLI (keychain auth, Han's Notion rule).
-See docs/specs/SPEC-004-pull-mode-intake.md (kit board ID-479).
+This is the kit board's pull leg.
 
 Absorbs dfoundation's standalone `infra/hermes-kanban-sync` cron: rows whose
 `Agent Queue` checkbox is checked and whose `Status` is not `Done` become
@@ -99,7 +99,7 @@ def neutralize(text: str) -> str:
       page's identity makes the planner believe that page is already on the
       board and silently suppresses its intake;
     - a board id token: the notes cell is part of the board text `next_id`
-      scans, so `ID-99999999` pushes every future mint on that board past it,
+      scans, so `ID-NNNNNNNN` pushes every future mint on that board past it,
       permanently, and an existing id collides with a real row;
     - a `#tag`: `extract_tags` reads the notes cell, so a tag decides which
       apps the row reaches;
@@ -118,7 +118,7 @@ def _clip(text: str, cap: int) -> str:
 
 def safe(text: str, cap: int) -> str:
     """Clip FIRST, then neutralize. The other order is a sanitizer bypass:
-    `ID-99999999a` survives the board-id pattern (the trailing letter breaks
+    `ID-NNNNNNNNa` survives the board-id pattern (the trailing letter breaks
     `\\d+\\b`), and clipping afterwards would cut that letter off and hand the
     board a live id token."""
     return neutralize(_clip(text, cap))

@@ -164,7 +164,7 @@ already runs at the high tier. A cheap prober's failure mode is plausible specul
 exactly what invariant 1 forbids. An operator who wants a cheaper run lowers the tier for that
 run and accepts the noise.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary:
 
@@ -178,7 +178,7 @@ demand.
 
 Source: the Thoughtworks Future of Software Engineering Europe 2026 ladder for an AI-written
 suite (coverage, then an agent actively trying to break the code without breaking a test, then
-mutation testing). Named-noun cross-cutting lens under ADR-0029, like `advisor`. Refuter stance
-and fail-safe posture from `agent-effectiveness` (SPEC-082). Rejected-findings consult from
-SPEC-144. See `docs/specs/SPEC-247-break-it-prober-lens.md`. Gated by the SG-01
-agent-effectiveness validator.
+mutation testing). Named-noun cross-cutting lens, like `advisor`. Refuter stance
+and fail-safe posture from `agent-effectiveness`. Rejected-findings consult from the
+same ledger convention. See the break-it prober-lens design spec under docs/specs/.
+Gated by the agent-effectiveness validator.

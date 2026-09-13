@@ -59,7 +59,7 @@ Write to `docs/research/<date>-<slug>-features.md` (the dispatch prompt supplies
 - Use `git log` to find which files are actively maintained vs abandoned.
 - If the area doesn't exist yet (no related code found), say so explicitly. That means it's greenfield within a brownfield project.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

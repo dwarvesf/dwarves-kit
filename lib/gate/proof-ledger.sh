@@ -41,7 +41,7 @@ source "$LIB_ROOT/telemetry/kit-log-dir.sh" || { echo "FATAL: lib/telemetry/kit-
 # The ONE append substrate: the override write routes through ledger_append.
 # shellcheck source=lib/ledger/ledger.sh
 source "$LIB_ROOT/ledger/ledger.sh" || { echo "FATAL: lib/ledger/ledger.sh missing or unreadable" >&2; exit 1; }
-# The config-layer resolver (SPEC-186 [ledger] wiring): the delivery-ratio thresholds below
+# The config-layer resolver ([ledger] wiring): the delivery-ratio thresholds below
 # read through it. kit-log-dir.sh already sources it, but source directly too so this file's
 # dependency on kit-config.sh is explicit, not incidental to another lib's internals.
 # shellcheck source=lib/config/kit-config.sh
@@ -76,7 +76,7 @@ classify() {
 
   # inert FIRST: a markdown/txt-only diff is docs, never load-bearing, regardless of what the
   # commit subject says. Checking stateful keywords against the subject before this misread a
-  # markdown-only "migrate" doc change as stateful (see SPEC-046, the classify-md-inert dogfood).
+  # markdown-only "migrate" doc change as stateful (see , the classify-md-inert dogfood).
   if [ -z "$(printf '%s\n' "$changed" | grep -vE '\.(md|txt|markdown)$')" ]; then
     echo inert; return 0
   fi
@@ -92,7 +92,7 @@ classify() {
 }
 
 # deployable <root> <base>: prints yes|no by mapping classify()'s existing "stateful" class
-# to "deployable" (SG-07: deployable-done, ADR-0028/ADR-0025). PURELY ADDITIVE -- a relabel
+# to "deployable" (: deployable-done). PURELY ADDITIVE -- a relabel
 # of classify()'s output for readability at call sites, never a second classifier. Does not
 # read or touch classify()'s logic, and classify()/check() are otherwise byte-unchanged.
 deployable() {
@@ -110,7 +110,7 @@ deployable() {
 # for a reviewer or `mega status` to surface. Rationale: the proof-of-done gate checks
 # that proof EXISTS, not that delivery is PROPORTIONATE, so a thin docs/reconcile
 # sub-goal can pass by padding proof (2026-07-05 delivery audit; ADR "delivery ratio").
-# Precedence (SPEC-186 [ledger] wiring): env var > project .kit.toml > kit-root kit.toml >
+# Precedence ([ledger] wiring): env var > project .kit.toml > kit-root kit.toml >
 # hardcoded default, via kit_config_get. An explicit env var still wins over config, same
 # back-compat contract as kit_resolve_log_dir.
 KIT_DELIVERY_RATIO_WARN="${KIT_DELIVERY_RATIO_WARN:-$(kit_config_get ledger.delivery_ratio_warn 3)}"    # proof >= N*real ...
@@ -205,7 +205,7 @@ is_overridden() {
   slug="$(slugify "${1:-}")"; repo="$(_repo_id "${2:-.}")"
   [ -n "$slug" ] || return 1
   [ -f "$OVERRIDE_LOG" ] || return 1
-  # FIELD-anchored match (ID-299 + review security lens): compare the repo/slug FIELDS by
+  # FIELD-anchored match (+ review security lens): compare the repo/slug FIELDS by
   # position, never a substring of the whole line. A free substring (`grep -F "| $repo | $slug |"`)
   # let a crafted `reason` embedding "| <victim-repo> | <victim-slug> |" forge a match for a
   # repo/slug the operator never touched -- the very cross-repo bypass this change closes.
@@ -279,7 +279,7 @@ check() {
       [ -n "$f" ] || continue
       local p="$root/$f"; [ -f "$p" ] || continue
       if [ "$class" = "behavioral" ]; then
-        # SPEC-080: an INCONCLUSIVE verdict never satisfies the gate, even with Exit: 0.
+        # An INCONCLUSIVE verdict never satisfies the gate, even with Exit: 0.
         # LAST-verdict-wins (review lens 2): the documented append shape retries after a
         # noisy run, so only the most recent Verdict: line in the file decides.
         last_v="$(grep -iE '^[[:space:]]*Verdict:' "$p" | tail -1)"
@@ -305,7 +305,7 @@ check() {
         esac
       done <<< "$(printf '%s\n' "$files" | sort)"
       if [ "$class" = "behavioral" ]; then
-        # SPEC-080 last-verdict-wins, set-wise: files concatenate in sorted (= chronological)
+        # Last-verdict-wins, set-wise: files concatenate in sorted (= chronological)
         # order, so the union's final Verdict: line is the latest run's.
         last_v="$(printf '%s' "$content" | grep -iE '^[[:space:]]*Verdict:' | tail -1)"
         printf '%s' "$content" | grep -qi 'NEGATIVE CONTROL' \
@@ -335,7 +335,7 @@ check() {
     # code. A blanket override that silently passes an unproven SOURCE change is the
     # rtk-611 hole (2026-07-01: an overridden branch shipped a broken source change,
     # reverted 9h later). Deploy scripts under a deploy/ path stay override-able (they
-    # are verified via deploy-proof/UAT per SPEC-095); source code elsewhere is not.
+    # are verified via deploy-proof/UAT); source code elsewhere is not.
     # Build the source-code remainder. A file counts as source if it has a code
     # extension OR is an extensionless shebang script (e.g. the kit's own
     # lib/goal/handoff-gen); deploy scripts at a SANCTIONED location (repo-root deploy/
@@ -377,7 +377,7 @@ check() {
     echo "  Type-specific shape: run 'bash lib/gate/proof-gate.sh contract \"<your task>\"' for the exact artifact this work-type owes + the skill that owns it (e.g. a data/CLI tool owes a recorded live run; an eval owes a TEST-REPORT)."
     echo "  Produce it via /kit:verify (or record it), or log an explicit override (audited):"
     echo "    bash lib/gate/proof-ledger.sh override '${slug:-<branch-slug>}' \"<reason>\""
-    # ID-299 operator hint: an override for THIS slug exists in the log but is scoped to a
+    # Operator hint: an override for THIS slug exists in the log but is scoped to a
     # different repo (legacy unqualified, a sibling repo, or a non-root/wrong-worktree cwd),
     # so it does not apply here. Say so, or the operator re-logs and it still "does nothing".
     if [ -n "$slug" ] && [ -f "$OVERRIDE_LOG" ] \

@@ -56,6 +56,10 @@ skill invents no new one:
 If any of these fail, the idea is not a loop. It may still work as a one-shot side-flow, like
 `kit-health` or `absorb`. A side-flow is simpler and does not need this skill.
 
+**One stop condition covers every shape.** A loop that repeats an unchanged move, same diff,
+same command, same failure, N times must stop and report. This is the Ralph Wiggum failure, a
+loop retrying one wrong move forever. Wire it alongside the shape's own convergence rule.
+
 ## Step 2: Pick the shape
 
 Three shapes exist. Do not conflate them. The routing question: does the loop make ONE thing
@@ -90,6 +94,10 @@ BEST VARIANT of one thing (search-select)?
   reviser must be distinct from every scanner. The convergence rule tracks severity, not raw
   count. A flat K still counts as progress if the worst severity dropped. See
   `test-plan-review-team.md` Step 4.3 for the exact wording.
+
+  Track cost per accepted change on the loop's scorecard: total spend over changes merged,
+  per loop, never tokens per run. This is the number that catches a loop finishing fast but
+  expensive per merged change, the failure a round cap alone cannot see.
 
   **The scan step runs in two tiers. It does not dispatch all N lenses every round.**
   `docs/WORKFLOW.md` already states a cheap-first verification-cost-routing principle. This

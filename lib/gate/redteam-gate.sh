@@ -7,7 +7,7 @@
 # THE GAP THIS CLOSES (ops-toolkit research/2026-07-18-rung4-cost-checkpoint.md): real rung-4
 # redteams HAVE run (board-tool 7-attempt, orchestrate-queue 3-round, board-writeback 4-attempt,
 # all VERDICT: SECURE), but none ever emitted a `redteam` kit_gates row, so the rung-4 cost
-# checkpoint (ID-372: tighten the trigger if rung 4 averages >15% of mega cost) can never be
+# checkpoint (: tighten the trigger if rung 4 averages >15% of mega cost) can never be
 # evaluated -- every existing primitive (gate-ledger.sh record/tokens/outcome) was already
 # capable of recording a round, but nothing called them, because a round-in-progress needs THREE
 # separate calls kept in sync (a GATE row, a TOKENS row, an OUTCOME bracket) and the redteam
@@ -132,7 +132,7 @@ cmd_round() {
   bash "$GATE_LEDGER" outcome "$rid" redteam end "caught=$caught" || return 1
 
   # 2) the round's cost, phase-scoped so lib/stats' read_kit_gates FIFO-pairs it onto this
-  #    round's GATE row (the same convention SPEC-129 already uses for OUTCOME brackets).
+  #    round's GATE row (the same convention already uses for OUTCOME brackets).
   local tok_args=(cost="$cost" phase=redteam)
   [ -n "$intok" ]    && tok_args+=("in=$intok")
   [ -n "$outtok" ]   && tok_args+=("out=$outtok")

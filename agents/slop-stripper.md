@@ -72,7 +72,7 @@ Summary: [1-3 sentences]
 - Do NOT create new files unless a strip requires it and the finding said so.
 - Do NOT add defensive code or comments while stripping; removing smell is the only change.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 
@@ -83,4 +83,4 @@ Your response to the lead is a BOUNDED summary, not a dump. Return only:
 
 Report findings IN this summary, not as a re-paste of diffs, full test logs, or whole files; the full output stays recoverable in your subagent transcript (and in any file you wrote). The lead absorbs the summary and pulls detail on demand. This return contract bounds within-sub-goal context growth to hundreds of tokens per dispatch instead of tens of thousands.
 
-Source: az-skills `skills/engineering/deslop` mechanism (no license; re-implemented, not copied), absorbed per kit ID-402; the detect half duplicates existing review lenses, the strip-fixer half fills the gap the review surfaces and the slop-cleaner hook (nudge-only by design) deliberately leave open.
+Source: az-skills `skills/engineering/deslop` mechanism (no license; re-implemented, not copied), absorbed into the kit; the detect half duplicates existing review lenses, the strip-fixer half fills the gap the review surfaces and the slop-cleaner hook (nudge-only by design) deliberately leave open.

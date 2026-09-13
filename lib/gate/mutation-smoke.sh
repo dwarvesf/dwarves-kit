@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# mutation-smoke.sh -- ADVISORY mutation smoke (SPEC-131, kit-run-integrity SG-04).
+# mutation-smoke.sh -- ADVISORY mutation smoke (kit-run-integrity).
 #
 # The HONESTLY-PROVEN check that coverage-delta cannot be: coverage sees whether a
 # changed line HAS a test near it; this asks whether that test actually BITES. It mutates a
@@ -214,7 +214,7 @@ run() {  # [<base>]
   while IFS="$(printf '\t')" read -r file lineno orig mut; do
     [ "$attempts" -ge "$MAX" ] && break
     [ -f "$file" ] || continue
-    [ -L "$file" ] && continue   # SPEC-134: never mutate through a symlink (defense-in-depth)
+    [ -L "$file" ] && continue   # never mutate through a symlink (defense-in-depth)
     attempts=$((attempts+1))
 
     CUR_FILE="$file"; CUR_BK="$(mktemp)"; cp "$file" "$CUR_BK"

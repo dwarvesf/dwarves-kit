@@ -51,7 +51,7 @@ Locks: [why this does not hold a long lock]
 Verify: [migration/test command run + result]
 ```
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

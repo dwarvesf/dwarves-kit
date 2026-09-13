@@ -5,7 +5,8 @@
 # Fixture: three bare remotes whose default branches are `main`, `master` and `develop`,
 # each with the branch set the gates discriminate on (merged-ancestor, unmerged, squash-ok,
 # squash-stale, stacked-child, wt-clean, wt-dirty), clones with three secondary worktrees
-# (clean, dirty, detached), a clone whose origin/HEAD dangles, and a repo with no remote.
+# (clean, dirty, detached), a locked-worktree matrix clone (proven, dirty, unproven), a clone whose
+# removal leaves the path behind, a clone whose origin/HEAD dangles, and a repo with no remote.
 # `gh` is a stub on PATH driven by env vars; it records every call so the merge case can
 # assert the exact flags.
 #
@@ -27,6 +28,9 @@ chk_no()  { chk "$1" "$({ trap '' PIPE; printf '%s' "$2" 2>/dev/null || :; } | g
 
 TMPD="$(mktemp -d "${TMPDIR:-/tmp}/dk-wrap-test.XXXXXX")"
 TMPD="$(cd "$TMPD" && pwd)"
+# git records a worktree path fully resolved, so a report line naming one carries the
+# symlink-free form of TMPD on macOS (/private/var...), not the logical one.
+TMPD_P="$(cd "$TMPD" && pwd -P)"
 trap 'chmod -R u+w "$TMPD" 2>/dev/null; rm -rf "$TMPD"' EXIT
 
 # Pin the operator config overlay at a path that does not exist, so the operator's REAL
@@ -142,6 +146,9 @@ set_stub() { # set_stub <remote name> <default branch>
   export GH_STUB_MERGED_squash_ok="[{\"headRefOid\":\"$(git -C "$bare" rev-parse squash-ok)\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
   export GH_STUB_MERGED_squash_stale="[{\"headRefOid\":\"1111111111111111111111111111111111111111\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
   export GH_STUB_MERGED_stacked_child="[{\"headRefOid\":\"$(git -C "$bare" rev-parse stacked-child)\",\"baseRefName\":\"feat/parent\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
+  # The clean worktree's own branch is squash-merged too: a locked worktree is removed only under
+  # the same merge proof a branch delete needs, so an unproven wt-clean would now be left alone.
+  export GH_STUB_MERGED_wt_clean="[{\"headRefOid\":\"$(git -C "$bare" rev-parse wt-clean)\",\"baseRefName\":\"$def\",\"mergedAt\":\"2026-01-01T00:00:00Z\"}]"
 }
 
 build_remote rmain main
@@ -205,6 +212,8 @@ out="$("$WRAP" apply --worktrees "$DRY" 2>&1)"; rc=$?
 chk "apply dry-run --worktrees exits 0" "$rc"
 chk_has "apply dry-run: the dirty worktree is skipped" "$out" "dirty (another session's work stays)"
 chk_has "apply dry-run: the detached worktree is skipped" "$out" "detached HEAD (removal could orphan the commit)"
+chk_has "apply dry-run: the proven locked worktree prints WOULD with path, branch and locked" "$out" \
+  "WOULD remove worktree $TMPD_P/wt-scan-main-clean [wt-clean, locked] and delete wt-clean (squash-merged per gh)"
 after_b="$(git -C "$DRY" branch --list)"
 after_w="$(git -C "$DRY" worktree list)"
 chk "apply without --apply changes no branch (byte-equal)" "$([ "$before_b" = "$after_b" ]; echo $?)"
@@ -227,13 +236,111 @@ APPLYREPO="$TMPD/clone-apply-main"
 out="$("$WRAP" apply --apply --worktrees "$APPLYREPO" 2>&1)"; rc=$?
 chk "apply --apply exits 0 on a healthy repo" "$rc"
 branches="$(git -C "$APPLYREPO" for-each-ref --format='%(refname:short)' refs/heads/ | sort | tr '\n' ' ')"
-chk "apply --apply deleted merged-ancestor and squash-ok only" \
-  "$([ "$branches" = "main squash-stale stacked-child unmerged wt-clean wt-dirty " ]; echo $?)"
+chk "apply --apply deleted merged-ancestor, squash-ok and the removed worktree's wt-clean" \
+  "$([ "$branches" = "main squash-stale stacked-child unmerged wt-dirty " ]; echo $?)"
 chk_no "apply --apply never touched the default branch" "$out" "delete main"
 chk "apply --apply removed the clean worktree only" \
   "$([ ! -d "$TMPD/wt-apply-main-clean" ] && [ -d "$TMPD/wt-apply-main-dirty" ] && [ -d "$TMPD/wt-apply-main-det" ]; echo $?)"
+chk_has "apply --apply names the removed worktree's path, branch and lock" "$out" \
+  "remove worktree $TMPD_P/wt-apply-main-clean [wt-clean, locked] and delete wt-clean"
 chk "apply --apply fast-forwarded the default branch" \
   "$([ "$(git -C "$APPLYREPO" rev-parse HEAD)" = "$NEW_TIP" ]; echo $?)"
+
+# ===========================================================================
+echo "=== apply --worktrees: the locked-worktree matrix (proven, dirty, unproven) ==="
+# ===========================================================================
+# One clone, three locked worktrees: the Agent tool locks every worktree it creates, so a lock is
+# the normal state here and the merge proof, not the lock, decides.
+git clone -q "$TMPD/bare-rmain" "$TMPD/clone-wtmatrix"
+MTX="$TMPD/clone-wtmatrix"
+gitc "$MTX"
+git -C "$MTX" remote set-head origin main >/dev/null 2>&1
+for b in merged-ancestor squash-stale wt-clean wt-dirty; do
+  git -C "$MTX" branch "$b" "origin/$b" >/dev/null 2>&1
+done
+for pair in "proven wt-clean" "dirty wt-dirty" "unproven squash-stale"; do
+  set -- $pair
+  git -C "$MTX" worktree add "$TMPD/mtx-$1" "$2" >/dev/null 2>&1
+  git -C "$MTX" worktree lock "$TMPD/mtx-$1" >/dev/null 2>&1
+done
+# Unlocked and proven: the report reads the real lock state rather than assuming one.
+git -C "$MTX" worktree add "$TMPD/mtx-unlocked" merged-ancestor >/dev/null 2>&1
+echo dirt > "$TMPD/mtx-dirty/dirt.txt"
+set_stub rmain main
+
+out="$("$WRAP" apply --worktrees "$MTX" 2>&1)"
+chk_has "matrix dry-run: the proven locked worktree is a WOULD line" "$out" \
+  "WOULD remove worktree $TMPD_P/mtx-proven [wt-clean, locked] and delete wt-clean"
+chk_has "matrix dry-run: the locked dirty worktree still skips as dirty" "$out" \
+  "SKIP $TMPD_P/mtx-dirty: dirty (another session's work stays)"
+chk_has "matrix dry-run: the locked unproven worktree skips unproven" "$out" \
+  "SKIP $TMPD_P/mtx-unproven: squash-stale is not proven merged into main (leave it)"
+chk_has "matrix dry-run: an unlocked proven worktree reads as unlocked" "$out" \
+  "WOULD remove worktree $TMPD_P/mtx-unlocked [merged-ancestor, unlocked] and delete merged-ancestor (ancestor of origin/main)"
+chk "matrix dry-run removed nothing" \
+  "$([ -d "$TMPD/mtx-proven" ] && [ -d "$TMPD/mtx-dirty" ] && [ -d "$TMPD/mtx-unproven" ]; echo $?)"
+
+out="$("$WRAP" apply --apply --worktrees "$MTX" 2>&1)"; rc=$?
+chk "matrix apply exits 0" "$rc"
+chk "matrix apply removed the proven locked worktree" "$([ ! -e "$TMPD/mtx-proven" ]; echo $?)"
+chk "matrix apply deleted the removed worktree's branch" \
+  "$(git -C "$MTX" show-ref --verify --quiet refs/heads/wt-clean && echo 1 || echo 0)"
+chk_has "matrix apply names the branch delete with its proof" "$out" \
+  "delete wt-clean (squash-merged per gh, its locked worktree is gone)"
+chk "matrix apply kept the dirty and unproven worktrees" \
+  "$([ -d "$TMPD/mtx-dirty" ] && [ -d "$TMPD/mtx-unproven" ]; echo $?)"
+chk "matrix apply kept the unproven worktree's branch" \
+  "$(git -C "$MTX" show-ref --verify --quiet refs/heads/squash-stale; echo $?)"
+
+# ===========================================================================
+echo "=== apply --worktrees: the default branch and the main checkout's branch are off limits ==="
+# ===========================================================================
+# git allows a second worktree on an already-checked-out branch under --force, which is the only
+# way either guard can be reached. Both would otherwise pass the merge proof: the default branch is
+# an ancestor of itself, and a session's own branch may well be merged already.
+make_clone guards rmain main unmerged
+GUARDS="$TMPD/clone-guards"
+git -C "$GUARDS" worktree add --force "$TMPD/wt-guards-default" main >/dev/null 2>&1
+git -C "$GUARDS" worktree lock "$TMPD/wt-guards-default" >/dev/null 2>&1
+git -C "$GUARDS" worktree add --force "$TMPD/wt-guards-cur" unmerged >/dev/null 2>&1
+git -C "$GUARDS" worktree lock "$TMPD/wt-guards-cur" >/dev/null 2>&1
+set_stub rmain main
+out="$("$WRAP" apply --apply --worktrees "$GUARDS" 2>&1)"
+chk_has "apply --worktrees: a worktree on the default branch is skipped" "$out" \
+  "SKIP $TMPD_P/wt-guards-default: main is the default or a protected branch name"
+chk_has "apply --worktrees: a worktree on the main checkout's branch is skipped" "$out" \
+  "SKIP $TMPD_P/wt-guards-cur: unmerged is the main checkout's branch"
+chk "apply --worktrees: both guarded worktrees and their branches survive" \
+  "$([ -d "$TMPD/wt-guards-default" ] && [ -d "$TMPD/wt-guards-cur" ] \
+     && git -C "$GUARDS" show-ref --verify --quiet refs/heads/main \
+     && git -C "$GUARDS" show-ref --verify --quiet refs/heads/unmerged; echo $?)"
+
+# ===========================================================================
+echo "=== apply --apply --worktrees: a removal that leaves the path is FAILED, exit 2 ==="
+# ===========================================================================
+# The postcondition is the point: git prunes the admin entry even when it cannot delete the
+# directory, so a report that trusted the exit code alone would call this worktree removed.
+git clone -q "$TMPD/bare-rmain" "$TMPD/clone-wtpost"
+POST="$TMPD/clone-wtpost"
+gitc "$POST"
+git -C "$POST" remote set-head origin main >/dev/null 2>&1
+git -C "$POST" branch wt-clean origin/wt-clean >/dev/null 2>&1
+mkdir -p "$TMPD/ro-parent"
+git -C "$POST" worktree add "$TMPD/ro-parent/stuck" wt-clean >/dev/null 2>&1
+git -C "$POST" worktree lock "$TMPD/ro-parent/stuck" >/dev/null 2>&1
+set_stub rmain main
+chmod 500 "$TMPD/ro-parent"
+out="$("$WRAP" apply --apply --worktrees "$POST" 2>&1)"; rc=$?
+chmod 700 "$TMPD/ro-parent"
+chk "apply exits 2 when the postcondition fails" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "the failed postcondition is reported, not silent" "$out" \
+  "FAILED remove worktree $TMPD_P/ro-parent/stuck [wt-clean, locked] and delete wt-clean (squash-merged per gh): $TMPD_P/ro-parent/stuck survived the removal, wt-clean not deleted"
+chk "the stuck worktree path is still there" "$([ -d "$TMPD/ro-parent/stuck" ]; echo $?)"
+# The branch delete is the half a silent postcondition would cost, so the worktree step must not
+# reach it. The later branch pass may still delete the same proven branch under its own gate,
+# which is why the assertion reads the step's own line rather than the ref.
+chk_no "a failed postcondition never reaches the worktree step's branch delete" "$out" \
+  "delete wt-clean (squash-merged per gh, its locked worktree is gone)"
 
 # ===========================================================================
 echo "=== apply --apply: a non-ff default branch is FAILED, exit 2, never forced ==="
@@ -271,6 +378,16 @@ chk "apply: the moved-tip branch survives" \
 chk "apply: the unmoved squash-ok branch still went" \
   "$(git -C "$TIPSREPO" show-ref --verify --quiet refs/heads/squash-ok && echo 1 || echo 0)"
 
+# The worktree gate re-reads the tip after the merge proof, because the proof can cost a network
+# round trip and `-D` discards a commit made inside that window.
+sed 's/^wt-clean .*/wt-clean 3333333333333333333333333333333333333333/' \
+  "$STALE_TIPS" > "$STALE_TIPS.new" && mv -f "$STALE_TIPS.new" "$STALE_TIPS"
+out="$("$WRAP" apply --apply --worktrees --tips-file "$STALE_TIPS" "$TIPSREPO" 2>&1)"
+chk_has "apply --worktrees: a worktree whose branch tip moved is skipped" "$out" \
+  "SKIP $TMPD_P/wt-tips-clean: wt-clean tip moved during this run (3333333"
+chk "apply --worktrees: the moved-tip worktree and branch survive" \
+  "$([ -d "$TMPD/wt-tips-clean" ] && git -C "$TIPSREPO" show-ref --verify --quiet refs/heads/wt-clean; echo $?)"
+
 # ===========================================================================
 echo "=== apply: index.lock age decides, and a non-repo never reaches a write ==="
 # ===========================================================================
@@ -298,6 +415,15 @@ out="$("$WRAP" apply --apply "$LOCKREPO" 2>&1)"
 chk_has "apply: a fresh index.lock that persists past the window refuses the write" "$out" "index.lock held by another writer"
 rm -f "$LOCKREPO/.git/index.lock"
 
+# The same guard, at the worktree write site: the clean locked worktree is proven, so only the
+# lock stands between it and a removal.
+touch -t 202601010000 "$LOCKREPO/.git/index.lock"
+out="$("$WRAP" apply --apply --worktrees "$LOCKREPO" 2>&1)"
+rm -f "$LOCKREPO/.git/index.lock"
+chk_has "apply --worktrees: a stale index.lock refuses the worktree removal" "$out" \
+  "SKIP $TMPD_P/wt-lock-clean: index.lock held by another writer"
+chk "apply --worktrees: the refused worktree is still there" "$([ -d "$TMPD/wt-lock-clean" ]; echo $?)"
+
 out="$("$WRAP" apply --apply "$TMPD/not-a-repo" "$LOCKREPO" 2>&1)"
 chk_has "apply: a non-repo argument is skipped before any write" "$out" "not a git repo, skipped"
 chk_has "apply: the repo after the non-repo still runs" "$out" "-- branches:"
@@ -314,6 +440,11 @@ out="$("$WRAP" apply --apply "$BROKEN" 2>&1)"
 chk_has "apply: the failed fetch is reported" "$out" "(fetch failed; every delete is skipped)"
 chk_has "apply: the ancestor branch names the stale-data reason" "$out" \
   "SKIP merged-ancestor: fetch failed, stale ancestor data"
+out="$("$WRAP" apply --apply --worktrees "$BROKEN" 2>&1)"
+chk_has "apply --worktrees: a failed fetch skips the worktree with the stale-proof reason" "$out" \
+  "SKIP $TMPD_P/wt-brokenremote-clean: fetch failed, stale merge proof for wt-clean"
+chk "apply --worktrees: the broken-remote repo lost no worktree" \
+  "$([ -d "$TMPD/wt-brokenremote-clean" ]; echo $?)"
 chk "apply: the broken-remote repo lost no branch" \
   "$([ "$BROKEN_BEFORE" = "$(git -C "$BROKEN" for-each-ref --format='%(refname:short)' refs/heads/ | sort)" ]; echo $?)"
 
@@ -462,6 +593,21 @@ out="$(GH_STUB_UNAUTH=1 "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge unauthenticated exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "merge unauthenticated names the reason" "$out" "(gh unauthenticated)"
 
+# feat/wrap stops being a fake OID here: `merge --apply`'s tree-verify needs a real local
+# commit to check, so give the branch one and land its exact content on the remote's main,
+# standing in for the squash `gh pr merge` performs on GitHub's own side (this stub never
+# pushes anything for real).
+MERGE_CUR="$(git -C "$TMPD/clone-scan-main" branch --show-current)"
+git -C "$TMPD/clone-scan-main" fetch -q origin main
+git -C "$TMPD/clone-scan-main" checkout -q -b feat/wrap origin/main
+echo "wrap the session" > "$TMPD/clone-scan-main/wrap-note.txt"
+git -C "$TMPD/clone-scan-main" add -A
+git -C "$TMPD/clone-scan-main" commit -qm "wrap the session"
+PR7_OID="$(git -C "$TMPD/clone-scan-main" rev-parse feat/wrap)"
+git -C "$TMPD/clone-scan-main" checkout -q "$MERGE_CUR"
+export GH_STUB_PR_7="{\"number\":7,\"title\":\"wrap the session\",\"headRefName\":\"feat/wrap\",\"headRefOid\":\"$PR7_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"},{\"conclusion\":\"SKIPPED\"}]}"
+git -C "$TMPD/clone-scan-main" push -q "$TMPD/bare-rmain" feat/wrap:refs/heads/main
+
 # ===========================================================================
 echo "=== merge: dry-run lists the eligible PR, --apply merges exactly one ==="
 # ===========================================================================
@@ -474,7 +620,7 @@ chk "merge dry-run calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" &&
 : > "$GH_STUB_CALLS"
 out="$("$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 0" "$rc"
-chk_has "merge --apply reports the merge SHA" "$out" "merged #7 1a2b3c4d5e6f"
+chk_has "merge --apply reports the merge, tree verified" "$out" "merged #7 (1a2b3c4d5e6f): tree verified"
 chk "merge --apply called pr merge exactly once" "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 chk "merge --apply passed --squash" "$(grep -q '^pr merge 7 .*--squash' "$GH_STUB_CALLS"; echo $?)"
 chk "merge --apply passed no --delete-branch" "$(grep -q -- '--delete-branch' "$GH_STUB_CALLS" && echo 1 || echo 0)"
@@ -515,7 +661,7 @@ STACK_OPEN='[{"number":7,"title":"parent","headRefName":"feat/wrap"},{"number":8
 STACK_8='{"number":8,"title":"child","headRefName":"feat/child","baseRefName":"feat/wrap","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}'
 STACK_7='{"number":7,"title":"parent","headRefName":"feat/wrap","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[]}'
 out="$(GH_STUB_OPEN_PRS="$STACK_OPEN" GH_STUB_PR_7="$STACK_7" GH_STUB_PR_8="$STACK_8" "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"
-chk_has "merge skips the stacked parent" "$out" "SKIP #7 parent: dependents open, retarget them first (SPEC-065)"
+chk_has "merge skips the stacked parent" "$out" "SKIP #7 parent: dependents open, retarget them first"
 chk_has "merge skips the child whose base is not the default branch" "$out" "SKIP #8 child: base is feat/wrap, not the default branch main"
 
 echo "=== merge: the post-merge state check fails closed ==="
@@ -636,6 +782,64 @@ out="$(GH_STUB_OPEN_PRS="$(open_one 17)" GH_STUB_PR_17="$(conflict_json 17 "$RM_
 chk_has "a re-gate that refuses after the push names the reason" "$out" \
   "SKIP #17 after the re-merge: changes requested"
 chk "a refused re-gate calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== merge: gh saying MERGED is not proof the default branch holds the PR head ==="
+# ===========================================================================
+# Real git repos throughout: what a tree actually holds after a squash is the whole
+# subject, so nothing about the tree state is stubbed. `gh` stays stubbed (it always
+# reports MERGED via GH_STUB_VIEW_STATE's default), which is the point: the mismatch
+# and unverifiable cases below are exactly what gh's own word cannot catch.
+tv_pr_json() { # tv_pr_json <number> <head branch> <head oid>
+  printf '{"number":%s,"title":"tv case","headRefName":"%s","headRefOid":"%s","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' "$1" "$2" "$3"
+}
+tv_open_one() { printf '[{"number":%s,"title":"tv case","headRefName":"%s"}]' "$1" "$2"; }
+build_tv_repo() { # build_tv_repo <name> -- bare + clone, base.txt on main, feat/tv adds pr-file.txt
+  local name="$1" work="$TMPD/tv-work-$1" clone="$TMPD/tv-clone-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  echo base > "$work/base.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/tv-bare-$name"
+  git clone -q "$TMPD/tv-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/tv main
+  echo "pr change" > "$clone/pr-file.txt"
+  git -C "$clone" add -A; git -C "$clone" commit -qm "pr change"
+}
+
+echo "--- a real mismatch: main never got the PR's content, exits 3, branch untouched"
+build_tv_repo mismatch
+TVM="$TMPD/tv-clone-mismatch"; TVM_OID="$(git -C "$TVM" rev-parse feat/tv)"
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 21 feat/tv)" GH_STUB_PR_21="$(tv_pr_json 21 feat/tv "$TVM_OID")" \
+  "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
+chk "tree-verify: a real mismatch exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: mismatch names the count and that main lacks the head" "$out" \
+  "TREE MISMATCH, 1 paths differ; main does not hold the PR head"
+chk "tree-verify: mismatch leaves the branch in place" \
+  "$(git -C "$TVM" rev-parse --verify feat/tv >/dev/null 2>&1; echo $?)"
+
+echo "--- an unreachable head object: never a false pass, exits 3"
+BOGUS_OID="0000000000000000000000000000000000000f"
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 22 feat/tv)" GH_STUB_PR_22="$(tv_pr_json 22 feat/tv "$BOGUS_OID")" \
+  "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
+chk "tree-verify: an unreachable head object exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: names it unverifiable rather than passing silently" "$out" \
+  "tree UNVERIFIABLE the PR head is not a local object"
+
+echo "--- scoped match: another PR landed on main meanwhile, only the touched path must agree"
+build_tv_repo scoped
+TVS="$TMPD/tv-clone-scoped"; TVS_OID="$(git -C "$TVS" rev-parse feat/tv)"
+git clone -q "$TMPD/tv-bare-scoped" "$TMPD/tv-land-scoped" >/dev/null 2>&1
+gitc "$TMPD/tv-land-scoped"
+echo "someone else's change" > "$TMPD/tv-land-scoped/other-file.txt"
+git -C "$TMPD/tv-land-scoped" add -A; git -C "$TMPD/tv-land-scoped" commit -qm "other change"
+cp "$TVS/pr-file.txt" "$TMPD/tv-land-scoped/pr-file.txt"
+git -C "$TMPD/tv-land-scoped" add -A; git -C "$TMPD/tv-land-scoped" commit -qm "squash: pr change"
+git -C "$TMPD/tv-land-scoped" push -q origin main
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 23 feat/tv)" GH_STUB_PR_23="$(tv_pr_json 23 feat/tv "$TVS_OID")" \
+  "$WRAP" merge --apply "$TVS" 2>&1)"; rc=$?
+chk "tree-verify: a scoped match (another PR landed meanwhile) exits 0" "$rc"
+chk_has "tree-verify: scoped match reports verified" "$out" "tree verified"
 
 # ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
@@ -1222,8 +1426,49 @@ out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:
 chk "a lane suffix with no ENHANCE or NEW still fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding still asks for the ENHANCE or NEW token" "$out" "no ENHANCE <home> or NEW (precedent: ...) token"
 
+# The lane closure rule. `wrap.build_lanes` lets an operator list heavier lanes for step 7b to
+# build inline, so `lane=normal`, `lane=bug` and `lane=backfill` are legal on a verified item
+# and the lint can no longer treat `tiny` as the only buildable lane. What it does enforce is
+# the pairing: a lane token says the candidate was sized and nothing about what became of it,
+# so every item naming a lane owes `verified:`, `filed:`, or a `staged` form. `lane=full` is
+# narrower still: it owes `filed:` and the lint rejects it closed as `staged`.
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** wake-probe ENHANCE tools/alert-triage: tests/live/wake-probe after the touch probe (lane=normal, verified: bash tests/test-alert.sh, #418)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "an ENHANCE line carrying lane=normal and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=bug, verified: bash tests/test-cron.sh, a1b2c3d)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW line carrying lane=bug and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=backfill, verified: bash tests/test-cron.sh, b2c3d4e)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a NEW line carrying lane=backfill and its check passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, filed: ops-toolkit ID-901, goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "the full-lane filed shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, capture failed: no board at _meta/BACKLOG.md)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "the full-lane capture-failed shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged: build_lanes excludes full)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a full lane closed as staged fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the board row a full lane owes" "$out" "closes a full-lane candidate as 'staged'"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged + goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a full lane staged with a goal draft still fails" "$([ "$rc" -eq 1 ]; echo $?)"
+
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=normal)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "a lane with neither a check nor a staged form fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the missing closure" "$out" "names a lane with no closure"
+
+out="$(printf '✅ **Needs you:** NOTHING\n\n**Built:**\n- alpha ENHANCE tools/x: file.sh (lane=normal, verified: bash tests/test-x.sh, #12)\n- beta NEW (precedent: nothing matched): tools/beta (lane=bug)\n\n**Seam:** NOTHING: no seam configured\n\n**What happened**\n- body\n' | bash "$LINT" 2>&1)"; rc=$?
+chk "one unclosed lane among good bullets fails" "$([ "$rc" -eq 1 ]; echo $?)"
+chk_has "the finding names the offending bullet by index" "$out" "item 2"
+
 chk_has "commands/wrap.md classifies each candidate's lane" "$(cat "$KIT_DIR/commands/wrap.md")" "lib/classify/lane-classify.sh classify"
 chk_has "commands/wrap.md names the worker model tiers" "$(cat "$KIT_DIR/commands/wrap.md")" "Sonnet is the default worker"
+chk_has "commands/wrap.md reads the build_lanes knob" "$(cat "$KIT_DIR/commands/wrap.md")" "kit_config_get_root wrap.build_lanes"
+chk_has "kit.toml ships build_lanes defaulting to tiny" "$(cat "$KIT_DIR/kit.toml")" 'build_lanes = "tiny"'
+chk_has "commands/wrap.md files a full-lane candidate with board capture" "$(cat "$KIT_DIR/commands/wrap.md")" "bin/board capture"
+chk_no "commands/wrap.md dropped the staged-exclusion form" "$(cat "$KIT_DIR/commands/wrap.md")" "build_lanes excludes"
+chk_no "kit.toml dropped the staged-exclusion form" "$(cat "$KIT_DIR/kit.toml")" "build_lanes excludes"
 # The LIST form: a bare `**Built:**` header followed by `- ` bullets, one candidate per
 # line. Added after a real report crammed three candidates onto one unreadable line. Each
 # bullet owes the same ENHANCE/NEW token as the inline form, checked per bullet, so one bare

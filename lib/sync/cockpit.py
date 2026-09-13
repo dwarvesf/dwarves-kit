@@ -1,38 +1,38 @@
 """Cockpit channel: multi-source extract + keyed-diff planner for the sync mesh.
 
-This is the P2 port of the legacy `board mirror` bridge (lib/board/board-mirror.sh,
-SPEC-147) into the sync module, implementing kit board row ID-290 and the
-SPEC-002 sync-mesh cockpit profile. It ports the two DETERMINISTIC legs of the
+This is the P2 port of the legacy `board mirror` bridge (lib/board/board-mirror.sh)
+into the sync module, implementing this cockpit's own
+sync-mesh profile. It ports the two DETERMINISTIC legs of the
 bridge:
 
   EXTRACT   N opted-in repos (a boards.txt registry) -> normalized, ORIGIN-KEYED
             items. A BACKLOG.md row keys as `<repo>:ID-NNN`; an active mega-goal
             (`_meta/megagoals/<slug>/ROADMAP.md`) keys as `megagoals:<repo>/<slug>`.
             Origin identity is what lets many repos pool onto one cockpit board
-            without ID collisions (SPEC-002 dim 4 / case 13), the gap bare-ID
+            without ID collisions (dim 4 / case 13), the gap bare-ID
             keying leaves open once profiles stop being single-repo.
   TRANSFORM a keyed diff between the current extract and the prior snapshot,
             matched on `origin` + `row_hash`: unseen origin -> CREATE, same hash
             -> UNCHANGED (the idempotence guarantee), changed hash -> CHANGE, a
             prior origin gone from the extract -> COMPLETE. The board always
             wins (row_hash is content from the git-owned board), which IS the
-            "row_hash git-wins conflict rule" ID-290 said the port must carry.
+            "row_hash git-wins conflict rule" this port was required to carry.
 
 Deferred to a later slice (still on the legacy engine, which stays runnable):
   * the LOAD leg (applying a plan to a live Hermes kanban via the CLI): needs a
     real Hermes binary, cannot run in CI, and is left on board-mirror.sh's
     proven `apply-plan`;
-  * two-way status writeback (SPEC-149 reverse-status + HELD-PR): left on
+  * two-way status writeback (reverse-status + HELD-PR): left on
     board-writeback.sh;
   * retiring `mirror`/`status`/`writeback` to thin aliases and migrating the
     snapshot into the per-app sync state shape.
-See docs/specs/SPEC-002-sync-mesh.md "P2" and the module docstring in
+See this module's own "P2" design notes and the module docstring in
 lib/board/board-mirror.sh for the legacy engine this ports.
 
 Pure logic + stdlib only; no network, no Hermes, no I/O beyond the CLI reading
 files. The row_hash is byte-identical to the bash `_row_hash` (sha256 over the
 0x1f-joined fields) so a future cutover can adopt the legacy NDJSON snapshot
-without re-hashing (SPEC-002 case 17: adopt-by-origin).
+without re-hashing (case 17: adopt-by-origin).
 """
 
 import hashlib
@@ -45,7 +45,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # The cockpit deliberately does NOT reuse sync_core.parse_board: that parser is
-# bare-`ID-NNN`-only (correct for the single-repo SPEC-001 spoke sync), but the
+# bare-`ID-NNN`-only (correct for the single-repo spoke sync), but the
 # cockpit pools MANY repos whose IDs are prefixed (`BK-`, `DS-`, `DF-`, ...), so
 # it honors the same id pattern as the legacy engine (`[A-Z]+-[0-9]+`, override
 # via BACKLOG_ID_RE) and splits rows exactly as the legacy awk does, byte-for-
@@ -57,8 +57,8 @@ DEFAULT_ID_RE = r"[A-Z]+-[0-9]+"
 # excluded from the extract entirely). The reachable set is {triage, ready,
 # blocked, done}; `todo`/`running` have no CLI-only durable path (see the
 # board-mirror.sh header's Hermes-CLI-reality note), so `claimed`/`speccing`/
-# `executing` honestly fall back to `ready`. This map is the second asset ID-290
-# said the port must carry over.
+# `executing` honestly fall back to `ready`. This map is the second asset
+# this port was required to carry over.
 TARGET_NATIVE = {
     "queued": "triage",
     "claimed": "ready",
@@ -79,7 +79,7 @@ def target_native(status_kw: str) -> str:
 
 
 def strip_routing_tags(text: str) -> str:
-    """Remove the SG-04 `#queue{...}` routing token before content is hashed or
+    """Remove the `#queue{...}` routing token before content is hashed or
     shown, so the hash keys off human content, not the machine tag (mirrors
     board-mirror.sh's `_strip_routing_tags`; ordinary #tags are kept)."""
     out = _ROUTING_RE.sub("", text)
@@ -317,7 +317,7 @@ class SnapEntry:
 def read_snapshot(ndjson_text: str) -> dict[str, SnapEntry]:
     """Read the bridge NDJSON snapshot (one JSON object per line) into an
     origin-keyed map. Format-compatible with board-mirror.sh's snapshot, so a
-    future cutover adopts the legacy file as-is (SPEC-002 case 17). A malformed
+    future cutover adopts the legacy file as-is (case 17). A malformed
     line is skipped, not fatal."""
     out: dict[str, SnapEntry] = {}
     for line in ndjson_text.splitlines():
@@ -360,7 +360,7 @@ class Plan:
 def plan_cockpit(current: list[Item], snapshot: dict[str, SnapEntry]) -> Plan:
     """Keyed diff between the current extract and the prior snapshot, matched on
     `origin` + `row_hash`. The board always wins (the hash is git-owned content),
-    which is the row_hash git-wins conflict rule ID-290 requires. Mirror-out
+    which is the row_hash git-wins conflict rule this port requires. Mirror-out
     only: the snapshot's Hermes-side fields feed CHANGE/COMPLETE targeting; no
     reverse-status path here (that is the deferred writeback leg).
 
@@ -515,7 +515,7 @@ def main(argv=None) -> int:
     plan = plan_cockpit(items, read_snapshot(snap_text))
     if args.json:
         # --json carries raw board `item`/`notes`; warn the reader that this is
-        # untrusted DATA (SPEC-147 content-trust boundary). The markers are NOT
+        # untrusted DATA (content-trust boundary). The markers are NOT
         # applied to the plan fields themselves: that would corrupt the plan the
         # deferred LOAD leg consumes and double-mark card text; the LOAD leg
         # marks structurally at card build (mark_untrusted_*).

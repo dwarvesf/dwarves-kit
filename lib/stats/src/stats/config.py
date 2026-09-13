@@ -89,7 +89,7 @@ def kit_log_dir() -> Path:
     `kit.toml [ledger].location` key. Under `location = "isolated"` the write plane wrote
     to the toml location and this read plane read the XDG default, and it failed SILENTLY:
     `stats` simply reported no runs. Latent only because the shipped default (`shared`)
-    makes both agree by accident (found 2026-07-15 while writing ADR-0035).
+    makes both agree by accident (found 2026-07-15 while writing).
 
     Two implementations of one resolver is the same bug class as a hand-list beside a
     deriving resolver: the copy drifts, and the drift is invisible until it costs you.

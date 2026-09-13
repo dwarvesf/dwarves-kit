@@ -2,8 +2,8 @@
 # transcript.sh: read a Claude Code transcript JSONL and emit the last K user+assistant turns as
 # compact "[role] text" blocks. bash + jq only; does NOT import cc-harvest's Python (cross-language).
 #
-# Per-line schema (locked against a real sample in tests/fixtures/sample-transcript.jsonl,
-# TASK-002): each line is one JSON object. The lines we want have:
+# Per-line schema (locked against a real sample in tests/fixtures/sample-transcript.jsonl):
+# each line is one JSON object. The lines we want have:
 #   .type        == "user" | "assistant"
 #   .message.role  (preferred role label; falls back to .type)
 #   .message.content[]  array of blocks; text blocks are {type:"text", text:"..."}

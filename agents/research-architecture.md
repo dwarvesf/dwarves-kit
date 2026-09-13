@@ -66,7 +66,7 @@ File: [example file showing the pattern]
 - Show concrete examples (actual file paths, actual function signatures) not abstract descriptions.
 - If the codebase has no consistent pattern (different features use different approaches), say so. That's useful information.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

@@ -71,7 +71,7 @@ assert "row 11: no-padding honesty rule" $?
 grep -qF 'Check `git blame` on suspicious code to see when it last changed. Code untouched for 6+ months in an active repo is a smell.' "$P"
 assert "row 12: git-blame smell rule (both sentences)" $?
 
-grep -qF '## Return contract (distilled return, SPEC-087 Mechanism C)' "$P" && grep -qF '**verdict**' "$P" && grep -qF '**key findings**' "$P" && grep -qF '**artifacts**' "$P" && grep -qF '**read-next**' "$P" && grep -qF 'BOUNDED summary, not a dump' "$P" && grep -qF 'not as a re-paste of diffs, full test logs, or whole files' "$P" && grep -qF 'hundreds of tokens per dispatch instead of tens of thousands' "$P"
+grep -qF '## Return contract (distilled return)' "$P" && grep -qF '**verdict**' "$P" && grep -qF '**key findings**' "$P" && grep -qF '**artifacts**' "$P" && grep -qF '**read-next**' "$P" && grep -qF 'BOUNDED summary, not a dump' "$P" && grep -qF 'not as a re-paste of diffs, full test logs, or whole files' "$P" && grep -qF 'hundreds of tokens per dispatch instead of tens of thousands' "$P"
 assert "row 13: pitfalls distilled return contract (heading + fields + bounds)" $?
 
 echo ""
@@ -117,7 +117,7 @@ assert "row 23: don't-guess rule" $?
 grep -qF "If a config file doesn't exist, say \"not found\" instead of assuming." "$S"
 assert "row 24: not-found honesty rule" $?
 
-grep -qF '## Return contract (distilled return, SPEC-087 Mechanism C)' "$S" && grep -qF '**verdict**' "$S" && grep -qF '**key findings**' "$S" && grep -qF '**artifacts**' "$S" && grep -qF '**read-next**' "$S" && grep -qF 'BOUNDED summary, not a dump' "$S" && grep -qF 'not as a re-paste of diffs, full test logs, or whole files' "$S" && grep -qF 'hundreds of tokens per dispatch instead of tens of thousands' "$S"
+grep -qF '## Return contract (distilled return)' "$S" && grep -qF '**verdict**' "$S" && grep -qF '**key findings**' "$S" && grep -qF '**artifacts**' "$S" && grep -qF '**read-next**' "$S" && grep -qF 'BOUNDED summary, not a dump' "$S" && grep -qF 'not as a re-paste of diffs, full test logs, or whole files' "$S" && grep -qF 'hundreds of tokens per dispatch instead of tens of thousands' "$S"
 assert "row 25: stack distilled return contract (heading + fields + bounds)" $?
 
 echo ""

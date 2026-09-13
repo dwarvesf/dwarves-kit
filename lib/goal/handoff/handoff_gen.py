@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Deterministically generate the orchestrator's two-tier feed-forward handoff
-(SPEC-087 Mechanism B) from the finishing sub-goal session's transcript.
+(Mechanism B) from the finishing sub-goal session's transcript.
 
 WHY: today HANDOFF.md / DECISIONS.md are written BY the LLM sub-goal session, so a
 good handoff depends on the model remembering to write one well. This makes the
 handoff a deterministic, always-produced FUNCTION of the transcript instead. The
 hot/warm CONTRACT (the fields) is unchanged; only the GENERATOR changes
-(token-optim-v3 SG-02; the extractor core is ported verbatim from ops-toolkit
-SG-01 `experiments/cc-deterministic-compaction/cc_compact.py`).
+(token-optim-v3; the extractor core is ported verbatim from ops-toolkit's
+`experiments/cc-deterministic-compaction/cc_compact.py`).
 
 Pure function of (transcript bytes, next-sub-goal args, --date): no model call, no
 network, no clock, no randomness -> same inputs produce byte-identical HANDOFF.md.
 DECISIONS.md is append-only and idempotent (a content-hash marker means re-running
 on the same transcript appends nothing).
 
-ponytail: stdlib only; reuses SG-01's extractors rather than reimplementing them.
+ponytail: stdlib only; reuses the extractors rather than reimplementing them.
 """
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import cc_compact as cc  # noqa: E402  (sibling module, ported SG-01 extractor)
+import cc_compact as cc  # noqa: E402  (sibling module, ported extractor)
 
 # Read-pointers are grounded in files the run actually touched. We emit `path`,
 # not `path:line`: a line number would be fabricated (the extractor has no line
-# data), and the handoff must stay grounded (SPEC-087: "cannot become an
+# data), and the handoff must stay grounded ("cannot become an
 # optimistic lie"). Cap so a runaway file list cannot bloat the HOT handoff.
 READ_POINTER_CAP = 8
 
@@ -121,7 +121,7 @@ DECISIONS_HEADER = (
 
 
 def _nn(sg_id: str) -> str:
-    """`SG-04` -> `04` for the goal-file pointer; passthrough on odd input."""
+    """`SG-NN` -> `NN` for the goal-file pointer; passthrough on odd input."""
     n = sg_id.split("-")[-1] if "-" in sg_id else sg_id
     return n
 
@@ -164,7 +164,7 @@ def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="handoff-gen", description=__doc__)
     p.add_argument("transcript", help="the finishing session's transcript JSONL")
     p.add_argument("--dir", required=True, help="mega-goal dir to write HANDOFF.md/DECISIONS.md into")
-    p.add_argument("--next-id", required=True, help="next sub-goal id, e.g. SG-04")
+    p.add_argument("--next-id", required=True, help="next sub-goal id, e.g. ")
     p.add_argument("--next-title", default="", help="next sub-goal human title")
     p.add_argument("--date", required=True, help="YYYY-MM-DD stamp (passed in; no clock here)")
     args = p.parse_args(argv)

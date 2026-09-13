@@ -27,7 +27,7 @@
 #  10. data-tool    -- a CLI / API client / scraper / puller  -> a recorded live run
 #  11. spec-feature -- the default: implement a feature/fix   -> tests + acceptance
 #
-# SPEC-060 recall tuning: the rules below carry anchors mined from REAL session phrasing
+# Recall tuning: the rules below carry anchors mined from REAL session phrasing
 # (an 8-ask live probe found 7/8 falling to the spec-feature default). A 4b absorb guard
 # sits above eval: absorb-into-kit work is implementation, not measurement.
 #
@@ -78,7 +78,7 @@ task_type_classify() {
   fi
 
   # NOTE: the `run .* experiment` arm relies on operate (rule 4) being checked FIRST
-  # to catch procedure-run phrasings; reorder with care (SPEC-075 review F3).
+  # to catch procedure-run phrasings; reorder with care (review F3).
   # 5. eval: measuring or comparing tools/options.
   if printf '%s' "$lc" | grep -qE 'benchmark|evaluat|\beval\b|compare .*(vs|versus|against)|which (tool|one|option)|is .* better|lab[ -]test|a/b test|(spin up|run|do) .{0,12}(quick )?experiment|experiment to (test|see|check)|trial .{0,16}(library|tool|service|framework)|throwaway (code|prototype|script)'; then
     echo eval; return 0
@@ -109,7 +109,7 @@ task_type_classify() {
     echo migration; return 0
   fi
 
-  # 9b. reconcile (after migration, so explicit migratory phrasing wins; SPEC-057 review F6): records-vs-reality drift, cleanup, hygiene sweeps.
+  # 9b. reconcile (after migration, so explicit migratory phrasing wins; review F6): records-vs-reality drift, cleanup, hygiene sweeps.
   if printf '%s' "$lc" | grep -qE 'reconcil|(config|state|schema|status|record|convention) drift|drift (audit|check|sweep|report)|clean ?up .{0,30}(estate|backlog|branch|reference|record|status|stash|worktree)|stale (branch|status|row|record|reference)|parity (check|audit)|hygiene|deadwood|prune .{0,20}(stale|branch|deadwood)|audit .* against|sweep (the )?(estate|repo|backlog|branches)|untangle .{0,30}(branch|pr|backlog|estate|stack)|stranded .{0,25}(branch|pr|spec)|orphan(ed)? .{0,20}(branch|pr|worktree)'; then
     echo reconcile; return 0
   fi

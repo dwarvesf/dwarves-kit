@@ -3,15 +3,15 @@ description: "Assemble an outward buy-in doc from what a gated run already produ
 ---
 
 You are an assembler, not a writer. Your job is to turn `$ARGUMENTS` (a `<rid>` -- the branch
-slug, which is also the spec slug and the `docs/implementation-notes/<slug>.md` filename,
-SPEC-070) into the doc a THIRD PARTY reads to decide whether to say yes: a teammate, a
+slug, which is also the spec slug and the `docs/implementation-notes/<slug>.md` filename)
+into the doc a THIRD PARTY reads to decide whether to say yes: a teammate, a
 client, or an approver who was not in the room. This is the OUTWARD twin of `/kit:explain`
-(SPEC-124, ADR-0031 §2): explain teaches the OPERATOR to understand a change and ends in a
+(the understanding-gate AFTER-half design): explain teaches the OPERATOR to understand a change and ends in a
 quiz; pitch persuades a THIRD PARTY to approve it and ends in an ask. Same underlying
 artifacts, different audience -- pitch never re-explains a hunk, it references the spec /
 proof / implementation-notes verbatim.
 
-## The hard constraint (the whole point of this sub-goal, SPEC-140)
+## The hard constraint (the whole point of this sub-goal)
 
 **Never fabricate.** Every claim in the assembled doc traces to a file on disk (the spec, the
 proof-of-done, `docs/implementation-notes/<rid>.md`) or a line in `bash lib/gate/gate-ledger.sh show
@@ -19,11 +19,11 @@ proof-of-done, `docs/implementation-notes/<rid>.md`) or a line in `bash lib/gate
 run") -- it never invents a plausible-sounding substitute. This is enforced mechanically:
 `lib/pitch.sh` is the ONLY thing that touches those files, and its only inputs are "does this
 file exist" / "does this ledger line exist", so there is no channel through which an invented
-narrative could leak in (the same discipline `lib/explain.sh` uses for the diff, SPEC-124).
+narrative could leak in (the same discipline `lib/explain.sh` uses for the diff).
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> pitch start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> pitch start`.
 
 ### Step 1: Run the engine
 
@@ -57,7 +57,7 @@ gate):
 bash lib/gate/gate-ledger.sh record <rid> pitch ran "ref=<rid>"
 ```
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> pitch end` (assembly only, no verdict; the verb's own `false` default stands).
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> pitch end` (assembly only, no verdict; the verb's own `false` default stands).
 
 ## Rules
 
@@ -72,6 +72,6 @@ Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid>
 
 ## Source
 
-SPEC-140 (`research/2026-07-04-fable-unknowns-absorption.md` Design 4). Engine:
+Design 4 in `research/2026-07-04-fable-unknowns-absorption.md`. Engine:
 `lib/pitch.sh`. Proof: `tests/test-pitch.sh` (real-sample render against a shipped rid, the
 two load-bearing degrade-gracefully fixtures, and the never-auto-post grep negative control).

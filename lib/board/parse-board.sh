@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# parse-board.sh -- the ONE structured board parser (SPEC-146, runner-fastpath sub-goal 04).
+# parse-board.sh -- the ONE structured board parser (runner-fastpath sub-goal 04).
 #
 # `lib/board/backlog.sh`'s own `_rows()` is a private, minimal row-extractor (id/title/status only).
 # This is the reusable, PUBLIC surface other tools parse a BACKLOG.md through: `lib/board/board.sh`'s
-# `queue` subcommand uses it today; the runner-fastpath design (SG-07/08, board-bridge mirror +
+# `queue` subcommand uses it today; the runner-fastpath design (board-bridge mirror +
 # writeback) is EXPECTED to reuse it rather than re-parsing the markdown a third time.
 #
 # Two functions, two CLI verbs:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# session.sh -- thin standalone entry for the session subsystem (kit-modularity
-# SG-03, board.sh/orchestrate.sh shape; the five prefixed `bin/session-*` CLIs
-# collapsed into this one dispatcher, ADR-0034 decision 7, SG-04). Forwards
+# session.sh -- thin standalone entry for the session subsystem (kit-modularity,
+# board.sh/orchestrate.sh shape; the five prefixed `bin/session-*` CLIs
+# collapsed into this one dispatcher). Forwards
 # `session <verb> <args...>` to the sibling tool that already owns that verb
 # (kit-foldin's session-observe/session-recall/session-intel/session-report/
 # session-semantic, folded into lib/session/{observe,recall,intel}/). Adds NO new

@@ -99,9 +99,9 @@ Issues:
 - Don't invent a command the spec did not designate. If the spec's `## Verification` is thin, say so -- that is itself a finding, not something to paper over.
 - Keep your output compact. The orchestrator needs to parse your verdict quickly.
 
-Source: ADR-0028 "Right-arm review parity" (fills the agent-less Acceptance row); ADR-0029 (`-verifier` = RIGHT-arm DYNAMIC test, "executes the artifact and observes"); mirrors `agents/task-verifier.md` (verification-record capture discipline, three-verdict shape, negative-control awareness) scoped to the spec's own `## Verification` section instead of a single task's criteria.
+Source: the "Right-arm review parity" decision (fills the agent-less Acceptance row); the `-verifier` naming convention (RIGHT-arm DYNAMIC test, "executes the artifact and observes"); mirrors `agents/task-verifier.md` (verification-record capture discipline, three-verdict shape, negative-control awareness) scoped to the spec's own `## Verification` section instead of a single task's criteria.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

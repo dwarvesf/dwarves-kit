@@ -66,7 +66,7 @@ Unfixed (if any):
 - Do NOT run the full build pipeline. Run tests only.
 - Do NOT create new files unless the verifier explicitly says a file is missing.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

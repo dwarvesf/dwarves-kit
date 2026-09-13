@@ -26,6 +26,8 @@
 #   board.sh board  [--backlog-file <path>]                    single-repo kanban render
 #   board.sh next   [--backlog-file <path>]                    first queued ID
 #   board.sh set <ID> <state> [note] [--backlog-file <path>]   flip a row's state
+#   board.sh dedupe <ID> [--backlog-file <path>]               collapse duplicate rows sharing
+#                                                               one id down to one
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh priority [counts|brief|overview|full] [--backlog-file <path>]
 #                                                               single-repo urgency x fit quadrant
@@ -1074,7 +1076,7 @@ cmd_publish() {
     echo "  commit is local, checkout restored, will retry next publish" >&2
     return 3
   fi
-  # ID-835: a rebase can apply cleanly onto a genuine row-id collision instead
+  # A rebase can apply cleanly onto a genuine row-id collision instead
   # of conflicting on it, because consumer boards mark BACKLOG.md
   # `merge=union` -- two sessions each minting an id from a clone that never
   # fetched land both rows, silently. `parse_board` then keeps only the FIRST
@@ -1105,7 +1107,7 @@ _legacy_bridge_note() {
   echo "      folded into the sync module; the port is tracked on the kit board." >&2
 }
 
-usage() { sed -n '2,166p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,168p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"

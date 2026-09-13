@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Two-way sync between a kit kanban BACKLOG.md (hub) and its spokes: Apple
-Reminders, a Notion board, the Hermes kanban. See docs/specs/SPEC-001.
+Reminders, a Notion board, the Hermes kanban.
 
 Front door: `board sync` (bin/board), which any adopted repo's `_meta/board`
 shim already forwards to with the right --backlog-file. Spokes plug in per
-repo via the `[sync]` section of `.kit.toml` (ADR-0034 config layer); the
+repo via the `[sync]` section of `.kit.toml` (config layer); the
 `cmd_sync` shim in lib/board/board.sh resolves those keys through
 lib/config/kit-config.sh (the ONE TOML reader) and hands this engine plain
 flags. This file reads no config file, by design.
@@ -191,7 +191,7 @@ def check_pull_isolation(names: list, args,
     if pull and others:
         sys.exit(f"{pull[0]}: a pull app runs alone, but this invocation also "
                  f"lists {', '.join(others)}. Run intake first, publish the "
-                 "board, then run the other apps (SPEC-004 design question 1).")
+                 "board, then run the other apps (design question 1).")
 
 
 def sync_source(src, backlog: Path, state_path: Path, dry_run: bool,

@@ -35,7 +35,7 @@ echo "== census: bin/ is exactly the ADR-0034 SG-04 target set =="
 # SPEC-184 forwarders; the census names them because the DISPATCH block below proves each
 # answers with its own contract. A bin/ entry with no such block is still the drift this
 # census exists to catch.
-EXPECTED="activate board classify config gate goal learn lint mega plugin-check precedent prose-rag queue reflect release session skill-improve skill-review spec stats worktree-provision wrap"
+EXPECTED="activate board classify config gate goal intake learn lint mega plugin-check precedent prose-rag queue reflect release session skill-improve skill-review spec stats worktree-provision wrap"
 ACTUAL="$(ls -1 "$KIT_DIR/bin" | sort | tr '\n' ' ' | sed 's/ $//')"
 EXPECTED_SORTED="$(printf '%s\n' $EXPECTED | sort | tr '\n' ' ' | sed 's/ $//')"
 if [ "$ACTUAL" = "$EXPECTED_SORTED" ]; then
@@ -123,6 +123,13 @@ out="$(cd "$EMPTY_PRECEDENT" && "$KIT_DIR/bin/precedent" find "spec drift" --sur
 assert_true "precedent find --surface records dispatches end to end (empty repo, no hits)" "$rc"
 out="$("$KIT_DIR/bin/precedent" find x --surface bogus 2>&1)"; rc=$?
 assert_true "precedent find rejects an unknown surface (exit 64)" "$([ $rc -eq 64 ]; echo $?)"
+
+echo "== intake: forwarder reaches intake.sh (deep behavior: test-intake.sh) =="
+out="$("$KIT_DIR/bin/intake" --help 2>&1)"; rc=$?
+assert_true "intake forwarder exits 0 (--help)" "$rc"
+assert_true "intake --help prints intake.sh's own usage" "$(grep -q 'intake.sh gate' <<<"$out"; echo $?)"
+out="$("$KIT_DIR/bin/intake" nosuchverb 2>&1)"; rc=$?
+assert_true "intake rejects an unknown verb (exit 64)" "$([ $rc -eq 64 ]; echo $?)"
 
 echo "== wrap: forwarder reaches wrap.sh (deep behavior: test-wrap.sh) =="
 out="$("$KIT_DIR/bin/wrap" --help 2>&1)"; rc=$?

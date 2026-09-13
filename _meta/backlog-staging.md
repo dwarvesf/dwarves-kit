@@ -99,3 +99,10 @@ Gitignored: may name unfiled work. NEVER the source of truth.
 - Home: dwarves-kit
 - Source: session 2026-09-11
 
+
+## [promoted ID-873] Test fixtures can write the tester git identity into the real repo when the temp dir var is empty #test #u-mid #f-lo
+- Intent: On 2026-09-13 the shared checkout's `.git/config` carried `user.name=tester` / `user.email=t@t.dev`, so three commits landed under that identity before a worker noticed and rewrote them; four tests (tests/test-cheap-guards.sh:75, tests/test-queue.bats:40, tests/test-runaway-guards.sh:86, tests/test-notes-sanitization.sh:164) run `git -C "$d" config user.email t@t.dev; git -C "$d" config user.name tester` right after `git -C "$d" init`, and with `$d` empty (a failed `mktemp -d`, an unset var under a subshell) `git -C ""` targets the caller's cwd, the real repo.
+- Approach: Root cause is the missing guard, not any one test; the fix is a shared helper `fixture_repo()` that does `d=$(mktemp -d) || exit 1` then init then identity, or `set -u` plus `[ -n "$d" ]` before every `git -C "$d"` call, plus a one-line check at test start that the real repo's `git config --local user.email` is not `t@t.dev`.
+- Tags: #test #u-mid #f-lo
+- Home: dwarves-kit
+- Source: incident 2026-09-13 | shared checkout identity clobber

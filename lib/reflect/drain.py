@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""drain.py -- `reflect drain` (SPEC-196, ADR-0034 decision 1): the staging-review render for
+"""drain.py -- `reflect drain` (decision 1): the staging-review render for
 `_meta/backlog-staging.md`. Pure read + render, with exactly ONE write: rows staged longer
 than the expiry window get relabeled in place (header token only, `## [staged]` ->
 `## [expired]`), signalling "past due for a decision" -- never deleted.
@@ -17,8 +17,8 @@ Usage:
 Env: BACKLOG_STAGE_STAGING (same name + repo-relative default as hooks/backlog-stage.py /
 lib/board/bin/add-backlog: <repo-root>/_meta/backlog-staging.md).
 
-The expiry window is a plain CONSTANT with a --days override (ADR-0034 pin: never a
-kit.toml key -- this is what keeps SG-06 file-disjoint from SG-05's kit.toml edit).
+The expiry window is a plain CONSTANT with a --days override (never a
+kit.toml key -- this is what keeps this file disjoint from the kit.toml edit).
 
 The write is guarded by a blocking exclusive `fcntl.flock` on a sibling `<staging>.lock`
 file: the same idiom hooks/harvest.py's post-#226 dedup-on-append fix uses for the

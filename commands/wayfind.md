@@ -5,11 +5,11 @@ disable-model-invocation: true
 
 You are a wayfinder. A loose idea has arrived, too big for one session and wrapped in fog: the way from here to the **destination** is not visible yet. Your job is to find the way, not to charge at the destination: chart a shared **map** of **decision tickets** (questions whose resolution is a decision, not build slices), then resolve them one at a time until the way is clear.
 
-Ported from mattpocock/skills `wayfinder` (MIT), re-based onto files + the kit board (SPEC-207; design: docs/research/2026-07-31-mattpocock-trio-adoption.md §1+§4). Tracker-native storage is deliberately NOT this command (parked; SPEC-207 Out of scope).
+Ported from mattpocock/skills `wayfinder` (MIT), re-based onto files + the kit board (design: docs/research/2026-07-31-mattpocock-trio-adoption.md §1+§4). Tracker-native storage is deliberately NOT this command (parked; see that design record's Out of scope section).
 
 **Router check first (upstream's admitted failure mode is over-reach).** Wayfind is slower and denser than a single grill. A well-scoped feature belongs on `/kit:grill` + `/kit:spec`; a decomposable build with a clear route belongs on `/kit:mega`. Reach for wayfind only when the OPEN QUESTIONS outnumber the stateable ones.
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Wayfind start` (rid = the umbrella effort's branch when one exists, else the session's own).
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Wayfind start` (rid = the umbrella effort's branch when one exists, else the session's own).
 
 ## Plan, don't do
 
@@ -24,7 +24,7 @@ _meta/megagoals/<slug>/
   ROADMAP.md                # (later) the do-half; written at graduation, not by wayfind
 ```
 
-Co-location is deliberate: wayfind is the decide-half of the folder whose do-half is the mega-goal ROADMAP (ADR-0032). Graduation happens in place. The board (SPEC-055) carries **ONE umbrella row per map**; tickets are NEVER duplicated as board rows.
+Co-location is deliberate: wayfind is the decide-half of the folder whose do-half is the mega-goal ROADMAP. Graduation happens in place. The board carries **ONE umbrella row per map**; tickets are NEVER duplicated as board rows.
 
 ### map.md
 
@@ -110,9 +110,9 @@ Invoked with a map (path or slug); a named ticket is optional.
 Nothing left to decide: hand off, never straight to execute.
 
 - Single bounded feature -> `/kit:spec`; the map's Decisions so far becomes the spec's Context, and the Context NAMES THE MAP PATH with the gists keeping their `[NN-<slug>]` pointers: the gists are summaries, so the spec must link back to the primary source (the ticket bodies), never carry only the summaries.
-- A build needing ordered sub-goals -> write `ROADMAP.md` beside map.md and run it as a mega-goal (`/kit:mega`, ADR-0032); the map stays as the decision record.
+- A build needing ordered sub-goals -> write `ROADMAP.md` beside map.md and run it as a mega-goal (`/kit:mega`); the map stays as the decision record.
 - Flip the umbrella board row to reflect the handoff (`bash lib/board/backlog.sh set <ID> speccing` for the single-spec path, `executing` once a ROADMAP run starts); the map goes read-only.
 
 Record the beat when a wayfind session ends: `bash lib/gate/gate-ledger.sh record <rid> Wayfind ran "mode=<chart|work> ticket=<NN|-> frontier=<N-remaining>"` (same rid as the opening bracket).
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Wayfind end` (no verdict to derive `caught=` from; the verb's own `false` default stands. A session whose ticket resolution killed or re-routed the effort is `caught=true`).
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Wayfind end` (no verdict to derive `caught=` from; the verb's own `false` default stands. A session whose ticket resolution killed or re-routed the effort is `caught=true`).

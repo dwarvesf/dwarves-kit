@@ -9,7 +9,7 @@
 #
 # So a `generic` result does NOT mean "use a generic worker". It means "no fast-path
 # match, escalate to meta-agent Mode C for open-ended role inference"; only Mode C's
-# own NO_SPECIALIST verdict falls through to a plain worker. See SPEC-089.
+# own NO_SPECIALIST verdict falls through to a plain worker.
 #
 # Pure keyword heuristic: no LLM, no network, deterministic (same desc -> same
 # domain). First clear match wins; order is specificity, not priority. Peer of
@@ -63,7 +63,7 @@ _role_match() {
 # agent-for <domain>: the predefined WORKER agent for a domain (the execute.md 2b-0 reuse target,
 # an IMPLEMENTER), or EMPTY. Reviewers are deliberately NOT here , a read-only reviewer cannot
 # implement a task, so it dispatches via /kit:review-team's domain lenses, not the 2b-0 worker slot
-#. `generic` returns empty so 2b-0 falls through to Mode-C synthesis (SPEC-089:79, the
+#. `generic` returns empty so 2b-0 falls through to Mode-C synthesis (the
 # dynamic long tail); a generic->agent map would collapse that escalation.
 agent_for() {
   case "${1:-}" in

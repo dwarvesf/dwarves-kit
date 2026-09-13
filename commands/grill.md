@@ -12,9 +12,9 @@ Grill applies to EVERY work type; the tiny lane is exempt (one obvious edit need
 
 ## Process
 
-If Step 0 below fires (the interview runs), bracket the phase for timing (SPEC-129) before starting Step 1: `bash lib/gate/gate-ledger.sh outcome <rid> grill start`. A precheck auto-skip (no interview) is never bracketed -- no work ran, no duration to measure.
+If Step 0 below fires (the interview runs), bracket the phase for timing before starting Step 1: `bash lib/gate/gate-ledger.sh outcome <rid> grill start`. A precheck auto-skip (no interview) is never bracketed -- no work ran, no duration to measure.
 
-### Step 0: Unknown-density precheck (SPEC-138)
+### Step 0: Unknown-density precheck
 
 Grill is the kit's own read of the highest-leverage pre-implementation move (Thariq, "A Field
 Guide to Fable: Finding Your Unknowns", 2026-07-03) and its own telemetry says it is the
@@ -39,7 +39,7 @@ auto-skip asks nothing, but is never silent to the ledger (Step 4 always records
 - **1 signal fired** (not enough density to warrant an interview) -> `reason=density-low`.
 - **the operator explicitly waves off an interview the signals would have fired** ->
   `reason=operator-wave` (their call, logged rather than silently dropped; this also absorbs the
-  pre-existing "conversation already resolved the banks" carve-out from SPEC-058).
+  pre-existing "conversation already resolved the banks" carve-out).
 
 ### Step 0b: Blindspot pass (only when S2 fires)
 
@@ -64,17 +64,17 @@ Read what already answers questions so you never ask one the repo answers:
    already made. A question whose answer sits in an ADR is a wasted turn; a claim that
    CONTRADICTS one is your first question.
 3. The active spec / BACKLOG row / goal draft, whatever context the item already carries.
-4. `bash bin/precedent find "<task>"` (SPEC-068): the repo's own prior art, both the written
-   record and the built inventory (SPEC-245).
+4. `bash bin/precedent find "<task>"`: the repo's own prior art, both the written
+   record and the built inventory.
 5. For an UNFAMILIAR code area (you cannot name the files involved), query the
    codebase-memory index first ("where is X defined / what calls Y") instead of blind
-   grep; fall back to grep when no index exists (SPEC-069). A question
+   grep; fall back to grep when no index exists. A question
    answered by a past spec/retro is a wasted turn; a precedent that CONTRADICTS the ask
    is your first question.
 
 ### Step 2: Interview, one question at a time
 
-**Order by blast radius (SPEC-138).** When more than one branch is open, ask in this order, most
+**Order by blast radius.** When more than one branch is open, ask in this order, most
 expensive to get wrong first:
 
 1. **Contradictions** against the repo/spec/ADR (Step 1's own trigger): a load-bearing error, so
@@ -152,10 +152,10 @@ step left unanswered):
 - What would CHANGE based on the answer (no consumer = no research)?
 - What does the claim-verification bar look like for this topic (live probe vs citation)?
 
-### review (SPEC-079)
+### review
 
 1. What exact artifact is under review (PR number, branch, diff range)? Pin the SHA.
-2. Single lens or multi-lens? (lib/ or hooks/ touched -> review-team per the SPEC-069 escalation rule.)
+2. Single lens or multi-lens? (lib/ or hooks/ touched -> review-team per the existing escalation rule.)
 3. What verdict gate applies , advisory report, or does a FIX-FIRST block something?
 4. Who acts on the findings, and in which run? (Acting on feedback is a separate spec-feature task.)
 
@@ -184,7 +184,7 @@ step left unanswered):
 - What is the riskiest assumption, and what is the cheapest probe of it?
 - Which lane did the classifier suggest, and does anything in the answers change that?
 
-### Step 2b: Self-answer mode (autonomous runs only, SPEC-217)
+### Step 2b: Self-answer mode (autonomous runs only)
 
 The default everywhere else in this file is human-in-the-loop, and it stays that way. Self-answer
 mode is the ONE exception, and it is paid for, not free.
@@ -218,7 +218,7 @@ that run's ledger file.
 Record the gate as Step 4 says, with the mode named in the free text so telemetry can separate
 these runs: `... record <rid> grill ran "self-answer: <N> questions, all ledgered"`.
 
-**How this reconciles with "the agent never answers its own questions" (SPEC-207 / ID-450):**
+**How this reconciles with "the agent never answers its own questions":**
 that rule holds unchanged for every interactive lane, and this mode does not weaken it. It pays
 for the exception instead. Nothing is answered SILENTLY: the operator opted the row in by hand,
 every answer is on the debt ledger with its reasoning, and a wrong call becomes a ledgered
@@ -243,11 +243,11 @@ The moment an answer resolves something, write it where it lives:
 Record exactly one of the two lines below, every run, so the ledger always shows what Step 0
 decided:
 
-- **The interview ran** (Step 0 fired): record it for telemetry (SPEC-063):
+- **The interview ran** (Step 0 fired): record it for telemetry:
   `bash lib/gate/gate-ledger.sh record <rid> grill ran "<N> questions, <M> contradictions, banks: <type>"`.
-  Close the timing bracket opened at the top of this Process section (SPEC-129):
+  Close the timing bracket opened at the top of this Process section:
   `bash lib/gate/gate-ledger.sh outcome <rid> grill end caught=<true if M > 0, else false>`.
-- **The precheck auto-skipped** (Step 0, SPEC-138): record the reason, with the `reason=` token
+- **The precheck auto-skipped** (Step 0): record the reason, with the `reason=` token
   as the FIRST word of the free text:
   `bash lib/gate/gate-ledger.sh record <rid> grill skipped "reason=<home-turf|density-low|operator-wave>: <one-line why>"`.
   `gate-ledger.sh` enforces this enum at write time: a grill skip with none of the three tokens,
@@ -271,10 +271,10 @@ pre-selected. This command delivers its value in interactive mode.
 Mechanics absorbed from [mattpocock/skills `grill-with-docs`](https://github.com/mattpocock/skills/blob/main/skills/engineering/grill-with-docs/SKILL.md):
 the one-question-at-a-time loop with recommended answers, the glossary/ADR write-as-you-go
 discipline, the 3-criteria ADR bar, and the contradiction-first posture. Adapted: question
-banks are shaped per the kit's 11 work types (SPEC-057), and the exit hands off to the kit's
+banks are shaped per the kit's 11 work types, and the exit hands off to the kit's
 phase-0 `Done =` definition (PHILOSOPHY §6 N3) instead of free-floating planning.
 
-Step 0/0b's unknown-density precheck, blindspot pass, and blast-radius ordering (SPEC-138)
+Step 0/0b's unknown-density precheck, blindspot pass, and blast-radius ordering
 absorb Thariq's "A Field Guide to Fable: Finding Your Unknowns" (Claude Code team, 2026-07-03):
 the blind-spot-pass framing, the architecture-changing-first sort key, and the
 prototype-not-question move for taste calls, conditioned on this repo's own 82%-skip telemetry

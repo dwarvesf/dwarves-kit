@@ -48,7 +48,7 @@ Validation: [schema + count checks run]
 Verify: [pipeline/test command run + result]
 ```
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

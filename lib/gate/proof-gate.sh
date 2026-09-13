@@ -23,7 +23,7 @@
 #   1. inert     -- the lane classifier calls it tiny or backfill (a typo in a migration
 #                   file is still a typo; cosmetic wins over subject matter)
 #   2. stateful  -- deploy / migration / data / persistent-state keywords
-#   3. registry   -- the classified type's default class (task-types.md, SPEC-071)
+#   3. registry   -- the classified type's default class (task-types.md)
 #   4. behavioral -- the fallback for types with no registry row
 #
 # Usage:
@@ -89,7 +89,7 @@ proof_requirement() {
   esac
 }
 
-# SPEC-044: compose the proof CLASS (rigor) with the task TYPE (artifact shape +
+# Compose the proof CLASS (rigor) with the task TYPE (artifact shape +
 # owning skill). The type comes from task-type-classify.sh; the artifact + skill come
 # from the registry docs/verification/task-types.md. Class still wins on rigor.
 TASK_TYPE_REGISTRY="$LIB_ROOT/../docs/verification/task-types.md"  # docs/ is at repo root (above lib/)
@@ -167,7 +167,7 @@ proof_skeleton() {
   echo "- <what this run does not cover>"
 }
 
-# ID-466: test-plan -> proof-of-done coverage (ADVISORY; always exit 0). When the active
+# Test-plan -> proof-of-done coverage (ADVISORY; always exit 0). When the active
 # spec carries a `## Test plan` matrix, the proof doc owes a `## Test plan coverage` map
 # (docs/verification/README.md "Test plan coverage map") mapping each matrix row to the run
 # that exercised it, or an explicit skip reason. This subcommand only REPORTS; the warn

@@ -22,7 +22,7 @@ Draft a new kit subagent. Match `agents/code-reviewer.md` / `agents/research-arc
 
 - Frontmatter (YAML, in this order): `name:` (kebab slug), `description:` (one line: what it does + who dispatches it + read-only?), `tools:` (a YAML list), `model:` one of `sonnet|haiku|opus`.
 - **Determine MINIMAL tools.** Start from nothing; add only what the role provably needs. Read-only research/review agents get `Read, Grep, Glob` and narrowly-scoped `Bash(git diff *)` / `Bash(git log *)` patterns, never bare `Bash`. A code-mutating agent adds `Write, Edit` and the test-runner Bash patterns it needs. Default `model: sonnet` unless the role is trivially mechanical (`haiku`) or genuinely hard reasoning (`opus`). Justify the tool list and model in one line in the body.
-- Body sections: a one-paragraph role statement, then the sections that role needs (e.g. `## Lenses`, `## Output format`, `## Rules`, and a `## Return contract` bounding the distilled return per SPEC-087). Do not pad with sections the role doesn't use.
+- Body sections: a one-paragraph role statement, then the sections that role needs (e.g. `## Lenses`, `## Output format`, `## Rules`, and a `## Return contract` bounding the distilled return). Do not pad with sections the role doesn't use.
 
 If you can pull the current Claude Code subagent/tool docs with WebFetch to confirm a tool name or frontmatter key, do so; otherwise match the in-repo examples (they are authoritative).
 
@@ -76,20 +76,20 @@ prompt, not stored.
 
 ## Data-driven routing (Mode B `Model:` / `Effort:`)
 
-When drafting a sub-goal file (Mode B), do NOT guess the `Model:` / `Effort:` fields. If a v2 SG-09
+When drafting a sub-goal file (Mode B), do NOT guess the `Model:` / `Effort:` fields. If a v2
 ablation ledger is available, ask the router for the measured-cheapest-at-parity model:
 
 ```
 bash lib/classify/route-suggest.sh <ledger.tsv> <task-or-fixture-name>
 # SUGGEST  model=<tier>  ... -> write that tier into the bare `Model:` line
-# ABSTAIN  reason=thin-data ... -> write `Model: sonnet` (the cheap-first default, SPEC-107); OMIT only to deliberately inherit
+# ABSTAIN  reason=thin-data ... -> write `Model: sonnet` (the cheap-first default); OMIT only to deliberately inherit
 ```
 
 It is a SUGGESTER, not an auto-router: surface the suggestion (or the abstention) in the draft's
-`## Notes` so the human sees the basis. Effort is not in SG-09's measured schema, so the router
-abstains on effort; leave `Effort:` to inherit unless the human sets it. With no ledger, write
-`Model: sonnet` (the cheap-first default) and OMIT `Effort:` (inherit), saying the basis is the
-SPEC-107 default, not a measurement. The stance (SPEC-107, reversing the earlier "human's call"):
+`## Notes` so the human sees the basis. Effort is not in the ablation ledger's measured schema, so
+the router abstains on effort; leave `Effort:` to inherit unless the human sets it. With no ledger,
+write `Model: sonnet` (the cheap-first default) and OMIT `Effort:` (inherit), saying the basis is
+the cheap-first default, not a measurement. The stance (reversing the earlier "human's call"):
 most sub-goals do not need opus (Opus dominated measured spend), so `sonnet` is the WRITTEN default
 on abstain, `opus` reserved for genuinely hard reasoning, and OMIT available as a deliberate
 "inherit the parent tier" choice a human can still pick.

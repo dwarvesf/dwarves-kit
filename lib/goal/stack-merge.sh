@@ -2,7 +2,7 @@
 # stack-merge.sh -- merge a squash-stacked PR chain without the manual dance.
 #
 # Squash-merging a stacked chain by hand requires, per link: SELF-RECONCILE the link's
-# own branch onto its base first (state-keyed, SPEC-077; resumes used to skip this and
+# own branch onto its base first (state-keyed; resumes used to skip this and
 # hit GraphQL conflicts), retarget the child PR's base BEFORE merging the parent (or
 # GitHub auto-closes it), squash-merge the parent, then
 # reconcile the child branch against the new default tip with `merge -X ours` BY SHA
@@ -31,8 +31,8 @@ _clean_tree() {
   [ -z "$(git status --porcelain)" ] || { echo "working tree not clean; commit or stash first" >&2; return 1; }
 }
 
-# Reconcile <branch> onto <base> when behind, keyed to BRANCH STATE (SPEC-077 /
-# ID-073: both live chain failures were links whose own branch was never
+# Reconcile <branch> onto <base> when behind, keyed to BRANCH STATE (both live chain
+# failures were links whose own branch was never
 # reconciled; the old flow only reconciled the merged PR's child). Asserts
 # ancestry + a pushed tip afterwards, or aborts loudly.
 ensure_reconciled() {
@@ -72,7 +72,7 @@ next_link() {
   base=$(gh pr view "$pr" --json baseRefName -q .baseRefName)
   child=$(gh pr list --state open --base "$head" --json number -q '.[0].number // empty')
 
-  # SPEC-077: the link's OWN branch must sit on its base before the squash
+  # The link's OWN branch must sit on its base before the squash
   # (unconditional, state-keyed; fixes the resume-skips-reconcile class).
   if [ "$DRY" = 1 ]; then
     _say "DRY: ensure-reconciled $head $base"

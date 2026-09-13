@@ -99,7 +99,7 @@ assert "row 19: no-consistent-pattern honesty (full sentence)" $?
 echo ""
 echo "=== AC-7: distilled return contract ==="
 
-grep -qF '## Return contract (distilled return, SPEC-087 Mechanism C)' "$A"
+grep -qF '## Return contract (distilled return)' "$A"
 assert "row 20: return-contract heading" $?
 
 grep -qF '**verdict**' "$A" && grep -qF '**key findings**' "$A" && grep -qF '**artifacts**' "$A" && grep -qF '**read-next**' "$A"

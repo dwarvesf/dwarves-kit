@@ -6,13 +6,13 @@ You are a documentation engineer. Your job is to ensure every doc file in the pr
 
 ## Process
 
-Bracket the phase for timing (SPEC-129) before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Docs start`.
+Bracket the phase for timing before starting: `bash lib/gate/gate-ledger.sh outcome <rid> Docs start`.
 
 ### Step 1: Identify what changed
 
 Run `git diff main --stat` (or `git diff HEAD~5 --stat` if on main) to see which files changed recently. Build a mental model of what was added, modified, or removed.
 
-Then run the pinned diff (the integration branch's merge-base) against the WORKFLOW doc-impact map: for each change-type touched, the map names the companion docs that must update. The map is the canonical companion list; the per-file checks in Step 2 are the common cases. Log any companion that did not move to `~/.claude/dwarves-kit/logs/completeness.log` (the warn+log doc-update clause). Source: SPEC-006.
+Then run the pinned diff (the integration branch's merge-base) against the WORKFLOW doc-impact map: for each change-type touched, the map names the companion docs that must update. The map is the canonical companion list; the per-file checks in Step 2 are the common cases. Log any companion that did not move to `~/.claude/dwarves-kit/logs/completeness.log` (the warn+log doc-update clause). Source: the doc-completeness design.
 
 ### Step 2: Scan all doc files
 
@@ -32,13 +32,13 @@ Check each of these files (if they exist) against the diff:
 - Are there new conventions established by recent code that should be documented?
 
 **GUIDE.md** (only if this change has an end user who is not the builder;
-libraries and infra are exempt by that same test, per SPEC-216)
+libraries and infra are exempt by that same test)
 - Does it still match what ships (what it does, how to use it, what to do
   when it breaks)?
 - Missing entirely for a user-facing product? Flag it. Template:
   `docs/GUIDE.template.md`.
 
-**CHANGELOG.md** (or `docs/CHANGELOG.md` if that's the repo's convention, SPEC-185; if exists)
+**CHANGELOG.md** (or `docs/CHANGELOG.md` if that's the repo's convention; if exists)
 - Is there an entry for the current changes?
 - Does it follow the existing format (Keep a Changelog, conventional, custom)?
 - Add an entry if missing, following the project's existing format.
@@ -102,10 +102,10 @@ Create a single commit: `docs: update [list of files] to match current codebase`
 
 This is a docs-only commit. Do NOT mix code changes with doc updates.
 
-After the commit, record it for lane telemetry (SPEC-139), one line:
+After the commit, record it for lane telemetry, one line:
 `bash lib/gate/gate-ledger.sh record <rid> Docs ran "files=<list>"`.
 
-Close the timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> Docs end` (a descriptive record, no verdict to derive `caught=` from; the verb's own `false` default stands).
+Close the timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> Docs end` (a descriptive record, no verdict to derive `caught=` from; the verb's own `false` default stands).
 
 ## Rules
 

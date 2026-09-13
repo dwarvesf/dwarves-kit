@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""mega-review.py -- `mega review --html <slug>` (SPEC-197, harness-loop sub-goal 07): renders
+"""mega-review.py -- `mega review --html <slug>` (harness-loop sub-goal 07): renders
 ONE self-contained static HTML sign-off page per mega-goal, composed from THREE read-only
-sources, never a fourth persisted store (SPEC-182 "stats persists nothing" discipline extended
+sources, never a fourth persisted store (the "stats persists nothing" discipline extended
 to this surface -- a projection, always safe to re-run, never cached):
 
   1. ROADMAP.md truth       -- this mega's sub-goal lines + each sub-goal's own goal file
@@ -13,7 +13,7 @@ to this surface -- a projection, always safe to re-run, never cached):
                                 drift-class enum this script's regex depends on).
   2. the gate/run ledger     -- KIT_LOG_DIR/runs/<rid>.log, keyed by rid = the sub-goal's own
                                 branch with its leading `type/` segment stripped (gate-ledger.sh
-                                `rid()`'s transform, SPEC-070: `${branch#*/}`, then the same
+                                `rid()`'s transform: `${branch#*/}`, then the same
                                 runid() charset normalization ledger_file() applies). GATE/
                                 OUTCOME line parsing is IMPORTED from `lib/gate/proof-table-gen.py`
                                 (`parse_ledger`) rather than re-implemented -- one parser, two
@@ -24,14 +24,14 @@ to this surface -- a projection, always safe to re-run, never cached):
   3. `gh pr view`             -- PR state / merge state / CI rollup, read fresh every render
                                 (never cached, matching the mega's projection discipline).
 
-Best-effort HARNESS-WIDE footer (mega-independent; ADR-0034-adjacent "Learn leg" signals the
+Best-effort HARNESS-WIDE footer (mega-independent; the "Learn leg" signals the
 goal file requires surfaced HERE because the dashboard is "the one surface with a guaranteed
 reader"): staged-candidate count + oldest age (`_meta/backlog-staging.md`, the existing
 BACKLOG_STAGE_STAGING seam), learned-ledger queued count (the existing STATS_LEARNED_MD seam,
 no kit-side default -- ops-toolkit-specific per lib/stats/src/stats/config.py), unpaid-debt
 count (`bin/reflect debt list`, its own default 7-day window, labeled honestly).
 Every one of the three reads via its OWN pre-existing consumer-config seam; an absent/unset
-source renders "-" (honest-dash), NEVER a fabricated zero -- SPEC-197 Design.
+source renders "-" (honest-dash), NEVER a fabricated zero.
 
 Usage: mega-review.py <slug> --megagoals-root DIR --code-root DIR [--base BRANCH] [--out PATH]
 Env: KIT_LOG_DIR  the resolved durable ledger root (set by the lib/mega/mega.sh `review` launcher,

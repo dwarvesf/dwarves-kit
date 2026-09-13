@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# queue.sh -- the overnight queue LAUNCHER (runner-fastpath sub-goal 03K, SPEC-148).
+# queue.sh -- the overnight queue LAUNCHER (runner-fastpath sub-goal 03K).
 #
 # For each queued+tokened backlog mega, it opens a REAL interactive Claude Code `/goal` session
 # in a fresh terminal-mux window and DRIVES it via scripting-control (types `/goal ` + the pointer
@@ -32,7 +32,7 @@
 #                     `sanitize_cell`, prepend the XPIA preamble, and gate the row if the run
 #                     wrote a protected path. Implied by `--from-boards`; the watcher passes it
 #                     explicitly for its own generated plan. A hand-authored tsv without the flag
-#                     is unchanged, because the OPERATOR authored it (the SPEC-148 trust boundary).
+#                     is unchanged, because the OPERATOR authored it (the trust boundary).
 #
 # The mux + the interactive claude are CONSUMER config (nothing personal is hardcoded):
 #   TERMINAL_MUX=tmux       which mux to drive (default AND only supported value; see below)
@@ -62,7 +62,7 @@
 #   QUEUE_NOPROGRESS_TRIP    consecutive no-progress runs that trip the breaker (default 3)
 #   QUEUE_SAMEERROR_TRIP     consecutive `error` runs that trip the breaker     (default 5)
 #
-# CHEAP GUARDRAILS (SPEC-224, board row ID-461). Draft-PR-by-default on this unattended path, plus a
+# CHEAP GUARDRAILS (board row). Draft-PR-by-default on this unattended path, plus a
 # self-reported per-row spend ceiling composed OR-style with the wall-clock timeout above:
 #   QUEUE_PR_READY               1 = open a normal PR (--ready); 0 = draft default (default 0)
 #   QUEUE_MAX_TOOL_CALLS         per-row ceiling on the run's self-reported TOOL_CALLS (0 = off)
@@ -73,12 +73,12 @@
 # mux-uncontrollable interface; it is NOT built into this bash launcher (manual escape hatch).
 #
 # cmux is NOT supported (review finding, 2026-07-05): this repo's OWN prior CLI verification
-# (docs/specs/SPEC-119 DEC-001, SPEC-121 DEC-004) found cmux has no `new-window -- cmd args...`
+# (docs/specs) found cmux has no `new-window -- cmd args...`
 # argv-safe launch primitive (`new-surface` takes no command; the only verified command-launch
 # path is the STRING-context `new-workspace --command '<string>'`, a different sanitization
 # problem). Rather than ship an unverified, likely-wrong cmux code path, TERMINAL_MUX=tmux is the
 # only supported value for now; a cmux driver is a documented follow-up once that primitive is
-# CLI-verified the way SPEC-121 verified its own.
+# CLI-verified the way the multiplexer path already verified its own.
 set -uo pipefail
 
 TERMINAL_MUX="${TERMINAL_MUX:-tmux}"
@@ -101,10 +101,10 @@ QUEUE_SUBMIT_SETTLE_SECS="${QUEUE_SUBMIT_SETTLE_SECS:-2}"
 # entry, nothing but an idle tmux pane an operator had to notice by hand.
 QUEUE_GOAL_CHAR_LIMIT="${QUEUE_GOAL_CHAR_LIMIT:-4000}"
 QUEUE_BOARD_CMD="${QUEUE_BOARD_CMD:-board}"
-# SPEC-200 I3 / SPEC-097: the journal lives under the ONE durable root, resolved by the ONE
+# The journal lives under the ONE durable root, resolved by the ONE
 # resolver (KIT_LEDGER_DIR -> DWARVES_KIT_LOG_DIR -> kit.toml [ledger].location -> XDG state).
 # Before this, it defaulted straight into ~/.claude/dwarves-kit/logs, the exact path a plugin
-# reinstall wipes and that SPEC-097 exists to escape: the queue's history was the one telemetry
+# reinstall wipes and that this resolver exists to escape: the queue's history was the one telemetry
 # corpus not protected by it.
 # The resolver soft-`return 1`s when lib/config/kit-config.sh is missing (a degraded or partial
 # checkout), leaving kit_resolve_log_dir UNDEFINED. queue.sh has no `set -e`, so an unguarded
@@ -144,7 +144,7 @@ QUEUE_SANITIZE_PROMPT="${QUEUE_SANITIZE_PROMPT:-0}"
 # Re-derived for THIS kit's clocks, not copied from the donor: the beat interval here is
 # QUEUE_POLL_SECS (15s, vs the donor's 30s) and the per-row ceiling is QUEUE_TIMEOUT_SECS (2h, vs
 # their hours-long stage budget). So the short threshold is tighter in beat-multiples and the long
-# one is SHORTER in absolute terms. Full derivation: docs/specs/SPEC-221-runaway-guards.md.
+# one is SHORTER in absolute terms.
 QUEUE_BEAT_STALE_SECS="${QUEUE_BEAT_STALE_SECS:-600}"
 QUEUE_BEAT_DEAD_SECS="${QUEUE_BEAT_DEAD_SECS:-3600}"
 QUEUE_MAX_STALLS="${QUEUE_MAX_STALLS:-3}"
@@ -159,7 +159,7 @@ QUEUE_RETRY_JITTER_MIN="${QUEUE_RETRY_JITTER_MIN:-5}"
 QUEUE_RETRY_JITTER_SPAN="${QUEUE_RETRY_JITTER_SPAN:-11}"
 
 # ---- cheap guardrails ---------------------------------------------------------------
-# Two wins that ride channels SPEC-221 already built. Both default OFF-or-safe, so the shipped
+# Two wins that ride channels the runaway-guard system already built. Both default OFF-or-safe, so the shipped
 # overnight behavior is byte-identical until an operator opts in.
 #   QUEUE_PR_READY             0 = draft-PR-by-default on this unattended path (the queue is always
 #                              autonomous); 1 = the --ready escape hatch, open a normal PR (OpenHands
@@ -276,7 +276,7 @@ _exit_signal() {  # slug
   esac
 }
 
-# SPEC-224: the largest numeric value of KEY across ALL its lines in <slug>.status (0 if none). A
+# The largest numeric value of KEY across ALL its lines in <slug>.status (0 if none). A
 # self-reported monotonic counter like TOOL_CALLS may be rewritten or appended by the run; MAX is
 # its latest value either way, so this never reads a stale earlier number. Distinct from
 # `_status_get` (first-wins), whose first-occurrence rule is load-bearing for EXIT_SIGNAL only.
@@ -428,7 +428,7 @@ _repo_skip_reason() {  # repo
 # an UNINTENDED session/window (target confusion -> misdirected keystrokes or kill-window; review
 # finding, LOW). Reject before any mux verb runs; a slug is meant to be a simple identifier.
 #
-# `/` joined the reject set with SPEC-221: the slug now also names a FILE under the sidecar
+# `/` joined the reject set once the slug also started naming a FILE under the sidecar
 # directory (`<log-dir>/queue-runs/<slug>.beat`), so a separator would be a traversal out of it.
 # Sanitizing instead of refusing was rejected: two different slugs would collide on one sidecar.
 _slug_ok() {  # slug
@@ -547,12 +547,12 @@ _scan_marker() {  # transcript-on-stdin
 # spaces so the TUI receives exactly ONE submission (a multi-line paste would submit early). v0
 # behavior: prompts are treated as one logical paragraph. Metachars in the content stay literal.
 #
-# SPEC-221 appends ONE clause naming the run's status file. That is how the run learns where to
+# The runaway-guard system appends ONE clause naming the run's status file. That is how the run learns where to
 # write its explicit EXIT_SIGNAL: the typed prompt is the same channel the RUNNER_DONE contract
 # already travels on, so it needs no `tmux new-window -e` (tmux 3.0 floor) and no environment
 # inheritance assumption. A run that ignores the clause behaves exactly as before.
 #
-# SPEC-223: on the board-sourced path the pointer body is UNTRUSTED. It is run through
+# On the board-sourced path the pointer body is UNTRUSTED. It is run through
 # `sanitize_cell`, framed by the XPIA preamble, and fenced by explicit begin/end markers so the
 # model can see where the data starts and stops. Returns 1 (no output) when the sanitizer cannot
 # run, which the caller turns into a refusal to launch rather than an unsanitized prompt.
@@ -568,19 +568,19 @@ _goal_line() {  # pointer-path slug
   status=$(_run_file "$slug" status 2>/dev/null) || status=""
   if [ -n "$status" ]; then
     line="$line When you finish, write $status containing the line \"EXIT_SIGNAL: true\" (or \"EXIT_SIGNAL: false\" if you are not done), plus \"REASON: <why>\" if a human must review, \"FILES_CHANGED: <n>\", and \"QUESTION: true\" if you stopped to ask something."
-    # SPEC-224: when a spend ceiling is active, ask the run to self-report a cumulative tool-call
+    # When a spend ceiling is active, ask the run to self-report a cumulative tool-call
     # count into the SAME status file, so the conductor can read it on the poll it already does.
     if [ "$QUEUE_MAX_TOOL_CALLS" -gt 0 ] || [ "$QUEUE_MAX_TOTAL_TOOL_CALLS" -gt 0 ]; then
       line="$line Also update $status every few tool calls with a line \"TOOL_CALLS: <your cumulative tool-call count>\"."
     fi
   fi
-  # ID-472: on a runner host with no GitHub credentials, the run commits + pushes its branch
+  # On a runner host with no GitHub credentials, the run commits + pushes its branch
   # (SSH remote, no `gh` needed) and stops -- opening the PR moves to the authed CLIENT session
   # (`gh pr create --head <branch>`). This takes precedence over the draft/ready choice below,
   # since no PR means "draft vs ready" is moot.
   if [ "$QUEUE_PUSH_ONLY" = 1 ]; then
     line="$line Commit your work and push the branch (git push -u origin <branch>), then STOP. Do NOT run \`gh pr create\`; opening the pull request is a separate step the operator's own authed session will do."
-  # SPEC-224: draft-PR-by-default on this unattended path (OpenHands posture). This builder is only
+  # Draft-PR-by-default on this unattended path (OpenHands posture). This builder is only
   # ever called by the autonomous queue, so appending here IS "autonomous path only"; interactive
   # /kit:ship never reaches it. QUEUE_PR_READY=1 is the --ready escape hatch (their draft=False).
   elif [ "$QUEUE_PR_READY" != 1 ]; then
@@ -627,7 +627,7 @@ _launch_once() {  # slug repo pointer
       return 2
     fi
 
-    # SPEC-221 exit gate. Read the run's OWN explicit signal BEFORE the pane, every poll. The
+    # Exit gate. Read the run's OWN explicit signal BEFORE the pane, every poll. The
     # ordering is the anti-false-completion rule: an explicit `false` outranks whatever prose the
     # pane happens to render, and an unparsable file is never a completion.
     sig=$(_exit_signal "$slug")
@@ -656,7 +656,7 @@ _launch_once() {  # slug repo pointer
         fi ;;
     esac
 
-    # SPEC-224 per-row spend ceiling, composed OR-style with the wall-clock below (first-to-trip
+    # Per-row spend ceiling, composed OR-style with the wall-clock below (first-to-trip
     # wins). Checked AFTER the exit gate so a finished run is never spend-capped, and BEFORE the
     # timeout so the more specific reason wins when both cross on one poll. The run self-reports its
     # count; the check reads only completed turns between polls, so "stop this row after the observed
@@ -721,7 +721,7 @@ _emit_rows() {  # src from_boards
 # .claude/goals/** before ever emitting a row -- but this launcher, driving an unattended
 # `--dangerously-skip-permissions` session, must not simply trust an upstream tool has no bugs. A
 # hand-authored tsv is EXEMPT (the operator authored it; that authorship IS the trust boundary for
-# that path, per SPEC-148). Checked against the pointer path RELATIVE TO ITS REPO (a pointer
+# that path). Checked against the pointer path RELATIVE TO ITS REPO (a pointer
 # outside the repo, or one that resolves via `..` OR a SYMLINK outside it, fails closed). Uses
 # `realpath` (present on both macOS/BSD and Linux/coreutils; verified on this host) so a symlink
 # planted INSIDE the allow-listed directory but pointing OUTSIDE the repo is caught too -- a
@@ -744,7 +744,7 @@ _pointer_allowlist_reason() {  # repo pointer
   # $QUEUE_ALLOWED_POINTER_GLOB` globs the patterns against the CWD first, so running from a
   # directory that happens to contain `_meta/megagoals/` replaced the literal pattern with real
   # subdirectory paths and made every legitimate pointer fail the check (found while wiring the
-  # SPEC-217 watcher, which calls this function from the repo root). The `case` match below is the
+  # watcher, which calls this function from the repo root). The `case` match below is the
   # glob that was ever intended.
   local globs=()
   IFS=' ' read -ra globs <<< "$QUEUE_ALLOWED_POINTER_GLOB"
@@ -913,9 +913,9 @@ cmd_run() {
       --from-boards) from_boards=1; QUEUE_SANITIZE_PROMPT=1; shift ;;
       --max-megas)  max="${2:-0}"; shift 2 ;;
       --journal)    QUEUE_JOURNAL="${2:-$QUEUE_JOURNAL}"; shift 2 ;;
-      # SPEC-224: open a NORMAL PR instead of the unattended draft default (OpenHands draft=False).
+      # Open a NORMAL PR instead of the unattended draft default (OpenHands draft=False).
       --ready)      QUEUE_PR_READY=1; shift ;;
-      # ID-472: no GitHub creds on this runner host -- push the branch, open no PR at all.
+      # No GitHub creds on this runner host -- push the branch, open no PR at all.
       --push-only)  QUEUE_PUSH_ONLY=1; shift ;;
       --*)          _warn "queue: unknown flag '$1'"; return 64 ;;
       *)            src="$1"; shift ;;
@@ -970,13 +970,13 @@ cmd_run() {
       stalled:*) reason="${verdict#stalled:}"; verdict=stalled ;;
       *)         reason="" ;;
     esac
-    # SPEC-221: counters + the trip decision. May rewrite a NON-terminal verdict to `error`.
+    # Counters + the trip decision. May rewrite a NON-terminal verdict to `error`.
     # _breaker_apply always prints exactly `verdict<TAB>reason`; an empty reason keeps the one
     # the run itself produced (a `gated:` pane reason, or `malformed_exit_signal`).
     IFS=$'\t' read -r brk_verdict brk_reason <<< "$(_breaker_apply "$slug" "$repo" "$head_before" "$verdict")"
     verdict="$brk_verdict"
     [ -n "$brk_reason" ] && reason="$brk_reason"
-    # SPEC-223: a protected path written by an untrusted-path run outranks every other verdict,
+    # A protected path written by an untrusted-path run outranks every other verdict,
     # including `done`. `gated` is terminal, so the row stops here and a human looks at it.
     if [ "$QUEUE_SANITIZE_PROMPT" = 1 ]; then
       local prot; prot=$(_protected_touched "$repo" "$head_before")
@@ -987,7 +987,7 @@ cmd_run() {
     _journal_append "$slug" "$verdict" "$reason"
     _say "[queue] $slug: $verdict${reason:+ ($reason)}."
 
-    # SPEC-224 queue-wide spend ceiling. Accumulate the run's self-reported tool-calls; once the
+    # Queue-wide spend ceiling. Accumulate the run's self-reported tool-calls; once the
     # BATCH total crosses the ceiling, the current row has already finished + shipped (SWE-agent:
     # the instance autosubmits before the batch halts), so only the REMAINING rows are skipped.
     if [ "$QUEUE_MAX_TOTAL_TOOL_CALLS" -gt 0 ]; then

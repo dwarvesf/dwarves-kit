@@ -218,6 +218,17 @@ registry = ""                   # [consumer] extra scan locations for `find --su
                                  #        path when both are empty (inventory.py's own fallback):
                                  #        ${XDG_CONFIG_HOME:-$HOME/.config}/dwarves-kit/inventory.txt
 
+[intake]                        # `intake gate` decision stores (lib/intake/intake.sh)
+url_ledger = ""                 # [consumer] command that answers "have we consumed this URL",
+                                 #        called as `<cmd> check <url>`, exit 0 = seen. Empty, or
+                                 #        not on PATH, skips the url source with a stderr line.
+verdicts = ""                   # [consumer] absolute or ~-prefixed path to the operator's
+                                 #        verdict ledger, one decided evaluation per line.
+boards = ""                     # [consumer] absolute or ~-prefixed path to the boards registry
+                                 #        (`<name> <path-to-BACKLOG.md>` rows, `#` comments).
+notes = ""                      # [consumer] command that answers "have I written about this",
+                                 #        called as `<cmd> query <subject> --k N --floor F --json`.
+
 [wrap]                          # `/kit:wrap` landing-step config (lib/wrap/wrap.sh log)
 activity_log = ""               # [consumer] absolute or ~-prefixed path, under $HOME, to the
                                  #        operator's own activity log file. Read from the KIT-ROOT
@@ -274,6 +285,18 @@ build_candidates = true         # [impl] step 7b. true = a precedent hit wires t
                                  #        in the home repo. false = every candidate stages a row in
                                  #        `_meta/backlog-staging.md` instead. A candidate whose scope
                                  #        is a judgment stages at either setting.
+build_lanes = "tiny"            # [impl] step 7b sizing. Space-separated lanes step 7b builds INLINE;
+                                 #        every other lane stages its row and drafts its goal. The
+                                 #        default is today's behavior exactly. `full` is the one lane
+                                 #        listing cannot buy an inline build for, because a spec and
+                                 #        a review do not fit in the minutes an operator gave you to
+                                 #        close the session; a full candidate files a QUEUED ROW on
+                                 #        the home repo's `_meta/BACKLOG.md` via `bin/board capture`
+                                 #        and wrap reports `(lane=full, filed: <repo> <ID-NNN>,
+                                 #        goal drafted: <path>)`. Adding `normal bug backfill` suits
+                                 #        an operator whose staged rows pile up with no consumer.
+                                 #        Ignored entirely when `build_candidates` is false, which
+                                 #        stages everything.
 
 [knowledge]                     # context tree root for repo knowledge notes (context-kit fills this)
 root = ""                       # [consumer] absolute or ~-prefixed path to the context tree

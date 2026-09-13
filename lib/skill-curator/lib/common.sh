@@ -18,7 +18,7 @@ SKILL_CURATOR_ROOT="$(cd "$SKILL_CURATOR_LIB/.." && pwd)"
 
 _expand() { case "$1" in "~"/*) printf '%s/%s' "$HOME" "${1#\~/}";; *) printf '%s' "$1";; esac; }
 
-# SPEC-200 I2/I5: the kit speaks one language. These knobs were `CC_SI_*` (a host-agent
+# The kit speaks one language. These knobs were `CC_SI_*` (a host-agent
 # prefix the naming invariant bans); the canonical family is now `SKILL_CURATOR_*`, matching
 # STATS_* / QUEUE_* / SESSION_*. An operator's existing CC_SI_* export still works for one
 # release and says so once, on stderr. Canonical always wins.

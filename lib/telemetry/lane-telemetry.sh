@@ -2,7 +2,7 @@
 # lane-telemetry.sh -- the read side of lane effectiveness.
 #
 # The kit records run facts in append-only ledgers (lib/gate/gate-ledger.sh -> logs/runs/<rid>.log,
-# lane downgrades -> logs/completeness.log) but until SPEC-061 nothing AGGREGATED them, so
+# lane downgrades -> logs/completeness.log) but historically nothing AGGREGATED them, so
 # lane misfires died in chat instead of becoming classifier fixes + pins. This is the
 # aggregator: pure bash/awk over the existing pipe-delimited logs, no new store, no daemon.
 # Advisory: it reports, /kit:retro disposes (Detect, don't dictate).
@@ -17,10 +17,10 @@
 #
 # Line formats consumed (produced by gate-ledger.sh):
 #   TS | START | lane=<chosen> classified=<suggested> type=<t> [ctype=<suggested-type>] repo=<r>
-#   TS | ACTION | ... escaped-from=<spec-slug> ...   (SPEC-062: a bug run indicting a shipped spec)
+#   TS | ACTION | ... escaped-from=<spec-slug> ...   (: a bug run indicting a shipped spec)
 #   TS | GATE | <phase> | ran|skipped|override | <reason>
 #   TS | OUTCOME | <phase> | end | at=<epoch> caught=<bool> [policy=<close|escalate|continue>]
-#                                    (ID-398: `report`'s failure-policy breakdown, when present)
+#                                    (: `report`'s failure-policy breakdown, when present)
 # A run with no START line surfaces as lane "?" (an untracked run is itself a signal).
 #
 # DWARVES_KIT_LOG_DIR overrides the log root (tests point it at a fixture copy).
@@ -59,7 +59,7 @@ _boardless() {
     rid="$(basename "$f" .log)"
     grep -qF -- "repo=$myrepo" "$f" 2>/dev/null || continue
     # On-board if the board names the run by rid (the `[run <rid>]` convention), OR by any
-    # ID-NNN / PR #N token the run's own ledger carries (SPEC-073 metric 9a: real board rows
+    # ID-NNN / PR #N token the run's own ledger carries (metric 9a: real board rows
     # key on ID/PR, not the raw rid, so a raw-rid-only match false-flagged tracked runs).
     grep -qF -- "$rid" "$board" 2>/dev/null && continue
     matched=""
@@ -76,8 +76,8 @@ _boardless() {
 # asks gate-ledger check. INTENTIONAL SEAM (review A4): this is lane-telemetry's ONE runtime
 # call into gate-ledger, delegated to avoid duplicating the lane->phase map (WORKFLOW matrix
 # parsing). It uses `check` (the same required-gate contract hooks/ship-gate.sh enforces), so
-# run-lite phases -- e.g. `ui-design` on a non-UI full-lane run -- never trip it (SPEC-073
-# metric 9b); a test pin asserts the detector calls `check` so a rename breaks the build.
+# run-lite phases -- e.g. `ui-design` on a non-UI full-lane run -- never trip it (metric 9b);
+# a test pin asserts the detector calls `check` so a rename breaks the build.
 _shipped_incomplete() {
   local f rid lane
   for f in "$RUNS_DIR"/*.log; do
@@ -131,9 +131,9 @@ _rows() {
 }
 
 # _review_agg: review-economics counters over runs that recorded at least one review round
-# (ID-392, per docs/briefs/DECISION-BRIEF-review-economics.md). Read-side only, over the
-# ledger lines SPEC-061 (`| GATE | review | ran |`) and SPEC-129 (`| OUTCOME | review | end |
-# caught=.. dur_s=..`) already write -- no new write verb, no new store. One TSV row per
+# (per docs/briefs/DECISION-BRIEF-review-economics.md). Read-side only, over the
+# ledger's own GATE (`| GATE | review | ran |`) and OUTCOME (`| OUTCOME | review | end |
+# caught=.. dur_s=..`) lines already written -- no new write verb, no new store. One TSV row per
 # reviewed run: <rid>\t<rounds>\t<last-caught>\t<total-review-dur_s>\t<shipped 0|1>.
 # `rounds` = count of review GATE ran lines (a rework round-trip is a review that ran again
 # after a prior one); `last-caught` = the LAST OUTCOME|review|end caught= value (false = the
@@ -160,7 +160,7 @@ _review_agg() {
   done
 }
 
-# "<spec>\t<bug-rid>" per escaped-from ACTION marker (SPEC-062: test-design quality feed)
+# "<spec>\t<bug-rid>" per escaped-from ACTION marker (: test-design quality feed)
 _escapes() {
   local f rid
   for f in "$RUNS_DIR"/*.log; do
@@ -207,7 +207,7 @@ _token_agg() {
       printf "__ALL__\t%d\t%d\t%d\t%d\n", total, withtok, unknown, rework }'
 }
 
-# _policy_agg: failure-policy breakdown (ID-398, docs/patterns/failure-policy.md) over every
+# _policy_agg: failure-policy breakdown (docs/patterns/failure-policy.md) over every
 # `| OUTCOME | <phase> | end | ... policy=<close|escalate|continue>` line in every run ledger.
 # Runs/lines with no policy= are simply not counted (graceful-empty, no fake zeros): a corpus
 # with zero policy-carrying lines prints nothing and report() omits the section entirely.
@@ -256,7 +256,7 @@ report() {
 
   # Token efficiency: only over runs carrying a TOKENS line; a no-capture run is an
   # honest usage=? and is EXCLUDED from medians (never a fake zero). No thresholds until a
-  # ~5-run baseline forms (the SPEC-073 pattern).
+  # ~5-run baseline forms (the pattern).
   local tagg; tagg="$(_token_agg)"
   echo ""
   if [ -n "$tagg" ]; then
@@ -273,7 +273,7 @@ report() {
     printf '    (no thresholds pinned; baseline forms after ~5 captured runs)\n'
   fi
 
-  # Failure-policy breakdown (ID-398, docs/patterns/failure-policy.md): only over OUTCOME
+  # Failure-policy breakdown (docs/patterns/failure-policy.md): only over OUTCOME
   # end lines that carried a policy= field; silent when none did (graceful-empty).
   local pagg; pagg="$(_policy_agg)"
   if [ -n "$pagg" ]; then
@@ -282,11 +282,11 @@ report() {
     printf '%s\n' "$pagg" | awk -F'\t' '{ printf "    %-10s %5d\n", $1, $2 }'
   fi
 
-  # Review economics (ID-392, DECISION-BRIEF-review-economics.md): first-pass acceptance,
+  # Review economics (DECISION-BRIEF-review-economics.md): first-pass acceptance,
   # rework round-trips, reviewer minutes, escape rate. Same read-side-only shape as the token
   # section above -- over the review GATE/OUTCOME lines already written, no new store. Time-
   # to-merge is not duplicated here: the per-run first..last window above already carries it
-  # (BSD awk has no mktime, the same portability limit SPEC-061 named for duration math).
+  # (BSD awk has no mktime, the same portability limit named for duration math).
   local ragg; ragg="$(_review_agg)"
   echo ""
   if [ -n "$ragg" ]; then
@@ -406,7 +406,7 @@ trace() {
 # Reuses _rows() (no second parser); degrades gracefully to an honest "no runs recorded"
 # on an empty/fresh install rather than crashing or printing fake zeros.
 render() {
-  # SPEC-110: a leading --mermaid/mermaid selects the mermaid output MODE, consumed BEFORE the
+  # A leading --mermaid/mermaid selects the mermaid output MODE, consumed BEFORE the
   # substring-filter positional so `render [filter]` (ASCII) stays byte-compatible.
   local mode=ascii
   case "${1:-}" in --mermaid|mermaid) mode=mermaid; shift ;; esac
@@ -426,7 +426,7 @@ render() {
     return 0
   fi
 
-  # SPEC-110 mermaid mode: a GitHub-native task-type -> lane graph, each lane node annotated with
+  # Mermaid mode: a GitHub-native task-type -> lane graph, each lane node annotated with
   # its median tokens-to-done (usage=? when no run in that lane was captured). Per lane/per run,
   # NOT per-phase (usage is per-session). Additive: the ASCII mode below is untouched.
   if [ "$mode" = mermaid ]; then

@@ -1,25 +1,25 @@
 #!/usr/bin/env bash
-# weekend-batch.sh -- the debt-paydown reader/closer (ADR-0031 §3, SPEC-126, understanding-gate SG-05).
+# weekend-batch.sh -- the debt-paydown reader/closer (understanding-gate).
 #
-# Flow B (the weekend batch): reads the EXISTING debt ledger (`| DEBT |` markers, SPEC-123's
+# Flow B (the weekend batch): reads the EXISTING debt ledger (`| DEBT |` markers, the
 # `gate-ledger.sh debt`) and surfaces the week's WAVED + DEFERRED items -- the conscious debt ADR-
 # 0031's Refinement says is fine to postpone, as long as it eventually gets paid down. This is a
 # READER + a single CLOSER, never a second ledger: it never writes anything except the same
-# `gate-ledger.sh debt` marker SPEC-123 already writes, with the additive `response=engage` key.
+# `gate-ledger.sh debt` marker other callers already write, with the additive `response=engage` key.
 #
 # Disposition rules (read off the LAST `| DEBT |` line for a given rid; the ledger is append-only,
 # so "last" == "current"):
 #
 #   verdict=not-significant                  -> never debt, never collected
 #   response=engage (any verdict)            -> PAID, never re-collected
-#   verdict=wave,   no response              -> WAVED  (SG-02's silent anti-fatigue path)  COLLECT
-#   response=wave                            -> WAVED  (an explicit human wave, SG-04)     COLLECT
+#   verdict=wave,   no response              -> WAVED  (the classifier's silent anti-fatigue path)  COLLECT
+#   response=wave                            -> WAVED  (an explicit human wave)     COLLECT
 #   response=defer                           -> DEFERRED                                    COLLECT
 #   verdict=tap,    no response              -> PENDING (an open (unresolved) tap; still Flow A's
 #                                                to resolve -- the batch does not race it)  skip
 #
-# The kit does not reinvent pedagogy or a second dedup/batching engine here (ADR-0031,
-# Alternatives): this lib is the dwarves-kit-generic collection half. What a consumer does with
+# The kit does not reinvent pedagogy or a second dedup/batching engine here (see its
+# Alternatives section): this lib is the dwarves-kit-generic collection half. What a consumer does with
 # the collected digest (route it into a study process, quiz on it, publish from it) is that
 # consumer's own skill, in that consumer's own repo; this file knows the contract below and no
 # consumer by name. The engine may know an overlay only through a config key the overlay fills.
@@ -99,7 +99,7 @@ _parse_common() {
 }
 
 # _file_repo <ledger-file> -- the repo= value from the run's START line (last START-AMEND if one
-# exists, else the first plain START -- SPEC-077's read rule). Empty if no START line at all.
+# exists, else the first plain START -- the read rule). Empty if no START line at all.
 #
 # Every internal pipeline here is guarded with `|| true`: a "no match" (no START-AMEND line, no
 # START line at all) is an EXPECTED, non-error outcome, not a script-ending failure -- and under
@@ -123,7 +123,7 @@ _last_debt_line() {
 }
 
 # _last_fat_debt_line <ledger-file> -- the last `| DEBT |` line carrying significance= (a "fat"
-# line: SG-02's classifier via gate-ledger.sh debt(), or a forward-carried debt-response()). Readers
+# line: the classifier via gate-ledger.sh debt(), or a forward-carried debt-response()). Readers
 # use this to walk back past a THIN response-only line (pre-forward-carry history, or the classifier
 # genuinely never ran) so significance/worthiness still display instead of going blank. Returns ""
 # (via `|| true`) when no fat line exists at all -- an honest gap, not fabricated data.
@@ -138,7 +138,7 @@ _last_fat_debt_line() {
 # keys BEFORE `reason=` and now also neuters any `=` inside the reason value itself (belt-and-
 # suspenders) -- so cutting the line at the first ` reason=` and parsing control keys from that
 # prefix ONLY is both correct (real control fields never appear after `reason=`) and sufficient.
-# `|| true`: a key that is not present (e.g. `response=` on a silent SG-02 wave) is an expected
+# `|| true`: a key that is not present (e.g. `response=` on a silent wave) is an expected
 # empty result, never a script-aborting failure.
 _kv() {
   local line="$1" key="$2" struct
@@ -147,7 +147,7 @@ _kv() {
 }
 
 # _disposition <debt-line> -- prints "waved"|"deferred"|"pending"|"paid"|"not-significant" for the
-# LAST debt line of a run (the exact matrix documented in the header + SPEC-126's Design table).
+# LAST debt line of a run (the exact matrix documented in the header + 's Design table).
 _disposition() {
   local line="$1" verdict response
   verdict="$(_kv "$line" verdict)"
@@ -202,7 +202,7 @@ _find_artifact() {
 # _strip_ug_prefix <rid> -- the understanding-gate mega-goal's rid convention is
 # "ug-<NN>-<feature-slug>"; docs/implementation-notes/ + docs/verification/explain-command/ files
 # for THAT convention are named by the shorter feature-slug (e.g. "explain-command.md", not
-# "ug-03-explain-command.md" -- see SPEC-126 Problem). Other rids (a plain `fix/<slug>` branch,
+# "ug-03-explain-command.md"). Other rids (a plain `fix/<slug>` branch,
 # no `ug-<NN>-` prefix) have no such prefix and the rid IS the slug. Both are tried; this is the
 # best-effort half of that.
 _strip_ug_prefix() {
@@ -221,7 +221,7 @@ cmd_list() {
     if [ -z "$sig" ] || [ -z "$wor" ]; then
       # Walk-back (TIER-4 close fix): the LAST line is a thin response= line with no sig/wor.
       # Fall back to the last FAT line for display; if none exists, blank stays honest. Since
-      # SPEC-136 wired `significance-classify record` into /kit:ship (before the quiz-gate tap),
+      # `significance-classify record` was later wired into /kit:ship (before the quiz-gate tap),
       # a live gate/gated-final rid almost always has a FAT line to walk back to; this stays the
       # fallback for a non-gate ship or a rid predating that wiring.
       fat="$(_last_fat_debt_line "$f")"
@@ -307,10 +307,10 @@ cmd_mark_paid() {
   local reason; reason="paid via weekend batch $(date -u +%Y-%m-%d)"
   [ -n "$note" ] && reason="$reason: $note"
   # Close via debt-response, NEVER the raw fat `debt` verb (TIER-4 close finding). The last debt
-  # line here CAN be a THIN response= line (SG-04's quiz-gate respond / debt-response), which
+  # line here CAN be a THIN response= line (from quiz-gate respond / debt-response), which
   # carries no significance=/worthiness=/verdict= to re-emit on its own -- historically the
   # default path, since the fat `debt`-verb classifier, `significance-classify record`, had no
-  # live caller anywhere; SPEC-136 wired it into /kit:ship (before the quiz-gate tap), so a live
+  # live caller anywhere; it was later wired into /kit:ship (before the quiz-gate tap), so a live
   # gate/gated-final rid now has a FAT line first, and this stays the fallback shape for a
   # non-gate ship or a rid predating that wiring. Re-emitting empties through the fat `debt`
   # verb's required-enum validation used to crash mark-paid with exit 64. debt-response only

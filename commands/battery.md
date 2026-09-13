@@ -9,7 +9,7 @@ and re-reading it. Never "review" inline in the session that wrote the code and 
 it the battery.
 
 
-Bracket the phase for timing (SPEC-129) before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
+Bracket the phase for timing before dispatching any arm: `bash lib/gate/gate-ledger.sh outcome <rid> battery start` (rid = the branch slug, the same key the ship-gate reads; the ledger counts `battery` as the review gate). For a foreign target the ledger writes under the run dir of the cwd repo, not the target repo. Run the two `gate-ledger.sh` calls from the target repo's primary checkout root in a subshell (`(cd <repo> && bash ...)`), or accept the record landing under the session repo.
 
 ## Target (optional argument)
 
@@ -40,7 +40,7 @@ Print the resolved target as a `## Target` block: path, branch, compare ref, PR 
 
 | Leg | Agent | Model tier | Job |
 |---|---|---|---|
-| 1. Acceptance verify | acceptance-verifier (or task-verifier for a single task) | mid, or the spec's tier when it carries `Model: opus` (SPEC-244) | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
+| 1. Acceptance verify | acceptance-verifier (or task-verifier for a single task) | mid, or the spec's tier when it carries `Model: opus` | re-execute the spec/branch verification commands VERBATIM in fresh context; check every AC against the actual files |
 | 2. Review | code-reviewer single-pass; escalate domain lenses per the table below | high (Opus-class) | static-read judgment: what re-execution cannot see |
 | 3. Advisor | advisor (critique mode) | mid | the uniform extra lens; additive, never replaces leg 2 |
 
@@ -121,6 +121,6 @@ probe and mutation; report that inversion in one line and re-run nothing.
 4. Write the spec's `## Review` section (replace-not-stack) and record the legs in
    the gate ledger under the BRANCH SLUG: `bash lib/gate/gate-ledger.sh record <rid> battery ran "<verdict> arms=<n> caught=<n>"`
    (the slug, never a board ID, is what the ship-gate reads). Then close the
-   timing bracket (SPEC-129): `bash lib/gate/gate-ledger.sh outcome <rid> battery end caught=<true if any arm found a defect, else false>`.
+   timing bracket: `bash lib/gate/gate-ledger.sh outcome <rid> battery end caught=<true if any arm found a defect, else false>`.
 5. Name what each arm caught in the report. Disagreement between arms is the
    signal this battery exists to produce.

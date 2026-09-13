@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# route-suggest.sh -- data-driven model routing suggester (token-optim-v3 SG-06).
+# route-suggest.sh -- data-driven model routing suggester (token-optim-v3).
 # Needs bash 4+ (mapfile); #!/usr/bin/env bash resolves Homebrew bash, not macOS stock 3.2.
 #
-# Reads the v2 SG-09 ablation ledger (the 12-column TSV the eval harness emits)
+# Reads the v2 ablation ledger (the 12-column TSV the eval harness emits)
 # and SUGGESTS the model tier for a given benchmark task: the cheapest model that
 # PASSED at quality parity. It is a SUGGESTER, never an auto-router, and it
 # ABSTAINS (does not overfit) when the data is too thin to compare , e.g. only
-# one model was measured, which is exactly the state of the committed SG-09 proof
+# one model was measured, which is exactly the state of the committed proof
 # run (haiku-only, n=1; the full multi-model matrix is gated on a human).
 #
-# Ledger schema (tab-delimited, no header), per v2 SG-09 record.py:
+# Ledger schema (tab-delimited, no header), per v2 record.py:
 #   task arm pass total_tokens in out cache_read cache_create turns cost_usd models session_id
 #    1    2   3      4         5  6   7        8            9    10      11        12
 #
-# Effort is NOT a column in SG-09's schema, so effort is always abstained on
+# Effort is NOT a column in the schema, so effort is always abstained on
 # (honesty: we cannot suggest what was never measured).
 #
 # Usage:
@@ -45,7 +45,7 @@ fi
 tier_of() { case "$1" in haiku*) echo haiku;; sonnet*) echo sonnet;; opus*) echo opus;; fable*) echo fable;; *) echo "$1";; esac; }
 
 # For each PASSING row of this task, emit "tier<TAB>total_tokens" (cheapest arm per tier
-# is the min). A failed run is never a candidate (infinite-cost guard, SG-09's anti-cherry-pick rule).
+# is the min). A failed run is never a candidate (infinite-cost guard, 's anti-cherry-pick rule).
 mapfile -t PASSES < <(awk -F'\t' -v t="$TASK" '$1==t && $3=="pass" {print $11"\t"$4}' "$LEDGER")
 
 if [ "${#PASSES[@]}" -eq 0 ]; then

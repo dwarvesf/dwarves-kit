@@ -6,8 +6,37 @@ All notable changes to dwarves-kit are documented here.
 
 ### COMPAT (contract surfaces, per forge kit-versioning.md)
 - Config surface (new keys, additive, MINOR): `[wrap] merge_own_prs`, `[wrap] tidy_worktrees`, `[wrap] build_candidates`, all defaulting `true`. An existing install keeps its current behavior without editing anything. All three resolve root-only, so a project `.kit.toml` cannot set them.
+- Config surface (new key, additive, MINOR): `[wrap] build_lanes`, default `"tiny"`, which is step 7b's behavior before the key existed. Resolves root-only like the other `[wrap]` autonomy knobs.
 - Ledger grammar, lanes.d plan format, export `schema`: unchanged.
 - Config surface (new key, additive, MINOR): `[output] style`, default `""`. Resolves project > operator > kit-root. Empty leaves every existing install untouched (SPEC-252).
+- Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
+
+### Added
+- `wrap merge --apply` verifies the default branch's tree after `gh pr merge` reports MERGED,
+  instead of trusting gh's word alone: it fetches the default branch and checks the PR head's
+  tree against the new tip, either whole or scoped to the paths the PR touched (another PR may
+  have landed on the default branch meanwhile). A stale `headRefOid` captured before a late
+  push, or an armed auto-merge overtaken by a push after the gates read, can both report
+  MERGED while the default branch moves on without the reviewed tree; three such gaps were
+  confirmed by hand in one session. A verified merge now prints `tree verified`; a real gap
+  prints `TREE MISMATCH, <n> paths differ` and exits 3 without deleting the branch.
+- `lib/session/handoffs.sh list [--repo DIR] [--days N]`: lists open handoff files (`_meta/handoffs/`
+  and `.claude/handoffs/`, skipping `done/`/`_archive/`), oldest first, each with its `## Next`
+  excerpt. `/kit:start` now surfaces the count and excerpts next to its goal-drafts bullet, so a
+  pile of unread handoffs shows up at session entry instead of needing a manual audit.
+- `batch-debt-warn.sh` (PreToolUse Bash hook, `session` module): warns once per session when a
+  second `gh pr merge` runs and the gate ledger holds no lane START since that session's first
+  merge. A batch-shaped session (board sweep, overnight run) records neither gate taps nor a
+  debt marker, so its understanding debt used to be lost unless the operator backfilled by hand.
+  Advisory only, never blocks; the warn names the `gate-ledger.sh start` + `debt` fix in one line.
+  Merge counting uses the ledger substrate stream `merge-watch/<session_id>.log`.
+- `intake gate <url | "subject">` (`bin/intake`, `lib/intake/intake.sh`): the scripted dedup
+  gate for knowledge intake. Reads six decision stores, the URL ledger, every board in the
+  operator's boards registry, the verdict ledger, prior notes, this kit's own inventory via
+  `precedent find`, and open pull requests via `gh`, then prints every hit as one JSON object
+  and exits 0 on any hit, 1 on none. A store with no key, a command not on PATH, or a path
+  that does not exist is skipped with a reason and never fails the gate. Replaces five
+  hand-written prose copies of the same checklist, two of which had already drifted.
 
 ### Deprecated
 - `bin/learn` forwards to `bin/reflect` (same verbs, arguments, exit codes) for ONE release,
@@ -17,6 +46,8 @@ All notable changes to dwarves-kit are documented here.
   Repoint any external caller to `bin/reflect` now.
 
 ### Changed
+- `/kit:wrap` step 7b sizes a candidate against `wrap.build_lanes` instead of hardcoding `tiny`. A lane on that list builds inline in the home repo, in a worktree on its own branch, dispatched to a worker and closed by one quoted verification command; a non-`tiny` lane also opens a PR that step 3 merges only when green, so the home repo's ship-gate proof still applies. Every unlisted lane stages its row and drafts its goal as before. `full` is the one lane the list cannot buy an inline build for: a full candidate files a QUEUED ROW on the home repo's `_meta/BACKLOG.md` through `bin/board capture` (which detects the repo's id prefix and mints against the board plus its fetched git history), still drafts its goal, and reports `(lane=full, filed: <repo> <ID-NNN>, goal drafted: <path>)`. Staging is gone for that lane because it was a dead end: one estate board holds 248 rows staged since May and has drained none. `lib/wrap/report-lint.sh` accepts `verified:` on any lane, accepts the new `filed:` closure, requires every item naming a lane to carry one of the three, and REFUSES `lane=full` closed as `staged`.
+- Finished the `lib/` scattered-id strip and registered `lib` as ratchet zone 8: `bin/lint --zone lib --count` is 0 and `tests/test-no-scattered-ids.sh` enforces it going forward, alongside hooks/bin/skills. Also taught the enumerator's provenance-footer exemption to recognize the shell/python `# provenance: ...` shape, not just markdown's `<!-- provenance: ... -->`.
 - `/kit:explain` no longer hardcodes `narrate-log` + `svg-knowledge-diagram`; it hands the
   grounded skeleton (reading-order diff, recorded test line, mermaid change-map) to whatever
   skill `understand.teach` names, through the Skill tool (ADR-0036). **Behavior change for an
@@ -26,12 +57,25 @@ All notable changes to dwarves-kit are documented here.
   mechanical skeleton alone, with no enrichment step. Set `understand.teach` (learning-kit's
   `understand` lane, or a custom skill) to keep the prior enrichment (#560).
 - Stripped scattered spec ids from `lib/` comments and module docs across 136 files: each id became the plain reason or a file path. Printed strings stayed clean, and tool.toml board arrays, own-number headers, tests and fixtures were left alone. The zone is not registered in the ratchet yet: about 478 hits remain, heaviest in queue, stats and gate.
+- Stripped scattered spec ids from `agents/*.md` and `commands/*.md`, the two surfaces that load into a model's context every session: each id became the plain reason, a quoted decision title, or a file path. Registered as lint zones 6 and 7 in `tests/test-no-scattered-ids.sh`.
 - Retired the `cc-` host-agent prefix (kit-contract C1) from the last doc filenames still carrying it: the cc-hyg-04-stop-tax spec/verification/impl-notes trio (spec claims SPEC-253), the cc-hyg-09-override-yaml proof, and four `lib/*/docs/implementation-notes/cc-*.md` files.
 - Renamed three `docs/verification/` files to their feature slug instead of a bare SPEC number: `SPEC-044.md` -> `proof-done-task-types.md`, `SPEC-045.md` -> `gate-lib-install-path.md`, `spec-200-t1-t2.md` -> `signal-pipelines-t1-t2.md`.
 - Dated the two undated `docs/research/` files that had no live wiring (`architecture-patterns.md`, `architecture-orchestrator-wavefront.md`) and the undated retro `v1.3-v1.5.md`, using each file's own git or in-body date.
 - Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
 
 ### Fixed
+- Fixture `mkrepo()` helpers in `tests/test-cheap-guards.sh`, `tests/test-queue.bats`, `tests/test-runaway-guards.sh`, and `tests/test-notes-sanitization.sh` now refuse to run `git config` under an empty fixture dir (a failed `mktemp -d` or an unset caller var previously let `git -C ""` write the tester git identity into the real repo's `.git/config`; board ID-873).
+- `tests/test-explain.sh`, `tests/test-quiz-gate.sh`, and `tests/test-weekend-batch.sh` captured
+  their proof samples (`docs/verification/{explain-command,quiz-gate,weekend-batch}/sample-*.md`)
+  with a fresh run-specific value baked in (a new fixture commit SHA each run for the first two,
+  a fresh wall-clock timestamp for the third), so every `tests/run-all.sh` pass rewrote all three
+  tracked files and left the checkout dirty, blocking `lib/gate/negctl.sh`'s clean-tree
+  requirement. Each test now normalizes its run-specific value to a fixed placeholder before
+  writing the sample, so the captured content is deterministic across runs (ID-830).
+- `tests/test-boundary-lint.sh` AC2 and AC3 shared one `$FX` fixture dir, so AC3's "exits
+  non-zero" assertion passed on AC2's own still-live planted violation instead of on the
+  name check it claims to test; only the message-content assertion caught a broken
+  `name_re`. AC3 now gets its own fresh `mktemp -d` fixture (ID-872).
 - A transcript JSONL line that decoded to valid JSON but not an object (e.g. `["x"]`) crashed `session-observe cost`/`report` and `session-semantic` with `AttributeError: 'list' object has no attribute 'get'`. The shared `lib/session/parse_transcript.py` `iter_entries()` now skips a non-object decoded line the same way it already skips a malformed one; `session-observe`'s `blocks()`/`collect()` and `session-semantic`'s `collect_prompts()` also guard a valid entry whose `message`/`usage` field is itself non-dict.
 - `bin/release` rolled `[Unreleased]` into the root `CHANGELOG.md` stub instead of `docs/CHANGELOG.md` (SPEC-185 moved the real history there), wrote a stray comma in the section header instead of a hyphen, and missed the third version surface `tool.toml` that `tests/test-meta.sh` pins (SPEC-115). Now targets `docs/CHANGELOG.md`, writes `## [X.Y.Z] - date`, bumps `tool.toml` alongside `VERSION`/`plugin.json`, and prints the tag-push line last so it is not missed (ID-648).
 - The shared `SECRET_SHAPE_RE` in `lib/precedent/inventory.py` and `lib/session/recall/session_recall.py` missed AWS secret access keys, PEM private-key blocks, 1Password `ops_` service tokens, and `PASSWORD=`/`TOKEN=` assignments. Widened both byte-equal copies (pinned by `tests/test-precedent.sh`) as defense in depth on top of the `--explain` confinement (ID-642).
@@ -40,7 +84,9 @@ All notable changes to dwarves-kit are documented here.
 - `/kit:wrap` step 9 narrated `Left alone` from what the steps intended rather than from a re-scan, so a surviving worktree or branch never appeared in the report. Step 5 now closes with a final `wrap scan` and step 9 derives the section from it (#523).
 - `/kit:wrap` step 7b ran the precedent check and then only quoted the hit, naming the tool the work should have joined while the work never joined it. A hit now wires the enhancement into that tool and commits; a clear-shaped miss is built in its home repo; only a scope that is a judgment stages a row (#525).
 - `/kit:wrap` Step 7a landing from `master`/`main` reads `gate-ledger.sh rid`'s refusal as a clean skip, so the DEBT marker looked unnecessary instead of impossible. It now prints `skipped (structural): DEBT marker impossible this run (<reason>)` for that case, and reasons why a session-derived rid would create a ledger entry no ship-gate check can trace back to a branch (ID-651).
+- Board id minting read the working copy of the board file and nothing else, so a checkout behind origin, or a board whose rows were archived out, handed out an id another session already took (three measured collisions on one consumer board). `history_max_id()` (`lib/sync/sync_core.py`) now raises the mint floor from `git log -p --all` over that file, and all three minters pass the path: `board.sh cmd_capture`, `sync_core.apply_board`, and `add-backlog`, which dropped its own weaker raw-text regex and delegates to the shared minter (ID-650, shipped in #541, refined by #596 and #606; the changelog entry was missed at the time).
 - A branch that touched an append-only log (`LAB_LOG.md`, `BACKLOG.md`) after the default branch moved could show CONFLICTING on GitHub's squash-merge even though `.gitattributes`' `merge=union` resolves it locally without a conflict. `/kit:ship` Step 8 now runs `lib/gate/premerge.sh check` before the push, merging the default branch in when the working branch is behind; a real conflict stops the step and leaves the merge unresolved rather than picking a side; an already-current branch does nothing and prints nothing (ID-653).
+- `lib/board/backlog.sh set` matched every row whose first cell was the given id, so a union-merge duplicate got both copies flipped silently instead of one. `set` now refuses (exit 1, writes nothing) when an id matches more than one row, naming the line numbers and pointing at the new `dedupe <ID>` verb, which collapses the duplicates down to one (preferring a shipped, then dropped, then parked copy, else the last occurrence).
 
 ### Changed
 - `/kit:wrap` step 7b routes every built candidate through the lane instead of editing and committing inline. The precedent check still decides the home and the `ENHANCE`/`NEW` token; `lib/classify/lane-classify.sh classify` now decides where the build happens. A `tiny` candidate is built in its home repo on its own branch, verified by one command whose output the report quotes, then committed. A `normal`, `full`, `bug`, or `backfill` candidate is not built inside wrap: the row is staged with `bin/wrap stage` and its six-section goal draft is written to `.claude/goals/<slug>.md` in the home repo, which is also the pointer the drain fence needs. The step names the worker model tiers (Sonnet default, Opus for verification and for security, money, or data-model work, Haiku for mechanical fan-out). `wrap.build_candidates = false` still stages and never builds; it now classifies too, so a staged row names the lane it owes. The `**Built:**` report line carries the lane and the closure: `(lane=tiny, verified: <check>, <commit>)`, `(lane=<lane>, staged + goal drafted: <path>)`, or `(lane=<lane>, staged: build_candidates off)`; `lib/wrap/report-lint.sh` keeps requiring the `ENHANCE`/`NEW` token, now pinned against the suffix by `tests/test-wrap.sh` (ID-827).
@@ -55,6 +101,8 @@ All notable changes to dwarves-kit are documented here.
 - Three `[wrap]` autonomy knobs make each of wrap's write actions a choice, defaulting to the acting posture: `merge_own_prs` (step 3), `tidy_worktrees` (step 5), `build_candidates` (step 7b). A `false` turns that step's action into a report line named in `FYI`; it never turns the step off and never relaxes a refusal the tools make on their own (#526).
 - `session observe burn`: ranks live sessions by token burn over a `--since` minutes window. Subagents roll into their parent, usage is deduplicated by message and request id, and each row shows the live context size and the owning PID. It answers "which session is burning tokens right now" without a hand script. Stdlib only, additive view, every other view unchanged (SPEC-254).
 - `hooks/context-budget.sh`: a `UserPromptSubmit` hook in the `session` module that warns once per 100k-token band once a session's live context (input + cache creation + cache read of the last main-chain assistant turn) passes 200k, and clears on a drop back under budget (e.g. after `/compact`). Ported from the operator's personal, already-tested dotfiles hook. `KIT_CTX_WARN`/`KIT_CTX_STEP` env knobs; advisory, never blocks (SPEC-255).
+- `doc-drift`'s Tier 1 pass now also checks diagram nodes: an ASCII/box diagram node naming a file, module, or symbol is a claim and gets the same existence check as a prose reference, quoting the node text when the target is missing. Contract lifted from archify's validated-IR idea (source-cited nodes, checked citations), not its renderer.
+- `skills/loop-engineering/SKILL.md` gains a stop condition covering every shape (a loop repeating an unchanged move, same diff, same command, same failure, must stop and report, the Ralph Wiggum failure) and a scorecard column for the bounded-revise engine (cost per accepted change: total spend over changes merged, per loop, never tokens per run).
 
 ## [2.2.0] - 2026-09-07
 

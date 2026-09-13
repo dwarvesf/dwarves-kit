@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""inventory.py -- SPEC-245 (precedent-inventory TASK-003): the inventory surface for
+"""inventory.py -- the precedent-inventory surface for
 `precedent find`. Ported from the `whathas` command of ops-toolkit's `repo-sweep` tool (its
 estate paths, the house-CLI table, and the git-native table are dropped; see the spec's Out of
 Scope). Answers "has something like this already been BUILT" (tools, scripts,
@@ -38,7 +38,7 @@ import time
 # There is no third copy downstream: ops-toolkit's repo-sweep whathas forwards to
 # `precedent find --surface inventory`, so it inherits this regex at runtime.
 # DATA_MARKER differs by design: files here, transcripts there.
-# Widened per SPEC-245 review finding 12: the original shape missed AWS
+# Widened per review finding 12: the original shape missed AWS
 # secret access keys (no fixed prefix, so scoped to an aws*secret/access*=value
 # assignment), PEM private-key blocks, 1Password ops_ service tokens, and plain
 # PASSWORD=/TOKEN= assignments. Defense in depth on top of --explain confinement,

@@ -1,6 +1,6 @@
 """Notion Task Board sink: ONE-WAY, insert-only push of board rows to a
 foreign, team-OWNED Notion board. Drives the `ntn` CLI (keychain auth, Han's
-Notion rule). See docs/specs/SPEC-003-oneway-create-push.md.
+Notion rule).
 
 Insert-only by contract: the team owns each card after it lands, so the sink
 sets fields on page-create and never touches them again (the local sync-state

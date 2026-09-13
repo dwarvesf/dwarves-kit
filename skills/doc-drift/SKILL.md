@@ -43,6 +43,11 @@ for describing 2026-05 reality is noise, not a finding.
      listing, both directions: rows with no file, files with no row),
    - every hardcoded count matches the derived count (`ls | wc -l`),
    - every named command, verb, or flag appears in the target script or its `--help`.
+   - every ASCII/box diagram node whose label names a file, module, or symbol resolves:
+     `test -e <path>` for a path, `grep -n <symbol> <path>` for a symbol. A diagram node
+     that names a path is a claim and gets checked like prose (source: archify's
+     validated-IR contract, a diagram node cites a source and a check verifies the
+     citation still holds). A missing target is a Tier 1 FIX, quoting the node text.
    A Tier 1 failure is a finding with evidence attached, severity FIX (or REMOVE when the whole
    doc's referent is gone). `bash tests/test-meta.sh` overlaps part of this pass; run it first
    and treat its failures as pre-confirmed findings, do not re-derive them.

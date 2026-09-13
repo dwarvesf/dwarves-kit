@@ -73,7 +73,7 @@ repo without fixtures.
 
 | Preset | Artifact | Outcome contract | Probe framing | Clean room | Worked instance |
 |---|---|---|---|---|---|
-| `onboarding` | contributor surface: CONTRIBUTING.md, docs/onboarding*, README, onboard/preview scripts, the card template | seed card (one small real feature) + submission checker + the repo's deterministic onboarding suite | "new contributor, docs only" | repo kind: `git archive HEAD` + container | SPEC-227; foundation-workers SPEC-018 |
+| `onboarding` | contributor surface: CONTRIBUTING.md, docs/onboarding*, README, onboard/preview scripts, the card template | seed card (one small real feature) + submission checker + the repo's deterministic onboarding suite | "new contributor, docs only" | repo kind: `git archive HEAD` + container | the onboarding-gauntlet spec; foundation-workers' onboarding-CI spec |
 
 Candidate presets, named only (each must build its own stager, Tier 1 command, checker,
 and card template before it can run; the onboarding ones are instance-specific):
@@ -113,7 +113,7 @@ checker), and offer to build them as ordinary tasks first. That is a good
 outcome, not a failed run: the checklist IS the first round's findings, obtained
 free. Point the user at `docs/guides/gauntlet.md` for the full checklist.
 
-## Telemetry, logging, learning (SPEC-226; all on existing rails)
+## Telemetry, logging, learning (all on existing rails)
 
 - Bracket the run: `bash lib/gate/gate-ledger.sh outcome <rid> gauntlet start`
   before round 1, `... end caught=<true if any finding>` after the verdict, and
@@ -133,9 +133,9 @@ free. Point the user at `docs/guides/gauntlet.md` for the full checklist.
 - Corpus-level projection: `bash lib/gauntlet/stats.sh` prints one convergence
   table over every run record (findings trajectory, rounds-to-clean, campaign
   rows GREEN, probe tokens/cost, same-card probe-model deltas); `--write` drops
-  a dated snapshot beside the records (SPEC-240). Read-only over the records;
+  a dated snapshot beside the records. Read-only over the records;
   a malformed QL-VERDICT marker fails the run loud.
-- A/B mode (SPEC-241, bounded search-select): when a REVISION is contested,
+- A/B mode (bounded search-select): when a REVISION is contested,
   `bash tests/gauntlet/deploy/gauntlet-ab <ref-A> <ref-B> <persona> <row> <N>`
   runs the same card against two committed variants of the artifact
   (rule-7 `git archive` tarballs through the runner's `GAUNTLET_SRC_TAR`
@@ -262,8 +262,8 @@ tools (use the eval experiment shape), or an artifact with no cold consumer.
 - Kit-dev positioning (execute-pipeline mapping, V-model placement, mega-goal
   relation, the floor-then-loop run design, ten known limits with mitigations):
   `docs/patterns/gauntlet.md`. Read it before your first run.
-- Telemetry / logging / learning contract: `docs/specs/SPEC-226-gauntlet-telemetry-learning.md`.
-- The generalization design record: `docs/specs/SPEC-235-gauntlet-generalize.md`.
+- Telemetry / logging / learning contract: the gauntlet-telemetry-learning design spec under docs/specs/.
+- The generalization design record: the gauntlet-generalize design spec under docs/specs/.
 
 ## Lineage
 
@@ -272,5 +272,5 @@ Evaluator-Optimizer lineage per `skills/loop-engineering`). The synthetic-user
 probe is documentation-testing practice (a fresh agent as the test oracle for
 docs); the two-tier cost routing and severity-aware convergence come from the
 kit; the frozen-seed + persisted-run-record shape comes from the eval
-experiment pattern. First worked instance (onboarding preset): foundation-workers
-SPEC-018 (S9/T9).
+experiment pattern. First worked instance (onboarding preset): foundation-workers'
+onboarding-CI gauntlet run.

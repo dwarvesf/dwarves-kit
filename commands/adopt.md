@@ -27,7 +27,7 @@ coding, and the ship-gate engages on push.
 - a `CLAUDE.md` loader pointer (Claude Code auto-loads CLAUDE.md, not AGENTS.md).
 - `WORKFLOW.md` -- a pointer to the installed kit's lane x phase matrix (not a 49KB copy).
 - `docs/verification/README.md` -- the proof marker that makes the ship-gate engage.
-- `.kit.toml` -- an OPT-IN starter override of the kit-root defaults (SPEC-192). Created
+- `.kit.toml` -- an OPT-IN starter override of the kit-root defaults. Created
   only on a fresh adopt (never overwritten afterward); `--with` seeds the named modules
   `true` instead of inheriting the kit-root default. Edit `[modules]` any time and re-run
   `/kit:adopt` (or `--refresh`) to re-wire.

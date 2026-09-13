@@ -55,7 +55,7 @@ Write to `docs/research/<date>-<slug>-stack.md` (the dispatch prompt supplies `<
 - Only report what you can verify from files. Don't guess.
 - If a config file doesn't exist, say "not found" instead of assuming.
 
-## Return contract (distilled return, SPEC-087 Mechanism C)
+## Return contract (distilled return)
 
 Your response to the lead is a BOUNDED summary, not a dump. Return only:
 

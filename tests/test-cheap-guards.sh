@@ -72,6 +72,7 @@ status_during() {
 mkrepo() {  # dir -> clean git repo on default branch main
   local d="$1"; mkdir -p "$d"
   git -C "$d" init -q -b main
+  [ -n "$d" ] && [ -d "$d" ] || { echo "fixture dir missing" >&2; exit 1; }
   git -C "$d" config user.email t@t.dev; git -C "$d" config user.name tester
   echo x > "$d/f"; git -C "$d" add f; git -C "$d" commit -qm init
 }
