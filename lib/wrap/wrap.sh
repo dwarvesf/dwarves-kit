@@ -16,7 +16,8 @@
 # The write set is closed: branch delete under two proofs, worktree remove under
 # --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
 # activity-log prepend, the knowledge-root project directory, the staging-file append, one
-# gh pr merge, and one bounded union re-merge push. Every other action is a report line. The
+# gh pr merge, and one bounded union re-merge push (with its own follow-up commit when the
+# re-merge duplicates a kanban row). Every other action is a report line. The
 # verbs never switch a branch and never force a push or a pull. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
 # unproven worktree, and the removal counts only once a postcondition finds the path gone.
@@ -41,6 +42,7 @@ LIB_ROOT="$(cd "$SELF_DIR/.." && pwd)"
 # The one staging-block writer: `stage` shells out to it rather
 # than growing a second copy of the dedupe/render/append grammar in bash.
 STAGING_FORMAT_PY="$LIB_ROOT/reflect/staging-format.py"
+BACKLOG_SH="$LIB_ROOT/board/backlog.sh"
 # shellcheck source=lib/config/kit-config.sh
 source "$LIB_ROOT/config/kit-config.sh" || { echo "FATAL: lib/config/kit-config.sh missing or unreadable" >&2; exit 1; }
 
@@ -745,6 +747,33 @@ _branch_worktree() {
 # git applies the union attribute here, so anything it cannot resolve is a real conflict a
 # human owns. That case aborts and leaves the branch exactly as it was. Runs once, never in
 # a loop, and only when the branch tip is still the head the PR gates read.
+# _union_dedupe_rows <wt> <pre-merge-tip> -- the merge above resolves a union-marked log by
+# keeping both sides, which duplicates a row when the two branches flipped the SAME id's
+# status. Scoped to files the merge just touched, declared merge=union, and shaped like a
+# kanban table (backlog.sh owns that row grammar); a duplicate elsewhere is not this pass's
+# job. Never amends the merge commit: a drop lands as its own follow-up commit so the merge
+# commit stays exactly what `git merge` produced.
+_union_dedupe_rows() {
+  local wt="$1" tip="$2" f dropped staged=0 note=""
+  while IFS= read -r f; do
+    [ -n "$f" ] && [ -f "$wt/$f" ] || continue
+    _union_marked "$wt" "$f" || continue
+    grep -qE '^\| *[A-Z]+-[0-9]+ *\|' "$wt/$f" || continue
+    dropped="$(bash "$BACKLOG_SH" dedupe-all "$wt/$f" 2>/dev/null)"
+    [ -n "$dropped" ] || continue
+    git -C "$wt" add "$f"
+    staged=1
+    note="${note}${note:+; }${f}: ${dropped}"
+  done < <(git -C "$wt" diff --name-only "$tip" HEAD -- 2>/dev/null)
+  [ "$staged" -eq 1 ] || return 0
+  if git -C "$wt" commit -q -m "fix(board): dedupe union-merged rows" -m "dropped duplicate ids -- ${note}"; then
+    echo "     deduped union-merged rows: ${note}"
+  else
+    echo "     found duplicate rows (${note}) but the follow-up commit failed; left staged for a human"
+    return 1
+  fi
+}
+
 _union_remerge() {
   local repo="$1" branch="$2" def="$3" head_oid="$4" wt tip
   [ -n "$branch" ] && [ -n "$head_oid" ] || { echo "     no branch or head SHA to re-merge"; return 1; }
@@ -766,6 +795,7 @@ _union_remerge() {
     echo "     merging origin/${def} into ${branch} conflicts beyond the union-marked files, aborted"
     return 1
   fi
+  _union_dedupe_rows "$wt" "$tip"
   if ! git -C "$wt" push -q origin "$branch" 2>/dev/null; then
     echo "     push of the re-merged ${branch} failed; the merge stays local for a human to inspect"
     return 1
