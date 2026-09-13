@@ -12,6 +12,10 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- `lib/session/handoffs.sh list [--repo DIR] [--days N]`: lists open handoff files (`_meta/handoffs/`
+  and `.claude/handoffs/`, skipping `done/`/`_archive/`), oldest first, each with its `## Next`
+  excerpt. `/kit:start` now surfaces the count and excerpts next to its goal-drafts bullet, so a
+  pile of unread handoffs shows up at session entry instead of needing a manual audit.
 - `batch-debt-warn.sh` (PreToolUse Bash hook, `session` module): warns once per session when a
   second `gh pr merge` runs and the gate ledger holds no lane START since that session's first
   merge. A batch-shaped session (board sweep, overnight run) records neither gate taps nor a
