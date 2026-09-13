@@ -26,6 +26,8 @@
 #   board.sh board  [--backlog-file <path>]                    single-repo kanban render
 #   board.sh next   [--backlog-file <path>]                    first queued ID
 #   board.sh set <ID> <state> [note] [--backlog-file <path>]   flip a row's state
+#   board.sh dedupe <ID> [--backlog-file <path>]               collapse duplicate rows sharing
+#                                                               one id down to one
 #   board.sh states [--backlog-file <path>]                    legal state names
 #   board.sh priority [counts|brief|overview|full] [--backlog-file <path>]
 #                                                               single-repo urgency x fit quadrant
@@ -1105,7 +1107,7 @@ _legacy_bridge_note() {
   echo "      folded into the sync module; the port is tracked on the kit board." >&2
 }
 
-usage() { sed -n '2,166p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,168p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local first="${1:-}"
