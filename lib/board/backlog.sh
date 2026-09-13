@@ -18,7 +18,13 @@
 # Usage:
 #   backlog.sh board               -> kanban columns (state -> ID + title), exit 0
 #   backlog.sh next                -> the first queued row's ID (file order = priority), exit 1 if none
-#   backlog.sh set <ID-NNN> <state> [note]  -> flip the row's leading status keyword
+#   backlog.sh set <ID-NNN> <state> [note]  -> flip the row's leading status keyword.
+#                                    Refuses (exit 1, writes nothing) when <ID-NNN> matches more
+#                                    than one row -- a union-merge duplicate would otherwise have
+#                                    both rows flipped silently. Run `dedupe` first.
+#   backlog.sh dedupe <ID-NNN>     -> collapse duplicate rows sharing one id down to one: keeps
+#                                    the shipped/dropped/parked copy (in that order), else the
+#                                    last occurrence; a unique id is a no-op
 #   backlog.sh states              -> the legal state names
 #
 # BACKLOG_FILE overrides the file path (tests point it at a fixture copy).
@@ -65,11 +71,27 @@ next() {
   echo "$id"
 }
 
+# _match_lines <id> -> that id's row line numbers (1-based), one per line, file order
+_match_lines() {
+  grep -nE "^\| *${1} *\|" "$BACKLOG_FILE" | cut -d: -f1
+}
+
 set_state() {
   local id="${1:-}" state="${2:-}"; shift 2 2>/dev/null || { echo "usage: backlog.sh set <ID-NNN> <state> [note]" >&2; return 64; }
   local note="${*:-}"
   echo "$STATES" | tr ' ' '\n' | grep -qx "$state" || { echo "unknown state '$state' (states: $STATES)" >&2; return 64; }
   grep -qE "^\| *${id} *\|" "$BACKLOG_FILE" || { echo "no Active-queue row for $id" >&2; return 1; }
+  # A union merge (SPEC-... _meta/BACKLOG.md's merge=union) can re-add a duplicate row for the
+  # same id; the awk write below matches every row whose first cell is $id, so writing through a
+  # duplicate flips both silently. Refuse instead of guessing which copy is current.
+  local match_lines match_count
+  match_lines="$(_match_lines "$id")"
+  match_count="$(printf '%s\n' "$match_lines" | grep -c .)"
+  if [ "$match_count" -gt 1 ]; then
+    local joined; joined="$(printf '%s\n' "$match_lines" | paste -sd ',' - | sed 's/,/, /g')"
+    echo "board set: ${id} matches ${match_count} rows (lines ${joined}); dedupe first" >&2
+    return 1
+  fi
   # Replace only the LEADING keyword of the last cell; keep the row's annotation prose.
   awk -F'|' -v OFS='|' -v id="$id" -v st="$state" -v note="$note" '
     $0 ~ "^\\| *" id " *\\|" {
@@ -89,14 +111,45 @@ set_state() {
   echo "$id -> $state"
 }
 
+dedupe() {
+  local id="${1:-}"; [ -n "$id" ] || { echo "usage: backlog.sh dedupe <ID-NNN>" >&2; return 64; }
+  # <line>\t<leading-status> per matching row, file order.
+  local rows
+  rows="$(awk -v id="$id" '
+    $0 ~ ("^\\| *" id " *\\|") {
+      n = split($0, f, "|"); status = f[n-1]; gsub(/^[ \t]+|[ \t]+$/, "", status)
+      split(status, a, /[ \[(]/); printf "%d\t%s\n", NR, a[1]
+    }' "$BACKLOG_FILE")"
+  local count; count="$(printf '%s\n' "$rows" | grep -c .)"
+  if [ "$count" -le 1 ]; then
+    echo "nothing to dedupe"
+    return 0
+  fi
+  # Keep priority: shipped, then dropped, then parked (all resolved/terminal-ish), else the
+  # last occurrence in the file (the most recently written copy).
+  local keep=""
+  for want in shipped dropped parked; do
+    keep="$(printf '%s\n' "$rows" | awk -F'\t' -v w="$want" '$2==w{print $1; exit}')"
+    [ -n "$keep" ] && break
+  done
+  [ -n "$keep" ] || keep="$(printf '%s\n' "$rows" | awk -F'\t' 'END{print $1}')"
+  local dropped; dropped="$(printf '%s\n' "$rows" | awk -F'\t' -v k="$keep" '$1!=k{print $1}' | paste -sd ',' - | sed 's/,/, /g')"
+  local drop_csv; drop_csv="$(printf '%s\n' "$rows" | awk -F'\t' -v k="$keep" '$1!=k{printf "%s,",$1}')"
+  awk -v dropset="$drop_csv" '
+    BEGIN { n = split(dropset, d, ","); for (i = 1; i <= n; i++) if (d[i] != "") skip[d[i]] = 1 }
+    !(NR in skip) { print }' "$BACKLOG_FILE" > "$BACKLOG_FILE.tmp" && mv -f "$BACKLOG_FILE.tmp" "$BACKLOG_FILE"
+  echo "board dedupe: ${id} kept line ${keep}, dropped lines ${dropped}"
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
-    board)  board ;;
-    next)   next ;;
-    set)    set_state "$@" ;;
-    states) echo "$STATES" | tr ' ' '\n' ;;
-    *) echo "usage: backlog.sh {board|next|set <ID-NNN> <state> [note]|states}" >&2; return 64 ;;
+    board)   board ;;
+    next)    next ;;
+    set)     set_state "$@" ;;
+    dedupe)  dedupe "$@" ;;
+    states)  echo "$STATES" | tr ' ' '\n' ;;
+    *) echo "usage: backlog.sh {board|next|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|states}" >&2; return 64 ;;
   esac
 }
 
