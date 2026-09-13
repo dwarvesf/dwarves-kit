@@ -89,10 +89,23 @@ case "$sub" in
               [ -n "${val2:-}" ] && val="$val2"
             fi
             [ -n "$val" ] || val="{}"
+            # A %REMERGE_TIP% marker resolves against the real branch tip, because a
+            # re-merge test cannot know the recovered commit's SHA before wrap creates it.
+            if [ -n "${GH_STUB_LAND_REPO:-}" ]; then
+              real_oid="$(git -C "$GH_STUB_LAND_REPO" rev-parse "${GH_STUB_LAND_BRANCH:-feat/union}" 2>/dev/null)"
+              val="${val//%REMERGE_TIP%/$real_oid}"
+            fi
             printf '%s\n' "$val" ;;
         esac
         exit 0 ;;
-      merge) exit "${GH_STUB_MERGE_RC:-0}" ;;
+      merge)
+        # Stands in for GitHub's own squash landing on the default branch, so the
+        # tree-verify step downstream has a real tree to compare against.
+        if [ -n "${GH_STUB_LAND_REPO:-}" ]; then
+          git -C "$GH_STUB_LAND_REPO" push -q "${GH_STUB_LAND_REMOTE:-origin}" \
+            "${GH_STUB_LAND_BRANCH:-feat/union}:refs/heads/${GH_STUB_LAND_DEF:-main}" 2>/dev/null
+        fi
+        exit "${GH_STUB_MERGE_RC:-0}" ;;
     esac
     exit 1 ;;
 esac
@@ -715,20 +728,25 @@ chk "re-merge dry run left the branch tip alone" \
 chk "re-merge dry run called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
 
 # --- apply: the union log resolves, the push lands, the re-gate passes, one merge follows
+# headRefOid is a %REMERGE_TIP% marker: the recovered commit's real SHA does not exist
+# until wrap creates it mid-run, so the stub resolves the marker against the live branch
+# tip, and its `pr merge` lands that same tip on main so tree-verify has a real match.
 build_remerge ok
 RM_OK="$TMPD/rm-clone-ok"; RM_OK_TIP="$(git -C "$RM_OK" rev-parse feat/union)"
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_OPEN_PRS="$(open_one 12)" GH_STUB_PR_12="$(conflict_json 12 "$RM_OK_TIP")" \
-  GH_STUB_PR_12_2='{"number":12,"title":"log entry","headRefName":"feat/union","headRefOid":"feedfacefeedfacefeedfacefeedfacefeedface","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_PR_12_2='{"number":12,"title":"log entry","headRefName":"feat/union","headRefOid":"%REMERGE_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$RM_OK" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-ok" GH_STUB_LAND_BRANCH="feat/union" GH_STUB_LAND_DEF="main" \
   "$WRAP" merge --apply "$RM_OK" 2>&1)"; rc=$?
+RM_OK_RECOVERED="$(git -C "$RM_OK" rev-parse feat/union)"
 chk "re-merge --apply exits 0" "$rc"
 chk_has "re-merge --apply reports the push" "$out" "re-merged origin/main into feat/union, pushed"
 chk_has "re-merge --apply re-gates the PR" "$out" "eligible #12 after the re-merge"
-chk_has "re-merge --apply merges the recovered PR" "$out" "merged #12 1a2b3c4d5e6f"
+chk_has "re-merge --apply merges the recovered PR" "$out" "merged #12 (1a2b3c4d5e6f): tree verified"
 chk "re-merge --apply called pr merge exactly once" \
   "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 chk "re-merge --apply pinned the head the re-gate read, not the stale one" \
-  "$(grep -q -- '--match-head-commit feedfacefeedfacefeedfacefeedfacefeedface' "$GH_STUB_CALLS"; echo $?)"
+  "$(grep -q -- "--match-head-commit ${RM_OK_RECOVERED}" "$GH_STUB_CALLS"; echo $?)"
 chk "re-merge --apply advanced the remote branch" \
   "$([ "$(git -C "$TMPD/rm-bare-ok" rev-parse feat/union)" != "$RM_OK_TIP" ]; echo $?)"
 chk "re-merge --apply kept both log lines" \
