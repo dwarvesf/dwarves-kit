@@ -104,6 +104,7 @@ Append to every recommendation:
 - Number of uncommitted changes (if any)
 - Whether `docs/specs/SPEC-NNN-<slug>.md` exists and its status
 - Active goal drafts in `.claude/goals/` (count, and `slug -> status`), if any
+- Open handoffs (count, oldest first, each with its Next excerpt): `bash lib/session/handoffs.sh list` scans `_meta/handoffs/` and `.claude/handoffs/` for unconsumed handoff notes (skipping anything already moved to `done/`/`_archive/`) so a pile of unread handoffs surfaces at session start instead of needing a manual audit. If none, print "Open handoffs: none".
 - Running goals across sessions (the cross-session registry): the count from `bash lib/goal/goal-registry.sh list`, so an operator opening a new session sees what other sessions already have in flight before starting a colliding goal. This is the kit-level companion to the native agent view (which sees only the current session's subagents, not goals across sessions).
 
 ## Output format
