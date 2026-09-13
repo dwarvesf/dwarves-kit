@@ -4,6 +4,10 @@
 #
 # Why this suite exists: stacking on a terminal state let a shipped row keep an older note
 # that still described the work as open, and a reader cannot tell which note is current.
+#
+# Cases 8-11: `set` refuses when an id matches more than one row (a union merge can re-add a
+# stale duplicate) instead of flipping both silently, and `dedupe` collapses duplicates down
+# to one, preferring a shipped/dropped/parked copy over the last occurrence.
 set -uo pipefail
 
 KIT_DIR="${KIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
@@ -91,5 +95,51 @@ BACKLOG_FILE="$B" bash "$BL" set ID-001 shipped "note" >/dev/null
 n=$(awk -F'|' '/^\| *ID-001 *\|/ { print NF }' "$B")
 [ "$n" = 6 ] && pass "row still has its original field count ($n)" \
   || fail "row field count changed to $n (was 6)"
+
+# ---- 8. set REFUSES on a duplicate id, writing nothing ----
+B="$TMP/dup-refuse.md"
+printf '## Active queue\n\n| ID | Title | Source | Status |\n|----|-------|--------|--------|\n| ID-871 | a | src | queued |\n| ID-871 | a mirror | src | shipped |\n' > "$B"
+before="$(cat "$B")"
+if err="$(BACKLOG_FILE="$B" bash "$BL" set ID-871 executing "x" 2>&1)"; then
+  fail "set on a 2-row id should exit nonzero, got 0"
+else
+  case "$err" in
+    *"ID-871 matches 2 rows"*"dedupe first"*) pass "set refuses the duplicate id: $err" ;;
+    *) fail "set's refusal message is wrong: $err" ;;
+  esac
+fi
+after="$(cat "$B")"
+[ "$before" = "$after" ] && pass "set on a duplicate id wrote nothing" \
+  || fail "set on a duplicate id should not touch the file"
+
+# ---- 9. set still works on a unique id (no regression) ----
+B="$TMP/dup-unique.md"; mk_board "$B"
+BACKLOG_FILE="$B" bash "$BL" set ID-001 shipped "done" >/dev/null
+c=$(cell "$B")
+[ "$c" = "shipped [done]" ] && pass "set on a unique id is unaffected: $c" \
+  || fail "set on a unique id regressed, got: $c"
+
+# ---- 10. dedupe keeps the shipped copy over the queued one ----
+B="$TMP/dup-dedupe.md"
+printf '## Active queue\n\n| ID | Title | Source | Status |\n|----|-------|--------|--------|\n| ID-871 | a | src | queued |\n| ID-871 | a mirror | src | shipped |\n' > "$B"
+out="$(BACKLOG_FILE="$B" bash "$BL" dedupe ID-871)"
+n="$(grep -c '^| *ID-871 *|' "$B")"
+kept="$(awk -F'|' '/^\| *ID-871 *\|/{print $(NF-1)}' "$B" | tr -d ' ')"
+if [ "$n" = 1 ] && [ "$kept" = "shipped" ]; then
+  pass "dedupe kept the shipped row, dropped the queued one: $out"
+else
+  fail "dedupe should leave exactly one shipped row, got n=$n kept=$kept ($out)"
+fi
+
+# ---- 11. dedupe on a unique id is a no-op ----
+B="$TMP/dup-noop.md"; mk_board "$B"
+before="$(cat "$B")"
+out="$(BACKLOG_FILE="$B" bash "$BL" dedupe ID-001)"
+after="$(cat "$B")"
+if [ "$out" = "nothing to dedupe" ] && [ "$before" = "$after" ]; then
+  pass "dedupe on a unique id is a no-op"
+else
+  fail "dedupe on a unique id should be a no-op, got: $out"
+fi
 
 if [ "$FAILED" = 0 ]; then echo "ALL PASS"; else echo "$FAILED FAILED"; exit 1; fi
