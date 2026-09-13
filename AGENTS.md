@@ -38,6 +38,13 @@ Orient before you touch anything. Read top to bottom; stop when you have enough.
 
 How to do one unit of work. The smallest verifiable increment, verified, committed.
 
+**Skill routing in an adopted repo.** Idea or design intent ("design X", "brainstorm X",
+"thiết kế X", "should we build X") enters through `/kit:think`, then the opt-in `/kit:design`.
+Bug intent ("fix this", "the test fails", "bị lỗi") enters through `/kit:debug`. Third-party
+process skills that overlap them (superpowers `brainstorming`, `systematic-debugging`) serve
+repos the kit has not adopted; here they would run a parallel pipeline outside the gate
+ledger and the ship-gate, so route past them.
+
 0. **Take work.** Handed a task: use it. **Handed a WAVE (2+ items approved in one
    conversation): enqueue every item as a board row FIRST (queued; the in-flight one
    executing), then pull them one at a time.** Work that never touches the board is

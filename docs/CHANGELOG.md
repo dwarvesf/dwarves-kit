@@ -64,6 +64,7 @@ All notable changes to dwarves-kit are documented here.
 - Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
 
 ### Fixed
+- `/kit:think`, `/kit:design`, and `/kit:debug` descriptions now carry trigger phrases (English and Vietnamese: "design X", "brainstorm X", "thiết kế X", "fix this bug", "bị lỗi"), and `AGENTS.md` §2 gains a skill-routing paragraph. Skill selection runs on descriptions, so the bare one-liners lost every "design" or "bug" prompt to superpowers `brainstorming` / `systematic-debugging`, which then ran a parallel pipeline outside the gate ledger and ship-gate in adopted repos.
 - Fixture `mkrepo()` helpers in `tests/test-cheap-guards.sh`, `tests/test-queue.bats`, `tests/test-runaway-guards.sh`, and `tests/test-notes-sanitization.sh` now refuse to run `git config` under an empty fixture dir (a failed `mktemp -d` or an unset caller var previously let `git -C ""` write the tester git identity into the real repo's `.git/config`; board ID-873).
 - `tests/test-explain.sh`, `tests/test-quiz-gate.sh`, and `tests/test-weekend-batch.sh` captured
   their proof samples (`docs/verification/{explain-command,quiz-gate,weekend-batch}/sample-*.md`)
