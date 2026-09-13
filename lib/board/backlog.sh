@@ -81,9 +81,9 @@ set_state() {
   local note="${*:-}"
   echo "$STATES" | tr ' ' '\n' | grep -qx "$state" || { echo "unknown state '$state' (states: $STATES)" >&2; return 64; }
   grep -qE "^\| *${id} *\|" "$BACKLOG_FILE" || { echo "no Active-queue row for $id" >&2; return 1; }
-  # A union merge (SPEC-... _meta/BACKLOG.md's merge=union) can re-add a duplicate row for the
-  # same id; the awk write below matches every row whose first cell is $id, so writing through a
-  # duplicate flips both silently. Refuse instead of guessing which copy is current.
+  # A union merge on _meta/BACKLOG.md can re-add a duplicate row for the same id; the awk write
+  # below matches every row whose first cell is $id, so writing through a duplicate flips both
+  # silently. Refuse instead of guessing which copy is current.
   local match_lines match_count
   match_lines="$(_match_lines "$id")"
   match_count="$(printf '%s\n' "$match_lines" | grep -c .)"
