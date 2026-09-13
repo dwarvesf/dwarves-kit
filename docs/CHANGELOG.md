@@ -12,6 +12,18 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- `wrap merge --apply` verifies the default branch's tree after `gh pr merge` reports MERGED,
+  instead of trusting gh's word alone: it fetches the default branch and checks the PR head's
+  tree against the new tip, either whole or scoped to the paths the PR touched (another PR may
+  have landed on the default branch meanwhile). A stale `headRefOid` captured before a late
+  push, or an armed auto-merge overtaken by a push after the gates read, can both report
+  MERGED while the default branch moves on without the reviewed tree; three such gaps were
+  confirmed by hand in one session. A verified merge now prints `tree verified`; a real gap
+  prints `TREE MISMATCH, <n> paths differ` and exits 3 without deleting the branch.
+- `lib/session/handoffs.sh list [--repo DIR] [--days N]`: lists open handoff files (`_meta/handoffs/`
+  and `.claude/handoffs/`, skipping `done/`/`_archive/`), oldest first, each with its `## Next`
+  excerpt. `/kit:start` now surfaces the count and excerpts next to its goal-drafts bullet, so a
+  pile of unread handoffs shows up at session entry instead of needing a manual audit.
 - `batch-debt-warn.sh` (PreToolUse Bash hook, `session` module): warns once per session when a
   second `gh pr merge` runs and the gate ledger holds no lane START since that session's first
   merge. A batch-shaped session (board sweep, overnight run) records neither gate taps nor a
@@ -52,6 +64,7 @@ All notable changes to dwarves-kit are documented here.
 - Migrated `docs/proof/` (flagged in `docs/README.md` as pre-convention, never migrated) into `docs/verification/`, and moved `lib/skill-curator/RUNBOOK.md` next to its sibling docs under `lib/skill-curator/docs/`.
 
 ### Fixed
+- `/kit:think`, `/kit:design`, and `/kit:debug` descriptions now carry trigger phrases (English and Vietnamese: "design X", "brainstorm X", "thiết kế X", "fix this bug", "bị lỗi"), and `AGENTS.md` §2 gains a skill-routing paragraph. Skill selection runs on descriptions, so the bare one-liners lost every "design" or "bug" prompt to superpowers `brainstorming` / `systematic-debugging`, which then ran a parallel pipeline outside the gate ledger and ship-gate in adopted repos.
 - Fixture `mkrepo()` helpers in `tests/test-cheap-guards.sh`, `tests/test-queue.bats`, `tests/test-runaway-guards.sh`, and `tests/test-notes-sanitization.sh` now refuse to run `git config` under an empty fixture dir (a failed `mktemp -d` or an unset caller var previously let `git -C ""` write the tester git identity into the real repo's `.git/config`; board ID-873).
 - `tests/test-explain.sh`, `tests/test-quiz-gate.sh`, and `tests/test-weekend-batch.sh` captured
   their proof samples (`docs/verification/{explain-command,quiz-gate,weekend-batch}/sample-*.md`)

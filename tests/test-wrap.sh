@@ -80,11 +80,32 @@ case "$sub" in
             printf '%s\n' "${GH_STUB_VIEW_STATE:-$default_state}" ;;
           *)
             key="GH_STUB_PR_$n"; eval "val=\"\${$key:-}\""
+            # A second detail read may serve a different body, so a case can model the PR
+            # whose mergeability changes once the re-merge push lands.
+            cnt_f="${GH_STUB_CALLS:-/dev/null}.view-$n"
+            cnt=$(( $(cat "$cnt_f" 2>/dev/null || echo 0) + 1 )); echo "$cnt" > "$cnt_f" 2>/dev/null
+            if [ "$cnt" -gt 1 ]; then
+              key2="GH_STUB_PR_${n}_2"; eval "val2=\"\${$key2:-}\""
+              [ -n "${val2:-}" ] && val="$val2"
+            fi
             [ -n "$val" ] || val="{}"
+            # A %REMERGE_TIP% marker resolves against the real branch tip, because a
+            # re-merge test cannot know the recovered commit's SHA before wrap creates it.
+            if [ -n "${GH_STUB_LAND_REPO:-}" ]; then
+              real_oid="$(git -C "$GH_STUB_LAND_REPO" rev-parse "${GH_STUB_LAND_BRANCH:-feat/union}" 2>/dev/null)"
+              val="${val//%REMERGE_TIP%/$real_oid}"
+            fi
             printf '%s\n' "$val" ;;
         esac
         exit 0 ;;
-      merge) exit "${GH_STUB_MERGE_RC:-0}" ;;
+      merge)
+        # Stands in for GitHub's own squash landing on the default branch, so the
+        # tree-verify step downstream has a real tree to compare against.
+        if [ -n "${GH_STUB_LAND_REPO:-}" ]; then
+          git -C "$GH_STUB_LAND_REPO" push -q "${GH_STUB_LAND_REMOTE:-origin}" \
+            "${GH_STUB_LAND_BRANCH:-feat/union}:refs/heads/${GH_STUB_LAND_DEF:-main}" 2>/dev/null
+        fi
+        exit "${GH_STUB_MERGE_RC:-0}" ;;
     esac
     exit 1 ;;
 esac
@@ -563,6 +584,288 @@ chk "dry-run: the union file is byte-identical" \
   "$([ "$UD_BEFORE" = "$(cksum < "$UD/_meta/LAB_LOG.md")" ]; echo $?)"
 
 # ===========================================================================
+echo "=== apply: wrap.pull_past_dirty stashes only the blocking files ==="
+# ===========================================================================
+# Real repos again, for the same reason: what git refuses to overwrite during a fast-forward
+# is the subject, and no stubbed `git` refuses anything.
+A_BASE=$'a1\na2\na3\na4\na5\na6\na7\na8\na9\na10\n'
+A_REMOTE=$'a1 remote\na2\na3\na4\na5\na6\na7\na8\na9\na10\n'
+A_LOCAL_FAR=$'a1\na2\na3\na4\na5\na6\na7\na8\na9\na10 local\n'
+A_LOCAL_SAME=$'a1 local\na2\na3\na4\na5\na6\na7\na8\na9\na10\n'
+
+PD_ON="$TMPD/pd-knob-on"; mkdir -p "$PD_ON"
+printf '[wrap]\npull_past_dirty = true\n' > "$PD_ON/kit.toml"
+PD_PROJ="$TMPD/pd-knob-project"; mkdir -p "$PD_PROJ"
+printf '[wrap]\npull_past_dirty = true\n' > "$PD_PROJ/.kit.toml"
+
+build_pd_repo() { # build_pd_repo <name> -- bare origin plus a clone on main
+  local name="$1" work clone
+  work="$TMPD/pdwork-$name"; clone="$TMPD/pdclone-$name"
+  mkdir -p "$work/_meta"
+  git -C "$work" init -q
+  gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+  printf '%s' "$LAB_BASE" > "$work/_meta/LAB_LOG.md"
+  printf '%s' "$A_BASE" > "$work/A.md"
+  printf 'b base\n' > "$work/B.md"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/pdbare-$name"
+  git clone -q "$TMPD/pdbare-$name" "$clone"
+  gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+}
+
+advance_pd_repo() { # advance_pd_repo <name> [also-lab] -- one incoming commit touching A.md
+  local name="$1" also="${2:-}" push
+  push="$TMPD/pdpush-$name"
+  git clone -q "$TMPD/pdbare-$name" "$push"
+  gitc "$push"
+  printf '%s' "$A_REMOTE" > "$push/A.md"
+  [ -n "$also" ] && printf '%s' "$LAB_REMOTE" > "$push/_meta/LAB_LOG.md"
+  git -C "$push" commit -qam advance
+  git -C "$push" push -q origin main
+}
+
+# A stash another session left behind. A bare `git stash pop` would take this one; every case
+# below asserts it survives untouched, which is the whole reason the pop resolves a ref.
+pd_sibling_stash() { # pd_sibling_stash <clone>
+  printf 'sibling work\n' >> "$1/B.md"
+  git -C "$1" stash push -q -m sibling -- B.md
+}
+pd_stash_count() { git -C "$1" stash list | grep -c '' ; }
+
+echo "--- knob off: the pull still aborts and nothing moves"
+build_pd_repo off; advance_pd_repo off
+PO="$TMPD/pdclone-off"
+pd_sibling_stash "$PO"
+printf '%s' "$A_LOCAL_FAR" > "$PO/A.md"
+printf 'b local edit\n' > "$PO/B.md"
+printf 'c untracked\n' > "$PO/C.md"
+PO_HEAD="$(git -C "$PO" rev-parse HEAD)"
+PO_A="$(cksum < "$PO/A.md")"; PO_B="$(cksum < "$PO/B.md")"
+out="$("$WRAP" apply --apply "$PO" 2>&1)"; rc=$?
+chk "knob off: apply still exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "knob off: the pull failure is still reported" "$out" "FAILED pull --ff-only"
+chk_has "knob off: git named the blocking file" "$out" "would be overwritten by merge"
+chk_no "knob off: nothing was stashed" "$out" "stashed"
+chk "knob off: HEAD did not move" "$([ "$(git -C "$PO" rev-parse HEAD)" = "$PO_HEAD" ]; echo $?)"
+chk "knob off: A.md is byte-identical" "$([ "$PO_A" = "$(cksum < "$PO/A.md")" ]; echo $?)"
+chk "knob off: B.md is byte-identical" "$([ "$PO_B" = "$(cksum < "$PO/B.md")" ]; echo $?)"
+chk "knob off: the untracked file is still there" "$([ -f "$PO/C.md" ]; echo $?)"
+chk "knob off: the sibling stash is the only stash" "$([ "$(pd_stash_count "$PO")" = "1" ]; echo $?)"
+
+echo "--- knob on: the blocking file goes aside, the pull lands, everything else stays put"
+build_pd_repo on; advance_pd_repo on
+PN="$TMPD/pdclone-on"
+pd_sibling_stash "$PN"
+printf '%s' "$A_LOCAL_FAR" > "$PN/A.md"
+printf 'b local edit\n' > "$PN/B.md"
+printf 'c untracked\n' > "$PN/C.md"
+PN_TIP="$(git -C "$TMPD/pdbare-on" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PN" 2>&1)"; rc=$?
+chk "knob on: apply exits 0" "$rc"
+chk_no "knob on: the pull did not fail" "$out" "FAILED pull --ff-only"
+chk_has "knob on: the NOTE says the pull stashes rather than aborts" "$out" \
+  "wrap.pull_past_dirty is on, so the pull stashes"
+chk_has "knob on: exactly the one blocking file was stashed" "$out" "stashed 1 dirty tracked file(s)"
+chk_has "knob on: the stash carries the run name" "$out" "as wrap-pull-past-dirty-"
+chk_has "knob on: the stash was restored and dropped" "$out" "restored the stashed file(s) and dropped"
+chk "knob on: HEAD moved to the incoming commit" \
+  "$([ "$(git -C "$PN" rev-parse HEAD)" = "$PN_TIP" ]; echo $?)"
+chk "knob on: the incoming line landed in A.md" "$(grep -qx 'a1 remote' "$PN/A.md"; echo $?)"
+chk "knob on: the local line survived in A.md" "$(grep -qx 'a10 local' "$PN/A.md"; echo $?)"
+chk_has "knob on: A.md is still uncommitted" "$(git -C "$PN" diff --name-only)" "A.md"
+chk "knob on: A.md is not staged" \
+  "$([ -z "$(git -C "$PN" diff --cached --name-only)" ]; echo $?)"
+chk "knob on: B.md kept its local edit" "$([ "$(cat "$PN/B.md")" = "b local edit" ]; echo $?)"
+chk_has "knob on: B.md is still dirty" "$(git -C "$PN" diff --name-only)" "B.md"
+chk "knob on: the untracked file is untouched" \
+  "$([ "$(cat "$PN/C.md")" = "c untracked" ]; echo $?)"
+chk "knob on: the sibling stash is the only stash left" \
+  "$([ "$(pd_stash_count "$PN")" = "1" ]; echo $?)"
+chk_has "knob on: the surviving stash is the sibling's" "$(git -C "$PN" stash list)" "sibling"
+
+echo "--- knob on: a sibling stash pushed DURING the pull does not steal the pop"
+# The race the by-commit resolution exists for. A stash index shifts the moment any session
+# pushes an entry, so a ref resolved before the pull points at the wrong entry after it. A
+# post-merge hook is how the suite stages that deterministically.
+build_pd_repo race; advance_pd_repo race
+PRACE="$TMPD/pdclone-race"
+printf '%s' "$A_LOCAL_FAR" > "$PRACE/A.md"
+printf 'b local edit\n' > "$PRACE/B.md"
+mkdir -p "$PRACE/.git/hooks"
+printf '#!/bin/sh\ngit stash push -q -m sibling-mid-pull -- B.md\n' > "$PRACE/.git/hooks/post-merge"
+chmod +x "$PRACE/.git/hooks/post-merge"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PRACE" 2>&1)"; rc=$?
+chk "mid-pull stash: apply exits 0" "$rc"
+chk_has "mid-pull stash: our own stash was the one restored" "$out" \
+  "restored the stashed file(s) and dropped"
+chk "mid-pull stash: A.md kept the local edit" "$(grep -qx 'a10 local' "$PRACE/A.md"; echo $?)"
+chk "mid-pull stash: A.md took the incoming line" "$(grep -qx 'a1 remote' "$PRACE/A.md"; echo $?)"
+chk "mid-pull stash: the sibling's mid-pull stash is still listed" \
+  "$([ "$(pd_stash_count "$PRACE")" = "1" ]; echo $?)"
+chk_has "mid-pull stash: and it is the sibling's, not ours" "$(git -C "$PRACE" stash list)" \
+  "sibling-mid-pull"
+
+echo "--- knob on: a pop conflict keeps the stash and reports it"
+build_pd_repo conflict; advance_pd_repo conflict
+PC="$TMPD/pdclone-conflict"
+pd_sibling_stash "$PC"
+printf '%s' "$A_LOCAL_SAME" > "$PC/A.md"
+PC_TIP="$(git -C "$TMPD/pdbare-conflict" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PC" 2>&1)"; rc=$?
+chk "pop conflict: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "pop conflict: the report names the file and keeps the stash" "$out" \
+  "PULLED, POP CONFLICT: A.md, stash wrap-pull-past-dirty-"
+chk "pop conflict: the pull still landed" \
+  "$([ "$(git -C "$PC" rev-parse HEAD)" = "$PC_TIP" ]; echo $?)"
+chk "pop conflict: the conflict markers are in the file" \
+  "$(grep -q '^<<<<<<<' "$PC/A.md"; echo $?)"
+chk_has "pop conflict: the run's own stash is still listed" "$(git -C "$PC" stash list)" "wrap-pull-past-dirty-"
+chk "pop conflict: the sibling stash survived too" \
+  "$([ "$(pd_stash_count "$PC")" = "2" ]; echo $?)"
+
+echo "--- knob on: a union-marked file blocked by the same pull resolves during the pop"
+build_pd_repo union; advance_pd_repo union also-lab
+PU="$TMPD/pdclone-union"
+printf '%s' "$A_LOCAL_FAR" > "$PU/A.md"
+printf '%s' "$LAB_LOCAL" > "$PU/_meta/LAB_LOG.md"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PU" 2>&1)"; rc=$?
+chk "union pop: apply exits 0" "$rc"
+chk_has "union pop: both blocking files were stashed" "$out" "stashed 2 dirty tracked file(s)"
+chk_no "union pop: the union file never conflicted" "$out" "POP CONFLICT"
+chk "union pop: the incoming log line landed" \
+  "$(grep -qF 'remote: the incoming line' "$PU/_meta/LAB_LOG.md"; echo $?)"
+chk "union pop: the local log line survived" \
+  "$(grep -qF 'local: the other session line' "$PU/_meta/LAB_LOG.md"; echo $?)"
+chk "union pop: no stash is left behind" "$([ "$(pd_stash_count "$PU")" = "0" ]; echo $?)"
+
+echo "--- knob on: an untracked file the incoming commit adds still aborts the pull"
+build_pd_repo untracked
+UPUSH="$TMPD/pdpush-untracked"
+git clone -q "$TMPD/pdbare-untracked" "$UPUSH"; gitc "$UPUSH"
+printf '%s' "$A_REMOTE" > "$UPUSH/A.md"; printf 'c incoming\n' > "$UPUSH/C.md"
+git -C "$UPUSH" add -A; git -C "$UPUSH" commit -qm advance; git -C "$UPUSH" push -q origin main
+PX="$TMPD/pdclone-untracked"
+pd_sibling_stash "$PX"
+printf '%s' "$A_LOCAL_FAR" > "$PX/A.md"
+printf 'c local untracked\n' > "$PX/C.md"
+PX_HEAD="$(git -C "$PX" rev-parse HEAD)"
+PX_A="$(cksum < "$PX/A.md")"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PX" 2>&1)"; rc=$?
+chk "untracked block: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "untracked block: the pull still failed" "$out" "FAILED pull --ff-only"
+chk_has "untracked block: the stash came back anyway" "$out" "restored the stashed file(s)"
+chk "untracked block: HEAD did not move" \
+  "$([ "$(git -C "$PX" rev-parse HEAD)" = "$PX_HEAD" ]; echo $?)"
+chk "untracked block: the dirty tracked file is byte-identical" \
+  "$([ "$PX_A" = "$(cksum < "$PX/A.md")" ]; echo $?)"
+chk "untracked block: the untracked file kept its local content" \
+  "$([ "$(cat "$PX/C.md")" = "c local untracked" ]; echo $?)"
+chk "untracked block: the sibling stash is the only stash" \
+  "$([ "$(pd_stash_count "$PX")" = "1" ]; echo $?)"
+
+echo "--- knob on: a dirty index is never stashed past"
+build_pd_repo staged2; advance_pd_repo staged2
+PS="$TMPD/pdclone-staged2"
+printf '%s' "$A_LOCAL_FAR" > "$PS/A.md"
+git -C "$PS" add A.md
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PS" 2>&1)"; rc=$?
+chk "dirty index: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_has "dirty index: the index reason prints" "$out" "NOTE: the index carries staged changes"
+chk_no "dirty index: nothing was stashed" "$out" "stashed"
+chk_has "dirty index: the path is still staged" "$(git -C "$PS" diff --cached --name-only)" "A.md"
+
+echo "--- knob on: a dry run never stashes"
+build_pd_repo dry2; advance_pd_repo dry2
+PD="$TMPD/pdclone-dry2"
+printf '%s' "$A_LOCAL_FAR" > "$PD/A.md"
+PD_A="$(cksum < "$PD/A.md")"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply "$PD" 2>&1)"
+chk_no "dry run: nothing was stashed" "$out" "stashed"
+chk_has "dry run: the knob is announced" "$out" "--apply would stash whichever of these block the pull"
+chk "dry run: no stash was created" "$([ "$(pd_stash_count "$PD")" = "0" ]; echo $?)"
+chk "dry run: the dirty file is byte-identical" "$([ "$PD_A" = "$(cksum < "$PD/A.md")" ]; echo $?)"
+
+echo "--- knob on: an incoming rename does not hide the path the pull blocks on"
+build_pd_repo rename
+RPUSH="$TMPD/pdpush-rename"
+git clone -q "$TMPD/pdbare-rename" "$RPUSH"; gitc "$RPUSH"
+git -C "$RPUSH" mv A.md Z.md
+printf '%s' "$A_REMOTE" > "$RPUSH/Z.md"
+git -C "$RPUSH" add -A; git -C "$RPUSH" commit -qm rename
+git -C "$TMPD/pdbare-rename" fetch -q "$RPUSH" main:main
+PR_="$TMPD/pdclone-rename"
+printf '%s' "$A_LOCAL_FAR" > "$PR_/A.md"
+PR_TIP="$(git -C "$TMPD/pdbare-rename" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PR_" 2>&1)"; rc=$?
+chk "rename: apply exits 0" "$rc"
+chk_has "rename: the renamed-away path was still stashed" "$out" "stashed 1 dirty tracked file(s)"
+chk "rename: HEAD moved to the incoming commit" \
+  "$([ "$(git -C "$PR_" rev-parse HEAD)" = "$PR_TIP" ]; echo $?)"
+# The pop follows the rename: the local edit lands on the incoming path, and nothing is lost.
+chk "rename: the renamed file carries the incoming content" \
+  "$(grep -qx 'a1 remote' "$PR_/Z.md"; echo $?)"
+chk "rename: the local edit followed the rename instead of being lost" \
+  "$(grep -qx 'a10 local' "$PR_/Z.md"; echo $?)"
+chk "rename: the old path is gone, as the incoming commit says" "$([ ! -e "$PR_/A.md" ]; echo $?)"
+
+echo "--- knob on: a worktree-deleted file is left for git to rewrite, never stashed"
+build_pd_repo deleted; advance_pd_repo deleted
+PDEL="$TMPD/pdclone-deleted"
+mv -f "$PDEL/A.md" "$TMPD/pd-deleted-A.md"
+PDEL_TIP="$(git -C "$TMPD/pdbare-deleted" rev-parse main)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PDEL" 2>&1)"; rc=$?
+chk "deleted: apply exits 0, as it does with the knob off" "$rc"
+chk_no "deleted: nothing was stashed" "$out" "stashed"
+chk_no "deleted: no pop conflict was manufactured" "$out" "POP CONFLICT"
+chk "deleted: the pull landed" \
+  "$([ "$(git -C "$PDEL" rev-parse HEAD)" = "$PDEL_TIP" ]; echo $?)"
+chk "deleted: git rewrote the file with the incoming content" \
+  "$(grep -qx 'a1 remote' "$PDEL/A.md"; echo $?)"
+chk "deleted: the index carries no unmerged path" \
+  "$([ -z "$(git -C "$PDEL" diff --name-only --diff-filter=U)" ]; echo $?)"
+
+echo "--- knob on: a diverged checkout is never stashed past"
+build_pd_repo diverged; advance_pd_repo diverged
+PDIV="$TMPD/pdclone-diverged"
+printf 'local commit\n' > "$PDIV/B.md"
+git -C "$PDIV" commit -qam "chore: a local commit the remote never saw"
+printf '%s' "$A_LOCAL_FAR" > "$PDIV/A.md"
+PDIV_HEAD="$(git -C "$PDIV" rev-parse HEAD)"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PDIV" 2>&1)"; rc=$?
+chk "diverged: apply exits 2" "$([ "$rc" -eq 2 ]; echo $?)"
+chk_no "diverged: nothing was stashed" "$out" "stashed"
+chk "diverged: no stash was created" "$([ "$(pd_stash_count "$PDIV")" = "0" ]; echo $?)"
+chk "diverged: HEAD did not move" \
+  "$([ "$(git -C "$PDIV" rev-parse HEAD)" = "$PDIV_HEAD" ]; echo $?)"
+
+echo "--- knob on: a path with a space and a glob character is stashed as itself"
+build_pd_repo oddname
+ONAME='a [odd] name.md'
+git -C "$TMPD/pdwork-oddname" checkout -q main 2>/dev/null
+printf '%s' "$A_BASE" > "$TMPD/pdwork-oddname/$ONAME"
+printf 'decoy\n' > "$TMPD/pdwork-oddname/a o name.md"
+git -C "$TMPD/pdwork-oddname" add -A
+git -C "$TMPD/pdwork-oddname" commit -qm "chore: add the odd names"
+git -C "$TMPD/pdbare-oddname" fetch -q "$TMPD/pdwork-oddname" main:main
+PODD="$TMPD/pdclone-oddname"
+git -C "$PODD" pull -q --ff-only
+printf '%s' "$A_REMOTE" > "$TMPD/pdwork-oddname/$ONAME"
+git -C "$TMPD/pdwork-oddname" commit -qam "chore: change the odd name"
+git -C "$TMPD/pdbare-oddname" fetch -q "$TMPD/pdwork-oddname" main:main
+printf '%s' "$A_LOCAL_FAR" > "$PODD/$ONAME"
+printf 'decoy local\n' > "$PODD/a o name.md"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PODD" 2>&1)"; rc=$?
+chk "odd name: apply exits 0" "$rc"
+chk_has "odd name: exactly one file was stashed" "$out" "stashed 1 dirty tracked file(s)"
+chk "odd name: the incoming line landed" "$(grep -qx 'a1 remote' "$PODD/$ONAME"; echo $?)"
+chk "odd name: the local edit came back" "$(grep -qx 'a10 local' "$PODD/$ONAME"; echo $?)"
+chk "odd name: the decoy the glob would have matched is untouched" \
+  "$([ "$(cat "$PODD/a o name.md")" = "decoy local" ]; echo $?)"
+
+# ===========================================================================
 echo "=== gh absent: every non-ancestor is LEAVE, merge refuses ==="
 # ===========================================================================
 mkdir -p "$TMPD/nogh"
@@ -585,6 +888,21 @@ out="$(GH_STUB_UNAUTH=1 "$WRAP" merge "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge unauthenticated exits 1" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "merge unauthenticated names the reason" "$out" "(gh unauthenticated)"
 
+# feat/wrap stops being a fake OID here: `merge --apply`'s tree-verify needs a real local
+# commit to check, so give the branch one and land its exact content on the remote's main,
+# standing in for the squash `gh pr merge` performs on GitHub's own side (this stub never
+# pushes anything for real).
+MERGE_CUR="$(git -C "$TMPD/clone-scan-main" branch --show-current)"
+git -C "$TMPD/clone-scan-main" fetch -q origin main
+git -C "$TMPD/clone-scan-main" checkout -q -b feat/wrap origin/main
+echo "wrap the session" > "$TMPD/clone-scan-main/wrap-note.txt"
+git -C "$TMPD/clone-scan-main" add -A
+git -C "$TMPD/clone-scan-main" commit -qm "wrap the session"
+PR7_OID="$(git -C "$TMPD/clone-scan-main" rev-parse feat/wrap)"
+git -C "$TMPD/clone-scan-main" checkout -q "$MERGE_CUR"
+export GH_STUB_PR_7="{\"number\":7,\"title\":\"wrap the session\",\"headRefName\":\"feat/wrap\",\"headRefOid\":\"$PR7_OID\",\"baseRefName\":\"main\",\"mergeable\":\"MERGEABLE\",\"mergeStateStatus\":\"CLEAN\",\"reviewDecision\":\"APPROVED\",\"statusCheckRollup\":[{\"conclusion\":\"SUCCESS\"},{\"conclusion\":\"SKIPPED\"}]}"
+git -C "$TMPD/clone-scan-main" push -q "$TMPD/bare-rmain" feat/wrap:refs/heads/main
+
 # ===========================================================================
 echo "=== merge: dry-run lists the eligible PR, --apply merges exactly one ==="
 # ===========================================================================
@@ -597,7 +915,7 @@ chk "merge dry-run calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" &&
 : > "$GH_STUB_CALLS"
 out="$("$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 0" "$rc"
-chk_has "merge --apply reports the merge SHA" "$out" "merged #7 1a2b3c4d5e6f"
+chk_has "merge --apply reports the merge, tree verified" "$out" "merged #7 (1a2b3c4d5e6f): tree verified"
 chk "merge --apply called pr merge exactly once" "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
 chk "merge --apply passed --squash" "$(grep -q '^pr merge 7 .*--squash' "$GH_STUB_CALLS"; echo $?)"
 chk "merge --apply passed no --delete-branch" "$(grep -q -- '--delete-branch' "$GH_STUB_CALLS" && echo 1 || echo 0)"
@@ -645,6 +963,183 @@ echo "=== merge: the post-merge state check fails closed ==="
 : > "$GH_STUB_CALLS"
 out="$(GH_STUB_VIEW_STATE='{"state":"OPEN","mergeCommit":null}' "$WRAP" merge --apply "$TMPD/clone-scan-main" 2>&1)"; rc=$?
 chk "merge --apply exits 2 when the PR is not MERGED after the call" "$([ "$rc" -eq 2 ]; echo $?)"
+
+# ===========================================================================
+echo "=== merge: one bounded re-merge when GitHub conflicts on a union-marked log ==="
+# ===========================================================================
+# GitHub squash-merges without reading .gitattributes, so a log both sides appended to
+# conflicts on the PR while `git merge` resolves it by union. Each case gets its own remote
+# and its own PR number, because the stub counts detail reads per number.
+build_remerge() { # build_remerge <name> [--also-conflict]
+  local name="$1" also="${2:-}" work="$TMPD/rm-work-$1" clone="$TMPD/rm-clone-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  mkdir -p "$work/_meta"
+  printf '_meta/LAB_LOG.md merge=union\n' > "$work/.gitattributes"
+  printf 'base line\n' > "$work/_meta/LAB_LOG.md"
+  printf 'shared\n' > "$work/a.txt"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git -C "$work" checkout -q -b feat/union
+  printf 'branch line\nbase line\n' > "$work/_meta/LAB_LOG.md"
+  [ "$also" = "--also-conflict" ] && printf 'branch side\n' > "$work/a.txt"
+  git -C "$work" commit -qam "branch entry"
+  git -C "$work" checkout -q main
+  printf 'main line\nbase line\n' > "$work/_meta/LAB_LOG.md"
+  [ "$also" = "--also-conflict" ] && printf 'main side\n' > "$work/a.txt"
+  git -C "$work" commit -qam "main entry"
+  git clone -q --bare "$work" "$TMPD/rm-bare-$name"
+  git clone -q "$TMPD/rm-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/union origin/feat/union
+}
+conflict_json() { # conflict_json <number>
+  printf '{"number":%s,"title":"log entry","headRefName":"feat/union","headRefOid":"%s","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' "$1" "$2"
+}
+open_one() { printf '[{"number":%s,"title":"log entry","headRefName":"feat/union"}]' "$1"; }
+
+# --- dry run: the retry is announced, never run
+build_remerge dry
+RM_DRY="$TMPD/rm-clone-dry"; RM_DRY_TIP="$(git -C "$RM_DRY" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 11)" GH_STUB_PR_11="$(conflict_json 11 "$RM_DRY_TIP")" \
+  "$WRAP" merge "$RM_DRY" 2>&1)"
+chk_has "re-merge dry run names the branch it would re-merge" "$out" \
+  "note: #11 conflicts; --apply would try one re-merge of main into feat/union"
+chk "re-merge dry run left the branch tip alone" \
+  "$([ "$(git -C "$RM_DRY" rev-parse feat/union)" = "$RM_DRY_TIP" ]; echo $?)"
+chk "re-merge dry run called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- apply: the union log resolves, the push lands, the re-gate passes, one merge follows
+# headRefOid is a %REMERGE_TIP% marker: the recovered commit's real SHA does not exist
+# until wrap creates it mid-run, so the stub resolves the marker against the live branch
+# tip, and its `pr merge` lands that same tip on main so tree-verify has a real match.
+build_remerge ok
+RM_OK="$TMPD/rm-clone-ok"; RM_OK_TIP="$(git -C "$RM_OK" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 12)" GH_STUB_PR_12="$(conflict_json 12 "$RM_OK_TIP")" \
+  GH_STUB_PR_12_2='{"number":12,"title":"log entry","headRefName":"feat/union","headRefOid":"%REMERGE_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$RM_OK" GH_STUB_LAND_REMOTE="$TMPD/rm-bare-ok" GH_STUB_LAND_BRANCH="feat/union" GH_STUB_LAND_DEF="main" \
+  "$WRAP" merge --apply "$RM_OK" 2>&1)"; rc=$?
+RM_OK_RECOVERED="$(git -C "$RM_OK" rev-parse feat/union)"
+chk "re-merge --apply exits 0" "$rc"
+chk_has "re-merge --apply reports the push" "$out" "re-merged origin/main into feat/union, pushed"
+chk_has "re-merge --apply re-gates the PR" "$out" "eligible #12 after the re-merge"
+chk_has "re-merge --apply merges the recovered PR" "$out" "merged #12 (1a2b3c4d5e6f): tree verified"
+chk "re-merge --apply called pr merge exactly once" \
+  "$([ "$(grep -c '^pr merge' "$GH_STUB_CALLS")" -eq 1 ]; echo $?)"
+chk "re-merge --apply pinned the head the re-gate read, not the stale one" \
+  "$(grep -q -- "--match-head-commit ${RM_OK_RECOVERED}" "$GH_STUB_CALLS"; echo $?)"
+chk "re-merge --apply advanced the remote branch" \
+  "$([ "$(git -C "$TMPD/rm-bare-ok" rev-parse feat/union)" != "$RM_OK_TIP" ]; echo $?)"
+chk "re-merge --apply kept both log lines" \
+  "$(grep -q 'branch line' "$RM_OK/_meta/LAB_LOG.md" && grep -q 'main line' "$RM_OK/_meta/LAB_LOG.md"; echo $?)"
+
+# --- apply: a conflict outside the union-marked files aborts and changes nothing
+build_remerge bad --also-conflict
+RM_BAD="$TMPD/rm-clone-bad"; RM_BAD_TIP="$(git -C "$RM_BAD" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 13)" GH_STUB_PR_13="$(conflict_json 13 "$RM_BAD_TIP")" \
+  "$WRAP" merge --apply "$RM_BAD" 2>&1)"; rc=$?
+chk "re-merge with a real conflict exits 0 without merging" "$rc"
+chk_has "re-merge with a real conflict says it aborted" "$out" \
+  "conflicts beyond the union-marked files, aborted"
+chk "re-merge with a real conflict left the branch tip alone" \
+  "$([ "$(git -C "$RM_BAD" rev-parse feat/union)" = "$RM_BAD_TIP" ]; echo $?)"
+chk "re-merge with a real conflict left no half-merged tree" \
+  "$([ -z "$(git -C "$RM_BAD" status --porcelain)" ]; echo $?)"
+chk "re-merge with a real conflict called no pr merge" \
+  "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- apply: a tip that is not the gated head is never pushed
+build_remerge tip
+RM_TIP="$TMPD/rm-clone-tip"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 14)" \
+  GH_STUB_PR_14="$(conflict_json 14 3333333333333333333333333333333333333333)" \
+  "$WRAP" merge --apply "$RM_TIP" 2>&1)"
+chk_has "re-merge refuses a branch whose tip is not the PR head" "$out" "is not the PR head"
+chk "re-merge tip mismatch called no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# --- apply: two conflicting PRs leave the branch ambiguous, so nothing is retried
+build_remerge two
+RM_TWO="$TMPD/rm-clone-two"; RM_TWO_TIP="$(git -C "$RM_TWO" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS='[{"number":15,"title":"log entry","headRefName":"feat/union"},{"number":16,"title":"other","headRefName":"feat/other"}]' \
+  GH_STUB_PR_15="$(conflict_json 15 "$RM_TWO_TIP")" \
+  GH_STUB_PR_16='{"number":16,"title":"other","headRefName":"feat/other","headRefOid":"bb","baseRefName":"main","mergeable":"CONFLICTING","mergeStateStatus":"DIRTY","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  "$WRAP" merge --apply "$RM_TWO" 2>&1)"
+chk_no "two conflicting PRs retry neither" "$out" "one re-merge of main"
+chk "two conflicting PRs left the branch tip alone" \
+  "$([ "$(git -C "$RM_TWO" rev-parse feat/union)" = "$RM_TWO_TIP" ]; echo $?)"
+
+# --- apply: the re-gate after the push is the authority, not the merge that succeeded
+build_remerge gate
+RM_GATE="$TMPD/rm-clone-gate"; RM_GATE_TIP="$(git -C "$RM_GATE" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 17)" GH_STUB_PR_17="$(conflict_json 17 "$RM_GATE_TIP")" \
+  GH_STUB_PR_17_2='{"number":17,"title":"log entry","headRefName":"feat/union","headRefOid":"cc","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  "$WRAP" merge --apply "$RM_GATE" 2>&1)"
+chk_has "a re-gate that refuses after the push names the reason" "$out" \
+  "SKIP #17 after the re-merge: changes requested"
+chk "a refused re-gate calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== merge: gh saying MERGED is not proof the default branch holds the PR head ==="
+# ===========================================================================
+# Real git repos throughout: what a tree actually holds after a squash is the whole
+# subject, so nothing about the tree state is stubbed. `gh` stays stubbed (it always
+# reports MERGED via GH_STUB_VIEW_STATE's default), which is the point: the mismatch
+# and unverifiable cases below are exactly what gh's own word cannot catch.
+tv_pr_json() { # tv_pr_json <number> <head branch> <head oid>
+  printf '{"number":%s,"title":"tv case","headRefName":"%s","headRefOid":"%s","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' "$1" "$2" "$3"
+}
+tv_open_one() { printf '[{"number":%s,"title":"tv case","headRefName":"%s"}]' "$1" "$2"; }
+build_tv_repo() { # build_tv_repo <name> -- bare + clone, base.txt on main, feat/tv adds pr-file.txt
+  local name="$1" work="$TMPD/tv-work-$1" clone="$TMPD/tv-clone-$1"
+  mkdir -p "$work"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  echo base > "$work/base.txt"; git -C "$work" add -A; git -C "$work" commit -qm base
+  git clone -q --bare "$work" "$TMPD/tv-bare-$name"
+  git clone -q "$TMPD/tv-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/tv main
+  echo "pr change" > "$clone/pr-file.txt"
+  git -C "$clone" add -A; git -C "$clone" commit -qm "pr change"
+}
+
+echo "--- a real mismatch: main never got the PR's content, exits 3, branch untouched"
+build_tv_repo mismatch
+TVM="$TMPD/tv-clone-mismatch"; TVM_OID="$(git -C "$TVM" rev-parse feat/tv)"
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 21 feat/tv)" GH_STUB_PR_21="$(tv_pr_json 21 feat/tv "$TVM_OID")" \
+  "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
+chk "tree-verify: a real mismatch exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: mismatch names the count and that main lacks the head" "$out" \
+  "TREE MISMATCH, 1 paths differ; main does not hold the PR head"
+chk "tree-verify: mismatch leaves the branch in place" \
+  "$(git -C "$TVM" rev-parse --verify feat/tv >/dev/null 2>&1; echo $?)"
+
+echo "--- an unreachable head object: never a false pass, exits 3"
+BOGUS_OID="0000000000000000000000000000000000000f"
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 22 feat/tv)" GH_STUB_PR_22="$(tv_pr_json 22 feat/tv "$BOGUS_OID")" \
+  "$WRAP" merge --apply "$TVM" 2>&1)"; rc=$?
+chk "tree-verify: an unreachable head object exits 3" "$([ "$rc" -eq 3 ]; echo $?)"
+chk_has "tree-verify: names it unverifiable rather than passing silently" "$out" \
+  "tree UNVERIFIABLE the PR head is not a local object"
+
+echo "--- scoped match: another PR landed on main meanwhile, only the touched path must agree"
+build_tv_repo scoped
+TVS="$TMPD/tv-clone-scoped"; TVS_OID="$(git -C "$TVS" rev-parse feat/tv)"
+git clone -q "$TMPD/tv-bare-scoped" "$TMPD/tv-land-scoped" >/dev/null 2>&1
+gitc "$TMPD/tv-land-scoped"
+echo "someone else's change" > "$TMPD/tv-land-scoped/other-file.txt"
+git -C "$TMPD/tv-land-scoped" add -A; git -C "$TMPD/tv-land-scoped" commit -qm "other change"
+cp "$TVS/pr-file.txt" "$TMPD/tv-land-scoped/pr-file.txt"
+git -C "$TMPD/tv-land-scoped" add -A; git -C "$TMPD/tv-land-scoped" commit -qm "squash: pr change"
+git -C "$TMPD/tv-land-scoped" push -q origin main
+out="$(GH_STUB_OPEN_PRS="$(tv_open_one 23 feat/tv)" GH_STUB_PR_23="$(tv_pr_json 23 feat/tv "$TVS_OID")" \
+  "$WRAP" merge --apply "$TVS" 2>&1)"; rc=$?
+chk "tree-verify: a scoped match (another PR landed meanwhile) exits 0" "$rc"
+chk_has "tree-verify: scoped match reports verified" "$out" "tree verified"
 
 # ===========================================================================
 echo "=== default-branch: detection, fall-through, and the no-remote refusal ==="
@@ -1116,10 +1611,18 @@ for knob in merge_own_prs tidy_worktrees build_candidates; do
   v="$(KIT_PROJECT_ROOT="$KNOB_PROJ" kit_config_get_root "wrap.$knob" true)"
   chk "wrap.$knob ignores a project .kit.toml" "$([ "$v" = "true" ]; echo $?)"
 done
-for knob in merge_own_prs tidy_worktrees build_candidates; do
+for knob in merge_own_prs tidy_worktrees build_candidates pull_past_dirty; do
   chk_has "commands/wrap.md reads wrap.$knob" "$(cat "$KIT_DIR/commands/wrap.md")" "wrap.$knob"
   chk_has "kit.toml declares $knob" "$(cat "$KIT_DIR/kit.toml")" "$knob"
 done
+# pull_past_dirty is the one knob whose shipped default does NOT act: it authorizes a write to
+# a dirty file in a checkout other sessions share, so it opts in, and the project fence holds.
+v="$(KIT_CONFIG_ROOT="$KIT_DIR" kit_config_get_root wrap.pull_past_dirty true)"
+chk "wrap.pull_past_dirty ships as false" "$([ "$v" = "false" ]; echo $?)"
+v="$(KIT_CONFIG_OPERATOR="$PD_ON" kit_config_get_root wrap.pull_past_dirty false)"
+chk "wrap.pull_past_dirty honours the operator kit.toml" "$([ "$v" = "true" ]; echo $?)"
+v="$(KIT_PROJECT_ROOT="$PD_PROJ" kit_config_get_root wrap.pull_past_dirty false)"
+chk "wrap.pull_past_dirty ignores a project .kit.toml" "$([ "$v" = "false" ]; echo $?)"
 
 # ------------------------------------------------- main-checkout resolver recipe
 # `commands/wrap.md` step 5 prescribes one recipe for turning the session cwd into the

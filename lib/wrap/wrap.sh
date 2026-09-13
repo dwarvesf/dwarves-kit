@@ -14,10 +14,10 @@
 #   internal, a test seam: apply --tips-file <path> replaces the run's own tip snapshot
 #
 # The write set is closed: branch delete under two proofs, worktree remove under
-# --worktrees, pull --ff-only on the default branch, the activity-log prepend, the
-# knowledge-root project directory, the staging-file append, and one gh pr merge. Every
-# other action is a report line. The verbs never switch a branch, never touch a dirty
-# file, never force a push or a pull, and never retry a failed git call. The one force is
+# --worktrees, pull --ff-only on the default branch and its pull-past-dirty stash, the
+# activity-log prepend, the knowledge-root project directory, the staging-file append, one
+# gh pr merge, and one bounded union re-merge push. Every other action is a report line. The
+# verbs never switch a branch and never force a push or a pull. The one force is
 # `worktree remove -f -f`: it overrides a LOCK, never a dirty, detached, checked-out or
 # unproven worktree, and the removal counts only once a postcondition finds the path gone.
 #
@@ -424,6 +424,89 @@ _union_carry_back() {
   printf '%s' "$n"
 }
 
+# _pull_past_dirty_on -- 0 when the operator authorized stashing a sibling session's dirty
+# tracked files aside for the length of one pull. Root-only: a project `.kit.toml` rides
+# inside a pull request and must never authorize a write to a shared checkout.
+_pull_past_dirty_on() { [ "$(kit_config_get_root wrap.pull_past_dirty false)" = "true" ]; }
+
+# _ff_blocked_into <repo> <outfile> -- writes the NUL-separated paths a fast-forward would
+# refuse to overwrite and prints how many. A path qualifies when it is dirty in the worktree
+# AND changes between HEAD and the upstream tip, which is the same per-entry test git applies
+# before it reports `would be overwritten by merge`. Nothing qualifies when the upstream is
+# unresolvable or HEAD is not already an ancestor of it: then the pull refuses for a reason no
+# stash can clear. Untracked paths never qualify, so an incoming commit that adds one still
+# aborts the pull, as it does today.
+_ff_blocked_into() {
+  local repo="$1" out="$2" up inc="" f n=0
+  : > "$out"
+  up="$(git -C "$repo" rev-parse --verify --quiet '@{u}' 2>/dev/null)"
+  [ -n "$up" ] || { printf '0'; return 0; }
+  git -C "$repo" merge-base --is-ancestor HEAD "$up" 2>/dev/null || { printf '0'; return 0; }
+  # --no-renames, because rename detection prints only the incoming name. A commit that
+  # renames a file the worktree has dirty would otherwise hide the very path git blocks on.
+  while IFS= read -r -d '' f; do inc="${inc}${f}"$'\n'; done \
+    < <(git -C "$repo" diff --name-only -z --no-renames HEAD "$up" 2>/dev/null)
+  while IFS= read -r -d '' f; do
+    # A path that is not a regular file never belongs in the stash. Git rewrites a
+    # worktree-deleted file rather than refusing the fast-forward, and a dirty submodule
+    # gitlink is stashable by nobody; stashing either turns a clean pull into a pop conflict.
+    [ -f "$repo/$f" ] || continue
+    case $'\n'"$inc" in
+      *$'\n'"$f"$'\n'*) printf '%s\0' "$f" >> "$out"; n=$(( n + 1 )) ;;
+    esac
+  done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
+  printf '%s' "$n"
+}
+
+# _stash_blocked <repo> <name> <nul-list file> -- stash exactly the listed paths under a
+# findable name and print the stash commit. The list goes in as a NUL pathspec file, so a
+# path holding a glob character, a leading colon, or a space means itself and nothing else;
+# a bare `git stash` would take every other dirty file and every untracked file in a
+# checkout this session does not own. A push that saves nothing leaves refs/stash where it
+# was, and the empty answer says so, because a caller that recorded a stash it never made
+# would report the operator's work lost when nothing was ever taken.
+_stash_blocked() {
+  local repo="$1" name="$2" list="$3" before after
+  before="$(git -C "$repo" rev-parse --verify --quiet refs/stash 2>/dev/null)"
+  git -C "$repo" stash push -q -m "$name" \
+    --pathspec-from-file="$list" --pathspec-file-nul 2>/dev/null || return 1
+  after="$(git -C "$repo" rev-parse --verify --quiet refs/stash 2>/dev/null)"
+  [ -n "$after" ] && [ "$after" != "$before" ] || return 1
+  printf '%s' "$after"
+}
+
+# _unstash <repo> <sha> <name> <pulled> -- pop the run's own stash BY IDENTITY. A bare
+# `git stash pop` takes whatever sits on top, which on a shared checkout is another
+# session's stash; a positional ref resolved a moment earlier is no better, because any
+# session pushing or dropping an entry shifts every index. The commit recorded at push time
+# is the only handle that cannot drift. A pop conflict keeps the stash and leaves the
+# markers: wrap does not know which side of a file it did not write is the right one. A file
+# the repo declares merge=union never reaches that branch, because the union driver resolves
+# it during the pop itself.
+_unstash() {
+  local repo="$1" sha="$2" name="$3" pulled="$4" ref="" gd h conflicted
+  while read -r gd h; do
+    if [ "$h" = "$sha" ]; then ref="$gd"; break; fi
+  done < <(git -C "$repo" stash list --format='%gd %H' 2>/dev/null)
+  if [ -z "$ref" ]; then
+    echo "     FAILED restore: stash ${name} left the stash list; recover it with git stash apply $(_short "$sha")"
+    FAILURES=1; return 0
+  fi
+  if git -C "$repo" stash pop -q "$ref" >/dev/null 2>&1; then
+    echo "     restored the stashed file(s) and dropped ${name}"
+    return 0
+  fi
+  conflicted="$(git -C "$repo" diff --name-only --diff-filter=U 2>/dev/null | tr '\n' ' ')"
+  if [ -z "$conflicted" ]; then
+    echo "     FAILED restore: the pop of ${name} refused with no conflict, so the stash is kept"
+  elif [ "$pulled" = 1 ]; then
+    echo "     PULLED, POP CONFLICT: ${conflicted% }, stash ${name} kept"
+  else
+    echo "     POP CONFLICT: ${conflicted% }, stash ${name} kept"
+  fi
+  FAILURES=1
+}
+
 # _pull_default <repo> <branch> -- the ff-only pull, with the repo's own append-only logs
 # carried across it.
 #
@@ -451,8 +534,12 @@ _pull_default() {
       if [ -f "$repo/$f" ] && _union_marked "$repo" "$f"; then continue; fi
       nonunion="${nonunion}${nonunion:+, }${f}"
     done < <(git -C "$repo" diff --name-only -z 2>/dev/null)
-    if [ -n "$nonunion" ]; then
+    if [ -n "$nonunion" ] && ! _pull_past_dirty_on; then
       echo "     NOTE: uncommitted and not declared merge=union, so the pull aborts on: ${nonunion}"
+    elif [ -n "$nonunion" ] && [ "$APPLY" = 1 ]; then
+      echo "     NOTE: uncommitted and not declared merge=union; wrap.pull_past_dirty is on, so the pull stashes whichever of these block it: ${nonunion}"
+    elif [ -n "$nonunion" ]; then
+      echo "     NOTE: uncommitted and not declared merge=union; --apply would stash whichever of these block the pull: ${nonunion}"
     elif [ "$APPLY" != 1 ]; then
       echo "     NOTE: every modified file is merge=union; --apply would carry its local lines across the pull"
     else
@@ -467,8 +554,39 @@ _pull_default() {
     fi
   fi
 
+  # The knob path: the files that block the fast-forward go aside under a name this run can
+  # find again, the pull lands, and they come back. Off by default, and never entered while
+  # the index carries staged changes, because a pop cannot restore an index it did not stash.
+  local blocked_file="" stash_name="" stash_sha="" nblocked=0
+  if [ "$APPLY" = 1 ] && [ -z "$staged" ] && [ -n "$nonunion" ] && _pull_past_dirty_on \
+     && _write_guard "$repo"; then
+    blocked_file="$(mktemp)"
+    nblocked="$(_ff_blocked_into "$repo" "$blocked_file")"
+    if [ "$nblocked" -gt 0 ] 2>/dev/null; then
+      stash_name="wrap-pull-past-dirty-$(date +%s)-$$"
+      stash_sha="$(_stash_blocked "$repo" "$stash_name" "$blocked_file")"
+      if [ -n "$stash_sha" ]; then
+        echo "     stashed ${nblocked} dirty tracked file(s) as ${stash_name} so the pull can fast-forward"
+      else
+        stash_name=""
+        echo "     NOTE: no stash was created, so the pull runs as it does with the knob off"
+      fi
+    fi
+    rm -f "$blocked_file"
+  fi
+
   before="$FAILURES"
   run "$repo" "$verdict" git -C "$repo" pull --ff-only
+
+  # Whatever the pull did, the operator's lines come back out of the stash. A failed pull
+  # leaves the checkout exactly as it was found.
+  if [ -n "$stash_name" ]; then
+    if [ "$FAILURES" = "$before" ]; then
+      _unstash "$repo" "$stash_sha" "$stash_name" 1
+    else
+      _unstash "$repo" "$stash_sha" "$stash_name" 0
+    fi
+  fi
 
   if [ -n "$saved_dir" ]; then
     n=0
@@ -589,6 +707,73 @@ _pr_gate() {
     else "OK" end' 2>/dev/null
 }
 
+# _pr_detail_settled <url> <number> -- the detail read once GitHub has recomputed
+# mergeability. A push flips `mergeable` to UNKNOWN for a second or two, and a gate that
+# reads it inside that window refuses a PR that is fine. Bounded: five tries, then whatever
+# the field says, because a gate that never settles must still fail closed rather than spin.
+_pr_detail_settled() {
+  local url="$1" n="$2" i=0 detail="" m
+  while [ "$i" -lt 5 ]; do
+    detail="$(_pr_detail "$url" "$n")"
+    m="$(printf '%s' "$detail" | jq -r '.mergeable // "UNKNOWN"' 2>/dev/null)"
+    [ "$m" = "UNKNOWN" ] || break
+    i=$(( i + 1 )); sleep 2
+  done
+  printf '%s' "$detail"
+}
+
+# _branch_worktree <repo> <branch> -- the checkout that holds <branch>, empty when none does.
+# `--porcelain -z` NUL-terminates every attribute, which keeps a path carrying a newline whole.
+_branch_worktree() {
+  local repo="$1" branch="$2" wt="" rec
+  while IFS= read -r -d '' rec; do
+    case "$rec" in
+      "worktree "*) wt="${rec#worktree }" ;;
+      "branch refs/heads/${branch}") printf '%s' "$wt"; return 0 ;;
+    esac
+  done < <(git -C "$repo" worktree list --porcelain -z 2>/dev/null)
+  return 1
+}
+
+# _union_remerge <repo> <branch> <def> <head-oid> -- the one bounded recovery from a conflict
+# GitHub invented. A squash merge resolves on GitHub's side, which never reads .gitattributes,
+# so two branches that both appended to a merge=union log conflict on the PR while a local
+# `git merge` resolves them by keeping both sides. This runs that merge in the checkout that
+# holds the branch and pushes the result, which is the recovery an operator runs by hand.
+#
+# A merge that stops on a conflict is the proof that the divergence was NOT the union case:
+# git applies the union attribute here, so anything it cannot resolve is a real conflict a
+# human owns. That case aborts and leaves the branch exactly as it was. Runs once, never in
+# a loop, and only when the branch tip is still the head the PR gates read.
+_union_remerge() {
+  local repo="$1" branch="$2" def="$3" head_oid="$4" wt tip
+  [ -n "$branch" ] && [ -n "$head_oid" ] || { echo "     no branch or head SHA to re-merge"; return 1; }
+  wt="$(_branch_worktree "$repo" "$branch")" || {
+    echo "     no local checkout holds ${branch}, so there is nothing to re-merge in"; return 1; }
+  tip="$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  [ "$tip" = "$head_oid" ] || {
+    echo "     ${branch} tip $(_short "$tip") is not the PR head $(_short "$head_oid"), left alone"; return 1; }
+  [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || {
+    echo "     ${wt} is dirty, so a re-merge would sweep uncommitted work into the branch"; return 1; }
+  _write_guard "$wt" || { echo "     index.lock held by another writer in ${wt}"; return 1; }
+
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "     fetch origin ${def} failed"; return 1; }
+  if git -C "$repo" merge-base --is-ancestor "origin/${def}" "$branch" 2>/dev/null; then
+    echo "     ${branch} already contains origin/${def}, so a re-merge cannot clear the conflict"; return 1
+  fi
+  if ! git -C "$wt" merge --no-edit "origin/${def}" >/dev/null 2>&1; then
+    git -C "$wt" merge --abort >/dev/null 2>&1
+    echo "     merging origin/${def} into ${branch} conflicts beyond the union-marked files, aborted"
+    return 1
+  fi
+  if ! git -C "$wt" push -q origin "$branch" 2>/dev/null; then
+    echo "     push of the re-merged ${branch} failed; the merge stays local for a human to inspect"
+    return 1
+  fi
+  echo "     re-merged origin/${def} into ${branch}, pushed $(_short "$(git -C "$wt" rev-parse HEAD)")"
+  return 0
+}
+
 cmd_merge() {
   local do_apply=0 arg repo="" count=0
   for arg in "$@"; do
@@ -624,7 +809,7 @@ cmd_merge() {
     printf '%s\t%s\t%s\n' "$n" "$head" "$base" >> "$cache"
   done
 
-  local first_eligible="" verdict title
+  local first_eligible="" verdict title conflict_n="" conflict_count=0
   for n in $numbers; do
     detail="$(cat "${jsondir}/pr-${n}.json" 2>/dev/null)"
     verdict="$(_pr_gate "$detail" "$def")"
@@ -642,11 +827,47 @@ cmd_merge() {
       [ -n "$first_eligible" ] || first_eligible="$n"
     else
       echo "SKIP #${n} ${title}: ${verdict#SKIP }"
+      case "$verdict" in
+        "SKIP not mergeable (CONFLICTING)")
+          conflict_count=$(( conflict_count + 1 )); conflict_n="$n" ;;
+      esac
     fi
   done
 
   local head_oid=""
   [ -n "$first_eligible" ] && head_oid="$(jq -r '.headRefOid // ""' "${jsondir}/pr-${first_eligible}.json" 2>/dev/null)"
+
+  # One bounded retry, and only when the conflict is the whole story: nothing else is
+  # eligible and exactly one PR is conflicting, so the branch to recover is unambiguous.
+  # The re-gate after the push is the authority: it re-reads every gate against the new
+  # head, so a push that dismissed an approval or broke a check refuses here.
+  if [ -z "$first_eligible" ] && [ "$conflict_count" = 1 ]; then
+    local c_head c_oid
+    c_head="$(jq -r '.headRefName // ""' "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"
+    c_oid="$(jq -r '.headRefOid // ""' "${jsondir}/pr-${conflict_n}.json" 2>/dev/null)"
+    if [ "$do_apply" != 1 ]; then
+      echo "note: #${conflict_n} conflicts; --apply would try one re-merge of ${def} into ${c_head}"
+    else
+      echo "retry #${conflict_n}: one re-merge of ${def} into ${c_head}"
+      if _union_remerge "$repo" "$c_head" "$def" "$c_oid"; then
+        detail="$(_pr_detail_settled "$url" "$conflict_n")"
+        verdict="$(_pr_gate "$detail" "$def")"
+        if [ -z "$verdict" ]; then
+          verdict="SKIP unreadable PR JSON"
+        elif [ "$verdict" = "OK" ] && awk -F'\t' -v h="$c_head" -v n="$conflict_n" \
+             '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
+          verdict="SKIP dependents open, retarget them first"
+        fi
+        if [ "$verdict" = "OK" ]; then
+          first_eligible="$conflict_n"
+          head_oid="$(printf '%s' "$detail" | jq -r '.headRefOid // ""' 2>/dev/null)"
+          echo "eligible #${conflict_n} after the re-merge"
+        else
+          echo "SKIP #${conflict_n} after the re-merge: ${verdict#SKIP }"
+        fi
+      fi
+    fi
+  fi
   rm -rf "$jsondir"
 
   [ "$do_apply" = 1 ] || { echo "dry run; pass --apply to merge one PR."; return 0; }
@@ -670,8 +891,52 @@ cmd_merge() {
     echo "FAILED merge #${first_eligible}: state is '${state:-unknown}', not MERGED" >&2
     return 2
   fi
-  echo "merged #${first_eligible} ${sha}"
+
+  # gh reporting MERGED is GitHub's word, not proof main holds the reviewed tree: a
+  # squash resolves on GitHub's own side, and a stale headRefOid captured before a late
+  # push, or an armed auto-merge overtaken by a push after the gates read, can both
+  # report MERGED while the default branch moves on without it.
+  local tv; tv="$(_tree_verify "$repo" "$def" "$head_oid")"
+  case "$tv" in
+    OK) echo "merged #${first_eligible} (${sha}): tree verified" ;;
+    MISMATCH*)
+      echo "merged #${first_eligible} (${sha}): TREE MISMATCH, ${tv#MISMATCH } paths differ; ${def} does not hold the PR head" >&2
+      return 3 ;;
+    *)
+      echo "merged #${first_eligible} (${sha}): tree ${tv}" >&2
+      return 3 ;;
+  esac
   return 0
+}
+
+# _tree_verify <repo> <def> <head_oid> -- "OK", "MISMATCH <n>", or "UNVERIFIABLE <reason>".
+# Checks the WHOLE tree first (the common case: the squash carried nothing else onto the
+# default branch), falling back to only the paths the PR itself touched, because another
+# commit landing on the default branch meanwhile is not the mismatch this guards against.
+_tree_verify() {
+  local repo="$1" def="$2" head_oid="$3" tip base paths diff_paths n
+  git -C "$repo" fetch -q origin "$def" 2>/dev/null || { echo "UNVERIFIABLE fetch of ${def} failed"; return; }
+  tip="$(git -C "$repo" rev-parse "origin/${def}" 2>/dev/null)"
+  [ -n "$tip" ] || { echo "UNVERIFIABLE origin/${def} did not resolve"; return; }
+  git -C "$repo" cat-file -e "${head_oid}^{commit}" 2>/dev/null || {
+    echo "UNVERIFIABLE the PR head is not a local object"; return; }
+  if [ "$(git -C "$repo" rev-parse "${tip}^{tree}" 2>/dev/null)" = \
+       "$(git -C "$repo" rev-parse "${head_oid}^{tree}" 2>/dev/null)" ]; then
+    echo "OK"; return
+  fi
+  base="$(git -C "$repo" merge-base "$head_oid" "$tip" 2>/dev/null)"
+  [ -n "$base" ] || { echo "UNVERIFIABLE no common history with ${def}"; return; }
+  paths="$(git -C "$repo" diff --name-only "$base" "$head_oid" 2>/dev/null)"
+  [ -n "$paths" ] || { echo "UNVERIFIABLE the PR touched no path git can name"; return; }
+  # ponytail: word-splits $paths on IFS, so a touched filename containing a space is read as
+  # two paths. Upgrade to NUL-delimited (diff -z + a bash array) if that ever bites.
+  diff_paths="$(git -C "$repo" diff --name-only "$tip" "$head_oid" -- $paths 2>/dev/null)"
+  if [ -z "$diff_paths" ]; then
+    echo "OK"
+  else
+    n="$(printf '%s\n' "$diff_paths" | grep -c .)"
+    echo "MISMATCH ${n}"
+  fi
 }
 
 # --------------------------------------------------------------------------- log
