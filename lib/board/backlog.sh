@@ -25,6 +25,14 @@
 #   backlog.sh dedupe <ID-NNN>     -> collapse duplicate rows sharing one id down to one: keeps
 #                                    the shipped/dropped/parked copy (in that order), else the
 #                                    last occurrence; a unique id is a no-op
+#   backlog.sh dedupe-all [file]   -> sweep every id in the file (default BACKLOG_FILE), not just
+#                                    one: for each id with more than one row, keep the first
+#                                    non-queued copy (the one a merge flipped), or the first row
+#                                    when every copy is still queued. Prints the deduped ids,
+#                                    space-separated, empty when nothing changed. Driven by
+#                                    `wrap.sh`'s union re-merge after a GitHub conflict, where the
+#                                    rows to fix are unknown up front and every one wants the same
+#                                    rule; a known single id still goes through plain `dedupe`.
 #   backlog.sh states              -> the legal state names
 #
 # BACKLOG_FILE overrides the file path (tests point it at a fixture copy).
@@ -141,15 +149,45 @@ dedupe() {
   echo "board dedupe: ${id} kept line ${keep}, dropped lines ${dropped}"
 }
 
+# dedupe_all [file] -- sweep every duplicated id in one pass (default $BACKLOG_FILE). Unlike
+# `dedupe <id>`, which keeps a terminal (shipped/dropped/parked) copy over the last occurrence,
+# this rule is the one a union-merge duplicate actually needs: prefer whichever copy is NOT
+# queued (the row a branch flipped), file order breaks a tie. Prints the deduped ids.
+dedupe_all() {
+  local file="${1:-$BACKLOG_FILE}"
+  [ -f "$file" ] || return 0
+  local ids; ids="$(awk -F'|' -v idre="$BACKLOG_ID_RE" '
+    $0 ~ ("^\\| *" idre " *\\|") { id=$2; gsub(/^[ \t]+|[ \t]+$/, "", id); print id }' "$file" \
+    | sort | uniq -d)"
+  [ -n "$ids" ] || return 0
+  local id rows keep skip_csv="" done_ids=""
+  for id in $ids; do
+    rows="$(awk -v id="$id" -F'|' '
+      $0 ~ ("^\\| *" id " *\\|") {
+        s = $(NF-1); gsub(/^[ \t]+|[ \t]+$/, "", s); split(s, a, /[ \[(]/)
+        printf "%d\t%s\n", NR, a[1]
+      }' "$file")"
+    keep="$(printf '%s\n' "$rows" | awk -F'\t' '$2 != "queued" { print $1; exit }')"
+    [ -n "$keep" ] || keep="$(printf '%s\n' "$rows" | head -n1 | cut -f1)"
+    skip_csv="${skip_csv}$(printf '%s\n' "$rows" | awk -F'\t' -v k="$keep" '$1 != k { printf "%s,", $1 }')"
+    done_ids="${done_ids}${done_ids:+ }${id}"
+  done
+  awk -v dropset="$skip_csv" '
+    BEGIN { n = split(dropset, d, ","); for (i = 1; i <= n; i++) if (d[i] != "") skip[d[i]] = 1 }
+    !(NR in skip) { print }' "$file" > "$file.tmp" && mv -f "$file.tmp" "$file"
+  echo "$done_ids"
+}
+
 main() {
   local sub="${1:-}"; shift || true
   case "$sub" in
-    board)   board ;;
-    next)    next ;;
-    set)     set_state "$@" ;;
-    dedupe)  dedupe "$@" ;;
-    states)  echo "$STATES" | tr ' ' '\n' ;;
-    *) echo "usage: backlog.sh {board|next|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|states}" >&2; return 64 ;;
+    board)      board ;;
+    next)       next ;;
+    set)        set_state "$@" ;;
+    dedupe)     dedupe "$@" ;;
+    dedupe-all) dedupe_all "$@" ;;
+    states)     echo "$STATES" | tr ' ' '\n' ;;
+    *) echo "usage: backlog.sh {board|next|set <ID-NNN> <state> [note]|dedupe <ID-NNN>|dedupe-all [file]|states}" >&2; return 64 ;;
   esac
 }
 

@@ -1064,6 +1064,7 @@ chk "re-merge --apply advanced the remote branch" \
   "$([ "$(git -C "$TMPD/rm-bare-ok" rev-parse feat/union)" != "$RM_OK_TIP" ]; echo $?)"
 chk "re-merge --apply kept both log lines" \
   "$(grep -q 'branch line' "$RM_OK/_meta/LAB_LOG.md" && grep -q 'main line' "$RM_OK/_meta/LAB_LOG.md"; echo $?)"
+chk_no "re-merge --apply reports no dedupe (LAB_LOG is not a kanban table)" "$out" "deduped union-merged rows"
 
 # --- apply: a conflict outside the union-marked files aborts and changes nothing
 build_remerge bad --also-conflict
@@ -1113,6 +1114,60 @@ out="$(GH_STUB_OPEN_PRS="$(open_one 17)" GH_STUB_PR_17="$(conflict_json 17 "$RM_
 chk_has "a re-gate that refuses after the push names the reason" "$out" \
   "SKIP #17 after the re-merge: changes requested"
 chk "a refused re-gate calls no pr merge" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 1 || echo 0)"
+
+# ===========================================================================
+echo "=== merge: the re-merge dedupes a union-merged kanban row before pushing ==="
+# ===========================================================================
+# Two adjacent kanban rows edited on each side sit inside ONE conflicting hunk on a short
+# file (git's merge context, not the row content, is what overlaps), so the union driver
+# resolves it by keeping ours-then-theirs whole and duplicates BOTH ids. This is the exact
+# defect measured by hand 12 times on 2026-09-12; `_union_dedupe_rows` fixes it.
+build_remerge_board() { # build_remerge_board <name>
+  local name="$1" work="$TMPD/rb-work-$1" clone="$TMPD/rb-clone-$1"
+  mkdir -p "$work/_meta"; git -C "$work" init -q; gitc "$work"
+  git -C "$work" symbolic-ref HEAD refs/heads/main
+  printf '_meta/BACKLOG.md merge=union\n' > "$work/.gitattributes"
+  printf '## Active queue\n\n| ID | Title | Source | Status |\n|----|-------|--------|--------|\n| ID-401 | row a | src | queued |\n| ID-402 | row b | src | queued |\n' \
+    > "$work/_meta/BACKLOG.md"
+  git -C "$work" add -A; git -C "$work" commit -qm base
+  git -C "$work" checkout -q -b feat/union
+  sed -i.bak 's/ID-401 | row a | src | queued/ID-401 | row a | src | shipped/' "$work/_meta/BACKLOG.md"
+  rm -f "$work/_meta/BACKLOG.md.bak"
+  git -C "$work" commit -qam "branch flips 401"
+  git -C "$work" checkout -q main
+  sed -i.bak 's/ID-402 | row b | src | queued/ID-402 | row b | src | executing/' "$work/_meta/BACKLOG.md"
+  rm -f "$work/_meta/BACKLOG.md.bak"
+  git -C "$work" commit -qam "main flips 402"
+  git clone -q --bare "$work" "$TMPD/rb-bare-$name"
+  git clone -q "$TMPD/rb-bare-$name" "$clone"; gitc "$clone"
+  git -C "$clone" remote set-head origin main >/dev/null 2>&1
+  git -C "$clone" checkout -q -b feat/union origin/feat/union
+}
+
+build_remerge_board board
+RB="$TMPD/rb-clone-board"; RB_TIP="$(git -C "$RB" rev-parse feat/union)"
+: > "$GH_STUB_CALLS"
+out="$(GH_STUB_OPEN_PRS="$(open_one 20)" GH_STUB_PR_20="$(conflict_json 20 "$RB_TIP")" \
+  GH_STUB_PR_20_2='{"number":20,"title":"log entry","headRefName":"feat/union","headRefOid":"%REMERGE_TIP%","baseRefName":"main","mergeable":"MERGEABLE","mergeStateStatus":"CLEAN","reviewDecision":"APPROVED","statusCheckRollup":[{"conclusion":"SUCCESS"}]}' \
+  GH_STUB_LAND_REPO="$RB" GH_STUB_LAND_REMOTE="$TMPD/rb-bare-board" GH_STUB_LAND_BRANCH="feat/union" GH_STUB_LAND_DEF="main" \
+  "$WRAP" merge --apply "$RB" 2>&1)"; rc=$?
+chk "board re-merge --apply exits 0" "$rc"
+chk_has "board re-merge reports the dedupe" "$out" "deduped union-merged rows"
+chk "board re-merge left exactly one ID-401 row" \
+  "$([ "$(grep -c '^| ID-401 ' "$RB/_meta/BACKLOG.md")" -eq 1 ]; echo $?)"
+chk "board re-merge left exactly one ID-402 row" \
+  "$([ "$(grep -c '^| ID-402 ' "$RB/_meta/BACKLOG.md")" -eq 1 ]; echo $?)"
+chk "board re-merge kept the flipped ID-401 status, dropped the queued copy" \
+  "$(grep -q '^| ID-401 | row a | src | shipped |$' "$RB/_meta/BACKLOG.md"; echo $?)"
+chk "board re-merge kept the flipped ID-402 status, dropped the queued copy" \
+  "$(grep -q '^| ID-402 | row b | src | executing |$' "$RB/_meta/BACKLOG.md"; echo $?)"
+# git's own process (not a builtin) can take a SIGPIPE from a `grep -q` that stops reading
+# after its match, so the subjects are captured into a variable FIRST and grepped from there
+# (a builtin write), never piped straight from a live `git log`.
+board_subjects="$(git -C "$RB" log --format=%s -3)"
+chk "the dedupe landed as its own commit, the merge commit stays untouched" \
+  "$(printf '%s\n' "$board_subjects" | grep -qx 'fix(board): dedupe union-merged rows'; echo $?)"
+chk "the re-merge still pushed and merged" "$(grep -q '^pr merge' "$GH_STUB_CALLS" && echo 0 || echo 1)"
 
 # ===========================================================================
 echo "=== merge: gh saying MERGED is not proof the default branch holds the PR head ==="
