@@ -625,7 +625,9 @@ plan_record() {
   real="$(ledger_file "$rid")" || return 1
   stem="$(basename "$real")"
   mkdir -p "$scratch/runs"
-  if [ -f "$real" ]; then cp "$real" "$scratch/runs/$stem"; fi
+  # Two copies: the dry run appends to the one under runs/, the other stays pristine for the
+  # drift check below.
+  if [ -f "$real" ]; then cp "$real" "$scratch/runs/$stem"; cp "$real" "$scratch/orig"; fi
   # Both roots move together: ledger_append resolves KIT_LEDGER_DIR per call, while
   # override()'s duplicate-reason guard reads RUNS_DIR through ledger_file().
   # The subshell inherits the EXIT trap; it must not delete the scratch the parent still compares.
@@ -638,7 +640,7 @@ plan_record() {
   # The dry run validated against a snapshot. A writer that appended to the real
   # ledger since then (another session's override on the same rid) could make the real
   # pass fail mid-loop and leave a partial ledger, so refuse when the file moved.
-  if [ -f "$real" ] && ! cmp -s "$real" "$scratch/runs/$stem"; then
+  if [ -f "$real" ] && ! cmp -s "$real" "$scratch/orig"; then
     echo "plan-record: the ledger for '$rid' changed during the dry run; nothing was written, re-run" >&2
     return 75
   fi

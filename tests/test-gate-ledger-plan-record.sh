@@ -170,5 +170,17 @@ OUT="$(gl plan-record r12 nosuchlane --ran build 2>&1)"; RC=$?
 [ -z "$(ledger_of r12)" ] && assert "C12 writes nothing" 0 || assert "C12 writes nothing" 1
 
 echo ""
+# C13: happy path on a rid that already has a START line (the real shape: start, then
+# plan-record). The dry run appends to its scratch copy, so the drift check must compare
+# the live file against a pristine copy, not against the mutated one.
+# ---------------------------------------------------------------------------
+new_log
+gl start r13 normal normal spec-feature spec-feature >/dev/null 2>&1
+OUT="$(gl plan-record r13 normal --skipped grill:"reason=home-turf: known area" \
+         "${NORMAL_TAIL[@]}" --ran ship:"pushed" 2>&1)"; RC=$?
+[ "$RC" -eq 0 ] && assert "C13 plan-record exits 0 after start" 0 || assert "C13 plan-record exits 0 after start (got $RC: $OUT)" 1
+gl check normal r13 >/dev/null 2>&1 \
+  && assert "C13 check passes after start plus one call" 0 || assert "C13 check passes after start plus one call" 1
+
 echo "=== $PASS/$TOTAL passed ==="
 [ "$FAIL" -eq 0 ] || exit 1
