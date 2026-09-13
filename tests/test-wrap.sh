@@ -665,6 +665,28 @@ chk "knob on: the sibling stash is the only stash left" \
   "$([ "$(pd_stash_count "$PN")" = "1" ]; echo $?)"
 chk_has "knob on: the surviving stash is the sibling's" "$(git -C "$PN" stash list)" "sibling"
 
+echo "--- knob on: a sibling stash pushed DURING the pull does not steal the pop"
+# The race the by-commit resolution exists for. A stash index shifts the moment any session
+# pushes an entry, so a ref resolved before the pull points at the wrong entry after it. A
+# post-merge hook is how the suite stages that deterministically.
+build_pd_repo race; advance_pd_repo race
+PRACE="$TMPD/pdclone-race"
+printf '%s' "$A_LOCAL_FAR" > "$PRACE/A.md"
+printf 'b local edit\n' > "$PRACE/B.md"
+mkdir -p "$PRACE/.git/hooks"
+printf '#!/bin/sh\ngit stash push -q -m sibling-mid-pull -- B.md\n' > "$PRACE/.git/hooks/post-merge"
+chmod +x "$PRACE/.git/hooks/post-merge"
+out="$(KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PRACE" 2>&1)"; rc=$?
+chk "mid-pull stash: apply exits 0" "$rc"
+chk_has "mid-pull stash: our own stash was the one restored" "$out" \
+  "restored the stashed file(s) and dropped"
+chk "mid-pull stash: A.md kept the local edit" "$(grep -qx 'a10 local' "$PRACE/A.md"; echo $?)"
+chk "mid-pull stash: A.md took the incoming line" "$(grep -qx 'a1 remote' "$PRACE/A.md"; echo $?)"
+chk "mid-pull stash: the sibling's mid-pull stash is still listed" \
+  "$([ "$(pd_stash_count "$PRACE")" = "1" ]; echo $?)"
+chk_has "mid-pull stash: and it is the sibling's, not ours" "$(git -C "$PRACE" stash list)" \
+  "sibling-mid-pull"
+
 echo "--- knob on: a pop conflict keeps the stash and reports it"
 build_pd_repo conflict; advance_pd_repo conflict
 PC="$TMPD/pdclone-conflict"

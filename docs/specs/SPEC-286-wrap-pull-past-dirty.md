@@ -137,6 +137,7 @@ pop after a failed pull drops the `PULLED` prefix.
 | Scope | knob on: the other dirty file keeps its local edit and stays dirty | same |
 | Scope | knob on: the untracked file is byte-identical after the run | same |
 | Stash safety | knob on: the pre-existing `sibling` stash is the only entry left | same |
+| Mid-pull race | knob on, a `post-merge` hook pushes a sibling stash during the pull: our own entry is still the one popped, the sibling's survives | same |
 | Pop conflict | knob on, overlapping edit: exit 2, `PULLED, POP CONFLICT: A.md, stash <name> kept`, markers in the file, both stashes listed, the pull still landed | same |
 | Union | knob on, a union-marked file blocked by the same pull: two files stashed, no conflict, both sides kept, no stash left behind | same |
 | Untracked block | knob on, an incoming commit adds a path that exists untracked: exit 2, pull failed, the stash came back, HEAD unmoved, the untracked file keeps its local content | same |
@@ -147,7 +148,7 @@ pop after a failed pull drops the `PULLED` prefix.
 | Diverged | knob on, a local commit the remote never saw: nothing stashed, no stash created, HEAD unmoved, exit 2 | same |
 | Odd path | knob on, a dirty path holding a space and a bracket glob: exactly one file stashed, the local edit restored, the path the glob would have matched untouched | same |
 | Config fence | ships `false`; an operator `kit.toml` sets it; a project `.kit.toml` cannot | same |
-| Negative control | replace the pop-by-ref with a bare `git stash pop`, the sibling-stash assertions go red, restore | `docs/verification/wrap-pull-past-dirty.md` |
+| Negative control | make the pop take the first entry instead of the one whose commit matches, the mid-pull race assertions go red, restore | `docs/verification/wrap-pull-past-dirty.md` |
 
 ## Verification
 
