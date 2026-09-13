@@ -22,6 +22,14 @@ All notable changes to dwarves-kit are documented here.
   left undisposed exits 64, and the rules the two writers own are caught by replaying the set
   against a scratch ledger first, so a rejected call leaves the real ledger byte-identical.
   `ship` is the one phase a caller may omit, since the push records it.
+- `backlog.sh dedupe-all [file]`: sweeps every duplicated id in one pass, keeping whichever
+  copy is not `queued` (file order breaks a tie), instead of naming one id at a time like the
+  existing `dedupe <id>`. `wrap merge --apply`'s union re-merge (PR #608) now calls it right
+  after the re-merge commit, on any merge-marked file the merge touched that still parses as a
+  kanban table: a union-marked log resolves a real conflict by keeping both sides, which
+  duplicates a row when two branches flip the same id, a defect deduped by hand 12 times on
+  one day before this fix. A drop lands as its own follow-up commit (`fix(board): dedupe
+  union-merged rows`), never folded into the merge commit; a clean board makes no commit.
 - `wrap merge --apply` verifies the default branch's tree after `gh pr merge` reports MERGED,
   instead of trusting gh's word alone: it fetches the default branch and checks the PR head's
   tree against the new tip, either whole or scoped to the paths the PR touched (another PR may
