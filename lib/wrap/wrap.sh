@@ -856,7 +856,7 @@ cmd_merge() {
           verdict="SKIP unreadable PR JSON"
         elif [ "$verdict" = "OK" ] && awk -F'\t' -v h="$c_head" -v n="$conflict_n" \
              '$3 == h && $1 != n { found = 1 } END { exit !found }' "$cache"; then
-          verdict="SKIP dependents open, retarget them first (SPEC-065)"
+          verdict="SKIP dependents open, retarget them first"
         fi
         if [ "$verdict" = "OK" ]; then
           first_eligible="$conflict_n"
