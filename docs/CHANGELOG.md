@@ -12,6 +12,14 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- `wrap merge --apply` verifies the default branch's tree after `gh pr merge` reports MERGED,
+  instead of trusting gh's word alone: it fetches the default branch and checks the PR head's
+  tree against the new tip, either whole or scoped to the paths the PR touched (another PR may
+  have landed on the default branch meanwhile). A stale `headRefOid` captured before a late
+  push, or an armed auto-merge overtaken by a push after the gates read, can both report
+  MERGED while the default branch moves on without the reviewed tree; three such gaps were
+  confirmed by hand in one session. A verified merge now prints `tree verified`; a real gap
+  prints `TREE MISMATCH, <n> paths differ` and exits 3 without deleting the branch.
 - `batch-debt-warn.sh` (PreToolUse Bash hook, `session` module): warns once per session when a
   second `gh pr merge` runs and the gate ledger holds no lane START since that session's first
   merge. A batch-shaped session (board sweep, overnight run) records neither gate taps nor a
