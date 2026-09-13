@@ -1249,6 +1249,9 @@ chk "a NEW line carrying lane=backfill and its check passes" "$([ "$rc" -eq 0 ];
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, filed: ops-toolkit ID-901, goal drafted: .claude/goals/cron-fire.md)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "the full-lane filed shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
 
+out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, capture failed: no board at _meta/BACKLOG.md)|' | bash "$LINT" 2>&1)"; rc=$?
+chk "the full-lane capture-failed shape passes" "$([ "$rc" -eq 0 ]; echo $?)"
+
 out="$(_report '✅ **Needs you:** NOTHING' | sed 's|^\*\*Built:\*\* .*|**Built:** cron-fire NEW (precedent: nothing matched): tools/cron-fire (lane=full, staged: build_lanes excludes full)|' | bash "$LINT" 2>&1)"; rc=$?
 chk "a full lane closed as staged fails" "$([ "$rc" -eq 1 ]; echo $?)"
 chk_has "the finding names the board row a full lane owes" "$out" "closes a full-lane candidate as 'staged'"
