@@ -44,3 +44,14 @@ exit code is never consulted. Argument-level refusals still fire during the pars
 `record()` and `override()` own are then discovered mid-write: a bad grill reason and a reused
 override reason both leave a partial ledger, and the C8, C9, and C10 write-nothing assertions go
 red. Restoring the file returns the suite to green in the same run.
+
+## After the review fixes
+
+| # | Command | Exit | Verdict |
+|---|---|---|---|
+| 5 | `bash tests/test-gate-ledger-plan-record.sh` | 0 | PASS (`=== 37/37 passed ===`, two cases added: start-then-plan-record happy path) |
+| 6 | `bash lib/gate/gate-ledger.sh plan-record gate-ledger-plan-record full --skipped grill:... (13 dispositions)` | 0 | PASS, the live primary flow: 13 GATE lines written for this branch's own rid in one call; `check` then listed only `ship`, which the push records |
+| 7 | same call, one phase (`review`) left out | 64 | PASS (refused before any write: `phases with no disposition: review`) |
+
+Run 6 is the real flow on the real ledger, not a fixture: this branch's full-lane gates were
+recorded by the verb it adds. Run 7 was the first attempt, before the reviewer lens had run.
