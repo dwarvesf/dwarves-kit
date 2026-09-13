@@ -464,17 +464,22 @@ _ff_blocked_into() {
 # findable name and print the stash commit. The list goes in as a NUL pathspec file, so a
 # path holding a glob character, a leading colon, or a space means itself and nothing else;
 # a bare `git stash` would take every other dirty file and every untracked file in a
-# checkout this session does not own. A push that saves nothing leaves refs/stash where it
-# was, and the empty answer says so, because a caller that recorded a stash it never made
-# would report the operator's work lost when nothing was ever taken.
+# checkout this session does not own. The entry is found by its own subject, never by
+# reading refs/stash after the push: a sibling pushing in that gap puts ITS commit at the
+# top, and a run that recorded it would pop and drop the sibling's stash while its own sat
+# orphaned under this name. The push's exit code is not the answer either, for the same
+# reason in the other direction: a push that failed after writing the entry still took the
+# files, and only the list says whether it did. A push that saved nothing has no entry, and
+# the empty answer says so, because a caller that recorded a stash it never made would
+# report the operator's work lost when nothing was ever taken.
 _stash_blocked() {
-  local repo="$1" name="$2" list="$3" before after
-  before="$(git -C "$repo" rev-parse --verify --quiet refs/stash 2>/dev/null)"
+  local repo="$1" name="$2" list="$3" h s
   git -C "$repo" stash push -q -m "$name" \
-    --pathspec-from-file="$list" --pathspec-file-nul 2>/dev/null || return 1
-  after="$(git -C "$repo" rev-parse --verify --quiet refs/stash 2>/dev/null)"
-  [ -n "$after" ] && [ "$after" != "$before" ] || return 1
-  printf '%s' "$after"
+    --pathspec-from-file="$list" --pathspec-file-nul >/dev/null 2>&1
+  while read -r h s; do
+    case "$s" in *": ${name}") printf '%s' "$h"; return 0 ;; esac
+  done < <(git -C "$repo" stash list --format='%H %s' 2>/dev/null)
+  return 1
 }
 
 # _unstash <repo> <sha> <name> <pulled> -- pop the run's own stash BY IDENTITY. A bare

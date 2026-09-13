@@ -46,6 +46,15 @@ Deltas from the draft at `.claude/goals/wrap-pull-past-dirty.md` and from SPEC-2
 - Decision/Change: the NOTE branches three ways: aborts (knob off), stashes (knob on, `--apply`), would stash (knob on, dry run).
 - Why: a report that contradicts the run is the defect class this file is most careful about, and the dry run previously gave no warning that `--apply` would stash at all.
 
+## 2026-09-13 Review: the run's own stash is found by its subject, not by where `refs/stash` moved
+- Context: the shipped `_stash_blocked` read `refs/stash` before and after its push and recorded the new top as the run's own entry. The review reproduced a sibling `stash push` landing between the run's push and that read. The run then recorded the sibling's commit, popped and dropped the sibling's stash after the pull, left its own entry orphaned, lost the operator's local edit from the worktree, and reported `restored the stashed file(s) and dropped` with exit 0.
+- Decision/Change: `_stash_blocked` walks `git stash list --format='%H %s'` and returns the commit whose subject ends in `: <run name>`. The push's exit code no longer gates the answer.
+- Why: the subject is written by this run and no sibling writes it. A suffix match on the full run name has no prefix collision, which was the objection to the earlier `grep -m1 <name>` form. A push that failed after writing its entry still took the files, so only the list can say whether anything was taken.
+- Impact: the pop is still by commit. One fixture stages the race with a git shim; against the shipped code it fails three assertions. SPEC-286 still says the commit is the one `refs/stash` moved to; this note is the delta.
+- Open questions:
+  - The `git stash list` to `git stash pop` window stays positional. `_unstash` resolves `stash@{N}` by commit and pops that ref a process spawn later; a sibling push in between shifts N. Git has no drop-by-commit, so the window can shrink (`stash apply <sha>`, then re-verify the ref and drop) but not close. Worth the extra write on a checkout other sessions share? Not changed in the review.
+  - A dirty tracked file the incoming commits delete is stashed, the pull lands, and the pop is a modify/delete conflict every time, leaving `DU <path>` in the shared index with exit 2. Reproduced by hand. `--diff-filter=d` on the incoming diff would exclude the path and degrade to the knob-off `FAILED`. The spec accepts pop conflicts as an outcome, so this is a contract call, not a defect. Not changed in the review.
+
 ## 2026-09-13 The header names the stash in the write set, and `_usage` keeps its line range
 - Context: `_usage` is `sed -n '2,25p'` over the file header. A first attempt added a parenthetical to the sentence that says the verbs never touch a dirty file, which pushed the last header line out of the usage window.
 - Decision/Change: the write-set enumeration names `its pull-past-dirty stash` instead, and the paragraph was rewrapped to the same line count, so the range stays `2,25p`.

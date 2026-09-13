@@ -708,6 +708,37 @@ chk "mid-pull stash: the sibling's mid-pull stash is still listed" \
 chk_has "mid-pull stash: and it is the sibling's, not ours" "$(git -C "$PRACE" stash list)" \
   "sibling-mid-pull"
 
+echo "--- knob on: a sibling stash pushed right AFTER ours is not mistaken for ours"
+# The other half of the race: a sibling's entry lands between the run's own stash push and
+# the moment the run reads which entry is its own. Whatever sits at the top of the stack
+# is then the sibling's, so the run must find its entry by name. A git shim stages the
+# sibling's push the instant the run's own push returns.
+build_pd_repo after; advance_pd_repo after
+PAFT="$TMPD/pdclone-after"
+printf '%s' "$A_LOCAL_FAR" > "$PAFT/A.md"
+printf 'b sibling edit\n' > "$PAFT/B.md"
+mkdir -p "$TMPD/gitshim"
+REAL_GIT="$(command -v git)"
+cat > "$TMPD/gitshim/git" <<SHIM
+#!/usr/bin/env bash
+"$REAL_GIT" "\$@"; rc=\$?
+case " \$* " in *" -m wrap-pull-past-dirty-"*) "$REAL_GIT" -C "$PAFT" stash push -q -m sibling-after -- B.md ;; esac
+exit \$rc
+SHIM
+chmod +x "$TMPD/gitshim/git"
+out="$(PATH="$TMPD/gitshim:$PATH" KIT_CONFIG_OPERATOR="$PD_ON" "$WRAP" apply --apply "$PAFT" 2>&1)"; rc=$?
+chk "after-push stash: apply exits 0" "$rc"
+chk_has "after-push stash: our own stash was the one restored" "$out" \
+  "restored the stashed file(s) and dropped"
+chk "after-push stash: A.md kept the local edit" "$(grep -qx 'a10 local' "$PAFT/A.md"; echo $?)"
+chk "after-push stash: A.md took the incoming line" "$(grep -qx 'a1 remote' "$PAFT/A.md"; echo $?)"
+chk "after-push stash: the sibling's entry was not popped" \
+  "$([ "$(cat "$PAFT/B.md")" = "b base" ]; echo $?)"
+chk "after-push stash: exactly one stash is left" \
+  "$([ "$(pd_stash_count "$PAFT")" = "1" ]; echo $?)"
+chk_has "after-push stash: and it is the sibling's, not ours" "$(git -C "$PAFT" stash list)" \
+  "sibling-after"
+
 echo "--- knob on: a pop conflict keeps the stash and reports it"
 build_pd_repo conflict; advance_pd_repo conflict
 PC="$TMPD/pdclone-conflict"
