@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# serial: fails under concurrency on ubuntu while passing sequentially, alone, and on macOS.
+#   Observed on master a1cd0c7: `the runs verb is missing from \`mega --help\`` with the other 20
+#   assertions green. That assertion pipes `mega.sh --help` (a 118-line `sed` of the script's own
+#   header) into `grep -q`, so an empty or truncated read fails it. The mechanism is NOT proven;
+#   the leading hypothesis is resource pressure on a 4-core runner, since this suite spawns
+#   heavily and the failure never appears on an idle box. Marked serial on the EMPIRICAL fact
+#   rather than the mechanism: it does not tolerate sharing the machine.
 # test-runs-dashboard.sh -- `mega runs` (SPEC-215): the estate runs dashboard generator.
 #
 # Pins the scanner's parse contract and the empty-state path over a fixture estate built in a
