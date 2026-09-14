@@ -180,6 +180,13 @@ dedupe_all() {
 
 main() {
   local sub="${1:-}"; shift || true
+  # Every verb but `states` reads BACKLOG_FILE; a wrapper pointing it at a moved or
+  # misspelled path used to fail deep inside _rows()'s awk call with a bare "can't open
+  # file" and exit 2, naming neither the variable nor the wrapper as the likely cause.
+  if [ "$sub" != "states" ] && [ ! -r "$BACKLOG_FILE" ]; then
+    echo "backlog.sh: BACKLOG_FILE names no readable file: $BACKLOG_FILE, check the board wrapper's path" >&2
+    return 1
+  fi
   case "$sub" in
     board)      board ;;
     next)       next ;;
