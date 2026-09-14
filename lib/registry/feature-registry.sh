@@ -201,7 +201,46 @@ generate() {
   mv -f "$tmp" "$out"
 }
 
+# check [file] -- is the committed projection current? Exit 0 fresh, 1 drifted.
+#
+# tests/test-meta.sh pins freshness by regenerating to a temp file and diffing, and
+# every caller who wanted that answer outside the suite rebuilt the same three lines
+# by hand. Doing it by hand also loses the drift itself: the suite reports a red
+# assertion, not WHICH rows moved, so the reader regenerates blind. This prints the
+# diff. `--fix` regenerates in place, which is the whole remedy every time.
+#
+# Worth knowing before reading a surprising diff: the Tests column is an exact-token
+# grep over tests/*.sh, so PROSE counts. A comment in a test file that names a
+# feature wires that file to the feature and moves this projection, which is how a
+# comment explaining an unrelated flake drifted three rows on 2026-09-14.
+check() {
+  local out="${1:-docs/FEATURES.md}" fix="" tmp rc=0
+  [ "$out" = "--fix" ] && { fix=1; out="${2:-docs/FEATURES.md}"; }
+  if [ ! -f "$out" ]; then
+    echo "feature-registry: $out does not exist; run 'generate' first" >&2
+    return 1
+  fi
+  tmp="$(mktemp)"
+  generate "$tmp"
+  if diff -q "$tmp" "$out" >/dev/null 2>&1; then
+    echo "feature-registry: $out is fresh"
+  else
+    rc=1
+    if [ -n "$fix" ]; then
+      mv -f "$tmp" "$out"
+      echo "feature-registry: $out regenerated"
+      return 0
+    fi
+    echo "feature-registry: $out has DRIFTED; regenerate with 'feature-registry.sh check --fix'" >&2
+    diff "$tmp" "$out" >&2 || true
+  fi
+  rm -f "$tmp"
+  return "$rc"
+}
+
 case "${1:-}" in
   generate) shift; generate "$@" ;;
-  *) echo "usage: feature-registry.sh generate [outfile]" >&2; exit 64 ;;
+  check)    shift; check "$@" ;;
+  *) echo "usage: feature-registry.sh generate [outfile]" >&2
+     echo "       feature-registry.sh check [--fix] [outfile]" >&2; exit 64 ;;
 esac
