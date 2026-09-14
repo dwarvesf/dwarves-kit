@@ -51,7 +51,9 @@ so the question protects nothing and spends the operator's attention, which is t
 
 ### Multi-agent future (a stated boundary)
 
-The standalone `<subsystem> <verb>` SHELL surface (`board`, `stats`, `gate`, `classify`, `spec`, `goal`, `session`) is runtime-agnostic: any shell-capable agent, pi, opencode, Claude Code, or a human at a terminal, can run `bash lib/gate/gate.sh ledger rid` directly, because it is bash reading and writing files git already tracks, nothing Claude-Code-specific. The agent-AUTHORING surface (`agents/`, `commands/`, `skills/`) is not: it is Claude Code's loader format specifically, frontmatter YAML, `/kit:<name>` namespacing, the Task-tool dispatch contract, and porting the kit to another runtime would mean that runtime growing its own loader for the same underlying scripts, not a rewrite of the scripts. This is a boundary the kit states honestly rather than papers over: the shell layer already is multi-agent-ready; the authoring layer is not, by construction, until a second loader exists to read it.
+The standalone `<subsystem> <verb>` SHELL surface (`board`, `stats`, `gate`, `classify`, `spec`, `goal`, `session`) is runtime-agnostic: any shell-capable agent, pi, opencode, Claude Code, or a human at a terminal, can run `bash lib/gate/gate.sh ledger rid` directly, because it is bash reading and writing files git already tracks, nothing Claude-Code-specific. The five hard hook policies now have Claude Code and Codex package adapters. The agent-AUTHORING surface (`agents/`, `commands/`, `skills/`) remains Claude Code-specific: frontmatter YAML, `/kit:<name>` namespacing, and the Task-tool dispatch contract. Codex support does not change that boundary.
+
+Codex hook coverage is scoped to verified PreToolUse paths and Stop. It is not complete data-loss prevention. Prompt content, assistant output, hosted tools, and unobserved specialized tool paths remain outside the Phase 1 boundary.
 
 ### Team mode: parked, not absent
 

@@ -201,6 +201,27 @@ This is the command/agent half of the ID-036 layering contract (orchestration / 
 
 ## Hook fallback layer (closing the layering contract)
 
+Claude Code and Codex package different lifecycle schemas around one policy spine:
+
+```text
+Claude Code                         Codex
+.claude-plugin/plugin.json          .codex-plugin/plugin.json
+            |                                   |
+            v                                   v
+hooks/hooks.json                    hooks/codex-hooks.json
+            |                                   |
+            |                                   v
+            |                        codex-hook-adapter.sh
+            |                                   |
+            +-------------------+---------------+
+                                v
+                 shared hooks/*.sh policies
+```
+
+The Codex adapter maps `last_assistant_message` into the shared Stop input and extracts Bash or `apply_patch` paths for the shared secret policy. It fails closed when `jq` or a hard policy is unavailable. Claude manifests and settings remain unchanged. The shared denylist adds Codex and Cloudflare credential files for both runtimes.
+
+The Codex boundary is deliberately narrow. It does not inspect prompts, assistant output, hosted tools, or every specialized tool path. Non-managed Codex hooks run only after the operator trusts their exact command hash through `/hooks`. Each trusted command also verifies the adapter and policy content hashes before execution. Codex treats an engine failure or timeout as a failed hook rather than a guaranteed denial, so remote branch protection and git hooks remain backstops.
+
 The three layers compose orchestration-first:
 
 ```
@@ -238,6 +259,7 @@ file count so this table cannot drift):
 
 | Hook | Event | Class | Failure mode it backstops |
 |---|---|---|---|
+| `codex-hook-adapter` | Codex PreToolUse, Stop | compatibility | normalizes Codex payloads and dispatches shared policies; owns no allow or deny rule |
 | `safety-gate` | PreToolUse Bash | hard | destructive deletes, push-to-main, force-push under deadline pressure |
 | `secrets-guard` | PreToolUse Read/Edit/Bash | hard | reading secret files "just to check"; transcript is plaintext |
 | `ship-gate` | PreToolUse Bash | hard | shipping without proof of done / recorded gates (ADR-0024 boundary) |
@@ -516,7 +538,8 @@ The orchestrator in `/execute` defaults to `autonomous` for worker subagents (th
 |---|---|---|
 | jq | Parse JSON in hook scripts; merge settings.json | `brew install jq` (macOS), `apt install jq` (Linux) |
 | git | Branch detection, diff for review, commit for ship | Pre-installed on most systems |
-| Claude Code | The agent runtime the kit extends | `npm install -g @anthropic-ai/claude-code` |
+| shasum or sha256sum | Verify trusted Codex adapter and policy content before execution | `shasum` ships with macOS; `sha256sum` ships in Linux coreutils |
+| Claude Code or Codex | Supported agent runtime; install at least one | Install the selected runtime from its vendor |
 
 ### Recommended
 | Tool | Why | Install |

@@ -5,8 +5,8 @@
 # (~, $HOME, and ../ spellings of the same file all normalize to one absolute
 # path) so the denylist cannot be bypassed by an alternate spelling.
 # Fail-closed on a confirmed secret match; fail-open (exit 0) on unparseable
-# input so a parse error never bricks the session. Logs the attempted path +
-# tool, never file contents.
+# input so a parse error never bricks the session. Logs the tool and block class,
+# never the attempted path or file contents.
 #
 # Scope is honest: the Read/Edit deny below (plus the settings.json
 # permissions.deny block) is the primary, reliable layer. The Bash-command
@@ -25,10 +25,10 @@ TOOL=$(printf '%s' "$INPUT" | jq -r '.tool_name // empty' 2>/dev/null) || exit 0
 [ -z "$TOOL" ] && exit 0
 
 LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
-log_block() {  # $1=tool  $2=path-or-cmd-snippet (never file contents)
+log_block() {  # $1=tool  $2=block class (never user-controlled text)
   mkdir -p "$LOG_DIR" 2>/dev/null || return 0
-  printf '%s | BLOCKED | %s | %s | %s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$(pwd)" "$2" \
+  printf '%s | BLOCKED | %s | %s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" \
     >> "$LOG_DIR/secrets-guard.log" 2>/dev/null || true
 }
 
@@ -40,6 +40,8 @@ SECRET_GLOBS=(
   "$HOME/.aws/"'*' "$HOME/.gnupg/"'*' "$HOME/.config/gh/"'*'
   "$HOME/.git-credentials" "$HOME/.docker/config.json"
   "$HOME/.kube/config" "$HOME/.npmrc"
+  "$HOME/.cloudflared/"'*' "$HOME/.config/cloudflared/"'*'
+  "$HOME/.codex/auth.json" "$HOME/.codex/.codex-global-state.json" "$HOME/.codex/.codex-global-state.json.bak"
   '*.pem' '*.p12' '*.pfx'
   "$HOME/Library/Keychains/"'*'
 )
@@ -53,6 +55,7 @@ normpath() {
     '~/'*) p="$HOME/${p#\~/}" ;;
   esac
   p="${p//\$HOME/$HOME}"
+  p="${p//\$\{HOME\}/$HOME}"
   case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
   local IFS=/
   for seg in $p; do
@@ -86,10 +89,9 @@ case "$TOOL" in
     FP=$(printf '%s' "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // empty' 2>/dev/null) || exit 0
     [ -z "$FP" ] && exit 0
     if is_secret "$FP"; then
-      NP=$(normpath "$FP")
-      log_block "$TOOL" "$NP"
-      jq -cn --arg t "$TOOL" --arg p "$NP" \
-        '{decision:"block",reason:("secrets-guard: "+$t+" targets a secret file ("+$p+"). Reading credentials/keys is blocked. If this file is not a secret, rename it or add it to ALLOW_GLOBS in hooks/secrets-guard.sh.")}'
+      log_block "$TOOL" "secret-file path"
+      jq -cn --arg t "$TOOL" \
+        '{decision:"block",reason:("secrets-guard: "+$t+" targets a secret file. Reading credentials or keys is blocked. If this file is not a secret, rename it or add it to ALLOW_GLOBS in hooks/secrets-guard.sh.")}'
       exit 2
     fi
     ;;
@@ -99,7 +101,7 @@ case "$TOOL" in
     # Best-effort: a reader/redirect touching a clear secret token.
     if printf '%s' "$CMD" | grep -qE '(\bcat\b|\bless\b|\bmore\b|\bhead\b|\btail\b|\bxxd\b|\bstrings\b|\bod\b|\btac\b|\bnl\b|\bbase64\b|\bcp\b)' \
        && printf '%s' "$CMD" | grep -qE '(\.ssh/id_|id_rsa|id_ed25519|\.aws/credentials|\.gnupg/|\.git-credentials|\.pem\b|\.p12\b|\.kube/config|\.npmrc)'; then
-      log_block "Bash" "$(printf '%s' "$CMD" | head -c 120)"
+      log_block "Bash" "secret-read command"
       jq -cn '{decision:"block",reason:"secrets-guard: this command appears to read a secret file (ssh key / aws creds / .pem). Blocked. Read the value from an env var or a secrets manager instead."}'
       exit 2
     fi

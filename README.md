@@ -140,7 +140,18 @@ That's it. Hooks, commands, agents, and the skill all install automatically. No 
 
 To get the kit listed on Anthropic's official marketplace (`claude-plugins-official`), submit it via [claude.ai/settings/plugins/submit](https://claude.ai/settings/plugins/submit). One-time manual step; not blocking the self-hosted install above.
 
-### Option 2: Bash installer (maintainer / power path)
+### Option 2: Codex plugin
+
+```bash
+codex plugin marketplace add dwarvesf/dwarves-kit
+codex plugin add kit@dwarves-marketplace
+```
+
+Codex loads the five hard controls through `hooks/codex-hooks.json`: destructive-command safety, secret-file protection, ship completeness, commit format, and premature-completion protection. Open `/hooks` once after installation and trust the exact hook definitions. Each command pins the adapter and policy content hashes, so changed code fails closed before execution and also changes the trust definition when the manifest refreshes.
+
+This first Codex package is a narrow enforcement adapter. It does not inspect prompts, assistant output, hosted tools, or every specialized tool path. The commands, agents, and skills remain Claude Code authoring surfaces until Codex-native loaders ship.
+
+### Option 3: Bash installer (maintainer / power path)
 
 Demoted from the default doc path (Moment 1 of the onboarding design is plugin-only). Reach for it
 only in environments without Claude Code's plugin system (CI, project templates, older Claude Code
@@ -245,6 +256,7 @@ Within one spec, tasks run sequentially. Across specs, `/kit:dispatch` fans out 
 
 | Hook | Event | What it does |
 |------|-------|-------------|
+| codex-hook-adapter | Codex PreToolUse, Stop | Normalizes Codex payloads and dispatches the shared hard policies; contains no policy rules |
 | safety-gate | PreToolUse(Bash) | Blocks rm -rf (build-artifact allowlist), push to main, force push, DROP TABLE, git reset --hard, kubectl delete |
 | secrets-guard | PreToolUse(Read\|Edit\|Bash) | Blocks reads of secret files (.env, ~/.ssh, ~/.aws, .pem); canonicalizes the path first |
 | commit-format | PreToolUse(Bash) | Blocks non-conventional / >72-char / spec-ID commit subjects |

@@ -23,14 +23,14 @@ CMD=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
 # Debug logging
 if [ "${DWARVES_KIT_DEBUG:-0}" = "1" ]; then
-  echo "[dwarves-kit:safety] checking: $(echo "$CMD" | head -c 80)" >&2
+  echo "[dwarves-kit:safety] checking command (${#CMD} chars)" >&2
 fi
 
 LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
 
 log_block() {
   mkdir -p "$LOG_DIR"
-  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $1 | $(pwd) | $(echo "$CMD" | head -c 120)" >> "$LOG_DIR/safety-gate.log"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) | BLOCKED | $1 | $(pwd)" >> "$LOG_DIR/safety-gate.log"
 }
 
 block() {  # <rule> <message>

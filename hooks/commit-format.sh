@@ -33,9 +33,9 @@ esac
 block() {  # $1 = why
   local LOG_DIR="${DWARVES_KIT_LOG_DIR:-$HOME/.claude/dwarves-kit/logs}"
   mkdir -p "$LOG_DIR" 2>/dev/null && printf '%s | BLOCKED | %s | %s\n' \
-    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$(printf '%s' "$SUBJ" | head -c 80)" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "subject omitted" \
     >> "$LOG_DIR/commit-format.log" 2>/dev/null || true
-  jq -cn --arg r "commit-format: $1 Subject: \"$(printf '%s' "$SUBJ" | head -c 80)\". Rules: Conventional Commits type, <=72 chars, no SPEC-/TASK-/phase markers in the subject (put those in the body)." \
+  jq -cn --arg r "commit-format: $1 The subject is omitted from hook output. Rules: Conventional Commits type, <=72 chars, no SPEC-/TASK-/phase markers in the subject (put those in the body)." \
     '{decision:"block",reason:$r}'
   exit 2
 }
