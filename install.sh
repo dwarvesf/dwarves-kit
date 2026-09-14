@@ -365,6 +365,18 @@ KIT_REQUESTED_MODULES="$(echo "$KIT_REQUESTED_MODULES" | xargs)"
 # auto-updated). Move a real non-empty dir aside first, loudly, before linking.
 kit_symlink_hardened() {
   local target="$1" linkname="$2"
+  # Self-link guard: on a dev machine ~/.claude/dwarves-kit is itself a symlink
+  # to this checkout, so $CLAUDE_DIR/dwarves-kit/hooks and $KIT_DIR/hooks name
+  # the SAME path. Linking one to the other moves the real dir aside and leaves
+  # a symlink pointing at itself: every hook and bin then dies with ELOOP.
+  # Compare the resolved paths and skip.
+  local t_dir l_dir
+  t_dir="$(cd "$(dirname "$target")" 2>/dev/null && pwd -P)" || t_dir=""
+  l_dir="$(cd "$(dirname "$linkname")" 2>/dev/null && pwd -P)" || l_dir=""
+  if [ -n "$t_dir" ] && [ "$t_dir/$(basename "$target")" = "$l_dir/$(basename "$linkname")" ]; then
+    echo "[skip] $linkname already resolves to $target (symlinked checkout); not linking it to itself"
+    return 0
+  fi
   if [ -e "$linkname" ] && [ ! -L "$linkname" ] && [ -d "$linkname" ] && [ -n "$(ls -A "$linkname" 2>/dev/null)" ]; then
     local bak="${linkname}.pre-symlink.bak.$(date +%Y%m%d-%H%M%S)"
     echo "[warn] $linkname is a real non-empty directory (ln -sfn would silently no-op); moving it to $bak"
