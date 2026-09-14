@@ -12,6 +12,7 @@ All notable changes to dwarves-kit are documented here.
 - Config surface (new section, additive, MINOR): `[intake]` with `url_ledger`, `verdicts`, `boards`, `notes`, all defaulting `""`. Every key resolves root-only, so a project `.kit.toml` cannot set them. An install that sets none of them keeps `intake gate` answering from this kit's own inventory and open pull requests alone.
 
 ### Added
+- Added a Codex plugin manifest and a Codex lifecycle adapter for the five hard guardrails: destructive-command safety, secret-file protection, ship completeness, commit format, and premature-completion protection. Claude Code keeps its existing manifest and settings. The shared secret policy now also denies Codex and Cloudflare credential files, and hard-hook logs omit command or subject text that could contain tokens. Codex requires explicit trust for each exact hook hash. This is not prompt/output DLP, and tool-hook coverage is limited to verified paths.
 - `gate-ledger.sh plan-record <rid> <lane> [--ran|--skipped|--override <phase>[:<reason>]]...`
   disposes every phase of a lane's plan in one call, instead of one `record`/`override` call per
   gate (nine hand-typed calls on a normal-lane prose PR). The phase list comes from `plan`, so the

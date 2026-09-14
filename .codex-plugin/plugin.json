@@ -1,0 +1,19 @@
+{
+  "name": "kit",
+  "version": "2.2.0",
+  "description": "Spec-driven workflow with shared Claude Code and Codex guardrails.",
+  "author": {
+    "name": "Dwarves Foundation",
+    "url": "https://dwarves.foundation"
+  },
+  "homepage": "https://github.com/dwarvesf/dwarves-kit",
+  "repository": "https://github.com/dwarvesf/dwarves-kit",
+  "keywords": [
+    "workflow",
+    "spec-driven",
+    "verification",
+    "guardrails",
+    "hooks"
+  ],
+  "hooks": "./hooks/codex-hooks.json"
+}
