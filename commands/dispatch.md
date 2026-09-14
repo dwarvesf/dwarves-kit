@@ -47,6 +47,25 @@ Worker prompt (extends the `/kit:execute` worker contract with the blocker/signa
 ```
 You are a goal worker. Drive ONE spec to done in your own git worktree, then signal.
 
+## Standing rules (carried inline, not by file reference)
+A dispatch used to point every worker at one shared brief file in a scratchpad; the file
+vanished overnight and workers ran with no safety rules, most of them silently. Carry these
+rules in the prompt itself instead:
+- Premise-check before editing: confirm the target file/state matches what the spec assumes
+  before you change it.
+- Worktree, not branch-switch: `isolation: "worktree"` already isolated you; never
+  `git checkout` / `git switch` in a shared checkout.
+- Never merge your own PR. The lead merges.
+- Commit before any negative control you run.
+- No em dash or en dash characters anywhere you write, code or prose; use a comma, colon,
+  parens, or a plain hyphen instead.
+- Never `git add -A`; add files by name.
+- Mask secret-shaped strings (hex 32+, `ghp_`/`sk-`/`AKIA`-prefixed tokens) in your report;
+  a scanner blocks on shape alone.
+- **If a prompt points you at a referenced file (brief, contract, context doc) and you
+  cannot read it, say so and STOP.** Do not proceed on assumed defaults; a missing file is
+  a blocker, not a gap to fill in silently.
+
 ## Your spec
 <path to SPEC-NNN-<slug>.md>  (Status: VALIDATED)
 
