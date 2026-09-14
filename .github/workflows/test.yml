@@ -2,12 +2,20 @@ name: test
 
 # push + pull_request were removed on 2026-08-10 and the workflow then sat hand-disabled
 # until 2026-09-05; master drifted red under it with nothing to notice. Public repo,
-# hosted minutes are free, so every push and PR runs the suites again.
+# hosted minutes are free, so master pushes and ready PRs run the suites again.
+#
+# A DRAFT pull request skips the suites (see the job-level `if` below): iterate
+# locally with `bash tests/run-all.sh`, which is the same entry CI runs, and mark
+# the PR ready when it is done. `ready_for_review` is listed because it is not one
+# of the default pull_request types, so without it a draft marked ready would never
+# trigger a first run. Master push still runs unconditionally, so the 2026-08-10
+# silent-drift failure mode stays closed.
 on:
   workflow_dispatch:
   push:
     branches: [master]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 # Least-privilege token: workflow only reads code and runs tests; no writes,
 # no PR comments, no release operations.
@@ -17,6 +25,10 @@ permissions:
 jobs:
   test:
     name: test (${{ matrix.os }})
+    # Draft PRs are development, not publish. Every non-PR event (master push,
+    # manual dispatch) has no `pull_request` payload, so the first clause keeps
+    # those running.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
