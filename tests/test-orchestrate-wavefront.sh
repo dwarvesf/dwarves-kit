@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# serial: asserts process-group kill TIMING, so background load changes the thing under test
+#   rather than merely slowing it. This file already records the measurement: 288s wall at load
+#   10.8 against ~130s idle, and 10s/30s poll windows that flaked under load. run-all.sh gives a
+#   suite with this header the machine to itself, after the parallel batch drains.
 # test-orchestrate-wavefront.sh
 # Pins _ready_set (SPEC-106 TASK-001, DAG-wavefront phase 1). The ready set = every sub-goal that
 # is unchecked AND whose `depends SG-NN` tokens are all checked, emitted in ROADMAP order as

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# serial: stages a fixture into the REAL repo index, because the enumerator under test reads
+#   `git ls-files` and would never see an untracked file. Two consequences make sharing the
+#   machine unsafe: the staging races other suites on .git/index.lock, and while the fixture is
+#   staged, every concurrent suite that reads `git ls-files` (test-meta, test-no-personal-paths)
+#   sees a planted SPEC-999 citation that is designed to look like a violation.
 # test-lint-scattered-ids.sh -- unit tests for lib/lint/scattered-ids.sh (C4 for the lint
 # module). Confirms the enumerator finds a planted hit and drops an exempt one, and that the
 # zones this repo already relies on report the counts they are supposed to.

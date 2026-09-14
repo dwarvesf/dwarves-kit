@@ -33,10 +33,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Manual dispatch only now, so every run pays the full ~4m25s and covers
-        # both: macOS is not redundant coverage, its /bin/bash is 3.2, so it is
-        # what catches `declare -A` / `mapfile` regressions in launcher scripts.
-        os: [ubuntu-latest, macos-latest]
+        # A PR runs ubuntu only; master push and manual dispatch run both.
+        #
+        # macOS is about 2.3x slower per suite for identical work, so it, not
+        # ubuntu, was the entire PR wait. What it uniquely covers is the BSD
+        # userland (sed, grep, date, mktemp), which matters for a repo this
+        # shell-heavy, so it still gates master. It is NOT bash 3.2 coverage,
+        # despite what this comment used to claim: the job brew-installs bash 4
+        # below and asserts it is first on PATH.
+        #
+        # This selection lives in the matrix, not in a job-level `if`. The matrix
+        # context does not exist yet when a job `if` is evaluated, so the `if`
+        # form parses but can never see matrix.os (actionlint rejects it).
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest","macos-latest"]') }}
     steps:
       # Pinned to release SHA to defend against tag-replay supply-chain attack.
       # Update via Dependabot or manually when checkout cuts a new release.
