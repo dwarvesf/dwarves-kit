@@ -55,3 +55,17 @@ Alternatives: Adapter-only path rules were rejected because they would duplicate
 Impact: Claude settings and manifests stay byte-identical. Claude will newly block reads of the added credential files.
 
 Open questions: None.
+
+## Installed-hook smoke compatibility
+
+Context: CI invokes every installed hook script with an empty JSON object and no adapter target.
+
+Decision: Treat only the exact empty-object probe as a standalone no-op. Keep non-empty untargeted events fail-closed.
+
+Why: The adapter must follow the existing install smoke contract without weakening real hook dispatch validation.
+
+Alternatives: Excluding the adapter from the shared smoke test would create a special-case coverage gap.
+
+Impact: The install suite passes while malformed Codex events still return exit code 2.
+
+Open questions: None.

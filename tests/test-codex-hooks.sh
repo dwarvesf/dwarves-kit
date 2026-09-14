@@ -108,6 +108,12 @@ if [ -f "$CODEX_MANIFEST" ] && [ -f "$CODEX_HOOKS_FILE" ]; then
 fi
 
 echo "Codex adapter behavior"
+RC=0
+printf '{}' | bash "$ADAPTER" >/dev/null 2>&1 || RC=$?
+assert_equal "standalone no-op smoke event is allowed" "0" "$RC"
+RC=0
+printf '{"hook_event_name":"PreToolUse"}' | bash "$ADAPTER" >/dev/null 2>&1 || RC=$?
+assert_equal "untargeted real hook event fails closed" "2" "$RC"
 RC=$(run_adapter PreToolUse safety-gate.sh '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /workspace/source"}}')
 assert_equal "destructive Bash command is blocked" "2" "$RC"
 RC=$(run_adapter PreToolUse safety-gate.sh '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status --short"}}')

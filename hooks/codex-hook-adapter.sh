@@ -8,6 +8,11 @@ EVENT="${1:-}"
 POLICY_NAME="${2:-}"
 ROOT="${PLUGIN_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
 
+if [ -z "$EVENT" ] && [ -z "$POLICY_NAME" ]; then
+  SMOKE_INPUT=$(cat 2>/dev/null) || exit 2
+  [ "$(printf '%s' "$SMOKE_INPUT" | tr -d '[:space:]')" = '{}' ] && exit 0
+fi
+
 case "$EVENT:$POLICY_NAME" in
   PreToolUse:safety-gate.sh|PreToolUse:secrets-guard.sh|PreToolUse:ship-gate.sh|PreToolUse:commit-format.sh|Stop:anti-rationalization.sh) ;;
   *)
