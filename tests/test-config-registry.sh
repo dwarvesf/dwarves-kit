@@ -279,14 +279,18 @@ cp "$AUT_OP/kit.toml" "$AUT_PROJ/.kit.toml"
 # KIT_CONFIG_ROOT is pinned at the repo under test on every probe. Without it the
 # resolver reads the INSTALLED kit, the repo's own kit.toml is never consulted, and the
 # default assertion passes on the fallback argument alone. `negctl.sh` caught exactly that.
+# The two probes that assert the SHIPPED DEFAULT also pin KIT_CONFIG_OPERATOR at a path
+# that cannot exist, for the same reason: left ambient, they read the real operator's
+# kit.toml and fail on any key that operator overrides (drain_staged did, on this machine).
 AUT_KIT="$(cd "$(dirname "$0")/.." && pwd)"
+AUT_NO_OP="$AUTONOMY_DIR/no-operator"
 while IFS='|' read -r akey adefault aover; do
   [ -n "$akey" ] || continue
-  v="$(KIT_CONFIG_ROOT="$AUT_KIT" kit_config_get_root "$akey" "__unset__")"
+  v="$(KIT_CONFIG_ROOT="$AUT_KIT" KIT_CONFIG_OPERATOR="$AUT_NO_OP" kit_config_get_root "$akey" "__unset__")"
   assert "$akey ships as $adefault" "$([ "$v" = "$adefault" ] && echo 0 || echo 1)"
   v="$(KIT_CONFIG_ROOT="$AUT_KIT" KIT_CONFIG_OPERATOR="$AUT_OP" kit_config_get_root "$akey" "__unset__")"
   assert "$akey honours the operator kit.toml" "$([ "$v" = "$aover" ] && echo 0 || echo 1)"
-  v="$(KIT_CONFIG_ROOT="$AUT_KIT" KIT_PROJECT_ROOT="$AUT_PROJ" kit_config_get_root "$akey" "__unset__")"
+  v="$(KIT_CONFIG_ROOT="$AUT_KIT" KIT_CONFIG_OPERATOR="$AUT_NO_OP" KIT_PROJECT_ROOT="$AUT_PROJ" kit_config_get_root "$akey" "__unset__")"
   assert "$akey ignores a project .kit.toml" "$([ "$v" = "$adefault" ] && echo 0 || echo 1)"
 done <<'KEYS'
 ship.confirm_commit|false|true
