@@ -14,7 +14,7 @@ refused by `hooks/ship-gate.sh`, through the same `feature-registry.sh check` ve
 | `bash tests/test-meta.sh` | 0 | 853/853, including the freshness pin now routed through `check` |
 | `bash tests/test-config-registry.sh` | 0 | 50/50, the new `DWARVES_KIT_SKIP_REGISTRY_FRESHNESS` row lints clean |
 | `bash tests/test-codex-hooks.sh` | 0 | 86/86, the Codex trust command repins the edited hook's content hash |
-| `bash tests/run-all.sh --changed` | 0 | 47 suites, all green |
+| `bash tests/run-all.sh --changed` | 0 | 44 suites, all green |
 
 ```
 ok - check on a fresh projection exits 0
@@ -67,7 +67,7 @@ No selection rule was added, and none was needed. `tests/test-meta.sh` line 2 ca
 ```
 
 which `tests/run-all.sh --changed` reads to force the suite onto every diff regardless of what the
-diff names. The run above is the evidence: this branch's diff selected 47 suites and
+diff names. The run above is the evidence: this branch's diff selected 44 suites and
 `test-meta` is among them, reported `ok`. The goal draft's pause-if clause fired, and the scope
 shrank to the pre-push arm.
 
