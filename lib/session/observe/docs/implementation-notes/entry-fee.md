@@ -57,4 +57,30 @@ through it.
 behaviour for the same question. One helper, both callers.
 
 **Impact**: a `--project` string that matches several slugs now walks all of them.
-An exact slug still resolves to exactly itself, so no existing invocation changes.
+An exact slug still resolves to exactly itself, so no invocation that already named a
+valid slug changes. A typo or a partial name used to walk nothing and say so through an
+empty report; it now returns a merged figure, so a multi-slug match announces its
+resolved list on stderr.
+
+## 2026-09-16 12:10 Review fixes
+
+The architecture and correctness review found three unguarded crash paths and two
+outputs that read as a measurement when they were not. All are fixed on this branch.
+
+- Three untrusted fields were sliced or hashed without a guard: a numeric `timestamp`,
+  a numeric `rendered[].content`, and a dict `attachment.type`. Each aborted the whole
+  scan, not just that file, while every sibling collector in the module guards the same
+  shapes. Now each contributes nothing and the scan continues.
+- The remainder row went negative when the four-characters-per-token estimate overshot
+  the measured fee, printing `-900` and `-900%` as if they were measurements. It now
+  prints `(estimate over measured)` with the magnitude, and the component shares above
+  100 percent carry the signal.
+- The per-repo table keyed on the raw project slug, so a repo's worktrees each ranked as
+  a separate repo and a one-session worktree slug sorted above the many-session checkout
+  of the same codebase. Rows now fold on the `--claude-worktrees-` marker.
+
+One review point stays a documentation fix rather than a code one: the measured fee also
+covers the first user prompt, not the preamble alone. The `(unattributed)` row absorbs
+it, which matters at the 51 percent unattributed share the live run shows. Stated in the
+spec and the README instead of subtracted, because the transcript gives no way to
+separate the two.

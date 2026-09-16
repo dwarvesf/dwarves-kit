@@ -128,6 +128,11 @@ def project_roots(root, project):
     without the full cwd-derived slug. One repo's worktrees each get their own
     slug, and a per-repo figure wants them together, so this returns all matches
     rather than picking one. No match -> the literal join, which walks nothing.
+
+    A substring that matches more than one slug prints the resolved list to
+    stderr. Before this fallback existed a wrong --project walked nothing and
+    the empty output said so; a silent multi-match would instead merge unrelated
+    repos into one plausible figure.
     """
     exact = os.path.join(root, project)
     if os.path.isdir(exact):
@@ -139,6 +144,9 @@ def project_roots(root, project):
         )
     except OSError:
         hits = []
+    if len(hits) > 1:
+        print(f"session-observe: --project {project!r} matched {len(hits)} slugs: "
+              + ", ".join(os.path.basename(h) for h in hits), file=sys.stderr)
     return hits or [exact]
 
 
@@ -223,13 +231,22 @@ def hook_label(command):
     return toks[0].rsplit("/", 1)[-1][:40] or "?"
 
 
+def _rank_index(n, p):
+    """Nearest-rank index into a sorted list of n values for percentile p.
+
+    Shared so pctl() and entry_fee_median() cannot drift: the entry-fee view
+    reports the component split of the session AT its median fee, and a drift
+    here would stop that session reconciling against the median it is shown for.
+    """
+    return min(n - 1, int(round((p / 100) * (n - 1))))
+
+
 def pctl(vals, p):
     """Nearest-rank percentile (integer ms). Empty -> 0."""
     if not vals:
         return 0
     s = sorted(vals)
-    i = min(len(s) - 1, int(round((p / 100) * (len(s) - 1))))
-    return int(s[i])
+    return int(s[_rank_index(len(s), p)])
 
 
 def collect(args):
@@ -838,16 +855,32 @@ ENTRY_FEE_CHARS_PER_TOKEN = 4
 # Fee minus the sized components: the system prompt and the built-in tool
 # schemas reach the model but never appear in the transcript.
 ENTRY_FEE_UNATTRIBUTED = "(unattributed)"
+# The other direction: the estimate overshot the measured fee, so the split is
+# wrong here and the row says so instead of printing a negative measurement.
+ENTRY_FEE_OVERSHOT = "(estimate over measured)"
+# Claude Code gives a worktree its own project slug. The worktree convention is
+# <repo>/.claude/worktrees/<name>, so the slug carries this separator and the
+# repo name sits before it. Splitting there groups a repo's worktrees together.
+ENTRY_FEE_WORKTREE_MARK = "--claude-worktrees-"
 
 
 def _rendered_chars(entry):
-    """Characters of rendered preamble text one attachment entry contributes."""
+    """Characters of rendered preamble text one attachment entry contributes.
+
+    Every field here is untrusted transcript data, so a non-string content or a
+    non-list rendered contributes zero rather than raising: one malformed line
+    must not abort the whole scan."""
     r = entry.get("rendered")
     if isinstance(r, str):
         return len(r)
     if not isinstance(r, list):
         return 0
-    return sum(len(b.get("content") or "") for b in r if isinstance(b, dict))
+    total = 0
+    for b in r:
+        c = b.get("content") if isinstance(b, dict) else None
+        if isinstance(c, str):
+            total += len(c)
+    return total
 
 
 def entry_fee_session(path):
@@ -869,7 +902,7 @@ def entry_fee_session(path):
             att = entry.get("attachment")
             label = att.get("type") if isinstance(att, dict) else None
             tokens = _rendered_chars(entry) // ENTRY_FEE_CHARS_PER_TOKEN
-            if label and tokens:
+            if isinstance(label, str) and tokens:
                 comps[label] += tokens
             continue
         if entry.get("type") != "assistant" or entry.get("isSidechain"):
@@ -881,8 +914,10 @@ def entry_fee_session(path):
         fee = ((u.get("input_tokens") or 0)
                + (u.get("cache_creation_input_tokens") or 0)
                + (u.get("cache_read_input_tokens") or 0))
-        day = (first_ts or ts or "")[:10]
-        return {"fee": fee, "components": comps, "day": day, "model": msg.get("model") or "?"}
+        # first_ts is the only timestamp already proven to be a string; ts is
+        # untrusted and slicing it directly would abort the whole scan.
+        return {"fee": fee, "components": comps, "day": (first_ts or "")[:10],
+                "model": msg.get("model") or "?"}
     return None
 
 
@@ -904,8 +939,7 @@ def entry_fee_median(sessions):
     if not sessions:
         return None
     ranked = sorted(sessions, key=lambda s: s["fee"])
-    i = min(len(ranked) - 1, int(round(0.5 * (len(ranked) - 1))))
-    return ranked[i]
+    return ranked[_rank_index(len(ranked), 50)]
 
 
 def entry_fee_split_session(sessions):
@@ -933,7 +967,14 @@ def entry_fee_component_rows(sess):
         return f"{100 * n / fee:.0f}%" if fee else "-"
     rows = [[name, n, share(n)] for name, n in sess["components"].most_common()]
     rest = fee - sum(sess["components"].values())
-    rows.append([ENTRY_FEE_UNATTRIBUTED, rest, share(rest)])
+    # A negative remainder means the 4-chars-per-token estimate overshot the
+    # measured fee, which happens on dense markdown and tables. Print that as
+    # what it is rather than as a negative measurement: the component shares
+    # then read above 100% and say plainly that the estimate broke here.
+    if rest < 0:
+        rows.append([ENTRY_FEE_OVERSHOT, -rest, "-"])
+    else:
+        rows.append([ENTRY_FEE_UNATTRIBUTED, rest, share(rest)])
     return rows
 
 
@@ -943,16 +984,25 @@ def short_project(slug, n=46):
     return ("..." + slug[-(n - 3):]) if len(slug) > n else slug
 
 
+def repo_of_slug(slug):
+    """A project slug -> the repo it belongs to, folding its worktree slugs in.
+
+    A one-session worktree slug is not a repo, and ranking it against a
+    many-session checkout of the same repo reads as a comparison when it is
+    the same codebase twice."""
+    return slug.split(ENTRY_FEE_WORKTREE_MARK, 1)[0]
+
+
 def entry_fee_project_rows(sessions, top):
-    """Per-repo median fee, every project (the caller slices for display).
+    """Per-repo median fee, largest median first, ties broken by session count.
     The memory index and CLAUDE.md stack differ per checkout, so the per-repo
     figure is the actionable one."""
     by = defaultdict(list)
     for s in sessions:
-        by[s["project"]].append(s["fee"])
+        by[repo_of_slug(s["project"])].append(s["fee"])
     rows = [[short_project(p), len(v), pctl(v, 50)] for p, v in by.items()]
-    rows.sort(key=lambda r: -r[2])
-    return rows
+    rows.sort(key=lambda r: (-r[2], -r[1]))
+    return rows[:top] if top else rows
 
 
 def iso_week(day):
@@ -964,12 +1014,13 @@ def iso_week(day):
     return f"{y}-W{w:02d}"
 
 
-def entry_fee_week_rows(sessions):
+def entry_fee_week_rows(sessions, top):
     """Weekly median fee, newest week first, so a reduction shows as a drop."""
     by = defaultdict(list)
     for s in sessions:
         by[iso_week(s["day"])].append(s["fee"])
-    return [[w, len(by[w]), pctl(by[w], 50)] for w in sorted(by, reverse=True)]
+    rows = [[w, len(by[w]), pctl(by[w], 50)] for w in sorted(by, reverse=True)]
+    return rows[:top] if top else rows
 
 
 def run_entry_fee(args):
@@ -980,7 +1031,7 @@ def run_entry_fee(args):
     split_sess, splittable = entry_fee_split_session(sessions)
     comp = entry_fee_component_rows(split_sess)
     projects = entry_fee_project_rows(sessions, args.top)
-    weeks = entry_fee_week_rows(sessions) if args.trend else []
+    weeks = entry_fee_week_rows(sessions, args.top) if args.trend else []
     med = med_sess["fee"] if med_sess else 0
 
     if args.json:
@@ -1003,10 +1054,10 @@ def run_entry_fee(args):
     print(f"  the split is ESTIMATED at {ENTRY_FEE_CHARS_PER_TOKEN} chars/token, only the totals are measured):")
     print_table(["component", "est-tokens", "share"], comp)
     print("  per repo (median measured fee):")
-    print_table(["project", "sessions", "median-fee"], projects[: args.top] if args.top else projects)
+    print_table(["project", "sessions", "median-fee"], projects)
     if args.trend:
         print("  weekly trend (median measured fee):")
-        print_table(["week", "sessions", "median-fee"], weeks[: args.top] if args.top else weeks)
+        print_table(["week", "sessions", "median-fee"], weeks)
     print()
 
 

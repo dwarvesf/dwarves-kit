@@ -377,6 +377,35 @@ echo "[73] report negative control: no entry-fee section (existing views unchang
 out="$("$CC" report --file "$FIX")"
 if ! grep -q '# entry-fee' <<<"$out"; then ok "report has no entry-fee section"; else no "entry-fee leaked into report: $out"; fi
 
+EEDGE="${DIR}/tests/entryfee-edge"   # entry-fee edge roots, deliberately OUTSIDE tests/fixtures/
+# (the untrusted root's numeric-timestamp and non-dict-message lines would otherwise
+# also break session-semantic's own --root tests/fixtures walk)
+
+echo "[74] entry-fee: an estimate ABOVE the measured fee prints as an overshoot, never a negative measurement"
+out="$("$CC" entry-fee --root "$EEDGE/overshoot")"
+if grep -Eq '\(estimate over measured\)[[:space:]]+1000[[:space:]]+-' <<<"$out" && ! grep -q -- '-1000' <<<"$out"; then ok "overshoot row 1000, no negative token count"; else no "overshoot row wrong: $out"; fi
+
+echo "[75] entry-fee: the overshooting component's share reads above 100% (the estimate saying it broke)"
+if grep -Eq 'instructions[[:space:]]+2000[[:space:]]+200%' <<<"$out"; then ok "instructions 2000 (200%)"; else no "overshoot share wrong: $out"; fi
+
+echo "[76] entry-fee: untrusted fields (numeric timestamp, dict attachment type, numeric content, non-dict message) do not crash"
+set +e
+out="$("$CC" entry-fee --root "$EEDGE/untrusted" 2>&1)"
+rc=$?
+set -e
+if [[ $rc -eq 0 ]] && grep -q 'median 700 tokens' <<<"$out"; then ok "exit 0, the valid turn's fee 700 still measured"; else no "untrusted input crashed or row missing (rc=$rc): $out"; fi
+
+echo "[77] entry-fee negative control: the dict-typed attachment contributes no component row"
+if ! grep -q 'nested' <<<"$out"; then ok "unhashable attachment type skipped, not keyed"; else no "dict attachment type leaked into the split: $out"; fi
+
+echo "[78] entry-fee: a worktree slug folds into its repo row (2 sessions under one proj-alpha, not two rows)"
+out="$("$CC" entry-fee --root "$EEDGE/worktrees")"
+if grep -Eq 'proj-alpha[[:space:]]+2[[:space:]]+2000' <<<"$out" && ! grep -q 'wt-one' <<<"$out"; then ok "proj-alpha 2 sessions, worktree slug folded in"; else no "worktree grouping wrong: $out"; fi
+
+echo "[79] entry-fee: a multi-slug --project match is announced on stderr (never a silent merge)"
+err="$("$CC" entry-fee --root "$EEDGE/worktrees" --project alpha 2>&1 >/dev/null)"
+if grep -q "matched 2 slugs" <<<"$err" && grep -q 'proj-alpha--claude-worktrees-wt-one' <<<"$err"; then ok "multi-match announced with the resolved slugs"; else no "multi-match not announced: $err"; fi
+
 echo
 if [[ $fail -gt 0 ]]; then echo "smoke: $pass passed, $fail FAILED" >&2; exit 1; fi
 echo "smoke: all $pass passed"

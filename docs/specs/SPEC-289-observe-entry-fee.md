@@ -60,6 +60,15 @@ The split is labelled an estimate in the table header and in the JSON
 (`components_estimated`). The same rule of thumb the hand measurement used is stated
 alongside it.
 
+Four characters per token overshoots on dense markdown and tables, so the sized blocks
+can exceed the measured fee. That prints as an `(estimate over measured)` row carrying
+the magnitude, never as a negative token count, and the component shares then read
+above 100 percent, which is the estimate saying it broke here.
+
+The measured total also covers the first user prompt and anything attached to it, so it
+is the preamble plus turn one. The `(unattributed)` row absorbs that alongside the
+system prompt and the tool schemas.
+
 The split is reported for ONE real session, not as a per-component median. Medians of
 separate components do not add up to the median fee, so a median-of-medians table
 would not reconcile against a measured total. That session is the median of the
@@ -69,9 +78,16 @@ unattributed fee.
 
 ### The per-repo and weekly figures
 
-Per repo: one row per project slug with the session count and the median measured fee,
-largest median first. The memory index and the CLAUDE.md stack differ per checkout, so
-this is the actionable cut.
+Per repo: one row per repo with the session count and the median measured fee, largest
+median first, ties broken by session count. The memory index and the CLAUDE.md stack
+differ per checkout, so this is the actionable cut.
+
+A worktree gets its own project slug. The worktree convention is
+`<repo>/.claude/worktrees/<name>`, so the slug carries a `--claude-worktrees-` marker
+and the repo name sits before it. Rows key on the part before that marker, which folds
+a repo's worktrees into one row. Without the fold, a one-session worktree slug ranks
+above the many-session checkout of the same repo, which reads as a comparison when it
+is one codebase twice.
 
 `--trend`: ISO-week buckets of the median measured fee, newest week first, so a
 reduction from a cleanup lands as a visible drop.
@@ -83,6 +99,10 @@ slug containing the given string, so a bare repo name resolves without the full
 cwd-derived slug. One repo's worktrees each get their own slug and a per-repo figure
 wants them together, so all matches are walked. This resolution is shared with the
 other views through `project_roots()`.
+
+A substring matching more than one slug prints the resolved list to stderr. Before the
+fallback existed, a wrong `--project` walked nothing and the empty output said so; a
+silent multi-match would instead merge unrelated repos into one plausible figure.
 
 ## Non-goals
 
@@ -112,6 +132,18 @@ sidechain-only transcript):
 71. `--project alpha` resolves the bare name to proj-alpha only.
 72. `--json` is valid, carries median_fee 2000 and the estimate flag.
 73. negative control: `report` prints no entry-fee section.
+
+Plus, against `tests/entryfee-edge/` (an overshooting session, an untrusted-field
+session, a repo with one worktree slug):
+
+74. an estimate above the measured fee prints as `(estimate over measured)`, never a
+    negative token count.
+75. the overshooting component's share reads above 100 percent.
+76. untrusted fields (numeric timestamp, dict attachment type, numeric rendered content,
+    non-dict message) do not crash the scan; the valid turn's fee is still measured.
+77. negative control: the dict-typed attachment contributes no component row.
+78. a worktree slug folds into its repo row (one row, two sessions).
+79. a multi-slug `--project` match is announced on stderr.
 
 Plus a real run over the live transcripts, recorded in
 `lib/session/observe/docs/verification/entry-fee.md`.
