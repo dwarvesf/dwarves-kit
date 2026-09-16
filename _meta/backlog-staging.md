@@ -106,3 +106,32 @@ Gitignored: may name unfiled work. NEVER the source of truth.
 - Tags: #test #u-mid #f-lo
 - Home: dwarves-kit
 - Source: incident 2026-09-13 | shared checkout identity clobber
+||||||| Stash base
+## [staged] wrap: land a worker branch in one verb
+- Intent: Every worker branch this session took the same 8 commands by hand, 20+ times: fetch main, merge FETCH_HEAD, push -u, gh pr create, gh pr view for head sha, gh pr merge --squash --match-head-commit, gh pr view for state, worktree remove. Twice main moved mid-sequence and the cycle repeated. Fork: a --land flag on wrap merge versus a new wrap land verb, and how either interacts with SPEC-065 chain ordering.
+- Approach: (no approach extracted)
+- Tags: #u-lo #f-mid
+- Home: dwarves-kit
+- Source: session 2026-09-11
+
+## [staged] wrap merge: clear a CONFLICTING verdict caused only by merge=union log files
+- Intent: GitHub squash-merge ignores .gitattributes merge=union, so a branch that prepended a LAB_LOG line reads CONFLICTING after main moves; three PRs in one session (ops-toolkit 2642, 2643, 2644) each needed a hand git merge origin/main in the worktree plus a push before wrap merge could proceed. Enhance bin/wrap merge: when the PR is CONFLICTING and the conflicting paths are all declared merge=union, merge the base into the branch in its worktree, push, re-check, then merge. Never touch a branch whose conflict includes a non-union path.
+- Approach: (no approach extracted)
+- Tags: #u-lo #f-mid
+- Home: dwarves-kit lib/wrap/wrap.sh merge verb
+- Source: session 2026-09-12
+
+## [staged] kit-weekly: render the staging buffer weekly and post it
+- Intent: The staging buffers fill (ops-toolkit held 105 candidates on 2026-09-12, last hand triage 2026-07-18) because reflect drain has no trigger. Add a kit-weekly step that runs reflect drain --days 7 over every registered board, posts the render to the mac-mini-ops channel through the existing notify rail, and pings the air.kit-weekly heartbeat as today. Read-only over the buffers; promotion stays board promote by hand.
+- Approach: (no approach extracted)
+- Tags: #u-lo #f-mid
+- Home: dwarves-kit kit-weekly scheduler (lib/session/observe or the kit-weekly runner) plus reflect drain
+- Source: session 2026-09-12
+
+## [staged] wrap apply: remove a proven-merged LOCKED agent worktree
+- Intent: Agent-tool worktrees are locked by default; git worktree remove --force no-ops on them and needs -f -f. This run removed about twenty by hand after wrap scan proved each squash-merged. wrap apply --worktrees should unlock and remove a clean worktree whose branch scan marks SQUASH-MERGED per gh, and report it, instead of skipping it as held. Lane normal, kit machinery.
+- Approach: (no approach extracted)
+- Tags: #u-lo #f-mid
+- Home: dwarves-kit lib/wrap/wrap.sh
+- Source: session 2026-09-13
+

@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# gate-policy.sh -- is a quality gate switched on for this project?
+#
+# The one reader of the `[gate]` block (kit-root kit.toml, then the operator overlay,
+# then the project's .kit.toml, which wins). Hooks call THIS script instead of reading
+# config themselves, so the standing lint "no hook reads kit.toml at runtime" stays
+# true and there is one place the default lives. Fail-open in the ON direction: an
+# unknown key, a missing resolver, or any error means the gate is on. Switching a gate
+# off has to be an explicit `<key> = false`, and a project-level `false` counts only once
+# .kit.toml is committed and clean: the hooks read the working tree, so an uncommitted file
+# would let the gated agent switch its own gate off with no trace in the PR. The operator
+# overlay needs no such check (it never rides inside a PR).
+#
+# Exit-code contract for callers: 0 = on, 1 = off by config. Callers treat EVERY other exit
+# (a broken or unreadable copy of this script, 2/126/127) as on.
+#
+# Safety gates (safety-gate.sh, secrets-guard.sh) have no key here on purpose. They stop
+# destructive git and credential leaks, not quality drift, and cannot be switched off.
+#
+# Usage:
+#   gate-policy.sh enabled <key> [project-root]   exit 0 = on, exit 1 = off by config (only 1)
+#   gate-policy.sh keys                            the known keys, one per line
+#
+# <key>: proof_of_done | lane_gates | understanding_gate | commit_format
+set -uo pipefail
+GATE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KEYS="proof_of_done lane_gates understanding_gate commit_format"
+
+enabled() {
+  local key="${1:-}" root="${2:-$PWD}" v
+  case " $KEYS " in *" $key "*) ;; *) return 0 ;; esac
+  # shellcheck source=lib/config/kit-config.sh
+  source "$GATE_DIR/../config/kit-config.sh" 2>/dev/null || return 0
+  v="$(KIT_PROJECT_ROOT="$root" kit_config_get "gate.$key" true 2>/dev/null)" || return 0
+  [ "$v" = "false" ] || return 0
+  # Off by the operator overlay or the kit root: no commit check needed.
+  [ "$(_kit_toml_get "$root/.kit.toml" gate "$key")" = "false" ] || return 1
+  # Off by the project file: only when that file is tracked and unmodified.
+  git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 1
+  if git -C "$root" ls-files --error-unmatch .kit.toml >/dev/null 2>&1 \
+     && git -C "$root" diff --quiet HEAD -- .kit.toml 2>/dev/null; then
+    return 1
+  fi
+  echo "gate-policy: [gate] $key = false in $root/.kit.toml is not applied until the file is committed and clean" >&2
+  return 0
+}
+
+case "${1:-}" in
+  enabled) shift; enabled "$@" ;;
+  keys)    printf '%s\n' $KEYS ;;
+  *) sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2; exit 64 ;;
+esac
