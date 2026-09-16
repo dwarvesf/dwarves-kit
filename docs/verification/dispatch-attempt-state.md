@@ -12,7 +12,7 @@ Exit: 0
 Verdict: PASS
 ```
 
-All 15 cases pass:
+All 26 cases pass:
 
 | Case | What it pins |
 |---|---|
@@ -30,11 +30,28 @@ All 15 cases pass:
 | 12 | a recorded sibling committing late is `superseded`, the first commit stands |
 | 13-14 | `status` reports the grace remaining, and reports it expired |
 | 15 | `--grace` sets the window rather than a hardcoded constant |
+| 16 | a result arriving inside the window commits straight from `disconnected`, with no resume first |
+| 17 | a fresh commit supersedes a co-live sibling |
+| 18 | a repeated disconnect does not extend the window |
+| 19 | the grace boundary: refused at expiry, allowed one second past |
+| 20 | `abandon` supersedes the live attempt instead of orphaning it |
+| 21 | `abandon` works from `queued` as well as `dispatched` |
+| 22 | a `done` task cannot be dispatched again |
+| 23 | id validation rejects path, traversal, pipe and whitespace shapes and accepts a clean id |
+| 24 | a verb naming a non-existent attempt is refused |
+| 25 | both lost workers stay excluded and a third is accepted |
+| 26 | `release` clears the record; `list` names a tracked task |
+
+The whole suite ran on a clean CI runner (local runs shared the machine with peer
+sessions and were not trustworthy timing-wise):
 
 ```
-Command: bash tests/run-all.sh
+Command: bash tests/run-all.sh   (CI, run 35090673903, ubuntu-latest)
+Output:  run-all: 149 suites, 1 at a time, 3 serial
+         test-attempt-state                             ok
+         run-all: all 149 suites passed, 1 skipped for missing tooling
 Exit: 0
-Verdict: PASS (149 suites)
+Verdict: PASS
 ```
 
 ## Negative control
@@ -59,7 +76,15 @@ Verdict: PASS
 
 The mutation replaced the window comparison `[ "$now" -le "$until" ]` with a condition that never
 holds, so `lose-attempt` would accept a disconnected attempt while its window still had time left.
-That is the duplicate-dispatch bug itself. The suite went red and returned green after restore.
+That is the duplicate-dispatch bug itself. Two cases went red (exit 2) and the suite returned green
+after restore.
+
+## Review
+
+An architecture lens and a test-coverage lens ran against `origin/master...HEAD`. Both found real
+defects, fixed in `ea6d424`: `abandon` orphaned a live attempt, and `mark-disconnected` refreshed
+the grace deadline on every call. The coverage lens also showed the sibling-supersede branch was
+dead relative to the tests. Eleven cases were added.
 
 ## Not proven
 
